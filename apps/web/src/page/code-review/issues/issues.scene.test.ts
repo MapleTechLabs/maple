@@ -18,7 +18,7 @@ const resolved = Message.GotFrameMessage({
 	message: FrameMessage.CompletedResolveWindow({ window, nowMs: NOW, mode: "Load" }),
 })
 const windowed = (search: Search = {}) => pageUpdate(init({ search }, context).model, resolved)
-const noFindings = Schema.decodeUnknownSync(CodeReviewFindingsResponse)({ findings: [], nextCursor: null })
+const noFindings = Schema.decodeSync(CodeReviewFindingsResponse)({ findings: [], nextCursor: null })
 
 describe("code review issues", () => {
 	test("entry reads the findings and the author list", () => {

@@ -36,7 +36,9 @@ interface Acc {
 }
 
 const withoutKey = <K extends string>(record: Readonly<Partial<Record<K, "contains">>>, key: K) =>
-	Rec.fromEntries(Arr.filter(Object.entries(record), ([candidate]) => candidate !== key))
+	Rec.fromEntries(
+		Arr.filter(Rec.toEntries<string, "contains" | undefined>(record), ([candidate]) => candidate !== key),
+	)
 
 export const buildListLogsParams = (
 	whereClause: string,
@@ -49,7 +51,7 @@ export const buildListLogsParams = (
 		matchModes: {},
 		warnings: Arr.map(parsed.warnings, (warning) => warning.message),
 	}
-	const done = parsed.clauses.reduce<Acc>((acc, clause) => {
+	const done = Arr.reduce(parsed.clauses, start, (acc, clause) => {
 		const key = normalizeKey(clause.key)
 		const typedKey = clause.rawKey ?? clause.key
 		const warn = (warning: string): Acc => ({ ...acc, warnings: [...acc.warnings, warning] })
@@ -83,7 +85,7 @@ export const buildListLogsParams = (
 			}
 		const supported = mode !== undefined ? "=, != and contains" : "= and !="
 		return warn(`Logs list filter ${typedKey} supports only ${supported}; ignoring ${clause.operator}`)
-	}, start)
+	})
 	return {
 		params: { limit, ...done.included, ...done.excluded, ...done.matchModes },
 		warnings: done.warnings,

@@ -4,6 +4,7 @@ import { type VariableValues } from "./dashboard-variables/interpolate"
 import { snapRangeForCache } from "./datetime"
 import { MAX_LIST_RANGE_SECONDS } from "./limits"
 import { WIDGET_FETCH_STRATEGY, planWidgetRequest } from "./widget-request"
+import * as Arr from "effect/Array"
 
 const single = (value: string): VariableValues[string] => ({ value, isAll: false, options: [] })
 
@@ -36,7 +37,7 @@ describe("planWidgetRequest", () => {
 		})
 		if (plan.kind !== "request") throw new Error("expected a request")
 		const queries = plan.params.queries as ReadonlyArray<{ whereClause: string }>
-		expect(queries[0].whereClause).toBe("service.name = 'checkout' AND env = 'prod'")
+		expect(Arr.getUnsafe(queries, 0).whereClause).toBe("service.name = 'checkout' AND env = 'prod'")
 	})
 
 	it("substitutes variables into raw SQL as escaped literals", () => {

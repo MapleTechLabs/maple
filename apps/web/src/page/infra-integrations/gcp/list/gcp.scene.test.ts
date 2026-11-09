@@ -21,7 +21,7 @@ const names = (commands: ReadonlyArray<{ readonly name: string }> | undefined) =
 	Arr.map(commands ?? [], ({ name }) => name)
 
 const status = (connected: boolean, overrides: Readonly<Record<string, unknown>> = {}) =>
-	Schema.decodeUnknownSync(V2GcpIntegration)({
+	Schema.decodeSync(V2GcpIntegration)({
 		object: "gcp_integration",
 		metrics_available: true,
 		connectors: connected
@@ -91,7 +91,7 @@ describe("google cloud list", () => {
 		expect(names(tabbed.commands)).not.toContain("ResolveGcpWindow")
 		expect(tabbed.model.window).toEqual(window)
 		const moved = routeChanged(tabbed.model, { search: { tab: "resources", timePreset: "6h" } }, context)
-		expect(moved.commands?.map(({ name, args }) => [name, args?.["mode"]])?.[0]).toEqual([
+		expect(Arr.map(moved.commands ?? [], ({ name, args }) => [name, args?.["mode"]])[0]).toEqual([
 			"ResolveGcpWindow",
 			"Refresh",
 		])

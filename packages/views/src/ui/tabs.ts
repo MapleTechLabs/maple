@@ -134,8 +134,10 @@ export const update = (model: Model, message: Message): UpdateReturn =>
 /** Base UI's `getCssDimensions`: the computed size unless it disagrees with the offset size. */
 const cssDimensions = (element: HTMLElement): { width: number; height: number } => {
 	const css = getComputedStyle(element)
-	const width = Number.parseFloat(css.width) || 0
-	const height = Number.parseFloat(css.height) || 0
+	const parsedWidth = Number.parseFloat(css.width)
+	const parsedHeight = Number.parseFloat(css.height)
+	const width = Number.isNaN(parsedWidth) ? 0 : parsedWidth
+	const height = Number.isNaN(parsedHeight) ? 0 : parsedHeight
 	const fallback = Math.round(width) !== element.offsetWidth || Math.round(height) !== element.offsetHeight
 	return fallback ? { width: element.offsetWidth, height: element.offsetHeight } : { width, height }
 }

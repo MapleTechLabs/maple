@@ -27,7 +27,7 @@ export const tableRowStyles =
 // Column labels share the eyebrow overline token (size, case, tracking, colour) with list headers.
 // Div-based tables (infra) use the label type alone.
 export const tableHeadLabelStyles =
-	"font-medium text-3xs uppercase tracking-[0.12em] text-muted-foreground leading-none"
+	"font-medium text-3xs uppercase tracking-overline text-muted-foreground leading-none"
 
 export const tableHeadStyles = `h-10 whitespace-nowrap px-2.5 text-left align-middle ${tableHeadLabelStyles} in-data-[size=sm]:h-8 in-data-[size=sm]:px-2 in-data-[size=xs]:h-auto in-data-[size=xs]:px-0 in-data-[size=xs]:pr-2 in-data-[size=xs]:pb-1 has-[[role=checkbox]]:w-px last:has-[[role=checkbox]]:ps-0 first:has-[[role=checkbox]]:pe-0`
 
@@ -52,8 +52,7 @@ export const tableRowLinkLiftStyles = "relative z-10"
 export const tableSortButtonStyles =
 	"group/sort inline-flex max-w-full items-center gap-1 rounded-xs [letter-spacing:inherit] [text-transform:inherit] text-muted-foreground hover:text-foreground active:text-foreground focus-visible:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring data-[active]:text-foreground data-[align=right]:flex-row-reverse"
 
-export const tableSortIconStyles =
-	"size-2.5 shrink-0 transition-[opacity,rotate] duration-150 ease-out"
+export const tableSortIconStyles = "size-2.5 shrink-0 transition-[opacity,rotate] duration-150 ease-out"
 
 export const tableSortIdleIconStyles =
 	"text-foreground-subtle opacity-0 group-hover/sort:opacity-100 group-active/sort:opacity-100 group-focus-visible/sort:opacity-100"

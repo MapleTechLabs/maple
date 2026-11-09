@@ -22,14 +22,17 @@ import {
 	findingsStateOf,
 	isNewFinding,
 	isReopened,
+	repositoryOf,
 	STATUS_TABS,
+	type StatusTab,
 	targetsOf,
 	toolbarFindings,
 } from "./derive"
 import { Message, type Model } from "./model"
 import { listToolbar, toolbarCount } from "../../kit/list-toolbar"
 import { borderedBox } from "@maple/views/ui/bordered-box"
-import { Array as Arr } from "effect"
+import { Array as Arr, Option, Struct } from "effect"
+import { typography } from "@maple/views/ui/typography"
 
 // The Findings tab, as Linear lists issues: severity tabs, a filter toolbar, then one dense line
 // per finding under collapsible severity groups.
@@ -54,10 +57,7 @@ const selectSubmodel = (
 			size: "sm",
 			ariaLabel: label,
 			className: "h-7 w-auto min-w-28 text-xs",
-			renderValue: (value) => [
-				h.span([h.Class("text-muted-foreground")], [`${label} `]),
-				renderValue(value),
-			],
+			renderValue: (value) => [typography(h, { tone: "muted" }, [`${label} `]), renderValue(value)],
 			toView: (parts) => h.div([h.Class("contents")], parts),
 		},
 		toParentMessage: (message) => wrap(message),
@@ -74,11 +74,12 @@ const toolbar = (
 	findings: ReadonlyArray<SecurityAuditFinding>,
 	targets: ReadonlyArray<SecurityAuditTarget>,
 ): Html => {
-	const targetLabel = (value: string) =>
-		value === "all"
-			? "All targets"
-			: (targets.find((target) => target.id === value)?.repository ?? "Removed target")
-	const statusLabel = (value: string) => STATUS_TABS.find((tab) => tab === value) ?? "open"
+	const targetLabel = (value: string) => (value === "all" ? "All targets" : repositoryOf(targets, value))
+	const statusLabel = (value: string) =>
+		Option.getOrElse(
+			Arr.findFirst(STATUS_TABS, (tab) => tab === value),
+			(): StatusTab => "open",
+		)
 	return listToolbar(h, {
 		framed: true,
 		leading: searchInput(h, {
@@ -177,8 +178,7 @@ const findingsList = (
 					? [
 							repositoryName(
 								h,
-								targets.find((target) => target.id === finding.targetId)?.repository ??
-									"Removed target",
+								repositoryOf(targets, finding.targetId),
 								"hidden max-w-48 text-xs lg:inline",
 							),
 						]
@@ -191,7 +191,6 @@ const findingsList = (
 							nowMs: clock.nowMs,
 							timeZone: clock.timeZone,
 							variant: "short",
-							tooltip: "title",
 						}),
 					],
 				),
@@ -247,7 +246,7 @@ export const findingsBody = (h: H, model: Model, timeZone: string): ReadonlyArra
 							[h.Class("p-4")],
 							[
 								// Clearing keeps the status, so the status alone is not a filter.
-								Arr.some(Object.keys(model.findingsSearch), (key) => key !== "status")
+								Arr.some(Struct.keys(model.findingsSearch), (key) => key !== "status")
 									? filteredEmpty(h, {
 											noun: "findings",
 											className: emptyFrameClass("dashed"),

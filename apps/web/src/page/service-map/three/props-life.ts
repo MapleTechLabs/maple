@@ -286,7 +286,9 @@ export function yard(scope: Scope, { kind, finish }: { kind: MachineKind; finish
 	const bits = Arr.flatMap(range(count), (i) => {
 		const spot = spots[(first + i * (spots.length > 2 ? 2 : 1)) % spots.length]
 		const make = YARD_PROPS[variant(finish.seed, 22 + i, YARD_PROPS.length)]
-		return spot && make ? Arr.map(make(), (bit) => ({ tone: bit.tone, part: placeBit(bit, spot) })) : []
+		return spot !== undefined && make !== undefined
+			? Arr.map(make(), (bit) => ({ tone: bit.tone, part: placeBit(bit, spot) }))
+			: []
 	})
 	const tones = {
 		timber: finish.timber,

@@ -127,7 +127,7 @@ const probeServiceWindow = (
 	deploymentEnv: string | null,
 	startMs: number,
 	endMs: number,
-): Effect.Effect<ServiceWindowTotals | null, never> =>
+): Effect.Effect<ServiceWindowTotals | null> =>
 	Effect.gen(function* () {
 		const scopedEnv = Option.fromNullOr(deploymentEnv)
 		const compiled = CH.compile(
@@ -160,7 +160,7 @@ const probeOrgWindow = (
 	tenant: TenantContext,
 	startMs: number,
 	endMs: number,
-): Effect.Effect<number | null, never> =>
+): Effect.Effect<number | null> =>
 	Effect.gen(function* () {
 		const compiled = CH.compileUnion(CH.orgTelemetryPulseQuery(), {
 			orgId: tenant.orgId,
@@ -178,7 +178,7 @@ const probeOrgWindow = (
  * Prove telemetry is still flowing for a subject before its silence is allowed
  * to mean anything. Never fails — an unprovable probe is a veto, not an error.
  */
-export const probeLiveness: (input: LivenessProbeInput) => Effect.Effect<LivenessVerdict, never> = Effect.fn(
+export const probeLiveness: (input: LivenessProbeInput) => Effect.Effect<LivenessVerdict> = Effect.fn(
 	"TelemetryLiveness.probeLiveness",
 )(function* (input) {
 	const { warehouse, tenant, serviceNames } = input
@@ -233,7 +233,7 @@ export const probeLiveness: (input: LivenessProbeInput) => Effect.Effect<Livenes
 										deploymentEnv,
 									})),
 					),
-					({ serviceName, deploymentEnv }): Effect.Effect<ServiceWindowPair, never> =>
+					({ serviceName, deploymentEnv }): Effect.Effect<ServiceWindowPair> =>
 						Effect.all(
 							[
 								probeServiceWindow(

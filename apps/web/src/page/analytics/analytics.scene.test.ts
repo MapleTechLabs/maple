@@ -178,7 +178,7 @@ describe("web analytics", () => {
 			input: { startTime: window.startTime, country: "US" },
 		})
 		const moved = routeChanged(filtered.model, { search: { country: "US", timePreset: "1h" } }, context)
-		expect(moved.commands?.map(({ name, args }) => [name, args?.["mode"]])).toEqual([
+		expect(Arr.map(moved.commands ?? [], ({ name, args }) => [name, args?.["mode"]])).toEqual([
 			["ResolveAnalyticsWindow", "Refresh"],
 		])
 	})

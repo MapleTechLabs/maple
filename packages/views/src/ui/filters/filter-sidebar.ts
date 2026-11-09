@@ -50,7 +50,8 @@ export const filterSidebarHeader = <M>(
 							{
 								variant: "link",
 								size: "xs",
-								className: "px-0 text-muted-foreground hover:text-foreground active:text-foreground",
+								className:
+									"px-0 text-muted-foreground hover:text-foreground active:text-foreground",
 								attributes: [h.OnClick(options.onClear)],
 							},
 							["Clear all"],
@@ -71,7 +72,10 @@ export const filterSidebarGroupLabel = <M>(
 ): Html =>
 	h.div(
 		[h.Class("flex items-center gap-1 py-2")],
-		[eyebrow(h, { as: "h4", variant: "label", className: "text-muted-foreground" }, [title]), ...trailing],
+		[
+			eyebrow(h, { as: "h4", variant: "label", className: "text-muted-foreground" }, [title]),
+			...trailing,
+		],
 	)
 
 /** A rule between groups of sections inside the body. */
@@ -89,13 +93,13 @@ export const filterSidebarBody = <M>(
 		[h.Class("relative -mr-4 min-h-0 flex-1")],
 		[
 			scrollArea(h, { className: "h-full", idPrefix }, [
-				h.div([h.Class("space-y-2 pr-4 pb-6")], children),
+				h.div([h.Class("space-y-1 pr-4 pb-6")], children),
 			]),
 			h.div(
 				[
 					h.AriaHidden(true),
 					h.Class(
-						"pointer-events-none absolute inset-x-0 bottom-0 h-8 bg-gradient-to-t from-background to-transparent",
+						"pointer-events-none absolute inset-x-0 bottom-0 h-8 bg-linear-to-t from-background to-transparent",
 					),
 				],
 				[],
@@ -116,17 +120,17 @@ export const filterSidebarLoading = <M>(h: HtmlBuilder<M>, sectionCount = 3): Ht
 				h.div([h.Class("flex h-8 items-center py-2")], [skeleton(h, "h-2.5 w-12")]),
 				railRule(h),
 				h.div(
-					[h.Class("space-y-2")],
+					[h.Class("space-y-1")],
 					Array.from({ length: sectionCount }, (_, section) =>
 						h.div(
-							[h.Class("pb-3")],
+							[h.Class("pb-2")],
 							[
 								h.div(
-									[h.Class("flex h-8 items-center")],
+									[h.Class("flex h-7 items-center")],
 									[skeleton(h, cn("h-2", LABEL_WIDTHS[section % LABEL_WIDTHS.length]))],
 								),
 								h.div(
-									[h.Class("space-y-2")],
+									[h.Class("space-y-1.5")],
 									Array.from({ length: section === 0 ? 2 : 4 }, (_, row) =>
 										h.div(
 											[h.Class("flex h-4 items-center gap-2")],

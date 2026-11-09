@@ -20,6 +20,8 @@ import { statusDot } from "@maple/views/ui/status-dot"
 import { serviceDot } from "@maple/views/ui/values"
 import { relativeTime } from "../../kit/relative-time"
 import { Array as Arr, String as Str } from "effect"
+import { hstack } from "@maple/views/ui/stack"
+import { typography } from "@maple/views/ui/typography"
 
 // `AnomalyRow`: one anomaly in a list.
 
@@ -72,7 +74,6 @@ export const anomalyRow = <M>(h: HtmlBuilder<M>, options: AnomalyRowOptions<M>):
 					"group/row relative flex h-9 items-center gap-2 pr-3 pl-3 text-sm",
 					"hover:bg-surface-sunken active:bg-surface-sunken",
 					"data-focused:bg-surface-sunken",
-					"transition-colors",
 				),
 			),
 		],
@@ -86,8 +87,9 @@ export const anomalyRow = <M>(h: HtmlBuilder<M>, options: AnomalyRowOptions<M>):
 				h.Tabindex(-1),
 			]),
 			h.span([h.AriaHidden(true), h.Class(cn("absolute inset-y-0 left-0 w-px", displayTone.accent))]),
-			h.span(
-				[h.Class("relative z-10 flex w-3 shrink-0 items-center justify-center")],
+			hstack(
+				h,
+				{ align: "center", justify: "center", as: "span", className: "relative z-10 w-3 shrink-0" },
 				[
 					isLive
 						? statusDot(h, {
@@ -100,18 +102,22 @@ export const anomalyRow = <M>(h: HtmlBuilder<M>, options: AnomalyRowOptions<M>):
 							}),
 				],
 			),
-			h.span(
-				[
-					h.Class(
-						"relative z-10 flex min-w-0 flex-1 items-center gap-1.5 font-medium text-foreground sm:w-32 sm:flex-none",
-					),
-				],
+			hstack(
+				h,
+				{
+					gap: "1.5",
+					align: "center",
+					shrink: true,
+					grow: true,
+					as: "span",
+					className: "relative z-10 font-medium text-foreground sm:w-32 sm:flex-none",
+				},
 				[
 					icon(h, SIGNAL_ICON_NAME[incident.signalType], {
 						size: 14,
 						className: "shrink-0 text-muted-foreground",
 					}),
-					h.span([h.Class("truncate")], [label]),
+					typography(h, { truncate: true }, [label]),
 				],
 			),
 			h.span(
@@ -136,7 +142,7 @@ export const anomalyRow = <M>(h: HtmlBuilder<M>, options: AnomalyRowOptions<M>):
 				],
 				[
 					formatSignalValue(incident.signalType, incident.lastObservedValue),
-					h.span([h.Class("text-foreground-faint")], [" ← "]),
+					typography(h, { tone: "faint" }, [" ← "]),
 					formatSignalValue(incident.signalType, incident.baselineMedian),
 				],
 			),
@@ -179,11 +185,8 @@ export const anomalyRow = <M>(h: HtmlBuilder<M>, options: AnomalyRowOptions<M>):
 							{
 								pill: true,
 								size: "sm",
-								className: cn(
-									META_CHIP_CLASS,
-									"z-10 hidden font-medium sm:inline-flex",
-									triageChip.tone,
-								),
+								variant: triageChip.variant,
+								className: cn(META_CHIP_CLASS, "z-10 hidden font-medium sm:inline-flex"),
 							},
 							[triageChip.label],
 						),
@@ -196,7 +199,6 @@ export const anomalyRow = <M>(h: HtmlBuilder<M>, options: AnomalyRowOptions<M>):
 				nowMs: options.nowMs,
 				timeZone: options.timeZone,
 				prefix: isStale ? "last seen" : undefined,
-				tooltip: "title",
 				className:
 					"relative z-10 w-28 shrink-0 whitespace-nowrap text-right text-xs tabular-nums text-muted-foreground",
 			}),

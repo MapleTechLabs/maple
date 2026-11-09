@@ -6,6 +6,7 @@ import {
 } from "@maple/web-data/warehouse/warehouse-services"
 import { Effect, Layer } from "effect"
 import { MapleApiV2Client, MapleInternalApiClient } from "../platform/api-clients"
+import { withResourceTiming } from "../lib/resource-timing"
 import { makeExecuteBatcher } from "./execute-batcher"
 
 /**
@@ -21,6 +22,7 @@ const WarehouseExecutorLive = Layer.effect(
 				.executeBatch({ payload: new QueryEngineExecuteBatchRequest({ requests }) })
 				.pipe(
 					Effect.map((response) => response.results),
+					withResourceTiming("/internal/query-engine/execute-batch"),
 					Effect.withSpan("QueryEngine.executeBatch", {
 						attributes: { "query.batch_size": requests.length },
 					}),

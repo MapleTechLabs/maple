@@ -173,7 +173,10 @@ export const tierFor = (
 	tiers: Arr.NonEmptyReadonlyArray<AlertThresholdTier>,
 	severity: AlertSeverity,
 ): AlertThresholdTier =>
-	tiers.find((tier) => tier.severity === severity) ?? Arr.headNonEmpty(Arr.sort(tiers, alertSeverityOrder))
+	Option.getOrElse(
+		Arr.findFirst(tiers, (tier) => tier.severity === severity),
+		() => Arr.headNonEmpty(Arr.sort(tiers, alertSeverityOrder)),
+	)
 
 /**
  * The rule tier an incident at `severity` reads as: its own, else the one the rule kept
@@ -189,7 +192,8 @@ export const maxSeverity = (a: AlertSeverity | null, b: AlertSeverity | null): A
 
 /** The highest tier a tick breached, for the audit trail; null when none did. */
 export const highestBreachedLevel = (levels: ReadonlyArray<AlertTierLevel>): AlertSeverity | null =>
-	Arr.filter(levels, (level) => level.status === "breach").reduce<AlertSeverity | null>(
-		(highest, level) => maxSeverity(highest, level.severity),
+	Arr.reduce<AlertTierLevel, AlertSeverity | null>(
+		Arr.filter(levels, (level) => level.status === "breach"),
 		null,
+		(highest, level) => maxSeverity(highest, level.severity),
 	)

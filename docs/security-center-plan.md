@@ -425,7 +425,9 @@ The method is language-neutral; the platform around it is not. Before a customer
   `SECURITY_AUDIT_MAX_REPOSITORY_BYTES`, before any clone. After the clone, prepare measures
   commits, tracked files and bytes, and Git LFS files; a repository over a limit
   (`security-audit/limits.ts`, env-overridable) is refused and the run is marked failed with the
-  reason.
+  reason. Only LFS files that look like source or config count against the LFS limit
+  (`SECURITY_AUDIT_MAX_LFS_SOURCE_FILES`, default 0); other LFS files (media, models, archives)
+  are skipped and named in a run note.
 - **Execution label.** Prepare detects ecosystems (node/bun, Python, Go, Rust, JVM) and private
   dependency signals (registries, credentials, submodules, local `replace`, SSH git deps) and
   stores an `executionProfile` on the run; every run is `source_only` with reasons, shown in the

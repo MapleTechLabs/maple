@@ -1,4 +1,4 @@
-// BOUNDARY: This module intentionally carries opaque values; callers decode them before domain use.
+// BOUNDARY-FILE: This module intentionally carries opaque values; callers decode them before domain use.
 // Shared plumbing for the ClickHouse-backed e2e tests.
 //
 // Both suites need the same three things: connection settings from the CI job's
@@ -12,6 +12,7 @@ import { dirname, join } from "node:path"
 import { fileURLToPath } from "node:url"
 import { MAPLE_AI_STAMP_ATTRS } from "@maple/domain/gen-ai"
 import { Array as Arr, Record as Rec, String as Str } from "effect"
+import * as SecureRandom from "effect/crypto/SecureRandom"
 
 export const clickhouseE2eEnabled = process.env.CLICKHOUSE_E2E === "1"
 export const clickhouseUrl = process.env.CLICKHOUSE_E2E_URL ?? "http://127.0.0.1:8123"
@@ -39,7 +40,7 @@ const repoRoot = findRepoRoot()
 
 /** Unique per suite so parallel test files never share (or drop) a database. */
 export const uniqueDatabase = (prefix: string): string =>
-	`${prefix}_${Date.now()}_${Str.slice(2, 8)(Math.random().toString(36))}`
+	`${prefix}_${Date.now()}_${Str.slice(0, 8)(SecureRandom.uuidV4Unsafe())}`
 
 export const clickhouseExec = async (
 	sql: string,

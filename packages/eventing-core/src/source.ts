@@ -86,9 +86,8 @@ export class SignalSourceRegistry {
 	readonly #sources = new Map<string, RegisteredSignalSource>()
 
 	register(definition: SignalSourceDefinition): Result.Result<this, SignalSourceInvalid> {
-		const self = this
-		return Result.gen(function* () {
-			yield* Schema.decodeUnknownResult(SourceDefinitionSchema)(definition).pipe(
+		return Result.gen(this, function* () {
+			yield* Schema.decodeResult(SourceDefinitionSchema)(definition).pipe(
 				Result.mapError(
 					(cause) =>
 						new SignalSourceInvalid({
@@ -98,7 +97,7 @@ export class SignalSourceRegistry {
 						}),
 				),
 			)
-			if (self.#sources.has(definition.sourceKind))
+			if (this.#sources.has(definition.sourceKind))
 				return yield* Result.fail(
 					new SignalSourceInvalid({
 						sourceKind: definition.sourceKind,
@@ -131,8 +130,8 @@ export class SignalSourceRegistry {
 				openFields.set(policy.namespace, policy)
 			}
 
-			self.#sources.set(definition.sourceKind, { definition, fields, openFields })
-			return self
+			this.#sources.set(definition.sourceKind, { definition, fields, openFields })
+			return this
 		})
 	}
 

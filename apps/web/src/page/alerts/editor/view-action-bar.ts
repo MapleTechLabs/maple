@@ -3,13 +3,14 @@ import { diffRuleForms } from "@maple/web-data/alerts/preview-insights"
 import { cn } from "@maple/ui/lib/utils"
 import { Struct, Array as Arr } from "effect"
 import { createLazy, type Html, type HtmlBuilder } from "foldkit/html"
+import { actionBar as kitActionBar } from "@maple/views/ui/action-bar"
 import { button, linkButton } from "@maple/views/ui/button"
 import { icon } from "@maple/views/ui/icon"
 import * as Tooltip from "@maple/views/ui/tooltip"
 import { stableSlice } from "../../kit/stable-slice"
 import { alertsHref } from "../shared/links"
 import type { AlertQueryTiming } from "@maple/domain/http"
-import { describeRuleCondition, saveIssues } from "./derive"
+import { describeRuleCondition, isProtectedDefault, saveIssues } from "./derive"
 import { draftTimingOf } from "./derive-rows"
 import type { RuleForm } from "./form"
 import { Message } from "./message"
@@ -82,10 +83,10 @@ const validationSummary = (h: H, model: BarView, issues: ReadonlyArray<string>):
 		[h.Class(cn("flex min-w-0 items-center gap-1.5 truncate text-xs text-muted-foreground"))],
 		[
 			icon(h, "CircleWarningIcon", { size: 14, className: "shrink-0 text-severity-warn" }),
-			h.span(
-				[h.Class("truncate")],
-				["Fix before saving: ", h.span([h.Class("text-foreground")], [summary])],
-			),
+			typography(h, { truncate: true }, [
+				"Fix before saving: ",
+				typography(h, { tone: "foreground" }, [summary]),
+			]),
 			...(hiddenCount > 0 ? [issuesDetails(h, model, issues)] : []),
 		],
 	)
@@ -94,79 +95,58 @@ const validationSummary = (h: H, model: BarView, issues: ReadonlyArray<string>):
 const bar = (h: H, model: BarView, form: RuleForm, timing: AlertQueryTiming | null): Html => {
 	// Unsaved field changes while editing, `null` on a new rule.
 	const changeCount = model.savedForm === null ? null : diffRuleForms(model.savedForm, form).length
-	const issues = saveIssues(form, timing)
+	const isDefault = isProtectedDefault(model)
+	const issues = saveIssues(form, timing, isDefault)
 	const isEditing = model.editingRuleId !== null
-	const summary = describeRuleCondition(form)
-	return h.div(
-		[
-			h.Class(
-				cn(
-					"sticky bottom-0 z-20 -mx-4 -mb-4 mt-6 border-t bg-background/95 px-4 py-3 backdrop-blur supports-[backdrop-filter]:bg-background/80",
-				),
-			),
-		],
-		[
-			h.div(
-				[h.Class(cn("mx-auto flex items-center justify-between gap-4", RULE_FORM_MAX_WIDTH))],
-				[
-					hstack(h, { gap: "3", shrink: true }, [
-						...(isEditing
-							? []
-							: [
-									button(
-										h,
-										{
-											variant: "ghost",
-											size: "sm",
-											className: "hidden sm:inline-flex",
-											attributes: [h.OnClick(Message.ClickedShowTemplates())],
-										},
-										[icon(h, "SquareTerminalIcon"), "Templates"],
-									),
-								]),
-						vstack(h, { gap: "0.5", shrink: true }, [
-							typography(
-								h,
-								{
-									size: "sm",
-									tone: "foreground",
-									truncate: true,
-									as: "p",
-									attributes: [h.Title(summary)],
-								},
-								[summary],
-							),
-							validationSummary(h, model, issues),
-						]),
-					]),
-					hstack(h, { gap: "2", className: "shrink-0" }, [
-						...(changeCount === null
-							? []
-							: [
-									h.span(
-										[h.Class("hidden text-xs text-muted-foreground sm:inline")],
-										[
-											changeCount === 0
-												? "No changes"
-												: `${changeCount} unsaved ${pluralize(changeCount, "change")}`,
-										],
-									),
-								]),
-						linkButton(h, { variant: "outline", href: alertsHref({}) }, ["Cancel"]),
+	const summary = describeRuleCondition(form, isDefault)
+	return kitActionBar(h, {
+		label: "Rule actions",
+		className: cn("mx-auto mt-6 w-full", RULE_FORM_MAX_WIDTH),
+		leading: [
+			...(isEditing
+				? []
+				: [
 						button(
 							h,
 							{
-								isDisabled: issues.length > 0 || changeCount === 0,
-								isLoading: model.isSaving,
-								attributes: [h.OnClick(Message.ClickedSave())],
+								variant: "ghost",
+								size: "sm",
+								className: "hidden sm:inline-flex",
+								attributes: [h.OnClick(Message.ClickedShowTemplates())],
 							},
-							[icon(h, "FloppyDiskIcon"), isEditing ? "Save changes" : "Create rule"],
+							[icon(h, "SquareTerminalIcon"), "Templates"],
 						),
 					]),
-				],
+			vstack(h, { gap: "0.5", shrink: true }, [
+				typography(
+					h,
+					{ size: "sm", tone: "foreground", truncate: true, as: "p", attributes: [h.Title(summary)] },
+					[summary],
+				),
+				validationSummary(h, model, issues),
+			]),
+		],
+		actions: [
+			...(changeCount === null
+				? []
+				: [
+						typography(h, { size: "xs", tone: "muted", className: "hidden sm:inline" }, [
+							changeCount === 0 ? "No changes" : `${changeCount} unsaved ${pluralize(changeCount, "change")}`,
+						]),
+					]),
+			linkButton(h, { variant: "outline", size: "sm", href: alertsHref({}) }, ["Cancel"]),
+			button(
+				h,
+				{
+					size: "sm",
+					isDisabled: issues.length > 0 || changeCount === 0,
+					isLoading: model.isSaving,
+					attributes: [h.OnClick(Message.ClickedSave())],
+				},
+				[icon(h, "FloppyDiskIcon"), isEditing ? "Save changes" : "Create rule"],
 			),
 		],
-	)
+	})
 }
 
 const slot = createLazy()

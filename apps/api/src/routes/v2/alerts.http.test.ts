@@ -2,9 +2,11 @@ import { LiveActivitiesService } from "@maple/backend/services/push/LiveActiviti
 import { MobileDevicesService } from "@maple/backend/services/push/MobileDevicesService"
 import { ApnsClient } from "@maple/backend/platform/Apns"
 import { MobilePushService } from "@maple/backend/services/push/MobilePushService"
+import { AlertMemberNotifier } from "@maple/backend/services/alerts/AlertMemberNotifier"
 import { ChatAlertPoster } from "@maple/backend/services/alerts/ChatAlertPoster"
 import { afterEach, describe, expect, it } from "@effect/vitest"
 import {
+	Clock,
 	ConfigProvider,
 	Context,
 	Effect,
@@ -18,12 +20,13 @@ import { FetchHttpClient, HttpRouter } from "effect/http"
 import { HttpApiBuilder } from "effect/http-api"
 import {
 	AlertMemberDirectoryUnavailableError,
+	AlertSilenceId,
 	IntegrationsRevokedError,
 	OrgId,
 	UserId,
 	WarehouseQuotaExceededError,
 } from "@maple/domain/http"
-import { MapleApiV2 } from "@maple/domain/http/v2"
+import { AlertSilencePublicId, encodePublicId, MapleApiV2 } from "@maple/domain/http/v2"
 import { BucketCacheService } from "@maple/query-engine/caching"
 import { EdgeCacheService } from "@maple/cache"
 import { CacheBackendLive } from "@maple/backend/platform/CacheBackendLive"
@@ -40,6 +43,8 @@ import { DashboardPersistenceService } from "@maple/backend/services/dashboards/
 import { SharedDashboardService } from "@maple/backend/services/dashboards/SharedDashboardService"
 import { AlertRuntime, AlertsService } from "@maple/backend/services/alerts/AlertsService"
 import { UptimeAlertSource } from "@maple/backend/services/uptime/UptimeAlertSource"
+import { AnomalyAlertSource } from "@maple/backend/services/alerts/anomaly/AnomalyAlertSource"
+import { SloAlertSource } from "@maple/backend/services/slos/SloAlertSource"
 import { AlertDestinationsService } from "@maple/backend/services/alerts/AlertDestinationsService"
 import { AlertReadModelsService } from "@maple/backend/services/alerts/AlertReadModelsService"
 import { AlertRulesService } from "@maple/backend/services/alerts/AlertRulesService"
@@ -110,7 +115,7 @@ const makeHarness = (
 		Layer.provide(configLive),
 	)
 	const runtimeLive = Layer.succeed(AlertRuntime, {
-		now: Effect.sync(() => Date.now()),
+		now: Clock.currentTimeMillis,
 		makeUuid: () => crypto.randomUUID(),
 		deliveryTimeoutMs: () => 15_000,
 		schedulerTickBudgetMs: () => 25_000,
@@ -188,7 +193,17 @@ const makeHarness = (
 				alertDestinationsLive,
 				alertReadModelsLive,
 				alertRulesLive,
+				Layer.effect(AlertMemberNotifier, AlertMemberNotifier.make).pipe(
+					Layer.provide(ChatAlertPoster.layer),
+					Layer.provide(
+						Layer.mergeAll(envLive, testDb.layer, runtimeLive, emailLive, orgMembersLive),
+					),
+				),
 				UptimeAlertSource.layer.pipe(Layer.provide(testDb.layer)),
+				AnomalyAlertSource.layer.pipe(Layer.provide(testDb.layer)),
+				Layer.effect(SloAlertSource, SloAlertSource.make).pipe(
+					Layer.provide(Layer.mergeAll(testDb.layer, warehouseLive)),
+				),
 			),
 		),
 	)
@@ -218,8 +233,8 @@ const makeHarness = (
 		disableLogger: true,
 	})
 	const runtime = ManagedRuntime.make(servicesLive)
-	const ORG = Schema.decodeUnknownSync(OrgId)("org_alerts_e2e")
-	const USER = Schema.decodeUnknownSync(UserId)("user_alerts_e2e")
+	const ORG = Schema.decodeSync(OrgId)("org_alerts_e2e")
+	const USER = Schema.decodeSync(UserId)("user_alerts_e2e")
 
 	const bootstrapKey = (scopes?: ReadonlyArray<string>) =>
 		runtime.runPromise(
@@ -389,6 +404,35 @@ describe("v2 alerts over HTTP", () => {
 		await harness.dispose()
 	})
 
+	it("returns last_evaluated_at for a healthy rule from list, retrieve and PATCH", async () => {
+		const harness = makeHarness()
+		const key = await harness.bootstrapKey(["alerts:write"])
+		const { rule } = await createWebhookAndRule(harness, key.secret)
+		expect(rule.status).toBe(200)
+		expect(rule.body.last_evaluated_at).toBeNull()
+
+		await executeSql(
+			harness.testDb,
+			`insert into alert_rule_states (org_id, rule_id, group_key, last_evaluated_at, updated_at)
+			 select org_id, id, '__total__', timestamptz '2026-07-31 12:00:00+00', timestamptz '2026-07-31 12:00:00+00'
+			 from alert_rules where org_id = 'org_alerts_e2e'`,
+		)
+
+		const evaluatedAt = "2026-07-31T12:00:00.000Z"
+		const listed = await harness.request("GET", "/v2/alerts/rules", key.secret)
+		expect(listed.body.data[0].last_evaluated_at).toBe(evaluatedAt)
+		expect(listed.body.data[0].last_evaluation_error).toBeNull()
+		const retrieved = await harness.request("GET", `/v2/alerts/rules/${rule.body.id}`, key.secret)
+		expect(retrieved.body.last_evaluated_at).toBe(evaluatedAt)
+		const patched = await harness.request("PATCH", `/v2/alerts/rules/${rule.body.id}`, key.secret, {
+			name: "Checkout errors",
+		})
+		expect(patched.status).toBe(200)
+		expect(patched.body.last_evaluated_at).toBe(evaluatedAt)
+
+		await harness.dispose()
+	})
+
 	it("paginates delivery history beyond the first 100 rows", async () => {
 		const harness = makeHarness()
 		const key = await harness.bootstrapKey(["alerts:write"])
@@ -429,6 +473,19 @@ describe("v2 alerts over HTTP", () => {
 			)`,
 		)
 
+		// An internal PagerDuty acknowledgement sync is not a notification: the public list leaves it out.
+		await executeSql(
+			harness.testDb,
+			`insert into alert_delivery_events (
+				id, org_id, rule_id, destination_id, delivery_key, event_type,
+				attempt_number, status, scheduled_at, payload_json, created_at, updated_at
+			)
+			select '00000000-0000-4000-9000-0000000000ac', rules.org_id, rules.id, destinations.id,
+				'ack-sync', 'acknowledge', 1, 'success', timestamp '2026-08-02 12:00:00+00', '{}'::jsonb,
+				timestamp '2026-08-02 12:00:00+00', timestamp '2026-08-02 12:00:00+00'
+			from (select id, org_id from alert_rules where org_id = 'org_alerts_e2e' limit 1) as rules
+			cross join (select id from alert_destinations where org_id = 'org_alerts_e2e' limit 1) as destinations`,
+		)
 		const first = await harness.request("GET", "/v2/alerts/deliveries?limit=60", key.secret)
 		expect(first.status).toBe(200)
 		expect(first.body.data).toHaveLength(60)
@@ -450,7 +507,7 @@ describe("v2 alerts over HTTP", () => {
 		expect(
 			Arr.some(
 				[...first.body.data, ...second.body.data],
-				(item) => item.delivery_key === "foreign-delivery",
+				(item) => item.delivery_key === "foreign-delivery" || item.delivery_key === "ack-sync",
 			),
 		).toBe(false)
 
@@ -624,6 +681,49 @@ describe("v2 alerts over HTTP", () => {
 		await harness.dispose()
 	})
 
+	it("round-trips an anomaly rule's anomaly_signals and keeps them through PATCH", async () => {
+		const harness = makeHarness()
+		const key = await harness.bootstrapKey(["alerts:write"])
+		const { rule: errorRate } = await createWebhookAndRule(harness, key.secret)
+		expect(errorRate.body).not.toHaveProperty("anomaly_signals")
+
+		const created = await harness.request("POST", "/v2/alerts/rules", key.secret, {
+			name: "Checkout anomalies",
+			signal_type: "anomaly",
+			severity: "critical",
+			comparator: "gte",
+			window_minutes: 5,
+			service_names: ["checkout"],
+			anomaly_signals: ["error_rate", "latency_p95"],
+			destination_ids: [errorRate.body.destination_ids[0]],
+		})
+		expect(created.status, JSON.stringify(created.body)).toBe(200)
+		expect(created.body.anomaly_signals).toEqual(["error_rate", "latency_p95"])
+
+		const renamed = await harness.request("PATCH", `/v2/alerts/rules/${created.body.id}`, key.secret, {
+			name: "Renamed anomalies",
+		})
+		expect(renamed.status, JSON.stringify(renamed.body)).toBe(200)
+		expect(renamed.body.anomaly_signals).toEqual(["error_rate", "latency_p95"])
+
+		const widened = await harness.request("PATCH", `/v2/alerts/rules/${created.body.id}`, key.secret, {
+			anomaly_signals: [],
+		})
+		expect(widened.body.anomaly_signals).toEqual([])
+
+		const misplaced = await harness.request(
+			"PATCH",
+			`/v2/alerts/rules/${errorRate.body.id}`,
+			key.secret,
+			{
+				anomaly_signals: ["throughput"],
+			},
+		)
+		expect(misplaced.status).toBe(400)
+
+		await harness.dispose()
+	})
+
 	it("keeps a rule's severity tiers through PATCH and rejects single-threshold edits on them", async () => {
 		const harness = makeHarness()
 		const key = await harness.bootstrapKey(["alerts:write"])
@@ -644,6 +744,7 @@ describe("v2 alerts over HTTP", () => {
 				upper: null,
 				recovery_value: 0.015,
 				destination_ids: [destination.body.id],
+				escalation_chain_id: null,
 			},
 			{
 				severity: "critical",
@@ -651,6 +752,7 @@ describe("v2 alerts over HTTP", () => {
 				upper: null,
 				recovery_value: null,
 				destination_ids: [pager.body.id],
+				escalation_chain_id: null,
 			},
 		]
 		const created = await harness.request("POST", "/v2/alerts/rules", key.secret, {
@@ -731,6 +833,7 @@ describe("v2 alerts over HTTP", () => {
 				upper: null,
 				recovery_value: null,
 				destination_ids: [destination.body.id],
+				escalation_chain_id: null,
 			},
 		])
 
@@ -1145,6 +1248,246 @@ describe("v2 alerts over HTTP", () => {
 		await harness.dispose()
 	})
 
+	it("lists an incident's labels, and omits them when none are recorded", async () => {
+		const harness = makeHarness()
+		const key = await harness.bootstrapKey(["alerts:write"])
+		await createWebhookAndRule(harness, key.secret)
+		await executeSql(
+			harness.testDb,
+			`insert into alert_incidents (
+				id, org_id, rule_id, incident_key, rule_name, group_key, signal_type, severity, status,
+				comparator, threshold, first_triggered_at, last_triggered_at, resolved_at, dedupe_key,
+				labels_json, created_at, updated_at
+			)
+			select v.id, rules.org_id, rules.id, v.id, 'Checkout error rate', '__total__', 'error_rate',
+				'critical', v.status, 'gt', 0.05, now(), now(), v.resolved_at, v.id, v.labels, now(), now()
+			from (values
+				('00000000-0000-4000-8000-0000000000b1', 'open', null::timestamptz,
+					'{"service":"checkout","environment":"production"}'::jsonb),
+				('00000000-0000-4000-8000-0000000000b2', 'resolved', now(), null::jsonb)
+			) as v(id, status, resolved_at, labels)
+			cross join lateral (
+				select id, org_id from alert_rules where org_id = 'org_alerts_e2e' limit 1
+			) as rules`,
+		)
+		const list = await harness.request("GET", "/v2/alerts/incidents", key.secret)
+		expect(list.status).toBe(200)
+		const labelsByKey = Arr.map(list.body.data, (incident: { dedupe_key: string; labels?: unknown }) => [
+			incident.dedupe_key,
+			incident.labels,
+		])
+		expect(labelsByKey).toEqual(
+			expect.arrayContaining([
+				["00000000-0000-4000-8000-0000000000b1", { service: "checkout", environment: "production" }],
+				["00000000-0000-4000-8000-0000000000b2", undefined],
+			]),
+		)
+	})
+
+	it("acknowledges and unacknowledges an open incident and lists its events", async () => {
+		const harness = makeHarness()
+		const key = await harness.bootstrapKey(["alerts:write"])
+		const readOnly = await harness.bootstrapKey(["alerts:read"])
+		await createWebhookAndRule(harness, key.secret)
+		await executeSql(
+			harness.testDb,
+			`insert into alert_incidents (
+				id, org_id, rule_id, incident_key, rule_name, group_key, signal_type, severity, status,
+				comparator, threshold, first_triggered_at, last_triggered_at, resolved_at, dedupe_key,
+				created_at, updated_at
+			)
+			select v.id, rules.org_id, rules.id, v.id, 'Checkout error rate', '__total__', 'error_rate',
+				'critical', v.status, 'gt', 0.05, now(), now(), v.resolved_at, v.id, now(), now()
+			from (values
+				('00000000-0000-4000-8000-0000000000a1', 'open', null::timestamptz),
+				('00000000-0000-4000-8000-0000000000a2', 'resolved', now())
+			) as v(id, status, resolved_at)
+			cross join lateral (
+				select id, org_id from alert_rules where org_id = 'org_alerts_e2e' limit 1
+			) as rules`,
+		)
+		const list = await harness.request("GET", "/v2/alerts/incidents?status=open", key.secret)
+		const open = Arr.findFirst(
+			list.body.data,
+			(incident: { status: string }) => incident.status === "open",
+		)
+		const openId: string = open._tag === "Some" ? open.value.id : ""
+		expect(open._tag === "Some" && open.value.acknowledged_at).toBeNull()
+
+		const acked = await harness.request("POST", `/v2/alerts/incidents/${openId}/acknowledge`, key.secret)
+		expect(acked.status).toBe(200)
+		expect(acked.body.status).toBe("open")
+		expect(acked.body.acknowledged_at).toEqual(expect.any(String))
+		// An API key is not a person: it is named by its label and has no user.
+		expect(acked.body.acknowledged_by).toEqual({ user_id: null, name: "alerts-test" })
+		expect(acked.body.acknowledged_via).toBe("api")
+
+		const unacknowledgedOnly = await harness.request(
+			"GET",
+			"/v2/alerts/incidents?acknowledged=false",
+			key.secret,
+		)
+		expect(unacknowledgedOnly.body.data).toEqual([])
+		const acknowledgedOnly = await harness.request(
+			"GET",
+			"/v2/alerts/incidents?acknowledged=true",
+			key.secret,
+		)
+		expect(Arr.map(acknowledgedOnly.body.data, (incident: { id: string }) => incident.id)).toEqual([
+			openId,
+		])
+
+		// alerts:read can see the history but not change it.
+		const denied = await harness.request(
+			"POST",
+			`/v2/alerts/incidents/${openId}/unacknowledge`,
+			readOnly.secret,
+		)
+		expect(denied.status).toBe(403)
+
+		const unacked = await harness.request(
+			"POST",
+			`/v2/alerts/incidents/${openId}/unacknowledge`,
+			key.secret,
+		)
+		expect(unacked.status).toBe(200)
+		expect(unacked.body.acknowledged_at).toBeNull()
+		expect(unacked.body.acknowledged_by).toBeNull()
+
+		const events = await harness.request("GET", `/v2/alerts/incidents/${openId}/events`, readOnly.secret)
+		expect(events.status).toBe(200)
+		expect(Arr.map(events.body.data, (event: { type: string }) => event.type)).toEqual([
+			"acknowledged",
+			"unacknowledged",
+		])
+		expect(events.body.data[0]).toMatchObject({
+			object: "alert_incident_event",
+			incident_id: openId,
+			actor: { user_id: null, name: "alerts-test" },
+			source: "api",
+		})
+		expect(events.body.data[0].id).toMatch(/^evt_/)
+
+		const all = await harness.request("GET", "/v2/alerts/incidents", key.secret)
+		const resolved = Arr.findFirst(
+			all.body.data,
+			(incident: { status: string }) => incident.status === "resolved",
+		)
+		const resolvedId: string = resolved._tag === "Some" ? resolved.value.id : ""
+		const conflict = await harness.request(
+			"POST",
+			`/v2/alerts/incidents/${resolvedId}/acknowledge`,
+			key.secret,
+		)
+		expect(conflict.status).toBe(409)
+		expect(conflict.body.error).toMatchObject({ code: "alert_incident_resolved" })
+
+		const missing = await harness.request(
+			"POST",
+			"/v2/alerts/incidents/inc_tC4d9V79DCDzgbGKhAnff9/acknowledge",
+			key.secret,
+		)
+		expect(missing.status).toBe(404)
+
+		await harness.dispose()
+	})
+
+	it("reads an incident's latest escalation run on retrieve and list, and null without one", async () => {
+		const harness = makeHarness()
+		const key = await harness.bootstrapKey(["alerts:write"])
+		await createWebhookAndRule(harness, key.secret)
+		await executeSql(
+			harness.testDb,
+			`insert into alert_incidents (
+				id, org_id, rule_id, incident_key, rule_name, group_key, signal_type, severity, status,
+				comparator, threshold, first_triggered_at, last_triggered_at, resolved_at, dedupe_key,
+				created_at, updated_at
+			)
+			select v.id, rules.org_id, rules.id, v.id, 'Checkout error rate', v.group_key, 'error_rate',
+				'critical', 'open', 'gt', 0.05, now(), now(), null, v.id, now(), now()
+			from (values
+				('00000000-0000-4000-8000-0000000000b1', 'checkout'),
+				('00000000-0000-4000-8000-0000000000b2', 'payments')
+			) as v(id, group_key)
+			cross join lateral (
+				select id, org_id from alert_rules where org_id = 'org_alerts_e2e' limit 1
+			) as rules`,
+		)
+		const steps = JSON.stringify([
+			{
+				targets: [{ type: "destination", destinationId: "00000000-0000-4000-8000-0000000000d1" }],
+				waitMinutes: 10,
+			},
+			{
+				targets: [{ type: "destination", destinationId: "00000000-0000-4000-8000-0000000000d2" }],
+				waitMinutes: 15,
+			},
+			{
+				targets: [{ type: "destination", destinationId: "00000000-0000-4000-8000-0000000000d3" }],
+				waitMinutes: 5,
+			},
+		])
+		// An older superseded run and the live one: the read shows the newer.
+		await executeSql(
+			harness.testDb,
+			`insert into alert_escalation_runs (
+				id, org_id, incident_id, chain_id, chain_name, severity, steps_json, repeat_count,
+				step_index, pass_index, next_step_at, status, payload_json, steps_sent, created_at, updated_at
+			) values
+				('00000000-0000-4000-8000-0000000000c1', 'org_alerts_e2e', '00000000-0000-4000-8000-0000000000b1',
+					'00000000-0000-4000-8000-0000000000e1', 'Old chain', 'warning', '${steps}'::jsonb, 0,
+					1, 0, '2026-11-06T14:00:00.000Z', 'superseded', '{}'::jsonb, 1,
+					'2026-11-06T13:00:00.000Z', '2026-11-06T13:00:00.000Z'),
+				('00000000-0000-4000-8000-0000000000c2', 'org_alerts_e2e', '00000000-0000-4000-8000-0000000000b1',
+					'00000000-0000-4000-8000-0000000000e2', 'Checkout on-call', 'critical', '${steps}'::jsonb, 1,
+					1, 0, '2026-11-06T14:25:00.000Z', 'active', '{}'::jsonb, 1,
+					'2026-11-06T14:10:00.000Z', '2026-11-06T14:10:00.000Z')`,
+		)
+		const list = await harness.request("GET", "/v2/alerts/incidents?status=open", key.secret)
+		expect(list.status).toBe(200)
+		const isEscalating = (incident: { escalation: unknown }) => incident.escalation !== null
+		const without = Arr.filter(list.body.data, (incident) => !isEscalating(incident))
+		const withRuns = Arr.filter(list.body.data, isEscalating)
+		expect(without).toHaveLength(1)
+		expect(without[0].escalation).toBeNull()
+		expect(withRuns).toHaveLength(1)
+		const withRun = withRuns[0]
+		const expected = {
+			chain_id: expect.stringMatching(/^esc_/),
+			chain_name: "Checkout on-call",
+			status: "active",
+			step: 2,
+			step_count: 3,
+			pass: 1,
+			pass_count: 2,
+			steps_sent: 1,
+			next_step_at: "2026-11-06T14:25:00.000Z",
+		}
+		expect(withRun.escalation).toEqual(expected)
+
+		const retrieved = await harness.request("GET", `/v2/alerts/incidents/${withRun.id}`, key.secret)
+		expect(retrieved.status).toBe(200)
+		expect(retrieved.body.escalation).toEqual(expected)
+
+		// Acked before the scheduler pauses the run: it already reads paused, with no next page.
+		await executeSql(
+			harness.testDb,
+			`update alert_incidents set acknowledged_at = now() where id = '00000000-0000-4000-8000-0000000000b1'`,
+		)
+		const pausing = await harness.request("GET", `/v2/alerts/incidents/${withRun.id}`, key.secret)
+		expect(pausing.body.escalation).toMatchObject({ status: "acknowledged", next_step_at: null })
+
+		// Paused while acknowledged: no next page time.
+		await executeSql(
+			harness.testDb,
+			`update alert_escalation_runs set status = 'acknowledged' where id = '00000000-0000-4000-8000-0000000000c2'`,
+		)
+		const paused = await harness.request("GET", `/v2/alerts/incidents/${withRun.id}`, key.secret)
+		expect(paused.body.escalation).toMatchObject({ status: "acknowledged", next_step_at: null })
+
+		await harness.dispose()
+	})
+
 	it("enforces the alerts scope family and rejects malformed ids", async () => {
 		const harness = makeHarness()
 		const readOnly = await harness.bootstrapKey(["alerts:read"])
@@ -1177,6 +1520,795 @@ describe("v2 alerts over HTTP", () => {
 		const malformed = await harness.request("GET", "/v2/alerts/rules/dash_notARuleId", readOnly.secret)
 		expect(malformed.status).toBe(400)
 		expect(malformed.body.error).toMatchObject({ type: "invalid_request_error" })
+
+		await harness.dispose()
+	})
+
+	const createWebhook = (harness: ReturnType<typeof makeHarness>, token: string, name: string) =>
+		harness.request("POST", "/v2/alerts/destinations", token, {
+			type: "webhook",
+			name,
+			url: `https://example.com/hooks/${name}`,
+		})
+
+	it("runs escalation chain CRUD and refuses to delete a chain a rule tier names", async () => {
+		const harness = makeHarness()
+		const key = await harness.bootstrapKey(["alerts:write"])
+		const primary = await createWebhook(harness, key.secret, "primary")
+		const secondary = await createWebhook(harness, key.secret, "secondary")
+		const steps = [
+			{ targets: [{ type: "destination", destination_id: primary.body.id }], wait_minutes: 10 },
+			{ targets: [{ type: "destination", destination_id: secondary.body.id }], wait_minutes: 15 },
+		]
+
+		const created = await harness.request("POST", "/v2/alerts/escalation_chains", key.secret, {
+			name: "Checkout on-call",
+			steps,
+			repeat_count: 1,
+		})
+		expect(created.status, JSON.stringify(created.body)).toBe(200)
+		expect(created.body).toMatchObject({
+			object: "escalation_chain",
+			name: "Checkout on-call",
+			description: null,
+			steps,
+			repeat_count: 1,
+			rule_ids: [],
+		})
+		expect(created.body.id).toMatch(/^esc_/)
+		const chainId: string = created.body.id
+
+		const listed = await harness.request("GET", "/v2/alerts/escalation_chains", key.secret)
+		expect(listed.status).toBe(200)
+		expect(listed.body).toMatchObject({ object: "list", has_more: false })
+		expect(listed.body.data.map((chain: { id: string }) => chain.id)).toEqual([chainId])
+
+		const rule = await harness.request("POST", "/v2/alerts/rules", key.secret, {
+			name: "Checkout errors",
+			signal_type: "error_rate",
+			comparator: "gt",
+			window_minutes: 5,
+			thresholds: [
+				{
+					severity: "critical",
+					value: 0.05,
+					destination_ids: [primary.body.id],
+					escalation_chain_id: chainId,
+				},
+			],
+		})
+		expect(rule.status, JSON.stringify(rule.body)).toBe(200)
+		expect(rule.body.thresholds[0].escalation_chain_id).toBe(chainId)
+
+		// A PATCH that leaves the tiers alone keeps the chain on them.
+		const toggled = await harness.request("PATCH", `/v2/alerts/rules/${rule.body.id}`, key.secret, {
+			enabled: false,
+		})
+		expect(toggled.status).toBe(200)
+		expect(toggled.body.thresholds[0].escalation_chain_id).toBe(chainId)
+
+		const fetched = await harness.request("GET", `/v2/alerts/escalation_chains/${chainId}`, key.secret)
+		expect(fetched.status).toBe(200)
+		expect(fetched.body.rule_ids).toEqual([rule.body.id])
+
+		const renamed = await harness.request(
+			"PATCH",
+			`/v2/alerts/escalation_chains/${chainId}`,
+			key.secret,
+			{
+				name: "Checkout paging",
+				repeat_count: 0,
+				steps: [steps[1]],
+			},
+		)
+		expect(renamed.status, JSON.stringify(renamed.body)).toBe(200)
+		expect(renamed.body).toMatchObject({ name: "Checkout paging", repeat_count: 0, steps: [steps[1]] })
+
+		const inUse = await harness.request("DELETE", `/v2/alerts/escalation_chains/${chainId}`, key.secret)
+		expect(inUse.status).toBe(409)
+		expect(inUse.body.error.code).toBe("escalation_chain_in_use")
+
+		// A client that predates chains edits the tiers without the field: the chain stays.
+		const retuned = await harness.request("PATCH", `/v2/alerts/rules/${rule.body.id}`, key.secret, {
+			thresholds: [{ severity: "critical", value: 0.06, destination_ids: [primary.body.id] }],
+		})
+		expect(retuned.status, JSON.stringify(retuned.body)).toBe(200)
+		expect(retuned.body.thresholds[0]).toMatchObject({ value: 0.06, escalation_chain_id: chainId })
+
+		const detached = await harness.request("PATCH", `/v2/alerts/rules/${rule.body.id}`, key.secret, {
+			thresholds: [
+				{
+					severity: "critical",
+					value: 0.05,
+					destination_ids: [primary.body.id],
+					escalation_chain_id: null,
+				},
+			],
+		})
+		expect(detached.status).toBe(200)
+		expect(detached.body.thresholds[0].escalation_chain_id).toBeNull()
+
+		const deleted = await harness.request("DELETE", `/v2/alerts/escalation_chains/${chainId}`, key.secret)
+		expect(deleted.status, JSON.stringify(deleted.body)).toBe(200)
+		expect(deleted.body).toEqual({ id: chainId, object: "escalation_chain", deleted: true })
+
+		const gone = await harness.request("GET", `/v2/alerts/escalation_chains/${chainId}`, key.secret)
+		expect(gone.status).toBe(404)
+		expect(gone.body.error.code).toBe("escalation_chain_not_found")
+
+		await harness.dispose()
+	})
+
+	it("rejects escalation chains with unknown destinations or bad steps, and rules naming an unknown chain", async () => {
+		const harness = makeHarness()
+		const key = await harness.bootstrapKey(["alerts:write"])
+		const primary = await createWebhook(harness, key.secret, "primary")
+		const post = (body: unknown) =>
+			harness.request("POST", "/v2/alerts/escalation_chains", key.secret, body)
+		const step = (destinationId: string, waitMinutes = 10) => ({
+			targets: [{ type: "destination", destination_id: destinationId }],
+			wait_minutes: waitMinutes,
+		})
+
+		const unknownDestination = await post({
+			name: "Ghost",
+			steps: [step(encodePublicId("dest", "0b8f7c1e-2f61-4f1e-9d2a-3c4b5d6e7f80"))],
+		})
+		const noSteps = await post({ name: "Empty", steps: [] })
+		const noWait = await post({ name: "Instant", steps: [step(primary.body.id, 0)] })
+		const tooManyRepeats = await post({ name: "Loop", steps: [step(primary.body.id)], repeat_count: 6 })
+		for (const response of [unknownDestination, noSteps, noWait, tooManyRepeats]) {
+			expect(response.status, JSON.stringify(response.body)).toBe(400)
+			expect(response.body.error.type).toBe("invalid_request_error")
+		}
+
+		const unknownChain = encodePublicId("esc", "0b8f7c1e-2f61-4f1e-9d2a-3c4b5d6e7f80")
+		const missing = await harness.request(
+			"PATCH",
+			`/v2/alerts/escalation_chains/${unknownChain}`,
+			key.secret,
+			{
+				name: "Nope",
+			},
+		)
+		expect(missing.status).toBe(404)
+
+		const rule = await harness.request("POST", "/v2/alerts/rules", key.secret, {
+			name: "Unknown chain",
+			signal_type: "error_rate",
+			comparator: "gt",
+			window_minutes: 5,
+			thresholds: [
+				{
+					severity: "critical",
+					value: 0.05,
+					destination_ids: [primary.body.id],
+					escalation_chain_id: unknownChain,
+				},
+			],
+		})
+		expect(rule.status).toBe(400)
+		expect(rule.body.error.type).toBe("invalid_request_error")
+
+		const readOnly = await harness.bootstrapKey(["alerts:read"])
+		const denied = await harness.request("POST", "/v2/alerts/escalation_chains", readOnly.secret, {
+			name: "Denied",
+			steps: [step(primary.body.id)],
+		})
+		expect(denied.status).toBe(403)
+
+		await harness.dispose()
+	})
+
+	// Weekly Monday 09:00 Berlin from Monday 2029-12-31: Ana, then Ben, then Chen.
+	const weeklySchedule = {
+		name: "Checkout primary",
+		time_zone: "Europe/Berlin",
+		layers: [
+			{
+				name: "Primary",
+				participants: ["user_ana", "user_ben", "user_chen"],
+				rotation: { kind: "weekly", handoff_weekday: "mon", handoff_time: "09:00" },
+				starts_at: "2029-12-31T08:00:00.000Z",
+			},
+		],
+	}
+
+	it("runs on-call schedule CRUD, answers who is on call and renders shifts around an override", async () => {
+		const harness = makeHarness()
+		const key = await harness.bootstrapKey(["alerts:write"])
+
+		const created = await harness.request(
+			"POST",
+			"/v2/alerts/oncall_schedules",
+			key.secret,
+			weeklySchedule,
+		)
+		expect(created.status, JSON.stringify(created.body)).toBe(200)
+		expect(created.body).toMatchObject({
+			object: "oncall_schedule",
+			...weeklySchedule,
+			description: null,
+			chain_ids: [],
+		})
+		expect(created.body.id).toMatch(/^onc_/)
+		const id: string = created.body.id
+		const base = `/v2/alerts/oncall_schedules/${id}`
+
+		const listed = await harness.request("GET", "/v2/alerts/oncall_schedules", key.secret)
+		expect(listed.status).toBe(200)
+		expect(listed.body.data.map((schedule: { id: string }) => schedule.id)).toEqual([id])
+
+		const override = await harness.request("POST", `${base}/overrides`, key.secret, {
+			user_id: "user_ben",
+			starts_at: "2030-01-03T17:00:00.000Z",
+			ends_at: "2030-01-04T08:00:00.000Z",
+		})
+		expect(override.status, JSON.stringify(override.body)).toBe(200)
+		expect(override.body).toMatchObject({
+			object: "oncall_override",
+			schedule_id: id,
+			user_id: "user_ben",
+		})
+		expect(override.body.id).toMatch(/^ovr_/)
+
+		const covered = await harness.request("GET", `${base}/oncall?at=2030-01-03T19:00:00.000Z`, key.secret)
+		expect(covered.status, JSON.stringify(covered.body)).toBe(200)
+		expect(covered.body).toEqual({
+			object: "oncall",
+			schedule_id: id,
+			at: "2030-01-03T19:00:00.000Z",
+			shift: {
+				user_id: "user_ben",
+				starts_at: "2030-01-03T17:00:00.000Z",
+				ends_at: "2030-01-04T08:00:00.000Z",
+				source: { kind: "override", override_id: override.body.id },
+			},
+		})
+
+		const shifts = await harness.request(
+			"GET",
+			`${base}/shifts?from=2029-12-31T08:00:00.000Z&to=2030-01-14T08:00:00.000Z`,
+			key.secret,
+		)
+		expect(shifts.status, JSON.stringify(shifts.body)).toBe(200)
+		expect(
+			shifts.body.final.map((s: { user_id: string; starts_at: string }) => [s.user_id, s.starts_at]),
+		).toEqual([
+			["user_ana", "2029-12-31T08:00:00.000Z"],
+			["user_ben", "2030-01-03T17:00:00.000Z"],
+			["user_ana", "2030-01-04T08:00:00.000Z"],
+			["user_ben", "2030-01-07T08:00:00.000Z"],
+		])
+
+		const overrides = await harness.request("GET", `${base}/overrides`, key.secret)
+		expect(overrides.body.data.map((o: { id: string }) => o.id)).toEqual([override.body.id])
+		const removed = await harness.request("DELETE", `${base}/overrides/${override.body.id}`, key.secret)
+		expect(removed.body).toEqual({ id: override.body.id, object: "oncall_override", deleted: true })
+		const back = await harness.request("GET", `${base}/oncall?at=2030-01-03T19:00:00.000Z`, key.secret)
+		expect(back.body.shift.user_id).toBe("user_ana")
+		const removedAgain = await harness.request(
+			"DELETE",
+			`${base}/overrides/${override.body.id}`,
+			key.secret,
+		)
+		expect(removedAgain.status).toBe(404)
+		expect(removedAgain.body.error.code).toBe("oncall_override_not_found")
+
+		const renamed = await harness.request("PATCH", base, key.secret, {
+			name: "Checkout paging",
+			time_zone: "America/New_York",
+		})
+		expect(renamed.status, JSON.stringify(renamed.body)).toBe(200)
+		expect(renamed.body).toMatchObject({ name: "Checkout paging", time_zone: "America/New_York" })
+
+		const deleted = await harness.request("DELETE", base, key.secret)
+		expect(deleted.body).toEqual({ id, object: "oncall_schedule", deleted: true })
+		const gone = await harness.request("GET", base, key.secret)
+		expect(gone.status).toBe(404)
+		expect(gone.body.error.code).toBe("oncall_schedule_not_found")
+
+		await harness.dispose()
+	})
+
+	it("pages a schedule and a user from a chain step, and keeps a paged schedule from being deleted", async () => {
+		const harness = makeHarness()
+		const key = await harness.bootstrapKey(["alerts:write"])
+		const schedule = await harness.request(
+			"POST",
+			"/v2/alerts/oncall_schedules",
+			key.secret,
+			weeklySchedule,
+		)
+		const scheduleId: string = schedule.body.id
+		const steps = [
+			{
+				targets: [
+					{ type: "schedule", schedule_id: scheduleId },
+					{ type: "user", user_id: "user_chen" },
+				],
+				wait_minutes: 10,
+			},
+		]
+		const chain = await harness.request("POST", "/v2/alerts/escalation_chains", key.secret, {
+			name: "API on-call",
+			steps,
+		})
+		expect(chain.status, JSON.stringify(chain.body)).toBe(200)
+		expect(chain.body.steps).toEqual(steps)
+		const fetched = await harness.request(
+			"GET",
+			`/v2/alerts/escalation_chains/${chain.body.id}`,
+			key.secret,
+		)
+		expect(fetched.body.steps).toEqual(steps)
+
+		const paged = await harness.request("GET", `/v2/alerts/oncall_schedules/${scheduleId}`, key.secret)
+		expect(paged.body.chain_ids).toEqual([chain.body.id])
+		const inUse = await harness.request("DELETE", `/v2/alerts/oncall_schedules/${scheduleId}`, key.secret)
+		expect(inUse.status).toBe(409)
+		expect(inUse.body.error.code).toBe("oncall_schedule_in_use")
+
+		const unknownSchedule = await harness.request("POST", "/v2/alerts/escalation_chains", key.secret, {
+			name: "Nowhere",
+			steps: [
+				{
+					targets: [
+						{
+							type: "schedule",
+							schedule_id: encodePublicId("onc", "0b8f7c1e-2f61-4f1e-9d2a-3c4b5d6e7f80"),
+						},
+					],
+					wait_minutes: 5,
+				},
+			],
+		})
+		expect(unknownSchedule.status).toBe(400)
+		expect(unknownSchedule.body.error.message).toContain("on-call schedule")
+
+		await harness.request("DELETE", `/v2/alerts/escalation_chains/${chain.body.id}`, key.secret)
+		const deleted = await harness.request(
+			"DELETE",
+			`/v2/alerts/oncall_schedules/${scheduleId}`,
+			key.secret,
+		)
+		expect(deleted.body).toEqual({ id: scheduleId, object: "oncall_schedule", deleted: true })
+
+		await harness.dispose()
+	})
+
+	it("names the wire field and what is wrong with it when an on-call request is refused", async () => {
+		const harness = makeHarness()
+		const key = await harness.bootstrapKey(["alerts:write"])
+		const created = await harness.request(
+			"POST",
+			"/v2/alerts/oncall_schedules",
+			key.secret,
+			weeklySchedule,
+		)
+		const base = `/v2/alerts/oncall_schedules/${created.body.id}`
+		const [layer] = weeklySchedule.layers
+		const create = (body: unknown) =>
+			harness.request("POST", "/v2/alerts/oncall_schedules", key.secret, body)
+		const responses = await Promise.all([
+			create({ ...weeklySchedule, layers: [{ ...layer, starts_at: "1960-01-01T00:00:00.000Z" }] }),
+			create({ ...weeklySchedule, layers: [{ ...layer, participants: [] }] }),
+			create({ ...weeklySchedule, layers: [] }),
+			create({ ...weeklySchedule, layers: [{ ...layer, starts_at: "next monday" }] }),
+			create({
+				...weeklySchedule,
+				layers: [
+					{ ...layer, restrictions: [{ weekdays: [], start_time: "18:00", end_time: "08:00" }] },
+				],
+			}),
+			harness.request("POST", `${base}/overrides`, key.secret, {
+				user_id: "user_ben",
+				starts_at: "1969-12-31T23:59:59.000Z",
+				ends_at: "2030-01-04T08:00:00.000Z",
+			}),
+			harness.request("GET", `${base}/oncall?at=yesterday`, key.secret),
+		])
+		expect(
+			Arr.map(responses, (response) => [
+				response.status,
+				response.body.error.param,
+				response.body.error.message,
+			]),
+		).toEqual([
+			[400, "layers[0].starts_at", "layers[0].starts_at: must be on or after 1970-01-01T00:00:00Z"],
+			[400, "layers[0].participants", "layers[0].participants: needs at least one member"],
+			[400, "layers", "layers: needs at least one layer"],
+			[
+				400,
+				"layers[0].starts_at",
+				"layers[0].starts_at: is not a valid ISO-8601 UTC timestamp, e.g. 2026-07-15T12:34:56.000Z",
+			],
+			[
+				400,
+				"layers[0].restrictions[0].weekdays",
+				"layers[0].restrictions[0].weekdays: needs at least one weekday",
+			],
+			[400, "starts_at", "starts_at: must be on or after 1970-01-01T00:00:00Z"],
+			[400, "at", "at: is not a valid ISO-8601 UTC timestamp, e.g. 2026-07-15T12:34:56.000Z"],
+		])
+
+		await harness.dispose()
+	})
+
+	it("rejects bad on-call times and layers with 400s, unknown schedules with 404 and read-only writes with 403", async () => {
+		const harness = makeHarness()
+		const key = await harness.bootstrapKey(["alerts:write"])
+		const created = await harness.request(
+			"POST",
+			"/v2/alerts/oncall_schedules",
+			key.secret,
+			weeklySchedule,
+		)
+		const base = `/v2/alerts/oncall_schedules/${created.body.id}`
+		const [layer] = weeklySchedule.layers
+
+		const badRequests = await Promise.all([
+			harness.request("GET", `${base}/oncall?at=yesterday`, key.secret),
+			harness.request("GET", `${base}/shifts?from=2030-01-01`, key.secret),
+			harness.request(
+				"GET",
+				`${base}/shifts?from=2030-01-14T00:00:00.000Z&to=2030-01-01T00:00:00.000Z`,
+				key.secret,
+			),
+			harness.request("POST", "/v2/alerts/oncall_schedules", key.secret, {
+				...weeklySchedule,
+				time_zone: "Mars/Olympus",
+			}),
+			harness.request("POST", "/v2/alerts/oncall_schedules", key.secret, {
+				...weeklySchedule,
+				layers: [{ ...layer, participants: [] }],
+			}),
+			harness.request("POST", `${base}/overrides`, key.secret, {
+				user_id: "user_ben",
+				starts_at: "2030-01-04T08:00:00.000Z",
+				ends_at: "2030-01-03T17:00:00.000Z",
+			}),
+			harness.request("POST", `${base}/overrides`, key.secret, {
+				user_id: "user_ben",
+				starts_at: "2020-01-03T17:00:00.000Z",
+				ends_at: "2020-01-04T08:00:00.000Z",
+			}),
+			// Valid ISO timestamps before 1970: not storable instants, so a 400 rather than a 500.
+			harness.request("POST", "/v2/alerts/oncall_schedules", key.secret, {
+				...weeklySchedule,
+				layers: [{ ...layer, starts_at: "1960-01-01T00:00:00.000Z" }],
+			}),
+			harness.request("PATCH", base, key.secret, {
+				layers: [{ ...layer, starts_at: "1969-12-31T23:59:59.000Z" }],
+			}),
+			harness.request("POST", `${base}/overrides`, key.secret, {
+				user_id: "user_ben",
+				starts_at: "1960-01-01T00:00:00.000Z",
+				ends_at: "2030-01-04T08:00:00.000Z",
+			}),
+		])
+		for (const response of badRequests) {
+			expect(response.status, JSON.stringify(response.body)).toBe(400)
+			expect(response.body.error.type).toBe("invalid_request_error")
+		}
+
+		const unknown = `/v2/alerts/oncall_schedules/${encodePublicId("onc", "0b8f7c1e-2f61-4f1e-9d2a-3c4b5d6e7f80")}`
+		const missing = await Promise.all([
+			harness.request("GET", `${unknown}/oncall`, key.secret),
+			harness.request("PATCH", unknown, key.secret, { name: "Nope" }),
+			harness.request(
+				"DELETE",
+				`${base}/overrides/${encodePublicId("ovr", "0b8f7c1e-2f61-4f1e-9d2a-3c4b5d6e7f80")}`,
+				key.secret,
+			),
+		])
+		expect(Arr.map(missing, (response) => response.status)).toEqual([404, 404, 404])
+
+		const readOnly = await harness.bootstrapKey(["alerts:read"])
+		const read = await harness.request(
+			"GET",
+			`${base}/oncall?at=2030-01-03T19:00:00.000Z`,
+			readOnly.secret,
+		)
+		expect(read.body.shift.user_id).toBe("user_ana")
+		const denied = await Promise.all([
+			harness.request("POST", "/v2/alerts/oncall_schedules", readOnly.secret, weeklySchedule),
+			harness.request("POST", `${base}/overrides`, readOnly.secret, {
+				user_id: "user_ben",
+				starts_at: "2030-01-03T17:00:00.000Z",
+				ends_at: "2030-01-04T08:00:00.000Z",
+			}),
+			harness.request("DELETE", base, readOnly.secret),
+		])
+		expect(Arr.map(denied, (response) => response.status)).toEqual([403, 403, 403])
+
+		await harness.dispose()
+	})
+
+	it("names the step field and what is wrong when escalation chain steps are empty or too long", async () => {
+		const harness = makeHarness()
+		const key = await harness.bootstrapKey(["alerts:write"])
+		const primary = await createWebhook(harness, key.secret, "primary")
+		const target = { type: "destination", destination_id: primary.body.id }
+		const step = { targets: [target], wait_minutes: 10 }
+		const created = await harness.request("POST", "/v2/alerts/escalation_chains", key.secret, {
+			name: "Paging",
+			steps: [step],
+		})
+		expect(created.status, JSON.stringify(created.body)).toBe(200)
+		const post = (body: unknown) =>
+			harness.request("POST", "/v2/alerts/escalation_chains", key.secret, body)
+		const patch = (body: unknown) =>
+			harness.request("PATCH", `/v2/alerts/escalation_chains/${created.body.id}`, key.secret, body)
+
+		const responses = await Promise.all([
+			post({ name: "Empty", steps: [] }),
+			post({ name: "No targets", steps: [{ targets: [], wait_minutes: 10 }] }),
+			post({ name: "Long", steps: Arr.makeBy(11, () => step) }),
+			post({ name: "Wide", steps: [{ targets: Arr.makeBy(11, () => target), wait_minutes: 10 }] }),
+			patch({ steps: [] }),
+			patch({ steps: [step, { targets: [], wait_minutes: 5 }] }),
+		])
+		expect(
+			Arr.map(responses, (response) => [
+				response.status,
+				response.body.error.param,
+				response.body.error.message,
+			]),
+		).toEqual([
+			[400, "steps", "steps: needs at least one step"],
+			[400, "steps[0].targets", "steps[0].targets: needs at least one target"],
+			[400, "steps", "steps: allows at most 10 steps"],
+			[400, "steps[0].targets", "steps[0].targets: allows at most 10 targets per step"],
+			[400, "steps", "steps: needs at least one step"],
+			[400, "steps[1].targets", "steps[1].targets: needs at least one target"],
+		])
+
+		await harness.dispose()
+	})
+
+	it("refuses to delete a destination only an escalation chain uses, naming chains in the conflict", async () => {
+		const harness = makeHarness()
+		const key = await harness.bootstrapKey(["alerts:write"])
+		const primary = await createWebhook(harness, key.secret, "primary")
+		const chain = await harness.request("POST", "/v2/alerts/escalation_chains", key.secret, {
+			name: "Chain only",
+			steps: [
+				{ targets: [{ type: "destination", destination_id: primary.body.id }], wait_minutes: 10 },
+			],
+		})
+		expect(chain.status, JSON.stringify(chain.body)).toBe(200)
+
+		const conflicted = await harness.request(
+			"DELETE",
+			`/v2/alerts/destinations/${primary.body.id}`,
+			key.secret,
+		)
+		expect([conflicted.status, conflicted.body.error.code, conflicted.body.error.message]).toEqual([
+			409,
+			"alert_destination_in_use",
+			"The alert destination is currently used by one or more alert rules or escalation chains.",
+		])
+
+		await harness.dispose()
+	})
+
+	it("creates, lists, extends and ends an alert silence", async () => {
+		const harness = makeHarness()
+		const key = await harness.bootstrapKey(["alerts:write"])
+		const { rule } = await createWebhookAndRule(harness, key.secret)
+
+		const created = await harness.request("POST", "/v2/alerts/silences", key.secret, {
+			reason: "Deploying checkout v2.3",
+			matchers: { rule_ids: [rule.body.id], services: ["checkout"] },
+			duration_minutes: 60,
+		})
+		expect(created.status).toBe(200)
+		expect(created.body).toMatchObject({
+			object: "alert_silence",
+			status: "active",
+			matchers: { rule_ids: [rule.body.id], services: ["checkout"] },
+		})
+		expect(created.body.id).toMatch(/^sil_/)
+		expect(Date.parse(created.body.ends_at) - Date.parse(created.body.starts_at)).toBe(60 * 60_000)
+		const id: string = created.body.id
+
+		const active = await harness.request("GET", "/v2/alerts/silences?status=active", key.secret)
+		expect(active.body.data.map((silence: { id: string }) => silence.id)).toEqual([id])
+
+		const endsAt = new Date(Date.parse(created.body.ends_at) + 60 * 60_000).toISOString()
+		const extended = await harness.request("PATCH", `/v2/alerts/silences/${id}`, key.secret, {
+			ends_at: endsAt,
+		})
+		expect(extended.status).toBe(200)
+		expect(extended.body.ends_at).toBe(endsAt)
+
+		const ended = await harness.request("POST", `/v2/alerts/silences/${id}/end`, key.secret)
+		expect(ended.status).toBe(200)
+		expect(ended.body.status).toBe("ended")
+		const stillActive = await harness.request("GET", "/v2/alerts/silences?status=active", key.secret)
+		expect(stillActive.body.data).toEqual([])
+
+		const unknownId = Schema.encodeSync(AlertSilencePublicId)(
+			Schema.decodeSync(AlertSilenceId)("0b8f7c1e-2f61-4f1e-9d2a-3c4b5d6e7f80"),
+		)
+		const missing = await harness.request("GET", `/v2/alerts/silences/${unknownId}`, key.secret)
+		expect(missing.status).toBe(404)
+
+		await harness.dispose()
+	})
+
+	it("rejects a silence without a matcher, an end or a sensible window", async () => {
+		const harness = makeHarness()
+		const key = await harness.bootstrapKey(["alerts:write"])
+		const post = (body: unknown) => harness.request("POST", "/v2/alerts/silences", key.secret, body)
+
+		const noMatcher = await post({ reason: "x", matchers: {}, duration_minutes: 10 })
+		const noEnd = await post({ reason: "x", matchers: { tags: ["db"] } })
+		const both = await post({
+			reason: "x",
+			matchers: { tags: ["db"] },
+			duration_minutes: 10,
+			ends_at: new Date(Date.now() + 60_000).toISOString(),
+		})
+		const tooLong = await post({
+			reason: "x",
+			matchers: { tags: ["db"] },
+			duration_minutes: 31 * 24 * 60,
+		})
+		const ended = await post({
+			reason: "x",
+			matchers: { tags: ["db"] },
+			ends_at: new Date(Date.now() - 60_000).toISOString(),
+		})
+		for (const response of [noMatcher, noEnd, both, tooLong, ended]) {
+			expect(response.status).toBe(400)
+			expect(response.body.error.type).toBe("invalid_request_error")
+		}
+
+		const readOnly = await harness.bootstrapKey(["alerts:read"])
+		const denied = await harness.request("POST", "/v2/alerts/silences", readOnly.secret, {
+			reason: "x",
+			matchers: { tags: ["db"] },
+			duration_minutes: 10,
+		})
+		expect(denied.status).toBe(403)
+
+		await harness.dispose()
+	})
+	it("creates, lists, updates and deletes a maintenance window and names it on its silences", async () => {
+		const harness = makeHarness()
+		const key = await harness.bootstrapKey(["alerts:write"])
+		const schedule = {
+			type: "weekly",
+			time_zone: "Europe/Berlin",
+			days: ["mon", "tue", "wed", "thu", "fri", "sat", "sun"],
+			start_time: "02:00",
+			duration_minutes: 60,
+		}
+
+		const created = await harness.request("POST", "/v2/alerts/maintenance_windows", key.secret, {
+			name: "Nightly vacuum",
+			matchers: { services: ["checkout"] },
+			schedule,
+		})
+		expect(created.status).toBe(200)
+		expect(created.body).toMatchObject({
+			object: "alert_maintenance_window",
+			name: "Nightly vacuum",
+			reason: null,
+			schedule,
+			exclude_from_baselines: true,
+			enabled: true,
+		})
+		expect(created.body.id).toMatch(/^mw_/)
+		expect(created.body.next_occurrence).not.toBeNull()
+		const id: string = created.body.id
+
+		const listed = await harness.request("GET", "/v2/alerts/maintenance_windows", key.secret)
+		expect(listed.body.data.map((window: { id: string }) => window.id)).toEqual([id])
+
+		const silences = await harness.request("GET", "/v2/alerts/silences", key.secret)
+		const occurrences = silences.body.data.filter(
+			(silence: { maintenance_window_id: string | null }) => silence.maintenance_window_id === id,
+		)
+		expect(occurrences.length).toBeGreaterThan(0)
+		expect(occurrences[0].reason).toBe("Maintenance: Nightly vacuum")
+
+		// A manual silence is left out when the list is filtered to the window.
+		const manual = await harness.request("POST", "/v2/alerts/silences", key.secret, {
+			reason: "Deploy",
+			matchers: { services: ["cart"] },
+			ends_at: new Date(Date.now() + 60 * 60_000).toISOString(),
+		})
+		expect(manual.status).toBe(200)
+		const filtered = await harness.request(
+			"GET",
+			`/v2/alerts/silences?maintenance_window_id=${id}`,
+			key.secret,
+		)
+		expect(filtered.status).toBe(200)
+		expect(filtered.body.data.map((silence: { id: string }) => silence.id)).toEqual(
+			occurrences.map((silence: { id: string }) => silence.id),
+		)
+		expect(filtered.body.data.map((silence: { id: string }) => silence.id)).not.toContain(manual.body.id)
+		const badFilter = await harness.request(
+			"GET",
+			"/v2/alerts/silences?maintenance_window_id=nope",
+			key.secret,
+		)
+		expect(badFilter.status).toBe(400)
+
+		// The window owns its silences: ending or editing one through the silence API is refused.
+		const silenceId: string = occurrences[0].id
+		const endRefused = await harness.request("POST", `/v2/alerts/silences/${silenceId}/end`, key.secret)
+		const editRefused = await harness.request("PATCH", `/v2/alerts/silences/${silenceId}`, key.secret, {
+			reason: "mine now",
+		})
+		for (const refused of [endRefused, editRefused]) {
+			expect(refused.status).toBe(400)
+			expect(refused.body.error.message).toBe(
+				"This silence belongs to maintenance window Nightly vacuum; edit or disable the window instead",
+			)
+		}
+
+		const updated = await harness.request("PATCH", `/v2/alerts/maintenance_windows/${id}`, key.secret, {
+			reason: "Weekly index rebuild",
+		})
+		expect(updated.status).toBe(200)
+		expect(updated.body.reason).toBe("Weekly index rebuild")
+
+		const deleted = await harness.request("DELETE", `/v2/alerts/maintenance_windows/${id}`, key.secret)
+		expect(deleted.body).toEqual({ id, object: "alert_maintenance_window", deleted: true })
+		const missing = await harness.request("GET", `/v2/alerts/maintenance_windows/${id}`, key.secret)
+		expect(missing.status).toBe(404)
+
+		await harness.dispose()
+	})
+
+	it("rejects a maintenance window without a matcher or a valid schedule", async () => {
+		const harness = makeHarness()
+		const key = await harness.bootstrapKey(["alerts:write"])
+		const post = (body: unknown) =>
+			harness.request("POST", "/v2/alerts/maintenance_windows", key.secret, body)
+		const weekly = {
+			type: "weekly",
+			time_zone: "UTC",
+			days: ["sat"],
+			start_time: "02:00",
+			duration_minutes: 60,
+		}
+
+		const responses = await Promise.all([
+			post({ name: "x", matchers: {}, schedule: weekly }),
+			post({
+				name: "x",
+				matchers: { tags: ["db"] },
+				schedule: { ...weekly, time_zone: "Mars/Olympus" },
+			}),
+			post({ name: "x", matchers: { tags: ["db"] }, schedule: { ...weekly, days: [] } }),
+			post({
+				name: "x",
+				matchers: { tags: ["db"] },
+				schedule: {
+					type: "once",
+					starts_at: new Date(Date.now() - 2 * 60 * 60_000).toISOString(),
+					ends_at: new Date(Date.now() - 60 * 60_000).toISOString(),
+				},
+			}),
+		])
+		for (const response of responses) {
+			expect(response.status).toBe(400)
+			expect(response.body.error.type).toBe("invalid_request_error")
+		}
+
+		const readOnly = await harness.bootstrapKey(["alerts:read"])
+		const denied = await harness.request("POST", "/v2/alerts/maintenance_windows", readOnly.secret, {
+			name: "x",
+			matchers: { tags: ["db"] },
+			schedule: weekly,
+		})
+		expect(denied.status).toBe(403)
 
 		await harness.dispose()
 	})

@@ -14,6 +14,7 @@ import {
 	Tracer,
 	Array as Arr,
 	String as Str,
+	Option,
 } from "effect"
 import { FetchHttpClient } from "effect/http"
 import { Env } from "@maple/backend/platform/Env"
@@ -36,7 +37,7 @@ import { MAX_JOB_LOG_CHARS } from "./logs"
 const trackedDbs: TestDb[] = []
 afterEach(() => cleanupTestDbs(trackedDbs))
 
-const orgId = Schema.decodeUnknownSync(OrgId)("org_ci")
+const orgId = Schema.decodeSync(OrgId)("org_ci")
 
 const makeConfig = () =>
 	ConfigProvider.layer(
@@ -239,7 +240,12 @@ const stamped = (ms: number, text: string) =>
 const spansOf = (call: IngestCall) =>
 	Arr.flatMap(call.body.resourceSpans, (rs) => Arr.flatMap(rs.scopeSpans, (ss) => ss.spans))
 const attr = (attributes: OtlpRequest["resourceSpans"][number]["resource"]["attributes"], key: string) => {
-	const value = attributes.find((kv) => kv.key === key)?.value
+	const value = Option.getOrUndefined(
+		Option.map(
+			Arr.findFirst(attributes, (kv) => kv.key === key),
+			(kv) => kv.value,
+		),
+	)
 	return value?.stringValue ?? value?.intValue
 }
 
@@ -282,14 +288,18 @@ describe("CiTraceService", () => {
 				),
 			)
 			assert.strictEqual(source!.name, "GitHub octo")
-			const expected = publicSourceId(Schema.decodeUnknownSync(SourceId)(source!.id))
+			const expected = publicSourceId(Schema.decodeSync(SourceId)(source!.id))
 			assert.strictEqual(
-				attr(calls[0]!.body.resourceSpans[0]!.resource.attributes, "maple_source_id"),
+				attr(calls[0].body.resourceSpans[0].resource.attributes, "maple_source_id"),
 				expected,
 			)
 			assert.strictEqual(
-				logCalls[0]!.resourceLogs[0]!.resource.attributes.find((kv) => kv.key === "maple_source_id")
-					?.value.stringValue,
+				Option.getOrThrow(
+					Arr.findFirst(
+						logCalls[0].resourceLogs[0].resource.attributes,
+						(kv) => kv.key === "maple_source_id",
+					),
+				).value.stringValue,
 				expected,
 			)
 		}).pipe(Effect.provide(sinkLayer(testDb, recordingFetch(calls, [200], logCalls))))
@@ -315,7 +325,7 @@ describe("CiTraceService", () => {
 			const sink = yield* WorkflowEventSink
 			yield* sink.onWorkflowRun(orgId, run)
 			assert.lengthOf(calls, 1)
-			assert.isUndefined(attr(calls[0]!.body.resourceSpans[0]!.resource.attributes, "maple_source_id"))
+			assert.isUndefined(attr(calls[0].body.resourceSpans[0].resource.attributes, "maple_source_id"))
 		}).pipe(Effect.provide(sinkLayer(testDb, recordingFetch(calls))))
 	})
 
@@ -329,38 +339,38 @@ describe("CiTraceService", () => {
 			yield* sink.onWorkflowRun(orgId, run)
 
 			assert.strictEqual(calls.length, 2)
-			assert.strictEqual(calls[0]!.url, "https://ingest.test/v1/traces")
-			assert.match(calls[0]!.authorization ?? "", /^Bearer maple_pk_/)
-			assert.strictEqual(calls[0]!.authorization, calls[1]!.authorization)
+			assert.strictEqual(calls[0].url, "https://ingest.test/v1/traces")
+			assert.match(calls[0].authorization ?? "", /^Bearer maple_pk_/)
+			assert.strictEqual(calls[0].authorization, calls[1].authorization)
 
-			const [jobSpan, queueSpan, installStep, testStep] = spansOf(calls[0]!)
-			const [runSpan] = spansOf(calls[1]!)
-			assert.strictEqual(runSpan!.parentSpanId, "")
-			assert.strictEqual(queueSpan!.parentSpanId, jobSpan!.spanId)
-			assert.strictEqual(jobSpan!.traceId, runSpan!.traceId)
-			assert.strictEqual(jobSpan!.parentSpanId, runSpan!.spanId)
-			assert.strictEqual(installStep!.parentSpanId, jobSpan!.spanId)
-			assert.strictEqual(testStep!.parentSpanId, jobSpan!.spanId)
-			assert.match(runSpan!.traceId, /^[0-9a-f]{32}$/)
-			assert.match(jobSpan!.spanId, /^[0-9a-f]{16}$/)
+			const [jobSpan, queueSpan, installStep, testStep] = spansOf(calls[0])
+			const [runSpan] = spansOf(calls[1])
+			assert.strictEqual(runSpan.parentSpanId, "")
+			assert.strictEqual(queueSpan.parentSpanId, jobSpan.spanId)
+			assert.strictEqual(jobSpan.traceId, runSpan.traceId)
+			assert.strictEqual(jobSpan.parentSpanId, runSpan.spanId)
+			assert.strictEqual(installStep.parentSpanId, jobSpan.spanId)
+			assert.strictEqual(testStep.parentSpanId, jobSpan.spanId)
+			assert.match(runSpan.traceId, /^[0-9a-f]{32}$/)
+			assert.match(jobSpan.spanId, /^[0-9a-f]{16}$/)
 
 			assert.deepStrictEqual(
-				[runSpan!.name, jobSpan!.name, queueSpan!.name, installStep!.name, testStep!.name],
+				[runSpan.name, jobSpan.name, queueSpan.name, installStep.name, testStep.name],
 				["RUN CI", "test", "Waiting for a runner", "Install", "Test"],
 			)
 			// The job span covers its 30s wait for a runner, which the queue span shows.
-			assert.strictEqual(jobSpan!.startTimeUnixNano, "1700000010000000000")
-			assert.strictEqual(jobSpan!.endTimeUnixNano, "1700000200000000000")
-			assert.strictEqual(queueSpan!.startTimeUnixNano, "1700000010000000000")
-			assert.strictEqual(queueSpan!.endTimeUnixNano, "1700000040000000000")
-			assert.strictEqual(attr(jobSpan!.attributes, "maple.cicd.queue_duration_ms"), "30000")
-			assert.strictEqual(attr(runSpan!.attributes, "vcs.change.id"), "612")
+			assert.strictEqual(jobSpan.startTimeUnixNano, "1700000010000000000")
+			assert.strictEqual(jobSpan.endTimeUnixNano, "1700000200000000000")
+			assert.strictEqual(queueSpan.startTimeUnixNano, "1700000010000000000")
+			assert.strictEqual(queueSpan.endTimeUnixNano, "1700000040000000000")
+			assert.strictEqual(attr(jobSpan.attributes, "maple.cicd.queue_duration_ms"), "30000")
+			assert.strictEqual(attr(runSpan.attributes, "vcs.change.id"), "612")
 			assert.strictEqual(
-				attr(calls[1]!.body.resourceSpans[0]!.resource.attributes, "service.name"),
+				attr(calls[1].body.resourceSpans[0].resource.attributes, "service.name"),
 				"github-actions",
 			)
 			assert.strictEqual(
-				attr(calls[1]!.body.resourceSpans[0]!.resource.attributes, "vcs.repository.name"),
+				attr(calls[1].body.resourceSpans[0].resource.attributes, "vcs.repository.name"),
 				"repo",
 			)
 		}).pipe(Effect.provide(sinkLayer(testDb, recordingFetch(calls))))
@@ -373,13 +383,13 @@ describe("CiTraceService", () => {
 			const sink = yield* WorkflowEventSink
 			yield* sink.onWorkflowJob(orgId, job, [])
 			yield* sink.onWorkflowRun(orgId, { ...run, conclusion: "cancelled" })
-			const [jobSpan, , installStep, testStep] = spansOf(calls[0]!)
-			const [runSpan] = spansOf(calls[1]!)
+			const [jobSpan, , installStep, testStep] = spansOf(calls[0])
+			const [runSpan] = spansOf(calls[1])
 			assert.deepStrictEqual(
-				[jobSpan!.status.code, installStep!.status.code, testStep!.status.code, runSpan!.status.code],
+				[jobSpan.status.code, installStep.status.code, testStep.status.code, runSpan.status.code],
 				[2, 1, 2, 0],
 			)
-			assert.strictEqual(attr(runSpan!.attributes, "cicd.pipeline.result"), "cancellation")
+			assert.strictEqual(attr(runSpan.attributes, "cicd.pipeline.result"), "cancellation")
 		}).pipe(Effect.provide(sinkLayer(testDb, recordingFetch(calls))))
 	})
 
@@ -406,19 +416,19 @@ describe("CiTraceService", () => {
 		return Effect.gen(function* () {
 			const sink = yield* WorkflowEventSink
 			yield* sink.onWorkflowJob(orgId, job, annotations)
-			const [jobSpan] = spansOf(calls[0]!)
-			assert.strictEqual(jobSpan!.status.code, 2)
-			assert.strictEqual(jobSpan!.status.message, "src/math.test.ts:12: adds: expected 2 to be 3")
+			const [jobSpan] = spansOf(calls[0])
+			assert.strictEqual(jobSpan.status.code, 2)
+			assert.strictEqual(jobSpan.status.message, "src/math.test.ts:12: adds: expected 2 to be 3")
 			assert.strictEqual(
-				attr(jobSpan!.attributes, "maple.cicd.failure.reason"),
+				attr(jobSpan.attributes, "maple.cicd.failure.reason"),
 				"src/math.test.ts:12: adds: expected 2 to be 3",
 			)
 			assert.deepStrictEqual(
-				Arr.map(jobSpan!.events ?? [], (event) =>
+				Arr.map(jobSpan.events ?? [], (event) =>
 					attr(event.attributes, "maple.cicd.annotation.message"),
 				),
 				// Failures first, then the rest.
-				[annotations[0]!.message, annotations[2]!.message, annotations[1]!.message],
+				[annotations[0].message, annotations[2].message, annotations[1].message],
 			)
 		}).pipe(Effect.provide(sinkLayer(testDb, recordingFetch(calls))))
 	})
@@ -438,7 +448,7 @@ describe("CiTraceService", () => {
 					startLine: 4,
 				},
 			])
-			assert.strictEqual(spansOf(calls[0]!)[0]!.status.message, "src/a.test.ts:4: expected 2 to be 3")
+			assert.strictEqual(spansOf(calls[0])[0].status.message, "src/a.test.ts:4: expected 2 to be 3")
 		}).pipe(Effect.provide(sinkLayer(testDb, recordingFetch(calls))))
 	})
 
@@ -453,7 +463,7 @@ describe("CiTraceService", () => {
 				url: "https://github.com/octo/actions/actions/runs/9001",
 			})
 			assert.strictEqual(
-				attr(calls[0]!.body.resourceSpans[0]!.resource.attributes, "vcs.repository.url.full"),
+				attr(calls[0].body.resourceSpans[0].resource.attributes, "vcs.repository.url.full"),
 				"https://github.com/octo/actions",
 			)
 		}).pipe(Effect.provide(sinkLayer(testDb, recordingFetch(calls))))
@@ -465,8 +475,8 @@ describe("CiTraceService", () => {
 		const pinned = "Run jdx/mise-action@2d8d4cafcbd33be2ea37d2b6f5ad595363d1f1ca"
 		return Effect.gen(function* () {
 			const sink = yield* WorkflowEventSink
-			yield* sink.onWorkflowJob(orgId, { ...job, steps: [{ ...job.steps[0]!, name: pinned }] }, [])
-			const step = spansOf(calls[0]!).at(-1)!
+			yield* sink.onWorkflowJob(orgId, { ...job, steps: [{ ...job.steps[0], name: pinned }] }, [])
+			const step = spansOf(calls[0]).at(-1)!
 			assert.strictEqual(step.name, "Run jdx/mise-action")
 			assert.strictEqual(attr(step.attributes, "maple.cicd.step.name"), pinned)
 		}).pipe(Effect.provide(sinkLayer(testDb, recordingFetch(calls))))
@@ -478,9 +488,9 @@ describe("CiTraceService", () => {
 		return Effect.gen(function* () {
 			const sink = yield* WorkflowEventSink
 			yield* sink.onWorkflowJob(orgId, { ...job, queuedAtMs: job.startedAtMs }, [])
-			const spans = spansOf(calls[0]!)
+			const spans = spansOf(calls[0])
 			assert.strictEqual(spans.length, 1 + job.steps.length)
-			assert.strictEqual(spans[0]!.startTimeUnixNano, "1700000040000000000")
+			assert.strictEqual(spans[0].startTimeUnixNano, "1700000040000000000")
 		}).pipe(Effect.provide(sinkLayer(testDb, recordingFetch(calls))))
 	})
 
@@ -491,29 +501,29 @@ describe("CiTraceService", () => {
 			const sink = yield* WorkflowEventSink
 			yield* sink.onWorkflowJob(orgId, job, [])
 			yield* sink.onWorkflowRun(orgId, run)
-			const [jobSpan, , installStep, testStep] = spansOf(calls[0]!)
-			const [runSpan] = spansOf(calls[1]!)
+			const [jobSpan, , installStep, testStep] = spansOf(calls[0])
+			const [runSpan] = spansOf(calls[1])
 
 			// A run is a SERVER span named `{action} {pipeline}`; tasks are INTERNAL.
-			assert.deepStrictEqual([runSpan!.kind, jobSpan!.kind, testStep!.kind], [2, 1, 1])
-			assert.strictEqual(attr(runSpan!.attributes, "cicd.pipeline.action.name"), "RUN")
+			assert.deepStrictEqual([runSpan.kind, jobSpan.kind, testStep.kind], [2, 1, 1])
+			assert.strictEqual(attr(runSpan.attributes, "cicd.pipeline.action.name"), "RUN")
 			// `error.type` on a failed run or task, never on one that passed.
 			assert.deepStrictEqual(
-				Arr.map([runSpan!, jobSpan!, installStep!, testStep!], (span) =>
+				Arr.map([runSpan, jobSpan, installStep, testStep], (span) =>
 					attr(span.attributes, "error.type"),
 				),
 				["failure", "failure", undefined, "failure"],
 			)
 			// A step is a task of its own: its name, an id unique in the run, a link to its log line.
-			assert.strictEqual(attr(testStep!.attributes, "cicd.pipeline.task.name"), "Test")
-			assert.strictEqual(attr(testStep!.attributes, "cicd.pipeline.task.run.id"), "555.2")
+			assert.strictEqual(attr(testStep.attributes, "cicd.pipeline.task.name"), "Test")
+			assert.strictEqual(attr(testStep.attributes, "cicd.pipeline.task.run.id"), "555.2")
 			assert.strictEqual(
-				attr(testStep!.attributes, "cicd.pipeline.task.run.url.full"),
+				attr(testStep.attributes, "cicd.pipeline.task.run.url.full"),
 				"https://github.com/octo/repo/actions/runs/9001/job/555#step:2:1",
 			)
-			assert.strictEqual(attr(jobSpan!.attributes, "cicd.pipeline.task.run.id"), "555")
+			assert.strictEqual(attr(jobSpan.attributes, "cicd.pipeline.task.run.id"), "555")
 			assert.strictEqual(
-				attr(calls[0]!.body.resourceSpans[0]!.resource.attributes, "vcs.repository.url.full"),
+				attr(calls[0].body.resourceSpans[0].resource.attributes, "vcs.repository.url.full"),
 				"https://github.com/octo/repo",
 			)
 		}).pipe(Effect.provide(sinkLayer(testDb, recordingFetch(calls))))
@@ -530,9 +540,9 @@ describe("CiTraceService", () => {
 				{ ...job, conclusion: "skipped", startedAtMs: job.completedAtMs, steps: [] },
 				[],
 			)
-			const [jobSpan, ...rest] = spansOf(calls[0]!)
+			const [jobSpan, ...rest] = spansOf(calls[0])
 			assert.lengthOf(rest, 0)
-			assert.strictEqual(jobSpan!.startTimeUnixNano, jobSpan!.endTimeUnixNano)
+			assert.strictEqual(jobSpan.startTimeUnixNano, jobSpan.endTimeUnixNano)
 		}).pipe(Effect.provide(sinkLayer(testDb, recordingFetch(calls))))
 	})
 
@@ -543,7 +553,7 @@ describe("CiTraceService", () => {
 			const sink = yield* WorkflowEventSink
 			yield* sink.onWorkflowRun(orgId, run)
 			yield* sink.onWorkflowRun(orgId, { ...run, runAttempt: 2 })
-			assert.notStrictEqual(spansOf(calls[0]!)[0]!.traceId, spansOf(calls[1]!)[0]!.traceId)
+			assert.notStrictEqual(spansOf(calls[0])[0].traceId, spansOf(calls[1])[0].traceId)
 		}).pipe(Effect.provide(sinkLayer(testDb, recordingFetch(calls))))
 	})
 
@@ -587,7 +597,7 @@ describe("CiTraceService", () => {
 					["IngestSender.send", true],
 				],
 			)
-			assert.strictEqual(ended[0]!.attributes.get("maple.cicd.outcome"), "ingest_refused")
+			assert.strictEqual(ended[0].attributes.get("maple.cicd.outcome"), "ingest_refused")
 		}).pipe(Effect.provide(sinkLayer(testDb, recordingFetch(calls, [402]))))
 	})
 
@@ -624,14 +634,19 @@ describe("CiTraceService", () => {
 			yield* emitJob.pipe(Effect.provide(batch))
 			// The rotation runs in another graph with its own memo, as the HTTP route does.
 			const rotated = yield* OrgIngestKeysService.use((keys) =>
-				keys.rerollPublic(orgId, Schema.decodeUnknownSync(UserId)("user_rotates")),
+				keys.rerollPublic(orgId, Schema.decodeSync(UserId)("user_rotates")),
 			).pipe(Effect.provide(keysLayer(testDb)))
 			yield* emitJob.pipe(Effect.provide(batch))
 			assert.deepStrictEqual(
 				Arr.map(calls, (call) => call.authorization),
-				[calls[0]!.authorization, calls[0]!.authorization, `Bearer ${rotated.publicKey}`],
+				[calls[0].authorization, calls[0].authorization, `Bearer ${rotated.publicKey}`],
 			)
-			assert.notStrictEqual(rotated.publicKey, calls[0]!.authorization?.slice("Bearer ".length))
+			assert.notStrictEqual(
+				rotated.publicKey,
+				Option.getOrUndefined(
+					Option.map(Option.fromNullishOr(calls[0].authorization), Str.slice("Bearer ".length)),
+				),
+			)
 		})
 	})
 
@@ -648,12 +663,12 @@ describe("CiTraceService", () => {
 			const emitJob = WorkflowEventSink.use((sink) => sink.onWorkflowJob(orgId, job, []))
 			yield* emitJob.pipe(Effect.provide(batch))
 			const rotated = yield* OrgIngestKeysService.use((keys) =>
-				keys.rerollPublic(orgId, Schema.decodeUnknownSync(UserId)("user_rotates")),
+				keys.rerollPublic(orgId, Schema.decodeSync(UserId)("user_rotates")),
 			).pipe(Effect.provide(keysLayer(testDb)))
 			yield* emitJob.pipe(Effect.provide(batch))
 			assert.deepStrictEqual(
 				Arr.map(calls, (call) => call.authorization),
-				[calls[0]!.authorization, `Bearer ${rotated.publicKey}`],
+				[calls[0].authorization, `Bearer ${rotated.publicKey}`],
 			)
 		})
 	})
@@ -687,31 +702,31 @@ describe("CiTraceService", () => {
 			yield* sink.onWorkflowJob(orgId, job, [])
 			yield* sink.onWorkflowJobLog(orgId, job, Stream.fromIterable(lines))
 
-			const [jobSpan, , installStep, testStep] = spansOf(calls[0]!)
+			const [jobSpan, , installStep, testStep] = spansOf(calls[0])
 			const records = recordsOf(logCalls).slice(1)
 			const [beforeSteps] = recordsOf(logCalls)
-			assert.strictEqual(beforeSteps!.spanId, jobSpan!.spanId)
-			assert.strictEqual(attr(beforeSteps!.attributes, "cicd.pipeline.task.run.id"), job.jobId)
+			assert.strictEqual(beforeSteps.spanId, jobSpan.spanId)
+			assert.strictEqual(attr(beforeSteps.attributes, "cicd.pipeline.task.run.id"), job.jobId)
 			assert.deepStrictEqual(
 				Arr.map(records, (record) => [record.body.stringValue, record.severityText, record.spanId]),
 				[
-					["Run bun install", "INFO", installStep!.spanId],
-					["FAIL src/math.test.ts", "INFO", testStep!.spanId],
-					["  expected 2 to be 3", "INFO", testStep!.spanId],
-					["Process completed with exit code 1.", "ERROR", testStep!.spanId],
+					["Run bun install", "INFO", installStep.spanId],
+					["FAIL src/math.test.ts", "INFO", testStep.spanId],
+					["  expected 2 to be 3", "INFO", testStep.spanId],
+					["Process completed with exit code 1.", "ERROR", testStep.spanId],
 				],
 			)
-			assert.isTrue(Arr.every(records, (record) => record.traceId === testStep!.traceId))
-			assert.strictEqual(records[0]!.timeUnixNano, `${job.startedAtMs + 123}000000`)
+			assert.isTrue(Arr.every(records, (record) => record.traceId === testStep.traceId))
+			assert.strictEqual(records[0].timeUnixNano, `${job.startedAtMs + 123}000000`)
 			// A line without a stamp takes the one before it.
-			assert.strictEqual(records[2]!.timeUnixNano, records[1]!.timeUnixNano)
+			assert.strictEqual(records[2].timeUnixNano, records[1].timeUnixNano)
 			assert.strictEqual(
-				attr(records[1]!.attributes, "cicd.pipeline.task.run.id"),
-				attr(testStep!.attributes, "cicd.pipeline.task.run.id"),
+				attr(records[1].attributes, "cicd.pipeline.task.run.id"),
+				attr(testStep.attributes, "cicd.pipeline.task.run.id"),
 			)
-			assert.strictEqual(attr(records[1]!.attributes, "cicd.pipeline.task.name"), "Test")
+			assert.strictEqual(attr(records[1].attributes, "cicd.pipeline.task.name"), "Test")
 			assert.strictEqual(
-				attr(logCalls[0]!.resourceLogs[0]!.resource.attributes, "service.name"),
+				attr(logCalls[0].resourceLogs[0].resource.attributes, "service.name"),
 				"github-actions",
 			)
 		}).pipe(Effect.provide(sinkLayer(testDb, recordingFetch(calls, [200], logCalls))))
@@ -831,9 +846,11 @@ describe("CiTraceService", () => {
 			yield* sink
 				.onWorkflowJobLog(orgId, job, Stream.fail("log download reset"))
 				.pipe(Effect.provideService(Tracer.Tracer, tracer))
-			const emitLog = spans.find((span) => span.name === "CiTraceService.emitLog")
-			assert.strictEqual(emitLog?.status._tag, "Ended")
-			if (emitLog?.status._tag !== "Ended") return
+			const emitLog = Option.getOrThrow(
+				Arr.findFirst(spans, (span) => span.name === "CiTraceService.emitLog"),
+			)
+			assert.strictEqual(emitLog.status._tag, "Ended")
+			if (emitLog.status._tag !== "Ended") return
 			assert.isTrue(Exit.isFailure(emitLog.status.exit))
 			assert.strictEqual(emitLog.attributes.get("maple.cicd.outcome"), "log_failed")
 		}).pipe(Effect.provide(sinkLayer(testDb, recordingFetch([]))))

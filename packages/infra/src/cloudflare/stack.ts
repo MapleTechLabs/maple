@@ -23,7 +23,7 @@ import {
 /** A Postgres login for an ECS service. A changed `id` rolls the tasks before the old login goes. */
 export interface MapleDbLogin {
 	readonly id: Output.Output<string>
-	readonly url: Output.Output<Redacted.Redacted<string>>
+	readonly url: Output.Output<Redacted.Redacted>
 }
 
 /**

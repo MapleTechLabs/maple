@@ -34,8 +34,8 @@ import {
 const createdDbs: TestDb[] = []
 afterEach(() => cleanupTestDbs(createdDbs))
 
-const ORG = Schema.decodeUnknownSync(OrgId)("org_widget_cred")
-const USER = Schema.decodeUnknownSync(UserId)("user_widget_cred")
+const ORG = Schema.decodeSync(OrgId)("org_widget_cred")
+const USER = Schema.decodeSync(UserId)("user_widget_cred")
 const INSTALLATION = "F9E1B4C0-8F2A-4C6D-9E1B-4C08F2A4C6D9"
 const OTHER_INSTALLATION = "A1B2C3D4-8F2A-4C6D-9E1B-4C08F2A4C6D9"
 

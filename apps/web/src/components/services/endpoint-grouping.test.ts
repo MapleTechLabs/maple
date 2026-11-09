@@ -47,7 +47,7 @@ describe("groupEndpoints", () => {
 			endpoint("GET", "/v2/status"),
 		])
 		expect(stems(groups)).toEqual(["/v2/webhooks", "ungrouped"])
-		expect(Arr.map(groups[1]?.endpoints, (e) => e.route)).toEqual(["/v2/status"])
+		expect(Arr.map(Arr.getUnsafe(groups, 1)?.endpoints, (e) => e.route)).toEqual(["/v2/status"])
 	})
 
 	it("emits no headers at all for a flat API", () => {
@@ -104,7 +104,7 @@ describe("groupEndpoints", () => {
 			endpoint("GET", "/v2/subs/{id}/checkout", 700),
 		])
 		expect(stems(groups)).toEqual(["/v2/webhooks", "/v2/subs/{id}"])
-		expect(Arr.map(groups[1]?.endpoints, (e) => e.route)).toEqual([
+		expect(Arr.map(Arr.getUnsafe(groups, 1)?.endpoints, (e) => e.route)).toEqual([
 			"/v2/subs/{id}/checkout",
 			"/v2/subs/{id}",
 		])
@@ -121,7 +121,7 @@ describe("groupEndpoints", () => {
 			"path",
 		)
 		expect(stems(groups)).toEqual(["/v2/subs/{id}", "/v2/webhooks"])
-		expect(Arr.map(groups[1]?.endpoints, (e) => e.route)).toEqual([
+		expect(Arr.map(Arr.getUnsafe(groups, 1)?.endpoints, (e) => e.route)).toEqual([
 			"/v2/webhooks/github",
 			"/v2/webhooks/stripe",
 		])
@@ -139,7 +139,7 @@ describe("groupEndpoints", () => {
 			"errorRate",
 		)
 		expect(stems(groups)).toEqual(["/v2/webhooks", "/v2/subs/{id}", "probes"])
-		expect(Arr.map(groups[0]?.endpoints, (e) => e.route)).toEqual([
+		expect(Arr.map(Arr.getUnsafe(groups, 0)?.endpoints, (e) => e.route)).toEqual([
 			"/v2/webhooks/stripe",
 			"/v2/webhooks/github",
 		])
@@ -151,7 +151,7 @@ describe("groupEndpoints", () => {
 			"errorRate",
 			"asc",
 		)
-		expect(Arr.map(ascending[0]?.endpoints, (e) => e.route)).toEqual([
+		expect(Arr.map(Arr.getUnsafe(ascending, 0)?.endpoints, (e) => e.route)).toEqual([
 			"/v2/webhooks/github",
 			"/v2/webhooks/stripe",
 		])
@@ -259,7 +259,10 @@ describe("scanner noise", () => {
 			endpoint("POST", "/.env", 22),
 		])
 		expect(stems(groups)).toEqual(["/v2/webhooks", "unrouted", "probes"])
-		expect(Arr.map(groups[2]?.endpoints, (e) => e.route)).toEqual(["/wp-login.php", "/.env"])
+		expect(Arr.map(Arr.getUnsafe(groups, 2)?.endpoints, (e) => e.route)).toEqual([
+			"/wp-login.php",
+			"/.env",
+		])
 	})
 
 	it("keeps probes out of the stem trie entirely", () => {

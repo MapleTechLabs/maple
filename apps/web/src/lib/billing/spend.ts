@@ -1,4 +1,10 @@
-import type { BillingCustomer, BillingUsage, CatalogPlan, DailySpendResponse } from "@maple/domain/http"
+import type {
+	AiCreditUsageResponse,
+	BillingCustomer,
+	BillingUsage,
+	CatalogPlan,
+	DailySpendResponse,
+} from "@maple/domain/http"
 import {
 	cycleSpend,
 	isActivePlanSubscription,
@@ -9,9 +15,11 @@ import {
 	type FeatureUsagePricing,
 	type PlanLike,
 } from "@maple/domain/billing"
+import { formatCurrency } from "@maple/domain/format"
+import { spendLimitFor } from "./controls"
 import { sentenceCasePlanName } from "./plans"
 import { formatQuoteUnits, quoteUnits } from "./usage"
-import { Array as Arr, Record as Rec, String as Str } from "effect"
+import { Array as Arr, Option, Record as Rec, String as Str } from "effect"
 
 /**
  * The billing page's spend model: one place that turns the Autumn snapshot plus
@@ -24,7 +32,14 @@ import { Array as Arr, Record as Rec, String as Str } from "effect"
  */
 
 /** Features Maple meters, in the order they stack in the chart and read across the cards. */
-export const SPEND_FEATURES = ["logs", "traces", "metrics", "browser_sessions", "product_events"] as const
+export const SPEND_FEATURES = [
+	"logs",
+	"traces",
+	"metrics",
+	"browser_sessions",
+	"product_events",
+	"ai_credits",
+] as const
 export type SpendFeatureId = (typeof SPEND_FEATURES)[number]
 
 export const FEATURE_LABELS: Record<SpendFeatureId, string> = {
@@ -33,6 +48,7 @@ export const FEATURE_LABELS: Record<SpendFeatureId, string> = {
 	metrics: "Metrics",
 	browser_sessions: "Browser sessions",
 	product_events: "Product events",
+	ai_credits: "AI credits",
 } satisfies Record<SpendFeatureId, string>
 
 /**
@@ -52,20 +68,28 @@ export const FEATURE_COLORS: Record<SpendFeatureId, string> = {
 	metrics: "#9085e9",
 	browser_sessions: "#d55181",
 	product_events: "light-dark(var(--chart-5), var(--chart-4))",
+	// Lime: lighter than the traces green, so the two stay apart under deutan CVD.
+	ai_credits: "#93b532",
 } satisfies Record<SpendFeatureId, string>
 
 /** Singular unit for the count-metered features; every other feature is per GB. */
 const COUNT_UNITS = {
 	browser_sessions: "session",
 	product_events: "event",
+	// One credit is one dollar: amounts read as currency, the rate as "$1/credit".
+	ai_credits: "credit",
 } as const satisfies Partial<Record<SpendFeatureId, string>>
 
 type CountFeatureId = keyof typeof COUNT_UNITS
 const isCountFeature = (featureId: string): featureId is CountFeatureId => featureId in COUNT_UNITS
 const countUnitOf = (featureId: string) => (isCountFeature(featureId) ? COUNT_UNITS[featureId] : undefined)
 
-/** `browser_sessions` is metered per session and `product_events` per event; every other feature per GB. */
-export const featureUnit = (featureId: string): "GB" | "sessions" | "events" => {
+/** AI credits as dollars, one credit each: "$4.20", and "<$0.01" for a real sub-cent amount. */
+export const formatCredits = (credits: number): string =>
+	credits > 0 && credits < 0.005 ? "<$0.01" : formatCurrency(credits, "usd")
+
+/** `browser_sessions` is metered per session, `product_events` per event, `ai_credits` per credit; the rest per GB. */
+export const featureUnit = (featureId: string): "GB" | "sessions" | "events" | "credits" => {
 	const unit = countUnitOf(featureId)
 	return unit === undefined ? "GB" : `${unit}s`
 }
@@ -196,9 +220,13 @@ const chargeOf = (
 }
 
 const cycleWindow = (customer: BillingCustomer | undefined, nowMs: number) => {
-	const active = customer?.subscriptions?.find((sub) => sub.status === "active")
-	if (active?.currentPeriodStart != null && active.currentPeriodEnd != null) {
-		return { startMs: active.currentPeriodStart, endMs: active.currentPeriodEnd }
+	const active = Arr.findFirst(customer?.subscriptions ?? [], (sub) => sub.status === "active")
+	if (
+		Option.isSome(active) &&
+		active.value.currentPeriodStart != null &&
+		active.value.currentPeriodEnd != null
+	) {
+		return { startMs: active.value.currentPeriodStart, endMs: active.value.currentPeriodEnd }
 	}
 	const now = new Date(nowMs)
 	return {
@@ -226,38 +254,42 @@ export function buildSpendModel({
 	if (!customer) return null
 
 	const catalog = plans ?? []
-	const activeSub = customer.subscriptions.find((sub) => isActivePlanSubscription(sub))
+	const activeSub = Arr.findFirst(customer.subscriptions, (sub) => isActivePlanSubscription(sub))
 	// The customer's own plan wins over the catalog — see `resolveSubscriptionPlan`.
 	// This is what makes usage-based pricing correct on a custom plan.
-	const basePlan = activeSub ? resolveSubscriptionPlan(activeSub, catalog) : null
+	const basePlan = Option.match(activeSub, {
+		onNone: () => null,
+		onSome: (sub) => resolveSubscriptionPlan(sub, catalog),
+	})
 	// An add-on we cannot resolve stays a charge (unpriced) so the spend reads as partial.
 	const addOnSubs = Arr.map(
 		Arr.filter(customer.subscriptions, (sub) => sub.addOn === true && sub.status === "active"),
 		(sub) => ({ sub, plan: resolveSubscriptionPlan(sub, catalog) }),
 	)
 	const addOns = Arr.flatMap(addOnSubs, ({ plan }) => (plan === null ? [] : [plan]))
-	const charges: BaseCharge[] =
-		activeSub === undefined
-			? []
-			: [
-					chargeOf("plan", activeSub, basePlan),
-					...Arr.map(addOnSubs, ({ sub, plan }) => chargeOf("addOn", sub, plan)),
-				]
+	const charges: BaseCharge[] = Option.match(activeSub, {
+		onNone: () => [],
+		onSome: (sub) => [
+			chargeOf("plan", sub, basePlan),
+			...Arr.map(addOnSubs, ({ sub: addOn, plan }) => chargeOf("addOn", addOn, plan)),
+		],
+	})
 
 	// A plan we can't price (neither expanded nor in the catalog) must read as
 	// partial rather than as a $0 base. Quantity multiplies, as on the invoice.
-	const baseDollars =
-		activeSub === undefined
-			? 0
-			: !isPricedPlan(basePlan)
-				? null
-				: Arr.reduce(charges, 0, (sum, charge) => sum + (charge.dollars ?? 0))
+	const baseDollars = Option.isNone(activeSub)
+		? 0
+		: !isPricedPlan(basePlan)
+			? null
+			: Arr.reduce(charges, 0, (sum, charge) => sum + (charge.dollars ?? 0))
 
 	const pricing: Record<string, FeatureUsagePricing> = {}
 	const billingUnitsByFeature: Record<string, number> = {}
 	for (const featureId of SPEND_FEATURES) {
 		const balance = customer.balances?.[featureId]
-		const item = basePlan?.items?.find((entry) => entry.featureId === featureId)
+		const item = Option.getOrUndefined(
+			Arr.findFirst(basePlan?.items ?? [], (entry) => entry.featureId === featureId),
+		)
 		// The catalog quotes `amount` per `billingUnits` (e.g. $0.05 per 1,000
 		// events); every consumer here prices ONE unit, so normalize once.
 		const rawBillingUnits = item?.price?.billingUnits ?? 1
@@ -271,34 +303,36 @@ export function buildSpendModel({
 			unlimited: balance?.unlimited === true,
 			// A hard-capped feature bills no overage — see `billsOverage`.
 			overageAllowed: balance?.overageAllowed,
+			overageLimit: spendLimitFor(customer, featureId)?.overageLimit,
 		}
 	}
 
 	const spend = cycleSpend({ baseDollars, features: pricing })
 	const unpricedAddOn = Arr.some(charges, (charge) => charge.kind === "addOn" && charge.dollars === null)
 
-	const features: FeatureSpend[] = Arr.map(SPEND_FEATURES, (featureId) => {
+	// Every SPEND_FEATURES id was priced above, so no feature is dropped here.
+	const features: FeatureSpend[] = Arr.flatMap(SPEND_FEATURES, (featureId) => {
 		const entry = pricing[featureId]
+		if (entry === undefined) return []
 		const overUnits =
 			entry.unlimited || entry.included == null ? 0 : Math.max(0, entry.used - entry.included)
-		return {
-			...entry,
-			featureId,
-			label: FEATURE_LABELS[featureId],
-			billingUnits: billingUnitsByFeature[featureId] ?? 1,
-			overageUnits: overUnits,
-			overageCents: spend.overageByFeature[featureId] ?? 0,
-		}
+		return [
+			{
+				...entry,
+				featureId,
+				label: FEATURE_LABELS[featureId],
+				billingUnits: billingUnitsByFeature[featureId] ?? 1,
+				overageUnits: overUnits,
+				overageCents: spend.overageByFeature[featureId] ?? 0,
+			},
+		]
 	})
 
-	const topDriver =
-		features.reduce<FeatureSpend | null>(
-			(best, feature) =>
-				feature.overageCents > 0 && (best === null || feature.overageCents > best.overageCents)
-					? feature
-					: best,
-			null,
-		) ?? null
+	const topDriver = Arr.reduce<FeatureSpend, FeatureSpend | null>(features, null, (best, feature) =>
+		feature.overageCents > 0 && (best === null || feature.overageCents > best.overageCents)
+			? feature
+			: best,
+	)
 
 	const cycle = cycleWindow(customer, nowMs)
 	const cycleDays = Math.max(1, Math.round((cycle.endMs - cycle.startMs) / DAY_MS))
@@ -323,12 +357,14 @@ export function buildSpendModel({
 		cycle: { ...cycle, nowMs },
 		dayOfCycle,
 		cycleDays,
-		planName: basePlan?.name ?? activeSub?.plan?.name ?? null,
+		planName:
+			basePlan?.name ?? Option.getOrNull(Option.flatMapNullishOr(activeSub, (sub) => sub.plan?.name)),
 		basePlan,
 		addOns,
-		isCustomPlan:
-			activeSub !== undefined &&
-			!Arr.some(catalog, (plan) => plan.id === activeSub.planId && !plan.addOn),
+		isCustomPlan: Option.exists(
+			activeSub,
+			(sub) => !Arr.some(catalog, (plan) => plan.id === sub.planId && !plan.addOn),
+		),
 		charges,
 	}
 }
@@ -343,12 +379,15 @@ export interface CostLine {
 
 /** "Logs, traces and product events": a feature list as one sentence-case phrase. */
 const joinFeatureLabels = (labels: ReadonlyArray<string>): string => {
-	const lower = Arr.map(labels, (label) => Str.toLowerCase(label))
+	// Lowercase the leading word only, and never an acronym: "AI credits" stays as is.
+	const lower = Arr.map(labels, (label) =>
+		/^[A-Z]{2}/.test(label) ? label : Str.toLowerCase(Str.slice(0, 1)(label)) + Str.slice(1)(label),
+	)
 	const phrase =
 		lower.length <= 1
 			? (lower[0] ?? "")
 			: `${Arr.join(lower.slice(0, -1), ", ")} and ${lower[lower.length - 1]}`
-	return Str.toUpperCase(phrase.charAt(0)) + Str.slice(1)(phrase)
+	return Str.toUpperCase(Str.slice(0, 1)(phrase)) + Str.slice(1)(phrase)
 }
 
 /**
@@ -370,21 +409,17 @@ export function costBreakdown(model: SpendModel): ReadonlyArray<CostLine> {
 			cents: baseKnown && charge.dollars !== null ? Math.round(charge.dollars * 100) : null,
 		}),
 	)
-	const plan = model.charges.find((charge) => charge.kind === "plan")
-	const planLine =
-		plan === undefined
-			? []
-			: [
-					{
-						key: plan.key,
-						label: `${sentenceCasePlanName(plan.name)} plan`,
-						detail: detailOf(plan),
-						cents: baseKnown
-							? model.baseCents -
-								Arr.reduce(addOnLines, 0, (sum, line) => sum + (line.cents ?? 0))
-							: null,
-					},
-				]
+	const planLine = Arr.map(
+		Arr.fromOption(Arr.findFirst(model.charges, (charge) => charge.kind === "plan")),
+		(plan) => ({
+			key: plan.key,
+			label: `${sentenceCasePlanName(plan.name)} plan`,
+			detail: detailOf(plan),
+			cents: baseKnown
+				? model.baseCents - Arr.reduce(addOnLines, 0, (sum, line) => sum + (line.cents ?? 0))
+				: null,
+		}),
+	)
 	const drivers = Arr.filter(model.features, (feature) => feature.overageCents > 0)
 	return [
 		...planLine,
@@ -416,6 +451,7 @@ export interface CumulativePoint {
 	readonly metrics: number | null
 	readonly browser_sessions: number | null
 	readonly product_events: number | null
+	readonly ai_credits: number | null
 	/** Cumulative total so far, for the tooltip. `null` for future days. */
 	readonly total: number | null
 	/**
@@ -445,28 +481,34 @@ export interface CumulativePoint {
  * series is scaled to land on the metered total. Without that, the chart's last
  * point contradicts the "spend so far" KPI directly above it, and the customer
  * has no way to tell which one is their bill.
+ *
+ * AI credits are not ingest, so their daily shape comes from the billing provider's own
+ * events (`aiDaily`); until that loads, the band stays flat.
  */
 export function buildCumulativeSeries({
 	daily,
+	aiDaily,
 	model,
 }: {
 	readonly daily: DailySpendResponse | undefined
+	readonly aiDaily?: AiCreditUsageResponse | undefined
 	readonly model: SpendModel
 }): ReadonlyArray<CumulativePoint> {
 	if (!daily || daily.days.length === 0) return []
 
 	const baseDollars = model.baseCents / 100
+	const aiCreditsByDate = new Map(Arr.map(aiDaily?.days ?? [], (day) => [day.date, day.credits] as const))
 
+	const volumes = {
+		logs: (day) => day.logsGB,
+		traces: (day) => day.tracesGB,
+		metrics: (day) => day.metricsGB,
+		browser_sessions: (day) => day.browserSessions,
+		product_events: (day) => day.productEvents ?? 0,
+		ai_credits: (day) => aiCreditsByDate.get(day.date) ?? 0,
+	} satisfies Record<SpendFeatureId, (day: DailySpendResponse["days"][number]) => number>
 	const volumeOf = (day: DailySpendResponse["days"][number], featureId: SpendFeatureId): number =>
-		featureId === "logs"
-			? day.logsGB
-			: featureId === "traces"
-				? day.tracesGB
-				: featureId === "metrics"
-					? day.metricsGB
-					: featureId === "browser_sessions"
-						? day.browserSessions
-						: (day.productEvents ?? 0)
+		volumes[featureId](day)
 
 	const byFeature = new Map<
 		SpendFeatureId,
@@ -492,11 +534,12 @@ export function buildCumulativeSeries({
 		metrics: 0,
 		browser_sessions: 0,
 		product_events: 0,
+		ai_credits: 0,
 	} satisfies Record<SpendFeatureId, number>
 
 	const todayMs = Math.floor(model.cycle.nowMs / DAY_MS) * DAY_MS
 	const lastDay = daily.days[daily.days.length - 1]
-	const lastDayMs = lastDay ? Date.parse(`${lastDay.date}T00:00:00Z`) : todayMs
+	const lastDayMs = lastDay !== undefined ? Date.parse(`${lastDay.date}T00:00:00Z`) : todayMs
 	const projectedTotal = model.projectedCents / 100
 
 	return Arr.map(daily.days, (day) => {
@@ -514,13 +557,7 @@ export function buildCumulativeSeries({
 			}
 		}
 
-		const total =
-			baseDollars +
-			accrued.logs +
-			accrued.traces +
-			accrued.metrics +
-			accrued.browser_sessions +
-			accrued.product_events
+		const total = Arr.reduce(SPEND_FEATURES, baseDollars, (sum, featureId) => sum + accrued[featureId])
 
 		// Two anchors only. Recharts joins them into one straight dashed segment,
 		// which is the honest shape for a linear projection — a curve through
@@ -537,6 +574,7 @@ export function buildCumulativeSeries({
 			metrics: future ? null : accrued.metrics,
 			browser_sessions: future ? null : accrued.browser_sessions,
 			product_events: future ? null : accrued.product_events,
+			ai_credits: future ? null : accrued.ai_credits,
 			total: future ? null : total,
 			projected,
 			future,

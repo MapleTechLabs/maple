@@ -1,4 +1,4 @@
-import { Option } from "effect"
+import { Option, Array as Arr } from "effect"
 import type { Command } from "foldkit"
 import * as Keyed from "@maple/views/data/keyed"
 import { requestKey } from "@maple/views/data/request-key"
@@ -16,6 +16,7 @@ import {
 	LoadRailway,
 	LoadScrapeTargets,
 	LoadVercel,
+	LoadSearchConsole,
 	LoadSupabase,
 } from "./command"
 import type { Message } from "./message"
@@ -37,6 +38,7 @@ const OPERATIONS = {
 	supabase: "integrations.supabaseStatus",
 	linear: "integrations.linearStatus",
 	github: "integrations.githubStatus",
+	searchConsole: "integrations.searchConsoleStatus",
 	chat: "chatIntegration.connectors",
 	scrapeTargets: "scrapeTargets.list",
 } satisfies { readonly [K in keyof Statuses]: string }
@@ -136,6 +138,12 @@ export const requestStatus = (
 				(all, github) => ({ ...all, github }),
 				(slotKey) => LoadGithub({ key: slotKey }),
 			)
+		case "searchConsole":
+			return go(
+				s.searchConsole,
+				(all, searchConsole) => ({ ...all, searchConsole }),
+				(slotKey) => LoadSearchConsole({ key: slotKey }),
+			)
 		case "chat":
 			return go(
 				s.chat,
@@ -153,17 +161,14 @@ export const requestStatus = (
 
 /** Runs steps in order, threading the Model and collecting their Commands and last OutMessage. */
 export const chain = (model: Model, steps: ReadonlyArray<(model: Model) => Return>): Return =>
-	steps.reduce<Return>(
-		(acc, next) => {
-			const result = next(acc.model)
-			return {
-				model: result.model,
-				commands: [...(acc.commands ?? []), ...(result.commands ?? [])],
-				outMessage: result.outMessage ?? acc.outMessage,
-			}
-		},
-		{ model },
-	)
+	Arr.reduce<(typeof steps)[number], Return>(steps, { model }, (acc, next) => {
+		const result = next(acc.model)
+		return {
+			model: result.model,
+			commands: [...(acc.commands ?? []), ...(result.commands ?? [])],
+			outMessage: result.outMessage ?? acc.outMessage,
+		}
+	})
 
 export const STATUS_NAMES: ReadonlyArray<keyof Statuses> = [
 	"cloudflare",
@@ -176,6 +181,7 @@ export const STATUS_NAMES: ReadonlyArray<keyof Statuses> = [
 	"supabase",
 	"linear",
 	"github",
+	"searchConsole",
 	"chat",
 	"scrapeTargets",
 ]

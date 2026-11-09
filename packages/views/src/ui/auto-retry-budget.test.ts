@@ -45,9 +45,8 @@ describe("auto-retry budget", () => {
 	})
 
 	test("manual retries after the last probe do not keep a spent budget alive", () => {
-		const spent = Array.from({ length: 6 }).reduce<RetryBudget>(
-			(budget) => probed(budget, budget.nextAt, MID),
-			resume(undefined, 0, MID),
+		const spent = Arr.reduce(Arr.range(1, 6), resume(undefined, 0, MID), (budget: RetryBudget) =>
+			probed(budget, budget.nextAt, MID),
 		)
 		const lastProbe = spent.touchedAt
 		const remounted = Arr.reduce([10_000, 30_000, 50_000], spent, (budget, offset) =>

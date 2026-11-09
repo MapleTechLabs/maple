@@ -1,6 +1,7 @@
 import {
 	type ActorId,
 	ErrorIncidentDocument,
+	ErrorIssueAffectedUsersResponse,
 	ErrorIncidentsListResponse,
 	ErrorIssueDetailResponse,
 	ErrorIssueDocument,
@@ -24,14 +25,27 @@ import {
 	type WarehouseReadError,
 } from "@maple/domain/http"
 import * as PG from "@maple-dev/effect-orm/postgres"
-import { ErrorIncidents, type ErrorIncidentRow, ErrorIssues } from "@maple/db/tables"
+import { ErrorIncidents, type ErrorIncidentRow, ErrorIssueFingerprints, ErrorIssues } from "@maple/db/tables"
 import { CH, formatWarehouseDateTime, parseWarehouseDateTime } from "@maple/query-engine"
-import { Clock, Context, DateTime, Effect, Layer, Match, Schema, Array as Arr } from "effect"
+import {
+	Clock,
+	Context,
+	DateTime,
+	Effect,
+	Layer,
+	Match,
+	Option,
+	Schema,
+	Array as Arr,
+	String as Str,
+} from "effect"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import type { TenantContext } from "@maple/backend/services/auth/AuthService"
 import { WarehouseQueryService } from "@maple/backend/services/warehouse/WarehouseQueryService"
+import { isMissingErrorEventsUserId } from "@maple/backend/services/warehouse/missing-table"
 import { ErrorIssueWorkflowService } from "./ErrorIssueWorkflowService"
 import { makeErrorDatabaseExecute } from "./error-persistence"
+import { issueFingerprintHashes } from "./issue-fingerprints"
 
 const decodeErrorIssueIdSync = Schema.decodeUnknownSync(ErrorIssueDocument.fields.id)
 const encodeIssueListCursor = Schema.encodeSync(IssueListCursor)
@@ -67,6 +81,20 @@ const CLOSED_LIST_WORKFLOW_STATES: ReadonlyArray<WorkflowState> = [
 
 type IssueColumns = PG.ColumnAccessor<typeof ErrorIssues.columns>
 type IssueConditions = ($: IssueColumns) => Array<PG.Condition | undefined>
+
+/** The issue's own hash or one merged into it is in `hashes`. Empty matches nothing. */
+const ownsAnyHash = ($: IssueColumns, orgId: OrgId, hashes: ReadonlyArray<string>) =>
+	hashes.length === 0
+		? $.fingerprintHash.in_()
+		: PG.or(
+				$.fingerprintHash.in_(...hashes),
+				PG.inSubquery(
+					$.id,
+					PG.from(ErrorIssueFingerprints)
+						.select("issueId")
+						.where(($alias) => [$alias.orgId.eq(orgId), $alias.fingerprintHash.in_(...hashes)]),
+				),
+			)
 
 /** Shared SQL ordering expression for the UI's critical-first issue ordering. */
 const issueSeverityOrder = ($: IssueColumns) =>
@@ -152,16 +180,70 @@ export interface ErrorIssueReadModelsPublicApi {
 		ErrorIssueDetailResponse,
 		ErrorPersistenceError | ErrorIssueNotFoundError | WarehouseReadError
 	>
+	/** The end users an issue hit in the window; unattributed on a cluster without `UserId`. */
+	readonly listIssueAffectedUsers: (
+		orgId: OrgId,
+		issueId: ErrorIssueId,
+		opts: { readonly startTime: string; readonly endTime: string; readonly limit?: number },
+	) => Effect.Effect<
+		ErrorIssueAffectedUsersResponse,
+		ErrorPersistenceError | ErrorIssueNotFoundError | WarehouseReadError
+	>
+	/** Newest first, at most `limit` (default 200). */
 	readonly listIssueIncidents: (
 		orgId: OrgId,
 		issueId: ErrorIssueId,
+		opts?: { readonly limit?: number },
 	) => Effect.Effect<ErrorIncidentsListResponse, ErrorPersistenceError | ErrorIssueNotFoundError>
+	/** Newest first, at most `limit` (default 500). */
 	readonly listOpenIncidents: (
 		orgId: OrgId,
+		opts?: { readonly limit?: number },
+	) => Effect.Effect<ErrorIncidentsListResponse, ErrorPersistenceError>
+	/** Incidents of several issues in one read, newest first; an unknown issue id has none. */
+	readonly listIncidentsOfIssues: (
+		orgId: OrgId,
+		issueIds: Arr.NonEmptyReadonlyArray<ErrorIssueId>,
+		opts: { readonly limit: number },
 	) => Effect.Effect<ErrorIncidentsListResponse, ErrorPersistenceError>
 }
 
 export type ErrorIssueReadModelsServiceApi = ErrorIssueReadModelsPublicApi
+
+const UNATTRIBUTED_USERS = new ErrorIssueAffectedUsersResponse({
+	affectedUsers: 0,
+	hitsWithUser: 0,
+	hits: 0,
+	users: [],
+	attributed: false,
+})
+
+/** The two affected-user reads as one answer; either missing `UserId` makes it unattributed. */
+export const affectedUsersResponse = (
+	count: Option.Option<CH.IssueAffectedUserCountOutput | undefined>,
+	users: Option.Option<ReadonlyArray<CH.IssueAffectedUserOutput>>,
+): ErrorIssueAffectedUsersResponse => {
+	if (Option.isNone(count) || Option.isNone(users)) return UNATTRIBUTED_USERS
+	const totals = count.value
+	return new ErrorIssueAffectedUsersResponse({
+		affectedUsers: totals?.affectedUsers ?? 0,
+		hitsWithUser: totals?.hitsWithUser ?? 0,
+		hits: totals?.hits ?? 0,
+		users: Arr.map(users.value, (row) => ({
+			userId: row.userId,
+			hits: row.hits,
+			lastSeenMs: Math.max(0, DateTime.toEpochMillis(row.lastSeen)),
+		})),
+		attributed: true,
+	})
+}
+
+/** A read naming `error_events.UserId`, `None` on a cluster that has not applied migration 0057. */
+const userIdRead = <A, E, R>(read: Effect.Effect<A, E, R>): Effect.Effect<Option.Option<A>, E, R> =>
+	read.pipe(
+		Effect.asSome,
+		Effect.catchIf(isMissingErrorEventsUserId, () => Effect.succeed(Option.none<A>())),
+	)
 
 const make: Effect.Effect<
 	ErrorIssueReadModelsServiceApi,
@@ -246,7 +328,7 @@ const make: Effect.Effect<
 		const endMs = finiteMs(opts.endTime)
 		const startMs = finiteMs(opts.startTime)
 		const sinceMs = finiteMs(opts.introducedAfter)
-		const pattern = opts.search ? `%${opts.search.replace(/[\\%_]/g, (ch) => `\\${ch}`)}%` : undefined
+		const pattern = opts.search ? `%${Str.replace(/[\\%_]/g, "\\$&")(opts.search)}%` : undefined
 		const conditions: IssueConditions = ($) => [
 			$.orgId.eq(orgId),
 			opts.workflowState ? $.workflowState.eq(opts.workflowState) : undefined,
@@ -272,10 +354,8 @@ const make: Effect.Effect<
 						$.errorLabel.ilike(pattern),
 						$.serviceName.ilike(pattern),
 					),
-			opts.fingerprintHashes === undefined
-				? undefined
-				: $.fingerprintHash.in_(...opts.fingerprintHashes),
-			envHashes === undefined ? undefined : $.fingerprintHash.in_(...envHashes),
+			opts.fingerprintHashes === undefined ? undefined : ownsAnyHash($, orgId, opts.fingerprintHashes),
+			envHashes === undefined ? undefined : ownsAnyHash($, orgId, envHashes),
 			opts.assignedActorId ? $.assignedActorId.eq(opts.assignedActorId) : undefined,
 			opts.includeArchived ? undefined : $.archivedAt.isNull(),
 			endMs === undefined ? undefined : $.firstSeenAt.lt(endMs),
@@ -413,10 +493,12 @@ const make: Effect.Effect<
 		const sampleLimit = opts.sampleLimit ?? 25
 		const tenant = systemTenant(orgId)
 		const isErrorKind = issueRow.kind === "error"
+		const fingerprintHashes = (yield* dbExecute((db) =>
+			issueFingerprintHashes(db, orgId, [issueRow]),
+		)).get(issueRow.id) ?? [issueRow.fingerprintHash]
 
-		const timeseriesCompiled = CH.compile(CH.errorIssueTimeseriesQuery(), {
+		const timeseriesCompiled = CH.compile(CH.errorIssueTimeseriesQuery({ fingerprintHashes }), {
 			orgId,
-			fingerprintHash: issueRow.fingerprintHash,
 			startTime: formatWarehouseDateTime(startMs),
 			endTime: formatWarehouseDateTime(endMs),
 			bucketSeconds,
@@ -428,12 +510,14 @@ const make: Effect.Effect<
 				})
 			: Effect.succeed([])
 
-		const samplesCompiled = CH.compile(CH.errorIssueSampleTracesQuery({ limit: sampleLimit }), {
-			orgId,
-			fingerprintHash: issueRow.fingerprintHash,
-			startTime: formatWarehouseDateTime(startMs),
-			endTime: formatWarehouseDateTime(endMs),
-		})
+		const samplesCompiled = CH.compile(
+			CH.errorIssueSampleTracesQuery({ fingerprintHashes, limit: sampleLimit }),
+			{
+				orgId,
+				startTime: formatWarehouseDateTime(startMs),
+				endTime: formatWarehouseDateTime(endMs),
+			},
+		)
 		const samplesEffect = isErrorKind
 			? warehouse.compiledQuery(tenant, samplesCompiled, {
 					profile: "list",
@@ -441,9 +525,8 @@ const make: Effect.Effect<
 				})
 			: Effect.succeed([])
 
-		const environmentsCompiled = CH.compile(CH.errorIssueEnvironmentsQuery(), {
+		const environmentsCompiled = CH.compile(CH.errorIssueEnvironmentsQuery({ fingerprintHashes }), {
 			orgId,
-			fingerprintHash: issueRow.fingerprintHash,
 			startTime: formatWarehouseDateTime(startMs),
 			endTime: formatWarehouseDateTime(endMs),
 		})
@@ -468,7 +551,7 @@ const make: Effect.Effect<
 			[timeseriesEffect, samplesEffect, environmentsEffect, incidentsEffect],
 			{ concurrency: 4 },
 		)
-		const issue = (yield* workflow.hydrateIssueRows(orgId, [issueRow]))[0]!
+		const issue = yield* workflow.hydrateIssue(orgId, issueRow)
 		const timeseries = Arr.map(
 			timeseriesRows,
 			(row) =>
@@ -504,9 +587,55 @@ const make: Effect.Effect<
 		})
 	})
 
+	const listIssueAffectedUsers: ErrorIssueReadModelsServiceApi["listIssueAffectedUsers"] = Effect.fn(
+		"ErrorIssueReadModelsService.listIssueAffectedUsers",
+	)(function* (orgId, issueId, opts) {
+		yield* Effect.annotateCurrentSpan({ orgId, "maple.issue.id": issueId })
+		const issueRow = yield* workflow.requireIssue(orgId, issueId)
+		// Alert and anomaly issues key on synthetic fingerprints that never reach `error_events`.
+		if (issueRow.kind !== "error") return UNATTRIBUTED_USERS
+		const fingerprintHashes = (yield* dbExecute((db) =>
+			issueFingerprintHashes(db, orgId, [issueRow]),
+		)).get(issueRow.id) ?? [issueRow.fingerprintHash]
+		const tenant = systemTenant(orgId)
+		const params = { orgId, startTime: opts.startTime, endTime: opts.endTime }
+		const [count, users] = yield* Effect.all(
+			[
+				userIdRead(
+					warehouse.compiledQuery(
+						tenant,
+						CH.compile(CH.issueAffectedUserCountQuery({ fingerprintHashes }), params),
+						{ profile: "aggregation", context: "issueAffectedUserCount" },
+					),
+				),
+				userIdRead(
+					warehouse.compiledQuery(
+						tenant,
+						CH.compile(
+							CH.issueAffectedUsersQuery({ fingerprintHashes, limit: opts.limit ?? 10 }),
+							params,
+						),
+						{ profile: "list", context: "issueAffectedUsers" },
+					),
+				),
+			],
+			{ concurrency: 2 },
+		)
+		const response = affectedUsersResponse(
+			Option.map(count, (rows) => rows[0]),
+			users,
+		)
+		yield* Effect.annotateCurrentSpan({
+			"maple.issue.fingerprints": fingerprintHashes.length,
+			"maple.issue.affected_users": response.affectedUsers,
+			"maple.issue.user_attributed": response.attributed,
+		})
+		return response
+	})
+
 	const listIssueIncidents: ErrorIssueReadModelsServiceApi["listIssueIncidents"] = Effect.fn(
 		"ErrorIssueReadModelsService.listIssueIncidents",
-	)(function* (orgId, issueId) {
+	)(function* (orgId, issueId, opts) {
 		yield* Effect.annotateCurrentSpan({ orgId, "maple.issue.id": issueId })
 		yield* workflow.requireIssue(orgId, issueId)
 		const rows = yield* dbExecute((db) =>
@@ -515,7 +644,7 @@ const make: Effect.Effect<
 					.select()
 					.where(($) => [$.orgId.eq(orgId), $.issueId.eq(issueId)])
 					.orderBy(["lastTriggeredAt", "desc"])
-					.limit(200),
+					.limit(opts?.limit ?? 200),
 			),
 		)
 		yield* Effect.annotateCurrentSpan("result.incidentCount", rows.length)
@@ -526,7 +655,7 @@ const make: Effect.Effect<
 
 	const listOpenIncidents: ErrorIssueReadModelsServiceApi["listOpenIncidents"] = Effect.fn(
 		"ErrorIssueReadModelsService.listOpenIncidents",
-	)(function* (orgId) {
+	)(function* (orgId, opts) {
 		yield* Effect.annotateCurrentSpan({ orgId })
 		const rows = yield* dbExecute((db) =>
 			db.run(
@@ -534,7 +663,27 @@ const make: Effect.Effect<
 					.select()
 					.where(($) => [$.orgId.eq(orgId), $.status.eq("open")])
 					.orderBy(["lastTriggeredAt", "desc"])
-					.limit(500),
+					.limit(opts?.limit ?? 500),
+			),
+		)
+		yield* Effect.annotateCurrentSpan("result.incidentCount", rows.length)
+		return new ErrorIncidentsListResponse({
+			incidents: Arr.map(rows, rowToIncident),
+		})
+	})
+
+	const listIncidentsOfIssues: ErrorIssueReadModelsServiceApi["listIncidentsOfIssues"] = Effect.fn(
+		"ErrorIssueReadModelsService.listIncidentsOfIssues",
+	)(function* (orgId, issueIds, opts) {
+		yield* Effect.annotateCurrentSpan({ orgId, "maple.issue.count": issueIds.length })
+		const [first, ...rest] = issueIds
+		const rows = yield* dbExecute((db) =>
+			db.run(
+				PG.from(ErrorIncidents)
+					.select()
+					.where(($) => [$.orgId.eq(orgId), $.issueId.in_(first, ...rest)])
+					.orderBy(["lastTriggeredAt", "desc"])
+					.limit(opts.limit),
 			),
 		)
 		yield* Effect.annotateCurrentSpan("result.incidentCount", rows.length)
@@ -548,8 +697,10 @@ const make: Effect.Effect<
 		countIssues,
 		countOpenIssuesByService,
 		getIssue,
+		listIssueAffectedUsers,
 		listIssueIncidents,
 		listOpenIncidents,
+		listIncidentsOfIssues,
 	})
 })
 

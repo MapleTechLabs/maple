@@ -3,7 +3,7 @@ import { isQualityTier, sessionTagsFromSearch } from "../../../components/replay
 import { Option, Array as Arr } from "effect"
 import { AsyncData } from "foldkit"
 import { formatCompact } from "@maple/views/ui/filters/range-format"
-import type { SessionRow } from "../kit/session-row"
+import { sessionListItems, type SessionRow } from "../kit/session-row"
 import type { Model, ReplaysFacets, Search } from "./model"
 
 /** `MAX_RETAINED_REPLAYS`. */
@@ -31,14 +31,35 @@ export const nextCursor = (model: Model): string | null => {
 	return last?.hasMore === true ? last.nextCursor : null
 }
 
+/** The latest loaded pages, in a row, none of whose sessions shows as its own row (all folded). */
+export const stalledPages = (model: Model): number => {
+	const shown = new Set(
+		Arr.flatMap(
+			sessionListItems(allRows(model), {
+				collapse: collapsesLowSignal(model.search),
+				expanded: model.expandedRuns,
+				nowMs: model.nowMs,
+			}),
+			(item) => (item.kind === "session" ? [item.session.sessionId] : []),
+		),
+	)
+	return Arr.takeWhile(
+		Arr.reverse(model.pagination.pages),
+		(page) => !Arr.some(page.rows, (row) => shown.has(row.sessionId)),
+	).length
+}
+
 /** `ReachEndSentinel` re-observes when `loading` or its `onReachEnd` deps change: the remount key. */
 export const listEndKey = (model: Model): string =>
-	[
-		model.pagination.generation,
-		model.pagination.isFetching ? "fetching" : "idle",
-		AsyncData.isSuccess(model.firstPage.data) ? "settled" : "waiting",
-		nextCursor(model) ?? "",
-	].join("|")
+	Arr.join(
+		[
+			String(model.pagination.generation),
+			model.pagination.isFetching ? "fetching" : "idle",
+			AsyncData.isSuccess(model.firstPage.data) ? "settled" : "waiting",
+			nextCursor(model) ?? "",
+		],
+		"|",
+	)
 
 export const isCapped = (model: Model): boolean => allRows(model).length >= MAX_RETAINED_REPLAYS
 
@@ -93,7 +114,10 @@ export const engagedCount = (model: Model): number | undefined => {
 	const facets = facetsOf(model)
 	if (selectedTags(model.search).includes("engaged")) return facets?.totalSessions
 	if (facets === undefined) return undefined
-	return facets.tags.find((tag) => tag.name === "engaged")?.count ?? 0
+	return Option.match(
+		Arr.findFirst(facets.tags, (tag) => tag.name === "engaged"),
+		{ onNone: () => 0, onSome: (tag) => tag.count },
+	)
 }
 
 /** A tier filter already decided what to show; folding its rows would hide the answer. */

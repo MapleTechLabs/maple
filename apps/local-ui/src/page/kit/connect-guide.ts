@@ -56,7 +56,7 @@ export const connectGuide = <M>(h: HtmlBuilder<M>, options: ConnectGuideOptions<
 			h.pre(
 				[
 					h.Class(
-						"overflow-x-auto rounded-md border bg-muted/40 px-3 py-2 font-mono text-2xs leading-relaxed",
+						"overflow-x-auto rounded-md border bg-surface-sunken px-3 py-2 font-mono text-2xs leading-relaxed",
 					),
 				],
 				[env],

@@ -82,6 +82,7 @@ const layerFor = (
 	const provider: VcsProviderClient = {
 		id: "github",
 		reviewerMention: "@maple-review-bot",
+		webhookSignatureHeader: "x-hub-signature-256",
 		webhookToJobs: unused,
 		fetchRepositories: unused,
 		fetchCommits: unused,
@@ -337,8 +338,8 @@ describe("PrReviewConversationService", () => {
 			)
 			assert.equal(outcome.outcome, "started")
 			assert.deepEqual(recorded.reactions, ["901:eyes"])
-			assert.include(recorded.begun[0]!, "@octocat mentioned you on pull request #612")
-			assert.include(recorded.begun[0]!, "> @maple why does this need a lock?")
+			assert.include(recorded.begun[0], "@octocat mentioned you on pull request #612")
+			assert.include(recorded.begun[0], "> @maple why does this need a lock?")
 			yield* conversations.submitReply(
 				orgId,
 				outcome.replyId!,
@@ -426,7 +427,7 @@ describe("PrReviewConversationService", () => {
 				comment({ body: "@maple fix the null check" }),
 			)
 			assert.equal(outcome.outcome, "started")
-			assert.include(recorded.begun[0]!, "They asked you to fix it")
+			assert.include(recorded.begun[0], "They asked you to fix it")
 			const replyId = outcome.replyId!
 			assert.include(
 				yield* conversations.stageEdit(orgId, replyId, {
@@ -452,8 +453,8 @@ describe("PrReviewConversationService", () => {
 					files: [{ path: "src/a.ts", content: "const a = 1\nif (x != null) {\n}\n" }],
 				},
 			])
-			assert.include(recorded.posted[0]!.body, "Guarded the null case.")
-			assert.include(recorded.posted[0]!.body, "Pushed `ccccccc` to `feat/orders`.")
+			assert.include(recorded.posted[0].body, "Guarded the null case.")
+			assert.include(recorded.posted[0].body, "Pushed `ccccccc` to `feat/orders`.")
 		}).pipe(
 			Effect.provide(
 				layerFor(testDb, recorded, { files: { "src/a.ts": "const a = 1\nif (x) {\n}\n" } }),
@@ -471,7 +472,7 @@ describe("PrReviewConversationService", () => {
 				comment({ body: "@maple fix it" }),
 			)
 			assert.equal(outcome.outcome, "failed")
-			assert.include(recordedA.posted[0]!.body, "write access")
+			assert.include(recordedA.posted[0].body, "write access")
 			assert.lengthOf(recordedA.begun, 0)
 		}).pipe(Effect.provide(layerFor(createTestDb(trackedDbs), recordedA, { permission: "read" })))
 
@@ -484,7 +485,7 @@ describe("PrReviewConversationService", () => {
 				comment({ body: "@maple fix it" }),
 			)
 			assert.equal(outcome.outcome, "failed")
-			assert.include(recordedB.posted[0]!.body, "fork")
+			assert.include(recordedB.posted[0].body, "fork")
 		}).pipe(
 			Effect.provide(
 				layerFor(createTestDb(trackedDbs), recordedB, {
@@ -510,7 +511,7 @@ describe("PrReviewConversationService", () => {
 			moved.current = head({ headSha: sha("2222222222222222222222222222222222222222") })
 			yield* conversations.submitReply(orgId, outcome.replyId!, "Done.")
 			assert.lengthOf(recordedC.commits, 0)
-			assert.include(recordedC.posted[0]!.body, "the branch moved")
+			assert.include(recordedC.posted[0].body, "the branch moved")
 		}).pipe(
 			Effect.provide(
 				Layer.suspend(() =>

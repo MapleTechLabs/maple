@@ -275,7 +275,7 @@ describe("org switcher", () => {
 			{ update, view },
 			given(signedIn()),
 			Mount.resolve(MeasureSidebarOverflow, Message.MeasuredSidebarOverflow()),
-			click(role("button", { name: /Self Hosted/ })),
+			click(role("button", { name: /Self-hosted/ })),
 			Command.expectExact(LoadNamespaces({ orgId: "org_parity" })),
 			Mount.resolve(PositionMenu, position(Menu.Org())),
 			expect(text(/Loading namespaces/)).toExist(),
@@ -290,8 +290,8 @@ describe("org switcher", () => {
 			Command.resolve(SaveNamespace, Message.CompletedSaveNamespace()),
 			expect(role("menu")).toBeAbsent(),
 			Mount.expectEnded(PositionMenu),
-			expect(role("button", { name: /^Self Hosted\s*shop$/ })).toExist(),
-			click(role("button", { name: /^Self Hosted\s*shop$/ })),
+			expect(role("button", { name: /^Self-hosted\s*shop$/ })).toExist(),
+			click(role("button", { name: /^Self-hosted\s*shop$/ })),
 			Command.expectExact(LoadNamespaces({ orgId: "org_parity" })),
 			Mount.resolve(PositionMenu, position(Menu.Org())),
 			// The listed names stay up while the fresh window is read.
@@ -303,7 +303,7 @@ describe("org switcher", () => {
 			click(role("menuitem", { name: "All namespaces" })),
 			Command.resolve(SaveNamespace, Message.CompletedSaveNamespace()),
 			Mount.expectEnded(PositionMenu),
-			expect(role("button", { name: "Self Hosted" })).toExist(),
+			expect(role("button", { name: "Self-hosted" })).toExist(),
 		)
 	})
 })
@@ -313,7 +313,7 @@ describe("namespace search", () => {
 	const openWith = (namespaces: ReadonlyArray<string>) => [
 		given(signedIn({ namespaces: NamespacesData.Success({ data: namespaces }) })),
 		Mount.resolve(MeasureSidebarOverflow, Message.MeasuredSidebarOverflow()),
-		click(role("button", { name: /Self Hosted/ })),
+		click(role("button", { name: /Self-hosted/ })),
 		Command.resolve(LoadNamespaces, Message.SucceededLoadNamespaces({ orgId: "org_parity", namespaces })),
 		Mount.resolve(PositionMenu, position(Menu.Org())),
 	]

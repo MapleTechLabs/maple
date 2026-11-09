@@ -196,16 +196,17 @@ describe("reading the answers back", () => {
 	})
 
 	it("finds the reviewed files that have a patch in a pr_changed_files answer", () => {
-		const answer = renderChangedFiles("octo/shop", 7, [
-			file("src/orders.ts"),
-			file("src/orders.test.ts"),
-			file("src/moved.ts", { previousPath: "src/old.ts" }),
-			file("infra/alchemy.run.ts"),
-			file("package.json"),
-			file("docs/orders.md"),
-			file("bun.lock"),
-			file("assets/logo.ts", { patch: null }),
-		]).content[0]!.text
+		const answer =
+			renderChangedFiles("octo/shop", 7, [
+				file("src/orders.ts"),
+				file("src/orders.test.ts"),
+				file("src/moved.ts", { previousPath: "src/old.ts" }),
+				file("infra/alchemy.run.ts"),
+				file("package.json"),
+				file("docs/orders.md"),
+				file("bun.lock"),
+				file("assets/logo.ts", { patch: null }),
+			]).content[0]?.text ?? ""
 		assert.deepEqual(reviewablePathsInListing(answer), [
 			"src/orders.ts",
 			"src/orders.test.ts",
@@ -220,12 +221,13 @@ describe("reading the answers back", () => {
 			...file("src/big.ts"),
 			patch: `@@ -1,0 +1,1400 @@\n${Str.repeat(1400)(`+${Str.repeat(60)("x")}\n`)}`,
 		}
-		const answer = renderFileDiffs(
-			"octo/shop",
-			7,
-			[file("src/a.ts"), big, file("src/c.ts")],
-			["src/a.ts", "src/missing.ts", "src/big.ts", "src/c.ts"],
-		).content[0]!.text
+		const answer =
+			renderFileDiffs(
+				"octo/shop",
+				7,
+				[file("src/a.ts"), big, file("src/c.ts")],
+				["src/a.ts", "src/missing.ts", "src/big.ts", "src/c.ts"],
+			).content[0]?.text ?? ""
 		assert.include(answer, "Not included")
 		const shown = pathsInDiffAnswer(answer)
 		// The unknown path shows nothing, and the deferred one is named without its diff.
@@ -249,7 +251,7 @@ describe("the typed outputs", () => {
 
 	it("encode through their schemas", () => {
 		const listing = changedFilesOutput("octo/shop", 7, [file("src/a.ts"), file("bun.lock")])
-		const decoded = Schema.decodeUnknownSync(PrChangedFilesOutput)(
+		const decoded = Schema.decodeSync(PrChangedFilesOutput)(
 			Schema.encodeUnknownSync(PrChangedFilesOutput)(listing),
 		)
 		assert.deepEqual(
@@ -257,7 +259,7 @@ describe("the typed outputs", () => {
 			["source", "lockfile"],
 		)
 		const diffs = fileDiffsOutput("octo/shop", 7, [file("src/a.ts")], ["src/a.ts", "nope.ts"])
-		const decodedDiffs = Schema.decodeUnknownSync(PrFileDiffOutput)(
+		const decodedDiffs = Schema.decodeSync(PrFileDiffOutput)(
 			Schema.encodeUnknownSync(PrFileDiffOutput)(diffs),
 		)
 		assert.deepEqual(decodedDiffs.notChanged, ["nope.ts"])

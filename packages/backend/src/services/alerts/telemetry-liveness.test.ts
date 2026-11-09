@@ -176,7 +176,7 @@ describe("holdCeilingMs", () => {
 
 describe("probeLiveness prior-day baseline", () => {
 	it("reads an evening dip against yesterday evening, not the peak the incident opened at", async () => {
-		const tenant = systemTenant(Schema.decodeUnknownSync(OrgId)("org_liveness_prior_day"))
+		const tenant = systemTenant(Schema.decodeSync(OrgId)("org_liveness_prior_day"))
 		const windowStartMs = Date.parse("2026-06-02T01:10:00.000Z")
 		const windowEndMs = Date.parse("2026-06-02T01:15:00.000Z")
 		const baselineStartMs = Date.parse("2026-06-01T17:55:00.000Z")
@@ -235,7 +235,7 @@ describe("probeLiveness environment scoping", () => {
 	// staging traffic for the same service satisfies liveness while production
 	// is dark — exactly the outage the probe exists to veto.
 	it("vetoes when the rule's environment went dark even though the service is loud elsewhere", async () => {
-		const tenant = systemTenant(Schema.decodeUnknownSync(OrgId)("org_liveness_env"))
+		const tenant = systemTenant(Schema.decodeSync(OrgId)("org_liveness_env"))
 		const windowStartMs = Date.parse("2026-06-02T00:10:00.000Z")
 		const windowEndMs = Date.parse("2026-06-02T00:15:00.000Z")
 		const baselineStartMs = Date.parse("2026-06-01T23:55:00.000Z")

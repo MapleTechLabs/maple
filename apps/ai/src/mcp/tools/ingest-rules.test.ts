@@ -39,10 +39,7 @@ const tools = () => {
 	const registrar: McpToolRegistrar = {
 		define: (spec) => {
 			handlers.set(spec.name, (params) =>
-				Schema.decodeUnknownEffect(spec.parameters)(params).pipe(
-					Effect.orDie,
-					Effect.flatMap(spec.handler),
-				),
+				Schema.decodeEffect(spec.parameters)(params).pipe(Effect.orDie, Effect.flatMap(spec.handler)),
 			)
 		},
 	}
@@ -59,9 +56,9 @@ const layerFor = (testDb: TestDb, roles: ReadonlyArray<string>) =>
 		unimplementedMcpToolServices,
 		IngestRuleService.layer,
 		Layer.succeed(CurrentMcpTenant, {
-			orgId: Schema.decodeUnknownSync(OrgId)("org_mcp_rules"),
-			userId: Schema.decodeUnknownSync(UserId)("user_mcp_rules"),
-			roles: Arr.map(roles, (role) => Schema.decodeUnknownSync(RoleName)(role)),
+			orgId: Schema.decodeSync(OrgId)("org_mcp_rules"),
+			userId: Schema.decodeSync(UserId)("user_mcp_rules"),
+			roles: Arr.map(roles, (role) => Schema.decodeSync(RoleName)(role)),
 			authMode: "self_hosted",
 		}),
 	).pipe(

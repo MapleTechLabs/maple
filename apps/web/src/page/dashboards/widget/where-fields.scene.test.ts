@@ -19,7 +19,7 @@ const NOW = Date.parse("2026-10-01T12:00:00Z")
 const anchor = { left: 0, top: 0, bottom: 32, width: 400, viewportHeight: 900 }
 const COUNTRY: FunnelPopulationFilterField = "country"
 
-const document = Schema.decodeUnknownSync(DashboardDocument)({
+const document = Schema.decodeSync(DashboardDocument)({
 	id: "dash_platform",
 	name: "Platform overview",
 	timeRange: { type: "relative", value: "6h" },
@@ -47,10 +47,10 @@ type Command = Readonly<{ name: string; args?: Readonly<Record<string, unknown>>
 type Step = Readonly<{ model: Model; commands: ReadonlyArray<Command> }>
 
 const run = (step: Step, ...messages: ReadonlyArray<Message>): Step =>
-	messages.reduce<Step>((current, message) => {
+	Arr.reduce(messages, step, (current, message) => {
 		const next = update(current.model, message, context)
 		return { model: next.model, commands: [...current.commands, ...(next.commands ?? [])] }
-	}, step)
+	})
 
 const opened = (...messages: ReadonlyArray<Message>): Step =>
 	run(

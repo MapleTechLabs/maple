@@ -115,6 +115,20 @@ describe("evaluateIssueGate", () => {
 		assert.deepStrictEqual(dead, { kind: "investigate" })
 	})
 
+	it("waits on a pass past the budget that is still reporting steps", () => {
+		const closingOut = open({
+			latest: {
+				...diagnosed(STALE_MS + 60 * 1000, "investigating"),
+				progressJson: { updatedAt: NOW - 30 * 1000 },
+			},
+		})
+		assert.deepStrictEqual(closingOut, {
+			kind: "skip",
+			reason: "investigation_in_flight",
+			priorInvestigationId: PRIOR,
+		})
+	})
+
 	it("lets a failed attempt be retried", () => {
 		assert.deepStrictEqual(open({ latest: diagnosed(1000, "failed") }), { kind: "investigate" })
 	})

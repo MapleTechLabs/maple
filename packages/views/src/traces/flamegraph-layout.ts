@@ -1,6 +1,6 @@
 import { spanStartMs } from "@maple/ui/lib/span-tree"
 import type { SpanNode } from "@maple/ui/lib/types"
-import { Array as Arr } from "effect"
+import { Array as Arr, Option } from "effect"
 
 // The bar geometry of `Flamegraph` and `FlamegraphMinimap` (packages/ui `traces/flamegraph*.tsx`).
 
@@ -62,8 +62,10 @@ const packLanes = (
 			(a, b) => a.leftPercent - b.leftPercent,
 		)
 		Arr.forEach(group, (bar) => {
-			const free = lanes.findIndex((end) => bar.leftPercent >= end)
-			const index = free === -1 ? lanes.length : free
+			const index = Option.getOrElse(
+				Arr.findFirstIndex(lanes, (end) => bar.leftPercent >= end),
+				() => lanes.length,
+			)
 			lanes[index] = bar.leftPercent + bar.widthPercent
 			packed.push({ ...bar, lane: laneOffset + index })
 		})
@@ -132,10 +134,12 @@ export const minimapBars = (input: FlamegraphInput): MinimapLayout => {
 
 /** The deepest span under a point of the minimap, as a percent of the trace. */
 export const spanAtMinimapPercent = (input: FlamegraphInput, percent: number): SpanNode | undefined =>
-	Arr.filter(
-		minimapBars(input).bars,
-		(bar) => percent >= bar.leftPercent && percent <= bar.leftPercent + bar.widthPercent,
-	).reduce<MinimapBar | undefined>(
-		(deepest, bar) => (deepest === undefined || bar.depth > deepest.depth ? bar : deepest),
+	Arr.reduce(
+		Arr.filter(
+			minimapBars(input).bars,
+			(bar) => percent >= bar.leftPercent && percent <= bar.leftPercent + bar.widthPercent,
+		),
 		undefined,
+		(deepest: MinimapBar | undefined, bar) =>
+			deepest === undefined || bar.depth > deepest.depth ? bar : deepest,
 	)?.span

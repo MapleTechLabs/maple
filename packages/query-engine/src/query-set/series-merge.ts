@@ -39,11 +39,11 @@ export function collectHiddenResultIds(input: {
 }): Set<string> {
 	return new Set([
 		...Arr.map(
-			input.queries.filter((query) => query.hidden),
+			Arr.filter(input.queries, (query) => query.hidden === true),
 			(query) => query.id,
 		),
 		...Arr.map(
-			(input.formulas ?? []).filter((formula) => formula.hidden),
+			Arr.filter(input.formulas ?? [], (formula) => formula.hidden === true),
 			(formula) => formula.id,
 		),
 	])

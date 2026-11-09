@@ -315,6 +315,8 @@ What it records:
 - **Scrubbed args.** Command args become span attributes in Foldkit. By default only args whose key ends in `Id`/`Ids`, booleans and nulls export; every other value is `[redacted]`. `commandArgs: { allow: ["provider"] }` exports more keys by name, `"all"` and `"none"` switch it wholesale.
 - **Crashes.** A runtime crash is reported as an exception with the Message that crashed it and the last 20 Message tags, then flushed.
 - **Slow phases.** `update` over 16ms and `view` or DOM patch over 50ms become `foldkit.update`, `foldkit.view` and `foldkit.patch` spans. Set `slowPhases` to change the budgets (`0` records every run) or `false` to turn it off.
+- **Navigation length.** A navigation never runs past 30 seconds from its start; one that hits the cap or is open when the page goes away carries `maple.navigation.interrupted: true`.
+- **Web vitals.** With `webVitals: true` (a `MapleFlush.make` option), LCP, CLS, INP, FCP and TTFB are reported as `browser.web_vital` log events linked to the `pageload` span.
 
 | Option                 | Default                               |                                                                               |
 | ---------------------- | ------------------------------------- | ----------------------------------------------------------------------------- |

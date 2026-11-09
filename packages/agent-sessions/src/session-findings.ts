@@ -28,7 +28,7 @@ import {
 	spanStartMs,
 	type SessionTurn,
 } from "./session-turns"
-import { Array as Arr, String as Str } from "effect"
+import { Array as Arr, Option, String as Str } from "effect"
 
 /**
  * A hole this long INSIDE a turn is the framework stalled mid-flight. Gaps
@@ -124,24 +124,25 @@ export function buildSessionFindings(
 	// The LAST failure event in the final turn is the one the turn died on — an
 	// earlier rate-limited retry in the same turn is a finding, not the cause.
 	const cause = summary.failed
-		? events.findLast((event) => turnIndexBySpan.get(event.span.spanId) === lastTurnIndex)
-		: undefined
+		? Arr.findLast(events, (event) => turnIndexBySpan.get(event.span.spanId) === lastTurnIndex)
+		: Option.none()
+	const causeSpanId = Option.getOrUndefined(Option.map(cause, (event) => event.span.spanId))
 
 	const findings = [
-		...failureFindings(events, turns, turnIndexBySpan, cause?.span.spanId, spans),
+		...failureFindings(events, turns, turnIndexBySpan, causeSpanId, spans),
 		...retryFindings(spans, turns, turnIndexBySpan),
 		...truncationFindings(spans, turns, turnIndexBySpan),
 		...stallFindings(turns),
-	].sort(
-		(a, b) =>
-			severityRank(a.severity) - severityRank(b.severity) ||
-			// The terminal failure leads: it is the verdict's own evidence.
-			Number(b.terminal) - Number(a.terminal) ||
-			a.atMs - b.atMs,
-	)
+	].sort((a, b) => {
+		const bySeverity = severityRank(a.severity) - severityRank(b.severity)
+		if (bySeverity !== 0) return bySeverity
+		// The terminal failure leads: it is the verdict's own evidence.
+		if (a.terminal !== b.terminal) return Number(b.terminal) - Number(a.terminal)
+		return a.atMs - b.atMs
+	})
 
 	const verdict: SessionVerdict = summary.failed
-		? { status: "failed", spanId: cause?.span.spanId }
+		? { status: "failed", spanId: causeSpanId }
 		: { status: findings.length > 0 ? "attention" : "clean", spanId: undefined }
 
 	return { verdict, findings }
@@ -168,14 +169,15 @@ function failureFindings(
 		{
 			kind: SessionFailureKind
 			tool: string | undefined
-			members: { span: AiSessionSpan; turnIndex: number }[]
+			members: Arr.NonEmptyArray<{ span: AiSessionSpan; turnIndex: number }>
 		}
 	>()
 	for (const event of events) {
-		const turnIndex = turnIndexBySpan.get(event.span.spanId) ?? 0
-		const group = byLabel.get(event.label) ?? { kind: event.kind, tool: event.tool, members: [] }
-		group.members.push({ span: event.span, turnIndex })
-		byLabel.set(event.label, group)
+		const member = { span: event.span, turnIndex: turnIndexBySpan.get(event.span.spanId) ?? 0 }
+		const group = byLabel.get(event.label)
+		if (group === undefined)
+			byLabel.set(event.label, { kind: event.kind, tool: event.tool, members: [member] })
+		else group.members.push(member)
 	}
 
 	return Arr.map([...byLabel], ([label, group]) => {
@@ -184,10 +186,11 @@ function failureFindings(
 		// links its first event, where the trouble began.
 		const cause =
 			causeSpanId === undefined
-				? undefined
-				: group.members.find((member) => member.span.spanId === causeSpanId)
-		const terminal = cause !== undefined
-		const linked = cause ?? group.members[0]
+				? Option.none()
+				: Arr.findFirst(group.members, (member) => member.span.spanId === causeSpanId)
+		const terminal = Option.isSome(cause)
+		const first = Arr.headNonEmpty(group.members)
+		const linked = Option.getOrElse(cause, () => first)
 		return {
 			id: `failure:${label}`,
 			kind: group.kind,
@@ -204,7 +207,7 @@ function failureFindings(
 					label,
 				),
 			spanId: linked.span.spanId,
-			atMs: spanStartMs(group.members[0].span),
+			atMs: spanStartMs(first.span),
 		}
 	})
 }
@@ -256,7 +259,7 @@ function retryFindings(
 
 	const statuses = Arr.join(
 		Arr.map(
-			[...byStatus].sort((a, b) => b[1] - a[1] || Str.localeCompare(b[0])(a[0])),
+			[...byStatus].sort((a, b) => (b[1] !== a[1] ? b[1] - a[1] : Str.localeCompare(b[0])(a[0]))),
 			([status, count]) => `${status} ×${count}`,
 		),
 		" · ",
@@ -389,12 +392,16 @@ function stallFindings(turns: readonly SessionTurn[]): SessionFinding[] {
 /** `Turn 4 (final)`, `Turns 9, 11`, `Segments 1, 2`, `6 of 14 turns`. */
 function turnListText(indices: readonly number[], turns: readonly SessionTurn[], terminal: boolean): string {
 	const word = turns[0]?.anchorKind === "trace" ? "Segment" : "Turn"
-	if (indices.length === 1) {
-		const one = `${word} ${turns[indices[0]]?.index ?? indices[0] + 1}`
+	const [only] = indices
+	if (indices.length === 1 && only !== undefined) {
+		const one = `${word} ${turns[only]?.index ?? only + 1}`
 		return terminal ? `${one} (final)` : one
 	}
 	if (indices.length > 4) return `${indices.length} of ${turns.length} ${Str.toLowerCase(word)}s`
-	const numbers = indices.map((index) => turns[index]?.index ?? index + 1).join(", ")
+	const numbers = Arr.join(
+		Arr.map(indices, (index) => `${turns[index]?.index ?? index + 1}`),
+		", ",
+	)
 	return `${word}s ${numbers}${terminal ? " (final)" : ""}`
 }
 

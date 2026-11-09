@@ -5,7 +5,7 @@ import { cn } from "@maple/ui/lib/utils"
 import { filterSidebarBody, filterSidebarHeader } from "@maple/views/ui/filters/filter-sidebar"
 import { icon } from "@maple/views/ui/icon"
 import { pressable } from "@maple/views/ui/pressable"
-import { hstackClass } from "@maple/views/ui/stack"
+import { hstack, hstackClass } from "@maple/views/ui/stack"
 import { typography } from "@maple/views/ui/typography"
 import { spinner } from "@maple/views/ui/spinner"
 import { Option, Array as Arr } from "effect"
@@ -30,7 +30,7 @@ const sidebarItem = (
 			onClick: Message.ClickedPickSql({ sql }),
 			className: cn(
 				hstackClass({ gap: "2" }),
-				"w-full rounded-md px-2 py-1 text-left text-xs hover:bg-accent/60 active:bg-accent/60",
+				"w-full rounded-md px-2 py-1 text-left text-xs hover:bg-surface-sunken active:bg-surface-sunken",
 			),
 			attributes: [h.Title(title)],
 		},
@@ -39,7 +39,7 @@ const sidebarItem = (
 
 const tablesList = (h: HtmlBuilder<Message>, model: Model): Html => {
 	if (isAwaitingFirstData(model.tables))
-		return h.div([h.Class("flex h-12 items-center justify-center")], [spinner(h, "size-4")])
+		return hstack(h, { align: "center", justify: "center", className: "h-12" }, [spinner(h, "size-4")])
 	const failure = failureWithoutData(model.tables)
 	if (Option.isSome(failure))
 		return typography(h, { as: "p", size: "xs", className: "break-all text-destructive" }, [

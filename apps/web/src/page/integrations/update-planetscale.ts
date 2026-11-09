@@ -1,4 +1,4 @@
-import { Option, String as Str } from "effect"
+import { Option, String as Str, Array as Arr } from "effect"
 import { AsyncData, Command as FoldkitCommand } from "foldkit"
 import * as Keyed from "@maple/views/data/keyed"
 import type { LoadFailure } from "@maple/views/data/load-failure"
@@ -100,8 +100,8 @@ const seededPicker = (model: Model): Partial<PlanetscaleCardModel> => {
 	const status = planetscaleStatusOf(model)
 	return {
 		selectedOrg: status?.organization ?? null,
-		includeBranches: Field.init(status?.scrape_target?.include_branches.join(", ") ?? ""),
-		excludeBranches: Field.init(status?.scrape_target?.exclude_branches.join(", ") ?? ""),
+		includeBranches: Field.init(Arr.join(status?.scrape_target?.include_branches ?? [], ", ")),
+		excludeBranches: Field.init(Arr.join(status?.scrape_target?.exclude_branches ?? [], ", ")),
 	}
 }
 

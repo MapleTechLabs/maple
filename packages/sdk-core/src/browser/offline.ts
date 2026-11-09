@@ -130,7 +130,7 @@ export function startOfflineQueue(config: OfflineQueueOptions): OfflineQueue {
 		try {
 			// The store is shared by every tab of the origin: tabs drain it in turn, and a
 			// later one finds what an earlier one sent already deleted.
-			if (typeof navigator !== "undefined" && navigator.locks) {
+			if (typeof navigator !== "undefined" && navigator.locks != null) {
 				await navigator.locks.request(`${DB_NAME}-resend`, () => drain())
 			} else {
 				await drain()

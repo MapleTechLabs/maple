@@ -1,7 +1,7 @@
 import { cva } from "class-variance-authority"
 
 export const navigationMenuTriggerStyle = cva(
-	"bg-background hover:bg-muted active:bg-muted focus:bg-muted data-open:hover:bg-muted data-open:active:bg-muted data-open:focus:bg-muted data-open:bg-surface-sunken focus-visible:ring-ring/50 data-popup-open:bg-surface-sunken data-popup-open:hover:bg-muted data-popup-open:active:bg-muted rounded-lg px-2.5 py-1.5 text-xs font-medium focus-visible:ring-1 focus-visible:outline-1 disabled:opacity-50 group/navigation-menu-trigger inline-flex h-9 w-max items-center justify-center disabled:pointer-events-none outline-none",
+	"bg-background hover:bg-accent active:bg-accent focus:bg-accent data-open:hover:bg-accent data-open:active:bg-accent data-open:focus:bg-accent data-open:bg-surface-sunken focus-visible:ring-ring data-popup-open:bg-surface-sunken data-popup-open:hover:bg-accent data-popup-open:active:bg-accent rounded-lg px-2.5 py-1.5 text-xs font-medium focus-visible:ring-1 focus-visible:outline-1 disabled:opacity-64 group/navigation-menu-trigger inline-flex h-9 w-max items-center justify-center disabled:pointer-events-none outline-none",
 )
 
 export const navigationMenuStyles =
@@ -28,10 +28,10 @@ export const navigationMenuPopupStyles =
 export const navigationMenuViewportStyles = "relative size-full overflow-hidden"
 
 export const navigationMenuLinkStyles =
-	"data-active:focus:bg-muted data-active:hover:bg-muted data-active:active:bg-muted data-active:bg-surface-sunken focus-visible:ring-ring/50 hover:bg-muted active:bg-muted focus:bg-muted flex items-center gap-2 rounded-lg p-2 text-xs outline-none focus-visible:ring-1 focus-visible:outline-1 [&_svg:not([class*='size-'])]:size-4 [[data-slot=navigation-menu-content]_&]:rounded-lg"
+	"data-active:focus:bg-accent data-active:hover:bg-accent data-active:active:bg-accent data-active:bg-surface-sunken focus-visible:ring-ring hover:bg-accent active:bg-accent focus:bg-accent flex items-center gap-2 rounded-lg p-2 text-xs outline-none focus-visible:ring-1 focus-visible:outline-1 [&_svg:not([class*='size-'])]:size-4 [[data-slot=navigation-menu-content]_&]:rounded-lg"
 
 export const navigationMenuIndicatorStyles =
-	"data-[state=visible]:animate-in data-[state=hidden]:animate-out data-[state=hidden]:fade-out data-[state=visible]:fade-in top-full z-[1] flex h-1.5 items-end justify-center overflow-hidden"
+	"data-[state=visible]:animate-in data-[state=hidden]:animate-out data-[state=hidden]:fade-out data-[state=visible]:fade-in top-full z-1 flex h-1.5 items-end justify-center overflow-hidden"
 
 export const navigationMenuIndicatorArrowStyles =
 	"bg-border rounded-sm shadow-popup relative top-[60%] h-2 w-2 rotate-45"

@@ -300,8 +300,8 @@ export function buildSimpleWidgets(specs: ReadonlyArray<SimpleWidgetSpec>): Widg
 	const widgets: WidgetDef[] = []
 	const errors: string[] = []
 
-	for (let i = 0; i < specs.length; i++) {
-		const result = simpleSpecToWidget(specs[i]!, `w${i}`, layouts[i]!)
+	for (const [i, [spec, layout]] of Arr.zip(specs, layouts).entries()) {
+		const result = simpleSpecToWidget(spec, `w${i}`, layout)
 		if (typeof result === "string") {
 			errors.push(result)
 		} else {
@@ -530,7 +530,7 @@ export function registerCreateDashboardTool(server: McpToolRegistrar) {
 			const tenant = yield* CurrentMcpTenant
 			const persistence = yield* DashboardPersistenceService
 
-			const dashboard = yield* persistence
+			const { document: dashboard } = yield* persistence
 				.create(tenant.orgId, tenant.userId, portable)
 				.pipe(Effect.mapError(toMcpDashboardError(TOOL)))
 

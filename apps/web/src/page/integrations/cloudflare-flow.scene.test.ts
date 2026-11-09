@@ -34,7 +34,7 @@ const zone = (name: string, watermarkAt: number | null) => ({
 })
 
 const status = (overrides: Record<string, unknown> = {}) =>
-	Schema.decodeUnknownSync(CloudflareIntegrationStatus)({
+	Schema.decodeSync(CloudflareIntegrationStatus)({
 		connected: true,
 		accountId: "acc_1",
 		accountName: "Acme",

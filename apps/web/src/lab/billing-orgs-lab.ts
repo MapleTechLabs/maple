@@ -1,3 +1,4 @@
+import * as Policy from "@maple/domain/policy"
 import {
 	BillingAccount,
 	BillingAccountUsageResponse,
@@ -40,7 +41,7 @@ const DAY = 86_400_000
 const CYCLE_START = Date.UTC(2026, 9, 1)
 const NOW_MS = Date.UTC(2026, 9, 28, 12)
 
-const plans = Schema.decodeUnknownSync(Schema.Array(CatalogPlan))([
+const plans = Schema.decodeSync(Schema.Array(CatalogPlan))([
 	{
 		id: "startup",
 		name: "Startup",
@@ -59,7 +60,7 @@ const plans = Schema.decodeUnknownSync(Schema.Array(CatalogPlan))([
 	},
 ])
 
-const customer = Schema.decodeUnknownSync(BillingCustomer)({
+const customer = Schema.decodeSync(BillingCustomer)({
 	id: "org_acme",
 	subscriptions: [
 		{
@@ -79,7 +80,7 @@ const customer = Schema.decodeUnknownSync(BillingCustomer)({
 	},
 })
 
-const usage = Schema.decodeUnknownSync(BillingUsage)({
+const usage = Schema.decodeSync(BillingUsage)({
 	total: {
 		logs: { sum: 142.6 },
 		traces: { sum: 61.2 },
@@ -89,12 +90,12 @@ const usage = Schema.decodeUnknownSync(BillingUsage)({
 	},
 })
 
-const daily = Schema.decodeUnknownSync(DailySpendResponse)({
+const daily = Schema.decodeSync(DailySpendResponse)({
 	days: [],
 	cycleStart: CYCLE_START,
 	cycleEnd: CYCLE_START + 31 * DAY,
 })
-const invoices = Schema.decodeUnknownSync(Schema.Array(BillingInvoice))([
+const invoices = Schema.decodeSync(Schema.Array(BillingInvoice))([
 	{
 		stripeId: "in_1",
 		status: "paid",
@@ -104,7 +105,7 @@ const invoices = Schema.decodeUnknownSync(Schema.Array(BillingInvoice))([
 		planIds: ["startup"],
 	},
 ])
-const profile = Schema.decodeUnknownSync(BillingProfile)({
+const profile = Schema.decodeSync(BillingProfile)({
 	linked: true,
 	name: "Acme Inc.",
 	address: { line1: "1 Market Street", city: "San Francisco", postalCode: "94105", country: "US" },
@@ -144,7 +145,7 @@ const account = (state: LabState) =>
 					},
 	)
 
-const accountUsage = Schema.decodeUnknownSync(BillingAccountUsageResponse)({
+const accountUsage = Schema.decodeSync(BillingAccountUsageResponse)({
 	cycleStartMs: CYCLE_START,
 	cycleEndMs: CYCLE_START + 31 * DAY,
 	orgs: [
@@ -183,7 +184,7 @@ const choices = [
 type Return = Update.Return<Model, Message, Resources>
 
 export const init = (flags: Flags): Return => {
-	const base = billingInit(flags.state !== "member-viewer", false, true).model
+	const base = billingInit(flags.state === "member-viewer" ? [] : Policy.allPermissions, false, true).model
 	const role = account(flags.state).role
 	return {
 		model: {

@@ -15,7 +15,7 @@ import { decodeJsonSync } from "./json"
  * than what the caller asked for, which is a bug in the SQL rather than data to
  * be tolerated — so this throws instead of skipping the row.
  */
-export const decodeJsonEachRow = <S extends Schema.Codec<unknown, unknown, never, never>>(
+export const decodeJsonEachRow = <S extends Schema.Codec<unknown, unknown>>(
 	rowSchema: S,
 ): ((value: string) => Array<S["Type"]>) => {
 	const decodeRow = Schema.decodeUnknownSync(rowSchema)

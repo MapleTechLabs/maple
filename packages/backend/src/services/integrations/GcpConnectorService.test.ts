@@ -45,9 +45,9 @@ const makeLayer = (testDb: TestDb, mapleServiceAccount?: string) =>
 		),
 	)
 
-const orgId = Schema.decodeUnknownSync(OrgId)("org_gcp")
-const otherOrgId = Schema.decodeUnknownSync(OrgId)("org_other")
-const userId = Schema.decodeUnknownSync(UserId)("user_1")
+const orgId = Schema.decodeSync(OrgId)("org_gcp")
+const otherOrgId = Schema.decodeSync(OrgId)("org_other")
+const userId = Schema.decodeSync(UserId)("user_1")
 const project = Schema.decodeUnknownSync(GcpProjectId)
 const number = Schema.decodeUnknownSync(GcpResourceNumber)
 
@@ -94,7 +94,7 @@ describe("GcpConnectorService", () => {
 			const { setupScript } = yield* gcp.scripts(orgId, connector.id, scriptOptions)
 			const endpoint = /PUSH_ENDPOINT='([^']+)'/.exec(setupScript)?.[1]
 			assert.isDefined(endpoint)
-			const url = new URL(endpoint!)
+			const url = new URL(endpoint)
 			assert.strictEqual(
 				url.origin + url.pathname,
 				`https://ingest.test/v1/logpush/gcp/${connector.id}`,

@@ -154,17 +154,14 @@ const presetPreview = (h: H, model: Model, entry: PickerSection, preset: WidgetP
 				preset.display.title,
 				"flex flex-col items-center justify-center gap-1.5",
 				[
-					h.div(
-						[h.Class("text-lg font-semibold tabular-nums")],
-						[
-							formatStatValue(
-								STAT_PRESET_SAMPLE_VALUES[preset.id] ?? 0,
-								preset.display.unit,
-								preset.display.prefix,
-								preset.display.suffix,
-							),
-						],
-					),
+					typography(h, { size: "lg", weight: "semibold", numeric: true, as: "div" }, [
+						formatStatValue(
+							STAT_PRESET_SAMPLE_VALUES[preset.id] ?? 0,
+							preset.display.unit,
+							preset.display.prefix,
+							preset.display.suffix,
+						),
+					]),
 				],
 			)
 		case "rows":
@@ -261,8 +258,9 @@ export const widgetPicker = (h: H, model: Model): Html => {
 					},
 					toParentMessage: (message) => Message.GotPickerTabsMessage({ message }),
 				}),
-				h.div(
-					[h.Class("flex flex-col gap-5 max-h-[60vh] overflow-y-auto py-5 px-4")],
+				vstack(
+					h,
+					{ gap: "5", className: "max-h-[60vh] overflow-y-auto py-5 px-4" },
 					sections(h, model),
 				),
 			],

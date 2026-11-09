@@ -68,7 +68,7 @@ const spanTooltipContent = (
 	const serviceColor = getServiceColor(span.serviceName)
 	const selfTime = calculateSelfTime(span, [...span.children])
 	const selfTimePercent = span.durationMs > 0 ? (selfTime / span.durationMs) * 100 : 0
-	const durationPercent = totalDurationMs ? (span.durationMs / totalDurationMs) * 100 : null
+	const durationPercent = totalDurationMs > 0 ? (span.durationMs / totalDurationMs) * 100 : null
 	const startOffset = traceStartTime ? spanStartMs(span) - new Date(traceStartTime).getTime() : null
 	return h.div(
 		[h.Class("space-y-2 font-mono text-xs")],
@@ -174,7 +174,7 @@ export const spanTooltip = (
 ): Html =>
 	h.div(
 		[
-			h.Class("fixed left-0 top-0 z-[9999] pointer-events-none"),
+			h.Class("fixed left-0 top-0 z-55 pointer-events-none"),
 			h.Style({
 				transform: `translate3d(${input.pointer.x}px, ${input.pointer.y - 8}px, 0) translate(-50%, -100%)`,
 			}),
@@ -183,7 +183,7 @@ export const spanTooltip = (
 			h.div(
 				[
 					h.Class(
-						"bg-popover text-popover-foreground border border-border shadow-popup p-2.5 max-w-sm",
+						"rounded-md bg-popover text-popover-foreground border border-border shadow-popup p-2.5 max-w-sm",
 					),
 				],
 				[spanTooltipContent(h, input.span, input.totalDurationMs, input.traceStartTime)],

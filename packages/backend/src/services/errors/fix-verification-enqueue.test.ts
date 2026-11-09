@@ -213,7 +213,7 @@ describe("enqueueFixVerification", () => {
 			const { verification } = yield* seedVerification()
 			const chat = fakeChatSession()
 			const database = yield* Database
-			const now = Date.now()
+			const now = yield* Clock.currentTimeMillis
 			yield* database.execute((db) =>
 				db.run(
 					PG.insertInto(Investigations).values({

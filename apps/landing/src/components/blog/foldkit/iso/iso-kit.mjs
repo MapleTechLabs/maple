@@ -45,7 +45,7 @@ export function roundedPlan({ x, y, w, d, r }, steps = 8) {
 	for (const [cx, cy, start] of corners) {
 		const count = radius > 0 ? steps : 0
 		for (let step = 0; step <= count; step++) {
-			const angle = (start + (count ? (90 * step) / count : 45)) * RADIANS
+			const angle = (start + (count > 0 ? (90 * step) / count : 45)) * RADIANS
 			out.push([cx + radius * Math.cos(angle), cy + radius * Math.sin(angle)])
 		}
 	}
@@ -62,7 +62,7 @@ function signedArea(points) {
 }
 const oriented = (points) => (signedArea(points) < 0 ? [...points].reverse() : points)
 function convexHull(points) {
-	const sorted = [...points].sort((a, b) => a[0] - b[0] || a[1] - b[1])
+	const sorted = [...points].sort((a, b) => (a[0] !== b[0] ? a[0] - b[0] : a[1] - b[1]))
 	if (sorted.length < 3) return sorted
 	const cross = (o, a, b) => (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0])
 	const lower = []
@@ -110,7 +110,8 @@ export function extrude(ring, z, height, projection, options = {}) {
 		const [bx, by] = ring[(index + 1) % count]
 		const dx = bx - ax
 		const dy = by - ay
-		const length = Math.hypot(dx, dy) || 1
+		const hyp = Math.hypot(dx, dy)
+		const length = hyp === 0 ? 1 : hyp
 		return counter ? [dy / length, -dx / length] : [-dy / length, dx / length]
 	})
 	const facing = normals.map(([nx, ny]) => nx * vx + ny * vy > 1e-9)
@@ -161,7 +162,8 @@ export function extrude(ring, z, height, projection, options = {}) {
 			const [bx, by2] = normals[index]
 			const mx = ax + bx
 			const my = ay + by2
-			const length = Math.hypot(mx, my) || 1
+			const hyp = Math.hypot(mx, my)
+			const length = hyp === 0 ? 1 : hyp
 			return [x - (mx / length) * by, y - (my / length) * by]
 		})
 		const insetTop = inset.map(([x, y]) => iso([x, y, z + height], projection))
@@ -539,7 +541,7 @@ export function fadeLineSvg(points, { fade = [0, 0], tone = "lo", className, sto
 	const at = (length) => {
 		let index = 1
 		while (index < points.length - 1 && lengths[index] < length) index++
-		const span = lengths[index] - lengths[index - 1] || 1
+		const span = lengths[index] !== lengths[index - 1] ? lengths[index] - lengths[index - 1] : 1
 		const t = Math.max(0, Math.min(1, (length - lengths[index - 1]) / span))
 		return [
 			points[index - 1][0] + (points[index][0] - points[index - 1][0]) * t,
@@ -618,8 +620,8 @@ export function plateHtml({ fig, title, hint, readout = "", keys = [], caption, 
 	const corner = (name, text, extra = "") =>
 		`<span class="iso-plate-corner" data-corner="${name}"${extra}>${escape(text)}</span>`
 	const legend =
-		keys.length || caption
-			? `<figcaption class="iso-legend">${keys.length ? `<span class="iso-keys">${keys.map((key) => `<span class="iso-key">${swatchSvg(key.mark)}${escape(key.label)}</span>`).join("")}</span>` : ""}${caption ? `<span class="iso-caption">${escape(caption)}</span>` : ""}</figcaption>`
+		keys.length > 0 || caption
+			? `<figcaption class="iso-legend">${keys.length > 0 ? `<span class="iso-keys">${keys.map((key) => `<span class="iso-key">${swatchSvg(key.mark)}${escape(key.label)}</span>`).join("")}</span>` : ""}${caption ? `<span class="iso-caption">${escape(caption)}</span>` : ""}</figcaption>`
 			: ""
 	return `<figure class="iso-figure"><div class="iso-plate"><div class="iso-plate-corners" aria-hidden="true">${corner("fig", fig)}${title ? corner("title", title) : ""}${hint ? corner("hint", hint) : ""}${corner("readout", readout, " data-readout")}</div>${body}</div>${legend}</figure>`
 }

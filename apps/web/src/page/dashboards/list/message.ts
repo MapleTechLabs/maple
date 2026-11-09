@@ -17,8 +17,11 @@ const Created = Schema.Struct({
 	warnings: Schema.Array(Schema.String),
 })
 
-/** A write's outcome: the failure is the message `getErrorMessage` would show. */
-const WriteResult = Schema.Result(WriteSync, Schema.String)
+/** A failed write: the message `getErrorMessage` would show, and whether the API refused this one write. */
+export const WriteFailure = Schema.Struct({ message: Schema.String, isRejected: Schema.Boolean })
+export type WriteFailure = typeof WriteFailure.Type
+
+const WriteResult = Schema.Result(WriteSync, WriteFailure)
 
 export const Message = defineMessageUnion({
 	/** The clock and the browser's locale, read together before the list renders. */
@@ -27,7 +30,10 @@ export const Message = defineMessageUnion({
 	UpdatedDashboards: { orgId: Schema.String, dashboards: Schema.Array(ListDashboard) },
 	/** The live list sat loading past the timeout (`useCollectionLoadFailed`). */
 	TimedOutLiveDashboards: { orgId: Schema.String },
-	CompletedFetchFallback: { orgId: Schema.String, result: Schema.Result(Schema.Array(ListDashboard), Schema.String) },
+	CompletedFetchFallback: {
+		orgId: Schema.String,
+		result: Schema.Result(Schema.Array(ListDashboard), Schema.String),
+	},
 	ClickedRetrySync: {},
 	ChangedSearchDraft: { value: Schema.String },
 	ElapsedSearchDebounce: { generation: Schema.Number },
@@ -36,7 +42,7 @@ export const Message = defineMessageUnion({
 	ClickedShowAllTags: {},
 	ClickedBrowseTemplates: {},
 	ClickedCreate: {},
-	CompletedCreateDashboard: { result: Schema.Result(Schema.String, Schema.String) },
+	CompletedCreateDashboard: { result: Schema.Result(Schema.String, WriteFailure) },
 	ClickedImport: {},
 	CompletedOpenImportPicker: {},
 	ChoseImportFile: { files: Schema.Array(File) },
@@ -45,8 +51,8 @@ export const Message = defineMessageUnion({
 	CompletedSavePreferences: {},
 	GotSortMenuMessage: { message: Menu.Message },
 	GotRowMenuMessage: { rowId: Schema.String, message: Menu.Message },
-	CompletedExportDashboard: {},
-	CompletedDuplicateDashboard: { result: Schema.Result(Created, Schema.String) },
+	CompletedExportDashboard: { error: Schema.NullOr(Schema.String) },
+	CompletedDuplicateDashboard: { result: Schema.Result(Created, WriteFailure) },
 	GotDeleteDialogMessage: { message: Dialog.Message },
 	ClickedConfirmDelete: {},
 	CompletedDeleteDashboard: { result: WriteResult },

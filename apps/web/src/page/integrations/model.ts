@@ -1,3 +1,4 @@
+import * as Policy from "@maple/domain/policy"
 import {
 	BillingCustomer,
 	CloudflareIntegrationStatus,
@@ -5,6 +6,7 @@ import {
 	LinearIntegrationStatus,
 	RailwayIntegrationStatus,
 	VercelIntegrationStatus,
+	SearchConsoleIntegrationStatus,
 	SupabaseIntegrationStatus,
 } from "@maple/domain/http"
 import {
@@ -29,6 +31,7 @@ import { PlanetscaleCardModel } from "./planetscale"
 import { GcpCardModel } from "./gcp"
 import { AwsCardModel } from "./aws"
 import { SupabaseCardModel } from "./supabase"
+import { SearchConsoleCardModel } from "./search-console"
 import { ConnectModel } from "./connect"
 import { VercelCardModel } from "./vercel-schema"
 
@@ -48,6 +51,7 @@ export const Statuses = Schema.Struct({
 	supabase: keyed(SupabaseIntegrationStatus),
 	linear: keyed(LinearIntegrationStatus),
 	github: keyed(GithubIntegrationStatus),
+	searchConsole: keyed(SearchConsoleIntegrationStatus),
 	chat: keyed(V2ChatConnectorList),
 	scrapeTargets: keyed(Schema.Array(V2ScrapeTarget)),
 })
@@ -61,7 +65,7 @@ export const Model = Schema.Struct({
 	/** `useMapleCustomer` (the settings nav's Data platform gate under Clerk). */
 	customer: keyed(BillingCustomer),
 	/** `useIsOrgAdmin()`: the session's roles (`false` until it loads under Clerk). */
-	isAdmin: Schema.Boolean,
+	grants: Schema.Array(Policy.PermissionName),
 	/** The OAuth popup flow of the page's integration (`IntegrationConnectProvider`). */
 	connect: ConnectModel,
 	/** The page's disconnect confirmation and its in-flight flag (one integration shows at a time). */
@@ -76,5 +80,10 @@ export const Model = Schema.Struct({
 	gcpCard: GcpCardModel,
 	awsCard: AwsCardModel,
 	supabaseCard: SupabaseCardModel,
+	searchConsoleCard: SearchConsoleCardModel,
 })
 export type Model = typeof Model.Type
+
+/** The viewer may connect, disconnect and change integrations (`integrations:manage`). */
+export const canManage = (model: Pick<Model, "grants">): boolean =>
+	Policy.has(model.grants, "integrations:manage")

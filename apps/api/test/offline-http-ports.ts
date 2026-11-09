@@ -14,6 +14,7 @@ import {
 	PlanetScaleWebhookQueueProducer,
 	ReplayBlobBucket,
 	SchemaApplyWorkflow,
+	ShareLinkRateLimit,
 	VcsBackfillQueueProducer,
 	VcsSyncQueueProducer,
 } from "@maple/backend/platform/bindings"
@@ -27,6 +28,7 @@ export const offlinePorts = Layer.mergeAll(
 	Layer.succeed(AuditEventsQueueProducer, queue),
 	Layer.succeed(CancellationReviewQueueProducer, queue),
 	Layer.succeed(ApiV2RateLimit, limiter),
+	Layer.succeed(ShareLinkRateLimit, limiter),
 	Layer.succeed(CliAuthRateLimit, limiter),
 	Layer.succeed(McpOAuthRateLimit, limiter),
 	Layer.succeed(ReplayBlobBucket, { getBytes: rejectIO }),

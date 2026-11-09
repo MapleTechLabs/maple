@@ -3,8 +3,9 @@
 	"plugins": ["eslint", "unicorn", "typescript", "oxc", "react", "jsx-a11y"],
 	"jsPlugins": [
 		"./scripts/oxlint-plugins/maple.mjs",
-		"./scripts/oxlint-plugins/anti-slop/index.ts",
-		"./scripts/oxlint-plugins/test-slop.mjs"
+		// The source, not the bundled anti-slop.mjs, so a rule edit applies without a rebuild.
+		"./lib/oxlint-config/plugins/anti-slop/index.ts",
+		"./lib/oxlint-config/plugins/test-slop.mjs"
 	],
 	"options": {
 		"reportUnusedDisableDirectives": "deny",
@@ -73,9 +74,23 @@
 	"overrides": [
 		// The dashboard's design rules (docs/design-rules.md), on the apps and their kit.
 		{
-			"files": ["apps/web/src/**", "apps/local-ui/src/**", "packages/views/src/**", "packages/ui/src/**"],
+			"files": [
+				"apps/web/src/**",
+				"apps/local-ui/src/**",
+				"packages/views/src/**",
+				"packages/ui/src/**"
+			],
 			"rules": {
 				"maple/couldnt-copy": "error",
+				"maple/disabled-opacity": "error",
+				"maple/focus-ring": "error",
+				"maple/hover-edge": "error",
+				"maple/font-weight-scale": "error",
+				"maple/no-legacy-utility": "error",
+				"maple/no-off-grid-spacing": "error",
+				"maple/no-unknown-color-token": "error",
+				"maple/surface-washes": "error",
+				"maple/tracking-tokens": "error",
 				"maple/hover-needs-active": "error",
 				"maple/instant-state": "error",
 				"maple/no-arbitrary-radius": "error",
@@ -85,7 +100,9 @@
 				"maple/single-tooltip-delay": "error",
 				"maple/tone-alpha-steps": "error",
 				"maple/no-raw-color": "error",
-				"maple/no-arbitrary-text-size": "error"
+				"maple/no-arbitrary-text-size": "error",
+				"maple/no-arbitrary-spacing": "error",
+				"maple/no-faded-text": "error"
 			}
 		},
 		// Build from the kit (docs/design-rules.md): pages compose packages/views/src/ui and each app's page/kit.
@@ -93,10 +110,27 @@
 		{
 			"files": ["apps/web/src/**", "apps/local-ui/src/**", "packages/views/src/**"],
 			"rules": {
+				"maple/no-clickable-div": "error",
 				"maple/no-kit-styles-in-pages": "error",
 				"maple/no-raw-control": "error",
-				"maple/no-raw-heading": "error"
+				"maple/no-raw-heading": "error",
+				"maple/no-raw-link": "error",
+				"maple/prefer-stack": "error",
+				"maple/prefer-typography": "error",
+				"maple/empty-copy": "error",
+				"maple/kit-class-layout-only": "error",
+				"maple/no-arbitrary-z": "error",
+				"maple/no-handrolled-kit-look": "error",
+				"maple/popup-radius": "error",
+				"maple/sheet-size": "error",
+				"maple/surface-translucency": "error",
+				"maple/ui-copy": "error"
 			}
+		},
+		// The kit draws the controls, so it alone gives a control its `accent` hover.
+		{
+			"files": ["packages/ui/src/**"],
+			"rules": { "maple/surface-washes": ["error", { "allowControlHover": true }] }
 		},
 		// The kit itself, the lab that showcases it, and tests render raw elements.
 		{
@@ -108,15 +142,26 @@
 				"**/*.test.ts"
 			],
 			"rules": {
+				"maple/no-clickable-div": "off",
 				"maple/no-kit-styles-in-pages": "off",
 				"maple/no-raw-control": "off",
-				"maple/no-raw-heading": "off"
+				"maple/no-raw-heading": "off",
+				"maple/no-raw-link": "off",
+				"maple/prefer-stack": "off",
+				"maple/prefer-typography": "off",
+				"maple/kit-class-layout-only": "off",
+				"maple/no-handrolled-kit-look": "off"
 			}
+		},
+		// Test fixtures assert on rendered colour values.
+		{
+			"files": ["**/*.test.ts"],
+			"rules": { "maple/no-raw-color": "off", "maple/ui-copy": "off", "maple/empty-copy": "off" }
 		},
 		// Lab fixtures hold sample telemetry (log bodies, error messages), not UI copy.
 		{
 			"files": ["apps/web/src/lab/**"],
-			"rules": { "maple/couldnt-copy": "off" }
+			"rules": { "maple/couldnt-copy": "off", "maple/ui-copy": "off", "maple/empty-copy": "off" }
 		},
 		// Existing API burndown entries, relocated with their implementation.
 		{
@@ -192,6 +237,13 @@
 				"maple/no-try-catch": "off",
 				"typescript/no-non-null-assertion": "off"
 			}
+		},
+		// Electric row mappers run inside live-query callbacks: a throwing decode there takes the
+		// page down when a newer server syncs a value this build does not know.
+		{
+			"files": ["packages/web-data/src/collections/**/*.ts"],
+			"excludeFiles": ["packages/web-data/src/collections/**/*.test.ts"],
+			"rules": { "maple/no-throwing-live-row-decode": "error" }
 		},
 		// `Date.parse` burndown: the server side is clean and held to the rule. These still parse
 		// with it and move to `parseWarehouseDateTime` / `DateTime` in their own audit; the
@@ -323,7 +375,7 @@
 		},
 		// Test cases that cannot catch a bug: assertion-free, existence-only, constant pins,
 		// Tailwind class pins, source greps, exact command lists and SQL projection pins.
-		// Rationale per rule in scripts/oxlint-plugins/test-slop.mjs.
+		// Rationale per rule in lib/oxlint-config/plugins/test-slop.mjs.
 		{
 			"files": ["**/*.test.ts", "**/*.test.tsx"],
 			"plugins": ["vitest"],
@@ -855,6 +907,7 @@
 		".factory/**",
 		".impeccable/**",
 		".superset/**",
-		"scripts/oxlint-plugins/anti-slop/**"
+		"lib/oxlint-config/plugins/anti-slop/**",
+		"lib/oxlint-config/plugins/anti-slop.mjs"
 	]
 }

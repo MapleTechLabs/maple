@@ -10,15 +10,11 @@ import { Array as Arr, Record as Rec } from "effect"
  * that identity structural (`kind` + `resultShape`), so the strings stop being
  * schema.
  *
- * They do not stop existing. Two contracts still speak them, and both outlive
- * the stored v2 resultKind:
- *
- * 1. The web app's server-function registry (`data-source-registry.ts`) is keyed
- *    by endpoint string, and that key is also the atom family key, the retention
- *    namespace, and the `LIST_ENDPOINTS` membership test.
- * 2. The public v2 HTTP API (`/v2/dashboards`) emits and accepts
- *    `{ endpoint, params }` and always will — a version number in a URL exists
- *    precisely so the internal resultKind can move without breaking published clients.
+ * They do not stop existing. Requests are still keyed by them: `toWidgetRequest`
+ * lowers a v3 source to an endpoint, and the web app's server-function registry
+ * (`data-source-registry.ts`) uses that string as its atom family key, retention
+ * namespace and `LIST_ENDPOINTS` test. The public v2 API speaks v3 (`kind`), and
+ * `access.ts` still reads a v2 `{ endpoint, params }` bag wherever one survives.
  *
  * They live in their own file, away from the schema modules, so that this
  * distinction survives contact with the next refactor: these are wire
@@ -29,7 +25,7 @@ import { Array as Arr, Record as Rec } from "effect"
  * The endpoints that carried a user-authored query set, keyed by the result
  * resultKind that is their v3 identity.
  *
- * Canonical in this direction because the v2 API encoder writes it and the MCP
+ * Canonical in this direction because request lowering writes it and the MCP
  * inspector reports it; the endpoint -> resultKind lookup is derived below, so the
  * two cannot drift.
  */
@@ -41,7 +37,7 @@ export const QUERY_RESULT_ENDPOINTS = {
 
 export const QUERY_ENDPOINT_RESULT_KINDS = Rec.fromEntries(
 	Arr.map(Rec.toEntries(QUERY_RESULT_ENDPOINTS), ([resultKind, endpoint]) => [endpoint, resultKind]),
-) as Record<string, QueryResultContract>
+)
 
 export const RAW_SQL_ENDPOINT = "raw_sql_chart"
 

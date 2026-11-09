@@ -187,7 +187,8 @@ Secrets source model (CI):
       slug like `maple` would then blank out the PR-preview deployment URL
       `app-pr-<n>.maple.dev`)
     - GitHub **environment secret** `INFISICAL_MACHINE_IDENTITY_ID` in each of `production`,
-      `production-eu`, `pr-preview` and `maintenance`, each a different identity (see below).
+      `production-eu`, `pr-preview`, `preview-tinybird` and `maintenance`, each a different
+      identity (see below).
       No repo-level copy: a job outside those environments gets no identity at all.
 - Infisical environments (`prod`, `dev` — mapped from the old Doppler
   `prd`/`pr` configs) must define:
@@ -208,9 +209,10 @@ Setup note: one Infisical machine identity per GitHub environment, each with Git
 bound to the exact subject `repo:MapleTechLabs/maple:environment:<name>` (no globs: Infisical's
 `*` also matches `:` and `/`) and a custom project role that reads only its Infisical
 environment: `production` → `prod`, `production-eu` → `prod-eu`, `pr-preview` and
-`maintenance` → `dev` (or a dedicated preview environment via `PREVIEW_INFISICAL_ENV_SLUG`).
-`production`, `production-eu` and `maintenance` only deploy from `main`. The workflows select
-secrets via `project-slug` (`INFISICAL_PROJECT_SLUG`) and per-stage `env-slug`.
+`maintenance` → `dev` (or a dedicated preview environment via `PREVIEW_INFISICAL_ENV_SLUG`),
+`preview-tinybird` → `dev` (the parent Tinybird workspace credentials, read by name).
+`production`, `production-eu`, `preview-tinybird` and `maintenance` only deploy from `main`.
+The workflows select secrets via `project-slug` (`INFISICAL_PROJECT_SLUG`) and per-stage `env-slug`.
 
 Runtime API URL behavior:
 

@@ -1,6 +1,6 @@
-// BOUNDARY: This module owns unparsed external values and narrows them before domain use.
+// BOUNDARY-FILE: This module owns unparsed external values and narrows them before domain use.
 import { Clock, Context, Effect, Layer, Metric, type Schema } from "effect"
-import { QueryEngineExecuteResponse, type QueryEngineExecuteRequest } from "@maple/query-engine"
+import { QueryEngineExecuteRequest, QueryEngineExecuteResponse } from "@maple/query-engine"
 import type { QueryEngineTimeoutError } from "@maple/domain/http"
 import {
 	buildCacheKey,
@@ -86,7 +86,7 @@ export interface QueryEngineServiceApi {
 		effect: Effect.Effect<A, E>,
 		policy?: DirectRouteCachePolicyInput,
 		/** How the value crosses the cache's JSON round trip, when plain JSON would change it. */
-		schema?: Schema.Codec<A, unknown, never, never>,
+		schema?: Schema.Codec<A, unknown>,
 		/** The write's TTL from the computed value, overriding the policy's. The key is unchanged. */
 		ttlSecondsFor?: (value: A) => number,
 	) => Effect.Effect<A, E | QueryEngineTimeoutError>
@@ -272,12 +272,15 @@ export class QueryEngineService extends Context.Service<QueryEngineService, Quer
 						endMs: range.endMs,
 					},
 					({ startMs, endMs }) =>
-						executeImpl(tenant, {
-							...request,
-							query: pinnedQuery,
-							startTime: msToTinybirdDateTime(startMs),
-							endTime: msToTinybirdDateTime(endMs),
-						}).pipe(
+						executeImpl(
+							tenant,
+							new QueryEngineExecuteRequest({
+								...request,
+								query: pinnedQuery,
+								startTime: msToTinybirdDateTime(startMs),
+								endTime: msToTinybirdDateTime(endMs),
+							}),
+						).pipe(
 							Effect.map((response) =>
 								response.result.kind === "timeseries" ? response.result.data : [],
 							),
@@ -399,7 +402,7 @@ export class QueryEngineService extends Context.Service<QueryEngineService, Quer
 				payload: unknown,
 				effect: Effect.Effect<A, E>,
 				policyInput: DirectRouteCachePolicyInput = 15,
-				schema?: Schema.Codec<A, unknown, never, never>,
+				schema?: Schema.Codec<A, unknown>,
 				ttlSecondsFor?: (value: A) => number,
 			) {
 				// Attributes go on the `Effect.fn` span, not an inner `withSpan` of the

@@ -27,7 +27,7 @@
 import { container, image, text, type Node } from "@takumi-rs/helpers"
 import type { ShareOgCardTile } from "@maple/domain/http"
 import { OG_IMAGE_HEIGHT, OG_IMAGE_WIDTH } from "./share-links"
-import { Array as Arr, String as Str } from "effect"
+import { Array as Arr, Option, String as Str } from "effect"
 
 /** The card is exactly the size the `og:image:*` tags advertise. */
 export const CARD_WIDTH = OG_IMAGE_WIDTH
@@ -277,12 +277,18 @@ const orgAvatar = (org: OgCardOrg): Node =>
 					justifyContent: "center",
 				},
 				children: [
-					text(Array.from(org.name)[0]?.toUpperCase() ?? "?", {
-						color: COLOR.muted,
-						fontSize: 17,
-						fontFamily: DISPLAY_FONT,
-						fontWeight: 600,
-					}),
+					text(
+						Option.getOrElse(
+							Option.map(Arr.head(Array.from(org.name)), (initial) => Str.toUpperCase(initial)),
+							() => "?",
+						),
+						{
+							color: COLOR.muted,
+							fontSize: 17,
+							fontFamily: DISPLAY_FONT,
+							fontWeight: 600,
+						},
+					),
 				],
 			})
 		: image({ src: org.imageUrl, width: AVATAR_SIZE, height: AVATAR_SIZE, style: { borderRadius: 8 } })

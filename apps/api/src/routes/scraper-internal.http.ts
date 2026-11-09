@@ -30,7 +30,7 @@ const decodeTargetTypeSync = Schema.decodeUnknownSync(ScrapeTargetType)
 const SCRAPER_SYSTEM_USER = Schema.decodeSync(UserId)("system-prometheus-scraper")
 const decodeScrapeResultsEffect = Schema.decodeUnknownEffect(ScrapeResultReportList)
 const decodeLabelsEffect = Schema.decodeUnknownEffect(Schema.Record(Schema.String, Schema.String))
-const EMPTY_LABELS = Schema.decodeUnknownSync(Schema.Record(Schema.String, Schema.String))({})
+const EMPTY_LABELS = Schema.decodeSync(Schema.Record(Schema.String, Schema.String))({})
 /** PlanetScale's data plane authenticates with the signed URL, never a header. */
 const NO_AUTH_HEADERS: Record<string, string> = {}
 const NO_SUB_TARGETS: ReadonlyArray<PlanetScaleSubTarget> = []

@@ -16,7 +16,7 @@ import {
 // same guarantees are asserted here: every shape compiles, is tenant-scoped,
 // and is pinned byte-for-byte.
 describe("integration sql catalog", () => {
-	const entries = Effect.runSync(collectIntegrationQueryCatalog())
+	const entries = Effect.runSync(collectIntegrationQueryCatalog)
 
 	it("compiles every fixture", () => {
 		expect(entries.length).toBeGreaterThan(0)

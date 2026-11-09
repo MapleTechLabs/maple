@@ -19,6 +19,8 @@
 // build. `process.getBuiltinModule` (Node ≥ 20.16, Bun) loads them lazily and
 // synchronously; when it's absent, detection just reports nothing.
 
+import { Option, String as Str } from "effect"
+
 import { trySyncOrUndefined } from "../shared/try-sync.js"
 
 const CONTAINER_ID_RE = /\/docker\/containers\/([0-9a-f]{64})\//
@@ -50,8 +52,15 @@ export const deriveContainerAttributes = (probe: ContainerProbe): Record<string,
 	// and mountinfo can run to hundreds of KB, so later probes only fire when
 	// the earlier ones miss.
 	const containerId =
-		trySyncOrUndefined(() => probe.readFile("/proc/self/mountinfo").match(CONTAINER_ID_RE)?.[1]) ??
-		trySyncOrUndefined(() => probe.readFile("/proc/self/cgroup").match(CGROUP_ID_RE)?.[1]) ??
+		trySyncOrUndefined(
+			() =>
+				Option.getOrUndefined(
+					Str.match(CONTAINER_ID_RE)(probe.readFile("/proc/self/mountinfo")),
+				)?.[1],
+		) ??
+		trySyncOrUndefined(
+			() => Option.getOrUndefined(Str.match(CGROUP_ID_RE)(probe.readFile("/proc/self/cgroup")))?.[1],
+		) ??
 		(inDocker
 			? trySyncOrUndefined(() => {
 					const name = probe.hostname()

@@ -8,6 +8,7 @@ import type {
 	InspectTraceOutput,
 	LogEntry,
 	MineLogPatternsOutput,
+	CompareLogPatternsOutput,
 	SearchLogsOutput,
 	SearchTracesOutput,
 	ServiceEdge,
@@ -310,6 +311,57 @@ export const logPatternsView = (empty: string): View<MineLogPatternsOutput> => (
 		},
 	],
 	notes: (d) => [`clustered ${formatCount(d.totalSampled)} sampled logs`],
+})
+
+const windowNote = (label: string, w: CompareLogPatternsOutput["before"]) =>
+	`${label} ${w.timeRange.startTime} to ${w.timeRange.endTime}: ${formatCount(w.totalLogs)} logs, ${formatCount(w.sampled)} sampled${w.sampleCoverage === undefined ? "" : ` from ${w.sampleCoverage.startTime} to ${w.sampleCoverage.endTime}`}`
+
+/** Why a log diff is empty: a window with nothing to cluster, or no significant change. */
+export const logDiffEmpty = (d: CompareLogPatternsOutput): string => {
+	const bare = Arr.filter(
+		[
+			["before", d.before],
+			["after", d.after],
+		] as const,
+		([, w]) => w.sampled === 0,
+	)
+	return bare.length === 0
+		? "No log template changed significantly between the windows"
+		: `Nothing to compare: no log bodies in the ${Arr.join(
+				Arr.map(bare, ([label, w]) => `${label} window (${formatCount(w.totalLogs)} logs)`),
+				" or the ",
+			)}`
+}
+
+export const logDiffView = (empty: string): View<CompareLogPatternsOutput> => ({
+	empty,
+	isEmpty: (d) => d.patterns.length === 0,
+	table: (d) => [
+		{
+			body: renderTable(
+				[
+					{ header: "CHANGE", cell: (p) => Str.toUpperCase(p.change) },
+					{ header: "BEFORE", cell: (p) => formatCount(p.before.estimated), align: right },
+					{ header: "AFTER", cell: (p) => formatCount(p.after.estimated), align: right },
+					{
+						header: "SHARE",
+						cell: (p) => (p.ratio === undefined ? "" : `${p.ratio}x`),
+						align: right,
+					},
+					{ header: "SEVERITY", cell: (p) => topKeys(p.severityCounts, 2) },
+					{ header: "TEMPLATE", cell: (p) => p.template, maxWidth: 100 },
+				],
+				d.patterns,
+			),
+		},
+	],
+	notes: (d) => [
+		windowNote("before", d.before),
+		windowNote("after", d.after),
+		d.unchanged === 0
+			? "Every compared template changed; counts are estimated from each window's sample"
+			: `${formatCount(d.unchanged)} other ${d.unchanged === 1 ? "template" : "templates"} did not change significantly; counts are estimated from each window's sample`,
+	],
 })
 
 export interface TopOperationRow {

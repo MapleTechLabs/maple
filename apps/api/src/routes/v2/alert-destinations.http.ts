@@ -11,6 +11,8 @@ import {
 	PagerDutyAlertDestinationConfig,
 	TelegramAlertDestinationConfig,
 	GoogleChatAlertDestinationConfig,
+	IncidentIoAlertDestinationConfig,
+	MicrosoftTeamsAlertDestinationConfig,
 	WebhookAlertDestinationConfig,
 } from "@maple/domain/http"
 import type {
@@ -21,7 +23,7 @@ import type {
 	V2TelegramChatList,
 } from "@maple/domain/http/v2"
 import { MapleApiV2, paginateArray } from "@maple/domain/http/v2"
-import { Effect, Array as Arr } from "effect"
+import { Effect, Option, Array as Arr } from "effect"
 import { recordHttpAudit } from "@maple/backend/services/audit/AuditLogService"
 import { AlertDestinationsService } from "@maple/backend/services/alerts/AlertDestinationsService"
 
@@ -87,6 +89,21 @@ const toCreateRequest = (params: V2AlertDestinationCreateParams) => {
 				type: "google-chat",
 				name: params.name,
 				webhookUrl: params.webhook_url,
+				...(params.enabled !== undefined ? { enabled: params.enabled } : undefined),
+			})
+		case "microsoft-teams":
+			return new MicrosoftTeamsAlertDestinationConfig({
+				type: "microsoft-teams",
+				name: params.name,
+				webhookUrl: params.webhook_url,
+				...(params.enabled !== undefined ? { enabled: params.enabled } : undefined),
+			})
+		case "incident-io":
+			return new IncidentIoAlertDestinationConfig({
+				type: "incident-io",
+				name: params.name,
+				alertSourceConfigId: params.alert_source_config_id,
+				token: params.token,
 				...(params.enabled !== undefined ? { enabled: params.enabled } : undefined),
 			})
 		case "email":
@@ -156,6 +173,21 @@ const toUpdateRequest = (params: V2AlertDestinationUpdateParams): AlertDestinati
 				...shared,
 				...(params.webhook_url !== undefined ? { webhookUrl: params.webhook_url } : undefined),
 			}
+		case "microsoft-teams":
+			return {
+				type: "microsoft-teams",
+				...shared,
+				...(params.webhook_url !== undefined ? { webhookUrl: params.webhook_url } : undefined),
+			}
+		case "incident-io":
+			return {
+				type: "incident-io",
+				...shared,
+				...(params.alert_source_config_id !== undefined
+					? { alertSourceConfigId: params.alert_source_config_id }
+					: undefined),
+				...(params.token !== undefined ? { token: params.token } : undefined),
+			}
 		case "email":
 			return {
 				type: "email",
@@ -195,10 +227,10 @@ export const destinationAuditDiff = auditDiff({
 	fields: ["name", "enabled", "member_user_ids"],
 	// A webhook URL is a credential: Discord's carries the token in the path, and
 	// a plain webhook's can carry one in userinfo or query.
-	writeOnly: ["integration_key", "signing_secret", "url", "webhook_url", "bot_token"],
+	writeOnly: ["integration_key", "signing_secret", "url", "webhook_url", "bot_token", "token"],
 	// Provider-side handles. Not secret, but not readable back off the document
 	// either — recorded as touched so the change is not invisible.
-	opaque: ["channel_id", "channel_name", "chat_id", "workspace_id", "team_id"],
+	opaque: ["channel_id", "channel_name", "chat_id", "workspace_id", "team_id", "alert_source_config_id"],
 })
 
 export const HttpV2AlertDestinationsLive = HttpApiBuilder.group(MapleApiV2, "alertDestinations", (handlers) =>
@@ -220,13 +252,13 @@ export const HttpV2AlertDestinationsLive = HttpApiBuilder.group(MapleApiV2, "ale
 					const tenant = yield* CurrentTenant.Context
 					const response = yield* destinations.listDestinations(tenant.orgId)
 
-					const destination = response.destinations.find((doc) => doc.id === params.id)
-					if (destination === undefined)
+					const destination = Arr.findFirst(response.destinations, (doc) => doc.id === params.id)
+					if (Option.isNone(destination))
 						return yield* new AlertDestinationNotFoundError({
 							message: "No such alert destination.",
 							destinationId: params.id,
 						})
-					return toV2Destination(destination)
+					return toV2Destination(destination.value)
 				}),
 			)
 			.handle("telegramChats", ({ payload }) =>
@@ -262,7 +294,7 @@ export const HttpV2AlertDestinationsLive = HttpApiBuilder.group(MapleApiV2, "ale
 					const tenant = yield* CurrentTenant.Context
 					const request = toUpdateRequest(payload)
 					const existing = yield* destinations.listDestinations(tenant.orgId)
-					const current = existing.destinations.find((doc) => doc.id === params.id)
+					const current = Arr.findFirst(existing.destinations, (doc) => doc.id === params.id)
 					const updated = yield* destinations.updateDestination(
 						tenant.orgId,
 						tenant.userId,
@@ -273,7 +305,7 @@ export const HttpV2AlertDestinationsLive = HttpApiBuilder.group(MapleApiV2, "ale
 
 					const changes = destinationAuditDiff(
 						payload,
-						destinationAuditView(current),
+						destinationAuditView(Option.getOrUndefined(current)),
 						destinationAuditView(updated),
 					)
 					yield* recordHttpAudit("alert_destination.updated", {

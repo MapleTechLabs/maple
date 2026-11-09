@@ -65,7 +65,7 @@ const toolGroup = (h: H, group: McpToolGroup, isOpen: boolean, isShowingAll: boo
 						isOpen && "rotate-90",
 					),
 				}),
-				h.span([h.Class("font-medium")], [group.label]),
+				typography(h, { weight: "medium" }, [group.label]),
 				typography(h, { size: "xs", tone: "muted", numeric: true }, [String(group.tools.length)]),
 			],
 		},
@@ -155,7 +155,7 @@ export const toolsSection = (h: H, model: Model): Html => {
 		},
 		AsyncData.matchData(model.tools, {
 			onEmpty: () => [h.div([h.Class("p-4")], [skeletonList(h, { rows: 6 })])],
-			onFailure: () => [sectionNote(h, "Couldn't load the tool list.")],
+			onFailure: () => [sectionNote(h, "Couldn't load the tool list")],
 			onData: (tools) => catalog(h, model, tools),
 		}),
 	)

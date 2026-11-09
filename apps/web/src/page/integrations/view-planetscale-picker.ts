@@ -59,8 +59,8 @@ const optionCard = (h: H, name: string, isChecked: boolean): Html =>
 			h.div(
 				[h.Class("min-w-0 flex-1 pt-px")],
 				[
-					typography(h, { size: "sm", weight: "semibold", className: "block" }, [
-						h.span([h.Class("truncate")], [name]),
+					typography(h, { size: "sm", weight: "medium", className: "block" }, [
+						typography(h, { truncate: true }, [name]),
 					]),
 				],
 			),
@@ -186,10 +186,9 @@ export const branchFields = (h: H, model: Model): Html => {
 						...(preview.dropped.length > 0
 							? [
 									", skipping ",
-									h.span(
-										[h.Class("font-mono")],
-										[Arr.join(preview.dropped.slice(0, 6), ", ")],
-									),
+									typography(h, { mono: true }, [
+										Arr.join(preview.dropped.slice(0, 6), ", "),
+									]),
 									preview.dropped.length > 6
 										? ` and ${preview.dropped.length - 6} more`
 										: "",

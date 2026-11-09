@@ -1,7 +1,8 @@
 import { organizationFeatureFlagsFrom } from "@maple/domain/organization-feature-flags"
+import * as Policy from "@maple/domain/policy"
 import { isClerkAuthEnabled } from "../../lib/services/common/auth-mode"
 import { NetworkErrorBody } from "@maple/web-data/lib/error-messages"
-import { Clock, Duration, Effect, Schema, Array as Arr } from "effect"
+import { Clock, Duration, Effect, Schema } from "effect"
 import { Command } from "foldkit"
 import { toLoadFailure } from "@maple/views/data/load-failure"
 import { SessionTenant } from "../../data/session-tenant"
@@ -19,7 +20,7 @@ export const FetchSettingsSession = Command.define("FetchSettingsSession", {
 	execute: Effect.gen(function* () {
 		const session = yield* (yield* SessionTenant).get
 		return {
-			isAdmin: Arr.some(session.roles, (role) => role === "root" || role === "org:admin"),
+			grants: Policy.grantsOf(session.roles),
 			userId: session.userId,
 			hasAiAutoTriage: isClerkAuthEnabled
 				? organizationFeatureFlagsFrom(window.Clerk?.organization?.publicMetadata).aiAutoTriage
@@ -45,8 +46,8 @@ export const FetchSettingsCustomer = Command.define("FetchSettingsCustomer", {
 			return yield* (yield* BillingCustomerCache).get(orgId === null ? { refresh } : { refresh, orgId })
 		}).pipe(
 			Effect.timeoutOrElse({ duration: CUSTOMER_TIMEOUT, orElse: () => Effect.fail(NetworkErrorBody) }),
-			Effect.catchDefect((defect) => Effect.fail(defect)),
 			Effect.mapError(toLoadFailure),
+			Effect.catchDefect((defect) => Effect.fail(toLoadFailure(defect))),
 			Effect.result,
 			Effect.map((result) => Message.CompletedFetchCustomer({ result })),
 		),

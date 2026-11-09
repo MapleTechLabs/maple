@@ -1,4 +1,5 @@
 import { Option, Schema, Array as Arr } from "effect"
+import { countLabel } from "@maple/ui/lib/format"
 import type { ChildAttribute, Html, HtmlBuilder } from "foldkit/html"
 import { button } from "../../ui/button"
 import * as Combobox from "../../ui/combobox"
@@ -79,7 +80,7 @@ const focusCombobox = <M>(h: HtmlBuilder<M>, inputs: ToolbarInputs<M>): Html =>
 		viewInputs: {
 			items: inputs.services,
 			placeholder: "Focus a service…",
-			emptyText: "No services found.",
+			emptyText: "No services match",
 			size: "sm",
 			showTrigger: false,
 			isUnfiltered: true,
@@ -109,12 +110,14 @@ const focusControls = <M>(
 	focus: Focus,
 	trigger: Trigger,
 ): ReadonlyArray<Html> => [
-	h.span(
-		[
-			h.Class(
-				"flex h-7 items-center gap-1.5 rounded-lg border border-input bg-background pr-1 pl-2 text-sm dark:bg-input/32",
-			),
-		],
+	hstack(
+		h,
+		{
+			gap: "1.5",
+			align: "center",
+			as: "span",
+			className: "h-7 rounded-lg border border-input bg-background pr-1 pl-2 text-sm dark:bg-input/32",
+		},
 		[
 			serviceDot(h, { serviceName: focus.serviceId, className: "size-1.5 shrink-0" }),
 			h.span([h.Class("max-w-40 truncate font-medium")], [focus.serviceId]),
@@ -189,9 +192,8 @@ const hiddenButton = <M>(h: HtmlBuilder<M>, inputs: ToolbarInputs<M>, trigger: T
 			attributes: [...trigger(TIP_HIDDEN), h.OnClick(inputs.onShowAllTraffic)],
 		},
 		[
-			...(inputs.hiddenNodeCount > 0 ? [`${inputs.hiddenNodeCount} services · `] : []),
-			String(inputs.hiddenEdgeCount),
-			" edges hidden",
+			...(inputs.hiddenNodeCount > 0 ? [`${countLabel(inputs.hiddenNodeCount, "service")} · `] : []),
+			`${countLabel(inputs.hiddenEdgeCount, "edge")} hidden`,
 		],
 	)
 
@@ -234,8 +236,9 @@ const presentationControls = <M>(h: HtmlBuilder<M>, inputs: ToolbarInputs<M>, tr
 	})
 
 const bar = <M>(h: HtmlBuilder<M>, inputs: ToolbarInputs<M>, trigger: Trigger, portal: Html | null): Html =>
-	h.div(
-		[h.Class("flex shrink-0 flex-wrap items-center gap-2 border-b bg-surface-sunken px-3 py-2")],
+	hstack(
+		h,
+		{ gap: "2", align: "center", wrap: true, className: "shrink-0 border-b bg-surface-sunken px-3 py-2" },
 		[
 			...Option.match(inputs.focus, {
 				onNone: () => [focusCombobox(h, inputs)],

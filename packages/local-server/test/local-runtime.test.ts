@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { ConfigProvider, Effect, Exit, Logger, Scope, Array as Arr, String as Str } from "effect"
+import { ConfigProvider, Effect, Exit, Logger, Option, Scope, Array as Arr, String as Str } from "effect"
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
@@ -199,7 +199,16 @@ describe("a store another process already serves", () => {
 			const logs: string[] = []
 			const capture = Logger.layer([
 				Logger.make(({ message }) => {
-					logs.push(String(Arr.isArray(message) ? message.join(" ") : message))
+					logs.push(
+						String(
+							Arr.isArray(message)
+								? Arr.join(
+										Arr.map(message, (part) => String(part)),
+										" ",
+									)
+								: message,
+						),
+					)
 				}),
 			])
 			await withForeignOwner(dataDir, async (owner) => {
@@ -220,9 +229,9 @@ describe("a store another process already serves", () => {
 				squatter.stop(true)
 				await Effect.runPromise(Scope.close(scope, Exit.void))
 			})
-			expect(logs.find((line) => Str.includes("cannot take over")(line))).toContain(
-				"port 47123 on 127.0.0.1 is already in use",
-			)
+			expect(
+				Option.getOrThrow(Arr.findFirst(logs, (line) => Str.includes("cannot take over")(line))),
+			).toContain("port 47123 on 127.0.0.1 is already in use")
 		})
 	})
 })

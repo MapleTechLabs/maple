@@ -3,9 +3,9 @@ import { Mount } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { defineMessageUnion } from "foldkit/message"
 
-// The linked cursor: hovering one
-// chart paints a cursor at the same x ratio on every sibling, through CSS variables written
-// imperatively, never through state.
+// The linked cursor: hovering one chart paints a cursor at the same x ratio on every sibling,
+// through CSS variables written imperatively on the overlays. Never on the container: the canvas
+// renderer rebuilds its whole scene when any ancestor's `style` or `class` changes.
 
 /** The container's resting cursor variables. */
 export const LINKED_CURSOR_STYLE = { "--linked-cursor-ratio": "0", "--linked-cursor-visible": "0" }
@@ -18,17 +18,18 @@ const TOOLTIP_UPDATE_INTERVAL_MS = 1000 / 30
 export const LinkedCursorMessage = defineMessageUnion({ CompletedMountLinkedCursor: {} })
 export type LinkedCursorMessage = typeof LinkedCursorMessage.Type
 
-/** The hovered chart, the last tooltip-forwarding move, and whether overlays sit on their plots. */
+/** The hovered chart, the last tooltip-forwarding move, the overlays placed on their plots (null until aligned), and whether they show. */
 interface CursorState {
 	active: HTMLElement | null
 	lastTooltip: number
-	aligned: boolean
+	overlays: ReadonlyArray<HTMLElement> | null
+	visible: boolean
 }
 
 const alignOverlays = (container: HTMLElement) => {
 	const placements = Arr.flatMap([...container.querySelectorAll<HTMLElement>(CHART_SELECTOR)], (chart) => {
 		const overlay = chart.querySelector<HTMLElement>(OVERLAY_SELECTOR)
-		const plot = chart.querySelector<Element>(PLOT_SELECTOR)
+		const plot = chart.querySelector(PLOT_SELECTOR)
 		const host = overlay?.offsetParent
 		if (!overlay || !plot || !(host instanceof HTMLElement)) return []
 		const plotBounds = plot.getBoundingClientRect()
@@ -50,6 +51,7 @@ const alignOverlays = (container: HTMLElement) => {
 		overlay.style.width = `${width}px`
 		overlay.style.height = `${height}px`
 	})
+	return Arr.map(placements, ({ overlay }) => overlay)
 }
 
 /** Pointer tracking on the container; emits `attached` once listening. A page with its own Message wraps this in its Mount. */
@@ -60,7 +62,14 @@ export const linkedCursorStream = <A>(element: Element, attached: A): Stream.Str
 				if (!(element instanceof HTMLElement)) return () => undefined
 				const container = element
 				// Mutable listener state lives only as long as this Mount.
-				const state: CursorState = { active: null, lastTooltip: 0, aligned: false }
+				const state: CursorState = { active: null, lastTooltip: 0, overlays: null, visible: false }
+				const setVisible = (visible: boolean) => {
+					if (state.visible === visible) return
+					state.visible = visible
+					Arr.forEach(state.overlays ?? [], (overlay) =>
+						overlay.style.setProperty("--linked-cursor-visible", visible ? "1" : "0"),
+					)
+				}
 				const setSource = (next: HTMLElement | null) => {
 					if (state.active === next) return
 					state.active?.querySelector<HTMLElement>(OVERLAY_SELECTOR)?.removeAttribute("hidden")
@@ -70,7 +79,7 @@ export const linkedCursorStream = <A>(element: Element, attached: A): Stream.Str
 					next?.querySelector<HTMLElement>(OVERLAY_SELECTOR)?.setAttribute("hidden", "")
 				}
 				const hide = () => {
-					container.style.setProperty("--linked-cursor-visible", "0")
+					setVisible(false)
 					setSource(null)
 				}
 				const onMouseMove = (event: MouseEvent) => {
@@ -85,7 +94,7 @@ export const linkedCursorStream = <A>(element: Element, attached: A): Stream.Str
 					const target = event.target
 					const chart =
 						target instanceof Element ? target.closest<HTMLElement>(CHART_SELECTOR) : null
-					const plot = chart?.querySelector<Element>(PLOT_SELECTOR)
+					const plot = chart?.querySelector(PLOT_SELECTOR)
 					const bounds = plot?.getBoundingClientRect()
 					const isInside =
 						chart !== null &&
@@ -97,23 +106,25 @@ export const linkedCursorStream = <A>(element: Element, attached: A): Stream.Str
 						event.clientY >= bounds.top &&
 						event.clientY <= bounds.bottom
 					if (!isInside || chart === null || bounds === undefined) {
-						state.aligned = false
 						hide()
+						state.overlays = null
 						return
 					}
-					if (!state.aligned) {
-						state.aligned = true
-						alignOverlays(container)
-					}
-					const ratio = Math.min(1, Math.max(0, (event.clientX - bounds.left) / bounds.width))
+					const overlays = state.overlays ?? alignOverlays(container)
+					state.overlays = overlays
+					const ratio = String(
+						Math.min(1, Math.max(0, (event.clientX - bounds.left) / bounds.width)),
+					)
 					setSource(chart)
-					container.style.setProperty("--linked-cursor-ratio", String(ratio))
-					container.style.setProperty("--linked-cursor-visible", "1")
+					Arr.forEach(overlays, (overlay) =>
+						overlay.style.setProperty("--linked-cursor-ratio", ratio),
+					)
+					setVisible(true)
 				}
 				const onPointerLeave = () => {
 					state.lastTooltip = 0
-					state.aligned = false
 					hide()
+					state.overlays = null
 				}
 				container.addEventListener("mousemove", onMouseMove, true)
 				container.addEventListener("pointermove", onPointerMove)

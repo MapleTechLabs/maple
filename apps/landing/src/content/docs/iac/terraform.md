@@ -9,12 +9,12 @@ navLabel: "Terraform"
 
 The Maple provider for [Terraform](https://developer.hashicorp.com/terraform) manages Maple configuration as code: dashboards, alert rules and their destinations, uptime monitors, scrape targets and API keys. It talks to the public [v2 API](/docs/reference/api), so anything you can do there with a key you can review in a plan first.
 
-|                    |                                                                                                                         |
-| ------------------ | ----------------------------------------------------------------------------------------------------------------------- |
-| Provider           | `mapletechlabs/maple`                                                                                                   |
-| Terraform          | 1.0 or later; `import` blocks need 1.5                                                                                  |
-| Source             | [packages/terraform-provider-maple](https://github.com/MapleTechLabs/maple/tree/main/packages/terraform-provider-maple) |
-| Resource reference | [Terraform resources](/docs/iac/terraform-resources)                                                                    |
+|                    |                                                                                                     |
+| ------------------ | --------------------------------------------------------------------------------------------------- |
+| Provider           | `mapletechlabs/maple`                                                                               |
+| Terraform          | 1.0 or later; `import` blocks need 1.5                                                              |
+| Source             | [MapleTechLabs/terraform-provider-maple](https://github.com/MapleTechLabs/terraform-provider-maple) |
+| Resource reference | [Terraform resources](/docs/iac/terraform-resources)                                                |
 
 ## Quick start
 

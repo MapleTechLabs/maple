@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { checkHealth, formatShare, medianOf } from "./uptime-derive"
+import { checkHealth, formatMs, formatShare, medianOf } from "./uptime-derive"
 import { Array as Arr } from "effect"
 
 describe("checkHealth", () => {
@@ -41,5 +41,12 @@ describe("formatShare", () => {
 
 	it("keeps two decimals otherwise, and a dash with no checks", () => {
 		expect(Arr.map([0.9958, 2 / 3, null], formatShare)).toEqual(["99.58%", "66.67%", "–"])
+	})
+})
+
+describe("formatMs", () => {
+	it("switches to seconds where milliseconds would round to 1000", () => {
+		expect(formatMs(999.4)).toBe("999 ms")
+		expect(formatMs(999.6)).toBe("1.00 s")
 	})
 })

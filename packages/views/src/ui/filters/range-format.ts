@@ -44,7 +44,7 @@ export const parseRange = (text: string, unit: RangeUnit): number | undefined =>
 	}
 	if (!/^(\d+(\.\d+)?\s*(ms|s|m|h)\s*)+$/.test(trimmed)) return undefined
 	const totalMs = Arr.reduce(
-		[...trimmed.matchAll(/(\d+(?:\.\d+)?)\s*(ms|s|m|h)/g)],
+		Str.matchAll(/(\d+(?:\.\d+)?)\s*(ms|s|m|h)/g)(trimmed),
 		0,
 		(sum, [, amount, suffix]) => sum + Number(amount) * (UNIT_MS.get(suffix ?? "") ?? 0),
 	)

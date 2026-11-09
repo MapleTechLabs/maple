@@ -19,7 +19,7 @@ export const localFailure = (error: { readonly message: string }): LoadFailure =
 	_tag: "@maple/local/errors/LoadFailed",
 	type: "api_error",
 	code: "local_query_failed",
-	title: "Couldn’t load data",
+	title: "Couldn't load data",
 	message: error.message,
 	retryable: false,
 	recovery: "retry",

@@ -68,7 +68,8 @@ const entryNameVersion = (key: string, value: unknown): NameVersion | undefined 
 
 export const parsePnpmLock = Effect.fn("lockfiles.parsePnpmLock")(function* (input: LockfileInput) {
 	// pnpm 11 can write an env document (the pinned package manager) before the project's.
-	const docs = (yield* parseYamlDocuments(input.path, input.content)).filter(isRecord)
+	const parsed = yield* parseYamlDocuments(input.path, input.content)
+	const docs = Arr.filter(parsed, isRecord)
 	if (!Arr.some(docs, (doc) => doc.lockfileVersion !== undefined)) {
 		return yield* new LockfileParseError({
 			path: input.path,

@@ -42,7 +42,7 @@ describe("startEventSink baseline counters", () => {
 
 	it("counts unhandled rejections as errors", () => {
 		const sink = startEventSink(CONFIG, "sess-2")
-		window.dispatchEvent(new Event("unhandledrejection") as PromiseRejectionEvent)
+		window.dispatchEvent(new Event("unhandledrejection"))
 
 		expect(sink.getErrorCount()).toBe(1)
 		sink.stop()

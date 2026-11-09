@@ -108,6 +108,7 @@ export class CancellationSnapshot extends Schema.Class<CancellationSnapshot>("Ca
  * the metrics record, and saying so is what sends a person to ask.
  */
 export const CancellationReason = Schema.Literals([
+	"same_day_cancel",
 	"never_activated",
 	"stopped_sending",
 	"not_engaged",

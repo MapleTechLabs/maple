@@ -86,7 +86,6 @@ if (checkpointProbeDataDir !== undefined) {
 			? onExit(0)
 			: Runtime.defaultTeardown(exit, onExit)
 
-	/* oxlint-disable effecttsgo/multiple-effect-provide */
 	/* oxlint-disable effecttsgo/strict-effect-provide */
 	maybeNotifyWhatsNew.pipe(
 		Effect.andThen(maybeNotifyUpdate),
@@ -132,6 +131,7 @@ if (checkpointProbeDataDir !== undefined) {
 		Effect.catchIf(isExpectedFailure, recoverExpected),
 		Effect.ensuring(Effect.sync(help.flush)),
 		Effect.withSpan("maple", { attributes: { "cli.argv": Arr.join(process.argv.slice(2), " ") } }),
+		// @effect-diagnostics-next-line multipleEffectProvide:off
 		Effect.provide(MainLayer),
 		Effect.provide(TelemetryLayer),
 		// Genuine failures reach here after closing the root span `Error`, each
@@ -150,5 +150,4 @@ if (checkpointProbeDataDir !== undefined) {
 		BunRuntime.runMain({ teardown }),
 	)
 	/* oxlint-enable effecttsgo/strict-effect-provide */
-	/* oxlint-enable effecttsgo/multiple-effect-provide */
 }

@@ -1,3 +1,4 @@
+import * as Policy from "@maple/domain/policy"
 import { V2ApiKey, V2ApiKeyWithSecret } from "@maple/domain/http/v2"
 import { Result, Schema, Array as Arr } from "effect"
 import { describe, expect, test } from "vitest"
@@ -9,10 +10,13 @@ import { Message } from "./message"
 import type { Model } from "./model"
 import { init, update } from "./update"
 
+const ADMIN = Policy.grantsOf(["org:admin"])
+const MEMBER = Policy.grantsOf(["org:member"])
+
 const names = (commands: ReadonlyArray<{ readonly name: string }> | undefined) =>
 	Arr.map(commands ?? [], ({ name }) => name)
 
-const key = Schema.decodeUnknownSync(V2ApiKey)({
+const key = Schema.decodeSync(V2ApiKey)({
 	id: "key_aXwpxqBkqtYwtBtmsGbR41",
 	object: "api_key",
 	name: "CI deploy",
@@ -30,15 +34,15 @@ const key = Schema.decodeUnknownSync(V2ApiKey)({
 })
 
 const loaded = (): Model =>
-	update(init({ isAdmin: true, userId: null }).model, Message.UpdatedApiKeys({ rows: [key] })).model
+	update(init({ grants: ADMIN, userId: null }).model, Message.UpdatedApiKeys({ rows: [key] })).model
 const create = (message: CreateDialog.Message) => Message.GotCreateMessage({ message })
 const steps = (model: Model, messages: ReadonlyArray<Message>) =>
 	Arr.reduce(messages, model, (current, message) => update(current, message).model)
 
 describe("keys tab", () => {
 	test("entry reads nothing: the keys follow the synced shape and ingest keys live in Ingestion", () => {
-		expect(names(init({ isAdmin: true, userId: null }).commands)).toEqual([])
-		expect(names(init({ isAdmin: false, userId: "user_1" }).commands)).toEqual([])
+		expect(names(init({ grants: ADMIN, userId: null }).commands)).toEqual([])
+		expect(names(init({ grants: MEMBER, userId: "user_1" }).commands)).toEqual([])
 	})
 
 	test("Create stays blocked until the key has a name, then posts the restricted scopes", () => {
@@ -82,7 +86,7 @@ describe("keys tab", () => {
 			),
 		])
 		expect(names(update(refilled, create(CreateDialog.Message.ClickedCreate())).commands)).toEqual([])
-		const secret = Schema.decodeUnknownSync(V2ApiKeyWithSecret)({
+		const secret = Schema.decodeSync(V2ApiKeyWithSecret)({
 			...Schema.encodeSync(V2ApiKey)(key),
 			secret: "maple_ak_secret",
 		})
@@ -98,7 +102,7 @@ describe("keys tab", () => {
 
 	test("a member revokes their own phone's device key from its row", () => {
 		const member = "user_2Nk8mXqPfR3yZ1aB4cD5eF6g"
-		const device = Schema.decodeUnknownSync(V2ApiKey)({
+		const device = Schema.decodeSync(V2ApiKey)({
 			...Schema.encodeSync(V2ApiKey)(key),
 			id: "key_bXwpxqBkqtYwtBtmsGbR42",
 			name: "Home Screen widgets",
@@ -108,7 +112,7 @@ describe("keys tab", () => {
 			created_by: member,
 		})
 		const model = update(
-			init({ isAdmin: false, userId: member }).model,
+			init({ grants: MEMBER, userId: member }).model,
 			Message.UpdatedApiKeys({ rows: [key, device] }),
 		).model
 		const menuId = `keys-row-${device.id}`

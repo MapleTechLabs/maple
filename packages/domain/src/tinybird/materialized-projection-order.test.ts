@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest"
 import { datasources, pipes } from "../generated/tinybird-project-manifest"
-import { Array as Arr, String as Str } from "effect"
+import { Array as Arr, Option, String as Str } from "effect"
 
 interface Resource {
 	readonly name: string
@@ -12,7 +12,7 @@ const blockBody = (resource: Resource, section: string): string => {
 		resource.content,
 	)
 	expect(match, `${resource.name} should include ${section} block`).not.toBeNull()
-	return Str.trim(Str.replace(/^    /gm, "")(match![1]!))
+	return Str.trim(Str.replace(/^    /gm, "")(Arr.getUnsafe(match!, 1)))
 }
 
 const splitTopLevelCommas = (input: string): string[] => {
@@ -48,7 +48,7 @@ const datasourceColumns = (resource: Resource): string[] =>
 	Arr.map(splitTopLevelCommas(blockBody(resource, "SCHEMA")), (column) => {
 		const match = /^([A-Za-z_][A-Za-z0-9_]*)\s+/.exec(column)
 		expect(match, `could not parse datasource column from ${column}`).not.toBeNull()
-		return match![1]!
+		return Arr.getUnsafe(match!, 1)
 	})
 
 const findTopLevelFrom = (sql: string): number => {
@@ -71,7 +71,7 @@ const findTopLevelFrom = (sql: string): number => {
 		if (
 			depth === 0 &&
 			/^FROM\b/i.test(Str.slice(index)(sql)) &&
-			(index === 0 || /\s/.test(sql[index - 1]!))
+			(index === 0 || /\s/.test(sql[index - 1] ?? ""))
 		) {
 			return index
 		}
@@ -97,17 +97,17 @@ const pipeSelectColumns = (resource: Resource): string[] => {
 	const selectMatch = /\bSELECT\b/i.exec(sql)
 	expect(selectMatch, `${resource.name} should include SELECT`).not.toBeNull()
 
-	const selectStart = selectMatch!.index + selectMatch![0]!.length
+	const selectStart = selectMatch!.index + selectMatch![0].length
 	const selectList = Str.slice(selectStart, findTopLevelFrom(sql))(sql)
 
 	return Arr.map(splitTopLevelCommas(selectList), (expression) => {
 		const normalized = Str.trim(Str.replace(/\s+/g, " ")(expression))
 		const alias = /\s+AS\s+([A-Za-z_][A-Za-z0-9_]*)$/i.exec(normalized)
-		if (alias) return alias[1]!
+		if (alias) return Arr.getUnsafe(alias, 1)
 
 		const bareColumn = /^([A-Za-z_][A-Za-z0-9_]*)$/.exec(normalized)
 		expect(bareColumn, `SELECT expression needs an explicit alias: ${normalized}`).not.toBeNull()
-		return bareColumn![1]!
+		return Arr.getUnsafe(bareColumn!, 1)
 	})
 }
 
@@ -118,6 +118,8 @@ describe("materialized projection order", () => {
 			["ai_crawler_requests", "ai_crawler_requests_mv"],
 			["scanner_requests", "scanner_requests_mv"],
 			["service_runtimes_hourly", "service_runtimes_hourly_mv"],
+			["user_activity_hourly", "user_activity_hourly_traces_mv"],
+			["user_activity_hourly", "user_activity_hourly_logs_mv"],
 			["ci_runs", "ci_runs_mv"],
 			["ci_jobs", "ci_jobs_mv"],
 			["service_map_edges_hourly", "service_map_edges_hourly_ingest_mv"],
@@ -133,8 +135,10 @@ describe("materialized projection order", () => {
 		] as const
 
 		for (const [datasourceName, pipeName] of targets) {
-			const datasource = datasources.find((resource) => resource.name === datasourceName)
-			const pipe = pipes.find((resource) => resource.name === pipeName)
+			const datasource = Option.getOrUndefined(
+				Arr.findFirst(datasources, (resource) => resource.name === datasourceName),
+			)
+			const pipe = Option.getOrUndefined(Arr.findFirst(pipes, (resource) => resource.name === pipeName))
 			expect(datasource, `${datasourceName} datasource should exist`).toBeDefined()
 			expect(pipe, `${pipeName} pipe should exist`).toBeDefined()
 

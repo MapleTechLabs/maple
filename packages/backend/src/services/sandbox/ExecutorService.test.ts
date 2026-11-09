@@ -11,6 +11,10 @@ import {
 	type ExecutorRunResponse,
 	ExecutorInstall,
 	ExecutorDestroyed,
+	ExecutorReleased,
+	type ExecutorReleaseRequest,
+	type ExecutorReleaseResponse,
+	ExecutorUnavailable,
 } from "@maple/domain/executor"
 import { OrgId } from "@maple/domain/http"
 import { SandboxCheckout } from "@maple/domain/sandbox"
@@ -18,7 +22,7 @@ import { Effect, Option, Schema, Array as Arr, String as Str } from "effect"
 import type { ExecutorTransport } from "@maple/backend/sandbox/client"
 import { executorAgentId, executorKey, makeExecutor } from "./ExecutorService"
 
-const orgId = Schema.decodeUnknownSync(OrgId)("org_test")
+const orgId = Schema.decodeSync(OrgId)("org_test")
 const SHA = Str.repeat(40)("d")
 const target = { repository: "octo/shop", sha: SHA }
 const RUN_ID = "7F3A2C10-1111-4222-8333-944455556666"
@@ -30,6 +34,8 @@ const exited = new ExecutorRunExited({
 	stderr: "",
 	stdoutBytes: 2,
 	stderrBytes: 0,
+	stdoutTruncated: false,
+	stderrTruncated: false,
 	wallTimeMs: 10,
 	promoted: [],
 	rejected: [],
@@ -40,9 +46,11 @@ const fakeTransport = (
 	prepares: Array<ExecutorPrepareResponse>,
 	runs: Array<ExecutorRunResponse> = [],
 	available = true,
+	releases: Array<ExecutorReleaseResponse> = [],
 ) => {
 	const prepared: Array<ExecutorPrepareRequest> = []
 	const ran: Array<ExecutorRunRequest> = []
+	const released: Array<ExecutorReleaseRequest> = []
 	const transport: ExecutorTransport = {
 		available,
 		prepare: (request) =>
@@ -55,9 +63,14 @@ const fakeTransport = (
 				ran.push(request)
 				return available ? Option.fromNullishOr(runs.shift()) : Option.none()
 			}),
+		release: (request) =>
+			Effect.sync(() => {
+				released.push(request)
+				return Option.fromNullishOr(releases.shift())
+			}),
 		destroy: () => Effect.succeedSome(new ExecutorDestroyed()),
 	}
-	return { transport, prepared, ran }
+	return { transport, prepared, ran, released }
 }
 
 const executorOver = (transport: ExecutorTransport) =>
@@ -151,6 +164,33 @@ describe("ExecutorService", () => {
 			)
 			assert.strictEqual(error.reason, "unavailable")
 			assert.lengthOf(fake.ran, 2)
+		}),
+	)
+})
+
+describe("ExecutorService.release", () => {
+	it.effect("releases each agent under its canonical id, whatever the executor answers", () =>
+		Effect.gen(function* () {
+			const fake = fakeTransport([], [], true, [
+				new ExecutorReleased(),
+				new ExecutorUnavailable({ message: "busy" }),
+			])
+			const executor = executorOver(fake.transport)
+			// Best effort: a refused or silent release still lets the invocation end normally.
+			const answers = yield* Effect.all([
+				executor.release(RUN_ID, "Hunter 2-ab12cd34"),
+				executor.release(RUN_ID, "verifier-1"),
+				executor.release(RUN_ID, "verifier-2"),
+			]).pipe(Effect.exit)
+			assert.strictEqual(answers._tag, "Success")
+			assert.deepStrictEqual(
+				Arr.map(fake.released, (request) => [request.executorKey, request.agentId]),
+				[
+					[executorKey(RUN_ID), "hunter-2-ab12cd34"],
+					[executorKey(RUN_ID), "verifier-1"],
+					[executorKey(RUN_ID), "verifier-2"],
+				],
+			)
 		}),
 	)
 })

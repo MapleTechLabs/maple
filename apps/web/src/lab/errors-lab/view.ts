@@ -40,7 +40,7 @@ const toggleGroup = <M, T>(
 							h.OnClick(onChange(option.value)),
 							h.Class(
 								cn(
-									"h-6 rounded-sm px-2 text-xs transition-colors",
+									"h-6 rounded-sm px-2 text-xs",
 									option.value === active
 										? "bg-muted text-foreground"
 										: "text-muted-foreground hover:text-foreground active:text-foreground",
@@ -93,6 +93,7 @@ const hubView = Submodel.defineView<HubModel, HubMessage, HubInputs>((hub, input
 				status,
 				signals,
 				isNarrowed: false,
+				timeZone: inputs.timeZone,
 				rowState: (signal) => ({
 					isSelected: hub.selectedIds.includes(signal.id),
 					isSelecting,

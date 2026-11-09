@@ -1,5 +1,5 @@
 import { OrgId } from "@maple/domain"
-import { Effect, Schema, Array as Arr, Record as Rec } from "effect"
+import { Effect, Order, Schema, Array as Arr, Record as Rec } from "effect"
 import { AsyncData, Command, type Update } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import * as Chart from "@maple/views/charts/chart"
@@ -105,7 +105,10 @@ const fixtureStats = (window: LabWindow): CheckStats => {
 	const firstCheckMs = samples[0] === undefined ? startMs : isoMs(samples[0].at)
 	const points = Arr.flatMap(buckets, (bucketMs): ReadonlyArray<CheckPoint> => {
 		const checks = inBucket(bucketMs)
-		const sorted = Arr.map(checks, (sample) => sample.durationMs).toSorted((a, b) => a - b)
+		const sorted = Arr.sort(
+			Arr.map(checks, (sample) => sample.durationMs),
+			Order.Number,
+		)
 		if (bucketMs + stepMs <= firstCheckMs) return []
 		return [
 			{
@@ -140,7 +143,10 @@ const fixtureStats = (window: LabWindow): CheckStats => {
 					},
 				]
 	})
-	const sorted = Arr.map(samples, (sample) => sample.durationMs).toSorted((a, b) => a - b)
+	const sorted = Arr.sort(
+		Arr.map(samples, (sample) => sample.durationMs),
+		Order.Number,
+	)
 	return {
 		window,
 		points,
@@ -180,7 +186,7 @@ export const init = (_flags: Flags): Return => ({
 		monitor: Keyed.idle(),
 		destinations: null,
 		incidents: null,
-		isAdmin: false,
+		grants: [],
 		isToggling: false,
 		isChecking: false,
 		copies: {},

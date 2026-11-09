@@ -4,7 +4,7 @@ import { CurrentMcpTenant, withTenantExecutor } from "../lib/query-warehouse"
 import { formatDurationFromMs, toSecondTimestamp, truncate } from "../lib/format"
 import * as P from "../lib/params"
 import { doc, type DocBlock } from "../lib/tool-doc"
-import { Effect, Schema, Array as Arr, Record as Rec, String as Str } from "effect"
+import { DateTime, Effect, Option, Schema, Array as Arr, Record as Rec, String as Str } from "effect"
 import { hasAiSignal, renderAiSpan } from "../lib/render-ai-span"
 import { InspectSpanOutput } from "@maple/domain/mcp-outputs"
 import { detectPlatform, type PlatformSummary } from "@maple/domain/cloud-platform"
@@ -187,7 +187,10 @@ export function registerInspectSpanTool(server: McpToolRegistrar) {
 		}) {
 			yield* Effect.annotateCurrentSpan({ "maple.trace.id": trace_id, "maple.span.id": span_id })
 			const timestampMs = timestamp === undefined ? undefined : parseWarehouseDateTime(timestamp)
-			const timestampHint = timestampMs === undefined ? undefined : new Date(timestampMs)
+			const timestampHint =
+				timestampMs === undefined
+					? undefined
+					: Option.getOrUndefined(Option.map(DateTime.make(timestampMs), DateTime.toDateUtc))
 
 			const result = yield* withTenantExecutor(
 				spanDetail({ traceId: trace_id, spanId: span_id, timestampHint }),

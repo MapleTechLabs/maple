@@ -53,7 +53,9 @@ export interface AuditWorkflowHandle {
 }
 
 export interface AuditWorkflowInstance {
+	// @effect-diagnostics-next-line lazyEffect:off -- mirrors the Workflow instance's RPC method
 	readonly terminate: () => Effect.Effect<void>
+	// @effect-diagnostics-next-line lazyEffect:off -- mirrors the Workflow instance's RPC method
 	readonly status: () => Effect.Effect<{ readonly status: string }>
 }
 

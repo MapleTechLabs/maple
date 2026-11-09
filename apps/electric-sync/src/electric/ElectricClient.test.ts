@@ -7,6 +7,7 @@ import {
 	Option,
 	Redacted,
 	Tracer,
+	Array as Arr,
 	Record as Rec,
 	String as Str,
 } from "effect"
@@ -44,6 +45,9 @@ const syncRequest = (
 }
 
 const base = { electricUrl: "http://electric:3000", orgId: "org_123" }
+
+const columnsOf = (params: URLSearchParams): ReadonlyArray<string> =>
+	Option.match(Option.fromNullishOr(params.get("columns")), { onNone: () => [], onSome: Str.split(",") })
 
 const buildUrl = (
 	subscription: SubscriptionName,
@@ -198,7 +202,7 @@ describe("buildUpstreamShapeUrl", () => {
 	it.each(["alert_destinations", "alert_destinations_v2"] as const)(
 		"pins %s's column projection and drops the secret columns",
 		(shape) => {
-			const columns = buildUrl(shape).params.get("columns")?.split(",") ?? []
+			const columns = columnsOf(buildUrl(shape).params)
 			// PK + org scope must be present for Electric.
 			assert.include(columns, "id")
 			assert.include(columns, "org_id")
@@ -213,7 +217,7 @@ describe("buildUpstreamShapeUrl", () => {
 
 	it("projects only safe API-key display fields", () => {
 		const { params } = buildUrl("api_keys")
-		const columns = params.get("columns")?.split(",") ?? []
+		const columns = columnsOf(params)
 		assert.strictEqual(params.get("table"), "api_keys")
 		assert.strictEqual(params.get("where"), `"org_id" = $1`)
 		assert.include(columns, "id")
@@ -225,12 +229,11 @@ describe("buildUpstreamShapeUrl", () => {
 	})
 
 	it("never lets the client widen a column-restricted shape back to secrets", () => {
-		const columns =
+		const columns = columnsOf(
 			buildUrl("alert_destinations", {
 				query: "columns=id%2Corg_id%2Csecret_ciphertext%2Csecret_iv%2Csecret_tag",
-			})
-				.params.get("columns")
-				?.split(",") ?? []
+			}).params,
+		)
 		assert.notInclude(columns, "secret_ciphertext")
 		assert.include(columns, "config_json")
 	})
@@ -260,8 +263,7 @@ describe("buildUpstreamShapeUrl", () => {
 	})
 
 	it("projects only the investigation columns the page renders", () => {
-		const columns =
-			buildUrl("investigation_v2", { scopeValue: "inv_1" }).params.get("columns")?.split(",") ?? []
+		const columns = columnsOf(buildUrl("investigation_v2", { scopeValue: "inv_1" }).params)
 		assert.include(columns, "id")
 		assert.include(columns, "org_id")
 		assert.include(columns, "report_json")
@@ -541,11 +543,10 @@ describe("Electric upstream span never carries the secret", () => {
 					assert.notInclude(String(value), "sh_secret")
 				}
 			}
-			const client = spans.find((span) => span.name === "http.client GET")
-			assert.isDefined(client)
-			assert.strictEqual(client?.attributes.get("url.path"), "/v1/shape")
-			assert.strictEqual(client?.attributes.get("peer.service"), "electric")
-			assert.strictEqual(client?.attributes.get("http.response.status_code"), 200)
+			const client = Option.getOrThrow(Arr.findFirst(spans, (span) => span.name === "http.client GET"))
+			assert.strictEqual(client.attributes.get("url.path"), "/v1/shape")
+			assert.strictEqual(client.attributes.get("peer.service"), "electric")
+			assert.strictEqual(client.attributes.get("http.response.status_code"), 200)
 		}).pipe(Effect.provide(secretLayer)),
 	)
 

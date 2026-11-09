@@ -9,10 +9,7 @@ import type { Resources } from "../../platform/resources"
 import { Message, type Model } from "./model"
 
 /** Every emission names the org it was read for, so `update` can drop the previous org's rows. */
-export const ruleCounts = (
-	orgId: OrgId,
-	rules: Collection<AlertRuleRow, string | number>,
-): Stream.Stream<Message> =>
+export const ruleCounts = (orgId: OrgId, rules: Collection<AlertRuleRow>): Stream.Stream<Message> =>
 	liveQueryStream(
 		(q) => q.from({ rule: rules }),
 		(rows) => Message.UpdatedAlertRules({ orgId, count: rows.length }),

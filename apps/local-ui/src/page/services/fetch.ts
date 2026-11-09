@@ -3,13 +3,14 @@ import type { TimeBounds } from "../../lib/time"
 import { Effect, Array as Arr } from "effect"
 import { localParams, queryRows } from "../../data/local-query"
 import type { ServiceCatalogEntry } from "./model"
+import { nonZeroOr } from "@maple/ui/lib/number"
 
 // The service catalog query and `toCatalogEntry`.
 
 /** Sampled counts win when the store estimated them. */
 export const toCatalogEntry = (row: CH.ServiceCatalogOutput, logCount: number): ServiceCatalogEntry => {
-	const spanCount = row.estimatedSpanCount || row.spanCount
-	const errorCount = row.estimatedErrorCount || row.errorCount
+	const spanCount = nonZeroOr(row.estimatedSpanCount, row.spanCount)
+	const errorCount = nonZeroOr(row.estimatedErrorCount, row.errorCount)
 	return {
 		serviceName: row.serviceName,
 		serviceNamespaces: row.serviceNamespaces,

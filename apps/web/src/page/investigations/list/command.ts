@@ -1,6 +1,6 @@
 import { Clock, Duration, Effect, Schema } from "effect"
 import { Command, Mount } from "foldkit"
-import { readIsAdmin } from "../../alerts/shared/commands"
+import { readGrants } from "../../../data/session-tenant"
 import { toLoadFailure } from "@maple/views/data/load-failure"
 import { MapleApiV2Client, MapleInternalApiClient } from "../../../platform/api-clients"
 import { loadSignalPresences } from "../../kit/signal-presence"
@@ -26,7 +26,8 @@ const fetchPage = (cursor: string | undefined) =>
 export const FetchInvestigations = Command.define("FetchInvestigations", {
 	args: { key: Schema.String },
 	messages: [Message.CompletedFetchFirstPage],
-	execute: ({ key }) => Effect.map(fetchPage(undefined), (result) => Message.CompletedFetchFirstPage({ key, result })),
+	execute: ({ key }) =>
+		Effect.map(fetchPage(undefined), (result) => Message.CompletedFetchFirstPage({ key, result })),
 })
 
 export const FetchMoreInvestigations = Command.define("FetchMoreInvestigations", {
@@ -112,9 +113,10 @@ export const MountInvestigationRows = Mount.defineStream("MountInvestigationRows
 		}),
 })
 
-/** `useIsOrgAdmin`: the shared session read, so the budget notice can offer "Raise the limit". */
-export const ReadInvestigationsIsAdmin = Command.define("ReadInvestigationsIsAdmin", {
+/** The shared session read, so the budget notice can offer "Raise the limit". */
+export const ReadInvestigationsGrants = Command.define("ReadInvestigationsGrants", {
 	args: { orgId: Schema.String },
-	messages: [Message.CompletedReadIsAdmin],
-	execute: ({ orgId }) => Effect.map(readIsAdmin, (isAdmin) => Message.CompletedReadIsAdmin({ orgId, isAdmin })),
+	messages: [Message.CompletedReadGrants],
+	execute: ({ orgId }) =>
+		Effect.map(readGrants, (grants) => Message.CompletedReadGrants({ orgId, grants })),
 })

@@ -1,7 +1,7 @@
 #!/usr/bin/env bun
 /**
  * Rewrites scripts/oxlint-plugins/ui-kit-baseline.json: the per-file counts the kit-first lint
- * rules (scripts/oxlint-plugins/ui-kit-rules.mjs) still tolerate. Run it after fixing violations;
+ * rules (scripts/oxlint-plugins/ui-kit-rules.mjs, ratchet.mjs) still tolerate. Run it after fixing violations;
  * lint reports a file whose count dropped until the baseline follows.
  *
  * The baseline only shrinks: an entry that would grow, or a new file, fails unless you pass
@@ -18,11 +18,26 @@ const baselineFile = join(root, "scripts/oxlint-plugins/ui-kit-baseline.json")
 const allowIncrease = process.argv.includes("--allow-increase")
 
 const RULES = [
+	"empty-copy",
+	"kit-class-layout-only",
+	"no-arbitrary-spacing",
 	"no-arbitrary-text-size",
+	"no-arbitrary-z",
+	"no-clickable-div",
+	"no-faded-text",
+	"no-handrolled-kit-look",
 	"no-kit-styles-in-pages",
 	"no-raw-color",
 	"no-raw-control",
 	"no-raw-heading",
+	"no-raw-link",
+	"no-raw-shadow",
+	"popup-radius",
+	"prefer-stack",
+	"prefer-typography",
+	"sheet-size",
+	"surface-translucency",
+	"ui-copy",
 ]
 
 const lint = Bun.spawnSync(
@@ -45,7 +60,7 @@ const Report = Schema.Struct({
 	),
 })
 const Baseline = Schema.Record(Schema.String, Schema.Record(Schema.String, Schema.Number))
-const { diagnostics } = Schema.decodeUnknownSync(Schema.fromJsonString(Report))(lint.stdout.toString())
+const { diagnostics } = Schema.decodeSync(Schema.fromJsonString(Report))(lint.stdout.toString())
 
 const counts: Record<string, Record<string, number>> = Rec.fromEntries(Arr.map(RULES, (rule) => [rule, {}]))
 for (const { code, filename } of diagnostics) {
@@ -54,7 +69,7 @@ for (const { code, filename } of diagnostics) {
 	counts[rule][filename] = (counts[rule][filename] ?? 0) + 1
 }
 
-const previous = Schema.decodeUnknownSync(Schema.fromJsonString(Baseline))(readFileSync(baselineFile, "utf8"))
+const previous = Schema.decodeSync(Schema.fromJsonString(Baseline))(readFileSync(baselineFile, "utf8"))
 const grew = Arr.flatMap(RULES, (rule) =>
 	Arr.map(
 		Arr.filter(Rec.toEntries(counts[rule]), ([file, count]) => count > (previous[rule]?.[file] ?? 0)),

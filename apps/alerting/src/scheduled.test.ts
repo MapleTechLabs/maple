@@ -1,5 +1,5 @@
 import { describe, expect, it } from "@effect/vitest"
-import { Cause, Effect, Exit, Fiber, Latch, Layer, Array as Arr } from "effect"
+import { Cause, Effect, Exit, Fiber, Latch, Layer, Order, Array as Arr } from "effect"
 import { TestClock } from "effect/testing"
 import { env as workerEnv } from "../test/stubs/cloudflare-workers"
 import { scheduleFor } from "./schedule"
@@ -19,7 +19,7 @@ const cronCases = [
 		],
 	],
 	["2-59/5 * * * *", ["vercel"]],
-	["*/15 * * * *", ["digest", "supabaseInsights"]],
+	["*/15 * * * *", ["digest", "supabaseInsights", "maintenanceWindows", "searchConsole"]],
 	["0 * * * *", ["serviceMapRollup", "supabaseDiscovery", "awsConnections"]],
 	[
 		"* * * * *",
@@ -44,10 +44,12 @@ const recordingTicks = (
 		escalation: tick("escalation"),
 		fixVerification: tick("fixVerification"),
 		gcpMetrics: tick("gcpMetrics"),
+		maintenanceWindows: tick("maintenanceWindows"),
 		planetScale: tick("planetScale"),
 		planetScaleMetrics: tick("planetScaleMetrics"),
 		prReviewPostMerge: tick("prReviewPostMerge"),
 		railwayMetrics: tick("railwayMetrics"),
+		searchConsole: tick("searchConsole"),
 		serviceMapRollup: tick("serviceMapRollup"),
 		statusPages: tick("statusPages"),
 		supabaseDiscovery: tick("supabaseDiscovery"),
@@ -73,7 +75,7 @@ describe("alerting Effect root", () => {
 					yield* selectLaneProgram(cron, lane, recordingTicks(calls))
 					perLane.push(calls)
 				}
-				expect(perLane.flat().toSorted()).toEqual([...expected].toSorted())
+				expect(Arr.sort(Arr.flatten(perLane), Order.String)).toEqual(Arr.sort(expected, Order.String))
 				expect(Arr.every(perLane, (calls) => calls.length > 0)).toBe(true)
 			}),
 		)

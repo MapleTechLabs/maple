@@ -43,7 +43,13 @@ export const ALERTING_SCHEDULE = {
 	// Vercel poller off the Railway and Cloudflare pollers' minute.
 	"2-59/5 * * * *": { lanes: ["vercel"], deadline: "270 seconds" },
 	// `supabase_insights` reads top queries every tick and advisors hourly (it tracks the hour itself).
-	"*/15 * * * *": { lanes: ["digest", "supabase_insights"], deadline: "10 minutes" },
+	// `maintenance_windows` writes the next 48 hours of maintenance occurrences as silences.
+	// `search_console` imports Google Search Console days; a property re-imports its head every 6 hours
+	// and walks its backfill one chunk per tick, so 15 minutes moves history without a minute cron.
+	"*/15 * * * *": {
+		lanes: ["digest", "supabase_insights", "maintenance_windows", "search_console"],
+		deadline: "10 minutes",
+	},
 	"0 * * * *": {
 		lanes: ["service_map_rollup", "supabase_discovery", "aws_connections"],
 		deadline: "15 minutes",
@@ -53,7 +59,8 @@ export const ALERTING_SCHEDULE = {
 export type AlertingCron = keyof typeof ALERTING_SCHEDULE
 export type TickLane = (typeof ALERTING_SCHEDULE)[AlertingCron]["lanes"][number]
 
-const isAlertingCron = (cron: string): cron is AlertingCron => Object.hasOwn(ALERTING_SCHEDULE, cron)
+const isAlertingCron = (cron: string): cron is AlertingCron =>
+	Rec.has<string, unknown>(ALERTING_SCHEDULE, cron)
 
 export const ALERTING_CRONS: ReadonlyArray<AlertingCron> = Arr.filter(
 	Rec.keys(ALERTING_SCHEDULE),

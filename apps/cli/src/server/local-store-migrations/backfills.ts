@@ -1,7 +1,7 @@
 // SAFETY-FILE: JSON rows here come from fixed internal formats and are validated before domain use.
 // Backfill SQL and the custom steps that `steps.ts` references. Each projection
 // is frozen byte-for-byte to the view body its snapshot installs, so backfilled and live rows agree.
-import { Schema, Array as Arr, String as Str } from "effect"
+import { Option, Schema, Array as Arr, String as Str } from "effect"
 import { applyRawTelemetryRetentionFloor, type Chdb } from "@maple/local-server/chdb"
 import { decodeJsonEachRow, decodeRowCounts } from "@maple/local-server/chdb-rows"
 import { localSchemaSnapshot } from "../schema-snapshots"
@@ -206,7 +206,12 @@ const rekeyTable = (db: Pick<Chdb, "query" | "exec">, rekey: SortKeyRekey): stri
 	)
 	if (table === undefined) return rekeyFailure(rekey, `found no ${rekey.table} table to re-sort`)
 	if (table.sortingKey !== rekey.sortingKey) {
-		const ttl = table.definition.match(/\bTTL\s+(.+?)(?=\bSETTINGS\b|$)/is)?.[1]?.trim()
+		const ttl = Option.getOrUndefined(
+			Option.flatMapNullishOr(
+				Str.match(/\bTTL\s+(.+?)(?=\bSETTINGS\b|$)/is)(table.definition),
+				(match) => match[1],
+			).pipe(Option.map(Str.trim)),
+		)
 		if (ttl === undefined) return rekeyFailure(rekey, `cannot read the TTL of ${rekey.table}`)
 		db.exec(rekeyStagingDdl(rekey, ttl))
 		db.exec(`INSERT INTO ${staging} SELECT * FROM ${rekey.table}`)

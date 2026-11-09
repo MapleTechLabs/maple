@@ -106,7 +106,7 @@ export interface OAuthTokenEndpointConfig {
 	readonly tokenUrl: string
 	readonly clientId: string
 	/** null for a public (PKCE-only) client. Stays Redacted until the token POST body. */
-	readonly clientSecret: Redacted.Redacted<string> | null
+	readonly clientSecret: Redacted.Redacted | null
 	/** How a confidential client authenticates (RFC 6749 s2.3.1); defaults to the POST body. */
 	readonly clientAuthentication?: "client_secret_post" | "client_secret_basic"
 	/** A non-RFC status the provider answers for an unknown or rotated-away refresh token (Supabase: 404). */
@@ -146,11 +146,15 @@ export interface MakeOAuthConnectionHelpersOptions {
 			sourceId: SourceId,
 		) => Effect.Effect<unknown, Effect.Error<ReturnType<MapleDb["run"]>>>
 	}
-	/** Provider state a new grant must reset, written in the same transaction as the grant. */
+	/**
+	 * Provider state a new grant must reset, written in the same transaction as the grant.
+	 * `previousExternalUserId` is the account the org was connected as before, null on a first connect.
+	 */
 	readonly onUpsert?: (
 		db: MapleDb,
 		orgId: OrgId,
 		currentTime: number,
+		change: { readonly previousExternalUserId: string | null; readonly externalUserId: string | null },
 	) => Effect.Effect<unknown, Effect.Error<ReturnType<MapleDb["run"]>>>
 }
 
@@ -250,7 +254,7 @@ export const makeOAuthConnectionHelpers = (options: MakeOAuthConnectionHelpersOp
 			orgId: OrgId,
 		) {
 			const row = yield* loadConnection(orgId)
-			if (!row) {
+			if (row == null) {
 				return yield* new IntegrationsNotConnectedError({
 					message: `${providerLabel} is not connected for this organization`,
 				})
@@ -273,6 +277,15 @@ export const makeOAuthConnectionHelpers = (options: MakeOAuthConnectionHelpersOp
 			dbExecute((db) =>
 				db.transaction(
 					Effect.gen(function* () {
+						const [previous] =
+							onUpsert === undefined
+								? []
+								: yield* db.run(
+										PG.from(OAuthConnections)
+											.select("externalUserId")
+											.where(($) => [$.orgId.eq(orgId), $.provider.eq(provider)])
+											.limit(1),
+									)
 						const [connection] = yield* db.run(
 							PG.insertInto(OAuthConnections)
 								.values({
@@ -289,9 +302,13 @@ export const makeOAuthConnectionHelpers = (options: MakeOAuthConnectionHelpersOp
 									// pollers resume automatically.
 									set: { ...values, revokedAt: null, updatedAt: currentTime },
 								})
-								.returning("id", "sourceId", "externalAccountName"),
+								.returning("id", "sourceId", "externalAccountName", "externalUserId"),
 						)
-						if (onUpsert !== undefined) yield* onUpsert(db, orgId, currentTime)
+						if (onUpsert !== undefined)
+							yield* onUpsert(db, orgId, currentTime, {
+								previousExternalUserId: previous?.externalUserId ?? null,
+								externalUserId: connection?.externalUserId ?? null,
+							})
 						if (source === undefined || connection === undefined || connection.sourceId !== null)
 							return
 						const sourceId = yield* createIntegrationSource(

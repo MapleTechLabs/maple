@@ -69,19 +69,28 @@ export function relativeParts(epochMs: number, nowMs: number = Date.now()): Rela
 	return { value: Math.floor(seconds / YEAR), unit: "y", future }
 }
 
+// Pages read the clock once at load and server clocks run slightly ahead, so an event
+// that just happened can land up to a couple of minutes "in the future".
+const FUTURE_SKEW_TOLERANCE_MS = 120_000
+
+const isJustNow = (epochMs: number, nowMs: number): boolean => {
+	const deltaMs = nowMs - epochMs
+	return deltaMs < 5_000 && deltaMs > -FUTURE_SKEW_TOLERANCE_MS
+}
+
 /** `"3h ago"` / `"in 3h"` / `"just now"`, from an epoch-ms instant. */
 export function formatRelativeFrom(epochMs: number, nowMs: number = Date.now()): string {
 	if (!Number.isFinite(epochMs)) return EMPTY_VALUE
+	if (isJustNow(epochMs, nowMs)) return "just now"
 	const { value, unit, future } = relativeParts(epochMs, nowMs)
-	if (unit === "s" && value < 5) return "just now"
 	return future ? `in ${value}${unit}` : `${value}${unit} ago`
 }
 
 /** `"3h"` / `"now"`, from an epoch-ms instant. For dense table cells and chips. */
 export function formatRelativeShortFrom(epochMs: number, nowMs: number = Date.now()): string {
 	if (!Number.isFinite(epochMs)) return EMPTY_VALUE
+	if (isJustNow(epochMs, nowMs)) return "now"
 	const { value, unit } = relativeParts(epochMs, nowMs)
-	if (unit === "s" && value < 5) return "now"
 	return `${value}${unit}`
 }
 

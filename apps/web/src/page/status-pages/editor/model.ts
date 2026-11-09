@@ -1,3 +1,4 @@
+import * as Policy from "@maple/domain/policy"
 import { StatusPageComponentId, StatusPageId, StatusPageIncidentId } from "@maple/domain"
 import {
 	StatusPageConfig,
@@ -19,6 +20,25 @@ import { PreviewHistory, PreviewScheme } from "../shared/preview"
 
 // `/status-pages/$pageId`: the page itself is the editor. A component or incident picked in the
 // preview or the list opens in the side panel; Settings and JSON are views of their own.
+
+/** The incident update form: open for one incident, posting it, or showing why the post failed. */
+export const UpdateFormState = Schema.Union([
+	Schema.TaggedStruct("Closed", {}),
+	Schema.TaggedStruct("Editing", { form: UpdateForm }),
+	/** `generation`: which post this is, so a reopened form ignores an earlier post's answer. */
+	Schema.TaggedStruct("Posting", { form: UpdateForm, generation: Schema.Number }),
+	Schema.TaggedStruct("Failed", { form: UpdateForm, failure: LoadFailure }),
+])
+export type UpdateFormState = typeof UpdateFormState.Type
+
+export const JsonEdit = Schema.Struct({
+	draft: Schema.String,
+	/** The saved document the draft was opened from: its diff base and the version an apply sends. */
+	base: StatusPageConfig,
+	/** After a conflict: the next good config read becomes the base, keeping the typed draft. */
+	isRebasing: Schema.Boolean,
+})
+export type JsonEdit = typeof JsonEdit.Type
 
 export const BreakGlassAction = Schema.Literals(["rotate", "revoke"])
 export type BreakGlassAction = typeof BreakGlassAction.Type
@@ -52,7 +72,7 @@ export const Model = Schema.Struct({
 	incidents: KeyedSchema(Schema.Array(V2StatusPageIncident), LoadFailure),
 	/** The org's monitors: the component picker and each linked component's status. */
 	monitors: KeyedSchema(Schema.Array(V2UptimeMonitor), LoadFailure),
-	isAdmin: Schema.Boolean,
+	grants: Schema.Array(Policy.PermissionName),
 	isSessionLoaded: Schema.Boolean,
 	pageMenu: Menu.Model,
 	panel: Schema.NullOr(Panel),
@@ -78,9 +98,9 @@ export const Model = Schema.Struct({
 	incidentForm: IncidentForm,
 	isCreatingIncident: Schema.Boolean,
 	incidentFailure: Schema.NullOr(LoadFailure),
-	updateForm: Schema.NullOr(UpdateForm),
-	isPostingUpdate: Schema.Boolean,
-	updateFailure: Schema.NullOr(LoadFailure),
+	updateForm: UpdateFormState,
+	/** The generation the next update post takes. */
+	nextUpdatePost: Schema.Number,
 	publishingIncidentIds: Schema.Array(StatusPageIncidentId),
 	// Live
 	/** The status Worker's origin; empty hides the public links (no status domain yet). */
@@ -102,14 +122,18 @@ export const Model = Schema.Struct({
 	// JSON
 	/** The page as `GET …/config` returns it: every component, and the revision to apply against. */
 	config: KeyedSchema(StatusPageConfig, LoadFailure),
-	/** The edited document; `null` while the tab shows the page as saved. */
-	jsonDraft: Schema.NullOr(Schema.String),
-	/** The saved document the draft was opened from: its diff base and the version an apply sends. */
-	jsonBase: Schema.NullOr(StatusPageConfig),
-	/** After a conflict: the next config read becomes the draft's base, keeping the typed draft. */
-	isRebasingJson: Schema.Boolean,
+	/** The open JSON edit; `null` while the tab shows the page as saved. */
+	jsonEdit: Schema.NullOr(JsonEdit),
 	isApplyingJson: Schema.Boolean,
 	jsonFailure: Schema.NullOr(LoadFailure),
 	jsonCopy: CopyButton.Model,
 })
 export type Model = typeof Model.Type
+
+/** The viewer may change what this page edits (`status_pages:edit`). */
+export const canManage = (model: Pick<Model, "grants">): boolean =>
+	Policy.has(model.grants, "status_pages:edit")
+
+/** The viewer may rotate or revoke the break-glass token (`status_pages:break_glass`). */
+export const canBreakGlass = (model: Pick<Model, "grants">): boolean =>
+	Policy.has(model.grants, "status_pages:break_glass")

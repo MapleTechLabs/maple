@@ -4,6 +4,7 @@ import type { Html, HtmlBuilder } from "foldkit/html"
 import { buttonVariants } from "@maple/ui/styles/ui/button"
 import { ROW_LINE_CHARS, ROW_WRAPPED_CHARS, textWindow } from "../../lib/display-text"
 import { icon } from "../icon"
+import { timestampTrigger } from "../timestamp"
 import type { LogChip, LogRowView, PinnedCell } from "./log-row-view"
 import { highlightedText } from "./highlight"
 import { badgeVariants } from "@maple/ui/styles/ui/badge"
@@ -66,7 +67,7 @@ const ROW_CLASS =
 const EXPAND_BUTTON_CLASS =
 	"-mr-1.5 shrink-0 flex h-4 items-center justify-center w-4 text-foreground-faint group-hover/row:text-muted-foreground hover:text-foreground active:text-foreground cursor-pointer focus-visible:outline-none focus-visible:text-foreground"
 const ROW_ACTION_CLASS =
-	"inline-flex size-5 items-center justify-center rounded-sm text-3xs text-muted-foreground hover:bg-muted active:bg-muted hover:text-foreground active:text-foreground cursor-pointer focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+	"inline-flex size-5 items-center justify-center rounded-sm text-3xs text-muted-foreground hover:bg-surface-strong active:bg-surface-strong hover:text-foreground active:text-foreground cursor-pointer focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
 const ACTIONS_CLASS =
 	"absolute right-0 hidden items-center gap-0.5 rounded-md border border-border bg-background p-0.5 group-hover/row:flex group-data-[focused]/row:flex group-focus-within/row:flex"
 const ICON_BUTTON_CLASS = cn(
@@ -190,7 +191,7 @@ export const logRow = <Message>(
 							SEVERITY_ROW.get(row.severity),
 							state.isSelected && rowSelectedClass(true),
 							state.wrap ? "items-start" : "items-center",
-							state.density === "comfortable" ? "py-3" : "py-[7px]",
+							state.density === "comfortable" ? "py-3" : "py-[calc(--spacing(2)-1px)]",
 						),
 					),
 				],
@@ -210,10 +211,11 @@ export const logRow = <Message>(
 							}),
 						],
 					),
-					h.span(
+					h.time(
 						[
 							rowClass(h, "shrink-0 w-24 text-foreground-soft tabular-nums"),
-							h.Title(row.timeTitle),
+							h.DataAttribute("base-ui-tooltip-trigger", ""),
+							...timestampTrigger(h, { epochMs: row.timeMs, timeZone: row.timeZone }),
 						],
 						row.timeFraction === ""
 							? [row.timeMain]
@@ -227,8 +229,8 @@ export const logRow = <Message>(
 							rowClass(
 								h,
 								cn(
-									"shrink-0 w-11 truncate text-3xs leading-4 uppercase tabular-nums font-semibold tracking-wide",
-									FILLED_SEVERITIES.has(row.severity) && "rounded-sm px-1 text-white",
+									"shrink-0 w-11 truncate text-3xs leading-4 uppercase tabular-nums font-semibold tracking-caption",
+									FILLED_SEVERITIES.has(row.severity) && "rounded-sm px-1 text-on-fill",
 								),
 							),
 							h.Style(

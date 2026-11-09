@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest"
 
 import { GEN_AI_LABELS, splitGenAiAttributes } from "../gen-ai"
-import { Array as Arr, Record as Rec } from "effect"
+import { Array as Arr, Record as Rec, Option } from "effect"
 
 // Captured verbatim from a `chat openai/gpt-4o-mini` span in the local
 // warehouse (Mastra instrumentation through OpenRouter). Note
@@ -31,7 +31,9 @@ const CHAT_SPAN_ATTRS = {
 }
 
 function fieldsOf(attrs: Record<string, string>, groupId: string) {
-	const group = splitGenAiAttributes(attrs).groups.find((candidate) => candidate.id === groupId)
+	const group = Option.getOrUndefined(
+		Arr.findFirst(splitGenAiAttributes(attrs).groups, (candidate) => candidate.id === groupId),
+	)
 	return Arr.map(group?.fields ?? [], (field) => [field.label, field.value])
 }
 
@@ -82,9 +84,15 @@ describe("splitGenAiAttributes", () => {
 	// whether the split rewrote the string, so a payload has to come through
 	// byte-identical.
 	it("hands message payloads on untouched", () => {
-		const messages = splitGenAiAttributes(CHAT_SPAN_ATTRS).groups.find((group) => group.id === "content")
+		const messages = Option.getOrUndefined(
+			Arr.findFirst(splitGenAiAttributes(CHAT_SPAN_ATTRS).groups, (group) => group.id === "content"),
+		)
 
-		expect(messages?.fields.map((field) => [field.label, field.value === field.rawValue])).toEqual([
+		expect(
+			messages === undefined
+				? undefined
+				: Arr.map(messages.fields, (field) => [field.label, field.value === field.rawValue]),
+		).toEqual([
 			["Input messages", true],
 			["Output messages", true],
 		])
@@ -140,7 +148,9 @@ describe("splitGenAiAttributes", () => {
 			"gen_ai.request.openai.org_id": "1785982835123456789",
 			"gen_ai.request.stream": "true",
 		})
-		expect(groups.find((group) => group.id === "other")?.fields[0]?.label).toBe("Wharrgarbl Frob Count")
+		expect(
+			Option.getOrUndefined(Arr.findFirst(groups, (group) => group.id === "other"))?.fields[0]?.label,
+		).toBe("Wharrgarbl Frob Count")
 	})
 
 	// Two rows for the same quantity is what the legacy aliases are, and a
@@ -152,5 +162,20 @@ describe("splitGenAiAttributes", () => {
 			const labels = Arr.map(group.fields, (field) => field.label)
 			expect(new Set(labels).size, `duplicate label in "${group.id}"`).toBe(labels.length)
 		}
+	})
+})
+
+describe("splitGenAiAttributes with Object.prototype key names", () => {
+	it("keeps a `constructor` attribute in a rendered group", () => {
+		const { groups } = splitGenAiAttributes({ "gen_ai.constructor.value": "x" })
+		const values = Arr.flatMap(groups, (group) => Arr.map(group.fields, (field) => field.value))
+
+		expect(values).toContain("x")
+		expect(
+			Arr.every(
+				Arr.flatMap(groups, (group) => group.fields),
+				(field) => typeof field.label === "string",
+			),
+		).toBe(true)
 	})
 })

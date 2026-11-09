@@ -3,14 +3,25 @@
 // extracting (release assets are mutable even for a fixed tag), extract, and
 // install it. Hosts without a bundled library (the @maple-dev/alchemy sidecar)
 // keep one verified copy per release in a per-user cache.
-import { Duration, Effect, Schedule, Schema, Stream, String as Str } from "effect"
+import {
+	Duration,
+	Effect,
+	Option,
+	Schedule,
+	Schema,
+	Stream,
+	Array as Arr,
+	Record as Rec,
+	String as Str,
+} from "effect"
 import { HttpClient } from "effect/http"
 import { createHash, randomUUID } from "node:crypto"
-import { createReadStream, existsSync } from "node:fs"
+import { existsSync } from "node:fs"
 import { mkdir, open, readdir, readFile, rename, rm, writeFile } from "node:fs/promises"
 import { homedir } from "node:os"
 import { join } from "node:path"
 import manifest from "../libchdb.json" with { type: "json" }
+import { sha256File as sha256FileAsync } from "./checkpoint-digest"
 
 export class LibchdbProvisionError extends Schema.TaggedError<LibchdbProvisionError>()(
 	"@maple/local-server/LibchdbProvisionError",
@@ -37,7 +48,7 @@ const PLATFORM_ASSETS = {
 } as const
 
 const isSupportedPlatform = (key: string): key is keyof typeof PLATFORM_ASSETS =>
-	Object.hasOwn(PLATFORM_ASSETS, key)
+	Rec.has<string, string>(PLATFORM_ASSETS, key)
 
 /** The release asset this machine needs, or `undefined` where chdb-core ships none. */
 export const platformLibchdbAsset = (): string | undefined => {
@@ -117,9 +128,7 @@ const download = (
 const sha256File = (path: string) =>
 	Effect.tryPromise({
 		try: async () => {
-			const hash = createHash("sha256")
-			for await (const chunk of createReadStream(path)) hash.update(chunk)
-			return hash.digest("hex")
+			return sha256FileAsync(path)
 		},
 		catch: (error) => fail(`cannot read ${path}: ${String(error)}`),
 	})
@@ -141,7 +150,8 @@ const findLibrary = (root: string) =>
 		catch: (error) => fail(`cannot list the extracted archive: ${String(error)}`),
 	}).pipe(
 		Effect.map((entries) =>
-			entries.find(
+			Arr.findFirst(
+				entries,
 				(entry) => Str.endsWith("libchdb.so")(entry) || Str.endsWith("libchdb.dylib")(entry),
 			),
 		),
@@ -195,8 +205,9 @@ export const provisionLibchdb = (options: ProvisionOptions = {}) =>
 			catch: (error) => fail(`cannot run tar: ${String(error)}`),
 		})
 		if (exitCode !== 0) return yield* fail(`tar could not extract ${asset} (exit ${exitCode})`)
-		const library = yield* findLibrary(staging)
-		if (library === undefined) return yield* fail(`libchdb not found in ${asset}`)
+		const found = yield* findLibrary(staging)
+		if (Option.isNone(found)) return yield* fail(`libchdb not found in ${asset}`)
+		const library = found.value
 		const libraryDigest = yield* sha256File(join(staging, library))
 		yield* Effect.tryPromise({
 			try: async () => {

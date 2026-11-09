@@ -1,5 +1,5 @@
 import { afterEach, assert, describe, it } from "@effect/vitest"
-import { ConfigProvider, Effect, Layer, Schema, Array as Arr, String as Str } from "effect"
+import { ConfigProvider, Effect, Layer, Schema, Array as Arr, String as Str, Option } from "effect"
 import { TestClock } from "effect/testing"
 import { FetchHttpClient } from "effect/http"
 import { OrgId, UserId, SupabaseProjectUpdateRequest } from "@maple/domain/http"
@@ -285,7 +285,7 @@ describe("SupabaseConnectionService", () => {
 			yield* TestClock.adjust("1 hour")
 			const skipped = yield* service.discoverOrg(ORG)
 			assert.strictEqual(skipped.skipped, "grant revoked")
-			const all = yield* service.discoverAllOrgs()
+			const all = yield* service.discoverAllOrgs
 			assert.deepStrictEqual(all, { orgs: 1, discovered: 0, skipped: 1, failures: 0 })
 			assert.strictEqual(fake.state.calls.length, callsBefore)
 		}).pipe(Effect.provide(makeLayer(testDb, fake)))
@@ -320,14 +320,14 @@ describe("SupabaseConnectionService", () => {
 			const service = yield* SupabaseConnectionService
 			yield* connect(fake)
 			const listed = apiCalls(fake, "/v1/projects")
-			assert.deepStrictEqual(yield* service.discoverAllOrgs(), {
+			assert.deepStrictEqual(yield* service.discoverAllOrgs, {
 				orgs: 0,
 				discovered: 0,
 				skipped: 0,
 				failures: 0,
 			})
 			yield* TestClock.adjust("1 hour")
-			assert.deepStrictEqual(yield* service.discoverAllOrgs(), {
+			assert.deepStrictEqual(yield* service.discoverAllOrgs, {
 				orgs: 1,
 				discovered: 1,
 				skipped: 0,
@@ -355,7 +355,7 @@ describe("SupabaseConnectionService", () => {
 			assert.isNotNull((yield* projectRow(testDb, REF_A))?.removed_at ?? null)
 			assert.isNotNull((yield* projectRow(testDb, REF_B))?.removed_at ?? null)
 			// The new organization is due for the next sweep rather than waiting out the interval.
-			assert.strictEqual((yield* (yield* SupabaseConnectionService).discoverAllOrgs()).discovered, 1)
+			assert.strictEqual((yield* (yield* SupabaseConnectionService).discoverAllOrgs).discovered, 1)
 			assert.deepStrictEqual(
 				Arr.map(
 					(yield* (yield* SupabaseConnectionService).getStatus(ORG)).projects,
@@ -508,7 +508,7 @@ describe("SupabaseConnectionService log drains", () => {
 
 				const [create] = drainCalls(fake, "POST")
 				assert.strictEqual(create?.path, `/v2/projects/${REF_A}/analytics/log-drains`)
-				const body = Schema.decodeUnknownSync(DrainBody)(create?.body)
+				const body = Schema.decodeSync(DrainBody)(create?.body)
 				const authorization = body.data.attributes.config.headers.Authorization ?? ""
 				assert.deepStrictEqual(
 					{ ...body.data.attributes, config: { ...body.data.attributes.config, headers: {} } },
@@ -1100,8 +1100,10 @@ describe("SupabaseConnectionService log drains", () => {
 				asRef(REF_A),
 				new SupabaseProjectUpdateRequest({ logDrainEnabled: true }),
 			)
-			const again = recreated.projects.find((project) => project.ref === REF_A)
-			assert.deepStrictEqual([again?.logDrainEnabled, again?.logDrainError], [true, null])
+			const again = Option.getOrThrow(
+				Arr.findFirst(recreated.projects, (project) => project.ref === REF_A),
+			)
+			assert.deepStrictEqual([again.logDrainEnabled, again.logDrainError], [true, null])
 			assert.strictEqual((fake.state.drains.get(REF_A) ?? []).length, 1)
 		}).pipe(Effect.provide(makeLayer(testDb, fake)))
 	})

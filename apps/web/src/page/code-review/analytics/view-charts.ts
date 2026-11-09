@@ -13,7 +13,8 @@ import { Message } from "./message"
 import type { Model } from "./model"
 import { repositoryList } from "./view-lists"
 import { vstack } from "@maple/views/ui/stack"
-import { Array as Arr, Record as Rec } from "effect"
+import { Array as Arr, Record as Rec, Order } from "effect"
+import { textLink } from "@maple/views/ui/text-link"
 
 // `VolumeCard` and `IssuesCard`.
 
@@ -86,9 +87,12 @@ const isSeverity = (value: string): value is keyof typeof SEVERITY_SERIES => val
 
 const topRepositories = (analytics: CodeReviewAnalytics, by: "reviews" | "findings") =>
 	Arr.map(
-		Arr.filter(analytics.repositories, (repo) => repo[by] > 0)
-			.toSorted((a, b) => b[by] - a[by])
-			.slice(0, 5),
+		Arr.sort(
+			Arr.filter(analytics.repositories, (repo) => repo[by] > 0),
+			Order.flip(
+				Order.mapInput(Order.Number, (repo: CodeReviewAnalytics["repositories"][number]) => repo[by]),
+			),
+		).slice(0, 5),
 		(repo) => ({ key: repo.repositoryId, name: repo.fullName, value: repo[by] }),
 	)
 
@@ -112,7 +116,12 @@ export const volumeCard = (
 			control: panelSelect(h, model.volumeSelect, VOLUME_LABELS, "Volume metric", (message) =>
 				Message.GotVolumeSelectMessage({ message }),
 			),
-			footer: repositoryList(h, "Top repositories by reviews", topRepositories(analytics, "reviews")),
+			footer: repositoryList(
+				h,
+				"Top repositories by reviews",
+				topRepositories(analytics, "reviews"),
+				model.search,
+			),
 		},
 		[
 			chartFrame(h, analytics.current.reviews === 0, () =>
@@ -154,16 +163,16 @@ export const issuesCard = (
 		}),
 	)
 	const footer = vstack(h, { gap: "3" }, [
-		repositoryList(h, "Repositories with the most issues", topRepositories(analytics, "findings")),
-		h.a(
-			[
-				h.Class(
-					"inline-flex items-center gap-1 self-center text-sm text-muted-foreground underline-offset-4 hover:text-foreground active:text-foreground hover:underline active:underline",
-				),
-				h.Href(href),
-			],
-			["See all issues caught", icon(h, "ArrowRightIcon", { size: 14 })],
+		repositoryList(
+			h,
+			"Repositories with the most issues",
+			topRepositories(analytics, "findings"),
+			search,
 		),
+		textLink(h, { href, tone: "muted", className: "self-center text-sm underline-offset-4" }, [
+			"See all issues caught",
+			icon(h, "ArrowRightIcon", { size: 14 }),
+		]),
 	])
 	return analyticsPanel(
 		h,

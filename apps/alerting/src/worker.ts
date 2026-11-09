@@ -38,7 +38,7 @@ import { bindChatSessions } from "@maple/backend/platform/chat-sessions"
 import { bindEmailSender } from "@maple/backend/platform/email-sender"
 import { chatConnectorOutboundConfigKeys } from "@maple/chat-platform"
 import * as Cloudflare from "@alchemy.run/cloudflare"
-import { RuntimeContext } from "alchemy/RuntimeContext"
+import { dischargeRuntimeContext } from "@maple/backend/platform/alchemy-runtime"
 import { Cause, Config, Effect, Option, Ref, Array as Arr } from "effect"
 import { FetchHttpClient, HttpClient, HttpServerResponse } from "effect/http"
 import { ALERTING_CRONS, scheduleFor } from "./schedule.ts"
@@ -51,11 +51,6 @@ import { CHAT_ANTICIPATED_ERROR_IDENTIFIERS } from "@maple/chat-platform/anticip
  * read through the ConfigProvider (`workerEnvLayer`), never off `env`.
  */
 export type AlertingWorkerEnv = Record<string, unknown>
-
-/** Discharge alchemy's phantom color, the way alchemy's own runtime helpers do. */
-const runtime = <A, E>(effect: Effect.Effect<A, E, RuntimeContext>): Effect.Effect<A, E> =>
-	// oxlint-disable-next-line effecttsgo/strict-effect-provide
-	Effect.provide(effect, RuntimeContext.phantom)
 
 /** Config-sourced env; largely shared with api via `@maple/infra/env`. */
 const configuredEnv = (stage: MapleStage, region: MapleRegion, domains: MapleDomains) =>
@@ -76,6 +71,9 @@ const configuredEnv = (stage: MapleStage, region: MapleRegion, domains: MapleDom
 		// Linear alert destinations refresh the org's Linear token at delivery time.
 		optionalPlain("LINEAR_OAUTH_CLIENT_ID"),
 		optionalSecret("LINEAR_OAUTH_CLIENT_SECRET"),
+		// The Search Console importer refreshes the org's Google token each tick.
+		optionalPlain("GOOGLE_SEARCH_CONSOLE_CLIENT_ID"),
+		optionalSecret("GOOGLE_SEARCH_CONSOLE_CLIENT_SECRET"),
 		// Signs the chart image URL in notifications; unset sends them text-only.
 		optionalSecret("MAPLE_SHARE_TOKEN_HMAC_KEY"),
 		// Push for incidents, plus OAuth refresh for the Cloudflare, PlanetScale and Supabase pollers.
@@ -173,7 +171,9 @@ export default class Alerting extends Cloudflare.Worker<Alerting>()(
 		const runTick = (cron: string, lane: string, env: Record<string, unknown>) =>
 			Effect.gen(function* () {
 				const { runScheduled } = yield* scheduled
-				const [kv, bucket] = yield* runtime(Effect.all([statusKv.raw, statusBucket.raw]))
+				const [kv, bucket] = yield* dischargeRuntimeContext(
+					Effect.all([statusKv.raw, statusBucket.raw]),
+				)
 				yield* runScheduled(cron, lane, env, email, chatSessions, Option.some({ kv, bucket }))
 			}).pipe(
 				// Interrupts are isolate teardown, not a failed run.

@@ -20,8 +20,10 @@ import { Message } from "./message"
 import type { Model } from "./model"
 import { githubStatusOf, trackedBranchOf } from "./update-github"
 import { typography, typographyClass } from "@maple/views/ui/typography"
-import { hstack, hstackClass } from "@maple/views/ui/stack"
-import { Array as Arr, String as Str } from "effect"
+import { hstack, hstackClass, vstack } from "@maple/views/ui/stack"
+import { Array as Arr, String as Str, Option } from "effect"
+import { dividedList } from "@maple/views/ui/rule"
+import { textLink } from "@maple/views/ui/text-link"
 
 // `ConnectedView`'s repository panels, `RepoRow` and `BranchSelector`.
 
@@ -38,17 +40,16 @@ export const SYNC_PRESENTATION = {
 
 const repoLink = (h: H, repo: GithubRepoSummary): Html =>
 	hstack(h, { gap: "2" }, [
-		h.a(
+		textLink(
+			h,
+			{
+				href: repo.htmlUrl,
+				tone: "inherit",
+				className: "group max-w-full truncate text-sm font-medium",
+				attributes: [h.Target("_blank"), h.Rel("noreferrer")],
+			},
 			[
-				h.Href(repo.htmlUrl),
-				h.Target("_blank"),
-				h.Rel("noreferrer"),
-				h.Class(
-					"group inline-flex max-w-full items-center gap-1 truncate text-sm font-medium hover:underline active:underline",
-				),
-			],
-			[
-				h.span([h.Class("truncate"), h.Title(repo.fullName)], [repo.fullName]),
+				typography(h, { truncate: true, attributes: [h.Title(repo.fullName)] }, [repo.fullName]),
 				revealIcon(h, "ExternalLinkIcon", { size: 12 }),
 			],
 		),
@@ -99,7 +100,7 @@ const branchContent = (h: H, model: Model, repo: GithubRepoSummary): ReadonlyArr
 			filtered.length === 0
 				? [
 						typography(h, { size: "xs", tone: "muted", as: "p", className: "px-2 py-1.5" }, [
-							"No matches.",
+							"No matches",
 						]),
 					]
 				: Arr.map(filtered, (branch) =>
@@ -134,37 +135,31 @@ const repoRow = (h: H, model: Model, repo: GithubRepoSummary, timeZone: string):
 			h,
 			[
 				repoLink(h, repo),
-				h.div(
-					[h.Class("flex items-center gap-1.5 text-xs")],
-					[
-						h.span([h.Class(presentation.tone)], [presentation.label]),
-						...(repo.syncStatus === "error" &&
-						repo.lastSyncError !== null &&
-						repo.lastSyncError !== ""
+				hstack(h, { gap: "1.5", align: "center", className: "text-xs" }, [
+					h.span([h.Class(presentation.tone)], [presentation.label]),
+					...(repo.syncStatus === "error" &&
+					repo.lastSyncError !== null &&
+					repo.lastSyncError !== ""
+						? [
+								truncatedText(
+									h,
+									{ text: repo.lastSyncError, className: "text-muted-foreground" },
+									["· ", repo.lastSyncError],
+								),
+							]
+						: repo.lastSyncedAt !== null && repo.lastSyncedAt !== 0
 							? [
-									truncatedText(
-										h,
-										{ text: repo.lastSyncError, className: "text-muted-foreground" },
-										["· ", repo.lastSyncError],
-									),
+									typography(h, { tone: "muted" }, [
+										"· ",
+										relativeTime(h, {
+											value: repo.lastSyncedAt,
+											nowMs: model.nowMs,
+											timeZone,
+										}),
+									]),
 								]
-							: repo.lastSyncedAt !== null && repo.lastSyncedAt !== 0
-								? [
-										h.span(
-											[h.Class("text-muted-foreground")],
-											[
-												"· ",
-												relativeTime(h, {
-													value: repo.lastSyncedAt,
-													nowMs: model.nowMs,
-													timeZone,
-												}),
-											],
-										),
-									]
-								: []),
-					],
-				),
+							: []),
+				]),
 			],
 			"gap-0",
 		),
@@ -258,28 +253,26 @@ export const repositoriesPanels = (
 	const discoveryNotice: ReadonlyArray<Html> =
 		discovery?._tag === "Pending"
 			? [
-					h.div(
-						[h.Class("flex items-center gap-2.5 px-4 py-6 text-sm text-muted-foreground")],
+					hstack(
+						h,
+						{ gap: "2.5", align: "center", className: "px-4 py-6 text-sm text-muted-foreground" },
 						[spinner(h, undefined, 16), "Discovering repositories…"],
 					),
 				]
 			: discovery?._tag === "Failed"
 				? [
-						h.div(
-							[h.Class("flex flex-col items-start gap-3 px-4 py-6 text-sm")],
-							[
-								h.p([h.Class("text-destructive-foreground")], [discovery.message]),
-								button(
-									h,
-									{
-										variant: "outline",
-										isDisabled: model.connect.isStarting,
-										attributes: [h.OnClick(Message.ClickedConnect())],
-									},
-									["Reconnect GitHub"],
-								),
-							],
-						),
+						vstack(h, { gap: "3", align: "start", className: "px-4 py-6 text-sm" }, [
+							typography(h, { tone: "destructive", as: "p" }, [discovery.message]),
+							button(
+								h,
+								{
+									variant: "outline",
+									isDisabled: model.connect.isStarting,
+									attributes: [h.OnClick(Message.ClickedConnect())],
+								},
+								["Reconnect GitHub"],
+							),
+						]),
 					]
 				: []
 	return [
@@ -296,8 +289,9 @@ export const repositoriesPanels = (
 			...discoveryNotice,
 			...(active.length > 0
 				? [
-						h.ul(
-							[h.Class("divide-y")],
+						dividedList(
+							h,
+							{ as: "ul", bordered: false },
 							Arr.map(active, (repo) => repoRow(h, model, repo, timeZone)),
 						),
 					]
@@ -334,8 +328,9 @@ export const repositoriesPanels = (
 								),
 							],
 						}),
-						h.ul(
-							[h.Class("divide-y")],
+						dividedList(
+							h,
+							{ as: "ul", bordered: false },
 							Arr.map(removed, (repo) => removedRow(h, model, repo)),
 						),
 						h.p(
@@ -343,15 +338,15 @@ export const repositoriesPanels = (
 							[
 								"Re-enable these in the",
 								" ",
-								h.a(
-									[
-										h.Href("https://github.com/settings/installations"),
-										h.Target("_blank"),
-										h.Rel("noreferrer"),
-										h.Class(
-											"font-medium underline underline-offset-2 hover:text-foreground active:text-foreground",
-										),
-									],
+								textLink(
+									h,
+									{
+										href: "https://github.com/settings/installations",
+										tone: "inherit",
+										className:
+											"inline font-medium underline hover:text-foreground active:text-foreground",
+										attributes: [h.Target("_blank"), h.Rel("noreferrer")],
+									},
 									["Maple GitHub App"],
 								),
 								" ",
@@ -367,9 +362,16 @@ export const repositoriesPanels = (
 /** The repository-delete and branch-change confirmations. */
 export const repoDialogs = (h: H, model: Model): ReadonlyArray<Html> => {
 	const status = githubStatusOf(model)
-	const toDelete = status?.repositories.find((repo) => repo.id === model.githubCard.repoToDelete)
+	const repoName = (repoId: string | null | undefined) =>
+		Option.getOrElse(
+			Option.map(
+				Arr.findFirst(status?.repositories ?? [], (repo) => repo.id === repoId),
+				(repo) => repo.fullName,
+			),
+			() => "",
+		)
 	const pending = model.githubCard.pendingBranch
-	const pendingRepo = status?.repositories.find((repo) => repo.id === pending?.repoId)
+
 	const strong = (text: string) => typography(h, { tone: "foreground", weight: "medium" }, [text])
 	return [
 		confirmDialog(h, {
@@ -380,7 +382,7 @@ export const repoDialogs = (h: H, model: Model): ReadonlyArray<Html> => {
 			description: [
 				"This permanently removes",
 				" ",
-				strong(toDelete?.fullName ?? ""),
+				strong(repoName(model.githubCard.repoToDelete)),
 				" and all of its synced commits from Maple. This cannot be undone. If you re-enable access in GitHub later, the repository will be re-synced from scratch.",
 			],
 			confirmLabel: "Delete repository",
@@ -394,7 +396,7 @@ export const repoDialogs = (h: H, model: Model): ReadonlyArray<Html> => {
 			title: "Change tracked branch?",
 			description: [
 				"This switches ",
-				strong(pendingRepo?.fullName ?? ""),
+				strong(repoName(pending?.repoId)),
 				" to track ",
 				strong(pending?.branch ?? ""),
 				". Maple deletes this repo's currently synced commits and re-syncs the last 90 days from",
@@ -446,7 +448,7 @@ const branchSelector = (h: H, model: Model, repo: GithubRepoSummary): Html => {
 								],
 							},
 							[
-								h.span([h.Class("text-muted-foreground")], ["branch"]),
+								typography(h, { tone: "muted" }, ["branch"]),
 								h.span(
 									[h.Class("max-w-[10rem] truncate font-medium")],
 									[trackedBranchOf(model, repo) ?? EMPTY_VALUE],

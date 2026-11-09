@@ -586,12 +586,14 @@ export type StatusPagePreviewParams = Schema.Schema.Type<typeof StatusPagePrevie
 
 /** Optional text as the service stores it: trimmed, blank as `null`. */
 const textOrNull = (value: string | null | undefined): string | null => {
-	const trimmed = value?.trim() ?? ""
+	const trimmed = value == null ? "" : Str.trim(value)
 	return trimmed.length === 0 ? null : trimmed
 }
 
-const hexOrNull = (value: string | null | undefined): string | null =>
-	textOrNull(value)?.toLowerCase() ?? null
+const hexOrNull = (value: string | null | undefined): string | null => {
+	const text = textOrNull(value)
+	return text === null ? null : Str.toLowerCase(text)
+}
 
 /**
  * A config as an apply would store it: defaults filled in, text trimmed, blank text `null`,
@@ -653,7 +655,7 @@ const canonicalJson = (value: unknown): string => {
 const cyrb53 = (text: string): number => {
 	const seed: readonly [number, number] = [0xdeadbeef, 0x41c6ce57]
 	const [a, b] = Arr.reduce(
-		Array.from({ length: text.length }, (_, index) => text.charCodeAt(index)),
+		Arr.getSomes(Array.from({ length: text.length }, (_, index) => Str.charCodeAt(text, index))),
 		seed,
 		([h1, h2], code): readonly [number, number] => [
 			Math.imul(h1 ^ code, 2654435761),

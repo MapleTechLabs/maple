@@ -13,8 +13,8 @@ import {
 	InvestigationValidationError,
 } from "../investigations"
 
-const retryableAt = Schema.decodeUnknownSync(IsoDateTimeString)("2026-08-12T00:00:00.000Z")
-const investigationId = Schema.decodeUnknownSync(InvestigationId)("00000000-0000-0000-0000-000000000000")
+const retryableAt = Schema.decodeSync(IsoDateTimeString)("2026-08-12T00:00:00.000Z")
+const investigationId = Schema.decodeSync(InvestigationId)("00000000-0000-0000-0000-000000000000")
 
 describe("investigation public errors", () => {
 	it("preserves each unique domain tag in the public envelope", () => {

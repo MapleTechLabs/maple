@@ -1,5 +1,6 @@
 import { Duration } from "effect"
 import type { ScrapeFailureReason } from "./ScrapeError"
+import { codeUnitAt } from "@maple/strings"
 
 /** Upper bound on exponential backoff so a target keeps probing for recovery. */
 export const MAX_BACKOFF = Duration.minutes(5)
@@ -79,7 +80,7 @@ export const startJitterMs = (key: string, baseMs: number): number => {
 	if (baseMs <= 0) return 0
 	let hash = 0x811c9dc5
 	for (let i = 0; i < key.length; i++) {
-		hash ^= key.charCodeAt(i)
+		hash ^= codeUnitAt(key, i)
 		hash = Math.imul(hash, 0x01000193)
 	}
 	return (hash >>> 0) % baseMs

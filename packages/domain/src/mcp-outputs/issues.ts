@@ -124,6 +124,17 @@ export const SetIssueSeverityOutput = Schema.Struct({
 	note: Schema.optionalKey(Schema.String),
 })
 
+export const MergeErrorIssuesOutput = Schema.Struct({
+	/** The issue that was kept. */
+	id: Schema.String,
+	mergedIssueIds: Schema.Array(Schema.String),
+	/** Every fingerprint the kept issue now owns, its own first. */
+	fingerprintHashes: Schema.Array(Schema.String),
+	occurrenceCount: Schema.Number,
+	workflowState: Schema.String,
+	serviceName: Schema.String,
+})
+
 export const ClaimErrorIssueOutput = Schema.Struct({
 	id: Schema.String,
 	workflowState: Schema.String,
@@ -210,6 +221,13 @@ export const ListErrorIncidentsOutput = Schema.Struct({
 	openCount: Schema.Number,
 	/** Set when the list was narrowed to one issue; absent means org-wide open incidents. */
 	issueId: Schema.optionalKey(Schema.String),
+	/** Set when the list was narrowed to several issues. */
+	issueIds: Schema.optionalKey(Schema.Array(Schema.String)),
+	/** Of `issueIds`, the ones with no incident at all; absent when the list was cut by `limit`. */
+	issuesWithoutIncidents: Schema.optionalKey(Schema.Array(Schema.String)),
+	limit: Schema.optionalKey(Schema.Number),
+	/** More incidents matched than `limit` let through. */
+	hasMore: Schema.optionalKey(Schema.Boolean),
 })
 
 /** A destination the policy delivers to; `name`/`type` are null when it no longer exists. */
@@ -232,7 +250,7 @@ export const ErrorNotificationPolicyOutput = Schema.Struct({
 	notifyOnRegression: Schema.Boolean,
 	notifyOnResolve: Schema.Boolean,
 	minOccurrenceCount: Schema.Number,
-	/** Occurrences a first-seen incident must open with to notify: at least 3, since issues open at 3. */
+	/** Occurrences a first-seen incident must open with to notify while the org has early promotions left; at least 3 past them. */
 	firstNotificationThreshold: Schema.Number,
 	severity: Schema.String,
 	updatedAt: Schema.String,

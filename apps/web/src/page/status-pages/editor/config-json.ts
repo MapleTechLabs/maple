@@ -4,7 +4,7 @@ import {
 	StatusPageConfig,
 	type StatusPageConfigChanges,
 } from "@maple/domain/http/v2"
-import { Result, Schema, SchemaIssue, Array as Arr, String as Str } from "effect"
+import { Result, Schema, SchemaIssue, Array as Arr, String as Str, Option } from "effect"
 
 // The JSON tab's document: the page as `GET …/config` returns it, and a draft parsed back.
 
@@ -126,10 +126,11 @@ const formatIssue = SchemaIssue.makeFormatterStandardSchemaV1()
 type PathSegment = PropertyKey | { readonly key: PropertyKey }
 
 const pathOf = (path: ReadonlyArray<PathSegment>): string =>
-	Arr.map(path, (segment) => (typeof segment === "object" ? segment.key : segment)).reduce<string>(
+	Arr.reduce(
+		Arr.map(path, (segment) => (typeof segment === "object" ? segment.key : segment)),
+		"",
 		(out, key) =>
 			typeof key === "number" ? `${out}[${key}]` : out === "" ? String(key) : `${out}.${String(key)}`,
-		"",
 	)
 
 const parseJson = Schema.decodeUnknownResult(Schema.fromJsonString(Schema.Unknown))
@@ -154,7 +155,10 @@ export const parseDraft = (text: string, current: StatusPageConfig): DraftResult
 			if (unknown !== undefined)
 				return Result.fail({
 					_tag: "Schema",
-					path: `components[${config.components.findIndex((c) => c.id === unknown)}].id`,
+					path: `components[${Option.getOrElse(
+						Arr.findFirstIndex(config.components, (c) => c.id === unknown),
+						() => -1,
+					)}].id`,
 					message: `${encodeId(unknown)} is not a component of this page. Remove the id to add a new one.`,
 				})
 			const [duplicate] = changes.duplicateIds

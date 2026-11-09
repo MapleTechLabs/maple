@@ -1,3 +1,4 @@
+import * as Policy from "@maple/domain/policy"
 import { OrgId } from "@maple/domain"
 import { SecurityAuditForbiddenError, SecurityAuditTargetNotFoundError } from "@maple/domain/http"
 import { SecurityAuditTargetId } from "@maple/domain/security-audit"
@@ -24,6 +25,8 @@ import { Message, type Model } from "./model"
 import { init, update } from "./update"
 import { view as pageView } from "./view"
 
+const ENGINEER = Policy.grantsOf(["org:engineer"])
+
 const context: PageContext = {
 	orgId: Schema.decodeSync(OrgId)("org_acme"),
 	pinnedNamespace: null,
@@ -44,7 +47,7 @@ const loaded = (): Model => {
 	return Arr.reduce(
 		[
 			Message.ReadClock({ nowMs: NOW }),
-			Message.CompletedReadIsAdmin({ isAdmin: true }),
+			Message.CompletedReadGrants({ grants: ENGINEER }),
 			Message.CompletedFetchFindings({
 				key: entered.findings.key ?? "",
 				result: Result.succeed(findingsOf(NOW, TARGET_IDS.gateway)),
@@ -197,7 +200,7 @@ describe("security finding", () => {
 		scene(
 			{ update: pageUpdate, view },
 			given(gated),
-			expectView(text("Findings and reports are visible to org admins only")).toExist(),
+			expectView(text("Findings and reports are visible to org admins and engineers only")).toExist(),
 		)
 	})
 })

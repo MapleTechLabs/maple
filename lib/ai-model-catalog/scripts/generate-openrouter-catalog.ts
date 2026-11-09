@@ -28,7 +28,6 @@ for (const model of data) {
 		typeof model.canonical_slug !== "string" ||
 		typeof model.name !== "string"
 	) {
-		// oxlint-disable-next-line effecttsgo/global-json -- lib/ai-model-catalog does not depend on effect
 		throw new Error(`${SOURCE} lists a model without id/canonical_slug/name: ${JSON.stringify(model)}`)
 	}
 }
@@ -39,13 +38,12 @@ const models = [...(data as ReadonlyArray<OpenRouterModel>)].sort((a, b) => a.id
 // model name. Ids under `~` are OpenRouter's rolling aliases of a real vendor.
 const vendors = new Map<string, string>()
 for (const model of models) {
-	const slug = model.id.split("/")[0]!.replace(/^~/, "")
+	const slug = model.id.replace(/\/.*$/s, "").replace(/^~/, "")
 	const separator = model.name.indexOf(": ")
 	if (separator === -1 || vendors.has(slug)) continue
 	vendors.set(slug, model.name.slice(0, separator))
 }
 
-// oxlint-disable-next-line effecttsgo/global-json -- lib/ai-model-catalog does not depend on effect
 const quote = (value: string) => JSON.stringify(value)
 
 const lines = [

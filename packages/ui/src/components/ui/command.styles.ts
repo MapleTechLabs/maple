@@ -1,5 +1,5 @@
 export const commandDialogBackdropStyles =
-	"fixed inset-0 z-50 bg-black/32 backdrop-blur-sm transition-opacity duration-200 data-ending-style:opacity-0 data-starting-style:opacity-0"
+	"fixed inset-0 z-50 bg-scrim backdrop-blur-sm transition-opacity duration-200 data-ending-style:opacity-0 data-starting-style:opacity-0"
 
 export const commandDialogViewportStyles =
 	"fixed inset-0 z-50 flex flex-col items-center px-4 py-[max(--spacing(4),4vh)] sm:py-[10vh]"
@@ -24,7 +24,7 @@ export const commandItemStyles = "py-1.5"
 export const commandSeparatorStyles = "my-2"
 
 export const commandShortcutStyles =
-	"ms-auto font-medium font-sans text-foreground-subtle text-xs tracking-widest"
+	"ms-auto font-medium font-sans text-foreground-subtle text-xs tracking-overline"
 
 export const commandFooterStyles =
 	"flex items-center justify-between gap-2 rounded-b-2xl-inset border-t px-5 py-3 text-muted-foreground text-xs"

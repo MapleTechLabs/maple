@@ -18,7 +18,7 @@ import { SpanEvents, TraceData } from "@maple/views/traces/trace-data"
 
 /** `decodeTraceIdParam`: a pasted id may carry whitespace; anything still undecodable is not found. */
 export const decodeTraceId = (raw: string): Option.Option<TraceId> =>
-	Schema.decodeUnknownOption(TraceId)(Str.trim(raw))
+	Schema.decodeOption(TraceId)(Str.trim(raw))
 
 /** Logs and product events correlate within the trace's span window plus 5 minutes either side. */
 const WINDOW_MARGIN_MS = 5 * 60 * 1000

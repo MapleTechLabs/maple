@@ -1,4 +1,4 @@
-import { Effect, Array as Arr } from "effect"
+import { Effect, Option, Predicate, Array as Arr } from "effect"
 
 import {
 	planAlertLifecycle,
@@ -109,7 +109,10 @@ export const simulateFiringSpans = (
 							lastCompleteBucketMs: bucketMs,
 						}
 						if (plan.transition === "opened" && plan.severity !== null) {
-							const firstBreach = recentBreaches.find((ms) => ms !== null) ?? bucketMs
+							const firstBreach = Option.getOrElse(
+								Arr.findFirst(recentBreaches, Predicate.isNotNull),
+								() => bucketMs,
+							)
 							return { ...base, open: { startMs: firstBreach, severity: plan.severity } }
 						}
 						if (plan.transition === "resolved" && acc.open !== null) {

@@ -7,6 +7,8 @@ import { TONE_TEXT } from "@maple/ui/lib/tone"
 import type { SpanNode } from "@maple/ui/lib/types"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { middleTruncate } from "../ui/middle-truncate"
+import { hstack } from "../ui/stack"
+import { typography } from "../ui/typography"
 
 // `SpanTooltipContent` (packages/ui `traces/span-tooltip.tsx`).
 
@@ -17,28 +19,24 @@ export interface SpanTooltipOptions {
 
 const GRID = "grid grid-cols-[auto_1fr] gap-x-3 gap-y-0.5 text-3xs"
 
-const term = <M>(h: HtmlBuilder<M>, label: string): Html =>
-	h.span([h.Class("text-muted-foreground")], [label])
+const term = <M>(h: HtmlBuilder<M>, label: string): Html => typography(h, { tone: "muted" }, [label])
 
 const statusClass = (statusCode: string): string =>
 	statusCode === "Error" ? "text-severity-error" : statusCode === "Ok" ? "text-severity-info" : ""
 
 const startOffsetCell = <M>(h: HtmlBuilder<M>, offsetMs: number): Html =>
 	offsetMs < 0
-		? h.span([h.Class("text-severity-warn")], [`−${formatDuration(Math.abs(offsetMs))} (clock skew)`])
+		? typography(h, { tone: "warning" }, [`−${formatDuration(Math.abs(offsetMs))} (clock skew)`])
 		: h.span([], [`+${formatDuration(offsetMs)}`])
 
 const durationBlock = <M>(h: HtmlBuilder<M>, span: SpanNode, percent: number): Html =>
 	h.div(
 		[h.Class("space-y-1")],
 		[
-			h.div(
-				[h.Class("flex items-center justify-between text-3xs")],
-				[
-					term(h, "Duration"),
-					h.span([], [`${formatDuration(span.durationMs)} (${formatPercent(percent / 100)})`]),
-				],
-			),
+			hstack(h, { align: "center", justify: "between", className: "text-3xs" }, [
+				term(h, "Duration"),
+				h.span([], [`${formatDuration(span.durationMs)} (${formatPercent(percent / 100)})`]),
+			]),
 			h.div(
 				[h.Class("h-1.5 w-full bg-muted overflow-hidden")],
 				[h.div([h.Class("h-full bg-primary/70"), h.Style({ width: `${Math.max(percent, 1)}%` })])],
@@ -78,7 +76,7 @@ const httpBlock = <M>(h: HtmlBuilder<M>, span: SpanNode): ReadonlyArray<Html> =>
 			[h.Class(`border-t border-border pt-1.5 ${GRID}`)],
 			[
 				term(h, "Method"),
-				h.span([h.Class("font-medium")], [info.method]),
+				typography(h, { weight: "medium" }, [info.method]),
 				...statusCells,
 				...routeCells,
 			],
@@ -105,33 +103,24 @@ export const spanTooltipContent = <M>(
 	return h.div(
 		[h.Class("space-y-2 font-mono text-xs")],
 		[
-			h.div(
-				[h.Class("flex items-center gap-2")],
-				[
-					...(serviceColor === ""
-						? []
-						: [
-								h.div([
-									h.Class("h-2.5 w-2.5 shrink-0"),
-									h.Style({ "background-color": serviceColor }),
-								]),
+			hstack(h, { gap: "2", align: "center" }, [
+				...(serviceColor === ""
+					? []
+					: [
+							h.div([
+								h.Class("h-2.5 w-2.5 shrink-0"),
+								h.Style({ "background-color": serviceColor }),
 							]),
-					h.span([h.Class("font-medium truncate")], [span.spanName]),
-				],
-			),
+						]),
+				typography(h, { weight: "medium", truncate: true }, [span.spanName]),
+			]),
 			...(durationPercent === null ? [] : [durationBlock(h, span, durationPercent)]),
 			...(span.children.length > 0
 				? [
-						h.div(
-							[h.Class("flex items-center justify-between text-3xs")],
-							[
-								term(h, "Self time"),
-								h.span(
-									[],
-									[`${formatDuration(selfTime)} (${formatPercent(selfPercent / 100)})`],
-								),
-							],
-						),
+						hstack(h, { align: "center", justify: "between", className: "text-3xs" }, [
+							term(h, "Self time"),
+							h.span([], [`${formatDuration(selfTime)} (${formatPercent(selfPercent / 100)})`]),
+						]),
 					]
 				: []),
 			h.div(

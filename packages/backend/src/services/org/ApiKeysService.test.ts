@@ -83,8 +83,8 @@ describe("ApiKeysService.roll", () => {
 			assert.match(rolled.txid ?? "", /^\d+$/)
 
 			const { keys } = yield* svc.list(orgId)
-			const oldRow = keys.find((k) => k.id === created.id)
-			const newRow = keys.find((k) => k.id === rolled.id)
+			const oldRow = Option.getOrUndefined(Arr.findFirst(keys, (k) => k.id === created.id))
+			const newRow = Option.getOrUndefined(Arr.findFirst(keys, (k) => k.id === rolled.id))
 
 			assert.isDefined(oldRow)
 			assert.strictEqual(oldRow?.revoked, true)
@@ -342,12 +342,12 @@ describe("ApiKeysService.touchLastUsed", () => {
 			// Cold isolate: a fresh service instance over the same database has an empty
 			// memo, so the round trip happens — but the SQL predicate must make it a
 			// zero-row UPDATE while the stored stamp is inside the heartbeat window.
-			const stamped = new Date()
-			yield* Effect.promise(() =>
-				executeSql(testDb, `update api_keys set last_used_at = $2 where id = $1`, [
-					created.id,
-					stamped,
-				]),
+			const stamped = yield* Effect.promise(() =>
+				queryFirstRow<{ lastUsedAt: Date }>(
+					testDb,
+					`update api_keys set last_used_at = now() where id = $1 returning last_used_at as "lastUsedAt"`,
+					[created.id],
+				),
 			)
 			yield* Effect.gen(function* () {
 				const coldSvc = yield* ApiKeysService
@@ -357,7 +357,7 @@ describe("ApiKeysService.touchLastUsed", () => {
 			const afterCold = yield* readLastUsed(testDb, created.id)
 			assert.strictEqual(
 				afterCold?.lastUsedAt?.getTime(),
-				stamped.getTime(),
+				stamped?.lastUsedAt.getTime(),
 				"SQL gate makes the cold-isolate touch a zero-row update",
 			)
 		}).pipe(Effect.provide(makeLayer(testDb)))

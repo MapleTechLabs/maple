@@ -3,12 +3,12 @@ import { cn } from "@maple/ui/lib/utils"
 import { badge } from "@maple/views/ui/display"
 import { icon } from "@maple/views/ui/icon"
 import { pressable } from "@maple/views/ui/pressable"
-import { hstackClass } from "@maple/views/ui/stack"
+import { hstack, hstackClass } from "@maple/views/ui/stack"
 import { typography } from "@maple/views/ui/typography"
 import { serviceDot } from "@maple/views/ui/values"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import type { ErrorTypeRow } from "./fetch"
-import { cardTraces, relativeTime } from "./view-traces"
+import { cardTraces, type Clock, relativeTime } from "./view-traces"
 import { Message } from "./message"
 import type { Card } from "./model"
 import { Array as Arr } from "effect"
@@ -42,14 +42,14 @@ const services = (h: H, row: ErrorTypeRow): ReadonlyArray<Html> =>
 				]),
 			]
 
-const header = (h: H, row: ErrorTypeRow, card: Card, panelId: string, nowMs: number): Html =>
+const header = (h: H, row: ErrorTypeRow, card: Card, panelId: string, clock: Clock): Html =>
 	pressable(
 		h,
 		{
 			onClick: Message.ClickedErrorType({ fingerprintHash: row.fingerprintHash }),
 			className: hstackClass({
 				gap: "3",
-				className: "w-full px-4 py-3 text-left hover:bg-accent/40 active:bg-accent/40",
+				className: "w-full px-4 py-3 text-left hover:bg-surface-sunken active:bg-surface-sunken",
 			}),
 			attributes: [h.AriaExpanded(card.isExpanded), h.AriaControls(panelId)],
 		},
@@ -58,15 +58,12 @@ const header = (h: H, row: ErrorTypeRow, card: Card, panelId: string, nowMs: num
 			h.span(
 				[h.Class("min-w-0 flex-1")],
 				[
-					h.span(
-						[h.Class("flex flex-wrap items-baseline gap-x-2 gap-y-1")],
-						[
-							typography(h, { size: "sm", weight: "medium", truncate: true }, [
-								row.errorLabel || "Unknown Error",
-							]),
-							...services(h, row),
-						],
-					),
+					hstack(h, { align: "baseline", wrap: true, as: "span", className: "gap-x-2 gap-y-1" }, [
+						typography(h, { size: "sm", weight: "medium", truncate: true }, [
+							row.errorLabel || "Unknown Error",
+						]),
+						...services(h, row),
+					]),
 					...(row.sampleMessage
 						? [
 								typography(
@@ -94,7 +91,7 @@ const header = (h: H, row: ErrorTypeRow, card: Card, panelId: string, nowMs: num
 					),
 					typography(h, { size: "3xs", tone: "muted", className: "block" }, [
 						"last seen ",
-						relativeTime(row.lastSeen, nowMs),
+						relativeTime(h, row.lastSeen, clock),
 					]),
 				],
 			),
@@ -112,18 +109,18 @@ export const errorTypeCard = (
 	row: ErrorTypeRow,
 	card: Card,
 	query: URLSearchParams,
-	nowMs: number,
+	clock: Clock,
 ): Html => {
 	const panelId = `error-traces-${row.fingerprintHash}`
 	return h.div(
 		[h.Key(row.fingerprintHash), h.Class("rounded-md border bg-card")],
 		[
-			header(h, row, card, panelId, nowMs),
+			header(h, row, card, panelId, clock),
 			...(card.isExpanded
 				? [
 						h.div(
 							[h.Id(panelId), h.Class("border-t px-4 py-2")],
-							[cardTraces(h, row, card, query, nowMs)],
+							[cardTraces(h, row, card, query, clock)],
 						),
 					]
 				: []),

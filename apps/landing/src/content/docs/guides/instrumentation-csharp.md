@@ -73,7 +73,7 @@ app.MapGet("/", () => "Hello!");
 app.Run();
 ```
 
-When you set `Endpoint` in code, it must include the signal path (`/v1/traces`, `/v1/metrics`, `/v1/logs`). The exporter's default protocol is gRPC, so set `HttpProtobuf` on each one.
+When you set `Endpoint` in code, it must include the signal path (`/v1/traces`, `/v1/metrics`, `/v1/logs`). The exporter's default protocol is gRPC, which needs the base URL without a signal path, so the example sets `HttpProtobuf` on each one to keep the paths. Maple accepts either protocol on port 443.
 
 The example puts the endpoint and key in source. An ingest key can only write telemetry to your organization. It cannot read data or call the Maple API. Keeping it in source means the SDK always starts with a complete configuration, so a deploy that is missing an environment variable cannot silently turn telemetry off. To keep the key out of source, use [environment variables](#environment-variables) instead.
 
@@ -224,7 +224,7 @@ Your service also appears on the **Services** page once its first spans arrive.
 ## Troubleshooting
 
 - **`401` responses.** The key is wrong, was copied from the other region, or the header is malformed. `OtlpExporterOptions.Headers` and `OTEL_EXPORTER_OTLP_HEADERS` both take `Authorization=Bearer YOUR_INGEST_KEY`. See [Ingest API status codes](/docs/reference/ingest#status-codes).
-- **Wrong protocol or path.** Maple accepts OTLP over HTTP, and the .NET exporter defaults to gRPC. Set `OtlpExportProtocol.HttpProtobuf` in code or `OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf`. An endpoint set in code needs the full signal path; the environment variable takes only the base URL.
+- **Wrong path or port.** Maple accepts OTLP over HTTP and gRPC on port 443, so never add `:4317`. With `HttpProtobuf`, an endpoint set in code needs the full signal path; the environment variable takes only the base URL. With gRPC (the .NET default), use the base URL with no path.
 - **Network.** From the machine running the app, run `curl -i https://ingest.maple.dev/v1/traces -X POST`. Any HTTP status code means the host can reach Maple. A timeout or DNS error means a firewall or proxy is blocking outbound HTTPS.
 - **Nothing exported.** Custom spans only export when their `ActivitySource` name is registered with `AddSource`, and custom metrics when their `Meter` name is registered with `AddMeter`. In console apps, dispose the providers before exit so the last batch is sent.
 

@@ -7,7 +7,7 @@ import {
 	lowestVersion,
 	severityOf,
 } from "@maple/domain/runtime-advisories"
-import { Schema, Array as Arr, String as Str } from "effect"
+import { Option, Schema, Array as Arr, String as Str } from "effect"
 import { cvss3BaseScore, severityOfScore } from "./cvss"
 
 // OSV vulnerability records, slimmed to what the scanner keeps, and how the records of one
@@ -73,7 +73,11 @@ export type OsvRecord = typeof OsvRecord.Type
 
 /** Many advisories carry no summary, only details: their first sentence stands in, capped. */
 const summaryOf = (vuln: OsvVulnResponse): string | null => {
-	const text = Str.trim(vuln.summary ?? vuln.details?.split(/(?<=\.)\s/)[0] ?? "")
+	const text = Str.trim(
+		vuln.summary ??
+			(vuln.details === undefined ? undefined : Str.split(vuln.details, /(?<=\.)\s/)[0]) ??
+			"",
+	)
 	if (text === "") return null
 	return text.length > SUMMARY_MAX_LENGTH
 		? `${Str.trimEnd(Str.slice(0, SUMMARY_MAX_LENGTH - 1)(text))}…`
@@ -87,7 +91,12 @@ export const toOsvRecord = (vuln: OsvVulnResponse): OsvRecord => ({
 	published: vuln.published ?? null,
 	withdrawn: vuln.withdrawn !== undefined,
 	curatedSeverity: vuln.database_specific?.severity ?? null,
-	cvssV3: (vuln.severity ?? []).find((entry) => entry.type === "CVSS_V3")?.score ?? null,
+	cvssV3: Option.getOrNull(
+		Option.map(
+			Arr.findFirst(vuln.severity ?? [], (entry) => entry.type === "CVSS_V3"),
+			(entry) => entry.score,
+		),
+	),
 	affected: Arr.flatMap(vuln.affected ?? [], ({ package: pkg, ranges }) =>
 		pkg === undefined
 			? []
@@ -114,10 +123,11 @@ const recordSeverity = (record: OsvRecord): AdvisorySeverity => {
 /** The lowest fix of the locked version across the record's ranges for that package. */
 const recordFix = (record: OsvRecord, ref: PackageRef): string | null => {
 	const compare = (a: string, b: string) => compareVersions(ref.ecosystem, a, b)
-	const fixes = Arr.filter(
+	const matching = Arr.filter(
 		record.affected,
 		(affected) => affected.ecosystem === ref.ecosystem && affected.name === ref.name,
-	).flatMap((affected) => {
+	)
+	const fixes = Arr.flatMap(matching, (affected) => {
 		const fixed = fixedVersionFor(affected.events, ref.version, compare)
 		return fixed === null ? [] : [fixed]
 	})
@@ -127,9 +137,10 @@ const recordFix = (record: OsvRecord, ref: PackageRef): string | null => {
 /** Records naming each other (directly or through a shared CVE) are one vulnerability. */
 export const groupByAlias = (records: ReadonlyArray<OsvRecord>): ReadonlyArray<ReadonlyArray<OsvRecord>> =>
 	Arr.map(
-		records.reduce<
+		Arr.reduce<
+			OsvRecord,
 			ReadonlyArray<{ readonly names: ReadonlySet<string>; readonly records: ReadonlyArray<OsvRecord> }>
-		>((groups, record) => {
+		>(records, [], (groups, record) => {
 			const names = [record.id, ...record.aliases]
 			const linked = Arr.filter(groups, (group) => Arr.some(names, (name) => group.names.has(name)))
 			const rest = Arr.filter(groups, (group) => !linked.includes(group))
@@ -140,7 +151,7 @@ export const groupByAlias = (records: ReadonlyArray<OsvRecord>): ReadonlyArray<R
 					records: [...Arr.flatMap(linked, (group) => group.records), record],
 				},
 			]
-		}, []),
+		}),
 		(group) => group.records,
 	)
 
@@ -156,7 +167,10 @@ export const mergeAdvisory = (records: ReadonlyArray<OsvRecord>, ref: PackageRef
 	const ids = [...new Set(Arr.map(records, (record) => record.id))].sort()
 	const names = new Set(Arr.flatMap(records, (record) => [record.id, ...record.aliases]))
 	// The GHSA id even when OSV only names it as an alias, so it holds once OSV returns that record too.
-	const id = [...names].sort().find((name) => Str.startsWith("GHSA-")(name)) ?? ids[0] ?? ""
+	const id = Option.getOrElse(
+		Arr.findFirst([...names].sort(), (name) => Str.startsWith("GHSA-")(name)),
+		() => ids[0] ?? "",
+	)
 	const ordered = [...records].sort((a, b) =>
 		a.id === id ? -1 : b.id === id ? 1 : Str.localeCompare(b.id)(a.id),
 	)
@@ -165,16 +179,13 @@ export const mergeAdvisory = (records: ReadonlyArray<OsvRecord>, ref: PackageRef
 		const fix = recordFix(record, ref)
 		return fix === null ? [] : [fix]
 	})
-	const highestFix = fixes.reduce<string | null>(
-		(highest, fix) => (highest === null || compare(fix, highest) > 0 ? fix : highest),
-		null,
+	const highestFix = Arr.reduce<string, string | null>(fixes, null, (highest, fix) =>
+		highest === null || compare(fix, highest) > 0 ? fix : highest,
 	)
-	const severity = Arr.filter(
-		Arr.map(ordered, recordSeverity),
-		(rated) => rated !== "unknown",
-	).reduce<AdvisorySeverity>(
-		(worst, rated) => (worst === "unknown" || severityRank(rated) < severityRank(worst) ? rated : worst),
+	const severity = Arr.reduce<AdvisorySeverity, AdvisorySeverity>(
+		Arr.filter(Arr.map(ordered, recordSeverity), (rated) => rated !== "unknown"),
 		"unknown",
+		(worst, rated) => (worst === "unknown" || severityRank(rated) < severityRank(worst) ? rated : worst),
 	)
 	const published = Arr.flatMap(ordered, (record) =>
 		record.published === null ? [] : [record.published],
@@ -182,7 +193,12 @@ export const mergeAdvisory = (records: ReadonlyArray<OsvRecord>, ref: PackageRef
 	return {
 		id,
 		aliases: Arr.filter([...names], (name) => name !== id).sort(),
-		summary: ordered.find((record) => record.summary !== null)?.summary ?? null,
+		summary: Option.getOrNull(
+			Option.flatMap(
+				Arr.findFirst(ordered, (record) => record.summary !== null),
+				(record) => Option.fromNullishOr(record.summary),
+			),
+		),
 		severity,
 		fixedIn: highestFix === null ? null : displayVersion(ref, highestFix),
 		published: published[0] ?? null,

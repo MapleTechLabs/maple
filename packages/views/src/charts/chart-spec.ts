@@ -38,6 +38,10 @@ export const TimeseriesAxisSpec = Schema.Struct({
 	softMin: Schema.NullOr(Schema.Number),
 	softMax: Schema.NullOr(Schema.Number),
 	fitYAxisToData: Schema.Boolean,
+	/** A hard ceiling the axis tops out at whatever nicing would round to (a share capped at 100%). */
+	max: Schema.optionalKey(Schema.Number),
+	/** The zero tick's label, when "0" alone would drop the unit (a "0%" line the series crosses). */
+	zeroLabel: Schema.optionalKey(Schema.String),
 })
 export type TimeseriesAxisSpec = typeof TimeseriesAxisSpec.Type
 
@@ -351,9 +355,16 @@ export const ChartSpec = defineTaggedUnion({
 				companion: Schema.optionalKey(Nullable(Schema.Number)),
 			}),
 		),
-		/** The metric keys behind `primary` and (when paired) `companion`, in paint order. */
+		/**
+		 * The metric keys behind `primary` and (when paired) `companion`, in paint order. `label`
+		 * names a series that is not an analytics metric (Search Console clicks); it formats as a count.
+		 */
 		series: Schema.Array(
-			Schema.Struct({ key: Schema.Literals(["primary", "companion"]), metric: Schema.String }),
+			Schema.Struct({
+				key: Schema.Literals(["primary", "companion"]),
+				metric: Schema.String,
+				label: Schema.optionalKey(Schema.String),
+			}),
 		),
 		/** The metric whose format the y ticks use. */
 		tickMetric: Schema.String,

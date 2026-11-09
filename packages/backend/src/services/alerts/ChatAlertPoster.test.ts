@@ -104,6 +104,7 @@ const makeConnector = (
 				whisper: unreachable,
 				typing: unreachable,
 				openThread: unreachable,
+				directMessage: unreachable,
 				conversation: unreachable,
 				history: unreachable,
 				destinations: () =>

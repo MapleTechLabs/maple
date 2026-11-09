@@ -216,11 +216,11 @@ const verifySelfHostedSessionToken = Effect.fn("AuthService.verifySelfHostedSess
 	secret: string,
 ): Effect.fn.Return<SelfHostedSessionClaims, UnauthorizedError> {
 	const parts = Str.split(".")(token)
-	if (parts.length !== 3) {
+	const [encodedHeader, encodedPayload, encodedSignature] = parts
+	if (parts.length !== 3 || encodedPayload === undefined || encodedSignature === undefined) {
 		return yield* unauthorized("Invalid JWT format")
 	}
 
-	const [encodedHeader, encodedPayload, encodedSignature] = parts
 	const header = yield* Schema.decodeEffect(Schema.fromJsonString(JwtHeaderSchema))(
 		decodeBase64Url(encodedHeader),
 	).pipe(Effect.mapError(() => unauthorized("Invalid JWT header")))
@@ -368,10 +368,14 @@ type ClerkRequestState = {
 	readonly toAuth: (options?: { readonly treatPendingAsSignedOut?: boolean }) => ClerkSessionAuth | null
 }
 
+type ClerkTokenType = "session_token" | "api_key" | "m2m_token" | "oauth_token"
+// Clerk takes `"any"` only on its own, never inside the array.
+type ClerkAcceptsToken = ClerkTokenType | ReadonlyArray<ClerkTokenType> | "any"
+
 type ClerkAuthenticateRequest = (
 	request: Request,
 	options: {
-		readonly acceptsToken: string | string[]
+		readonly acceptsToken: ClerkAcceptsToken
 		readonly jwtKey?: string
 	},
 ) => Promise<ClerkRequestState>
@@ -380,17 +384,21 @@ export interface AuthEnv {
 	readonly MAPLE_AUTH_MODE: string
 	readonly MAPLE_DEFAULT_ORG_ID: string
 	readonly MAPLE_ORG_ID_OVERRIDE: Option.Option<string>
-	/** Only `development` lets a pinned org admit a non-member (with their session role). */
 	readonly MAPLE_ENVIRONMENT?: string | undefined
-	readonly MAPLE_ROOT_PASSWORD: Option.Option<Redacted.Redacted<string>>
-	readonly CLERK_SECRET_KEY: Option.Option<Redacted.Redacted<string>>
+	/**
+	 * Lets a pinned org admit a non-member with their session role, for a local stack pinned to a
+	 * seeded org. Honoured only when `MAPLE_ENVIRONMENT` is `development`; absent means refuse.
+	 */
+	readonly MAPLE_ORG_ID_OVERRIDE_ADMITS_NONMEMBERS?: boolean | undefined
+	readonly MAPLE_ROOT_PASSWORD: Option.Option<Redacted.Redacted>
+	readonly CLERK_SECRET_KEY: Option.Option<Redacted.Redacted>
 	readonly CLERK_PUBLISHABLE_KEY: Option.Option<string>
-	readonly CLERK_JWT_KEY: Option.Option<Redacted.Redacted<string>>
+	readonly CLERK_JWT_KEY: Option.Option<Redacted.Redacted>
 }
 
 const getOptionalString = <A>(option: Option.Option<A>): A | undefined => Option.getOrUndefined(option)
 
-const getOptionalSecret = (option: Option.Option<Redacted.Redacted<string>>): string | undefined =>
+const getOptionalSecret = (option: Option.Option<Redacted.Redacted>): string | undefined =>
 	Option.match(option, { onNone: () => undefined, onSome: Redacted.value })
 
 /**
@@ -403,15 +411,12 @@ class MissingAuthSecretError extends Schema.TaggedError<MissingAuthSecretError>(
 	{ secret: Schema.String, message: Schema.String },
 ) {}
 
-const requireSecret = (
-	option: Option.Option<Redacted.Redacted<string>>,
-	label: string,
-): Effect.Effect<string, never> =>
+const requireSecret = (option: Option.Option<Redacted.Redacted>, label: string): Effect.Effect<string> =>
 	Option.match(option, {
 		// Config is read once at layer build, so a missing secret is a misconfigured
 		// deployment, not a request that could be answered differently.
 		onNone: () =>
-			// oxlint-disable-next-line maple/no-effect-die
+			// oxlint-disable-next-line maple/no-effect-die -- a missing secret is a misconfigured deployment
 			Effect.die(new MissingAuthSecretError({ secret: label, message: `${label} is required` })),
 		onSome: (value) => Effect.succeed(Redacted.value(value)),
 	})
@@ -430,7 +435,11 @@ const makeClerkAuthenticateRequest = (
 	})
 
 	return (request, options) =>
-		clerkClient.authenticateRequest(request, options as any) as Promise<ClerkRequestState>
+		clerkClient.authenticateRequest(request, {
+			jwtKey: options.jwtKey,
+			acceptsToken:
+				typeof options.acceptsToken === "string" ? options.acceptsToken : [...options.acceptsToken],
+		})
 }
 
 export const makeLoginSelfHosted = (
@@ -647,8 +656,8 @@ const authenticateClerkUser = Effect.fnUntraced(function* (
 	headers: HeaderRecord,
 	env: Pick<AuthEnv, "CLERK_JWT_KEY">,
 	authenticateClerkRequest: ClerkAuthenticateRequest,
-	acceptsToken: string | string[],
-	acceptPendingSession = false,
+	acceptsToken: ClerkAcceptsToken,
+	acceptPendingSession: boolean = false,
 ) {
 	const requestState = yield* Effect.tryPromise({
 		try: () =>
@@ -716,7 +725,7 @@ export const makeResolveClerkUser = (
 export const makeResolveTenant = (
 	env: AuthEnv,
 	authenticateClerkRequest = makeClerkAuthenticateRequest(env),
-	acceptsToken: string | string[] = "session_token",
+	acceptsToken: ClerkAcceptsToken = "session_token",
 	/**
 	 * Omit to disable {@link ORG_SELECTION_HEADER} entirely — the header is then
 	 * rejected rather than ignored. Callers that have no membership directory to
@@ -770,7 +779,7 @@ export const makeResolveTenant = (
 				const pinnedOrgId = yield* decodeOrgId(orgIdOverride, "Invalid MAPLE_ORG_ID_OVERRIDE value")
 				// The pin wins over a selection header (every web session names its own
 				// org). The role is the verified membership's; a non-member is only let
-				// in with their session's role on a development pin.
+				// in with their session's role on an explicitly opted-in development pin.
 				if (auth.orgId === pinnedOrgId) {
 					return { orgId: pinnedOrgId, userId, roles: sessionRoles, authMode: "clerk" }
 				}
@@ -780,10 +789,13 @@ export const makeResolveTenant = (
 				if (Option.isSome(membership)) {
 					return { orgId: pinnedOrgId, userId, roles: [membership.value.role], authMode: "clerk" }
 				}
-				if (env.MAPLE_ENVIRONMENT === "development") {
+				if (
+					env.MAPLE_ENVIRONMENT === "development" &&
+					env.MAPLE_ORG_ID_OVERRIDE_ADMITS_NONMEMBERS === true
+				) {
 					return { orgId: pinnedOrgId, userId, roles: sessionRoles, authMode: "clerk" }
 				}
-				// Outside development, membership the resolver cannot prove (no verifier) is a refusal.
+				// Otherwise membership the resolver cannot prove (no verifier) is a refusal.
 				return yield* organizationAccessDenied(pinnedOrgId)
 			}
 
@@ -881,8 +893,11 @@ const clerkLookup = <A>(
 	)
 
 const extractPrimaryEmail = (u: ClerkUser): string | null => {
-	const primary = u.emailAddresses?.find((e) => e.id === u.primaryEmailAddressId)
-	return primary?.emailAddress ?? u.emailAddresses?.[0]?.emailAddress ?? null
+	const primary = Arr.findFirst(u.emailAddresses ?? [], (e) => e.id === u.primaryEmailAddressId)
+	return Option.getOrElse(
+		Option.flatMapNullishOr(primary, (e) => e.emailAddress),
+		() => u.emailAddresses?.[0]?.emailAddress ?? null,
+	)
 }
 
 /** The primary address only once Clerk has verified it; never a fallback to another address. */
@@ -894,8 +909,13 @@ export const extractVerifiedPrimaryEmail = (u: {
 		readonly verification: { readonly status: string } | null
 	}>
 }): string | null => {
-	const primary = u.emailAddresses.find((e) => e.id === u.primaryEmailAddressId)
-	return primary?.verification?.status === "verified" ? primary.emailAddress : null
+	return Option.match(
+		Arr.findFirst(u.emailAddresses, (e) => e.id === u.primaryEmailAddressId),
+		{
+			onNone: () => null,
+			onSome: (primary) => (primary.verification?.status === "verified" ? primary.emailAddress : null),
+		},
+	)
 }
 
 const makeClerkClient = (

@@ -99,7 +99,7 @@ const categoryOf = (
 		const isProducer = spanKind === "PRODUCER"
 		return {
 			id: "messaging",
-			label: SPAN_KIND_LABELS[`SPAN_KIND_${spanKind}`],
+			label: SPAN_KIND_LABELS[`SPAN_KIND_${spanKind}`] ?? spanKind,
 			icon: isProducer ? "PaperPlaneIcon" : "BoxArchiveIcon",
 			accent: ACCENTS.messaging,
 		}

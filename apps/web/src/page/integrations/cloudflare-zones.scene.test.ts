@@ -47,7 +47,7 @@ const zone = (id: string, name: string, watched: boolean) => ({
 
 const zones = [zone("z1", "acme.com", true), zone("z2", "staging.acme.com", false)]
 
-const status = Schema.decodeUnknownSync(CloudflareIntegrationStatus)({
+const status = Schema.decodeSync(CloudflareIntegrationStatus)({
 	connected: true,
 	accountId: "acc_1",
 	accountName: "Acme",

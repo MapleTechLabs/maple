@@ -113,7 +113,7 @@ export const applyBranchFilters = (
 	candidates: ReadonlyArray<BranchCandidate>,
 	filters: PlanetScaleFilters,
 ): ReadonlyArray<BranchCandidate> => {
-	const contains = filters.branchContains?.toLowerCase() ?? ""
+	const contains = filters.branchContains === undefined ? "" : Str.toLowerCase(filters.branchContains)
 	return Arr.filter(
 		candidates,
 		(candidate) =>

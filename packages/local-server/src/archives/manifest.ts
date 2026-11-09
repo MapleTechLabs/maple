@@ -144,7 +144,7 @@ const TUNING_KEYS = new Set([
 const assertExactOwnKeys = (record: Record<string, unknown>, keys: ReadonlySet<string>, label = ""): void => {
 	const location = label.length > 0 ? `${label} ` : ""
 	for (const key of keys) {
-		if (!Object.prototype.hasOwnProperty.call(record, key)) {
+		if (!Rec.has(record, key)) {
 			throw new Error(`invalid archive manifest ${location}field: ${key} (required in formatVersion 3)`)
 		}
 	}
@@ -179,8 +179,7 @@ const requiredPositiveInteger = (record: Record<string, unknown>, key: string): 
 }
 
 /** The same 64-hex rule the journal enforces, stated once in ./schemas. */
-const isSha256Hex = (value: string): boolean =>
-	Schema.decodeUnknownResult(Sha256Lower)(value)._tag === "Success"
+const isSha256Hex = (value: string): boolean => Schema.decodeResult(Sha256Lower)(value)._tag === "Success"
 
 /** A safe logical config name (no path separators, no traversal). */
 const SAFE_CONFIG_NAME = /^[A-Za-z0-9._-]+$/

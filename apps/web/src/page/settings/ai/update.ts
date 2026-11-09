@@ -110,9 +110,8 @@ export const init = (isTriageAvailable: boolean): Return => ({
 		picked: null,
 		isReplacing: false,
 		keyDraft: Field.init(),
-		isSavingKey: false,
+		keyWrite: "Idle",
 		removeDialog: Dialog.init("openrouter-remove", "alert-dialog"),
-		isRemoving: false,
 		addOnDialog: Dialog.init("openrouter-add-on", "alert-dialog"),
 		isAttachingAddOn: false,
 		triage: isTriageAvailable ? AsyncData.Loading() : AsyncData.Idle(),
@@ -246,26 +245,29 @@ export const update = (model: Model, message: Message): Return =>
 		}),
 		PickedProvider: ({ provider }) =>
 			provider === "managed" && isKeyInUse(model)
-				? liftRemoveDialog(model, Dialog.open(model.removeDialog))
+				? model.keyWrite !== "Idle"
+					? { model }
+					: liftRemoveDialog(model, Dialog.open(model.removeDialog))
 				: { model: { ...model, picked: provider } },
 		CompletedFocusProvider: () => ({ model }),
 		ClickedReplace: () => ({ model: { ...model, isReplacing: true } }),
 		ClickedCancelReplace: () => ({ model: { ...model, isReplacing: false, keyDraft: Field.init() } }),
-		GotKeyDraftMessage: ({ message: child }) => ({
-			model: { ...model, keyDraft: Field.update(model.keyDraft, child).model },
-		}),
+		GotKeyDraftMessage: ({ message: child }) =>
+			model.keyWrite === "Saving"
+				? { model }
+				: { model: { ...model, keyDraft: Field.update(model.keyDraft, child).model } },
 		SubmittedKey: () => {
 			const apiKey = Str.trim(model.keyDraft.value)
-			return apiKey === "" || model.isSavingKey
+			return apiKey === "" || model.keyWrite !== "Idle"
 				? { model }
-				: { model: { ...model, isSavingKey: true }, commands: [SaveOpenRouterKey({ apiKey })] }
+				: { model: { ...model, keyWrite: "Saving" }, commands: [SaveOpenRouterKey({ apiKey })] }
 		},
 		CompletedSaveKey: ({ result }) =>
 			Result.match(result, {
 				onSuccess: () => ({
 					model: {
 						...model,
-						isSavingKey: false,
+						keyWrite: "Idle",
 						isReplacing: false,
 						keyDraft: Field.init(),
 						key: refresh(model.key),
@@ -274,19 +276,22 @@ export const update = (model: Model, message: Message): Return =>
 					outMessage: toast("success", "OpenRouter key saved"),
 				}),
 				onFailure: (error) => ({
-					model: { ...model, isSavingKey: false },
+					model: { ...model, keyWrite: "Idle" },
 					outMessage: toast("error", "Couldn't save the key", error.message),
 				}),
 			}),
-		ClickedRemoveKey: () => liftRemoveDialog(model, Dialog.open(model.removeDialog)),
+		ClickedRemoveKey: () =>
+			model.keyWrite !== "Idle" ? { model } : liftRemoveDialog(model, Dialog.open(model.removeDialog)),
 		GotRemoveDialogMessage: ({ message: child }) =>
-			model.isRemoving ? { model } : liftRemoveDialog(model, Dialog.update(model.removeDialog, child)),
-		ClickedConfirmRemove: () =>
-			model.isRemoving
+			model.keyWrite === "Removing"
 				? { model }
-				: { model: { ...model, isRemoving: true }, commands: [RemoveOpenRouterKey()] },
+				: liftRemoveDialog(model, Dialog.update(model.removeDialog, child)),
+		ClickedConfirmRemove: () =>
+			model.keyWrite !== "Idle"
+				? { model }
+				: { model: { ...model, keyWrite: "Removing" }, commands: [RemoveOpenRouterKey()] },
 		CompletedRemoveKey: ({ result }) => {
-			const closed = liftRemoveDialog({ ...model, isRemoving: false }, Dialog.close(model.removeDialog))
+			const closed = liftRemoveDialog({ ...model, keyWrite: "Idle" }, Dialog.close(model.removeDialog))
 			return Result.match(result, {
 				onSuccess: () => ({
 					model: { ...closed.model, picked: null, key: refresh(closed.model.key) },
@@ -366,11 +371,20 @@ export const update = (model: Model, message: Message): Return =>
 					outMessage: toast("error", "Couldn't update auto-triage settings", error.message),
 				}),
 			}),
-		ChangedLimit: ({ field, value }) => ({
-			model: { ...model, limits: { ...limitsDraftOf(model), [field]: value }, committedOver: null },
-		}),
+		// The save in flight sends what was typed; edits wait for it, as the disabled inputs do.
+		ChangedLimit: ({ field, value }) =>
+			model.isSavingLimits
+				? { model }
+				: {
+						model: {
+							...model,
+							limits: { ...limitsDraftOf(model), [field]: value },
+							committedOver: null,
+						},
+					},
 		ToggledAdvanced: () => ({ model: { ...model, isAdvancedOpen: !model.isAdvancedOpen } }),
-		ClickedDiscardLimits: () => ({ model: { ...model, limits: null, committedOver: null } }),
+		ClickedDiscardLimits: () =>
+			model.isSavingLimits ? { model } : { model: { ...model, limits: null, committedOver: null } },
 		ClickedSaveLimits: () => saveLimits(model),
 		CompletedSaveLimits: ({ result }) =>
 			Result.match(result, {

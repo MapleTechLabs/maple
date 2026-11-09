@@ -12,7 +12,7 @@ import { textarea } from "@maple/views/ui/textarea"
 import { adminOnlyNote } from "../../settings/kit/section"
 import { formatConfig, problemText } from "./config-json"
 import { Message } from "./message"
-import type { Model } from "./model"
+import { canManage, type Model } from "./model"
 import { canApply, currentConfigOf, draftOf } from "./update-json"
 import { isSettingsDirty } from "./update-settings"
 import { typography, typographyClass } from "@maple/views/ui/typography"
@@ -58,7 +58,7 @@ const summary = (h: H, changes: StatusPageConfigChanges): Html => {
 			h,
 			[
 				rows.length === 0
-					? typography(h, { size: "sm", tone: "muted", as: "p" }, ["No changes yet."])
+					? typography(h, { size: "sm", tone: "muted", as: "p" }, ["No changes yet"])
 					: h.dl(
 							[h.Class("grid grid-cols-[max-content_minmax(0,1fr)] gap-x-6 gap-y-1.5 text-sm")],
 							Arr.flatMap(rows, ([term, detail]) => [
@@ -86,7 +86,7 @@ const readView = (h: H, model: Model, text: string): Html =>
 					variant: "outline",
 					size: "sm",
 				}),
-				...(model.isAdmin
+				...(canManage(model)
 					? [
 							button(
 								h,
@@ -221,16 +221,17 @@ export const jsonTab = (h: H, model: Model): Html =>
 	Option.match(currentConfigOf(model), {
 		onNone: () => h.empty,
 		onSome: (current) =>
-			h.div(
-				[h.Class("flex max-w-4xl flex-col gap-4")],
-				[
-					intro(h),
-					...(model.isAdmin
-						? []
-						: [adminOnlyNote(h, ["Only org admins can apply a config. You can copy it."])]),
-					model.isAdmin && model.jsonDraft !== null
-						? editView(h, model, model.jsonDraft)
-						: readView(h, model, formatConfig(current)),
-				],
-			),
+			vstack(h, { gap: "4", className: "max-w-4xl" }, [
+				intro(h),
+				...(canManage(model)
+					? []
+					: [
+							adminOnlyNote(h, [
+								"Only org admins and engineers can apply a config. You can copy it.",
+							]),
+						]),
+				canManage(model) && model.jsonEdit !== null
+					? editView(h, model, model.jsonEdit.draft)
+					: readView(h, model, formatConfig(current)),
+			]),
 	})

@@ -3,6 +3,7 @@
 import { AlertValidationError } from "@maple/domain/http"
 import { afterEach, assert, describe, it } from "@effect/vitest"
 import { Clock, Duration, Effect, Schema, Array as Arr } from "effect"
+import * as SecureRandom from "effect/crypto/SecureRandom"
 import { TestClock } from "effect/testing"
 import { type AlertDestinationId, AlertRuleUpsertRequest, OrgId } from "@maple/domain/http"
 import { AlertsService } from "./AlertsService"
@@ -68,8 +69,8 @@ const seedUptimeMonitor = (
 	Effect.gen(function* () {
 		const database = yield* Database
 		const now = yield* Clock.currentTimeMillis
-		const ruleId = AlertRuleIdSchema.make(crypto.randomUUID())
-		const monitorId = UptimeMonitorIdSchema.make(crypto.randomUUID())
+		const ruleId = AlertRuleIdSchema.make(SecureRandom.uuidV4Unsafe())
+		const monitorId = UptimeMonitorIdSchema.make(SecureRandom.uuidV4Unsafe())
 		const enabled = input.enabled ?? true
 		yield* database.execute((db) =>
 			db.transaction(
@@ -97,7 +98,8 @@ const seedUptimeMonitor = (
 							failuresToDown: 1,
 							serviceName: input.serviceName,
 							alertRuleId: ruleId,
-							heartbeatToken: input.config._tag === "heartbeat" ? crypto.randomUUID() : null,
+							heartbeatToken:
+								input.config._tag === "heartbeat" ? SecureRandom.uuidV4Unsafe() : null,
 							enabled,
 							createdBy: asUserId("user_uptime"),
 							createdAt: now,
@@ -183,7 +185,7 @@ describe("AlertsService uptime rules", () => {
 			assert.strictEqual(opened[0]?.groupKey, "checkout-api")
 			assert.strictEqual(opened[0]?.signalType, "uptime")
 			assert.strictEqual(opened[0]?.severity, "critical")
-			const trigger = Schema.decodeUnknownSync(
+			const trigger = Schema.decodeSync(
 				Schema.fromJsonString(
 					Schema.Struct({
 						eventType: Schema.String,
@@ -224,9 +226,9 @@ describe("AlertsService uptime rules", () => {
 				status: "down",
 			})
 			const pages = [
-				{ id: crypto.randomUUID(), slug: "published-page", autoIncidents: "publish" },
-				{ id: crypto.randomUUID(), slug: "draft-page", autoIncidents: "draft" },
-				{ id: crypto.randomUUID(), slug: "off-page", autoIncidents: "off" },
+				{ id: SecureRandom.uuidV4Unsafe(), slug: "published-page", autoIncidents: "publish" },
+				{ id: SecureRandom.uuidV4Unsafe(), slug: "draft-page", autoIncidents: "draft" },
+				{ id: SecureRandom.uuidV4Unsafe(), slug: "off-page", autoIncidents: "off" },
 			]
 			yield* Effect.forEach(pages, (page) =>
 				Effect.promise(() =>
@@ -286,7 +288,7 @@ describe("AlertsService uptime rules", () => {
 			yield* TestClock.adjust(Duration.minutes(1))
 			yield* alerts.runSchedulerTick()
 			assert.deepStrictEqual(
-				(yield* pageIncidents()).map((row) => [row.slug, row.status, row.updates]),
+				Arr.map(yield* pageIncidents(), (row) => [row.slug, row.status, row.updates]),
 				[
 					["draft-page", "resolved", 2],
 					["published-page", "resolved", 2],

@@ -60,7 +60,7 @@ export const pagingFooter = (h: H, paging: PagingState): ReadonlyArray<Html> => 
 		isFailed: paging === "failed",
 		onLoadMore: Message.ClickedLoadMore(),
 		className: stripClass("block"),
-		children: paging === "failed" ? [h.span([], ["Couldn't load more errors."])] : [],
+		children: paging === "failed" ? [h.span([], ["Couldn't load more errors"])] : [],
 	})
 	return footer === null ? [] : [footer]
 }
@@ -70,6 +70,8 @@ export type ListInputs = Readonly<{
 	signals: ReadonlyArray<ErrorSignal>
 	rowState: (signal: ErrorSignal) => RowState
 	isNarrowed: boolean
+	/** The page zone, for the empty state's last-seen card. */
+	timeZone: string
 }>
 
 const rowView = (
@@ -119,7 +121,10 @@ const readyBody = (h: H, model: Model, inputs: ListInputs): ReadonlyArray<Html> 
 	const { signals } = inputs
 	if (signals.length === 0) {
 		return [
-			h.div([h.Key("empty"), h.Class("contents")], [hubEmpty(h, model, inputs.isNarrowed)]),
+			h.div(
+				[h.Key("empty"), h.Class("contents")],
+				[hubEmpty(h, model, inputs.isNarrowed, inputs.timeZone)],
+			),
 			...bulkBar(h, model),
 		]
 	}

@@ -13,8 +13,8 @@ import type { Finding, SourceId } from "./model"
 import { sourceMark, SOURCE_TITLE } from "./source-mark"
 import type { SourceState } from "./state"
 import { typography } from "@maple/views/ui/typography"
-import { hstackClass, vstack } from "@maple/views/ui/stack"
-import { Array as Arr, String as Str } from "effect"
+import { hstack, hstackClass, vstack } from "@maple/views/ui/stack"
+import { Array as Arr, String as Str, Order } from "effect"
 
 /** The muted caption beside an overview section's title, set in the sans prose face. */
 export const sectionCaption = <M>(h: HtmlBuilder<M>, text: string): Html =>
@@ -38,8 +38,9 @@ const RANK = { crit: 0, warn: 1, error: 2, stale: 3 } as const
 const LOADING_ROWS = 2
 
 const sourceLabel = <M>(h: HtmlBuilder<M>, id: SourceId): Html =>
-	h.span(
-		[h.Class("flex w-32 shrink-0 items-center gap-2 text-xs text-muted-foreground")],
+	hstack(
+		h,
+		{ gap: "2", align: "center", as: "span", className: "w-32 shrink-0 text-xs text-muted-foreground" },
 		[sourceMark(h, id, 14), SOURCE_TITLE[id]],
 	)
 
@@ -50,14 +51,20 @@ const findingTitle = <M>(h: HtmlBuilder<M>, { subject, title }: Finding): Html =
 				[h.Class("truncate text-sm text-foreground group-hover:text-primary"), h.Title(title)],
 				[title],
 			)
-		: h.span(
-				[h.Class("flex min-w-0 text-sm text-foreground group-hover:text-primary"), h.Title(title)],
+		: hstack(
+				h,
+				{
+					align: "stretch",
+					shrink: true,
+					as: "span",
+					className: "text-sm text-foreground group-hover:text-primary",
+					attributes: [h.Title(title)],
+				},
 				[
-					h.span([h.Class("truncate")], [subject]),
-					h.span(
-						[h.Class("shrink-0 whitespace-pre tabular-nums")],
-						[Str.slice(subject.length)(title)],
-					),
+					typography(h, { truncate: true }, [subject]),
+					typography(h, { numeric: true, className: "shrink-0 whitespace-pre" }, [
+						Str.slice(subject.length)(title),
+					]),
 				],
 			)
 
@@ -82,7 +89,7 @@ const findingRowLoading = <M>(h: HtmlBuilder<M>): Html =>
 		[h.Class(cn(hstackClass({ gap: "4", className: "px-4 py-3" }), FINDINGS_ROW_CLASS))],
 		[
 			skeleton(h, "size-2 shrink-0 rounded-full"),
-			h.span([h.Class("flex w-32 shrink-0 items-center")], [skeleton(h, "h-3 w-20")]),
+			hstack(h, { align: "center", as: "span", className: "w-32 shrink-0" }, [skeleton(h, "h-3 w-20")]),
 			vstack(h, { gap: "0.5", shrink: true, grow: true, as: "span" }, [
 				skeleton(h, "my-0.5 h-4 w-64 max-w-full"),
 				skeleton(h, "my-0.5 h-3 w-40 max-w-full"),
@@ -159,8 +166,9 @@ export const needsAttention = <M>(
 	const isSettled = sources !== null && Arr.every(sources, ({ state }) => state.status !== "loading")
 	const rows = isSettled
 		? Arr.map(
-				Arr.flatMap(sources, ({ id, state }) => entriesOf(h, id, state, time)).toSorted(
-					(a, b) => a.rank - b.rank,
+				Arr.sort(
+					Arr.flatMap(sources, ({ id, state }) => entriesOf(h, id, state, time)),
+					Order.mapInput(Order.Number, (entry: { readonly rank: number }) => entry.rank),
 				),
 				({ row }) => row,
 			)
@@ -185,7 +193,7 @@ export const needsAttention = <M>(
 					: rows.length > 0
 						? findingsList(h, rows)
 						: emptyMessage(h, { dashed: true }, [
-								"Nothing is over its thresholds in this window.",
+								"Nothing is over its thresholds in this window",
 							]),
 		],
 	)

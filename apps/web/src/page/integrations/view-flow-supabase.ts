@@ -1,6 +1,7 @@
 import type { SupabaseIntegrationStatus } from "@maple/domain/http"
 import { countLabel } from "@maple/ui/lib/format"
-import { formatRelativeShortFrom, toEpochMs } from "@maple/ui/lib/time-format"
+import { toEpochMs } from "@maple/ui/lib/time-format"
+import { relativeTime } from "../kit/relative-time"
 import { cn } from "@maple/ui/lib/utils"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
@@ -33,10 +34,11 @@ import {
 	supabaseProjectSwitches,
 } from "./view-supabase"
 import { typography, typographyClass } from "@maple/views/ui/typography"
-import { hstackClass, vstack } from "@maple/views/ui/stack"
+import { hstack, hstackClass, vstack } from "@maple/views/ui/stack"
 import { stripClass } from "@maple/views/ui/rule"
 import { columnClass } from "@maple/views/ui/column"
 import { Array as Arr } from "effect"
+import { textLink } from "@maple/views/ui/text-link"
 
 // Supabase in the connect flow: authorize an organization, switch on projects, watch the first data land.
 
@@ -78,31 +80,25 @@ const muted = (h: H, text: string): Html => typography(h, { size: "sm", tone: "m
 
 /** What happens in the Supabase window, before it opens. */
 const windowSteps = (h: H): Html =>
-	h.div(
-		[h.Class("flex flex-col gap-2 rounded-md bg-surface-sunken p-4")],
-		[
-			eyebrow(h, { variant: "mono" }, ["In the Supabase window"]),
-			vstack(h, { gap: "1.5", as: "ul", className: typographyClass({ size: "sm" }) }, [
-				h.li([], ["Pick the organization that owns your projects"]),
-				h.li([], ["Review the read scopes: projects, analytics, database"]),
-				h.li([], ["Click Authorize. This tab picks it up on its own"]),
-			]),
-		],
-	)
+	vstack(h, { gap: "2", className: "rounded-md bg-surface-sunken p-4" }, [
+		eyebrow(h, { variant: "mono" }, ["In the Supabase window"]),
+		vstack(h, { gap: "1.5", as: "ul", className: typographyClass({ size: "sm" }) }, [
+			h.li([], ["Pick the organization that owns your projects"]),
+			h.li([], ["Review the read scopes: projects, analytics, database"]),
+			h.li([], ["Click Authorize. This tab picks it up on its own"]),
+		]),
+	])
 
 const waitingBlock = (h: H): Html =>
-	h.div(
-		[h.Class("flex items-center gap-3 rounded-md bg-surface-sunken p-4")],
-		[
-			icon(h, "ClockIcon", { size: 16, className: "shrink-0 text-muted-foreground" }),
-			vstack(h, { gap: "0.5" }, [
-				typography(h, { size: "sm", weight: "medium" }, ["Waiting for you to approve in Supabase"]),
-				typography(h, { size: "xs", tone: "muted" }, [
-					"Pick an organization in that window, then click Authorize.",
-				]),
+	hstack(h, { gap: "3", align: "center", className: "rounded-md bg-surface-sunken p-4" }, [
+		icon(h, "ClockIcon", { size: 16, className: "shrink-0 text-muted-foreground" }),
+		vstack(h, { gap: "0.5" }, [
+			typography(h, { size: "sm", weight: "medium" }, ["Waiting for you to approve in Supabase"]),
+			typography(h, { size: "xs", tone: "muted" }, [
+				"Pick an organization in that window, then click Authorize.",
 			]),
-		],
-	)
+		]),
+	])
 
 const authorizeButton = (h: H, model: Model, label: string, variant: "default" | "outline"): Html =>
 	button(
@@ -118,29 +114,33 @@ const authorizeButton = (h: H, model: Model, label: string, variant: "default" |
 	)
 
 const selfHostedLine = (h: H): Html =>
-	h.div(
-		[
-			h.Class(
-				"flex flex-wrap items-center justify-between gap-2 border-t border-border pt-4 text-xs text-muted-foreground",
-			),
-		],
+	hstack(
+		h,
+		{
+			gap: "2",
+			align: "center",
+			justify: "between",
+			wrap: true,
+			className: "border-t border-border pt-4 text-xs text-muted-foreground",
+		},
 		[
 			h.span([], ["Self-hosted Supabase? Scrape its metrics endpoint as a Prometheus source."]),
-			h.a(
-				[
-					h.Href(PROMETHEUS_HREF),
-					h.Class(
-						"inline-flex items-center gap-1 text-foreground hover:underline active:underline",
-					),
-				],
-				["Use Prometheus", icon(h, "ArrowRightIcon", { size: 12 })],
-			),
+			textLink(h, { href: PROMETHEUS_HREF, tone: "inherit", className: "text-foreground" }, [
+				"Use Prometheus",
+				icon(h, "ArrowRightIcon", { size: 12 }),
+			]),
 		],
 	)
 
 const revokedNotice = (h: H, status: SupabaseIntegrationStatus): Html =>
-	h.div(
-		[h.Class("flex gap-3 rounded-md border border-severity-warn-a4 bg-card p-4"), h.Role("alert")],
+	hstack(
+		h,
+		{
+			gap: "3",
+			align: "stretch",
+			className: "rounded-md border border-severity-warn-a4 bg-card p-4",
+			attributes: [h.Role("alert")],
+		},
 		[
 			icon(h, "CircleWarningIcon", { size: 14, className: "mt-0.5 shrink-0 text-severity-warn" }),
 			vstack(h, { gap: "1" }, [
@@ -258,7 +258,7 @@ const chooseRow = (h: H, model: Model, project: Project): Html => {
 		],
 		[
 			vstack(h, { grow: true, as: "span", className: "w-0 min-w-48" }, [
-				h.span([h.Class("truncate"), h.Title(project.name)], [project.name]),
+				typography(h, { truncate: true, attributes: [h.Title(project.name)] }, [project.name]),
 				typography(h, { size: "2xs", tone: "muted", mono: true, truncate: true }, [
 					Arr.join(
 						Arr.filter(
@@ -357,7 +357,18 @@ const showsUpRail = (h: H): Html =>
 		docs: DOCS_HREF === undefined ? null : { label: "Docs", href: DOCS_HREF },
 	})
 
-const metricsCheck = (model: Model, projects: ReadonlyArray<Project>): CheckRow | null => {
+type Clock = Readonly<{ nowMs: number; timeZone: string }>
+
+/** The newest instant as a short relative stamp, `null` when nothing has reported. */
+const latestMeta = (h: H, latest: number, clock: Clock): Html | null =>
+	latest > 0 ? relativeTime(h, { value: latest, ...clock, variant: "short" }) : null
+
+const metricsCheck = (
+	h: H,
+	model: Model,
+	projects: ReadonlyArray<Project>,
+	timeZone: string,
+): CheckRow | null => {
 	const watched = Arr.filter(projects, (project) => project.metricsEnabled)
 	if (watched.length === 0) return null
 	const data = model.supabaseCard.metrics.data
@@ -374,7 +385,7 @@ const metricsCheck = (model: Model, projects: ReadonlyArray<Project>): CheckRow 
 				state: "done",
 				title: "First metrics",
 				detail: `${reporting.length} of ${watched.length} projects reporting CPU, memory, disk and Postgres`,
-				meta: latest > 0 ? formatRelativeShortFrom(latest, model.nowMs) : null,
+				meta: latestMeta(h, latest, { nowMs: model.nowMs, timeZone }),
 			}
 		: {
 				state: "working",
@@ -383,7 +394,12 @@ const metricsCheck = (model: Model, projects: ReadonlyArray<Project>): CheckRow 
 			}
 }
 
-const logsCheck = (model: Model, projects: ReadonlyArray<Project>): CheckRow | null => {
+const logsCheck = (
+	h: H,
+	model: Model,
+	projects: ReadonlyArray<Project>,
+	timeZone: string,
+): CheckRow | null => {
 	const polled = Arr.filter(projects, (project) => project.logsEnabled)
 	const drained = Arr.filter(projects, (project) => project.logDrainEnabled)
 	if (polled.length === 0 && drained.length === 0) return null
@@ -422,7 +438,7 @@ const logsCheck = (model: Model, projects: ReadonlyArray<Project>): CheckRow | n
 			),
 			" · ",
 		),
-		meta: latest > 0 ? formatRelativeShortFrom(latest, model.nowMs) : null,
+		meta: latestMeta(h, latest, { nowMs: model.nowMs, timeZone }),
 	}
 }
 
@@ -445,7 +461,12 @@ const drainCheck = (drains: ReadonlyArray<Project>): ReadonlyArray<CheckRow> => 
 	]
 }
 
-const liveRows = (model: Model, status: SupabaseIntegrationStatus): ReadonlyArray<CheckRow> => {
+const liveRows = (
+	h: H,
+	model: Model,
+	status: SupabaseIntegrationStatus,
+	timeZone: string,
+): ReadonlyArray<CheckRow> => {
 	const collecting = Arr.filter(status.projects, isCollecting)
 	const drains = Arr.filter(collecting, (project) => project.logDrainEnabled)
 	return [
@@ -469,13 +490,13 @@ const liveRows = (model: Model, status: SupabaseIntegrationStatus): ReadonlyArra
 				},
 		...drainCheck(drains),
 		...Arr.filter(
-			[metricsCheck(model, collecting), logsCheck(model, collecting)],
+			[metricsCheck(h, model, collecting, timeZone), logsCheck(h, model, collecting, timeZone)],
 			(row): row is CheckRow => row !== null,
 		),
 	]
 }
 
-const liveStep = (h: H, model: Model): Html => {
+const liveStep = (h: H, model: Model, timeZone: string): Html => {
 	const status = supabaseStatusOf(model)
 	return flowColumns(
 		h,
@@ -489,12 +510,16 @@ const liveStep = (h: H, model: Model): Html => {
 				rows:
 					status === null || !status.connected
 						? [{ state: "waiting", title: "Waiting for Supabase's status" }]
-						: liveRows(model, status),
+						: liveRows(h, model, status, timeZone),
 			}),
 		],
 		showsUpRail(h),
 	)
 }
 
-export const supabaseFlowView = (h: H, model: Model, stage: FlowStage): Html =>
-	stage === "live" ? liveStep(h, model) : stage === "choose" ? chooseStep(h, model) : connectStep(h, model)
+export const supabaseFlowView = (h: H, model: Model, stage: FlowStage, timeZone: string): Html =>
+	stage === "live"
+		? liveStep(h, model, timeZone)
+		: stage === "choose"
+			? chooseStep(h, model)
+			: connectStep(h, model)

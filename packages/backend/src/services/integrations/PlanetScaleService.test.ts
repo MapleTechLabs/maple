@@ -1,6 +1,17 @@
 import { afterEach, assert, describe, it } from "@effect/vitest"
 import { SupabaseOAuthService } from "@maple/backend/services/auth/SupabaseOAuthService"
-import { ConfigProvider, Effect, Fiber, Layer, Predicate, Schema, Array as Arr, String as Str } from "effect"
+import {
+	ConfigProvider,
+	Effect,
+	Fiber,
+	Layer,
+	Predicate,
+	Schema,
+	Array as Arr,
+	String as Str,
+	DateTime,
+	Option,
+} from "effect"
 import { TestClock } from "effect/testing"
 import { FetchHttpClient } from "effect/http"
 import { OrgId, UserId } from "@maple/domain/http"
@@ -105,17 +116,21 @@ const stubApi = (fixtures: {
 		if (/\/v1\/organizations\?/.test(url)) {
 			return json({ data: [{ id: "psorg_1", name: "acme" }] })
 		}
-		const branchesMatch = url.match(/\/databases\/([^/?]+)\/branches/)
-		if (branchesMatch) {
-			return json({ data: fixtures.branchesByDatabase[decodeURIComponent(branchesMatch[1])] ?? [] })
+		const branchesMatch = Str.match(/\/databases\/([^/?]+)\/branches/)(url)
+		if (Option.isSome(branchesMatch)) {
+			return json({
+				data: fixtures.branchesByDatabase[decodeURIComponent(branchesMatch.value[1])] ?? [],
+			})
 		}
 		// Must precede the /databases catch-all, which would otherwise serve the
 		// databases fixture to the deploy-request poller — the poller would then
 		// decode it as deploy requests and silently record nothing.
-		const deployRequestsMatch = url.match(/\/databases\/([^/?]+)\/deploy-requests/)
-		if (deployRequestsMatch) {
+		const deployRequestsMatch = Str.match(/\/databases\/([^/?]+)\/deploy-requests/)(url)
+		if (Option.isSome(deployRequestsMatch)) {
 			return json({
-				data: fixtures.deployRequestsByDatabase?.[decodeURIComponent(deployRequestsMatch[1])] ?? [],
+				data:
+					fixtures.deployRequestsByDatabase?.[decodeURIComponent(deployRequestsMatch.value[1])] ??
+					[],
 			})
 		}
 		if (Str.includes("/databases")(url)) {
@@ -182,19 +197,21 @@ describe("PlanetScaleService", () => {
 			yield* connect("org_1")
 			const service = yield* PlanetScaleService
 
-			const summary = yield* service.pollAllOrgs()
+			const summary = yield* service.pollAllOrgs
 			assert.strictEqual(summary.orgs, 1)
 			assert.strictEqual(summary.refreshed, 1)
 			assert.strictEqual(summary.failures, 0)
 
 			const rows = yield* service.listDatabases(asOrgId("org_1"))
 			assert.strictEqual(rows.length, 2)
-			const main = rows.find((row) => row.name === "main-db")
-			assert.strictEqual(main?.kind, "mysql")
-			assert.strictEqual(main?.branchesJson?.length, 2)
-			assert.isTrue(main?.branchesJson?.some((branch) => branch.name === "main" && branch.production))
-			const analytics = rows.find((row) => row.name === "analytics")
-			assert.strictEqual(analytics?.kind, "postgresql")
+			const main = Option.getOrThrow(Arr.findFirst(rows, (row) => row.name === "main-db"))
+			assert.strictEqual(main.kind, "mysql")
+			assert.strictEqual(main.branchesJson?.length, 2)
+			assert.isTrue(
+				Arr.some(main.branchesJson ?? [], (branch) => branch.name === "main" && branch.production),
+			)
+			const analytics = Option.getOrThrow(Arr.findFirst(rows, (row) => row.name === "analytics"))
+			assert.strictEqual(analytics.kind, "postgresql")
 
 			// The connection carries the freshness marker for the status endpoint.
 			const connection = yield* Effect.promise(() =>
@@ -207,7 +224,7 @@ describe("PlanetScaleService", () => {
 			assert.isNotNull(connection?.last_inventory_at)
 
 			// A second tick inside the TTL skips (no lease churn, no API refetch).
-			const second = yield* service.pollAllOrgs()
+			const second = yield* service.pollAllOrgs
 			assert.strictEqual(second.skipped, 1)
 			assert.strictEqual(second.refreshed, 0)
 		}).pipe(
@@ -244,7 +261,7 @@ describe("PlanetScaleService", () => {
 
 			// `it.effect` runs on TestClock, so the 15s request timeout and the jittered
 			// backoff between attempts only elapse when the clock is advanced.
-			const poll = yield* Effect.forkChild(service.pollAllOrgs())
+			const poll = yield* Effect.forkChild(service.pollAllOrgs)
 			// Give the fiber a real macrotask to reach (and re-reach) the pending fetch
 			// before each virtual advance — the stubbed request never settles, so only
 			// the timeout can move it along.
@@ -299,7 +316,7 @@ describe("PlanetScaleService", () => {
 			const service = yield* PlanetScaleService
 			stallPageTwo = true
 
-			const poll = yield* Effect.forkChild(service.pollAllOrgs())
+			const poll = yield* Effect.forkChild(service.pollAllOrgs)
 			for (let tick = 0; tick < 6; tick++) {
 				yield* Effect.promise(() => new Promise((resolve) => setTimeout(resolve, 10)))
 				yield* TestClock.adjust("20 seconds")
@@ -363,7 +380,7 @@ describe("PlanetScaleService", () => {
 		return Effect.gen(function* () {
 			yield* connect("org_1")
 			const service = yield* PlanetScaleService
-			yield* service.pollAllOrgs()
+			yield* service.pollAllOrgs
 
 			const result = yield* service.queryInsights(asOrgId("org_1"), {
 				database: "main-db",
@@ -373,13 +390,13 @@ describe("PlanetScaleService", () => {
 
 			// Branch defaulted to the inventory's production branch.
 			assert.strictEqual(result.branch, "main")
-			assert.isTrue(insightCalls[0]?.includes("/databases/main-db/branches/main/insights"))
-			const insightUrl = new URL(insightCalls[0]!)
+			assert.isTrue(Str.includes("/databases/main-db/branches/main/insights")(insightCalls[0] ?? ""))
+			const insightUrl = new URL(insightCalls[0])
 			assert.strictEqual(insightUrl.searchParams.get("sort"), "totalTime")
 			assert.strictEqual(insightUrl.searchParams.get("dir"), "desc")
 			assert.isNull(result.unavailableReason)
 			assert.strictEqual(result.rows.length, 1)
-			const row = result.rows[0]!
+			const row = result.rows[0]
 			assert.strictEqual(row.fingerprint, "abc123")
 			assert.strictEqual(row.queryCount, 420)
 			assert.strictEqual(row.p99LatencyMillis, 140)
@@ -510,7 +527,7 @@ describe("PlanetScaleService", () => {
 		return Effect.gen(function* () {
 			yield* connect("org_1")
 			const service = yield* PlanetScaleService
-			yield* service.pollAllOrgs()
+			yield* service.pollAllOrgs
 
 			// No branch requested and the inventory has no production branch → the
 			// first inventoried branch ("dev") is used, not the "main" hard fallback.
@@ -521,7 +538,7 @@ describe("PlanetScaleService", () => {
 			})
 
 			assert.strictEqual(result.branch, "dev")
-			assert.isTrue(insightCalls[0]?.includes("/branches/dev/insights"))
+			assert.isTrue(Str.includes("/branches/dev/insights")(insightCalls[0] ?? ""))
 			assert.isNull(result.unavailableReason)
 		}).pipe(
 			Effect.provideService(FetchHttpClient.Fetch, stub),
@@ -544,7 +561,7 @@ describe("PlanetScaleService", () => {
 			// The grant vanishes (revoked / cleaned up) while the binding row stays.
 			yield* oauth.disconnect(asOrgId("org_1"))
 
-			const summary = yield* service.pollAllOrgs()
+			const summary = yield* service.pollAllOrgs
 			assert.strictEqual(summary.orgs, 1)
 			assert.strictEqual(summary.failures, 1)
 			assert.strictEqual(summary.refreshed, 0)
@@ -574,7 +591,7 @@ describe("PlanetScaleService", () => {
 		return Effect.gen(function* () {
 			yield* connect("org_1")
 			const service = yield* PlanetScaleService
-			yield* service.pollAllOrgs()
+			yield* service.pollAllOrgs
 			const ok = yield* sourcePollState(testDb, "org_1")
 			assert.isNotNull(ok.last_poll_ok_at)
 			assert.isNull(ok.last_poll_error)
@@ -584,14 +601,14 @@ describe("PlanetScaleService", () => {
 				executeSql(testDb, "UPDATE sources SET disconnected_at = now(), last_poll_error = 'Revoked'"),
 			)
 			yield* TestClock.adjust("2 minutes")
-			yield* service.pollAllOrgs()
+			yield* service.pollAllOrgs
 			const fresh = yield* sourcePollState(testDb, "org_1")
 			assert.deepStrictEqual([fresh.disconnected_at, fresh.last_poll_error], [null, null])
 
 			// The next refresh fails: the source records the connection's own error.
 			yield* (yield* PlanetScaleOAuthService).disconnect(asOrgId("org_1"))
 			yield* TestClock.adjust("2 hours")
-			assert.strictEqual((yield* service.pollAllOrgs()).failures, 1)
+			assert.strictEqual((yield* service.pollAllOrgs).failures, 1)
 			const failed = yield* sourcePollState(testDb, "org_1")
 			assert.isNotNull(failed.last_poll_error)
 			assert.strictEqual(failed.last_poll_error, failed.last_inventory_error)
@@ -613,7 +630,7 @@ describe("PlanetScaleService", () => {
 		return Effect.gen(function* () {
 			yield* connect("org_1")
 			const service = yield* PlanetScaleService
-			yield* service.pollAllOrgs()
+			yield* service.pollAllOrgs
 
 			// A previously-seen database that no longer exists upstream.
 			yield* Effect.promise(() =>
@@ -632,7 +649,7 @@ describe("PlanetScaleService", () => {
 				),
 			)
 
-			const summary = yield* service.pollAllOrgs()
+			const summary = yield* service.pollAllOrgs
 			assert.strictEqual(summary.refreshed, 1)
 
 			const gone = yield* Effect.promise(() =>
@@ -687,7 +704,7 @@ describe("PlanetScaleService.listEvents", () => {
 					row.branch ?? "",
 					row.category ?? "deploy_request",
 					row.eventType ?? "deploy_request.schema_applied",
-					new Date(T0 + row.offsetMs).toISOString(),
+					DateTime.formatIso(DateTime.makeUnsafe(T0 + row.offsetMs)),
 				],
 			),
 		)
@@ -919,11 +936,11 @@ describe("PlanetScaleService deploy-request backfill", () => {
 
 			// The backfill runs BEFORE the inventory claim, so the first tick has no
 			// databases to walk — the timeline fills on the following tick.
-			const first = yield* service.pollAllOrgs()
+			const first = yield* service.pollAllOrgs
 			assert.strictEqual(first.deployEvents, 0)
 			assert.strictEqual(first.refreshed, 1)
 
-			const second = yield* service.pollAllOrgs()
+			const second = yield* service.pollAllOrgs
 			assert.strictEqual(second.deployEvents, 4)
 
 			const states = yield* Effect.promise(() =>
@@ -960,7 +977,7 @@ describe("PlanetScaleService deploy-request backfill", () => {
 
 			// Same upstream on a third tick: the watermark and the dedupe index
 			// between them must add nothing.
-			const third = yield* service.pollAllOrgs()
+			const third = yield* service.pollAllOrgs
 			assert.strictEqual(third.deployEvents, 0)
 			assert.strictEqual((yield* countEvents(testDb))?.n, 4)
 		}).pipe(
@@ -988,7 +1005,7 @@ describe("PlanetScaleService deploy-request backfill", () => {
 		return Effect.gen(function* () {
 			yield* connect("org_1")
 			const service = yield* PlanetScaleService
-			yield* service.pollAllOrgs()
+			yield* service.pollAllOrgs
 
 			// A webhook already recorded this exact transition, at the second
 			// precision PlanetScale delivers.
@@ -1006,7 +1023,7 @@ describe("PlanetScaleService deploy-request backfill", () => {
 				createdAtMs: Date.parse("2026-08-04T10:15:00Z"),
 			})
 
-			yield* service.pollAllOrgs()
+			yield* service.pollAllOrgs
 			// One marker, not two: the dedupe index is what makes the live and the
 			// backfilled source converge instead of double-drawing every deploy.
 			assert.strictEqual((yield* countEvents(testDb))?.n, 1)
@@ -1034,8 +1051,8 @@ describe("PlanetScaleService deploy-request backfill", () => {
 		return Effect.gen(function* () {
 			yield* connect("org_1")
 			const service = yield* PlanetScaleService
-			yield* service.pollAllOrgs()
-			yield* service.pollAllOrgs()
+			yield* service.pollAllOrgs
+			yield* service.pollAllOrgs
 			assert.strictEqual((yield* countEvents(testDb))?.n, 0)
 		}).pipe(
 			Effect.provideService(FetchHttpClient.Fetch, stub),
@@ -1056,11 +1073,11 @@ describe("PlanetScaleService deploy-request backfill", () => {
 		return Effect.gen(function* () {
 			yield* connect("org_1")
 			const service = yield* PlanetScaleService
-			const first = yield* service.pollAllOrgs()
+			const first = yield* service.pollAllOrgs
 			assert.strictEqual(first.refreshed, 1)
 			assert.strictEqual(first.failures, 0)
 
-			const second = yield* service.pollAllOrgs()
+			const second = yield* service.pollAllOrgs
 			assert.strictEqual(second.failures, 0)
 			assert.strictEqual((yield* countEvents(testDb))?.n, 0)
 			// The inventory still landed despite the unusable deploy payload.
@@ -1153,8 +1170,10 @@ describe("PlanetScaleService pagination truncation", () => {
 	}) => {
 		const base = stubApi({ databases: [], branchesByDatabase: {} })
 		const pageOf = (url: string) => {
-			const match = url.match(/[?&]page=(\d+)/)
-			return match ? Number(match[1]) : 1
+			return Option.match(Str.match(/[?&]page=(\d+)/)(url), {
+				onNone: () => 1,
+				onSome: (match) => Number(match[1]),
+			})
 		}
 		const stub = (async (input: string | URL | Request, init?: RequestInit) => {
 			const url =
@@ -1223,7 +1242,7 @@ describe("PlanetScaleService pagination truncation", () => {
 					),
 				)
 				const service = yield* PlanetScaleService
-				const summary = yield* service.pollAllOrgs()
+				const summary = yield* service.pollAllOrgs
 				assert.strictEqual(summary.refreshed, 1)
 
 				const kept = yield* Effect.promise(() =>
@@ -1263,7 +1282,7 @@ describe("PlanetScaleService pagination truncation", () => {
 			// real past instants that sit beyond the 30-day backfill floor (no
 			// timeline rows, but a positive newest-update candidate).
 			yield* TestClock.adjust("500000 hours")
-			const summary = yield* service.pollAllOrgs()
+			const summary = yield* service.pollAllOrgs
 			// The poll itself succeeded — a decode failure would also leave the
 			// watermark null and make this test vacuous.
 			assert.strictEqual(summary.failures, 0)
@@ -1357,7 +1376,7 @@ describe("PlanetScaleService rejected tokens", () => {
 			rejectOriginal.value = true
 			const service = yield* PlanetScaleService
 
-			const summary = yield* service.pollAllOrgs()
+			const summary = yield* service.pollAllOrgs
 			assert.strictEqual(summary.refreshed, 1)
 			assert.strictEqual(summary.failures, 0)
 			assert.strictEqual(calls.refreshes, 1)
@@ -1379,7 +1398,7 @@ describe("PlanetScaleService rejected tokens", () => {
 			const service = yield* PlanetScaleService
 			const oauth = yield* PlanetScaleOAuthService
 
-			const first = yield* service.pollAllOrgs()
+			const first = yield* service.pollAllOrgs
 			assert.strictEqual(first.failures, 1)
 			assert.strictEqual(calls.refreshes, 1)
 			const grant = yield* oauth.grantStatus(asOrgId("org_1"))
@@ -1390,7 +1409,7 @@ describe("PlanetScaleService rejected tokens", () => {
 			// The stamped grant is skipped outright: no token handed out, no API call.
 			const rejectedBefore = calls.rejected
 			const apiBefore = calls.api
-			const second = yield* service.pollAllOrgs()
+			const second = yield* service.pollAllOrgs
 			assert.strictEqual(second.skipped, 1)
 			assert.strictEqual(second.failures, 0)
 			assert.strictEqual(calls.rejected, rejectedBefore)
@@ -1463,7 +1482,7 @@ describe("PlanetScaleService rejected tokens", () => {
 			rejectOriginal.value = true
 			const service = yield* PlanetScaleService
 
-			const summary = yield* service.pollAllOrgs()
+			const summary = yield* service.pollAllOrgs
 			assert.strictEqual(summary.failures, 1)
 			const grant = yield* (yield* PlanetScaleOAuthService).grantStatus(asOrgId("org_1"))
 			assert.isNull(grant.revokedAt)
@@ -1509,18 +1528,18 @@ describe("PlanetScaleService forbidden grants", () => {
 			const oauth = yield* PlanetScaleOAuthService
 
 			// One 403 is reported as a failed read; the grant is left alone.
-			assert.strictEqual((yield* service.pollAllOrgs()).failures, 1)
+			assert.strictEqual((yield* service.pollAllOrgs).failures, 1)
 			assert.isNull((yield* oauth.grantStatus(asOrgId("org_1"))).revokedAt)
 			assert.isNull((yield* sourcePollState(testDb, "org_1")).disconnected_at)
 
 			// The same 403 again: the grant needs a reconnect.
-			assert.strictEqual((yield* service.pollAllOrgs()).failures, 1)
+			assert.strictEqual((yield* service.pollAllOrgs).failures, 1)
 			assert.isNotNull((yield* oauth.grantStatus(asOrgId("org_1"))).revokedAt)
 			assert.isNotNull((yield* sourcePollState(testDb, "org_1")).disconnected_at)
 
 			// The stamped grant is skipped without another call.
 			const callsBefore = calls.forbidden
-			const third = yield* service.pollAllOrgs()
+			const third = yield* service.pollAllOrgs
 			assert.deepStrictEqual([third.skipped, third.failures], [1, 0])
 			assert.strictEqual(calls.forbidden, callsBefore)
 		}).pipe(
@@ -1537,8 +1556,8 @@ describe("PlanetScaleService forbidden grants", () => {
 			forbidden.value = true
 			const service = yield* PlanetScaleService
 			const oauth = yield* PlanetScaleOAuthService
-			yield* service.pollAllOrgs()
-			yield* service.pollAllOrgs()
+			yield* service.pollAllOrgs
+			yield* service.pollAllOrgs
 			assert.isNotNull((yield* oauth.grantStatus(asOrgId("org_1"))).revokedAt)
 
 			// Re-authorize only: a multi-org grant keeps its binding and skips the picker.
@@ -1551,7 +1570,7 @@ describe("PlanetScaleService forbidden grants", () => {
 			})
 			assert.isNull((yield* oauth.grantStatus(asOrgId("org_1"))).revokedAt)
 
-			assert.strictEqual((yield* service.pollAllOrgs()).failures, 1)
+			assert.strictEqual((yield* service.pollAllOrgs).failures, 1)
 			assert.isNull((yield* oauth.grantStatus(asOrgId("org_1"))).revokedAt)
 		}).pipe(
 			Effect.provideService(FetchHttpClient.Fetch, stub),
@@ -1595,7 +1614,7 @@ describe("PlanetScaleService forbidden grants", () => {
 			const service = yield* PlanetScaleService
 			const oauth = yield* PlanetScaleOAuthService
 
-			const inFlight = yield* Effect.forkChild(service.pollAllOrgs())
+			const inFlight = yield* Effect.forkChild(service.pollAllOrgs)
 			yield* Effect.promise(() => arrived.promise)
 			yield* TestClock.adjust("1 millis")
 			yield* reauthorize
@@ -1603,7 +1622,7 @@ describe("PlanetScaleService forbidden grants", () => {
 			assert.strictEqual((yield* Fiber.join(inFlight)).failures, 1)
 
 			// The new grant's first 403 is only a failed read.
-			assert.strictEqual((yield* service.pollAllOrgs()).failures, 1)
+			assert.strictEqual((yield* service.pollAllOrgs).failures, 1)
 			assert.isNull((yield* oauth.grantStatus(asOrgId("org_1"))).revokedAt)
 		}).pipe(
 			Effect.provideService(FetchHttpClient.Fetch, stub),
@@ -1619,7 +1638,7 @@ describe("PlanetScaleService forbidden grants", () => {
 			forbidden.value = true
 			const service = yield* PlanetScaleService
 			const oauth = yield* PlanetScaleOAuthService
-			assert.strictEqual((yield* service.pollAllOrgs()).failures, 1)
+			assert.strictEqual((yield* service.pollAllOrgs).failures, 1)
 			const before = yield* oauth.grantStatus(asOrgId("org_1"))
 
 			yield* Effect.promise(async () => {
@@ -1654,7 +1673,7 @@ describe("PlanetScaleService forbidden grants", () => {
 			const service = yield* PlanetScaleService
 
 			for (const _ of [1, 2, 3]) {
-				assert.strictEqual((yield* service.pollAllOrgs()).failures, 1)
+				assert.strictEqual((yield* service.pollAllOrgs).failures, 1)
 			}
 			assert.isNull((yield* (yield* PlanetScaleOAuthService).grantStatus(asOrgId("org_1"))).revokedAt)
 		}).pipe(
@@ -1672,12 +1691,12 @@ describe("PlanetScaleService forbidden grants", () => {
 			const oauth = yield* PlanetScaleOAuthService
 
 			forbidden.value = true
-			assert.strictEqual((yield* service.pollAllOrgs()).failures, 1)
+			assert.strictEqual((yield* service.pollAllOrgs).failures, 1)
 			forbidden.value = false
-			assert.strictEqual((yield* service.pollAllOrgs()).refreshed, 1)
+			assert.strictEqual((yield* service.pollAllOrgs).refreshed, 1)
 			yield* TestClock.adjust("2 hours")
 			forbidden.value = true
-			assert.strictEqual((yield* service.pollAllOrgs()).failures, 1)
+			assert.strictEqual((yield* service.pollAllOrgs).failures, 1)
 			assert.isNull((yield* oauth.grantStatus(asOrgId("org_1"))).revokedAt)
 		}).pipe(
 			Effect.provideService(FetchHttpClient.Fetch, stub),

@@ -32,13 +32,14 @@ import {
 	dataTableEmpty,
 	skeletonRows,
 	ROW_LINK_CLASS,
+	NUMERIC_CELL,
 } from "../../../infra/kit/data-table"
 import { metaLine } from "../../../infra/kit/meta-line"
 import { type Sort, sortRowsByField } from "../../../kit/table-sort"
 import type { QueueRow, ZoneRow } from "../data"
 import { Message, type QueueSortKey, type ZoneSortKey } from "./model"
-import { typography, typographyClass } from "@maple/views/ui/typography"
-import { hstackClass } from "@maple/views/ui/stack"
+import { typography } from "@maple/views/ui/typography"
+import { hstack, hstackClass } from "@maple/views/ui/stack"
 import { stripClass } from "@maple/views/ui/rule"
 import { columnClass } from "@maple/views/ui/column"
 import { Array as Arr, String as Str } from "effect"
@@ -50,7 +51,6 @@ type H = HtmlBuilder<Message>
 // The server caps the list at 500 rows, so the row area scrolls rather than growing the page.
 // Capped: a short zone name on a wide page otherwise opens a gulf before its numbers.
 const NAME = "w-0 flex-1 min-w-52 max-w-90"
-const NUMBER = typographyClass({ size: "xs", mono: true, numeric: true, className: "text-right" })
 
 export type SparkContext = Readonly<{ theme: ThemeColors | null; isChartReady: boolean }>
 
@@ -244,7 +244,7 @@ const zoneRow = (
 							mono: true,
 							truncate: true,
 							as: "div",
-							className: "transition-colors group-hover:text-primary",
+							className: "group-hover:text-primary",
 							attributes: [h.Title(zone.zoneName)],
 						},
 						[zone.zoneName],
@@ -264,21 +264,18 @@ const zoneRow = (
 							[options.accounts.get(zone.serviceName) ?? EMPTY_VALUE],
 						),
 					]),
-			h.div(
-				[h.Class("flex w-48 items-center gap-3")],
-				[
-					h.span(
-						[h.Class("w-[56px] shrink-0 font-mono text-xs tabular-nums text-foreground-soft")],
-						[formatNumber(zone.requests)],
-					),
-					requestSpark(h, options.spark, zone, options.sparks?.get(zone.serviceName)),
-				],
-			),
+			hstack(h, { gap: "3", align: "center", className: "w-48" }, [
+				h.span(
+					[h.Class("w-[56px] shrink-0 font-mono text-xs tabular-nums text-foreground-soft")],
+					[formatNumber(zone.requests)],
+				),
+				requestSpark(h, options.spark, zone, options.sparks?.get(zone.serviceName)),
+			]),
 			statusMix(h, zone, rated),
 			h.div(
 				[
 					h.Class(
-						cn("w-20", NUMBER, rated ? errorRateClass(zone.errorRate) : "text-muted-foreground"),
+						cn("w-20", NUMERIC_CELL, rated ? errorRateClass(zone.errorRate) : "text-muted-foreground"),
 					),
 				],
 				[rated ? formatErrorRate(zone.errorRate) : EMPTY_VALUE],
@@ -299,13 +296,13 @@ const zoneRow = (
 			...(options.showLatency
 				? [
 						h.div(
-							[h.Class(cn("hidden w-20 text-foreground-soft lg:block", NUMBER))],
+							[h.Class(cn("hidden w-20 text-foreground-soft lg:block", NUMERIC_CELL))],
 							[zone.ttfbP99Ms > 0 ? formatLatency(zone.ttfbP99Ms) : EMPTY_VALUE],
 						),
 					]
 				: []),
 			h.div(
-				[h.Class(cn("hidden w-24 text-foreground-soft md:block", NUMBER))],
+				[h.Class(cn("hidden w-24 text-foreground-soft md:block", NUMERIC_CELL))],
 				[formatBytes(zone.bytes)],
 			),
 		],
@@ -349,15 +346,12 @@ const workerMeta = (h: H, row: WorkerListRow) => [
 	row.nameInOtherAccounts ? "name shared with another account" : "",
 	row.errors > 0 ? `${formatNumber(row.errors)} of ${formatNumber(row.requests)} failed` : "",
 	row.doRequests > 0
-		? h.span(
-				[...(row.doErrorRate >= 0.01 ? [h.Class("text-severity-error")] : [])],
-				[
-					"Durable Objects · ",
-					formatNumber(row.doRequests),
-					" calls",
-					row.doErrors > 0 ? ` · ${formatErrorRate(row.doErrorRate)} failed` : "",
-				],
-			)
+		? h.span(row.doErrorRate >= 0.01 ? [h.Class("text-severity-error")] : [], [
+				"Durable Objects · ",
+				formatNumber(row.doRequests),
+				" calls",
+				row.doErrors > 0 ? ` · ${formatErrorRate(row.doErrorRate)} failed` : "",
+			])
 		: "",
 	row.isPreview ? "preview deploy" : "",
 ]
@@ -397,7 +391,7 @@ const workerRow = (h: H, row: WorkerListRow, accounts: ReadonlyMap<string, strin
 							mono: true,
 							truncate: true,
 							as: "div",
-							className: "transition-colors group-hover:text-primary",
+							className: "group-hover:text-primary",
 							attributes: [h.Title(row.scriptName)],
 						},
 						[row.scriptName],
@@ -418,7 +412,7 @@ const workerRow = (h: H, row: WorkerListRow, accounts: ReadonlyMap<string, strin
 						),
 					]),
 			h.div(
-				[h.Class(cn("w-24 text-foreground-soft", NUMBER))],
+				[h.Class(cn("w-24 text-foreground-soft", NUMERIC_CELL))],
 				[invocationsOnly ? formatNumber(row.requests) : EMPTY_VALUE],
 			),
 			h.div(
@@ -426,7 +420,7 @@ const workerRow = (h: H, row: WorkerListRow, accounts: ReadonlyMap<string, strin
 					h.Class(
 						cn(
 							"w-20",
-							NUMBER,
+							NUMERIC_CELL,
 							invocationsOnly ? errorRateClass(row.errorRate) : "text-muted-foreground",
 						),
 					),
@@ -438,7 +432,7 @@ const workerRow = (h: H, row: WorkerListRow, accounts: ReadonlyMap<string, strin
 					h.Class(
 						cn(
 							"hidden w-20 md:block",
-							NUMBER,
+							NUMERIC_CELL,
 							row.cpuP99Ms >= CPU_HEAVY_P99_MS ? "text-severity-warn" : "text-foreground-soft",
 						),
 					),
@@ -450,7 +444,7 @@ const workerRow = (h: H, row: WorkerListRow, accounts: ReadonlyMap<string, strin
 					h.Class(
 						cn(
 							"w-24",
-							NUMBER,
+							NUMERIC_CELL,
 							row.durationP99Ms >= SLOW_P99_MS ? "text-severity-warn" : "text-foreground-soft",
 						),
 					),

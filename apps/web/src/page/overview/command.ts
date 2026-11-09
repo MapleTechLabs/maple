@@ -204,9 +204,10 @@ export const FetchLogSeries = Command.define("FetchOverviewLogVolume", {
 				onSuccess: (response) =>
 					Arr.map(response.data, (point) => ({
 						bucket: point.bucket,
-						throughput: Rec.values(point.series).reduce<number>(
-							(sum, value) => sum + (typeof value === "number" ? value : 0),
+						throughput: Arr.reduce(
+							Rec.values(point.series),
 							0,
+							(sum, value) => sum + (typeof value === "number" ? value : 0),
 						),
 					})),
 				onFailure: toLoadFailure,

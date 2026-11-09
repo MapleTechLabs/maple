@@ -52,7 +52,7 @@ describe("PublicId schema codec", () => {
 	})
 
 	it("encodes an internal ID to the wire public ID", () => {
-		const internal = Schema.decodeUnknownSync(ApiKeyId)(UUID)
+		const internal = Schema.decodeSync(ApiKeyId)(UUID)
 		expect(encode(internal)).toBe(encodePublicId("key", UUID))
 	})
 

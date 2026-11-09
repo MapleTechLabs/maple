@@ -12,7 +12,7 @@ import { init, isConnectionDirty, isRunActive, update } from "./update"
 const names = (commands: ReadonlyArray<{ readonly name: string }> | undefined) =>
 	Arr.map(commands ?? [], ({ name }) => name)
 
-const settings = Schema.decodeUnknownSync(OrgClickHouseSettingsResponse)({
+const settings = Schema.decodeSync(OrgClickHouseSettingsResponse)({
 	configured: true,
 	chUrl: "https://ch.acme.test:8443",
 	chUser: "maple_writer",
@@ -23,7 +23,7 @@ const settings = Schema.decodeUnknownSync(OrgClickHouseSettingsResponse)({
 	schemaVersion: "2026-09-30.1",
 })
 const status = (value: "running" | "succeeded") =>
-	Schema.decodeUnknownSync(OrgClickHouseApplySchemaStatus)({
+	Schema.decodeSync(OrgClickHouseApplySchemaStatus)({
 		status: value,
 		phase: null,
 		currentMigration: null,

@@ -29,7 +29,7 @@ describe("Clerk org switcher", () => {
 		expect(result.model.menu.isOpen).toBe(false)
 	})
 
-	test("Create Organization opens the dialog, which creates only with a name", () => {
+	test("Create organization opens the dialog, which creates only with a name", () => {
 		const withDialog = update(opened(), clickItem(CREATE_VALUE)).model
 		expect(withDialog.createDialog.isOpen).toBe(true)
 		const blank = update(withDialog, Message.SubmittedCreateOrganization())

@@ -24,7 +24,7 @@ export const ONBOARDING_INTENTS = {
 	metrics: { label: "Metrics", title: "Time series per service, on your own dashboards." },
 	errors: { label: "Errors", title: "Exceptions grouped into issues, trace attached." },
 	replays: { label: "Replays", title: "Browser sessions, with the network trace behind them." },
-	service_map: { label: "Service Map", title: "Which services call which, with latency on every edge." },
+	service_map: { label: "Service map", title: "Which services call which, with latency on every edge." },
 	infrastructure: { label: "Infrastructure", title: "Hosts, containers, Kubernetes, Cloudflare." },
 	alerts: { label: "Alerts", title: "A threshold crossed opens an incident." },
 } satisfies Record<OnboardingIntent, { label: string; title: string }>
@@ -56,7 +56,8 @@ const SETUP_HINTS = {
 
 export function getOnboardingSetupHint(intents: readonly OnboardingIntent[]): string {
 	if (intents.length === 0) return "Drop in the snippet and we'll auto-detect your first traces."
-	if (intents.length === 1) return SETUP_HINTS[intents[0]].hint
+	const [only] = intents
+	if (intents.length === 1 && only !== undefined) return SETUP_HINTS[only].hint
 	const focuses = Arr.map(intents, (intent) => SETUP_HINTS[intent].focus)
 	return `Connect your app to explore ${new Intl.ListFormat("en", { type: "conjunction" }).format(focuses)}.`
 }

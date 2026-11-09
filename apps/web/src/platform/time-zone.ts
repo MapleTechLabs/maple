@@ -60,6 +60,14 @@ export const writeSelectedTimeZone = (selected: Option.Option<string>): Effect.E
 		window.dispatchEvent(new Event(TIME_ZONE_PREFERENCE_EVENT))
 	})
 
+const zoneFormat = Option.liftThrowable(
+	(zone: string) => new Intl.DateTimeFormat("en-US", { timeZone: zone }),
+)
+
+/** An untrusted zone (a URL param) when the runtime knows it; never throws. */
+export const validTimeZone = (zone: string): Option.Option<string> =>
+	Str.trim(zone).length === 0 ? Option.none() : Option.as(zoneFormat(zone), zone)
+
 const supportedValues = Option.liftThrowable(() => Intl.supportedValuesOf("timeZone"))
 
 /** `listSupportedTimeZones`: every zone the runtime knows, else UTC and the browser's own. */

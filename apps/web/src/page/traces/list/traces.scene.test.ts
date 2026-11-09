@@ -156,7 +156,7 @@ describe("traces list", () => {
 		expect(names(filtered.commands)).toEqual([FetchFirstPage.name])
 		expect(filtered.model.window).toEqual(window)
 		const moved = routeChanged(filtered.model, { search: { hasError: true, timePreset: "1h" } }, context)
-		expect(moved.commands?.map(({ name, args }) => [name, args?.["mode"]])).toEqual([
+		expect(Arr.map(moved.commands ?? [], ({ name, args }) => [name, args?.["mode"]])).toEqual([
 			["ResolveTracesWindow", "Refresh"],
 		])
 	})

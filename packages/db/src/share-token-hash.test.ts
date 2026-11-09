@@ -58,8 +58,8 @@ describe("shareOgId", () => {
 
 // Decoded, not cast: `AlertRuleId` is a UUID brand, so a placeholder like
 // "rule_1" is not merely untyped here — it is not a valid id at all.
-const ORG_ID = Schema.decodeUnknownSync(OrgId)("org_3Aui9f2b6a8e")
-const RULE_ID = Schema.decodeUnknownSync(AlertRuleId)("1f2b6a8e-6c1b-4f2a-9f6e-1d2c3b4a5e6f")
+const ORG_ID = Schema.decodeSync(OrgId)("org_3Aui9f2b6a8e")
+const RULE_ID = Schema.decodeSync(AlertRuleId)("1f2b6a8e-6c1b-4f2a-9f6e-1d2c3b4a5e6f")
 
 const claims = {
 	orgId: ORG_ID,
@@ -207,7 +207,7 @@ describe("alertChartId, on claims only it carries", () => {
 		const other = alertChartId(
 			{
 				...claims,
-				ruleId: Schema.decodeUnknownSync(AlertRuleId)("2f2b6a8e-6c1b-4f2a-9f6e-1d2c3b4a5e6f"),
+				ruleId: Schema.decodeSync(AlertRuleId)("2f2b6a8e-6c1b-4f2a-9f6e-1d2c3b4a5e6f"),
 			},
 			KEY,
 		)

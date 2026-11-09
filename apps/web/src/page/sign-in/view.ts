@@ -15,7 +15,7 @@ const PASSWORD_FIELD: FieldIds = { control: "base-ui-_r_0_", label: "base-ui-_r_
 const failureMessage = (failure: SignInFailure): string =>
 	SignInFailure.match(failure, {
 		Rejected: ({ message }) => message,
-		Unreachable: () => "Failed to fetch",
+		Unreachable: () => "Couldn't reach the server",
 		Unexpected: () => "Invalid root password",
 	})
 
@@ -39,7 +39,7 @@ const passwordField = (model: Model, h: HtmlBuilder<Message>): Html => {
 	return field(h, { className: "items-stretch", state }, [
 		fieldLabel(
 			h,
-			{ ids: PASSWORD_FIELD, className: "font-mono text-xs sm:text-xs tracking-wide", state },
+			{ ids: PASSWORD_FIELD, className: "font-mono text-xs sm:text-xs", state },
 			"Root password",
 		),
 		input(h, {

@@ -1,9 +1,9 @@
-import type { SpanNode } from "@maple/query-engine/observability"
+import { isRedundantTreeAttribute, type SpanNode } from "@maple/query-engine/observability"
 import type { InspectTraceOutput, TraceSpanOutput } from "@maple/domain/mcp-outputs"
 import { formatDurationFromMs, toSecondTimestamp, truncate } from "./format"
 import { selectOverviewSpans, type OverviewOptions } from "./span-tree"
 import { doc, type DocBlock, type ToolDoc } from "./tool-doc"
-import { Array as Arr, Record as Rec, String as Str } from "effect"
+import { Array as Arr, Option, Record as Rec, String as Str } from "effect"
 
 export interface TraceOverviewLog {
 	readonly timestamp: string
@@ -137,7 +137,10 @@ const renderTree = (output: Output): string => {
 		if (node.statusCode === "Error" && node.statusMessage) {
 			lines.push(`${detailPrefix}    Status: "${truncate(node.statusMessage, 100)}"`)
 		}
-		const attrs = Rec.toEntries(node.attributes).slice(0, 5)
+		const attrs = Arr.filter(Rec.toEntries(node.attributes), ([k]) => !isRedundantTreeAttribute(k)).slice(
+			0,
+			5,
+		)
 		if (attrs.length > 0) {
 			lines.push(
 				`${detailPrefix}    {${Arr.join(
@@ -244,7 +247,7 @@ export function renderTraceOverview(output: Output): ToolDoc {
 	}
 	if (output.logs.length > 0) blocks.push(doc.text(renderLogs(output.logs)))
 	const services = [...new Set(Arr.map(output.spans, (span) => span.serviceName))]
-	const focus = output.spans.find(isErrorSpan) ?? output.spans[0]
+	const focus = Option.getOrElse(Arr.findFirst(output.spans, isErrorSpan), () => output.spans[0])
 	return {
 		title: `Trace ${output.traceId} (${output.serviceCount} services, ${output.spanCount} spans, ${formatDurationFromMs(output.rootDurationMs)})`,
 		scope: [

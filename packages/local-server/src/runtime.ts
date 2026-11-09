@@ -1,6 +1,17 @@
 /// <reference path="./assets.d.ts" />
 import * as BunServices from "@effect/platform-bun/BunServices"
-import { Config, DateTime, Duration, Effect, Exit, Option, Schedule, Schema, Scope } from "effect"
+import {
+	Config,
+	DateTime,
+	Duration,
+	Effect,
+	Exit,
+	Option,
+	Schedule,
+	Schema,
+	Scope,
+	String as Str,
+} from "effect"
 import { FileSystem } from "effect/FileSystem"
 import { resolve } from "node:path"
 import { DEFAULT_REMOTE_UI_URL, hostedDashboardUrl, hostedUiOrigin, serverUrl } from "./local-address"
@@ -202,7 +213,7 @@ const remoteUiUrl = Effect.gen(function* () {
 		Effect.map(Option.getOrUndefined),
 		Effect.orElseSucceed(() => undefined),
 	)
-	const url = configured?.trim() || DEFAULT_REMOTE_UI_URL
+	const url = (configured === undefined ? undefined : Str.trim(configured)) || DEFAULT_REMOTE_UI_URL
 	return yield* Effect.try({
 		try: () => ({ url, origin: hostedUiOrigin(url) }),
 		catch: (error) =>
@@ -256,7 +267,7 @@ const acquireLocal = (options: LocalOptions, portChoice: PortChoice) =>
 			dataDir,
 			configFile: yield* resolveChdbConfigFile(dataDir, undefined),
 			auth: NO_REMOTE_AUTH,
-			assets: yield* resolveUiAssets(),
+			assets: yield* resolveUiAssets,
 		})
 		const endpoint = serverUrl(HOSTNAME, boundPort)
 		// How a second `alchemy dev` of the same stack finds this server (and `maple status` too).

@@ -7,6 +7,7 @@ import { button, linkButton } from "@maple/views/ui/button"
 import { eyebrow } from "@maple/views/ui/eyebrow"
 import { heading } from "@maple/views/ui/heading"
 import { icon } from "@maple/views/ui/icon"
+import { inlineCode } from "@maple/views/ui/inline-code"
 import { MAPLE_MARK_PATH } from "@maple/views/ui/icons.generated"
 import { mountMapleLeaves } from "./maple-leaves"
 import { typography } from "@maple/views/ui/typography"
@@ -123,8 +124,9 @@ export const crashView = (context: CrashContext<unknown, unknown>, h: HtmlBuilde
 						"pointer-events-none absolute inset-0 -z-10 size-full opacity-40 md:opacity-100 md:[mask-image:linear-gradient(90deg,rgb(0_0_0/0.2)_0%,rgb(0_0_0/0.2)_40%,#000_62%)]",
 					),
 				]),
-				h.div(
-					[h.Class("flex w-full max-w-[560px] flex-col justify-center gap-8 px-6 py-16 md:px-16")],
+				vstack(
+					h,
+					{ gap: "8", justify: "center", className: "w-full max-w-[560px] px-6 py-16 md:px-16" },
 					[
 						mapleMark(h),
 						vstack(h, { gap: "3" }, [
@@ -170,40 +172,38 @@ export const crashView = (context: CrashContext<unknown, unknown>, h: HtmlBuilde
 								[icon(h, "HouseIcon"), "Back to home"],
 							),
 						]),
-						h.div(
-							[h.Class("flex max-w-full flex-col gap-1.5 border-t pt-5")],
-							[
-								typography(h, { size: "xs", tone: "muted", as: "p" }, [
-									"If it keeps happening, send us this reference:",
-								]),
-								h.div(
-									[h.Class("flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1")],
-									[
-										h.code(
-											[
-												h.Class(
-													"min-w-0 rounded-md bg-muted px-1.5 py-0.5 font-mono text-muted-foreground text-xs [overflow-wrap:anywhere] select-all",
-												),
-											],
-											[reference],
-										),
-										button(
-											h,
-											{
-												variant: "ghost",
-												size: "xs",
-												className: "shrink-0 text-muted-foreground",
-												attributes: [h.DataAttribute("copy", details)],
-											},
-											[
-												icon(h, "CopyIcon"),
-												h.span([h.DataAttribute("copy-label", "")], ["Copy details"]),
-											],
-										),
-									],
-								),
-							],
-						),
+						vstack(h, { gap: "1.5", className: "max-w-full border-t pt-5" }, [
+							typography(h, { size: "xs", tone: "muted", as: "p" }, [
+								"If it keeps happening, send us this reference:",
+							]),
+							hstack(
+								h,
+								{ align: "center", wrap: true, shrink: true, className: "gap-x-2 gap-y-1" },
+								[
+									inlineCode(
+										h,
+										{
+											className:
+												"min-w-0 rounded-md px-1.5 py-0.5 text-muted-foreground text-xs [overflow-wrap:anywhere] select-all",
+										},
+										[reference],
+									),
+									button(
+										h,
+										{
+											variant: "ghost",
+											size: "xs",
+											className: "shrink-0 text-muted-foreground",
+											attributes: [h.DataAttribute("copy", details)],
+										},
+										[
+											icon(h, "CopyIcon"),
+											h.span([h.DataAttribute("copy-label", "")], ["Copy details"]),
+										],
+									),
+								],
+							),
+						]),
 					],
 				),
 			],

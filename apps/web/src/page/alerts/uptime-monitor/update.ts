@@ -73,7 +73,7 @@ export const init = (route: MonitorRoute, context: PageContext): Return => {
 		monitor: Keyed.idle(),
 		destinations: null,
 		incidents: null,
-		isAdmin: false,
+		grants: [],
 		isToggling: false,
 		isChecking: false,
 		copies: {},
@@ -152,8 +152,8 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			orgId === context.orgId ? { model: { ...model, destinations: rows } } : { model },
 		UpdatedIncidents: ({ orgId, rows }) =>
 			orgId === context.orgId ? { model: { ...model, incidents: rows } } : { model },
-		CompletedFetchSession: ({ orgId, isAdmin }) =>
-			orgId === context.orgId ? { model: { ...model, isAdmin } } : { model },
+		CompletedFetchSession: ({ orgId, grants }) =>
+			orgId === context.orgId ? { model: { ...model, grants } } : { model },
 		ClickedToggle: () => toggle(model),
 		CompletedToggle: ({ result }) => {
 			const settled = { ...model, isToggling: false }

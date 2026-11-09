@@ -31,7 +31,7 @@ const names = (commands: ReadonlyArray<{ readonly name: string }> | undefined) =
 	Arr.map(commands ?? [], ({ name }) => name)
 
 const source = (index: number, fields: Readonly<Record<string, unknown>> = {}) =>
-	Schema.decodeUnknownSync(V2Source)({
+	Schema.decodeSync(V2Source)({
 		id: encodePublicId(PublicIdPrefixes.source, `0199a0e1-0000-7000-8000-00000000000${index}`),
 		object: "source",
 		name: `Source ${index}`,
@@ -104,6 +104,18 @@ describe("sources list", () => {
 			expectView(role("link", { name: "Default" })).toExist(),
 			expectView(text("Org ingest keys")).toExist(),
 			expectView(text("Connect your first source")).toExist(),
+		)
+	})
+
+	test("a member without sources:manage reads the list without the connect actions", () => {
+		const member = pageUpdate(loaded([defaultSource]), Message.CompletedReadGrants({ grants: [] })).model
+		scene(
+			{ update: pageUpdate, view },
+			given(member),
+			expectView(role("link", { name: "Default" })).toExist(),
+			expectView(text("No sources added yet")).toExist(),
+			expectView(role("link", { name: "Connect source" })).not.toExist(),
+			expectView(role("link", { name: "Cloudflare" })).not.toExist(),
 		)
 	})
 
@@ -181,7 +193,7 @@ describe("integrations on the sources list", () => {
 			...rows,
 			source(5, { name: "PlanetScale acme", platform: "planetscale", key_prefix: null }),
 		])
-		const summary = Schema.decodeUnknownSync(V2SourceUsageSummary)({
+		const summary = Schema.decodeSync(V2SourceUsageSummary)({
 			object: "source_usage_summary",
 			window_start: "2026-09-30T13:00:00.000Z",
 			window_end: "2026-10-01T12:00:00.000Z",

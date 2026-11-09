@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest"
+import { assert, describe, expect, it } from "vitest"
 
 import type { AiSessionSpan } from "@maple/domain/http"
 
@@ -19,7 +19,7 @@ import {
 	spanFailed,
 	spanTtftMs,
 } from "./session-turns"
-import { Array as Arr, String as Str } from "effect"
+import { Array as Arr, Option, String as Str } from "effect"
 
 const SECOND = 1000
 
@@ -42,9 +42,9 @@ describe("buildSessionTurns", () => {
 		])
 
 		expect(Arr.map(turns, (turn) => turn.index)).toEqual([1, 2])
-		expect(turns[0]!.anchorKind).toBe("conversation")
-		expect(Arr.map(turns[0]!.spans, (span) => span.spanId)).toEqual(["a"])
-		expect(Arr.map(turns[1]!.spans, (span) => span.spanId)).toEqual(["b", "c"])
+		expect(Arr.getUnsafe(turns, 0).anchorKind).toBe("conversation")
+		expect(Arr.map(Arr.getUnsafe(turns, 0).spans, (span) => span.spanId)).toEqual(["a"])
+		expect(Arr.map(Arr.getUnsafe(turns, 1).spans, (span) => span.spanId)).toEqual(["b", "c"])
 	})
 
 	it("puts a span with no conversation id in the turn that was open when it started", () => {
@@ -60,7 +60,7 @@ describe("buildSessionTurns", () => {
 			}),
 		])
 
-		expect(Arr.map(turns[1]!.spans, (span) => span.spanId)).toEqual(["b", "untagged"])
+		expect(Arr.map(Arr.getUnsafe(turns, 1).spans, (span) => span.spanId)).toEqual(["b", "untagged"])
 	})
 
 	it("keeps spans that start before the first anchor in turn 1", () => {
@@ -71,7 +71,7 @@ describe("buildSessionTurns", () => {
 		])
 
 		expect(turns).toHaveLength(1)
-		expect(Arr.map(turns[0]!.spans, (span) => span.spanId)).toEqual(["http", "agent"])
+		expect(Arr.map(Arr.getUnsafe(turns, 0).spans, (span) => span.spanId)).toEqual(["http", "agent"])
 	})
 
 	it("ignores a conversation id that only names the session", () => {
@@ -101,30 +101,35 @@ describe("buildSessionTurns", () => {
 		// An agent engine stamps its thread id — the session — on `execute_tool`
 		// spans and no session id; the model calls carry the session and a turn id.
 		const turns = buildSessionTurns([
-			agentSpan({
+			llmSpan({
 				spanId: "chat-1",
 				startMs: 0,
 				durationMs: 4 * SECOND,
 				sessionId: "sess-1",
-				genAi: { operationName: "chat", conversationId: "turn-1" },
+				genAi: { conversationId: "turn-1" },
 			}),
-			agentSpan({
+			toolSpan({
 				spanId: "tool-1",
 				startMs: 4 * SECOND,
 				durationMs: 2 * SECOND,
-				genAi: { operationName: "execute_tool", toolName: "search_logs", conversationId: "sess-1" },
+				toolName: "search_logs",
+				genAi: { conversationId: "sess-1" },
 			}),
-			agentSpan({
+			llmSpan({
 				spanId: "chat-2",
 				startMs: 6 * SECOND,
 				durationMs: 4 * SECOND,
 				sessionId: "sess-1",
-				genAi: { operationName: "chat", conversationId: "turn-1" },
+				genAi: { conversationId: "turn-1" },
 			}),
 		])
 
 		expect(turns).toHaveLength(1)
-		expect(Arr.map(turns[0]!.spans, (span) => span.spanId)).toEqual(["chat-1", "tool-1", "chat-2"])
+		expect(Arr.map(Arr.getUnsafe(turns, 0).spans, (span) => span.spanId)).toEqual([
+			"chat-1",
+			"tool-1",
+			"chat-2",
+		])
 	})
 
 	it("does not partition on a conversation id the whole session shares", () => {
@@ -169,8 +174,12 @@ describe("buildSessionTurns", () => {
 		expect(Arr.map(turns, (turn) => turn.anchorKind)).toEqual(["agent-root", "agent-root"])
 		// Assignment is by time, so the second route span — which opened before the
 		// agent it invokes — closes turn 1 rather than opening turn 2.
-		expect(Arr.map(turns[0]!.spans, (span) => span.spanId)).toEqual(["route-1", "agent-1", "route-2"])
-		expect(Arr.map(turns[1]!.spans, (span) => span.spanId)).toEqual(["agent-2"])
+		expect(Arr.map(Arr.getUnsafe(turns, 0).spans, (span) => span.spanId)).toEqual([
+			"route-1",
+			"agent-1",
+			"route-2",
+		])
+		expect(Arr.map(Arr.getUnsafe(turns, 1).spans, (span) => span.spanId)).toEqual(["agent-2"])
 	})
 
 	it("gives agent roots that start in the same millisecond a turn each", () => {
@@ -236,13 +245,13 @@ describe("buildSessionTurns", () => {
 		const turns = buildSessionTurns(spans)
 
 		expect(turns).toHaveLength(1)
-		expect(Arr.map(turns[0]!.spans, (span) => span.spanId)).toEqual([
+		expect(Arr.map(Arr.getUnsafe(turns, 0).spans, (span) => span.spanId)).toEqual([
 			"build",
 			"run",
 			"orchestrator",
 			"chat",
 		])
-		expect(turns[0]!.label).toBe("Produce a mini briefing about Amsterdam")
+		expect(Arr.getUnsafe(turns, 0).label).toBe("Produce a mini briefing about Amsterdam")
 		expect(buildSessionSummary({ spans, turns }).title).toBe("Produce a mini briefing about Amsterdam")
 	})
 
@@ -275,7 +284,11 @@ describe("buildSessionTurns", () => {
 		])
 
 		expect(Arr.map(turns, (turn) => turn.anchorKind)).toEqual(["agent-root"])
-		expect(Arr.map(turns[0]!.spans, (span) => span.spanId)).toEqual(["memory", "agent", "chat"])
+		expect(Arr.map(Arr.getUnsafe(turns, 0).spans, (span) => span.spanId)).toEqual([
+			"memory",
+			"agent",
+			"chat",
+		])
 	})
 
 	it("falls back to root agent invocations when no conversation id exists", () => {
@@ -287,8 +300,8 @@ describe("buildSessionTurns", () => {
 		])
 
 		expect(Arr.map(turns, (turn) => turn.anchorKind)).toEqual(["agent-root", "agent-root"])
-		expect(Arr.map(turns[0]!.spans, (span) => span.spanId)).toEqual(["agent-1", "llm-1"])
-		expect(Arr.map(turns[1]!.spans, (span) => span.spanId)).toEqual(["agent-2", "llm-2"])
+		expect(Arr.map(Arr.getUnsafe(turns, 0).spans, (span) => span.spanId)).toEqual(["agent-1", "llm-1"])
+		expect(Arr.map(Arr.getUnsafe(turns, 1).spans, (span) => span.spanId)).toEqual(["agent-2", "llm-2"])
 	})
 
 	it("does not treat a nested agent span as a turn boundary", () => {
@@ -306,7 +319,7 @@ describe("buildSessionTurns", () => {
 		])
 
 		expect(turns).toHaveLength(1)
-		expect(turns[0]!.spans).toHaveLength(2)
+		expect(Arr.getUnsafe(turns, 0).spans).toHaveLength(2)
 	})
 
 	it("falls back to one turn per trace when nothing marks a boundary", () => {
@@ -327,7 +340,7 @@ describe("buildSessionTurns", () => {
 		])
 
 		expect(turns).toHaveLength(1)
-		expect(turns[0]!.traceIds).toEqual(["trace-1", "trace-2"])
+		expect(Arr.getUnsafe(turns, 0).traceIds).toEqual(["trace-1", "trace-2"])
 	})
 
 	it("measures a turn from its first span's start to its last span's end", () => {
@@ -337,7 +350,7 @@ describe("buildSessionTurns", () => {
 			toolSpan({ spanId: "tool", parentSpanId: "agent", startMs: 5 * SECOND, durationMs: 20 * SECOND }),
 		])
 
-		expect(turns[0]!.durationMs).toBe(25 * SECOND)
+		expect(Arr.getUnsafe(turns, 0).durationMs).toBe(25 * SECOND)
 	})
 
 	it("takes its label from a captured user message", () => {
@@ -352,8 +365,8 @@ describe("buildSessionTurns", () => {
 			}),
 		])
 
-		expect(turns[0]!.label).toBe("fix the webhook retry backoff")
-		expect(turns[0]!.agentName).toBe("billing-agent")
+		expect(Arr.getUnsafe(turns, 0).label).toBe("fix the webhook retry backoff")
+		expect(Arr.getUnsafe(turns, 0).agentName).toBe("billing-agent")
 	})
 
 	it("labels each turn with its own prompt, not the history's first one", () => {
@@ -403,7 +416,7 @@ describe("buildSessionTurns", () => {
 			}),
 		])
 
-		expect(turns[0]!.label).toBe("deploy the worker")
+		expect(Arr.getUnsafe(turns, 0).label).toBe("deploy the worker")
 	})
 
 	// LangGraph with a checkpointer, through the OpenInference dual-write: the
@@ -426,7 +439,7 @@ describe("buildSessionTurns", () => {
 					startMs: at + 10,
 					durationMs: SECOND,
 					vendorId: "unknown:openinference",
-					genAi: { inputMessages: userMessages(prompts[0]!) },
+					genAi: { inputMessages: userMessages(Arr.getUnsafe(prompts, 0)) },
 				}),
 				llmSpan({
 					spanId: `chat-${n}`,
@@ -486,13 +499,14 @@ describe("buildSessionTurns", () => {
 	it("has no label when message content was not captured", () => {
 		const turns = buildSessionTurns([agentSpan({ spanId: "agent", startMs: 0, durationMs: SECOND })])
 
-		expect(turns[0]!.label).toBeUndefined()
+		expect(Arr.getUnsafe(turns, 0).label).toBeUndefined()
 	})
 
 	it("fails a turn whose root span errored, but not one that only errored inside", () => {
 		const [failedTurn] = buildSessionTurns([
 			agentSpan({ spanId: "agent", startMs: 0, durationMs: 10 * SECOND, statusCode: "Error" }),
 		])
+		assert.isDefined(failedTurn)
 		const [retriedTurn] = buildSessionTurns([
 			agentSpan({ spanId: "agent", startMs: 0, durationMs: 10 * SECOND }),
 			// A rate-limited attempt that the agent retried successfully.
@@ -504,9 +518,10 @@ describe("buildSessionTurns", () => {
 				statusCode: "Error",
 			}),
 		])
+		assert.isDefined(retriedTurn)
 
-		expect(failedTurn!.failed).toBe(true)
-		expect(retriedTurn!.failed).toBe(false)
+		expect(failedTurn.failed).toBe(true)
+		expect(retriedTurn.failed).toBe(false)
 	})
 
 	it("does not fail a turn on a rooting tool call the agent carried on from", () => {
@@ -522,6 +537,7 @@ describe("buildSessionTurns", () => {
 			}),
 			toolSpan({ spanId: "submit", parentSpanId: "run", startMs: 2 * SECOND, durationMs: SECOND }),
 		])
+		assert.isDefined(recovered)
 		const [died] = buildSessionTurns([
 			toolSpan({ spanId: "read", parentSpanId: "run", startMs: 0, durationMs: SECOND }),
 			toolSpan({
@@ -532,9 +548,10 @@ describe("buildSessionTurns", () => {
 				statusCode: "Error",
 			}),
 		])
+		assert.isDefined(died)
 
-		expect(recovered!.failed).toBe(false)
-		expect(died!.failed).toBe(true)
+		expect(recovered.failed).toBe(false)
+		expect(died.failed).toBe(true)
 	})
 
 	it("does not fail a turn on the app's own errored span", () => {
@@ -550,8 +567,9 @@ describe("buildSessionTurns", () => {
 				statusCode: "Error",
 			}),
 		])
+		assert.isDefined(turn)
 
-		expect(turn!.failed).toBe(false)
+		expect(turn.failed).toBe(false)
 	})
 
 	it("returns nothing for a session with no spans", () => {
@@ -560,74 +578,7 @@ describe("buildSessionTurns", () => {
 })
 
 describe("classifyAiSpan", () => {
-	it("reads gen_ai.operation.name when it is there", () => {
-		expect(classifyAiSpan(llmSpan({ spanId: "a", startMs: 0, durationMs: 1 }))).toBe("inference")
-		expect(classifyAiSpan(toolSpan({ spanId: "b", startMs: 0, durationMs: 1 }))).toBe("tool")
-		expect(classifyAiSpan(agentSpan({ spanId: "c", startMs: 0, durationMs: 1 }))).toBe("agent")
-	})
-
-	it("accepts operation names outside the documented set", () => {
-		const vercelStep = makeSpan({
-			spanId: "a",
-			startMs: 0,
-			durationMs: 1,
-			genAi: { operationName: "agent_step" },
-		})
-
-		expect(classifyAiSpan(vercelStep)).toBe("agent")
-	})
-
-	it("falls back to the span name when the operation is not recorded", () => {
-		// A name-only AI span is one the ingest gateway stamped from its scope: a
-		// vendor id, no decoded gen_ai attributes.
-		const named = (spanName: string) =>
-			classifyAiSpan(
-				makeSpan({ spanId: "a", startMs: 0, durationMs: 1, spanName, vendorId: "vercel_ai_sdk" }),
-			)
-
-		expect(named("ai.toolCall")).toBe("tool")
-		expect(named("workflow.run")).toBe("agent")
-		expect(named("chat gpt-5")).toBe("inference")
-	})
-
-	it("does not read 'tool' off the name of a span that names an unknown operation", () => {
-		// `blind-ts-mastra` (EU, 2026-09-29): the Mastra exporter lowercases a span
-		// type the convention has no name for into `gen_ai.operation.name`; a
-		// LangSmith OTel `chain` wraps LangGraph's `tools` node.
-		const unknownOp = (spanName: string, operationName: string) =>
-			makeSpan({
-				spanId: "a",
-				startMs: 0,
-				durationMs: 1,
-				spanName,
-				vendorId: "mastra",
-				genAi: { operationName },
-			})
-
-		for (const span of [
-			unknownOp("scorer_run code-tool-call-accuracy-scorer", "scorer_run"),
-			unknownOp("scorer_step code-tool-call-accuracy-scorer", "scorer_step"),
-			unknownOp("tools", "chain"),
-			unknownOp("HumanInTheLoopMiddleware.wrap_tool_call", "chain"),
-		]) {
-			expect(classifyAiSpan(span)).toBe("agent")
-			expect(isLlmCall(span)).toBe(false)
-		}
-		// A tool name is still a tool call, whatever the operation says.
-		expect(
-			classifyAiSpan(
-				makeSpan({
-					spanId: "a",
-					startMs: 0,
-					durationMs: 1,
-					spanName: "mcp_tool_call search",
-					genAi: { operationName: "mcp_tool_call", toolName: "search" },
-				}),
-			),
-		).toBe("tool")
-	})
-
-	it("classifies a span with no AI signal as other, whatever it is called", () => {
+	it("classifies a span the gateway did not stamp as other, whatever it says", () => {
 		const httpSpan = makeSpan({
 			spanId: "a",
 			startMs: 0,
@@ -635,51 +586,18 @@ describe("classifyAiSpan", () => {
 			spanName: "POST /v1/agent/chat",
 			isAiSpan: false,
 		})
+		// An MCP server's `tools/call`: the tool, not an agent calling one.
+		const mcpServer = makeSpan({
+			spanId: "b",
+			startMs: 0,
+			durationMs: 1,
+			spanName: "tools/call search",
+			genAi: { operationName: "execute_tool", toolName: "search" },
+		})
 
 		expect(classifyAiSpan(httpSpan)).toBe("other")
-	})
-})
-
-describe("isLlmCall", () => {
-	it("counts chat-shaped operations", () => {
-		expect(isLlmCall(llmSpan({ spanId: "a", startMs: 0, durationMs: 1 }))).toBe(true)
-	})
-
-	it("agrees with classifyAiSpan on an operation name outside the documented set", () => {
-		const openSet = makeSpan({
-			spanId: "a",
-			startMs: 0,
-			durationMs: 1,
-			genAi: { operationName: "generate_text", responseModel: "gpt-5" },
-		})
-
-		expect(classifyAiSpan(openSet)).toBe("inference")
-		expect(isLlmCall(openSet)).toBe(true)
-	})
-
-	it("does not count embeddings, which are inference but not a model turn", () => {
-		const embedding = makeSpan({
-			spanId: "a",
-			startMs: 0,
-			durationMs: 1,
-			genAi: { operationName: "embeddings" },
-		})
-
-		expect(classifyAiSpan(embedding)).toBe("inference")
-		expect(isLlmCall(embedding)).toBe(false)
-	})
-
-	it("reads a memory operation as agent work, even when it names a model", () => {
-		const memory = makeSpan({
-			spanId: "a",
-			startMs: 0,
-			durationMs: 1,
-			spanName: "search_memory chat-history",
-			genAi: { operationName: "search_memory", requestModel: "text-embedding-3-small" },
-		})
-
-		expect(classifyAiSpan(memory)).toBe("agent")
-		expect(isLlmCall(memory)).toBe(false)
+		expect(classifyAiSpan(mcpServer)).toBe("other")
+		expect(isCountedToolCall(mcpServer)).toBe(false)
 	})
 })
 
@@ -718,20 +636,17 @@ describe("the ingest gateway's verdicts", () => {
 		expect(
 			isCountedToolCall(stamped("execute_tool delete_file", { mapleLlmCall: 0, mapleToolCall: 1 })),
 		).toBe(true)
-		// Before the gateway stamped: the classifier's rule.
-		expect(
-			isCountedToolCall(stamped("execute_tool delete_file", { operationName: "execute_tool" })),
-		).toBe(true)
 	})
 
 	it("decide whether a stamped span failed", () => {
 		expect(spanFailed(stamped("execute_tool", { mapleLlmCall: 0, mapleError: 1 }))).toBe(true)
 		// The gateway already weighed the span's own `error.type`.
 		expect(spanFailed(stamped("execute_tool", { mapleLlmCall: 0, errorType: "Timeout" }))).toBe(false)
-		// A span before the gateway stamped: the attribute rule.
-		expect(
-			spanFailed(makeSpan({ spanId: "a", startMs: 0, durationMs: 1, genAi: { errorType: "Timeout" } })),
-		).toBe(true)
+		// A span it did not stamp: its status alone.
+		const unstamped = (statusCode: string) =>
+			makeSpan({ spanId: "a", startMs: 0, durationMs: 1, statusCode, genAi: { errorType: "404" } })
+		expect(spanFailed(unstamped("Unset"))).toBe(false)
+		expect(spanFailed(unstamped("Error"))).toBe(true)
 	})
 })
 
@@ -755,14 +670,17 @@ describe("spanTtftMs", () => {
 
 describe("turn labels", () => {
 	const labelFor = (inputMessages: unknown) =>
-		buildSessionTurns([
-			agentSpan({
-				spanId: "agent",
-				startMs: 0,
-				durationMs: SECOND,
-				genAi: { operationName: "invoke_agent", inputMessages },
-			}),
-		])[0]!.label
+		Arr.getUnsafe(
+			buildSessionTurns([
+				agentSpan({
+					spanId: "agent",
+					startMs: 0,
+					durationMs: SECOND,
+					genAi: { operationName: "invoke_agent", inputMessages },
+				}),
+			]),
+			0,
+		).label
 
 	it("reads the user's text out of an OTel messages array", () => {
 		expect(labelFor(userMessages("hello"))).toBe("hello")
@@ -780,7 +698,7 @@ describe("turn labels", () => {
 
 		const long = labelFor([{ role: "user", content: Str.repeat(500)("x") }])
 		expect(long).toHaveLength(80)
-		expect(long?.endsWith("…")).toBe(true)
+		expect(long !== undefined && Str.endsWith("…")(long)).toBe(true)
 	})
 
 	// smolagents sends every task as "New task:\n<task>", so every turn and the
@@ -902,7 +820,9 @@ describe("buildSessionTurns — concurrent conversation ids", () => {
 
 		for (const index of [0, 1, 2, 3]) {
 			const lane = `hypothesis-${index}`
-			const turn = turns.find((candidate) => candidate.id === `conversation:inv_1_${lane}`)!
+			const turn = Option.getOrThrow(
+				Arr.findFirst(turns, (candidate) => candidate.id === `conversation:inv_1_${lane}`),
+			)
 			expect(Arr.map(turn.spans, (span) => span.spanId)).toEqual([
 				`${lane}-agent`,
 				`${lane}-chat-1`,
@@ -964,8 +884,8 @@ describe("buildSessionTurns — concurrent conversation ids", () => {
 			}),
 		])
 
-		expect(Arr.map(turns[0]!.spans, (span) => span.spanId)).toEqual(["lane-a", "db"])
-		expect(Arr.map(turns[1]!.spans, (span) => span.spanId)).toEqual(["lane-b"])
+		expect(Arr.map(Arr.getUnsafe(turns, 0).spans, (span) => span.spanId)).toEqual(["lane-a", "db"])
+		expect(Arr.map(Arr.getUnsafe(turns, 1).spans, (span) => span.spanId)).toEqual(["lane-b"])
 	})
 
 	// Parentage only reaches so far: `parentSpanId` is intra-trace, and a span
@@ -988,7 +908,7 @@ describe("buildSessionTurns — concurrent conversation ids", () => {
 			}),
 		])
 
-		expect(Arr.map(turns[1]!.spans, (span) => span.spanId)).toEqual(["b", "orphan"])
+		expect(Arr.map(Arr.getUnsafe(turns, 1).spans, (span) => span.spanId)).toEqual(["b", "orphan"])
 	})
 
 	// The session-id exclusion has to survive the new path: for the six vendors

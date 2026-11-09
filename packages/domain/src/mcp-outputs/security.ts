@@ -13,14 +13,15 @@ export type SecuritySeverity = typeof SecuritySeverityLiteral.Type
 
 /**
  * How an area stands: `findings` and `clear` were read; the rest say why there is nothing to read
- * (`not_enabled`, `not_connected`, `no_data`), may not be read by this caller (`forbidden`) or
- * failed (`unavailable`).
+ * (`not_enabled`, `not_connected`, `not_scanned` for a filtered repository never scanned or audited,
+ * `no_data`), may not be read by this caller (`forbidden`) or failed (`unavailable`).
  */
 export const SECURITY_AREA_STATES = [
 	"findings",
 	"clear",
 	"not_enabled",
 	"not_connected",
+	"not_scanned",
 	"no_data",
 	"forbidden",
 	"unavailable",
@@ -72,6 +73,36 @@ export const SecurityFindingRow = Schema.Struct({
 })
 export type SecurityFindingRow = typeof SecurityFindingRow.Type
 
+/** One repository's place in the Security Center: what audits and scans it, and when each last ran. */
+export const SecurityRepositoryCoverage = Schema.Struct({
+	repository: Schema.String,
+	/** False when this caller could not read the code audit (members, audit not enabled): `audit` is then unknown. */
+	auditReadable: Schema.Boolean,
+	/** Null when no code audit target is set up for it, or when `auditReadable` is false. */
+	audit: Schema.NullOr(
+		Schema.Struct({
+			branch: Schema.String,
+			enabled: Schema.Boolean,
+			/** Null before its first run. */
+			lastRunId: Schema.NullOr(Schema.String),
+			lastRunStatus: Schema.NullOr(Schema.String),
+			lastRunAt: Schema.NullOr(Schema.String),
+			/** Why the latest run stopped short or failed. */
+			lastRunStopReason: Schema.NullOr(Schema.String),
+		}),
+	),
+	/** Null when the repository is not connected, so the dependency scanner cannot read it. */
+	dependencyScan: Schema.NullOr(
+		Schema.Struct({
+			/** Null before its first scan. */
+			status: Schema.NullOr(Schema.String),
+			at: Schema.NullOr(Schema.String),
+			commit: Schema.NullOr(Schema.String),
+		}),
+	),
+})
+export type SecurityRepositoryCoverage = typeof SecurityRepositoryCoverage.Type
+
 export const ListSecurityFindingsOutput = Schema.Struct({
 	generatedAt: Schema.String,
 	/** The telemetry window exposure and runtimes were read over. */
@@ -91,6 +122,8 @@ export const ListSecurityFindingsOutput = Schema.Struct({
 	offset: Schema.Number,
 	/** Area-specific facts worth one line each: a catch-all service, a scan that failed, a target never run. */
 	notes: Schema.Array(Schema.String),
+	/** In the overview: every connected or audited repository, its latest audit and dependency scan. */
+	repositories: Schema.optionalKey(Schema.Array(SecurityRepositoryCoverage)),
 	/** With `area=exposure`: probe traffic per category and the busiest scanning sources. */
 	exposure: Schema.optionalKey(
 		Schema.Struct({
@@ -282,4 +315,125 @@ export const InspectSecurityFindingOutput = Schema.Struct({
 	notSearched: Schema.Array(Schema.String),
 	/** For an advisory id: what was checked and found clean, and what could not be judged. */
 	coverage: Schema.Array(Schema.String),
+})
+
+// ---------------------------------------------------------------------------------------------
+// list_security_audit_runs / inspect_security_audit_run
+
+/** What one audit run reported per severity (leads by their estimate) and how many claims it rejected. */
+export const SecurityAuditRunFindingTotals = Schema.Struct({
+	critical: Schema.Number,
+	high: Schema.Number,
+	medium: Schema.Number,
+	low: Schema.Number,
+	/** Confirmed without an overall severity. */
+	informational: Schema.Number,
+	/** Of the severity counts, unconfirmed leads. */
+	leads: Schema.Number,
+	rejected: Schema.Number,
+})
+
+export const SecurityAuditRunSummary = Schema.Struct({
+	runId: Schema.String,
+	repository: Schema.String,
+	branch: Schema.String,
+	/** baseline, slice, revalidation or manual. */
+	kind: Schema.String,
+	/** in_progress, complete, incomplete or failed. */
+	status: Schema.String,
+	/** The commit audited. */
+	sourceRef: Schema.String,
+	startedAt: Schema.String,
+	finishedAt: Schema.NullOr(Schema.String),
+	durationMinutes: Schema.NullOr(Schema.Number),
+	/** Why it stopped short (`org_spend_limit_reached`, `cancelled`, ...) or the error it failed on. */
+	stopReason: Schema.NullOr(Schema.String),
+	agentInvocations: Schema.Number,
+	/** Max agent invocations; null is unbounded. */
+	budget: Schema.NullOr(Schema.Number),
+	/** Billed model cost plus sandbox fees in US dollars; null until the model cost settles. */
+	costUsd: Schema.NullOr(Schema.Number),
+	/** Null for a caller who may not read findings. */
+	findings: Schema.NullOr(SecurityAuditRunFindingTotals),
+})
+export type SecurityAuditRunSummary = typeof SecurityAuditRunSummary.Type
+
+export const SecurityAuditSpend = Schema.Struct({
+	spentUsd: Schema.Number,
+	monthlyLimitUsd: Schema.Number,
+	/** ISO start of the UTC month the spend counts from, and when it resets. */
+	since: Schema.String,
+	resetsAt: Schema.String,
+})
+
+export const ListSecurityAuditRunsOutput = Schema.Struct({
+	generatedAt: Schema.String,
+	filters: Schema.Struct({
+		repository: Schema.optionalKey(Schema.String),
+		status: Schema.optionalKey(Schema.String),
+	}),
+	spend: SecurityAuditSpend,
+	targets: Schema.Array(
+		Schema.Struct({
+			repository: Schema.String,
+			branch: Schema.String,
+			enabled: Schema.Boolean,
+			profile: Schema.String,
+			/** Counted up to 100. */
+			runs: Schema.Number,
+		}),
+	),
+	/** Newest first. */
+	runs: Schema.Array(SecurityAuditRunSummary),
+	notes: Schema.Array(Schema.String),
+})
+
+export const InspectSecurityAuditRunOutput = Schema.Struct({
+	run: SecurityAuditRunSummary,
+	coverage: Schema.Struct({
+		total: Schema.Number,
+		/** Units per ledger status: covered, candidate, planned, in_progress, deferred, blocked, out_of_scope, not_applicable. */
+		byStatus: Schema.Record(Schema.String, Schema.Number),
+		/** Units not covered first (blocked, deferred, planned, in progress), then the rest; capped. */
+		units: Schema.Array(
+			Schema.Struct({
+				coverageId: Schema.String,
+				status: Schema.String,
+				subsystem: Schema.NullOr(Schema.String),
+				surface: Schema.NullOr(Schema.String),
+				attackClass: Schema.NullOr(Schema.String),
+				/** What the agent could not settle, first note only. */
+				unresolved: Schema.NullOr(Schema.String),
+				findings: Schema.Array(Schema.String),
+			}),
+		),
+	}),
+	/** Every finding the run reported, rejected claims included, worst first. */
+	findings: Schema.Array(
+		Schema.Struct({
+			fingerprint: Schema.String,
+			title: Schema.String,
+			/** confirmed, needs_validation or rejected. */
+			verdict: Schema.String,
+			severity: Schema.String,
+			/** The finding's current triage across runs. */
+			status: Schema.String,
+			/** Why the verifier rejected the claim; null otherwise. */
+			rejectedBecause: Schema.NullOr(Schema.String),
+		}),
+	),
+	/** The run's log, newest last: agent outcomes, phase transitions, notes. Capped to the newest. */
+	events: Schema.Array(
+		Schema.Struct({
+			at: Schema.String,
+			kind: Schema.String,
+			role: Schema.NullOr(Schema.String),
+			agentId: Schema.NullOr(Schema.String),
+			outcome: Schema.NullOr(Schema.String),
+			text: Schema.String,
+			costUsd: Schema.NullOr(Schema.Number),
+		}),
+	),
+	eventsShown: Schema.Number,
+	notes: Schema.Array(Schema.String),
 })

@@ -59,7 +59,7 @@ describe("VcsScheduledSyncService.runScheduledSync", () => {
 			yield* seedInstallation(repo, asOrgId("org_a"), "1")
 			yield* seedInstallation(repo, asOrgId("org_b"), "2")
 
-			const result = yield* svc.runScheduledSync()
+			const result = yield* svc.runScheduledSync
 
 			assert.strictEqual(result.installationsTotal, 2)
 			assert.strictEqual(result.enqueued, 2)
@@ -85,7 +85,7 @@ describe("VcsScheduledSyncService.runScheduledSync", () => {
 			yield* repo.markInstallationStatus(suspended.id, "suspended")
 			yield* repo.markInstallationStatus(disconnected.id, "disconnected")
 
-			const result = yield* svc.runScheduledSync()
+			const result = yield* svc.runScheduledSync
 
 			assert.strictEqual(result.installationsTotal, 3)
 			assert.strictEqual(result.enqueued, 1)
@@ -100,7 +100,7 @@ describe("VcsScheduledSyncService.runScheduledSync", () => {
 		const sent: Array<VcsSyncJob> = []
 		return Effect.gen(function* () {
 			const svc = yield* VcsScheduledSyncService
-			const result = yield* svc.runScheduledSync()
+			const result = yield* svc.runScheduledSync
 			assert.strictEqual(result.installationsTotal, 0)
 			assert.strictEqual(result.enqueued, 0)
 			assert.strictEqual(sent.length, 0)
@@ -114,7 +114,7 @@ describe("VcsScheduledSyncService.runScheduledSync", () => {
 			const svc = yield* VcsScheduledSyncService
 			const repo = yield* VcsRepository
 			yield* seedInstallation(repo, asOrgId("org_a"), "1")
-			const exit = yield* Effect.exit(svc.runScheduledSync())
+			const exit = yield* Effect.exit(svc.runScheduledSync)
 			assert.ok(Exit.isFailure(exit), "the tick surfaces the queue failure")
 			assert.ok(Schema.is(VcsQueueError)(findError(exit)))
 		}).pipe(Effect.provide(schedulerLayer(testDb, sent, { failQueue: true })))

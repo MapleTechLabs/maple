@@ -301,12 +301,10 @@ const asNumber = (value: number | bigint): number => {
 }
 
 const decodeProjection = (json: string): SignalProjectionSpec =>
-	decodeSignalProjectionSpec(Schema.decodeUnknownSync(Schema.fromJsonString(Schema.Unknown))(json))
+	decodeSignalProjectionSpec(Schema.decodeSync(Schema.fromJsonString(Schema.Unknown))(json))
 
 const decodeEvent = (json: string): MapleCloudEvent => {
-	const validated = validateMapleCloudEvent(
-		Schema.decodeUnknownSync(Schema.fromJsonString(Schema.Unknown))(json),
-	)
+	const validated = validateMapleCloudEvent(Schema.decodeSync(Schema.fromJsonString(Schema.Unknown))(json))
 	if (Result.isFailure(validated)) throw validated.failure
 	return validated.success.event
 }
@@ -322,9 +320,9 @@ const assertRealDatabaseFile = (path: string): void => {
 }
 
 const configure = (db: Database): void => {
-	db.exec("PRAGMA foreign_keys = ON")
-	db.exec("PRAGMA trusted_schema = OFF")
-	db.exec("PRAGMA busy_timeout = 5000")
+	db.run("PRAGMA foreign_keys = ON")
+	db.run("PRAGMA trusted_schema = OFF")
+	db.run("PRAGMA busy_timeout = 5000")
 }
 
 const checkpointWal = (db: Database): void => {
@@ -362,7 +360,10 @@ const validateOpenDatabase = (
 	const schemaVersion = asNumber(version.user_version)
 	if (!acceptedSchemaVersions.includes(schemaVersion))
 		throw storeError(
-			`unsupported eventing control schema ${schemaVersion}; expected ${acceptedSchemaVersions.join(" or ")}`,
+			`unsupported eventing control schema ${schemaVersion}; expected ${Arr.join(
+				Arr.map(acceptedSchemaVersions, (v) => `${v}`),
+				" or ",
+			)}`,
 		)
 	// Full accounting verification belongs at open/restore, never on the ingest hot path.
 	const accounting = db.prepare<CountRow, []>(`
@@ -619,13 +620,13 @@ const openDatabase = (path: string): Effect.Effect<Database, EventingControlStor
 			Effect.try({
 				try: () => {
 					configure(db)
-					db.exec("PRAGMA journal_mode = WAL")
-					db.exec("PRAGMA synchronous = FULL")
+					db.run("PRAGMA journal_mode = WAL")
+					db.run("PRAGMA synchronous = FULL")
 					const version = db.query<UserVersionRow, []>("PRAGMA user_version").get()
 					if (!version) throw storeError("eventing control database has no schema version")
 					let schemaVersion = asNumber(version.user_version)
 					if (schemaVersion === 0) {
-						db.transaction(() => db.exec(CREATE_SCHEMA)).exclusive()
+						db.transaction(() => db.run(CREATE_SCHEMA)).exclusive()
 						schemaVersion = CONTROL_SCHEMA_VERSION
 					}
 					if (schemaVersion !== CONTROL_SCHEMA_VERSION)

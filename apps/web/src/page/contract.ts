@@ -68,6 +68,15 @@ export const RootToastAction = Schema.Union([
 ])
 export type RootToastAction = typeof RootToastAction.Type
 
+/** A toast raised with a navigation or refresh; no timeout means the toast's default, no `rootAction` no button. */
+const NavigationToast = Schema.Struct({
+	type: ToastType,
+	title: Schema.String,
+	description: Schema.String,
+	timeoutMs: Schema.optionalKey(Schema.NullOr(Schema.Number)),
+	rootAction: Schema.optionalKey(Schema.Struct({ label: Schema.String, action: RootToastAction })),
+})
+
 /** Facts a page reports to the root; the root owns the URL. */
 export const PageOutMessage = defineMessageUnion({
 	/** `navigate({ search })` / `<Link>`: the root pushes (or replaces) the URL, which re-enters the route. */
@@ -75,13 +84,9 @@ export const PageOutMessage = defineMessageUnion({
 		url: Schema.String,
 		isReplace: Schema.Boolean,
 		/** A toast raised with the navigation (`navigate(...)` then `toastManager.add(...)`). */
-		toast: Schema.optionalKey(
-			Schema.Struct({ type: ToastType, title: Schema.String, description: Schema.String }),
-		),
+		toast: Schema.optionalKey(NavigationToast),
 		/** A second toast after the first (a Perses import's "Imported with N warnings"). */
-		followUpToast: Schema.optionalKey(
-			Schema.Struct({ type: ToastType, title: Schema.String, description: Schema.String }),
-		),
+		followUpToast: Schema.optionalKey(NavigationToast),
 		/** A confirmed checkout's URL cleanup: the root re-reads the app's customer too. */
 		refreshesCustomer: Schema.optionalKey(Schema.Boolean),
 	},
@@ -95,11 +100,7 @@ export const PageOutMessage = defineMessageUnion({
 	/** `retryOrgCollections` / `handleCollectionStuck`: recreate the org's synced collections. */
 	RequestedReconnectOrgCollections: {},
 	/** A billing change in a page: the root re-reads the app's customer (plan gate, quota banners). */
-	RequestedCustomerRefresh: {
-		toast: Schema.optionalKey(
-			Schema.Struct({ type: ToastType, title: Schema.String, description: Schema.String }),
-		),
-	},
+	RequestedCustomerRefresh: { toast: Schema.optionalKey(NavigationToast) },
 	/**
 	 * `toastManager.add`: the root shows it. `action` is the page's own Message for the action
 	 * button (`actionProps`); the root sends it back to the page that is open when it is clicked.
@@ -317,48 +318,58 @@ export const definePage = <
 	 * Each Subscription restarts per instance and stamps its Messages with that instance's key and
 	 * org, so a Message queued by an older instance's stream is dropped like a late Command result.
 	 */
+	type PageSubscriptionEntry = Subscription.Subscription<
+		PageSubscriptionInput<ModelSchema["Type"]>,
+		MessageSchema["Type"],
+		unknown,
+		Resources
+	>
 	const stamped = Subscription.make<PageHost, WrappedType, Resources>()((entry) =>
 		Rec.fromEntries(
-			Array.map(Rec.toEntries(spec.subscriptions ?? {}), ([name, inner]) => [
-				name,
-				entry(
-					{
-						maybeInstance: Schema.Option(
-							Schema.Struct({
-								key: Schema.String,
-								orgId: Schema.String,
-								instance: Schema.Number,
-								inner: inner.dependenciesSchema,
+			// foldkit erases each entry's dependencies to `any`; `unknown` keeps them opaque here.
+			Array.map(
+				Rec.toEntries(spec.subscriptions ?? {}),
+				([name, inner]: readonly [string, PageSubscriptionEntry]) => [
+					name,
+					entry(
+						{
+							maybeInstance: Schema.Option(
+								Schema.Struct({
+									key: Schema.String,
+									orgId: Schema.String,
+									instance: Schema.Number,
+									inner: inner.dependenciesSchema,
+								}),
+							),
+						},
+						{
+							modelToDependencies: (host) => ({
+								maybeInstance:
+									host.page !== null && host.context !== null && isOwnSlot(host.page)
+										? Option.some({
+												key: host.page.key,
+												orgId: host.page.orgId,
+												instance: host.page.instance,
+												inner: inner.modelToDependencies({
+													model: host.page.model,
+													context: host.context,
+												}),
+											})
+										: Option.none(),
 							}),
-						),
-					},
-					{
-						modelToDependencies: (host) => ({
-							maybeInstance:
-								host.page !== null && host.context !== null && isOwnSlot(host.page)
-									? Option.some({
-											key: host.page.key,
-											orgId: host.page.orgId,
-											instance: host.page.instance,
-											inner: inner.modelToDependencies({
-												model: host.page.model,
-												context: host.context,
-											}),
-										})
-									: Option.none(),
-						}),
-						dependenciesToStream: ({ maybeInstance }) =>
-							Option.match(maybeInstance, {
-								onNone: () => Stream.empty,
-								onSome: ({ key, orgId, instance, inner: dependencies }) =>
-									Stream.map(
-										inner.dependenciesToStream(dependencies, () => dependencies),
-										wrapFor(key, orgId, instance),
-									),
-							}),
-					},
-				),
-			]),
+							dependenciesToStream: ({ maybeInstance }) =>
+								Option.match(maybeInstance, {
+									onNone: () => Stream.empty,
+									onSome: ({ key, orgId, instance, inner: dependencies }) =>
+										Stream.map(
+											inner.dependenciesToStream(dependencies, () => dependencies),
+											wrapFor(key, orgId, instance),
+										),
+								}),
+						},
+					),
+				],
+			),
 		),
 	)
 
@@ -416,6 +427,11 @@ export const definePage = <
 				return Option.none<PageStep<SlotType, WrappedType>>()
 			return Option.some(step(slot.key, instance, context, revive(slot.model, route, context)))
 		},
+		/** The instance holds unsaved state: leaving it, by link or by closing the tab, asks first. */
+		isBlockingNavigation: (slot: PageSlotBase): boolean =>
+			isOwnSlot(slot) &&
+			spec.isBlockingNavigation !== undefined &&
+			spec.isBlockingNavigation(slot.model),
 		/** A navigation away from this instance, held: the page's confirm step, or `None` if it allows it. */
 		blockedNavigation: (slot: PageSlotBase, url: string, context: PageContext) =>
 			isOwnSlot(slot) &&

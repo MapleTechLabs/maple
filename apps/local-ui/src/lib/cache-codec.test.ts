@@ -1,4 +1,4 @@
-import { DateTime, Option } from "effect"
+import { Array as Arr, DateTime, Option, Predicate } from "effect"
 import { describe, expect, it } from "vitest"
 import { decodeCacheValue, encodeCacheValue } from "./cache-codec"
 
@@ -15,7 +15,8 @@ describe("cache codec", () => {
 		const restored = Option.getOrThrow(roundTrip(page))
 		expect(restored).toEqual(page)
 		const row = Option.getOrThrow(roundTrip([{ startTime }]))
-		expect(DateTime.isDateTime(Array.isArray(row) ? row[0].startTime : null)).toBe(true)
+		const first = Arr.isArray(row) ? row[0] : null
+		expect(Predicate.hasProperty(first, "startTime") && DateTime.isDateTime(first.startTime)).toBe(true)
 	})
 
 	it("keeps values plain JSON would lose", () => {

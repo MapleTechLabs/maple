@@ -48,7 +48,7 @@ import { relativeTime } from "../kit/relative-time"
 import { statRail, statRailItem, statRailLoading } from "../kit/stat-rail"
 import { VERCEL_ACCENT } from "./catalog"
 import { Message } from "./message"
-import type { Model } from "./model"
+import { canManage, type Model } from "./model"
 import { vercelConfigure, vercelCostNote } from "./view-vercel-configure"
 
 // `VercelIntegrationCard`: not connected, or a connected team's issues, last 24 hours, projects and drains.
@@ -105,7 +105,7 @@ const notConnected = (h: H, model: Model): Html =>
 		integrationEmptyFeatures(h, FEATURES),
 		integrationEmptyCard(h, [
 			integrationEmptyMedia(h, BRAND),
-			...(model.isAdmin
+			...(canManage(model)
 				? [
 						integrationEmptyHint(h, [
 							"Paste a Vercel token. Maple creates a logs drain and a traces drain on the team you pick.",
@@ -168,7 +168,7 @@ const summary = (h: H, model: Model, status: VercelIntegrationStatus, timeZone: 
 						linkButton(h, { size: "sm", href: hrefOf(AppRoute.InfraVercel({ search: {} })) }, [
 							"View metrics",
 						]),
-						...(model.isAdmin
+						...(canManage(model)
 							? [
 									button(
 										h,
@@ -224,7 +224,7 @@ const issueAlert = (h: H, model: Model, issue: VercelIssue): Html =>
 				? []
 				: [h.span([h.Class("font-mono text-2xs [overflow-wrap:anywhere]")], ["Vercel: ", issue.vercelError])]),
 		]),
-		...(model.isAdmin
+		...(canManage(model)
 			? [
 					alertAction(h, [
 						issue.fix === "token"
@@ -344,7 +344,6 @@ const productionCell = (h: H, model: Model, project: VercelProjectStatus, timeZo
 				nowMs: model.nowMs,
 				timeZone,
 				variant: "short",
-				tooltip: "title",
 				className: "shrink-0 text-muted-foreground",
 			}),
 			...(deployment.branch === null

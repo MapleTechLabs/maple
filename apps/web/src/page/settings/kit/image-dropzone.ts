@@ -93,11 +93,11 @@ export const imageDropzone = <M>(h: HtmlBuilder<M>, options: ImageDropzoneOption
 					: [h.AriaDisabled(!isInteractive), h.AriaLabel(options.targetLabel), h.Role("button")]),
 				h.Class(
 					cn(
-						"relative flex size-16 shrink-0 items-center justify-center overflow-hidden rounded-md border border-dashed p-1 outline-none transition-colors",
+						"relative flex size-16 shrink-0 items-center justify-center overflow-hidden rounded-md border border-dashed p-1 outline-none",
 						isReadOnly
 							? null
 							: isInteractive
-								? "cursor-pointer hover:border-primary active:border-primary focus-visible:ring-2 focus-visible:ring-ring"
+								? "cursor-pointer hover:border-primary-a4 active:border-primary-a4 focus-visible:ring-2 focus-visible:ring-ring"
 								: "cursor-not-allowed opacity-60",
 						// The dashed outline is a drop cue: shown on hover, focus and drag, not at rest.
 						options.isDragging ? "border-primary ring-2 ring-primary" : "border-transparent",
@@ -121,12 +121,14 @@ export const imageDropzone = <M>(h: HtmlBuilder<M>, options: ImageDropzoneOption
 				options.preview,
 				...(options.isDragging
 					? [
-							h.div(
-								[
-									h.Class(
-										"absolute inset-0 flex items-center justify-center rounded-md bg-primary-a2 text-center text-3xs font-medium text-primary",
-									),
-								],
+							hstack(
+								h,
+								{
+									align: "center",
+									justify: "center",
+									className:
+										"absolute inset-0 rounded-md bg-primary-a2 text-center text-3xs font-medium text-primary",
+								},
 								["Drop image"],
 							),
 						]
@@ -163,7 +165,7 @@ export const typeToConfirmField = <M>(
 		[
 			label(h, { className: "text-xs", attributes: [h.For(options.id)] }, [
 				"Type ",
-				h.span([h.Class("font-mono font-semibold")], [options.expected]),
+				typography(h, { weight: "semibold", mono: true }, [options.expected]),
 				" to confirm.",
 			]),
 			input(h, {

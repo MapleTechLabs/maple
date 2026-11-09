@@ -116,7 +116,7 @@ const readJsonBody = (request: HttpClientRequest.HttpClientRequest) => {
 			),
 		)
 	}
-	return Schema.decodeUnknownEffect(JsonObjectFromString)(text).pipe(
+	return Schema.decodeEffect(JsonObjectFromString)(text).pipe(
 		Effect.mapBoth({
 			onSuccess: (parsed): Record<string, unknown> => ({ ...parsed }),
 			onFailure: (cause) =>
@@ -143,7 +143,7 @@ const readJsonBody = (request: HttpClientRequest.HttpClientRequest) => {
 const isNativeWorkersAiTrailer = (payload: string): boolean =>
 	payload !== "[DONE]" &&
 	Option.exists(
-		Schema.decodeUnknownOption(JsonObjectFromString)(payload),
+		Schema.decodeOption(JsonObjectFromString)(payload),
 		(frame) =>
 			!("choices" in frame) &&
 			!("object" in frame) &&
@@ -157,7 +157,8 @@ const isNativeWorkersAiTrailer = (payload: string): boolean =>
  * Frame-aligned rather than line-based: SSE separates events with a blank line, and rewriting at
  * any finer granularity risks corrupting a multi-line `data:` payload.
  */
-const stripNativeTrailer = (body: ReadableStream<Uint8Array>): ReadableStream<Uint8Array> => {
+// The Workers runtime types a response body as `ReadableStream<any>`; chunks are checked as bytes.
+const stripNativeTrailer = (body: ReadableStream<unknown>): ReadableStream<Uint8Array> => {
 	const decoder = new TextDecoder()
 	const encoder = new TextEncoder()
 	let buffer = ""
@@ -175,8 +176,14 @@ const stripNativeTrailer = (body: ReadableStream<Uint8Array>): ReadableStream<Ui
 	}
 
 	return body.pipeThrough(
-		new TransformStream<Uint8Array, Uint8Array>({
+		new TransformStream<unknown, Uint8Array>({
 			transform(chunk, controller) {
+				if (!ArrayBuffer.isView(chunk)) {
+					controller.error(
+						new WorkersAiShimRequestError({ message: "Workers AI stream chunk is not bytes" }),
+					)
+					return
+				}
 				buffer += decoder.decode(chunk, { stream: true })
 				const frames = Str.split("\n\n")(buffer)
 				buffer = frames.pop() ?? ""
@@ -201,7 +208,11 @@ const workersAiRunModel = (url: string): Option.Option<string> =>
 		Option.filter(
 			(pathname) => Str.includes("/accounts/")(pathname) && Str.includes(RUN_MARKER)(pathname),
 		),
-		Option.map((pathname) => Str.slice(pathname.indexOf(RUN_MARKER) + RUN_MARKER.length)(pathname)),
+		Option.flatMap((pathname) =>
+			Option.map(Str.indexOf(RUN_MARKER)(pathname), (at) =>
+				Str.slice(at + RUN_MARKER.length)(pathname),
+			),
+		),
 		Option.flatMap((encoded) => Option.liftThrowable(decodeURIComponent)(encoded)),
 		Option.filter((model) => model !== ""),
 	)

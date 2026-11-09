@@ -3,11 +3,11 @@ import { chmodSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { afterEach, describe, expect, it } from "vitest"
-import { Effect, Schema, Array as Arr, String as Str } from "effect"
+import { Effect, Schema, Array as Arr, String as Str, Option } from "effect"
 import { AwsAccountId } from "@maple/domain/primitives"
 import { renderAwsCleanupScript, renderAwsSetupScript } from "./setup"
 
-const accountId = Schema.decodeUnknownSync(AwsAccountId)("123456789012")
+const accountId = Schema.decodeSync(AwsAccountId)("123456789012")
 const PROVIDER_ARN = "arn:aws:iam::123456789012:oidc-provider/api.maple.test/oidc/aws"
 const target = {
 	accountId,
@@ -123,11 +123,19 @@ describe("AWS setup scripts", () => {
 		])
 		// Regions without the stack are left alone, and the role's stack goes after them.
 		expect(metricsCalls(calls, "us-west-2")).toEqual([])
-		const roleStackDeleted = calls.findIndex((call) =>
-			Str.includes(`stack-delete-complete --region us-east-1 --stack-name ${target.stackName}`)(call),
+		const roleStackDeleted = Option.getOrElse(
+			Arr.findFirstIndex(calls, (call) =>
+				Str.includes(`stack-delete-complete --region us-east-1 --stack-name ${target.stackName}`)(
+					call,
+				),
+			),
+			() => -1,
 		)
 		expect(roleStackDeleted).toBeGreaterThan(
-			calls.findLastIndex((call) => Str.includes("eu-central-1")(call)),
+			Option.getOrElse(
+				Arr.findLastIndex(calls, (call) => Str.includes("eu-central-1")(call)),
+				() => -1,
+			),
 		)
 	})
 
@@ -185,13 +193,19 @@ describe("AWS setup scripts", () => {
 		const setup = Effect.runSync(renderAwsSetupScript(target, "{}\n", null))
 		const fresh = run(setup, { stacksIn: [] })
 		expect(fresh.status).toBe(0)
-		const created = fresh.calls.findIndex((call) =>
-			Str.startsWith("iam create-open-id-connect-provider")(call),
+		const created = Option.getOrElse(
+			Arr.findFirstIndex(fresh.calls, (call) =>
+				Str.startsWith("iam create-open-id-connect-provider")(call),
+			),
+			() => -1,
 		)
 		expect(fresh.calls[created]).toContain(
 			`--url ${target.oidcProvider.url} --client-id-list sts.amazonaws.com`,
 		)
-		const deployed = fresh.calls.findIndex((call) => Str.startsWith("cloudformation deploy")(call))
+		const deployed = Option.getOrElse(
+			Arr.findFirstIndex(fresh.calls, (call) => Str.startsWith("cloudformation deploy")(call)),
+			() => -1,
+		)
 		expect(created).toBeLessThan(deployed)
 		// The stack never owns it, so deleting one connection's stack cannot take it from another.
 		expect(fresh.calls[deployed]).toContain("--parameter-overrides CreateOidcProvider=false")

@@ -1,5 +1,5 @@
 import { OrgId } from "@maple/domain"
-import { Result, Schema, Array as Arr, String as Str } from "effect"
+import { Result, Schema, Array as Arr, String as Str, Option } from "effect"
 import {
 	click,
 	expect as expectView,
@@ -46,7 +46,7 @@ const row = (service: string, commit: string, firstSeen: string, errorCount = 0)
 	apdexScore: 1,
 })
 
-const data = Schema.decodeUnknownSync(ReleasesData)({
+const data = Schema.decodeSync(ReleasesData)({
 	releases: [
 		row("payment-svc", sha("a"), "2026-09-30T10:00:00.000Z"),
 		row("payment-svc", sha("b"), "2026-10-01T10:00:00.000Z", 90),
@@ -70,7 +70,7 @@ const loaded = (): Model => {
 	).model
 }
 
-const noReleases = Schema.decodeUnknownSync(ReleasesData)({ ...data, releases: [] })
+const noReleases = Schema.decodeSync(ReleasesData)({ ...data, releases: [] })
 
 /** A window with no releases, after the presence read answered. */
 const empty = (traces: "present" | "absent"): Model => {
@@ -151,7 +151,7 @@ describe("releases list", () => {
 			{ search: { environments: ["production"], timePreset: "1h" } },
 			context,
 		)
-		expect(moved.commands?.map(({ name, args }) => [name, args?.["mode"]])).toEqual([
+		expect(Arr.map(moved.commands ?? [], ({ name, args }) => [name, args?.["mode"]])).toEqual([
 			["ResolveReleasesWindow", "Refresh"],
 		])
 	})
@@ -213,7 +213,9 @@ describe("releases list", () => {
 
 	test("a health filter that matches nothing offers to clear it", () => {
 		const shown = new Set(Arr.map(deriveOf(data).groups, (group) => group.health))
-		const unmatched = RELEASE_HEALTH_ORDER.find((health) => !shown.has(health))
+		const unmatched = Option.getOrUndefined(
+			Arr.findFirst(RELEASE_HEALTH_ORDER, (health) => !shown.has(health)),
+		)
 		expect(unmatched).toBeDefined()
 		const filtered = { ...loaded(), search: { impact: unmatched } }
 		scene(

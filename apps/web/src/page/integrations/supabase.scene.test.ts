@@ -1,7 +1,7 @@
 import { OrgId } from "@maple/domain"
 import { SupabaseIntegrationStatus } from "@maple/domain/http"
 import { SupabaseProjectRef } from "@maple/domain/primitives"
-import { Result, Schema, Array as Arr } from "effect"
+import { Result, Schema, Array as Arr, Option } from "effect"
 import { expect as expectView, given, role, scene, text, withViewInputs } from "foldkit/scene"
 import { describe, expect, test } from "vitest"
 import { toLoadFailure } from "@maple/views/data/load-failure"
@@ -46,7 +46,7 @@ const metricsRow = (projectRef: string, overrides: Partial<SupabaseProjectRow> =
 })
 
 const status = (overrides: Record<string, unknown> = {}) =>
-	Schema.decodeUnknownSync(SupabaseIntegrationStatus)({
+	Schema.decodeSync(SupabaseIntegrationStatus)({
 		configured: true,
 		connected: true,
 		organization: { id: "org-1", slug: "acme", name: "Acme" },
@@ -493,7 +493,9 @@ describe("supabase card", () => {
 			Message.CompletedSupabaseMetrics({ ref: REF, enabled: true, failure: null }),
 		)
 		const clocked = pageUpdate(done.model, Message.CompletedReadSupabaseClock({ nowMs: later }))
-		const load = (clocked.commands ?? []).find(({ name }) => name === "LoadIntegrationsSupabaseMetrics")
+		const load = Option.getOrUndefined(
+			Arr.findFirst(clocked.commands ?? [], ({ name }) => name === "LoadIntegrationsSupabaseMetrics"),
+		)
 		expect(load?.args).toEqual({
 			key: clocked.model.supabaseCard.metrics.key,
 			window: { startTime: "2026-10-01 12:20:00", endTime: "2026-10-01 13:20:00" },

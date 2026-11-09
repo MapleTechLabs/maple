@@ -24,8 +24,10 @@ const request = new IncidentTriageRequest({
 })
 
 /** Answers shaped like Clef's output, so the decode is the real one. */
-const answering = (body: unknown): typeof globalThis.fetch =>
-	(async () => new Response(JSON.stringify(body), { status: 200 })) as typeof globalThis.fetch
+const answering =
+	(body: unknown): typeof globalThis.fetch =>
+	async () =>
+		new Response(JSON.stringify(body), { status: 200 })
 
 const run = (fetch: typeof globalThis.fetch, input: IncidentTriageRequest = request) =>
 	classifyIncident({ request: input, model: "@cf/cloudflare/clef" }).pipe(

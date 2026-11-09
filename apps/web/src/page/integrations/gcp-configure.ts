@@ -4,7 +4,7 @@ import {
 	type V2GcpConnector,
 } from "@maple/domain/http/v2"
 import { GcpConnectorId, GcpLogRuntime } from "@maple/domain/primitives"
-import { Effect, Schema } from "effect"
+import { Effect, Schema, Option, Array as Arr } from "effect"
 import { Command } from "foldkit"
 import * as Keyed from "@maple/views/data/keyed"
 import { toLoadFailure } from "@maple/views/data/load-failure"
@@ -36,7 +36,9 @@ export const initConfigure = (
 	metricsAvailable: boolean,
 ): ConfigureModel => {
 	const connector =
-		target._tag === "Connection" ? connectors.find((entry) => entry.id === target.id) : undefined
+		target._tag === "Connection"
+			? Arr.findFirst(connectors, (entry) => entry.id === target.id)
+			: Option.none()
 	return {
 		target,
 		dialog: Dialog.init(CONFIGURE_DIALOG_ID, "dialog"),
@@ -51,8 +53,10 @@ export const initConfigure = (
 		newFlags: { logs_enabled: true, metrics_enabled: metricsAvailable },
 		createError: null,
 		isCreating: false,
-		chooseFlags:
-			connector === undefined ? { logs_enabled: true, metrics_enabled: false } : flagsOf(connector),
+		chooseFlags: Option.match(connector, {
+			onNone: () => ({ logs_enabled: true, metrics_enabled: false }),
+			onSome: flagsOf,
+		}),
 		asked: null,
 		opened: null,
 		confirm: initConfirm(),

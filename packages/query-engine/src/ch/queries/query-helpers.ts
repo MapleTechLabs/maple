@@ -186,7 +186,7 @@ export function inclusionValues(
 	scalar: string | undefined,
 	list: readonly string[] | undefined,
 ): readonly string[] | undefined {
-	if (list?.length) return list
+	if (list !== undefined && list.length > 0) return list
 	if (scalar) return [scalar]
 	return undefined
 }
@@ -279,7 +279,7 @@ export function severitySpellings(level: string): readonly string[] {
 	if (trimmed === "") return []
 	const upper = Str.toUpperCase(trimmed)
 	const lower = Str.toLowerCase(trimmed)
-	const title = upper.charAt(0) + Str.slice(1)(lower)
+	const title = Str.slice(0, 1)(upper) + Str.slice(1)(lower)
 	return [...new Set([upper, title, lower])]
 }
 
@@ -334,6 +334,18 @@ type TracesBaseWhereColumns = Pick<
 >
 
 /**
+ * Every stored SpanName whose HTTP display form (`httpDisplaySpanName`) can equal `name`.
+ * A rewritten name is `<prefix> <route>`, stored as `<prefix>` or `http.server <prefix>`,
+ * so a name without a space can only match itself.
+ */
+export const rawSpanNameCandidates = (name: string): ReadonlyArray<string> => [
+	name,
+	...Arr.flatMap(Arr.range(0, name.length - 1), (i) =>
+		name[i] === " " ? [Str.slice(0, i)(name), `http.server ${Str.slice(0, i)(name)}`] : [],
+	),
+]
+
+/**
  * Build the WHERE conditions shared between traces queries and alert queries:
  * OrgId, Timestamp range, serviceName, spanName, rootOnly, errorsOnly,
  * environments, commitShas, attribute filters, duration filters, and
@@ -365,11 +377,18 @@ export function tracesBaseWhereConditions(
 				$.SpanAttributes.get("url.path"),
 			)
 			const needle = mm?.spanName === "contains" ? soleValue(v) : undefined
-			return needle === undefined
-				? inclusionCondition($.SpanName, v).or(inclusionCondition(display, v))
-				: CH.positionCaseInsensitive($.SpanName, CH.lit(needle))
-						.gt(0)
-						.or(CH.positionCaseInsensitive(display, CH.lit(needle)).gt(0))
+			if (needle === undefined) {
+				// The `SpanName IN` conjunct is what lets idx_span_name prune: an OR with the
+				// display expression alone reads SpanAttributes for every row in range.
+				return Arr.some(v, Str.includes(" "))
+					? inclusionCondition($.SpanName, Arr.dedupe(Arr.flatMap(v, rawSpanNameCandidates))).and(
+							inclusionCondition($.SpanName, v).or(inclusionCondition(display, v)),
+						)
+					: inclusionCondition($.SpanName, v)
+			}
+			return CH.positionCaseInsensitive($.SpanName, CH.lit(needle))
+				.gt(0)
+				.or(CH.positionCaseInsensitive(display, CH.lit(needle)).gt(0))
 		}),
 		CH.when(opts.statusCode, (v: string) => $.StatusCode.eq(v)),
 		CH.whenTrue(!!opts.rootOnly, () => $.SpanKind.in_("Server", "Consumer").or($.ParentSpanId.eq(""))),
@@ -383,31 +402,33 @@ export function tracesBaseWhereConditions(
 		conditions.push($.Duration.lte(opts.maxDurationMs * 1000000))
 	}
 
-	if (opts.environments?.length) {
-		if (mm?.deploymentEnv === "contains" && opts.environments.length === 1) {
+	if (opts.environments !== undefined && opts.environments.length > 0) {
+		const soleEnvironment = soleValue(opts.environments)
+		if (mm?.deploymentEnv === "contains" && soleEnvironment !== undefined) {
 			conditions.push(
 				CH.positionCaseInsensitive(
 					deploymentEnvExpr($.ResourceAttributes),
-					CH.lit(opts.environments[0]),
+					CH.lit(soleEnvironment),
 				).gt(0),
 			)
 		} else {
 			conditions.push(CH.inList(deploymentEnvExpr($.ResourceAttributes), opts.environments))
 		}
 	}
-	if (opts.namespaces?.length) {
-		if (mm?.serviceNamespace === "contains" && opts.namespaces.length === 1) {
+	if (opts.namespaces !== undefined && opts.namespaces.length > 0) {
+		const soleNamespace = soleValue(opts.namespaces)
+		if (mm?.serviceNamespace === "contains" && soleNamespace !== undefined) {
 			conditions.push(
 				CH.positionCaseInsensitive(
 					$.ResourceAttributes.get("service.namespace"),
-					CH.lit(opts.namespaces[0]),
+					CH.lit(soleNamespace),
 				).gt(0),
 			)
 		} else {
 			conditions.push(CH.inList($.ResourceAttributes.get("service.namespace"), opts.namespaces))
 		}
 	}
-	if (opts.commitShas?.length) {
+	if (opts.commitShas !== undefined && opts.commitShas.length > 0) {
 		conditions.push(CH.inList($.ResourceAttributes.get("vcs.ref.head.revision"), opts.commitShas))
 	}
 	if (opts.attributeFilters) {
@@ -420,10 +441,10 @@ export function tracesBaseWhereConditions(
 			conditions.push(buildAttrFilterCondition(rf, "ResourceAttributes", opts.attributeIndexMode))
 		}
 	}
-	if (opts.excludedServiceNames?.length) {
+	if (opts.excludedServiceNames !== undefined && opts.excludedServiceNames.length > 0) {
 		conditions.push(CH.notInList($.ServiceName, opts.excludedServiceNames))
 	}
-	if (opts.excludedSpanNames?.length) {
+	if (opts.excludedSpanNames !== undefined && opts.excludedSpanNames.length > 0) {
 		// Display-name aware: exclude rows matching either the raw or rewritten span name.
 		const display = httpDisplaySpanName(
 			$.SpanName,
@@ -436,13 +457,13 @@ export function tracesBaseWhereConditions(
 			),
 		)
 	}
-	if (opts.excludedEnvironments?.length) {
+	if (opts.excludedEnvironments !== undefined && opts.excludedEnvironments.length > 0) {
 		conditions.push(CH.notInList(deploymentEnvExpr($.ResourceAttributes), opts.excludedEnvironments))
 	}
-	if (opts.excludedNamespaces?.length) {
+	if (opts.excludedNamespaces !== undefined && opts.excludedNamespaces.length > 0) {
 		conditions.push(CH.notInList($.ResourceAttributes.get("service.namespace"), opts.excludedNamespaces))
 	}
-	if (opts.excludedCommitShas?.length) {
+	if (opts.excludedCommitShas !== undefined && opts.excludedCommitShas.length > 0) {
 		conditions.push(
 			CH.notInList($.ResourceAttributes.get("vcs.ref.head.revision"), opts.excludedCommitShas),
 		)
@@ -475,10 +496,10 @@ export function canUseServiceOverviewMv(opts: TracesBaseWhereOpts, groupBy?: rea
 	if (!opts.rootOnly) return false
 	// The MV has no SpanName column, so neither spelling of the span-name filter
 	// can be served from it.
-	if (opts.spanName || opts.spanNames?.length) return false
-	if (opts.excludedSpanNames?.length) return false
-	if (opts.attributeFilters?.length) return false
-	if (opts.resourceAttributeFilters?.length) return false
+	if (opts.spanName || (opts.spanNames !== undefined && opts.spanNames.length > 0)) return false
+	if (opts.excludedSpanNames !== undefined && opts.excludedSpanNames.length > 0) return false
+	if (opts.attributeFilters !== undefined && opts.attributeFilters.length > 0) return false
+	if (opts.resourceAttributeFilters !== undefined && opts.resourceAttributeFilters.length > 0) return false
 	if (groupBy) {
 		for (const g of groupBy) {
 			if (g === "span_name" || g === "http_method" || g === "attribute") return false
@@ -516,33 +537,35 @@ export function serviceOverviewWhereConditions(
 		conditions.push($.Duration.lte(opts.maxDurationMs * 1000000))
 	}
 
-	if (opts.environments?.length) {
-		if (mm?.deploymentEnv === "contains" && opts.environments.length === 1) {
-			conditions.push(CH.positionCaseInsensitive($.DeploymentEnv, CH.lit(opts.environments[0])).gt(0))
+	if (opts.environments !== undefined && opts.environments.length > 0) {
+		const soleEnvironment = soleValue(opts.environments)
+		if (mm?.deploymentEnv === "contains" && soleEnvironment !== undefined) {
+			conditions.push(CH.positionCaseInsensitive($.DeploymentEnv, CH.lit(soleEnvironment)).gt(0))
 		} else {
 			conditions.push(CH.inList($.DeploymentEnv, opts.environments))
 		}
 	}
-	if (opts.namespaces?.length) {
-		if (mm?.serviceNamespace === "contains" && opts.namespaces.length === 1) {
-			conditions.push(CH.positionCaseInsensitive($.ServiceNamespace, CH.lit(opts.namespaces[0])).gt(0))
+	if (opts.namespaces !== undefined && opts.namespaces.length > 0) {
+		const soleNamespace = soleValue(opts.namespaces)
+		if (mm?.serviceNamespace === "contains" && soleNamespace !== undefined) {
+			conditions.push(CH.positionCaseInsensitive($.ServiceNamespace, CH.lit(soleNamespace)).gt(0))
 		} else {
 			conditions.push(CH.inList($.ServiceNamespace, opts.namespaces))
 		}
 	}
-	if (opts.commitShas?.length) {
+	if (opts.commitShas !== undefined && opts.commitShas.length > 0) {
 		conditions.push(CH.inList($.CommitSha, opts.commitShas))
 	}
-	if (opts.excludedServiceNames?.length) {
+	if (opts.excludedServiceNames !== undefined && opts.excludedServiceNames.length > 0) {
 		conditions.push(CH.notInList($.ServiceName, opts.excludedServiceNames))
 	}
-	if (opts.excludedEnvironments?.length) {
+	if (opts.excludedEnvironments !== undefined && opts.excludedEnvironments.length > 0) {
 		conditions.push(CH.notInList($.DeploymentEnv, opts.excludedEnvironments))
 	}
-	if (opts.excludedNamespaces?.length) {
+	if (opts.excludedNamespaces !== undefined && opts.excludedNamespaces.length > 0) {
 		conditions.push(CH.notInList($.ServiceNamespace, opts.excludedNamespaces))
 	}
-	if (opts.excludedCommitShas?.length) {
+	if (opts.excludedCommitShas !== undefined && opts.excludedCommitShas.length > 0) {
 		conditions.push(CH.notInList($.CommitSha, opts.excludedCommitShas))
 	}
 
@@ -573,11 +596,15 @@ export function canUseTracesAggregatesMv(
 	bucketSeconds: number | undefined,
 ): boolean {
 	if (bucketSeconds == null || bucketSeconds < 3600) return false
-	if (opts.attributeFilters?.length) return false
-	if (opts.resourceAttributeFilters?.length) return false
-	if (opts.commitShas?.length) return false // MV doesn't carry CommitSha
-	if (opts.excludedCommitShas?.length) return false // ...so it cannot exclude on one either
-	if (opts.namespaces?.length || opts.excludedNamespaces?.length) return false // MV doesn't carry ServiceNamespace
+	if (opts.attributeFilters !== undefined && opts.attributeFilters.length > 0) return false
+	if (opts.resourceAttributeFilters !== undefined && opts.resourceAttributeFilters.length > 0) return false
+	if (opts.commitShas !== undefined && opts.commitShas.length > 0) return false // MV doesn't carry CommitSha
+	if (opts.excludedCommitShas !== undefined && opts.excludedCommitShas.length > 0) return false // ...so it cannot exclude on one either
+	if (
+		(opts.namespaces !== undefined && opts.namespaces.length > 0) ||
+		(opts.excludedNamespaces !== undefined && opts.excludedNamespaces.length > 0)
+	)
+		return false // MV doesn't carry ServiceNamespace
 	if (opts.minDurationMs != null || opts.maxDurationMs != null) return false
 	if (groupBy) {
 		for (const g of groupBy) {
@@ -619,20 +646,21 @@ export function tracesAggregatesWhereConditions(
 		errorsOnlyCondition($.StatusCode, opts.errorsOnly),
 	]
 
-	if (opts.environments?.length) {
-		if (mm?.deploymentEnv === "contains" && opts.environments.length === 1) {
-			conditions.push(CH.positionCaseInsensitive($.DeploymentEnv, CH.lit(opts.environments[0])).gt(0))
+	if (opts.environments !== undefined && opts.environments.length > 0) {
+		const soleEnvironment = soleValue(opts.environments)
+		if (mm?.deploymentEnv === "contains" && soleEnvironment !== undefined) {
+			conditions.push(CH.positionCaseInsensitive($.DeploymentEnv, CH.lit(soleEnvironment)).gt(0))
 		} else {
 			conditions.push(CH.inList($.DeploymentEnv, opts.environments))
 		}
 	}
-	if (opts.excludedServiceNames?.length) {
+	if (opts.excludedServiceNames !== undefined && opts.excludedServiceNames.length > 0) {
 		conditions.push(CH.notInList($.ServiceName, opts.excludedServiceNames))
 	}
-	if (opts.excludedSpanNames?.length) {
+	if (opts.excludedSpanNames !== undefined && opts.excludedSpanNames.length > 0) {
 		conditions.push(CH.notInList($.SpanName, opts.excludedSpanNames))
 	}
-	if (opts.excludedEnvironments?.length) {
+	if (opts.excludedEnvironments !== undefined && opts.excludedEnvironments.length > 0) {
 		conditions.push(CH.notInList($.DeploymentEnv, opts.excludedEnvironments))
 	}
 

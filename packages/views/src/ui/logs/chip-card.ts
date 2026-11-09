@@ -1,5 +1,5 @@
 import { cn } from "@maple/ui/lib/utils"
-import { Array, Effect, Option, Schema } from "effect"
+import { Array, Effect, Option, Schema, String as Str } from "effect"
 import { Mount } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { copyButton } from "../copy-button"
@@ -19,7 +19,10 @@ const COLLISION_PADDING = 5
 const findChip = (index: number, key: string): HTMLElement | undefined =>
 	Array.findFirst(
 		document.querySelectorAll<HTMLElement>(`[role='log'] > [data-index="${index}"] button[aria-label]`),
-		(button) => button.getAttribute("aria-label")?.startsWith(`Copy ${key}=`) === true,
+		(button) => {
+			const label = button.getAttribute("aria-label")
+			return label !== null && Str.startsWith(`Copy ${key}=`)(label)
+		},
 	).pipe(Option.getOrUndefined)
 
 /** Flips side, then alignment, then shifts into the viewport, as Floating UI does for Base UI. */

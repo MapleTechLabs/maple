@@ -12,8 +12,8 @@ import { OrgOpenRouterKeyService } from "./OrgOpenRouterKeyService"
 const trackedDbs: TestDb[] = []
 afterEach(() => cleanupTestDbs(trackedDbs))
 
-const ORG = Schema.decodeUnknownSync(OrgId)("org_byok")
-const USER = Schema.decodeUnknownSync(UserId)("user_byok")
+const ORG = Schema.decodeSync(OrgId)("org_byok")
+const USER = Schema.decodeSync(UserId)("user_byok")
 const KEY = "sk-or-v1-0123456789abcdef0123456789abcdef"
 
 interface World {
@@ -140,7 +140,7 @@ describe("OrgOpenRouterKeyService", () => {
 						"SELECT key_ciphertext FROM org_openrouter_keys WHERE org_id = 'org_byok'",
 					),
 				)
-				assert.isFalse(row?.key_ciphertext.includes(KEY) ?? true)
+				assert.isFalse(row === undefined || Str.includes(KEY)(row.key_ciphertext))
 
 				const resolved = yield* keys.resolveForRun(ORG)
 				assert.strictEqual(Option.map(resolved, Redacted.value).pipe(Option.getOrNull), KEY)

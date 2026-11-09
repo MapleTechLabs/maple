@@ -1,5 +1,5 @@
 import { AWS_INFRA_KINDS, type AwsInfraKindId } from "@maple/domain/aws-infra"
-import { Array as Arr, Record as Rec, String as Str } from "effect"
+import { Array as Arr, Record as Rec, String as Str, Option } from "effect"
 import type { MetricChart } from "../../kit/metric-charts"
 import type { BucketPoint } from "../data"
 
@@ -13,7 +13,7 @@ export const bucketRows = (
 	points: ReadonlyArray<BucketPoint>,
 ): ReadonlyArray<BucketRow> => {
 	const metrics = new Map(Arr.map(AWS_INFRA_KINDS[kind].metrics, (metric) => [metric.name, metric]))
-	return Arr.map(Rec.toEntries(Arr.groupBy(points, (point) => point.bucket)), ([bucket, group]) => ({
+	const rows = Arr.map(Rec.toEntries(Arr.groupBy(points, (point) => point.bucket)), ([bucket, group]) => ({
 		bucket,
 		values: Rec.fromEntries(
 			Arr.flatMap(group, (point) => {
@@ -24,7 +24,8 @@ export const bucketRows = (
 				return [[metric.key, value] as const]
 			}),
 		),
-	})).toSorted((a, b) => Str.localeCompare(b.bucket)(a.bucket))
+	}))
+	return Arr.sort(rows, (a: BucketRow, b: BucketRow) => Str.localeCompare(b.bucket)(a.bucket))
 }
 
 const pick =
@@ -105,15 +106,15 @@ export const figureOf = (
 	rows: ReadonlyArray<BucketRow>,
 	key: string,
 ): Figure | null => {
-	const metric = AWS_INFRA_KINDS[kind].metrics.find((entry) => entry.key === key)
+	const metric = Arr.findFirst(AWS_INFRA_KINDS[kind].metrics, (entry) => entry.key === key)
 	const values = Arr.flatMap(rows, (row) => {
 		const value = row.values[key]
 		return value === undefined ? [] : [value]
 	})
-	if (metric === undefined || values.length === 0) return null
+	if (Option.isNone(metric) || values.length === 0) return null
 	const total = Arr.reduce(values, 0, (sum, value) => sum + value)
 	return {
-		value: metric.table === "sum" ? total : total / values.length,
+		value: metric.value.table === "sum" ? total : total / values.length,
 		peak: Math.max(...values),
 		trend: values.slice(-28),
 	}

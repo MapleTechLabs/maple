@@ -18,7 +18,7 @@ const issueWith = (
 	kind: "error" | "alert" = "error",
 ) =>
 	errorIssueDetailFromV2(
-		Schema.decodeUnknownSync(V2ErrorIssueDetail)({
+		Schema.decodeSync(V2ErrorIssueDetail)({
 			id: encodePublicId("iss", issueId),
 			object: "error_issue",
 			kind,

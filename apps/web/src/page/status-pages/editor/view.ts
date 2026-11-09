@@ -28,7 +28,7 @@ import {
 	hasUnpublishedChanges,
 } from "../shared/derive"
 import { Message } from "./message"
-import type { Model } from "./model"
+import { canBreakGlass, canManage, type Model } from "./model"
 import { componentsOf, incidentsOf, monitorsOf, pageOf, statusReadsReady } from "./reads"
 import { PAGE_MENU_ID, resolveView } from "./update"
 import { canvas } from "./view-canvas"
@@ -36,7 +36,7 @@ import { jsonTab } from "./view-json"
 import { addressLine, liveView } from "./view-live"
 import { appearanceView, breakGlassDialog, deletePageDialog, settingsView } from "./view-settings"
 import { typography, typographyClass } from "@maple/views/ui/typography"
-import { vstack } from "@maple/views/ui/stack"
+import { hstack, vstack } from "@maple/views/ui/stack"
 
 // `/status-pages/$pageId`: the header and tabs, then the page as the editor, its Appearance, its
 // Settings, its JSON, or the screen right after it went live.
@@ -68,7 +68,6 @@ const stateLine = (h: H, model: Model, page: V2StatusPage, timeZone: string): Ht
 				value: page.published_at,
 				nowMs: model.nowMs ?? 0,
 				timeZone,
-				tooltip: "title",
 				prefix: "Live, published",
 			}),
 		],
@@ -84,9 +83,11 @@ const menuEntries = (model: Model, page: V2StatusPage): ReadonlyArray<MenuEntry>
 		// A draft is not public, and without a status domain there is no address to open.
 		isDisabled: page.draft || model.publicBaseUrl === "",
 	},
-	...(model.isAdmin
+	...(canBreakGlass(model)
+		? ([{ _tag: "Item", value: "break-glass", label: "Break-glass token", icon: "KeyIcon" }] as const)
+		: []),
+	...(canManage(model)
 		? ([
-				{ _tag: "Item", value: "break-glass", label: "Break-glass token", icon: "KeyIcon" },
 				{ _tag: "Separator" },
 				{ _tag: "Item", value: "delete", label: "Delete", icon: "TrashIcon", variant: "destructive" },
 			] as const)
@@ -106,7 +107,7 @@ const publishButton = (h: H, model: Model): Html =>
 
 /** A draft's next step is publishing it, so Publish leads and Post incident steps back. */
 const headerActions = (h: H, model: Model, page: V2StatusPage): Html => {
-	const canPublish = model.isAdmin && page.draft
+	const canPublish = canManage(model) && page.draft
 	// The composer opens beside the page, so Post incident lives on the Page tab.
 	const isPageView = resolveView(model.search.view) === "page"
 	return detailActions(h, [
@@ -220,7 +221,9 @@ const body = (h: H, model: Model, page: V2StatusPage, timeZone: string): Html =>
 					[skeleton(h, "h-48 w-full"), skeleton(h, "h-[560px] w-full")],
 				)
 			const editor = canvas(h, model, page, { nowMs: model.nowMs ?? 0, timeZone })
-			return model.isAdmin && page.draft ? vstack(h, { gap: "4" }, [draftCallout(h), editor]) : editor
+			return canManage(model) && page.draft
+				? vstack(h, { gap: "4" }, [draftCallout(h), editor])
+				: editor
 		}
 	}
 }
@@ -243,7 +246,9 @@ export const removeComponentCopy = (
 	)
 
 const deleteComponentDialog = (h: H, model: Model, page: V2StatusPage): Html => {
-	const component = componentsOf(model).find((row) => row.id === model.confirmDeleteComponentId)
+	const component = Option.getOrUndefined(
+		Arr.findFirst(componentsOf(model), (row) => row.id === model.confirmDeleteComponentId),
+	)
 	return confirmDialog(h, {
 		slotId: "status-page-delete-component",
 		model: model.deleteComponentDialog,
@@ -277,8 +282,9 @@ const loaded = (h: H, model: Model, page: V2StatusPage, inputs: PageViewInputs):
 									])
 								: h.empty,
 						meta: [
-							h.span(
-								[h.Class("flex flex-wrap items-center gap-x-3 gap-y-1")],
+							hstack(
+								h,
+								{ align: "center", wrap: true, as: "span", className: "gap-x-3 gap-y-1" },
 								[stateLine(h, model, page, timeZone), addressLine(h, model, page)],
 							),
 						],

@@ -31,6 +31,7 @@ import {
 	listEndKey,
 	nextCursor,
 	selectedTags,
+	stalledPages,
 } from "./derive"
 import { Message } from "./message"
 import type { Model } from "./model"
@@ -43,7 +44,8 @@ import { Array as Arr } from "effect"
 
 type H = HtmlBuilder<Message>
 
-const AUTO_LOAD_MIN_ROWS = 25
+/** Pages in a row that add no visible session before auto-loading hands over to Load more. */
+const STALLED_PAGE_LIMIT = 2
 
 const headerActions = (h: H, model: Model): Html => {
 	const facets = facetsOf(model)
@@ -97,8 +99,13 @@ const activeUserFilter = (
 	h: H,
 	config: Readonly<{ userId: string; count: number; label: string; clearLabel: string; onClear: Message }>,
 ): Html =>
-	h.div(
-		[h.Class("mb-3 flex items-center gap-3 rounded-md border border-primary-a3 bg-primary-a1 px-3 py-2")],
+	hstack(
+		h,
+		{
+			gap: "3",
+			align: "center",
+			className: "mb-3 rounded-md border border-primary-a3 bg-primary-a1 px-3 py-2",
+		},
 		[
 			h.div(
 				[
@@ -147,9 +154,8 @@ const listFooterParts = (
 	const hasMore = nextCursor(model) !== null
 	const { isFetching } = model.pagination
 	const hidesSessions = Arr.some(items, (item) => item.kind === "quiet" && !item.expanded)
-	const last = items.at(-1)
-	const endsInFoldedRun = last?.kind === "quiet" && !last.expanded
-	const isManual = hidesSessions && (items.length < AUTO_LOAD_MIN_ROWS || endsInFoldedRun)
+	// Folded pages barely grow the list, so the sentinel stays in view: stop once pages show nothing.
+	const isManual = hidesSessions && stalledPages(model) >= STALLED_PAGE_LIMIT
 	const capped = isCapped(model)
 		? listFooter(h, {
 				shown: allRows(model).length,
@@ -204,6 +210,7 @@ const listBody = (h: H, model: Model, timeZone: string): Html =>
 							signal: "sessions",
 							presence: presenceOf(model.presence, "sessions"),
 							nowMs: model.nowMs,
+							timeZone,
 							isFiltered: hasActiveFilters(model.search),
 							onClearFilters: Message.ClickedClearFilters(),
 						}),

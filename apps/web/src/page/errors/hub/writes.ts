@@ -1,6 +1,7 @@
 import {
 	ErrorIssueClaimRequest,
 	ErrorIssueId,
+	ErrorIssueMergeRequest,
 	ErrorIssueReleaseRequest,
 	ErrorIssueSetSeverityRequest,
 	ErrorIssueTransitionRequest,
@@ -22,6 +23,8 @@ export const HubWrite = Schema.Union([
 	Schema.TaggedStruct("Claim", {}),
 	Schema.TaggedStruct("Release", {}),
 	Schema.TaggedStruct("SetSeverity", { severity: Schema.NullOr(IssueSeverity) }),
+	/** The written ids fold into `targetId`, in one request. */
+	Schema.TaggedStruct("Merge", { targetId: ErrorIssueId }),
 ])
 export type HubWrite = typeof HubWrite.Type
 
@@ -33,7 +36,11 @@ export const WriteOutcome = Schema.Struct({
 })
 export type WriteOutcome = typeof WriteOutcome.Type
 
-const writeOne = (issueId: ErrorIssueId, write: HubWrite) =>
+const writeOne = (
+	issueId: ErrorIssueId,
+	write: Exclude<HubWrite, { readonly _tag: "Merge" }>,
+	expectedState: WorkflowState | undefined,
+) =>
 	Effect.gen(function* () {
 		const client = yield* MapleInternalApiClient
 		const params = { issueId }
@@ -41,7 +48,10 @@ const writeOne = (issueId: ErrorIssueId, write: HubWrite) =>
 			case "Transition":
 				return yield* client.errors.transitionIssue({
 					params,
-					payload: new ErrorIssueTransitionRequest({ toState: write.toState }),
+					payload: new ErrorIssueTransitionRequest({
+						toState: write.toState,
+						...(expectedState === undefined ? undefined : { expectedState }),
+					}),
 				})
 			case "Claim":
 				return yield* client.errors.claimIssue({ params, payload: new ErrorIssueClaimRequest({}) })
@@ -58,13 +68,31 @@ const writeOne = (issueId: ErrorIssueId, write: HubWrite) =>
 		}
 	})
 
+/** A merge is one request for the whole set: it commits for every issue or for none. */
+const mergeAll = (targetId: ErrorIssueId, ids: ReadonlyArray<ErrorIssueId>) =>
+	Effect.gen(function* () {
+		const client = yield* MapleInternalApiClient
+		return yield* client.errors.mergeIssues({
+			params: { issueId: targetId },
+			payload: new ErrorIssueMergeRequest({ sourceIssueIds: ids }),
+		})
+	})
+
 /** Builds the Command for the page's own completion Message (`CompletedHubWrite`). */
 export const runHubWrite = <M>(
 	ids: ReadonlyArray<ErrorIssueId>,
 	write: HubWrite,
+	expectedStates: Readonly<Record<string, WorkflowState>>,
 	toMessage: (outcome: WriteOutcome) => M,
 ) =>
-	Effect.forEach(ids, (id) => Effect.exit(writeOne(id, write)), { concurrency: 4 }).pipe(
+	(write._tag === "Merge"
+		? Effect.exit(mergeAll(write.targetId, ids)).pipe(
+				Effect.map((exit) => Arr.replicate(exit, ids.length)),
+			)
+		: Effect.forEach(ids, (id) => Effect.exit(writeOne(id, write, expectedStates[id])), {
+				concurrency: 4,
+			})
+	).pipe(
 		Effect.map((exits) => {
 			const failures = Arr.filter(exits, Exit.isFailure)
 			const first = failures[0]
@@ -102,6 +130,10 @@ const singleToast = (write: HubWrite, outcome: WriteOutcome) => {
 						write.severity === null ? "Severity cleared" : `Severity set to ${write.severity}`,
 					)
 				: toast("error", "Severity change failed", failure.message)
+		case "Merge":
+			return failure === null
+				? toast("success", "Merged")
+				: toast("error", "Merge failed", failure.message)
 	}
 }
 
@@ -115,6 +147,8 @@ const bulkDone = (write: HubWrite, total: number): string => {
 			return `Released ${countLabel(total, "issue")}`
 		case "SetSeverity":
 			return `Updated severity for ${countLabel(total, "issue")}`
+		case "Merge":
+			return `Merged ${countLabel(total, "issue")}`
 	}
 }
 
@@ -129,6 +163,8 @@ const bulkPartial = (write: HubWrite, outcome: WriteOutcome, total: number): str
 			return `Released ${tail}`
 		case "SetSeverity":
 			return `Updated ${tail}`
+		case "Merge":
+			return `Merged ${tail}`
 	}
 }
 
@@ -137,6 +173,7 @@ const BULK_FAILED = {
 	Claim: "Claim failed",
 	Release: "Release failed",
 	SetSeverity: "Severity change failed",
+	Merge: "Merge failed",
 } satisfies Record<HubWrite["_tag"], string>
 
 /** `transitionMany` and friends: all, some (a warning), or none. */

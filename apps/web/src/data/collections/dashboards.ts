@@ -73,7 +73,7 @@ export const makeDashboardsCollection = (config: {
 		},
 		onUpdate: ({ transaction }) =>
 			Effect.gen(function* () {
-				const { modified } = transaction.mutations[0]
+				const { modified, original } = transaction.mutations[0]
 				const document = yield* Effect.fromOption(
 					rowToDocument(modified),
 					() =>
@@ -85,7 +85,8 @@ export const makeDashboardsCollection = (config: {
 				const id = yield* decodeDashboardId(modified.id)
 				const result = yield* config.client.dashboards.update({
 					params: { id },
-					payload: toUpdateRequest(document),
+					// The version this edit was based on: a newer save by someone else is a 409, not overwritten.
+					payload: { ...toUpdateRequest(document), expectedVersion: original.version },
 				})
 				return { txid: yield* requireTxid(result.txid) }
 			}),

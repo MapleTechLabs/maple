@@ -113,7 +113,7 @@ const stats = (
 			subline:
 				row.lastSeen === null
 					? "none in this window"
-					: relativeTime(h, { value: row.lastSeen, ...clock, prefix: "last", tooltip: "title" }),
+					: relativeTime(h, { value: row.lastSeen, ...clock, prefix: "last" }),
 		}),
 		statRailItem(h, {
 			eyebrow: "5xx rate",
@@ -409,7 +409,6 @@ const topErrors = (h: H, errors: VercelInfraProjectDetailResponse["errors"], clo
 												...clock,
 												variant: "short",
 												mono: true,
-												tooltip: "title",
 												className: typographyClass({ size: "2xs", tone: "muted" }),
 											}),
 										],
@@ -481,7 +480,6 @@ const deploymentRow = (h: H, deployment: VercelDeploymentSummary, clock: Clock):
 						...clock,
 						variant: "short",
 						mono: true,
-						tooltip: "title",
 						className: typographyClass({ size: "2xs", tone: "muted" }),
 					}),
 				],

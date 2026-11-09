@@ -1,3 +1,4 @@
+import { formatNumber } from "@maple/ui/lib/format"
 import { ANALYTICS_METRICS, findMetric } from "../../lib/analytics-metrics"
 import { bucketDate, makeBucketAxis } from "@maple/ui/components/plot/bucket-axis"
 import { focusCrosshair, focusDot } from "@maple/ui/components/plot/plot-focus"
@@ -11,6 +12,7 @@ import { ChartTooltip, type ChartSpec } from "../chart-spec"
 import type { BuiltChart } from "./built-chart"
 import { verticalGradient } from "./fixed-metric-axes"
 import { cursorTooltip, tooltipFocusCapture } from "./plot-constants"
+import { gradientId, gradientUrl } from "./gradient-id"
 
 // The analytics traffic chart's definition. Colours arrive resolved in the spec; series arrive in paint order.
 
@@ -26,7 +28,16 @@ interface TrafficPoint {
 
 /** The descriptor a spec names by key; an unknown key reads as the strip's first metric. */
 const metricOf = (key: string) =>
-	ANALYTICS_METRICS.find((metric) => metric.key === key) ?? findMetric("visitors")
+	Option.getOrElse(
+		Arr.findFirst(ANALYTICS_METRICS, (metric) => metric.key === key),
+		() => findMetric("visitors"),
+	)
+
+/** A series' tooltip label and format: its own label (a plain count) or its metric's. */
+const seriesOf = (entry: { readonly metric: string; readonly label?: string }) => {
+	const metric = metricOf(entry.metric)
+	return entry.label === undefined ? metric : { label: entry.label, format: formatNumber }
+}
 
 export const buildAnalyticsTraffic = (spec: TrafficSpec): BuiltChart<TrafficPoint, ChartValue, number> => {
 	const data: ReadonlyArray<TrafficPoint> = Arr.map(spec.points, (point) => ({
@@ -49,7 +60,7 @@ export const buildAnalyticsTraffic = (spec: TrafficSpec): BuiltChart<TrafficPoin
 	const focus = tooltipFocusCapture()
 	const definition = defineChart({
 		gradients: Arr.map(spec.series, (entry) =>
-			verticalGradient(`${spec.gradientPrefix}-${entry.key}`, colorOf(entry.key)),
+			verticalGradient(gradientId(spec.gradientPrefix, entry.key), colorOf(entry.key)),
 		),
 		marks: [
 			...Arr.flatMap(spec.series, (entry) => {
@@ -62,13 +73,13 @@ export const buildAnalyticsTraffic = (spec: TrafficSpec): BuiltChart<TrafficPoin
 						valueOf(entry.key),
 						colorOf(entry.key),
 					),
-					...runs.flatMap((run, index) => [
+					...Arr.flatMap(runs, (run, index) => [
 						areaY(run, {
 							id: `${entry.key}-band:${index}`,
 							x: at,
 							y: valueOf(entry.key),
 							y1: () => 0,
-							fill: `url(#${spec.gradientPrefix}-${entry.key})`,
+							fill: gradientUrl(gradientId(spec.gradientPrefix, entry.key)),
 							fillOpacity: 1,
 							stroke: "none",
 							curve,
@@ -114,7 +125,7 @@ export const buildAnalyticsTraffic = (spec: TrafficSpec): BuiltChart<TrafficPoin
 		Option.map(Option.fromNullishOr(points[0]), ({ datum }) => {
 			const highlighted = focus.highlight(
 				Arr.map(spec.series, (entry): readonly [string, number | null] => [
-					metricOf(entry.metric).label,
+					seriesOf(entry).label,
 					valueOf(entry.key)(datum),
 				]),
 			)
@@ -122,7 +133,7 @@ export const buildAnalyticsTraffic = (spec: TrafficSpec): BuiltChart<TrafficPoin
 				heading: axis.heading(datum.bucket),
 				rows: Arr.flatMap(spec.series, (entry) => {
 					const value = valueOf(entry.key)(datum)
-					const metric = metricOf(entry.metric)
+					const metric = seriesOf(entry)
 					return value === null
 						? []
 						: [

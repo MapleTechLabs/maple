@@ -37,7 +37,7 @@ import {
 	tableTitle,
 } from "./view-table-cells"
 import { typography } from "@maple/views/ui/typography"
-import { hstack, vstackClass } from "@maple/views/ui/stack"
+import { hstack, vstack, vstackClass } from "@maple/views/ui/stack"
 import { stripClass } from "@maple/views/ui/rule"
 import { Array as Arr } from "effect"
 
@@ -46,8 +46,11 @@ import { Array as Arr } from "effect"
 
 type H = HtmlBuilder<Message>
 
-const BADGE = new Map<DependencyKind, Readonly<{ label: string; tone: string; icon: IconName }>>([
-	["service", { label: "Service", tone: "bg-severity-info-a2 text-severity-info", icon: "ServerIcon" }],
+// `tone` recolours the neutral chip for a kind without a status tone.
+type KindBadge = Readonly<{ label: string; variant?: "info"; tone?: string; icon: IconName }>
+
+const BADGE = new Map<DependencyKind, KindBadge>([
+	["service", { label: "Service", variant: "info", icon: "ServerIcon" }],
 	["database", { label: "Database", tone: "bg-chart-3/10 text-chart-3", icon: "DatabaseIcon" }],
 	["http", { label: "HTTP", tone: "bg-surface-sunken text-muted-foreground", icon: "GlobeIcon" }],
 	["messaging", { label: "Queue", tone: "bg-chart-4/10 text-chart-4", icon: "PaperPlaneIcon" }],
@@ -55,11 +58,12 @@ const BADGE = new Map<DependencyKind, Readonly<{ label: string; tone: string; ic
 ])
 
 const typeBadge = (h: H, kind: DependencyKind): Html => {
-	const entry = BADGE.get(kind) ?? { label: kind, tone: "", icon: "GlobeIcon" }
-	return badge(h, { variant: "secondary", size: "sm", className: cn("uppercase", entry.tone) }, [
-		icon(h, entry.icon, { size: 10 }),
-		entry.label,
-	])
+	const entry: KindBadge = BADGE.get(kind) ?? { label: kind, icon: "GlobeIcon" }
+	return badge(
+		h,
+		{ variant: entry.variant ?? "secondary", size: "sm", className: cn("uppercase", entry.tone) },
+		[icon(h, entry.icon, { size: 10 }), entry.label],
+	)
 }
 
 /** `SampledValue`: "~" when estimated; an estimate carries its tooltip trigger. */
@@ -78,27 +82,33 @@ const dependencyRow = (h: H, row: DependencyRow, maxima: Readonly<{ calls: numbe
 				[
 					hstack(h, { gap: "2.5", shrink: true }, [
 						typeBadge(h, row.kind),
-						h.div(
-							[h.Class("flex min-w-0 flex-col leading-tight")],
-							[
-								h.span(
-									[h.Class("flex min-w-0 items-center gap-1.5 text-xs text-foreground")],
-									[
-										...(row.kind === "service"
-											? [serviceDot(h, { serviceName: row.name, size: "sm" })]
-											: []),
-										h.span([h.Class("truncate"), h.Title(row.name)], [row.name]),
-									],
-								),
-								...(row.subtitle === undefined
-									? []
-									: [
-											typography(h, { size: "3xs", tone: "subtle", truncate: true }, [
-												row.subtitle,
-											]),
+						vstack(h, { shrink: true, className: "leading-tight" }, [
+							hstack(
+								h,
+								{
+									gap: "1.5",
+									align: "center",
+									shrink: true,
+									as: "span",
+									className: "text-xs text-foreground",
+								},
+								[
+									...(row.kind === "service"
+										? [serviceDot(h, { serviceName: row.name, size: "sm" })]
+										: []),
+									typography(h, { truncate: true, attributes: [h.Title(row.name)] }, [
+										row.name,
+									]),
+								],
+							),
+							...(row.subtitle === undefined
+								? []
+								: [
+										typography(h, { size: "3xs", tone: "subtle", truncate: true }, [
+											row.subtitle,
 										]),
-							],
-						),
+									]),
+						]),
 					]),
 				],
 				"max-w-0 py-0 pl-4 align-middle",
@@ -164,7 +174,7 @@ const dependencyTable = (h: H, model: Model, rows: ReadonlyArray<DependencyRow>)
 									h,
 									[
 										emptyMessage(h, {}, [
-											"No downstream dependencies in this window.",
+											"No downstream dependencies in this window",
 											h.span(
 												[h.Class("mt-1 block text-foreground-subtle")],
 												[
@@ -198,13 +208,10 @@ const headlineFact = (
 			),
 		],
 		[
-			h.span(
-				[h.Class("flex min-w-0 items-baseline gap-1.5")],
-				[
-					eyebrow(h, {}, [label]),
-					h.span([h.Class("max-w-[60vw] truncate text-foreground sm:max-w-[140px]")], [name]),
-				],
-			),
+			hstack(h, { gap: "1.5", align: "baseline", shrink: true, as: "span" }, [
+				eyebrow(h, {}, [label]),
+				h.span([h.Class("max-w-[60vw] truncate text-foreground sm:max-w-[140px]")], [name]),
+			]),
 			h.span(
 				[h.Class(cn("shrink-0 tabular-nums font-mono", valueClassName ?? "text-foreground"))],
 				[value],
@@ -221,7 +228,7 @@ const summaryStrip = (h: H, summary: DependencySummary): Html =>
 		],
 		[
 			// The table title carries the count; the strip says what kind of targets they are.
-			h.span([h.Class("text-foreground-subtle")], [summary.breakdown]),
+			typography(h, { tone: "subtle" }, [summary.breakdown]),
 			h.span([h.Class("hidden grow sm:block")]),
 			h.div(
 				[h.Class("flex flex-col gap-1 sm:contents")],
@@ -256,8 +263,9 @@ const summaryStrip = (h: H, summary: DependencySummary): Html =>
 const loadingState = (h: H): Html =>
 	panel(h, {}, [
 		...tableSkeletonHead(h, "Dependencies"),
-		h.div(
-			[h.AriaBusy(true), h.Class("flex flex-col")],
+		vstack(
+			h,
+			{ attributes: [h.AriaBusy(true)] },
 			Array.from({ length: 6 }, (_, index) =>
 				hstack(
 					h,

@@ -1,5 +1,5 @@
 import { elementScroll, observeElementOffset, observeElementRect, Virtualizer } from "@tanstack/virtual-core"
-import { Effect, Queue, Schema, Stream, Array as Arr, String as Str } from "effect"
+import { Effect, Queue, Schema, Stream, Array as Arr, String as Str, Option } from "effect"
 import type { HtmlBuilder } from "foldkit/html"
 
 // `useVirtualizer` over the page scroller (`usePageScrollMargin`) on @tanstack/virtual-core, for the
@@ -49,7 +49,7 @@ export const virtualAttributes = <M>(
 	scroll?: ScrollRequest,
 ): ReadonlyArray<ReturnType<HtmlBuilder<M>["DataAttribute"]>> => [
 	h.DataAttribute(KEYS, Arr.join(keys, "\n")),
-	h.DataAttribute(ESTIMATES, estimates.join(",")),
+	h.DataAttribute(ESTIMATES, Arr.join(Arr.map(estimates, String), ",")),
 	...(scroll === undefined
 		? []
 		: [
@@ -225,9 +225,13 @@ const setUp = (
 		if (!request.reveal) return
 		// The waterfall's second aim: a frame later the row exists and can say where it is.
 		requestAnimationFrame(() =>
-			Array.from(list.querySelectorAll<HTMLElement>(config.rows))
-				.find((row) => row.getAttribute("data-index") === String(request.index))
-				?.scrollIntoView({ block: "center" }),
+			Option.map(
+				Arr.findFirst(
+					Array.from(list.querySelectorAll<HTMLElement>(config.rows)),
+					(row) => row.getAttribute("data-index") === String(request.index),
+				),
+				(row) => row.scrollIntoView({ block: "center" }),
+			),
 		)
 	}
 	// One observer for the inputs and the rows: a render that changes both must re-key before it

@@ -7,7 +7,7 @@
  * the browser and the iOS app both see.
  */
 import { assert, describe, it } from "vitest"
-import type { ChatEvent } from "@maple/domain/chat-session"
+import { decodeChatEventPayload, encodeChatEventPayload } from "@maple/domain/chat-session"
 import { makeChatTranscript } from "@maple/domain/chat-transcript"
 import { APPROVAL_REQUIRED, type ToolUiPayload } from "../mcp/tools/llm-tools"
 import { makeTextSanitizer, toChatEvents, type AdapterContext } from "./events"
@@ -165,7 +165,9 @@ describe("toChatEvents", () => {
 			(engine) => toChatEvents(engine, context),
 		)
 		const transcript = makeChatTranscript()
-		Arr.forEach(chat, (wire, index) => transcript.add({ ...wire, seq: index + 1 } as ChatEvent, 0))
+		Arr.forEach(chat, (wire, index) =>
+			transcript.add(decodeChatEventPayload(encodeChatEventPayload(wire), index + 1), 0),
+		)
 
 		assert.deepEqual(
 			Arr.map(chat, (wire) => wire.type),

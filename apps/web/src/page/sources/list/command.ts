@@ -1,11 +1,17 @@
 import { Clock, Effect, Schema } from "effect"
 import { Command } from "foldkit"
+import { readGrants } from "../../../data/session-tenant"
 import { loadSources, loadSourcesUsage } from "../kit/data"
 import { Message } from "./message"
 
 export const ReadSourcesClock = Command.define("ReadSourcesClock", {
 	messages: [Message.ReadClock],
 	execute: Effect.map(Clock.currentTimeMillis, (nowMs) => Message.ReadClock({ nowMs })),
+})
+
+export const ReadSourcesGrants = Command.define("ReadSourcesGrants", {
+	messages: [Message.CompletedReadGrants],
+	execute: Effect.map(readGrants, (grants) => Message.CompletedReadGrants({ grants })),
 })
 
 export const FetchSourcesList = Command.define("FetchSourcesList", {

@@ -1,4 +1,5 @@
 import {
+	ErrorIssueAffectedUsersResponse,
 	ErrorIssueEventsResponse,
 	ErrorIssueId,
 	ErrorIssuePullRequestsResponse,
@@ -41,6 +42,8 @@ export const Model = Schema.Struct({
 	leaseNowMs: Schema.Number,
 	detail: keyed(V2ErrorIssueDetail),
 	events: keyed(ErrorIssueEventsResponse),
+	/** The rail's Affected users group, over the window. */
+	affectedUsers: keyed(ErrorIssueAffectedUsersResponse),
 	investigations: keyed(Schema.Array(V2Investigation)),
 	pullRequests: keyed(ErrorIssuePullRequestsResponse),
 	verifications: keyed(ErrorIssueVerificationsResponse),
@@ -63,7 +66,7 @@ export const Model = Schema.Struct({
 	themeColors: Schema.NullOr(ThemeColors),
 	/** `PageRefreshProvider`: Reloads so far (non-zero stops snapping) and the 600 ms spinner. */
 	/** The rail writes in flight, one entry per write kind. */
-	busy: Schema.Array(Schema.Literals(["state", "severity", "claim", "heartbeat", "release"])),
+	busy: Schema.Array(Schema.Literals(["state", "severity", "claim", "heartbeat", "release", "unmerge"])),
 	/** The severity raise waiting on "Notify escalation destinations?". */
 	/** `startingInvestigation`: the create is in flight. */
 	isStartingInvestigation: Schema.Boolean,

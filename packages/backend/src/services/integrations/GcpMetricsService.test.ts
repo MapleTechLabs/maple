@@ -12,6 +12,8 @@ import {
 	Array as Arr,
 	Record as Rec,
 	String as Str,
+	DateTime,
+	Option,
 } from "effect"
 import { TestClock } from "effect/testing"
 import { FetchHttpClient, HttpClient } from "effect/http"
@@ -90,7 +92,7 @@ beforeAll(async () => {
 	)
 	publicKey = pair.publicKey
 	privateKeyBody = Buffer.from(await crypto.subtle.exportKey("pkcs8", pair.privateKey)).toString("base64")
-	const lines = Arr.join(privateKeyBody.match(/.{1,64}/g)!, "\n")
+	const lines = Arr.join(Option.getOrThrow(Str.match(/.{1,64}/g)(privateKeyBody)), "\n")
 	encodedKey = Buffer.from(
 		JSON.stringify({
 			type: "service_account",
@@ -533,7 +535,7 @@ const inventory = (testDb: TestDb, id: string) =>
 		),
 	).pipe(Effect.map((row) => row?.resources ?? []))
 
-const pollAll = GcpMetricsService.use((gcp) => gcp.pollAll())
+const pollAll = GcpMetricsService.use((gcp) => gcp.pollAll)
 
 const decodeJwtPart = (part: string) => JSON.parse(Buffer.from(part, "base64url").toString("utf8"))
 
@@ -552,11 +554,7 @@ describe("GcpMetricsService", () => {
 
 				// The assertion is an RS256 JWT from Maple's account, valid for ten minutes.
 				assert.lengthOf(calls.oauth, 1)
-				const [header, claims, signature] = Str.split(".")(calls.oauth[0]!) as [
-					string,
-					string,
-					string,
-				]
+				const [header, claims, signature] = Str.split(".")(calls.oauth[0]) as [string, string, string]
 				assert.deepStrictEqual(decodeJwtPart(header), { alg: "RS256", typ: "JWT", kid: "key-1" })
 				assert.deepStrictEqual(decodeJwtPart(claims), {
 					iss: MAPLE_ACCOUNT,
@@ -599,7 +597,9 @@ describe("GcpMetricsService", () => {
 							call.quotaProject === "acme-prod",
 					),
 				)
-				const query = calls.monitoring.find((call) => call.metricType === REQUEST_COUNT)!
+				const query = Option.getOrThrow(
+					Arr.findFirst(calls.monitoring, (call) => call.metricType === REQUEST_COUNT),
+				)
 				assert.includeDeepMembers(
 					[...query.params],
 					[
@@ -619,17 +619,21 @@ describe("GcpMetricsService", () => {
 					],
 				)
 				// The Compute Engine instance name is a metric label: grouped on, for the resource.
-				const network = calls.monitoring.find(
-					(call) => call.metricType === "compute.googleapis.com/instance/network/sent_bytes_count",
-				)!
+				const network = Option.getOrThrow(
+					Arr.findFirst(
+						calls.monitoring,
+						(call) =>
+							call.metricType === "compute.googleapis.com/instance/network/sent_bytes_count",
+					),
+				)
 				assert.include(
 					network.params.getAll("aggregation.groupByFields"),
 					"metric.label.instance_name",
 				)
 
 				assert.lengthOf(calls.ingest, 1)
-				assert.match(calls.ingest[0]!.authorization ?? "", /^Bearer maple_pk_/)
-				const payload = JSON.parse(calls.ingest[0]!.body)
+				assert.match(calls.ingest[0].authorization ?? "", /^Bearer maple_pk_/)
+				const payload = JSON.parse(calls.ingest[0].body)
 				const resource = payload.resourceMetrics[0]
 				const attributes = Rec.fromEntries(
 					resource.resource.attributes.map(
@@ -653,7 +657,7 @@ describe("GcpMetricsService", () => {
 				)
 				assert.strictEqual(
 					attributes.maple_source_id,
-					publicSourceId(Schema.decodeUnknownSync(SourceId)(source!.id)),
+					publicSourceId(Schema.decodeSync(SourceId)(source!.id)),
 				)
 				const metric = resource.scopeMetrics[0].metrics[0]
 				assert.strictEqual(metric.name, "gcp.cloud_run.requests")
@@ -724,13 +728,20 @@ describe("GcpMetricsService", () => {
 					["organizations/123456789012"],
 				)
 
-				const payload = JSON.parse(calls.ingest[0]!.body)
+				const payload = JSON.parse(calls.ingest[0].body)
 				const accounts = payload.resourceMetrics.map(
 					(resource: {
 						resource: { attributes: Array<{ key: string; value: { stringValue: string } }> }
 					}) =>
-						resource.resource.attributes.find((attribute) => attribute.key === "cloud.account.id")
-							?.value.stringValue,
+						Option.getOrUndefined(
+							Option.map(
+								Arr.findFirst(
+									resource.resource.attributes,
+									(attribute) => attribute.key === "cloud.account.id",
+								),
+								(attribute) => attribute.value.stringValue,
+							),
+						),
 				)
 				assert.sameMembers(accounts, ["shop-prod", "shop-staging"])
 				assert.deepStrictEqual(yield* inventory(testDb, CONNECTOR_A), [
@@ -1007,7 +1018,7 @@ describe("GcpMetricsService", () => {
 				assert.deepInclude(summary, { polled: 1, failures: 0, incompleteMetrics: 1 })
 				const pages = Arr.filter(calls.monitoring, (call) => call.metricType === REQUEST_COUNT)
 				assert.lengthOf(pages, MAX_PAGES_PER_METRIC)
-				assert.isNull(pages[0]!.params.get("pageToken"))
+				assert.isNull(pages[0].params.get("pageToken"))
 				assert.isNotNull(pages.at(-1)!.params.get("pageToken"))
 				// What was read is kept, and the window is not read again.
 				assert.strictEqual(summary.rowsIngested, 2 * MAX_PAGES_PER_METRIC)
@@ -1104,9 +1115,12 @@ describe("GcpMetricsService", () => {
 				assert.deepInclude(yield* pollAll, { polled: 1, failures: 0 })
 				// Something ranked, so every metric was read.
 				assert.lengthOf(calls.monitoring, METRIC_COUNT)
-				const ranking = calls.monitoring.find(
-					(call) => call.metricType === `${PER_QUERY}/execution_time`,
-				)!
+				const ranking = Option.getOrThrow(
+					Arr.findFirst(
+						calls.monitoring,
+						(call) => call.metricType === `${PER_QUERY}/execution_time`,
+					),
+				)
 				// One point over the whole window, per instance and statement.
 				assert.strictEqual(ranking.params.get("aggregation.alignmentPeriod"), "3600s")
 				assert.includeMembers(ranking.params.getAll("aggregation.groupByFields"), [
@@ -1128,11 +1142,14 @@ describe("GcpMetricsService", () => {
 				// p50, p95 and p99 of each.
 				assert.lengthOf(kept("gcp.cloud_sql.query.statement.duration"), 3 * top.length)
 
-				const execution = points.find(
-					(point) =>
-						point.metric === "gcp.cloud_sql.query.statement.execution.time" &&
-						point.attributes["gcp.metric.labels.query_hash"] === "q26",
-				)!
+				const execution = Option.getOrThrow(
+					Arr.findFirst(
+						points,
+						(point) =>
+							point.metric === "gcp.cloud_sql.query.statement.execution.time" &&
+							point.attributes["gcp.metric.labels.query_hash"] === "q26",
+					),
+				)
 				// Microseconds, stored as seconds; the text under the semantic convention's name.
 				assert.deepInclude(execution, { value: 0.026 })
 				assert.strictEqual(execution.attributes["db.query.text"], "select q26")
@@ -1382,7 +1399,7 @@ describe("GcpMetricsService", () => {
 				yield* insertConnector(testDb, CONNECTOR_B, { projectId: "acme-staging" })
 				yield* Effect.promise(() =>
 					executeSql(testDb, "UPDATE gcp_connectors SET metrics_lease_until = $1 WHERE id = $2", [
-						new Date(now + minute).toISOString(),
+						DateTime.formatIso(DateTime.makeUnsafe(now + minute)),
 						CONNECTOR_B,
 					]),
 				)
@@ -1513,7 +1530,7 @@ describe("GcpMetricsService resource inventory", () => {
 					authorization: `Bearer ${READER_TOKEN}`,
 					quotaProject: "acme-prod",
 				})
-				assert.deepStrictEqual(calls.assets[0]!.params.getAll("assetTypes"), [...GCP_ASSET_TYPES])
+				assert.deepStrictEqual(calls.assets[0].params.getAll("assetTypes"), [...GCP_ASSET_TYPES])
 				assert.deepStrictEqual(yield* inventory(testDb, CONNECTOR_A), [
 					["acme-prod", "cloudresourcemanager.googleapis.com/Project", "acme-prod"],
 					["acme-prod", "run.googleapis.com/Service", "cart"],
@@ -1596,9 +1613,9 @@ describe("GcpMetricsService resource inventory", () => {
 					authorization: `Bearer ${READER_TOKEN}`,
 					quotaProject: "acme-prod",
 				})
-				assert.strictEqual(calls.instances[0]!.params.get("contentType"), "RESOURCE")
+				assert.strictEqual(calls.instances[0].params.get("contentType"), "RESOURCE")
 				assert.strictEqual(
-					calls.instances[0]!.params.get("assetTypes"),
+					calls.instances[0].params.get("assetTypes"),
 					"sqladmin.googleapis.com/Instance",
 				)
 				const stored = yield* Effect.promise(() =>
@@ -1675,7 +1692,7 @@ describe("GcpMetricsService resource inventory", () => {
 				)
 				// Counted as synced, so the next attempt is in an hour, and nothing was removed.
 				assert.strictEqual(state.resources_synced_at?.getTime(), now + 60 * minute)
-				const names = (yield* inventory(testDb, CONNECTOR_A)).map((row) => row[2])
+				const names = Arr.map(yield* inventory(testDb, CONNECTOR_A), (row) => row[2])
 				assert.lengthOf(names, 1 + MAX_RESOURCE_PAGES)
 				assert.include(names, "checkout")
 			}),

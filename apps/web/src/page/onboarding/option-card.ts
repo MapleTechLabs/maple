@@ -4,6 +4,7 @@ import { choiceCard, choiceCheckClass } from "@maple/views/ui/choice-card"
 import { PIXEL_GLYPHS } from "@maple/views/ui/icons.generated"
 import { typography } from "@maple/views/ui/typography"
 import { Array as Arr, String as Str } from "effect"
+import { hstack } from "@maple/views/ui/stack"
 
 // `OptionCard` (row layout), `DrawnCheck` and the onboarding `PixelGlyph`. Each animation is drawn at
 // its end state.
@@ -19,7 +20,7 @@ const rasterOrder = (segments: ReadonlyArray<string>): ReadonlyArray<string> => 
 	return [...segments].sort((a, b) => {
 		const p = origin(a)
 		const q = origin(b)
-		return p.y - q.y || p.x - q.x
+		return p.y !== q.y ? p.y - q.y : p.x - q.x
 	})
 }
 
@@ -87,7 +88,7 @@ export const optionCard = <M>(h: HtmlBuilder<M>, options: OptionCardOptions<M>):
 					h.div(
 						[h.Class("min-w-0 flex-1 pt-px")],
 						[
-							typography(h, { size: "sm", weight: "semibold", className: "block" }, [
+							typography(h, { size: "sm", weight: "medium", className: "block" }, [
 								options.title,
 							]),
 							h.span(
@@ -99,20 +100,23 @@ export const optionCard = <M>(h: HtmlBuilder<M>, options: OptionCardOptions<M>):
 					check,
 				]
 			: [
-					h.div([h.Class("flex items-start justify-between")], [options.media, check]),
+					hstack(h, { align: "start", justify: "between" }, [options.media, check]),
 					h.div(
 						[h.Class("space-y-1")],
 						[
-							h.span(
-								[h.Class("block text-base font-semibold tracking-tight")],
+							typography(
+								h,
+								{ size: "base", weight: "semibold", className: "block tracking-tight" },
 								[options.title],
 							),
-							h.span([h.Class("block text-sm text-muted-foreground")], [options.description]),
+							typography(h, { size: "sm", tone: "muted", className: "block" }, [
+								options.description,
+							]),
 						],
 					),
 					...(options.footer === undefined
 						? []
-						: [h.div([h.Class("mt-auto flex")], [options.footer])]),
+						: [hstack(h, { align: "stretch", className: "mt-auto" }, [options.footer])]),
 				]
 
 	return choiceCard(
@@ -136,8 +140,8 @@ export const pixelGlyph = <M>(h: HtmlBuilder<M>, name: PixelGlyphName, isSelecte
 		[
 			h.Class(
 				cn(
-					"flex size-10 shrink-0 items-center justify-center rounded-lg transition-colors duration-200 motion-reduce:transition-none",
-					isSelected ? "bg-primary-a2" : "bg-surface-strong group-hover:bg-muted",
+					"flex size-10 shrink-0 items-center justify-center rounded-lg",
+					isSelected ? "bg-primary-a2" : "bg-surface-sunken group-hover:bg-surface-strong group-active:bg-surface-strong",
 				),
 			),
 		],
@@ -156,9 +160,8 @@ export const pixelGlyph = <M>(h: HtmlBuilder<M>, name: PixelGlyphName, isSelecte
 						[
 							h.Class(
 								cn(
-									"transition-colors duration-200 motion-reduce:transition-none",
 									isSelected
-										? "text-primary/40"
+										? "text-primary-a4"
 										: "text-muted-foreground group-hover:text-foreground",
 								),
 							),

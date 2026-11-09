@@ -16,7 +16,7 @@ const pageUpdate = (model: Model, message: Message) => update(model, message, co
 const names = (commands: ReadonlyArray<{ readonly name: string }> | undefined) =>
 	Arr.map(commands ?? [], ({ name }) => name)
 
-const document = Schema.decodeUnknownSync(DashboardDocument)({
+const document = Schema.decodeSync(DashboardDocument)({
 	id: "dash_hist",
 	name: "History",
 	timeRange: { type: "relative", value: "6h" },
@@ -48,7 +48,7 @@ const withVersions = (): Model =>
 			Message.CompletedReadClock({ nowMs: Date.parse("2026-10-01T12:00:00Z") }),
 			Message.UpdatedDashboard({ orgId, maybeDocument: Option.some(document) }),
 			openHistoryMessage,
-			Message.CompletedFetchVersions({ generation: 1, result: Result.succeed([version]) }),
+			Message.CompletedFetchVersions({ generation: 1, nowMs: 0, result: Result.succeed([version]) }),
 		],
 		init(ROUTE, context).model,
 		(model, message) => pageUpdate(model, message).model,
@@ -96,11 +96,15 @@ describe("dashboard version history", () => {
 		const restoredRow = { ...version, id: "ver_restored", versionNumber: 3, isRestore: true }
 		const fresh = pageUpdate(
 			done,
-			Message.CompletedFetchVersions({ generation: 2, result: Result.succeed([restoredRow, version]) }),
+			Message.CompletedFetchVersions({
+				generation: 2,
+				nowMs: 0,
+				result: Result.succeed([restoredRow, version]),
+			}),
 		).model
 		const late = pageUpdate(
 			fresh,
-			Message.CompletedFetchVersions({ generation: 1, result: Result.succeed([version]) }),
+			Message.CompletedFetchVersions({ generation: 1, nowMs: 0, result: Result.succeed([version]) }),
 		).model
 		expect(
 			Arr.map(
@@ -108,5 +112,19 @@ describe("dashboard version history", () => {
 				(row) => row.id,
 			),
 		).toEqual(["ver_restored", version.id])
+	})
+
+	test("the version list keeps when it was read, so rows saved after page load never read as future", () => {
+		const opened = withVersions()
+		const listedAt = Date.parse("2026-10-01T12:05:00Z")
+		const listed = pageUpdate(
+			opened,
+			Message.CompletedFetchVersions({
+				generation: opened.history.versionsGeneration,
+				nowMs: listedAt,
+				result: Result.succeed([version]),
+			}),
+		).model
+		expect(listed.history.listedAtMs).toBe(listedAt)
 	})
 })

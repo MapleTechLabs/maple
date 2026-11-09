@@ -22,8 +22,8 @@ import { makeWarehouseServiceStub } from "@maple/backend/testing/warehouse-test-
 const trackedDbs: TestDb[] = []
 afterEach(() => cleanupTestDbs(trackedDbs))
 
-const ORG = Schema.decodeUnknownSync(OrgId)("org_setup_audit")
-const USER = Schema.decodeUnknownSync(UserId)("user_setup_audit")
+const ORG = Schema.decodeSync(OrgId)("org_setup_audit")
+const USER = Schema.decodeSync(UserId)("user_setup_audit")
 const tenant: TenantContext = { orgId: ORG, userId: USER, roles: ["org:admin"], authMode: "self_hosted" }
 
 type Probe = "present" | "absent" | "unavailable"

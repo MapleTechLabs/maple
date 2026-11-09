@@ -9,7 +9,7 @@ import {
 	worstSourceStatus,
 } from "./source-health"
 import { redactUrlSecrets } from "./url-redaction"
-import { Array as Arr, Record as Rec, String as Str } from "effect"
+import { Array as Arr, Option, Record as Rec, String as Str } from "effect"
 
 export const INTEGRATION_PROVIDERS = [
 	"github",
@@ -19,6 +19,7 @@ export const INTEGRATION_PROVIDERS = [
 	"planetscale",
 	"prometheus",
 	"chat",
+	"search_console",
 ] as const
 export type IntegrationProvider = (typeof INTEGRATION_PROVIDERS)[number]
 
@@ -41,6 +42,8 @@ export const worstStatus = worstSourceStatus
 const POLLER_STALE_MS = 30 * 60 * 1000
 /** PlanetScale inventory refreshes hourly and deploy requests round-robin 25 databases per tick. */
 const PLANETSCALE_STALE_MS = 3 * 60 * 60 * 1000
+/** Search Console re-imports its head every few hours; two days without a success is no longer a blip. */
+const SEARCH_CONSOLE_STALE_MS = 2 * 24 * 60 * 60 * 1000
 const SCRAPE_MIN_STALE_MS = 10 * 60 * 1000
 
 /** How long a scrape target may go without a good scrape: ten intervals, at least 10 minutes. */
@@ -151,6 +154,13 @@ export interface IntegrationInventoryInputs {
 		readonly name: string
 		readonly createdAt: number
 	}>
+	/** Search Console properties under the org's Google grant (`oauthConnections` provider "google"). */
+	readonly searchConsoleSites: ReadonlyArray<{
+		readonly siteUrl: string
+		readonly enabled: boolean
+		readonly lastSyncedAt: number | null
+		readonly lastError: string | null
+	}>
 }
 
 /** What the poller last saw of one Vercel drain. */
@@ -212,6 +222,9 @@ export const INTEGRATION_FEEDS = {
 	],
 	prometheus: ["metrics scraped from Prometheus endpoints (list_metrics)"],
 	chat: ["the Maple bot in chat workspaces", "alert issues and comments in Linear"],
+	search_console: [
+		"Google search queries, pages, clicks and positions for the selected properties (daily import)",
+	],
 } satisfies Record<IntegrationProvider, ReadonlyArray<string>>
 
 /** The newest attempt decides: an error newer than the last success is failing. */
@@ -235,7 +248,7 @@ const summarizeResources = (resources: ReadonlyArray<IntegrationResource>): stri
 	if (unhealthy.length === 0) return null
 	const worst = worstStatus(Arr.map(unhealthy, (r) => r.status))
 	const ofWorst = Arr.filter(unhealthy, (r) => r.status === worst)
-	const example = ofWorst.find((r) => r.lastError !== null) ?? ofWorst[0]
+	const example = Option.getOrUndefined(Arr.findFirst(ofWorst, (r) => r.lastError !== null)) ?? ofWorst[0]
 	if (example === undefined) return null
 	const detail = example.lastError ?? example.note
 	return `${ofWorst.length} of ${resources.length} ${worst}, e.g. ${example.kind} ${example.name}${detail ? `: ${detail}` : ""}`
@@ -284,14 +297,16 @@ const entry = (
 		connectedAt: fields.connectedAt,
 		problem: status === "healthy" ? null : problem,
 		feeds: fields.feeds ?? INTEGRATION_FEEDS[provider],
-		resources: [...resources].sort(
-			(a, b) => STATUS_RANK[a.status] - STATUS_RANK[b.status] || Str.localeCompare(b.name)(a.name),
+		resources: [...resources].sort((a, b) =>
+			STATUS_RANK[a.status] !== STATUS_RANK[b.status]
+				? STATUS_RANK[a.status] - STATUS_RANK[b.status]
+				: Str.localeCompare(b.name)(a.name),
 		),
 	}
 }
 
 const oauthFor = (inputs: IntegrationInventoryInputs, provider: string) =>
-	inputs.oauthConnections.find((c) => c.provider === provider)
+	Option.getOrUndefined(Arr.findFirst(inputs.oauthConnections, (c) => c.provider === provider))
 
 const isRevoked = (oauth: IntegrationInventoryInputs["oauthConnections"][number] | undefined) =>
 	oauth !== undefined && oauth.revokedAt !== null
@@ -501,25 +516,32 @@ const planetscale = (inputs: IntegrationInventoryInputs, now: number): Integrati
 		const states = Arr.filter(inputs.planetscalePollStates, (s) => s.databaseId === db.databaseId)
 		const statuses = Arr.map(states, (s) => pollStatus(s, now, PLANETSCALE_STALE_MS))
 		const status = states.length === 0 ? "healthy" : worstStatus(statuses)
-		const failing = states.find((_, i) => statuses[i] === "failing")
+		const failing = Option.getOrUndefined(Arr.findFirst(states, (_, i) => statuses[i] === "failing"))
 		return {
 			kind: "database",
 			name: db.name,
 			status,
-			lastSuccessAt: states.reduce<number | null>(
-				(latest, s) =>
-					s.lastSuccessAt !== null && (latest === null || s.lastSuccessAt > latest)
-						? s.lastSuccessAt
-						: latest,
-				null,
+			lastSuccessAt: Arr.reduce<(typeof states)[number], number | null>(states, null, (latest, s) =>
+				s.lastSuccessAt !== null && (latest === null || s.lastSuccessAt > latest)
+					? s.lastSuccessAt
+					: latest,
 			),
 			lastError: failing?.lastError ?? null,
-			note: [db.kind, db.region, db.state].filter((part) => part !== null && part !== "").join(", "),
+			note: Arr.join(
+				Arr.filter(
+					[db.kind, db.region, db.state],
+					(part): part is string => part !== null && part !== "",
+				),
+				", ",
+			),
 		}
 	})
 	// A disabled managed target only holds branch filters: metrics come from the metrics API.
 	const scrape = Arr.map(
-		inputs.scrapeTargets.filter((t) => t.managedBy?.startsWith("planetscale:") && t.enabled !== false),
+		Arr.filter(
+			inputs.scrapeTargets,
+			(t) => t.managedBy != null && Str.startsWith("planetscale:")(t.managedBy) && t.enabled !== false,
+		),
 		(t) => scrapeResource(t, now, "metrics scrape"),
 	)
 	// Only permissions something still depends on; older bindings stored ones that no longer matter.
@@ -562,7 +584,10 @@ const PLANETSCALE_PERMISSION_FEEDS = [
 ] as const
 
 const permissionFeed = (permission: string) =>
-	PLANETSCALE_PERMISSION_FEEDS.find(([key]) => key === permission)?.[1] ?? "unknown use"
+	Option.match(
+		Arr.findFirst(PLANETSCALE_PERMISSION_FEEDS, ([key]) => key === permission),
+		{ onNone: () => "unknown use", onSome: ([, feed]) => feed },
+	)
 
 export const scrapeResource = (
 	target: IntegrationInventoryInputs["scrapeTargets"][number],
@@ -640,6 +665,40 @@ const chat = (inputs: IntegrationInventoryInputs, now: number): IntegrationEntry
 	})
 }
 
+const searchConsole = (inputs: IntegrationInventoryInputs, now: number): IntegrationEntry | null => {
+	const oauth = oauthFor(inputs, "google")
+	if (oauth === undefined) return null
+	const enabled = Arr.filter(inputs.searchConsoleSites, (site) => site.enabled)
+	const own = isRevoked(oauth)
+		? {
+				status: "disconnected" as const,
+				problem: "Google revoked Maple's access; reconnect it in Integrations.",
+			}
+		: enabled.length === 0
+			? { status: "pending" as const, problem: "No Search Console property is selected for import." }
+			: undefined
+	return entry("search_console", now, {
+		account: oauth.externalUserEmail,
+		connectedAt: oauth.createdAt,
+		own,
+		resources: Arr.map(enabled, (site): IntegrationResource => ({
+			kind: "property",
+			name: site.siteUrl,
+			status:
+				site.lastError !== null
+					? "failing"
+					: site.lastSyncedAt === null
+						? "pending"
+						: now - site.lastSyncedAt > SEARCH_CONSOLE_STALE_MS
+							? "stale"
+							: "healthy",
+			lastSuccessAt: site.lastSyncedAt,
+			lastError: site.lastError,
+			note: null,
+		})),
+	})
+}
+
 export const buildIntegrationInventory = (
 	inputs: IntegrationInventoryInputs,
 	now: number,
@@ -653,6 +712,7 @@ export const buildIntegrationInventory = (
 			planetscale(inputs, now),
 			prometheus(inputs, now),
 			chat(inputs, now),
+			searchConsole(inputs, now),
 		],
 		(e): e is IntegrationEntry => e !== null,
 	)
@@ -682,7 +742,9 @@ export const withSourceHealth = (
 		const own = Arr.filter(sources, (source) => source.platform === entry.provider)
 		if (own.length === 0) return entry
 		const status = worstStatus([entry.status, ...Arr.map(own, (source) => source.health.status)])
-		const problem = own.find((source) => source.health.status === status)?.health.problem ?? entry.problem
+		const problem =
+			Option.getOrUndefined(Arr.findFirst(own, (source) => source.health.status === status))?.health
+				.problem ?? entry.problem
 		return { ...entry, status, problem: status === "healthy" ? null : problem }
 	}),
 })

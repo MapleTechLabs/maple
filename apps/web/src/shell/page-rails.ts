@@ -21,13 +21,15 @@ export type SplitPage = Readonly<{
 }>
 
 const railOf = (children: ReadonlyArray<Child>, slot: string): Option.Option<LiftedRail> =>
-	Option.map(Option.fromNullishOr(children.find((child) => slotOf(child) === slot)), (rail) =>
-		typeof rail === "string"
-			? { children: [], label: Option.none() }
-			: {
-					children: Arr.filter(rail.children ?? [], isNode),
-					label: Option.fromNullishOr(rail.data?.attrs?.["data-rail-label"]?.toString()),
-				},
+	Option.map(
+		Arr.findFirst(children, (child) => slotOf(child) === slot),
+		(rail) =>
+			typeof rail === "string"
+				? { children: [], label: Option.none() }
+				: {
+						children: Arr.filter(rail.children ?? [], isNode),
+						label: Option.fromNullishOr(rail.data?.attrs?.["data-rail-label"]?.toString()),
+					},
 	)
 
 const isNode = (child: Child): child is VNode => typeof child !== "string"

@@ -1,6 +1,6 @@
 #!/usr/bin/env bun
 // SAFETY-FILE: JSON rows here come from fixed internal formats and are validated before domain use.
-// BOUNDARY: This module intentionally carries opaque values; callers decode them before domain use.
+// BOUNDARY-FILE: This module intentionally carries opaque values; callers decode them before domain use.
 // bench-startup-cpu.ts — does defining Schema/TaggedError classes actually
 // cost meaningful Cloudflare *startup* CPU?
 //
@@ -57,7 +57,7 @@ const measureOnce = (fn: () => unknown): Sample => {
 const median = (xs: ReadonlyArray<number>): number => {
 	const s = [...xs].sort((a, b) => a - b)
 	const m = s.length >> 1
-	return s.length % 2 ? s[m]! : (s[m - 1]! + s[m]!) / 2
+	return s.length % 2 === 1 ? s[m] : (s[m - 1] + s[m]) / 2
 }
 
 type BenchResult = { label: string; wallMs: number; cpuMs: number; reps: number }
@@ -257,7 +257,7 @@ const parseProfile = (path: string, json: boolean) => {
 
 	const selfUs = new Map<number, number>() // nodeId → self µs
 	for (let i = 0; i < profile.samples.length; i++) {
-		const id = profile.samples[i]!
+		const id = profile.samples[i]
 		const dt = profile.timeDeltas[i] ?? 0
 		selfUs.set(id, (selfUs.get(id) ?? 0) + dt)
 	}

@@ -37,12 +37,14 @@ describe("error issue", () => {
 		expect(commands).not.toContain("FetchGithubStatus")
 	})
 
-	test("the resolved window asks the detail with 48 buckets in ISO", () => {
+	test("the resolved window asks the detail with 48 buckets in ISO, and the affected users", () => {
 		const resolved = pageUpdate(
 			entered().model,
 			Message.CompletedResolveWindow({ window, nowMs: NOW, mode: "Load" }),
 		)
-		expect(names(resolved.commands)).toEqual(["FetchErrorIssueDetail"])
+		expect(names(resolved.commands)).toContain("FetchErrorIssueDetail")
+		expect(names(resolved.commands)).toContain("FetchErrorIssueAffectedUsers")
+		expect(resolved.model.affectedUsers.key).toContain("2026-10-01 12:00:00")
 		expect(resolved.model.detail.key).toContain("2026-10-01T00:00:00")
 		expect(resolved.model.detail.key).toContain("900")
 	})
@@ -73,14 +75,17 @@ describe("error issue", () => {
 			}),
 		).model
 		expect(AsyncData.isFailure(failed.detail.data)).toBe(true)
-		expect(names(pageUpdate(failed, Message.ClickedRetry()).commands)).toEqual(["FetchErrorIssueDetail"])
+		// Retry re-asks the affected users too, so a failed rail does not stay failed.
+		const retried = names(pageUpdate(failed, Message.ClickedRetry()).commands)
+		expect(retried).toContain("FetchErrorIssueDetail")
+		expect(retried).toContain("FetchErrorIssueAffectedUsers")
 	})
 
 	test("after a Reload a tab change keeps the window; a new preset re-resolves unsnapped", () => {
 		const reloaded = pageUpdate(windowed(), Message.ClickedReload()).model
 		expect(routeChanged(reloaded, { search: { tab: "activity" } }, context).commands).toBeUndefined()
 		const moved = routeChanged(reloaded, { search: { timePreset: "1d" } }, context)
-		expect(moved.commands?.map(({ name, args }) => [name, args?.["mode"]])).toEqual([
+		expect(Arr.map(moved.commands ?? [], ({ name, args }) => [name, args?.["mode"]])).toEqual([
 			["ResolveIssueWindow", "Refresh"],
 		])
 	})

@@ -2,9 +2,7 @@ import type { McpToolRegistrar } from "./types"
 import { Effect, Schema, Array as Arr, String as Str } from "effect"
 import { encodePublicId, PublicIdPrefixes } from "@maple/domain/http/v2"
 import { GetDashboardOutput } from "@maple/domain/mcp-outputs"
-import { CurrentMcpTenant } from "../lib/query-warehouse"
-import { DashboardPersistenceService } from "@maple/backend/services/dashboards/DashboardPersistenceService"
-import { dashboardNotFound, toMcpDashboardError } from "../lib/dashboard-mutations"
+import { loadDashboard } from "../lib/dashboard-mutations"
 import { stringifyJson } from "../lib/json"
 import * as P from "../lib/params"
 import { doc } from "../lib/tool-doc"
@@ -24,15 +22,7 @@ export function registerGetDashboardTool(server: McpToolRegistrar) {
 		hints: { readOnly: true },
 		phrases: ["Opening a dashboard", "Loading a dashboard"],
 		handler: Effect.fn("McpTool.getDashboard")(function* ({ dashboard_id }) {
-			const tenant = yield* CurrentMcpTenant
-			const persistence = yield* DashboardPersistenceService
-
-			const result = yield* persistence
-				.list(tenant.orgId)
-				.pipe(Effect.mapError(toMcpDashboardError(TOOL)))
-
-			const dashboard = result.dashboards.find((d) => d.id === dashboard_id)
-			if (!dashboard) return yield* dashboardNotFound(dashboard_id)
+			const dashboard = yield* loadDashboard(dashboard_id, TOOL)
 
 			return {
 				publicId: encodePublicId(PublicIdPrefixes.dashboard, dashboard.id),

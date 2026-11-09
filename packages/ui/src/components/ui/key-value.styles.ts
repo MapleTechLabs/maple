@@ -29,7 +29,7 @@ export const keyValueValueFirstStyles = "in-data-[value-first]:flex-row-reverse"
 export const keyValueLabelStyles = "shrink-0 text-muted-foreground"
 
 export const keyValueLabelOverlineStyles =
-	"in-data-[label=overline]:text-3xs in-data-[label=overline]:font-medium in-data-[label=overline]:uppercase in-data-[label=overline]:tracking-[0.12em]"
+	"in-data-[label=overline]:text-3xs in-data-[label=overline]:font-medium in-data-[label=overline]:uppercase in-data-[label=overline]:tracking-overline"
 
 export const keyValueValueStyles =
 	"flex min-w-0 items-center gap-1 text-foreground in-data-[layout=split]:justify-end in-data-[layout=split]:text-right"

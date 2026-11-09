@@ -1,7 +1,7 @@
 import { assert, describe, it } from "@effect/vitest"
 import { BillingCustomerResolver } from "@maple/backend/services/billing/BillingCustomerResolver"
 import { BillingAccountPersistenceError, BillingCustomerId, OrgId } from "@maple/domain/http"
-import { ConfigProvider, Context, Effect, Layer, Schema, Array as Arr, String as Str } from "effect"
+import { Clock, ConfigProvider, Context, Effect, Layer, Schema, Array as Arr, String as Str } from "effect"
 import { HttpRouter } from "effect/http"
 import { Env } from "@maple/backend/platform/Env"
 import { CancellationReviewQueueProducer, QueueSendError } from "@maple/backend/platform/bindings"
@@ -22,6 +22,7 @@ import {
 } from "@maple/backend/services/auth/MembershipRevocationService"
 import { AutumnWebhookRouter } from "./autumn.http"
 import { ClerkWebhookRoute } from "./clerk.http"
+import { SVIX_WEBHOOK_MAX_BYTES } from "./svix-receiver"
 
 const CLERK_SECRET = "whsec_MfKQ9r8GKYqrTwjUPD8ILPZIo2LaLaSw"
 const AUTUMN_SECRET = "whsec_" + Buffer.alloc(24, 7).toString("base64")
@@ -147,15 +148,21 @@ const signedHeaders = (secret: string, body: string, nowMs: number, id = "msg_te
 const post = (
 	handler: (request: Request, context: Context.Context<never>) => Promise<Response>,
 	path: string,
-	body: string,
+	body: BodyInit,
 	headers: Record<string, string>,
 ) =>
 	Effect.promise(() =>
 		handler(
-			new Request(`http://api.localhost${path}`, { method: "POST", body, headers }),
+			new Request(`http://api.localhost${path}`, { method: "POST", body, headers, duplex: "half" }),
 			Context.empty(),
 		),
 	)
+
+/** A body that fails as soon as anything pulls it. */
+const unreadableBody = () =>
+	new ReadableStream<Uint8Array>({
+		pull: (controller) => controller.error(new Error("the body was read")),
+	})
 
 const CLERK_USER_CREATED = JSON.stringify({
 	type: "user.created",
@@ -226,9 +233,44 @@ const CLERK_MEMBERSHIP_CREATED = JSON.stringify({
 })
 
 describe("ClerkWebhookRouter", () => {
+	it.live("refuses unsigned, stale and oversized deliveries before reading the body", () =>
+		Effect.gen(function* () {
+			const events = recordingProductEvents()
+			const configured = HttpRouter.toWebHandler(
+				makeRouterLayer(ClerkWebhookRoute, { CLERK_WEBHOOK_SECRET: CLERK_SECRET }, events.layer),
+				{ disableLogger: true },
+			)
+			yield* Effect.gen(function* () {
+				const now = yield* Clock.currentTimeMillis
+				const unsigned = yield* post(configured.handler, "/webhooks/clerk", unreadableBody(), {})
+				assert.strictEqual(unsigned.status, 401)
+
+				const stale = yield* signedHeaders(CLERK_SECRET, "", now - 10 * 60 * 1000)
+				const staleResponse = yield* post(
+					configured.handler,
+					"/webhooks/clerk",
+					unreadableBody(),
+					stale,
+				)
+				assert.strictEqual(staleResponse.status, 401)
+
+				const oversized = Str.repeat(SVIX_WEBHOOK_MAX_BYTES + 1)("x")
+				const signed = yield* signedHeaders(CLERK_SECRET, oversized, now)
+				const streamed = yield* post(configured.handler, "/webhooks/clerk", oversized, signed)
+				assert.strictEqual(streamed.status, 413)
+				const declared = yield* post(configured.handler, "/webhooks/clerk", unreadableBody(), {
+					...signed,
+					"content-length": String(SVIX_WEBHOOK_MAX_BYTES + 1),
+				})
+				assert.strictEqual(declared.status, 413)
+				assert.strictEqual(events.tracked.length, 0)
+			}).pipe(Effect.ensuring(Effect.promise(() => configured.dispose())))
+		}),
+	)
+
 	// Membership is changed in Clerk, never through Maple's API, so this receiver
 	// is the only writer of `affected_user`.
-	it.effect("audits an organizationMembership.created delivery against the member", () =>
+	it.live("audits an organizationMembership.created delivery against the member", () =>
 		Effect.gen(function* () {
 			const events = recordingProductEvents()
 			const audit = recordingAudit()
@@ -243,7 +285,7 @@ describe("ClerkWebhookRouter", () => {
 				{ disableLogger: true },
 			)
 			yield* Effect.gen(function* () {
-				const now = Date.now()
+				const now = yield* Clock.currentTimeMillis
 				const headers = yield* signedHeaders(CLERK_SECRET, CLERK_MEMBERSHIP_CREATED, now)
 				const response = yield* post(
 					configured.handler,
@@ -253,7 +295,7 @@ describe("ClerkWebhookRouter", () => {
 				)
 				assert.strictEqual(response.status, 200)
 				assert.strictEqual(audit.recorded.length, 1)
-				const entry = audit.recorded[0]!
+				const entry = audit.recorded[0]
 				assert.strictEqual(entry.action, "member.added")
 				assert.strictEqual(entry.affectedUserId, "user_2abc")
 				assert.strictEqual(entry.orgId, "org_42")
@@ -265,7 +307,7 @@ describe("ClerkWebhookRouter", () => {
 		}),
 	)
 
-	it.effect(
+	it.live(
 		"503s while unconfigured, 401s a bad signature, and emits signup_completed for user.created",
 		() =>
 			Effect.gen(function* () {
@@ -291,7 +333,7 @@ describe("ClerkWebhookRouter", () => {
 					{ disableLogger: true },
 				)
 				yield* Effect.gen(function* () {
-					const now = Date.now()
+					const now = yield* Clock.currentTimeMillis
 					const missing = yield* post(configured.handler, "/webhooks/clerk", CLERK_USER_CREATED, {})
 					assert.strictEqual(missing.status, 401)
 
@@ -340,7 +382,7 @@ describe("ClerkWebhookRouter", () => {
 				}).pipe(Effect.ensuring(Effect.promise(configured.dispose)))
 			}),
 	)
-	it.effect("sweeps a removed member, only invalidates on a role change, and 500s a failed sweep", () =>
+	it.live("sweeps a removed member, only invalidates on a role change, and 500s a failed sweep", () =>
 		Effect.gen(function* () {
 			const events = recordingProductEvents()
 			const revocation = recordingRevocation()
@@ -354,7 +396,7 @@ describe("ClerkWebhookRouter", () => {
 				{ disableLogger: true },
 			)
 			yield* Effect.gen(function* () {
-				const now = Date.now()
+				const now = yield* Clock.currentTimeMillis
 				const membership = (type: string, role?: string) =>
 					JSON.stringify({
 						type,
@@ -437,7 +479,12 @@ describe("ClerkWebhookRouter", () => {
 						public_user_data: { user_id: "user_9" },
 					},
 				})
-				const headers = yield* signedHeaders(CLERK_SECRET, body, Date.now(), "msg_fail")
+				const headers = yield* signedHeaders(
+					CLERK_SECRET,
+					body,
+					yield* Clock.currentTimeMillis,
+					"msg_fail",
+				)
 				const response = yield* post(broken.handler, "/webhooks/clerk", body, headers)
 				assert.strictEqual(response.status, 500)
 			}).pipe(Effect.ensuring(Effect.promise(broken.dispose)))
@@ -473,7 +520,7 @@ const AUTUMN_CANCEL_SCHEDULED = JSON.stringify({
 })
 
 describe("AutumnWebhookRouter", () => {
-	it.effect("queues a scheduled cancellation for its review", () =>
+	it.live("queues a scheduled cancellation for its review", () =>
 		Effect.gen(function* () {
 			const events = recordingProductEvents()
 			const reviews = recordingCancellationQueue()
@@ -492,7 +539,11 @@ describe("AutumnWebhookRouter", () => {
 				{ disableLogger: true },
 			)
 			yield* Effect.gen(function* () {
-				const headers = yield* signedHeaders(AUTUMN_SECRET, AUTUMN_CANCEL_SCHEDULED, Date.now())
+				const headers = yield* signedHeaders(
+					AUTUMN_SECRET,
+					AUTUMN_CANCEL_SCHEDULED,
+					yield* Clock.currentTimeMillis,
+				)
 				const response = yield* post(handler, "/webhooks/autumn", AUTUMN_CANCEL_SCHEDULED, headers)
 				assert.strictEqual(response.status, 200)
 				assert.deepStrictEqual(
@@ -523,11 +574,11 @@ describe("AutumnWebhookRouter", () => {
 		}),
 	)
 
-	it.effect("queues no review for an org whose plan ended because it is billed through another", () =>
+	it.live("queues no review for an org whose plan ended because it is billed through another", () =>
 		Effect.gen(function* () {
 			const events = recordingProductEvents()
 			const reviews = recordingCancellationQueue()
-			const payer = Schema.decodeUnknownSync(OrgId)("org_payer")
+			const payer = Schema.decodeSync(OrgId)("org_payer")
 			const linked = Layer.succeed(BillingCustomerResolver, {
 				billingOrgId: () => Effect.succeed(payer),
 				customerFor: () => Effect.succeed(BillingCustomerId.make(payer)),
@@ -551,7 +602,11 @@ describe("AutumnWebhookRouter", () => {
 				{ disableLogger: true },
 			)
 			yield* Effect.gen(function* () {
-				const headers = yield* signedHeaders(AUTUMN_SECRET, AUTUMN_CANCEL_SCHEDULED, Date.now())
+				const headers = yield* signedHeaders(
+					AUTUMN_SECRET,
+					AUTUMN_CANCEL_SCHEDULED,
+					yield* Clock.currentTimeMillis,
+				)
 				const response = yield* post(handler, "/webhooks/autumn", AUTUMN_CANCEL_SCHEDULED, headers)
 				assert.strictEqual(response.status, 200)
 				assert.deepStrictEqual(reviews.queued, [])
@@ -560,7 +615,7 @@ describe("AutumnWebhookRouter", () => {
 		}),
 	)
 
-	it.effect("asks for redelivery when it cannot tell whether the org is billed elsewhere", () =>
+	it.live("asks for redelivery when it cannot tell whether the org is billed elsewhere", () =>
 		Effect.gen(function* () {
 			const events = recordingProductEvents()
 			const reviews = recordingCancellationQueue()
@@ -587,7 +642,11 @@ describe("AutumnWebhookRouter", () => {
 				{ disableLogger: true },
 			)
 			yield* Effect.gen(function* () {
-				const headers = yield* signedHeaders(AUTUMN_SECRET, AUTUMN_CANCEL_SCHEDULED, Date.now())
+				const headers = yield* signedHeaders(
+					AUTUMN_SECRET,
+					AUTUMN_CANCEL_SCHEDULED,
+					yield* Clock.currentTimeMillis,
+				)
 				const response = yield* post(handler, "/webhooks/autumn", AUTUMN_CANCEL_SCHEDULED, headers)
 				assert.strictEqual(response.status, 503)
 				assert.deepStrictEqual(reviews.queued, [])
@@ -596,7 +655,7 @@ describe("AutumnWebhookRouter", () => {
 		}),
 	)
 
-	it.effect("reviews nothing on a deployment with no channel to report to", () =>
+	it.live("reviews nothing on a deployment with no channel to report to", () =>
 		Effect.gen(function* () {
 			const events = recordingProductEvents()
 			const reviews = recordingCancellationQueue()
@@ -612,7 +671,11 @@ describe("AutumnWebhookRouter", () => {
 				{ disableLogger: true },
 			)
 			yield* Effect.gen(function* () {
-				const headers = yield* signedHeaders(AUTUMN_SECRET, AUTUMN_CANCEL_SCHEDULED, Date.now())
+				const headers = yield* signedHeaders(
+					AUTUMN_SECRET,
+					AUTUMN_CANCEL_SCHEDULED,
+					yield* Clock.currentTimeMillis,
+				)
 				const response = yield* post(handler, "/webhooks/autumn", AUTUMN_CANCEL_SCHEDULED, headers)
 				assert.strictEqual(response.status, 200)
 				assert.deepStrictEqual(reviews.queued, [])
@@ -621,7 +684,7 @@ describe("AutumnWebhookRouter", () => {
 		}),
 	)
 
-	it.effect("records the plan events, then answers 503, when the review could not be queued", () =>
+	it.live("records the plan events, then answers 503, when the review could not be queued", () =>
 		Effect.gen(function* () {
 			const events = recordingProductEvents()
 			const { handler, dispose } = HttpRouter.toWebHandler(
@@ -639,7 +702,11 @@ describe("AutumnWebhookRouter", () => {
 				{ disableLogger: true },
 			)
 			yield* Effect.gen(function* () {
-				const headers = yield* signedHeaders(AUTUMN_SECRET, AUTUMN_CANCEL_SCHEDULED, Date.now())
+				const headers = yield* signedHeaders(
+					AUTUMN_SECRET,
+					AUTUMN_CANCEL_SCHEDULED,
+					yield* Clock.currentTimeMillis,
+				)
 				const response = yield* post(handler, "/webhooks/autumn", AUTUMN_CANCEL_SCHEDULED, headers)
 				assert.strictEqual(response.status, 503)
 				// The funnel does not wait on the review.
@@ -651,7 +718,7 @@ describe("AutumnWebhookRouter", () => {
 		}),
 	)
 
-	it.effect("emits plan_started for an activated plan and plan_cancelled for the expired one", () =>
+	it.live("emits plan_started for an activated plan and plan_cancelled for the expired one", () =>
 		Effect.gen(function* () {
 			const events = recordingProductEvents()
 			const { handler, dispose } = HttpRouter.toWebHandler(
@@ -659,7 +726,7 @@ describe("AutumnWebhookRouter", () => {
 				{ disableLogger: true },
 			)
 			yield* Effect.gen(function* () {
-				const now = Date.now()
+				const now = yield* Clock.currentTimeMillis
 				const wrongSecret = yield* signedHeaders(CLERK_SECRET, AUTUMN_BILLING_UPDATED, now)
 				const rejected = yield* post(handler, "/webhooks/autumn", AUTUMN_BILLING_UPDATED, wrongSecret)
 				assert.strictEqual(rejected.status, 401)

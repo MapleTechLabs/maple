@@ -1,6 +1,6 @@
 import { DashboardDocument, DashboardId, DashboardVersionId } from "@maple/domain/http"
-import type { V2Dashboard } from "@maple/domain/http/v2"
-import { Effect, Schema, Array as Arr } from "effect"
+import type { V2DashboardVersionDetail } from "@maple/domain/http/v2"
+import { Clock, Effect, Schema, Array as Arr } from "effect"
 import { Command } from "foldkit"
 import { toLoadFailure } from "@maple/views/data/load-failure"
 import { MapleApiV2Client } from "../../../platform/api-clients"
@@ -14,7 +14,7 @@ const decodeVersionId = Schema.decodeUnknownEffect(DashboardVersionId)
 const decodeDocument = Schema.decodeUnknownEffect(DashboardDocument)
 
 /** A version's snapshot read as the board document the canvas renders. */
-export const documentOf = (snapshot: V2Dashboard) =>
+export const documentOf = (snapshot: V2DashboardVersionDetail["snapshot"]) =>
 	decodeDocument({
 		id: snapshot.id,
 		name: snapshot.name,
@@ -51,7 +51,11 @@ export const FetchVersions = Command.define("FetchDashboardVersions", {
 		}).pipe(
 			Effect.mapError(toLoadFailure),
 			Effect.result,
-			Effect.map((result) => Message.CompletedFetchVersions({ generation, result })),
+			Effect.flatMap((result) =>
+				Effect.map(Clock.currentTimeMillis, (nowMs) =>
+					Message.CompletedFetchVersions({ generation, nowMs, result }),
+				),
+			),
 		),
 })
 

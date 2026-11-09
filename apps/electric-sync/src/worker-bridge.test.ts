@@ -2,7 +2,17 @@ import { assert, describe, it } from "@effect/vitest"
 import * as MapleCloudflareSDK from "@maple-dev/effect-sdk/cloudflare"
 import { MapleHttpTracingLive, workerTelemetryConfig } from "@maple/infra/worker-telemetry"
 import * as Cloudflare from "@alchemy.run/cloudflare"
-import { Effect, Exit, Layer, Schema, Scope, Array as Arr, Record as Rec, String as Str } from "effect"
+import {
+	Effect,
+	Exit,
+	Layer,
+	Option,
+	Schema,
+	Scope,
+	Array as Arr,
+	Record as Rec,
+	String as Str,
+} from "effect"
 import { HttpRouter } from "effect/http"
 import { ElectricSyncRouter } from "./routes/shape.http"
 import {
@@ -45,19 +55,28 @@ const ExportedTraces = Schema.Struct({
 const decodeExportedTraces = Schema.decodeUnknownSync(ExportedTraces)
 
 const exportedSpans = (recorded: ReadonlyArray<RecordedRequest>): Array<ExportedSpan> =>
-	Arr.filter(recorded, (request) => Str.endsWith("/v1/traces")(request.url)).flatMap((request) => {
-		const body = decodeExportedTraces(JSON.parse(request.body ?? "{}"))
-		return Arr.flatMap(body.resourceSpans ?? [], (resource) =>
-			Arr.flatMap(resource.scopeSpans, (scope) => scope.spans),
-		)
-	})
+	Arr.flatMap(
+		Arr.filter(recorded, (request) => Str.endsWith("/v1/traces")(request.url)),
+		(request: RecordedRequest) => {
+			const body = decodeExportedTraces(JSON.parse(request.body ?? "{}"))
+			return Arr.flatMap(body.resourceSpans ?? [], (resource) =>
+				Arr.flatMap(resource.scopeSpans, (scope) => scope.spans),
+			)
+		},
+	)
 
-const statusCodeOf = (span: ExportedSpan | undefined): number | undefined => {
-	const value = span?.attributes.find((attribute) => attribute.key === "http.response.status_code")?.value
-	return value === undefined ? undefined : Number(Rec.values(value)[0])
-}
+const statusCodeOf = (span: ExportedSpan | undefined): number | undefined =>
+	Option.getOrUndefined(
+		Option.map(
+			Arr.findFirst(
+				span?.attributes ?? [],
+				(attribute) => attribute.key === "http.response.status_code",
+			),
+			(attribute) => Number(Rec.values(attribute.value)[0]),
+		),
+	)
 
-const appLayer = (options: { readonly ensureConfigured?: Effect.Effect<void, never> } = {}) =>
+const appLayer = (options: { readonly ensureConfigured?: Effect.Effect<void> } = {}) =>
 	ElectricSyncRouter.pipe(
 		Layer.provide(
 			recordingElectricClient({
@@ -106,7 +125,7 @@ const event = (
 				input: new Request(`http://sync.maple.test${path}`, { headers }),
 			})
 		assert.isDefined(fetchEvent)
-		const response = yield* fetchEvent!.pipe(Effect.provide(services), Scope.provide(request))
+		const response = yield* fetchEvent.pipe(Effect.provide(services), Scope.provide(request))
 		const flushedBeforeClose = recorded.length
 		yield* Effect.promise(() => new Promise<void>((resolve) => setTimeout(resolve, 0)))
 		yield* Scope.close(request, Exit.void)

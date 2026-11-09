@@ -9,6 +9,7 @@ import {
 	PlanetscaleDatabases,
 	PlanetscalePollState,
 	RailwayConnections,
+	SearchConsoleSites,
 	RailwayEnvironments,
 	ScrapeTargets,
 	Sources,
@@ -209,6 +210,11 @@ const make: Effect.Effect<IntegrationInventoryServiceApi, never, Database> = Eff
 							.select("connector", "name", "createdAt")
 							.where(($) => [$.orgId.eq(orgId)]),
 					),
+					searchConsoleSites: db.run(
+						PG.from(SearchConsoleSites)
+							.select("siteUrl", "enabled", "lastSyncedAt", "lastError")
+							.where(($) => [$.orgId.eq(orgId)]),
+					),
 					sources: db.run(
 						PG.from(Sources)
 							.select(...SOURCE_HEALTH_COLUMNS)
@@ -254,6 +260,7 @@ const make: Effect.Effect<IntegrationInventoryServiceApi, never, Database> = Eff
 				),
 				scrapeTargets: rows.scrapeTargets,
 				chatWorkspaces: rows.chatWorkspaces,
+				searchConsoleSites: rows.searchConsoleSites,
 			},
 			now,
 		)

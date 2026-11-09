@@ -26,9 +26,9 @@ import {
 const createdDbs: TestDb[] = []
 afterEach(() => cleanupTestDbs(createdDbs))
 
-const ORG = Schema.decodeUnknownSync(OrgId)("org_mcp_connections")
-const ME = Schema.decodeUnknownSync(UserId)("user_member")
-const OTHER = Schema.decodeUnknownSync(UserId)("user_other")
+const ORG = Schema.decodeSync(OrgId)("org_mcp_connections")
+const ME = Schema.decodeSync(UserId)("user_member")
+const OTHER = Schema.decodeSync(UserId)("user_other")
 const MY_FAMILY = "11111111-1111-4111-8111-111111111111"
 const OTHER_FAMILY = "22222222-2222-4222-8222-222222222222"
 

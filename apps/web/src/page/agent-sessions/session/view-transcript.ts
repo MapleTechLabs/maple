@@ -85,6 +85,7 @@ const block = (h: H, context: BlockContext, row: TranscriptRow): Html => {
 		isContinued: context.continued.has(row.key),
 		isSelected: isSelectedRow(model, row),
 		timeZone,
+		nowMs: model.nowMs,
 	}
 	switch (row.kind) {
 		case "turn":
@@ -116,7 +117,7 @@ const block = (h: H, context: BlockContext, row: TranscriptRow): Html => {
 		case "note":
 			return noteBlock(h, row)
 		case "divider":
-			return dividerBlock(h, row, context.data.progress, timeZone)
+			return dividerBlock(h, row, context.data.progress, timeZone, model.nowMs)
 	}
 }
 
@@ -126,7 +127,7 @@ export const transcript = (h: H, model: Model, data: SessionData, timeZone: stri
 		return emptyMessage(h, {}, [
 			Str.trim(model.query) === ""
 				? "No AI activity in this session. Its spans are HTTP and database work, which the transcript excludes. The Traces view shows them."
-				: "No blocks match this filter.",
+				: "No blocks match these filters",
 		])
 	const context: BlockContext = { model, data, timeZone, continued: continuedKeys(rows) }
 	const mounted = Arr.flatMap(model.transcriptWindow.items, (item) => {

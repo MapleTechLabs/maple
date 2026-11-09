@@ -1,6 +1,7 @@
+import * as Policy from "@maple/domain/policy"
 import { OrgId } from "@maple/domain"
 import { V2IngestRule } from "@maple/domain/http/v2"
-import { Result, Schema } from "effect"
+import { Result, Schema, Array as Arr } from "effect"
 import { change, expect as expectView, given, role, scene, text, withViewInputs } from "foldkit/scene"
 import { describe, expect, test } from "vitest"
 import { ORG } from "../../alerts/shared/test-rows"
@@ -11,13 +12,15 @@ import type { LogSample } from "./preview"
 import { init, update } from "./update"
 import { view as pageView } from "./view"
 
+const ENGINEER = Policy.grantsOf(["org:engineer"])
+
 const orgId = Schema.decodeSync(OrgId)(ORG)
 const context: PageContext = { orgId, pinnedNamespace: null, timeZone: "UTC" }
 const pageUpdate = (model: Model, message: Message) => update(model, message, context)
 const view = withViewInputs(pageView, { context })()
 
 const asAdmin = (model: Model): Model =>
-	pageUpdate(model, Message.CompletedFetchSession({ orgId: ORG, isAdmin: true })).model
+	pageUpdate(model, Message.CompletedFetchSession({ orgId: ORG, grants: ENGINEER })).model
 const fresh = (template?: string): Model =>
 	asAdmin(
 		init({ _tag: "IngestRuleNew", search: template === undefined ? {} : { template } }, context).model,
@@ -51,7 +54,7 @@ const withSamples = (model: Model): Model =>
 describe("ingest rule editor", () => {
 	test("a new rule reads recent logs for the preview", () => {
 		const entered = init({ _tag: "IngestRuleNew", search: {} }, context)
-		expect(entered.commands?.map(({ name }) => name)).toContain("FetchIngestRuleSamples")
+		expect(Arr.map(entered.commands ?? [], ({ name }) => name)).toContain("FetchIngestRuleSamples")
 	})
 
 	test("an empty drop rule lists what is missing and cannot be created", () => {
@@ -125,7 +128,7 @@ describe("ingest rule editor", () => {
 				},
 			},
 		})
-		const saved = Schema.decodeUnknownSync(V2IngestRule)({
+		const saved = Schema.decodeSync(V2IngestRule)({
 			id: "irule_YofPTrK9782DWwcnXhpcCw",
 			object: "ingest_rule",
 			name: "Drop debug logs",

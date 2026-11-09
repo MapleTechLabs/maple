@@ -7,6 +7,8 @@
  */
 import { AlertsService, type AlertSchedulerLane } from "@maple/backend/services/alerts/AlertsService"
 import { AnomalyDetectionService } from "@maple/backend/services/alerts/AnomalyDetectionService"
+import { AlertMaintenanceWindowsService } from "@maple/backend/services/alerts/AlertMaintenanceWindowsService"
+import { AnomalyAlertSource } from "@maple/backend/services/alerts/anomaly/AnomalyAlertSource"
 import { CloudflareAnalyticsService } from "@maple/backend/services/integrations/CloudflareAnalyticsService"
 import { DigestService } from "@maple/backend/services/digest/DigestService"
 import { WebAnalyticsDigestService } from "@maple/backend/services/digest/WebAnalyticsDigestService"
@@ -23,6 +25,7 @@ import { PlanetScaleMetricsService } from "@maple/backend/services/integrations/
 import { PlanetScaleService } from "@maple/backend/services/integrations/PlanetScaleService"
 import { PrReviewPostMergeService } from "@maple/backend/services/pr-review/PrReviewPostMergeService"
 import { RailwayMetricsService } from "@maple/backend/services/integrations/RailwayMetricsService"
+import { SearchConsoleImportService } from "@maple/backend/services/integrations/SearchConsoleImportService"
 import { AwsConnectionService } from "@maple/backend/services/integrations/AwsConnectionService"
 import { SupabaseConnectionService } from "@maple/backend/services/integrations/SupabaseConnectionService"
 import { SupabaseInsightsService } from "@maple/backend/services/integrations/SupabaseInsightsService"
@@ -71,13 +74,16 @@ export const layerTick = (
 ) =>
 	Layer.mergeAll(
 		AlertsService.layer,
+		AlertMaintenanceWindowsService.layer,
 		AnomalyDetectionService.layer,
+		AnomalyAlertSource.layer,
 		CloudflareAnalyticsService.layer,
 		GcpMetricsService.layer,
 		PlanetScaleService.layer,
 		PlanetScaleMetricsService.layer,
 		RailwayMetricsService.layer,
 		VercelIntegrationService.layer,
+		SearchConsoleImportService.layer,
 		AwsConnectionService.layer,
 		SupabaseConnectionService.layer,
 		SupabaseLogsService.layer,
@@ -176,7 +182,7 @@ const alertTick = schedulerTick("standard", "scheduler")
 const alertLongQueryTick = schedulerTick("long_query", "scheduler_long_query")
 
 const errorTick = makeTick(
-	ErrorsService.use((errors) => errors.runTick()),
+	ErrorsService.use((errors) => errors.runTick),
 	"error",
 	(result) => ({
 		orgsProcessed: result.orgsProcessed,
@@ -192,7 +198,7 @@ const errorTick = makeTick(
 )
 
 const fixVerificationTick = makeTick(
-	FixVerificationTickService.use((service) => service.runTick()),
+	FixVerificationTickService.use((service) => service.runTick),
 	"fix_verification",
 	(result) => ({
 		examined: result.examined,
@@ -205,7 +211,7 @@ const fixVerificationTick = makeTick(
 )
 
 const escalationTick = makeTick(
-	EscalationService.use((escalations) => escalations.runEscalationTick()),
+	EscalationService.use((escalations) => escalations.runEscalationTick),
 	"escalation",
 	(result) =>
 		result.processed > 0
@@ -249,7 +255,7 @@ const digestTick = Effect.andThen(opsDigestTick, webAnalyticsDigestTick)
 // four `*_email_sent_at` columns, which are what the portal's backfill reads.
 
 const serviceMapRollupTick = makeTick(
-	ServiceMapRollupService.use((rollup) => rollup.runRollupTick()),
+	ServiceMapRollupService.use((rollup) => rollup.runRollupTick),
 	"service_map_rollup",
 	(result) => ({
 		orgsProcessed: result.orgsProcessed,
@@ -262,8 +268,8 @@ const serviceMapRollupTick = makeTick(
 	}),
 )
 
-const anomalyTick = makeTick(
-	AnomalyDetectionService.use((anomalies) => anomalies.runTick()),
+const anomalyDetectionTick = makeTick(
+	AnomalyDetectionService.use((anomalies) => anomalies.runTick),
 	"anomaly",
 	(result) => ({
 		orgsProcessed: result.orgsProcessed,
@@ -277,8 +283,38 @@ const anomalyTick = makeTick(
 	}),
 )
 
+// Gives each org with an open anomaly its default anomaly alert rule. Its own tick, so a
+// failure only logs and never touches detection.
+const anomalyDefaultRulesTick = makeTick(
+	AnomalyAlertSource.use((source) => source.backfillDefaultRules),
+	"anomaly_default_rules",
+	(created) => (created > 0 ? { defaultAnomalyRulesCreated: created } : undefined),
+)
+
+const anomalyTick = Effect.andThen(anomalyDetectionTick, anomalyDefaultRulesTick)
+
+// Its own lane, so a failure only logs and never touches the digest or another lane.
+const maintenanceWindowsTick = makeTick(
+	Effect.gen(function* () {
+		const nowMs = yield* Clock.currentTimeMillis
+		const windows = yield* AlertMaintenanceWindowsService
+		return yield* windows.materialize(nowMs)
+	}),
+	"maintenance_windows",
+	(result) =>
+		result.windows > 0
+			? {
+					maintenanceWindows: result.windows,
+					maintenanceSilencesUpserted: result.silencesUpserted,
+					maintenanceWindowFailures: result.failures,
+					maintenanceWindowPages: result.pages,
+					maintenanceWindowBudgetExhausted: result.budgetExhausted,
+				}
+			: undefined,
+)
+
 const cloudflareAnalyticsTick = makeTick(
-	CloudflareAnalyticsService.use((analytics) => analytics.pollAllOrgs()),
+	CloudflareAnalyticsService.use((analytics) => analytics.pollAllOrgs),
 	"cloudflare_analytics",
 	(result) => ({
 		orgs: result.orgs,
@@ -290,7 +326,7 @@ const cloudflareAnalyticsTick = makeTick(
 )
 
 const gcpMetricsTick = makeTick(
-	GcpMetricsService.use((gcp) => gcp.pollAll()),
+	GcpMetricsService.use((gcp) => gcp.pollAll),
 	"gcp_metrics",
 	(result) =>
 		result.polled + result.deferred > 0
@@ -306,7 +342,7 @@ const gcpMetricsTick = makeTick(
 )
 
 const planetScaleTick = makeTick(
-	PlanetScaleService.use((planetscale) => planetscale.pollAllOrgs()),
+	PlanetScaleService.use((planetscale) => planetscale.pollAllOrgs),
 	"planetscale",
 	(result) =>
 		result.orgs > 0
@@ -321,7 +357,7 @@ const planetScaleTick = makeTick(
 )
 
 const planetScaleMetricsTick = makeTick(
-	PlanetScaleMetricsService.use((metrics) => metrics.pollAll()),
+	PlanetScaleMetricsService.use((metrics) => metrics.pollAll),
 	"planetscale_metrics",
 	(result) =>
 		result.polled > 0
@@ -336,7 +372,7 @@ const planetScaleMetricsTick = makeTick(
 )
 
 const awsConnectionsTick = makeTick(
-	AwsConnectionService.use((aws) => aws.checkDue()),
+	AwsConnectionService.use((aws) => aws.checkDue),
 	"aws_connections",
 	(result) =>
 		result.due > 0
@@ -349,7 +385,7 @@ const awsConnectionsTick = makeTick(
 )
 
 const railwayMetricsTick = makeTick(
-	RailwayMetricsService.use((railway) => railway.pollAllOrgs()),
+	RailwayMetricsService.use((railway) => railway.pollAllOrgs),
 	"railway_metrics",
 	(result) =>
 		result.orgs > 0
@@ -377,8 +413,24 @@ const vercelTick = makeTick(
 			: undefined,
 )
 
+const searchConsoleTick = makeTick(
+	SearchConsoleImportService.use((searchConsole) => searchConsole.pollAllSites),
+	"search_console",
+	(result) =>
+		result.due > 0
+			? {
+					due: result.due,
+					imported: result.imported,
+					skipped: result.skipped,
+					failures: result.failures,
+					rowsWritten: result.rowsWritten,
+					days: result.days,
+				}
+			: undefined,
+)
+
 const supabaseDiscoveryTick = makeTick(
-	SupabaseConnectionService.use((supabase) => supabase.discoverAllOrgs()),
+	SupabaseConnectionService.use((supabase) => supabase.discoverAllOrgs),
 	"supabase_discovery",
 	(result) =>
 		result.orgs > 0
@@ -392,7 +444,7 @@ const supabaseDiscoveryTick = makeTick(
 )
 
 const supabaseLogsTick = makeTick(
-	SupabaseLogsService.use((supabase) => supabase.pollAllOrgs()),
+	SupabaseLogsService.use((supabase) => supabase.pollAllOrgs),
 	"supabase_logs",
 	(result) =>
 		result.orgs > 0
@@ -406,7 +458,7 @@ const supabaseLogsTick = makeTick(
 )
 
 const supabaseInsightsTick = makeTick(
-	SupabaseInsightsService.use((supabase) => supabase.pollAllOrgs()),
+	SupabaseInsightsService.use((supabase) => supabase.pollAllOrgs),
 	"supabase_insights",
 	(result) =>
 		result.orgs > 0
@@ -421,7 +473,7 @@ const supabaseInsightsTick = makeTick(
 )
 
 const prReviewPostMergeTick = makeTick(
-	PrReviewPostMergeService.use((service) => service.runTick()),
+	PrReviewPostMergeService.use((service) => service.runTick),
 	"pr_review_post_merge",
 	(result) =>
 		result.examined > 0
@@ -445,7 +497,7 @@ const statusPagesTick = Effect.gen(function* () {
 	if (Option.isNone(publisher) || Option.isNone(reconciler)) {
 		return yield* Effect.logInfo("Status page storage is not bound; skipping status page publishing")
 	}
-	yield* makeTick(reconciler.value.reconcileAll(), "status_page_reconcile", (result) =>
+	yield* makeTick(reconciler.value.reconcileAll, "status_page_reconcile", (result) =>
 		result.imported + result.cleared + result.failed > 0
 			? {
 					statusPageImported: result.imported,
@@ -454,7 +506,7 @@ const statusPagesTick = Effect.gen(function* () {
 				}
 			: undefined,
 	)
-	yield* makeTick(reconciler.value.repairAutoIncidents(), "status_page_repair", (repaired) =>
+	yield* makeTick(reconciler.value.repairAutoIncidents, "status_page_repair", (repaired) =>
 		repaired > 0 ? { statusPageAutoIncidentsRepaired: repaired } : undefined,
 	)
 	const nowMs = yield* Clock.currentTimeMillis
@@ -483,10 +535,12 @@ export interface ScheduledTickPrograms<R = never> {
 	readonly escalation: Effect.Effect<void, never, R>
 	readonly fixVerification: Effect.Effect<void, never, R>
 	readonly gcpMetrics: Effect.Effect<void, never, R>
+	readonly maintenanceWindows: Effect.Effect<void, never, R>
 	readonly planetScale: Effect.Effect<void, never, R>
 	readonly planetScaleMetrics: Effect.Effect<void, never, R>
 	readonly prReviewPostMerge: Effect.Effect<void, never, R>
 	readonly railwayMetrics: Effect.Effect<void, never, R>
+	readonly searchConsole: Effect.Effect<void, never, R>
 	readonly serviceMapRollup: Effect.Effect<void, never, R>
 	readonly statusPages: Effect.Effect<void, never, R>
 	readonly supabaseDiscovery: Effect.Effect<void, never, R>
@@ -521,6 +575,8 @@ const laneProgram = <R>(lane: TickLane, ticks: ScheduledTickPrograms<R>): Effect
 		Match.when("supabase_discovery", () => ticks.supabaseDiscovery),
 		Match.when("supabase_logs", () => ticks.supabaseLogs),
 		Match.when("supabase_insights", () => ticks.supabaseInsights),
+		Match.when("maintenance_windows", () => ticks.maintenanceWindows),
+		Match.when("search_console", () => ticks.searchConsole),
 		Match.exhaustive,
 	)
 
@@ -558,7 +614,9 @@ export const selectLaneProgram = <R>(
 
 type ScheduledServices =
 	| AlertsService
+	| AlertMaintenanceWindowsService
 	| AnomalyDetectionService
+	| AnomalyAlertSource
 	| AwsConnectionService
 	| CloudflareAnalyticsService
 	| DigestService
@@ -571,6 +629,7 @@ type ScheduledServices =
 	| PlanetScaleMetricsService
 	| PrReviewPostMergeService
 	| RailwayMetricsService
+	| SearchConsoleImportService
 	| ServiceMapRollupService
 	| SupabaseConnectionService
 	| SupabaseLogsService
@@ -588,10 +647,12 @@ export const scheduledTicks: ScheduledTickPrograms<ScheduledServices> = {
 	escalation: escalationTick,
 	fixVerification: fixVerificationTick,
 	gcpMetrics: gcpMetricsTick,
+	maintenanceWindows: maintenanceWindowsTick,
 	planetScale: planetScaleTick,
 	planetScaleMetrics: planetScaleMetricsTick,
 	prReviewPostMerge: prReviewPostMergeTick,
 	railwayMetrics: railwayMetricsTick,
+	searchConsole: searchConsoleTick,
 	serviceMapRollup: serviceMapRollupTick,
 	statusPages: statusPagesTick,
 	supabaseDiscovery: supabaseDiscoveryTick,
@@ -614,7 +675,7 @@ export const runScheduled = (
 	email: Option.Option<EmailSenderClient>,
 	chatSessions: ChatSessionNamespace,
 	statusPages: Option.Option<StatusPageBindings>,
-): Effect.Effect<void, unknown> =>
+) =>
 	withPgConnectionScope(selectLaneProgram(cron, lane, scheduledTicks)).pipe(
 		// One lane is one application run: the layer is built here and released
 		// with it, as the async entry's ManagedRuntime was.

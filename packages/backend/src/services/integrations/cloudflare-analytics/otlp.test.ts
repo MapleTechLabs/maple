@@ -1,7 +1,7 @@
 import { assert, describe, it } from "@effect/vitest"
 import type { MetricGaugeRow, MetricSumRow } from "@maple/backend/services/warehouse/metric-rows"
 import { metricRowsToOtlp } from "./otlp"
-import { Array as Arr } from "effect"
+import { Array as Arr, Option } from "effect"
 
 const baseGauge = (over: Partial<MetricGaugeRow>): MetricGaugeRow => ({
 	timestamp: "2026-07-02 11:35:00.000",
@@ -53,7 +53,7 @@ describe("metricRowsToOtlp", () => {
 		const payload = metricRowsToOtlp([baseSum({})], [baseGauge({})])
 
 		assert.strictEqual(payload.resourceMetrics.length, 1)
-		const resource = payload.resourceMetrics[0]!
+		const resource = payload.resourceMetrics[0]
 		// Resource attributes carry service.name so the collector derives ServiceName.
 		assert.deepStrictEqual(resource.resource.attributes, [
 			{ key: "service.name", value: { stringValue: "cloudflare/example.com" } },
@@ -61,26 +61,30 @@ describe("metricRowsToOtlp", () => {
 			{ key: "cloud.provider", value: { stringValue: "cloudflare" } },
 		])
 		assert.strictEqual(resource.scopeMetrics.length, 1)
-		const scope = resource.scopeMetrics[0]!
+		const scope = resource.scopeMetrics[0]
 		assert.strictEqual(scope.scope.name, "@maple/cloudflare-analytics")
 		assert.strictEqual(scope.metrics.length, 2)
 
-		const sum = scope.metrics.find((m) => m.name === "cloudflare.http.requests")!
+		const sum = Option.getOrThrow(
+			Arr.findFirst(scope.metrics, (m) => m.name === "cloudflare.http.requests"),
+		)
 		assert.isDefined(sum.sum)
 		assert.isUndefined(sum.gauge)
 		// DELTA temporality (1) + monotonic carried straight from the row.
-		assert.strictEqual(sum.sum!.aggregationTemporality, 1)
-		assert.strictEqual(sum.sum!.isMonotonic, true)
-		assert.strictEqual(sum.sum!.dataPoints[0]!.asDouble, 100)
-		assert.deepStrictEqual(sum.sum!.dataPoints[0]!.attributes, [
+		assert.strictEqual(sum.sum.aggregationTemporality, 1)
+		assert.strictEqual(sum.sum.isMonotonic, true)
+		assert.strictEqual(sum.sum.dataPoints[0].asDouble, 100)
+		assert.deepStrictEqual(sum.sum.dataPoints[0].attributes, [
 			{ key: "cache.status", value: { stringValue: "hit" } },
 			{ key: "http.status_class", value: { stringValue: "2xx" } },
 		])
 
-		const gauge = scope.metrics.find((m) => m.name === "cloudflare.http.edge.ttfb")!
+		const gauge = Option.getOrThrow(
+			Arr.findFirst(scope.metrics, (m) => m.name === "cloudflare.http.edge.ttfb"),
+		)
 		assert.isDefined(gauge.gauge)
 		assert.isUndefined(gauge.sum)
-		assert.strictEqual(gauge.gauge!.dataPoints[0]!.asDouble, 180)
+		assert.strictEqual(gauge.gauge.dataPoints[0].asDouble, 180)
 	})
 
 	it("stamps the poller's source id on every resource", () => {
@@ -90,10 +94,13 @@ describe("metricRowsToOtlp", () => {
 			{ sourceId: "src_cf" },
 		)
 		assert.strictEqual(payload.resourceMetrics.length, 2)
-		const stamped = Arr.map(
-			payload.resourceMetrics,
-			(resource) =>
-				resource.resource.attributes.find((a) => a.key === "maple_source_id")?.value.stringValue,
+		const stamped = Arr.map(payload.resourceMetrics, (resource) =>
+			Option.getOrUndefined(
+				Option.map(
+					Arr.findFirst(resource.resource.attributes, (a) => a.key === "maple_source_id"),
+					(a) => a.value.stringValue,
+				),
+			),
 		)
 		assert.deepStrictEqual(stamped, ["src_cf", "src_cf"])
 	})
@@ -103,7 +110,7 @@ describe("metricRowsToOtlp", () => {
 			[],
 			[baseGauge({ timestamp: "2026-07-02 11:35:00.000", start_timestamp: "2026-07-02 11:30:00.000" })],
 		)
-		const dp = payload.resourceMetrics[0]!.scopeMetrics[0]!.metrics[0]!.gauge!.dataPoints[0]!
+		const dp = payload.resourceMetrics[0].scopeMetrics[0].metrics[0].gauge!.dataPoints[0]
 		assert.strictEqual(dp.timeUnixNano, `${Date.parse("2026-07-02T11:35:00.000Z")}000000`)
 		assert.strictEqual(dp.startTimeUnixNano, `${Date.parse("2026-07-02T11:30:00.000Z")}000000`)
 	})
@@ -128,10 +135,14 @@ describe("metricRowsToOtlp", () => {
 		)
 
 		assert.strictEqual(payload.resourceMetrics.length, 2)
-		const zone = payload.resourceMetrics.find((r) =>
-			Arr.some(r.resource.attributes, (a) => a.value.stringValue === "cloudflare/example.com"),
-		)!
-		const requests = zone.scopeMetrics[0]!.metrics.find((m) => m.name === "cloudflare.http.requests")!
+		const zone = Option.getOrThrow(
+			Arr.findFirst(payload.resourceMetrics, (r) =>
+				Arr.some(r.resource.attributes, (a) => a.value.stringValue === "cloudflare/example.com"),
+			),
+		)
+		const requests = Option.getOrThrow(
+			Arr.findFirst(zone.scopeMetrics[0].metrics, (m) => m.name === "cloudflare.http.requests"),
+		)
 		// Two datapoints (hit + miss) merged under one metric.
 		assert.strictEqual(requests.sum!.dataPoints.length, 2)
 	})

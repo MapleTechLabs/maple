@@ -14,7 +14,7 @@ const context: Context = {
 }
 
 const commandNames = (result: { commands?: ReadonlyArray<{ name: string }> }) =>
-	result.commands?.map((command) => command.name) ?? []
+	Arr.map(result.commands ?? [], (command) => command.name)
 
 const typed = (model: Model, value: string) =>
 	update(model, Message.GotListMessage({ message: Combobox.Message.ChangedInput({ value }) }), context)
@@ -136,7 +136,14 @@ describe("command palette", () => {
 				Arr.filter(browsed, (entry) => entry.group === "Integrations"),
 				(entry) => entry.title,
 			),
-		).toEqual(["Connect Google Cloud", "Connect AWS", "Connect Railway", "Connect Supabase", "Connect Vercel"])
+		).toEqual([
+			"Connect Google Cloud",
+			"Connect AWS",
+			"Connect Railway",
+			"Connect Supabase",
+			"Connect Vercel",
+			"Connect Google Search Console",
+		])
 	})
 
 	test("every chat connector is typeable as Connect <name>, with no per-org gate", () => {

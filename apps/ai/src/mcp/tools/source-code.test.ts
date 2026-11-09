@@ -25,7 +25,7 @@ const tools = new Map<string, Run>()
 registerSourceCodeTools({
 	define: (spec) => {
 		const run = (params: Readonly<Record<string, unknown>>) =>
-			Schema.decodeUnknownEffect(spec.parameters)(params).pipe(
+			Schema.decodeEffect(spec.parameters)(params).pipe(
 				Effect.flatMap(spec.handler),
 				Effect.map((output) => ({
 					text: renderToolDoc(spec.render(output)),
@@ -37,8 +37,8 @@ registerSourceCodeTools({
 } satisfies McpToolRegistrar)
 
 const tenant = Layer.succeed(CurrentMcpTenant, {
-	orgId: Schema.decodeUnknownSync(OrgId)("org_tools"),
-	userId: Schema.decodeUnknownSync(UserId)("user_tools"),
+	orgId: Schema.decodeSync(OrgId)("org_tools"),
+	userId: Schema.decodeSync(UserId)("user_tools"),
 	roles: [],
 	authMode: "self_hosted",
 } as CurrentMcpTenant["Service"])
@@ -77,6 +77,20 @@ describe("the source-code tools", () => {
 			)
 			const output = Schema.decodeUnknownSync(ReadSourceFileOutput)(result.structured)
 			assert.deepStrictEqual(output.lines, ["two", "three"])
+		}),
+	)
+
+	it.effect("does not count the trailing newline as another line", () =>
+		Effect.gen(function* () {
+			const result = yield* call(
+				"read_source_file",
+				{ repository: "octo/shop", path: "src/a.ts" },
+				{ readFile: () => Effect.succeed({ ...file, content: `${file.content}\n` }) },
+			)
+			const output = Schema.decodeUnknownSync(ReadSourceFileOutput)(result.structured)
+			assert.strictEqual(output.totalLines, 4)
+			assert.strictEqual(output.truncated, false)
+			assert.deepStrictEqual(output.lines, ["one", "two", "three", "four"])
 		}),
 	)
 

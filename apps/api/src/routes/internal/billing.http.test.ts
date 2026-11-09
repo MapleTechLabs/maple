@@ -621,7 +621,7 @@ describe("billing writes over HTTP", () => {
 		.middleware(ApiUnexpectedErrors) {}
 
 	const decodeTenant = Schema.decodeUnknownSync(CurrentTenant.TenantSchema)
-	const PAYER_ORG = Schema.decodeUnknownSync(OrgId)("org_billing_payer")
+	const PAYER_ORG = Schema.decodeSync(OrgId)("org_billing_payer")
 	const tenantWithRoles = (roles: ReadonlyArray<string>) =>
 		decodeTenant({ orgId: ORG, userId: "user_billing_test", roles, authMode: "self_hosted" })
 
@@ -694,7 +694,7 @@ describe("billing writes over HTTP", () => {
 					headers: { authorization: "Bearer test-token", "content-type": "application/json" },
 					body: JSON.stringify(body),
 				}),
-				Context.empty() as never,
+				Context.empty(),
 			)
 			const text = await response.text()
 			return { status: response.status, body: text.length === 0 ? null : JSON.parse(text) }

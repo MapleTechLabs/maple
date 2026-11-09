@@ -6,7 +6,7 @@
 import { afterEach, assert, describe, it } from "@effect/vitest"
 import { EdgeCacheService, MemoryCacheBackendLive } from "@maple/cache"
 import { GitCommitSha, VcsInstallation, VcsRepo, type VcsRepositoryRef } from "@maple/domain/http"
-import { Console, Effect, Layer, Option, Schema, Array as Arr, String as Str } from "effect"
+import { Console, Effect, Layer, Option, Schema, Array as Arr, String as Str, Clock } from "effect"
 import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/http"
 import { spawnSync } from "node:child_process"
 import { mkdtempSync } from "node:fs"
@@ -126,7 +126,7 @@ const scanAndCompare = (fullName: string) =>
 			createdAt: 0,
 			updatedAt: 0,
 		})
-		const repository = Schema.decodeUnknownSync(VcsRepo)({
+		const repository = Schema.decodeSync(VcsRepo)({
 			id: "7f0c1a52-4d8e-4b6a-9b1e-2a3c4d5e6f70",
 			orgId: "org_harness",
 			provider: "github",
@@ -150,13 +150,13 @@ const scanAndCompare = (fullName: string) =>
 		})
 		const scanner = yield* DependencyScanner
 		const store = yield* DependencyScanStore
-		const started = Date.now()
+		const started = yield* Clock.currentTimeMillis
 		const outcome = yield* scanner.scan(installation, repository, { trigger: "manual" })
 		if (outcome._tag !== "Scanned") return yield* Console.log(`${fullName}: ${outcome._tag}`)
 		const scan = outcome.scan
 		const matches = yield* store.scanMatches({ orgId: repository.orgId, scanId: scan.id })
 		yield* Console.log(
-			`${fullName}@${Str.slice(0, 12)(scan.commitSha)} (${branch}): ${scan.lockfiles.length} lockfiles, ${scan.packageCount} packages, ${matches.length} vulnerable matches, ${Date.now() - started} ms`,
+			`${fullName}@${Str.slice(0, 12)(scan.commitSha)} (${branch}): ${scan.lockfiles.length} lockfiles, ${scan.packageCount} packages, ${matches.length} vulnerable matches, ${(yield* Clock.currentTimeMillis) - started} ms`,
 		)
 
 		const dir = mkdtempSync(join(tmpdir(), "depscan-"))

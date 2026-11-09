@@ -18,7 +18,7 @@
 // tested (delivery works fine without ever pressing Test), onboarding checklist incomplete (owned by
 // the onboarding surface). A check that fires on every healthy org is noise, not an audit.
 
-import { Schema, Array as Arr, String as Str } from "effect"
+import { Option, Schema, Array as Arr, String as Str } from "effect"
 import { HttpTaggedError } from "./http/error-policy"
 import type { IntegrationEntry, IntegrationInventory } from "./integration-inventory"
 
@@ -468,7 +468,8 @@ const alertingChecks: ReadonlyArray<AuditCheck> = [
 					(d) => d.id,
 				),
 			)
-			const broken = Arr.filter(config.alertRules, (rule) => rule.enabled).flatMap((rule) => {
+			const enabledRules = Arr.filter(config.alertRules, (rule) => rule.enabled)
+			const broken = Arr.flatMap(enabledRules, (rule) => {
 				if (rule.destinationIds.length === 0) {
 					return [
 						{
@@ -479,7 +480,7 @@ const alertingChecks: ReadonlyArray<AuditCheck> = [
 						},
 					]
 				}
-				if (rule.destinationIds.some((id) => deliverable.has(id))) return []
+				if (Arr.some(rule.destinationIds, (id) => deliverable.has(id))) return []
 				return [
 					{
 						kind: "alert_rule" as const,
@@ -537,9 +538,12 @@ const alertingChecks: ReadonlyArray<AuditCheck> = [
 				else statesByRule.set(state.ruleId, [state])
 			}
 
-			const stalled = Arr.filter(config.alertRules, (rule) => rule.enabled).flatMap((rule) => {
+			const enabledRules = Arr.filter(config.alertRules, (rule) => rule.enabled)
+			const stalled = Arr.flatMap(enabledRules, (rule) => {
 				const states = statesByRule.get(rule.id) ?? []
-				const errored = states.find((state) => state.lastError !== null)
+				const errored = Option.getOrUndefined(
+					Arr.findFirst(states, (state) => state.lastError !== null),
+				)
 				if (errored?.lastError != null) {
 					return [
 						{
@@ -812,7 +816,12 @@ const inventoryFindings = (
 	provider: IntegrationEntry["provider"],
 	only?: { readonly kinds: ReadonlySet<string>; readonly failingOnly: boolean },
 ): ReadonlyArray<AuditAffectedEntity> => {
-	const entry = inventory?.integrations.find((integration) => integration.provider === provider)
+	const entry =
+		inventory === undefined
+			? undefined
+			: Option.getOrUndefined(
+					Arr.findFirst(inventory.integrations, (integration) => integration.provider === provider),
+				)
 	if (entry === undefined) return []
 	const resources = Arr.map(
 		Arr.filter(

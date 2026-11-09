@@ -18,7 +18,8 @@ const encodePrettyJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown,
 export const AWS_STACK_REGION = "us-east-1"
 
 /** CloudFormation logical id of a module's policy: `ObservabilityPolicy`. */
-const policyLogicalId = (module: string) => `${module[0]?.toUpperCase() ?? ""}${Str.slice(1)(module)}Policy`
+const policyLogicalId = (module: string) =>
+	`${Str.toUpperCase(Str.slice(0, 1)(module))}${Str.slice(1)(module)}Policy`
 
 /** The trust policy with its federated principal swapped for `principal`. */
 const trustingPrincipal = (plan: AwsSetupPlan, principal: unknown) => ({

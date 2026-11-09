@@ -9,6 +9,7 @@ import {
 } from "@maple/domain/http"
 import { EdgeCacheService, makeEdgeCacheService, makeMemoryBackend } from "@maple/cache"
 import { ConfigProvider, Context, Effect, Layer, Schema } from "effect"
+import * as SecureRandom from "effect/crypto/SecureRandom"
 import { HttpRouter } from "effect/http"
 import { HttpApi, HttpApiBuilder } from "effect/http-api"
 import { ApiErrorBoundaryLive } from "@maple/backend/http/error-boundary"
@@ -30,8 +31,8 @@ class DigestOnlyApi extends HttpApi.make("MapleInternalApi")
 	.middleware(ApiSchemaErrors)
 	.middleware(ApiUnexpectedErrors) {}
 
-const ORG_ID = Schema.decodeUnknownSync(OrgId)("org_digest_route")
-const USER_ID = Schema.decodeUnknownSync(UserId)("user_digest_route")
+const ORG_ID = Schema.decodeSync(OrgId)("org_digest_route")
+const USER_ID = Schema.decodeSync(UserId)("user_digest_route")
 
 const testConfig = () =>
 	ConfigProvider.layer(
@@ -84,6 +85,7 @@ const makeHarness = (verifiedEmail: string | null) => {
 		Layer.succeed(EmailService, { isConfigured: false, send: () => Effect.void }),
 		Layer.succeed(WarehouseQueryService, makeWarehouseServiceStub()),
 		Layer.succeed(EdgeCacheService, makeEdgeCacheService(makeMemoryBackend())),
+		SecureRandom.layerWebCrypto,
 	)
 	const services = Layer.mergeAll(
 		Layer.effect(DigestService, DigestService.make),

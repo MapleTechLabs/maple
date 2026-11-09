@@ -26,7 +26,7 @@ export const openStore = async (
 	dataDir: string,
 	limits?: LocalEventingControlLimits,
 ): Promise<OpenedStore> => {
-	const scope = Effect.runSync(Scope.make())
+	const scope = Scope.makeUnsafe()
 	const store = await Effect.runPromise(
 		openControlStore(dataDir, limits).pipe(
 			Scope.provide(scope),

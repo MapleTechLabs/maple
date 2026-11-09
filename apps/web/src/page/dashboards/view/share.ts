@@ -1,6 +1,7 @@
-import { DashboardShareMode } from "@maple/domain/http"
+import { DashboardShareMode, type TimeRange } from "@maple/domain/http"
+import { isZoneDependentShorthand } from "@maple/query-engine"
 import { AsyncData } from "foldkit"
-import { Schema } from "effect"
+import { Schema, Option, Array as Arr } from "effect"
 import { LoadFailure } from "@maple/views/data/load-failure"
 import * as CopyButton from "@maple/views/ui/copy-button"
 import * as Dialog from "@maple/views/ui/dialog"
@@ -91,13 +92,52 @@ export const ShareMessage = defineMessageUnion({
 })
 export type ShareMessage = typeof ShareMessage.Type
 
-export const boardShareOf =(shares: ReadonlyArray<ShareRow>): ShareRow | undefined =>
-	shares.find((share) => share.widgetId === null)
+export const boardShareOf = (shares: ReadonlyArray<ShareRow>): ShareRow | undefined =>
+	Option.getOrUndefined(Arr.findFirst(shares, (share) => share.widgetId === null))
 
 export const chartShareOf = (shares: ReadonlyArray<ShareRow>, widgetId: string): ShareRow | undefined =>
-	shares.find((share) => share.widgetId === widgetId && share.mode === "public")
+	Option.getOrUndefined(
+		Arr.findFirst(shares, (share) => share.widgetId === widgetId && share.mode === "public"),
+	)
 
-export const shareUrl = (origin: string, token: string): string => `${origin}/share/${token}`
+/** What a share link pins: the viewer's picked range (null for the board's saved one) and zone. */
+export interface ShareLinkRange {
+	readonly range: TimeRange | null
+	readonly timeZone: string
+}
+
+/** The share page's `?range=` or `?from=&to=` for a viewer's picked range. */
+const rangeParams = (range: TimeRange | null): Array<[string, string]> =>
+	range === null
+		? []
+		: range.type === "relative"
+			? [["range", range.value]]
+			: [
+					["from", range.startTime],
+					["to", range.endTime],
+				]
+
+/**
+ * `?tz=` so a zone-dependent range resolves on the sender's wall clock. A link without its own
+ * range always carries it: the board's saved range can later change to one that needs it.
+ */
+const zoneParams = (link: ShareLinkRange): Array<[string, string]> =>
+	link.range === null || (link.range.type === "relative" && isZoneDependentShorthand(link.range.value))
+		? [["tz", link.timeZone]]
+		: []
+
+const linkParams = (link: ShareLinkRange): Array<[string, string]> => [
+	...rangeParams(link.range),
+	...zoneParams(link),
+]
+
+const withParams = (url: string, params: Array<[string, string]>): string =>
+	params.length === 0 ? url : `${url}?${new URLSearchParams(params).toString()}`
+
+/** A share link: with the viewer's own range, so the recipient sees the window they picked. */
+export const shareUrl = (origin: string, token: string, link: ShareLinkRange): string =>
+	withParams(`${origin}/share/${token}`, linkParams(link))
 
 /** `?embed=true` drops the share page's own header, leaving only the chart. */
-export const embedUrl = (origin: string, token: string): string => `${shareUrl(origin, token)}?embed=true`
+export const embedUrl = (origin: string, token: string, link: ShareLinkRange): string =>
+	withParams(`${origin}/share/${token}`, [["embed", "true"], ...linkParams(link)])

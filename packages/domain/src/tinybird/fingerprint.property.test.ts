@@ -1,6 +1,12 @@
+import { Array as Arr, Record as Rec, String as Str } from "effect"
 import fc from "fast-check"
 import { describe, expect, it } from "vitest"
-import { computeFingerprintInputs, MAX_FINGERPRINT_FRAMES, MSG_SIGNATURE_CHARS } from "./fingerprint"
+import {
+	computeFingerprintInputs,
+	CUSTOM_FINGERPRINT_MAX_CHARS,
+	MAX_FINGERPRINT_FRAMES,
+	MSG_SIGNATURE_CHARS,
+} from "./fingerprint"
 
 // Grouping is two promises: the same bug under different runtime values is ONE
 // issue, and two bugs are TWO. Each property renders one structure under two
@@ -76,14 +82,25 @@ const RUNTIMES = [
 	"hibernate",
 	"apple",
 ] as const
+/** Runtimes whose frames are a dependency's or the stdlib's, which the hash skips. */
+const LIBRARY_RUNTIMES: ReadonlySet<Runtime> = new Set([
+	"store",
+	"hoisted",
+	"pip",
+	"pystd",
+	"gem",
+	"gomod",
+	"jvmProxy",
+	"jvmAccessor",
+])
 const site = (runtimes: ReadonlyArray<Runtime>) =>
 	fc.record({ runtime: fc.constantFrom(...runtimes), fn: name, file: name })
 type Runtime = (typeof RUNTIMES)[number] | (typeof PYTHON_RUNTIMES)[number]
 type Site = { readonly runtime: Runtime; readonly fn: string; readonly file: string }
 
 const renderFrame = ({ runtime, fn, file }: Site, index: number, c: FrameChurn): string => {
-	const host = c.host.join("")
-	const version = c.version.join(".")
+	const host = Arr.join(c.host, "")
+	const version = Arr.join(Arr.map(c.version, String), ".")
 	const frames = {
 		v8: `    at ${fn} (/app/src/${file}.ts:${c.line}:${c.col})`,
 		bundle: `    at ${fn} (https://${host}/assets/${file}-${c.bundle}.js:${c.line}:${c.col})`,
@@ -114,10 +131,10 @@ const churnFor = <A>(arb: fc.Arbitrary<A>, length: number) =>
 
 /** Sites run from the throw site outward; Python prints them the other way round. */
 const renderStack = (sites: ReadonlyArray<Site>, churn: ReadonlyArray<FrameChurn>) => {
-	const frames = sites.map((site, i) => renderFrame(site, i, churn[i] ?? churn[0]!))
-	return PYTHON_RUNTIMES.some((runtime) => runtime === sites[0]?.runtime)
-		? ["Traceback (most recent call last):", ...frames.reverse(), "Error: boom"].join("\n")
-		: ["Error: boom", ...frames].join("\n")
+	const frames = Arr.map(sites, (site, i) => renderFrame(site, i, Arr.getUnsafe(churn, i) ?? churn[0]))
+	return Arr.some(PYTHON_RUNTIMES, (runtime) => runtime === sites[0]?.runtime)
+		? Arr.join(["Traceback (most recent call last):", ...Arr.reverse(frames), "Error: boom"], "\n")
+		: Arr.join(["Error: boom", ...frames], "\n")
 }
 
 /** One call path in one language, rendered under two independent churns. */
@@ -180,13 +197,13 @@ const renderVolatile = (kind: Volatile, word: string, c: ValueChurn): string => 
 		traceId: c.traceId,
 		email: `${c.user}@${word}.com`,
 		home: `/Users/${c.user}/.maple/${word}`,
-		prefixedId: `${c.key}_${c.idTail.join("")}`,
+		prefixedId: `${c.key}_${Arr.join(c.idTail, "")}`,
 		ulid: c.ulid,
 		quoted: `'${c.token}'`,
 		query: `/api/${word}?${c.key}=${c.value}`,
 		origin: `https://${c.host}/api/${word}`,
 		ansi: `\x1b[${c.n % 100}m${word}\x1b[0m`,
-		opaque: `rejected ${c.opaque.join("")}`,
+		opaque: `rejected ${Arr.join(c.opaque, "")}`,
 		timestamp: c.date.toISOString(),
 		handle: `/v1/users/@${word}${c.n % 1000}`,
 		routeNotFound: `RouteNotFound (GET /${c.path})`,
@@ -203,11 +220,12 @@ const Part = fc.oneof(
 type Part = typeof Part extends fc.Arbitrary<infer A> ? A : never
 
 const renderMessage = (parts: ReadonlyArray<Part>, churn: ReadonlyArray<ValueChurn>) =>
-	parts
-		.map((part, i) =>
-			part.kind === "word" ? part.word : renderVolatile(part.kind, part.word, churn[i]!),
-		)
-		.join(" ")
+	Arr.join(
+		Arr.map(parts, (part, i) =>
+			part.kind === "word" ? part.word : renderVolatile(part.kind, part.word, Arr.getUnsafe(churn, i)),
+		),
+		" ",
+	)
 
 /** A message of names and values. Kept under MSG_SCAN_CHARS, which cuts before redaction. */
 const Message = fc.array(Part, { maxLength: 12 }).chain((parts) =>
@@ -265,10 +283,12 @@ describe("one bug is one issue", () => {
 		churn: ReadonlyArray<ValueChurn>,
 	) =>
 		JSON.stringify(
-			Object.fromEntries(
-				entries.map(({ key, kind, word }, i) => [
+			Rec.fromEntries(
+				Arr.map(entries, ({ key, kind, word }, i) => [
 					key,
-					kind === "int" ? churn[i]!.n : renderVolatile(kind, word, churn[i]!),
+					kind === "int"
+						? Arr.getUnsafe(churn, i).n
+						: renderVolatile(kind, word, Arr.getUnsafe(churn, i)),
 				]),
 			),
 		)
@@ -301,17 +321,14 @@ describe("one bug is one issue", () => {
 	it("never reads a non-frame line as a frame", () => {
 		fc.assert(
 			fc.property(Stack, fc.array(fc.tuple(NoiseLine, fc.nat()), { maxLength: 5 }), (stack, noise) => {
-				const lines = renderStack(stack.sites, stack.a).split("\n")
-				const noisy = noise.reduce(
-					(acc, [line, at]) => [
-						...acc.slice(0, at % (acc.length + 1)),
-						line,
-						...acc.slice(at % (acc.length + 1)),
-					],
-					lines,
-				)
-				expect(fingerprint("Error", noisy.join("\n"), "boom").fpFrames).toBe(
-					fingerprint("Error", lines.join("\n"), "boom").fpFrames,
+				const lines: ReadonlyArray<string> = Str.split("\n")(renderStack(stack.sites, stack.a))
+				const noisy = Arr.reduce(noise, lines, (acc, [line, at]) => [
+					...acc.slice(0, at % (acc.length + 1)),
+					line,
+					...acc.slice(at % (acc.length + 1)),
+				])
+				expect(fingerprint("Error", Arr.join(noisy, "\n"), "boom").fpFrames).toBe(
+					fingerprint("Error", Arr.join(lines, "\n"), "boom").fpFrames,
 				)
 			}),
 		)
@@ -324,7 +341,10 @@ describe("two bugs are two issues", () => {
 			fc.property(Stack, name, name, (stack, fnA, fnB) => {
 				fc.pre(fnA !== fnB)
 				const [top, ...callers] = stack.sites
-				const render = (fn: string) => renderStack([{ ...top!, fn, file: fn }, ...callers], stack.a)
+				if (top === undefined) return
+				// A throw inside a dependency or the stdlib groups by its app callers instead.
+				fc.pre(!LIBRARY_RUNTIMES.has(top.runtime))
+				const render = (fn: string) => renderStack([{ ...top, fn, file: fn }, ...callers], stack.a)
 				expect(fingerprint("Error", render(fnA), "").fpFrames).not.toBe(
 					fingerprint("Error", render(fnB), "").fpFrames,
 				)
@@ -343,9 +363,12 @@ describe("two bugs are two issues", () => {
 			.tuple(fc.array(name, { minLength: 2, maxLength: 4 }), fc.option(int(1, 9), { nil: undefined }))
 			.chain(([words, version]) =>
 				fc.constantFrom(
-					`${words.join("_")}${version === undefined ? "" : `_v${version}`}`,
-					`${words.join("-")}${version === undefined ? "" : `-${version}`}`,
-					words.map((w) => w[0]!.toUpperCase() + w.slice(1)).join(""),
+					`${Arr.join(words, "_")}${version === undefined ? "" : `_v${version}`}`,
+					`${Arr.join(words, "-")}${version === undefined ? "" : `-${version}`}`,
+					Arr.join(
+						Arr.map(words, (w) => Str.toUpperCase(Str.slice(0, 1)(w)) + Str.slice(1)(w)),
+						"",
+					),
 				),
 			),
 	)
@@ -414,12 +437,12 @@ describe("signature bounds", () => {
 					exceptionStacktrace: stack,
 					statusMessage: message,
 				})
-				const frames = inputs.fpFrames === "" ? [] : inputs.fpFrames.split("\n")
+				const frames = inputs.fpFrames === "" ? [] : Str.split("\n")(inputs.fpFrames)
 				expect(frames.length).toBeLessThanOrEqual(MAX_FINGERPRINT_FRAMES)
 				expect(inputs.topFrame).toBe(frames[0] ?? "")
 				expect(inputs.msgSignature).not.toMatch(/\p{Cs}/u)
 				expect(inputs.label).not.toMatch(/\p{Cs}/u)
-				if (!message.trimStart().startsWith("{"))
+				if (!Str.startsWith("{")(Str.trimStart(message)))
 					expect(Array.from(inputs.msgSignature).length).toBeLessThanOrEqual(MSG_SIGNATURE_CHARS)
 			}),
 		)
@@ -432,11 +455,37 @@ describe("signature bounds", () => {
 		fc.assert(
 			fc.property(Message, fc.string({ maxLength: 40 }), (message, text) => {
 				const statusMessage = `${text} ${renderMessage(message.parts, message.a)}`
-				fc.pre(!statusMessage.trimStart().startsWith("{"))
-				expect(fingerprint("", "", statusMessage).msgSignature.replace(STATUS, "")).not.toMatch(
+				fc.pre(!Str.startsWith("{")(Str.trimStart(statusMessage)))
+				expect(Str.replace(STATUS, "")(fingerprint("", "", statusMessage).msgSignature)).not.toMatch(
 					/[0-9]/,
 				)
 			}),
+		)
+	})
+
+	it("hashes one bounded user key for every error that carries it", () => {
+		fc.assert(
+			fc.property(
+				fc.string({ minLength: 1, maxLength: 300 }).filter((key) => Str.trim(key) !== ""),
+				fc.tuple(fc.string({ maxLength: 20 }), anyText, anyText),
+				fc.tuple(fc.string({ maxLength: 20 }), anyText, anyText),
+				(key, [typeA, stackA, messageA], [typeB, stackB, messageB]) => {
+					const hash = (
+						exceptionType: string,
+						exceptionStacktrace: string,
+						statusMessage: string,
+					) =>
+						computeFingerprintInputs({
+							exceptionType,
+							exceptionStacktrace,
+							statusMessage,
+							customFingerprint: ` ${key}\n`,
+						}).hashInputs
+					const a = hash(typeA, stackA, messageA)
+					expect(hash(typeB, stackB, messageB)).toEqual(a)
+					expect(Array.from(a[1] ?? "").length).toBeLessThanOrEqual(CUSTOM_FINGERPRINT_MAX_CHARS)
+				},
+			),
 		)
 	})
 })

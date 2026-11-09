@@ -28,8 +28,8 @@ export function cellText(value: unknown, fallback = ""): string {
 
 /** The first numeric column that isn't the category label. */
 export function pickValueField(rows: ReadonlyArray<Record<string, unknown>>): string {
-	if (rows.length === 0) return "value"
 	const first = rows[0]
+	if (first === undefined) return "value"
 	for (const key of Rec.keys(first)) {
 		if (key === "name") continue
 		if (typeof first[key] === "number") return key

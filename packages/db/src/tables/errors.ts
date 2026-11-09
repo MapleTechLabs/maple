@@ -6,6 +6,7 @@ import {
 	ErrorIncidentReason,
 	ErrorIncidentStatus,
 	ErrorIssueEventType,
+	IssueFingerprintSource,
 	IssueKind,
 	IssueSeverity,
 	IssueSeveritySource,
@@ -134,6 +135,10 @@ export const ErrorIssues = PG.table("error_issues", {
 		}),
 		snoozeUntil: PG.column(PG.nullable(PG.timestamptzMillis), { name: "snooze_until" }),
 		archivedAt: PG.column(PG.nullable(PG.timestamptzMillis), { name: "archived_at" }),
+		// Set on an issue merged into another: it is archived, and its hashes now land there.
+		mergedIntoIssueId: PG.column(PG.nullable(PG.brand(PG.text, ErrorIssueId)), {
+			name: "merged_into_issue_id",
+		}),
 		createdAt: PG.column(PG.timestamptzMillis, { name: "created_at" }),
 		updatedAt: PG.column(PG.timestamptzMillis, { name: "updated_at" }),
 	},
@@ -156,6 +161,9 @@ export const ErrorIssues = PG.table("error_issues", {
 		// Once a sweep drains them the scan returns nothing, and it stays an index
 		// lookup rather than the heap check that `error_issues_org_archived_idx`
 		// below was added to prevent.
+		// The errors tick counts the error issues an org opened in the last day to
+		// spend its early-promotion budget (`EarlyPromotionsPerDay`).
+		PG.index("error_issues_org_kind_created_idx", ["orgId", "kind", "createdAt"]),
 		PG.index("error_issues_org_fp_version_idx", ["orgId", "fingerprintVersion"]),
 		PG.index("error_issues_org_assignee_idx", ["orgId", "assignedActorId"]),
 		PG.index("error_issues_lease_expiry_idx", ["leaseExpiresAt"]),
@@ -168,6 +176,9 @@ export const ErrorIssues = PG.table("error_issues", {
 		PG.index("error_issues_org_archived_idx", ["orgId", "archivedAt"], {
 			where: `"archived_at" is not null`,
 		}),
+		PG.index("error_issues_org_merged_into_idx", ["orgId", "mergedIntoIssueId"], {
+			where: `"merged_into_issue_id" is not null`,
+		}),
 	],
 	tenantColumn: "orgId",
 })
@@ -178,9 +189,10 @@ export const ErrorIssues = PG.table("error_issues", {
  *
  * Nothing used to stand between "a fingerprint appeared once" and "a durable row
  * plus a first-seen notification", so a single unapplied migration could mint
- * 2,531 issues in three days. A fingerprint accumulates here until it clears
- * PROMOTION_MIN_OCCURRENCES, and only then becomes an Issue; rows that never get
- * there are pruned by retention. Display fields are carried so promotion needs
+ * 2,531 issues in three days. A fingerprint passes through here: it is promoted at once while the org has
+ * early-promotion budget left (EarlyPromotionsPerDay), otherwise it accumulates
+ * until it clears PROMOTION_MIN_OCCURRENCES. Rows that never get there are pruned
+ * after a week without an occurrence. Display fields are carried so promotion needs
  * no second warehouse read.
  */
 export const ErrorFingerprintCandidates = PG.table("error_fingerprint_candidates", {
@@ -208,6 +220,29 @@ export const ErrorFingerprintCandidates = PG.table("error_fingerprint_candidates
 		// Retention prunes candidates that never reached the threshold.
 		PG.index("error_fingerprint_candidates_last_seen_idx", ["orgId", "lastSeenAt"]),
 	],
+	tenantColumn: "orgId",
+})
+
+/**
+ * Fingerprints an issue owns besides its own `fingerprint_hash`. The tick reads
+ * this before `error_issues`, so an aliased hash lands on its issue even when
+ * the hash is also the primary of the archived issue it was merged out of.
+ */
+export const ErrorIssueFingerprints = PG.table("error_issue_fingerprints", {
+	columns: {
+		orgId: PG.column(PG.brand(PG.text, OrgId), { name: "org_id" }),
+		fingerprintHash: PG.column(PG.text, { name: "fingerprint_hash" }),
+		issueId: PG.column(PG.brand(PG.text, ErrorIssueId), { name: "issue_id" }),
+		source: PG.brand(PG.text, IssueFingerprintSource),
+		// The merged issue that brought this hash, so unmerging can hand it back.
+		originIssueId: PG.column(PG.nullable(PG.brand(PG.text, ErrorIssueId)), { name: "origin_issue_id" }),
+		createdAt: PG.column(PG.timestamptzMillis, { name: "created_at" }),
+	},
+	primaryKey: {
+		columns: ["orgId", "fingerprintHash"],
+		name: "error_issue_fingerprints_org_id_fingerprint_hash_pk",
+	},
+	indexes: [PG.index("error_issue_fingerprints_issue_idx", ["orgId", "issueId"])],
 	tenantColumn: "orgId",
 })
 

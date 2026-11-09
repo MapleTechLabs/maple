@@ -38,6 +38,9 @@ import { AppRoute, hrefOf } from "../../../route"
 import { relatedAnomaliesOf, relatedAnomaliesSection } from "./view-anomalies"
 import { issueSkeleton, issueNotFound } from "./view-skeleton"
 import { vstack } from "@maple/views/ui/stack"
+import { alert, alertAction, alertDescription, alertTitle } from "@maple/views/ui/alert"
+import { button } from "@maple/views/ui/button"
+import { typography } from "@maple/views/ui/typography"
 
 // `IssueDetailContent`: skeleton, not-found and error states, then the loaded page.
 
@@ -95,10 +98,9 @@ const incidentsPanel = (
 			scope:
 				detail.incidents.length === 0
 					? undefined
-					: h.span(
-							[h.Class("text-2xs text-muted-foreground tabular-nums")],
-							[`${detail.incidents.length} opened`],
-						),
+					: typography(h, { size: "2xs", tone: "muted", numeric: true }, [
+							`${detail.incidents.length} opened`,
+						]),
 		}),
 		detail.incidents.length === 0
 			? h.p(
@@ -109,6 +111,43 @@ const incidentsPanel = (
 				)
 			: incidentsTable(h, detail.incidents, clock),
 	])
+
+/** A merged issue says where its occurrences go now, and offers to split it back out. */
+const mergedNotice = (h: H, model: Model, issue: ErrorIssueDetailResponse["issue"]): ReadonlyArray<Html> =>
+	issue.mergedIntoIssueId === null
+		? []
+		: [
+				alert(h, { variant: "info", size: "sm", role: "status" }, [
+					alertTitle(h, ["Merged into another issue"]),
+					alertDescription(h, [
+						"New occurrences of this error land on ",
+						h.a(
+							[
+								h.Href(
+									hrefOf(
+										AppRoute.ErrorIssue({ issueId: issue.mergedIntoIssueId, search: {} }),
+									),
+								),
+								h.Class(textLinkClass("primary", false)),
+							],
+							["the issue it was merged into"],
+						),
+						". Unmerge it to track it on its own again.",
+					]),
+					alertAction(h, [
+						button(
+							h,
+							{
+								size: "sm",
+								variant: "outline",
+								isLoading: model.busy.includes("unmerge"),
+								attributes: [h.OnClick(Message.ClickedUnmerge())],
+							},
+							["Unmerge"],
+						),
+					]),
+				]),
+			]
 
 type Signal = ReturnType<typeof signalOf>
 
@@ -151,10 +190,9 @@ const overview = (
 		...clock,
 	})
 	const fix = getItFixedPanel(h, model, issue, linkedInvestigationOf(model))
-	return vstack(
-		h,
-		{ gap: "4" },
-		issue.kind === "alert"
+	return vstack(h, { gap: "4" }, [
+		...mergedNotice(h, model, issue),
+		...(issue.kind === "alert"
 			? [
 					alertSourceCard(h, issue),
 					stats,
@@ -169,8 +207,8 @@ const overview = (
 					...latestOccurrences(h, model, detail, clock),
 					incidentsPanel(h, detail, clock),
 					...relatedAnomaliesSection(h, relatedAnomaliesOf(model), clock),
-				],
-	)
+				]),
+	])
 }
 
 const rightPanel = (h: H, model: Model, detail: ErrorIssueDetailResponse): Html => {
@@ -178,17 +216,14 @@ const rightPanel = (h: H, model: Model, detail: ErrorIssueDetailResponse): Html 
 	const pullRequests = pullRequestsOf(model)
 	return vstack(h, { gap: "4", attributes: [h.OnMount(MountRightRail())] }, [
 		issueSidebar(h, model, detail.issue, detail.environments),
-		h.div(
-			[h.Class("flex flex-col gap-4 px-4 pb-4")],
-			[
-				...(verification !== null
-					? [verificationCard(h, verification, detail.issue.workflowState, model.nowMs)]
-					: AWAITING_FIX_STATES.has(detail.issue.workflowState) && pullRequests.length === 0
-						? [attachNudge(h)]
-						: []),
-				pullRequestsPanel(h, pullRequests, model.isAttaching || model.isDetaching),
-			],
-		),
+		vstack(h, { gap: "4", className: "px-4 pb-4" }, [
+			...(verification !== null
+				? [verificationCard(h, verification, detail.issue.workflowState, model.nowMs)]
+				: AWAITING_FIX_STATES.has(detail.issue.workflowState) && pullRequests.length === 0
+					? [attachNudge(h)]
+					: []),
+			pullRequestsPanel(h, pullRequests, model.isAttaching || model.isDetaching),
+		]),
 	])
 }
 
@@ -286,7 +321,7 @@ const severityConfirmDialog = (h: H, model: Model): Html =>
 			model.pendingSeverity?.severity ?? "",
 			" will notify",
 			" ",
-			model.pendingSeverity?.destinationNames.join(", ") ?? "",
+			model.pendingSeverity === null ? "" : Arr.join(model.pendingSeverity.destinationNames, ", "),
 			". Manual severity changes represent explicit human intent and bypass AI confidence gates.",
 		],
 		confirmLabel: "Change severity and notify",

@@ -11,6 +11,7 @@ import { summarizeCause } from "@maple/backend/platform/describe-cause"
 import { WarehouseQueryService } from "@maple/backend/services/warehouse/WarehouseQueryService"
 import { enqueueFixVerification } from "@maple/backend/services/errors/fix-verification-enqueue"
 import { IssueFixVerificationService } from "./IssueFixVerificationService"
+import { issueFingerprintHashes } from "./issue-fingerprints"
 import { makeErrorDatabaseExecute } from "./error-persistence"
 
 const decodeUserIdSync = Schema.decodeUnknownSync(UserId)
@@ -114,7 +115,7 @@ export interface FixVerificationTickServiceApi {
 	 * right answer for a transient database problem and avoids a failed cron
 	 * invocation for something that self-heals.
 	 */
-	readonly runTick: () => Effect.Effect<FixVerificationTickResult>
+	readonly runTick: Effect.Effect<FixVerificationTickResult>
 }
 
 const make: Effect.Effect<
@@ -152,12 +153,18 @@ const make: Effect.Effect<
 		fingerprintHash: string,
 		nowMs: number,
 	) {
-		const compiled = CH.compile(CH.errorIssueVersionsSinceQuery({ limit: VERSION_SCAN_LIMIT }), {
-			orgId: row.orgId,
-			fingerprintHash,
-			startTime: DateTime.makeUnsafe(row.mergedAt),
-			endTime: DateTime.makeUnsafe(nowMs),
-		})
+		const owned = yield* dbExecute((db) =>
+			issueFingerprintHashes(db, row.orgId, [{ id: row.issueId, fingerprintHash }]),
+		)
+		const fingerprintHashes = owned.get(row.issueId) ?? [fingerprintHash]
+		const compiled = CH.compile(
+			CH.errorIssueVersionsSinceQuery({ fingerprintHashes, limit: VERSION_SCAN_LIMIT }),
+			{
+				orgId: row.orgId,
+				startTime: DateTime.makeUnsafe(row.mergedAt),
+				endTime: DateTime.makeUnsafe(nowMs),
+			},
+		)
 		const rows = yield* warehouse.compiledQuery(systemTenant(row.orgId), compiled, {
 			profile: "aggregation",
 			context: "errorIssueVersionsSince",
@@ -169,7 +176,7 @@ const make: Effect.Effect<
 
 	// Not annotated with the public signature: this one can fail on persistence.
 	// `runTickSafely` below is what satisfies the never-failing contract.
-	const runTick = Effect.fn("FixVerificationTick.runTick")(function* () {
+	const runTick = Effect.gen(function* () {
 		const nowMs = yield* Clock.currentTimeMillis
 
 		/**
@@ -374,30 +381,29 @@ const make: Effect.Effect<
 		})
 
 		return { examined: due.length, refuted, investigationsStarted, verdictsApplied, skipped, failedRows }
-	})
+	}).pipe(Effect.withSpan("FixVerificationTick.runTick"))
 
-	const runTickSafely: FixVerificationTickServiceApi["runTick"] = () =>
-		runTick().pipe(
-			// Interrupts are re-raised rather than reported as an empty tick: the
-			// worker's `catchTickFailure` re-raises them for every other tick so the
-			// isolate tears down gracefully, and swallowing them here would make that
-			// guard dead code for this one.
-			Effect.catchCause((cause) =>
-				Cause.hasInterruptsOnly(cause)
-					? Effect.interrupt
-					: Effect.logError("[FixVerification] verification tick failed").pipe(
-							Effect.annotateLogs({ error: summarizeCause(cause) }),
-							Effect.as({
-								examined: 0,
-								refuted: 0,
-								investigationsStarted: 0,
-								verdictsApplied: 0,
-								skipped: 0,
-								failedRows: 0,
-							} satisfies FixVerificationTickResult),
-						),
-			),
-		)
+	const runTickSafely: FixVerificationTickServiceApi["runTick"] = runTick.pipe(
+		// Interrupts are re-raised rather than reported as an empty tick: the
+		// worker's `catchTickFailure` re-raises them for every other tick so the
+		// isolate tears down gracefully, and swallowing them here would make that
+		// guard dead code for this one.
+		Effect.catchCause((cause) =>
+			Cause.hasInterruptsOnly(cause)
+				? Effect.interrupt
+				: Effect.logError("[FixVerification] verification tick failed").pipe(
+						Effect.annotateLogs({ error: summarizeCause(cause) }),
+						Effect.as({
+							examined: 0,
+							refuted: 0,
+							investigationsStarted: 0,
+							verdictsApplied: 0,
+							skipped: 0,
+							failedRows: 0,
+						} satisfies FixVerificationTickResult),
+					),
+		),
+	)
 
 	return { runTick: runTickSafely } satisfies FixVerificationTickServiceApi
 })

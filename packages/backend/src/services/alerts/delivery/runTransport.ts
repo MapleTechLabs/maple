@@ -10,7 +10,7 @@ import {
 	type AlertDeliveryFailure,
 	type AlertDestinationType,
 } from "@maple/domain/http"
-import { Duration, Effect, Option, Result, String as Str } from "effect"
+import { Clock, Duration, Effect, Option, String as Str } from "effect"
 import { constTrue } from "effect/Function"
 import { HttpBody, HttpClient, HttpClientRequest } from "effect/http"
 import type { HttpClientResponse } from "effect/http"
@@ -37,12 +37,17 @@ const MAX_ERROR_BODY_BYTES = 16 * 1024
 /** Largest ack body a transport may `interpret` (Telegram's `{ ok }` is tiny). */
 const MAX_ACK_BODY_BYTES = 1024 * 1024
 
+/** Time left before `deadline` (epoch ms), never negative. */
+const remainingUntil = (deadline: number) =>
+	Effect.map(Clock.currentTimeMillis, (now) => Duration.millis(Math.max(0, deadline - now)))
+
 /**
  * Best-effort read of a failure body for the error message. Truncated and
  * whitespace-collapsed: this ends up in a delivery row and a log line, and some
- * providers answer with an HTML error page.
+ * providers answer with an HTML error page. Stops at `deadline`, so a slow body
+ * costs its detail and never the status that classifies the failure.
  */
-const readErrorBody = (response: HttpClientResponse.HttpClientResponse) =>
+const readErrorBody = (response: HttpClientResponse.HttpClientResponse, deadline: number) =>
 	readTextPrefix(response, MAX_ERROR_BODY_BYTES).pipe(
 		Effect.map(({ text }) => {
 			const detail = Str.slice(0, 500)(Str.trim(Str.replace(/\s+/g, " ")(text)))
@@ -56,6 +61,13 @@ const readErrorBody = (response: HttpClientResponse.HttpClientResponse) =>
 			return contentType ? `<empty body> (content-type: ${contentType})` : "<empty body>"
 		}),
 		Effect.orElseSucceed(() => ""),
+		(read) =>
+			Effect.flatMap(remainingUntil(deadline), (duration) =>
+				Effect.timeoutOrElse(read, {
+					duration,
+					orElse: () => Effect.succeed("<body not received before the deadline>"),
+				}),
+			),
 	)
 
 /**
@@ -93,7 +105,8 @@ export const failureForStatus = (
 const hostOf = (url: string) => Option.liftThrowable(() => new URL(url))()
 
 /**
- * The outbound provider call, as a Client-kind span.
+ * One provider call, as a Client-kind span: the POST, its status check and any
+ * body read, all under the exchange's deadline.
  *
  * `kind: "client"` + `peer.service` is what draws the provider as a node on the
  * service map and makes its latency and status attributable — without it the
@@ -105,14 +118,14 @@ const hostOf = (url: string) => Option.liftThrowable(() => new URL(url))()
  * inner closes Ok+interrupted while the outer records Error). The timeout stays
  * INSIDE the span so the elapsed time is attributed to the call that hung.
  */
-const sendHttp = Effect.fn("AlertDelivery.http", { kind: "client" })(function* (
+const sendHttp = Effect.fn("AlertDelivery.http", { kind: "client" })(function* <Config, A>(
 	spec: HttpRequestSpec,
-	transport: {
-		readonly peerService: string
-		readonly providerLabel: string
-		readonly type: AlertDestinationType
-	},
+	transport: HttpTransport<Config>,
+	input: RenderInput<Config>,
 	runtime: TransportRuntime,
+	/** Epoch ms the whole exchange must finish by. */
+	deadline: number,
+	onOk: (response: HttpClientResponse.HttpClientResponse) => Effect.Effect<A, AlertDeliveryFailure>,
 ) {
 	const parsed = hostOf(spec.url)
 	yield* Effect.annotateCurrentSpan({
@@ -138,31 +151,37 @@ const sendHttp = Effect.fn("AlertDelivery.http", { kind: "client" })(function* (
 	// Scoped per hop: a body nobody reads (a redirect, an ack-only 2xx) is
 	// cancelled when `runHttpTransport`'s scope closes.
 	const scoped = HttpClient.withScope(client)
-	const response = yield* (spec.guarded ? guard(scoped) : scoped).execute(request).pipe(
-		// The client's own span records `url.full`, and Discord and
-		// Telegram carry their delivery token in the URL path. This span is the
-		// client span.
-		Effect.provideService(HttpClient.TracerDisabledWhen, constTrue),
-		Effect.catchTags({
-			"@maple/safe-fetch/UrlValidationError": (error) =>
-				Effect.fail(makeDeliveryError(error.message, transport.type, error)),
-			HttpClientError: (error) =>
-				Effect.fail(makeDeliveryError(describeHttpClientError(error), transport.type, error)),
-		}),
-		Effect.timeoutOrElse({
-			duration: Duration.millis(runtime.timeoutMs),
-			orElse: () =>
-				Effect.fail(
-					makeDeliveryError(
-						`${transport.providerLabel} delivery timed out after ${runtime.timeoutMs}ms`,
-						transport.type,
-					),
-				),
-		}),
+	const timedOut = makeDeliveryError(
+		`${transport.providerLabel} delivery timed out after ${runtime.timeoutMs}ms`,
+		transport.type,
 	)
+	const withinDeadline = <B, R>(effect: Effect.Effect<B, AlertDeliveryFailure, R>) =>
+		Effect.flatMap(remainingUntil(deadline), (duration) =>
+			Effect.timeoutOrElse(effect, { duration, orElse: () => Effect.fail(timedOut) }),
+		)
+	// A hop with no time left is not sent: it would only be aborted mid-flight.
+	const left = yield* remainingUntil(deadline)
+	if (Duration.isZero(left)) return yield* timedOut
 
+	const response = yield* withinDeadline(
+		(spec.guarded ? guard(scoped) : scoped).execute(request).pipe(
+			// The client's own span records `url.full`, and Discord and
+			// Telegram carry their delivery token in the URL path. This span is the
+			// client span.
+			Effect.provideService(HttpClient.TracerDisabledWhen, constTrue),
+			Effect.catchTags({
+				"@maple/safe-fetch/UrlValidationError": (error) =>
+					Effect.fail(makeDeliveryError(error.message, transport.type, error)),
+				HttpClientError: (error) =>
+					Effect.fail(makeDeliveryError(describeHttpClientError(error), transport.type, error)),
+			}),
+		),
+	)
 	yield* Effect.annotateCurrentSpan({ "http.response.status_code": response.status })
-	return response
+	// Body reads are byte-bounded only, so they get what is left of the deadline
+	// too: a provider that trickles its body cannot hold the delivery past it.
+	yield* failOnStatus(response, transport, input, deadline)
+	return yield* withinDeadline(onOk(response))
 })
 
 /** Fail the delivery on a non-2xx, in the transport's own words when it has them. */
@@ -170,15 +189,21 @@ const failOnStatus = <Config>(
 	response: HttpClientResponse.HttpClientResponse,
 	transport: HttpTransport<Config>,
 	input: RenderInput<Config>,
+	deadline: number,
 ): Effect.Effect<void, AlertDeliveryFailure> =>
 	Effect.gen(function* () {
 		if (response.status >= 200 && response.status < 300) return
-		const detail = yield* readErrorBody(response)
 		// A transport may supply a better sentence for a status it knows well;
 		// it does not get to change whether the failure is retryable.
 		const described = transport.describeStatus?.(response.status) ?? null
+		// The body is only read when it will be shown.
+		const message =
+			described ??
+			(yield* Effect.map(readErrorBody(response, deadline), (detail) =>
+				statusFailureMessage(transport.providerLabel, response.status, detail),
+			))
 		const failure = failureForStatus(response.status, {
-			message: described ?? statusFailureMessage(transport.providerLabel, response.status, detail),
+			message,
 			destinationType: transport.type,
 			providerStatus: response.status,
 		})
@@ -194,44 +219,50 @@ const failOnStatus = <Config>(
 		return yield* failure
 	})
 
+/**
+ * Every hop of one delivery shares `runtime.timeoutMs`, from the first POST to
+ * the last body read, so a delivery never holds a drain slot past it.
+ */
 export const runHttpTransport = <Config>(
 	transport: HttpTransport<Config>,
 	input: RenderInput<Config>,
 	runtime: TransportRuntime,
 ): Effect.Effect<DispatchResult, AlertDeliveryFailure, HttpClient.HttpClient> =>
 	Effect.gen(function* () {
-		const spec = transport.render(input)
-		const response = yield* sendHttp(spec, transport, runtime)
-		yield* failOnStatus(response, transport, input)
-		yield* Effect.forEach(
-			transport.followUps?.(input) ?? [],
-			(followUp) =>
-				sendHttp(followUp, transport, runtime).pipe(
-					Effect.flatMap((followUpResponse) => failOnStatus(followUpResponse, transport, input)),
-				),
-			{ discard: true },
-		)
-
+		const deadline = (yield* Clock.currentTimeMillis) + runtime.timeoutMs
+		const interpret = transport.interpret
 		// A 2xx is not proof of delivery for every provider — Telegram answers 200
 		// with `{ ok: false }` — so a transport may claim the body.
-		if (transport.interpret) {
-			const rawBody = yield* readTextWithin(response, MAX_ACK_BODY_BYTES).pipe(
-				Effect.mapError((error) =>
-					makeDeliveryError(
-						`${transport.providerLabel} returned an unreadable response`,
-						transport.type,
-						error,
-					),
-				),
-			)
-			const ack = yield* Result.match(transport.interpret(input, rawBody), {
-				onSuccess: (value) => Effect.succeed(value),
-				onFailure: (error) => Effect.fail(error),
-			})
-			return { ...ack, responseCode: response.status }
-		}
-
-		return { ...transport.ack(input), responseCode: response.status }
+		const result = yield* sendHttp(
+			transport.render(input),
+			transport,
+			input,
+			runtime,
+			deadline,
+			(response) =>
+				interpret === undefined
+					? Effect.succeed<DispatchResult>({
+							...transport.ack(input),
+							responseCode: response.status,
+						})
+					: readTextWithin(response, MAX_ACK_BODY_BYTES).pipe(
+							Effect.mapError((error) =>
+								makeDeliveryError(
+									`${transport.providerLabel} returned an unreadable response`,
+									transport.type,
+									error,
+								),
+							),
+							Effect.flatMap((rawBody) => Effect.fromResult(interpret(input, rawBody))),
+							Effect.map((ack): DispatchResult => ({ ...ack, responseCode: response.status })),
+						),
+		)
+		yield* Effect.forEach(
+			transport.followUps?.(input) ?? [],
+			(followUp) => sendHttp(followUp, transport, input, runtime, deadline, () => Effect.void),
+			{ discard: true },
+		)
+		return result
 	}).pipe(Effect.scoped)
 
 export const runEffectTransport = <Config>(

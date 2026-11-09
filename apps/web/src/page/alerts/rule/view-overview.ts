@@ -40,18 +40,20 @@ import {
 } from "./derive"
 import { Message } from "./message"
 import type { Model, SignalSource } from "./model"
+import { anomalyConfiguration, anomalyIncidentsSection } from "./view-anomaly"
 import { checksPanel } from "./view-checks"
 import { diagnosisPanel } from "./view-diagnosis"
 import { queryTimeCard } from "./view-query-time"
 import { sectionHeading } from "../../kit/section-heading"
 import { typography } from "@maple/views/ui/typography"
+import { hstack, vstack } from "@maple/views/ui/stack"
 
 // The rule detail's Overview tab.
 
 type H = HtmlBuilder<Message>
 
 const SIGNAL_SOURCE_DESCRIPTION = new Map<SignalSource, string>([
-	["preview", "The rule's query, replayed now over the selected window."],
+	["preview", "The rule's query, replayed now over this window."],
 	["checks", "What the evaluator actually observed and stored, one point per check."],
 ])
 
@@ -68,8 +70,9 @@ const configRow = (h: H, label: string, children: ReadonlyArray<Html | string>, 
 	keyValue(h, { label, wrap: true, className: cn("items-center", isWide && "sm:col-span-2") }, children)
 
 const badgeList = (h: H, values: ReadonlyArray<string>, className: string): Html =>
-	h.div(
-		[h.Class("flex flex-wrap gap-1 justify-end")],
+	hstack(
+		h,
+		{ gap: "1", align: "stretch", justify: "end", wrap: true },
 		Arr.map(values, (value) => badge(h, { variant: "outline", className }, [value])),
 	)
 
@@ -88,26 +91,24 @@ const configuration = (h: H, rule: AlertRuleDocument): Html =>
 							[
 								...(rule.notes
 									? [
-											h.div(
-												[h.Class("flex flex-col gap-1 sm:col-span-2")],
-												[
-													h.dt([h.Class("text-muted-foreground")], ["Notes"]),
-													h.dd(
-														[h.Class("whitespace-pre-wrap text-foreground")],
-														[rule.notes],
-													),
-												],
-											),
+											vstack(h, { gap: "1", className: "sm:col-span-2" }, [
+												h.dt([h.Class("text-muted-foreground")], ["Notes"]),
+												h.dd(
+													[h.Class("whitespace-pre-wrap text-foreground")],
+													[rule.notes],
+												),
+											]),
 										]
 									: []),
 								configRow(h, "Signal", [
-									h.span([h.Class("font-medium")], [signalLabels[rule.signalType]]),
+									typography(h, { weight: "medium" }, [signalLabels[rule.signalType]]),
 								]),
 								configRow(h, "Scope", [
 									rule.serviceNames?.length > 0
 										? badgeList(h, rule.serviceNames, "text-xs")
-										: h.div(
-												[h.Class("flex flex-wrap gap-1 justify-end")],
+										: hstack(
+												h,
+												{ gap: "1", align: "stretch", justify: "end", wrap: true },
 												[
 													typography(h, { weight: "medium", mono: true }, [
 														rule.groupBy && rule.groupBy.length > 0
@@ -120,8 +121,9 @@ const configuration = (h: H, rule: AlertRuleDocument): Html =>
 								configRow(h, "Environments", [
 									rule.environments?.length > 0
 										? badgeList(h, rule.environments, "text-xs")
-										: h.div(
-												[h.Class("flex flex-wrap gap-1 justify-end")],
+										: hstack(
+												h,
+												{ gap: "1", align: "stretch", justify: "end", wrap: true },
 												[typography(h, { weight: "medium", mono: true }, ["all"])],
 											),
 								]),
@@ -147,38 +149,34 @@ const configuration = (h: H, rule: AlertRuleDocument): Html =>
 									]),
 								),
 								configRow(h, "Breaches to fire", [
-									h.span(
-										[h.Class("font-medium tabular-nums")],
-										[
-											rule.breachesOutOf === null
-												? `${rule.consecutiveBreachesRequired} in a row`
-												: `${rule.consecutiveBreachesRequired} of last ${rule.breachesOutOf}`,
-										],
-									),
+									typography(h, { weight: "medium", numeric: true }, [
+										rule.breachesOutOf === null
+											? `${rule.consecutiveBreachesRequired} in a row`
+											: `${rule.consecutiveBreachesRequired} of last ${rule.breachesOutOf}`,
+									]),
 								]),
 								configRow(h, "Healthy to resolve", [
-									h.span(
-										[h.Class("font-medium tabular-nums")],
-										[String(rule.consecutiveHealthyRequired)],
-									),
+									typography(h, { weight: "medium", numeric: true }, [
+										String(rule.consecutiveHealthyRequired),
+									]),
 								]),
 								configRow(h, "Min samples", [
-									h.span(
-										[h.Class("font-medium tabular-nums")],
-										[String(rule.minimumSampleCount)],
-									),
+									typography(h, { weight: "medium", numeric: true }, [
+										String(rule.minimumSampleCount),
+									]),
 								]),
 								configRow(h, "Renotify interval", [
-									h.span(
-										[h.Class("font-medium")],
-										[String(rule.renotifyIntervalMinutes), "min"],
-									),
+									typography(h, { weight: "medium" }, [
+										String(rule.renotifyIntervalMinutes),
+										"min",
+									]),
 								]),
 								...(rule.signalType === "builder_query" && rule.queryBuilderDraft
 									? [
 											configRow(h, "Data source", [
-												h.span(
-													[h.Class("font-mono font-medium capitalize")],
+												typography(
+													h,
+													{ weight: "medium", mono: true, className: "capitalize" },
 													[rule.queryBuilderDraft.dataSource ?? ""],
 												),
 											]),
@@ -210,60 +208,55 @@ const configuration = (h: H, rule: AlertRuleDocument): Html =>
 									: []),
 								...(rule.signalType === "raw_query" && rule.rawQuerySql
 									? [
-											h.div(
-												[h.Class("flex flex-col gap-1.5 sm:col-span-2")],
-												[
-													h.dt([h.Class("text-muted-foreground")], ["Raw SQL"]),
-													h.dd(
-														[],
-														[
-															h.pre(
-																[
-																	h.Class(
-																		"overflow-x-auto whitespace-pre rounded-md border bg-surface-sunken p-3 font-mono text-xs leading-relaxed",
-																	),
-																],
-																[
-																	h.code(
-																		[],
-																		Arr.map(
-																			tokenizeSql(
-																				formatSql(rule.rawQuerySql),
-																			),
-																			(token) =>
-																				h.span(
-																					[
-																						h.Key(
-																							String(
-																								token.start,
-																							),
-																						),
-																						...(token.className ===
-																						undefined
-																							? []
-																							: [
-																									h.Class(
-																										token.className,
-																									),
-																								]),
-																					],
-																					[token.text],
-																				),
+											vstack(h, { gap: "1.5", className: "sm:col-span-2" }, [
+												h.dt([h.Class("text-muted-foreground")], ["Raw SQL"]),
+												h.dd(
+													[],
+													[
+														h.pre(
+															[
+																h.Class(
+																	"overflow-x-auto whitespace-pre rounded-md border bg-surface-sunken p-3 font-mono text-xs leading-relaxed",
+																),
+															],
+															[
+																h.code(
+																	[],
+																	Arr.map(
+																		tokenizeSql(
+																			formatSql(rule.rawQuerySql),
 																		),
+																		(token) =>
+																			h.span(
+																				[
+																					h.Key(
+																						String(token.start),
+																					),
+																					...(token.className ===
+																					undefined
+																						? []
+																						: [
+																								h.Class(
+																									token.className,
+																								),
+																							]),
+																				],
+																				[token.text],
+																			),
 																	),
-																],
-															),
-														],
-													),
-												],
-											),
+																),
+															],
+														),
+													],
+												),
+											]),
 										]
 									: []),
 								configRow(h, "Destinations", [
-									h.span(
-										[h.Class("font-medium")],
-										[String(rule.destinationIds.length), " configured"],
-									),
+									typography(h, { weight: "medium" }, [
+										String(rule.destinationIds.length),
+										" configured",
+									]),
 								]),
 								configRow(h, "Status", [
 									alertStatusBadge(h, rule.enabled ? "ok" : "disabled", {
@@ -310,9 +303,77 @@ export const overviewTab = (h: H, model: Model, rule: AlertRuleDocument, timeZon
 	const railCoverage = `60 buckets · covers all of ${Str.toLowerCase(rangeLabel)}${
 		page != null ? ` · ${formatBucketSpan(page.summary.bucketSeconds)} each` : ""
 	}`
-	const overviewIncident = ruleIncidents.find((i) => i.status === "open") ?? ruleIncidents[0] ?? null
+	const overviewIncident =
+		Option.getOrElse(
+			Arr.findFirst(ruleIncidents, (i) => i.status === "open"),
+			() => ruleIncidents[0],
+		) ?? null
 	const isChartReady = model.themeColors !== null && isChartRuntimeReady(model.chartRuntime)
 	const isChecksLoading = AsyncData.isIdle(model.checks.data) || AsyncData.isLoading(model.checks.data)
+
+	const isAnomaly = rule.signalType === "anomaly"
+	// An anomaly rule has no query to replay: its incidents stand in for the chart.
+	const signalSection = h.div(
+		[h.Class("space-y-3")],
+		[
+			hstack(h, { align: "end", justify: "between", wrap: true, className: "gap-x-4 gap-y-2" }, [
+				h.div(
+					[h.Class("space-y-1")],
+					[
+						eyebrow(h, { as: "h2", className: "mb-0 block" }, [
+							`${signalLabels[rule.signalType]}: ${rangeLabel}`,
+						]),
+						typography(h, { size: "xs", tone: "muted", as: "p" }, [
+							SIGNAL_SOURCE_DESCRIPTION.get(model.signalSource) ?? "",
+						]),
+					],
+				),
+				segmentedSelect(h, {
+					options: [
+						{
+							value: "preview" as const,
+							label: SIGNAL_SOURCE_LABEL.preview,
+							isDisabled: !isPreviewAvailable,
+						},
+						{
+							value: "checks" as const,
+							label: SIGNAL_SOURCE_LABEL.checks,
+							isDisabled: !isChecksAvailable,
+						},
+					],
+					value: model.signalSource,
+					onChange: (source) => Message.ClickedSignalSource({ source }),
+					size: "sm",
+					ariaLabel: "Chart data source",
+				}),
+			]),
+			ruleChart(h, {
+				chartId: "alert-rule-chart",
+				chart: model.chart,
+				toChartMessage: (message) => Message.GotChartMessage({ message }),
+				colors: model.themeColors ?? {},
+				timeZone,
+				preview: preview.preview,
+				checks: chartChecks,
+				incidents: ruleIncidents,
+				threshold: rule.threshold,
+				thresholdUpper: rule.thresholdUpper,
+				criticalThreshold: rule.thresholds[1]?.value ?? null,
+				comparator: rule.comparator,
+				signalType: rule.signalType,
+				window: timelineRangeOf(model),
+				source: model.signalSource,
+				railCoverage,
+				selectedBucket: model.selectedBucket?.index ?? null,
+				onSelectBucket: (index) => Message.ClickedRailBucket({ index }),
+				isLoading:
+					preview.isLoading ||
+					!isChartReady ||
+					(rule.signalType === "raw_query" && isChecksLoading),
+				error: preview.error,
+			}),
+		],
+	)
 
 	return h.div(
 		[h.Class("space-y-6")],
@@ -327,71 +388,17 @@ export const overviewTab = (h: H, model: Model, rule: AlertRuleDocument, timeZon
 				now: model.nowMs,
 				timeZone,
 			}),
-			...Arr.fromNullishOr(queryTimeCard(h, rule, checks, timeZone)),
-			h.div(
-				[h.Class("space-y-3")],
-				[
-					h.div(
-						[h.Class("flex flex-wrap items-end justify-between gap-x-4 gap-y-2")],
-						[
-							h.div(
-								[h.Class("space-y-1")],
-								[
-									eyebrow(h, { as: "h2", className: "mb-0 block" }, [
-										`${signalLabels[rule.signalType]}: ${rangeLabel}`,
-									]),
-									typography(h, { size: "xs", tone: "muted", as: "p" }, [
-										SIGNAL_SOURCE_DESCRIPTION.get(model.signalSource) ?? "",
-									]),
-								],
-							),
-							segmentedSelect(h, {
-								options: [
-									{
-										value: "preview" as const,
-										label: SIGNAL_SOURCE_LABEL.preview,
-										isDisabled: !isPreviewAvailable,
-									},
-									{
-										value: "checks" as const,
-										label: SIGNAL_SOURCE_LABEL.checks,
-										isDisabled: !isChecksAvailable,
-									},
-								],
-								value: model.signalSource,
-								onChange: (source) => Message.ClickedSignalSource({ source }),
-								size: "sm",
-								ariaLabel: "Chart data source",
-							}),
-						],
-					),
-					ruleChart(h, {
-						chartId: "alert-rule-chart",
-						chart: model.chart,
-						toChartMessage: (message) => Message.GotChartMessage({ message }),
-						colors: model.themeColors ?? {},
-						timeZone,
-						preview: preview.preview,
-						checks: chartChecks,
-						incidents: ruleIncidents,
-						threshold: rule.threshold,
-						thresholdUpper: rule.thresholdUpper,
-						criticalThreshold: rule.thresholds[1]?.value ?? null,
-						comparator: rule.comparator,
-						signalType: rule.signalType,
-						window: timelineRangeOf(model),
-						source: model.signalSource,
-						railCoverage,
-						selectedBucket: model.selectedBucket?.index ?? null,
-						onSelectBucket: (index) => Message.ClickedRailBucket({ index }),
-						isLoading:
-							preview.isLoading ||
-							!isChartReady ||
-							(rule.signalType === "raw_query" && isChecksLoading),
-						error: preview.error,
-					}),
-				],
-			),
+			...(isAnomaly
+				? [
+						anomalyIncidentsSection(h, {
+							incidents: ruleIncidents,
+							range: timelineRangeOf(model),
+							rangeLabel,
+							now: model.nowMs,
+							timeZone,
+						}),
+					]
+				: [...Arr.fromNullishOr(queryTimeCard(h, rule, checks, timeZone)), signalSection]),
 			model.incidents === null
 				? skeleton(h, "h-40 w-full")
 				: overviewIncident === null
@@ -421,7 +428,7 @@ export const overviewTab = (h: H, model: Model, rule: AlertRuleDocument, timeZon
 								[icon(h, "ChatBubbleSparkleIcon"), "Open investigation"],
 							),
 						]),
-			configuration(h, rule),
+			isAnomaly ? anomalyConfiguration(h, rule, destinationsOf(model)) : configuration(h, rule),
 			Option.match(checksFailureOf(model), {
 				onSome: (failure) =>
 					h.div(
@@ -435,7 +442,11 @@ export const overviewTab = (h: H, model: Model, rule: AlertRuleDocument, timeZon
 							}),
 						],
 					),
-				onNone: () => checksPanel(h, model, { rule, page, isLoading: isChecksLoading, timeZone }),
+				// An anomaly rule's checks only record a severity code: its incidents say more.
+				onNone: () =>
+					isAnomaly
+						? h.empty
+						: checksPanel(h, model, { rule, page, isLoading: isChecksLoading, timeZone }),
 			}),
 		],
 	)

@@ -2,7 +2,7 @@ import { afterAll, beforeAll, describe, expect, test } from "bun:test"
 import { existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { Effect, Schema } from "effect"
+import { Effect, Option, Schema, Array as Arr, Record as Rec, String as Str } from "effect"
 import schemaSql from "@maple/local-server/schema/local-schema.sql" with { type: "text" }
 import { Chdb } from "@maple/local-server/chdb"
 import { decodeJsonEachRow } from "@maple/local-server/chdb-rows"
@@ -23,8 +23,12 @@ describe("scoped delete plan", () => {
 	// Fails when a table is added to the local schema without a delete strategy.
 	test("classifies every table in the bundled schema soundly", () => {
 		expect(validateDeletePlan(LOCAL_SCHEMA_MANIFEST)).toEqual([])
-		const tables = LOCAL_SCHEMA_MANIFEST.objects.filter((o) => o.kind === "table").map((o) => o.name)
-		expect(Object.keys(TABLE_DELETE_PLAN).sort()).toEqual([...tables].sort())
+		const tables = Arr.map(
+			Arr.filter(LOCAL_SCHEMA_MANIFEST.objects, (o) => o.kind === "table"),
+			(o) => o.name,
+		)
+		const planned: Array<string> = Rec.keys(TABLE_DELETE_PLAN)
+		expect(planned.sort()).toEqual([...tables].sort())
 	})
 
 	const withExtra = (ddl: string) => buildLocalSchemaManifest(`${schemaSql}\n\n${ddl}\n`)
@@ -48,7 +52,7 @@ describe("scoped delete plan", () => {
 				recompute: "views",
 			},
 		})
-		expect(problems.some((p) => p.includes("ServiceName is not in the sorting key"))).toBe(true)
+		expect(Arr.some(problems, (p) => Str.includes("ServiceName is not in the sorting key")(p))).toBe(true)
 	})
 
 	test("refuses a table that can neither filter nor recompute a namespace", () => {
@@ -78,7 +82,7 @@ describe("scoped delete plan", () => {
 				recompute: "views",
 			},
 		})
-		expect(problems.some((p) => p.includes("leaks into service_operations_hourly"))).toBe(true)
+		expect(Arr.some(problems, (p) => Str.includes("leaks into service_operations_hourly")(p))).toBe(true)
 	})
 
 	test("refuses excluding a table that telemetry views write", () => {
@@ -91,7 +95,7 @@ describe("scoped delete plan", () => {
 })
 
 const HOUR_MS = 3_600_000
-const iso = (ms: number) => new Date(ms).toISOString().replace("T", " ").replace("Z", "")
+const iso = (ms: number) => Str.replace("Z", "")(Str.replace("T", " ")(new Date(ms).toISOString()))
 const decodeCount = decodeJsonEachRow(Schema.Struct({ n: Schema.String }))
 
 describeWithChdb("scoped delete against chDB", () => {
@@ -107,7 +111,10 @@ describeWithChdb("scoped delete against chDB", () => {
 		const plan = tablePlan(table)!
 		const columns = plan.strategy === "scoped" && plan.service !== null ? plan.service : ["ServiceName"]
 		return count(
-			`SELECT toString(count()) AS n FROM ${table} WHERE ${columns.map((c) => `${c} = '${service}'`).join(" OR ")}`,
+			`SELECT toString(count()) AS n FROM ${table} WHERE ${Arr.join(
+				Arr.map(columns, (c) => `${c} = '${service}'`),
+				" OR ",
+			)}`,
 		)
 	}
 	const attributeKey = (key: string) =>
@@ -120,7 +127,7 @@ describeWithChdb("scoped delete against chDB", () => {
 		`map('deployment.environment', '${env}'), map('attr.${service}', 'v', 'shared.key', 'v', 'exception.type', 'E'), ` +
 		`[toDateTime64('${iso(at)}', 9)], ['exception'], [map('exception.type', 'Boom', 'exception.message', 'm')])`
 	const log = (at: number, service: string, env: string) =>
-		`('local', '${iso(at)}', '${iso(at).slice(0, 19)}', '${service}', 'body', map('deployment.environment', '${env}'), map('log.${service}', 'v'))`
+		`('local', '${iso(at)}', '${Str.slice(0, 19)(iso(at))}', '${service}', 'body', map('deployment.environment', '${env}'), map('log.${service}', 'v'))`
 	const metric = (at: number, service: string, env: string) =>
 		`('local', map('deployment.environment', '${env}'), '${service}', 'm.${service}', map('k', 'v'), '${iso(at)}', '${iso(at)}', 1, 1)`
 
@@ -136,24 +143,30 @@ describeWithChdb("scoped delete against chDB", () => {
 			span(hourAgo + 1, "d3", "drop", "prod", "", "Client"),
 		]
 		db.exec(
-			`INSERT INTO traces (OrgId, Timestamp, TraceId, SpanId, ParentSpanId, SpanName, SpanKind, ServiceName, Duration, StatusCode, ResourceAttributes, SpanAttributes, EventsTimestamp, EventsName, EventsAttributes) VALUES ${spans.join(", ")}`,
+			`INSERT INTO traces (OrgId, Timestamp, TraceId, SpanId, ParentSpanId, SpanName, SpanKind, ServiceName, Duration, StatusCode, ResourceAttributes, SpanAttributes, EventsTimestamp, EventsName, EventsAttributes) VALUES ${Arr.join(spans, ", ")}`,
 		)
 		db.exec(
-			`INSERT INTO logs (OrgId, Timestamp, TimestampTime, ServiceName, Body, ResourceAttributes, LogAttributes) VALUES ${[
-				log(twoHoursAgo, "keep", "prod"),
-				log(hourAgo, "drop", "prod"),
-				log(hourAgo, "drop", "pr-1"),
-			].join(", ")}`,
+			`INSERT INTO logs (OrgId, Timestamp, TimestampTime, ServiceName, Body, ResourceAttributes, LogAttributes) VALUES ${Arr.join(
+				[
+					log(twoHoursAgo, "keep", "prod"),
+					log(hourAgo, "drop", "prod"),
+					log(hourAgo, "drop", "pr-1"),
+				],
+				", ",
+			)}`,
 		)
 		db.exec(
-			`INSERT INTO metrics_sum (OrgId, ResourceAttributes, ServiceName, MetricName, Attributes, StartTimeUnix, TimeUnix, Value, IsMonotonic) VALUES ${[
-				metric(hourAgo, "keep", "prod"),
-				metric(hourAgo, "drop", "prod"),
-				metric(hourAgo, "drop", "pr-1"),
-			].join(", ")}`,
+			`INSERT INTO metrics_sum (OrgId, ResourceAttributes, ServiceName, MetricName, Attributes, StartTimeUnix, TimeUnix, Value, IsMonotonic) VALUES ${Arr.join(
+				[
+					metric(hourAgo, "keep", "prod"),
+					metric(hourAgo, "drop", "prod"),
+					metric(hourAgo, "drop", "pr-1"),
+				],
+				", ",
+			)}`,
 		)
 		db.exec(
-			`INSERT INTO service_map_edges_hourly_ingest (OrgId, Hour, SourceService, TargetService, DeploymentEnv, CallCount) VALUES ('local', toStartOfHour(toDateTime('${iso(hourAgo).slice(0, 19)}')), 'keep', 'drop', 'prod', 3), ('local', toStartOfHour(toDateTime('${iso(hourAgo).slice(0, 19)}')), 'keep', 'db', 'prod', 2)`,
+			`INSERT INTO service_map_edges_hourly_ingest (OrgId, Hour, SourceService, TargetService, DeploymentEnv, CallCount) VALUES ('local', toStartOfHour(toDateTime('${Str.slice(0, 19)(iso(hourAgo))}')), 'keep', 'drop', 'prod', 3), ('local', toStartOfHour(toDateTime('${Str.slice(0, 19)(iso(hourAgo))}')), 'keep', 'db', 'prod', 2)`,
 		)
 	}, 120_000)
 
@@ -180,7 +193,14 @@ describeWithChdb("scoped delete against chDB", () => {
 	test("dry run counts without deleting", async () => {
 		const report = await deleteNow({ service: "drop", env: "pr-1" }, true)
 		expect(report.dryRun).toBe(true)
-		expect(report.tables.find((t) => t.table === "traces")?.rows).toBe(1)
+		expect(
+			Option.getOrUndefined(
+				Option.map(
+					Arr.findFirst(report.tables, (t) => t.table === "traces"),
+					(t) => t.rows,
+				),
+			),
+		).toBe(1)
 		expect(serviceRows("traces", "drop")).toBe(3)
 		expect(existsSync(pendingDeletePath(dataDir))).toBe(false)
 	})
@@ -191,7 +211,14 @@ describeWithChdb("scoped delete against chDB", () => {
 		)
 		expect(usageBefore).toBe(3)
 		const report = await deleteNow({ service: "drop", env: "pr-1" })
-		expect(report.tables.find((t) => t.table === "service_usage")?.strategy).toBe("rebuild")
+		expect(
+			Option.getOrUndefined(
+				Option.map(
+					Arr.findFirst(report.tables, (t) => t.table === "service_usage"),
+					(t) => t.strategy,
+				),
+			),
+		).toBe("rebuild")
 		expect(count("SELECT toString(count()) AS n FROM traces WHERE ServiceName = 'drop'")).toBe(2)
 		expect(count("SELECT toString(count()) AS n FROM trace_list_mv WHERE DeploymentEnv = 'pr-1'")).toBe(0)
 		expect(
@@ -205,21 +232,25 @@ describeWithChdb("scoped delete against chDB", () => {
 	})
 
 	test("--service removes every derived row and keeps other services intact", async () => {
-		const keepBefore = Object.fromEntries(
-			Object.entries(TABLE_DELETE_PLAN)
-				.filter(([, plan]) => plan.strategy === "scoped" && plan.service !== null)
-				.map(([table]) => [table, serviceRows(table, "keep")]),
+		const keepBefore = Rec.fromEntries(
+			Arr.map(
+				Arr.filter(
+					Rec.toEntries(TABLE_DELETE_PLAN),
+					([, plan]) => plan.strategy === "scoped" && plan.service !== null,
+				),
+				([table]): [string, number] => [table, serviceRows(table, "keep")],
+			),
 		)
 		const sharedBefore = attributeKey("shared.key")
 		await deleteNow({ service: "drop" })
-		for (const [table, plan] of Object.entries(TABLE_DELETE_PLAN)) {
+		for (const [table, plan] of Rec.toEntries(TABLE_DELETE_PLAN)) {
 			if (plan.strategy !== "scoped" || plan.service === null) continue
 			expect({ table, rows: serviceRows(table, "drop") }).toEqual({ table, rows: 0 })
 			// Edges from keep to drop go too: they were derived from drop's spans.
 			if (table !== "service_map_edges_hourly")
 				expect({ table, rows: serviceRows(table, "keep") }).toEqual({
 					table,
-					rows: keepBefore[table]!,
+					rows: keepBefore[table] ?? 0,
 				})
 		}
 		expect(serviceRows("service_map_edges_hourly", "keep")).toBe(1)
@@ -302,7 +333,13 @@ describeWithChdb("namespace delete against chDB", () => {
 		const report = await Effect.runPromise(
 			runScopedDelete(db, LOCAL_SCHEMA_MANIFEST, dataDir, { namespace: "pr-1" }, { dryRun: false }),
 		)
-		const strategy = (table: string) => report.tables.find((t) => t.table === table)?.strategy
+		const strategy = (table: string) =>
+			Option.getOrUndefined(
+				Option.map(
+					Arr.findFirst(report.tables, (t) => t.table === table),
+					(t) => t.strategy,
+				),
+			)
 		expect(strategy("trace_list_mv")).toBe("filter")
 		expect(strategy("error_events")).toBe("rebuild")
 		expect(strategy("service_map_edges_hourly")).toBe("rebuild")
@@ -316,9 +353,12 @@ describeWithChdb("namespace delete against chDB", () => {
 		expect(
 			count("SELECT toString(count()) AS n FROM trace_list_mv WHERE ServiceNamespace = 'pr-1'"),
 		).toBe(0)
-		for (const [table, plan] of Object.entries(TABLE_DELETE_PLAN)) {
+		for (const [table, plan] of Rec.toEntries(TABLE_DELETE_PLAN)) {
 			if (plan.strategy !== "scoped" || plan.service === null) continue
-			const where = plan.service.map((c) => `${c} = 'web'`).join(" OR ")
+			const where = Arr.join(
+				Arr.map(plan.service, (c) => `${c} = 'web'`),
+				" OR ",
+			)
 			expect({
 				table,
 				rows: count(`SELECT toString(count()) AS n FROM ${table} WHERE ${where}`),

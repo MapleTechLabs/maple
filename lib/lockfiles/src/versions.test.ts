@@ -34,7 +34,7 @@ describe("compareNpmVersions", () => {
 	it("is antisymmetric and ignores build metadata", () => {
 		fc.assert(
 			fc.property(semverString, semverString, (a, b) => {
-				expect(compareNpmVersions(a, b)).toBe(-compareNpmVersions(b, a) || 0)
+				expect(compareNpmVersions(a, b)).toBe(0 - compareNpmVersions(b, a))
 				expect(compareNpmVersions(`${Str.split("+")(a)[0]}+zzz`, a)).toBe(0)
 			}),
 		)

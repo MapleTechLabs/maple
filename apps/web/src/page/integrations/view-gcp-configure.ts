@@ -10,6 +10,7 @@ import { chooseConfirm, chooseStage } from "./view-gcp-configure-choose"
 import { configureHeader, configurePanel } from "./view-gcp-configure-parts"
 import { methodApplyStage, methodStage } from "./view-gcp-configure-method"
 import { applyStage } from "./view-gcp-configure-run"
+import { typography } from "@maple/views/ui/typography"
 
 // `GcpConfigure`: an existing connection's Edit data and Reconnect, in one dialog. A new connection
 // is made in the connect flow (`view-flow-gcp.ts`).
@@ -31,7 +32,7 @@ const stages = (
 	const title = [
 		GCP_SCOPE_NAMES[connector.scope_type],
 		" ",
-		h.span([h.Class("font-mono whitespace-nowrap")], [connector.scope_id]),
+		typography(h, { mono: true, className: "whitespace-nowrap" }, [connector.scope_id]),
 	]
 	if (configure.opened === null)
 		return configure.connectionStage === "choose"

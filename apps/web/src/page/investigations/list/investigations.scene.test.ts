@@ -1,4 +1,5 @@
 import { OrgId } from "@maple/domain"
+import * as Policy from "@maple/domain/policy"
 import { Result, Schema, Array as Arr } from "effect"
 import { expect as expectView, given, Mount, scene, text, withViewInputs } from "foldkit/scene"
 import { describe, expect, test } from "vitest"
@@ -116,16 +117,27 @@ describe("investigations list", () => {
 			entered,
 			Message.CompletedFetchBudget({ key: entered.budget.key ?? "", result: Result.succeed(budget) }),
 		).model
-		const member = { ...paused, isOrgAdmin: false }
+		const member = { ...paused, grants: [] }
 		scene(
 			{ update: pageUpdate, view },
 			given(member),
 			measured(),
 			expectView(text("Raise the limit")).not.toExist(),
 		)
+		// The limit is on the AI settings tab, which an engineer cannot open.
+		const engineer = pageUpdate(
+			member,
+			Message.CompletedReadGrants({ orgId: context.orgId, grants: Policy.grantsOf(["org:engineer"]) }),
+		).model
+		scene(
+			{ update: pageUpdate, view },
+			given(engineer),
+			measured(),
+			expectView(text("Raise the limit")).not.toExist(),
+		)
 		const admin = pageUpdate(
 			member,
-			Message.CompletedReadIsAdmin({ orgId: context.orgId, isAdmin: true }),
+			Message.CompletedReadGrants({ orgId: context.orgId, grants: Policy.grantsOf(["org:admin"]) }),
 		).model
 		scene(
 			{ update: pageUpdate, view },
@@ -135,9 +147,9 @@ describe("investigations list", () => {
 		)
 		const otherOrg = pageUpdate(
 			member,
-			Message.CompletedReadIsAdmin({ orgId: "org_other", isAdmin: true }),
+			Message.CompletedReadGrants({ orgId: "org_other", grants: Policy.grantsOf(["org:admin"]) }),
 		).model
-		expect(otherOrg.isOrgAdmin).toBe(false)
+		expect(otherOrg.grants).toEqual([])
 	})
 
 	test("search is debounced into the URL", () => {

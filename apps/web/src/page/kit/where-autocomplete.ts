@@ -165,8 +165,8 @@ export const activeKeysAt = (expression: string, cursor: number, dataSource: Que
 	const at = getWhereClauseAutocomplete({ expression, cursor, dataSource })
 	const key = at.context === "value" ? at.key : null
 	return {
-		attribute: key?.startsWith("attr.") === true ? Str.slice(5)(key) : null,
-		resource: key?.startsWith("resource.") === true ? Str.slice(9)(key) : null,
+		attribute: key !== null && Str.startsWith("attr.")(key) ? Str.slice(5)(key) : null,
+		resource: key !== null && Str.startsWith("resource.")(key) ? Str.slice(9)(key) : null,
 	}
 }
 

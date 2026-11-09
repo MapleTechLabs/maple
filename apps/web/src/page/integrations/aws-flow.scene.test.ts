@@ -108,7 +108,7 @@ describe("aws connect flow", () => {
 			IntegrationMessage.CompletedLoadAws({
 				key: disconnected.integrations.statuses.aws.key ?? "",
 				result: Result.succeed(
-					Schema.decodeUnknownSync(V2AwsIntegration)({
+					Schema.decodeSync(V2AwsIntegration)({
 						object: "aws_integration",
 						available: true,
 						modules: [],

@@ -18,6 +18,19 @@ export const MUTATING_TOOL_NAMES: ReadonlySet<string> = new Set([
 	"create_alert_rule",
 	"update_alert_rule",
 	"delete_alert_rule",
+	"create_maintenance_window",
+	"delete_maintenance_window",
+	"create_alert_silence",
+	"end_alert_silence",
+	"acknowledge_alert_incident",
+	"create_escalation_chain",
+	"update_escalation_chain",
+	"delete_escalation_chain",
+	"create_oncall_schedule",
+	"update_oncall_schedule",
+	"delete_oncall_schedule",
+	"create_oncall_override",
+	"delete_oncall_override",
 	// error issues
 	"claim_error_issue",
 	"release_error_issue",
@@ -25,6 +38,7 @@ export const MUTATING_TOOL_NAMES: ReadonlySet<string> = new Set([
 	"transition_error_issues",
 	"comment_on_error_issue",
 	"set_issue_severity",
+	"merge_error_issues",
 	"update_error_notification_policy",
 	// fixes / agents
 	"propose_fix",
@@ -36,6 +50,10 @@ export const MUTATING_TOOL_NAMES: ReadonlySet<string> = new Set([
 	"create_scrape_target",
 	"update_scrape_target",
 	"delete_scrape_target",
+	// SLOs
+	"create_slo",
+	"update_slo",
+	"delete_slo",
 	// uptime monitors
 	"create_uptime_monitor",
 	"update_uptime_monitor",
@@ -45,10 +63,7 @@ export const MUTATING_TOOL_NAMES: ReadonlySet<string> = new Set([
 	"update_ingest_rule",
 	"delete_ingest_rule",
 	// status pages: every post is public text on the customer's page
-	"create_status_page_incident",
 	"post_status_page_update",
-	"resolve_status_page_incident",
-	"schedule_status_page_maintenance",
 	"apply_status_page_config",
 	// feedback
 	"send_maple_feedback",

@@ -6,7 +6,7 @@ import { eyebrow } from "@maple/views/ui/eyebrow"
 import { icon, type IconName } from "@maple/views/ui/icon"
 import { panel } from "@maple/views/ui/panel"
 import { typography } from "@maple/views/ui/typography"
-import { vstackClass } from "@maple/views/ui/stack"
+import { hstack, vstackClass } from "@maple/views/ui/stack"
 import { Array as Arr } from "effect"
 
 // `IntegrationEmpty` and its parts and `IntegrationIconPlate`.
@@ -75,16 +75,20 @@ export const integrationEmptyFeatures = <M>(
 	h.ul(
 		[h.Class("grid grid-cols-1 gap-3 text-left @2xl/page:grid-cols-3")],
 		Arr.map(features, (feature, index) =>
-			h.li(
-				[
-					h.Class(
-						"flex animate-in fade-in slide-in-from-bottom-1 [animation-duration:300ms] motion-reduce:animate-none",
-					),
-					h.Style({
-						"animation-delay": `${50 + index * 50}ms`,
-						"animation-fill-mode": "backwards",
-					}),
-				],
+			hstack(
+				h,
+				{
+					align: "stretch",
+					as: "li",
+					className:
+						"animate-in fade-in slide-in-from-bottom-1 [animation-duration:300ms] motion-reduce:animate-none",
+					attributes: [
+						h.Style({
+							"animation-delay": `${50 + index * 50}ms`,
+							"animation-fill-mode": "backwards",
+						}),
+					],
+				},
 				[
 					panel(h, { className: "flex-1 gap-2 border-border-subtle px-4 py-3.5" }, [
 						eyebrow(h, { variant: "label" }, [feature.label]),
@@ -102,8 +106,14 @@ const BACKER =
 /** `IntegrationEmptyMedia`: two dim backer plates fanned behind the brand plate. */
 export const integrationEmptyMedia = <M>(h: HtmlBuilder<M>, brand: IntegrationBrand): Html => {
 	const backerIcon = brand.backerIcon ?? brand.icon
-	return h.div(
-		[h.AriaHidden(true), h.Class("relative mb-1 flex h-16 shrink-0 items-end justify-center")],
+	return hstack(
+		h,
+		{
+			align: "end",
+			justify: "center",
+			className: "relative mb-1 h-16 shrink-0",
+			attributes: [h.AriaHidden(true)],
+		},
 		[
 			h.span(
 				[h.Class(cn(BACKER, "origin-bottom -translate-x-8 -rotate-10"))],
@@ -115,7 +125,7 @@ export const integrationEmptyMedia = <M>(h: HtmlBuilder<M>, brand: IntegrationBr
 			),
 			integrationIconPlate(h, brand, {
 				size: 28,
-				plateClassName: "relative size-14 rounded-xl shadow-popup shadow-black/10",
+				plateClassName: "relative size-14 rounded-xl shadow-popup",
 			}),
 		],
 	)

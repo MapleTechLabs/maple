@@ -362,7 +362,7 @@ export class ApnsClient extends Context.Service<ApnsClient, ApnsClientApi>()(
 					// Alerts about the present are worthless an hour later.
 					"apns-expiration": String(Math.floor((yield* Clock.currentTimeMillis) / 1000) + 3600),
 					...(push.collapseId !== undefined
-						? { "apns-collapse-id": push.collapseId.slice(0, 64) }
+						? { "apns-collapse-id": Str.slice(0, 64)(push.collapseId) }
 						: undefined),
 				}
 				return yield* dispatch(push.environment, push.deviceToken, headers, body)
@@ -394,7 +394,7 @@ export class ApnsClient extends Context.Service<ApnsClient, ApnsClientApi>()(
 					"apns-priority": "5",
 					"apns-expiration": String(nowSeconds + (push.expiresInSeconds ?? 900)),
 					...(push.collapseId !== undefined
-						? { "apns-collapse-id": push.collapseId.slice(0, 64) }
+						? { "apns-collapse-id": Str.slice(0, 64)(push.collapseId) }
 						: undefined),
 				}
 				return yield* dispatch(push.environment, push.deviceToken, headers, body)

@@ -1,5 +1,5 @@
 import { SpanId, TraceId } from "@maple/domain"
-import { Schema, Array as Arr, String as Str } from "effect"
+import { Option, Schema, Array as Arr, String as Str } from "effect"
 
 import type { LogRow as Log } from "@maple/query-engine"
 
@@ -226,7 +226,10 @@ function pickTemplate(r: Rng, incident: boolean): Template {
 	if (incident && r() < 0.35) return pick(r, INCIDENT_TEMPLATES)
 	const target = r() * TOTAL_WEIGHT
 	let seen = 0
-	return TEMPLATES.find((template) => (seen += template.weight) >= target) ?? pick(r, TEMPLATES)
+	return Option.getOrElse(
+		Arr.findFirst(TEMPLATES, (template) => (seen += template.weight) >= target),
+		() => pick(r, TEMPLATES),
+	)
 }
 
 export function buildLogsLabFixture(anchorMs: number, count = 400): Log[] {

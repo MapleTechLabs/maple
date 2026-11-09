@@ -5,7 +5,7 @@
  * `FetchHttpClient.Fetch`; tests steer it by mutating `state` between steps.
  */
 import { createHash, randomUUID } from "node:crypto"
-import { Schema, Array as Arr, String as Str } from "effect"
+import { Order, Schema, Array as Arr, String as Str } from "effect"
 
 export const FAKE_CLIENT_ID = "6f1c1d1e-0b7a-4d8e-9a51-3c2b1a0f9e88"
 export const FAKE_CLIENT_SECRET = "sba_fake_client_secret"
@@ -49,18 +49,18 @@ const runLogsQuery = (rows: ReadonlyArray<FakeLogRow>, sql: string) => {
 	const from = /timestamp >= '([^']+)'/.exec(sql)?.[1]
 	const to = /timestamp < '([^']+)'/.exec(sql)?.[1]
 	const limit = Number(/limit (\d+)/.exec(sql)?.[1] ?? "100")
-	return Arr.filter(
-		rows,
-		(row) =>
-			(from === undefined || comparableTime(row.timestamp) >= comparableTime(from)) &&
-			(to === undefined || comparableTime(row.timestamp) < comparableTime(to)),
-	)
-		.toSorted(
-			(a, b) =>
-				Str.localeCompare(comparableTime(b.timestamp))(comparableTime(a.timestamp)) ||
-				Str.localeCompare(b.id)(a.id),
-		)
-		.slice(0, limit)
+	return Arr.sort(
+		Arr.filter(
+			rows,
+			(row) =>
+				(from === undefined || comparableTime(row.timestamp) >= comparableTime(from)) &&
+				(to === undefined || comparableTime(row.timestamp) < comparableTime(to)),
+		),
+		Order.make<FakeLogRow>((a, b) => {
+			const byTime = Str.localeCompare(comparableTime(b.timestamp))(comparableTime(a.timestamp))
+			return byTime !== 0 ? byTime : Str.localeCompare(b.id)(a.id)
+		}),
+	).slice(0, limit)
 }
 
 export interface FakeCall {

@@ -16,7 +16,7 @@ import {
 } from "@maple/backend/services/warehouse/WarehouseQueryService"
 import { productEventsFunnel } from "@maple/query-engine/observability"
 import { PRODUCT_EVENTS_FUNNEL_ENDPOINT } from "@maple/widgets/dashboard"
-import { QuerySpec, type QueryEngineResult } from "@maple/query-engine"
+import { QueryEngineExecuteRequest, QuerySpec, type QueryEngineResult } from "@maple/query-engine"
 import { buildBreakdownQuerySpec, buildTimeseriesQuerySpec } from "@maple/query-engine/query-builder"
 import {
 	buildFormulaResults,
@@ -38,7 +38,7 @@ import {
 	type ChartFlag,
 	type QueryStats,
 } from "./chart-statistics"
-import { resolveDashboardTimeRange, type DashboardTimeRangeInput } from "./resolve-dashboard-time-range"
+import { resolveDashboardTimeRange } from "./resolve-dashboard-time-range"
 import { resolveTimeRange } from "./time"
 import { autoBucketSeconds, runRawSql } from "./run-raw-sql"
 import type { DashboardDocument, DashboardWidgetSchema } from "@maple/domain/http"
@@ -208,7 +208,7 @@ function applyReduceToValue(
 		case "max":
 			return { value: Math.max(...values) }
 		case "first":
-			return { value: values[0] }
+			return { value: values[0] ?? null }
 		case "count":
 			return { value: values.length }
 		default:
@@ -389,7 +389,8 @@ const checkFunnelWidget = (
 	}).pipe(
 		provideWarehouseExecutorFromTenant(tenant),
 		Effect.map((rows): FunnelCheck => {
-			const count = (step: number) => Number(rows.find((r) => r.step === step)?.count) || 0
+			const count = (step: number) =>
+				Option.getOrUndefined(Arr.findFirst(rows, (r) => r.step === step))?.count ?? 0
 			return { ok: true, steps, first: count(1), last: count(steps) }
 		}),
 		Effect.catch((error) => Effect.succeed<FunnelCheck>({ ok: false, error: error.message })),
@@ -542,6 +543,7 @@ export const inspectWidget = Effect.fn("McpInspectWidget.inspectWidget")(
 		const transformObj = dataSourceTransform(widget.dataSource)
 		const reduceToValue = transformObj?.reduceToValue
 		const hasUnsupportedTransform =
+			// @effect-diagnostics-next-line preferEffectRecord:off -- not a record type; Rec.keys would need a cast
 			transformObj !== undefined && Arr.some(Object.keys(transformObj), (k) => k !== "reduceToValue")
 
 		const queryEngine = yield* QueryEngineService
@@ -562,9 +564,7 @@ export const inspectWidget = Effect.fn("McpInspectWidget.inspectWidget")(
 						: buildBreakdownQuerySpec(draft)
 
 					const builderWarnings =
-						buildResult.warnings && buildResult.warnings.length > 0
-							? [...buildResult.warnings]
-							: undefined
+						buildResult.warnings.length > 0 ? [...buildResult.warnings] : undefined
 					const builderWarningFlags: ChartFlag[] = builderWarnings ? ["BUILDER_WARNINGS"] : []
 
 					if (!buildResult.query) {
@@ -598,11 +598,14 @@ export const inspectWidget = Effect.fn("McpInspectWidget.inspectWidget")(
 					const decodedSpec = decodedSpecResult.success
 
 					const exit = yield* queryEngine
-						.execute(tenant, {
-							startTime: timeRange.startTime,
-							endTime: timeRange.endTime,
-							query: decodedSpec,
-						})
+						.execute(
+							tenant,
+							new QueryEngineExecuteRequest({
+								startTime: timeRange.startTime,
+								endTime: timeRange.endTime,
+								query: decodedSpec,
+							}),
+						)
 						.pipe(Effect.exit)
 
 					if (Exit.isFailure(exit)) {
@@ -855,7 +858,9 @@ export function summarizeOutcome(widget: DashboardWidget, outcome: InspectionOut
 		// The percent-scale note is the one note that tells the caller what to
 		// change, so it rides along on the mutation-tool summary rather than only
 		// appearing in a full `inspect_chart_data` response.
-		const actionableNote = outcome.data.notes.find((note) => Str.startsWith('unit "percent')(note))
+		const actionableNote = Arr.findFirst(outcome.data.notes, (note) =>
+			Str.startsWith('unit "percent')(note),
+		)
 		// A breakdown's groups are its rows. The largest query, not the sum, so hidden
 		// operands and the formula built from them are not counted twice.
 		const isBreakdown = dataSourceQuerySet(widget.dataSource)?.resultShape === "breakdown"
@@ -870,7 +875,7 @@ export function summarizeOutcome(widget: DashboardWidget, outcome: InspectionOut
 			visualization: widget.visualization,
 			verdict: outcome.data.verdict satisfies WidgetInspectionVerdict,
 			flags: [...outcome.data.flags],
-			...(actionableNote !== undefined ? { note: actionableNote } : undefined),
+			...Option.match(actionableNote, { onNone: () => undefined, onSome: (note) => ({ note }) }),
 			seriesCount,
 		}
 	}
@@ -1000,7 +1005,7 @@ export const inspectWidgetsAfterMutation = Effect.fn("McpInspectWidget.inspectWi
 		const capped = targets.length > maxWidgets
 		const toInspect = capped ? targets.slice(0, maxWidgets) : targets
 
-		const resolved = resolveDashboardTimeRange(dashboard.timeRange as DashboardTimeRangeInput)
+		const resolved = resolveDashboardTimeRange(dashboard.timeRange)
 		const timeRange: InspectWidgetTimeRange = resolved
 			? { startTime: resolved.startTime, endTime: resolved.endTime, source: "dashboard" }
 			: (() => {
@@ -1013,7 +1018,7 @@ export const inspectWidgetsAfterMutation = Effect.fn("McpInspectWidget.inspectWi
 		// on data the tile will never show.
 		const timeRangeFor = (widget: DashboardWidget): InspectWidgetTimeRange => {
 			if (!widget.timeRange) return timeRange
-			const widgetResolved = resolveDashboardTimeRange(widget.timeRange as DashboardTimeRangeInput)
+			const widgetResolved = resolveDashboardTimeRange(widget.timeRange)
 			return widgetResolved
 				? { startTime: widgetResolved.startTime, endTime: widgetResolved.endTime, source: "widget" }
 				: timeRange
@@ -1031,8 +1036,9 @@ export const inspectWidgetsAfterMutation = Effect.fn("McpInspectWidget.inspectWi
 			{ concurrency: maxConcurrent },
 		)
 
-		const inspected: WidgetInspectionEntry[] = Arr.map(toInspect, (widget, i) =>
-			summarizeOutcome(widget, outcomes[i]),
+		const inspected: WidgetInspectionEntry[] = Arr.map(
+			Arr.zip(toInspect, outcomes),
+			([widget, outcome]) => summarizeOutcome(widget, outcome),
 		)
 
 		const countVerdict = (verdict: WidgetInspectionEntry["verdict"]) =>

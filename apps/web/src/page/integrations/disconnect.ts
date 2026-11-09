@@ -96,6 +96,14 @@ const SPECS = {
 		error: "Couldn't disconnect Google Cloud",
 		refresh: ["gcp"],
 	},
+	"google-search-console": {
+		subject: "Google Search Console",
+		description:
+			"Maple revokes its access to your Google account and stops importing Search Console data. Data already imported stays. You can reconnect later.",
+		success: "Google Search Console disconnected",
+		error: "Couldn't disconnect Google Search Console",
+		refresh: ["searchConsole"],
+	},
 	chat: {
 		subject: "workspace",
 		description: "This workspace is unlinked from your organization immediately.",
@@ -149,6 +157,9 @@ const mutation = (integration: string) =>
 			}
 			case "supabase":
 				yield* internal.integrations.supabaseDisconnect()
+				return integration
+			case "google-search-console":
+				yield* internal.integrations.searchConsoleDisconnect()
 				return integration
 			case "cloudflare":
 			case "cloudflare-multi":

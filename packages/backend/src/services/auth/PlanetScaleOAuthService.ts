@@ -12,7 +12,19 @@ import {
 import * as PG from "@maple-dev/effect-orm/postgres"
 import { OAuthAuthStates, PlanetscaleConnections } from "@maple/db/tables"
 import * as PlanetScale from "@distilled.cloud/planetscale"
-import { Clock, Context, Duration, Effect, Layer, Option, Redacted, Result, Schema } from "effect"
+import {
+	Clock,
+	Context,
+	Duration,
+	Effect,
+	Layer,
+	Option,
+	Redacted,
+	Result,
+	Schema,
+	String as Str,
+	Array as Arr,
+} from "effect"
 import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/http"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { Env, type EnvConfig } from "@maple/backend/platform/Env"
@@ -57,7 +69,7 @@ const MAX_PAGES = 10
 interface ResolvedPlanetScaleOAuthConfig {
 	readonly clientId: string
 	/** Always present — PlanetScale OAuth apps are confidential clients (no PKCE). Redacted until the wire. */
-	readonly clientSecret: Redacted.Redacted<string>
+	readonly clientSecret: Redacted.Redacted
 	readonly authorizeUrl: string
 	readonly tokenUrl: string
 	/** Space-delimited, resource-prefixed scopes sent in the authorize request. */
@@ -274,7 +286,7 @@ export class PlanetScaleOAuthService extends Context.Service<
 				if (res.status === 401 || res.status === 403) {
 					yield* Effect.logError("PlanetScale auth server rejected the token on introspection", {
 						status: res.status,
-						body: text.slice(0, 200),
+						body: Str.slice(0, 200)(text),
 					})
 					return "invalid" satisfies TokenIntrospectionVerdict
 				}
@@ -310,7 +322,7 @@ export class PlanetScaleOAuthService extends Context.Service<
 					decodeConsumed(Schema.Array(OrganizationSchema), "organizations")(items),
 				),
 				Effect.map((organizations) =>
-					organizations.map((organization): PlanetScaleOrganization => ({
+					Arr.map(organizations, (organization): PlanetScaleOrganization => ({
 						id: organization.id,
 						name: organization.name,
 					})),
@@ -395,9 +407,9 @@ export class PlanetScaleOAuthService extends Context.Service<
 			yield* Effect.annotateCurrentSpan({
 				"maple.planetscale.token.granted_scope": tokenResponse.scope ?? "(none)",
 				"maple.planetscale.token.type": tokenResponse.token_type ?? "(none)",
-				"maple.planetscale.token.prefix": tokenResponse.access_token.slice(0, 13),
+				"maple.planetscale.token.prefix": Str.slice(0, 13)(tokenResponse.access_token),
 				"maple.planetscale.token.length": tokenResponse.access_token.length,
-				"maple.planetscale.token.looks_jwt": tokenResponse.access_token.split(".").length === 3,
+				"maple.planetscale.token.looks_jwt": Str.split(tokenResponse.access_token, ".").length === 3,
 				"maple.planetscale.token.expires_in": tokenResponse.expires_in ?? "(none)",
 			})
 
@@ -452,7 +464,8 @@ export class PlanetScaleOAuthService extends Context.Service<
 					}),
 				),
 			)
-			if (organizations.length === 0) {
+			const [firstOrganization] = organizations
+			if (firstOrganization === undefined) {
 				return yield* new IntegrationsValidationError({
 					message: "The PlanetScale authorization grants access to no organizations",
 				})
@@ -475,7 +488,7 @@ export class PlanetScaleOAuthService extends Context.Service<
 
 			yield* oauth.upsertConnection(orgId, currentTime, {
 				externalUserId: Option.match(currentUser, {
-					onNone: () => organizations[0]!.id,
+					onNone: () => firstOrganization.id,
 					onSome: (user) => user.id,
 				}),
 				externalUserEmail: Option.match(currentUser, {
@@ -550,7 +563,7 @@ export class PlanetScaleOAuthService extends Context.Service<
 			return {
 				revokedAt: row?.revokedAt ?? null,
 				expiresAt: row?.expiresAt ?? null,
-				scopes: (row?.scope ?? "").split(" ").filter((scope) => scope !== ""),
+				scopes: Arr.filter(Str.split(row?.scope ?? "", " "), (scope) => scope !== ""),
 				updatedAt: row?.updatedAt ?? null,
 			}
 		})

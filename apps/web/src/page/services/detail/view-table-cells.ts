@@ -97,17 +97,16 @@ export const tableTitle = (h: H, options: Readonly<{ title: string; count?: numb
 		scope:
 			options.count === undefined
 				? undefined
-				: h.span(
-						[h.Class("font-mono text-2xs tabular-nums text-foreground-subtle")],
-						[String(options.count)],
-					),
+				: typography(h, { size: "2xs", tone: "subtle", mono: true, numeric: true }, [
+						String(options.count),
+					]),
 		action: options.action,
 	})
 
 /** Past 30 days a tab's summaries outlive the raw spans its drill-downs read. */
 export const rangeNote = (h: H, subject: string): Html =>
 	typography(h, { size: "xs", tone: "muted", as: "p" }, [
-		`${subject} summaries cover the selected range; trace drill-downs show the latest 30 days.`,
+		`${subject} summaries cover this window; trace drill-downs show the latest 30 days.`,
 	])
 
 /** A loading table's title and column-header rows, sized like the loaded ones. */

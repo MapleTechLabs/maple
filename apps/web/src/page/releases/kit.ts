@@ -1,10 +1,10 @@
 import { formatPercent } from "@maple/ui/lib/format"
-import { TONE_FILL, TONE_SOFT } from "@maple/ui/lib/tone"
+import { TONE_FILL } from "@maple/ui/lib/tone"
 import { cn } from "@maple/ui/lib/utils"
 import type { ReleaseHealth } from "../../components/releases/release-model"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { AppRoute, hrefOf } from "../../route"
-import { Array as Arr, Record as Rec, String as Str } from "effect"
+import { Array as Arr, Record as Rec, String as Str, Option, Order } from "effect"
 
 // Release health and commit helpers, shared by the list and the detail.
 
@@ -20,7 +20,7 @@ export const RELEASE_HEALTH_DESCRIPTION = {
 	watch: "p95 latency up by a quarter or more against the version it replaced.",
 	rolling: "The newest version of its service, not yet carrying the whole of the latest traffic.",
 	healthy:
-		"No change worth flagging against the version it replaced, or no earlier version in the window to compare with.",
+		"No change worth flagging against the version it replaced, or no earlier version in this window to compare with.",
 } as const satisfies Record<ReleaseHealth, string>
 
 export const RELEASE_HEALTH_DOT_CLASS = {
@@ -30,12 +30,12 @@ export const RELEASE_HEALTH_DOT_CLASS = {
 	healthy: TONE_FILL.ok,
 } as const satisfies Record<ReleaseHealth, string>
 
-export const PILL_CLASS = {
-	regressed: TONE_SOFT.crit,
-	watch: TONE_SOFT.warn,
-	rolling: "bg-primary-a2 text-primary",
-	healthy: TONE_SOFT.ok,
-} as const satisfies Record<ReleaseHealth, string>
+export const PILL_VARIANT = {
+	regressed: "crit",
+	watch: "warn",
+	rolling: "live",
+	healthy: "ok",
+} as const satisfies Record<ReleaseHealth, "crit" | "warn" | "live" | "ok">
 
 /** `releaseHealthFigure`: "errors 4.1×" / "p95 +38%" / "42% rolling out". */
 export const releaseHealthFigure = (impact: {
@@ -65,28 +65,35 @@ export const isResolvableSha = (sha: string): boolean => /^[0-9a-f]{40}$/i.test(
 
 /** `firstLine`: a commit message's subject. */
 export const firstLine = (message: string): string => {
-	const index = message.indexOf("\n")
-	return Str.trim(index === -1 ? message : Str.slice(0, index)(message))
+	return Str.trim(
+		Option.match(Str.indexOf("\n")(message), {
+			onNone: () => message,
+			onSome: (index) => Str.slice(0, index)(message),
+		}),
+	)
 }
 
 /** `commitsQueryKey`: the resolvable shas, deduped and sorted. */
 export const commitsQueryKey = (shas: Iterable<string>): string =>
-	Arr.join(Arr.filter([...new Set(shas)], isResolvableSha).toSorted(), ",")
+	Arr.join(Arr.sort(Arr.filter([...new Set(shas)], isResolvableSha), Order.String), ",")
 
 /** `commitRangesKey`: resolvable `base..head` pairs, deduped and sorted. */
 export const commitRangesKey = (ranges: Iterable<Readonly<{ base: string; head: string }>>): string =>
 	Arr.join(
-		[
-			...new Set(
-				Arr.map(
-					Arr.filter(
-						[...ranges],
-						(range) => isResolvableSha(range.base) && isResolvableSha(range.head),
+		Arr.sort(
+			[
+				...new Set(
+					Arr.map(
+						Arr.filter(
+							[...ranges],
+							(range) => isResolvableSha(range.base) && isResolvableSha(range.head),
+						),
+						(range) => `${range.base}..${range.head}`,
 					),
-					(range) => `${range.base}..${range.head}`,
 				),
-			),
-		].toSorted(),
+			],
+			Order.String,
+		),
 		",",
 	)
 
@@ -124,16 +131,22 @@ export const commitAvatar = <M>(
  * schema's. Reorders `href`'s query to `keys` (the rest after), keeping each value's encoding.
  */
 export const withQueryOrder = (href: string, keys: ReadonlyArray<string>): string => {
-	const [path, query] = href.split("?", 2)
+	const [path, query] = Str.split("?")(href)
 	if (query === undefined) return href
-	const pairs = Arr.map(Str.split("&")(query), (pair) => [pair.split("=", 1)[0] ?? "", pair] as const)
+	const pairs = Arr.map(
+		Str.split("&")(query),
+		(pair) => [Arr.headNonEmpty(Str.split("=")(pair)), pair] as const,
+	)
 	const rank = (key: string) => {
 		const index = keys.indexOf(key)
 		return index === -1 ? keys.length : index
 	}
 	return `${path}?${Arr.join(
 		Arr.map(
-			pairs.toSorted((a, b) => rank(a[0]) - rank(b[0])),
+			Arr.sort(
+				pairs,
+				Order.mapInput(Order.Number, (pair: readonly [string, string]) => rank(pair[0])),
+			),
 			([, pair]) => pair,
 		),
 		"&",

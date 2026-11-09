@@ -6,8 +6,9 @@ import {
 	getSpanAttributeKeys,
 	getTracesFacets,
 } from "@maple/web-data/warehouse/traces"
-import type { MapleInternalHttp, WarehouseExecutor } from "@maple/web-data/warehouse/warehouse-services"
 import { Effect, Schema, Array as Arr, String as Str } from "effect"
+import type { BackendError, WarehouseApiError } from "@maple/web-data/warehouse/effect-utils"
+import type { MapleInternalHttp, WarehouseExecutor } from "@maple/web-data/warehouse/warehouse-services"
 import type { TimeWindow } from "../../data/time-range"
 
 // The autocomplete lookups a
@@ -32,8 +33,11 @@ export type LookupNames = typeof LookupNames.Type
 
 /** `toNames`: trimmed, non-empty, each once. */
 const names = (rows: ReadonlyArray<{ readonly name: string }> | undefined): ReadonlyArray<string> =>
-	Arr.map(rows ?? [], (row) => Str.trim(row.name)).filter(
-		(name, index, all) => name !== "" && all.indexOf(name) === index,
+	Arr.dedupe(
+		Arr.filter(
+			Arr.map(rows ?? [], (row) => Str.trim(row.name)),
+			(name) => name !== "",
+		),
 	)
 const keysOf = (response: {
 	readonly data: ReadonlyArray<{ readonly attributeKey: string }>
@@ -49,7 +53,7 @@ export const lookupField = (answer: LookupNames | undefined, field: string): Rea
 export const autocompleteLookup = (
 	name: AutocompleteLookup,
 	window: TimeWindow,
-): Effect.Effect<LookupNames, unknown, WarehouseExecutor | MapleInternalHttp> => {
+): Effect.Effect<LookupNames, WarehouseApiError | BackendError, WarehouseExecutor | MapleInternalHttp> => {
 	switch (name) {
 		case "tracesFacets":
 			return Effect.map(getTracesFacets({ data: window }), ({ data }) => ({

@@ -1,3 +1,4 @@
+import * as Policy from "@maple/domain/policy"
 import { Schema } from "effect"
 import { defineMessageUnion } from "foldkit/message"
 import { LoadFailure } from "@maple/views/data/load-failure"
@@ -7,7 +8,7 @@ const outcome = <S extends Schema.Top>(success: S) => Schema.Result(success, Loa
 
 export const Message = defineMessageUnion({
 	ReadClock: { nowMs: Schema.Number },
-	CompletedFetchSession: { orgId: Schema.String, isAdmin: Schema.Boolean },
+	CompletedFetchSession: { orgId: Schema.String, grants: Schema.Array(Policy.PermissionName) },
 	CompletedFetchPages: { key: Schema.String, result: outcome(Schema.Array(StatusPageSummary)) },
 	ClickedRetry: {},
 })

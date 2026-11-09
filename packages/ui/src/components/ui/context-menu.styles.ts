@@ -8,7 +8,7 @@ export const contextMenuContentStyles =
 export const contextMenuLabelStyles = "text-muted-foreground px-2 py-2 text-xs data-[inset]:pl-8"
 
 export const contextMenuItemStyles =
-	"focus:bg-accent focus:text-accent-foreground data-[variant=destructive]:text-destructive data-[variant=destructive]:focus:bg-destructive-a2 dark:data-[variant=destructive]:focus:bg-destructive-a3 data-[variant=destructive]:focus:text-destructive data-[variant=destructive]:*:[svg]:text-destructive focus:*:[svg]:text-accent-foreground gap-2 rounded-md px-2 py-2 text-xs [&_svg:not([class*='size-'])]:size-3.5 group/context-menu-item relative flex cursor-default items-center outline-hidden select-none data-disabled:pointer-events-none data-disabled:opacity-50 data-[inset]:pl-8 [&_svg]:pointer-events-none [&_svg]:shrink-0"
+	"focus:bg-accent focus:text-accent-foreground data-[variant=destructive]:text-destructive data-[variant=destructive]:focus:bg-destructive-a2 dark:data-[variant=destructive]:focus:bg-destructive-a3 data-[variant=destructive]:focus:text-destructive data-[variant=destructive]:*:[svg]:text-destructive focus:*:[svg]:text-accent-foreground gap-2 rounded-md px-2 py-2 text-xs [&_svg:not([class*='size-'])]:size-3.5 group/context-menu-item relative flex cursor-default items-center outline-hidden select-none data-disabled:pointer-events-none data-disabled:opacity-64 data-[inset]:pl-8 [&_svg]:pointer-events-none [&_svg]:shrink-0"
 
 export const contextMenuSubTriggerStyles =
 	"focus:bg-accent focus:text-accent-foreground data-open:bg-accent data-open:text-accent-foreground gap-2 rounded-md px-2 py-2 text-xs [&_svg:not([class*='size-'])]:size-3.5 flex cursor-default items-center outline-hidden select-none data-[inset]:pl-8 [&_svg]:pointer-events-none [&_svg]:shrink-0"
@@ -18,10 +18,10 @@ export const contextMenuSubTriggerIconStyles = "ml-auto"
 export const contextMenuSubContentStyles = "shadow-popup"
 
 export const contextMenuCheckboxItemStyles =
-	"focus:bg-accent focus:text-accent-foreground gap-2 rounded-md py-2 pr-8 pl-2 text-xs [&_svg:not([class*='size-'])]:size-3.5 relative flex cursor-default items-center outline-hidden select-none data-[disabled]:pointer-events-none data-[disabled]:opacity-50 [&_svg]:pointer-events-none [&_svg]:shrink-0"
+	"focus:bg-accent focus:text-accent-foreground gap-2 rounded-md py-2 pr-8 pl-2 text-xs [&_svg:not([class*='size-'])]:size-3.5 relative flex cursor-default items-center outline-hidden select-none data-[disabled]:pointer-events-none data-[disabled]:opacity-64 [&_svg]:pointer-events-none [&_svg]:shrink-0"
 
 export const contextMenuRadioItemStyles =
-	"focus:bg-accent focus:text-accent-foreground gap-2 rounded-md py-2 pr-8 pl-2 text-xs [&_svg:not([class*='size-'])]:size-3.5 relative flex cursor-default items-center outline-hidden select-none data-[disabled]:pointer-events-none data-[disabled]:opacity-50 [&_svg]:pointer-events-none [&_svg]:shrink-0"
+	"focus:bg-accent focus:text-accent-foreground gap-2 rounded-md py-2 pr-8 pl-2 text-xs [&_svg:not([class*='size-'])]:size-3.5 relative flex cursor-default items-center outline-hidden select-none data-[disabled]:pointer-events-none data-[disabled]:opacity-64 [&_svg]:pointer-events-none [&_svg]:shrink-0"
 
 export const contextMenuCheckboxItemIndicatorStyles = "absolute right-2 pointer-events-none"
 
@@ -30,4 +30,4 @@ export const contextMenuRadioItemIndicatorStyles = "absolute right-2 pointer-eve
 export const contextMenuSeparatorStyles = "bg-border -mx-1 h-px"
 
 export const contextMenuShortcutStyles =
-	"text-muted-foreground group-focus/context-menu-item:text-accent-foreground ml-auto text-xs tracking-widest"
+	"text-muted-foreground group-focus/context-menu-item:text-accent-foreground ml-auto text-xs tracking-overline"

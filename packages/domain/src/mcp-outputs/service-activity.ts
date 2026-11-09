@@ -56,6 +56,8 @@ export const RouteUsageOutput = Schema.Struct({
 	search: Schema.optionalKey(Schema.String),
 	sort: RouteUsageSort,
 	truncated: Schema.Boolean,
+	/** Rows skipped before this page. */
+	offset: Schema.optionalKey(Schema.Number),
 	routes: Schema.Array(RouteUsageRow),
 })
 

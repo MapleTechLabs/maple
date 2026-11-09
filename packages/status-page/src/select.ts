@@ -39,18 +39,17 @@ export const groupComponents = (
 	components: ReadonlyArray<StatusPageSnapshotComponent>,
 ): ReadonlyArray<ComponentGroup> =>
 	Arr.map(
-		components.reduce<
+		Arr.reduce<
+			StatusPageSnapshotComponent,
 			ReadonlyArray<{ name: string | null; components: ReadonlyArray<StatusPageSnapshotComponent> }>
-		>(
-			(groups, component) =>
-				Arr.some(groups, (group) => group.name === component.group)
-					? Arr.map(groups, (group) =>
-							group.name === component.group
-								? { ...group, components: [...group.components, component] }
-								: group,
-						)
-					: [...groups, { name: component.group, components: [component] }],
-			[],
+		>(components, [], (groups, component) =>
+			Arr.some(groups, (group) => group.name === component.group)
+				? Arr.map(groups, (group) =>
+						group.name === component.group
+							? { ...group, components: [...group.components, component] }
+							: group,
+					)
+				: [...groups, { name: component.group, components: [component] }],
 		),
 		(group) => ({ ...group, status: worstStatus(Arr.map(group.components, (c) => c.status)) }),
 	)

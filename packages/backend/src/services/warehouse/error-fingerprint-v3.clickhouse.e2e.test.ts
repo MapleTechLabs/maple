@@ -3,7 +3,7 @@
 // cityHash64 of exactly the inputs the TS mirror derives, for every v3 rule.
 
 import { afterAll, assert, beforeAll, describe, it } from "@effect/vitest"
-import { computeFingerprintInputs, FINGERPRINT_HASH_SALT } from "@maple/domain/tinybird/fingerprint"
+import { computeFingerprintInputs } from "@maple/domain/tinybird/fingerprint"
 import { Schema, Array as Arr, String as Str } from "effect"
 import { msToDate } from "../../platform/time"
 import {
@@ -20,7 +20,7 @@ const SERVICE = "api"
 /** Now-relative: the tables enforce a TTL at insert time. */
 const SEED_TS = Str.slice(0, 19)(Str.replace("T", " ")(msToDate(Date.now() - 60 * 60 * 1000).toISOString()))
 
-const quote = (value: string): string => `'${Str.replace(/'/g, "\\'")(Str.replace(/\\/g, "\\\\")(value))}'`
+const quote = (value: string): string => `'${Str.replace(/[\\']/g, "\\$&")(value)}'`
 
 interface Seed {
 	readonly spanId: string
@@ -194,7 +194,10 @@ const decodeHashRow = Schema.decodeUnknownSync(Schema.fromJsonString(HashRow))
 
 const readRows = async (sql: string): Promise<Map<string, HashRow>> => {
 	const body = await clickhouseExec(`${sql} FORMAT JSONEachRow`, database)
-	const rows = Arr.filter(Str.split("\n")(body), (line) => Str.trim(line).length > 0).map(decodeHashRow)
+	const rows = Arr.map(
+		Arr.filter(Str.split("\n")(body), (line) => Str.trim(line).length > 0),
+		(line) => decodeHashRow(line),
+	)
 	return new Map(Arr.map(rows, (row) => [row.SpanId, row]))
 }
 
@@ -206,7 +209,7 @@ const mirroredSql = Arr.join(
 			exceptionStacktrace: row.stacktrace,
 			statusMessage: row.message,
 		})
-		return `SELECT ${quote(row.spanId)} AS SpanId, ${quote(inputs.topFrame)} AS TopFrame, toString(cityHash64(${quote(ORG_ID)}, ${quote(SERVICE)}, ${quote(row.type)}, ${quote(inputs.fpFrames)}, ${quote(inputs.msgSignature)}, ${quote(FINGERPRINT_HASH_SALT)})) AS Hash`
+		return `SELECT ${quote(row.spanId)} AS SpanId, ${quote(inputs.topFrame)} AS TopFrame, toString(cityHash64(${Arr.join(Arr.map([ORG_ID, SERVICE, ...inputs.hashInputs], quote), ", ")})) AS Hash`
 	}),
 	"\nUNION ALL\n",
 )

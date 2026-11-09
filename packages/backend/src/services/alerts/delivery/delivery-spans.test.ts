@@ -41,7 +41,7 @@ const dispatchDelivery = (
 const failingChatPost = () =>
 	Effect.fail(new AlertDeliveryError({ message: "unexpected postChatAlert", destinationType: "chat" }))
 
-const DESTINATION_ID = Schema.decodeUnknownSync(AlertDestinationId)("7c6b5a49-3821-4e0f-9d8c-7b6a59483726")
+const DESTINATION_ID = Schema.decodeSync(AlertDestinationId)("7c6b5a49-3821-4e0f-9d8c-7b6a59483726")
 
 const HTTP_SPAN = "AlertDelivery.http"
 
@@ -176,22 +176,22 @@ describe("AlertDelivery.http span", () => {
 				// `Effect.fn` — that emits two spans that disagree on timeout.
 				assert.deepStrictEqual(rest, [], "exactly one provider span per delivery")
 
-				assert.strictEqual(span!.kind, "client")
-				assert.strictEqual(span!.attributes.get("peer.service"), testCase.peerService)
-				assert.strictEqual(span!.attributes.get("server.address"), testCase.host)
-				assert.strictEqual(span!.attributes.get("http.request.method"), "POST")
-				assert.isUndefined(span!.attributes.get("url.full"))
+				assert.strictEqual(span.kind, "client")
+				assert.strictEqual(span.attributes.get("peer.service"), testCase.peerService)
+				assert.strictEqual(span.attributes.get("server.address"), testCase.host)
+				assert.strictEqual(span.attributes.get("http.request.method"), "POST")
+				assert.isUndefined(span.attributes.get("url.full"))
 
 				if (testCase.expectPath === null) {
 					assert.isUndefined(
-						span!.attributes.get("url.path"),
+						span.attributes.get("url.path"),
 						"the webhook token is a path segment — the path must stay off the span",
 					)
 				} else {
-					assert.strictEqual(span!.attributes.get("url.path"), testCase.expectPath)
+					assert.strictEqual(span.attributes.get("url.path"), testCase.expectPath)
 				}
 
-				for (const value of span!.attributes.values()) {
+				for (const value of span.attributes.values()) {
 					assert.notInclude(String(value), "s3cr3t")
 					assert.notInclude(String(value), "xoxb-token")
 				}
@@ -218,8 +218,8 @@ describe("AlertDelivery.http span", () => {
 			// upstream 5xx is attributable without parsing the error message.
 			const [span] = spansNamed(spans, HTTP_SPAN)
 			assert.isDefined(span)
-			assert.strictEqual(span!.attributes.get("http.response.status_code"), 503)
-			assert.strictEqual(span!.attributes.get("peer.service"), "webhook")
+			assert.strictEqual(span.attributes.get("http.response.status_code"), 503)
+			assert.strictEqual(span.attributes.get("peer.service"), "webhook")
 		}),
 	)
 

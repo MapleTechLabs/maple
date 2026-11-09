@@ -29,8 +29,12 @@ type Side = typeof Side.Type
 
 /** `instanceAttribute`: the most specific resource attribute that names one running instance. */
 export const instanceAttribute = (log: LogRecord): InstanceAttribute | undefined => {
-	const key = INSTANCE_KEYS.find((candidate) => (log.resourceAttributes[candidate] ?? "") !== "")
-	return key === undefined ? undefined : { key, value: log.resourceAttributes[key] ?? "" }
+	return Option.getOrUndefined(
+		Option.map(
+			Arr.findFirst(INSTANCE_KEYS, (candidate) => (log.resourceAttributes[candidate] ?? "") !== ""),
+			(key) => ({ key, value: log.resourceAttributes[key] ?? "" }),
+		),
+	)
 }
 
 /** `contextKey`: the record hash when the row has one, else timestamp, span and body. */
@@ -102,7 +106,7 @@ export const mergeLogContext = (
 			seen.add(key)
 			return true
 		})
-	const before = unique(beforeDesc).slice(0, CONTEXT_SIZE).toReversed()
+	const before = Arr.reverse(unique(beforeDesc).slice(0, CONTEXT_SIZE))
 	const after = unique(afterAsc).slice(0, CONTEXT_SIZE)
 	return [...before, selected, ...after]
 }

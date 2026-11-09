@@ -39,14 +39,16 @@ export function getSpanKindLabel(spanKind: string | null | undefined): string {
 	return SPAN_KIND_LABELS[spanKind] ?? Str.replace("SPAN_KIND_", "")(spanKind)
 }
 
+const UNSET_BADGE_CLASSES = "bg-muted text-muted-foreground border-border"
+
 /** Span status (`Ok`/`Error`/`Unset`, Title case per Maple convention) → badge classes. */
 export const SPAN_STATUS_BADGE_CLASSES: Record<string, string> = {
 	Ok: "bg-severity-info-a2 text-severity-info border-severity-info-a3",
 	Error: "bg-severity-error-a2 text-severity-error border-severity-error-a3",
-	Unset: "bg-muted text-muted-foreground border-border",
+	Unset: UNSET_BADGE_CLASSES,
 } satisfies Record<string, string>
 
 /** Badge classes for a span status, treating unknown statuses as `Unset`. */
 export function getSpanStatusBadgeClass(statusCode: string | null | undefined): string {
-	return (statusCode && SPAN_STATUS_BADGE_CLASSES[statusCode]) || SPAN_STATUS_BADGE_CLASSES.Unset
+	return (statusCode ? SPAN_STATUS_BADGE_CLASSES[statusCode] : undefined) || UNSET_BADGE_CLASSES
 }

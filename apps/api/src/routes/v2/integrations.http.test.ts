@@ -158,8 +158,8 @@ const makeHarness = (planetscale: PlanetScaleFakes = {}) => {
 		disableLogger: true,
 	})
 	const runtime = ManagedRuntime.make(servicesLive)
-	const ORG = Schema.decodeUnknownSync(OrgId)("org_integrations_e2e")
-	const USER = Schema.decodeUnknownSync(UserId)("user_integrations_e2e")
+	const ORG = Schema.decodeSync(OrgId)("org_integrations_e2e")
+	const USER = Schema.decodeSync(UserId)("user_integrations_e2e")
 
 	/** Root-role key (API keys resolve as `root` unless their metadata pins roles). */
 	const bootstrapAdminKey = (scopes?: ReadonlyArray<string>) =>
@@ -236,7 +236,7 @@ describe("v2 planetscale integration over HTTP", () => {
 		apiMetrics: null,
 		webhooks: null,
 		scrapeTarget: {
-			id: Schema.decodeUnknownSync(ScrapeTargetId)("11111111-1111-4111-8111-111111111111"),
+			id: Schema.decodeSync(ScrapeTargetId)("11111111-1111-4111-8111-111111111111"),
 			enabled: true,
 			scrapeIntervalSeconds: 60,
 			includeBranches: ["main"],

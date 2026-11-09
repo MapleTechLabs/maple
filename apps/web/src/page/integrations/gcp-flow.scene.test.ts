@@ -30,7 +30,7 @@ const NOW = Date.parse("2026-10-24T12:00:00.000Z")
 const id = encodePublicId(PublicIdPrefixes.gcpConnector, "00000000-0000-4000-8000-000000000501")
 
 const connector = (fields: Readonly<Record<string, unknown>> = {}) =>
-	Schema.decodeUnknownSync(V2GcpConnector)({
+	Schema.decodeSync(V2GcpConnector)({
 		id,
 		object: "gcp_connector",
 		scope_type: "project",
@@ -55,7 +55,7 @@ const statusOf = (model: PageModel, connectors: ReadonlyArray<V2GcpConnector>): 
 	Message.CompletedLoadGcp({
 		key: model.integrations.statuses.gcp.key ?? "",
 		result: Result.succeed(
-			Schema.decodeUnknownSync(V2GcpIntegration)({
+			Schema.decodeSync(V2GcpIntegration)({
 				object: "gcp_integration",
 				metrics_available: true,
 				connectors: Arr.map(connectors, (entry) => Schema.encodeSync(V2GcpConnector)(entry)),

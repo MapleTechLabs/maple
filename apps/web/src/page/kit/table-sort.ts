@@ -1,4 +1,4 @@
-import { Schema, Array as Arr, String as Str } from "effect"
+import { Schema, Array as Arr, String as Str, Order } from "effect"
 
 // The click-to-sort state as Model data, and the comparator.
 
@@ -55,8 +55,19 @@ export const sortRows = <Row>(
 	read: (row: Row, key: string) => SortValue,
 ): ReadonlyArray<Row> => {
 	const key = sort.key
-	return key === null ? rows : rows.toSorted((a, b) => compareValues(read(a, key), read(b, key), sort.dir))
+	return key === null
+		? rows
+		: Arr.sort(
+				rows,
+				orderOf((a: Row, b: Row) => compareValues(read(a, key), read(b, key), sort.dir)),
+			)
 }
+
+/** A native numeric comparator as an `Order`: only its sign counts, as with `toSorted`. */
+const orderOf =
+	<Row>(compare: (a: Row, b: Row) => number): Order.Order<Row> =>
+	(a, b) =>
+		Order.Number(compare(a, b), 0)
 
 /** `sortRows` on the row field named by the key, `pinned` rows first. */
 export const sortRowsByField = <Row, K extends keyof Row>(
@@ -66,11 +77,14 @@ export const sortRowsByField = <Row, K extends keyof Row>(
 ): ReadonlyArray<Row> => {
 	const key = sort.key
 	if (key === null) return rows
-	const compare = (a: Row, b: Row) => compareValues(a[key], b[key], sort.dir)
-	if (pinned === undefined) return rows.toSorted(compare)
+	const compare = orderOf((a: Row, b: Row) => compareValues(a[key], b[key], sort.dir))
+	if (pinned === undefined) return Arr.sort(rows, compare)
 	return [
-		...Arr.filter(rows, pinned).toSorted(compare),
-		...Arr.filter(rows, (row) => !pinned(row)).toSorted(compare),
+		...Arr.sort(Arr.filter(rows, pinned), compare),
+		...Arr.sort(
+			Arr.filter(rows, (row) => !pinned(row)),
+			compare,
+		),
 	]
 }
 

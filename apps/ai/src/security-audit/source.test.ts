@@ -47,7 +47,7 @@ const fake: SourceReaderApi = {
 		}),
 }
 const { handlers } = auditToolHandlers(fake)
-const run = <A, E>(effect: Effect.Effect<A, E, never>) => Effect.runPromise(Effect.result(effect))
+const run = <A, E>(effect: Effect.Effect<A, E>) => Effect.runPromise(Effect.result(effect))
 const failureOf = <A, E extends { readonly message: string }>(
 	result: Awaited<ReturnType<typeof run<A, E>>>,
 ) => (result._tag === "Failure" ? result.failure.message : undefined)

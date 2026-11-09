@@ -141,7 +141,7 @@ const optionalEnvString = (key: string): Effect.Effect<string | undefined> =>
 
 const localUiUrlConfig = Effect.map(
 	optionalEnvString("MAPLE_LOCAL_UI_URL"),
-	(raw) => raw?.trim() || DEFAULT_REMOTE_UI_URL,
+	(raw) => (raw === undefined ? undefined : Str.trim(raw)) || DEFAULT_REMOTE_UI_URL,
 )
 
 const remoteUiUrl = (): Effect.Effect<string, ServerOptionError> =>
@@ -483,8 +483,9 @@ const BACKGROUND_ABORT_GRACE_MS = 20_000
 export const parseCheckpointInterval = (value: string): Duration.Duration | undefined | "invalid" => {
 	const raw = Str.toLowerCase(Str.trim(value))
 	if (raw === "off" || raw === "0" || raw === "none") return undefined
-	const match = raw.match(/^(\d+)\s*(s|m|h)$/)
-	if (!match) return "invalid"
+	const parsed = Str.match(/^(\d+)\s*(s|m|h)$/)(raw)
+	if (Option.isNone(parsed)) return "invalid"
+	const match = parsed.value
 	const amount = Number(match[1])
 	if (amount <= 0) return undefined
 	return match[2] === "s"
@@ -723,8 +724,12 @@ const childFailureLine = (logPath: string, fromByte: number): string =>
 					),
 					(line) => line.length > 0,
 				)
-				return (
-					[...lines].reverse().find((line) => Str.startsWith("error:")(line)) ?? lines.at(-1) ?? ""
+				return Option.getOrElse(
+					Option.orElse(
+						Arr.findLast(lines, (line) => Str.startsWith("error:")(line)),
+						() => Arr.last(lines),
+					),
+					() => "",
 				)
 			},
 			catch: stateFileError(logPath, "read"),
@@ -883,7 +888,7 @@ const startDetached = (options: DetachedStart) =>
 			})
 		}
 
-		const assets = options.offline ? yield* resolveUiAssets() : undefined
+		const assets = options.offline ? yield* resolveUiAssets : undefined
 		const dashboardUrl = options.offline
 			? assets !== undefined
 				? `${connectAddr}/`
@@ -1251,7 +1256,7 @@ export const start = Command.make("start", {
 							dim(`◌ opening chDB at ${prettyPath(dataDir)} (bootstrapping schema)…\n`),
 						),
 					)
-					const assets = yield* resolveUiAssets()
+					const assets = yield* resolveUiAssets
 
 					const { port: boundPort } = yield* startServer({
 						hostname: bindHost,

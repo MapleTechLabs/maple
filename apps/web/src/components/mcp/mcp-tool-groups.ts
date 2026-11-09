@@ -1,5 +1,5 @@
 import type { McpToolCatalogEntry } from "@maple/domain/http"
-import { Array as Arr, String as Str } from "effect"
+import { Array as Arr, Option, Order, String as Str } from "effect"
 
 export type McpToolGroupId =
 	| "alerts"
@@ -55,8 +55,10 @@ const RULES: ReadonlyArray<readonly [McpToolGroupId, ReadonlyArray<string>]> = [
 
 export function mcpToolGroupOf(name: string): McpToolGroupId {
 	const tokens = new Set(Str.split("_")(Str.toLowerCase(name)))
-	const rule = RULES.find(([, words]) => Arr.some(words, (word) => tokens.has(word)))
-	return rule === undefined ? "other" : rule[0]
+	return Option.match(
+		Arr.findFirst(RULES, ([, words]) => Arr.some(words, (word) => tokens.has(word))),
+		{ onNone: (): McpToolGroupId => "other", onSome: ([id]) => id },
+	)
 }
 
 export interface McpToolGroup {
@@ -83,8 +85,17 @@ export function groupMcpTools(
 	return Arr.flatMap(MCP_TOOL_GROUPS, ({ id, label }) => {
 		const members = Arr.filter(visible, (tool) => mcpToolGroupOf(tool.name) === id)
 		if (members.length === 0) return []
-		const sorted = members.toSorted(
-			(a, b) => Number(b.readOnly) - Number(a.readOnly) || Str.localeCompare(b.name)(a.name),
+		const sorted = Arr.sort(
+			members,
+			Order.combine(
+				Order.flip(
+					Order.mapInput(Order.Number, (tool: (typeof members)[number]) => Number(tool.readOnly)),
+				),
+				Order.mapInput(
+					Order.make<string>((a, b) => Str.localeCompare(b)(a)),
+					(tool: (typeof members)[number]) => tool.name,
+				),
+			),
 		)
 		return [{ id, label, tools: sorted }]
 	})

@@ -5,7 +5,7 @@
 // and step / runner-wait spans under each job. Migration 0047's views keep the runs in `ci_runs`
 // and the jobs in `ci_jobs` with those attributes as columns; every read here goes to them.
 
-import { DateTime, Array as Arr } from "effect"
+import { DateTime, Array as Arr, Option } from "effect"
 import * as CH from "@maple-dev/effect-orm/expr"
 import { from, param, type ColumnAccessor } from "@maple-dev/effect-orm/clickhouse"
 import { CiJobs, CiRuns, orgIdParam, utcSecondsParam } from "../tables"
@@ -129,12 +129,19 @@ export const ciRedStreak = <R extends { readonly result: string }>(
 		runsNewestFirst,
 		(run) => run.result === "success" || isCiFailedResult(run.result),
 	)
-	const greenAt = judged.findIndex((run) => run.result === "success")
-	const streak = greenAt === -1 ? judged : judged.slice(0, greenAt)
+	const greenAt = Arr.findFirstIndex(judged, (run) => run.result === "success")
+	const streak = Option.match(greenAt, { onNone: () => judged, onSome: (index) => judged.slice(0, index) })
 	const firstFailed = streak[streak.length - 1]
 	return firstFailed === undefined
 		? undefined
-		: { failedRuns: streak.length, firstFailed, lastGreen: greenAt === -1 ? undefined : judged[greenAt] }
+		: {
+				failedRuns: streak.length,
+				firstFailed,
+				lastGreen: Option.match(greenAt, {
+					onNone: () => undefined,
+					onSome: (index) => judged[index],
+				}),
+			}
 }
 
 /**

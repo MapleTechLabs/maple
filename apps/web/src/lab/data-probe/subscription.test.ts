@@ -49,7 +49,7 @@ const rule = (id: string, orgId: string): AlertRuleRow => ({
 const rulesOf = (orgId: string, count: number) =>
 	createCollection(
 		// Keyed `string | number` like the Electric collections.
-		localOnlyCollectionOptions<AlertRuleRow, string | number>({
+		localOnlyCollectionOptions<AlertRuleRow>({
 			getKey: (row) => row.id,
 			initialData: Array.from({ length: count }, (_, index) => rule(`${orgId}-${index}`, orgId)),
 		}),

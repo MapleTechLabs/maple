@@ -26,7 +26,7 @@ const names = (commands: ReadonlyArray<{ readonly name: string }> | undefined) =
 
 const URL_VALUE = "https://redis.internal:9121/metrics"
 
-const target = Schema.decodeUnknownSync(V2ScrapeTarget)({
+const target = Schema.decodeSync(V2ScrapeTarget)({
 	id: "scrp_YoxMqYdzUJ1tH4BqCWxPH3",
 	object: "scrape_target",
 	name: "redis.internal:9121",
@@ -49,7 +49,7 @@ const target = Schema.decodeUnknownSync(V2ScrapeTarget)({
 })
 
 const check = (success: boolean) =>
-	Schema.decodeUnknownSync(V2ScrapeTargetCheck)({
+	Schema.decodeSync(V2ScrapeTargetCheck)({
 		object: "scrape_target.check",
 		timestamp: "2026-10-01T11:01:00.000Z",
 		success,

@@ -14,7 +14,8 @@ import {
 	formatPercent,
 } from "@maple/ui/lib/format"
 import { gcpMetricsState } from "../../integrations/gcp-connector-state"
-import { Array as Arr, String as Str } from "effect"
+import { Array as Arr, Option, String as Str } from "effect"
+import { replaceWith } from "@maple/strings"
 
 /** One metric and label value of one workload: `total` over `samples` points. */
 export interface GcpMetricValue {
@@ -59,7 +60,8 @@ export function formatGcpValue(format: GcpColumnFormat, value: number | undefine
 			return value.toLocaleString(undefined, { maximumFractionDigits: 2 })
 		case "cores":
 			// Most containers use a fraction of a core: millicores, as Kubernetes writes them.
-			if (value >= 1) return value.toLocaleString(undefined, { maximumFractionDigits: 2 })
+			if (Math.round(value * 1000) >= 1000)
+				return value.toLocaleString(undefined, { maximumFractionDigits: 2 })
 			return value > 0 && value < 0.001 ? "<1m" : `${Math.round(value * 1000)}m`
 		case "percent":
 			return formatPercent(value)
@@ -313,7 +315,12 @@ const identityValue = (
 	keys: ReadonlyArray<string>,
 	labels: ReadonlyArray<string>,
 ): string | undefined =>
-	keys[GCP_INFRA_SERVICES[service].identity.findIndex(([label]) => labels.includes(label))]
+	Option.getOrUndefined(
+		Option.flatMap(
+			Arr.findFirstIndex(GCP_INFRA_SERVICES[service].identity, ([label]) => labels.includes(label)),
+			(index) => Arr.get(keys, index),
+		),
+	)
 
 const REGION_LABELS = ["Region", "Location", "Zone"]
 
@@ -325,8 +332,10 @@ export const gcpWorkloadLocation = (service: GcpInfraServiceId, keys: ReadonlyAr
 	identityValue(service, keys, REGION_LABELS)
 
 /** The region a workload runs in: its own, or its zone's. */
-export const gcpWorkloadRegion = (service: GcpInfraServiceId, keys: ReadonlyArray<string>) =>
-	gcpWorkloadLocation(service, keys)?.replace(/-[a-z]$/, "")
+export const gcpWorkloadRegion = (service: GcpInfraServiceId, keys: ReadonlyArray<string>) => {
+	const location = gcpWorkloadLocation(service, keys)
+	return location === undefined ? undefined : Str.replace(/-[a-z]$/, "")(location)
+}
 
 /** The search params that carry a workload's identity after its name, by lower-cased identity label. */
 const GCP_WORKLOAD_PARAMS = [
@@ -364,7 +373,14 @@ export const gcpWorkloadKeys = (
 
 /** What to call a workload: its name, without the project Cloud Monitoring puts before a Cloud SQL instance. */
 export const gcpWorkloadName = (service: GcpInfraServiceId, keys: ReadonlyArray<string>): string =>
-	service === "cloudSql" ? Str.slice(keys[0].indexOf(":") + 1)(keys[0]) : keys[0]
+	service === "cloudSql"
+		? Str.slice(
+				Option.match(Str.indexOf(":")(keys[0] ?? ""), {
+					onNone: () => 0,
+					onSome: (colon) => colon + 1,
+				}),
+			)(keys[0] ?? "")
+		: (keys[0] ?? "")
 
 /** Whether a service's workloads run in a region or zone; a subscription and a URL map are global. */
 export const gcpHasRegion = (service: GcpInfraServiceId): boolean =>
@@ -372,7 +388,9 @@ export const gcpHasRegion = (service: GcpInfraServiceId): boolean =>
 
 /** What one row of a tab is, in running text: "container", "URL map". */
 export const gcpWorkloadNoun = (service: GcpInfraServiceId): string =>
-	GCP_INFRA_SERVICES[service].identity[0][0].replace(/^[A-Z](?=[a-z])/, (letter) => Str.toLowerCase(letter))
+	replaceWith(GCP_INFRA_SERVICES[service].identity[0][0], /^[A-Z](?=[a-z])/, (letter) =>
+		Str.toLowerCase(letter),
+	)
 
 export const GCP_RESOURCES_TAB = "resources"
 
@@ -435,10 +453,11 @@ export function gcpInfraNotice(
 ): GcpInfraNotice | null {
 	if (connectors.length === 0) return { kind: "off" }
 	const states = Arr.map(connectors, (connector) => gcpMetricsState(connector, nowMs))
-	const broken =
-		states.find((state) => state.kind === "failing") ??
-		states.find((state) => state.kind === "incomplete")
-	if (broken !== undefined) return { kind: broken.kind, error: broken.error }
+	const broken = Option.orElse(
+		Arr.findFirst(states, (state) => state.kind === "failing"),
+		() => Arr.findFirst(states, (state) => state.kind === "incomplete"),
+	)
+	if (Option.isSome(broken)) return { kind: broken.value.kind, error: broken.value.error }
 	const has = (kind: (typeof states)[number]["kind"]) => Arr.some(states, (state) => state.kind === kind)
 	if (has("stalled")) return { kind: "stalled" }
 	if (reporting) return null
@@ -451,7 +470,9 @@ export function gcpInfraNotice(
 export const gcpResourcesError = (
 	connectors: ReadonlyArray<Pick<V2GcpConnector, "last_resources_error">>,
 ): string | null =>
-	connectors.find((connector) => connector.last_resources_error !== null)?.last_resources_error ?? null
+	Option.getOrNull(
+		Arr.findFirst(connectors, (connector) => Option.fromNullOr(connector.last_resources_error)),
+	)
 
 const ASSET_TYPE_LABELS: Record<string, string> = {
 	"cloudresourcemanager.googleapis.com/Project": "Project",
@@ -474,7 +495,7 @@ export const gcpAssetTypeLabel = (assetType: string): string => ASSET_TYPE_LABEL
 
 /** "RUNNING" and "PENDING_CREATE" as Google reports them, in sentence case. */
 export const gcpStateLabel = (state: string) =>
-	Str.replaceAll("_", " ")(state.charAt(0) + Str.toLowerCase(Str.slice(1)(state)))
+	Str.replaceAll("_", " ")(Str.slice(0, 1)(state) + Str.toLowerCase(Str.slice(1)(state)))
 
 /** What to call a resource: its display name, else the last segment of its full name. */
 export const gcpResourceName = (resource: {

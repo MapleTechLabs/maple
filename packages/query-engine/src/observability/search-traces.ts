@@ -159,7 +159,8 @@ const spanLevelSearch = (
 		...(input.maxDurationMs != null && { max_duration_ms: input.maxDurationMs }),
 		...(input.httpMethod && { http_method: input.httpMethod }),
 		...(input.traceId && { trace_id: input.traceId }),
-		...(input.attributeFilters?.length && { attribute_filters: input.attributeFilters }),
+		...(input.attributeFilters !== undefined &&
+			input.attributeFilters.length > 0 && { attribute_filters: input.attributeFilters }),
 		...(input.resourceAttributeFilter && {
 			resource_attribute_filters: [{ ...input.resourceAttributeFilter, mode: "equals" }],
 		}),

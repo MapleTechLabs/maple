@@ -1,4 +1,9 @@
-import type { AlertDestinationType } from "@maple/domain/http"
+import {
+	type AlertDestinationType,
+	isIncidentIoAlertSourceId,
+	TEAMS_WEBHOOK_URL_PROBLEM_MESSAGES,
+	teamsWebhookUrlProblem,
+} from "@maple/domain/http"
 import { cn } from "@maple/ui/lib/utils"
 import { suggestedDestinationName } from "@maple/web-data/alerts/form-utils"
 import { isClerkAuthEnabled } from "../../../lib/services/common/auth-mode"
@@ -34,6 +39,7 @@ import { typography, typographyClass } from "@maple/views/ui/typography"
 import { hstack, hstackClass } from "@maple/views/ui/stack"
 import { grid } from "@maple/views/ui/grid"
 import { Array as Arr, String as Str } from "effect"
+import { textLink } from "@maple/views/ui/text-link"
 
 // The destination dialog. The Email, Linear and chat fields live in `*-fields-view.ts`.
 
@@ -140,16 +146,13 @@ const providerTile = (
 					background: `radial-gradient(circle at 0% 0%, ${provider.accentBg}, transparent 60%)`,
 				}),
 			]),
-			h.div(
-				[h.Class("relative flex w-full items-center gap-2.5")],
-				[
-					logo(h, model, options.type, 32, options.chatConnector),
-					typography(h, { size: "sm", weight: "semibold", truncate: true }, [
-						options.label ?? provider.label,
-					]),
-					...(options.isBusy === true ? [spinner(h, "ml-auto", 12)] : []),
-				],
-			),
+			hstack(h, { gap: "2.5", align: "center", className: "relative w-full" }, [
+				logo(h, model, options.type, 32, options.chatConnector),
+				typography(h, { size: "sm", weight: "medium", truncate: true }, [
+					options.label ?? provider.label,
+				]),
+				...(options.isBusy === true ? [spinner(h, "ml-auto", 12)] : []),
+			]),
 			h.p(
 				[h.Class("relative text-2xs leading-snug text-muted-foreground")],
 				[options.description ?? provider.description],
@@ -257,17 +260,14 @@ const connectionFields = (h: H, model: Model, isEditing: boolean): ReadonlyArray
 						[
 							"In PagerDuty: open the service → Integrations → add or select an",
 							" ",
-							h.a(
-								[
-									h.Href(
-										"https://maple.dev/docs/alerting/notification-destinations#pagerduty",
-									),
-									h.Target("_blank"),
-									h.Rel("noreferrer"),
-									h.Class(
-										"underline-offset-2 hover:text-foreground active:text-foreground hover:underline active:underline",
-									),
-								],
+							textLink(
+								h,
+								{
+									href: "https://maple.dev/docs/alerting/notification-destinations#pagerduty",
+									tone: "muted",
+									className: "inline",
+									attributes: [h.Target("_blank"), h.Rel("noreferrer")],
+								},
 								["Events API v2"],
 							),
 							" ",
@@ -340,6 +340,10 @@ const connectionFields = (h: H, model: Model, isEditing: boolean): ReadonlyArray
 				]),
 			]
 		}
+		case "microsoft-teams":
+			return teamsFields(h, model, isEditing)
+		case "incident-io":
+			return incidentIoFields(h, model, isEditing)
 		case "telegram":
 			return telegramFields(h, model, isEditing)
 		case "webhook":
@@ -410,6 +414,109 @@ const connectionFields = (h: H, model: Model, isEditing: boolean): ReadonlyArray
 		default:
 			return []
 	}
+}
+
+const teamsFields = (h: H, model: Model, isEditing: boolean): ReadonlyArray<Html> => {
+	const { form } = model
+	const fieldIds = ids("teams-webhook", true)
+	const problem = Str.trim(form.webhookUrl).length > 0 ? teamsWebhookUrlProblem(form.webhookUrl) : null
+	return [
+		fieldBlock(h, [
+			fieldLabel(
+				h,
+				{ ids: fieldIds, className: "text-xs", state: stateOf(form.webhookUrl) },
+				"Workflows webhook URL",
+			),
+			textInput(h, model, {
+				name: "teams-webhook",
+				field: "webhookUrl",
+				placeholder: isEditing
+					? "Leave blank to keep current webhook"
+					: "https://….environment.api.powerplatform.com/powerautomate/automations/direct/workflows/…",
+				className: typographyClass({ size: "xs", mono: true }),
+				hasDescription: true,
+			}),
+			...(problem === null
+				? []
+				: [
+						fieldError(
+							h,
+							{ ids: fieldIds, className: "text-2xs", state: stateOf(form.webhookUrl) },
+							TEAMS_WEBHOOK_URL_PROBLEM_MESSAGES[problem],
+						),
+					]),
+			fieldDescription(
+				h,
+				{ ids: fieldIds, className: "text-2xs", state: stateOf(form.webhookUrl) },
+				'In Teams: open the channel → ⋯ → Workflows → "Post to a channel when a webhook request is received", then copy the URL. Leave the trigger\'s "Who can trigger the flow" on Anyone.',
+			),
+		]),
+	]
+}
+
+const incidentIoFields = (h: H, model: Model, isEditing: boolean): ReadonlyArray<Html> => {
+	const { form } = model
+	const sourceIds = ids("incident-io-source", true)
+	const tokenIds = ids("incident-io-token", true)
+	const isBadId =
+		Str.trim(form.incidentIoAlertSourceId).length > 0 &&
+		!isIncidentIoAlertSourceId(form.incidentIoAlertSourceId)
+	return [
+		fieldBlock(h, [
+			fieldLabel(
+				h,
+				{ ids: sourceIds, className: "text-xs", state: stateOf(form.incidentIoAlertSourceId) },
+				"Alert source config ID",
+			),
+			textInput(h, model, {
+				name: "incident-io-source",
+				field: "incidentIoAlertSourceId",
+				placeholder: "e.g. 01GW2G3V0S59R238FAHPDS1R66",
+				className: typographyClass({ size: "xs", mono: true }),
+				hasDescription: true,
+			}),
+			...(isBadId
+				? [
+						fieldError(
+							h,
+							{
+								ids: sourceIds,
+								className: "text-2xs",
+								state: stateOf(form.incidentIoAlertSourceId),
+							},
+							"Paste only the ID, the last part of https://api.incident.io/v2/alert_events/http/<ID>.",
+						),
+					]
+				: []),
+			fieldDescription(
+				h,
+				{ ids: sourceIds, className: "text-2xs", state: stateOf(form.incidentIoAlertSourceId) },
+				"In incident.io, add an HTTP alert source and pick Default. The ID is the last part of its URL, …/alert_events/http/<ID>.",
+			),
+		]),
+		fieldBlock(h, [
+			fieldLabel(
+				h,
+				{ ids: tokenIds, className: "text-xs", state: stateOf(form.incidentIoToken) },
+				"Token",
+			),
+			textInput(h, model, {
+				name: "incident-io-token",
+				field: "incidentIoToken",
+				type: "password",
+				placeholder: isEditing
+					? "Leave blank to keep current token (a new source ID needs its token)"
+					: "The alert source's secret token",
+				className: typographyClass({ size: "xs", mono: true }),
+				hasDescription: true,
+			}),
+			fieldDescription(
+				h,
+				{ ids: tokenIds, className: "text-2xs", state: stateOf(form.incidentIoToken) },
+				"Shown with the source's URL. Maple sends it as a Bearer token and never shows it again.",
+			),
+		]),
+	]
 }
 
 const telegramFields = (h: H, model: Model, isEditing: boolean): ReadonlyArray<Html> => {
@@ -531,15 +638,14 @@ const fieldHelper = (h: H, type: AlertDestinationType): ReadonlyArray<Html> => {
 	return provider.docsUrl === undefined
 		? []
 		: [
-				h.a(
-					[
-						h.Href(provider.docsUrl),
-						h.Target("_blank"),
-						h.Rel("noreferrer"),
-						h.Class(
-							"text-2xs text-muted-foreground underline-offset-2 hover:text-foreground active:text-foreground hover:underline active:underline",
-						),
-					],
+				textLink(
+					h,
+					{
+						href: provider.docsUrl,
+						tone: "muted",
+						className: "text-2xs",
+						attributes: [h.Target("_blank"), h.Rel("noreferrer")],
+					},
 					[provider.docsLabel ?? "Docs", " ↗"],
 				),
 			]

@@ -2,11 +2,13 @@ import type { AlertDestinationRow } from "@maple/db/tables"
 import { OrgId } from "@maple/domain/primitives"
 import { AlertDestinationId } from "@maple/domain/http"
 import { assert, describe, it } from "@effect/vitest"
-import { Schema, Array as Arr, String as Str } from "effect"
+import { Option, Schema, Array as Arr, String as Str } from "effect"
 import type { DispatchContext } from "../context"
 import type { HttpRequestSpec, RenderInput } from "../Transport"
 import { discordTransport } from "./discord"
 import { googleChatTransport } from "./google-chat"
+import { incidentIoTransport } from "./incident-io"
+import { microsoftTeamsTransport } from "./microsoft-teams"
 import { pagerDutyTransport } from "./pagerduty"
 import { telegramTransport } from "./telegram"
 import { webhookTransport } from "./webhook"
@@ -19,7 +21,7 @@ import { webhookTransport } from "./webhook"
  * providers had no coverage at all.
  */
 
-const DESTINATION_ID = Schema.decodeUnknownSync(AlertDestinationId)("7c6b5a49-3821-4e0f-9d8c-7b6a59483726")
+const DESTINATION_ID = Schema.decodeSync(AlertDestinationId)("7c6b5a49-3821-4e0f-9d8c-7b6a59483726")
 
 const LINK = "https://web.localhost/alerts"
 const CHAT = "https://web.localhost/alerts/rule_1"
@@ -121,6 +123,22 @@ describe("transport render: guard flags", () => {
 				}),
 			),
 		],
+		[
+			"microsoft-teams",
+			microsoftTeamsTransport.render(
+				inputFor({
+					type: "microsoft-teams",
+					webhookUrl:
+						"https://d1.47.environment.api.powerplatform.com/powerautomate/automations/direct/workflows/w1/triggers/manual/paths/invoke?sig=s",
+				}),
+			),
+		],
+		[
+			"incident-io",
+			incidentIoTransport.render(
+				inputFor({ type: "incident-io", alertSourceConfigId: "01GW2G3V", token: "t" }),
+			),
+		],
 	]
 
 	it("guards exactly the user-configured hosts", () => {
@@ -131,7 +149,7 @@ describe("transport render: guard flags", () => {
 		// pagerduty + telegram post to compile-time vendor constants: there
 		// is no attacker-controlled URL to validate, so the guard would only cost a
 		// redirect walk.
-		assert.deepStrictEqual(guarded, ["webhook", "discord", "google-chat"])
+		assert.deepStrictEqual(guarded, ["webhook", "discord", "google-chat", "microsoft-teams"])
 	})
 
 	it("marks exactly the providers whose token rides in the URL path", () => {
@@ -353,7 +371,7 @@ describe("transport render: uptime monitors", () => {
 	const uptimeInput = <Config>(config: Config, overrides: Partial<DispatchContext> = {}) =>
 		inputFor(config, { context: { ...uptime, ...overrides } })
 	const discord = (overrides: Partial<DispatchContext> = {}) =>
-		Schema.decodeUnknownSync(
+		Schema.decodeSync(
 			Schema.fromJsonString(
 				Schema.Struct({
 					content: Schema.String,
@@ -378,7 +396,9 @@ describe("transport render: uptime monitors", () => {
 		assert.strictEqual(body.content, "**checkout-api is down**")
 		assert.strictEqual(body.embeds[0]?.title, "\u{1F6A8} checkout-api is down")
 		assert.deepStrictEqual(
-			body.embeds[0]?.fields.find((field) => field.name === "Observed"),
+			Option.getOrUndefined(
+				Arr.findFirst(body.embeds[0]?.fields ?? [], (field) => field.name === "Observed"),
+			),
 			{ name: "Observed", value: "Status 503, expected 2xx" },
 		)
 	})
@@ -395,7 +415,7 @@ describe("transport render: uptime monitors", () => {
 	})
 
 	it("puts the check's error in the PagerDuty summary and details", () => {
-		const body = Schema.decodeUnknownSync(
+		const body = Schema.decodeSync(
 			Schema.fromJsonString(
 				Schema.Struct({
 					payload: Schema.Struct({
@@ -410,13 +430,52 @@ describe("transport render: uptime monitors", () => {
 	})
 
 	it("writes the Telegram message from the check's error", () => {
-		const body = Schema.decodeUnknownSync(Schema.fromJsonString(Schema.Struct({ text: Schema.String })))(
+		const body = Schema.decodeSync(Schema.fromJsonString(Schema.Struct({ text: Schema.String })))(
 			telegramTransport.render(
 				uptimeInput({ type: "telegram", botToken: "123456789:AA-token", chatId: "-100123" }),
 			).body,
 		)
 		assert.isTrue(
 			Str.startsWith("\u{1F6A8} <b>checkout-api is down</b>\n\nStatus 503, expected 2xx.")(body.text),
+		)
+	})
+})
+
+describe("pagerduty acknowledge", () => {
+	const ack = (overrides: Partial<DispatchContext>) => {
+		const input = inputFor(
+			{ type: "pagerduty" as const, integrationKey: "k" },
+			{ context: { ...context, eventType: "acknowledge", ...overrides } },
+		)
+		return Arr.map(
+			[pagerDutyTransport.render(input), ...(pagerDutyTransport.followUps?.(input) ?? [])],
+			(spec) => JSON.parse(spec.body),
+		)
+	}
+	const tiered = { ruleSeverities: ["warning", "critical"] as const }
+
+	it("acknowledges the incident's key with a bare acknowledge event", () => {
+		assert.deepStrictEqual(ack({ ruleSeverities: ["critical"] }), [
+			{ routing_key: "k", event_action: "acknowledge", dedup_key: "org_1:rule_1:checkout" },
+		])
+	})
+
+	it("acknowledges both keys an incident of a tiered rule may hold open, whatever its tier now", () => {
+		const keys = (overrides: Partial<DispatchContext>) =>
+			Arr.map(ack(overrides), (body) => `${body.event_action} ${body.dedup_key}`)
+		const both = ["acknowledge org_1:rule_1:checkout", "acknowledge org_1:rule_1:checkout:critical"]
+		assert.deepStrictEqual(keys({ ...tiered, severity: "critical", incidentSeverity: "critical" }), both)
+		// A warning alert stays open beside a critical one; PagerDuty ignores a key with no open alert.
+		assert.deepStrictEqual(keys({ ...tiered, severity: "warning", incidentSeverity: "warning" }), both)
+	})
+
+	it("acknowledges the critical key of an incident that peaked there, after the rule lost its tiers", () => {
+		assert.deepStrictEqual(
+			Arr.map(
+				ack({ ruleSeverities: ["critical"], incidentPeakSeverity: "critical" }),
+				(body) => `${body.event_action} ${body.dedup_key}`,
+			),
+			["acknowledge org_1:rule_1:checkout", "acknowledge org_1:rule_1:checkout:critical"],
 		)
 	})
 })

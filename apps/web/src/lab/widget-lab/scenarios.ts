@@ -1572,7 +1572,7 @@ const longTail = [
 
 const narrowBuckets = Arr.map(Array.from({ length: 30 }), (_, i) => ({
 	name: `${i * 10}-${(i + 1) * 10}`,
-	value: Math.round(Math.exp(-((i - 14) ** 2) / 30) * 240 + Math.random() * 8),
+	value: Math.round(Math.exp(-((i - 14) ** 2) / 30) * 240 + ((i * 5) % 8)),
 }))
 
 export const histogramScenarios: WidgetScenario[] = [
@@ -1648,7 +1648,7 @@ const denseHeatmap = Arr.flatMap(hours, (h, hi) =>
 	Arr.map(buckets, (b, bi) => ({
 		x: `${h}:00`,
 		y: b,
-		value: Math.round(20 + Math.sin(hi / 2) * 40 + (buckets.length - bi) * 8 + Math.random() * 5),
+		value: Math.round(20 + Math.sin(hi / 2) * 40 + (buckets.length - bi) * 8 + ((hi * 3 + bi * 2) % 5)),
 	})),
 )
 

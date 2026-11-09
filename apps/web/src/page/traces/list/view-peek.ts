@@ -64,7 +64,7 @@ const footer = (h: H, model: Model): Html => {
 			]),
 			linkButton(h, { size: "sm", href: openHref(model) }, [
 				"Open trace",
-				kbd(h, "ml-1 hidden bg-black/15 text-current sm:inline-flex", ["↵"]),
+				kbd(h, "ml-1 hidden bg-primary-foreground/15 text-current sm:inline-flex", ["↵"]),
 			]),
 		],
 		"flex-row items-center justify-between gap-3 border-t",
@@ -77,7 +77,8 @@ export const peekSheet = (h: H, model: Model, timeZone: string): Html =>
 		model: model.peekDialog,
 		view: DialogView.view,
 		viewInputs: {
-			className: "w-[min(1100px,calc(100vw-2rem))] p-0 sm:max-w-[min(1100px,calc(100vw-2rem))]",
+			className: "p-0",
+			size: "full",
 			side: "right",
 			hasTrigger: false,
 			isPopupFocused: true,

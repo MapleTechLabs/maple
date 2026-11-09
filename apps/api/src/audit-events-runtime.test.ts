@@ -16,7 +16,7 @@ const event = (id: string, orgId: OrgId = ORG) =>
 	encodeAuditLogEventSync(
 		new AuditLogEvent({
 			orgId,
-			id: Schema.decodeUnknownSync(AuditLogEvent.fields.id)(id),
+			id: Schema.decodeSync(AuditLogEvent.fields.id)(id),
 			actorType: "user",
 			source: "dashboard",
 			action: "dashboard.created",

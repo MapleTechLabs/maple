@@ -3,7 +3,7 @@ import { chmodSync, existsSync, mkdtempSync, readFileSync, rmSync, symlinkSync, 
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { afterEach, describe, expect, it } from "vitest"
-import { Effect, Schema, Array as Arr, Record as Rec, String as Str } from "effect"
+import { Effect, Schema, Array as Arr, Record as Rec, String as Str, Option } from "effect"
 import { GcpConnectorId, GcpLogRuntime, GcpProjectId, GcpResourceNumber } from "@maple/domain/primitives"
 import {
 	gcpLogFilter,
@@ -13,9 +13,9 @@ import {
 	type GcpSetupScriptInput,
 } from "./setup-scripts"
 
-const connectorId = Schema.decodeUnknownSync(GcpConnectorId)("018f2b3c-4d5e-4f70-8192-a3b4c5d6e7f8")
-const hostProject = Schema.decodeUnknownSync(GcpProjectId)("acme-host")
-const resourceNumber = Schema.decodeUnknownSync(GcpResourceNumber)("123456789012")
+const connectorId = Schema.decodeSync(GcpConnectorId)("018f2b3c-4d5e-4f70-8192-a3b4c5d6e7f8")
+const hostProject = Schema.decodeSync(GcpProjectId)("acme-host")
+const resourceNumber = Schema.decodeSync(GcpResourceNumber)("123456789012")
 const NAME = "maple-018f2b3c4d5e4f708192a3b4"
 const ACCOUNT = `${NAME}@acme-host.iam.gserviceaccount.com`
 const SECRET = "maple_gcp_s3cr3t-value"
@@ -515,7 +515,7 @@ Done. Everything the setup script created is gone.
 		const fresh = run(script)
 		expect(fresh.status).toBe(0)
 		expect(Arr.every(fresh.commands, isLookup)).toBe(true)
-		expect(fresh.stdout.match(/ {2}✓ Nothing left to remove/g)).toHaveLength(2)
+		expect(Option.getOrThrow(Str.match(/ {2}✓ Nothing left to remove/g)(fresh.stdout))).toHaveLength(2)
 	})
 })
 
@@ -535,7 +535,11 @@ describe("the text that is copied", () => {
 			false,
 		)
 		// Plain ASCII survives a paste under any locale; the marks it prints are spelled as bytes.
-		expect(Arr.every(Array.from(script), (character) => character.charCodeAt(0) < 128)).toBe(true)
+		expect(
+			Arr.every(Array.from(script), (character) =>
+				Option.exists(Str.charCodeAt(0)(character), (code) => code < 128),
+			),
+		).toBe(true)
 
 		const cleanupLines = Str.split("\n")(cleanup(SCOPES.project))
 		expect(cleanupLines[1]).toBe("bash /dev/fd/3 3<<'MAPLE_CLEANUP_SCRIPT'")
@@ -658,8 +662,8 @@ Done. Everything is in place.
 		expect(filtered(all)).toContain(allForwardedComment)
 		for (const script of [filtered(null), filtered([]), filtered(all)]) {
 			const comment = Str.slice(
-				script.indexOf("# ---- Which logs"),
-				script.indexOf("LOG_FILTER_MODE="),
+				Option.getOrThrow(Str.indexOf("# ---- Which logs")(script)),
+				Option.getOrThrow(Str.indexOf("LOG_FILTER_MODE=")(script)),
 			)(script)
 			expect(Math.max(...Arr.map(Str.split("\n")(comment), (line) => line.length))).toBeLessThan(100)
 		}
@@ -1011,7 +1015,8 @@ esac
 		// The signal lands where a step has just finished.
 		const marker = '\nsection "Log forwarding"\n'
 		expect(script).toContain(marker)
-		const { status, stdout } = run(script.replace(marker, () => `\nkill -INT $$${marker}`))
+		// `$$$$` in a replacement string writes the shell's `$$`.
+		const { status, stdout } = run(Str.replace(marker, `\nkill -INT $$$$${marker}`)(script))
 		expect(status).toBe(130)
 		expect(stdout).toContain(
 			"\n\nSetup interrupted. Nothing needs undoing: paste the script again to finish it.\n",
@@ -1059,7 +1064,11 @@ esac
 			{ gcloud: slow },
 		)
 		expect(status).toBe(0)
-		expect(stdout.match(/ {2}… waiting for Google to publish the new service account\n/g)).toHaveLength(1)
+		expect(
+			Option.getOrThrow(
+				Str.match(/ {2}… waiting for Google to publish the new service account\n/g)(stdout),
+			),
+		).toHaveLength(1)
 		expect(
 			Arr.filter(commands, (command) => Str.includes("roles/monitoring.viewer")(command)),
 		).toHaveLength(3)
@@ -1160,7 +1169,7 @@ esac
 		const { status, stdout, commands } = run(cleanup(SCOPES.project), { gcloud: hostOff })
 		expect(status).toBe(0)
 		expect(Arr.every(commands, isLookup)).toBe(true)
-		expect(stdout.match(/ {2}✓ Nothing left to remove/g)).toHaveLength(2)
+		expect(Option.getOrThrow(Str.match(/ {2}✓ Nothing left to remove/g)(stdout))).toHaveLength(2)
 	})
 
 	it("finishes when the service account was deleted by an earlier run", () => {

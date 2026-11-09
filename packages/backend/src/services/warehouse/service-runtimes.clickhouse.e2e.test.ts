@@ -24,7 +24,7 @@ const START_MS = END_MS - 60 * MINUTE_MS
 const chDateTime = (epochMs: number): string =>
 	Str.slice(0, 19)(Str.replace("T", " ")(new Date(epochMs).toISOString()))
 
-const quote = (value: string): string => `'${Str.replace(/'/g, "\\'")(Str.replace(/\\/g, "\\\\")(value))}'`
+const quote = (value: string): string => `'${Str.replace(/[\\']/g, "\\$&")(value)}'`
 const mapLiteral = (attrs: Readonly<Record<string, string>>): string =>
 	`map(${Arr.join(
 		Arr.flatMap(Rec.toEntries(attrs), ([key, value]) => [quote(key), quote(value)]),

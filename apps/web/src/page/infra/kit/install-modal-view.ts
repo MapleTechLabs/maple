@@ -41,7 +41,7 @@ const snippetPanel = (h: H, model: Model, panel: SnippetPanel): Html =>
 				textarea(h, {
 					id: `${model.id}-${panel.snippet}`,
 					isUnstyled: true,
-					controlClassName: "font-mono text-xs tracking-wide select-all leading-relaxed",
+					controlClassName: "font-mono text-xs select-all leading-relaxed",
 					defaultValue: panel.display,
 					attributes: [h.Readonly(true), h.Attribute("wrap", "off"), h.Rows(panel.rows)],
 				}),

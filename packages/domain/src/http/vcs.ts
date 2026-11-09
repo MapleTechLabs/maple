@@ -57,6 +57,27 @@ export const GitCommitSha = Schema.String.pipe(
 )
 export type GitCommitSha = Schema.Schema.Type<typeof GitCommitSha>
 
+// GitHub's shapes: an owner is alphanumerics and hyphens, a name is never `.` or `..`.
+export const REPO_FULL_NAME_PATTERN = /^[A-Za-z0-9][A-Za-z0-9-]*\/(?!\.\.?$)[A-Za-z0-9_.-]+$/u
+
+/** A repository as `owner/name`. */
+export const RepoFullName = Schema.String.check(Schema.isPattern(REPO_FULL_NAME_PATTERN))
+
+// `https://github.com/o/r[.git][/commit/…]` or `git@github.com:o/r[.git]`: the first two segments.
+const GITHUB_URL =
+	/^(?:(?:https?:\/\/)?(?:www\.)?github\.com\/|git@github\.com:)([^/]+)\/([^/]+?)(?:\.git)?(?:\/.*)?$/iu
+
+/**
+ * A repository reference as `owner/name`, or null. Takes a full name or a GitHub URL (https or
+ * ssh, any path after the name), since that is how telemetry and models write it.
+ */
+export const normalizeRepoFullName = (text: string): string | null => {
+	const trimmed = Str.trim(text)
+	const url = GITHUB_URL.exec(trimmed)
+	const candidate = url === null ? trimmed : `${url[1]}/${url[2]}`
+	return REPO_FULL_NAME_PATTERN.test(candidate) ? candidate : null
+}
+
 /** The set of supported VCS providers. Extend this array to add a provider. */
 export const VcsProviderId = Schema.Literals(["github"]).annotate({
 	identifier: "@maple/VcsProviderId",
@@ -84,9 +105,9 @@ export type VcsRepoSelection = Schema.Schema.Type<typeof VcsRepoSelection>
 
 /** Completion of the repository enumeration requested by one connect operation. */
 export const VcsRepositoryDiscovery = Schema.Union([
-	Schema.Struct({ _tag: Schema.Literal("Pending"), requestId: Schema.String }),
-	Schema.Struct({ _tag: Schema.Literal("Complete"), requestId: Schema.String }),
-	Schema.Struct({ _tag: Schema.Literal("Failed"), requestId: Schema.String, message: Schema.String }),
+	Schema.TaggedStruct("Pending", { requestId: Schema.String }),
+	Schema.TaggedStruct("Complete", { requestId: Schema.String }),
+	Schema.TaggedStruct("Failed", { requestId: Schema.String, message: Schema.String }),
 ])
 export type VcsRepositoryDiscovery = Schema.Schema.Type<typeof VcsRepositoryDiscovery>
 

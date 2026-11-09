@@ -33,7 +33,7 @@ import { Message } from "./message"
 import type { Model } from "./model"
 import { CATEGORY_ICON, CATEGORY_TEXT } from "./span-visuals"
 import { typography, typographyClass } from "@maple/views/ui/typography"
-import { hstack } from "@maple/views/ui/stack"
+import { hstack, vstack } from "@maple/views/ui/stack"
 import { Array as Arr } from "effect"
 
 // The session flow: one lane per turn on the xyflow canvas.
@@ -59,7 +59,7 @@ const stepNode = (h: H, node: FlowNode, isSelected: boolean): ReadonlyArray<Html
 		{
 			onClick: Message.ClickedSpan({ spanId: isSelected ? undefined : node.span.spanId }),
 			className: cn(
-				"flex size-full flex-col justify-center gap-1 rounded-md border bg-card px-2.5 py-2 text-left hover:border-ring active:border-ring",
+				"flex size-full flex-col justify-center gap-1 rounded-md border bg-card px-2.5 py-2 text-left hover:border-border-strong active:border-border-strong",
 				"focus-visible:ring-ring",
 				node.isErrored ? "border-severity-error-a4" : "border-border",
 				isSelected && "border-primary bg-primary-a1",
@@ -86,8 +86,9 @@ const stepNode = (h: H, node: FlowNode, isSelected: boolean): ReadonlyArray<Html
 				),
 				...(node.count > 1
 					? [
-							h.span(
-								[h.Class("shrink-0 text-2xs text-muted-foreground tabular-nums")],
+							typography(
+								h,
+								{ size: "2xs", tone: "muted", numeric: true, className: "shrink-0" },
 								["×", String(node.count)],
 							),
 						]
@@ -206,12 +207,13 @@ const LEGEND = ["agent", "inference", "tool"] as const
 /** `FlowControls`: in, out, and back to the top of the session at 1:1. */
 const controls = (h: H, model: Model): Html => {
 	const { zoom } = model.flowCanvas.viewport
-	return h.div(
-		[
-			h.Class(
-				"pointer-events-auto flex items-center gap-1 rounded-md bg-background/80 p-0.5 backdrop-blur-sm",
-			),
-		],
+	return hstack(
+		h,
+		{
+			gap: "1",
+			align: "center",
+			className: "pointer-events-auto rounded-md bg-surface-float p-0.5 backdrop-blur-sm",
+		},
 		[
 			iconButton(
 				h,
@@ -239,42 +241,38 @@ const controls = (h: H, model: Model): Html => {
 }
 
 const floor = (h: H, model: Model): Html =>
-	h.div(
-		[h.Class("sticky bottom-0 z-10 mt-auto flex flex-col")],
-		[
-			h.div(
-				[h.Class("pointer-events-none flex items-end justify-between gap-4 p-3")],
+	vstack(h, { className: "sticky bottom-0 z-10 mt-auto" }, [
+		hstack(h, { gap: "4", align: "end", justify: "between", className: "pointer-events-none p-3" }, [
+			hstack(
+				h,
+				{
+					align: "stretch",
+					wrap: true,
+					className:
+						"pointer-events-auto gap-x-4 gap-y-1 rounded-md bg-surface-float px-2 py-1 text-muted-foreground text-xs backdrop-blur-sm",
+				},
 				[
-					h.div(
-						[
-							h.Class(
-								"pointer-events-auto flex flex-wrap gap-x-4 gap-y-1 rounded-md bg-background/80 px-2 py-1 text-muted-foreground text-xs backdrop-blur-sm",
-							),
-						],
-						[
-							...Arr.map(LEGEND, (category) =>
-								hstack(h, { gap: "1.5", as: "span", attributes: [h.Key(category)] }, [
-									icon(h, CATEGORY_ICON[category], {
-										size: 12,
-										className: cn("shrink-0", CATEGORY_TEXT[category]),
-									}),
-									category,
-								]),
-							),
-							hstack(h, { gap: "1.5", as: "span" }, [
-								icon(h, "CircleXmarkIcon", {
-									size: 12,
-									className: "shrink-0 text-severity-error",
-								}),
-								"error",
-							]),
-						],
+					...Arr.map(LEGEND, (category) =>
+						hstack(h, { gap: "1.5", as: "span", attributes: [h.Key(category)] }, [
+							icon(h, CATEGORY_ICON[category], {
+								size: 12,
+								className: cn("shrink-0", CATEGORY_TEXT[category]),
+							}),
+							category,
+						]),
 					),
-					controls(h, model),
+					hstack(h, { gap: "1.5", as: "span" }, [
+						icon(h, "CircleXmarkIcon", {
+							size: 12,
+							className: "shrink-0 text-severity-error",
+						}),
+						"error",
+					]),
 				],
 			),
-		],
-	)
+			controls(h, model),
+		]),
+	])
 
 export const flow = (h: H, model: Model, data: SessionData): Html => {
 	const lanes = layoutLanes(data.turns, {
@@ -283,10 +281,11 @@ export const flow = (h: H, model: Model, data: SessionData): Html => {
 		agentSpansOnly: model.options.agentSpansOnly,
 	})
 	const extent = translateExtentOf(lanes)
-	return h.div(
-		[h.Class("relative flex grow flex-col")],
+	return vstack(
+		h,
+		{ className: "relative grow" },
 		lanes.length === 0
-			? [emptyMessage(h, {}, ["No spans match this filter"])]
+			? [emptyMessage(h, {}, ["No spans match these filters"])]
 			: [
 					h.div(
 						[h.Class("relative min-h-48 grow")],

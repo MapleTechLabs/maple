@@ -67,18 +67,15 @@ const compactFilterInput = (h: H, value: string, placeholder: string, label: str
 	})
 
 const toolbar = (h: H, model: Model, dimension: DimensionDef, count: number, meta: Html | null): Html =>
-	h.div(
-		[h.Class("flex flex-wrap items-center justify-between gap-x-3 gap-y-2 px-3 pb-2")],
-		[
-			compactFilterInput(
-				h,
-				model.breakdownSearch,
-				`Filter ${count} ${dimension.noun}`,
-				`Filter the listed ${dimension.noun}`,
-			),
-			...(meta === null ? [] : [meta]),
-		],
-	)
+	hstack(h, { align: "center", justify: "between", wrap: true, className: "gap-x-3 gap-y-2 px-3 pb-2" }, [
+		compactFilterInput(
+			h,
+			model.breakdownSearch,
+			`Filter ${count} ${dimension.noun}`,
+			`Filter the listed ${dimension.noun}`,
+		),
+		...(meta === null ? [] : [meta]),
+	])
 
 const table = (
 	h: H,
@@ -318,7 +315,7 @@ const live = (h: H, model: Model, dimension: DimensionDef): Html => {
 				[],
 				[
 					toolbar(h, model, dimension, 0, liveMeta),
-					note(["Couldn't reach Cloudflare's analytics API for this zone right now."]),
+					note(["Couldn't reach Cloudflare's analytics API for this zone right now"]),
 				],
 			),
 		onStale: () =>
@@ -326,7 +323,7 @@ const live = (h: H, model: Model, dimension: DimensionDef): Html => {
 				[],
 				[
 					toolbar(h, model, dimension, 0, liveMeta),
-					note(["Couldn't reach Cloudflare's analytics API for this zone right now."]),
+					note(["Couldn't reach Cloudflare's analytics API for this zone right now"]),
 				],
 			),
 		onSuccess: (data) => liveBody(h, model, dimension, data, false, query, liveMeta),
@@ -443,7 +440,7 @@ export const breakdownPanel = (
 										size: "xs",
 										mono: true,
 										className:
-											"bg-background/60 font-normal hover:text-foreground active:text-foreground",
+											"bg-surface-well font-normal hover:text-foreground active:text-foreground",
 										onClick: Message.ClickedLeaveLive(),
 									},
 									["live", icon(h, "XmarkIcon")],

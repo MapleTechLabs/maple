@@ -41,7 +41,7 @@ const sourceIds = (testDb: TestDb) =>
 		Effect.map((result) => Arr.map(result.rows, (row) => row.id)),
 	)
 
-const orgId = Schema.decodeUnknownSync(OrgId)("org_upsert")
+const orgId = Schema.decodeSync(OrgId)("org_upsert")
 const asSourceId = Schema.decodeUnknownSync(SourceId)
 const ref = { platform: "railway", name: "Railway" } as const
 

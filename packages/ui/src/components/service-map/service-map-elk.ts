@@ -62,7 +62,7 @@ function getMainThreadElk(): Promise<ELK> {
 function getElk(onWarning: ElkWarningReporter | undefined): Promise<ELK> {
 	if (workerBroken) return getMainThreadElk()
 	if (!workerElk) {
-		workerElk = createWorkerElk().catch((error) => {
+		workerElk = createWorkerElk().catch((error: unknown) => {
 			onWarning?.("service_map.elk_worker_unavailable", toLayoutFailure(error))
 			workerBroken = true
 			return getMainThreadElk()
@@ -260,7 +260,7 @@ export async function layoutServiceMapWithElk(
 
 	const result: ElkNode = await getElk(onWarning)
 		.then((elk) => elk.layout(graph))
-		.catch((error) => {
+		.catch((error: unknown) => {
 			// A failure on the worker path (e.g. the worker chunk 404s at runtime)
 			// demotes to the main-thread build and retries once.
 			if (workerBroken) return Promise.reject(error)

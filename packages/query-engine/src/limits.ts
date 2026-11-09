@@ -14,8 +14,20 @@
 
 import { relativeRangeSeconds } from "./datetime"
 
-/** Widest window any query kind may span. */
-export const MAX_QUERY_RANGE_SECONDS = 60 * 60 * 24 * 31
+/**
+ * The dashboard's "1mo" preset is a calendar month on the viewer's wall clock: up to 31 days, plus
+ * an hour when it crosses a DST change. Raw tables keep 30 days, so the slack reads no more data.
+ */
+const ONE_MONTH_PRESET_SECONDS = 60 * 60 * 24 * 32
+
+/** Widest window any query kind may span, timeseries aside. */
+export const MAX_QUERY_RANGE_SECONDS = ONE_MONTH_PRESET_SECONDS
+
+/**
+ * Timeseries read the 365-day hourly rollups, and the service pages offer presets up to 12 months
+ * (a calendar year, a leap day and a DST hour included). Raw tables keep 30 days, which bounds the rest.
+ */
+export const MAX_TIMESERIES_RANGE_SECONDS = 60 * 60 * 24 * 367
 
 /**
  * List queries (recent traces/logs tiles) scan raw rows rather than a rollup,
@@ -24,7 +36,7 @@ export const MAX_QUERY_RANGE_SECONDS = 60 * 60 * 24 * 31
 export const MAX_LIST_RANGE_SECONDS = 60 * 60 * 24 * 7
 
 /** Breakdown queries (pie/bar/heatmap/funnel) aggregate across a whole window. */
-export const MAX_BREAKDOWN_RANGE_SECONDS = 60 * 60 * 24 * 30
+export const MAX_BREAKDOWN_RANGE_SECONDS = ONE_MONTH_PRESET_SECONDS
 
 /**
  * A breakdown with no narrowing filter scans the entire partition prefix, so it
@@ -78,7 +90,7 @@ export function maxRangeSecondsForKind(kind: QueryRangeKind): number {
 		case "breakdown":
 			return MAX_BREAKDOWN_RANGE_SECONDS
 		case "timeseries":
-			return MAX_QUERY_RANGE_SECONDS
+			return MAX_TIMESERIES_RANGE_SECONDS
 	}
 }
 

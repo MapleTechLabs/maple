@@ -1,5 +1,5 @@
 import { afterEach, assert, describe, it } from "@effect/vitest"
-import { ConfigProvider, Effect, Layer, Schema, Array as Arr, String as Str } from "effect"
+import { ConfigProvider, Effect, Layer, Schema, Array as Arr, String as Str, DateTime, Option } from "effect"
 import { TestClock } from "effect/testing"
 import { CreateSourceRequest, OrgId, UpdateSourceRequest, UserId } from "@maple/domain/http"
 import { SourceId } from "@maple/domain/primitives"
@@ -36,10 +36,10 @@ const config = ConfigProvider.layer(
 const makeLayer = (testDb: TestDb) =>
 	SourcesService.layer.pipe(Layer.provide(testDb.layer), Layer.provide(Env.layer), Layer.provide(config))
 
-const orgA = Schema.decodeUnknownSync(OrgId)("org_a")
-const orgB = Schema.decodeUnknownSync(OrgId)("org_b")
-const user = Schema.decodeUnknownSync(UserId)("user_a")
-const missingId = Schema.decodeUnknownSync(SourceId)("0f8e6c1a-2b3d-4e5f-8a9b-0c1d2e3f4a5b")
+const orgA = Schema.decodeSync(OrgId)("org_a")
+const orgB = Schema.decodeSync(OrgId)("org_b")
+const user = Schema.decodeSync(UserId)("user_a")
+const missingId = Schema.decodeSync(SourceId)("0f8e6c1a-2b3d-4e5f-8a9b-0c1d2e3f4a5b")
 
 /**
  * An integration source as its service creates it, with what its poller last reported. Fixture
@@ -57,15 +57,15 @@ const insertSource = (
 			testDb,
 			`INSERT INTO sources (id, org_id, name, platform, kind, last_poll_ok_at, last_poll_error,
 				disconnected_at, created_at, updated_at)
-			 VALUES ($1, $2, $3, $4, 'integration', $5, $6, $7, now(), now())`,
+			 VALUES ($1, $2, $3, $4, 'integration', $5, $6, CASE WHEN $7 THEN now() END, now(), now())`,
 			[
 				id,
 				orgA,
 				name,
 				platform,
-				poll.okAt === undefined ? null : new Date(poll.okAt).toISOString(),
+				poll.okAt === undefined ? null : DateTime.formatIso(DateTime.makeUnsafe(poll.okAt)),
 				poll.error ?? null,
-				poll.disconnected === true ? new Date().toISOString() : null,
+				poll.disconnected === true,
 			],
 		),
 	)
@@ -205,6 +205,32 @@ describe("SourcesService", () => {
 			assert.isNull(updated.rateLimitRps)
 			assert.deepStrictEqual(updated.allowedSignals, ["logs"])
 			assert.strictEqual(updated.keyPrefix, created.source.keyPrefix)
+		}).pipe(Effect.provide(makeLayer(testDb)))
+	})
+
+	it.effect("a browser source gets a public token, on create and on roll", () => {
+		const testDb = createTestDb(trackedDbs)
+
+		return Effect.gen(function* () {
+			const keys = yield* SourcesService
+			const created = yield* keys.create(
+				orgA,
+				user,
+				new CreateSourceRequest({ platform: "browser", name: "Web" }),
+			)
+			assert.isTrue(Str.startsWith("maple_src_pk_")(created.secret))
+			assert.strictEqual(created.source.keyPrefix?.length, "maple_src_pk_".length + 5)
+			assert.isTrue(Str.startsWith(created.source.keyPrefix ?? "-")(created.secret))
+
+			const rolled = yield* keys.roll(orgA, user, created.source.id)
+			assert.isTrue(Str.startsWith("maple_src_pk_")(rolled.secret))
+
+			const server = yield* keys.create(
+				orgA,
+				user,
+				new CreateSourceRequest({ platform: "nodejs", name: "API" }),
+			)
+			assert.isFalse(Str.startsWith("maple_src_pk_")(server.secret))
 		}).pipe(Effect.provide(makeLayer(testDb)))
 	})
 
@@ -512,7 +538,7 @@ describe("SourcesService", () => {
 						id,
 						orgA,
 						name,
-						lastScrapeAt === null ? null : new Date(lastScrapeAt).toISOString(),
+						lastScrapeAt === null ? null : DateTime.formatIso(DateTime.makeUnsafe(lastScrapeAt)),
 						error,
 					],
 				),
@@ -544,11 +570,12 @@ describe("SourcesService", () => {
 				],
 			)
 			assert.strictEqual(
-				first.find((source) => source.name === "broken")?.health.problem,
+				Option.getOrUndefined(Arr.findFirst(first, (source) => source.name === "broken"))?.health
+					.problem,
 				"connection refused",
 			)
 
-			const broken = first.find((source) => source.name === "broken")
+			const broken = Option.getOrUndefined(Arr.findFirst(first, (source) => source.name === "broken"))
 			if (broken === undefined) return
 			// A rename answers with the integration's health, not push health.
 			const renamed = yield* keys.update(
@@ -562,7 +589,9 @@ describe("SourcesService", () => {
 			const paused = yield* keys.pause(orgA, user, broken.id, null)
 			assert.deepStrictEqual([paused.status, paused.health.status], ["paused", "paused"])
 			assert.strictEqual(
-				(yield* ownSources(keys, orgA)).find((source) => source.id === broken.id)?.health.status,
+				Option.getOrUndefined(
+					Arr.findFirst(yield* ownSources(keys, orgA), (source) => source.id === broken.id),
+				)?.health.status,
 				"paused",
 			)
 			const resumed = yield* keys.resume(orgA, user, broken.id)
@@ -580,12 +609,13 @@ describe("SourcesService", () => {
 				["9d1e2f3a-0000-4000-8000-000000000001"],
 			)
 			assert.deepStrictEqual(
-				(yield* ownSources(keys, orgA)).map((source) => source.name),
+				Arr.map(yield* ownSources(keys, orgA), (source) => source.name),
 				["node"],
 			)
 			const fetched = yield* keys.get(
 				orgA,
-				first.find((source) => source.name === "node")?.id ?? broken.id,
+				Option.getOrUndefined(Arr.findFirst(first, (source) => source.name === "node"))?.id ??
+					broken.id,
 			)
 			assert.strictEqual(fetched.health.status, "healthy")
 		}).pipe(Effect.provide(makeLayer(testDb)))
@@ -615,7 +645,7 @@ describe("SourcesService", () => {
 	it.effect("reads an AWS source's health from its metric stream, not from the role check", () => {
 		const testDb = createTestDb(trackedDbs)
 		const now = 2 * 3_600_000
-		const iso = (ms: number | null) => (ms === null ? null : new Date(ms).toISOString())
+		const iso = (ms: number | null) => (ms === null ? null : DateTime.formatIso(DateTime.makeUnsafe(ms)))
 		const insertAws = (
 			id: string,
 			name: string,
@@ -720,10 +750,14 @@ describe("SourcesService", () => {
 			)
 			// Last data is the last delivery: a passing role check is not data.
 			assert.strictEqual(
-				sources.find((source) => source.name === "streaming")?.health.lastDataAt,
-				new Date(now - 2 * 60_000).toISOString(),
+				Option.getOrUndefined(Arr.findFirst(sources, (source) => source.name === "streaming"))?.health
+					.lastDataAt,
+				DateTime.formatIso(DateTime.makeUnsafe(now - 2 * 60_000)),
 			)
-			assert.isNull(sources.find((source) => source.name === "never delivered")?.health.lastDataAt)
+			assert.isNull(
+				Option.getOrUndefined(Arr.findFirst(sources, (source) => source.name === "never delivered"))
+					?.health.lastDataAt,
+			)
 		}).pipe(Effect.provide(makeLayer(testDb)))
 	})
 
@@ -758,7 +792,8 @@ describe("SourcesService", () => {
 				],
 			)
 			assert.strictEqual(
-				sources.find((source) => source.name === "GitHub globex")?.health.problem,
+				Option.getOrUndefined(Arr.findFirst(sources, (source) => source.name === "GitHub globex"))
+					?.health.problem,
 				"The GitHub installation is suspended",
 			)
 		}).pipe(Effect.provide(makeLayer(testDb)))

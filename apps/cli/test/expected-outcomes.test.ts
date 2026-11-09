@@ -1,6 +1,6 @@
 import { describe, it } from "@effect/vitest"
 import * as BunServices from "@effect/platform-bun/BunServices"
-import { Duration, Effect, String as Str } from "effect"
+import { Duration, Effect, Option, String as Str } from "effect"
 import { ok, strictEqual } from "node:assert"
 import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
@@ -24,10 +24,10 @@ const captureStderr = async (effect: Effect.Effect<void>): Promise<string> => {
 	const original = process.stderr.write.bind(process.stderr)
 	const previousExitCode = process.exitCode
 	let captured = ""
-	process.stderr.write = ((chunk: string) => {
+	process.stderr.write = (chunk: string) => {
 		captured += chunk
 		return true
-	}) as typeof process.stderr.write
+	}
 	try {
 		await Effect.runPromise(effect)
 		return captured
@@ -75,7 +75,7 @@ describe("expected CLI outcomes", () => {
 	it("still exits non-zero, so scripts and CI keep their old behaviour", async () => {
 		const original = process.exitCode
 		const restoreStderr = process.stderr.write.bind(process.stderr)
-		process.stderr.write = (() => true) as typeof process.stderr.write
+		process.stderr.write = () => true
 		try {
 			process.exitCode = 0
 			await Effect.runPromise(
@@ -120,7 +120,8 @@ describe("dirty-store recovery advice", () => {
 		})
 		ok(Str.includes("maple update --tag v0.0.22")(advice))
 		ok(Str.includes("maple restore --yes")(advice))
-		ok(advice.indexOf("maple update") < advice.indexOf("maple start --reset"))
+		const positionOf = (needle: string) => Option.getOrElse(Str.indexOf(needle)(advice), () => -1)
+		ok(positionOf("maple update") < positionOf("maple start --reset"))
 		ok(!Str.includes("unusable")(advice))
 		ok(!Str.includes("cannot be recovered")(advice))
 	})

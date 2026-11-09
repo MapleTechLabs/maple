@@ -19,7 +19,7 @@ import {
 	StatusPageIncidentUpdateId,
 } from "@maple/domain/primitives"
 import { StatusPageKeys, statusFitsKind, type StatusPageOverlayEntry } from "@maple/domain/status-page"
-import { Clock, Context, Effect, Layer, Option, Schema, Array as Arr, String as Str } from "effect"
+import { Clock, Context, Effect, Layer, Option, Order, Schema, Array as Arr, String as Str } from "effect"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { makeDbExecute, makePersistenceErrorMapper } from "@maple/backend/platform/db-execute"
 import { repairMissingAutoIncidents, repairOrphanedAutoIncidents } from "./auto-incidents"
@@ -58,9 +58,9 @@ export interface StatusPageReconcilerApi {
 		pageId: StatusPageId,
 	) => Effect.Effect<StatusPageReconcileResult, StatusPageReconcileError>
 	/** Reconciles every page with break-glass entries in KV; a failing page is logged and skipped. */
-	readonly reconcileAll: () => Effect.Effect<StatusPageReconcileAllResult, StatusPageReconcileError>
+	readonly reconcileAll: Effect.Effect<StatusPageReconcileAllResult, StatusPageReconcileError>
 	/** Resolves auto incidents whose alert incident is resolved or gone; returns how many. */
-	readonly repairAutoIncidents: () => Effect.Effect<number, StatusPagePublishDbError>
+	readonly repairAutoIncidents: Effect.Effect<number, StatusPagePublishDbError>
 }
 
 /** A concurrent import inserted the entry's update first; rolls this attempt back. */
@@ -254,11 +254,12 @@ export class StatusPageReconciler extends Context.Service<StatusPageReconciler, 
 					{ concurrency: ENTRY_READ_CONCURRENCY },
 				)
 				// A key names its entry; one that disagrees is not trusted.
-				const entries = read
-					.flatMap((entry) =>
+				const entries = Arr.sort(
+					Arr.flatMap(read, (entry) =>
 						Option.isSome(entry) && entryIds.includes(entry.value.id) ? [entry.value] : [],
-					)
-					.toSorted((a, b) => a.at - b.at)
+					),
+					Order.mapInput(Order.Number, (entry: StatusPageOverlayEntry) => entry.at),
+				)
 				if (entries.length === 0) return { imported: 0, cleared: 0 }
 				const page = yield* dbExecute((db) =>
 					Effect.gen(function* () {
@@ -285,28 +286,30 @@ export class StatusPageReconciler extends Context.Service<StatusPageReconciler, 
 								.where(($) => [
 									$.orgId.eq(row.orgId),
 									// OR of equalities: the unique index serves it on a nullable column.
-									PG.or(...entries.map((entry) => $.overlayEntryId.eq(entry.id))),
+									PG.or(...Arr.map(entries, (entry) => $.overlayEntryId.eq(entry.id))),
 								]),
 						)
-						return { ...row, componentIds: components.map((c) => c.id), existing }
+						return { ...row, componentIds: Arr.map(components, (c) => c.id), existing }
 					}),
 				)
 				// A deleted page's keys go with its edge cleanup.
 				if (page === null) return { imported: 0, cleared: 0 }
 				const scope: PageScope = { orgId: page.orgId, pageId, componentIds: page.componentIds }
 				const imported = new Set(
-					page.existing.flatMap((row) => (row.overlayEntryId === null ? [] : [row.overlayEntryId])),
+					Arr.flatMap(page.existing, (row) =>
+						row.overlayEntryId === null ? [] : [row.overlayEntryId],
+					),
 				)
 				// In order: a later entry can target the incident an earlier one opened.
 				const outcomes = yield* Effect.forEach(
-					entries.filter((entry) => !imported.has(entry.id)),
+					Arr.filter(entries, (entry) => !imported.has(entry.id)),
 					(entry) => dbExecute((db) => importEntry(db, scope, entry)),
 				)
 				// Published at or past the revision read before this run's imports, and after the update.
 				const { publishedAt } = page
 				const carried =
 					page.publishedRevision >= page.revision && publishedAt !== null
-						? page.existing.flatMap((row) =>
+						? Arr.flatMap(page.existing, (row) =>
 								row.overlayEntryId !== null && publishedAt > row.createdAt
 									? [row.overlayEntryId]
 									: [],
@@ -316,7 +319,7 @@ export class StatusPageReconciler extends Context.Service<StatusPageReconciler, 
 					concurrency: ENTRY_READ_CONCURRENCY,
 					discard: true,
 				})
-				const result = { imported: outcomes.filter((ok) => ok).length, cleared: carried.length }
+				const result = { imported: Arr.filter(outcomes, (ok) => ok).length, cleared: carried.length }
 				yield* Effect.annotateCurrentSpan({
 					"maple.status_page.imported_count": result.imported,
 					"maple.status_page.cleared_count": result.cleared,
@@ -326,12 +329,16 @@ export class StatusPageReconciler extends Context.Service<StatusPageReconciler, 
 
 			/** Entry ids per page among the listed keys. */
 			const groupByPage = (keys: ReadonlyArray<string>) =>
-				keys.reduce<ReadonlyMap<StatusPageId, ReadonlyArray<string>>>((groups, key) => {
-					const parsed = parseOverlayKey(key)
-					if (Option.isNone(parsed)) return groups
-					const { pageId, entryId } = parsed.value
-					return new Map([...groups, [pageId, [...(groups.get(pageId) ?? []), entryId]]])
-				}, new Map())
+				Arr.reduce<string, ReadonlyMap<StatusPageId, ReadonlyArray<string>>>(
+					keys,
+					new Map(),
+					(groups, key) => {
+						const parsed = parseOverlayKey(key)
+						if (Option.isNone(parsed)) return groups
+						const { pageId, entryId } = parsed.value
+						return new Map([...groups, [pageId, [...(groups.get(pageId) ?? []), entryId]]])
+					},
+				)
 
 			const reconcile = Effect.fn("StatusPageReconciler.reconcile")(function* (pageId: StatusPageId) {
 				const listing = yield* store.listKeys(
@@ -343,7 +350,7 @@ export class StatusPageReconciler extends Context.Service<StatusPageReconciler, 
 				return yield* reconcileEntries(pageId, entryIds)
 			})
 
-			const reconcileAll = Effect.fn("StatusPageReconciler.reconcileAll")(function* () {
+			const reconcileAll = Effect.gen(function* () {
 				// Whether or not the page still has a token: entries posted before a revoke still count.
 				const listing = yield* store.listKeys(StatusPageKeys.overlayAll, RECONCILE_LIST_PAGES)
 				const pages = [...groupByPage(listing.keys)]
@@ -365,11 +372,13 @@ export class StatusPageReconciler extends Context.Service<StatusPageReconciler, 
 						),
 					{ concurrency: RECONCILE_CONCURRENCY },
 				)
-				const done = outcomes.flatMap((outcome) => (Option.isSome(outcome) ? [outcome.value] : []))
+				const done = Arr.flatMap(outcomes, (outcome) =>
+					Option.isSome(outcome) ? [outcome.value] : [],
+				)
 				const result: StatusPageReconcileAllResult = {
 					pages: pages.length,
-					imported: done.reduce((sum, r) => sum + r.imported, 0),
-					cleared: done.reduce((sum, r) => sum + r.cleared, 0),
+					imported: Arr.reduce(done, 0, (sum, r) => sum + r.imported),
+					cleared: Arr.reduce(done, 0, (sum, r) => sum + r.cleared),
 					failed: outcomes.length - done.length,
 				}
 				yield* Effect.annotateCurrentSpan({
@@ -380,9 +389,9 @@ export class StatusPageReconciler extends Context.Service<StatusPageReconciler, 
 					"maple.status_page.listing_complete": listing.complete,
 				})
 				return result
-			})
+			}).pipe(Effect.withSpan("StatusPageReconciler.reconcileAll"))
 
-			const repairAutoIncidents = Effect.fn("StatusPageReconciler.repairAutoIncidents")(function* () {
+			const repairAutoIncidents = Effect.gen(function* () {
 				const nowMs = yield* Clock.currentTimeMillis
 				// Opens what the open hook missed, then resolves what the resolve hook missed.
 				const opened = yield* dbExecute((db) => repairMissingAutoIncidents(db, nowMs))
@@ -390,7 +399,7 @@ export class StatusPageReconciler extends Context.Service<StatusPageReconciler, 
 				const repaired = opened + resolved
 				yield* Effect.annotateCurrentSpan({ "maple.status_page.repaired_count": repaired })
 				return repaired
-			})
+			}).pipe(Effect.withSpan("StatusPageReconciler.repairAutoIncidents"))
 
 			return { reconcile, reconcileAll, repairAutoIncidents }
 		}),

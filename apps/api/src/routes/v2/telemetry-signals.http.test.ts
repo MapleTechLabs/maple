@@ -49,8 +49,8 @@ import { compiledQueryOf } from "@maple/query-engine/execution"
 const createdDbs: TestDb[] = []
 afterEach(() => cleanupTestDbs(createdDbs))
 
-const ORG = Schema.decodeUnknownSync(OrgId)("org_signals_e2e")
-const USER = Schema.decodeUnknownSync(UserId)("user_signals_e2e")
+const ORG = Schema.decodeSync(OrgId)("org_signals_e2e")
+const USER = Schema.decodeSync(UserId)("user_signals_e2e")
 
 const testConfig = () =>
 	ConfigProvider.layer(

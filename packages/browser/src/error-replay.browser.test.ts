@@ -38,7 +38,7 @@ describe("replay.onErrorSampleRate", () => {
 		vi.stubGlobal(
 			"fetch",
 			vi.fn(async (input: RequestInfo | URL) => {
-				urls.push(String(input))
+				urls.push(input instanceof Request ? input.url : input.toString())
 				return new Response("{}")
 			}),
 		)
@@ -67,7 +67,7 @@ describe("replay.onErrorSampleRate", () => {
 		vi.stubGlobal(
 			"fetch",
 			vi.fn(async (input: RequestInfo | URL) => {
-				urls.push(String(input))
+				urls.push(input instanceof Request ? input.url : input.toString())
 				return new Response("{}")
 			}),
 		)

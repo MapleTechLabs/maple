@@ -42,7 +42,7 @@ describe("you're live step", () => {
 			given(atLive([], {})),
 			expectView(role("heading", { name: "Acme is ready for its first data" })).toExist(),
 			expectView(text("Connect Cloudflare")).toExist(),
-			expectView(text("Your first span, log or metric")).toExist(),
+			expectView(text("Your first request, log or metric")).toExist(),
 		)
 	})
 
@@ -61,7 +61,20 @@ describe("you're live step", () => {
 			{ update, view },
 			given(atLive(["traces"], {})),
 			expectView(role("heading", { name: "Acme is live" })).toExist(),
-			expectView(text("Your first span, log or metric")).not.toExist(),
+			expectView(text("Your first request, log or metric")).not.toExist(),
+		)
+	})
+
+	test("with data arriving and no provider left to connect, there is no empty waiting list", () => {
+		const codeOnly: QuickStartState = { ...state, stack: { languages: ["nodejs"], platforms: [] } }
+		scene(
+			{
+				update,
+				view: (model: Model, h: HtmlBuilder<Message>): Html => liveStep(h, model, codeOnly, "Acme"),
+			},
+			given({ ...atLive(["traces", "logs", "metrics"], {}), state: codeOnly }),
+			expectView(role("heading", { name: "Acme is live" })).toExist(),
+			expectView(text("Still waiting on")).not.toExist(),
 		)
 	})
 })

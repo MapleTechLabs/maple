@@ -56,15 +56,16 @@ export interface SeriesSilence<T> {
 
 /** The bucket width: the smallest step between consecutive rows. */
 const smallestStep = (times: ReadonlyArray<number>): number =>
-	times.reduce<{ min: number; previous: number | null }>(
-		(acc, time) => ({
+	Arr.reduce(
+		times,
+		{ min: Number.POSITIVE_INFINITY, previous: null },
+		(acc: { min: number; previous: number | null }, time) => ({
 			min:
 				acc.previous !== null && time > acc.previous
 					? Math.min(acc.min, time - acc.previous)
 					: acc.min,
 			previous: time,
 		}),
-		{ min: Number.POSITIVE_INFINITY, previous: null },
 	).min
 
 /**
@@ -79,7 +80,7 @@ export function seriesRuns<T>(
 ): SeriesRuns<T> {
 	const step = smallestStep(Arr.map(rows, (row) => at(row).getTime()))
 	const limit = Number.isFinite(step) ? Math.max(MAX_BRIDGED_GAP_MS, 2 * step) : MAX_BRIDGED_GAP_MS
-	const runs = dropNullPoints(rows, value).reduce<Array<Array<T>>>((acc, row) => {
+	const runs = Arr.reduce(dropNullPoints(rows, value), [], (acc: Array<Array<T>>, row) => {
 		const current = acc.at(-1)
 		const last = current?.at(-1)
 		if (current === undefined || last === undefined || at(row).getTime() - at(last).getTime() > limit) {
@@ -88,7 +89,7 @@ export function seriesRuns<T>(
 			current.push(row)
 		}
 		return acc
-	}, [])
+	})
 	const silences = Arr.flatMap(runs, (run, index) => {
 		const from = run.at(-1)
 		const to = runs[index + 1]?.[0]

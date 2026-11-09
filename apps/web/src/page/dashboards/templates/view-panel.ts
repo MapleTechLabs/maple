@@ -8,6 +8,7 @@ import { CANONICAL_COLS, colsForWidth } from "../../../components/dashboard-buil
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import * as Chart from "@maple/views/charts/chart"
+import { actionBar } from "@maple/views/ui/action-bar"
 import { button, linkButton } from "@maple/views/ui/button"
 import { empty, emptyDescription, emptyHeader, emptyMedia, emptyTitle } from "@maple/views/ui/empty"
 import { eyebrow } from "@maple/views/ui/eyebrow"
@@ -20,7 +21,7 @@ import { relativeTime } from "../../kit/relative-time"
 import { dataStateOf } from "../kit/data-state"
 import { widgetTile } from "../kit/tiles"
 import { MeasurePreview } from "./command"
-import { previewVariableValues } from "./derive"
+import { missingRequiredOf, previewVariableValues } from "./derive"
 import {
 	CATEGORY_LABELS,
 	compositionLabel,
@@ -32,10 +33,10 @@ import {
 } from "./derive"
 import { Message } from "./message"
 import type { Model } from "./model"
-import { MAX_PREVIEW_WIDGETS } from "./update"
+import { MAX_PREVIEW_WIDGETS, selectedOf } from "./update"
 import { typography, typographyClass } from "@maple/views/ui/typography"
 import { hstack, vstack } from "@maple/views/ui/stack"
-import { Array as Arr, String as Str } from "effect"
+import { Array as Arr } from "effect"
 
 // `TemplateDetailPanel` and `TemplateLivePreview`: a template's details and live preview.
 
@@ -102,15 +103,26 @@ const previewSkeleton = (h: H): Html => {
 /** `TemplateLivePreview`: the template's widgets drawn over the org's own data. */
 const livePreview = (h: H, model: Model, timeZone: string): Html =>
 	AsyncData.match(model.preview.data, {
-		onIdle: () => previewSkeleton(h),
+		// A required parameter still empty holds the preview back: say what it waits on.
+		onIdle: () => {
+			const selected = selectedOf(model)
+			const missing = selected === null ? [] : missingRequiredOf(selected, model.parameters)
+			return missing.length === 0
+				? previewSkeleton(h)
+				: typography(h, { size: "xs", tone: "muted", as: "p" }, [
+						`Fill in ${Arr.join(missing, ", ")} to preview this template.`,
+					])
+		},
 		onLoading: () => previewSkeleton(h),
 		onFailure: () =>
-			h.div(
-				[
-					h.Class(
-						"text-muted-foreground flex items-center gap-2 rounded-md border border-border border-dashed p-4 text-xs",
-					),
-				],
+			hstack(
+				h,
+				{
+					gap: "2",
+					align: "center",
+					className:
+						"text-muted-foreground rounded-md border border-border border-dashed p-4 text-xs",
+				},
 				[
 					icon(h, "CircleWarningIcon", { size: 14 }),
 					"Couldn't build the preview. You can still create the dashboard.",
@@ -201,107 +213,88 @@ const requirementBlock = (
 	return [
 		vstack(h, { gap: "2.5" }, [
 			eyebrow(h, { variant: "label" }, ["What it needs"]),
-			h.div(
-				[h.Class("flex items-start gap-2.5")],
-				[
-					isReady
-						? h.span(
-								[
-									h.Class(
-										"bg-severity-info flex size-4 shrink-0 items-center justify-center rounded-xs",
-									),
-								],
-								[icon(h, "CheckIcon", { size: 10, className: "text-background" })],
-							)
-						: h.span([h.Class("border-input size-4 shrink-0 rounded-full border-[1.5px]")], []),
-					h.div(
-						[h.Class("flex min-w-0 grow flex-col gap-1")],
-						[
-							h.div(
-								[h.Class("flex flex-wrap items-baseline gap-2.5")],
-								[
-									...(readiness?.prefixLabel === null ||
-									readiness?.prefixLabel === undefined
-										? []
-										: [
-												h.span(
-													[
-														h.Class(
-															cn(
-																typographyClass({ size: "sm", mono: true }),
-																isReady
-																	? "text-foreground"
-																	: "text-muted-foreground",
-															),
-														),
-													],
-													[readiness.prefixLabel],
-												),
-											]),
+			hstack(h, { gap: "2.5", align: "start" }, [
+				isReady
+					? hstack(
+							h,
+							{
+								align: "center",
+								justify: "center",
+								as: "span",
+								className: "bg-severity-info size-4 shrink-0 rounded-xs",
+							},
+							[icon(h, "CheckIcon", { size: 10, className: "text-background" })],
+						)
+					: h.span([h.Class("border-input size-4 shrink-0 rounded-full border-[1.5px]")], []),
+				vstack(h, { gap: "1", shrink: true, className: "grow" }, [
+					hstack(h, { gap: "2.5", align: "baseline", wrap: true }, [
+						...(readiness?.prefixLabel === null || readiness?.prefixLabel === undefined
+							? []
+							: [
 									h.span(
 										[
 											h.Class(
 												cn(
-													"text-sm",
+													typographyClass({ size: "sm", mono: true }),
 													isReady ? "text-foreground" : "text-muted-foreground",
 												),
 											),
 										],
+										[readiness.prefixLabel],
+									),
+								]),
+						h.span(
+							[h.Class(cn("text-sm", isReady ? "text-foreground" : "text-muted-foreground"))],
+							[
+								isReady
+									? requirement.kind === "telemetry"
+										? "trace data is arriving"
+										: "metrics are arriving"
+									: `no matching metrics in ${READINESS_WINDOW_LABEL}`,
+							],
+						),
+						...(requirement.kind !== "telemetry" && readiness !== undefined
+							? [
+									h.span(
 										[
-											isReady
-												? requirement.kind === "telemetry"
-													? "trace data is arriving"
-													: "metrics are arriving"
-												: `no matching metrics in ${READINESS_WINDOW_LABEL}`,
+											h.Class(
+												"text-muted-foreground ml-auto shrink-0 font-mono text-2xs",
+											),
+										],
+										[
+											String(readiness.metricCount),
+											" ",
+											pluralize(readiness.metricCount, "metric"),
+											...(lastSeen === null || !Number.isFinite(toEpochMs(lastSeen))
+												? []
+												: [
+														" · ",
+														relativeTime(h, {
+															value: lastSeen,
+															nowMs,
+															timeZone,
+															prefix: "last seen",
+														}),
+													]),
 										],
 									),
-									...(requirement.kind !== "telemetry" && readiness !== undefined
-										? [
-												h.span(
-													[
-														h.Class(
-															"text-muted-foreground ml-auto shrink-0 font-mono text-2xs",
-														),
-													],
-													[
-														String(readiness.metricCount),
-														" ",
-														pluralize(readiness.metricCount, "metric"),
-														...(lastSeen === null ||
-														!Number.isFinite(toEpochMs(lastSeen))
-															? []
-															: [
-																	" · ",
-																	relativeTime(h, {
-																		value: lastSeen,
-																		nowMs,
-																		timeZone,
-																		prefix: "last seen",
-																		tooltip: "title",
-																	}),
-																]),
-													],
-												),
-											]
-										: []),
-								],
-							),
-							typography(h, { size: "2xs", tone: "muted", as: "p" }, [
-								isReady ? "Collected by" : "Emitted by",
-								" ",
-								requirement.collector,
-								".",
-								...(!isReady &&
-								requirement.hint !== undefined &&
-								requirement.hint !== null &&
-								requirement.hint !== ""
-									? [` ${requirement.hint}`]
-									: []),
-							]),
-						],
-					),
-				],
-			),
+								]
+							: []),
+					]),
+					typography(h, { size: "2xs", tone: "muted", as: "p" }, [
+						isReady ? "Collected by" : "Emitted by",
+						" ",
+						requirement.collector,
+						".",
+						...(!isReady &&
+						requirement.hint !== undefined &&
+						requirement.hint !== null &&
+						requirement.hint !== ""
+							? [` ${requirement.hint}`]
+							: []),
+					]),
+				]),
+			]),
 		]),
 	]
 }
@@ -313,13 +306,14 @@ const parameterFields = (h: H, model: Model, template: V2DashboardTemplate): Rea
 		: [
 				vstack(h, { gap: "2.5" }, [
 					eyebrow(h, { variant: "label" }, ["Parameters"]),
-					h.div(
-						[h.Class("flex max-w-95 flex-col gap-4")],
+					vstack(
+						h,
+						{ gap: "4", className: "max-w-95" },
 						Arr.map(template.parameters, (parameter) =>
 							field(
 								h,
 								{
-									className: "items-stretch gap-1.75",
+									className: "items-stretch gap-2",
 									state: IDLE,
 									attributes: [h.Key(parameter.key)],
 								},
@@ -371,75 +365,49 @@ const parameterFields = (h: H, model: Model, template: V2DashboardTemplate): Rea
 
 /** The sticky create row: Create, or Set up + Create it anyway for a gated template. */
 const createRow = (h: H, model: Model, template: V2DashboardTemplate, isReady: boolean): Html => {
-	const missing = Arr.map(
-		Arr.filter(
-			template.parameters,
-			(parameter) => parameter.required && Str.trim(model.parameters[parameter.key] ?? "") === "",
-		),
-		(parameter) => parameter.label,
-	)
+	const missing = missingRequiredOf(template, model.parameters)
 	const create = Message.ClickedCreate({ templateId: template.id })
-	return h.div(
-		[h.Class("sticky bottom-0 z-10 -mx-8 -mb-8 bg-[var(--panel-surface)] px-8 pt-3 pb-6")],
-		[
-			h.div([
-				h.AriaHidden(true),
-				h.Class(
-					"pointer-events-none absolute inset-x-0 bottom-full h-12 bg-gradient-to-t from-[var(--panel-surface)] to-transparent",
-				),
+	return actionBar(h, {
+		label: "Create dashboard",
+		className: "mt-6",
+		leading: [
+			typography(h, { size: "2xs", tone: "muted", as: "p", className: "min-w-0" }, [
+				missing.length > 0
+					? `Fill in ${Arr.join(missing, " and ")} first.`
+					: isReady
+						? "Creates a copy you own. Edit or delete it freely."
+						: "Creating it now is fine. The widgets stay empty until the data shows up, then fill in on their own.",
 			]),
-			h.div(
-				[h.Class("flex flex-wrap items-center gap-x-3.5 gap-y-2")],
-				[
-					...(isReady
-						? [
-								button(
-									h,
-									{
-										isDisabled: missing.length > 0,
-										isLoading: model.isCreating,
-										attributes: [h.OnClick(create)],
-									},
-									[
-										"Create dashboard",
-										icon(h, "ArrowRightIcon", {
-											attributes: [h.DataAttribute("icon", "inline-end")],
-										}),
-									],
-								),
-							]
-						: [
-								linkButton(h, { href: setupHref(template) }, [
-									`Set up ${template.requirement?.setupLabel ?? "the collector"}`,
-									icon(h, "ExternalLinkIcon", {
-										attributes: [h.DataAttribute("icon", "inline-end")],
-									}),
-								]),
-								button(
-									h,
-									{
-										variant: "outline",
-										isDisabled: missing.length > 0,
-										isLoading: model.isCreating,
-										attributes: [h.OnClick(create)],
-									},
-									["Create it anyway"],
-								),
-							]),
-					h.p(
-						[h.Class("text-muted-foreground min-w-0 text-2xs")],
+		],
+		actions: isReady
+			? [
+					button(
+						h,
+						{ size: "sm", isDisabled: missing.length > 0, isLoading: model.isCreating, attributes: [h.OnClick(create)] },
 						[
-							missing.length > 0
-								? `Fill in ${Arr.join(missing, " and ")} first.`
-								: isReady
-									? "Creates a copy you own. Edit or delete it freely."
-									: "Creating it now is fine. The widgets stay empty until the data shows up, then fill in on their own.",
+							"Create dashboard",
+							icon(h, "ArrowRightIcon", { attributes: [h.DataAttribute("icon", "inline-end")] }),
 						],
 					),
+				]
+			: [
+					button(
+						h,
+						{
+							size: "sm",
+							variant: "outline",
+							isDisabled: missing.length > 0,
+							isLoading: model.isCreating,
+							attributes: [h.OnClick(create)],
+						},
+						["Create it anyway"],
+					),
+					linkButton(h, { size: "sm", href: setupHref(template) }, [
+						`Set up ${template.requirement?.setupLabel ?? "the collector"}`,
+						icon(h, "ExternalLinkIcon", { attributes: [h.DataAttribute("icon", "inline-end")] }),
+					]),
 				],
-			),
-		],
-	)
+	})
 }
 
 /** `TemplateDetailPanel`. */
@@ -458,28 +426,32 @@ export const detailPanel = (
 		[
 			vstack(h, { gap: "3" }, [
 				hstack(h, { gap: "3" }, [
-					h.span(
-						[
-							h.Class(
-								"border-border bg-card flex size-8.5 shrink-0 items-center justify-center rounded-md border",
-							),
-						],
+					hstack(
+						h,
+						{
+							align: "center",
+							justify: "center",
+							as: "span",
+							className: "border-border bg-card size-8.5 shrink-0 rounded-md border",
+						},
 						[icon(h, templateIcon(template.id, template.category), { size: 16 })],
 					),
 					vstack(h, { gap: "1", shrink: true }, [
 						heading(h, { level: 2, variant: "title" }, [template.name]),
-						h.div(
-							[h.Class("text-muted-foreground flex items-center gap-2 text-2xs")],
+						hstack(
+							h,
+							{
+								gap: "2",
+								align: "center",
+								className: typographyClass({ tone: "muted", size: "2xs" }),
+							},
 							[
 								h.span([], [CATEGORY_LABELS.get(template.category) ?? template.category]),
 								h.span([h.Class("text-border")], ["/"]),
-								h.span(
-									[h.Class("font-mono")],
-									[
-										widgetCountLabel(template),
-										...(composition === "" ? [] : [` · ${composition}`]),
-									],
-								),
+								typography(h, { mono: true }, [
+									widgetCountLabel(template),
+									...(composition === "" ? [] : [` · ${composition}`]),
+								]),
 							],
 						),
 					]),

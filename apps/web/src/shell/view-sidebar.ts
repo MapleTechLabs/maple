@@ -24,6 +24,7 @@ import * as ClerkOrgSwitcherView from "./clerk-org-switcher-view"
 import { orgAvatar } from "./clerk-org-switcher-view"
 import { typography } from "@maple/views/ui/typography"
 import { identityLabel } from "@maple/views/ui/identity-label"
+import { hstack } from "@maple/views/ui/stack"
 
 export const GROUP_LABEL = "h-6 text-muted-foreground"
 
@@ -51,7 +52,7 @@ export const triggerFor = (h: HtmlBuilder<Message>, model: Model, menu: Menu) =>
 export const pinnedNamespaceOf = (model: Model): Option.Option<string> =>
 	Option.flatMap(model.maybeOrgId, (orgId) => Record.get(model.pinnedNamespaces, orgId))
 
-/** `SelfHostedOrgSwitcher`'s trigger: the server tile, "Self Hosted" and the pinned namespace. */
+/** `SelfHostedOrgSwitcher`'s trigger: the server tile, "Self-hosted" and the pinned namespace. */
 const orgSwitcher = (h: HtmlBuilder<Message>, model: Model): Html =>
 	sidebarMenu(h, undefined, [
 		sidebarMenuItem(h, undefined, [
@@ -64,20 +65,25 @@ const orgSwitcher = (h: HtmlBuilder<Message>, model: Model): Html =>
 					attributes: triggerFor(h, model, Menu.Org()),
 				},
 				[
-					h.div(
-						[
-							h.Class(
-								"flex size-8 shrink-0 items-center justify-center rounded-md bg-muted text-muted-foreground",
-							),
-						],
+					hstack(
+						h,
+						{
+							align: "center",
+							justify: "center",
+							className: "size-8 shrink-0 rounded-md bg-muted text-muted-foreground",
+						},
 						[icon(h, "ServerIcon", { size: 16 })],
 					),
 					identityLabel(h, [
-						typography(h, { weight: "medium", truncate: true }, ["Self Hosted"]),
+						typography(h, { weight: "medium", truncate: true }, ["Self-hosted"]),
 						...Option.match(pinnedNamespaceOf(model), {
 							onNone: () => [],
 							onSome: (namespace) => [
-								h.span([h.Class("truncate text-xs font-medium text-primary")], [namespace]),
+								typography(
+									h,
+									{ size: "xs", tone: "primary", weight: "medium", truncate: true },
+									[namespace],
+								),
 							],
 						}),
 					]),
@@ -180,14 +186,10 @@ const clerkOrgSwitcher = (h: HtmlBuilder<Message>, model: Model, clerk: ShellCle
 												),
 											onSome: (namespace) =>
 												typography(h, { size: "xs", truncate: true }, [
-													h.span(
-														[h.Class("font-medium text-primary")],
-														[namespace],
-													),
-													h.span(
-														[h.Class("text-muted-foreground")],
-														[regionSuffix],
-													),
+													typography(h, { tone: "primary", weight: "medium" }, [
+														namespace,
+													]),
+													typography(h, { tone: "muted" }, [regionSuffix]),
 												]),
 										}),
 									]),
@@ -331,7 +333,7 @@ export const shellSidebarFooter = (
 			[
 				h.AriaHidden(true),
 				h.Class(
-					"pointer-events-none -mx-2 -mt-2 -mb-2 h-px transition-[background-color,box-shadow] [[data-overflow-y-end]+[data-slot=sidebar-footer]>&]:bg-sidebar-border [[data-overflow-y-end]+[data-slot=sidebar-footer]>&]:shadow-overflow-up",
+					"pointer-events-none -mx-2 -mt-2 -mb-2 h-px transition-shadow [[data-overflow-y-end]+[data-slot=sidebar-footer]>&]:bg-sidebar-border [[data-overflow-y-end]+[data-slot=sidebar-footer]>&]:shadow-overflow-up",
 				),
 			],
 			[],

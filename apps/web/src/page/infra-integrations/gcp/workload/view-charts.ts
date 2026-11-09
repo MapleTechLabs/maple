@@ -31,6 +31,7 @@ import { typography, typographyClass } from "@maple/views/ui/typography"
 import { hstackClass, vstack } from "@maple/views/ui/stack"
 import { gridClass } from "@maple/views/ui/grid"
 import { Array as Arr, String as Str } from "effect"
+import { textLink } from "@maple/views/ui/text-link"
 
 // `CorrelationStrips` as the workload's signals, and `GcpWorkloadCharts`.
 
@@ -111,7 +112,7 @@ export const correlationStrips = (
 					vstack(h, { gap: "0.5", className: "w-36 shrink-0" }, [
 						h.span([h.Class("font-prose text-xs font-medium text-foreground")], [strip.label]),
 						h.span([h.Class("font-prose text-3xs text-muted-foreground")], [strip.source]),
-						h.div([h.Class("mt-2 flex flex-col gap-0.5")], summaryView(h, strip.summary)),
+						vstack(h, { gap: "0.5", className: "mt-2" }, summaryView(h, strip.summary)),
 					]),
 					h.div(
 						[h.Class("min-w-0 flex-1")],
@@ -171,25 +172,27 @@ export const workloadCharts = (
 					? gcpClassRows(spec.metric, points, range)
 					: gcpLineRows(spec.series, points, range)
 			const metric = gcpChartMetric(spec, points)
-			const explore = h.a(
-				[
-					h.AriaLabel(`Open ${metric.name} in the metrics explorer`),
-					h.Class("text-foreground-subtle hover:text-foreground active:text-foreground"),
-					h.Href(
-						hrefOf(
-							AppRoute.Metric({
-								metricName: metric.name,
-								search: {
-									...options.timeSearch,
-									type: metric.type,
-									where: options.where,
-									groupBy: metric.groupBy,
-								},
-							}),
-						),
+			const explore = textLink(
+				h,
+				{
+					href: hrefOf(
+						AppRoute.Metric({
+							metricName: metric.name,
+							search: {
+								...options.timeSearch,
+								type: metric.type,
+								where: options.where,
+								groupBy: metric.groupBy,
+							},
+						}),
 					),
-					h.Title(`Open ${metric.name} in the metrics explorer`),
-				],
+					tone: "inherit",
+					className: "text-foreground-subtle hover:text-foreground active:text-foreground",
+					attributes: [
+						h.AriaLabel(`Open ${metric.name} in the metrics explorer`),
+						h.Title(`Open ${metric.name} in the metrics explorer`),
+					],
+				},
 				[icon(h, "ChartLineIcon", { size: 12 })],
 			)
 			if (rows.length === 0) {

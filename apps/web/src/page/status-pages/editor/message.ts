@@ -1,3 +1,4 @@
+import * as Policy from "@maple/domain/policy"
 import { StatusPageComponentId, StatusPageIncidentId, StatusPageIncidentKind } from "@maple/domain"
 import {
 	StatusPageConfig,
@@ -36,7 +37,7 @@ export const Message = defineMessageUnion({
 	CompletedFetchComponents: { key: Schema.String, result: outcome(Schema.Array(V2StatusPageComponent)) },
 	CompletedFetchIncidents: { key: Schema.String, result: outcome(Schema.Array(V2StatusPageIncident)) },
 	CompletedFetchMonitors: { key: Schema.String, result: outcome(Schema.Array(V2UptimeMonitor)) },
-	CompletedFetchSession: { orgId: Schema.String, isAdmin: Schema.Boolean },
+	CompletedFetchSession: { orgId: Schema.String, grants: Schema.Array(Policy.PermissionName) },
 	ClickedRetry: {},
 	GotPageMenuMessage: { message: Menu.Message },
 	CompletedFocus: {},
@@ -82,7 +83,8 @@ export const Message = defineMessageUnion({
 	ChangedUpdateField: { field: UpdateTextField, value: Schema.String },
 	SubmittedUpdate: {},
 	ClickedCancelUpdate: {},
-	CompletedPostUpdate: { result: outcome(V2StatusPageIncident) },
+	/** `generation`: which post answered; the form may have moved on to another one. */
+	CompletedPostUpdate: { generation: Schema.Number, result: outcome(V2StatusPageIncident) },
 	ClickedPublishIncident: { incidentId: StatusPageIncidentId },
 	CompletedPublishIncident: { incidentId: StatusPageIncidentId, result: outcome(V2StatusPageIncident) },
 	// Live

@@ -71,9 +71,7 @@ const current = new Map(
 
 const Baseline = Schema.Record(Schema.String, Schema.Number)
 const previous = new Map(
-	Rec.toEntries(
-		Schema.decodeUnknownSync(Schema.fromJsonString(Baseline))(readFileSync(baselineFile, "utf8")),
-	),
+	Rec.toEntries(Schema.decodeSync(Schema.fromJsonString(Baseline))(readFileSync(baselineFile, "utf8"))),
 )
 
 const hint = (pattern: string) =>

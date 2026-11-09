@@ -45,7 +45,7 @@ const GIT_COMMON = ["--no-optional-locks", "-c", "core.quotePath=false"]
  * filters, so they are combined into a single pattern instead.
  */
 export const gitPathspec = (path: string | undefined, glob: string | undefined): ReadonlyArray<string> => {
-	const dir = path?.replace(/\/+$/, "")
+	const dir = path === undefined ? undefined : Str.replace(/\/+$/, "")(path)
 	if (glob === undefined) return dir === undefined ? [] : [dir]
 	return [`:(glob)${dir === undefined ? glob : `${dir}/${glob}`}`]
 }
@@ -171,8 +171,6 @@ const inWorkspace = (relative: string | undefined): string =>
 		: `${REPO_MOUNT_TARGET}/${Str.replace(/^\/+/, "")(relative)}`
 
 /** Fold the event stream into what a tool renders. Non-zero exits are results, not failures: `rg` exits 1 on no match. */
-const utf8 = new TextEncoder()
-
 const drain = (
 	events: Stream.Stream<SandboxEvent, SandboxError>,
 ): Effect.Effect<SandboxCommandResult, SandboxError> =>
@@ -190,9 +188,7 @@ const drain = (
 				case "SandboxStarted":
 					return result
 				case "SandboxOutput": {
-					// `bytes` is the stream's real size; more of it than arrived means the
-					// container cut it at the bound.
-					const truncated = result.truncated || event.bytes > utf8.encode(event.text).length
+					const truncated = result.truncated || event.truncated
 					return event.stream === "stdout"
 						? { ...result, stdout: result.stdout + event.text, truncated }
 						: { ...result, stderr: result.stderr + event.text, truncated }
@@ -256,7 +252,9 @@ export class RepoSandboxService extends Context.Service<RepoSandboxService, Repo
 						// a literal bar and an unbalanced group.
 						"--extended-regexp",
 						...(options.caseSensitive === false ? ["--ignore-case"] : []),
-						...(options.contextLines ? ["--context", String(options.contextLines)] : []),
+						...(options.contextLines !== undefined && options.contextLines > 0
+							? ["--context", String(options.contextLines)]
+							: []),
 						"-e",
 						options.pattern,
 						// Everything past `--` is a pathspec, so a pattern that starts with a

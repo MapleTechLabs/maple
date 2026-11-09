@@ -16,19 +16,21 @@ import { pressable } from "@maple/views/ui/pressable"
 import { textLink } from "@maple/views/ui/text-link"
 import { tooltipTrigger } from "@maple/views/ui/tooltip-host"
 import { truncatedText } from "@maple/views/ui/truncated-text"
+import { errorCountPill } from "@maple/views/ui/error-count-pill"
 import { relativeTime } from "../../kit/relative-time"
 import type { SessionRow } from "./session-row"
 import {
 	browserIconFor,
 	COLUMNS,
 	deviceIconFor,
-	errorCountPill,
 	livePill,
 	type SessionsListOptions,
 } from "./sessions-parts"
 import { typography, typographyClass } from "@maple/views/ui/typography"
 import { hstack } from "@maple/views/ui/stack"
+import { selectableRow } from "@maple/views/ui/selectable-row"
 import { Array as Arr } from "effect"
+import { nonZeroOr } from "@maple/ui/lib/number"
 
 // A session list row: its org button, tags and badges.
 
@@ -96,7 +98,7 @@ const sessionTags = <M>(
 	)
 
 const sessionBadges = <M>(h: HtmlBuilder<M>, session: SessionRow): ReadonlyArray<Html> => [
-	...(session.errorCount > 0 ? [errorCountPill(h, session.errorCount)] : []),
+	...(session.errorCount > 0 ? [errorCountPill(h, { count: session.errorCount })] : []),
 	...(session.traceCount > 0
 		? [
 				badge(h, { variant: "meta", pill: true, size: "xs", mono: true }, [
@@ -199,16 +201,16 @@ export const sessionListRow = <M>(
 	const durationMs = sessionDurationMs(session)
 	const p95 = options.durationP95
 	const open = options.onOpen(session)
-	return h.div(
-		[
-			h.OnClick(open),
-			h.Class(
-				cn(
-					"group relative flex w-full cursor-pointer items-center gap-3 border-b border-border px-3 hover:bg-surface-sunken active:bg-surface-sunken @2xl:gap-4",
-					lowSignal ? "py-1.5" : "py-2.5",
-				),
+	return selectableRow(
+		h,
+		{
+			isSelected: false,
+			onClick: open,
+			className: cn(
+				"group relative flex w-full cursor-pointer items-center gap-3 border-b border-border px-3 hover:bg-surface-sunken active:bg-surface-sunken @2xl:gap-4",
+				lowSignal ? "py-1.5" : "py-2.5",
 			),
-		],
+		},
 		[
 			pressable(
 				h,
@@ -236,7 +238,7 @@ export const sessionListRow = <M>(
 				[
 					session.groupName
 						? orgButton(h, session.groupName, options.onFilterGroup)
-						: h.span([h.Class("text-xs text-foreground-faint")], [EMPTY_VALUE]),
+						: typography(h, { size: "xs", tone: "faint" }, [EMPTY_VALUE]),
 				],
 			),
 			h.div(
@@ -269,7 +271,7 @@ export const sessionListRow = <M>(
 						? [longBadge(h, p95)]
 						: []),
 					typography(h, { size: "xs", tone: "muted", className: "whitespace-nowrap" }, [
-						countLabel(session.pageViews || 1, "page"),
+						countLabel(nonZeroOr(session.pageViews, 1), "page"),
 						" · ",
 						countLabel(session.clickCount, "click"),
 					]),
@@ -309,8 +311,13 @@ const deviceColumn = <M>(h: HtmlBuilder<M>, session: SessionRow): Html =>
 				],
 				[icon(h, browserIconFor(session.browserName), { className: "size-4" })],
 			),
-			h.span(
-				[h.Class("shrink-0 text-muted-foreground"), h.Title(session.deviceType || "desktop")],
+			typography(
+				h,
+				{
+					tone: "muted",
+					className: "shrink-0",
+					attributes: [h.Title(session.deviceType || "desktop")],
+				},
 				[icon(h, deviceIconFor(session.deviceType), { className: "size-4" })],
 			),
 			...(session.country
@@ -330,6 +337,5 @@ const startedAt = <M>(
 		nowMs: options.nowMs,
 		timeZone: options.timeZone,
 		variant: "orDate",
-		tooltip: "title",
 		className,
 	})

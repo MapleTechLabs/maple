@@ -5,15 +5,17 @@ import type { Html, HtmlBuilder } from "foldkit/html"
 import { docsUrl } from "../../../../lib/docs"
 import { AppRoute, hrefOf } from "../../../../route"
 import { statusDot } from "@maple/views/ui/status-dot"
-import { columnHead, dataTable } from "../../../infra/kit/data-table"
+import { columnHead, dataTable, NUMERIC_CELL } from "../../../infra/kit/data-table"
 import { type SparkWindow, windowSparkline } from "../../kit/window-sparkline"
 import { ERROR_RATE_LIMIT } from "../health"
 import { callerMixText } from "./derive"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { keyedBody, panelEmpty, panelLink, sectionPanel } from "../panel"
-import { typography, typographyClass } from "@maple/views/ui/typography"
+import { typography } from "@maple/views/ui/typography"
 import { Array as Arr } from "effect"
+import { hstack } from "@maple/views/ui/stack"
+import { textLink } from "@maple/views/ui/text-link"
 
 // "Services calling this project": the org's client spans to the project's API and pooler.
 
@@ -39,33 +41,33 @@ const trend = (h: H, caller: SupabaseProjectCaller, window: SparkWindow | null):
 				],
 			)
 
-const NUMBER = typographyClass({ size: "xs", mono: true, numeric: true })
-
 const callerRow = (h: H, model: Model, caller: SupabaseProjectCaller, spark: SparkWindow | null): Html =>
-	h.div(
+	hstack(
+		h,
+		{
+			gap: "4",
+			align: "center",
+			className: "border-b border-border-subtle px-4 py-2.5 last:border-0",
+			attributes: [h.Key(caller.serviceName)],
+		},
 		[
-			h.Key(caller.serviceName),
-			h.Class("flex items-center gap-4 border-b border-border-subtle px-4 py-2.5 last:border-0"),
-		],
-		[
-			h.a(
-				[
-					h.Class(
-						"flex w-0 min-w-40 flex-1 items-center gap-2 text-xs hover:text-primary active:text-primary",
+			textLink(
+				h,
+				{
+					href: hrefOf(
+						AppRoute.Service({
+							serviceName: caller.serviceName,
+							search: {
+								startTime: model.search.startTime,
+								endTime: model.search.endTime,
+								timePreset: model.search.timePreset,
+							},
+						}),
 					),
-					h.Href(
-						hrefOf(
-							AppRoute.Service({
-								serviceName: caller.serviceName,
-								search: {
-									startTime: model.search.startTime,
-									endTime: model.search.endTime,
-									timePreset: model.search.timePreset,
-								},
-							}),
-						),
-					),
-				],
+					tone: "inherit",
+					className:
+						"flex w-0 min-w-40 flex-1 gap-2 text-xs hover:text-primary active:text-primary",
+				},
 				[
 					statusDot(h, { tone: "custom", className: "bg-chart-1" }),
 					typography(h, { mono: true, truncate: true, attributes: [h.Title(caller.serviceName)] }, [
@@ -77,13 +79,13 @@ const callerRow = (h: H, model: Model, caller: SupabaseProjectCaller, spark: Spa
 				[h.Class("hidden w-56 truncate font-mono text-2xs text-muted-foreground md:block")],
 				[callerMixText(caller.mix)],
 			),
-			h.span([h.Class(cn(NUMBER, "w-20 text-right"))], [formatRate(caller.callsPerMinute)]),
-			h.span([h.Class(cn(NUMBER, "w-20 text-right"))], [formatLatency(caller.p95DurationMs)]),
+			h.span([h.Class(cn(NUMERIC_CELL, "w-20 text-right"))], [formatRate(caller.callsPerMinute)]),
+			h.span([h.Class(cn(NUMERIC_CELL, "w-20 text-right"))], [formatLatency(caller.p95DurationMs)]),
 			h.span(
 				[
 					h.Class(
 						cn(
-							NUMBER,
+							NUMERIC_CELL,
 							"w-16 text-right",
 							caller.errorRate >= ERROR_RATE_LIMIT && "text-severity-error",
 						),
@@ -91,7 +93,7 @@ const callerRow = (h: H, model: Model, caller: SupabaseProjectCaller, spark: Spa
 				],
 				[formatErrorRate(caller.errorRate)],
 			),
-			h.div([h.Class("flex w-24 justify-end")], [trend(h, caller, spark)]),
+			hstack(h, { align: "stretch", justify: "end", className: "w-24" }, [trend(h, caller, spark)]),
 		],
 	)
 
@@ -107,13 +109,14 @@ const HEAD = [
 const noCallers = (h: H): Html =>
 	panelEmpty(h, [
 		"This fills in when your instrumented services call this project's URL or its pooler. ",
-		h.a(
-			[
-				h.Href(docsUrl("instrumentation")),
-				h.Target("_blank"),
-				h.Rel("noopener noreferrer"),
-				h.Class("underline underline-offset-2 hover:text-foreground active:text-foreground"),
-			],
+		textLink(
+			h,
+			{
+				href: docsUrl("instrumentation"),
+				tone: "inherit",
+				className: "inline underline hover:text-foreground active:text-foreground",
+				attributes: [h.Target("_blank"), h.Rel("noopener noreferrer")],
+			},
 			["Instrument a service"],
 		),
 	])

@@ -3,10 +3,12 @@ import { Effect, Predicate, Result, Schema, Array as Arr, Record as Rec, String 
 import { MapleApiV2 } from "./api"
 import { V2AlertDestinationCreateParams } from "./alert-destinations"
 import { V2AlertIncident } from "./alert-incidents"
-import { V2AlertRule, V2AlertRuleMutationResponse } from "./alert-rules"
+import { fromV2Threshold, V2AlertRule, V2AlertRuleMutationResponse } from "./alert-rules"
 import { V2ApiKey, V2ApiKeyMutationResponse, V2ApiKeyWithSecret } from "./api-keys"
 import { V2DashboardMutation } from "./dashboards"
 import { V2ErrorIssue } from "./error-issues"
+import { V2EscalationChain } from "./escalation-chains"
+import { V2OnCallOverride, V2OnCallSchedule, V2OnCallShift } from "./oncall-schedules"
 import { AuthorizationV2, isScopeExemptRoute, requiredScopeForRoute, scopeAllows, V2Scope } from "./auth"
 import {
 	V2PlanetScaleIntegration,
@@ -31,10 +33,11 @@ import {
 } from "./telemetry"
 
 const UUID = "0f8fad5b-d9cb-469f-a165-70867728950e"
+const INCIDENT_CHAIN_UUID = "3f2a1b4c-5d6e-4f70-8a9b-0c1d2e3f4a5b"
 
 describe("V2PlanetScaleIntegration wire format", () => {
 	it("decodes snake_case fields, ISO timestamps, and a scrp_ public ID", () => {
-		const status = Schema.decodeUnknownSync(V2PlanetScaleIntegration)({
+		const status = Schema.decodeSync(V2PlanetScaleIntegration)({
 			object: "planetscale_integration",
 			connected: true,
 			pending_org_selection: false,
@@ -63,7 +66,7 @@ describe("V2PlanetScaleIntegration wire format", () => {
 
 	it("rejects a scrape target ID carrying the wrong prefix", () => {
 		expect(() =>
-			Schema.decodeUnknownSync(V2PlanetScaleScrapeTarget)({
+			Schema.decodeSync(V2PlanetScaleScrapeTarget)({
 				id: encodePublicId("key", UUID),
 				object: "planetscale_integration.scrape_target",
 				enabled: true,
@@ -78,13 +81,13 @@ describe("V2PlanetScaleIntegration wire format", () => {
 
 	it("requires a non-empty token id and secret", () => {
 		expect(() =>
-			Schema.decodeUnknownSync(V2PlanetScaleMetricsTokenRequest)({
+			Schema.decodeSync(V2PlanetScaleMetricsTokenRequest)({
 				token_id: "",
 				token_secret: "pscale_tkn_x",
 			}),
 		).toThrow()
 		expect(
-			Schema.decodeUnknownSync(V2PlanetScaleMetricsTokenRequest)({
+			Schema.decodeSync(V2PlanetScaleMetricsTokenRequest)({
 				token_id: "tok_1",
 				token_secret: "pscale_tkn_x",
 			}).token_id,
@@ -94,7 +97,7 @@ describe("V2PlanetScaleIntegration wire format", () => {
 
 describe("V2ApiKey wire format", () => {
 	it("encodes snake_case fields, an object type, and a key_ public ID", () => {
-		const key = Schema.decodeUnknownSync(V2ApiKey)({
+		const key = Schema.decodeSync(V2ApiKey)({
 			id: encodePublicId("key", UUID),
 			object: "api_key",
 			name: "ci",
@@ -121,7 +124,7 @@ describe("V2ApiKey wire format", () => {
 	})
 
 	it("encodes MCP OAuth tokens, whose stored scope is outside the request grammar", () => {
-		const key = Schema.decodeUnknownSync(V2ApiKey)({
+		const key = Schema.decodeSync(V2ApiKey)({
 			id: encodePublicId("key", UUID),
 			object: "api_key",
 			name: "Claude",
@@ -157,21 +160,21 @@ describe("V2ApiKey wire format", () => {
 			created_by: "user_123",
 			created_by_email: null,
 		}
-		const withSecret = Schema.decodeUnknownSync(V2ApiKeyWithSecret)({
+		const withSecret = Schema.decodeSync(V2ApiKeyWithSecret)({
 			...base,
 			secret: "maple_ak_secret",
 			txid: "81234",
 		})
-		const revoked = Schema.decodeUnknownSync(V2ApiKeyMutationResponse)({ ...base, txid: "81235" })
+		const revoked = Schema.decodeSync(V2ApiKeyMutationResponse)({ ...base, txid: "81235" })
 
 		expect(Schema.encodeSync(V2ApiKeyWithSecret)(withSecret).txid).toBe("81234")
 		expect(Schema.encodeSync(V2ApiKeyMutationResponse)(revoked).txid).toBe("81235")
-		expect("txid" in Schema.encodeSync(V2ApiKey)(Schema.decodeUnknownSync(V2ApiKey)(base))).toBe(false)
+		expect("txid" in Schema.encodeSync(V2ApiKey)(Schema.decodeSync(V2ApiKey)(base))).toBe(false)
 	})
 
 	it("rejects non-Postgres transaction IDs", () => {
 		expect(() =>
-			Schema.decodeUnknownSync(V2ApiKeyMutationResponse)({
+			Schema.decodeSync(V2ApiKeyMutationResponse)({
 				id: encodePublicId("key", UUID),
 				object: "api_key",
 				name: "ci",
@@ -230,7 +233,7 @@ describe("V2ErrorIssue wire format", () => {
 	}
 
 	it("encodes the resource with snake_case fields and an iss_ public ID", () => {
-		const decoded = Schema.decodeUnknownSync(V2ErrorIssue)(issueWire)
+		const decoded = Schema.decodeSync(V2ErrorIssue)(issueWire)
 		expect(decoded.id).toBe(UUID)
 		const wire = Schema.encodeSync(V2ErrorIssue)(decoded)
 		expect(wire.id).toBe(encodePublicId("iss", UUID))
@@ -241,7 +244,7 @@ describe("V2ErrorIssue wire format", () => {
 
 describe("V2Dashboard wire format", () => {
 	it("encodes public IDs and recursively snake_cases the dashboard document", () => {
-		const decoded = Schema.decodeUnknownSync(V2DashboardMutation)({
+		const decoded = Schema.decodeSync(V2DashboardMutation)({
 			id: encodePublicId("dash", UUID),
 			object: "dashboard",
 			name: "Operations",
@@ -298,6 +301,7 @@ describe("V2Dashboard wire format", () => {
 			refresh_interval_seconds: null,
 			created_at: "2026-07-15T00:00:00.000Z",
 			updated_at: "2026-07-16T00:00:00.000Z",
+			version: 3,
 			txid: "81234",
 		})
 
@@ -418,6 +422,156 @@ describe("V2 alerts wire format", () => {
 		expect("txid" in Schema.encodeSync(V2AlertRule)(base)).toBe(false)
 	})
 
+	it("keeps an omitted tier escalation chain absent, reads it as no chain, and round-trips an esc_ id", () => {
+		const CHAIN_UUID = "3f2a1b4c-5d6e-4f70-8a9b-0c1d2e3f4a5b"
+		const without = Schema.decodeUnknownSync(V2AlertRule)(ruleWire)
+		// Absent, not null: an update that leaves it out keeps the stored chain.
+		const [omitted] = without.thresholds
+		expect(omitted).not.toHaveProperty("escalation_chain_id")
+		expect(fromV2Threshold(omitted).escalationChainId).toBeNull()
+
+		const [tier] = ruleWire.thresholds
+		const withChain = Schema.decodeUnknownSync(V2AlertRule)({
+			...ruleWire,
+			thresholds: [{ ...tier, escalation_chain_id: encodePublicId("esc", CHAIN_UUID) }],
+		})
+		expect(withChain.thresholds[0]?.escalation_chain_id).toBe(CHAIN_UUID)
+		expect(Schema.encodeSync(V2AlertRule)(withChain).thresholds[0]?.escalation_chain_id).toBe(
+			encodePublicId("esc", CHAIN_UUID),
+		)
+		expect(() =>
+			Schema.decodeUnknownSync(V2AlertRule)({
+				...ruleWire,
+				thresholds: [{ ...tier, escalation_chain_id: encodePublicId("dest", CHAIN_UUID) }],
+			}),
+		).toThrow()
+	})
+
+	it("encodes an escalation chain with esc_/dest_/onc_/alrt_ ids, user targets and snake_case steps", () => {
+		const CHAIN_UUID = "3f2a1b4c-5d6e-4f70-8a9b-0c1d2e3f4a5b"
+		const SCHEDULE_UUID = "5a4b3c2d-1e0f-4a9b-8c7d-6e5f4a3b2c1d"
+		const chainWire = {
+			id: encodePublicId("esc", CHAIN_UUID),
+			object: "escalation_chain",
+			name: "On-call",
+			description: null,
+			steps: [
+				{
+					targets: [{ type: "destination", destination_id: encodePublicId("dest", DEST_UUID) }],
+					wait_minutes: 10,
+				},
+				{
+					targets: [
+						{ type: "schedule", schedule_id: encodePublicId("onc", SCHEDULE_UUID) },
+						{ type: "user", user_id: "user_ana" },
+					],
+					wait_minutes: 15,
+				},
+			],
+			repeat_count: 1,
+			rule_ids: [encodePublicId("alrt", UUID)],
+			created_at: "2026-07-15T00:00:00.000Z",
+			updated_at: "2026-07-15T00:00:00.000Z",
+		}
+		const chain = Schema.decodeUnknownSync(V2EscalationChain)(chainWire)
+		expect(chain.id).toBe(CHAIN_UUID)
+		expect(chain.steps[0]?.targets[0]).toEqual({ type: "destination", destination_id: DEST_UUID })
+		expect(chain.steps[1]?.targets).toEqual([
+			{ type: "schedule", schedule_id: SCHEDULE_UUID },
+			{ type: "user", user_id: "user_ana" },
+		])
+		expect(chain.rule_ids).toEqual([UUID])
+		expect(Schema.encodeSync(V2EscalationChain)(chain)).toEqual(chainWire)
+		expect(() => Schema.decodeUnknownSync(V2EscalationChain)({ ...chainWire, steps: [] })).toThrow()
+		expect(() =>
+			Schema.decodeUnknownSync(V2EscalationChain)({
+				...chainWire,
+				steps: [{ ...chainWire.steps[0], wait_minutes: 0 }],
+			}),
+		).toThrow()
+		expect(() =>
+			Schema.decodeUnknownSync(V2EscalationChain)({
+				...chainWire,
+				steps: [
+					{
+						targets: [{ type: "schedule", schedule_id: encodePublicId("dest", SCHEDULE_UUID) }],
+						wait_minutes: 5,
+					},
+				],
+			}),
+		).toThrow()
+	})
+
+	it("encodes an on-call schedule with onc_ ids, snake_case layers and Maple user ids", () => {
+		const SCHEDULE_UUID = "5a4b3c2d-1e0f-4a9b-8c7d-6e5f4a3b2c1d"
+		const scheduleWire = {
+			id: encodePublicId("onc", SCHEDULE_UUID),
+			object: "oncall_schedule",
+			name: "Checkout primary",
+			description: null,
+			time_zone: "Europe/Berlin",
+			layers: [
+				{
+					name: "Primary",
+					participants: ["user_ana", "user_ben"],
+					rotation: { kind: "weekly", handoff_weekday: "mon", handoff_time: "09:00" },
+					starts_at: "2026-11-09T08:00:00.000Z",
+					restrictions: [{ weekdays: ["mon", "tue"], start_time: "18:00", end_time: "08:00" }],
+				},
+			],
+			on_call_now: {
+				user_id: "user_ana",
+				starts_at: "2026-11-09T08:00:00.000Z",
+				ends_at: "2026-11-16T08:00:00.000Z",
+			},
+			chain_ids: [],
+			created_at: "2026-11-06T00:00:00.000Z",
+			updated_at: "2026-11-06T00:00:00.000Z",
+		}
+		const schedule = Schema.decodeUnknownSync(V2OnCallSchedule)(scheduleWire)
+		expect(schedule.id).toBe(SCHEDULE_UUID)
+		expect(Schema.encodeSync(V2OnCallSchedule)(schedule)).toEqual(scheduleWire)
+		const [layer] = scheduleWire.layers
+		const invalid = [
+			{ ...scheduleWire, id: encodePublicId("esc", SCHEDULE_UUID) },
+			{ ...scheduleWire, layers: [] },
+			{ ...scheduleWire, layers: [{ ...layer, participants: [] }] },
+			{ ...scheduleWire, layers: [{ ...layer, rotation: { kind: "daily", handoff_time: "25:00" } }] },
+		]
+		for (const wire of invalid) expect(() => Schema.decodeUnknownSync(V2OnCallSchedule)(wire)).toThrow()
+	})
+
+	it("round-trips ovr_ override ids in overrides and override-sourced shifts", () => {
+		const SCHEDULE_UUID = "5a4b3c2d-1e0f-4a9b-8c7d-6e5f4a3b2c1d"
+		const OVERRIDE_UUID = "6b5c4d3e-2f10-4b8c-9d8e-7f6a5b4c3d2e"
+		const overrideWire = {
+			id: encodePublicId("ovr", OVERRIDE_UUID),
+			object: "oncall_override",
+			schedule_id: encodePublicId("onc", SCHEDULE_UUID),
+			user_id: "user_ben",
+			starts_at: "2026-11-12T17:00:00.000Z",
+			ends_at: "2026-11-13T08:00:00.000Z",
+			created_by: "user_ana",
+			created_at: "2026-11-10T00:00:00.000Z",
+		}
+		const override = Schema.decodeUnknownSync(V2OnCallOverride)(overrideWire)
+		expect([override.id, override.schedule_id]).toEqual([OVERRIDE_UUID, SCHEDULE_UUID])
+		expect(Schema.encodeSync(V2OnCallOverride)(override)).toEqual(overrideWire)
+
+		const shiftWire = {
+			user_id: "user_ben",
+			starts_at: overrideWire.starts_at,
+			ends_at: overrideWire.ends_at,
+			source: { kind: "override", override_id: overrideWire.id },
+		}
+		const shift = Schema.decodeUnknownSync(V2OnCallShift)(shiftWire)
+		expect(shift.source).toEqual({ kind: "override", override_id: OVERRIDE_UUID })
+		expect(Schema.encodeSync(V2OnCallShift)(shift)).toEqual(shiftWire)
+		expect(() =>
+			Schema.decodeUnknownSync(V2OnCallOverride)({ ...overrideWire, starts_at: "2026-11-12 17:00" }),
+		).toThrow()
+	})
+
 	it("rejects wrong-prefix rule IDs", () => {
 		expect(() =>
 			Schema.decodeUnknownSync(V2AlertRule)({ ...ruleWire, id: encodePublicId("dash", UUID) }),
@@ -425,14 +579,14 @@ describe("V2 alerts wire format", () => {
 	})
 
 	it("decodes destination create params per union arm and rejects mismatched configs", () => {
-		const pagerduty = Schema.decodeUnknownSync(V2AlertDestinationCreateParams)({
+		const pagerduty = Schema.decodeSync(V2AlertDestinationCreateParams)({
 			type: "pagerduty",
 			name: "On-call",
 			integration_key: "routing-key",
 		})
 		expect(pagerduty.type).toBe("pagerduty")
 
-		const email = Schema.decodeUnknownSync(V2AlertDestinationCreateParams)({
+		const email = Schema.decodeSync(V2AlertDestinationCreateParams)({
 			type: "email",
 			name: "Leads",
 			member_user_ids: ["user_1", "user_2"],
@@ -477,15 +631,52 @@ describe("V2 alerts wire format", () => {
 			last_notified_at: null,
 			hold_reason: null,
 			held_since: null,
+			acknowledged_at: null,
+			acknowledged_by: null,
+			acknowledged_via: null,
 			error_issue_id: null,
+			escalation: {
+				chain_id: encodePublicId("esc", INCIDENT_CHAIN_UUID),
+				chain_name: "Checkout on-call",
+				status: "active",
+				step: 2,
+				step_count: 3,
+				pass: 1,
+				pass_count: 2,
+				steps_sent: 1,
+				next_step_at: "2026-07-15T09:25:00.000Z",
+			},
+			silence_id: null,
+			silenced_at: null,
 		})
 		expect(incident.id).toBe(INCIDENT_UUID)
 		expect(incident.rule_id).toBe(UUID)
+		expect(incident.escalation?.chain_id).toBe(INCIDENT_CHAIN_UUID)
 
 		const wire = Schema.encodeSync(V2AlertIncident)(incident)
 		expect(wire.id).toMatch(/^inc_/)
 		expect(wire.rule_id).toMatch(/^alrt_/)
+		expect(wire.escalation?.chain_id).toMatch(/^esc_/)
 		expect("ruleId" in wire).toBe(false)
+	})
+
+	it("refuses an incident escalation with an unknown run status or a negative step", () => {
+		const decode = Schema.decodeUnknownResult(V2AlertIncident.fields.escalation)
+		const escalation = {
+			chain_id: encodePublicId("esc", INCIDENT_CHAIN_UUID),
+			chain_name: "Checkout on-call",
+			status: "active",
+			step: 1,
+			step_count: 1,
+			pass: 1,
+			pass_count: 1,
+			steps_sent: 0,
+			next_step_at: null,
+		}
+		expect(Result.isSuccess(decode(escalation))).toBe(true)
+		expect(Result.isSuccess(decode(null))).toBe(true)
+		expect(Result.isFailure(decode({ ...escalation, status: "paused" }))).toBe(true)
+		expect(Result.isFailure(decode({ ...escalation, step: -1 }))).toBe(true)
 	})
 })
 
@@ -652,6 +843,7 @@ describe("scopes", () => {
 	it("classifies every scope-protected v2 route template", () => {
 		let checked = 0
 		for (const group of Rec.values(MapleApiV2.groups)) {
+			// @effect-diagnostics-next-line preferEffectRecord:off -- not a record type; Rec.values would need a cast
 			for (const endpoint of Object.values(group.endpoints)) {
 				const scoped = Arr.some(
 					Array.from(endpoint.middlewares),
@@ -747,21 +939,21 @@ describe("telemetry contracts", () => {
 			end_time: "2026-07-15T01:00:00.000Z",
 		}
 		expect(() =>
-			Schema.decodeUnknownSync(V2TraceTimeseriesParams)({
+			Schema.decodeSync(V2TraceTimeseriesParams)({
 				...base,
 				aggregation: "count",
 				group_by: "attribute",
 			}),
 		).toThrow()
 		expect(() =>
-			Schema.decodeUnknownSync(V2TraceTimeseriesParams)({
+			Schema.decodeSync(V2TraceTimeseriesParams)({
 				...base,
 				aggregation: "count",
 				bucket_seconds: 0,
 			}),
 		).toThrow()
 		expect(() =>
-			Schema.decodeUnknownSync(V2MetricsTimeseriesParams)({
+			Schema.decodeSync(V2MetricsTimeseriesParams)({
 				...base,
 				aggregation: "rate",
 				filters: { metric_name: "requests", metric_type: "gauge" },
@@ -856,11 +1048,9 @@ describe("list pagination", () => {
 
 describe("timestamps", () => {
 	it("accepts UTC ISO-8601 timestamps and rejects invalid values", () => {
-		expect(Schema.decodeUnknownSync(Timestamp)("2026-07-15T12:34:56.000Z")).toBe(
-			"2026-07-15T12:34:56.000Z",
-		)
-		expect(() => Schema.decodeUnknownSync(Timestamp)("not-a-date")).toThrow()
-		expect(() => Schema.decodeUnknownSync(Timestamp)("2026-07-15T12:34:56+02:00")).toThrow()
+		expect(Schema.decodeSync(Timestamp)("2026-07-15T12:34:56.000Z")).toBe("2026-07-15T12:34:56.000Z")
+		expect(() => Schema.decodeSync(Timestamp)("not-a-date")).toThrow()
+		expect(() => Schema.decodeSync(Timestamp)("2026-07-15T12:34:56+02:00")).toThrow()
 	})
 })
 

@@ -1,4 +1,4 @@
-import { allowedTransitionsForAll, type WorkflowState } from "@maple/domain/http"
+import { allowedTransitionsForAll, MAX_ISSUE_MERGE_SOURCES, type WorkflowState } from "@maple/domain/http"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { button } from "@maple/views/ui/button"
 import { icon } from "@maple/views/ui/icon"
@@ -10,8 +10,10 @@ import { WORKFLOW_LABEL } from "../kit/workflow"
 import { signalsOf } from "./derive"
 import { Message } from "./message"
 import type { Model } from "./model"
-import { hstackClass } from "@maple/views/ui/stack"
-import { Array as Arr } from "effect"
+import { hstack, hstackClass } from "@maple/views/ui/stack"
+import { Array as Arr, Order } from "effect"
+import { formatNumber } from "@maple/ui/lib/format"
+import type { ErrorSignal } from "../../../lib/models/error-signal"
 
 // The issues bulk bar: the selection's actions, pinned to the foot.
 
@@ -110,21 +112,58 @@ const moveEntries = (
 	]
 }
 
-export const bulkBar = (h: H, model: Model): ReadonlyArray<Html> => {
-	const selected = Arr.map(
-		Arr.filter(signalsOf(model), (signal) => model.selectedIds.includes(signal.id)),
-		(signal) => ({ id: signal.id, state: signal.issue.workflowState }),
-	)
-	if (selected.length === 0) return []
-	return [
-		h.div(
-			[
-				h.Role("region"),
-				h.AriaLabel("Bulk actions"),
-				h.Class(
-					"pointer-events-auto fixed bottom-4 left-1/2 z-40 flex -translate-x-1/2 items-center gap-1 border bg-popover p-1",
+/** One entry per selected issue: picking it keeps that issue and folds the rest into it. */
+const mergeEntries = (selected: ReadonlyArray<ErrorSignal>): ReadonlyArray<MenuView.MenuEntry> => [
+	{
+		_tag: "Group",
+		label: "Keep this issue, merge the rest into it",
+		entries: [
+			{ _tag: "Separator" },
+			...Arr.map(
+				// The busiest first: usually the one worth keeping.
+				Arr.sort(
+					selected,
+					Order.mapInput(Order.flip(Order.Number), (signal: ErrorSignal) => signal.totalCount),
 				),
-			],
+				(signal): MenuView.MenuEntry => ({
+					_tag: "Item",
+					value: signal.id,
+					label: `${signal.title} · ${signal.serviceName} · ${formatNumber(signal.totalCount)}`,
+				}),
+			),
+		],
+	},
+]
+
+/**
+ * Whether the selection can be merged: 2+ live error issues (alert and integration
+ * issues own no fingerprints, and an archived one cannot be merged), few enough for
+ * one request, which keeps one issue and folds at most MAX_ISSUE_MERGE_SOURCES into it.
+ */
+export const canMergeSelection = (
+	signals: ReadonlyArray<{
+		readonly issue: { readonly kind: ErrorSignal["issue"]["kind"]; readonly archivedAt: string | null }
+	}>,
+): boolean =>
+	signals.length >= 2 &&
+	signals.length <= MAX_ISSUE_MERGE_SOURCES + 1 &&
+	Arr.every(signals, (signal) => signal.issue.kind === "error" && signal.issue.archivedAt === null)
+
+export const bulkBar = (h: H, model: Model): ReadonlyArray<Html> => {
+	const signals = Arr.filter(signalsOf(model), (signal) => model.selectedIds.includes(signal.id))
+	const selected = Arr.map(signals, (signal) => ({ id: signal.id, state: signal.issue.workflowState }))
+	if (selected.length === 0) return []
+	const canMerge = canMergeSelection(signals)
+	return [
+		hstack(
+			h,
+			{
+				gap: "1",
+				align: "center",
+				className:
+					"pointer-events-auto fixed bottom-4 left-1/2 z-40 -translate-x-1/2 rounded-lg border bg-popover p-1",
+				attributes: [h.Role("region"), h.AriaLabel("Bulk actions")],
+			},
 			[
 				h.span(
 					[h.Class("px-2 text-xs font-medium tabular-nums text-foreground")],
@@ -141,6 +180,13 @@ export const bulkBar = (h: H, model: Model): ReadonlyArray<Html> => {
 				bulkMenu(h, model.bulkMoveMenu, "Move to", moveEntries(selected), (message) =>
 					Message.GotBulkMoveMenuMessage({ message }),
 				),
+				...(canMerge
+					? [
+							bulkMenu(h, model.bulkMergeMenu, "Merge", mergeEntries(signals), (message) =>
+								Message.GotBulkMergeMenuMessage({ message }),
+							),
+						]
+					: []),
 				iconButton(
 					h,
 					{ label: "Clear selection", attributes: [h.OnClick(Message.ClickedClearSelection())] },

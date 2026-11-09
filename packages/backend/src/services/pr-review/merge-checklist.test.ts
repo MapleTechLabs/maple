@@ -7,7 +7,7 @@ import {
 	parseMergeStepTicks,
 	type PullRequestFile,
 } from "@maple/domain/http"
-import { Schema, Array as Arr, Record as Rec, String as Str } from "effect"
+import { Option, Schema, Array as Arr, Record as Rec, String as Str } from "effect"
 import { assert, describe, it } from "vitest"
 import {
 	buildChecklist,
@@ -95,6 +95,65 @@ describe("detectMergeSteps", () => {
 				file("src/b.test.ts", "@@ -1 +1 @@\n+process.env.TEST_ONLY_TOKEN = 'x'"),
 			]),
 			[],
+		)
+	})
+
+	it("skips files a custom test suffix or a test folder marks as tests", () => {
+		const read = (path: string) => file(path, "@@ -1 +1 @@\n+const k = process.env.PAYMENTS_KEY")
+		assert.deepEqual(
+			names([
+				read(
+					"apps/subscriptions-api/src/providers/stripe/CheckoutServiceElementsIntro.stripe-live.ts",
+				),
+				read("src/checkout.e2e.ts"),
+				read("src/checkout.integration.ts"),
+				read("src/checkout.it.ts"),
+				read("src/checkout.live.ts"),
+				read("src/types.test-d.ts"),
+				read("src/checkout.smoke-test.ts"),
+				read("apps/web/integration/checkout.ts"),
+				read("apps/web/playwright/checkout.ts"),
+			]),
+			[],
+		)
+	})
+
+	it("still reads ordinary files whose names contain a test word", () => {
+		const read = (path: string) => file(path, "@@ -1 +1 @@\n+const k = process.env.PAYMENTS_KEY")
+		for (const path of [
+			"src/latest.ts",
+			"src/live.ts",
+			"src/go-live.ts",
+			"src/integration.ts",
+			"src/integrations/stripe.ts",
+			"src/contest.ts",
+		]) {
+			assert.deepEqual(names([read(path)]), ["secret:PAYMENTS_KEY"], path)
+		}
+	})
+
+	it("skips names only a test run reads, by whole TEST or E2E token", () => {
+		const read = (name: string) => file("src/checkout.ts", `@@ -1 +1 @@\n+const v = process.env.${name}`)
+		assert.deepEqual(
+			names([
+				read("STRIPE_E2E_TEST_SECRET_KEY"),
+				read("STRIPE_E2E_REQUIRED"),
+				read("TEST_DATABASE_URL"),
+				read("LATEST_RELEASE_TOKEN"),
+				read("CONTEST_API_KEY"),
+				read("TESTING_MODE"),
+			]),
+			["secret:LATEST_RELEASE_TOKEN", "secret:CONTEST_API_KEY", "env:TESTING_MODE"],
+		)
+	})
+
+	it("still lists a test-only CI secret, which the repository must hold", () => {
+		const detected = detectMergeSteps([
+			file(".github/workflows/e2e.yml", "@@ -1 +1 @@\n+  token: ${{ secrets.E2E_TOKEN }}"),
+		])
+		assert.deepEqual(
+			Arr.map(detected.names, (candidate) => [candidate.kind, candidate.name, candidate.ci]),
+			[["secret", "E2E_TOKEN", true]],
 		)
 	})
 
@@ -249,7 +308,10 @@ describe("the Before merge section", () => {
 			body,
 			`- [ ] **Secret** · Add secret \`STRIPE_KEY\` to every environment · [\`src/env.ts:1\`](https://github.com/acme/shop/blob/${Str.repeat(40)("a")}/src/env.ts#L1)`,
 		)
-		assert.isBelow(body.indexOf("Adds Stripe webhooks."), body.indexOf("### Before merge"))
+		assert.isBelow(
+			Option.getOrElse(Str.indexOf("Adds Stripe webhooks.")(body), () => -1),
+			Option.getOrElse(Str.indexOf("### Before merge")(body), () => -1),
+		)
 	})
 })
 

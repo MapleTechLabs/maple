@@ -1,4 +1,5 @@
 import { Schema } from "effect"
+import { nonZeroOr } from "@maple/ui/lib/number"
 
 /**
  * Base UI's anchor positioning (`internals/useAnchorPositioning.mjs` over Floating UI) for the
@@ -191,7 +192,7 @@ export const measurePosition = (
 	const anchorElement = positioner.ownerDocument.getElementById(anchorId)
 	if (anchorElement === null || !(positioner instanceof HTMLElement)) return undefined
 	const box = anchorElement.getBoundingClientRect()
-	const dpr = window.devicePixelRatio || 1
+	const dpr = nonZeroOr(window.devicePixelRatio, 1)
 	positioner.style.setProperty("--anchor-width", `${dprRounded(box.x, box.width, dpr)}px`)
 	positioner.style.setProperty("--anchor-height", `${dprRounded(box.y, box.height, dpr)}px`)
 	const popupBox = positioner.getBoundingClientRect()

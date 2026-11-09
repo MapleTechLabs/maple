@@ -1,5 +1,5 @@
 import { type ErrorIssueId, ErrorIssuePullRequestId, type IssueSeverity } from "@maple/domain/http"
-import { Option, Result, Schema, String as Str } from "effect"
+import { Option, Result, Schema, String as Str, Array as Arr } from "effect"
 import { AsyncData, Command } from "foldkit"
 import * as Chart from "@maple/views/charts/chart"
 import { LoadChartRuntime } from "@maple/views/charts/chart-runtime"
@@ -21,6 +21,7 @@ import {
 	CreateInvestigation,
 	UnlinkPullRequest,
 	CommentOnIssue,
+	FetchAffectedUsers,
 	FetchAnomalies,
 	FetchDetail,
 	FetchEscalations,
@@ -84,12 +85,13 @@ const keyed = <A, E>(
 	})
 
 const applySteps = (model: Model, steps: ReadonlyArray<(model: Model) => Step>): Return =>
-	steps.reduce<{ model: Model; commands: ReadonlyArray<Cmd> }>(
+	Arr.reduce<(typeof steps)[number], { model: Model; commands: ReadonlyArray<Cmd> }>(
+		steps,
+		{ model, commands: [] },
 		(acc, step) => {
 			const next = step(acc.model)
 			return { model: { ...acc.model, ...next.patch }, commands: [...acc.commands, ...next.commands] }
 		},
-		{ model, commands: [] },
 	)
 
 const resolveCommand = (search: Search, context: PageContext, mode: RequestMode) =>
@@ -192,6 +194,18 @@ const detailStep =
 		)
 	}
 
+/** The rail's affected users, over the same window as the detail. */
+const affectedUsersStep =
+	(context: PageContext, window: TimeWindow, mode: Keyed.ReadMode) =>
+	(model: Model): Step =>
+		keyed(
+			model.affectedUsers,
+			requestKey(context.orgId, "errors.listIssueAffectedUsers", { id: model.issueId, window }),
+			mode,
+			(affectedUsers) => ({ affectedUsers }),
+			(key) => FetchAffectedUsers({ key, issueId: model.issueId, ...window }),
+		)
+
 const selectedRepository = (model: Model): string | null => githubOf(model).repository
 
 /** `vcsPullRequests` for the selected repository; a query without one is never sent. */
@@ -234,6 +248,7 @@ export const init = (
 		leaseNowMs: 0,
 		detail: Keyed.idle(),
 		events: Keyed.idle(),
+		affectedUsers: Keyed.idle(),
 		investigations: Keyed.idle(),
 		pullRequests: Keyed.idle(),
 		verifications: Keyed.idle(),
@@ -337,14 +352,19 @@ const selectStep = (
 const isSeverity = (value: string): value is IssueSeverity =>
 	value === "critical" || value === "high" || value === "medium" || value === "low"
 
-/** The reads a write invalidates (`invalidateKeys`): the detail, timeline, escalations, PRs, verifications. */
+/** The reads a write invalidates (`invalidateKeys`): the detail, affected users, timeline, escalations, PRs, verifications. */
 const refreshAfterWrite =
 	(context: PageContext) =>
 	(model: Model): { readonly model: Model; readonly commands: ReadonlyArray<Cmd> } => {
 		const key = (operation: string) => requestKey(context.orgId, operation, model.issueId)
 		const issueId = model.issueId
 		const result = applySteps(model, [
-			...(model.window === null ? [] : [detailStep(context, model.window, "Supersede")]),
+			...(model.window === null
+				? []
+				: [
+						detailStep(context, model.window, "Supersede"),
+						affectedUsersStep(context, model.window, "Supersede"),
+					]),
 			(m) =>
 				keyed(
 					m.events,
@@ -392,7 +412,10 @@ const navigateSearch = (model: Model, search: Search): Return => ({
 export const update = (model: Model, message: Message, context: PageContext): Return =>
 	Message.match<Return>(message, {
 		CompletedResolveWindow: ({ window, nowMs, mode }) =>
-			applySteps({ ...model, window, nowMs }, [detailStep(context, window, mode)]),
+			applySteps({ ...model, window, nowMs }, [
+				detailStep(context, window, mode),
+				affectedUsersStep(context, window, mode),
+			]),
 		CompletedFetchDetail: ({ key, result }) =>
 			applySteps(syncSelects({ ...model, detail: Keyed.accept(model.detail, key, result) }), [
 				loadedReads(context),
@@ -407,6 +430,9 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 					]),
 		CompletedFetchEvents: ({ key, result }) => ({
 			model: { ...model, events: Keyed.accept(model.events, key, result) },
+		}),
+		CompletedFetchAffectedUsers: ({ key, result }) => ({
+			model: { ...model, affectedUsers: Keyed.accept(model.affectedUsers, key, result) },
 		}),
 		CompletedFetchInvestigations: ({ key, result }) => ({
 			model: { ...model, investigations: Keyed.accept(model.investigations, key, result) },
@@ -454,7 +480,10 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		ClickedRetry: () =>
 			model.window === null
 				? { model }
-				: applySteps(model, [detailStep(context, model.window, "Supersede")]),
+				: applySteps(model, [
+						detailStep(context, model.window, "Supersede"),
+						affectedUsersStep(context, model.window, "Supersede"),
+					]),
 		ClickedResetTimeRange: () =>
 			navigateSearch(model, {
 				...model.search,
@@ -506,6 +535,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 				(m, value) => pickedSeverity(m, isSeverity(value) ? value : null),
 			),
 		ClickedClaim: () => startWrite(model, { _tag: "Claim" }),
+		ClickedUnmerge: () => startWrite(model, { _tag: "Unmerge" }),
 		ClickedExtendLease: () => startWrite(model, { _tag: "Heartbeat" }),
 		ClickedReleaseLease: () => startWrite(model, { _tag: "Release" }),
 		CompletedIssueWrite: ({ write, result }) => {

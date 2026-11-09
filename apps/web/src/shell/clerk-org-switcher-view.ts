@@ -30,6 +30,7 @@ import {
 } from "./clerk-org-switcher"
 import { hasNamespaceSearch, namespaceRows, namespaceSearchRow, noNamespacesMatch } from "./namespace-search"
 import { typography } from "@maple/views/ui/typography"
+import { hstack } from "@maple/views/ui/stack"
 
 /** The namespace submenu's data (`NamespaceScopeList`), sidebar switcher only. */
 export type NamespaceScope = Readonly<{
@@ -94,7 +95,7 @@ const organizationItem = (
 	label: organization.name,
 	content: [
 		orgAvatar(h, organization.name, undefined, organization.imageUrl),
-		h.span([h.Class("truncate"), h.Title(organization.name)], [organization.name]),
+		typography(h, { truncate: true, attributes: [h.Title(organization.name)] }, [organization.name]),
 		...(hasMultipleRegions && !organization.isRegionOpen
 			? [regionBadge(h, organization.homeRegion, "ml-auto")]
 			: []),
@@ -108,7 +109,7 @@ const namespaceItem = (h: H, value: string, label: string, isPinned: boolean): M
 	_tag: "Item",
 	value,
 	label,
-	content: [h.span([h.Class("truncate")], [label]), ...(isPinned ? [checkIcon(h)] : [])],
+	content: [typography(h, { truncate: true }, [label]), ...(isPinned ? [checkIcon(h)] : [])],
 })
 
 /** `NamespaceScopeSubmenu`: the pin on the trigger, the observed namespaces inside. */
@@ -130,7 +131,7 @@ const namespaceSubmenu = (h: H, model: Model, scope: NamespaceScope): MenuView.M
 					value: `${NAMESPACE_PREFIX}${name}`,
 					label: name,
 					content: [
-						h.span([h.Class("truncate")], [name]),
+						typography(h, { truncate: true }, [name]),
 						typography(h, { size: "xs", tone: "muted", className: "ml-2" }, ["no recent data"]),
 						checkIcon(h),
 					],
@@ -170,8 +171,13 @@ const namespaceSubmenu = (h: H, model: Model, scope: NamespaceScope): MenuView.M
 			? [noNamespacesMatch(h)]
 			: isLoadingEmpty
 				? [
-						h.div(
-							[h.Class("flex items-center gap-1.5 px-2 py-1.5 text-xs text-muted-foreground")],
+						hstack(
+							h,
+							{
+								gap: "1.5",
+								align: "center",
+								className: "px-2 py-1.5 text-xs text-muted-foreground",
+							},
 							[spinner(h, "size-3.5", undefined, true), " Loading namespaces…"],
 						),
 					]
@@ -190,7 +196,7 @@ const entriesOf = (h: H, model: Model, inputs: ViewInputs): ReadonlyArray<MenuVi
 	{ _tag: "Separator" },
 	{
 		_tag: "Group",
-		entries: [{ _tag: "Item", value: CREATE_VALUE, label: "Create Organization", icon: "PlusIcon" }],
+		entries: [{ _tag: "Item", value: CREATE_VALUE, label: "Create organization", icon: "PlusIcon" }],
 	},
 	...(inputs.namespaceScope === undefined
 		? []
@@ -215,7 +221,7 @@ const createDialog = (h: H, model: Model): Html => {
 					[h.Class("contents"), h.OnSubmit(Message.SubmittedCreateOrganization())],
 					[
 						DialogView.dialogHeader(h, "dialog", [
-							DialogView.dialogTitle(h, "dialog", id, "Create Organization"),
+							DialogView.dialogTitle(h, "dialog", id, "Create organization"),
 							DialogView.dialogDescription(
 								h,
 								"dialog",
@@ -308,7 +314,7 @@ const regionField = (h: H, model: Model): Html => {
 		fieldLabel(h, { ids, state: NO_FIELD_STATE }, "Data region"),
 		RadioGroup.radioGroup(
 			h,
-			{ className: "gap-0 divide-y divide-border overflow-hidden rounded-md border" },
+			{ className: "gap-0 divide-y divide-border-subtle overflow-hidden rounded-md border" },
 			Arr.map(MapleRegion.literals, (region) =>
 				label(
 					h,

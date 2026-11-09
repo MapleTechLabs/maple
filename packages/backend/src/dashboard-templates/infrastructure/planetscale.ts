@@ -27,7 +27,7 @@ function gaugeChart(opts: {
 	unit: string
 	where: string
 	aggregation?: string
-	display?: typeof CHART_DISPLAY_AREA | typeof CHART_DISPLAY_LINE
+	display?: WidgetDef["display"]
 	layout: WidgetDef["layout"]
 }): WidgetDef {
 	return {

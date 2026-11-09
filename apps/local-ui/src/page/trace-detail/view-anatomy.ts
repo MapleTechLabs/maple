@@ -13,7 +13,7 @@ import type { Html, HtmlBuilder } from "foldkit/html"
 import type { Message } from "./message"
 import { hstack } from "@maple/views/ui/stack"
 import { typography, typographyClass } from "@maple/views/ui/typography"
-import { Array as Arr } from "effect"
+import { Array as Arr, Option } from "effect"
 
 // The @maple/ui `TraceAnatomyStrip` as local mode renders it: no start time, no commit.
 // copied: the spectrum bar of apps/web/src/page/traces/detail/view-summary.ts.
@@ -30,7 +30,10 @@ export const traceHasError = (trace: TraceData): boolean =>
 
 /** The first real root: an orphan's synthetic "missing" parent can sort ahead of it. */
 export const rootSpanOf = (trace: TraceData): SpanNodeData | undefined =>
-	trace.rootSpans.find((span) => span.isMissing !== true) ?? trace.rootSpans[0]
+	Option.getOrElse(
+		Arr.findFirst(trace.rootSpans, (span) => span.isMissing !== true),
+		() => trace.rootSpans[0],
+	)
 
 export const httpInfoOf = (span: SpanNodeData) =>
 	getHttpInfo({
@@ -50,8 +53,9 @@ const httpStatusColor = (code: number): string => {
 const spectrumBar = (h: HtmlBuilder<Message>, shares: ReadonlyArray<ServiceShare>): Html | null =>
 	shares.length === 0
 		? null
-		: h.div(
-				[h.Class("flex h-1.5 w-full gap-px overflow-hidden rounded-full")],
+		: hstack(
+				h,
+				{ align: "stretch", className: "h-1.5 w-full gap-px overflow-hidden rounded-full" },
 				Arr.map(shares, (share) =>
 					h.span(
 						[
@@ -88,8 +92,9 @@ export const anatomyStrip = (h: HtmlBuilder<Message>, trace: TraceData): Html =>
 		[h.Class("shrink-0 space-y-2")],
 		Arr.filter(
 			[
-				h.div(
-					[h.Class("flex flex-wrap items-baseline justify-between gap-x-6 gap-y-1")],
+				hstack(
+					h,
+					{ align: "baseline", justify: "between", wrap: true, className: "gap-x-6 gap-y-1" },
 					[
 						statFigure(h, {
 							value: formatDuration(trace.totalDurationMs),

@@ -9,14 +9,15 @@
  * than reaching resources directly. What is here is what the MCP transport and
  * the tool registry touch on their own.
  */
-import { MapleDb, parseMapleDeployment } from "@maple/infra/cloudflare"
+import { AuditEventsQueue, MapleDb, parseMapleDeployment } from "@maple/infra/cloudflare"
 import * as Cloudflare from "@alchemy.run/cloudflare"
-import { RuntimeContext } from "alchemy/RuntimeContext"
+import { dischargeRuntimeContext } from "@maple/backend/platform/alchemy-runtime"
 import { Stage } from "alchemy/Stage"
 import { Effect, Layer, Option } from "effect"
 import { securityAuditWorkflowControl } from "../security-audit/workflow-control"
 import { isWorkersAiBinding, viaGateway, WorkersAiGateway } from "../platform/WorkersAiHttpClient"
 import {
+	AuditEventsQueueProducer,
 	McpToolsRateLimit,
 	RateLimitBindingError,
 	type RateLimiter,
@@ -26,6 +27,7 @@ import type { SecurityAuditWorkflowPayload } from "@maple/domain/security-audit"
 import { type ChatSessionNamespace, layerChatSessions } from "@maple/backend/platform/chat-sessions"
 import { envPorts } from "@maple/backend/platform/env-ports"
 import { layerMapleDbConnection } from "@maple/backend/platform/pg-connection-source"
+import { queueProducer } from "@maple/backend/platform/queue-producer"
 import {
 	MCP_TOOLS_RATE_LIMIT_PERIOD_SECONDS,
 	MCP_TOOLS_RATE_LIMIT_REQUESTS,
@@ -47,15 +49,12 @@ export const bindAiClients = Effect.gen(function* () {
 			namespaceId: 2026082901,
 			simple: { limit: MCP_TOOLS_RATE_LIMIT_REQUESTS, period: MCP_TOOLS_RATE_LIMIT_PERIOD_SECONDS },
 		}),
+		// Audited tool calls send here after the response, as api's requests do; api consumes it.
+		auditEvents: yield* Cloudflare.Queues.WriteQueue(AuditEventsQueue),
 	}
 })
 
 type AiBindingClients = Effect.Success<typeof bindAiClients>
-
-/** Discharge alchemy's phantom color, the way alchemy's own runtime helpers do. */
-const runtime = <A, E>(effect: Effect.Effect<A, E, RuntimeContext>): Effect.Effect<A, E> =>
-	// oxlint-disable-next-line effecttsgo/strict-effect-provide
-	Effect.provide(effect, RuntimeContext.phantom)
 
 /**
  * The AI Gateway Workers AI calls route through. The logical id is the api's, unchanged: the
@@ -77,9 +76,9 @@ const bindWorkersAiGateway = Effect.gen(function* () {
 	}
 	const client = yield* Cloudflare.AI.QueryGateway(AiGateway)
 	if (!globalThis.__ALCHEMY_RUNTIME__) return Option.none()
-	const raw = yield* runtime(client.raw)
+	const raw = yield* dischargeRuntimeContext(client.raw)
 	if (!isWorkersAiBinding(raw)) return Option.none()
-	const id = yield* runtime(client.id)
+	const id = yield* dischargeRuntimeContext(client.id)
 	return Option.some(viaGateway(raw, id))
 })
 
@@ -95,12 +94,13 @@ export const WorkersAiGatewayLive = Layer.effect(WorkersAiGateway, bindWorkersAi
 export const AiBindingsLive = Layer.mergeAll(
 	Cloudflare.Hyperdrive.ConnectBinding,
 	Cloudflare.Workers.RateLimitBinding,
+	Cloudflare.Queues.WriteQueueBinding,
 	WorkersAiGatewayLive,
 )
 
 const limiter = (client: Cloudflare.Workers.RateLimitClient): RateLimiter => ({
 	limit: (key) =>
-		runtime(client.limit({ key })).pipe(
+		dischargeRuntimeContext(client.limit({ key })).pipe(
 			Effect.mapError(
 				(error) =>
 					new RateLimitBindingError({
@@ -128,6 +128,7 @@ export const aiPorts = (
 		Layer.succeed(WorkersAiGateway, workersAi),
 		Layer.succeed(SecurityAuditWorkflowStarter, securityAuditWorkflowControl(audits)),
 		Layer.succeed(McpToolsRateLimit, limiter(clients.mcpToolsRateLimit)),
+		Layer.succeed(AuditEventsQueueProducer, queueProducer(clients.auditEvents)),
 		layerMapleDbConnection(env),
 		envPorts(env),
 		layerChatSessions(chatSessions, env),

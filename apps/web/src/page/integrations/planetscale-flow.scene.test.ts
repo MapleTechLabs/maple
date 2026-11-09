@@ -33,7 +33,7 @@ const send = (model: Model, message: IntegrationMessage) =>
 	pageUpdate(model, Message.GotIntegrationsMessage({ message }))
 
 const status = (over: Record<string, unknown> = {}) =>
-	Schema.decodeUnknownSync(V2PlanetScaleIntegration)({
+	Schema.decodeSync(V2PlanetScaleIntegration)({
 		object: "planetscale_integration",
 		connected: true,
 		pending_org_selection: false,
@@ -50,7 +50,7 @@ const status = (over: Record<string, unknown> = {}) =>
 		...over,
 	})
 
-const organizations = Schema.decodeUnknownSync(V2PlanetScaleOrganizationList)({
+const organizations = Schema.decodeSync(V2PlanetScaleOrganizationList)({
 	object: "planetscale_integration.organization_list",
 	organizations: [
 		{ id: "organization/acme", name: "acme" },

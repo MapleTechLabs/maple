@@ -38,7 +38,7 @@ const groupBy = (h: H, model: Model, query: QueryDraft): Html =>
 		viewInputs: {
 			items: groupByOptionsOf(query.dataSource, spanAttributeKeysOf(model)),
 			placeholder: GROUP_BY_PLACEHOLDER,
-			emptyText: "No fields found.",
+			emptyText: "No fields match",
 			className: "h-8 text-xs",
 			isUnfiltered: true,
 			toView: ({ field, rest }) =>

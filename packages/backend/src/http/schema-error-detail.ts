@@ -1,4 +1,4 @@
-// BOUNDARY: This module intentionally carries opaque values; callers decode them before domain use.
+// BOUNDARY-FILE: This module intentionally carries opaque values; callers decode them before domain use.
 /**
  * Turns an `HttpApiSchemaError` (the framework's request-decode failure) into
  * human-readable, path-anchored lines.
@@ -16,7 +16,7 @@
  * decode failure, so the common request-decode path now renders the path alone.
  * The path still identifies the widget positionally (`widgets[0]`).
  */
-import { SchemaIssue, Array as Arr } from "effect"
+import { SchemaIssue, Array as Arr, Option } from "effect"
 
 /** Which part of the request failed to decode; mirrors `HttpApiSchemaError.kind`. */
 export type SchemaErrorKind = "Params" | "Headers" | "Query" | "Body" | "Payload" | "ResponseHeaders"
@@ -52,10 +52,12 @@ export const widgetIdForPath = (root: unknown, path: ReadonlyArray<PropertyKey>)
 	let cursor = root
 	let widgetId: string | undefined
 	for (let i = 0; i < path.length; i++) {
-		const segment = path[i]!
+		const segment = path[i]
+		if (segment === undefined) break
 		const next = readKey(cursor, segment)
-		if (segment === "widgets" && typeof path[i + 1] === "number") {
-			const widget = readKey(next, path[i + 1]!)
+		const following = path[i + 1]
+		if (segment === "widgets" && typeof following === "number") {
+			const widget = readKey(next, following)
 			const id = readKey(widget, "id")
 			if (typeof id === "string") widgetId = id
 		}
@@ -79,6 +81,13 @@ const reportedInputs = (issue: SchemaIssue.Issue): ReadonlyArray<unknown> => {
 			case "Composite":
 			case "AnyOf":
 				Arr.forEach(current.issues, visit)
+				break
+			case "Forbidden":
+			case "InvalidType":
+			case "InvalidValue":
+			case "MissingKey":
+			case "OneOf":
+			case "UnexpectedKey":
 				break
 		}
 	}
@@ -129,8 +138,11 @@ export const describeSchemaIssue = (issue: SchemaIssue.Issue): ReadonlyArray<Sch
 
 	const details: Array<SchemaIssueDetail> = []
 	for (const [key, { path, messages }] of byPath) {
-		const widgetId = Arr.map(inputs, (input) => widgetIdForPath(input, path)).find(
-			(id) => id !== undefined,
+		const widgetId = Option.getOrUndefined(
+			Arr.findFirst(
+				Arr.map(inputs, (input) => widgetIdForPath(input, path)),
+				(id) => id !== undefined,
+			),
 		)
 		const message = Arr.join(messages, "; ")
 		const location = key === "" ? "<root>" : key

@@ -1,6 +1,16 @@
 import { assert, describe, it } from "@effect/vitest"
 import { generateKeyPairSync } from "node:crypto"
-import { ConfigProvider, Effect, Fiber, Layer, Option, Stream, Array as Arr, String as Str } from "effect"
+import {
+	ConfigProvider,
+	Effect,
+	Fiber,
+	Layer,
+	Option,
+	Stream,
+	Array as Arr,
+	Record as Rec,
+	String as Str,
+} from "effect"
 import { TestClock } from "effect/testing"
 import { Env } from "@maple/backend/platform/Env"
 import { GithubAppClient } from "@maple/backend/services/integrations/vcs/vendor/github/GithubAppClient"
@@ -159,6 +169,119 @@ describe("GithubAppClient responses that are normal states", () => {
 			const error = yield* Effect.flip(client.getRecursiveTree("42", "octo", "shop", SHA))
 			assert.deepStrictEqual([error.status, error.scope], [404, "repository"])
 		}).pipe(Effect.provide(layer))
+	})
+
+	describe("a tree too large for one recursive read", () => {
+		const blob = (path: string, sha: string) => ({ path, type: "blob", sha, size: 10 })
+		const tree = (path: string, sha: string) => ({ path, type: "tree", sha })
+		// root/ { README.md, apps/ { web/ { bun.lock } }, packages/ { db/ { package.json } } }
+		// The root and `apps` are truncated recursively; `apps/web` and `packages` are not.
+		type Listings = Record<string, { truncated: boolean; tree: ReadonlyArray<unknown> }>
+		const listings: Listings = {
+			"root?recursive=1": { truncated: true, tree: [blob("README.md", "r1")] },
+			root: {
+				truncated: false,
+				tree: [blob("README.md", "r1"), tree("apps", "apps"), tree("packages", "pkgs")],
+			},
+			"apps?recursive=1": { truncated: true, tree: [] },
+			apps: { truncated: false, tree: [tree("web", "web")] },
+			"web?recursive=1": { truncated: false, tree: [blob("bun.lock", "l1")] },
+			"pkgs?recursive=1": {
+				truncated: false,
+				tree: [tree("db", "db"), blob("db/package.json", "p1")],
+			},
+		}
+		const routedLayer = (served: Listings, treeReads: Array<string> = []) => {
+			const http = fakeGithubHttp(({ url }) => {
+				if (Str.endsWith("/access_tokens")(url)) return tokenResponse()
+				treeReads.push(url)
+				const key = Option.getOrUndefined(
+					Option.map(Arr.get(Str.split("/git/trees/")(url), 1), Str.replace(SHA, "root")),
+				)
+				const listing = key === undefined ? undefined : served[key]
+				return listing === undefined
+					? new Response("unexpected request", { status: 500 })
+					: jsonResponse({
+							sha: key !== undefined && Str.startsWith("root")(key) ? "root" : key,
+							...listing,
+						})
+			})
+			return Layer.effect(GithubAppClient, GithubAppClient.make).pipe(
+				Layer.provide(http),
+				Layer.provide(env),
+			)
+		}
+
+		it.effect("lists every file by reading its subtrees", () => {
+			return Effect.gen(function* () {
+				const client = yield* GithubAppClient
+				const listing = yield* client.getRecursiveTree("42", "octo", "shop", SHA)
+				const blobs = Arr.map(
+					Arr.filter(listing.tree, (entry) => entry.type === "blob"),
+					(entry) => entry.path,
+				)
+				assert.isFalse(listing.truncated)
+				assert.deepStrictEqual(blobs.sort(), [
+					"README.md",
+					"apps/web/bun.lock",
+					"packages/db/package.json",
+				])
+			}).pipe(Effect.provide(routedLayer(listings)))
+		})
+
+		it.effect("stays truncated when a subtree cannot be listed whole", () => {
+			const served = { ...listings, apps: { truncated: true, tree: [tree("web", "web")] } }
+			return Effect.gen(function* () {
+				const client = yield* GithubAppClient
+				const listing = yield* client.getRecursiveTree("42", "octo", "shop", SHA)
+				assert.isTrue(listing.truncated)
+			}).pipe(Effect.provide(routedLayer(served)))
+		})
+
+		/** A truncated root whose direct entries are `dirs`, each listing whole as `subtree(i)`. */
+		const wideRoot = (dirs: number, subtree: (i: number) => ReadonlyArray<unknown>): Listings => ({
+			"root?recursive=1": { truncated: true, tree: [] },
+			root: { truncated: false, tree: Arr.makeBy(dirs, (i) => tree(`d${i}`, `d${i}`)) },
+			...Rec.fromEntries(
+				Arr.makeBy(
+					dirs,
+					(i) => [`d${i}?recursive=1`, { truncated: false, tree: subtree(i) }] as const,
+				),
+			),
+		})
+
+		it.effect("stops at 400 reads and reports the listing truncated", () => {
+			const treeReads: Array<string> = []
+			return Effect.gen(function* () {
+				const client = yield* GithubAppClient
+				const listing = yield* client.getRecursiveTree("42", "octo", "shop", SHA)
+				// The first recursive read, then the walk's 400: the root level and 399 of 401 subtrees.
+				assert.deepStrictEqual([listing.truncated, treeReads.length], [true, 401])
+			}).pipe(
+				Effect.provide(
+					routedLayer(
+						wideRoot(401, (i) => [blob("f", `f${i}`)]),
+						treeReads,
+					),
+				),
+			)
+		})
+
+		it.effect("reports the listing truncated past 150,000 held entries", () =>
+			Effect.gen(function* () {
+				const client = yield* GithubAppClient
+				const listing = yield* client.getRecursiveTree("42", "octo", "shop", SHA)
+				assert.isTrue(listing.truncated)
+			}).pipe(
+				Effect.provide(
+					routedLayer(
+						wideRoot(2, (i) =>
+							i === 0 ? Arr.makeBy(150_001, (n) => blob(`f${n}`, `s${n}`)) : [blob("f", "s")],
+						),
+					),
+				),
+			),
+		)
 	})
 
 	it.effect("reads an expired job log as empty", () => {

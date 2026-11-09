@@ -18,7 +18,19 @@ import {
 	String as Str,
 } from "effect"
 import { decodePublicId, PublicIdPrefixes } from "@maple/domain/http/v2"
-import { AlertDestinationId, AlertRuleId, DashboardId, ErrorIssueId } from "@maple/domain/primitives"
+import {
+	AlertDestinationId,
+	AlertIncidentId,
+	AlertMaintenanceWindowId,
+	AlertRuleId,
+	AlertSilenceId,
+	DashboardId,
+	ErrorIssueId,
+	EscalationChainId,
+	InvestigationId,
+	OnCallOverrideId,
+	OnCallScheduleId,
+} from "@maple/domain/primitives"
 import { WarehouseTimeInput, type WarehouseDateTime } from "@maple/query-engine"
 import { McpInvalidInputError } from "../tools/types"
 import { resolveWindow } from "./time"
@@ -88,8 +100,33 @@ export const optionalFlag = (description: string) => Schema.optional(BooleanLike
 export const oneOf = <const L extends ReadonlyArray<string>>(values: L, description: string) =>
 	Schema.Literals(values).annotate({ description })
 
-export const optionalOneOf = <const L extends ReadonlyArray<string>>(values: L, description: string) =>
-	Schema.optional(Schema.Literals(values)).annotate({ description })
+export const optionalOneOf = <const L extends ReadonlyArray<string>>(
+	values: L,
+	description: string,
+	/** Spellings models reach for (`p95` for `p95_duration`); they decode to the value they name. */
+	aliases?: Readonly<Record<string, L[number]>>,
+) =>
+	aliases === undefined
+		? Schema.optional(Schema.Literals(values)).annotate({ description })
+		: Schema.optional(literalsWithAliases(values, aliases)).annotate({ description })
+
+/**
+ * The aliases are published in the enum too: only a flat `enum` gets the registry's case fix and
+ * its "expected one of" message, and effect cannot publish a string schema narrower than it decodes.
+ */
+const literalsWithAliases = <const L extends ReadonlyArray<string>>(
+	values: L,
+	aliases: Readonly<Record<string, L[number]>>,
+) =>
+	Schema.Literals([...values, ...Rec.keys(aliases)]).pipe(
+		Schema.decodeTo(
+			Schema.Literals(values),
+			SchemaTransformation.transform<L[number], string>({
+				decode: (value) => aliases[value] ?? value,
+				encode: (value) => value,
+			}),
+		),
+	)
 
 /** `"auto"`, a value a schema-validating client can send where the published schema cannot say null. */
 const AutoAsNull = Schema.Literal("auto").pipe(
@@ -141,13 +178,40 @@ export const optionalList = (description: string) =>
 /** The resources a tool takes ids for, with their REST public-id prefix and internal id schema. */
 const RESOURCE_IDS = {
 	alertRule: { prefix: PublicIdPrefixes.alertRule, schema: AlertRuleId, noun: "alert rule" },
+	alertIncident: {
+		prefix: PublicIdPrefixes.alertIncident,
+		schema: AlertIncidentId,
+		noun: "alert incident",
+	},
 	alertDestination: {
 		prefix: PublicIdPrefixes.alertDestination,
 		schema: AlertDestinationId,
 		noun: "alert destination",
 	},
+	escalationChain: {
+		prefix: PublicIdPrefixes.escalationChain,
+		schema: EscalationChainId,
+		noun: "escalation chain",
+	},
+	alertMaintenanceWindow: {
+		prefix: PublicIdPrefixes.alertMaintenanceWindow,
+		schema: AlertMaintenanceWindowId,
+		noun: "maintenance window",
+	},
+	oncallSchedule: {
+		prefix: PublicIdPrefixes.oncallSchedule,
+		schema: OnCallScheduleId,
+		noun: "on-call schedule",
+	},
+	oncallOverride: {
+		prefix: PublicIdPrefixes.oncallOverride,
+		schema: OnCallOverrideId,
+		noun: "on-call override",
+	},
+	alertSilence: { prefix: PublicIdPrefixes.alertSilence, schema: AlertSilenceId, noun: "alert silence" },
 	dashboard: { prefix: PublicIdPrefixes.dashboard, schema: DashboardId, noun: "dashboard" },
 	errorIssue: { prefix: PublicIdPrefixes.errorIssue, schema: ErrorIssueId, noun: "error issue" },
+	investigation: { prefix: PublicIdPrefixes.investigation, schema: InvestigationId, noun: "investigation" },
 } as const
 
 export type ResourceIdKind = keyof typeof RESOURCE_IDS
@@ -200,9 +264,7 @@ export const decodeResourceId =
 		return Option.match(internalIdOf(kind, raw), {
 			onNone: () => Effect.fail(invalidId(kind, raw, parameter)),
 			onSome: (id) =>
-				Schema.decodeUnknownEffect(schema)(id).pipe(
-					Effect.mapError(() => invalidId(kind, raw, parameter)),
-				),
+				Schema.decodeEffect(schema)(id).pipe(Effect.mapError(() => invalidId(kind, raw, parameter))),
 		})
 	}
 
@@ -243,15 +305,11 @@ export const optionalResourceIdList = (kind: ResourceIdKind, description: string
  * decodes it against the real schema, so a malformed field is a parameter error naming the
  * field rather than a handler-side `JSON.parse` failure.
  */
-export const json = <S extends Schema.Codec<unknown, unknown, never, never>>(
-	schema: S,
-	description: string,
-) => Schema.Union([Schema.fromJsonString(schema), schema]).annotate({ description })
+export const json = <S extends Schema.Codec<unknown, unknown>>(schema: S, description: string) =>
+	Schema.Union([Schema.fromJsonString(schema), schema]).annotate({ description })
 
-export const optionalJson = <S extends Schema.Codec<unknown, unknown, never, never>>(
-	schema: S,
-	description: string,
-) => Schema.optional(json(schema, description))
+export const optionalJson = <S extends Schema.Codec<unknown, unknown>>(schema: S, description: string) =>
+	Schema.optional(json(schema, description))
 
 const clampTo = (spec: { readonly min: number; readonly max: number }) =>
 	SchemaTransformation.transform<number, number>({

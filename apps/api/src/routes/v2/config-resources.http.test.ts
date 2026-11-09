@@ -167,8 +167,8 @@ const makeHarness = () => {
 		return { status: response.status, body: text.length > 0 ? JSON.parse(text) : null }
 	}
 
-	const ORG = Schema.decodeUnknownSync(OrgId)("org_config_e2e")
-	const USER = Schema.decodeUnknownSync(UserId)("user_config_e2e")
+	const ORG = Schema.decodeSync(OrgId)("org_config_e2e")
+	const USER = Schema.decodeSync(UserId)("user_config_e2e")
 
 	const bootstrapKey = (scopes?: ReadonlyArray<string>) =>
 		runtime.runPromise(
@@ -191,7 +191,7 @@ const makeHarness = () => {
 	const seedScrapeChecks = (publicId: string, count: number) => {
 		const internalId = decodePublicId("scrp", publicId)
 		if (internalId === null) throw new Error(`Invalid scrape target public ID: ${publicId}`)
-		const targetId = Schema.decodeUnknownSync(ScrapeTargetId)(internalId)
+		const targetId = Schema.decodeSync(ScrapeTargetId)(internalId)
 		const now = Date.now()
 		return runtime.runPromise(
 			Effect.gen(function* () {
@@ -509,6 +509,25 @@ describe("v2 ingest_keys over HTTP", () => {
 		})
 		expect(rolledPrivate.status).toBe(200)
 		expect(rolledPrivate.body.private_key).not.toBe(initial.body.private_key)
+		await harness.dispose()
+	})
+
+	it("lets a member read the public key alone, and only engineers and admins both", async () => {
+		const harness = makeHarness()
+		const admin = await harness.bootstrapKey()
+		const member = await harness.bootstrapMemberKey()
+
+		const both = await harness.request("GET", "/v2/ingest_keys", { token: admin.secret })
+		const publicOnly = await harness.request("GET", "/v2/ingest_keys/public", { token: member.secret })
+		expect(publicOnly.status).toBe(200)
+		expect(publicOnly.body).toEqual({
+			object: "public_ingest_key",
+			public_key: both.body.public_key,
+			public_rotated_at: both.body.public_rotated_at,
+		})
+
+		const denied = await harness.request("GET", "/v2/ingest_keys", { token: member.secret })
+		expect(denied.status).toBe(403)
 		await harness.dispose()
 	})
 

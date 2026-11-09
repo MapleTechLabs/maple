@@ -1,6 +1,5 @@
 import type { TranscriptPayload } from "@maple/agent-sessions"
 import { formatBytes } from "@maple/ui/lib/format"
-import { TONE_SOFT } from "@maple/ui/lib/tone"
 import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { badge } from "@maple/views/ui/display"
@@ -12,7 +11,8 @@ import type { Model } from "./model"
 import { disclosed, jsonPayload, viewSwitch } from "./payload-view"
 import { clampedBody, payloadCopyButton } from "./transcript-kit"
 import { typography, typographyClass } from "@maple/views/ui/typography"
-import { hstack } from "@maple/views/ui/stack"
+import { hstack, vstack } from "@maple/views/ui/stack"
+import { Array as Arr } from "effect"
 
 // Tool input and output, and its summary: one invocation, both halves, joined by a spine.
 
@@ -34,8 +34,14 @@ export const toolIoSummary = (
 	args: TranscriptPayload | undefined,
 	result: TranscriptPayload | undefined,
 ): Html =>
-	h.span(
-		[h.Class("flex shrink-0 items-center gap-1 font-mono text-2xs text-muted-foreground")],
+	hstack(
+		h,
+		{
+			gap: "1",
+			align: "center",
+			as: "span",
+			className: "shrink-0 font-mono text-2xs text-muted-foreground",
+		},
 		[
 			icon(h, "ArrowDownIcon", {
 				size: 10,
@@ -54,12 +60,14 @@ export const toolIoSummary = (
 
 const marker = (h: H, direction: "in" | "out", isFailed: boolean): Html =>
 	direction === "in"
-		? h.span(
-				[
-					h.Class(
-						"flex size-4 shrink-0 items-center justify-center rounded-full border border-input",
-					),
-				],
+		? hstack(
+				h,
+				{
+					align: "center",
+					justify: "center",
+					as: "span",
+					className: "size-4 shrink-0 rounded-full border border-input",
+				},
 				[
 					icon(h, "ArrowDownIcon", {
 						size: 9,
@@ -87,13 +95,12 @@ const marker = (h: H, direction: "in" | "out", isFailed: boolean): Html =>
 			)
 
 export const truncatedNote = (h: H): Html =>
-	h.p(
-		[h.Class("text-2xs text-muted-foreground italic")],
-		["Cut off here by the instrumentation, not by Maple. The tail was never recorded."],
-	)
+	typography(h, { size: "2xs", tone: "muted", as: "p", className: "italic" }, [
+		"Cut off here by the instrumentation, not by Maple. The tail was never recorded.",
+	])
 
 export const truncatedBadge = (h: H): Html =>
-	badge(h, { size: "xs", mono: true, className: TONE_SOFT.warn }, ["truncated by the emitter"])
+	badge(h, { size: "xs", mono: true, variant: "warn" }, ["truncated by the emitter"])
 
 /** The copy and the rendered/raw switch at a payload header's right edge. */
 export const payloadActions = (
@@ -106,17 +113,14 @@ export const payloadActions = (
 	const rawKey = `${options.textKey}:raw`
 	const isRaw = disclosed(model.openRows, rawKey, false)
 	return [
-		h.span(
-			[h.Class("-my-1 ml-auto flex items-center")],
-			[
-				...(isJson ? [viewSwitch(h, { rendered: "json", isRaw, rawKey, className: "mr-1" })] : []),
-				payloadCopyButton(h, model, {
-					key: options.textKey,
-					value: isRaw ? options.payload.text : formatted,
-					label: options.label,
-				}),
-			],
-		),
+		hstack(h, { align: "center", as: "span", className: "-my-1 ml-auto" }, [
+			...(isJson ? [viewSwitch(h, { rendered: "json", isRaw, rawKey, className: "mr-1" })] : []),
+			payloadCopyButton(h, model, {
+				key: options.textKey,
+				value: isRaw ? options.payload.text : formatted,
+				label: options.label,
+			}),
+		]),
 	]
 }
 
@@ -178,62 +182,63 @@ const ioHalf = (h: H, model: Model, half: Half): Html =>
 						: []),
 				],
 			),
-			h.div(
-				[h.Class("flex min-w-0 grow flex-col gap-2 pt-2.5 pr-3 pb-3")],
-				[
-					hstack(h, { gap: "2", wrap: true }, [
-						eyebrow(
-							h,
-							{
-								variant: "mono",
-								className: half.isFailed ? "text-severity-error" : "text-foreground",
-							},
-							[half.label],
-						),
-						h.span(
-							[h.Class(META)],
-							[
-								[half.name, half.meta, sizeLine(half.payload)]
-									.filter((part) => part !== undefined && part !== "")
-									.join(" · "),
-							],
-						),
-						...(half.payload.truncatedByEmitter ? [truncatedBadge(h)] : []),
-						...payloadActions(h, model, {
-							payload: half.payload,
-							textKey: half.textKey,
-							label: half.name,
-						}),
-					]),
-					...payloadBody(h, model, {
+			vstack(h, { gap: "2", shrink: true, className: "grow pt-2.5 pr-3 pb-3" }, [
+				hstack(h, { gap: "2", wrap: true }, [
+					eyebrow(
+						h,
+						{
+							variant: "mono",
+							className: half.isFailed ? "text-severity-error" : "text-foreground",
+						},
+						[half.label],
+					),
+					h.span(
+						[h.Class(META)],
+						[
+							Arr.join(
+								Arr.filter(
+									[half.name, half.meta, sizeLine(half.payload)],
+									(part): part is string => part !== undefined && part !== "",
+								),
+								" · ",
+							),
+						],
+					),
+					...(half.payload.truncatedByEmitter ? [truncatedBadge(h)] : []),
+					...payloadActions(h, model, {
 						payload: half.payload,
 						textKey: half.textKey,
-						clampLines: half.clampLines,
-						toneClass: half.isFailed ? "text-severity-error" : undefined,
+						label: half.name,
 					}),
-					...(half.payload.truncatedByEmitter ? [truncatedNote(h)] : []),
-				],
-			),
+				]),
+				...payloadBody(h, model, {
+					payload: half.payload,
+					textKey: half.textKey,
+					clampLines: half.clampLines,
+					toneClass: half.isFailed ? "text-severity-error" : undefined,
+				}),
+				...(half.payload.truncatedByEmitter ? [truncatedNote(h)] : []),
+			]),
 		],
 	)
 
 const missingHalf = (h: H, label: string, note: string): Html =>
-	h.div(
-		[h.Class("flex items-center border-input border-t border-dashed bg-surface-faint py-2.5 pr-3")],
+	hstack(
+		h,
+		{ align: "center", className: "border-input border-t border-dashed bg-surface-faint py-2.5 pr-3" },
 		[
-			h.span(
-				[h.Class("flex w-8 shrink-0 justify-center")],
-				[
-					h.span(
-						[
-							h.Class(
-								"flex size-4 items-center justify-center rounded-full border border-input border-dashed",
-							),
-						],
-						[icon(h, "CircleQuestionIcon", { size: 9, className: "text-muted-foreground" })],
-					),
-				],
-			),
+			hstack(h, { align: "stretch", justify: "center", as: "span", className: "w-8 shrink-0" }, [
+				hstack(
+					h,
+					{
+						align: "center",
+						justify: "center",
+						as: "span",
+						className: "size-4 rounded-full border border-input border-dashed",
+					},
+					[icon(h, "CircleQuestionIcon", { size: 9, className: "text-muted-foreground" })],
+				),
+			]),
 			eyebrow(h, { variant: "mono", className: "shrink-0 pr-2.5 text-muted-foreground" }, [label]),
 			typography(h, { size: "xs", tone: "muted", className: "min-w-0" }, [note]),
 		],
@@ -255,18 +260,23 @@ export const toolIo = (
 	const { args, result } = options
 	if (args === undefined && result === undefined)
 		return [
-			h.div(
+			hstack(
+				h,
+				{
+					gap: "2.5",
+					align: "center",
+					className: "border-input border-t border-dashed bg-surface-faint px-3 py-2.5",
+				},
 				[
-					h.Class(
-						"flex items-center gap-2.5 border-input border-t border-dashed bg-surface-faint px-3 py-2.5",
-					),
-				],
-				[
-					h.span(
-						[
-							h.AriaHidden(true),
-							h.Class("flex shrink-0 items-center gap-0.5 text-foreground-subtle"),
-						],
+					hstack(
+						h,
+						{
+							gap: "0.5",
+							align: "center",
+							as: "span",
+							className: "shrink-0 text-foreground-subtle",
+							attributes: [h.AriaHidden(true)],
+						},
 						[icon(h, "ArrowDownIcon", { size: 10 }), icon(h, "ArrowUpIcon", { size: 10 })],
 					),
 					typography(h, { size: "xs", tone: "muted", className: "min-w-0" }, [

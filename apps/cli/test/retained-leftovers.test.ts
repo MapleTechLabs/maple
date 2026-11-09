@@ -7,7 +7,7 @@ import { dirname, join } from "node:path"
 import { checkpointQuarantineRoot, restoreTransactionPath } from "@maple/local-server/checkpoints"
 import { migrationJournalPath, migrationRootPath } from "@maple/local-server/local-store-migration-journal"
 import { listRetainedLeftovers, pruneRetainedLeftovers } from "../src/server/retained-leftovers"
-import { Array as Arr, Record as Rec, String as Str } from "effect"
+import { Option, Array as Arr, Record as Rec, String as Str } from "effect"
 
 const withParent = async (run: (dataDir: string) => Promise<void>): Promise<void> => {
 	const parent = mkdtempSync(join(tmpdir(), "maple-retained-"))
@@ -84,7 +84,12 @@ describe("retained leftovers", () => {
 			])
 			ok(Arr.every(inventory.leftovers, (item) => item.bytes > 0))
 			strictEqual(
-				inventory.leftovers.find((item) => item.kind === "migration-source")?.path,
+				Option.getOrUndefined(
+					Option.map(
+						Arr.findFirst(inventory.leftovers, (item) => item.kind === "migration-source"),
+						(item) => item.path,
+					),
+				),
 				dirname(expected.source),
 			)
 			strictEqual(inventory.blocker, null)

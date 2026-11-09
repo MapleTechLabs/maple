@@ -37,39 +37,36 @@ const label = (h: H, text: string): Html =>
 
 /** The explorer's way out: a dashboard widget, an alert rule, or a shared link. */
 export const graduationActions = (h: H, model: Model): Html =>
-	h.div(
-		[h.Class("flex justify-end")],
-		[
-			hstack(h, { gap: "2" }, [
-				button(
-					h,
-					{
-						variant: "outline",
-						size: "sm",
-						attributes: [h.OnClick(Message.ClickedAddToDashboard())],
-					},
-					[icon(h, "GridSquareCirclePlusIcon"), "Add to dashboard"],
-				),
-				button(
-					h,
-					{
-						variant: "outline",
-						size: "sm",
-						attributes: [h.OnClick(Message.ClickedCreateAlert())],
-					},
-					[icon(h, "BellIcon"), "Create alert"],
-				),
-				CopyButton.copyButton(h, {
-					status: model.copyLink.status,
-					label: "Link",
-					idleLabel: "Copy link",
-					idleIcon: "LinkIcon",
+	hstack(h, { align: "stretch", justify: "end" }, [
+		hstack(h, { gap: "2" }, [
+			button(
+				h,
+				{
 					variant: "outline",
-					onClick: Message.ClickedCopyLink(),
-				}),
-			]),
-		],
-	)
+					size: "sm",
+					attributes: [h.OnClick(Message.ClickedAddToDashboard())],
+				},
+				[icon(h, "GridSquareCirclePlusIcon"), "Add to dashboard"],
+			),
+			button(
+				h,
+				{
+					variant: "outline",
+					size: "sm",
+					attributes: [h.OnClick(Message.ClickedCreateAlert())],
+				},
+				[icon(h, "BellIcon"), "Create alert"],
+			),
+			CopyButton.copyButton(h, {
+				status: model.copyLink.status,
+				label: "Link",
+				idleLabel: "Copy link",
+				idleIcon: "LinkIcon",
+				variant: "outline",
+				onClick: Message.ClickedCopyLink(),
+			}),
+		]),
+	])
 
 const toAggregation = (message: Select.Message) => Message.GotAggregationSelectMessage({ message })
 const toGroupBy = (message: Combobox.Message) => Message.GotGroupByComboboxMessage({ message })
@@ -182,10 +179,10 @@ export const queryControls = (
 				toView: (parts) => hstack(h, { gap: "2" }, [label(h, "Aggregate"), ...parts]),
 			},
 		}),
-		h.div(
-			[h.Class("flex min-w-64 flex-1 items-center gap-2")],
-			[label(h, "Where"), whereEditor(h, model)],
-		),
+		hstack(h, { gap: "2", align: "center", grow: true, className: "min-w-64" }, [
+			label(h, "Where"),
+			whereEditor(h, model),
+		]),
 		h.submodel({
 			slotId: "metric-group-by",
 			model: model.groupByCombobox,

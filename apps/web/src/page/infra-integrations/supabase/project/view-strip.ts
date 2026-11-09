@@ -1,6 +1,7 @@
 import { EMPTY_VALUE, formatBytes, formatPercent } from "@maple/ui/lib/format"
 import { formatClockInTimezone } from "@maple/web-data/lib/timezone-format"
 import type { Html, HtmlBuilder } from "foldkit/html"
+import { timestamp } from "@maple/views/ui/timestamp"
 import { VALUE_TONE } from "../../../../components/infra/severity-tokens"
 import { cn } from "@maple/ui/lib/utils"
 import { type SparkPoint, type SparkWindow, windowSparkline } from "../../kit/window-sparkline"
@@ -10,6 +11,7 @@ import type { HealthStrip } from "./derive"
 import type { Message } from "./message"
 import { typography } from "@maple/views/ui/typography"
 import { String as Str } from "effect"
+import { vstack } from "@maple/views/ui/stack"
 
 // The health strip: six tiles, each value over a line spark of the window and a caption.
 
@@ -26,31 +28,26 @@ type TileOptions = Readonly<{
 	value: string
 	isWarn?: boolean
 	spark: ReadonlyArray<SparkPoint>
-	caption: string | undefined
+	caption: Html | string | undefined
 }>
 
 const tile = (h: H, window: SparkWindow, options: TileOptions): Html =>
-	h.div(
-		[h.Class("flex min-w-0 flex-col gap-2 rounded-md border bg-card p-4")],
-		[
-			typography(h, { size: "2xs", tone: "muted", weight: "medium", truncate: true }, [options.label]),
-			h.span(
-				[
-					h.Class(
-						cn(
-							"font-mono text-xl font-semibold tabular-nums",
-							VALUE_TONE[options.isWarn === true ? "warn" : "neutral"],
-						),
+	vstack(h, { gap: "2", shrink: true, className: "rounded-md border bg-card p-4" }, [
+		typography(h, { size: "2xs", tone: "muted", weight: "medium", truncate: true }, [options.label]),
+		h.span(
+			[
+				h.Class(
+					cn(
+						"font-mono text-xl font-semibold tabular-nums",
+						VALUE_TONE[options.isWarn === true ? "warn" : "neutral"],
 					),
-				],
-				[options.value],
-			),
-			windowSparkline(h, { points: options.spark, window, color: SUPABASE_ACCENT }),
-			typography(h, { size: "2xs", tone: "muted", mono: true, truncate: true }, [
-				options.caption ?? "",
-			]),
-		],
-	)
+				),
+			],
+			[options.value],
+		),
+		windowSparkline(h, { points: options.spark, window, color: SUPABASE_ACCENT }),
+		typography(h, { size: "2xs", tone: "muted", mono: true, truncate: true }, [options.caption ?? ""]),
+	])
 
 export const HEALTH_STRIP_GRID = "grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6"
 
@@ -67,7 +64,20 @@ export const healthStripView = (h: H, strip: HealthStrip, window: SparkWindow, t
 				caption:
 					cpu.peak === null
 						? ""
-						: `peak ${formatPercent(cpu.peak.cpu)} at ${Str.slice(0, 5)(formatClockInTimezone(cpu.peak.bucket, { timeZone }))}`,
+						: h.span(
+								[],
+								[
+									`peak ${formatPercent(cpu.peak.cpu)} at `,
+									timestamp(h, {
+										value: cpu.peak.bucket,
+										timeZone,
+										label: Str.slice(
+											0,
+											5,
+										)(formatClockInTimezone(cpu.peak.bucket, { timeZone })),
+									}),
+								],
+							),
 			}),
 			tile(h, window, {
 				label: "Memory",
@@ -98,7 +108,7 @@ export const healthStripView = (h: H, strip: HealthStrip, window: SparkWindow, t
 				label: "Database size",
 				value: dbSize.bytes === null ? EMPTY_VALUE : formatBytes(dbSize.bytes),
 				spark: dbSize.spark,
-				caption: dbSize.growth === null ? undefined : `${signedBytes(dbSize.growth)} in this range`,
+				caption: dbSize.growth === null ? undefined : `${signedBytes(dbSize.growth)} in this window`,
 			}),
 		],
 	)

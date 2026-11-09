@@ -1,4 +1,4 @@
-import { String as Str } from "effect"
+import { String as Str, Array as Arr, Option } from "effect"
 /**
  * Datasources that are written via `ingest` (hard-pinned to the managed
  * Tinybird pipeline) and have NO per-org materialization — they simply do not
@@ -9,7 +9,11 @@ import { String as Str } from "effect"
  * org-BYO backend while referencing one of these tables would silently return
  * empty rows, so it logs a warning instead of failing quietly.
  */
-export const INGEST_PINNED_TABLES: ReadonlyArray<string> = ["alert_checks", "audit_log"]
+export const INGEST_PINNED_TABLES: ReadonlyArray<string> = [
+	"alert_checks",
+	"audit_log",
+	"search_console_daily",
+]
 
 export const findIngestPinnedTable = (sql: string): string | undefined =>
-	INGEST_PINNED_TABLES.find((table) => Str.includes(table)(sql))
+	Option.getOrUndefined(Arr.findFirst(INGEST_PINNED_TABLES, (table) => Str.includes(table)(sql)))

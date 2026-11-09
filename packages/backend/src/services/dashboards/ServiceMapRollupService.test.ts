@@ -123,7 +123,7 @@ describe("ServiceMapRollupService", () => {
 					),
 			})
 
-			const result = yield* ServiceMapRollupService.use((service) => service.runRollupTick()).pipe(
+			const result = yield* ServiceMapRollupService.use((service) => service.runRollupTick).pipe(
 				Effect.provide(
 					Layer.effect(ServiceMapRollupService, ServiceMapRollupService.make).pipe(
 						Layer.provide(
@@ -179,7 +179,7 @@ describe("ServiceMapRollupService", () => {
 				}),
 			)
 
-			const result = yield* ServiceMapRollupService.use((service) => service.runRollupTick()).pipe(
+			const result = yield* ServiceMapRollupService.use((service) => service.runRollupTick).pipe(
 				Effect.provide(
 					Layer.effect(ServiceMapRollupService, ServiceMapRollupService.make).pipe(
 						Layer.provide(warehouse),

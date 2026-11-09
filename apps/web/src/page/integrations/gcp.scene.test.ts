@@ -19,7 +19,7 @@ const names = (commands: ReadonlyArray<{ readonly name: string }> | undefined) =
 const publicId = encodePublicId(PublicIdPrefixes.gcpConnector, "00000000-0000-4000-8000-000000000402")
 
 const status = (applied: boolean | null) =>
-	Schema.decodeUnknownSync(V2GcpIntegration)({
+	Schema.decodeSync(V2GcpIntegration)({
 		object: "gcp_integration",
 		metrics_available: true,
 		connectors: [

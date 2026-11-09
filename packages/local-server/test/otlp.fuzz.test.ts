@@ -1,7 +1,8 @@
+import { ok } from "node:assert"
 import { describe, expect, it } from "vitest"
 import fc from "fast-check"
 import insertMappings from "../src/schema/local-inserts.json"
-import { Result, Schema, Array as Arr, Record as Rec, String as Str } from "effect"
+import { Option, Result, Schema, Array as Arr, Record as Rec, String as Str } from "effect"
 import { encodeLogs, encodeMetrics, encodeTraces, OtlpFieldError } from "../src/otlp/encode"
 import { checkOtlpJson } from "../src/otlp/json"
 import {
@@ -23,13 +24,15 @@ const decodeManifest = Schema.decodeUnknownSync(
 
 /** `name Type, ...` from the insert manifest, split on top-level commas. */
 const columns = (datasource: string): Map<string, string> => {
-	const { inputSchema } = decodeManifest(insertMappings).datasources[datasource]!
+	const entry = decodeManifest(insertMappings).datasources[datasource]
+	ok(entry !== undefined)
+	const { inputSchema } = entry
 	const result = new Map<string, string>()
 	let depth = 0
 	let token = ""
 	const flush = () => {
 		const trimmed = Str.trim(token)
-		const space = trimmed.indexOf(" ")
+		const space = Option.getOrElse(Str.indexOf(" ")(trimmed), () => -1)
 		if (space > 0) result.set(Str.slice(0, space)(trimmed), Str.trim(Str.slice(space + 1)(trimmed)))
 		token = ""
 	}
@@ -514,7 +517,7 @@ const replaceAt = (root: unknown, path: ReadonlyArray<string | number>, replacem
 const oneWrongValue = <T>(arb: fc.Arbitrary<T>) =>
 	fc.tuple(arb, fc.nat(), wrongType).map(([body, pick, bad]) => {
 		const all = paths(body)
-		return replaceAt(body, all[pick % all.length]!, bad)
+		return replaceAt(body, Arr.getUnsafe(all, pick % all.length), bad)
 	})
 
 describe("OTLP protobuf ingest", () => {

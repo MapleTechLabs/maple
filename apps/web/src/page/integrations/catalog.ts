@@ -1,7 +1,7 @@
 import { type ChatConnectorManifest, chatConnectorManifests } from "@maple/chat-platform/manifests"
 import { ChatConnectorId } from "@maple/domain/primitives"
 import { docsUrl } from "../../lib/docs"
-import { Array, Option, Schema, String as Str } from "effect"
+import { Option, Schema, String as Str, Array as Arr } from "effect"
 import type { IconName } from "@maple/views/ui/icon"
 import { PLANETSCALE_COLOR } from "../infra-integrations/planetscale/notices"
 import { SUPABASE_ACCENT } from "../infra-integrations/supabase/connect"
@@ -21,6 +21,7 @@ export type IntegrationId =
 	| "warpstream"
 	| "linear"
 	| "github"
+	| "google-search-console"
 	| ChatIntegrationId
 
 export const GITHUB_ACCENT = "#181717"
@@ -36,7 +37,7 @@ export type EntryIcon =
 	| Readonly<{ _tag: "Named"; name: IconName }>
 	| Readonly<{ _tag: "Manifest"; icon: ChatConnectorManifest["icon"] }>
 
-export type IntegrationCategory = "infrastructure" | "code" | "notifications"
+export type IntegrationCategory = "infrastructure" | "code" | "analytics" | "notifications"
 
 export interface CatalogEntry {
 	readonly id: IntegrationId
@@ -56,6 +57,7 @@ export const INTEGRATION_CATEGORIES: ReadonlyArray<{
 }> = [
 	{ id: "infrastructure", label: "Infrastructure" },
 	{ id: "code", label: "Code & deploys" },
+	{ id: "analytics", label: "Web analytics" },
 	{ id: "notifications", label: "Chat & alerts" },
 ]
 
@@ -70,9 +72,9 @@ export const chatConnectorOf = (id: IntegrationId): ChatConnectorId | null =>
 	Str.startsWith("chat-")(id) ? Option.getOrNull(decodeConnectorId(Str.slice("chat-".length)(id))) : null
 
 export const chatManifestOf = (connector: string): ChatConnectorManifest | undefined =>
-	chatConnectorManifests.find((manifest) => manifest.id === connector)
+	Option.getOrUndefined(Arr.findFirst(chatConnectorManifests, (manifest) => manifest.id === connector))
 
-const CHAT_ENTRIES: ReadonlyArray<CatalogEntry> = Array.map(chatConnectorManifests, (manifest) => ({
+const CHAT_ENTRIES: ReadonlyArray<CatalogEntry> = Arr.map(chatConnectorManifests, (manifest) => ({
 	id: chatIntegrationId(manifest.id),
 	name: manifest.name,
 	description: manifest.description,
@@ -195,24 +197,33 @@ export const CATALOG: ReadonlyArray<CatalogEntry> = [
 		iconClassName: "text-foreground",
 		docsUrl: docsUrl("github"),
 	},
+	{
+		id: "google-search-console",
+		category: "analytics",
+		isNew: true,
+		name: "Google Search Console",
+		description: "Import the search queries, pages and positions that bring people to your sites.",
+		icon: named("GoogleIcon"),
+		accent: GCP_ACCENT,
+	},
 	...CHAT_ENTRIES,
 ]
 
-/** What `/integrations` lists: chat and alert connectors. Data integrations live under Sources. */
-export const HUB_CATALOG: ReadonlyArray<CatalogEntry> = Array.filter(
+/** What `/integrations` lists: chat, alert and web analytics connectors. Telemetry sources live under Sources. */
+export const HUB_CATALOG: ReadonlyArray<CatalogEntry> = Arr.filter(
 	CATALOG,
-	(entry) => entry.category === "notifications",
+	(entry) => entry.category === "notifications" || entry.category === "analytics",
 )
 
 export const catalogEntry = (id: IntegrationId): CatalogEntry =>
 	Option.getOrElse(
-		Array.findFirst(CATALOG, (entry) => entry.id === id),
+		Arr.findFirst(CATALOG, (entry) => entry.id === id),
 		() => CLOUDFLARE_ENTRY,
 	)
 
 /** Whether a URL value names a catalog entry (the OAuth callbacks append `?integration=`). */
 export const isIntegrationId = (value: string): value is IntegrationId =>
-	Array.some(CATALOG, (entry) => entry.id === value)
+	Arr.some(CATALOG, (entry) => entry.id === value)
 
 /** The `?integration=` the page shows: a known id, else the hub. */
 export const integrationOfSearch = (value: string | undefined): IntegrationId | null =>

@@ -1,4 +1,15 @@
-import { Config, Context, DateTime, Effect, Layer, Option, Redacted, Result, Schema } from "effect"
+import {
+	Config,
+	Context,
+	DateTime,
+	Effect,
+	Layer,
+	Option,
+	Redacted,
+	Result,
+	Schema,
+	Record as Rec,
+} from "effect"
 import { FileSystem } from "effect/FileSystem"
 import { ChildProcessSpawner } from "effect/process/ChildProcessSpawner"
 import * as os from "node:os"
@@ -59,7 +70,7 @@ const StoredConfigFields = Schema.Struct({
 	latestKnownVersion: Schema.optionalKey(Schema.String),
 	lastSeenVersion: Schema.optionalKey(Schema.String),
 })
-const KNOWN_KEYS = new Set(Object.keys(StoredConfigFields.fields))
+const KNOWN_KEYS = new Set<string>(Rec.keys(StoredConfigFields.fields))
 const decodeConfigObject = Schema.decodeUnknownResult(
 	Schema.fromJsonString(Schema.Record(Schema.String, Schema.Unknown)),
 )
@@ -91,9 +102,7 @@ const readConfig = (fs: FileSystem, configPath: string): Effect.Effect<ConfigFil
 			if (Result.isFailure(object)) return Effect.fail(invalid)
 			const config = decodeStoredConfig(object.success)
 			if (Result.isFailure(config)) return Effect.fail(invalid)
-			const unknownFields = Object.fromEntries(
-				Object.entries(object.success).filter(([key]) => !KNOWN_KEYS.has(key)),
-			)
+			const unknownFields = Rec.filter(object.success, (_, key) => !KNOWN_KEYS.has(key))
 			return Effect.succeed<ConfigFile>({ config: config.success, unknownFields })
 		}),
 	)
@@ -148,7 +157,7 @@ export interface MapleConfigValues {
 	/** Remote API base URL (env `MAPLE_API_URL` overrides the stored value). */
 	readonly apiUrl: Option.Option<string>
 	/** Remote bearer token (env `MAPLE_API_TOKEN` overrides the stored value). */
-	readonly token: Option.Option<Redacted.Redacted<string>>
+	readonly token: Option.Option<Redacted.Redacted>
 	readonly orgId: Option.Option<string>
 	readonly userId: Option.Option<string>
 	readonly credentialStore: Option.Option<"keychain" | "file">
@@ -175,11 +184,11 @@ export interface MapleConfigValues {
 		readonly userId: string
 		readonly managed: boolean
 	}) => Effect.Effect<"keychain" | "file", ConfigFileError>
-	readonly clearRemoteCredential: () => Effect.Effect<void, ConfigFileError>
+	readonly clearRemoteCredential: Effect.Effect<void, ConfigFileError>
 	/** Pin the default mode (used by `maple use local|remote`). */
 	readonly setDefaultMode: (mode: "local" | "remote") => Effect.Effect<void, ConfigFileError>
 	/** Drop the pinned default mode, reverting to auto-detect (`maple use auto`). */
-	readonly clearDefaultMode: () => Effect.Effect<void, ConfigFileError>
+	readonly clearDefaultMode: Effect.Effect<void, ConfigFileError>
 	/** Stamp the update-check timestamp (always) and the latest seen tag (when
 	 *  provided — omitted on a failed probe so the cached version is preserved). */
 	readonly recordUpdateCheck: (latestTag?: string) => Effect.Effect<void, ConfigFileError>
@@ -265,31 +274,29 @@ export class MapleConfig extends Context.Service<MapleConfig, MapleConfigValues>
 					})
 					return storedInKeychain ? "keychain" : "file"
 				}),
-			clearRemoteCredential: () =>
-				Effect.gen(function* () {
-					const storedApiUrl = stored.apiUrl
-					if (storedApiUrl && stored.credentialStore === "keychain") {
-						yield* keychain(deleteNativeCredential(storedApiUrl))
-					}
-					yield* writeMerged(fs, (cur) => {
-						const {
-							token: _token,
-							apiUrl: _apiUrl,
-							orgId: _orgId,
-							userId: _userId,
-							credentialStore: _store,
-							credentialManaged: _managed,
-							...rest
-						} = cur
-						return rest
-					})
-				}),
-			setDefaultMode: (mode) => writeMerged(fs, (cur) => ({ ...cur, defaultMode: mode })),
-			clearDefaultMode: () =>
-				writeMerged(fs, (cur) => {
-					const { defaultMode: _mode, ...rest } = cur
+			clearRemoteCredential: Effect.gen(function* () {
+				const storedApiUrl = stored.apiUrl
+				if (storedApiUrl && stored.credentialStore === "keychain") {
+					yield* keychain(deleteNativeCredential(storedApiUrl))
+				}
+				yield* writeMerged(fs, (cur) => {
+					const {
+						token: _token,
+						apiUrl: _apiUrl,
+						orgId: _orgId,
+						userId: _userId,
+						credentialStore: _store,
+						credentialManaged: _managed,
+						...rest
+					} = cur
 					return rest
-				}),
+				})
+			}),
+			setDefaultMode: (mode) => writeMerged(fs, (cur) => ({ ...cur, defaultMode: mode })),
+			clearDefaultMode: writeMerged(fs, (cur) => {
+				const { defaultMode: _mode, ...rest } = cur
+				return rest
+			}),
 			recordUpdateCheck: (latestTag) =>
 				Effect.gen(function* () {
 					const nowIso = yield* Effect.map(DateTime.now, DateTime.formatIso)

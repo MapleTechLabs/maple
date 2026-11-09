@@ -46,7 +46,7 @@ export const hasClerkSessionCookie = (cookie: string, suffix: string): boolean =
 
 /** The signed-in user's id in what Clerk emits (decoded: `window.Clerk` is whatever loaded), or null. */
 export const signedInUserId = (resources: ClerkResources): string | null =>
-	Option.match(Schema.decodeUnknownOption(Resources)(resources), {
+	Option.match(Schema.decodeOption(Resources)(resources), {
 		onNone: () => null,
 		onSome: ({ session, user }) =>
 			session === null || session === undefined || session.status === "pending"

@@ -21,6 +21,7 @@ import {
 	overviewOf,
 	summaryOf,
 	type UnavailableOverview,
+	lastSyncText,
 } from "./derive"
 import { Message } from "./message"
 import type { Model } from "./model"
@@ -28,7 +29,7 @@ import { STATUS_NAMES } from "./update-status"
 import { entryPlate } from "./view-entry"
 import { typography, typographyClass } from "@maple/views/ui/typography"
 import { hstack, hstackClass, vstack } from "@maple/views/ui/stack"
-import { Array as Arr } from "effect"
+import { Array as Arr, Order } from "effect"
 
 // `IntegrationsSummary` and `IntegrationCatalog`.
 
@@ -59,6 +60,7 @@ const connectedRow = (
 	entry: CatalogEntry,
 	overview: ConnectedOverview | UnavailableOverview,
 	onSelect: Select,
+	nowMs: number,
 ): Html => {
 	const connected = overview.kind === "connected" ? overview : null
 	return pressable(
@@ -66,14 +68,21 @@ const connectedRow = (
 		{
 			onClick: onSelect(entry.id),
 			className:
-				"group flex w-full items-center gap-4 px-4 py-3 text-left outline-none hover:bg-surface-sunken active:bg-surface-sunken focus-visible:bg-surface-sunken focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/40",
+				"group flex w-full items-center gap-4 px-4 py-3 text-left outline-none hover:bg-surface-sunken active:bg-surface-sunken focus-visible:bg-surface-sunken focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
 		},
 		[
 			entryPlate(h, entry, { plateClassName: "size-8 rounded-lg", size: 18 }),
-			h.span(
-				[h.Class("flex min-w-0 flex-1 flex-col gap-0.5 sm:w-44 sm:flex-none 2xl:w-52")],
+			vstack(
+				h,
+				{
+					gap: "0.5",
+					shrink: true,
+					grow: true,
+					as: "span",
+					className: "sm:w-44 sm:flex-none 2xl:w-52",
+				},
 				[
-					typography(h, { size: "sm", weight: "semibold", truncate: true }, [entry.name]),
+					typography(h, { size: "sm", weight: "medium", truncate: true }, [entry.name]),
 					...(connected?.context
 						? [typography(h, { size: "xs", tone: "muted", truncate: true }, [connected.context])]
 						: []),
@@ -89,22 +98,20 @@ const connectedRow = (
 						),
 					),
 				],
-				[
-					// A failed read says so once above the list; the row keeps a muted "Unknown".
-					...(connected === null && overview.kind === "unavailable" && overview.reason === "failed"
-						? [
-								statusDot(h, { tone: "neutral" }),
-								typography(h, { size: "xs", tone: "muted" }, ["Unknown"]),
-							]
-						: [
-								statusDot(h, {
-									tone: connected !== null ? HEALTH_TONE[connected.health] : "neutral",
-								}),
-								typography(h, { size: "xs", truncate: true }, [
-									connected?.stateLabel ?? "Not configured",
-								]),
+				// A failed read says so once above the list; the row keeps a muted "Unknown".
+				connected === null && overview.kind === "unavailable" && overview.reason === "failed"
+					? [
+							statusDot(h, { tone: "neutral" }),
+							typography(h, { size: "xs", tone: "muted" }, ["Unknown"]),
+						]
+					: [
+							statusDot(h, {
+								tone: connected !== null ? HEALTH_TONE[connected.health] : "neutral",
+							}),
+							typography(h, { size: "xs", truncate: true }, [
+								connected?.stateLabel ?? "Not configured",
 							]),
-				],
+						],
 			),
 			...(connected?.stat
 				? [
@@ -114,40 +121,33 @@ const connectedRow = (
 						),
 					]
 				: []),
-			h.span(
-				[h.Class("ml-auto flex shrink-0 items-center gap-3")],
-				[
-					...(connected?.lastSyncLabel
-						? [
-								h.span(
-									[
-										h.Class(
-											"hidden w-28 text-right text-xs text-muted-foreground 2xl:block",
-										),
-									],
-									[connected.lastSyncLabel],
-								),
-							]
-						: []),
-					...(connected?.issue
-						? [
-								badge(
-									h,
-									{
-										variant: connected.health === "pending" ? "outline" : "warn",
-										size: "sm",
-										className: "hidden sm:inline-flex",
-									},
-									[connected.issue],
-								),
-							]
-						: []),
-					icon(h, "ChevronRightIcon", {
-						size: 14,
-						className: "text-foreground-subtle transition-colors group-hover:text-foreground",
-					}),
-				],
-			),
+			hstack(h, { gap: "3", align: "center", as: "span", className: "ml-auto shrink-0" }, [
+				...(connected !== null && connected.lastSync !== null
+					? [
+							h.span(
+								[h.Class("hidden w-28 text-right text-xs text-muted-foreground 2xl:block")],
+								[lastSyncText(connected.lastSync, nowMs)],
+							),
+						]
+					: []),
+				...(connected?.issue
+					? [
+							badge(
+								h,
+								{
+									variant: connected.health === "pending" ? "outline" : "warn",
+									size: "sm",
+									className: "hidden sm:inline-flex",
+								},
+								[connected.issue],
+							),
+						]
+					: []),
+				icon(h, "ChevronRightIcon", {
+					size: 14,
+					className: "text-foreground-subtle group-hover:text-foreground",
+				}),
+			]),
 		],
 	)
 }
@@ -159,7 +159,7 @@ const availableCard = (h: H, entry: CatalogEntry, cta: AvailableOverview["cta"],
 		entryPlate(h, entry, { plateClassName: "size-9 rounded-lg", size: 20 }),
 		vstack(h, { gap: "0.5", shrink: true, grow: true, as: "span" }, [
 			hstack(h, { gap: "2", shrink: true, as: "span" }, [
-				typography(h, { size: "sm", weight: "semibold", truncate: true }, [entry.name]),
+				typography(h, { size: "sm", weight: "medium", truncate: true }, [entry.name]),
 				...(entry.isNew === true ? [newBadge(h)] : []),
 			]),
 			h.span([h.Class("line-clamp-2 font-prose text-xs text-muted-foreground")], [entry.description]),
@@ -168,7 +168,7 @@ const availableCard = (h: H, entry: CatalogEntry, cta: AvailableOverview["cta"],
 			[
 				h.Class(
 					cn(
-						"shrink-0 rounded-md border border-input px-3 py-1.5 text-xs font-medium transition-colors group-hover:border-ring/60",
+						"shrink-0 rounded-md border border-input px-3 py-1.5 text-xs font-medium group-hover:border-border-strong",
 						cta === "Connect" ? "text-primary" : "text-foreground",
 					),
 				),
@@ -178,24 +178,21 @@ const availableCard = (h: H, entry: CatalogEntry, cta: AvailableOverview["cta"],
 	])
 
 const skeletonRow = (h: H): Html =>
-	h.div(
-		[h.Class("flex w-full items-center gap-4 px-4 py-3")],
-		[
-			skeleton(h, "size-8 shrink-0 rounded-lg"),
-			h.span(
-				[h.Class("flex w-52 shrink-0 flex-col gap-1.5")],
-				[skeleton(h, "h-3.5 w-24"), skeleton(h, "h-3 w-32")],
-			),
-			skeleton(h, "h-3 w-20"),
-		],
-	)
+	hstack(h, { gap: "4", align: "center", className: "w-full px-4 py-3" }, [
+		skeleton(h, "size-8 shrink-0 rounded-lg"),
+		vstack(h, { gap: "1.5", as: "span", className: "w-52 shrink-0" }, [
+			skeleton(h, "h-3.5 w-24"),
+			skeleton(h, "h-3 w-32"),
+		]),
+		skeleton(h, "h-3 w-20"),
+	])
 
 /** The first failed status read, for the one error line above the connected list. */
 const firstStatusFailure = (model: Model): LoadFailure | null =>
-	STATUS_NAMES.reduce<LoadFailure | null>((found, name) => {
+	Arr.reduce<(typeof STATUS_NAMES)[number], LoadFailure | null>(STATUS_NAMES, null, (found, name) => {
 		const { data } = model.statuses[name]
 		return found ?? (data._tag === "Failure" || data._tag === "Stale" ? data.error : null)
-	}, null)
+	})
 
 /** The hub's title and its one-line description, tight under the `<h1>` like every page header. */
 export const hubTitle = (h: H): Html =>
@@ -245,18 +242,24 @@ export const integrationCatalog = (h: H, model: Model, onSelect: Select): Html =
 	const shelves = Arr.filter(
 		Arr.map(INTEGRATION_CATEGORIES, (category) => ({
 			...category,
-			entries: Arr.filter(available, ({ entry }) => entry.category === category.id).toSorted(
-				(a, b) => Number(b.entry.isNew ?? false) - Number(a.entry.isNew ?? false),
+			entries: Arr.sort(
+				Arr.filter(available, ({ entry }) => entry.category === category.id),
+				Order.flip(
+					Order.mapInput(Order.Number, (item: (typeof available)[number]) =>
+						Number(item.entry.isNew ?? false),
+					),
+				),
 			),
 		})),
 		(shelf) => shelf.entries.length > 0,
 	)
-	return h.div(
-		[
-			h.Class(
-				"flex flex-col gap-6 animate-in fade-in slide-in-from-bottom-1 [animation-duration:300ms] motion-reduce:animate-none",
-			),
-		],
+	return vstack(
+		h,
+		{
+			gap: "6",
+			className:
+				"animate-in fade-in slide-in-from-bottom-1 [animation-duration:300ms] motion-reduce:animate-none",
+		},
 		[
 			...(connected.length > 0 || loading.length > 0
 				? [
@@ -293,7 +296,7 @@ export const integrationCatalog = (h: H, model: Model, onSelect: Select): Html =
 							]),
 							panel(h, { className: "divide-y divide-border-subtle border-border-subtle" }, [
 								...Arr.map(connected, ({ entry, overview }) =>
-									connectedRow(h, entry, overview, onSelect),
+									connectedRow(h, entry, overview, onSelect, model.nowMs),
 								),
 								...Arr.map(loading, () => skeletonRow(h)),
 							]),

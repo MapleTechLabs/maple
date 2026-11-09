@@ -24,7 +24,8 @@
 // wearing one name, and only the shape the fixture happens to select is ever
 // executed. `assertRouteCoverage` below fails when a route is never exercised.
 
-import { Effect, Array as Arr, String as Str } from "effect"
+import { Effect, Array as Arr, String as Str, Option, Schema } from "effect"
+import { TracesMetric } from "@maple/domain/query-engine"
 import type { CompiledQuery } from "@maple-dev/effect-orm/clickhouse"
 import {
 	DeploymentEnvironment,
@@ -161,7 +162,19 @@ export const pipeFixtures: ReadonlyArray<PipeFixture> = [
 	},
 	{ pipe: "slow_traces", label: "default", params: { service: "api", deployment_env: "production" } },
 	{ pipe: "span_search", label: "default", params: { search: "timeout" }, allCapabilities: true },
-	{ pipe: "top_operations", label: "default", params: { service_name: "api", metric: "p95_duration" } },
+	{
+		pipe: "top_operations",
+		label: "default",
+		route: "top_operations:rollup",
+		params: { service_name: "api", metric: "p95_duration" },
+	},
+	{
+		// apdex scores each span against its thresholds, so it stays on raw spans.
+		pipe: "top_operations",
+		label: "apdex",
+		route: "top_operations:raw",
+		params: { service_name: "api", metric: "apdex", environment: "production" },
+	},
 
 	// NB: the pipe adapter never forwards `bucket_seconds` into the query opts,
 	// so none of these can reach the annual service-overview rollup — see
@@ -823,6 +836,16 @@ export const querySpecFixtures: ReadonlyArray<QuerySpecFixture> = [
 		},
 	},
 	{
+		label: "logs-breakdown-by-resource-attribute",
+		query: {
+			kind: "breakdown",
+			source: "logs",
+			metric: "count",
+			groupBy: "resource_attribute",
+			filters: { serviceName: service("api"), groupByResourceAttributeKey: "k8s.pod.name" },
+		},
+	},
+	{
 		label: "metrics-breakdown",
 		query: {
 			kind: "breakdown",
@@ -973,24 +996,24 @@ interface CapturedSql {
  * result still contributes its SQL — the SQL is the artifact under test.
  */
 function makeCapturingWarehouse(capabilities: WarehouseCapabilities): {
-	readonly warehouse: QueryEngineWarehouse<QueryTenant>
+	readonly warehouse: QueryEngineWarehouse
 	readonly captured: ReadonlyArray<CapturedSql>
 } {
 	const captured: Array<CapturedSql> = []
 	const empty = Effect.succeed([] as ReadonlyArray<never>)
-	const warehouse: QueryEngineWarehouse<QueryTenant> = {
+	const warehouse: QueryEngineWarehouse = {
 		rawSqlQuery: (_tenant, sql) => {
 			captured.push({ sql })
 			return empty
 		},
 		compiledQuery: (_tenant, input) => {
 			const compiled = compiledQueryOf(input)
-			captured.push({ sql: compiled.sql, compiled: compiled as CompiledQuery<unknown> })
+			captured.push({ sql: compiled.sql, compiled: compiled })
 			return empty
 		},
 		compiledQueryWithCapabilities: (_tenant, compile) => {
 			const compiled = Effect.runSync(compile(capabilities))
-			captured.push({ sql: compiled.sql, compiled: compiled as CompiledQuery<unknown> })
+			captured.push({ sql: compiled.sql, compiled: compiled })
 			return empty
 		},
 	}
@@ -1086,25 +1109,25 @@ export function collectBuilderCatalog(): ReadonlyArray<CatalogEntry> {
 
 /** The benchmark and analyzer consume these same compiled cases. Compilation
  * failures stay typed at CLI boundaries instead of dropping fixtures. */
-export const collectQueryCatalog = () =>
-	Effect.try({
-		try: () => [...collectPipeCatalog(), ...collectQuerySpecCatalog(), ...collectBuilderCatalog()],
-		catch: (cause) =>
-			new BenchmarkError({ message: `Core catalog compilation failed: ${String(cause)}` }),
-	})
+export const collectQueryCatalog = Effect.try({
+	try: () => [...collectPipeCatalog(), ...collectQuerySpecCatalog(), ...collectBuilderCatalog()],
+	catch: (cause) => new BenchmarkError({ message: `Core catalog compilation failed: ${String(cause)}` }),
+})
 
 /** Composition happens in the app, keeping integration knowledge out of core. */
 export const mergeQueryCatalogs = (...catalogs: ReadonlyArray<ReadonlyArray<CatalogEntry>>) => {
 	const entries = catalogs.flat()
 	const seen = new Set<string>()
-	const duplicate = entries.find((entry) => {
+	const duplicate = Arr.findFirst(entries, (entry) => {
 		if (seen.has(entry.id)) return true
 		seen.add(entry.id)
 		return false
 	})
-	return duplicate
-		? Effect.fail(new BenchmarkError({ message: `Duplicate query case ID: ${duplicate.id}` }))
-		: Effect.succeed(entries)
+	return Option.match(duplicate, {
+		onNone: () => Effect.succeed(entries),
+		onSome: (entry) =>
+			Effect.fail(new BenchmarkError({ message: `Duplicate query case ID: ${entry.id}` })),
+	})
 }
 
 /** The only conversion from compiled catalog cases to a serializable workload.
@@ -1267,7 +1290,7 @@ export function routeCoverage(): ReadonlyMap<string, { true: number; false: numb
 				metric: query.metric,
 				needsSampling: true,
 				allMetrics: query.allMetrics === true,
-				groupBy: query.groupBy as ReadonlyArray<string> | undefined,
+				groupBy: query.groupBy,
 				bucketSeconds: query.bucketSeconds,
 				apdexThresholdMs: query.apdexThresholdMs,
 				rootOnly: filters.rootSpansOnly === true,
@@ -1287,6 +1310,12 @@ export function routeCoverage(): ReadonlyMap<string, { true: number; false: numb
 	for (const fixture of builderFixtures) {
 		if (fixture.module !== "web-analytics") continue
 		record("useProductEvents", Str.endsWith("-rollup")(fixture.label))
+	}
+
+	for (const fixture of pipeFixtures) {
+		if (fixture.pipe !== "top_operations") continue
+		const metric = Schema.decodeUnknownOption(TracesMetric)(fixture.params.metric ?? "count")
+		record("isRollupTopOperationsMetric", Option.exists(metric, CH.isRollupTopOperationsMetric))
 	}
 
 	return coverage

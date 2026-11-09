@@ -95,7 +95,7 @@ describe("cloudflare zone", () => {
 	})
 
 	test("the ingest poll advances the clock, so a silent connection turns stalled", () => {
-		const status = Schema.decodeUnknownSync(Status)({
+		const status = Schema.decodeSync(Status)({
 			connected: true,
 			accountId: "acc_a",
 			accountName: "Acme",

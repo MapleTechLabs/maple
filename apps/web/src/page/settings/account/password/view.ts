@@ -8,6 +8,7 @@ import { switchRow } from "../../kit/switch-row"
 import { fieldIds, stateFor, textField } from "../fields"
 import { Message, type Model, type PasswordField } from "./model"
 import { canSubmit, hasPasswordOf, isMismatch, isTooShort, MIN_PASSWORD_LENGTH } from "./update"
+import { hstack } from "@maple/views/ui/stack"
 
 type H = HtmlBuilder<Message>
 
@@ -102,21 +103,18 @@ const loaded = (h: H, model: Model): Html => {
 							isDisabled: model.isSaving,
 							onToggle: Message.ToggledSignOutOthers(),
 						}),
-						h.div(
-							[h.Class("flex justify-end")],
-							[
-								button(
-									h,
-									{
-										size: "sm",
-										isLoading: model.isSaving,
-										isDisabled: !canSubmit(model),
-										attributes: [h.OnClick(Message.ClickedSubmit())],
-									},
-									[hasPassword ? "Change password" : "Set password"],
-								),
-							],
-						),
+						hstack(h, { align: "stretch", justify: "end" }, [
+							button(
+								h,
+								{
+									size: "sm",
+									isLoading: model.isSaving,
+									isDisabled: !canSubmit(model),
+									attributes: [h.OnClick(Message.ClickedSubmit())],
+								},
+								[hasPassword ? "Change password" : "Set password"],
+							),
+						]),
 					],
 				),
 			],
@@ -124,7 +122,6 @@ const loaded = (h: H, model: Model): Html => {
 	])
 }
 
-export const view = Submodel.defineView<Model, Message, Readonly<Record<never, never>>>(
-	(model, _inputs, h) =>
-		!model.isLoaded || model.user === null ? accountSectionSkeleton(h) : loaded(h, model),
+export const view = Submodel.defineView<Model, Message, Readonly<Record<never, never>>>((model, _inputs, h) =>
+	!model.isLoaded || model.user === null ? accountSectionSkeleton(h) : loaded(h, model),
 )

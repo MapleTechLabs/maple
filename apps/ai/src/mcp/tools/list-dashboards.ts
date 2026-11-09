@@ -31,10 +31,11 @@ export function registerListDashboardsTool(server: McpToolRegistrar) {
 				.pipe(Effect.mapError(toMcpDashboardError(TOOL)))
 
 			const lowerSearch = search?.toLowerCase()
+			const all = Arr.map(result.dashboards, (stored) => stored.document)
 			const dashboards =
 				lowerSearch === undefined
-					? result.dashboards
-					: Arr.filter(result.dashboards, (d) => Str.includes(lowerSearch)(Str.toLowerCase(d.name)))
+					? all
+					: Arr.filter(all, (d) => Str.includes(lowerSearch)(Str.toLowerCase(d.name)))
 
 			yield* Effect.annotateCurrentSpan({
 				orgId: tenant.orgId,

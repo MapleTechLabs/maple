@@ -1,4 +1,3 @@
-import { createHash, timingSafeEqual } from "node:crypto"
 import { createClerkClient } from "@clerk/backend"
 import {
 	PreviewSignInDisabledError,
@@ -10,6 +9,7 @@ import {
 import { Context, Effect, Layer, Option, Redacted, Array as Arr, String as Str } from "effect"
 import { Env, type EnvConfig } from "@maple/backend/platform/Env"
 import { clerkRequest, type ClerkRequestError } from "@maple/backend/services/auth/clerk-request"
+import { secretsEqual } from "./secret-equal"
 
 /**
  * One reviewer identity shared by every preview, kept apart from the developers' own dev users
@@ -38,7 +38,7 @@ export interface PreviewClerk {
 }
 
 export interface PreviewSignInServiceApi {
-	readonly status: () => Effect.Effect<PreviewSignInStatusResponse>
+	readonly status: Effect.Effect<PreviewSignInStatusResponse>
 	readonly signIn: (
 		key: string,
 	) => Effect.Effect<
@@ -46,11 +46,6 @@ export interface PreviewSignInServiceApi {
 		PreviewSignInDisabledError | PreviewSignInInvalidKeyError | PreviewSignInUnavailableError
 	>
 }
-
-const digest = (value: string) => createHash("sha256").update(value).digest()
-
-/** Hashing first makes the comparison constant-time regardless of the guess's length. */
-const keyMatches = (provided: string, expected: string) => timingSafeEqual(digest(provided), digest(expected))
 
 type PreviewEnv = Pick<
 	EnvConfig,
@@ -96,7 +91,7 @@ export const makePreviewSignIn = (
 			return yield* new PreviewSignInDisabledError({ message: "Preview sign-in is not enabled here" })
 		}
 		const { clerk } = enabled.value
-		if (!keyMatches(key, enabled.value.key)) {
+		if (!secretsEqual(key, enabled.value.key)) {
 			return yield* new PreviewSignInInvalidKeyError({ message: "Invalid preview access key" })
 		}
 		const userId = yield* ensureReviewer(clerk).pipe(Effect.mapError(unavailable))
@@ -107,7 +102,7 @@ export const makePreviewSignIn = (
 	})
 
 	return {
-		status: () => Effect.succeed(new PreviewSignInStatusResponse({ enabled: Option.isSome(enabled) })),
+		status: Effect.succeed(new PreviewSignInStatusResponse({ enabled: Option.isSome(enabled) })),
 		signIn,
 	}
 }

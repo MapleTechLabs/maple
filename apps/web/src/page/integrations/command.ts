@@ -8,7 +8,7 @@ import { MapleApiV2Client, MapleInternalApiClient } from "../../platform/api-cli
 import { Message } from "./message"
 import { completeOAuthReturn } from "./oauth-return"
 import { BillingCustomerCache } from "../../data/billing-customer"
-import { readIsOrgAdmin } from "../../data/session-tenant"
+import { readGrants } from "../../data/session-tenant"
 import { trackProduct } from "../../data/analytics"
 
 const settle = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
@@ -165,6 +165,19 @@ export const LoadLinear = Command.define("LoadIntegrationsLinearStatus", {
 		),
 })
 
+export const LoadSearchConsole = Command.define("LoadIntegrationsSearchConsoleStatus", {
+	args: Args,
+	messages: [Message.CompletedLoadSearchConsole],
+	execute: ({ key }) =>
+		Effect.gen(function* () {
+			const client = yield* MapleInternalApiClient
+			return yield* client.integrations.searchConsoleStatus()
+		}).pipe(
+			settle,
+			Effect.map((result) => Message.CompletedLoadSearchConsole({ key, result })),
+		),
+})
+
 export const LoadGithub = Command.define("LoadIntegrationsGithubStatus", {
 	args: Args,
 	messages: [Message.CompletedLoadGithub],
@@ -220,10 +233,10 @@ export const TrackConnected = Command.define("TrackIntegrationConnected", {
 		),
 })
 
-/** `useIsOrgAdmin()`: the session the shell already read (`SessionTenant`), for the settings rail. */
+/** The session the shell already read (`SessionTenant`): the settings rail and connecting read its grants. */
 export const LoadSession = Command.define("LoadIntegrationsSession", {
 	messages: [Message.CompletedLoadSession],
-	execute: Effect.map(readIsOrgAdmin, (isAdmin) => Message.CompletedLoadSession({ isAdmin })),
+	execute: Effect.map(readGrants, (grants) => Message.CompletedLoadSession({ grants })),
 })
 
 /** `useMapleCustomer` (`billingCustomerAtom`). */

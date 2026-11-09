@@ -84,7 +84,7 @@ describe("validateFindings", () => {
 	it("rejects a multi-step trace that does not begin at an entrypoint", async () => {
 		const [first, second] = confirmedRecord.trace
 		const exit = await Effect.runPromiseExit(
-			validateFindings([{ ...confirmedRecord, trace: [{ ...first!, kind: "propagation" }, second!] }]),
+			validateFindings([{ ...confirmedRecord, trace: [{ ...first, kind: "propagation" }, second] }]),
 		)
 		expect(Exit.isFailure(exit)).toBe(true)
 	})

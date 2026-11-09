@@ -102,7 +102,6 @@ export const deploymentInline = <M>(
 				...clock,
 				variant: "short",
 				mono: true,
-				tooltip: "title",
 				className: "shrink-0 text-muted-foreground",
 			}),
 		],

@@ -5,10 +5,27 @@ import { workerTelemetryConfig } from "@maple/infra/worker-telemetry"
 import { workerEnvLayer } from "@maple/infra/worker-runtime"
 import * as Cloudflare from "@alchemy.run/cloudflare"
 import type { HttpEffect } from "alchemy/Http"
-import { Effect, Exit, Layer, Option, Schema, Scope } from "effect"
+import type { RuntimeContext } from "alchemy/RuntimeContext"
+import {
+	Effect,
+	Exit,
+	Layer,
+	Option,
+	Ref,
+	Schema,
+	Scope,
+	Array as Arr,
+	Record as Rec,
+	String as Str,
+} from "effect"
 import { HttpServerResponse } from "effect/http"
 import { TestClock } from "effect/testing"
-import { MapleDbConnection } from "@maple/backend/platform/bindings"
+import { AuditEventsQueueProducer, MapleDbConnection } from "@maple/backend/platform/bindings"
+import { AuditLogService } from "@maple/backend/services/audit/AuditLogService"
+import { WarehouseQueryService } from "@maple/backend/services/warehouse/WarehouseQueryService"
+import { makeWarehouseServiceStub } from "@maple/backend/testing/warehouse-test-support"
+import { OrgId } from "@maple/domain/primitives"
+import { runAfterResponse } from "@maple/backend/platform/after-response"
 import { makeFetch } from "./http"
 
 /** A stubbed fetch body as text: the client sends the JSON as bytes. */
@@ -46,8 +63,11 @@ const noPorts = Layer.mergeAll(Layer.succeed(MapleDbConnection, Option.none()), 
 
 /** One attribute as its rendered value; OTLP JSON carries ints as strings anyway. */
 const attributeOf = (span: ExportedSpan | undefined, key: string): string | undefined => {
-	const value = span?.attributes.find((attribute) => attribute.key === key)?.value
-	return value === undefined ? undefined : String(Object.values(value)[0])
+	if (span === undefined) return undefined
+	return Option.match(
+		Arr.findFirst(span.attributes, (attribute) => attribute.key === key),
+		{ onNone: () => undefined, onSome: ({ value }) => String(Rec.values(value)[0]) },
+	)
 }
 
 /** The server spans the event exported, read off the OTLP requests the exporter sent. */
@@ -57,30 +77,32 @@ const capturedServerSpans = Effect.acquireRelease(
 	),
 	(spy) => Effect.sync(() => spy.mockRestore()),
 ).pipe(
-	Effect.map(
-		(spy) => () =>
-			spy.mock.calls
-				.filter(([input]) =>
-					(input instanceof Request ? input.url : input.toString()).endsWith("/v1/traces"),
-				)
-				.flatMap(
-					([, init]) =>
-						decodeExportedTraces(JSON.parse(requestBodyText(init?.body))).resourceSpans ?? [],
-				)
-				.flatMap((resource) => resource.scopeSpans.flatMap((scope) => scope.spans))
-				.filter((span) => span.kind === SERVER_KIND),
-	),
+	Effect.map((spy) => () => {
+		const traceCalls = Arr.filter(spy.mock.calls, ([input]) =>
+			Str.endsWith("/v1/traces")(input instanceof Request ? input.url : input.toString()),
+		)
+		const resources = Arr.flatMap(
+			traceCalls,
+			([, init]) => decodeExportedTraces(JSON.parse(requestBodyText(init?.body))).resourceSpans ?? [],
+		)
+		const spans = Arr.flatMap(resources, (resource) =>
+			Arr.flatMap(resource.scopeSpans, (scope) => scope.spans),
+		)
+		return Arr.filter(spans, (span) => span.kind === SERVER_KIND)
+	}),
 )
 
-const event = (fetch: HttpEffect, method: string, path: string) =>
+const event = (fetch: HttpEffect<RuntimeContext>, method: string, path: string) =>
 	Effect.gen(function* () {
 		const serverSpans = yield* capturedServerSpans
 		const request = yield* Scope.make()
 		const services = yield* Layer.buildWithScope(
 			Layer.mergeAll(
-				MapleCloudflareSDK.make(workerTelemetryConfig({ serviceName: "maple-ai" })).requestLayer,
+				MapleCloudflareSDK.make(workerTelemetryConfig({ serviceName: "maple-ai" })).requestLayer.pipe(
+					Layer.provide(Layer.succeed(MapleCloudflareSDK.WorkerEnvironment, env)),
+				),
 				Layer.succeed(Cloudflare.WorkerEnvironment, env),
-			).pipe(Layer.provide(Layer.succeed(MapleCloudflareSDK.WorkerEnvironment, env))),
+			),
 			request,
 		)
 		// Alchemy erases this helper's return type to any. Restore its boundary contract.
@@ -155,5 +177,101 @@ describe("the maple-ai Worker through alchemy's bridge", () => {
 				headers: { ordinal: "2", ageMs: "250" },
 			})
 		}).pipe(Effect.provide(IsolateAge.layer)),
+	)
+	it.effect(
+		"hands a route's after-response work, like an audit write, to the event instead of running it first",
+		() =>
+			Effect.gen(function* () {
+				const handedOver = yield* Ref.make<ReadonlyArray<Effect.Effect<void>>>([])
+				const ran = yield* Ref.make(0)
+				const fetch = yield* makeFetch(
+					Effect.succeed(
+						runAfterResponse(Ref.update(ran, (n) => n + 1)).pipe(
+							Effect.as(HttpServerResponse.text("ok")),
+						),
+					),
+					noPorts,
+					undefined,
+					Effect.succeed((work) => Ref.update(handedOver, (works) => [...works, work])),
+				)
+				const served = yield* event(fetch, "POST", "/mcp")
+				const ranBeforeHandover = yield* Ref.get(ran)
+				const works = yield* Ref.get(handedOver)
+				yield* Effect.forEach(works, (work) => work, { discard: true })
+				assert.deepStrictEqual(
+					{
+						status: served.status,
+						ranBeforeHandover,
+						handedOver: works.length,
+						ran: yield* Ref.get(ran),
+					},
+					{ status: 200, ranBeforeHandover: 0, handedOver: 1, ran: 1 },
+				)
+			}).pipe(Effect.provide(IsolateAge.layer)),
+	)
+
+	/** An audited `/mcp` call through the real AuditLogService, with or without the queue producer. */
+	const auditedCall = (withQueue: boolean) =>
+		Effect.gen(function* () {
+			const handedOver = yield* Ref.make<ReadonlyArray<Effect.Effect<void>>>([])
+			const sent = yield* Ref.make(0)
+			const ingested = yield* Ref.make(0)
+			const warehouse = Layer.succeed(
+				WarehouseQueryService,
+				makeWarehouseServiceStub({ ingest: () => Ref.update(ingested, (n) => n + 1) }),
+			)
+			const producer = Layer.succeed(AuditEventsQueueProducer, {
+				sendBatch: (messages) => Ref.update(sent, (n) => n + messages.length),
+			})
+			const audit = yield* Layer.build(
+				Layer.effect(AuditLogService, AuditLogService.make).pipe(
+					Layer.provide(withQueue ? Layer.merge(warehouse, producer) : warehouse),
+				),
+			)
+			const handler = Effect.gen(function* () {
+				const service = yield* AuditLogService
+				yield* service.record({
+					orgId: Schema.decodeSync(OrgId)("org_audit_wiring"),
+					actor: { type: "api_key" },
+					source: "mcp",
+					action: "mcp_tool.called",
+				})
+				return HttpServerResponse.text("ok")
+			}).pipe(Effect.provideContext(audit))
+			const fetch = yield* makeFetch(
+				Effect.succeed(handler),
+				noPorts,
+				undefined,
+				Effect.succeed((work) => Ref.update(handedOver, (works) => [...works, work])),
+			)
+			yield* event(fetch, "POST", "/mcp")
+			const atResponse = { sent: yield* Ref.get(sent), ingested: yield* Ref.get(ingested) }
+			const works = yield* Ref.get(handedOver)
+			yield* Effect.forEach(works, (work) => work, { discard: true })
+			return {
+				atResponse,
+				handedOver: works.length,
+				after: { sent: yield* Ref.get(sent), ingested: yield* Ref.get(ingested) },
+			}
+		}).pipe(Effect.scoped, Effect.provide(IsolateAge.layer))
+
+	it.effect("sends an audited call's entry to the queue after the response when it has a producer", () =>
+		Effect.gen(function* () {
+			assert.deepStrictEqual(yield* auditedCall(true), {
+				atResponse: { sent: 0, ingested: 0 },
+				handedOver: 1,
+				after: { sent: 1, ingested: 0 },
+			})
+		}),
+	)
+
+	it.effect("writes an audited call's entry before the response when there is no producer", () =>
+		Effect.gen(function* () {
+			assert.deepStrictEqual(yield* auditedCall(false), {
+				atResponse: { sent: 0, ingested: 1 },
+				handedOver: 0,
+				after: { sent: 0, ingested: 1 },
+			})
+		}),
 	)
 })

@@ -1,9 +1,13 @@
 import { McpSchema, McpServer as EffectMcpServer } from "effect/ai"
 import { Context, Effect, Layer, Array as Arr, String as Str } from "effect"
 import { cachedRecoverable } from "@maple/infra/cached-recoverable"
-import { McpToolExecutorLoader, McpToolsUnavailableError } from "./executor-loader"
+import {
+	McpToolExecutorLoader,
+	type McpToolExecutorBuildKind,
+	McpToolsUnavailableError,
+} from "./executor-loader"
 import { CurrentMcpRequestTenant } from "./lib/query-warehouse"
-import type { McpToolResult } from "./tools/types"
+import { refusesReadOnlyCredential, type McpToolResult } from "./tools/types"
 import type { McpToolDescriptor } from "@maple/domain/mcp-tool-contract"
 
 /**
@@ -64,6 +68,17 @@ const annotateToolFailure = (result: McpToolResult) =>
 			})
 		: Effect.void
 
+/**
+ * Hides a tool from a read-only credential's `tools/list`, and answers a call to it as unknown:
+ * the registry would refuse every such call anyway, and a listed tool invites it.
+ */
+const HiddenFromReadOnlyCredentials = EffectMcpServer.visibility(() =>
+	Effect.gen(function* () {
+		const tenant = yield* CurrentMcpRequestTenant
+		return tenant?.readOnly !== true
+	}),
+)
+
 const toBoundaryErrorResult = (error: { readonly _tag: string; readonly message: string }) =>
 	toCallToolResult({
 		isError: true,
@@ -80,15 +95,21 @@ export class McpToolRegistration extends Context.Service<
 	{
 		/** Adds every public tool to the server, once per isolate, before the first `tools/*` request. */
 		readonly ensureRegistered: Effect.Effect<void, McpToolsUnavailableError>
-		/** Builds the executor before a `tools/call`; `built` marks the request that paid for it. */
-		readonly ensureExecutor: Effect.Effect<{ readonly built: boolean }, McpToolsUnavailableError>
+		/** Builds the executor before a `tools/call`, saying how the request came by it. */
+		readonly ensureExecutor: Effect.Effect<McpToolExecutorBuildKind, McpToolsUnavailableError>
+		/** Starts the executor build in the background, for a request that runs no tool. */
+		readonly prewarmExecutor: Effect.Effect<void>
 	}
 >()("@maple/ai/mcp/McpToolRegistration", {
 	make: Effect.gen(function* () {
 		const server = yield* EffectMcpServer.McpServer
 		const loader = yield* McpToolExecutorLoader
+		const readOnlyGate = yield* Layer.build(HiddenFromReadOnlyCredentials.layer)
 		const addTool = (descriptor: McpToolDescriptor) =>
 			server.addTool({
+				...(refusesReadOnlyCredential(descriptor.name, descriptor.annotations?.readOnlyHint === true)
+					? { services: readOnlyGate }
+					: undefined),
 				tool: new McpSchema.Tool({
 					name: descriptor.name,
 					title: descriptor.title,
@@ -112,6 +133,10 @@ export class McpToolRegistration extends Context.Service<
 							})
 						}
 
+						// The hub tells clients apart by this; the stateless transport issues no session id.
+						if (tenant.mcpClientName !== undefined) {
+							yield* Effect.annotateCurrentSpan("maple.mcp.client.name", tenant.mcpClientName)
+						}
 						// Already built by the transport before the call; this reads the cached executor.
 						const executor = yield* loader.load
 						return yield* executor
@@ -144,7 +169,8 @@ export class McpToolRegistration extends Context.Service<
 		)
 		return {
 			ensureRegistered: yield* cachedRecoverable(register),
-			ensureExecutor: Effect.map(loader.loadReportingBuild, ({ built }) => ({ built })),
+			ensureExecutor: Effect.map(loader.loadReportingBuild, ({ build }) => build),
+			prewarmExecutor: loader.prewarm,
 		}
 	}),
 }) {

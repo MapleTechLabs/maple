@@ -104,7 +104,7 @@ export function textOf(el: Element): string | undefined {
 		const children = node?.childNodes ?? []
 		for (let i = children.length - 1; i >= 0; i--) {
 			const child = children[i]
-			if (child) stack.push(child)
+			if (child !== undefined) stack.push(child)
 		}
 	}
 	text = text.trim()

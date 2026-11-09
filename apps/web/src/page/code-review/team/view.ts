@@ -1,6 +1,11 @@
-import type { CodeReviewTeam, CodeReviewTeamMember, CodeReviewTeamTotals } from "@maple/domain/http"
+import {
+	type CodeReviewTeam,
+	type CodeReviewTeamMember,
+	type CodeReviewTeamTotals,
+	VcsRepositoryId,
+} from "@maple/domain/http"
 import { formatSpan } from "../../../components/code-review/code-review-format"
-import { EMPTY_VALUE, formatNumber, formatPercent } from "@maple/ui/lib/format"
+import { EMPTY_VALUE, countLabel, formatNumber, formatPercent } from "@maple/ui/lib/format"
 import { formatExactCount } from "@maple/views/lib/locale"
 import { cn } from "@maple/ui/lib/utils"
 import { AsyncData, Submodel } from "foldkit"
@@ -32,6 +37,8 @@ import { filteredEmpty } from "@maple/views/ui/signal-empty-state"
 import { statRail, statRailItem } from "../../kit/stat-rail"
 import * as TimeRangePicker from "../../kit/time-range-picker"
 import { authorLabel } from "../kit/author"
+import { repositoriesOf } from "../kit/frame-update"
+import { authorLink, type LinkScope, repositoryLink } from "../kit/links"
 import { filtersView } from "../kit/filters-view"
 import { codeReviewLayout } from "../kit/layout"
 import {
@@ -65,7 +72,7 @@ import * as HoverCard from "@maple/views/ui/hover-card"
 import { contributionCalendar, contributionLevel } from "@maple/views/ui/contribution-calendar"
 import { type ActivityCount, type ActivityDay, activityByDay, daysOf, totalOf } from "./activity"
 import { ACTIVITY_CARD_ID } from "./update"
-import { Array as Arr, Record as Rec, String as Str } from "effect"
+import { Array as Arr, Record as Rec, Schema, String as Str, Order } from "effect"
 
 // `CodeReviewTeamPage`: team KPIs, a few highlights, and the per-person scorecard against the team
 // median, ranked only on request.
@@ -151,7 +158,7 @@ const COLUMNS: ReadonlyArray<Column> = [
 		hint: "Runs that were a rerun of a workflow, over every run the person started",
 		className: "hidden w-24 xl:table-cell",
 		format: rateOf,
-		detail: (member) => `${member.reruns} reruns over ${member.ciRuns} runs`,
+		detail: (member) => `${countLabel(member.reruns, "rerun")} over ${countLabel(member.ciRuns, "run")}`,
 	},
 	{
 		metric: "shippedClean",
@@ -168,7 +175,7 @@ const COLUMNS: ReadonlyArray<Column> = [
 		hint: "Time the person's jobs spent on a runner, queue left out",
 		className: "hidden w-24 md:table-cell",
 		format: (value) => (value === null ? EMPTY_VALUE : runnerTimeOf(value)),
-		detail: (member) => `${member.ciRuns} runs, ${member.cancelledRuns} cancelled`,
+		detail: (member) => `${countLabel(member.ciRuns, "run")}, ${member.cancelledRuns} cancelled`,
 	},
 ]
 
@@ -269,8 +276,13 @@ const highlightLine = (key: "fixed" | "steady" | "fast", value: number) => {
 	}
 }
 
-const highlights = (h: H, members: ReadonlyArray<CodeReviewTeamMember>): Html | null => {
+/** A member as a link to their pull requests; plain when they have CI runs and no reviewed pull request. */
+const memberLabel = (h: H, login: string, pullRequests: number, scope: LinkScope, className: string): Html =>
+	pullRequests === 0 ? authorLabel(h, login, className) : authorLink(h, login, { scope, className })
+
+const highlights = (h: H, members: ReadonlyArray<CodeReviewTeamMember>, scope: LinkScope): Html | null => {
 	const items = highlightsOf(members)
+	const pullRequestsOf = new Map(Arr.map(members, (member) => [member.login, member.pullRequests] as const))
 	if (items.length === 0) return null
 	return h.section(
 		[h.AriaLabel("Highlights")],
@@ -286,7 +298,13 @@ const highlights = (h: H, members: ReadonlyArray<CodeReviewTeamMember>): Html | 
 							statRailItem(h, {
 								compact: true,
 								eyebrow: item.title,
-								value: authorLabel(h, item.login, "max-w-full text-base"),
+								value: memberLabel(
+									h,
+									item.login,
+									pullRequestsOf.get(item.login) ?? 0,
+									scope,
+									"max-w-full text-base",
+								),
 								subline: highlightLine(item.key, item.value),
 							}),
 						],
@@ -333,11 +351,25 @@ const cardSection = (h: H, title: string, rows: ReadonlyArray<Html>, more: numbe
 const countCell = (h: H, count: ActivityCount): Html =>
 	typography(h, { size: "xs", tone: "muted", numeric: true, className: "shrink-0" }, [countLine(count)])
 
-const repositoryLabel = (h: H, repository: string): Html =>
+/**
+ * `wrap` for the day card: the pointer passes through it, so a truncated name has no title to hover.
+ * It breaks after the owner's slash first.
+ */
+const repositoryLabel = (h: H, repository: string, wrap = false): Html =>
 	typography(
 		h,
-		{ size: "xs", mono: true, truncate: true, className: "min-w-0", attributes: [h.Title(repository)] },
-		[repository],
+		{
+			size: "xs",
+			mono: true,
+			truncate: !wrap,
+			className: wrap ? "min-w-0 wrap-anywhere" : "min-w-0",
+			attributes: [h.Title(repository)],
+		},
+		wrap
+			? Arr.flatMap(Str.split("/")(repository), (part, index) =>
+					index === 0 ? [part] : ["/", h.wbr([]), part],
+				)
+			: [repository],
 	)
 
 /** What a calendar day's card says: the totals, then who and where. */
@@ -360,7 +392,7 @@ const dayCard = (h: H, day: string, activity: ActivityDay | undefined): Readonly
 					"People",
 					Arr.map(activity.people.slice(0, CARD_PEOPLE), (person) =>
 						hstack(h, { gap: "3", justify: "between", attributes: [h.Key(person.key)] }, [
-							authorLabel(h, person.key, "text-xs"),
+							authorLabel(h, person.key, "text-xs", true),
 							countCell(h, person),
 						]),
 					),
@@ -371,7 +403,7 @@ const dayCard = (h: H, day: string, activity: ActivityDay | undefined): Readonly
 					"Repositories",
 					Arr.map(activity.repositories.slice(0, CARD_REPOSITORIES), (repository) =>
 						hstack(h, { gap: "3", justify: "between", attributes: [h.Key(repository.key)] }, [
-							repositoryLabel(h, repository.key),
+							repositoryLabel(h, repository.key, true),
 							countCell(h, repository),
 						]),
 					),
@@ -395,9 +427,9 @@ const topList = (
 	for (const day of byDay.values())
 		for (const count of countsOf(day))
 			totals.set(count.key, (totals.get(count.key) ?? 0) + totalOf(count))
-	const ranked = [...totals.entries()]
-		.toSorted((a, b) => b[1] - a[1] || Str.localeCompare(b[0])(a[0]))
-		.slice(0, 5)
+	const ranked = Arr.sort([...totals.entries()], (a: [string, number], b: [string, number]) =>
+		a[1] === b[1] ? Str.localeCompare(b[0])(a[0]) : Order.Number(b[1], a[1]),
+	).slice(0, 5)
 	const max = ranked[0]?.[1] ?? 0
 	if (ranked.length === 0) return null
 	return vstack(h, { gap: "2.5", className: "min-w-0" }, [
@@ -427,6 +459,8 @@ const topList = (
 	])
 }
 
+const isRepositoryId = Schema.is(VcsRepositoryId)
+
 /** A GitHub-style calendar of the team's pull requests, a card per day naming who and where. */
 const activityPanel = (h: H, model: Model, team: CodeReviewTeam, timeZone: string): Html => {
 	const byDay = activityByDay(team.activity)
@@ -435,6 +469,22 @@ const activityPanel = (h: H, model: Model, team: CodeReviewTeam, timeZone: strin
 	const opened = Arr.reduce(team.activity, 0, (sum, row) => sum + row.opened)
 	const merged = Arr.reduce(team.activity, 0, (sum, row) => sum + row.merged)
 	const ids = Arr.map(days, dayTriggerId)
+	// The calendar's year and repository, so a top list's link shows the pull requests it counted.
+	const activityScope: LinkScope = {
+		startTime: new Date(team.activityStartTime).toISOString(),
+		endTime: new Date(team.endTime).toISOString(),
+		repo: model.search.repo,
+	}
+	const repositoryIds = new Map(
+		Arr.map(
+			repositoriesOf(model.frame, false),
+			(repository) => [Str.toLowerCase(repository.fullName), repository.id] as const,
+		),
+	)
+	// A repository the server could not name comes as its id.
+	const repositoryIdOf = (repository: string) =>
+		repositoryIds.get(Str.toLowerCase(repository)) ??
+		(isRepositoryId(repository) ? repository : undefined)
 	const sides = Arr.filter(
 		[
 			topList(
@@ -442,14 +492,17 @@ const activityPanel = (h: H, model: Model, team: CodeReviewTeam, timeZone: strin
 				"Most active people",
 				byDay,
 				(day) => day.people,
-				(login) => authorLabel(h, login, "text-xs"),
+				(login) => authorLink(h, login, { scope: activityScope, className: "text-xs" }),
 			),
 			topList(
 				h,
 				"Most active repositories",
 				byDay,
 				(day) => day.repositories,
-				(repository) => repositoryLabel(h, repository),
+				(repository) =>
+					repositoryLink(h, repositoryIdOf(repository), repositoryLabel(h, repository), {
+						scope: activityScope,
+					}),
 			),
 		],
 		(side): side is Html => side !== null,
@@ -505,7 +558,7 @@ const sortHead = (h: H, column: Column, model: Model, ranked: boolean): Html => 
 	const sort = sortOf(model.search)
 	const isActive = ranked ? rankedMetric(sort) === column.metric : sort === column.metric
 	const isAscending = ASCENDING.has(column.metric)
-	const className = cn("px-3 text-right font-normal", column.className)
+	const className = cn("px-3 text-right", column.className)
 	// Ranked orders by rates alone: a count column is a plain header there.
 	if (ranked && !RANKABLE.has(column.metric))
 		return tableHead(h, [h.span([h.Title(column.hint)], [column.label])], className)
@@ -538,7 +591,7 @@ const personHead = (h: H, model: Model): Html => {
 				"Person",
 			]),
 		],
-		"px-4 font-normal",
+		"px-4",
 		[h.Attribute("aria-sort", isActive ? "ascending" : "none")],
 	)
 }
@@ -568,6 +621,7 @@ const medianRow = (
 
 const memberRow = (
 	h: H,
+	scope: LinkScope,
 	member: CodeReviewTeamMember,
 	scores: TeamScores,
 	rank: number | null,
@@ -585,7 +639,11 @@ const memberRow = (
 						),
 					]
 				: []),
-			tableCell(h, [authorLabel(h, member.login, "max-w-full")], "px-4 py-2.5"),
+			tableCell(
+				h,
+				[memberLabel(h, member.login, member.pullRequests, scope, "max-w-full")],
+				"px-4 py-2.5",
+			),
 			...Arr.map(COLUMNS, (column) =>
 				tableCell(
 					h,
@@ -641,7 +699,7 @@ const scorecard = (h: H, model: Model, members: ReadonlyArray<CodeReviewTeamMemb
 						h,
 						[
 							tableRow(h, [
-								...(ranked ? [tableHead(h, ["#"], "w-10 px-3 font-normal")] : []),
+								...(ranked ? [tableHead(h, ["#"], "w-10 px-3")] : []),
 								personHead(h, model),
 								...Arr.map(COLUMNS, (column) => sortHead(h, column, model, ranked)),
 							]),
@@ -650,7 +708,9 @@ const scorecard = (h: H, model: Model, members: ReadonlyArray<CodeReviewTeamMemb
 					),
 					tableBody(h, [
 						medianRow(h, members, scores, ranked),
-						...Arr.map(rows, (row) => memberRow(h, row.member, scores, row.rank, ranked)),
+						...Arr.map(rows, (row) =>
+							memberRow(h, model.search, row.member, scores, row.rank, ranked),
+						),
 					]),
 				]),
 		scorecardFooter(h, ranked),
@@ -716,7 +776,7 @@ const noTeamData = (h: H): Html =>
 	)
 
 const teamView = (h: H, model: Model, team: CodeReviewTeam, timeZone: string): Html => {
-	const highlighted = highlights(h, team.members)
+	const highlighted = highlights(h, team.members, model.search)
 	return vstack(h, { gap: "6" }, [
 		headlineStrip(h, team.totals),
 		...(highlighted === null ? [] : [highlighted]),

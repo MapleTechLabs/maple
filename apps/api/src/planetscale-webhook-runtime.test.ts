@@ -19,7 +19,7 @@ const trackedDbs: TestDb[] = []
 
 afterEach(() => cleanupTestDbs(trackedDbs))
 
-const orgId = Schema.decodeUnknownSync(OrgId)("org_1")
+const orgId = Schema.decodeSync(OrgId)("org_1")
 
 const basePayload: PlanetScaleWebhookPayload = {
 	timestamp: 1,
@@ -65,7 +65,7 @@ const makeBatch = (body: unknown) => {
 			messages: [message],
 			ackAll: () => undefined,
 			retryAll: () => undefined,
-		} as MessageBatch<unknown>,
+		} as MessageBatch,
 		acknowledged: () => acknowledged,
 		retried: () => retried,
 	}
@@ -252,7 +252,7 @@ describe("PlanetScale webhook queue consumer", () => {
 		const testDb = createTestDb(trackedDbs)
 		const delivery = makeBatch({
 			...job,
-			event: { ...job.event, tenantid: Schema.decodeUnknownSync(OrgId)("org_2") },
+			event: { ...job.event, tenantid: Schema.decodeSync(OrgId)("org_2") },
 		})
 		return processPlanetScaleWebhookBatch(delivery.batch).pipe(
 			Effect.tap(() =>

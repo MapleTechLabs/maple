@@ -23,12 +23,14 @@ const tileHead = (h: H, iconName: IconName, title: string, subtitle: string): Ht
 		[h.Class("space-y-1")],
 		[
 			hstack(h, { gap: "2" }, [
-				h.span(
-					[
-						h.Class(
-							"flex size-7 items-center justify-center rounded-md bg-primary-a2 text-primary",
-						),
-					],
+				hstack(
+					h,
+					{
+						align: "center",
+						justify: "center",
+						as: "span",
+						className: "size-7 rounded-md bg-primary-a2 text-primary",
+					},
 					[icon(h, iconName, { size: 18 })],
 				),
 				h.span([h.Class("font-prose font-medium text-sm")], [title]),
@@ -47,34 +49,25 @@ const tiles = (h: H): ReadonlyArray<Html> => [
 	...Arr.map(ALERT_TEMPLATES, (template) =>
 		cardButton(h, { onClick: Message.ClickedTemplate({ id: template.id }), className: TILE_LAYOUT }, [
 			tileHead(h, template.icon, template.title, template.description),
-			h.div(
-				[h.Class("mt-auto flex min-w-0 items-center justify-between gap-2")],
-				[
-					inlineCode(
-						h,
-						{
-							className: "min-w-0 truncate whitespace-nowrap text-2xs text-muted-foreground",
-						},
-						[template.summary],
-					),
-					chevron(h),
-				],
-			),
+			hstack(h, { gap: "2", align: "center", justify: "between", shrink: true, className: "mt-auto" }, [
+				inlineCode(
+					h,
+					{
+						className: "min-w-0 truncate whitespace-nowrap text-2xs text-muted-foreground",
+					},
+					[template.summary],
+				),
+				chevron(h),
+			]),
 		]),
 	),
 	cardButton(h, { onClick: Message.ClickedStartBlank(), className: TILE_LAYOUT }, [
 		tileHead(h, "SquarePlusIcon", "Start blank", "Build a rule from scratch."),
-		h.div(
-			[h.Class("mt-auto flex min-w-0 items-center justify-between gap-2")],
-			[
-				// One line, so the chevron sits on the same row as the siblings' chips.
-				h.p(
-					[h.Class("min-w-0 truncate font-prose text-muted-foreground text-xs")],
-					["Choose a signal"],
-				),
-				chevron(h),
-			],
-		),
+		hstack(h, { gap: "2", align: "center", justify: "between", shrink: true, className: "mt-auto" }, [
+			// One line, so the chevron sits on the same row as the siblings' chips.
+			h.p([h.Class("min-w-0 truncate font-prose text-muted-foreground text-xs")], ["Choose a signal"]),
+			chevron(h),
+		]),
 	]),
 	// Instructions, not a choice: a note under the tiles rather than another card.
 	h.p(

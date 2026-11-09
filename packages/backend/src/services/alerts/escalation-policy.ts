@@ -4,6 +4,7 @@ import type {
 	IssueEscalationPolicyRule,
 	IssueSeverity,
 } from "@maple/domain/http"
+import { Array as Arr, Option } from "effect"
 
 export type EscalationSkipReason =
 	| "policy_disabled"
@@ -48,8 +49,8 @@ export const evaluateEscalationPolicy = (input: EvaluateEscalationPolicyInput): 
 		return { outcome: "skip", destinationIds: [], skipReason: "policy_disabled" }
 	}
 
-	const rule = input.rules.find((candidate) => candidate.severity === input.severity)
-	if (!rule || rule.destinationIds.length === 0) {
+	const found = Arr.findFirst(input.rules, (candidate) => candidate.severity === input.severity)
+	if (Option.isNone(found) || found.value.destinationIds.length === 0) {
 		return {
 			outcome: "skip",
 			destinationIds: [],
@@ -57,6 +58,7 @@ export const evaluateEscalationPolicy = (input: EvaluateEscalationPolicyInput): 
 		}
 	}
 
+	const rule = found.value
 	if (
 		input.source === "ai" &&
 		rule.minConfidence !== undefined &&
@@ -69,7 +71,7 @@ export const evaluateEscalationPolicy = (input: EvaluateEscalationPolicyInput): 
 	const destinationIds =
 		input.enabledDestinationIds === undefined
 			? rule.destinationIds
-			: rule.destinationIds.filter((id) => input.enabledDestinationIds?.has(id))
+			: Arr.filter(rule.destinationIds, (id) => input.enabledDestinationIds?.has(id) === true)
 	if (destinationIds.length === 0) {
 		return { outcome: "skip", destinationIds: [], skipReason: "no_enabled_destinations" }
 	}

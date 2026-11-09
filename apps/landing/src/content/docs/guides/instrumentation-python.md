@@ -115,7 +115,7 @@ export OTEL_RESOURCE_ATTRIBUTES="deployment.environment.name=production,vcs.repo
 opentelemetry-instrument python app.py
 ```
 
-`OTEL_EXPORTER_OTLP_PROTOCOL` matters here: the distro defaults to gRPC, which needs a different exporter package. `OTEL_PYTHON_LOGGING_AUTO_INSTRUMENTATION_ENABLED` attaches the log exporter to the standard `logging` module. Use either this path or `telemetry.py`, not both.
+`OTEL_EXPORTER_OTLP_PROTOCOL` matters here: the distro defaults to gRPC, which needs `opentelemetry-exporter-otlp-proto-grpc` instead. Maple accepts both protocols on the same endpoint. `OTEL_PYTHON_LOGGING_AUTO_INSTRUMENTATION_ENABLED` attaches the log exporter to the standard `logging` module. Use either this path or `telemetry.py`, not both.
 
 ## Auto-instrumentation
 
@@ -251,7 +251,7 @@ Your service also appears on the **Services** page once its first spans arrive.
 ## Troubleshooting
 
 - **`401` responses.** The key is wrong, was copied from the other region, or the header is malformed. The header must be `Authorization: Bearer YOUR_INGEST_KEY`. In `OTEL_EXPORTER_OTLP_HEADERS` it is written `Authorization=Bearer YOUR_INGEST_KEY`. See [Ingest API status codes](/docs/reference/ingest#status-codes).
-- **Wrong protocol or path.** Maple accepts OTLP over HTTP. Use `opentelemetry-exporter-otlp-proto-http`, and set `OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf` when using `opentelemetry-instrument`. Endpoints set in code need the full signal path (`/v1/traces`); `OTEL_EXPORTER_OTLP_ENDPOINT` takes only the base URL.
+- **Wrong protocol or path.** The protocol must match the exporter package you installed: `http/protobuf` for `opentelemetry-exporter-otlp-proto-http`, `grpc` for `opentelemetry-exporter-otlp-proto-grpc`. Maple accepts both on port 443, so the endpoint has no port. HTTP endpoints set in code need the full signal path (`/v1/traces`); `OTEL_EXPORTER_OTLP_ENDPOINT` takes only the base URL.
 - **Network.** From the machine running the app, run `curl -i https://ingest.maple.dev/v1/traces -X POST`. Any HTTP status code means the host can reach Maple. A timeout or DNS error means a firewall or proxy is blocking outbound HTTPS.
 - **Nothing exported.** Import `telemetry` before the framework. With gunicorn or uWSGI worker processes, set up the SDK in each worker (for example in gunicorn's `post_fork` hook), because batch processor threads do not survive a fork. A short script can exit before its batch is sent; call `tracer_provider.shutdown()`, `logger_provider.shutdown()` and the meter provider's `shutdown()` before exit.
 

@@ -17,7 +17,7 @@ import {
 	ORDINARY_BLOCK_REFS,
 	skillFile,
 } from "./skill"
-import { Array as Arr, Record as Rec, String as Str } from "effect"
+import { Array as Arr, Option, Record as Rec, String as Str } from "effect"
 
 const context: AgentContext = {
 	agentId: "hunter-1",
@@ -41,9 +41,13 @@ const prompt = hunterPrompt(
 describe("skill blocks", () => {
 	it("gives each ordinary attack class exactly its own block", () => {
 		const texts = Arr.map(ORDINARY_BLOCK_REFS, (ref) => findBlock(ref)?.text ?? "")
-		expect(Arr.map(texts, (text) => text.match(/\(subagent_type/g)?.length)).toEqual(
-			Arr.map(texts, () => 1),
-		)
+		expect(
+			Arr.map(texts, (text) =>
+				Option.getOrUndefined(
+					Option.map(Str.match(/\(subagent_type/g)(text), (found) => found.length),
+				),
+			),
+		).toEqual(Arr.map(texts, () => 1))
 		expect(Arr.map(texts, (text) => Str.startsWith("**")(text))).toEqual(Arr.map(texts, () => true))
 	})
 
@@ -55,7 +59,9 @@ describe("skill blocks", () => {
 		for (const file of COMPANION_FILES) {
 			for (const section of COMPANION_REQUIRED_SECTIONS) {
 				expect(
-					findBlock(`${file}#${section}`)?.text.startsWith(`## ${section}`),
+					Option.exists(Option.fromUndefinedOr(findBlock(`${file}#${section}`)), (block) =>
+						Str.startsWith(`## ${section}`)(block.text),
+					),
 					`${file}#${section}`,
 				).toBe(true)
 			}
@@ -91,17 +97,18 @@ describe("hunterPrompt", () => {
 	})
 
 	it("orders the parts as the skill requires", () => {
+		const at = (search: string) => Option.getOrElse(Str.indexOf(search)(prompt), () => -1)
 		const positions = [
-			prompt.indexOf("Your goal is to find"),
-			prompt.indexOf("ARCHITECTURE-SUMMARY"),
-			prompt.indexOf(plannedUnit.coverage_id),
-			prompt.indexOf(findBlock("ATTACK-CLASSES.md#Access control")!.text),
-			prompt.indexOf("CLIENT-SIDE.md#Core discipline: no browser surface"),
-			prompt.indexOf(VERBATIM.coreHuntingMethod),
-			prompt.indexOf(VERBATIM.hunterPromotion),
-			prompt.indexOf(VERBATIM.coreValidationRules),
-			prompt.indexOf("peer-unit"),
-			prompt.indexOf(VERBATIM.structuredHunterResult),
+			at("Your goal is to find"),
+			at("ARCHITECTURE-SUMMARY"),
+			at(plannedUnit.coverage_id),
+			at(findBlock("ATTACK-CLASSES.md#Access control")!.text),
+			at("CLIENT-SIDE.md#Core discipline: no browser surface"),
+			at(VERBATIM.coreHuntingMethod),
+			at(VERBATIM.hunterPromotion),
+			at(VERBATIM.coreValidationRules),
+			at("peer-unit"),
+			at(VERBATIM.structuredHunterResult),
 		]
 		expect(Arr.every(positions, (p) => p >= 0)).toBe(true)
 		expect([...positions].sort((a, b) => a - b)).toEqual(positions)
@@ -120,7 +127,7 @@ describe("hunterPrompt", () => {
 			},
 			{ ...context, execution: { _tag: "Available", limits: "60s, 512 MiB" } },
 		)
-		const confirmedBranch = '"const": "confirmed"'
+		const confirmedBranch = '"const":"confirmed"'
 		for (const scaffold of ["agents/hunter-1/scratch", "agents/hunter-1/artifacts", confirmedBranch]) {
 			expect(available).toContain(scaffold)
 			expect(prompt).not.toContain(scaffold)

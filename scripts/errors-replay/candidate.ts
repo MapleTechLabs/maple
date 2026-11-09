@@ -14,15 +14,17 @@ export interface ReplayEvent {
 	readonly exceptionType: string
 	readonly statusMessage: string
 	readonly exceptionStacktrace: string
+	/** The raw `maple.fingerprint` value, when the sample carries one. */
+	readonly customFingerprint?: string | undefined
 }
 
 interface KeyInputs {
-	readonly fpFrames: string
-	readonly msgSignature: string
+	/** What the hash reads after OrgId and ServiceName. */
+	readonly hashInputs: ReadonlyArray<string>
 }
 
 const key = (event: ReplayEvent, inputs: KeyInputs): string =>
-	[event.serviceName, event.exceptionType, inputs.fpFrames, inputs.msgSignature].join("\u0000")
+	[event.serviceName, ...inputs.hashInputs].join("\u0000")
 
 /** The proposal. No proposal is open, so this is production. */
 const candidateInputs = (event: ReplayEvent): KeyInputs => computeFingerprintInputs(event)

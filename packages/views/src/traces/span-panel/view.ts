@@ -1,7 +1,6 @@
 import { warehouseDateTimeToIso } from "@maple/query-engine"
 import { getServiceColor } from "@maple/ui/lib/colors"
 import { formatDuration } from "@maple/ui/lib/format"
-import { formatTimestampInTimezone } from "@maple/web-data/lib/timezone-format"
 import { Option, Array as Arr } from "effect"
 import { AsyncData, Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
@@ -10,6 +9,7 @@ import { keyValue, keyValueList } from "@maple/views/ui/key-value"
 import { scrollArea } from "@maple/views/ui/scroll-area"
 import { skeleton } from "@maple/views/ui/skeleton"
 import { textLink } from "@maple/views/ui/text-link"
+import { timestamp } from "@maple/views/ui/timestamp"
 import { attributesSection } from "./attributes"
 import { copyableValue, selectableValue } from "./copy"
 import { errorSection } from "./error-section"
@@ -21,6 +21,8 @@ import { getCloudPlatform } from "./platform"
 import { cacheSummary, panelHeader, platformSummary, summaryStats } from "./view-header"
 import { spanLogs, tabsView } from "./view-tabs"
 import { sidePanelFrame } from "../../ui/side-panel"
+import { hstack } from "../../ui/stack"
+import { typography } from "../../ui/typography"
 
 export type ViewInputs = Readonly<{
 	timeZone: string
@@ -62,15 +64,23 @@ const positionBar = (h: H, model: Model, color: string): Html | null => {
 					),
 				],
 			),
-			h.div(
-				[h.Class("mt-1 flex justify-between text-3xs text-muted-foreground tabular-nums")],
+			hstack(
+				h,
+				{
+					align: "stretch",
+					justify: "between",
+					className: "mt-1 text-3xs text-muted-foreground tabular-nums",
+				},
 				[
 					offsetMs < 0
-						? h.span(
-								[
-									h.Class("text-severity-warn"),
-									h.Title("Starts before the trace root: the clocks disagree"),
-								],
+						? typography(
+								h,
+								{
+									tone: "warning",
+									attributes: [
+										h.Title("Starts before the trace root: the clocks disagree"),
+									],
+								},
 								["−", formatDuration(Math.abs(offsetMs)), " (clock skew)"],
 							)
 						: h.span([], ["+", formatDuration(offsetMs)]),
@@ -94,9 +104,11 @@ const spanCard = (h: H, model: Model, timeZone: string, color: string): Html => 
 					keyValueList(h, { className: "gap-1" }, [
 						keyValue(h, { label: "Start time", mono: true }, [
 							copyableValue(h, model, { id: "start-time", value: span.startTime }, [
-								formatTimestampInTimezone(span.startTime, {
+								timestamp(h, {
+									value: span.startTime,
 									timeZone,
 									withMilliseconds: true,
+									className: "cursor-pointer",
 								}),
 							]),
 						]),

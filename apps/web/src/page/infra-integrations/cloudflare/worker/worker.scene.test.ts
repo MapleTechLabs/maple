@@ -73,7 +73,7 @@ describe("cloudflare worker", () => {
 			{ scriptName: "edge-router", search: { account: "acct_b", timePreset: "1h" } },
 			context,
 		)
-		expect(moved.commands?.map(({ name, args }) => [name, args?.["mode"]])).toEqual([
+		expect(Arr.map(moved.commands ?? [], ({ name, args }) => [name, args?.["mode"]])).toEqual([
 			["ResolveCloudflareWorkerWindow", "Refresh"],
 		])
 	})
@@ -119,7 +119,7 @@ describe("cloudflare worker", () => {
 	})
 
 	test("the ingest poll advances the clock, so a silent connection turns stalled", () => {
-		const status = Schema.decodeUnknownSync(Status)({
+		const status = Schema.decodeSync(Status)({
 			connected: true,
 			accountId: "acc_a",
 			accountName: "Acme",

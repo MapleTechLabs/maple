@@ -9,8 +9,7 @@ import {
 } from "../primitives"
 
 // ---------------------------------------------------------------------------------------------
-// list_status_pages / get_status_page / create_status_page_incident / post_status_page_update /
-// resolve_status_page_incident / schedule_status_page_maintenance
+// get_status_page / post_status_page_update
 
 export const StatusPageRow = Schema.Struct({
 	/** REST id (`stp_…`). */
@@ -25,11 +24,6 @@ export const StatusPageRow = Schema.Struct({
 	/** ISO timestamp of the last publish; null before the first one. */
 	publishedAt: Schema.NullOr(Schema.String),
 	lastPublishError: Schema.NullOr(Schema.String),
-})
-
-export const ListStatusPagesOutput = Schema.Struct({
-	pages: Schema.Array(StatusPageRow),
-	total: Schema.Number,
 })
 
 export const StatusPageComponentRow = Schema.Struct({
@@ -79,14 +73,24 @@ export const StatusPageFreshnessRow = Schema.Struct({
 	publishPending: Schema.Boolean,
 })
 
-export const GetStatusPageOutput = Schema.Struct({
-	page: StatusPageRow,
+/** One page as its visitors see it. */
+export const StatusPageDetail = Schema.Struct({
+	...StatusPageRow.fields,
 	/** The banner: the worst component status. */
 	overallStatus: StatusPageComponentStatus,
 	components: Schema.Array(StatusPageComponentRow),
 	/** Open incidents and maintenance not yet completed, drafts included; newest first. */
 	activeIncidents: Schema.Array(StatusPageIncidentRow),
 	freshness: StatusPageFreshnessRow,
+})
+
+export const GetStatusPageOutput = Schema.Struct({
+	/** Every page of the org, when no `page` was asked for. */
+	pages: Schema.optionalKey(Schema.Array(StatusPageRow)),
+	/** The page asked for. */
+	page: Schema.optionalKey(StatusPageDetail),
+	/** With include_config: the document `PUT /v2/status_pages/{id}/config` and apply_status_page_config take. */
+	config: Schema.optionalKey(StatusPageConfig),
 })
 
 export const StatusPageIncidentMutationOutput = Schema.Struct({
@@ -97,13 +101,7 @@ export const StatusPageIncidentMutationOutput = Schema.Struct({
 })
 
 // ---------------------------------------------------------------------------------------------
-// get_status_page_config / apply_status_page_config
-
-export const GetStatusPageConfigOutput = Schema.Struct({
-	page: StatusPageRow,
-	/** The document `PUT /v2/status_pages/{id}/config` and apply_status_page_config take. */
-	config: StatusPageConfig,
-})
+// apply_status_page_config
 
 const StatusPageConfigChangesRow = Schema.Struct({
 	/** Page fields whose value changed. */

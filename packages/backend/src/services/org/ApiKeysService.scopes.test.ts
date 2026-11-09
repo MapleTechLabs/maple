@@ -30,8 +30,8 @@ const makeLayer = () => {
 	return ApiKeysService.layer.pipe(Layer.provide(Layer.mergeAll(envLive, testDb.layer)))
 }
 
-const ORG = Schema.decodeUnknownSync(OrgId)("org_test")
-const USER = Schema.decodeUnknownSync(UserId)("user_test")
+const ORG = Schema.decodeSync(OrgId)("org_test")
+const USER = Schema.decodeSync(UserId)("user_test")
 
 describe("ApiKeysService scopes", () => {
 	it.effect("persists scopes on create and resolves them by key", () =>

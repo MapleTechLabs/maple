@@ -1,4 +1,5 @@
 import { V2SourceUsageSummary } from "@maple/domain/http/v2"
+import * as Policy from "@maple/domain/policy"
 import { Schema } from "effect"
 import { KeyedSchema } from "@maple/views/data/keyed"
 import { LoadFailure } from "@maple/views/data/load-failure"
@@ -10,6 +11,8 @@ import { SourceList } from "../kit/data"
 export const Model = Schema.Struct({
 	/** `Date.now()` at render, read once on entry for the rows' relative times. */
 	nowMs: Schema.NullOr(Schema.Number),
+	/** The session's permissions: anyone reads sources, `sources:manage` adds and changes them. */
+	grants: Schema.Array(Policy.PermissionName),
 	/** `sourcesListAtom`. */
 	list: KeyedSchema(SourceList, LoadFailure),
 	/** Every source's volume over the last 24 hours; the list shows without it. */
@@ -23,3 +26,5 @@ export const Model = Schema.Struct({
 export const SOURCE_KINDS = ["all", "push", "integration"] as const
 export type SourceKind = (typeof SOURCE_KINDS)[number]
 export type Model = typeof Model.Type
+
+export const canManage = (model: Pick<Model, "grants">): boolean => Policy.has(model.grants, "sources:manage")

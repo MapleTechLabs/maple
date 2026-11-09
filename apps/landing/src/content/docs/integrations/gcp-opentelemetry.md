@@ -176,7 +176,7 @@ Limits of this setup:
 
 ## Instrumentation guides
 
-- Languages: [Node.js](/docs/guides/instrumentation-nodejs), [Next.js](/docs/guides/instrumentation-nextjs), [Python](/docs/guides/instrumentation-python), [Go](/docs/guides/instrumentation-go), [Rust](/docs/guides/instrumentation-rust), [Java](/docs/guides/instrumentation-java), [Kotlin](/docs/guides/instrumentation-kotlin), [C# / .NET](/docs/guides/instrumentation-csharp) and [Laravel](/docs/guides/instrumentation-laravel).
+- Languages: [Node.js](/docs/guides/instrumentation-nodejs), [Next.js](/docs/guides/instrumentation-nextjs), [Python](/docs/guides/instrumentation-python), [Go](/docs/guides/instrumentation-go), [Rust](/docs/guides/instrumentation-rust), [Java](/docs/guides/instrumentation-java), [Kotlin](/docs/guides/instrumentation-kotlin), [C# / .NET](/docs/guides/instrumentation-csharp), [Laravel](/docs/guides/instrumentation-laravel) and [Ruby](/docs/guides/instrumentation-ruby).
 - [Kubernetes infrastructure](/docs/infrastructure/kubernetes): the collector that receives OTLP from in-cluster services.
 - [Hosts](/docs/infrastructure/hosts): host metrics from a VM.
 - [Google Cloud](/docs/integrations/gcp): connect, verify and troubleshoot the connection.

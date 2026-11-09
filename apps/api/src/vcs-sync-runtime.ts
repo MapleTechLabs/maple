@@ -81,7 +81,7 @@ export const VcsScheduledLive = VcsScheduledSyncService.layer.pipe(Layer.provide
 // The cron program: enqueue a periodic refresh per processable installation.
 export const runScheduledSync = Effect.gen(function* () {
 	const scheduler = yield* VcsScheduledSyncService
-	const result = yield* scheduler.runScheduledSync()
+	const result = yield* scheduler.runScheduledSync
 	// Duplicate counts onto the tick span so cron-level traces are filterable without drilling into child spans.
 	yield* Effect.annotateCurrentSpan({
 		"vcs.scheduled.installations_total": result.installationsTotal,
@@ -218,7 +218,7 @@ export const processPlacedBatch = (messages: ReadonlyArray<PlacedMessage>, place
  * Final deliveries whose placed run failed with an unknown outcome: no redelivery is left, so the
  * terminal status is recorded and the message acked, as a failed final attempt inline would be.
  */
-export const recordExhaustedBatch = (messages: ReadonlyArray<Message<unknown>>) =>
+export const recordExhaustedBatch = (messages: ReadonlyArray<Message>) =>
 	Effect.gen(function* () {
 		const service = yield* VcsSyncService
 		yield* Effect.forEach(

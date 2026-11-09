@@ -143,7 +143,7 @@ const make = Effect.gen(function* () {
 		Effect.gen(function* () {
 			// Hour-floored, like the dashboard's, so a drifting client window keeps one cache entry.
 			const endMs = Math.floor(windowStartMs / HOUR_MS) * HOUR_MS
-			const request = yield* Schema.decodeUnknownEffect(ServiceHealthBaselineRequest)({
+			const request = yield* Schema.decodeEffect(ServiceHealthBaselineRequest)({
 				startTime: formatWarehouseDateTime(endMs - BASELINE_WINDOW_MS),
 				endTime: formatWarehouseDateTime(endMs),
 				environments: filters.deploymentEnvironment ? [filters.deploymentEnvironment] : undefined,
@@ -191,7 +191,7 @@ const make = Effect.gen(function* () {
 	) =>
 		Effect.gen(function* () {
 			// Built from a window the route already validated, so a decode failure is a defect.
-			const request = yield* Schema.decodeUnknownEffect(ServiceOperationsRequest)({
+			const request = yield* Schema.decodeEffect(ServiceOperationsRequest)({
 				serviceName: opts.serviceName,
 				startTime: window.startTime,
 				endTime: window.endTime,
@@ -218,7 +218,7 @@ const make = Effect.gen(function* () {
 		opts: { readonly environments?: ReadonlyArray<string> | undefined },
 		window: TelemetryWindow,
 	) {
-		const request = yield* Schema.decodeUnknownEffect(ServiceHealthSnapshotRequest)({
+		const request = yield* Schema.decodeEffect(ServiceHealthSnapshotRequest)({
 			startTime: window.startTime,
 			endTime: window.endTime,
 			environments: opts.environments,

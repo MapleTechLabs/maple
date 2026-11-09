@@ -106,7 +106,7 @@ export class McpConnectionsService extends Context.Service<McpConnectionsService
 					),
 				)
 				const live = latestPerFamily(rows, now)
-				const [first, ...rest] = [...new Set(live.map((row) => row.clientId))]
+				const [first, ...rest] = [...new Set(Arr.map(live, (row) => row.clientId))]
 				const clients =
 					first === undefined
 						? []
@@ -117,8 +117,10 @@ export class McpConnectionsService extends Context.Service<McpConnectionsService
 										.where(($) => [$.clientId.in_(first, ...rest)]),
 								),
 							)
-				const clientNames = new Map(clients.map((client) => [client.clientId, client.clientName]))
-				return live.flatMap((row) => Option.toArray(toConnection(row, clientNames)))
+				const clientNames = new Map(
+					Arr.map(clients, (client) => [client.clientId, client.clientName]),
+				)
+				return Arr.flatMap(live, (row) => Option.toArray(toConnection(row, clientNames)))
 			})
 
 			const list = Effect.fn("McpConnectionsService.list")(function* (

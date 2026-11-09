@@ -8,6 +8,7 @@ import {
 	IssueSeverity,
 	IssueSeveritySource,
 	WorkflowState,
+	MAX_ISSUE_MERGE_SOURCES,
 } from "../errors"
 import { SpanId, TraceId, UserId } from "../../primitives"
 import { AuditedRead } from "../audit-log"
@@ -38,6 +39,11 @@ export const V2ErrorIssue = Schema.Struct({
 	object: Schema.Literal("error_issue"),
 	kind: IssueKind,
 	fingerprint_hash: Schema.String,
+	fingerprint_hashes: Schema.optionalKey(
+		Schema.Array(Schema.String).annotate({
+			description: "Every fingerprint the issue owns, its own first: merged-in issues add theirs.",
+		}),
+	),
 	service_name: Schema.String,
 	exception_type: Schema.String,
 	exception_message: Schema.String,
@@ -65,6 +71,11 @@ export const V2ErrorIssue = Schema.Struct({
 	resolved_versions: Schema.Array(Schema.String),
 	snooze_until: Schema.NullOr(Timestamp),
 	archived_at: Schema.NullOr(Timestamp),
+	merged_into_issue_id: Schema.optionalKey(
+		Schema.NullOr(ErrorIssuePublicId).annotate({
+			description: "The issue this one was merged into. A merged issue is archived.",
+		}),
+	),
 	has_open_incident: Schema.Boolean,
 	// Activity rollups: comments include agent notes; closed-unmerged PRs are
 	// counted by neither PR field.
@@ -209,6 +220,8 @@ export const V2ErrorIssueTransitionParams = Schema.Struct({
 	note: Schema.optionalKey(Schema.String),
 	// Only meaningful with `to_state: "snoozed"`; `null` clears it.
 	snooze_until: Schema.optionalKey(Schema.NullOr(Timestamp)),
+	// The state the caller last read; when the issue has since moved, the request is a 409.
+	expected_state: Schema.optionalKey(WorkflowState),
 }).annotate({ identifier: "ErrorIssueTransitionParams", title: "Error issue transition parameters" })
 
 export const V2ErrorIssueClaimParams = Schema.Struct({
@@ -229,6 +242,14 @@ export const V2ErrorIssueSeverityParams = Schema.Struct({
 	severity: Schema.optionalKey(Schema.NullOr(IssueSeverity)),
 	note: Schema.optionalKey(Schema.String.check(Schema.isMaxLength(2_000))),
 }).annotate({ identifier: "ErrorIssueSeverityParams", title: "Error issue severity parameters" })
+
+export const V2ErrorIssueMergeParams = Schema.Struct({
+	// Archived into the issue in the path; their fingerprints land on it from now on.
+	source_issue_ids: Schema.Array(ErrorIssuePublicId).check(
+		Schema.isMinLength(1),
+		Schema.isMaxLength(MAX_ISSUE_MERGE_SOURCES),
+	),
+}).annotate({ identifier: "ErrorIssueMergeParams", title: "Error issue merge parameters" })
 
 export const V2ErrorIssueTransitionConflict = defineV2Error({
 	tag: "@maple/http/v2/ErrorIssueTransitionConflictError",
@@ -352,6 +373,35 @@ export class V2ErrorIssuesApiGroup extends HttpApiGroup.make("errorIssues")
 				summary: "Release an error issue",
 				description:
 					"Gives up the calling user's lease, optionally moving the issue to another state. Requires `error_issues:write`.",
+			}),
+		),
+	)
+	.add(
+		HttpApiEndpoint.post("merge", "/:id/merge", {
+			params: { id: ErrorIssuePublicId },
+			payload: V2ErrorIssueMergeParams,
+			success: V2ErrorIssue,
+			error: [errorIssueNotFound, errorPersistence, V2ParameterInvalid.schema],
+		}).annotateMerge(
+			OpenApi.annotations({
+				identifier: "mergeErrorIssues",
+				summary: "Merge error issues",
+				description:
+					"Folds the source issues into this one: their occurrences and fingerprints land here from now on, and each source is archived pointing at it. Returns the merged issue. Requires `error_issues:write`.",
+			}),
+		),
+	)
+	.add(
+		HttpApiEndpoint.post("unmerge", "/:id/unmerge", {
+			params: { id: ErrorIssuePublicId },
+			success: V2ErrorIssue,
+			error: [errorIssueNotFound, errorPersistence, V2ParameterInvalid.schema],
+		}).annotateMerge(
+			OpenApi.annotations({
+				identifier: "unmergeErrorIssue",
+				summary: "Unmerge an error issue",
+				description:
+					"Splits a merged issue back out: it leaves the archive and its fingerprints land on it again. Returns the restored issue. Requires `error_issues:write`.",
 			}),
 		),
 	)

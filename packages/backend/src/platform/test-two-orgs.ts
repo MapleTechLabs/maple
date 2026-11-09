@@ -8,10 +8,10 @@ import type { TestDb } from "./test-pglite"
  * rows for both, acts as one, and asserts the other's rows are untouched: the
  * predicate that scopes a query to its org is only proven by a second org.
  */
-export const ORG_A = Schema.decodeUnknownSync(OrgId)("org_tenant_a")
-export const ORG_B = Schema.decodeUnknownSync(OrgId)("org_tenant_b")
-export const USER_A = Schema.decodeUnknownSync(UserId)("user_tenant_a")
-export const USER_B = Schema.decodeUnknownSync(UserId)("user_tenant_b")
+export const ORG_A = Schema.decodeSync(OrgId)("org_tenant_a")
+export const ORG_B = Schema.decodeSync(OrgId)("org_tenant_b")
+export const USER_A = Schema.decodeSync(UserId)("user_tenant_a")
+export const USER_B = Schema.decodeSync(UserId)("user_tenant_b")
 
 const ColumnInfo = Schema.Struct({
 	column_name: Schema.String,
@@ -28,7 +28,7 @@ const CountRow = Schema.Struct({ n: Schema.Number })
 /** Raw SQL against the test instance; `rows` decodes what comes back, so nothing is assumed. */
 const query = <S extends Schema.Top>(db: TestDb, rows: S, sql: string, params: ReadonlyArray<unknown> = []) =>
 	Effect.promise(() => db.pglite.query(sql, [...params])).pipe(
-		Effect.flatMap((result) => Schema.decodeUnknownEffect(Schema.Array(rows))(result.rows)),
+		Effect.flatMap((result) => Schema.decodeEffect(Schema.Array(rows))(result.rows)),
 	)
 
 const NoRows = Schema.Struct({})

@@ -1,9 +1,10 @@
+import * as Policy from "@maple/domain/policy"
 import { BillingCustomer } from "@maple/domain/http"
 import { BillingAccount, BillingAccountOrg } from "@maple/domain/http"
 import { OrgId } from "@maple/domain"
 import { V2McpConnection } from "@maple/domain/http/v2"
 import { NetworkErrorBody } from "@maple/web-data/lib/error-messages"
-import { Result, Schema, Array as Arr } from "effect"
+import { Result, Schema, Array as Arr, Option } from "effect"
 import {
 	click,
 	expect as expectView,
@@ -59,7 +60,7 @@ const tools = [
 		destructive: false,
 	},
 ]
-const connection = Schema.decodeUnknownSync(V2McpConnection)({
+const connection = Schema.decodeSync(V2McpConnection)({
 	id: "mcpc_p12S8T8agEHUkYc825nMz6",
 	object: "mcp_connection",
 	client_name: "Claude Code",
@@ -75,7 +76,11 @@ const mcpLoaded = (catalog: typeof tools = tools): Model =>
 	Arr.reduce(
 		[
 			Message.CompletedFetchSession({
-				result: Result.succeed({ isAdmin: true, userId: null, hasAiAutoTriage: true }),
+				result: Result.succeed({
+					grants: Policy.allPermissions,
+					userId: null,
+					hasAiAutoTriage: true,
+				}),
 			}),
 			Message.CompletedFetchCustomer({
 				result: Result.succeed(new BillingCustomer({ id: "org_acme", subscriptions: [] })),
@@ -244,7 +249,7 @@ describe("settings page", () => {
 	})
 
 	test("checkout polls re-read only the page's customer; the confirmed plan refreshes the app's once", () => {
-		const subscribed = Schema.decodeUnknownSync(BillingCustomer)({
+		const subscribed = Schema.decodeSync(BillingCustomer)({
 			id: "org_acme",
 			subscriptions: [
 				{
@@ -257,7 +262,7 @@ describe("settings page", () => {
 		})
 		const returning: Model = {
 			...mcpLoaded(),
-			tab: { _tag: "Billing", model: Billing.init(true, true, true).model },
+			tab: { _tag: "Billing", model: Billing.init(Policy.allPermissions, true, true).model },
 		}
 		const polled = pageUpdate(
 			returning,
@@ -283,7 +288,7 @@ describe("settings page", () => {
 
 	// Billing is Clerk-only, so the tab left while it confirmed a checkout return is placed in `kept`.
 	test("a checkout return settles even when the Billing tab was left while it waited", () => {
-		const subscribed = Schema.decodeUnknownSync(BillingCustomer)({
+		const subscribed = Schema.decodeSync(BillingCustomer)({
 			id: "org_acme",
 			subscriptions: [
 				{
@@ -296,13 +301,15 @@ describe("settings page", () => {
 		})
 		const away: Model = {
 			...mcpLoaded(),
-			kept: [{ _tag: "Billing", model: Billing.init(true, true, true).model }],
+			kept: [{ _tag: "Billing", model: Billing.init(Policy.allPermissions, true, true).model }],
 		}
 		const settled = pageUpdate(
 			away,
 			Message.CompletedFetchCustomer({ result: Result.succeed(subscribed) }),
 		)
-		const billing = settled.model.kept.find((tab) => tab._tag === "Billing")
+		const billing = Option.getOrUndefined(
+			Arr.findFirst(settled.model.kept, (tab) => tab._tag === "Billing"),
+		)
 		expect(billing?._tag === "Billing" && billing.model.checkoutReturn).toBe("Idle")
 		expect(settled.commands).toContainEqual(
 			expect.objectContaining({
@@ -315,7 +322,11 @@ describe("settings page", () => {
 		const keys = Arr.reduce(
 			[
 				Message.CompletedFetchSession({
-					result: Result.succeed({ isAdmin: true, userId: null, hasAiAutoTriage: true }),
+					result: Result.succeed({
+						grants: Policy.allPermissions,
+						userId: null,
+						hasAiAutoTriage: true,
+					}),
 				}),
 				Message.CompletedFetchCustomer({
 					result: Result.succeed(new BillingCustomer({ id: "org_acme", subscriptions: [] })),
@@ -347,7 +358,11 @@ describe("settings page", () => {
 		const failed = Arr.reduce(
 			[
 				Message.CompletedFetchSession({
-					result: Result.succeed({ isAdmin: true, userId: null, hasAiAutoTriage: true }),
+					result: Result.succeed({
+						grants: Policy.allPermissions,
+						userId: null,
+						hasAiAutoTriage: true,
+					}),
 				}),
 				Message.FailedLoadApiKeys({ orgId: context.orgId }),
 			],
@@ -365,7 +380,7 @@ describe("settings page", () => {
 	test("usage that fails while the customer answers shows the account error with Try again, not skeletons", () => {
 		const billing: Model = {
 			...mcpLoaded(),
-			tab: { _tag: "Billing", model: Billing.init(true, false, true).model },
+			tab: { _tag: "Billing", model: Billing.init(Policy.allPermissions, false, true).model },
 		}
 		// The account settles first: an org that pays for itself.
 		const standalone = pageUpdate(
@@ -415,7 +430,11 @@ describe("settings page", () => {
 		const keys = Arr.reduce(
 			[
 				Message.CompletedFetchSession({
-					result: Result.succeed({ isAdmin: true, userId: null, hasAiAutoTriage: true }),
+					result: Result.succeed({
+						grants: Policy.allPermissions,
+						userId: null,
+						hasAiAutoTriage: true,
+					}),
 				}),
 				Message.FailedLoadApiKeys({ orgId: context.orgId }),
 			],
@@ -442,7 +461,10 @@ describe("settings page", () => {
 		const customer = new BillingCustomer({ id: "org_acme", subscriptions: [] })
 		const editing: Model = {
 			...mcpLoaded(),
-			tab: { _tag: "Billing", model: { ...Billing.init(true, false, true).model, isSavingCap: true } },
+			tab: {
+				_tag: "Billing",
+				model: { ...Billing.init(Policy.allPermissions, false, true).model, isSavingCap: true },
+			},
 		}
 		const saved = pageUpdate(
 			editing,
@@ -465,7 +487,7 @@ describe("settings page", () => {
 	test("a customer re-read without a toast still re-reads the app's customer", () => {
 		const billing: Model = {
 			...mcpLoaded(),
-			tab: { _tag: "Billing", model: Billing.init(true, false, true).model },
+			tab: { _tag: "Billing", model: Billing.init(Policy.allPermissions, false, true).model },
 		}
 		const retried = pageUpdate(
 			billing,

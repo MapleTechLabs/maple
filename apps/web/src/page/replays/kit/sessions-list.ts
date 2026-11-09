@@ -13,6 +13,7 @@ import { KEYS_ATTRIBUTE, keysValue, type VirtualWindow } from "./virtualize"
 import { hstack } from "@maple/views/ui/stack"
 import { spaced } from "@maple/views/ui/spaced"
 import { Array as Arr, String as Str } from "effect"
+import { typography } from "@maple/views/ui/typography"
 
 // The sessions list. Rows render in flow: the virtualizer's
 // absolute rows stack to the same offsets once every row is in view.
@@ -40,25 +41,32 @@ const quietRunRow = <M>(
 			attributes: [h.AriaExpanded(item.expanded)],
 		},
 		[
-			h.span(
-				[h.Class("shrink-0 whitespace-nowrap font-medium tabular-nums")],
-				[countLabel(item.count, "low-signal session")],
-			),
-			h.span(
-				[h.Class("flex min-w-0 items-center gap-3 overflow-hidden"), h.Title(item.summary)],
+			typography(h, { weight: "medium", numeric: true, className: "shrink-0 whitespace-nowrap" }, [
+				countLabel(item.count, "low-signal session"),
+			]),
+			hstack(
+				h,
+				{
+					gap: "3",
+					align: "center",
+					shrink: true,
+					as: "span",
+					className: "overflow-hidden",
+					attributes: [h.Title(item.summary)],
+				},
 				Arr.map(item.tiers, ({ tag, count }) =>
 					hstack(h, { gap: "1.5", as: "span", className: "shrink-0" }, [
 						statusDot(h, { tone: "custom", className: SESSION_TAG_DOTS[tag] }),
-						h.span([h.Class("tabular-nums")], [String(count)]),
+						typography(h, { numeric: true }, [String(count)]),
 						" ",
 						pluralize(count, Str.toLowerCase(SESSION_TAG_LABELS[tag])),
 					]),
 				),
 			),
-			h.span(
-				[h.Class("ml-auto flex shrink-0 items-center gap-1")],
-				[item.expanded ? "Hide" : "Show", disclosureChevron(h, item.expanded, 14)],
-			),
+			hstack(h, { gap: "1", align: "center", as: "span", className: "ml-auto shrink-0" }, [
+				item.expanded ? "Hide" : "Show",
+				disclosureChevron(h, item.expanded, 14),
+			]),
 		],
 	)
 
@@ -122,8 +130,13 @@ export const sessionsListSkeleton = <M>(h: HtmlBuilder<M>, rows = 8): Html =>
 		[
 			columnHeader(h),
 			...Array.from({ length: rows }, (_, i) =>
-				h.div(
-					[h.Class("flex h-[65px] items-center gap-3 border-b border-border px-3 @2xl:gap-4")],
+				hstack(
+					h,
+					{
+						gap: "3",
+						align: "center",
+						className: "h-[65px] border-b border-border px-3 @2xl:gap-4",
+					},
 					[
 						spaced(h, { space: "2", fill: true }, [
 							skeleton(h, cn("h-3.5", SKELETON_NAME_WIDTHS[i % SKELETON_NAME_WIDTHS.length])),

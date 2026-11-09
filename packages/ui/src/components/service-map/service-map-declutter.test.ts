@@ -8,7 +8,7 @@ import {
 	type ServiceEdgeData,
 	type ServiceNodeData,
 } from "./service-map-utils"
-import { Array as Arr } from "effect"
+import { Array as Arr, Option } from "effect"
 
 const node = (id: string, overrides: Partial<ServiceNodeData> = {}): Node<ServiceNodeData> => ({
 	id,
@@ -226,7 +226,9 @@ describe("applyDeclutter — namespace collapse", () => {
 	it("folds members into one aggregate with weighted metrics", () => {
 		const { nodes, edges } = graph()
 		const result = applyDeclutter(nodes, edges, state({ collapsedNamespaces: ["payments"] }))
-		const agg = result.nodes.find((n) => n.id === nsAggregateId("payments"))
+		const agg = Option.getOrUndefined(
+			Arr.findFirst(result.nodes, (n) => n.id === nsAggregateId("payments")),
+		)
 		expect(agg).toBeDefined()
 		expect(agg!.data.kind).toBe("namespaceAggregate")
 		expect(agg!.data.nsMemberCount).toBe(2)
@@ -245,7 +247,9 @@ describe("applyDeclutter — namespace collapse", () => {
 		const agg = nsAggregateId("payments")
 
 		// gateway→checkout and gateway→ledger merge into gateway→agg
-		const inbound = result.edges.find((e) => e.id === edgeIdFor("gateway", agg))
+		const inbound = Option.getOrUndefined(
+			Arr.findFirst(result.edges, (e) => e.id === edgeIdFor("gateway", agg)),
+		)
 		expect(inbound).toBeDefined()
 		expect(inbound!.data!.callCount).toBe(150)
 		expect(inbound!.data!.callsPerSecond).toBe(15)
@@ -279,8 +283,11 @@ describe("applyDeclutter — namespace collapse", () => {
 	it("collapsing both endpoints' namespaces links the two aggregates", () => {
 		const { nodes, edges } = graph()
 		const result = applyDeclutter(nodes, edges, state({ collapsedNamespaces: ["payments", "platform"] }))
-		const link = result.edges.find(
-			(e) => e.id === edgeIdFor(nsAggregateId("platform"), nsAggregateId("payments")),
+		const link = Option.getOrUndefined(
+			Arr.findFirst(
+				result.edges,
+				(e) => e.id === edgeIdFor(nsAggregateId("platform"), nsAggregateId("payments")),
+			),
 		)
 		expect(link).toBeDefined()
 		expect(link!.data!.callCount).toBe(150)

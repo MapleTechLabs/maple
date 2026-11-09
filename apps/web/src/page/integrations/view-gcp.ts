@@ -27,7 +27,7 @@ import { gcpDialogs } from "./view-gcp-dialogs"
 import { copyScriptButton, openCloudShellButton } from "./view-gcp-parts"
 import { usageBand } from "./view-gcp-workloads"
 import { hstack, vstack } from "@maple/views/ui/stack"
-import { Array as Arr } from "effect"
+import { Array as Arr, Order } from "effect"
 
 // `GcpIntegrationCard` and `GcpHeaderStatus`.
 
@@ -40,7 +40,7 @@ const cleanupPanels = (h: H, model: Model): ReadonlyArray<Html> =>
 			h.div(
 				[],
 				[
-					heading(h, { level: 3, variant: "subsection" }, [
+					heading(h, { level: 3, variant: "section" }, [
 						entry.label,
 						" ",
 						entry.reported ? "disconnected, may not be cleaned up" : "disconnected",
@@ -108,31 +108,29 @@ const byStatus = (
 			),
 			...dialogs,
 		])
-	const ordered = connectors.toSorted(
-		(a, b) =>
-			GCP_STATE_ORDER.indexOf(gcpConnectionState(a, model.nowMs)) -
-			GCP_STATE_ORDER.indexOf(gcpConnectionState(b, model.nowMs)),
+	const ordered = Arr.sort(
+		connectors,
+		Order.mapInput(Order.Number, (connector: (typeof connectors)[number]) =>
+			GCP_STATE_ORDER.indexOf(gcpConnectionState(connector, model.nowMs)),
+		),
 	)
 	const band = usageBand(h, model, connectors)
 	return vstack(h, { gap: "4" }, [
 		...cleanupPanels(h, model),
 		...(band === null ? [] : [band]),
-		h.section(
-			[h.Class("flex min-w-0 flex-col gap-3 font-display")],
-			[
-				sectionHeading(h, {
-					title: focusId === null ? "Connections" : "Connection",
-					count: connectors.length > 1 ? String(connectors.length) : undefined,
-					actions:
-						focusId === null
-							? linkButton(h, { size: "sm", variant: "outline", href: FLOW_HREF }, [
-									"Add another account",
-								])
-							: undefined,
-				}),
-				...Arr.map(ordered, (connector) => gcpConnection(h, model, connector, timeZone)),
-			],
-		),
+		vstack(h, { gap: "3", shrink: true, as: "section", className: "font-display" }, [
+			sectionHeading(h, {
+				title: focusId === null ? "Connections" : "Connection",
+				count: connectors.length > 1 ? String(connectors.length) : undefined,
+				actions:
+					focusId === null
+						? linkButton(h, { size: "sm", variant: "outline", href: FLOW_HREF }, [
+								"Add another account",
+							])
+						: undefined,
+			}),
+			...Arr.map(ordered, (connector) => gcpConnection(h, model, connector, timeZone)),
+		]),
 		...dialogs,
 	])
 }
@@ -164,8 +162,9 @@ export const gcpHeaderStatus = (h: H, model: Model): Html => {
 		(sum, connector) =>
 			sum + (connector.scope_type === "project" ? 1 : connector.discovered_project_count),
 	)
-	return h.div(
-		[h.Class("flex items-center gap-1.5 font-display text-ui/5 text-muted-foreground")],
+	return hstack(
+		h,
+		{ gap: "1.5", align: "center", className: "font-display text-ui/5 text-muted-foreground" },
 		[
 			statusDot(h, {
 				tone: HEALTH_TONE[worst === "attention" || worst === "healthy" ? worst : "pending"],

@@ -45,7 +45,7 @@ export const SessionAuthorizationLive = Layer.effect(
 					const request = yield* HttpServerRequest.HttpServerRequest
 
 					const token = getBearerToken(request.headers)
-					if (token?.startsWith(API_KEY_PREFIX)) {
+					if (token !== undefined && Str.startsWith(API_KEY_PREFIX)(token)) {
 						return yield* new CurrentTenant.ApiKeyNotAcceptedError({
 							message: "API keys cannot call the internal API; use the /v2 API instead",
 						})
@@ -85,7 +85,7 @@ export const RegionlessSessionAuthorizationLive = Layer.effect(
 			bearer: (httpEffect, options) =>
 				Effect.gen(function* () {
 					const request = yield* HttpServerRequest.HttpServerRequest
-					if (getBearerToken(request.headers)?.startsWith(API_KEY_PREFIX)) {
+					if (Str.startsWith(API_KEY_PREFIX)(getBearerToken(request.headers) ?? "")) {
 						return yield* new CurrentTenant.ApiKeyNotAcceptedError({
 							message: "API keys cannot call the internal API; use the /v2 API instead",
 						})

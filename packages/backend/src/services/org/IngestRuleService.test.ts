@@ -11,8 +11,8 @@ afterEach(() => cleanupTestDbs(createdDbs))
 const makeLayer = (testDb: TestDb = createTestDb(createdDbs)) =>
 	Layer.effect(IngestRuleService, IngestRuleService.make).pipe(Layer.provide(testDb.layer))
 
-const ORG = Schema.decodeUnknownSync(OrgId)("org_rules")
-const OTHER_ORG = Schema.decodeUnknownSync(OrgId)("org_other")
+const ORG = Schema.decodeSync(OrgId)("org_rules")
+const OTHER_ORG = Schema.decodeSync(OrgId)("org_other")
 
 const dropDebug: IngestRuleSpec = {
 	signals: ["logs"],
@@ -112,7 +112,7 @@ describe("IngestRuleService", () => {
 				"@maple/http/errors/IngestRuleValidationError",
 				"@maple/http/errors/IngestRuleValidationError",
 			])
-			expect((yield* service.list(ORG)).map((rule) => rule.name)).toEqual(["Second", "First"])
+			expect(Arr.map(yield* service.list(ORG), (rule) => rule.name)).toEqual(["Second", "First"])
 		}).pipe(Effect.provide(makeLayer())),
 	)
 
@@ -135,6 +135,68 @@ describe("IngestRuleService", () => {
 			expect(new Set(Arr.map(rules, (rule) => rule.position)).size).toBe(50)
 		}).pipe(Effect.provide(makeLayer())),
 	)
+
+	it.effect("refuses a create or update that takes the org's regexes past the budget together", () =>
+		Effect.gen(function* () {
+			const service = yield* IngestRuleService
+			// Each rule fits alone; the gateway compiles them all at once.
+			const heavy = (count: number): IngestRuleSpec => ({
+				signals: ["logs"],
+				conditions: [],
+				action: {
+					_tag: "redact",
+					keys: [],
+					detectors: [],
+					patterns: Array.from({ length: count }, () => "\\d{170}"),
+					scopes: ["attributes"],
+					method: "mask",
+				},
+			})
+			const first = yield* service.create(ORG, { name: "Heavy 1", spec: heavy(5) })
+			const refused = yield* service.create(ORG, { name: "Heavy 2", spec: heavy(5) }).pipe(Effect.flip)
+			expect(refused._tag).toBe("@maple/http/errors/IngestRuleValidationError")
+			expect(refused.message).toMatch(
+				/^the regexes across this organization's ingest rules are too large/,
+			)
+
+			const second = yield* service.create(ORG, { name: "Light", spec: heavy(4) })
+			const grown = yield* service.update(ORG, second.id, { spec: heavy(5) }).pipe(Effect.flip)
+			expect(grown._tag).toBe("@maple/http/errors/IngestRuleValidationError")
+			// The rule's own old spec does not count against its new one.
+			yield* service.update(ORG, first.id, { spec: heavy(5), name: "Heavy 1b" })
+			yield* service.create(OTHER_ORG, { name: "Other", spec: heavy(5) })
+			expect(Arr.map(yield* service.list(ORG), (rule) => rule.name)).toEqual(["Heavy 1b", "Light"])
+		}).pipe(Effect.provide(makeLayer())),
+	)
+
+	it.effect("lets an org stored past the regex budget shrink a rule but not grow one", () => {
+		const testDb = createTestDb(createdDbs)
+		const patterns = (count: number): IngestRuleSpec => ({
+			...maskEmails,
+			action: {
+				...maskEmails.action,
+				detectors: [],
+				patterns: Array.from({ length: count }, () => "\\d{170}"),
+			},
+		})
+		return Effect.gen(function* () {
+			const service = yield* IngestRuleService
+			const first = yield* service.create(ORG, { name: "First", spec: patterns(5) })
+			const second = yield* service.create(ORG, { name: "Second", spec: patterns(4) })
+			// Rows stored before the budget existed: 10 heavy patterns over two rules.
+			yield* Effect.promise(() =>
+				executeSql(testDb, "UPDATE org_ingest_rules SET spec_json = $1 WHERE id = $2", [
+					JSON.stringify(patterns(5)),
+					second.id,
+				]),
+			)
+			const grown = yield* service.update(ORG, first.id, { spec: patterns(6) }).pipe(Effect.flip)
+			expect(grown._tag).toBe("@maple/http/errors/IngestRuleValidationError")
+			yield* service.update(ORG, first.id, { spec: patterns(5), name: "First, unchanged" })
+			const shrunk = yield* service.update(ORG, second.id, { spec: patterns(4) })
+			expect(shrunk.spec).toEqual(patterns(4))
+		}).pipe(Effect.provide(makeLayer(testDb)))
+	})
 
 	it.effect("cannot read, update or delete another org's rule", () =>
 		Effect.gen(function* () {

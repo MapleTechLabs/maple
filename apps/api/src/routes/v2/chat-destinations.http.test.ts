@@ -49,9 +49,9 @@ const createdDbs: TestDb[] = []
 afterEach(() => cleanupTestDbs(createdDbs))
 
 const API_HOST = "api.maple.test"
-const WORKSPACE = Schema.decodeUnknownSync(ChatWorkspaceId)("11111111-1111-4111-8111-111111111111")
+const WORKSPACE = Schema.decodeSync(ChatWorkspaceId)("11111111-1111-4111-8111-111111111111")
 const WORKSPACE_PUBLIC_ID = Schema.encodeSync(ChatWorkspacePublicId)(WORKSPACE)
-const TESTCHAT = Schema.decodeUnknownSync(ChatConnectorId)("testchat")
+const TESTCHAT = Schema.decodeSync(ChatConnectorId)("testchat")
 
 const testConfig = () =>
 	ConfigProvider.layer(
@@ -91,9 +91,7 @@ const chatLayer = (listDestinations: ChatWorkspaceServiceApi["listDestinations"]
 
 const destinationDocument = (channelLabel: string) =>
 	new AlertDestinationDocument({
-		id: Schema.decodeUnknownSync(AlertDestinationDocument.fields.id)(
-			"7c6b5a49-3821-4e0f-9d8c-7b6a59483726",
-		),
+		id: Schema.decodeSync(AlertDestinationDocument.fields.id)("7c6b5a49-3821-4e0f-9d8c-7b6a59483726"),
 		name: "Incidents",
 		type: "chat",
 		enabled: true,
@@ -104,12 +102,8 @@ const destinationDocument = (channelLabel: string) =>
 		chatWorkspaceId: WORKSPACE,
 		lastTestedAt: null,
 		lastTestError: null,
-		createdAt: Schema.decodeUnknownSync(AlertDestinationDocument.fields.createdAt)(
-			"2026-09-24T00:00:00.000Z",
-		),
-		updatedAt: Schema.decodeUnknownSync(AlertDestinationDocument.fields.updatedAt)(
-			"2026-09-24T00:00:00.000Z",
-		),
+		createdAt: Schema.decodeSync(AlertDestinationDocument.fields.createdAt)("2026-09-24T00:00:00.000Z"),
+		updatedAt: Schema.decodeSync(AlertDestinationDocument.fields.updatedAt)("2026-09-24T00:00:00.000Z"),
 	})
 
 interface Recorded {
@@ -168,8 +162,8 @@ const makeHarness = (
 	)
 	const { handler, dispose: disposeHandler } = HttpRouter.toWebHandler(routes, { disableLogger: true })
 	const runtime = ManagedRuntime.make(servicesLive)
-	const ORG = Schema.decodeUnknownSync(OrgId)("org_chat_dest_e2e")
-	const USER = Schema.decodeUnknownSync(UserId)("user_chat_dest_e2e")
+	const ORG = Schema.decodeSync(OrgId)("org_chat_dest_e2e")
+	const USER = Schema.decodeSync(UserId)("user_chat_dest_e2e")
 
 	const key = (metadataJson?: Record<string, unknown>) =>
 		runtime.runPromise(

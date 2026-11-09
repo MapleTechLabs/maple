@@ -34,6 +34,7 @@ import {
 } from "./command"
 import { Message, type Model, type RequestMode } from "./model"
 import { type QueryPeek, resolveQueryPeek, statementSpansInput } from "./peek"
+import { Option, Array as Arr } from "effect"
 
 type Return = PageReturn<Model, Message>
 type Search = Model["search"]
@@ -217,7 +218,7 @@ const requestAll = (model: Model, context: PageContext, mode: Keyed.RequestMode)
 }
 
 const serviceOf = (service: string): GcpInfraServiceId | undefined =>
-	GCP_INFRA_SERVICE_IDS.find((candidate) => candidate === service)
+	Option.getOrUndefined(Arr.findFirst(GCP_INFRA_SERVICE_IDS, (candidate) => candidate === service))
 
 export const init = (route: Route, context: PageContext): Return => {
 	const service = serviceOf(route.service)

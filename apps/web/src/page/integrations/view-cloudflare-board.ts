@@ -9,6 +9,7 @@ import { AppRoute, hrefOf } from "../../route"
 import { button } from "@maple/views/ui/button"
 import { emptyMessage } from "@maple/views/ui/empty"
 import { panel, panelHeader } from "@maple/views/ui/panel"
+import { stripClass } from "@maple/views/ui/rule"
 import { searchInput } from "@maple/views/ui/search-input"
 import { statusDot } from "@maple/views/ui/status-dot"
 import { countChipItem } from "./kit/count-chip"
@@ -29,11 +30,13 @@ import {
 	zoneStatus,
 } from "./cloudflare-derive"
 import { Message } from "./message"
-import type { Model } from "./model"
-import { typographyClass } from "@maple/views/ui/typography"
-import { hstack } from "@maple/views/ui/stack"
+import { canManage, type Model } from "./model"
+import { typography, typographyClass } from "@maple/views/ui/typography"
+import { hstack, vstack } from "@maple/views/ui/stack"
 import { tooltipTrigger } from "@maple/views/ui/tooltip-host"
-import { Array as Arr, String as Str } from "effect"
+import { relativeTime } from "../kit/relative-time"
+import { Array as Arr, String as Str, Order, Ordering } from "effect"
+import { textLink } from "@maple/views/ui/text-link"
 
 // `CloudflareZoneBoard`, `ResourceRow`, `CountChip` and `CloudflareWorkersCard`.
 
@@ -41,31 +44,35 @@ type H = HtmlBuilder<Message>
 
 const CHART_MODEL = Chart.init()
 
-const detailView = (h: H, detail: ZoneDetail): ReadonlyArray<Html | string> =>
+type Clock = Readonly<{ nowMs: number; timeZone: string }>
+
+const detailView = (h: H, detail: ZoneDetail, clock: Clock): ReadonlyArray<Html | string> =>
 	detail._tag === "Text"
 		? [detail.text]
-		: [
-				detail.summary === detail.raw
-					? h.span([h.Class("line-clamp-2 break-words")], [detail.raw])
-					: h.span(
-							[h.Class("line-clamp-2 break-words")],
-							[
-								detail.summary,
-								" ",
-								h.span(
-									[
-										h.DataAttribute("base-ui-tooltip-trigger", ""),
-										h.Class(
-											"cursor-help font-medium underline decoration-dotted underline-offset-2",
-										),
-										h.DataAttribute("slot", "tooltip-trigger"),
-										...tooltipTrigger(h, detail.raw),
-									],
-									["Details"],
-								),
-							],
-						),
-			]
+		: detail._tag === "Since"
+			? [relativeTime(h, { value: detail.at, ...clock, prefix: detail.text })]
+			: [
+					detail.summary === detail.raw
+						? h.span([h.Class("line-clamp-2 break-words")], [detail.raw])
+						: h.span(
+								[h.Class("line-clamp-2 break-words")],
+								[
+									detail.summary,
+									" ",
+									h.span(
+										[
+											h.DataAttribute("base-ui-tooltip-trigger", ""),
+											h.Class(
+												"cursor-help font-medium underline decoration-dotted underline-offset-2",
+											),
+											h.DataAttribute("slot", "tooltip-trigger"),
+											...tooltipTrigger(h, detail.raw),
+										],
+										["Details"],
+									),
+								],
+							),
+				]
 
 const sparkline = (h: H, model: Model, name: string, usage: RowUsage): Html =>
 	model.cloudflareCard.chartRuntime._tag !== "Ready" || usage.points.length < 2
@@ -98,10 +105,11 @@ const resourceRow = (
 	status: ZoneStatusInfo,
 	usage: RowUsage | null,
 	zoneLink: boolean,
+	clock: Clock,
 ): Html => {
 	const hasData = rowHasData(usage)
 	const body = [
-		statusDot(h, { tone: status.tone, className: "mt-[5px]" }),
+		statusDot(h, { tone: status.tone, className: "mt-[calc(--spacing(1)+1px)]" }),
 		h.div(
 			[h.Class("min-w-0 flex-1")],
 			[
@@ -114,27 +122,23 @@ const resourceRow = (
 				}),
 				h.div(
 					[h.Class(cn("mt-0.5 text-2xs @lg:hidden", status.detailClass))],
-					detailView(h, status.detail),
+					detailView(h, status.detail, clock),
 				),
 			],
 		),
 		h.div(
 			[h.Class(cn("hidden w-48 min-w-0 shrink-0 self-center text-2xs @lg:block", status.detailClass))],
-			detailView(h, status.detail),
+			detailView(h, status.detail, clock),
 		),
-		h.div(
-			[h.Class("flex w-32 shrink-0 items-center justify-end gap-2.5 self-center")],
-			[
-				...(hasData && usage !== null ? [sparkline(h, model, name, usage)] : []),
-				h.span(
-					[h.Class("w-12 text-right text-xs font-medium tabular-nums text-foreground")],
-					[hasData && usage !== null ? formatNumber(usage.totalRequests) : EMPTY_VALUE],
-				),
-			],
-		),
+		hstack(h, { gap: "2.5", align: "center", justify: "end", className: "w-32 shrink-0 self-center" }, [
+			...(hasData && usage !== null ? [sparkline(h, model, name, usage)] : []),
+			h.span(
+				[h.Class("w-12 text-right text-xs font-medium tabular-nums text-foreground")],
+				[hasData && usage !== null ? formatNumber(usage.totalRequests) : EMPTY_VALUE],
+			),
+		]),
 	]
-	const rowClass =
-		"group flex items-start gap-3 border-b border-border-subtle px-3 py-2 transition-colors last:border-0"
+	const rowClass = stripClass("row", "group flex items-start gap-3")
 	return zoneLink
 		? h.a(
 				[
@@ -158,15 +162,15 @@ interface Decorated {
 }
 
 const sortZones = (zones: ReadonlyArray<Decorated>, key: ZoneSortKey, dir: "asc" | "desc") =>
-	zones.toSorted((a, b) => {
+	Arr.sort(zones, (a: Decorated, b: Decorated) => {
 		const raw =
 			key === "name"
 				? Str.localeCompare(b.entry.name)(a.entry.name)
 				: key === "requests"
-					? a.requests - b.requests
-					: STATUS_META[a.status.kind].order - STATUS_META[b.status.kind].order
-		const primary = dir === "asc" ? raw : -raw
-		return primary !== 0 ? primary : b.requests - a.requests
+					? Order.Number(a.requests, b.requests)
+					: Order.Number(STATUS_META[a.status.kind].order, STATUS_META[b.status.kind].order)
+		const primary = dir === "asc" ? raw : Ordering.reverse(raw)
+		return primary !== 0 ? primary : Order.Number(b.requests, a.requests)
 	})
 
 export const zoneBoard = (
@@ -176,11 +180,12 @@ export const zoneBoard = (
 	usageLoaded: boolean,
 	banner: Html | null,
 	className: string,
+	timeZone: string,
 ): Html => {
 	const card = model.cloudflareCard
 	const decorated = Arr.map(zones, (entry) => ({
 		entry,
-		status: zoneStatus(entry, usageLoaded, model.nowMs),
+		status: zoneStatus(entry, usageLoaded),
 		requests: entry.usage?.totalRequests ?? 0,
 	}))
 	const counts = (kind: ZoneStatusKind) => Arr.filter(decorated, (zone) => zone.status.kind === kind).length
@@ -248,50 +253,47 @@ export const zoneBoard = (
 					{
 						variant: "outline",
 						size: "xs",
-						isDisabled: !model.isAdmin,
+						isDisabled: !canManage(model),
 						attributes: [
 							h.OnClick(Message.ClickedManageZones()),
-							...(model.isAdmin ? [] : [h.Title("Only org admins can change zones")]),
+							...(canManage(model)
+								? []
+								: [h.Title("Only org admins and engineers can change zones")]),
 						],
 					},
 					["Manage zones"],
 				),
 			],
 		}),
-		...(banner === null ? [] : [h.div([h.Class("px-3 pt-3")], [banner])]),
-		h.div(
-			[h.Class("flex flex-col")],
-			[
-				h.div(
-					[h.Class("flex items-center gap-3 border-b border-border-subtle px-3 py-2")],
-					[
-						h.span([h.AriaHidden(true), h.Class("size-1.5 shrink-0")]),
-						head("Zone", "name", "min-w-0 flex-1", {}),
-						head("Status", "status", "w-48", { hidden: "hidden @lg:flex" }),
-						head("24h requests", "requests", "w-32", { align: "right" }),
-					],
-				),
-				sorted.length === 0
-					? emptyMessage(h, { className: "px-3 py-10" }, [
-							query !== ""
-								? `No zones match "${Str.trim(card.zoneSearch)}"`
-								: "No zones in this state",
-						])
-					: h.div(
-							[h.Class("max-h-[22rem] overflow-y-auto overscroll-contain")],
-							Arr.map(sorted, (zone) =>
-								resourceRow(
-									h,
-									model,
-									zone.entry.name,
-									zone.status,
-									zone.entry.usage,
-									zone.requests > 0,
-								),
+		...(banner === null ? [] : [h.div([h.Class("px-4 pt-3")], [banner])]),
+		vstack(h, {}, [
+			hstack(h, { gap: "3", align: "center", className: "border-b border-border-subtle px-4 py-2" }, [
+				h.span([h.AriaHidden(true), h.Class("size-1.5 shrink-0")]),
+				head("Zone", "name", "min-w-0 flex-1", {}),
+				head("Status", "status", "w-48", { hidden: "hidden @lg:flex" }),
+				head("24h requests", "requests", "w-32", { align: "right" }),
+			]),
+			sorted.length === 0
+				? emptyMessage(h, { className: "px-4 py-10" }, [
+						query !== ""
+							? `No zones match "${Str.trim(card.zoneSearch)}"`
+							: "No zones in this state",
+					])
+				: h.div(
+						[h.Class("max-h-[22rem] overflow-y-auto overscroll-contain")],
+						Arr.map(sorted, (zone) =>
+							resourceRow(
+								h,
+								model,
+								zone.entry.name,
+								zone.status,
+								zone.entry.usage,
+								zone.requests > 0,
+								{ nowMs: model.nowMs, timeZone },
 							),
 						),
-			],
-		),
+					),
+		]),
 	])
 }
 
@@ -303,20 +305,23 @@ export const workersCard = (
 	workerEntry: ZoneEntry,
 	workerServices: ReadonlyArray<CloudflareServiceUsage>,
 	usageLoaded: boolean,
+	timeZone: string,
 ): Html => {
-	const aggregate = zoneStatus(workerEntry, usageLoaded, model.nowMs)
-	const scripts = workerServices.toSorted((a, b) => b.totalRequests - a.totalRequests)
+	const aggregate = zoneStatus(workerEntry, usageLoaded)
+	const clock = { nowMs: model.nowMs, timeZone }
+	const scripts = Arr.sort(
+		workerServices,
+		Order.flip(Order.mapInput(Order.Number, (service: CloudflareServiceUsage) => service.totalRequests)),
+	)
 	const expanded = model.cloudflareCard.workersExpanded
 	const visible = expanded ? scripts : scripts.slice(0, WORKERS_COLLAPSED_COUNT)
 	return panel(h, { className: "h-fit border-border-subtle lg:w-72 lg:shrink-0 xl:w-80" }, [
 		panelHeader(h, {
 			className: "border-border-subtle py-3",
 			children: [heading(h, { level: 3, variant: "section" }, ["Workers"])],
-			action: h.a(
-				[
-					h.Href(hrefOf(AppRoute.ServiceMap({ search: {} }))),
-					h.Class("text-xs text-muted-foreground hover:text-foreground active:text-foreground"),
-				],
+			action: textLink(
+				h,
+				{ href: hrefOf(AppRoute.ServiceMap({ search: {} })), tone: "muted", className: "text-xs" },
 				["View on map →"],
 			),
 		}),
@@ -328,80 +333,79 @@ export const workersCard = (
 								cn("border-b border-border-subtle px-4 py-2 text-2xs", aggregate.detailClass),
 							),
 						],
-						detailView(h, aggregate.detail),
+						detailView(h, aggregate.detail, clock),
 					),
 				]
 			: []),
 		scripts.length === 0
-			? h.div(
-					[h.Class("flex items-center gap-2.5 px-4 py-3")],
-					[
-						statusDot(h, { tone: aggregate.tone }),
-						h.span(
-							[h.Class(cn("text-2xs", aggregate.detailClass))],
-							detailView(h, aggregate.detail),
-						),
-					],
-				)
-			: h.div(
-					[h.Class("flex flex-col px-4 pb-2 pt-1")],
-					[
-						...Arr.map(visible, (service) =>
-							h.div(
-								[
-									h.Class(
-										"flex items-center justify-between gap-3 border-b border-border-subtle py-2.5 last:border-0",
-									),
-								],
-								[
-									hstack(h, { gap: "2.5", shrink: true, as: "span" }, [
-										statusDot(h, {
-											tone: service.totalRequests > 0 ? "ok" : "neutral",
-										}),
-										truncatedText(h, {
-											text: service.displayName,
-											className: typographyClass({
-												size: "xs",
-												tone: "foreground",
-												weight: "medium",
-											}),
-										}),
-									]),
-									h.span(
-										[
-											h.Class(
-												"shrink-0 text-xs font-medium tabular-nums text-foreground",
-											),
-										],
-										[
-											service.totalRequests > 0
-												? formatNumber(service.totalRequests)
-												: EMPTY_VALUE,
-										],
-									),
-								],
-							),
-						),
-						...(scripts.length > WORKERS_COLLAPSED_COUNT
-							? [
-									button(
-										h,
-										{
-											variant: "link",
+			? hstack(h, { gap: "2.5", align: "center", className: "px-4 py-3" }, [
+					statusDot(h, { tone: aggregate.tone }),
+					h.span(
+						[h.Class(cn("text-2xs", aggregate.detailClass))],
+						detailView(h, aggregate.detail, clock),
+					),
+				])
+			: vstack(h, { className: "px-4 pb-2 pt-1" }, [
+					...Arr.map(visible, (service) =>
+						hstack(
+							h,
+							{
+								gap: "3",
+								align: "center",
+								justify: "between",
+								className: "border-b border-border-subtle py-2.5 last:border-0",
+							},
+							[
+								hstack(h, { gap: "2.5", shrink: true, as: "span" }, [
+									statusDot(h, {
+										tone: service.totalRequests > 0 ? "ok" : "neutral",
+									}),
+									truncatedText(h, {
+										text: service.displayName,
+										className: typographyClass({
 											size: "xs",
-											className:
-												"h-auto justify-start p-0 pb-1 pt-2.5 text-2xs font-normal text-muted-foreground hover:text-foreground active:text-foreground",
-											attributes: [h.OnClick(Message.ClickedWorkersExpand())],
-										},
-										[
-											expanded
-												? "Show fewer"
-												: `Showing ${visible.length} of ${scripts.length} · View all →`,
-										],
-									),
-								]
-							: []),
-					],
-				),
+											tone: "foreground",
+											weight: "medium",
+										}),
+									}),
+								]),
+								typography(
+									h,
+									{
+										size: "xs",
+										tone: "foreground",
+										weight: "medium",
+										numeric: true,
+										className: "shrink-0",
+									},
+									[
+										service.totalRequests > 0
+											? formatNumber(service.totalRequests)
+											: EMPTY_VALUE,
+									],
+								),
+							],
+						),
+					),
+					...(scripts.length > WORKERS_COLLAPSED_COUNT
+						? [
+								button(
+									h,
+									{
+										variant: "link",
+										size: "xs",
+										className:
+											"h-auto justify-start p-0 pb-1 pt-2.5 text-2xs font-normal text-muted-foreground hover:text-foreground active:text-foreground",
+										attributes: [h.OnClick(Message.ClickedWorkersExpand())],
+									},
+									[
+										expanded
+											? "Show fewer"
+											: `Showing ${visible.length} of ${scripts.length} · View all →`,
+									],
+								),
+							]
+						: []),
+				]),
 	])
 }

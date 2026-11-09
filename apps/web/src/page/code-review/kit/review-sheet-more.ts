@@ -1,7 +1,6 @@
 import type { CodeReviewDetail, PrReviewPostMerge, PrReviewTelemetry } from "@maple/domain/http"
 import { outcomeOf } from "../../../components/code-review/code-review-format"
 import { countLabel, formatDuration, formatErrorRate, formatNumber } from "@maple/ui/lib/format"
-import { formatRelativeFrom } from "@maple/ui/lib/time-format"
 import { TONE_TEXT } from "@maple/ui/lib/tone"
 import { cn } from "@maple/ui/lib/utils"
 import { DateTime, Array as Arr } from "effect"
@@ -16,7 +15,7 @@ import { type ReviewSheet, SheetMessage } from "./review-sheet"
 import { CI_RUNS_SHOWN } from "./review-sheet-update"
 import { emptyMessage } from "@maple/views/ui/empty"
 import { typography, typographyClass } from "@maple/views/ui/typography"
-import { vstack } from "@maple/views/ui/stack"
+import { hstack, vstack } from "@maple/views/ui/stack"
 
 // `ProductionSection`, `PostMergeSection`, `PullRequestCiRuns` and the review history.
 
@@ -36,32 +35,29 @@ export const productionSection = (h: H, telemetry: PrReviewTelemetry): ReadonlyA
 							h,
 							{ gap: "1.5", as: "ul", className: typographyClass({ size: "sm" }) },
 							Arr.map(breaks, (item) =>
-								h.li(
-									[...(item.dismissed ? [h.Class("text-muted-foreground")] : [])],
-									[
-										h.span(
-											[
-												h.Class(
-													cn(
-														"font-medium",
-														item.dismissed ? undefined : TONE_TEXT.crit,
-													),
+								h.li(item.dismissed ? [h.Class("text-muted-foreground")] : [], [
+									h.span(
+										[
+											h.Class(
+												cn(
+													"font-medium",
+													item.dismissed ? undefined : TONE_TEXT.crit,
 												),
-											],
-											[item.dismissed ? "Still emitted elsewhere" : "Stops arriving"],
-										),
-										" ",
-										h.code(
-											[h.Class(typographyClass({ size: "xs", mono: true }))],
-											[item.name],
-										),
-										" · ",
-										Arr.join(
-											Arr.map(item.references, (ref) => `${ref.kind} “${ref.name}”`),
-											", ",
-										),
-									],
-								),
+											),
+										],
+										[item.dismissed ? "Still emitted elsewhere" : "Stops arriving"],
+									),
+									" ",
+									h.code(
+										[h.Class(typographyClass({ size: "xs", mono: true }))],
+										[item.name],
+									),
+									" · ",
+									Arr.join(
+										Arr.map(item.references, (ref) => `${ref.kind} “${ref.name}”`),
+										", ",
+									),
+								]),
 							),
 						),
 					]),
@@ -94,7 +90,12 @@ export const productionSection = (h: H, telemetry: PrReviewTelemetry): ReadonlyA
 }
 
 /** How the operations the change touched behaved the hour before and after it deployed. */
-export const postMergeSection = (h: H, postMerge: PrReviewPostMerge, nowMs: number): Html => {
+export const postMergeSection = (
+	h: H,
+	postMerge: PrReviewPostMerge,
+	nowMs: number,
+	timeZone: string,
+): Html => {
 	const regressed = postMerge.verdict === "regressed"
 	return section(h, "After it shipped", [
 		h.p(
@@ -106,7 +107,11 @@ export const postMergeSection = (h: H, postMerge: PrReviewPostMerge, nowMs: numb
 				" ",
 				truncatedId(h, { value: postMerge.deploy.commitSha, kind: "sha", className: "text-xs" }),
 				" ",
-				formatRelativeFrom(DateTime.toEpochMillis(postMerge.deploy.firstSeen), nowMs),
+				relativeTime(h, {
+					value: DateTime.toEpochMillis(postMerge.deploy.firstSeen),
+					nowMs,
+					timeZone,
+				}),
 			],
 		),
 		bulletList(h, [
@@ -137,16 +142,20 @@ export const ciRunsSection = (h: H, sheet: ReviewSheet): Html =>
 			response.runs.length === 0
 				? ciSection(h, [emptyMessage(h, {}, ["No CI runs in the last 90 days"])])
 				: ciSection(h, [
-						h.ul(
-							[h.Class("-mx-2 flex flex-col")],
+						vstack(
+							h,
+							{ as: "ul", className: "-mx-2" },
 							Arr.map(response.runs, (run) =>
-								h.li(
-									[
-										h.Key(run.traceId),
-										h.Class(
-											"flex items-center gap-3 rounded-md px-2 py-1 text-sm hover:bg-surface-sunken active:bg-surface-sunken",
-										),
-									],
+								hstack(
+									h,
+									{
+										gap: "3",
+										align: "center",
+										as: "li",
+										className:
+											"rounded-md px-2 py-1 text-sm hover:bg-surface-sunken active:bg-surface-sunken",
+										attributes: [h.Key(run.traceId)],
+									},
 									[
 										ciResultBadge(h, run.result, run.attempt, "w-32 shrink-0"),
 										typography(
@@ -188,8 +197,9 @@ export const ciRunsSection = (h: H, sheet: ReviewSheet): Html =>
 
 export const historySection = (h: H, sheet: ReviewSheet, detail: CodeReviewDetail, timeZone: string): Html =>
 	section(h, "Reviews of this pull request", [
-		h.ul(
-			[h.Class("-mx-2 flex flex-col")],
+		vstack(
+			h,
+			{ as: "ul", className: "-mx-2" },
 			Arr.map(detail.history, (entry) => {
 				const outcome = outcomeOf(entry)
 				const isCurrent = entry.id === detail.review.id
@@ -203,7 +213,7 @@ export const historySection = (h: H, sheet: ReviewSheet, detail: CodeReviewDetai
 								// The current review is marked by its tint, not dimmed like a disabled control.
 								isDisabled: isCurrent,
 								className: cn(
-									"flex w-full items-center gap-3 rounded-md px-2 py-1.5 text-left text-sm transition-colors disabled:cursor-default disabled:opacity-100",
+									"flex w-full items-center gap-3 rounded-md px-2 py-1.5 text-left text-sm disabled:cursor-default disabled:opacity-100",
 									isCurrent
 										? "bg-muted"
 										: "hover:bg-surface-sunken active:bg-surface-sunken",
@@ -220,7 +230,6 @@ export const historySection = (h: H, sheet: ReviewSheet, detail: CodeReviewDetai
 									countLabel(entry.findings, "issue"),
 								]),
 								relativeTime(h, {
-									tooltip: "title",
 									value: entry.createdAt,
 									nowMs: sheet.nowMs,
 									timeZone,

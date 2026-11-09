@@ -296,8 +296,9 @@ export { LONG_RANGE_PRESET_VALUES, PRESET_VALUES }
 /** The window a shorthand resolves to: minutes and hours roll, days and weeks count calendar days,
  * months count calendar months (`resolveRelativeRange`). Null for "today" and non-shorthand. */
 const windowIdentity = (shorthand: string): string | null => {
-	const match = Str.toLowerCase(Str.trim(shorthand)).match(/^(\d+)(mo|m|h|d|w)$/)
-	if (match === null) return null
+	const matched = Str.match(/^(\d+)(mo|m|h|d|w)$/)(Str.toLowerCase(Str.trim(shorthand)))
+	if (Option.isNone(matched)) return null
+	const match = matched.value
 	const amount = Number.parseInt(match[1] ?? "0", 10)
 	const unit = match[2]
 	if (unit === "m" || unit === "h") return `rolling:${unit === "h" ? amount * 60 : amount}`
@@ -354,7 +355,7 @@ const presetList = (h: HtmlBuilder<Message>, inputs: ViewInputs): Html =>
 							h.OnClick(Message.ClickedPreset({ value, ...withMax(inputs) })),
 							h.Class(
 								cn(
-									"relative flex h-7 items-center pl-3 pr-2 text-left text-xs transition-colors",
+									"relative flex h-7 items-center pl-3 pr-2 text-left text-xs",
 									"before:absolute before:inset-y-1 before:left-0 before:w-[2px] before:rounded-r-sm before:bg-transparent before:transition-colors",
 									"hover:bg-surface-sunken active:bg-surface-sunken",
 									isActive && "text-foreground before:bg-primary",
@@ -402,7 +403,7 @@ const quickSelect = (h: HtmlBuilder<Message>, inputs: ViewInputs): Html =>
 							h.Type("button"),
 							h.OnClick(Message.ClickedPreset({ value, ...withMax(inputs) })),
 							h.Class(
-								"flex h-7 items-center justify-center rounded-md border border-border-subtle bg-background/30 font-mono text-2xs tracking-wide text-foreground-soft hover:border-border active:border-border hover:bg-surface-strong active:bg-surface-strong hover:text-foreground active:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+								"flex h-7 items-center justify-center rounded-md border border-border-subtle bg-surface-well font-mono text-2xs text-foreground-soft hover:border-border active:border-border hover:bg-surface-strong active:bg-surface-strong hover:text-foreground active:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
 							),
 						],
 						[value],
@@ -436,8 +437,8 @@ const shorthandInput = (h: HtmlBuilder<Message>, model: Model, inputs: ViewInput
 				[
 					h.Class(
 						cn(
-							"group flex h-9 items-center gap-2 rounded-md border bg-background/40 pl-3 pr-1.5 transition-colors",
-							"focus-within:border-ring focus-within:ring-2 focus-within:ring-ring/20",
+							"group flex h-9 items-center gap-2 rounded-md border bg-surface-well pl-3 pr-1.5",
+							"focus-within:border-ring focus-within:ring-[3px] focus-within:ring-ring/24",
 							model.isShorthandInvalid
 								? "border-destructive/70"
 								: "border-border-subtle hover:border-border active:border-border",
@@ -474,7 +475,7 @@ const shorthandInput = (h: HtmlBuilder<Message>, model: Model, inputs: ViewInput
 				[
 					h.Class(
 						cn(
-							"px-1 font-prose text-xs transition-colors",
+							"px-1 font-prose text-xs",
 							model.isShorthandInvalid ? TONE_TEXT.crit : "text-muted-foreground",
 						),
 					),
@@ -590,8 +591,8 @@ const timezoneFooter = (h: HtmlBuilder<Message>, model: Model, fallbackZone: str
 					h.Class(
 						cn(
 							"-mr-1.5 inline-flex h-6 min-w-0 cursor-pointer items-center gap-2 rounded-md px-1.5",
-							"text-2xs tracking-tight outline-none transition-colors",
-							"hover:bg-surface-strong active:bg-surface-strong focus-visible:ring-[3px] focus-visible:ring-ring/24 data-popup-open:bg-surface-strong",
+							"text-2xs tracking-tight outline-none",
+							"hover:bg-surface-strong active:bg-surface-strong focus-visible:ring-2 focus-visible:ring-ring data-popup-open:bg-surface-strong",
 						),
 					),
 					h.DataAttribute("slot", "combobox-trigger"),

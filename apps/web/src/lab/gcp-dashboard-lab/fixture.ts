@@ -1,7 +1,7 @@
 import { DashboardDocument } from "@maple/domain/http"
 import type { VariableValues } from "@maple/query-engine"
 import fixture from "../gcp-dashboard-fixture.json"
-import { Schema, Array as Arr, Record as Rec } from "effect"
+import { Option, Order, Schema, Array as Arr, Record as Rec, String as Str } from "effect"
 
 // The series fixture (WORKLOADS, GROUPS, OPTIONS,
 // `fixtureRows`), over the template document as the dashboards view reads it.
@@ -85,7 +85,7 @@ const GROUPS = new Map<string, ReadonlyArray<Resource>>([
 
 const ALL_RESOURCES = [...WORKLOADS.values(), ...GROUPS.values()].flat()
 const unique = (values: ReadonlyArray<string | undefined>): ReadonlyArray<string> =>
-	[...new Set(Arr.filter(values, (value): value is string => value !== undefined))].toSorted()
+	Arr.sort([...new Set(Arr.filter(values, (value): value is string => value !== undefined))], Order.String)
 
 /** What the metric-sourced variables would list against this data. */
 export const OPTIONS = new Map<string, ReadonlyArray<string>>([
@@ -109,7 +109,9 @@ const RANGES = new Map<string, readonly [number, number]>([
 const BUCKETS = Array.from({ length: 48 }, (_, i) => new Date(Date.UTC(2026, 9, 14, 0, i * 30)).toISOString())
 
 const hash = (text: string): number =>
-	(Arr.reduce(Array.from(text), 2166136261, (h, char) => Math.imul(h ^ char.charCodeAt(0), 16777619)) >>>
+	(Arr.reduce(Array.from(text), 2166136261, (h, char) =>
+		Math.imul(h ^ Option.getOrElse(Str.charCodeAt(char, 0), () => 0), 16777619),
+	) >>>
 		0) /
 	4294967296
 
@@ -123,7 +125,11 @@ export const fixtureRows = (
 	const groupBy = query?.groupBy?.[0] ?? ""
 	const resources =
 		(groupBy === "service.name" ? WORKLOADS.get(widget.tabId ?? "") : GROUPS.get(groupBy)) ?? []
-	const filters = [...ATTRIBUTE.keys()].filter((name) => query?.whereClause?.includes(`$${name}`))
+	const whereClause = query?.whereClause
+	const filters = Arr.filter(
+		[...ATTRIBUTE.keys()],
+		(name) => whereClause !== undefined && Str.includes(`$${name}`)(whereClause),
+	)
 	const kept = Arr.filter(resources, (resource) =>
 		Arr.every(filters, (name) => {
 			const selected = values[name]

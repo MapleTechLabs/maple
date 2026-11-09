@@ -130,14 +130,18 @@ function rollupEnvironmentCondition(
 	$: ColumnAccessor<typeof ServiceOperationsMinutely.columns>,
 	environments: readonly string[] | undefined,
 ) {
-	return environments?.length ? CH.inList($.DeploymentEnv, environments) : undefined
+	return environments !== undefined && environments.length > 0
+		? CH.inList($.DeploymentEnv, environments)
+		: undefined
 }
 
 function hourlyEnvironmentCondition(
 	$: ColumnAccessor<typeof ServiceOperationsHourly.columns>,
 	environments: readonly string[] | undefined,
 ) {
-	return environments?.length ? CH.inList($.DeploymentEnv, environments) : undefined
+	return environments !== undefined && environments.length > 0
+		? CH.inList($.DeploymentEnv, environments)
+		: undefined
 }
 
 export const mergedDurationQuantile = (index: 1 | 2 | 3) =>
@@ -181,7 +185,13 @@ export function serviceOperationsSummaryRawQuery(opts: ServiceOperationsSummaryO
 		.format("JSON")
 }
 
-export function serviceOperationsSummaryQuery(opts: ServiceOperationsSummaryOpts) {
+/**
+ * One service's operations over the window as per-tier partial aggregates
+ * (`bSpanName`, `bSpanCount`, `bDurationQuantiles`, ...): raw spans for the partial
+ * minutes at each end, the minute rollup for the partial hours, the hour rollup
+ * for the interior. Callers aggregate across the union.
+ */
+export function serviceOperationWindows(opts: Omit<ServiceOperationsSummaryOpts, "limit">) {
 	const rawEdges = from(Traces)
 		.select(($) => ({
 			bSpanName: displaySpanName($),
@@ -242,6 +252,10 @@ export function serviceOperationsSummaryQuery(opts: ServiceOperationsSummaryOpts
 		.groupBy("bSpanName")
 
 	return fromUnion(unionAll(rawEdges, minutelyEdges, hourlyInterior), "operation_windows")
+}
+
+export function serviceOperationsSummaryQuery(opts: ServiceOperationsSummaryOpts) {
+	return serviceOperationWindows(opts)
 		.select(($) => {
 			const spanCount = CH.sum($.bSpanCount)
 			const estimatedSpanCount = CH.sum($.bEstimatedSpanCount)
@@ -401,6 +415,7 @@ export interface RouteUsageOpts {
 	readonly search?: string
 	readonly orderBy?: RouteUsageOrder
 	readonly limit?: number
+	readonly offset?: number
 }
 
 export interface RouteUsageOutput {
@@ -505,7 +520,11 @@ export function routeUsageQuery(opts: RouteUsageOpts) {
 			order === "count"
 				? ["spanCount", "desc"]
 				: ["lastSeen", order === "lastSeenAsc" ? "asc" : "desc"],
+			// A total order, so `offset` pages never repeat or skip a route.
+			["serviceName", "asc"],
+			["spanName", "asc"],
 		)
 		.limit(opts.limit ?? 50)
+		.offset(opts.offset ?? 0)
 		.format("JSON")
 }

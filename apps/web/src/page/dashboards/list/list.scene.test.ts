@@ -172,7 +172,10 @@ describe("dashboards list", () => {
 		const failed = pageUpdate(
 			confirmed.model,
 			Message.CompletedDeleteDashboard({
-				result: Result.fail("Dashboard persistence is temporarily unavailable"),
+				result: Result.fail({
+					message: "Dashboard persistence is temporarily unavailable",
+					isRejected: false,
+				}),
 			}),
 		).model
 		expect(failed.persistenceError).toBe("Dashboard persistence is temporarily unavailable")

@@ -112,7 +112,7 @@ const hubOf = (nowMs: number, scene: Scene): IntegrationsModel => {
 	return {
 		...hub,
 		nowMs,
-		isAdmin: true,
+		grants: ["integrations:manage"],
 		statuses: { ...hub.statuses, vercel: success(scene.status) },
 		vercelCard: {
 			...hub.vercelCard,

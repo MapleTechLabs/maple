@@ -81,54 +81,57 @@ export const AnomalyDetectorStates = PG.table("anomaly_detector_states", {
 	tenantColumn: "orgId",
 })
 
+const anomalyIncidentsColumns = {
+	id: PG.brand(PG.text, AnomalyIncidentId),
+	orgId: PG.column(PG.brand(PG.text, OrgId), { name: "org_id" }),
+	detectorKey: PG.column(PG.text, { name: "detector_key" }),
+	signalType: PG.column(PG.brand(PG.text, AnomalySignalType), { name: "signal_type" }),
+	serviceName: PG.column(PG.text, { name: "service_name" }),
+	deploymentEnv: PG.column(PG.text, { name: "deployment_env", default: "" }),
+	fingerprintHash: PG.column(PG.nullable(PG.text), { name: "fingerprint_hash" }),
+	errorIssueId: PG.column(PG.nullable(PG.brand(PG.text, ErrorIssueId)), { name: "error_issue_id" }),
+	status: PG.brand(PG.text, AnomalyIncidentStatus),
+	severity: PG.brand(PG.text, AnomalyIncidentSeverity),
+	openedValue: PG.column(PG.float8, { name: "opened_value" }),
+	baselineMedian: PG.column(PG.float8, { name: "baseline_median" }),
+	baselineSigma: PG.column(PG.float8, { name: "baseline_sigma" }),
+	thresholdValue: PG.column(PG.float8, { name: "threshold_value" }),
+	lastObservedValue: PG.column(PG.float8, { name: "last_observed_value" }),
+	lastSampleCount: PG.column(PG.int4, { name: "last_sample_count", default: 0 }),
+	firstTriggeredAt: PG.column(PG.timestamptzMillis, { name: "first_triggered_at" }),
+	lastTriggeredAt: PG.column(PG.timestamptzMillis, { name: "last_triggered_at" }),
+	resolvedAt: PG.column(PG.nullable(PG.timestamptzMillis), { name: "resolved_at" }),
+	resolveReason: PG.column(PG.nullable(PG.brand(PG.text, AnomalyResolveReason)), {
+		name: "resolve_reason",
+	}),
+	triageStatus: PG.column(PG.brand(PG.text, AnomalyTriageStatus), {
+		name: "triage_status",
+		default: "none",
+	}),
+	dedupeKey: PG.column(PG.text, { name: "dedupe_key" }),
+	/**
+	 * Error-spike consolidation: all fingerprints sharing this incident
+	 * (JSON array of IncidentFingerprintEntry; empty for golden signals).
+	 */
+	fingerprintsJson: PG.column(PG.jsonb(Schema.Array(Schema.Unknown)), {
+		name: "fingerprints_json",
+		default: [],
+	}),
+	/** Times this incident re-breached and reopened within the reopen window. */
+	reopenCount: PG.column(PG.int4, { name: "reopen_count", default: 0 }),
+	lastReopenedAt: PG.column(PG.nullable(PG.timestamptzMillis), { name: "last_reopened_at" }),
+	createdAt: PG.column(PG.timestamptzMillis, { name: "created_at" }),
+	updatedAt: PG.column(PG.timestamptzMillis, { name: "updated_at" }),
+}
+type AnomalyIncidentsColumns = PG.ColumnsOf<typeof anomalyIncidentsColumns>
+
 /**
  * An anomaly flare-up for one detector series. Self-explaining: carries the
  * observed value, baseline stats, and threshold at open time so the UI and
  * the AI triage prompt can describe the deviation without re-querying.
  */
 export const AnomalyIncidents = PG.table("anomaly_incidents", {
-	columns: {
-		id: PG.brand(PG.text, AnomalyIncidentId),
-		orgId: PG.column(PG.brand(PG.text, OrgId), { name: "org_id" }),
-		detectorKey: PG.column(PG.text, { name: "detector_key" }),
-		signalType: PG.column(PG.brand(PG.text, AnomalySignalType), { name: "signal_type" }),
-		serviceName: PG.column(PG.text, { name: "service_name" }),
-		deploymentEnv: PG.column(PG.text, { name: "deployment_env", default: "" }),
-		fingerprintHash: PG.column(PG.nullable(PG.text), { name: "fingerprint_hash" }),
-		errorIssueId: PG.column(PG.nullable(PG.brand(PG.text, ErrorIssueId)), { name: "error_issue_id" }),
-		status: PG.brand(PG.text, AnomalyIncidentStatus),
-		severity: PG.brand(PG.text, AnomalyIncidentSeverity),
-		openedValue: PG.column(PG.float8, { name: "opened_value" }),
-		baselineMedian: PG.column(PG.float8, { name: "baseline_median" }),
-		baselineSigma: PG.column(PG.float8, { name: "baseline_sigma" }),
-		thresholdValue: PG.column(PG.float8, { name: "threshold_value" }),
-		lastObservedValue: PG.column(PG.float8, { name: "last_observed_value" }),
-		lastSampleCount: PG.column(PG.int4, { name: "last_sample_count", default: 0 }),
-		firstTriggeredAt: PG.column(PG.timestamptzMillis, { name: "first_triggered_at" }),
-		lastTriggeredAt: PG.column(PG.timestamptzMillis, { name: "last_triggered_at" }),
-		resolvedAt: PG.column(PG.nullable(PG.timestamptzMillis), { name: "resolved_at" }),
-		resolveReason: PG.column(PG.nullable(PG.brand(PG.text, AnomalyResolveReason)), {
-			name: "resolve_reason",
-		}),
-		triageStatus: PG.column(PG.brand(PG.text, AnomalyTriageStatus), {
-			name: "triage_status",
-			default: "none",
-		}),
-		dedupeKey: PG.column(PG.text, { name: "dedupe_key" }),
-		/**
-		 * Error-spike consolidation: all fingerprints sharing this incident
-		 * (JSON array of IncidentFingerprintEntry; empty for golden signals).
-		 */
-		fingerprintsJson: PG.column(PG.jsonb(Schema.Array(Schema.Unknown)), {
-			name: "fingerprints_json",
-			default: [],
-		}),
-		/** Times this incident re-breached and reopened within the reopen window. */
-		reopenCount: PG.column(PG.int4, { name: "reopen_count", default: 0 }),
-		lastReopenedAt: PG.column(PG.nullable(PG.timestamptzMillis), { name: "last_reopened_at" }),
-		createdAt: PG.column(PG.timestamptzMillis, { name: "created_at" }),
-		updatedAt: PG.column(PG.timestamptzMillis, { name: "updated_at" }),
-	},
+	columns: anomalyIncidentsColumns,
 	primaryKey: ["id"],
 	indexes: [
 		// (org, status) plus the list ordering: listIncidents filters on the
@@ -144,9 +147,13 @@ export const AnomalyIncidents = PG.table("anomaly_incidents", {
 		// with no renewal, so a tick that outruns ORG_LOCK_TTL_MS can overlap the
 		// next one; this turns the duplicate open into a no-op/loud conflict
 		// instead of two incidents, two triages, two pages.
-		PG.uniqueIndex("anomaly_incidents_open_detector_idx", ["orgId", "detectorKey"], {
-			where: ($) => $.status.eq("open"),
-		}),
+		PG.uniqueIndex<AnomalyIncidentsColumns>(
+			"anomaly_incidents_open_detector_idx",
+			["orgId", "detectorKey"],
+			{
+				where: ($) => $.status.eq("open"),
+			},
+		),
 	],
 	tenantColumn: "orgId",
 })

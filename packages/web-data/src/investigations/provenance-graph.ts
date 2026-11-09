@@ -24,7 +24,7 @@ import {
 	type ActionTarget,
 } from "./action-target"
 import { formatTimeInTimezone } from "../lib/timezone-format"
-import { Array as Arr, String as Str } from "effect"
+import { Array as Arr, Option, String as Str } from "effect"
 
 /* -------------------------------------------------------------------------------------------------
  * Geometry
@@ -362,9 +362,13 @@ export function buildProvenanceGraph(investigation: V2Investigation, timeZone = 
 					// "manual", not "opened by you": the node is 146px wide and carries a
 					// second line ("you are here") under this one, so a note that wraps to
 					// two lines pushes the id out through the bottom of the box.
-					note: [investigation.seeded_by === "system" ? "automatic" : "manual", elapsed]
-						.filter(Boolean)
-						.join(" · "),
+					note: Arr.join(
+						Arr.filter(
+							[investigation.seeded_by === "system" ? "automatic" : "manual", elapsed],
+							(part): part is string => Boolean(part),
+						),
+						" · ",
+					),
 					current: true,
 					...(running ? { live: true, phase: livePhase(investigation) } : undefined),
 				},
@@ -503,7 +507,11 @@ export function buildProvenanceGraph(investigation: V2Investigation, timeZone = 
 	}
 	const columnHeight = (column: { nodes: Array<ProvenanceNode> }): number => {
 		const gap = isActionColumn(column) ? ACTION_GAP : COLUMN_GAP
-		return Arr.reduce(column.nodes, 0, (total, node, index) => total + node.height + (index ? gap : 0))
+		return Arr.reduce(
+			column.nodes,
+			0,
+			(total, node, index) => total + node.height + (index > 0 ? gap : 0),
+		)
 	}
 	const height = Math.max(0, ...Arr.map(columns, columnHeight))
 
@@ -563,7 +571,8 @@ export function buildProvenanceGraph(investigation: V2Investigation, timeZone = 
 const originTitle = (investigation: V2Investigation): string | null => {
 	const { snapshot } = investigation
 	const candidate = snapshot.errorLabel ?? snapshot.exceptionType ?? snapshot.title
-	const text = candidate?.trim()
+	if (candidate == null) return null
+	const text = Str.trim(candidate)
 	return text ? text : null
 }
 
@@ -579,9 +588,12 @@ const originTitle = (investigation: V2Investigation): string | null => {
  */
 const incidentTitle = (investigation: V2Investigation): string => {
 	const { snapshot, subject } = investigation
-	const signal = snapshot.facts.find((fact) => Str.toLowerCase(fact.label) === "signal")?.value.trim()
+	const signal = Option.match(
+		Arr.findFirst(snapshot.facts, (fact) => Str.toLowerCase(fact.label) === "signal"),
+		{ onNone: () => "", onSome: (fact) => Str.trim(fact.value) },
+	)
 	if (signal) return signal
-	const scope = snapshot.scope?.trim()
+	const scope = snapshot.scope == null ? "" : Str.trim(snapshot.scope)
 	if (scope) return scope
 	return subject.type === "incident" ? `${subject.incident_kind} incident` : "Incident"
 }

@@ -102,13 +102,14 @@ export const GUIDE_SECTIONS: readonly GuideSection[] = [
 	},
 	{
 		id: "other",
-		title: "Go, Rust, .NET & PHP",
+		title: "Go, Rust, .NET, PHP & Ruby",
 		chip: "Other languages",
 		cards: [
 			lang("go", "otelhttp, otelgrpc, otelsql"),
 			lang("rust", "tracing bridge · Axum, reqwest"),
 			lang("csharp", "ASP.NET Core, HttpClient, EF Core"),
 			lang("laravel", "PHP · Eloquent, queues, HTTP client"),
+			lang("ruby", "Rails, Sinatra, Sidekiq"),
 		],
 	},
 	{

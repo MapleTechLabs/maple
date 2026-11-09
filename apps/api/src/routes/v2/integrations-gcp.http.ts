@@ -9,16 +9,15 @@ import {
 } from "@maple/domain/http/v2"
 import { Effect, Array as Arr } from "effect"
 import { recordHttpAudit } from "@maple/backend/services/audit/AuditLogService"
-import { requireAdmin } from "@maple/backend/services/auth/auth"
+import * as Policy from "@maple/domain/policy"
 import {
 	GcpConnectorService,
 	type GcpConnector,
 } from "@maple/backend/services/integrations/GcpConnectorService"
 
-// Reading the status is open to every member. Everything else is admin-only: a connector decides
+// Reading the status is open to every member. Everything else needs integrations:manage: a connector decides
 // what may write logs into the org and what Maple reads, and its setup script carries the push
 // secret.
-const adminOnly = () => V2InsufficientPermissions.make("Only org admins can manage Google Cloud connectors")
 
 const toV2Connector = (connector: GcpConnector): V2GcpConnector => ({
 	id: connector.id,
@@ -67,7 +66,9 @@ export const HttpV2GcpIntegrationsLive = HttpApiBuilder.group(MapleApiV2, "gcpIn
 			.handle("createConnector", ({ payload }) =>
 				Effect.gen(function* () {
 					const tenant = yield* CurrentTenant.Context
-					yield* requireAdmin(tenant.roles, adminOnly)
+					yield* Policy.check(tenant.roles, "integrations:manage", (denial) =>
+						V2InsufficientPermissions.make(denial.message),
+					)
 					const connector = yield* gcp.create(tenant.orgId, tenant.userId, {
 						scopeType: payload.scope_type,
 						scopeId: payload.scope_id,
@@ -86,7 +87,9 @@ export const HttpV2GcpIntegrationsLive = HttpApiBuilder.group(MapleApiV2, "gcpIn
 			.handle("updateConnector", ({ params, payload }) =>
 				Effect.gen(function* () {
 					const tenant = yield* CurrentTenant.Context
-					yield* requireAdmin(tenant.roles, adminOnly)
+					yield* Policy.check(tenant.roles, "integrations:manage", (denial) =>
+						V2InsufficientPermissions.make(denial.message),
+					)
 					const connector = yield* gcp.update(tenant.orgId, params.id, {
 						logsEnabled: payload.logs_enabled,
 						metricsEnabled: payload.metrics_enabled,
@@ -101,7 +104,9 @@ export const HttpV2GcpIntegrationsLive = HttpApiBuilder.group(MapleApiV2, "gcpIn
 			.handle("setupScripts", ({ params, payload }) =>
 				Effect.gen(function* () {
 					const tenant = yield* CurrentTenant.Context
-					yield* requireAdmin(tenant.roles, adminOnly)
+					yield* Policy.check(tenant.roles, "integrations:manage", (denial) =>
+						V2InsufficientPermissions.make(denial.message),
+					)
 					const scripts = yield* gcp.scripts(tenant.orgId, params.id, {
 						applicationLogs: payload.application_logs ?? null,
 					})
@@ -120,7 +125,9 @@ export const HttpV2GcpIntegrationsLive = HttpApiBuilder.group(MapleApiV2, "gcpIn
 			.handle("confirmRemoval", ({ params }) =>
 				Effect.gen(function* () {
 					const tenant = yield* CurrentTenant.Context
-					yield* requireAdmin(tenant.roles, adminOnly)
+					yield* Policy.check(tenant.roles, "integrations:manage", (denial) =>
+						V2InsufficientPermissions.make(denial.message),
+					)
 					const connector = yield* gcp.confirmRemoval(tenant.orgId, params.id)
 					yield* recordHttpAudit("gcp_connector.removal_confirmed", {
 						resourceId: connector.id,
@@ -132,7 +139,9 @@ export const HttpV2GcpIntegrationsLive = HttpApiBuilder.group(MapleApiV2, "gcpIn
 			.handle("deleteConnector", ({ params }) =>
 				Effect.gen(function* () {
 					const tenant = yield* CurrentTenant.Context
-					yield* requireAdmin(tenant.roles, adminOnly)
+					yield* Policy.check(tenant.roles, "integrations:manage", (denial) =>
+						V2InsufficientPermissions.make(denial.message),
+					)
 					const deleted = yield* gcp.delete(tenant.orgId, params.id)
 					yield* recordHttpAudit("gcp_connector.deleted", {
 						resourceId: params.id,

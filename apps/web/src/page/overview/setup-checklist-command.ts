@@ -1,9 +1,9 @@
+import { retrieveSetupKeys } from "../../data/ingest-keys"
 import { getServiceOverview } from "@maple/web-data/warehouse/services"
 import { Effect, Schema, Array as Arr } from "effect"
 import { Command } from "foldkit"
 import { toLoadFailure } from "@maple/views/data/load-failure"
 import { currentWindow, TimeWindow } from "../../data/time-range"
-import { MapleApiV2Client } from "../../platform/api-clients"
 import { QuickStartState, readQuickStartState, writeQuickStartState } from "../onboarding/quick-start-state"
 import { Message } from "./setup-checklist"
 
@@ -22,13 +22,11 @@ export const SaveSetupState = Command.define("SaveSetupChecklistState", {
 		Effect.as(writeQuickStartState(storageKey, state), Message.CompletedSaveState()),
 })
 
-/** `retainedQueryV2("ingestKeys", "retrieve", {})`. */
+/** Both ingest keys, or the public one alone for a member. */
 export const FetchSetupKeys = Command.define("FetchSetupChecklistKeys", {
 	messages: [Message.SucceededLoadKeys, Message.FailedLoadKeys],
-	execute: Effect.flatMap(MapleApiV2Client, (client) => client.ingestKeys.retrieve()).pipe(
-		Effect.map((keys) =>
-			Message.SucceededLoadKeys({ publicKey: keys.public_key, privateKey: keys.private_key }),
-		),
+	execute: retrieveSetupKeys.pipe(
+		Effect.map((keys) => Message.SucceededLoadKeys(keys)),
 		Effect.orElseSucceed(() => Message.FailedLoadKeys()),
 	),
 })

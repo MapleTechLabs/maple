@@ -60,8 +60,10 @@ const toMap = (message: ServiceMap.Message) => Message.GotMapMessage({ message }
 const hyperdriveOf = (model: Model, nodeId: string) =>
 	Option.getOrUndefined(
 		Option.flatMapNullishOr(
-			model.map,
-			(map) => map.source.rawNodes.find((node) => node.id === nodeId)?.data.hyperdrive,
+			Option.flatMap(model.map, (map) =>
+				Arr.findFirst(map.source.rawNodes, (node) => node.id === nodeId),
+			),
+			(node) => node.data.hyperdrive,
 		),
 	)
 
@@ -178,7 +180,9 @@ const header = (h: H, inputs: DatabasePanelInputs): Html => {
 				className: "shrink-0",
 				style: style.branded ? undefined : { color: style.color },
 			}),
-			h.span([h.Class("text-sm font-semibold text-foreground truncate")], [style.title]),
+			typography(h, { size: "sm", tone: "foreground", weight: "semibold", truncate: true }, [
+				style.title,
+			]),
 			eyebrow(h, { className: "shrink-0" }, [style.badge]),
 		],
 		[

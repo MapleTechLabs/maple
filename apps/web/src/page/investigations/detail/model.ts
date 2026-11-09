@@ -1,4 +1,5 @@
 import { V2Investigation } from "@maple/domain/http/v2"
+import { AGENT_TARGETS } from "@maple/web-data/investigations/agent-handoff"
 import { Schema } from "effect"
 import { KeyedSchema } from "@maple/views/data/keyed"
 import { LoadFailure } from "@maple/views/data/load-failure"
@@ -40,6 +41,20 @@ export const Escalation = Schema.Struct({
 	destinations: Schema.Array(Schema.Struct({ name: Schema.String, status: Schema.String })),
 })
 
+export const AgentTargetSchema = Schema.Literals(AGENT_TARGETS)
+
+/** "Fix in Claude Code": where the handoff opens, and what its links need to be absolute and repo-scoped. */
+export const Handoff = Schema.Struct({
+	target: AgentTargetSchema,
+	/** `window.location.origin`, for the prompt's link back here; `""` until read. */
+	origin: Schema.String,
+	/** The org's one connected repository (`owner/name`); `null` with none, several, or before the read. */
+	repo: Schema.NullOr(Schema.String),
+	/** The repository is read once, when a report first arrives: nothing shows the button before. */
+	isRepoRequested: Schema.Boolean,
+})
+export type Handoff = typeof Handoff.Type
+
 export const Busy = Schema.NullOr(Schema.Literals(["resolve", "restart"]))
 
 export const Model = Schema.Struct({
@@ -54,6 +69,8 @@ export const Model = Schema.Struct({
 	escalation: KeyedSchema(Schema.NullOr(Escalation), LoadFailure),
 	busy: Busy,
 	actionsMenu: Menu.Model,
+	handoff: Handoff,
+	handoffMenu: Menu.Model,
 	actionSheet: Dialog.Model,
 	canvas: Canvas.Model,
 	/** The trace chips' full-id tooltip, one Model for every chip. */

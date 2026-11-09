@@ -29,16 +29,17 @@ import { emptyActions } from "@maple/views/ui/signal-empty-state"
 import { destinationProvider, providerLogo } from "../shared/providers"
 import { createHref } from "../shared/links"
 import { Message } from "./message"
-import type { Model } from "./model"
+import { canManage, type Model } from "./model"
 import { destinationMenuId } from "./update"
+import { chainsSection } from "./view-chains"
 import { relativeTime } from "../../kit/relative-time"
 import { sectionHeading } from "../../kit/section-heading"
 import { typography, typographyClass } from "@maple/views/ui/typography"
-import { stripClass } from "@maple/views/ui/rule"
+import { stripClass, dividedList } from "@maple/views/ui/rule"
 import { hstack, hstackClass } from "@maple/views/ui/stack"
 import { borderedBox } from "@maple/views/ui/bordered-box"
 import { tooltipTrigger } from "@maple/views/ui/tooltip-host"
-import { Array as Arr } from "effect"
+import { Array as Arr, Option } from "effect"
 
 // `AlertsRoutingTab` and `DestinationRow`: the hub's Routing tab.
 
@@ -78,6 +79,8 @@ export const routingTab = (h: H, model: Model, inputs: RoutingInputs): Html => {
 				],
 			),
 			separator(h, "horizontal", undefined),
+			chainsSection(h, model),
+			separator(h, "horizontal", undefined),
 			h.section(
 				[h.Class("space-y-4")],
 				[
@@ -111,14 +114,14 @@ const destinationsSection = (
 			[
 				emptyHeader(h, [
 					emptyMedia(h, { variant: "icon" }, [icon(h, "PaperPlaneIcon", { size: 18 })]),
-					emptyTitle(h, ["No destinations configured"]),
+					emptyTitle(h, ["No destinations yet"]),
 					emptyDescription(h, [
 						"Add Slack, PagerDuty, or webhook destinations before creating alert rules.",
-						...(model.isAdmin ? [] : [" Ask an org admin to add one."]),
+						...(canManage(model) ? [] : [" Ask an org admin to add one."]),
 					]),
 				]),
 				emptyActions(h, [
-					...(model.isAdmin
+					...(canManage(model)
 						? [
 								button(
 									h,
@@ -153,8 +156,9 @@ const destinationsSection = (
 						h.span([], []),
 					],
 				),
-				h.ul(
-					[h.Class("divide-y")],
+				dividedList(
+					h,
+					{ as: "ul", bordered: false },
 					Arr.map(inputs.destinations, (destination) =>
 						destinationRow(h, model, inputs, {
 							destination,
@@ -189,7 +193,7 @@ type RowInputs = Readonly<{
 export const destinationRow = (h: H, model: Model, inputs: RoutingInputs, row: RowInputs): Html => {
 	const { destination, recent } = row
 	const provider = destinationProvider(destination.type, destination.chatConnector ?? undefined)
-	const lastSuccess = recent.find((event) => event.status === "success")
+	const lastSuccess = Arr.findFirst(recent, (event) => event.status === "success")
 	const failed = Arr.filter(recent, (event) => event.status === "failed").length
 	const problem =
 		!destination.enabled && destination.disabledReason
@@ -261,15 +265,16 @@ export const destinationRow = (h: H, model: Model, inputs: RoutingInputs, row: R
 											: [],
 										[destination.disabledAt != null ? "auto-disabled" : "disabled"],
 									)
-								: lastSuccess !== undefined
-									? relativeTime(h, {
-											value: lastSuccess.scheduledAt,
-											nowMs: inputs.nowMs,
-											timeZone: inputs.timeZone,
-											variant: "short",
-											tooltip: "title",
-										})
-									: "never",
+								: Option.match(lastSuccess, {
+										onNone: () => "never",
+										onSome: (event) =>
+											relativeTime(h, {
+												value: event.scheduledAt,
+												nowMs: inputs.nowMs,
+												timeZone: inputs.timeZone,
+												variant: "short",
+											}),
+									}),
 						],
 					),
 					hstack(h, { gap: "2", justify: "end" }, [
@@ -277,7 +282,7 @@ export const destinationRow = (h: H, model: Model, inputs: RoutingInputs, row: R
 							id: `destination-switch-${destination.id}`,
 							inputId: `destination-switch-input-${destination.id}`,
 							isChecked: destination.enabled,
-							isDisabled: !model.isAdmin,
+							isDisabled: !canManage(model),
 							ariaLabel: destination.enabled ? "Disable destination" : "Enable destination",
 							onToggle: Message.ClickedToggleDestination({ destinationId: destination.id }),
 						}),
@@ -286,7 +291,7 @@ export const destinationRow = (h: H, model: Model, inputs: RoutingInputs, row: R
 							{
 								size: "sm",
 								variant: "outline",
-								isDisabled: !model.isAdmin,
+								isDisabled: !canManage(model),
 								isLoading: model.testingDestinationIds.includes(destination.id),
 								attributes: [
 									h.OnClick(
@@ -296,7 +301,7 @@ export const destinationRow = (h: H, model: Model, inputs: RoutingInputs, row: R
 							},
 							[icon(h, "CheckIcon"), "Test"],
 						),
-						...(model.isAdmin
+						...(canManage(model)
 							? [
 									rowActionsMenu(h, {
 										slotId: menuId,
@@ -345,13 +350,18 @@ const deliveryStrip = (h: H, recent: ReadonlyArray<AlertDeliveryEventDocument>, 
 				: pending > 0
 					? `${total - pending} of the last ${total} attempts delivered, ${pending} pending`
 					: `Last ${total} attempts delivered`
-	return h.span(
-		[
-			h.Class("flex h-3.5 cursor-default items-stretch gap-px"),
-			h.DataAttribute("slot", "tooltip-trigger"),
-			h.AriaLabel(summary),
-			...tooltipTrigger(h, summary),
-		],
+	return hstack(
+		h,
+		{
+			align: "stretch",
+			as: "span",
+			className: "h-3.5 cursor-default gap-px",
+			attributes: [
+				h.DataAttribute("slot", "tooltip-trigger"),
+				h.AriaLabel(summary),
+				...tooltipTrigger(h, summary),
+			],
+		},
 		Arr.map([...recent].reverse(), (event) =>
 			h.span([h.Key(event.id), h.Class(cn("w-1 rounded-2xs", ATTEMPT_CLASS.get(event.status)))]),
 		),
@@ -394,7 +404,7 @@ const logTable = (
 					]),
 				]),
 				emptyActions(h, [
-					...(model.isAdmin
+					...(canManage(model)
 						? [
 								linkButton(h, { variant: "outline", size: "sm", href: createHref({}) }, [
 									"Create an alert rule",
@@ -453,17 +463,27 @@ const logTable = (
 const logRow = (h: H, model: Model, inputs: RoutingInputs, event: AlertDeliveryEventDocument): Html => {
 	const ev = eventTypeMeta[event.eventType]
 	const status = deliveryStatusMeta[event.status]
+	// Delivery events carry only the type; a `chat` destination's logo comes from its connector.
+	const chatConnector = Option.getOrUndefined(
+		Option.flatMapNullishOr(
+			Arr.findFirst(inputs.destinations, (d) => d.id === event.destinationId),
+			(d) => d.chatConnector,
+		),
+	)
 	return tableRow(h, [
 		tableCell(h, [
 			hstack(h, { gap: "1.5", as: "span" }, [
 				badge(h, { variant: status.variant, size: "sm" }, [status.label]),
 				...(event.attemptNumber > 1
 					? [
-							h.span(
-								[
-									h.Class("text-severity-warn tabular-nums text-2xs"),
-									h.Title(`Attempt ${event.attemptNumber}`),
-								],
+							typography(
+								h,
+								{
+									size: "2xs",
+									tone: "warning",
+									numeric: true,
+									attributes: [h.Title(`Attempt ${event.attemptNumber}`)],
+								},
 								["↻", String(event.attemptNumber)],
 							),
 						]
@@ -480,6 +500,7 @@ const logRow = (h: H, model: Model, inputs: RoutingInputs, event: AlertDeliveryE
 			hstack(h, { gap: "2", as: "span" }, [
 				providerLogo(h, {
 					type: event.destinationType,
+					chatConnector: chatConnector ?? undefined,
 					size: 32,
 					isBare: true,
 					className: hstackClass({ className: "shrink-0" }),
@@ -493,27 +514,18 @@ const logRow = (h: H, model: Model, inputs: RoutingInputs, event: AlertDeliveryE
 			h,
 			event.status === "failed"
 				? [
-						h.span(
-							[h.Class("block truncate text-xs text-severity-error")],
-							[
-								event.errorMessage ?? "Delivery failed",
-								...(event.responseCode != null
-									? [
-											h.span(
-												[h.Class("text-muted-foreground")],
-												[" · ", String(event.responseCode)],
-											),
-										]
-									: []),
-							],
-						),
+						typography(h, { size: "xs", tone: "error", truncate: true, className: "block" }, [
+							event.errorMessage ?? "Delivery failed",
+							...(event.responseCode != null
+								? [typography(h, { tone: "muted" }, [" · ", String(event.responseCode)])]
+								: []),
+						]),
 					]
 				: event.providerReference
 					? [
-							h.span(
-								[h.Class("block truncate text-xs text-muted-foreground")],
-								[event.providerReference],
-							),
+							typography(h, { size: "xs", tone: "muted", truncate: true, className: "block" }, [
+								event.providerReference,
+							]),
 						]
 					: [],
 			"max-w-0",

@@ -15,9 +15,9 @@ import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/platfo
 import { ErrorActorsService } from "@maple/backend/services/errors/ErrorActorsService"
 import { withConnectorActor } from "./turn-actor"
 
-const ORG = Schema.decodeUnknownSync(OrgId)("org_turn_actor_test")
-const PLACEHOLDER_USER = Schema.decodeUnknownSync(UserId)("chat-connector")
-const PINNED_ACTOR = Schema.decodeUnknownSync(ActorId)("00000000-0000-4000-8000-00000000beef")
+const ORG = Schema.decodeSync(OrgId)("org_turn_actor_test")
+const PLACEHOLDER_USER = Schema.decodeSync(UserId)("chat-connector")
+const PINNED_ACTOR = Schema.decodeSync(ActorId)("00000000-0000-4000-8000-00000000beef")
 const createdDbs: TestDb[] = []
 
 afterEach(() => cleanupTestDbs(createdDbs))
@@ -65,7 +65,7 @@ describe("withConnectorActor", () => {
 			assert.strictEqual(first.actorId, second.actorId)
 
 			const actors = yield* ErrorActorsService
-			const doc = yield* actors.lookupActor(ORG, first.actorId!)
+			const doc = yield* actors.lookupActor(ORG, first.actorId)
 			assert.strictEqual(doc.type, "agent")
 			assert.strictEqual(doc.agentName, "chat-connector-testchat")
 			// No Maple user is behind a connector turn, so none is recorded as one.

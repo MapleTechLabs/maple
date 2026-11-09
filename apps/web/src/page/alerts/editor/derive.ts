@@ -10,13 +10,21 @@ import {
 	signalLabels,
 	thresholdUnitLabel,
 } from "@maple/web-data/alerts/form-utils"
+import { anomalyScopeSummary, isDefaultAnomalyRule } from "@maple/web-data/alerts/anomaly-rule"
 import { destinationProvider } from "../shared/providers"
 import type { RuleForm } from "./form"
 import { intervalWindowIssue, queryTimingIssue } from "./interval"
+import { nonZeroOr } from "@maple/ui/lib/number"
 
 const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
 
 // The rule editor's pure helpers: form surface, condition bar, live chart hero, notifications.
+
+/** Editing the org's default anomaly rule: its scope, kind and enabled state are the server's. */
+export const isProtectedDefault = (
+	model: Readonly<{ editingRuleId: string | null; savedForm: RuleForm | null }>,
+): boolean =>
+	model.editingRuleId !== null && model.savedForm !== null && isDefaultAnomalyRule(model.savedForm)
 
 export const COMPARATOR_WORDS = new Map<AlertComparator, string>([
 	["gt", "is above"],
@@ -32,6 +40,7 @@ export const comparatorWords = (comparator: AlertComparator): string => COMPARAT
 
 /** What the threshold is compared against, in words: the aggregation for a query, the signal otherwise. */
 export const conditionSubject = (form: RuleForm): string => {
+	if (form.signalType === "anomaly") return "anomalies"
 	if (form.signalType === "raw_query") return "the SQL value"
 	if (form.signalType === "builder_query") {
 		const aggregation = Str.trim(Str.replaceAll("_", " ")(form.queryBuilderDraft.aggregation))
@@ -41,7 +50,13 @@ export const conditionSubject = (form: RuleForm): string => {
 }
 
 /** The rule in one plain sentence, shown in the action bar. */
-export const describeRuleCondition = (form: RuleForm): string => {
+export const describeRuleCondition = (form: RuleForm, isDefault = false): string => {
+	if (form.signalType === "anomaly")
+		return isDefault
+			? "Pages on every anomaly no narrower rule handles"
+			: isDefaultAnomalyRule(form)
+				? "Anomalies in a service, environment or signal"
+				: `Pages on anomalies in ${anomalyScopeSummary(form)}`
 	const unit = thresholdUnitLabel(form) ?? ""
 	const value = (raw: string) => `${Str.trim(raw) || "?"}${unit === "%" ? "%" : unit ? ` ${unit}` : ""}`
 	const threshold = isRangeComparator(form.comparator)
@@ -73,13 +88,14 @@ export const recoveryLabel = (comparator: AlertComparator): string =>
 export const suggestCriticalThreshold = (form: RuleForm): string => {
 	const warning = Number(form.threshold)
 	if (Str.trim(form.threshold).length === 0 || !Number.isFinite(warning)) return ""
-	const step = Math.abs(warning) || 1
+	const step = nonZeroOr(Math.abs(warning), 1)
 	const worse = form.comparator === "gt" || form.comparator === "gte" ? warning + step : warning - step
 	return String(Number(worse.toPrecision(12)))
 }
 
 /** `deriveValidationIssues`: what the action bar lists as missing. */
-export const validationIssues = (form: RuleForm): ReadonlyArray<string> => {
+export const validationIssues = (form: RuleForm, isDefault = false): ReadonlyArray<string> => {
+	if (form.signalType === "anomaly") return anomalyIssues(form, isDefault)
 	const issues: Array<string> = []
 	if (Str.trim(form.name).length === 0) issues.push("Rule name")
 	if (!isFilledNumber(form.threshold)) issues.push("Threshold")
@@ -105,14 +121,37 @@ export const validationIssues = (form: RuleForm): ReadonlyArray<string> => {
 	const intervalIssue = intervalWindowIssue(form)
 	if (intervalIssue !== null) issues.push(intervalIssue)
 	issues.push(...deriveRuleQueryIssues(form), ...deriveTierIssues(form))
-	if (form.destinationIds.length === 0) issues.push("Who gets notified")
+	if (form.destinationIds.length === 0 && form.escalationChainId === null) issues.push("Who gets notified")
 	return issues
 }
 
+/** Whether an anomaly rule pages nobody: no destination and no escalation chain on either tier. */
+export const isAnomalyUnrouted = (form: RuleForm): boolean =>
+	form.destinationIds.length === 0 &&
+	form.escalationChainId === null &&
+	(form.escalation?.destinationIds.length ?? 0) === 0 &&
+	(form.escalation?.escalationChainId ?? null) === null
+
+/**
+ * An anomaly rule has no query or timing to get wrong: a name, a scope and someone to page. Only
+ * Maple creates the unscoped default rule, which may stay unrouted (anomaly paging is opt-in); the
+ * server refuses any other unscoped enabled anomaly rule with no destination or escalation chain.
+ */
+const anomalyIssues = (form: RuleForm, isDefault: boolean): ReadonlyArray<string> => [
+	...(Str.trim(form.name).length === 0 ? ["Rule name"] : []),
+	...(!isDefault && isDefaultAnomalyRule(form) ? ["Scope"] : []),
+	...(!isDefault && isAnomalyUnrouted(form) ? ["Who gets notified"] : []),
+]
+
 /** What blocks saving: the form's own issues and a query too slow for its interval. */
-export const saveIssues = (form: RuleForm, timing: AlertQueryTiming | null): ReadonlyArray<string> => {
+export const saveIssues = (
+	form: RuleForm,
+	timing: AlertQueryTiming | null,
+	isDefault = false,
+): ReadonlyArray<string> => {
 	const timingIssue = queryTimingIssue(form, timing)
-	return timingIssue === null ? validationIssues(form) : [...validationIssues(form), timingIssue]
+	const issues = validationIssues(form, isDefault)
+	return timingIssue === null ? issues : [...issues, timingIssue]
 }
 
 /** `previewIdentityKey`: the rule as evaluated; a dry-run verdict is only shown while it matches. */
@@ -127,15 +166,19 @@ export const previewIdentityKey = (form: RuleForm): string => {
 		thresholds,
 		...evaluated
 	} = buildRuleCreateParamsV2(form)
-	const tiers = thresholds?.map(({ destination_ids: _ids, ...tier }) => tier)
+	const tiers =
+		thresholds === undefined
+			? undefined
+			: Arr.map(thresholds, ({ destination_ids: _ids, ...tier }) => tier)
 	return encodeJson({ ...evaluated, tiers })
 }
 
 /** `makeSuggestedName`: signal and scope, offered while the name is empty. */
 export const suggestedName = (form: RuleForm): string | null => {
 	if (Str.trim(form.name).length > 0) return null
+	if (form.signalType === "anomaly") return `Anomalies · ${anomalyScopeSummary(form)}`
 	const subject = conditionSubject(form)
-	const base = Str.toUpperCase(subject.charAt(0)) + Str.slice(1)(subject)
+	const base = Str.toUpperCase(Str.slice(0, 1)(subject)) + Str.slice(1)(subject)
 	const queryGroupBy =
 		form.signalType === "builder_query" && form.queryBuilderDraft.addOns.groupBy
 			? form.queryBuilderDraft.groupBy

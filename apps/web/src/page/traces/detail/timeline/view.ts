@@ -1,7 +1,7 @@
 import { SIDEBAR_WIDTH_NARROW_MIN } from "@maple/ui/components/traces/trace-timeline-types"
 import { Option, Array as Arr, String as Str } from "effect"
 import { Submodel } from "foldkit"
-import type { Html, HtmlBuilder } from "foldkit/html"
+import { createKeyedLazy, type Html, type HtmlBuilder } from "foldkit/html"
 import { emptyMessage } from "@maple/views/ui/empty"
 import { MountAltToggle, MeasureTimelineBody } from "./command"
 import { type Bar, computeSearchMatches, computeTimeAxisTicks, ROW_PITCH, virtualRange } from "./layout"
@@ -10,7 +10,8 @@ import type { Model } from "./model"
 import { barsOf, TIMELINE_KEYS } from "./update"
 import { minimap, searchBar, tickLeft, timeAxis, toolbar, type ToolbarIds } from "./view-chrome"
 import { footer, shortcutsOverlay } from "./view-footer"
-import { timelineRow } from "./view-row"
+import { type RowState, timelineRow } from "./view-row"
+import { hstack, vstack } from "@maple/views/ui/stack"
 
 // `TraceTimeline` (packages/ui/src/components/traces/trace-timeline.tsx): what its tab panel holds.
 // TODO(gestures): drag-zoom marquee, shift/middle-drag pan, ctrl+wheel zoom, minimap drags, the
@@ -53,6 +54,40 @@ const alignedStrip = (h: H, spacerClass: string, rowClass: string, cellClass: st
 		],
 	)
 
+// Keyed by `index % 256`, not span id: keys are never evicted, and a window never holds 256 rows.
+const rowSlots = createKeyedLazy()
+const ROW_SLOTS = 256
+
+// Primitive args so an unchanged row reuses its VNode; `top` is an arg, so a reused row never moves.
+const memoRow = (
+	h: H,
+	bar: Bar,
+	top: number,
+	isSelected: boolean,
+	isFocused: boolean,
+	isHovered: boolean,
+	isDimmed: boolean,
+	isMatched: boolean,
+	showService: boolean,
+	events: RowState["events"],
+	leftPct: number,
+	rightPct: number,
+	idPrefix: string,
+): Html =>
+	timelineRow(h, bar, {
+		top,
+		isSelected,
+		isFocused,
+		isHovered,
+		isDimmed,
+		isMatched,
+		showService,
+		events,
+		leftPct,
+		rightPct,
+		markerId: (marker) => `${idPrefix}-event-${bar.span.spanId}-${marker}`,
+	})
+
 const body = (
 	h: H,
 	model: Model,
@@ -72,96 +107,95 @@ const body = (
 		const spanId = bar.span.spanId
 		const isMatched = isSearchActive && matches.has(spanId)
 		return [
-			timelineRow(h, bar, {
-				top: index * ROW_PITCH,
-				isSelected: model.selectedSpanId === spanId,
-				isFocused: model.focusedIndex === index,
-				isHovered: model.hoveredSpanId === spanId,
-				isDimmed: isSearchActive && !isMatched,
+			rowSlots(index % ROW_SLOTS, memoRow, [
+				h,
+				bar,
+				index * ROW_PITCH,
+				model.selectedSpanId === spanId,
+				model.focusedIndex === index,
+				model.hoveredSpanId === spanId,
+				isSearchActive && !isMatched,
 				isMatched,
-				showService: model.services.length > 1,
-				events: model.spanEvents?.[spanId],
-				leftPct: (bar.offsetStartMs - vp0) * k,
-				rightPct: (bar.offsetEndMs - vp0) * k,
-				markerId: (marker) => `${inputs.idPrefix}-event-${spanId}-${marker}`,
-			}),
+				model.services.length > 1,
+				model.spanEvents?.[spanId],
+				(bar.offsetStartMs - vp0) * k,
+				(bar.offsetEndMs - vp0) * k,
+				inputs.idPrefix,
+			]),
 		]
 	})
-	return h.div(
-		[h.Class("relative flex flex-1 min-h-0")],
-		[
-			h.div(
-				[
-					h.Attribute("class", "flex-1 overflow-auto select-none "),
-					h.Style({ "scrollbar-gutter": "stable" }),
-					h.OnScroll((scrollTop) => Message.ScrolledBody({ scrollTop })),
-					h.OnMount(MeasureTimelineBody()),
-				],
-				[
-					h.div(
-						[
-							h.Class("relative w-full"),
-							h.OnMount(MountAltToggle()),
-							h.Style({
-								height: `${bars.length * ROW_PITCH}px`,
-								"--vp0": String(vp0),
-								"--vpk": String(visible > 0 ? 100 / visible : 0),
-							}),
-						],
-						[
-							h.div(
-								[
-									h.AriaHidden(true),
-									h.Class("pointer-events-none absolute inset-y-0 right-0 z-0"),
-									h.Style({ left: "var(--sidebar-w)" }),
-								],
-								Arr.map(ticks, (offset) =>
-									h.span(
-										[
-											h.Attribute(
-												"class",
-												"pointer-events-none absolute inset-y-0 w-px bg-border-subtle",
-											),
-											h.Style({ left: tickLeft(offset, model) }),
-										],
-										[],
-									),
+	return hstack(h, { align: "stretch", grow: true, className: "relative min-h-0" }, [
+		h.div(
+			[
+				h.Attribute("class", "flex-1 overflow-auto select-none "),
+				h.Style({ "scrollbar-gutter": "stable" }),
+				h.OnScroll((scrollTop) => Message.ScrolledBody({ scrollTop })),
+				h.OnMount(MeasureTimelineBody()),
+			],
+			[
+				h.div(
+					[
+						h.Class("relative w-full"),
+						h.OnMount(MountAltToggle()),
+						h.Style({
+							height: `${bars.length * ROW_PITCH}px`,
+							"--vp0": String(vp0),
+							"--vpk": String(visible > 0 ? 100 / visible : 0),
+						}),
+					],
+					[
+						h.div(
+							[
+								h.AriaHidden(true),
+								h.Class("pointer-events-none absolute inset-y-0 right-0 z-0"),
+								h.Style({ left: "var(--sidebar-w)" }),
+							],
+							Arr.map(ticks, (offset) =>
+								h.span(
+									[
+										h.Attribute(
+											"class",
+											"pointer-events-none absolute inset-y-0 w-px bg-border-subtle",
+										),
+										h.Style({ left: tickLeft(offset, model) }),
+									],
+									[],
 								),
 							),
-							...rows,
-						],
-					),
-				],
-			),
-			h.div(
-				[
-					h.AriaOrientation("vertical"),
-					h.Class(
-						"absolute top-0 bottom-0 z-30 w-1 -ml-0.5 cursor-col-resize bg-transparent hover:bg-primary-a3 active:bg-primary-a3 pointer-coarse:hidden",
-					),
-					h.Role("separator"),
-					h.Style({ left: `${sidebarWidth}px` }),
-				],
-				[],
-			),
-			h.div(
-				[
-					h.Class("pointer-events-none absolute top-0 bottom-0 left-0 z-20 w-px bg-foreground/40"),
-					h.Style({ display: "none" }),
-				],
-				[
-					h.span(
-						[
-							h.Class(
-								"absolute top-1 whitespace-nowrap bg-background/90 px-1 font-mono text-4xs leading-3 text-muted-foreground",
-							),
-						],
-						[],
-					),
-				],
-			),
-		],
-	)
+						),
+						...rows,
+					],
+				),
+			],
+		),
+		h.div(
+			[
+				h.AriaOrientation("vertical"),
+				h.Class(
+					"absolute top-0 bottom-0 z-30 w-1 -ml-0.5 cursor-col-resize bg-transparent hover:bg-primary-a3 active:bg-primary-a3 pointer-coarse:hidden",
+				),
+				h.Role("separator"),
+				h.Style({ left: `${sidebarWidth}px` }),
+			],
+			[],
+		),
+		h.div(
+			[
+				h.Class("pointer-events-none absolute top-0 bottom-0 left-0 z-20 w-px bg-foreground/40"),
+				h.Style({ display: "none" }),
+			],
+			[
+				h.span(
+					[
+						h.Class(
+							"absolute top-1 whitespace-nowrap bg-surface-float backdrop-blur-sm px-1 font-mono text-4xs leading-3 text-muted-foreground",
+						),
+					],
+					[],
+				),
+			],
+		),
+	])
 }
 
 export const view = Submodel.defineView<Model, Message, ViewInputs>((model, inputs, h) => {
@@ -175,17 +209,20 @@ export const view = Submodel.defineView<Model, Message, ViewInputs>((model, inpu
 		model.traceStartMs,
 		Math.max(0, model.scrollerWidth - sidebarWidth),
 	)
-	return h.div(
-		[
-			h.Class("@container/timeline border flex flex-col h-full outline-none relative"),
-			h.Style({ "--sidebar-w": `${sidebarWidth}px` }),
-			h.Tabindex(0),
-			h.OnKeyDownSelfPreventDefault((key, modifiers) =>
-				TIMELINE_KEYS.has(Str.toLowerCase(key))
-					? Option.some(Message.PressedTimelineKey({ key, isShift: modifiers.shiftKey }))
-					: Option.none(),
-			),
-		],
+	return vstack(
+		h,
+		{
+			className: "@container/timeline border h-full outline-none relative",
+			attributes: [
+				h.Style({ "--sidebar-w": `${sidebarWidth}px` }),
+				h.Tabindex(0),
+				h.OnKeyDownSelfPreventDefault((key, modifiers) =>
+					TIMELINE_KEYS.has(Str.toLowerCase(key))
+						? Option.some(Message.PressedTimelineKey({ key, isShift: modifiers.shiftKey }))
+						: Option.none(),
+				),
+			],
+		},
 		[
 			searchBar(h, model, matches.size, bars.length),
 			toolbar(h, model, bars.length, toolbarIds(inputs.idPrefix)),

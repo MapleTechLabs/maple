@@ -3,24 +3,64 @@ import { buildIncidentTimeline } from "@maple/web-data/alerts/incident-timeline"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { isChartRuntimeReady } from "@maple/views/charts/chart-runtime"
 import { ResolveThemeColors } from "@maple/views/charts/theme-colors"
-import { headerTitle, incidentBody } from "../../page/alerts/incident/view"
+import { acknowledgeAction, headerTitle, incidentBody } from "../../page/alerts/incident/view"
+import { AlertIncidentDocument, IsoDateTimeString } from "@maple/domain/http"
+import { V2AlertIncidentEvent } from "@maple/domain/http/v2"
+import { Array as Arr, Schema } from "effect"
+import { hstack } from "@maple/views/ui/stack"
 import { providerOf } from "../../page/alerts/shared/providers"
 import { RULE_CHART_TOKENS } from "../../page/alerts/shared/rule-chart"
+import { isoMs } from "../../page/alerts/shared/time"
 import { dashboardPage, pageHeader } from "../../page/kit/dashboard-page"
 import { AppRoute, hrefOf } from "../../route"
 import { linkButton } from "@maple/views/ui/button"
 import { icon } from "@maple/views/ui/icon"
 import { labShellView } from "../app-shell"
 import { Message, type Model } from "./model"
+import { Message as HubMessage } from "../../page/alerts/hub/message"
 import { FRAME_CLASS, hubSections, section } from "./view"
 
 type H = HtmlBuilder<Message>
 
+/** The fixture incident as Dana acknowledged it from Slack, a minute after its last notification. */
+const acknowledgedByDana = (
+	fixture: AlertsLabFixture,
+): Readonly<{ incident: AlertIncidentDocument; activity: ReadonlyArray<V2AlertIncidentEvent> }> => {
+	const { incident, deliveries } = fixture.incident
+	const lastNotifiedMs = Arr.reduce(deliveries, isoMs(incident.firstTriggeredAt), (latest, delivery) =>
+		Math.max(latest, isoMs(delivery.attemptedAt ?? delivery.scheduledAt)),
+	)
+	const acknowledgedAt = new Date(lastNotifiedMs + 60_000).toISOString()
+	return {
+		incident: new AlertIncidentDocument({
+			...incident,
+			acknowledgedAt: Schema.decodeSync(IsoDateTimeString)(acknowledgedAt),
+			acknowledgedByUserId: null,
+			acknowledgedByName: "Dana Kim",
+			acknowledgedVia: "slack",
+		}),
+		activity: [
+			Schema.decodeSync(V2AlertIncidentEvent)({
+				id: "evt_tC4d9V79DCDzgbGKhAnff9",
+				object: "alert_incident_event",
+				incident_id: "inc_tC4d9V79DCDzgbGKhAnff9",
+				type: "acknowledged",
+				actor: { user_id: null, name: "Dana Kim" },
+				source: "slack",
+				created_at: acknowledgedAt,
+			}),
+		],
+	}
+}
+
 /** `IncidentFrame`: `IncidentHeader` (a page header) over `IncidentBody`, from the fixture. */
-const incidentFrame = (h: H, model: Model, fixture: AlertsLabFixture): Html => {
-	const { incident, rule, ruleIncidents, states, preview, range, deliveries, investigation } =
-		fixture.incident
+const incidentFrame = (h: H, model: Model, fixture: AlertsLabFixture, isAcknowledged: boolean): Html => {
+	const { rule, ruleIncidents, states, preview, range, deliveries, investigation } = fixture.incident
+	const { incident, activity } = isAcknowledged
+		? acknowledgedByDana(fixture)
+		: { incident: fixture.incident.incident, activity: [] }
 	const entries = buildIncidentTimeline({
+		activity,
 		incident,
 		deliveries,
 		investigation,
@@ -37,17 +77,31 @@ const incidentFrame = (h: H, model: Model, fixture: AlertsLabFixture): Html => {
 					pageHeader(
 						h,
 						headerTitle(h, incident, rule, model.nowMs, model.timeZone),
-						linkButton(
-							h,
-							{
-								variant: "outline",
-								size: "sm",
-								href: hrefOf(
-									AppRoute.Investigation({ id: String(investigation.id), search: {} }),
-								),
-							},
-							[icon(h, "ChatBubbleSparkleIcon"), "Open investigation"],
-						),
+						hstack(h, { gap: "2", wrap: true }, [
+							// The lab hub drops this message, as it does the inbox buttons': the lab has no API.
+							...acknowledgeAction(h, {
+								incident,
+								isLoading: false,
+								onAcknowledge: (acknowledged) =>
+									Message.GotHubMessage({
+										message: HubMessage.ClickedAcknowledgeIncident({
+											incidentId: incident.id,
+											acknowledged,
+										}),
+									}),
+							}),
+							linkButton(
+								h,
+								{
+									variant: "outline",
+									size: "sm",
+									href: hrefOf(
+										AppRoute.Investigation({ id: String(investigation.id), search: {} }),
+									),
+								},
+								[icon(h, "ChatBubbleSparkleIcon"), "Open investigation"],
+							),
+						]),
 					),
 				],
 			),
@@ -69,7 +123,9 @@ const incidentFrame = (h: H, model: Model, fixture: AlertsLabFixture): Html => {
 						entries,
 						isEntriesLoading: false,
 						isEntriesFailed: false,
-						chartId: "alerts-lab-incident-chart",
+						chartId: isAcknowledged
+							? "alerts-lab-incident-chart-acknowledged"
+							: "alerts-lab-incident-chart",
 						chart: model.chart,
 						toChartMessage: (message) => Message.GotChartMessage({ message }),
 						colors: model.themeColors ?? {},
@@ -102,7 +158,10 @@ const pageBody = (h: H, model: Model): Html => {
 							toParentMessage: (message) => Message.GotHubMessage({ message }),
 						}),
 						section(h, "incident", "Incident: critical error rate on maple-chat", [
-							incidentFrame(h, model, fixture),
+							incidentFrame(h, model, fixture, false),
+						]),
+						section(h, "incident-acknowledged", "Incident: acknowledged from Slack", [
+							incidentFrame(h, model, fixture, true),
 						]),
 					],
 				),

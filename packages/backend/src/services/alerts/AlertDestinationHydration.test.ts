@@ -145,7 +145,7 @@ describe("hydrateDestinationRow", () => {
 	it.effect("hydrates a chat destination carrying optional public config keys", () => {
 		const testDb = createTestDb(createdDbs)
 		const id = asDestinationId("00000000-0000-4000-8000-000000000002")
-		const workspaceId = Schema.decodeUnknownSync(ChatWorkspaceId)("11111111-1111-4111-8111-111111111111")
+		const workspaceId = Schema.decodeSync(ChatWorkspaceId)("11111111-1111-4111-8111-111111111111")
 		const secretConfig: DestinationSecretConfig = {
 			type: "chat",
 			workspaceId,

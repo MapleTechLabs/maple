@@ -39,8 +39,8 @@ const TestMapleStack = Layer.effect(
 			workerDev: () => undefined,
 			devEnv: undefined,
 			db: undefined,
-			awsOidc: yield* createMapleAwsOidcKey(),
-			deviceToken: yield* createMapleDeviceTokenKey(),
+			awsOidc: yield* createMapleAwsOidcKey,
+			deviceToken: yield* createMapleDeviceTokenKey,
 		}
 		return context
 	}),

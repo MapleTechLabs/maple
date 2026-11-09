@@ -12,7 +12,7 @@
  * `section` carries at most 10 `fields` of at most 2000 each, and a link button's `url` is at most
  * 3000.
  */
-import { chatActionControlId, type ChatActionToken } from "../../action-token"
+import { chatActionControlId, chatAlertAckControlId, type ChatActionToken } from "../../action-token"
 import type { ChatAlertBlock, ChatBlock, ChatToolActivity } from "../../render/blocks"
 import { escapeMrkdwn, toMrkdwn } from "./mrkdwn"
 import { Array as Arr, String as Str } from "effect"
@@ -142,6 +142,7 @@ export const MAX_FIELD_CHARS = 2000
 export const MAX_LINK_BUTTONS = 5
 
 export const APPROVE_ACTION = "maple_approve"
+export const ALERT_ACK_ACTION = "maple_alert_ack"
 export const DENY_ACTION = "maple_deny"
 
 /** A message with nothing in it: Slack rejects a post carrying neither text nor blocks. */
@@ -279,23 +280,32 @@ const alertAttachment = (block: ChatAlertBlock): SlackAttachment => {
 			alt_text: clamp(block.imageAlt === "" ? "Chart" : block.imageAlt, MAX_ALT_TEXT_CHARS),
 		})
 	}
+	const ack = block.acknowledge
+	if (ack !== undefined && ack.acknowledgedBy !== null) {
+		blocks.push(context(`:white_check_mark: Acknowledged by *${escapeMrkdwn(ack.acknowledgedBy)}*`))
+	}
 	// A link too long for a button is left out rather than sent: Slack rejects the whole message.
 	const links = Arr.filter(block.links, (link) => link.url.length <= MAX_IMAGE_URL_CHARS).slice(
 		0,
 		MAX_LINK_BUTTONS,
 	)
-	if (links.length > 0) {
-		blocks.push({
-			type: "actions",
-			elements: Arr.map(links, (link, index) => ({
-				type: "button",
-				text: { type: "plain_text", text: clamp(link.label, MAX_BUTTON_TEXT_CHARS), emoji: true },
-				action_id: `maple_link_${index}`,
-				url: link.url,
-				...(link.primary ? { style: "primary" as const } : undefined),
-			})),
+	const buttons: Array<SlackButton> = Arr.map(links, (link, index) => ({
+		type: "button",
+		text: { type: "plain_text", text: clamp(link.label, MAX_BUTTON_TEXT_CHARS), emoji: true },
+		action_id: `maple_link_${index}`,
+		url: link.url,
+		...(link.primary ? { style: "primary" as const } : undefined),
+	}))
+	if (ack !== undefined) {
+		const acknowledged = ack.acknowledgedBy !== null
+		buttons.push({
+			type: "button",
+			text: { type: "plain_text", text: acknowledged ? "Unacknowledge" : "Acknowledge" },
+			action_id: ALERT_ACK_ACTION,
+			value: chatAlertAckControlId(acknowledged ? "unacknowledge" : "acknowledge", ack.incidentId),
 		})
 	}
+	if (buttons.length > 0) blocks.push({ type: "actions", elements: buttons })
 	const footer = [
 		...Arr.map(block.footer, toMrkdwn),
 		...(block.sentAtMs === null ? [] : [slackDate(block.sentAtMs)]),

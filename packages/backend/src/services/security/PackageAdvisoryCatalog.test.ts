@@ -2,7 +2,7 @@ import { assert, describe, it } from "@effect/vitest"
 import { CacheBackendLive } from "@maple/backend/platform/CacheBackendLive"
 import { EdgeCacheService } from "@maple/cache"
 import { type PackageRef, packageKey } from "@maple/domain/package-advisories"
-import { Effect, Layer, Array as Arr, String as Str } from "effect"
+import { Effect, Layer, Option, Array as Arr, String as Str } from "effect"
 import { HttpClient, type HttpClientRequest, HttpClientResponse } from "effect/http"
 import fixture from "./__fixtures__/osv.json"
 import { MAX_VULNERABILITIES, PackageAdvisoryCatalog } from "./PackageAdvisoryCatalog"
@@ -25,11 +25,15 @@ interface FakeOsv {
 }
 
 const capturedAnswer = (query: Query) => {
-	const index = fixture.queries.findIndex(
-		(known) =>
-			known.package.ecosystem === query.package.ecosystem &&
-			known.package.name === query.package.name &&
-			known.version === query.version,
+	const index = Option.getOrElse(
+		Arr.findFirstIndex(
+			fixture.queries,
+			(known) =>
+				known.package.ecosystem === query.package.ecosystem &&
+				known.package.name === query.package.name &&
+				known.version === query.version,
+		),
+		() => -1,
 	)
 	return fixture.batch.results[index] ?? {}
 }
@@ -52,8 +56,8 @@ const osv = (fake: FakeOsv) =>
 			}
 			const id = decodeURIComponent(Str.replace("/v1/vulns/", "")(url.pathname))
 			fake.requests.push(`vuln:${id}`)
-			const vuln = fixture.vulns.find((candidate) => candidate.id === id)
-			if (vuln !== undefined) return json(request, vuln)
+			const vuln = Arr.findFirst(fixture.vulns, (candidate) => candidate.id === id)
+			if (Option.isSome(vuln)) return json(request, vuln.value)
 			// Synthetic ids a test invents answer with a bare record.
 			return Str.startsWith("GHSA-many-")(id)
 				? json(request, { id, aliases: [] })
@@ -83,8 +87,10 @@ const refs: ReadonlyArray<PackageRef> = Arr.map(fixture.queries, (query) => ({
 }))
 
 const keyOf = (name: string) => {
-	const ref = refs.find((candidate) => candidate.name === name)
-	return ref === undefined ? "" : packageKey(ref)
+	return Option.match(
+		Arr.findFirst(refs, (candidate) => candidate.name === name),
+		{ onNone: () => "", onSome: (ref) => packageKey(ref) },
+	)
 }
 
 describe("PackageAdvisoryCatalog", () => {
@@ -94,9 +100,11 @@ describe("PackageAdvisoryCatalog", () => {
 			const catalog = yield* PackageAdvisoryCatalog
 			const { byPackage: first } = yield* catalog.advisories([...refs, ...refs])
 			assert.deepStrictEqual(
-				first
-					.get(keyOf("minimist"))
-					?.map((advisory) => [advisory.id, advisory.severity, advisory.fixedIn]),
+				Arr.map(first.get(keyOf("minimist")) ?? [], (advisory) => [
+					advisory.id,
+					advisory.severity,
+					advisory.fixedIn,
+				]),
 				[["GHSA-xvch-5gv4-984h", "critical", "1.2.6"]],
 			)
 			assert.strictEqual(first.get(keyOf("lodash"))?.length, 6)
@@ -129,10 +137,7 @@ describe("PackageAdvisoryCatalog", () => {
 			const catalog = yield* PackageAdvisoryCatalog
 			const { byPackage: advisories } = yield* catalog.advisories(refs)
 			assert.deepStrictEqual(
-				advisories
-					.get(keyOf("lodash"))
-					?.map((advisory) => advisory.id)
-					.sort(),
+				Arr.map(advisories.get(keyOf("lodash")) ?? [], (advisory) => advisory.id).sort(),
 				["GHSA-29mw-wpgm-hmr9", "GHSA-p6mc-m468-83gw"],
 			)
 			assert.deepStrictEqual(

@@ -1,4 +1,4 @@
-import { Effect, Array as Arr } from "effect"
+import { Effect, Array as Arr, String as Str } from "effect"
 import { describe, expect, it } from "vitest"
 import { compileUnsafe } from "@maple-dev/effect-orm/clickhouse"
 import { OrgId } from "@maple/domain"
@@ -27,8 +27,8 @@ describe("gcpInfraMetricsSQL", () => {
 		)
 		expect(sql).toContain("FROM metrics_gauge\n        WHERE metrics_gauge.OrgId = 'org_1'")
 		expect(sql).toContain("'gcp.cloud_run.request.duration', 'gcp.cloud_run.container.instance.count'")
-		expect(sql.match(/TimeUnix >= '2026-07-02 00:00:00.000'/g)).toHaveLength(2)
-		expect(sql.match(/TimeUnix <= '2026-07-03 00:00:00.000'/g)).toHaveLength(2)
+		expect(Arr.fromIterable(Str.matchAll(/TimeUnix >= '2026-07-02 00:00:00.000'/g)(sql))).toHaveLength(2)
+		expect(Arr.fromIterable(Str.matchAll(/TimeUnix <= '2026-07-03 00:00:00.000'/g)(sql))).toHaveLength(2)
 		// oxlint-disable-next-line test-slop/no-sql-text-pin -- the identity key every row groups by
 		expect(sql).toContain(
 			"[metrics_sum.ResourceAttributes['service.name'], metrics_sum.ResourceAttributes['cloud.account.id'], metrics_sum.ResourceAttributes['cloud.region']] AS keys",
@@ -56,7 +56,7 @@ describe("gcpInfraMetricsSQL", () => {
 			// Metric names only: `gcp.resource.labels.*` are identity attributes, and
 			// `gcp.metric.labels.*` point attributes.
 			const names = Arr.map(
-				[...sql.matchAll(/'(gcp\.(?!resource\.|metric\.)[a-z_.]+)'/g)],
+				Arr.fromIterable(Str.matchAll(/'(gcp\.(?!resource\.|metric\.)[a-z_.]+)'/g)(sql)),
 				(match) => match[1],
 			)
 			expect(names.sort(), service).toEqual([
@@ -112,8 +112,8 @@ describe("gcpInfraTimeseriesSQL", () => {
 		expect(sql).toContain(
 			"metrics_sum.MetricName IN ('gcp.cloud_run.requests', 'gcp.cloud_run.container.billable_time')",
 		)
-		expect(sql.match(/TimeUnix >= '2026-07-02 00:00:00.000'/g)).toHaveLength(2)
-		expect(sql.match(/TimeUnix <= '2026-07-03 00:00:00.000'/g)).toHaveLength(2)
+		expect(Arr.fromIterable(Str.matchAll(/TimeUnix >= '2026-07-02 00:00:00.000'/g)(sql))).toHaveLength(2)
+		expect(Arr.fromIterable(Str.matchAll(/TimeUnix <= '2026-07-03 00:00:00.000'/g)(sql))).toHaveLength(2)
 		expect(sql).toContain("toStartOfInterval(points.t, INTERVAL 300 SECOND) AS bucket")
 		expect(sql).toContain("GROUP BY bucket, metric, label")
 		expect(sql).toContain("LIMIT 10000")
@@ -138,9 +138,10 @@ describe("gcpInfraTimeseriesSQL", () => {
 		for (const source of GCP_INFRA_SOURCE_IDS) {
 			const { sql } = compileUnsafe(gcpInfraTimeseriesSQL(source, ["only-the-name"]), bucketed)
 			expect(sql, source).toContain("= 'only-the-name'")
-			expect(sql.match(/ResourceAttributes\['[a-z_.]+'\] = ''/g)?.length ?? 0, source).toBeGreaterThan(
-				0,
-			)
+			expect(
+				Arr.fromIterable(Str.matchAll(/ResourceAttributes\['[a-z_.]+'\] = ''/g)(sql)).length,
+				source,
+			).toBeGreaterThan(0)
 		}
 	})
 

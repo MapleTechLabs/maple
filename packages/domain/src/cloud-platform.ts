@@ -1,7 +1,7 @@
 // The platform a span ran on, shared by the trace views and MCP `inspect_span`. The tree
 // projection returns every requested key with an empty value, so only non-blank values count.
 
-import { Record, Schema, Array as Arr, String as Str } from "effect"
+import { Option, Record, Schema, Array as Arr, String as Str } from "effect"
 
 export const CloudflareWorkerSummary = Schema.TaggedStruct("cloudflare", {
 	scriptName: Schema.optionalKey(Schema.String),
@@ -59,7 +59,8 @@ const field = <K extends string, V>(key: K, value: V | undefined): { readonly [P
 const reader = (span: Attrs, resource: Attrs) => {
 	const get = (key: string): string | undefined =>
 		isPresent(span[key]) ? span[key] : isPresent(resource[key]) ? resource[key] : undefined
-	const pick = (...keys: ReadonlyArray<string>): string | undefined => Arr.map(keys, get).find(isPresent)
+	const pick = (...keys: ReadonlyArray<string>): string | undefined =>
+		Option.getOrUndefined(Arr.findFirst(Arr.map(keys, get), isPresent))
 	// Zero is a real timing (the Workers clock only advances on I/O); unparsable is absent.
 	const millis = (key: string): number | undefined => {
 		const raw = get(key)

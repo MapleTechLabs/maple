@@ -64,7 +64,7 @@ export const getUptimeCheckStats = Effect.fn("QueryEngine.getUptimeCheckStats")(
 	input: UptimeCheckStatsInput,
 ) {
 	// A constant that always decodes; checks are exported under it.
-	const serviceName = yield* Schema.decodeUnknownEffect(ServiceName)(UPTIME_SERVICE_NAME).pipe(Effect.orDie)
+	const serviceName = yield* Schema.decodeEffect(ServiceName)(UPTIME_SERVICE_NAME).pipe(Effect.orDie)
 	const filters: TracesFilters = {
 		serviceName,
 		rootSpansOnly: true,

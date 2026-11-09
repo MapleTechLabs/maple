@@ -43,15 +43,15 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 		if (Option.isSome(failure))
 			return errorState(h, {
 				failure: failure.value,
-				title: "Couldn’t load errors",
+				title: "Couldn't load errors",
 				onRetry: Message.ClickedRefresh(),
 			})
 		if (rows.length === 0)
 			return activeFilterCount === 0 && tracesPresence.status === "present"
 				? emptyNotice(h, {
 						icon: icon(h, "CircleWarningIcon"),
-						title: "No errors in this range",
-						hint: "Errors appear when spans arrive with an Error status. None did in the selected window.",
+						title: "No errors in this window",
+						hint: "Errors appear when spans arrive with an Error status. None did in this window.",
 					})
 				: signalEmptyState(h, {
 						signal: "traces",
@@ -62,6 +62,7 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 						onWidenRange: Message.ClickedWidenRange(),
 						presence: tracesPresence,
 						nowMs: inputs.presenceNowMs,
+						timeZone: inputs.context.timeFormat.timeZone,
 						guide: {
 							id: "errors-empty",
 							endpoint: context.env.otlpEndpoint,
@@ -72,13 +73,10 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 		return h.div(
 			[h.Class(cn("space-y-2 p-4", model.byType.retained === true && "opacity-60 transition-opacity"))],
 			Arr.map(rows, (row) =>
-				errorTypeCard(
-					h,
-					row,
-					cardOf(model, row.fingerprintHash),
-					query,
-					Math.max(model.nowMs, inputs.clockMs),
-				),
+				errorTypeCard(h, row, cardOf(model, row.fingerprintHash), query, {
+					nowMs: Math.max(model.nowMs, inputs.clockMs),
+					timeZone: context.timeFormat.timeZone,
+				}),
 			),
 		)
 	}

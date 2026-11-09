@@ -7,6 +7,8 @@
 import type { APIRoute } from "astro"
 import { EU_APP_URL, EU_INGEST_URL, euFaqs } from "../lib/eu-region"
 import { blocks, docHeader, markdown, table } from "../lib/page-markdown"
+import { complianceMarkdown } from "../lib/compliance"
+import * as m from "../paraglide/messages.js"
 import { Array as Arr } from "effect"
 
 export const GET: APIRoute = async ({ site }) => {
@@ -53,6 +55,9 @@ export const GET: APIRoute = async ({ site }) => {
 
 			"## Shared between regions",
 			"Your Maple login, billing (plan and usage totals, no telemetry) and the maple.dev website are run once for both regions. None of them hold the telemetry you send.",
+
+			`## ${m.compliance_title()}`,
+			complianceMarkdown(),
 
 			"## FAQ",
 			...Arr.flatMap(euFaqs(), (item) => [`### ${item.question}`, item.answer]),

@@ -1,3 +1,4 @@
+import * as Policy from "@maple/domain/policy"
 import { AlertDestinationId } from "@maple/domain/http"
 import {
 	encodePublicId,
@@ -40,6 +41,8 @@ import {
 	update,
 } from "./dialog"
 import { view as dialogView } from "./view"
+
+const ENGINEER = Policy.grantsOf(["org:engineer"])
 
 const view = withViewInputs(dialogView, { id: "test-destination" })()
 const workspaceWire = (n: number, name: string) => ({
@@ -312,8 +315,8 @@ describe("destination dialog", () => {
 			click(role("button", { name: /^Linear/ })),
 			expectView(text("Checking your Linear connection…")).toExist(),
 			Command.resolve(
-				LinearFields.FetchIsAdmin,
-				LinearFields.Message.CompletedFetchIsAdmin({ isAdmin: true }),
+				LinearFields.FetchGrants,
+				LinearFields.Message.CompletedFetchGrants({ grants: ENGINEER }),
 			),
 			Command.resolve(
 				LinearFields.FetchStatus,
@@ -402,5 +405,33 @@ describe("Google Chat destination form", () => {
 
 	test("keeps the stored webhook when an edit leaves the URL blank", () => {
 		expect(isFormReady({ ...form(""), name: "Ops" }, true)).toBe(true)
+	})
+})
+
+describe("incident.io destination form", () => {
+	const STORED = "01GW2G3V0S59R238FAHPDS1R66"
+	const editing = (alertSourceId: string, token = "") => ({
+		...opened().form,
+		type: "incident-io" as const,
+		name: "Paging",
+		incidentIoAlertSourceId: alertSourceId,
+		incidentIoToken: token,
+		incidentIoStoredAlertSourceId: STORED,
+	})
+
+	test("keeps the stored token while the source stays the same", () => {
+		expect(isFormReady(editing(STORED), true)).toBe(true)
+	})
+
+	test("asks for the token of a different source before saving", () => {
+		expect(isFormReady(editing("01HZZZZZZZZZZZZZZZZZZZZZZZ"), true)).toBe(false)
+		expect(isFormReady(editing("01HZZZZZZZZZZZZZZZZZZZZZZZ", "new-token"), true)).toBe(true)
+	})
+
+	test("a new destination needs a valid id and a token", () => {
+		const fresh = { ...editing(STORED, "tok"), incidentIoStoredAlertSourceId: "" }
+		expect(isFormReady(fresh, false)).toBe(true)
+		expect(isFormReady({ ...fresh, incidentIoToken: "" }, false)).toBe(false)
+		expect(isFormReady({ ...fresh, incidentIoAlertSourceId: "https://api.incident.io/x" }, false)).toBe(false)
 	})
 })

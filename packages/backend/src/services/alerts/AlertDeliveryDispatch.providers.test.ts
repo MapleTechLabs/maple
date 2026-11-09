@@ -2,7 +2,7 @@ import type { AlertDestinationRow } from "@maple/db/tables"
 import { AlertDeliveryError, AlertDestinationId, OrgId } from "@maple/domain/http"
 import { assert, describe, it } from "@effect/vitest"
 import { createHmac } from "node:crypto"
-import { Effect, Schema } from "effect"
+import { Array as Arr, Effect, Schema } from "effect"
 import type { DispatchContext } from "./AlertDeliveryDispatch"
 import { dispatchDelivery as dispatchDeliveryRaw } from "./delivery/dispatch"
 import { FetchHttpClient } from "effect/http"
@@ -54,7 +54,7 @@ const unusedLinear: EffectTransportDeps["linear"] = {
 		Effect.fail(new AlertDeliveryError({ message: "unexpected Linear call", destinationType: "linear" })),
 }
 
-const DESTINATION_ID = Schema.decodeUnknownSync(AlertDestinationId)("7c6b5a49-3821-4e0f-9d8c-7b6a59483726")
+const DESTINATION_ID = Schema.decodeSync(AlertDestinationId)("7c6b5a49-3821-4e0f-9d8c-7b6a59483726")
 
 const SENT_AT_MS = Date.parse("2026-06-02T00:00:00.000Z")
 const LINK = "https://web.localhost/alerts"
@@ -62,7 +62,7 @@ const CHAT = "https://web.localhost/alerts/rule_1"
 
 const destinationRow = (overrides: Partial<AlertDestinationRow> = {}): AlertDestinationRow => ({
 	id: DESTINATION_ID,
-	orgId: Schema.decodeUnknownSync(OrgId)("org_1"),
+	orgId: Schema.decodeSync(OrgId)("org_1"),
 	name: "Destination",
 	type: "webhook",
 	enabled: true,
@@ -154,7 +154,7 @@ describe("dispatchDelivery: pagerduty", () => {
 			const result = yield* dispatch(context, fetchFn)
 
 			assert.lengthOf(calls, 1)
-			const call = calls[0]!
+			const call = calls[0]
 			assert.strictEqual(call.url, "https://events.pagerduty.com/v2/enqueue")
 			assert.strictEqual(call.method, "POST")
 			assert.strictEqual(call.headers.get("content-type"), "application/json")
@@ -187,7 +187,7 @@ describe("dispatchDelivery: pagerduty", () => {
 			const { calls, fetchFn } = recorder(ok)
 			yield* dispatch({ ...context, eventType: "resolve" }, fetchFn)
 
-			const body = JSON.parse(calls[0]!.body)
+			const body = JSON.parse(calls[0].body)
 			assert.strictEqual(body.event_action, "resolve")
 			assert.strictEqual(body.dedup_key, "org_1:rule_1:checkout")
 		}),
@@ -198,7 +198,7 @@ describe("dispatchDelivery: pagerduty", () => {
 			const { calls, fetchFn } = recorder(ok)
 			yield* dispatch({ ...context, severity: "warning" }, fetchFn)
 
-			assert.strictEqual(JSON.parse(calls[0]!.body).payload.severity, "warning")
+			assert.strictEqual(JSON.parse(calls[0].body).payload.severity, "warning")
 		}),
 	)
 })
@@ -217,7 +217,7 @@ describe("dispatchDelivery: webhook", () => {
 			)
 
 			assert.lengthOf(calls, 1)
-			const call = calls[0]!
+			const call = calls[0]
 			assert.strictEqual(call.url, url)
 			assert.strictEqual(call.method, "POST")
 			// Byte-identical: the webhook body IS the caller's payload string.
@@ -245,7 +245,7 @@ describe("dispatchDelivery: webhook", () => {
 				payloadJson,
 			)
 
-			const signature = calls[0]!.headers.get("x-maple-signature")
+			const signature = calls[0].headers.get("x-maple-signature")
 			assert.isNotNull(signature)
 			// Pinned: consumers verify against this exact construction.
 			assert.strictEqual(signature, createHmac("sha256", "s3cr3t").update(payloadJson).digest("hex"))
@@ -276,7 +276,7 @@ describe("dispatchDelivery: discord", () => {
 			const result = yield* dispatch(context, fetchFn)
 
 			assert.lengthOf(calls, 1)
-			const call = calls[0]!
+			const call = calls[0]
 			assert.strictEqual(call.url, webhookUrl)
 			assert.strictEqual(call.method, "POST")
 			assert.strictEqual(call.headers.get("content-type"), "application/json")
@@ -309,7 +309,7 @@ describe("dispatchDelivery: discord", () => {
 			const { calls, fetchFn } = recorder(ok)
 			yield* dispatch(context, fetchFn, '{"totally":"ignored"}')
 
-			assert.notInclude(calls[0]!.body, "totally")
+			assert.notInclude(calls[0].body, "totally")
 		}),
 	)
 })
@@ -340,6 +340,141 @@ describe("dispatchDelivery: google-chat", () => {
 	)
 })
 
+describe("dispatchDelivery: microsoft-teams", () => {
+	const context = contextFor({
+		type: "microsoft-teams",
+		webhookUrl:
+			"https://default0a1b.47.environment.api.powerplatform.com/powerautomate/automations/direct/workflows/abc123/triggers/manual/paths/invoke?api-version=1&sv=1.0&sig=s1g",
+	})
+	const accepted = () => new Response("", { status: 202 })
+
+	it.effect("acknowledges the 202 the Workflows trigger answers", () =>
+		Effect.gen(function* () {
+			const { calls, fetchFn } = recorder(accepted)
+			const result = yield* dispatch(context, fetchFn)
+			assert.lengthOf(calls, 1)
+			assert.strictEqual(JSON.parse(calls[0].body).type, "message")
+			assert.deepStrictEqual(result, {
+				providerMessage: "Delivered to Microsoft Teams",
+				providerReference: "org_1:rule_1:checkout",
+				responseCode: 202,
+			})
+		}),
+	)
+
+	it.effect("explains a rejected or deleted flow", () =>
+		Effect.gen(function* () {
+			const messages = yield* Effect.forEach([401, 404], (status) =>
+				Effect.flip(dispatch(context, recorder(() => new Response("", { status })).fetchFn)).pipe(
+					Effect.map((error) => error.message),
+				),
+			)
+			assert.include(messages[0], 'set its trigger to "Anyone"')
+			assert.include(messages[1], "no longer exists")
+		}),
+	)
+})
+
+describe("dispatchDelivery: incident-io", () => {
+	const context = contextFor({
+		type: "incident-io",
+		alertSourceConfigId: "01GW2G3V0S59R238FAHPDS1R66",
+		token: "inc-s3cret",
+	})
+	const accepted = () =>
+		new Response(JSON.stringify({ status: "success", message: "Event accepted for processing" }), {
+			status: 202,
+		})
+	const bodies = (calls: ReadonlyArray<RecordedCall>) =>
+		Arr.map(calls, (call) => {
+			const body = JSON.parse(call.body)
+			return [body.status, body.deduplication_key]
+		})
+
+	it.effect("posts a firing event to the alert source with the token as a Bearer header", () =>
+		Effect.gen(function* () {
+			const { calls, fetchFn } = recorder(accepted)
+			const result = yield* dispatch(context, fetchFn)
+
+			assert.lengthOf(calls, 1)
+			const call = calls[0]
+			assert.strictEqual(
+				call.url,
+				"https://api.incident.io/v2/alert_events/http/01GW2G3V0S59R238FAHPDS1R66",
+			)
+			assert.strictEqual(call.method, "POST")
+			assert.strictEqual(call.headers.get("authorization"), "Bearer inc-s3cret")
+			const body = JSON.parse(call.body)
+			assert.strictEqual(body.title, "Checkout error rate triggered")
+			assert.strictEqual(body.status, "firing")
+			assert.strictEqual(body.deduplication_key, "org_1:rule_1:checkout")
+			assert.strictEqual(body.source_url, LINK)
+			assert.include(body.description, `[Ask Maple AI](${CHAT})`)
+			assert.strictEqual(body.metadata.severity, "critical")
+			assert.strictEqual(body.metadata.group_key, "checkout")
+			assert.strictEqual(body.metadata.value, 0.08)
+			assert.deepStrictEqual(result, {
+				providerMessage: "Delivered to incident.io",
+				providerReference: "org_1:rule_1:checkout",
+				responseCode: 202,
+			})
+		}),
+	)
+
+	it.effect("resolves the alert it opened under the same rule-and-group key", () =>
+		Effect.gen(function* () {
+			const { calls, fetchFn } = recorder(accepted)
+			yield* dispatch({ ...context, eventType: "resolve" }, fetchFn)
+			assert.deepStrictEqual(bodies(calls), [["resolved", "org_1:rule_1:checkout"]])
+		}),
+	)
+
+	it.effect(
+		"pages a two-tier rule's critical escalation under its own key, and closes both on resolve",
+		() =>
+			Effect.gen(function* () {
+				const twoTier = { ...context, ruleSeverities: ["warning", "critical"] as const }
+				const fired = recorder(accepted)
+				yield* dispatch({ ...twoTier, incidentSeverity: "critical" }, fired.fetchFn)
+				assert.deepStrictEqual(bodies(fired.calls), [["firing", "org_1:rule_1:checkout:critical"]])
+
+				const resolved = recorder(accepted)
+				yield* dispatch(
+					{ ...twoTier, eventType: "resolve", incidentPeakSeverity: "critical" },
+					resolved.fetchFn,
+				)
+				assert.deepStrictEqual(bodies(resolved.calls), [
+					["resolved", "org_1:rule_1:checkout"],
+					["resolved", "org_1:rule_1:checkout:critical"],
+				])
+			}),
+	)
+
+	it.effect("closes a test alert as soon as it opens it", () =>
+		Effect.gen(function* () {
+			const { calls, fetchFn } = recorder(accepted)
+			yield* dispatch({ ...context, eventType: "test", dedupeKey: "org_1:dest_1:test" }, fetchFn)
+			assert.deepStrictEqual(bodies(calls), [
+				["firing", "org_1:dest_1:test"],
+				["resolved", "org_1:dest_1:test"],
+			])
+		}),
+	)
+
+	it.effect("names a bad token, an unknown source and the rate limit", () =>
+		Effect.gen(function* () {
+			const messages = yield* Effect.forEach([401, 404, 429], (status) =>
+				Effect.flip(dispatch(context, recorder(() => new Response("{}", { status })).fetchFn)).pipe(
+					Effect.map((error) => error.message),
+				),
+			)
+			assert.include(messages[0], "rejected the token")
+			assert.include(messages[1], "no alert source with this ID")
+			assert.include(messages[2], "rate-limited")
+		}),
+	)
+})
+
 describe("dispatchDelivery: telegram", () => {
 	const botToken = "123456789:tok3n-in-the-path"
 	const context = contextFor({ type: "telegram", botToken, chatId: "-1001234567890" })
@@ -352,7 +487,7 @@ describe("dispatchDelivery: telegram", () => {
 			const result = yield* dispatch(context, fetchFn)
 
 			assert.lengthOf(calls, 1)
-			const call = calls[0]!
+			const call = calls[0]
 			assert.strictEqual(call.url, `https://api.telegram.org/bot${botToken}/sendMessage`)
 			assert.strictEqual(call.method, "POST")
 
@@ -406,7 +541,7 @@ describe("dispatchDelivery: telegram", () => {
 			const { calls, fetchFn } = recorder(sent)
 			yield* dispatch(context, fetchFn, '{"totally":"ignored"}')
 
-			assert.notInclude(calls[0]!.body, "totally")
+			assert.notInclude(calls[0].body, "totally")
 		}),
 	)
 })

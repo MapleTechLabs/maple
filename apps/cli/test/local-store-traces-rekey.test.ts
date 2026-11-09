@@ -108,7 +108,7 @@ describeWithChdb("v33 -> v34 traces re-sort", () => {
 		}))
 		expect(after.snapshot).toEqual(before)
 		expect(after.table?.sortingKey).toBe("OrgId, ServiceName, toStartOfFiveMinutes(Timestamp), TraceId")
-		expect(Str.split(",")(after.table?.indexes)).toContain("idx_span_name")
+		expect(Str.split(",")(after.table?.indexes ?? "")).toContain("idx_span_name")
 		expect(after.table?.definition).toContain(`toIntervalDay(${RETENTION_DAYS})`)
 	})
 

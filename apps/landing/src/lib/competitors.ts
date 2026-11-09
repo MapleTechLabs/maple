@@ -670,6 +670,7 @@ export const competitors: Competitor[] = [
 				maple: m.cmp_d0_selfhost_maple,
 				competitor: m.cmp_d0_selfhost_them,
 				edge: "maple",
+				source: 3,
 			},
 			{
 				id: "retention",
@@ -743,6 +744,7 @@ export const competitors: Competitor[] = [
 			{ label: "Dash0 pricing", url: "https://www.dash0.com/pricing", checked: CHECKED_PRICING },
 			{ label: "Dash0 on GitHub", url: "https://github.com/dash0hq", checked: CHECKED },
 			{ label: "Dash0 documentation", url: "https://www.dash0.com/documentation", checked: CHECKED },
+			{ label: "Dash0 SignalControl", url: "https://www.dash0.com/signalcontrol", checked: "2026-11" },
 		],
 		locales: ["en", "ja", "ko"],
 	},
@@ -844,7 +846,7 @@ export const competitors: Competitor[] = [
 				topic: m.cmp_topic_channels,
 				maple: m.cmp_sn_channels_maple,
 				competitor: m.cmp_sn_channels_them,
-				edge: "competitor",
+				edge: "even",
 				source: 9,
 			},
 		],
@@ -1375,7 +1377,7 @@ export const competitors: Competitor[] = [
 				topic: m.cmp_topic_slo,
 				maple: m.cmp_hc_slo_maple,
 				competitor: m.cmp_hc_slo_them,
-				edge: "competitor",
+				edge: "even",
 				source: 0,
 			},
 			{

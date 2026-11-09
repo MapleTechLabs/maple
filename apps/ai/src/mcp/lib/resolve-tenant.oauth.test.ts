@@ -50,9 +50,9 @@ const makeLayer = (testDb: TestDb, apiBaseUrl = "https://api.example.com") => {
 	)
 }
 
-const orgId = Schema.decodeUnknownSync(OrgId)("org_mcp")
-const userId = Schema.decodeUnknownSync(UserId)("user_mcp")
-const memberRole = Schema.decodeUnknownSync(RoleName)("org:member")
+const orgId = Schema.decodeSync(OrgId)("org_mcp")
+const userId = Schema.decodeSync(UserId)("user_mcp")
+const memberRole = Schema.decodeSync(RoleName)("org:member")
 const resource = "https://api.example.com/mcp"
 const redirectUri = "http://127.0.0.1:49152/callback"
 const verifier = "maple-mcp-oauth-verifier-that-is-long-enough-1234567890"
@@ -146,8 +146,8 @@ describe("an MCP OAuth token, resolved by the AI worker", () => {
 })
 
 describe("an agent named in x-maple-agent-id", () => {
-	const otherUser = Schema.decodeUnknownSync(UserId)("user_other")
-	const otherOrg = Schema.decodeUnknownSync(OrgId)("org_other")
+	const otherUser = Schema.decodeSync(UserId)("user_other")
+	const otherOrg = Schema.decodeSync(OrgId)("org_other")
 
 	it.effect("is acted as only when it is the key user's own agent in the key's org", () => {
 		const db = createTestDb(createdDbs)

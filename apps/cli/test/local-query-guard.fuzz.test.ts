@@ -2,7 +2,7 @@ import { afterAll, beforeAll, expect, test } from "bun:test"
 import fc from "fast-check"
 import { mkdtempSync, readdirSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
-import { join } from "node:path"
+import { basename, dirname, join } from "node:path"
 import { Chdb } from "@maple/local-server/chdb"
 import { __testables } from "@maple/local-server/serve"
 import { describeWithChdb } from "./libchdb-test-support"
@@ -110,6 +110,8 @@ const sideEffects = () => [
 	`SELECT * FROM urlCluster('default', 'http://127.0.0.1:${port()}/c', 'CSVWithNames')`,
 	"SELECT catboostEvaluate('/x', 1)",
 	"SELECT * FROM input('a String')",
+	`SELECT content FROM filesystem('${dirname(secretPath)}') WHERE name = '${basename(secretPath)}'`,
+	`SELECT * FROM numbers(1) AS limit, filesystem('${dirname(secretPath)}') AS f`,
 ]
 
 const suffixes = () => [
@@ -136,6 +138,7 @@ const statement: fc.Arbitrary<string> = fc.letrec<{ stmt: string }>((tie) => ({
 		atom,
 		fc.tuple(tie("stmt"), fc.constantFrom(...suffixes())).map(([s, suffix]) => s + suffix),
 		tie("stmt").map((s) => `SELECT * FROM (${s})`),
+		tie("stmt").map((s) => `SELECT * FROM (${s} SETTINGS readonly = 0)`),
 		tie("stmt").map((s) => `WITH (${s}) AS q SELECT 1`),
 		tie("stmt").map((s) => `SELECT 1 WHERE 1 IN (${s})`),
 		fc

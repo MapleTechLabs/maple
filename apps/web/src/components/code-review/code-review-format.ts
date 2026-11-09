@@ -54,9 +54,10 @@ export const SKIP_LABELS = {
 /** A span in the largest unit that keeps it readable: `42s`, `14m`, `5.2h`, `7.0d`. */
 export function formatSpan(seconds: number | null): string {
 	if (seconds === null || !Number.isFinite(seconds)) return EMPTY_VALUE
-	if (seconds < 60) return `${Math.round(seconds)}s`
-	if (seconds < 3_600) return `${Math.round(seconds / 60)}m`
-	if (seconds < 86_400) return `${(seconds / 3_600).toFixed(1)}h`
+	// Pick the unit from the rounded value, so 59.6s reads `1m`, not `60s`.
+	if (Math.round(seconds) < 60) return `${Math.round(seconds)}s`
+	if (Math.round(seconds / 60) < 60) return `${Math.round(seconds / 60)}m`
+	if (Number((seconds / 3_600).toFixed(1)) < 24) return `${(seconds / 3_600).toFixed(1)}h`
 	return `${(seconds / 86_400).toFixed(1)}d`
 }
 

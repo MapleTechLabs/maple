@@ -4,8 +4,13 @@ import type { Html, HtmlBuilder } from "foldkit/html"
 import { emptyMessage } from "@maple/views/ui/empty"
 import { divTableHead, sortButton } from "@maple/views/ui/table"
 import type { SortDir } from "../../kit/table-sort"
+import { hstack } from "@maple/views/ui/stack"
+import { typographyClass } from "@maple/views/ui/typography"
 
-// `DataTable`, `ColumnHead` and `ROW_LINK_CLASS`.
+// `DataTable`, `ColumnHead`, `ROW_LINK_CLASS` and `NUMERIC_CELL`.
+
+/** A numeric cell's figure: xs mono tabular, right-aligned; the call site adds width and tone. */
+export const NUMERIC_CELL = typographyClass({ size: "xs", mono: true, numeric: true, className: "text-right" })
 
 export const ROW_LINK_CLASS =
 	"group flex items-center gap-4 border-b border-border-subtle px-4 py-3 last:border-0 hover:bg-surface-sunken active:bg-surface-sunken focus-visible:bg-surface-sunken focus-visible:outline-none"
@@ -112,8 +117,9 @@ export const skeletonRows = <M>(
 	cells: () => ReadonlyArray<Html>,
 ): ReadonlyArray<Html> =>
 	Array.from({ length: count }, () =>
-		h.div(
-			[h.Class("flex items-center gap-4 border-b border-border-subtle px-4 py-3 last:border-0")],
+		hstack(
+			h,
+			{ gap: "4", align: "center", className: "border-b border-border-subtle px-4 py-3 last:border-0" },
 			cells(),
 		),
 	)

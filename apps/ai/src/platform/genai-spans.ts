@@ -178,6 +178,8 @@ const summarizeResponse = (response: ResponseParts) => {
 			case "error":
 				errored = true
 				break
+			default:
+				break
 		}
 	}
 	const message: SerializedMessage = {
@@ -218,7 +220,7 @@ const fitFrom = (encoded: ReadonlyArray<string>, budget: number): number => {
 	let total = Arr.reduce(encoded, 1, (sum, json) => sum + json.length + 1)
 	let start = 0
 	while (total > budget && start < encoded.length - 1) {
-		total -= encoded[start]!.length + 1
+		total -= (encoded[start]?.length ?? 0) + 1
 		start += 1
 	}
 	return start
@@ -349,6 +351,7 @@ const modelCallTransformer =
 				: { [MAPLE_GENAI_MODEL_DURATION_MS_ATTR]: finishedMs - timing.startedMs }),
 			...telemetry.sessionAttributes,
 		}
+		// @effect-diagnostics-next-line preferEffectRecord:off -- not a record type; Rec.toEntries would need a cast
 		for (const [key, value] of Object.entries(attributes)) {
 			if (value !== undefined) span.attribute(key, value)
 		}
@@ -539,7 +542,7 @@ export const toolCallJson = (value: unknown): string => {
 	if (Predicate.isString(value)) return resultJson(value)
 	if (!Predicate.isObjectOrArray(value)) return encodeJson({ result: value })
 	const json = stringify(value)
-	if (json === undefined) return resultJson(String(value))
+	if (json === undefined) return resultJson("[unserializable value]")
 	if (json.length <= TOOL_JSON_BUDGET) return json
 	return withinToolBudget(json, (prefix) => encodeJson({ truncated: true, prefix }))
 }
@@ -553,7 +556,8 @@ const toolDefinitionsJson = (tools: ReadonlyArray<Tool.Any>): string | undefined
 	if (tools.length === 0) return undefined
 	const described = Arr.map(tools, (tool) => ({
 		type: "function",
-		name: tool.name,
+		// `Tool.Any` types the name parameter as `any`.
+		name: String(tool.name),
 		description: Tool.getDescription(tool) ?? "",
 	}))
 	// A schema that cannot be expressed as JSON Schema throws here; it degrades to the compact form.
@@ -769,6 +773,7 @@ export const toolHandlersWithContent = <
 			name,
 			(params: never, context: never) =>
 				withToolCallContent(
+					// @effect-diagnostics-next-line anyUnknownInErrorContext:off -- each handler keeps its own types; the map is re-typed as `Handlers` below
 					Effect.suspend(() => handler(params, context)),
 					{
 						description: toolkit.tools[name]?.description,

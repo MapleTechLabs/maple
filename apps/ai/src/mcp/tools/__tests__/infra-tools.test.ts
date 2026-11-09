@@ -23,8 +23,8 @@ afterAll(async () => {
 const call = (name: string, params: Record<string, unknown>): Promise<McpToolResult> =>
 	runToolDirect(rt, name, { ...WINDOW, ...params })
 
-const decode = <S extends Schema.Codec<unknown, unknown, never, never>>(schema: S, result: McpToolResult) =>
-	Schema.decodeUnknownSync(schema)(result.structuredContent)
+const decode = <S extends Schema.Codec<unknown, unknown>>(schema: S, result: McpToolResult) =>
+	Schema.decodeSync(schema)(result.structuredContent)
 
 describe("list_infra", () => {
 	it("gives an overview of every reporting kind, hottest first", async () => {
@@ -45,7 +45,7 @@ describe("list_infra", () => {
 			ListInfraOutput,
 			await call("list_infra", { kind: "pods", namespace: "shop", status: "hot" }),
 		)
-		const names = Arr.map(output.sections[0]?.rows, (r) => r.name) ?? []
+		const names = Arr.map(Arr.getUnsafe(output.sections, 0)?.rows, (r) => r.name) ?? []
 		expect(names[0]).toBe(INFRA_WORLD.oomPod)
 		expect(Arr.every(names, (name) => Str.startsWith("checkout-")(name))).toBe(true)
 	})
@@ -58,7 +58,9 @@ describe("list_infra", () => {
 	it("leaves kinds out of an overview when they cannot apply the filter", async () => {
 		const output = decode(ListInfraOutput, await call("list_infra", { node: INFRA_WORLD.hotNode }))
 		expect(Arr.map(output.sections, (s) => s.kind)).toEqual(["pods", "nodes"])
-		expect(Arr.every(output.sections[0]?.rows, (r) => r.node === INFRA_WORLD.hotNode)).toBe(true)
+		expect(
+			Arr.every(Arr.getUnsafe(output.sections, 0)?.rows, (r) => r.node === INFRA_WORLD.hotNode),
+		).toBe(true)
 	})
 
 	it("shows pod restarts in the pod list", async () => {
@@ -98,7 +100,7 @@ describe("list_infra", () => {
 			ListInfraOutput,
 			await call("list_infra", { kind: "pods", status: "no_limits" }),
 		)
-		expect(Arr.map(output.sections[0]?.rows, (r) => r.name).sort()).toEqual([
+		expect(Arr.map(Arr.getUnsafe(output.sections, 0)?.rows, (r) => r.name).sort()).toEqual([
 			"otel-agent-q4w9e",
 			"otel-agent-x8k2l",
 		])

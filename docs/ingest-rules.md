@@ -207,6 +207,13 @@ character but `\n`", before compiling.
 - 100 values per condition, each at most 1,024 characters.
 - 32 keys and 10 patterns per rule, each pattern at most 512 characters.
 - The gateway also caps a compiled regex at 1 MiB.
+- All of an org's regexes together (conditions and patterns, enabled rules or not) are capped at
+  an estimated 8 MiB compiled (`regexBudgetCost`); the API refuses a rule past it. The gateway
+  measures the real size and refuses the org's payloads with a 503 past 16 MiB, rather than apply
+  only some of its rules.
+- One payload's rule pass may scan at most 1 GiB with conditions, detectors and patterns, summed
+  over rules and passes, and may take at most 2 seconds. A payload that needs more is refused
+  with a 413; smaller batches fit.
 
 ## Fixture format
 

@@ -1,5 +1,5 @@
 import { assert, describe, it } from "@effect/vitest"
-import { Effect, Fiber, Tracer } from "effect"
+import { Array as Arr, Effect, Fiber, Option, Tracer } from "effect"
 import { TestClock } from "effect/testing"
 import { withTimeout } from "./query-engine"
 
@@ -29,7 +29,10 @@ const makeRecordingTracer = () => {
 }
 
 const timeoutAttr = (spans: Array<Tracer.NativeSpan>, name: string) =>
-	spans.find((span) => span.name === name)?.attributes.get("query.timeout") ?? null
+	Option.match(
+		Arr.findFirst(spans, (span) => span.name === name),
+		{ onNone: () => null, onSome: (span) => span.attributes.get("query.timeout") ?? null },
+	)
 
 describe("withTimeout", () => {
 	it.effect("tags the span it is wrapped by, not the caller's span", () => {
@@ -62,8 +65,10 @@ describe("withTimeout", () => {
 			const exit = yield* Fiber.join(fiber)
 
 			assert.strictEqual(exit._tag, "Failure")
-			const span = spans.find((candidate) => candidate.name === "queryEngine")
-			assert.strictEqual(span?.attributes.get("query.timeout_ms"), 30_000)
+			const span = Option.getOrThrow(
+				Arr.findFirst(spans, (candidate) => candidate.name === "queryEngine"),
+			)
+			assert.strictEqual(span.attributes.get("query.timeout_ms"), 30_000)
 		}).pipe(Effect.provideService(Tracer.Tracer, tracer))
 	})
 

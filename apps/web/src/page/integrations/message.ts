@@ -1,3 +1,4 @@
+import * as Policy from "@maple/domain/policy"
 import {
 	BillingCustomer,
 	CloudflareIntegrationStatus,
@@ -8,6 +9,8 @@ import {
 	LinearIntegrationStatus,
 	RailwayIntegrationStatus,
 	ScrapeTargetId,
+	SearchConsoleAvailableSitesResponse,
+	SearchConsoleIntegrationStatus,
 	SupabaseIntegrationStatus,
 	VcsRepositoryId,
 	VercelAiGatewayResponse,
@@ -73,6 +76,7 @@ export const StatusName = Schema.Literals([
 	"supabase",
 	"linear",
 	"github",
+	"searchConsole",
 	"chat",
 	"scrapeTargets",
 ])
@@ -95,13 +99,21 @@ export const Message = defineMessageUnion({
 	CompletedLoadSupabase: result(SupabaseIntegrationStatus),
 	CompletedLoadLinear: result(LinearIntegrationStatus),
 	CompletedLoadGithub: result(GithubIntegrationStatus),
+	CompletedLoadSearchConsole: result(SearchConsoleIntegrationStatus),
+	CompletedLoadSearchConsoleSites: result(SearchConsoleAvailableSitesResponse),
+	/** A property's checkbox in the Search Console picker. */
+	ToggledSearchConsoleSite: { siteUrl: Schema.String },
+	ClickedSaveSearchConsoleSites: {},
+	ClickedRetrySearchConsoleSites: {},
+	CompletedSaveSearchConsoleSites: { failure: Schema.NullOr(LoadFailure) },
+	CompletedSearchConsolePrime: {},
 	CompletedLoadChat: result(V2ChatConnectorList),
 	CompletedLoadScrapeTargets: result(Schema.Array(V2ScrapeTarget)),
 	CompletedLoadCustomer: result(BillingCustomer),
 	/** `trackProduct("integration_connected")` was handed to the session SDK. */
 	CompletedTrackConnected: {},
-	/** The shared session read answered (`useIsOrgAdmin`). */
-	CompletedLoadSession: { isAdmin: Schema.Boolean },
+	/** The shared session read answered with its grants. */
+	CompletedLoadSession: { grants: Schema.Array(Policy.PermissionName) },
 	/** A catalog row or card, or the header's back button (`navigate({ search })`). */
 	ClickedIntegration: { integration: Schema.NullOr(Schema.String) },
 	/** A settings nav tab (`navigate({ to: "/settings", search: { tab } })`). */
@@ -186,8 +198,6 @@ export const Message = defineMessageUnion({
 	FailedLoadChartRuntime: { reason: Schema.String },
 	GotSparklineMessage: { message: Chart.Message },
 	ClickedTarget: { id: ScrapeTargetId },
-	/** A press inside a row's switch or menu cell, which does not select the row. */
-	ClickedTargetControls: {},
 	CompletedFetchChecks: {
 		key: Schema.String,
 		result: Schema.Result(Schema.Array(V2ScrapeTargetCheck), LoadFailure),
@@ -307,7 +317,9 @@ export const Message = defineMessageUnion({
 	ToggledAwsRegion: { id: AwsConnectionId, region: Schema.String },
 	ToggledAwsNamespace: { id: AwsConnectionId, namespace: AwsMetricNamespace },
 	SubmittedAwsMetrics: { id: AwsConnectionId },
+	/** `id`: the connection the save was for, which the editor may have moved on from. */
 	CompletedAwsMetricStream: {
+		id: AwsConnectionId,
 		connection: Schema.NullOr(V2AwsConnection),
 		error: Schema.NullOr(Schema.String),
 	},

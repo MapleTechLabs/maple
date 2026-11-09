@@ -9,7 +9,7 @@ import { randomUUID } from "node:crypto"
 import { existsSync, readFileSync, statfsSync } from "node:fs"
 import { lstat, readdir, stat } from "node:fs/promises"
 import { dirname, join, resolve } from "node:path"
-import { Effect, Schema, Array as Arr, String as Str } from "effect"
+import { Effect, Option, Schema, Array as Arr, String as Str } from "effect"
 import { Chdb } from "@maple/local-server/chdb"
 import { decodeJsonEachRow } from "@maple/local-server/chdb-rows"
 import {
@@ -43,6 +43,7 @@ import {
 	ensurePrivateDirectory,
 	syncTree,
 } from "@maple/local-server/durable-files"
+import { errnoCode } from "@maple/local-server/store-errors"
 import { MAPLE_VERSION } from "@maple/local-server/version"
 import {
 	assertJournalPaths,
@@ -128,15 +129,15 @@ export const validateMigrationRegistry = (
 		}
 		if (migration.operations.length === 0) throw new Error(`migration ${migration.id} has no operations`)
 		for (const handler of [
-			migration.decodeState,
-			migration.decodeProgress,
-			migration.preflight,
-			migration.prepareTarget,
-			migration.apply,
-			migration.verify,
-			migration.recover,
-		]) {
-			if (typeof handler !== "function")
+			"decodeState",
+			"decodeProgress",
+			"preflight",
+			"prepareTarget",
+			"apply",
+			"verify",
+			"recover",
+		] as const) {
+			if (typeof migration[handler] !== "function")
 				throw new Error(`migration ${migration.id} is missing a module handler`)
 		}
 	}
@@ -460,7 +461,7 @@ class MigrationDbSession {
 			db.exec("SYSTEM STOP TTL MERGES")
 			this.#open = { dataDir, db, schemaSql, bootstrapSchema }
 		}
-		return await fn(this.#open.db)
+		return fn(this.#open.db)
 	}
 
 	/** Close the live connection and clear its sentinel. If chDB's close throws,
@@ -476,8 +477,8 @@ class MigrationDbSession {
 
 const ensureMigrationCapacity = async (dataDir: string, session: MigrationDbSession): Promise<void> => {
 	const treeBytes = async (path: string): Promise<number> => {
-		const info = await lstat(path).catch((error: NodeJS.ErrnoException) => {
-			if (error.code === "ENOENT") return null
+		const info = await lstat(path).catch((error: unknown) => {
+			if (errnoCode(error) === "ENOENT") return null
 			throw error
 		})
 		if (info === null) return 0
@@ -592,15 +593,15 @@ export const abandonLocalStoreMigrationPreservingSource = async (dataDir: string
 		assertJournalSourceMarker(readMarker(resolvedDataDir), journal)
 
 		const root = migrationRootPath(resolvedDataDir, journal.migrationId)
-		const rootInfo = await lstat(root).catch((error: NodeJS.ErrnoException) => {
-			if (error.code === "ENOENT") return null
+		const rootInfo = await lstat(root).catch((error: unknown) => {
+			if (errnoCode(error) === "ENOENT") return null
 			throw error
 		})
 		if (rootInfo?.isSymbolicLink()) throw new Error("migration root must be a real directory")
 		if (rootInfo && !rootInfo.isDirectory()) throw new Error("migration root must be a real directory")
 		const sourceRoot = join(root, "source")
-		const sourceRootInfo = await lstat(sourceRoot).catch((error: NodeJS.ErrnoException) => {
-			if (error.code === "ENOENT") return null
+		const sourceRootInfo = await lstat(sourceRoot).catch((error: unknown) => {
+			if (errnoCode(error) === "ENOENT") return null
 			throw error
 		})
 		if (sourceRootInfo)
@@ -608,8 +609,8 @@ export const abandonLocalStoreMigrationPreservingSource = async (dataDir: string
 				"migration already contains a retained source; promotion may have started, so refusing to guess",
 			)
 		const targetRoot = join(root, "target")
-		const targetRootInfo = await lstat(targetRoot).catch((error: NodeJS.ErrnoException) => {
-			if (error.code === "ENOENT") return null
+		const targetRootInfo = await lstat(targetRoot).catch((error: unknown) => {
+			if (errnoCode(error) === "ENOENT") return null
 			throw error
 		})
 		if (targetRootInfo?.isSymbolicLink())
@@ -695,14 +696,7 @@ export const promoteLocalStoreMigration = async (
 		marker: StoreMarker | null,
 		activation: "active" | "staging",
 	): StoreMarkerV2 => {
-		if (
-			!markerMatches(
-				marker,
-				journal.chain[journal.chain.length - 1]!.to,
-				journal.targetStoreId,
-				activation,
-			)
-		)
+		if (!markerMatches(marker, Arr.lastNonEmpty(journal.chain).to, journal.targetStoreId, activation))
 			throw new Error(
 				`migration target marker is missing or not ${activation} with the journal's final identity`,
 			)
@@ -796,7 +790,7 @@ const reconcilePromotion = async (dataDir: string, journal: MigrationJournal): P
 	assertJournalPaths(dataDir, journal)
 	assertPromotionStoresClosed(dataDir, journal)
 	const activeMarker = readMarker(dataDir)
-	const finalIdentity = journal.chain[journal.chain.length - 1]!.to
+	const finalIdentity = Arr.lastNonEmpty(journal.chain).to
 	if (
 		existsSync(resolve(dataDir)) &&
 		markerMatches(activeMarker, finalIdentity, journal.targetStoreId, "active")
@@ -826,7 +820,8 @@ const moduleForStep = (
 	step: MigrationStepJournal,
 	modules: ReadonlyArray<AnyLocalStoreMigrationModule>,
 ): AnyLocalStoreMigrationModule => {
-	const module = modules.find(
+	const module = Arr.findFirst(
+		modules,
 		(candidate) =>
 			candidate.id === step.id &&
 			candidate.moduleVersion === step.moduleVersion &&
@@ -839,8 +834,9 @@ const moduleForStep = (
 			candidate.to.digest === step.to.digest &&
 			candidate.to.chdb === step.to.chdb,
 	)
-	if (!module) throw new Error(`unfinished local migration step ${step.id} is not available in this build`)
-	return module
+	if (Option.isNone(module))
+		throw new Error(`unfinished local migration step ${step.id} is not available in this build`)
+	return module.value
 }
 
 const validateJournalModuleState = (
@@ -867,7 +863,8 @@ const makeModuleContext = (
 	readonly setPhase: (phase: MigrationPhase) => void
 } => {
 	let current = journal
-	const step = journal.chain[stepIndex]!
+	const step = journal.chain[stepIndex]
+	if (step === undefined) throw new Error(`migration journal has no step ${stepIndex}`)
 	const sourceDataDir = stepIndex === 0 ? dataDir : journal.targetDataDir
 	const context: MigrationModuleContext = {
 		dataDir,
@@ -884,7 +881,8 @@ const makeModuleContext = (
 		ensureCapacity: () =>
 			stepIndex === 0 ? ensureMigrationCapacity(dataDir, session) : Promise.resolve(),
 		saveStep: async (update) => {
-			const previous = current.chain[stepIndex]!
+			const previous = current.chain[stepIndex]
+			if (previous === undefined) throw new Error(`migration journal has no step ${stepIndex}`)
 			const nextStep: MigrationStepJournal = {
 				...previous,
 				...(!(update.state === undefined) ? { state: update.state } : undefined),
@@ -925,8 +923,8 @@ export const executeMigrationModule = async (
 	if (step.status === "verified" || step.status === "completed") {
 		if (step.state === undefined)
 			throw new Error(`${migration.id} ${step.status} step has no recoverable persisted state`)
-		const state = migration.decodeState(step.state)
-		const progress = migration.decodeProgress(step.progress)
+		const state: unknown = migration.decodeState(step.state)
+		const progress: unknown = migration.decodeProgress(step.progress)
 		if (progress === undefined)
 			throw new Error(`${migration.id} ${step.status} step has no recoverable persisted progress`)
 		// Verification has already passed. The only remaining work is the
@@ -992,7 +990,8 @@ export const executeMigrationChain = async (
 	try {
 		while (journal.currentStepIndex < journal.chain.length) {
 			const stepIndex = journal.currentStepIndex
-			const lifecycleStep = journal.chain[stepIndex]!
+			const lifecycleStep = journal.chain[stepIndex]
+			if (lifecycleStep === undefined) throw new Error(`migration journal has no step ${stepIndex}`)
 			let step = lifecycleStep
 			const migration = moduleForStep(lifecycleStep, modules)
 			if (step.status === "pending") {
@@ -1030,7 +1029,8 @@ export const executeMigrationChain = async (
 				},
 			})
 			journal = await updateJournal(dataDir, current(), { phase: "copy-verified" })
-			const activeStep = current().chain[stepIndex]!
+			const activeStep = current().chain[stepIndex]
+			if (activeStep === undefined) throw new Error(`migration journal has no step ${stepIndex}`)
 			if (activeStep.status !== "verified" && activeStep.status !== "completed") {
 				const verifiedStep: MigrationStepJournal = { ...activeStep, status: "verified" }
 				journal = await updateJournal(
@@ -1056,10 +1056,9 @@ export const executeMigrationChain = async (
 					storeId: journal.targetStoreId,
 				},
 			)
-			const completedStep: MigrationStepJournal = {
-				...current().chain[stepIndex]!,
-				status: "completed",
-			}
+			const finishedStep = current().chain[stepIndex]
+			if (finishedStep === undefined) throw new Error(`migration journal has no step ${stepIndex}`)
+			const completedStep: MigrationStepJournal = { ...finishedStep, status: "completed" }
 			const nextChain = Arr.map(current().chain, (candidate, index) =>
 				index === stepIndex
 					? completedStep
@@ -1108,6 +1107,7 @@ const sourceStoreId = (marker: StoreMarker): string =>
 
 const createJournal = (dataDir: string, plan: MigrationPlan, marker: StoreMarker): MigrationJournal => {
 	const migrationId = `local-migration-${randomUUID()}`
+	if (!Arr.isReadonlyArrayNonEmpty(plan.chain)) throw new Error("local store migration plan has no steps")
 	return {
 		formatVersion: 2,
 		migrationId,
@@ -1153,7 +1153,7 @@ const migrationPlanFromJournal = (journal: MigrationJournal): MigrationPlan => {
 		digest: journal.sourceDigest,
 		chdb: journal.sourceChdb,
 	}
-	const target = journal.chain[journal.chain.length - 1]!.to
+	const target = Arr.lastNonEmpty(journal.chain).to
 	const operations = Arr.flatMap(chain, (migration) => migration.operations)
 	return {
 		source,
@@ -1223,7 +1223,7 @@ export const runLocalStoreMigration = async (
 	if (journal?.phase === "promoted") {
 		if (!markerState || markerState.formatVersion !== 2)
 			throw new Error("completed migration has no readable active v2 marker")
-		const completedTarget = journal.chain[journal.chain.length - 1]!.to
+		const completedTarget = Arr.lastNonEmpty(journal.chain).to
 		if (!markerMatches(markerState, completedTarget, journal.targetStoreId, "active"))
 			throw new Error("completed migration journal does not match the active store; refusing to guess")
 		if (options.dryRun) return planMigration(completedTarget)
@@ -1265,7 +1265,7 @@ export const runLocalStoreMigration = async (
 		const resumedChain = journalModules(journal!, localStoreMigrations)
 		return {
 			source: sourceIdentity,
-			target: journal!.chain[journal!.chain.length - 1]!.to,
+			target: Arr.lastNonEmpty(journal!.chain).to,
 			chain: resumedChain,
 			operations: Arr.flatMap(resumedChain, (migration) => migration.operations),
 			dispositions: Arr.flatMap(resumedChain, (migration) => migration.dispositions),
@@ -1326,7 +1326,7 @@ export const runLocalStoreMigration = async (
 			if (current.currentStepIndex !== current.chain.length)
 				throw new Error("migration chain did not reach its final verified step")
 			await assertSameFilesystemPromotion(dataDir, current)
-			return promoteLocalStoreMigration(dataDir, current)
+			return await promoteLocalStoreMigration(dataDir, current)
 		} catch (error) {
 			const persisted = await readMigrationJournal(dataDir).catch(() => null)
 			const failed = persisted ?? current

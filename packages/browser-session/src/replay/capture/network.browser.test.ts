@@ -6,6 +6,8 @@ import { installNetworkCapture } from "./network"
 const originalOpen = XMLHttpRequest.prototype.open
 let uninstall: (() => void) | undefined
 
+const urlOf = (input: RequestInfo | URL): string => (input instanceof Request ? input.url : input.toString())
+
 afterEach(() => {
 	uninstall?.()
 	uninstall = undefined
@@ -98,7 +100,7 @@ describe("installNetworkCapture", () => {
 		const realFetch = window.fetch
 		let streamed = false
 		window.fetch = async (input) =>
-			String(input).includes("events")
+			urlOf(input).includes("events")
 				? new Response(
 						new ReadableStream({
 							start() {
@@ -270,7 +272,7 @@ describe("installNetworkCapture next to the app's own wrappers", () => {
 		const seen: string[] = []
 		const underneath = window.fetch
 		const interceptor: typeof fetch = (input, init) => {
-			seen.push(String(input))
+			seen.push(urlOf(input))
 			return underneath(input, init)
 		}
 		window.fetch = interceptor

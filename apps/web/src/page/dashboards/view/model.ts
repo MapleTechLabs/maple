@@ -1,9 +1,10 @@
-import { DashboardDocument, TimeRangeSchema } from "@maple/domain/http"
+import { DashboardDocument } from "@maple/domain/http"
 import { Schema } from "effect"
 import * as Chart from "@maple/views/charts/chart"
 import { ChartRuntime } from "@maple/views/charts/chart-runtime"
 import { ThemeColors } from "@maple/views/charts/theme-colors"
 import { KeyedSchema } from "@maple/views/data/keyed"
+import { LoadFailure } from "@maple/views/data/load-failure"
 import { DashboardSearch } from "../../../route/search"
 import * as Dialog from "@maple/views/ui/dialog"
 import * as Menu from "@maple/views/ui/menu"
@@ -21,7 +22,7 @@ import { WidgetFailure, WidgetGate } from "../kit/widget-data"
 
 // The dashboard view and builder.
 
-export const Status = Schema.Literals(["Loading", "Ready", "Missing"])
+export const Status = Schema.Literals(["Loading", "Ready", "Missing", "Failed"])
 export type Status = typeof Status.Type
 
 /** One tile: lazily revealed (`useInViewportSticky`), measured, and what it asked for. */
@@ -79,6 +80,10 @@ export const GridGesture = Schema.Struct({
 	dy: Schema.Number,
 	/** Past the 3 px threshold: until then a press is still a click. */
 	isStarted: Schema.Boolean,
+	/** The canonical grid's columns at the press: a resize into another tier cancels the gesture. */
+	cols: Schema.Number,
+	/** The container the tile was pressed in: moving it to another container cancels the gesture. */
+	key: Schema.String,
 	/** The grid's viewport position at the first frame; auto-scrolling moves it under the pointer. */
 	gridOrigin: Schema.NullOr(Schema.Struct({ left: Schema.Number, top: Schema.Number })),
 	/** The tile's box when it was picked up, inside the grid's padding box. */
@@ -92,20 +97,66 @@ export type GridGesture = typeof GridGesture.Type
 export const KeyboardMove = Schema.Struct({
 	widgetId: Schema.String,
 	label: Schema.String,
+	/** The canonical grid's columns and container at pick-up, as for `GridGesture`. */
+	cols: Schema.Number,
+	key: Schema.String,
 	origin: Schema.Array(GridItem),
 	preview: Schema.Array(GridItem),
 })
 export type KeyboardMove = typeof KeyboardMove.Type
 
+/** The tiles one finished drag, resize or keyboard drop writes. */
+export const LayoutChange = Schema.Struct({
+	i: Schema.String,
+	x: Schema.Number,
+	y: Schema.Number,
+	w: Schema.Number,
+	h: Schema.Number,
+})
+export type LayoutChange = typeof LayoutChange.Type
+
+const layoutWriteFields = {
+	/** Which write this is: a result for an older one is ignored. */
+	generation: Schema.Number,
+	/** The container the dropped layout belongs to. */
+	key: Schema.String,
+	layout: Schema.Array(GridItem),
+	changes: Schema.Array(LayoutChange),
+}
+
+/**
+ * The last drop's write. `Saving` and `Saved` draw the dropped layout until the store echoes it;
+ * `Failed` draws the stored one again and keeps the write for Retry.
+ */
+export const LayoutWrite = Schema.Union([
+	Schema.TaggedStruct("Saving", layoutWriteFields),
+	Schema.TaggedStruct("Saved", layoutWriteFields),
+	Schema.TaggedStruct("Failed", layoutWriteFields),
+])
+export type LayoutWrite = typeof LayoutWrite.Type
+
 export const SectionTargetSchema = Schema.Struct({ sectionId: Schema.String, tabId: Schema.String })
+
+/**
+ * The HTTP snapshot read while live sync is down: `Shown` is a read-only board the stream
+ * replaces once it delivers, `Failed` holds why the board could not be read at all.
+ */
+export const Snapshot = Schema.Union([
+	Schema.TaggedStruct("Idle", {}),
+	Schema.TaggedStruct("Loading", {}),
+	Schema.TaggedStruct("Shown", {}),
+	Schema.TaggedStruct("Failed", { failure: LoadFailure }),
+])
+export type Snapshot = typeof Snapshot.Type
 
 export const Model = Schema.Struct({
 	dashboardId: Schema.String,
 	search: DashboardSearch,
 	status: Status,
 	document: Schema.NullOr(DashboardDocument),
-	/** `DashboardTimeRange`: seeded from the document once, then the picker's. */
-	timeRange: Schema.NullOr(TimeRangeSchema),
+	/** The live board never answered within `COLLECTION_LOAD_TIMEOUT_MS`: the HTTP snapshot's state. */
+	snapshot: Snapshot,
+	/** The clock the window is resolved against: read on entry, Reload and a time range change. */
 	nowMs: Schema.NullOr(Schema.Number),
 	/** `PageRefreshProvider.refreshVersion`: 0 snaps the window to the cache grid. */
 	refreshVersion: Schema.Number,
@@ -141,12 +192,10 @@ export const Model = Schema.Struct({
 	keyboardMove: Schema.NullOr(KeyboardMove),
 	/** The grid's polite live region: what the keyboard session just did. */
 	gridAnnouncement: Schema.String,
-	/** `settled`: a dropped layout, drawn until the store echoes the write back. */
-	droppedLayout: Schema.NullOr(Schema.Array(GridItem)),
-	/** Which container the dropped layout belongs to. */
-	droppedKey: Schema.NullOr(Schema.String),
+	layoutWrite: Schema.NullOr(LayoutWrite),
+	/** The generation the next layout write takes. */
+	nextLayoutGeneration: Schema.Number,
 	persistenceError: Schema.NullOr(Schema.String),
-	/** Failed tiles' "Details" popovers and their copy buttons, by widget id. */
 	/** Which grid the picker's next widget lands in: a group's own "+", reset when it closes. */
 	pickerTarget: Schema.NullOr(SectionTargetSchema),
 	/** The one open group options menu. */
@@ -165,6 +214,7 @@ export const Model = Schema.Struct({
 	pendingSectionDelete: Schema.NullOr(Schema.String),
 	tabDialog: Dialog.Model,
 	pendingTabDelete: Schema.NullOr(SectionTargetSchema),
+	/** Failed tiles' "Details" popovers and their copy buttons, by widget id. */
 	errorDetails: Schema.Record(Schema.String, Popover.Model),
 	errorCopies: Schema.Record(Schema.String, CopyButton.Model),
 	/** Each query variable's option list, by variable name (custom ones are inline). */

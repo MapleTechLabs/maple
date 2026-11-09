@@ -33,7 +33,7 @@ const totals = (reviews: number) => ({
 
 /** `reviews` reviews by `authors`, one bucket. */
 export const analyticsOf = (reviews: number, authors: ReadonlyArray<string> = []): CodeReviewAnalytics =>
-	Schema.decodeUnknownSync(CodeReviewAnalytics)({
+	Schema.decodeSync(CodeReviewAnalytics)({
 		bucketSeconds: 86_400,
 		current: totals(reviews),
 		previous: totals(0),

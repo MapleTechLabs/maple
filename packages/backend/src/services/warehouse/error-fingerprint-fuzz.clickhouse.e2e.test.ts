@@ -7,7 +7,7 @@
 // Replay a failure with FINGERPRINT_FUZZ_SEED=<seed from the failure message>.
 
 import { afterAll, assert, beforeAll, describe, it } from "@effect/vitest"
-import { computeFingerprintInputs, FINGERPRINT_HASH_SALT } from "@maple/domain/tinybird/fingerprint"
+import { computeFingerprintInputs, CUSTOM_FINGERPRINT_ATTRIBUTE } from "@maple/domain/tinybird/fingerprint"
 import { Schema, Array as Arr, String as Str } from "effect"
 import fc from "fast-check"
 import { msToDate } from "../../platform/time"
@@ -53,6 +53,19 @@ const frameLine = fc.oneof(
 	fc
 		.tuple(word, fc.nat(999), chars("0123456789abcdef", 1, 6))
 		.map(([file, line, pc]) => `\t/app/${file}.go:${line} +0x${pc}`),
+	// Dependency and stdlib frames, which the hash skips when the stack has its own.
+	fc
+		.tuple(word, word, fc.nat(999))
+		.map(([fn, file, line]) => `    at ${fn} (/app/node_modules/${file}/index.js:${line}:1)`),
+	fc
+		.tuple(word, word, fc.nat(999))
+		.map(
+			([fn, file, line]) =>
+				`  File "/usr/local/lib/python3.11/site-packages/${file}/core.py", line ${line}, in ${fn}`,
+		),
+	fc
+		.tuple(word, word, fc.nat(999))
+		.map(([fn, file, line]) => `\tat java.util.${file}.${fn}(${file}.java:${line})`),
 	fc
 		.tuple(fc.nat(30), word, chars("0123456789abcdef", 9, 12))
 		.map(([i, binary, address]) => `${i}   ${binary}   0x${address}   +0x1d0`),
@@ -84,6 +97,9 @@ const messagePart = fc.oneof(
 	hostile,
 	fc.uuid(),
 	chars("0123456789abcdefABCDEF", 6, 40),
+	// Single-case values that interleave letters and digits, and their near-miss names.
+	chars("0123456789abcdefghijklmnopqrstuvwxyz", 8, 30),
+	chars("0123456789ABCDEFGHJKMNPQRSTVWXYZ", 8, 14),
 	fc.integer().map(String),
 	fc.constantFrom(
 		"RouteNotFound (GET /.env)",
@@ -99,6 +115,10 @@ const messagePart = fc.oneof(
 		"StatusCode error (404 GET https://host.dev/f956aa438ac39eff/codex~maple-in-process)",
 		"/v1/user/@handle42",
 		"rejected key tok_prod_9fQz2LmXc7RtV4bNw8Yh",
+		"internal error; reference = skqdd7q56j7h4ovn7obivsp1",
+		"web2#build exited",
+		"utf8mb4_unicode_520_ci",
+		"a#b1c2d3e4f5",
 		"HTTP 503",
 		"returned 418",
 		"/Users/bob/.maple/store",
@@ -181,6 +201,26 @@ const jsonMessage = fc.oneof(
 		),
 )
 
+/** A `maple.fingerprint` value: absent mostly, else padded, blank, or past the cap. */
+const customKey = fc.oneof(
+	{ arbitrary: fc.constant(undefined), weight: 6 },
+	{ arbitrary: fc.oneof(word, hostile), weight: 2 },
+	{
+		arbitrary: fc.oneof(
+			word.map((w) => ` \t${w}\n `),
+			fc.constantFrom(
+				"",
+				" ",
+				"\t\n\r",
+				Str.repeat(250)("x"),
+				Str.repeat(201)("😀"),
+				`${Str.repeat(199)("é")}  z`,
+			),
+		),
+		weight: 1,
+	},
+)
+
 const Case = fc.record({
 	type: fc.oneof(fc.constantFrom("", "Error", "HttpServerError", "@acme/http/errors/Upstream"), hostile),
 	stack: fc.array(frameLine, { maxLength: 14 }).map((lines) => Arr.join(lines, "\n")),
@@ -198,11 +238,14 @@ const Case = fc.record({
 		{ arbitrary: jsonMessage, weight: 2 },
 	),
 	viaAttributes: fc.boolean(),
+	eventKey: customKey,
+	spanKey: customKey,
 })
 type Case = typeof Case extends fc.Arbitrary<infer A> ? A : never
 
 /** ClickHouse treats every input as UTF-8 bytes; a lone surrogate has no such encoding. */
-const wellFormed = (c: Case) => c.type.isWellFormed() && c.stack.isWellFormed() && c.message.isWellFormed()
+const wellFormed = (c: Case) =>
+	Arr.every([c.type, c.stack, c.message, c.eventKey ?? "", c.spanKey ?? ""], (s) => s.isWellFormed())
 const CASES = Arr.filter(fc.sample(Case, { numRuns: RUNS, seed: SEED }), wellFormed)
 
 /**
@@ -210,6 +253,9 @@ const CASES = Arr.filter(fc.sample(Case, { numRuns: RUNS, seed: SEED }), wellFor
  * StatusMessage; without one, and with no StatusMessage, it falls back to the
  * `exception.*` span attributes. Both paths feed the same mirror inputs.
  */
+const withKey = (attributes: Record<string, string>, key: string | undefined) =>
+	key === undefined ? attributes : { ...attributes, [CUSTOM_FINGERPRINT_ATTRIBUTE]: key }
+
 const traceRow = (c: Case, spanId: string) => {
 	const exception = {
 		"exception.type": c.type,
@@ -228,11 +274,11 @@ const traceRow = (c: Case, spanId: string) => {
 		Duration: 1_000_000,
 		StatusCode: "Error",
 		StatusMessage: c.viaAttributes ? "" : c.message,
-		SpanAttributes: c.viaAttributes ? exception : {},
+		SpanAttributes: withKey(c.viaAttributes ? exception : {}, c.spanKey),
 		ResourceAttributes: {},
 		EventsTimestamp: c.viaAttributes ? [] : [SEED_TS],
 		EventsName: c.viaAttributes ? [] : ["exception"],
-		EventsAttributes: c.viaAttributes ? [] : [exception],
+		EventsAttributes: c.viaAttributes ? [] : [withKey(exception, c.eventKey)],
 	})
 }
 
@@ -241,14 +287,17 @@ const mirrorRow = (c: Case, spanId: string) => {
 		exceptionType: c.type,
 		exceptionStacktrace: c.stack,
 		statusMessage: c.message,
+		// The view reads the event's key first, then the span's; an empty value counts as unset.
+		customFingerprint:
+			!c.viaAttributes && c.eventKey !== undefined && c.eventKey !== "" ? c.eventKey : c.spanKey,
 	})
 	return JSON.stringify({
 		SpanId: spanId,
 		TopFrame: inputs.topFrame,
-		Frames: inputs.fpFrames,
 		Signature: inputs.msgSignature,
 		Label: inputs.label,
-		Type: c.type,
+		HashInputs: inputs.hashInputs,
+		PreviousHashInputs: inputs.previousHashInputs,
 	})
 }
 
@@ -266,6 +315,9 @@ const decodeMismatch = Schema.decodeUnknownSync(Schema.fromJsonString(Mismatch))
 describe.skipIf(!clickhouseE2eEnabled)("error fingerprint differential fuzz (ClickHouse e2e)", () => {
 	let materialized = 0
 	let mismatches: ReadonlyArray<typeof Mismatch.Type> = []
+	let strayLineage = -1
+	let missingLineage = -1
+	let rekeyed = 0
 
 	beforeAll(async () => {
 		await clickhouseExec(`CREATE DATABASE IF NOT EXISTS ${database}`)
@@ -278,7 +330,7 @@ describe.skipIf(!clickhouseE2eEnabled)("error fingerprint differential fuzz (Cli
 			database,
 		)
 		await clickhouseExec(
-			"CREATE TABLE fingerprint_mirror (SpanId String, TopFrame String, Frames String, Signature String, Label String, Type String) ENGINE = Memory",
+			"CREATE TABLE fingerprint_mirror (SpanId String, TopFrame String, Signature String, Label String, HashInputs Array(String), PreviousHashInputs Array(String)) ENGINE = Memory",
 			database,
 		)
 		await clickhouseExec(
@@ -296,7 +348,11 @@ describe.skipIf(!clickhouseE2eEnabled)("error fingerprint differential fuzz (Cli
 		const body = await clickhouseExec(
 			`SELECT e.SpanId AS SpanId, e.TopFrame AS TopFrame, m.TopFrame AS MirrorTopFrame,
 			        e.ErrorLabel AS ErrorLabel, m.Label AS MirrorLabel, m.Signature AS Signature,
-			        toBool(e.FingerprintHash = cityHash64('${ORG_ID}', '${SERVICE}', m.Type, m.Frames, m.Signature, '${FINGERPRINT_HASH_SALT}')) AS HashMatches
+			        toBool(e.FingerprintHash = if(
+			          length(m.HashInputs) = 2,
+			          cityHash64('${ORG_ID}', '${SERVICE}', m.HashInputs[1], m.HashInputs[2]),
+			          cityHash64('${ORG_ID}', '${SERVICE}', m.HashInputs[1], m.HashInputs[2], m.HashInputs[3], m.HashInputs[4])
+			        )) AS HashMatches
 			 FROM error_events AS e INNER JOIN fingerprint_mirror AS m ON e.SpanId = m.SpanId
 			 WHERE e.OrgId = '${ORG_ID}' AND (NOT HashMatches OR e.TopFrame != m.TopFrame OR e.ErrorLabel != m.Label)
 			 FORMAT JSONEachRow`,
@@ -306,6 +362,27 @@ describe.skipIf(!clickhouseE2eEnabled)("error fingerprint differential fuzz (Cli
 			Arr.filter(Str.split("\n")(body), (line) => Str.trim(line).length > 0),
 			decodeMismatch,
 		)
+		// The lineage view must pair each re-keyed hash with the v3 hash the mirror derives.
+		const hashOf = (column: string) => `if(
+			length(m.${column}) = 2,
+			cityHash64('${ORG_ID}', '${SERVICE}', m.${column}[1], m.${column}[2]),
+			cityHash64('${ORG_ID}', '${SERVICE}', m.${column}[1], m.${column}[2], m.${column}[3], m.${column}[4])
+		)`
+		const expected = `SELECT DISTINCT ${hashOf("HashInputs")} AS FingerprintHash, ${hashOf("PreviousHashInputs")} AS PreviousFingerprintHash
+			FROM fingerprint_mirror AS m WHERE FingerprintHash != PreviousFingerprintHash`
+		const actual = `SELECT DISTINCT FingerprintHash, PreviousFingerprintHash FROM error_fingerprint_lineage WHERE OrgId = '${ORG_ID}'`
+		strayLineage = Number(
+			Str.trim(await clickhouseExec(`SELECT count() FROM (${actual} EXCEPT ${expected})`, database)),
+		)
+		missingLineage = Number(
+			Str.trim(
+				await clickhouseExec(
+					`SELECT count() FROM (SELECT DISTINCT FingerprintHash FROM (${expected}) EXCEPT SELECT DISTINCT FingerprintHash FROM (${actual}))`,
+					database,
+				),
+			),
+		)
+		rekeyed = Number(Str.trim(await clickhouseExec(`SELECT count() FROM (${expected})`, database)))
 	}, 180_000)
 
 	afterAll(async () => {
@@ -314,6 +391,16 @@ describe.skipIf(!clickhouseE2eEnabled)("error fingerprint differential fuzz (Cli
 
 	it("materializes every case", () => {
 		assert.strictEqual(materialized, CASES.length)
+	})
+
+	it("records each re-keyed hash's previous hash exactly as the TS mirror does", () => {
+		// Library frames are generated, so some cases must re-key, or this proves nothing.
+		assert.isAbove(rekeyed, 0)
+		assert.deepStrictEqual(
+			{ strayLineage, missingLineage },
+			{ strayLineage: 0, missingLineage: 0 },
+			`replay with FINGERPRINT_FUZZ_SEED=${SEED}`,
+		)
 	})
 
 	it("hashes, labels and picks the top frame exactly as the TS mirror does", () => {

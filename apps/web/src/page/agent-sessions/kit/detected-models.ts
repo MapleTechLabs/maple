@@ -1,6 +1,6 @@
 import { AiModelBrandColor, DetectAiModelsRequest } from "@maple/domain/http"
 import { shortTarget } from "../../../lib/agent-sessions/span-filters"
-import { Effect, Option, Record, Schema, Array as Arr, String as Str } from "effect"
+import { Effect, Option, Schema, Array as Arr, String as Str, Record as Rec, Order } from "effect"
 import { MapleInternalApiClient } from "../../../platform/api-clients"
 
 // Model detection: one `detectMany` per distinct
@@ -35,7 +35,7 @@ const MAX_MODELS = 200
 
 /** One request per distinct set: sorted so two orders of the same models share the key. */
 export const detectionKey = (models: ReadonlyArray<string>): string =>
-	encodeModels([...new Set(models)].toSorted().slice(0, MAX_MODELS))
+	encodeModels(Arr.sort([...new Set(models)], Order.String).slice(0, MAX_MODELS))
 
 /** `Some(key)` when the set has not been asked for yet. */
 export const missingDetection = (
@@ -43,13 +43,13 @@ export const missingDetection = (
 	models: ReadonlyArray<string>,
 ): Option.Option<string> => {
 	const key = detectionKey(models)
-	return Record.has(detections, key) ? Option.none() : Option.some(key)
+	return Rec.has(detections, key) ? Option.none() : Option.some(key)
 }
 
 /** Every answer so far, as one lookup; an unanswered model renders its last path segment. */
 export const detectLookup = (detections: Detections) => {
 	const byModel = new Map(
-		Arr.flatMap(Record.values(detections), (answer) =>
+		Arr.flatMap(Rec.values(detections), (answer) =>
 			Arr.map(answer ?? [], (entry) => [entry.model, entry] as const),
 		),
 	)

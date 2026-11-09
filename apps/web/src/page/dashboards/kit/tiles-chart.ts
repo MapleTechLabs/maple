@@ -19,7 +19,7 @@ import { resolveColor, type ThemeColors } from "@maple/views/charts/theme-colors
 import { validateCssColor } from "@maple/ui/lib/sanitizers"
 import { chartSkeleton, type ChartSkeletonVariant } from "@maple/views/ui/chart-skeleton"
 import { type ChartCategory, chartCategoryOf } from "./chart-registry"
-import { widgetEmptyState, widgetFrame } from "./tile-shell"
+import { chartRuntimeFailedState, widgetEmptyState, widgetFrame } from "./tile-shell"
 import type { TileContext, TileWidget } from "./tiles"
 import { frame } from "./tiles-frame"
 import { isServiceChart, serviceChart, serviceLegend } from "./tiles-service"
@@ -132,6 +132,8 @@ const chartView = <M>(h: HtmlBuilder<M>, ctx: TileContext<M>, widget: Widget, re
 	const common = { slotId: `chart-${widget.id}`, model: ctx.chart, toParentMessage: ctx.onChart }
 	const theme = ctx.themeColors
 	const { data, className } = render
+	if (isCanvas(render.category) && ctx.chartRuntime._tag === "Failed")
+		return chartRuntimeFailedState(h, ctx.reloadPage ?? null)
 	if (isCanvas(render.category) && (theme === null || !isChartRuntimeReady(ctx.chartRuntime)))
 		return chartSkeleton(h, skeletonOf(render.category, widget))
 	switch (render.category) {
@@ -362,9 +364,18 @@ export const chartWidgetTile = <M>(
 								: item,
 						)
 					: hoistedSeries(data, theme)
-	const options_ = frame(ctx, widget, { loadingSkeleton: skeleton, legendItems })
+	// A tile that needs the chart runtime says it failed even while its data is still loading.
+	const runtimeFailed =
+		category !== undefined &&
+		(isCanvas(category) || isServiceChart(chartId)) &&
+		ctx.chartRuntime._tag === "Failed"
+	const options_ = frame(ctx, widget, {
+		loadingSkeleton: runtimeFailed ? chartRuntimeFailedState(h, ctx.reloadPage ?? null) : skeleton,
+		legendItems,
+	})
 	return widgetFrame(h, options_, () => {
 		if (category === undefined) return []
+		if (runtimeFailed) return [chartRuntimeFailedState(h, ctx.reloadPage ?? null)]
 		if (data === undefined || data.length === 0) return [widgetEmptyState(h)]
 		if (isServiceChart(chartId))
 			return theme === null || ctx.nowMs === null || !isChartRuntimeReady(ctx.chartRuntime)

@@ -40,9 +40,9 @@ const asOrgId = Schema.decodeUnknownSync(OrgId)
 const ORG = asOrgId("org_issue_hub_test")
 
 // Rule/incident ids are UUID-branded end to end, so fixtures must be real UUIDs.
-const RULE_1 = Schema.decodeUnknownSync(AlertRuleId)("11111111-1111-4111-8111-111111111111")
-const INCIDENT_1 = Schema.decodeUnknownSync(AlertIncidentId)("22222222-2222-4222-8222-222222222222")
-const INCIDENT_2 = Schema.decodeUnknownSync(AlertIncidentId)("33333333-3333-4333-8333-333333333333")
+const RULE_1 = Schema.decodeSync(AlertRuleId)("11111111-1111-4111-8111-111111111111")
+const INCIDENT_1 = Schema.decodeSync(AlertIncidentId)("22222222-2222-4222-8222-222222222222")
+const INCIDENT_2 = Schema.decodeSync(AlertIncidentId)("33333333-3333-4333-8333-333333333333")
 
 // Single time base for the whole file: seeded rows, upsert input timestamps,
 // and the service's own Clock reads (via TestClock.setTime) all derive from T0
@@ -118,7 +118,7 @@ describe("upsertAlertIssue", () => {
 
 			const issues = yield* loadIssue
 			assert.lengthOf(issues, 1)
-			const issue = issues[0]!
+			const issue = issues[0]
 			assert.strictEqual(issue.kind, "alert")
 			assert.strictEqual(issue.workflowState, "triage")
 			assert.strictEqual(issue.severity, "medium")
@@ -223,7 +223,7 @@ describe("upsertAlertIssue", () => {
 		}).pipe(Effect.provide(makeLayer())),
 	)
 
-	it.effect("reopens a done issue to triage with regression events", () =>
+	it.effect("reopens a done issue as regressed with regression events", () =>
 		Effect.gen(function* () {
 			yield* TestClock.setTime(T0)
 			const database = yield* Database
@@ -242,8 +242,11 @@ describe("upsertAlertIssue", () => {
 			assert.strictEqual(second.action, "reopened")
 
 			const issues = yield* loadIssue
-			assert.strictEqual(issues[0]?.workflowState, "triage")
+			// A fixed issue that fires again lands in `regressed`, as the errors tick does.
+			assert.strictEqual(issues[0]?.workflowState, "regressed")
 			assert.isNull(issues[0]?.resolvedAt)
+			assert.strictEqual(issues[0]?.regressionCount, 1)
+			assert.strictEqual(issues[0]?.lastRegressedAt, T0 + 100_000)
 
 			const events = yield* database.execute((db) =>
 				db.run(
@@ -317,7 +320,7 @@ describe("upsertAlertIssue", () => {
 			yield* database.execute((db) =>
 				db.run(
 					PG.update(ErrorIssues)
-						.set({ workflowState: "wontfix", snoozeUntil: T0 + 50_000 })
+						.set({ workflowState: "wontfix", snoozeUntil: T0 + 50_000, resolvedAt: T0 + 10_000 })
 						.where(($) => [$.id.eq(first.issueId!)]),
 				),
 			)
@@ -330,6 +333,7 @@ describe("upsertAlertIssue", () => {
 			const issues = yield* loadIssue
 			assert.strictEqual(issues[0]?.workflowState, "triage")
 			assert.isNull(issues[0]?.snoozeUntil)
+			assert.isNull(issues[0]?.resolvedAt)
 		}).pipe(Effect.provide(makeLayer())),
 	)
 

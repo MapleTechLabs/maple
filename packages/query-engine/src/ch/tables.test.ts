@@ -1,4 +1,4 @@
-import { describe, expect, it } from "@effect/vitest"
+import { assert, describe, expect, it } from "@effect/vitest"
 import { DateTime, Effect, Array as Arr } from "effect"
 import * as CH from "@maple-dev/effect-orm/expr"
 import { compile, from, param } from "@maple-dev/effect-orm/clickhouse"
@@ -58,7 +58,8 @@ describe("wrapped utcDateTime64 columns", () => {
 			const [row] = yield* compiled.decodeRows([
 				{ exemplars: ["2026-10-07 10:00:00.123456789", "2026-10-07 10:00:01.000000000"] },
 			])
-			expect(Arr.map(row!.exemplars, DateTime.formatIso)).toEqual([
+			assert.isDefined(row)
+			expect(Arr.map(row.exemplars, DateTime.formatIso)).toEqual([
 				"2026-10-07T10:00:00.123Z",
 				"2026-10-07T10:00:01.000Z",
 			])
@@ -76,8 +77,9 @@ describe("wrapped utcDateTime64 columns", () => {
 			const [row] = yield* compiled.decodeRows([
 				{ firstSeen: "2026-10-07 10:00:00.250000000", earliest: "2026-10-07 09:00:00.000000000" },
 			])
-			expect(DateTime.formatIso(row!.firstSeen)).toBe("2026-10-07T10:00:00.250Z")
-			expect(DateTime.formatIso(row!.earliest)).toBe("2026-10-07T09:00:00.000Z")
+			assert.isDefined(row)
+			expect(DateTime.formatIso(row.firstSeen)).toBe("2026-10-07T10:00:00.250Z")
+			expect(DateTime.formatIso(row.earliest)).toBe("2026-10-07T09:00:00.000Z")
 		}),
 	)
 })

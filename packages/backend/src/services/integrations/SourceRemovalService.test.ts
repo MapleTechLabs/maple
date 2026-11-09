@@ -1,5 +1,5 @@
 import { afterEach, assert, describe, it } from "@effect/vitest"
-import { ConfigProvider, Effect, Layer, Schema } from "effect"
+import { ConfigProvider, Effect, Layer, Schema, Array as Arr, Option, Order } from "effect"
 import { CreateSourceRequest, OrgId, ScrapeTargetDeleteResponse, UserId } from "@maple/domain/http"
 import { AwsAccountId, GcpProjectId, SourceId } from "@maple/domain/primitives"
 import { Env } from "@maple/backend/platform/Env"
@@ -38,12 +38,12 @@ const config = ConfigProvider.layer(
 	}),
 )
 
-const org = Schema.decodeUnknownSync(OrgId)("org_a")
-const user = Schema.decodeUnknownSync(UserId)("user_a")
+const org = Schema.decodeSync(OrgId)("org_a")
+const user = Schema.decodeSync(UserId)("user_a")
 const decodeSourceId = Schema.decodeUnknownSync(SourceId)
 
-const projectId = Schema.decodeUnknownSync(GcpProjectId)("acme-prod")
-const accountId = Schema.decodeUnknownSync(AwsAccountId)("123456789012")
+const projectId = Schema.decodeSync(GcpProjectId)("acme-prod")
+const accountId = Schema.decodeSync(AwsAccountId)("123456789012")
 
 const die = () => Effect.die("not used by SourceRemovalService")
 
@@ -102,7 +102,7 @@ const makeLayer = (testDb: TestDb, calls: string[]) => {
 			update: die,
 			setup: die,
 			check: die,
-			checkDue: die,
+			checkDue: die(),
 			delete: (_orgId, connectionId) =>
 				Effect.as(record(`aws:${connectionId}`), {
 					connection: {
@@ -140,7 +140,7 @@ const makeLayer = (testDb: TestDb, calls: string[]) => {
 			disconnect: disconnected("railway"),
 			sync: die,
 			pollOrg: die,
-			pollAllOrgs: die,
+			pollAllOrgs: die(),
 		}),
 		Layer.succeed(PlanetScaleConnectionService, {
 			getStatus: die,
@@ -158,7 +158,7 @@ const makeLayer = (testDb: TestDb, calls: string[]) => {
 			updateProject: die,
 			disconnect: disconnected("supabase"),
 			discoverOrg: die,
-			discoverAllOrgs: die,
+			discoverAllOrgs: die(),
 		}),
 	)
 	const sources = SourcesService.layer.pipe(Layer.provide(Env.layer), Layer.provide(config))
@@ -219,7 +219,10 @@ describe("SourceRemovalService", () => {
 
 			assert.strictEqual(removed.source.platform, "prometheus")
 			assert.strictEqual(removed.cleanupScript, null)
-			assert.deepStrictEqual(calls.toSorted(), [`prometheus:${TARGET_1}`, `prometheus:${TARGET_2}`])
+			assert.deepStrictEqual(Arr.sort(calls, Order.String), [
+				`prometheus:${TARGET_1}`,
+				`prometheus:${TARGET_2}`,
+			])
 			assert.strictEqual(yield* sourceCount(testDb, SOURCE_A), 0)
 			assert.strictEqual(yield* sourceCount(testDb, SOURCE_B), 1)
 		}).pipe(Effect.provide(makeLayer(testDb, calls)))
@@ -352,8 +355,9 @@ describe("SourceRemovalService", () => {
 			assert.strictEqual(removed.source.id, created.source.id)
 			assert.strictEqual(yield* sourceCount(testDb, created.source.id), 0)
 
-			const defaultSource = (yield* sources.list(org)).find((source) => source.kind === "default")
-			assert.isDefined(defaultSource)
+			const defaultSource = Option.getOrThrow(
+				Arr.findFirst(yield* sources.list(org), (source) => source.kind === "default"),
+			)
 			const refused = yield* removal.remove(org, defaultSource.id).pipe(Effect.flip)
 			assert.strictEqual(refused._tag, "@maple/http/errors/SourceValidationError")
 			assert.deepStrictEqual(calls, [])

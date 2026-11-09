@@ -133,8 +133,8 @@ export const Loader = Schema.Struct({
 	/** The seed's events, cut once per `seedVersion` so ticks and views do not re-flatten them. */
 	seed: Schema.Array(Schema.Unknown),
 	queue: Schema.Array(Range),
-	seekTargetMs: Schema.NullOr(Schema.Number),
-	isSeeking: Schema.Boolean,
+	/** Where the current seed starts after a seek or slide; `isLoading` until its window is cut. */
+	seek: Schema.NullOr(Schema.Struct({ targetMs: Schema.Number, isLoading: Schema.Boolean })),
 	playheadMs: Schema.Number,
 	/** The range the events subscription reads (`subscribedRange`). */
 	range: KeyedSchema(RangeRows, LoadFailure),
@@ -154,8 +154,6 @@ export const Loader = Schema.Struct({
 	backgroundFailure: Schema.NullOr(LoadFailure),
 	/** The engine ran out of loaded events, until the window grows or is rebuilt. */
 	isStarved: Schema.Boolean,
-	/** Play as soon as the next seed's engine is ready: a seek or slide that interrupted playback. */
-	resumeOnReady: Schema.Boolean,
 })
 export type Loader = typeof Loader.Type
 
@@ -165,9 +163,20 @@ export type RailTab = typeof RailTab.Type
 export const EventFilter = Schema.Literals(["all", "custom", "console", "network", "error"])
 export type EventFilter = typeof EventFilter.Type
 
+/**
+ * The transport: `Buffering` while a seek or slide rebuilds the engine, `resumeAfter` when it
+ * interrupted playback and plays again once the new engine is ready.
+ */
+export const Playback = Schema.Union([
+	Schema.TaggedStruct("Paused", {}),
+	Schema.TaggedStruct("Playing", {}),
+	Schema.TaggedStruct("Buffering", { resumeAfter: Schema.Boolean }),
+	Schema.TaggedStruct("Finished", {}),
+])
+export type Playback = typeof Playback.Type
+
 export const Player = Schema.Struct({
-	isPlaying: Schema.Boolean,
-	isFinished: Schema.Boolean,
+	playback: Playback,
 	/** Real ms from recording start. */
 	currentMs: Schema.Number,
 	totalMs: Schema.Number,

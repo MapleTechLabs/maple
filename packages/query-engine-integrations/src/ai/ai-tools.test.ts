@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { Array as Arr, Effect, String as Str } from "effect"
+import { Array as Arr, Effect, String as Str, Option } from "effect"
 import { compileUnionUnsafe, compileUnsafe, type CompiledQuery } from "@maple-dev/effect-orm/clickhouse"
 import {
 	aiToolDescriptionQuery,
@@ -359,7 +359,9 @@ describe("aiToolsTotalsQuery", () => {
 		// The overview's default is unchanged, and the branches keep their order
 		// whatever order the caller lists them in.
 		const listed = compileUnionUnsafe(aiToolsTotalsQuery({}, ["window", "current"]), totalsParams).sql
-		expect(listed.indexOf("'current' AS period")).toBeLessThan(listed.indexOf("'window' AS period"))
+		expect(Option.getOrThrow(Str.indexOf("'current' AS period")(listed))).toBeLessThan(
+			Option.getOrThrow(Str.indexOf("'window' AS period")(listed)),
+		)
 		expect(listed).not.toContain("'previous' AS period")
 	})
 
@@ -506,8 +508,8 @@ describe("the tool detail reads", () => {
 		expect(sql).toContain("min(numbered_tool_calls.newerCalls) AS callsSince")
 		// The failure filter is the outer level's, above the numbering.
 		expect(sql).toContain("WHERE numbered_tool_calls.isError = 1")
-		expect(sql.indexOf("WHERE numbered_tool_calls.isError = 1")).toBeGreaterThan(
-			sql.indexOf("row_number()"),
+		expect(Option.getOrThrow(Str.indexOf("WHERE numbered_tool_calls.isError = 1")(sql))).toBeGreaterThan(
+			Option.getOrThrow(Str.indexOf("row_number()")(sql)),
 		)
 	})
 
@@ -852,9 +854,8 @@ describe("aiToolDescriptionQuery", () => {
 		expect(compiled.sql).toContain(
 			"argMax(ai_trace_index.ToolDescription, ai_trace_index.Timestamp) AS description",
 		)
-		// Rows materialized before migration 0032 read '', and so does a call
-		// whose framework stamps nothing — without this the `argMax` would answer
-		// '' for a tool whose most recent call is one of them.
+		// A call whose framework sends no description reads '' — without this the
+		// `argMax` would answer '' for a tool whose most recent call is one.
 		expect(compiled.sql).toContain("ToolDescription != ''")
 		expect(decodeRows(compiled, [{ description: "Search traces." }])).toEqual([
 			{ description: "Search traces." },

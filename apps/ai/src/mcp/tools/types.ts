@@ -114,6 +114,13 @@ export interface McpToolHints {
 }
 
 /**
+ * Whether a read-only credential is refused this tool, and so never shown it: every tool that
+ * changes data, except feedback, which stays open to read-only keys as on v2.
+ */
+export const refusesReadOnlyCredential = (name: string, readOnly: boolean): boolean =>
+	!readOnly && name !== "send_maple_feedback"
+
+/**
  * Who a tool is for.
  *
  * `public` tools are listed on and callable from every surface, the MCP transport
@@ -168,7 +175,7 @@ export const audienceAdmits = (audience: McpToolAudience, surface: McpToolSurfac
  */
 export interface McpToolSpec<
 	P extends Schema.Codec<unknown, unknown, never, unknown>,
-	O extends Schema.Codec<unknown, unknown, never, never>,
+	O extends Schema.Codec<unknown, unknown>,
 	R extends McpToolRequirements,
 > {
 	readonly name: string
@@ -181,9 +188,19 @@ export interface McpToolSpec<
 	readonly hints: McpToolHints
 	/** Defaults to `public`. */
 	readonly audience?: McpToolAudience
+	/**
+	 * A v2 scope family a scoped API key must also hold (read for read-only tools, else write), as
+	 * the matching `/v2/<family>` routes require. For data outside the toolset's baseline families.
+	 */
+	readonly scopeFamily?: string
 	readonly phrases: McpToolPhrases
 	/** Retired parameter names mapped to their current name. Accepted, never published. */
 	readonly aliases?: Readonly<Record<string, string>>
+	/**
+	 * Per enum parameter, other spellings of a published value (`feature` for `feature_request`).
+	 * Accepted, never published. Case, spaces and hyphens are already forgiven for every enum.
+	 */
+	readonly valueAliases?: Readonly<Record<string, Readonly<Record<string, string>>>>
 	/**
 	 * Refuse keys a nested object parameter does not declare, instead of dropping them. For
 	 * documents that replace state, where a dropped typo would reset a field to its default.
@@ -197,7 +214,7 @@ export interface McpToolSpec<
 export interface McpToolRegistrar {
 	define<
 		P extends Schema.Codec<unknown, unknown, never, unknown>,
-		O extends Schema.Codec<unknown, unknown, never, never>,
+		O extends Schema.Codec<unknown, unknown>,
 		R extends McpToolRequirements,
 	>(
 		spec: McpToolSpec<P, O, R>,

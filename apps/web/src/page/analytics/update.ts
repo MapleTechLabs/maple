@@ -1,4 +1,12 @@
 import { toggleFilterValue, toggleTraffic } from "../../components/analytics/filters"
+import {
+	SearchConsoleIntegrationStatus,
+	SearchConsoleLandingPage,
+	SearchConsoleOverview,
+	SearchConsolePageRow,
+	SearchConsolePoint,
+	SearchConsoleQueryRow,
+} from "@maple/domain/http"
 import { Option, Result, Schema, Array as Arr, Record as Rec } from "effect"
 import { AsyncData, Command } from "foldkit"
 import * as Chart from "@maple/views/charts/chart"
@@ -28,11 +36,14 @@ import {
 	PageviewsPoint,
 	type PanelState,
 	type Search,
+	type SearchSort,
+	type SearchSortKey,
+	type SearchTable,
 	Summary,
 	TimeseriesPoint,
 	TraceSample,
 } from "./model"
-import { filtersOf, requestSlots, showsOverviewContent, tabOf } from "./requests"
+import { filtersOf, requestSlots, searchSortOf, showsOverviewContent, tabOf } from "./requests"
 
 type Return = PageReturn<Model, Message>
 type Cmd = Command.Command<Message, never, Resources>
@@ -54,6 +65,12 @@ const SLOT_SCHEMAS = {
 	previousAiReferrals: Schema.Array(AiReferralPoint),
 	aiCrawlers: AiCrawlers,
 	traceSamples: Schema.Array(TraceSample),
+	searchStatus: SearchConsoleIntegrationStatus,
+	searchOverview: SearchConsoleOverview,
+	searchTimeseries: Schema.Array(SearchConsolePoint),
+	searchQueries: Schema.Array(SearchConsoleQueryRow),
+	searchPages: Schema.Array(SearchConsolePageRow),
+	searchLanding: Schema.Array(SearchConsoleLandingPage),
 } satisfies Record<SlotName, Schema.Top>
 
 const SLOTS = Arr.filter(Rec.keys(SLOT_SCHEMAS), (name): name is SlotName => name in SLOT_SCHEMAS)
@@ -62,7 +79,7 @@ const decodeFailure: LoadFailure = toLoadFailure("The response could not be read
 
 /** Folds an answer into every slot that asked under its key, decoded with that slot's schema. */
 const settleSlots = (model: Model, key: string, result: Result.Result<unknown, LoadFailure>): Model =>
-	SLOTS.reduce<Model>((next, name) => {
+	Arr.reduce(SLOTS, model, (next, name) => {
 		if (next[name].key !== key) return next
 		const decoded = Result.match(result, {
 			onFailure: (failure) => Result.fail(failure),
@@ -74,7 +91,7 @@ const settleSlots = (model: Model, key: string, result: Result.Result<unknown, L
 		})
 		const slot: Keyed.Keyed<unknown, LoadFailure> = next[name]
 		return { ...next, [name]: Keyed.accept(slot, key, decoded) }
-	}, model)
+	})
 
 const resolveCommand = (model: Model, context: PageContext, mode: RequestMode): Cmd =>
 	ResolveWindow({
@@ -104,6 +121,22 @@ const withRequests = (model: Model, context: PageContext, mode: Keyed.RequestMod
 	return requestSlots(model, context, model.window, mode)
 }
 
+/** The Search tab's reads that need the status's property. */
+const SEARCH_DATA_SLOTS: ReadonlyArray<SlotName> = [
+	"searchOverview",
+	"searchTimeseries",
+	"searchQueries",
+	"searchPages",
+	"searchLanding",
+]
+const SEARCH_SLOTS: ReadonlyArray<SlotName> = ["searchStatus", ...SEARCH_DATA_SLOTS]
+
+const SEARCH_TABLE_SLOT = {
+	queries: "searchQueries",
+	pages: "searchPages",
+	landing: "searchLanding",
+} as const satisfies Record<SearchTable, SlotName>
+
 const defaultPanel: PanelState = { pickedTab: null, query: "", sortKey: null, sortDir: "desc" }
 export const panelOf = (model: Model, panel: string): PanelState => model.panels[panel] ?? defaultPanel
 
@@ -126,12 +159,10 @@ const seedPanels = (model: Model): Model => {
 		["content", hasRows(model.pages)],
 		["events", hasRows(model.events)],
 	]
-	return seeds.reduce<Model>(
-		(next, [panel, hasViews]) =>
-			next.panels[panel] === undefined
-				? withPanel(next, panel, { sortKey: hasViews ? "views" : "count" })
-				: next,
-		model,
+	return Arr.reduce(seeds, model, (next, [panel, hasViews]) =>
+		next.panels[panel] === undefined
+			? withPanel(next, panel, { sortKey: hasViews ? "views" : "count" })
+			: next,
 	)
 }
 
@@ -173,6 +204,13 @@ export const init = (route: { readonly search: Search }, context: PageContext): 
 		previousAiReferrals: Keyed.idle(),
 		aiCrawlers: Keyed.idle(),
 		traceSamples: Keyed.idle(),
+		searchStatus: Keyed.idle(),
+		searchOverview: Keyed.idle(),
+		searchTimeseries: Keyed.idle(),
+		searchQueries: Keyed.idle(),
+		searchPages: Keyed.idle(),
+		searchLanding: Keyed.idle(),
+		searchSorts: {},
 		presence: SignalPresenceData.Loading(),
 		pickedMetric: null,
 		panels: {},
@@ -248,6 +286,7 @@ const clearedFilters = (search: Search): Search => ({
 	endTime: search.endTime,
 	timePreset: search.timePreset,
 	tab: search.tab,
+	site: search.site,
 })
 
 const dialogStep = (model: Model, inner: Dialog.Message): Return => {
@@ -263,7 +302,13 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 	Message.match<Return>(message, {
 		CompletedResolveWindow: ({ window, nowMs, mode }) =>
 			withRequests({ ...model, window, nowMs }, context, mode),
-		CompletedFetch: ({ key, result }) => ({ model: delivered(model, key, result) }),
+		CompletedFetch: ({ key, result }) => {
+			const next = delivered(model, key, result)
+			// A status answer asks for the reads it unlocks; a failed one asks for nothing (Retry does).
+			return key === model.searchStatus.key && Result.isSuccess(result) && next.window !== null
+				? requestSlots(next, context, next.window, "Load", SEARCH_DATA_SLOTS)
+				: { model: next }
+		},
 		CompletedLoadSignalPresence: ({ result }) =>
 			withRequests(
 				seedPanels({ ...model, presence: AsyncData.settle(model.presence, result) }),
@@ -271,6 +316,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 				"Load",
 			),
 		TickedLivePoll: () => refreshOnly(model, context, ["live"]),
+		TickedSearchImportPoll: () => refreshOnly(model, context, ["searchStatus"]),
 		ClickedReload: () => {
 			const reloaded = { ...model, refreshVersion: model.refreshVersion + 1, isReloading: true }
 			return {
@@ -295,6 +341,21 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		ClickedRetrySummaryAndBreakdowns: () => refreshOnly(model, context, ["summary", "breakdowns"]),
 		ClickedRetryAiReferrals: () => retryFailed(model, context, ["aiReferrals", "previousAiReferrals"]),
 		ClickedRetryAiCrawlers: () => retryFailed(model, context, ["aiCrawlers"]),
+		ClickedRetrySearch: () => retryFailed(model, context, SEARCH_SLOTS),
+		ClickedRetryEvents: () => retryFailed(model, context, ["events"]),
+		PickedSearchSite: ({ siteUrl }) => navigate(model, { ...model.search, site: siteUrl }),
+		ClickedSearchSort: ({ table, key }) => {
+			// Names and position start ascending: lower position is better.
+			const next = nextSort<SearchSortKey>(searchSortOf(model, table), key, {
+				stringKeys: ["name", "position"],
+			})
+			const sort: SearchSort = { key: next.key ?? "clicks", dir: next.dir }
+			const sorted = { ...model, searchSorts: { ...model.searchSorts, [table]: sort } }
+			// The sort is part of the read's key: a new order asks again, and an older answer is dropped.
+			return sorted.window === null
+				? { model: sorted }
+				: requestSlots(sorted, context, sorted.window, "Load", [SEARCH_TABLE_SLOT[table]])
+		},
 		ToggledFilter: ({ key, value }) => {
 			const filters = filtersOf(model.search)
 			return navigate(model, withFilter(model.search, key, toggleFilterValue(filters[key], value)))

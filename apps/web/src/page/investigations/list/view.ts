@@ -1,3 +1,4 @@
+import * as Policy from "@maple/domain/policy"
 import type { V2Investigation } from "@maple/domain/http/v2"
 import { EMPTY_VALUE, formatNumber, pluralize } from "@maple/ui/lib/format"
 import { toEpochMs } from "@maple/ui/lib/time-format"
@@ -11,6 +12,7 @@ import {
 import { formatTimestampInTimezone } from "@maple/web-data/lib/timezone-format"
 import { AsyncData, Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
+import { timestamp } from "@maple/views/ui/timestamp"
 import { AppRoute, hrefOf } from "../../../route"
 import { alert, alertAction, alertDescription, alertTitle } from "@maple/views/ui/alert"
 import { button, linkButton } from "@maple/views/ui/button"
@@ -57,7 +59,8 @@ import type { Model } from "./model"
 import { typography, typographyClass } from "@maple/views/ui/typography"
 import { hstack, hstackClass, vstack } from "@maple/views/ui/stack"
 import { spaced } from "@maple/views/ui/spaced"
-import { Array as Arr, String as Str } from "effect"
+import { Array as Arr, String as Str, Option } from "effect"
+import { textLink } from "@maple/views/ui/text-link"
 
 // `InvestigationsHub` and `InvestigationTable`: the investigations list page.
 
@@ -83,9 +86,17 @@ const SORT_ENTRIES: ReadonlyArray<SelectView.SelectEntry> = Arr.map(SORT_OPTIONS
 }))
 
 const kindLabel = (value: string): string =>
-	KIND_FILTER_LABEL[KIND_FILTER_VALUES.find((kind) => kind === value) ?? "all"]
+	KIND_FILTER_LABEL[
+		Option.getOrElse(
+			Arr.findFirst(KIND_FILTER_VALUES, (kind) => kind === value),
+			(): "all" => "all",
+		)
+	]
 const sortLabel = (value: string): string =>
-	SORT_OPTIONS.find((option) => option.value === value)?.label ?? SORT_OPTIONS[0].label
+	Arr.findFirst(SORT_OPTIONS, (option) => option.value === value).pipe(
+		Option.flatMapNullishOr((found) => found.label),
+		Option.getOrElse(() => SORT_OPTIONS[0].label),
+	)
 
 const toolbar = (
 	h: H,
@@ -244,19 +255,18 @@ const row = (h: H, investigation: V2Investigation, nowMs: number, timeZone: stri
 			as: "li",
 			divided: true,
 			className: "cursor-pointer gap-3.5 py-3.5",
-			leading: h.span(
-				[h.Class("flex w-5 items-center justify-center")],
-				[kindMarker(h, investigation.subject, investigation.seeded_by)],
-			),
+			leading: hstack(h, { align: "center", justify: "center", as: "span", className: "w-5" }, [
+				kindMarker(h, investigation.subject, investigation.seeded_by),
+			]),
 			title: hstack(h, { gap: "2", align: "baseline", shrink: true, as: "span" }, [
-				h.a(
-					[
-						h.Href(hrefOf(AppRoute.Investigation({ id: investigation.id, search: {} }))),
-						h.Class(
-							"min-w-0 truncate font-medium text-sm text-foreground hover:underline active:underline",
-						),
-						h.Title(headline),
-					],
+				textLink(
+					h,
+					{
+						href: hrefOf(AppRoute.Investigation({ id: investigation.id, search: {} })),
+						tone: "inherit",
+						className: "block min-w-0 truncate font-medium text-sm text-foreground",
+						attributes: [h.Title(headline)],
+					},
 					[headline],
 				),
 				...(scope
@@ -269,26 +279,23 @@ const row = (h: H, investigation: V2Investigation, nowMs: number, timeZone: stri
 					: []),
 			]),
 			meta: rowFinding(h, investigation),
-			trailing: h.span(
-				[h.Class("flex items-center gap-3.5")],
-				[
-					h.span(
-						[h.Class("w-20 shrink-0 max-md:hidden")],
-						[confidenceMeter(h, investigation.confidence)],
-					),
-					h.span(
-						[h.Class("w-18 shrink-0 max-sm:hidden")],
-						[severityBadge(h, investigationSeverity(investigation))],
-					),
-					h.span([h.Class("w-24 shrink-0 max-lg:hidden")], [statusBadge(h, investigation.status)]),
-					listRelativeTime(h, {
-						value: investigation.updated_at,
-						nowMs,
-						timeZone,
-						className: "w-13 shrink-0 text-right text-xs text-muted-foreground",
-					}),
-				],
-			),
+			trailing: hstack(h, { align: "center", as: "span", className: "gap-3.5" }, [
+				h.span(
+					[h.Class("w-20 shrink-0 max-md:hidden")],
+					[confidenceMeter(h, investigation.confidence)],
+				),
+				h.span(
+					[h.Class("w-18 shrink-0 max-sm:hidden")],
+					[severityBadge(h, investigationSeverity(investigation))],
+				),
+				h.span([h.Class("w-24 shrink-0 max-lg:hidden")], [statusBadge(h, investigation.status)]),
+				listRelativeTime(h, {
+					value: investigation.updated_at,
+					nowMs,
+					timeZone,
+					className: "w-13 shrink-0 text-right text-xs text-muted-foreground",
+				}),
+			]),
 		},
 		[h.Key(investigation.id), h.Attribute(ROW_ATTRIBUTE, investigation.id)],
 	)
@@ -301,17 +308,19 @@ const tableSkeleton = (h: H): Html =>
 		gap: "0",
 		label: "Loading investigations",
 		renderRow: (index) =>
-			h.div(
-				[
-					h.Key(String(index)),
-					h.Class("flex items-center gap-3.5 border-b px-4 py-3.5 last:border-b-0"),
-				],
+			hstack(
+				h,
+				{
+					align: "center",
+					className: "gap-3.5 border-b px-4 py-3.5 last:border-b-0",
+					attributes: [h.Key(String(index))],
+				},
 				[
 					skeleton(h, "size-3.5 shrink-0 rounded-full"),
-					h.div(
-						[h.Class("flex min-w-0 flex-1 flex-col gap-2")],
-						[skeleton(h, "h-3.5 w-[45%]"), skeleton(h, "h-3 w-[70%]")],
-					),
+					vstack(h, { gap: "2", shrink: true, grow: true }, [
+						skeleton(h, "h-3.5 w-[45%]"),
+						skeleton(h, "h-3 w-[70%]"),
+					]),
 					skeleton(h, "h-3 w-20 shrink-0 max-md:hidden"),
 					skeleton(h, "h-4 w-14 shrink-0 max-sm:hidden"),
 					skeleton(h, "h-4 w-20 shrink-0 max-lg:hidden"),
@@ -353,39 +362,33 @@ const HUB_TITLE = "Ask, and Maple goes and finds out."
 /** `HubHero`: the first-run page. */
 const hubHero = (h: H, model: Model): Html => {
 	const presence = presenceOf(model.presence, "traces")
-	return h.div(
-		[h.Class("mx-auto flex min-h-full w-full max-w-2xl flex-col justify-center gap-5 py-16")],
+	return vstack(
+		h,
+		{ gap: "5", justify: "center", className: "mx-auto min-h-full w-full max-w-2xl py-16" },
 		[
 			eyebrow(h, { className: "text-primary" }, ["Investigations"]),
-			h.header(
-				[h.Class("flex flex-wrap items-start gap-x-6 gap-y-3")],
-				[
-					spaced(h, { space: "1", fill: true }, [
-						h.div(
-							[h.Class("flex flex-wrap items-baseline gap-3")],
-							[
-								pageTitle(h, { className: "min-w-0 whitespace-normal text-foreground" }, [
-									HUB_TITLE,
-								]),
-							],
-						),
-						h.p(
-							[h.Class("max-w-2xl text-sm text-muted-foreground")],
-							[
-								"One agent reads the traces, logs and metrics around it, tests the likely explanations (deploys, dependencies, saturation, traffic) and comes back with a cause, the evidence for it, and what it ruled out.",
-							],
-						),
+			hstack(h, { align: "start", wrap: true, as: "header", className: "gap-x-6 gap-y-3" }, [
+				spaced(h, { space: "1", fill: true }, [
+					hstack(h, { gap: "3", align: "baseline", wrap: true }, [
+						pageTitle(h, { className: "min-w-0 whitespace-normal text-foreground" }, [HUB_TITLE]),
 					]),
-				],
-			),
+					h.p(
+						[h.Class("max-w-2xl text-sm text-muted-foreground")],
+						[
+							"One agent reads the traces, logs and metrics around it, tests the likely explanations (deploys, dependencies, saturation, traffic) and comes back with a cause, the evidence for it, and what it ruled out.",
+						],
+					),
+				]),
+			]),
 			...(presence.status === "absent"
 				? [
-						h.div(
-							[
-								h.Class(
-									"flex flex-wrap items-center gap-x-4 gap-y-2 text-sm text-muted-foreground",
-								),
-							],
+						hstack(
+							h,
+							{
+								align: "center",
+								wrap: true,
+								className: "gap-x-4 gap-y-2 text-sm text-muted-foreground",
+							},
 							[
 								h.span([], ["Investigations read your telemetry. Send traces first."]),
 								linkButton(
@@ -416,11 +419,16 @@ const hubHero = (h: H, model: Model): Html => {
 									onClick: Message.ClickedSuggestion({ title: suggestion }),
 									isDisabled: model.isCreating,
 									className:
-										"flex w-full items-center gap-3 rounded-md border bg-card px-3.5 py-2.5 text-left text-sm text-foreground hover:border-ring active:border-ring hover:bg-surface-sunken active:bg-surface-sunken disabled:opacity-60",
+										"flex w-full items-center gap-3 rounded-md border bg-card px-3.5 py-2.5 text-left text-sm text-foreground hover:border-border-strong active:border-border-strong hover:bg-surface-sunken active:bg-surface-sunken disabled:opacity-64",
 								},
 								[
-									h.span(
-										[h.AriaHidden(true), h.Class("shrink-0 text-muted-foreground")],
+									typography(
+										h,
+										{
+											tone: "muted",
+											className: "shrink-0",
+											attributes: [h.AriaHidden(true)],
+										},
 										["›"],
 									),
 									suggestion,
@@ -430,8 +438,9 @@ const hubHero = (h: H, model: Model): Html => {
 					),
 				),
 			),
-			h.div(
-				[h.Class("flex flex-wrap items-baseline gap-x-4 gap-y-2 text-sm text-muted-foreground")],
+			hstack(
+				h,
+				{ align: "baseline", wrap: true, className: "gap-x-4 gap-y-2 text-sm text-muted-foreground" },
 				[
 					h.p(
 						[h.Class(hstackClass({ gap: "2", align: "baseline" }))],
@@ -458,15 +467,27 @@ const hubHero = (h: H, model: Model): Html => {
 const budgetNotice = (h: H, model: Model, timeZone: string): Html | null => {
 	const budget = AsyncData.getOrElse(model.budget.data, () => null)
 	if (budget === null || !budget.enabled || !budget.ordinaryPaused) return null
-	const resets =
+	const resets: ReadonlyArray<Html | string> =
 		budget.resumesAt === null
-			? "."
-			: `; it resets ${formatTimestampInTimezone(toEpochMs(budget.resumesAt), { timeZone, style: "range" })}.`
+			? ["."]
+			: [
+					"; it resets ",
+					timestamp(h, {
+						value: budget.resumesAt,
+						timeZone,
+						label: formatTimestampInTimezone(toEpochMs(budget.resumesAt), {
+							timeZone,
+							style: "range",
+						}),
+					}),
+					".",
+				]
 	const spent =
 		budget.pausedDimension === "runs" || budget.pausedDimension === "runs_reserved"
 			? "Today's investigation limit is reached"
 			: "Today's model budget is spent"
-	const canEditSettings = model.isOrgAdmin
+	// The limit lives on the AI settings tab, which needs llm_keys:manage to open.
+	const canEditSettings = Policy.has(model.grants, "llm_keys:manage")
 	return alert(h, { variant: "warn", className: "mb-4" }, [
 		alertTitle(
 			h,
@@ -482,7 +503,7 @@ const budgetNotice = (h: H, model: Model, timeZone: string): Html | null => {
 				[],
 				[
 					spent,
-					resets,
+					...resets,
 					" ",
 					budget.priorityPaused
 						? "Nothing new will start until then."
@@ -541,27 +562,25 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 		return h.div(
 			[h.Class("contents")],
 			[
-				h.ul(
-					[h.Class("flex flex-col"), h.OnMount(MountInvestigationRows())],
+				vstack(
+					h,
+					{ as: "ul", attributes: [h.OnMount(MountInvestigationRows())] },
 					Arr.map(visible, (investigation) => row(h, investigation, model.nowMs, timeZone)),
 				),
 				...(hasMore
 					? [
-							h.div(
-								[h.Class("flex justify-center border-t py-3")],
-								[
-									button(
-										h,
-										{
-											variant: "outline",
-											size: "sm",
-											isLoading: isLoadingMore,
-											attributes: [h.OnClick(Message.ClickedLoadMore())],
-										},
-										["Load more"],
-									),
-								],
-							),
+							hstack(h, { align: "stretch", justify: "center", className: "border-t py-3" }, [
+								button(
+									h,
+									{
+										variant: "outline",
+										size: "sm",
+										isLoading: isLoadingMore,
+										attributes: [h.OnClick(Message.ClickedLoadMore())],
+									},
+									["Load more"],
+								),
+							]),
 						]
 					: []),
 			],

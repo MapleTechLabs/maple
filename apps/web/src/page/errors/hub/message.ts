@@ -66,6 +66,7 @@ export const Message = defineMessageUnion({
 	ClickedClearSelection: {},
 	GotBulkSeverityMenuMessage: { message: Menu.Message },
 	GotBulkMoveMenuMessage: { message: Menu.Message },
+	GotBulkMergeMenuMessage: { message: Menu.Message },
 	CompletedHubWrite: {
 		ids: Schema.Array(Schema.String),
 		write: HubWrite,

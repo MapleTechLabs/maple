@@ -41,6 +41,13 @@ export const dataStateOf = (
 			return { _tag: "Ready", data: null }
 		case "WaitingOnVariables":
 			return LOADING
+		case "VariableUnavailable":
+			return {
+				_tag: "Error",
+				title: `Variable $${gate.name} unavailable`,
+				message: gate.message,
+				kind: null,
+			}
 		case "Config":
 			return { _tag: "Error", title: gate.title, message: gate.message, kind: "config" }
 		case "Range":

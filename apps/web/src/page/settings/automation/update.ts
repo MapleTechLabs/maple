@@ -1,3 +1,4 @@
+import * as Policy from "@maple/domain/policy"
 import {
 	EscalationConfidence,
 	EscalationPolicyEvaluationRequest,
@@ -15,7 +16,15 @@ import * as Select from "@maple/views/ui/select"
 import { PageOutMessage, type PageReturn } from "../../contract"
 import { revisitData } from "../kit/revisit"
 import { SEVERITY_ORDER } from "../../errors/kit/severity"
-import { ConfidenceChoice, DecisionSource, Message, type Model, PolicyDraft, type RuleDraft } from "./model"
+import {
+	canManage,
+	ConfidenceChoice,
+	DecisionSource,
+	Message,
+	type Model,
+	PolicyDraft,
+	type RuleDraft,
+} from "./model"
 
 type Return = PageReturn<Model, Message>
 
@@ -56,9 +65,9 @@ const EvaluateEscalationPolicy = Command.define("EvaluateEscalationPolicy", {
 		).pipe(settle((result) => Message.CompletedEvaluate({ revision, result }))),
 })
 
-export const init = (isAdmin: boolean): Return => ({
+export const init = (grants: ReadonlyArray<Policy.Permission>): Return => ({
 	model: {
-		isAdmin,
+		grants,
 		policy: AsyncData.Loading(),
 		draft: null,
 		isDirty: false,
@@ -131,7 +140,7 @@ const isSameDraft = Schema.toEquivalence(PolicyDraft)
 
 /** An edit: dirty, and the revision moves so a stale simulation is dropped. */
 const edit = (model: Model, change: (draft: PolicyDraft) => PolicyDraft): Return =>
-	model.draft === null || !model.isAdmin || model.isSaving
+	model.draft === null || !canManage(model) || model.isSaving
 		? { model }
 		: { model: { ...model, draft: change(model.draft), isDirty: true, revision: model.revision + 1 } }
 
@@ -218,7 +227,7 @@ export const update = (model: Model, message: Message): Return =>
 				return { ...draft, [severity]: { ...draft[severity], destinationIds: next } }
 			}),
 		ClickedSavePolicy: () =>
-			model.draft === null || model.isSaving || !model.isAdmin
+			model.draft === null || model.isSaving || !canManage(model)
 				? { model }
 				: {
 						model: { ...model, isSaving: true },
@@ -261,11 +270,14 @@ export const update = (model: Model, message: Message): Return =>
 		ClickedEvaluate: () => {
 			if (model.isEvaluating || model.isDirty) return { model }
 			const severity = Option.getOrElse(
-				Schema.decodeUnknownOption(DecisionSource)(model.source),
+				Schema.decodeOption(DecisionSource)(model.source),
 				() => "ai" as const,
 			)
 			const request = new EscalationPolicyEvaluationRequest({
-				severity: SEVERITY_ORDER.find((value) => value === model.severitySelect.value) ?? "high",
+				severity: Option.getOrElse(
+					Array.findFirst(SEVERITY_ORDER, (value) => value === model.severitySelect.value),
+					() => "high" as const,
+				),
 				source: severity,
 				...(severity === "ai" && { confidence: model.confidence }),
 			})

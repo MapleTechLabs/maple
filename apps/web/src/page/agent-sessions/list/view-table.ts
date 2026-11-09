@@ -19,6 +19,7 @@ import {
 	tableHeader,
 	tableRow,
 } from "@maple/views/ui/table"
+import { textLink } from "@maple/views/ui/text-link"
 import { middleTruncate } from "@maple/views/ui/middle-truncate"
 import { tableSkeleton } from "@maple/views/ui/table-skeleton"
 import { emptyValue, measure, NIL_VALUE } from "@maple/views/ui/values"
@@ -33,10 +34,10 @@ import { sessionHeading } from "../kit/session-name"
 import { vendorColor, vendorIcon, vendorLabel } from "../kit/vendor"
 import type { DisplayRow, Sort } from "./derive"
 import { Message } from "./message"
-import { errorChip as sharedErrorChip, TOOL_CHIP, TURN_CHIP } from "../kit/error-chip"
+import { errorChip as sharedErrorChip } from "../kit/error-chip"
 import { moreChip } from "../kit/more-chip"
-import { typographyClass } from "@maple/views/ui/typography"
-import { hstack, hstackClass } from "@maple/views/ui/stack"
+import { typography, typographyClass } from "@maple/views/ui/typography"
+import { hstack, hstackClass, vstack } from "@maple/views/ui/stack"
 import { Array as Arr } from "effect"
 
 // The agent sessions list, windowed.
@@ -249,19 +250,19 @@ const sessionCell = (h: H, row: DisplayRow, context: RowContext): Html => {
 						}),
 					],
 				),
-				h.a(
-					[
-						h.Class(
-							"min-w-0 truncate text-sm font-medium hover:underline active:underline focus-visible:underline focus-visible:outline-none",
-						),
-						...triggerAttributes(
+				textLink(
+					h,
+					{
+						href,
+						tone: "inherit",
+						className: "block min-w-0 truncate text-sm font-medium focus-visible:underline",
+						attributes: triggerAttributes(
 							h,
 							row.agentNames.length > 0
 								? `Agents: ${Arr.join(row.agentNames, ", ")}`
 								: "No agent name was reported",
 						),
-						h.Href(href),
-					],
+					},
 					[sessionHeading(row.firstAgentName, row.vendorId)],
 				),
 				startedAt(
@@ -271,25 +272,43 @@ const sessionCell = (h: H, row: DisplayRow, context: RowContext): Html => {
 					"ml-auto shrink-0 whitespace-nowrap text-xs text-muted-foreground @min-[400px]/page:hidden",
 				),
 			]),
-			h.div(
-				[
-					h.Class("mt-0.5 flex min-w-0 items-baseline gap-1.5 text-xs"),
-					...triggerAttributes(
-						h,
-						`${id.kind === "trace" ? "No session key was reported, so this session is this one trace" : "The session ID the framework reported"}\n${id.id}`,
-					),
-				],
+			hstack(
+				h,
+				{
+					gap: "1.5",
+					align: "baseline",
+					shrink: true,
+					className: "mt-0.5 text-xs",
+					attributes: [
+						...triggerAttributes(
+							h,
+							`${id.kind === "trace" ? "No session key was reported, so this session is this one trace" : "The session ID the framework reported"}\n${id.id}`,
+						),
+					],
+				},
 				[
 					// The id only tells sessions apart: it reads under the name and keeps both of its ends.
+					// "Session" (the default) hides while the model shares the line, which needs the room; "Trace"
+					// stays, since a bare hex id would read as a session key.
 					h.span(
-						[h.Class("shrink-0 text-foreground-faint")],
+						[
+							h.Class(
+								cn(
+									"shrink-0 text-foreground-faint",
+									row.models.length > 0 &&
+										id.kind === "session" &&
+										"@max-[1110px]/page:hidden",
+								),
+							),
+						],
 						[id.kind === "trace" ? "Trace" : "Session"],
 					),
 					middleTruncate(h, {
 						text: id.short,
 						tail: 6,
 						mono: true,
-						className: "text-foreground-subtle",
+						// Gives way first, down to its tail, before the model name shrinks.
+						className: "shrink-[100] text-foreground-subtle",
 					}),
 					...inlineModel(h, row, context),
 				],
@@ -306,8 +325,10 @@ const inlineModel = (h: H, row: DisplayRow, context: RowContext): ReadonlyArray<
 		: [
 				h.span(
 					[
+						// Shrink 1, not less: once the id is down to its tail the model shrinks alone, and a
+						// total flex-shrink under 1 absorbs only that fraction of the overflow.
 						h.Class(
-							"ml-auto min-w-0 max-w-[55%] shrink-[0.25] self-center text-muted-foreground @min-[1110px]/page:hidden",
+							"ml-auto min-w-0 max-w-[55%] shrink self-center text-muted-foreground @min-[1110px]/page:hidden",
 						),
 					],
 					[
@@ -355,8 +376,6 @@ const workCount = (h: H, iconName: IconName, tone: string, count: number, noun: 
 		],
 	)
 
-const BUCKET_COVERAGE_MIN = 0.9
-
 /** The buckets on the sent side of the model call; the rest are what it generated. */
 const INPUT_BUCKETS: ReadonlySet<string> = new Set(["input", "cacheRead", "cacheWrite"])
 
@@ -394,25 +413,15 @@ const tokenTooltip = (row: DisplayRow, total: number): string => {
 	)
 }
 
-/** In then out on one line, each in its side's colour; a session that reported only a total shows the total. */
+/** In then out on one line, each in its side's colour. */
 const tokenBar = (h: H, row: DisplayRow): Html | null => {
 	const inputs = Arr.filter(
 		[row.inputTokens, row.cacheReadTokens, row.cacheWriteTokens],
 		(value) => value > 0,
 	)
 	const outputs = Arr.filter([row.outputTokens, row.reasoningTokens], (value) => value > 0)
-	const drawnTotal = Arr.reduce([...inputs, ...outputs], 0, (sum, value) => sum + value)
-	const hasBuckets = drawnTotal > 0 && drawnTotal >= row.totalTokens * BUCKET_COVERAGE_MIN
-	const total = hasBuckets ? drawnTotal : row.totalTokens
+	const total = Arr.reduce([...inputs, ...outputs], 0, (sum, value) => sum + value)
 	if (total === 0) return null
-	if (!hasBuckets) {
-		return hint(
-			h,
-			typographyClass({ size: "xs", tone: "muted", mono: true, numeric: true }),
-			countLabel(total, "token"),
-			[formatNumber(total)],
-		)
-	}
 	const input = {
 		label: "in",
 		tone: "text-chart-tok-input",
@@ -429,18 +438,23 @@ const tokenBar = (h: H, row: DisplayRow): Html | null => {
 			[h.Class(part.count > 0 ? part.tone : NIL_VALUE)],
 			[part.count > 0 ? formatNumber(part.count) : EMPTY_VALUE],
 		)
-	return h.span(
-		[
-			h.Class("inline-flex items-baseline gap-1 whitespace-nowrap font-mono text-xs tabular-nums"),
-			...triggerAttributes(h, tokenTooltip(row, total)),
-		],
-		[side(input), h.span([h.Class("text-muted-foreground")], ["→"]), side(output)],
+	return hstack(
+		h,
+		{
+			gap: "1",
+			align: "baseline",
+			inline: true,
+			as: "span",
+			className: "whitespace-nowrap font-mono text-xs tabular-nums",
+			attributes: [...triggerAttributes(h, tokenTooltip(row, total))],
+		},
+		[side(input), typography(h, { tone: "muted" }, ["→"]), side(output)],
 	)
 }
 
 const errorChip = (
 	h: H,
-	options: Readonly<{ iconName?: IconName; count: number; noun: string; hint: string; className: string }>,
+	options: Readonly<{ iconName?: IconName; count: number; noun: string; hint: string; tone: "crit" | "warn" }>,
 ): Html => sharedErrorChip(h, { ...options, attributes: triggerAttributes(h, options.hint) })
 
 /** Tool failures apart from turn failures; an unclassified failure only when it is all there is. */
@@ -453,43 +467,40 @@ const errorChips = (h: H, row: DisplayRow): Html => {
 		)
 	const classified = row.toolErrorCount + row.turnErrorCount
 	const other = row.errorSpanCount - classified
-	return h.div(
-		[h.Class("flex flex-col items-start gap-1")],
-		[
-			...(row.turnErrorCount > 0
-				? [
-						errorChip(h, {
-							iconName: "FaceRobotIcon",
-							count: row.turnErrorCount,
-							noun: "turn",
-							hint: `${countLabel(row.turnErrorCount, "failed turn")}: a model call or agent turn errored`,
-							className: TURN_CHIP,
-						}),
-					]
-				: []),
-			...(row.toolErrorCount > 0
-				? [
-						errorChip(h, {
-							iconName: "GearIcon",
-							count: row.toolErrorCount,
-							noun: "tool",
-							hint: `${countLabel(row.toolErrorCount, "failed tool call")}: the agent may have recovered`,
-							className: TOOL_CHIP,
-						}),
-					]
-				: []),
-			...(classified === 0 && other > 0
-				? [
-						errorChip(h, {
-							count: other,
-							noun: "span",
-							hint: `${countLabel(other, "errored span")} outside the agent's turns and tools`,
-							className: TURN_CHIP,
-						}),
-					]
-				: []),
-		],
-	)
+	return vstack(h, { gap: "1", align: "start" }, [
+		...(row.turnErrorCount > 0
+			? [
+					errorChip(h, {
+						iconName: "FaceRobotIcon",
+						count: row.turnErrorCount,
+						noun: "turn",
+						hint: `${countLabel(row.turnErrorCount, "failed turn")}: a model call or agent turn errored`,
+						tone: "crit",
+					}),
+				]
+			: []),
+		...(row.toolErrorCount > 0
+			? [
+					errorChip(h, {
+						iconName: "GearIcon",
+						count: row.toolErrorCount,
+						noun: "tool",
+						hint: `${countLabel(row.toolErrorCount, "failed tool call")}: the agent may have recovered`,
+						tone: "warn",
+					}),
+				]
+			: []),
+		...(classified === 0 && other > 0
+			? [
+					errorChip(h, {
+						count: other,
+						noun: "span",
+						hint: `${countLabel(other, "errored span")} outside the agent's turns and tools`,
+						tone: "crit",
+					}),
+				]
+			: []),
+	])
 }
 
 const CELL_CLASS = "p-2 whitespace-normal leading-normal"
@@ -553,7 +564,14 @@ const sessionRow = (h: H, row: DisplayRow, index: number, context: RowContext): 
 
 /** `VirtualTableBody`'s spacers: the table keeps its full height around the rendered window. */
 const spacer = (h: H, key: string, height: number): Html =>
-	h.tr([h.Key(key), h.AriaHidden(true), h.Style({ height: `${height}px` })], [h.td([], [])])
+	tableRow(h, [tableCell(h, [], "p-0")], SPACER_ROW_CLASS, [
+		h.Key(key),
+		h.AriaHidden(true),
+		h.Style({ height: `${height}px` }),
+	])
+
+/** A structural row (spacer, loading): no rule and no hover tint. */
+const SPACER_ROW_CLASS = "border-0 hover:bg-transparent active:bg-transparent"
 
 /** The rows the virtualizer mounted, between their spacers; every row without a virtualizer. */
 const windowRows = (
@@ -618,17 +636,18 @@ export const sessionsTable = (
 							...windowRows(h, options.rows, options.context, options.virtual?.window),
 							...(options.isLoadingMore
 								? [
-										h.tr(
-											[h.Key("loading")],
+										tableRow(
+											h,
 											[
-												h.td(
-													[
-														h.Attribute("colspan", String(COLUMNS.length)),
-														h.Class("p-2"),
-													],
+												tableCell(
+													h,
 													[loadingMoreRow(h, "Loading more sessions…")],
+													"p-2",
+													[h.Attribute("colspan", String(COLUMNS.length))],
 												),
 											],
+											SPACER_ROW_CLASS,
+											[h.Key("loading")],
 										),
 									]
 								: []),

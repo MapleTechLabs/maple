@@ -13,6 +13,7 @@ import { graphOf } from "./graph"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { ACTION_GLYPH } from "./view-canvas"
+import { focusedHandoffLink } from "./view-handoff"
 import { evidenceChips, type TipTrigger } from "./view-sections"
 import { typography } from "@maple/views/ui/typography"
 import { hstack, vstack, vstackClass } from "@maple/views/ui/stack"
@@ -29,14 +30,17 @@ const sectionEyebrow = (h: H, title: string): Html =>
 
 export const actionSheetContent = (
 	h: H,
+	model: Model,
 	dialogId: string,
 	action: ActionNodeData,
 	report: Report | null,
 	trigger: TipTrigger,
 ): ReadonlyArray<Html> => {
 	const glyph = ACTION_GLYPH[action.kind]
-	const evidence = (report?.evidence ?? []).filter(
-		(item) => item.note || item.traceIds.length > 0 || item.logPatterns.length > 0,
+	const handoff = focusedHandoffLink(h, model, action.text)
+	const evidence = Arr.filter(
+		report?.evidence ?? [],
+		(item) => Boolean(item.note) || item.traceIds.length > 0 || item.logPatterns.length > 0,
 	)
 	return [
 		sheetDetailHeader(h, {
@@ -46,7 +50,7 @@ export const actionSheetContent = (
 					icon(h, glyph.icon, { size: 12, className: "shrink-0" }),
 					"Proposed action ",
 					Str.padStart(2, "0")(String(action.index + 1)),
-					h.span([h.Class("text-foreground-faint")], ["·"]),
+					typography(h, { tone: "faint" }, ["·"]),
 					glyph.label,
 				]),
 			],
@@ -60,6 +64,7 @@ export const actionSheetContent = (
 			dialogId,
 			[
 				hstack(h, { gap: "2", wrap: true }, [
+					...(handoff === null ? [] : [handoff]),
 					...(action.target === null
 						? []
 						: [
@@ -72,7 +77,7 @@ export const actionSheetContent = (
 					h.span(
 						[
 							h.Class(
-								"rounded-sm border border-dashed px-2 py-1 text-3xs tracking-wider text-foreground-subtle",
+								"rounded-sm border border-dashed px-2 py-1 text-3xs tracking-caption text-foreground-subtle",
 							),
 						],
 						[action.promise],
@@ -108,7 +113,7 @@ export const actionSheetContent = (
 										),
 										...(report.affectedScope
 											? [
-													h.span([h.Class("text-foreground-faint")], ["·"]),
+													typography(h, { tone: "faint" }, ["·"]),
 													h.span([], [report.affectedScope]),
 												]
 											: []),
@@ -172,7 +177,7 @@ export const actionSheet = (
 		model: model.actionSheet,
 		view: DialogView.view,
 		viewInputs: {
-			className: "sm:max-w-lg",
+			size: "detail",
 			side: "right",
 			hasTrigger: false,
 			hasDescription: action !== null,
@@ -184,7 +189,7 @@ export const actionSheet = (
 								DialogView.dialogTitle(h, "sheet", dialogId, "Proposed action", "sr-only"),
 							]),
 						]
-					: actionSheetContent(h, dialogId, action, investigation.report, trigger),
+					: actionSheetContent(h, model, dialogId, action, investigation.report, trigger),
 		},
 		toParentMessage: (message) => Message.GotActionSheetMessage({ message }),
 	})

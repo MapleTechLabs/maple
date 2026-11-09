@@ -42,7 +42,7 @@ const timeseries = Array.from({ length: BUCKETS }, (_, i) => ({
 	count: i < 40 ? 4 + ((i * 7) % 9) : 30 + (i - 40) * 22,
 }))
 
-const detail = Schema.decodeUnknownSync(V2ErrorIssueDetail)({
+const detail = Schema.decodeSync(V2ErrorIssueDetail)({
 	id: encodePublicId("iss", issueId),
 	object: "error_issue",
 	kind: "error",

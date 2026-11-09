@@ -9,7 +9,7 @@ import { CAPABILITIES, CAPABILITY_IDS, LOCK_NOTES } from "./gcp-configure-copy"
 import type { Capability, GcpFlags } from "./gcp-configure-schema"
 import { Message } from "./message"
 import { GCP_TITLE, SMALL } from "./view-gcp-parts"
-import { vstack, vstackClass } from "@maple/views/ui/stack"
+import { hstack, vstack, vstackClass } from "@maple/views/ui/stack"
 import { Array as Arr } from "effect"
 
 // `CollectFields`: a switch per capability, with the log filter under Logs. Nothing is saved here.
@@ -44,38 +44,35 @@ export const collectFields = (
 					const inputId = `${COLLECT_ID}-${capability}`
 					const lock = locks[index] ?? null
 					return vstack(h, { gap: "3", className: "p-4" }, [
-						h.div(
-							[h.Class("flex items-start gap-4")],
-							[
-								vstack(h, { gap: "0.5", shrink: true, grow: true }, [
-									label(
-										h,
-										{
-											className: "text-sm sm:text-sm",
-											attributes: [h.For(inputId), h.Id(labelIdOf(inputId))],
-										},
-										[title],
-									),
-									h.p(
-										[h.Class(SMALL)],
-										[
-											lock === "metrics-unavailable"
-												? LOCK_NOTES["metrics-unavailable"]
-												: description,
-										],
-									),
-									...(note === null ? [] : [effectNote(h, note, effects[note])]),
-								]),
-								...Switch.switchControl(h, {
-									id: `${inputId}-switch`,
-									inputId,
-									isChecked: flags[flag],
-									isDisabled: lock !== null,
-									labelledBy: labelIdOf(inputId),
-									onToggle: Message.ToggledGcpCollect({ capability }),
-								}),
-							],
-						),
+						hstack(h, { gap: "4", align: "start" }, [
+							vstack(h, { gap: "0.5", shrink: true, grow: true }, [
+								label(
+									h,
+									{
+										className: "text-sm sm:text-sm",
+										attributes: [h.For(inputId), h.Id(labelIdOf(inputId))],
+									},
+									[title],
+								),
+								h.p(
+									[h.Class(SMALL)],
+									[
+										lock === "metrics-unavailable"
+											? LOCK_NOTES["metrics-unavailable"]
+											: description,
+									],
+								),
+								...(note === null ? [] : [effectNote(h, note, effects[note])]),
+							]),
+							...Switch.switchControl(h, {
+								id: `${inputId}-switch`,
+								inputId,
+								isChecked: flags[flag],
+								isDisabled: lock !== null,
+								labelledBy: labelIdOf(inputId),
+								onToggle: Message.ToggledGcpCollect({ capability }),
+							}),
+						]),
 						...(capability === "logs" && flags.logs_enabled ? [options.logFilter] : []),
 					])
 				}),

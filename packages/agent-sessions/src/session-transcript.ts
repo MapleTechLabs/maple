@@ -44,6 +44,7 @@ import {
 } from "./span-detail"
 import { rawFailureText } from "./failure-text"
 import { countTurnUsage, type SessionTurnUsage } from "./session-summary"
+import { codeUnitAt } from "@maple/strings"
 
 /* -------------------------------------------------------------------------- */
 /* Rows                                                                       */
@@ -832,7 +833,8 @@ function delegationTarget(
 	if (forks(span)) return span
 	if (scope.context.categoryOf(span) !== "tool") return undefined
 	const own = children.get(span.spanId) ?? []
-	return own.length === 1 && forks(own[0]) ? own[0] : undefined
+	const [only] = own
+	return own.length === 1 && only !== undefined && forks(only) ? only : undefined
 }
 
 /**
@@ -856,7 +858,7 @@ function markParallelLanes(
 	for (const cluster of clusters) {
 		// `at` is where the lane's rows were pushed and its opening row is the
 		// first of them — the marker opens the cluster right above it.
-		const first = cluster.members[0]
+		const first = Arr.headNonEmpty(cluster.members)
 		markers.push({
 			at: first.at,
 			row: {
@@ -889,7 +891,7 @@ interface Interval {
 
 interface OverlapCluster<T> {
 	/** Two or more, in start order. */
-	readonly members: readonly T[]
+	readonly members: Arr.NonEmptyReadonlyArray<T>
 	/** The run's extent: first member starting to last member ending. */
 	readonly startMs: number
 	readonly endMs: number
@@ -932,14 +934,14 @@ function clusterByOverlap<T extends Interval>(items: readonly T[]): readonly Ove
 	}
 
 	return Arr.map(
-		Arr.filter(groups, (group) => group.length > 1),
+		Arr.filter(groups, (group): group is Arr.NonEmptyArray<T> => group.length > 1),
 		(members) => {
 			const sharedStart = Math.max(...Arr.map(members, (item) => item.startMs))
 			const sharedEnd = Math.min(...Arr.map(members, (item) => item.endMs))
 			const shared = sharedStart < sharedEnd
 			return {
 				members,
-				startMs: members[0].startMs,
+				startMs: Arr.headNonEmpty(members).startMs,
 				endMs: Math.max(...Arr.map(members, (item) => item.endMs)),
 				overlapStartMs: shared ? sharedStart : undefined,
 				overlapEndMs: shared ? sharedEnd : undefined,
@@ -981,7 +983,12 @@ function markParallelTurns(entries: readonly TurnRows[]): ReadonlyMap<string, Tr
 	const marked = new Map<string, TranscriptRow | undefined>()
 	for (const cluster of clusterByOverlap(items)) {
 		for (const item of cluster.members) marked.set(item.entry.turn.id, undefined)
-		const first = cluster.members.reduce((a, b) => (a.order <= b.order ? a : b))
+		if (!Arr.isReadonlyArrayNonEmpty(cluster.members)) continue
+		const first = Arr.reduce(
+			Arr.tailNonEmpty(cluster.members),
+			Arr.headNonEmpty(cluster.members),
+			(a, b) => (a.order <= b.order ? a : b),
+		)
 		marked.set(first.entry.turn.id, {
 			kind: "parallel-turns",
 			key: `${first.ref.key}:parallel-turns`,
@@ -1131,8 +1138,9 @@ function userRows(
 	let index = -1
 	let text = ""
 	for (let i = history.length - 1; i >= 0; i--) {
-		if (Str.toLowerCase(history[i].role) !== "user") continue
-		text = Str.trim(withoutInjectedBlocks(textOf(history[i].parts)))
+		const message = history[i]
+		if (message === undefined || Str.toLowerCase(message.role) !== "user") continue
+		text = Str.trim(withoutInjectedBlocks(textOf(message.parts)))
 		if (text !== "") {
 			index = i
 			break
@@ -1306,8 +1314,9 @@ function coveredBySpan(part: Extract<SpanMessagePart, { kind: "tool_call" }>, co
 function capturedPromptText(messages: readonly SpanMessage[]): string | undefined {
 	const input = Arr.filter(messages, (message) => message.origin === "input")
 	for (let i = input.length - 1; i >= 0; i--) {
-		if (Str.toLowerCase(input[i].role) !== "user") continue
-		const text = Str.trim(withoutInjectedBlocks(textOf(input[i].parts)))
+		const message = input[i]
+		if (message === undefined || Str.toLowerCase(message.role) !== "user") continue
+		const text = Str.trim(withoutInjectedBlocks(textOf(message.parts)))
 		if (text !== "") return text
 	}
 	return undefined
@@ -1446,7 +1455,7 @@ function measure(text: string): { byteLength: number; lineCount: number } {
 	let bytes = 0
 	let lines = text === "" ? 0 : 1
 	for (let i = 0; i < text.length; i++) {
-		const code = text.charCodeAt(i)
+		const code = codeUnitAt(text, i)
 		if (code === 10) lines++
 		if (code < 0x80) bytes += 1
 		else if (code < 0x800) bytes += 2
@@ -1494,7 +1503,12 @@ function rowText(row: TranscriptRow): string | undefined {
 		case "thinking":
 			return row.text
 		case "tool":
-			return [row.toolName, row.args?.text, row.result?.text].filter(Boolean).join("\n")
+			return Arr.join(
+				Arr.filter([row.toolName, row.args?.text, row.result?.text], (part): part is string =>
+					Boolean(part),
+				),
+				"\n",
+			)
 		case "structure":
 			return row.label
 		default:

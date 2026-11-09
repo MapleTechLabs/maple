@@ -1,6 +1,6 @@
 /**
  * The integration changes an agent may make: poll Railway or Vercel now, and manage plain Prometheus scrape
- * targets. Both are admin-only, like their HTTP routes. Connecting a provider stays in Settings:
+ * targets. Both need a permission, like their HTTP routes. Connecting a provider stays in Settings:
  * it needs an OAuth consent or a pasted token. Scrape credentials stay there too, so no secret
  * passes through a model.
  */
@@ -15,7 +15,7 @@ import { CreateScrapeTargetRequest, UpdateScrapeTargetRequest } from "@maple/dom
 import { decodePublicId, PublicIdPrefixes } from "@maple/domain/http/v2"
 import { ScrapeIntervalSeconds } from "@maple/domain/primitives"
 import { redactUrlSecrets } from "@maple/domain/url-redaction"
-import { requireAdmin } from "@maple/backend/services/auth/auth"
+import * as Policy from "@maple/domain/policy"
 import { RailwayMetricsService } from "@maple/backend/services/integrations/RailwayMetricsService"
 import { ScrapeTargetsService } from "@maple/backend/services/integrations/ScrapeTargetsService"
 import { VercelIntegrationService } from "@maple/backend/services/integrations/VercelIntegrationService"
@@ -29,14 +29,15 @@ const iso = (ms: number | null) => (ms === null ? null : new Date(ms).toISOStrin
 /** The Railway poller ticks every 5 minutes; this long without a success after a sync is not a blip. */
 const RAILWAY_STALE_MS = 30 * 60 * 1000
 
-const adminOnly = (tool: string) =>
+const permitted = (tool: string, permission: Policy.Permission) =>
 	Effect.gen(function* () {
 		const tenant = yield* CurrentMcpTenant
-		yield* requireAdmin(
+		yield* Policy.check(
 			tenant.roles,
-			() =>
+			permission,
+			(denial) =>
 				new McpUnavailableError({
-					message: `${tool} changes the organization's integrations, which only org admins may do. Ask an admin, or change it in Sources.`,
+					message: `${tool}: ${denial.message} Ask someone who can, or change it in Sources.`,
 					capability: "org_admin",
 				}),
 		)
@@ -44,7 +45,7 @@ const adminOnly = (tool: string) =>
 	})
 
 const queryError = (tool: string) => (error: { readonly _tag: string; readonly message: string }) =>
-	new McpQueryError({ message: `${error._tag}: ${error.message}`, pipeName: tool, cause: error })
+	new McpQueryError({ message: error.message, pipeName: tool, cause: error })
 
 const INTERVAL = Schema.Int.check(Schema.isGreaterThanOrEqualTo(5), Schema.isLessThanOrEqualTo(300))
 const decodeInterval = Schema.decodeUnknownEffect(ScrapeIntervalSeconds)
@@ -155,13 +156,13 @@ export function registerIntegrationWriteTools(server: McpToolRegistrar) {
 		name: "sync_vercel",
 		title: "Sync Vercel",
 		description:
-			"Sync Vercel now instead of waiting for the next 5-minute tick: refresh the team's deployments, check that Maple's log and trace drains still exist (re-creating a deleted one, re-keying them after an ingest key change), then report each drain's state and each project's latest deployment. Use after fixing a Vercel token or drain, to confirm logs and traces flow again. Admin only.",
+			"Sync Vercel now instead of waiting for the next 5-minute tick: refresh the team's deployments, check that Maple's log and trace drains still exist (re-creating a deleted one, re-keying them after an ingest key change), then report each drain's state and each project's latest deployment. Use after fixing a Vercel token or drain, to confirm logs and traces flow again. Org admins and engineers only.",
 		parameters: Schema.Struct({}),
 		output: SyncVercelOutput,
 		hints: { readOnly: false, destructive: false, idempotent: true, openWorld: true },
 		phrases: ["Syncing Vercel"],
 		handler: Effect.fn("McpTool.syncVercel")(function* () {
-			const tenant = yield* adminOnly("sync_vercel")
+			const tenant = yield* permitted("sync_vercel", "integrations:manage")
 			const vercel = yield* VercelIntegrationService
 			const status = yield* vercel.sync(tenant.orgId).pipe(Effect.mapError(queryError("sync_vercel")))
 			const drain = (
@@ -246,13 +247,13 @@ export function registerIntegrationWriteTools(server: McpToolRegistrar) {
 		name: "sync_railway",
 		title: "Sync Railway",
 		description:
-			"Poll Railway now instead of waiting for the next 5-minute tick, then report each environment's last sync and error. Use after fixing a Railway token or project access, to confirm metrics flow again. Admin only. Environments already caught up cost no Railway call.",
+			"Poll Railway now instead of waiting for the next 5-minute tick, then report each environment's last sync and error. Use after fixing a Railway token or project access, to confirm metrics flow again. Org admins and engineers only. Environments already caught up cost no Railway call.",
 		parameters: Schema.Struct({}),
 		output: SyncRailwayOutput,
 		hints: { readOnly: false, destructive: false, idempotent: true, openWorld: true },
 		phrases: ["Syncing Railway"],
 		handler: Effect.fn("McpTool.syncRailway")(function* () {
-			const tenant = yield* adminOnly("sync_railway")
+			const tenant = yield* permitted("sync_railway", "integrations:manage")
 			const railway = yield* RailwayMetricsService
 			const status = yield* railway.sync(tenant.orgId).pipe(Effect.mapError(queryError("sync_railway")))
 			const now = yield* Clock.currentTimeMillis
@@ -331,7 +332,7 @@ export function registerIntegrationWriteTools(server: McpToolRegistrar) {
 		name: "create_scrape_target",
 		title: "Create Scrape Target",
 		description:
-			"Start scraping a Prometheus metrics endpoint: Maple's scraper pulls `url` every interval and stores the samples as metrics, tagged with `service` when given. Admin only. The endpoint must be reachable from the internet without credentials; to add a bearer or basic credential, create it in Sources → Prometheus instead.",
+			"Start scraping a Prometheus metrics endpoint: Maple's scraper pulls `url` every interval and stores the samples as metrics, tagged with `service` when given. Org admins and engineers only. The endpoint must be reachable from the internet without credentials; to add a bearer or basic credential, create it in Sources → Prometheus instead.",
 		parameters: Schema.Struct({
 			name: P.text("A label for the target, e.g. `node-exporter`"),
 			url: P.text("The full metrics URL, e.g. `https://metrics.example.com/metrics`"),
@@ -343,7 +344,7 @@ export function registerIntegrationWriteTools(server: McpToolRegistrar) {
 		hints: { readOnly: false, destructive: false, idempotent: false, openWorld: true },
 		phrases: ["Adding a scrape target"],
 		handler: Effect.fn("McpTool.createScrapeTarget")(function* (params) {
-			const tenant = yield* adminOnly("create_scrape_target")
+			const tenant = yield* permitted("create_scrape_target", "scrape_targets:manage")
 			const targets = yield* ScrapeTargetsService
 			const interval =
 				params.interval_seconds === undefined
@@ -370,11 +371,21 @@ export function registerIntegrationWriteTools(server: McpToolRegistrar) {
 					}),
 				)
 				.pipe(
-					Effect.catchTag("@maple/http/errors/ScrapeTargetValidationError", (error) =>
-						Effect.fail(new McpInvalidInputError({ message: error.message, parameter: "url" })),
-					),
+					Effect.catchTags({
+						"@maple/http/errors/ScrapeTargetValidationError": (error) =>
+							Effect.fail(
+								new McpInvalidInputError({ message: error.message, parameter: "url" }),
+							),
+						"@maple/http/errors/ScrapeTargetLimitReachedError": (error) =>
+							Effect.fail(
+								new McpUnavailableError({
+									message: error.message,
+									capability: "scrape_target_limit",
+								}),
+							),
+					}),
 					Effect.mapError((error) =>
-						error instanceof McpInvalidInputError
+						Schema.is(McpInvalidInputError)(error) || Schema.is(McpUnavailableError)(error)
 							? error
 							: queryError("create_scrape_target")(error),
 					),
@@ -388,7 +399,7 @@ export function registerIntegrationWriteTools(server: McpToolRegistrar) {
 		name: "update_scrape_target",
 		title: "Update Scrape Target",
 		description:
-			"Change a Prometheus scrape target: pause or resume it, or change its URL, name, service or interval. Fields left out keep their value, and a stored credential is kept. Admin only. Targets managed by an integration (PlanetScale) are changed from that integration in Settings.",
+			"Change a Prometheus scrape target: pause or resume it, or change its URL, name, service or interval. Fields left out keep their value, and a stored credential is kept. Org admins and engineers only. Targets managed by an integration (PlanetScale) are changed from that integration in Settings.",
 		parameters: Schema.Struct({
 			target: P.text("The target's name or id (list_integrations provider=prometheus lists them)"),
 			enabled: P.optionalFlag("false pauses scraping, true resumes it"),
@@ -402,7 +413,7 @@ export function registerIntegrationWriteTools(server: McpToolRegistrar) {
 		hints: { readOnly: false, destructive: false, idempotent: true, openWorld: true },
 		phrases: ["Updating a scrape target"],
 		handler: Effect.fn("McpTool.updateScrapeTarget")(function* (params) {
-			const tenant = yield* adminOnly("update_scrape_target")
+			const tenant = yield* permitted("update_scrape_target", "scrape_targets:manage")
 			const targets = yield* ScrapeTargetsService
 			const target = yield* resolveTarget("update_scrape_target", tenant.orgId, params.target)
 			const interval =
@@ -434,7 +445,7 @@ export function registerIntegrationWriteTools(server: McpToolRegistrar) {
 						Effect.fail(new McpInvalidInputError({ message: error.message })),
 					),
 					Effect.mapError((error) =>
-						error instanceof McpInvalidInputError
+						Schema.is(McpInvalidInputError)(error)
 							? error
 							: queryError("update_scrape_target")(error),
 					),
@@ -448,7 +459,7 @@ export function registerIntegrationWriteTools(server: McpToolRegistrar) {
 		name: "delete_scrape_target",
 		title: "Delete Scrape Target",
 		description:
-			"Stop scraping a Prometheus target and delete it with its check history; metrics already stored stay. Irreversible; requires confirm=true. To stop it for a while, update_scrape_target enabled=false instead. Admin only.",
+			"Stop scraping a Prometheus target and delete it with its check history; metrics already stored stay. Irreversible; requires confirm=true. To stop it for a while, update_scrape_target enabled=false instead. Org admins and engineers only.",
 		parameters: Schema.Struct({
 			target: P.text("The target's name or id"),
 			confirm: P.flag("Must be true. There is no undo."),
@@ -463,7 +474,7 @@ export function registerIntegrationWriteTools(server: McpToolRegistrar) {
 					parameter: "confirm",
 				})
 			}
-			const tenant = yield* adminOnly("delete_scrape_target")
+			const tenant = yield* permitted("delete_scrape_target", "scrape_targets:manage")
 			const targets = yield* ScrapeTargetsService
 			const target = yield* resolveTarget("delete_scrape_target", tenant.orgId, params.target)
 			yield* targets

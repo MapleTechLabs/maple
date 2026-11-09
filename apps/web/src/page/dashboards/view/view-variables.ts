@@ -1,5 +1,6 @@
 import { ALL_VALUE, type ResolvedVariable } from "@maple/query-engine"
 import { EMPTY_VALUE } from "@maple/ui/lib/format"
+import { TONE_TEXT } from "@maple/ui/lib/tone"
 import { cn } from "@maple/ui/lib/utils"
 import { Option, Array as Arr } from "effect"
 import { Submodel } from "foldkit"
@@ -11,19 +12,18 @@ import { icon } from "@maple/views/ui/icon"
 import { inputGroup, inputGroupAddon, inputGroupInput } from "@maple/views/ui/input-group"
 import { isMounted } from "@maple/views/ui/overlay/transition"
 import type { PageContext } from "../../contract"
-import type { Variable as DashboardVariable } from "../kit/variables"
+import { NO_OPTIONS, type OptionsState, type Variable as DashboardVariable } from "../kit/variables"
 import { Message } from "./message"
 import type { Model } from "./model"
-import { optionsByNameOf, variablesOf } from "./plan"
+import { optionsByNameOf, shownDocumentOf, variablesOf } from "./plan"
 import { variableComboIdOf } from "./variable-update"
-import { typographyClass } from "@maple/views/ui/typography"
+import { typography, typographyClass } from "@maple/views/ui/typography"
 import { hstack } from "@maple/views/ui/stack"
 
 // The variable selects: one chip per variable, and in
 // edit mode the `+` chip that opens the manager.
 
 type H = HtmlBuilder<Message>
-type OptionsState = Readonly<{ options: ReadonlyArray<string>; loading: boolean }>
 
 const chipLabel = (variable: DashboardVariable): string => variable.label ?? variable.name
 
@@ -31,7 +31,9 @@ const displayValue = (resolved: ResolvedVariable | undefined, options: OptionsSt
 	resolved === undefined
 		? options.loading
 			? "…"
-			: EMPTY_VALUE
+			: options.error === null
+				? EMPTY_VALUE
+				: "Unavailable"
 		: resolved.isAll
 			? "All"
 			: resolved.value === ""
@@ -66,8 +68,14 @@ const chipView = Submodel.defineView<Combobox.Model, Combobox.Message, ChipInput
 	return h.span(
 		[h.Class("contents")],
 		[
-			h.span(
-				[h.Class("inline-flex"), h.DataAttribute("variable-anchor", model.id)],
+			hstack(
+				h,
+				{
+					align: "stretch",
+					inline: true,
+					as: "span",
+					attributes: [h.DataAttribute("variable-anchor", model.id)],
+				},
 				[
 					button(
 						h,
@@ -82,6 +90,7 @@ const chipView = Submodel.defineView<Combobox.Model, Combobox.Message, ChipInput
 								h.AriaExpanded(model.isOpen),
 								h.AriaHasPopup("dialog"),
 								h.AriaLabel(`${label} variable`),
+								...(inputs.options.error === null ? [] : [h.Title(inputs.options.error)]),
 								...(model.isOpen
 									? [
 											h.DataAttribute("popup-open", ""),
@@ -96,13 +105,16 @@ const chipView = Submodel.defineView<Combobox.Model, Combobox.Message, ChipInput
 							],
 						},
 						[
-							h.span([h.Class("text-muted-foreground")], [label]),
+							typography(h, { tone: "muted" }, [label]),
 							h.span(
 								[
 									h.Class(
 										cn(
 											"truncate",
-											inputs.resolved === undefined && "text-muted-foreground",
+											inputs.resolved === undefined &&
+												(inputs.options.error === null
+													? "text-muted-foreground"
+													: TONE_TEXT.crit),
 										),
 									),
 								],
@@ -122,7 +134,7 @@ const chipView = Submodel.defineView<Combobox.Model, Combobox.Message, ChipInput
 						listPopup(h, model, {
 							slot: "combobox",
 							items,
-							emptyText: inputs.options.loading ? "Loading values…" : "No matching values",
+							emptyText: inputs.options.loading ? "Loading values…" : "No values match",
 							anchorSelector: anchor,
 							className: "min-w-52",
 							listClassName: "max-h-72 overflow-y-auto p-1",
@@ -212,7 +224,7 @@ const control = (h: H, model: Model, context: PageContext, variable: DashboardVa
 		viewInputs: {
 			variable,
 			resolved,
-			options: optionsByNameOf(model, context)[variable.name] ?? { options: [], loading: false },
+			options: optionsByNameOf(model, context)[variable.name] ?? NO_OPTIONS,
 		},
 		toParentMessage: (message) => Message.GotVariableComboMessage({ name: variable.name, message }),
 	})
@@ -225,7 +237,7 @@ export const variableSelects = (
 	context: PageContext,
 	canManage: boolean,
 ): ReadonlyArray<Html> => {
-	const variables = model.document?.variables ?? []
+	const variables = shownDocumentOf(model)?.variables ?? []
 	if (variables.length === 0 && !canManage) return []
 	return [
 		hstack(h, { gap: "1.5" }, [
