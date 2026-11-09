@@ -2996,9 +2996,13 @@ export class CloudflareAnalyticsService extends Context.Service<
 			const grantCap = grantCapOf(stateRows)
 			const planNow = pollable.length === 0 ? 0 : yield* Clock.currentTimeMillis
 			// A backed-off account makes no call this tick and reserves no share of the budget.
+			const pollableIds = new Set(Arr.map(pollable, (account) => account.accountId))
 			const backoffs = new Map(
 				Arr.flatMap(stateRows, (row) =>
-					row.dataset === WORKERS_DATASET && row.zoneId === "" && isBackedOff(row, planNow)
+					row.dataset === WORKERS_DATASET &&
+					row.zoneId === "" &&
+					pollableIds.has(row.accountId) &&
+					isBackedOff(row, planNow)
 						? [[row.accountId, row] as const]
 						: [],
 				),

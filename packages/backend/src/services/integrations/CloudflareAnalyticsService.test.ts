@@ -244,8 +244,6 @@ interface FetchOptions {
 	/** Hyperdrive configs the REST enumeration returns (default: none). Mutable so a test can change the upstream set between polls. */
 	/** Serve this many synthetic active zones with real pagination (50/page). */
 	zonesTotal?: number
-	/** Awaited before answering each GraphQL call — lets a test interleave a concurrent write. */
-	onGraphql?: () => Promise<void>
 	hyperdriveConfigs?: ReadonlyArray<HyperdriveConfigFixture>
 	/** HTTP status for the hyperdrive listing (default 200). Mutable for per-poll failure injection. */
 	hyperdriveStatus?: number
@@ -334,7 +332,6 @@ const mockCloudflareFetch = (options: FetchOptions = {}): typeof globalThis.fetc
 			return jsonResponse({}, options.metricsStatus ?? 200)
 		}
 		if (Str.includes("/graphql")(url)) {
-			await options.onGraphql?.()
 			const body = JSON.parse(await readRequestBody(input, init)) as {
 				query: string
 				variables?: { zoneTags?: ReadonlyArray<string> }
