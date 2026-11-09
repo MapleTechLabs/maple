@@ -1,5 +1,5 @@
 import * as Policy from "@maple/domain/policy"
-import type { AlertsTab } from "../shared/links"
+import type { AlertsTab } from "../../../route/search"
 import { OrgId } from "@maple/domain"
 import { EscalationChainId, OnCallScheduleId } from "@maple/domain/http"
 import type { V2OnCallSchedule } from "@maple/domain/http/v2"

@@ -236,6 +236,39 @@ describe("alerts hub, silence side panel", () => {
 		expect(withPanel(MEMBER).model.silenceDialog.dialog.isOpen).toBe(false)
 	})
 
+	test("a member's link loses its `?sheet=` once the grants say so, replaced away", () => {
+		const entered = init(hubAt({ tab: "silences", sheet: "silence" }), context).model
+		const clocked = pageUpdate(entered, Message.ReadClock({ nowMs: NOW })).model
+		const granted = pageUpdate(clocked, Message.CompletedFetchSession({ orgId: ORG, grants: MEMBER }))
+		expect(granted.model.silenceDialog.dialog.isOpen).toBe(false)
+		expect(granted.model.search.sheet).toBeUndefined()
+		expect(callsOf(granted.commands)).toEqual([
+			["DismissAlertsHubSheet", { href: `${SILENCES_URL}?sheet=silence`, id: "silence" }],
+		])
+	})
+
+	test("the panel opens only on the Silences section", () => {
+		const onRules = routeChanged(
+			onSilences(ENGINEER, []),
+			hubAt({ tab: "rules", sheet: "silence" }),
+			context,
+		)
+		expect(onRules.model.silenceDialog.dialog.isOpen).toBe(false)
+		expect(
+			pageUpdate(onRules.model, Message.ReadClock({ nowMs: NOW })).model.silenceDialog.dialog.isOpen,
+		).toBe(false)
+	})
+
+	test("a clock tick after Cancel, before the URL change lands, leaves it closed", () => {
+		const cancelled = pageUpdate(withPanel().model, silenceMessage(SilenceDialog.Message.ClickedCancel()))
+		expect(cancelled.model.search.sheet).toBeUndefined()
+		const ticked = pageUpdate(cancelled.model, Message.ReadClock({ nowMs: NOW + 30_000 }))
+		expect(ticked.model.silenceDialog.dialog.isOpen).toBe(false)
+		const landed = routeChanged(ticked.model, hubAt({ tab: "silences" }), context)
+		expect(landed.model.silenceDialog.dialog.isOpen).toBe(false)
+		expect(namesOf(landed.commands)).not.toContain("DismissAlertsHubSheet")
+	})
+
 	test("Cancel and Escape close it and take `?sheet=` off the URL", () => {
 		const dismissed = [
 			["DismissAlertsHubSheet", { href: `${SILENCES_URL}?sheet=silence`, id: "silence" }],
@@ -297,5 +330,9 @@ describe("alerts hub, silence side panel", () => {
 			expect.arrayContaining(["DismissAlertsHubSheet", "FetchAlertsHubSilences"]),
 		)
 		expect(saved.outMessage).toMatchObject({ title: "Alerts silenced" })
+		// The refreshed list reads the clock again; the panel stays shut.
+		expect(
+			pageUpdate(saved.model, Message.ReadClock({ nowMs: NOW })).model.silenceDialog.dialog.isOpen,
+		).toBe(false)
 	})
 })

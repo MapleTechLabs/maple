@@ -526,6 +526,10 @@ export const AlertsSection = Schema.Literals([
 ])
 export type AlertsSection = typeof AlertsSection.Type
 
+/** A hub section: the Inbox at `/alerts`, the rest at `/alerts/<section>`. */
+export const AlertsTab = Schema.Union([Schema.Literal("inbox"), AlertsSection])
+export type AlertsTab = typeof AlertsTab.Type
+
 const alertsHubSearchFields = {
 	serviceName: Schema.optional(Schema.String),
 	status: Schema.optional(Schema.String),

@@ -44,18 +44,25 @@ import { ServiceNamespaces, serviceNamespaces } from "./uptime-groups"
 
 const sheetArgs = { href: Schema.String, id: Schema.String }
 
+/** A command must answer with a message: a sheet change answers with the clock, as a route change reads it. */
+const thenReadClock = (effect: Effect.Effect<void>) =>
+	effect.pipe(
+		Effect.andThen(Clock.currentTimeMillis),
+		Effect.map((nowMs) => Message.ReadClock({ nowMs })),
+	)
+
 /** Opens a side panel: a history entry carrying `?sheet=`, marked as this tab's. */
 export const PushHubSheet = Command.define("PushAlertsHubSheet", {
 	args: sheetArgs,
-	messages: [Message.CompletedSheetUrl],
-	execute: ({ href, id }) => pushSheetUrl(href, id).pipe(Effect.as(Message.CompletedSheetUrl())),
+	messages: [Message.ReadClock],
+	execute: ({ href, id }) => thenReadClock(pushSheetUrl(href, id)),
 })
 
 /** Closes it: Back over the entry this tab pushed, else `?sheet=` replaced away. */
 export const DismissHubSheet = Command.define("DismissAlertsHubSheet", {
 	args: sheetArgs,
-	messages: [Message.CompletedSheetUrl],
-	execute: ({ href, id }) => dismissSheetUrl(href, id).pipe(Effect.as(Message.CompletedSheetUrl())),
+	messages: [Message.ReadClock],
+	execute: ({ href, id }) => thenReadClock(dismissSheetUrl(href, id)),
 })
 
 export const ReadHubClock = Command.define("ReadAlertsHubClock", {

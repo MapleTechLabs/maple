@@ -46,7 +46,7 @@ const subscriptions = Subscription.make<PageSubscriptionInput<Model>, Message, R
 	),
 }))
 
-/** `/alerts/$ruleId`: one instance per rule; the tab and window are search. */
+/** `/alerts/rules/$ruleId`: one instance per rule; the tab and window are search. */
 export const page = definePage(
 	"AlertRule",
 	{ Model, Message },

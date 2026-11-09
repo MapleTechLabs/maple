@@ -78,6 +78,8 @@ export const Model = Schema.Struct({
 	/** `maple.infra-surfaces.<orgId>`: each org's last settled surfaces, so the sidebar lays out once. */
 	rememberedSurfaces: Schema.Record(Schema.String, Schema.Array(NavSurface)),
 	dashboards: DashboardsData.schema,
+	/** Read only while an alerts page is open; `null` until then. */
+	alertsInboxCount: Schema.NullOr(Schema.Number),
 	/** The org's schedules and who holds each now, for the footer's on-call pill. */
 	onCall: OnCallData.schema,
 	/** `maple.sidebar.collapsed-groups`: nav group ids the user folded. */
@@ -173,6 +175,7 @@ export const init = (flags: ShellFlags): Model => ({
 	integrations: PENDING_INTEGRATIONS,
 	rememberedSurfaces: flags.rememberedSurfaces ?? {},
 	dashboards: DashboardsData.Idle(),
+	alertsInboxCount: null,
 	onCall: OnCallData.Idle(),
 	collapsedNavGroups: flags.collapsedNavGroups ?? [],
 	onCallNowMs: 0,

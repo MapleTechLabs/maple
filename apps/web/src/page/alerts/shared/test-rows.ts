@@ -5,8 +5,7 @@ import type {
 	AlertRuleStateRow,
 } from "@maple/web-data/collections/alerts"
 import { alertsSectionRoute } from "../../../route"
-import type { AlertsHubSearch } from "../../../route/search"
-import type { AlertsTab } from "./links"
+import type { AlertsHubSearch, AlertsTab } from "../../../route/search"
 import { isoMs } from "./time"
 
 /** A hub section and its filters, as the tests and labs spell where they stand. */

@@ -120,7 +120,13 @@ const bar = (h: H, model: BarView, form: RuleForm, timing: AlertQueryTiming | nu
 			vstack(h, { gap: "0.5", shrink: true }, [
 				typography(
 					h,
-					{ size: "sm", tone: "foreground", truncate: true, as: "p", attributes: [h.Title(summary)] },
+					{
+						size: "sm",
+						tone: "foreground",
+						truncate: true,
+						as: "p",
+						attributes: [h.Title(summary)],
+					},
 					[summary],
 				),
 				validationSummary(h, model, issues),
@@ -131,10 +137,12 @@ const bar = (h: H, model: BarView, form: RuleForm, timing: AlertQueryTiming | nu
 				? []
 				: [
 						typography(h, { size: "xs", tone: "muted", className: "hidden sm:inline" }, [
-							changeCount === 0 ? "No changes" : `${changeCount} unsaved ${pluralize(changeCount, "change")}`,
+							changeCount === 0
+								? "No changes"
+								: `${changeCount} unsaved ${pluralize(changeCount, "change")}`,
 						]),
 					]),
-			linkButton(h, { variant: "outline", size: "sm", href: alertsHref({}) }, ["Cancel"]),
+			linkButton(h, { variant: "outline", size: "sm", href: alertsHref({}, "rules") }, ["Cancel"]),
 			button(
 				h,
 				{

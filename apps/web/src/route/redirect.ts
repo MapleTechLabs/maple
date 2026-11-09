@@ -7,6 +7,7 @@ import {
 	type AlertsHubSearch,
 	type AlertsSearch,
 	AlertsSection,
+	type AlertsTab,
 	type AnomaliesSearch,
 	ErrorsSearch,
 } from "./search"
@@ -69,7 +70,7 @@ const anomaliesViewSearch = (search: typeof AnomaliesSearch.Type): typeof Alerts
 const decodeAlertsSection = Schema.decodeUnknownOption(AlertsSection)
 
 /** The section an old `?tab=` named: "oncall" and "settings" were renamed, the rest is the Inbox. */
-const legacyAlertsSection = (tab: string): AlertsSection | "inbox" =>
+const legacyAlertsSection = (tab: string): AlertsTab =>
 	tab === "oncall"
 		? "on-call"
 		: tab === "settings"
@@ -78,7 +79,7 @@ const legacyAlertsSection = (tab: string): AlertsSection | "inbox" =>
 
 /** `/alerts` for the Inbox, else `/alerts/<section>`, with the hub's filters. */
 export const alertsSectionRoute = (
-	section: AlertsSection | "inbox",
+	section: AlertsTab,
 	search: typeof AlertsHubSearch.Type,
 ): Extract<AppRoute, { readonly _tag: "Alerts" | "AlertsSection" }> =>
 	section === "inbox" ? AppRoute.Alerts({ search }) : AppRoute.AlertsSection({ section, search })
@@ -120,6 +121,8 @@ export const routeRedirect = (route: AppRoute): Option.Option<Redirect> =>
 			InfraDiscover: () => redirect(AppRoute.Infra({ search: {} }), true),
 			InfraLegacyHost: ({ hostName }) => redirect(AppRoute.InfraHost({ hostName, search: {} }), true),
 			AlertIncidentsIndex: () => redirect(AppRoute.Alerts({ search: {} }), true),
+			/** A rule moved under Rules; old links (notifications, the apps) keep their tab and window. */
+			AlertRuleLegacy: ({ ruleId, search }) => redirect(AppRoute.AlertRule({ ruleId, search }), true),
 			/** The anomalies list is the Alerts Inbox's Anomalies view; one service and the status carry over. */
 			Anomalies: ({ search }) =>
 				redirect(AppRoute.Alerts({ search: anomaliesViewSearch(search) }), true),

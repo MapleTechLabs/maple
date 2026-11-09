@@ -18,6 +18,7 @@ export {
 } from "./subscription"
 
 export { pinnedDashboardRows } from "./dashboards-shape"
+export { alertsInboxCounts } from "./alerts-inbox"
 export { BUILT_COMMIT, versionChecks } from "./version"
 export {
 	checklistTicked,

@@ -83,7 +83,8 @@ describe("routes", () => {
 		expect(parse("/alerts/schedules/sch_1")._tag).toBe("AlertsSchedule")
 		expect(parse("/alerts/incidents/inc_1")._tag).toBe("AlertIncident")
 		expect(parse("/alerts/create")._tag).toBe("AlertsCreate")
-		expect(parse("/alerts/0199a001-0000-7000-8000-000000000001")._tag).toBe("AlertRule")
+		expect(parse("/alerts/rules/0199a001-0000-7000-8000-000000000001")._tag).toBe("AlertRule")
+		expect(parse("/alerts/0199a001-0000-7000-8000-000000000001")._tag).toBe("AlertRuleLegacy")
 		expect(parse("/alerts/nope")._tag).toBe("NotFound")
 	})
 
@@ -101,6 +102,13 @@ describe("routes", () => {
 		expect(redirectOf("/alerts?tab=overview")).toEqual(Option.some("/alerts"))
 		expect(routeRedirect(parse("/alerts?tab=uptime"))).toEqual(
 			Option.some({ url: "/alerts/uptime", isReplace: true }),
+		)
+		// A rule's old address (notifications, the apps) opens it under Rules, keeping its tab and window.
+		expect(redirectOf("/alerts/0199a001-0000-7000-8000-000000000001?tab=history&timePreset=7d")).toEqual(
+			Option.some("/alerts/rules/0199a001-0000-7000-8000-000000000001?tab=history&timePreset=7d"),
+		)
+		expect(routeRedirect(parse("/alerts/rules/0199a001-0000-7000-8000-000000000001"))).toEqual(
+			Option.none(),
 		)
 		expect(routeRedirect(parse("/alerts?signal=anomaly"))).toEqual(Option.none())
 		expect(routeRedirect(parse("/alerts/rules"))).toEqual(Option.none())

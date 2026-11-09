@@ -462,6 +462,34 @@ describe("alerts section", () => {
 			measured,
 			expect(role("link", { name: "Uptime" })).toHaveAttr("aria-current", "page"),
 		)
+		scene(
+			{ update, view: shellAt("/alerts/rules/0199a001-0000-7000-8000-000000000001") },
+			given(signedIn()),
+			measured,
+			expect(role("link", { name: "Rules" })).toHaveAttr("aria-current", "page"),
+			expect(role("link", { name: "Inbox" })).not.toHaveAttr("aria-current", "page"),
+		)
+	})
+
+	test("the Inbox counts unacknowledged incidents for this org, and thin rules split the groups", () => {
+		const counted = update(signedIn(), Message.UpdatedAlertsInboxCount({ orgId: "org_parity", count: 3 }))
+		scene(
+			{ update, view: shellAt("/alerts/rules") },
+			given(counted.model),
+			measured,
+			expect(text("3")).toExist(),
+			expect(role("separator")).toExist(),
+		)
+		// Nothing to act on shows no badge; another org's count is dropped, and an org change clears it.
+		scene(
+			{ update, view: shellAt("/alerts/rules") },
+			given(signedIn({ alertsInboxCount: 0 })),
+			measured,
+			expect(text("0")).toBeAbsent(),
+		)
+		const stray = update(signedIn(), Message.UpdatedAlertsInboxCount({ orgId: "org_other", count: 4 }))
+		expectVitest(stray.model.alertsInboxCount).toBeNull()
+		expectVitest(enter("org_other")(counted.model).model.alertsInboxCount).toBeNull()
 	})
 
 	test("elsewhere the sections stay hidden", () => {

@@ -71,10 +71,17 @@ const routers = {
 		Route.mapTo(AppRoute.AgentSession),
 	),
 	AlertRule: pipe(
-		path("alerts"),
+		path("alerts", "rules"),
 		slash(schemaSegment("ruleId", AlertRuleId)),
 		search(Search.AlertRuleSearch),
 		Route.mapTo(AppRoute.AlertRule),
+	),
+	// A rule's page before it moved under Rules; notifications still link here, `routeRedirect` sends them on.
+	AlertRuleLegacy: pipe(
+		path("alerts"),
+		slash(schemaSegment("ruleId", AlertRuleId)),
+		search(Search.AlertRuleSearch),
+		Route.mapTo(AppRoute.AlertRuleLegacy),
 	),
 	AlertsCreate: pipe(
 		path("alerts", "create"),

@@ -754,11 +754,12 @@ const silenceCommands = (step: ReturnType<typeof SilenceDialog.update>): Command
 	FoldkitCommand.mapMessages(step.commands ?? [], (message) => Message.GotSilenceDialogMessage({ message }))
 
 /**
- * Opens or closes the silence panel to match `?sheet=` (a link, Back, or "New silence"). It opens
- * once the clock is read, as the form checks its end against it, and only for a viewer who may save.
+ * Opens or closes the silence panel to match `?sheet=` (a link, Back, or "New silence"). It opens on
+ * the Silences section once the clock is read, as the form checks its end against it, and only for
+ * a viewer who may save.
  */
 const followSilenceSheet = (model: Model, context: PageContext): Requested => {
-	const isInUrl = model.search.sheet === SILENCE_SHEET
+	const isInUrl = model.search.sheet === SILENCE_SHEET && model.tab === "silences"
 	const isOpen = model.silenceDialog.dialog.isOpen
 	if (isInUrl && !isOpen && model.nowMs !== null && canManage(model)) {
 		const step = SilenceDialog.openNew(model.silenceDialog, context.timeZone, model.nowMs)
@@ -771,19 +772,32 @@ const followSilenceSheet = (model: Model, context: PageContext): Requested => {
 	return { model, commands: [] }
 }
 
+/** The grants are in: a viewer who can't silence loses a linked panel's `?sheet=`, replaced away. */
+const grantsLoaded = (model: Model, context: PageContext): Requested =>
+	model.search.sheet === SILENCE_SHEET && !canManage(model)
+		? {
+				model: { ...model, search: { ...model.search, sheet: undefined } },
+				commands: [DismissHubSheet({ href: hubHref(model), id: SILENCE_SHEET })],
+			}
+		: followSilenceSheet(model, context)
+
 const liftSilenceDialog = (
 	model: Model,
 	context: PageContext,
 	step: ReturnType<typeof SilenceDialog.update>,
 ): Return => {
-	const next = { ...model, silenceDialog: step.model }
-	// The panel closed itself (Cancel, Escape, a save): its `?sheet=` goes too.
-	const hasClosed = model.silenceDialog.dialog.isOpen && !step.model.dialog.isOpen
+	// The panel closed itself (Cancel, Escape, a save): its `?sheet=` goes now, in the model too, so a
+	// clock tick before the URL change lands can't reopen it.
+	const hasClosed =
+		model.silenceDialog.dialog.isOpen && !step.model.dialog.isOpen && model.search.sheet === SILENCE_SHEET
+	const next = {
+		...model,
+		silenceDialog: step.model,
+		search: hasClosed ? { ...model.search, sheet: undefined } : model.search,
+	}
 	const commands = [
 		...silenceCommands(step),
-		...(hasClosed && model.search.sheet === SILENCE_SHEET
-			? [DismissHubSheet({ href: hubHref(model), id: SILENCE_SHEET })]
-			: []),
+		...(hasClosed ? [DismissHubSheet({ href: hubHref(model), id: SILENCE_SHEET })] : []),
 	]
 	if (step.outMessage === undefined) return { model: next, commands }
 	return SilenceDialog.OutMessage.match(step.outMessage, {
@@ -1119,7 +1133,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			model: { ...model, routingDeliveries: Keyed.accept(model.routingDeliveries, key, result) },
 		}),
 		CompletedFetchSession: ({ orgId, grants }) =>
-			orgId === context.orgId ? followSilenceSheet({ ...model, grants }, context) : { model },
+			orgId === context.orgId ? grantsLoaded({ ...model, grants }, context) : { model },
 		ChangedRulesQuery: ({ value }) => ({ model: { ...model, rulesQuery: value } }),
 		ClickedStatusFilter: ({ bucket }) => statusToggled(model, bucket),
 		ClickedClearRuleFilters: () => ({
@@ -1339,7 +1353,6 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			model.search.sheet === SILENCE_SHEET
 				? { model }
 				: { model, commands: [PushHubSheet({ href: hubHref(model), id: SILENCE_SHEET })] },
-		CompletedSheetUrl: () => ({ model }),
 		GotSilenceDialogMessage: ({ message: child }) =>
 			liftSilenceDialog(model, context, SilenceDialog.update(model.silenceDialog, child)),
 		ClickedEndSilence: ({ silenceId }) => endSilence(model, silenceId),

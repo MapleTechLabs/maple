@@ -1,5 +1,15 @@
 import { isClerkAuthEnabled } from "./lib/services/common/auth-mode"
-import { Clock, Duration, Effect, Option, Schedule, Schema, Stream } from "effect"
+import {
+	Array as Arr,
+	Clock,
+	Duration,
+	Effect,
+	Option,
+	Schedule,
+	Schema,
+	Stream,
+	String as Str,
+} from "effect"
 import { Dom, Subscription } from "foldkit"
 import { Message } from "./message"
 import type { Resources } from "./platform/resources"
@@ -17,6 +27,8 @@ import { connectSubscriptions } from "./page/onboarding/quick-start-connect"
 import * as SourcesFlow from "./page/sources/new/embed"
 import { clerkSnapshots } from "./platform/clerk"
 import * as Shell from "./shell"
+import { isAlertsOpenAt } from "./shell/nav"
+import { hrefOf } from "./route"
 import { staleBuildRecovery } from "./shell/version"
 import { pollTicks } from "./data/poll"
 import { collectionLoadFailed } from "./page/alerts/shared/collection-load"
@@ -75,6 +87,14 @@ const shellDashboardsOrgId = (model: Model): string | null =>
 	model.session._tag === "SignedIn" &&
 	rendersShell(model.route) &&
 	(model.shell.hasRequestedSidebarData || model.shell.palette !== null)
+		? Option.getOrNull(model.shell.maybeOrgId)
+		: null
+
+/** The org whose Alerts › Inbox count the sidebar shows: while an alerts page has the row open. */
+const shellAlertsInboxOrgId = (model: Model): string | null =>
+	model.session._tag === "SignedIn" &&
+	rendersShell(model.route) &&
+	isAlertsOpenAt(Arr.headNonEmpty(Str.split(hrefOf(model.route), "?")))
 		? Option.getOrNull(model.shell.maybeOrgId)
 		: null
 
@@ -178,6 +198,21 @@ const root = Subscription.make<Model, Message, Resources>()((entry) => ({
 					Stream.map(Shell.globalShortcuts, (message) => Message.GotShellMessage({ message })),
 					Effect.sync(() => isShellOpen),
 				),
+		},
+	),
+	/** The Alerts › Inbox count, over the `alert_incidents` collection the alerts pages already sync. */
+	shellAlertsInbox: entry(
+		{ orgId: Schema.NullOr(Schema.String) },
+		{
+			modelToDependencies: (model) => ({ orgId: shellAlertsInboxOrgId(model) }),
+			dependenciesToStream: ({ orgId }) =>
+				orgId === null
+					? Stream.empty
+					: Shell.alertsInboxCounts(orgId, (count) =>
+							Message.GotShellMessage({
+								message: Shell.Message.UpdatedAlertsInboxCount({ orgId, count }),
+							}),
+						),
 		},
 	),
 	/** `useDashboardsRead` for the Pinned group: the org's live `dashboards` collection. */

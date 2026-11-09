@@ -1,5 +1,5 @@
 import * as Policy from "@maple/domain/policy"
-import type { AlertsTab } from "../shared/links"
+import type { AlertsTab } from "../../../route/search"
 import { OrgId } from "@maple/domain"
 import type { V2AlertMaintenanceWindow, V2AlertSilence } from "@maple/domain/http/v2"
 import { Result, Schema, Array as Arr } from "effect"

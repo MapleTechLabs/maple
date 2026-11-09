@@ -30,7 +30,7 @@ type H = HtmlBuilder<Message>
 export const resourceHref = (link: AuditResourceLink): string => {
 	switch (link.to) {
 		case "/alerts/$ruleId":
-			return `/alerts/${encodeURIComponent(link.params.ruleId)}`
+			return `/alerts/rules/${encodeURIComponent(link.params.ruleId)}`
 		case "/dashboards/$dashboardId":
 			return `/dashboards/${encodeURIComponent(link.params.dashboardId)}`
 		case "/errors/issues/$issueId":

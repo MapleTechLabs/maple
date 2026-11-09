@@ -29,6 +29,7 @@ export const AppRoute = defineRouteUnion({
 	Unsubscribe: { search: Search.UnsubscribeSearch },
 	AgentSession: { sessionId: Schema.String, search: Search.AgentSessionSearch },
 	AlertRule: { ruleId: AlertRuleId, search: Search.AlertRuleSearch },
+	AlertRuleLegacy: { ruleId: AlertRuleId, search: Search.AlertRuleSearch },
 	AlertsCreate: { search: Search.AlertsCreateSearch },
 	AlertsUptimeNew: { search: Search.AlertsUptimeNewSearch },
 	AlertsUptimeMonitor: { monitorId: Schema.String, search: Search.AlertsUptimeMonitorSearch },

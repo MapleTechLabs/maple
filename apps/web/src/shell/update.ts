@@ -65,6 +65,7 @@ export const enter =
 			infraPresence: () => InfraPresenceData.Idle(),
 			integrations: () => PENDING_INTEGRATIONS,
 			dashboards: () => DashboardsData.Idle(),
+			alertsInboxCount: () => null,
 			onCall: () => OnCallData.Idle(),
 			onCallNextReadAtMs: () => null,
 			onCallBackoffMs: () => 0,
@@ -550,6 +551,10 @@ const foldMessage = (model: Model, message: Message): UpdateReturn =>
 				modifyFields(current, { sources: () => SourcesData.Failure({ error: "Failed" }) }),
 			),
 		// A result for an org the shell has left is dropped.
+		UpdatedAlertsInboxCount: ({ orgId, count }) =>
+			Option.contains(model.maybeOrgId, orgId)
+				? { model: modifyFields(model, { alertsInboxCount: () => count }) }
+				: { model },
 		SucceededLoadDashboards: ({ orgId, dashboards }) =>
 			Option.contains(model.maybeOrgId, orgId)
 				? {

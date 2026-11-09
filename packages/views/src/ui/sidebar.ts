@@ -313,10 +313,15 @@ export const sidebarMenuItem = <Message>(
 		children,
 	)
 
-export const sidebarMenuBadge = <Message>(h: HtmlBuilder<Message>, children: Children): Html =>
+/** `<SidebarMenuBadge>`; `className` places it beside a sub-item, which the peer offsets don't cover. */
+export const sidebarMenuBadge = <Message>(
+	h: HtmlBuilder<Message>,
+	children: Children,
+	className?: string,
+): Html =>
 	h.div(
 		[
-			h.Class(cn(...sidebarMenuBadgeStyles)),
+			h.Class(cn(...sidebarMenuBadgeStyles, className)),
 			h.DataAttribute("sidebar", "menu-badge"),
 			h.DataAttribute("slot", "sidebar-menu-badge"),
 		],

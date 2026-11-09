@@ -39,6 +39,8 @@ export type ShellLabPage<PageModel, PageMessage extends { _tag: string }, PageFl
 		| ((model: PageModel) => ReadonlyArray<Shell.BreadcrumbEntry>)
 	/** Rendered in `#app` before the shell: lab toolbars that sit beside the shell. */
 	before?: (model: PageModel, h: HtmlBuilder<PageMessage>) => Html
+	/** Shell state the root's reads would bring (the Alerts › Inbox count), as a fixture. */
+	seedShell?: (shell: Shell.Model) => Shell.Model
 }>
 
 export const defineShellLab = <PageModel, PageMessage extends { _tag: string }, PageFlags>(
@@ -107,7 +109,7 @@ export const defineShellLab = <PageModel, PageMessage extends { _tag: string }, 
 			return {
 				model: {
 					page: inner.model,
-					shell: shell.model,
+					shell: page.seedShell === undefined ? shell.model : page.seedShell(shell.model),
 					toasts: initLabToasts(),
 					tooltip: TooltipHost.init("tooltip"),
 				},

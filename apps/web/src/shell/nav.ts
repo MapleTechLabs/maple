@@ -36,6 +36,10 @@ export interface NavSubItem {
 	readonly paletteTitle?: string
 	/** Pages under another path that this row stands in for (schedules under On-call). */
 	readonly alsoActive?: ReadonlyArray<string>
+	/** A live count beside the title, read by the shell (the Inbox's unacknowledged incidents). */
+	readonly count?: "alertsInbox"
+	/** Starts a group of rows: a thin rule above it, no heading. */
+	readonly startsGroup?: boolean
 }
 
 export interface NavItem {
@@ -143,6 +147,7 @@ const alertsItem: NavItem = {
 			icon: "BellIcon",
 			paletteTitle: "Alerts",
 			alsoActive: ["/anomalies"],
+			count: "alertsInbox",
 		},
 		{
 			title: "Rules",
@@ -150,17 +155,24 @@ const alertsItem: NavItem = {
 			icon: "ChartLineIcon",
 			paletteTitle: "Alert rules",
 			alsoActive: ["/alerts/create"],
+			startsGroup: true,
 		},
 		{ title: "Uptime", href: "/alerts/uptime", icon: "GlobeIcon", paletteTitle: "Uptime checks" },
 		{ title: "SLOs", href: "/alerts/slos", icon: "GaugeIcon" },
-		{ title: "Silences", href: "/alerts/silences", icon: "BellSlashIcon" },
+		{ title: "Silences", href: "/alerts/silences", icon: "BellSlashIcon", startsGroup: true },
 		{
 			title: "Maintenance",
 			href: "/alerts/maintenance",
 			icon: "CalendarIcon",
 			paletteTitle: "Maintenance windows",
 		},
-		{ title: "On-call", href: "/alerts/on-call", icon: "UsersIcon", alsoActive: ["/alerts/schedules"] },
+		{
+			title: "On-call",
+			href: "/alerts/on-call",
+			icon: "UsersIcon",
+			alsoActive: ["/alerts/schedules"],
+			startsGroup: true,
+		},
 		{ title: "Routing", href: "/alerts/routing", icon: "BranchForkIcon", paletteTitle: "Alert routing" },
 	],
 }
@@ -245,6 +257,9 @@ export const isNavItemActive = (currentPath: string, item: NavItem): boolean =>
 	isPathActive(currentPath, item.href) ||
 	Arr.some(item.alsoActive ?? [], (href) => isPathActive(currentPath, href)) ||
 	Arr.some(item.subItems ?? [], (sub) => matchSubItem(currentPath, sub) !== undefined)
+
+/** The Alerts row is open here, so its Inbox count is shown (and worth reading). */
+export const isAlertsOpenAt = (currentPath: string): boolean => isNavItemActive(currentPath, alertsItem)
 
 export interface NavPreview {
 	readonly glyphs: ReadonlyArray<NavSubItem>
