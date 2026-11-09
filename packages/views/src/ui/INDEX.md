@@ -230,6 +230,7 @@ existing copies onto it (see `apps/web/CLAUDE.md`).
 - `apps/web/src/page/kit/resource-not-found.ts` `resourceNotFound`
 - `apps/web/src/page/kit/route-window.ts` `isWindowChange`, `snapModeOf`, `routeWindowStep`: `useEffectiveTimeRange` + `useRefreshableAtomValue` for a page's `routeChanged`: the window is re-resolved only when its own fields moved, and only Reload revalidates unchanged...
 - `apps/web/src/page/kit/section-heading.ts` `sectionHeading`: `SectionHeading`: the `title` row and the `eyebrow` overline.
+- `apps/web/src/page/kit/sentence-card.ts` `sentenceCard`, `sentenceChain`: Sentence cards: a form that reads top to bottom as one sentence ("When ...
 - `apps/web/src/page/kit/series-legend.ts` `seriesLegend`
 - `apps/web/src/page/kit/service-runtimes.ts` `runtimeLink`, `workloadLink`: Where a service runs, as links to the infra pages: its platform resources (`ServiceRuntimesResponse`) and its Kubernetes workloads.
 - `apps/web/src/page/kit/sheet-detail-header.ts` `sheetDetailHeader`: `SheetDetailHeader`: a detail sheet's eyebrow kind, title, screen-reader description and meta row.

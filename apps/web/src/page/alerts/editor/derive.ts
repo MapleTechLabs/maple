@@ -49,6 +49,12 @@ export const conditionSubject = (form: RuleForm): string => {
 	return Str.toLowerCase(signalLabels[form.signalType])
 }
 
+/** A threshold with its unit: "5%", "800 ms", "?" while empty. */
+export const thresholdValue = (form: RuleForm, raw: string): string => {
+	const unit = thresholdUnitLabel(form) ?? ""
+	return `${Str.trim(raw) || "?"}${unit === "%" ? "%" : unit ? ` ${unit}` : ""}`
+}
+
 /** The rule in one plain sentence, shown in the action bar. */
 export const describeRuleCondition = (form: RuleForm, isDefault = false): string => {
 	if (form.signalType === "anomaly")
@@ -57,8 +63,7 @@ export const describeRuleCondition = (form: RuleForm, isDefault = false): string
 			: isDefaultAnomalyRule(form)
 				? "Anomalies in a service, environment or signal"
 				: `Pages on anomalies in ${anomalyScopeSummary(form)}`
-	const unit = thresholdUnitLabel(form) ?? ""
-	const value = (raw: string) => `${Str.trim(raw) || "?"}${unit === "%" ? "%" : unit ? ` ${unit}` : ""}`
+	const value = (raw: string) => thresholdValue(form, raw)
 	const threshold = isRangeComparator(form.comparator)
 		? `${value(form.threshold)} and ${value(form.thresholdUpper)}`
 		: value(form.threshold)

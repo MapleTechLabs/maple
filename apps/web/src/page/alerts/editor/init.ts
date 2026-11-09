@@ -67,6 +67,7 @@ export const init = (route: CreateRoute, _context: PageContext): PageReturn<Mode
 		isSaving: false,
 		kindNotice: null,
 		isNotesOpen: false,
+		expandedCards: [],
 		tagSuggestions: [],
 		isSqlCollapsed: false,
 		isMessageTemplateOpen: false,

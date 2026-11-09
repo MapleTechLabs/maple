@@ -153,6 +153,7 @@ describe("alert rule editor", () => {
 			{ update: pageUpdate, view },
 			given(withWindow(editing, "60")),
 			themeResolved(),
+			click(role("button", { name: /^Alert when: / })),
 			expectView(text(`${saved} min`)).toExist(),
 			expectView(hint("5 min")).toExist(),
 		)
@@ -382,6 +383,7 @@ describe("alert rule editor", () => {
 			{ update: pageUpdate, view },
 			given(slowed),
 			themeResolved(),
+			click(role("button", { name: /^Alert when: / })),
 			expectView(notice).toExist(),
 			click(role("button", { name: "Keep 5 min" })),
 			expectView(notice).not.toExist(),

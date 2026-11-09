@@ -6,7 +6,9 @@ import type { RuleForm } from "./form"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { applyDefaultDestination, planMetrics, planPreviews } from "./plan"
-import { Option, String as Str } from "effect"
+import { isProtectedDefault } from "./derive"
+import { missingCards, RULE_CARDS } from "./summary"
+import { Option, String as Str, Array as Arr } from "effect"
 
 export type Return = PageReturn<Model, Message>
 
@@ -43,15 +45,26 @@ export const initialize = (model: Model, context: PageContext): Return => {
 		isNotesOpen: Str.trim(form.notes).length > 0,
 		isMessageTemplateOpen: form.notificationTitle.length > 0 || form.notificationBody.length > 0,
 	}
-	const loaded = planned(applyDefaultDestination(ready), context)
+	// A new rule opens every card; a saved one opens on its summaries, with any gap left open.
+	const withCards: Model = {
+		...ready,
+		expandedCards:
+			draft.editingRule === null ? RULE_CARDS : missingCards(form, isProtectedDefault(ready)),
+	}
+	const loaded = planned(applyDefaultDestination(withCards), context)
 	if (!draft.isShowingTemplates) return loaded
 	const opened = liftTemplates(loaded.model, Dialog.open(loaded.model.templates))
 	return { model: opened.model, commands: [...(loaded.commands ?? []), ...(opened.commands ?? [])] }
 }
 
 /** An edit to the draft; the preview follows it (`useDeferredValue` over the form). */
-export const editForm = (model: Model, context: PageContext, edit: (form: RuleForm) => RuleForm): Return =>
-	model.form === null ? { model } : planned({ ...model, form: edit(model.form) }, context)
+export const editForm = (model: Model, context: PageContext, edit: (form: RuleForm) => RuleForm): Return => {
+	if (model.form === null) return { model }
+	const form = edit(model.form)
+	// A card that goes missing stays open once filled in again, so it never closes under the cursor.
+	const expandedCards = Arr.union(model.expandedCards, missingCards(form, isProtectedDefault(model)))
+	return planned({ ...model, form, expandedCards }, context)
+}
 
 /** A list answered: the draft may now be known, and the default destination picked. */
 export const followRows = (model: Model, context: PageContext): Return => {

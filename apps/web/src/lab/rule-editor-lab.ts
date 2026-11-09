@@ -154,7 +154,10 @@ const withPreview = (model: EditorModel, nowMs: number): EditorModel =>
 const seed = (variant: Variant, nowMs: number): EditorModel => {
 	if (variant === "new") return run(opened({}, nowMs, []), [EditorMessage.ClickedStartBlank()])
 	if (variant === "anomaly") return opened({ ruleId: ruleId(8) }, nowMs, [scopedAnomalyRuleRow()])
-	return withPreview(opened({ ruleId: ruleId(2) }, nowMs, [ERROR_RATE_RULE]), nowMs)
+	// Every card on its summary except "Alert when", open for editing.
+	return run(withPreview(opened({ ruleId: ruleId(2) }, nowMs, [ERROR_RATE_RULE]), nowMs), [
+		EditorMessage.ClickedExpandCard({ card: "condition" }),
+	])
 }
 
 // Reads and writes need a session; the lab keeps the editor's local commands (chart, focus, menus).

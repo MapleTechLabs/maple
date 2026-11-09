@@ -31,7 +31,7 @@ import * as TimeRangePicker from "../../kit/time-range-picker"
 import * as DestinationDialog from "../destination/dialog"
 import * as ChatConnect from "../shared/chat-connect"
 import { PreviewFailure } from "../shared/preview"
-import { Tier } from "./form"
+import { RuleCard, Tier } from "./form"
 import { DryRun, TraceFacets } from "./model"
 
 /** The form's free-text fields, each one input. */
@@ -144,6 +144,10 @@ export const Message = defineMessageUnion({
 	BlurredTagInput: {},
 	ClickedRemoveTag: { tag: Schema.String },
 	ClickedAddNotes: {},
+	/** A closed sentence card's summary: opens the card for editing. */
+	ClickedExpandCard: { card: RuleCard },
+	/** An open card's Done: back to its summary. */
+	ClickedCollapseCard: { card: RuleCard },
 	ToggledSqlCollapsed: {},
 	ClickedSqlToken: { token: Schema.String },
 	CompletedInsertSqlToken: { sql: Schema.String, caret: Schema.Number },

@@ -214,6 +214,12 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			editForm({ ...model, tagDraft: "" }, context, (form) => F.commitTag(form, model.tagDraft)),
 		ClickedRemoveTag: ({ tag }) => editForm(model, context, (form) => F.removeTag(form, tag)),
 		ClickedAddNotes: () => ({ model: { ...model, isNotesOpen: true } }),
+		ClickedExpandCard: ({ card }) => ({
+			model: { ...model, expandedCards: Arr.union(model.expandedCards, [card]) },
+		}),
+		ClickedCollapseCard: ({ card }) => ({
+			model: { ...model, expandedCards: Arr.filter(model.expandedCards, (open) => open !== card) },
+		}),
 		ToggledSqlCollapsed: () => ({ model: { ...model, isSqlCollapsed: !model.isSqlCollapsed } }),
 		ClickedSqlToken: ({ token }) =>
 			model.form === null
