@@ -47,6 +47,7 @@
 		"./permission": "./src/permission.ts",
 		"./policy": "./src/policy/index.ts",
 		"./primitives": "./src/primitives.ts",
+		"./data-sources": "./src/data-sources.ts",
 		"./query-engine": "./src/query-engine.ts",
 		"./raw-sql": "./src/raw-sql.ts",
 		"./recommendations": "./src/recommendations.ts",
