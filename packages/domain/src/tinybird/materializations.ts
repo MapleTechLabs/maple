@@ -1273,6 +1273,9 @@ export const errorFingerprintLineageMv = defineMaterializedView("error_fingerpri
 	description:
 		"Records the previous-version fingerprint hashes of each error fingerprint a version bump re-keyed, for the issue evaluator.",
 	datasource: errorFingerprintLineage,
+	// Shares the error views' WITH block, so a fingerprint change reaches it too: swap the
+	// query in place rather than replay `traces`, the same as error_events_mv.
+	deploymentMethod: "alter",
 	nodes: [
 		node({
 			name: "error_fingerprint_lineage_mv_node",
