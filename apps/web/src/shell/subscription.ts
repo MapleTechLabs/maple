@@ -98,27 +98,30 @@ export const onCallTimer = (atMs: number): Stream.Stream<Message> =>
 		}),
 	)
 
-const wakeTargets: Dom.TypedEventTarget<{ focus: FocusEvent; visibilitychange: Event }> = window
-
 /** The tab came back into view or focus (a handoff may have passed while it slept). */
-export const onCallWakes: Stream.Stream<Message> = Stream.merge(
-	Dom.streamFromEvent({ target: wakeTargets, type: "focus", mapEvent: () => true }),
-	Dom.streamFromEvent({
-		target: document,
-		type: "visibilitychange",
-		mapEvent: () => document.visibilityState === "visible",
-	}),
-).pipe(
+// Suspended: `window` and `document` are read on subscribe, so importing the shell needs no DOM.
+export const onCallWakes: Stream.Stream<Message> = Stream.suspend(() => {
+	const wakeTarget: Dom.TypedEventTarget<{ focus: FocusEvent }> = window
+	return Stream.merge(
+		Dom.streamFromEvent({ target: wakeTarget, type: "focus", mapEvent: () => true }),
+		Dom.streamFromEvent({
+			target: document,
+			type: "visibilitychange",
+			mapEvent: () => document.visibilityState === "visible",
+		}),
+	)
+}).pipe(
 	Stream.filter((isAwake) => isAwake),
 	Stream.mapEffect(() => Clock.currentTimeMillis),
 	Stream.map((nowMs) => Message.WokeOnCall({ nowMs })),
 )
 
-const onCallChangeTarget: Dom.TypedEventTarget<{ [ONCALL_CHANGED_EVENT]: Event }> = window
-
 /** A page wrote a schedule or an override. */
-export const onCallChanges: Stream.Stream<Message> = Dom.streamFromEvent({
-	target: onCallChangeTarget,
-	type: ONCALL_CHANGED_EVENT,
-	mapEvent: () => Message.ChangedOnCallSchedules(),
+export const onCallChanges: Stream.Stream<Message> = Stream.suspend(() => {
+	const target: Dom.TypedEventTarget<{ [ONCALL_CHANGED_EVENT]: Event }> = window
+	return Dom.streamFromEvent({
+		target,
+		type: ONCALL_CHANGED_EVENT,
+		mapEvent: () => Message.ChangedOnCallSchedules(),
+	})
 })
