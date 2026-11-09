@@ -4,12 +4,8 @@ import { Array as Arr, Option, Predicate, String as Str } from "effect"
 import { describe, expect, it } from "vitest"
 import { CANCELLATION_FIXTURES } from "./fixtures"
 import { deriveSignals, ruleReason } from "./signals"
-import {
-	buildCancellationMessage,
-	type CancellationReport,
-	OTHER_ORGS_SHOWN,
-	type OtherOrg,
-} from "./slack-message"
+import { type CancellationReport, OTHER_ORGS_SHOWN, type OtherOrg } from "./report"
+import { buildCancellationMessage } from "./slack-message"
 
 const report = (id: string, overrides: Partial<CancellationReport> = {}): CancellationReport => {
 	const fixture = Option.getOrUndefined(

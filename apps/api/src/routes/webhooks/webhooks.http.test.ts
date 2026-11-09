@@ -684,6 +684,39 @@ describe("AutumnWebhookRouter", () => {
 		}),
 	)
 
+	it.live("queues a cancellation on a deployment that reports to Hazel alone", () =>
+		Effect.gen(function* () {
+			const reviews = recordingCancellationQueue()
+			const { handler, dispose } = HttpRouter.toWebHandler(
+				makeRouterLayer(
+					AutumnWebhookRouter,
+					{
+						AUTUMN_WEBHOOK_SECRET: AUTUMN_SECRET,
+						MAPLE_CANCELLATION_HAZEL_CHANNEL_ID: "hazel-cancellations",
+					},
+					recordingProductEvents().layer,
+					undefined,
+					undefined,
+					reviews.layer,
+				),
+				{ disableLogger: true },
+			)
+			yield* Effect.gen(function* () {
+				const headers = yield* signedHeaders(
+					AUTUMN_SECRET,
+					AUTUMN_CANCEL_SCHEDULED,
+					yield* Clock.currentTimeMillis,
+				)
+				const response = yield* post(handler, "/webhooks/autumn", AUTUMN_CANCEL_SCHEDULED, headers)
+				assert.strictEqual(response.status, 200)
+				assert.deepStrictEqual(
+					Arr.map(reviews.queued, (body) => decodeQueuedJob(body).planId),
+					["startup"],
+				)
+			}).pipe(Effect.ensuring(Effect.promise(dispose)))
+		}),
+	)
+
 	it.live("records the plan events, then answers 503, when the review could not be queued", () =>
 		Effect.gen(function* () {
 			const events = recordingProductEvents()

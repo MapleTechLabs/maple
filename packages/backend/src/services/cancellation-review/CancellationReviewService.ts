@@ -1,8 +1,9 @@
 /**
- * The cancellation review: one cancelled subscription in, one Slack report out.
+ * The cancellation review: one cancelled subscription in, one report out, to
+ * Slack, Hazel or both.
  *
  * Gathers what the org's own usage looks like around the cancellation, reads it
- * with fixed rules, and posts the result to Maple's own workspace. Every source
+ * with fixed rules, and posts the result to Maple's own workspaces. Every source
  * but Autumn is optional: a section that cannot be read is `null` in the
  * snapshot and named in the report, because a report missing its visit numbers
  * is worth more than no report.
@@ -13,6 +14,7 @@
  */
 import { ownBillingCustomer } from "@maple/backend/services/billing/billing-customer"
 import * as PG from "@maple-dev/effect-orm/postgres"
+import { type ChatBlock, chatConnectorId, type ChatOutboundError, splitBlocks } from "@maple/chat-platform"
 import type { MapleDb, MapleDbError } from "@maple/db/client"
 import {
 	AlertRules,
@@ -32,7 +34,7 @@ import {
 	CancellationModelRequest,
 	CancellationSnapshot,
 	CancellationTelemetryEvidence,
-	type OrgId,
+	OrgId,
 } from "@maple/domain/http"
 import { CH, formatWarehouseDateTime } from "@maple/query-engine"
 import {
@@ -51,6 +53,8 @@ import {
 	Record as Rec,
 } from "effect"
 import * as SecureRandom from "effect/crypto/SecureRandom"
+import { FetchHttpClient, HttpClient } from "effect/http"
+import { parseBase64Aes256GcmKey } from "@maple/backend/platform/Crypto"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { Env } from "@maple/backend/platform/Env"
 import { summarizeCause } from "@maple/backend/platform/describe-cause"
@@ -60,6 +64,13 @@ import { decodeUpstream, ensureOk, subscriptionsOf } from "@maple/backend/servic
 import { AutumnClient } from "@maple/backend/services/billing/autumn-http"
 import { stripeCustomerIdOf } from "@maple/backend/services/billing/billing-profile"
 import { StripeClient } from "@maple/backend/services/billing/stripe-http"
+import {
+	ChatConnectorRegistry,
+	chatOutboundTransport,
+	loadOwnedChatWorkspace,
+	missingOutboundConfig,
+	type OwnedChatWorkspace,
+} from "@maple/backend/services/integrations/chat-outbound"
 import { IntegrationInventoryService } from "@maple/backend/services/integrations/IntegrationInventoryService"
 import { DailySpendService } from "@maple/backend/services/billing/DailySpendService"
 import { OnboardingService } from "@maple/backend/services/org/OnboardingService"
@@ -69,8 +80,10 @@ import { OrgIngestKeysService } from "@maple/backend/services/org/OrgIngestKeysS
 import { OrgMembersService } from "@maple/backend/services/org/OrgMembersService"
 import type { PlanCancellation } from "@maple/backend/services/product-events/autumn-events"
 import { SupportSlackClient } from "@maple/backend/services/support/SupportSlackClient"
+import type { SupportChannelUnavailableError } from "@maple/domain/support-channel"
 import { WarehouseQueryService } from "@maple/backend/services/warehouse/WarehouseQueryService"
 import { CancellationReader } from "./CancellationReader"
+import { buildCancellationChatBlocks } from "./chat-message"
 import {
 	AUDIT_ENTRIES_SHOWN,
 	SESSIONS_READ,
@@ -88,7 +101,8 @@ import { CancellationCompanyEvidenceReader, isMapleStaff } from "./evidence-comp
 import { type CancellationEvidenceInput, EVIDENCE_GRACE_MS, knownAtCancel } from "./evidence-input"
 import { CancellationTelemetryEvidenceReader } from "./evidence-telemetry"
 import { deriveSignals, ruleReason } from "./signals"
-import { buildCancellationMessage, OTHER_ORGS_SHOWN, type OrgLinks, type OtherOrg } from "./slack-message"
+import { type CancellationReport, OTHER_ORGS_SHOWN, type OrgLinks, type OtherOrg } from "./report"
+import { buildCancellationMessage } from "./slack-message"
 import {
 	DAY_MS,
 	WINDOW_DAYS,
@@ -119,8 +133,8 @@ const CLAIM_LEASE_MS = 5 * 60 * 1000
  */
 const SOURCE_TIMEOUT = "30 seconds"
 
-/** Slack's post, after which the report is out. */
-const SLACK_TIMEOUT = "30 seconds"
+/** One destination's post, after which the report is out there. */
+const POST_TIMEOUT = "30 seconds"
 
 /** The org reads every other read waits on get less. */
 const ORG_TIMEOUT = "10 seconds"
@@ -128,7 +142,7 @@ const ORG_TIMEOUT = "10 seconds"
 /** Members whose other orgs are looked up: one Clerk call each. */
 const OTHER_ORGS_MEMBER_LIMIT = 10
 
-/** A failure worth another delivery: Clerk, Autumn, Postgres or Slack did not answer. */
+/** A failure worth another delivery: Clerk, Autumn, Postgres, Slack or Hazel did not answer. */
 export class CancellationReviewError extends Schema.TaggedError<CancellationReviewError>()(
 	"@maple/backend/cancellation-review/CancellationReviewError",
 	{
@@ -142,7 +156,10 @@ export type CancellationReviewOutcome =
 	| "posted"
 	/** This subscription's cancellation was already reported. */
 	| "duplicate"
-	/** Slack refused the post for a reason no retry fixes (bot not in the channel, bad channel id). */
+	/**
+	 * Every destination refused the post for a reason no retry fixes (bot not in the channel, bad
+	 * channel id).
+	 */
 	| "refused"
 	/** The org lives on another region's instance, which reports it. */
 	| "other_region"
@@ -152,7 +169,7 @@ export type CancellationReviewOutcome =
 	| "not_a_plan"
 	/** The plan ended but the org still holds an active one: a switch or a resubscription. */
 	| "still_subscribed"
-	/** No Slack channel or bot token on this deployment. */
+	/** Neither a Slack channel and bot token nor a Hazel channel Maple's org can post to. */
 	| "not_configured"
 
 export interface CancellationReviewServiceApi {
@@ -187,6 +204,24 @@ const CustomerBilling = Schema.Struct({
 		),
 	),
 })
+
+/** Maple's own org links its Hazel workspace through this connector. */
+const HAZEL_CONNECTOR_ID = chatConnectorId("hazel")
+
+/** The channel in Maple's own Hazel workspace that reports go to. */
+interface HazelDestination {
+	readonly workspace: OwnedChatWorkspace
+	readonly channelId: string
+}
+
+/** Somewhere the report goes; `post` is true once it is out, false when refused for good. */
+interface Destination {
+	readonly name: "Slack" | "Hazel"
+	readonly postedAttribute: "maple.cancellation.slack_posted" | "maple.cancellation.hazel_posted"
+	readonly post: (
+		report: CancellationReport,
+	) => Effect.Effect<boolean, Schema.SchemaError | SupportChannelUnavailableError | ChatOutboundError>
+}
 
 /** The upstream's own words, so the log says why and not only where. */
 const encodeJson = Schema.encodeEffect(Schema.fromJsonString(Schema.Unknown))
@@ -225,6 +260,14 @@ export class CancellationReviewService extends Context.Service<
 		const billingEvidence = yield* CancellationBillingEvidenceReader
 		const appEvidence = yield* CancellationAppEvidenceReader
 		const telemetryEvidence = yield* CancellationTelemetryEvidenceReader
+		const httpClient = yield* HttpClient.HttpClient
+		const chatConnectors = yield* ChatConnectorRegistry
+		// An Option rather than failing the layer: a bad key costs only the Hazel report, and the
+		// services that seal chat credentials refuse to boot on one first.
+		const encryptionKey = yield* parseBase64Aes256GcmKey(
+			Redacted.value(env.MAPLE_INGEST_KEY_ENCRYPTION_KEY),
+			(message) => message,
+		).pipe(Effect.option)
 
 		const clerkOrgUrl = (orgId: string) =>
 			Option.match(env.MAPLE_CLERK_DASHBOARD_URL, {
@@ -647,6 +690,118 @@ export class CancellationReviewService extends Context.Service<
 				)
 				.pipe(Effect.ignore)
 
+		/**
+		 * Maple's own Hazel workspace and the channel reports go to, when the deployment names a
+		 * channel, Maple's org has linked a Hazel workspace and this deployment can post through it.
+		 * Anything short of that leaves Hazel out with a warning; only an unanswered lookup retries.
+		 */
+		const findHazel = Effect.gen(function* () {
+			const channelId = env.MAPLE_CANCELLATION_HAZEL_CHANNEL_ID
+			if (Option.isNone(channelId)) return null
+			const ownOrgId = Option.flatMap(env.MAPLE_INTERNAL_ORG_ID, Schema.decodeUnknownOption(OrgId))
+			if (Option.isNone(ownOrgId) || Option.isNone(encryptionKey)) {
+				yield* Effect.logWarning(
+					"cancellation reviews have a Hazel channel but no MAPLE_INTERNAL_ORG_ID or usable encryption key; nothing is posted to Hazel",
+				)
+				return null
+			}
+			const [linked] = yield* database.execute((db) =>
+				db.run(
+					PG.from(ChatWorkspaces)
+						.select("id")
+						.where(($) => [$.orgId.eq(ownOrgId.value), $.connector.eq(HAZEL_CONNECTOR_ID)])
+						.orderBy(($) => [[$.createdAt, "asc"]])
+						.limit(1),
+				),
+			)
+			const workspace =
+				linked === undefined
+					? Option.none<OwnedChatWorkspace>()
+					: yield* loadOwnedChatWorkspace(
+							database,
+							chatConnectors,
+							ownOrgId.value,
+							linked.id,
+							encryptionKey.value,
+						)
+			if (Option.isNone(workspace)) {
+				yield* Effect.logWarning(
+					"cancellation reviews have a Hazel channel but Maple's org has no Hazel workspace linked; nothing is posted to Hazel",
+				)
+				return null
+			}
+			const missing = missingOutboundConfig(workspace.value, env.CHAT_CONNECTOR_OUTBOUND_CONFIG)
+			if (missing.length > 0) {
+				yield* Effect.logWarning(
+					"cancellation reviews have a Hazel channel but this deployment cannot post to Hazel; nothing is posted to Hazel",
+				).pipe(Effect.annotateLogs({ missingConfig: Arr.join(missing, ", ") }))
+				return null
+			}
+			return { workspace: workspace.value, channelId: channelId.value } satisfies HazelDestination
+		}).pipe(
+			// Only a reinstall writes a new credential: no retry gets past it.
+			Effect.catchTag("@maple/backend/ChatWorkspaceCredentialsUnreadable", (error) =>
+				Effect.logError(
+					"Maple's Hazel workspace credential is unreadable; nothing is posted to Hazel",
+				).pipe(Effect.annotateLogs({ error: error.message }), Effect.as(null)),
+			),
+			Effect.mapError(failedAt("post", "Could not look up Maple's Hazel workspace")),
+		)
+
+		const postToSlack = (channel: string) => (report: CancellationReport) =>
+			Effect.gen(function* () {
+				const message = buildCancellationMessage(report)
+				const blocks = yield* encodeJson(message.blocks)
+				return yield* slack
+					.call("chat.postMessage", { channel, text: message.text, blocks, unfurl_links: false })
+					.pipe(
+						Effect.as(true),
+						// Slack answered and said no: redelivering changes nothing, and failing
+						// here would hold this delivery's plan events back for hours. The row
+						// stays unposted, so a scheduled cancellation is tried again at expiry.
+						Effect.catchTag("@maple/backend/support/SupportSlackRefusedError", (error) =>
+							Effect.logError("Slack refused the cancellation report; it was not posted").pipe(
+								Effect.annotateLogs({
+									slackError: error.error,
+									slackDetails: Arr.join(error.details ?? [], "\n"),
+								}),
+								Effect.as(false),
+							),
+						),
+					)
+			})
+
+		/** One message, or one per section when the report is longer than Hazel takes in one. */
+		const postToHazel = (hazel: HazelDestination) => (report: CancellationReport) =>
+			Effect.gen(function* () {
+				const { workspace, channelId } = hazel
+				const transport = yield* chatOutboundTransport(
+					workspace,
+					env.CHAT_CONNECTOR_OUTBOUND_CONFIG,
+					httpClient,
+				)
+				const target = { workspaceId: workspace.externalWorkspaceId, channelId }
+				const messages: ReadonlyArray<ReadonlyArray<ChatBlock>> = splitBlocks(
+					buildCancellationChatBlocks(report),
+					workspace.connector.outbound.limits.maxMessageChars,
+				)
+				yield* Effect.forEach(messages, (blocks) => transport.post(target, blocks), { discard: true })
+				return true
+			}).pipe(
+				// The bot's grant, the channel or the message itself: a retry changes none of them.
+				Effect.catchIf(
+					(error) =>
+						error.reason === "auth" ||
+						error.reason === "not_found" ||
+						error.reason === "rejected",
+					(error) =>
+						Effect.logError("Hazel refused the cancellation report; it was not posted").pipe(
+							Effect.annotateLogs({ hazelError: error.message, reason: error.reason ?? "" }),
+							Effect.as(false),
+						),
+				),
+			)
+
 		const review: CancellationReviewServiceApi["review"] = Effect.fn("CancellationReviewService.review")(
 			function* (job) {
 				const { orgId } = job
@@ -658,15 +813,36 @@ export class CancellationReviewService extends Context.Service<
 				const outcome = (value: CancellationReviewOutcome) =>
 					Effect.annotateCurrentSpan({ "maple.cancellation.outcome": value }).pipe(Effect.as(value))
 
-				const channel = env.MAPLE_CANCELLATION_SLACK_CHANNEL_ID
-				if (Option.isNone(channel) || !slack.configured) {
-					if (Option.isSome(channel)) {
-						yield* Effect.logWarning(
-							"cancellation reviews have a channel but no Slack bot token; nothing is posted",
-						)
-					}
-					return yield* outcome("not_configured")
+				const slackChannel = env.MAPLE_CANCELLATION_SLACK_CHANNEL_ID
+				if (Option.isSome(slackChannel) && !slack.configured) {
+					yield* Effect.logWarning(
+						"cancellation reviews have a Slack channel but no Slack bot token; nothing is posted to Slack",
+					)
 				}
+				const hazel = yield* findHazel
+				// Slack first: with both set, it is the one whose failure retries the review.
+				const destinations: ReadonlyArray<Destination> = [
+					...(Option.isSome(slackChannel) && slack.configured
+						? [
+								{
+									name: "Slack" as const,
+									postedAttribute: "maple.cancellation.slack_posted" as const,
+									post: postToSlack(slackChannel.value),
+								},
+							]
+						: []),
+					...(hazel === null
+						? []
+						: [
+								{
+									name: "Hazel" as const,
+									postedAttribute: "maple.cancellation.hazel_posted" as const,
+									post: postToHazel(hazel),
+								},
+							]),
+				]
+				const [primary, ...secondary] = destinations
+				if (primary === undefined) return yield* outcome("not_configured")
 
 				// Every region's instance receives the webhook and exactly one may report,
 				// so an unanswered region lookup waits for the next delivery.
@@ -839,7 +1015,7 @@ export class CancellationReviewService extends Context.Service<
 								: otherOrgsOf(atMs, otherOrgs, org.members),
 					}),
 				)
-				const message = buildCancellationMessage({
+				const report: CancellationReport = {
 					subject: {
 						orgId,
 						orgName: org?.info.name ?? orgId,
@@ -880,42 +1056,42 @@ export class CancellationReviewService extends Context.Service<
 						),
 						([name]) => name,
 					),
-				})
+				}
 
-				const blocks = yield* encodeJson(message.blocks).pipe(
-					Effect.mapError(failedAt("post", "Could not encode the cancellation report")),
+				// The first destination decides whether the review is retried. The rest post once it
+				// has settled and are never retried: the retry would post the first one again.
+				const delivered = yield* primary.post(report).pipe(
+					Effect.timeout(POST_TIMEOUT),
+					// A refused or failed post: the retry is this delivery's own and need not wait
+					// out its lease. A timed-out one may still land, so the lease keeps the retry
+					// from posting it twice right away.
+					Effect.tapError((error) =>
+						Cause.isTimeoutError(error) ? Effect.void : releaseClaim(claimed.id, nowMs),
+					),
+					Effect.mapError(
+						failedAt("post", `Could not post the cancellation report to ${primary.name}`),
+					),
 				)
-				const delivered = yield* slack
-					.call("chat.postMessage", {
-						channel: channel.value,
-						text: message.text,
-						blocks,
-						unfurl_links: false,
-					})
-					.pipe(
-						Effect.as(true),
-						// Slack answered and said no: redelivering changes nothing, and failing
-						// here would hold this delivery's plan events back for hours. The row
-						// stays unposted, so a scheduled cancellation is tried again at expiry.
-						Effect.catchTag("@maple/backend/support/SupportSlackRefusedError", (error) =>
-							Effect.logError("Slack refused the cancellation report; it was not posted").pipe(
-								Effect.annotateLogs({
-									slackError: error.error,
-									slackDetails: Arr.join(error.details ?? [], "\n"),
-								}),
-								Effect.as(false),
-							),
+				yield* Effect.annotateCurrentSpan(primary.postedAttribute, delivered)
+				const alsoDelivered = yield* Effect.forEach(secondary, (destination) =>
+					destination.post(report).pipe(
+						Effect.timeout(POST_TIMEOUT),
+						Effect.catchCause((cause) =>
+							Cause.hasInterruptsOnly(cause)
+								? Effect.interrupt
+								: Effect.logError(
+										`Could not post the cancellation report to ${destination.name}; it is not retried`,
+									).pipe(
+										Effect.annotateLogs({ error: summarizeCause(cause) }),
+										Effect.as(false),
+									),
 						),
-						Effect.timeout(SLACK_TIMEOUT),
-						// A refused or failed post: the retry is this delivery's own and need not wait
-						// out its lease. A timed-out one may still land, so the lease keeps the retry
-						// from posting it twice right away.
-						Effect.tapError((error) =>
-							Cause.isTimeoutError(error) ? Effect.void : releaseClaim(claimed.id, nowMs),
+						Effect.tap((posted) =>
+							Effect.annotateCurrentSpan(destination.postedAttribute, posted),
 						),
-						Effect.mapError(failedAt("post", "Could not post the cancellation report to Slack")),
-					)
-				if (!delivered) return yield* outcome("refused")
+					),
+				)
+				if (!delivered && !alsoDelivered.includes(true)) return yield* outcome("refused")
 
 				yield* database
 					.execute((db) =>
@@ -993,6 +1169,7 @@ export class CancellationReviewService extends Context.Service<
 				OrgIngestKeysService.layer,
 				AutumnClient.layer,
 				SupportSlackClient.layer,
+				FetchHttpClient.layer,
 				IntegrationInventoryService.layer,
 				AuditLogService.layer,
 				StripeClient.layer,
