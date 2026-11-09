@@ -40,8 +40,18 @@ const BRAND = { icon: "GoogleIcon", accent: GCP_ACCENT } as const
 
 const ADMIN_ONLY = "Only org admins and engineers can change the Google Search Console connection."
 
-const notConnected = (h: H, model: Model, status: SearchConsoleIntegrationStatus): Html =>
-	integrationEmpty(h, [
+/**
+ * From the click until the status re-read after Google's popup lands: the popup is out, or the
+ * re-read that shows the new grant is in flight. Without it the card sat idle under the toast.
+ */
+const isConnecting = (model: Model): boolean =>
+	model.connect.isStarting ||
+	model.connect.active?.provider === "google-search-console" ||
+	AsyncData.isRefreshing(model.statuses.searchConsole.data)
+
+const notConnected = (h: H, model: Model, status: SearchConsoleIntegrationStatus): Html => {
+	const connecting = isConnecting(model)
+	return integrationEmpty(h, [
 		integrationEmptyFeatures(h, [
 			{
 				label: "Queries",
@@ -62,22 +72,22 @@ const notConnected = (h: H, model: Model, status: SearchConsoleIntegrationStatus
 		integrationEmptyCard(h, [
 			integrationEmptyMedia(h, BRAND),
 			integrationEmptyHint(h, [
-				status.configured
-					? "Your Search Console properties will appear here after you connect a Google account."
-					: "Google Search Console is not configured for this Maple deployment.",
+				!status.configured
+					? "Google Search Console is not configured for this Maple deployment."
+					: model.connect.isStarting || model.connect.active?.provider === "google-search-console"
+						? "Finish signing in with Google in the popup. Your properties will appear here."
+						: connecting
+							? "Checking the connection with Google."
+							: "Your Search Console properties will appear here after you connect a Google account.",
 			]),
 			button(
 				h,
 				{
-					isDisabled:
-						!status.configured ||
-						!canManage(model) ||
-						model.connect.isStarting ||
-						model.disconnect.isPending,
-					isLoading: model.connect.isStarting,
+					isDisabled: !status.configured || !canManage(model) || model.disconnect.isPending,
+					isLoading: connecting,
 					attributes: [h.OnClick(Message.ClickedConnect())],
 				},
-				[icon(h, "GoogleIcon"), "Connect Google"],
+				connecting ? ["Connecting to Google"] : [icon(h, "GoogleIcon"), "Connect Google"],
 			),
 			integrationEmptyFooter(h, [
 				canManage(model)
@@ -86,6 +96,7 @@ const notConnected = (h: H, model: Model, status: SearchConsoleIntegrationStatus
 			]),
 		]),
 	])
+}
 
 /** The row's second line: why it can't be picked, its import failure, or its permission. */
 const siteDetail = (h: H, site: SearchConsoleSiteChoice, saved: SearchConsoleSiteStatus | undefined): Html =>
@@ -198,7 +209,9 @@ const sitePicker = (h: H, model: Model, status: SearchConsoleIntegrationStatus):
 }
 
 const connected = (h: H, model: Model, status: SearchConsoleIntegrationStatus): Html => {
-	const busy = model.connect.isStarting || model.disconnect.isPending
+	const reconnecting =
+		model.connect.isStarting || model.connect.active?.provider === "google-search-console"
+	const busy = reconnecting || model.disconnect.isPending
 	return mediaCard(h, integrationIconPlate(h, BRAND), [
 		itemContent(
 			h,
@@ -227,7 +240,7 @@ const connected = (h: H, model: Model, status: SearchConsoleIntegrationStatus): 
 									size: "sm",
 									variant: status.revoked ? "default" : "outline",
 									isDisabled: busy || !status.configured,
-									isLoading: model.connect.isStarting,
+									isLoading: reconnecting,
 									attributes: [h.OnClick(Message.ClickedConnect())],
 								},
 								["Reconnect"],
