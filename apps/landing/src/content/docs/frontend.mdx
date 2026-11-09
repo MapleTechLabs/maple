@@ -10,7 +10,7 @@ import FrontendTrace from "../../components/docs/FrontendTrace.astro"
 import GuideGrid from "../../components/docs/GuideGrid.astro"
 import { FRONTEND_GUIDES } from "../../lib/instrumentation-guides"
 
-Frontend tracing records what happens in the browser before a request reaches your backend. Each click becomes one trace: a span for the navigation, spans for the data it loads, the `fetch` and XHR requests those make, and your backend's spans behind them. With server rendering, the first page load also joins the server render's trace.
+Frontend tracing records what happens in the browser before a request reaches your backend. Each click becomes one trace: a span for the navigation, spans for the data it loads, the `fetch` and XHR requests those make, and your backend's spans behind them. With server rendering, the first page load also joins the server render's trace. The same SDK records each session for [session replay](/docs/session-replay/replays), and every trace links to the recording of the session it came from.
 
 The guides below set this up per framework with [`@maple-dev/browser`](/docs/session-replay/browser-sdk) 0.14.0 or later. Here's one navigation where every API call is fast and the page is still slow:
 
@@ -18,7 +18,7 @@ The guides below set this up per framework with [`@maple-dev/browser`](/docs/ses
 
 ## Choose your framework
 
-Each guide installs the SDK, connects browser traces to your backend, and wires navigations, data loading and errors into the framework's own hooks. React Router and TanStack Router use the adapters in `@maple-dev/browser/react`. The other frameworks call three SDK methods from their router's hooks: `startNavigation`, `traced` and `endNavigation`.
+Each guide installs the SDK, connects browser traces to your backend, and wires navigations, data loading and errors into the framework's own hooks.
 
 <GuideGrid cards={FRONTEND_GUIDES} />
 
@@ -47,10 +47,13 @@ Use your public key from **Settings → Ingestion**. Without one, the agent uses
 
 ## Limits
 
-- **No async context in the browser.** Inside `traced`, only requests started before the first `await` nest under its span. Start independent requests together with `Promise.all`, or capture `context.active()` from `@opentelemetry/api` before the `await` and run the later request in `context.with(ctx, …)`.
-- **Cross-origin APIs must allow the header.** Add `traceparent` to `Access-Control-Allow-Headers` in the API's CORS preflight, or the browser blocks the request.
-- **Clock skew.** Browser and server clocks differ, so a server span can appear to start before the `fetch` that caused it. Durations are exact; offsets between browser and server spans are approximate.
-- **Cached HTML joins a stale trace.** Don't send the server trace context on responses a CDN or the back/forward cache serves to more than one page load.
+Detailed instructions for each of these are in the guide for your framework.
+
+- **Requests after an `await` can start their own trace.** In the browser, a request inside a data-loading function only joins the navigation's trace if it starts before the function's first `await`. Start independent requests together with `Promise.all`; for a request that depends on an earlier one, the guides show the extra line that keeps it in the trace.
+- **Your API must allow the `traceparent` header.** For an API on another origin, add `traceparent` to `Access-Control-Allow-Headers` in its CORS configuration, or the browser blocks the request.
+- **Don't let a CDN cache server-rendered HTML that carries the trace context.** Every visitor served the cached page would join the same server trace. Only add the `Server-Timing` header or meta tag to responses rendered for one request.
+
+Browser and server clocks also differ, so a server span can appear to start slightly before the browser request that caused it. Durations are exact.
 
 ## Related
 
