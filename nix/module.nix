@@ -18,10 +18,20 @@ let
   inMemory = lib.elem "--in-memory" cfg.extraArgs;
   start = pkgs.writeShellScript "maple-start" ''
     set -eu
-    if [ -n "''${CREDENTIALS_DIRECTORY:-}" ]; then
-      [ -f "$CREDENTIALS_DIRECTORY/ingest-key" ] && export MAPLE_LOCAL_INGEST_KEY="$(cat "$CREDENTIALS_DIRECTORY/ingest-key")"
-      [ -f "$CREDENTIALS_DIRECTORY/access-token" ] && export MAPLE_LOCAL_ACCESS_TOKEN="$(cat "$CREDENTIALS_DIRECTORY/access-token")"
-    fi
+    # A configured secret must be non-empty: maple treats an empty one as unset,
+    # which would serve without auth. 78 tells systemd not to retry.
+    load_secret() {
+      value="$(cat "$CREDENTIALS_DIRECTORY/$1")"
+      if [ -z "$(printf '%s' "$value" | tr -d '[:space:]')" ]; then
+        echo "maple: the $1 file is empty" >&2
+        exit 78
+      fi
+      export "$2=$value"
+    }
+    ${lib.optionalString (cfg.ingestKeyFile != null) "load_secret ingest-key MAPLE_LOCAL_INGEST_KEY"}
+    ${lib.optionalString (
+      cfg.accessTokenFile != null
+    ) "load_secret access-token MAPLE_LOCAL_ACCESS_TOKEN"}
     # After an unclean stop the store restores its last checkpoint. Before the
     # first one exists there is nothing to recover, so it starts fresh instead
     # of refusing (the image's policy).
