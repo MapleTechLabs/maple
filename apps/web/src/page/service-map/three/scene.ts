@@ -308,7 +308,7 @@ export function startScene(
 		const pop = state.pop
 		if (pop !== null) {
 			// A newly selected machine squashes and springs back once, standing on its pad.
-			const t = (now - pop.start) / POP_MS
+			const t = Math.max(0, now - pop.start) / POP_MS
 			const lift = t >= 1 ? 0 : 0.1 * Math.sin(t * 2.5 * Math.PI) * (1 - t) ** 2
 			world
 				.machine(pop.id)
@@ -407,8 +407,9 @@ export function startScene(
 			floor.grid.visible = input.editing && input.view === "atlas"
 			// Motion allowed is `flowing`, so a paused or reduced-motion map selects without the pop.
 			if (input.selectedId !== null && input.selectedId !== previous.selectedId && input.flowing) {
-				state.pop = { id: input.selectedId, start: performance.now() }
-				state.awakeUntil = Math.max(state.awakeUntil, performance.now() + POP_MS)
+				const start = performance.now()
+				state.pop = { id: input.selectedId, start }
+				state.awakeUntil = Math.max(state.awakeUntil, start + POP_MS)
 			}
 			// A camera command changes no scene prop, but the zoom still needs frames to land.
 			if (

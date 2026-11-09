@@ -38,13 +38,21 @@ export type MapleFinish = MachineFinish & {
 	night: boolean
 }
 
-/** Wind time for things that sway: wall-clock seconds, so a rebuild keeps the swing where it
- * was, held still while the map is paused. */
+/** One wind for the whole map: wall-clock seconds less the time spent paused. */
+const wind = { seconds: 0, lag: 0, still: false }
+
+/** Wind time for things that sway. Shared, so a rebuilt machine keeps its swing, and a pause
+ * holds it still and resumes from the same pose. */
 export function breeze(scope: Scope, running: Running, apply: (seconds: number) => void) {
-	const held = { seconds: performance.now() / 1000 }
 	scope.frames.push(() => {
-		if (running()) held.seconds = performance.now() / 1000
-		apply(held.seconds)
+		const now = performance.now() / 1000
+		if (!running()) wind.still = true
+		else {
+			if (wind.still) wind.lag = now - wind.seconds
+			wind.still = false
+			wind.seconds = now - wind.lag
+		}
+		apply(wind.seconds)
 	})
 }
 

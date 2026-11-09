@@ -1,9 +1,10 @@
 import { mapPalette } from "../../../components/service-map/three/appearance"
 import * as THREE from "three"
 import { Array as Arr } from "effect"
-import { describe, expect, it } from "vitest"
+import { afterEach, describe, expect, it, vi } from "vitest"
 import { type Child, makeScope, type Scope } from "./kit"
 import { butterflies, fallingLeaves } from "./life"
+import { breeze } from "./props-kit"
 
 const world = {
 	sources: [{ x: 0, z: 0, top: 1.2, radius: 0.35 }],
@@ -71,11 +72,41 @@ describe("butterflies in the scene", () => {
 	it("stay within a short flight of the glade they belong to", () => {
 		const scene = flock(() => true)
 		scene.step(40)
-		// Each instance matrix carries its position in elements 12 to 14; two wings then a body per anchor.
+		// Each instance matrix, wings and bodies alike, carries its position in elements 12 to 14.
 		const nearest = Arr.map(Arr.chunksOf(scene.matrices(), 16), (m) => {
 			const [x, z] = [m[12] ?? 0, m[14] ?? 0]
 			return Math.min(Math.hypot(x, z), Math.hypot(x - 2, z + 1))
 		})
 		expect(Math.max(...nearest)).toBeLessThan(1.4)
+	})
+})
+
+describe("the breeze", () => {
+	afterEach(() => vi.restoreAllMocks())
+
+	it("holds its time through a pause and carries on from the same moment", () => {
+		const now = vi.spyOn(performance, "now")
+		const state = { playing: true, seconds: 0 }
+		const scope = makeScope()
+		breeze(
+			scope,
+			() => state.playing,
+			(seconds) => {
+				state.seconds = seconds
+			},
+		)
+		const at = (ms: number) => {
+			now.mockReturnValue(ms)
+			Arr.forEach(scope.frames, (frame) => frame(0.016))
+			return state.seconds
+		}
+		const start = at(10_000)
+		expect(at(12_000) - start).toBeCloseTo(2)
+		state.playing = false
+		const held = at(13_000)
+		expect(at(60_000)).toBe(held)
+		state.playing = true
+		expect(at(61_000)).toBe(held)
+		expect(at(62_000) - held).toBeCloseTo(1)
 	})
 })

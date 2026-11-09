@@ -144,10 +144,8 @@ export function butterflies(
 	)
 	bodies.frustumCulled = false
 	// Blue shows on the paper and white on the meadow; the ink body marks both.
-	const tints = Arr.map([palette.water, palette.birch], (color) => new THREE.Color(color))
 	Arr.forEach(anchors, (_, i) => {
-		const tint = tints[i % tints.length]
-		if (tint === undefined) return
+		const tint = new THREE.Color(i % 2 === 0 ? palette.water : palette.birch)
 		wings.setColorAt(i * 2, tint)
 		wings.setColorAt(i * 2 + 1, tint)
 	})

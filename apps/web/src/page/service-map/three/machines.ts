@@ -149,10 +149,10 @@ function windowPane(
 function door(scope: Scope, { position, finish }: { position: Vec3; finish: Finish }) {
 	const [x, y, z] = position
 	// Lantern panes are gifts[2]; a degraded machine's lamp is out.
-	const lamp =
-		finish.trouble === "degraded"
-			? { ...finish, gifts: Arr.map(finish.gifts, (c, i) => (i === 2 ? finish.iron : c)) }
-			: finish
+	const lit = finish.trouble !== "degraded"
+	const lamp = lit
+		? finish
+		: { ...finish, gifts: Arr.map(finish.gifts, (c, i) => (i === 2 ? finish.iron : c)) }
 	return group({}, [
 		inkPlate({ size: [0.42, 0.36], position, normal: "x", color: finish.signal, ink: finish.ink }),
 		inkLines([x, y - 0.18, z, x, y + 0.18, z, x, y + 0.02, z - 0.13, x, y - 0.02, z - 0.13], finish.ink),
@@ -161,7 +161,7 @@ function door(scope: Scope, { position, finish }: { position: Vec3; finish: Fini
 			: porch(scope, { door: position, finish }),
 		lantern(scope, { position: [x, y, z - 0.33], finish: lamp }),
 		finish.night &&
-			finish.trouble !== "degraded" &&
+			lit &&
 			lampPool({ position: [x + 0.24, 0.006, z - 0.24], radius: 0.5, color: finish.glow }),
 	])
 }
@@ -344,7 +344,6 @@ function loadingBay(scope: Scope, { height, finish }: { height: number; finish: 
 				half: 0.3,
 				rise: 0.2,
 				length: 2,
-				color: finish.shingle,
 				finish,
 			}),
 		]),
