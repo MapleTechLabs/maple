@@ -8,6 +8,7 @@ import * as Combobox from "@maple/views/ui/combobox"
 import * as Menu from "@maple/views/ui/menu"
 import { AlertsScheduleNewSearch } from "../../../route/search"
 import { OrgMember } from "../shared/org-members"
+import { RangeDays } from "../shared/coverage-preview"
 import { Form } from "./form"
 
 // `/alerts/schedules/new`: create an on-call schedule, or edit one (`?scheduleId=`).
@@ -35,6 +36,9 @@ export const Model = Schema.Struct({
 	saveFailure: Schema.NullOr(LoadFailure),
 	grants: Schema.Array(Policy.PermissionName),
 	isSessionLoaded: Schema.Boolean,
+	/** The coverage preview: weeks from today, and how many days it shows. */
+	previewWeekOffset: Schema.Number,
+	previewRange: RangeDays,
 })
 export type Model = typeof Model.Type
 

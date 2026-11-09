@@ -12,8 +12,8 @@ import { typography } from "./typography"
 // on-call schedule's layers and its final row). Days follow the zone's wall clock, so a DST day is
 // 23 or 25 hours wide.
 
-/** A bar's look: a layer's shift, the effective shift, or an override over it. */
-export type TimelineBarTone = "neutral" | "primary" | "info"
+/** A bar's look: a layer's shift, the effective shift, an override over it, or a gap nobody covers. */
+export type TimelineBarTone = "neutral" | "primary" | "info" | "warning"
 
 export type TimelineBar<M> = Readonly<{
 	key: string
@@ -24,6 +24,8 @@ export type TimelineBar<M> = Readonly<{
 	title: string
 	tone: TimelineBarTone
 	onClick?: M
+	/** The bar's element id, so a summary elsewhere can scroll to and focus it. */
+	id?: string
 }>
 
 export type TimelineRow<M> = Readonly<{
@@ -43,6 +45,7 @@ export type TimelineDay = Readonly<{
 	dayOfMonth: number
 	leftPct: number
 	widthPct: number
+	isWeekend: boolean
 }>
 
 const weekdayFormatters = new Map<string, Intl.DateTimeFormat>()
@@ -52,6 +55,8 @@ const weekdayOf = (ms: number, timeZone: string): string => {
 	if (cached === undefined) weekdayFormatters.set(timeZone, formatter)
 	return formatter.format(ms)
 }
+
+const WEEKEND = new Set(["Sat", "Sun"])
 
 /** The instant the wall-clock day containing `ms` starts in `timeZone`, `offsetDays` later. */
 export const zonedDayStart = (ms: number, timeZone: string, offsetDays = 0): number => {
@@ -90,6 +95,7 @@ export const timelineDays = (fromMs: number, toMs: number, timeZone: string): Re
 					startMs,
 					endMs,
 					weekday: weekdayOf(Math.max(startMs, fromMs), timeZone),
+					isWeekend: WEEKEND.has(weekdayOf(Math.max(startMs, fromMs), timeZone)),
 					dayOfMonth: zonedDateParts(Math.max(startMs, fromMs), timeZone).day,
 					...place,
 				},
@@ -104,6 +110,8 @@ const BAR_TONE = {
 	// An override is the one bar that must stand out, even 8px wide on a dark surface: a stronger
 	// wash and the tone's own edge.
 	info: "bg-severity-info-a3 border-severity-info text-severity-info",
+	// A gap reads as missing cover: a dashed warning edge over a faint wash.
+	warning: "border-dashed bg-warning-a2 border-warning text-warning-foreground",
 } as const satisfies Record<TimelineBarTone, string>
 
 /** The narrowest a bar draws, so a short shift stays visible and clickable. */
@@ -151,7 +159,12 @@ const barView = <M>(
 			const text = typography(h, { size: "xs", truncate: true, className: "block leading-6" }, [
 				bar.label,
 			])
-			const attributes = [h.Key(bar.key), style, ...tooltipTrigger(h, bar.title)]
+			const attributes = [
+				h.Key(bar.key),
+				style,
+				...(bar.id === undefined ? [] : [h.Id(bar.id)]),
+				...tooltipTrigger(h, bar.title),
+			]
 			return [
 				bar.onClick === undefined
 					? h.div(
@@ -200,6 +213,8 @@ export const shiftTimeline = <M>(
 		ariaLabel: string
 		/** Read out in place of the now line, which is drawn only ("Now, Tue 10 Nov, 11:30"). */
 		nowLabel?: string
+		/** Names the axis's zone in the label column's header ("Europe/Berlin"). */
+		zoneLabel?: string
 		/** A key under the timeline for the bar tones it uses. */
 		legend?: ReadonlyArray<Readonly<{ tone: TimelineBarTone; label: string }>>
 	}>,
@@ -213,8 +228,14 @@ export const shiftTimeline = <M>(
 			h.div(
 				[
 					h.Key(`rule-${day.startMs}`),
-					h.Class("absolute inset-y-0 border-l border-border-subtle"),
-					h.Style({ left: `${day.leftPct}%` }),
+					...(day.isWeekend ? [h.DataAttribute("weekend", "true")] : []),
+					h.Class(
+						cn(
+							"absolute inset-y-0 border-l border-border-subtle",
+							day.isWeekend && "bg-surface-sunken",
+						),
+					),
+					h.Style({ left: `${day.leftPct}%`, width: `${day.widthPct}%` }),
 				],
 				[],
 			),
@@ -238,7 +259,21 @@ export const shiftTimeline = <M>(
 	const header = h.div(
 		[h.Class("flex border-b"), h.Role("row")],
 		[
-			h.div([h.Class(LABEL_COLUMN), h.Role("columnheader")], [h.span([h.Class("sr-only")], ["Lane"])]),
+			h.div(
+				[h.Class(cn(LABEL_COLUMN, "flex items-center")), h.Role("columnheader")],
+				[
+					h.span([h.Class("sr-only")], ["Lane"]),
+					...(options.zoneLabel === undefined
+						? []
+						: [
+								typography(
+									h,
+									{ size: "2xs", tone: "muted", truncate: true, className: "block" },
+									[options.zoneLabel],
+								),
+							]),
+				],
+			),
 			// One header for the track, as each row has one cell for it; the days label it visually.
 			h.div(
 				[h.Class("relative h-8 grow"), h.Role("columnheader"), h.AriaLabel("Shifts")],

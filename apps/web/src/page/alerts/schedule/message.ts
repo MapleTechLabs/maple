@@ -5,6 +5,7 @@ import { Schema } from "effect"
 import { defineMessageUnion } from "foldkit/message"
 import { LoadFailure } from "@maple/views/data/load-failure"
 import * as Dialog from "@maple/views/ui/dialog"
+import { RangeDays } from "../shared/coverage-preview"
 import { OrgMember } from "../shared/org-members"
 
 const outcome = <S extends Schema.Top>(success: S) => Schema.Result(success, LoadFailure)
@@ -26,6 +27,10 @@ export const Message = defineMessageUnion({
 	ClickedPreviousWeek: {},
 	ClickedNextWeek: {},
 	ClickedThisWeek: {},
+	PickedRange: { days: RangeDays },
+	/** A gap in the summary: its bar on the calendar takes focus. */
+	ClickedGap: { index: Schema.Number },
+	CompletedFocusGap: {},
 	/** A final shift's bar: an override over its whole range, for someone else to cover. */
 	ClickedShift: { startMs: Schema.Number, endMs: Schema.Number },
 	ClickedNewOverride: {},

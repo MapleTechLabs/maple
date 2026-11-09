@@ -49,6 +49,7 @@ import {
 } from "./form"
 import { type LayerField, Message } from "./message"
 import { canManage, type Model, zoneItems } from "./model"
+import { schedulePreview } from "./preview"
 import { participantMenuId } from "./update"
 import { stripClass } from "@maple/views/ui/rule"
 
@@ -558,7 +559,21 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 		return dashboardPage(h, header, [skeleton(h, "h-24 w-full"), skeleton(h, "h-80 w-full")])
 	return dashboardPage(h, { ...header, fill: true }, [
 		formScrollArea(h, [
-			formCard(h, [nameSection(h, model), zoneSection(h, model), layersSection(h, model)], FORM_WIDTH),
+			// The form on the left and its live preview on the right; stacked under xl.
+			h.div(
+				[h.Class("grid gap-6 xl:grid-cols-[minmax(0,40rem)_minmax(0,1fr)] xl:items-start")],
+				[
+					formCard(
+						h,
+						[nameSection(h, model), zoneSection(h, model), layersSection(h, model)],
+						FORM_WIDTH,
+					),
+					h.div(
+						[h.Class("min-w-0 rounded-md border bg-card p-4 xl:sticky xl:top-0")],
+						[schedulePreview(h, model)],
+					),
+				],
+			),
 		]),
 		actionBar(h, model),
 	])

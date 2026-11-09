@@ -8,6 +8,7 @@ import * as Dialog from "@maple/views/ui/dialog"
 import { zonedDayStart } from "@maple/views/ui/shift-timeline"
 import type { AppRoute } from "../../../route"
 import { type PageContext, PageOutMessage, type PageReturn } from "../../contract"
+import { DEFAULT_RANGE_DAYS, gapBarId } from "../shared/coverage-preview"
 import { scheduleIdFromUrl } from "../shared/oncall-schedules"
 import { localInputMs, localInputOf } from "../schedule-form/form"
 import {
@@ -18,6 +19,7 @@ import {
 	FetchScheduleMembers,
 	FetchScheduleSession,
 	FetchShifts,
+	FocusScheduleGap,
 	ReadScheduleClock,
 } from "./command"
 import { Message } from "./message"
@@ -30,8 +32,11 @@ type ScheduleRoute = Extract<AppRoute, { readonly _tag: "AlertsSchedule" }>
 export const OVERRIDE_DIALOG_ID = "schedule-override"
 export const DELETE_OVERRIDE_DIALOG_ID = "schedule-delete-override"
 
-/** The calendar shows one week of the schedule zone's days, from today. */
+/** The calendar steps a week of the schedule zone's days at a time. */
 export const CALENDAR_DAYS = 7
+
+/** Prefixes the calendar's gap bar ids. */
+export const CALENDAR_SCOPE = "schedule-calendar"
 
 export const scheduleOf = (model: Model): Option.Option<V2OnCallSchedule> =>
 	AsyncData.getData(model.schedule.data)
@@ -46,7 +51,7 @@ export const rangeOf = (model: Model): Option.Option<Readonly<{ fromMs: number; 
 					toMs: zonedDayStart(
 						model.nowMs,
 						schedule.time_zone,
-						(model.weekOffset + 1) * CALENDAR_DAYS,
+						model.weekOffset * CALENDAR_DAYS + Number(model.rangeDays),
 					),
 				}),
 	)
@@ -73,6 +78,7 @@ export const init = (route: ScheduleRoute, context: PageContext): Return => {
 		schedule: Keyed.idle(),
 		scheduleAskedAtMs: null,
 		weekOffset: 0,
+		rangeDays: DEFAULT_RANGE_DAYS,
 		shifts: Keyed.idle(),
 		overrides: Keyed.idle(),
 		members: null,
@@ -344,6 +350,12 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		ClickedPreviousWeek: () => moveWeek(model, context, model.weekOffset - 1),
 		ClickedNextWeek: () => moveWeek(model, context, model.weekOffset + 1),
 		ClickedThisWeek: () => moveWeek(model, context, 0),
+		PickedRange: ({ days }) => requestShifts({ ...model, rangeDays: days }, context, "Load"),
+		ClickedGap: ({ index }) => ({
+			model,
+			commands: [FocusScheduleGap({ selector: `#${gapBarId(CALENDAR_SCOPE, index)}` })],
+		}),
+		CompletedFocusGap: () => ({ model }),
 		// An ended shift has nothing left to cover; a running one is covered from now to its end.
 		ClickedShift: ({ startMs, endMs }) =>
 			canManage(model) && endMs > (model.nowMs ?? 0) ? openOverride(model, startMs, endMs) : { model },

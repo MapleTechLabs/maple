@@ -306,4 +306,59 @@ describe("schedule form", () => {
 			"FetchScheduleFormSchedule",
 		)
 	})
+
+	describe("coverage preview", () => {
+		test("a layer with nobody in it leaves the next 14 days uncovered and says why", () => {
+			scene(
+				{ update: pageUpdate, view },
+				given(ready()),
+				expectView(text("Primary has no people, so it covers nothing.")).toExist(),
+				expectView(text(/^1 gap in the next 14 days, longest 13d 12h/u)).toExist(),
+				expectView(text("Add people to see shifts")).toExist(),
+			)
+		})
+
+		test("adding a person updates the preview to covered, and a restriction opens gaps", () => {
+			const staffed = run(ready(), [addPerson("l0", 0)])
+			scene(
+				{ update: pageUpdate, view },
+				given(staffed),
+				expectView(text("Covered for the next 14 days")).toExist(),
+				expectView(text(/Primary starts in the past\. Shifts are scheduled from now/u)).toExist(),
+				expectView(role("rowheader", { name: /Final schedule/u })).toExist(),
+			)
+			// Weeknights only (18:00 to 08:00): days and weekends are gaps.
+			const nights = run(staffed, [Message.ClickedAddRestriction({ key: "l0" })])
+			scene(
+				{ update: pageUpdate, view },
+				given(nights),
+				expectView(
+					text(
+						"10 gaps in the next 14 days, longest 2d 10h (Sat 14 Nov 08:00 to Mon 16 Nov 18:00)",
+					),
+				).toExist(),
+				expectView(role("button", { name: "Sat 14 Nov 08:00 to Mon 16 Nov 18:00" })).toExist(),
+			)
+			const focus = pageUpdate(nights, Message.ClickedPreviewGap({ index: 4 }))
+			expect(names(focus.commands)).toEqual(["FocusScheduleFormGap"])
+		})
+
+		test("the range switch and week steps change what the preview covers", () => {
+			const staffed = run(ready(), [addPerson("l0", 0), Message.PickedPreviewRange({ days: "7" })])
+			scene(
+				{ update: pageUpdate, view },
+				given(staffed),
+				expectView(text("Covered for the next 7 days")).toExist(),
+				expectView(text("10 Nov to 16 Nov")).toExist(),
+			)
+			const later = run(staffed, [Message.ClickedPreviewNext()])
+			scene(
+				{ update: pageUpdate, view },
+				given(later),
+				expectView(text("Covered in this period")).toExist(),
+				expectView(text("17 Nov to 23 Nov")).toExist(),
+			)
+			expect(run(later, [Message.ClickedPreviewToday()]).previewWeekOffset).toBe(0)
+		})
+	})
 })

@@ -7,11 +7,13 @@ import * as Combobox from "@maple/views/ui/combobox"
 import * as Menu from "@maple/views/ui/menu"
 import type { AppRoute } from "../../../route"
 import { type PageContext, PageOutMessage, type PageReturn } from "../../contract"
+import { DEFAULT_RANGE_DAYS, gapBarId } from "../shared/coverage-preview"
 import { scheduleHref, scheduleIdFromUrl } from "../shared/oncall-schedules"
 import {
 	FetchExistingSchedule,
 	FetchScheduleFormMembers,
 	FetchScheduleFormSession,
+	FocusPreviewGap,
 	ReadScheduleFormDefaults,
 	SaveSchedule,
 } from "./command"
@@ -34,6 +36,9 @@ type Return = PageReturn<Model, Message>
 type FormRoute = Extract<AppRoute, { readonly _tag: "AlertsScheduleNew" }>
 
 export const ZONE_PICKER_ID = "schedule-form-zone"
+
+/** Prefixes the preview's gap bar ids. */
+export const PREVIEW_SCOPE = "schedule-preview"
 
 export const participantMenuId = (layerKey: string) => `schedule-form-people-${layerKey}`
 
@@ -58,6 +63,8 @@ export const init = (route: FormRoute, context: PageContext): Return => {
 		saveFailure: null,
 		grants: [],
 		isSessionLoaded: false,
+		previewWeekOffset: 0,
+		previewRange: DEFAULT_RANGE_DAYS,
 	}
 	const common = [
 		ReadScheduleFormDefaults(),
@@ -301,6 +308,17 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			editRestriction(model, key, restrictionKey, (restriction) =>
 				edge === "start" ? { ...restriction, startTime: value } : { ...restriction, endTime: value },
 			),
+		ClickedPreviewPrevious: () => ({
+			model: { ...model, previewWeekOffset: model.previewWeekOffset - 1 },
+		}),
+		ClickedPreviewNext: () => ({ model: { ...model, previewWeekOffset: model.previewWeekOffset + 1 } }),
+		ClickedPreviewToday: () => ({ model: { ...model, previewWeekOffset: 0 } }),
+		PickedPreviewRange: ({ days }) => ({ model: { ...model, previewRange: days } }),
+		ClickedPreviewGap: ({ index }) => ({
+			model,
+			commands: [FocusPreviewGap({ selector: `#${gapBarId(PREVIEW_SCOPE, index)}` })],
+		}),
+		CompletedFocusGap: () => ({ model }),
 		ClickedSave: () => save(model),
 		CompletedSave: ({ result }) =>
 			Result.match(result, {

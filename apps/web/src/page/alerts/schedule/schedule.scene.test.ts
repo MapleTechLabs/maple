@@ -110,7 +110,7 @@ describe("on-call schedule page", () => {
 			{ update: pageUpdate, view },
 			given(model),
 			expectView(text("Sun 25")).toExist(),
-			expectView(text("22 Oct to 28 Oct")).toExist(),
+			expectView(text("22 Oct to 4 Nov")).toExist(),
 		)
 	})
 
@@ -122,7 +122,7 @@ describe("on-call schedule page", () => {
 		scene(
 			{ update: pageUpdate, view },
 			given(next.model),
-			expectView(text("17 Nov to 23 Nov")).toExist(),
+			expectView(text("17 Nov to 30 Nov")).toExist(),
 			expectView(role("rowheader", { name: /Final schedule/u })).not.toExist(),
 		)
 		scene(
@@ -454,6 +454,26 @@ describe("on-call schedule page", () => {
 			given(model),
 			Mount.resolve(MountDialog, Dialog.Message.CompletedMountDialog()),
 			expectView(text("Couldn't load members, try reloading the page")).toExist(),
+		)
+	})
+
+	test("the calendar summarises coverage like the editor, with a range switch that reads the new range", () => {
+		const model = loaded(ONCALL_NOW)
+		scene(
+			{ update: pageUpdate, view },
+			given(model),
+			expectView(text("Covered for the next 14 days")).toExist(),
+			expectView(role("group", { name: "Range" })).toExist(),
+		)
+		const month = pageUpdate(model, Message.PickedRange({ days: "28" }))
+		expect(names(month.commands)).toEqual(["FetchOnCallShifts"])
+		expect(Option.map(rangeOf(month.model), (r) => Math.round((r.toMs - r.fromMs) / 86_400_000))).toEqual(
+			Option.some(28),
+		)
+		scene(
+			{ update: pageUpdate, view },
+			given(withShifts(month.model, ONCALL_NOW)),
+			expectView(text("10 Nov to 7 Dec")).toExist(),
 		)
 	})
 })

@@ -1,7 +1,7 @@
 import { OnCallOverrideId, OnCallScheduleId } from "@maple/domain/http"
 import { V2OnCallOverrideCreateParams } from "@maple/domain/http/v2"
 import { Clock, Effect, Schema } from "effect"
-import { Command } from "foldkit"
+import { Command, Dom } from "foldkit"
 import { readGrants } from "../../../data/session-tenant"
 import {
 	createOverride,
@@ -82,4 +82,12 @@ export const DeleteOverride = Command.define("DeleteOnCallOverride", {
 			Effect.result,
 			Effect.map((result) => Message.CompletedDeleteOverride({ overrideId, result })),
 		),
+})
+
+/** A gap's bar takes focus, which scrolls it into view. */
+export const FocusScheduleGap = Command.define("FocusScheduleGap", {
+	args: { selector: Schema.String },
+	messages: [Message.CompletedFocusGap],
+	execute: ({ selector }) =>
+		Dom.focus(selector).pipe(Effect.ignore, Effect.as(Message.CompletedFocusGap())),
 })

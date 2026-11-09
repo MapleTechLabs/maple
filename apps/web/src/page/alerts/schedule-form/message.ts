@@ -7,6 +7,7 @@ import { LoadFailure } from "@maple/views/data/load-failure"
 import * as Combobox from "@maple/views/ui/combobox"
 import * as Menu from "@maple/views/ui/menu"
 import { OrgMember } from "../shared/org-members"
+import { RangeDays } from "../shared/coverage-preview"
 import { RotationKind } from "./form"
 
 const outcome = <S extends Schema.Top>(success: S) => Schema.Result(success, LoadFailure)
@@ -46,6 +47,13 @@ export const Message = defineMessageUnion({
 		edge: Schema.Literals(["start", "end"]),
 		value: Schema.String,
 	},
+	ClickedPreviewPrevious: {},
+	ClickedPreviewNext: {},
+	ClickedPreviewToday: {},
+	PickedPreviewRange: { days: RangeDays },
+	/** A gap in the summary: its bar on the timeline takes focus. */
+	ClickedPreviewGap: { index: Schema.Number },
+	CompletedFocusGap: {},
 	ClickedSave: {},
 	CompletedSave: { result: outcome(V2OnCallSchedule) },
 })
