@@ -247,7 +247,7 @@ const initTab = (model: Model, tab: SettingsTab, context: PageContext): Return =
 			}
 		}
 		case "DataSources": {
-			const step = DataSources.init()
+			const step = DataSources.init(model.search)
 			return {
 				model: { ...model, tab: { _tag: "DataSources", model: step.model } },
 				commands: Command.mapMessages(step.commands ?? [], (message) =>
@@ -373,7 +373,7 @@ const revisitTab = (model: Model, kept: TabModel, context: PageContext): Return 
 			}
 		}
 		case "DataSources": {
-			const step = DataSources.revisit(kept.model)
+			const step = DataSources.revisit(kept.model, model.search)
 			return {
 				model: { ...model, tab: { _tag: "DataSources", model: step.model } },
 				commands: Command.mapMessages(step.commands ?? [], (message) =>

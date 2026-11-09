@@ -1,5 +1,6 @@
+import { type DataSourceKind, ExternalDataSourceId } from "@maple/domain/data-sources"
 import type { V2DataSource } from "@maple/domain/http/v2"
-import { Array as Arr, Option, Result } from "effect"
+import { Array as Arr, Option, Result, Schema } from "effect"
 import { AsyncData } from "foldkit"
 import * as Dialog from "@maple/views/ui/dialog"
 import { revisitData } from "../kit/revisit"
@@ -9,10 +10,33 @@ import { Message, type Model } from "./model"
 import { type Return, sourceById, toast, withSource } from "./state"
 import { updateCatalog } from "./update-catalog"
 
-export const init = (): Return => ({
+const resetForm = { isSubmitted: false, isSaving: false, saveError: null } as const
+
+/** Where `/integrations` sends the tab: one source's page, or a kind's connect form. */
+export type Target = Readonly<{ source?: string | undefined; connect?: DataSourceKind | undefined }>
+
+const decodeSourceId = Schema.decodeUnknownOption(ExternalDataSourceId)
+
+/** The linked source's id, when the link names a valid one. */
+const linkedSource = (target: Target): Option.Option<ExternalDataSourceId> =>
+	target.source === undefined ? Option.none() : decodeSourceId(target.source)
+
+const screenOf = (target: Target): Model["screen"] =>
+	Option.match(linkedSource(target), {
+		onSome: (id) => ({ _tag: "Detail", id }),
+		onNone: () =>
+			target.connect !== undefined
+				? { _tag: "Form", kind: target.connect, editing: null }
+				: { _tag: "List" },
+	})
+
+const catalogCommands = (target: Target) =>
+	Option.match(linkedSource(target), { onSome: (id) => [FetchCatalog({ id })], onNone: () => [] })
+
+export const init = (target: Target = {}): Return => ({
 	model: {
 		sources: AsyncData.Loading(),
-		screen: { _tag: "List" },
+		screen: screenOf(target),
 		draft: emptyDraft,
 		isSubmitted: false,
 		isSaving: false,
@@ -20,7 +44,7 @@ export const init = (): Return => ({
 		tests: [],
 		testingIds: [],
 		saveWarnings: null,
-		catalog: AsyncData.Idle(),
+		catalog: Option.isSome(linkedSource(target)) ? AsyncData.Loading() : AsyncData.Idle(),
 		refreshingId: null,
 		entryDraft: null,
 		entryError: null,
@@ -28,13 +52,28 @@ export const init = (): Return => ({
 		deleteDialog: Dialog.init("data-source-delete", "alert-dialog"),
 		isDeleting: false,
 	},
-	commands: [FetchSources()],
+	commands: [FetchSources(), ...catalogCommands(target)],
 })
 
-/** Back on the tab: the list stays up while it reads again. */
-export const revisit = (model: Model): Return => {
+/** Back on the tab: the list stays up while it reads again; a deep link opens its screen. */
+export const revisit = (model: Model, target: Target = {}): Return => {
 	const sources = revisitData(model.sources, FetchSources)
-	return { model: { ...model, sources: sources.data }, commands: sources.commands }
+	const read = { ...model, sources: sources.data }
+	if (target.source === undefined && target.connect === undefined)
+		return { model: read, commands: sources.commands }
+	const screen = screenOf(target)
+	return {
+		model: {
+			...read,
+			...resetForm,
+			screen,
+			draft: emptyDraft,
+			catalog: screen._tag === "Detail" ? AsyncData.Loading() : read.catalog,
+			entryDraft: null,
+			entryError: null,
+		},
+		commands: [...(sources.commands ?? []), ...catalogCommands(target)],
+	}
 }
 
 /** The open form's source, when it edits one. */
@@ -42,8 +81,6 @@ const editedSource = (model: Model): Option.Option<V2DataSource> =>
 	model.screen._tag === "Form" && model.screen.editing !== null
 		? sourceById(model, model.screen.editing)
 		: Option.none()
-
-const resetForm = { isSubmitted: false, isSaving: false, saveError: null } as const
 
 const submit = (model: Model): Return => {
 	if (model.screen._tag !== "Form" || model.isSaving) return { model }
