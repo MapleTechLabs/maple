@@ -37,8 +37,8 @@ export type OnCallFixture = typeof OnCallFixture.Type
 export const StandOn = Schema.Literals(["lab", "alerts"])
 export type StandOn = typeof StandOn.Type
 
-/** Mon 16 Nov 2026, 08:00 UTC: 09:00 CET for a Berlin viewer. */
-const HANDOFF_MS = Date.UTC(2026, 10, 16, 8)
+/** Mon 16 Nov 2099, 08:00 UTC (09:00 CET): far enough out that the fixture shift never ends. */
+const HANDOFF_MS = Date.UTC(2099, 10, 16, 8)
 
 const LAB_USER = "user_lab"
 
