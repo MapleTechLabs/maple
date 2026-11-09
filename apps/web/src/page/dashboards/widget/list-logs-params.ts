@@ -55,7 +55,7 @@ export const buildListLogsParams = (
 		const key = normalizeKey(clause.key)
 		const typedKey = clause.rawKey ?? clause.key
 		const warn = (warning: string): Acc => ({ ...acc, warnings: [...acc.warnings, warning] })
-		if (key === "search" || key === "body")
+		if (key === "search" || key === "body" || key === "message")
 			return clause.operator === "=" || clause.operator === "contains"
 				? { ...acc, included: { ...acc.included, search: clause.value } }
 				: warn(

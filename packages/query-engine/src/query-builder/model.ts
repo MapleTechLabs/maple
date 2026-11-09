@@ -739,6 +739,7 @@ function applyTracesClause(
 interface LogsFilterAccumulator {
 	serviceName?: string
 	severity?: string
+	search?: string
 	excludedServiceNames?: string[]
 	excludedSeverities?: string[]
 	attributeFilters: AccumulatedAttributeFilter[]
@@ -787,6 +788,23 @@ function applyLogsClause(
 						...filters,
 						excludedSeverities: [...(filters.excludedSeverities ?? []), ...predicate.values],
 					}
+		}),
+		// Message text search, same keys and operators as the logs list widget.
+		// `=` is a substring match too: the spec has only the one search string.
+		Match.whenOr("body", "message", "search", () => {
+			if (clause.operator !== "=" && clause.operator !== "contains") {
+				warnings.push(
+					`Logs filter ${clause.key} supports only = and contains; ignoring ${clause.operator}`,
+				)
+				return filters
+			}
+			if (filters.search !== undefined) {
+				warnings.push(
+					`Only one body filter supported; ignoring ${clause.key} ${clause.operator} ${clause.value}`,
+				)
+				return filters
+			}
+			return { ...filters, search: clause.value }
 		}),
 		Match.orElse(() => {
 			warnings.push(`Unsupported logs filter ignored: ${clause.key}`)
@@ -1903,6 +1921,7 @@ export function formatFiltersAsWhereClause(params: Record<string, unknown>): str
 	scalar("service.name", filters.serviceName, matchModes.serviceName === "contains")
 	scalar("span.name", filters.spanName, matchModes.spanName === "contains")
 	scalar("severity", filters.severity)
+	scalar("body", filters.search, true)
 
 	if (filters.rootSpansOnly === true) {
 		clauses.push("root_only = true")
