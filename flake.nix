@@ -39,6 +39,8 @@
         }
       );
 
+      # Builds from the consumer's nixpkgs, so it needs maple allowed there:
+      # nixpkgs.config.allowUnfreePredicate = p: lib.getName p == "maple";
       overlays.default = final: _prev: { maple = mapleFor final; };
 
       nixosModules.maple = import ./nix/module.nix {
