@@ -315,6 +315,46 @@ describe("audit log tab", () => {
 			expect(Arr.map(loaded.commands ?? [], ({ name }) => name)).toEqual(["ScrollToAuditEntry"])
 		})
 
+		test("a shared entry link still opens its entry when it arrives on a later page", () => {
+			const target = AUDIT_ENTRIES[5]
+			if (target === undefined) throw new Error("fixture")
+			const linked = {
+				tab: "audit-log",
+				entry: encodePublicId(PublicIdPrefixes.auditLogEntry, target.id),
+			} as const
+			const entered = init(linked).model
+			const first = update(
+				entered,
+				Message.CompletedFetchPage({
+					request: entered.request,
+					resolvedSince: null,
+					result: Result.succeed({
+						data: AUDIT_ENTRIES.slice(0, 3),
+						has_more: true,
+						next_cursor: "cursor_2",
+					}),
+				}),
+				linked,
+			).model
+			expect(first.expanded).toEqual([])
+			const asked = update(first, Message.ClickedLoadMore(), linked).model
+			const second = update(
+				asked,
+				Message.CompletedFetchPage({
+					request: asked.request,
+					resolvedSince: null,
+					result: Result.succeed({
+						data: AUDIT_ENTRIES.slice(3),
+						has_more: false,
+						next_cursor: null,
+					}),
+				}),
+				linked,
+			)
+			expect(second.model.expanded).toEqual([target.id])
+			expect(Arr.map(second.commands ?? [], ({ name }) => name)).toEqual(["ScrollToAuditEntry"])
+		})
+
 		test("the Origin section names the country an entry came from", () => {
 			const target = AUDIT_ENTRIES[4]
 			if (target === undefined) throw new Error("fixture")

@@ -353,9 +353,8 @@ export const update = (model: Model, message: Message, search: SettingsSearch): 
 			const linked = linkedAuditEntryId(search)
 			return Result.match(result, {
 				onSuccess: (page) => {
-					// A shared link opens on its entry, once, when the first page holds it.
+					// A shared link opens on its entry, once, on whichever page holds it.
 					const reveal =
-						request.cursor === undefined &&
 						linked !== null &&
 						!model.expanded.includes(linked) &&
 						Arr.some(page.data, (entry) => entry.id === linked)

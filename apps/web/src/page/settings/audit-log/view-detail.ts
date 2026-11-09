@@ -216,7 +216,10 @@ const isLabelledKey = (key: string): key is keyof typeof METADATA_LABELS =>
 const metadataLabel = (key: string): string =>
 	isLabelledKey(key) ? METADATA_LABELS[key] : Str.capitalize(Str.replaceAll("_", " ")(key))
 
-/** The audit log filtered to the minute around one entry, with that entry open. */
+/**
+ * The audit log ending at one entry, with that entry open. Newest first, so the entry heads the
+ * first page however busy the minute was, and the minute before it follows as context.
+ */
 export const entryHref = (entry: V2AuditLogEntry): string => {
 	const at = DateTime.toEpochMillis(DateTime.makeUnsafe(entry.occurred_at))
 	return hrefOf(
@@ -225,7 +228,7 @@ export const entryHref = (entry: V2AuditLogEntry): string => {
 				tab: "audit-log",
 				kind: "all",
 				since: new Date(at - 60_000).toISOString(),
-				until: new Date(at + 60_000).toISOString(),
+				until: entry.occurred_at,
 				entry: encodePublicId(PublicIdPrefixes.auditLogEntry, entry.id),
 			},
 		}),
