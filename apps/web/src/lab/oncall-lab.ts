@@ -54,6 +54,8 @@ export const LabState = Schema.Literals([
 	"schedules",
 	"strip",
 	"editor-new",
+	"editor-covered",
+	"editor-gaps",
 	"editor-edit",
 	"editor-invalid",
 	"editor-error",
@@ -186,6 +188,12 @@ const hubFor = (state: LabState): Step<HubModel.Model, HubMessage.Message> => {
 const formStep = (model: FormModel.Model, message: FormMessage.Message) =>
 	FormUpdate.update(model, message, CONTEXT)
 
+const addPerson = (index: number) =>
+	FormMessage.Message.GotParticipantMenuMessage({
+		key: "l0",
+		message: { _tag: "ClickedItem", index, item: { kind: "Item", value: memberId(index) } },
+	})
+
 const formFor = (state: LabState): Step<FormModel.Model, FormMessage.Message> => {
 	const isEdit = state === "editor-edit" || state === "editor-error"
 	const start = FormUpdate.init(
@@ -252,7 +260,17 @@ const formFor = (state: LabState): Step<FormModel.Model, FormMessage.Message> =>
 					]
 				: state === "editor-new"
 					? [FormMessage.Message.ChangedName({ value: "Checkout primary" })]
-					: []
+					: state === "editor-covered" || state === "editor-gaps"
+						? [
+								FormMessage.Message.ChangedName({ value: "Checkout primary" }),
+								addPerson(0),
+								addPerson(1),
+								// Weeknights only: the days and weekends show as gaps.
+								...(state === "editor-gaps"
+									? [FormMessage.Message.ClickedAddRestriction({ key: "l0" })]
+									: []),
+							]
+						: []
 	return fold(start, [...base, ...extra], formStep)
 }
 
