@@ -160,9 +160,10 @@ function door(scope: Scope, { position, finish }: { position: Vec3; finish: Fini
 			? doorSteps(scope, { door: position, finish })
 			: porch(scope, { door: position, finish }),
 		lantern(scope, { position: [x, y, z - 0.33], finish: lamp }),
+		// Under the lantern and inside the pad edge, so it never spills over the selection rail.
 		finish.night &&
 			lit &&
-			lampPool({ position: [x + 0.24, 0.006, z - 0.24], radius: 0.5, color: finish.glow }),
+			lampPool({ position: [x + 0.05, 0.006, z - 0.3], radius: 0.38, color: finish.glow }),
 	])
 }
 

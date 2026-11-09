@@ -2,7 +2,7 @@ import { mapPalette } from "../../../components/service-map/three/appearance"
 import * as THREE from "three"
 import { Array as Arr } from "effect"
 import { describe, expect, it } from "vitest"
-import { type Child, makeScope, type Scope } from "./kit"
+import { type Child, disposeTree, group, makeScope, type Scope } from "./kit"
 import { butterflies, fallingLeaves } from "./life"
 import { breeze } from "./props-kit"
 
@@ -71,13 +71,36 @@ describe("butterflies in the scene", () => {
 
 	it("stay within a short flight of the glade they belong to", () => {
 		const scene = flock(() => true)
-		scene.step(40)
-		// Each instance matrix, wings and bodies alike, carries its position in elements 12 to 14.
-		const nearest = Arr.map(Arr.chunksOf(scene.matrices(), 16), (m) => {
-			const [x, z] = [m[12] ?? 0, m[14] ?? 0]
-			return Math.min(Math.hypot(x, z), Math.hypot(x - 2, z + 1))
+		// Sampled every second for a minute; each instance matrix carries its position in 12 to 14.
+		const farthest = Arr.map(Arr.range(1, 60), () => {
+			scene.step(1)
+			return Math.max(
+				...Arr.map(Arr.chunksOf(scene.matrices(), 16), (m) => {
+					const [x, z] = [m[12] ?? 0, m[14] ?? 0]
+					return Math.min(Math.hypot(x, z), Math.hypot(x - 2, z + 1))
+				}),
+			)
 		})
-		expect(Math.max(...nearest)).toBeLessThan(1.4)
+		expect(Math.max(...farthest)).toBeLessThan(1.4)
+	})
+})
+
+describe("freeing a rebuilt scene", () => {
+	it("releases the per-instance buffers of instanced life", () => {
+		const scope = makeScope()
+		const root = group({}, [
+			fallingLeaves(scope, { world, palette: mapPalette(false), running: () => true }),
+		])
+		const released = { count: 0 }
+		const instanced = Arr.filter(root.children, (child) => child instanceof THREE.InstancedMesh)
+		Arr.forEach(instanced, (mesh) =>
+			mesh.addEventListener("dispose", () => {
+				released.count += 1
+			}),
+		)
+		disposeTree(root)
+		expect(instanced.length).toBeGreaterThan(0)
+		expect(released.count).toBe(instanced.length)
 	})
 })
 
