@@ -24,6 +24,9 @@ const RANGE_OPTIONS: ReadonlyArray<Readonly<{ value: RangeDays; label: string }>
 	{ value: "28", label: "4 weeks" },
 ]
 
+/** The summary links this many gaps; the rest are on the timeline. */
+const MAX_GAP_LINKS = 6
+
 /** The element id of a gap's bar, so its summary link can scroll to and focus it. */
 export const gapBarId = (scope: string, index: number): string => `${scope}-gap-${index}`
 
@@ -145,10 +148,8 @@ const gapSummaryView = <M>(h: HtmlBuilder<M>, options: CoveragePreviewOptions<M>
 		...(isCovered
 			? []
 			: [
-					hstack(
-						h,
-						{ gap: "1", wrap: true },
-						Arr.map(options.gaps, (gap, index) =>
+					hstack(h, { gap: "1", wrap: true }, [
+						...Arr.map(Arr.take(options.gaps, MAX_GAP_LINKS), (gap, index) =>
 							button(
 								h,
 								{
@@ -162,7 +163,16 @@ const gapSummaryView = <M>(h: HtmlBuilder<M>, options: CoveragePreviewOptions<M>
 								[gapRangeText(gap, options.timeZone)],
 							),
 						),
-					),
+						...(options.gaps.length > MAX_GAP_LINKS
+							? [
+									typography(
+										h,
+										{ size: "xs", tone: "muted", attributes: [h.Key("more")] },
+										[`and ${options.gaps.length - MAX_GAP_LINKS} more on the timeline`],
+									),
+								]
+							: []),
+					]),
 				]),
 	])
 }

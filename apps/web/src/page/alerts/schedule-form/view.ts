@@ -559,9 +559,9 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 		return dashboardPage(h, header, [skeleton(h, "h-24 w-full"), skeleton(h, "h-80 w-full")])
 	return dashboardPage(h, { ...header, fill: true }, [
 		formScrollArea(h, [
-			// The form on the left and its live preview on the right; stacked under xl.
+			// The form on the left and its live preview on the right; under 2xl the preview follows the form.
 			h.div(
-				[h.Class("grid gap-6 xl:grid-cols-[minmax(0,40rem)_minmax(0,1fr)] xl:items-start")],
+				[h.Class("grid gap-6 2xl:grid-cols-[minmax(0,40rem)_minmax(0,1fr)] 2xl:items-start")],
 				[
 					formCard(
 						h,
@@ -569,7 +569,7 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 						FORM_WIDTH,
 					),
 					h.div(
-						[h.Class("min-w-0 rounded-md border bg-card p-4 xl:sticky xl:top-0")],
+						[h.Class("min-w-0 rounded-md border bg-card p-4 2xl:sticky 2xl:top-0")],
 						[schedulePreview(h, model)],
 					),
 				],
