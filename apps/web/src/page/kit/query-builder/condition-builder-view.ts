@@ -114,7 +114,11 @@ const fieldPicker = (
 			Message.GotConditionField({ queryId: query.id, rowId: row.id, message }),
 		viewInputs: {
 			items: Arr.map(items, (item) => item.value),
-			ariaLabel: `Field for condition ${index + 1}`,
+			// The label replaces the trigger's text for screen readers, so it carries the pick.
+			ariaLabel:
+				row.key === ""
+					? `Field for condition ${index + 1}`
+					: `Field for condition ${index + 1}: ${row.key}`,
 			searchPlaceholder: "Search fields…",
 			emptyText: "No fields match",
 			trigger: row.key === "" ? ["Choose field"] : fieldTrigger(h, fieldOf(row.key, query.dataSource)),
