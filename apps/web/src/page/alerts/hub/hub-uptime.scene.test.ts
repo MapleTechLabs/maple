@@ -324,6 +324,25 @@ describe("alerts hub, Uptime tab", () => {
 		expect(done.model.deletingMonitorId).toBeNull()
 	})
 
+	test("the header's main create button makes an uptime check here, for admins only", () => {
+		scene(
+			{ update: pageUpdate, view },
+			given(withMonitors(THREE)),
+			expectView(role("link", { name: "New check" })).toHaveAttr("href", "/alerts/uptime/new"),
+			expectView(role("link", { name: "New rule" })).not.toExist(),
+		)
+		const asMember = pageUpdate(
+			withMonitors(THREE),
+			Message.CompletedFetchSession({ orgId: ORG, grants: MEMBER }),
+		).model
+		scene(
+			{ update: pageUpdate, view },
+			given(asMember),
+			expectView(role("link", { name: "New check" })).not.toExist(),
+			expectView(role("link", { name: "New rule" })).toHaveAttr("href", "/alerts/create"),
+		)
+	})
+
 	test("the New rule chevron opens both kinds, and Uptime check goes to the uptime form", () => {
 		scene(
 			{ update: pageUpdate, view },

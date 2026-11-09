@@ -19,6 +19,7 @@ import { navShell, type NavShellCount, type NavShellSection } from "../../kit/na
 import type { BreadcrumbEntry } from "../../../shell"
 import { alertsHref, createHref } from "../shared/links"
 import { newSloHref } from "../shared/slo-commands"
+import { newMonitorHref } from "../shared/uptime-commands"
 import {
 	type AlertsTab,
 	anomalyOverviewOf,
@@ -194,17 +195,20 @@ const newRuleItem = (
 	],
 })
 
-/** The split "New rule": the main part opens the telemetry editor, the chevron offers both kinds. */
-const newRuleButton = (h: H, model: Model): Html =>
-	hstack(h, { align: "center" }, [
+/** The split create button: the main part opens the tab's own kind (an uptime check on Uptime, else a
+ * telemetry rule), the chevron offers every kind. */
+const newRuleButton = (h: H, model: Model, tab: AlertsTab): Html => {
+	const serviceName = model.search.serviceName
+	const uptimeLead = tab === "uptime" && canManage(model)
+	return hstack(h, { align: "center" }, [
 		linkButton(
 			h,
 			{
 				size: "sm",
-				href: createHref({ serviceName: model.search.serviceName }),
+				href: uptimeLead ? newMonitorHref({ serviceName }) : createHref({ serviceName }),
 				className: splitButtonClass("lead"),
 			},
-			[icon(h, "PlusIcon"), "New rule"],
+			[icon(h, "PlusIcon"), uptimeLead ? "New check" : "New rule"],
 		),
 		h.submodel({
 			slotId: model.newRuleMenu.id,
@@ -267,6 +271,7 @@ const newRuleButton = (h: H, model: Model): Html =>
 			toParentMessage: (message) => Message.GotNewRuleMenuMessage({ message }),
 		}),
 	])
+}
 
 /** The SLOs tab lists some; the empty one offers "New SLO" itself. */
 const hasSlos = (model: Model): boolean =>
@@ -329,7 +334,7 @@ const headerActions = (h: H, model: Model, tab: AlertsTab): Html =>
 					),
 				]
 			: []),
-		newRuleButton(h, model),
+		newRuleButton(h, model, tab),
 	])
 
 /** `SyncUnavailable`: the rules or incidents stream stopped before its first answer. */
