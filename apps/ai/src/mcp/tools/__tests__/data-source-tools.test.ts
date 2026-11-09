@@ -1,5 +1,8 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest"
-import { Array as Arr, Schema } from "effect"
+import { Array as Arr, Effect, Schema } from "effect"
+import { DISABLED_ORGANIZATION_FEATURE_FLAGS } from "@maple/domain/organization-feature-flags"
+import { OrganizationFeatureFlagsService } from "@maple/backend/services/org/OrganizationFeatureFlagsService"
+import { McpToolExecutor } from "../../dispatcher"
 import {
 	DataSourceConnectionError,
 	DataSourceLimitError,
@@ -28,7 +31,13 @@ const world = makeDataSourceWorld()
 let empty: EvalRuntime
 let seeded: EvalRuntime
 let capped: EvalRuntime
+let flaggedOff: EvalRuntime
 beforeAll(async () => {
+	flaggedOff = makeEvalRuntime(
+		OrganizationFeatureFlagsService.fixed(DISABLED_ORGANIZATION_FEATURE_FLAGS),
+		fakeDataSources(makeDataSourceWorld()),
+	)
+	await flaggedOff.runtime.runPromise(seedDataSources)
 	empty = makeEvalRuntime(undefined, fakeDataSources(makeDataSourceWorld()))
 	seeded = makeEvalRuntime(undefined, fakeDataSources(world))
 	capped = makeEvalRuntime(undefined, fakeDataSources(makeDataSourceWorld()))
@@ -39,12 +48,36 @@ afterAll(async () => {
 	await empty.dispose()
 	await seeded.dispose()
 	await capped.dispose()
+	await flaggedOff.dispose()
 })
 
 const decode = <S extends Schema.Codec<unknown, unknown>>(schema: S, result: McpToolResult) =>
 	Schema.decodeSync(schema)(result.structuredContent)
 
 const WINDOW = { start_time: "2026-11-01 00:00:00", end_time: "2026-11-08 00:00:00" }
+
+describe("an org outside the dataSources rollout", () => {
+	it("cannot reach its sources through any tool", async () => {
+		const calls: ReadonlyArray<readonly [string, Record<string, unknown>]> = [
+			["list_data_sources", {}],
+			["search_data_sources", { query: "payments" }],
+			["describe_data_source", { data_source: "shop-prod" }],
+			["query_data_source", { data_source: "shop-prod", sql: "SELECT 1" }],
+		]
+		for (const [tool, params] of calls) {
+			const result = await runToolDirect(flaggedOff, tool, params)
+			expect(result.failureCategory).toBe("unavailable")
+			expect(markdown(result)).toContain("not enabled for this organization")
+		}
+	})
+
+	it("gives the prompt and resource no sources to name", async () => {
+		const sources = await flaggedOff.runtime.runPromise(
+			McpToolExecutor.pipe(Effect.flatMap((executor) => executor.listDataSources(flaggedOff.tenant))),
+		)
+		expect(sources).toEqual([])
+	})
+})
 
 describe("list_data_sources", () => {
 	it("says none are connected and points to Settings when the org has none", async () => {

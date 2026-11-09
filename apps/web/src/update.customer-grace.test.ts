@@ -57,6 +57,7 @@ const snapshot: ClerkSnapshot = {
 		isRegionOpen: false,
 		flags: {
 			aiAutoTriage: false,
+			dataSources: false,
 			releases: false,
 			securityAudit: false,
 			statusPages: false,

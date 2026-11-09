@@ -4,10 +4,15 @@ import { QueryDataSourceOutput } from "@maple/domain/mcp-outputs"
 import { parseWarehouseDateTime } from "@maple/query-engine"
 import { ResourceExternalQuery, type ExternalQuery } from "@maple/domain/data-sources"
 import { ExternalDataSourceService } from "@maple/backend/services/data-sources/ExternalDataSourceService"
-import { CurrentMcpTenant } from "../lib/query-warehouse"
 import * as P from "../lib/params"
 import { doc } from "../lib/tool-doc"
-import { AGENT_AUDIENCE, mapDataSourceError, planLine, queryLanguageLabel } from "../lib/data-sources"
+import {
+	AGENT_AUDIENCE,
+	tenantWithDataSources,
+	mapDataSourceError,
+	planLine,
+	queryLanguageLabel,
+} from "../lib/data-sources"
 import { exampleQuery } from "../lib/data-source-cheat-sheet"
 import { cellToString, toJson } from "./run-sql"
 
@@ -68,7 +73,7 @@ export function registerQueryDataSourceTool(server: McpToolRegistrar) {
 			const query: ExternalQuery =
 				resource === undefined ? { _tag: "sql", sql: sql ?? "" } : { _tag: "resource", ...resource }
 			const { st, et } = yield* window.resolve(params, TOOL)
-			const tenant = yield* CurrentMcpTenant
+			const tenant = yield* tenantWithDataSources(TOOL)
 			const service = yield* ExternalDataSourceService
 			const source = yield* service
 				.get(tenant.orgId, params.data_source, AGENT_AUDIENCE)
