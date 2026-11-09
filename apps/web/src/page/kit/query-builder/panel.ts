@@ -8,6 +8,16 @@ import type { Resources } from "../../../platform/resources"
 import * as Combobox from "@maple/views/ui/combobox"
 import * as Select from "@maple/views/ui/select"
 import { QueryChange } from "./change"
+import {
+	addedCondition,
+	changedWhereMode,
+	fieldStep,
+	isOperatorSelect,
+	operatorSelectId,
+	operatorStep,
+	removedCondition,
+	valuesStep,
+} from "./conditions"
 import { groupBySelectionOf } from "./draft"
 import { Message, type Model, OutMessage } from "./panel-message"
 import { type PanelInputs, whereStep } from "./where"
@@ -15,6 +25,7 @@ import { Array as Arr, Option, String as Str } from "effect"
 
 export * from "./panel-message"
 export type { PanelInputs } from "./where"
+export { operatorSelectId }
 
 type Return = Update.ReturnWithOutMessage<Model, Message, OutMessage, Resources>
 
@@ -123,10 +134,11 @@ const metricStep = (model: Model, queryId: string, value: string, message: Combo
 		: { model: lifted, commands }
 }
 
-/** Where-editor Messages need `inputs` (the drafts and autocomplete values); without them they are ignored. */
+/** Where-editor and condition-builder Messages need `inputs` (the drafts and autocomplete values); without them they are ignored. */
 export const update = (model: Model, message: Message, inputs?: PanelInputs): Return =>
 	Message.match<Return>(message, {
-		GotSelectMessage: ({ id, message: inner }) => selectStep(model, id, inner),
+		GotSelectMessage: ({ id, message: inner }) =>
+			isOperatorSelect(id) ? operatorStep(model, id, inner, inputs) : selectStep(model, id, inner),
 		GotGroupByMessage: ({ queryId, message: inner }) => groupByStep(model, queryId, inner, inputs),
 		GotMetricMessage: ({ queryId, value, message: inner }) => metricStep(model, queryId, value, inner),
 		ToggledCollapsed: ({ queryId }) => ({
@@ -140,4 +152,11 @@ export const update = (model: Model, message: Message, inputs?: PanelInputs): Re
 		ClickedRemove: ({ queryId }) => ({ model, outMessage: OutMessage.ClickedRemove({ queryId }) }),
 		GotWhereField: ({ message: inner }) =>
 			inputs === undefined ? { model } : whereStep(model, inner, inputs),
+		ChangedWhereMode: ({ queryId, mode }) => changedWhereMode(model, queryId, mode),
+		ClickedAddCondition: ({ queryId }) => addedCondition(model, queryId, inputs),
+		ClickedRemoveCondition: ({ queryId, rowId }) => removedCondition(model, queryId, rowId, inputs),
+		GotConditionField: ({ queryId, rowId, message: inner }) =>
+			fieldStep(model, queryId, rowId, inner, inputs),
+		GotConditionValues: ({ queryId, rowId, message: inner }) =>
+			valuesStep(model, queryId, rowId, inner, inputs),
 	})

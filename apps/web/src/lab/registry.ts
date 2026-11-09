@@ -436,6 +436,14 @@ export const LAB_ENTRIES: ReadonlyArray<LabEntry> = [
 		session: "none",
 	},
 	{
+		path: "/lab/condition-builder",
+		title: "Condition builder",
+		description:
+			"The query panel's where clause as field, operator and value rows: empty, populated, a clause the rows can't show, and text mode.",
+		kind: "lab",
+		session: "none",
+	},
+	{
 		path: "/lab/time-range",
 		title: "Time range picker",
 		description:

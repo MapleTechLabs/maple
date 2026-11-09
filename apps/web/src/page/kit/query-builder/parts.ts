@@ -5,13 +5,22 @@ import * as Combobox from "@maple/views/ui/combobox"
 import { chipsView } from "@maple/views/ui/combobox-view"
 import { filterChip } from "@maple/views/ui/filter-chip"
 import { input } from "@maple/views/ui/input"
-import * as Select from "@maple/views/ui/select"
-import { view as selectView, type SelectOption } from "@maple/views/ui/select-view"
 import type { AddOnKey } from "./change"
 import { groupBySelectionOf, type QueryDraft } from "./draft"
 import { Message, type Model } from "./panel"
 import { whereEditor } from "./where-editor"
+import { button } from "@maple/views/ui/button"
+import { icon } from "@maple/views/ui/icon"
+import { segmentedSelect } from "@maple/views/ui/segmented-select"
+import { hstack, vstack } from "@maple/views/ui/stack"
+import { typography } from "@maple/views/ui/typography"
+import { conditionBuilder } from "./condition-builder-view"
+import { conditionRowsOf, whereModeOf } from "./conditions"
+import type { WhereMode } from "./panel-message"
 import { whereSpecOf, whereTextareaId } from "./where"
+import { panelSelect } from "./panel-select"
+
+export { panelSelect }
 import { Array as Arr, Record as Rec, Option } from "effect"
 
 // The pieces of a `QueryPanel` body: the where clause, the add-on toggles and their sections.
@@ -26,38 +35,6 @@ export const ADD_ON_KEYS: ReadonlyArray<{ key: AddOnKey; label: string }> = [
 	{ key: "legend", label: "Legend" },
 ]
 
-/** One of the panel's selects, kept by id; its value is always the draft's. */
-export const panelSelect = (
-	h: H,
-	model: Model,
-	id: string,
-	value: string,
-	options: ReadonlyArray<SelectOption>,
-	inputs: Readonly<{
-		size?: "sm" | "default"
-		className?: string
-		ariaLabel?: string
-		/** Places the trigger and its siblings (hidden input, portal) in the caller's layout. */
-		toView: (parts: ReadonlyArray<Html>) => Html
-	}>,
-): Html => {
-	const index = Option.getOrNull(Arr.findFirstIndex(options, (option) => option.value === value))
-	const current = model.selects[id] ?? Select.init(id, { value, selectedIndex: index })
-	return h.submodel({
-		slotId: `${model.slotPrefix}-select-${id}`,
-		model: { ...current, value },
-		view: selectView,
-		toParentMessage: (message) => Message.GotSelectMessage({ id, message }),
-		viewInputs: {
-			entries: Arr.map(options, (item) => ({ _tag: "Item" as const, item })),
-			size: inputs.size,
-			className: inputs.className,
-			ariaLabel: inputs.ariaLabel,
-			toView: inputs.toView,
-		},
-	})
-}
-
 const WHERE_PLACEHOLDER = {
 	traces: 'service.name = "checkout" AND status.code = "Error"',
 	logs: 'service.name = "checkout" AND severity = "ERROR"',
@@ -67,21 +44,21 @@ const WHERE_PLACEHOLDER = {
 
 const WHERE_TEXTAREA_CLASS = "min-h-[32px] resize-y text-xs"
 
-/** `WhereClauseEditor`: the textarea under its highlight overlay, and its suggestion list. */
-export const whereClauseEditor = (
+/** The text editor: the textarea under its highlight overlay, and its suggestion list. */
+const whereTextEditor = (
 	h: H,
 	model: Model,
 	query: QueryDraft,
 	values: WhereClauseAutocompleteValues,
-	options: Readonly<{ placeholder?: string; className?: string }> = {},
+	placeholder: string | undefined,
 ): Html =>
 	whereEditor(h, {
 		id: whereTextareaId(query.id),
 		value: query.whereClause,
 		ariaLabel: `Where clause for query ${query.name}`,
-		placeholder: options.placeholder ?? WHERE_PLACEHOLDER[query.dataSource],
+		placeholder: placeholder ?? WHERE_PLACEHOLDER[query.dataSource],
 		rows: 1,
-		className: options.className ?? "flex-1",
+		className: "w-full",
 		textareaClassName: WHERE_TEXTAREA_CLASS,
 		onInput: (value) => Message.ChangedText({ queryId: query.id, field: "whereClause", value }),
 		autocomplete: {
@@ -92,6 +69,61 @@ export const whereClauseEditor = (
 			toMessage: (message) => Message.GotWhereField({ message }),
 		},
 	})
+
+const UNPARSEABLE_NOTE = "This filter uses syntax the builder can't show, edit as text"
+
+/**
+ * `WhereClauseEditor`: condition rows when the clause reads as rows (the default), else the text
+ * editor; a Builder/Text switch under it. Both edit the same where-clause string.
+ */
+export const whereClauseEditor = (
+	h: H,
+	model: Model,
+	query: QueryDraft,
+	values: WhereClauseAutocompleteValues,
+	options: Readonly<{ placeholder?: string; className?: string }> = {},
+): Html => {
+	const rows = conditionRowsOf(model, query)
+	const preferred = whereModeOf(model, query)
+	const isBuilder = preferred === "builder" && Option.isSome(rows)
+	const leading = isBuilder
+		? button(
+				h,
+				{
+					variant: "ghost",
+					size: "xs",
+					className: "text-muted-foreground",
+					attributes: [h.OnClick(Message.ClickedAddCondition({ queryId: query.id }))],
+				},
+				[icon(h, "PlusIcon"), "Add condition"],
+			)
+		: preferred === "builder"
+			? typography(h, { size: "xs", tone: "muted" }, [UNPARSEABLE_NOTE])
+			: h.empty
+	const toggle = segmentedSelect(h, {
+		options: [
+			{ value: "builder", label: "Builder", isDisabled: Option.isNone(rows) },
+			{ value: "text", label: "Text" },
+		],
+		value: isBuilder ? "builder" : "text",
+		onChange: (mode: WhereMode) => Message.ChangedWhereMode({ queryId: query.id, mode }),
+		size: "xs",
+		ariaLabel: `Where clause editor for query ${query.name}`,
+		className: "ml-auto shrink-0",
+	})
+	return vstack(h, { gap: "1.5", className: options.className ?? "flex-1 min-w-0" }, [
+		...(isBuilder
+			? conditionBuilder(
+					h,
+					model,
+					query,
+					Option.getOrElse(rows, () => []),
+					values,
+				)
+			: [whereTextEditor(h, model, query, values, options.placeholder)]),
+		hstack(h, { gap: "2", wrap: true }, [leading, toggle]),
+	])
+}
 
 /** A controlled `<Input>` that reports each keystroke. */
 export const textInput = <M>(
