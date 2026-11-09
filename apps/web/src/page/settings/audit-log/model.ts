@@ -116,5 +116,8 @@ export const Message = defineMessageUnion({
 		lastDay: CustomRange.CalendarDate,
 	},
 	GotCustomRangeMessage: { message: CustomRange.Message },
+	/** "Filter" beside a value in an entry's detail: the filter key and the value to filter by. */
+	ClickedPivot: { key: Schema.String, value: Schema.String },
+	CompletedScrollToEntry: {},
 })
 export type Message = typeof Message.Type

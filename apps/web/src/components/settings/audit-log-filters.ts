@@ -1,5 +1,6 @@
 import { auditActionLabel, auditResourceLabel } from "@maple/domain/audit-actions"
 import type { AuditActorType, AuditOutcome } from "@maple/domain/http"
+import { decodePublicId, PublicIdPrefixes } from "@maple/domain/http/v2"
 import { Array as Arr, Option, String as Str } from "effect"
 
 export interface AuditLogSearch {
@@ -125,6 +126,11 @@ export function parseAuditLogSearch(search: AuditLogSearch): AuditLogFilters {
 		affectedUserId: isUserId(search.affected) ? search.affected : undefined,
 		requestId: isRequestId(search.request) ? search.request : undefined,
 	}
+}
+
+/** The entry a shared link points at (`?entry=alog_…`), as the internal id rows carry; none if malformed. */
+export function linkedAuditEntryId(search: { readonly entry?: string | undefined }): string | null {
+	return search.entry === undefined ? null : decodePublicId(PublicIdPrefixes.auditLogEntry, search.entry)
 }
 
 /** The filter one pasted value stands for: an id of a known shape, or an action name. */

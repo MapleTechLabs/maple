@@ -1,4 +1,9 @@
-import { auditActionLabel, AuditResourceLabels, AuditResources } from "@maple/domain/audit-actions"
+import {
+	auditActionLabel,
+	AuditResourceLabels,
+	AuditResources,
+	auditResourceLabel,
+} from "@maple/domain/audit-actions"
 import type { AuditActorType, AuditLogSource } from "@maple/domain/http"
 import { encodePublicId, PublicIdPrefixes, type V2ApiKey, type V2AuditLogEntry } from "@maple/domain/http/v2"
 import { EMPTY_VALUE } from "@maple/ui/lib/format"
@@ -41,8 +46,8 @@ import { relativeTime } from "../../kit/relative-time"
 import { filteredEmpty } from "@maple/views/ui/signal-empty-state"
 import { settingsSection } from "../kit/section"
 import { Message, type Model } from "./model"
-import { ANY, ANYONE } from "./update"
-import { auditDetail, resourceHref } from "./view-detail"
+import { ANY, ANYONE, entryRowId } from "./update"
+import { auditDetail, memberName, resourceHref } from "./view-detail"
 import { typography, typographyClass } from "@maple/views/ui/typography"
 import { hstack, hstackClass, vstack, vstackClass } from "@maple/views/ui/stack"
 import { Array as Arr, String as Str, Option, Order, Record as Rec } from "effect"
@@ -113,8 +118,11 @@ const abbreviateId = (id: string): string => {
 	)
 }
 
-const actorDisplayName = (entry: V2AuditLogEntry): string | null =>
-	entry.actor_name ?? (entry.actor_id === null ? null : abbreviateId(entry.actor_id))
+/** The name frozen on the entry, else the member's current name, else a short id. */
+const actorDisplayName = (model: Model, entry: V2AuditLogEntry): string | null =>
+	entry.actor_name ??
+	memberName(model, entry.actor_id) ??
+	(entry.actor_id === null ? null : abbreviateId(entry.actor_id))
 
 const rangeLabel = (range: AuditDateRange, timeZone: string): string => {
 	if (range.kind === "all") return "All time"
@@ -321,18 +329,15 @@ const personFilter = (
 
 // ROWS
 
-const actorCell = (h: H, entry: V2AuditLogEntry): Html => {
+const actorCell = (h: H, model: Model, entry: V2AuditLogEntry): Html => {
 	const actor = ACTOR_BADGES[entry.actor_type]
-	const name = actorDisplayName(entry)
+	const name = actorDisplayName(model, entry)
+	const isNamed = entry.actor_name !== null || memberName(model, entry.actor_id) !== null
 	return h.div(
 		[h.Class(cn(COL.actor, hstackClass({ gap: "1.5" })))],
 		[
 			entry.actor_type === "user"
-				? avatarFallback(
-						h,
-						{ className: "size-4 shrink-0 text-4xs" },
-						initialsOf(entry.actor_name ?? entry.actor_id ?? ""),
-					)
+				? avatarFallback(h, { className: "size-4 shrink-0 text-4xs" }, initialsOf(name ?? ""))
 				: badge(h, { variant: actor.variant, size: "sm", className: "shrink-0" }, [actor.label]),
 			...(name === null
 				? []
@@ -341,13 +346,10 @@ const actorCell = (h: H, entry: V2AuditLogEntry): Html => {
 							h,
 							{
 								text:
-									entry.actor_name !== null && entry.actor_id !== null
+									isNamed && entry.actor_id !== null
 										? `${name} (${entry.actor_id})`
 										: (entry.actor_id ?? name),
-								className: cn(
-									"text-xs",
-									entry.actor_name === null && "text-muted-foreground",
-								),
+								className: cn("text-xs", !isNamed && "text-muted-foreground"),
 							},
 							[name],
 						),
@@ -371,8 +373,8 @@ const actionLabel = (h: H, action: string): ReadonlyArray<Html> => {
 
 const deniedBadge = (h: H) => badge(h, { variant: "crit", size: "sm", className: "shrink-0" }, ["Denied"])
 
-const resourceCell = (h: H, entry: V2AuditLogEntry): Html => {
-	const display = auditResourceDisplay(entry)
+const resourceCell = (h: H, model: Model, entry: V2AuditLogEntry): Html => {
+	const display = withMemberName(model, entry, auditResourceDisplay(entry))
 	if (display === null) return typography(h, { size: "xs", tone: "muted" }, [EMPTY_VALUE])
 	if (display.link === null) return truncatedText(h, { text: display.text, className: "text-xs" })
 	return textLink(
@@ -388,13 +390,25 @@ const resourceCell = (h: H, entry: V2AuditLogEntry): Html => {
 	)
 }
 
+/** A membership change acts on a person: name them rather than showing their id. */
+const withMemberName = (
+	model: Model,
+	entry: V2AuditLogEntry,
+	display: ReturnType<typeof auditResourceDisplay>,
+): ReturnType<typeof auditResourceDisplay> => {
+	const name = memberName(model, entry.affected_user)
+	return display === null || name === null || entry.resource_type !== "member"
+		? display
+		: { ...display, text: `${auditResourceLabel(entry.resource_type) ?? "Member"} · ${name}` }
+}
+
 const auditRow = (h: H, model: Model, entry: V2AuditLogEntry, inputs: ViewInputs): Html => {
 	const isExpanded = model.expanded.includes(entry.id)
 	const detailId = `audit-entry-${entry.id}`
 	const isDenied = entry.outcome === "denied"
 	const label = auditActionLabel(entry.action) ?? entry.action
 	return h.div(
-		[h.Key(entry.id), ...(isExpanded ? [h.Class("bg-surface-faint")] : [])],
+		[h.Key(entry.id), h.Id(entryRowId(entry.id)), ...(isExpanded ? [h.Class("bg-surface-faint")] : [])],
 		[
 			hstack(
 				h,
@@ -433,7 +447,7 @@ const auditRow = (h: H, model: Model, entry: V2AuditLogEntry, inputs: ViewInputs
 							}),
 						],
 					),
-					actorCell(h, entry),
+					actorCell(h, model, entry),
 					h.div(
 						[h.Class(cn(COL.action, vstackClass({ shrink: true })))],
 						[
@@ -451,7 +465,7 @@ const auditRow = (h: H, model: Model, entry: V2AuditLogEntry, inputs: ViewInputs
 								: []),
 						],
 					),
-					h.div([h.Class(COL.resource)], [resourceCell(h, entry)]),
+					h.div([h.Class(COL.resource)], [resourceCell(h, model, entry)]),
 					h.span(
 						[h.Class(COL.source)],
 						[badge(h, { variant: "outline", size: "sm" }, [SOURCE_LABELS[entry.source]])],
@@ -659,7 +673,7 @@ export const view = Submodel.defineView<Model, Message, ViewInputs>((model, inpu
 							]),
 				]),
 				hstack(h, { gap: "3", wrap: true, align: "center", justify: "between" }, [
-					hstack(h, { gap: "3", wrap: true }, [
+					hstack(h, { gap: "3", wrap: true, className: "min-w-0 max-w-full" }, [
 						segmentedSelect(h, {
 							size: "sm",
 							ariaLabel: "Actor type",

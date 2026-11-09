@@ -1,5 +1,7 @@
 import { Result, Array as Arr } from "effect"
-import { expect as expectView, given, role, scene, withViewInputs } from "foldkit/scene"
+import { encodePublicId, PublicIdPrefixes } from "@maple/domain/http/v2"
+import { expect as expectView, given, role, scene, text, withViewInputs } from "foldkit/scene"
+import { AUDIT_ENTRIES, AUDIT_MEMBERS, AUDIT_NOW } from "../../../lab/audit-log-fixture"
 import { describe, expect, test } from "vitest"
 import { PageOutMessage } from "../../contract"
 import * as CustomRange from "../../kit/custom-range"
@@ -231,5 +233,97 @@ describe("audit log tab", () => {
 			}),
 		)
 		expect(picked.model.customRange).toBeNull()
+	})
+
+	describe("an entry's detail", () => {
+		const search = { tab: "audit-log" } as const
+		const loadedWith = (
+			searchFor: typeof search | { readonly tab: "audit-log"; readonly entry: string },
+		) => {
+			const entered = init(searchFor).model
+			const withMembers = update(
+				entered,
+				Message.CompletedFetchMembers({ members: AUDIT_MEMBERS }),
+				searchFor,
+			).model
+			return update(
+				withMembers,
+				Message.CompletedFetchPage({
+					request: entered.request,
+					resolvedSince: null,
+					result: Result.succeed({ data: AUDIT_ENTRIES, has_more: false, next_cursor: null }),
+				}),
+				searchFor,
+			)
+		}
+		const sceneOf = (searchFor: Parameters<typeof loadedWith>[0]) => ({
+			update: (model: ReturnType<typeof init>["model"], message: Message) =>
+				update(model, message, searchFor),
+			view: withViewInputs(view, {
+				search: searchFor,
+				nowMs: AUDIT_NOW,
+				timeZone: "UTC",
+				apiKeys: [],
+			})(),
+		})
+
+		test("names a member the entry froze no name for, from the org's memberships", () => {
+			scene(
+				sceneOf(search),
+				given(loadedWith(search).model),
+				expectView(text("Linus Torvalds")).toExist(),
+			)
+		})
+
+		test("Filter beside the actor lists that actor's entries of any type", () => {
+			const step = update(
+				loadedWith({ ...search }).model,
+				Message.ClickedPivot({ key: "actorId", value: "key_aXwpxqBkqtYwtBtmsGbR41" }),
+				{ tab: "audit-log", actor_type: "user" },
+			)
+			expect(step.outMessage).toEqual(
+				PageOutMessage.RequestedNavigation({
+					url: "/settings?tab=audit-log&actor=key_aXwpxqBkqtYwtBtmsGbR41",
+					isReplace: true,
+				}),
+			)
+		})
+
+		test("Filter beside the action also picks its resource type, so the action select shows it", () => {
+			const step = update(
+				loadedWith(search).model,
+				Message.ClickedPivot({ key: "action", value: "dashboard.updated" }),
+				search,
+			)
+			expect(step.outMessage).toEqual(
+				PageOutMessage.RequestedNavigation({
+					url: "/settings?tab=audit-log&resource_type=dashboard&action=dashboard.updated",
+					isReplace: true,
+				}),
+			)
+		})
+
+		test("a shared entry link opens that entry and scrolls to it", () => {
+			const target = AUDIT_ENTRIES[2]
+			if (target === undefined) throw new Error("fixture")
+			const linked = {
+				tab: "audit-log",
+				entry: encodePublicId(PublicIdPrefixes.auditLogEntry, target.id),
+			} as const
+			const loaded = loadedWith(linked)
+			expect(loaded.model.expanded).toEqual([target.id])
+			expect(Arr.map(loaded.commands ?? [], ({ name }) => name)).toEqual(["ScrollToAuditEntry"])
+		})
+
+		test("the Origin section names the country an entry came from", () => {
+			const target = AUDIT_ENTRIES[4]
+			if (target === undefined) throw new Error("fixture")
+			const opened = update(
+				loadedWith(search).model,
+				Message.ToggledEntry({ id: target.id }),
+				search,
+			).model
+			scene(sceneOf(search), given(opened), expectView(text(/United Kingdom \(GB\)/)).toExist())
+		})
 	})
 })
