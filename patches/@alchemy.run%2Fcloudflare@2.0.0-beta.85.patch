@@ -70,3 +70,47 @@ index 869f3d8..c4dadbd 100644
          // 1. Observe — the slug cached on `output` is a hint, not a
          //    guarantee; fall back to the name (Cloudflare enforces name
          //    uniqueness, and ownership of a name match has already been
+diff --git a/src/Queues/Consumer.ts b/src/Queues/Consumer.ts
+--- a/src/Queues/Consumer.ts
++++ b/src/Queues/Consumer.ts
+@@ -595,7 +595,8 @@ export const ConsumerProviderLive = () =>
+           queueId: output.queueId,
+           consumerId: output.consumerId,
+         })
+-        .pipe(Effect.catchTag("ConsumerNotFound", () => Effect.void));
++        // A queue deleted first takes its consumers with it.
++        .pipe(Effect.catchTag(["ConsumerNotFound", "QueueNotFound"], () => Effect.void));
+ 
+       // Block until Cloudflare's worker subsystem stops claiming
+       // the script as a queue consumer. Without this the
+@@ -610,7 +611,7 @@ export const ConsumerProviderLive = () =>
+         })
+         .pipe(
+           Effect.flatMap(() => Effect.fail("still-attached" as const)),
+-          Effect.catchTag("ConsumerNotFound", () => Effect.void),
++          Effect.catchTag(["ConsumerNotFound", "QueueNotFound"], () => Effect.void),
+           Effect.retry({
+             while: (e) => e === "still-attached",
+             schedule: Schedule.max([Schedule.spaced("1 second"), Schedule.recurs(30)]),
+diff --git a/lib/Queues/Consumer.js b/lib/Queues/Consumer.js
+--- a/lib/Queues/Consumer.js
++++ b/lib/Queues/Consumer.js
+@@ -412,7 +412,8 @@ export const ConsumerProviderLive = () => Provider.succeed(Consumer, {
+             queueId: output.queueId,
+             consumerId: output.consumerId,
+         })
+-            .pipe(Effect.catchTag("ConsumerNotFound", () => Effect.void));
++            // A queue deleted first takes its consumers with it.
++            .pipe(Effect.catchTag(["ConsumerNotFound", "QueueNotFound"], () => Effect.void));
+         // Block until Cloudflare's worker subsystem stops claiming
+         // the script as a queue consumer. Without this the
+         // sibling Worker.delete races on `QueueConsumerConflict`
+@@ -424,7 +425,7 @@ export const ConsumerProviderLive = () => Provider.succeed(Consumer, {
+             queueId: output.queueId,
+             consumerId: output.consumerId,
+         })
+-            .pipe(Effect.flatMap(() => Effect.fail("still-attached")), Effect.catchTag("ConsumerNotFound", () => Effect.void), Effect.retry({
++            .pipe(Effect.flatMap(() => Effect.fail("still-attached")), Effect.catchTag(["ConsumerNotFound", "QueueNotFound"], () => Effect.void), Effect.retry({
+             while: (e) => e === "still-attached",
+             schedule: Schedule.max([Schedule.spaced("1 second"), Schedule.recurs(30)]),
+         }), Effect.ignore);
