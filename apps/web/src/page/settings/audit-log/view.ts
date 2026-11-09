@@ -3,6 +3,7 @@ import {
 	AuditResourceLabels,
 	AuditResources,
 	auditResourceLabel,
+	isAuditAccessAction,
 } from "@maple/domain/audit-actions"
 import type { AuditActorType, AuditLogSource } from "@maple/domain/http"
 import { encodePublicId, PublicIdPrefixes, type V2ApiKey, type V2AuditLogEntry } from "@maple/domain/http/v2"
@@ -363,11 +364,9 @@ const actorCell = (h: H, model: Model, entry: V2AuditLogEntry): Html => {
 	)
 }
 
-const ACCESS_SUFFIXES = [".read", ".called", ".sql_executed", ".request"]
-
 /** A read, tool call, SQL run or API request that went through: background next to a change. */
 const isQuietAccess = (entry: V2AuditLogEntry): boolean =>
-	entry.outcome === "allowed" && Arr.some(ACCESS_SUFFIXES, (suffix) => Str.endsWith(suffix)(entry.action))
+	entry.outcome === "allowed" && isAuditAccessAction(entry.action)
 
 const actionLabel = (h: H, action: string, isQuiet: boolean): ReadonlyArray<Html> => {
 	const label = auditActionLabel(action)

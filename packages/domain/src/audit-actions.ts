@@ -1,6 +1,6 @@
 import { ErrorIssueEventType } from "./http/errors"
 import { type PublicIdPrefix, PublicIdPrefixes } from "./http/v2/public-id"
-import { Array as Arr, Record as Rec } from "effect"
+import { Array as Arr, Record as Rec, String as Str } from "effect"
 
 /**
  * Every audited action in Maple, grouped by the resource it acts on.
@@ -416,6 +416,17 @@ const isAuditResourceType = (type: string): type is AuditResourceType =>
 	Rec.has<string, string>(AuditResourceLabels, type)
 
 /** Label for an action string read off a row; null for one this build does not know. */
+/**
+ * Actions that record access rather than a change: reads, tool calls, SQL runs
+ * and API requests. A heavy agent user writes hundreds of these a day. The
+ * server filters by them and the web mutes them, so both read this one list.
+ */
+export const AUDIT_ACCESS_ACTION_SUFFIXES = [".read", ".called", ".sql_executed", ".request"] as const
+
+/** True for an access action (see {@link AUDIT_ACCESS_ACTION_SUFFIXES}). */
+export const isAuditAccessAction = (action: string): boolean =>
+	Arr.some(AUDIT_ACCESS_ACTION_SUFFIXES, (suffix) => Str.endsWith(suffix)(action))
+
 export const auditActionLabel = (action: string): string | null =>
 	isAuditAction(action) ? AuditActionLabels[action] : null
 
