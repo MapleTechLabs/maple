@@ -369,7 +369,92 @@ describe("SetupAuditService telemetry mapping", () => {
 		return Effect.gen(function* () {
 			yield* SetupAuditService.use((audit) => audit.run(tenant))
 			assert.isFalse(sqlByContext.has("setupAuditResourceKeyServices"))
-			assert.isFalse(sqlByContext.has("setupAuditMetricLabelServices"))
+			assert.isFalse(sqlByContext.has("setupAuditMetricLabelSeries"))
+			assert.isFalse(sqlByContext.has("setupAuditInboundRoutes"))
 		}).pipe(Effect.provide(makeLayer(testDb, "present")))
 	})
+
+	it.effect(
+		"confirms label cardinality per metric, release keys per service and outside callers' routes",
+		() => {
+			const testDb = createTestDb(trackedDbs)
+			sqlByContext.clear()
+			const rootless = (
+				entryService: string,
+				externalParentCount: number,
+				externalTraceIds: ReadonlyArray<string>,
+			) => ({
+				entryService,
+				traceCount: 7_000,
+				rootlessCount: externalParentCount,
+				sampledRootlessCount: 0,
+				externalParentCount,
+				externalTraceIds,
+				orgTraceCount: 14_000,
+				orgRootlessCount: 44,
+				orgSampledRootlessCount: 0,
+				orgExternalParentCount: 44,
+			})
+			rowsBySql = [
+				[
+					"FROM service_overview_hourly\n",
+					[
+						{ serviceName: "api", namespaces: [], environments: ["production"] },
+						{ serviceName: "landing", namespaces: [], environments: ["production"] },
+					],
+				],
+				["FROM service_runtimes_hourly", [{ serviceName: "landing", sdkLanguages: ["webjs"] }]],
+				[
+					"AttributeScope = 'metric'",
+					[{ attributeKey: "url.path", valueCardinality: 3_383, usageCount: 100 }],
+				],
+				[
+					"FROM metrics_sum",
+					[
+						{
+							serviceName: "api",
+							metricName: "http.requests.by_path",
+							valueCardinalities: ["1500"],
+						},
+					],
+				],
+				[
+					"traces.IsEntryPoint = 1",
+					[
+						{ serviceName: "api", spanCount: 10, keyCounts: [10, 10, 10] },
+						{ serviceName: "landing", spanCount: 5, keyCounts: [0, 0, 0] },
+					],
+				],
+				["AS entryService", [rootless("api", 44, ["t1", "t2"]), rootless("cli", 0, [])]],
+				["AS route", [{ serviceName: "api", route: "/mcp", traceCount: 2 }]],
+			]
+			return Effect.gen(function* () {
+				const report = yield* SetupAuditService.use((audit) => audit.run(tenant))
+				const byId = (id: string) =>
+					Option.getOrUndefined(Arr.findFirst(report.checks, (row) => row.id === id))
+				assert.strictEqual(
+					byId("MET-01")?.affected[0]?.note,
+					"~1,500 values on `http.requests.by_path` (api)",
+				)
+				// The per-metric read never spends its row cap on Maple's integration services.
+				assert.match(
+					sqlByContext.get("setupAuditMetricLabelSeries") ?? "",
+					/NOT \(+metrics_sum\.ServiceName LIKE 'cloudflare\/%'/,
+				)
+				assert.deepStrictEqual(
+					Arr.map(byId("RES-02")?.affected ?? [], (entity) => entity.name),
+					["landing"],
+				)
+				// Only the services that reported outside callers, and only their sampled trace ids.
+				const routesSql = sqlByContext.get("setupAuditInboundRoutes") ?? ""
+				assert.include(routesSql, "traces.ServiceName IN ('api')")
+				assert.include(routesSql, "traces.TraceId IN ('t1', 't2')")
+				assert.strictEqual(
+					byId("TRC-04")?.affected[0]?.note,
+					"44 traces started by an outside caller, mostly via `/mcp`",
+				)
+				assert.strictEqual(byId("TRC-02")?.status, "pass")
+			}).pipe(Effect.provide(makeLayer(testDb, "present")))
+		},
+	)
 })

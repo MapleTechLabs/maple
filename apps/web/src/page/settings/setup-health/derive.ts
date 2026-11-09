@@ -37,6 +37,10 @@ const GUIDES = new Map<string, { readonly label: string; readonly href: string }
 	["TRC-01", { label: "Read service map guide", href: conventions("1-service-to-service-edges") }],
 	["TRC-02", { label: "Read root span guide", href: docsUrl("missingRootSpans") }],
 	["TRC-03", { label: "Read sampling guide", href: docsUrl("samplingThroughput") }],
+	[
+		"TRC-04",
+		{ label: "Read upstream context guide", href: docsUrl("missingRootSpans", "context-from-upstream") },
+	],
 ])
 
 const INTEGRATION_FOR_CHECK = new Map<string, string>([

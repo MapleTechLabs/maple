@@ -35,5 +35,9 @@ describe("setup health", () => {
 			label: "Open ingestion",
 			href: "/settings?tab=ingestion",
 		})
+		expect(setupHealthAction({ id: "TRC-04", affected: [] })).toMatchObject({
+			kind: "docs",
+			label: "Read upstream context guide",
+		})
 	})
 })

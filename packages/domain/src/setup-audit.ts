@@ -18,7 +18,7 @@
 // tested (delivery works fine without ever pressing Test), onboarding checklist incomplete (owned by
 // the onboarding surface). A check that fires on every healthy org is noise, not an audit.
 
-import { Option, pipe, Schema, Array as Arr, Record as Rec, String as Str } from "effect"
+import { Option, Order, pipe, Result, Schema, Array as Arr, Record as Rec, String as Str } from "effect"
 import { HttpTaggedError } from "./http/error-policy"
 import {
 	type IntegrationEntry,
@@ -27,6 +27,7 @@ import {
 	PLANETSCALE_NO_ORGANIZATION_PROBLEM,
 	summarizeResources,
 } from "./integration-inventory"
+import { HYPERDRIVE_DB_NAMESPACE } from "./tinybird/db-query-shape-sql"
 import { isMapleService, UPTIME_SERVICE_NAME } from "./uptime"
 
 export class SetupAuditUnavailableError extends HttpTaggedError<SetupAuditUnavailableError>()(
@@ -295,6 +296,29 @@ export interface AuditServiceIdentity {
 	readonly sdkLanguages: ReadonlyArray<string>
 }
 
+export interface AuditMetricLabelSeries {
+	readonly attributeKey: string
+	readonly serviceName: string
+	readonly metricName: string
+	readonly valueCardinality: number
+}
+
+export interface AuditSpanNameTemplates {
+	readonly serviceName: string
+	readonly rawNameCount: number
+	/** Distinct names once UUIDs, hex runs, `prefix_<id>`s and digit runs are templated out. */
+	readonly templateCount: number
+	/** Raw names behind the busiest template, and up to three of them. */
+	readonly topTemplateNameCount: number
+	readonly exampleNames: ReadonlyArray<string>
+}
+
+export interface AuditServiceResourceKeys {
+	readonly serviceName: string
+	/** The resource keys seen on any of the service's entry spans. */
+	readonly keys: ReadonlyArray<string>
+}
+
 /**
  * Telemetry-derived inputs. `undefined` on `SetupAuditInputs` means the warehouse was unreachable and
  * every `needsWarehouse` check skips.
@@ -323,11 +347,13 @@ export interface WarehouseAuditInputs {
 		readonly attributeValue: string
 		readonly usageCount: number
 	}>
+	/** Database calls per namespace, as the service map keys its database nodes. */
 	readonly dbEdges: ReadonlyArray<{
 		readonly serviceName: string
 		readonly dbSystem: string
+		/** Empty, the `hyperdrive` sentinel and host fallbacks included. */
+		readonly dbNamespace: string
 		readonly callCount: number
-		readonly unknownNamespaceCallCount: number
 	}>
 	/** Log correlation is sampled over a shorter window than the rest — see `logCorrelationHours`. */
 	readonly logCorrelation: ReadonlyArray<AuditLogCorrelation>
@@ -342,11 +368,15 @@ export interface WarehouseAuditInputs {
 	}>
 	/** Services seen emitting each invented resource key, from a short recent window. */
 	readonly resourceKeyServices: ReadonlyArray<{ readonly key: string; readonly serviceName: string }>
-	/** Services emitting each high-cardinality metric label (see {@link explodedMetricLabels}). */
-	readonly metricLabelServices: ReadonlyArray<{
-		readonly attributeKey: string
-		readonly serviceName: string
-	}>
+	/**
+	 * Per-metric cardinality of each label the rollup flagged (see {@link explodedMetricLabels}), from
+	 * a short recent window. Absent when that read failed, and MET-01 falls back to the rollup.
+	 */
+	readonly metricLabelSeries?: ReadonlyArray<AuditMetricLabelSeries>
+	/** Distinct span names against ID-free templates, per service. Absent when the read failed. */
+	readonly spanNameTemplates?: ReadonlyArray<AuditSpanNameTemplates>
+	/** Release resource keys each traced service sets. Absent when the read failed. */
+	readonly serviceResourceKeys?: ReadonlyArray<AuditServiceResourceKeys>
 	/**
 	 * Trace-completeness samples. These come from a short, lagged window and (on high-volume orgs) a
 	 * fraction of traces, so they are rates to reason about — never exact counts.
@@ -365,6 +395,8 @@ export interface TraceCompletenessInputs {
 		readonly orphanCount: number
 		/** Orphans inside sampling-marked traces, where a missing parent is expected. */
 		readonly sampledOrphanCount: number
+		/** Unsampled orphans in traces with no root in the org: the caller is outside it. */
+		readonly externalParentCount: number
 		readonly sampleTraceIds: ReadonlyArray<string>
 	}>
 	readonly rootless: ReadonlyArray<{
@@ -372,10 +404,19 @@ export interface TraceCompletenessInputs {
 		readonly traceCount: number
 		readonly rootlessCount: number
 		readonly sampledRootlessCount: number
+		/** Unsampled rootless traces entered by a Server/Consumer span carrying an outside parent. */
+		readonly externalParentCount: number
 		/** Org-wide totals, the same on every row; they include services past the row cap. */
 		readonly orgTraceCount: number
 		readonly orgRootlessCount: number
 		readonly orgSampledRootlessCount: number
+		readonly orgExternalParentCount: number
+	}>
+	/** The routes a sample of external-parent traces entered by, busiest first. */
+	readonly inboundRoutes: ReadonlyArray<{
+		readonly serviceName: string
+		readonly route: string
+		readonly traceCount: number
 	}>
 }
 
@@ -449,12 +490,15 @@ const keysForScope = (warehouse: WarehouseAuditInputs, scope: string): Set<strin
 
 const spanKeySet = (warehouse: WarehouseAuditInputs): Set<string> => keysForScope(warehouse, "span")
 
-/** Reports whichever of `keys` is missing from the org's resource attributes, as one finding. */
+/**
+ * Reports the services that set none of `keys` on their resource. Only app and client services are
+ * judged; without the per-service read it falls back to "no resource in the org has the key".
+ */
 const resourceKeyCheck = (
 	id: string,
 	title: string,
 	keys: ReadonlyArray<string>,
-	detail: string,
+	detail: { readonly org: string; readonly services: (count: number) => string },
 	fixHint: string,
 ): AuditCheck => ({
 	id,
@@ -466,7 +510,24 @@ const resourceKeyCheck = (
 	evaluate: ({ warehouse }) => {
 		if (!warehouse) return PASS
 		const present = keysForScope(warehouse, "resource")
-		return Arr.some(keys, (key) => present.has(key)) ? PASS : fail(detail)
+		const perService = warehouse.serviceResourceKeys
+		if (perService === undefined)
+			return Arr.some(keys, (key) => present.has(key)) ? PASS : fail(detail.org)
+		const origin = serviceOrigin(warehouse)
+		const missing = Arr.map(
+			Arr.filter(
+				perService,
+				(service) =>
+					(origin(service.serviceName) === "app" || origin(service.serviceName) === "client") &&
+					!Arr.some(keys, (key) => service.keys.includes(key)),
+			),
+			(service) => ({
+				kind: "service" as const,
+				name: service.serviceName,
+				note: `no \`${Arr.join(keys, "` or `")}\` on its resource`,
+			}),
+		)
+		return missing.length === 0 ? PASS : fail(detail.services(missing.length), missing)
 	},
 })
 
@@ -1158,8 +1219,12 @@ const LOG_CORRELATION_FAIL_RATIO = 0.9
 const LOG_CORRELATION_NONE_RATIO = 0.01
 /** Share of a service's spans that must lack an environment before it is worth reporting. */
 const MISSING_ENV_RATIO = 0.5
-/** Distinct span names per service above which operation grouping stops being useful. */
-const SPAN_NAME_CARDINALITY_LIMIT = 500
+/** Raw span names per ID-free template at which IDs are in the names. */
+const SPAN_NAME_ID_RATIO = 2
+/** Below this many distinct names, IDs in a few of them are not worth a finding. */
+const SPAN_NAME_ID_MIN_RAW = 100
+/** Distinct ID-free span names per service above which operation grouping stops being useful. */
+const SPAN_NAME_TEMPLATE_LIMIT = 2_000
 /** Distinct values for a single metric label above which series counts explode. */
 const METRIC_LABEL_CARDINALITY_LIMIT = 1_000
 /** Share of a service's database calls that may lack a namespace before the node loses its identity. */
@@ -1168,6 +1233,13 @@ const DB_NAMESPACE_MISSING_RATIO = 0.5
 const UNSTRUCTURED_LOG_MIN_VOLUME = 1_000
 /** Distinct log-scope attribute keys below which logging is effectively unstructured. */
 const UNSTRUCTURED_LOG_KEY_LIMIT = 3
+
+/** A hostname or IPv4 address: what the map shows when only `server.address` named the database. */
+const HOST_LIKE = /^(?:localhost|\d{1,3}(?:\.\d{1,3}){3}|(?:[a-z0-9-]+\.){2,}[a-z]{2,})$/i
+
+/** A database node with no real name: empty, the Hyperdrive sentinel, or a bare host fallback. */
+const namelessDbNamespace = (namespace: string): boolean =>
+	namespace === "" || namespace === HYPERDRIVE_DB_NAMESPACE || HOST_LIKE.test(namespace)
 
 const STANDARD_SEVERITIES = new Set(["TRACE", "DEBUG", "INFO", "WARN", "WARNING", "ERROR", "FATAL"])
 
@@ -1262,7 +1334,11 @@ export const MAPLE_GENERATED_SERVICE_NAMES: ReadonlyArray<string> = [
 ]
 
 /** Metric services the Cloudflare analytics integration writes, one per zone, worker or queue. */
-const MAPLE_INTEGRATION_SERVICE_PREFIXES = ["cloudflare/", "cloudflare-worker/", "cloudflare-queue/"]
+export const MAPLE_INTEGRATION_SERVICE_PREFIXES: ReadonlyArray<string> = [
+	"cloudflare/",
+	"cloudflare-worker/",
+	"cloudflare-queue/",
+]
 
 /** SDK languages that only ever run on a user's device. */
 const CLIENT_SDK_LANGUAGES = new Set(["webjs", "swift"])
@@ -1322,13 +1398,17 @@ const serviceOrigin = (warehouse: WarehouseAuditInputs): ((serviceName: string) 
 
 /**
  * The snapshot with every Maple-written service removed from the per-service inputs, so no check can
- * blame the user for telemetry Maple produces. A metric label is dropped when every service seen
- * emitting it is Maple's; org-wide trace totals lose the removed services' traces too.
+ * blame the user for telemetry Maple produces. Org-wide trace totals lose the removed services'
+ * traces too.
  */
 export const withoutMapleServices = (warehouse: WarehouseAuditInputs): WarehouseAuditInputs => {
 	const origin = serviceOrigin(warehouse)
 	const isUsers = (serviceName: string) => origin(serviceName) !== "maple"
-	const labelEmitters = Arr.groupBy(warehouse.metricLabelServices, (row) => row.attributeKey)
+	const byUsers = <A extends { readonly serviceName: string }>(rows: ReadonlyArray<A> | undefined) =>
+		rows === undefined ? undefined : Arr.filter(rows, (row) => isUsers(row.serviceName))
+	const metricLabelSeries = byUsers(warehouse.metricLabelSeries)
+	const spanNameTemplates = byUsers(warehouse.spanNameTemplates)
+	const serviceResourceKeys = byUsers(warehouse.serviceResourceKeys)
 	const traces = warehouse.traceCompleteness
 	const mapleRootless = Arr.filter(traces?.rootless ?? [], (row) => !isUsers(row.entryService))
 	const minus = (pick: (row: (typeof mapleRootless)[number]) => number) =>
@@ -1340,16 +1420,16 @@ export const withoutMapleServices = (warehouse: WarehouseAuditInputs): Warehouse
 		logSeverity: Arr.filter(warehouse.logSeverity, (row) => isUsers(row.serviceName)),
 		dbEdges: Arr.filter(warehouse.dbEdges, (row) => isUsers(row.serviceName)),
 		logCorrelation: Arr.filter(warehouse.logCorrelation, (row) => isUsers(row.serviceName)),
-		metricLabels: Arr.filter(warehouse.metricLabels, (label) => {
-			const emitters = labelEmitters[label.attributeKey] ?? []
-			return emitters.length === 0 || Arr.some(emitters, (row) => isUsers(row.serviceName))
-		}),
+		...(metricLabelSeries === undefined ? undefined : { metricLabelSeries }),
+		...(spanNameTemplates === undefined ? undefined : { spanNameTemplates }),
+		...(serviceResourceKeys === undefined ? undefined : { serviceResourceKeys }),
 		traceCompleteness:
 			traces === undefined
 				? undefined
 				: {
 						...traces,
 						orphans: Arr.filter(traces.orphans, (row) => isUsers(row.serviceName)),
+						inboundRoutes: Arr.filter(traces.inboundRoutes, (row) => isUsers(row.serviceName)),
 						rootless: Arr.map(
 							Arr.filter(traces.rootless, (row) => isUsers(row.entryService)),
 							(row) => ({
@@ -1358,6 +1438,8 @@ export const withoutMapleServices = (warehouse: WarehouseAuditInputs): Warehouse
 								orgRootlessCount: row.orgRootlessCount - minus((r) => r.rootlessCount),
 								orgSampledRootlessCount:
 									row.orgSampledRootlessCount - minus((r) => r.sampledRootlessCount),
+								orgExternalParentCount:
+									row.orgExternalParentCount - minus((r) => r.externalParentCount),
 							}),
 						),
 					},
@@ -1703,21 +1785,33 @@ const attributeQualityChecks: ReadonlyArray<AuditCheck> = [
 		"RES-02",
 		"Services report their version",
 		["service.version"],
-		"No `service.version` on any resource. Per-version slices on service overview are empty, so a regression cannot be tied to a release.",
+		{
+			org: "No `service.version` on any resource. Per-version slices on service overview are empty, so a regression cannot be tied to a release.",
+			services: (count) =>
+				`${plural(count, "service")} ${conj(count, "reports", "report")} no \`service.version\`, so per-version slices are empty for ${conj(count, "it", "them")} and a regression cannot be tied to a release.`,
+		},
 		"Set `service.version` on the OTel resource from your build's release or short commit SHA.",
 	),
 	resourceKeyCheck(
 		"RES-04",
 		"Telemetry links back to source",
 		["vcs.repository.url.full"],
-		"No `vcs.repository.url.full` on any resource, so Maple cannot link a service back to its repository for source context in error debugging.",
+		{
+			org: "No `vcs.repository.url.full` on any resource, so Maple cannot link a service back to its repository for source context in error debugging.",
+			services: (count) =>
+				`${plural(count, "service")} ${conj(count, "sets", "set")} no \`vcs.repository.url.full\`, so Maple cannot link ${conj(count, "it", "them")} back to a repository for source context in error debugging.`,
+		},
 		"Set `vcs.repository.url.full` to the canonical https repo URL — not an SSH remote, not a local path.",
 	),
 	resourceKeyCheck(
 		"RES-05",
 		"Deploys are identifiable",
 		["vcs.ref.head.revision"],
-		"No commit revision on any resource. Release markers and per-deploy comparisons have nothing to anchor to.",
+		{
+			org: "No commit revision on any resource. Release markers and per-deploy comparisons have nothing to anchor to.",
+			services: (count) =>
+				`${plural(count, "service")} ${conj(count, "sets", "set")} no commit revision, so release markers and per-deploy comparisons have nothing to anchor to for ${conj(count, "it", "them")}.`,
+		},
 		"Set `vcs.ref.head.revision` best-effort from the build environment (`VERCEL_GIT_COMMIT_SHA`, `GITHUB_SHA`, …). Never shell out to git at runtime.",
 	),
 	{
@@ -1795,21 +1889,48 @@ const attributeQualityChecks: ReadonlyArray<AuditCheck> = [
 			"Use `domain.verb` span names (`order.process`) and move IDs and URLs into attributes — never into the name.",
 		evaluate: ({ warehouse }) => {
 			if (!warehouse) return PASS
-			const exploded = Arr.map(
-				Arr.filter(
-					warehouse.spanShape,
-					(service) => service.spanNameCount > SPAN_NAME_CARDINALITY_LIMIT,
-				),
-				(service) => ({
-					kind: "service" as const,
-					name: service.serviceName,
-					note: `${service.spanNameCount.toLocaleString("en-US")} distinct span names`,
-				}),
-			)
+			const fmt = (count: number) => count.toLocaleString("en-US")
+			const templates = warehouse.spanNameTemplates
+			// Without the template read only the raw count is known; judge it against the template limit.
+			const exploded =
+				templates === undefined
+					? Arr.map(
+							Arr.filter(
+								warehouse.spanShape,
+								(service) => service.spanNameCount > SPAN_NAME_TEMPLATE_LIMIT,
+							),
+							(service) => ({
+								kind: "service" as const,
+								name: service.serviceName,
+								note: `${fmt(service.spanNameCount)} distinct span names`,
+							}),
+						)
+					: Arr.filterMap(templates, (service) => {
+							const idsInNames =
+								service.rawNameCount > SPAN_NAME_ID_MIN_RAW &&
+								service.rawNameCount >= SPAN_NAME_ID_RATIO * service.templateCount
+							if (!idsInNames && service.templateCount <= SPAN_NAME_TEMPLATE_LIMIT) {
+								return Result.failVoid
+							}
+							const examples =
+								idsInNames && service.topTemplateNameCount > 1
+									? `; e.g. ${Arr.join(
+											Arr.map(service.exampleNames, (name) => `"${quoteSafely(name)}"`),
+											", ",
+										)}`
+									: ""
+							return Result.succeed({
+								kind: "service" as const,
+								name: service.serviceName,
+								note: idsInNames
+									? `${fmt(service.rawNameCount)} distinct span names but only ${fmt(service.templateCount)} once IDs are removed${examples}`
+									: `${fmt(service.templateCount)} distinct span names even with IDs removed`,
+							})
+						})
 			return exploded.length === 0
 				? PASS
 				: fail(
-						`${plural(exploded.length, "service")} ${conj(exploded.length, "emits", "emit")} more than ${SPAN_NAME_CARDINALITY_LIMIT.toLocaleString("en-US")} distinct span names — a sign IDs or URLs are in the name. Operation grouping and top-operations become unusable.`,
+						`${plural(exploded.length, "service")} ${conj(exploded.length, "emits", "emit")} span names that carry IDs or URLs, or more distinct operations than grouping can use. Operation grouping and top-operations become unusable.`,
 						exploded,
 					)
 		},
@@ -1873,17 +1994,54 @@ const attributeQualityChecks: ReadonlyArray<AuditCheck> = [
 			"Drop unbounded IDs (user, order, request, raw URL) from metric labels — put them on spans instead, where cardinality is free.",
 		evaluate: ({ warehouse }) => {
 			if (!warehouse) return PASS
-			const exploded = Arr.map(
-				Arr.filter(
-					warehouse.metricLabels,
-					(label) => label.valueCardinality > METRIC_LABEL_CARDINALITY_LIMIT,
-				),
-				(label) => ({
-					kind: "attribute_key" as const,
-					name: label.attributeKey,
-					note: `~${label.valueCardinality.toLocaleString("en-US")} distinct values`,
-				}),
-			)
+			const fmt = (count: number) => count.toLocaleString("en-US")
+			const series = warehouse.metricLabelSeries
+			// The rollup counts a label's values across every metric; the per-metric read confirms it.
+			const exploded =
+				series === undefined
+					? Arr.map(
+							Arr.filter(
+								warehouse.metricLabels,
+								(label) => label.valueCardinality > METRIC_LABEL_CARDINALITY_LIMIT,
+							),
+							(label) => ({
+								kind: "attribute_key" as const,
+								name: label.attributeKey,
+								note: `~${fmt(label.valueCardinality)} distinct values across all metrics`,
+							}),
+						)
+					: Arr.map(
+							Rec.toEntries(
+								Arr.groupBy(
+									Arr.filter(
+										series,
+										(row) => row.valueCardinality > METRIC_LABEL_CARDINALITY_LIMIT,
+									),
+									(row) => row.attributeKey,
+								),
+							),
+							([attributeKey, rows]) => {
+								const busiest = Arr.sort(
+									rows,
+									Order.mapInput(
+										Order.flip(Order.Number),
+										(row: AuditMetricLabelSeries) => row.valueCardinality,
+									),
+								)
+								return {
+									kind: "attribute_key" as const,
+									name: attributeKey,
+									note: `${Arr.join(
+										Arr.map(
+											Arr.take(busiest, 3),
+											(row) =>
+												`~${fmt(row.valueCardinality)} values on \`${row.metricName}\` (${row.serviceName})`,
+										),
+										", ",
+									)}${busiest.length > 3 ? ` and ${busiest.length - 3} more metrics` : ""}`,
+								}
+							},
+						)
 			return exploded.length === 0
 				? PASS
 				: fail(
@@ -2016,26 +2174,43 @@ const serviceMapChecks: ReadonlyArray<AuditCheck> = [
 		severity: "warn",
 		needsWarehouse: true,
 		fixHint:
-			"Set `db.namespace` (or the legacy `db.name`) on database client spans so each database gets its own node.",
+			"Set `db.namespace` to the logical database name on database client spans. Without it the map falls back to `db.name`, then to `server.address` (a hostname), and a Cloudflare Hyperdrive binding's opaque database id shows as `hyperdrive`; set the real name explicitly when connecting through Hyperdrive.",
 		evaluate: ({ warehouse }) => {
 			if (!warehouse) return PASS
-			const anonymous = Arr.map(
-				Arr.filter(
-					warehouse.dbEdges,
-					(edge) =>
-						edge.callCount > 0 &&
-						edge.unknownNamespaceCallCount / edge.callCount > DB_NAMESPACE_MISSING_RATIO,
-				),
-				(edge) => ({
-					kind: "service" as const,
-					name: `${edge.serviceName} → ${edge.dbSystem}`,
-					note: `${percent(edge.unknownNamespaceCallCount, edge.callCount)} of calls have no db.namespace`,
-				}),
+			const fmt = (count: number) => count.toLocaleString("en-US")
+			const dependencies = Rec.values(
+				Arr.groupBy(warehouse.dbEdges, (edge) => `${edge.serviceName}\x00${edge.dbSystem}`),
 			)
+			const anonymous = Arr.filterMap(dependencies, (edges) => {
+				const [first] = edges
+				const total = Arr.reduce(edges, 0, (sum, edge) => sum + edge.callCount)
+				const unnamed = Arr.filter(edges, (edge) => namelessDbNamespace(edge.dbNamespace))
+				const unnamedCalls = Arr.reduce(unnamed, 0, (sum, edge) => sum + edge.callCount)
+				if (total === 0 || unnamedCalls / total <= DB_NAMESPACE_MISSING_RATIO) return Result.failVoid
+				const named = Arr.filter(edges, (edge) => !namelessDbNamespace(edge.dbNamespace))
+				const describe = (edge: (typeof edges)[number]) =>
+					edge.dbNamespace === ""
+						? `${fmt(edge.callCount)} with no namespace`
+						: edge.dbNamespace === HYPERDRIVE_DB_NAMESPACE
+							? `${fmt(edge.callCount)} named \`hyperdrive\` (an opaque Hyperdrive id)`
+							: `${fmt(edge.callCount)} named after the host \`${edge.dbNamespace}\``
+				const unnamedNote = Arr.join(Arr.map(unnamed, describe), ", ")
+				const note = Arr.isReadonlyArrayNonEmpty(named)
+					? `split across nodes: ${unnamedNote}; ${Arr.join(
+							Arr.map(named, (edge) => `${fmt(edge.callCount)} as \`${edge.dbNamespace}\``),
+							", ",
+						)}`
+					: unnamedNote
+				return Result.succeed({
+					kind: "service" as const,
+					name: `${first?.serviceName ?? ""} → ${first?.dbSystem ?? ""}`,
+					note,
+				})
+			})
 			return anonymous.length === 0
 				? PASS
 				: fail(
-						`${plural(anonymous.length, "database dependency", "database dependencies")} ${conj(anonymous.length, "arrives", "arrive")} without a namespace, so every database behind that driver collapses into one anonymous node on the service map.`,
+						`${plural(anonymous.length, "database dependency", "database dependencies")} ${conj(anonymous.length, "arrives", "arrive")} without a database name. Their service-map node is named after a host or a placeholder, or one database is split between a named and an unnamed node.`,
 						anonymous,
 					)
 		},
@@ -2094,6 +2269,12 @@ const ROOTLESS_MIN_TRACES = 2
 const ROOTLESS_SYSTEMIC_RATIO = 0.95
 /** Share of orphans that must sit inside sampled traces before sampling is the better explanation. */
 const SAMPLING_EXPLAINS_RATIO = 0.5
+/** Routes named per service on TRC-04. */
+const INBOUND_ROUTE_LIMIT = 3
+
+/** Orphans whose parent should have arrived: neither dropped by sampling nor sent from outside. */
+const missingParents = (row: TraceCompletenessInputs["orphans"][number]): number =>
+	row.orphanCount - row.sampledOrphanCount - row.externalParentCount
 
 const traceCompletenessChecks: ReadonlyArray<AuditCheck> = [
 	{
@@ -2110,15 +2291,13 @@ const traceCompletenessChecks: ReadonlyArray<AuditCheck> = [
 			const broken = Arr.map(
 				Arr.filter(traces.orphans, (row) => {
 					if (row.childCount < TRACE_MIN_SAMPLE) return false
-					// Orphans inside sampling-marked traces are expected — a dropped parent is the
-					// sampler working. Those are reported by TRC-03 instead.
-					const unsampled = row.orphanCount - row.sampledOrphanCount
-					return unsampled / row.childCount > TRACE_GAP_RATIO
+					// Sampled orphans are TRC-03's; orphans continuing an outside caller are TRC-04's.
+					return missingParents(row) / row.childCount > TRACE_GAP_RATIO
 				}),
 				(row) => ({
 					kind: "service" as const,
 					name: row.serviceName,
-					note: `${percent(row.orphanCount - row.sampledOrphanCount, row.childCount)} of entry spans reference a parent that never arrived${
+					note: `${percent(missingParents(row), row.childCount)} of entry spans reference a parent that never arrived${
 						row.sampleTraceIds[0] ? ` (e.g. trace ${row.sampleTraceIds[0]})` : ""
 					}`,
 				}),
@@ -2143,13 +2322,13 @@ const traceCompletenessChecks: ReadonlyArray<AuditCheck> = [
 			const traces = warehouse?.traceCompleteness
 			const org = traces?.rootless[0]
 			if (!traces || !org) return PASS
-			// Rootless traces inside sampling-marked traces are the sampler's doing, not a lost root.
+			// Sampled traces are the sampler's doing and external-parent ones TRC-04's: neither lost a root.
 			const rows = Arr.map(traces.rootless, (row) => ({
 				...row,
-				missing: row.rootlessCount - row.sampledRootlessCount,
+				missing: row.rootlessCount - row.sampledRootlessCount - row.externalParentCount,
 			}))
-			const total = org.orgTraceCount
-			const missing = org.orgRootlessCount - org.orgSampledRootlessCount
+			const total = org.orgTraceCount - org.orgExternalParentCount
+			const missing = org.orgRootlessCount - org.orgSampledRootlessCount - org.orgExternalParentCount
 			if (missing < ROOTLESS_MIN_TRACES) return PASS
 			const ratio = missing / total
 			// Below the minimum sample a rate is noise, so it never escalates past info. A lost root
@@ -2171,7 +2350,7 @@ const traceCompletenessChecks: ReadonlyArray<AuditCheck> = [
 			// One upstream fact, not N service defects — but only when every sizable service shows it,
 			// so the rows must cover every trace (none cut by the query's row cap).
 			const sizable = Arr.filter(rows, (row) => row.traceCount >= TRACE_MIN_SAMPLE)
-			const everyService = Arr.reduce(rows, 0, (sum, row) => sum + row.traceCount) === total
+			const everyService = Arr.reduce(rows, 0, (sum, row) => sum + row.traceCount) === org.orgTraceCount
 			const systemic =
 				ratio > ROOTLESS_SYSTEMIC_RATIO &&
 				everyService &&
@@ -2232,6 +2411,68 @@ const traceCompletenessChecks: ReadonlyArray<AuditCheck> = [
 						`${plural(sampled.length, "service")} ${conj(sampled.length, "receives", "receive")} spans whose parent was dropped by sampling. Nothing is broken, but those traces are partial — services that disagree about sampling ratios produce exactly this.`,
 						sampled,
 					)
+		},
+	},
+	{
+		id: "TRC-04",
+		category: "traces",
+		title: "Inbound requests start their own traces",
+		severity: "info",
+		needsWarehouse: true,
+		fixHint:
+			"On a public endpoint, start a new trace for each inbound request and keep the caller's context as a span link instead of its parent, so the trace has a root you own. If the callers are yours, instrument and export them instead. Continuing the caller's trace is fine when deliberate; nothing is lost either way.",
+		evaluate: ({ warehouse }) => {
+			const traces = warehouse?.traceCompleteness
+			if (!traces) return PASS
+			const routes = Arr.groupBy(traces.inboundRoutes, (row) => row.serviceName)
+			const rootless = new Map(
+				Arr.map(traces.rootless, (row) => [row.entryService, row.externalParentCount] as const),
+			)
+			const orphans = new Map(
+				Arr.map(traces.orphans, (row) => [row.serviceName, row.externalParentCount] as const),
+			)
+			const services = Arr.dedupe([...rootless.keys(), ...orphans.keys()])
+			const modulus = traces.traceSampleModulus
+			const sampleNote = modulus > 1 ? ` in a 1-in-${modulus} sample` : ""
+			const external = Arr.filterMap(services, (serviceName) => {
+				const traceCount = rootless.get(serviceName) ?? 0
+				const spanCount = orphans.get(serviceName) ?? 0
+				if (traceCount === 0 && spanCount === 0) return Result.failVoid
+				const top = Arr.take(routes[serviceName] ?? [], INBOUND_ROUTE_LIMIT)
+				const via = Arr.isReadonlyArrayNonEmpty(top)
+					? `, mostly via ${Arr.join(
+							Arr.map(top, (row) =>
+								row.route === "" ? "an unrouted request" : `\`${quoteSafely(row.route)}\``,
+							),
+							", ",
+						)}`
+					: ""
+				const counted =
+					traceCount > 0
+						? `${plural(traceCount, "trace")} started by an outside caller`
+						: `${plural(spanCount, "inbound span")} continuing an outside caller's trace`
+				return Result.succeed({
+					weight: Math.max(traceCount, spanCount),
+					entity: {
+						kind: "service" as const,
+						name: serviceName,
+						note: `${counted}${sampleNote}${via}`,
+					},
+				})
+			})
+			const total = Arr.reduce(external, 0, (sum, row) => sum + row.weight)
+			if (total < ROOTLESS_MIN_TRACES) return PASS
+			const sorted = Arr.map(
+				Arr.sort(
+					external,
+					Order.mapInput(Order.flip(Order.Number), (row: (typeof external)[number]) => row.weight),
+				),
+				(row) => row.entity,
+			)
+			return fail(
+				`${plural(sorted.length, "service")} ${conj(sorted.length, "receives", "receive")} requests that carry a \`traceparent\` from outside what Maple received, typically a public API or MCP client, or a caller that exports no spans. Those traces have no root here, so they are left out of TRC-01 and TRC-02.`,
+				sorted,
+			)
 		},
 	},
 ]

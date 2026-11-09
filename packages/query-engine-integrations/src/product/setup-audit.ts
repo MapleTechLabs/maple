@@ -7,8 +7,9 @@
 //     call order, and mixing Float64 quotients into otherwise-integer result sets is how UNION type
 //     unification breaks; returning counts sidesteps both, and `nan`/`ifNotFinite` handling with it.
 //  2. **Pre-aggregated MVs over raw scans.** Only `auditLogCorrelationQuery`,
-//     `auditRootlessTracesSQL` and the two attribution follow-ups touch a raw table, each reading a
-//     few narrow columns over a hard-clamped window. Attribute *values* are never scanned org-wide: a `Map` re-read at that
+//     `auditRootlessTracesSQL`, `auditServiceResourceKeysQuery` and the follow-ups (key attribution,
+//     per-metric labels, inbound routes) touch a raw table, each reading a few narrow columns over a
+//     hard-clamped window. Attribute *values* are never scanned org-wide: a `Map` re-read at that
 //     scale is what previously exhausted query memory.
 //
 // Every builder filters `OrgId` (enforced at execution) and every count/sum/uniq column needs
@@ -178,6 +179,76 @@ export function auditSpanProfileByServiceQuery(opts: { limit?: number } = {}) {
 		.groupBy("serviceName")
 		.orderBy(["weightedSpanCount", "desc"])
 		.limit(opts.limit ?? 500)
+		.format("JSON")
+}
+
+// A3b — span-name templates
+
+export interface AuditSpanNameTemplateRow {
+	readonly serviceName: string
+	readonly rawNameCount: number
+	readonly templateCount: number
+	/** Raw names behind the busiest template, and up to three of them. */
+	readonly topTemplateNameCount: number
+	readonly exampleNames: ReadonlyArray<string>
+}
+
+export const auditSpanNameTemplateRowSchema = Schema.Struct({
+	serviceName: Schema.String,
+	rawNameCount: CHNumber,
+	templateCount: CHNumber,
+	topTemplateNameCount: CHNumber,
+	exampleNames: Schema.Array(Schema.String),
+})
+
+/** Below this many distinct names a service is never reported, so the template pass skips it. */
+export const AUDIT_SPAN_NAME_MIN_RAW = 100
+
+const UUID_PATTERN = "[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}"
+
+/**
+ * A span name with its IDs replaced: UUIDs, `prefix_<base62 12+>` ids and hex runs of 8+ (each
+ * holding a digit, so `request_processing` and `decadefaced` survive), then every digit run.
+ * Tokenizing with `extractAll` keeps the separators, so only ids change.
+ */
+const SPAN_NAME_TEMPLATE_SQL = `replaceRegexpAll(arrayStringConcat(arrayMap(tok -> multiIf(match(tok, '^[A-Za-z]+_[A-Za-z0-9]{12,}$') AND match(tok, '[0-9]'), '{id}', match(tok, '^[0-9a-fA-F]{8,}$') AND match(tok, '[0-9]'), '{hex}', tok), extractAll(replaceRegexpAll(spanName, '${UUID_PATTERN}', '{uuid}'), '[A-Za-z0-9_]+|[^A-Za-z0-9_]+'))), '[0-9]+', '{n}')`
+
+/**
+ * Distinct span names per service against distinct names once IDs are templated out: many raw names
+ * per template is an ID in the name, many templates is a genuinely large operation set. Reads the
+ * service's distinct names from `traces_aggregates_hourly`, then templates only those.
+ */
+export function auditSpanNameTemplatesQuery() {
+	const names = from(TracesAggregatesHourly)
+		.select(($) => ({ serviceName: $.ServiceName, spanName: $.SpanName }))
+		.where(($) => [
+			$.OrgId.eq(orgIdParam),
+			$.Hour.gte(utcHourFloor("startTime")),
+			$.Hour.lte(utcHourFloor("endTime")),
+		])
+		.groupBy("serviceName", "spanName")
+
+	const templates = fromQuery(names, "n")
+		.select(($) => ({
+			serviceName: $.serviceName,
+			template: CH.rawExpr(SPAN_NAME_TEMPLATE_SQL, T.string),
+			names: CH.count(),
+			examples: CH.rawExpr("groupArray(3)(spanName)", T.array(T.string)),
+		}))
+		.groupBy("serviceName", "template")
+
+	return fromQuery(templates, "t")
+		.select(($) => ({
+			serviceName: $.serviceName,
+			rawNameCount: CH.sum($.names),
+			templateCount: CH.count(),
+			topTemplateNameCount: CH.max($.names),
+			exampleNames: CH.argMax($.examples, $.names),
+		}))
+		.groupBy("serviceName")
+		.having(($) => [CH.sum($.names).gt(AUDIT_SPAN_NAME_MIN_RAW)])
+		.orderBy(["rawNameCount", "desc"])
+		.limit(200)
 		.format("JSON")
 }
 
@@ -357,28 +428,30 @@ export function auditPeerValueInventoryQuery(opts: { limit?: number } = {}) {
 export interface AuditDbEdgeRow {
 	readonly serviceName: string
 	readonly dbSystem: string
+	/** As the service map keys the node: empty, the `hyperdrive` sentinel, or a host fallback included. */
+	readonly dbNamespace: string
 	readonly callCount: number
-	readonly unknownNamespaceCallCount: number
 }
 
 export const auditDbEdgeRowSchema = Schema.Struct({
 	serviceName: Schema.String,
 	dbSystem: Schema.String,
+	dbNamespace: Schema.String,
 	callCount: CHNumber,
-	unknownNamespaceCallCount: CHNumber,
 })
 
 /**
- * Database map edges whose namespace is empty — the node exists but has no identity, so every
- * database a service talks to collapses into one anonymous box.
+ * Database map edges per namespace, exactly as the service map keys its database nodes. The caller
+ * judges which namespaces carry no identity (empty, `hyperdrive`, a bare host) and whether one
+ * database is split across a named and an unnamed node.
  */
 export function auditDbEdgeIdentityQuery(opts: { limit?: number } = {}) {
 	return from(ServiceMapDbEdgesHourly)
 		.select(($) => ({
 			serviceName: $.ServiceName,
 			dbSystem: $.DbSystem,
+			dbNamespace: $.DbNamespace,
 			callCount: CH.sum($.CallCount),
-			unknownNamespaceCallCount: CH.sumIf($.CallCount, $.DbNamespace.eq("")),
 		}))
 		.where(($) => [
 			$.OrgId.eq(orgIdParam),
@@ -386,7 +459,7 @@ export function auditDbEdgeIdentityQuery(opts: { limit?: number } = {}) {
 			$.Hour.lte(utcHourFloor("endTime")),
 			$.DbSystem.neq(""),
 		])
-		.groupBy("serviceName", "dbSystem")
+		.groupBy("serviceName", "dbSystem", "dbNamespace")
 		.orderBy(["callCount", "desc"])
 		.limit(opts.limit ?? 500)
 		.format("JSON")
@@ -531,21 +604,107 @@ export function auditResourceKeyServicesQuery(keys: Arr.NonEmptyReadonlyArray<st
 		.format("JSON")
 }
 
-/** Services whose counter datapoints carry any of the metric labels `keys`. */
-export function auditMetricLabelServicesQuery(keys: Arr.NonEmptyReadonlyArray<string>) {
+/** Upper bound on the raw `metrics_sum` window for per-metric label cardinality. */
+export const AUDIT_METRIC_LABEL_MAX_HOURS = 6
+
+export interface AuditMetricLabelByMetricRow {
+	readonly serviceName: string
+	readonly metricName: string
+	/** Distinct values of each requested label on this metric, aligned with the `keys` argument. */
+	readonly valueCardinalities: ReadonlyArray<number>
+}
+
+export const auditMetricLabelByMetricRowSchema = Schema.Struct({
+	serviceName: Schema.String,
+	metricName: Schema.String,
+	valueCardinalities: Schema.Array(CHNumber),
+})
+
+/**
+ * Per-metric cardinality of labels the org-wide rollup flagged. `attribute_values_hourly` carries no
+ * service or metric, so its count is the union over every metric; this confirms it per series family.
+ * `excludeServicePrefixes` drops the services Maple writes itself before they fill the row cap.
+ */
+export function auditMetricLabelByMetricQuery(
+	keys: Arr.NonEmptyReadonlyArray<string>,
+	opts: { readonly excludeServicePrefixes?: ReadonlyArray<string> } = {},
+) {
+	const prefixes = opts.excludeServicePrefixes ?? []
 	return from(MetricsSum)
 		.select(($) => ({
 			serviceName: $.ServiceName,
-			keyCounts: keyPresence($.Attributes, keys).counts,
+			metricName: $.MetricName,
+			valueCardinalities: CH.arrayOf(
+				...Arr.map(keys, (key) =>
+					CH.uniqIf($.Attributes.get(key), CH.mapContains($.Attributes, key)),
+				),
+			),
 		}))
 		.where(($) => [
 			$.OrgId.eq(orgIdParam),
 			$.TimeUnix.gte(param.dateTime("startTime")),
 			$.TimeUnix.lte(param.dateTime("endTime")),
 			keyPresence($.Attributes, keys).any,
+			Arr.isReadonlyArrayNonEmpty(prefixes)
+				? CH.not(
+						Arr.reduce(
+							Arr.tailNonEmpty(prefixes),
+							$.ServiceName.startsWith(Arr.headNonEmpty(prefixes)),
+							(any, prefix) => any.or($.ServiceName.startsWith(prefix)),
+						),
+					)
+				: undefined,
+		])
+		.groupBy("serviceName", "metricName")
+		.orderBy((_columns) => [[CH.rawExpr("arrayMax(valueCardinalities)", T.uint64), "desc"]])
+		.limit(200)
+		.format("JSON")
+}
+
+// A12 — release keys per service (bounded raw read)
+
+/** Upper bound on the raw `traces` window for per-service resource keys. */
+export const AUDIT_SERVICE_RESOURCE_MAX_HOURS = 6
+
+export interface AuditServiceResourceKeyRow {
+	readonly serviceName: string
+	readonly spanCount: number
+	/** Entry spans carrying each requested key, aligned with the `keys` argument. */
+	readonly keyCounts: ReadonlyArray<number>
+}
+
+export const auditServiceResourceKeyRowSchema = Schema.Struct({
+	serviceName: Schema.String,
+	spanCount: CHNumber,
+	keyCounts: Schema.Array(CHNumber),
+})
+
+/**
+ * Which services set each resource key. No rollup keeps resource keys per service, so this reads
+ * entry spans only (`IsEntryPoint`, which still covers every client's roots), trace-sampled on large
+ * orgs like the completeness joins; a key is per-resource, so any kept span answers for its service.
+ */
+export function auditServiceResourceKeysQuery(
+	keys: Arr.NonEmptyReadonlyArray<string>,
+	opts: { readonly traceSampleModulus?: number } = {},
+) {
+	const modulus = normalizeModulus(opts.traceSampleModulus)
+	return from(Traces)
+		.select(($) => ({
+			serviceName: $.ServiceName,
+			spanCount: CH.count(),
+			keyCounts: keyPresence($.ResourceAttributes, keys).counts,
+		}))
+		.where(($) => [
+			$.OrgId.eq(orgIdParam),
+			$.Timestamp.gte(param.dateTime("startTime")),
+			$.Timestamp.lte(param.dateTime("endTime")),
+			$.IsEntryPoint.eq(1),
+			modulusFilter($.TraceId, modulus),
 		])
 		.groupBy("serviceName")
-		.limit(200)
+		.orderBy(["spanCount", "desc"])
+		.limit(500)
 		.format("JSON")
 }
 
@@ -681,6 +840,9 @@ export interface AuditOrphanSpanRow {
 	readonly childCount: number
 	readonly orphanCount: number
 	readonly sampledOrphanCount: number
+	/** Unsampled orphans in traces with no root in the org: the caller is outside it. */
+	readonly externalParentCount: number
+	/** Orphans inside traces that did start in the org, the ones worth inspecting. */
 	readonly sampleTraceIds: ReadonlyArray<string>
 }
 
@@ -693,6 +855,18 @@ export interface AuditTraceWindowParams {
 	readonly parentStart: string
 	readonly traceSampleModulus?: number
 }
+
+/** Trace ids with a root span in the window: `trace_list_mv` holds exactly the `ParentSpanId = ''` spans. */
+const rootIndex = (modulus: number) =>
+	from(TraceListMv)
+		.select(($) => ({ TraceId: $.TraceId }))
+		.where(($) => [
+			$.OrgId.eq(orgIdParam),
+			$.Timestamp.gte(utcSecondsParam("parentStart")),
+			$.Timestamp.lt(utcSecondsParam("childEnd")),
+			modulusFilter($.TraceId, modulus),
+		])
+		.groupBy("TraceId")
 
 /**
  * Entry-point spans (Server/Consumer) whose parent span never arrived.
@@ -708,6 +882,10 @@ export interface AuditTraceWindowParams {
  *
  * `sampledOrphanCount` splits out orphans inside sampling-marked traces, where a dropped parent is
  * expected rather than a defect; the caller reports those as a sampling observation instead.
+ *
+ * `externalParentCount` splits out orphans whose trace has no root anywhere in the org (a lookup in
+ * `trace_list_mv`, the root-span index): the request arrived carrying a caller's `traceparent` from
+ * outside, such as a public API or MCP client. Nothing of the org's is missing there.
  */
 export function auditOrphanSpansSQL(
 	params: AuditTraceWindowParams,
@@ -740,20 +918,21 @@ export function auditOrphanSpansSQL(
 
 	const query = fromQuery(children, "c")
 		.leftJoinQuery(parents, "p", (c, p) => c.TraceId.eq(p.TraceId).and(c.ParentSpanId.eq(p.SpanId)))
+		.leftJoinQuery(rootIndex(modulus), "r", (c, r) => c.TraceId.eq(r.TraceId))
 		.select(($) => {
 			// With ClickHouse's default `join_use_nulls = 0`, an unmatched LEFT JOIN
 			// row yields '' rather than NULL — which is what makes this the orphan
 			// test. `leftJoinQuery` types the joined side as nullable, so compare
 			// through a non-null assertion-free coalesce.
 			const missedParent = $.p.SpanId.eq("")
+			const sampled = CH.matchCond($.TraceState, SAMPLED_TRACE_STATE_PATTERN)
 			return {
 				serviceName: $.ServiceName,
 				childCount: CH.count(),
 				orphanCount: CH.countIf(missedParent),
-				sampledOrphanCount: CH.countIf(
-					missedParent.and(CH.matchCond($.TraceState, SAMPLED_TRACE_STATE_PATTERN)),
-				),
-				sampleTraceIds: CH.groupUniqArrayIf(3)($.TraceId, missedParent),
+				sampledOrphanCount: CH.countIf(missedParent.and(sampled)),
+				externalParentCount: CH.countIf(missedParent.and(CH.not(sampled)).and($.r.TraceId.eq(""))),
+				sampleTraceIds: CH.groupUniqArrayIf(3)($.TraceId, missedParent.and($.r.TraceId.neq(""))),
 			}
 		})
 		.groupBy("serviceName")
@@ -778,15 +957,22 @@ export interface AuditSamplingOverrides {
 	readonly slowSpanNs: number | null
 }
 
+/** Trace ids kept per service from external-parent traces; the route follow-up reads these. */
+export const AUDIT_EXTERNAL_TRACE_SAMPLE = 10
+
 export interface AuditRootlessTraceRow {
 	readonly entryService: string
 	readonly traceCount: number
 	readonly rootlessCount: number
 	readonly sampledRootlessCount: number
+	/** Unsampled rootless traces that start at a Server/Consumer span with a parent: an outside caller. */
+	readonly externalParentCount: number
+	readonly externalTraceIds: ReadonlyArray<string>
 	/** Org-wide totals over every service, including those past the row cap. */
 	readonly orgTraceCount: number
 	readonly orgRootlessCount: number
 	readonly orgSampledRootlessCount: number
+	readonly orgExternalParentCount: number
 }
 
 /**
@@ -807,6 +993,10 @@ export interface AuditRootlessTraceRow {
  * Attribution uses `argMin(ServiceName, Timestamp)`: the earliest service Maple actually observed.
  * When the true root belongs to an uninstrumented upstream, that names the first instrumented hop,
  * which is exactly where the fix goes.
+ *
+ * `externalParentCount` counts rootless traces whose first span is a Server/Consumer span that
+ * declares a parent: the caller's context came from outside the org. A Server span wins a timestamp
+ * tie, since runtimes with frozen clocks start a handler and its first outbound call together.
  */
 export function auditRootlessTracesSQL(
 	params: AuditTraceWindowParams,
@@ -834,6 +1024,10 @@ export function auditRootlessTracesSQL(
 				thresholdSampled: CH.max(CH.match($.TraceState, SAMPLED_TRACE_STATE_PATTERN)),
 				// Zero when every span is one the ingest sampler keeps from dropped traces.
 				unkeptSpans: keptBySampler === undefined ? CH.count() : CH.countIf(CH.not(keptBySampler)),
+				externalParent: CH.rawExpr(
+					`argMin(toUInt8(SpanKind IN ('Server', 'Consumer') AND ParentSpanId != ''), (Timestamp, SpanKind NOT IN ('Server', 'Consumer')))`,
+					T.uint8,
+				),
 			}
 		})
 		.where(($) => [
@@ -845,26 +1039,17 @@ export function auditRootlessTracesSQL(
 		.groupBy("TraceId")
 		.having(($) => [CH.min($.Timestamp).gte(utcSecondsParam("childStart"))])
 
-	const roots = from(TraceListMv)
-		.select(($) => ({ TraceId: $.TraceId }))
-		.where(($) => [
-			$.OrgId.eq(orgIdParam),
-			$.Timestamp.gte(utcSecondsParam("parentStart")),
-			$.Timestamp.lt(utcSecondsParam("childEnd")),
-			modulusFilter($.TraceId, modulus),
-		])
-		.groupBy("TraceId")
-
 	const query = fromQuery(traces, "t")
-		.leftJoinQuery(roots, "r", (t, r) => t.TraceId.eq(r.TraceId))
+		.leftJoinQuery(rootIndex(modulus), "r", (t, r) => t.TraceId.eq(r.TraceId))
 		.select(($) => {
 			// `join_use_nulls = 0` turns a miss into '' — see auditOrphanSpansSQL.
 			const noRoot = $.r.TraceId.eq("")
+			const sampled = $.thresholdSampled.eq(1).or($.unkeptSpans.eq(0))
+			const external = noRoot.and(CH.not(sampled)).and($.externalParent.eq(1))
 			const traceCount = CH.count()
 			const rootlessCount = CH.countIf(noRoot)
-			const sampledRootlessCount = CH.countIf(
-				noRoot.and($.thresholdSampled.eq(1).or($.unkeptSpans.eq(0))),
-			)
+			const sampledRootlessCount = CH.countIf(noRoot.and(sampled))
+			const externalParentCount = CH.countIf(external)
 			const allServices = CH.windowSpec({
 				frame: CH.rowsBetween(CH.unboundedPreceding, CH.unboundedFollowing),
 			})
@@ -873,9 +1058,12 @@ export function auditRootlessTracesSQL(
 				traceCount,
 				rootlessCount,
 				sampledRootlessCount,
+				externalParentCount,
+				externalTraceIds: CH.groupUniqArrayIf(AUDIT_EXTERNAL_TRACE_SAMPLE)($.TraceId, external),
 				orgTraceCount: CH.over(CH.sum(traceCount), allServices),
 				orgRootlessCount: CH.over(CH.sum(rootlessCount), allServices),
 				orgSampledRootlessCount: CH.over(CH.sum(sampledRootlessCount), allServices),
+				orgExternalParentCount: CH.over(CH.sum(externalParentCount), allServices),
 			}
 		})
 		.groupBy("entryService")
@@ -890,4 +1078,60 @@ export function auditRootlessTracesSQL(
 		childEnd: params.childEnd,
 		parentStart: params.parentStart,
 	})
+}
+
+export interface AuditInboundRouteRow {
+	readonly serviceName: string
+	readonly route: string
+	readonly traceCount: number
+}
+
+export const auditInboundRouteRowSchema = Schema.Struct({
+	serviceName: Schema.String,
+	route: Schema.String,
+	traceCount: CHNumber,
+})
+
+/**
+ * The route each sampled external-parent trace entered by, for the rootless rows that reported one.
+ * A raw read, but seeks by service (the sort-key prefix) and a short trace-id list, inbound spans only.
+ */
+export function auditInboundRoutesQuery(
+	serviceNames: Arr.NonEmptyReadonlyArray<string>,
+	traceIds: Arr.NonEmptyReadonlyArray<string>,
+) {
+	const firstInbound = from(Traces)
+		.select(($) => ({
+			TraceId: $.TraceId,
+			serviceName: CH.argMin($.ServiceName, $.Timestamp),
+			route: CH.argMin(
+				CH.coalesce(
+					CH.nullIf($.SpanAttributes.get("http.route"), ""),
+					CH.nullIf($.SpanAttributes.get("url.path"), ""),
+					$.SpanAttributes.get("http.target"),
+				),
+				$.Timestamp,
+			),
+		}))
+		.where(($) => [
+			$.OrgId.eq(orgIdParam),
+			CH.inList($.ServiceName, serviceNames),
+			$.Timestamp.gte(utcSecondsParam("parentStart")),
+			$.Timestamp.lt(utcSecondsParam("childEnd")),
+			CH.inList($.SpanKind, ["Server", "Consumer"]),
+			$.ParentSpanId.neq(""),
+			CH.inList($.TraceId, traceIds),
+		])
+		.groupBy("TraceId")
+
+	return fromQuery(firstInbound, "f")
+		.select(($) => ({
+			serviceName: $.serviceName,
+			route: $.route,
+			traceCount: CH.count(),
+		}))
+		.groupBy("serviceName", "route")
+		.orderBy(["traceCount", "desc"])
+		.limit(50)
+		.format("JSON")
 }

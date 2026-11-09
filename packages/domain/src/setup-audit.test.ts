@@ -70,6 +70,7 @@ const withOrgTotals = (
 		readonly traceCount: number
 		readonly rootlessCount: number
 		readonly sampledRootlessCount: number
+		readonly externalParentCount?: number
 	}>,
 ) => {
 	const sum = (pick: (row: (typeof rows)[number]) => number) =>
@@ -78,8 +79,9 @@ const withOrgTotals = (
 		orgTraceCount: sum((row) => row.traceCount),
 		orgRootlessCount: sum((row) => row.rootlessCount),
 		orgSampledRootlessCount: sum((row) => row.sampledRootlessCount),
+		orgExternalParentCount: sum((row) => row.externalParentCount ?? 0),
 	}
-	return Arr.map(rows, (row) => ({ ...row, ...totals }))
+	return Arr.map(rows, (row) => ({ externalParentCount: 0, ...row, ...totals }))
 }
 
 const healthyRule = Arr.getUnsafe(healthyConfig.alertRules, 0)
@@ -115,14 +117,7 @@ const healthyWarehouse: WarehouseAuditInputs = {
 	logSeverity: [{ serviceName: "api", severityText: "INFO", logCount: 500 }],
 	metricLabels: [{ attributeKey: "http.route", valueCardinality: 40 }],
 	peerValues: [{ attributeKey: "peer.service", attributeValue: "tinybird", usageCount: 20 }],
-	dbEdges: [
-		{
-			serviceName: "api",
-			dbSystem: "postgresql",
-			callCount: 100,
-			unknownNamespaceCallCount: 0,
-		},
-	],
+	dbEdges: [{ serviceName: "api", dbSystem: "postgresql", dbNamespace: "orders", callCount: 100 }],
 	logCorrelation: [
 		{
 			serviceName: "api",
@@ -141,19 +136,20 @@ const healthyWarehouse: WarehouseAuditInputs = {
 				childCount: 800,
 				orphanCount: 4,
 				sampledOrphanCount: 0,
+				externalParentCount: 0,
 				sampleTraceIds: [],
 			},
 		],
 		rootless: withOrgTotals([
 			{ entryService: "api", traceCount: 10_000, rootlessCount: 1, sampledRootlessCount: 0 },
 		]),
+		inboundRoutes: [],
 	},
 	services: [
 		{ serviceName: "api", namespaces: [], environments: ["production"], sdkLanguages: ["nodejs"] },
 	],
 	resourceKeySamples: [],
 	resourceKeyServices: [],
-	metricLabelServices: [],
 }
 
 const healthyServiceSpans = Arr.getUnsafe(healthyWarehouse.spanShape, 0)
@@ -308,8 +304,8 @@ describe("runSetupAudit — baseline", () => {
 				dbEdges: each((i) => ({
 					serviceName: `svc-${i}`,
 					dbSystem: "redis",
+					dbNamespace: "",
 					callCount: 100,
-					unknownNamespaceCallCount: 100,
 				})),
 				logCorrelation: each((i) => ({
 					serviceName: `svc-${i}`,
@@ -326,6 +322,7 @@ describe("runSetupAudit — baseline", () => {
 						childCount: 800,
 						orphanCount: 400,
 						sampledOrphanCount: 0,
+						externalParentCount: 0,
 						sampleTraceIds: [],
 					})),
 					rootless: withOrgTotals([
@@ -337,6 +334,7 @@ describe("runSetupAudit — baseline", () => {
 							sampledRootlessCount: 0,
 						})),
 					]),
+					inboundRoutes: [],
 				},
 			}
 			return runSetupAudit({ now: NOW, config, warehouse: telemetry }).checks
@@ -1620,6 +1618,51 @@ describe("resource-attribute coverage", () => {
 		expect(check(withoutResourceKey("vcs.ref.head.revision"), "RES-05").status).toBe("fail")
 	})
 
+	it("names each app and client service missing a key, even when another service sets it", () => {
+		const report = telemetry({
+			services: [
+				{
+					serviceName: "api",
+					namespaces: [],
+					environments: ["production"],
+					sdkLanguages: ["nodejs"],
+				},
+				{
+					serviceName: "landing",
+					namespaces: [],
+					environments: ["production"],
+					sdkLanguages: ["webjs"],
+				},
+				{ serviceName: "ios", namespaces: [], environments: ["production"], sdkLanguages: ["swift"] },
+				{ serviceName: "pr-app", namespaces: [], environments: ["pr-12"], sdkLanguages: ["nodejs"] },
+			],
+			serviceResourceKeys: [
+				{
+					serviceName: "api",
+					keys: ["service.version", "vcs.repository.url.full", "vcs.ref.head.revision"],
+				},
+				{ serviceName: "landing", keys: [] },
+				{ serviceName: "ios", keys: ["service.version"] },
+				// Maple's own and preview-only services are not the user's to fix here.
+				{ serviceName: "maple-uptime", keys: [] },
+				{ serviceName: "pr-app", keys: [] },
+			],
+		})
+		const names = (id: string) => Arr.map(check(report, id).affected, (entity) => entity.name)
+		expect(names("RES-02")).toEqual(["landing"])
+		expect(names("RES-04")).toEqual(["landing", "ios"])
+		expect(names("RES-05")).toEqual(["landing", "ios"])
+		expect(check(report, "RES-04").detail).toContain("2 services set no `vcs.repository.url.full`")
+	})
+
+	it("passes per service when every service sets the key", () => {
+		const report = telemetry({
+			serviceResourceKeys: [{ serviceName: "api", keys: ["service.version"] }],
+		})
+		expect(check(report, "RES-02").status).toBe("pass")
+		expect(check(report, "RES-04").status).toBe("fail")
+	})
+
 	it("RES-06 flags invented parallel keys, including the retired deployment.commit_sha", () => {
 		const invented = telemetry({
 			attributeKeys: [
@@ -1677,12 +1720,54 @@ describe("RES-03 — spans carry an environment", () => {
 })
 
 describe("NAME-02 — span-name cardinality", () => {
-	it("flags a service whose span names look like IDs", () => {
-		const report = telemetry({
-			spanShape: [{ ...healthyServiceSpans, spanNameCount: 40_000 }],
+	const templates = (row: Partial<NonNullable<WarehouseAuditInputs["spanNameTemplates"]>[number]>) =>
+		telemetry({
+			spanNameTemplates: [
+				{
+					serviceName: "api",
+					rawNameCount: 545,
+					templateCount: 542,
+					topTemplateNameCount: 2,
+					exampleNames: ["a"],
+					...row,
+				},
+			],
 		})
-		const result = check(report, "NAME-02")
+
+	it("passes a large set of real operation names", () => {
+		expect(check(templates({}), "NAME-02").status).toBe("pass")
+	})
+
+	it("flags names that collapse onto far fewer templates, with examples", () => {
+		const result = check(
+			templates({
+				rawNameCount: 4_000,
+				templateCount: 30,
+				topTemplateNameCount: 3_900,
+				exampleNames: ["GET /orders/1", "GET /orders/2"],
+			}),
+			"NAME-02",
+		)
 		expect(result.status).toBe("fail")
+		expect(result.affected[0]?.note).toBe(
+			'4,000 distinct span names but only 30 once IDs are removed; e.g. "GET /orders/1", "GET /orders/2"',
+		)
+	})
+
+	it("flags an extreme number of distinct operations even without IDs", () => {
+		const result = check(templates({ rawNameCount: 2_500, templateCount: 2_400 }), "NAME-02")
+		expect(result.affected[0]?.note).toBe("2,400 distinct span names even with IDs removed")
+	})
+
+	it("falls back to the raw count, at the extreme limit, when the template read failed", () => {
+		expect(
+			check(telemetry({ spanShape: [{ ...healthyServiceSpans, spanNameCount: 545 }] }), "NAME-02")
+				.status,
+		).toBe("pass")
+		const result = check(
+			telemetry({ spanShape: [{ ...healthyServiceSpans, spanNameCount: 40_000 }] }),
+			"NAME-02",
+		)
 		expect(result.affected[0]?.note).toBe("40,000 distinct span names")
 	})
 })
@@ -1765,6 +1850,45 @@ describe("MET-01 — metric label cardinality", () => {
 		expect(result.affected[0]?.name).toBe("user.id")
 		expect(result.detail).toContain("Counter metrics only")
 	})
+
+	it("judges each metric on its own once the per-metric read ran", () => {
+		const flagged = [{ attributeKey: "url.path", valueCardinality: 3_383 }]
+		const series = (cardinalities: ReadonlyArray<readonly [string, number]>) =>
+			telemetry({
+				metricLabels: flagged,
+				metricLabelSeries: Arr.map(cardinalities, ([metricName, valueCardinality]) => ({
+					attributeKey: "url.path",
+					serviceName: "api",
+					metricName,
+					valueCardinality,
+				})),
+			})
+		// The union across metrics is high, but no single metric is.
+		expect(
+			check(
+				series([
+					["http.requests", 600],
+					["http.bytes", 600],
+				]),
+				"MET-01",
+			).status,
+		).toBe("pass")
+		// No series at all: only services the read excludes (Maple's) carry the label.
+		expect(check(series([]), "MET-01").status).toBe("pass")
+
+		const result = check(
+			series([
+				["http.requests", 2_400],
+				["http.bytes", 1_100],
+				["other", 10],
+			]),
+			"MET-01",
+		)
+		expect(result.status).toBe("fail")
+		expect(result.affected[0]?.note).toBe(
+			"~2,400 values on `http.requests` (api), ~1,100 values on `http.bytes` (api)",
+		)
+	})
 })
 
 describe("STAT-01 — status and kind casing", () => {
@@ -1828,20 +1952,53 @@ describe("STAT-04 — entry-point spans", () => {
 })
 
 describe("MAP-02 — database identity", () => {
-	it("flags edges whose namespace is mostly empty", () => {
-		const report = telemetry({
-			dbEdges: [
-				{
-					serviceName: "api",
-					dbSystem: "postgresql",
-					callCount: 100,
-					unknownNamespaceCallCount: 100,
-				},
-			],
+	const edges = (
+		...rows: ReadonlyArray<readonly [service: string, system: string, namespace: string, calls: number]>
+	) =>
+		telemetry({
+			dbEdges: Arr.map(rows, ([serviceName, dbSystem, dbNamespace, callCount]) => ({
+				serviceName,
+				dbSystem,
+				dbNamespace,
+				callCount,
+			})),
 		})
-		const result = check(report, "MAP-02")
+
+	it("flags a dependency whose calls carry no namespace", () => {
+		const result = check(edges(["api", "postgresql", "", 100]), "MAP-02")
 		expect(result.status).toBe("fail")
 		expect(result.affected[0]?.name).toBe("api → postgresql")
+		expect(result.affected[0]?.note).toBe("100 with no namespace")
+	})
+
+	it("says a database is split across nodes when some calls do name it", () => {
+		const result = check(
+			edges(["cli", "clickhouse", "", 446], ["cli", "clickhouse", "default", 28]),
+			"MAP-02",
+		)
+		expect(result.affected[0]?.note).toBe("split across nodes: 446 with no namespace; 28 as `default`")
+	})
+
+	it("treats the Hyperdrive sentinel and a bare hostname as missing names", () => {
+		const result = check(
+			edges(
+				["api", "postgresql", "hyperdrive", 500],
+				["api", "tinybird", "api.us-east.aws.tinybird.co", 300],
+				["ingest", "postgresql", "postgres", 300],
+			),
+			"MAP-02",
+		)
+		expect(Arr.map(result.affected, (entity) => [entity.name, entity.note])).toEqual([
+			["api → postgresql", "500 named `hyperdrive` (an opaque Hyperdrive id)"],
+			["api → tinybird", "300 named after the host `api.us-east.aws.tinybird.co`"],
+		])
+	})
+
+	it("accepts a mostly named dependency and dotted database names", () => {
+		expect(
+			check(edges(["api", "postgresql", "orders", 90], ["api", "postgresql", "", 10]), "MAP-02").status,
+		).toBe("pass")
+		expect(check(edges(["api", "postgresql", "orders.public", 90]), "MAP-02").status).toBe("pass")
 	})
 })
 
@@ -1851,7 +2008,7 @@ describe("trace completeness", () => {
 
 	it("skips all three checks when the joins did not run", () => {
 		const report = telemetry({ traceCompleteness: undefined })
-		for (const id of ["TRC-01", "TRC-02", "TRC-03"]) {
+		for (const id of ["TRC-01", "TRC-02", "TRC-03", "TRC-04"]) {
 			// The joins degrade independently of the rest of the telemetry reads, so the checks pass
 			// rather than skip — the report never claims a gap it did not measure.
 			expect(check(report, id).status).toBe("pass")
@@ -1867,6 +2024,7 @@ describe("trace completeness", () => {
 						childCount: 800,
 						orphanCount: 400,
 						sampledOrphanCount: 0,
+						externalParentCount: 0,
 						sampleTraceIds: ["abc123"],
 					},
 				],
@@ -1885,6 +2043,7 @@ describe("trace completeness", () => {
 						childCount: 800,
 						orphanCount: 400,
 						sampledOrphanCount: 400,
+						externalParentCount: 0,
 						sampleTraceIds: [],
 					},
 				],
@@ -1904,12 +2063,81 @@ describe("trace completeness", () => {
 						childCount: 10,
 						orphanCount: 10,
 						sampledOrphanCount: 0,
+						externalParentCount: 0,
 						sampleTraceIds: [],
 					},
 				],
 			})
 			expect(check(report, "TRC-01").status).toBe("pass")
 			expect(check(report, "TRC-03").status).toBe("pass")
+		})
+	})
+
+	describe("TRC-04 — inbound requests continuing an outside trace", () => {
+		// maple-api in prod: every orphan and rootless trace came from an external MCP client.
+		const external = traces({
+			orphans: [
+				{
+					serviceName: "api",
+					childCount: 1_500,
+					orphanCount: 140,
+					sampledOrphanCount: 0,
+					externalParentCount: 140,
+					sampleTraceIds: [],
+				},
+			],
+			rootless: withOrgTotals([
+				{
+					entryService: "api",
+					traceCount: 7_400,
+					rootlessCount: 44,
+					sampledRootlessCount: 0,
+					externalParentCount: 44,
+				},
+				{ entryService: "cli", traceCount: 22_000, rootlessCount: 0, sampledRootlessCount: 0 },
+			]),
+			inboundRoutes: [
+				{ serviceName: "api", route: "/mcp", traceCount: 9 },
+				{ serviceName: "api", route: "/oauth/token", traceCount: 1 },
+			],
+		})
+
+		it("keeps them out of TRC-01 and TRC-02", () => {
+			expect(check(external, "TRC-01").status).toBe("pass")
+			expect(check(external, "TRC-02").status).toBe("pass")
+		})
+
+		it("reports them as info, naming the routes they arrive on", () => {
+			const result = check(external, "TRC-04")
+			expect(result.status).toBe("fail")
+			expect(result.severity).toBe("info")
+			expect(result.affected).toEqual([
+				{
+					kind: "service",
+					name: "api",
+					note: "44 traces started by an outside caller, mostly via `/mcp`, `/oauth/token`",
+				},
+			])
+		})
+
+		it("still reports the orphans that are not external under TRC-01", () => {
+			const report = traces({
+				orphans: [
+					{
+						serviceName: "api",
+						childCount: 1_000,
+						orphanCount: 400,
+						sampledOrphanCount: 0,
+						externalParentCount: 100,
+						sampleTraceIds: ["abc"],
+					},
+				],
+			})
+			expect(check(report, "TRC-01").affected[0]?.note).toContain("30% of entry spans")
+		})
+
+		it("passes when nothing arrives from outside", () => {
+			expect(check(traces({}), "TRC-04").status).toBe("pass")
 		})
 	})
 
@@ -1987,6 +2215,8 @@ describe("trace completeness", () => {
 				orgTraceCount: 10_000,
 				orgRootlessCount: 9_800,
 				orgSampledRootlessCount: 0,
+				externalParentCount: 0,
+				orgExternalParentCount: 0,
 			}
 			const result = check(traces({ rootless: [api] }), "TRC-02")
 			expect(result.detail).toContain("98% of traces have no root span: 9800 of 10000 traces")
@@ -2002,6 +2232,8 @@ describe("trace completeness", () => {
 				orgTraceCount: 100_000,
 				orgRootlessCount: 200,
 				orgSampledRootlessCount: 0,
+				externalParentCount: 0,
+				orgExternalParentCount: 0,
 			}
 			const report = traces({ rootless: [api] })
 			const result = check(report, "TRC-02")
@@ -2103,26 +2335,23 @@ describe("services Maple writes itself", () => {
 		}
 	})
 
-	it("drops a metric label only Maple's integration services emit", () => {
+	it("drops Maple's services from the per-metric series", () => {
 		const exploded = [{ attributeKey: "url.path", valueCardinality: 3_500 }]
+		const series = (serviceName: string) => ({
+			attributeKey: "url.path",
+			serviceName,
+			metricName: "cloudflare.http.requests.by_path",
+			valueCardinality: 1_500,
+		})
 		const integrationOnly = telemetry({
 			metricLabels: exploded,
-			metricLabelServices: [
-				{ attributeKey: "url.path", serviceName: "cloudflare/example.com" },
-				{ attributeKey: "url.path", serviceName: "cloudflare/example.org" },
-			],
+			metricLabelSeries: [series("cloudflare/example.com"), series("cloudflare/example.org")],
 		})
 		expect(check(integrationOnly, "MET-01").status).toBe("pass")
-
-		const alsoUsers = telemetry({
-			metricLabels: exploded,
-			metricLabelServices: [
-				{ attributeKey: "url.path", serviceName: "cloudflare/example.com" },
-				{ attributeKey: "url.path", serviceName: "api" },
-			],
-		})
-		expect(check(alsoUsers, "MET-01").status).toBe("fail")
-		// No attribution (the follow-up failed or was skipped) keeps the finding.
+		expect(
+			check(telemetry({ metricLabels: exploded, metricLabelSeries: [series("api")] }), "MET-01").status,
+		).toBe("fail")
+		// No per-metric read (it failed) keeps the rollup's finding.
 		expect(check(telemetry({ metricLabels: exploded }), "MET-01").status).toBe("fail")
 	})
 

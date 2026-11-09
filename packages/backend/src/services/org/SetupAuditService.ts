@@ -23,6 +23,7 @@ import {
 	explodedMetricLabels,
 	inventedResourceKeys,
 	MAPLE_GENERATED_SERVICE_NAMES,
+	MAPLE_INTEGRATION_SERVICE_PREFIXES,
 	SetupAuditUnavailableError,
 	type SetupAuditReport,
 	type TraceCompletenessInputs,
@@ -57,6 +58,9 @@ const TRACE_PARENT_LOOKBACK_MINUTES = 60
 
 /** At most this many keys per attribution read; each becomes one predicate and one count. */
 const ATTRIBUTION_MAX_KEYS = 10
+
+/** The release keys RES-02, RES-04 and RES-05 judge per service. */
+const RELEASE_RESOURCE_KEYS = ["service.version", "vcs.repository.url.full", "vcs.ref.head.revision"] as const
 
 /** What the ingest sampler keeps from traces it drops; null when it drops nothing. */
 const samplingOverrides = (
@@ -461,11 +465,35 @@ const make: Effect.Effect<SetupAuditServiceApi, never, SetupAuditServiceRequirem
 				{ concurrency: 2 },
 			)
 
+			// Names the routes outside callers arrive on, from the trace ids the rootless join sampled.
+			const externalRows = Arr.filter(joined.rootless, (row) => row.externalParentCount > 0)
+			const externalServices = Arr.map(externalRows, (row) => row.entryService)
+			const externalTraceIds = Arr.flatMap(externalRows, (row) => row.externalTraceIds)
+			const inboundRoutes =
+				Arr.isReadonlyArrayNonEmpty(externalServices) && Arr.isReadonlyArrayNonEmpty(externalTraceIds)
+					? yield* orEmpty(
+							"setupAuditInboundRoutes",
+							warehouse.compiledQuery(
+								tenant,
+								CH.compile(
+									Integrations.auditInboundRoutesQuery(externalServices, externalTraceIds),
+									{
+										orgId: tenant.orgId,
+										parentStart: window.parentStart,
+										childEnd: window.childEnd,
+									},
+								),
+								{ profile: "list", context: "setupAuditInboundRoutes" },
+							),
+						)
+					: []
+
 			const inputs: TraceCompletenessInputs = {
 				windowMinutes: TRACE_WINDOW_MINUTES,
 				traceSampleModulus: window.traceSampleModulus,
 				orphans: joined.orphans,
-				rootless: joined.rootless,
+				rootless: Arr.map(joined.rootless, ({ externalTraceIds: _ids, ...row }) => row),
+				inboundRoutes,
 			}
 			return inputs
 		})
@@ -520,15 +548,32 @@ const make: Effect.Effect<SetupAuditServiceApi, never, SetupAuditServiceRequirem
 								),
 							)
 						: none,
-					metricServices: Arr.isReadonlyArrayNonEmpty(metricKeyList)
-						? read(
-								"setupAuditMetricLabelServices",
-								CH.compile(
-									Integrations.auditMetricLabelServicesQuery(metricKeyList),
-									window(LOOKBACK_HOURS),
-								),
-							)
-						: none,
+					// `Option.none` when the read failed, so MET-01 falls back to the rollup.
+					metricSeries: Arr.isReadonlyArrayNonEmpty(metricKeyList)
+						? warehouse
+								.compiledQuery(
+									tenant,
+									CH.compile(
+										Integrations.auditMetricLabelByMetricQuery(metricKeyList, {
+											excludeServicePrefixes: MAPLE_INTEGRATION_SERVICE_PREFIXES,
+										}),
+										window(Integrations.AUDIT_METRIC_LABEL_MAX_HOURS),
+									),
+									{ profile: "list", context: "setupAuditMetricLabelSeries" },
+								)
+								.pipe(
+									Effect.asSome,
+									Effect.catchCause((cause) =>
+										Effect.logWarning("Setup audit key attribution skipped").pipe(
+											Effect.annotateLogs({
+												context: "setupAuditMetricLabelSeries",
+												cause,
+											}),
+											Effect.as(Option.none()),
+										),
+									),
+								)
+						: Effect.succeedSome([]),
 				},
 				{ concurrency: 2 },
 			)
@@ -551,13 +596,28 @@ const make: Effect.Effect<SetupAuditServiceApi, never, SetupAuditServiceRequirem
 					usageCount: row.usageCount,
 				})),
 				resourceKeyServices: emitters(resourceKeyList, rows.resourceServices),
-				metricLabelServices: Arr.map(emitters(metricKeyList, rows.metricServices), (row) => ({
-					attributeKey: row.key,
-					serviceName: row.serviceName,
-				})),
+				...Option.match(rows.metricSeries, {
+					onNone: () => ({}),
+					onSome: (series) => ({
+						// `valueCardinalities` is aligned with the keys asked for.
+						metricLabelSeries: Arr.flatMap(series, (row) =>
+							Arr.filterMap(metricKeyList, (key, index) => {
+								const valueCardinality = row.valueCardinalities[index] ?? 0
+								return valueCardinality > 0
+									? Result.succeed({
+											attributeKey: key,
+											serviceName: row.serviceName,
+											metricName: row.metricName,
+											valueCardinality,
+										})
+									: Result.failVoid
+							}),
+						),
+					}),
+				}),
 			} satisfies Pick<
 				WarehouseAuditInputs,
-				"resourceKeySamples" | "resourceKeyServices" | "metricLabelServices"
+				"resourceKeySamples" | "resourceKeyServices" | "metricLabelSeries"
 			>
 		})
 
@@ -593,6 +653,18 @@ const make: Effect.Effect<SetupAuditServiceApi, never, SetupAuditServiceRequirem
 						Effect.logWarning("Setup audit enrichment read skipped").pipe(
 							Effect.annotateLogs({ context, cause }),
 							Effect.as([]),
+						),
+					),
+				)
+
+			// Like `optional`, but a failure reads as absent so the check can fall back.
+			const optionalOption = <A>(context: string, read: Effect.Effect<ReadonlyArray<A>, unknown>) =>
+				read.pipe(
+					Effect.asSome,
+					Effect.catchCause((cause) =>
+						Effect.logWarning("Setup audit enrichment read skipped").pipe(
+							Effect.annotateLogs({ context, cause }),
+							Effect.as(Option.none<ReadonlyArray<A>>()),
 						),
 					),
 				)
@@ -641,6 +713,10 @@ const make: Effect.Effect<SetupAuditServiceApi, never, SetupAuditServiceRequirem
 						"setupAuditServiceSdk",
 						run(CH.compile(Integrations.auditServiceSdkQuery(), window), "discovery"),
 					),
+					spanNameTemplates: optionalOption(
+						"setupAuditSpanNameTemplates",
+						run(CH.compile(Integrations.auditSpanNameTemplatesQuery(), window), "list"),
+					),
 				},
 				{ concurrency: 4 },
 			)
@@ -678,6 +754,25 @@ const make: Effect.Effect<SetupAuditServiceApi, never, SetupAuditServiceRequirem
 						now,
 						inventedResourceKeys(attributeKeys),
 						explodedMetricLabels(metricLabels),
+					),
+					// Trace-sampled like the completeness joins, from the same span volume.
+					resourceKeys: optionalOption(
+						"setupAuditServiceResourceKeys",
+						run(
+							CH.compile(
+								Integrations.auditServiceResourceKeysQuery(RELEASE_RESOURCE_KEYS, {
+									traceSampleModulus: Integrations.auditTraceSampleModulus(totalSpans),
+								}),
+								{
+									orgId: tenant.orgId,
+									startTime: formatWarehouseDateTime(
+										now - Integrations.AUDIT_SERVICE_RESOURCE_MAX_HOURS * 60 * 60 * 1000,
+									),
+									endTime: formatWarehouseDateTime(now),
+								},
+							),
+							"list",
+						),
 					),
 				},
 				{ concurrency: 2 },
@@ -725,6 +820,22 @@ const make: Effect.Effect<SetupAuditServiceApi, never, SetupAuditServiceRequirem
 				metricLabels,
 				peerValues: results.peerValues,
 				dbEdges: results.dbEdges,
+				...Option.match(results.spanNameTemplates, {
+					onNone: () => ({}),
+					onSome: (rows) => ({ spanNameTemplates: rows }),
+				}),
+				...Option.match(followUps.resourceKeys, {
+					onNone: () => ({}),
+					onSome: (rows) => ({
+						serviceResourceKeys: Arr.map(rows, (row) => ({
+							serviceName: row.serviceName,
+							keys: Arr.filter(
+								RELEASE_RESOURCE_KEYS,
+								(_key, index) => (row.keyCounts[index] ?? 0) > 0,
+							),
+						})),
+					}),
+				}),
 				logCorrelation: Arr.map(results.logCorrelation, (row) => ({
 					serviceName: row.serviceName,
 					logCount: row.logCount,

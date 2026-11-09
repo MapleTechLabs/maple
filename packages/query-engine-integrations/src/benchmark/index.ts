@@ -1093,9 +1093,39 @@ export const integrationFixtures: ReadonlyArray<IntegrationFixture> = [
 	},
 	{
 		module: "setup-audit",
-		name: "auditMetricLabelServicesQuery",
+		name: "auditMetricLabelByMetricQuery",
 		label: "default",
-		compile: () => compileUnsafe(CH.auditMetricLabelServicesQuery(["url.path"]), window),
+		compile: () =>
+			compileUnsafe(
+				CH.auditMetricLabelByMetricQuery(["url.path"], { excludeServicePrefixes: ["cloudflare/"] }),
+				window,
+			),
+	},
+	{
+		module: "setup-audit",
+		name: "auditServiceResourceKeysQuery",
+		label: "default",
+		compile: () =>
+			compileUnsafe(
+				CH.auditServiceResourceKeysQuery(["service.version", "vcs.repository.url.full"]),
+				window,
+			),
+	},
+	{
+		module: "setup-audit",
+		name: "auditSpanNameTemplatesQuery",
+		label: "default",
+		compile: () => compileUnsafe(CH.auditSpanNameTemplatesQuery(), window),
+	},
+	{
+		module: "setup-audit",
+		name: "auditInboundRoutesQuery",
+		label: "default",
+		compile: () =>
+			compileUnsafe(
+				CH.auditInboundRoutesQuery(["maple-api"], ["0af7651916cd43dd8448eb211c80319c"]),
+				traceWindow,
+			),
 	},
 	{
 		module: "setup-audit",

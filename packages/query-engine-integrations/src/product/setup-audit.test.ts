@@ -10,7 +10,14 @@ import {
 	auditLogCorrelationQuery,
 	auditLogCorrelationRowSchema,
 	auditKeyServiceRowSchema,
-	auditMetricLabelServicesQuery,
+	auditInboundRouteRowSchema,
+	auditInboundRoutesQuery,
+	auditMetricLabelByMetricQuery,
+	auditMetricLabelByMetricRowSchema,
+	auditServiceResourceKeyRowSchema,
+	auditServiceResourceKeysQuery,
+	auditSpanNameTemplateRowSchema,
+	auditSpanNameTemplatesQuery,
 	auditResourceKeyServicesQuery,
 	auditResourceValueRowSchema,
 	auditResourceValueSamplesQuery,
@@ -59,8 +66,21 @@ const compiledQueries: ReadonlyArray<readonly [string, string]> = [
 		compileUnsafe(auditResourceKeyServicesQuery(["deployment.commit_sha"]), baseParams).sql,
 	],
 	[
-		"auditMetricLabelServicesQuery",
-		compileUnsafe(auditMetricLabelServicesQuery(["url.path"]), baseParams).sql,
+		"auditMetricLabelByMetricQuery",
+		compileUnsafe(auditMetricLabelByMetricQuery(["url.path"]), baseParams).sql,
+	],
+	[
+		"auditServiceResourceKeysQuery",
+		compileUnsafe(auditServiceResourceKeysQuery(["service.version"]), baseParams).sql,
+	],
+	["auditSpanNameTemplatesQuery", compileUnsafe(auditSpanNameTemplatesQuery(), baseParams).sql],
+	[
+		"auditInboundRoutesQuery",
+		compileUnsafe(auditInboundRoutesQuery(["api"], ["abc"]), {
+			orgId: OrgId.make("org_1"),
+			parentStart: "2024-01-01 09:00:00",
+			childEnd: "2024-01-01 11:00:00",
+		}).sql,
 	],
 ]
 
@@ -140,13 +160,50 @@ describe("auditPeerValueInventoryQuery", () => {
 })
 
 describe("auditDbEdgeIdentityQuery", () => {
-	it("counts calls whose database namespace is empty", () => {
+	it("keys calls by namespace the way the service map keys database nodes", () => {
 		const { sql } = compileUnsafe(auditDbEdgeIdentityQuery(), baseParams)
 		expect(sql).toContain("FROM service_map_db_edges_hourly")
-		expect(sql).toContain(
-			"sumIf(service_map_db_edges_hourly.CallCount, service_map_db_edges_hourly.DbNamespace = '')",
-		)
+		expect(sql).toContain("GROUP BY serviceName, dbSystem, dbNamespace")
 		expect(sql).toContain("DbSystem != ''")
+	})
+})
+
+describe("auditSpanNameTemplatesQuery", () => {
+	it("templates only each service's distinct names from the hourly rollup", () => {
+		const { sql } = compileUnsafe(auditSpanNameTemplatesQuery(), baseParams)
+		expect(sql).toContain("FROM traces_aggregates_hourly")
+		expect(sql).not.toContain("FROM traces\n")
+		expect(sql).toContain("GROUP BY serviceName, spanName")
+		expect(sql).toContain("HAVING sum(t.names) > 100")
+	})
+})
+
+describe("auditMetricLabelByMetricQuery", () => {
+	it("counts each label's values per service and metric, skipping excluded services", () => {
+		const { sql } = compileUnsafe(
+			auditMetricLabelByMetricQuery(["url.path", "user.id"], {
+				excludeServicePrefixes: ["cloudflare/"],
+			}),
+			baseParams,
+		)
+		expect(sql).toContain("FROM metrics_sum")
+		expect(sql).toContain(
+			"uniqIf(metrics_sum.Attributes['url.path'], mapContains(metrics_sum.Attributes, 'url.path'))",
+		)
+		expect(sql).toContain("GROUP BY serviceName, metricName")
+		expect(sql).toContain("NOT (metrics_sum.ServiceName LIKE 'cloudflare/%')")
+	})
+})
+
+describe("auditServiceResourceKeysQuery", () => {
+	it("reads entry spans only and counts each key per service", () => {
+		const { sql } = compileUnsafe(
+			auditServiceResourceKeysQuery(["service.version", "vcs.repository.url.full"]),
+			baseParams,
+		)
+		expect(sql).toContain("IsEntryPoint = 1")
+		expect(sql).toContain("countIf(mapContains(traces.ResourceAttributes, 'vcs.repository.url.full'))")
+		expect(sql).toContain("GROUP BY serviceName")
 	})
 })
 
@@ -213,9 +270,6 @@ describe("key attribution reads", () => {
 		expect(sql).toContain(
 			"(mapContains(traces.ResourceAttributes, 'env') OR mapContains(traces.ResourceAttributes, 'git.sha'))",
 		)
-		expect(compileUnsafe(auditMetricLabelServicesQuery(["url.path"]), baseParams).sql).toContain(
-			"mapContains(metrics_sum.Attributes, 'url.path')",
-		)
 	})
 
 	it("escapes a key so it cannot break out of its literal", () => {
@@ -252,11 +306,33 @@ describe("trace-completeness joins", () => {
 		// join_use_nulls = 0 makes a miss an empty string, not NULL.
 		expect(sql).toContain("countIf(p.SpanId = '')")
 		// Both sides scoped to the org; the parent side reaches further back for long spans.
-		expect(Arr.fromIterable(Str.matchAll(/OrgId = 'org_1'/g)(sql))).toHaveLength(2)
+		expect(Arr.fromIterable(Str.matchAll(/OrgId = 'org_1'/g)(sql))).toHaveLength(3)
 		expect(sql).toContain("Timestamp >= '2024-01-01 09:00:00'")
 		expect(sql).toContain("Timestamp >= '2024-01-01 10:00:00'")
 		// Sampling-marked orphans are split out rather than counted as defects.
 		expect(sql).toContain("sampledOrphanCount")
+		// An orphan whose trace has no root in the org continues a caller from outside it.
+		expect(sql).toContain("FROM trace_list_mv")
+		expect(sql).toContain("r.TraceId = '')) AS externalParentCount")
+	})
+
+	it("auditRootlessTracesSQL splits out traces entered from an outside caller", () => {
+		const { sql } = Effect.runSync(auditRootlessTracesSQL(window, null))
+		expect(sql).toContain(
+			"argMin(toUInt8(SpanKind IN ('Server', 'Consumer') AND ParentSpanId != ''), (Timestamp, SpanKind NOT IN ('Server', 'Consumer')))",
+		)
+		expect(sql).toContain("AS orgExternalParentCount")
+	})
+
+	it("auditInboundRoutesQuery reads the first inbound span of each listed trace", () => {
+		const { sql } = compileUnsafe(auditInboundRoutesQuery(["api"], ["t1", "t2"]), {
+			orgId: OrgId.make("org_1"),
+			parentStart: window.parentStart,
+			childEnd: window.childEnd,
+		})
+		expect(sql).toContain("traces.ServiceName IN ('api')")
+		expect(sql).toContain("traces.TraceId IN ('t1', 't2')")
+		expect(sql).toContain("traces.ParentSpanId != ''")
 	})
 
 	it("auditRootlessTracesSQL joins every observed trace against the root-span index", () => {
@@ -293,13 +369,13 @@ describe("trace-completeness joins", () => {
 		const unsampled = Effect.runSync(auditOrphanSpansSQL(window)).sql
 		expect(unsampled).not.toContain("cityHash64")
 
-		for (const sql of [
-			Effect.runSync(auditOrphanSpansSQL({ ...window, traceSampleModulus: 16 })).sql,
-			Effect.runSync(auditRootlessTracesSQL({ ...window, traceSampleModulus: 16 }, null)).sql,
-		]) {
-			// Both sides, so every span of a kept trace survives and per-trace correctness is exact.
+		for (const [sql, sides] of [
+			[Effect.runSync(auditOrphanSpansSQL({ ...window, traceSampleModulus: 16 })).sql, 3],
+			[Effect.runSync(auditRootlessTracesSQL({ ...window, traceSampleModulus: 16 }, null)).sql, 2],
+		] as const) {
+			// Every side, so every span of a kept trace survives and per-trace correctness is exact.
 			expect(Arr.fromIterable(Str.matchAll(/cityHash64\(\w+\.TraceId\) % 16 = 0/g)(sql))).toHaveLength(
-				2,
+				sides,
 			)
 		}
 	})
@@ -423,8 +499,8 @@ describe("row schemas decode both ClickHouse and Tinybird numeric encodings", ()
 			() =>
 				decodeBothEncodings(
 					Schema.decodeUnknownSync(auditDbEdgeRowSchema),
-					{ serviceName: "api", dbSystem: "postgresql" },
-					{ callCount: 500, unknownNamespaceCallCount: 500 },
+					{ serviceName: "api", dbSystem: "postgresql", dbNamespace: "" },
+					{ callCount: 500 },
 				),
 		],
 		[
@@ -457,6 +533,41 @@ describe("row schemas decode both ClickHouse and Tinybird numeric encodings", ()
 				return [
 					decode({ serviceName: "ios", keyCounts: ["32", "0"] }),
 					decode({ serviceName: "ios", keyCounts: [32, 0] }),
+				]
+			},
+		],
+		[
+			"spanNameTemplate",
+			() =>
+				decodeBothEncodings(
+					Schema.decodeUnknownSync(auditSpanNameTemplateRowSchema),
+					{ serviceName: "api", exampleNames: ["GET /u/1", "GET /u/2"] },
+					{ rawNameCount: 900, templateCount: 40, topTemplateNameCount: 800 },
+				),
+		],
+		[
+			"inboundRoute",
+			() =>
+				decodeBothEncodings(
+					Schema.decodeUnknownSync(auditInboundRouteRowSchema),
+					{ serviceName: "api", route: "/mcp" },
+					{ traceCount: 87 },
+				),
+		],
+		[
+			"metricLabelByMetric / serviceResourceKey",
+			() => {
+				const metric = Schema.decodeUnknownSync(auditMetricLabelByMetricRowSchema)
+				const resource = Schema.decodeUnknownSync(auditServiceResourceKeyRowSchema)
+				return [
+					[
+						metric({ serviceName: "api", metricName: "m", valueCardinalities: ["3383"] }),
+						resource({ serviceName: "api", spanCount: "10", keyCounts: ["10", "0"] }),
+					],
+					[
+						metric({ serviceName: "api", metricName: "m", valueCardinalities: [3383] }),
+						resource({ serviceName: "api", spanCount: 10, keyCounts: [10, 0] }),
+					],
 				]
 			},
 		],
