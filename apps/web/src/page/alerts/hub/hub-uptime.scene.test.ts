@@ -331,6 +331,14 @@ describe("alerts hub, Uptime tab", () => {
 			expectView(role("link", { name: "New check" })).toHaveAttr("href", "/alerts/uptime/new"),
 			expectView(role("link", { name: "New rule" })).not.toExist(),
 		)
+		scene(
+			{ update: pageUpdate, view },
+			given({ ...withMonitors(THREE), search: { tab: "uptime", serviceName: "checkout-api" } }),
+			expectView(role("link", { name: "New check" })).toHaveAttr(
+				"href",
+				"/alerts/uptime/new?serviceName=checkout-api",
+			),
+		)
 		const asMember = pageUpdate(
 			withMonitors(THREE),
 			Message.CompletedFetchSession({ orgId: ORG, grants: MEMBER }),
