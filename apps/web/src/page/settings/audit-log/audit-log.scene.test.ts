@@ -2,6 +2,7 @@ import { Result, Array as Arr } from "effect"
 import { expect as expectView, given, role, scene, withViewInputs } from "foldkit/scene"
 import { describe, expect, test } from "vitest"
 import { PageOutMessage } from "../../contract"
+import * as CustomRange from "../../kit/custom-range"
 import { Message } from "./model"
 import { init, revisit, searchChanged, update } from "./update"
 import { view } from "./view"
@@ -22,7 +23,11 @@ describe("audit log tab", () => {
 		const moved = searchChanged(entered, { outcome: "denied" }).model
 		const stale = update(
 			moved,
-			Message.CompletedFetchPage({ request: {}, resolvedSince: null, result: Result.succeed(page) }),
+			Message.CompletedFetchPage({
+				request: init({}).model.request,
+				resolvedSince: null,
+				result: Result.succeed(page),
+			}),
 			{ outcome: "denied" },
 		)
 		expect(stale.model.view).toBeNull()
@@ -88,9 +93,14 @@ describe("audit log tab", () => {
 	})
 
 	test("Load more pins the ceiling to the newest entry and asks for the next cursor", () => {
+		const entered = init({}).model
 		const loaded = update(
-			init({}).model,
-			Message.CompletedFetchPage({ request: {}, resolvedSince: null, result: Result.succeed(page) }),
+			entered,
+			Message.CompletedFetchPage({
+				request: entered.request,
+				resolvedSince: null,
+				result: Result.succeed(page),
+			}),
 			{},
 		).model
 		expect(update(loaded, Message.ClickedLoadMore(), {}).commands?.[0]).toMatchObject({
@@ -99,9 +109,14 @@ describe("audit log tab", () => {
 	})
 
 	test("a revisit reads the first page quietly and holds Load more until it lands", () => {
+		const entered = init({}).model
 		const loaded = update(
-			init({}).model,
-			Message.CompletedFetchPage({ request: {}, resolvedSince: null, result: Result.succeed(page) }),
+			entered,
+			Message.CompletedFetchPage({
+				request: entered.request,
+				resolvedSince: null,
+				result: Result.succeed(page),
+			}),
 			{},
 		).model
 		const back = revisit(loaded, {})
@@ -112,5 +127,109 @@ describe("audit log tab", () => {
 
 	test("a revisit while the same first page is in flight does not read it twice", () => {
 		expect(revisit(init({}).model, {}).commands ?? []).toEqual([])
+	})
+
+	test("the list opens on changes, and the kind switch writes access or all to the URL", () => {
+		const entered = init({ tab: "audit-log" })
+		expect(entered.commands?.[0]).toMatchObject({ args: { request: { kind: "changes" } } })
+		expect(init({ kind: "all" }).model.request.kind).toBeUndefined()
+		const step = update(entered.model, Message.ClickedKind({ value: "access" }), { tab: "audit-log" })
+		expect(step.outMessage).toEqual(
+			PageOutMessage.RequestedNavigation({
+				url: "/settings?tab=audit-log&kind=access",
+				isReplace: true,
+			}),
+		)
+		const back = update(entered.model, Message.ClickedKind({ value: "changes" }), {
+			tab: "audit-log",
+			kind: "access",
+		})
+		expect(back.outMessage).toEqual(
+			PageOutMessage.RequestedNavigation({ url: "/settings?tab=audit-log", isReplace: true }),
+		)
+	})
+
+	test("a pasted id becomes the filter it stands for; anything else says what the lookup takes", () => {
+		const search = { tab: "audit-log" } as const
+		const typed = update(
+			init(search).model,
+			Message.ChangedLookup({ value: " key_aXwpxqBkqtYwtBtmsGbR41 " }),
+			search,
+		)
+		expect(update(typed.model, Message.SubmittedLookup(), search).outMessage).toEqual(
+			PageOutMessage.RequestedNavigation({
+				url: "/settings?tab=audit-log&actor=key_aXwpxqBkqtYwtBtmsGbR41",
+				isReplace: true,
+			}),
+		)
+		const ray = update(
+			init(search).model,
+			Message.ChangedLookup({ value: "8f2c1a9d4b7e3f60-FRA" }),
+			search,
+		)
+		expect(update(ray.model, Message.SubmittedLookup(), search).outMessage).toEqual(
+			PageOutMessage.RequestedNavigation({
+				url: "/settings?tab=audit-log&request=8f2c1a9d4b7e3f60-FRA",
+				isReplace: true,
+			}),
+		)
+		const junk = update(init(search).model, Message.ChangedLookup({ value: "hello world" }), search)
+		const refused = update(junk.model, Message.SubmittedLookup(), search)
+		expect(refused.outMessage).toBeUndefined()
+		scene(
+			{
+				update: (model, message) => update(model, message, search),
+				view: withViewInputs(view, { search, nowMs: 0, timeZone: "UTC", apiKeys: [] })(),
+			},
+			given(refused.model),
+			expectView(role("status")).toHaveText(/Not something the log filters by/),
+		)
+	})
+
+	test("removing the resource type drops the action that belongs to it", () => {
+		const search = {
+			tab: "audit-log",
+			resource_type: "dashboard",
+			action: "dashboard.updated",
+			outcome: "denied",
+		} as const
+		expect(
+			update(init(search).model, Message.RemovedFilter({ key: "resourceType" }), search).outMessage,
+		).toEqual(
+			PageOutMessage.RequestedNavigation({
+				url: "/settings?tab=audit-log&outcome=denied",
+				isReplace: true,
+			}),
+		)
+	})
+
+	test("an applied custom range lands in the URL as UTC instants", () => {
+		const search = { tab: "audit-log" } as const
+		const opened = update(
+			init(search).model,
+			Message.ResolvedCustomToday({
+				timeZone: "UTC",
+				today: { year: 2026, month: 11, day: 9 },
+				lastDay: { year: 2026, month: 11, day: 9 },
+			}),
+			search,
+		).model
+		const start: ReturnType<typeof update> = { model: opened }
+		const picked = Arr.reduce(
+			[
+				CustomRange.Message.ClickedDay({ date: { year: 2026, month: 11, day: 2 } }),
+				CustomRange.Message.ClickedDay({ date: { year: 2026, month: 11, day: 4 } }),
+				CustomRange.Message.ClickedApply(),
+			],
+			start,
+			(step, message) => update(step.model, Message.GotCustomRangeMessage({ message }), search),
+		)
+		expect(picked.outMessage).toEqual(
+			PageOutMessage.RequestedNavigation({
+				url: "/settings?tab=audit-log&since=2026-11-02T00%3A00%3A00.000Z&until=2026-11-04T23%3A59%3A00.000Z",
+				isReplace: true,
+			}),
+		)
+		expect(picked.model.customRange).toBeNull()
 	})
 })

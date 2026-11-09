@@ -317,6 +317,13 @@ export const SettingsSearch = Schema.Struct({
 	actor: Schema.optional(Schema.String),
 	actor_type: Schema.optional(Schema.String),
 	outcome: Schema.optional(Schema.String),
+	kind: Schema.optional(Schema.String),
+	resource_type: Schema.optional(Schema.String),
+	action: Schema.optional(Schema.String),
+	resource: Schema.optional(Schema.String),
+	affected: Schema.optional(Schema.String),
+	request: Schema.optional(Schema.String),
+	entry: Schema.optional(Schema.String),
 })
 
 export const SignInSearch = Schema.Struct({
