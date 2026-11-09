@@ -96,7 +96,7 @@ export function registerSearchDataSourcesTool(server: McpToolRegistrar) {
 					empty: {
 						message:
 							incomplete.length === 0
-								? `No data source table, resource or field matches. Search covers every table, field, note and sample value of every data source you can see, so paging describe_data_source will not find more.${PII_NOTE}`
+								? `No data source table, resource or field matches. Search matches whole words and word prefixes in every table, field, note and sample value you can see, so a different word for the same thing can miss; describe_data_source lists a source's tables by name if you want to browse.${PII_NOTE}`
 								: `No data source table, resource or field matches, but search cannot vouch for ${Arr.join(incomplete, ", ")}: their catalog is incomplete (it failed, was never read, or holds more tables than Maple stores). Check them with describe_data_source before concluding the data is not there.${PII_NOTE}`,
 						hints: [
 							"Try a synonym once; if that also misses, tell the user the data is not in a connected source you can see (an admin can hide sources from agents).",
