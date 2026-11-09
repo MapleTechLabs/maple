@@ -72,12 +72,13 @@ Pass the route template, never the concrete URL: Maple groups by span name, so a
 
 ### Wire your router
 
-This is the part of a History API router that runs a route. `match` returns the route whose `path` is the template, and a catch-all route (`"*"`) for unknown URLs. A loader throws `Redirect` to send the user elsewhere.
+Add the SDK calls to the function in your router that runs a route for a path. `match`, `Redirect` and `renderError` stand for your router's own route matching, redirect and error page. The span name must be the route template (`/projects/:id`), not the URL.
 
 ```ts
 // src/router.ts
 import { MapleBrowser } from "@maple-dev/browser"
-import { match, Redirect, renderError } from "./routes"
+// Your router's own code
+import { match, Redirect, renderError } from "./my-router"
 
 // A loader throws Redirect to send the user elsewhere: not a failure
 const isFailure = (error: unknown) => !(error instanceof Redirect)
@@ -157,6 +158,10 @@ Look for these in its API and make the same calls:
 
 The browser has no async context, so a request started after the first `await` inside `traced` is its own trace. Start independent requests together with `Promise.all`. For a request that needs an earlier result, save the context before the first `await`:
 
+```bash
+npm install @opentelemetry/api
+```
+
 ```ts
 import { context } from "@opentelemetry/api"
 
@@ -168,11 +173,11 @@ async function loadUser({ id }: Params) {
 }
 ```
 
-Install `@opentelemetry/api` yourself if you use it; strict package managers like pnpm don't resolve the SDK's copy for you.
+Install it yourself even though the SDK depends on it: strict package managers like pnpm don't resolve the SDK's copy for you.
 
 ## Multi-page apps
 
-Every page view is a full page load, so each one is a `pageload` span. Load this on every page:
+Every page view is a full page load, so each one is a `pageload` span. Install the SDK (`npm install @maple-dev/browser`) and load this on every page:
 
 ```ts
 // assets/maple.ts, loaded on every page: <script type="module" src="/assets/maple.js">
@@ -193,6 +198,10 @@ Bundle it with your asset pipeline, for example `npx esbuild assets/maple.ts --b
 ### Join the server's trace
 
 The page load joins the trace of the request that rendered the page when the response carries a `Server-Timing: traceparent;desc="…"` entry or the page a `<meta name="traceparent">` tag. Maple has no server helper for this: set up OpenTelemetry on the server ([Instrument your application](/docs/instrumentation)), then write the active span's context into the response. In Node.js:
+
+```bash
+npm install @opentelemetry/api
+```
 
 ```ts
 import { context, propagation } from "@opentelemetry/api"
