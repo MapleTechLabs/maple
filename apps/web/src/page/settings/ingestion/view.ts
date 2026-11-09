@@ -53,7 +53,7 @@ const unknownStatusBanner = (h: H): Html =>
 		statusDot(h, { tone: "neutral", size: "lg" }),
 		typography(h, { size: "sm", weight: "medium", className: "whitespace-nowrap" }, ["Status unknown"]),
 		typography(h, { size: "xs", tone: "muted", truncate: true, className: "font-prose" }, [
-			"Couldn't check for incoming telemetry.",
+			"Couldn't check for incoming telemetry",
 		]),
 	])
 

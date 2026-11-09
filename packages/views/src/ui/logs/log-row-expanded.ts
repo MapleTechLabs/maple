@@ -63,7 +63,7 @@ export const logRowExpanded = <Message>(
 					h.div(
 						[
 							h.Class(
-								"relative rounded-md border border-border-subtle bg-background/60 py-2 pl-3 pr-24",
+								"relative rounded-md border border-border-subtle bg-surface-well py-2 pl-3 pr-24",
 							),
 						],
 						[

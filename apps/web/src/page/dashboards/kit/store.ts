@@ -76,7 +76,7 @@ const readFrom = (collection: DashboardsWriter, id: string) =>
 		Option.flatMap(Option.fromNullishOr(collection.get(id)), rowToDocument),
 		() =>
 			new DashboardUnreadableError({
-				message: "This dashboard hasn’t finished loading. Try again in a moment",
+				message: "This dashboard hasn't finished loading. Try again in a moment",
 				rawId: id,
 			}),
 	)
@@ -106,7 +106,7 @@ export const behindToastContent = {
 	type: "warning",
 	title: "Saved, but this tab is behind",
 	description:
-		"The change reached the server; this tab’s live sync didn’t catch up, so it isn’t shown yet.",
+		"The change reached the server; this tab's live sync didn't catch up, so it isn't shown yet.",
 	timeoutMs: 10000,
 	rootAction: { label: "Reconnect", action: { _tag: "ReconnectOrgCollections" } },
 } as const

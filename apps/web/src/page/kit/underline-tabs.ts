@@ -37,7 +37,7 @@ export const underlineTabStrip = <M>(
 
 export const underlineTabClass = (isActive: boolean): string =>
 	cn(
-		"-mb-px flex h-9 shrink-0 items-center gap-1.5 border-b-2 text-sm transition-colors",
+		"-mb-px flex h-9 shrink-0 items-center gap-1.5 border-b-2 text-sm",
 		isActive
 			? "border-primary font-medium text-foreground"
 			: "border-transparent text-muted-foreground hover:text-foreground active:text-foreground",

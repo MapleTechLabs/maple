@@ -36,8 +36,8 @@ export const SECTIONS = [
 		id: "instrumentation",
 		icon: "Instrumentation",
 		label: "Instrumentation",
-		blurb: "Languages, frameworks and AI agents.",
-		groups: ["Instrumentation", "AI Frameworks", "AI Gateways"],
+		blurb: "Languages, frameworks, frontends and AI agents.",
+		groups: ["Instrumentation", "Frontend", "AI Frameworks", "AI Gateways"],
 	},
 	{
 		id: "local",

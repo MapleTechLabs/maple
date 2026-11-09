@@ -1977,5 +1977,29 @@ export const LOCAL_STORE_STEPS: ReadonlyArray<StepSpec> = [
 			},
 		],
 	},
+	{
+		// Purely additive: a new empty table, created by the bootstrap. Search Console rows come
+		// from the hosted importer, so a local store has nothing to backfill.
+		id: "local-0051-to-0052-search-console-daily",
+		from: 51,
+		to: 52,
+		description: "Create search_console_daily for imported Google Search Console performance",
+		clonedBefore: "additive DDL runs",
+		plan: [
+			[
+				"install-search-console-daily",
+				"Install the empty search_console_daily table via the v52 bootstrap",
+			],
+		],
+		verifies: "Verify the v52 physical schema and the retained raw telemetry counts",
+		dispositions: [
+			{
+				name: "search_console_daily",
+				classification: "authoritative",
+				disposition: "preserve-exact",
+				guarantee: "Created empty; no existing table is read or rewritten.",
+			},
+		],
+	},
 	// local-schema:bump appends the next step above this line.
 ]

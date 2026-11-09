@@ -136,7 +136,13 @@ describe("command palette", () => {
 				Arr.filter(browsed, (entry) => entry.group === "Integrations"),
 				(entry) => entry.title,
 			),
-		).toEqual(["Connect Google Cloud", "Connect AWS", "Connect Railway", "Connect Supabase"])
+		).toEqual([
+			"Connect Google Cloud",
+			"Connect AWS",
+			"Connect Railway",
+			"Connect Supabase",
+			"Connect Google Search Console",
+		])
 	})
 
 	test("every chat connector is typeable as Connect <name>, with no per-org gate", () => {

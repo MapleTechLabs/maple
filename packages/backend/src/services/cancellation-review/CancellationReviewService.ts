@@ -899,7 +899,10 @@ export class CancellationReviewService extends Context.Service<
 						// stays unposted, so a scheduled cancellation is tried again at expiry.
 						Effect.catchTag("@maple/backend/support/SupportSlackRefusedError", (error) =>
 							Effect.logError("Slack refused the cancellation report; it was not posted").pipe(
-								Effect.annotateLogs({ slackError: error.error }),
+								Effect.annotateLogs({
+									slackError: error.error,
+									slackDetails: Arr.join(error.details ?? [], "\n"),
+								}),
 								Effect.as(false),
 							),
 						),

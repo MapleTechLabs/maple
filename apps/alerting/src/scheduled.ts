@@ -25,6 +25,7 @@ import { PlanetScaleMetricsService } from "@maple/backend/services/integrations/
 import { PlanetScaleService } from "@maple/backend/services/integrations/PlanetScaleService"
 import { PrReviewPostMergeService } from "@maple/backend/services/pr-review/PrReviewPostMergeService"
 import { RailwayMetricsService } from "@maple/backend/services/integrations/RailwayMetricsService"
+import { SearchConsoleImportService } from "@maple/backend/services/integrations/SearchConsoleImportService"
 import { AwsConnectionService } from "@maple/backend/services/integrations/AwsConnectionService"
 import { SupabaseConnectionService } from "@maple/backend/services/integrations/SupabaseConnectionService"
 import { SupabaseInsightsService } from "@maple/backend/services/integrations/SupabaseInsightsService"
@@ -80,6 +81,7 @@ export const layerTick = (
 		PlanetScaleService.layer,
 		PlanetScaleMetricsService.layer,
 		RailwayMetricsService.layer,
+		SearchConsoleImportService.layer,
 		AwsConnectionService.layer,
 		SupabaseConnectionService.layer,
 		SupabaseLogsService.layer,
@@ -394,6 +396,22 @@ const railwayMetricsTick = makeTick(
 			: undefined,
 )
 
+const searchConsoleTick = makeTick(
+	SearchConsoleImportService.use((searchConsole) => searchConsole.pollAllSites),
+	"search_console",
+	(result) =>
+		result.due > 0
+			? {
+					due: result.due,
+					imported: result.imported,
+					skipped: result.skipped,
+					failures: result.failures,
+					rowsWritten: result.rowsWritten,
+					days: result.days,
+				}
+			: undefined,
+)
+
 const supabaseDiscoveryTick = makeTick(
 	SupabaseConnectionService.use((supabase) => supabase.discoverAllOrgs),
 	"supabase_discovery",
@@ -505,6 +523,7 @@ export interface ScheduledTickPrograms<R = never> {
 	readonly planetScaleMetrics: Effect.Effect<void, never, R>
 	readonly prReviewPostMerge: Effect.Effect<void, never, R>
 	readonly railwayMetrics: Effect.Effect<void, never, R>
+	readonly searchConsole: Effect.Effect<void, never, R>
 	readonly serviceMapRollup: Effect.Effect<void, never, R>
 	readonly statusPages: Effect.Effect<void, never, R>
 	readonly supabaseDiscovery: Effect.Effect<void, never, R>
@@ -538,6 +557,7 @@ const laneProgram = <R>(lane: TickLane, ticks: ScheduledTickPrograms<R>): Effect
 		Match.when("supabase_logs", () => ticks.supabaseLogs),
 		Match.when("supabase_insights", () => ticks.supabaseInsights),
 		Match.when("maintenance_windows", () => ticks.maintenanceWindows),
+		Match.when("search_console", () => ticks.searchConsole),
 		Match.exhaustive,
 	)
 
@@ -590,6 +610,7 @@ type ScheduledServices =
 	| PlanetScaleMetricsService
 	| PrReviewPostMergeService
 	| RailwayMetricsService
+	| SearchConsoleImportService
 	| ServiceMapRollupService
 	| SupabaseConnectionService
 	| SupabaseLogsService
@@ -611,6 +632,7 @@ export const scheduledTicks: ScheduledTickPrograms<ScheduledServices> = {
 	planetScaleMetrics: planetScaleMetricsTick,
 	prReviewPostMerge: prReviewPostMergeTick,
 	railwayMetrics: railwayMetricsTick,
+	searchConsole: searchConsoleTick,
 	serviceMapRollup: serviceMapRollupTick,
 	statusPages: statusPagesTick,
 	supabaseDiscovery: supabaseDiscoveryTick,

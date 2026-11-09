@@ -164,12 +164,15 @@ export const RESOLVE_REASON_LABEL: Record<AnomalyResolveReason, string> = {
 	manual: "Resolved manually",
 } satisfies Record<AnomalyResolveReason, string>
 
-export const TRIAGE_STATUS_CHIP: Record<AnomalyTriageStatus, { label: string; tone: string } | null> = {
+type TriageChip = { label: string; variant: "warn" | "ok" | "muted" }
+
+/** The triage status chip: its label and the badge variant it draws in. */
+export const TRIAGE_STATUS_CHIP: Record<AnomalyTriageStatus, TriageChip | null> = {
 	none: null,
-	pending: { label: "triaging…", tone: TONE_SOFT.warn },
-	completed: { label: "triaged", tone: TONE_SOFT.ok },
-	skipped: { label: "triage skipped", tone: TONE_SOFT.neutral },
-} satisfies Record<AnomalyTriageStatus, { label: string; tone: string } | null>
+	pending: { label: "triaging…", variant: "warn" },
+	completed: { label: "triaged", variant: "ok" },
+	skipped: { label: "triage skipped", variant: "muted" },
+} satisfies Record<AnomalyTriageStatus, TriageChip | null>
 
 /** Keeps the 20px / 11px meta-pill size on anomaly rows and cards (Badge `size="sm"` shrinks on sm+). */
 export const META_CHIP_CLASS = "h-5 gap-1.5 font-normal text-2xs sm:h-5 sm:text-2xs"

@@ -62,6 +62,8 @@ import { registerGetInstrumentationRecommendationsTool } from "./get-instrumenta
 import { registerGetServiceTopOperationsTool } from "./get-service-top-operations"
 import { registerServiceDeploymentsTool } from "./service-deployments"
 import { registerRouteUsageTool } from "./route-usage"
+import { registerSearchConsoleQueriesTool } from "./search-console-queries"
+import { registerSearchConsolePagesTool } from "./search-console-pages"
 import { registerIngestFreshnessTool } from "./ingest-freshness"
 import { registerDbQueryVolumeTool } from "./db-query-volume"
 import { registerListInfraTool } from "./list-infra"
@@ -507,6 +509,8 @@ const collectMapleToolDefinitions = (): ReadonlyArray<MapleToolDefinition> => {
 	registerGetInstrumentationRecommendationsTool(registrar)
 	registerAuditSetupTool(registrar)
 	registerListIntegrationsTool(registrar)
+	registerSearchConsoleQueriesTool(registrar)
+	registerSearchConsolePagesTool(registrar)
 	registerListSecurityFindingsTool(registrar)
 	registerInspectSecurityFindingTool(registrar)
 	registerListSecurityAuditRunsTool(registrar)

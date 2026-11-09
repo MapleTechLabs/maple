@@ -238,7 +238,7 @@ export const applied = (h: H, connector: V2GcpConnector, created: boolean, nowMs
 		]),
 		dividedList(
 			h,
-			{ as: "ul", className: "w-full divide-border-subtle text-left" },
+			{ as: "ul", className: "w-full text-left" },
 			Arr.map(rows, (row) =>
 				hstack(h, { gap: "3", align: "center", as: "li", className: "px-4 py-2.5" }, [
 					h.span([h.Class("w-16 shrink-0 text-sm font-medium")], [row.title]),

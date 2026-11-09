@@ -17,8 +17,8 @@ export type ButtonOptions<Message> = VariantProps<typeof buttonVariants> &
 		attributes?: ReadonlyArray<Attribute<Message> | ChildAttribute>
 	}>
 
-// Every variant dims to the same 50% when disabled; a loading button stays solid so its spinner shows.
-const STATE_CLASSES = "disabled:opacity-50 data-loading:disabled:opacity-100"
+// Every variant dims to the same 64% when disabled; a loading button stays solid so its spinner shows.
+const STATE_CLASSES = "disabled:opacity-64 data-loading:disabled:opacity-100"
 
 const buttonClasses = (options: VariantProps<typeof buttonVariants> & Readonly<{ className?: string }>) =>
 	cn(buttonVariants({ size: options.size, variant: options.variant }), STATE_CLASSES, options.className)

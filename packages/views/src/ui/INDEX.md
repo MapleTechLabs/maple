@@ -6,6 +6,7 @@ existing copies onto it (see `apps/web/CLAUDE.md`).
 
 ## packages/views/src/ui
 
+- `packages/views/src/ui/action-bar.ts` `actionBar`: `ActionBar`: the one sticky bar a form, editor or step flow pins to the bottom of its scroll area: a floating card, so it reads the same in a page, a capped settings column and...
 - `packages/views/src/ui/alert.ts` `alert`, `alertTitle`, `alertDescription`, `alertAction`: Port of packages/ui/src/components/ui/alert.tsx.
 - `packages/views/src/ui/anchor.ts` `computePosition`, `measurePosition`: Base UI's anchor positioning (`internals/useAnchorPositioning.mjs` over Floating UI) for the cases the kit uses: offset, flip, shift with `limitShift`, size and the `transformOr...
 - `packages/views/src/ui/attributes/attribute-row.ts` `copyableValue`, `attributeFilterAction`, `attributeRow`: Port of `CopyableValue`, `SelectableValue`, `AttributeRow` (packages/ui/src/components/attributes/ attributes-table.tsx) and `CollapsibleJsonValue` (json-value.tsx), against an...
@@ -53,6 +54,7 @@ existing copies onto it (see `apps/web/CLAUDE.md`).
 - `packages/views/src/ui/docs-link.ts` `docsLink`: A docs link under an empty state: muted text and an external-link glyph, opening in a new tab.
 - `packages/views/src/ui/dropdown-menu.ts` `menuTriggerAttributes`, `positionerStyle`, `menuPopup`, `menuGroup`, `menuLabel`, `menuItem`, `menuSeparator`, `menuShortcut`, `menuCheckableItem`, `menuRadioGroup`, `menuSubTrigger`: The Foldkit side of packages/ui/src/components/ui/dropdown-menu.tsx over Base UI's Menu DOM.
 - `packages/views/src/ui/empty.ts` `empty`, `emptyHeader`, `emptyTitle`, `emptyDescription`, `emptyContent`, `emptyMedia`, `emptyMessage`, `emptyFrameClass`: Port of packages/ui/src/components/ui/empty.tsx.
+- `packages/views/src/ui/error-count-pill.ts` `errorCountPill`: `ErrorCountPill`: a failure count as a toned pill, led by a dot or its kind's glyph.
 - `packages/views/src/ui/error-section.ts` `errorSectionView`: Port of `ErrorSection` (packages/ui/src/components/error-section.tsx): the error banner, its highlighted body that copies itself, the "Copy as prompt" control and the Show more...
 - `packages/views/src/ui/error-state.ts` `failureKind`, `failureSentence`, `autoRetryMessage`, `errorState`: The error state.
 - `packages/views/src/ui/eyebrow.ts` `withHint`, `eyebrow`: Keeps a trailing "(hint)" out of the uppercase transform; for any uppercased label.

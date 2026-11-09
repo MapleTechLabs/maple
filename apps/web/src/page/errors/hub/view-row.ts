@@ -159,7 +159,6 @@ export const signalRow = (h: H, signal: ErrorSignal, state: RowState): Html => {
 						"hover:bg-surface-sunken active:bg-surface-sunken data-focused:bg-surface-sunken",
 						"data-selected:bg-primary-a2 data-selected:hover:bg-primary-a3 data-selected:active:bg-primary-a3",
 						"focus-visible:bg-surface-sunken focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-ring",
-						"transition-colors",
 					),
 				),
 				...(state.isFocused ? [h.DataAttribute("focused", "true")] : []),
@@ -200,9 +199,8 @@ export const signalRow = (h: H, signal: ErrorSignal, state: RowState): Html => {
 							h,
 							{
 								text: swap ? signal.detail : rowTitle,
-								// The exception type never truncates on wide rows; only the detail gives way.
-								className:
-									"font-medium text-foreground @4xl/page:max-w-[75%] @4xl/page:shrink-0",
+								// The detail (basis 0) gives way first; the title shrinks only so the activity chips fit.
+								className: "font-medium text-foreground @4xl/page:max-w-[75%]",
 							},
 							[rowTitle],
 						),

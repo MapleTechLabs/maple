@@ -184,7 +184,7 @@ const planCard = (h: H, plan: CatalogPlan, loadingPlanId: string | null): Html =
 			),
 		],
 		cn(
-			"flex flex-col transition-colors",
+			"flex flex-col",
 			isActive && "bg-surface-strong",
 			isUpgrade && "bg-surface-sunken ring-1 ring-primary-a3",
 		),

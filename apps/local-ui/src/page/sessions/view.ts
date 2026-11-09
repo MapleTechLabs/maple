@@ -51,7 +51,7 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 		if (Option.isSome(failure))
 			return errorState(h, {
 				failure: failure.value,
-				title: "Couldn’t load sessions",
+				title: "Couldn't load sessions",
 				onRetry: Message.ClickedRefresh(),
 			})
 		if (sessions.length === 0)

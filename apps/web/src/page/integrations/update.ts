@@ -23,6 +23,8 @@ import { initAwsCard } from "./aws"
 import * as Aws from "./update-aws"
 import { initSupabaseCard } from "./supabase"
 import * as Supabase from "./update-supabase"
+import * as SearchConsole from "./update-search-console"
+import { initSearchConsoleCard } from "./search-console"
 import * as Gcp from "./update-gcp"
 import * as Configure from "./update-gcp-configure"
 import * as Planetscale from "./update-planetscale"
@@ -137,6 +139,7 @@ export const init = (route: { readonly search: Search }, context: PageContext): 
 			supabase: Keyed.idle(),
 			linear: Keyed.idle(),
 			github: Keyed.idle(),
+			searchConsole: Keyed.idle(),
 			chat: Keyed.idle(),
 			scrapeTargets: Keyed.idle(),
 		},
@@ -154,6 +157,7 @@ export const init = (route: { readonly search: Search }, context: PageContext): 
 		awsCard: initAwsCard(),
 		railwayCard: initRailwayCard(),
 		supabaseCard: initSupabaseCard(),
+		searchConsoleCard: initSearchConsoleCard(),
 	}
 	const loaded = chain(model, [
 		...Arr.map(STATUS_NAMES, (name) => (next: Model) => requestStatus(next, context, name, "Load")),
@@ -189,6 +193,7 @@ const enterIntegration = (model: Model, context: PageContext): Return => {
 		return chain(model, [(next) => Gcp.enterGcp(next, context), (next) => Gcp.requestBand(next, context)])
 	if (integration === "supabase") return Supabase.requestMetricsRows(model, context, "Load")
 	if (integration === "planetscale") return Planetscale.enterPlanetscale(model)
+	if (integration === "google-search-console") return SearchConsole.requestSites(model, context, "Load")
 	return { model }
 }
 
@@ -256,6 +261,28 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			accepted(model, { ...s, linear: Keyed.accept(s.linear, key, result) }),
 		CompletedLoadGithub: ({ key, result }) =>
 			accepted(model, { ...s, github: Keyed.accept(s.github, key, result) }),
+		CompletedLoadSearchConsole: ({ key, result }) => {
+			const read = SearchConsole.resetOnGrantChange(
+				model,
+				accepted(model, {
+					...s,
+					searchConsole: Keyed.accept(s.searchConsole, key, result),
+				}).model,
+			)
+			return SearchConsole.requestSites(
+				s.searchConsole.key === key ? SearchConsole.settledStatus(read) : read,
+				context,
+				"Load",
+			)
+		},
+		CompletedLoadSearchConsoleSites: ({ key, result }) =>
+			SearchConsole.completedSites(model, key, result),
+		ToggledSearchConsoleSite: ({ siteUrl }) => SearchConsole.toggledSite(model, siteUrl),
+		ClickedSaveSearchConsoleSites: () => SearchConsole.clickedSave(model),
+		ClickedRetrySearchConsoleSites: () => SearchConsole.requestSites(model, context, "Refresh"),
+		CompletedSaveSearchConsoleSites: ({ failure }) =>
+			SearchConsole.completedSave(model, context, failure),
+		CompletedSearchConsolePrime: () => SearchConsole.completedPrime(model, context),
 		CompletedLoadChat: ({ key, result }) =>
 			accepted(model, { ...s, chat: Keyed.accept(s.chat, key, result) }),
 		CompletedLoadScrapeTargets: ({ key, result }) =>

@@ -355,9 +355,16 @@ export const ChartSpec = defineTaggedUnion({
 				companion: Schema.optionalKey(Nullable(Schema.Number)),
 			}),
 		),
-		/** The metric keys behind `primary` and (when paired) `companion`, in paint order. */
+		/**
+		 * The metric keys behind `primary` and (when paired) `companion`, in paint order. `label`
+		 * names a series that is not an analytics metric (Search Console clicks); it formats as a count.
+		 */
 		series: Schema.Array(
-			Schema.Struct({ key: Schema.Literals(["primary", "companion"]), metric: Schema.String }),
+			Schema.Struct({
+				key: Schema.Literals(["primary", "companion"]),
+				metric: Schema.String,
+				label: Schema.optionalKey(Schema.String),
+			}),
 		),
 		/** The metric whose format the y ticks use. */
 		tickMetric: Schema.String,

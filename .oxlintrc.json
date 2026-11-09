@@ -82,7 +82,9 @@
 			],
 			"rules": {
 				"maple/couldnt-copy": "error",
+				"maple/disabled-opacity": "error",
 				"maple/focus-ring": "error",
+				"maple/hover-edge": "error",
 				"maple/font-weight-scale": "error",
 				"maple/no-legacy-utility": "error",
 				"maple/no-off-grid-spacing": "error",
@@ -114,7 +116,15 @@
 				"maple/no-raw-heading": "error",
 				"maple/no-raw-link": "error",
 				"maple/prefer-stack": "error",
-				"maple/prefer-typography": "error"
+				"maple/prefer-typography": "error",
+				"maple/empty-copy": "error",
+				"maple/kit-class-layout-only": "error",
+				"maple/no-arbitrary-z": "error",
+				"maple/no-handrolled-kit-look": "error",
+				"maple/popup-radius": "error",
+				"maple/sheet-size": "error",
+				"maple/surface-translucency": "error",
+				"maple/ui-copy": "error"
 			}
 		},
 		// The kit draws the controls, so it alone gives a control its `accent` hover.
@@ -138,18 +148,20 @@
 				"maple/no-raw-heading": "off",
 				"maple/no-raw-link": "off",
 				"maple/prefer-stack": "off",
-				"maple/prefer-typography": "off"
+				"maple/prefer-typography": "off",
+				"maple/kit-class-layout-only": "off",
+				"maple/no-handrolled-kit-look": "off"
 			}
 		},
 		// Test fixtures assert on rendered colour values.
 		{
 			"files": ["**/*.test.ts"],
-			"rules": { "maple/no-raw-color": "off" }
+			"rules": { "maple/no-raw-color": "off", "maple/ui-copy": "off", "maple/empty-copy": "off" }
 		},
 		// Lab fixtures hold sample telemetry (log bodies, error messages), not UI copy.
 		{
 			"files": ["apps/web/src/lab/**"],
-			"rules": { "maple/couldnt-copy": "off" }
+			"rules": { "maple/couldnt-copy": "off", "maple/ui-copy": "off", "maple/empty-copy": "off" }
 		},
 		// Existing API burndown entries, relocated with their implementation.
 		{

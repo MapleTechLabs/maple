@@ -32,6 +32,13 @@ import {
 	MapleInternalApi,
 	RailwayDisconnectResponse,
 	RoleName,
+	SearchConsoleAvailableSitesResponse,
+	SearchConsoleDisconnectResponse,
+	SearchConsoleIntegrationStatus,
+	SearchConsolePrimeResponse,
+	SearchConsoleSiteChoice,
+	SearchConsoleSiteStatus,
+	SearchConsoleStartConnectResponse,
 	SupabaseConnectResponse,
 	SupabaseDisconnectResponse,
 	VCS_COMMIT_DETAILS_MAX_SHAS,
@@ -75,6 +82,12 @@ import { GithubConnectService } from "@maple/backend/services/integrations/vcs/v
 import { VcsCommitService } from "@maple/backend/services/integrations/vcs/VcsCommitService"
 import { VcsSourceService } from "@maple/backend/services/integrations/vcs/VcsSourceService"
 import { LinearOAuthService } from "@maple/backend/services/auth/LinearOAuthService"
+import { GOOGLE_CALLBACK_PATH, GoogleOAuthService } from "@maple/backend/services/auth/GoogleOAuthService"
+import {
+	SearchConsoleService,
+	type SearchConsoleStatus,
+} from "@maple/backend/services/integrations/SearchConsoleService"
+import { SearchConsoleImportService } from "@maple/backend/services/integrations/SearchConsoleImportService"
 import * as Policy from "@maple/domain/policy"
 import {
 	CLOUDFLARE_CALLBACK_PATH,
@@ -93,8 +106,33 @@ import { settleInfraSurfaces } from "./infra-surfaces"
  * callback handler.
  */
 const CLOUDFLARE_PRIME_TIMEOUT = "20 seconds"
+/** Same budget for the Search Console first import; what it does not finish the cron resumes. */
+const SEARCH_CONSOLE_PRIME_TIMEOUT = "20 seconds"
 
 const encodeJson = Schema.encodeEffect(Schema.fromJsonString(Schema.Unknown))
+
+const toSearchConsoleStatus = (status: SearchConsoleStatus) =>
+	new SearchConsoleIntegrationStatus({
+		configured: status.configured,
+		connected: status.connection !== null,
+		accountEmail: status.connection?.accountEmail ?? null,
+		connectedByUserId: status.connection?.connectedByUserId ?? null,
+		revoked: status.connection?.revoked ?? false,
+		sites: Arr.map(
+			status.sites,
+			(site) =>
+				new SearchConsoleSiteStatus({
+					id: site.id,
+					siteUrl: site.siteUrl,
+					permissionLevel: site.permissionLevel,
+					enabled: site.enabled,
+					watermarkDate: site.watermarkDate,
+					backfillDate: site.backfillDate,
+					lastSyncedAt: site.lastSyncedAt,
+					lastError: site.lastError,
+				}),
+		),
+	})
 
 const requirePermission = (roles: ReadonlyArray<RoleName>, permission: Policy.Permission) =>
 	Policy.check(roles, permission, (denial) => new IntegrationsForbiddenError({ message: denial.message }))
@@ -102,6 +140,9 @@ const requirePermission = (roles: ReadonlyArray<RoleName>, permission: Policy.Pe
 export const HttpIntegrationsLive = HttpApiBuilder.group(MapleInternalApi, "integrations", (handlers) =>
 	Effect.gen(function* () {
 		const linear = yield* LinearOAuthService
+		const google = yield* GoogleOAuthService
+		const searchConsole = yield* SearchConsoleService
+		const searchConsoleImport = yield* SearchConsoleImportService
 		const github = yield* GithubConnectService
 		const vcsCommits = yield* VcsCommitService
 		const vcsSource = yield* VcsSourceService
@@ -190,6 +231,69 @@ export const HttpIntegrationsLive = HttpApiBuilder.group(MapleInternalApi, "inte
 						yield* requirePermission(tenant.roles, "integrations:manage")
 						const disconnected = yield* linear.disconnect(tenant.orgId)
 						return new LinearDisconnectResponse(disconnected)
+					}),
+				)
+				.handle("searchConsoleStatus", () =>
+					Effect.gen(function* () {
+						const tenant = yield* CurrentTenant.Context
+						const status = yield* searchConsole.getStatus(tenant.orgId)
+						return toSearchConsoleStatus(status)
+					}),
+				)
+				.handle("searchConsoleStart", ({ payload }) =>
+					Effect.gen(function* () {
+						const tenant = yield* CurrentTenant.Context
+						yield* requirePermission(tenant.roles, "integrations:manage")
+						const callbackUrl = yield* trustedCallbackUrl(GOOGLE_CALLBACK_PATH)
+						const result = yield* google.startConnect(tenant.orgId, tenant.userId, {
+							callbackUrl,
+							...(payload.returnTo === undefined ? undefined : { returnTo: payload.returnTo }),
+						})
+						return new SearchConsoleStartConnectResponse(result)
+					}),
+				)
+				.handle("searchConsoleSites", () =>
+					Effect.gen(function* () {
+						const tenant = yield* CurrentTenant.Context
+						const sites = yield* searchConsole.listAvailableSites(tenant.orgId)
+						return new SearchConsoleAvailableSitesResponse({
+							sites: Arr.map(sites, (site) => new SearchConsoleSiteChoice(site)),
+						})
+					}),
+				)
+				.handle("searchConsoleSaveSites", ({ payload }) =>
+					Effect.gen(function* () {
+						const tenant = yield* CurrentTenant.Context
+						yield* requirePermission(tenant.roles, "integrations:manage")
+						yield* searchConsole.saveSites(tenant.orgId, payload.siteUrls)
+						const status = yield* searchConsole.getStatus(tenant.orgId)
+						return toSearchConsoleStatus(status)
+					}),
+				)
+				.handle("searchConsoleDisconnect", () =>
+					Effect.gen(function* () {
+						const tenant = yield* CurrentTenant.Context
+						yield* requirePermission(tenant.roles, "integrations:manage")
+						const result = yield* google.disconnect(tenant.orgId)
+						return new SearchConsoleDisconnectResponse(result)
+					}),
+				)
+				.handle("searchConsolePrime", () =>
+					Effect.gen(function* () {
+						const tenant = yield* CurrentTenant.Context
+						yield* requirePermission(tenant.roles, "integrations:manage")
+						// Timing out is ordinary: the lease it drops expires and the cron resumes the import.
+						const summary = yield* Effect.timeoutOption(
+							searchConsoleImport.importOrg(tenant.orgId),
+							SEARCH_CONSOLE_PRIME_TIMEOUT,
+						)
+						return new SearchConsolePrimeResponse({
+							connected: Option.match(summary, {
+								onNone: () => true,
+								onSome: (value) => value.connected,
+							}),
+							complete: Option.isSome(summary),
+						})
 					}),
 				)
 				// The sidebar's boot read: one request instead of the probe plus six statuses.

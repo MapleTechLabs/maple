@@ -65,7 +65,7 @@ export const anomalyIncidentsSection = <M>(
 				],
 			),
 			inWindow.length === 0
-				? typography(h, { size: "sm", tone: "muted", as: "p" }, ["No anomalies in this window."])
+				? typography(h, { size: "sm", tone: "muted", as: "p" }, ["No anomalies in this window"])
 				: dividedList(
 						h,
 						{ as: "ul" },

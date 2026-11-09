@@ -84,6 +84,7 @@ import {
 	ExternalDataSourceCatalogEntries,
 	ExternalDataSources,
 	ScrapeTargets,
+	SearchConsoleSites,
 	Sources,
 	SupabaseConnections,
 	StatusPageComponents,
@@ -190,6 +191,8 @@ const ORG_SCOPED_TABLES: ReadonlyArray<OrgScopedTable> = [
 	UptimeMonitors,
 	// An SLO points at its burn-rate rule, which goes with the org's alert rules.
 	Slos,
+	// Picked Search Console properties; a surviving row would keep importing the org's search data.
+	SearchConsoleSites,
 	OAuthConnections,
 	OAuthAuthStates,
 	// The binding that makes a chat workspace's members act as the org. Deleting

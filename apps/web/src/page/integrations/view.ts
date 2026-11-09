@@ -18,6 +18,7 @@ import { cloudflareCard, cloudflareHeaderActions } from "./view-cloudflare"
 import { gcpCard, gcpHeaderStatus } from "./view-gcp"
 import { githubCard } from "./view-github"
 import { linearCard } from "./view-linear"
+import { searchConsoleCard } from "./view-search-console"
 import { planetscaleCard } from "./view-planetscale"
 import { railwayCard } from "./view-railway"
 import { awsCard } from "./view-aws"
@@ -41,8 +42,9 @@ export const connectButton = (h: H, model: Model, integration: IntegrationId): H
 		{
 			size: "sm",
 			isLoading: model.connect.isStarting,
-			// Linear's start is admin-only on the server.
-			isDisabled: integration === "linear" && !canManage(model),
+			// Linear's and Google's starts are admin-only on the server.
+			isDisabled:
+				(integration === "linear" || integration === "google-search-console") && !canManage(model),
 			attributes: [h.OnClick(Message.ClickedConnect())],
 		},
 		[entryGlyph(h, entry, undefined), "Connect ", entry.name],
@@ -64,6 +66,8 @@ export const cardView = (
 			return [linearCard(h, model)]
 		case "github":
 			return githubCard(h, model, timeZone)
+		case "google-search-console":
+			return [searchConsoleCard(h, model)]
 		case "cloudflare":
 			return [cloudflareCard(h, model, timeZone)]
 		case "railway":

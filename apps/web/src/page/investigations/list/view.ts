@@ -419,7 +419,7 @@ const hubHero = (h: H, model: Model): Html => {
 									onClick: Message.ClickedSuggestion({ title: suggestion }),
 									isDisabled: model.isCreating,
 									className:
-										"flex w-full items-center gap-3 rounded-md border bg-card px-3.5 py-2.5 text-left text-sm text-foreground hover:border-ring active:border-ring hover:bg-surface-sunken active:bg-surface-sunken disabled:opacity-60",
+										"flex w-full items-center gap-3 rounded-md border bg-card px-3.5 py-2.5 text-left text-sm text-foreground hover:border-border-strong active:border-border-strong hover:bg-surface-sunken active:bg-surface-sunken disabled:opacity-64",
 								},
 								[
 									typography(

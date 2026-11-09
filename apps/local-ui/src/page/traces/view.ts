@@ -51,7 +51,7 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 		if (Option.isSome(failure))
 			return errorState(h, {
 				failure: failure.value,
-				title: "Couldn’t load traces",
+				title: "Couldn't load traces",
 				onRetry: Message.ClickedRefresh(),
 			})
 		if (rows.length === 0)

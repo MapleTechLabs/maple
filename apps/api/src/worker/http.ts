@@ -1,8 +1,7 @@
-import * as Cloudflare from "@alchemy.run/cloudflare"
 import { AfterResponse } from "@maple/backend/platform/after-response"
 import type { RuntimeContext } from "alchemy/RuntimeContext"
 import { IsolateAge } from "@maple/infra/isolate-age"
-import { WorkerPlatformLive, forIsolate, bridgeHandler } from "@maple/infra/worker-http"
+import { WorkerPlatformLive, forIsolate, bridgeHandler, waitUntilOfEvent } from "@maple/infra/worker-http"
 /**
  * The api Worker's request path: the route graph built once per isolate on
  * the first request, and the `fetch` handler the bridge serves around it.
@@ -138,16 +137,6 @@ export const makeAppGraphs = (isolate: Context.Context<never>, ports: ApiPortsLa
 		}
 	})
 
-/**
- * The event's `waitUntil`, as the request's after-response runner. Read per event: the isolate
- * context omits the execution context, so a captured one could never bind another request.
- */
-const afterResponseOfEvent = Effect.gen(function* () {
-	const execution = yield* Cloudflare.WorkerExecutionContext
-	const runtime = yield* Effect.context<RuntimeContext>()
-	return (work: Effect.Effect<void>) => execution.waitUntil(work).pipe(Effect.provideContext(runtime))
-})
-
 const pathOf = (url: string): string => {
 	return Option.match(Str.indexOf("?")(url), {
 		onNone: () => url,
@@ -205,7 +194,7 @@ export const makeFetch = <E>(
 		(work: Effect.Effect<void>) => Effect.Effect<void>,
 		never,
 		RuntimeContext
-	> = afterResponseOfEvent,
+	> = waitUntilOfEvent,
 ) =>
 	IsolateAge.useSync((isolateAge) => {
 		const serve = Effect.gen(function* () {

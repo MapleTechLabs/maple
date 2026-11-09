@@ -130,7 +130,7 @@ export const manualSteps = (
 		]),
 		dividedList(
 			h,
-			{ as: "ol", className: "divide-border-subtle" },
+			{ as: "ol" },
 			Arr.map(options.steps, (step, index) => {
 				const expanded = open === step.title
 				return h.li(

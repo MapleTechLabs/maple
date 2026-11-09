@@ -106,7 +106,7 @@ export const tableTitle = (h: H, options: Readonly<{ title: string; count?: numb
 /** Past 30 days a tab's summaries outlive the raw spans its drill-downs read. */
 export const rangeNote = (h: H, subject: string): Html =>
 	typography(h, { size: "xs", tone: "muted", as: "p" }, [
-		`${subject} summaries cover the selected range; trace drill-downs show the latest 30 days.`,
+		`${subject} summaries cover this window; trace drill-downs show the latest 30 days.`,
 	])
 
 /** A loading table's title and column-header rows, sized like the loaded ones. */

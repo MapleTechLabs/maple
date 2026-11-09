@@ -31,6 +31,8 @@ const RETENTION_DAYS = {
 	metrics_sum: 90,
 	// Raw-tier projection of `traces`, like `ai_crawler_requests`.
 	scanner_requests: 30,
+	// Google keeps 16 months of Search Console data; a month past that keeps a full year-over-year window.
+	search_console_daily: 520,
 	service_address_resolutions_hourly: 365,
 	// Hour-grain only, read for windows of days; a year would be a second annual table.
 	service_endpoint_details_hourly: 90,

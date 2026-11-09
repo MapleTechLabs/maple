@@ -9,6 +9,8 @@ import {
 	LinearIntegrationStatus,
 	RailwayIntegrationStatus,
 	ScrapeTargetId,
+	SearchConsoleAvailableSitesResponse,
+	SearchConsoleIntegrationStatus,
 	SupabaseIntegrationStatus,
 	VcsRepositoryId,
 } from "@maple/domain/http"
@@ -65,6 +67,7 @@ export const StatusName = Schema.Literals([
 	"supabase",
 	"linear",
 	"github",
+	"searchConsole",
 	"chat",
 	"scrapeTargets",
 ])
@@ -86,6 +89,14 @@ export const Message = defineMessageUnion({
 	CompletedLoadSupabase: result(SupabaseIntegrationStatus),
 	CompletedLoadLinear: result(LinearIntegrationStatus),
 	CompletedLoadGithub: result(GithubIntegrationStatus),
+	CompletedLoadSearchConsole: result(SearchConsoleIntegrationStatus),
+	CompletedLoadSearchConsoleSites: result(SearchConsoleAvailableSitesResponse),
+	/** A property's checkbox in the Search Console picker. */
+	ToggledSearchConsoleSite: { siteUrl: Schema.String },
+	ClickedSaveSearchConsoleSites: {},
+	ClickedRetrySearchConsoleSites: {},
+	CompletedSaveSearchConsoleSites: { failure: Schema.NullOr(LoadFailure) },
+	CompletedSearchConsolePrime: {},
 	CompletedLoadChat: result(V2ChatConnectorList),
 	CompletedLoadScrapeTargets: result(Schema.Array(V2ScrapeTarget)),
 	CompletedLoadCustomer: result(BillingCustomer),

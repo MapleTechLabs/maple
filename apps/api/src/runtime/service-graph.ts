@@ -23,6 +23,9 @@ import { AuthService } from "@maple/backend/services/auth/AuthService"
 import { CliDeviceAuthService } from "@maple/backend/services/auth/CliDeviceAuthService"
 import { CloudflareOAuthService } from "@maple/backend/services/auth/CloudflareOAuthService"
 import { LinearOAuthService } from "@maple/backend/services/auth/LinearOAuthService"
+import { GoogleOAuthService } from "@maple/backend/services/auth/GoogleOAuthService"
+import { SearchConsoleService } from "@maple/backend/services/integrations/SearchConsoleService"
+import { SearchConsoleImportService } from "@maple/backend/services/integrations/SearchConsoleImportService"
 import { McpConnectionsService } from "@maple/backend/services/auth/McpConnectionsService"
 import { McpOAuthService } from "@maple/backend/services/auth/McpOAuthService"
 import { PreviewSignInService } from "@maple/backend/services/auth/PreviewSignInService"
@@ -130,6 +133,9 @@ export const HttpServicesLive = Layer.mergeAll(
 	DashboardPersistenceService.layer,
 	SharedDashboardService.layer,
 	LinearOAuthService.layer,
+	GoogleOAuthService.layer,
+	SearchConsoleService.layer,
+	SearchConsoleImportService.layer,
 	OnboardingService.layer,
 	OnboardingChecklistService.layer,
 	SupportChannelService.layer,

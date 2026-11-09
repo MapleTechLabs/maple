@@ -44,7 +44,8 @@ const makeMcpToolExecutorStubLayer = (
 			}
 			return {
 				load: Effect.succeed(executor),
-				loadReportingBuild: Effect.succeed({ executor, built: false }),
+				loadReportingBuild: Effect.succeed({ executor, build: "reused" as const }),
+				prewarm: Effect.void,
 			}
 		}),
 	)

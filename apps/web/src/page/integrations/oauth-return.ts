@@ -20,6 +20,7 @@ import { ConnectProvider } from "./connect"
 const PROVIDER_OF = {
 	cloudflare: "cloudflare",
 	linear: "linear",
+	google: "google-search-console",
 	github: "github",
 	planetscale: "planetscale",
 	supabase: "supabase",

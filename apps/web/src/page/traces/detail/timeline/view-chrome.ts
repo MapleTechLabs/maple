@@ -371,7 +371,7 @@ export const minimap = (h: H, model: Model): Html => {
 					h.span(
 						[
 							h.Class(
-								"absolute top-0 whitespace-nowrap bg-background/90 px-1 font-mono text-4xs leading-3 text-muted-foreground",
+								"absolute top-0 whitespace-nowrap bg-surface-float backdrop-blur-sm px-1 font-mono text-4xs leading-3 text-muted-foreground",
 							),
 						],
 						[],

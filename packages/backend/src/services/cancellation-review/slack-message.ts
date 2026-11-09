@@ -295,7 +295,7 @@ const statsTable = (shown: ReadonlyArray<Stat>, signals: ReadonlyArray<Cancellat
 	})
 	return {
 		type: "table",
-		column_settings: [null, null, { is_wrapped: true }],
+		column_settings: [{}, {}, { is_wrapped: true }],
 		rows: [[bold("Last 30 days"), bold("Now"), bold("Month before")], ...rows],
 	}
 }

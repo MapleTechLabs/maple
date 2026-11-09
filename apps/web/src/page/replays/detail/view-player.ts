@@ -239,7 +239,7 @@ const statusOverlay = (
 							sessionActive,
 						)
 					: playerMessage(h, [
-							"This session wasn’t recorded. Replay is off or unsampled for this app. Its traces and events are still below.",
+							"This session wasn't recorded. Replay is off or unsampled for this app. Its traces and events are still below.",
 							hstack(
 								h,
 								{ align: "stretch", justify: "center", as: "span", className: "mt-2" },
@@ -357,7 +357,7 @@ const urlBar = (h: H, urlInitial: string): Html =>
 					shrink: true,
 					grow: true,
 					className:
-						"rounded-md bg-background/80 px-2.5 py-1 text-xs text-muted-foreground ring-1 ring-inset ring-border",
+						"rounded-md bg-surface-float backdrop-blur-sm px-2.5 py-1 text-xs text-muted-foreground ring-1 ring-inset ring-border",
 				},
 				[
 					icon(h, "GlobeIcon", { className: "size-3.5 shrink-0" }),

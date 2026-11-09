@@ -259,7 +259,7 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 					tabs: kubernetesViewTabs(h, "pods", model.search),
 					filters: filtersRail(h, model),
 				},
-				[h.div([h.Class("space-y-5")], [summaryBand(h, model), podsArea(h, model, inputs)])],
+				[h.div([h.Class("space-y-4")], [summaryBand(h, model), podsArea(h, model, inputs)])],
 			),
 			h.submodel({
 				slotId: "pod-peek",

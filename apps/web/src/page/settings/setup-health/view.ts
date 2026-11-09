@@ -12,6 +12,7 @@ import { errorState } from "@maple/views/ui/error-state"
 import { icon, type IconName } from "@maple/views/ui/icon"
 import { inlineCode, inlineCodeClassName } from "@maple/views/ui/inline-code"
 import { panel } from "@maple/views/ui/panel"
+import { statusDot } from "@maple/views/ui/status-dot"
 import { refreshButton } from "@maple/views/ui/refresh-button"
 import { skeletonBlock } from "@maple/views/ui/skeleton"
 import { relativeTime } from "../../kit/relative-time"
@@ -226,7 +227,7 @@ const summaryPanel = (h: H, audit: V2SetupAudit, isRefreshing: boolean, inputs: 
 						attributes: [h.Key(segment)],
 					},
 					[
-						h.span([h.Class(cn("size-2 rounded-full", SEGMENT[segment].fill))], []),
+						statusDot(h, { tone: "custom", size: "lg", className: SEGMENT[segment].fill }),
 						SEGMENT[segment].legend(count),
 					],
 				),
@@ -279,7 +280,7 @@ const findings = (h: H, audit: V2SetupAudit): Html => {
 					])
 				: dividedList(
 						h,
-						{ as: "ul", bordered: false, className: "divide-border" },
+						{ as: "ul", bordered: false },
 						Arr.map(rows, (check) => findingRow(h, check)),
 					),
 		],
@@ -322,7 +323,7 @@ const passingDisclosure = (
 						[
 							dividedList(
 								h,
-								{ as: "ul", bordered: false, className: "divide-border border-t" },
+								{ as: "ul", bordered: false, className: "border-t" },
 								Arr.map(passing, (check) =>
 									hstack(
 										h,

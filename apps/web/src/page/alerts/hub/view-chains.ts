@@ -141,7 +141,7 @@ const chainsEmpty = (h: H, model: Model): Html =>
 		[
 			emptyHeader(h, [
 				emptyMedia(h, { variant: "icon" }, [icon(h, "BellIcon", { size: 18 })]),
-				emptyTitle(h, ["No escalation chains"]),
+				emptyTitle(h, ["No escalation chains yet"]),
 				emptyDescription(h, [
 					"A chain pages one set of destinations, waits for someone to acknowledge, then pages the next. A rule's severity tier can start one on top of its own destinations.",
 					...(canManage(model) ? [] : [" Ask an org admin to create one."]),

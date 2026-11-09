@@ -117,7 +117,7 @@ export const emptySection = <M>(h: HtmlBuilder<M>): Html =>
 					],
 					"rounded-md border border-dashed",
 				),
-				emptyMessage(h, { dashed: true }, ["No dashboards match this filter."]),
+				emptyMessage(h, { dashed: true }, ["No dashboards match these filters"]),
 			],
 		),
 	])

@@ -6,7 +6,7 @@ import { badge } from "@maple/views/ui/display"
 import * as HoverCard from "@maple/views/ui/hover-card"
 import * as Tooltip from "@maple/views/ui/tooltip"
 import { commitDetailBody, isResolvableSha } from "../kit/commit-card"
-import { PILL_CLASS, RELEASE_HEALTH_DESCRIPTION, RELEASE_HEALTH_LABEL } from "./kit"
+import { PILL_VARIANT, RELEASE_HEALTH_DESCRIPTION, RELEASE_HEALTH_LABEL } from "./kit"
 import { commitTriggerId, Message, type Model } from "./overlays"
 
 // The triggers of the releases overlays. Each trigger embeds the shared Model as its own
@@ -42,7 +42,8 @@ export const releaseHealthPill = <M>(
 						size: "xs",
 						pill: true,
 						mono: true,
-						className: cn("cursor-default font-normal", PILL_CLASS[health], className),
+						variant: PILL_VARIANT[health],
+						className: cn("cursor-default font-normal", className),
 						attributes: [...trigger(triggerId), ...childAttributes([h.DataAttribute("slot", "tooltip-trigger")])],
 					},
 					[

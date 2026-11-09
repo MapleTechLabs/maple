@@ -152,7 +152,7 @@ const windowsEmpty = (h: H, model: Model): Html =>
 		[
 			emptyHeader(h, [
 				emptyMedia(h, { variant: "icon" }, [icon(h, "CalendarIcon", { size: 18 })]),
-				emptyTitle(h, ["No maintenance windows"]),
+				emptyTitle(h, ["No maintenance windows yet"]),
 				emptyDescription(h, [
 					"Plan quiet periods once or every week, like a nightly backup or a weekend migration. Each occurrence silences the rules it covers, so no one is paged.",
 					...(canManage(model) ? [] : [" Ask an org admin to create one."]),

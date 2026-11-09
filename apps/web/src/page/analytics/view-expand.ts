@@ -51,7 +51,7 @@ const breakdownContent = (h: H, model: Model, panelId: string): ReadonlyArray<Ht
 						" ",
 						ranking,
 						" ",
-						"over the selected window. Pick a row to filter the page.",
+						"over this window. Pick a row to filter the page.",
 					]),
 				]),
 				hstack(h, { justify: "between", wrap: true, className: "gap-x-3 gap-y-2" }, [
