@@ -340,7 +340,7 @@ export class DependencyScanner extends Context.Service<DependencyScanner, Depend
 						)
 					const provider = yield* sources
 						.resolve(repository.provider)
-						.pipe(Effect.mapError(scanError("Unknown VCS provider")))
+						.pipe(Effect.mapError(scanError("Could not use the repository's provider")))
 					const headOpt =
 						request.commitSha === undefined
 							? yield* provider
