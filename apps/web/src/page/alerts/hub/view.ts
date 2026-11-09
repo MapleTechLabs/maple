@@ -195,20 +195,26 @@ const newRuleItem = (
 	],
 })
 
-/** The split create button: the main part opens the tab's own kind (an uptime check on Uptime, else a
- * telemetry rule), the chevron offers every kind. */
+/** The split create button: its main part makes the section's own kind (an uptime check on Uptime, an SLO
+ * on SLOs, else a telemetry rule), the chevron offers every kind. */
 const newRuleButton = (h: H, model: Model, tab: AlertsTab): Html => {
 	const serviceName = model.search.serviceName
-	const uptimeLead = tab === "uptime" && canManage(model)
+	// Uptime checks and SLOs are admin-only to create; members keep the telemetry rule.
+	const lead =
+		canManage(model) && tab === "uptime"
+			? { href: newMonitorHref({ serviceName }), label: "New check" }
+			: canManage(model) && tab === "slos"
+				? { href: newSloHref({ serviceName }), label: "New SLO" }
+				: { href: createHref({ serviceName }), label: "New rule" }
 	return hstack(h, { align: "center" }, [
 		linkButton(
 			h,
 			{
 				size: "sm",
-				href: uptimeLead ? newMonitorHref({ serviceName }) : createHref({ serviceName }),
+				href: lead.href,
 				className: splitButtonClass("lead"),
 			},
-			[icon(h, "PlusIcon"), uptimeLead ? "New check" : "New rule"],
+			[icon(h, "PlusIcon"), lead.label],
 		),
 		h.submodel({
 			slotId: model.newRuleMenu.id,
@@ -273,11 +279,7 @@ const newRuleButton = (h: H, model: Model, tab: AlertsTab): Html => {
 	])
 }
 
-/** The SLOs tab lists some; the empty one offers "New SLO" itself. */
-const hasSlos = (model: Model): boolean =>
-	Option.exists(AsyncData.getData(model.slos.data), (rows) => rows.length > 0)
-
-// Destinations are a Routing concern, so "New destination" only shows on that tab; "New SLO" likewise.
+// Destinations are a Routing concern, so "New destination" only shows on that tab.
 const headerActions = (h: H, model: Model, tab: AlertsTab): Html =>
 	hstack(h, { gap: "2" }, [
 		...(canManage(model) && tab === "silences"
@@ -304,19 +306,6 @@ const headerActions = (h: H, model: Model, tab: AlertsTab): Html =>
 							attributes: [h.OnClick(Message.ClickedNewWindow())],
 						},
 						[icon(h, "CalendarIcon"), "New window"],
-					),
-				]
-			: []),
-		...(canManage(model) && tab === "slos" && hasSlos(model)
-			? [
-					linkButton(
-						h,
-						{
-							size: "sm",
-							variant: "outline",
-							href: newSloHref({ serviceName: model.search.serviceName }),
-						},
-						[icon(h, "PlusIcon"), "New SLO"],
 					),
 				]
 			: []),
