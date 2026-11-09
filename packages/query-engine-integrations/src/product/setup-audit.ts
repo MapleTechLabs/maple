@@ -609,6 +609,8 @@ export const auditResourceKeyServiceRowSchema = Schema.Struct({
  * Services whose span resources carry any of `keys`, over a short raw `traces` window. Each
  * `[key, target]` in `duplicatePairs` counts rows where both hold the same value, compared in place.
  */
+const COMMIT_SHA_PATTERN = "^[0-9a-fA-F]{7,40}$"
+
 export function auditResourceKeyServicesQuery(
 	keys: Arr.NonEmptyReadonlyArray<string>,
 	opts: { readonly duplicatePairs?: ReadonlyArray<readonly [string, string]> } = {},
@@ -623,11 +625,17 @@ export function auditResourceKeyServicesQuery(
 					...Arr.map(pairs, ([key, target]) => {
 						const value = $.ResourceAttributes.get(key)
 						const twin = $.ResourceAttributes.get(target)
+						// A prefix match needs 7+ chars on the shorter side, so `1` never matches `1f3a…`.
+						const prefix = twin
+							.startsWith(value)
+							.and(CH.matchCond(value, "^.{7,}"))
+							.or(value.startsWith(twin).and(CH.matchCond(twin, "^.{7,}")))
+						const same = value.neq("").and(twin.neq("")).and(value.eq(twin).or(prefix))
+						// A SHA kept in service.version is still the only revision: removing its twin loses it.
 						return CH.countIf(
-							value
-								.neq("")
-								.and(twin.neq(""))
-								.and(value.eq(twin).or(twin.startsWith(value)).or(value.startsWith(twin))),
+							target === "service.version"
+								? same.and(CH.not(CH.matchCond(value, COMMIT_SHA_PATTERN)))
+								: same,
 						)
 					}),
 				),
@@ -650,7 +658,7 @@ export function auditResourceKeyServicesQuery(
 }
 
 /** Upper bound on the raw `traces` window for naming who emits a sensitive-looking span key. */
-export const AUDIT_SENSITIVE_KEY_MAX_HOURS = 6
+export const AUDIT_SENSITIVE_KEY_MAX_HOURS = 1
 
 export interface AuditSensitiveKeyEmitterRow {
 	readonly serviceName: string

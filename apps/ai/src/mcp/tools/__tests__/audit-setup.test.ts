@@ -169,14 +169,6 @@ describe("formatAffected", () => {
 		const result = formatAffected(structured([check({ affected, affectedCount: 25 })]).checks[0]!)
 		expect(result).toBe("rule-0, rule-1, rule-2; +22 more")
 	})
-
-	it("does not count the objects a grouped row stands for as more rows", () => {
-		const grouped = check({
-			affected: [{ kind: "integration", name: "firewall_events on 17 zones", note: "500" }],
-			affectedCount: 17,
-		})
-		expect(formatAffected(structured([grouped]).checks[0]!)).toBe("firewall_events on 17 zones (500)")
-	})
 })
 
 describe("toStructured", () => {
@@ -279,6 +271,23 @@ describe("nextCallsOf", () => {
 			method: "remove",
 		})
 		expect(decodes(call)).toBe(true)
+	})
+
+	it("scopes the PII preview to the service that sends that key, not another key's sender", () => {
+		const [call] = callsFor([
+			check({
+				id: "PII-01",
+				category: "attributes",
+				severity: "critical",
+				affected: [
+					{ kind: "attribute_key", name: "password", note: "log" },
+					{ kind: "attribute_key", name: "api_key", note: 'span; sent by checkout on "charge"' },
+				],
+				affectedCount: 2,
+			}),
+		])
+		expect(call?.args.signals).toEqual(["logs"])
+		expect(call?.args.service).toBeUndefined()
 	})
 
 	it("explores the resource keys of the first service a resource or database check names", () => {

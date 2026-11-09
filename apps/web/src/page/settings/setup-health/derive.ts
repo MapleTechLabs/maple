@@ -1,5 +1,4 @@
 import { decodePublicId, PublicIdPrefixes, type V2SetupAuditCheck } from "@maple/domain/http/v2"
-import { AUDIT_AFFECTED_LIMIT } from "@maple/domain/setup-audit"
 import { docsUrl } from "../../../lib/docs"
 import { AppRoute, hrefOf } from "../../../route"
 import { Array as Arr, Option, Order } from "effect"
@@ -121,13 +120,6 @@ export const setupHealthAction = (check: Check): SetupHealthAction | null => {
 		}
 	}
 }
-
-/**
- * Affected objects beyond the chips shown. Only a capped list has more to show; a shorter one may
- * hold grouped chips (one per failing Cloudflare dataset group) that `affected_count` counts inside.
- */
-export const hiddenAffectedCount = (check: Pick<V2SetupAuditCheck, "affected" | "affected_count">): number =>
-	check.affected.length >= AUDIT_AFFECTED_LIMIT ? check.affected_count - check.affected.length : 0
 
 const SEVERITY_RANK = { critical: 0, warn: 1, info: 2 } as const
 

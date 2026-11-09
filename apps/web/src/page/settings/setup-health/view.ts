@@ -22,7 +22,6 @@ import { settingsSection, settingsSections } from "../kit/section"
 import {
 	type HealthSegment,
 	healthSegments,
-	hiddenAffectedCount,
 	orderFindings,
 	resolvedChecks,
 	type SetupHealthAction,
@@ -153,11 +152,11 @@ const findingRow = (h: H, check: V2SetupAuditCheck): Html => {
 									...Arr.map(check.affected, (entity, index) =>
 										affectedChip(h, entity, index),
 									),
-									...(hiddenAffectedCount(check) > 0
+									...(check.affected_count > check.affected.length
 										? [
 												typography(h, { size: "2xs", tone: "subtle" }, [
 													"+",
-													String(hiddenAffectedCount(check)),
+													String(check.affected_count - check.affected.length),
 													" more",
 												]),
 											]

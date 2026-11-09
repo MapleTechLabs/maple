@@ -444,8 +444,7 @@ export interface SetupAuditInputs {
 // Helpers
 
 /** How many affected entities a single finding carries; the rest are counted, not listed. */
-export const AUDIT_AFFECTED_LIMIT = 20
-const AFFECTED_LIMIT = AUDIT_AFFECTED_LIMIT
+const AUDIT_AFFECTED_LIMIT = 20
 
 /** Floor for how old an enabled rule's scheduler claim may get before it counts as stalled. */
 const RULE_SCHEDULE_STALE_FLOOR_MS = 30 * 60_000
@@ -462,7 +461,7 @@ const PASS: AuditEvaluation = { status: "pass" }
 const fail = (detail: string, affected: ReadonlyArray<AuditAffectedEntity> = []): AuditEvaluation => ({
 	status: "fail",
 	detail,
-	affected: affected.slice(0, AFFECTED_LIMIT),
+	affected: affected.slice(0, AUDIT_AFFECTED_LIMIT),
 	affectedCount: affected.length,
 })
 
@@ -1147,7 +1146,7 @@ const integrationChecks: ReadonlyArray<AuditCheck> = [
 				}
 			})
 			if (affected.length === 0) return PASS
-			// A grouped row stands for every dataset in it, so the count (and the ranking) is per dataset.
+			// The detail states the dataset count; affectedCount stays the row count v2 clients expect.
 			return {
 				...fail(
 					`${plural(failing.length, "Cloudflare dataset")} ${conj(failing.length, "has", "have")} failed since ${conj(failing.length, "its", "their")} last successful poll${
@@ -1157,7 +1156,6 @@ const integrationChecks: ReadonlyArray<AuditCheck> = [
 					}.`,
 					affected,
 				),
-				affectedCount: failing.length,
 				...(losing ? { severity: "critical" as const } : undefined),
 			}
 		},

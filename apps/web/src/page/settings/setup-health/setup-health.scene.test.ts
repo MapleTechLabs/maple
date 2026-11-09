@@ -1,11 +1,5 @@
 import { describe, expect, test } from "vitest"
-import {
-	healthSegments,
-	hiddenAffectedCount,
-	orderFindings,
-	resolvedChecks,
-	setupHealthAction,
-} from "./derive"
+import { healthSegments, orderFindings, resolvedChecks, setupHealthAction } from "./derive"
 import { Message } from "./model"
 import { init, update } from "./update"
 import { Array as Arr } from "effect"
@@ -45,16 +39,5 @@ describe("setup health", () => {
 			kind: "docs",
 			label: "Read upstream context guide",
 		})
-	})
-
-	test("+N more counts only past the cap, not the objects a grouped chip stands for", () => {
-		const chip = {
-			kind: "integration",
-			id: null,
-			name: "firewall_events on 17 zones",
-			note: null,
-		} as const
-		expect(hiddenAffectedCount({ affected: [chip], affected_count: 17 })).toBe(0)
-		expect(hiddenAffectedCount({ affected: Arr.makeBy(20, () => chip), affected_count: 26 })).toBe(6)
 	})
 })

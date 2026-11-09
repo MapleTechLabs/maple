@@ -1269,8 +1269,8 @@ describe("integration checks", () => {
 		}))
 		const result = check(runSetupAudit(inputs({ cloudflareAnalytics: zones })), "CFG-INTEG-02")
 		expect(result.detail).toContain("17 Cloudflare datasets")
-		// The grouped row stands for 17 datasets, so it ranks by 17, and two days without a poll is data loss.
-		expect(result.affectedCount).toBe(17)
+		// One row per group (the detail carries the dataset count); two days without a poll is data loss.
+		expect(result.affectedCount).toBe(1)
 		expect(result.severity).toBe("critical")
 		expect(result.detail).toContain("all for over 24 hours, so that data is missing")
 		expect(result.affected).toEqual([

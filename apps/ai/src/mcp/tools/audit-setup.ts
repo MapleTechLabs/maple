@@ -7,7 +7,6 @@ import { CurrentMcpTenant } from "../lib/query-warehouse"
 import * as P from "../lib/params"
 import { doc, type NextCall } from "../lib/tool-doc"
 import {
-	AUDIT_AFFECTED_LIMIT,
 	type AuditAffectedEntity,
 	type AuditCheckResult,
 	type AuditSeverity,
@@ -117,11 +116,7 @@ export const formatAffected = (check: AffectedLike): string => {
 		),
 		"; ",
 	)
-	// A full list was capped, so the count says how many more; a shorter one may hold grouped rows
-	// (one Cloudflare row per failing dataset group) whose count is not more rows to show.
-	const hidden =
-		(check.affected.length >= AUDIT_AFFECTED_LIMIT ? check.affectedCount : check.affected.length) -
-		named.length
+	const hidden = check.affectedCount - named.length
 	return hidden > 0 ? `${shown}; +${hidden} more` : shown
 }
 
@@ -146,11 +141,16 @@ const serviceInNotes = (check: OutputCheck, pattern: RegExp): Option.Option<stri
 /** A redact rule that removes a flagged key, previewed (not created) so a person can decide. */
 const removeKeyPreview = (check: OutputCheck): ReadonlyArray<NextCall> =>
 	Option.match(
-		Arr.findFirst(check.affected, (entity) => entity.kind === "attribute_key"),
+		// The ingest-rule preview covers traces and logs only, so metric-scope keys get no call.
+		Arr.findFirst(
+			check.affected,
+			(entity) => entity.kind === "attribute_key" && !Str.startsWith("metric")(entity.note ?? ""),
+		),
 		{
 			onNone: () => [],
 			onSome: (entity) => {
 				const scope = Str.split(";")(entity.note ?? "")[0] ?? ""
+				const sender = /\bsent by ([^\s,;]+)/.exec(entity.note ?? "")?.[1]
 				const action = {
 					type: "redact",
 					keys: [entity.name],
@@ -165,7 +165,7 @@ const removeKeyPreview = (check: OutputCheck): ReadonlyArray<NextCall> =>
 						{
 							signals: [scope === "log" ? "logs" : "traces"],
 							action: JSON.stringify(action),
-							service: Option.getOrUndefined(serviceInNotes(check, /\bsent by ([^\s,;]+)/)),
+							service: sender,
 						},
 						`${check.id}: what an ingest rule removing \`${entity.name}\` would strip while the source is fixed`,
 					),
