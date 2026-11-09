@@ -101,6 +101,8 @@ function resourceLink(entry: AuditEntryResource): AuditResourceLink | null {
 			return { to: "/settings", search: { tab: "ai" } }
 		case "warehouse_settings":
 			return { to: "/settings", search: { tab: "data-platform" } }
+		case "data_source":
+			return { to: "/settings", search: { tab: "data-sources" } }
 		default:
 			return null
 	}

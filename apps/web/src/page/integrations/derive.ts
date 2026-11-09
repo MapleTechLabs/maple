@@ -765,10 +765,11 @@ export const summaryOf = (
 
 /** `useVisibleSettingsSections()` on `/integrations`: the session's admin flag and the BYOC add-on. */
 export const settingsNavVisibility = (
-	model: Pick<Model, "grants" | "customer">,
+	model: Pick<Model, "grants" | "customer" | "hasDataSources">,
 	isClerk: boolean,
 ): Visibility => {
-	if (!isClerk) return { isClerk, grants: Policy.allPermissions, canAccessDataPlatform: true }
+	if (!isClerk)
+		return { isClerk, grants: Policy.allPermissions, canAccessDataPlatform: true, hasDataSources: true }
 	const hasByoc = AsyncData.getOrElse(
 		AsyncData.map(model.customer.data, hasBringYourOwnCloudAddOn),
 		() => false,
@@ -777,5 +778,6 @@ export const settingsNavVisibility = (
 		isClerk,
 		grants: model.grants,
 		canAccessDataPlatform: Policy.has(model.grants, "warehouse:manage") && hasByoc,
+		hasDataSources: model.hasDataSources,
 	}
 }

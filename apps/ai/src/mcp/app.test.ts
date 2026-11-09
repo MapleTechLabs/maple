@@ -40,6 +40,7 @@ const makeMcpToolExecutorStubLayer = (
 				execute,
 				prepareRepository: () => Effect.void,
 				prepareConnectedRepositories: () => Effect.void,
+				listDataSources: () => Effect.succeed([]),
 			}
 			return {
 				load: Effect.succeed(executor),

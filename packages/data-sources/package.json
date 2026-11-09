@@ -1,0 +1,28 @@
+{
+	"name": "@maple/data-sources",
+	"private": true,
+	"type": "module",
+	"sideEffects": false,
+	"exports": {
+		".": "./src/index.ts",
+		"./clerk": "./src/drivers/clerk/index.ts",
+		"./clerk/testing": "./src/drivers/clerk/testing.ts",
+		"./clickhouse": "./src/drivers/clickhouse/index.ts"
+	},
+	"scripts": {
+		"test": "vitest run",
+		"typecheck": "tsrs --noEmit"
+	},
+	"dependencies": {
+		"@maple-dev/effect-clickhouse-http": "workspace:*",
+		"@maple/domain": "workspace:*",
+		"@maple/safe-fetch": "workspace:*",
+		"effect": "catalog:effect"
+	},
+	"devDependencies": {
+		"@effect/vitest": "catalog:effect",
+		"@types/node": "catalog:tooling",
+		"typescript": "catalog:tooling",
+		"vitest": "catalog:"
+	}
+}

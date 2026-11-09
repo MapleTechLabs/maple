@@ -145,6 +145,7 @@ export const init = (route: { readonly search: Search }, context: PageContext): 
 		},
 		customer: Keyed.idle(),
 		grants: isClerkAuthEnabled ? [] : Policy.allPermissions,
+		hasDataSources: !isClerkAuthEnabled,
 		connect: initConnect(),
 		disconnect: { dialog: Dialog.init("integration-disconnect", "alert-dialog"), isPending: false },
 		chatCard: { busy: null, confirmId: null, identityBusy: false },
@@ -289,7 +290,9 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		CompletedLoadCustomer: ({ key, result }) => ({
 			model: { ...model, customer: Keyed.accept(model.customer, key, result) },
 		}),
-		CompletedLoadSession: ({ grants }) => ({ model: { ...model, grants } }),
+		CompletedLoadSession: ({ grants, hasDataSources }) => ({
+			model: { ...model, grants, hasDataSources },
+		}),
 		CompletedTrackConnected: () => ({ model }),
 		ClickedIntegration: ({ integration }) =>
 			navigateTo(model, hrefOfSearch(integration === null ? {} : { integration }), false),

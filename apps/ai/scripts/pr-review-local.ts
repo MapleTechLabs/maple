@@ -793,6 +793,7 @@ export const makeExecutor = (input: {
 		// The local clone is already prepared before the turn starts.
 		prepareRepository: () => Effect.void,
 		prepareConnectedRepositories: () => Effect.void,
+		listDataSources: () => Effect.succeed([]),
 		execute: (_tenant, name, raw) =>
 			Effect.sync(() => {
 				const normalized = normalizeArguments(raw, Rec.keys(LocalToolParams.fields))

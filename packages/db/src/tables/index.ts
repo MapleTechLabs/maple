@@ -61,6 +61,7 @@ import { OrgIngestRules, OrgIngestRuleSettings, OrgIngestRuleStats } from "./org
 import { OrgIngestKeys } from "./org-ingest-keys"
 import { OrgIngestSamplingPolicies } from "./org-ingest-sampling-policies"
 import { Sources } from "./sources"
+import { ExternalDataSources, ExternalDataSourceCatalogEntries } from "./external-data-sources"
 import { OrgRecommendationIssues } from "./org-recommendation-issues"
 import { PlanetscaleConnections } from "./planetscale-connections"
 import {
@@ -131,6 +132,7 @@ export * from "./dashboards"
 export * from "./device-credentials"
 export * from "./digest"
 export * from "./errors"
+export * from "./external-data-sources"
 export * from "./escalations"
 export * from "./escalation-chains"
 export * from "./oncall-schedules"
@@ -240,6 +242,8 @@ export const allTables: ReadonlyArray<PgSchemaTable<string, ColumnDefs>> = [
 	OrgOpenRouterKeys,
 	OrgBillingLinks,
 	Sources,
+	ExternalDataSources,
+	ExternalDataSourceCatalogEntries,
 	OrgRecommendationIssues,
 	PlanetscaleConnections,
 	PlanetscalePollState,

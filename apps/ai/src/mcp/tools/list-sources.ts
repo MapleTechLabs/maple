@@ -10,28 +10,29 @@ import { doc } from "../lib/tool-doc"
 import { SourcesService } from "@maple/backend/services/org/SourcesService"
 import { publicSourceId } from "@maple/backend/services/org/integration-sources"
 
-const TOOL = "list_sources"
+const TOOL = "list_ingest_sources"
 
 const RANK = new Map(Arr.map(SOURCE_HEALTH_STATUSES, (status, index) => [status, index]))
 
 export function registerListSourcesTool(server: McpToolRegistrar) {
 	server.define({
 		name: TOOL,
-		title: "List Sources",
+		title: "List Ingest Sources",
 		description:
-			"Everything that sends data to this Maple organization, worst health first: OpenTelemetry SDKs and collectors " +
+			"Telemetry INGEST sources: everything that sends data to this Maple organization, worst health first: OpenTelemetry SDKs and collectors " +
 			"(each with its own token, or the default ingest keys), Kubernetes clusters, Docker hosts, Prometheus scrape " +
 			"targets and connected integrations (Cloudflare, Google Cloud, Railway, PlanetScale, GitHub CI). Each source " +
 			"says whether data is arriving and when it last did. Telemetry carries its source in the `maple_source_id` " +
 			"resource attribute, so a source id filters traces, logs and metrics. Use it to find which sender stopped; " +
-			"ingest_freshness says whether any data arrives at all, list_integrations covers provider credentials and pollers.",
+			"ingest_freshness says whether any data arrives at all, list_integrations covers provider credentials and pollers. " +
+			"Not for databases or APIs the org connected to query in place: those are data sources, listed by list_data_sources.",
 		parameters: Schema.Struct({
 			platform: P.optionalOneOf(SourcePlatform.literals, "Only sources of this platform"),
 		}),
 		output: ListSourcesOutput,
 		hints: { readOnly: true },
-		phrases: ["Checking sources", "Listing data sources"],
-		handler: Effect.fn("McpTool.listSources")(function* ({ platform }) {
+		phrases: ["Checking ingest sources", "Listing ingest sources"],
+		handler: Effect.fn("McpTool.listIngestSources")(function* ({ platform }) {
 			const tenant = yield* CurrentMcpTenant
 			const service = yield* SourcesService
 			const sources = yield* service
@@ -66,7 +67,7 @@ export function registerListSourcesTool(server: McpToolRegistrar) {
 		render: (output) => {
 			if (output.sources.length === 0) {
 				return {
-					title: "Sources",
+					title: "Ingest sources",
 					empty: {
 						message: "No source matches.",
 						hints: ["Create one in Sources → Connect source."],
@@ -79,7 +80,7 @@ export function registerListSourcesTool(server: McpToolRegistrar) {
 				(s) => s.kind === "integration" && s.status !== "healthy",
 			)
 			return {
-				title: "Sources",
+				title: "Ingest sources",
 				blocks: [
 					doc.table(
 						["Source", "Platform", "Status", "Last data", "Id", "Problem"],

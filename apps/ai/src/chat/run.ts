@@ -119,6 +119,8 @@ export interface ChatRunInput {
 	/** Who is driving this turn. Decides surface, ruleset, persona and labels — see `./profiles`. */
 	readonly origin: ChatTurnOrigin
 	readonly toolExecutor: McpToolExecutorApi
+	/** Org-specific prompt text (its connected data sources), appended to the agent's persona. */
+	readonly orgContext?: string
 	readonly model: ResolvedModel
 	readonly submitDiagnosis: SubmitDiagnosis
 	/** Absent outside a review session's runtime; a `pr-` session without it runs with no completion. */
@@ -326,7 +328,14 @@ const runChatTurnFrom = (input: ChatRunInput, startedAt: number) => {
 
 	// Not declared to the engine, which would then require the tool on every call; see
 	// `buildDiagnosisCompletion`. A landed submission still settles the run, below.
-	const prompt = codeMode === undefined ? profile.prompt : `${profile.prompt}\n\n${CODE_MODE_GUIDANCE}`
+	const prompt = Arr.join(
+		[
+			profile.prompt,
+			...(input.orgContext === undefined ? [] : [input.orgContext]),
+			...(codeMode === undefined ? [] : [CODE_MODE_GUIDANCE]),
+		],
+		"\n\n",
+	)
 	const run = chatAgent({ ...agent, prompt }, toolkit, input.model, {
 		autonomous: input.origin.kind === "autonomous",
 	})

@@ -28,6 +28,7 @@ import * as BillingView from "./billing/view"
 import * as MembersView from "./members/view"
 import * as GeneralView from "./general/view"
 import * as DataPlatformView from "./data-platform/view"
+import * as DataSourcesView from "./data-sources/view"
 import * as AuditLogView from "./audit-log/view"
 import * as AutomationView from "./automation/view"
 import * as SetupHealthView from "./setup-health/view"
@@ -143,6 +144,20 @@ const tabContent = (h: H, model: Model, inputs: PageViewInputs): ReadonlyArray<H
 					view: DataPlatformView.view,
 					toParentMessage: (message) => Message.GotDataPlatformMessage({ message }),
 					viewInputs: { nowMs: model.nowMs, timeZone: inputs.context.timeZone },
+				}),
+			]
+		case "DataSources":
+			return [
+				h.submodel({
+					slotId: "settings-data-sources",
+					model: tab.model,
+					view: DataSourcesView.view,
+					toParentMessage: (message) => Message.GotDataSourcesMessage({ message }),
+					viewInputs: {
+						canManage: Policy.has(visibilityOf(model).grants, "data_sources:manage"),
+						nowMs: model.nowMs,
+						timeZone: inputs.context.timeZone,
+					},
 				}),
 			]
 		case "General":
@@ -323,6 +338,14 @@ const tabActions = (h: H, model: Model): Html | undefined => {
 				view: MembersView.headerActions,
 				toParentMessage: (message) => Message.GotMembersMessage({ message }),
 				viewInputs: {},
+			})
+		case "DataSources":
+			return h.submodel({
+				slotId: "settings-data-sources-actions",
+				model: tab.model,
+				view: DataSourcesView.headerActions,
+				toParentMessage: (message) => Message.GotDataSourcesMessage({ message }),
+				viewInputs: { canManage: Policy.has(visibilityOf(model).grants, "data_sources:manage") },
 			})
 		default:
 			return undefined

@@ -43,7 +43,8 @@
 				"src/worker.ts",
 				"vitest.playground.config.ts",
 				"src/evals/playground/*.playground.ts",
-				"scripts/cold-path/*.{ts,mjs}"
+				"scripts/cold-path/*.{ts,mjs}",
+				"src/mcp/__evals__/ds-world/seed-sql.ts"
 			]
 		},
 		"apps/alerting": {
