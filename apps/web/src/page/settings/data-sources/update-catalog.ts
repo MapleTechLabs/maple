@@ -69,11 +69,16 @@ const closeDeleted = (model: Model, wasOpen: boolean): Model =>
 
 export const updateCatalog = (model: Model, message: Message): Return => {
 	switch (message._tag) {
-		case "CompletedFetchCatalog":
+		case "CompletedFetchCatalog": {
 			// An answer for a source the admin already left must not land on the one now open.
-			return isOpenDetail(model, message.id)
-				? { model: { ...model, catalog: AsyncData.settle(model.catalog, message.result) } }
-				: { model }
+			if (!isOpenDetail(model, message.id)) return { model }
+			const settled = { ...model, catalog: AsyncData.settle(model.catalog, message.result) }
+			// A refresh can drop the entry being edited; its draft would lock every other row.
+			const draftName = model.entryDraft?.name
+			return draftName !== undefined && Option.isNone(entryNamed(settled, draftName))
+				? { model: { ...settled, entryDraft: null, entryError: null } }
+				: { model: settled }
+		}
 		case "ClickedRefreshCatalog":
 			return model.refreshingId !== null
 				? { model }

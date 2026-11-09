@@ -9,7 +9,7 @@ import {
 	DataSourceValidationError,
 } from "@maple/domain/data-sources"
 import { OrgId, UserId } from "@maple/domain/http"
-import { MapleApiV2 } from "@maple/domain/http/v2"
+import { encodePublicId, MapleApiV2, PublicIdPrefixes } from "@maple/domain/http/v2"
 import { Env } from "@maple/backend/platform/Env"
 import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/platform/test-pglite"
 import { ApiAuthorizationV2Live } from "@maple/backend/services/auth/ApiAuthorizationV2Live"
@@ -222,9 +222,17 @@ describe("v2 data sources over HTTP", () => {
 	it("refuses every call from an org outside the dataSources rollout", async () => {
 		const harness = makeHarness(createdDbs, makeSource(), DISABLED_ORGANIZATION_FEATURE_FLAGS)
 		const admin = await harness.adminKey()
+		const one = `${BASE}/${encodePublicId(PublicIdPrefixes.dataSource, "018f2b3c-4d5e-6f70-8192-a3b4c5d6e7f8")}`
 		for (const [method, path, body] of [
 			["GET", BASE, undefined],
 			["POST", BASE, shopProd],
+			["GET", one, undefined],
+			["PATCH", one, { name: "renamed" }],
+			["DELETE", one, undefined],
+			["POST", `${one}/test`, undefined],
+			["POST", `${one}/catalog/refresh`, undefined],
+			["GET", `${one}/catalog`, undefined],
+			["PATCH", `${one}/catalog/entries/shop.payments`, { note: "x" }],
 		] as const) {
 			const response = await harness.request(method, path, admin, body)
 			expect(response.status).toBe(403)

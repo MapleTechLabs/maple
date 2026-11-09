@@ -470,6 +470,32 @@ describe("data sources tab", () => {
 			)
 		})
 
+		test("a refresh that drops the entry being edited closes its editor, so the other rows unlock", () => {
+			const two = Schema.decodeSync(V2DataSourceCatalog)({
+				...Schema.encodeSync(V2DataSourceCatalog)(reported),
+				entries: [
+					...Schema.encodeSync(V2DataSourceCatalog)(reported).entries,
+					{ ...Schema.encodeSync(V2DataSourceCatalog)(reported).entries[0]!, name: "shop.orders" },
+				],
+			})
+			const onlyOrders = Schema.decodeSync(V2DataSourceCatalog)({
+				...Schema.encodeSync(V2DataSourceCatalog)(two),
+				entries: Schema.encodeSync(V2DataSourceCatalog)(two).entries.slice(1),
+			})
+			const refreshed = step(
+				editing(two),
+				Message.ClickedRefreshCatalog(),
+				Message.CompletedRefreshCatalog({ id: source.id, result: Result.succeed(source) }),
+				Message.CompletedFetchCatalog({ id: source.id, result: Result.succeed(onlyOrders) }),
+			)
+			expect(refreshed.entryDraft).toBeNull()
+			scene(
+				{ update, view },
+				given(refreshed),
+				expectView(role("button", { name: "Fields and notes" })).toBeEnabled(),
+			)
+		})
+
 		test("the time field picker announces its hint", () => {
 			scene(
 				{ update, view },
