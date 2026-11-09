@@ -44,6 +44,13 @@ describe("runtimeHint", () => {
 		expect(hint).not.toContain("::type")
 	})
 
+	it("shows how to bucket an epoch-seconds column when toStartOfInterval refuses it", () => {
+		const message =
+			"Illegal type UInt32 of 1st argument of function toStartOfInterval, expected a Date, Date32, DateTime or DateTime64"
+		const hint = runtimeHint("SELECT $__timeGroup(ts) FROM iot.readings", "43", message, catalog)
+		expect(hint).toContain("toStartOfInterval(toDateTime(ts)")
+	})
+
 	it("suggests catalog columns for an unknown identifier and tables for an unknown table", () => {
 		expect(
 			runtimeHint(

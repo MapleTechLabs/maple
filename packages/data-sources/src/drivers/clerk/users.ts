@@ -153,7 +153,7 @@ export const userRow = (user: ClerkUserWire): ResourceRow => {
 
 export const usersResource = (secret: Redacted.Redacted): ResourceDefinition => ({
 	name: "users",
-	note: "People who signed up to this Clerk instance. `created_at` is the signup time. Counts per time bucket are cheap (one total call each); anything else reads users page by page.",
+	note: "People who signed up to this Clerk instance. `created_at` is the signup time. Signups per time bucket are cheap (one total call each); anything else reads users page by page. There is no per-day activity history: daily active users cannot be answered, only how many were active within a window.",
 	noun: { one: "user", many: "users" },
 	timeField: "created_at",
 	fields: USER_FIELDS,

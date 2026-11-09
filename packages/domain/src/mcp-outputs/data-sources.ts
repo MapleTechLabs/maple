@@ -36,6 +36,8 @@ export const ListDataSourcesOutput = Schema.Struct({
 
 export const SearchDataSourcesOutput = Schema.Struct({
 	query: Schema.String,
+	/** Visible sources whose catalog failed, was never captured or was cut at the cap: search cannot vouch for them. */
+	incompleteSources: Schema.optionalKey(Schema.Array(Schema.String)),
 	hits: Schema.Array(
 		Schema.Struct({
 			source: Schema.String,
@@ -94,6 +96,8 @@ export const QueryDataSourceOutput = Schema.Struct({
 	/** False for `explain`, which plans without running. */
 	executed: Schema.Boolean,
 	timeRange: OutputTimeRange,
+	/** False when the SQL uses no window macro, so `timeRange` did not filter anything. */
+	windowApplied: Schema.optionalKey(Schema.Boolean),
 	/** Set when the call chose a bucket size; otherwise the source picked one from the window. */
 	granularitySeconds: Schema.optionalKey(Schema.Number),
 	columns: Schema.Array(DataSourceColumn),

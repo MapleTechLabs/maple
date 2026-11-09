@@ -2,6 +2,7 @@ import { Array as Arr, Option, String as Str } from "effect"
 import { maskLiteralsAndComments } from "@maple/domain/raw-sql"
 import type { SourceCatalog } from "@maple/domain/data-sources"
 import { didYouMean } from "../../suggest"
+import { EPOCH_HELP } from "./sql"
 
 // PostgreSQL and MySQL habits that fail on ClickHouse, each with the ClickHouse spelling.
 // Shown only when a query was refused or ClickHouse rejected it, never on success.
@@ -125,6 +126,9 @@ export const runtimeHint = (
 		return Option.match(hit, { onNone: () => "", onSome: render })
 	}
 	if (code === "62") return validationHints(sql)
+	if (code === "43" && /toStartOfInterval/.test(message) && /Illegal type U?Int/.test(message)) {
+		return ` ${EPOCH_HELP}`
+	}
 	const table = UNKNOWN_TABLE_RE.exec(message)?.[1]
 	if (code === "60" || (code === "81" && table !== undefined)) {
 		return table === undefined

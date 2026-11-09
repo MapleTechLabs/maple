@@ -78,6 +78,8 @@ const ENVIRONMENT_WORDS = {
 
 const SCORE = {
 	entryName: 6,
+	/** Every word of the table's own name was asked for: `invoices` over `invoices_archive_2019`. */
+	wholeName: 3,
 	fieldName: 3,
 	note: 2,
 	sample: 2,
@@ -94,19 +96,26 @@ const DEFAULT_LIMIT = 10
 const matchesAny = (haystack: ReadonlyArray<string>, needle: string): boolean =>
 	Arr.some(haystack, (word) => word === needle || (needle.length >= 4 && Str.startsWith(needle)(word)))
 
+const askedWords = (query: string): ReadonlyArray<string> =>
+	Arr.dedupe(Arr.filter(words(query), (word) => !STOP_WORDS.has(word)))
+
+/** The words a search matches on: filler and environment words removed. Empty means nothing to search. */
+export const searchableWords = (query: string): ReadonlyArray<string> =>
+	Arr.filter(
+		askedWords(query),
+		(word) => !Arr.some(Rec.values(ENVIRONMENT_WORDS), (envWords) => Arr.contains(envWords, word)),
+	)
+
 export const searchCatalogs = (
 	sources: ReadonlyArray<SearchableSource>,
 	query: string,
 	limit: number = DEFAULT_LIMIT,
 ): ReadonlyArray<DataSourceSearchHit> => {
-	const asked = Arr.dedupe(Arr.filter(words(query), (word) => !STOP_WORDS.has(word)))
+	const asked = askedWords(query)
 	const askedEnvironment = Arr.findFirst(Rec.toEntries(ENVIRONMENT_WORDS), ([, envWords]) =>
 		Arr.some(asked, (word) => Arr.contains(envWords, word)),
 	)
-	const contentWords = Arr.filter(
-		asked,
-		(word) => !Arr.some(Rec.values(ENVIRONMENT_WORDS), (envWords) => Arr.contains(envWords, word)),
-	)
+	const contentWords = searchableWords(query)
 	if (contentWords.length === 0) return []
 
 	const hits = Arr.flatMap(sources, (source) => {
@@ -165,6 +174,13 @@ export const searchCatalogs = (
 			if (score === 0 && !namesSource) return []
 			if (score === 0) reasons.push(`in data source ${source.name}`)
 			if (namesSource) score += SCORE.sourceName
+			const baseWords = words(Arr.lastNonEmpty(Str.split(".")(entry.name)))
+			if (
+				baseWords.length > 0 &&
+				Arr.every(baseWords, (base) => Arr.some(contentWords, (word) => matchesAny([base], word)))
+			) {
+				score += SCORE.wholeName
+			}
 			score += sourceScore
 			if (matchedFields.size > 0 && reasons.length === 0) {
 				reasons.push(`fields ${Arr.join(Arr.take(Arr.fromIterable(matchedFields), 4), ", ")}`)
