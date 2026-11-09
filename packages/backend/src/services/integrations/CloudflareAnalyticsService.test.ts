@@ -235,6 +235,10 @@ interface FetchOptions {
 	readonly graphqlCalls?: { count: number }
 	/** When set, every outbound request URL (Cloudflare and the ingest gateway) is captured here. */
 	readonly requestUrls?: Array<string>
+	/** Report only the first matching error per response, as Cloudflare may when it rejects early. */
+	readonly graphqlFirstErrorOnly?: boolean
+	/** When set, every outbound GraphQL document's `$start` is captured here, aligned with `graphqlQueries`. */
+	readonly graphqlStarts?: Array<string>
 	/** When set, every outbound GraphQL document is captured here (batching assertions). */
 	readonly graphqlQueries?: Array<string>
 	/** When set, the `$zoneTags` of every outbound GraphQL document are captured here. */
@@ -334,16 +338,31 @@ const mockCloudflareFetch = (options: FetchOptions = {}): typeof globalThis.fetc
 		if (Str.includes("/graphql")(url)) {
 			const body = JSON.parse(await readRequestBody(input, init)) as {
 				query: string
-				variables?: { zoneTags?: ReadonlyArray<string> }
+				variables?: { zoneTags?: ReadonlyArray<string>; start?: string }
 			}
 			options.graphqlQueries?.push(body.query)
 			options.graphqlZoneTags?.push(body.variables?.zoneTags ?? [])
+			options.graphqlStarts?.push(body.variables?.start ?? "")
 			const call = served.graphql
 			served.graphql += 1
 			if (options.graphqlCalls) options.graphqlCalls.count += 1
 			await options.onGraphql?.(call)
-			if (options.graphqlErrors && call >= (options.graphqlErrorsFromCall ?? 0)) {
-				return jsonResponse({ data: null, errors: options.graphqlErrors })
+			// Like Cloudflare, an error on a selection only comes back while the document selects it.
+			const errors =
+				call >= (options.graphqlErrorsFromCall ?? 0)
+					? Arr.filter(options.graphqlErrors ?? [], (error) => {
+							const alias = Arr.findLast(
+								error.path ?? [],
+								(segment) => typeof segment === "string",
+							)
+							return Option.isNone(alias) || Str.includes(`${alias.value}:`)(body.query)
+						})
+					: []
+			if (errors.length > 0) {
+				return jsonResponse({
+					data: null,
+					errors: options.graphqlFirstErrorOnly ? errors.slice(0, 1) : errors,
+				})
 			}
 			if (Str.includes("MapleCfDatasetSettings")(body.query))
 				return jsonResponse({ data: settingsData })
@@ -1958,6 +1977,143 @@ describe("CloudflareAnalyticsService", () => {
 		)
 	})
 
+	it.effect("one dataset's authz failure does not starve its batched siblings", () => {
+		const testDb = createTestDb(trackedDbs)
+		const captured: CapturedIngest[] = []
+		return Effect.gen(function* () {
+			yield* TestClock.setTime(T0)
+			yield* seedConnection()
+			for (const dataset of ["http_requests", "firewall_events"]) {
+				yield* seedStateRow({
+					dataset,
+					zoneId: ZONE_ID,
+					zoneName: ZONE_NAME,
+					watermarkAt: T0 - 30 * MIN,
+					settingsFetchedAt: T0 - 5 * MIN,
+				})
+			}
+			const service = yield* CloudflareAnalyticsService
+			const summary = yield* service.pollOrg(ORG)
+			// Cloudflare nulls the whole document's data when the token cannot read one selection.
+			// Only the dataset it cannot read fails; the sibling is re-queried alone and advances.
+			// It sits out the tick's later rounds instead of failing again on each backfill window.
+			assert.deepStrictEqual(
+				Arr.map(summary.failures, (failure) => `${failure.datasetId}:${failure.kind}`),
+				["firewall_events:authz"],
+			)
+			assert.isAbove(summary.rowsIngested, 0)
+			const rows = yield* loadStateRows
+			const http = Option.getOrThrow(Arr.findFirst(rows, (r) => r.dataset === "http_requests"))
+			assert.isAbove(http.watermarkAt ?? 0, T0 - 30 * MIN)
+			assert.isNull(http.lastError)
+		}).pipe(
+			Effect.provide(
+				makeLayer(testDb, captured, {
+					graphqlErrors: [
+						{
+							message: "not authorized for that account",
+							path: ["viewer", "zones", 0, "firewall"],
+						},
+					],
+				}),
+			),
+		)
+	})
+
+	it.effect("a sibling still advances when each response reveals only one failing dataset", () => {
+		const testDb = createTestDb(trackedDbs)
+		const captured: CapturedIngest[] = []
+		const queries: Array<string> = []
+		const starts: Array<string> = []
+		return Effect.gen(function* () {
+			yield* TestClock.setTime(T0)
+			yield* seedConnection()
+			for (const dataset of ["http_requests", "firewall_events", "dns_queries"]) {
+				yield* seedStateRow({
+					dataset,
+					zoneId: ZONE_ID,
+					zoneName: ZONE_NAME,
+					watermarkAt: T0 - 30 * MIN,
+					settingsFetchedAt: T0 - 5 * MIN,
+				})
+			}
+			const service = yield* CloudflareAnalyticsService
+			const summary = yield* service.pollOrg(ORG)
+			// firewall fails the first document and dns the re-query; http gets a third pass for the
+			// same window instead of waiting for a later round (which never comes when nothing else moves).
+			const first = Arr.findFirstIndex(queries, (q) => Str.includes("firewall:")(q))
+			const window = Option.getOrThrow(first)
+			const passes = Arr.filter(
+				Arr.zip(queries, starts),
+				([q, start]) => start === starts[window] && Str.includes("groups:")(q),
+			)
+			assert.deepStrictEqual(
+				Arr.map(passes, ([q]) =>
+					Arr.filter(["groups:", "firewall:", "dns:"], (alias) => Str.includes(alias)(q)),
+				),
+				[["groups:", "firewall:", "dns:"], ["groups:", "dns:"], ["groups:"]],
+			)
+			assert.deepStrictEqual(
+				Arr.map(summary.failures, (failure) => failure.datasetId).sort(),
+				["dns_queries", "firewall_events"].sort(),
+			)
+			const rows = yield* loadStateRows
+			const http = Option.getOrThrow(Arr.findFirst(rows, (r) => r.dataset === "http_requests"))
+			assert.isAbove(http.watermarkAt ?? 0, T0 - 30 * MIN)
+		}).pipe(
+			Effect.provide(
+				makeLayer(testDb, captured, {
+					graphqlFirstErrorOnly: true,
+					graphqlQueries: queries,
+					graphqlStarts: starts,
+					graphqlErrors: [
+						{
+							message: "not authorized for that account",
+							path: ["viewer", "zones", 0, "firewall"],
+						},
+						{ message: "not authorized for that account", path: ["viewer", "zones", 0, "dns"] },
+					],
+				}),
+			),
+		)
+	})
+
+	it.effect("a dataset whose head window failed is not asked again for its backfill window", () => {
+		const testDb = createTestDb(trackedDbs)
+		const captured: CapturedIngest[] = []
+		return Effect.gen(function* () {
+			yield* TestClock.setTime(T0)
+			yield* seedConnection()
+			for (const dataset of ["http_requests", "firewall_events"]) {
+				yield* seedStateRow({
+					dataset,
+					zoneId: ZONE_ID,
+					zoneName: ZONE_NAME,
+					watermarkAt: T0 - 30 * MIN,
+					backfillAt: T0 - 2 * 60 * MIN,
+					settingsFetchedAt: T0 - 5 * MIN,
+				})
+			}
+			const service = yield* CloudflareAnalyticsService
+			const summary = yield* service.pollOrg(ORG)
+			assert.deepStrictEqual(
+				Arr.map(summary.failures, (failure) => `${failure.datasetId}:${failure.kind}`),
+				["firewall_events:authz"],
+			)
+		}).pipe(
+			Effect.provide(
+				makeLayer(testDb, captured, {
+					graphqlErrors: [
+						{
+							message: "not authorized for that account",
+							path: ["viewer", "zones", 0, "firewall"],
+						},
+					],
+				}),
+			),
+		)
+	})
+
 	it.effect("a Cloudflare rate limit is a quiet org-wide backoff, not a per-dataset failure", () => {
 		const testDb = createTestDb(trackedDbs)
 		const captured: CapturedIngest[] = []
@@ -2319,7 +2475,7 @@ describe("CloudflareAnalyticsService", () => {
 		},
 	)
 
-	it.effect("a genuine error alongside a plan-gated one still fails the clean siblings", () => {
+	it.effect("an unattributed genuine error alongside a plan-gated one still fails every dataset", () => {
 		const testDb = createTestDb(trackedDbs)
 		const captured: CapturedIngest[] = []
 		return Effect.gen(function* () {
