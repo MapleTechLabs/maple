@@ -31,7 +31,7 @@ export const accountLayout = <Message>(h: HtmlBuilder<Message>, children: Readon
 							h.p([h.Class("account-eyebrow")], ["Open-source observability"]),
 							h.p(
 								[h.Class("account-art-headline")],
-								["Understand", h.br([]), "what’s happening."],
+								["Understand", h.br([]), "what's happening."],
 							),
 							h.p(
 								[],

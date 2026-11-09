@@ -8,9 +8,8 @@ import * as Cloudflare from "@alchemy.run/cloudflare"
 import { renamedFrom } from "alchemy/Rename"
 import { Effect, Layer, Stream } from "effect"
 import { DatabasePgLive } from "@maple/backend/platform/DatabasePgLive"
+import { AuditEventsDlq, AuditEventsQueue } from "@maple/infra/cloudflare"
 import {
-	AuditEventsDlq,
-	AuditEventsQueue,
 	CancellationReviewsQueue,
 	PlanetScaleWebhookQueue,
 	VcsBackfillQueue,

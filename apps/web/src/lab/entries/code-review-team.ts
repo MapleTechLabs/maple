@@ -1,7 +1,13 @@
 import { OrgId } from "@maple/domain"
-import { CodeReviewTeam } from "@maple/domain/http"
-import { Clock, Effect, Result, Schema, Array as Arr, Record as Rec, String as Str } from "effect"
+import {
+	CodeReviewTeam,
+	GithubIntegrationStatus,
+	GithubRepoSummary,
+	VcsRepositoryId,
+} from "@maple/domain/http"
+import { Clock, Effect, Option, Result, Schema, Array as Arr, Record as Rec, String as Str } from "effect"
 import { Command } from "foldkit"
+import { FrameMessage } from "../../page/code-review/kit/frame"
 import type { PageContext } from "../../page/contract"
 import * as Team from "../../page/code-review/team/model"
 import { init, routeChanged, update } from "../../page/code-review/team/update"
@@ -254,16 +260,64 @@ const ServeFixtureTeam = Command.define("ServeFixtureCodeReviewTeam", {
 		),
 })
 
+/** The installation's repositories, so the activity lists link the fixture's repositories. */
+const githubStatus = new GithubIntegrationStatus({
+	connected: true,
+	state: "connected",
+	accountLogin: "acme",
+	accountType: null,
+	repositorySelection: null,
+	ciTracesEnabled: true,
+	repositoryDiscovery: null,
+	repositories: Arr.map(
+		REPOSITORIES,
+		(fullName, index) =>
+			new GithubRepoSummary({
+				id: Schema.decodeSync(VcsRepositoryId)(`00000000-0000-4000-8000-00000000000${index}`),
+				fullName,
+				htmlUrl: `https://github.com/${fullName}`,
+				isPrivate: true,
+				status: "active",
+				syncStatus: "ready",
+				lastSyncedAt: null,
+				lastSyncError: null,
+				trackedBranch: null,
+				branches: [],
+				prReviewEnabled: true,
+			}),
+	),
+})
+
+const ServeFixtureGithubStatus = Command.define("ServeFixtureCodeReviewGithubStatus", {
+	args: { key: Schema.String },
+	messages: [Team.Message.GotFrameMessage],
+	execute: ({ key }) =>
+		Effect.succeed(
+			Team.Message.GotFrameMessage({
+				message: FrameMessage.CompletedFetchGithubStatus({
+					key,
+					result: Result.succeed(githubStatus),
+				}),
+			}),
+		),
+})
+
+const decodeKey = Schema.decodeUnknownOption(Schema.Struct({ key: Schema.String }))
 const decodeSearch = Schema.decodeUnknownSync(CodeReviewTeamSearch)
 type PageStep = ReturnType<typeof update>
 
-/** The page's reads answered by the fixture; the GitHub status read is dropped (no repositories). */
+/** The page's reads answered by the fixture. */
 const served = (result: PageStep) => ({
 	model: result.model,
 	commands: Arr.flatMap(result.commands ?? [], (command) => {
 		if (command.name === "FetchCodeReviewTeam")
 			return [ServeFixtureTeam({ key: result.model.team.key ?? "" })]
-		return command.name === "FetchCodeReviewGithubStatus" ? [] : [command]
+		if (command.name === "FetchCodeReviewGithubStatus")
+			return Option.match(decodeKey(command.args), {
+				onNone: () => [],
+				onSome: ({ key }) => [ServeFixtureGithubStatus({ key })],
+			})
+		return [command]
 	}),
 })
 

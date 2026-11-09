@@ -32,7 +32,7 @@ const tabBar = (h: H, section: DashboardSection, activeTabId: string): Html =>
 				[
 					h.Class(
 						cn(
-							"group/tab flex shrink-0 items-center gap-1 border-b-2 px-2 py-1 text-xs transition-colors",
+							"group/tab flex shrink-0 items-center gap-1 border-b-2 px-2 py-1 text-xs",
 							isActive
 								? "border-primary text-foreground"
 								: "border-transparent text-muted-foreground hover:text-foreground active:text-foreground",
@@ -115,7 +115,7 @@ export const sharedSection = (
 					h,
 					{
 						size: "sm",
-						weight: "semibold",
+						weight: "medium",
 						truncate: true,
 						className: "min-w-0",
 						attributes: [h.Title(section.title)],

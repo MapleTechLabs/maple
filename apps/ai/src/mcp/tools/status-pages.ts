@@ -6,10 +6,9 @@
 import { Clock, Effect, Schema, Array as Arr, String as Str } from "effect"
 import {
 	ApplyStatusPageConfigOutput,
-	GetStatusPageConfigOutput,
 	GetStatusPageOutput,
-	ListStatusPagesOutput,
 	StatusPageIncidentMutationOutput,
+	type StatusPageDetail,
 	type StatusPageIncidentRow,
 	type StatusPageRow,
 } from "@maple/domain/mcp-outputs"
@@ -34,7 +33,7 @@ import {
 	type StatusPageIncidentStatus,
 } from "@maple/domain/primitives"
 import { isActiveIncident, overallStatus, pageFreshness } from "@maple/domain/status-page"
-import { parseWarehouseDateTime, WarehouseTimeInput } from "@maple/query-engine"
+import { parseWarehouseDateTime } from "@maple/query-engine"
 import { AuditLogService } from "@maple/backend/services/audit/AuditLogService"
 import { auditAttribution, originMetadata } from "@maple/backend/services/audit/audit-access"
 import { CurrentAuditActor } from "@maple/backend/services/auth/audit-actor"
@@ -48,7 +47,6 @@ import { CurrentMcpTenant } from "../lib/query-warehouse"
 import * as P from "../lib/params"
 import { doc } from "../lib/tool-doc"
 
-const INCIDENT_STATUSES = ["investigating", "identified", "monitoring"] as const
 const MUTATION_HINTS = { readOnly: false, destructive: false, idempotent: false, openWorld: true } as const
 const encodeConfig = Schema.encodeSync(StatusPageConfig)
 
@@ -63,7 +61,7 @@ const toMcpError =
 			case "@maple/http/errors/StatusPageNotFoundError":
 			case "@maple/backend/status-pages/StatusPageGoneError":
 				return new McpInvalidInputError({
-					message: "No such status page. list_status_pages lists them.",
+					message: "No such status page. get_status_page without `page` lists them.",
 					parameter: "page",
 				})
 			case "@maple/http/errors/StatusPageIncidentNotFoundError":
@@ -81,7 +79,7 @@ const toMcpError =
 				return new McpInvalidInputError({ message: error.message })
 			case "@maple/http/errors/StatusPageConflictError":
 				return new McpInvalidInputError({
-					message: `${error.message} Nothing was applied. Call get_status_page_config again and redo the edit on the fresh document; applying the old one would undo the other change.`,
+					message: `${error.message} Nothing was applied. Call get_status_page with include_config=true again and redo the edit on the fresh document; applying the old one would undo the other change.`,
 					parameter: "if_version",
 				})
 			default:
@@ -193,7 +191,7 @@ const resolvePage = Effect.fnUntraced(function* (tool: string, orgId: OrgId, ref
 	const [page] = matches
 	if (page === undefined) {
 		return yield* new McpInvalidInputError({
-			message: `No status page "${ref}". list_status_pages lists them.`,
+			message: `No status page "${ref}". get_status_page without \`page\` lists them.`,
 			parameter: "page",
 		})
 	}
@@ -291,263 +289,259 @@ const renderIncident = (title: string, output: typeof StatusPageIncidentMutation
 	}
 }
 
-/** A required UTC time; annotated on the wire side, where the published schema reads it. */
-const utcTime = (meaning: string) =>
-	Schema.String.annotate({ description: `${meaning}, UTC (YYYY-MM-DD HH:mm:ss or ISO 8601)` }).pipe(
-		Schema.decodeTo(WarehouseTimeInput),
-	)
-
 const publishParameter = P.optionalFlag(
 	"true puts it on the public page now. Default false: a draft a person reviews and publishes",
 )
 
-export function registerStatusPageTools(server: McpToolRegistrar) {
-	server.define({
-		name: "list_status_pages",
-		title: "List Status Pages",
-		description:
-			"Every public status page of the org with its slug and publish state (revision vs published revision, last publish error). get_status_page shows one page's components, open incidents and freshness.",
-		parameters: Schema.Struct({}),
-		output: ListStatusPagesOutput,
-		hints: { readOnly: true, destructive: false, idempotent: true },
-		phrases: ["Checking status pages"],
-		handler: Effect.fn("McpTool.listStatusPages")(function* () {
-			const tenant = yield* tenantInRollout("list_status_pages")
-			const service = yield* StatusPagesService
-			const pages = yield* service
-				.list(tenant.orgId)
-				.pipe(Effect.mapError(toMcpError("list_status_pages")))
-			yield* Effect.annotateCurrentSpan({ orgId: tenant.orgId, "result.rowCount": pages.length })
-			return { pages: Arr.map(pages, toPageRow), total: pages.length }
+const UPDATE_STATUSES = [
+	"investigating",
+	"identified",
+	"monitoring",
+	"resolved",
+	"scheduled",
+	"in_progress",
+	"completed",
+] as const
+
+/** `resolved` and `completed` both close: the kind decides which one the service stores. */
+const statusForKind = (
+	kind: StatusPageIncidentRecord["kind"],
+	status: (typeof UPDATE_STATUSES)[number],
+): StatusPageIncidentStatus =>
+	status === "resolved" || status === "completed"
+		? kind === "maintenance"
+			? "completed"
+			: "resolved"
+		: status
+
+const isClosingStatus = (status: StatusPageIncidentStatus) => status === "resolved" || status === "completed"
+
+const renderPageList = (pages: ReadonlyArray<typeof StatusPageRow.Type>) => ({
+	title: "Status pages",
+	...(pages.length === 0
+		? {
+				empty: {
+					message: "This organization has no status pages.",
+					hints: ["Create one in Maple under Status pages, or with POST /v2/status_pages."],
+				},
+			}
+		: undefined),
+	blocks:
+		pages.length === 0
+			? []
+			: [
+					doc.table(
+						["Name", "Slug", "Id", "Published", "Publish error"],
+						Arr.map(pages, (page) => [
+							page.name,
+							page.slug,
+							page.id,
+							page.draft
+								? "draft, not public"
+								: page.publishedAt === null
+									? "not yet"
+									: page.publishedRevision < page.revision
+										? `${page.publishedAt} (change pending)`
+										: page.publishedAt,
+							page.lastPublishError ?? "-",
+						]),
+					),
+				],
+	next: Arr.map(pages.slice(0, 3), (page) =>
+		doc.next("get_status_page", { page: page.slug }, `${page.name}'s components and incidents`),
+	),
+})
+
+const renderPageDetail = (
+	page: typeof StatusPageDetail.Type,
+	config: StatusPageConfig | undefined,
+) => ({
+	title: `Status page: ${page.name}`,
+	notices: [
+		// No suggested call: every follow-up needs a public message only the user can word.
+		...(Arr.some(page.activeIncidents, (incident) => isActiveIncident(incident))
+			? [
+					"To update an open incident, call post_status_page_update (incident, status, message) with wording the user approves; status=resolved closes it.",
+				]
+			: []),
+		...(page.freshness.state === "delayed"
+			? [
+					page.freshness.updatedAt === null
+						? "Live checks are delayed: none of the page's monitors has reported in the last two days."
+						: `Live checks are delayed: the page's monitors last reported at ${page.freshness.updatedAt}.`,
+				]
+			: []),
+		...(page.lastPublishError === null
+			? []
+			: [`The last publish failed: ${page.lastPublishError}. The next minutely publish retries.`]),
+		...(config === undefined
+			? []
+			: [
+					"apply_status_page_config replaces the page with an edited copy of the config below: keep a component's id to update it, drop the id to add one, leave it out to delete it. Order is display order. Keep the `version` key: the apply is refused if the config changed since this read.",
+				]),
+	],
+	blocks: [
+		doc.fields([
+			["Slug", page.slug],
+			["Id", page.id],
+			["Overall", page.overallStatus],
+			["Published", page.draft ? "draft, not public" : (page.publishedAt ?? "not yet")],
+			["Change pending", page.freshness.publishPending ? "yes, publishes within a minute" : "no"],
+		]),
+		...(page.components.length === 0
+			? [doc.text("No components yet.")]
+			: [
+					doc.table(
+						["Component", "Group", "Status", "Monitor", "Id"],
+						Arr.map(page.components, (c) => [
+							c.name,
+							c.group ?? "-",
+							c.status,
+							c.monitorId ?? "-",
+							c.id,
+						]),
+					),
+				]),
+		...(page.activeIncidents.length === 0
+			? [doc.text("No open incidents or maintenance.")]
+			: [
+					doc.table(
+						["Title", "Kind", "Status", "Impact", "Published", "Id"],
+						Arr.map(page.activeIncidents, (i) => [
+							i.title,
+							i.kind,
+							i.status,
+							i.impact,
+							i.published ? "yes" : "draft",
+							i.id,
+						]),
+					),
+				]),
+		...(config === undefined ? [] : [doc.code("json", stringifyJsonPretty(encodeConfig(config)) ?? "")]),
+	],
+})
+
+/** One page as its visitors see it, scoped to the caller's org by `resolvePage`. */
+const readPageDetail = Effect.fnUntraced(function* (tool: string, orgId: OrgId, page: StatusPageRecord) {
+	const service = yield* StatusPagesService
+	const builder = yield* StatusPageSnapshotBuilder
+	const nowMs = yield* Clock.currentTimeMillis
+	const snapshot = yield* builder.build(page.id, nowMs).pipe(Effect.mapError(toMcpError(tool)))
+	const records = yield* pageComponents(tool, orgId, page.id)
+	const incidents = yield* service.listIncidents(orgId, page.id).pipe(Effect.mapError(toMcpError(tool)))
+	// Answering means Maple is up, so this is the probe side of freshness only, scoped to this org.
+	const probesSeenAt = yield* builder.probesSeenAt(nowMs, orgId).pipe(Effect.mapError(toMcpError(tool)))
+	const monitored = Arr.some(snapshot.components, (component) => component.monitored)
+	// No recent probe at all is the most delayed a monitored page can be, not "live now".
+	const freshness =
+		monitored && probesSeenAt === null
+			? { _tag: "delayed" as const, updatedAt: null }
+			: pageFreshness({ snapshot, heartbeat: { at: nowMs, probesSeenAt }, nowMs })
+	return {
+		...toPageRow(page),
+		overallStatus: overallStatus(snapshot),
+		components: Arr.map(snapshot.components, (component) => {
+			const record = records.find((candidate) => candidate.id === component.id)
+			return {
+				id: encodePublicId(PublicIdPrefixes.statusPageComponent, component.id),
+				name: component.name,
+				group: component.group,
+				status: component.status,
+				monitorId:
+					record?.monitorId == null
+						? null
+						: encodePublicId(PublicIdPrefixes.uptimeMonitor, record.monitorId),
+				manualStatus: record?.manualStatus ?? null,
+			}
 		}),
-		render: (output) => ({
-			title: "Status pages",
-			...(output.pages.length === 0
-				? {
-						empty: {
-							message: "This organization has no status pages.",
-							hints: ["Create one in Maple under Status pages, or with POST /v2/status_pages."],
-						},
-					}
-				: undefined),
-			blocks:
-				output.pages.length === 0
-					? []
-					: [
-							doc.table(
-								["Name", "Slug", "Id", "Published", "Publish error"],
-								Arr.map(output.pages, (page) => [
-									page.name,
-									page.slug,
-									page.id,
-									page.draft
-										? "draft, not public"
-										: page.publishedAt === null
-											? "not yet"
-											: page.publishedRevision < page.revision
-												? `${page.publishedAt} (change pending)`
-												: page.publishedAt,
-									page.lastPublishError ?? "-",
-								]),
-							),
-						],
-			next: Arr.map(output.pages.slice(0, 3), (page) =>
-				doc.next("get_status_page", { page: page.slug }, `${page.name}'s components and incidents`),
-			),
-		}),
+		activeIncidents: Arr.map(incidents, toIncidentRow),
+		freshness: {
+			state: freshness._tag,
+			updatedAt: freshness.updatedAt === null ? null : iso(freshness.updatedAt),
+			// A draft is never published, so nothing is pending for it.
+			publishPending: !page.draft && page.publishedRevision < page.revision,
+		},
+	}
+})
+
+const opensOnlyParameter = (name: string) =>
+	new McpInvalidInputError({
+		message: `\`${name}\` only applies when opening an incident or maintenance (no \`incident\`). Drop it, or drop \`incident\` to open a new one.`,
+		parameter: name,
 	})
 
+export function registerStatusPageTools(server: McpToolRegistrar) {
 	server.define({
 		name: "get_status_page",
 		title: "Get Status Page",
 		description:
-			"One status page as its visitors see it: each component's status (worst of its uptime monitor, manual override and published incidents), the overall banner, open incidents and maintenance (drafts included, marked), and whether its live checks are fresh or delayed.",
+			"The org's public status pages. Without `page`: every page with its slug and publish state. With `page`: that page as visitors see it, each component's status (worst of its uptime monitor, manual override and published incidents), the overall banner, open incidents and maintenance (drafts included, marked), and whether its live checks are fresh. include_config=true adds the page's settings, theme and components as the JSON document apply_status_page_config takes.",
 		parameters: Schema.Struct({
-			page: P.text("The page's slug, name or id (list_status_pages lists them)"),
+			page: P.optionalText("The page's slug, name or id. Omit to list every page"),
+			include_config: P.optionalFlag(
+				"true adds the editable config document (needs `page`). Same document as GET /v2/status_pages/{id}/config",
+			),
 		}),
 		output: GetStatusPageOutput,
 		hints: { readOnly: true, destructive: false, idempotent: true },
-		phrases: ["Reading a status page"],
+		phrases: ["Reading status pages"],
 		handler: Effect.fn("McpTool.getStatusPage")(function* (params) {
-			const tenant = yield* tenantInRollout("get_status_page")
-			const service = yield* StatusPagesService
-			const builder = yield* StatusPageSnapshotBuilder
-			const page = yield* resolvePage("get_status_page", tenant.orgId, params.page)
-			const nowMs = yield* Clock.currentTimeMillis
-			// The builder reads by page id; `resolvePage` already scoped it to this org.
-			const snapshot = yield* builder
-				.build(page.id, nowMs)
-				.pipe(Effect.mapError(toMcpError("get_status_page")))
-			const records = yield* pageComponents("get_status_page", tenant.orgId, page.id)
-			const incidents = yield* service
-				.listIncidents(tenant.orgId, page.id)
-				.pipe(Effect.mapError(toMcpError("get_status_page")))
-			// Answering means Maple is up, so this is the probe side of freshness only, scoped to this org.
-			const probesSeenAt = yield* builder
-				.probesSeenAt(nowMs, tenant.orgId)
-				.pipe(Effect.mapError(toMcpError("get_status_page")))
-			const monitored = Arr.some(snapshot.components, (component) => component.monitored)
-			// No recent probe at all is the most delayed a monitored page can be, not "live now".
-			const freshness =
-				monitored && probesSeenAt === null
-					? { _tag: "delayed" as const, updatedAt: null }
-					: pageFreshness({ snapshot, heartbeat: { at: nowMs, probesSeenAt }, nowMs })
-			return {
-				page: toPageRow(page),
-				overallStatus: overallStatus(snapshot),
-				components: Arr.map(snapshot.components, (component) => {
-					const record = records.find((candidate) => candidate.id === component.id)
-					return {
-						id: encodePublicId(PublicIdPrefixes.statusPageComponent, component.id),
-						name: component.name,
-						group: component.group,
-						status: component.status,
-						monitorId:
-							record?.monitorId == null
-								? null
-								: encodePublicId(PublicIdPrefixes.uptimeMonitor, record.monitorId),
-						manualStatus: record?.manualStatus ?? null,
-					}
-				}),
-				activeIncidents: Arr.map(incidents, toIncidentRow),
-				freshness: {
-					state: freshness._tag,
-					updatedAt: freshness.updatedAt === null ? null : iso(freshness.updatedAt),
-					// A draft is never published, so nothing is pending for it.
-					publishPending: !page.draft && page.publishedRevision < page.revision,
-				},
-			}
-		}),
-		render: (output) => ({
-			title: `Status page: ${output.page.name}`,
-			notices: [
-				// No suggested call: both follow-ups need a public message only the user can word.
-				...(Arr.some(output.activeIncidents, (incident) => isActiveIncident(incident))
-					? [
-							"To update an open incident, call post_status_page_update (incident, status, message) or resolve_status_page_incident (incident, message) with wording the user approves.",
-						]
-					: []),
-				...(output.freshness.state === "delayed"
-					? [
-							output.freshness.updatedAt === null
-								? "Live checks are delayed: none of the page's monitors has reported in the last two days."
-								: `Live checks are delayed: the page's monitors last reported at ${output.freshness.updatedAt}.`,
-						]
-					: []),
-				...(output.page.lastPublishError === null
-					? []
-					: [
-							`The last publish failed: ${output.page.lastPublishError}. The next minutely publish retries.`,
-						]),
-			],
-			blocks: [
-				doc.fields([
-					["Slug", output.page.slug],
-					["Id", output.page.id],
-					["Overall", output.overallStatus],
-					[
-						"Published",
-						output.page.draft ? "draft, not public" : (output.page.publishedAt ?? "not yet"),
-					],
-					[
-						"Change pending",
-						output.freshness.publishPending ? "yes, publishes within a minute" : "no",
-					],
-				]),
-				...(output.components.length === 0
-					? [doc.text("No components yet.")]
-					: [
-							doc.table(
-								["Component", "Group", "Status", "Monitor", "Id"],
-								Arr.map(output.components, (c) => [
-									c.name,
-									c.group ?? "-",
-									c.status,
-									c.monitorId ?? "-",
-									c.id,
-								]),
-							),
-						]),
-				...(output.activeIncidents.length === 0
-					? [doc.text("No open incidents or maintenance.")]
-					: [
-							doc.table(
-								["Title", "Kind", "Status", "Impact", "Published", "Id"],
-								Arr.map(output.activeIncidents, (i) => [
-									i.title,
-									i.kind,
-									i.status,
-									i.impact,
-									i.published ? "yes" : "draft",
-									i.id,
-								]),
-							),
-						]),
-			],
-		}),
-	})
-
-	server.define({
-		name: "create_status_page_incident",
-		title: "Create Status Page Incident",
-		description:
-			"Open a customer-facing incident on a status page with its first public update (`message`). `components` names the affected components; `impact` sets how hard it hits them. Starts as an unpublished draft unless publish=true: everything here is public text your customers read. Separate from internal alert incidents.",
-		parameters: Schema.Struct({
-			page: P.text("The page's slug, name or id"),
-			title: P.text("Public title, e.g. `Elevated API errors`"),
-			message: P.text("The first public update, written for customers"),
-			impact: P.optionalOneOf(
-				StatusPageIncidentImpact.literals,
-				"How hard it hits the components (default minor)",
-			),
-			status: P.optionalOneOf(INCIDENT_STATUSES, "Where the response stands (default investigating)"),
-			components: P.optionalList("Affected components, by name or id (get_status_page lists them)"),
-			publish: publishParameter,
-		}),
-		output: StatusPageIncidentMutationOutput,
-		hints: MUTATION_HINTS,
-		phrases: ["Opening a status page incident"],
-		handler: Effect.fn("McpTool.createStatusPageIncident")(function* (params) {
-			const tool = "create_status_page_incident"
+			const tool = "get_status_page"
 			const tenant = yield* tenantInRollout(tool)
 			const service = yield* StatusPagesService
+			if (params.page === undefined) {
+				if (params.include_config === true) {
+					return yield* new McpInvalidInputError({
+						message: "include_config needs `page`: the config document is per page.",
+						parameter: "include_config",
+					})
+				}
+				const pages = yield* service.list(tenant.orgId).pipe(Effect.mapError(toMcpError(tool)))
+				yield* Effect.annotateCurrentSpan({ orgId: tenant.orgId, "result.rowCount": pages.length })
+				return { pages: Arr.map(pages, toPageRow) }
+			}
 			const page = yield* resolvePage(tool, tenant.orgId, params.page)
-			const components = yield* pageComponents(tool, tenant.orgId, page.id)
-			const componentIds = yield* resolveComponents(components, params.components ?? [])
-			const created = yield* service
-				.createIncident(tenant.orgId, page.id, {
-					kind: "incident",
-					title: params.title,
-					impact: params.impact ?? "minor",
-					status: params.status ?? "investigating",
-					body: params.message,
-					componentIds,
-					published: params.publish === true,
-					source: "mcp",
-					createdBy: tenant.userId,
-				})
+			const detail = yield* readPageDetail(tool, tenant.orgId, page)
+			if (params.include_config !== true) return { page: detail }
+			const config = yield* service
+				.getConfig(tenant.orgId, page.id)
 				.pipe(Effect.mapError(toMcpError(tool)))
-			yield* auditIncidentCreated(created)
-			return { action: "created" as const, incident: toIncidentRow(created), pageDraft: page.draft }
+			return { page: detail, config }
 		}),
-		render: (output) => renderIncident("Status page incident opened", output),
+		render: (output) =>
+			output.page === undefined
+				? renderPageList(output.pages ?? [])
+				: renderPageDetail(output.page, output.config),
 	})
 
 	server.define({
 		name: "post_status_page_update",
 		title: "Post Status Page Update",
 		description:
-			"Post the next public update on a status page incident or maintenance and move it to `status`. Pass publish=true to also publish a draft. To close an incident use resolve_status_page_incident. The message is public text your customers read.",
+			"Write to a status page's incidents and maintenance, all public text your customers read. Without `incident`: opens a new incident on `page` with `title` and `message` as its first update, or announces maintenance when `starts_at` and `ends_at` are given. With `incident`: posts the next update and moves it to `status`; status=resolved (or completed) closes it. New ones start as unpublished drafts unless publish=true. Separate from internal alert incidents.",
 		parameters: Schema.Struct({
-			incident: P.text("The incident's id (sti_… or its UUID; get_status_page lists open ones)"),
-			message: P.text("The public update, written for customers"),
-			status: P.oneOf(
-				["investigating", "identified", "monitoring", "scheduled", "in_progress"] as const,
-				"Incidents: investigating, identified, monitoring. Maintenance: scheduled, in_progress",
+			incident: P.optionalText(
+				"The incident's id (sti_… or its UUID; get_status_page lists open ones). Omit to open a new one",
 			),
-			impact: P.optionalOneOf(StatusPageIncidentImpact.literals, "A new impact; omit to keep it"),
-			components: P.optionalList("Replaces the affected components, by name or id"),
-			publish: P.optionalFlag("true publishes a draft along with this update"),
+			message: P.text("The public update, written for customers"),
+			status: P.optionalOneOf(
+				UPDATE_STATUSES,
+				"Incidents: investigating, identified, monitoring, resolved. Maintenance: scheduled, in_progress, completed. Required on an existing incident; a new incident starts investigating, new maintenance scheduled",
+			),
+			page: P.optionalText("Opening only: the page's slug, name or id"),
+			title: P.optionalText(
+				"Opening only: public title, e.g. `Elevated API errors` or `Database upgrade`",
+			),
+			starts_at: P.optionalTimestamp("Opening maintenance only: when it starts"),
+			ends_at: P.optionalTimestamp("Opening maintenance only: when it ends"),
+			impact: P.optionalOneOf(
+				StatusPageIncidentImpact.literals,
+				"How hard it hits the components (new incident default minor, new maintenance none; omit on an update to keep it)",
+			),
+			components: P.optionalList(
+				"Affected components, by name or id (get_status_page lists them). On an update it replaces the list",
+			),
+			publish: publishParameter,
 		}),
 		output: StatusPageIncidentMutationOutput,
 		hints: MUTATION_HINTS,
@@ -556,10 +550,82 @@ export function registerStatusPageTools(server: McpToolRegistrar) {
 			const tool = "post_status_page_update"
 			const tenant = yield* tenantInRollout(tool)
 			const service = yield* StatusPagesService
+
+			if (params.incident === undefined) {
+				if (params.page === undefined) {
+					return yield* new McpInvalidInputError({
+						message:
+							"Pass `page` to open a new incident or maintenance, or `incident` to update an existing one.",
+						parameter: "page",
+					})
+				}
+				if (params.title === undefined) {
+					return yield* new McpInvalidInputError({
+						message: "Opening an incident or maintenance needs a public `title`.",
+						parameter: "title",
+					})
+				}
+				if ((params.starts_at === undefined) !== (params.ends_at === undefined)) {
+					return yield* new McpInvalidInputError({
+						message:
+							"Maintenance needs both `starts_at` and `ends_at`; an incident takes neither.",
+						parameter: params.starts_at === undefined ? "starts_at" : "ends_at",
+					})
+				}
+				const kind = params.starts_at === undefined ? ("incident" as const) : ("maintenance" as const)
+				const status =
+					params.status === undefined
+						? kind === "incident"
+							? ("investigating" as const)
+							: ("scheduled" as const)
+						: statusForKind(kind, params.status)
+				const page = yield* resolvePage(tool, tenant.orgId, params.page)
+				const components = yield* pageComponents(tool, tenant.orgId, page.id)
+				const componentIds = yield* resolveComponents(components, params.components ?? [])
+				const created = yield* service
+					.createIncident(tenant.orgId, page.id, {
+						kind,
+						title: params.title,
+						impact: params.impact ?? (kind === "incident" ? "minor" : "none"),
+						status,
+						body: params.message,
+						componentIds,
+						published: params.publish === true,
+						...(params.starts_at === undefined || params.ends_at === undefined
+							? undefined
+							: {
+									scheduledStart: parseWarehouseDateTime(params.starts_at),
+									scheduledEnd: parseWarehouseDateTime(params.ends_at),
+								}),
+						source: "mcp",
+						createdBy: tenant.userId,
+					})
+					.pipe(Effect.mapError(toMcpError(tool)))
+				yield* auditIncidentCreated(created)
+				return {
+					action: kind === "incident" ? ("created" as const) : ("scheduled" as const),
+					incident: toIncidentRow(created),
+					pageDraft: page.draft,
+				}
+			}
+
+			if (params.page !== undefined) return yield* opensOnlyParameter("page")
+			if (params.title !== undefined) return yield* opensOnlyParameter("title")
+			if (params.starts_at !== undefined) return yield* opensOnlyParameter("starts_at")
+			if (params.ends_at !== undefined) return yield* opensOnlyParameter("ends_at")
+			const requestedStatus = params.status
+			if (requestedStatus === undefined) {
+				return yield* new McpInvalidInputError({
+					message:
+						"An update needs a `status`: investigating, identified, monitoring or resolved for an incident; scheduled, in_progress or completed for maintenance.",
+					parameter: "status",
+				})
+			}
 			const incidentId = yield* decodeIncidentId(params.incident)
 			const current = yield* service
 				.getIncident(tenant.orgId, incidentId)
 				.pipe(Effect.mapError(toMcpError(tool)))
+			const status = statusForKind(current.kind, requestedStatus)
 			const requested = params.components
 			const componentIds =
 				requested === undefined
@@ -569,7 +635,7 @@ export function registerStatusPageTools(server: McpToolRegistrar) {
 						)
 			const posted = yield* service
 				.postUpdate(tenant.orgId, incidentId, {
-					status: params.status,
+					status,
 					body: params.message,
 					...(params.impact === undefined ? undefined : { impact: params.impact }),
 					...(componentIds === undefined ? undefined : { componentIds }),
@@ -581,141 +647,34 @@ export function registerStatusPageTools(server: McpToolRegistrar) {
 				.pipe(Effect.mapError(toMcpError(tool)))
 			yield* auditUpdatePosted(posted)
 			return {
-				action: "updated" as const,
+				action: isClosingStatus(status) ? ("resolved" as const) : ("updated" as const),
 				incident: toIncidentRow(posted),
 				pageDraft: yield* pageIsDraft(tool, tenant.orgId, posted.pageId),
 			}
 		}),
-		render: (output) => renderIncident("Status page update posted", output),
-	})
-
-	server.define({
-		name: "resolve_status_page_incident",
-		title: "Resolve Status Page Incident",
-		description:
-			"Close a status page incident (or complete a maintenance) with a final public update. The message is public text your customers read.",
-		parameters: Schema.Struct({
-			incident: P.text("The incident's id (sti_… or its UUID)"),
-			message: P.text("The closing public update, e.g. what was fixed"),
-			publish: P.optionalFlag("true publishes a draft along with its closing update"),
-		}),
-		output: StatusPageIncidentMutationOutput,
-		hints: MUTATION_HINTS,
-		phrases: ["Resolving a status page incident"],
-		handler: Effect.fn("McpTool.resolveStatusPageIncident")(function* (params) {
-			const tool = "resolve_status_page_incident"
-			const tenant = yield* tenantInRollout(tool)
-			const service = yield* StatusPagesService
-			const incidentId = yield* decodeIncidentId(params.incident)
-			const current = yield* service
-				.getIncident(tenant.orgId, incidentId)
-				.pipe(Effect.mapError(toMcpError(tool)))
-			const status: StatusPageIncidentStatus = current.kind === "maintenance" ? "completed" : "resolved"
-			const updated = yield* service
-				.postUpdate(tenant.orgId, incidentId, {
-					status,
-					body: params.message,
-					source: "mcp",
-					createdBy: tenant.userId,
-					publish: params.publish === true,
-				})
-				.pipe(Effect.mapError(toMcpError(tool)))
-			yield* auditUpdatePosted(updated)
-			return {
-				action: "resolved" as const,
-				incident: toIncidentRow(updated),
-				pageDraft: yield* pageIsDraft(tool, tenant.orgId, updated.pageId),
-			}
-		}),
-		render: (output) => renderIncident("Status page incident resolved", output),
-	})
-
-	server.define({
-		name: "schedule_status_page_maintenance",
-		title: "Schedule Status Page Maintenance",
-		description:
-			"Announce planned maintenance on a status page for a window (`starts_at` to `ends_at`, UTC). The named components show `maintenance` while it is in progress. Starts as an unpublished draft unless publish=true: the message is public text your customers read.",
-		parameters: Schema.Struct({
-			page: P.text("The page's slug, name or id"),
-			title: P.text("Public title, e.g. `Database upgrade`"),
-			message: P.text("What will happen and what customers may notice"),
-			starts_at: utcTime("When it starts"),
-			ends_at: utcTime("When it ends"),
-			impact: P.optionalOneOf(StatusPageIncidentImpact.literals, "Expected impact (default none)"),
-			components: P.optionalList("Components under maintenance, by name or id"),
-			publish: publishParameter,
-		}),
-		output: StatusPageIncidentMutationOutput,
-		hints: MUTATION_HINTS,
-		phrases: ["Scheduling maintenance"],
-		handler: Effect.fn("McpTool.scheduleStatusPageMaintenance")(function* (params) {
-			const tool = "schedule_status_page_maintenance"
-			const tenant = yield* tenantInRollout(tool)
-			const service = yield* StatusPagesService
-			const page = yield* resolvePage(tool, tenant.orgId, params.page)
-			const components = yield* pageComponents(tool, tenant.orgId, page.id)
-			const componentIds = yield* resolveComponents(components, params.components ?? [])
-			const created = yield* service
-				.createIncident(tenant.orgId, page.id, {
-					kind: "maintenance",
-					title: params.title,
-					impact: params.impact ?? "none",
-					status: "scheduled",
-					body: params.message,
-					componentIds,
-					published: params.publish === true,
-					scheduledStart: parseWarehouseDateTime(params.starts_at),
-					scheduledEnd: parseWarehouseDateTime(params.ends_at),
-					source: "mcp",
-					createdBy: tenant.userId,
-				})
-				.pipe(Effect.mapError(toMcpError(tool)))
-			yield* auditIncidentCreated(created)
-			return { action: "scheduled" as const, incident: toIncidentRow(created), pageDraft: page.draft }
-		}),
-		render: (output) => renderIncident("Maintenance scheduled", output),
-	})
-
-	server.define({
-		name: "get_status_page_config",
-		title: "Get Status Page Config",
-		description:
-			"One status page's settings, theme and ordered components as a JSON document (no incidents, break-glass token or publish state). Edit it and pass it to apply_status_page_config to change the page in one write. Same document as GET /v2/status_pages/{id}/config.",
-		parameters: Schema.Struct({
-			page: P.text("The page's slug, name or id (list_status_pages lists them)"),
-		}),
-		output: GetStatusPageConfigOutput,
-		hints: { readOnly: true, destructive: false, idempotent: true },
-		phrases: ["Reading a status page config"],
-		handler: Effect.fn("McpTool.getStatusPageConfig")(function* (params) {
-			const tool = "get_status_page_config"
-			const tenant = yield* tenantInRollout(tool)
-			const service = yield* StatusPagesService
-			const page = yield* resolvePage(tool, tenant.orgId, params.page)
-			const config = yield* service
-				.getConfig(tenant.orgId, page.id)
-				.pipe(Effect.mapError(toMcpError(tool)))
-			return { page: toPageRow(page), config }
-		}),
-		render: (output) => ({
-			title: `Status page config: ${output.page.name}`,
-			notices: [
-				"apply_status_page_config replaces the page with an edited copy: keep a component's id to update it, drop the id to add one, leave it out to delete it. Order is display order. Keep the `version` key: the apply is refused if the config changed since this read.",
-			],
-			blocks: [doc.code("json", stringifyJsonPretty(encodeConfig(output.config)) ?? "")],
-		}),
+		render: (output) =>
+			renderIncident(
+				output.action === "created"
+					? "Status page incident opened"
+					: output.action === "scheduled"
+						? "Maintenance scheduled"
+						: output.action === "resolved"
+							? "Status page incident resolved"
+							: "Status page update posted",
+				output,
+			),
 	})
 
 	server.define({
 		name: "apply_status_page_config",
 		title: "Apply Status Page Config",
 		description:
-			"Replace a status page with a config document from get_status_page_config, in one write that fully applies or not at all. Components with an `id` are updated, without one created, and left out deleted; list order is display order; omitted optional fields take their defaults; unknown keys are refused. The document's `version` guards the write: if the config changed since it was read, nothing is applied and you must read it again. Only org admins and engineers may call it, and the result is public on the page.",
+			"Replace a status page with the config document get_status_page returns with include_config=true, in one write that fully applies or not at all. Components with an `id` are updated, without one created, and left out deleted; list order is display order; omitted optional fields take their defaults; unknown keys are refused. The document's `version` guards the write: if the config changed since it was read, nothing is applied and you must read it again. Only org admins and engineers may call it, and the result is public on the page.",
 		parameters: Schema.Struct({
 			page: P.text("The page's slug, name or id"),
 			config: P.json(
 				StatusPageConfig,
-				"The whole page document, as returned by get_status_page_config, edited. Keys it does not define are refused",
+				"The whole page document, as get_status_page returns it with include_config=true, edited. Keys it does not define are refused",
 			),
 			if_version: P.optionalText(
 				"The config `version` the document was read with. Defaults to the document's `version`; the apply is refused if the config changed since",

@@ -97,7 +97,7 @@ const providerCard = (
 		[
 			h.Class(
 				cn(
-					"flex flex-col gap-3 rounded-md border bg-card p-4 transition-colors",
+					"flex flex-col gap-3 rounded-md border bg-card p-4",
 					isSelected && "border-primary-a4 bg-primary-a1",
 				),
 			),

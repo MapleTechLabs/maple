@@ -142,7 +142,7 @@ const railStatus = <M>(h: HtmlBuilder<M>, facets: UsersRailFacets, onRetry: M): 
 					hstack(h, { gap: "2", className: "px-1" }, [
 						typography(h, { size: "xs", tone: "muted" }, ["Couldn't load the filters"]),
 						button(h, { size: "xs", variant: "ghost", attributes: [h.OnClick(onRetry)] }, [
-							"Retry",
+							"Try again",
 						]),
 					]),
 				]
@@ -178,7 +178,7 @@ export const usersFilterRail = <M>(h: HtmlBuilder<M>, options: UsersRailOptions<
 				: filterSection(h, {
 						title: "Namespace",
 						description:
-							"The service.namespace of the services users' requests and sessions reached in the window.",
+							"The service.namespace of the services users' requests and sessions reached in this window.",
 						options: facets.namespaces,
 						selected: options.filters.namespaces,
 						isSearchable: true,
@@ -314,7 +314,7 @@ export const usersToolbar = <M>(
 		searchInput(h, {
 			id: "users-search",
 			value: options.filters.search,
-			placeholder: "Search by id, name or email",
+			placeholder: "Search by id, name or email…",
 			ariaLabel: "Search users",
 			onInput: options.onSearch,
 			onClear: options.onClearSearch,

@@ -8,6 +8,7 @@ import {
 	metricDelta,
 } from "@maple/views/lib/analytics-metrics"
 import { EMPTY_VALUE, formatNumber, formatPercent } from "@maple/ui/lib/format"
+import { cn } from "@maple/ui/lib/utils"
 import { timestamp } from "@maple/views/ui/timestamp"
 import { Option, Array as Arr } from "effect"
 import { AsyncData } from "foldkit"
@@ -40,8 +41,13 @@ import { dividedList } from "@maple/views/ui/rule"
 
 type H = HtmlBuilder<Message>
 
-const GRID =
-	"grid grid-cols-2 divide-x divide-y divide-border overflow-hidden rounded-md border bg-card @min-[880px]/page:grid-cols-4"
+// Eight tiles in two or four columns: `divide-*` would double the outer border at row ends,
+// so each tile rules its own inner right and top edges per column count.
+const GRID = cn(
+	"grid grid-cols-2 overflow-hidden rounded-md border bg-card @min-[880px]/page:grid-cols-4",
+	"[&>*]:border-border [&>*:nth-child(odd)]:border-r @min-[880px]/page:[&>*:not(:nth-child(4n))]:border-r",
+	"@max-[879px]/page:[&>*:nth-child(n+3)]:border-t @min-[880px]/page:[&>*:nth-child(n+5)]:border-t",
+)
 const TILE_NARROW = "@max-[560px]/page:px-4 @max-[560px]/page:py-3"
 
 const dataOf = <A>(slot: { readonly data: AsyncData.AsyncData<A, unknown> }): A | undefined =>

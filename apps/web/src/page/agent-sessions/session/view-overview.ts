@@ -25,7 +25,7 @@ import { disclosureChevron } from "./view-kit"
 import { sectionHeading } from "../../kit/section-heading"
 import { loadIndicator } from "./view-load"
 import { rail } from "./view-rail"
-import { errorChip, TOOL_CHIP } from "../kit/error-chip"
+import { errorChip } from "../kit/error-chip"
 import { typography, typographyClass } from "@maple/views/ui/typography"
 import { hstack, vstack } from "@maple/views/ui/stack"
 import { Array as Arr } from "effect"
@@ -45,8 +45,8 @@ const callWhen = (event: SessionToolCall, sessionStartMs: number): string => {
 }
 
 const callTitle = (toolName: string, event: SessionToolCall, sessionStartMs: number): string => {
-	const where = `${toolName} — ${callWhen(event, sessionStartMs)}`
-	return event.failed ? `${where} — ${event.errorLabel ?? "error"}` : where
+	const where = `${toolName} · ${callWhen(event, sessionStartMs)}`
+	return event.failed ? `${where} · ${event.errorLabel ?? "error"}` : where
 }
 
 const openSpan = (model: Model, spanId: string) =>
@@ -84,7 +84,7 @@ const ledgerHeader = (h: H, summary: SessionSummary): Html => {
 										iconName: "GearIcon",
 										count: failed,
 										noun: "failed call",
-										className: TOOL_CHIP,
+										tone: "warn",
 									}),
 								]
 							: []),

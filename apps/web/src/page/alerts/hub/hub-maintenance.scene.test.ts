@@ -175,7 +175,7 @@ describe("alerts hub, Maintenance tab", () => {
 		scene(
 			{ update: pageUpdate, view },
 			given(onMaintenance([])),
-			expectView(text("No maintenance windows")).toExist(),
+			expectView(text("No maintenance windows yet")).toExist(),
 			expectView(role("button", { name: "Create window" })).toExist(),
 			expectView(role("button", { name: "New window" })).not.toExist(),
 		)

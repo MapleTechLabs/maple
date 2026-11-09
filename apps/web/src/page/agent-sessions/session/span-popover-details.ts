@@ -10,7 +10,6 @@ import {
 import { formatTimestampInTimezone } from "@maple/web-data/lib/timezone-format"
 import { formatDuration, formatNumber } from "@maple/ui/lib/format"
 import { shortId } from "@maple/ui/lib/ids"
-import { TONE_SOFT } from "@maple/ui/lib/tone"
 import { Option, Array as Arr, String as Str } from "effect"
 import { AsyncData, Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
@@ -102,7 +101,7 @@ const failureBanner = <M>(b: HtmlBuilder<M>, span: AiSessionSpan): Html => {
 	const responseStatus = span.genAi.responseStatus
 	const hasErrorType = errorType !== undefined && errorType !== ""
 	const pill = (text: string) =>
-		badge(b, { pill: true, size: "xs", mono: true, className: TONE_SOFT.crit }, [text])
+		badge(b, { pill: true, size: "xs", mono: true, variant: "crit" }, [text])
 	return b.div(
 		[
 			b.Class(
@@ -207,7 +206,7 @@ const spanAttributesView = Submodel.defineView<PanelState, PanelMessage, PanelIn
 					skeleton(p, "h-24 w-full"),
 				],
 			),
-		onFailure: () => emptyMessage(p, {}, ["Couldn't load this span's full attributes."]),
+		onFailure: () => emptyMessage(p, {}, ["Couldn't load this span's full attributes"]),
 		onData: (detail) =>
 			attributesSection(p, state, "span", detail.spanAttributes, "Span attributes", {
 				isFilterable: false,

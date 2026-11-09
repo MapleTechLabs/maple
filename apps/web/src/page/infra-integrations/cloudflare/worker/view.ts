@@ -419,9 +419,9 @@ const rail = (h: H, data: PageData, timeZone: string): Html => {
 		),
 		detailRailGroup(
 			h,
-			"Deploys in window",
+			"Deploys in this window",
 			deploys.length === 0
-				? [typography(h, { size: "2xs", tone: "muted", as: "p" }, ["No new version in this window."])]
+				? [typography(h, { size: "2xs", tone: "muted", as: "p" }, ["No new version in this window"])]
 				: present(
 						Arr.map(deploys, (deploy) =>
 							detailRailMetaRow(h, {

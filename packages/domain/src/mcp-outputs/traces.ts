@@ -266,4 +266,6 @@ export const CompareLogPatternsOutput = Schema.Struct({
 	unchanged: Schema.Number,
 	filters: Schema.optionalKey(LogSearchFilters),
 	environment: Schema.optionalKey(Schema.String),
+	/** How a period longer than the cap was cut down, one note per period. */
+	trimmed: Schema.optionalKey(Schema.Array(Schema.String)),
 })

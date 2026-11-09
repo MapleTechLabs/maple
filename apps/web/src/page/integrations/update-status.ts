@@ -15,6 +15,7 @@ import {
 	LoadPlanetscaleDatabases,
 	LoadRailway,
 	LoadScrapeTargets,
+	LoadSearchConsole,
 	LoadSupabase,
 } from "./command"
 import type { Message } from "./message"
@@ -35,6 +36,7 @@ const OPERATIONS = {
 	supabase: "integrations.supabaseStatus",
 	linear: "integrations.linearStatus",
 	github: "integrations.githubStatus",
+	searchConsole: "integrations.searchConsoleStatus",
 	chat: "chatIntegration.connectors",
 	scrapeTargets: "scrapeTargets.list",
 } satisfies { readonly [K in keyof Statuses]: string }
@@ -128,6 +130,12 @@ export const requestStatus = (
 				(all, github) => ({ ...all, github }),
 				(slotKey) => LoadGithub({ key: slotKey }),
 			)
+		case "searchConsole":
+			return go(
+				s.searchConsole,
+				(all, searchConsole) => ({ ...all, searchConsole }),
+				(slotKey) => LoadSearchConsole({ key: slotKey }),
+			)
 		case "chat":
 			return go(
 				s.chat,
@@ -164,6 +172,7 @@ export const STATUS_NAMES: ReadonlyArray<keyof Statuses> = [
 	"supabase",
 	"linear",
 	"github",
+	"searchConsole",
 	"chat",
 	"scrapeTargets",
 ]

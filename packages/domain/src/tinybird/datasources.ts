@@ -3012,3 +3012,39 @@ export const identityLinks = defineDatasource("identity_links", {
 })
 
 export type IdentityLinksRow = InferRow<typeof identityLinks>
+
+/**
+ * Google Search Console per (site, grain, Pacific day as midnight UTC, page, query, country, device), from `SearchConsoleImportService`.
+ * Grains never sum together; `PositionSum` = position * impressions. Days up to today are partial.
+ * The page grain has Country = Device = '': Google drops anonymized traffic when page is split by them.
+ * Each (day, grain) import is written whole under one `IngestedAt`: readers keep rows whose IngestedAt is the max per (SiteUrl, Grain, Date).
+ */
+export const searchConsoleDaily = defineDatasource("search_console_daily", {
+	tenantColumn: "OrgId",
+	description:
+		"Google Search Console clicks, impressions and position per site, day, page, query, country and device, at three grains (site totals, per page, per query). Imported daily; never sum across Grain.",
+	schema: {
+		OrgId: t.string().lowCardinality().brand(OrgId),
+		SiteUrl: t.string().lowCardinality(),
+		Grain: t.string().lowCardinality(),
+		SearchType: t.string().lowCardinality(),
+		Date: utcDateTime(),
+		Page: t.string(),
+		Query: t.string(),
+		Country: t.string().lowCardinality(),
+		Device: t.string().lowCardinality(),
+		Clicks: t.uint64(),
+		Impressions: t.uint64(),
+		PositionSum: t.float64(),
+		IngestedAt: utcDateTime64(3),
+	},
+	engine: engine.replacingMergeTree({
+		partitionKey: "toYYYYMM(Date)",
+		sortingKey: ["OrgId", "SiteUrl", "Grain", "SearchType", "Date", "Page", "Query", "Country", "Device"],
+		ver: "IngestedAt",
+		// Google keeps 16 months; a month past that keeps a full year-over-year window.
+		ttl: "toDate(Date) + INTERVAL 520 DAY",
+	}),
+})
+
+export type SearchConsoleDailyRow = InferRow<typeof searchConsoleDaily>

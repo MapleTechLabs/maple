@@ -100,9 +100,9 @@ const changesTable = (h: H, changes: V2AuditChanges): Html =>
 	table(h, { size: "sm", className: "font-mono" }, [
 		tableHeader(h, [
 			tableRow(h, [
-				tableHead(h, ["Field"], "w-40 font-normal"),
-				tableHead(h, ["Before"], "font-normal"),
-				tableHead(h, ["After"], "font-normal"),
+				tableHead(h, ["Field"], "w-40"),
+				tableHead(h, ["Before"]),
+				tableHead(h, ["After"]),
 			]),
 		]),
 		tableBody(
@@ -136,7 +136,7 @@ const metadataList = (h: H, metadata: Readonly<Record<string, unknown>>): Readon
 						? h.pre(
 								[
 									h.Class(
-										"bg-background/60 max-h-64 overflow-auto rounded-md border px-2.5 py-2 font-mono text-2xs leading-relaxed whitespace-pre-wrap break-all",
+										"bg-surface-well max-h-64 overflow-auto rounded-md border px-2.5 py-2 font-mono text-2xs leading-relaxed whitespace-pre-wrap break-all",
 									),
 								],
 								[block],

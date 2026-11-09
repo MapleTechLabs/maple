@@ -20,6 +20,7 @@ export type IntegrationId =
 	| "warpstream"
 	| "linear"
 	| "github"
+	| "google-search-console"
 	| ChatIntegrationId
 
 export const GITHUB_ACCENT = "#181717"
@@ -34,7 +35,7 @@ export type EntryIcon =
 	| Readonly<{ _tag: "Named"; name: IconName }>
 	| Readonly<{ _tag: "Manifest"; icon: ChatConnectorManifest["icon"] }>
 
-export type IntegrationCategory = "infrastructure" | "code" | "notifications"
+export type IntegrationCategory = "infrastructure" | "code" | "analytics" | "notifications"
 
 export interface CatalogEntry {
 	readonly id: IntegrationId
@@ -54,6 +55,7 @@ export const INTEGRATION_CATEGORIES: ReadonlyArray<{
 }> = [
 	{ id: "infrastructure", label: "Infrastructure" },
 	{ id: "code", label: "Code & deploys" },
+	{ id: "analytics", label: "Web analytics" },
 	{ id: "notifications", label: "Chat & alerts" },
 ]
 
@@ -182,13 +184,22 @@ export const CATALOG: ReadonlyArray<CatalogEntry> = [
 		iconClassName: "text-foreground",
 		docsUrl: docsUrl("github"),
 	},
+	{
+		id: "google-search-console",
+		category: "analytics",
+		isNew: true,
+		name: "Google Search Console",
+		description: "Import the search queries, pages and positions that bring people to your sites.",
+		icon: named("GoogleIcon"),
+		accent: GCP_ACCENT,
+	},
 	...CHAT_ENTRIES,
 ]
 
-/** What `/integrations` lists: chat and alert connectors. Data integrations live under Sources. */
+/** What `/integrations` lists: chat, alert and web analytics connectors. Telemetry sources live under Sources. */
 export const HUB_CATALOG: ReadonlyArray<CatalogEntry> = Arr.filter(
 	CATALOG,
-	(entry) => entry.category === "notifications",
+	(entry) => entry.category === "notifications" || entry.category === "analytics",
 )
 
 export const catalogEntry = (id: IntegrationId): CatalogEntry =>

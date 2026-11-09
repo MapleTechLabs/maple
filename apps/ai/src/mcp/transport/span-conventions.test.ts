@@ -6,7 +6,7 @@ import { String as Str } from "effect"
 const request = (tag: string, payload: unknown) =>
 	({ _tag: "Request", id: "7", tag, payload, headers: [] }) as const
 
-const caller = { userAgent: undefined, clientAddress: undefined, userId: undefined }
+const caller = { userAgent: undefined, clientAddress: undefined, userId: undefined, orgId: undefined }
 
 describe("mcpServerSpan", () => {
 	it("names a prompt span after the prompt", () => {
@@ -32,6 +32,11 @@ describe("mcpServerSpan", () => {
 			userId: "user_2abc",
 		})
 		expect(span.attributes.get("user.id")).toBe("user_2abc")
+		const withOrg = mcpServerSpan(request("tools/call", { name: "run_sql" }), "2025-06-18", {
+			...caller,
+			orgId: "org_2xyz",
+		})
+		expect(withOrg.attributes.get("maple.org_id")).toBe("org_2xyz")
 		expect(
 			mcpServerSpan(request("tools/call", { name: "run_sql" }), "2025-06-18", caller).attributes.has(
 				"user.id",

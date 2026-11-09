@@ -118,12 +118,12 @@ export const activitySection = (
 			? activityLoading(h)
 			: AsyncData.isFailure(slot) || AsyncData.isStale(slot)
 				? typography(h, { size: "xs", tone: "muted", as: "p", className: "py-2" }, [
-						"Couldn't load the deploy timeline for this window.",
+						"Couldn't load the deploy timeline for this window",
 					])
 				: events.length === 0
 					? h.p(
 							[h.Class("py-3 text-xs text-muted-foreground")],
-							["No deploys or branch events in this window."],
+							["No deploys or branch events in this window"],
 						)
 					: h.ul(
 							[

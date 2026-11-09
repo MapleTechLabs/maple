@@ -29,7 +29,7 @@ export const copyableValue = (
 			h.AriaLabel(`Copy ${options.label ?? "value"}`),
 			h.Class(
 				cn(
-					"-mx-0.5 cursor-pointer rounded-sm px-0.5 text-left transition-colors",
+					"-mx-0.5 cursor-pointer rounded-sm px-0.5 text-left",
 					status === "idle" && "hover:bg-surface-sunken active:bg-surface-sunken",
 					status === "copied" && "bg-severity-info-a3",
 					status === "error" && "bg-severity-error-a3",
@@ -117,7 +117,7 @@ const jsonValue = (h: H, model: Model, id: string, value: string): Html => {
 									label: "JSON",
 									iconSize: 10,
 									className:
-										"absolute top-1 right-1 border-border-subtle bg-background/80 opacity-0 backdrop-blur-sm transition-opacity focus-visible:opacity-100 group-hover/json:opacity-100 pointer-coarse:opacity-100",
+										"absolute top-1 right-1 border-border-subtle bg-surface-float opacity-0 backdrop-blur-sm transition-opacity focus-visible:opacity-100 group-hover/json:opacity-100 pointer-coarse:opacity-100",
 									attributes: [
 										h.OnClick(
 											Message.ClickedCopy({ copyId: `json:${id}`, text: value }),
@@ -169,7 +169,7 @@ export const attributeFilterAction = <M>(
 				cn(
 					badgeVariants({
 						variant: "tag",
-						className: "bg-transparent font-sans transition-colors",
+						className: "bg-transparent font-sans",
 					}),
 				),
 			),

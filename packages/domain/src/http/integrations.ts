@@ -1,11 +1,13 @@
 import { HttpApiEndpoint, HttpApiGroup } from "effect/http-api"
-import { Schema } from "effect"
+import { Schema, String as Str } from "effect"
 import {
 	AwsAccountId,
 	GcpProjectId,
 	GcpResourceNumber,
 	GcpScopeType,
 	ScrapeTargetId,
+	SearchConsoleSiteId,
+	SearchConsoleSiteUrl,
 	SourceId,
 	SupabaseProjectRef,
 	UserId,
@@ -106,6 +108,99 @@ export class LinearDisconnectResponse extends Schema.Class<LinearDisconnectRespo
 	"LinearDisconnectResponse",
 )({
 	disconnected: Schema.Boolean,
+}) {}
+
+/** One saved Search Console property and where its daily import stands. */
+export class SearchConsoleSiteStatus extends Schema.Class<SearchConsoleSiteStatus>("SearchConsoleSiteStatus")(
+	{
+		id: SearchConsoleSiteId,
+		siteUrl: SearchConsoleSiteUrl,
+		permissionLevel: Schema.String,
+		enabled: Schema.Boolean,
+		/** Newest day (YYYY-MM-DD) imported, possibly today's partial day; null before the first import. */
+		watermarkDate: Schema.NullOr(Schema.String),
+		/** Oldest day (YYYY-MM-DD) imported so far; history before it is still importing. */
+		backfillDate: Schema.NullOr(Schema.String),
+		lastSyncedAt: Schema.NullOr(Schema.Number),
+		lastError: Schema.NullOr(Schema.String),
+	},
+) {}
+
+export class SearchConsoleIntegrationStatus extends Schema.Class<SearchConsoleIntegrationStatus>(
+	"SearchConsoleIntegrationStatus",
+)({
+	/** False when this deployment has no Google OAuth client, so connecting cannot work. */
+	configured: Schema.Boolean,
+	connected: Schema.Boolean,
+	/** The Google account that granted access. */
+	accountEmail: Schema.NullOr(Schema.String),
+	connectedByUserId: Schema.NullOr(UserId),
+	/** Set once Google rejected the grant; the org must reconnect. */
+	revoked: Schema.Boolean,
+	sites: Schema.Array(SearchConsoleSiteStatus),
+}) {}
+
+const DOMAIN_PROPERTY_PREFIX = "sc-domain:"
+
+/** A Search Console property as people read it: `sc-domain:maple.dev` is "maple.dev (domain)". */
+export const searchConsoleSiteLabel = (siteUrl: string): string =>
+	Str.startsWith(DOMAIN_PROPERTY_PREFIX)(siteUrl)
+		? `${Str.slice(DOMAIN_PROPERTY_PREFIX.length)(siteUrl)} (domain)`
+		: siteUrl
+
+/** A property the connected Google account can see, for the site picker. */
+export class SearchConsoleSiteChoice extends Schema.Class<SearchConsoleSiteChoice>("SearchConsoleSiteChoice")(
+	{
+		siteUrl: Schema.String,
+		permissionLevel: Schema.String,
+		/** False for unverified properties, which have no data to import. */
+		selectable: Schema.Boolean,
+		enabled: Schema.Boolean,
+	},
+) {}
+
+export class SearchConsoleAvailableSitesResponse extends Schema.Class<SearchConsoleAvailableSitesResponse>(
+	"SearchConsoleAvailableSitesResponse",
+)({
+	sites: Schema.Array(SearchConsoleSiteChoice),
+}) {}
+
+export const SEARCH_CONSOLE_MAX_SELECTED_SITES = 100
+
+/** The full set of properties to import; every other saved property is turned off. */
+export class SearchConsoleSaveSitesRequest extends Schema.Class<SearchConsoleSaveSitesRequest>(
+	"SearchConsoleSaveSitesRequest",
+)({
+	siteUrls: Schema.Array(SearchConsoleSiteUrl).check(Schema.isMaxLength(SEARCH_CONSOLE_MAX_SELECTED_SITES)),
+}) {}
+
+export class SearchConsoleStartConnectRequest extends Schema.Class<SearchConsoleStartConnectRequest>(
+	"SearchConsoleStartConnectRequest",
+)({
+	returnTo: Schema.optionalKey(IntegrationReturnPath),
+}) {}
+
+export class SearchConsoleStartConnectResponse extends Schema.Class<SearchConsoleStartConnectResponse>(
+	"SearchConsoleStartConnectResponse",
+)({
+	redirectUrl: Schema.String,
+	state: Schema.String,
+}) {}
+
+export class SearchConsoleDisconnectResponse extends Schema.Class<SearchConsoleDisconnectResponse>(
+	"SearchConsoleDisconnectResponse",
+)({
+	disconnected: Schema.Boolean,
+}) {}
+
+/** Result of the import the dashboard runs right after saving properties, so data lands without the cron. */
+export class SearchConsolePrimeResponse extends Schema.Class<SearchConsolePrimeResponse>(
+	"SearchConsolePrimeResponse",
+)({
+	/** False when the org has no live Google grant, so nothing imported. */
+	connected: Schema.Boolean,
+	/** False when the import hit its time budget; the next cron tick resumes it. */
+	complete: Schema.Boolean,
 }) {}
 
 /** Per-zone edge-analytics collection state (from the GraphQL Analytics poller). */
@@ -1269,6 +1364,22 @@ export class IntegrationsNotConnectedError extends HttpTaggedError<IntegrationsN
 	},
 ) {}
 
+/** The org's grant moved to another account (or was revoked) while a write was checked against it. */
+export class IntegrationsConnectionChangedError extends HttpTaggedError<IntegrationsConnectionChangedError>()(
+	"@maple/http/errors/IntegrationsConnectionChangedError",
+	{
+		message: Schema.String,
+	},
+	{
+		status: 409,
+		code: "integration_connection_changed",
+		title: "Integration connection changed",
+		retry: "never",
+		recovery: "refresh",
+		exposure: "public_message",
+	},
+) {}
+
 export class IntegrationsRevokedError extends HttpTaggedError<IntegrationsRevokedError>()(
 	"@maple/http/errors/IntegrationsRevokedError",
 	{
@@ -1478,6 +1589,62 @@ export class IntegrationsApiGroup extends HttpApiGroup.make("integrations")
 	.add(
 		HttpApiEndpoint.delete("linearDisconnect", "/linear", {
 			success: LinearDisconnectResponse,
+			error: [IntegrationsForbiddenError, IntegrationsPersistenceError],
+		}),
+	)
+	.add(
+		HttpApiEndpoint.get("searchConsoleStatus", "/google-search-console/status", {
+			success: SearchConsoleIntegrationStatus,
+			error: IntegrationsPersistenceError,
+		}),
+	)
+	.add(
+		HttpApiEndpoint.post("searchConsoleStart", "/google-search-console/start", {
+			payload: SearchConsoleStartConnectRequest,
+			success: SearchConsoleStartConnectResponse,
+			error: [IntegrationsForbiddenError, IntegrationsConfigurationError, IntegrationsPersistenceError],
+		}),
+	)
+	.add(
+		// Live from Google: the connected account's properties, merged with the saved choice.
+		HttpApiEndpoint.get("searchConsoleSites", "/google-search-console/sites", {
+			success: SearchConsoleAvailableSitesResponse,
+			error: [
+				IntegrationsNotConnectedError,
+				IntegrationsRevokedError,
+				IntegrationsValidationError,
+				IntegrationsConfigurationError,
+				IntegrationsUpstreamError,
+				IntegrationsPersistenceError,
+			],
+		}),
+	)
+	.add(
+		HttpApiEndpoint.put("searchConsoleSaveSites", "/google-search-console/sites", {
+			payload: SearchConsoleSaveSitesRequest,
+			success: SearchConsoleIntegrationStatus,
+			error: [
+				IntegrationsForbiddenError,
+				IntegrationsNotConnectedError,
+				IntegrationsConnectionChangedError,
+				IntegrationsRevokedError,
+				IntegrationsValidationError,
+				IntegrationsConfigurationError,
+				IntegrationsUpstreamError,
+				IntegrationsPersistenceError,
+			],
+		}),
+	)
+	.add(
+		HttpApiEndpoint.delete("searchConsoleDisconnect", "/google-search-console", {
+			success: SearchConsoleDisconnectResponse,
+			error: [IntegrationsForbiddenError, IntegrationsPersistenceError],
+		}),
+	)
+	.add(
+		// Bounded first import of the saved properties, run on demand right after a save.
+		HttpApiEndpoint.post("searchConsolePrime", "/google-search-console/prime", {
+			success: SearchConsolePrimeResponse,
 			error: [IntegrationsForbiddenError, IntegrationsPersistenceError],
 		}),
 	)

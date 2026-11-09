@@ -59,7 +59,7 @@ export const zoneListView = Submodel.defineView<Combobox.Model, Combobox.Message
 			slot: "combobox",
 			items,
 			isPrefiltered: true,
-			emptyText: "No timezone matches that",
+			emptyText: "No time zones match",
 			anchorSelector: `#${inputs.triggerId}`,
 			positionSelector: `#${inputs.anchorId}`,
 			className: "w-(--anchor-width)",

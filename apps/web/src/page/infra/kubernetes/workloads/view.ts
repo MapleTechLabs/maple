@@ -210,7 +210,7 @@ const workloadList = (
 		(workload) => q === "" || Str.includes(q)(Str.toLowerCase(workload.workloadName)),
 	)
 	return h.div(
-		[h.Class(cn("space-y-5", refreshingClass(isWaiting))), ...(isWaiting ? [h.AriaBusy(true)] : [])],
+		[h.Class(cn("space-y-4", refreshingClass(isWaiting))), ...(isWaiting ? [h.AriaBusy(true)] : [])],
 		[
 			fleetBand(h, {
 				total: workloads.length,

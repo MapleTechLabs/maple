@@ -31,12 +31,14 @@ import { regionStep } from "./quick-start-region-view"
 import { isResumable } from "./quick-start-drawer"
 import { drawerView } from "./quick-start-drawer-view"
 import * as QuickStartTeamView from "./quick-start-team-view"
-import { STEP_BODY_CLASS, STEP_FOOTER_CLASS } from "./step-layout"
+import { STEP_BODY_CLASS, STEP_FOOTER_LAYOUT } from "./step-layout"
+import { actionBar } from "@maple/views/ui/action-bar"
 import { Message, type Model, MountDitherField } from "./quick-start"
 import { type QuickStartState, resolveQuickStartStep, type StepId } from "./quick-start-state"
 import { eyebrow, eyebrowVariants } from "@maple/views/ui/eyebrow"
 import { statusDot } from "@maple/views/ui/status-dot"
 import { typography, typographyClass } from "@maple/views/ui/typography"
+import { dividedList } from "@maple/views/ui/rule"
 import { hstack, hstackClass, vstack } from "@maple/views/ui/stack"
 import { layer } from "@maple/views/ui/layer"
 import { Array as Arr, String as Str } from "effect"
@@ -368,12 +370,13 @@ const backButton = (h: H, to: StepId): Html =>
 
 /** The step's actions on the right, with a Back button on the left when there is a step before it. */
 const stepFooter = (h: H, children: ReadonlyArray<Html>, back: StepId | null = null): Html =>
-	back === null
-		? h.div([h.Class(STEP_FOOTER_CLASS)], children)
-		: h.div(
-				[h.Class(cn(STEP_FOOTER_CLASS, "justify-between"))],
-				[backButton(h, back), hstack(h, { gap: "4" }, children)],
-			)
+	actionBar(h, {
+		label: "Step actions",
+		as: "footer",
+		className: STEP_FOOTER_LAYOUT,
+		leading: back === null ? [] : [backButton(h, back)],
+		actions: children,
+	})
 
 const stackStep = (h: H, state: QuickStartState, query: string, hasPlan: boolean): Html => {
 	const { languages, platforms } = state.stack
@@ -462,12 +465,11 @@ const stackPreview = (h: H, orgName: string, state: QuickStartState): Html => {
 					),
 				]
 			: [
-					vstack(
+					dividedList(
 						h,
 						{
 							as: "ul",
-							className:
-								"divide-y divide-border overflow-hidden rounded-md border border-border bg-background",
+							className: "overflow-hidden bg-background",
 						},
 						Arr.map(surfaces, (surface) =>
 							hstack(h, { align: "center", as: "li", className: "gap-3.5 px-4 py-3" }, [
@@ -670,12 +672,11 @@ export const connectStep = (h: H, model: Model, state: QuickStartState): Html =>
 				: [
 						vstack(h, { gap: "3", as: "section" }, [
 							eyebrow(h, { variant: "label", as: "h2" }, ["Providers"]),
-							vstack(
+							dividedList(
 								h,
 								{
 									as: "ul",
-									className:
-										"divide-y divide-border overflow-hidden rounded-md border border-border bg-card",
+									className: "overflow-hidden bg-card",
 								},
 								Arr.map(platforms, (platform) => providerRow(h, model, platform)),
 							),
@@ -814,12 +815,11 @@ const connectPreview = (h: H, orgName: string, model: Model, state: QuickStartSt
 				[statusDot(h, { tone: "ok" }), "Listening"],
 			),
 		]),
-		vstack(
+		dividedList(
 			h,
 			{
 				as: "ul",
-				className:
-					"divide-y divide-border overflow-hidden rounded-md border border-border bg-background",
+				className: "overflow-hidden bg-background",
 			},
 			[
 				...Arr.map(rows, (row) =>
@@ -1048,12 +1048,11 @@ export const liveStep = (h: H, model: Model, state: QuickStartState, orgName: st
 				: [
 						vstack(h, { gap: "3", as: "section" }, [
 							eyebrow(h, { variant: "label", as: "h2" }, ["Still waiting on"]),
-							vstack(
+							dividedList(
 								h,
 								{
 									as: "ul",
-									className:
-										"divide-y divide-border overflow-hidden rounded-md border border-border",
+									className: "overflow-hidden",
 								},
 								[
 									...Arr.map(notConnected, (platform) =>

@@ -504,6 +504,7 @@ const noThrowingLiveRowDecode = {
 }
 
 import { designRules } from "./design-rules.mjs"
+import { consistencyRules } from "./consistency-rules.mjs"
 import { uiKitRules } from "./ui-kit-rules.mjs"
 
 export default {
@@ -511,6 +512,7 @@ export default {
 	rules: {
 		...designRules,
 		...uiKitRules,
+		...consistencyRules,
 		"dialog-body-padding": dialogBodyPadding,
 		"mcp-tracer-anticipated-errors": mcpTracerAnticipatedErrors,
 		"no-date-parse": noDateParse,

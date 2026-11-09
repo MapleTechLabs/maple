@@ -189,7 +189,7 @@ export const BAND_CELLS = {
 	],
 	lambda: [
 		{ scope: "errors", label: "Erroring", hint: "1% of invocations or more", tone: "crit" },
-		{ scope: "throttled", label: "Throttled", hint: "Any throttle in the window", tone: "warn" },
+		{ scope: "throttled", label: "Throttled", hint: "Any throttle in this window", tone: "warn" },
 	],
 	sqs: [{ scope: "backlog", label: "Backed up", hint: "Oldest message over 5 min", tone: "warn" }],
 } satisfies Record<AwsInfraKindId, ReadonlyArray<BandCell>>

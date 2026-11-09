@@ -110,27 +110,39 @@ const COLOR_PROPS = new Set([
 
 const isInteractive = ({ variants }) => variants.includes("hover") || variants.includes("active")
 
+/** Colour-only properties: a colour never eases, wherever its change comes from. */
+const EASED_COLOR_PROPS = new Set([...COLOR_PROPS].filter((prop) => prop !== "box-shadow"))
+
 const instantState = {
 	meta: {
 		type: "problem",
 		docs: { description: "Hover and press land in the frame they happen; only movement eases." },
 		messages: {
 			bad: "`{{token}}` eases a colour on a string with hover or press states. State is instant: drop it, and transition only properties that move (opacity, translate, scale, rotate, size).",
+			color:
+				"`{{token}}` eases a colour. A colour changes with state (a parent's hover, selection, focus, open), and state is instant: drop it, and transition only properties that move (opacity, translate, scale, rotate, size).",
 		},
 	},
 	create(context) {
 		return classStrings((node, tokens) => {
 			const parsed = tokens.map(splitToken)
-			if (!parsed.some(isInteractive)) return
+			const interactive = parsed.some(isInteractive)
 			parsed.forEach(({ variants, utility }, i) => {
 				if (variants.length > 0) return
 				const list = /^transition-\[([^\]]+)\]$/.exec(utility)
-				const eases =
-					utility === "transition" ||
+				const props = list === null ? [] : list[1].split(",")
+				if (
 					utility === "transition-colors" ||
-					utility === "transition-shadow" ||
-					(list !== null && list[1].split(",").some((prop) => COLOR_PROPS.has(prop)))
-				if (eases) context.report({ node, messageId: "bad", data: { token: tokens[i] } })
+					props.some((prop) => EASED_COLOR_PROPS.has(prop))
+				)
+					context.report({ node, messageId: "color", data: { token: tokens[i] } })
+				else if (
+					interactive &&
+					(utility === "transition" ||
+						utility === "transition-shadow" ||
+						props.some((prop) => COLOR_PROPS.has(prop)))
+				)
+					context.report({ node, messageId: "bad", data: { token: tokens[i] } })
 			})
 		})
 	},
@@ -451,9 +463,39 @@ const focusRing = {
 	},
 }
 
+const DISABLED_VARIANT = /^(?:group-|peer-|in-|has-)?(?:data-|aria-)?(?:\[)?disabled\]?$/
+/** Every disabled control dims the same: `opacity-64` (`opacity-100` undoes it while loading). */
+const disabledOpacity = tokenRule(
+	"A disabled control dims to one opacity.",
+	"`{{token}}` dims a disabled state by a hand-picked amount. Disabled is `opacity-64` everywhere, the same as the kit's inputs and buttons.",
+	({ variants, utility }) => {
+		const match = /^opacity-(\d+)$/.exec(utility)
+		return (
+			match !== null &&
+			match[1] !== "64" &&
+			match[1] !== "100" &&
+			variants.some((v) => DISABLED_VARIANT.test(v))
+		)
+	},
+)
+
+const HOVER_VARIANT = /^(?:group-|peer-)?(?:hover|active)(?:\/\w+)?$/
+const HOVER_EDGE = new RegExp(`^border-(?:ring|foreground|${TONES})(?:\\/\\d+)?$`)
+/**
+ * A hover outline is not a focus ring: a pickable card or chip hovers `border-border-strong`, a
+ * toned one its tone's strong edge `-a4`. `ring` is focus only, so hover never borrows it.
+ */
+const hoverEdge = tokenRule(
+	"A hover outline is `border-border-strong` or a tone's `-a4` edge.",
+	"`{{token}}` outlines a hover with a focus or ad-hoc colour. A neutral card or chip hovers `border-border-strong`; a toned one hovers its tone's `-a4` step (`border-primary-a4`). `ring` is for focus only.",
+	({ variants, utility }) => HOVER_EDGE.test(utility) && variants.some((v) => HOVER_VARIANT.test(v)),
+)
+
 export const designRules = {
 	"couldnt-copy": couldntCopy,
+	"disabled-opacity": disabledOpacity,
 	"focus-ring": focusRing,
+	"hover-edge": hoverEdge,
 	"font-weight-scale": fontWeightScale,
 	"no-legacy-utility": noLegacyUtility,
 	"no-off-grid-spacing": noOffGridSpacing,

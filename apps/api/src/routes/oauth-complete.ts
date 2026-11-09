@@ -8,6 +8,7 @@ import { Effect, String as Str } from "effect"
 import { summarizeCause } from "@maple/backend/platform/describe-cause"
 import type { OAuthFlowInitiator } from "@maple/backend/services/auth/oauth/oauth-state"
 import { CloudflareOAuthService } from "@maple/backend/services/auth/CloudflareOAuthService"
+import { GoogleOAuthService } from "@maple/backend/services/auth/GoogleOAuthService"
 import { LinearOAuthService } from "@maple/backend/services/auth/LinearOAuthService"
 import { PlanetScaleOAuthService } from "@maple/backend/services/auth/PlanetScaleOAuthService"
 import { SupabaseOAuthService } from "@maple/backend/services/auth/SupabaseOAuthService"
@@ -20,6 +21,7 @@ import { GithubConnectService } from "@maple/backend/services/integrations/vcs/v
 const LABELS = {
 	cloudflare: "Cloudflare",
 	linear: "Linear",
+	google: "Google Search Console",
 	github: "GitHub",
 	planetscale: "PlanetScale",
 	supabase: "Supabase",
@@ -76,6 +78,7 @@ const failure = (message: string) => new OAuthCompleteResponse({ status: "error"
  */
 export const makeOAuthCompleter = Effect.gen(function* () {
 	const linear = yield* LinearOAuthService
+	const google = yield* GoogleOAuthService
 	const github = yield* GithubConnectService
 	const cloudflare = yield* CloudflareOAuthService
 	const cloudflareAnalytics = yield* CloudflareAnalyticsService
@@ -254,6 +257,18 @@ export const makeOAuthCompleter = Effect.gen(function* () {
 				case "linear":
 					return withCode(params, (code, state) =>
 						linear.completeConnect(code, state, initiator).pipe(Effect.as(success(CLOSE_HINT))),
+					)
+				case "google":
+					return withCode(params, (code, state) =>
+						google
+							.completeConnect(code, state, initiator)
+							.pipe(
+								Effect.as(
+									success(
+										"Authorization complete. Choose which Search Console properties to import back in Maple.",
+									),
+								),
+							),
 					)
 				case "planetscale":
 					return withCode(params, (code, state) => completePlanetScale(code, state, initiator))

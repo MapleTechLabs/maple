@@ -22,6 +22,7 @@ import type { RecommendationIssueService } from "@maple/backend/services/errors/
 import type { IntegrationInventoryService } from "@maple/backend/services/integrations/IntegrationInventoryService"
 import type { SourcesService } from "@maple/backend/services/org/SourcesService"
 import type { RailwayMetricsService } from "@maple/backend/services/integrations/RailwayMetricsService"
+import type { SearchConsoleService } from "@maple/backend/services/integrations/SearchConsoleService"
 import type { ScrapeTargetsService } from "@maple/backend/services/integrations/ScrapeTargetsService"
 import type { VcsCommitService } from "@maple/backend/services/integrations/vcs/VcsCommitService"
 import type { VcsSourceService } from "@maple/backend/services/integrations/vcs/VcsSourceService"
@@ -78,6 +79,7 @@ export type McpToolRuntimeRequirements =
 	| RuntimeAdvisoryCatalog
 	| RuntimeReleaseCatalog
 	| ScrapeTargetsService
+	| SearchConsoleService
 	| SecurityAuditStore
 	| SetupAuditService
 	| SlosService

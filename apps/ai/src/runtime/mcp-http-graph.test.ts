@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest"
 import * as Cloudflare from "@alchemy.run/cloudflare"
 import { IsolateAge } from "@maple/infra/isolate-age"
 import type { HttpEffect } from "alchemy/Http"
+import type { RuntimeContext } from "alchemy/RuntimeContext"
 import { Context, Effect, Schema, Scope } from "effect"
 import { buildApp, buildMcpApp, makeFetch } from "../worker/http"
 import { offlinePorts } from "../../test/offline-http-ports"
@@ -10,7 +11,7 @@ class UnexpectedGraphBuild extends Schema.TaggedError<UnexpectedGraphBuild>()("U
 	message: Schema.String,
 }) {}
 
-const serve = (fetch: HttpEffect, method: string, path: string, body?: string) =>
+const serve = (fetch: HttpEffect<RuntimeContext>, method: string, path: string, body?: string) =>
 	Effect.runPromise(
 		Effect.scoped(
 			Effect.gen(function* () {

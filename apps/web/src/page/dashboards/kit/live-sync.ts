@@ -29,7 +29,7 @@ export const snapshotBanner = <M>(h: HtmlBuilder<M>, subject: string, onRetry: M
 			h.span(
 				[h.Class("flex-1")],
 				[
-					`Live sync is unavailable, so ${subject} is a snapshot loaded over HTTP. It won’t update on its own and editing is disabled.`,
+					`Live sync is unavailable, so ${subject} is a snapshot loaded over HTTP. It won't update on its own and editing is disabled.`,
 				],
 			),
 			button(

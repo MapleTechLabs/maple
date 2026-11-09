@@ -5,6 +5,7 @@ import {
 	GithubIntegrationStatus,
 	LinearIntegrationStatus,
 	RailwayIntegrationStatus,
+	SearchConsoleIntegrationStatus,
 	SupabaseIntegrationStatus,
 } from "@maple/domain/http"
 import {
@@ -29,6 +30,7 @@ import { PlanetscaleCardModel } from "./planetscale"
 import { GcpCardModel } from "./gcp"
 import { AwsCardModel } from "./aws"
 import { SupabaseCardModel } from "./supabase"
+import { SearchConsoleCardModel } from "./search-console"
 import { ConnectModel } from "./connect"
 
 // `/integrations`: the hub and every integration's page.
@@ -46,6 +48,7 @@ export const Statuses = Schema.Struct({
 	supabase: keyed(SupabaseIntegrationStatus),
 	linear: keyed(LinearIntegrationStatus),
 	github: keyed(GithubIntegrationStatus),
+	searchConsole: keyed(SearchConsoleIntegrationStatus),
 	chat: keyed(V2ChatConnectorList),
 	scrapeTargets: keyed(Schema.Array(V2ScrapeTarget)),
 })
@@ -73,6 +76,7 @@ export const Model = Schema.Struct({
 	gcpCard: GcpCardModel,
 	awsCard: AwsCardModel,
 	supabaseCard: SupabaseCardModel,
+	searchConsoleCard: SearchConsoleCardModel,
 })
 export type Model = typeof Model.Type
 

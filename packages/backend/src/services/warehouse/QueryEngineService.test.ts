@@ -15,6 +15,7 @@ import {
 import { strict as nodeAssert } from "node:assert"
 import { MetricName, OrgId, ServiceName, UserId } from "@maple/domain"
 import {
+	type QueryBuilderQueryDraftPayload,
 	QueryEngineValidationError,
 	RawSqlValidationError,
 	WarehouseConfigError,
@@ -35,6 +36,8 @@ import {
 	makeQueryEngineExecute,
 	withAlertEvaluationScope,
 } from "@maple/query-engine/runtime"
+import { buildBreakdownQuerySpec, buildTimeseriesQuerySpec } from "@maple/query-engine/query-builder"
+import { QuerySpec } from "@maple/domain/query-engine"
 import type { SqlQueryOptions } from "@maple/query-engine/profiles"
 import type { CompiledQuery } from "@maple/query-engine/ch"
 import type { TenantContext } from "@maple/backend/services/auth/AuthService"
@@ -320,6 +323,67 @@ describe("makeQueryEngineExecute", () => {
 				source: "logs",
 				data: { total: 42 },
 			})
+		}),
+	)
+
+	it.effect("runs a builder body filter as a Body search with the capped block size", () =>
+		Effect.gen(function* () {
+			const calls: Array<{ context?: string; sql: string; maxBlockSize?: number }> = []
+			const execute = makeQueryEngineExecute(
+				makeTinybirdStub({
+					sqlQuery: (_tenant, sql, options) => {
+						calls.push({
+							context: options.context,
+							sql,
+							maxBlockSize: options.settings?.maxBlockSize,
+						})
+						return Effect.succeed([])
+					},
+				}),
+			)
+			const draft: QueryBuilderQueryDraftPayload = {
+				id: "q1",
+				name: "A",
+				enabled: true,
+				hidden: false,
+				dataSource: "logs",
+				aggregation: "count",
+				whereClause: 'body contains "timeout"',
+				stepInterval: "",
+				orderByDirection: "desc",
+				addOns: { groupBy: false, having: false, orderBy: false, limit: false, legend: false },
+				groupBy: [],
+				having: "",
+				orderBy: "",
+				limit: "",
+				legend: "",
+			}
+
+			const timeseries = buildTimeseriesQuerySpec(draft)
+			const breakdown = buildBreakdownQuerySpec({
+				...draft,
+				addOns: { ...draft.addOns, groupBy: true },
+				groupBy: ["service.name"],
+			})
+			for (const query of [{ ...timeseries.query, bucketSeconds: 300 }, breakdown.query]) {
+				yield* execute(
+					tenant,
+					new QueryEngineExecuteRequest({
+						startTime: "2026-01-01 00:00:00",
+						endTime: "2026-01-01 00:05:00",
+						query: Schema.decodeUnknownSync(QuerySpec)(query),
+					}),
+				)
+			}
+
+			assert.deepStrictEqual(
+				Arr.map(calls, (call) => [call.context, call.maxBlockSize]),
+				[
+					["logsTimeseries", 512],
+					["logsBreakdown", 512],
+				],
+			)
+			for (const call of calls) assert.include(call.sql, "Body ILIKE '%timeout%'")
 		}),
 	)
 
