@@ -1059,7 +1059,43 @@ export const integrationFixtures: ReadonlyArray<IntegrationFixture> = [
 		module: "setup-audit",
 		name: "auditLogCorrelationQuery",
 		label: "default",
-		compile: () => compileUnsafe(CH.auditLogCorrelationQuery(), window),
+		compile: () =>
+			compileUnsafe(
+				CH.auditLogCorrelationQuery({ excludeServiceNames: ["maple-uptime", "github-actions"] }),
+				window,
+			),
+	},
+	{
+		module: "setup-audit",
+		name: "auditServiceIdentityQuery",
+		label: "default",
+		compile: () => compileUnsafe(CH.auditServiceIdentityQuery({ limit: 25 }), window),
+	},
+	{
+		module: "setup-audit",
+		name: "auditServiceSdkQuery",
+		label: "default",
+		compile: () => compileUnsafe(CH.auditServiceSdkQuery({ limit: 25 }), window),
+	},
+	{
+		module: "setup-audit",
+		name: "auditResourceValueSamplesQuery",
+		label: "default",
+		compile: () =>
+			compileUnsafe(CH.auditResourceValueSamplesQuery(["deployment.commit_sha", "env"]), window),
+	},
+	{
+		module: "setup-audit",
+		name: "auditResourceKeyServicesQuery",
+		label: "default",
+		compile: () =>
+			compileUnsafe(CH.auditResourceKeyServicesQuery(["deployment.commit_sha", "env"]), window),
+	},
+	{
+		module: "setup-audit",
+		name: "auditMetricLabelServicesQuery",
+		label: "default",
+		compile: () => compileUnsafe(CH.auditMetricLabelServicesQuery(["url.path"]), window),
 	},
 	{
 		module: "setup-audit",

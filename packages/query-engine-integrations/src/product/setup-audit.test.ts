@@ -9,6 +9,13 @@ import {
 	auditDbEdgeRowSchema,
 	auditLogCorrelationQuery,
 	auditLogCorrelationRowSchema,
+	auditKeyServiceRowSchema,
+	auditMetricLabelServicesQuery,
+	auditResourceKeyServicesQuery,
+	auditResourceValueRowSchema,
+	auditResourceValueSamplesQuery,
+	auditServiceIdentityQuery,
+	auditServiceSdkQuery,
 	auditLogSeverityByServiceQuery,
 	auditLogSeverityRowSchema,
 	auditMetricLabelCardinalityQuery,
@@ -41,6 +48,20 @@ const compiledQueries: ReadonlyArray<readonly [string, string]> = [
 	["auditPeerValueInventoryQuery", compileUnsafe(auditPeerValueInventoryQuery(), baseParams).sql],
 	["auditDbEdgeIdentityQuery", compileUnsafe(auditDbEdgeIdentityQuery(), baseParams).sql],
 	["auditLogCorrelationQuery", compileUnsafe(auditLogCorrelationQuery(), baseParams).sql],
+	["auditServiceIdentityQuery", compileUnsafe(auditServiceIdentityQuery(), baseParams).sql],
+	["auditServiceSdkQuery", compileUnsafe(auditServiceSdkQuery(), baseParams).sql],
+	[
+		"auditResourceValueSamplesQuery",
+		compileUnsafe(auditResourceValueSamplesQuery(["deployment.commit_sha"]), baseParams).sql,
+	],
+	[
+		"auditResourceKeyServicesQuery",
+		compileUnsafe(auditResourceKeyServicesQuery(["deployment.commit_sha"]), baseParams).sql,
+	],
+	[
+		"auditMetricLabelServicesQuery",
+		compileUnsafe(auditMetricLabelServicesQuery(["url.path"]), baseParams).sql,
+	],
 ]
 
 describe("setup-audit query invariants", () => {
@@ -139,9 +160,67 @@ describe("auditLogCorrelationQuery", () => {
 		// TimestampTime prunes day partitions; Timestamp narrows within them.
 		expect(sql).toContain("TimestampTime >= '2024-01-01 00:00:00'")
 		expect(sql).toContain("Timestamp >= '2024-01-01 00:00:00'")
-		// Never the wide columns — this is the audit's only raw-table read.
-		expect(sql).not.toContain("Body")
+		// Never the attribute maps, and the body only as a bounded prefix.
 		expect(sql).not.toContain("LogAttributes")
+		expect(sql).toContain("topKIf(1)(leftUTF8(Body, 120), TraceId = '')")
+	})
+
+	it("splits non-standard severity texts by whether they carry a valid SeverityNumber", () => {
+		const { sql } = compileUnsafe(auditLogCorrelationQuery(), baseParams)
+		expect(sql).toMatch(/groupUniqArrayIf\(10\)\(SeverityText, .* AND SeverityNumber BETWEEN 1 AND 24\)/)
+		expect(sql).toMatch(
+			/groupUniqArrayIf\(10\)\(SeverityText, .* AND NOT \(SeverityNumber BETWEEN 1 AND 24\)\)/,
+		)
+	})
+
+	it("skips the services it is told to, and filters nothing otherwise", () => {
+		expect(compileUnsafe(auditLogCorrelationQuery(), baseParams).sql).not.toContain("ServiceName NOT IN")
+		const { sql } = compileUnsafe(
+			auditLogCorrelationQuery({ excludeServiceNames: ["maple-uptime", "github-actions"] }),
+			baseParams,
+		)
+		expect(sql).toContain("ServiceName NOT IN ('maple-uptime', 'github-actions')")
+	})
+})
+
+describe("auditSpanShapeByServiceQuery root spans", () => {
+	it("names the busiest root span that is not an entry point", () => {
+		const { sql } = compileUnsafe(auditSpanProfileByServiceQuery(), baseParams)
+		expect(sql).toContain(
+			"topKWeightedIf(1)(SpanName, toUInt64(WeightedCount), IsEntryPoint = 1 AND SpanKind NOT IN ('Server', 'Consumer'))",
+		)
+	})
+})
+
+describe("service identity reads", () => {
+	it("read hourly rollups and drop empty values", () => {
+		const identity = compileUnsafe(auditServiceIdentityQuery(), baseParams).sql
+		expect(identity).toContain("FROM service_overview_hourly")
+		expect(identity).toContain("ServiceNamespace != ''")
+		const sdk = compileUnsafe(auditServiceSdkQuery(), baseParams).sql
+		expect(sdk).toContain("FROM service_runtimes_hourly")
+		expect(sdk).toContain("SdkLanguage != ''")
+	})
+})
+
+describe("key attribution reads", () => {
+	it("count each requested key per service and read only rows carrying one", () => {
+		const { sql } = compileUnsafe(auditResourceKeyServicesQuery(["env", "git.sha"]), baseParams)
+		expect(sql).toContain("FROM traces")
+		expect(sql).toContain(
+			"[countIf(mapContains(traces.ResourceAttributes, 'env')), countIf(mapContains(traces.ResourceAttributes, 'git.sha'))]",
+		)
+		expect(sql).toContain(
+			"(mapContains(traces.ResourceAttributes, 'env') OR mapContains(traces.ResourceAttributes, 'git.sha'))",
+		)
+		expect(compileUnsafe(auditMetricLabelServicesQuery(["url.path"]), baseParams).sql).toContain(
+			"mapContains(metrics_sum.Attributes, 'url.path')",
+		)
+	})
+
+	it("escapes a key so it cannot break out of its literal", () => {
+		const { sql } = compileUnsafe(auditResourceKeyServicesQuery(["a'b"]), baseParams)
+		expect(sql).toContain("'a\\'b'")
 	})
 })
 
@@ -284,7 +363,13 @@ describe("row schemas decode both ClickHouse and Tinybird numeric encodings", ()
 			() =>
 				decodeBothEncodings(
 					Schema.decodeUnknownSync(auditSpanProfileRowSchema),
-					{ serviceName: "api", badStatusCodes: ["ERROR"], badSpanKinds: [] },
+					{
+						serviceName: "api",
+						badStatusCodes: ["ERROR"],
+						badSpanKinds: [],
+						rootSpanNames: ["chat.turn"],
+						rootSpanKinds: ["Internal"],
+					},
 					{
 						weightedSpanCount: 10,
 						weightedErrorCount: 1,
@@ -347,9 +432,33 @@ describe("row schemas decode both ClickHouse and Tinybird numeric encodings", ()
 			() =>
 				decodeBothEncodings(
 					Schema.decodeUnknownSync(auditLogCorrelationRowSchema),
-					{ serviceName: "api" },
+					{
+						serviceName: "api",
+						topUncorrelatedMessages: ["starting"],
+						numberedOddSeverities: ["log"],
+						unnumberedOddSeverities: [],
+					},
 					{ logCount: 100, uncorrelatedCount: 99, errorLogCount: 5, uncorrelatedErrorCount: 5 },
 				),
+		],
+		[
+			"resourceValue",
+			() =>
+				decodeBothEncodings(
+					Schema.decodeUnknownSync(auditResourceValueRowSchema),
+					{ attributeKey: "deployment.commit_sha", attributeValue: "0.1.0+685" },
+					{ usageCount: 45 },
+				),
+		],
+		[
+			"keyService",
+			() => {
+				const decode = Schema.decodeUnknownSync(auditKeyServiceRowSchema)
+				return [
+					decode({ serviceName: "ios", keyCounts: ["32", "0"] }),
+					decode({ serviceName: "ios", keyCounts: [32, 0] }),
+				]
+			},
 		],
 	]
 

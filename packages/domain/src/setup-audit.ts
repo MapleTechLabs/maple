@@ -8,9 +8,9 @@
 // every `needsWarehouse` check emits `skip` and the report still returns the config findings.
 //
 // Severity is fixed per check, never computed inside `evaluate`. Conditional severity ("critical if
-// referenced, warn otherwise") is a smell — split it into two checks or pick the honest one. The one
-// exception is a rate with tiered thresholds (TRC-02): one condition, so one check, and its evaluation
-// names the tier it crossed.
+// referenced, warn otherwise") is a smell — split it into two checks or pick the honest one. The
+// exceptions are tiered readings of one condition (TRC-02's rate; LOG-02's "no correlation at all"
+// versus "mostly outside spans"): one check, whose evaluation names the tier it crossed.
 //
 // Checks deliberately NOT included, so nobody re-adds them: escalation policy disabled (defaults to
 // false — would fire on nearly every org), AI triage disabled (opt-in by design), no scrape targets /
@@ -18,7 +18,7 @@
 // tested (delivery works fine without ever pressing Test), onboarding checklist incomplete (owned by
 // the onboarding surface). A check that fires on every healthy org is noise, not an audit.
 
-import { Option, Schema, Array as Arr, Record as Rec, String as Str } from "effect"
+import { Option, pipe, Schema, Array as Arr, Record as Rec, String as Str } from "effect"
 import { HttpTaggedError } from "./http/error-policy"
 import {
 	type IntegrationEntry,
@@ -27,6 +27,7 @@ import {
 	PLANETSCALE_NO_ORGANIZATION_PROBLEM,
 	summarizeResources,
 } from "./integration-inventory"
+import { isMapleService, UPTIME_SERVICE_NAME } from "./uptime"
 
 export class SetupAuditUnavailableError extends HttpTaggedError<SetupAuditUnavailableError>()(
 	"@maple/http/errors/SetupAuditUnavailableError",
@@ -265,6 +266,9 @@ export interface AuditSpanProfile {
 	readonly spanNameCount: number
 	readonly badStatusCodes: ReadonlyArray<string>
 	readonly badSpanKinds: ReadonlyArray<string>
+	/** The busiest root span that is not Server/Consumer, and its kind, when there is one. */
+	readonly rootSpanName?: string
+	readonly rootSpanKind?: string
 }
 
 export interface AuditLogCorrelation {
@@ -273,6 +277,22 @@ export interface AuditLogCorrelation {
 	readonly uncorrelatedCount: number
 	readonly errorLogCount: number
 	readonly uncorrelatedErrorCount: number
+	/** Raw prefix of the commonest log body without trace context; redacted before it is shown. */
+	readonly topUncorrelatedMessage?: string
+	/** Non-standard severity texts seen with a valid OTel `SeverityNumber` (1-24), and without one. */
+	readonly numberedOddSeverities?: ReadonlyArray<string>
+	readonly unnumberedOddSeverities?: ReadonlyArray<string>
+}
+
+/** What the rollups say about one traced service, for telling who can fix its telemetry. */
+export interface AuditServiceIdentity {
+	readonly serviceName: string
+	/** Non-empty `service.namespace` values. */
+	readonly namespaces: ReadonlyArray<string>
+	/** Non-empty deployment environments. */
+	readonly environments: ReadonlyArray<string>
+	/** Non-empty `telemetry.sdk.language` values. */
+	readonly sdkLanguages: ReadonlyArray<string>
 }
 
 /**
@@ -312,6 +332,21 @@ export interface WarehouseAuditInputs {
 	/** Log correlation is sampled over a shorter window than the rest — see `logCorrelationHours`. */
 	readonly logCorrelation: ReadonlyArray<AuditLogCorrelation>
 	readonly logCorrelationHours: number
+	/** Identity of each traced service; classifies Maple-written and client services. */
+	readonly services: ReadonlyArray<AuditServiceIdentity>
+	/** Top values of the invented resource keys present (see {@link inventedResourceKeys}). */
+	readonly resourceKeySamples: ReadonlyArray<{
+		readonly key: string
+		readonly value: string
+		readonly usageCount: number
+	}>
+	/** Services seen emitting each invented resource key, from a short recent window. */
+	readonly resourceKeyServices: ReadonlyArray<{ readonly key: string; readonly serviceName: string }>
+	/** Services emitting each high-cardinality metric label (see {@link explodedMetricLabels}). */
+	readonly metricLabelServices: ReadonlyArray<{
+		readonly attributeKey: string
+		readonly serviceName: string
+	}>
 	/**
 	 * Trace-completeness samples. These come from a short, lagged window and (on high-volume orgs) a
 	 * fraction of traces, so they are rates to reason about — never exact counts.
@@ -1117,8 +1152,10 @@ const integrationChecks: ReadonlyArray<AuditCheck> = [
 
 /** Below this a service's log volume is too small for a correlation rate to mean anything. */
 const LOG_CORRELATION_MIN_LOGS = 20
-/** Share of a service's logs that must lack a TraceId before correlation counts as broken. */
+/** Share of a service's logs that must lack a TraceId before correlation is worth reporting. */
 const LOG_CORRELATION_FAIL_RATIO = 0.9
+/** Below this share of correlated logs the bridge never sees a span; above it, it does. */
+const LOG_CORRELATION_NONE_RATIO = 0.01
 /** Share of a service's spans that must lack an environment before it is worth reporting. */
 const MISSING_ENV_RATIO = 0.5
 /** Distinct span names per service above which operation grouping stops being useful. */
@@ -1208,6 +1245,211 @@ const isNameVariant = (a: string, b: string): boolean => {
 
 /** `maple_ai.*` is stamped by Maple's own ingest on agent spans (see `gen-ai.ts`), not by the customer. */
 const isMapleWrittenKey = (key: string): boolean => Str.startsWith("maple_ai.")(Str.toLowerCase(key))
+
+// Who can fix a service's telemetry
+//
+// Per-service checks only make sense for services the user instruments. Maple writes some services
+// itself (uptime checks, CI traces, pulled integration metrics) and client apps lack server traits by
+// design, so each service is classified once and the checks read that classification.
+
+/** `CI_SERVICE_NAME` in `./tinybird/datasources`; imported, it would pull the warehouse schema in here. */
+const CI_TRACES_SERVICE_NAME = "github-actions"
+
+/** Service names Maple writes on the user's behalf; the raw log read skips them outright. */
+export const MAPLE_GENERATED_SERVICE_NAMES: ReadonlyArray<string> = [
+	UPTIME_SERVICE_NAME,
+	CI_TRACES_SERVICE_NAME,
+]
+
+/** Metric services the Cloudflare analytics integration writes, one per zone, worker or queue. */
+const MAPLE_INTEGRATION_SERVICE_PREFIXES = ["cloudflare/", "cloudflare-worker/", "cloudflare-queue/"]
+
+/** SDK languages that only ever run on a user's device. */
+const CLIENT_SDK_LANGUAGES = new Set(["webjs", "swift"])
+const PREVIEW_ENVIRONMENT = /^(?:pr-\d+|preview(?:[-_].*)?)$/i
+
+export type AuditServiceOrigin = "maple" | "client" | "preview" | "app"
+
+/** Classifies one service; an unknown identity (metric-only services) is judged by name. */
+export const classifyService = (
+	serviceName: string,
+	identity: AuditServiceIdentity | undefined,
+): AuditServiceOrigin => {
+	const namespaces = identity?.namespaces ?? []
+	if (
+		MAPLE_GENERATED_SERVICE_NAMES.includes(serviceName) ||
+		Arr.some(namespaces, (namespace) => isMapleService({ serviceName, serviceNamespace: namespace })) ||
+		Arr.some(MAPLE_INTEGRATION_SERVICE_PREFIXES, (prefix) => Str.startsWith(prefix)(serviceName))
+	) {
+		return "maple"
+	}
+	if (identity === undefined) return "app"
+	const environments = identity.environments
+	// A CLI tags itself with a `cli` environment; browsers and mobile apps by SDK language.
+	const cliOnly =
+		environments.length > 0 && Arr.every(environments, (env) => Str.toLowerCase(env) === "cli")
+	if (
+		cliOnly ||
+		Arr.some(identity.sdkLanguages, (lang) => CLIENT_SDK_LANGUAGES.has(Str.toLowerCase(lang)))
+	) {
+		return "client"
+	}
+	return environments.length > 0 && Arr.every(environments, (env) => PREVIEW_ENVIRONMENT.test(env))
+		? "preview"
+		: "app"
+}
+
+const originCache = new WeakMap<WarehouseAuditInputs, (serviceName: string) => AuditServiceOrigin>()
+
+/** Memoized per snapshot: every check asks, the answer never changes within one audit. */
+const serviceOrigin = (warehouse: WarehouseAuditInputs): ((serviceName: string) => AuditServiceOrigin) => {
+	const cached = originCache.get(warehouse)
+	if (cached) return cached
+	const identities = new Map(
+		Arr.map(warehouse.services, (identity) => [identity.serviceName, identity] as const),
+	)
+	const origins = new Map<string, AuditServiceOrigin>()
+	const lookup = (serviceName: string): AuditServiceOrigin => {
+		const known = origins.get(serviceName)
+		if (known) return known
+		const origin = classifyService(serviceName, identities.get(serviceName))
+		origins.set(serviceName, origin)
+		return origin
+	}
+	originCache.set(warehouse, lookup)
+	return lookup
+}
+
+/**
+ * The snapshot with every Maple-written service removed from the per-service inputs, so no check can
+ * blame the user for telemetry Maple produces. A metric label is dropped when every service seen
+ * emitting it is Maple's; org-wide trace totals lose the removed services' traces too.
+ */
+export const withoutMapleServices = (warehouse: WarehouseAuditInputs): WarehouseAuditInputs => {
+	const origin = serviceOrigin(warehouse)
+	const isUsers = (serviceName: string) => origin(serviceName) !== "maple"
+	const labelEmitters = Arr.groupBy(warehouse.metricLabelServices, (row) => row.attributeKey)
+	const traces = warehouse.traceCompleteness
+	const mapleRootless = Arr.filter(traces?.rootless ?? [], (row) => !isUsers(row.entryService))
+	const minus = (pick: (row: (typeof mapleRootless)[number]) => number) =>
+		Arr.reduce(mapleRootless, 0, (sum, row) => sum + pick(row))
+	const scoped: WarehouseAuditInputs = {
+		...warehouse,
+		serviceUsage: Arr.filter(warehouse.serviceUsage, (row) => isUsers(row.serviceName)),
+		spanShape: Arr.filter(warehouse.spanShape, (row) => isUsers(row.serviceName)),
+		logSeverity: Arr.filter(warehouse.logSeverity, (row) => isUsers(row.serviceName)),
+		dbEdges: Arr.filter(warehouse.dbEdges, (row) => isUsers(row.serviceName)),
+		logCorrelation: Arr.filter(warehouse.logCorrelation, (row) => isUsers(row.serviceName)),
+		metricLabels: Arr.filter(warehouse.metricLabels, (label) => {
+			const emitters = labelEmitters[label.attributeKey] ?? []
+			return emitters.length === 0 || Arr.some(emitters, (row) => isUsers(row.serviceName))
+		}),
+		traceCompleteness:
+			traces === undefined
+				? undefined
+				: {
+						...traces,
+						orphans: Arr.filter(traces.orphans, (row) => isUsers(row.serviceName)),
+						rootless: Arr.map(
+							Arr.filter(traces.rootless, (row) => isUsers(row.entryService)),
+							(row) => ({
+								...row,
+								orgTraceCount: row.orgTraceCount - minus((r) => r.traceCount),
+								orgRootlessCount: row.orgRootlessCount - minus((r) => r.rootlessCount),
+								orgSampledRootlessCount:
+									row.orgSampledRootlessCount - minus((r) => r.sampledRootlessCount),
+							}),
+						),
+					},
+	}
+	// The scoped snapshot classifies exactly like the original.
+	originCache.set(scoped, origin)
+	return scoped
+}
+
+/** The invented resource keys present in an attribute inventory, which RES-06 reports. */
+export const inventedResourceKeys = (
+	attributeKeys: ReadonlyArray<AuditAttributeKey>,
+): ReadonlyArray<string> => {
+	const present = new Set(
+		Arr.map(
+			Arr.filter(attributeKeys, (row) => row.scope === "resource"),
+			(row) => row.key,
+		),
+	)
+	return Arr.filter(INVENTED_RESOURCE_KEYS, (key) => present.has(key))
+}
+
+/** Metric labels past the cardinality limit, which MET-01 reports. */
+export const explodedMetricLabels = (labels: WarehouseAuditInputs["metricLabels"]): ReadonlyArray<string> =>
+	Arr.map(
+		Arr.filter(labels, (label) => label.valueCardinality > METRIC_LABEL_CARDINALITY_LIMIT),
+		(label) => label.attributeKey,
+	)
+
+/** Max characters of a log message or attribute value quoted into a finding, ellipsis included. */
+const QUOTE_LIMIT = 80
+/** A whole 24+ character run of token characters holding both a digit and a letter. */
+const OPAQUE_RUN =
+	/(?<![A-Za-z0-9+/_=.-])(?=[A-Za-z0-9+/_=.-]*\d)(?=[A-Za-z0-9+/_=.-]*[A-Za-z])[A-Za-z0-9+/_=.-]{24,}/g
+const SECRET_ASSIGNMENT = /\b(password|passwd|pwd|secret|token|api[_-]?key|authorization)(\s*[:=]\s*)\S+/gi
+const BEARER = /\bbearer\s+\S+/gi
+const URL_CREDENTIALS = /\/\/[^/\s:@]+:[^/\s@]+@/g
+
+/**
+ * A log line or attribute value made safe to quote: credentials and long opaque runs (keys, JWTs,
+ * hashes) are masked, then the result is capped. Long runs of plain words are kept.
+ */
+export const quoteSafely = (raw: string): string => {
+	const masked = pipe(
+		Str.trim(raw),
+		Str.replace(URL_CREDENTIALS, "//[redacted]@"),
+		Str.replace(BEARER, "Bearer [redacted]"),
+		Str.replace(SECRET_ASSIGNMENT, "$1$2[redacted]"),
+		Str.replace(OPAQUE_RUN, "[redacted]"),
+		Str.replace(/\s+/g, " "),
+	)
+	return masked.length > QUOTE_LIMIT ? `${Str.slice(0, QUOTE_LIMIT - 1)(masked)}…` : masked
+}
+
+/** The semconv key each invented one stands in for. */
+const INVENTED_KEY_TARGETS = new Map<string, string>([
+	["env", "deployment.environment.name"],
+	["environment", "deployment.environment.name"],
+	["service.env", "deployment.environment.name"],
+	["deployment.commit_sha", "vcs.ref.head.revision"],
+	["git.commit", "vcs.ref.head.revision"],
+	["git.sha", "vcs.ref.head.revision"],
+	["commit.sha", "vcs.ref.head.revision"],
+	["git.repo", "vcs.repository.url.full"],
+	["repo.url", "vcs.repository.url.full"],
+	["app.repo_url", "vcs.repository.url.full"],
+])
+const COMMIT_SHA = /^[0-9a-f]{7,40}$/i
+const VERSION = /^v?\d+(?:\.\d+)+(?:[-+][0-9A-Za-z.-]+)?$/
+
+/** Where an invented key belongs, judged by what it holds: a "commit" key carrying `1.2.0+85` is a version. */
+const inventedKeyTarget = (key: string, sample: string | undefined): string => {
+	const target = INVENTED_KEY_TARGETS.get(key) ?? "its semantic-convention key"
+	if (target !== "vcs.ref.head.revision" || sample === undefined || COMMIT_SHA.test(sample)) return target
+	return VERSION.test(sample) ? "service.version" : target
+}
+
+const inventedKeyNote = (
+	key: string,
+	services: ReadonlyArray<string>,
+	sample: string | undefined,
+): string => {
+	const from =
+		services.length === 0
+			? ""
+			: `from ${Arr.join(Arr.take(services, 3), ", ")}${services.length > 3 ? ` and ${services.length - 3} more` : ""}; `
+	const quoted = sample === undefined ? "" : quoteSafely(sample)
+	const value = quoted === "" ? "" : `e.g. "${quoted}"; `
+	const target = inventedKeyTarget(key, sample)
+	const looksLikeVersion = target === "service.version" && INVENTED_KEY_TARGETS.get(key) !== target
+	return `${from}${value}${looksLikeVersion ? "holds a version, so send it as" : "rename to"} \`${target}\``
+}
 
 const ingestCoverageChecks: ReadonlyArray<AuditCheck> = [
 	{
@@ -1303,10 +1545,15 @@ const ingestCoverageChecks: ReadonlyArray<AuditCheck> = [
 			// Gated on the org logging at all: a traces-only setup is a legitimate choice, an
 			// inconsistent one is the finding.
 			if (!Arr.some(warehouse.serviceUsage, (service) => service.logCount > 0)) return PASS
+			// Browsers, mobile apps and CLIs rarely ship logs by design; preview deploys come and go.
+			const origin = serviceOrigin(warehouse)
 			const silent = Arr.map(
 				Arr.filter(
 					warehouse.serviceUsage,
-					(service) => service.traceCount > 0 && service.logCount === 0,
+					(service) =>
+						service.traceCount > 0 &&
+						service.logCount === 0 &&
+						origin(service.serviceName) === "app",
 				),
 				(service) => ({
 					kind: "service" as const,
@@ -1338,30 +1585,53 @@ const ingestCoverageChecks: ReadonlyArray<AuditCheck> = [
 					(s) => s.serviceName,
 				),
 			)
-			const broken = Arr.map(
-				Arr.filter(
-					warehouse.logCorrelation,
-					(row) =>
-						traced.has(row.serviceName) &&
-						row.logCount >= LOG_CORRELATION_MIN_LOGS &&
-						row.uncorrelatedCount / row.logCount > LOG_CORRELATION_FAIL_RATIO,
-				),
-				(row) => ({
+			const eligible = Arr.filter(
+				warehouse.logCorrelation,
+				(row) =>
+					traced.has(row.serviceName) &&
+					row.logCount >= LOG_CORRELATION_MIN_LOGS &&
+					row.uncorrelatedCount / row.logCount > LOG_CORRELATION_FAIL_RATIO,
+			)
+			// Some correlated logs prove the bridge works; the rest are logged outside any span.
+			const neverCorrelated = (row: AuditLogCorrelation) =>
+				(row.logCount - row.uncorrelatedCount) / row.logCount < LOG_CORRELATION_NONE_RATIO
+			const bridgeless = Arr.filter(eligible, neverCorrelated)
+			const outside = Arr.filter(eligible, (row) => !neverCorrelated(row))
+			const bridgelessEntities = Arr.map(bridgeless, (row) => ({
+				kind: "service" as const,
+				name: row.serviceName,
+				note: `${percent(row.uncorrelatedCount, row.logCount)} of logs have no trace_id${
+					row.uncorrelatedErrorCount > 0
+						? `, including ${row.uncorrelatedErrorCount} error-level`
+						: ""
+				}`,
+			}))
+			const outsideEntities = Arr.map(outside, (row) => {
+				const message = quoteSafely(row.topUncorrelatedMessage ?? "")
+				return {
 					kind: "service" as const,
 					name: row.serviceName,
-					note: `${percent(row.uncorrelatedCount, row.logCount)} of logs have no trace_id${
-						row.uncorrelatedErrorCount > 0
-							? `, including ${row.uncorrelatedErrorCount} error-level`
-							: ""
+					note: `${percent(row.uncorrelatedCount, row.logCount)} of logs are emitted outside any span${
+						message === "" ? "" : `, mostly: "${message}"`
 					}`,
-				}),
-			)
-			return broken.length === 0
-				? PASS
-				: fail(
-						`${plural(broken.length, "service")} ${conj(broken.length, "emits", "emit")} logs with no trace context despite being traced (last ${warehouse.logCorrelationHours}h). Trace↔log correlation is unavailable for them.`,
-						broken,
-					)
+				}
+			})
+			if (bridgeless.length > 0) {
+				return fail(
+					`${plural(bridgeless.length, "service")} ${conj(bridgeless.length, "emits", "emit")} logs with no trace context despite being traced (last ${warehouse.logCorrelationHours}h). Trace↔log correlation is unavailable for them.`,
+					[...bridgelessEntities, ...outsideEntities],
+				)
+			}
+			if (outside.length === 0) return PASS
+			return {
+				...fail(
+					`${plural(outside.length, "service")} ${conj(outside.length, "logs", "log")} mostly outside any span (last ${warehouse.logCorrelationHours}h). The bridge works, since some logs carry trace context, but those lines cannot be reached from a trace.`,
+					outsideEntities,
+				),
+				severity: "info",
+				fixHint:
+					"Usually startup, config or background-loop logs written before any span starts. Emit them inside a span if you want them on a trace; a one-off startup line is fine to leave.",
+			}
 		},
 	},
 	{
@@ -1391,13 +1661,24 @@ const ingestCoverageChecks: ReadonlyArray<AuditCheck> = [
 		severity: "warn",
 		needsWarehouse: true,
 		fixHint:
-			"Map your logger's levels onto TRACE/DEBUG/INFO/WARN/ERROR/FATAL in the OTLP bridge — severity drives row coloring and the error banner.",
+			"Map your logger's levels onto TRACE/DEBUG/INFO/WARN/ERROR/FATAL in the OTLP bridge, or at least set a SeverityNumber. Severity drives row coloring and the error banner.",
 		evaluate: ({ warehouse }) => {
 			if (!warehouse) return PASS
+			// A text that always arrives with a valid SeverityNumber carries its level there, and is usually
+			// the platform's choice (`log` from Workers console.log), with nothing for the user to remap.
+			const numbered = new Set(
+				Arr.flatMap(warehouse.logCorrelation, (row) => {
+					const without = new Set(row.unnumberedOddSeverities ?? [])
+					return Arr.map(
+						Arr.filter(row.numberedOddSeverities ?? [], (text) => !without.has(text)),
+						(text) => `${row.serviceName}\x00${text}`,
+					)
+				}),
+			)
 			const offenders = Arr.map(
 				Arr.filter(warehouse.logSeverity, (row) => {
 					const text = Str.toUpperCase(Str.trim(row.severityText))
-					if (text === "") return false
+					if (text === "" || numbered.has(`${row.serviceName}\x00${row.severityText}`)) return false
 					// OTel allows a numeric suffix within a level, e.g. `DEBUG3`.
 					return !STANDARD_SEVERITIES.has(Str.replace(/\d+$/, "")(text))
 				}),
@@ -1446,21 +1727,30 @@ const attributeQualityChecks: ReadonlyArray<AuditCheck> = [
 		severity: "warn",
 		needsWarehouse: true,
 		fixHint:
-			"Rename to the semantic-convention key. Invented keys are stored faithfully but no Maple feature reads them.",
+			"Rename each key to the semantic-convention key named on it. Invented keys are stored faithfully but no Maple feature reads them.",
 		evaluate: ({ warehouse }) => {
 			if (!warehouse) return PASS
-			const present = keysForScope(warehouse, "resource")
-			const invented = Arr.map(
-				Arr.filter(INVENTED_RESOURCE_KEYS, (key) => present.has(key)),
-				(key) => ({
+			const invented = Arr.map(inventedResourceKeys(warehouse.attributeKeys), (key) => {
+				const services = Arr.dedupe(
+					Arr.map(
+						Arr.filter(warehouse.resourceKeyServices, (row) => row.key === key),
+						(row) => row.serviceName,
+					),
+				)
+				// Samples arrive busiest first.
+				const sample = Option.getOrUndefined(
+					Arr.findFirst(warehouse.resourceKeySamples, (row) => row.key === key),
+				)?.value
+				return {
 					kind: "attribute_key" as const,
 					name: key,
-				}),
-			)
+					note: inventedKeyNote(key, services, sample),
+				}
+			})
 			return invented.length === 0
 				? PASS
 				: fail(
-						`${plural(invented.length, "resource attribute")} ${conj(invented.length, "duplicates", "duplicate")} a semantic-convention key under a name nothing reads. The data arrives, but environment filtering and source linking stay empty.`,
+						`${plural(invented.length, "resource attribute")} ${conj(invented.length, "duplicates", "duplicate")} a semantic-convention key under a name nothing reads. The data arrives, but environment filtering, release tracking and source linking stay empty.`,
 						invented,
 					)
 		},
@@ -1688,25 +1978,33 @@ const serviceMapChecks: ReadonlyArray<AuditCheck> = [
 		severity: "info",
 		needsWarehouse: true,
 		fixHint:
-			"Expected for cron jobs and workers with no inbound traffic. For anything serving requests, register the HTTP-server or queue-consumer instrumentation.",
+			"Expected for cron jobs and workers with no inbound traffic. If the service handles requests or queue messages, register the HTTP-server or queue-consumer instrumentation, or give the span that receives the work kind Server (requests) or Consumer (queue messages).",
 		evaluate: ({ warehouse }) => {
 			if (!warehouse) return PASS
+			// Browsers, mobile apps and CLIs start traces on the device; they have no inbound work.
+			const origin = serviceOrigin(warehouse)
 			const noEntry = Arr.map(
 				Arr.filter(
 					warehouse.spanShape,
 					(service) =>
-						service.spanCount > 0 && service.serverCount === 0 && service.consumerCount === 0,
+						service.spanCount > 0 &&
+						service.serverCount === 0 &&
+						service.consumerCount === 0 &&
+						origin(service.serviceName) !== "client",
 				),
 				(service) => ({
 					kind: "service" as const,
 					name: service.serviceName,
-					note: "no Server or Consumer spans",
+					note:
+						service.rootSpanName === undefined
+							? "no Server or Consumer spans"
+							: `traces start at "${quoteSafely(service.rootSpanName)}" (${service.rootSpanKind ?? "Internal"}), not a Server or Consumer span`,
 				}),
 			)
 			return noEntry.length === 0
 				? PASS
 				: fail(
-						`${plural(noEntry.length, "service")} ${conj(noEntry.length, "emits", "emit")} no entry-point spans. If they serve requests or consume a queue, that instrumentation is not registered — and route views, throughput attribution and Apdex stay empty for them.`,
+						`${plural(noEntry.length, "service")} ${conj(noEntry.length, "emits", "emit")} no entry-point spans. If they serve requests or consume a queue, that instrumentation is not registered or the receiving span has the wrong kind, and route views, throughput attribution and Apdex stay empty for them.`,
 						noEntry,
 					)
 		},
@@ -1858,12 +2156,15 @@ const traceCompletenessChecks: ReadonlyArray<AuditCheck> = [
 			// distorts a waterfall but loses no data or alerts, so it caps at warn.
 			const severity = total < TRACE_MIN_SAMPLE || ratio <= ROOTLESS_WARN_RATIO ? "info" : "warn"
 
+			// Sampled counts are a fraction of the real ones; say so wherever a count appears.
+			const modulus = traces.traceSampleModulus
+			const sampleNote = modulus > 1 ? ` in a 1-in-${modulus} sample` : ""
 			const affected = Arr.map(
 				Arr.filter(rows, (row) => row.missing > 0).sort((a, b) => b.missing - a.missing),
 				(row) => ({
 					kind: "service" as const,
 					name: row.entryService,
-					note: `${sharePercent(row.missing, row.traceCount)} of traces starting here have no root (${row.missing} of ${row.traceCount})`,
+					note: `${sharePercent(row.missing, row.traceCount)} of traces starting here have no root (${row.missing} of ${row.traceCount}${sampleNote})`,
 				}),
 			)
 
@@ -1886,10 +2187,14 @@ const traceCompletenessChecks: ReadonlyArray<AuditCheck> = [
 				}
 			}
 
-			const sample = traces.traceSampleModulus > 1 ? ` (1 in ${traces.traceSampleModulus} sampled)` : ""
+			const perHour = Math.round((missing * modulus * 60) / traces.windowMinutes)
+			const counts =
+				modulus > 1
+					? `about ${perHour.toLocaleString("en-US")} traces an hour, estimated from a 1-in-${modulus} trace sample over ${plural(traces.windowMinutes, "minute")}`
+					: `${missing} of ${total} traces over ${plural(traces.windowMinutes, "minute")}`
 			return {
 				...fail(
-					`${sharePercent(missing, total)} of traces have no root span: ${missing} of ${total} traces over ${plural(traces.windowMinutes, "minute")}${sample}. Their duration and waterfall start at the first span that did arrive, so both are wrong.`,
+					`${sharePercent(missing, total)} of traces have no root span: ${counts}. Their duration and waterfall start at the first span that did arrive, so both are wrong.`,
 					affected,
 				),
 				severity,
@@ -1955,6 +2260,8 @@ const emptySummary: SetupAuditSummary = { critical: 0, warn: 0, info: 0, pass: 0
  *    checks against an org that hasn't connected yet is noise; the onboarding checklist owns that phase.
  *  - When the warehouse is unreachable, `needsWarehouse` checks report `skip` rather than failing the
  *    request, so the config half of the audit still lands.
+ *
+ * Telemetry checks see the snapshot without Maple-written services ({@link withoutMapleServices}).
  */
 export function runSetupAudit(inputs: SetupAuditInputs): SetupAuditReport {
 	const warehouseAvailable = inputs.warehouse !== undefined
@@ -1972,6 +2279,11 @@ export function runSetupAudit(inputs: SetupAuditInputs): SetupAuditReport {
 
 	const checks: AuditCheckResult[] = []
 	const summary = { ...emptySummary }
+	// Maple-written services leave every per-service input once, here, rather than in each check.
+	const scoped: SetupAuditInputs =
+		inputs.warehouse === undefined
+			? inputs
+			: { ...inputs, warehouse: withoutMapleServices(inputs.warehouse) }
 
 	for (const check of SETUP_AUDIT_CHECKS) {
 		if (check.needsWarehouse === true && !warehouseAvailable) {
@@ -1990,7 +2302,7 @@ export function runSetupAudit(inputs: SetupAuditInputs): SetupAuditReport {
 			continue
 		}
 
-		const evaluation = check.evaluate(inputs)
+		const evaluation = check.evaluate(scoped)
 		const severity = evaluation.severity ?? check.severity
 		if (evaluation.status === "pass") summary.pass += 1
 		else summary[severity] += 1

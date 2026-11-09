@@ -1,5 +1,5 @@
 import { afterEach, assert, describe, it } from "@effect/vitest"
-import { Effect, Layer, Option, Schema, Array as Arr } from "effect"
+import { Effect, Layer, Option, Schema, Array as Arr, String as Str } from "effect"
 import { OrgId, UserId } from "@maple/domain/http"
 import { SETUP_AUDIT_CHECKS } from "@maple/domain/setup-audit"
 import { compiledQueryOf } from "@maple/query-engine/execution"
@@ -20,7 +20,10 @@ import { WarehouseQueryService } from "@maple/backend/services/warehouse/Warehou
 import { makeWarehouseServiceStub } from "@maple/backend/testing/warehouse-test-support"
 
 const trackedDbs: TestDb[] = []
-afterEach(() => cleanupTestDbs(trackedDbs))
+afterEach(() => {
+	rowsBySql = []
+	return cleanupTestDbs(trackedDbs)
+})
 
 const ORG = Schema.decodeSync(OrgId)("org_setup_audit")
 const USER = Schema.decodeSync(UserId)("user_setup_audit")
@@ -58,13 +61,22 @@ const signalPresence = (probe: Probe) =>
 /** The SQL of each warehouse query the last audit ran, by its `context`. */
 const sqlByContext = new Map<string, string>()
 
+/** Rows served to any query whose SQL contains the key; everything else returns no rows. */
+let rowsBySql: ReadonlyArray<readonly [string, ReadonlyArray<unknown>]> = []
+const allSql: Array<string> = []
+
 const warehouse = Layer.succeed(
 	WarehouseQueryService,
 	makeWarehouseServiceStub({
 		compiledQuery: (_tenant, compiled, options) => {
 			const query = compiledQueryOf(compiled)
 			if (options?.context) sqlByContext.set(options.context, query.sql)
-			return query.decodeRows([]).pipe(Effect.orDie)
+			allSql.push(query.sql)
+			const rows = Option.match(
+				Arr.findFirst(rowsBySql, ([needle]) => Str.includes(needle)(query.sql)),
+				{ onNone: () => [], onSome: ([, served]) => served },
+			)
+			return query.decodeRows(rows).pipe(Effect.orDie)
 		},
 	}),
 )
@@ -276,6 +288,88 @@ describe("SetupAuditService alert routing reads", () => {
 				Arr.map(byId("CFG-ALERT-03")?.affected ?? [], (row) => row.name),
 				["routes-to-disabled"],
 			)
+		}).pipe(Effect.provide(makeLayer(testDb, "present")))
+	})
+})
+
+describe("SetupAuditService telemetry mapping", () => {
+	const spanProfile = (serviceName: string, rootSpanName: string, rootSpanKind: string) => ({
+		serviceName,
+		weightedSpanCount: 500,
+		weightedErrorCount: 0,
+		serverCount: 0,
+		consumerCount: 0,
+		clientCount: 0,
+		producerCount: 0,
+		noEnvCount: 0,
+		spanNameCount: 3,
+		badStatusCodes: [],
+		badSpanKinds: [],
+		rootSpanNames: [rootSpanName],
+		rootSpanKinds: [rootSpanKind],
+	})
+
+	it.effect("classifies services, names root spans and attributes invented keys to their emitter", () => {
+		const testDb = createTestDb(trackedDbs)
+		rowsBySql = [
+			[
+				"FROM traces_aggregates_hourly",
+				[
+					spanProfile("reviews", "ReviewQueue.processMessage", "Internal"),
+					spanProfile("maple-uptime", "GET /health", "Client"),
+					spanProfile("web", "foldkit.view", "Internal"),
+				],
+			],
+			[
+				"FROM service_overview_hourly\n",
+				[
+					{ serviceName: "reviews", namespaces: ["core"], environments: ["production"] },
+					{ serviceName: "maple-uptime", namespaces: ["maple-services"], environments: [] },
+					{ serviceName: "web", namespaces: ["core"], environments: ["production"] },
+				],
+			],
+			["FROM service_runtimes_hourly", [{ serviceName: "web", sdkLanguages: ["webjs"] }]],
+			[
+				"FROM attribute_keys_hourly",
+				[{ scope: "resource", attributeKey: "deployment.commit_sha", usageCount: 40 }],
+			],
+			[
+				"AttributeScope = 'resource'",
+				[{ attributeKey: "deployment.commit_sha", attributeValue: "0.1.0+685", usageCount: 40 }],
+			],
+			["mapContains(traces.ResourceAttributes", [{ serviceName: "ios", keyCounts: ["32"] }]],
+		]
+		return Effect.gen(function* () {
+			const report = yield* SetupAuditService.use((audit) => audit.run(tenant))
+			const byId = (id: string) =>
+				Option.getOrUndefined(Arr.findFirst(report.checks, (row) => row.id === id))
+			assert.deepStrictEqual(byId("STAT-04")?.affected, [
+				{
+					kind: "service",
+					name: "reviews",
+					note: 'traces start at "ReviewQueue.processMessage" (Internal), not a Server or Consumer span',
+				},
+			])
+			assert.strictEqual(
+				byId("RES-06")?.affected[0]?.note,
+				'from ios; e.g. "0.1.0+685"; holds a version, so send it as `service.version`',
+			)
+			// Maple's own services never reach the raw log read.
+			const logRead = Arr.findFirst(allSql, Str.includes("FROM logs\n"))
+			assert.include(
+				Option.getOrElse(logRead, () => ""),
+				"ServiceName NOT IN ('maple-uptime', 'github-actions')",
+			)
+		}).pipe(Effect.provide(makeLayer(testDb, "present")))
+	})
+
+	it.effect("skips the raw attribution reads when no check flagged a key", () => {
+		const testDb = createTestDb(trackedDbs)
+		sqlByContext.clear()
+		return Effect.gen(function* () {
+			yield* SetupAuditService.use((audit) => audit.run(tenant))
+			assert.isFalse(sqlByContext.has("setupAuditResourceKeyServices"))
+			assert.isFalse(sqlByContext.has("setupAuditMetricLabelServices"))
 		}).pipe(Effect.provide(makeLayer(testDb, "present")))
 	})
 })

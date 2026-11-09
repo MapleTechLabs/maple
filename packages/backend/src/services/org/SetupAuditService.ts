@@ -20,6 +20,9 @@ import { clickHouseSchemaVersion } from "@maple/domain/clickhouse"
 import type { OrgId } from "@maple/domain/primitives"
 import {
 	type ConfigAuditInputs,
+	explodedMetricLabels,
+	inventedResourceKeys,
+	MAPLE_GENERATED_SERVICE_NAMES,
 	SetupAuditUnavailableError,
 	type SetupAuditReport,
 	type TraceCompletenessInputs,
@@ -27,7 +30,7 @@ import {
 	runSetupAudit,
 } from "@maple/domain/setup-audit"
 import { alertRuleIntervalMinutes, CH, formatWarehouseDateTime } from "@maple/query-engine"
-import { Clock, Context, Effect, Layer, Option, Schema, Array as Arr } from "effect"
+import { Clock, Context, Effect, Layer, Option, Result, Schema, Array as Arr } from "effect"
 import type { TenantContext } from "@maple/backend/services/auth/AuthService"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { makeDbExecute } from "@maple/backend/platform/db-execute"
@@ -51,6 +54,9 @@ const LOOKBACK_HOURS = 24
 const TRACE_WINDOW_MINUTES = 60
 const TRACE_WINDOW_LAG_MINUTES = 15
 const TRACE_PARENT_LOOKBACK_MINUTES = 60
+
+/** At most this many keys per attribution read; each becomes one predicate and one count. */
+const ATTRIBUTION_MAX_KEYS = 10
 
 /** What the ingest sampler keeps from traces it drops; null when it drops nothing. */
 const samplingOverrides = (
@@ -465,6 +471,97 @@ const make: Effect.Effect<SetupAuditServiceApi, never, SetupAuditServiceRequirem
 		})
 
 		/**
+		 * Names the services behind keys a check already flagged: invented resource keys (RES-06) and
+		 * exploded metric labels (MET-01). The key rollups carry no service, so these are raw reads,
+		 * run only when there is something to attribute and each capped in keys, window and rows.
+		 */
+		const fetchKeyAttribution = Effect.fn("SetupAuditService.fetchKeyAttribution")(function* (
+			tenant: TenantContext,
+			now: number,
+			resourceKeys: ReadonlyArray<string>,
+			metricKeys: ReadonlyArray<string>,
+		) {
+			const read = <A>(context: string, compiled: CH.CompiledQueryInput<A>) =>
+				warehouse
+					.compiledQuery(tenant, compiled, { profile: "list", context })
+					.pipe(
+						Effect.catchCause((cause) =>
+							Effect.logWarning("Setup audit key attribution skipped").pipe(
+								Effect.annotateLogs({ context, cause }),
+								Effect.as([]),
+							),
+						),
+					)
+			const window = (hours: number) => ({
+				orgId: tenant.orgId,
+				startTime: formatWarehouseDateTime(now - hours * 60 * 60 * 1000),
+				endTime: formatWarehouseDateTime(now),
+			})
+			const resourceKeyList = Arr.take(resourceKeys, ATTRIBUTION_MAX_KEYS)
+			const metricKeyList = Arr.take(metricKeys, ATTRIBUTION_MAX_KEYS)
+			const none = Effect.succeed([])
+			const rows = yield* Effect.all(
+				{
+					samples: Arr.isReadonlyArrayNonEmpty(resourceKeyList)
+						? read(
+								"setupAuditResourceKeySamples",
+								CH.compile(
+									Integrations.auditResourceValueSamplesQuery(resourceKeyList),
+									window(LOOKBACK_HOURS),
+								),
+							)
+						: none,
+					resourceServices: Arr.isReadonlyArrayNonEmpty(resourceKeyList)
+						? read(
+								"setupAuditResourceKeyServices",
+								CH.compile(
+									Integrations.auditResourceKeyServicesQuery(resourceKeyList),
+									window(Integrations.AUDIT_RESOURCE_KEY_SERVICE_MAX_HOURS),
+								),
+							)
+						: none,
+					metricServices: Arr.isReadonlyArrayNonEmpty(metricKeyList)
+						? read(
+								"setupAuditMetricLabelServices",
+								CH.compile(
+									Integrations.auditMetricLabelServicesQuery(metricKeyList),
+									window(LOOKBACK_HOURS),
+								),
+							)
+						: none,
+				},
+				{ concurrency: 2 },
+			)
+			// `keyCounts` is aligned with the keys asked for; a non-zero count means the service emits it.
+			const emitters = (
+				keys: ReadonlyArray<string>,
+				services: ReadonlyArray<Integrations.AuditKeyServiceRow>,
+			) =>
+				Arr.flatMap(services, (row) =>
+					Arr.filterMap(keys, (key, index) =>
+						(row.keyCounts[index] ?? 0) > 0
+							? Result.succeed({ key, serviceName: row.serviceName })
+							: Result.failVoid,
+					),
+				)
+			return {
+				resourceKeySamples: Arr.map(rows.samples, (row) => ({
+					key: row.attributeKey,
+					value: row.attributeValue,
+					usageCount: row.usageCount,
+				})),
+				resourceKeyServices: emitters(resourceKeyList, rows.resourceServices),
+				metricLabelServices: Arr.map(emitters(metricKeyList, rows.metricServices), (row) => ({
+					attributeKey: row.key,
+					serviceName: row.serviceName,
+				})),
+			} satisfies Pick<
+				WarehouseAuditInputs,
+				"resourceKeySamples" | "resourceKeyServices" | "metricLabelServices"
+			>
+		})
+
+		/**
 		 * Eight reads, seven of them over pre-aggregated rollups. Run concurrently but capped: the
 		 * audit is a diagnostic endpoint and must never behave like a load generator against a
 		 * warehouse that may already be struggling — which is often exactly why someone runs it.
@@ -489,6 +586,16 @@ const make: Effect.Effect<SetupAuditServiceApi, never, SetupAuditServiceRequirem
 
 			const run = <A>(compiled: CH.CompiledQueryInput<A>, profile: "discovery" | "list") =>
 				warehouse.compiledQuery(tenant, compiled, { profile, context: "setupAudit" })
+			// Enrichment reads: a failure costs a classification or a note, never the telemetry half.
+			const optional = <A>(context: string, read: Effect.Effect<ReadonlyArray<A>, unknown>) =>
+				read.pipe(
+					Effect.catchCause((cause) =>
+						Effect.logWarning("Setup audit enrichment read skipped").pipe(
+							Effect.annotateLogs({ context, cause }),
+							Effect.as([]),
+						),
+					),
+				)
 
 			// Same reason as `fetchTraceCompleteness`. Both are independent entry
 			// points, so each warms; whichever runs second finds the memo warm and
@@ -518,8 +625,21 @@ const make: Effect.Effect<SetupAuditServiceApi, never, SetupAuditServiceRequirem
 					),
 					dbEdges: run(CH.compile(Integrations.auditDbEdgeIdentityQuery(), window), "discovery"),
 					logCorrelation: run(
-						CH.compile(Integrations.auditLogCorrelationQuery(), logWindow),
+						CH.compile(
+							Integrations.auditLogCorrelationQuery({
+								excludeServiceNames: MAPLE_GENERATED_SERVICE_NAMES,
+							}),
+							logWindow,
+						),
 						"list",
+					),
+					identities: optional(
+						"setupAuditServiceIdentity",
+						run(CH.compile(Integrations.auditServiceIdentityQuery(), window), "discovery"),
+					),
+					sdks: optional(
+						"setupAuditServiceSdk",
+						run(CH.compile(Integrations.auditServiceSdkQuery(), window), "discovery"),
 					),
 				},
 				{ concurrency: 4 },
@@ -529,29 +649,49 @@ const make: Effect.Effect<SetupAuditServiceApi, never, SetupAuditServiceRequirem
 			// and sizes its trace sampling from the volume they just reported. It degrades on its own:
 			// a join that times out costs the three TRC checks, not the whole telemetry half.
 			const totalSpans = Arr.reduce(results.spanShape, 0, (sum, row) => sum + row.weightedSpanCount)
-			const traceCompleteness = yield* fetchTraceCompleteness(
-				tenant,
-				now,
-				totalSpans,
-				samplingOverrides,
-			).pipe(
-				Effect.catchCause((cause) =>
-					Effect.logWarning("Setup audit trace-completeness checks skipped").pipe(
-						Effect.annotateLogs({ cause }),
-						Effect.as(undefined),
+			const attributeKeys = Arr.map(results.attributeKeys, (row) => ({
+				scope: row.scope,
+				key: row.attributeKey,
+				usageCount: row.usageCount,
+			}))
+			const metricLabels = Arr.map(results.metricLabels, (row) => ({
+				attributeKey: row.attributeKey,
+				valueCardinality: row.valueCardinality,
+			}))
+			const followUps = yield* Effect.all(
+				{
+					traceCompleteness: fetchTraceCompleteness(
+						tenant,
+						now,
+						totalSpans,
+						samplingOverrides,
+					).pipe(
+						Effect.catchCause((cause) =>
+							Effect.logWarning("Setup audit trace-completeness checks skipped").pipe(
+								Effect.annotateLogs({ cause }),
+								Effect.as(undefined),
+							),
+						),
 					),
-				),
+					attribution: fetchKeyAttribution(
+						tenant,
+						now,
+						inventedResourceKeys(attributeKeys),
+						explodedMetricLabels(metricLabels),
+					),
+				},
+				{ concurrency: 2 },
+			)
+			const traceCompleteness = followUps.traceCompleteness
+			const sdkByService = new Map(
+				Arr.map(results.sdks, (row) => [row.serviceName, row.sdkLanguages] as const),
 			)
 
 			const inputs: WarehouseAuditInputs = {
 				lookbackHours: LOOKBACK_HOURS,
 				logCorrelationHours: Integrations.AUDIT_LOG_CORRELATION_MAX_HOURS,
 				traceCompleteness,
-				attributeKeys: Arr.map(results.attributeKeys, (row) => ({
-					scope: row.scope,
-					key: row.attributeKey,
-					usageCount: row.usageCount,
-				})),
+				attributeKeys,
 				serviceUsage: Arr.map(results.usage, (row) => ({
 					serviceName: row.serviceName,
 					logCount: row.totalLogCount,
@@ -572,15 +712,39 @@ const make: Effect.Effect<SetupAuditServiceApi, never, SetupAuditServiceRequirem
 					spanNameCount: row.spanNameCount,
 					badStatusCodes: row.badStatusCodes,
 					badSpanKinds: row.badSpanKinds,
+					...Arr.match(row.rootSpanNames, {
+						onEmpty: () => ({}),
+						onNonEmpty: ([first]) => ({ rootSpanName: first }),
+					}),
+					...Arr.match(row.rootSpanKinds, {
+						onEmpty: () => ({}),
+						onNonEmpty: ([first]) => ({ rootSpanKind: first }),
+					}),
 				})),
 				logSeverity: results.logSeverity,
-				metricLabels: Arr.map(results.metricLabels, (row) => ({
-					attributeKey: row.attributeKey,
-					valueCardinality: row.valueCardinality,
-				})),
+				metricLabels,
 				peerValues: results.peerValues,
 				dbEdges: results.dbEdges,
-				logCorrelation: results.logCorrelation,
+				logCorrelation: Arr.map(results.logCorrelation, (row) => ({
+					serviceName: row.serviceName,
+					logCount: row.logCount,
+					uncorrelatedCount: row.uncorrelatedCount,
+					errorLogCount: row.errorLogCount,
+					uncorrelatedErrorCount: row.uncorrelatedErrorCount,
+					numberedOddSeverities: row.numberedOddSeverities,
+					unnumberedOddSeverities: row.unnumberedOddSeverities,
+					...Arr.match(row.topUncorrelatedMessages, {
+						onEmpty: () => ({}),
+						onNonEmpty: ([first]) => ({ topUncorrelatedMessage: first }),
+					}),
+				})),
+				services: Arr.map(results.identities, (row) => ({
+					serviceName: row.serviceName,
+					namespaces: row.namespaces,
+					environments: row.environments,
+					sdkLanguages: sdkByService.get(row.serviceName) ?? [],
+				})),
+				...followUps.attribution,
 			}
 			return inputs
 		})

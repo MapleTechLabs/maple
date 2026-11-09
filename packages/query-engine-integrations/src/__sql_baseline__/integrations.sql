@@ -4692,13 +4692,17 @@ SELECT
           count() AS logCount,
           countIf(logs.TraceId = '') AS uncorrelatedCount,
           countIf(upper(SeverityText) IN ('ERROR', 'FATAL')) AS errorLogCount,
-          countIf((logs.TraceId = '' AND upper(SeverityText) IN ('ERROR', 'FATAL'))) AS uncorrelatedErrorCount
+          countIf((logs.TraceId = '' AND upper(SeverityText) IN ('ERROR', 'FATAL'))) AS uncorrelatedErrorCount,
+          topKIf(1)(leftUTF8(Body, 120), TraceId = '') AS topUncorrelatedMessages,
+          groupUniqArrayIf(10)(SeverityText, SeverityText != '' AND replaceRegexpOne(upper(trim(SeverityText)), '[0-9]+$', '') NOT IN ('TRACE', 'DEBUG', 'INFO', 'WARN', 'WARNING', 'ERROR', 'FATAL') AND SeverityNumber BETWEEN 1 AND 24) AS numberedOddSeverities,
+          groupUniqArrayIf(10)(SeverityText, SeverityText != '' AND replaceRegexpOne(upper(trim(SeverityText)), '[0-9]+$', '') NOT IN ('TRACE', 'DEBUG', 'INFO', 'WARN', 'WARNING', 'ERROR', 'FATAL') AND NOT (SeverityNumber BETWEEN 1 AND 24)) AS unnumberedOddSeverities
         FROM logs
         WHERE logs.OrgId = 'org_sql_catalog'
           AND logs.TimestampTime >= '2026-01-01 10:30:00'
           AND logs.TimestampTime <= '2026-01-03 14:15:00'
           AND logs.Timestamp >= '2026-01-01 10:30:00'
           AND logs.Timestamp <= '2026-01-03 14:15:00'
+          AND logs.ServiceName NOT IN ('maple-uptime', 'github-actions')
         GROUP BY serviceName
         ORDER BY logCount DESC
         LIMIT 500
@@ -4731,6 +4735,19 @@ SELECT
         GROUP BY attributeKey
         ORDER BY valueCardinality DESC
         LIMIT 25
+        FORMAT JSON
+
+-- builder:setup-audit:auditMetricLabelServicesQuery:default
+SELECT
+          metrics_sum.ServiceName AS serviceName,
+          [countIf(mapContains(metrics_sum.Attributes, 'url.path'))] AS keyCounts
+        FROM metrics_sum
+        WHERE metrics_sum.OrgId = 'org_sql_catalog'
+          AND metrics_sum.TimeUnix >= '2026-01-01 10:30:00'
+          AND metrics_sum.TimeUnix <= '2026-01-03 14:15:00'
+          AND mapContains(metrics_sum.Attributes, 'url.path')
+        GROUP BY serviceName
+        LIMIT 200
         FORMAT JSON
 
 -- builder:setup-audit:auditOrphanSpansSQL:default
@@ -4777,6 +4794,35 @@ SELECT
         GROUP BY attributeKey, attributeValue
         ORDER BY usageCount DESC
         LIMIT 25
+        FORMAT JSON
+
+-- builder:setup-audit:auditResourceKeyServicesQuery:default
+SELECT
+          traces.ServiceName AS serviceName,
+          [countIf(mapContains(traces.ResourceAttributes, 'deployment.commit_sha')), countIf(mapContains(traces.ResourceAttributes, 'env'))] AS keyCounts
+        FROM traces
+        WHERE traces.OrgId = 'org_sql_catalog'
+          AND traces.Timestamp >= '2026-01-01 10:30:00'
+          AND traces.Timestamp <= '2026-01-03 14:15:00'
+          AND (mapContains(traces.ResourceAttributes, 'deployment.commit_sha') OR mapContains(traces.ResourceAttributes, 'env'))
+        GROUP BY serviceName
+        LIMIT 20
+        FORMAT JSON
+
+-- builder:setup-audit:auditResourceValueSamplesQuery:default
+SELECT
+          attribute_values_hourly.AttributeKey AS attributeKey,
+          attribute_values_hourly.AttributeValue AS attributeValue,
+          sum(attribute_values_hourly.UsageCount) AS usageCount
+        FROM attribute_values_hourly
+        WHERE attribute_values_hourly.OrgId = 'org_sql_catalog'
+          AND attribute_values_hourly.AttributeScope = 'resource'
+          AND attribute_values_hourly.AttributeKey IN ('deployment.commit_sha', 'env')
+          AND attribute_values_hourly.Hour >= '2026-01-01 10:30:00'
+          AND attribute_values_hourly.Hour <= '2026-01-03 14:15:00'
+        GROUP BY attributeKey, attributeValue
+        ORDER BY usageCount DESC
+        LIMIT 50
         FORMAT JSON
 
 -- builder:setup-audit:auditRootlessTracesSQL:default
@@ -4826,6 +4872,31 @@ SELECT
         LIMIT 25
         FORMAT JSON
 
+-- builder:setup-audit:auditServiceIdentityQuery:default
+SELECT
+          service_overview_hourly.ServiceName AS serviceName,
+          groupUniqArrayIf(5)(service_overview_hourly.ServiceNamespace, service_overview_hourly.ServiceNamespace != '') AS namespaces,
+          groupUniqArrayIf(10)(service_overview_hourly.DeploymentEnv, service_overview_hourly.DeploymentEnv != '') AS environments
+        FROM service_overview_hourly
+        WHERE service_overview_hourly.OrgId = 'org_sql_catalog'
+          AND service_overview_hourly.Hour >= toStartOfHour(toDateTime('2026-01-01 10:30:00'))
+          AND service_overview_hourly.Hour <= toStartOfHour(toDateTime('2026-01-03 14:15:00'))
+        GROUP BY serviceName
+        LIMIT 25
+        FORMAT JSON
+
+-- builder:setup-audit:auditServiceSdkQuery:default
+SELECT
+          service_runtimes_hourly.ServiceName AS serviceName,
+          groupUniqArrayIf(5)(service_runtimes_hourly.SdkLanguage, service_runtimes_hourly.SdkLanguage != '') AS sdkLanguages
+        FROM service_runtimes_hourly
+        WHERE service_runtimes_hourly.OrgId = 'org_sql_catalog'
+          AND service_runtimes_hourly.Hour >= toStartOfHour(toDateTime('2026-01-01 10:30:00'))
+          AND service_runtimes_hourly.Hour <= toStartOfHour(toDateTime('2026-01-03 14:15:00'))
+        GROUP BY serviceName
+        LIMIT 25
+        FORMAT JSON
+
 -- builder:setup-audit:auditSpanProfileByServiceQuery:default
 SELECT
           traces_aggregates_hourly.ServiceName AS serviceName,
@@ -4838,7 +4909,9 @@ SELECT
           sumIf(traces_aggregates_hourly.WeightedCount, traces_aggregates_hourly.DeploymentEnv = '') AS noEnvCount,
           uniq(traces_aggregates_hourly.SpanName) AS spanNameCount,
           groupUniqArrayIf(5)(StatusCode, StatusCode NOT IN ('Ok', 'Error', 'Unset', '')) AS badStatusCodes,
-          groupUniqArrayIf(5)(SpanKind, SpanKind NOT IN ('Server', 'Client', 'Producer', 'Consumer', 'Internal', '')) AS badSpanKinds
+          groupUniqArrayIf(5)(SpanKind, SpanKind NOT IN ('Server', 'Client', 'Producer', 'Consumer', 'Internal', '')) AS badSpanKinds,
+          topKWeightedIf(1)(SpanName, toUInt64(WeightedCount), IsEntryPoint = 1 AND SpanKind NOT IN ('Server', 'Consumer')) AS rootSpanNames,
+          topKWeightedIf(1)(SpanKind, toUInt64(WeightedCount), IsEntryPoint = 1 AND SpanKind NOT IN ('Server', 'Consumer')) AS rootSpanKinds
         FROM traces_aggregates_hourly
         WHERE traces_aggregates_hourly.OrgId = 'org_sql_catalog'
           AND traces_aggregates_hourly.Hour >= toStartOfHour(toDateTime('2026-01-01 10:30:00'))

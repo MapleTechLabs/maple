@@ -6,9 +6,9 @@
 //     denominator — never a division. The builder's arithmetic follows SQL precedence rather than
 //     call order, and mixing Float64 quotients into otherwise-integer result sets is how UNION type
 //     unification breaks; returning counts sidesteps both, and `nan`/`ifNotFinite` handling with it.
-//  2. **Pre-aggregated MVs over raw scans.** Only `auditLogCorrelationQuery` and
-//     `auditRootlessTracesSQL` touch a raw table, each reading a few narrow columns over a
-//     hard-clamped window. Attribute *values* are never scanned org-wide: a `Map` re-read at that
+//  2. **Pre-aggregated MVs over raw scans.** Only `auditLogCorrelationQuery`,
+//     `auditRootlessTracesSQL` and the two attribution follow-ups touch a raw table, each reading a
+//     few narrow columns over a hard-clamped window. Attribute *values* are never scanned org-wide: a `Map` re-read at that
 //     scale is what previously exhausted query memory.
 //
 // Every builder filters `OrgId` (enforced at execution) and every count/sum/uniq column needs
@@ -23,10 +23,12 @@ import {
 	AttributeValuesHourly,
 	Logs,
 	LogsAggregatesHourly,
+	MetricsSum,
 	ServiceMapChildren,
 	ServiceMapDbEdgesHourly,
 	ServiceMapSpans,
 	ServiceOverviewHourly,
+	ServiceRuntimesHourly,
 	TraceListMv,
 	Traces,
 	TracesAggregatesHourly,
@@ -106,6 +108,9 @@ export interface AuditSpanProfileRow {
 	readonly spanNameCount: number
 	readonly badStatusCodes: ReadonlyArray<string>
 	readonly badSpanKinds: ReadonlyArray<string>
+	/** The busiest root span that is not Server/Consumer, at most one; with its kind. */
+	readonly rootSpanNames: ReadonlyArray<string>
+	readonly rootSpanKinds: ReadonlyArray<string>
 }
 
 export const auditSpanProfileRowSchema = Schema.Struct({
@@ -120,7 +125,12 @@ export const auditSpanProfileRowSchema = Schema.Struct({
 	spanNameCount: CHNumber,
 	badStatusCodes: Schema.Array(Schema.String),
 	badSpanKinds: Schema.Array(Schema.String),
+	rootSpanNames: Schema.Array(Schema.String),
+	rootSpanKinds: Schema.Array(Schema.String),
 })
+
+/** An entry-point row that is not Server/Consumer is a root span (`IsEntryPoint` covers both). */
+const NON_ENTRY_ROOT = "IsEntryPoint = 1 AND SpanKind NOT IN ('Server', 'Consumer')"
 
 /**
  * Per-service span shape from `traces_aggregates_hourly`, which already carries every dimension the
@@ -148,6 +158,15 @@ export function auditSpanProfileByServiceQuery(opts: { limit?: number } = {}) {
 			),
 			badSpanKinds: CH.rawExpr(
 				`groupUniqArrayIf(5)(SpanKind, SpanKind NOT IN (${quoteList(VALID_SPAN_KINDS)}))`,
+				T.array(T.string),
+			),
+			// What a service without Server/Consumer spans starts its traces with, so STAT-04 can name it.
+			rootSpanNames: CH.rawExpr(
+				`topKWeightedIf(1)(SpanName, toUInt64(WeightedCount), ${NON_ENTRY_ROOT})`,
+				T.array(T.string),
+			),
+			rootSpanKinds: CH.rawExpr(
+				`topKWeightedIf(1)(SpanKind, toUInt64(WeightedCount), ${NON_ENTRY_ROOT})`,
 				T.array(T.string),
 			),
 		}))
@@ -373,6 +392,163 @@ export function auditDbEdgeIdentityQuery(opts: { limit?: number } = {}) {
 		.format("JSON")
 }
 
+// A9 — service identity, for telling Maple-written and client services apart
+
+export interface AuditServiceIdentityRow {
+	readonly serviceName: string
+	readonly namespaces: ReadonlyArray<string>
+	readonly environments: ReadonlyArray<string>
+}
+
+export const auditServiceIdentityRowSchema = Schema.Struct({
+	serviceName: Schema.String,
+	namespaces: Schema.Array(Schema.String),
+	environments: Schema.Array(Schema.String),
+})
+
+/** Non-empty `service.namespace`s and environments per traced service, from the overview rollup. */
+export function auditServiceIdentityQuery(opts: { limit?: number } = {}) {
+	return from(ServiceOverviewHourly)
+		.select(($) => ({
+			serviceName: $.ServiceName,
+			namespaces: CH.groupUniqArrayIf(5)($.ServiceNamespace, $.ServiceNamespace.neq("")),
+			environments: CH.groupUniqArrayIf(10)($.DeploymentEnv, $.DeploymentEnv.neq("")),
+		}))
+		.where(($) => [
+			$.OrgId.eq(orgIdParam),
+			$.Hour.gte(utcHourFloor("startTime")),
+			$.Hour.lte(utcHourFloor("endTime")),
+		])
+		.groupBy("serviceName")
+		.limit(opts.limit ?? 500)
+		.format("JSON")
+}
+
+export interface AuditServiceSdkRow {
+	readonly serviceName: string
+	readonly sdkLanguages: ReadonlyArray<string>
+}
+
+export const auditServiceSdkRowSchema = Schema.Struct({
+	serviceName: Schema.String,
+	sdkLanguages: Schema.Array(Schema.String),
+})
+
+/** `telemetry.sdk.language` per traced service (`webjs`, `swift`, ...), from the runtimes rollup. */
+export function auditServiceSdkQuery(opts: { limit?: number } = {}) {
+	return from(ServiceRuntimesHourly)
+		.select(($) => ({
+			serviceName: $.ServiceName,
+			sdkLanguages: CH.groupUniqArrayIf(5)($.SdkLanguage, $.SdkLanguage.neq("")),
+		}))
+		.where(($) => [
+			$.OrgId.eq(orgIdParam),
+			$.Hour.gte(utcHourFloor("startTime")),
+			$.Hour.lte(utcHourFloor("endTime")),
+		])
+		.groupBy("serviceName")
+		.limit(opts.limit ?? 500)
+		.format("JSON")
+}
+
+// A10 — resource values behind suspect keys
+
+export interface AuditResourceValueRow {
+	readonly attributeKey: string
+	readonly attributeValue: string
+	readonly usageCount: number
+}
+
+export const auditResourceValueRowSchema = Schema.Struct({
+	attributeKey: Schema.String,
+	attributeValue: Schema.String,
+	usageCount: CHNumber,
+})
+
+/** Sample values of a few resource keys, so a finding can judge what the key actually holds. */
+export function auditResourceValueSamplesQuery(keys: ReadonlyArray<string>, opts: { limit?: number } = {}) {
+	return from(AttributeValuesHourly)
+		.select(($) => ({
+			attributeKey: $.AttributeKey,
+			attributeValue: $.AttributeValue,
+			usageCount: CH.sum($.UsageCount),
+		}))
+		.where(($) => [
+			$.OrgId.eq(orgIdParam),
+			$.AttributeScope.eq("resource"),
+			CH.inList($.AttributeKey, keys),
+			$.Hour.gte(utcSecondsParam("startTime")),
+			$.Hour.lte(utcSecondsParam("endTime")),
+		])
+		.groupBy("attributeKey", "attributeValue")
+		.orderBy(["usageCount", "desc"])
+		.limit(opts.limit ?? 50)
+		.format("JSON")
+}
+
+// A11 — which services emit a given key (bounded raw follow-ups)
+//
+// The key rollups carry no service, so naming the emitter takes a raw read. Both run only for the
+// handful of keys a check already flagged, read one map's keys and nothing else, and cap their rows.
+
+/** Upper bound on the raw `traces` window for resource-key attribution. */
+export const AUDIT_RESOURCE_KEY_SERVICE_MAX_HOURS = 1
+
+export interface AuditKeyServiceRow {
+	readonly serviceName: string
+	/** Rows carrying each requested key, aligned with the `keys` argument. */
+	readonly keyCounts: ReadonlyArray<number>
+}
+
+export const auditKeyServiceRowSchema = Schema.Struct({
+	serviceName: Schema.String,
+	keyCounts: Schema.Array(CHNumber),
+})
+
+const keyPresence = (map: CH.Expr<Record<string, string>>, keys: Arr.NonEmptyReadonlyArray<string>) => {
+	const has = Arr.map(keys, (key) => CH.mapContains(map, key))
+	return {
+		any: Arr.reduce(Arr.tailNonEmpty(has), Arr.headNonEmpty(has), (a, b) => a.or(b)),
+		counts: CH.arrayOf(...Arr.map(has, (condition) => CH.countIf(condition))),
+	}
+}
+
+/** Services whose span resources carry any of `keys`, over a short raw `traces` window. */
+export function auditResourceKeyServicesQuery(keys: Arr.NonEmptyReadonlyArray<string>) {
+	return from(Traces)
+		.select(($) => ({
+			serviceName: $.ServiceName,
+			keyCounts: keyPresence($.ResourceAttributes, keys).counts,
+		}))
+		.where(($) => [
+			$.OrgId.eq(orgIdParam),
+			$.Timestamp.gte(param.dateTime("startTime")),
+			$.Timestamp.lte(param.dateTime("endTime")),
+			keyPresence($.ResourceAttributes, keys).any,
+		])
+		.groupBy("serviceName")
+		.limit(20)
+		.format("JSON")
+}
+
+/** Services whose counter datapoints carry any of the metric labels `keys`. */
+export function auditMetricLabelServicesQuery(keys: Arr.NonEmptyReadonlyArray<string>) {
+	return from(MetricsSum)
+		.select(($) => ({
+			serviceName: $.ServiceName,
+			keyCounts: keyPresence($.Attributes, keys).counts,
+		}))
+		.where(($) => [
+			$.OrgId.eq(orgIdParam),
+			$.TimeUnix.gte(param.dateTime("startTime")),
+			$.TimeUnix.lte(param.dateTime("endTime")),
+			keyPresence($.Attributes, keys).any,
+		])
+		.groupBy("serviceName")
+		.limit(200)
+		.format("JSON")
+}
+
 // B1 — log ↔ trace correlation (bounded raw read)
 
 /** Upper bound on the raw `logs` window, applied in the builder — callers cannot widen it. */
@@ -384,6 +560,11 @@ export interface AuditLogCorrelationRow {
 	readonly uncorrelatedCount: number
 	readonly errorLogCount: number
 	readonly uncorrelatedErrorCount: number
+	/** The commonest uncorrelated message, as a prefix; at most one. */
+	readonly topUncorrelatedMessages: ReadonlyArray<string>
+	/** Non-standard severity texts seen with a valid `SeverityNumber` (1-24), and without one. */
+	readonly numberedOddSeverities: ReadonlyArray<string>
+	readonly unnumberedOddSeverities: ReadonlyArray<string>
 }
 
 export const auditLogCorrelationRowSchema = Schema.Struct({
@@ -392,19 +573,32 @@ export const auditLogCorrelationRowSchema = Schema.Struct({
 	uncorrelatedCount: CHNumber,
 	errorLogCount: CHNumber,
 	uncorrelatedErrorCount: CHNumber,
+	topUncorrelatedMessages: Schema.Array(Schema.String),
+	numberedOddSeverities: Schema.Array(Schema.String),
+	unnumberedOddSeverities: Schema.Array(Schema.String),
 })
+
+/** Characters of a log body kept for the top-message sample; the caller trims further. */
+const LOG_MESSAGE_PREFIX_CHARS = 120
+
+/** Severity text outside OTel's levels, ignoring case and a numeric suffix (`DEBUG3`). */
+const ODD_SEVERITY = `SeverityText != '' AND replaceRegexpOne(upper(trim(SeverityText)), '[0-9]+$', '') NOT IN ('TRACE', 'DEBUG', 'INFO', 'WARN', 'WARNING', 'ERROR', 'FATAL')`
+const VALID_SEVERITY_NUMBER = "SeverityNumber BETWEEN 1 AND 24"
 
 /**
  * How many of each service's logs carry no `TraceId` — the signal for a log bridge that sits off the
  * path the application actually logs through, which silently costs every trace↔log jump.
  *
- * The only raw-table read in the audit, and deliberately narrow: three columns, never `Body` and
- * never a `Map`, filtered on both `TimestampTime` (day-partition pruning) and `Timestamp`. Error-level
- * logs are counted separately because uncorrelated startup and cron logs are normal, whereas an
+ * A raw read, kept narrow: no attribute `Map`, and `Body` only as a short prefix for the commonest
+ * uncorrelated message. Filtered on both `TimestampTime` (day-partition pruning) and `Timestamp`.
+ * Error-level logs are counted separately: uncorrelated startup and cron logs are normal, an
  * uncorrelated error log is a debugging dead end.
+ *
+ * `excludeServiceNames` drops services Maple writes itself (CI logs dwarf everything else).
  */
-export function auditLogCorrelationQuery() {
+export function auditLogCorrelationQuery(opts: { excludeServiceNames?: ReadonlyArray<string> } = {}) {
 	const isErrorSeverity = CH.rawCond("upper(SeverityText) IN ('ERROR', 'FATAL')")
+	const excluded = opts.excludeServiceNames ?? []
 	return from(Logs)
 		.select(($) => ({
 			serviceName: $.ServiceName,
@@ -412,6 +606,18 @@ export function auditLogCorrelationQuery() {
 			uncorrelatedCount: CH.countIf($.TraceId.eq("")),
 			errorLogCount: CH.countIf(isErrorSeverity),
 			uncorrelatedErrorCount: CH.countIf($.TraceId.eq("").and(isErrorSeverity)),
+			topUncorrelatedMessages: CH.rawExpr(
+				`topKIf(1)(leftUTF8(Body, ${LOG_MESSAGE_PREFIX_CHARS}), TraceId = '')`,
+				T.array(T.string),
+			),
+			numberedOddSeverities: CH.rawExpr(
+				`groupUniqArrayIf(10)(SeverityText, ${ODD_SEVERITY} AND ${VALID_SEVERITY_NUMBER})`,
+				T.array(T.string),
+			),
+			unnumberedOddSeverities: CH.rawExpr(
+				`groupUniqArrayIf(10)(SeverityText, ${ODD_SEVERITY} AND NOT (${VALID_SEVERITY_NUMBER}))`,
+				T.array(T.string),
+			),
 		}))
 		.where(($) => [
 			$.OrgId.eq(orgIdParam),
@@ -419,6 +625,7 @@ export function auditLogCorrelationQuery() {
 			$.TimestampTime.lte(utcSecondsParam("endTime")),
 			$.Timestamp.gte(param.dateTime("startTime")),
 			$.Timestamp.lte(param.dateTime("endTime")),
+			excluded.length > 0 ? CH.notInList($.ServiceName, excluded) : undefined,
 		])
 		.groupBy("serviceName")
 		.orderBy(["logCount", "desc"])
