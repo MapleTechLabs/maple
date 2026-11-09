@@ -3,6 +3,7 @@ import { Array as Arr, Effect, Schema } from "effect"
 import { DISABLED_ORGANIZATION_FEATURE_FLAGS } from "@maple/domain/organization-feature-flags"
 import { OrganizationFeatureFlagsService } from "@maple/backend/services/org/OrganizationFeatureFlagsService"
 import { McpToolExecutor } from "../../dispatcher"
+import { MAX_CATALOG_ENTRIES } from "@maple/backend/services/data-sources/ExternalDataSourceService"
 import {
 	DataSourceConnectionError,
 	DataSourceLimitError,
@@ -121,7 +122,7 @@ describe("list_data_sources paging and caps", () => {
 	it("marks a source whose catalog filled Maple's cap, in list and describe", async () => {
 		const listed = await runToolDirect(capped, "list_data_sources", {})
 		expect(decode(ListDataSourcesOutput, listed).sources[0]?.catalogTruncated).toBe(true)
-		expect(markdown(listed)).toMatch(/\| 2000 \(capped\)\s*\|/)
+		expect(markdown(listed)).toMatch(new RegExp(`\\| ${MAX_CATALOG_ENTRIES} \\(capped\\)\\s*\\|`))
 		const described = await runToolDirect(capped, "describe_data_source", {
 			data_source: "warehouse-capped",
 		})
