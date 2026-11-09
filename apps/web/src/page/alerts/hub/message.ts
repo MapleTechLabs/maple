@@ -30,7 +30,6 @@ import { LoadFailure } from "@maple/views/data/load-failure"
 import * as Dialog from "@maple/views/ui/dialog"
 import * as Menu from "@maple/views/ui/menu"
 import * as DestinationDialog from "../destination/dialog"
-import * as ChainDialog from "../escalation-dialog/dialog"
 import { OrgMember } from "../shared/org-members"
 import * as WindowDialog from "../maintenance-dialog/dialog"
 import * as SilenceDialog from "../silence-dialog/dialog"
@@ -110,8 +109,6 @@ export const Message = defineMessageUnion({
 	ClickedRetrySlos: {},
 	CompletedFetchChains: { key: Schema.String, result: outcome(Schema.Array(V2EscalationChain)) },
 	ClickedRetryChains: {},
-	ClickedNewChain: {},
-	GotChainDialogMessage: { message: ChainDialog.Message },
 	ClickedConfirmDeleteChain: {},
 	CompletedDeleteChain: { chainId: EscalationChainId, result: outcome(Schema.Void) },
 	GotDeleteChainDialogMessage: { message: Dialog.Message },

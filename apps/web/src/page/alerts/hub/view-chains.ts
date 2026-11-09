@@ -6,7 +6,7 @@ import { Array as Arr, Option } from "effect"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { borderedBox } from "@maple/views/ui/bordered-box"
-import { button } from "@maple/views/ui/button"
+import { linkButton } from "@maple/views/ui/button"
 import { confirmDialog } from "@maple/views/ui/confirm-dialog"
 import { empty, emptyDescription, emptyHeader, emptyMedia, emptyTitle } from "@maple/views/ui/empty"
 import { errorState } from "@maple/views/ui/error-state"
@@ -18,10 +18,11 @@ import { emptyActions } from "@maple/views/ui/signal-empty-state"
 import { skeleton } from "@maple/views/ui/skeleton"
 import { hstack, vstack } from "@maple/views/ui/stack"
 import { tooltipTrigger } from "@maple/views/ui/tooltip-host"
+import { textLink } from "@maple/views/ui/text-link"
 import { typography } from "@maple/views/ui/typography"
 import { alert, alertDescription, alertTitle } from "@maple/views/ui/alert"
 import { sectionHeading } from "../../kit/section-heading"
-import { chainSummary } from "../shared/escalation-chains"
+import { chainHref, chainSummary, newChainHref } from "../shared/escalation-chains"
 import { memberName } from "../shared/org-members"
 import { Message } from "./message"
 import { canManage, type Model } from "./model"
@@ -89,7 +90,9 @@ export const chainRow = (
 			hstack(h, { gap: "3", align: "start" }, [
 				rowIcon(h, "BellIcon"),
 				vstack(h, { gap: "0.5", shrink: true, grow: true }, [
-					typography(h, { size: "sm", weight: "medium", truncate: true, as: "p" }, [chain.name]),
+					typography(h, { size: "sm", weight: "medium", truncate: true, as: "p" }, [
+						textLink(h, { href: chainHref(chain.id), tone: "inherit" }, [chain.name]),
+					]),
 					typography(
 						h,
 						{
@@ -150,7 +153,7 @@ const chainsEmpty = (h: H, model: Model): Html =>
 			...(canManage(model)
 				? [
 						emptyActions(h, [
-							button(h, { size: "sm", attributes: [h.OnClick(Message.ClickedNewChain())] }, [
+							linkButton(h, { size: "sm", href: newChainHref() }, [
 								icon(h, "PlusIcon"),
 								"Create chain",
 							]),
@@ -211,15 +214,10 @@ export const chainsSection = (h: H, model: Model): Html =>
 						title: "Escalation chains",
 						actions:
 							canManage(model) && hasChains(model)
-								? button(
-										h,
-										{
-											size: "sm",
-											variant: "outline",
-											attributes: [h.OnClick(Message.ClickedNewChain())],
-										},
-										[icon(h, "PlusIcon"), "New chain"],
-									)
+								? linkButton(h, { size: "sm", variant: "outline", href: newChainHref() }, [
+										icon(h, "PlusIcon"),
+										"New chain",
+									])
 								: undefined,
 					}),
 					typography(h, { size: "sm", tone: "muted", as: "p" }, [

@@ -81,6 +81,11 @@ describe("routes", () => {
 		expect(parse("/alerts/uptime/mon_1")._tag).toBe("AlertsUptimeMonitor")
 		expect(parse("/alerts/slos/slo_1")._tag).toBe("AlertsSlo")
 		expect(parse("/alerts/schedules/sch_1")._tag).toBe("AlertsSchedule")
+		expect(parse("/alerts/escalation-chains/new")._tag).toBe("AlertsEscalationChainNew")
+		expect(parse("/alerts/escalation-chains/esc_1")).toMatchObject({
+			_tag: "AlertsEscalationChain",
+			chainId: "esc_1",
+		})
 		expect(parse("/alerts/incidents/inc_1")._tag).toBe("AlertIncident")
 		expect(parse("/alerts/create")._tag).toBe("AlertsCreate")
 		expect(parse("/alerts/rules/0199a001-0000-7000-8000-000000000001")._tag).toBe("AlertRule")

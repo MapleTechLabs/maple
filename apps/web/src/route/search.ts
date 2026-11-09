@@ -380,6 +380,11 @@ export const AlertsScheduleNewSearch = Schema.Struct({
 
 export const AlertsScheduleSearch = Schema.Struct({})
 
+/** `/alerts/escalation-chains/new` and `/:chainId`: `returnTo` is where Cancel and Save go back to. */
+export const AlertsEscalationChainSearch = Schema.Struct({
+	returnTo: Schema.optional(Schema.String),
+})
+
 /** `/settings/ingestion/rules/new`: `template` prefills the editor from an empty-state template. */
 export const IngestRuleNewSearch = Schema.Struct({
 	template: Schema.optional(Schema.String),
