@@ -2443,6 +2443,9 @@ export class CloudflareAnalyticsService extends Context.Service<
 				// Genuine dataset failures this tick (authz/upstream/revoked/billing/other) — the seam pushes
 				// here so the org summary carries a failure count and the tick can escalate.
 				const datasetFailures: Array<DatasetPollFailure> = []
+				// Rows that failed sit out this tick's later rounds: re-asking a failing dataset every
+				// round while its siblings backfill costs a call and an exception event each time.
+				const failedRowIds = new Set<CloudflareAnalyticsStateRow["id"]>()
 
 				// Round-based catch-up: every round advances each behind zone/dataset by one window;
 				// loop until caught up or the call budget is spent (backfill resumes next tick).
@@ -2483,7 +2486,10 @@ export class CloudflareAnalyticsService extends Context.Service<
 				// One round; succeeds with whether another round should run.
 				const round = Effect.gen(function* () {
 					if (yield* stopped) return false
-					const work = buildWorkItems(rows, now)
+					const work = buildWorkItems(
+						Arr.filter(rows, (row) => !failedRowIds.has(row.id)),
+						now,
+					)
 					if (work.length === 0) return false
 					const progressedRef = yield* Ref.make(false)
 
@@ -2637,6 +2643,9 @@ export class CloudflareAnalyticsService extends Context.Service<
 														}
 														yield* observeDatasetFailure(orgId, failure)
 														datasetFailures.push(failure)
+														Arr.forEach(failure.rowIds, (id) =>
+															failedRowIds.add(id),
+														)
 													}),
 											}),
 										),

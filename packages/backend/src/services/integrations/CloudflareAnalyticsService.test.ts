@@ -1948,8 +1948,9 @@ describe("CloudflareAnalyticsService", () => {
 			const summary = yield* service.pollOrg(ORG)
 			// Cloudflare nulls the whole document's data when the token cannot read one selection.
 			// Only the dataset it cannot read fails; the sibling is re-queried alone and advances.
+			// It sits out the tick's later rounds instead of failing again on each backfill window.
 			assert.deepStrictEqual(
-				Arr.dedupe(Arr.map(summary.failures, (failure) => `${failure.datasetId}:${failure.kind}`)),
+				Arr.map(summary.failures, (failure) => `${failure.datasetId}:${failure.kind}`),
 				["firewall_events:authz"],
 			)
 			assert.isAbove(summary.rowsIngested, 0)
@@ -2329,7 +2330,7 @@ describe("CloudflareAnalyticsService", () => {
 		},
 	)
 
-	it.effect("a genuine error alongside a plan-gated one still fails the clean siblings", () => {
+	it.effect("an unattributed genuine error alongside a plan-gated one still fails every dataset", () => {
 		const testDb = createTestDb(trackedDbs)
 		const captured: CapturedIngest[] = []
 		return Effect.gen(function* () {
