@@ -199,9 +199,8 @@ export const signalRow = (h: H, signal: ErrorSignal, state: RowState): Html => {
 							h,
 							{
 								text: swap ? signal.detail : rowTitle,
-								// The exception type never truncates on wide rows; only the detail gives way.
-								className:
-									"font-medium text-foreground @4xl/page:max-w-[75%] @4xl/page:shrink-0",
+								// The detail (basis 0) gives way first; the title shrinks only so the activity chips fit.
+								className: "font-medium text-foreground @4xl/page:max-w-[75%]",
 							},
 							[rowTitle],
 						),
