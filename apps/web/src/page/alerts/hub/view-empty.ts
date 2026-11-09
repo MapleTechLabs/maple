@@ -122,7 +122,7 @@ const destinationStep = <M>(h: HtmlBuilder<M>, onAddDestination: M | undefined):
 				],
 			),
 			onAddDestination === undefined
-				? linkButton(h, { size: "sm", href: alertsHref({ tab: "routing" }) }, [
+				? linkButton(h, { size: "sm", href: alertsHref({}, "routing") }, [
 						icon(h, "PaperPlaneIcon"),
 						"Add destination",
 					])

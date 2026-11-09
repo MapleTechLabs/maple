@@ -52,6 +52,8 @@ const rows = <S extends Schema.Top>(row: S) => ({ orgId: Schema.String, rows: Sc
 const outcome = <S extends Schema.Top>(success: S) => Schema.Result(success, LoadFailure)
 
 export const Message = defineMessageUnion({
+	/** A `?sheet=` push or dismissal ran; the route change that follows does the work. */
+	CompletedSheetUrl: {},
 	ReadClock: { nowMs: Schema.Number },
 	UpdatedRules: rows(AlertRuleRowSchema),
 	UpdatedRuleStates: rows(AlertRuleStateRowSchema),

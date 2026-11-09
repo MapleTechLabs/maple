@@ -9,7 +9,7 @@ import { MAX_ALERT_SILENCE_DURATION_MS } from "@maple/domain/http"
 import { hasMatchers, MatcherField, matchersFromTyped, TypedMatchers } from "../shared/matcher-fields"
 import { createSilence } from "../shared/silences"
 
-// "Silence notifications": the dialog the hub, a rule and an incident open, as one Submodel.
+// "Silence notifications": the side panel the hub, a rule and an incident open, as one Submodel.
 
 export const SilenceDuration = Schema.Literals(["1h", "4h", "morning", "custom"])
 export type SilenceDuration = typeof SilenceDuration.Type
@@ -41,7 +41,7 @@ export const Model = Schema.Struct({
 export type Model = typeof Model.Type
 
 export const init = (id: string): Model => ({
-	dialog: Dialog.init(id, "dialog"),
+	dialog: Dialog.init(id, "sheet"),
 	scope: { _tag: "Typed", services: "", tags: "", environments: "" },
 	reason: "",
 	duration: "1h",
@@ -210,6 +210,9 @@ export const openFor = (
 export const openNew = (model: Model, timeZone: string, nowMs: number): Return =>
 	open(model, { _tag: "Typed", services: "", tags: "", environments: "" }, timeZone, nowMs)
 
+/** Closes the panel, as Cancel does; a page whose URL holds it closes it on Back. */
+export const close = (model: Model): Return => liftDialog(model, Dialog.close(model.dialog))
+
 const save = (model: Model): Return =>
 	model.isSaving || !isFormReady(model)
 		? { model }
@@ -237,7 +240,7 @@ export const update = (model: Model, message: Message): Return =>
 			model.scope._tag === "Fixed"
 				? { model }
 				: { model: { ...model, scope: { ...model.scope, [field]: value } } },
-		ClickedCancel: () => liftDialog(model, Dialog.close(model.dialog)),
+		ClickedCancel: () => close(model),
 		ClickedSave: () => save(model),
 		CompletedSave: ({ openCount, result }) =>
 			Result.match(result, {

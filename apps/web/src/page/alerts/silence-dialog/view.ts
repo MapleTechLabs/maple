@@ -2,9 +2,10 @@ import { Option, Array as Arr } from "effect"
 import { Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { eyebrow } from "@maple/views/ui/eyebrow"
-import { formDialog } from "@maple/views/ui/form-dialog"
+import { button } from "@maple/views/ui/button"
 import { panel } from "@maple/views/ui/panel"
 import { segmentedSelect } from "@maple/views/ui/segmented-select"
+import { sidePanelSheet } from "@maple/views/ui/sheet"
 import { vstack } from "@maple/views/ui/stack"
 import { typography } from "@maple/views/ui/typography"
 import type { V2AlertSilenceMatchers } from "@maple/domain/http/v2"
@@ -90,31 +91,43 @@ const durationSection = (h: H, model: Model): Html =>
 			: []),
 	])
 
-/** The "Silence notifications" dialog: what it covers, for how long, and why. */
-export const view = Submodel.defineView<Model, Message, { id: string }>((model, inputs, h) =>
-	formDialog(h, {
-		slotId: `${inputs.id}-dialog`,
-		model: model.dialog,
+/** The "Silence notifications" side panel: what it covers, for how long, and why. */
+export const view = Submodel.defineView<Model, Message, { id: string }>((model, _inputs, h) =>
+	sidePanelSheet(h, {
+		sheet: model.dialog,
 		toParentMessage: (message) => Message.GotDialogMessage({ message }),
-		className: "sm:max-w-lg",
 		title: "Silence notifications",
 		description:
 			"Rules keep checking and incidents still open and resolve, but no one is paged. If an incident is still open when the silence ends, its page goes out then.",
-		panelClassName: "space-y-5",
-		fields: [
-			scopeSection(h, model),
-			durationSection(h, model),
-			textField(h, {
-				name: "reason",
-				label: "Reason",
-				value: model.reason,
-				placeholder: "Deploying checkout v2.3",
-				onInput: (value) => Message.ChangedReason({ value }),
-			}),
+		body: [
+			vstack(h, { gap: "5" }, [
+				scopeSection(h, model),
+				durationSection(h, model),
+				textField(h, {
+					name: "reason",
+					label: "Reason",
+					value: model.reason,
+					placeholder: "Deploying checkout v2.3",
+					onInput: (value) => Message.ChangedReason({ value }),
+				}),
+			]),
 		],
 		onSubmit: Message.ClickedSave(),
-		submitLabel: submitLabel(model),
-		isPending: model.isSaving,
-		isSubmitDisabled: !isFormReady(model),
+		footer: (close) => [
+			button(
+				h,
+				{ variant: "outline", isDisabled: model.isSaving, attributes: model.isSaving ? [] : close },
+				["Cancel"],
+			),
+			button(
+				h,
+				{
+					type: "submit",
+					isLoading: model.isSaving,
+					isDisabled: model.isSaving || !isFormReady(model),
+				},
+				[submitLabel(model)],
+			),
+		],
 	}),
 )

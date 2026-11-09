@@ -14,7 +14,7 @@ export type AuditResourceLink =
 	| { readonly to: "/errors/issues/$issueId"; readonly params: { readonly issueId: string } }
 	| { readonly to: "/investigations/$id"; readonly params: { readonly id: string } }
 	| { readonly to: "/anomalies/$incidentId"; readonly params: { readonly incidentId: string } }
-	| { readonly to: "/alerts"; readonly search: { readonly tab: "routing" } }
+	| { readonly to: "/alerts/routing" }
 	| { readonly to: "/integrations"; readonly search: { readonly integration?: string } }
 	| { readonly to: "/settings"; readonly search: { readonly tab: string } }
 
@@ -79,7 +79,7 @@ function resourceLink(entry: AuditEntryResource): AuditResourceLink | null {
 			return incidentId === null ? null : { to: "/anomalies/$incidentId", params: { incidentId } }
 		}
 		case "alert_destination":
-			return { to: "/alerts", search: { tab: "routing" } }
+			return { to: "/alerts/routing" }
 		case "scrape_target":
 			return { to: "/integrations", search: { integration: "prometheus" } }
 		case "gcp_connector":

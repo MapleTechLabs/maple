@@ -427,7 +427,8 @@ export const sidebarMenuSubButton = <Message>(
 	options: Readonly<{ className?: string; isActive: boolean; link?: LinkTarget; href?: string }>,
 	children: Children,
 ): Html => {
-	const linkActive = options.link !== undefined && isLinkActive(options.link.currentPath, options.link.href)
+	// The caller picks the most specific sibling, so an index row (`/alerts`) doesn't claim its siblings' pages.
+	const linkActive = options.link !== undefined && options.isActive
 	const className = cn(
 		...sidebarMenuSubButtonStyles,
 		sidebarMenuSubButtonMdStyles,

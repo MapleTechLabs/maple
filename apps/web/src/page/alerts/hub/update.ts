@@ -62,19 +62,28 @@ import {
 	EndHubSilence,
 	FetchHubSilences,
 	DeleteWindow,
+	DismissHubSheet,
 	FetchHubWindows,
+	PushHubSheet,
 	ToggleWindow,
 } from "./command"
 import { withAcknowledgement } from "../shared/commands"
 import { testSendFailureMessage } from "../shared/delivery-failure"
-import { resolveStatus, resolveTab } from "./derive"
+import { resolveStatus } from "./derive"
 import { Message, type RuleBucket } from "./message"
-import type { Model } from "./model"
+import { canManage, type Model } from "./model"
 
 type Return = PageReturn<Model, Message>
 type Commands = ReadonlyArray<Command.Command<Message, never, Resources>>
 type Requested = Readonly<{ model: Model; commands: Commands }>
-type HubRoute = Extract<AppRoute, { readonly _tag: "Alerts" }>
+export type HubRoute = Extract<AppRoute, { readonly _tag: "Alerts" | "AlertsSection" }>
+
+/** The section and filters a hub route names; a legacy `tab` on `/alerts` is left out. */
+const fromRoute = (route: HubRoute): Pick<Model, "tab" | "search"> => {
+	if (route._tag === "AlertsSection") return { tab: route.section, search: route.search }
+	const { tab: _legacyTab, ...search } = route.search
+	return { tab: "inbox", search }
+}
 
 const DELETE_DIALOG_ID = "alerts-delete-destination"
 const DELETE_MONITOR_DIALOG_ID = "alerts-delete-monitor"
@@ -115,7 +124,7 @@ const requestDeliveries = (model: Model, context: PageContext, mode: Keyed.Reque
 /** The Routing tab mounts its own deliveries read; the overview's stays mounted with the tab counts. */
 const requestRoutingDeliveries = (model: Model, context: PageContext, mode: Keyed.RequestMode): Requested => {
 	const key = deliveriesKey(context)
-	return resolveTab(model.search.tab) !== "routing"
+	return model.tab !== "routing"
 		? { model, commands: [] }
 		: Option.match(Keyed.request(model.routingDeliveries, key, mode), {
 				onNone: () => ({ model, commands: [] }),
@@ -135,7 +144,7 @@ const silencesKey = (context: PageContext, windowId: AlertMaintenanceWindowId | 
 
 /** The Silences tab reads the org's silences, or one window's, only while it is open. */
 const requestSilences = (model: Model, context: PageContext, mode: Keyed.ReadMode): Requested => {
-	if (resolveTab(model.search.tab) !== "silences") return { model, commands: [] }
+	if (model.tab !== "silences") return { model, commands: [] }
 	const windowId = Option.getOrNull(windowIdOfParam(model.search.window))
 	return Option.match(Keyed.requestFor(model.silences, silencesKey(context, windowId), mode), {
 		onNone: () => ({ model, commands: [] }),
@@ -156,7 +165,7 @@ const windowsKey = (context: PageContext) =>
 
 /** The Maintenance tab lists the windows; the Silences tab names the windows its silences belong to. */
 const requestWindows = (model: Model, context: PageContext, mode: Keyed.ReadMode): Requested => {
-	const tab = resolveTab(model.search.tab)
+	const tab = model.tab
 	if (tab !== "maintenance" && tab !== "silences") return { model, commands: [] }
 	return Option.match(Keyed.requestFor(model.windows, windowsKey(context), mode), {
 		onNone: () => ({ model, commands: [] }),
@@ -174,7 +183,7 @@ const requestWindows = (model: Model, context: PageContext, mode: Keyed.ReadMode
 const refreshWindows = (model: Model, context: PageContext): Return => {
 	const windows = requestWindows(model, context, "Supersede")
 	const silences: Requested =
-		resolveTab(windows.model.search.tab) === "silences"
+		windows.model.tab === "silences"
 			? requestSilences(windows.model, context, "Supersede")
 			: { model: { ...windows.model, silences: Keyed.idle() }, commands: [] }
 	return { model: silences.model, commands: [...windows.commands, ...silences.commands] }
@@ -198,7 +207,7 @@ const requestServiceNamespaces = (model: Model, context: PageContext): Requested
 
 /** The Uptime tab reads the monitors, and the namespaces they group by, only while it is open. */
 const requestMonitors = (model: Model, context: PageContext, mode: Keyed.ReadMode): Requested => {
-	if (resolveTab(model.search.tab) !== "uptime") return { model, commands: [] }
+	if (model.tab !== "uptime") return { model, commands: [] }
 	const namespaces = requestServiceNamespaces(model, context)
 	return Option.match(Keyed.requestFor(namespaces.model.monitors, monitorsKey(context), mode), {
 		onNone: () => namespaces,
@@ -214,7 +223,7 @@ const slosKey = (context: PageContext) =>
 
 /** The SLOs tab reads the SLOs and their statuses only while it is open. */
 const requestSlos = (model: Model, context: PageContext, mode: Keyed.ReadMode): Requested => {
-	if (resolveTab(model.search.tab) !== "slos") return { model, commands: [] }
+	if (model.tab !== "slos") return { model, commands: [] }
 	return Option.match(Keyed.requestFor(model.slos, slosKey(context), mode), {
 		onNone: () => ({ model, commands: [] }),
 		onSome: (slos) => ({ model: { ...model, slos }, commands: [FetchHubSlos({ key: slos.key })] }),
@@ -226,8 +235,8 @@ const chainsKey = (context: PageContext) =>
 
 /** The Routing tab reads the escalation chains, and the On-call tab to name the ones paging a schedule. */
 const requestChains = (model: Model, context: PageContext, mode: Keyed.ReadMode): Requested => {
-	const tab = resolveTab(model.search.tab)
-	if (tab !== "routing" && tab !== "oncall") return { model, commands: [] }
+	const tab = model.tab
+	if (tab !== "routing" && tab !== "on-call") return { model, commands: [] }
 	return Option.match(Keyed.requestFor(model.chains, chainsKey(context), mode), {
 		onNone: () => ({ model, commands: [] }),
 		onSome: (chains) => ({
@@ -271,10 +280,10 @@ const isSchedulesStale = (model: Model, nowMs: number): boolean => {
 
 /** The clock ticked: the overview's derivation moves, and stale schedules are read again. */
 const clockRead = (model: Model, context: PageContext, nowMs: number): Return => {
-	const next = { ...model, nowMs }
-	if (!isSchedulesStale(next, nowMs)) return { model: next }
-	const step = requestSchedules({ ...next, schedulesAskedAtMs: nowMs }, context, "Refresh")
-	return { model: step.model, commands: step.commands }
+	const sheet = followSilenceSheet({ ...model, nowMs }, context)
+	if (!isSchedulesStale(sheet.model, nowMs)) return sheet
+	const step = requestSchedules({ ...sheet.model, schedulesAskedAtMs: nowMs }, context, "Refresh")
+	return { model: step.model, commands: [...sheet.commands, ...step.commands] }
 }
 
 /** `reactivityKeys: ["alertDeliveryEvents"]`: both reads revalidate. */
@@ -286,15 +295,15 @@ const refreshDeliveries = (model: Model, context: PageContext) => {
 
 /** Members are read once, on the first tab that names people: the inbox strip, On-call, Routing. */
 const requestMembers = (model: Model): Requested => {
-	const tab = resolveTab(model.search.tab)
-	return model.isMembersRequested || (tab !== "inbox" && tab !== "oncall" && tab !== "routing")
+	const tab = model.tab
+	return model.isMembersRequested || (tab !== "inbox" && tab !== "on-call" && tab !== "routing")
 		? { model, commands: [] }
 		: { model: { ...model, isMembersRequested: true }, commands: [FetchHubMembers()] }
 }
 
 export const init = (route: HubRoute, context: PageContext): Return => {
 	const model: Model = {
-		search: route.search,
+		...fromRoute(route),
 		nowMs: null,
 		rules: null,
 		states: null,
@@ -380,7 +389,8 @@ export const init = (route: HubRoute, context: PageContext): Return => {
 }
 
 export const routeChanged = (model: Model, route: HubRoute, context: PageContext): Return => {
-	const routing = requestRoutingDeliveries({ ...model, search: route.search }, context, "Load")
+	const sheet = followSilenceSheet({ ...model, ...fromRoute(route) }, context)
+	const routing = requestRoutingDeliveries(sheet.model, context, "Load")
 	const monitors = requestMonitors(routing.model, context, "Load")
 	const silences = requestSilences(monitors.model, context, "Load")
 	const windows = requestWindows(silences.model, context, "Load")
@@ -399,13 +409,14 @@ export const routeChanged = (model: Model, route: HubRoute, context: PageContext
 			...chains.commands,
 			...schedules.commands,
 			...members.commands,
+			...sheet.commands,
 			ReadHubClock(),
 		],
 	}
 }
 
-const navigate = (search: Model["search"]): PageOutMessage =>
-	PageOutMessage.RequestedNavigation({ url: alertsHref(search), isReplace: false })
+const navigate = (search: Model["search"], tab: Model["tab"]): PageOutMessage =>
+	PageOutMessage.RequestedNavigation({ url: alertsHref(search, tab), isReplace: false })
 
 const toast = (type: "success" | "error", title: string, description = ""): PageOutMessage =>
 	PageOutMessage.RequestedToast({ type, title, description })
@@ -734,15 +745,46 @@ const deletedSchedule = (
 
 // SILENCES
 
+/** `?sheet=silence`: the new-silence side panel. */
+export const SILENCE_SHEET = "silence"
+
+const hubHref = (model: Model): string => alertsHref(model.search, model.tab)
+
+const silenceCommands = (step: ReturnType<typeof SilenceDialog.update>): Commands =>
+	FoldkitCommand.mapMessages(step.commands ?? [], (message) => Message.GotSilenceDialogMessage({ message }))
+
+/**
+ * Opens or closes the silence panel to match `?sheet=` (a link, Back, or "New silence"). It opens
+ * once the clock is read, as the form checks its end against it, and only for a viewer who may save.
+ */
+const followSilenceSheet = (model: Model, context: PageContext): Requested => {
+	const isInUrl = model.search.sheet === SILENCE_SHEET
+	const isOpen = model.silenceDialog.dialog.isOpen
+	if (isInUrl && !isOpen && model.nowMs !== null && canManage(model)) {
+		const step = SilenceDialog.openNew(model.silenceDialog, context.timeZone, model.nowMs)
+		return { model: { ...model, silenceDialog: step.model }, commands: silenceCommands(step) }
+	}
+	if (!isInUrl && isOpen) {
+		const step = SilenceDialog.close(model.silenceDialog)
+		return { model: { ...model, silenceDialog: step.model }, commands: silenceCommands(step) }
+	}
+	return { model, commands: [] }
+}
+
 const liftSilenceDialog = (
 	model: Model,
 	context: PageContext,
 	step: ReturnType<typeof SilenceDialog.update>,
 ): Return => {
 	const next = { ...model, silenceDialog: step.model }
-	const commands = FoldkitCommand.mapMessages(step.commands ?? [], (message) =>
-		Message.GotSilenceDialogMessage({ message }),
-	)
+	// The panel closed itself (Cancel, Escape, a save): its `?sheet=` goes too.
+	const hasClosed = model.silenceDialog.dialog.isOpen && !step.model.dialog.isOpen
+	const commands = [
+		...silenceCommands(step),
+		...(hasClosed && model.search.sheet === SILENCE_SHEET
+			? [DismissHubSheet({ href: hubHref(model), id: SILENCE_SHEET })]
+			: []),
+	]
 	if (step.outMessage === undefined) return { model: next, commands }
 	return SilenceDialog.OutMessage.match(step.outMessage, {
 		RequestedToast: ({ type, title, description }) => ({
@@ -1044,10 +1086,10 @@ const updateMenu = (model: Model, context: PageContext, menuId: string, message:
 
 const statusToggled = (model: Model, bucket: RuleBucket): Return => ({
 	model,
-	outMessage: navigate({
-		...model.search,
-		status: resolveStatus(model.search.status) === bucket ? undefined : bucket,
-	}),
+	outMessage: navigate(
+		{ ...model.search, status: resolveStatus(model.search.status) === bucket ? undefined : bucket },
+		model.tab,
+	),
 })
 
 export const update = (model: Model, message: Message, context: PageContext): Return =>
@@ -1077,29 +1119,39 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			model: { ...model, routingDeliveries: Keyed.accept(model.routingDeliveries, key, result) },
 		}),
 		CompletedFetchSession: ({ orgId, grants }) =>
-			orgId === context.orgId ? { model: { ...model, grants } } : { model },
+			orgId === context.orgId ? followSilenceSheet({ ...model, grants }, context) : { model },
 		ChangedRulesQuery: ({ value }) => ({ model: { ...model, rulesQuery: value } }),
 		ClickedStatusFilter: ({ bucket }) => statusToggled(model, bucket),
 		ClickedClearRuleFilters: () => ({
 			model: { ...model, rulesQuery: "" },
-			outMessage: navigate({ ...model.search, status: undefined }),
+			outMessage: navigate({ ...model.search, status: undefined }, model.tab),
 		}),
 		ClickedInboxSignal: ({ signal }) => ({
 			model,
 			// The status and service belong to the signal view: plain Inbox drops them.
-			outMessage: navigate(
+			outMessage:
 				signal === null
-					? { ...model.search, signal: undefined, anomalyStatus: undefined, serviceName: undefined }
-					: { ...model.search, tab: "inbox", signal, anomalyStatus: undefined },
-			),
+					? navigate(
+							{
+								...model.search,
+								signal: undefined,
+								anomalyStatus: undefined,
+								serviceName: undefined,
+							},
+							model.tab,
+						)
+					: navigate({ ...model.search, signal, anomalyStatus: undefined }, "inbox"),
 		}),
 		ClickedIncidentStatus: ({ status }) => ({
 			model,
-			outMessage: navigate({ ...model.search, anomalyStatus: status === "open" ? undefined : status }),
+			outMessage: navigate(
+				{ ...model.search, anomalyStatus: status === "open" ? undefined : status },
+				model.tab,
+			),
 		}),
 		ClickedClearInboxService: () => ({
 			model,
-			outMessage: navigate({ ...model.search, serviceName: undefined }),
+			outMessage: navigate({ ...model.search, serviceName: undefined }, model.tab),
 		}),
 		ClickedShowAllRules: () => ({ model: { ...model, isShowingAllRules: true } }),
 		ClickedToggleRule: ({ ruleId, isEnabled }) => toggleRule(model, ruleId, isEnabled),
@@ -1284,11 +1336,10 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		}),
 		ClickedRetrySilences: () => refreshSilences(model, context),
 		ClickedNewSilence: () =>
-			liftSilenceDialog(
-				model,
-				context,
-				SilenceDialog.openNew(model.silenceDialog, context.timeZone, model.nowMs ?? 0),
-			),
+			model.search.sheet === SILENCE_SHEET
+				? { model }
+				: { model, commands: [PushHubSheet({ href: hubHref(model), id: SILENCE_SHEET })] },
+		CompletedSheetUrl: () => ({ model }),
 		GotSilenceDialogMessage: ({ message: child }) =>
 			liftSilenceDialog(model, context, SilenceDialog.update(model.silenceDialog, child)),
 		ClickedEndSilence: ({ silenceId }) => endSilence(model, silenceId),
@@ -1353,7 +1404,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 				: updateDeleteWindowDialog(model, Dialog.update(model.deleteWindowDialog, child)),
 		ClickedClearWindowFilter: () => ({
 			model,
-			outMessage: navigate({ ...model.search, window: undefined }),
+			outMessage: navigate({ ...model.search, window: undefined }, model.tab),
 		}),
 		ClickedConfirmDeleteMonitor: () => confirmDeleteMonitor(model),
 		GotDeleteMonitorDialogMessage: ({ message: child }) =>

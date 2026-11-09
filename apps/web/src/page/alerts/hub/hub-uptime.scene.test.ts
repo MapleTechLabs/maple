@@ -18,7 +18,7 @@ import { toLoadFailure } from "@maple/views/data/load-failure"
 import * as Menu from "@maple/views/ui/menu"
 import { MountMenu } from "@maple/views/ui/menu"
 import { PageOutMessage, type PageContext } from "../../contract"
-import { incidentRow, NOW, ORG } from "../shared/test-rows"
+import { incidentRow, NOW, ORG, hubAt } from "../shared/test-rows"
 import { monitorHref } from "../shared/uptime-commands"
 import type { UptimeMonitor } from "../shared/uptime-derive"
 import { downMonitor, httpMonitor, monitorId, pausedMonitor } from "../shared/uptime-test-monitors"
@@ -38,7 +38,7 @@ const names = (commands: ReadonlyArray<{ readonly name: string }> | undefined) =
 	Arr.map(commands ?? [], ({ name }) => name)
 
 const onUptime = (): Model => {
-	const entered = init({ _tag: "Alerts", search: { tab: "uptime" } }, context).model
+	const entered = init(hubAt({ tab: "uptime" }), context).model
 	return Arr.reduce(
 		[Message.ReadClock({ nowMs: NOW }), Message.CompletedFetchSession({ orgId: ORG, grants: ENGINEER })],
 		entered,
@@ -74,7 +74,7 @@ const NAMESPACES = { "checkout-api": "shop", "payments-api": "billing" }
 
 describe("alerts hub inbox, uptime incidents", () => {
 	test("an uptime incident reads as its monitor being down, without the ungrouped key", () => {
-		const entered = init({ _tag: "Alerts", search: {} }, context).model
+		const entered = init(hubAt(), context).model
 		const model = Arr.reduce(
 			[
 				Message.ReadClock({ nowMs: NOW }),
@@ -123,16 +123,12 @@ describe("alerts hub, Uptime tab", () => {
 	})
 
 	test("the monitors are read only when the Uptime tab is open", () => {
-		expect(names(init({ _tag: "Alerts", search: {} }, context).commands)).not.toContain(
-			"FetchAlertsHubMonitors",
-		)
-		expect(names(init({ _tag: "Alerts", search: { tab: "uptime" } }, context).commands)).toContain(
-			"FetchAlertsHubMonitors",
-		)
+		expect(names(init(hubAt(), context).commands)).not.toContain("FetchAlertsHubMonitors")
+		expect(names(init(hubAt({ tab: "uptime" }), context).commands)).toContain("FetchAlertsHubMonitors")
 	})
 
 	test("opening the tab also reads which namespace each service reports under", () => {
-		expect(names(init({ _tag: "Alerts", search: { tab: "uptime" } }, context).commands)).toContain(
+		expect(names(init(hubAt({ tab: "uptime" }), context).commands)).toContain(
 			"FetchAlertsHubServiceNamespaces",
 		)
 	})

@@ -2,7 +2,7 @@ import * as Policy from "@maple/domain/policy"
 import { OrgId } from "@maple/domain"
 import { AlertSilenceId } from "@maple/domain/http"
 import type { V2AlertSilence } from "@maple/domain/http/v2"
-import { Effect, Option, Result, Schema, Array as Arr } from "effect"
+import { Effect, Option, Result, Schema, Array as Arr, String as Str } from "effect"
 import { Command, type Update } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { defineMessageUnion } from "foldkit/message"
@@ -11,13 +11,15 @@ import * as HubModel from "../page/alerts/hub/model"
 import * as HubUpdate from "../page/alerts/hub/update"
 import { breadcrumbs as hubBreadcrumbs, view as hubView } from "../page/alerts/hub/view"
 import * as SilenceDialog from "../page/alerts/silence-dialog/dialog"
-import { destinationRow, NOW, ORG, ruleRow, stateRow } from "../page/alerts/shared/test-rows"
+import { alertsHref } from "../page/alerts/shared/links"
+import { destinationRow, NOW, ORG, ruleRow, stateRow, hubAt } from "../page/alerts/shared/test-rows"
 import type { PageContext } from "../page/contract"
 import type { Resources } from "../platform/resources"
 
-// `/lab/alerts-hub`: the hub's Inbox, Rules and Silences tabs and the silence dialog over
+// `/lab/alerts-hub`: the hub's Inbox, Rules and Silences sections and the silence side panel over
 // fixtures, including a rule skipped for too few samples and a cancelled silence. `?state=` picks
-// one: inbox, rules, loading, error, silences, silence-dialog, silence-dialog-custom.
+// one: inbox, rules, loading, error, silences, silence-dialog, silence-dialog-custom. The shell
+// stands on the section's own path, and `?sheet=` is played here rather than pushed.
 
 export const LabState = Schema.Literals([
 	"inbox",
@@ -55,9 +57,15 @@ const CONTEXT: PageContext = {
 }
 const GRANTS = Policy.grantsOf(["org:engineer"])
 
-/** The hub's reads and writes are dropped: the fixture is all the data there is. */
+/** The hub's reads, writes and URL changes are dropped: the fixture is all the data there is. */
 const keepLocal = <M>(commands: ReadonlyArray<Command.Command<M, never, Resources>> | undefined) =>
-	Arr.filter(commands ?? [], (command) => !/^(Fetch|Toggle|Delete|Save|Read|End)/.test(command.name))
+	Arr.filter(
+		commands ?? [],
+		(command) =>
+			!/^(Fetch|Toggle|Delete|Save|Read|End|PushAlertsHubSheet|DismissAlertsHubSheet)/.test(
+				command.name,
+			),
+	)
 
 const MINUTE = 60_000
 const iso = (ms: number) => new Date(ms).toISOString()
@@ -140,10 +148,23 @@ const tabOf = (state: LabState) =>
 			? "inbox"
 			: "silences"
 
-const step = (model: HubModel.Model, message: HubMessage.Message) => HubUpdate.update(model, message, CONTEXT)
+const routeTo = (model: HubModel.Model, sheet: string | undefined) =>
+	HubUpdate.routeChanged(model, hubAt({ ...model.search, tab: model.tab, sheet }), CONTEXT)
+
+/** The hub's update, with the `?sheet=` push and dismissal it asks for played back as route changes. */
+const step = (model: HubModel.Model, message: HubMessage.Message) => {
+	const next = HubUpdate.update(model, message, CONTEXT)
+	const asked = Arr.findFirst(next.commands ?? [], (command) => Str.endsWith("HubSheet")(command.name))
+	if (asked._tag === "None") return next
+	const routed = routeTo(
+		next.model,
+		asked.value.name === "PushAlertsHubSheet" ? HubUpdate.SILENCE_SHEET : undefined,
+	)
+	return { ...routed, commands: [...(next.commands ?? []), ...(routed.commands ?? [])] }
+}
 
 const hubFor = (state: LabState): HubModel.Model => {
-	const entered = HubUpdate.init({ _tag: "Alerts", search: { tab: tabOf(state) } }, CONTEXT).model
+	const entered = HubUpdate.init(hubAt({ tab: tabOf(state) }), CONTEXT).model
 	const base = [
 		HubMessage.Message.ReadClock({ nowMs: NOW }),
 		HubMessage.Message.CompletedFetchSession({ orgId: ORG, grants: GRANTS }),
@@ -200,6 +221,9 @@ export const update = (model: Model, message: Message): Return =>
 	})
 
 export const breadcrumbs = (model: Model) => hubBreadcrumbs(model.hub)
+
+/** The section's own path, so the sidebar opens Alerts on it. */
+export const currentPath = (model: Model): string => alertsHref({}, model.hub.tab)
 
 export const view = (model: Model, h: HtmlBuilder<Message>): Html =>
 	h.submodel({

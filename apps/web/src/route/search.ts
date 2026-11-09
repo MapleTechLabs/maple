@@ -514,8 +514,19 @@ export const AgentSessionsSearch = Schema.Struct({
 	sortDir: Schema.optional(AiSessionSortDir),
 })
 
-export const AlertsSearch = Schema.Struct({
-	tab: Schema.optional(Schema.String),
+/** The Alerts hub's sections past the Inbox, each at `/alerts/<section>`. */
+export const AlertsSection = Schema.Literals([
+	"rules",
+	"uptime",
+	"slos",
+	"silences",
+	"maintenance",
+	"on-call",
+	"routing",
+])
+export type AlertsSection = typeof AlertsSection.Type
+
+const alertsHubSearchFields = {
 	serviceName: Schema.optional(Schema.String),
 	status: Schema.optional(Schema.String),
 	/** The Inbox narrowed to one kind of incident: "anomaly" lists anomalies alone. */
@@ -524,7 +535,15 @@ export const AlertsSearch = Schema.Struct({
 	anomalyStatus: Schema.optional(Schema.String),
 	/** The Silences tab narrowed to one maintenance window's occurrences (`mw_…`). */
 	window: Schema.optional(Schema.String),
-})
+	/** The open side panel (`SHEET_PARAM`): "silence" is the new-silence form. */
+	sheet: Schema.optional(Schema.String),
+}
+
+/** `/alerts` and `/alerts/<section>`: the filters every section shares. */
+export const AlertsHubSearch = Schema.Struct(alertsHubSearchFields)
+
+/** `/alerts`: a legacy `tab` redirects to its section's own path. */
+export const AlertsSearch = Schema.Struct({ tab: Schema.optional(Schema.String), ...alertsHubSearchFields })
 
 // sessionTimeRangeSearchMiddleware()
 export const AnalyticsSearch = Schema.Struct({

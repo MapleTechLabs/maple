@@ -3,27 +3,17 @@ import { OrgId } from "@maple/domain"
 import { AlertRuleId, AlertSilenceId } from "@maple/domain/http"
 import { AlertMaintenanceWindowPublicId, type V2AlertSilence } from "@maple/domain/http/v2"
 import { Result, Schema, Array as Arr } from "effect"
-import * as Animation from "@foldkit/ui/animation"
 import * as Dialog from "@maple/views/ui/dialog"
 import { MountDialog } from "@maple/views/ui/dialog"
-import {
-	click,
-	Command,
-	expect as expectView,
-	Mount,
-	given,
-	role,
-	scene,
-	text,
-	withViewInputs,
-} from "foldkit/scene"
+import { expect as expectView, Mount, given, role, scene, text, withViewInputs } from "foldkit/scene"
 import { describe, expect, test } from "vitest"
 import type { PageContext } from "../../contract"
-import { NOW, ORG } from "../shared/test-rows"
+import { NOW, ORG, hubAt } from "../shared/test-rows"
 import { Message } from "./message"
 import type { Model } from "./model"
-import { init, update } from "./update"
+import { init, routeChanged, update } from "./update"
 import { view as pageView } from "./view"
+import * as SilenceDialog from "../silence-dialog/dialog"
 
 const orgId = Schema.decodeSync(OrgId)(ORG)
 const context: PageContext = { orgId, pinnedNamespace: null, timeZone: "UTC" }
@@ -57,7 +47,7 @@ const silence = (
 }
 
 const onSilences = (grants: ReturnType<typeof Policy.grantsOf>, silences: ReadonlyArray<V2AlertSilence>) => {
-	const entered = init({ _tag: "Alerts", search: { tab: "silences" } }, context)
+	const entered = init(hubAt({ tab: "silences" }), context)
 	expect(Arr.map(entered.commands ?? [], ({ name }) => name)).toContain("FetchAlertsHubSilences")
 	return Arr.reduce(
 		[
@@ -165,7 +155,7 @@ describe("alerts hub, Silences tab", () => {
 	})
 
 	test("reads the clock again when the list lands, so a new silence is placed by it", () => {
-		const entered = init({ _tag: "Alerts", search: { tab: "silences" } }, context).model
+		const entered = init(hubAt({ tab: "silences" }), context).model
 		const step = pageUpdate(
 			entered,
 			Message.CompletedFetchSilences({ key: entered.silences.key ?? "", result: Result.succeed([]) }),
@@ -195,24 +185,117 @@ describe("alerts hub, Silences tab", () => {
 			expectView(text(/· 1 rule$/u)).toExist(),
 		)
 	})
+})
 
-	test("New silence opens the dialog with typed scope fields", () => {
+const SILENCES_URL = "/alerts/silences"
+const callsOf = (commands: ReadonlyArray<{ readonly name: string; readonly args?: unknown }> | undefined) =>
+	Arr.map(commands ?? [], ({ name, args }) => [name, args])
+const namesOf = (commands: ReadonlyArray<{ readonly name: string }> | undefined) =>
+	Arr.map(commands ?? [], ({ name }) => name)
+const silenceMessage = (message: SilenceDialog.Message) => Message.GotSilenceDialogMessage({ message })
+
+/** The Silences tab with `?sheet=silence` followed: the panel is open. */
+const withPanel = (grants = ENGINEER) =>
+	routeChanged(onSilences(grants, []), hubAt({ tab: "silences", sheet: "silence" }), context)
+
+describe("alerts hub, silence side panel", () => {
+	test("New silence opens the panel through the URL, as a history entry on this section", () => {
+		const model = onSilences(ENGINEER, [])
+		const step = pageUpdate(model, Message.ClickedNewSilence())
+		expect(callsOf(step.commands)).toEqual([
+			["PushAlertsHubSheet", { href: SILENCES_URL, id: "silence" }],
+		])
+		expect(step.model.silenceDialog.dialog.isOpen).toBe(false)
+	})
+
+	test("the URL opens it with typed scope fields, Cancel and a save that waits for a valid form", () => {
+		const opened = withPanel()
+		expect(opened.model.silenceDialog.dialog.isOpen).toBe(true)
 		scene(
 			{ update: pageUpdate, view },
-			given(onSilences(ENGINEER, [])),
-			click(role("button", { name: "New silence" })),
-			Command.resolve(
-				Animation.WaitForPaint,
-				Animation.Message.CompletedWaitForPaint({ generation: 1 }),
-			),
-			Command.resolve(
-				Animation.WaitForAnimationSettled,
-				Animation.Message.EndedAnimation({ generation: 1 }),
-			),
+			given(opened.model),
 			Mount.resolve(MountDialog, Dialog.Message.CompletedMountDialog()),
 			expectView(role("dialog", { name: "Silence notifications" })).toExist(),
 			expectView(role("textbox", { name: "Services" })).toExist(),
+			expectView(role("button", { name: "Cancel" })).toExist(),
 			expectView(role("button", { name: "Silence for 1 hour" })).toBeDisabled(),
 		)
+	})
+
+	test("a link straight to the panel waits for the clock and the viewer's grants, and a member never gets it", () => {
+		const entered = init(hubAt({ tab: "silences", sheet: "silence" }), context).model
+		expect(entered.silenceDialog.dialog.isOpen).toBe(false)
+		const clocked = pageUpdate(entered, Message.ReadClock({ nowMs: NOW })).model
+		expect(clocked.silenceDialog.dialog.isOpen).toBe(false)
+		const granted = pageUpdate(
+			clocked,
+			Message.CompletedFetchSession({ orgId: ORG, grants: ENGINEER }),
+		).model
+		expect(granted.silenceDialog.dialog.isOpen).toBe(true)
+		expect(granted.silenceDialog.nowMs).toBe(NOW)
+		expect(withPanel(MEMBER).model.silenceDialog.dialog.isOpen).toBe(false)
+	})
+
+	test("Cancel and Escape close it and take `?sheet=` off the URL", () => {
+		const dismissed = [
+			["DismissAlertsHubSheet", { href: `${SILENCES_URL}?sheet=silence`, id: "silence" }],
+		]
+		const cancelled = pageUpdate(withPanel().model, silenceMessage(SilenceDialog.Message.ClickedCancel()))
+		expect(cancelled.model.silenceDialog.dialog.isOpen).toBe(false)
+		expect(Arr.filter(callsOf(cancelled.commands), ([name]) => name === "DismissAlertsHubSheet")).toEqual(
+			dismissed,
+		)
+		const escaped = pageUpdate(
+			withPanel().model,
+			silenceMessage(
+				SilenceDialog.Message.GotDialogMessage({ message: Dialog.Message.PressedEscape() }),
+			),
+		)
+		expect(escaped.model.silenceDialog.dialog.isOpen).toBe(false)
+		expect(Arr.filter(callsOf(escaped.commands), ([name]) => name === "DismissAlertsHubSheet")).toEqual(
+			dismissed,
+		)
+	})
+
+	test("Back closes it without touching the URL again, and the form starts fresh when it reopens", () => {
+		const typed = pageUpdate(
+			withPanel().model,
+			silenceMessage(SilenceDialog.Message.ChangedReason({ value: "x" })),
+		)
+		const back = routeChanged(typed.model, hubAt({ tab: "silences" }), context)
+		expect(back.model.silenceDialog.dialog.isOpen).toBe(false)
+		expect(namesOf(back.commands)).not.toContain("DismissAlertsHubSheet")
+		const reopened = routeChanged(back.model, hubAt({ tab: "silences", sheet: "silence" }), context)
+		expect(reopened.model.silenceDialog.dialog.isOpen).toBe(true)
+		expect(reopened.model.silenceDialog.reason).toBe("")
+	})
+
+	test("saving creates the silence, closes the panel, clears the URL and reads the list again", () => {
+		const filled = Arr.reduce(
+			[
+				silenceMessage(
+					SilenceDialog.Message.ChangedScopeField({ field: "services", value: "checkout" }),
+				),
+				silenceMessage(SilenceDialog.Message.ChangedReason({ value: "Deploying checkout v2.3" })),
+			],
+			withPanel().model,
+			(model, message) => pageUpdate(model, message).model,
+		)
+		const saving = pageUpdate(filled, silenceMessage(SilenceDialog.Message.ClickedSave()))
+		expect(namesOf(saving.commands)).toEqual(["SaveAlertSilence"])
+		const saved = pageUpdate(
+			saving.model,
+			silenceMessage(
+				SilenceDialog.Message.CompletedSave({
+					openCount: saving.model.silenceDialog.openCount,
+					result: Result.succeed(silence({ startMin: 0, endMin: 60 })),
+				}),
+			),
+		)
+		expect(saved.model.silenceDialog.dialog.isOpen).toBe(false)
+		expect(namesOf(saved.commands)).toEqual(
+			expect.arrayContaining(["DismissAlertsHubSheet", "FetchAlertsHubSilences"]),
+		)
+		expect(saved.outMessage).toMatchObject({ title: "Alerts silenced" })
 	})
 })

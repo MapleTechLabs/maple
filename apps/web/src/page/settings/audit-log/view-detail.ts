@@ -39,8 +39,8 @@ export const resourceHref = (link: AuditResourceLink): string => {
 			return `/investigations/${encodeURIComponent(link.params.id)}`
 		case "/anomalies/$incidentId":
 			return `/anomalies/${encodeURIComponent(link.params.incidentId)}`
-		case "/alerts":
-			return hrefOf(AppRoute.Alerts({ search: link.search }))
+		case "/alerts/routing":
+			return hrefOf(AppRoute.AlertsSection({ section: "routing", search: {} }))
 		case "/integrations":
 			return hrefOf(AppRoute.Integrations({ search: link.search }))
 		case "/settings":
@@ -99,11 +99,7 @@ const identifier = (h: H, model: Model, value: string, label: string): Html => {
 const changesTable = (h: H, changes: V2AuditChanges): Html =>
 	table(h, { size: "sm", className: "font-mono" }, [
 		tableHeader(h, [
-			tableRow(h, [
-				tableHead(h, ["Field"], "w-40"),
-				tableHead(h, ["Before"]),
-				tableHead(h, ["After"]),
-			]),
+			tableRow(h, [tableHead(h, ["Field"], "w-40"), tableHead(h, ["Before"]), tableHead(h, ["After"])]),
 		]),
 		tableBody(
 			h,

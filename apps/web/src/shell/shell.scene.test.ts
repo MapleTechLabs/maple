@@ -425,6 +425,56 @@ describe("app update banner", () => {
 	})
 })
 
+describe("alerts section", () => {
+	const measured = Mount.resolve(MeasureSidebarOverflow, Message.MeasuredSidebarOverflow())
+
+	test("on an alerts page, Alerts opens its sections with the open one current", () => {
+		scene(
+			{ update, view: shellAt("/alerts/rules") },
+			given(signedIn()),
+			measured,
+			expect(role("link", { name: "Rules" })).toHaveAttr("aria-current", "page"),
+			expect(role("link", { name: "Rules" })).toHaveAttr("href", "/alerts/rules"),
+			expect(role("link", { name: "Inbox" })).not.toHaveAttr("aria-current", "page"),
+			expect(role("link", { name: "Silences" })).toHaveAttr("href", "/alerts/silences"),
+			expect(role("link", { name: "On-call" })).toHaveAttr("href", "/alerts/on-call"),
+		)
+		scene(
+			{ update, view: shellAt("/alerts") },
+			given(signedIn()),
+			measured,
+			expect(role("link", { name: "Inbox" })).toHaveAttr("aria-current", "page"),
+			expect(role("link", { name: "Rules" })).not.toHaveAttr("aria-current", "page"),
+		)
+	})
+
+	test("a detail page marks the section it belongs to", () => {
+		scene(
+			{ update, view: shellAt("/alerts/schedules/sch_1") },
+			given(signedIn()),
+			measured,
+			expect(role("link", { name: "On-call" })).toHaveAttr("aria-current", "page"),
+			expect(role("link", { name: "Inbox" })).not.toHaveAttr("aria-current", "page"),
+		)
+		scene(
+			{ update, view: shellAt("/alerts/uptime/mon_1") },
+			given(signedIn()),
+			measured,
+			expect(role("link", { name: "Uptime" })).toHaveAttr("aria-current", "page"),
+		)
+	})
+
+	test("elsewhere the sections stay hidden", () => {
+		scene(
+			{ update, view: shellAt("/logs") },
+			given(signedIn()),
+			measured,
+			expect(role("link", { name: "Alerts" })).toExist(),
+			expect(role("link", { name: "Silences" })).toBeAbsent(),
+		)
+	})
+})
+
 describe("services section", () => {
 	test("on the service map, Services opens with the map row current", () => {
 		scene(

@@ -348,7 +348,7 @@ describe("alert rule", () => {
 			}),
 		)
 		expect(viewAll.outMessage).toEqual(
-			PageOutMessage.RequestedNavigation({ url: "/alerts?tab=overview", isReplace: false }),
+			PageOutMessage.RequestedNavigation({ url: "/alerts", isReplace: false }),
 		)
 	})
 })

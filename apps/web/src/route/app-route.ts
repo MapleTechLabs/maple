@@ -78,6 +78,7 @@ export const AppRoute = defineRouteUnion({
 	Trace: { traceId: Schema.String, search: Search.TraceSearch },
 	AgentSessions: { search: Search.AgentSessionsSearch },
 	Alerts: { search: Search.AlertsSearch },
+	AlertsSection: { section: Search.AlertsSection, search: Search.AlertsHubSearch },
 	Analytics: { search: Search.AnalyticsSearch },
 	Anomalies: { search: Search.AnomaliesSearch },
 	CodeReview: { search: Search.CodeReviewSearch },

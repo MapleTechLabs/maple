@@ -1,4 +1,5 @@
 import * as Policy from "@maple/domain/policy"
+import type { AlertsTab } from "../shared/links"
 import { OrgId } from "@maple/domain"
 import type { V2AlertMaintenanceWindow, V2AlertSilence } from "@maple/domain/http/v2"
 import { Result, Schema, Array as Arr } from "effect"
@@ -26,7 +27,7 @@ import {
 	weeklyWindow,
 } from "../shared/maintenance-test-fixtures"
 import { windowPublicId, windowSilencesHref } from "../shared/maintenance-windows"
-import { NOW, ORG, ruleRow } from "../shared/test-rows"
+import { NOW, ORG, ruleRow, hubAt, type HubAt } from "../shared/test-rows"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { init, routeChanged, update, windowMenuId } from "./update"
@@ -49,14 +50,14 @@ const names = (commands: ReadonlyArray<{ readonly name: string }> | undefined) =
 	Arr.map(commands ?? [], ({ name }) => name)
 
 const onTab = (
-	search: Model["search"],
+	at: HubAt,
 	options: Readonly<{
 		grants?: ReturnType<typeof Policy.grantsOf>
 		windows: ReadonlyArray<V2AlertMaintenanceWindow>
 		silences?: ReadonlyArray<V2AlertSilence>
 	}>,
 ): Model => {
-	const entered = init({ _tag: "Alerts", search }, context)
+	const entered = init(hubAt(at), context)
 	const loaded = Arr.reduce(
 		[
 			Message.ReadClock({ nowMs: NOW }),
@@ -86,7 +87,7 @@ const onMaintenance = (windows: ReadonlyArray<V2AlertMaintenanceWindow>, grants 
 
 describe("alerts hub, Maintenance tab", () => {
 	test("reads the windows only while the Maintenance or Silences tab is open", () => {
-		const fetched = (tab: string) => names(init({ _tag: "Alerts", search: { tab } }, context).commands)
+		const fetched = (tab: AlertsTab) => names(init(hubAt({ tab }), context).commands)
 		expect(fetched("maintenance")).toContain("FetchAlertsHubMaintenanceWindows")
 		expect(fetched("silences")).toContain("FetchAlertsHubMaintenanceWindows")
 		expect(fetched("rules")).not.toContain("FetchAlertsHubMaintenanceWindows")
@@ -129,7 +130,7 @@ describe("alerts hub, Maintenance tab", () => {
 	test("a window change on the Maintenance tab makes the Silences tab read its silences again", () => {
 		const model = onTab({ tab: "silences" }, { windows: [weeklyWindow], silences: silencesWithWindows })
 		const onMaint = update(model, Message.ReadClock({ nowMs: NOW }), context).model
-		const moved = routeChanged(onMaint, { _tag: "Alerts", search: { tab: "maintenance" } }, context).model
+		const moved = routeChanged(onMaint, hubAt({ tab: "maintenance" }), context).model
 		const toggled = pageUpdate(moved, Message.ClickedToggleWindow({ windowId: weeklyWindow.id })).model
 		const settled = pageUpdate(
 			toggled,
@@ -141,7 +142,7 @@ describe("alerts hub, Maintenance tab", () => {
 		// Following the row's Occurrences link lands on the Silences tab filtered to the window.
 		const back = routeChanged(
 			settled,
-			{ _tag: "Alerts", search: { tab: "silences", window: windowPublicId(weeklyWindow.id) } },
+			hubAt({ tab: "silences", window: windowPublicId(weeklyWindow.id) }),
 			context,
 		)
 		expect(back.commands ?? []).toContainEqual(
@@ -150,7 +151,7 @@ describe("alerts hub, Maintenance tab", () => {
 				args: expect.objectContaining({ windowId: weeklyWindow.id }),
 			}),
 		)
-		const unfiltered = routeChanged(settled, { _tag: "Alerts", search: { tab: "silences" } }, context)
+		const unfiltered = routeChanged(settled, hubAt({ tab: "silences" }), context)
 		expect(names(unfiltered.commands)).toContain("FetchAlertsHubSilences")
 	})
 
@@ -247,7 +248,7 @@ describe("alerts hub, Maintenance tab", () => {
 		const step = pageUpdate(onMaintenance([weeklyWindow]), Message.ClickedNewWindow())
 		expect(step.model.windowDialog.dialog.isOpen).toBe(true)
 		expect(names(step.commands)).toContain("ReadMaintenanceWindowZones")
-		const early = init({ _tag: "Alerts", search: { tab: "maintenance" } }, context).model
+		const early = init(hubAt({ tab: "maintenance" }), context).model
 		expect(pageUpdate(early, Message.ClickedNewWindow()).model.windowDialog.dialog.isOpen).toBe(false)
 	})
 })
@@ -268,13 +269,13 @@ describe("alerts hub, Silences tab with maintenance windows", () => {
 			click(role("button", { name: "Remove Window: Nightly database backup" })),
 			expectOutMessage(
 				PageOutMessage.RequestedNavigation({
-					url: alertsHref({ tab: "silences" }),
+					url: alertsHref({}, "silences"),
 					isReplace: false,
 				}),
 			),
 		)
 		// The route without the param reads every silence and drops the chip.
-		const cleared = routeChanged(model, { _tag: "Alerts", search: { tab: "silences" } }, context)
+		const cleared = routeChanged(model, hubAt({ tab: "silences" }), context)
 		const fetch = Arr.findFirst(cleared.commands ?? [], ({ name }) => name === "FetchAlertsHubSilences")
 		expect(fetch).toMatchObject({ value: { args: { windowId: null } } })
 		const shown = pageUpdate(

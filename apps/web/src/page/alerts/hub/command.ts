@@ -17,6 +17,7 @@ import { readThrough } from "../../../data/read-cache"
 import { readGrants } from "../../../data/session-tenant"
 import { toLoadFailure } from "@maple/views/data/load-failure"
 import { Command } from "foldkit"
+import { dismissSheetUrl, pushSheetUrl } from "../../kit/sheet-param"
 import {
 	deleteDestination,
 	listDeliveries,
@@ -40,6 +41,22 @@ import {
 } from "../shared/maintenance-windows"
 import { Message } from "./message"
 import { ServiceNamespaces, serviceNamespaces } from "./uptime-groups"
+
+const sheetArgs = { href: Schema.String, id: Schema.String }
+
+/** Opens a side panel: a history entry carrying `?sheet=`, marked as this tab's. */
+export const PushHubSheet = Command.define("PushAlertsHubSheet", {
+	args: sheetArgs,
+	messages: [Message.CompletedSheetUrl],
+	execute: ({ href, id }) => pushSheetUrl(href, id).pipe(Effect.as(Message.CompletedSheetUrl())),
+})
+
+/** Closes it: Back over the entry this tab pushed, else `?sheet=` replaced away. */
+export const DismissHubSheet = Command.define("DismissAlertsHubSheet", {
+	args: sheetArgs,
+	messages: [Message.CompletedSheetUrl],
+	execute: ({ href, id }) => dismissSheetUrl(href, id).pipe(Effect.as(Message.CompletedSheetUrl())),
+})
 
 export const ReadHubClock = Command.define("ReadAlertsHubClock", {
 	messages: [Message.ReadClock],

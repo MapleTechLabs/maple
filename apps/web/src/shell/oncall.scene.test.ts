@@ -90,7 +90,7 @@ describe("on-call pill", () => {
 			expect(footer).toContainText("You're on call"),
 			expect(footer).toContainText("until Mon 16 Nov, 09:00 CET"),
 			expect(footer).toContainText("Checkout primary"),
-			expect(role("link", { name: /You're on call/ })).toHaveAttr("href", "/alerts?tab=oncall"),
+			expect(role("link", { name: /You're on call/ })).toHaveAttr("href", "/alerts/on-call"),
 		)
 	})
 
@@ -99,7 +99,7 @@ describe("on-call pill", () => {
 			{ update, view },
 			given(withOnCall([shift({ userId: "user_someone" })])),
 			measured,
-			expect(role("link", { name: /You're not on call/ })).toHaveAttr("href", "/alerts?tab=oncall"),
+			expect(role("link", { name: /You're not on call/ })).toHaveAttr("href", "/alerts/on-call"),
 			expect(footer).toContainText("My schedules"),
 		)
 	})
