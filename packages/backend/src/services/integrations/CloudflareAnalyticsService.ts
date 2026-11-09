@@ -1037,6 +1037,8 @@ type PollOutcome =
 	| { readonly kind: "rate-limited"; readonly message: string }
 	| { readonly kind: "plan-blocked"; readonly message: string }
 	| { readonly kind: "failed"; readonly failure: DatasetPollFailure }
+	/** A sibling's error nulled the document's data; this part did not fail and is re-queried alone. */
+	| { readonly kind: "voided" }
 
 /** Typed constructor so each failure site returns `PollOutcome` (widens the failure off `as const`). */
 const failedOutcome = (failure: DatasetPollFailure): PollOutcome => ({ kind: "failed", failure })
@@ -2004,33 +2006,18 @@ export class CloudflareAnalyticsService extends Context.Service<
 			const cleanParts = Arr.filter(item.parts, (part) => !classified.failedParts.has(part))
 			if (cleanParts.length === 0) return results
 			if (result.data == null) {
-				// Errors typically null the whole `data` — clean parts simply didn't advance; retry
-				// next round. A null data with NO errors is an upstream contract break.
+				// A null data with NO errors is an upstream contract break.
 				if (result.errors.length === 0) {
 					return yield* decodeError("batched")
 				}
-				// When every error that nulled `data` is expected per-plan gating, the clean sibling
-				// parts weren't the problem — Cloudflare just voids the whole batch when one selection
-				// is plan-gated. Don't fail them (and don't emit `AnalyticsPollError` telemetry); treat
-				// them like the errorless case above — they didn't advance, retry next round. The
-				// gated part itself is handled by its own classification (disabled/quantiles), and once
-				// it disables, later rounds stop voiding the batch.
-				if (Arr.every(result.errors, (error) => isPlanGatedMessage(error.message))) {
-					return results
-				}
-				for (const part of cleanParts) {
-					results.push({
-						part,
-						outcome: failedOutcome({
-							scope: part.dataset.scope,
-							datasetId: part.dataset.id,
-							kind: "other",
-							message: `GraphQL response carried no data: ${graphqlErrorMessage(result.errors)}`,
-							rowIds: Arr.map(part.rows, (row) => row.id),
-						}),
-					})
-				}
-				return results
+				// Every error is attributed to a failed part (an unattributed one fails every part), so
+				// Cloudflare voided the clean siblings' data on another part's account. The caller
+				// re-queries them without it; failing them here starved them for as long as it failed.
+				const voided = Arr.map(cleanParts, (part): PartResult => ({
+					part,
+					outcome: { kind: "voided" },
+				}))
+				return [...results, ...voided]
 			}
 
 			const mapContext = (row: CloudflareAnalyticsStateRow) => ({
@@ -2464,6 +2451,35 @@ export class CloudflareAnalyticsService extends Context.Service<
 					Ref.get(deliveryBlockedRef),
 					Ref.get(rateLimitedRef),
 				]).pipe(Effect.map((flags) => Arr.some(flags, Boolean) || budget.calls >= callLimit))
+				const pollItem = (item: WorkItem) =>
+					Effect.suspend(() => {
+						budget.calls += 1
+						return pollDatasetChunk(
+							item,
+							{ orgId, accountId, accessToken, ingestKey, sourceId, liveScripts },
+							now,
+						)
+					}).pipe(
+						Effect.catchTags({
+							"@maple/http/errors/IntegrationsRevokedError": (error) =>
+								// Stop this connection's loop; the seam disables + records health
+								// connection-wide. The grant is NOT stamped revoked: a mid-poll
+								// 401/403 is account-scoped (access to this account was removed),
+								// and stamping would stop the grant's other accounts too. Disabling
+								// this account's rows is what keeps it from being re-polled.
+								Ref.set(revokedRef, true).pipe(
+									Effect.as(
+										allPartsFailed(item, "revoked", error.message, {
+											orgWide: true,
+											disable: true,
+										}),
+									),
+								),
+							"@maple/http/errors/IntegrationsUpstreamError": (error) =>
+								Effect.succeed(allPartsFailed(item, "upstream", error.message)),
+						}),
+					)
+
 				// One round; succeeds with whether another round should run.
 				const round = Effect.gen(function* () {
 					if (yield* stopped) return false
@@ -2477,31 +2493,19 @@ export class CloudflareAnalyticsService extends Context.Service<
 						(item) =>
 							Effect.gen(function* () {
 								if (yield* stopped) return
-								budget.calls += 1
-								const partResults = yield* pollDatasetChunk(
-									item,
-									{ orgId, accountId, accessToken, ingestKey, sourceId, liveScripts },
-									now,
-								).pipe(
-									Effect.catchTags({
-										"@maple/http/errors/IntegrationsRevokedError": (error) =>
-											// Stop this connection's loop; the seam disables + records health
-											// connection-wide. The grant is NOT stamped revoked: a mid-poll
-											// 401/403 is account-scoped (access to this account was removed),
-											// and stamping would stop the grant's other accounts too. Disabling
-											// this account's rows is what keeps it from being re-polled.
-											Ref.set(revokedRef, true).pipe(
-												Effect.as(
-													allPartsFailed(item, "revoked", error.message, {
-														orgWide: true,
-														disable: true,
-													}),
-												),
-											),
-										"@maple/http/errors/IntegrationsUpstreamError": (error) =>
-											Effect.succeed(allPartsFailed(item, "upstream", error.message)),
-									}),
+								const firstResults = yield* pollItem(item)
+								// One re-query for the parts a failing sibling voided; voided again, they
+								// wait for the next round.
+								const voidedParts = Arr.flatMap(firstResults, ({ part, outcome }) =>
+									outcome.kind === "voided" ? [part] : [],
 								)
+								const partResults =
+									voidedParts.length === 0 || (yield* stopped)
+										? firstResults
+										: [
+												...firstResults,
+												...(yield* pollItem({ ...item, parts: voidedParts })),
+											]
 
 								// Mirror the DB writes onto the in-memory rows so the next round re-plans
 								// without a per-round SELECT.
@@ -2604,6 +2608,8 @@ export class CloudflareAnalyticsService extends Context.Service<
 														Effect.andThen(Ref.set(deliveryBlockedRef, true)),
 														Effect.andThen(Ref.set(orgRefusal, message)),
 													),
+												// Not advanced and not failed: re-queried above or next round.
+												voided: () => Effect.void,
 												// The one seam: record health to Postgres AND emit an observable signal.
 												failed: ({ failure }) =>
 													Effect.gen(function* () {

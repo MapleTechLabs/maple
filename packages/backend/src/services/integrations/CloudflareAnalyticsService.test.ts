@@ -315,8 +315,13 @@ const mockCloudflareFetch =
 			}
 			options.graphqlQueries?.push(body.query)
 			options.graphqlZoneTags?.push(body.variables?.zoneTags ?? [])
-			if (options.graphqlErrors) {
-				return jsonResponse({ data: null, errors: options.graphqlErrors })
+			// Like Cloudflare, an error on a selection only comes back while the document selects it.
+			const errors = Arr.filter(options.graphqlErrors ?? [], (error) => {
+				const alias = Arr.findLast(error.path ?? [], (segment) => typeof segment === "string")
+				return Option.isNone(alias) || Str.includes(`${alias.value}:`)(body.query)
+			})
+			if (errors.length > 0) {
+				return jsonResponse({ data: null, errors })
 			}
 			if (Str.includes("MapleCfDatasetSettings")(body.query))
 				return jsonResponse({ data: settingsData })
@@ -1919,6 +1924,48 @@ describe("CloudflareAnalyticsService", () => {
 			Effect.provide(
 				makeLayer(testDb, captured, {
 					graphqlErrors: [{ message: "not authorized to access these fields" }],
+				}),
+			),
+		)
+	})
+
+	it.effect("one dataset's authz failure does not starve its batched siblings", () => {
+		const testDb = createTestDb(trackedDbs)
+		const captured: CapturedIngest[] = []
+		return Effect.gen(function* () {
+			yield* TestClock.setTime(T0)
+			yield* seedConnection()
+			for (const dataset of ["http_requests", "firewall_events"]) {
+				yield* seedStateRow({
+					dataset,
+					zoneId: ZONE_ID,
+					zoneName: ZONE_NAME,
+					watermarkAt: T0 - 30 * MIN,
+					settingsFetchedAt: T0 - 5 * MIN,
+				})
+			}
+			const service = yield* CloudflareAnalyticsService
+			const summary = yield* service.pollOrg(ORG)
+			// Cloudflare nulls the whole document's data when the token cannot read one selection.
+			// Only the dataset it cannot read fails; the sibling is re-queried alone and advances.
+			assert.deepStrictEqual(
+				Arr.dedupe(Arr.map(summary.failures, (failure) => `${failure.datasetId}:${failure.kind}`)),
+				["firewall_events:authz"],
+			)
+			assert.isAbove(summary.rowsIngested, 0)
+			const rows = yield* loadStateRows
+			const http = Option.getOrThrow(Arr.findFirst(rows, (r) => r.dataset === "http_requests"))
+			assert.isAbove(http.watermarkAt ?? 0, T0 - 30 * MIN)
+			assert.isNull(http.lastError)
+		}).pipe(
+			Effect.provide(
+				makeLayer(testDb, captured, {
+					graphqlErrors: [
+						{
+							message: "not authorized for that account",
+							path: ["viewer", "zones", 0, "firewall"],
+						},
+					],
 				}),
 			),
 		)
