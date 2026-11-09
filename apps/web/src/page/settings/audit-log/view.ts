@@ -417,6 +417,8 @@ const withMemberName = (
 }
 
 const auditRow = (h: H, model: Model, entry: V2AuditLogEntry, inputs: ViewInputs): Html => {
+	// Muting reads only helps where they sit beside changes; in Data access every row is one.
+	const isMixedView = auditLogKindOf(parseAuditLogSearch(inputs.search)) === "all"
 	const isExpanded = model.expanded.includes(entry.id)
 	const detailId = `audit-entry-${entry.id}`
 	const isDenied = entry.outcome === "denied"
@@ -472,7 +474,7 @@ const auditRow = (h: H, model: Model, entry: V2AuditLogEntry, inputs: ViewInputs
 								vstack(
 									h,
 									{ shrink: true },
-									actionLabel(h, entry.action, isQuietAccess(entry)),
+									actionLabel(h, entry.action, isMixedView && isQuietAccess(entry)),
 								),
 								...(isDenied ? [h.span([h.Class("@md:hidden")], [deniedBadge(h)])] : []),
 							]),
