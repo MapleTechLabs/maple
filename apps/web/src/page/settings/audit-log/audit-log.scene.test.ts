@@ -364,6 +364,17 @@ describe("audit log tab", () => {
 			expect(Arr.map(second.commands ?? [], ({ name }) => name)).toEqual(["ScrollToAuditEntry"])
 		})
 
+		test("a filter change leaves a shared entry link behind", () => {
+			const linked = { tab: "audit-log", entry: "alog_gQUY7khzfVuTjEMzpTTstW" } as const
+			const step = update(init(linked).model, Message.ClickedOutcome({ value: "denied" }), linked)
+			expect(step.outMessage).toEqual(
+				PageOutMessage.RequestedNavigation({
+					url: "/settings?tab=audit-log&outcome=denied",
+					isReplace: true,
+				}),
+			)
+		})
+
 		test("the Origin section names the country an entry came from", () => {
 			const target = AUDIT_ENTRIES[4]
 			if (target === undefined) throw new Error("fixture")
