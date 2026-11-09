@@ -12,6 +12,7 @@ import * as ConnectPanel from "./connect-panel"
 import * as SupportChannel from "./support-channel"
 import { PinnedDashboardRow } from "./dashboards-shape"
 import * as Palette from "./palette/model"
+import { OnCallSnapshot } from "./oncall"
 
 /** The shell's dropdown menus; a collapsed-rail section menu is keyed by its section title. */
 export const Menu = defineTaggedUnion({
@@ -79,6 +80,13 @@ export const Message = defineMessageUnion({
 	FailedLoadSources: { orgId: Schema.String },
 	SucceededLoadDashboards: { orgId: Schema.String, dashboards: Schema.Array(PinnedDashboardRow) },
 	FailedLoadDashboards: { orgId: Schema.String },
+	SucceededLoadOnCall: { orgId: Schema.String, snapshot: OnCallSnapshot },
+	FailedLoadOnCall: { orgId: Schema.String },
+	/** A schedule handed off: who is on call may have changed. */
+	ElapsedOnCallHandoff: {},
+	/** A nav group's label: fold or unfold its rows. */
+	ClickedNavGroup: { groupId: Schema.String },
+	CompletedSaveNavGroups: {},
 	ChangedDashboardFavorites: { favorites: Schema.Array(Schema.String) },
 	SucceededLoadNamespaces: { orgId: Schema.String, namespaces: Schema.Array(Schema.String) },
 	FailedLoadNamespaces: { orgId: Schema.String },

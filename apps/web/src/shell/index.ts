@@ -8,6 +8,8 @@ export { init, Model, type ShellClerk } from "./model"
 export {
 	favoritesChanges,
 	filterViewportChanges,
+	onCallHandoff,
+	onCallHandoffAt,
 	sidebarShortcut,
 	smallViewportChanges,
 	viewportChanges,

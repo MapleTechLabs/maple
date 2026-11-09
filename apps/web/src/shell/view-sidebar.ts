@@ -25,6 +25,9 @@ import { orgAvatar } from "./clerk-org-switcher-view"
 import { typography } from "@maple/views/ui/typography"
 import { identityLabel } from "@maple/views/ui/identity-label"
 import { hstack } from "@maple/views/ui/stack"
+import { statusDot } from "@maple/views/ui/status-dot"
+import { oncallTabHref } from "../page/alerts/shared/oncall-schedules"
+import { type OnCallStatus, onCallSentence, onCallStatusOf, scheduleLabel } from "./oncall"
 
 export const GROUP_LABEL = "h-6 text-muted-foreground"
 
@@ -244,6 +247,85 @@ const footerNavRow = (
 		),
 	])
 
+/** The pill's state; nothing while the schedules read, after a failed read, or with none. */
+export const shellOnCallStatus = (model: Model): OnCallStatus =>
+	Option.match(AsyncData.getData(model.onCall), {
+		onNone: (): OnCallStatus => ({ _tag: "NoSchedules" }),
+		onSome: onCallStatusOf,
+	})
+
+/**
+ * "You're on call until …" with the schedule, or "You're not on call" with a way to the schedules;
+ * a dot with the sentence as its tooltip on the collapsed rail.
+ */
+const onCallPill = (
+	h: HtmlBuilder<Message>,
+	currentPath: string,
+	status: OnCallStatus,
+	tip: RailTip,
+): ReadonlyArray<Html> =>
+	status._tag === "NoSchedules"
+		? []
+		: [
+				sidebarMenu(h, undefined, [
+					sidebarMenuItem(h, undefined, [
+						sidebarMenuButton(
+							h,
+							{
+								size: "lg",
+								className:
+									"h-auto gap-2.5 border border-sidebar-border py-1.5 group-data-[collapsible=icon]:border-transparent",
+								link: { href: oncallTabHref(), currentPath },
+								hasTooltip: true,
+								attributes: [...tip(onCallSentence(status)), h.Title(onCallSentence(status))],
+							},
+							[
+								hstack(
+									h,
+									{ align: "center", justify: "center", className: "size-4 shrink-0" },
+									[
+										statusDot(h, {
+											tone: status._tag === "OnCall" ? "ok" : "neutral",
+											size: "lg",
+										}),
+									],
+								),
+								// Three short lines: the full sentence does not fit the rail's width.
+								identityLabel(
+									h,
+									status._tag === "OnCall"
+										? [
+												typography(
+													h,
+													{ size: "xs", weight: "medium", truncate: true },
+													["You're on call"],
+												),
+												typography(h, { size: "xs", truncate: true }, [
+													`until ${status.until}`,
+												]),
+												typography(h, { size: "xs", tone: "muted", truncate: true }, [
+													scheduleLabel(status),
+												]),
+											]
+										: [
+												typography(
+													h,
+													{ size: "xs", weight: "medium", truncate: true },
+													["You're not on call"],
+												),
+												typography(h, { size: "xs", tone: "muted", truncate: true }, [
+													"My schedules",
+												]),
+											],
+									// The rail shows the dot; the tooltip says the sentence.
+									"group-data-[collapsible=icon]:hidden",
+								),
+							],
+						),
+					]),
+				]),
+			]
+
 /** The user avatar: the Clerk image over the initials on a warm tile keyed by the name. */
 export const userAvatar = (
 	h: HtmlBuilder<Message>,
@@ -338,6 +420,7 @@ export const shellSidebarFooter = (
 			],
 			[],
 		),
+		...onCallPill(h, currentPath, shellOnCallStatus(model), tip),
 		sidebarMenu(h, undefined, [
 			footerNavRow(h, currentPath, { href: "/sources", title: "Sources", icon: "ConnectionIcon" }, tip),
 			// `/integrations` renders inside the settings rail, so Settings owns it.

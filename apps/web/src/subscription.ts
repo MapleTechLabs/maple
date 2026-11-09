@@ -215,6 +215,21 @@ const root = Subscription.make<Model, Message, Resources>()((entry) => ({
 						),
 		},
 	),
+	/** The on-call pill reads the schedules again once a shift hands off. */
+	shellOnCallHandoff: entry(
+		{ atMs: Schema.NullOr(Schema.Number) },
+		{
+			modelToDependencies: (model) => ({
+				atMs: model.session._tag === "SignedIn" ? Shell.onCallHandoffAt(model.shell) : null,
+			}),
+			dependenciesToStream: ({ atMs }) =>
+				atMs === null
+					? Stream.empty
+					: Stream.map(Shell.onCallHandoff(atMs), (message) =>
+							Message.GotShellMessage({ message }),
+						),
+		},
+	),
 	/** The dashboards list starred or unstarred one (`dashboardFavoritesAtom`). */
 	shellDashboardFavorites: entry(
 		{},

@@ -206,14 +206,63 @@ export const sidebarGroupLabel = <Message>(
 		children,
 	)
 
-export const sidebarGroupContent = <Message>(h: HtmlBuilder<Message>, children: Children): Html =>
+export const sidebarGroupContent = <Message>(
+	h: HtmlBuilder<Message>,
+	children: Children,
+	attributes: Attributes<Message> = [],
+): Html =>
 	h.div(
 		[
 			h.Class(cn(sidebarGroupContentStyles)),
 			h.DataAttribute("sidebar", "group-content"),
 			h.DataAttribute("slot", "sidebar-group-content"),
+			...attributes,
 		],
 		children,
+	)
+
+export type SidebarGroupToggleOptions<Message> = Readonly<{
+	label: string
+	isExpanded: boolean
+	/** The `sidebarGroupContent` id it shows and hides. */
+	controlsId: string
+	/** None: the group cannot collapse right now (it holds the current page). */
+	onToggle: Message | null
+}>
+
+/** A group label that collapses its rows: a chevron button with `aria-expanded`. */
+export const sidebarGroupToggle = <Message>(
+	h: HtmlBuilder<Message>,
+	options: SidebarGroupToggleOptions<Message>,
+): Html =>
+	h.button(
+		[
+			h.Type("button"),
+			h.Class(
+				cn(
+					...sidebarGroupLabelStyles,
+					"group/toggle h-6 w-full gap-1 text-left text-muted-foreground",
+					options.onToggle === null
+						? "cursor-default"
+						: "cursor-pointer hover:text-sidebar-foreground active:text-sidebar-foreground",
+				),
+			),
+			h.DataAttribute("sidebar", "group-label"),
+			h.DataAttribute("slot", "sidebar-group-toggle"),
+			h.AriaExpanded(options.isExpanded),
+			h.AriaControls(options.controlsId),
+			...(options.onToggle === null ? [h.AriaDisabled(true)] : [h.OnClick(options.onToggle)]),
+		],
+		[
+			h.span([h.Class("flex-1 truncate")], [options.label]),
+			icon(h, "ChevronDownIcon", {
+				size: 12,
+				className: cn(
+					"opacity-0 transition-[opacity,rotate] duration-150 group-hover/toggle:opacity-100 group-focus-visible/toggle:opacity-100 motion-reduce:transition-none",
+					options.isExpanded ? "" : "-rotate-90 opacity-100",
+				),
+			}),
+		],
 	)
 
 /** `<SidebarGroupAction aria-label>`: the icon button in a group label's corner. */

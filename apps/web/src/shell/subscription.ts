@@ -1,8 +1,11 @@
 import { isDialogOpen, isEditableTarget, pressedKey } from "@maple/ui/lib/keyboard"
-import { Option, Stream, String as Str } from "effect"
+import { Clock, Duration, Effect, Option, Stream, String as Str } from "effect"
+import { AsyncData } from "foldkit"
 import { Dom } from "foldkit"
 import { DASHBOARD_FAVORITES_EVENT, readDashboardFavorites } from "./favorites"
 import { Message } from "./message"
+import type { Model } from "./model"
+import { nextHandoffMs } from "./oncall"
 
 /** `useIsMobile` (`max-md`): below 768px the sidebar is a sheet. */
 export const MOBILE_QUERY = "(max-width: 767px)"
@@ -82,3 +85,17 @@ export const favoritesChanges: Stream.Stream<Message> = Dom.streamFromEvent({
 	type: DASHBOARD_FAVORITES_EVENT,
 	mapEvent: () => Message.ChangedDashboardFavorites({ favorites: readDashboardFavorites() }),
 })
+
+/** When the on-call pill next reads the schedules again: the soonest handoff, if any. */
+export const onCallHandoffAt = (model: Model): number | null =>
+	Option.getOrNull(Option.flatMapNullishOr(AsyncData.getData(model.onCall), nextHandoffMs))
+
+/** Waits out the handoff (and a few seconds for the API to agree), then asks again. */
+export const onCallHandoff = (atMs: number): Stream.Stream<Message> =>
+	Stream.fromEffect(
+		Effect.gen(function* () {
+			const now = yield* Clock.currentTimeMillis
+			yield* Effect.sleep(Duration.millis(Math.max(0, atMs - now) + 5_000))
+			return Message.ElapsedOnCallHandoff()
+		}),
+	)

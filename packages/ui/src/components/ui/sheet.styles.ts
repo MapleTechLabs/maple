@@ -29,12 +29,13 @@ export const sheetPopupRightStyles =
 	"col-start-2 w-[calc(100%-(--spacing(12)))] max-w-md border-s data-ending-style:translate-x-8 data-starting-style:translate-x-8"
 
 /**
- * A side sheet's width, by what it holds. `default` a form or filter list, `detail` a peek at one
- * item, `wide` reading content (a log, a review, a setup guide), `full` a trace waterfall.
+ * A side sheet's width, by what it holds. `default` a filter list, `detail` a peek at one item,
+ * `form` a create or edit form, `wide` reading content (a log, a review), `full` a trace waterfall.
  */
 export const sheetSizeStyles = {
 	default: "sm:max-w-md",
 	detail: "sm:max-w-xl",
+	form: "sm:max-w-2xl",
 	wide: "sm:max-w-3xl",
 	full: "sm:max-w-[min(1100px,calc(100vw-2rem))]",
 } as const

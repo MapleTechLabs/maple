@@ -7,6 +7,9 @@ import { MapleInternalApiClient } from "../platform/api-clients"
 import { loadServicesFacets } from "../data/services-facets-probe"
 import { loadSources, sourcesListKey } from "../page/sources/kit/data"
 import { Message } from "./message"
+import { SessionTenant } from "../data/session-tenant"
+import { listOnCallSchedules } from "../page/alerts/shared/oncall-schedules"
+import { isoMs } from "../page/alerts/shared/time"
 
 /**
  * Everything the shell loads at boot, over the S1 API clients. The data layer (S6) is designed in
@@ -77,4 +80,29 @@ export const LoadNamespaces = Command.define("LoadNamespaces", {
 			)
 			return Message.SucceededLoadNamespaces({ orgId, namespaces })
 		}).pipe(failed(Message.FailedLoadNamespaces({ orgId }))),
+})
+
+// ON CALL
+
+/** The org's schedules (who holds each now, as the API reads it) and who is looking. */
+export const LoadOnCall = Command.define("LoadOnCall", {
+	args: orgArgs,
+	messages: [Message.SucceededLoadOnCall, Message.FailedLoadOnCall],
+	execute: ({ orgId }) =>
+		Effect.gen(function* () {
+			const tenant = yield* (yield* SessionTenant).get
+			const schedules = yield* listOnCallSchedules
+			return Message.SucceededLoadOnCall({
+				orgId,
+				snapshot: {
+					userId: tenant.userId,
+					shifts: Arr.map(schedules, (schedule) => ({
+						scheduleName: schedule.name,
+						timeZone: schedule.time_zone,
+						userId: schedule.on_call_now?.user_id ?? null,
+						endsAtMs: schedule.on_call_now === null ? null : isoMs(schedule.on_call_now.ends_at),
+					})),
+				},
+			})
+		}).pipe(failed(Message.FailedLoadOnCall({ orgId }))),
 })

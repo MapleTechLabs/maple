@@ -3,6 +3,7 @@ import { Effect, Option, Schema, Array as Arr, Record as Rec, String as Str } fr
 import { readQuotaApproachingDismissed } from "./billing-banners"
 import { readDashboardFavorites } from "./favorites"
 import {
+	COLLAPSED_NAV_GROUPS_KEY,
 	INFRA_SURFACES_STORAGE_PREFIX,
 	NAMESPACE_STORAGE_PREFIX,
 	ShellStorageError,
@@ -61,6 +62,12 @@ const readRememberedSurfaces = readPrefixed(
 	Schema.decodeUnknownOption(Schema.fromJsonString(Schema.Array(NavSurface))),
 )
 
+const decodeGroups = Schema.decodeUnknownOption(Schema.fromJsonString(Schema.Array(Schema.String)))
+
+/** The folded nav groups; unreadable or blocked storage folds none. */
+export const readCollapsedNavGroups = (): ReadonlyArray<string> =>
+	Option.getOrElse(Option.flatMap(readLocalStorage(COLLAPSED_NAV_GROUPS_KEY), decodeGroups), () => [])
+
 /** Persisted shell UI state, read once before the first render. */
 export const readShellFlags: Effect.Effect<ShellFlags> = Effect.gen(function* () {
 	const pinnedNamespaces = yield* readPinnedNamespaces
@@ -71,6 +78,7 @@ export const readShellFlags: Effect.Effect<ShellFlags> = Effect.gen(function* ()
 		theme: readTheme(),
 		pinnedNamespaces,
 		dashboardFavorites: readDashboardFavorites(),
+		collapsedNavGroups: readCollapsedNavGroups(),
 		rememberedSurfaces: yield* readRememberedSurfaces,
 		isQuotaApproachingDismissed: yield* readQuotaApproachingDismissed,
 		platform: detectPlatform(),

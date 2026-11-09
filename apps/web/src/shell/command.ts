@@ -9,6 +9,8 @@ import { Message, Theme } from "./message"
 export const NAMESPACE_STORAGE_PREFIX = "maple.global-namespace."
 /** `maple.infra-surfaces.<orgId>`: the org's last settled infra surfaces, JSON. */
 export const INFRA_SURFACES_STORAGE_PREFIX = "maple.infra-surfaces."
+/** The nav group ids the user folded, JSON. */
+export const COLLAPSED_NAV_GROUPS_KEY = "maple.sidebar.collapsed-groups"
 /** The theme key the app and the pre-paint script in index.html share. */
 export const THEME_STORAGE_KEY = "maple-theme"
 
@@ -21,7 +23,7 @@ export class ShellStorageError extends Schema.TaggedError<ShellStorageError>()(
 	},
 ) {}
 
-const encodeSurfaces = Schema.encodeSync(Schema.fromJsonString(Schema.Array(Schema.String)))
+const encodeStrings = Schema.encodeSync(Schema.fromJsonString(Schema.Array(Schema.String)))
 
 /** Base UI moves DOM focus to the open popup and to the hovered or arrowed item. */
 export const FocusElement = Command.define("FocusElement", {
@@ -96,8 +98,19 @@ export const SaveInfraSurfaces = Command.define("SaveInfraSurfaces", {
 	messages: [Message.CompletedSaveInfraSurfaces],
 	execute: ({ orgId, surfaces }) =>
 		Effect.sync(() => {
-			writeLocalStorage(`${INFRA_SURFACES_STORAGE_PREFIX}${orgId}`, encodeSurfaces(surfaces))
+			writeLocalStorage(`${INFRA_SURFACES_STORAGE_PREFIX}${orgId}`, encodeStrings(surfaces))
 			return Message.CompletedSaveInfraSurfaces()
+		}),
+})
+
+/** Remembers which nav groups are folded; storage that throws keeps them for this tab only. */
+export const SaveCollapsedNavGroups = Command.define("SaveCollapsedNavGroups", {
+	args: { groups: Schema.Array(Schema.String) },
+	messages: [Message.CompletedSaveNavGroups],
+	execute: ({ groups }) =>
+		Effect.sync(() => {
+			writeLocalStorage(COLLAPSED_NAV_GROUPS_KEY, encodeStrings(groups))
+			return Message.CompletedSaveNavGroups()
 		}),
 })
 

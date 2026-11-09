@@ -8,6 +8,7 @@ import {
 	sidebarGroup,
 	sidebarGroupContent,
 	sidebarGroupLabel,
+	sidebarGroupToggle,
 	sidebarMenu,
 	sidebarMenuButton,
 	sidebarMenuItem,
@@ -276,6 +277,21 @@ export const pinnedGroup = (
 	]
 }
 
+export type NavGroupFold = "unlabelled" | "expanded" | "collapsed" | "pinned"
+
+/**
+ * How a group's rows show: a labelled group folds, except while it holds the current page
+ * (`pinned`) and on the collapsed rail, where its label is hidden and every row shows.
+ */
+export const navGroupFold = (model: Model, group: NavGroup, currentPath: string): NavGroupFold => {
+	if (group.label === undefined) return "unlabelled"
+	if (Arr.some(group.items, (item) => isNavItemActive(currentPath, item))) return "pinned"
+	if (!model.isSidebarOpen && !model.isMobile) return "expanded"
+	return model.collapsedNavGroups.includes(group.id) ? "collapsed" : "expanded"
+}
+
+const navGroupContentId = (group: NavGroup) => `shell-nav-group-${group.id}`
+
 export const navGroupSections = (
 	h: HtmlBuilder<Message>,
 	model: Model,
@@ -283,15 +299,32 @@ export const navGroupSections = (
 	tip: RailTip = NO_TIP,
 	clerk: ShellClerk | null = null,
 ): ReadonlyArray<Html> =>
-	Arr.map(shellNavGroups(clerk), (group) =>
-		sidebarGroup(h, undefined, [
-			...(group.label === undefined ? [] : [sidebarGroupLabel(h, GROUP_LABEL, [group.label])]),
-			sidebarGroupContent(h, [
-				sidebarMenu(
-					h,
-					undefined,
-					Arr.map(group.items, (item) => navRow(h, model, item, currentPath, tip)),
-				),
-			]),
-		]),
-	)
+	Arr.map(shellNavGroups(clerk), (group) => {
+		const fold = navGroupFold(model, group, currentPath)
+		return sidebarGroup(h, undefined, [
+			...(group.label === undefined
+				? []
+				: [
+						sidebarGroupToggle(h, {
+							label: group.label,
+							isExpanded: fold !== "collapsed",
+							controlsId: navGroupContentId(group),
+							onToggle:
+								fold === "pinned" ? null : Message.ClickedNavGroup({ groupId: group.id }),
+						}),
+					]),
+			sidebarGroupContent(
+				h,
+				fold === "collapsed"
+					? []
+					: [
+							sidebarMenu(
+								h,
+								undefined,
+								Arr.map(group.items, (item) => navRow(h, model, item, currentPath, tip)),
+							),
+						],
+				[h.Id(navGroupContentId(group))],
+			),
+		])
+	})

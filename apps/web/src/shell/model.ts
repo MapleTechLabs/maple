@@ -16,6 +16,7 @@ import * as Palette from "./palette/model"
 import { Platform } from "./palette/shortcuts"
 import { Menu, Theme } from "./message"
 import { NavSurface } from "./nav"
+import { OnCallSnapshot } from "./oncall"
 import {
 	type InfraSurfaces,
 	PENDING_INTEGRATIONS,
@@ -31,6 +32,7 @@ export const InfraPresenceData = AsyncData.Schema(Schema.Array(InfraSurfaceLiter
 export const DashboardsData = AsyncData.Schema(Schema.Array(PinnedDashboardRow), LoadFailure)
 export const NamespacesData = AsyncData.Schema(Schema.Array(Schema.String), LoadFailure)
 export const SourcesData = AsyncData.Schema(Schema.Array(V2Source), LoadFailure)
+export const OnCallData = AsyncData.Schema(OnCallSnapshot, LoadFailure)
 
 export const OpenMenu = Schema.Struct({ menu: Menu, maybePosition: Schema.Option(PopupPosition) })
 export type OpenMenu = typeof OpenMenu.Type
@@ -76,6 +78,10 @@ export const Model = Schema.Struct({
 	/** `maple.infra-surfaces.<orgId>`: each org's last settled surfaces, so the sidebar lays out once. */
 	rememberedSurfaces: Schema.Record(Schema.String, Schema.Array(NavSurface)),
 	dashboards: DashboardsData.schema,
+	/** The org's schedules and who holds each now, for the footer's on-call pill. */
+	onCall: OnCallData.schema,
+	/** `maple.sidebar.collapsed-groups`: nav group ids the user folded. */
+	collapsedNavGroups: Schema.Array(Schema.String),
 	namespaces: NamespacesData.schema,
 	/** The org's sources, read once a page links to its source (`source-link.ts`). */
 	sources: SourcesData.schema,
@@ -133,6 +139,7 @@ export type ShellFlags = Readonly<{
 	theme: Theme
 	pinnedNamespaces: Readonly<Record<string, string>>
 	dashboardFavorites: ReadonlyArray<string>
+	collapsedNavGroups?: ReadonlyArray<string>
 	rememberedSurfaces?: Readonly<Record<string, ReadonlyArray<NavSurface>>>
 	isQuotaApproachingDismissed?: boolean
 	platform?: Platform
@@ -157,6 +164,8 @@ export const init = (flags: ShellFlags): Model => ({
 	integrations: PENDING_INTEGRATIONS,
 	rememberedSurfaces: flags.rememberedSurfaces ?? {},
 	dashboards: DashboardsData.Idle(),
+	onCall: OnCallData.Idle(),
+	collapsedNavGroups: flags.collapsedNavGroups ?? [],
 	namespaces: NamespacesData.Idle(),
 	sources: SourcesData.Idle(),
 	namespaceQuery: "",

@@ -11,12 +11,13 @@ import {
 	FocusSiblingMenuItem,
 	FocusShortcutSearch,
 	LogOut,
+	SaveCollapsedNavGroups,
 	SaveInfraSurfaces,
 	SaveNamespace,
 	SaveSidebarState,
 	SaveTheme,
 } from "./command"
-import { LoadInfraSurfaces, LoadNamespaces, LoadSources } from "./data"
+import { LoadInfraSurfaces, LoadNamespaces, LoadOnCall, LoadSources } from "./data"
 import { DismissQuotaBanner, OpenCustomerPortal } from "./billing-banners"
 import * as ClerkOrgSwitcher from "./clerk-org-switcher"
 import * as Checklist from "./onboarding-checklist"
@@ -34,6 +35,7 @@ import {
 	initRightSheet,
 	type Model,
 	NamespacesData,
+	OnCallData,
 	shellProbe,
 	SourcesData,
 } from "./model"
@@ -61,6 +63,7 @@ export const enter =
 			infraPresence: () => InfraPresenceData.Idle(),
 			integrations: () => PENDING_INTEGRATIONS,
 			dashboards: () => DashboardsData.Idle(),
+			onCall: () => OnCallData.Idle(),
 			namespaces: () => NamespacesData.Idle(),
 			sources: () => SourcesData.Idle(),
 		})
@@ -84,12 +87,34 @@ export const enter =
 const requestSidebarData = (model: Model): UpdateReturn => {
 	if (model.hasRequestedSidebarData || Option.isNone(model.maybeOrgId)) return { model }
 	const surfaces = requestInfraSurfaces(model)
+	const onCall = readOnCall(surfaces.model)
 	return {
-		model: modifyFields(surfaces.model, {
+		model: modifyFields(onCall.model, {
 			hasRequestedSidebarData: () => true,
 			dashboards: () => DashboardsData.Loading(),
 		}),
-		commands: surfaces.commands ?? [],
+		commands: [...(surfaces.commands ?? []), ...(onCall.commands ?? [])],
+	}
+}
+
+/** The footer's on-call pill: read with the sidebar, again at each handoff with the last answer up. */
+const readOnCall = (model: Model): UpdateReturn =>
+	Option.match(Option.all([model.maybeOrgId, AsyncData.revalidateOrLoad(model.onCall)]), {
+		onNone: () => ({ model }),
+		onSome: ([orgId, onCall]) => ({
+			model: modifyFields(model, { onCall: () => onCall }),
+			commands: [LoadOnCall({ orgId })],
+		}),
+	})
+
+/** Folds or unfolds a nav group and remembers it. */
+const toggleNavGroup = (model: Model, groupId: string): UpdateReturn => {
+	const groups = Array.contains(model.collapsedNavGroups, groupId)
+		? Array.filter(model.collapsedNavGroups, (id) => id !== groupId)
+		: [...model.collapsedNavGroups, groupId]
+	return {
+		model: modifyFields(model, { collapsedNavGroups: () => groups }),
+		commands: [SaveCollapsedNavGroups({ groups })],
 	}
 }
 
@@ -461,6 +486,17 @@ const foldMessage = (model: Model, message: Message): UpdateReturn =>
 						}),
 					}
 				: { model },
+		SucceededLoadOnCall: ({ orgId, snapshot }) =>
+			forOrg(model, orgId, (current) =>
+				modifyFields(current, { onCall: () => OnCallData.Success({ data: snapshot }) }),
+			),
+		FailedLoadOnCall: ({ orgId }) =>
+			forOrg(model, orgId, (current) =>
+				modifyFields(current, { onCall: () => OnCallData.Failure({ error: "Failed" }) }),
+			),
+		ElapsedOnCallHandoff: () => readOnCall(model),
+		ClickedNavGroup: ({ groupId }) => toggleNavGroup(model, groupId),
+		CompletedSaveNavGroups: () => ({ model }),
 		SucceededLoadNamespaces: ({ orgId, namespaces }) =>
 			forOrg(model, orgId, (current) =>
 				modifyFields(current, { namespaces: () => NamespacesData.Success({ data: namespaces }) }),

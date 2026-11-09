@@ -9,9 +9,13 @@ import {
 	sheetTitleStyles,
 	sheetViewportLeftStyles,
 	sheetViewportStyles,
+	type SheetSize,
 } from "@maple/ui/styles/ui/sheet"
+import { Command } from "foldkit"
 import type { Attribute, Html, HtmlBuilder } from "foldkit/html"
 import { button } from "./button"
+import * as Dialog from "./dialog"
+import * as DialogView from "./dialog-view"
 import { icon } from "./icon"
 
 // `<Sheet><SheetPopup side="left">` (packages/ui/src/components/ui/sheet.tsx) over Base UI Dialog.
@@ -127,3 +131,75 @@ export const leftSheet = <Message>(
 			),
 		],
 	)
+
+// RIGHT SHEET
+
+export type RightSheetOptions<Message> = Readonly<{
+	sheet: Dialog.Model
+	title: string
+	description?: string
+	/** `form` (672px) by default; `wide` for reading content. */
+	size?: SheetSize
+	/** The scrolling body. */
+	body: ReadonlyArray<Html>
+	/** The sticky footer (Cancel, then the primary action); none renders no footer. */
+	footer?: ReadonlyArray<Html>
+	toParentMessage: (message: Dialog.Message) => Message
+}>
+
+// Reduced motion keeps the fade and drops the slide.
+const REDUCED_MOTION =
+	"motion-reduce:data-ending-style:translate-x-0 motion-reduce:data-starting-style:translate-x-0"
+
+/**
+ * A full-height panel from the right over the Dialog Submodel: title, close, a scrolling body and a
+ * sticky footer. Escape, the backdrop and the close button close it (`isDismissed`).
+ */
+export const rightSheet = <Message>(h: HtmlBuilder<Message>, options: RightSheetOptions<Message>): Html => {
+	const { sheet } = options
+	return h.submodel({
+		slotId: `${sheet.id}-sheet`,
+		model: sheet,
+		view: DialogView.view,
+		viewInputs: {
+			side: "right",
+			size: options.size ?? "form",
+			className: REDUCED_MOTION,
+			hasDescription: options.description !== undefined,
+			toView: ({ portal }) => portal,
+			toContent: () => [
+				DialogView.dialogHeader(h, "sheet", [
+					DialogView.dialogTitle(h, "sheet", sheet.id, options.title),
+					...(options.description === undefined
+						? []
+						: [DialogView.dialogDescription(h, "sheet", sheet.id, options.description)]),
+				]),
+				DialogView.dialogPanel(h, "sheet", sheet.id, options.body),
+				...(options.footer === undefined
+					? []
+					: [DialogView.dialogFooter(h, "sheet", options.footer)]),
+			],
+		},
+		toParentMessage: options.toParentMessage,
+	})
+}
+
+export type SheetStep = ReturnType<typeof Dialog.update>
+
+/**
+ * A sheet whose open state lives in the URL: open or close it to match. The Opened/Closed it
+ * reports are dropped, as the URL already says so.
+ */
+export const followUrl = (sheet: Dialog.Model, isOpenInUrl: boolean): SheetStep => {
+	const step = isOpenInUrl ? Dialog.open(sheet) : Dialog.close(sheet)
+	return { model: step.model, commands: step.commands }
+}
+
+/** The sheet closed itself (Escape, backdrop, close button): the caller clears its URL state. */
+export const isDismissed = (step: SheetStep): boolean => step.outMessage?._tag === "Closed"
+
+/** A sheet step's commands under the parent's Message. */
+export const mapSheetCommands = <Message>(
+	step: SheetStep,
+	toParentMessage: (message: Dialog.Message) => Message,
+) => Command.mapMessages(step.commands ?? [], toParentMessage)
