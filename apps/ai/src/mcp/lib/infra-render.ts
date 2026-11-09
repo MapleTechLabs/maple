@@ -331,7 +331,7 @@ export const kindTable = (section: InfraKindSection): DocBlock => {
 		case "vercel_projects":
 			return doc.table(
 				["Project", "Requests", "5xx rate", "4xx", "Cache hit", "Error logs", "Status", "Last seen"],
-				rows.map((r) => [
+				Arr.map(rows, (r) => [
 					tableCell(r.name),
 					count(r.requests),
 					pct(r.errorRate),

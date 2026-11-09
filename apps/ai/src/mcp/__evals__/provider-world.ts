@@ -151,7 +151,7 @@ export const providerFixtureRules = (): FixtureRule[] => [
 	{
 		// The busiest-paths query counts cache lookups too; it is matched below.
 		match: (sql) => vercelLogs(sql) && has(sql, "cacheLookups") && !has(sql, "path"),
-		rows: VERCEL_PROJECTS.map((p) => ({
+		rows: Arr.map(VERCEL_PROJECTS, (p) => ({
 			projectId: p.id,
 			projectName: p.name,
 			serviceName: p.name,
@@ -167,7 +167,7 @@ export const providerFixtureRules = (): FixtureRule[] => [
 	{
 		match: (sql) => vercelLogs(sql) && has(sql, "requests5xx") && bucketed(sql),
 		rows: (sql) =>
-			buckets(sql).map(({ at, t }) => ({
+			Arr.map(buckets(sql), ({ at, t }) => ({
 				bucket: isoZ(at),
 				requests: 4_300,
 				requests2xx: 3_800,

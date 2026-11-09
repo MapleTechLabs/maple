@@ -216,7 +216,7 @@ describe("buildIntegrationInventory", () => {
 			const vercel = providerOf({ vercelConnection: connection, vercelProjectCount: 3 }, "vercel")
 			expect(vercel?.status).toBe("healthy")
 			expect(vercel?.account).toBe("Acme (3 projects)")
-			expect(vercel?.resources.map((r) => r.name)).toEqual(["logs", "traces"])
+			expect(Arr.map(vercel?.resources ?? [], (r) => r.name)).toEqual(["logs", "traces"])
 		})
 
 		it("fails on a drain Vercel reports missing, and leaves out a drain that is turned off", () => {

@@ -1,4 +1,5 @@
 import { escapeClickHouseString } from "@maple-dev/effect-orm/sql"
+import { Array as Arr } from "effect"
 import { rawSqlDisplayTypeFor } from "@maple/widgets"
 import { makeRawSqlDataSource } from "@maple/widgets/dashboard"
 import {
@@ -133,9 +134,13 @@ function widgets(projectName?: string): WidgetDef[] {
 		sqlWidget({
 			id: "requests-by-status",
 			visualization: "chart",
-			sql: `SELECT $__timeGroup(Timestamp) AS bucket, ${[2, 3, 4, 5]
-				.map((digit) => `countIf(intDiv(${STATUS_SQL}, 100) = ${digit}) AS \`${digit}xx\``)
-				.join(", ")} FROM logs WHERE ${requests} GROUP BY bucket ORDER BY bucket ${FILL}`,
+			sql: `SELECT $__timeGroup(Timestamp) AS bucket, ${Arr.join(
+				Arr.map(
+					[2, 3, 4, 5],
+					(digit) => `countIf(intDiv(${STATUS_SQL}, 100) = ${digit}) AS \`${digit}xx\``,
+				),
+				", ",
+			)} FROM logs WHERE ${requests} GROUP BY bucket ORDER BY bucket ${FILL}`,
 			display: { title: "Requests by Status Class", ...CHART_DISPLAY_AREA, unit: "number" },
 			layout: { x: 6, y: 2, w: 6, h: 6 },
 		}),

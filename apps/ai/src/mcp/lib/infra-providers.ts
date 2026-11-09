@@ -796,7 +796,9 @@ export const inspectProvider = (target: ProviderInspectTarget, window: InfraWind
 					CH.compile(Integrations.vercelProjectRequestsSQL(), params),
 					"mcpVercelProjects",
 				)
-				const match = projects.find((row) => vercelName(row) === target.name)
+				const match = Option.getOrUndefined(
+					Arr.findFirst(projects, (row) => vercelName(row) === target.name),
+				)
 				if (match === undefined) return NOT_FOUND
 				const project = { ...params, projectId: match.projectId, bucketSeconds }
 				const [series, paths, errors] = yield* Effect.all(
@@ -820,7 +822,7 @@ export const inspectProvider = (target: ProviderInspectTarget, window: InfraWind
 					{ concurrency: 3 },
 				)
 				const points = (pick: (row: (typeof series)[number]) => number) =>
-					series.flatMap((row) => isoPoint(row.bucket, pick(row)))
+					Arr.flatMap(series, (row) => isoPoint(row.bucket, pick(row)))
 				return {
 					found: true,
 					entity: vercelRow(match),
@@ -844,7 +846,7 @@ export const inspectProvider = (target: ProviderInspectTarget, window: InfraWind
 							title: "Busiest paths",
 							keyLabel: "Path",
 							valueLabels: ["Requests", "4xx", "5xx", "Cache hits"],
-							rows: paths.map((row) => ({
+							rows: Arr.map(paths, (row) => ({
 								key: row.path === "" ? "(none)" : row.path,
 								values: [row.requests, row.requests4xx, row.requests5xx, row.cacheHits],
 							})),
@@ -853,7 +855,7 @@ export const inspectProvider = (target: ProviderInspectTarget, window: InfraWind
 							title: "Top error logs",
 							keyLabel: "Message (source)",
 							valueLabels: ["Occurrences"],
-							rows: errors.map((row) => ({
+							rows: Arr.map(errors, (row) => ({
 								key: `${row.message === "" ? "(empty)" : row.message} (${row.source || "-"})`,
 								values: [row.occurrences],
 							})),

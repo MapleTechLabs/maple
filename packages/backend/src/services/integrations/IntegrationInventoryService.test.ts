@@ -8,7 +8,7 @@ import {
 	VercelProjects,
 } from "@maple/db/tables"
 import { OrgId, ScrapeTargetId, SourceId } from "@maple/domain/primitives"
-import { Effect, Layer, Schema, Array as Arr } from "effect"
+import { Effect, Layer, Option, Schema, Array as Arr } from "effect"
 import { TestClock } from "effect/testing"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import {
@@ -148,7 +148,7 @@ describe("IntegrationInventoryService", () => {
 					),
 					db.run(
 						PG.insertInto(VercelProjects).values(
-							["p1", "p2", "p3"].map((projectId) => ({
+							Arr.map(["p1", "p2", "p3"], (projectId) => ({
 								id: `row_${projectId}`,
 								orgId,
 								// p3 is left from an earlier connection.
@@ -163,7 +163,9 @@ describe("IntegrationInventoryService", () => {
 				]),
 			)
 			const inventory = yield* (yield* IntegrationInventoryService).list(orgId)
-			const vercel = inventory.integrations.find((i) => i.provider === "vercel")
+			const vercel = Option.getOrUndefined(
+				Arr.findFirst(inventory.integrations, (i) => i.provider === "vercel"),
+			)
 			assert.strictEqual(vercel?.account, "Acme (2 projects)")
 			assert.strictEqual(vercel?.status, "failing")
 			assert.strictEqual(vercel?.resources[0]?.lastError, "Drain not found")

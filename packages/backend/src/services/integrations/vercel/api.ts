@@ -3,7 +3,7 @@
  * No Effect SDK exists, so this decodes only the fields Maple reads. Failures fold into one
  * {@link VercelApiError} whose `kind` drives the poller (auth failure, back-off, missing drain).
  */
-import { Duration, Effect, Option, Schema } from "effect"
+import { Duration, Effect, Option, Schema, Array as Arr, Record as Rec, String as Str } from "effect"
 import { HttpClient, HttpClientRequest } from "effect/http"
 
 const BASE_URL = "https://api.vercel.com"
@@ -52,12 +52,12 @@ const call = <S extends Schema.Top>(
 		if (response.status >= 300) {
 			const detail = Option.getOrUndefined(decodeErrorBody(body))?.error.message
 			return yield* new VercelApiError({
-				message: `Vercel API returned ${response.status}${detail === undefined ? "" : `: ${detail.slice(0, 300)}`}`,
+				message: `Vercel API returned ${response.status}${detail === undefined ? "" : `: ${Str.slice(0, 300)(detail)}`}`,
 				kind: errorKind(response.status),
 				status: response.status,
 			})
 		}
-		return yield* Schema.decodeUnknownEffect(schema)(body)
+		return yield* Schema.decodeEffect(schema)(body)
 	}).pipe(
 		Effect.timeout(REQUEST_TIMEOUT),
 		Effect.catchTags({
@@ -420,16 +420,14 @@ export const listDrains = Effect.fn("VercelApi.listDrains")(function* (
 ) {
 	const body = yield* call(httpClient, token, HttpClientRequest.get(drainUrl(teamId)), ListedDrainsBody)
 	yield* Effect.annotateCurrentSpan("maple.vercel.drains", body.drains.length)
-	return body.drains.map(
-		(drain): VercelListedDrain => ({
-			...toDrainInfo(drain),
-			createdAt: drain.createdAt,
-			endpoint: endpointOf(drain.delivery?.endpoint),
-			projectIds: drain.projectIds ?? [],
-			sampling: drain.sampling ?? [],
-			schemas: Object.keys(drain.schemas ?? {}),
-		}),
-	)
+	return Arr.map(body.drains, (drain): VercelListedDrain => ({
+		...toDrainInfo(drain),
+		createdAt: drain.createdAt,
+		endpoint: endpointOf(drain.delivery?.endpoint),
+		projectIds: drain.projectIds ?? [],
+		sampling: drain.sampling ?? [],
+		schemas: Rec.keys(drain.schemas ?? {}),
+	}))
 })
 
 /** Deletes a drain; one that is already gone (404/410) counts as deleted. */

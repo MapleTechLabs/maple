@@ -35,7 +35,21 @@ import {
 	type VercelConnectionRow,
 	type VercelDeploymentRow,
 } from "@maple/db/tables"
-import { Cause, Clock, Context, Duration, Effect, Layer, Option, Redacted, Ref, Result, Schema } from "effect"
+import {
+	Cause,
+	Clock,
+	Context,
+	Duration,
+	Effect,
+	Layer,
+	Option,
+	Redacted,
+	Ref,
+	Result,
+	Schema,
+	Array as Arr,
+	String as Str,
+} from "effect"
 import { FetchHttpClient, HttpClient } from "effect/http"
 import { decryptAes256Gcm, encryptAes256Gcm, parseBase64Aes256GcmKey } from "@maple/backend/platform/Crypto"
 import { Database } from "@maple/backend/platform/DatabaseLive"
@@ -178,11 +192,11 @@ const validateForwarding = (forwarding: VercelForwarding) =>
 		: Effect.void
 
 const sameIds = (a: ReadonlyArray<string>, b: ReadonlyArray<string>) =>
-	a.length === b.length && [...a].sort().join("\n") === [...b].sort().join("\n")
+	a.length === b.length && Arr.join([...a].sort(), "\n") === Arr.join([...b].sort(), "\n")
 
 /** One entry per id; listings that page by time can repeat an item at a page edge. */
 const uniqueById = <A extends { readonly id: string }>(items: ReadonlyArray<A>) => [
-	...new Map(items.map((item) => [item.id, item])).values(),
+	...new Map(Arr.map(items, (item) => [item.id, item])).values(),
 ]
 
 const toSummary = (row: VercelDeploymentRow) =>
@@ -256,7 +270,7 @@ export interface VercelIntegrationServiceApi {
 		limit: number,
 	) => Effect.Effect<ReadonlyArray<VercelDeploymentSummary>, IntegrationsPersistenceError>
 	readonly pollOrg: (orgId: OrgId) => Effect.Effect<VercelPollOrgSummary, IntegrationsPersistenceError>
-	readonly pollAllOrgs: () => Effect.Effect<VercelPollAllOrgsSummary, IntegrationsPersistenceError>
+	readonly pollAllOrgs: Effect.Effect<VercelPollAllOrgsSummary, IntegrationsPersistenceError>
 }
 
 export class VercelIntegrationService extends Context.Service<
@@ -277,7 +291,7 @@ export class VercelIntegrationService extends Context.Service<
 			Redacted.value(env.MAPLE_INGEST_KEY_LOOKUP_HMAC_KEY),
 			toConfigError,
 		)
-		const ingestUrl = env.MAPLE_INGEST_PUBLIC_URL.replace(/\/+$/, "")
+		const ingestUrl = Str.replace(/\/+$/, "")(env.MAPLE_INGEST_PUBLIC_URL)
 		const dbExecute = makeDbExecute(database, "VercelIntegrationService", toPersistenceError)
 
 		const loadConnection = (orgId: OrgId) =>
@@ -456,7 +470,8 @@ export class VercelIntegrationService extends Context.Service<
 			owner: DrainOwner,
 		) => {
 			const storedId = kind === "logs" ? owner.logDrainId : owner.traceDrainId
-			return drains.filter(
+			return Arr.filter(
+				drains,
 				(drain) =>
 					drain.schemas.includes(drainSchema(kind)) &&
 					(drain.endpoint === drainEndpoint(kind, owner.orgId) || drain.id === storedId),
@@ -470,7 +485,7 @@ export class VercelIntegrationService extends Context.Service<
 					Effect.as(null),
 					Effect.catch((error) => Effect.succeed(error)),
 				),
-			).pipe(Effect.map((errors) => errors.find((error) => error !== null) ?? null))
+			).pipe(Effect.map((errors) => Option.getOrNull(Arr.findFirst(errors, (error) => error !== null))))
 
 		const reconcileDrain = Effect.fn("VercelIntegrationService.reconcileDrain")(function* (
 			kind: DrainKind,
@@ -491,19 +506,23 @@ export class VercelIntegrationService extends Context.Service<
 				const error = yield* deleteEach(
 					token,
 					owner.teamId,
-					own.map((drain) => drain.id),
+					Arr.map(own, (drain) => drain.id),
 				)
 				return { id: null, state: null, changed: own.length > 0, error } satisfies DrainOutcome
 			}
 			const storedId = kind === "logs" ? owner.logDrainId : owner.traceDrainId
 			const kept =
-				own.find((drain) => drain.id === storedId) ??
-				own.reduce<VercelListedDrain | undefined>(
+				Option.getOrUndefined(Arr.findFirst(own, (drain) => drain.id === storedId)) ??
+				Arr.reduce<VercelListedDrain, VercelListedDrain | undefined>(
+					own,
+					undefined,
 					(newest, drain) =>
 						newest === undefined || drain.createdAt > newest.createdAt ? drain : newest,
-					undefined,
 				)
-			const extras = own.filter((drain) => drain !== kept).map((drain) => drain.id)
+			const extras = Arr.map(
+				Arr.filter(own, (drain) => drain !== kept),
+				(drain) => drain.id,
+			)
 			const extraError = yield* deleteEach(token, owner.teamId, extras)
 			// Vercel may redact headers in the listing, so the stored hash says whether they are current.
 			const rekey = owner.drainKeyHash !== ingestKey.hash
@@ -584,7 +603,9 @@ export class VercelIntegrationService extends Context.Service<
 					deleteEach(
 						token,
 						owner.teamId,
-						DRAIN_KINDS.flatMap((kind) => ownDrains(drains, kind, owner).map((drain) => drain.id)),
+						Arr.flatMap(DRAIN_KINDS, (kind) =>
+							Arr.map(ownDrains(drains, kind, owner), (drain) => drain.id),
+						),
 					),
 				),
 				Effect.flatMap((error) => (error === null ? Effect.succeed(true) : Effect.fail(error))),
@@ -634,7 +655,7 @@ export class VercelIntegrationService extends Context.Service<
 						yield* db.run(
 							PG.insertInto(VercelProjects)
 								.values(
-									projects.map((project) => ({
+									Arr.map(projects, (project) => ({
 										id: randomUUID(),
 										orgId,
 										connectionId,
@@ -659,7 +680,7 @@ export class VercelIntegrationService extends Context.Service<
 						)
 					}
 					if (!listing.complete) return
-					const seen = projects.map((project) => project.id)
+					const seen = Arr.map(projects, (project) => project.id)
 					yield* db.run(
 						PG.deleteFrom(VercelProjects).where(($) => [
 							$.orgId.eq(orgId),
@@ -690,7 +711,7 @@ export class VercelIntegrationService extends Context.Service<
 					yield* db.run(
 						PG.insertInto(VercelDeployments)
 							.values(
-								deployments.map((d) => ({
+								Arr.map(deployments, (d) => ({
 									id: randomUUID(),
 									orgId,
 									connectionId,
@@ -725,7 +746,7 @@ export class VercelIntegrationService extends Context.Service<
 								}),
 							}),
 					)
-					const touched = [...new Set(deployments.map((d) => d.projectId))]
+					const touched = [...new Set(Arr.map(deployments, (d) => d.projectId))]
 					const rows = yield* db.run(
 						PG.from(VercelDeployments)
 							.select("id", "projectId")
@@ -733,13 +754,14 @@ export class VercelIntegrationService extends Context.Service<
 							.orderBy(($) => [[$.createdAtVercel, "desc"]]),
 					)
 					const kept = new Map<string, number>()
-					const stale = rows
-						.filter((row) => {
+					const stale = Arr.map(
+						Arr.filter(rows, (row) => {
 							const count = (kept.get(row.projectId) ?? 0) + 1
 							kept.set(row.projectId, count)
 							return count > DEPLOYMENTS_KEPT_PER_PROJECT
-						})
-						.map((row) => row.id)
+						}),
+						(row) => row.id,
+					)
 					if (stale.length > 0) {
 						yield* db.run(
 							PG.deleteFrom(VercelDeployments).where(($) => [
@@ -787,7 +809,7 @@ export class VercelIntegrationService extends Context.Service<
 					),
 				]),
 			)
-			const productionIds = projects.flatMap((project) =>
+			const productionIds = Arr.flatMap(projects, (project) =>
 				project.productionDeploymentId === null ? [] : [project.productionDeploymentId],
 			)
 			const production =
@@ -800,8 +822,8 @@ export class VercelIntegrationService extends Context.Service<
 									.where(($) => [$.orgId.eq(orgId), $.deploymentId.in_(...productionIds)]),
 							),
 						)
-			const latestByProject = new Map(latest.map((row) => [row.projectId, row]))
-			const byDeploymentId = new Map(production.map((row) => [row.deploymentId, row]))
+			const latestByProject = new Map(Arr.map(latest, (row) => [row.projectId, row]))
+			const byDeploymentId = new Map(Arr.map(production, (row) => [row.deploymentId, row]))
 			const drainStatus = (id: string | null, state: VercelDrainState | null) =>
 				id === null && state === null
 					? null
@@ -826,9 +848,9 @@ export class VercelIntegrationService extends Context.Service<
 					logs: drainStatus(connection.logDrainId, connection.logDrainState),
 					traces: drainStatus(connection.traceDrainId, connection.traceDrainState),
 				},
-				projects: [...projects]
-					.sort((a, b) => a.name.localeCompare(b.name))
-					.map((project) => {
+				projects: Arr.map(
+					[...projects].sort((a, b) => Str.localeCompare(b.name)(a.name)),
+					(project) => {
 						const productionRow =
 							project.productionDeploymentId === null
 								? undefined
@@ -845,7 +867,8 @@ export class VercelIntegrationService extends Context.Service<
 								productionRow === undefined ? null : toSummary(productionRow),
 							latestDeployment: latestRow === undefined ? null : toSummary(latestRow),
 						})
-					}),
+					},
+				),
 				authFailed: connection.authFailedAt !== null,
 				connectedAt: connection.createdAt,
 				lastSuccessAt: connection.lastSuccessAt,
@@ -863,7 +886,7 @@ export class VercelIntegrationService extends Context.Service<
 					? teams.length === 1
 						? teams[0]
 						: undefined
-					: teams.find((t) => t.id === teamId)
+					: Option.getOrUndefined(Arr.findFirst(teams, (t) => t.id === teamId))
 			if (teamId !== undefined && team === undefined) {
 				return yield* new IntegrationsValidationError({
 					message: "This token cannot see that Vercel team.",
@@ -875,24 +898,19 @@ export class VercelIntegrationService extends Context.Service<
 					: (yield* listProjects(httpClient, token, team.id).pipe(Effect.mapError(toListError)))
 							.projects
 			return new VercelDiscoverResponse({
-				teams: teams.map((t) => new VercelTeam(t)),
-				projects: projects
-					.map((project) => ({ id: project.id, name: project.name, framework: project.framework }))
-					.sort((a, b) => a.name.localeCompare(b.name)),
+				teams: Arr.map(teams, (t) => new VercelTeam(t)),
+				projects: Arr.map(projects, (project) => ({
+					id: project.id,
+					name: project.name,
+					framework: project.framework,
+				})).sort((a, b) => Str.localeCompare(b.name)(a.name)),
 			})
 		})
 
 		const findTeam = (teams: ReadonlyArray<VercelTeamInfo>, teamId: string) =>
-			Option.fromNullishOr(teams.find((team) => team.id === teamId)).pipe(
-				Option.match({
-					onNone: () =>
-						Effect.fail(
-							new IntegrationsValidationError({
-								message: "This token cannot see that Vercel team.",
-							}),
-						),
-					onSome: Effect.succeed,
-				}),
+			Effect.fromOption(
+				Arr.findFirst(teams, (team) => team.id === teamId),
+				() => new IntegrationsValidationError({ message: "This token cannot see that Vercel team." }),
 			)
 
 		const claimLease = (connectionId: string, now: number) =>
@@ -1131,7 +1149,7 @@ export class VercelIntegrationService extends Context.Service<
 						.limit(limit),
 				),
 			)
-			return rows.map(toSummary)
+			return Arr.map(rows, toSummary)
 		})
 
 		const pollOrg = Effect.fn("VercelIntegrationService.pollOrg")(function* (orgId: OrgId) {
@@ -1208,8 +1226,8 @@ export class VercelIntegrationService extends Context.Service<
 					if (Result.isSuccess(projects)) {
 						yield* storeProjects(orgId, claimed.teamId, projects.success, now)
 						// Vercel drops a deleted project from the drain; forget it too, or the drain reads as drifted forever.
-						const listed = new Set(projects.success.projects.map((project) => project.id))
-						const kept = claimed.projectIds.filter((id) => listed.has(id))
+						const listed = new Set(Arr.map(projects.success.projects, (project) => project.id))
+						const kept = Arr.filter(claimed.projectIds, (id) => listed.has(id))
 						const prune = projects.success.complete && kept.length < claimed.projectIds.length
 						if (prune) forwarding = { ...claimed, projectIds: kept }
 						yield* write(prune ? { discoveredAt: now, projectIds: kept } : { discoveredAt: now })
@@ -1233,7 +1251,7 @@ export class VercelIntegrationService extends Context.Service<
 					deploymentsUpserted = listed.success.length
 					const newest = Math.max(
 						claimed.deploymentsWatermarkAt ?? 0,
-						...listed.success.map((d) => d.createdAt),
+						...Arr.map(listed.success, (d) => d.createdAt),
 					)
 					if (newest > 0) yield* write({ deploymentsWatermarkAt: newest })
 				} else if (yield* stopFor(listed.failure)) {
@@ -1263,7 +1281,7 @@ export class VercelIntegrationService extends Context.Service<
 							yield* removeDrains(claimed, token)
 							return skip("disconnected")
 						}
-						drainsRepaired = [outcomes.logs, outcomes.traces].filter((o) => o.changed).length
+						drainsRepaired = Arr.filter([outcomes.logs, outcomes.traces], (o) => o.changed).length
 						for (const outcome of [outcomes.logs, outcomes.traces]) {
 							if (outcome.error === null) continue
 							if (isFatal(outcome.error) && (yield* stopFor(outcome.error))) {
@@ -1275,7 +1293,7 @@ export class VercelIntegrationService extends Context.Service<
 				}
 
 				const errors = yield* Ref.get(errorsRef)
-				const lastError = errors.length === 0 ? null : (errors[0] ?? "").slice(0, 500)
+				const lastError = errors.length === 0 ? null : Str.slice(0, 500)(errors[0] ?? "")
 				yield* write(
 					lastError === null
 						? { lastSuccessAt: now, lastError: null, lastErrorAt: null }
@@ -1313,7 +1331,7 @@ export class VercelIntegrationService extends Context.Service<
 			)
 		})
 
-		const pollAllOrgs = Effect.fn("VercelIntegrationService.pollAllOrgs")(function* () {
+		const pollAllOrgs = Effect.gen(function* () {
 			const connections = yield* dbExecute((db) =>
 				db.run(
 					PG.from(VercelConnections)
@@ -1346,12 +1364,12 @@ export class VercelIntegrationService extends Context.Service<
 			)
 			return {
 				orgs: connections.length,
-				deploymentsUpserted: summaries.reduce((sum, s) => sum + s.deploymentsUpserted, 0),
-				drainsRepaired: summaries.reduce((sum, s) => sum + s.drainsRepaired, 0),
-				failures: summaries.reduce((sum, s) => sum + s.failures, 0),
-				skipped: summaries.filter((s) => s.skipped !== null).length,
+				deploymentsUpserted: Arr.reduce(summaries, 0, (sum, s) => sum + s.deploymentsUpserted),
+				drainsRepaired: Arr.reduce(summaries, 0, (sum, s) => sum + s.drainsRepaired),
+				failures: Arr.reduce(summaries, 0, (sum, s) => sum + s.failures),
+				skipped: Arr.filter(summaries, (s) => s.skipped !== null).length,
 			} satisfies VercelPollAllOrgsSummary
-		})
+		}).pipe(Effect.withSpan("VercelIntegrationService.pollAllOrgs"))
 
 		/** Best effort: a failed or slow poll still leaves the connection for the cron to catch up. */
 		const pollNow = (orgId: OrgId) =>

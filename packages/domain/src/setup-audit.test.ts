@@ -1015,7 +1015,9 @@ describe("integration checks", () => {
 				"CFG-INTEG-07",
 			)
 			expect(
-				rejected.affected.some((entity) => entity.note?.includes("Vercel rejected the access token")),
+				Arr.some(rejected.affected, (entity) =>
+					Str.includes("Vercel rejected the access token")(entity.note ?? ""),
+				),
 			).toBe(true)
 		})
 

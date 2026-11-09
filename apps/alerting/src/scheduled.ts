@@ -399,7 +399,7 @@ const railwayMetricsTick = makeTick(
 )
 
 const vercelTick = makeTick(
-	VercelIntegrationService.use((vercel) => vercel.pollAllOrgs()),
+	VercelIntegrationService.use((vercel) => vercel.pollAllOrgs),
 	"vercel",
 	(result) =>
 		result.orgs > 0
