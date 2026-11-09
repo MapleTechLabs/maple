@@ -131,6 +131,19 @@ export const GcpResourceNumber = Schema.String.check(Schema.isPattern(/^[0-9]{1,
 )
 export type GcpResourceNumber = Schema.Schema.Type<typeof GcpResourceNumber>
 
+export const SearchConsoleSiteId = MapleUuidId("@maple/SearchConsoleSiteId", "Search Console Site ID")
+export type SearchConsoleSiteId = Schema.Schema.Type<typeof SearchConsoleSiteId>
+
+/** A Search Console property: `sc-domain:example.com` or a URL prefix like `https://example.com/`. */
+export const SearchConsoleSiteUrl = Schema.String.check(
+	Schema.isMaxLength(2048),
+	Schema.isPattern(/^(sc-domain:[a-z0-9.-]+|https?:\/\/[^\s]+)$/iu),
+).pipe(
+	Schema.brand("@maple/SearchConsoleSiteUrl"),
+	Schema.annotate({ identifier: "@maple/SearchConsoleSiteUrl", title: "Search Console Site URL" }),
+)
+export type SearchConsoleSiteUrl = Schema.Schema.Type<typeof SearchConsoleSiteUrl>
+
 export const AwsConnectionId = MapleUuidId("@maple/AwsConnectionId", "AWS Connection ID")
 export type AwsConnectionId = Schema.Schema.Type<typeof AwsConnectionId>
 

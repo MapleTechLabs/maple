@@ -221,7 +221,7 @@ const lensBody = (h: H, model: Model, serviceName: string, inputs: PageViewInput
 	const xDomain = unifiedBucketDomain([Arr.map(points, (p) => p.bucket), Arr.map(cpuRows, (r) => r.bucket)])
 	const theme = model.themeColors
 	return h.div(
-		[h.Class("space-y-7 pb-4")],
+		[h.Class("space-y-6 pb-4")],
 		[
 			isLoading
 				? h.header(

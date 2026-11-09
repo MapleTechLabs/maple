@@ -76,7 +76,7 @@ export const stepBody = (h: H, model: Model, timeZone: string, host: FlowHost): 
 	model.created !== null
 		? tokenStep(h, model, model.created, host)
 		: model.platform !== null
-			? createSourceForm(h, model, model.platform, host)
+			? createSourceForm(h, model, model.platform)
 			: model.integration !== null
 				? integrationStep(h, model, model.integration, timeZone, host)
 				: platformPicker(h, model)

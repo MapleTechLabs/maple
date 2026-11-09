@@ -3,6 +3,7 @@ import {
 	GithubStartConnectRequest,
 	IntegrationReturnPath,
 	LinearStartConnectRequest,
+	SearchConsoleStartConnectRequest,
 	SupabaseConnectRequest,
 } from "@maple/domain/http"
 import { Context, Effect, Result, Schema, Stream } from "effect"
@@ -11,7 +12,14 @@ import { MapleApiV2Client, MapleInternalApiClient } from "../../platform/api-cli
 
 // `IntegrationConnectProvider` and `useOAuthPopupFlow`.
 
-export const ConnectProvider = Schema.Literals(["cloudflare", "linear", "github", "planetscale", "supabase"])
+export const ConnectProvider = Schema.Literals([
+	"cloudflare",
+	"linear",
+	"github",
+	"planetscale",
+	"supabase",
+	"google-search-console",
+])
 export type ConnectProvider = typeof ConnectProvider.Type
 
 const browserCallbackEvents = () => ({
@@ -103,6 +111,14 @@ export const PROVIDERS = {
 		closeGraceMs: 0,
 		polls: false,
 	},
+	"google-search-console": {
+		label: "Google Search Console",
+		windowName: "maple-google-search-console-connect",
+		windowFeatures: "popup,width=520,height=680",
+		startErrorTitle: "Couldn't start Google Search Console connect flow",
+		closeGraceMs: 0,
+		polls: false,
+	},
 } satisfies { readonly [K in ConnectProvider]: ProviderSpec }
 
 const decodeReturnPath = Schema.decodeUnknownResult(IntegrationReturnPath)
@@ -146,6 +162,10 @@ export const startConnect = (
 				})
 				return { redirectUrl: response.redirect_url }
 			}
+			case "google-search-console":
+				return yield* internal.integrations.searchConsoleStart({
+					payload: new SearchConsoleStartConnectRequest({ returnTo }),
+				})
 			case "supabase":
 				return yield* internal.integrations.supabaseConnect({
 					payload: new SupabaseConnectRequest({ returnTo }),

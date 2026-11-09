@@ -56,7 +56,7 @@ export const detailQueryOf = (window: TimeWindow): DetailQuery => ({
 
 /** Names the window the fact strip's "Events" lane is counting over. */
 export const windowLabel = (search: Search): string =>
-	search.startTime && !search.timePreset ? "selected range" : (search.timePreset ?? DEFAULT_PRESET)
+	search.startTime && !search.timePreset ? "this window" : (search.timePreset ?? DEFAULT_PRESET)
 
 export const detailOf = (model: Model): Option.Option<ErrorIssueDetailResponse> =>
 	Option.map(AsyncData.getData(model.detail.data), errorIssueDetailFromV2)

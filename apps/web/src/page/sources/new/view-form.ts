@@ -9,7 +9,7 @@ import { defaultSourceName } from "../kit/platforms"
 import { rulesOutcome } from "../kit/rules"
 import * as RulesView from "../kit/rules-view"
 import { Message } from "./message"
-import type { FlowHost, Model } from "./model"
+import type { Model } from "./model"
 import { flowFooter } from "./view-footer"
 import { howItWorksRail } from "./view-push-rail"
 import { typography } from "@maple/views/ui/typography"
@@ -79,7 +79,7 @@ const advanced = (h: H, model: Model): Html =>
 		],
 	)
 
-export const createSourceForm = (h: H, model: Model, platform: PushSourcePlatform, host: FlowHost): Html => {
+export const createSourceForm = (h: H, model: Model, platform: PushSourcePlatform): Html => {
 	const isValid = Str.trim(model.name).length > 0 && rulesOutcome(model.rules).valid
 	return h.form(
 		[h.Class("flex w-full flex-1 flex-col gap-4"), h.OnSubmit(Message.SubmittedForm())],
@@ -110,7 +110,6 @@ export const createSourceForm = (h: H, model: Model, platform: PushSourcePlatfor
 			flowFooter(h, {
 				back: Message.ClickedBack(),
 				hint: "The token is shown once, on the next step.",
-				host,
 				actions: [
 					button(h, { type: "submit", isDisabled: !isValid, isLoading: model.isSaving }, [
 						"Create source",

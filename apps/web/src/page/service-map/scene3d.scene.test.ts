@@ -510,7 +510,7 @@ describe("service map 3D: customize", () => {
 				scene3d(Scene3d.Message.PickedNode({ nodeId: null })),
 			),
 			expectView(text("Not saved")).toExist(),
-			expectView(role("button", { name: "Retry" })).toExist(),
+			expectView(role("button", { name: "Try again" })).toExist(),
 		)
 	})
 

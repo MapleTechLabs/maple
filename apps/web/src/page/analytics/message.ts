@@ -8,6 +8,7 @@ import * as Dialog from "@maple/views/ui/dialog"
 import * as FilterSections from "@maple/views/ui/filters/filter-sections"
 import { SignalPresences } from "@maple/views/data/signal-presence"
 import * as TimeRangePicker from "../kit/time-range-picker"
+import { SearchSortKey, SearchTable } from "./model"
 
 export const RequestMode = Schema.Literals(["Load", "Refresh"])
 export type RequestMode = typeof RequestMode.Type
@@ -28,6 +29,12 @@ export const SlotName = Schema.Literals([
 	"previousAiReferrals",
 	"aiCrawlers",
 	"traceSamples",
+	"searchStatus",
+	"searchOverview",
+	"searchTimeseries",
+	"searchQueries",
+	"searchPages",
+	"searchLanding",
 ])
 export type SlotName = typeof SlotName.Type
 
@@ -60,6 +67,8 @@ export const Message = defineMessageUnion({
 	},
 	CompletedLoadSignalPresence: { result: Schema.Result(SignalPresences, LoadFailure) },
 	TickedLivePoll: {},
+	/** The Search tab re-reads the status while a property runs its first import. */
+	TickedSearchImportPoll: {},
 	ClickedReload: {},
 	CompletedReloadSpin: { version: Schema.Number },
 	ClickedResetTimeRange: {},
@@ -69,6 +78,12 @@ export const Message = defineMessageUnion({
 	ClickedRetrySummaryAndBreakdowns: {},
 	ClickedRetryAiReferrals: {},
 	ClickedRetryAiCrawlers: {},
+	/** The Search tab rail's events read. */
+	ClickedRetryEvents: {},
+	/** Any failed Search tab read, the status included. */
+	ClickedRetrySearch: {},
+	PickedSearchSite: { siteUrl: Schema.String },
+	ClickedSearchSort: { table: SearchTable, key: SearchSortKey },
 	/** A sidebar option or a breakdown row: the value toggles in or out of the URL. */
 	ToggledFilter: { key: FilterKey, value: Schema.String },
 	/** A sidebar section picked a single value (or cleared it). */

@@ -19,6 +19,7 @@ import type { Html, HtmlBuilder } from "foldkit/html"
 import type { ThemeColors } from "@maple/views/charts/theme-colors"
 import { button } from "@maple/views/ui/button"
 import { pressable } from "@maple/views/ui/pressable"
+import { badge } from "@maple/views/ui/display"
 import { icon } from "@maple/views/ui/icon"
 import { tableCell, tableRow } from "@maple/views/ui/table"
 import { truncatedText } from "@maple/views/ui/truncated-text"
@@ -211,15 +212,13 @@ const endpointRow = (
 						]),
 						...(isSlowest
 							? [
-									h.span(
-										[
-											h.Class(
-												cn(
-													"hidden shrink-0 rounded-sm bg-muted px-1.5 text-3xs md:inline",
-													TONE_TEXT.warn,
-												),
-											),
-										],
+									badge(
+										h,
+										{
+											variant: "muted",
+											size: "xs",
+											className: cn("hidden px-1.5 md:inline-flex", TONE_TEXT.warn),
+										},
 										["slowest"],
 									),
 								]

@@ -490,7 +490,7 @@ export const waterfall = (h: H, model: Model, data: SessionData): Html => {
 			],
 			[
 				rows.length === 0
-					? emptyMessage(h, {}, ["No spans match this filter"])
+					? emptyMessage(h, {}, ["No spans match these filters"])
 					: h.div(
 							[h.Class("relative w-full"), h.Style({ height: `${totalSize}px` })],
 							Arr.flatMap(items, (item) => {

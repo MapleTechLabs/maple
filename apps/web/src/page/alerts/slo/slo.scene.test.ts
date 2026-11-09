@@ -382,7 +382,7 @@ describe("SLO page", () => {
 			expectView(
 				within(
 					alertingPanel,
-					text("Burn-rate alerts are off: no incident opens however fast the budget burns."),
+					text("Burn-rate alerts are off: no incident opens however fast the budget burns"),
 				),
 			).toExist(),
 		)

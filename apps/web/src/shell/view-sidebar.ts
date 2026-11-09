@@ -52,7 +52,7 @@ export const triggerFor = (h: HtmlBuilder<Message>, model: Model, menu: Menu) =>
 export const pinnedNamespaceOf = (model: Model): Option.Option<string> =>
 	Option.flatMap(model.maybeOrgId, (orgId) => Record.get(model.pinnedNamespaces, orgId))
 
-/** `SelfHostedOrgSwitcher`'s trigger: the server tile, "Self Hosted" and the pinned namespace. */
+/** `SelfHostedOrgSwitcher`'s trigger: the server tile, "Self-hosted" and the pinned namespace. */
 const orgSwitcher = (h: HtmlBuilder<Message>, model: Model): Html =>
 	sidebarMenu(h, undefined, [
 		sidebarMenuItem(h, undefined, [
@@ -75,7 +75,7 @@ const orgSwitcher = (h: HtmlBuilder<Message>, model: Model): Html =>
 						[icon(h, "ServerIcon", { size: 16 })],
 					),
 					identityLabel(h, [
-						typography(h, { weight: "medium", truncate: true }, ["Self Hosted"]),
+						typography(h, { weight: "medium", truncate: true }, ["Self-hosted"]),
 						...Option.match(pinnedNamespaceOf(model), {
 							onNone: () => [],
 							onSome: (namespace) => [
@@ -333,7 +333,7 @@ export const shellSidebarFooter = (
 			[
 				h.AriaHidden(true),
 				h.Class(
-					"pointer-events-none -mx-2 -mt-2 -mb-2 h-px transition-[background-color,box-shadow] [[data-overflow-y-end]+[data-slot=sidebar-footer]>&]:bg-sidebar-border [[data-overflow-y-end]+[data-slot=sidebar-footer]>&]:shadow-overflow-up",
+					"pointer-events-none -mx-2 -mt-2 -mb-2 h-px transition-shadow [[data-overflow-y-end]+[data-slot=sidebar-footer]>&]:bg-sidebar-border [[data-overflow-y-end]+[data-slot=sidebar-footer]>&]:shadow-overflow-up",
 				),
 			],
 			[],

@@ -76,7 +76,7 @@ const widgetRow = <M>(h: HtmlBuilder<M>, widget: Widget): Html =>
 		{
 			gap: "2",
 			align: "center",
-			className: "rounded-md border border-border-subtle bg-background/60 px-2 py-1.5",
+			className: "rounded-md border border-border-subtle bg-surface-well px-2 py-1.5",
 		},
 		[
 			icon(h, vizIcon(widget.visualization), {
@@ -134,7 +134,7 @@ const heading = <M>(
 ): Html =>
 	hstack(h, { gap: "2" }, [
 		icon(h, glyph, { className: typographyClass({ tone: "muted", className: "size-3.5 shrink-0" }) }),
-		typography(h, { size: "sm", weight: "semibold" }, title),
+		typography(h, { size: "sm", weight: "medium" }, title),
 		...(dashboardId === null
 			? []
 			: [
@@ -172,7 +172,7 @@ const createDashboard = <M>(h: HtmlBuilder<M>, obj: Input): Html => {
 				h.div(
 					[h.Class("min-w-0 flex-1")],
 					[
-						typography(h, { size: "sm", weight: "semibold", truncate: true, as: "div" }, [name]),
+						typography(h, { size: "sm", weight: "medium", truncate: true, as: "div" }, [name]),
 						...(innerName !== undefined && innerName !== name
 							? [
 									typography(h, { size: "2xs", tone: "muted", truncate: true, as: "div" }, [
@@ -286,7 +286,7 @@ const addWidget = <M>(h: HtmlBuilder<M>, obj: Input): Html => {
 		[h.Class("space-y-3")],
 		[
 			heading(h, "PlusIcon", ["Add widget"], asString(obj.dashboard_id) ?? EMPTY_VALUE),
-			panel(h, { tone: "background", className: "border-border-subtle bg-background/60 p-2" }, [
+			panel(h, { tone: "background", className: "border-border-subtle bg-surface-well p-2" }, [
 				hstack(h, { gap: "2" }, [
 					icon(h, vizIcon(visualization), {
 						className: "size-4 shrink-0 text-muted-foreground",

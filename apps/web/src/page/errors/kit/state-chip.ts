@@ -39,7 +39,7 @@ export const investigationChip = <M>(
 			attributes: [
 				h.Title(
 					investigation.confidence
-						? `Maple ${Str.toLowerCase(label)} — ${investigation.confidence} confidence`
+						? `Maple ${Str.toLowerCase(label)}, ${investigation.confidence} confidence`
 						: `Maple ${Str.toLowerCase(label)}`,
 				),
 			],

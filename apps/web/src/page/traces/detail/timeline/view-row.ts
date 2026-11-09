@@ -152,7 +152,7 @@ const labelCell = (h: H, bar: Bar, state: RowState, durationLabel: string): Html
 								"text-muted-foreground hover:text-foreground active:text-foreground pointer-coarse:after:hidden",
 							attributes: [
 								h.Tabindex(-1),
-								h.Title(`${verb} — ⌥ for the whole subtree`),
+								h.Title(`${verb} (⌥ for the whole subtree)`),
 								h.OnClick(Message.ClickedToggleCollapse({ spanId }), { propagation: "Stop" }),
 								h.DataAttribute("toggle-span", spanId),
 							],
@@ -248,7 +248,7 @@ const eventMarkers = (h: H, bar: Bar, state: RowState, events: ReadonlyArray<Tim
 					),
 					attr(
 						h,
-						"pointer-events-auto absolute -top-0.5 -bottom-0.5 z-[1] flex w-2 -translate-x-1/2 justify-center",
+						"pointer-events-auto absolute -top-0.5 -bottom-0.5 z-1 flex w-2 -translate-x-1/2 justify-center",
 					),
 					h.DataAttribute("base-ui-tooltip-trigger", ""),
 					h.DataAttribute("slot", "tooltip-trigger"),

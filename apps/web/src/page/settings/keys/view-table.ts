@@ -49,7 +49,7 @@ const COL = {
 }
 
 const ROW_CLASS =
-	"flex items-center gap-4 border-b border-border-subtle px-4 py-3 transition-colors last:border-0"
+	"flex items-center gap-4 border-b border-border-subtle px-4 py-3 last:border-0"
 
 const typeBadge = (h: H, type: KeyType): Html =>
 	badge(h, { variant: TYPE_BADGE[type], size: "sm", mono: true }, [KEY_TYPE_LABELS[type]])

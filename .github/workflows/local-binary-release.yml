@@ -383,3 +383,52 @@ jobs:
                   subject-name: ${{ steps.tags.outputs.image }}
                   subject-digest: ${{ steps.push.outputs.digest }}
                   push-to-registry: true
+
+    # Points the flake's `maple` package (nix/release.json) at the published bundles.
+    # Runs after every platform finished, even if one failed: the script leaves out a
+    # platform whose bundle never made it to the release. Pre-releases keep the pin.
+    nix-release:
+        name: Nix release pin
+        needs: [preflight, build]
+        if: ${{ always() && needs.preflight.outputs.publish == 'true' && !contains(needs.preflight.outputs.version, '-') }}
+        runs-on: ubuntu-latest
+        timeout-minutes: 10
+        permissions:
+            contents: write
+            pull-requests: write
+            actions: write # dispatch the Nix check on the pin branch
+        steps:
+            - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6
+              with:
+                  ref: main
+
+            - name: Open the pin PR
+              env:
+                  GH_TOKEN: ${{ github.token }}
+                  TAG: ${{ needs.preflight.outputs.version }}
+              run: |
+                  set -euo pipefail
+                  # Never pin a re-run of an older tag over a newer one.
+                  newest="$(git ls-remote --tags --refs origin 'v*' | sed 's|.*refs/tags/||' | { grep -ve '-' || true; } | sort -V | tail -1)"
+                  if [ "$TAG" != "$newest" ]; then
+                    echo "::notice::$TAG is not the newest stable tag ($newest); keeping the pin."
+                    exit 0
+                  fi
+                  scripts/update-nix-release.sh "$TAG"
+                  if git diff --quiet -- nix/release.json; then
+                    echo "::notice::nix/release.json already pins $TAG."
+                    exit 0
+                  fi
+                  branch="nix/release-$TAG"
+                  git config user.name "github-actions[bot]"
+                  git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+                  git switch -c "$branch"
+                  git commit -m "chore(nix): pin maple $TAG" -- nix/release.json
+                  git push --force origin "$branch"
+                  if [ -z "$(gh pr list --head "$branch" --state open --json number --jq '.[].number')" ]; then
+                    gh pr create --base main --head "$branch" \
+                      --title "chore(nix): pin maple $TAG" \
+                      --body "Points the flake's \`maple\` package at the $TAG bundles (\`scripts/update-nix-release.sh $TAG\`)."
+                  fi
+                  # A push made with this token starts no workflows, so run the check explicitly.
+                  gh workflow run nix.yml --ref "$branch"

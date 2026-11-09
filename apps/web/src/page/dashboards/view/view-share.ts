@@ -122,7 +122,7 @@ const accessOption = (
 			icon(h, option.icon, {
 				size: 16,
 				className:
-					"mt-0.5 shrink-0 text-muted-foreground transition-colors group-has-[[data-checked]]:text-primary",
+					"mt-0.5 shrink-0 text-muted-foreground group-has-[[data-checked]]:text-primary",
 			}),
 			spaced(h, { space: "0.5", fill: true }, [
 				typography(h, { size: "sm", weight: "medium", as: "div", className: "leading-5" }, [
@@ -153,7 +153,7 @@ const panelContent = (h: H, model: Model, context: PageContext): ReadonlyArray<H
 	return [
 		RadioGroup.radioGroup(
 			h,
-			{ className: "gap-0 divide-y divide-border overflow-hidden rounded-md border" },
+			{ className: "gap-0 divide-y divide-border-subtle overflow-hidden rounded-md border" },
 			Arr.map(ACCESS, (option) => accessOption(h, config, option)),
 		),
 		...(boardShare === undefined

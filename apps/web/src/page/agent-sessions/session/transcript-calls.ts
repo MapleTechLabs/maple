@@ -70,7 +70,7 @@ const assistantError = (
 						}),
 					]),
 				]),
-		typography(h, { size: "xs", tone: "muted", as: "p" }, ["No reply was produced by this call."]),
+		typography(h, { size: "xs", tone: "muted", as: "p" }, ["No reply was produced by this call"]),
 	])
 }
 

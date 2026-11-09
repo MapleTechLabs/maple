@@ -81,7 +81,7 @@ describe("alerts hub, Silences tab", () => {
 		scene(
 			{ update: pageUpdate, view },
 			given(onSilences(ENGINEER, [])),
-			expectView(text("No silences")).toExist(),
+			expectView(text("No silences yet")).toExist(),
 			expectView(role("button", { name: "New silence" })).toExist(),
 		)
 	})

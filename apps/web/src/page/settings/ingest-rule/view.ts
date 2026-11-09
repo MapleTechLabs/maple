@@ -1,6 +1,7 @@
 import { AsyncData, Submodel } from "foldkit"
 import type { Html } from "foldkit/html"
 import { failureMessage } from "@maple/views/data/load-failure"
+import { actionBar } from "@maple/views/ui/action-bar"
 import { alert, alertDescription, alertTitle } from "@maple/views/ui/alert"
 import { button, linkButton } from "@maple/views/ui/button"
 import { errorState } from "@maple/views/ui/error-state"
@@ -88,37 +89,36 @@ const problemsList = (h: H, problems: ReadonlyArray<string>): Html =>
 				],
 			)
 
-const actionBar = (h: H, model: Model): Html => {
+const ruleActionBar = (h: H, model: Model): Html => {
 	const problems = draftProblems(model.draft)
-	return h.div(
-		[h.Class("bg-background/95 sticky bottom-0 z-20 -mx-4 -mb-4 mt-2 border-t px-4 py-3 backdrop-blur")],
-		[
-			...(model.saveFailure === null
+	return actionBar(h, {
+		label: "Rule actions",
+		className: "mt-2",
+		notice:
+			model.saveFailure === null
 				? []
 				: [
-						alert(h, { variant: "crit", size: "sm", className: "mb-3" }, [
+						alert(h, { variant: "crit", size: "sm" }, [
 							icon(h, "CircleXmarkIcon"),
 							alertTitle(h, ["Couldn't save the rule"]),
 							alertDescription(h, [failureMessage(model.saveFailure)]),
 						]),
-					]),
-			hstack(h, { gap: "4", justify: "between" }, [
-				problemsList(h, problems),
-				hstack(h, { gap: "2", className: "shrink-0" }, [
-					linkButton(h, { variant: "outline", href: ingestionHref() }, ["Cancel"]),
-					button(
-						h,
-						{
-							isDisabled: problems.length > 0 || !canManage(model),
-							isLoading: model.isSaving,
-							attributes: [h.OnClick(Message.ClickedSave())],
-						},
-						[model.editingId === null ? "Create rule" : "Save changes"],
-					),
-				]),
-			]),
+					],
+		leading: [problemsList(h, problems)],
+		actions: [
+			linkButton(h, { variant: "outline", size: "sm", href: ingestionHref() }, ["Cancel"]),
+			button(
+				h,
+				{
+					size: "sm",
+					isDisabled: problems.length > 0 || !canManage(model),
+					isLoading: model.isSaving,
+					attributes: [h.OnClick(Message.ClickedSave())],
+				},
+				[model.editingId === null ? "Create rule" : "Save changes"],
+			),
 		],
-	)
+	})
 }
 
 const backLink = (h: H) =>
@@ -166,6 +166,6 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 				h.div([h.Class("lg:sticky lg:top-4 lg:self-start")], [previewPanel(h, model)]),
 			],
 		),
-		actionBar(h, model),
+		ruleActionBar(h, model),
 	])
 })

@@ -123,7 +123,7 @@ const keyField = (
 			items: keys,
 			ariaLabel: label,
 			placeholder,
-			emptyText: "No matching attributes. Press Enter to use as typed",
+			emptyText: "No attributes match. Press Enter to use as typed",
 			hasStartAddon: false,
 			hasClear: true,
 			toView: ({ field: control, rest }) =>

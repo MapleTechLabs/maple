@@ -173,7 +173,7 @@ export const taskCard = <M>(h: HtmlBuilder<M>, host: TaskHost<M>, part: TaskPart
 		toParentMessage: (message: Dialog.Message) => host.onDialog(part.toolCallId, message),
 		viewInputs: {
 			side: "right",
-			className: "sm:max-w-xl",
+			size: "detail",
 			hasDescription: true,
 			toView: ({ trigger, portal }) =>
 				trace(h, [pressable(h, { attributes: trigger }, [taskLine(h, host, part)]), portal]),

@@ -3,6 +3,8 @@ import { Update } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { defineMessageUnion } from "foldkit/message"
 import { modifyFields } from "foldkit/struct"
+import { actionBar } from "@maple/views/ui/action-bar"
+import { alert, alertTitle } from "@maple/views/ui/alert"
 import { button } from "@maple/views/ui/button"
 import { cardButton } from "@maple/views/ui/card-button"
 import * as CopyButton from "@maple/views/ui/copy-button"
@@ -14,6 +16,7 @@ import { inlineCode } from "@maple/views/ui/inline-code"
 import { refreshButton } from "@maple/views/ui/refresh-button"
 import { statusDot } from "@maple/views/ui/status-dot"
 import { textLink } from "@maple/views/ui/text-link"
+import { typography } from "@maple/views/ui/typography"
 import * as Toggle from "@maple/views/ui/toggle"
 import * as ToggleGroup from "@maple/views/ui/toggle-group"
 import { defineLab } from "../../define"
@@ -404,6 +407,42 @@ const cardButtons = (h: HtmlBuilder<Message>): Html =>
 		),
 	)
 
+/** The kit action bar in its three uses; `static` so the lab shows them in place, not stuck. */
+const actionBars = (h: HtmlBuilder<Message>): ReadonlyArray<Html> => [
+	kitRow(h, "Unsaved changes (settings save bar)", [
+		actionBar(h, {
+			label: "Unsaved changes",
+			className: "static w-full",
+			leading: [
+				statusDot(h, { tone: "live" }),
+				typography(h, { size: "sm", tone: "foreground" }, ["Unsaved changes"]),
+			],
+			actions: [button(h, { variant: "ghost", size: "sm" }, ["Discard"]), button(h, { size: "sm" }, ["Save"])],
+		}),
+	]),
+	kitRow(h, "Editor, with a notice", [
+		actionBar(h, {
+			label: "Rule actions",
+			className: "static w-full",
+			notice: [alert(h, { variant: "crit", size: "sm" }, [icon(h, "CircleXmarkIcon"), alertTitle(h, ["Couldn't save the rule"])])],
+			leading: [typography(h, { size: "sm", tone: "muted" }, ["Drop health checks from api-gateway"])],
+			actions: [button(h, { variant: "outline", size: "sm" }, ["Cancel"]), button(h, { size: "sm" }, ["Save changes"])],
+		}),
+	]),
+	kitRow(h, "Step flow", [
+		actionBar(h, {
+			label: "Step actions",
+			as: "footer",
+			className: "static w-full",
+			leading: [button(h, { variant: "ghost", size: "sm" }, [icon(h, "ArrowLeftIcon"), "Back"])],
+			actions: [
+				typography(h, { size: "xs", tone: "muted" }, ["We keep listening while you move on."]),
+				button(h, { size: "sm" }, ["Continue", icon(h, "ArrowRightIcon")]),
+			],
+		}),
+	]),
+]
+
 const view = (model: Model, h: HtmlBuilder<Message>): Html =>
 	kitPage(
 		h,
@@ -424,6 +463,7 @@ const view = (model: Model, h: HtmlBuilder<Message>): Html =>
 			kitSection(h, "Badge", badges(h)),
 			kitSection(h, "Status dot", [statusDots(h)]),
 			kitSection(h, "Kbd and inline code", [kbdAndInlineCode(h)]),
+			kitSection(h, "Action bar", actionBars(h)),
 		],
 	)
 

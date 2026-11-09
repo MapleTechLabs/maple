@@ -288,9 +288,13 @@ export class AuditLogService extends Context.Service<AuditLogService, AuditLogSe
 			})
 
 			// Stamped now, sent after the response: the send was ~80 ms on every audited read.
+			// Only a queue send is deferred. A direct write retries for longer than the
+			// platform keeps `waitUntil` work alive, so it stays on the response path.
 			const record: AuditLogServiceApi["record"] = (input) =>
 				Effect.flatMap(Clock.currentTimeMillis, (now) =>
-					runAfterResponse(write(makeEvent(input, now))),
+					Option.isSome(queue)
+						? runAfterResponse(write(makeEvent(input, now)))
+						: write(makeEvent(input, now)),
 				)
 
 			const list: AuditLogServiceApi["list"] = Effect.fn("AuditLogService.list")(

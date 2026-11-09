@@ -134,6 +134,14 @@ export const LAB_ENTRIES: ReadonlyArray<LabEntry> = [
 		session: "none",
 	},
 	{
+		path: "/lab/search-console",
+		title: "Google Search Console",
+		description:
+			"The Google Search Console card from connect to revoked, the connecting states included, over fixtures, no API needed.",
+		kind: "lab",
+		session: "none",
+	},
+	{
 		path: "/lab/gcp-infra",
 		title: "Google Cloud infrastructure",
 		description:

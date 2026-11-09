@@ -108,7 +108,7 @@ export const healthStripView = (h: H, strip: HealthStrip, window: SparkWindow, t
 				label: "Database size",
 				value: dbSize.bytes === null ? EMPTY_VALUE : formatBytes(dbSize.bytes),
 				spark: dbSize.spark,
-				caption: dbSize.growth === null ? undefined : `${signedBytes(dbSize.growth)} in this range`,
+				caption: dbSize.growth === null ? undefined : `${signedBytes(dbSize.growth)} in this window`,
 			}),
 		],
 	)

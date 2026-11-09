@@ -30,5 +30,5 @@ export const listSkeleton = <M>(h: HtmlBuilder<M>, variant: "table" | "card", ro
 		rows,
 		gap: "2",
 		className: "p-4",
-		rowClassName: variant === "card" ? "h-[68px] rounded-xl" : "h-10 rounded-md",
+		rowClassName: variant === "card" ? "h-[68px] rounded-md" : "h-10 rounded-md",
 	})

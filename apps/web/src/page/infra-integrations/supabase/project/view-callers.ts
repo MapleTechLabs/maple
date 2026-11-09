@@ -5,14 +5,14 @@ import type { Html, HtmlBuilder } from "foldkit/html"
 import { docsUrl } from "../../../../lib/docs"
 import { AppRoute, hrefOf } from "../../../../route"
 import { statusDot } from "@maple/views/ui/status-dot"
-import { columnHead, dataTable } from "../../../infra/kit/data-table"
+import { columnHead, dataTable, NUMERIC_CELL } from "../../../infra/kit/data-table"
 import { type SparkWindow, windowSparkline } from "../../kit/window-sparkline"
 import { ERROR_RATE_LIMIT } from "../health"
 import { callerMixText } from "./derive"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { keyedBody, panelEmpty, panelLink, sectionPanel } from "../panel"
-import { typography, typographyClass } from "@maple/views/ui/typography"
+import { typography } from "@maple/views/ui/typography"
 import { Array as Arr } from "effect"
 import { hstack } from "@maple/views/ui/stack"
 import { textLink } from "@maple/views/ui/text-link"
@@ -40,8 +40,6 @@ const trend = (h: H, caller: SupabaseProjectCaller, window: SparkWindow | null):
 					}),
 				],
 			)
-
-const NUMBER = typographyClass({ size: "xs", mono: true, numeric: true })
 
 const callerRow = (h: H, model: Model, caller: SupabaseProjectCaller, spark: SparkWindow | null): Html =>
 	hstack(
@@ -81,13 +79,13 @@ const callerRow = (h: H, model: Model, caller: SupabaseProjectCaller, spark: Spa
 				[h.Class("hidden w-56 truncate font-mono text-2xs text-muted-foreground md:block")],
 				[callerMixText(caller.mix)],
 			),
-			h.span([h.Class(cn(NUMBER, "w-20 text-right"))], [formatRate(caller.callsPerMinute)]),
-			h.span([h.Class(cn(NUMBER, "w-20 text-right"))], [formatLatency(caller.p95DurationMs)]),
+			h.span([h.Class(cn(NUMERIC_CELL, "w-20 text-right"))], [formatRate(caller.callsPerMinute)]),
+			h.span([h.Class(cn(NUMERIC_CELL, "w-20 text-right"))], [formatLatency(caller.p95DurationMs)]),
 			h.span(
 				[
 					h.Class(
 						cn(
-							NUMBER,
+							NUMERIC_CELL,
 							"w-16 text-right",
 							caller.errorRate >= ERROR_RATE_LIMIT && "text-severity-error",
 						),

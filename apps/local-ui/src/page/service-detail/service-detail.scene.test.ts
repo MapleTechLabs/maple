@@ -98,7 +98,7 @@ describe("local service detail", () => {
 			{ update: pageUpdate, view },
 			given(quiet.model),
 			themeResolved(),
-			expectView(text("No spans from this service in this range")).toExist(),
+			expectView(text("No spans from this service in this window")).toExist(),
 			click(role("button", { name: "Widen to 30 days" })),
 			expectOutMessage(
 				PageOutMessage.RememberedRange({ range: "30d", hash: "#/services/checkout-api?range=30d" }),

@@ -1,5 +1,6 @@
 import * as Cloudflare from "@alchemy.run/cloudflare"
 import type { HttpEffect } from "alchemy/Http"
+import type { RuntimeContext } from "alchemy/RuntimeContext"
 import { Context, Effect, Exit, FileSystem, Layer, Logger, Path, Scope } from "effect"
 import { HttpServerRequest, HttpServerResponse } from "effect/http"
 import * as Etag from "effect/http/Etag"
@@ -53,6 +54,16 @@ export const forIsolate =
 				Effect.onExit((exit) => (Exit.isFailure(exit) ? Scope.close(scope, exit) : Effect.void)),
 			)
 		}).pipe(Effect.updateContext((_: Context.Context<never>) => isolate))
+
+/**
+ * The event's `waitUntil`, as a request's after-response runner. Read per event: the isolate
+ * context omits the execution context, so a captured one could never bind another request.
+ */
+export const waitUntilOfEvent = Effect.gen(function* () {
+	const execution = yield* Cloudflare.WorkerExecutionContext
+	const runtime = yield* Effect.context<RuntimeContext>()
+	return (work: Effect.Effect<void>) => execution.waitUntil(work).pipe(Effect.provideContext(runtime))
+})
 
 /** SAFETY: the bridge's `safeHttpEffect` renders any escaping cause, so the markers are discharged here. */
 export const bridgeHandler = <E, R>(

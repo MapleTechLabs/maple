@@ -20,7 +20,8 @@ import { dashboardPage } from "../../kit/dashboard-page"
 import { resourceNotFound } from "../../kit/resource-not-found"
 import { relativeTime } from "../../kit/relative-time"
 import { stableSlice } from "../../kit/stable-slice"
-import { errorCountPill, livePill } from "../kit/sessions-parts"
+import { livePill } from "../kit/sessions-parts"
+import { errorCountPill } from "@maple/views/ui/error-count-pill"
 import { WatchPlayerKeys } from "./command"
 import { detailOf, durationOf, isActive, labelOf, playerStatus } from "./derive"
 import { Message } from "./message"
@@ -154,7 +155,7 @@ const identityBar = (h: H, model: IdentityView, session: ReplayDetail, timeZone:
 				]),
 				eyebrow(h, {}, ["duration"]),
 			]),
-			...(session.errorCount > 0 ? [errorCountPill(h, session.errorCount)] : []),
+			...(session.errorCount > 0 ? [errorCountPill(h, { count: session.errorCount })] : []),
 		]),
 	])
 }

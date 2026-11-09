@@ -40,7 +40,7 @@ const silencesEmptyState = (h: H): Html =>
 		[
 			emptyHeader(h, [
 				emptyMedia(h, { variant: "icon" }, [icon(h, "BellSlashIcon", { size: 18 })]),
-				emptyTitle(h, ["No silences"]),
+				emptyTitle(h, ["No silences yet"]),
 				emptyDescription(h, [
 					"Silence a rule, a service or an environment during a deploy or a planned migration. Rules keep checking and incidents still open, but no one is paged.",
 				]),

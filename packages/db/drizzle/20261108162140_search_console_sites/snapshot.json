@@ -1,7 +1,7 @@
 {
 	"version": "1",
 	"dialect": "postgres",
-	"id": "6c88bdfce01627daa36777c07caeec93d85e499af3083beb6f204cb2a13c718a",
+	"id": "59887c63a9ec922a0481f1975afc949640a620b016a7c56537b65a9932d27d42",
 	"prevIds": [
 		"c71580b50f2deb277316c5576657bed836622ef47dc6b8c1ff96d044fcda05a0"
 	],
@@ -513,27 +513,6 @@
 		},
 		{
 			"kind": "table",
-			"name": "external_data_source_catalog_entries",
-			"primaryKey": {
-				"name": "external_data_source_catalog_entries_pk",
-				"columns": [
-					"source_id",
-					"name"
-				]
-			}
-		},
-		{
-			"kind": "table",
-			"name": "external_data_sources",
-			"primaryKey": {
-				"name": "external_data_sources_pkey",
-				"columns": [
-					"id"
-				]
-			}
-		},
-		{
-			"kind": "table",
 			"name": "gcp_connectors",
 			"primaryKey": {
 				"name": "gcp_connectors_pkey",
@@ -962,6 +941,16 @@
 			"name": "scrape_targets",
 			"primaryKey": {
 				"name": "scrape_targets_pkey",
+				"columns": [
+					"id"
+				]
+			}
+		},
+		{
+			"kind": "table",
+			"name": "search_console_sites",
+			"primaryKey": {
+				"name": "search_console_sites_pkey",
 				"columns": [
 					"id"
 				]
@@ -8405,376 +8394,6 @@
 		},
 		{
 			"kind": "column",
-			"table": "external_data_source_catalog_entries",
-			"name": "source_id",
-			"position": 0,
-			"type": "text",
-			"notNull": true,
-			"default": null,
-			"identity": null
-		},
-		{
-			"kind": "column",
-			"table": "external_data_source_catalog_entries",
-			"name": "org_id",
-			"position": 1,
-			"type": "text",
-			"notNull": true,
-			"default": null,
-			"identity": null
-		},
-		{
-			"kind": "column",
-			"table": "external_data_source_catalog_entries",
-			"name": "name",
-			"position": 2,
-			"type": "text",
-			"notNull": true,
-			"default": null,
-			"identity": null
-		},
-		{
-			"kind": "column",
-			"table": "external_data_source_catalog_entries",
-			"name": "kind",
-			"position": 3,
-			"type": "text",
-			"notNull": true,
-			"default": null,
-			"identity": null
-		},
-		{
-			"kind": "column",
-			"table": "external_data_source_catalog_entries",
-			"name": "row_estimate",
-			"position": 4,
-			"type": "double precision",
-			"notNull": false,
-			"default": null,
-			"identity": null
-		},
-		{
-			"kind": "column",
-			"table": "external_data_source_catalog_entries",
-			"name": "source_note",
-			"position": 5,
-			"type": "text",
-			"notNull": false,
-			"default": null,
-			"identity": null
-		},
-		{
-			"kind": "column",
-			"table": "external_data_source_catalog_entries",
-			"name": "detected_time_field",
-			"position": 6,
-			"type": "text",
-			"notNull": false,
-			"default": null,
-			"identity": null
-		},
-		{
-			"kind": "column",
-			"table": "external_data_source_catalog_entries",
-			"name": "fields",
-			"position": 7,
-			"type": "jsonb",
-			"notNull": true,
-			"default": null,
-			"identity": null
-		},
-		{
-			"kind": "column",
-			"table": "external_data_source_catalog_entries",
-			"name": "exposed",
-			"position": 8,
-			"type": "boolean",
-			"notNull": true,
-			"default": "true",
-			"identity": null
-		},
-		{
-			"kind": "column",
-			"table": "external_data_source_catalog_entries",
-			"name": "note",
-			"position": 9,
-			"type": "text",
-			"notNull": false,
-			"default": null,
-			"identity": null
-		},
-		{
-			"kind": "column",
-			"table": "external_data_source_catalog_entries",
-			"name": "time_field_override",
-			"position": 10,
-			"type": "text",
-			"notNull": false,
-			"default": null,
-			"identity": null
-		},
-		{
-			"kind": "column",
-			"table": "external_data_source_catalog_entries",
-			"name": "field_notes",
-			"position": 11,
-			"type": "jsonb",
-			"notNull": true,
-			"default": "'{}'::jsonb",
-			"identity": null
-		},
-		{
-			"kind": "column",
-			"table": "external_data_source_catalog_entries",
-			"name": "seen_at",
-			"position": 12,
-			"type": "timestamp with time zone",
-			"notNull": true,
-			"default": null,
-			"identity": null
-		},
-		{
-			"kind": "column",
-			"table": "external_data_sources",
-			"name": "id",
-			"position": 0,
-			"type": "text",
-			"notNull": true,
-			"default": null,
-			"identity": null
-		},
-		{
-			"kind": "column",
-			"table": "external_data_sources",
-			"name": "org_id",
-			"position": 1,
-			"type": "text",
-			"notNull": true,
-			"default": null,
-			"identity": null
-		},
-		{
-			"kind": "column",
-			"table": "external_data_sources",
-			"name": "name",
-			"position": 2,
-			"type": "text",
-			"notNull": true,
-			"default": null,
-			"identity": null
-		},
-		{
-			"kind": "column",
-			"table": "external_data_sources",
-			"name": "kind",
-			"position": 3,
-			"type": "text",
-			"notNull": true,
-			"default": null,
-			"identity": null
-		},
-		{
-			"kind": "column",
-			"table": "external_data_sources",
-			"name": "description",
-			"position": 4,
-			"type": "text",
-			"notNull": true,
-			"default": null,
-			"identity": null
-		},
-		{
-			"kind": "column",
-			"table": "external_data_sources",
-			"name": "environment",
-			"position": 5,
-			"type": "text",
-			"notNull": true,
-			"default": null,
-			"identity": null
-		},
-		{
-			"kind": "column",
-			"table": "external_data_sources",
-			"name": "tags",
-			"position": 6,
-			"type": "jsonb",
-			"notNull": true,
-			"default": "'[]'::jsonb",
-			"identity": null
-		},
-		{
-			"kind": "column",
-			"table": "external_data_sources",
-			"name": "agent_access",
-			"position": 7,
-			"type": "boolean",
-			"notNull": true,
-			"default": "true",
-			"identity": null
-		},
-		{
-			"kind": "column",
-			"table": "external_data_sources",
-			"name": "agent_pii",
-			"position": 8,
-			"type": "boolean",
-			"notNull": true,
-			"default": "false",
-			"identity": null
-		},
-		{
-			"kind": "column",
-			"table": "external_data_sources",
-			"name": "config",
-			"position": 9,
-			"type": "jsonb",
-			"notNull": true,
-			"default": null,
-			"identity": null
-		},
-		{
-			"kind": "column",
-			"table": "external_data_sources",
-			"name": "secret_ciphertext",
-			"position": 10,
-			"type": "text",
-			"notNull": false,
-			"default": null,
-			"identity": null
-		},
-		{
-			"kind": "column",
-			"table": "external_data_sources",
-			"name": "secret_iv",
-			"position": 11,
-			"type": "text",
-			"notNull": false,
-			"default": null,
-			"identity": null
-		},
-		{
-			"kind": "column",
-			"table": "external_data_sources",
-			"name": "secret_tag",
-			"position": 12,
-			"type": "text",
-			"notNull": false,
-			"default": null,
-			"identity": null
-		},
-		{
-			"kind": "column",
-			"table": "external_data_sources",
-			"name": "secret_hint",
-			"position": 13,
-			"type": "text",
-			"notNull": false,
-			"default": null,
-			"identity": null
-		},
-		{
-			"kind": "column",
-			"table": "external_data_sources",
-			"name": "status",
-			"position": 14,
-			"type": "text",
-			"notNull": true,
-			"default": null,
-			"identity": null
-		},
-		{
-			"kind": "column",
-			"table": "external_data_sources",
-			"name": "last_checked_at",
-			"position": 15,
-			"type": "timestamp with time zone",
-			"notNull": false,
-			"default": null,
-			"identity": null
-		},
-		{
-			"kind": "column",
-			"table": "external_data_sources",
-			"name": "last_error",
-			"position": 16,
-			"type": "text",
-			"notNull": false,
-			"default": null,
-			"identity": null
-		},
-		{
-			"kind": "column",
-			"table": "external_data_sources",
-			"name": "catalog_refreshed_at",
-			"position": 17,
-			"type": "timestamp with time zone",
-			"notNull": false,
-			"default": null,
-			"identity": null
-		},
-		{
-			"kind": "column",
-			"table": "external_data_sources",
-			"name": "catalog_error",
-			"position": 18,
-			"type": "text",
-			"notNull": false,
-			"default": null,
-			"identity": null
-		},
-		{
-			"kind": "column",
-			"table": "external_data_sources",
-			"name": "examples",
-			"position": 19,
-			"type": "jsonb",
-			"notNull": true,
-			"default": "'[]'::jsonb",
-			"identity": null
-		},
-		{
-			"kind": "column",
-			"table": "external_data_sources",
-			"name": "created_at",
-			"position": 20,
-			"type": "timestamp with time zone",
-			"notNull": true,
-			"default": null,
-			"identity": null
-		},
-		{
-			"kind": "column",
-			"table": "external_data_sources",
-			"name": "updated_at",
-			"position": 21,
-			"type": "timestamp with time zone",
-			"notNull": true,
-			"default": null,
-			"identity": null
-		},
-		{
-			"kind": "column",
-			"table": "external_data_sources",
-			"name": "created_by",
-			"position": 22,
-			"type": "text",
-			"notNull": true,
-			"default": null,
-			"identity": null
-		},
-		{
-			"kind": "column",
-			"table": "external_data_sources",
-			"name": "updated_by",
-			"position": 23,
-			"type": "text",
-			"notNull": true,
-			"default": null,
-			"identity": null
-		},
-		{
-			"kind": "column",
 			"table": "gcp_connectors",
 			"name": "id",
 			"position": 0,
@@ -14265,6 +13884,156 @@
 		},
 		{
 			"kind": "column",
+			"table": "search_console_sites",
+			"name": "id",
+			"position": 0,
+			"type": "text",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "search_console_sites",
+			"name": "org_id",
+			"position": 1,
+			"type": "text",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "search_console_sites",
+			"name": "oauth_connection_id",
+			"position": 2,
+			"type": "text",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "search_console_sites",
+			"name": "site_url",
+			"position": 3,
+			"type": "text",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "search_console_sites",
+			"name": "permission_level",
+			"position": 4,
+			"type": "text",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "search_console_sites",
+			"name": "enabled",
+			"position": 5,
+			"type": "boolean",
+			"notNull": true,
+			"default": "true",
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "search_console_sites",
+			"name": "watermark_date",
+			"position": 6,
+			"type": "text",
+			"notNull": false,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "search_console_sites",
+			"name": "backfill_date",
+			"position": 7,
+			"type": "text",
+			"notNull": false,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "search_console_sites",
+			"name": "last_synced_at",
+			"position": 8,
+			"type": "timestamp with time zone",
+			"notNull": false,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "search_console_sites",
+			"name": "last_error",
+			"position": 9,
+			"type": "text",
+			"notNull": false,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "search_console_sites",
+			"name": "lease_until",
+			"position": 10,
+			"type": "timestamp with time zone",
+			"notNull": false,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "search_console_sites",
+			"name": "next_attempt_at",
+			"position": 11,
+			"type": "timestamp with time zone",
+			"notNull": false,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "search_console_sites",
+			"name": "consecutive_failures",
+			"position": 12,
+			"type": "integer",
+			"notNull": true,
+			"default": "0",
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "search_console_sites",
+			"name": "created_at",
+			"position": 13,
+			"type": "timestamp with time zone",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "search_console_sites",
+			"name": "updated_at",
+			"position": 14,
+			"type": "timestamp with time zone",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
 			"table": "security_audit_events",
 			"name": "id",
 			"position": 0,
@@ -19208,29 +18977,6 @@
 		},
 		{
 			"kind": "index",
-			"table": "external_data_source_catalog_entries",
-			"name": "external_data_source_catalog_entries_org_idx",
-			"unique": false,
-			"method": "btree",
-			"columns": [
-				"\"org_id\""
-			],
-			"where": null
-		},
-		{
-			"kind": "index",
-			"table": "external_data_sources",
-			"name": "external_data_sources_org_name_unique",
-			"unique": true,
-			"method": "btree",
-			"columns": [
-				"\"org_id\"",
-				"\"name\""
-			],
-			"where": null
-		},
-		{
-			"kind": "index",
 			"table": "gcp_connectors",
 			"name": "gcp_connectors_org_scope_idx",
 			"unique": true,
@@ -19991,6 +19737,29 @@
 		},
 		{
 			"kind": "index",
+			"table": "search_console_sites",
+			"name": "search_console_sites_connection_idx",
+			"unique": false,
+			"method": "btree",
+			"columns": [
+				"\"oauth_connection_id\""
+			],
+			"where": null
+		},
+		{
+			"kind": "index",
+			"table": "search_console_sites",
+			"name": "search_console_sites_org_site_idx",
+			"unique": true,
+			"method": "btree",
+			"columns": [
+				"\"org_id\"",
+				"\"site_url\""
+			],
+			"where": null
+		},
+		{
+			"kind": "index",
 			"table": "security_audit_events",
 			"name": "security_audit_events_run_at_idx",
 			"unique": false,
@@ -20619,20 +20388,6 @@
 		},
 		{
 			"kind": "foreign_key",
-			"table": "external_data_source_catalog_entries",
-			"name": "external_data_source_catalog_entries_x60VonL2VphD_fk",
-			"columns": [
-				"source_id"
-			],
-			"foreignTable": "external_data_sources",
-			"foreignColumns": [
-				"id"
-			],
-			"onDelete": "CASCADE",
-			"onUpdate": "NO ACTION"
-		},
-		{
-			"kind": "foreign_key",
 			"table": "gcp_connectors",
 			"name": "gcp_connectors_source_id_sources_id_fk",
 			"columns": [
@@ -20737,6 +20492,20 @@
 				"source_id"
 			],
 			"foreignTable": "sources",
+			"foreignColumns": [
+				"id"
+			],
+			"onDelete": "CASCADE",
+			"onUpdate": "NO ACTION"
+		},
+		{
+			"kind": "foreign_key",
+			"table": "search_console_sites",
+			"name": "search_console_sites_jBAHYyW36dnu_fk",
+			"columns": [
+				"oauth_connection_id"
+			],
+			"foreignTable": "oauth_connections",
 			"foreignColumns": [
 				"id"
 			],

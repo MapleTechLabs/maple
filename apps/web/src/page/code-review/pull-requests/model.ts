@@ -3,6 +3,7 @@ import {
 	CodeReviewListResponse,
 	CodeReviewSortKey,
 	PrReviewId,
+	VcsRepositoryId,
 } from "@maple/domain/http"
 import { Schema } from "effect"
 import { defineMessageUnion } from "foldkit/message"
@@ -47,6 +48,9 @@ export const Message = defineMessageUnion({
 	ClickedRetry: {},
 	ClickedClearFilters: {},
 	ClickedReview: { reviewId: PrReviewId },
+	/** A row's author or repository, which narrows the list to it. */
+	ClickedAuthor: { author: Schema.String },
+	ClickedRepository: { repo: VcsRepositoryId },
 	ClickedLoadMore: {},
 	ClickedSort: { key: CodeReviewSortKey },
 	TickedPoll: {},

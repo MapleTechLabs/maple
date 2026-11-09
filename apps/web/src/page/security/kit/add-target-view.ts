@@ -185,7 +185,7 @@ const profileField = (h: H, model: Model): Html => {
 					{
 						// A card: the kit label's centring and medium weight stay off.
 						className: cn(
-							"flex cursor-pointer items-start gap-2.5 rounded-md border p-3 font-normal transition-colors",
+							"flex cursor-pointer items-start gap-2.5 rounded-md border p-3 font-normal",
 							isChecked
 								? "border-border-strong bg-surface-strong"
 								: "hover:bg-surface-sunken active:bg-surface-sunken",

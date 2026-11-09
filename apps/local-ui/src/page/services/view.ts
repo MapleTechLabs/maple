@@ -126,7 +126,7 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 		if (Option.isSome(failure))
 			return errorState(h, {
 				failure: failure.value,
-				title: "Couldn’t load services",
+				title: "Couldn't load services",
 				onRetry: Message.ClickedRefresh(),
 			})
 		if (entries.length === 0)

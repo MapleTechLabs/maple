@@ -57,7 +57,7 @@ const statusPill = (h: H, model: Model): Html => {
 		{
 			pill: true,
 			className: cn(
-				"gap-1.5 text-2xs transition-colors sm:text-2xs",
+				"gap-1.5 text-2xs sm:text-2xs",
 				toneBoxClass(isConnected ? "info" : "primary"),
 			),
 		},
