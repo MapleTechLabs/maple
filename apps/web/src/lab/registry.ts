@@ -73,7 +73,15 @@ export const LAB_ENTRIES: ReadonlyArray<LabEntry> = [
 		path: "/lab/escalation",
 		title: "Escalation chains",
 		description:
-			"The Routing tab's escalation chains empty and populated, the chain dialog new, editing, invalid and failing, a rule tier's chain picker, and the incident rail escalating, paused or finished (`?state=`).",
+			"The Routing tab's escalation chains empty and populated, a rule tier's chain picker, and the incident rail escalating, paused or finished (`?state=`).",
+		kind: "lab",
+		session: "none",
+	},
+	{
+		path: "/lab/escalation-editor",
+		title: "Escalation chain editor",
+		description:
+			"The escalation chain editor page new, populated, with a step inserted, invalid and asking to delete (`?state=`).",
 		kind: "lab",
 		session: "none",
 	},
