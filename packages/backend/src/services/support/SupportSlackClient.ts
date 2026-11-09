@@ -39,15 +39,29 @@ const SlackResponse = Schema.Struct({
 	),
 	/** `auth.test`: the bot's own user id. */
 	user_id: Schema.optionalKey(Schema.String),
-	response_metadata: Schema.optionalKey(Schema.Struct({ next_cursor: Schema.optionalKey(Schema.String) })),
+	/** `messages`: on a refusal, what Slack found wrong and where (`[ERROR] … [json-pointer:/blocks/4/…]`). */
+	response_metadata: Schema.optionalKey(
+		Schema.Struct({
+			next_cursor: Schema.optionalKey(Schema.String),
+			messages: Schema.optionalKey(Schema.Array(Schema.String)),
+		}),
+	),
 })
 type SlackResponse = Schema.Schema.Type<typeof SlackResponse>
 const decodeSlackResponse = Schema.decodeUnknownEffect(SlackResponse)
 
-/** Slack refused the call; `error` is its machine-readable reason (`name_taken`, …). */
+/**
+ * Slack refused the call; `error` is its machine-readable reason (`name_taken`, …), `details`
+ * Slack's own account of it, which for `invalid_blocks` names the offending block.
+ */
 export class SupportSlackRefusedError extends Schema.TaggedError<SupportSlackRefusedError>()(
 	"@maple/backend/support/SupportSlackRefusedError",
-	{ message: Schema.String, method: Schema.String, error: Schema.String },
+	{
+		message: Schema.String,
+		method: Schema.String,
+		error: Schema.String,
+		details: Schema.optionalKey(Schema.Array(Schema.String)),
+	},
 ) {}
 
 export type SupportSlackMethod =
@@ -127,6 +141,7 @@ export class SupportSlackClient extends Context.Service<SupportSlackClient, Supp
 						message: `Slack ${method} refused: ${error}`,
 						method,
 						error,
+						details: decoded.response_metadata?.messages ?? [],
 					})
 				}
 				return decoded
