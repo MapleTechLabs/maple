@@ -10,7 +10,7 @@ import { ErrorActorsService } from "@maple/backend/services/errors/ErrorActorsSe
 import { AuthService } from "@maple/backend/services/auth/AuthService"
 import { McpToolRateLimiter } from "@maple/backend/services/auth/McpToolRateLimiter"
 import { McpToolExecutor } from "./dispatcher"
-import { McpToolExecutorLoader } from "./executor-loader"
+import { McpToolExecutorLoader, type McpToolExecutorBuildKind } from "./executor-loader"
 import { McpLive } from "./app"
 import { MCP_TOOL_DESCRIPTORS } from "./tool-descriptors.generated"
 
@@ -89,6 +89,26 @@ const recordedAfterResponse = () => {
 			),
 		)
 	return { layer, drain }
+}
+
+/**
+ * The loader, reporting each `tools/call` as it asks for the executor (`asked`, before it waits)
+ * and the build kind it got back (`kinds`).
+ */
+const observedLoader = (inner: ReturnType<typeof McpToolExecutorLoader.layerFrom>) => {
+	const asked = Deferred.makeUnsafe<void>()
+	const kinds = Ref.makeUnsafe<ReadonlyArray<McpToolExecutorBuildKind>>([])
+	const layer = Layer.effect(
+		McpToolExecutorLoader,
+		Effect.map(McpToolExecutorLoader, (loader) => ({
+			...loader,
+			loadReportingBuild: Deferred.succeed(asked, undefined).pipe(
+				Effect.andThen(loader.loadReportingBuild),
+				Effect.tap(({ build }) => Ref.update(kinds, (all) => [...all, build])),
+			),
+		})),
+	).pipe(Layer.provide(inner))
+	return { layer, asked, kinds: () => Effect.runSync(Ref.get(kinds)) }
 }
 
 /** The public MCP routes over the given loader, and a client holding a valid MCP key. */
@@ -252,19 +272,31 @@ describe("McpToolExecutorLoader", () => {
 		const gate = Deferred.makeUnsafe<void>()
 		const entered = Deferred.makeUnsafe<void>()
 		const { counts, loader } = countingGraph({ failFirstBuild: false, gate, entered })
+		const observed = observedLoader(loader)
 		const afterResponse = recordedAfterResponse()
-		const { send, dispose } = await mcpClient(loader, afterResponse.layer)
+		const { send, dispose } = await mcpClient(observed.layer, afterResponse.layer)
 		try {
 			await send("initialize", { authorized: true })
 			const prewarm = afterResponse.drain()
 			// The prewarm now holds the build at the gate, so the call can join it but never build.
 			await Effect.runPromise(Deferred.await(entered))
 			const call = send("tools/call", toolCall)
+			// The call is waiting on the executor while the only build is still gated.
+			await Effect.runPromise(Deferred.await(observed.asked))
+			const builtWhileWaiting = counts()
 			Effect.runSync(Deferred.succeed(gate, undefined))
 			const [, called] = await Promise.all([prewarm, call])
-			expect({ status: called.status, built: builtHeader(called), ...counts() }).toEqual({
+			expect({
+				status: called.status,
+				built: builtHeader(called),
+				builtWhileWaiting,
+				kinds: observed.kinds(),
+				...counts(),
+			}).toEqual({
 				status: 200,
 				built: null,
+				builtWhileWaiting: { imports: 1, builds: 1 },
+				kinds: ["prewarm"],
 				imports: 1,
 				builds: 1,
 			})

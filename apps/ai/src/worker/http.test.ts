@@ -20,7 +20,11 @@ import {
 } from "effect"
 import { HttpServerResponse } from "effect/http"
 import { TestClock } from "effect/testing"
-import { MapleDbConnection } from "@maple/backend/platform/bindings"
+import { AuditEventsQueueProducer, MapleDbConnection } from "@maple/backend/platform/bindings"
+import { AuditLogService } from "@maple/backend/services/audit/AuditLogService"
+import { WarehouseQueryService } from "@maple/backend/services/warehouse/WarehouseQueryService"
+import { makeWarehouseServiceStub } from "@maple/backend/testing/warehouse-test-support"
+import { OrgId } from "@maple/domain/primitives"
 import { runAfterResponse } from "@maple/backend/platform/after-response"
 import { makeFetch } from "./http"
 
@@ -204,5 +208,70 @@ describe("the maple-ai Worker through alchemy's bridge", () => {
 					{ status: 200, ranBeforeHandover: 0, handedOver: 1, ran: 1 },
 				)
 			}).pipe(Effect.provide(IsolateAge.layer)),
+	)
+
+	/** An audited `/mcp` call through the real AuditLogService, with or without the queue producer. */
+	const auditedCall = (withQueue: boolean) =>
+		Effect.gen(function* () {
+			const handedOver = yield* Ref.make<ReadonlyArray<Effect.Effect<void>>>([])
+			const sent = yield* Ref.make(0)
+			const ingested = yield* Ref.make(0)
+			const warehouse = Layer.succeed(
+				WarehouseQueryService,
+				makeWarehouseServiceStub({ ingest: () => Ref.update(ingested, (n) => n + 1) }),
+			)
+			const producer = Layer.succeed(AuditEventsQueueProducer, {
+				sendBatch: (messages) => Ref.update(sent, (n) => n + messages.length),
+			})
+			const audit = yield* Layer.build(
+				Layer.effect(AuditLogService, AuditLogService.make).pipe(
+					Layer.provide(withQueue ? Layer.merge(warehouse, producer) : warehouse),
+				),
+			)
+			const handler = Effect.gen(function* () {
+				const service = yield* AuditLogService
+				yield* service.record({
+					orgId: Schema.decodeSync(OrgId)("org_audit_wiring"),
+					actor: { type: "api_key" },
+					source: "mcp",
+					action: "mcp_tool.called",
+				})
+				return HttpServerResponse.text("ok")
+			}).pipe(Effect.provideContext(audit))
+			const fetch = yield* makeFetch(
+				Effect.succeed(handler),
+				noPorts,
+				undefined,
+				Effect.succeed((work) => Ref.update(handedOver, (works) => [...works, work])),
+			)
+			yield* event(fetch, "POST", "/mcp")
+			const atResponse = { sent: yield* Ref.get(sent), ingested: yield* Ref.get(ingested) }
+			const works = yield* Ref.get(handedOver)
+			yield* Effect.forEach(works, (work) => work, { discard: true })
+			return {
+				atResponse,
+				handedOver: works.length,
+				after: { sent: yield* Ref.get(sent), ingested: yield* Ref.get(ingested) },
+			}
+		}).pipe(Effect.scoped, Effect.provide(IsolateAge.layer))
+
+	it.effect("sends an audited call's entry to the queue after the response when it has a producer", () =>
+		Effect.gen(function* () {
+			assert.deepStrictEqual(yield* auditedCall(true), {
+				atResponse: { sent: 0, ingested: 0 },
+				handedOver: 1,
+				after: { sent: 1, ingested: 0 },
+			})
+		}),
+	)
+
+	it.effect("writes an audited call's entry before the response when there is no producer", () =>
+		Effect.gen(function* () {
+			assert.deepStrictEqual(yield* auditedCall(false), {
+				atResponse: { sent: 0, ingested: 1 },
+				handedOver: 0,
+				after: { sent: 0, ingested: 1 },
+			})
+		}),
 	)
 })
