@@ -337,12 +337,13 @@ function loadingBay(scope: Scope, { height, finish }: { height: number; finish: 
 			}),
 		),
 		inkBox({ size: [1.8, 0.24, 0.3], position: [0, gantry, -0.7], color: finish.face, ink: finish.ink }),
-		// A shingled canopy keeps the weather off the hoist.
-		group({ position: [0, 0, -0.7] }, [
+		// A shingled canopy keeps the weather off the hoist. Its front eave stops at the beam face,
+		// so it never covers the health plate or the service mark.
+		group({ position: [0, 0, -0.75] }, [
 			gableRoof(scope, {
 				base: gantry + 0.12,
-				half: 0.3,
-				rise: 0.2,
+				half: 0.2,
+				rise: 0.16,
 				length: 2,
 				finish,
 			}),
@@ -523,6 +524,7 @@ export function factoryMachine(
 		selected,
 		palette,
 		running,
+		wind,
 		building,
 	}: {
 		node: Node3D
@@ -532,6 +534,8 @@ export function factoryMachine(
 		selected: boolean
 		palette: InkPalette
 		running: Running
+		/** The map's wind clock, in seconds. */
+		wind: () => number
 		/** A customized building type; defaults to the one the node's kind implies. */
 		building?: MachineKind
 	},
@@ -574,6 +578,7 @@ export function factoryMachine(
 		water: recede(palette.water),
 		moss: recede(palette.evergreen),
 		night: palette.night,
+		wind,
 	}
 	const model = MACHINE_MODELS[kind]
 	// Everything standing on the pad; the scene finds it by name to pop a new selection.

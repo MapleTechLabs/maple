@@ -59,7 +59,7 @@ function warningFlag(scope: Scope, { position, finish }: { position: Vec3; finis
 			ink: finish.ink,
 		}),
 	])
-	breeze(scope, finish.running, (seconds) => {
+	breeze(scope, finish, (seconds) => {
 		cloth.rotation.y = Math.sin(seconds * 2.6) * 0.3 + Math.sin(seconds * 4.3) * 0.08
 	})
 	return [
@@ -346,7 +346,7 @@ export function yard(scope: Scope, { kind, finish }: { kind: MachineKind; finish
 					ink: finish.ink,
 				}),
 			])
-			breeze(scope, finish.running, (seconds) => {
+			breeze(scope, finish, (seconds) => {
 				const lift = 0.08 + Math.sin(seconds * 1.9 + i * 1.3) * 0.2
 				cloth.rotation.set(along === "x" ? lift : 0, 0, along === "z" ? lift : 0)
 			})

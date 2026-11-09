@@ -278,7 +278,7 @@ export function weathervane(
 		}),
 	])
 	const phase = variant(finish.seed, 13, 628) / 100
-	breeze(scope, finish.running, (seconds) => {
+	breeze(scope, finish, (seconds) => {
 		arrow.rotation.y =
 			0.6 + Math.sin(seconds * 0.5 + phase) * 0.45 + Math.sin(seconds * 1.3 + phase) * 0.1
 	})
@@ -526,7 +526,7 @@ export function hangingSign(
 		}),
 	])
 	const phase = variant(finish.seed, 14, 628) / 100
-	breeze(scope, finish.running, (seconds) => {
+	breeze(scope, finish, (seconds) => {
 		swing.rotation.x = Math.sin(seconds * 1.6 + phase) * 0.12
 	})
 	return [

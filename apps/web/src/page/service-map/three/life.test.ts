@@ -1,7 +1,7 @@
 import { mapPalette } from "../../../components/service-map/three/appearance"
 import * as THREE from "three"
 import { Array as Arr } from "effect"
-import { afterEach, describe, expect, it, vi } from "vitest"
+import { describe, expect, it } from "vitest"
 import { type Child, makeScope, type Scope } from "./kit"
 import { butterflies, fallingLeaves } from "./life"
 import { breeze } from "./props-kit"
@@ -82,31 +82,29 @@ describe("butterflies in the scene", () => {
 })
 
 describe("the breeze", () => {
-	afterEach(() => vi.restoreAllMocks())
-
-	it("holds its time through a pause and carries on from the same moment", () => {
-		const now = vi.spyOn(performance, "now")
-		const state = { playing: true, seconds: 0 }
+	/** Something swaying on `wind`, reporting the wind time of its current pose. */
+	const sway = (wind: { seconds: number }, running: () => boolean) => {
 		const scope = makeScope()
-		breeze(
-			scope,
-			() => state.playing,
-			(seconds) => {
-				state.seconds = seconds
-			},
-		)
-		const at = (ms: number) => {
-			now.mockReturnValue(ms)
-			Arr.forEach(scope.frames, (frame) => frame(0.016))
-			return state.seconds
-		}
-		const start = at(10_000)
-		expect(at(12_000) - start).toBeCloseTo(2)
-		state.playing = false
-		const held = at(13_000)
-		expect(at(60_000)).toBe(held)
-		state.playing = true
-		expect(at(61_000)).toBe(held)
-		expect(at(62_000) - held).toBeCloseTo(1)
+		const pose = { seconds: -1 }
+		breeze(scope, { running, wind: () => wind.seconds }, (seconds) => {
+			pose.seconds = seconds
+		})
+		return { pose, frame: () => Arr.forEach(scope.frames, (frame) => frame(0.016)) }
+	}
+
+	it("poses a thing on the wind as it is built, so a rebuilt machine keeps its swing", () => {
+		expect(sway({ seconds: 7.5 }, () => true).pose.seconds).toBe(7.5)
+		expect(sway({ seconds: 7.5 }, () => false).pose.seconds).toBe(7.5)
+	})
+
+	it("keeps one thing swaying while its dimmed neighbour holds still", () => {
+		const wind = { seconds: 3 }
+		const lively = sway(wind, () => true)
+		const dimmed = sway(wind, () => false)
+		wind.seconds = 4
+		dimmed.frame()
+		lively.frame()
+		expect(lively.pose.seconds).toBe(4)
+		expect(dimmed.pose.seconds).toBe(3)
 	})
 })

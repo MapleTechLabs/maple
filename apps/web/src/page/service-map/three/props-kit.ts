@@ -36,23 +36,20 @@ export type MapleFinish = MachineFinish & {
 	moss: string
 	/** Dark paper: lit lamps throw a pool of light on the ground. */
 	night: boolean
+	/** Seconds of wind so far: one clock for the whole map, standing still while it is paused. */
+	wind: () => number
 }
 
-/** One wind for the whole map: wall-clock seconds less the time spent paused. */
-const wind = { seconds: 0, lag: 0, still: false }
-
-/** Wind time for things that sway. Shared, so a rebuilt machine keeps its swing, and a pause
- * holds it still and resumes from the same pose. */
-export function breeze(scope: Scope, running: Running, apply: (seconds: number) => void) {
+/** Sways something on the map's wind. A rebuilt machine picks its swing up where it was, and
+ * one that is not running holds its pose. */
+export function breeze(
+	scope: Scope,
+	{ running, wind }: Pick<MapleFinish, "running" | "wind">,
+	apply: (seconds: number) => void,
+) {
+	apply(wind())
 	scope.frames.push(() => {
-		const now = performance.now() / 1000
-		if (!running()) wind.still = true
-		else {
-			if (wind.still) wind.lag = now - wind.seconds
-			wind.still = false
-			wind.seconds = now - wind.lag
-		}
-		apply(wind.seconds)
+		if (running()) apply(wind())
 	})
 }
 

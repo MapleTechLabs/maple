@@ -154,7 +154,8 @@ export function butterflies(
 		const t = elapsed.value
 		Arr.forEach(anchors, ([x, , z], i) => {
 			const phase = hash(x, z) * 6.28
-			const [a, b] = [t * 0.5 + phase, t * 0.41 + phase]
+			const a = t * 0.5 + phase
+			const b = t * 0.41 + phase
 			pose.position.set(
 				x + Math.sin(a) * 0.9,
 				floor + 0.55 + Math.sin(t * 0.3 + phase * 2) * 0.18 + Math.sin(t * 5 + phase) * 0.03,

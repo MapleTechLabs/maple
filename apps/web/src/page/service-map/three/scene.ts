@@ -293,6 +293,11 @@ export function startScene(
 		() => state.size,
 		invalidate,
 	)
+	const squash = (id: string, lift: number) =>
+		world
+			.machine(id)
+			?.getObjectByName(MACHINE_BODY)
+			?.scale.set(1 - lift / 2, 1 + lift, 1 - lift / 2)
 	const loop = (now: number) => {
 		state.raf = requestAnimationFrame(loop)
 		const idle = state.pending === 0 && now > state.awakeUntil
@@ -309,11 +314,7 @@ export function startScene(
 		if (pop !== null) {
 			// A newly selected machine squashes and springs back once, standing on its pad.
 			const t = Math.max(0, now - pop.start) / POP_MS
-			const lift = t >= 1 ? 0 : 0.1 * Math.sin(t * 2.5 * Math.PI) * (1 - t) ** 2
-			world
-				.machine(pop.id)
-				?.getObjectByName(MACHINE_BODY)
-				?.scale.set(1 - lift / 2, 1 + lift, 1 - lift / 2)
+			squash(pop.id, t >= 1 ? 0 : 0.1 * Math.sin(t * 2.5 * Math.PI) * (1 - t) ** 2)
 			if (t >= 1) state.pop = null
 		}
 		renderer.render(scene, camera)
@@ -405,6 +406,12 @@ export function startScene(
 				scene.add(floor.grid)
 			}
 			floor.grid.visible = input.editing && input.view === "atlas"
+			// A pop ends at rest the moment its machine is deselected or the map stops moving.
+			const pop = state.pop
+			if (pop !== null && (pop.id !== input.selectedId || !input.flowing)) {
+				squash(pop.id, 0)
+				state.pop = null
+			}
 			// Motion allowed is `flowing`, so a paused or reduced-motion map selects without the pop.
 			if (input.selectedId !== null && input.selectedId !== previous.selectedId && input.flowing) {
 				const start = performance.now()
