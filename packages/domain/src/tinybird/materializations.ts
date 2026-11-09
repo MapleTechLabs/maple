@@ -1002,10 +1002,11 @@ const errorEventsWithSql = `
           ) AS _exStack,
           if(_useAttrs, _exMsg, StatusMessage) AS _msgText,
           -- A user key replaces type, frames, message and salt in the hash: the
-          -- exception event's value first, then the span's. Trimmed and capped.
+          -- exception event's value unless blank after trimming, then the span's.
+          -- Trimmed and capped.
           substringUTF8(
             ${chRedactChain(
-				`coalesce(nullIf(if(_ei > 0, EventsAttributes[_ei][${chPattern(CUSTOM_FINGERPRINT_ATTRIBUTE)}], ''), ''), SpanAttributes[${chPattern(CUSTOM_FINGERPRINT_ATTRIBUTE)}])`,
+				`coalesce(nullIf(${chRedactChain(`if(_ei > 0, EventsAttributes[_ei][${chPattern(CUSTOM_FINGERPRINT_ATTRIBUTE)}], '')`, CUSTOM_FINGERPRINT_REDACTIONS)}, ''), SpanAttributes[${chPattern(CUSTOM_FINGERPRINT_ATTRIBUTE)}])`,
 				CUSTOM_FINGERPRINT_REDACTIONS,
 			)},
             1, ${CUSTOM_FINGERPRINT_MAX_CHARS}

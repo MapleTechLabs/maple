@@ -3,7 +3,7 @@
 // computed grouping, per org and service, and the hash is the one the TS mirror derives.
 
 import { afterAll, assert, beforeAll, describe, it } from "@effect/vitest"
-import { computeFingerprintInputs } from "@maple/domain/tinybird/fingerprint"
+import { computeFingerprintInputs, resolveCustomFingerprint } from "@maple/domain/tinybird/fingerprint"
 import { Schema, Array as Arr, String as Str } from "effect"
 import { msToDate } from "../../platform/time"
 import {
@@ -65,6 +65,24 @@ const SEEDS: ReadonlyArray<Seed> = [
 		message: "card declined",
 		stacktrace: "",
 		eventKey: "event-side",
+		spanKey: KEY,
+	},
+	{
+		spanId: "blank-event-span-key",
+		service: "checkout",
+		type: "RefundError",
+		message: "refund rejected",
+		stacktrace: "RefundError: rejected\n    at refund (/app/src/refund.ts:12:3)",
+		eventKey: " \t\n ",
+		spanKey: KEY,
+	},
+	{
+		spanId: "empty-event-span-key",
+		service: "checkout",
+		type: "RefundError",
+		message: "refund rejected",
+		stacktrace: "RefundError: rejected\n    at refund (/app/src/refund.ts:12:3)",
+		eventKey: "",
 		spanKey: KEY,
 	},
 	{
@@ -131,7 +149,7 @@ const mirroredSql = Arr.join(
 			exceptionType: row.type,
 			exceptionStacktrace: row.stacktrace,
 			statusMessage: row.message,
-			customFingerprint: row.eventKey !== undefined && row.eventKey !== "" ? row.eventKey : row.spanKey,
+			customFingerprint: resolveCustomFingerprint(row.eventKey, row.spanKey),
 		})
 		return `SELECT ${quote(row.spanId)} AS SpanId, toString(cityHash64(${Arr.join(Arr.map([ORG_ID, row.service, ...inputs.hashInputs], quote), ", ")})) AS Hash, ${quote(inputs.topFrame)} AS TopFrame, ${quote(inputs.label)} AS ErrorLabel`
 	}),
@@ -140,6 +158,7 @@ const mirroredSql = Arr.join(
 
 describe.skipIf(!clickhouseE2eEnabled)("maple.fingerprint override (ClickHouse e2e)", () => {
 	let materialized: Map<string, Row>
+	let materializedByTime: Map<string, Row>
 	let mirrored: Map<string, Row>
 	const hash = (spanId: string) => materialized.get(spanId)?.Hash
 
@@ -149,6 +168,9 @@ describe.skipIf(!clickhouseE2eEnabled)("maple.fingerprint override (ClickHouse e
 		await seed()
 		materialized = await readRows(
 			`SELECT SpanId, toString(FingerprintHash) AS Hash, TopFrame, ErrorLabel FROM error_events WHERE OrgId = ${quote(ORG_ID)}`,
+		)
+		materializedByTime = await readRows(
+			`SELECT SpanId, toString(FingerprintHash) AS Hash, TopFrame, ErrorLabel FROM error_events_by_time WHERE OrgId = ${quote(ORG_ID)}`,
 		)
 		mirrored = await readRows(mirroredSql)
 	}, 180_000)
@@ -170,6 +192,11 @@ describe.skipIf(!clickhouseE2eEnabled)("maple.fingerprint override (ClickHouse e
 		assert.notStrictEqual(hash("event-wins"), hash("event-key"))
 	})
 
+	it("falls back to the span's key when the event's is blank after trimming", () => {
+		assert.strictEqual(hash("blank-event-span-key"), hash("event-key"))
+		assert.strictEqual(hash("empty-event-span-key"), hash("event-key"))
+	})
+
 	it("falls back to the computed fingerprint when the key is blank", () => {
 		assert.strictEqual(hash("blank-key"), hash("no-key"))
 		assert.notStrictEqual(hash("no-key"), hash("event-key"))
@@ -178,6 +205,7 @@ describe.skipIf(!clickhouseE2eEnabled)("maple.fingerprint override (ClickHouse e
 	for (const { spanId } of SEEDS) {
 		it(`materializes ${spanId} exactly as the TS mirror does`, () => {
 			assert.deepStrictEqual(materialized.get(spanId), mirrored.get(spanId))
+			assert.deepStrictEqual(materializedByTime.get(spanId), mirrored.get(spanId))
 		})
 	}
 })
