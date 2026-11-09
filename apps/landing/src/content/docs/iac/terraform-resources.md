@@ -141,7 +141,7 @@ resource "maple_uptime_monitor" "nightly_backup" {
 | `dns`         | `hostname`, `record_type` (`A`, `AAAA`, `CNAME`, `MX`, `TXT`, `NS`), optional `expected`                    |
 | `heartbeat`   | `schedule` (`{ type = "interval", seconds }` or `{ type = "cron", expression, timezone }`), `grace_seconds` |
 
-Read-only: `kind`, `heartbeat_url` (the URL a heartbeat job pings), `alert_rule_id`. See [Uptime monitoring](/docs/alerting/uptime-monitoring).
+Read-only: `kind`, `heartbeat_url` (the URL a heartbeat job pings), `alert_rule_id`. See [Uptime monitoring](/docs/alerting/uptime-monitoring) and [Heartbeat monitors](/docs/alerting/heartbeat-monitors).
 
 ## maple_scrape_target
 
