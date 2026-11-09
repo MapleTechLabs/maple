@@ -65,6 +65,7 @@
       "devDependencies": {
         "@cloudflare/workers-types": "catalog:alchemy",
         "@effect/vitest": "catalog:effect",
+        "@maple/data-sources": "workspace:*",
         "@types/node": "catalog:tooling",
         "@yielded/agent-testing": "0.1.0-beta.192",
         "gpt-tokenizer": "^4.1.0",

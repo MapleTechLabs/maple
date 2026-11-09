@@ -197,6 +197,7 @@ describe("re-render on change only", () => {
 			isRegionOpen: false,
 			flags: {
 				aiAutoTriage: false,
+				dataSources: false,
 				releases: false,
 				securityAudit: false,
 				statusPages: false,

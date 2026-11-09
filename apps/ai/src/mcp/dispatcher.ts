@@ -44,6 +44,9 @@ import { StatusPageSnapshotBuilder } from "@maple/backend/services/status-pages/
 import { VcsCommitService } from "@maple/backend/services/integrations/vcs/VcsCommitService"
 import { IntegrationInventoryService } from "@maple/backend/services/integrations/IntegrationInventoryService"
 import { SourcesService } from "@maple/backend/services/org/SourcesService"
+import { ExternalDataSourceService } from "@maple/backend/services/data-sources/ExternalDataSourceService"
+import { OrganizationFeatureFlagsService } from "@maple/backend/services/org/OrganizationFeatureFlagsService"
+import type { DataSourcePersistenceError, ExternalDataSourceDocument } from "@maple/domain/data-sources"
 import { AgentFeedbackService } from "@maple/backend/services/feedback/AgentFeedbackService"
 import { QueryEngineService } from "@maple/backend/services/warehouse/QueryEngineService"
 import { SecurityAuditStore } from "@maple/backend/services/security-audit/SecurityAuditStore"
@@ -277,6 +280,10 @@ export interface McpToolExecutorApi {
 	 * picks later costs a delta fetch. Skipped past a few repositories rather than guessing.
 	 */
 	readonly prepareConnectedRepositories: (tenant: TenantContext) => Effect.Effect<void>
+	/** The org's data sources an agent may query, for prompts and resources. Not a tool call. */
+	readonly listDataSources: (
+		tenant: TenantContext,
+	) => Effect.Effect<ReadonlyArray<ExternalDataSourceDocument>, DataSourcePersistenceError>
 }
 
 /** More connected repositories than this and an investigation warms none of them. */
@@ -356,6 +363,8 @@ export class McpToolExecutor extends Context.Service<McpToolExecutor, McpToolExe
 			)(withoutInvocationContext(buildContext))
 			const sandbox = yield* RepoSandboxService
 			const source = yield* VcsSourceService
+			const dataSources = yield* ExternalDataSourceService
+			const featureFlags = yield* OrganizationFeatureFlagsService
 
 			const execute = Effect.fn("McpToolExecutor.execute")(function* (
 				tenant: TenantContext,
@@ -420,7 +429,16 @@ export class McpToolExecutor extends Context.Service<McpToolExecutor, McpToolExe
 				),
 			)
 
-			return { execute, prepareRepository, prepareConnectedRepositories }
+			// An org outside the `dataSources` rollout has none, so prompts and resources never mention them.
+			const listDataSources = Effect.fn("McpToolExecutor.listDataSources")(function* (
+				tenant: TenantContext,
+			) {
+				const flags = yield* featureFlags.flags(tenant.orgId)
+				if (!flags.dataSources) return []
+				return yield* dataSources.list(tenant.orgId, { agent: true })
+			})
+
+			return { execute, prepareRepository, prepareConnectedRepositories, listDataSources }
 		}),
 	},
 ) {

@@ -37,7 +37,13 @@ const member: ClerkOrganization = {
 	homeRegion: "us",
 	isServedHere: true,
 	isRegionOpen: false,
-	flags: { aiAutoTriage: false, releases: false, securityAudit: false, statusPages: false },
+	flags: {
+		aiAutoTriage: false,
+		dataSources: false,
+		releases: false,
+		securityAudit: false,
+		statusPages: false,
+	},
 }
 
 const view = (model: Model, h: HtmlBuilder<Message>): Html => createOrgView(h, model, "david@acme.dev", [])

@@ -56,6 +56,7 @@ const countingGraph = (options: {
 				execute: () => Effect.succeed({ content: [{ type: "text" as const, text: "ok" }] }),
 				prepareRepository: () => Effect.void,
 				prepareConnectedRepositories: () => Effect.void,
+				listDataSources: () => Effect.succeed([]),
 			}
 		}),
 	)
