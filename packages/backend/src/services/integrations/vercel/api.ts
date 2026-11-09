@@ -18,6 +18,8 @@ export class VercelApiError extends Schema.TaggedError<VercelApiError>()(
 		message: Schema.String,
 		kind: Schema.Literals(["unauthorized", "forbidden", "rate_limited", "not_found", "upstream"]),
 		status: Schema.optionalKey(Schema.Number),
+		/** Vercel's own error message, without the status prefix. */
+		detail: Schema.optionalKey(Schema.String),
 		cause: Schema.optionalKey(Schema.Defect()),
 	},
 ) {}
@@ -55,6 +57,7 @@ const call = <S extends Schema.Top>(
 				message: `Vercel API returned ${response.status}${detail === undefined ? "" : `: ${Str.slice(0, 300)(detail)}`}`,
 				kind: errorKind(response.status),
 				status: response.status,
+				...(detail === undefined ? undefined : { detail: Str.slice(0, 300)(detail) }),
 			})
 		}
 		return yield* Schema.decodeEffect(schema)(body)
@@ -93,6 +96,8 @@ export interface VercelTeamInfo {
 	readonly id: string
 	readonly slug: string
 	readonly name: string
+	/** Null for a team the token sees only in part (Vercel's `limited` teams). */
+	readonly plan: string | null
 }
 
 const TeamsBody = Schema.Struct({
@@ -101,6 +106,7 @@ const TeamsBody = Schema.Struct({
 			id: Schema.String,
 			slug: Schema.String,
 			name: Schema.optionalKey(Schema.NullOr(Schema.String)),
+			billing: Schema.optionalKey(Schema.NullOr(Schema.Struct({ plan: Schema.optionalKey(Schema.String) }))),
 		}),
 	),
 	pagination: Schema.optionalKey(Pagination),
@@ -126,7 +132,12 @@ export const listTeams = Effect.fn("VercelApi.listTeams")(function* (
 			TeamsBody,
 		)
 		for (const team of body.teams) {
-			teams.push({ id: team.id, slug: team.slug, name: team.name ?? team.slug })
+			teams.push({
+				id: team.id,
+				slug: team.slug,
+				name: team.name ?? team.slug,
+				plan: team.billing?.plan ?? null,
+			})
 		}
 		next = body.pagination?.next ?? null
 		if (next === null) break

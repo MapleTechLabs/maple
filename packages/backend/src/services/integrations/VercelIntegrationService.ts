@@ -170,19 +170,27 @@ const toListError = (error: VercelApiError) =>
 				...(error.status === undefined ? undefined : { status: error.status }),
 			})
 
-const toDrainError = (error: VercelApiError) =>
-	error.kind === "unauthorized"
-		? tokenRejected()
-		: error.kind === "forbidden"
-			? new IntegrationsValidationError({
-					message: `Vercel refused the drain (drains need a Pro or Enterprise team). ${error.message}`,
-				})
-			: error.status !== undefined && error.status >= 400 && error.status < 500 && error.status !== 429
-				? new IntegrationsValidationError({ message: `Vercel refused the drain. ${error.message}` })
-				: new IntegrationsUpstreamError({
-						message: error.message,
-						...(error.status === undefined ? undefined : { status: error.status }),
-					})
+/** A refused drain in words the person connecting can act on; Vercel's own reason stays at the end. */
+const toDrainError = (teamName: string, ingestUrl: string) => (error: VercelApiError) => {
+	if (error.kind === "unauthorized") return tokenRejected()
+	const reason = error.detail ?? error.message
+	if (error.kind === "forbidden") {
+		return new IntegrationsValidationError({
+			message: `Vercel creates drains only on Pro and Enterprise teams. Upgrade ${teamName} in Vercel's team settings, then connect again. (Vercel: ${reason})`,
+		})
+	}
+	if (error.status !== undefined && error.status >= 400 && error.status < 500 && error.status !== 429) {
+		return new IntegrationsValidationError({
+			message: Str.includes("delivery endpoint")(Str.toLowerCase(reason))
+				? `Vercel could not reach Maple's ingest endpoint at ${ingestUrl} when it tested the drain. Try again in a few minutes; if it keeps failing, contact Maple support. (Vercel: ${reason})`
+				: `Vercel refused the drain: ${reason}`,
+		})
+	}
+	return new IntegrationsUpstreamError({
+		message: error.message,
+		...(error.status === undefined ? undefined : { status: error.status }),
+	})
+}
 
 const validateForwarding = (forwarding: VercelForwarding) =>
 	forwarding.projectScope === "some" && forwarding.projectIds.length === 0
@@ -1073,7 +1081,7 @@ export class VercelIntegrationService extends Context.Service<
 					yield* removeDrains(connection, token)
 					yield* deleteRows(orgId)
 				}
-				return yield* toDrainError(failure)
+				return yield* toDrainError(connection.teamName, ingestUrl)(failure)
 			}
 			yield* pollNow(orgId)
 			const status = yield* getStatus(orgId)
@@ -1108,14 +1116,14 @@ export class VercelIntegrationService extends Context.Service<
 			const token = yield* decryptToken(connection)
 			const ingestKey = yield* drainKey(connection, SYSTEM_USER_ID)
 			const outcomes = yield* reconcileDrains(connection, token, forwarding, ingestKey, true).pipe(
-				Effect.mapError(toDrainError),
+				Effect.mapError(toDrainError(connection.teamName, ingestUrl)),
 			)
 			if (!(yield* saveOutcomes(connection, outcomes, ingestKey.hash, now))) {
 				// Disconnected or moved team while this ran: take back what it may have created.
 				yield* removeDrains(connection, token)
 			}
 			const failure = firstError(outcomes)
-			if (failure !== null) return yield* toDrainError(failure)
+			if (failure !== null) return yield* toDrainError(connection.teamName, ingestUrl)(failure)
 			return yield* getStatus(orgId)
 		})
 

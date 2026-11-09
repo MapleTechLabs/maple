@@ -1155,6 +1155,8 @@ export class VercelTeam extends Schema.Class<VercelTeam>("VercelTeam")({
 	id: Schema.String,
 	slug: Schema.String,
 	name: Schema.String,
+	/** Vercel's `billing.plan` (`hobby`, `pro`, `enterprise`) when the lookup read it; drains need Pro or Enterprise. */
+	plan: Schema.optionalKey(Schema.NullOr(Schema.String)),
 }) {}
 
 export class VercelDrainStatus extends Schema.Class<VercelDrainStatus>("VercelDrainStatus")({

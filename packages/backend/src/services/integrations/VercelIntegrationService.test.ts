@@ -74,7 +74,12 @@ interface Fake {
 	readonly calls: Array<VercelCall>
 	readonly drains: Map<string, FakeDrain>
 	mode: "ok" | "token_rejected"
-	teams: ReadonlyArray<{ readonly id: string; readonly slug: string; readonly name: string }>
+	teams: ReadonlyArray<{
+		readonly id: string
+		readonly slug: string
+		readonly name: string
+		readonly billing?: { readonly plan: string }
+	}>
 	deployments: ReadonlyArray<Deployment>
 	created: number
 	/** Answers a call before the default handling when it returns a response. */
@@ -990,6 +995,65 @@ describe("VercelIntegrationService", () => {
 				)
 				assert.strictEqual(fake.drains.size, 0)
 				assert.isFalse((yield* status()).connected)
+			}),
+		)
+	})
+
+	it.effect("discover reports each team's Vercel plan", () => {
+		const testDb = createTestDb(trackedDbs)
+		const fake = makeFake()
+		fake.teams = [
+			{ id: "team_1", slug: "acme", name: "Acme", billing: { plan: "hobby" } },
+			{ id: "team_2", slug: "labs", name: "Labs" },
+		]
+		return run(
+			testDb,
+			fake,
+			Effect.gen(function* () {
+				const found = yield* VercelIntegrationService.use((vercel) => vercel.discover("vercel_token_123", undefined))
+				assert.deepStrictEqual(
+					Arr.map(found.teams, (team) => [team.slug, team.plan]),
+					[
+						["acme", "hobby"],
+						["labs", null],
+					],
+				)
+			}),
+		)
+	})
+
+	it.effect("a connect Vercel refuses for the plan says to upgrade the team", () => {
+		const testDb = createTestDb(trackedDbs)
+		const fake = makeFake()
+		fake.respond = (call) =>
+			call.method === "POST" && call.path === "/v1/drains"
+				? vercelError(403, "Drains are not available for team 'team_1'")
+				: undefined
+		return run(
+			testDb,
+			fake,
+			Effect.gen(function* () {
+				const error = yield* Effect.flip(connect())
+				assert.strictEqual(
+					error.message,
+					"Vercel creates drains only on Pro and Enterprise teams. Upgrade Acme in Vercel's team settings, then connect again. (Vercel: Drains are not available for team 'team_1')",
+				)
+			}),
+		)
+	})
+
+	it.effect("a drain Vercel cannot deliver to names Maple's ingest endpoint", () => {
+		const testDb = createTestDb(trackedDbs)
+		const fake = makeFake()
+		fake.respond = (call) =>
+			call.method === "POST" && call.path === "/v1/drains" ? vercelError(400, "Invalid delivery endpoint") : undefined
+		return run(
+			testDb,
+			fake,
+			Effect.gen(function* () {
+				const error = yield* Effect.flip(connect())
+				assert.include(error.message, "Vercel could not reach Maple's ingest endpoint at https://ingest.test")
+				assert.include(error.message, "(Vercel: Invalid delivery endpoint)")
 			}),
 		)
 	})

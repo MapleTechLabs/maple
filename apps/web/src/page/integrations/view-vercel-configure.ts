@@ -94,6 +94,22 @@ const refusal = (h: H, title: string, error: string | null): ReadonlyArray<Html>
 				]),
 			]
 
+/** Vercel reports the team on Hobby, where it refuses drains. */
+const onHobby = (team: VercelTeam): boolean => team.plan === "hobby"
+
+const hobbyWarning = (h: H, team: VercelTeam): ReadonlyArray<Html> =>
+	onHobby(team)
+		? [
+				alert(h, { size: "sm", variant: "warn" }, [
+					icon(h, "AlertWarningIcon", { size: 14 }),
+					alertTitle(h, [`${team.name} is on Vercel's Hobby plan`]),
+					alertDescription(h, [
+						"Vercel creates drains only on Pro and Enterprise teams, so connecting fails until you upgrade the team in Vercel.",
+					]),
+				]),
+			]
+		: []
+
 // TOKEN
 
 const TOKEN_IDS: Field.FieldIds = { control: "vercel-token", label: "vercel-token-label", error: "vercel-token-error" }
@@ -234,6 +250,9 @@ const teamStage = (h: H, configure: VercelConfigureModel, teams: ReadonlyArray<V
 										},
 										[
 											h.span([h.Class("min-w-0 flex-1 truncate text-sm font-medium")], [team.name]),
+											...(onHobby(team)
+												? [typography(h, { size: "xs", tone: "muted" }, ["Hobby: no drains"])]
+												: []),
 											typography(h, { size: "xs", tone: "muted", mono: true }, [team.slug]),
 										],
 									),
@@ -507,7 +526,11 @@ const connectSettingsStage = (
 	const problem = draftProblem(draft)
 	return [
 		header(h, `Connect ${team.name}`),
-		body(h, [settingsFields(h, configure, projects), ...refusal(h, "Vercel refused the drains", configure.error)]),
+		body(h, [
+			...hobbyWarning(h, team),
+			settingsFields(h, configure, projects),
+			...refusal(h, "Vercel refused the drains", configure.error),
+		]),
 		footer(h, [
 			footerNote(h, [
 				problem ?? `Creates ${draft.logsEnabled && draft.tracesEnabled ? "2 drains" : "a drain"} on ${team.name} right away.`,

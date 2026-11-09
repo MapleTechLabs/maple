@@ -138,6 +138,32 @@ describe("vercel card: connecting", () => {
 		expect(names(done.commands)).toEqual(["LoadIntegrationsVercelStatus"])
 	})
 
+	test("warns before connecting a team Vercel reports on Hobby", () => {
+		const settingsFor = (team: VercelTeam) =>
+			run(withStatus(NOT_CONNECTED).model, [
+				Message.ClickedVercelConfigure({ target: "connect" }),
+				typed("vc_token_0001"),
+				Message.CompletedVercelDiscover({
+					forTeam: null,
+					response: new VercelDiscoverResponse({ teams: [team], projects: PROJECTS }),
+					error: null,
+				}),
+			])
+		const hobby = new VercelTeam({ id: "team_acme", slug: "acme", name: "Acme", plan: "hobby" })
+		scene(
+			{ update: step, view },
+			given(settingsFor(hobby)),
+			mounted(),
+			expectView(text("Acme is on Vercel's Hobby plan")).toExist(),
+		)
+		scene(
+			{ update: step, view },
+			given(settingsFor(ACME)),
+			mounted(),
+			expectView(text("Acme is on Vercel's Hobby plan")).toBeAbsent(),
+		)
+	})
+
 	test("a single team skips the team step; picking projects with none picked cannot connect", () => {
 		const settings = run(withStatus(NOT_CONNECTED).model, [
 			Message.ClickedVercelConfigure({ target: "connect" }),
