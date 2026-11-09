@@ -109,6 +109,18 @@ describe("byUrgency", () => {
 		expect(ordered).toEqual(["CFG-C", "CFG-B", "CFG-A"])
 	})
 
+	it("ranks a secret exposure first within its severity, whatever it counts", () => {
+		const ordered = Arr.map(
+			[
+				check({ id: "CFG-INTEG-02", severity: "critical", affectedCount: 17 }),
+				check({ id: "PII-01", severity: "critical", affectedCount: 1 }),
+				check({ id: "CFG-ALERT-03", severity: "critical", affectedCount: 2 }),
+			].sort(byUrgency),
+			(row) => row.id,
+		)
+		expect(ordered).toEqual(["PII-01", "CFG-INTEG-02", "CFG-ALERT-03"])
+	})
+
 	it("falls back to the check id so the table is stable across runs", () => {
 		const ordered = Arr.map([check({ id: "CFG-B" }), check({ id: "CFG-A" })].sort(byUrgency), (r) => r.id)
 		expect(ordered).toEqual(["CFG-A", "CFG-B"])
@@ -317,7 +329,7 @@ describe("nextCallsOf", () => {
 		expect(decodes(entry)).toBe(true)
 	})
 
-	it("keeps the most urgent five, one per tool", () => {
+	it("keeps the most urgent six, one per tool", () => {
 		const calls = callsFor(
 			[
 				unroutedRule,
@@ -327,6 +339,7 @@ describe("nextCallsOf", () => {
 				check({ id: "CFG-ALERT-04" }),
 				check({ id: "CFG-ATTR-01", category: "attributes" }),
 				check({ id: "CFG-INTEG-02", category: "integrations" }),
+				check({ id: "STAT-04", category: "traces", affected: [{ kind: "service", name: "api" }] }),
 			],
 			3,
 		)
@@ -336,7 +349,23 @@ describe("nextCallsOf", () => {
 			"inspect_trace",
 			"list_alert_destinations",
 			"get_instrumentation_recommendations",
+			"list_integrations",
 		])
+		// Every reason names the check it serves.
+		expect(Arr.every(calls, (call) => /^[A-Z]+(-[A-Z0-9]+)+[:,]/.test(call.why))).toBe(true)
+	})
+
+	it("merges integration checks for two providers into one call that names both", () => {
+		const calls = callsFor(
+			[
+				check({ id: "CFG-INTEG-02", category: "integrations", detail: "Cloudflare datasets fail." }),
+				check({ id: "CFG-INTEG-05", category: "integrations", detail: "PlanetScale has 1 problem." }),
+			],
+			0,
+		)
+		expect(calls).toHaveLength(1)
+		expect(calls[0]?.args).toEqual({})
+		expect(calls[0]?.why).toMatch(/^CFG-INTEG-02, CFG-INTEG-05: /)
 	})
 })
 

@@ -34,12 +34,17 @@ const SEVERITY_MEANING: Record<AuditSeverity, string> = {
 
 type RankedCheck = Pick<AuditCheckResult, "id" | "status" | "severity" | "affectedCount">
 
+/** A secret exposure outranks every other finding of its severity, however few entities it names. */
+const FIRST_WITHIN_SEVERITY: ReadonlySet<string> = new Set(["PII-01"])
+
 /** Within a severity, checks naming more broken entities come first; the id keeps runs stable. */
 export const byUrgency = (a: RankedCheck, b: RankedCheck) => {
 	const byStatus = STATUS_RANK[a.status] - STATUS_RANK[b.status]
 	if (byStatus !== 0) return byStatus
 	const bySeverity = SEVERITY_RANK[a.severity] - SEVERITY_RANK[b.severity]
 	if (bySeverity !== 0) return bySeverity
+	const byPriority = Number(FIRST_WITHIN_SEVERITY.has(b.id)) - Number(FIRST_WITHIN_SEVERITY.has(a.id))
+	if (byPriority !== 0) return byPriority
 	const byAffected = b.affectedCount - a.affectedCount
 	if (byAffected !== 0) return byAffected
 	return Str.localeCompare(b.id)(a.id)
@@ -91,8 +96,9 @@ type OutputCheck = (typeof AuditSetupOutput.Type)["checks"][number]
 type AffectedLike = Pick<OutputCheck, "affected" | "affectedCount">
 
 const MAX_SHOWN_AFFECTED = 3
-const MAX_NOTE_CHARS = 64
-const MAX_FINDING_CHARS = 160
+// Sized so every note and finding of a real org's audit prints whole; longer text clips at a sentence.
+const MAX_NOTE_CHARS = 170
+const MAX_FINDING_CHARS = 340
 
 /** Affected entities inline into the table cell: the agent reads them as evidence, not as a list. */
 export const formatAffected = (check: AffectedLike): string => {
@@ -190,7 +196,7 @@ const exploreResource = (check: OutputCheck, service: Option.Option<string>): Re
 const nextCallsFor = (check: OutputCheck, openRecommendations: number): ReadonlyArray<NextCall> => {
 	if (check.id === "PII-01") return removeKeyPreview(check)
 	if (RESOURCE_KEY_CHECKS.has(check.id)) return exploreResource(check, firstService(check))
-	if (check.id === "RES-06") return exploreResource(check, serviceInNotes(check, /^from ([^\s,;]+)/))
+	if (check.id === "RES-06") return exploreResource(check, serviceInNotes(check, /(?:^|; )from ([^\s,;]+)/))
 	if (check.id === "MAP-02") {
 		return Option.match(firstService(check), {
 			onNone: () => [],
@@ -241,7 +247,7 @@ const nextCallsFor = (check: OutputCheck, openRecommendations: number): Readonly
 			doc.next(
 				"get_error_notification_policy",
 				{},
-				`${check.id}: read the policy, then set its destinations`,
+				`${check.id}: read the policy, then call update_error_notification_policy with an enabled destination id from list_alert_destinations`,
 			),
 		]
 	}
@@ -277,11 +283,14 @@ const nextCallsFor = (check: OutputCheck, openRecommendations: number): Readonly
 	return []
 }
 
-const MAX_NEXT_CALLS = 5
+const MAX_NEXT_CALLS = 6
+
+/** The check ids a call's reason leads with (`CFG-INTEG-02, CFG-INTEG-05: …`). */
+const reasonIds = (call: NextCall): string => Str.split(": ")(call.why)[0] ?? ""
 
 /**
  * One call per tool, most urgent check first. Two integration checks for different providers
- * collapse into one unfiltered `list_integrations`.
+ * collapse into one unfiltered `list_integrations` whose reason names both.
  */
 export const nextCallsOf = (
 	failing: ReadonlyArray<OutputCheck>,
@@ -293,13 +302,18 @@ export const nextCallsOf = (
 		(calls, call) => {
 			const existing = Arr.findFirstIndex(calls, (prior) => prior.tool === call.tool)
 			if (Option.isNone(existing)) return Arr.append(calls, call)
-			const prior = calls[existing.value]
-			if (call.tool !== "list_integrations" || prior?.args.provider === call.args.provider) return calls
-			return Arr.map(calls, (kept, index) =>
-				index === existing.value
-					? doc.next("list_integrations", {}, "several integrations report failures")
-					: kept,
-			)
+			if (call.tool !== "list_integrations") return calls
+			return Arr.map(calls, (kept, index) => {
+				if (index !== existing.value) return kept
+				const ids = Arr.dedupe([...Str.split(", ")(reasonIds(kept)), reasonIds(call)])
+				// Same provider keeps its filter; a second provider widens the call to every integration.
+				const args = kept.args.provider === call.args.provider ? kept.args : {}
+				return doc.next(
+					"list_integrations",
+					args,
+					`${Arr.join(ids, ", ")}: which integration resources fail and why`,
+				)
+			})
 		},
 	)
 	const withRecommendations =
@@ -310,7 +324,7 @@ export const nextCallsOf = (
 					doc.next(
 						"get_instrumentation_recommendations",
 						{},
-						`${openRecommendations} open attribute recommendation(s) with the exact renames`,
+						`CFG-ATTR-01: ${openRecommendations} open attribute recommendation(s) with the exact renames`,
 					),
 				)
 			: merged

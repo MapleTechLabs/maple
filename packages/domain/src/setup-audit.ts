@@ -482,9 +482,11 @@ const formatAgo = (ms: number): string => {
 	return plural(Math.floor(hours / 24), "day")
 }
 
-/** Truncates a provider error so one pathological message can't dominate the report. */
-const briefError = (message: string): string =>
-	message.length > ERROR_EXCERPT_LIMIT ? `${Str.slice(0, ERROR_EXCERPT_LIMIT - 1)(message)}…` : message
+/** A stored provider error with credentials masked, truncated so one message can't dominate the report. */
+const briefError = (message: string): string => {
+	const masked = maskSecrets(message)
+	return masked.length > ERROR_EXCERPT_LIMIT ? `${Str.slice(0, ERROR_EXCERPT_LIMIT - 1)(masked)}…` : masked
+}
 
 const percent = (numerator: number, denominator: number): string =>
 	denominator === 0 ? "0%" : `${Math.round((numerator / denominator) * 100)}%`
@@ -1139,10 +1141,14 @@ const integrationChecks: ReadonlyArray<AuditCheck> = [
 					lastSuccessAt === 0
 						? "never succeeded"
 						: `last success ${formatAgo(now - lastSuccessAt)} ago`
+				const error = `${briefError(first.lastError ?? "last poll failed")} (${formatAgo(now - lastErrorAt)} ago)`
+				// Past the data-loss threshold the age of the gap is the finding, so it leads.
 				return {
 					kind: "integration",
 					name,
-					note: `${briefError(first.lastError ?? "last poll failed")} (${formatAgo(now - lastErrorAt)} ago), ${success}`,
+					note: Arr.some(group, (state) => losingData(state.lastSuccessAt, now))
+						? `${success}; ${error}`
+						: `${error}, ${success}`,
 				}
 			})
 			if (affected.length === 0) return PASS
@@ -1156,7 +1162,12 @@ const integrationChecks: ReadonlyArray<AuditCheck> = [
 					}.`,
 					affected,
 				),
-				...(losing ? { severity: "critical" as const } : undefined),
+				...(losing
+					? {
+							severity: "critical" as const,
+							fixHint: `Cloudflare data has been missing for over ${DATA_LOSS_HOURS} hours: reconnect the Cloudflare integration in Sources now, granting Analytics and Firewall read access.`,
+						}
+					: undefined),
 			}
 		},
 	},
@@ -1600,7 +1611,13 @@ const URL_CREDENTIALS = /\/\/[^/\s:@]+:[^/\s@]+@/g
  * hashes) are masked, then the result is capped. Long runs of plain words are kept.
  */
 export const quoteSafely = (raw: string): string => {
-	const masked = pipe(
+	const masked = maskSecrets(raw)
+	return masked.length > QUOTE_LIMIT ? `${Str.slice(0, QUOTE_LIMIT - 1)(masked)}…` : masked
+}
+
+/** `raw` with credentials and long opaque runs masked and whitespace collapsed, uncapped. */
+function maskSecrets(raw: string): string {
+	return pipe(
 		Str.trim(raw),
 		Str.replace(URL_CREDENTIALS, "//[redacted]@"),
 		Str.replace(AUTHORIZATION, "$1$2[redacted]"),
@@ -1609,7 +1626,6 @@ export const quoteSafely = (raw: string): string => {
 		Str.replace(OPAQUE_RUN, "[redacted]"),
 		Str.replace(/\s+/g, " "),
 	)
-	return masked.length > QUOTE_LIMIT ? `${Str.slice(0, QUOTE_LIMIT - 1)(masked)}…` : masked
 }
 
 /** The semconv key each invented one stands in for. */
@@ -1666,7 +1682,8 @@ const inventedKeyNote = (
 	const [duplicate] = duplicates
 	// Every emitter already sends the semconv key with the same value: the key is pure duplication.
 	if (duplicate !== undefined && renamers.length === 0) {
-		return `from ${serviceList(Arr.map(duplicates, (row) => row.serviceName))}; ${value}same value as its \`${duplicate.duplicateOf}\`, so remove this key`
+		// The action leads so clipping drops the sample, not the fix.
+		return `same value as its \`${duplicate.duplicateOf}\`, so remove this key; from ${serviceList(Arr.map(duplicates, (row) => row.serviceName))}${quoted === "" ? "" : `; e.g. "${quoted}"`}`
 	}
 	const from = renamers.length === 0 ? "" : `from ${serviceList(renamers)}; `
 	const target = inventedKeyTarget(key, sample)
@@ -2005,14 +2022,36 @@ const attributeQualityChecks: ReadonlyArray<AuditCheck> = [
 					name: key,
 					note: inventedKeyNote(key, services, duplicates, sample),
 					duplicated: duplicates.length > 0,
+					// Every emitter already sends the semconv key with this value.
+					pureDuplicateOf: Arr.every(services, (service) =>
+						Arr.some(duplicates, (row) => row.serviceName === service),
+					)
+						? duplicates[0]?.duplicateOf
+						: undefined,
 				}
 			})
 			if (invented.length === 0) return PASS
 			const anyDuplicate = Arr.some(invented, (row) => row.duplicated)
+			const entities = Arr.map(invented, ({ duplicated: _d, pureDuplicateOf: _p, ...entity }) => entity)
+			const [only] = invented
+			// Nothing is missing when every key repeats a semconv key: only noise, so advisory.
+			if (Arr.every(invented, (row) => row.pureDuplicateOf !== undefined)) {
+				return {
+					...fail(
+						invented.length === 1 && only !== undefined
+							? `\`${only.name}\` already arrives as \`${only.pureDuplicateOf}\` with the same value; the extra key only adds noise.`
+							: `${invented.length} resource attributes already arrive under their semantic-convention keys with the same values; the extra keys only add noise.`,
+						entities,
+					),
+					severity: "info",
+					fixHint:
+						"Remove each key: the service already sends the semantic-convention key with the same value.",
+				}
+			}
 			return {
 				...fail(
 					`${plural(invented.length, "resource attribute")} ${conj(invented.length, "duplicates", "duplicate")} a semantic-convention key under a name nothing reads. The data arrives, but environment filtering, release tracking and source linking stay empty.`,
-					Arr.map(invented, ({ duplicated: _duplicated, ...entity }) => entity),
+					entities,
 				),
 				...(anyDuplicate
 					? {
@@ -2463,10 +2502,29 @@ const serviceMapChecks: ReadonlyArray<AuditCheck> = [
 							"Set `db.namespace` on database client spans to the logical database name.",
 							hyperdriveHint,
 						]
+			// With several causes, a count summary leads so clipping keeps every cause named.
+			const causeLabels = {
+				hyperdrive: "behind Cloudflare Hyperdrive",
+				missing: "with no name",
+				split: "split across nodes",
+			} satisfies Record<DbIdentityCause, string>
+			const present = Arr.filter(DB_IDENTITY_CAUSES, (cause) => count(cause) > 0)
+			const summary =
+				present.length > 1
+					? `${plural(findings.length, "database dependency", "database dependencies")} lack a usable name (${Arr.join(
+							Arr.map(present, (cause) => `${count(cause)} ${causeLabels[cause]}`),
+							", ",
+						)}). `
+					: ""
+			// One row per cause first, so no cause hides behind "+N more".
+			const leads = Arr.flatMap(present, (cause) =>
+				Arr.fromOption(Arr.findFirst(ordered, (row) => row.cause === cause)),
+			)
+			const affected = [...leads, ...Arr.filter(ordered, (row) => !leads.includes(row))]
 			return {
 				...fail(
-					`${Arr.join(clauses, "; ")}.`,
-					Arr.map(ordered, (row) => row.entity),
+					`${summary}${Arr.join(clauses, "; ")}.`,
+					Arr.map(affected, (row) => row.entity),
 				),
 				fixHint: Arr.join(hints, " "),
 			}
@@ -2588,7 +2646,11 @@ const traceCompletenessChecks: ReadonlyArray<AuditCheck> = [
 			}))
 			const total = org.orgTraceCount - org.orgExternalParentCount
 			const missing = org.orgRootlessCount - org.orgSampledRootlessCount - org.orgExternalParentCount
-			if (missing < ROOTLESS_MIN_TRACES) return PASS
+			// A service with fewer than TRACE_MIN_SAMPLE sampled traces only adds to the org rate: its own
+			// misses can't fail the check or name it, or one lost root in 15 traces flips the result.
+			const judged = (row: (typeof rows)[number]) => row.traceCount >= TRACE_MIN_SAMPLE
+			const judgedMissing = Arr.reduce(Arr.filter(rows, judged), 0, (sum, row) => sum + row.missing)
+			if (missing < ROOTLESS_MIN_TRACES || judgedMissing < ROOTLESS_MIN_TRACES) return PASS
 			const ratio = missing / total
 			// Below the minimum sample a rate is noise, so it never escalates past info. A lost root
 			// distorts a waterfall but loses no data or alerts, so it caps at warn.
@@ -2598,15 +2660,15 @@ const traceCompletenessChecks: ReadonlyArray<AuditCheck> = [
 			const modulus = traces.traceSampleModulus
 			const sampleNote = modulus > 1 ? ` in a 1-in-${modulus} sample` : ""
 			const losing = Arr.filter(rows, (row) => row.missing > 0)
-			const unnamed = Arr.filter(losing, (row) => row.missing < TRACE_NAMED_MIN_HITS).length
+			const nameable = (row: (typeof rows)[number]) =>
+				judged(row) && row.missing >= TRACE_NAMED_MIN_HITS
+			const unnamed = Arr.filter(losing, (row) => !nameable(row)).length
 			const others =
 				unnamed === 0
 					? ""
-					: ` ${plural(unnamed, "other service")} ${conj(unnamed, "loses", "lose")} a root on fewer than ${TRACE_NAMED_MIN_HITS} sampled traces${conj(unnamed, "", " each")}.`
+					: ` ${plural(unnamed, "other service")} ${conj(unnamed, "loses", "lose")} a root on too few sampled traces to name.`
 			const affected = Arr.map(
-				Arr.filter(losing, (row) => row.missing >= TRACE_NAMED_MIN_HITS).sort(
-					(a, b) => b.missing - a.missing,
-				),
+				Arr.filter(losing, nameable).sort((a, b) => b.missing - a.missing),
 				(row) => ({
 					kind: "service" as const,
 					name: row.entryService,

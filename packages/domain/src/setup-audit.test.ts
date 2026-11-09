@@ -1277,9 +1277,31 @@ describe("integration checks", () => {
 			{
 				kind: "integration",
 				name: "firewall_events on 17 zones",
-				note: "Token refresh failed with 500 (3 hours ago), last success 2 days ago",
+				note: "last success 2 days ago; Token refresh failed with 500 (3 hours ago)",
 			},
 		])
+		expect(result.fixHint).toContain("reconnect the Cloudflare integration in Sources now")
+	})
+
+	it("CFG-INTEG-02 masks credentials quoted in a stored provider error", () => {
+		const result = check(
+			runSetupAudit(
+				inputs({
+					cloudflareAnalytics: [
+						{
+							dataset: "httpRequests",
+							zoneName: "example.com",
+							lastSuccessAt: NOW - 3 * HOUR,
+							lastErrorAt: NOW - HOUR,
+							lastError: "401 from upstream: Authorization: Bearer abc123secretvalue",
+						},
+					],
+				}),
+			),
+			"CFG-INTEG-02",
+		)
+		expect(result.affected[0]?.note).toContain("Authorization: [redacted]")
+		expect(result.affected[0]?.note).not.toContain("abc123secretvalue")
 	})
 
 	it("CFG-INTEG-02 stays a warning while the last success is under a day old", () => {
@@ -1790,9 +1812,13 @@ describe("resource-attribute coverage", () => {
 		})
 		const result = check(report, "RES-06")
 		expect(result.affected[0]?.note).toBe(
-			'from ios; e.g. "0.1.0+1100"; same value as its `service.version`, so remove this key',
+			'same value as its `service.version`, so remove this key; from ios; e.g. "0.1.0+1100"',
 		)
-		expect(result.fixHint).toMatch(/^Remove a key that only repeats/)
+		// Pure duplication loses nothing, so it is advisory and says so.
+		expect(result.severity).toBe("info")
+		expect(result.detail).toBe(
+			"`deployment.commit_sha` already arrives as `service.version` with the same value; the extra key only adds noise.",
+		)
 	})
 })
 
@@ -2128,12 +2154,33 @@ describe("MAP-02 — database identity", () => {
 		)
 		expect(Arr.map(result.affected, (entity) => [entity.name, entity.note])).toEqual([
 			["worker", "postgresql: namespace is an opaque Hyperdrive id"],
-			["api", "postgresql: namespace is an opaque Hyperdrive id"],
 			["cron", "mysql node named after the host `db.internal.example.com`"],
+			["api", "postgresql: namespace is an opaque Hyperdrive id"],
 		])
-		expect(result.detail).toMatch(/^2 services connect through Cloudflare Hyperdrive/)
+		expect(result.detail).toMatch(
+			/^3 database dependencies lack a usable name \(2 behind Cloudflare Hyperdrive, 1 with no name\)\. 2 services connect through Cloudflare Hyperdrive/,
+		)
 		expect(result.detail).toContain("1 database dependency arrives with no database name")
 		expect(result.fixHint).toContain("Through Hyperdrive")
+	})
+
+	it("leads with both causes and keeps a split service in view beside many Hyperdrive ones", () => {
+		const result = check(
+			edges(
+				["a", "postgresql", "hyperdrive", 900],
+				["b", "postgresql", "hyperdrive", 800],
+				["c", "postgresql", "hyperdrive", 700],
+				["d", "postgresql", "hyperdrive", 600],
+				["cli", "clickhouse", "", 446],
+				["cli", "clickhouse", "default", 28],
+			),
+			"MAP-02",
+		)
+		expect(result.detail).toMatch(
+			/^5 database dependencies lack a usable name \(4 behind Cloudflare Hyperdrive, 1 split across nodes\)\./,
+		)
+		expect(Arr.map(Arr.take(result.affected, 2), (entity) => entity.name)).toEqual(["a", "cli"])
+		expect(result.affectedCount).toBe(5)
 	})
 
 	it("accepts an HTTP-API warehouse named after its regional host", () => {
@@ -2364,7 +2411,7 @@ describe("trace completeness", () => {
 		it("names a service only on three or more sampled rootless traces", () => {
 			const result = check(rootless(["api", 9_000, 30], ["web", 7, 1]), "TRC-02")
 			expect(Arr.map(result.affected, (entity) => entity.name)).toEqual(["api"])
-			expect(result.detail).toContain("1 other service loses a root on fewer than 3 sampled traces.")
+			expect(result.detail).toContain("1 other service loses a root on too few sampled traces to name.")
 		})
 
 		it("passes with a single trace that lacks a root", () => {
@@ -2406,13 +2453,18 @@ describe("trace completeness", () => {
 			expect(check(rootless(["api", 1_000, 0]), "TRC-02").severity).toBe("warn")
 		})
 
-		it("never escalates past info below 50 traces", () => {
-			expect(check(rootless(["api", 40, 40]), "TRC-02").severity).toBe("info")
+		it("does not fail or name a service on fewer than 50 sampled traces", () => {
+			// A thin sample (3 of 15) flips between runs, so it is no evidence on its own.
+			const result = check(rootless(["ingest", 2_000, 0], ["electric-sync", 15, 3]), "TRC-02")
+			expect(result.status).toBe("pass")
 		})
 
-		it("does not blame upstream when no service has 50 traces", () => {
-			const result = check(rootless(["api", 40, 40]), "TRC-02")
-			expect(result.detail).toContain("100% of traces have no root span: 40 of 40 traces")
+		it("still counts an under-sampled service toward the org-wide rate", () => {
+			const result = check(rootless(["api", 9_000, 4], ["web", 30, 5]), "TRC-02")
+			expect(result.status).toBe("fail")
+			expect(result.detail).toContain("9 of 9030 traces")
+			expect(Arr.map(result.affected, (entity) => entity.name)).toEqual(["api"])
+			expect(result.detail).toContain("1 other service loses a root on too few sampled traces to name.")
 		})
 
 		it("does not blame upstream when the row cap cut services it cannot see", () => {
