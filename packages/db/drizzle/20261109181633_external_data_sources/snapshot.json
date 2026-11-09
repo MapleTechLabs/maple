@@ -1,9 +1,9 @@
 {
 	"version": "1",
 	"dialect": "postgres",
-	"id": "6c88bdfce01627daa36777c07caeec93d85e499af3083beb6f204cb2a13c718a",
+	"id": "77aecb4e1c4d159fd47a2d41dd6d645794e77ead6b40a6625ec6b63945bdf2df",
 	"prevIds": [
-		"c71580b50f2deb277316c5576657bed836622ef47dc6b8c1ff96d044fcda05a0"
+		"5d00fdaa161cf64cbc8bc71dacd900de91ed6c86c7246de209a5bcb8bff05c0b"
 	],
 	"entities": [
 		{
@@ -962,6 +962,16 @@
 			"name": "scrape_targets",
 			"primaryKey": {
 				"name": "scrape_targets_pkey",
+				"columns": [
+					"id"
+				]
+			}
+		},
+		{
+			"kind": "table",
+			"name": "search_console_sites",
+			"primaryKey": {
+				"name": "search_console_sites_pkey",
 				"columns": [
 					"id"
 				]
@@ -5216,8 +5226,38 @@
 		{
 			"kind": "column",
 			"table": "cloudflare_analytics_state",
-			"name": "created_at",
+			"name": "backoff_until",
 			"position": 19,
+			"type": "timestamp with time zone",
+			"notNull": false,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "cloudflare_analytics_state",
+			"name": "backoff_streak",
+			"position": 20,
+			"type": "integer",
+			"notNull": true,
+			"default": "0",
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "cloudflare_analytics_state",
+			"name": "backoff_reason",
+			"position": 21,
+			"type": "text",
+			"notNull": false,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "cloudflare_analytics_state",
+			"name": "created_at",
+			"position": 22,
 			"type": "timestamp with time zone",
 			"notNull": true,
 			"default": null,
@@ -5227,7 +5267,7 @@
 			"kind": "column",
 			"table": "cloudflare_analytics_state",
 			"name": "updated_at",
-			"position": 20,
+			"position": 23,
 			"type": "timestamp with time zone",
 			"notNull": true,
 			"default": null,
@@ -14265,6 +14305,156 @@
 		},
 		{
 			"kind": "column",
+			"table": "search_console_sites",
+			"name": "id",
+			"position": 0,
+			"type": "text",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "search_console_sites",
+			"name": "org_id",
+			"position": 1,
+			"type": "text",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "search_console_sites",
+			"name": "oauth_connection_id",
+			"position": 2,
+			"type": "text",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "search_console_sites",
+			"name": "site_url",
+			"position": 3,
+			"type": "text",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "search_console_sites",
+			"name": "permission_level",
+			"position": 4,
+			"type": "text",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "search_console_sites",
+			"name": "enabled",
+			"position": 5,
+			"type": "boolean",
+			"notNull": true,
+			"default": "true",
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "search_console_sites",
+			"name": "watermark_date",
+			"position": 6,
+			"type": "text",
+			"notNull": false,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "search_console_sites",
+			"name": "backfill_date",
+			"position": 7,
+			"type": "text",
+			"notNull": false,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "search_console_sites",
+			"name": "last_synced_at",
+			"position": 8,
+			"type": "timestamp with time zone",
+			"notNull": false,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "search_console_sites",
+			"name": "last_error",
+			"position": 9,
+			"type": "text",
+			"notNull": false,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "search_console_sites",
+			"name": "lease_until",
+			"position": 10,
+			"type": "timestamp with time zone",
+			"notNull": false,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "search_console_sites",
+			"name": "next_attempt_at",
+			"position": 11,
+			"type": "timestamp with time zone",
+			"notNull": false,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "search_console_sites",
+			"name": "consecutive_failures",
+			"position": 12,
+			"type": "integer",
+			"notNull": true,
+			"default": "0",
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "search_console_sites",
+			"name": "created_at",
+			"position": 13,
+			"type": "timestamp with time zone",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "search_console_sites",
+			"name": "updated_at",
+			"position": 14,
+			"type": "timestamp with time zone",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
 			"table": "security_audit_events",
 			"name": "id",
 			"position": 0,
@@ -19991,6 +20181,29 @@
 		},
 		{
 			"kind": "index",
+			"table": "search_console_sites",
+			"name": "search_console_sites_connection_idx",
+			"unique": false,
+			"method": "btree",
+			"columns": [
+				"\"oauth_connection_id\""
+			],
+			"where": null
+		},
+		{
+			"kind": "index",
+			"table": "search_console_sites",
+			"name": "search_console_sites_org_site_idx",
+			"unique": true,
+			"method": "btree",
+			"columns": [
+				"\"org_id\"",
+				"\"site_url\""
+			],
+			"where": null
+		},
+		{
+			"kind": "index",
 			"table": "security_audit_events",
 			"name": "security_audit_events_run_at_idx",
 			"unique": false,
@@ -20737,6 +20950,20 @@
 				"source_id"
 			],
 			"foreignTable": "sources",
+			"foreignColumns": [
+				"id"
+			],
+			"onDelete": "CASCADE",
+			"onUpdate": "NO ACTION"
+		},
+		{
+			"kind": "foreign_key",
+			"table": "search_console_sites",
+			"name": "search_console_sites_jBAHYyW36dnu_fk",
+			"columns": [
+				"oauth_connection_id"
+			],
+			"foreignTable": "oauth_connections",
 			"foreignColumns": [
 				"id"
 			],
