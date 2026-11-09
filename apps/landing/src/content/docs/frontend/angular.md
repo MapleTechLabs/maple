@@ -156,14 +156,7 @@ export const appConfig: ApplicationConfig = {
 }
 ```
 
-An environment initializer runs before the first navigation, so the page load is traced too. For an NgModule app, add the same providers to the root module. What you get:
-
-- **Names use the route config, not the URL.** Nested routes join their paths (`navigate /orgs/:org/projects/:id`), empty layout paths add nothing, and the wildcard route is `navigate /**`. The concrete path, without query or fragment, is the `url.path` attribute.
-- **A redirect is one span.** A guard that returns a `UrlTree`, a resolver that returns a `RedirectCommand`, and a `redirectTo` in the config each give one span named after the destination, with `url.path` set to the URL the user asked for.
-- **A click during a pending navigation interrupts it.** The old span ends with the bare name `navigate` and `maple.navigation.interrupted: true`. Angular doesn't cancel its resolver, so the resolver's span and request finish after it.
-- **The URL already on screen.** A click on it starts no span. A pending navigation that ends there (a click on it, or a redirect to it) ends with the bare name `navigate`.
-- **Query-only changes, fragments and back/forward** each get a `navigate` span. Resolvers only rerun when path or matrix params change, so a query-only change has no resolver span under it.
-- **Failed navigations aren't marked `Error`.** A `NavigationError` or a guard returning `false` ends the span, named after the route it tried to reach. The error itself is on the resolver's span.
+An environment initializer runs before the first navigation, so the page load is traced too. For an NgModule app, add the same providers to the root module.
 
 ## Resolvers
 
@@ -313,19 +306,32 @@ app.use((req, res, next) => {
 })
 ```
 
-The browser's `pageload` span reads the `Server-Timing` header and becomes a child of the server's request span. Without the Node SDK, for example under `ng serve`, no header is sent. What the first load looks like:
-
-- **One trace from the request to the page.** The server's `HttpClient` requests are children of the request span, and the API's spans are under those.
-- **The browser's first resolver has no requests under it.** `provideClientHydration()` replays the server's successful `HttpClient` responses; a failed one, like a 404, is requested again.
-- **A redirect is a 302.** A full load of a URL a guard redirects gets a `302`, and the `pageload` span joins the trace of the page it lands on.
-- **A resolver that throws during the render gets no page.** `handle()` resolves `null` and Express answers `404`, so there's no `pageload`. `MapleErrorHandler` records the error on the server's request span and marks it `Error`.
-- **A component that throws while rendering is reported twice**: on the server's request span, and as an `angular.error` span when the browser renders it again.
+The browser's `pageload` span reads the `Server-Timing` header and becomes a child of the server's request span. Without the Node SDK, for example under `ng serve`, no header is sent.
 
 `@angular/ssr` sends no `ETag` on rendered HTML, so a reload is a new render with a new trace. Don't send the header on HTML a CDN caches, or every visitor's page load joins the same trace.
 
-## zone.js apps
+## Apps that use zone.js
 
-New Angular apps are zoneless. With zone.js, the SDK starts its 2-second export timer from whatever zone ends a span, and a timer in Angular's zone keeps `ApplicationRef.isStable` false until it fires. `provideMapleTracing()` already runs outside the zone. Start each resolver's `traced` call outside it too, with `return inject(NgZone).runOutsideAngular(() => MapleBrowser.traced(...))`. The router still resumes in Angular's zone, so change detection runs as before.
+Skip this if your app is zoneless, the default for new Angular apps.
+
+With zone.js, start each resolver's `traced` call outside Angular's zone:
+
+```ts
+export const projectResolver: ResolveFn<Project> = (route) => {
+	const http = inject(HttpClient)
+	const id = route.paramMap.get("id")
+
+	return inject(NgZone).runOutsideAngular(() =>
+		MapleBrowser.traced("loader /projects/:id", () =>
+			firstValueFrom(http.get<Project>(`https://api.acme.com/projects/${id}`)),
+		),
+	)
+}
+```
+
+- **Why:** the SDK sends spans in batches, on a 2-second timer. Started inside Angular's zone, that timer makes Angular treat the app as busy (`ApplicationRef.isStable` is false) for about 2 seconds after each navigation. Anything that waits for a stable app waits too, such as end-to-end tests and service worker registration.
+- `provideMapleTracing()` already does this for navigation spans.
+- The router still resumes inside Angular's zone, so change detection works as before.
 
 ## Next steps
 
