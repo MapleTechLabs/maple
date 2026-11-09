@@ -872,6 +872,7 @@ describe("integration checks", () => {
 					planetscalePollStates: [],
 					scrapeTargets: [],
 					chatWorkspaces: [],
+					searchConsoleSites: [],
 					...partial,
 				},
 				NOW,

@@ -138,7 +138,7 @@ const edgeLabel = <M>(h: HtmlBuilder<M>, data: ServiceEdgeData | undefined, x: n
 					h.span(
 						[
 							h.Class(
-								"rounded-sm bg-card/90 px-1.5 py-0.5 text-3xs font-mono font-medium text-muted-foreground border border-border-subtle whitespace-nowrap tabular-nums",
+								"rounded-sm bg-surface-float backdrop-blur-sm px-1.5 py-0.5 text-3xs font-mono font-medium text-muted-foreground border border-border-subtle whitespace-nowrap tabular-nums",
 							),
 						],
 						[

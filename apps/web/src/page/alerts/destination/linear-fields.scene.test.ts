@@ -250,7 +250,7 @@ describe("linear destination fields", () => {
 			form,
 		)
 		expect(names(stillUp)).toEqual([])
-		shows(stillUp.model, "Couldn't load your Linear teams.")
+		shows(stillUp.model, "Couldn't load your Linear teams")
 		const revoked = update(
 			failed.model,
 			Message.CompletedFetchStatus({

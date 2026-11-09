@@ -342,7 +342,7 @@ describe("service detail view", () => {
 			{ update: pageUpdate, view },
 			given(model),
 			themeResolved(),
-			expectView(text("No downstream dependencies in this window.")).toBeAbsent(),
+			expectView(text("No downstream dependencies in this window")).toBeAbsent(),
 		)
 		const empty = pageUpdate(
 			model,
@@ -355,7 +355,7 @@ describe("service detail view", () => {
 			{ update: pageUpdate, view },
 			given(empty),
 			themeResolved(),
-			expectView(text("No downstream dependencies in this window.")).toExist(),
+			expectView(text("No downstream dependencies in this window")).toExist(),
 		)
 	})
 
@@ -373,7 +373,7 @@ describe("service detail view", () => {
 			given(failed),
 			themeResolved(),
 			expectView(text("Couldn't load dependencies")).toExist(),
-			expectView(text("No downstream dependencies in this window.")).toBeAbsent(),
+			expectView(text("No downstream dependencies in this window")).toBeAbsent(),
 		)
 	})
 
@@ -697,7 +697,7 @@ describe("the API tab's endpoint drawer", () => {
 			themeResolved(),
 			expectView(text("/a")).toExist(),
 			click(role("button", { name: "Rejecting > 5%" })),
-			expectView(text("No endpoint matches this filter")).toExist(),
+			expectView(text("No endpoints match these filters")).toExist(),
 		)
 	})
 })

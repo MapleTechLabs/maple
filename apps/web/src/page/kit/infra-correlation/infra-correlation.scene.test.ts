@@ -88,7 +88,7 @@ describe("infra correlation panel", () => {
 		scene(
 			{ update, view: withViewInputs(panelView, inputs({ "service.name": "checkout" }))() },
 			given(init("panel", "org_acme")),
-			expectView(text("No Kubernetes, container, or host metadata on this record.")).toExist(),
+			expectView(text("No Kubernetes, container, or host metadata on this record")).toExist(),
 		)
 	})
 })

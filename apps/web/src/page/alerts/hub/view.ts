@@ -19,6 +19,7 @@ import { navShell, type NavShellCount, type NavShellSection } from "../../kit/na
 import type { BreadcrumbEntry } from "../../../shell"
 import { alertsHref, createHref } from "../shared/links"
 import { newSloHref } from "../shared/slo-commands"
+import { newMonitorHref } from "../shared/uptime-commands"
 import {
 	type AlertsTab,
 	anomalyOverviewOf,
@@ -194,17 +195,26 @@ const newRuleItem = (
 	],
 })
 
-/** The split "New rule": the main part opens the telemetry editor, the chevron offers both kinds. */
-const newRuleButton = (h: H, model: Model): Html =>
-	hstack(h, { align: "center" }, [
+/** The split create button: its main part makes the section's own kind (an uptime check on Uptime, an SLO
+ * on SLOs, else a telemetry rule), the chevron offers every kind. */
+const newRuleButton = (h: H, model: Model, tab: AlertsTab): Html => {
+	const serviceName = model.search.serviceName
+	// Uptime checks and SLOs are admin-only to create; members keep the telemetry rule.
+	const lead =
+		canManage(model) && tab === "uptime"
+			? { href: newMonitorHref({ serviceName }), label: "New check" }
+			: canManage(model) && tab === "slos"
+				? { href: newSloHref({ serviceName }), label: "New SLO" }
+				: { href: createHref({ serviceName }), label: "New rule" }
+	return hstack(h, { align: "center" }, [
 		linkButton(
 			h,
 			{
 				size: "sm",
-				href: createHref({ serviceName: model.search.serviceName }),
+				href: lead.href,
 				className: splitButtonClass("lead"),
 			},
-			[icon(h, "PlusIcon"), "New rule"],
+			[icon(h, "PlusIcon"), lead.label],
 		),
 		h.submodel({
 			slotId: model.newRuleMenu.id,
@@ -267,12 +277,9 @@ const newRuleButton = (h: H, model: Model): Html =>
 			toParentMessage: (message) => Message.GotNewRuleMenuMessage({ message }),
 		}),
 	])
+}
 
-/** The SLOs tab lists some; the empty one offers "New SLO" itself. */
-const hasSlos = (model: Model): boolean =>
-	Option.exists(AsyncData.getData(model.slos.data), (rows) => rows.length > 0)
-
-// Destinations are a Routing concern, so "New destination" only shows on that tab; "New SLO" likewise.
+// Destinations are a Routing concern, so "New destination" only shows on that tab.
 const headerActions = (h: H, model: Model, tab: AlertsTab): Html =>
 	hstack(h, { gap: "2" }, [
 		...(canManage(model) && tab === "silences"
@@ -302,19 +309,6 @@ const headerActions = (h: H, model: Model, tab: AlertsTab): Html =>
 					),
 				]
 			: []),
-		...(canManage(model) && tab === "slos" && hasSlos(model)
-			? [
-					linkButton(
-						h,
-						{
-							size: "sm",
-							variant: "outline",
-							href: newSloHref({ serviceName: model.search.serviceName }),
-						},
-						[icon(h, "PlusIcon"), "New SLO"],
-					),
-				]
-			: []),
 		...(canManage(model) && tab === "oncall" && hasSchedules(model) ? [newScheduleButton(h)] : []),
 		...(canManage(model) && tab === "routing"
 			? [
@@ -329,7 +323,7 @@ const headerActions = (h: H, model: Model, tab: AlertsTab): Html =>
 					),
 				]
 			: []),
-		newRuleButton(h, model),
+		newRuleButton(h, model, tab),
 	])
 
 /** `SyncUnavailable`: the rules or incidents stream stopped before its first answer. */

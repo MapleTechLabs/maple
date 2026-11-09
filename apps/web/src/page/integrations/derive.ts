@@ -309,6 +309,26 @@ export const cardStatusOf = (statuses: Statuses, id: IntegrationId, nowMs: numbe
 			)
 		case "github":
 			return githubStatus(statuses)
+		case "google-search-console":
+			return fold(
+				statuses.searchConsole,
+				(status): CardStatus =>
+					status.revoked
+						? { label: "Revoked", variant: "warn" }
+						: !status.connected
+							? status.configured
+								? NOT_CONNECTED
+								: NOT_CONFIGURED
+							: {
+									label: countLabel(
+										Arr.filter(status.sites, (site) => site.enabled).length,
+										"property",
+										"properties",
+									),
+									variant: "ok",
+								},
+				unavailableStatus,
+			)
 		default:
 			return chatStatus(statuses, id)
 	}
@@ -601,6 +621,36 @@ const linearOverview = (statuses: Statuses) =>
 		unavailableOverview,
 	)
 
+const searchConsoleOverview = (statuses: Statuses) =>
+	fold(
+		statuses.searchConsole,
+		(status): IntegrationOverview => {
+			if (!status.connected) return status.configured ? CONNECT : UNCONFIGURED
+			const enabled = Arr.filter(status.sites, (site) => site.enabled)
+			const failing = Arr.filter(enabled, (site) => site.lastError !== null).length
+			const issue = status.revoked
+				? "Reconnect Google"
+				: enabled.length === 0
+					? "Choose properties"
+					: failing > 0
+						? `${countLabel(failing, "property", "properties")} failing`
+						: null
+			return {
+				kind: "connected",
+				...attentionOr(issue),
+				...(status.revoked ? { stateLabel: "Revoked" } : undefined),
+				context: status.accountEmail,
+				stat:
+					enabled.length > 0
+						? `${countLabel(enabled.length, "property", "properties")} selected`
+						: null,
+				lastSync: lastSyncOf(maxMs(Arr.map(enabled, (site) => site.lastSyncedAt))),
+				issue,
+			}
+		},
+		unavailableOverview,
+	)
+
 const githubOverview = (statuses: Statuses) =>
 	fold(
 		statuses.github,
@@ -691,6 +741,8 @@ export const overviewOf = (statuses: Statuses, nowMs: number, id: IntegrationId)
 			return linearOverview(statuses)
 		case "github":
 			return githubOverview(statuses)
+		case "google-search-console":
+			return searchConsoleOverview(statuses)
 		default:
 			return chatOverview(statuses, id)
 	}

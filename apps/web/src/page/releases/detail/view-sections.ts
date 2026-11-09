@@ -289,7 +289,7 @@ export const releaseChangeset = <M>(h: HtmlBuilder<M>, state: ChangesetState, cl
 	if (state._tag === "NotShas")
 		return sectionCard(h, { title: "What shipped" }, [
 			emptyMessage(h, {}, [
-				"These versions are not commit shas, so the commits between them are unknown.",
+				"These versions are not commit shas, so the commits between them are unknown",
 			]),
 		])
 	const action = typography(h, { size: "2xs", tone: "subtle" }, [
@@ -303,7 +303,7 @@ export const releaseChangeset = <M>(h: HtmlBuilder<M>, state: ChangesetState, cl
 	if (state._tag === "Unavailable")
 		return sectionCard(h, { title: "What shipped", action }, [
 			emptyMessage(h, {}, [
-				"Both versions need to be commits of a connected repository's tracked branch to list what changed between them.",
+				"Both versions need to be commits of a connected repository's tracked branch to list what changed between them",
 			]),
 		])
 	const { range } = state
@@ -438,7 +438,7 @@ const issueLine = <M>(
 						tone: "muted",
 						mono: true,
 						numeric: true,
-						attributes: [h.Title("Occurrences on this version in the window")],
+						attributes: [h.Title("Occurrences on this version in this window")],
 					},
 					[formatNumber(occurrences ?? issue.occurrenceCount), "×"],
 				),

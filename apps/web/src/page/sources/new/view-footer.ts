@@ -2,12 +2,11 @@ import type { Html, HtmlBuilder } from "foldkit/html"
 import { button } from "@maple/views/ui/button"
 import { icon } from "@maple/views/ui/icon"
 import type { Message } from "./message"
-import type { FlowHost } from "./model"
-import { hstack } from "@maple/views/ui/stack"
+import { actionBar } from "@maple/views/ui/action-bar"
+import { typography } from "@maple/views/ui/typography"
 
-// The connect flow's sticky footer: Back on the left, the step's hint and its actions on the right.
-// It sits on the page's bottom edge, stuck or not, so it never moves between steps or at the scroll end.
-// In the drawer it spans the sheet panel and sticks to the panel viewport's edge, which has no padding.
+// The connect flow's sticky footer (kit `actionBar`): Back on the left, the step's hint and its
+// actions on the right. The page and the drawer's sheet panel both pad it into place.
 
 type H = HtmlBuilder<Message>
 
@@ -16,31 +15,23 @@ export type FlowFooterOptions = Readonly<{
 	back: Message | null
 	hint: string
 	actions: ReadonlyArray<Html>
-	host: FlowHost
 }>
 
-const FOOTER_CLASS = {
-	page: "sticky -bottom-4 z-10 -mx-1 mt-auto -mb-4 bg-background px-1",
-	drawer: "sticky bottom-0 z-10 -mx-6 mt-auto -mb-6 bg-popover px-6",
-} satisfies Record<FlowHost, string>
-
 export const flowFooter = (h: H, options: FlowFooterOptions): Html =>
-	h.footer(
-		[
-			h.Class(
-				`${FOOTER_CLASS[options.host]} flex items-center justify-between gap-4 border-t border-border py-4`,
-			),
-		],
-		[
+	actionBar(h, {
+		label: "Step actions",
+		as: "footer",
+		leading:
 			options.back === null
-				? h.span([], [])
-				: button(h, { variant: "outline", attributes: [h.OnClick(options.back)] }, [
-						icon(h, "ArrowLeftIcon", { size: 14 }),
-						"Back",
-					]),
-			hstack(h, { gap: "4" }, [
-				h.span([h.Class("hidden text-xs text-muted-foreground @2xl/page:inline")], [options.hint]),
-				...options.actions,
-			]),
+				? []
+				: [
+						button(h, { variant: "outline", size: "sm", attributes: [h.OnClick(options.back)] }, [
+							icon(h, "ArrowLeftIcon", { size: 14 }),
+							"Back",
+						]),
+					],
+		actions: [
+			typography(h, { size: "xs", tone: "muted", className: "hidden @2xl/page:inline" }, [options.hint]),
+			...options.actions,
 		],
-	)
+	})

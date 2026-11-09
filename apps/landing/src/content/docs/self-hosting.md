@@ -58,5 +58,6 @@ This serves plain HTTP on every interface, which is fine on a private network. O
 - [Deploy](/docs/self-hosting/deploy): Docker Compose, container platforms, and TLS with a reverse proxy.
 - [Render](/docs/self-hosting/platforms/render): one-click deploy from a blueprint.
 - [Railway](/docs/self-hosting/platforms/railway): one-click deploy from a template.
+- [NixOS](/docs/self-hosting/platforms/nixos): a NixOS module from the Maple flake.
 - [Connect](/docs/self-hosting/connect): send telemetry, sign in, and query from the CLI.
 - [Operations](/docs/self-hosting/operations): backups, upgrades, crash recovery and rotating secrets.

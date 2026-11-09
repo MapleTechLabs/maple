@@ -24,7 +24,7 @@ export const ONBOARDING_INTENTS = {
 	metrics: { label: "Metrics", title: "Time series per service, on your own dashboards." },
 	errors: { label: "Errors", title: "Exceptions grouped into issues, trace attached." },
 	replays: { label: "Replays", title: "Browser sessions, with the network trace behind them." },
-	service_map: { label: "Service Map", title: "Which services call which, with latency on every edge." },
+	service_map: { label: "Service map", title: "Which services call which, with latency on every edge." },
 	infrastructure: { label: "Infrastructure", title: "Hosts, containers, Kubernetes, Cloudflare." },
 	alerts: { label: "Alerts", title: "A threshold crossed opens an incident." },
 } satisfies Record<OnboardingIntent, { label: string; title: string }>

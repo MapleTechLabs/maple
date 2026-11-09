@@ -148,7 +148,7 @@ const comparisonTable = <M>(h: HtmlBuilder<M>, impact: ReleaseServiceImpact, bas
 	])
 
 const OLDEST_VERSION =
-	"This is the oldest version of the service in the window, so there is nothing to compare against. Widen the time range to include the version it replaced."
+	"This is the oldest version of the service in this window, so there is nothing to compare against. Widen the time range to include the version it replaced."
 
 /** `ReleaseComparison`: this version against the one it replaced on the same service. */
 export const releaseComparison = <M>(
@@ -208,7 +208,7 @@ export const releaseVersionsRail = <M>(h: HtmlBuilder<M>, input: RailInput<M>): 
 	return sectionCard(
 		h,
 		{
-			title: "Versions in window",
+			title: "Versions in this window",
 			action: typography(h, { size: "2xs", tone: "subtle" }, [countLabel(sorted.length, "version")]),
 		},
 		[

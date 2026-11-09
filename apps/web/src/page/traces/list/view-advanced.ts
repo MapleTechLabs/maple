@@ -37,7 +37,7 @@ export const suggestionList = (h: H, model: Model): ReadonlyArray<Html> => {
 				h.Role("listbox"),
 				h.AriaLabel("Where clause suggestions"),
 				h.Class(
-					"fixed z-[60] overflow-auto rounded-md border bg-popover text-popover-foreground shadow-popup",
+					"fixed z-60 overflow-auto rounded-lg border bg-popover text-popover-foreground shadow-popup",
 				),
 				h.OnMount(MountSuggestions()),
 			],

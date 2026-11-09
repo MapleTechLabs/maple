@@ -1,5 +1,7 @@
 import { IsolateAge, isolateStampHeaders } from "@maple/infra/isolate-age"
-import { WorkerPlatformLive, forIsolate, bridgeHandler } from "@maple/infra/worker-http"
+import { WorkerPlatformLive, forIsolate, bridgeHandler, waitUntilOfEvent } from "@maple/infra/worker-http"
+import type { RuntimeContext } from "alchemy/RuntimeContext"
+import { AfterResponse } from "@maple/backend/platform/after-response"
 /**
  * The AI Worker's request path: the route graph built once per isolate on the
  * first request, and the `fetch` handler the bridge serves around it.
@@ -87,6 +89,12 @@ export const makeFetch = <E, EMcp = E>(
 	app: Effect.Effect<HttpEffect, E>,
 	ports: Layer.Layer<MapleDbConnection>,
 	mcpApp: Effect.Effect<HttpEffect, E | EMcp> = app,
+	/** How this event defers work past its response (audit writes, the MCP executor prewarm). */
+	afterResponseRunner: Effect.Effect<
+		(work: Effect.Effect<void>) => Effect.Effect<void>,
+		never,
+		RuntimeContext
+	> = waitUntilOfEvent,
 ) =>
 	IsolateAge.useSync((isolateAge) =>
 		Effect.gen(function* () {
@@ -109,8 +117,10 @@ export const makeFetch = <E, EMcp = E>(
 					headers: isolateStampHeaders(stamp),
 				})
 			}
+			const afterResponse = yield* afterResponseRunner
 			return yield* withPgConnectionScope(built.value).pipe(
 				Effect.map(HttpServerResponse.setHeaders(isolateStampHeaders(stamp))),
+				Effect.provideService(AfterResponse, afterResponse),
 			)
 		}).pipe(
 			// oxlint-disable-next-line effecttsgo/strict-effect-provide -- the request IS the boundary the ports belong to.

@@ -44,10 +44,10 @@ export const describeNotice = (
 		ms === null ? "" : ` Showing results from ${formatAsOf(input.timeFormat, ms, input.nowMs)}.`
 	const { shown } = input
 	if (input.isDisconnected)
-		return { tone: "crit", text: `Can’t reach Maple Local.${asOf(shown.shownAsOfMs)}`, isRetrying: true }
+		return { tone: "crit", text: `Can't reach Maple Local.${asOf(shown.shownAsOfMs)}`, isRetrying: true }
 	if (shown.staleAsOfMs === null) return null
 	if (shown.refreshFailed)
-		return { tone: "warn", text: `Couldn’t refresh.${asOf(shown.staleAsOfMs)}`, isRetrying: true }
+		return { tone: "warn", text: `Couldn't refresh.${asOf(shown.staleAsOfMs)}`, isRetrying: true }
 	if (input.isBusy)
 		return { tone: "warn", text: `Maple Local is busy.${asOf(shown.staleAsOfMs)}`, isRetrying: false }
 	return { tone: "neutral", text: `Loading newer results.${asOf(shown.staleAsOfMs)}`, isRetrying: false }

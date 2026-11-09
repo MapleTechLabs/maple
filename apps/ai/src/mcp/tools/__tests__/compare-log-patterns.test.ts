@@ -200,13 +200,20 @@ describe("compare_log_patterns", () => {
 		expect(markdown(result)).toContain("cannot be combined with around_time")
 	})
 
-	it("refuses a period wider than a day", async () => {
+	it("cuts a period wider than a day from its far side, keeping the boundary, and says so", async () => {
 		const result = await call({
-			current_start: "2026-09-20 00:00:00",
-			current_end: "2026-09-24 00:00:00",
+			previous_start: "2026-09-20 00:00:00",
+			previous_end: "2026-09-22 00:00:00",
+			current_start: "2026-09-22 00:00:00",
+			current_end: "2026-09-25 00:00:00",
 		})
-		expect(result.isError).toBe(true)
-		expect(markdown(result)).toContain("at most 24")
+		expect(result.isError).not.toBe(true)
+		const output = decode(result)
+		expect(output.before.timeRange).toEqual({ start: "2026-09-21 00:00:00", end: "2026-09-22 00:00:00" })
+		expect(output.after.timeRange).toEqual({ start: "2026-09-22 00:00:00", end: "2026-09-23 00:00:00" })
+		expect(output.trimmed).toHaveLength(2)
+		expect(markdown(result)).toContain("The previous period spanned 48 hours")
+		expect(markdown(result)).toContain("The current period spanned 72 hours")
 	})
 })
 

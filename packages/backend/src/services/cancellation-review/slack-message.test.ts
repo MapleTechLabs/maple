@@ -301,6 +301,19 @@ describe("buildCancellationMessage", () => {
 		])
 	})
 
+	// Slack refuses the whole message (`invalid_blocks`) for a null column setting.
+	it("gives Slack an object for every table column setting", () => {
+		const [table] = Arr.filter(
+			buildCancellationMessage(report("pipeline-off")).blocks,
+			(block) => block.type === "table",
+		)
+		expect(table).toBeDefined()
+		for (const setting of (table?.column_settings ?? []) as ReadonlyArray<unknown>) {
+			expect(setting).toBeTypeOf("object")
+			expect(setting).not.toBeNull()
+		}
+	})
+
 	it("lists what no stat covers, such as a past-due payment, under the reason", () => {
 		const message = buildCancellationMessage(report("past-due"))
 		expect(message.text).toBe("Acme &lt;Labs&gt; &amp; Co ended the startup plan (Payment failed)")

@@ -24,7 +24,7 @@ export const suggestionListbox = <M>(
 			h.Role("listbox"),
 			h.AriaLabel("Where clause suggestions"),
 			h.Class(
-				"fixed z-[60] overflow-auto rounded-md border bg-popover text-popover-foreground shadow-popup",
+				"fixed z-60 overflow-auto rounded-lg border bg-popover text-popover-foreground shadow-popup",
 			),
 			...(inputs.anchor === null ? [] : [h.Style(listboxStyle(inputs.anchor))]),
 			inputs.keepFocus,

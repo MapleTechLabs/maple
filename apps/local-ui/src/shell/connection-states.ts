@@ -155,7 +155,7 @@ export const disconnectedState = (h: HtmlBuilder<Message>, model: Model): Html =
 				icon(h, "ConnectionIcon", { className: "text-muted-foreground" }),
 			]),
 			emptyHeader(h, [
-				emptyTitle(h, ["Can’t reach Maple Local"]),
+				emptyTitle(h, ["Can't reach Maple Local"]),
 				emptyDescription(h, [
 					"Nothing is answering on port ",
 					model.env.port,

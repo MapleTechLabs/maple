@@ -103,7 +103,7 @@ const tabBar = (h: H, model: Model, section: Section, activeTabId: string, isEdi
 					[
 						h.Class(
 							cn(
-								"group/tab flex shrink-0 items-center gap-1 border-b-2 px-2 py-1 text-xs transition-colors",
+								"group/tab flex shrink-0 items-center gap-1 border-b-2 px-2 py-1 text-xs",
 								isActive
 									? "border-primary text-foreground"
 									: "border-transparent text-muted-foreground hover:text-foreground active:text-foreground",
@@ -341,7 +341,7 @@ const sectionBody = (h: H, inputs: SectionViewInputs): Html => {
 	const add = Message.ClickedAddSectionWidget({ sectionId: inputs.section.id, tabId: inputs.activeTabId })
 	return inputs.isEditable
 		? emptyMessage(h, { className: "flex items-center gap-2 px-1 py-6 text-left" }, [
-				h.span([], ["No widgets in this group yet."]),
+				h.span([], ["No widgets in this group yet"]),
 				button(h, { variant: "ghost", size: "sm", attributes: [h.OnClick(add)] }, [
 					icon(h, "PlusIcon"),
 					"Add widget",

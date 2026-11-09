@@ -18,6 +18,7 @@ import * as DialogView from "@maple/views/ui/dialog-view"
 import { linkButton } from "@maple/views/ui/button"
 import { eyebrow } from "@maple/views/ui/eyebrow"
 import { heading } from "@maple/views/ui/heading"
+import { badge } from "@maple/views/ui/display"
 import { icon } from "@maple/views/ui/icon"
 import { iconButton } from "@maple/views/ui/icon-button"
 import { miniBars } from "@maple/views/ui/mini-bars"
@@ -134,14 +135,10 @@ const headerLead = (h: H, inputs: ModalInputs): Html => {
 				...(group.errorType === ""
 					? []
 					: [
-							h.span(
-								[
-									h.Class(
-										"ml-1 rounded-sm border border-border px-1.5 text-2xs text-foreground-subtle",
-									),
-								],
-								["error.type ", group.errorType],
-							),
+							badge(h, { variant: "meta", size: "xs", className: "ml-1 px-1.5" }, [
+								"error.type ",
+								group.errorType,
+							]),
 						]),
 			],
 		),

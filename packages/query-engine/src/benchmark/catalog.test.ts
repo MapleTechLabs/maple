@@ -50,6 +50,7 @@ import * as prReviewQueries from "../ch/queries/pr-review"
 import * as serviceQueries from "../ch/queries/services"
 import * as sloQueries from "../ch/queries/slos"
 import * as releaseQueries from "../ch/queries/releases"
+import * as searchConsoleQueries from "../ch/queries/search-console"
 import * as sessionEventQueries from "../ch/queries/session-events"
 import * as sessionReplayQueries from "../ch/queries/session-replays"
 import * as webAnalyticsQueries from "../ch/queries/web-analytics"
@@ -302,6 +303,7 @@ const QUERY_MODULES: Record<string, Record<string, unknown>> = {
 	"source-usage": sourceUsageQueries,
 	"aws-ingest": awsIngestQueries,
 	releases: releaseQueries,
+	"search-console": searchConsoleQueries,
 	"session-events": sessionEventQueries,
 	"session-replays": sessionReplayQueries,
 	"top-operations": topOperationQueries,

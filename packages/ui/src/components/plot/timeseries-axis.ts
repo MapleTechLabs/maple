@@ -34,7 +34,9 @@ export interface TimeseriesAxisContext {
  * the solid and dashed marks each cover a slice: a continuous domain is
  * min/max over the union, and the slices overlap at the bridge row.
  */
-export function timeseriesXAxis(axisContext: TimeseriesAxisContext) {
+export function timeseriesXAxis(context: TimeseriesAxisContext) {
+	const axisContext = dailyBucketContext(context)
+	const dailyTicks = dailyTickValues(axisContext)
 	return {
 		scale: zonedTimeScale(axisContext.timeZone),
 		axis: {
@@ -47,7 +49,8 @@ export function timeseriesXAxis(axisContext: TimeseriesAxisContext) {
 				// digits. Widening the CANDIDATE spacing is what buys the room without
 				// touching how the labels are chosen — the scale still lands them on
 				// round clock boundaries, evenly spaced.
-				spacing: 104,
+				// The chart accepts one candidate policy, so explicit daily ticks replace the spacing.
+				...(dailyTicks === undefined ? { spacing: 104 } : { values: dailyTicks }),
 				format: (value: Date) => formatBucketLabel(value.toISOString(), axisContext, "tick"),
 			},
 			// The port's missing `minTickGap={24}`. Thinning is the backstop, not the
@@ -58,6 +61,52 @@ export function timeseriesXAxis(axisContext: TimeseriesAxisContext) {
 			tickLabels: { thin: { minGap: 12 }, anchor: edgeTickAnchor(axisContext) },
 		},
 	}
+}
+
+/** Day buckets (allowing a DST day of 23 hours) never tick finer than a day. */
+const MIN_DAILY_BUCKET_SECONDS = 23 * 3600
+
+const isMidnightIn = (epochMs: number, timeZone: string | undefined): boolean =>
+	new Date(epochMs).toLocaleTimeString("en-GB", {
+		timeZone,
+		hour: "2-digit",
+		minute: "2-digit",
+		hourCycle: "h23",
+	}) === "00:00"
+
+/**
+ * Daily buckets are calendar days, labelled in the zone they start at midnight in. A UTC-midnight
+ * day (Search Console's) read in Los Angeles is 4 PM the day before, so it labels in UTC instead.
+ */
+export function dailyBucketContext(axisContext: TimeseriesAxisContext): TimeseriesAxisContext {
+	const domain = axisContext.domainMs
+	const bucketSeconds = axisContext.bucketSeconds
+	if (!domain || bucketSeconds === undefined || bucketSeconds < MIN_DAILY_BUCKET_SECONDS) return axisContext
+	if (isMidnightIn(domain[0], axisContext.timeZone) || !isMidnightIn(domain[0], "UTC")) return axisContext
+	return { ...axisContext, timeZone: "UTC" }
+}
+/** Under this many days the scale's 104px candidates would fall twelve hours apart on a wide card. */
+const MAX_DAILY_TICK_DAYS = 16
+/** Labels a short daily axis aims for; a longer run ticks every few days. */
+const DAILY_TICK_TARGET = 8
+
+/**
+ * Explicit ticks for a short run of daily buckets. Left to the scale, a 7-day window on a wide
+ * card ticks every 12 hours and each day prints twice ("Nov 1, Nov 1"); one tick per bucket (or
+ * per few) fixes that. Longer runs and finer buckets keep the scale's own round ticks.
+ */
+function dailyTickValues(axisContext: TimeseriesAxisContext): ReadonlyArray<Date> | undefined {
+	const domain = axisContext.domainMs
+	const bucketSeconds = axisContext.bucketSeconds
+	if (!domain || bucketSeconds === undefined || bucketSeconds < MIN_DAILY_BUCKET_SECONDS) return undefined
+	const stepMs = bucketSeconds * 1000
+	const buckets = Math.floor((domain[1] - domain[0]) / stepMs) + 1
+	if (buckets > MAX_DAILY_TICK_DAYS) return undefined
+	const stride = Math.max(1, Math.ceil(buckets / DAILY_TICK_TARGET))
+	return Array.from(
+		{ length: Math.ceil(buckets / stride) },
+		(_, index) => new Date(domain[0] + index * stride * stepMs),
+	)
 }
 
 /**

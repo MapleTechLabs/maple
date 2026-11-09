@@ -102,7 +102,7 @@ const status = <M>(
 										h.OnClick(inputs.toMessage(ChatMessage.ClickedRefreshChannels())),
 									],
 								},
-								["Retry"],
+								["Try again"],
 							),
 						]),
 			]),
@@ -186,7 +186,7 @@ export const chatFields = <M>(h: HtmlBuilder<M>, inputs: Inputs<M>): Html => {
 					? "Loading channels…"
 					: channels.length === 0
 						? "No channels loaded yet"
-						: "No matching channels",
+						: "No channels match",
 				startAddon: icon(h, "MagnifierIcon"),
 				className: "w-full",
 				renderItem: (label) => {

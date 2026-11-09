@@ -456,19 +456,19 @@ export function summarizePlanetScale(databases: ReadonlyArray<PlanetScaleDatabas
 				id: "lag",
 				tone: findingTone(lagTone(db.replicaLagMaxSeconds)),
 				title: `${db.database} replica ${formatLag(db.replicaLagMaxSeconds)} behind primary`,
-				detail: "Peak replica lag in the window",
+				detail: "Peak replica lag in this window",
 			},
 			{
 				id: "cpu",
 				tone: findingTone(utilizationTone(db.cpuMaxPercent)),
 				title: `${db.database} CPU peaked at ${formatPercent(db.cpuMaxPercent / 100)}`,
-				detail: "Busiest branch in the window",
+				detail: "Busiest branch in this window",
 			},
 			{
 				id: "memory",
 				tone: findingTone(utilizationTone(db.memMaxPercent)),
 				title: `${db.database} memory peaked at ${formatPercent(db.memMaxPercent / 100)}`,
-				detail: "Busiest branch in the window",
+				detail: "Busiest branch in this window",
 			},
 			{
 				id: "storage",

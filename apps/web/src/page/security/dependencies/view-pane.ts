@@ -46,7 +46,7 @@ export const scopeSwitcher = (h: H, model: Model, digest: Digest, detail: Readon
 				items: [ALL_REPOSITORIES, ...Arr.map(digest.ranked, (repository) => repository.fullName)],
 				ariaLabel: "Repository",
 				placeholder: `Search ${countLabel(digest.repositories.length, "repository", "repositories")}…`,
-				emptyText: "No repository matches",
+				emptyText: "No repositories match",
 				size: "sm",
 				highlightsSelected: true,
 				className: "w-72",
