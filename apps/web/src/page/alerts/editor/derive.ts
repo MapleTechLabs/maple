@@ -55,6 +55,18 @@ export const thresholdValue = (form: RuleForm, raw: string): string => {
 	return `${Str.trim(raw) || "?"}${unit === "%" ? "%" : unit ? ` ${unit}` : ""}`
 }
 
+/** How many checks fire the rule: "in 3 checks in a row (5 min each)", "over 5 min". */
+export const checksPhrase = (form: RuleForm): string => {
+	const checks = Str.trim(form.consecutiveBreachesRequired) || "?"
+	const outOf = Str.trim(form.breachesOutOf)
+	const windowText = `${Str.trim(form.windowMinutes) || "?"} min`
+	return outOf.length > 0
+		? `in ${checks} of the last ${outOf} checks (${windowText} each)`
+		: checks === "1"
+			? `over ${windowText}`
+			: `in ${checks} checks in a row (${windowText} each)`
+}
+
 /** The rule in one plain sentence, shown in the action bar. */
 export const describeRuleCondition = (form: RuleForm, isDefault = false): string => {
 	if (form.signalType === "anomaly")
@@ -68,15 +80,7 @@ export const describeRuleCondition = (form: RuleForm, isDefault = false): string
 		? `${value(form.threshold)} and ${value(form.thresholdUpper)}`
 		: value(form.threshold)
 	const escalation = comparatorSupportsTiers(form.comparator) ? form.escalation : null
-	const checks = Str.trim(form.consecutiveBreachesRequired) || "?"
-	const outOf = Str.trim(form.breachesOutOf)
-	const windowText = `${Str.trim(form.windowMinutes) || "?"} min`
-	const when =
-		outOf.length > 0
-			? `in ${checks} of the last ${outOf} checks (${windowText} each)`
-			: checks === "1"
-				? `over ${windowText}`
-				: `in ${checks} checks in a row (${windowText} each)`
+	const when = checksPhrase(form)
 	const severity = escalation === null && form.severity === "critical" ? "Critical" : "Warning"
 	const critical =
 		escalation === null

@@ -3,6 +3,7 @@ import { AlertDestinationId } from "@maple/domain/http"
 import { Result, Schema, Array as Arr } from "effect"
 import {
 	click,
+	Command,
 	expect as expectView,
 	given,
 	Mount,
@@ -20,6 +21,7 @@ import { menuIdOf } from "./dest-steps"
 import type { PageContext } from "../../contract"
 import { defaultAnomalyRuleRow, scopedAnomalyRuleRow } from "../shared/anomaly-test-fixtures"
 import { DESTINATION_ID, destinationRow, NOW, ORG, ruleId, ruleRow } from "../shared/test-rows"
+import { FocusRuleCard } from "./command"
 import { init } from "./init"
 import { Message } from "./message"
 import type { Model } from "./model"
@@ -149,6 +151,7 @@ describe("alert rule editor: anomaly rules", () => {
 			given(scoped),
 			themeResolved(),
 			click(role("button", { name: /^When: / })),
+			Command.resolve(FocusRuleCard, Message.CompletedFocusCard()),
 			expectView(text("No changes")).toExist(),
 			expectView(text(DEFAULT_NOTE)).not.toExist(),
 			// Each chip's remove button names its chip.
@@ -164,6 +167,7 @@ describe("alert rule editor: anomaly rules", () => {
 			given(fallback),
 			themeResolved(),
 			click(role("button", { name: /^When: / })),
+			Command.resolve(FocusRuleCard, Message.CompletedFocusCard()),
 			expectView(text(DEFAULT_NOTE)).toExist(),
 			expectView(role("button", { name: "Error rate" })).toBeDisabled(),
 			expectView(role("button", { name: "Built-in" })).toBeDisabled(),

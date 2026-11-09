@@ -1,4 +1,4 @@
-import { AlertDestinationId, EscalationChainId } from "@maple/domain/http"
+import { AlertDestinationId, AlertQueryTiming, EscalationChainId } from "@maple/domain/http"
 import { anomalyRuleForm, defaultRuleForm } from "@maple/web-data/alerts/form-utils"
 import { Schema } from "effect"
 import { describe, expect, it } from "vitest"
@@ -10,6 +10,7 @@ import {
 	missingCards,
 	nameSummary,
 	notifySummary,
+	type NameLookup,
 	type NotifyNames,
 	watchSummary,
 } from "./summary"
@@ -28,10 +29,24 @@ const form = (fields: Partial<RuleForm> = {}): RuleForm => ({
 	...fields,
 })
 
+const found = (name: string): NameLookup => ({ _tag: "Found", name })
+const GONE_LOOKUP: NameLookup = { _tag: "Gone" }
 const NAMES: NotifyNames = {
-	destination: (id) => (id === ONCALL ? "#oncall" : id === PAGER ? "PagerDuty Checkout" : null),
-	chain: (id) => (id === CHAIN ? "Checkout primary" : null),
+	destination: (id) =>
+		id === ONCALL ? found("#oncall") : id === PAGER ? found("PagerDuty Checkout") : GONE_LOOKUP,
+	chain: (id) => (id === CHAIN ? found("Checkout primary") : GONE_LOOKUP),
 }
+const LOADING: NotifyNames = { destination: () => ({ _tag: "Loading" }), chain: () => ({ _tag: "Loading" }) }
+
+/** One check of the SQL takes 7.8s: too slow for 1-minute checks, fits 5-minute ones. */
+const SLOW = Schema.decodeSync(AlertQueryTiming)({
+	elapsedMs: 7_800,
+	failure: null,
+	probeLimitMs: 25_000,
+	intervalMinutes: 1,
+	limitMs: 5_000,
+	fitsIntervalMinutes: [5, 10, 15, 30, 60],
+})
 
 const criticalTier = (fields: Partial<NonNullable<RuleForm["escalation"]>> = {}) => ({
 	threshold: "10",
@@ -86,7 +101,7 @@ describe("watchSummary", () => {
 describe("conditionSummary", () => {
 	it("says the threshold with its unit and how many checks fire it", () => {
 		expect(conditionSummary(form({ consecutiveBreachesRequired: "3" }))).toBe(
-			"Above 5%, over 5 min, 3 checks in a row, resolves after 2 healthy checks",
+			"Above 5%, in 3 checks in a row (5 min each), resolves after 2 healthy checks",
 		)
 	})
 
@@ -96,7 +111,7 @@ describe("conditionSummary", () => {
 				form({ comparator: "lt", threshold: "20", escalation: criticalTier({ threshold: "10" }) }),
 			),
 		).toBe(
-			"Below 20%, critical below 10%, over 5 min, 2 checks in a row, resolves after 2 healthy checks",
+			"Below 20%, critical below 10%, in 2 checks in a row (5 min each), resolves after 2 healthy checks",
 		)
 	})
 
@@ -122,7 +137,13 @@ describe("conditionSummary", () => {
 				form({ consecutiveBreachesRequired: "3", breachesOutOf: "5", alertOnNoData: true }),
 			),
 		).toBe(
-			"Above 5%, over 5 min, 3 of the last 5 checks, resolves after 2 healthy checks, no data counts",
+			"Above 5%, in 3 of the last 5 checks (5 min each), resolves after 2 healthy checks, alerts on no data",
+		)
+	})
+
+	it("says the recovery value when one is set", () => {
+		expect(conditionSummary(form({ recoveryValue: "4", consecutiveHealthyRequired: "1" }))).toBe(
+			"Above 5%, in 2 checks in a row (5 min each), recovers below 4%",
 		)
 	})
 
@@ -156,13 +177,30 @@ describe("notifySummary", () => {
 	})
 
 	it("names a destination the org no longer has instead of dropping it", () => {
-		expect(notifySummary(form({ destinationIds: [GONE] }), NAMES)).toBe("a removed destination")
+		expect(notifySummary(form({ destinationIds: [GONE] }), NAMES)).toBe("A removed destination")
+	})
+
+	it("never calls a destination removed while the lists are still loading", () => {
+		expect(notifySummary(form({ destinationIds: [GONE], escalationChainId: CHAIN }), LOADING)).toBe(
+			"A destination, then escalate to a chain",
+		)
 	})
 
 	it("names a destination on both tiers once", () => {
 		expect(notifySummary(form({ escalation: criticalTier({ destinationIds: [ONCALL] }) }), NAMES)).toBe(
 			"#oncall",
 		)
+	})
+
+	it("reads a rule routed only on its critical tier as the critical route", () => {
+		const anomaly = fromFormState(
+			anomalyRuleForm(form({ serviceNames: ["checkout"], destinationIds: [] })),
+		)
+		const criticalOnly = {
+			...anomaly,
+			escalation: { ...criticalTier(), ...anomaly.escalation, destinationIds: [PAGER] },
+		}
+		expect(notifySummary(criticalOnly, NAMES)).toBe("Critical: PagerDuty Checkout")
 	})
 
 	it("reads both tiers of an anomaly rule", () => {
@@ -186,20 +224,29 @@ describe("nameSummary", () => {
 
 describe("card issues", () => {
 	it("puts each missing field on the card that edits it", () => {
-		expect(missingCards(form())).toEqual([])
-		expect(missingCards(form({ name: "" }))).toEqual(["name"])
-		expect(missingCards(form({ threshold: "" }))).toEqual(["condition"])
-		expect(missingCards(form({ destinationIds: [] }))).toEqual(["notify"])
+		expect(missingCards(form(), null)).toEqual([])
+		expect(missingCards(form({ name: "" }), null)).toEqual(["name"])
+		expect(missingCards(form({ threshold: "" }), null)).toEqual(["condition"])
+		expect(missingCards(form({ destinationIds: [] }), null)).toEqual(["notify"])
 		expect(
-			cardIssues(form({ signalType: "raw_query", rawQuerySql: "SELECT 1 AS value" }), "watch"),
+			cardIssues(form({ signalType: "raw_query", rawQuerySql: "SELECT 1 AS value" }), "watch", null),
 		).toEqual(["$__orgFilter in SQL"])
-		expect(cardIssues(form({ escalation: criticalTier() }), "notify")).toEqual(["Critical destinations"])
+		expect(cardIssues(form({ escalation: criticalTier() }), "notify", null)).toEqual([
+			"Critical destinations",
+		])
+	})
+
+	it("puts a query too slow for its interval on Alert when, as a save blocker", () => {
+		const sql = form({ signalType: "raw_query" })
+		expect(missingCards(sql, null)).toEqual([])
+		expect(cardIssues(sql, "condition", SLOW)).toEqual(["Query too slow for this check interval"])
+		expect(missingCards(sql, SLOW)).toEqual(["condition"])
 	})
 
 	it("drops the condition card for an anomaly rule, whose scope is required unless it is the default", () => {
 		const unscoped = fromFormState(anomalyRuleForm(form()))
 		expect(cardsOf(unscoped)).toEqual(["watch", "notify", "name"])
-		expect(missingCards(unscoped)).toEqual(["watch"])
-		expect(missingCards(unscoped, true)).toEqual([])
+		expect(missingCards(unscoped, null)).toEqual(["watch"])
+		expect(missingCards(unscoped, null, true)).toEqual([])
 	})
 })

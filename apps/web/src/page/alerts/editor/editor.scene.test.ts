@@ -31,7 +31,7 @@ import * as RadioGroup from "@maple/views/ui/radio-group"
 import * as Tooltip from "@maple/views/ui/tooltip"
 import type { PageContext } from "../../contract"
 import { destinationRow, NOW, ORG, ruleId, ruleRow } from "../shared/test-rows"
-import { FetchEditorPreview, ReloadPage } from "./command"
+import { FetchEditorPreview, FocusRuleCard, ReloadPage } from "./command"
 import { init } from "./init"
 import { Message } from "./message"
 import type { Model } from "./model"
@@ -154,6 +154,7 @@ describe("alert rule editor", () => {
 			given(withWindow(editing, "60")),
 			themeResolved(),
 			click(role("button", { name: /^Alert when: / })),
+			Command.resolve(FocusRuleCard, Message.CompletedFocusCard()),
 			expectView(text(`${saved} min`)).toExist(),
 			expectView(hint("5 min")).toExist(),
 		)
@@ -384,6 +385,7 @@ describe("alert rule editor", () => {
 			given(slowed),
 			themeResolved(),
 			click(role("button", { name: /^Alert when: / })),
+			Command.resolve(FocusRuleCard, Message.CompletedFocusCard()),
 			expectView(notice).toExist(),
 			click(role("button", { name: "Keep 5 min" })),
 			expectView(notice).not.toExist(),

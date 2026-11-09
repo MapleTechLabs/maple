@@ -163,6 +163,21 @@ export const FocusSqlCaret = Command.define("FocusAlertSqlCaret", {
 		}),
 })
 
+/** After the card opens or closes: its heading or its summary button, once the next frame has it. */
+export const FocusRuleCard = Command.define("FocusAlertRuleCard", {
+	args: { id: Schema.String },
+	messages: [Message.CompletedFocusCard],
+	execute: ({ id }) =>
+		Effect.callback<typeof Message.CompletedFocusCard.Type>((resume) => {
+			const handle = requestAnimationFrame(() => {
+				const element = document.getElementById(id)
+				if (element instanceof HTMLElement) element.focus()
+				resume(Effect.succeed(Message.CompletedFocusCard()))
+			})
+			return Effect.sync(() => cancelAnimationFrame(handle))
+		}),
+})
+
 /** `onRetry={() => window.location.reload()}`: a live query past its recovery has no other retry. */
 export const ReloadPage = Command.define("ReloadAlertEditorPage", {
 	messages: [Message.ReloadedPage],

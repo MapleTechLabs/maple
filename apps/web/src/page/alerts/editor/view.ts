@@ -16,13 +16,15 @@ import type { RuleForm } from "./form"
 import { Message } from "./message"
 import type { Model, Notice } from "./model"
 import { destinationTarget, isProtectedDefault } from "./derive"
-import { destinationsOf } from "./derive-rows"
+import type { AlertQueryTiming } from "@maple/domain/http"
+import { destinationsOf, draftTimingOf } from "./derive-rows"
 import type { RuleCard } from "./form"
 import {
 	cardIssues,
 	conditionSummary,
 	nameSummary,
 	notifySummary,
+	type NameLookup,
 	type NotifyNames,
 	watchSummary,
 } from "./summary"
@@ -136,16 +138,30 @@ const evaluatedFormOf = stableSlice((form: RuleForm): RuleForm => ({
 /** How the Notify summary names destinations and chains, from the lists the editor holds. */
 const notifyNamesOf = (model: Model): NotifyNames => {
 	const destinations = destinationsOf(model)
+	// A list that has not answered (or failed, for chains) is loading, never "removed".
+	const lookup = <A>(
+		list: ReadonlyArray<A> | null,
+		isMatch: (item: A) => boolean,
+		nameOf: (item: A) => string,
+	): NameLookup =>
+		list === null
+			? { _tag: "Loading" }
+			: Option.match(Arr.findFirst(list, isMatch), {
+					onNone: (): NameLookup => ({ _tag: "Gone" }),
+					onSome: (item): NameLookup => ({ _tag: "Found", name: nameOf(item) }),
+				})
 	return {
 		destination: (id) =>
-			Option.match(
-				Arr.findFirst(destinations, (destination) => destination.id === id),
-				{ onNone: () => null, onSome: (destination) => destinationTarget(destination).primary },
+			lookup(
+				model.destinations === null ? null : destinations,
+				(destination) => destination.id === id,
+				(destination) => destinationTarget(destination).primary,
 			),
 		chain: (id) =>
-			Option.match(
-				Arr.findFirst(model.escalationChains ?? [], (chain) => chain.id === id),
-				{ onNone: () => null, onSome: (chain) => chain.name },
+			lookup(
+				model.isEscalationChainsFailed ? null : model.escalationChains,
+				(chain) => chain.id === id,
+				(chain) => chain.name,
 			),
 	}
 }
@@ -158,8 +174,15 @@ type CardSpec = Readonly<{
 	body: () => Html
 }>
 
-const ruleCard = (h: H, model: Model, form: RuleForm, isDefault: boolean, spec: CardSpec): Html => {
-	const issues = cardIssues(form, spec.card, isDefault)
+const ruleCard = (
+	h: H,
+	model: Model,
+	form: RuleForm,
+	timing: AlertQueryTiming | null,
+	isDefault: boolean,
+	spec: CardSpec,
+): Html => {
+	const issues = cardIssues(form, spec.card, timing, isDefault)
 	return sentenceCard(
 		h,
 		{
@@ -173,8 +196,7 @@ const ruleCard = (h: H, model: Model, form: RuleForm, isDefault: boolean, spec: 
 			onExpand: Message.ClickedExpandCard({ card: spec.card }),
 			onCollapse: Message.ClickedCollapseCard({ card: spec.card }),
 		},
-		// Closed cards skip their section: its lazy slot renders again once the card opens.
-		model.expandedCards.includes(spec.card) || issues.length > 0 ? [spec.body()] : [],
+		() => [spec.body()],
 	)
 }
 
@@ -183,6 +205,7 @@ const surface = (h: H, model: Model, form: RuleForm, timeZone: string): Readonly
 	// An anomaly rule has no condition to tune: the detector decides, so "Alert when" and the chart go.
 	const isAnomaly = form.signalType === "anomaly"
 	const isDefault = isProtectedDefault(model)
+	const timing = draftTimingOf(model, form)
 	const condition: CardSpec = {
 		card: "condition",
 		lead: "Alert when",
@@ -227,7 +250,7 @@ const surface = (h: H, model: Model, form: RuleForm, timeZone: string): Readonly
 				sentenceChain(
 					h,
 					{ label: "Rule" },
-					Arr.map(cards, (spec) => ruleCard(h, model, form, isDefault, spec)),
+					Arr.map(cards, (spec) => ruleCard(h, model, form, timing, isDefault, spec)),
 				),
 			],
 		),

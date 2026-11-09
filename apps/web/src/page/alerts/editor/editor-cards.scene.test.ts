@@ -1,7 +1,9 @@
 import { OrgId } from "@maple/domain"
-import { Schema, Array as Arr } from "effect"
+import { AlertRulePreviewResponse } from "@maple/domain/http"
+import { Result, Schema, Array as Arr } from "effect"
 import {
 	click,
+	Command,
 	expect as expectView,
 	given,
 	Mount,
@@ -11,11 +13,12 @@ import {
 	type,
 	withViewInputs,
 } from "foldkit/scene"
-import { describe, test } from "vitest"
+import { describe, expect, test } from "vitest"
 import { ResolveThemeColors, ThemeMessage } from "@maple/views/charts/theme-colors"
 import type { PageContext } from "../../contract"
 import { scopedAnomalyRuleRow } from "../shared/anomaly-test-fixtures"
 import { destinationRow, NOW, ORG, ruleId, ruleRow } from "../shared/test-rows"
+import { FocusRuleCard } from "./command"
 import { init } from "./init"
 import { Message } from "./message"
 import type { Model } from "./model"
@@ -38,6 +41,33 @@ const opened = (search: Model["search"], rules = [ruleRow(2)]) =>
 		Message.UpdatedRules({ orgId: ORG, rows: rules }),
 	])
 
+const SQL =
+	"SELECT toStartOfInterval(Timestamp, INTERVAL $__interval_s SECOND) AS bucket, count() AS value FROM traces WHERE $__orgFilter AND $__timeFilter(Timestamp) GROUP BY bucket ORDER BY bucket"
+
+/** A preview whose one check takes 7.8s: too slow for 1-minute checks. */
+const slowPreview = () =>
+	Schema.decodeSync(AlertRulePreviewResponse)({
+		bucketSeconds: 300,
+		windowMinutes: 5,
+		threshold: 800,
+		thresholdUpper: null,
+		thresholds: [
+			{ severity: "critical", value: 800, upper: null, recoveryValue: null, destinationIds: [] },
+		],
+		comparator: "gt",
+		truncatedToStart: null,
+		series: [],
+		wouldFire: [],
+		queryTiming: {
+			elapsedMs: 7_800,
+			failure: null,
+			probeLimitMs: 25_000,
+			intervalMinutes: 1,
+			limitMs: 5_000,
+			fitsIntervalMinutes: [5, 10, 15, 30, 60],
+		},
+	})
+
 const summary = (lead: string, rest: string) => role("button", { name: `${lead}: ${rest}. Edit` })
 const queryMode = role("button", { name: "Built-in" })
 
@@ -51,16 +81,21 @@ describe("alert rule editor, sentence cards", () => {
 			expectView(
 				summary(
 					"Alert when",
-					"Above 800 ms (critical), over 5 min, 2 checks in a row, resolves after 2 healthy checks",
+					"Above 800 ms (critical), in 2 checks in a row (5 min each), resolves after 2 healthy checks",
 				),
 			).toExist(),
 			expectView(summary("Notify", "https://hooks.acme.test/maple")).toExist(),
 			expectView(summary("Name", "Rule 2")).toExist(),
 			expectView(queryMode).not.toExist(),
 			click(summary("When", "P95 latency on payment-svc in production")),
+			// Opening moves focus to the card's heading; closing returns it to the summary.
+			Command.expectHas(FocusRuleCard({ id: "sentence-card-watch" })),
+			Command.resolve(FocusRuleCard, Message.CompletedFocusCard()),
 			expectView(queryMode).toExist(),
 			expectView(role("heading", { name: "When" })).toExist(),
 			click(role("button", { name: "Done" })),
+			Command.expectHas(FocusRuleCard({ id: "sentence-card-watch-summary" })),
+			Command.resolve(FocusRuleCard, Message.CompletedFocusCard()),
 			expectView(queryMode).not.toExist(),
 			expectView(summary("When", "P95 latency on payment-svc in production")).toExist(),
 		)
@@ -101,6 +136,28 @@ describe("alert rule editor, sentence cards", () => {
 				summary("When", "Anomalies in checkout · production · Error rate, p95 latency"),
 			).toExist(),
 			expectView(text("Alert when")).not.toExist(),
+		)
+	})
+
+	test("a SQL rule whose timing lands too slow opens Alert when with the blocker", () => {
+		const sql = opened({ ruleId: ruleId(2) }, [
+			ruleRow(2, { signal_type: "raw_query", raw_query_sql: SQL }),
+		])
+		expect(sql.expandedCards).toEqual([])
+		const timed = pageUpdate(
+			sql,
+			Message.CompletedFetchPreview({
+				key: sql.preview.key ?? "",
+				isSaved: false,
+				result: Result.succeed(slowPreview()),
+			}),
+		).model
+		expect(timed.expandedCards).toContain("condition")
+		scene(
+			{ update: pageUpdate, view },
+			given(timed),
+			themeResolved(),
+			expectView(text("Missing: Query too slow for this check interval")).toExist(),
 		)
 	})
 })

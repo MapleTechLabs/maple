@@ -7,7 +7,8 @@ import { Array as Arr, Result } from "effect"
 import type { PageContext } from "../../contract"
 import * as DestinationDialog from "../destination/dialog"
 import { completeSave, completeTest, runTest, save } from "./actions"
-import { FetchEditorChains, FocusSqlCaret, InsertSqlToken, ReloadPage } from "./command"
+import { FetchEditorChains, FocusRuleCard, FocusSqlCaret, InsertSqlToken, ReloadPage } from "./command"
+import { sentenceCardHeadingId, sentenceCardSummaryId } from "../../kit/sentence-card"
 import { SQL_TEXTAREA_ID } from "./view-sql"
 import { chatConnectStep, connectorsAnswered, liftDialog, menuStep, removeDestination } from "./dest-steps"
 import { isProtectedDefault, suggestedName } from "./derive"
@@ -16,7 +17,7 @@ import * as F from "./form-steps"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { planAutocomplete, planPreviews } from "./plan"
-import { editForm, followRows, initialize, liftTemplates, type Return } from "./steps"
+import { editForm, followRows, initialize, liftTemplates, type Return, withMissingCardsOpen } from "./steps"
 import { chartStep, comboStep, queryPanelStep, radioStep, selectStep, timePickerStep } from "./sub-steps"
 
 const AUTOCOMPLETE_PRESET = "24h"
@@ -126,14 +127,15 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 					},
 		// Both slots take an answer for their key: the replay can share the draft's first request.
 		CompletedFetchPreview: ({ key, result }) => ({
-			model: {
+			// A timing that lands as too slow opens "Alert when", where the interval is picked.
+			model: withMissingCardsOpen({
 				...model,
 				preview: model.preview.key === key ? Keyed.accept(model.preview, key, result) : model.preview,
 				savedPreview:
 					model.savedPreview.key === key
 						? Keyed.accept(model.savedPreview, key, result)
 						: model.savedPreview,
-			},
+			}),
 		}),
 		ResolvedThemeColors: ({ colors }) => ({ model: { ...model, themeColors: colors } }),
 		CompletedLoadChartRuntime: () => ({ model: { ...model, chartRuntime: { _tag: "Ready" } } }),
@@ -216,10 +218,13 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		ClickedAddNotes: () => ({ model: { ...model, isNotesOpen: true } }),
 		ClickedExpandCard: ({ card }) => ({
 			model: { ...model, expandedCards: Arr.union(model.expandedCards, [card]) },
+			commands: [FocusRuleCard({ id: sentenceCardHeadingId(card) })],
 		}),
 		ClickedCollapseCard: ({ card }) => ({
 			model: { ...model, expandedCards: Arr.filter(model.expandedCards, (open) => open !== card) },
+			commands: [FocusRuleCard({ id: sentenceCardSummaryId(card) })],
 		}),
+		CompletedFocusCard: () => ({ model }),
 		ToggledSqlCollapsed: () => ({ model: { ...model, isSqlCollapsed: !model.isSqlCollapsed } }),
 		ClickedSqlToken: ({ token }) =>
 			model.form === null

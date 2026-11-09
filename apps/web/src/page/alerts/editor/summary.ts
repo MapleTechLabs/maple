@@ -1,5 +1,5 @@
 import { Array as Arr, String as Str } from "effect"
-import type { AlertDestinationId, EscalationChainId } from "@maple/domain/http"
+import type { AlertDestinationId, AlertQueryTiming, EscalationChainId } from "@maple/domain/http"
 import {
 	comparatorSupportsTiers,
 	isRangeComparator,
@@ -8,7 +8,15 @@ import {
 } from "@maple/web-data/alerts/form-utils"
 import { anomalyScopeSummary } from "@maple/web-data/alerts/anomaly-rule"
 import type { RuleCard, RuleForm } from "./form"
-import { comparatorWords, conditionSubject, groupBySummary, thresholdValue, validationIssues } from "./derive"
+import {
+	checksPhrase,
+	comparatorWords,
+	conditionSubject,
+	groupBySummary,
+	recoveryLabel,
+	saveIssues,
+	thresholdValue,
+} from "./derive"
 
 // The rule editor's sentence cards: which card each field lives on, and each card's one-line summary.
 
@@ -30,13 +38,25 @@ const cardOfIssue = (issue: string): RuleCard =>
 				? "watch"
 				: "condition"
 
-/** What blocks saving on one card, from the same list the action bar shows. */
-export const cardIssues = (form: RuleForm, card: RuleCard, isDefault = false): ReadonlyArray<string> =>
-	Arr.filter(validationIssues(form, isDefault), (issue) => cardOfIssue(issue) === card)
+/**
+ * What blocks saving on one card: the action bar's own list (`saveIssues`), so a closed card never
+ * hides a blocker. A query too slow for its check interval lands on "Alert when", where the interval is.
+ */
+export const cardIssues = (
+	form: RuleForm,
+	card: RuleCard,
+	timing: AlertQueryTiming | null,
+	isDefault = false,
+): ReadonlyArray<string> =>
+	Arr.filter(saveIssues(form, timing, isDefault), (issue) => cardOfIssue(issue) === card)
 
 /** The cards with something missing, which stay open until it is filled in. */
-export const missingCards = (form: RuleForm, isDefault = false): ReadonlyArray<RuleCard> =>
-	Arr.filter(cardsOf(form), (card) => cardIssues(form, card, isDefault).length > 0)
+export const missingCards = (
+	form: RuleForm,
+	timing: AlertQueryTiming | null,
+	isDefault = false,
+): ReadonlyArray<RuleCard> =>
+	Arr.filter(cardsOf(form), (card) => cardIssues(form, card, timing, isDefault).length > 0)
 
 const capitalize = (text: string): string => Str.toUpperCase(Str.slice(0, 1)(text)) + Str.slice(1)(text)
 
@@ -85,15 +105,7 @@ export const watchSummary = (form: RuleForm, isDefault = false): string => {
 	return Arr.join([signalLabels[form.signalType], ...builtinScope(form), ...perGroup], " ")
 }
 
-const checksText = (form: RuleForm): string => {
-	const checks = Str.trim(form.consecutiveBreachesRequired) || "?"
-	const outOf = Str.trim(form.breachesOutOf)
-	const windowText = `over ${Str.trim(form.windowMinutes) || "?"} min`
-	if (outOf.length > 0) return `${windowText}, ${checks} of the last ${outOf} checks`
-	return checks === "1" ? windowText : `${windowText}, ${checks} checks in a row`
-}
-
-/** The "Alert when" card: "Above 5%, critical above 10%, over 5 min, 3 checks in a row". */
+/** The "Alert when" card: "Above 5%, critical above 10%, in 3 checks in a row (5 min each)". */
 export const conditionSummary = (form: RuleForm): string => {
 	const words = Str.replace(/^is /, "")(comparatorWords(form.comparator))
 	const threshold = isRangeComparator(form.comparator)
@@ -101,25 +113,38 @@ export const conditionSummary = (form: RuleForm): string => {
 		: thresholdValue(form, form.threshold)
 	const escalation = comparatorSupportsTiers(form.comparator) ? form.escalation : null
 	const healthy = Str.trim(form.consecutiveHealthyRequired)
+	const recovery = comparatorSupportsTiers(form.comparator) ? Str.trim(form.recoveryValue) : ""
 	return Arr.join(
 		[
 			`${capitalize(words)} ${threshold}${escalation === null && form.severity === "critical" ? " (critical)" : ""}`,
 			...(escalation === null
 				? []
 				: [`critical ${words} ${thresholdValue(form, escalation.threshold)}`]),
-			checksText(form),
+			checksPhrase(form),
+			...(recovery.length > 0
+				? [`${Str.toLowerCase(recoveryLabel(form.comparator))} ${thresholdValue(form, recovery)}`]
+				: []),
 			...(healthy.length > 0 && healthy !== "1" ? [`resolves after ${healthy} healthy checks`] : []),
-			...(form.alertOnNoData ? ["no data counts"] : []),
+			...(form.alertOnNoData ? ["alerts on no data"] : []),
 		],
 		", ",
 	)
 }
 
-/** How the summary names a destination and a chain; `null` for one the lists no longer hold. */
+/** A destination or chain by id: its list still loading, its name, or gone from the loaded list. */
+export type NameLookup =
+	| Readonly<{ _tag: "Loading" }>
+	| Readonly<{ _tag: "Found"; name: string }>
+	| Readonly<{ _tag: "Gone" }>
+
+/** How the summary names destinations and chains. */
 export type NotifyNames = Readonly<{
-	destination: (id: AlertDestinationId) => string | null
-	chain: (id: EscalationChainId) => string | null
+	destination: (id: AlertDestinationId) => NameLookup
+	chain: (id: EscalationChainId) => NameLookup
 }>
+
+const nameOf = (lookup: NameLookup, noun: string): string =>
+	lookup._tag === "Found" ? lookup.name : lookup._tag === "Gone" ? `a removed ${noun}` : `a ${noun}`
 
 type Route = Readonly<{
 	destinationIds: ReadonlyArray<AlertDestinationId>
@@ -127,14 +152,9 @@ type Route = Readonly<{
 }>
 
 const routeText = (route: Route, names: NotifyNames): string | null => {
-	const destinations = Arr.map(
-		route.destinationIds,
-		(id) => names.destination(id) ?? "a removed destination",
-	)
+	const destinations = Arr.map(route.destinationIds, (id) => nameOf(names.destination(id), "destination"))
 	const chain =
-		route.escalationChainId === null
-			? null
-			: (names.chain(route.escalationChainId) ?? "an escalation chain")
+		route.escalationChainId === null ? null : nameOf(names.chain(route.escalationChainId), "chain")
 	if (destinations.length === 0) return chain === null ? null : `escalate to ${chain}`
 	return chain === null ? listOf(destinations) : `${listOf(destinations)}, then escalate to ${chain}`
 }
@@ -158,15 +178,17 @@ export const notifySummary = (form: RuleForm, names: NotifyNames): string => {
 				)
 			: null
 	if (primary === null && critical === null) return "No one is notified"
+	// With no warning route, critical is the whole route: "Critical: #pager", not "Critical also".
 	const criticalText =
 		critical === null
 			? null
 			: Str.startsWith("escalate to ")(critical)
 				? `critical ${Str.replace(/^escalate/, "escalates")(critical)}`
-				: `critical also ${critical}`
-	// Only the leading verb is capitalised: a destination keeps its own spelling ("#oncall", an email).
-	const lead = (text: string) =>
-		Str.startsWith("escalate")(text) || Str.startsWith("critical")(text) ? capitalize(text) : text
+				: primary === null
+					? `critical: ${critical}`
+					: `critical also ${critical}`
+	// Only our own words are capitalised: a destination keeps its spelling ("#oncall", an email).
+	const lead = (text: string) => (/^(escalate|critical|a |an )/.test(text) ? capitalize(text) : text)
 	if (primary === null) return lead(criticalText ?? "")
 	return Arr.join(
 		Arr.filter([lead(primary), criticalText], (part): part is string => part !== null),

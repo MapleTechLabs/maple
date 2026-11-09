@@ -148,6 +148,7 @@ export const Message = defineMessageUnion({
 	ClickedExpandCard: { card: RuleCard },
 	/** An open card's Done: back to its summary. */
 	ClickedCollapseCard: { card: RuleCard },
+	CompletedFocusCard: {},
 	ToggledSqlCollapsed: {},
 	ClickedSqlToken: { token: Schema.String },
 	CompletedInsertSqlToken: { sql: Schema.String, caret: Schema.Number },

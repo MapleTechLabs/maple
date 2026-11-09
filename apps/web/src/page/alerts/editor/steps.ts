@@ -7,6 +7,7 @@ import { Message } from "./message"
 import type { Model } from "./model"
 import { applyDefaultDestination, planMetrics, planPreviews } from "./plan"
 import { isProtectedDefault } from "./derive"
+import { draftTimingOf } from "./derive-rows"
 import { missingCards, RULE_CARDS } from "./summary"
 import { Option, String as Str, Array as Arr } from "effect"
 
@@ -49,7 +50,7 @@ export const initialize = (model: Model, context: PageContext): Return => {
 	const withCards: Model = {
 		...ready,
 		expandedCards:
-			draft.editingRule === null ? RULE_CARDS : missingCards(form, isProtectedDefault(ready)),
+			draft.editingRule === null ? RULE_CARDS : missingCards(form, null, isProtectedDefault(ready)),
 	}
 	const loaded = planned(applyDefaultDestination(withCards), context)
 	if (!draft.isShowingTemplates) return loaded
@@ -58,13 +59,22 @@ export const initialize = (model: Model, context: PageContext): Return => {
 }
 
 /** An edit to the draft; the preview follows it (`useDeferredValue` over the form). */
-export const editForm = (model: Model, context: PageContext, edit: (form: RuleForm) => RuleForm): Return => {
-	if (model.form === null) return { model }
-	const form = edit(model.form)
-	// A card that goes missing stays open once filled in again, so it never closes under the cursor.
-	const expandedCards = Arr.union(model.expandedCards, missingCards(form, isProtectedDefault(model)))
-	return planned({ ...model, form, expandedCards }, context)
-}
+/** Opens every card with a save blocker; it stays open once fixed, so it never closes under the cursor. */
+export const withMissingCardsOpen = (model: Model): Model =>
+	model.form === null
+		? model
+		: {
+				...model,
+				expandedCards: Arr.union(
+					model.expandedCards,
+					missingCards(model.form, draftTimingOf(model, model.form), isProtectedDefault(model)),
+				),
+			}
+
+export const editForm = (model: Model, context: PageContext, edit: (form: RuleForm) => RuleForm): Return =>
+	model.form === null
+		? { model }
+		: planned(withMissingCardsOpen({ ...model, form: edit(model.form) }), context)
 
 /** A list answered: the draft may now be known, and the default destination picked. */
 export const followRows = (model: Model, context: PageContext): Return => {
