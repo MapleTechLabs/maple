@@ -51,6 +51,7 @@ const scripted = (answers: ReadonlyArray<McpToolResult>, calls: string[], prepar
 						}),
 					),
 		prepareConnectedRepositories: () => Effect.void,
+		listDataSources: () => Effect.succeed([]),
 	}
 	return executor
 }

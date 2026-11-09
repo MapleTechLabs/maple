@@ -48,7 +48,7 @@ export function registerListUsersTool(server: McpToolRegistrar) {
 		name: TOOL,
 		title: "List Users",
 		description:
-			"List the end users of the org's own apps: people identified with `identify()` or a `user.id` span attribute. One row per user, most recently seen first, with sessions, requests, errors, where the requests came from (web, mobile, api, mcp) and which signals carry them (replay, events, mcp, traces, logs). Open one with `inspect_user`.",
+			"List the end users of the org's own apps: people identified with `identify()` or a `user.id` span attribute. One row per user, most recently seen first, with sessions, requests, errors, where the requests came from (web, mobile, api, mcp) and which signals carry them (replay, events, mcp, traces, logs). Open one with `inspect_user`. Accounts and signups in a connected auth system (Clerk) are a data source: `search_data_sources`.",
 		parameters: Schema.Struct({
 			...WINDOW.fields,
 			namespaces: P.optionalList(
@@ -132,6 +132,7 @@ export function registerListUsersTool(server: McpToolRegistrar) {
 								hints: [
 									"Widen start_time/end_time, or drop filters.",
 									"Users appear once an app calls identify() or sets the user.id span attribute.",
+									"Accounts and signups in a connected system such as Clerk: search_data_sources.",
 								],
 							},
 						}

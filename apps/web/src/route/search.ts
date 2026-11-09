@@ -215,6 +215,7 @@ export const settingsTabValues = [
 	"ai",
 	"ingestion",
 	"data-platform",
+	"data-sources",
 	"setup-health",
 	"automation",
 ] as const

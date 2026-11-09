@@ -24,6 +24,7 @@ import { IssueFixVerificationService } from "@maple/backend/services/errors/Issu
 import { RecommendationIssueService } from "@maple/backend/services/errors/RecommendationIssueService"
 import { IntegrationInventoryService } from "@maple/backend/services/integrations/IntegrationInventoryService"
 import { SourcesService } from "@maple/backend/services/org/SourcesService"
+import { ExternalDataSourceService } from "@maple/backend/services/data-sources/ExternalDataSourceService"
 import { RailwayMetricsService } from "@maple/backend/services/integrations/RailwayMetricsService"
 import { ScrapeTargetsService } from "@maple/backend/services/integrations/ScrapeTargetsService"
 import { SearchConsoleService } from "@maple/backend/services/integrations/SearchConsoleService"
@@ -69,6 +70,7 @@ export const unimplementedMcpToolServices = Layer.mergeAll(
 	Layer.mock(RecommendationIssueService)({}),
 	Layer.mock(IntegrationInventoryService)({}),
 	Layer.mock(SourcesService)({}),
+	Layer.mock(ExternalDataSourceService)({}),
 	Layer.mock(RailwayMetricsService)({}),
 	Layer.mock(ScrapeTargetsService)({}),
 	Layer.mock(SearchConsoleService)({}),

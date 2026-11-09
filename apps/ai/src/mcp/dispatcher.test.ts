@@ -13,6 +13,8 @@ import { WarehouseQueryService } from "@maple/backend/services/warehouse/Warehou
 import { makeWarehouseServiceStub } from "@maple/backend/testing/warehouse-test-support"
 import { WarehouseQueryError } from "@maple/domain"
 import { RepoSandboxService } from "@maple/backend/services/sandbox/RepoSandboxService"
+import { ExternalDataSourceService } from "@maple/backend/services/data-sources/ExternalDataSourceService"
+import { OrganizationFeatureFlagsService } from "@maple/backend/services/org/OrganizationFeatureFlagsService"
 import {
 	type ConnectedSourceRepository,
 	VcsSourceService,
@@ -43,6 +45,8 @@ const CONNECTOR_TENANT: TenantContext = {
 const unusedRepositoryServices = Layer.mergeAll(
 	Layer.mock(RepoSandboxService, {}),
 	Layer.mock(VcsSourceService, {}),
+	Layer.mock(ExternalDataSourceService, {}),
+	OrganizationFeatureFlagsService.allEnabled,
 )
 
 // These cases stop at registry lookup/schema decoding, before a tool service is read.
@@ -495,6 +499,8 @@ describe("McpToolExecutor repository preparation", () => {
 				listRepositories: () =>
 					Effect.succeed([connected("octo/shop", false), connected("octo/legacy", true)]),
 			}),
+			Layer.mock(ExternalDataSourceService, {}),
+			OrganizationFeatureFlagsService.allEnabled,
 		)
 
 		return Effect.gen(function* () {

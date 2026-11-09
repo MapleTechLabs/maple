@@ -27,6 +27,7 @@
 		"@maple-dev/effect-sdk": "workspace:*",
 		"@maple/agent-sessions": "workspace:*",
 		"@maple/backend": "workspace:*",
+		"@maple/data-sources": "workspace:*",
 		"@maple/domain": "workspace:*",
 		"@maple/infra": "workspace:*",
 		"@maple/ingest-rules": "workspace:*",

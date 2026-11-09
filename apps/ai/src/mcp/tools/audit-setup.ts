@@ -58,7 +58,7 @@ export function registerAuditSetupTool(server: McpToolRegistrar) {
 			"trace completeness (orphan spans, traces with no root) and integration health. Telemetry-backed checks " +
 			"skip when the warehouse is unavailable; configuration checks always run. Answers 'is my Maple setup " +
 			"correct' and 'why didn't anything alert me'. `get_instrumentation_recommendations` is the per-attribute " +
-			"rename list; whether data is arriving right now is ingest_freshness / list_sources.",
+			"rename list; whether data is arriving right now is ingest_freshness / list_ingest_sources.",
 		parameters: Schema.Struct({
 			include_passing: P.optionalFlag(
 				"Also list passing and skipped checks (default false: findings only)",
