@@ -398,6 +398,13 @@ export const pageSubscriptions = Subscription.aggregate<PageHost, PageMessage, R
 /** The page's view boundary: a new instance (another org on the same route, too) mounts afresh. */
 export const pageSlotId = (slot: PageSlotBase): string => `page:${pageIdentity(slot)}`
 
+/**
+ * A `slotId` only scopes dispatch, so the instance's identity also keys the DOM: dashboard A to B
+ * would otherwise patch A's tree in place and B's `OnMount` hooks (the grid measure) never run.
+ */
+const keyedByInstance = <ParentMessage>(h: HtmlBuilder<ParentMessage>, key: string, child: Html): Html =>
+	h.keyed("div")(key, [h.Class("contents")], [child])
+
 /** Embeds the active page under `pageSlotId`. */
 export const viewPage = <ParentMessage>(
 	h: HtmlBuilder<ParentMessage>,
@@ -408,13 +415,17 @@ export const viewPage = <ParentMessage>(
 	Option.match(pageById(slot._tag), {
 		onNone: () => h.empty,
 		onSome: (page) =>
-			h.submodel({
-				slotId: pageSlotId(slot),
-				model: slot,
-				view: page.hostView,
-				viewInputs: inputs,
-				toParentMessage,
-			}),
+			keyedByInstance(
+				h,
+				pageSlotId(slot),
+				h.submodel({
+					slotId: pageSlotId(slot),
+					model: slot,
+					view: page.hostView,
+					viewInputs: inputs,
+					toParentMessage,
+				}),
+			),
 	})
 
 /** The active page's top-bar actions (`DashboardPage topbarActions`), or nothing. */
@@ -427,11 +438,15 @@ export const viewPageTopbarActions = <ParentMessage>(
 	Option.match(pageById(slot._tag), {
 		onNone: () => h.empty,
 		onSome: (page) =>
-			h.submodel({
-				slotId: `page-topbar:${pageIdentity(slot)}`,
-				model: slot,
-				view: page.hostTopbarActions,
-				viewInputs: inputs,
-				toParentMessage,
-			}),
+			keyedByInstance(
+				h,
+				`page-topbar:${pageIdentity(slot)}`,
+				h.submodel({
+					slotId: `page-topbar:${pageIdentity(slot)}`,
+					model: slot,
+					view: page.hostTopbarActions,
+					viewInputs: inputs,
+					toParentMessage,
+				}),
+			),
 	})
