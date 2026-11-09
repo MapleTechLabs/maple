@@ -213,7 +213,7 @@ const create = async (branchName: string, handoffFile: string): Promise<void> =>
 	// Listed first: at the workspace's branch cap Tinybird answers a create of an
 	// existing branch with "Max number of Branches" instead of "already exists".
 	const listed = runTb(parent, ["branch", "ls"])
-	const exists = listed.exitCode === 0 && new RegExp(`\\b${branchName}\\b`).test(listed.stdout)
+	const exists = listed.exitCode === 0 && listed.stdout.split(/[\s|]+/).includes(branchName)
 	if (!exists) {
 		const created = runTb(parent, ["branch", "create", branchName])
 		if (created.exitCode !== 0 && !isAlreadyExists(created)) {
