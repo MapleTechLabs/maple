@@ -80,10 +80,21 @@ export const Message = defineMessageUnion({
 	FailedLoadSources: { orgId: Schema.String },
 	SucceededLoadDashboards: { orgId: Schema.String, dashboards: Schema.Array(PinnedDashboardRow) },
 	FailedLoadDashboards: { orgId: Schema.String },
-	SucceededLoadOnCall: { orgId: Schema.String, snapshot: OnCallSnapshot },
-	FailedLoadOnCall: { orgId: Schema.String },
-	/** A schedule handed off: who is on call may have changed. */
-	ElapsedOnCallHandoff: {},
+	/** `isFromCache`: the org's fresh "no schedules" answer stood in for the request. */
+	SucceededLoadOnCall: {
+		orgId: Schema.String,
+		snapshot: OnCallSnapshot,
+		readAtMs: Schema.Number,
+		isFromCache: Schema.Boolean,
+	},
+	FailedLoadOnCall: { orgId: Schema.String, failedAtMs: Schema.Number },
+	/** The pill's next read is due: a handoff, the hourly check off call, or a retry. */
+	ElapsedOnCallTimer: { nowMs: Schema.Number },
+	/** The tab came back into view or focus. */
+	WokeOnCall: { nowMs: Schema.Number },
+	/** A page wrote a schedule or an override. */
+	ChangedOnCallSchedules: {},
+	CompletedSaveNoSchedules: {},
 	/** A nav group's label: fold or unfold its rows. */
 	ClickedNavGroup: { groupId: Schema.String },
 	CompletedSaveNavGroups: {},

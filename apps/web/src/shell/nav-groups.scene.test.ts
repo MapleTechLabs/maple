@@ -65,23 +65,29 @@ describe("sidebar groups", () => {
 		)
 	})
 
-	test("the group holding the current page stays open and cannot fold", () => {
+	test("folding the group holding the current page keeps only the current page's row", () => {
+		const triage = role("button", { name: "Triage" })
 		scene(
 			{ update, view: shellAt("/alerts") },
-			given(signedIn({ collapsedNavGroups: ["triage"] })),
+			given(signedIn()),
 			measured,
-			expect(role("button", { name: "Triage" })).toHaveAttr("aria-expanded", "true"),
-			expect(role("button", { name: "Triage" })).toBeDisabled(),
+			expect(role("link", { name: "Errors" })).toExist(),
+			click(triage),
+			Command.resolve(SaveCollapsedNavGroups, Message.CompletedSaveNavGroups()),
+			expect(triage).toHaveAttr("aria-expanded", "false"),
 			expect(role("link", { name: "Alerts" })).toExist(),
+			expect(role("link", { name: "Errors" })).toBeAbsent(),
+			expect(role("link", { name: "Code review" })).toBeAbsent(),
 		)
 	})
 
-	test("the collapsed rail shows every row of a folded group", () => {
+	test("the collapsed rail shows every row of a folded group and its labels are no tab stops", () => {
 		scene(
 			{ update, view: shellAt("/") },
 			given(signedIn({ isSidebarOpen: false, collapsedNavGroups: ["analyze"] })),
 			measured,
 			expect(dashboards).toExist(),
+			expect(analyze).toBeAbsent(),
 		)
 	})
 

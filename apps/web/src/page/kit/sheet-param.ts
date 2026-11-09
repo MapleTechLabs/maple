@@ -1,9 +1,11 @@
-import { Option, Schema } from "effect"
-import { PageOutMessage } from "../contract"
+import { Effect, Option, Schema } from "effect"
+import { back, replaceUrl } from "foldkit/navigation"
 
 /**
- * A right sheet held in the URL as `?sheet=<id>`: opening pushes it (Back closes the sheet, the
- * link reopens it), and dismissing replaces it away. Pair with `followUrl` / `isDismissed`.
+ * A side sheet held in the URL as `?sheet=<id>`. Opening pushes an entry this tab marks as its own,
+ * so dismissing it goes back (Back after a close never lands on the same page again); a deep link
+ * or a sheet opened by another tab's entry replaces the param away instead. Pages wrap
+ * `pushSheetUrl` / `dismissSheetUrl` in a Command and follow the URL with `followUrl`.
  */
 export const SHEET_PARAM = "sheet"
 
@@ -24,10 +26,29 @@ export const withSheetParam = (href: string, id: string | undefined): string => 
 export const sheetParamOf = (href: string): Option.Option<string> =>
 	Option.filter(Option.fromNullOr(new URL(href, BASE).searchParams.get(SHEET_PARAM)), (id) => id !== "")
 
-/** A page opens the sheet: a new history entry, so Back closes it. */
-export const openSheetNavigation = (href: string, id: string): PageOutMessage =>
-	PageOutMessage.RequestedNavigation({ url: withSheetParam(href, id), isReplace: false })
+/** The history entry state `pushSheetUrl` writes. */
+export const SheetHistoryState = Schema.Struct({ mapleSheet: Schema.String })
+const decodeSheetState = Schema.decodeUnknownOption(SheetHistoryState)
 
-/** The sheet was dismissed: the param leaves without adding an entry. */
-export const closeSheetNavigation = (href: string): PageOutMessage =>
-	PageOutMessage.RequestedNavigation({ url: withSheetParam(href, undefined), isReplace: true })
+export type SheetDismissal = Readonly<{ _tag: "Back" }> | Readonly<{ _tag: "Replace"; url: string }>
+
+/** Back when the current entry is the one this tab pushed for `id`, else replace the param away. */
+export const dismissalOf = (historyState: unknown, href: string, id: string): SheetDismissal =>
+	Option.exists(decodeSheetState(historyState), (state) => state.mapleSheet === id)
+		? { _tag: "Back" }
+		: { _tag: "Replace", url: withSheetParam(href, undefined) }
+
+/** Opens the sheet: a marked history entry, announced the way foldkit's `pushUrl` does. */
+export const pushSheetUrl = (href: string, id: string): Effect.Effect<void> =>
+	Effect.sync(() => {
+		const state: typeof SheetHistoryState.Type = { mapleSheet: id }
+		window.history.pushState(state, "", withSheetParam(href, id))
+		window.dispatchEvent(new CustomEvent("foldkit:urlchange"))
+	})
+
+/** Dismisses it (Escape, backdrop, close, Cancel): see `dismissalOf`. */
+export const dismissSheetUrl = (href: string, id: string): Effect.Effect<void> =>
+	Effect.suspend(() => {
+		const dismissal = dismissalOf(window.history.state, href, id)
+		return dismissal._tag === "Back" ? back() : replaceUrl(dismissal.url)
+	})

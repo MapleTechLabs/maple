@@ -2,19 +2,24 @@ import { Effect, Option, Schema } from "effect"
 import { Command, type Update } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { defineMessageUnion } from "foldkit/message"
-import { pushUrl, replaceUrl } from "foldkit/navigation"
 import { button } from "@maple/views/ui/button"
 import * as Dialog from "@maple/views/ui/dialog"
 import { input } from "@maple/views/ui/input"
 import { label } from "@maple/views/ui/label"
 import { segmentedSelect } from "@maple/views/ui/segmented-select"
-import { followUrl, isDismissed, mapSheetCommands, rightSheet, type SheetStep } from "@maple/views/ui/sheet"
+import {
+	followUrl,
+	isDismissed,
+	mapSheetCommands,
+	type SheetStep,
+	sidePanelSheet,
+} from "@maple/views/ui/sheet"
 import { vstack } from "@maple/views/ui/stack"
 import { textarea } from "@maple/views/ui/textarea"
 import { typography } from "@maple/views/ui/typography"
 import type { Resources } from "../platform/resources"
 import { dashboardPage } from "../page/kit/dashboard-page"
-import { sheetParamOf, withSheetParam } from "../page/kit/sheet-param"
+import { dismissSheetUrl, pushSheetUrl, sheetParamOf } from "../page/kit/sheet-param"
 import { Message as ShellMessage, Theme } from "../shell/message"
 import { init as initShell, Model as ShellModel, OnCallData } from "../shell/model"
 import type { OnCallSnapshot } from "../shell/oncall"
@@ -32,20 +37,20 @@ export type OnCallFixture = typeof OnCallFixture.Type
 export const StandOn = Schema.Literals(["lab", "alerts"])
 export type StandOn = typeof StandOn.Type
 
-/** Mon 16 Nov 2026, 08:00 UTC: 09:00 on the schedule's Berlin clock. */
+/** Mon 16 Nov 2026, 08:00 UTC: 09:00 CET for a Berlin viewer. */
 const HANDOFF_MS = Date.UTC(2026, 10, 16, 8)
 
 const LAB_USER = "user_lab"
 
 export const onCallSnapshotOf = (fixture: OnCallFixture): OnCallSnapshot => ({
 	userId: LAB_USER,
+	viewerTimeZone: "Europe/Berlin",
 	shifts:
 		fixture === "none"
 			? []
 			: [
 					{
 						scheduleName: "Checkout primary",
-						timeZone: "Europe/Berlin",
 						userId: fixture === "onCall" ? LAB_USER : "user_other",
 						endsAtMs: HANDOFF_MS,
 					},
@@ -86,18 +91,20 @@ export const Message = defineMessageUnion({
 })
 export type Message = typeof Message.Type
 
-/** Opening the sheet: a new history entry carrying `?sheet=`. */
+const sheetArgs = { href: Schema.String, id: Schema.String }
+
+/** Opening the sheet: a history entry carrying `?sheet=`, marked as this tab's. */
 export const PushSheetUrl = Command.define("PushSheetUrl", {
-	args: { url: Schema.String },
+	args: sheetArgs,
 	messages: [Message.CompletedNavigate],
-	execute: ({ url }) => pushUrl(url).pipe(Effect.as(Message.CompletedNavigate())),
+	execute: ({ href, id }) => pushSheetUrl(href, id).pipe(Effect.as(Message.CompletedNavigate())),
 })
 
-/** Dismissing it: the param leaves in place. */
-export const ReplaceSheetUrl = Command.define("ReplaceSheetUrl", {
-	args: { url: Schema.String },
+/** Dismissing it: back past the entry this tab pushed, else the param is replaced away. */
+export const DismissSheetUrl = Command.define("DismissSheetUrl", {
+	args: sheetArgs,
 	messages: [Message.CompletedNavigate],
-	execute: ({ url }) => replaceUrl(url).pipe(Effect.as(Message.CompletedNavigate())),
+	execute: ({ href, id }) => dismissSheetUrl(href, id).pipe(Effect.as(Message.CompletedNavigate())),
 })
 
 type Return = Update.Return<Model, Message, Resources>
@@ -112,7 +119,7 @@ const sheetStep = (model: Model, step: SheetStep): Return => ({
 	model: { ...model, sheet: step.model },
 	commands: [
 		...mapSheetCommands(step, toSheet),
-		...(isDismissed(step) ? [ReplaceSheetUrl({ url: withSheetParam(model.href, undefined) })] : []),
+		...(isDismissed(step) ? [DismissSheetUrl({ href: model.href, id: SHEET_ID })] : []),
 	],
 })
 
@@ -146,7 +153,7 @@ export const update = (model: Model, message: Message): Return =>
 		},
 		ClickedNewRule: () => ({
 			model,
-			commands: [PushSheetUrl({ url: withSheetParam(model.href, SHEET_ID) })],
+			commands: [PushSheetUrl({ href: model.href, id: SHEET_ID })],
 		}),
 		ClickedCreateRule: () => sheetStep(model, Dialog.close(model.sheet)),
 		ClickedOnCallFixture: ({ fixture }) => ({
@@ -165,7 +172,7 @@ const field = <M>(h: HtmlBuilder<M>, id: string, text: string, control: Html): H
 	vstack(h, { gap: "2" }, [label(h, { attributes: [h.For(id)] }, [text]), control])
 
 const sheet = (h: HtmlBuilder<Message>, model: Model): Html =>
-	rightSheet(h, {
+	sidePanelSheet(h, {
 		sheet: model.sheet,
 		title: "New alert rule",
 		description: "Page the on-call person when a service's error rate crosses a threshold.",
@@ -198,12 +205,8 @@ const sheet = (h: HtmlBuilder<Message>, model: Model): Html =>
 				),
 			]),
 		],
-		footer: [
-			button(
-				h,
-				{ variant: "outline", attributes: [h.OnClick(toSheet(Dialog.Message.ClickedClose()))] },
-				["Cancel"],
-			),
+		footer: (close) => [
+			button(h, { variant: "outline", attributes: close }, ["Cancel"]),
 			button(h, { attributes: [h.OnClick(Message.ClickedCreateRule())] }, ["Create rule"]),
 		],
 	})

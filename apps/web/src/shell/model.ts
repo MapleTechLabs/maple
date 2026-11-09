@@ -82,6 +82,14 @@ export const Model = Schema.Struct({
 	onCall: OnCallData.schema,
 	/** `maple.sidebar.collapsed-groups`: nav group ids the user folded. */
 	collapsedNavGroups: Schema.Array(Schema.String),
+	/** The pill's clock: when an on-call event last happened, so ended shifts read as unknown. */
+	onCallNowMs: Schema.Number,
+	/** When the pill reads again; `null` for an org without schedules. */
+	onCallNextReadAtMs: Schema.NullOr(Schema.Number),
+	/** The current retry delay; 0 after a good answer. */
+	onCallBackoffMs: Schema.Number,
+	/** `maple.oncall.no-schedules.<orgId>`: when each org last answered with no schedules. */
+	noScheduleOrgs: Schema.Record(Schema.String, Schema.Number),
 	namespaces: NamespacesData.schema,
 	/** The org's sources, read once a page links to its source (`source-link.ts`). */
 	sources: SourcesData.schema,
@@ -140,6 +148,7 @@ export type ShellFlags = Readonly<{
 	pinnedNamespaces: Readonly<Record<string, string>>
 	dashboardFavorites: ReadonlyArray<string>
 	collapsedNavGroups?: ReadonlyArray<string>
+	noScheduleOrgs?: Readonly<Record<string, number>>
 	rememberedSurfaces?: Readonly<Record<string, ReadonlyArray<NavSurface>>>
 	isQuotaApproachingDismissed?: boolean
 	platform?: Platform
@@ -166,6 +175,10 @@ export const init = (flags: ShellFlags): Model => ({
 	dashboards: DashboardsData.Idle(),
 	onCall: OnCallData.Idle(),
 	collapsedNavGroups: flags.collapsedNavGroups ?? [],
+	onCallNowMs: 0,
+	onCallNextReadAtMs: null,
+	onCallBackoffMs: 0,
+	noScheduleOrgs: flags.noScheduleOrgs ?? {},
 	namespaces: NamespacesData.Idle(),
 	sources: SourcesData.Idle(),
 	namespaceQuery: "",

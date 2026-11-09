@@ -12,7 +12,7 @@ import {
 	type SheetSize,
 } from "@maple/ui/styles/ui/sheet"
 import { Command } from "foldkit"
-import type { Attribute, Html, HtmlBuilder } from "foldkit/html"
+import type { Attribute, ChildAttribute, Html, HtmlBuilder } from "foldkit/html"
 import { button } from "./button"
 import * as Dialog from "./dialog"
 import * as DialogView from "./dialog-view"
@@ -132,9 +132,9 @@ export const leftSheet = <Message>(
 		],
 	)
 
-// RIGHT SHEET
+// SIDE PANEL SHEET
 
-export type RightSheetOptions<Message> = Readonly<{
+export type SidePanelSheetOptions<Message> = Readonly<{
 	sheet: Dialog.Model
 	title: string
 	description?: string
@@ -142,8 +142,11 @@ export type RightSheetOptions<Message> = Readonly<{
 	size?: SheetSize
 	/** The scrolling body. */
 	body: ReadonlyArray<Html>
-	/** The sticky footer (Cancel, then the primary action); none renders no footer. */
-	footer?: ReadonlyArray<Html>
+	/**
+	 * The sticky footer (Cancel, then the primary action), handed the close button's attributes so
+	 * Cancel dismisses like Escape does; none renders no footer.
+	 */
+	footer?: (close: ReadonlyArray<ChildAttribute>) => ReadonlyArray<Html>
 	toParentMessage: (message: Dialog.Message) => Message
 }>
 
@@ -155,7 +158,10 @@ const REDUCED_MOTION =
  * A full-height panel from the right over the Dialog Submodel: title, close, a scrolling body and a
  * sticky footer. Escape, the backdrop and the close button close it (`isDismissed`).
  */
-export const rightSheet = <Message>(h: HtmlBuilder<Message>, options: RightSheetOptions<Message>): Html => {
+export const sidePanelSheet = <Message>(
+	h: HtmlBuilder<Message>,
+	options: SidePanelSheetOptions<Message>,
+): Html => {
 	const { sheet } = options
 	return h.submodel({
 		slotId: `${sheet.id}-sheet`,
@@ -167,7 +173,7 @@ export const rightSheet = <Message>(h: HtmlBuilder<Message>, options: RightSheet
 			className: REDUCED_MOTION,
 			hasDescription: options.description !== undefined,
 			toView: ({ portal }) => portal,
-			toContent: () => [
+			toContent: (close) => [
 				DialogView.dialogHeader(h, "sheet", [
 					DialogView.dialogTitle(h, "sheet", sheet.id, options.title),
 					...(options.description === undefined
@@ -177,7 +183,7 @@ export const rightSheet = <Message>(h: HtmlBuilder<Message>, options: RightSheet
 				DialogView.dialogPanel(h, "sheet", sheet.id, options.body),
 				...(options.footer === undefined
 					? []
-					: [DialogView.dialogFooter(h, "sheet", options.footer)]),
+					: [DialogView.dialogFooter(h, "sheet", options.footer(close))]),
 			],
 		},
 		toParentMessage: options.toParentMessage,

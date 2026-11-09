@@ -114,6 +114,32 @@ export const SaveCollapsedNavGroups = Command.define("SaveCollapsedNavGroups", {
 		}),
 })
 
+/** `maple.oncall.no-schedules.<orgId>`: when the org last answered with no schedules, epoch ms. */
+export const NO_SCHEDULES_STORAGE_PREFIX = "maple.oncall.no-schedules."
+
+/** Remembers an org's "no schedules" answer, or forgets it (`null`) once it has one. */
+export const SaveNoSchedules = Command.define("SaveNoSchedules", {
+	args: { orgId: Schema.String, checkedAtMs: Schema.NullOr(Schema.Number) },
+	messages: [Message.CompletedSaveNoSchedules],
+	execute: ({ orgId, checkedAtMs }) => {
+		const key = `${NO_SCHEDULES_STORAGE_PREFIX}${orgId}`
+		return (
+			checkedAtMs === null
+				? Effect.ignore(
+						Effect.try({
+							try: () => localStorage.removeItem(key),
+							catch: (cause) =>
+								new ShellStorageError({
+									message: "Could not clear the on-call cache",
+									cause,
+								}),
+						}),
+					)
+				: Effect.sync(() => writeLocalStorage(key, String(checkedAtMs)))
+		).pipe(Effect.as(Message.CompletedSaveNoSchedules()))
+	},
+})
+
 /** `SidebarProvider.setOpen`: the `sidebar_state` cookie (7 days). Never read back. */
 export const SaveSidebarState = Command.define("SaveSidebarState", {
 	args: { isOpen: Schema.Boolean },

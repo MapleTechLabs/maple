@@ -226,8 +226,7 @@ export type SidebarGroupToggleOptions<Message> = Readonly<{
 	isExpanded: boolean
 	/** The `sidebarGroupContent` id it shows and hides. */
 	controlsId: string
-	/** None: the group cannot collapse right now (it holds the current page). */
-	onToggle: Message | null
+	onToggle: Message
 }>
 
 /** A group label that collapses its rows: a chevron button with `aria-expanded`. */
@@ -241,17 +240,14 @@ export const sidebarGroupToggle = <Message>(
 			h.Class(
 				cn(
 					...sidebarGroupLabelStyles,
-					"group/toggle h-6 w-full gap-1 text-left text-muted-foreground",
-					options.onToggle === null
-						? "cursor-default"
-						: "cursor-pointer hover:text-sidebar-foreground active:text-sidebar-foreground",
+					"group/toggle h-6 w-full cursor-pointer gap-1 text-left text-muted-foreground hover:text-sidebar-foreground active:text-sidebar-foreground",
 				),
 			),
 			h.DataAttribute("sidebar", "group-label"),
 			h.DataAttribute("slot", "sidebar-group-toggle"),
 			h.AriaExpanded(options.isExpanded),
 			h.AriaControls(options.controlsId),
-			...(options.onToggle === null ? [h.AriaDisabled(true)] : [h.OnClick(options.onToggle)]),
+			h.OnClick(options.onToggle),
 		],
 		[
 			h.span([h.Class("flex-1 truncate")], [options.label]),

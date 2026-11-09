@@ -12,6 +12,7 @@ import {
 	FocusShortcutSearch,
 	LogOut,
 	SaveCollapsedNavGroups,
+	SaveNoSchedules,
 	SaveInfraSurfaces,
 	SaveNamespace,
 	SaveSidebarState,
@@ -27,6 +28,7 @@ import { isSameMenu, popupIdOf, triggerIdOf } from "./menus"
 import { BUILT_COMMIT, CheckDeployedCommit, ReloadPage } from "./version"
 import { openPalette, openShortcuts, paletteStep, shortcutsDialogStep, toggleTheme } from "./update-palette"
 import { Menu, Message, OutMessage } from "./message"
+import { ONCALL_WAKE_MIN_MS, type OnCallSnapshot, scheduleAfterAnswer, scheduleAfterFailure } from "./oncall"
 import {
 	DashboardsData,
 	InfraPresenceData,
@@ -64,6 +66,8 @@ export const enter =
 			integrations: () => PENDING_INTEGRATIONS,
 			dashboards: () => DashboardsData.Idle(),
 			onCall: () => OnCallData.Idle(),
+			onCallNextReadAtMs: () => null,
+			onCallBackoffMs: () => 0,
 			namespaces: () => NamespacesData.Idle(),
 			sources: () => SourcesData.Idle(),
 		})
@@ -97,14 +101,93 @@ const requestSidebarData = (model: Model): UpdateReturn => {
 	}
 }
 
-/** The footer's on-call pill: read with the sidebar, again at each handoff with the last answer up. */
-const readOnCall = (model: Model): UpdateReturn =>
+/**
+ * The footer's on-call pill: read with the sidebar and again when due, the last answer staying up.
+ * A forced read skips the org's cached "no schedules" answer (a schedule was just written).
+ */
+const readOnCall = (model: Model, isForced = false): UpdateReturn =>
 	Option.match(Option.all([model.maybeOrgId, AsyncData.revalidateOrLoad(model.onCall)]), {
 		onNone: () => ({ model }),
 		onSome: ([orgId, onCall]) => ({
-			model: modifyFields(model, { onCall: () => onCall }),
-			commands: [LoadOnCall({ orgId })],
+			model: modifyFields(model, { onCall: () => onCall, onCallNextReadAtMs: () => null }),
+			commands: [
+				LoadOnCall({
+					orgId,
+					noSchedulesCheckedAtMs: isForced ? null : (model.noScheduleOrgs[orgId] ?? null),
+				}),
+			],
 		}),
+	})
+
+/** An answer: schedule the next read, and remember (or forget) that the org has no schedules. */
+const onCallAnswered = (
+	model: Model,
+	answer: Readonly<{ orgId: string; snapshot: OnCallSnapshot; readAtMs: number; isFromCache: boolean }>,
+): UpdateReturn => {
+	const { orgId, snapshot, readAtMs, isFromCache } = answer
+	if (!Option.contains(model.maybeOrgId, orgId)) return { model }
+	const next = scheduleAfterAnswer(snapshot, readAtMs, model.onCallBackoffMs)
+	const isEmpty = snapshot.shifts.length === 0
+	const wasEmpty = model.noScheduleOrgs[orgId] !== undefined
+	return {
+		model: modifyFields(model, {
+			onCall: () => OnCallData.Success({ data: snapshot }),
+			onCallNowMs: () => readAtMs,
+			onCallNextReadAtMs: () => next.nextReadAtMs,
+			onCallBackoffMs: () => next.backoffMs,
+			noScheduleOrgs: (all) =>
+				isFromCache ? all : isEmpty ? Record.set(all, orgId, readAtMs) : Record.remove(all, orgId),
+		}),
+		commands: isFromCache
+			? []
+			: isEmpty
+				? [SaveNoSchedules({ orgId, checkedAtMs: readAtMs })]
+				: wasEmpty
+					? [SaveNoSchedules({ orgId, checkedAtMs: null })]
+					: [],
+	}
+}
+
+/** A failed read keeps the last good answer up and retries with backoff. */
+const onCallFailed = (model: Model, orgId: string, failedAtMs: number): UpdateReturn => {
+	if (!Option.contains(model.maybeOrgId, orgId)) return { model }
+	const next = scheduleAfterFailure(failedAtMs, model.onCallBackoffMs)
+	return {
+		model: modifyFields(model, {
+			onCall: (current) =>
+				Option.match(AsyncData.getData(current), {
+					onNone: () => OnCallData.Failure({ error: "Failed" }),
+					onSome: (data) => OnCallData.Success({ data }),
+				}),
+			onCallNowMs: () => failedAtMs,
+			onCallNextReadAtMs: () => next.nextReadAtMs,
+			onCallBackoffMs: () => next.backoffMs,
+		}),
+	}
+}
+
+/** Back in view or focus: move the pill's clock, and read again if the last event is a minute old. */
+const onCallWoke = (model: Model, nowMs: number): UpdateReturn => {
+	const hasSchedules = Option.exists(AsyncData.getData(model.onCall), (data) => data.shifts.length > 0)
+	if (!hasSchedules) return { model }
+	const moved = modifyFields(model, { onCallNowMs: () => nowMs })
+	return nowMs - model.onCallNowMs >= ONCALL_WAKE_MIN_MS ? readOnCall(moved) : { model: moved }
+}
+
+/** A page wrote a schedule or override: the org may have its first schedule now. */
+const onCallChanged = (model: Model): UpdateReturn =>
+	Option.match(model.maybeOrgId, {
+		onNone: () => ({ model }),
+		onSome: (orgId) => {
+			const read = readOnCall(
+				modifyFields(model, { noScheduleOrgs: (all) => Record.remove(all, orgId) }),
+				true,
+			)
+			return {
+				model: read.model,
+				commands: [...(read.commands ?? []), SaveNoSchedules({ orgId, checkedAtMs: null })],
+			}
+		},
 	})
 
 /** Folds or unfolds a nav group and remembers it. */
@@ -486,15 +569,12 @@ const foldMessage = (model: Model, message: Message): UpdateReturn =>
 						}),
 					}
 				: { model },
-		SucceededLoadOnCall: ({ orgId, snapshot }) =>
-			forOrg(model, orgId, (current) =>
-				modifyFields(current, { onCall: () => OnCallData.Success({ data: snapshot }) }),
-			),
-		FailedLoadOnCall: ({ orgId }) =>
-			forOrg(model, orgId, (current) =>
-				modifyFields(current, { onCall: () => OnCallData.Failure({ error: "Failed" }) }),
-			),
-		ElapsedOnCallHandoff: () => readOnCall(model),
+		SucceededLoadOnCall: (answer) => onCallAnswered(model, answer),
+		FailedLoadOnCall: ({ orgId, failedAtMs }) => onCallFailed(model, orgId, failedAtMs),
+		ElapsedOnCallTimer: ({ nowMs }) => readOnCall(modifyFields(model, { onCallNowMs: () => nowMs })),
+		WokeOnCall: ({ nowMs }) => onCallWoke(model, nowMs),
+		ChangedOnCallSchedules: () => onCallChanged(model),
+		CompletedSaveNoSchedules: () => ({ model }),
 		ClickedNavGroup: ({ groupId }) => toggleNavGroup(model, groupId),
 		CompletedSaveNavGroups: () => ({ model }),
 		SucceededLoadNamespaces: ({ orgId, namespaces }) =>

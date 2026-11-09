@@ -198,7 +198,7 @@ describe("sidebar collapse", () => {
 			expect(sidebar).toBeAbsent(),
 			...open(),
 			Command.expectExact(LoadInfraSurfaces, LoadOnCall),
-			Command.resolve(LoadOnCall, Message.FailedLoadOnCall({ orgId: "org_parity" })),
+			Command.resolve(LoadOnCall, Message.FailedLoadOnCall({ orgId: "org_parity", failedAtMs: 0 })),
 			Command.resolve(LoadInfraSurfaces, surfacesAnswer("org_parity", [])),
 			Command.expectExact(SaveInfraSurfaces({ orgId: "org_parity", surfaces: [] })),
 			Command.resolve(SaveInfraSurfaces, Message.CompletedSaveInfraSurfaces()),

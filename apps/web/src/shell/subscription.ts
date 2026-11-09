@@ -1,11 +1,10 @@
 import { isDialogOpen, isEditableTarget, pressedKey } from "@maple/ui/lib/keyboard"
 import { Clock, Duration, Effect, Option, Stream, String as Str } from "effect"
-import { AsyncData } from "foldkit"
 import { Dom } from "foldkit"
 import { DASHBOARD_FAVORITES_EVENT, readDashboardFavorites } from "./favorites"
 import { Message } from "./message"
 import type { Model } from "./model"
-import { nextHandoffMs } from "./oncall"
+import { ONCALL_CHANGED_EVENT } from "../page/alerts/shared/oncall-schedules"
 
 /** `useIsMobile` (`max-md`): below 768px the sidebar is a sheet. */
 export const MOBILE_QUERY = "(max-width: 767px)"
@@ -86,16 +85,40 @@ export const favoritesChanges: Stream.Stream<Message> = Dom.streamFromEvent({
 	mapEvent: () => Message.ChangedDashboardFavorites({ favorites: readDashboardFavorites() }),
 })
 
-/** When the on-call pill next reads the schedules again: the soonest handoff, if any. */
-export const onCallHandoffAt = (model: Model): number | null =>
-	Option.getOrNull(Option.flatMapNullishOr(AsyncData.getData(model.onCall), nextHandoffMs))
+/** When the on-call pill next reads the schedules; `null` while one is in flight or none is due. */
+export const onCallReadAt = (model: Model): number | null => model.onCallNextReadAtMs
 
-/** Waits out the handoff (and a few seconds for the API to agree), then asks again. */
-export const onCallHandoff = (atMs: number): Stream.Stream<Message> =>
+/** Waits until the pill's next read is due. */
+export const onCallTimer = (atMs: number): Stream.Stream<Message> =>
 	Stream.fromEffect(
 		Effect.gen(function* () {
 			const now = yield* Clock.currentTimeMillis
-			yield* Effect.sleep(Duration.millis(Math.max(0, atMs - now) + 5_000))
-			return Message.ElapsedOnCallHandoff()
+			yield* Effect.sleep(Duration.millis(Math.max(0, atMs - now)))
+			return Message.ElapsedOnCallTimer({ nowMs: yield* Clock.currentTimeMillis })
 		}),
 	)
+
+const wakeTargets: Dom.TypedEventTarget<{ focus: FocusEvent; visibilitychange: Event }> = window
+
+/** The tab came back into view or focus (a handoff may have passed while it slept). */
+export const onCallWakes: Stream.Stream<Message> = Stream.merge(
+	Dom.streamFromEvent({ target: wakeTargets, type: "focus", mapEvent: () => true }),
+	Dom.streamFromEvent({
+		target: document,
+		type: "visibilitychange",
+		mapEvent: () => document.visibilityState === "visible",
+	}),
+).pipe(
+	Stream.filter((isAwake) => isAwake),
+	Stream.mapEffect(() => Clock.currentTimeMillis),
+	Stream.map((nowMs) => Message.WokeOnCall({ nowMs })),
+)
+
+const onCallChangeTarget: Dom.TypedEventTarget<{ [ONCALL_CHANGED_EVENT]: Event }> = window
+
+/** A page wrote a schedule or an override. */
+export const onCallChanges: Stream.Stream<Message> = Dom.streamFromEvent({
+	target: onCallChangeTarget,
+	type: ONCALL_CHANGED_EVENT,
+	mapEvent: () => Message.ChangedOnCallSchedules(),
+})

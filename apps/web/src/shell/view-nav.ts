@@ -277,16 +277,15 @@ export const pinnedGroup = (
 	]
 }
 
-export type NavGroupFold = "unlabelled" | "expanded" | "collapsed" | "pinned"
+export type NavGroupFold = "unlabelled" | "rail" | "expanded" | "collapsed"
 
 /**
- * How a group's rows show: a labelled group folds, except while it holds the current page
- * (`pinned`) and on the collapsed rail, where its label is hidden and every row shows.
+ * How a group's rows show. The collapsed rail hides labels, so every row shows there; elsewhere a
+ * labelled group folds to the rows of the current page, if it holds it.
  */
-export const navGroupFold = (model: Model, group: NavGroup, currentPath: string): NavGroupFold => {
+export const navGroupFold = (model: Model, group: NavGroup): NavGroupFold => {
 	if (group.label === undefined) return "unlabelled"
-	if (Arr.some(group.items, (item) => isNavItemActive(currentPath, item))) return "pinned"
-	if (!model.isSidebarOpen && !model.isMobile) return "expanded"
+	if (!model.isSidebarOpen && !model.isMobile) return "rail"
 	return model.collapsedNavGroups.includes(group.id) ? "collapsed" : "expanded"
 }
 
@@ -300,28 +299,34 @@ export const navGroupSections = (
 	clerk: ShellClerk | null = null,
 ): ReadonlyArray<Html> =>
 	Arr.map(shellNavGroups(clerk), (group) => {
-		const fold = navGroupFold(model, group, currentPath)
+		const fold = navGroupFold(model, group)
+		const rows =
+			fold === "collapsed"
+				? Arr.filter(group.items, (item) => isNavItemActive(currentPath, item))
+				: group.items
 		return sidebarGroup(h, undefined, [
 			...(group.label === undefined
 				? []
-				: [
-						sidebarGroupToggle(h, {
-							label: group.label,
-							isExpanded: fold !== "collapsed",
-							controlsId: navGroupContentId(group),
-							onToggle:
-								fold === "pinned" ? null : Message.ClickedNavGroup({ groupId: group.id }),
-						}),
-					]),
+				: fold === "rail"
+					? // Hidden on the rail: a plain label keeps the spacing and is no tab stop.
+						[sidebarGroupLabel(h, GROUP_LABEL, [group.label])]
+					: [
+							sidebarGroupToggle(h, {
+								label: group.label,
+								isExpanded: fold !== "collapsed",
+								controlsId: navGroupContentId(group),
+								onToggle: Message.ClickedNavGroup({ groupId: group.id }),
+							}),
+						]),
 			sidebarGroupContent(
 				h,
-				fold === "collapsed"
+				rows.length === 0
 					? []
 					: [
 							sidebarMenu(
 								h,
 								undefined,
-								Arr.map(group.items, (item) => navRow(h, model, item, currentPath, tip)),
+								Arr.map(rows, (item) => navRow(h, model, item, currentPath, tip)),
 							),
 						],
 				[h.Id(navGroupContentId(group))],

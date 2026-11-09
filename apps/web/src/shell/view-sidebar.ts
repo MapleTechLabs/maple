@@ -27,7 +27,7 @@ import { identityLabel } from "@maple/views/ui/identity-label"
 import { hstack } from "@maple/views/ui/stack"
 import { statusDot } from "@maple/views/ui/status-dot"
 import { oncallTabHref } from "../page/alerts/shared/oncall-schedules"
-import { type OnCallStatus, onCallSentence, onCallStatusOf, scheduleLabel } from "./oncall"
+import { isPillShown, type OnCallStatus, onCallSentence, onCallStatusOf, scheduleLabel } from "./oncall"
 
 export const GROUP_LABEL = "h-6 text-muted-foreground"
 
@@ -251,7 +251,7 @@ const footerNavRow = (
 export const shellOnCallStatus = (model: Model): OnCallStatus =>
 	Option.match(AsyncData.getData(model.onCall), {
 		onNone: (): OnCallStatus => ({ _tag: "NoSchedules" }),
-		onSome: onCallStatusOf,
+		onSome: (snapshot) => onCallStatusOf(snapshot, model.onCallNowMs),
 	})
 
 /**
@@ -263,8 +263,9 @@ const onCallPill = (
 	currentPath: string,
 	status: OnCallStatus,
 	tip: RailTip,
+	isRail: boolean,
 ): ReadonlyArray<Html> =>
-	status._tag === "NoSchedules"
+	!isPillShown(status)
 		? []
 		: [
 				sidebarMenu(h, undefined, [
@@ -277,7 +278,11 @@ const onCallPill = (
 									"h-auto gap-2.5 border border-sidebar-border py-1.5 group-data-[collapsible=icon]:border-transparent",
 								link: { href: oncallTabHref(), currentPath },
 								hasTooltip: true,
-								attributes: [...tip(onCallSentence(status)), h.Title(onCallSentence(status))],
+								// The rail hides the lines, so the link names itself there.
+								attributes: [
+									...tip(onCallSentence(status)),
+									...(isRail ? [h.AriaLabel(onCallSentence(status))] : []),
+								],
 							},
 							[
 								hstack(
@@ -420,7 +425,7 @@ export const shellSidebarFooter = (
 			],
 			[],
 		),
-		...onCallPill(h, currentPath, shellOnCallStatus(model), tip),
+		...onCallPill(h, currentPath, shellOnCallStatus(model), tip, !model.isSidebarOpen && !model.isMobile),
 		sidebarMenu(h, undefined, [
 			footerNavRow(h, currentPath, { href: "/sources", title: "Sources", icon: "ConnectionIcon" }, tip),
 			// `/integrations` renders inside the settings rail, so Settings owns it.

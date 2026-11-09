@@ -30,7 +30,7 @@ import {
 	shellSidebarFooter,
 	shellSidebarHeader,
 } from "./view-sidebar"
-import { onCallSentence } from "./oncall"
+import { isPillShown, onCallSentence } from "./oncall"
 import { type BreadcrumbEntry, hidesTopbarConnect, topbar } from "./view-topbar"
 import { splitPageRails } from "./page-rails"
 import { filterSheet, filterSheetTrigger, rightSheet, rightSheetTrigger } from "./view-page-sheets"
@@ -67,7 +67,7 @@ const railTipTitles = (model: Model, clerk: ShellClerk | null): ReadonlyArray<st
 	return [
 		"Search",
 		...Arr.flatMap(shellNavGroups(clerk), (group) => Arr.map(group.items, (item) => item.title)),
-		...(onCall._tag === "NoSchedules" ? [] : [onCallSentence(onCall)]),
+		...(isPillShown(onCall) ? [onCallSentence(onCall)] : []),
 		"Sources",
 		"Settings",
 	]

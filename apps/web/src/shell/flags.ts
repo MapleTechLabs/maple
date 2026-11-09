@@ -5,6 +5,7 @@ import { readDashboardFavorites } from "./favorites"
 import {
 	COLLAPSED_NAV_GROUPS_KEY,
 	INFRA_SURFACES_STORAGE_PREFIX,
+	NO_SCHEDULES_STORAGE_PREFIX,
 	NAMESPACE_STORAGE_PREFIX,
 	ShellStorageError,
 	THEME_STORAGE_KEY,
@@ -68,6 +69,12 @@ const decodeGroups = Schema.decodeUnknownOption(Schema.fromJsonString(Schema.Arr
 export const readCollapsedNavGroups = (): ReadonlyArray<string> =>
 	Option.getOrElse(Option.flatMap(readLocalStorage(COLLAPSED_NAV_GROUPS_KEY), decodeGroups), () => [])
 
+/** Every org's last "no schedules" answer, epoch ms; an entry that is not a number is skipped. */
+const readNoScheduleOrgs = readPrefixed(
+	NO_SCHEDULES_STORAGE_PREFIX,
+	Schema.decodeUnknownOption(Schema.NumberFromString),
+)
+
 /** Persisted shell UI state, read once before the first render. */
 export const readShellFlags: Effect.Effect<ShellFlags> = Effect.gen(function* () {
 	const pinnedNamespaces = yield* readPinnedNamespaces
@@ -79,6 +86,7 @@ export const readShellFlags: Effect.Effect<ShellFlags> = Effect.gen(function* ()
 		pinnedNamespaces,
 		dashboardFavorites: readDashboardFavorites(),
 		collapsedNavGroups: readCollapsedNavGroups(),
+		noScheduleOrgs: yield* readNoScheduleOrgs,
 		rememberedSurfaces: yield* readRememberedSurfaces,
 		isQuotaApproachingDismissed: yield* readQuotaApproachingDismissed,
 		platform: detectPlatform(),
