@@ -16,6 +16,7 @@ export const ANTICIPATED_ERROR_IDENTIFIER_LIST: ReadonlyArray<string> = [
 	"@maple/http/data-sources/DataSourceNotFoundError",
 	"@maple/http/data-sources/DataSourceRateLimitedError",
 	"@maple/http/data-sources/DataSourceUnreachableError",
+	"@maple/http/data-sources/DataSourcesDisabledError",
 	"@maple/http/dependency-scan/DependencyFindingNotFoundError",
 	"@maple/http/dependency-scan/DependencyScanForbiddenError",
 	"@maple/http/dependency-scan/DependencyScanRepositoryNotFoundError",

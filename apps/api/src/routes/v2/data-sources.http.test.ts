@@ -16,6 +16,11 @@ import { ApiAuthorizationV2Live } from "@maple/backend/services/auth/ApiAuthoriz
 import { AuthService } from "@maple/backend/services/auth/AuthService"
 import { AuditLogService, makeMemoryAuditLog } from "@maple/backend/services/audit/AuditLogService"
 import { DataSourceDrivers } from "@maple/backend/services/data-sources/DataSourceDrivers"
+import { OrganizationFeatureFlagsService } from "@maple/backend/services/org/OrganizationFeatureFlagsService"
+import {
+	DISABLED_ORGANIZATION_FEATURE_FLAGS,
+	ENABLED_ORGANIZATION_FEATURE_FLAGS,
+} from "@maple/domain/organization-feature-flags"
 import { DashboardPersistenceService } from "@maple/backend/services/dashboards/DashboardPersistenceService"
 import { SharedDashboardService } from "@maple/backend/services/dashboards/SharedDashboardService"
 import { ApiKeysService } from "@maple/backend/services/org/ApiKeysService"
@@ -112,7 +117,11 @@ const testConfig = ConfigProvider.layer(
 	}),
 )
 
-const makeHarness = (createdDbs: Array<TestDb>, source: FakeSource) => {
+const makeHarness = (
+	createdDbs: Array<TestDb>,
+	source: FakeSource,
+	flags = ENABLED_ORGANIZATION_FEATURE_FLAGS,
+) => {
 	const testDb = createTestDb(createdDbs)
 	const audit = makeMemoryAuditLog()
 	const auditLive = Layer.succeed(AuditLogService, audit)
@@ -126,7 +135,11 @@ const makeHarness = (createdDbs: Array<TestDb>, source: FakeSource) => {
 	// Only ClickHouse is served, so Clerk sources take the path a driver-less deploy has.
 	const routes = HttpApiBuilder.layer(MapleApiV2).pipe(
 		Layer.provide(
-			allV2GroupLayersWithDataSources(DataSourceDrivers.fromList([fakeClickHouse(source)]), auditLive),
+			allV2GroupLayersWithDataSources(
+				DataSourceDrivers.fromList([fakeClickHouse(source)]),
+				auditLive,
+				OrganizationFeatureFlagsService.fixed(flags),
+			),
 		),
 		Layer.provide(V2TransportErrorBoundaryLive),
 		Layer.provide(AlertsServiceStubLayer),
@@ -206,6 +219,20 @@ const shopProd = {
 }
 
 describe("v2 data sources over HTTP", () => {
+	it("refuses every call from an org outside the dataSources rollout", async () => {
+		const harness = makeHarness(createdDbs, makeSource(), DISABLED_ORGANIZATION_FEATURE_FLAGS)
+		const admin = await harness.adminKey()
+		for (const [method, path, body] of [
+			["GET", BASE, undefined],
+			["POST", BASE, shopProd],
+		] as const) {
+			const response = await harness.request(method, path, admin, body)
+			expect(response.status).toBe(403)
+			expect(response.body.error.code).toBe("data_sources_disabled")
+		}
+		await harness.dispose()
+	})
+
 	it("lets members read and only admins connect, and never returns the secret", async () => {
 		const harness = makeHarness(createdDbs, makeSource())
 		const [admin, member] = [await harness.adminKey(), await harness.memberKey()]

@@ -4,6 +4,20 @@ import { HttpTaggedError } from "./error-policy"
 // HTTP errors for `/v2/data_sources`. A source is the caller's own system, so what it said
 // (connection refused, a bad password, a rejected query) is safe to show and is the fix hint.
 
+/** The organization is outside the `dataSources` rollout. */
+export class DataSourcesDisabledError extends HttpTaggedError<DataSourcesDisabledError>()(
+	"@maple/http/data-sources/DataSourcesDisabledError",
+	{ message: Schema.String },
+	{
+		status: 403,
+		code: "data_sources_disabled",
+		title: "Data sources are not enabled",
+		retry: "never",
+		recovery: "contact_support",
+		exposure: "public_message",
+	},
+) {}
+
 /** No data source with that id in this organization. */
 export class DataSourceNotFoundHttpError extends HttpTaggedError<DataSourceNotFoundHttpError>()(
 	"@maple/http/data-sources/DataSourceNotFoundError",

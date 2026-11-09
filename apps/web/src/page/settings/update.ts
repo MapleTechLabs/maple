@@ -55,6 +55,10 @@ export const visibilityOf = (model: Model): Visibility => {
 		isClerk: isClerkAuthEnabled,
 		grants,
 		canAccessDataPlatform: canManageWarehouse && hasByoc,
+		hasDataSources: AsyncData.getOrElse(
+			AsyncData.map(model.session, (session) => session.hasDataSources),
+			() => false,
+		),
 		isDataPlatformLocked: isClerkAuthEnabled && canManageWarehouse && !hasByoc,
 	}
 }

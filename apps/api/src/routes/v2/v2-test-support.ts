@@ -198,6 +198,7 @@ const v2GroupLayersExceptOnboardingChecklist = (
 					Layer.provide(Layer.merge(dataSourceDrivers, DataSourceCallBudget.unlimited)),
 				),
 			),
+			Layer.provide(featureFlags),
 		),
 		HttpV2ChatIntegrationsLive.pipe(Layer.provide(chatWorkspace)),
 		HttpV2PlanetScaleIntegrationsLive,
@@ -407,12 +408,13 @@ export const allV2GroupLayersWithUptime = (uptimeMonitors: Layer.Layer<UptimeMon
 export const allV2GroupLayersWithDataSources = (
 	drivers: Layer.Layer<DataSourceDrivers>,
 	auditLog: Layer.Layer<AuditLogService>,
+	featureFlags: Layer.Layer<OrganizationFeatureFlagsService> = OrganizationFeatureFlagsService.allEnabled,
 ) =>
 	allV2GroupLayersWithChat(
 		ChatWorkspaceServiceStubLayer,
 		auditLog,
 		UptimeMonitorsServiceStubLayer,
-		OrganizationFeatureFlagsService.allEnabled,
+		featureFlags,
 		drivers,
 	)
 

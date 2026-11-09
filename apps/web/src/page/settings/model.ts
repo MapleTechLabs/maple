@@ -26,6 +26,8 @@ export const SessionInfo = Schema.Struct({
 	userId: Schema.NullOr(Schema.String),
 	/** `useOrganizationFeatureFlags().flags.aiAutoTriage`: Clerk org metadata; on self-hosted. */
 	hasAiAutoTriage: Schema.Boolean,
+	/** The org's `dataSources` rollout flag; on self-hosted. */
+	hasDataSources: Schema.Boolean,
 })
 export const SessionData = AsyncData.Schema(SessionInfo, LoadFailure)
 /** `billingCustomerAtom`: the nav's data-platform gate and the Billing tab read the one customer. */
