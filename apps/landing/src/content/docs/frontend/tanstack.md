@@ -39,10 +39,6 @@ MapleBrowser.init({
 	ingestKey: import.meta.env.VITE_MAPLE_INGEST_KEY, // public key, maple_pk_...
 	serviceName: "acme-web",
 	environment: import.meta.env.MODE,
-	tracing: {
-		// APIs on another origin that should receive `traceparent`
-		propagateTraceHeaderCorsUrls: [/^https:\/\/api\.acme\.com\//],
-	},
 })
 ```
 
@@ -71,6 +67,16 @@ For an EU organization, add `region: "eu"`. Every other option is in the [Browse
 ## Connect browser traces to your API
 
 Same-origin requests, including Start server functions, carry a `traceparent` header, so the backend's span joins the browser's trace. For an API on another origin, list it in `propagateTraceHeaderCorsUrls` and allow the header in its CORS preflight, or the browser blocks the request:
+
+```ts
+// src/maple.ts
+MapleBrowser.init({
+	// ...
+	tracing: {
+		propagateTraceHeaderCorsUrls: [/^https:\/\/api\.acme\.com\//],
+	},
+})
+```
 
 ```http
 Access-Control-Allow-Headers: content-type, authorization, traceparent
@@ -109,10 +115,6 @@ What you get:
 
 - Spans are named after the leaf route's `fullPath`: `pageload /projects/$projectId`, then `navigate /projects/$projectId`. The concrete path is in `url.path`.
 - Search-only changes (`?tab=members`) and hash links start no span.
-- A click before the previous navigation resolves ends that span unnamed (`navigate`) with `maple.navigation.interrupted: true`.
-- A `redirect()` during a client navigation does the same: an interrupted span with the original `url.path`, then one for the target route. On a first page load, Start's server sends the redirect, and the page load is named after the target.
-- A loader that throws `notFound()` keeps its route's name. A URL no route matches is named after the root route (`navigate /`); use `url.path` to find those.
-- StrictMode and HMR attach twice; the second attach reuses the first.
 
 ## Trace loaders
 
@@ -159,12 +161,6 @@ loader: ({ params }) =>
 
 ## Report route errors
 
-With `defaultOnCatch` from `src/router.tsx`, each caught error is reported once:
-
-- A loader that throws records the error on its `loader …` span; `captureException` skips it after that.
-- A component that throws during render becomes one `exception` span.
-- A loader that fails during a Start server render is reported from the browser as one `exception` span when the page hydrates.
-
 A route's own `onCatch` replaces `defaultOnCatch`; call `MapleBrowser.captureException(error)` there too. Errors thrown in event handlers are recorded by the SDK's global handler as `browser.uncaught_error`.
 
 ## Join the server render (TanStack Start)
@@ -208,6 +204,12 @@ In **Traces**, filtered to your `serviceName`:
 
 - A reload gives one `pageload <fullPath>` span; with Start, under the server's request span.
 - A click gives one `navigate <fullPath>` span, with the `loader …` span, its `fetch` spans and your API's spans under it.
+
+## Navigation edge cases
+
+- A click before the previous navigation resolves ends that span unnamed (`navigate`) with `maple.navigation.interrupted: true`.
+- A `redirect()` during a client navigation does the same: an interrupted span with the original `url.path`, then one for the target route. On a first page load, Start's server sends the redirect, and the page load is named after the target.
+- A loader that throws `notFound()` keeps its route's name. A URL no route matches is named after the root route (`navigate /`); use `url.path` to find those.
 
 ## Next steps
 
