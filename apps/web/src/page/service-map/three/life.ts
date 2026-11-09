@@ -108,6 +108,81 @@ export function fireflies(
 	return [mesh, halo]
 }
 
+/** Butterflies flutter slow loops over the glades by day: pale wings, off the health colours. */
+export function butterflies(
+	scope: Scope,
+	{
+		anchors,
+		floor,
+		palette,
+		running,
+	}: { anchors: ReadonlyArray<Vec3>; floor: number; palette: InkPalette; running: Running },
+): Child {
+	const count = anchors.length
+	if (count === 0) return null
+	const elapsed = { value: 0 }
+	const pose = new THREE.Object3D()
+	// One wing in the ground plane, hinged on the body along z; its twin is the mirror image.
+	const wing = new THREE.BufferGeometry()
+	wing.setAttribute(
+		"position",
+		new THREE.Float32BufferAttribute(
+			[0, 0, -0.05, 0.12, 0, -0.08, 0.13, 0, 0.03, 0, 0, -0.05, 0.13, 0, 0.03, 0, 0, 0.06],
+			3,
+		),
+	)
+	const wings = new THREE.InstancedMesh(
+		wing,
+		new THREE.MeshBasicMaterial({ side: THREE.DoubleSide }),
+		count * 2,
+	)
+	wings.frustumCulled = false
+	const bodies = new THREE.InstancedMesh(
+		new THREE.BoxGeometry(0.016, 0.016, 0.11),
+		new THREE.MeshBasicMaterial({ color: palette.ink }),
+		count,
+	)
+	bodies.frustumCulled = false
+	// Blue shows on the paper and white on the meadow; the ink body marks both.
+	const tints = Arr.map([palette.water, palette.birch], (color) => new THREE.Color(color))
+	Arr.forEach(anchors, (_, i) => {
+		const tint = tints[i % tints.length]
+		if (tint === undefined) return
+		wings.setColorAt(i * 2, tint)
+		wings.setColorAt(i * 2 + 1, tint)
+	})
+	scope.frames.push((delta) => {
+		if (running()) elapsed.value += Math.min(delta, 0.05)
+		const t = elapsed.value
+		Arr.forEach(anchors, ([x, , z], i) => {
+			const phase = hash(x, z) * 6.28
+			const [a, b] = [t * 0.5 + phase, t * 0.41 + phase]
+			pose.position.set(
+				x + Math.sin(a) * 0.9,
+				floor + 0.55 + Math.sin(t * 0.3 + phase * 2) * 0.18 + Math.sin(t * 5 + phase) * 0.03,
+				z + Math.cos(b) * 0.9,
+			)
+			// Nose along the way it is flying.
+			const heading = Math.atan2(Math.cos(a) * 0.5, -Math.sin(b) * 0.41)
+			const flap = 0.15 + Math.abs(Math.sin(t * 9 + phase)) * 1.05
+			pose.scale.set(1, 1, 1)
+			pose.rotation.set(0, heading, 0)
+			pose.updateMatrix()
+			bodies.setMatrixAt(i, pose.matrix)
+			pose.rotation.set(0, heading, flap)
+			pose.updateMatrix()
+			wings.setMatrixAt(i * 2, pose.matrix)
+			pose.scale.set(-1, 1, 1)
+			pose.rotation.set(0, heading, -flap)
+			pose.updateMatrix()
+			wings.setMatrixAt(i * 2 + 1, pose.matrix)
+		})
+		wings.instanceMatrix.needsUpdate = true
+		bodies.instanceMatrix.needsUpdate = true
+	})
+	return [wings, bodies]
+}
+
 type LeafCut = "birch" | "maple"
 
 /** Half a leaf's outline, stem to tip, x >= 0; mirrored for the other half. Unit height. */

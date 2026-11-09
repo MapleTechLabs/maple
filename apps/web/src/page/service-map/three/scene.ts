@@ -7,6 +7,7 @@ import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js"
 import { type CameraCommand, cameraRig, type Size } from "./camera"
 import { type DuckClick, duckClicks } from "./critters"
 import { type Child, disposeScope, group, makeScope, type Scope, type Vec3 } from "./kit"
+import { MACHINE_BODY } from "./machines"
 import { quacker } from "./quack"
 import { selectTool, type Tool, type ToolContext, type ToolPointer } from "./tools"
 import { moveTool, type Placement } from "./move-tool"
@@ -53,6 +54,16 @@ const AMBIENT_FRAME_MS = 24
 
 const isGroup = (child: Child): child is THREE.Group => child instanceof THREE.Group
 const asGroup = (child: Child): THREE.Group => (isGroup(child) ? child : group({}, [child]))
+
+/** How long a newly selected machine takes to spring and settle. */
+const POP_MS = 450
+
+interface Pop {
+	readonly id: string
+	readonly start: number
+}
+
+const noPop = (): Pop | null => null
 
 /** R3F's default orthographic camera, framed to the canvas size as `updateCamera` does. */
 const fitFrustum = (camera: THREE.OrthographicCamera, { width, height }: Size) => {
@@ -257,6 +268,8 @@ export function startScene(
 		raf: 0,
 		last: performance.now(),
 		tool: selectTool(),
+		/** The machine springing from a fresh selection, and when it started (ms). */
+		pop: noPop(),
 		built: build(sceneryHolder, world, initial, null, flowing),
 	}
 	const invalidate = () => {
@@ -292,6 +305,17 @@ export function startScene(
 		rig()
 		Arr.forEach(state.built.scenery.scope.frames, (frame) => frame(delta))
 		world.frame(delta)
+		const pop = state.pop
+		if (pop !== null) {
+			// A newly selected machine squashes and springs back once, standing on its pad.
+			const t = (now - pop.start) / POP_MS
+			const lift = t >= 1 ? 0 : 0.1 * Math.sin(t * 2.5 * Math.PI) * (1 - t) ** 2
+			world
+				.machine(pop.id)
+				?.getObjectByName(MACHINE_BODY)
+				?.scale.set(1 - lift / 2, 1 + lift, 1 - lift / 2)
+			if (t >= 1) state.pop = null
+		}
 		renderer.render(scene, camera)
 	}
 	state.raf = requestAnimationFrame(loop)
@@ -381,6 +405,11 @@ export function startScene(
 				scene.add(floor.grid)
 			}
 			floor.grid.visible = input.editing && input.view === "atlas"
+			// Motion allowed is `flowing`, so a paused or reduced-motion map selects without the pop.
+			if (input.selectedId !== null && input.selectedId !== previous.selectedId && input.flowing) {
+				state.pop = { id: input.selectedId, start: performance.now() }
+				state.awakeUntil = Math.max(state.awakeUntil, performance.now() + POP_MS)
+			}
 			// A camera command changes no scene prop, but the zoom still needs frames to land.
 			if (
 				changed ||

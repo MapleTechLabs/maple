@@ -34,6 +34,18 @@ export type MapleFinish = MachineFinish & {
 	soil: string
 	water: string
 	moss: string
+	/** Dark paper: lit lamps throw a pool of light on the ground. */
+	night: boolean
+}
+
+/** Wind time for things that sway: wall-clock seconds, so a rebuild keeps the swing where it
+ * was, held still while the map is paused. */
+export function breeze(scope: Scope, running: Running, apply: (seconds: number) => void) {
+	const held = { seconds: performance.now() / 1000 }
+	scope.frames.push(() => {
+		if (running()) held.seconds = performance.now() / 1000
+		apply(held.seconds)
+	})
 }
 
 /** FNV-1a over a node id: the same service always draws the same homestead. */
