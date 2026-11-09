@@ -55,25 +55,10 @@ export const init = (target: Target = {}): Return => ({
 	commands: [FetchSources(), ...catalogCommands(target)],
 })
 
-/** Back on the tab: the list stays up while it reads again; a deep link opens its screen. */
-export const revisit = (model: Model, target: Target = {}): Return => {
+/** Back on the tab: the list stays up while it reads again. A link is applied on entry only, so a return keeps what the viewer left. */
+export const revisit = (model: Model): Return => {
 	const sources = revisitData(model.sources, FetchSources)
-	const read = { ...model, sources: sources.data }
-	if (target.source === undefined && target.connect === undefined)
-		return { model: read, commands: sources.commands }
-	const screen = screenOf(target)
-	return {
-		model: {
-			...read,
-			...resetForm,
-			screen,
-			draft: emptyDraft,
-			catalog: screen._tag === "Detail" ? AsyncData.Loading() : read.catalog,
-			entryDraft: null,
-			entryError: null,
-		},
-		commands: [...(sources.commands ?? []), ...catalogCommands(target)],
-	}
+	return { model: { ...model, sources: sources.data }, commands: sources.commands }
 }
 
 /** The open form's source, when it edits one. */
