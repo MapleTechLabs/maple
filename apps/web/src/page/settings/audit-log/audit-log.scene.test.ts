@@ -315,6 +315,15 @@ describe("audit log tab", () => {
 			expect(Arr.map(loaded.commands ?? [], ({ name }) => name)).toEqual(["ScrollToAuditEntry"])
 		})
 
+		test("rows sit under a heading for each day, counted in the viewer's zone", () => {
+			scene(
+				sceneOf(search),
+				given(loadedWith(search).model),
+				expectView(role("heading", { name: "Today" })).toExist(),
+				expectView(role("heading", { name: "Yesterday" })).toExist(),
+			)
+		})
+
 		test("the Origin section names the country an entry came from", () => {
 			const target = AUDIT_ENTRIES[4]
 			if (target === undefined) throw new Error("fixture")

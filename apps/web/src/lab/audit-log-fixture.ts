@@ -60,7 +60,8 @@ const entry = (wire: Wire): V2AuditLogEntry => {
 		actor_avatar_url: null,
 		affected_user: wire.affected ?? null,
 		source: wire.source,
-		resource_type: wire.resource?.type ?? null,
+		// The service derives the type from the action, so every stored entry has one.
+		resource_type: wire.resource?.type ?? Arr.headNonEmpty(Str.split(".")(wire.action)),
 		resource_id:
 			wire.resource?.prefix === undefined
 				? null
