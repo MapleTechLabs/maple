@@ -320,6 +320,45 @@ describe("the page as the editor", () => {
 		scene({ update: pageUpdate, view }, given(saved.model), expectView(text("Saved")).toExist())
 	})
 
+	test("a description typed in the panel saves on blur and shows in the preview as typed", () => {
+		const editing = pageUpdate(
+			selected(2),
+			Message.ChangedComponentField({ field: "description", value: " Card payments and payouts " }),
+		)
+		expect(canvasDocument(editing.model, statusPage())).toContain("Card payments and payouts")
+		expect(pageUpdate(editing.model, Message.CommittedComponent()).commands).toMatchObject([
+			{
+				name: "SaveStatusPageComponent",
+				args: { componentId: componentId(2), payload: { description: "Card payments and payouts" } },
+			},
+		])
+		scene(
+			{ update: pageUpdate, view },
+			given(editing.model),
+			expectView(role("textbox", { name: "Description" })).toHaveValue(" Card payments and payouts "),
+		)
+	})
+
+	test("the page's other groups are offered under Group, and picking one saves it at once", () => {
+		const rows = [component(1, { group: "Core" }), component(2, { group: "Core" }), component(3)]
+		const open = selected(3, { components: rows })
+		scene(
+			{ update: pageUpdate, view },
+			given(open),
+			expectView(role("button", { name: "Core" })).toExist(),
+		)
+		const picked = pageUpdate(open, Message.PickedComponentField({ field: "group", value: "Core" }))
+		expect(picked.commands).toMatchObject([
+			{ name: "SaveStatusPageComponent", args: { payload: { group: "Core" } } },
+		])
+		scene(
+			{ update: pageUpdate, view },
+			given(picked.model),
+			expectView(role("textbox", { name: "Group" })).toHaveValue("Core"),
+			expectView(role("group", { name: "Groups on this page" })).not.toExist(),
+		)
+	})
+
 	test("picking a monitor saves at once and a failed save says so in the panel", () => {
 		const monitor = downMonitor()
 		const saving = pageUpdate(
@@ -652,6 +691,143 @@ describe("incidents in the panel", () => {
 			expectView(text("Set when the maintenance starts and ends.")).toExist(),
 			expectView(role("button", { name: "Schedule" })).toBeDisabled(),
 		)
+	})
+
+	const shown = (row: ReturnType<typeof incident>) =>
+		pageUpdate(loaded({ incidents: [row] }), Message.ClickedIncident({ incidentId: row.id })).model
+
+	test("Edit details opens the saved title, impact and components in place of the actions", () => {
+		scene(
+			{ update: pageUpdate, view },
+			given(shown(incident(1, { title: "Elevated errors" }))),
+			click(role("button", { name: "Edit details" })),
+			Command.resolve(FocusEditorElement, Message.CompletedFocus()),
+			expectView(role("textbox", { name: "Title" })).toHaveValue("Elevated errors"),
+			expectView(role("checkbox", { name: "Component 1" })).toBeChecked(),
+			expectView(role("checkbox", { name: "Component 2" })).not.toBeChecked(),
+			expectView(role("button", { name: "Post update" })).not.toExist(),
+			click(role("button", { name: "Cancel" })),
+			expectView(role("button", { name: "Post update" })).toExist(),
+		)
+	})
+
+	test("saving an edit sends the trimmed title, the impact and the components once, and posts no update", () => {
+		const edited = Arr.reduce(
+			[
+				Message.ClickedEditIncident({ incidentId: incidentId(1) }),
+				Message.ChangedIncidentEditField({ field: "title", value: " Checkout errors " }),
+				Message.ChangedIncidentEditField({ field: "impact", value: "critical" }),
+				Message.ToggledIncidentEditComponent({ componentId: componentId(2) }),
+			],
+			shown(incident(1)),
+			(model, message) => pageUpdate(model, message).model,
+		)
+		const saving = pageUpdate(edited, Message.SubmittedIncidentEdit())
+		expect(saving.commands).toMatchObject([
+			{
+				name: "SaveStatusPageIncident",
+				args: {
+					incidentId: incidentId(1),
+					payload: {
+						title: "Checkout errors",
+						impact: "critical",
+						component_ids: [componentId(1), componentId(2)],
+					},
+				},
+			},
+		])
+		expect(pageUpdate(saving.model, Message.SubmittedIncidentEdit()).commands ?? []).toEqual([])
+		const saved = pageUpdate(
+			saving.model,
+			Message.CompletedSaveIncident({
+				result: Result.succeed(incident(1, { title: "Checkout errors", impact: "critical" })),
+			}),
+		)
+		expect(saved.model.incidentEdit).toBeNull()
+		expect(names(saved.commands)).not.toContain("PostStatusPageIncidentUpdate")
+		expect(saved.outMessage).toMatchObject({ _tag: "RequestedToast", type: "success" })
+	})
+
+	test("an edit with no title is not sent, and a refused save keeps what was typed with the reason", () => {
+		const opened = pageUpdate(
+			shown(incident(1)),
+			Message.ClickedEditIncident({ incidentId: incidentId(1) }),
+		).model
+		const blank = pageUpdate(
+			opened,
+			Message.ChangedIncidentEditField({ field: "title", value: "  " }),
+		).model
+		expect(pageUpdate(blank, Message.SubmittedIncidentEdit()).commands ?? []).toEqual([])
+		const typed = pageUpdate(
+			opened,
+			Message.ChangedIncidentEditField({ field: "title", value: "Checkout errors" }),
+		).model
+		const refused = pageUpdate(
+			pageUpdate(typed, Message.SubmittedIncidentEdit()).model,
+			Message.CompletedSaveIncident({ result: Result.fail(toLoadFailure(new Error("save refused"))) }),
+		).model
+		expect(refused.incidentEdit?.title).toBe("Checkout errors")
+		scene(
+			{ update: pageUpdate, view },
+			given(refused),
+			expectView(text("Couldn't save the changes")).toExist(),
+			expectView(role("button", { name: "Save changes" })).toBeEnabled(),
+		)
+	})
+
+	test("maintenance has no impact to edit, so its save sends none", () => {
+		const opened = pageUpdate(
+			shown(incident(1, { kind: "maintenance", status: "scheduled", impact: "none" })),
+			Message.ClickedEditIncident({ incidentId: incidentId(1) }),
+		).model
+		scene(
+			{ update: pageUpdate, view },
+			given(opened),
+			expectView(role("textbox", { name: "Title" })).toExist(),
+			expectView(role("combobox", { name: "Impact" })).not.toExist(),
+		)
+		const sent = pageUpdate(opened, Message.SubmittedIncidentEdit()).commands ?? []
+		expect(sent).toMatchObject([{ name: "SaveStatusPageIncident" }])
+		expect(sent[0]?.args?.payload).not.toHaveProperty("impact")
+	})
+
+	test("deleting an incident asks first, deletes it once and closes its panel", () => {
+		const asking = pageUpdate(
+			shown(incident(1, { status: "resolved" })),
+			Message.ClickedDeleteIncident({ incidentId: incidentId(1) }),
+		)
+		expect(asking.model.confirmDeleteIncidentId).toBe(incidentId(1))
+		expect(asking.model.deleteIncidentDialog.isOpen).toBe(true)
+		expect(names(asking.commands)).not.toContain("DeleteStatusPageIncident")
+		const deleting = pageUpdate(asking.model, Message.ClickedConfirmDeleteIncident())
+		expect(deleting.commands).toMatchObject([
+			{ name: "DeleteStatusPageIncident", args: { incidentId: incidentId(1) } },
+		])
+		expect(pageUpdate(deleting.model, Message.ClickedConfirmDeleteIncident()).commands ?? []).toEqual([])
+		const deleted = pageUpdate(
+			deleting.model,
+			Message.CompletedDeleteIncident({ result: Result.succeed(undefined) }),
+		)
+		expect(deleted.model.panel).toBeNull()
+		expect(deleted.model.deleteIncidentDialog.isOpen).toBe(false)
+		expect(names(deleted.commands)).toContain("FetchStatusPageIncidents")
+	})
+
+	test("a delete that fails leaves the incident open in the panel and says why", () => {
+		const deleting = pageUpdate(
+			pageUpdate(shown(incident(1)), Message.ClickedDeleteIncident({ incidentId: incidentId(1) }))
+				.model,
+			Message.ClickedConfirmDeleteIncident(),
+		).model
+		const failed = pageUpdate(
+			deleting,
+			Message.CompletedDeleteIncident({
+				result: Result.fail(toLoadFailure(new Error("delete refused"))),
+			}),
+		)
+		expect(failed.model.panel).toEqual({ _tag: "Incident", incidentId: incidentId(1) })
+		expect(failed.model.isDeletingIncident).toBe(false)
+		expect(failed.outMessage).toMatchObject({ _tag: "RequestedToast", type: "error" })
 	})
 })
 
@@ -1020,6 +1196,68 @@ describe("settings and appearance views", () => {
 			expectView(text("Unsaved changes")).not.toExist(),
 			type(role("textbox", { name: "Accent" }), "#ff0066"),
 			tap(({ html }) => expect(srcdoc(html)).toContain("--link:#ff0066")),
+		)
+	})
+
+	test("the preview can show a state the page is not in, and says it is an example", () => {
+		const iframeOf = find("iframe")
+		const srcdoc = (html: Parameters<typeof iframeOf>[0]): string =>
+			Option.getOrElse(Option.flatMap(iframeOf(html), attr("srcdoc")), () => "")
+		const note = text("Showing an example state. Visitors still see the live page.")
+		const pick = (name: string) =>
+			inside(role("group", { name: "Preview state" }), click(role("button", { name })))
+		scene(
+			{ update: pageUpdate, view },
+			given(loaded({ tab: "appearance" })),
+			expectView(note).not.toExist(),
+			tap(({ html }) => expect(srcdoc(html)).not.toContain("Example incident")),
+			pick("Outage"),
+			tap(({ html }) => expect(srcdoc(html)).toContain("Example incident")),
+			expectView(note).toExist(),
+			// Looking only: the example is not a page edit and posts nothing.
+			expectView(text("Unsaved changes")).not.toExist(),
+			pick("Maintenance"),
+			tap(({ html }) => {
+				expect(srcdoc(html)).toContain("Example maintenance")
+				expect(srcdoc(html)).not.toContain("Example incident")
+			}),
+			pick("All clear"),
+			tap(({ html }) => expect(srcdoc(html)).not.toContain("Example maintenance")),
+			expectView(note).toExist(),
+			pick("Live"),
+			expectView(note).not.toExist(),
+		)
+	})
+
+	test("the preview narrows to a phone and back", () => {
+		const pick = (name: string) =>
+			inside(role("group", { name: "Preview width" }), click(role("button", { name })))
+		scene(
+			{ update: pageUpdate, view },
+			given(loaded({ tab: "appearance" })),
+			expectView(selector("iframe")).toHaveAttr("data-width", "desktop"),
+			pick("Mobile"),
+			expectView(selector("iframe")).toHaveAttr("data-width", "mobile"),
+			expectView(text("Unsaved changes")).not.toExist(),
+			pick("Desktop"),
+			expectView(selector("iframe")).toHaveAttr("data-width", "desktop"),
+		)
+	})
+
+	test("each color has a picker that opens on the color in effect", () => {
+		const accent = selector('[aria-label="Accent color"]')
+		scene(
+			{ update: pageUpdate, view },
+			given(loaded({ tab: "appearance" })),
+			// Empty field: the preset's own colour, the one the placeholder names.
+			expectView(accent).toHaveValue("#000000"),
+			type(role("textbox", { name: "Accent" }), "#FF0066"),
+			expectView(accent).toHaveValue("#ff0066"),
+			// A colour input cannot hold something that is not a hex colour.
+			type(role("textbox", { name: "Accent" }), "teal"),
+			expectView(accent).not.toExist(),
+			// Auto takes the overrides from the preset, so they have nothing to pick.
+			expectView(selector('[aria-label="Background color"]')).not.toExist(),
 		)
 	})
 

@@ -212,6 +212,71 @@ describe("renderPage", () => {
 	})
 })
 
+/** The rendered body of the one update on a page whose incident says `body`. */
+const bodyOf = (body: string): string => {
+	const snapshot = makeSnapshot({
+		incidents: [makeIncident("inc", { updates: [update("u-1", FIXTURE_NOW - 60_000, body)] })],
+	})
+	return between(renderPage(snapshot, live, FIXTURE_NOW), `<div class="body">`, "</div>")
+}
+
+describe("incident update text", () => {
+	it("links bare URLs without the sentence punctuation after them", () => {
+		expect(bodyOf("Follow https://example.com/status?a=1&b=2.")).toBe(
+			`<p>Follow <a href="https://example.com/status?a=1&amp;b=2" rel="noopener nofollow ugc">https://example.com/status?a=1&amp;b=2</a>.</p>`,
+		)
+	})
+
+	it("renders bold, italic, code and named links", () => {
+		expect(bodyOf("**Fixed** in *one* region, see [the report](https://example.com/r) and `api-2`")).toBe(
+			`<p><strong>Fixed</strong> in <em>one</em> region, see <a href="https://example.com/r" rel="noopener nofollow ugc">the report</a> and <code>api-2</code></p>`,
+		)
+	})
+
+	it("turns dash and numbered lines into lists and blank lines into paragraphs", () => {
+		expect(bodyOf("Affected:\n- API\n- Dashboard\n\nNext:\n1. Restart\n2) Verify\nline two")).toBe(
+			"<p>Affected:</p><ul><li>API</li><li>Dashboard</li></ul><p>Next:</p><ol><li>Restart</li><li>Verify</li></ol><p>line two</p>",
+		)
+		expect(bodyOf("one\ntwo")).toBe("<p>one<br>two</p>")
+	})
+
+	it("leaves arithmetic and stray asterisks as text", () => {
+		expect(bodyOf("2 * 3 * 4 and a*b*c")).toBe("<p>2 * 3 * 4 and a*b*c</p>")
+	})
+
+	it("keeps a link with an unsafe target, and any markup, as escaped text", () => {
+		const body = bodyOf(`[click](javascript:alert(1)) <img src=x onerror=alert(1)> **<b>bold</b>**`)
+		expect(body).not.toContain("<a ")
+		expect(body).not.toContain("<img")
+		expect(body).toContain("&lt;img src=x onerror=alert(1)&gt;")
+		expect(body).toContain("<strong>&lt;b&gt;bold&lt;/b&gt;</strong>")
+	})
+
+	it("cannot break out of the href with a quote in the URL", () => {
+		const body = bodyOf(`[x](https://example.com/"onmouseover="alert(1)) https://example.com/'x`)
+		expect(body).not.toMatch(/href="[^"]*"[^>]*on\w+=/u)
+		expect(allMatches(body, /<a /gu)).toHaveLength(2)
+	})
+})
+
+describe("bar legend", () => {
+	it("explains the bar colours under the bars, and only when some component draws them", () => {
+		const withBars = renderPage(makeSnapshot({ components: [makeComponent(0)] }), live, FIXTURE_NOW)
+		expect(
+			Arr.map(
+				allMatches(between(withBars, `<ul class="legend"`, "</ul>"), /<\/span>([^<]+)</gu),
+				(m) => m[1],
+			),
+		).toEqual(["No downtime", "Some checks failed", "Downtime recorded", "No data"])
+		const without = renderPage(
+			makeSnapshot({ components: [makeComponent(0, { showUptime: false })] }),
+			live,
+			FIXTURE_NOW,
+		)
+		expect(without).not.toContain(`class="legend"`)
+	})
+})
+
 const DAY_MS = 86_400_000
 
 const PageData = Schema.Struct({

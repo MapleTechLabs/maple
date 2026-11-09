@@ -17,6 +17,7 @@ import { pageHref, previewIdAttr, type RenderOptions, renderDocument, renderHead
 import { escapeHtml, safeUrl } from "./escape"
 import {
 	COMPONENT_STATUS_LABEL,
+	DAY_STATE_LABEL,
 	dayTitle,
 	formatAge,
 	formatDateTime,
@@ -40,6 +41,7 @@ import {
 	windowDays,
 } from "./history"
 import { chevron, MAPLE_MARK, statusIcon } from "./icons"
+import { renderUpdateBody } from "./markdown"
 import { PAGE_SCRIPT } from "./script"
 import { activeIncidents, groupComponents, pastIncidents, upcomingMaintenance } from "./select"
 import { pageStyles } from "./styles"
@@ -54,7 +56,7 @@ const renderUpdates = (incident: StatusPageSnapshotIncident): string =>
 				Arr.map(
 					incident.updates,
 					(update) =>
-						`<li><strong>${INCIDENT_STATUS_LABEL[update.status]}</strong><p class="body">${escapeHtml(update.body)}</p><span class="meta">${timeTag(update.at)}</span></li>`,
+						`<li><strong>${INCIDENT_STATUS_LABEL[update.status]}</strong><div class="body">${renderUpdateBody(update.body)}</div><span class="meta">${timeTag(update.at)}</span></li>`,
 				),
 				"",
 			)}</ol>`
@@ -133,6 +135,15 @@ const renderBars = (days: ReadonlyArray<StatusPageDayBar>): string => {
 	return `<ol class="bars" aria-label="${label}">${bars}</ol>`
 }
 
+/** What each bar colour means, under the bars. */
+const BAR_LEGEND = `<ul class="legend" aria-label="Bar colours">${Arr.join(
+	Arr.map(
+		["ok", "degraded", "down", "none"] as const,
+		(state) => `<li><span class="key d-${state}"></span>${DAY_STATE_LABEL[state]}</li>`,
+	),
+	"",
+)}</ul>`
+
 const renderComponent = (component: StatusPageSnapshotComponent, options: RenderOptions): string => {
 	const description =
 		component.description === null ? "" : `<p class="desc">${escapeHtml(component.description)}</p>`
@@ -163,7 +174,7 @@ const renderSystemStatus = (snapshot: StatusPageSnapshot, options: RenderOptions
 		}),
 		"",
 	)
-	return `<section class="panel" aria-labelledby="h-components">${head}${groups}</section>`
+	return `<section class="panel" aria-labelledby="h-components">${head}${groups}${shown === undefined ? "" : BAR_LEGEND}</section>`
 }
 
 const WEEKDAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]

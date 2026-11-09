@@ -57,20 +57,30 @@ import {
 	submitAdd,
 } from "./update-components"
 import {
+	askDeleteIncident,
+	cancelIncidentEdit,
 	changeIncident,
 	cancelUpdate,
+	changeIncidentEdit,
 	changeUpdate,
+	confirmDeleteIncident,
 	createdIncident,
 	changeIncidentKind,
+	deletedIncident,
+	deleteIncidentDialog,
 	openComposer,
+	openIncidentEdit,
 	openUpdate,
 	postedUpdate,
 	publishedIncident,
 	publishIncident,
+	savedIncident,
 	selectIncident,
 	submitIncident,
+	submitIncidentEdit,
 	submitUpdate,
 	toggleIncidentComponent,
+	toggleIncidentEditComponent,
 } from "./update-incidents"
 import {
 	askBreakGlass,
@@ -124,6 +134,8 @@ export const init = (route: EditorRoute, context: PageContext): Return => {
 		pageMenu: Menu.init(PAGE_MENU_ID),
 		panel: null,
 		previewScheme: "light",
+		previewWidth: "desktop",
+		previewState: "live",
 		previewGeneration: 0,
 		previewShown: 0,
 		previewHistory: [],
@@ -143,6 +155,12 @@ export const init = (route: EditorRoute, context: PageContext): Return => {
 		updateForm: { _tag: "Closed" },
 		nextUpdatePost: 0,
 		publishingIncidentIds: [],
+		incidentEdit: null,
+		isSavingIncident: false,
+		incidentEditFailure: null,
+		confirmDeleteIncidentId: null,
+		deleteIncidentDialog: Dialog.init("status-page-delete-incident", "alert-dialog"),
+		isDeletingIncident: false,
 		publicBaseUrl: STATUS_PAGE_BASE_URL,
 		urlCopy: CopyButton.init(),
 		settingsEdits: null,
@@ -230,7 +248,7 @@ const closePanel = (model: Model): Return => {
 	return panel === null
 		? { model }
 		: {
-				model: { ...model, panel: null, updateForm: { _tag: "Closed" } },
+				model: { ...model, panel: null, updateForm: { _tag: "Closed" }, incidentEdit: null },
 				commands: [FocusEditorElement({ id: target })],
 			}
 }
@@ -403,6 +421,19 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		ClickedPublishIncident: ({ incidentId }) => publishIncident(model, incidentId),
 		CompletedPublishIncident: ({ incidentId, result }) =>
 			publishedIncident(model, incidentId, result, context),
+		ClickedEditIncident: ({ incidentId }) => openIncidentEdit(model, incidentId),
+		ChangedIncidentEditField: ({ field, value }) => changeIncidentEdit(model, field, value),
+		ToggledIncidentEditComponent: ({ componentId }) => toggleIncidentEditComponent(model, componentId),
+		SubmittedIncidentEdit: () => submitIncidentEdit(model),
+		ClickedCancelIncidentEdit: () => cancelIncidentEdit(model),
+		CompletedSaveIncident: ({ result }) => savedIncident(model, result, context),
+		ClickedDeleteIncident: ({ incidentId }) => askDeleteIncident(model, incidentId),
+		ClickedConfirmDeleteIncident: () => confirmDeleteIncident(model),
+		CompletedDeleteIncident: ({ result }) => deletedIncident(model, result, context),
+		GotDeleteIncidentDialogMessage: ({ message: child }) =>
+			whenIdle(model.isDeletingIncident, model, () =>
+				deleteIncidentDialog(model, Dialog.update(model.deleteIncidentDialog, child)),
+			),
 		// Live
 		GotUrlCopyMessage: ({ message: child }) => {
 			const step = CopyButton.update(model.urlCopy, child)
@@ -423,6 +454,8 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		PickedThemeRadius: ({ radius }) => changeTheme(model, { radius }),
 		PickedThemeFont: ({ font }) => changeTheme(model, { font }),
 		PickedPreviewScheme: ({ scheme }) => ({ model: { ...model, previewScheme: scheme } }),
+		PickedPreviewWidth: ({ width }) => ({ model: { ...model, previewWidth: width } }),
+		PickedPreviewState: ({ state }) => ({ model: { ...model, previewState: state } }),
 		ClickedDiscardSettings: () => ({ model: { ...model, settingsEdits: null, settingsFailure: null } }),
 		ClickedSaveSettings: () => saveSettings(model),
 		CompletedSaveSettings: ({ result }) => savedSettings(model, result),
