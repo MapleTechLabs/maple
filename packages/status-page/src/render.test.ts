@@ -240,6 +240,12 @@ describe("incident update text", () => {
 		expect(bodyOf("one\ntwo")).toBe("<p>one<br>two</p>")
 	})
 
+	it("keeps an indented line under a list item as part of that item", () => {
+		expect(bodyOf("- API errors\n  affecting 10% of requests\n- Dashboard\nBack to normal")).toBe(
+			"<ul><li>API errors affecting 10% of requests</li><li>Dashboard</li></ul><p>Back to normal</p>",
+		)
+	})
+
 	it("leaves arithmetic and stray asterisks as text", () => {
 		expect(bodyOf("2 * 3 * 4 and a*b*c")).toBe("<p>2 * 3 * 4 and a*b*c</p>")
 	})
@@ -252,10 +258,13 @@ describe("incident update text", () => {
 		expect(body).toContain("<strong>&lt;b&gt;bold&lt;/b&gt;</strong>")
 	})
 
-	it("cannot break out of the href with a quote in the URL", () => {
-		const body = bodyOf(`[x](https://example.com/"onmouseover="alert(1)) https://example.com/'x`)
-		expect(body).not.toMatch(/href="[^"]*"[^>]*on\w+=/u)
-		expect(allMatches(body, /<a /gu)).toHaveLength(2)
+	it("cannot break out of the href or the link text with a quote", () => {
+		expect(bodyOf(`[x](https://example.com/"onmouseover="alert(1))`)).toBe(
+			`<p><a href="https://example.com/%22onmouseover=%22alert(1" rel="noopener nofollow ugc">x</a>)</p>`,
+		)
+		expect(bodyOf(`[a"b](https://example.com/'x?a=1&b=2)`)).toBe(
+			`<p><a href="https://example.com/&#39;x?a=1&amp;b=2" rel="noopener nofollow ugc">a&quot;b</a></p>`,
+		)
 	})
 })
 

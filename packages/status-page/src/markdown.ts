@@ -74,6 +74,23 @@ const blocks = (text: string): ReadonlyArray<Block> =>
 			if (Str.trim(line) === "") return { blocks: state.blocks, open: false }
 			const { kind, text: content } = classify(line)
 			const last = state.blocks.at(-1)
+			const item = last?.lines.at(-1)
+			// An indented line under a list item is that item's wrapped text, not a new paragraph.
+			if (
+				state.open &&
+				last !== undefined &&
+				item !== undefined &&
+				last.kind !== "p" &&
+				kind === "p" &&
+				/^\s/u.test(line)
+			)
+				return {
+					blocks: [
+						...state.blocks.slice(0, -1),
+						{ kind: last.kind, lines: [...last.lines.slice(0, -1), `${item} ${Str.trim(line)}`] },
+					],
+					open: true,
+				}
 			return state.open && last !== undefined && last.kind === kind
 				? {
 						blocks: [...state.blocks.slice(0, -1), { kind, lines: [...last.lines, content] }],

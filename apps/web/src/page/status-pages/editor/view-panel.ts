@@ -501,7 +501,7 @@ const updateForm = (h: H, model: Model): ReadonlyArray<Html> => {
 
 /** An open incident can be published, updated and closed; any incident can have its details edited. */
 const incidentActions = (h: H, model: Model, incident: V2StatusPageIncident): ReadonlyArray<Html> => {
-	if (model.updateForm._tag !== "Closed" || model.incidentEdit !== null) return []
+	if (model.updateForm._tag !== "Closed" || model.incidentEdit?.incidentId === incident.id) return []
 	const isOpen = isOpenIncident(incident)
 	return [
 		hstack(h, { gap: "2", align: "stretch", wrap: true }, [

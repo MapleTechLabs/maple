@@ -92,7 +92,14 @@ export const openComposer = (model: Model, kind: StatusPageIncidentKind): Return
 					componentIds: Arr.map(affected, (component) => component.id),
 					impact: IMPACT_OF_STATUS[worstStatus(Arr.map(affected, statusOf))],
 				}
-	return focusPanel({ ...model, panel: { _tag: "Compose" }, incidentForm: form, incidentFailure: null })
+	return focusPanel({
+		...model,
+		panel: { _tag: "Compose" },
+		incidentForm: form,
+		incidentFailure: null,
+		incidentEdit: null,
+		incidentEditFailure: null,
+	})
 }
 
 /** Switching Incident and Maintenance keeps what was typed; only kind-specific defaults reset. */

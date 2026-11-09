@@ -711,6 +711,29 @@ describe("incidents in the panel", () => {
 		)
 	})
 
+	test("an edit form left open does not hide the actions of an incident created after it", () => {
+		const editing = pageUpdate(
+			pageUpdate(
+				loaded({ incidents: [incident(1), incident(2)] }),
+				Message.ClickedIncident({ incidentId: incidentId(1) }),
+			).model,
+			Message.ClickedEditIncident({ incidentId: incidentId(1) }),
+		).model
+		const composing = pageUpdate(editing, Message.ClickedNewIncident({ kind: "incident" })).model
+		expect(composing.incidentEdit).toBeNull()
+		const created = pageUpdate(
+			{ ...composing, incidentEdit: editing.incidentEdit },
+			Message.CompletedCreateIncident({ result: Result.succeed(incident(2)) }),
+		).model
+		scene(
+			{ update: pageUpdate, view },
+			given(created),
+			expectView(role("button", { name: "Post update" })).toExist(),
+			expectView(role("button", { name: "Edit details" })).toExist(),
+			expectView(role("textbox", { name: "Title" })).not.toExist(),
+		)
+	})
+
 	test("saving an edit sends the trimmed title, the impact and the components once, and posts no update", () => {
 		const edited = Arr.reduce(
 			[
