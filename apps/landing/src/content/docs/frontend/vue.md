@@ -94,15 +94,25 @@ export function traceRouter(router: Router) {
 }
 ```
 
-In `src/router/index.ts`, call `traceRouter(router)` right after `createRouter` and before adding your own guards, so the span covers them.
+Call it right after `createRouter`, before your own guards, so the span covers them:
 
-- The first navigation is a `pageload` span starting at the browser's navigation start; each later one is a `navigate` span in its own trace.
-- Spans are named after the route template, parents included (`navigate /settings/profile/:tab`), with the concrete path in `url.path`. A catch-all route gives `navigate /:pathMatch(.*)*`.
-- The span ends after Vue renders the new route, so requests the page starts in `setup`, an immediate watcher or `onMounted` nest under it.
-- A redirect is one span named after the target. After a guard redirect, `url.path` is the original path (`navigate /login`, `url.path` `/private`).
-- A guard returning `false` ends the span normally. A navigation that starts while another is pending ends the pending one with `maple.navigation.interrupted: true` and the bare name `navigate`.
-- A link to the page on screen starts no span; a query or hash change does.
-- A guard that throws, or a route chunk that fails to load, ends the span and is reported once as `vue_router.error`.
+```ts
+// src/router/index.ts
+import { createRouter, createWebHistory } from "vue-router"
+import { traceRouter } from "../trace-router"
+import { routes } from "./routes"
+
+const router = createRouter({ history: createWebHistory(), routes })
+
+traceRouter(router)
+
+// Your own guards come after
+router.beforeEach((to) => {
+	// ...
+})
+
+export default router
+```
 
 ## Trace data loading
 
@@ -114,43 +124,40 @@ Pages usually fetch in `setup`. Wrap the page's load in `MapleBrowser.traced`, n
 import { MapleBrowser } from "@maple-dev/browser"
 import { ref, watch } from "vue"
 import { useRoute } from "vue-router"
-import { fetchProject, NotFoundError, type Project } from "../api"
+import { fetchProject, type Project } from "../api"
 
 const route = useRoute()
 const project = ref<Project>()
-const notFound = ref(false)
 
 watch(
 	() => route.params.id as string,
 	async (id) => {
-		try {
-			project.value = await MapleBrowser.traced("loader /projects/:id", () => fetchProject(id), {
-				isFailure: (error) => !(error instanceof NotFoundError), // a missing project isn't a failure
-			})
-			notFound.value = false
-		} catch (error) {
-			if (!(error instanceof NotFoundError)) throw error
-			notFound.value = true
-		}
+		project.value = await MapleBrowser.traced("loader /projects/:id", () => fetchProject(id))
 	},
 	{ immediate: true },
 )
 </script>
 
 <template>
-	<h1 v-if="notFound">Project not found</h1>
-	<h1 v-else>{{ project?.name }}</h1>
+	<h1>{{ project?.name }}</h1>
 </template>
 ```
 
-`fetchProject` is your API client, which throws `NotFoundError` on a 404.
+- `immediate: true` runs the load during `setup`, so the trace is `navigate /projects/:id` → `loader /projects/:id` → `GET` → your API's spans. The watcher also reloads when only the `id` changes and Vue reuses the component.
+- A load that throws is recorded once, on the `loader` span. To keep an expected error, like a 404, from marking the span `Error`, pass `{ isFailure: (error) => !(error instanceof NotFoundError) }` as the third argument.
 
-- `immediate: true` runs the watcher during `setup`, so the trace is `navigate /projects/:id` → `loader /projects/:id` → `GET` → your API's spans. From `/projects/1` to `/projects/2` the component is reused and the watcher runs inside that navigation.
-- The `loader` span usually ends after the navigation span, which ends when the page renders.
-- A load that throws is recorded once, on the `loader` span, and rethrown; the error handler below skips it.
-- `isFailure` keeps the 404 from marking the span `Error`; use it the same way for an aborted request. The 404 `fetch` span is still `Error`, like every 4xx client span, but opens no issue.
+The browser has no async context: only requests started before the first `await` inside `traced` nest under its span. Start independent requests together with `Promise.all`. For a request that needs an earlier result, carry the context across the `await` (`npm install @opentelemetry/api`):
 
-The browser has no async context: only requests started before the first `await` inside `traced` nest under its span. Start independent requests together with `Promise.all`. For a dependent request, capture `const ctx = context.active()` (from `@opentelemetry/api`) before the first `await` and start it with `context.with(ctx, () => fetchMembers(project.id))`.
+```ts
+import { context } from "@opentelemetry/api"
+
+await MapleBrowser.traced("loader /projects/:id", async () => {
+	const ctx = context.active() // before the first await
+	const project = await fetchProject(id)
+	const members = await context.with(ctx, () => fetchMembers(project.id))
+	return { project, members }
+})
+```
 
 ## Report errors Vue catches
 
@@ -210,11 +217,6 @@ export default defineNuxtPlugin((nuxtApp) => {
 
 Declare the key in `nuxt.config.ts` as `runtimeConfig: { public: { mapleIngestKey: "" } }` and set it with `NUXT_PUBLIC_MAPLE_INGEST_KEY`.
 
-- Templates use Nuxt's syntax: `pages/projects/[id].vue` gives `navigate /projects/:id()`.
-- Route middleware runs before the plugin's guard, so a middleware redirect is one span with the target's name and path.
-- A URL no page matches keeps the bare name `navigate`. Nuxt then reloads it from the server, which gives a bare `pageload` for the 404 page.
-- Nuxt calls `vue:error` asynchronously. In development, Vue rethrows an event handler's error first, so it arrives as `browser.uncaught_error`; production reports it as `vue.error`. Either way, once.
-
 ### Data loading with useAsyncData
 
 Wrap the `useAsyncData` handler in `traced`:
@@ -238,18 +240,21 @@ const { data: project, error } = await useAsyncData(`project-${route.params.id}`
 </template>
 ```
 
-- On a client navigation, the handler runs under the `navigate` span.
-- During the server render, `traced` only runs the handler, and hydration doesn't run it again: a page load has no `loader` span, the server's spans cover it.
-- A handler that throws lands in `error`, not `vue:error`, and is recorded once, on the `loader` span.
-- `$fetch` retries a failed `GET` once. The retry starts after an `await`, so it is a separate trace; pass `retry: 0` to turn it off.
+`$fetch` retries a failed `GET` once. The retry starts after an `await`, so it is a separate trace; pass `retry: 0` to turn it off.
 
 ### Join the page load to the server render
 
-The browser's `pageload` span joins the server's trace when the page has a `<meta name="traceparent">` tag or a `Server-Timing: traceparent;desc="…"` header. The SDK doesn't write either: the server must run OpenTelemetry and add one. Install the Node SDK:
+The browser's `pageload` span joins the server's trace when the page has a `<meta name="traceparent">` tag or a `Server-Timing: traceparent;desc="…"` header. The SDK doesn't write either: the Nuxt server must run OpenTelemetry and add one. This step is optional: without it, each page load is still traced, as a trace of its own. Install:
 
 ```bash
 npm install @opentelemetry/api @opentelemetry/sdk-node @opentelemetry/auto-instrumentations-node @opentelemetry/exporter-trace-otlp-http import-in-the-middle
 ```
+
+- `@opentelemetry/sdk-node`: the OpenTelemetry SDK for Node.js.
+- `@opentelemetry/auto-instrumentations-node`: creates a span for each request the server handles, which the page load joins, plus spans for the server's `fetch` and database calls.
+- `@opentelemetry/exporter-trace-otlp-http`: sends the spans to Maple.
+- `import-in-the-middle`: lets the instrumentations patch ES modules, which Nuxt's server build uses. Without it there is no request span.
+- `@opentelemetry/api`: the server plugin below uses it to write the tag.
 
 ```js
 // instrumentation.mjs
