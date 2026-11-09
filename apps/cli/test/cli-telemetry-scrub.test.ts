@@ -18,6 +18,8 @@ describe("CLI telemetry scrubber", () => {
 			str("maple.session.id", "sess_123"),
 			str("exception.message", "Cannot parse input: 'alice@example.com'"),
 			str("effect.cause", "Error: row {'email':'x'}"),
+			str("http.request.header.x-maple-maintenance-token", "a1f1"),
+			str("http.response.header.set-cookie", "sid=1"),
 			str("db.system.name", "clickhouse"),
 			str("error.type", "HTTP 400"),
 			{ key: "db.query.length", value: { intValue: 41 } },

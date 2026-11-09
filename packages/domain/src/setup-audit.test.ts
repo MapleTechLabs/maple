@@ -1121,7 +1121,21 @@ describe("ING-01 — service names agree across signals", () => {
 		})
 		const result = check(report, "ING-01")
 		expect(result.status).toBe("fail")
-		expect(result.affected[0]).toMatchObject({ name: "api-server", note: "logs but no traces" })
+		expect(result.affected[0]).toMatchObject({
+			name: "api-server",
+			note: 'logs only; traces arrive as "api"',
+		})
+	})
+
+	it("ignores a logs-only service with no traced twin: it logs without a tracer", () => {
+		const report = telemetry({
+			serviceUsage: [
+				{ serviceName: "maple-api", logCount: 500, traceCount: 900, metricCount: 40 },
+				{ serviceName: "maple-sandbox", logCount: 300, traceCount: 0, metricCount: 0 },
+				{ serviceName: "maple-api-pr-2408", logCount: 30, traceCount: 0, metricCount: 0 },
+			],
+		})
+		expect(check(report, "ING-01").status).toBe("pass")
 	})
 
 	it("ignores metrics-only names — scraped exporters legitimately never trace", () => {
@@ -1356,6 +1370,17 @@ describe("NAME-03 — reserved namespace", () => {
 		})
 		expect(check(report, "NAME-03").status).toBe("pass")
 	})
+
+	it("does not flag the maple_ai.* keys Maple's ingest stamps on agent spans", () => {
+		const report = telemetry({
+			attributeKeys: [
+				...healthyWarehouse.attributeKeys,
+				spanKey("maple_ai.session.id"),
+				spanKey("maple_ai.usage.input_tokens"),
+			],
+		})
+		expect(check(report, "NAME-03").status).toBe("pass")
+	})
 })
 
 describe("PII-01 — secrets in attribute names", () => {
@@ -1365,6 +1390,9 @@ describe("PII-01 — secrets in attribute names", () => {
 		"api_key",
 		"auth.accessToken",
 		"payment.credit_card",
+		"http.request.header.x-maple-maintenance-token",
+		"http.request.header.cookie",
+		"oauth.client_secret",
 	])("flags %s", (key) => {
 		const report = telemetry({ attributeKeys: [...healthyWarehouse.attributeKeys, spanKey(key)] })
 		expect(check(report, "PII-01").status).toBe("fail")
@@ -1376,6 +1404,15 @@ describe("PII-01 — secrets in attribute names", () => {
 		"db.query.text",
 		"http.route",
 		"user.id",
+		// Keys that describe a credential rather than hold one.
+		"maple.api_key.id",
+		"maple.api_key.kind",
+		"maple.api_key.last_used_memo_hit",
+		"maple.app.auth.has_token",
+		"maple.device.credential_id",
+		"maple.tinybird.token.scope",
+		"vcs.provider.token_cache",
+		"maple.app.widget.fetch.credential_rejected",
 	])("does not flag %s", (key) => {
 		const report = telemetry({ attributeKeys: [...healthyWarehouse.attributeKeys, spanKey(key)] })
 		expect(check(report, "PII-01").status).toBe("pass")

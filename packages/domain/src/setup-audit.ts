@@ -1044,12 +1044,11 @@ const INVENTED_RESOURCE_KEYS = [
 ]
 
 /**
- * Key-name fragments that suggest a secret is being written into telemetry. Matched per separator-
- * delimited segment (plus a few compounds) rather than as substrings, so `gen_ai.usage.output_tokens`
- * does not trip the `token` rule. Values are never scanned — that would mean reading every attribute
- * map in the warehouse.
+ * Words that name a secret. Only a key's trailing word counts: `user.password` holds one, while
+ * `maple.api_key.id`, `token.scope` and `token_cache` describe one. Values are never scanned, which
+ * would mean reading every attribute map in the warehouse.
  */
-const SENSITIVE_SEGMENTS = new Set([
+const SENSITIVE_WORDS = new Set([
 	"password",
 	"passwd",
 	"secret",
@@ -1060,8 +1059,6 @@ const SENSITIVE_SEGMENTS = new Set([
 	"ssn",
 	"cvv",
 	"pin",
-])
-const SENSITIVE_COMPOUNDS = [
 	"apikey",
 	"accesstoken",
 	"refreshtoken",
@@ -1069,15 +1066,39 @@ const SENSITIVE_COMPOUNDS = [
 	"privatekey",
 	"creditcard",
 	"setcookie",
-]
+	"clientsecret",
+])
+/** Captured headers whose value is a credential even though the name says nothing of the kind. */
+const SENSITIVE_HEADERS = new Set(["cookie", "set-cookie", "proxy-authorization", "x-api-key"])
+const HEADER_KEY = /^http\.(?:request|response)\.header\.(.+)$/
+/** A leading `has`/`is` makes the key a flag about a secret, not the secret. */
+const FLAG_WORDS = new Set(["has", "is"])
 
 /** True when an attribute key name looks like it carries a secret. */
 export const looksSensitive = (key: string): boolean => {
 	const lower = Str.toLowerCase(key)
-	if (Arr.some(Str.split(/[.\-_/]/)(lower), (segment) => SENSITIVE_SEGMENTS.has(segment))) return true
-	const squashed = Str.replaceAll(/[.\-_/]/g, "")(lower)
-	return Arr.some(SENSITIVE_COMPOUNDS, (needle) => Str.includes(needle)(squashed))
+	const header = HEADER_KEY.exec(lower)?.[1]
+	if (header !== undefined && SENSITIVE_HEADERS.has(header)) return true
+	const words = Arr.filter(Str.split(/[.\-_/\s]/)(lower), (word) => word !== "")
+	if (Arr.some(words, (word) => FLAG_WORDS.has(word))) return false
+	const last = words.at(-1) ?? ""
+	const lastTwo = `${words.at(-2) ?? ""}${last}`
+	return SENSITIVE_WORDS.has(last) || SENSITIVE_WORDS.has(lastTwo)
 }
+
+const nameWords = (name: string): ReadonlyArray<string> =>
+	Arr.filter(Str.split(/[^a-z0-9]+/)(Str.toLowerCase(name)), (word) => word !== "")
+
+/** Same name up to separators and case, or one extra trailing word (`api` / `api-server`). */
+const isNameVariant = (a: string, b: string): boolean => {
+	const [x, y] = [nameWords(a), nameWords(b)]
+	const [short, long] = x.length <= y.length ? [x, y] : [y, x]
+	if (short.length === 0 || long.length - short.length > 1) return false
+	return Arr.every(short, (word, index) => long[index] === word)
+}
+
+/** `maple_ai.*` is stamped by Maple's own ingest on agent spans (see `gen-ai.ts`), not by the customer. */
+const isMapleWrittenKey = (key: string): boolean => Str.startsWith("maple_ai.")(Str.toLowerCase(key))
 
 const ingestCoverageChecks: ReadonlyArray<AuditCheck> = [
 	{
@@ -1123,26 +1144,39 @@ const ingestCoverageChecks: ReadonlyArray<AuditCheck> = [
 		evaluate: ({ warehouse }) => {
 			if (!warehouse) return PASS
 			// Logs-only, deliberately NOT metrics-only: scraped exporters, cloud-platform collectors
-			// and synthetic checks all legitimately ship metrics under a name that never traces, and
-			// flagging them buries the real signal. A service shipping OTLP logs almost always has a
-			// tracer in the same process, so logs without traces really does mean the names disagree.
+			// and synthetic checks all legitimately ship metrics under a name that never traces. A
+			// logs-only name is only a split when a traced service carries nearly the same name;
+			// otherwise it is a service that logs without a tracer, which is not this check's finding.
 			// Unnamed services are RES-01's finding, not a mismatch.
-			const split = Arr.map(
+			const traced = Arr.filter(
+				warehouse.serviceUsage,
+				(service) => service.traceCount > 0 && service.serviceName !== "",
+			)
+			const split = Arr.flatMap(
 				Arr.filter(
 					warehouse.serviceUsage,
 					(service) =>
 						service.traceCount === 0 && service.logCount > 0 && service.serviceName !== "",
 				),
-				(service) => ({
-					kind: "service" as const,
-					name: service.serviceName,
-					note: "logs but no traces",
-				}),
+				(service: AuditServiceUsage): Array<AuditAffectedEntity> => {
+					const twin = Arr.findFirst(traced, (candidate) =>
+						isNameVariant(service.serviceName, candidate.serviceName),
+					)
+					return Option.isNone(twin)
+						? []
+						: [
+								{
+									kind: "service" as const,
+									name: service.serviceName,
+									note: `logs only; traces arrive as "${twin.value.serviceName}"`,
+								},
+							]
+				},
 			)
 			return split.length === 0
 				? PASS
 				: fail(
-						`${plural(split.length, "service name")} ${conj(split.length, "appears", "appear")} in logs but never in traces — usually the tracer and the logger were configured with different \`service.name\` values, which splits one service into two everywhere in Maple.`,
+						`${plural(split.length, "service")} ${conj(split.length, "sends", "send")} logs under a different \`service.name\` than ${conj(split.length, "its", "their")} traces, so one service shows up as two and jumping between its traces and logs finds nothing.`,
 						split,
 					)
 		},
@@ -1393,7 +1427,10 @@ const attributeQualityChecks: ReadonlyArray<AuditCheck> = [
 			const reserved = Arr.map(
 				Arr.filter(
 					warehouse.attributeKeys,
-					(row) => row.scope !== "resource" && Str.startsWith("maple_")(Str.toLowerCase(row.key)),
+					(row) =>
+						row.scope !== "resource" &&
+						Str.startsWith("maple_")(Str.toLowerCase(row.key)) &&
+						!isMapleWrittenKey(row.key),
 				),
 				(row) => ({ kind: "attribute_key" as const, name: row.key, note: row.scope }),
 			)
