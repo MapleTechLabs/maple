@@ -76,5 +76,18 @@ pkgs.testers.runNixOSTest {
     machine.systemctl("restart maple.service")
     machine.wait_until_succeeds("curl -fsS http://127.0.0.1:4318/health", timeout=180)
     machine.wait_until_succeeds(query + " | grep -q nixos-test", timeout=60)
+
+    # An empty secret file must not serve without auth: the unit exits 78 and stays down.
+    machine.succeed(
+        "touch /run/empty-token",
+        "mkdir -p /run/systemd/system/maple.service.d",
+        "printf '[Service]\\nLoadCredential=\\nLoadCredential=ingest-key:/etc/maple/ingest-key\\nLoadCredential=access-token:/run/empty-token\\n' > /run/systemd/system/maple.service.d/empty.conf",
+        "systemctl daemon-reload",
+    )
+    machine.systemctl("restart maple.service")
+    machine.wait_until_succeeds("test \"$(systemctl show -P ExecMainStatus maple.service)\" = 78", timeout=60)
+    machine.sleep(10)
+    machine.succeed("test \"$(systemctl show -P ActiveState maple.service)\" = failed")
+    machine.fail("curl -fsS http://127.0.0.1:4318/health")
   '';
 }

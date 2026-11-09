@@ -172,7 +172,7 @@ in
         message = "services.maple: secret files must live outside the Nix store, which is world-readable.";
       }
       {
-        assertion = !lib.elem "--data-dir" cfg.extraArgs;
+        assertion = !lib.any (arg: arg == "--data-dir" || lib.hasPrefix "--data-dir=" arg) cfg.extraArgs;
         message = "services.maple: the store lives under /var/lib/maple; remove --data-dir from extraArgs.";
       }
     ];
