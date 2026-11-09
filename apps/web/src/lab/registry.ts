@@ -444,6 +444,14 @@ export const LAB_ENTRIES: ReadonlyArray<LabEntry> = [
 		session: "none",
 	},
 	{
+		path: "/lab/rule-editor",
+		title: "Rule editor",
+		description:
+			"The alert rule editor over fixture rows: a saved error rate rule (?variant=populated), a blank new rule (new) and a scoped anomaly rule (anomaly). ?theme=light|dark.",
+		kind: "lab",
+		session: "none",
+	},
+	{
 		path: "/lab/time-range",
 		title: "Time range picker",
 		description:
