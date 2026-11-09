@@ -1,5 +1,10 @@
 import * as PG from "@maple-dev/effect-orm/postgres"
 import { OrgId } from "@maple/domain/primitives"
+import { Schema } from "effect"
+
+/** Why a connection sits out polling: ingest refused its metrics, or its first GraphQL call was rate limited. */
+export const CloudflareBackoffReasonSchema = Schema.Literals(["ingest_refused", "rate_limited"])
+export type CloudflareBackoffReason = typeof CloudflareBackoffReasonSchema.Type
 
 // Poll-state for the Cloudflare GraphQL Analytics collector. One row per (org, dataset, zone):
 // zone-scoped datasets (http_requests) get one row per discovered zone; account-scoped datasets
@@ -52,6 +57,13 @@ export const CloudflareAnalyticsState = PG.table("cloudflare_analytics_state", {
 		// Overlap guard: a tick claims an org's rows by bumping this past now; a competing tick
 		// that fails to claim skips the org.
 		leaseUntil: PG.column(PG.nullable(PG.timestamptzMillis), { name: "lease_until" }),
+		// Escalating poll backoff, on the workers anchor row only. The poller skips the account with no
+		// upstream call while backoffUntil is in the future; the streak picks the next, longer step.
+		backoffUntil: PG.column(PG.nullable(PG.timestamptzMillis), { name: "backoff_until" }),
+		backoffStreak: PG.column(PG.int4, { name: "backoff_streak", default: 0 }),
+		backoffReason: PG.column(PG.nullable(PG.brand(PG.text, CloudflareBackoffReasonSchema)), {
+			name: "backoff_reason",
+		}),
 		createdAt: PG.column(PG.timestamptzMillis, { name: "created_at" }),
 		updatedAt: PG.column(PG.timestamptzMillis, { name: "updated_at" }),
 	},
