@@ -200,8 +200,9 @@ in
         RestartSec = 5;
         # Exit 78 is a refusal retrying cannot fix (dirty or incompatible store).
         RestartPreventExitStatus = 78;
-        # A clean stop closes chDB; killing it mid-close leaves a dirty store.
-        TimeoutStopSec = 60;
+        # A clean stop waits for an in-flight checkpoint, then closes chDB; a kill
+        # leaves a dirty store. Matches `maple stop`'s checkpoint budget.
+        TimeoutStopSec = "15min";
         LimitNOFILE = 65536;
 
         NoNewPrivileges = true;

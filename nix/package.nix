@@ -37,15 +37,15 @@ stdenv.mkDerivation {
     install -Dm755 libchdb.so $out/libexec/maple/libchdb.so
     mkdir -p $out/bin
     # Nix owns upgrades: no update notice, and `maple update` would write into the store.
-    cat > $out/bin/maple <<EOF
+    cat > $out/bin/maple <<'EOF'
     #!${stdenv.shell}
-    if [ "\''${1:-}" = "update" ]; then
+    if [ "''${1:-}" = "update" ]; then
       echo "maple was installed by Nix; upgrade it through your flake or channel." >&2
       exit 1
     fi
     export MAPLE_NO_UPDATE_CHECK=1
     # maple finds the libchdb.so beside it.
-    exec $out/libexec/maple/maple "\$@"
+    exec ${placeholder "out"}/libexec/maple/maple "$@"
     EOF
     chmod 755 $out/bin/maple
     runHook postInstall
