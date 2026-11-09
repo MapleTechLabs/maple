@@ -61,7 +61,7 @@ const charge = Effect.gen(function* () {
 ```
 
 - The value is scoped to the organization and the service: the same value in two services is two issues.
-- A value on the exception event wins over one on the span. Surrounding whitespace is ignored, and only the first 200 characters count.
+- A value on the exception event wins over one on the span. Surrounding whitespace is ignored, and only the first 200 characters count. An empty or whitespace-only value counts as unset, so the span's value applies; with neither set, Maple groups the error automatically.
 - Use a fixed name for the failure, never an ID or other per-request value, or every occurrence becomes its own issue.
 - Adding the attribute starts a new issue for those errors; the issue they had before stops receiving occurrences.
 
