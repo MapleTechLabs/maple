@@ -7,7 +7,6 @@ import { toEpochMs } from "@maple/ui/lib/time-format"
 import type { Release, ReleaseTimelineBucket } from "@maple/web-data/warehouse/releases"
 import { shortId } from "@maple/ui/lib/ids"
 import { Array as Arr, Option, Order, String as Str } from "effect"
-import { isoMs } from "../kit/alert-time"
 
 /**
  * Health, worst first. A single band per release so the sidebar facet and the
@@ -385,14 +384,14 @@ export function attributeIssues<T extends IntroducedIssue>(
 	}
 	const attributed = new Map<string, ReleaseIssues<T>>()
 	for (const issue of issues) {
-		const firstMs = isoMs(issue.firstSeenAt)
-		const regressedMs = issue.lastRegressedAt === null ? Number.NaN : isoMs(issue.lastRegressedAt)
+		const firstMs = toEpochMs(issue.firstSeenAt)
+		const regressedMs = issue.lastRegressedAt === null ? Number.NaN : toEpochMs(issue.lastRegressedAt)
 		const regressed = Number.isFinite(regressedMs) && regressedMs > firstMs
 		const atMs = regressed ? regressedMs : firstMs
 		if (!Number.isFinite(atMs)) continue
 		let owner: ReleaseServiceImpact | undefined
 		for (const impact of byService.get(issue.serviceName) ?? []) {
-			const startMs = isoMs(impact.firstSeen) - NEW_ISSUE_SLACK_MS
+			const startMs = toEpochMs(impact.firstSeen) - NEW_ISSUE_SLACK_MS
 			if (startMs <= atMs && (owner === undefined || impact.firstSeen > owner.firstSeen)) owner = impact
 		}
 		if (owner === undefined) continue

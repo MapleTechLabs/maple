@@ -1,6 +1,6 @@
 import { Option, Array as Arr } from "effect"
 import type { ReplayPartitionWindow } from "./replay-window"
-import { isoMs } from "../../kit/alert-time"
+import { toEpochMs } from "@maple/ui/lib/time-format"
 
 /**
  * Chunk-range planning for progressive replay playback.
@@ -143,7 +143,7 @@ export const replayRangeInput = (
  * replay until an out-of-band migration landed. Not worth sub-second precision
  * on a chunk picker.
  */
-export const chunkStartMs = (chunk: ReplayChunkMeta): number => isoMs(chunk.timestamp)
+export const chunkStartMs = (chunk: ReplayChunkMeta): number => toEpochMs(chunk.timestamp)
 
 /** Epoch-ms the recording starts at, or 0 for an empty manifest. */
 export const manifestStartMs = (chunks: ReadonlyArray<ReplayChunkMeta>): number => {
