@@ -1,7 +1,7 @@
 /** Output schemas for the alerts MCP tools. */
 import { Schema } from "effect"
 import { QueryBuilderQueryDraftSchema } from "@maple/query-model"
-import { AlertIncidentLabels } from "../http/alerts"
+import { AlertIncidentLabels, AlertSeriesFailure } from "../http/alerts"
 import { OutputTimeRange } from "./shared"
 
 const NullableString = Schema.NullOr(Schema.String)
@@ -197,11 +197,9 @@ export const PreviewAlertRuleOutput = Schema.Struct({
 		Schema.Struct({ groupKey: Schema.String, start: Schema.String, end: Schema.String }),
 	),
 	warnings: Schema.Array(Schema.String),
-	/** Raw SQL rules only: one check of the latest window, timed against the interval's limit. */
 	/** Raw SQL only: the range was too heavy to chart, or the SQL has no time bucket, so no windows were evaluated. */
-	seriesFailure: Schema.optionalKey(
-		Schema.Literals(["query_too_slow", "query_too_much_memory", "not_time_grouped"]),
-	),
+	seriesFailure: Schema.optionalKey(AlertSeriesFailure),
+	/** Raw SQL rules only: one check of the latest window, timed against the interval's limit. */
 	queryTiming: Schema.optionalKey(
 		Schema.Struct({
 			/** Null when the check did not finish within `probeLimitMs`. */
