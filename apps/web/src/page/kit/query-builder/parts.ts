@@ -67,7 +67,7 @@ const WHERE_PLACEHOLDER = {
 
 const WHERE_TEXTAREA_CLASS = "min-h-[32px] resize-y text-xs"
 
-/** `WhereClauseEditor`: the textarea under its highlight overlay, and its suggestion list. */
+/** The where-clause textarea under its highlight overlay, and its suggestion list. */
 export const whereClauseEditor = (
 	h: H,
 	model: Model,
@@ -93,7 +93,7 @@ export const whereClauseEditor = (
 		},
 	})
 
-/** A controlled `<Input>` that reports each keystroke. */
+/** A controlled text input that reports each keystroke. */
 export const textInput = <M>(
 	h: HtmlBuilder<M>,
 	id: string,
@@ -110,7 +110,6 @@ export const textInput = <M>(
 		attributes: [h.Value(value), h.Placeholder(placeholder), h.OnInput(toMessage)],
 	})
 
-/** `AddOnToggleBar`. */
 export const addOnToggles = (
 	h: H,
 	query: QueryDraft,
@@ -134,7 +133,7 @@ export const addOnToggles = (
 const sectionLabel = (h: H, text: string): Html =>
 	h.span([h.Class("text-2xs text-muted-foreground w-16 shrink-0")], [text])
 
-/** `GroupByMultiSelect`: the source's built-in dimensions as chips. TODO(widget-editor): `attr.*` keys. */
+/** The source's built-in dimensions as chips. TODO(widget-editor): `attr.*` keys. */
 const groupBySelect = (h: H, model: Model, query: QueryDraft): Html => {
 	const current = model.groupBys[query.id] ?? Combobox.init(`group-by-${query.id}`, "multiple")
 	return h.submodel({
@@ -158,7 +157,7 @@ const groupBySelect = (h: H, model: Model, query: QueryDraft): Html => {
 const row = (h: H, label: string, children: ReadonlyArray<Html>): Html =>
 	h.div([h.Class("flex items-center gap-2")], [sectionLabel(h, label), ...children])
 
-/** `AddOnSections`: the inputs each enabled add-on reveals. */
+/** The inputs each enabled add-on reveals. */
 export const addOnSections = (h: H, model: Model, query: QueryDraft): ReadonlyArray<Html> => {
 	if (!Arr.some(Rec.values(query.addOns), Boolean)) return []
 	const text = (field: "having" | "orderBy" | "limit" | "legend") => (value: string) =>

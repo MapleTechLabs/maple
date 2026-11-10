@@ -9,8 +9,8 @@ import * as MenuView from "@maple/views/ui/menu-view"
 import { refreshButton } from "@maple/views/ui/refresh-button"
 import { Array as Arr } from "effect"
 
-// `RefreshControls`: Reload joined to the
-// auto-refresh cadence menu. The caller owns the menu Model and what a picked cadence does.
+// Reload joined to the auto-refresh cadence menu. The caller owns the menu Model and what a picked
+// cadence does.
 
 /** `formatRefreshInterval`: `0` is off. */
 export const formatRefreshInterval = (seconds: number): string =>

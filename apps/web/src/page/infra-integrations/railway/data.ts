@@ -5,8 +5,7 @@ import { settled } from "@maple/views/data/load-failure"
 import type { TimeWindow } from "../../../data/time-range"
 import type { RailwayServiceRow, RailwayServiceTimeseriesRow } from "./model"
 
-// The Railway reads as Effects; each page wraps them in its own Commands (`railwayServicesResultAtom`,
-// `railwayServiceTimeseriesResultAtom`, `railwayStatusAtom`).
+// The Railway reads as Effects; each page wraps them in its own Commands.
 
 export const loadRailwayServices = (window: TimeWindow) =>
 	getRailwayServices({ data: window }).pipe(

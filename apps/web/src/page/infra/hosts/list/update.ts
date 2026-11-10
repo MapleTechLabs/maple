@@ -38,7 +38,6 @@ const requestAll = (model: Model, context: PageContext, mode: Keyed.RequestMode)
 	])
 }
 
-/** `navigate({ search: (prev) => ({ ...prev, ...patch }) })`. */
 const navigate = (model: Model, search: Search): Return => ({
 	model,
 	outMessage: PageOutMessage.RequestedNavigation({

@@ -29,8 +29,6 @@ import { CI_HEADLINE_LABELS, chartsRow, headlineStrip, RESULT_SERIES } from "./v
 import { jobsTable, workflowsTable } from "./view-tables"
 import { hstack, vstack } from "@maple/views/ui/stack"
 
-// `CodeReviewCiPage` and `CiAnalyticsView`.
-
 type H = HtmlBuilder<Message>
 
 const THEME_TOKENS = [...seriesTokens([...Rec.values(RESULT_SERIES), "p50", "p95"]), ...AREA_CHART_TOKENS]

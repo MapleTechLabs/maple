@@ -76,8 +76,6 @@ export const gcpSqlEdition = (edition: string | null): string | undefined =>
 export const gcpQueryInsightsConsoleUrl = (project: string, instance: string): string =>
 	`https://console.cloud.google.com/sql/instances/${encodeURIComponent(instance)}/insights?project=${encodeURIComponent(project)}`
 
-// Statements -------------------------------------------------------------------------------------
-
 /** A Query Insights statement over the window, as the top queries table shows it. */
 export interface GcpStatement {
 	readonly queryHash: string
@@ -279,8 +277,6 @@ export function gcpAppWait(
 	)
 }
 
-// Connections ------------------------------------------------------------------------------------
-
 /** The window's busiest moment for connections. */
 export interface GcpConnectionPeak {
 	readonly open: number
@@ -313,8 +309,6 @@ export function gcpConnectionPeak(
 /** The pool ran out: open connections reached 90% of `max_connections`. */
 export const gcpPoolFull = (peak: GcpConnectionPeak | undefined): boolean =>
 	peak !== undefined && peak.max !== null && peak.open >= GCP_LIMIT_FRACTION * peak.max
-
-// The rail --------------------------------------------------------------------------------------
 
 /**
  * How healthy PostgreSQL is underneath: deadlocks, transaction IDs used toward wraparound, the

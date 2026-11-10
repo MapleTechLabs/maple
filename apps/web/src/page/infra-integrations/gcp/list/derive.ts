@@ -16,8 +16,6 @@ import type { FleetRead, GcpStatus, Resources } from "../data"
 import type { Model } from "./model"
 import { successOf } from "../../kit/success-of"
 
-// The page's derivations over its reads (`GcpPage`, `GcpInfra` and `GcpListPage`).
-
 export const statusOf = (model: Model): GcpStatus | null => successOf(model.status.data)
 
 /** The connections that collect metrics; none when metrics are off on all of them. */

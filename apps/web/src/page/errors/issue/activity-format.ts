@@ -6,8 +6,6 @@ import { toEpochMs } from "@maple/ui/lib/time-format"
 
 const encodeJsonOption = Schema.encodeOption(Schema.fromJsonString(Schema.Unknown))
 
-// The issue timeline's vocabulary: labels, dots, payload text.
-
 export type EventType = ErrorIssueEventDocument["type"]
 
 export const IN_FLIGHT_FILL = "bg-severity-debug"
@@ -95,7 +93,6 @@ export const MESSAGE_VERB = {
 	unmerge: null,
 } satisfies Record<EventType, string | null>
 
-/** `payloadString`: a scalar as text; anything else as JSON. */
 export const payloadString = (value: unknown): string | null => {
 	if (value === null || value === undefined) return null
 	if (typeof value === "string") return value
@@ -181,7 +178,6 @@ const unmergeText = (p: Payload): string | null => {
 	return label ? `Split out ${label}.` : null
 }
 
-/** `renderPayload`: the row's body text, or none. */
 export const renderPayload = (event: ErrorIssueEventDocument): string | null => {
 	const p = event.payload
 	switch (event.type) {

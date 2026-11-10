@@ -44,7 +44,7 @@ import { toEpochMs } from "@maple/ui/lib/time-format"
 // The view half of the alert rule chart; the
 // definition is `charts/definitions/alert-rule.ts`, built by the chart Mount from the spec here.
 
-/** The tokens the chart and its chrome read off the theme (`PAINT_COLORS` plus the frame). */
+/** The tokens the chart and its chrome read off the theme. */
 export const RULE_CHART_TOKENS: ReadonlyArray<string> = [
 	"--chart-1",
 	"--severity-warn",
@@ -98,7 +98,7 @@ export type RuleChartInputs<M> = Readonly<{
 	source?: SignalSource
 	railCoverage?: string
 	selectedBucket?: number | null
-	/** `onSelectBucket`: the rail cells are buttons when set. */
+	/** The rail cells are buttons when set. */
 	onSelectBucket?: (index: number | null) => M
 	isLoading?: boolean
 	error?: string | null
@@ -472,7 +472,7 @@ const chartView = Submodel.defineView<
 	}),
 )
 
-// THE RAIL: evaluations as discrete cells, incidents as a continuous bar.
+// The rail: evaluations as discrete cells, incidents as a continuous bar.
 
 /** One rail cell's tally while the checks are folded in. */
 type RailBucket = {

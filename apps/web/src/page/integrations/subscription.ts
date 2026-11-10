@@ -69,8 +69,6 @@ const openPopup = (name: string, features: string, label: string) =>
 		),
 	)
 
-/** Polls the popup until it closes: `PolledConnect` every 3 s (polling providers), then `Closed`. */
-
 /**
  * The flow's 500 ms interval: every sixth tick polls (polling providers); `isClosed` ends it with
  * `Closed` once the popup is gone.
@@ -114,7 +112,7 @@ const grace = ({ provider, attempt }: ConnectAttempt) => {
 	return ticker(attempt, spec.polls, () => true, spec.closeGraceMs)
 }
 
-/** `useOAuthPopupFlow`'s `connect`: open in the click, start, then send the popup to the provider. */
+/** Opens the popup in the click, starts, then sends the popup to the provider. */
 const popupFlow = ({ provider, attempt, githubMode }: ConnectAttempt) =>
 	Stream.unwrap(
 		Effect.gen(function* () {
@@ -148,8 +146,6 @@ const popupFlow = ({ provider, attempt, githubMode }: ConnectAttempt) =>
 					)
 		}),
 	)
-
-/** After the popup closed, a provider with a grace keeps polling until it ends. */
 
 const GITHUB_POLL_MS = 3_000
 const FORCE_POLL_WINDOW_MS = 10_000
@@ -242,7 +238,7 @@ const isAwaitingRun = (model: Model): boolean => {
 	const connector = configureConnector(model, configure)
 	if (connector === undefined) return false
 	if (configure.method === "script") return !runConfirmed(connector, configure.opened, model.nowMs)
-	// `MethodApplyStage`: until each capability's first data, or its removal, is confirmed.
+	// Until each capability's first data, or its removal, is confirmed.
 	return Arr.some(CAPABILITY_IDS, (capability) => {
 		const applied =
 			capability === "logs" ? connector.applied_logs_enabled : connector.applied_metrics_enabled
@@ -284,7 +280,7 @@ const isGithubPolling = (model: Model): boolean => {
 	)
 }
 
-/** The provider whose callback messages this page listens for (`useIntegrationMessage`). */
+/** The provider whose callback messages this page listens for. */
 const listeningProvider = (model: Model): ConnectProvider | null => {
 	const integration = integrationOfSearch(model.search.integration)
 	return Schema.is(ConnectProvider)(integration) ? integration : null
@@ -317,7 +313,6 @@ export const subscriptions = Subscription.make<PageSubscriptionInput<Model>, Mes
 							: grace(attempt),
 			},
 		),
-		/** `useIntervalRefresh(refreshStatus, { intervalMs: 3_000, enabled: shouldPoll })` on the GitHub card. */
 		githubPoll: entry(
 			{ isPolling: Schema.Boolean },
 			{
@@ -348,7 +343,7 @@ export const subscriptions = Subscription.make<PageSubscriptionInput<Model>, Mes
 							),
 			},
 		),
-		/** `useCloudflareIngestPhase`: status and usage every 30 s while a fresh connection settles. */
+		/** Status and usage every 30 s while a fresh Cloudflare connection settles. */
 		cloudflareIngest: entry(
 			{ isSettling: Schema.Boolean },
 			{
@@ -359,7 +354,7 @@ export const subscriptions = Subscription.make<PageSubscriptionInput<Model>, Mes
 						: Stream.empty,
 			},
 		),
-		/** `ScrapeTargetsSection`: the list every 30 s; the selected target's checks every 10 s. */
+		/** The scrape target list every 30 s; the selected target's checks every 10 s. */
 		scrapeTargetsRefresh: entry(
 			{ isShown: Schema.Boolean },
 			{
@@ -378,7 +373,6 @@ export const subscriptions = Subscription.make<PageSubscriptionInput<Model>, Mes
 					selectedId === null ? Stream.empty : every(10_000, () => Message.TickedChecksRefresh()),
 			},
 		),
-		/** `useIntervalRefresh(refreshStatus, { intervalMs: 15_000, enabled: queued > 0 })`. */
 		railwaySettle: entry(
 			{ isSettling: Schema.Boolean },
 			{
@@ -425,7 +419,6 @@ export const subscriptions = Subscription.make<PageSubscriptionInput<Model>, Mes
 						: Stream.empty,
 			},
 		),
-		/** `useIntervalRefresh(refreshStatus, { intervalMs: settling ? 10_000 : 60_000 })` with the live clock. */
 		gcpRefresh: entry(
 			{ intervalMs: Schema.NullOr(Schema.Number) },
 			{
@@ -434,7 +427,7 @@ export const subscriptions = Subscription.make<PageSubscriptionInput<Model>, Mes
 					intervalMs === null ? Stream.empty : every(intervalMs, () => Message.TickedGcpRefresh()),
 			},
 		),
-		/** `GcpDisconnectDialog`'s own `useIntervalRefresh(gcpStatus, 10_000)` while it is open. */
+		/** The Google Cloud status every 10 s while its disconnect dialog is open. */
 		gcpDisconnectRefresh: entry(
 			{ isOpen: Schema.Boolean },
 			{
@@ -447,7 +440,7 @@ export const subscriptions = Subscription.make<PageSubscriptionInput<Model>, Mes
 					isOpen ? every(10_000, () => Message.TickedGcpRefresh()) : Stream.empty,
 			},
 		),
-		/** `ApplyStage`'s `useIntervalRefresh(gcpStatus, 10_000)` until the run is confirmed. */
+		/** The Google Cloud status every 10 s until the run is confirmed. */
 		gcpApplyRefresh: entry(
 			{ isWaiting: Schema.Boolean },
 			{

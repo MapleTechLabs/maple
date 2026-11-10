@@ -70,7 +70,6 @@ import { appendedPage, fetchingNext, freshLaterPages } from "../../kit/infinite-
 export type Return = PageReturn<Model, Message>
 type Commands = ReadonlyArray<Command.Command<Message, never, Resources>>
 
-/** The stream's default window (`DashboardPage`'s `defaultPreset`). */
 export const DEFAULT_PRESET = "12h"
 
 const NO_BRUSH = { left: null, right: null, isSelecting: false }
@@ -84,11 +83,9 @@ export const resolveCommand = (model: Model, context: PageContext, mode: Request
 		timeZone: context.timeZone,
 	})
 
-// STREAM ROWS
-
 const firstPageOf = (model: Model) => Option.getOrUndefined(AsyncData.getData(model.firstPage.data))
 
-/** `ListFooter`'s line: the count, scoped by the trace and the search. */
+/** The footer's line: the count, scoped by the trace and the search. */
 const footerOf = (model: Model, shown: number): string => {
 	const scope = Arr.join(
 		[
@@ -128,7 +125,7 @@ const streamSlot = {
 	toParentMessage: (message: LogsStream.Message) => Message.GotStreamMessage({ message }),
 }
 
-/** New data (a reload, a filter): expansion was made on the old rows, so it goes (`expansion.anchor`). */
+/** New data (a reload, a filter): expansion was made on the old rows, so it goes. */
 const replaceStreamRows = (model: Model, context: PageContext): Return => {
 	const result = LogsStream.replaceRows(model.stream, rowsOf(model, context))
 	return {
@@ -148,11 +145,9 @@ const inspectOf = (out: LogsStream.OutMessage | undefined): Partial<Model> =>
 		? { isInspecting: out.isInspecting, isScrolledAway: out.isScrolledAway }
 		: {}
 
-// REQUESTS
-
 type Step = Readonly<{ model: Model; commands: Commands }>
 
-/** One `Keyed.request`: `Some` writes the slot and returns its fetch (S6). */
+/** `Some` writes the slot and returns its fetch. */
 const keyed = <A, E>(
 	step: Step,
 	slot: (model: Model) => Keyed.Keyed<A, E>,
@@ -166,10 +161,9 @@ const keyed = <A, E>(
 		onSome: (next) => ({ model: write(step.model, next), commands: [...step.commands, fetch(key)] }),
 	})
 
-/** Every query the page reads, keyed by its inputs, for the resolved window. */
 /**
- * Reload refreshes only the stream (`useRefreshableAtomValue`); the other reads refetch only when
- * their key moves. `facetsMode` is the sidebar's own retry.
+ * Every query the page reads, keyed by its inputs, for the resolved window. Reload refreshes only
+ * the stream; the other reads refetch only when their key moves. `facetsMode` is the sidebar's own retry.
  */
 const requestAll = (
 	model: Model,
@@ -230,7 +224,6 @@ const requestAll = (
 		{ model: { ...model, window }, commands: [] },
 		(step, next) => next(step),
 	)
-	// A new first-page request owns a fresh set of later pages (`initialPagination`).
 	const isNewFirstPage = done.model.firstPage.key !== model.firstPage.key
 	return {
 		model: isNewFirstPage
@@ -241,8 +234,8 @@ const requestAll = (
 }
 
 /**
- * `useVirtualReachEnd` + `fetchNextPage`: once the window's last row is within `FETCH_THRESHOLD`
- * of the end, the next page is fetched, one at a time, never while the first page refreshes.
+ * Once the window's last row is within `FETCH_THRESHOLD` of the end, the next page is fetched, one
+ * at a time, never while the first page refreshes.
  */
 const fetchIfNearEnd =
 	(context: PageContext) =>
@@ -280,8 +273,6 @@ const fetchIfNearEnd =
 		}
 	}
 
-// NAVIGATION
-
 const navigate = (model: Model, search: Search, isReplace = false): Return => ({
 	model,
 	outMessage: PageOutMessage.RequestedNavigation({ url: hrefOf(AppRoute.Logs({ search })), isReplace }),
@@ -304,8 +295,6 @@ const windowOnly = (search: Search): Search => ({
 	endTime: search.endTime,
 	timePreset: search.timePreset,
 })
-
-// ENTRY POINTS
 
 export const init = (route: { readonly search: Search }, context: PageContext): Return => {
 	const model: Model = {
@@ -380,8 +369,6 @@ export const routeChanged = (
 export const contextChanged = (model: Model, context: PageContext): Return =>
 	model.window === null ? { model } : requestAll(model, context, model.window, "Load")
 
-// STREAM
-
 const foldStreamOut = (model: Model, out: LogsStream.OutMessage, context: PageContext): Return =>
 	LogsStream.OutMessage.match<Return>(out, {
 		OpenedLog: ({ index }) => {
@@ -427,8 +414,6 @@ const foldStream = (model: Model, message: LogsStream.Message, context: PageCont
 	}
 	return message._tag === "ChangedVirtualWindow" ? fetchIfNearEnd(context)(withOut) : withOut
 }
-
-// UPDATE
 
 /** Reload, live tick or Jump to latest: a new `refreshVersion`, unsnapped, with the 600 ms spin. */
 const reload = (model: Model, context: PageContext): Return => {
@@ -500,7 +485,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		}),
 		CompletedSavePreference: () => ({ model }),
 		...chartEnvHandlers(model),
-		// `useSignalPresence` mounts with the empty state, so its "unknown" copy paints first.
+		// Presence is asked when the empty state mounts, so its "unknown" copy paints first.
 		MountedFilterRail: () => {
 			if (model.isFilterRailMounted) return { model }
 			const mounted = { ...model, isFilterRailMounted: true }
@@ -670,7 +655,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 				Message.GotSearchHelpMessage({ message: m }),
 			)
 		},
-		// `setColumns`: the picked keys in `?columns`, none leaves the URL.
+		// The picked keys go in `?columns`; none leaves the URL.
 		ToggledColumn: ({ key }) => {
 			const pinned = model.search.columns ?? []
 			const next = pinned.includes(key) ? Arr.filter(pinned, (k) => k !== key) : [...pinned, key]
@@ -695,7 +680,6 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		},
 		GotVolumeChartMessage: ({ message: inner }) => {
 			const next = Chart.update(model.volumeChart, inner)
-			// `handleBucketHover`: while dragging, every bucket crossed extends the selection.
 			const hovered = inner._tag === "ChangedChartFocus" ? Option.getOrNull(inner.maybeKey) : null
 			const volumeBrush =
 				model.volumeBrush.isSelecting && hovered !== null
@@ -717,14 +701,14 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			const cleared = { ...model, volumeBrush: NO_BRUSH }
 			const buckets = Option.getOrUndefined(AsyncData.getData(model.volume.data)) ?? []
 			const range = isSelecting && left !== null ? brushRange(left, right ?? left, buckets) : undefined
-			// `onTimeRangeSelect`: `applyTimeRangeSearch` with absolute bounds, as a replace.
+			// Absolute bounds, written as a replace.
 			return range === undefined
 				? { model: cleared }
 				: navigate(cleared, { ...model.search, ...range, timePreset: undefined }, true)
 		},
 		LeftVolumeChart: () =>
 			model.volumeBrush.isSelecting ? { model: { ...model, volumeBrush: NO_BRUSH } } : { model },
-		// `applyTimeRangeSearch` with a preset: the absolute bounds leave the URL.
+		// A preset: the absolute bounds leave the URL.
 		GotTimePickerMessage: ({ message: inner }) =>
 			pickerStep(
 				model,

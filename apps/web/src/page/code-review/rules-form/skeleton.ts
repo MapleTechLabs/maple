@@ -12,7 +12,7 @@ import { hstack, vstack } from "@maple/views/ui/stack"
 import { skeletonSwitchClass } from "@maple/views/ui/skeleton"
 import { Array as Arr } from "effect"
 
-// `RulesFormView` before its config loads: the real field labels and hints, bars for the values.
+// The rules form before its config loads: the real field labels and hints, bars for the values.
 
 type Mode = "organization" | "repository"
 

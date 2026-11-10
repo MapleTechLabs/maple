@@ -23,8 +23,6 @@ import {
 import { DATA_SOURCE_KIND_ENTRIES, DATA_SOURCE_KIND_ENTRY, type DataSourceKindEntry } from "../kit/providers"
 import type { Model } from "./model"
 
-// The hub's rows and shelves: integrations and data sources in one list, by capability.
-
 export type ConnectedRow =
 	| Readonly<{
 			_tag: "Integration"

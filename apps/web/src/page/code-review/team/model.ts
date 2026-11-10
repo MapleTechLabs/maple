@@ -10,8 +10,6 @@ import { getTeam } from "../kit/api"
 import { Frame, FrameMessage } from "../kit/frame"
 import { ResponseCache } from "../kit/page-steps"
 
-// `/code-review/team`.
-
 export const Model = Schema.Struct({
 	search: CodeReviewTeamSearch,
 	frame: Frame,

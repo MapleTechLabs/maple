@@ -38,7 +38,7 @@ const toast = (model: Model, type: "success" | "error", title: string, descripti
 
 const isCurrent = (model: Model, attempt: number) => model.connect.active?.attempt === attempt
 
-/** `refreshStatus` of the provider (Cloudflare's usage and prime ride along, see its card). */
+/** Re-reads the provider's status (Cloudflare's usage and prime ride along, see its card). */
 export const refreshProvider = (
 	model: Model,
 	context: PageContext,
@@ -114,7 +114,7 @@ export const polled = (model: Model, context: PageContext, attempt: number): Ret
 		: { model }
 }
 
-/** `onClosed`: re-read the status; a provider with a grace keeps the attempt open a while. */
+/** The popup closed: re-read the status; a provider with a grace keeps the attempt open a while. */
 export const closedPopup = (model: Model, context: PageContext, attempt: number): Return => {
 	const active = model.connect.active
 	if (active === null || active.attempt !== attempt) return { model }
@@ -141,7 +141,7 @@ const CONNECTED_TITLE = {
 const refreshedSites = (model: Model, context: PageContext, provider: ConnectProvider): Return =>
 	provider === "google-search-console" ? SearchConsole.requestSites(model, context, "Supersede") : { model }
 
-/** `useIntegrationMessage`: the callback page's verdict; a success is `integration_connected`. */
+/** The callback page's verdict; a success is `integration_connected`. */
 export const receivedCallback = (
 	model: Model,
 	context: PageContext,

@@ -21,7 +21,7 @@ export const countHostScopes = (hosts: ReadonlyArray<HostRow>, reference: string
 	return { total: hosts.length, saturated, elevated, stale }
 }
 
-/** `HostList`'s filter: scope, then a case-insensitive name match. */
+/** The list's filter: scope, then a case-insensitive name match. */
 export const filterHosts = (
 	hosts: ReadonlyArray<HostRow>,
 	scope: HostScope | undefined,

@@ -5,7 +5,7 @@ import { Schema, Array as Arr, String as Str, Order } from "effect"
 export const SortDir = Schema.Literals(["asc", "desc"])
 export type SortDir = typeof SortDir.Type
 
-/** `useSortState`: the sorted column (`null` = source order) and its direction. */
+/** The sorted column (`null` = source order) and its direction. */
 export const SortState = Schema.Struct({ key: Schema.NullOr(Schema.String), dir: SortDir })
 export type SortState = typeof SortState.Type
 
@@ -17,7 +17,7 @@ export type Sort<K = string> = Readonly<{ key: K | null; dir: SortDir }>
 /** A sortable cell value; a missing one sorts as text. */
 export type SortValue = number | string | undefined
 
-/** `handleSort`: same key flips the direction (desc, asc, then source order when resettable); a new key starts asc for names, desc otherwise. */
+/** Same key flips the direction (desc, asc, then source order when resettable); a new key starts asc for names, desc otherwise. */
 export const nextSort = <K>(
 	sort: Sort<K>,
 	key: K,
@@ -61,7 +61,7 @@ export const urlSortPatch = <K extends string>(
 		: { sortBy: key, sortDir }
 }
 
-/** `useTableSort`'s `sorted`: a stable sort by the active column, source order without one. */
+/** A stable sort by the active column, source order without one. */
 export const sortRows = <Row>(
 	rows: ReadonlyArray<Row>,
 	sort: Sort,

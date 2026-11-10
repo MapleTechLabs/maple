@@ -31,8 +31,6 @@ import { HEALTH_STRIP_GRID, healthStripView } from "./view-strip"
 import { trafficPanel } from "./view-traffic"
 import { typography } from "@maple/views/ui/typography"
 
-// `/infra/supabase/$projectRef`: the project's Overview.
-
 type H = HtmlBuilder<Message>
 type DiscoveredProject = SupabaseStatus["projects"][number]
 

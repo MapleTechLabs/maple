@@ -36,14 +36,12 @@ import { typography, typographyClass } from "@maple/views/ui/typography"
 import { hstack, hstackClass, vstack } from "@maple/views/ui/stack"
 import { Array as Arr, String as Str } from "effect"
 
-// `GcpConnection`, `connectionIssues`, `signalText`, `Signal` and `Fact`.
-
 type H = HtmlBuilder<Message>
 type Children = ReadonlyArray<Html | string>
 type LogState = ReturnType<typeof gcpLogState>
 type MetricsState = ReturnType<typeof gcpMetricsState>
 
-// TODO(clerk): `useIsOrgAdmin`; self-hosted runs as the root admin, so every control shows.
+// TODO(clerk): read the org admin role; self-hosted runs as the root admin, so every control shows.
 const IS_ADMIN = true
 
 const RETRIES = "Maple retries every 5 minutes. If this lasts an hour, write to support@maple.dev."

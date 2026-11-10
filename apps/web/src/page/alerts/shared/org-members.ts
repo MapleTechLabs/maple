@@ -55,14 +55,12 @@ export const membersOf = (
 			)
 		const first = yield* page(1)
 		const pageCount = Math.ceil(Math.min(first.total_count, MAX_MEMBERS) / PAGE_SIZE)
-		// The rest of the pages, 4 at a time.
 		const rest = yield* Effect.forEach(pageCount > 1 ? Arr.range(2, pageCount) : [], page, {
 			concurrency: 4,
 		})
 		return Arr.flatMap([first, ...rest], (result) => Arr.flatMap(result.data, memberOfMembership))
 	}).pipe(Effect.mapError((error) => error.message))
 
-/** The current org's members. */
 export const listOrgMembers: Effect.Effect<ReadonlyArray<OrgMember>, string> = currentClerkOrganization.pipe(
 	Effect.mapError((error) => error.message),
 	Effect.flatMap(membersOf),

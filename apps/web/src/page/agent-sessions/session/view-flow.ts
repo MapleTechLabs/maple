@@ -36,7 +36,6 @@ import { typography, typographyClass } from "@maple/views/ui/typography"
 import { hstack, vstack } from "@maple/views/ui/stack"
 import { Array as Arr } from "effect"
 
-// The session flow: one lane per turn on the xyflow canvas.
 // TODO(list-navigation): the arrow-key node cursor is not ported.
 
 type H = HtmlBuilder<Message>
@@ -204,7 +203,7 @@ const edgesOf = (h: H, lanes: ReadonlyArray<FlowLane>, isRelaid: boolean): Html 
 
 const LEGEND = ["agent", "inference", "tool"] as const
 
-/** `FlowControls`: in, out, and back to the top of the session at 1:1. */
+/** In, out, and back to the top of the session at 1:1. */
 const controls = (h: H, model: Model): Html => {
 	const { zoom } = model.flowCanvas.viewport
 	return hstack(

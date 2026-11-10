@@ -15,8 +15,6 @@ import { Array as Arr, Order } from "effect"
 import { formatNumber } from "@maple/ui/lib/format"
 import type { ErrorSignal } from "../../../lib/models/error-signal"
 
-// The issues bulk bar: the selection's actions, pinned to the foot.
-
 type H = HtmlBuilder<Message>
 
 const DOT_ITEM = hstackClass({ gap: "2" })

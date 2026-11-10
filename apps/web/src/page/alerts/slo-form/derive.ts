@@ -3,8 +3,6 @@ import { countLabel } from "@maple/ui/lib/format"
 import { Array as Arr, Option, String as Str } from "effect"
 import { type Form, TARGET_PRESETS, type TargetPick } from "./form"
 
-// The SLO form's draft read back: the target it sets, what still blocks saving, and the payload.
-
 const MIN_TARGET = 50
 const MAX_TARGET = 99.999
 

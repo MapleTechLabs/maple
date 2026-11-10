@@ -6,12 +6,11 @@ import { autocompleteField, metricKeysOf, whereValuesOf } from "../../kit/query-
 import { traceFacetsOf } from "./derive-rows"
 import type { Model } from "./model"
 
-// `AlertQueryPanel`'s `autocompleteValues` (the provider is not lazy here): the where editor's
-// suggestions per source, over the editor's 24h window.
+// The where editor's suggestions per source, over the editor's 24h window.
 
 type ValuesModel = Pick<Model, "traceFacets" | "autocomplete" | "metricKeys" | "metricOptions">
 
-/** `autocompleteValues[query.dataSource]`, with a picked metric's own keys (`useMetricScopedAutocomplete`). */
+/** The source's autocomplete values, with a picked metric's own keys. */
 export const baseValuesOf = (model: ValuesModel, query: QueryDraft): WhereClauseAutocompleteValues =>
 	whereValuesOf(query.dataSource, {
 		slots: model.autocomplete,

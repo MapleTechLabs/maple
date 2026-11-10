@@ -10,8 +10,6 @@ import { LoadFailure } from "@maple/views/data/load-failure"
 import * as Dialog from "@maple/views/ui/dialog"
 import { LiveRows } from "../../kit/load-schemas"
 
-// `/alerts/slos/$sloId`: one SLO, its error budget, burn rates and incidents.
-
 export const Model = Schema.Struct({
 	/** The URL segment as written; `sloId` is `null` when it is not an SLO id. */
 	rawSloId: Schema.String,

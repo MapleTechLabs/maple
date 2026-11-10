@@ -20,8 +20,6 @@ import { filterChipRail } from "../../kit/filter-chip-rail"
 import type { ZoneFacets } from "../data"
 import { type FilterKey, Message, type Model } from "./model"
 
-// `CloudflareFilterChips`, `CloudflareFilterPopover` and `CloudflareFilterSidebarView`.
-
 type H = HtmlBuilder<Message>
 
 export const filterChips = (h: H, model: Model, filters: CloudflareFilters): Html | null =>
@@ -124,7 +122,7 @@ const sidebar = (h: H, model: Model, filters: CloudflareFilters): Html => {
 	})
 }
 
-/** `CloudflareFilterPopover`: every facet behind one dashed button. */
+/** Every facet behind one dashed button. */
 export const filterPopover = (h: H, model: Model, filters: CloudflareFilters): Html =>
 	h.submodel({
 		slotId: "cloudflare-zone-filter-popover",

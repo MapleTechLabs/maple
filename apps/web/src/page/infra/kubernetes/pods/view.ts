@@ -32,8 +32,6 @@ import { DEFAULT_PRESET, filtersOf, pageIndexOf, peekOf, sortOf } from "./update
 import { filtersRail } from "./view-filters"
 import { Array as Arr, Record as Rec, String as Str } from "effect"
 
-// `PodsPage` in `KubernetesShell`.
-
 type H = HtmlBuilder<Message>
 
 const FACETS: ReadonlyArray<Readonly<{ label: string; include: FilterParam; exclude: FilterParam }>> = [

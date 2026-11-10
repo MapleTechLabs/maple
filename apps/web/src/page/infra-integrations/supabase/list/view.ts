@@ -27,8 +27,6 @@ import { hstack } from "@maple/views/ui/stack"
 import { grid } from "@maple/views/ui/grid"
 import { Array as Arr } from "effect"
 
-// `/infra/supabase`: the organization's projects, their health and what needs a look.
-
 type H = HtmlBuilder<Message>
 
 const loading = (h: H): Html =>

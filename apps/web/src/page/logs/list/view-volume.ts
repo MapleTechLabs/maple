@@ -54,7 +54,6 @@ const volumeSpec = (
 
 type PlotInputs = Readonly<{ spec: ChartSpec }>
 
-/** `CursorPlot` with `ariaLabel="Log volume by severity"` in its 120px strip. */
 const volumePlot = Submodel.defineView<Chart.Model, Chart.Message, PlotInputs>((model, inputs, h) =>
 	plotFrame(h, {
 		chartId: "logs-volume",
@@ -69,8 +68,6 @@ const volumePlot = Submodel.defineView<Chart.Model, Chart.Message, PlotInputs>((
 			),
 	}),
 )
-
-// EMPTY STRIP
 
 const EMPTY_STRIP_TICKS = 5
 const EMPTY_STRIP_BARS = 64
@@ -90,7 +87,7 @@ const EMPTY_STRIP_BARS_STACKED = Array.from({ length: EMPTY_STRIP_BARS }, (_, i)
 	]
 })
 
-/** `EmptyVolumeStrip`: the strip's height and gutter kept, the window and severities named. */
+/** The strip's height and gutter kept, the window and severities named. */
 const emptyStrip = (
 	h: HtmlBuilder<Message>,
 	window: Readonly<{ startTime: string; endTime: string }>,

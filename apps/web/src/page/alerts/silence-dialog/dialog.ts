@@ -9,8 +9,6 @@ import { MAX_ALERT_SILENCE_DURATION_MS } from "@maple/domain/http"
 import { hasMatchers, MatcherField, matchersFromTyped, TypedMatchers } from "../shared/matcher-fields"
 import { createSilence } from "../shared/silences"
 
-// "Silence notifications": the dialog the hub, a rule and an incident open, as one Submodel.
-
 export const SilenceDuration = Schema.Literals(["1h", "4h", "morning", "custom"])
 export type SilenceDuration = typeof SilenceDuration.Type
 
@@ -146,8 +144,6 @@ export const isFormReady = (model: Model): boolean =>
 	hasMatchers(matchersOf(model.scope)) &&
 	Option.isSome(silenceEndMs(model.duration, model.until, model.nowMs, model.timeZone))
 
-// COMMANDS
-
 export const SaveSilence = Command.define("SaveAlertSilence", {
 	args: {
 		openCount: Schema.Number,
@@ -174,8 +170,6 @@ export const SaveSilence = Command.define("SaveAlertSilence", {
 			Effect.map((result) => Message.CompletedSave({ openCount, result })),
 		),
 })
-
-// UPDATE
 
 const liftDialog = (model: Model, result: ReturnType<typeof Dialog.update>): Return => ({
 	model: { ...model, dialog: result.model },

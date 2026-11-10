@@ -222,8 +222,6 @@ const combine = (first: Return, second: (model: Model) => Return): Return => {
 	}
 }
 
-// ENTRY
-
 export const init = (_route: unknown, context: PageContext, carried: Carried = noCarry): Return => {
 	const key = statusKey(context)
 	const model: Model = {
@@ -317,7 +315,7 @@ const liftDialog = (model: Model, result: ReturnType<typeof Dialog.update>): Ret
 	const commands = Command.mapMessages(result.commands ?? [], (message) =>
 		Message.GotDialogMessage({ message }),
 	)
-	// `RepositoryConfig` unmounts with the closed dialog: the next open builds its form again.
+	// The closed dialog drops its form: the next open builds it again.
 	const closed = result.outMessage?._tag === "Closed"
 	return {
 		model: { ...model, dialog: result.model, repoForm: closed ? null : model.repoForm },
@@ -325,7 +323,7 @@ const liftDialog = (model: Model, result: ReturnType<typeof Dialog.update>): Ret
 	}
 }
 
-/** `RepositoryConfig`'s form, built from the answer once it is in (or kept in step with it). */
+/** The repository dialog's form, built from the answer once it is in (or kept in step with it). */
 const withRepoForm = (model: Model): Model =>
 	Option.match(AsyncData.getData(model.repoConfig.data), {
 		onNone: () => model,
@@ -381,7 +379,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 				localSettings: isSettled ? null : model.localSettings,
 				confirmedSettings: isSettled ? null : model.confirmedSettings,
 			})
-			// `RepositoriesSection` mounts with the settings: the repositories are read then.
+			// The repositories are read once the settings are in.
 			return Option.isSome(settingsOf(next)) && AsyncData.isIdle(next.githubStatus.data)
 				? readStatus(next, context, "Load")
 				: { model: next }

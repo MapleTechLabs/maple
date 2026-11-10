@@ -21,9 +21,7 @@ import { CheckSummary } from "../shared/check-summary"
 import { PreviewSlot } from "../shared/preview"
 import { LiveRows } from "../../kit/load-schemas"
 
-// `/alerts/$ruleId`.
-
-/** `AlertRuleChecksResponse` (`useAlertRuleChecks`): the newest checks page plus the summary. */
+/** The newest checks page plus the summary. */
 export const ChecksResponse = Schema.Struct({
 	checks: Schema.Array(AlertCheckDocument),
 	hasMore: Schema.Boolean,
@@ -49,7 +47,7 @@ export const Model = Schema.Struct({
 	ruleId: AlertRuleId,
 	search: AlertRuleSearch,
 	window: Schema.NullOr(TimeWindow),
-	/** `diagnosisNow`: the wall clock the diagnosis labels read, refreshed with its inputs. */
+	/** The wall clock the diagnosis labels read, refreshed with its inputs. */
 	nowMs: Schema.Number,
 	rules: LiveRows(AlertRuleRowSchema),
 	incidents: LiveRows(AlertIncidentRowSchema),
@@ -58,7 +56,6 @@ export const Model = Schema.Struct({
 	deliveries: KeyedSchema(Schema.Array(AlertDeliveryEventDocument), LoadFailure),
 	checks: KeyedSchema(ChecksResponse, LoadFailure),
 	preview: PreviewSlot,
-	// Local UI state.
 	stateFilter: StateFilter,
 	checkStatusFilter: CheckStatusFilter,
 	signalSource: SignalSource,
@@ -68,13 +65,13 @@ export const Model = Schema.Struct({
 	isBucketLoading: Schema.Boolean,
 	bucketRequest: Schema.Number,
 	isShowingAllIncidents: Schema.Boolean,
-	/** `ChecksPanel`'s "Load 100 more" pages and its cursor (`undefined` = the first page's). */
+	/** The checks panel's "Load 100 more" pages and its cursor (`undefined` = the first page's). */
 	extraChecks: Schema.Array(AlertCheckDocument),
 	nextCursorOverride: Schema.optionalKey(Schema.NullOr(Schema.String)),
 	isLoadingMoreChecks: Schema.Boolean,
 	/** Bumped when the panel starts over (window or filter): a load-more for an older one is dropped. */
 	checksGeneration: Schema.Number,
-	/** `RuleDiagnosisPanel`: the header toggle (`null` follows the verdict), steps and evidence. */
+	/** The diagnosis panel: its header toggle (`null` follows the verdict), steps and evidence. */
 	isDiagnosisExpanded: Schema.NullOr(Schema.Boolean),
 	isShowingAllStages: Schema.Boolean,
 	selectedGroup: Schema.NullOr(Schema.String),

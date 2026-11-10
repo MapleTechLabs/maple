@@ -16,8 +16,6 @@ import type { Model, TraceFacets } from "./model"
 import { Array as Arr } from "effect"
 import { toEpochMs } from "@maple/ui/lib/time-format"
 
-// The live rows as the documents the editor reads.
-
 export const destinationsOf = (model: Pick<Model, "destinations">): ReadonlyArray<AlertDestinationDocument> =>
 	rowsToAlertDestinationDocuments(model.destinations ?? [])
 
@@ -36,7 +34,7 @@ export const tagSuggestionsOf = (
 		: tags
 }
 
-/** The edited rule's open incidents (`clearedIncidents` input). */
+/** The edited rule's open incidents. */
 export const openIncidentsOf = (
 	model: Pick<Model, "incidents" | "editingRuleId">,
 ): ReadonlyArray<AlertIncidentDocument> =>
@@ -108,7 +106,7 @@ export const draftTimingOf = (
 			})
 		: null
 
-/** The draft's preview as `useAlertRulePreview` reads it. */
+/** The draft's preview state. */
 export const draftPreviewOf = (
 	model: Pick<Model, "preview" | "previewWindow">,
 	form: RuleForm,

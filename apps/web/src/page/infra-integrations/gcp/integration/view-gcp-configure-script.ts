@@ -15,8 +15,6 @@ import { hstack } from "@maple/views/ui/stack"
 import { String as Str } from "effect"
 import { stripClass } from "@maple/views/ui/rule"
 
-// `FileCard` and `LoadFailure`: a generated file to copy, the start in view, the rest on request.
-
 type H = HtmlBuilder<Message>
 
 const COPY_ID = "configure-file"

@@ -31,8 +31,6 @@ import { DEFAULT_PRESET } from "./update"
 import { hstack } from "@maple/views/ui/stack"
 import { typography } from "@maple/views/ui/typography"
 
-// `WorkloadDetailPage` and `WorkloadDetailChart`.
-
 type H = HtmlBuilder<Message>
 type Summary = NonNullable<WorkloadSummary>
 

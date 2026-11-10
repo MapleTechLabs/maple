@@ -24,14 +24,10 @@ import { Array as Arr, Record as Rec } from "effect"
 import { stripClass } from "@maple/views/ui/rule"
 import { everyMinutes } from "../../kit/alert-time"
 
-// `RawSqlEditorPanel` without the bucket control, and the alert's reducer row under it
-// (`RawQueryEditor`).
-
 type H = HtmlBuilder<Message>
 
 export const REDUCER_SELECT_ID = "rule-raw-reducer"
 
-/** What the editor reads off the Model: the collapse and the reducer select's state. */
 export type SqlView = Pick<Model, "isSqlCollapsed"> & Readonly<{ reducerSelect: Select.Model | undefined }>
 
 export const SQL_TEXTAREA_ID = "alert-rule-sql"
@@ -211,7 +207,7 @@ const isNearLimit = (form: RuleForm, timing: AlertQueryTiming): boolean =>
 	timing.elapsedMs === null ||
 	timing.elapsedMs > alertQueryLimits(formIntervalMinutes(form)).timeSeconds * 1000 * 0.5
 
-/** `RawQueryEditor`: the SQL panel, the query time, the reducer, and the sample-count warning. */
+/** The SQL panel, the query time, the reducer, and the sample-count warning. */
 export const rawQueryEditor = (
 	h: H,
 	model: SqlView,

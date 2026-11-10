@@ -2,8 +2,6 @@ import { V2Slo, V2SloHistory, V2SloStatus } from "@maple/domain/http/v2"
 import { Array as Arr, Schema } from "effect"
 import { DESTINATION_ID, NOW, ruleId } from "../../kit/alert-test-rows"
 
-// SLOs, statuses and budget histories as the v2 client decodes them, for the scene tests and the lab.
-
 export const sloUuid = (n: number) => `0199a00a-0000-7000-8000-00000000000${n}`
 /** The burn-rate rule behind the default SLO; its incidents carry it as `rule_id`. */
 export const SLO_RULE_UUID = ruleId(8)

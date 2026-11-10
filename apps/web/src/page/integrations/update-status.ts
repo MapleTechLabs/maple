@@ -7,8 +7,6 @@ import { STATUS_READS } from "./command"
 import type { Message } from "./message"
 import type { Model, Statuses } from "./model"
 
-// The shared status reads: keys, requests, and step chaining.
-
 type Return = PageReturn<Model, Message>
 
 export const statusKey = (context: PageContext, name: keyof Statuses) =>

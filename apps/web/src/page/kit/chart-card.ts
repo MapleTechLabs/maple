@@ -5,7 +5,7 @@ import { panel, panelHeader, panelTitle } from "@maple/views/ui/panel"
 import { typography } from "@maple/views/ui/typography"
 import { hstack, vstack, vstackClass } from "@maple/views/ui/stack"
 
-// `ChartCard` and `ChartCardMessage`.
+// The card a chart sits in: an optional header (title, legend, scope) over the plot area.
 
 /** Every infra detail chart plots at this height, so a grid of them never staggers. */
 export const CHART_HEIGHT = 200
@@ -57,6 +57,6 @@ export const chartCard = <M>(
 		: panel(h, { className: options.className }, content)
 }
 
-/** `ChartCardMessage`: a centred message filling the card's plot area. */
+/** A centred message filling the card's plot area. */
 export const chartCardMessage = <M>(h: HtmlBuilder<M>, message: string): Html =>
 	chartEmpty(h, { height: CHART_HEIGHT }, [message])

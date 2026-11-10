@@ -9,8 +9,6 @@ import type { Model } from "../../../integrations/model"
 import { ConnectRailwayToken, type RailwayCardModel, SyncRailway } from "./railway"
 import { chain, requestStatus } from "../../../integrations/update-status"
 
-// `RailwayIntegrationCard`'s state changes.
-
 type Return = PageReturn<Model, Message>
 
 const decodeConnectRequest = Schema.decodeUnknownOption(RailwayConnectRequest)
@@ -54,7 +52,7 @@ export const submittedToken = (model: Model): Return => {
 	})
 }
 
-/** The toast, a cleared form, the form closed (`onSaved`), and the status re-read. */
+/** The toast, a cleared form, the form closed, and the status re-read. */
 export const succeededConnect = (
 	model: Model,
 	context: PageContext,

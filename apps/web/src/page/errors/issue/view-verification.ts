@@ -12,8 +12,6 @@ import { textLinkClass } from "@maple/views/ui/text-link"
 import { sectionHeading } from "../../kit/section-heading"
 import { hstack } from "@maple/views/ui/stack"
 
-// The issue verification card: the post-merge fix check.
-
 type Status = ErrorIssueVerificationDocument["status"]
 const IN_FLIGHT_SOFT = "bg-severity-debug-a2 text-severity-debug"
 

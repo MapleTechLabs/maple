@@ -30,9 +30,7 @@ import { spaced } from "@maple/views/ui/spaced"
 import { hstack } from "@maple/views/ui/stack"
 import { toEpochMs } from "@maple/ui/lib/time-format"
 
-// The issue timeline and the comment composer.
-
-/** Rows mounted before "Show earlier" (`RECENT_ITEMS`). */
+/** Rows mounted before "Show earlier". */
 const RECENT_ITEMS = 50
 
 type H = HtmlBuilder<Message>

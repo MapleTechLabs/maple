@@ -30,8 +30,6 @@ import { settingsSection, settingsSections } from "../../kit/settings-section"
 import { typography } from "@maple/views/ui/typography"
 import { hstack } from "@maple/views/ui/stack"
 
-// `CodeReviewSettingsView`: the code review settings page.
-
 type H = HtmlBuilder<Message>
 
 const MODEL_ENTRIES = [
@@ -149,7 +147,7 @@ const repositoriesSection = (h: H, model: Model): Html =>
 		},
 	})
 
-/** `RepositoryConfig` in its dialog: skeleton, the error line, or the repository's rules form. */
+/** The repository dialog: skeleton, the error line, or the repository's rules form. */
 const repoConfigBody = (h: H, model: Model): Html =>
 	AsyncData.matchData(model.repoConfig.data, {
 		onEmpty: () => rulesFormSkeleton(h, "repository"),

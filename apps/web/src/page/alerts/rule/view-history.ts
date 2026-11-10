@@ -34,8 +34,6 @@ import { hstack } from "@maple/views/ui/stack"
 import { Array as Arr, String as Str } from "effect"
 import { textLink } from "@maple/views/ui/text-link"
 
-// The rule detail's History tab.
-
 type H = HtmlBuilder<Message>
 
 const INCIDENT_RENDER_LIMIT = 100

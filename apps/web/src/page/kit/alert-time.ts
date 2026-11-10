@@ -1,6 +1,7 @@
 import { DateTime } from "effect"
 
-/** `new Date(ms).toISOString()`. */
+// How alert pages write times: ISO stamps, spans in their two largest units, check cadences.
+
 export const msIso = (ms: number): string => DateTime.formatIso(DateTime.makeUnsafe(ms))
 
 /** `6m`, `3h 12m`, `2d 4h`: the two largest units of a span. */

@@ -23,8 +23,8 @@ export type WhereEditorAutocomplete<M> = Readonly<{
 }>
 
 /**
- * `WhereClauseEditor`: the textarea under its
- * highlight overlay, and with `autocomplete` its suggestion list. Enter never inserts a newline.
+ * The where-clause textarea under its highlight overlay, and with `autocomplete` its suggestion
+ * list. Enter never inserts a newline.
  */
 export type WhereEditorOptions<M> = Readonly<
 	{
@@ -33,7 +33,7 @@ export type WhereEditorOptions<M> = Readonly<
 		ariaLabel: string
 		placeholder: string
 		rows?: number
-		/** `className`: the wrapper's, after `relative`. */
+		/** The wrapper's, after `relative`. */
 		className?: string
 		textareaClassName: string
 		onInput: (value: string) => M

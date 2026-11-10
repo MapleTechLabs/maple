@@ -32,8 +32,6 @@ import { dnsSection, heartbeatSection, notifySection, serviceSection, tcpSection
 import { typography, typographyClass } from "@maple/views/ui/typography"
 import { hstack, hstackClass, vstack, vstackClass } from "@maple/views/ui/stack"
 
-// `/alerts/uptime/new`: the kind picker, the kind's sections, the test panel and the action bar.
-
 const KINDS: ReadonlyArray<{ kind: MonitorKind; label: string; icon: IconName; description: string }> = [
 	{
 		kind: "http",

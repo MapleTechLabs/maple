@@ -32,8 +32,6 @@ import { isDirty, permissionLabel, selectionOf, unavailableSaved } from "./searc
 import { disconnectDialog } from "./view-disconnect"
 import { providerBrand } from "../kit/providers"
 
-// The Google Search Console card: connect, pick the properties to import, and a revoked grant.
-
 type H = HtmlBuilder<Message>
 
 const BRAND = providerBrand("google-search-console")

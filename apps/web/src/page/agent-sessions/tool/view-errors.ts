@@ -56,7 +56,7 @@ export type Prepared = ToolErrorRow &
 		spark: ReadonlyArray<number>
 	}>
 
-/** `prepareToolErrors`: messages unwrapped, the shared prefix hoisted, trends filled over the window. */
+/** Messages unwrapped, the shared prefix hoisted, trends filled over the window. */
 export const prepare = (rows: ReadonlyArray<ToolErrorRow>, range: Range) => {
 	const failures = Arr.reduce(rows, 0, (sum, row) => sum + row.calls)
 	const bucket = errorTrendBucket(range.startMs, range.endMs)

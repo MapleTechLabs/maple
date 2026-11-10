@@ -8,10 +8,9 @@ import { DEFAULT_LIST_COLUMNS } from "./lowering-list"
 import { ProductEdit, type StepKind, type StepScope, type StepTextField } from "./product-edit"
 import { Array as Arr, String as Str, Option } from "effect"
 
-// What each `ProductEdit` does to the editor state: `ListConfigPanel`'s `onChange`, the
-// `FunnelStepBuilder`'s `onChange`, and `updateFunnel` / `updatePaths`.
+// What each `ProductEdit` does to the editor state.
 
-/** `withKind`: a step's kind changed, carrying nothing over. */
+/** A step's kind changed, carrying nothing over. */
 const withKind = (step: StepDraft, kind: StepKind): StepDraft => {
 	if (step.kind === kind) return step
 	switch (kind) {
@@ -24,7 +23,7 @@ const withKind = (step: StepDraft, kind: StepKind): StepDraft => {
 	}
 }
 
-/** `move`: an item moved within the list; out of range is a no-op. */
+/** An item moved within the list; out of range is a no-op. */
 const move = <T>(items: ReadonlyArray<T>, from: number, to: number): ReadonlyArray<T> => {
 	const item = items[from]
 	if (to < 0 || to >= items.length || item === undefined) return items
@@ -118,7 +117,7 @@ const togglePathsAddOn = (current: PathsDraft, key: keyof PathsDraft["addOns"]):
 	}
 }
 
-/** `BreakdownPicker`'s `onChange`: none, a session dimension, or a non-empty `attribute:<key>`. */
+/** None, a session dimension, or a non-empty `attribute:<key>`. */
 const withBreakdown = (current: FunnelDraft, value: string | null): FunnelDraft => {
 	const { breakdownBy: _previous, ...rest } = current
 	if (value === null) return rest
@@ -130,7 +129,7 @@ const withBreakdown = (current: FunnelDraft, value: string | null): FunnelDraft 
 	)
 }
 
-/** A funnel step moved; a session step past step 1 is demoted to an event step (`reorder`). */
+/** A funnel step moved; a session step past step 1 is demoted to an event step. */
 const reorderSteps = (steps: ReadonlyArray<StepDraft>, from: number, to: number): ReadonlyArray<StepDraft> =>
 	Arr.map(move(steps, from, to), (step, index) =>
 		index > 0 && step.kind === "session" ? withKind(step, "event") : step,

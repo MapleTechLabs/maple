@@ -165,7 +165,7 @@ export const formFromSchedule = (schedule: V2OnCallSchedule): Form => {
 	}
 }
 
-// VALIDATION: the limits the API's schemas hold, as one message per field.
+// The limits the API's schemas hold, as one message per field.
 
 const isName = Schema.is(OnCallScheduleName)
 const isDescription = Schema.is(OnCallScheduleDescription)
@@ -191,7 +191,6 @@ export const descriptionError = (description: string): Option.Option<string> =>
 export const zoneError = (zone: string): Option.Option<string> =>
 	isZone(zone) ? Option.none() : Option.some("Pick a time zone from the list")
 
-/** One layer's field errors, by field. */
 export type LayerErrors = Readonly<{
 	name: Option.Option<string>
 	participants: Option.Option<string>

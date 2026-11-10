@@ -145,7 +145,7 @@ const combine = (first: Return, second: (model: Model) => Return): Return => {
 
 const SELECT_FIELD = { severity: "severitySelect", category: "categorySelect", state: "stateSelect" } as const
 
-/** `FilterSelect`: only a listed option reaches the URL; "all" clears it. */
+/** Only a listed option reaches the URL; "all" clears it. */
 const filterPatch = (filter: FilterKey, value: string): Partial<Search> => {
 	switch (filter) {
 		case "severity":
@@ -176,8 +176,6 @@ const withSelects = (model: Model, search: Search): Model => ({
 	stateSelect: { ...model.stateSelect, value: search.state ?? ALL },
 	searchDraft: syncedDraft(model.searchDraft, search.q),
 })
-
-// ENTRY POINTS
 
 export const init = (
 	route: { readonly search: Search },

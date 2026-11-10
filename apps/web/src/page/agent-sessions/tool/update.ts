@@ -180,7 +180,7 @@ export const routeChanged = (
 		modelSelect: { ...model.modelSelect, value: route.search.model ?? ALL },
 		envSelect: { ...model.envSelect, value: route.search.env ?? ALL },
 	}
-	// `useEffectiveTimeRange` re-resolves only on a time change; every other change reads its new keys.
+	// The window re-resolves only on a time change; every other change reads its new keys.
 	return isSameTime(model.search, route.search)
 		? followModal(context)(requestAll(next, context, "Load"))
 		: {
@@ -264,7 +264,7 @@ const followModal =
 		}
 	}
 
-// Reload re-reads the open group's facts too (`useRefreshableAtomValue`), even under the same key.
+// Reload re-reads the open group's facts too, even under the same key.
 const detailModeOf = (message: Message): Keyed.RequestMode =>
 	message._tag === "CompletedResolveWindow" ? message.mode : "Load"
 

@@ -21,8 +21,6 @@ import { fillRule } from "@maple/views/ui/rule"
 import { hstack, vstack } from "@maple/views/ui/stack"
 import { Array as Arr } from "effect"
 
-// The transcript's structure: agent lanes, parallel markers, capture notes and dividers.
-
 type H = HtmlBuilder<Message>
 
 export const laneOpen = (
@@ -88,7 +86,9 @@ export const laneClose = (h: H, model: Model, lane: Extract<TranscriptRow, { kin
 			avatar: h.span(
 				[
 					h.AriaHidden(true),
-					h.Class("ml-[calc(--spacing(3)-1px)] h-4 w-3 rounded-bl-md border-border border-b border-l"),
+					h.Class(
+						"ml-[calc(--spacing(3)-1px)] h-4 w-3 rounded-bl-md border-border border-b border-l",
+					),
 				],
 				[],
 			),

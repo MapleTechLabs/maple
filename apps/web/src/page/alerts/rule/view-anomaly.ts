@@ -18,9 +18,6 @@ import { alertStatusBadge, severityBadge, ALERT_SEVERITY_LABEL } from "../shared
 import { incidentHref } from "../../kit/alert-links"
 import { toEpochMs } from "@maple/ui/lib/time-format"
 
-// An anomaly rule's Overview: the anomalies it paged on in the window, and its scope and routing.
-// It has no query to replay and no threshold, window or sample count of its own.
-
 const INCIDENT_LIMIT = 20
 
 /** The list shows when each anomaly opened, so the newest opening leads. */

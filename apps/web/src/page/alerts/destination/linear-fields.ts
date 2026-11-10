@@ -11,9 +11,6 @@ import { currentReturnPath, startConnect } from "../../integrations/connect"
 import { readGrants } from "../../../data/session-tenant"
 import type { DestinationForm } from "./form"
 
-// `LinearFields`: the org's Linear connection, connected in a popup by an admin, and the
-// team this destination opens issues in.
-
 export const LinearStatus = Schema.Struct({
 	connected: Schema.Boolean,
 	revoked: Schema.Boolean,

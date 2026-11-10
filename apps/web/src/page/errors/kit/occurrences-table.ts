@@ -20,8 +20,6 @@ import { typographyClass } from "@maple/views/ui/typography"
 import { hstack } from "@maple/views/ui/stack"
 import { Array as Arr, String as Str } from "effect"
 
-// The issue occurrences table.
-
 export type OccurrencesTableInputs = Readonly<{ nowMs: number; timeZone: string }>
 
 const TRACE_PILL = cn(

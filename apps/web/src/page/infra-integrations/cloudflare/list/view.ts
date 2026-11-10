@@ -56,8 +56,6 @@ import { type SparkContext, queueTable, workerTable, zoneTable, zoneTableLoading
 import { Array as Arr, String as Str, Option } from "effect"
 import { providerBrand } from "../../../kit/providers"
 
-// `CloudflarePage` and `CloudflareListPage`.
-
 type H = HtmlBuilder<Message>
 
 const VIEW_LABEL = { zones: "Zones", workers: "Workers", queues: "Queues" } as const satisfies Record<
@@ -73,7 +71,7 @@ const count = <T>(rows: ReadonlyArray<T>, keep: (row: T) => boolean) => Arr.filt
 
 const scopeMessage = (scope: ZoneScope | WorkerScope | undefined) => Message.ClickedScope({ scope })
 
-/** `CloudflareZoneBand`: counts over the unfiltered fleet. */
+/** Counts over the unfiltered fleet. */
 const zoneBand = (h: H, zones: ReadonlyArray<ZoneRow>, activeScope: ZoneScope | undefined): Html => {
 	const serving5xx = count(zones, (z) => zoneHealth(z) === "serving5xx")
 	const mostly4xx = count(zones, (z) => zoneHealth(z) === "mostly4xx")
@@ -121,7 +119,6 @@ const zoneBand = (h: H, zones: ReadonlyArray<ZoneRow>, activeScope: ZoneScope | 
 	})
 }
 
-/** `CloudflareWorkerBand`. */
 const workerBand = (h: H, rows: ReadonlyArray<WorkerListRow>, activeScope: WorkerScope | undefined): Html => {
 	const erroring = count(rows, (r) => workerHealth(r) === "erroring")
 	const slow = count(rows, (r) => workerHealth(r) === "slow")
@@ -310,7 +307,7 @@ const viewTabs = (h: H, model: Model, scope: ListScope, inPlace: boolean): Html 
 	)
 }
 
-/** `CloudflareListPage`'s props: what the route reads, or the lab's fixtures. */
+/** What the route reads, or the lab's fixtures. */
 export type ListFrame = Readonly<{
 	data: ListData
 	accounts: ReadonlyArray<CloudflareAccount>
@@ -336,7 +333,7 @@ const listPage = (h: H, model: Model, status: Status, data: ListData, spark: Spa
 	)
 }
 
-/** `CloudflareListPage`: header, banner, accounts strip and the current view. The route draws the header in its title row. */
+/** Banner, accounts strip and the current view; the route draws the header in its title row. */
 export const listBody = (
 	h: H,
 	model: Model,

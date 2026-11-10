@@ -17,9 +17,6 @@ import { SQL_MACRO_HINTS, sqlPanelHeader } from "../../kit/query-builder/sql-pan
 import { Array as Arr, Option } from "effect"
 import { stripClass } from "@maple/views/ui/rule"
 
-// `RawSqlEditorPanel` under the editor's Raw SQL
-// tab: the highlighted SQL, the macro and variable chips, the bucket, Run preview.
-
 type H = HtmlBuilder<Message>
 
 /** The tooltip trigger id of a chip, by position (variable names are free text). */

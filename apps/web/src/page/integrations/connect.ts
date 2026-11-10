@@ -11,8 +11,6 @@ import { toLoadFailure } from "@maple/views/data/load-failure"
 import { MapleApiV2Client, MapleInternalApiClient } from "../../platform/api-clients"
 import { PROVIDERS as REGISTRY } from "../kit/providers"
 
-// `IntegrationConnectProvider` and `useOAuthPopupFlow`.
-
 export const ConnectProvider = Schema.Literals([
 	"cloudflare",
 	"linear",
@@ -48,7 +46,7 @@ export const ConnectModel = Schema.Struct({
 	active: Schema.NullOr(ConnectAttempt),
 	/** The start mutation is in flight (`busy`). */
 	isStarting: Schema.Boolean,
-	/** The popup closed; the provider's grace runs until `active` clears (`popupActive` = `active !== null`). */
+	/** The popup closed; the provider's grace runs until `active` clears. */
 	isClosed: Schema.Boolean,
 })
 export type ConnectModel = typeof ConnectModel.Type
@@ -64,7 +62,7 @@ interface PopupSpec {
 	readonly windowFeatures: string
 	/** `closeGraceMs`: polling continues this long after the popup closes. */
 	readonly closeGraceMs: number
-	/** Whether the status is re-read every 3 s while the popup is out (`onPoll`). */
+	/** Whether the status is re-read every 3 s while the popup is out. */
 	readonly polls: boolean
 }
 

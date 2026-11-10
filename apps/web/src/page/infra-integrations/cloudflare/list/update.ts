@@ -59,7 +59,7 @@ const withView = (search: Search, view: Search["view"]): Search => ({
 /** The view tab's link: where `ClickedView` writes. */
 export const viewHref = (search: Search, view: Search["view"]): string => hrefOfSearch(withView(search, view))
 
-/** `patchSearch`: list state is written in place (a replace, not a new entry). */
+/** List state is written in place (a replace, not a new entry). */
 const patch = (model: Model, next: Partial<Search>): Return => ({
 	model,
 	outMessage: PageOutMessage.RequestedNavigation({
@@ -73,7 +73,7 @@ const navigate = (model: Model, search: Search): Return => ({
 	outMessage: PageOutMessage.RequestedNavigation({ url: hrefOfSearch(search), isReplace: false }),
 })
 
-/** `CloudflareData` mounts once the status says connected with analytics scopes. */
+/** The data reads start once the status says connected with analytics scopes. */
 const sync = (model: Model, context: PageContext, mode: Keyed.RequestMode): Return => {
 	const status = statusOf(model)
 	const window = model.window

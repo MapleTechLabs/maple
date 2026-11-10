@@ -20,8 +20,6 @@ import {
 } from "./planetscale"
 import { chain, requestStatus } from "../../../integrations/update-status"
 
-// `PlanetScaleIntegrationCard`'s and its connect flow's state changes.
-
 type Return = PageReturn<Model, Message>
 
 const withCard = (model: Model, card: Partial<PlanetscaleCardModel>): Model => ({
@@ -157,7 +155,6 @@ export const gotBranchField = (
 	}
 }
 
-/** Cancel closes the dialog. */
 export const clickedPickerCancel = (model: Model): Return =>
 	model.planetscaleCard.pickerDialog.isOpen
 		? dialogStep(model, Dialog.close(model.planetscaleCard.pickerDialog))

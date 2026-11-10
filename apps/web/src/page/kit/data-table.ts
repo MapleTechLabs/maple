@@ -7,7 +7,7 @@ import type { SortDir } from "./table-sort"
 import { hstack } from "@maple/views/ui/stack"
 import { typographyClass } from "@maple/views/ui/typography"
 
-// `DataTable`, `ColumnHead`, `ROW_LINK_CLASS` and `NUMERIC_CELL`.
+// A sortable data table: its column heads, numeric cells, row links, and empty and skeleton rows.
 
 /** A numeric cell's figure: xs mono tabular, right-aligned; the call site adds width and tone. */
 export const NUMERIC_CELL = typographyClass({
@@ -78,7 +78,7 @@ export type DataTableOptions = Readonly<{
 	className?: string
 }>
 
-/** `DataTable.Root` + `DataTable.Head`: the head row, then rows (or `dataTableEmpty`). */
+/** The head row, then rows (or `dataTableEmpty`). */
 export const dataTable = <M>(
 	h: HtmlBuilder<M>,
 	options: DataTableOptions,
@@ -111,11 +111,10 @@ export const dataTable = <M>(
 	)
 }
 
-/** `DataTable.Empty`. */
 export const dataTableEmpty = <M>(h: HtmlBuilder<M>, children: ReadonlyArray<Html | string>): Html =>
 	emptyMessage(h, { className: "py-12" }, children)
 
-/** `DataTable.SkeletonRows`: `count` identical placeholder rows. */
+/** `count` identical placeholder rows. */
 export const skeletonRows = <M>(
 	h: HtmlBuilder<M>,
 	count: number,

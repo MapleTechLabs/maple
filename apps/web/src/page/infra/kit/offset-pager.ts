@@ -3,8 +3,7 @@ import { button } from "@maple/views/ui/button"
 import { listFooter } from "@maple/views/ui/list-footer"
 import { hstack } from "@maple/views/ui/stack"
 
-// `OffsetPager` and `pageRangeLabel`, on `ListFooter align="start"` with children only. Counts
-// use `toLocaleString()` (en-US).
+// Counts use `toLocaleString()` (en-US).
 
 const count = (value: number) => value.toLocaleString("en-US")
 
@@ -35,26 +34,29 @@ export const offsetPager = <M>(
 		className: "px-0 py-1",
 		children: [
 			h.span([], [pageRangeLabel(options.offset, options.shown, options.total, options.noun)]),
-			hstack(h, { gap: "2", className: "ml-auto" },
-				[
-					h.span([], ["Page ", count(page), " of ", count(pages)]),
-					button(
-						h,
-						{
-							variant: "outline",
-							size: "sm",
-							isDisabled: !hasPrevious,
-							attributes: [h.OnClick(options.onPage(-1))],
-						},
-						["Previous"],
-					),
-					button(
-						h,
-						{ variant: "outline", size: "sm", isDisabled: !hasNext, attributes: [h.OnClick(options.onPage(1))] },
-						["Next"],
-					),
-				],
-			),
+			hstack(h, { gap: "2", className: "ml-auto" }, [
+				h.span([], ["Page ", count(page), " of ", count(pages)]),
+				button(
+					h,
+					{
+						variant: "outline",
+						size: "sm",
+						isDisabled: !hasPrevious,
+						attributes: [h.OnClick(options.onPage(-1))],
+					},
+					["Previous"],
+				),
+				button(
+					h,
+					{
+						variant: "outline",
+						size: "sm",
+						isDisabled: !hasNext,
+						attributes: [h.OnClick(options.onPage(1))],
+					},
+					["Next"],
+				),
+			]),
 		],
 	})
 }

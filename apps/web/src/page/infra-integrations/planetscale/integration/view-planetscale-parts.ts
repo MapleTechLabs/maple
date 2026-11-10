@@ -12,8 +12,6 @@ import { hstack } from "@maple/views/ui/stack"
 import { strip } from "@maple/views/ui/rule"
 import { Array as Arr } from "effect"
 
-// `PlanetScaleMetricsHealth`.
-
 type H = HtmlBuilder<Message>
 
 export const QUIET_LINK =

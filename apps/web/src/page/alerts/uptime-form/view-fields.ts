@@ -25,13 +25,10 @@ import { typography, typographyClass } from "@maple/views/ui/typography"
 import { hstack, vstack, vstackClass } from "@maple/views/ui/stack"
 import { Array as Arr } from "effect"
 
-// The form's inputs and the HTTP and schedule sections.
-
 export type H = HtmlBuilder<Message>
 
 const changed = (field: TextField) => (value: string) => Message.ChangedText({ field, value })
 
-/** A labelled text input bound to one form field. */
 export const textField = (
 	h: H,
 	options: Readonly<{
@@ -83,7 +80,6 @@ export const textField = (
 	)
 }
 
-/** A labelled native select. */
 export const selectField = (
 	h: H,
 	options: Readonly<{

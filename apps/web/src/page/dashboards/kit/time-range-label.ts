@@ -4,7 +4,7 @@ import { pluralize } from "@maple/ui/lib/format"
 import { presetLabel } from "../../kit/time-controls"
 import { toEpochMs } from "@maple/ui/lib/time-format"
 
-// `formatTimeRangeDisplay` and `widgetTimeRangeLabel`, with the clock passed in instead of read.
+// The clock is passed in instead of read.
 
 const MINUTE = 60_000
 const lastSpan = (count: number, unit: string) => `Last ${count} ${pluralize(count, unit)}`

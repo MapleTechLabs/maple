@@ -4,9 +4,6 @@ import { FUNNEL_POPULATION_FILTER_FIELDS, type FunnelPopulationFilterField } fro
 import { Effect, Schema, Array as Arr } from "effect"
 import type { TimeWindow } from "../../../data/time-range"
 
-// The funnel suggestions: what the funnel and paths
-// panels' inputs complete from, over the preview's window.
-
 /** One suggestion: an event name or page path with its count, or a facet value under its field. */
 export const Suggestion = Schema.Struct({
 	name: Schema.String,

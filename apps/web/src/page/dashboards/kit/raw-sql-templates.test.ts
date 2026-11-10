@@ -5,10 +5,9 @@ import { Record as Rec } from "effect"
 
 describe("visualizationToDisplayType", () => {
 	it("maps gauge onto the scalar stat shape", () => {
-		// RawSqlDisplayType has no `gauge` member — a gauge is a scalar on an arc,
-		// the same single-row shape as a stat. Mirrors the API-side mapping in
-		// apps/api/src/mcp/lib/raw-sql-widget.ts; without this a raw-SQL gauge fell
-		// through to "line" and fed a timeseries into GaugeWidget.
+		// RawSqlDisplayType has no `gauge` member: a gauge is a scalar on an arc, the same single-row
+		// shape as a stat. Mirrors the API-side mapping in apps/ai/src/mcp/lib/raw-sql-widget.ts; without
+		// this a raw-SQL gauge fell through to "line" and fed a timeseries into the gauge.
 		expect(visualizationToDisplayType("gauge")).toBe("stat")
 	})
 

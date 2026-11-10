@@ -17,8 +17,6 @@ import { getCiAnalytics, listCiRuns } from "../kit/api"
 import { Frame, FrameMessage } from "../kit/frame"
 import { ResponseCache } from "../kit/page-steps"
 
-// `/code-review/ci`.
-
 const RunsPage = KeyedSchema(CodeReviewCiRunsResponse, LoadFailure)
 
 export const Model = Schema.Struct({
@@ -29,7 +27,7 @@ export const Model = Schema.Struct({
 	/** The workflow filter's list: the same read without the workflow. */
 	pipelines: KeyedSchema(CodeReviewCiAnalytics, LoadFailure),
 	analyticsCache: ResponseCache(CodeReviewCiAnalytics),
-	/** `CiRunsList`: the first page, then one slot per cursor followed (each its own read). */
+	/** The runs list: the first page, then one slot per cursor followed (each its own read). */
 	runsFilterKey: Schema.NullOr(Schema.String),
 	runs: RunsPage,
 	cursors: Schema.Array(Schema.String),

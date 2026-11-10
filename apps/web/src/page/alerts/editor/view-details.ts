@@ -18,16 +18,13 @@ import { fieldStateOf, idsOf } from "./view-fields"
 import { hstack } from "@maple/views/ui/stack"
 import { typography } from "@maple/views/ui/typography"
 
-// `DetailsSection` and `TagInput`: the rule's name, description and tags.
-
 type H = HtmlBuilder<Message>
 
 const TAG_LIST_ID = "rule-tags-suggestions"
 
-/** What the section reads off the Model. */
 type DetailsView = Pick<Model, "mountedForm" | "tagDraft" | "isNotesOpen" | "tagSuggestions">
 
-/** `TagInput`: chips, a free-text input committing on Enter or comma, and the org's tags as a datalist. */
+/** Chips, a free-text input committing on Enter or comma, and the org's tags as a datalist. */
 const tagInput = (h: H, model: DetailsView, form: RuleForm): Html => {
 	const available = Arr.filter(model.tagSuggestions, (tag) => !form.tags.includes(tag))
 	return h.div(
@@ -150,7 +147,7 @@ const notes = (h: H, model: DetailsView, form: RuleForm): Html => {
 				h.AriaLabelledBy(ids.label),
 				h.Placeholder("Runbook links, ownership, or why this rule exists…"),
 				h.Rows(2),
-				// `autoFocus={!hasExistingNotes}`: opened from the button, the field takes focus.
+				// Opened from the button, an empty notes field takes focus.
 				...(model.mountedForm !== null && Str.trim(model.mountedForm.notes).length === 0
 					? [h.Autofocus(true)]
 					: []),
@@ -192,6 +189,6 @@ const viewOf = stableSlice((model: Model) =>
 	Struct.pick(model, ["mountedForm", "tagDraft", "isNotesOpen", "tagSuggestions"]),
 )
 
-/** `DetailsSection`: the name with a one-click suggestion, tags, and notes behind a button. */
+/** The name with a one-click suggestion, tags, and notes behind a button. */
 export const detailsSection = (h: H, model: Model, form: RuleForm): Html =>
 	slot(details, [h, viewOf(model), form])

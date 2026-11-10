@@ -268,7 +268,7 @@ const timeActions = (h: H, model: Model): Html =>
 			}),
 	})
 
-/** `AgentToolsBody`: the toolbar, scope, strip, chart and table, or their loading and error states. */
+/** The toolbar, scope, strip, chart and table, or their loading and error states. */
 export const toolsBody = (h: H, model: Model, options: BodyOptions): Html =>
 	AsyncData.matchData(model.totals.data, {
 		onEmpty: () => loadingView(h),

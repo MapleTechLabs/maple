@@ -30,8 +30,6 @@ import { typography, typographyClass } from "@maple/views/ui/typography"
 import { hstack, hstackClass } from "@maple/views/ui/stack"
 import { Array as Arr } from "effect"
 
-// `ReviewTable`: the pull requests and their reviews.
-
 type H = HtmlBuilder<Message>
 
 const OUTCOME_ICONS = {

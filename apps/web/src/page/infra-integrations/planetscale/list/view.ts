@@ -32,8 +32,6 @@ import { Message, type Model } from "./model"
 import { DEFAULT_PRESET, neverCollected, sortOf } from "./update"
 import { databaseTable, databaseTableLoading } from "./view-table"
 
-// `PlanetScalePage`.
-
 type H = HtmlBuilder<Message>
 type Clock = Readonly<{ nowMs: number; timeZone: string }>
 
@@ -157,7 +155,7 @@ const content = (
 	inventory: DatabaseList,
 	clock: Clock,
 ): Html => {
-	// `Result.builder(...).onSuccess(...).orElse(NO_STATS)`: a failed read shows no numbers.
+	// A failed read shows no numbers.
 	const statsData = model.stats.data
 	const stats =
 		AsyncData.isSuccess(statsData) || AsyncData.isRefreshing(statsData) ? statsData.data : NO_STATS

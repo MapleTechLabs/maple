@@ -23,8 +23,6 @@ import {
 	type WindowSearch,
 } from "./frame"
 
-// The frame's `init`, `routeChanged` and `update`; the page maps its Commands and acts on its out.
-
 /** A tab's `GotFrameMessage`: the frame's next state and Commands, then the tab acting on its out. */
 export const frameStep = <Model extends Readonly<{ frame: Frame }>, Message>(
 	model: Model,

@@ -22,7 +22,7 @@ export const liftTemplates = (model: Model, step: ReturnType<typeof Dialog.updat
 	commands: Command.mapMessages(step.commands ?? [], (message) => Message.GotTemplatesMessage({ message })),
 })
 
-/** The draft, once its inputs answered: the form surface mounts with it (`ready`). */
+/** The draft, once its inputs answered: the form surface mounts with it. */
 export const initialize = (model: Model, context: PageContext): Return => {
 	if (model.form !== null || model.draftId === null) return { model }
 	const draft = initialization(model, model.draftId)
@@ -49,7 +49,7 @@ export const initialize = (model: Model, context: PageContext): Return => {
 	return { model: opened.model, commands: [...(loaded.commands ?? []), ...(opened.commands ?? [])] }
 }
 
-/** An edit to the draft; the preview follows it (`useDeferredValue` over the form). */
+/** An edit to the draft; the preview follows it. */
 export const editForm = (model: Model, context: PageContext, edit: (form: RuleForm) => RuleForm): Return =>
 	model.form === null ? { model } : planned({ ...model, form: edit(model.form) }, context)
 

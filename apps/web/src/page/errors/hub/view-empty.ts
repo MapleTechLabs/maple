@@ -12,8 +12,6 @@ import type { Model } from "./model"
 import { hstack } from "@maple/views/ui/stack"
 import { String as Str } from "effect"
 
-// The hub's empty state: what an empty view says, and what it offers.
-
 type H = HtmlBuilder<Message>
 
 const VIEW_LABEL = { open: "Open", closed: "Closed", all: "All" } as const

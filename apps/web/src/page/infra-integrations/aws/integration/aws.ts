@@ -20,8 +20,6 @@ import * as Field from "@maple/views/ui/field"
 import { AwsRemovedStack, AwsSetupMethod } from "./aws-schema"
 import { Message } from "../../../integrations/message"
 
-// `AwsIntegrationCard`: state and writes.
-
 export { AwsRemovedStack, AwsSetupMethod, AwsSetupPart } from "./aws-schema"
 
 /** The regions and namespaces picked for one connection's metric stream, before it is saved. */

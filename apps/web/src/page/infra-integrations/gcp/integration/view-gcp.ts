@@ -24,8 +24,6 @@ import { usageBand } from "./view-gcp-workloads"
 import { hstack, vstack } from "@maple/views/ui/stack"
 import { Array as Arr, Order } from "effect"
 
-// `GcpIntegrationCard` and `GcpHeaderStatus`.
-
 type H = HtmlBuilder<Message>
 
 /** A removed connection whose cleanup script was never seen to run. */
@@ -145,7 +143,7 @@ export const gcpCard = (h: H, model: Model, timeZone: string, focusId: string | 
 		onSuccess: (data) => byStatus(h, model, data, timeZone, focusId),
 	})
 
-/** `GcpHeaderStatus`: the worst connection's state, how many share it, how many projects send data. */
+/** The worst connection's state, how many share it, how many projects send data. */
 export const gcpHeaderStatus = (h: H, model: Model): Html => {
 	const connectors: ReadonlyArray<V2GcpConnector> = gcpConnectors(model)
 	const states = Arr.map(connectors, (connector) => gcpConnectionState(connector, model.nowMs))

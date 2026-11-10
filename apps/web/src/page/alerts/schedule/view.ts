@@ -41,9 +41,6 @@ import { dividedList } from "@maple/views/ui/rule"
 import { canManageAlerts } from "../../kit/session-grants"
 import { toEpochMs } from "@maple/ui/lib/time-format"
 
-// `/alerts/schedules/$scheduleId`: who is on call now, the week's calendar (each layer and the
-// final row with its overrides), the upcoming overrides, and the dialog that adds one.
-
 type H = HtmlBuilder<Message>
 
 const imageOf = (members: ReadonlyArray<OrgMember> | null, userId: string) =>

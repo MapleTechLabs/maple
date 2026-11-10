@@ -27,8 +27,8 @@ import { MapleInternalApiClient } from "../../platform/api-clients"
 import { loadSignalPresences } from "../kit/signal-presence"
 import { Message, SlotName } from "./message"
 
-// The page's reads. Every fetch answers `CompletedFetch` with its slot and key (S6); the request
-// itself is the web-data function, with the input it was keyed on.
+// Every fetch answers `CompletedFetch` with its slot and key; the request itself is the
+// web-data function, with the input it was keyed on.
 
 export const ResolveWindow = resolveWindowCommand("ResolveAnalyticsWindow", Message.CompletedResolveWindow)
 

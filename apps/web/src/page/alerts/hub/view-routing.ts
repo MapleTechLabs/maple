@@ -42,8 +42,6 @@ import { tooltipTrigger } from "@maple/views/ui/tooltip-host"
 import { Array as Arr, Option } from "effect"
 import { canManageAlerts } from "../../kit/session-grants"
 
-// `AlertsRoutingTab` and `DestinationRow`: the hub's Routing tab.
-
 export const HEALTH_WINDOW = 20
 export const DESTINATION_ROW_GRID = "grid grid-cols-[minmax(0,1fr)_110px_140px_110px_auto] items-center gap-4"
 
@@ -190,7 +188,7 @@ type RowInputs = Readonly<{
 	recent: ReadonlyArray<AlertDeliveryEventDocument>
 }>
 
-/** `DestinationRow`; the Model owns the menu, the test and delete pending state, the confirm dialog. */
+/** The Model owns the row's menu, the test and delete pending state, and the confirm dialog. */
 export const destinationRow = (h: H, model: Model, inputs: RoutingInputs, row: RowInputs): Html => {
 	const { destination, recent } = row
 	const provider = destinationProvider(destination.type, destination.chatConnector ?? undefined)
@@ -368,8 +366,6 @@ const deliveryStrip = (h: H, recent: ReadonlyArray<AlertDeliveryEventDocument>, 
 		),
 	)
 }
-
-// DELIVERY LOG
 
 const deliveryLog = (h: H, model: Model, inputs: RoutingInputs): Html =>
 	AsyncData.match(model.routingDeliveries.data, {

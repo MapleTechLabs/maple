@@ -12,8 +12,6 @@ import { inferDefaultUnitForQueries } from "./drafts"
 import type { EditorState, QueryDraft } from "./editor-state"
 import { Array as Arr, Option } from "effect"
 
-// `useWidgetBuilder`'s actions and the page's query handlers, as pure state steps.
-
 export const updateQuery = (
 	state: EditorState,
 	queryId: string,
@@ -41,13 +39,13 @@ export const setDataSource = (
 		withInferredUnit(updateQuery(state, queryId, (query) => switchDataSource(query, dataSource))),
 	)
 
-/** `addQuery`: a default draft under the next letter. */
+/** A default draft under the next letter. */
 export const addQuery = (state: EditorState, id: string): EditorState => ({
 	...state,
 	queries: [...state.queries, { ...createQueryDraft(state.queries.length), id }],
 })
 
-/** `cloneQuery`: a copy appended, then every query relettered in order. */
+/** A copy appended, then every query relettered in order. */
 export const cloneQuery = (state: EditorState, sourceId: string, id: string): EditorState => {
 	const found = Arr.findFirst(state.queries, (query) => query.id === sourceId)
 	if (Option.isNone(found)) return state
@@ -61,7 +59,7 @@ export const cloneQuery = (state: EditorState, sourceId: string, id: string): Ed
 	}
 }
 
-/** `removeQuery`: the last query stays. */
+/** The last query stays. */
 export const removeQuery = (state: EditorState, queryId: string): EditorState =>
 	state.queries.length === 1
 		? state
@@ -96,8 +94,8 @@ export const removeFormula = (state: EditorState, formulaId: string): EditorStat
 })
 
 /**
- * `reconcileFunnelSource` (funnel-source.ts): on a funnel, a product-event query A means the step
- * editor; leaving the funnel type turns those steps back into a product-event count query.
+ * On a funnel, a product-event query A means the step editor; leaving the funnel type turns those
+ * steps back into a product-event count query.
  */
 export const reconcileFunnelSource = (state: EditorState): EditorState => {
 	const first = state.queries[0]
@@ -129,7 +127,7 @@ export const reconcileFunnelSource = (state: EditorState): EditorState => {
 	}
 }
 
-/** `TypePicker`: the panel's persisted pair, keeping a chart id already of that panel. */
+/** The panel's persisted pair, keeping a chart id already of that panel. */
 export const setPanelType = (state: EditorState, panel: PanelType): EditorState => {
 	const { visualization, chartId } = fromPanelType(panel, state.chartId)
 	return reconcileFunnelSource({ ...state, visualization, chartId: chartId ?? state.chartId })

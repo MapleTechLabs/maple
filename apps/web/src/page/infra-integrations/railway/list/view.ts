@@ -27,8 +27,6 @@ import { type Clock, railwayTable, railwayTableLoading, triggerIds } from "./vie
 import { Array as Arr, Record as Rec } from "effect"
 import { providerBrand } from "../../../kit/providers"
 
-// `RailwayPage`.
-
 type H = HtmlBuilder<Message>
 
 const NOTE = "Summed across replicas."
@@ -182,7 +180,7 @@ const railwayConnectCta = (h: H): Html =>
 		href: hrefOf(AppRoute.SourcesNew({ search: { integration: "railway" } })),
 	})
 
-/** `RailwayIntegrationCard` keeps the last loaded status when a refetch fails. */
+/** Keeps the last loaded status when a refetch fails. */
 const connectedView = (h: H, model: Model, status: RailwayStatus, clock: Clock): Html =>
 	status.connected ? servicesView(h, model, status, clock) : railwayConnectCta(h)
 

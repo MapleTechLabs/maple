@@ -14,8 +14,6 @@ import { fillRule } from "@maple/views/ui/rule"
 import { Array as Arr } from "effect"
 import { hstack } from "@maple/views/ui/stack"
 
-// The transcript's turn chapters (`TurnChapter`, `EmptyTurnRow`, `summariseTurn`).
-
 type H = HtmlBuilder<Message>
 
 export const turnOrdinal = (turn: SessionTurn): string =>

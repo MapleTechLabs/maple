@@ -6,7 +6,7 @@ import { eyebrow } from "@maple/views/ui/eyebrow"
 import { String as Str } from "effect"
 import { hstack } from "@maple/views/ui/stack"
 
-// `CodeBlock`: language eyebrow, copy button, highlighted markup. The parent owns the copy status.
+// A code block: language eyebrow, copy button, highlighted markup. The parent owns the copy status.
 
 export type CodeBlockOptions<M> = Readonly<{
 	code: string

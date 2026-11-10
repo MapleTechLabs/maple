@@ -24,7 +24,7 @@ import { type MetricKeys, metricsBody } from "./metrics-body"
 import { addOnSections, ADD_ON_KEYS, addOnToggles, panelSelect, textInput, whereClauseEditor } from "./parts"
 import { Array as Arr, String as Str } from "effect"
 
-// `QueryPanel` and `QueryPanelShell`: one query's builder panel and its frame.
+// One query's builder panel and its frame.
 
 type H = HtmlBuilder<Message>
 
@@ -34,13 +34,13 @@ export type QueryPanelInputs = Readonly<{
 	canRemove: boolean
 	/** `Auto (2m)` in the interval placeholder, or `Auto`. */
 	intervalPlaceholder: string
-	/** Clone / Remove in the header (`showHeaderActions`). */
+	/** Clone / Remove in the header. */
 	hasHeaderActions: boolean
-	/** The "include in the chart" checkbox (`showVisibilityToggle`). */
+	/** The "include in the chart" checkbox. */
 	hasVisibilityToggle: boolean
-	/** `metricSelectionOptions`: the metric list page for a metrics query; none until fetched. */
+	/** The metric list page for a metrics query; none until fetched. */
 	metricOptions?: ReadonlyArray<MetricOption>
-	/** What the metric picker last searched for (`MetricOptionsEmpty`). */
+	/** What the metric picker last searched for. */
 	metricSearch?: string
 	/** The picked metric's keys, offered as `attr.<key>` and `resource.<key>` group-bys. */
 	metricBreakdownKeys?: MetricKeys | undefined
@@ -137,7 +137,6 @@ const SPAN_OPTIONS = [
 	{ value: "root", label: "Root spans" },
 ]
 
-/** `TracesLogsBody`, or `MetricsBody` for a metrics query. */
 const body = (h: H, model: Model, inputs: QueryPanelInputs): ReadonlyArray<Html> => {
 	const { query, intervalPlaceholder } = inputs
 	if (query.dataSource === "metrics")
@@ -189,7 +188,7 @@ const body = (h: H, model: Model, inputs: QueryPanelInputs): ReadonlyArray<Html>
 	]
 }
 
-/** `WarningList`: clauses the builder could not apply as written. */
+/** Clauses the builder could not apply as written. */
 const warningList = (h: H, warnings: ReadonlyArray<string>): ReadonlyArray<Html> =>
 	warnings.length === 0
 		? []
@@ -214,7 +213,7 @@ export const queryPanelView = Submodel.defineView<Model, Message, QueryPanelInpu
 	const { query } = inputs
 	const content = () => [
 		...body(h, model, inputs),
-		// TODO(query-builder): the product-events setup hint (`SignalEmptyState`).
+		// TODO(query-builder): the product-events setup hint (a signal empty state).
 		...warningList(h, buildTimeseriesQuerySpec(query).warnings),
 		// A metrics query groups from its "across" row; a Group by toggle would only hide that choice.
 		addOnToggles(

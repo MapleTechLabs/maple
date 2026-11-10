@@ -13,8 +13,8 @@ import {
 import type { Model } from "./model"
 import { autocompleteWindowOf } from "./update"
 
-// `useWidgetBuilderData`'s `autocompleteValues`: the provider's lookups per source, the metric
-// list's services, and the board's variable names, for the query panels' where editors.
+// The provider's lookups per source, the metric list's services, and the board's variable names, for
+// the query panels' where editors.
 
 const sourcesOf = (model: Model, query: QueryDraft | undefined): WhereValueSources => ({
 	slots: model.autocomplete,
@@ -27,13 +27,13 @@ const sourcesOf = (model: Model, query: QueryDraft | undefined): WhereValueSourc
 	metricServices: model.metricOptions?.services ?? [],
 })
 
-/** `AutocompleteValuesProvider`'s values for a source the list widget reads (no variables). */
+/** The provider's values for a source the list widget reads (no variables). */
 export const providerValuesOf = (
 	model: Model,
 	dataSource: "traces" | "logs" | "product_events",
 ): WhereClauseAutocompleteValues => whereValuesOf(dataSource, sourcesOf(model, undefined))
 
-/** `autocompleteValues[query.dataSource]`, with a picked metric's own keys (`useMetricScopedAutocomplete`). */
+/** The source's values, with a picked metric's own keys. */
 export const baseValuesOf = (model: Model, query: QueryDraft): WhereClauseAutocompleteValues => ({
 	...whereValuesOf(query.dataSource, sourcesOf(model, query)),
 	variables: Arr.map(model.document?.variables ?? [], (variable) => variable.name),

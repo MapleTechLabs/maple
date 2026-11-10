@@ -77,9 +77,9 @@ export type WidgetShellOptions = Readonly<{
 	legend: ReadonlyArray<FixedMetricSeries>
 	headerValue?: Html
 	footer?: ReadonlyArray<Html | string>
-	/** `titleHint`: the info icon after the title, a docs link when it has an `href`. */
+	/** The info icon after the title, a docs link when it has an `href`. */
 	titleHint?: Readonly<{ text: string; href?: string }>
-	/** `contentClassName`: replaces the panel's `flex-1 min-h-0 p-2` (an overlay opts out of the clip). */
+	/** Replaces the panel's `flex-1 min-h-0 p-2` (an overlay opts out of the clip). */
 	contentClassName?: string
 }>
 

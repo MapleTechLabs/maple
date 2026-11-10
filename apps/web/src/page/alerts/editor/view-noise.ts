@@ -9,11 +9,13 @@ import { Message } from "./message"
 import type { Model } from "./model"
 import { NOISE_CONTROL_CLASS, numberField } from "./view-fields"
 
-// `RuleNoiseSection`: how an open incident behaves.
-
 type H = HtmlBuilder<Message>
 
-const NO_DATA_IDS = { control: "rule-no-data-input", label: "rule-no-data-label", description: "rule-no-data-description" }
+const NO_DATA_IDS = {
+	control: "rule-no-data-input",
+	label: "rule-no-data-label",
+	description: "rule-no-data-description",
+}
 
 const noise = (h: H, mounted: Model["mountedForm"], form: RuleForm): Html => {
 	const isGrouped = ruleFormIsGrouped(form)

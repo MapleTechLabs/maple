@@ -19,10 +19,6 @@ const encodeJson = Schema.encodeOption(Schema.fromJsonString(Schema.Unknown))
 /** `JSON.stringify` that falls back to `String` for a value JSON cannot hold. */
 const stringify = (value: unknown): string => Option.getOrElse(encodeJson(value), () => String(value))
 
-/* -------------------------------------------------------------------------------------------------
- * The message
- * -----------------------------------------------------------------------------------------------*/
-
 /** A tool result's error envelope keys, in the order they are read. */
 const ENVELOPE_KEYS = ["result", "error", "message"] as const
 
@@ -264,10 +260,6 @@ export function errorTextTokens(text: string): ReadonlyArray<ErrorTextToken> {
 	)
 }
 
-/* -------------------------------------------------------------------------------------------------
- * The error path, against the arguments
- * -----------------------------------------------------------------------------------------------*/
-
 export type ErrorPath = ReadonlyArray<string | number>
 
 /** The last `at [...]` path of a message, as keys and indices. */
@@ -430,10 +422,6 @@ export function variantDifferences(texts: ReadonlyArray<string>): ReadonlyArray<
 	})
 }
 
-/* -------------------------------------------------------------------------------------------------
- * The arguments block
- * -----------------------------------------------------------------------------------------------*/
-
 /** One line of a payload as the sample draws it. */
 export interface PayloadLine {
 	readonly depth: number
@@ -589,10 +577,6 @@ export function parsePayload(text: string): JsonValue | undefined {
 	return parseJson(trimmed)
 }
 
-/* -------------------------------------------------------------------------------------------------
- * Stopped or still happening
- * -----------------------------------------------------------------------------------------------*/
-
 export type FailureStatus =
 	/** Enough calls since the last failure that its absence means something. */
 	| { readonly kind: "stopped"; readonly since: number; readonly callsSince: number }
@@ -636,10 +620,6 @@ export function failureStatus(input: {
 		? { kind: "stopped", since: input.lastSeen, callsSince: input.callsSince }
 		: { kind: "ongoing", lastSeen: input.lastSeen }
 }
-
-/* -------------------------------------------------------------------------------------------------
- * The trend
- * -----------------------------------------------------------------------------------------------*/
 
 const HOUR = 3_600
 

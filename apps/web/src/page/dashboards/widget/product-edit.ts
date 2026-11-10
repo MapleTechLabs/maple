@@ -10,9 +10,8 @@ import { defineTaggedUnion } from "foldkit/schema"
 import { ListDataSource } from "./editor-state"
 
 /**
- * The edits of the list, funnel and paths panels (`ListConfigPanel`, `FunnelQueryPanel`,
- * `PathsQueryPanel` and the `FunnelStepBuilder` they mount), as data for one Message.
- * `scope` names the step list: the funnel's steps, or the paths widget's single anchor.
+ * The edits of the list, funnel and paths panels, as data for one Message. `scope` names the step
+ * list: the funnel's steps, or the paths widget's single anchor.
  */
 export const StepScope = Schema.Literals(["funnel", "paths"])
 export type StepScope = typeof StepScope.Type

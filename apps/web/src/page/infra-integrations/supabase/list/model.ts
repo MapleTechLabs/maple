@@ -7,8 +7,6 @@ import { InfraSupabaseSearch } from "../../../../route/search"
 import * as TimeRangePicker from "../../../kit/time-range-picker"
 import { SupabaseFleetInsights, SupabaseProjectRow, SupabaseStatus } from "../model"
 
-// `/infra/supabase`.
-
 export const Model = Schema.Struct({
 	search: InfraSupabaseSearch,
 	window: Schema.NullOr(TimeWindow),

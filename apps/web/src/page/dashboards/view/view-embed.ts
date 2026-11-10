@@ -25,8 +25,6 @@ import { hstack } from "@maple/views/ui/stack"
 import { Array as Arr, String as Str } from "effect"
 import { dividedList } from "@maple/views/ui/rule"
 
-// The embed widget dialog.
-
 type H = HtmlBuilder<Message>
 
 const wrap = (message: ShareMessage) => Message.GotShareMessage({ message })

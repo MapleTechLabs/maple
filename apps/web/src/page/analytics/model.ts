@@ -20,13 +20,10 @@ import { SignalPresenceData } from "@maple/views/data/signal-presence"
 import * as TimeRangePicker from "../kit/time-range-picker"
 import { SortDir } from "../kit/table-sort"
 
-// `/analytics`.
-
 export type Search = typeof AnalyticsSearch.Type
 
 const FacetRow = Schema.Struct({ name: Schema.String, count: Schema.Number })
 
-/** `WebAnalyticsBreakdowns`. */
 export const Breakdowns = Schema.Struct({
 	referrerHosts: Schema.Array(FacetRow),
 	countries: Schema.Array(FacetRow),
@@ -192,7 +189,7 @@ export const Model = Schema.Struct({
 	/** The breakdown card whose table is open in the dialog. */
 	expandedPanel: Schema.NullOr(Schema.String),
 	expandDialog: Dialog.Model,
-	/** Favicon hosts whose image failed (`Favicon`'s `failed`). */
+	/** Favicon hosts whose image failed. */
 	failedFavicons: Schema.Array(Schema.String),
 	filterSections: FilterSections.Model,
 	timePicker: TimeRangePicker.Model,

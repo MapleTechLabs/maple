@@ -13,8 +13,6 @@ import { configureFooter, configureHeader, configurePanel, footerNote } from "./
 import { typographyClass } from "@maple/views/ui/typography"
 import { Array as Arr, String as Str } from "effect"
 
-// `ChooseStage`: a connection's data step, and the confirmation for a change that acts at once.
-
 type H = HtmlBuilder<Message>
 type Changes = ReturnType<typeof chooseChanges>
 

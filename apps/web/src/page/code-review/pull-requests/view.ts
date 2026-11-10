@@ -20,8 +20,6 @@ import { DEFAULT_PRESET, MAX_ROWS, sortOf, STATUS_LABELS } from "./update"
 import { reviewTable } from "./view-table"
 import { vstack } from "@maple/views/ui/stack"
 
-// The code review pull requests page.
-
 type H = HtmlBuilder<Message>
 
 const STATUS_ENTRIES: ReadonlyArray<SelectEntry> = Arr.map(

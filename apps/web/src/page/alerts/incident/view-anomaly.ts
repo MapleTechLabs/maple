@@ -23,9 +23,6 @@ import { anomalyIncidentFromV2 } from "../../../lib/services/anomalies"
 import { AppRoute, hrefOf } from "../../../route"
 import { anomalyFingerprintRow, anomalySignalChart, anomalySummary } from "../../kit/anomaly-evidence"
 
-// An anomaly rule's incident: the detector's evidence (its signal against the baseline, the
-// values, the grouped errors) and the way to the anomaly, its issue and its triage.
-
 /** What the evidence section draws from: the page reads it off its Model, the lab off a fixture. */
 export type AnomalyEvidenceInputs<M> = Readonly<{
 	anomalyIncidentId: AnomalyIncidentId

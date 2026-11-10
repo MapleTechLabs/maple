@@ -36,8 +36,6 @@ import { type Model } from "./model"
 import { canManageAlerts } from "../../kit/session-grants"
 import { ALERT_SEVERITY_LABEL } from "../shared/badges"
 
-// `/alerts/slos/new`: what the SLO counts, the target and window, and who its burn-rate alerts notify.
-
 type H = HtmlBuilder<Message>
 
 const FORM_WIDTH = "max-w-3xl"

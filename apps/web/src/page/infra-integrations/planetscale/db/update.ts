@@ -62,10 +62,9 @@ const navigate = (model: Model, search: Search): Return => ({
 	outMessage: PageOutMessage.RequestedNavigation({ url: hrefOfSearch(model, search), isReplace: false }),
 })
 
-/** One slot request: the next slot and its fetch, or nothing when the key is already in hand. */
 const slot = requestSlot
 
-/** The scoped reads (`PlanetScaleDatabaseData`): they re-key whenever the resolved branch moves. */
+/** The scoped reads: they re-key whenever the resolved branch moves. */
 const requestScoped = (model: Model, context: PageContext, mode: Keyed.RequestMode): Return => {
 	const { window, localWindow } = model
 	if (window === null || localWindow === null) return { model }
@@ -184,7 +183,7 @@ export const routeChanged = (model: Model, route: Route, context: PageContext): 
 
 export const contextChanged = (model: Model): Return => ({ model })
 
-/** `setFilter`: an emptied filter leaves the URL; the legacy `?branch=` is never written back. */
+/** An emptied filter leaves the URL; the legacy `?branch=` is never written back. */
 const setFilter = (
 	model: Model,
 	key: "branches" | "branchStates" | "branchRoles" | "branchContains",

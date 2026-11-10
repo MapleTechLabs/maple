@@ -122,7 +122,7 @@ export const FetchDistributions = Command.define("FetchAgentSessionsDistribution
 		),
 })
 
-/** `useAgentSessionsTabCounts`: the window's sessions and the tools called in it. */
+/** The tab counts: the window's sessions and the tools called in it. */
 export const FetchTabSessions = Command.define("FetchAgentSessionsTabSessions", {
 	args: { key: Schema.String, window: TimeWindow },
 	messages: [Message.CompletedFetchTabSessions],
@@ -174,13 +174,13 @@ const afterPaint = <A>(message: A) =>
 		return Effect.sync(() => cancelAnimationFrame(handle))
 	})
 
-/** The filter rail is in the DOM; its `useDetectedModels` reads as it renders. */
+/** The filter rail is in the DOM, so its models can be detected. */
 export const MountFilterRail = Mount.define("MountAgentSessionsFilterRail", {
 	messages: [Message.MountedFilterRail],
 	execute: () => Effect.succeed(Message.MountedFilterRail()),
 })
 
-/** The loaded table is on screen: its details read follows (`useInfiniteAiSessions`' effect). */
+/** The loaded table is on screen: its details read follows. */
 export const MountTable = Mount.define("MountAgentSessionsTable", {
 	messages: [Message.PaintedTable],
 	execute: () => afterPaint(Message.PaintedTable()),
@@ -196,7 +196,7 @@ export type RowClick = Readonly<{
 	rowUrl: string | null
 }>
 
-/** The row's `onClick`: a plain primary click outside a link opens the row's session. */
+/** A plain primary click on a row, outside a link, opens the row's session. */
 export const openedRowUrl = (click: RowClick): Option.Option<string> =>
 	click.button === 0 &&
 	!click.metaKey &&
@@ -239,7 +239,7 @@ export const MountRowClicks = Mount.defineStream("MountAgentSessionsRowClicks", 
 		),
 })
 
-/** `useVirtualizer` over the page scroller, on the table body: measured rows, index keys. */
+/** The virtualizer over the page scroller, on the table body: measured rows, index keys. */
 export const VirtualizeSessions = Mount.defineStream("VirtualizeAgentSessions", {
 	messages: [Message.ChangedListWindow],
 	execute: ({ element, viewStateChanges }) =>
@@ -263,7 +263,7 @@ export const LoadSignalPresence = Command.define("LoadAgentSessionsSignalPresenc
 		Effect.map(loadSignalPresences(orgId), (result) => Message.CompletedLoadSignalPresence({ result })),
 })
 
-/** `ReachEndSentinel`: the 1px marker nearing view (400px margin) asks for the next page. */
+/** The 1px marker nearing view (400px margin) asks for the next page. */
 export const MountReachEnd = Mount.defineStream("MountAgentSessionsReachEnd", {
 	messages: [Message.ReachedListEnd],
 	execute: ({ element }) =>

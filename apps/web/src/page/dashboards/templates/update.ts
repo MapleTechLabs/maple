@@ -34,7 +34,7 @@ export type Return = PageReturn<Model, Message>
 type Search = typeof DashboardsTemplatesSearch.Type
 type Route = Readonly<{ search: Search }>
 
-/** Widgets past this many are not worth the warehouse round trip in a preview (`MAX_PREVIEW_WIDGETS`). */
+/** Widgets past this many are not worth the warehouse round trip in a preview. */
 export const MAX_PREVIEW_WIDGETS = 8
 
 /** The v2 wire widget is the stored widget under another schema; decoding narrows its type. */
@@ -90,7 +90,7 @@ export const selectedOf = (model: Model): V2DashboardTemplate | null =>
 
 export const PANEL_SHEET_ID = "dashboard-template-panel"
 
-/** `<Sheet open={selected !== null}>`: each selection opens it afresh. */
+/** Each selection opens the sheet afresh. */
 const openPanelSheet = () => Dialog.init(PANEL_SHEET_ID, "sheet", { isOpen: true })
 
 /** A new selection drops the old preview and starts the 250 ms arming delay (the panel remounts). */
@@ -152,7 +152,7 @@ const planPreview = (model: Model, context: PageContext): Return => {
 		nowMs: model.nowMs,
 	})
 	const shown = model.previewWidgets.slice(0, MAX_PREVIEW_WIDGETS)
-	// `ResolvedDashboardVariablesProvider` declares no variables, so nothing waits on one.
+	// The preview declares no variables, so nothing waits on one.
 	const variables = { names: [], values: previewVariableValues(preview.variables) }
 	const initial: PreviewPlan = { gates: model.gates, requests: model.requests, commands: [], asked: [] }
 	const planned = Arr.reduce(shown, initial, (state, widget) => {
@@ -197,7 +197,7 @@ const navigate = (model: Model, url: string, isReplace: boolean): Return => ({
 const selectionHref = (templateId: string | undefined) =>
 	hrefOf(AppRoute.DashboardsTemplates({ search: templateId === undefined ? {} : { template: templateId } }))
 
-/** `createFromTemplate`: only filled parameters are sent. */
+/** Only filled parameters are sent. */
 const create = (model: Model, templateId: string): Return => {
 	if (model.isCreating) return { model }
 	const parameters = filledParametersOf(model.parameters)
@@ -277,7 +277,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 				: { model },
 		ChangedFilter: ({ filter }) => ({ model: { ...model, filter } }),
 		ClickedTemplate: ({ templateId }) => navigate(model, selectionHref(templateId), true),
-		// `onOpenChange(false)`: dismissing the sheet clears the selection.
+		// Dismissing the sheet clears the selection.
 		GotPanelSheetMessage: ({ message: inner }) => {
 			const next = Dialog.update(model.panelSheet, inner)
 			const stepped = {

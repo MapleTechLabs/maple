@@ -1,5 +1,3 @@
-// Branch resolution for the PlanetScale database drill-in.
-//
 // A PlanetScale database is not one thing: production plus one branch per open
 // pull request, which in practice means tens of branches, nearly all idle. Two
 // consequences drive this module:
@@ -10,8 +8,6 @@
 //  2. The branch list has to come from the inventory UNION the metric rollups.
 //     Building it from metrics alone silently drops branches excluded from
 //     scraping or asleep, leaving no way to tell "no such branch" from "no data".
-//
-// Pure, so the precedence rules are testable on their own.
 
 import { matchesGlob } from "@maple/domain/glob"
 import type { V2PlanetScaleBranch } from "@maple/domain/http/v2"
@@ -26,17 +22,15 @@ export interface BranchCandidate {
 	readonly ready: boolean
 	/** Null when the inventory knows this branch but the window has no metrics for it. */
 	readonly stat: PlanetScaleBranchStat | null
-	/** Matched the scrape target's exclude globs — explains a permanent dash. */
+	/** Matched the scrape target's exclude globs: explains a permanent dash. */
 	readonly excluded: boolean
 	/** In the metric rollups but not the inventory (inventory lag, or just deleted). */
 	readonly unknownToInventory: boolean
 }
 
 /**
- * Whether the scrape target's branch filters keep this branch out. Shares
- * `matchesGlob` with the scraper's discovery config (`@maple/domain/glob`) —
- * these two previously had independent glob implementations that disagreed on
- * `?`, so the preview and the scraper collected different branch sets.
+ * Whether the scrape target's branch filters keep this branch out. Shares `matchesGlob` with the
+ * scraper's discovery config (`@maple/domain/glob`), so the preview and the scraper agree.
  */
 export const isExcluded = (
 	name: string,
@@ -76,7 +70,7 @@ export function mergeBranchCandidates(
 		candidates.push({
 			name: row.branch,
 			production: false,
-			// Metrics are flowing, so it is serving — the inventory just hasn't listed it.
+			// Metrics are flowing, so it is serving: the inventory just hasn't listed it.
 			ready: true,
 			stat: row,
 			excluded: false,
@@ -97,16 +91,16 @@ export type BranchResolution =
 
 const connectionsOf = (candidate: BranchCandidate) => candidate.stat?.connectionsAvg ?? -1
 
-/** Production first, then busiest, then alphabetical — a total order with no ties. */
+/** Production first, then busiest, then alphabetical: a total order with no ties. */
 export function defaultBranch(
 	candidates: ReadonlyArray<BranchCandidate>,
 ): { readonly branch: BranchCandidate; readonly role: "production" | "busiest" } | null {
 	if (candidates.length === 0) return null
 	const production = Arr.filter(candidates, (c) => c.production)
 	if (production.length > 0) {
-		// A promote in flight can briefly show two production branches; the busier
-		// one is the one actually serving. Both keep their badge in the table —
-		// this picks a default, it does not hide the anomaly.
+		// A promote in flight can briefly show two production branches; the busier one is the one
+		// actually serving. Both keep their badge in the table: this picks a default, it does not hide
+		// the anomaly.
 		const branch = [...production].sort((a, b) =>
 			connectionsOf(b) !== connectionsOf(a)
 				? connectionsOf(b) - connectionsOf(a)

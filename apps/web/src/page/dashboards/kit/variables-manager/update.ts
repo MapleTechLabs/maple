@@ -108,7 +108,7 @@ const withDefault = (draft: Variable, value: string): Variable => {
 	return value === "" ? rest : { ...rest, defaultValue: value }
 }
 
-/** A typed value lands in the draft, as the controlled inputs' `onChange` does. */
+/** A typed value lands in the draft. */
 const applyField = (draft: Variable, field: FormField, value: string): Variable => {
 	switch (field) {
 		case "name":
@@ -160,7 +160,7 @@ const fieldStep = (model: Model, field: FormField, message: Field.Message): Retu
 		: { model: updated }
 }
 
-/** A select step; a pick retypes the draft and re-reads the form from it (the inputs are controlled). */
+/** A select step; a pick retypes the draft and re-reads the form from it. */
 const selectStep = (
 	model: Model,
 	key: "typeSelect" | "sourceSelect" | "metricTypeSelect",
@@ -207,7 +207,7 @@ const applyMetricType = (draft: Variable, value: string): Variable => {
 		: draft
 }
 
-/** `move`: the expanded form follows its draft. */
+/** The expanded form follows its draft. */
 const move = (model: Model, index: number, delta: -1 | 1): Return => {
 	const target = index + delta
 	const moved = model.drafts[index]

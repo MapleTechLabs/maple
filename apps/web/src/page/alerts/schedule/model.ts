@@ -7,8 +7,6 @@ import { LoadFailure } from "@maple/views/data/load-failure"
 import * as Dialog from "@maple/views/ui/dialog"
 import { OrgMember } from "../shared/org-members"
 
-// `/alerts/schedules/$scheduleId`: who is on call, the calendar of shifts, and the overrides.
-
 /** The override form as typed: who, and from when to when on the schedule zone's wall clock. */
 export const OverrideDraft = Schema.Struct({
 	userId: Schema.String,
@@ -45,7 +43,6 @@ export const Model = Schema.Struct({
 	/** Bumped on every open: a create's result only settles the dialog it was sent from. */
 	overrideOpenCount: Schema.Number,
 	deletingOverrideId: Schema.NullOr(OnCallOverrideId),
-	/** The override awaiting delete confirmation. */
 	confirmDeleteOverrideId: Schema.NullOr(OnCallOverrideId),
 	deleteOverrideDialog: Dialog.Model,
 })

@@ -187,7 +187,7 @@ const select = (model: Model, context: ModalContext, index: number): Return => {
 	}
 }
 
-/** The sample `SamplesPane` has open: the selection clamped to what is loaded. */
+/** The open sample: the selection clamped to what is loaded. */
 export const currentOf = (model: Model): number =>
 	Math.min(model.selected, Math.max(occurrencesOf(model).length - 1, 0))
 

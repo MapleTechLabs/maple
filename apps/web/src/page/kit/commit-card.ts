@@ -19,8 +19,8 @@ import { MapleInternalApiClient } from "../../platform/api-clients"
 import { skeleton } from "@maple/views/ui/skeleton"
 import { relativeTime } from "./relative-time"
 
-// The commit SHA hover card: its state machine (arm, lookup, settle), the body
-// `CommitDetailBody` renders once `commitQueryAtom(sha)` settles, and the lookup itself.
+// The commit SHA hover card: its state machine (arm, lookup, settle), the body it renders once the
+// lookup settles, and the lookup itself.
 
 /** A full 40-hex git SHA: only those open a card and reach the VCS endpoint. */
 export const isResolvableSha = (sha: string): boolean => /^[0-9a-f]{40}$/i.test(sha)
@@ -34,7 +34,7 @@ export const firstLine = (message: string): string =>
 		}),
 	)
 
-/** `CommitShaHoverCard`'s timings: the fetch arms after 20 ms, the card opens after 200 ms. */
+/** The hover card's timings: the fetch arms after 20 ms, the card opens after 200 ms. */
 export const ARM_DELAY_MS = 20
 export const OPEN_DELAY_MS = 200
 
@@ -60,11 +60,11 @@ export type CommitDetailData = AsyncData.AsyncData<CommitDetail, CommitFailure>
 const errorTag = (error: unknown): string =>
 	Predicate.hasProperty(error, "_tag") && typeof error._tag === "string" ? error._tag : ""
 
-/** `commitQueryAtom(sha)`'s identity: every page reading one commit shares its read. */
+/** One commit's cache key: every page reading one commit shares its read. */
 export const commitDetailKey = (orgId: string, sha: string): RequestKey =>
 	requestKey(orgId, "vcsCommitDetail", { sha })
 
-/** `commitsQueryAtom(shasKey)`'s identity (`commitsQueryKey`: deduped, sorted, comma-joined). */
+/** Several commits' cache key (deduped, sorted, comma-joined). */
 export const commitDetailsKey = (orgId: string, shasKey: string): RequestKey =>
 	requestKey(orgId, "vcsCommitDetails", { shas: shasKey })
 
@@ -132,7 +132,7 @@ export const readCommitDetails = (key: RequestKey, shas: string, refresh = false
 		)
 	})
 
-/** `commitQueryAtom(sha)` as the hover card reads it. */
+/** One commit's lookup, as the hover card reads it. */
 export const loadCommitDetail = (key: RequestKey, sha: string) =>
 	Effect.gen(function* () {
 		const commit = yield* readCommitDetail(key, sha)
@@ -151,8 +151,6 @@ export const loadCommitDetail = (key: RequestKey, sha: string) =>
 		Effect.mapError((error): CommitFailure => ({ tag: errorTag(error) })),
 		Effect.result,
 	)
-
-// STATE
 
 /** One card per page, shared by every trigger, and the commits it looked up by sha. */
 export const CommitCardState = Schema.Struct({
@@ -184,7 +182,7 @@ export const CommitCardMessages = {
 	CompletedFetchCommitDetail: DetailFields,
 }
 
-/** A page's arm timer (the lookup starts 20 ms into a hover, ahead of the card) and `commitQueryAtom(sha)`. */
+/** A page's arm timer (the lookup starts 20 ms into a hover, ahead of the card) and the commit lookup. */
 export const commitCardCommands = <
 	const ArmName extends string,
 	const FetchName extends string,
@@ -269,8 +267,6 @@ export const settleCommitDetail = <S extends CommitCardState>(
 	},
 })
 
-// VIEW
-
 type Clock = Readonly<{ nowMs: number; timeZone: string }>
 
 /** `hrefFromOrigin`: an author or repo path on the commit URL's host. */
@@ -295,7 +291,7 @@ const externalText = <M>(h: HtmlBuilder<M>, href: string | null, className: stri
 				[text],
 			)
 
-/** `CommitAvatar`: the author's avatar, or their initials. TODO(avatar-error): a broken URL does not fall back to initials. */
+/** The author's avatar, or their initials. TODO(avatar-error): a broken URL does not fall back to initials. */
 export const commitAvatar = <M>(
 	h: HtmlBuilder<M>,
 	url: string | null,
@@ -324,7 +320,7 @@ export const commitAvatar = <M>(
 			])
 }
 
-/** `CommitAvatar` (not compact), linked to the author's profile when known. */
+/** The author's avatar, linked to their profile when known. */
 const avatar = <M>(h: HtmlBuilder<M>, url: string | null, name: string, href: string | null): Html => {
 	const inner = commitAvatar(h, url, name, false)
 	return href === null
@@ -343,7 +339,7 @@ const avatar = <M>(h: HtmlBuilder<M>, url: string | null, name: string, href: st
 			)
 }
 
-/** `CommitCard` (not compact): subject and body, author and repo, sha and age, the provider link. */
+/** Subject and body, author and repo, sha and age, the provider link. */
 const commitCard = <M>(
 	h: HtmlBuilder<M>,
 	commit: CommitDetail,
@@ -432,7 +428,7 @@ const commitCard = <M>(
 	)
 }
 
-/** `CopyableSha`: the short sha as a copy badge (copies the full sha). */
+/** The short sha as a copy badge (copies the full sha). */
 const copyableSha = <M>(h: HtmlBuilder<M>, sha: string, onCopy: M | undefined): Html =>
 	h.button(
 		[
@@ -446,7 +442,6 @@ const copyableSha = <M>(h: HtmlBuilder<M>, sha: string, onCopy: M | undefined): 
 		[shortId(sha, "sha")],
 	)
 
-/** `CommitSkeleton` (not compact). */
 const commitSkeleton = <M>(h: HtmlBuilder<M>): Html =>
 	h.div(
 		[h.Class("flex flex-col gap-3 p-3.5")],
@@ -489,7 +484,6 @@ const describeError = (
 const ACTION_CLASS =
 	"mt-0.5 inline-flex w-fit items-center gap-1 font-medium text-primary hover:underline active:underline"
 
-/** `CommitMessage` (not compact). */
 const commitMessage = <M>(h: HtmlBuilder<M>, tag: string): Html => {
 	const { title, detail, action } = describeError(tag)
 	const link = (href: string, label: string) =>
@@ -508,7 +502,7 @@ const commitMessage = <M>(h: HtmlBuilder<M>, tag: string): Html => {
 	)
 }
 
-/** `CommitHoverBody`: the card, its error message, or the skeleton while the lookup runs. */
+/** The card, its error message, or the skeleton while the lookup runs. */
 export const commitDetailBody = <M>(
 	h: HtmlBuilder<M>,
 	data: CommitDetailData,

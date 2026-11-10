@@ -16,12 +16,12 @@ import type { SeriesSlot } from "./series"
 import { seriesLegend } from "./series-legend"
 import { Array as Arr } from "effect"
 
-// `K8sMetricChartView` and the detail-chart wrappers around it: one metric at a time, 280 tall, series legend,
-// in a `ChartCard`.
+// The Kubernetes metric chart and the detail-chart wrappers around it: one metric at a time, 280
+// tall, series legend, in a chart card.
 
 export const K8S_CHART_HEIGHT = 280
 
-/** `K8sSeriesSummary`: the series legend above the plot. */
+/** The series legend above the plot. */
 const k8sSeriesSummary = (h: HtmlBuilder<Chart.Message>, info: InfraSeriesInfo, className = "mb-3"): Html =>
 	seriesLegend(h, {
 		className: cn("justify-start", className),
@@ -46,7 +46,7 @@ export type K8sChartOptions<M> = Readonly<{
 	title?: string
 	showThreshold?: boolean
 	stacked?: boolean
-	/** `syncId` given: the chart joins the page's linked cursor under this id. */
+	/** Joins the page's linked cursor under this id. */
 	linkedChartId?: string
 	height?: number
 	theme: ThemeColors | null

@@ -14,8 +14,6 @@ import { type ToolPlotInputs, toolPlotView } from "../../kit/tools/series-chart"
 import { Message } from "./message"
 import { vstackClass } from "@maple/views/ui/stack"
 
-// The tool detail charts: four readings of one tool.
-
 type H = HtmlBuilder<Message>
 
 const PLOT_HEIGHT = 160

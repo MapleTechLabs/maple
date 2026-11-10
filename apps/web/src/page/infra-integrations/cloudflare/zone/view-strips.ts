@@ -28,8 +28,6 @@ import { Message, type Model } from "./model"
 import { typographyClass } from "@maple/views/ui/typography"
 import { Array as Arr, Order } from "effect"
 
-// `CloudflareZoneSignals`.
-
 type H = HtmlBuilder<Message>
 
 const summary = (

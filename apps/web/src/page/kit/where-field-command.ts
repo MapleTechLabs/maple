@@ -32,7 +32,7 @@ export const WhereValuesRequest = Schema.Union([
 ])
 export type WhereValuesRequest = typeof WhereValuesRequest.Type
 
-/** `getSpanAttributeValuesResultAtom` and friends, for the key the caret is in. */
+/** The values read for the key the caret is in. */
 export const lookupWhereValues = (request: WhereValuesRequest) => {
 	switch (request._tag) {
 		case "Span":

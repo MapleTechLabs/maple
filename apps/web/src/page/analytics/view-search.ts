@@ -526,7 +526,6 @@ const content = (h: H, model: Model, isNarrow: boolean, isComparable: boolean): 
 	]
 }
 
-/** `/analytics?tab=search`. */
 export const searchTab = (h: H, model: Model, isNarrow: boolean): Html =>
 	AsyncData.matchData(model.searchStatus.data, {
 		onEmpty: () => skeleton(h, "h-64 w-full"),

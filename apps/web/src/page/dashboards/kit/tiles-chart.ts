@@ -26,8 +26,7 @@ import { isServiceChart, serviceChart, serviceLegend } from "./tiles-service"
 import { chartFrameClass } from "@maple/views/ui/chart-frame"
 import { Array as Arr, Record as Rec } from "effect"
 
-// `makeChartWidget`: one factory for every widget
-// that mounts a registry chart, each branch handing its chart only the settings it declares.
+// Each chart branch hands its chart only the settings it declares.
 // TODO(chart-axes): line/area/bar thresholds, log scale and soft bounds are not drawn yet.
 
 type Widget = TileWidget
@@ -71,7 +70,7 @@ const toPrimitiveRows = (rows: Rows): ReadonlyArray<Primitive> =>
 				([key, value]): ReadonlyArray<readonly [string, string | number | boolean]> =>
 					typeof value === "string" || typeof value === "boolean"
 						? [[key, value] as const]
-						: // `asFiniteNumber`: a null or NaN reading is plotted as 0, the key kept in place.
+						: // A null or NaN reading is plotted as 0, the key kept in place.
 							typeof value === "number" || value === null
 							? [
 									[
@@ -103,7 +102,7 @@ type Render = Readonly<{
 	legend: "visible" | "hidden" | "right" | undefined
 }>
 
-/** `canvasSafeThresholdColor`: a validated colour resolved to a literal, else `--destructive`. */
+/** A validated colour resolved to a literal, else `--destructive`. */
 const thresholdColor = (theme: ThemeColors, color: string | undefined): string => {
 	const fallback = resolveColor(theme, "--destructive")
 	const validated = validateCssColor(color)
@@ -112,7 +111,7 @@ const thresholdColor = (theme: ThemeColors, color: string | undefined): string =
 	return /var\(|currentcolor/i.test(resolved) ? fallback : resolved
 }
 
-/** The cartesian block every line, area and bar chart reads (`renderChart`'s `cartesian`). */
+/** The cartesian block every line, area and bar chart reads. */
 const axisSpecOf = (widget: Widget, theme: ThemeColors): TimeseriesAxisSpec => ({
 	thresholds: Arr.map(widget.display.thresholds ?? [], (threshold) => ({
 		value: threshold.value,
@@ -295,8 +294,8 @@ export type RegistryChartInputs<M> = Readonly<{
 }>
 
 /**
- * A registry chart with only `data` and `className` set (`ChartPreview`, the gallery thumbnails):
- * every other setting at the chart component's own default.
+ * A registry chart with only `data` and `className` set (the picker and gallery thumbnails): every
+ * other setting at the chart's own default.
  */
 export const registryChartView = <M>(h: HtmlBuilder<M>, inputs: RegistryChartInputs<M>): Html => {
 	const category = chartCategoryOf(inputs.chartId) ?? "line"

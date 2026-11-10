@@ -7,8 +7,6 @@ import { MapleApiV2Client } from "../../../platform/api-clients"
 import { errorMessageOf } from "../kit/store"
 import { Message } from "./message"
 
-// `useDashboardVersions`, `useDashboardVersionDetail` and `useRestoreDashboardVersion`.
-
 const decodeDashboardId = Schema.decodeUnknownEffect(DashboardId)
 const decodeVersionId = Schema.decodeUnknownEffect(DashboardVersionId)
 const decodeDocument = Schema.decodeUnknownEffect(DashboardDocument)

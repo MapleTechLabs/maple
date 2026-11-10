@@ -24,8 +24,6 @@ import { keysOf } from "./update"
 import { Array as Arr, Option } from "effect"
 import { successOf } from "../../kit/success-of"
 
-// The workload page's derivations (`GcpWorkloadPage`, `GcpCloudSqlPage`).
-
 const NO_STATEMENTS: ReadonlyArray<GcpStatement> = []
 
 export const pointsOf = (model: Model) => successOf(model.timeseries.data) ?? []
@@ -85,7 +83,7 @@ export const pageOf = (model: Model) => {
 	})
 }
 
-/** What `GcpWorkloadPage` is handed, read off the slots by the route and off fixtures by the lab. */
+/** Read off the slots by the route and off fixtures by the lab. */
 export type WorkloadInputs = Readonly<{
 	service: GcpInfraServiceId
 	keys: ReadonlyArray<string>

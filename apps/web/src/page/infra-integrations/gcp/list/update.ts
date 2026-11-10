@@ -76,8 +76,8 @@ export const resourcesQueryOf = (search: Search): ResourcesQuery => {
 }
 
 /**
- * Every read the page shows right now, keyed like the atoms: the fleet once the status says it
- * collects, then the current view's sparklines, its Cloud SQL inventory, or the resource list.
+ * Every read the page shows right now: the fleet once the status says it collects, then the
+ * current view's sparklines, its Cloud SQL inventory, or the resource list.
  */
 const sync = (model: Model, context: PageContext, mode: Keyed.RequestMode): Return => {
 	const status = statusOf(model)

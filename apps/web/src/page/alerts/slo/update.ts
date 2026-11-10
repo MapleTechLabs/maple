@@ -172,7 +172,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			orgId === context.orgId && model.incidents === null
 				? { model: { ...model, isIncidentsLoadFailed: true } }
 				: { model },
-		// `retryOrgCollections`: a stopped shape syncs again only on fresh collections.
+		// A stopped shape syncs again only on fresh collections.
 		ClickedRetryIncidents: () => ({
 			model: { ...model, isIncidentsLoadFailed: false },
 			outMessage: PageOutMessage.RequestedReconnectOrgCollections(),

@@ -18,8 +18,6 @@ import { type ConfigureModel, GcpFlags } from "./gcp-configure-schema"
 import type { ConfigureTarget } from "./gcp-schema"
 import { Message } from "../../../integrations/message"
 
-// `GcpConfigure`'s writes and reads: the create, the update and the run step's scripts.
-
 export const CONFIGURE_DIALOG_ID = "gcp-configure"
 
 export const initConfirm = (): Dialog.Model => Dialog.init("gcp-configure-confirm", "alert-dialog")
@@ -29,7 +27,7 @@ export const flagsOf = (connector: V2GcpConnector): GcpFlags => ({
 	metrics_enabled: connector.metrics_enabled,
 })
 
-/** The wizard as `GcpConfigure` mounts it; `ConnectionStages` fills `opened` once it has a connector. */
+/** `opened` is filled once the wizard has a connector. */
 export const initConfigure = (
 	target: ConfigureTarget,
 	connectors: ReadonlyArray<V2GcpConnector>,
@@ -112,7 +110,7 @@ export const UpdateConnector = Command.define("UpdateGcpConnector", {
 		),
 })
 
-/** `useGcpScripts(connector, applicationLogs)`: null keeps the sink's filter (an empty payload). */
+/** Null `applicationLogs` keeps the sink's filter (an empty payload). */
 export const LoadConfigureScripts = Command.define("LoadGcpConfigureScripts", {
 	args: {
 		key: Schema.String,
@@ -146,7 +144,6 @@ export const ConfirmRemoval = Command.define("ConfirmGcpRemoval", {
 		),
 })
 
-/** `FileCard`'s `useCopy({ label: "prompt" })`: whether the prompt reached the clipboard. */
 export const CopyPrompt = Command.define("CopyGcpPrompt", {
 	args: { text: Schema.String },
 	messages: [Message.CompletedGcpPromptCopy],

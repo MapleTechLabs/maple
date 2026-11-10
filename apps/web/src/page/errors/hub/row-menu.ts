@@ -14,8 +14,6 @@ import type { Model } from "./model"
 import { startHubWrite } from "./selection"
 import { Array as Arr, Option } from "effect"
 
-// The issue context menu: a row's right-click menu.
-
 type Return = PageReturn<Model, Message>
 
 /** What each top-level entry does, in entry order (the submenu and separator do nothing themselves). */

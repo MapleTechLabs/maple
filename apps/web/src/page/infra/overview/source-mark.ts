@@ -5,7 +5,7 @@ import type { IconName } from "@maple/views/ui/icons.generated"
 import { PROVIDERS } from "../../kit/providers"
 import type { SourceId } from "./model"
 
-// `SOURCE_TITLE` and `SourceMark`: the sidebar's marks.
+// The sources' titles and marks, as the sidebar draws them.
 
 export const SOURCE_TITLE = {
 	hosts: "Hosts",

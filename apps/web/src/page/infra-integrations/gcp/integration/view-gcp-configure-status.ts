@@ -22,8 +22,6 @@ import { hstack, vstack } from "@maple/views/ui/stack"
 import { Array as Arr } from "effect"
 import { dividedList } from "@maple/views/ui/rule"
 
-// `RunStatus` (what Maple has heard from the script) and `Applied` (the confirmed run).
-
 type H = HtmlBuilder<Message>
 type RowState = "pending" | "running" | "done"
 

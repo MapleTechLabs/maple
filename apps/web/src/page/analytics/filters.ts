@@ -1,5 +1,3 @@
-// Shared filter vocabulary for the Web Analytics page.
-//
 // Every filter is single-valued, matching the query builder's filter surface
 // (packages/query-engine/src/ch/queries/web-analytics.ts). Single rather than
 // multi-select is a deliberate narrowing: the panels answer "how does this slice
@@ -23,8 +21,8 @@ export interface AnalyticsFilters {
 	utmCampaign?: string
 	visitorType?: "new" | "returning"
 	/**
-	 * Which agents count. Never absent once decoded — {@link filtersFromSearch}
-	 * substitutes {@link DEFAULT_TRAFFIC} — so every query on the page states its
+	 * Which agents count. Never absent once decoded ({@link filtersFromSearch}
+	 * substitutes {@link DEFAULT_TRAFFIC}), so every query on the page states its
 	 * population rather than inheriting one.
 	 */
 	traffic?: "all" | "humans" | "bots"
@@ -41,7 +39,7 @@ export type AnalyticsFilterKey = keyof AnalyticsFilters
  * being crawled hard reported Googlebot as ten thousand unique mobile Chrome
  * users, and every headline, breakdown and funnel on the page inherited that.
  * A default of `all` keeps the old numbers and asks each customer to discover
- * the problem themselves, which is the wrong way round — the correct number
+ * the problem themselves, which is the wrong way round: the correct number
  * should not be the one you have to opt into.
  *
  * The cost is that figures move, sharply, on exactly the orgs where they were
@@ -89,7 +87,6 @@ export const FILTER_SECTION_LABEL: Record<AnalyticsFilterKey, string> = {
 
 const FILTER_KEYS = Rec.keys(FILTER_CHIP_LABEL) as ReadonlyArray<AnalyticsFilterKey>
 
-/** Pull just the filter fields out of the route's search object. */
 export const filtersFromSearch = (search: Record<string, unknown>): AnalyticsFilters => {
 	const out: AnalyticsFilters = {}
 	for (const key of FILTER_KEYS) {
@@ -120,7 +117,7 @@ export interface ActiveFilterChip {
 }
 
 /**
- * The empty-group sentinel as a chip reads — lower case like the rest of the
+ * The empty-group sentinel as a chip reads: lower case like the rest of the
  * chip, and the same words the breakdown row used (`referrerLabel`/`utmLabel`).
  */
 const chipValue = (key: AnalyticsFilterKey, value: string): string => {
@@ -129,11 +126,9 @@ const chipValue = (key: AnalyticsFilterKey, value: string): string => {
 }
 
 /**
- * Flatten the filter object into one removable chip per set filter.
- *
  * `traffic` at its default is not a chip. Every chip here is something you did,
  * and a permanent `traffic:humans` on an otherwise unfiltered page would read as
- * a filter you forgot to clear — while also making "Clear all" look available on
+ * a filter you forgot to clear, while also making "Clear all" look available on
  * a page with nothing to clear. Choosing `all` or `bots` is a choice, and does
  * get a chip.
  */
@@ -148,7 +143,7 @@ export const activeFilterChips = (filters: AnalyticsFilters): ReadonlyArray<Acti
  * The Traffic section is two checkboxes over a three-valued filter, and they
  * behave the way two checkboxes look like they should: ticking both means both.
  *
- * `all` is therefore not a third option competing with the other two — it is
+ * `all` is therefore not a third option competing with the other two: it is
  * what "Humans and Bots" is called once it reaches the query layer. Unticking
  * the last remaining box widens to `all` rather than selecting nothing, since a
  * page filtered to neither population has nothing to show and no way back.
@@ -166,13 +161,13 @@ export const toggleTraffic = (
 	return "all"
 }
 
-/** Whether the current setting counts this population — drives the checkboxes. */
+/** Whether the current setting counts this population; drives the checkboxes. */
 export const trafficIncludes = (traffic: AnalyticsFilters["traffic"], which: "humans" | "bots"): boolean => {
 	const effective = traffic ?? DEFAULT_TRAFFIC
 	return effective === "all" || effective === which
 }
 
-/** Whether anything is narrowed beyond the page's defaults — drives "Clear all". */
+/** Whether anything is narrowed beyond the page's defaults; drives "Clear all". */
 export const hasActiveFilters = (filters: AnalyticsFilters): boolean => activeFilterChips(filters).length > 0
 
 /**

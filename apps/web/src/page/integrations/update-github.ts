@@ -19,8 +19,6 @@ import type { Model } from "./model"
 import { chain, requestStatus } from "./update-status"
 import { TrackConnected } from "./command"
 
-// `GithubIntegrationCard`'s state changes.
-
 type Return = PageReturn<Model, Message>
 
 const withCard = (model: Model, card: Partial<GithubCardModel>): Model => ({
@@ -191,8 +189,6 @@ export const completedRepoDelete = (
 			: [(next: Model) => toast(next, "error", `Couldn't delete ${fullName}`, failure.message)]),
 	])
 }
-
-// BRANCH SELECTOR
 
 const popoverStep = (
 	model: Model,

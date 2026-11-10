@@ -4,8 +4,6 @@ import { tailEvents } from "./kit/chat-api"
 import { Message } from "./message"
 import type { Model } from "./model"
 
-// The investigation conversation's live tail while a turn runs, as a Subscription dependency.
-
 export const Tail = Schema.Struct({
 	sessionId: Schema.String,
 	generation: Schema.Number,

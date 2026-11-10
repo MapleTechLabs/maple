@@ -10,9 +10,9 @@ import {
 import type { Model } from "./model"
 import { Array as Arr, Option } from "effect"
 
-// One container's grid as `DashboardGrid` derives it (the root canvas, or a section tab): the tier
-// for the one measured width every grid shares, the stored layout projected onto it, and the pixel
-// geometry a gesture resolves cells with.
+// One container's grid (the root canvas, or a section tab): the tier for the one measured width
+// every grid shares, the stored layout projected onto it, and the pixel geometry a gesture resolves
+// cells with.
 
 type Widget = DashboardDocument["widgets"][number]
 

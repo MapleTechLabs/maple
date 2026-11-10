@@ -38,7 +38,7 @@ const isConnected = (model: Model): boolean =>
 		onSome: (status) => status.connected,
 	})
 
-/** `RailwayServices` mounts once the status says connected; its atom keys on the window. */
+/** The services read starts once the status says connected; it keys on the window. */
 const requestServices = (model: Model, context: PageContext, mode: Keyed.RequestMode): Return => {
 	const window = model.window
 	if (window === null || !isConnected(model)) return { model }

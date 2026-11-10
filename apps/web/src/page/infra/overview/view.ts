@@ -22,8 +22,6 @@ import { typography } from "@maple/views/ui/typography"
 import { vstack } from "@maple/views/ui/stack"
 import { Array as Arr } from "effect"
 
-// `InfraOverviewPage`.
-
 type H = HtmlBuilder<Message>
 
 const toFrame = (message: Frame.Message) => Message.GotFrameMessage({ message })

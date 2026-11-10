@@ -67,7 +67,7 @@ export const STATUS_READS = {
 	aws: statusRead("LoadIntegrationsAwsStatus", Message.CompletedLoadAws, () =>
 		Effect.flatMap(MapleApiV2Client, (client) => client.awsIntegration.status()),
 	),
-	/** `retainedQueryV2("planetscaleIntegration", "databases")`: the poller's inventory. */
+	/** The poller's inventory of PlanetScale databases. */
 	planetscaleDatabases: statusRead(
 		"LoadIntegrationsPlanetscaleDatabases",
 		Message.CompletedLoadPlanetscaleDatabases,
@@ -85,7 +85,7 @@ export const STATUS_READS = {
 	chat: statusRead("LoadIntegrationsChatConnectors", Message.CompletedLoadChat, () =>
 		Effect.flatMap(MapleApiV2Client, (client) => client.chatIntegration.connectors()),
 	),
-	/** `scrapeTargetsListAtom`: every page of 100. */
+	/** Every page of 100. */
 	scrapeTargets: statusRead("LoadIntegrationsScrapeTargets", Message.CompletedLoadScrapeTargets, () =>
 		Effect.flatMap(MapleApiV2Client, (client) =>
 			collectV2Pages((cursor) =>
@@ -103,7 +103,7 @@ export const STATUS_READS = {
 	),
 } satisfies { readonly [K in StatusName]: unknown }
 
-/** `useIntegrationMessage`: a successful callback is the `integration_connected` product event. */
+/** A successful callback is the `integration_connected` product event. */
 export const TrackConnected = Command.define("TrackIntegrationConnected", {
 	args: { provider: Schema.String },
 	messages: [Message.CompletedTrackConnected],
@@ -126,7 +126,6 @@ export const LoadSession = Command.define("LoadIntegrationsSession", {
 	),
 })
 
-/** `useMapleCustomer` (`billingCustomerAtom`). */
 export const LoadCustomer = Command.define("LoadIntegrationsCustomer", {
 	args: { key: Schema.String, orgId: Schema.String },
 	messages: [Message.CompletedLoadCustomer],

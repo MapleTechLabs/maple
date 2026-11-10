@@ -40,8 +40,6 @@ import { Array as Arr, Option } from "effect"
 import { typography } from "@maple/views/ui/typography"
 import { providerBrand } from "../../../kit/providers"
 
-// `/infra/aws`: every streamed resource of the connected accounts, problems first.
-
 type H = HtmlBuilder<Message>
 
 const MANAGE_HREF = hrefOf(AppRoute.Integrations({ search: { integration: "aws" } }))

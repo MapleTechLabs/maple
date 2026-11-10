@@ -21,8 +21,6 @@ import {
 import { Message, type Model } from "./model"
 import { Array as Arr, Record as Rec } from "effect"
 
-// `PlanetScaleFilterSidebar`.
-
 type H = HtmlBuilder<Message>
 
 const STATES = ["ready", "provisioning", "excluded", "untracked"] as const

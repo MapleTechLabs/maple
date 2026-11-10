@@ -9,8 +9,6 @@ import * as Select from "@maple/views/ui/select"
 import { Frame } from "../kit/frame"
 import { ResponseCache } from "../kit/page-steps"
 
-// `/code-review`: the analytics tab.
-
 export const Model = Schema.Struct({
 	search: CodeReviewSearch,
 	frame: Frame,
@@ -20,7 +18,7 @@ export const Model = Schema.Struct({
 	authors: KeyedSchema(CodeReviewAnalytics, LoadFailure),
 	/** Retained answers by key, so a filter undone within a minute is not fetched again. */
 	cache: ResponseCache(CodeReviewAnalytics),
-	/** `VolumeCard`'s metric and `IssuesCard`'s severity (component state). */
+	/** The volume chart's metric and the issues chart's severity. */
 	volumeSelect: Select.Model,
 	severitySelect: Select.Model,
 	volumeChart: Chart.Model,

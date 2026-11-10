@@ -8,10 +8,8 @@ import { MapleInternalApiClient } from "../../../../platform/api-clients"
 import * as Field from "@maple/views/ui/field"
 import { Message } from "../../../integrations/message"
 
-// `RailwayIntegrationCard`: state and writes.
-
 export const RailwayCardModel = Schema.Struct({
-	/** `RailwayTokenForm`'s state (the shape the infra page's form shares). */
+	/** The token form's state (the shape the infra page's form shares). */
 	connect: Schema.Struct({
 		token: Field.Model,
 		isSubmitting: Schema.Boolean,
@@ -35,7 +33,6 @@ export const unsyncedEnvironments = (status: RailwayIntegrationStatus): number =
 		(environment) => environment.lastSyncedAt === null && environment.lastError === null,
 	).length
 
-/** `connectedToast`. */
 export const connectedToastOf = (status: RailwayIntegrationStatus, mode: "connect" | "rotate") => {
 	const synced = Arr.filter(status.environments, (environment) => environment.lastSyncedAt !== null).length
 	const failed = Arr.filter(

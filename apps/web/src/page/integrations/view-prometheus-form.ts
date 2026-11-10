@@ -13,8 +13,6 @@ import { typography } from "@maple/views/ui/typography"
 import { hstack } from "@maple/views/ui/stack"
 import { Option, Array as Arr } from "effect"
 
-// `ScrapeTargetsSection`'s `FormDialog` (add and edit) and its delete `ConfirmDialog`.
-
 type H = HtmlBuilder<Message>
 
 const AUTH_ENTRIES: ReadonlyArray<SelectView.SelectEntry> = [

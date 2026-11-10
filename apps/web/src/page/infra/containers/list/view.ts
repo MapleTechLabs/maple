@@ -25,8 +25,6 @@ import { filtersRail } from "./view-filters"
 import { containerTable, containerTableLoading } from "./view-table"
 import { Array as Arr, Record as Rec, String as Str } from "effect"
 
-// `ContainersPage`.
-
 type H = HtmlBuilder<Message>
 
 const FACETS: ReadonlyArray<Readonly<{ label: string; include: FilterParam; exclude: FilterParam }>> = [

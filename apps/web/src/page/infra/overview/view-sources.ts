@@ -18,8 +18,6 @@ import { typography } from "@maple/views/ui/typography"
 import { hstack, vstack } from "@maple/views/ui/stack"
 import { Array as Arr } from "effect"
 
-// `SourcesTable`, `SourceRowBody` and `HealthBar`.
-
 const SEGMENT_CLASS = {
 	ok: TONE_FILL.ok,
 	elevated: TONE_FILL.warn,

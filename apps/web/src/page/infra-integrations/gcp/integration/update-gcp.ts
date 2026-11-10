@@ -32,8 +32,6 @@ import type { Model } from "../../../integrations/model"
 import type { ConfigureTarget } from "./gcp-schema"
 import { chain, requestStatus } from "../../../integrations/update-status"
 
-// `GcpIntegrationCard`'s state changes.
-
 type Return = PageReturn<Model, Message>
 
 const withCard = (model: Model, card: Partial<GcpCardModel>): Model => ({
@@ -68,10 +66,7 @@ export const enterGcp = (model: Model, context: PageContext): Return => ({
 	commands: [ReadRemoved({ orgId: context.orgId })],
 })
 
-/**
- * `GcpUsageBand` mounts once a connection has delivered: the log volume, the fleet and the
- * inventory over the last 24 hours.
- */
+/** The usage band reads once a connection has delivered: log volume, fleet and inventory over 24 hours. */
 export const requestBand = (model: Model, context: PageContext): Return => {
 	const connectors = gcpConnectors(model)
 	const logs = Arr.some(connectors, (connector) => connector.last_log_received_at !== null)
@@ -153,7 +148,7 @@ export const gcpInfraHref = (connector: V2GcpConnector): string =>
 		}),
 	)
 
-/** `ConfirmDialog` for a connection never reported, else `GcpDisconnectDialog` reading its scripts. */
+/** A plain confirmation for a connection never reported, else the cleanup dialog reading its scripts. */
 const openDisconnect = (model: Model, context: PageContext, connector: V2GcpConnector): Return => {
 	const quiet = neverReported(connector)
 	const key = requestKey(context.orgId, "gcpIntegration.setupScripts", { id: connector.id })
@@ -176,7 +171,7 @@ export const gotMenu = (
 	context: PageContext,
 	id: GcpConnectorId,
 	message: Menu.Message,
-	/** `GcpConfigure` on the connection (`update-gcp-configure.ts`, which reads this module). */
+	/** Passed in: `update-gcp-configure.ts` imports this module. */
 	openConfigure: (model: Model, target: ConfigureTarget) => Return,
 ): Return => {
 	const menuId = `gcp-connection-menu-${id}`
@@ -277,7 +272,7 @@ export const completedDisconnect = (
 		(next) => disconnectStep(next, Dialog.close(next.gcpCard.disconnectDialog)),
 		(next) => ({ model: next, commands: [WriteRemoved({ orgId: context.orgId, removed })] }),
 		(next) => requestStatus(next, context, "gcp", "Supersede"),
-		// `GCP_REACTIVITY_KEYS` also covers the resource inventory the band reads.
+		// The band's resource inventory is a read of its own.
 		(next) => refreshInventory(next),
 	])
 }

@@ -28,7 +28,6 @@ export interface ActorIdentity {
 	readonly imageUrl?: string | null
 }
 
-/** `shortId` (hooks/use-actor-directory.ts). */
 const shortId = (id: string): string => {
 	const withoutPrefix = Str.includes("_")(id) ? (Str.split("_")(id).at(-1) ?? id) : id
 	return truncateId(withoutPrefix, "generic", { length: 6 })
@@ -108,11 +107,11 @@ export const actorAvatar = <M>(
 	size: keyof typeof SIZE_CLASS = "sm",
 ): Html => identityAvatar(h, resolveActorIdentity(actor), size)
 
-/** `ActorChip`'s empty form. */
+/** The empty actor cell. */
 export const noActor = <M>(h: HtmlBuilder<M>): Html =>
 	typography(h, { size: "xs", tone: "muted" }, [EMPTY_VALUE])
 
-/** `ActorChip`: avatar and name; a person outside the directory has no detail, so no tooltip. */
+/** Avatar and name; a person outside the directory has no detail, so no tooltip. */
 export const actorChip = <M>(h: HtmlBuilder<M>, actor: ActorDocument | null, className?: string): Html => {
 	if (actor === null) return noActor(h)
 	const identity = resolveActorIdentity(actor)

@@ -7,8 +7,6 @@ import { meter } from "@maple/views/ui/meter"
 import { hstack, vstackClass } from "@maple/views/ui/stack"
 import { Array as Arr } from "effect"
 
-// `MeterRows`.
-
 export type MeterRow = Readonly<{ label: string; fraction: number }>
 
 const meterRow = <M>(h: HtmlBuilder<M>, row: MeterRow, hideLabel: boolean): Html => {

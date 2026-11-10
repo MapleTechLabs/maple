@@ -20,8 +20,6 @@ import { stripClass } from "@maple/views/ui/rule"
 import { columnClass } from "@maple/views/ui/column"
 import { Array as Arr } from "effect"
 
-// `CloudflareZoneDnsSection`, `CloudflareZoneSecuritySection` and their `StackedBreakdownChart`.
-
 type H = HtmlBuilder<Message>
 
 export type SectionContext = Readonly<{
@@ -117,7 +115,7 @@ const RESPONSE_CODE_COLORS = {
 
 const RESPONSE_CODE_ORDER = ["NOERROR", "NXDOMAIN", "SERVFAIL", "REFUSED", "unknown"]
 
-/** `CloudflareZoneDnsSection`: nothing when the zone has no DNS analytics. */
+/** Nothing when the zone has no DNS analytics. */
 export const dnsSection = (
 	h: H,
 	model: Model,
@@ -228,7 +226,7 @@ const ACTION_ORDER = [
 	"unknown",
 ]
 
-/** `CloudflareZoneSecuritySection`: nothing when the window has no security events. */
+/** Nothing when the window has no security events. */
 export const securitySection = (
 	h: H,
 	model: Model,

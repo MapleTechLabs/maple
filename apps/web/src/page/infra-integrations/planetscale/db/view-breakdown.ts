@@ -17,8 +17,6 @@ import { columnClass } from "@maple/views/ui/column"
 import { Array as Arr, String as Str } from "effect"
 import { hstack } from "@maple/views/ui/stack"
 
-// `PlanetScaleBranchBreakdownPanel`.
-
 type H = HtmlBuilder<Message>
 
 interface MeasureSpec {
@@ -79,11 +77,10 @@ interface Row {
 	readonly isOther: boolean
 }
 
-/** `relativeRatio`. */
 const relativeRatio = (value: number, max: number): number =>
 	max > 0 && Number.isFinite(value) ? Math.max(0, value) / max : 0
 
-/** `shareBar`: the row's background filled to its share. */
+/** The row's background filled to its share. */
 export const shareBarStyle = (share: number): Readonly<Record<string, string>> | undefined => {
 	const pct = Math.min(100, share * 100)
 	if (!Number.isFinite(pct) || pct < 0.5) return undefined

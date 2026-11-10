@@ -8,7 +8,7 @@ import { Message } from "./message"
 
 export const ResolveWindow = resolveWindowCommand("ResolveRailwayWindow", Message.CompletedResolveWindow)
 
-/** `railwayStatusAtom`, shared with the other Railway pages through `IntegrationStatuses`. */
+/** Shared with the other Railway pages through `IntegrationStatuses`. */
 export const LoadStatus = Command.define("LoadRailwayStatus", {
 	args: { key: Schema.String, refresh: Schema.Boolean },
 	messages: [Message.CompletedLoadStatus],
@@ -16,7 +16,6 @@ export const LoadStatus = Command.define("LoadRailwayStatus", {
 		Effect.map(loadRailwayStatus(refresh), (result) => Message.CompletedLoadStatus({ key, result })),
 })
 
-/** `railwayServicesResultAtom({ data: window })`. */
 export const FetchServices = Command.define("FetchRailwayServices", {
 	args: { key: Schema.String, window: TimeWindow },
 	messages: [Message.CompletedFetchServices],

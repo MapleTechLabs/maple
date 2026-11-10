@@ -9,7 +9,7 @@ import { QueryChange } from "./change"
 import type { QueryDraft } from "./draft"
 import { Message, type Model, OutMessage } from "./panel-message"
 
-// `WhereClauseEditor` inside a `QueryPanel`: one `WhereFields` field per query, keyed by query id.
+// The where editors inside a `QueryPanel`: one `WhereFields` field per query, keyed by query id.
 
 /** What the host knows that the panel needs to complete a where clause. */
 export type PanelInputs = Readonly<{
@@ -41,7 +41,7 @@ const requestOf = (
 	return kind === "attr" ? { _tag: "Span", ...range } : { _tag: "Resource", ...range }
 }
 
-/** A query's where field over the host's values (`useMetricScopedAutocomplete` included). */
+/** A query's where field over the host's values (metric-scoped keys included). */
 export const whereSpecOf = (
 	query: QueryDraft,
 	values: WhereClauseAutocompleteValues,
@@ -59,11 +59,15 @@ export const whereStep = (model: Model, message: WhereFieldMessage, inputs: Pane
 	const next = updateWhereFields(model.whereFields, message, {
 		specOf: (queryId) => {
 			const query = inputs.queryOf(queryId)
-			return query === undefined ? undefined : whereSpecOf(query, inputs.baseValuesOf(query), inputs.window)
+			return query === undefined
+				? undefined
+				: whereSpecOf(query, inputs.baseValuesOf(query), inputs.window)
 		},
 		orgId: inputs.orgId,
 	})
-	const commands = Command.mapMessages(next.commands ?? [], (inner) => Message.GotWhereField({ message: inner }))
+	const commands = Command.mapMessages(next.commands ?? [], (inner) =>
+		Message.GotWhereField({ message: inner }),
+	)
 	const updated = { ...model, whereFields: next.fields }
 	return next.change === undefined
 		? { model: updated, commands }

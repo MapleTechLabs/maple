@@ -30,20 +30,17 @@ export const DatabaseStat = Schema.Struct({
 })
 export type DatabaseStat = typeof DatabaseStat.Type
 
-/** `retainedQueryV2("planetscaleIntegration", "status")`, shared with the sidebar. */
 export const loadStatus = (refresh: boolean) =>
 	Effect.gen(function* () {
 		const statuses = yield* IntegrationStatuses
 		return yield* statuses.planetscale({ refresh })
 	}).pipe(settled)
 
-/** `retainedQueryV2("planetscaleIntegration", "databases")`. */
 export const loadDatabases = Effect.gen(function* () {
 	const client = yield* MapleApiV2Client
 	return yield* client.planetscaleIntegration.databases()
 }).pipe(settled)
 
-/** `getServiceMapPlanetScaleResultAtom({ data: window })`. */
 export const loadDatabaseStats = (window: TimeWindow) =>
 	getServiceMapPlanetScale({ data: window }).pipe(
 		Effect.map((response): ReadonlyArray<DatabaseStat> => response.databases),
@@ -100,7 +97,6 @@ export const QueryInsights = Schema.Struct({
 })
 export type QueryInsights = typeof QueryInsights.Type
 
-/** `getPlanetScaleBranchStatsResultAtom`. */
 export const loadBranchStats = (input: TimeWindow & { readonly database: string }) =>
 	getPlanetScaleBranchStats({ data: input }).pipe(
 		Effect.map((response): ReadonlyArray<BranchStat> => response.branches),

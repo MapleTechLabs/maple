@@ -34,13 +34,12 @@ import { timestamp } from "@maple/views/ui/timestamp"
 import { typographyClass } from "@maple/views/ui/typography"
 import { hstack, hstackClass, vstack, vstackClass } from "@maple/views/ui/stack"
 
-// The span expansion's Tool calls, Details and Logs tabs.
 // Details and Logs draw the trace span panel's parts over the popover's own `PanelState`.
 
 type H = HtmlBuilder<Message>
 type P = HtmlBuilder<PanelMessage>
 
-/** One invocation as one card: the call and its result drawn together by `ToolIo`. */
+/** One invocation as one card: the call and its result drawn together. */
 const toolCallCard = (
 	h: H,
 	model: Model,
@@ -225,7 +224,7 @@ const resourceAttributesView = Submodel.defineView<PanelState, PanelMessage, Pan
 		}),
 )
 
-/** `LogsSection`: the trace panel's span logs, read once the tab is open. */
+/** The trace panel's span logs, read once the tab is open. */
 const logsView = Submodel.defineView<PanelState, PanelMessage, PanelInputs>((state, { timeZone }, p) =>
 	p.div(
 		[p.Class("overflow-hidden rounded-md border border-border-subtle")],

@@ -40,8 +40,6 @@ import { typography, typographyClass } from "@maple/views/ui/typography"
 import { hstack, hstackClass, vstack } from "@maple/views/ui/stack"
 import { Array as Arr } from "effect"
 
-// The agent sessions list, windowed.
-
 type H = HtmlBuilder<Message>
 
 /** The virtualizer's estimate before a row is measured. */
@@ -159,12 +157,13 @@ const triggerAttributes = (h: H, text: string): ReadonlyArray<Attribute<Message>
 	...tooltipTrigger(h, text),
 ]
 
-/** `Hint`: an inline figure whose tooltip says what it counts. A lifted trigger: a plain click on it
- *  reaches the row's click handler (`MountRowClicks`), which opens the session. */
+/**
+ * A lifted tooltip trigger: a plain click on it reaches the row's click handler, which opens the session.
+ */
 const hint = (h: H, className: string, text: string, children: ReadonlyArray<Html | string>): Html =>
 	h.span([h.Class(className), ...triggerAttributes(h, text)], children)
 
-/** `SortableHeader`; a column with a hint renders its button as a tooltip trigger. */
+/** A column with a hint renders its sort button as a tooltip trigger. */
 const sortableHeader = (h: H, column: Column, sort: Sort): Html => {
 	const key = column.sort?.key ?? "startTime"
 	return sortButton(
@@ -568,7 +567,7 @@ const sessionRow = (h: H, row: DisplayRow, index: number, context: RowContext): 
 	)
 }
 
-/** `VirtualTableBody`'s spacers: the table keeps its full height around the rendered window. */
+/** Spacers keep the table at its full height around the rendered window. */
 const spacer = (h: H, key: string, height: number): Html =>
 	tableRow(h, [tableCell(h, [], "p-0")], SPACER_ROW_CLASS, [
 		h.Key(key),

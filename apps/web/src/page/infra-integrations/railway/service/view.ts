@@ -22,8 +22,6 @@ import { DEFAULT_PRESET } from "./update"
 import { AppRoute, hrefOf } from "../../../../route"
 import { pickTimeSearch } from "../../../kit/view-tabs"
 
-// `RailwayServicePage`.
-
 type H = HtmlBuilder<Message>
 
 const LINKED_CHART_ID = "railway-service"

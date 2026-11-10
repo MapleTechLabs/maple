@@ -54,7 +54,7 @@ const summaryInputOf = (pod: PodRow, window: TimeWindow) => ({
 	endTime: window.endTime,
 })
 
-/** The summary and (unless `summaryOnly`) every chart of the pods (`PeekPrefetch`). */
+/** The summary and (unless `summaryOnly`) every chart of the pods. */
 const request = (
 	model: Model,
 	context: PageContext,
@@ -153,7 +153,7 @@ export const update = (
 		}),
 		ClickedStep: ({ step }) => ({ model, outMessage: OutMessage.RequestedStep({ step }) }),
 		PressedStepKey: ({ step }) => ({ model, outMessage: OutMessage.RequestedStep({ step }) }),
-		// `useAtomRefresh` on the summary atom alone: the charts are not re-read.
+		// Only the summary is refreshed: the charts are not re-read.
 		ClickedRetrySummary: () =>
 			peek === null || window === null
 				? { model }

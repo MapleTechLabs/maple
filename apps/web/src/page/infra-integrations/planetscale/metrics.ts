@@ -1,5 +1,3 @@
-// Thresholds, tones, and formatting for the PlanetScale metrics.
-//
 // Every PlanetScale surface (the fleet table, the branch table, the detail charts, the toolbar
 // stats, the service-map panel) reads its severity from here. These gauges arrive as 0-100
 // percentages; utilization divides them onto the shared 0-1 thresholds (`@maple/ui/lib/utilization`)

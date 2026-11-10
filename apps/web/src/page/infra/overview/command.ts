@@ -80,7 +80,7 @@ const read = (source: SourceId, window: TimeWindow) => {
 	}
 }
 
-/** `infraPresenceResultAtom({ data: window })`, one cache entry with the sidebar's when the windows match. */
+/** The presence probe for a window, one cache entry with the sidebar's when the windows match. */
 export const FetchPresence = Command.define("FetchInfraOverviewPresence", {
 	args: { orgId: Schema.String, key: Schema.String, window: TimeWindow },
 	messages: [Message.CompletedFetchPresence],

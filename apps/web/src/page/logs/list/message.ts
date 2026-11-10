@@ -36,7 +36,7 @@ export const Message = defineMessageUnion({
 	CompletedReadPreferences: { wrap: Schema.Boolean, density: Density, locale: Schema.String },
 	CompletedSavePreference: {},
 	...ChartEnvMessages,
-	/** `LogsFilterSidebar` mounted (inline, or in the sheet below `lg`): its facets read goes out. */
+	/** The filter sidebar mounted (inline, or in the sheet below `lg`): its facets read goes out. */
 	MountedFilterRail: {},
 	CompletedLoadSignalPresence: { result: Schema.Result(SignalPresences, LoadFailure) },
 	ClickedReload: {},

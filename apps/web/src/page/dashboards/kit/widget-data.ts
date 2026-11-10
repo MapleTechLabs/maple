@@ -35,9 +35,6 @@ import {
 } from "effect"
 import { requestKey } from "@maple/views/data/request-key"
 
-// A widget's data source: the request a widget
-// sends, the fetch with its retry policy, and the transform that turns the answer into rows.
-
 type Transform = typeof WidgetDataSourceTransformSchema.Type
 type Row = Readonly<Record<string, unknown>>
 
@@ -72,7 +69,7 @@ export interface PlanInput {
 	readonly window: { readonly startTime: string; readonly endTime: string } | null
 	readonly widgetTimeRange?: Parameters<typeof planWidgetRequest>[0]["widgetTimeRange"]
 	readonly maxDataPoints?: number
-	/** The board's variables: their names, and the values resolved so far (`useDashboardVariables`). */
+	/** The board's variables: their names, and the values resolved so far. */
 	readonly variables?: Readonly<{
 		names: ReadonlyArray<string>
 		values: VariableValues
@@ -81,7 +78,7 @@ export interface PlanInput {
 		/** "All" over failed options: blocks only references outside where clauses (`unexpandableVariables`). */
 		unexpandable?: Readonly<Record<string, string>>
 	}>
-	/** `narrowedToCap`: the viewer pulled this list back to the cap (per tile, not persisted). */
+	/** The viewer pulled this list back to the cap (per tile, not persisted). */
 	readonly isNarrowed?: boolean
 }
 
@@ -102,12 +99,9 @@ const keyParamsOf = (params: Readonly<Record<string, unknown>>): Readonly<Record
 
 const encodeParams = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
 
-/** `narrowRangeLabel`: the list cap as the CTA reads it. */
+/** The list cap as the CTA reads it. */
 export const NARROW_RANGE_LABEL = `Show last ${formatRangeSeconds(MAX_LIST_RANGE_SECONDS)}`
 
-/**
- * `useWidgetDataSource`'s `plan`, `disableReason` and gating, in that order.
- */
 export const planWidget = (input: PlanInput): WidgetGate => {
 	if (input.dataSource === undefined || input.dataSource === null)
 		return { _tag: "Config", title: "Not set up yet", message: "Pick what this widget should show." }
@@ -201,9 +195,7 @@ export const planWidget = (input: PlanInput): WidgetGate => {
 	}
 }
 
-// RESULTS
-
-/** A failed widget fetch as the tile draws it (`classifyWidgetErrorKind`). */
+/** A failed widget fetch as the tile draws it. */
 export const WidgetFailure = Schema.Struct({
 	title: Schema.NullOr(Schema.String),
 	message: Schema.String,
@@ -268,7 +260,7 @@ export const isTransientWidgetError = (error: unknown): boolean =>
 	!isDecodeError(error) &&
 	displayError(error).retryable
 
-/** `fetchWidgetData`: the endpoint's server function, retried twice on a transient failure. */
+/** The endpoint's server function, retried twice on a transient failure. */
 export const fetchWidgetData = (endpoint: string, params: Readonly<Record<string, unknown>>) => {
 	const serverFn = getWidgetServerFunction(endpoint)
 	return serverFn === undefined
@@ -297,7 +289,7 @@ const isRow = (value: unknown): value is Row => typeof value === "object" && val
 const rowsOf = (value: unknown): ReadonlyArray<Row> | null =>
 	Arr.isArray(value) ? Arr.filter(value, isRow) : null
 
-/** `isEmptyDataEnvelope`: a successful answer that carried no rows. */
+/** A successful answer that carried no rows. */
 export const isEmptyEnvelope = (raw: unknown): boolean =>
 	isRow(raw) && "data" in raw && Arr.isArray(raw.data) && raw.data.length === 0
 
@@ -338,7 +330,7 @@ const isHidden = (seriesName: string, hidden: ReadonlySet<string>): boolean =>
 			seriesName === base || Str.startsWith(`${base}: `)(seriesName) || seriesName === `${base} (prev)`,
 	)
 
-/** `applyTransform` over the unwrapped envelope (`toReadyWidgetData`). */
+/** The transform over the unwrapped envelope. */
 export const toReadyData = (response: unknown, transform: Transform | undefined): ReadyData => {
 	const unwrapped =
 		isRow(response) && "data" in response && response.data !== undefined ? response.data : response

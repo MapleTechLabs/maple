@@ -184,11 +184,11 @@ const slosKey = (context: PageContext) =>
 const monitorsKey = (context: PageContext) =>
 	requestKey(context.orgId, "uptimeMonitors.list", { query: { limit: UPTIME_LIST_LIMIT } })
 
-/** An atom never refetches a failed read on its own: a same-key `Load` leaves the slot alone. */
+/** A same-key `Load` leaves the slot alone, so a failed read is not refetched on its own. */
 const sameKey = <A, E>(slot: Keyed.Keyed<A, E>, key: string) => slot.key === key
 
 /**
- * The reads `IncidentDetail` sends once it mounts: deliveries and the investigation for the
+ * The reads the incident page sends once it loads: deliveries and the investigation for the
  * incident, and the preview once the rule is known. Idempotent (`Load` keeps a same-key slot).
  */
 const followData = (model: Model, context: PageContext): Return =>
@@ -463,7 +463,7 @@ const withRuleRows = (
 const incidentRowOf = (model: Model, rows: Model["incidents"]) =>
 	Arr.findFirst(rows ?? [], (row) => row.id === model.incidentId)
 
-/** `clockAtSync`: once the incident row itself changes, the minute clock is read again. */
+/** Once the incident row itself changes, the minute clock is read again. */
 const withIncidents = (
 	model: Model,
 	context: PageContext,

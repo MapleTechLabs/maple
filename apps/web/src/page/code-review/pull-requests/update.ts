@@ -68,7 +68,7 @@ const sortPatch = (search: Search, key: SortKey): Partial<Search> =>
 
 const searchHref = (search: Search) => hrefOf(AppRoute.CodeReviewPullRequests({ search }))
 
-/** `onChange`: a filter change starts the list over at one page; opening a review keeps it. */
+/** A filter change starts the list over at one page; opening a review keeps it. */
 const navigate = (model: Model, patch: Partial<Search>): Return => {
 	const isFilter = Arr.some(Rec.keys<string, unknown>(patch), (key) => key !== "review")
 	return {
@@ -168,8 +168,6 @@ const combine = (first: Return, second: (model: Model) => Return): Return => {
 	}
 }
 
-// ENTRY POINTS
-
 export const init = (
 	route: { readonly search: Search },
 	context: PageContext,
@@ -257,7 +255,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			},
 		}),
 		ClickedRetry: () => refreshList(model, context),
-		// `useIntervalRefresh`: only the list refetches while a review is queued or running.
+		// Only the list refetches while a review is queued or running.
 		TickedPoll: () => refreshList(model, context),
 		ClickedClearFilters: () =>
 			navigate(model, { repo: undefined, author: undefined, status: undefined, q: undefined }),

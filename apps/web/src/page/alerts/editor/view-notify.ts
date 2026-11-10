@@ -25,17 +25,14 @@ import { Array as Arr, Option } from "effect"
 import { hstack } from "@maple/views/ui/stack"
 import { canManageAlerts } from "../../kit/session-grants"
 
-// `DestinationList` and `AddDestinationMenu`: a tier's destinations and the menu that adds one.
-
 type H = HtmlBuilder<Message>
 
-/** What a tier's list and its Add destination menu read off the Model. */
 export type NotifyView = Pick<
 	Model,
 	"grants" | "connectors" | "menus" | "chatConnect" | "chatConnectMenuId" | "brokenLogos"
 >
 
-/** `ProviderLogo size={30} bare`: a destination's mark, the monogram once its image failed. */
+/** A destination's mark, the monogram once its image failed. */
 export const logo = <M>(
 	h: HtmlBuilder<M>,
 	model: NotifyView,
@@ -219,7 +216,7 @@ const addMenu = (
 							{
 								className: cn(
 									"flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-muted-foreground hover:bg-surface-sunken active:bg-surface-sunken hover:text-foreground active:text-foreground",
-									// Open, Base UI's guards follow the trigger, so the panel's divider lands on it.
+									// Open, the menu's focus guards follow the trigger, so the panel's divider lands on it.
 									menu.isOpen && "border-b border-border-subtle",
 								),
 								attributes: [h.DataAttribute("slot", "dropdown-menu-trigger"), ...trigger],
@@ -258,7 +255,7 @@ const addMenu = (
 	})
 }
 
-/** `DestinationList`: one tier's destinations, plus the menu that adds an existing or new one. */
+/** One tier's destinations, plus the menu that adds an existing or new one. */
 export const destinationList = (
 	h: H,
 	model: NotifyView,

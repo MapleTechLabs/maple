@@ -26,8 +26,8 @@ import { typography, typographyClass } from "@maple/views/ui/typography"
 import { hstack, vstack } from "@maple/views/ui/stack"
 import { Array as Arr } from "effect"
 
-// The funnel step builder, compact: an ordered list of
-// steps, each an event name, a page path or (first step only) a session dimension.
+// A compact ordered list of funnel steps, each an event name, a page path or (first step only) a
+// session dimension.
 
 type H = HtmlBuilder<Message>
 
@@ -44,7 +44,7 @@ export type StepBuilderOptions = Readonly<{
 
 const product = (edit: ProductEdit): Message => Message.ChangedProduct({ edit })
 
-/** `SuggestingInput`: free text, with the window's names to pick from. */
+/** Free text, with the window's names to pick from. */
 const suggestingInput = (
 	h: H,
 	model: Model,
@@ -333,7 +333,6 @@ const stepRow = (h: H, model: Model, options: StepBuilderOptions, step: StepDraf
 	])
 }
 
-/** `FunnelStepBuilder compact`. */
 export const stepBuilder = (h: H, model: Model, options: StepBuilderOptions): Html => {
 	const isSingle = options.maxSteps <= 1
 	const isFull = options.steps.length >= options.maxSteps

@@ -15,8 +15,6 @@ import { Message, type Model } from "./model"
 import { grid } from "@maple/views/ui/grid"
 import { Array as Arr } from "effect"
 
-// `HeadlineStrip`, `RunsCard` and `DurationCard`.
-
 type H = HtmlBuilder<Message>
 
 /** Series names the shared palette colours as run results. */

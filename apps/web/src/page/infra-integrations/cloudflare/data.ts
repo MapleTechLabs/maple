@@ -23,8 +23,6 @@ import { IntegrationStatuses } from "../../../data/integration-statuses"
 import { settled } from "@maple/views/data/load-failure"
 import { MapleInternalApiClient } from "../../../platform/api-clients"
 
-// Row schemas and loaders shared by the Cloudflare pages: `@maple/web-data/warehouse/cloudflare-infra`.
-
 export const Status = CloudflareIntegrationStatus
 export type Status = CloudflareIntegrationStatus
 export const Usage = CloudflareUsageResponse
@@ -118,14 +116,12 @@ export const TimeseriesInput = Schema.Struct({
 })
 export type TimeseriesInput = typeof TimeseriesInput.Type
 
-/** `retainedInternalQuery("integrations", "cloudflareStatus")`, shared with the sidebar. */
 export const loadStatus = (refresh: boolean) =>
 	Effect.gen(function* () {
 		const statuses = yield* IntegrationStatuses
 		return yield* statuses.cloudflare({ refresh })
 	}).pipe(settled)
 
-/** `retainedInternalQuery("integrations", "cloudflareUsage")`. */
 export const loadUsage = Effect.gen(function* () {
 	const client = yield* MapleInternalApiClient
 	return yield* client.integrations.cloudflareUsage()
@@ -185,7 +181,6 @@ export const WorkerDetailInput = Schema.Struct({
 })
 export type WorkerDetailInput = typeof WorkerDetailInput.Type
 
-/** `cloudflareWorkerDetailResultAtom`. */
 export const loadWorkerDetail = (data: WorkerDetailInput) =>
 	getCloudflareWorkerDetail({ data }).pipe(
 		Effect.map((detail): WorkerDetail => detail),
@@ -209,7 +204,6 @@ export const ReleasesInput = Schema.Struct({
 })
 export type ReleasesInput = typeof ReleasesInput.Type
 
-/** `getReleasesResultAtom`. */
 export const loadReleases = (input: ReleasesInput) =>
 	getReleases({ data: { ...input, services: [...input.services] } }).pipe(
 		Effect.map((result): ReadonlyArray<Release> =>
@@ -368,38 +362,32 @@ export const TopTraffic = Schema.Struct({
 })
 export type TopTraffic = typeof TopTraffic.Type
 
-/** `cloudflareZoneDetailResultAtom`. */
 export const loadZoneDetail = (data: ZoneDetailInput) =>
 	getCloudflareZoneDetail({ data }).pipe(
 		Effect.map((detail): ZoneDetail => detail),
 		settled,
 	)
 
-/** `cloudflareZoneDnsResultAtom`. */
 export const loadZoneDns = (data: ZoneDetailInput) =>
 	getCloudflareZoneDns({ data }).pipe(
 		Effect.map((dns): ZoneDns => dns),
 		settled,
 	)
 
-/** `cloudflareZoneSecurityResultAtom`. */
 export const loadZoneSecurity = (data: ZoneDetailInput) =>
 	getCloudflareZoneSecurity({ data }).pipe(
 		Effect.map((security): ZoneSecurity => security),
 		settled,
 	)
 
-/** `cloudflareZoneFacetsResultAtom`. */
 export const loadZoneFacets = (data: ZoneFacetsInput) => getCloudflareZoneFacets({ data }).pipe(settled)
 
-/** `cloudflareZonesResultAtom` with the zone page's filters. */
 export const loadFilteredZones = (data: ZonesInput) =>
 	getCloudflareZones({ data }).pipe(
 		Effect.map((response): ReadonlyArray<ZoneRow> => response.zones),
 		settled,
 	)
 
-/** `cloudflareZoneBreakdownResultAtom`. */
 export const loadZoneBreakdown = (data: BreakdownInput) =>
 	getCloudflareZoneBreakdown({ data }).pipe(
 		Effect.map((breakdown): ZoneBreakdown => ({
@@ -411,7 +399,7 @@ export const loadZoneBreakdown = (data: BreakdownInput) =>
 		settled,
 	)
 
-/** `cloudflareTopTrafficResultAtom`: the live long-tail lookup. */
+/** The live long-tail lookup. */
 export const loadTopTraffic = (data: TopTrafficInput) =>
 	getCloudflareTopTraffic({ data }).pipe(
 		Effect.map((traffic): TopTraffic => traffic),

@@ -1,13 +1,7 @@
 import { rawSqlDisplayTypeFor, type RawSqlDisplayType } from "@maple/domain/http"
 
-// Default ClickHouse SQL templates per Raw SQL display type.
-//
-// Used when the user toggles a widget into Raw SQL mode for the first time —
-// we seed the SQL textarea with a sensible starting query so the preview
-// renders immediately.
-//
-// The visualization → display-type mapping lives in the shared widget-type
-// table; it used to be duplicated here and in apps/api/src/mcp/lib/raw-sql-widget.ts.
+// Default ClickHouse SQL templates per Raw SQL display type: a widget switched to Raw SQL for the
+// first time starts on one, so the preview renders immediately.
 
 export { rawSqlDisplayTypeFor as visualizationToDisplayType }
 

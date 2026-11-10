@@ -4,7 +4,6 @@ import { Schema } from "effect"
 import { msIso } from "../../kit/alert-time"
 import { NOW, ruleId } from "../../kit/alert-test-rows"
 
-// Maintenance windows and their silences for the scene tests and `/lab/maintenance`.
 // `NOW` is Thursday 2026-10-01 12:00 UTC.
 
 const MIN = 60_000

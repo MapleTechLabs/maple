@@ -189,8 +189,6 @@ const flatten = (
 	})
 }
 
-// WIRE
-
 const iso = (ms: number) => msIso(ms)
 const decodeSchedule = Schema.decodeUnknownSync(V2OnCallSchedule)
 const decodeShifts = Schema.decodeUnknownSync(V2OnCallShifts)

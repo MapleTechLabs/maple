@@ -124,7 +124,7 @@ export const RunCodeAction = Command.define("RunAgentSessionCodeAction", {
 		).pipe(Effect.map((isCopied) => Message.CompletedCodeAction({ code, isCopied }))),
 })
 
-/** Streamdown's `CodeBlockCopyButton` holds its check for `timeout` (2s), then shows Copy again. */
+/** A code block's Copy holds its check for 2s, then shows Copy again. */
 export const WaitCodeCopied = Command.define("WaitAgentSessionCodeCopied", {
 	args: { generation: Schema.Number },
 	messages: [Message.ElapsedCodeCopied],

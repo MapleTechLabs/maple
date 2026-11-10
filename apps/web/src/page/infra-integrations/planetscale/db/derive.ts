@@ -15,8 +15,6 @@ import { filtersFromSearch, type PlanetScaleFilters, soleSelectedBranch } from "
 import type { LocalWindow, Model } from "./model"
 import { successOf } from "../../kit/success-of"
 
-// The page's derivations: the branch universe, the resolved scope and the request inputs.
-
 export const filtersOf = (model: Model): PlanetScaleFilters => filtersFromSearch(model.search)
 
 export const databaseOf = (model: Model) =>
@@ -82,8 +80,6 @@ export const insightsInputOf = (model: Model, window: TimeWindow): EpochWindowIn
 	),
 	limit: 12,
 })
-
-// The PlanetScale events vocabulary: tone, short label and chart placement per event.
 
 type Presentation = Readonly<{ tone: EventTone; short: string; onChart: boolean }>
 

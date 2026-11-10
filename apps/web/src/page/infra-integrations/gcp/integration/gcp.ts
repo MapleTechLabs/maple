@@ -20,8 +20,6 @@ import { Message } from "../../../integrations/message"
 import { ConfigureModel } from "./gcp-configure-schema"
 import { LogVolume, RemovedConnector } from "./gcp-schema"
 
-// `GcpIntegrationCard` and `GcpUsageBand`: state and reads.
-
 export { RemovedConnector } from "./gcp-schema"
 
 export const GcpCardModel = Schema.Struct({
@@ -36,16 +34,15 @@ export const GcpCardModel = Schema.Struct({
 	disconnectId: Schema.NullOr(GcpConnectorId),
 	disconnectDialog: Dialog.Model,
 	isDisconnecting: Schema.Boolean,
-	/** `useGcpScripts` for the disconnect dialog, and its "Read the script" toggle. */
+	/** The disconnect dialog's scripts, and its "Read the script" toggle. */
 	scripts: KeyedSchema(V2GcpSetupScripts, LoadFailure),
 	isScriptShown: Schema.Boolean,
-	/** `removedGcpConnectorsAtomFamily(org)` (localStorage), and the entry being dismissed. */
+	/** Kept in localStorage per org, and the entry being dismissed. */
 	removed: Schema.Array(RemovedConnector),
 	dismissingId: Schema.NullOr(Schema.String),
 	dismissDialog: Dialog.Model,
 	/** The cleanup scripts' copy buttons, by removed connection. */
 	copies: Schema.Record(Schema.String, CopyButton.Model),
-	/** `GcpConfigure`, null while closed. */
 	configure: Schema.NullOr(ConfigureModel),
 	/** Bumped on every open: a write's result only drives the wizard it was sent from. */
 	configureOpens: Schema.Number,

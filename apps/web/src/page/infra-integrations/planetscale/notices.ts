@@ -19,8 +19,6 @@ import { liveChecklist } from "../../kit/connect-flow"
 import { relativeTime } from "../../kit/relative-time"
 import { providerBrand } from "../../kit/providers"
 
-// PlanetScale absence notices and the setup state.
-
 export const BRANCH_ABSENCE_COPY = {
 	excluded: "Excluded from metrics collection by this connection's branch filters.",
 	"no-data": "No metrics for this branch in this window",
@@ -28,7 +26,7 @@ export const BRANCH_ABSENCE_COPY = {
 
 const INTEGRATION_HREF = hrefOf(AppRoute.SourcesNew({ search: { integration: "planetscale" } }))
 
-/** `PlanetScaleMetricsNotice`: metrics arrived before and have stopped. */
+/** Metrics arrived before and have stopped. */
 export const metricsNotice = <M>(h: HtmlBuilder<M>, status: V2PlanetScaleIntegration): Html => {
 	const error = metricsLastError(status)
 	const source = metricsAuthOf(status) === "api" ? "poll" : "scrape"
@@ -95,7 +93,7 @@ export const inventoryIsStale = (lastInventoryAt: string | null, nowMs: number):
 
 const BRAND = providerBrand("planetscale")
 
-/** `PlanetScaleSetupState`: metrics have never arrived for this connection. */
+/** Metrics have never arrived for this connection. */
 export const setupState = <M>(h: HtmlBuilder<M>, checks: ReadonlyArray<LiveCheck>): Html =>
 	integrationEmpty(h, [
 		integrationEmptyFeatures(h, [

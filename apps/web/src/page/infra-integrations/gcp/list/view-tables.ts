@@ -72,8 +72,6 @@ import { hstack, hstackClass, vstack } from "@maple/views/ui/stack"
 import { columnClass } from "@maple/views/ui/column"
 import { Array as Arr, String as Str } from "effect"
 
-// `GcpServicesTable`, `GcpSubscriptionsTable`, `GcpDatabasesTable` and `GcpServiceTable`.
-
 const seconds = (value: number) => formatLatency(value * 1000)
 const head = (h: H, label: string, width: string, align?: "right", hidden?: string) =>
 	columnHead(h, { label, width, align, hidden })
@@ -86,8 +84,6 @@ const placeItems = (
 
 const rowsOrEmpty = (h: H, rows: ReadonlyArray<Html>, emptyMessage: string) =>
 	rows.length === 0 ? [dataTableEmpty(h, [emptyMessage])] : rows
-
-// Services ---------------------------------------------------------------------------------------
 
 const SERVICE_KIND = { cloudRun: "Cloud Run", cloudFunctions: "Function 1st gen" } as const
 
@@ -145,8 +141,10 @@ const statusMix = (h: H, row: GcpServiceRow): Html => {
 	)
 }
 
-/** Below `md` the Status cell is hidden, so the idle billing note rides on the sub-line there. */
-/** The idle note rides inside the last item, separator included, so hiding it at `md` leaves no stray dot. */
+/**
+ * Below `md` the Status cell is hidden, so the idle billing note rides on the sub-line, inside the
+ * last item with its separator, so hiding it at `md` leaves no stray dot.
+ */
 const serviceMeta = (h: H, row: GcpServiceRow, showProject: boolean): ReadonlyArray<MetaItem> => {
 	// Only items metaLine will draw: the note joins the last shown one, never an empty slot.
 	const items = Arr.filter(
@@ -255,8 +253,6 @@ export const servicesTable = (
 			emptyMessage,
 		),
 	)
-
-// Pub/Sub subscriptions --------------------------------------------------------------------------
 
 const growthLabel = (growth: number) =>
 	growth > 0 ? `+${formatNumber(growth)}` : growth < 0 ? `−${formatNumber(-growth)}` : "steady"
@@ -390,8 +386,6 @@ export const subscriptionsTable = (
 			emptyMessage,
 		),
 	)
-
-// Cloud SQL instances ----------------------------------------------------------------------------
 
 const quotaTone = (value: number) =>
 	value >= GCP_LIMIT_FRACTION ? "crit" : value >= GCP_FILLING_FRACTION ? "warn" : "neutral"
@@ -604,8 +598,6 @@ export const databasesTable = (
 		],
 	)
 
-// The other services (GKE, Compute Engine, Load Balancing) ---------------------------------------
-
 const GENERIC_NAME = columnClass({ min: "60" })
 const VALUE_WIDTH = "w-28"
 
@@ -615,7 +607,6 @@ const genericHead = (h: H, service: GcpInfraServiceId): ReadonlyArray<Html> => [
 	...Arr.map(GCP_INFRA_COLUMNS[service], (column) => head(h, column.label, VALUE_WIDTH, "right")),
 ]
 
-/** `GcpServiceTableLoading`. */
 export const serviceTableLoading = (h: H, service: GcpInfraServiceId): Html =>
 	dataTable(
 		h,
@@ -642,7 +633,7 @@ export const valueClass = (spec: GcpColumn, value: number | undefined): string =
 	return "text-foreground-soft"
 }
 
-/** `GcpServiceTable`: a service without a list of its own, its curated columns. */
+/** A service without a list of its own, its curated columns. */
 export const serviceTable = (
 	h: H,
 	service: GcpInfraServiceId,

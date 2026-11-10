@@ -29,8 +29,6 @@ import { DEFAULT_PRESET } from "./update"
 import { hstack } from "@maple/views/ui/stack"
 import { typography } from "@maple/views/ui/typography"
 
-// `ContainerDetailPage` and `ContainerDetailChart`.
-
 type H = HtmlBuilder<Message>
 type Summary = NonNullable<ContainerSummary>
 

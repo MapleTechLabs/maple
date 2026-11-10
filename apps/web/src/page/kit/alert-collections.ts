@@ -8,8 +8,7 @@ import type { Stream } from "effect"
 import { type OrgCollectionSet, type OrgCollections, orgLive } from "../../data/collections/org-collections"
 import { liveQueryStream } from "../../data/live-query"
 
-// The four alert shapes as live streams (`useAlertRulesList`, `useAlertIncidentsList`,
-// `useAlertDestinationsList` and the overview model's collection stores).
+// The alert rules, incidents and destinations as live streams.
 
 const fromSet =
 	<A>(build: (set: OrgCollectionSet) => Stream.Stream<A>) =>

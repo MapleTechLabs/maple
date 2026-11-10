@@ -40,8 +40,6 @@ import * as LinearFields from "./linear-fields"
 import { DestinationForm, TextField, toFormState } from "./form"
 import { listChatConnectors } from "../shared/commands"
 
-// The destination dialog and the state it is driven by, as one Submodel.
-
 export const Model = Schema.Struct({
 	dialog: Dialog.Model,
 	form: DestinationForm,
@@ -52,18 +50,18 @@ export const Model = Schema.Struct({
 	isSaving: Schema.Boolean,
 	/** Bumped on every open: a save's result only settles the form it was sent from. */
 	openCount: Schema.Number,
-	/** `chatIntegration.connectors`, `null` until it answers (`orElse(() => [])`). */
+	/** The chat connectors; `null` until they answer. */
 	connectors: Schema.NullOr(Schema.Array(V2ChatConnector)),
 	telegramChats: Schema.NullOr(Schema.Array(V2TelegramChat)),
 	telegramError: Schema.NullOr(Schema.String),
 	isDetectingChats: Schema.Boolean,
-	/** `ChatDestinationFields`: the channel list and picker of a `chat` destination. */
+	/** The channel list and picker of a `chat` destination. */
 	chat: ChatFields.Model,
-	/** `useChatWorkspaceConnect` behind the connect tiles. */
+	/** The workspace connect popup behind the connect tiles. */
 	chatConnect: ChatConnect.Model,
-	/** `EmailMemberPicker`: the org's members, read from Clerk once the picker mounts. */
+	/** The org's members, read from Clerk once the picker mounts. */
 	email: EmailFields.Model,
-	/** `LinearFields`: the org's Linear connection and its teams. */
+	/** The org's Linear connection and its teams. */
 	linear: LinearFields.Model,
 	brokenLogos: Schema.Array(Schema.String),
 })
@@ -134,8 +132,6 @@ export const OutMessage = defineMessageUnion({
 export type OutMessage = typeof OutMessage.Type
 
 type Return = Update.ReturnWithOutMessage<Model, Message, OutMessage, Resources>
-
-// COMMANDS
 
 const FetchChatConnectors = Command.define("FetchChatConnectors", {
 	messages: [Message.CompletedFetchConnectors],
@@ -244,8 +240,6 @@ const UpdateDestination = Command.define("UpdateAlertDestinationFromDialog", {
 		),
 })
 
-// FORM READINESS (`isFormReady`, `isValidPagerDutyKey`, `isValidTelegramToken`)
-
 export const isValidPagerDutyKey = (key: string): boolean => /^[A-Za-z0-9]{32}$/.test(Str.trim(key))
 export const isValidTelegramToken = (token: string): boolean =>
 	/^\d{5,}:[A-Za-z0-9_-]{30,}$/.test(Str.trim(token))
@@ -295,8 +289,6 @@ export const isFormReady = (form: DestinationForm, isEditing: boolean): boolean 
 			return true
 	}
 }
-
-// UPDATE
 
 const liftDialog = (model: Model, result: ReturnType<typeof Dialog.update>): Return => ({
 	model: { ...model, dialog: result.model },
@@ -362,7 +354,7 @@ const open = (model: Model, patch: Partial<Model>): Return => {
 		chatConnect: ChatConnect.finish(model.chatConnect),
 	}
 	const opened = liftDialog(next, Dialog.open(model.dialog))
-	// `ProviderPicker` reads the connectors; it renders only for a new, unlocked destination.
+	// The provider picker reads the connectors; it renders only for a new, unlocked destination.
 	const needsConnectors = next.editingId === null && !next.isProviderLocked && next.connectors === null
 	return mountFields(withCommands(opened, needsConnectors ? [FetchChatConnectors()] : []))
 }
@@ -397,7 +389,7 @@ const chatConnectStep = (model: Model, message: ChatConnect.Message): Return => 
 	}
 }
 
-/** `onLinked`: the new workspace becomes the form's, and the popup closes. */
+/** A workspace just linked becomes the form's, and the popup closes. */
 const connectorsAnswered = (model: Model, connectors: ReadonlyArray<V2ChatConnector>): Return => {
 	const next = { ...model, connectors }
 	return Option.match(ChatConnect.linkedOf(model.chatConnect, connectors), {
@@ -411,7 +403,7 @@ const connectorsAnswered = (model: Model, connectors: ReadonlyArray<V2ChatConnec
 	})
 }
 
-/** `openDialog()`: a new destination, optionally preset to a provider picked elsewhere. */
+/** A new destination, optionally preset to a provider picked elsewhere. */
 export const openNew = (model: Model, preset?: DestinationForm): Return =>
 	open(model, {
 		form: preset ?? defaultDestinationForm(),
@@ -419,7 +411,6 @@ export const openNew = (model: Model, preset?: DestinationForm): Return =>
 		isProviderLocked: preset !== undefined,
 	})
 
-/** `openDialog(destination)`: edit an existing one. */
 export const openEdit = (model: Model, destination: AlertDestinationDocument): Return =>
 	open(model, {
 		form: destinationToFormState(destination),
@@ -472,7 +463,7 @@ const detected = (model: Model, result: Result.Result<ReadonlyArray<V2TelegramCh
 		onFailure: (error) => ({ model: { ...model, isDetectingChats: false, telegramError: error } }),
 	})
 
-// SUBSCRIPTION (the host page runs it: a Submodel has no Subscriptions of its own)
+// The host page runs these subscriptions: a Submodel has no Subscriptions of its own.
 
 /** The connect popup lives with the open dialog. */
 export const chatConnectDependencies = (model: Model): ChatConnectStream.Dependencies =>

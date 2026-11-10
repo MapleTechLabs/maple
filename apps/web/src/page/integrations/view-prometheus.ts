@@ -43,8 +43,6 @@ import { textLink } from "@maple/views/ui/text-link"
 import { pressable } from "@maple/views/ui/pressable"
 import { providerBrand } from "../kit/providers"
 
-// `ScrapeTargetsSection` and `ScrapeTargetRow`, with the Prometheus and WarpStream intro alerts.
-
 type H = HtmlBuilder<Message>
 
 export const AUTH_TYPE_LABELS = {
@@ -64,7 +62,6 @@ export interface ScheduledStatus {
 	readonly tone: Tone
 }
 
-/** `scheduledStatusFromRollup`, with the page's clock. */
 export const statusFromRollup = (target: V2ScrapeTarget): ScheduledStatus => {
 	if (!target.enabled) return { label: "Disabled", detail: "Collector skips this target", tone: "neutral" }
 	if (target.last_scrape_error !== null)
@@ -362,7 +359,6 @@ const placeholder = (h: H): Html =>
 		),
 	])
 
-/** `ScrapeTargetsSection`: the list, the selected target's details, and its dialogs. */
 /** `focusId`: a source's own target (`/sources/$id`), shown alone instead of the whole list. */
 export const scrapeTargetsSection = (
 	h: H,

@@ -7,9 +7,6 @@ import type { Message } from "./message"
 import { typography } from "@maple/views/ui/typography"
 import { Array as Arr } from "effect"
 
-// `NumberField` and `NoiseRow`: a Base UI field
-// holding an input group with the unit as its trailing addon.
-
 type H = HtmlBuilder<Message>
 
 export const NUMERIC_CONTROL_CLASS =
@@ -17,7 +14,7 @@ export const NUMERIC_CONTROL_CLASS =
 export const NOISE_CONTROL_CLASS =
 	"font-mono tabular-nums [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
 
-/** Base UI's field state from the value and the value the field mounted with. */
+/** The field state from the value and the value the field mounted with. */
 export const fieldStateOf = (value: string, mounted: string | undefined): FieldState => ({
 	isInvalid: false,
 	isDirty: mounted !== undefined && value !== mounted,
@@ -44,11 +41,11 @@ export type NumberFieldOptions = Readonly<{
 	inputMode?: "decimal" | "numeric"
 	controlClassName?: string
 	min?: string
-	/** The saved value when it differs (`previous`): the border warns and a note says what it was. */
+	/** The saved value when it differs: the border warns and a note says what it was. */
 	previous?: string | null
 }>
 
-/** `WasNote`: what a changed field was before the edit. */
+/** What a changed field was before the edit. */
 export const wasNote = (h: H, children: ReadonlyArray<string>): Html =>
 	typography(h, { size: "xs", tone: "warning", as: "p" }, [
 		"Was ",

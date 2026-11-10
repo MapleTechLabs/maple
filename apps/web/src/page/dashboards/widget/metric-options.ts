@@ -14,8 +14,8 @@ import type { EditorState } from "./editor-state"
 import { Message } from "./message"
 import type { Model } from "./model"
 
-// `useWidgetBuilderData`'s metric list: one page of the org's metrics for what the picker searched,
-// each name and type once, fetched while a query reads metrics.
+// One page of the org's metrics for what the picker searched, each name and type once, fetched while
+// a query reads metrics.
 
 export const FetchMetricOptions = Command.define("FetchWidgetEditorMetricOptions", {
 	args: { search: Schema.String },

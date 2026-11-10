@@ -32,8 +32,6 @@ import { typography, typographyClass } from "@maple/views/ui/typography"
 import { hstack, vstack } from "@maple/views/ui/stack"
 import { timestamp } from "@maple/views/ui/timestamp"
 
-// The tool error modal: one error group of one tool in full.
-
 type H = HtmlBuilder<Message>
 
 export type ModalInputs = Readonly<{

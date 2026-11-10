@@ -14,8 +14,6 @@ import { Facets } from "../list/model"
 import { ToolBreakdownRow, ToolSeries, TotalsResult } from "../../kit/tools/model"
 import { SortState } from "../../kit/table-sort"
 
-// `/agent-sessions/tools`.
-
 export const Breakdowns = Schema.Struct({ tools: Schema.Array(ToolBreakdownRow) })
 export type Breakdowns = typeof Breakdowns.Type
 
@@ -36,7 +34,7 @@ export const Model = Schema.Struct({
 	envSelect: Select.Model,
 	percentileToggle: ToggleGroup.Model,
 	timePicker: TimeRangePicker.Model,
-	/** The Tools table's client-side sort (`useTableSort`, calls descending). */
+	/** The Tools table's client-side sort (calls descending). */
 	tableSort: SortState,
 	searchInput: Schema.String,
 	searchVersion: Schema.Number,

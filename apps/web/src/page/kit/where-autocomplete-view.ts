@@ -5,7 +5,7 @@ import type { Attribute, Html, HtmlBuilder } from "foldkit/html"
 import { eyebrow } from "@maple/views/ui/eyebrow"
 import { type AnchorRect, listboxStyle } from "./where-autocomplete"
 
-// `WhereClauseEditor`'s suggestion list and key handling, generic over the owner's Message.
+// The where editor's suggestion list and key handling, generic over the owner's Message.
 
 /** The suggestion list, fixed under (or over) the textarea. */
 export const suggestionListbox = <M>(

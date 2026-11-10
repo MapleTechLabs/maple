@@ -54,8 +54,6 @@ import { handoffButton } from "./view-handoff"
 import { hstack, vstack } from "@maple/views/ui/stack"
 import { Array as Arr } from "effect"
 
-// The investigation page: `InvestigationView`, `InvestigationHeader`, `InvestigationTabs`.
-
 type H = HtmlBuilder<Message>
 
 const titleContent = (h: H, investigation: V2Investigation): Html => {
@@ -82,7 +80,7 @@ const titleContent = (h: H, investigation: V2Investigation): Html => {
 	})
 }
 
-/** `InvestigationActions`: the status's primary verb, and the overflow menu. */
+/** The status's primary verb, and the overflow menu. */
 const headerActions = (h: H, model: Model, investigation: V2Investigation): Html => {
 	const status = investigation.status
 	const isBusy = model.busy !== null
@@ -171,7 +169,7 @@ const TABS: ReadonlyArray<{ value: Tab; label: string }> = [
 	{ value: "transcript", label: "Transcript" },
 ]
 
-/** `InvestigationTabs`: links, so the open tab is in the URL; Evidence only when there is some. */
+/** Links, so the open tab is in the URL; Evidence only when there is some. */
 const tabs = (h: H, investigation: V2Investigation, active: Tab): Html => {
 	const evidenceCount = investigation.report?.evidence.length ?? 0
 	return linkTabStrip(
@@ -224,7 +222,7 @@ const documentTab = (
 	]
 }
 
-/** `InvestigationLead`: what a thread with no turns says, read off the subject's own status. */
+/** What a thread with no turns says, read off the subject's own status. */
 const investigationLead = (h: H, investigation: V2Investigation): Html =>
 	investigation.status === "investigating"
 		? emptyNotice(
@@ -244,7 +242,7 @@ const investigationLead = (h: H, investigation: V2Investigation): Html =>
 					`This ${investigationNoun(contextOf(investigation).kind)} is attached to every message in the thread. Start with a suggestion or ask your own question.`,
 				)
 
-/** `ChatConversation mode="investigation"`: the thread, led by the report until its own turn lands. */
+/** The thread, led by the report until its own turn lands. */
 const conversationTab = (
 	h: H,
 	model: Model,

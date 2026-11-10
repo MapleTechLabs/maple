@@ -7,7 +7,7 @@ import { fillRule } from "@maple/views/ui/rule"
 
 // Shared by the dashboards list and the template gallery.
 
-/** `ListSectionHeader`: heading, count, rule, note. */
+/** Heading, count, rule, note. */
 export const listSectionHeader = <M>(
 	h: HtmlBuilder<M>,
 	options: Readonly<{ title: string; count: number; accent?: boolean; note?: string; className?: string }>,
@@ -34,7 +34,7 @@ export const listSectionHeader = <M>(
 		],
 	)
 
-/** `ToolbarSearch` (`SearchInput` at the toolbar size, sm): the clear button empties the draft. */
+/** The search input at the toolbar size; the clear button empties the draft. */
 export const toolbarSearch = <M>(
 	h: HtmlBuilder<M>,
 	options: Readonly<{

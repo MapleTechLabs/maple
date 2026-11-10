@@ -15,8 +15,6 @@ import { hstack, vstack } from "@maple/views/ui/stack"
 import { strip } from "@maple/views/ui/rule"
 import { Array as Arr } from "effect"
 
-// The issue detail skeleton and the not-found state.
-
 type H = HtmlBuilder<Message>
 
 const titleSkeleton = (h: H): Html =>
@@ -102,7 +100,6 @@ export const issueSkeleton = (h: H, model: Model): Html => {
 	)
 }
 
-/** `ResourceNotFound` with its way back to the list. */
 export const issueNotFound = (h: H): Html =>
 	dashboardPage(h, {}, [
 		resourceNotFound(h, {

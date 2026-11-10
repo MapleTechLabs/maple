@@ -21,8 +21,6 @@ import { hstack } from "@maple/views/ui/stack"
 import { spaced } from "@maple/views/ui/spaced"
 import { Array as Arr } from "effect"
 
-// `PageHero`, `SearchToolbar` and the infra empty states.
-
 type Children = ReadonlyArray<Html | string>
 
 export type PageHeroOptions = Readonly<{
@@ -78,7 +76,7 @@ export const pageHeroParts = <M>(
 			: hstack(h, { gap: "2", wrap: true }, options.meta),
 })
 
-/** `PageHero` for a page that draws its header in the body: `pageHeroParts` with actions beside it. */
+/** A hero for a page that draws its header in the body: `pageHeroParts` with actions beside it. */
 export const pageHero = <M>(h: HtmlBuilder<M>, options: PageHeroOptions): Html => {
 	const parts = pageHeroParts(h, options)
 	return h.header(
@@ -112,7 +110,7 @@ export type SearchToolbarOptions<M> = Readonly<{
 	className?: string
 }>
 
-/** `SearchToolbar` over `SearchInput size="sm"` (w-64), on the shared list toolbar. */
+/** A small search input (w-64) on the shared list toolbar. */
 export const searchToolbar = <M>(h: HtmlBuilder<M>, options: SearchToolbarOptions<M>): Html =>
 	listToolbar(h, {
 		// Parents space their sections; the list toolbar's own bottom padding would double it.
@@ -135,7 +133,7 @@ export const searchToolbar = <M>(h: HtmlBuilder<M>, options: SearchToolbarOption
 				: [toolbarCount(h, [options.trailing])],
 	})
 
-/** `InfraSetupEmpty`: nothing reporting yet; the button opens the page's install modal. */
+/** Nothing reporting yet; the button opens the page's install modal. */
 export const setupEmpty = <M>(
 	h: HtmlBuilder<M>,
 	options: Readonly<{
@@ -171,7 +169,6 @@ export const setupEmpty = <M>(
 		"py-16",
 	)
 
-/** `NoMetricsMessage`. */
 export const noMetricsMessage = <M>(h: HtmlBuilder<M>, noun: string): Html =>
 	emptyMessage(h, { dashed: true, className: "py-12" }, [
 		`No metrics arrived for this ${noun} in this window`,

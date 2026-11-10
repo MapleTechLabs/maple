@@ -12,7 +12,7 @@ export const ResolveWindow = resolveWindowCommand(
 	Message.CompletedResolveWindow,
 )
 
-/** `railwayServicesResultAtom`: the service's own row (limits, replicas) comes from the fleet read. */
+/** The service's own row (limits, replicas) comes from the fleet read. */
 export const FetchServices = Command.define("FetchRailwayServiceRows", {
 	args: { key: Schema.String, window: TimeWindow },
 	messages: [Message.CompletedFetchServices],
@@ -36,7 +36,6 @@ export const TimeseriesInput = Schema.Struct({
 })
 export type TimeseriesInput = typeof TimeseriesInput.Type
 
-/** `railwayServiceTimeseriesResultAtom`. */
 export const FetchTimeseries = Command.define("FetchRailwayServiceTimeseries", {
 	args: { key: Schema.String, input: TimeseriesInput },
 	messages: [Message.CompletedFetchTimeseries],

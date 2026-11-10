@@ -30,9 +30,6 @@ import { PreviewSlot } from "../shared/preview"
 import { RuleForm, Tier } from "./form"
 import { LiveRows } from "../../kit/load-schemas"
 
-// `/alerts/create`: `AlertCreatePageContent` and the
-// `AlertCreateFormSurface` it mounts once the draft is known.
-
 export const Notice = Schema.Struct({
 	severity: Schema.Literals(["warning", "error"]),
 	message: Schema.String,
@@ -40,7 +37,7 @@ export const Notice = Schema.Struct({
 export type Notice = typeof Notice.Type
 
 /**
- * `RuleInitialization`: the draft exists only once ready; `Failed` is the rules sync that never
+ * The draft exists only once ready; `Failed` is the rules sync that never
  * answered, `Unreadable` a rule this build cannot read (a newer build saved it).
  */
 export const Status = Schema.Literals(["Loading", "Ready", "Failed", "Unreadable"])
@@ -67,13 +64,13 @@ export type TraceFacets = typeof TraceFacets.Type
 export const Model = Schema.Struct({
 	search: AlertsCreateSearch,
 	status: Status,
-	/** The draft's identity (`RuleDraft.key`); a different source remounts the surface. */
+	/** The draft's identity; a different source remounts the surface. */
 	draftKey: Schema.NullOr(Schema.String),
 	form: Schema.NullOr(RuleForm),
-	/** The saved rule while editing (`savedForm`), what the diff and replay compare against. */
+	/** The saved rule while editing, what the diff and replay compare against. */
 	savedForm: Schema.NullOr(RuleForm),
 	editingRuleId: Schema.NullOr(AlertRuleId),
-	/** The draft as the surface mounted with it: Base UI fields mark a changed value dirty. */
+	/** The draft as the surface mounted with it: a field whose value differs from it reads dirty. */
 	mountedForm: Schema.NullOr(RuleForm),
 	notices: Schema.Array(Notice),
 	/** `crypto.randomUUID()` for a fresh query draft, read once on entry. */
@@ -82,16 +79,16 @@ export const Model = Schema.Struct({
 	states: LiveRows(AlertRuleStateRowSchema),
 	incidents: LiveRows(AlertIncidentRowSchema),
 	destinations: LiveRows(AlertDestinationRowSchema),
-	/** `useCollectionLoadFailed` on `alert_rules` while an edit waits on it. */
+	/** The `alert_rules` sync failed while an edit waits on it. */
 	isRulesLoadFailed: Schema.Boolean,
-	/** The widget's dashboard when no `chart` snapshot came along (`useDashboardsRead`). */
+	/** The widget's dashboard when no `chart` snapshot came along. */
 	sourceDashboards: Schema.NullOr(Schema.Array(DashboardDocument)),
 	isDashboardsLoadFailed: Schema.Boolean,
 	grants: Schema.Array(Policy.PermissionName),
 	isDefaultDestinationApplied: Schema.Boolean,
 	/** The destination the editor pre-selected for a new rule, until the user picks or removes one. */
 	autoDestinationId: Schema.NullOr(AlertDestinationId),
-	/** `useChatConnectors`: `null` until the list answers. */
+	/** The org's chat connectors; `null` until the list answers. */
 	connectors: Schema.NullOr(Schema.Array(V2ChatConnector)),
 	/** The org's escalation chains a tier can start; `null` until the list answers, or when it failed. */
 	escalationChains: Schema.NullOr(Schema.Array(V2EscalationChain)),
@@ -117,7 +114,7 @@ export const Model = Schema.Struct({
 	isDryRunning: Schema.Boolean,
 	isSendingTest: Schema.Boolean,
 	isSaving: Schema.Boolean,
-	/** The switch notice under the mode toggle (`notice`), cleared by the next switch. */
+	/** The switch notice under the mode toggle, cleared by the next switch. */
 	kindNotice: Schema.NullOr(Schema.String),
 	isNotesOpen: Schema.Boolean,
 	/** Tags already in use across the org's rules, sorted; kept by reference while they stay the same. */

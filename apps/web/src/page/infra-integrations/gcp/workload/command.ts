@@ -89,7 +89,7 @@ export const FetchFleet = Command.define("FetchGcpWorkloadFleet", {
 
 export const CompleteReloadSpin = reloadSpin("CompleteGcpWorkloadReloadSpin", Message.CompletedReloadSpin)
 
-/** `useLinkedCursor` on a group of charts. */
+/** One cursor shared by a group of charts. */
 export const MountLinkedCursor = Mount.defineStream("MountGcpLinkedCursor", {
 	messages: [Message.AttachedLinkedCursor],
 	execute: ({ element }) => linkedCursorStream(element, Message.AttachedLinkedCursor()),

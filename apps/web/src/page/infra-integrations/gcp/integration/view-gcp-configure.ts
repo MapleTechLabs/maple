@@ -12,8 +12,8 @@ import { methodApplyStage, methodStage } from "./view-gcp-configure-method"
 import { applyStage } from "./view-gcp-configure-run"
 import { typography } from "@maple/views/ui/typography"
 
-// `GcpConfigure`: an existing connection's Edit data and Reconnect, in one dialog. A new connection
-// is made in the connect flow (`view-flow-gcp.ts`).
+// An existing connection's Edit data and Reconnect, in one dialog. A new connection is made in the
+// connect flow (`view-flow-gcp.ts`).
 
 type H = HtmlBuilder<Message>
 
@@ -43,7 +43,7 @@ const stages = (
 		: methodApplyStage(h, model, configure, connector, { title, opened: configure.opened })
 }
 
-/** `GcpConfigureFrame`: the dialog every step renders in, open while the wizard is. */
+/** The dialog every step renders in, open while the wizard is. */
 export const gcpConfigure = (h: H, model: Model, timeZone: string): ReadonlyArray<Html> => {
 	const configure = model.gcpCard.configure
 	if (configure === null || configure.target._tag === "New") return []

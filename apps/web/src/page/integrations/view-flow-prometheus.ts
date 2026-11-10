@@ -37,9 +37,6 @@ import { typography } from "@maple/views/ui/typography"
 import { vstack, vstackClass } from "@maple/views/ui/stack"
 import { Array as Arr, String as Str } from "effect"
 
-// Prometheus and WarpStream in the connect flow: save and probe an endpoint, name it, then watch
-// the first scheduled scrape land.
-
 type H = HtmlBuilder<Message>
 
 const COPY = {

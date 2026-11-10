@@ -26,8 +26,6 @@ import { hstack } from "@maple/views/ui/stack"
 import { column, columnClass } from "@maple/views/ui/column"
 import { Array as Arr } from "effect"
 
-// `WorkloadTable` / `WorkloadTableLoading`.
-
 type H = HtmlBuilder<Message>
 
 const columns = (h: H, sort: SortState | null, kind: WorkloadKind | undefined): ReadonlyArray<Html> => {
@@ -74,7 +72,7 @@ export const workloadTableLoading = (h: H): Html =>
 		]),
 	)
 
-/** `ReplicaCell`: ready against desired; a job counts completions and reads its failures. */
+/** Ready against desired; a job counts completions and reads its failures. */
 const replicaCell = (h: H, workload: WorkloadRow, kind: WorkloadKind): Html => {
 	const desired = workload.desiredReplicas
 	const ready = workload.readyReplicas

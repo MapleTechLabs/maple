@@ -8,8 +8,6 @@ import { hstack } from "@maple/views/ui/stack"
 import { Array as Arr } from "effect"
 import { destinationPicker } from "../../kit/destination-picker"
 
-// The TCP, DNS and heartbeat sections, and the Service and Notify sections every kind shares.
-
 const isRecordType = (value: string): value is RecordType =>
 	Arr.some(RecordType.literals, (type) => type === value)
 const isUnit = (value: string): value is typeof EveryUnit.Type =>

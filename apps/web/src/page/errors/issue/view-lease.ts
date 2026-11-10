@@ -10,8 +10,6 @@ import { actorChip } from "../../kit/issue-actor"
 import { typographyClass } from "@maple/views/ui/typography"
 import { hstack, hstackClass, vstack } from "@maple/views/ui/stack"
 
-// The lease HUD: the countdown ring beside who holds the lease.
-
 const DANGER_MS = 60_000
 const RING_SIZE = 36
 const RING_RADIUS = 14

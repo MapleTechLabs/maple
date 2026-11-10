@@ -354,7 +354,6 @@ const workloadParams = (service: GcpInfraServiceId) =>
 		Arr.filter(GCP_WORKLOAD_PARAMS, (name) => name === Str.toLowerCase(label)),
 	)
 
-/** The search params of a workload's page. */
 export function gcpWorkloadSearch(
 	service: GcpInfraServiceId,
 	keys: ReadonlyArray<string>,
@@ -410,7 +409,6 @@ export const GCP_VIEWS = [
 export type GcpView = (typeof GCP_VIEWS)[number]
 export type GcpServiceView = Exclude<GcpView, typeof GCP_RESOURCES_TAB>
 
-/** The services each list reads. */
 export const GCP_VIEW_SERVICES = {
 	services: ["cloudRun", "cloudFunctions"],
 	pubsub: ["pubsub"],

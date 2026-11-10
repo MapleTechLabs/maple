@@ -25,12 +25,8 @@ import { settingsRail } from "./view-rail"
 import { hstack, vstack } from "@maple/views/ui/stack"
 import { Array as Arr } from "effect"
 
-// `WidgetConfigurePage` and `WidgetQueryBuilderPage`: the preview over the query editor, the
-// settings rail beside them.
-
 type H = HtmlBuilder<Message>
 
-/** `WidgetEditorSkeleton`. */
 const editorSkeleton = (h: H): Html =>
 	h.div(
 		[h.Role("status"), h.AriaLabel("Loading widget")],
@@ -65,7 +61,7 @@ const editorSkeleton = (h: H): Html =>
 		],
 	)
 
-/** `ResourceNotFound`: no such widget on this board. */
+/** No such widget on this board. */
 const notFound = (h: H, widgetId: string, dashboardHref: string): Html =>
 	resourceNotFound(h, {
 		title: "Widget not found",
@@ -190,7 +186,7 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 	),
 )
 
-/** `topbarActions`: Cancel and Apply, once the widget is open. */
+/** Cancel and Apply, once the widget is open. */
 export const topbarActions = Submodel.defineView<Model, Message, PageViewInputs>((model, _inputs, h) =>
 	model.status !== "Ready" || model.state === null
 		? null

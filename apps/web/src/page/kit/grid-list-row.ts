@@ -2,8 +2,8 @@ import { cn } from "@maple/ui/lib/utils"
 import type { Attribute, Html, HtmlBuilder } from "foldkit/html"
 
 /**
- * `GridListRow`: one `<li>` of a bordered grid list (the alerts inbox, rules and resolved lists), padded,
- * tinted on hover and press, positioned so a stretched row link covers it.
+ * One `<li>` of a bordered grid list (the alerts inbox, rules and resolved lists), padded, tinted on
+ * hover and press, positioned so a stretched row link covers it.
  */
 export const gridListRow = <M>(
 	h: HtmlBuilder<M>,

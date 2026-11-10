@@ -9,8 +9,6 @@ import { AlertsUptimeNewSearch } from "../../../route/search"
 import * as Menu from "@maple/views/ui/menu"
 import { Form } from "../../kit/uptime/form"
 
-// `/alerts/uptime/new`: create an uptime monitor, or edit one (`?monitorId=`).
-
 export const Model = Schema.Struct({
 	search: AlertsUptimeNewSearch,
 	/** The monitor being edited; `null` creates. */

@@ -10,7 +10,7 @@ import type { Model } from "./model"
 import { update } from "./page-update"
 import { editedWidget, init, widgetOf } from "./update"
 
-// `WidgetTimeRange`: under Custom, the widget's own window is picked, not frozen.
+// Under Custom, the widget's own window is picked, not frozen.
 
 const orgId = Schema.decodeSync(OrgId)("org_acme")
 const context: PageContext = { orgId, pinnedNamespace: null, timeZone: "UTC" }

@@ -12,8 +12,6 @@ import { typography } from "@maple/views/ui/typography"
 import { Array as Arr } from "effect"
 import { vstack } from "@maple/views/ui/stack"
 
-// The logs table's empty state.
-
 const exclusionsHint = (h: HtmlBuilder<Message>, model: Model): Html | null =>
 	excludedEmptyHint(h, {
 		excluded: Arr.flatMap(

@@ -28,8 +28,6 @@ import { hstack } from "@maple/views/ui/stack"
 import { column, columnClass } from "@maple/views/ui/column"
 import { Array as Arr } from "effect"
 
-// `NodeTable` / `NodeTableLoading`.
-
 type H = HtmlBuilder<Message>
 
 const columns = (h: H, sort: SortState | null): ReadonlyArray<Html> => {
@@ -76,7 +74,7 @@ export const nodeTableLoading = (h: H): Html =>
 		]),
 	)
 
-/** `CapacityCell`: the meter answers "is this node full", the caption says of what. */
+/** The meter answers "is this node full", the caption says of what. */
 const capacityCell = (h: H, fraction: number, caption: string): Html =>
 	h.div(
 		[h.Class("space-y-1")],

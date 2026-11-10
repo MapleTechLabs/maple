@@ -113,7 +113,7 @@ export const routeChanged = (model: Model, route: Route): Return => ({
 export const widgetOf = (model: Model): Widget | null =>
 	Option.getOrNull(Arr.findFirst(model.document?.widgets ?? [], (widget) => widget.id === model.widgetId))
 
-/** `navigateBack`: the dashboard in edit mode, with the controls the editor carried. */
+/** The dashboard in edit mode, with the controls the editor carried. */
 export const backHref = (model: Model): string =>
 	hrefOf(
 		AppRoute.Dashboard({
@@ -140,7 +140,7 @@ const stagedFieldsOf = (staged: EditorState) => ({
 	paths: staged.paths,
 })
 
-/** `previewWidget`: the staged query fields under the live display, so presentation edits apply without Run preview. */
+/** The staged query fields under the live display, so presentation edits apply without Run preview. */
 export const previewWidgetOf = (model: Model): Widget | null => {
 	const widget = widgetOf(model)
 	if (widget === null || model.state === null || model.staged === null) return null
@@ -247,7 +247,7 @@ const planWidgetGates = (
 		variables,
 	})
 	const asked = ask({ model: { ...model, gate }, commands: [] }, gate)
-	// `StatSparklineLoader`: the trend is asked for beside the stat; it does not read the stat's value.
+	// The trend is asked for beside the stat; it does not read the stat's value.
 	const sparkline = widget.display.sparkline
 	const sparkGate =
 		panel === "stat" && sparkline?.enabled === true && sparkline.dataSource !== undefined
@@ -330,7 +330,7 @@ export const receiveDocument = (
 		},
 	})
 
-/** `showSourceToggle`: lists, notes and paths have no SQL rendering. */
+/** Lists, notes and paths have no SQL rendering. */
 export const showsSourceToggle = (state: EditorState): boolean => {
 	const panel = toPanelType(state.visualization, state.chartId)
 	return panel !== "list" && panel !== "markdown" && panel !== "paths"
@@ -362,7 +362,7 @@ export const editState = (
 		? { model }
 		: planPreview({ ...model, state: trackStoredSource(model.initial, edit(model.state)) }, context)
 
-/** `isDirty`: the source tab moved, or the state (or, in Raw SQL, the SQL) differs from what was opened. */
+/** The source tab moved, or the state (or, in Raw SQL, the SQL) differs from what was opened. */
 export const isDirty = (model: Model): boolean =>
 	model.sourceMode !== model.initialSourceMode ||
 	encodeJson(model.state) !== encodeJson(model.initial) ||
@@ -373,10 +373,9 @@ export const navigate = (model: Model, url: string): Return => ({
 	outMessage: PageOutMessage.RequestedNavigation({ url, isReplace: false }),
 })
 
-/** `shouldBlockFn: !isSaving && isDirty()`. */
 export const isBlockingNavigation = (model: Model): boolean => !model.isSaving && isDirty(model)
 
-/** `useBlocker`: leaving with unsaved edits asks first; Discard then goes where the user was going. */
+/** Leaving with unsaved edits asks first; Discard then goes where the user was going. */
 export const leave = (model: Model, url: string): Return => {
 	if (!isBlockingNavigation(model)) return navigate(model, url)
 	return askToLeave(model, url)

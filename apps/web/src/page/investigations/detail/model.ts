@@ -10,9 +10,7 @@ import * as Tooltip from "@maple/views/ui/tooltip"
 import { Model as ConversationModel } from "../conversation/model"
 import * as Canvas from "@maple/views/service-map/xyflow/canvas"
 
-// `/investigations/$id`.
-
-/** `useInvestigation`: the scoped shape's state, rebuilt into the `V2Investigation` the page renders. */
+/** The scoped shape's state, rebuilt into the `V2Investigation` the page renders. */
 export const Sync = Schema.Union([
 	Schema.TaggedStruct("Loading", {}),
 	Schema.TaggedStruct("Missing", {}),
@@ -21,7 +19,7 @@ export const Sync = Schema.Union([
 ])
 export type Sync = typeof Sync.Type
 
-/** `SignalsCard`'s two reads: log volume by severity, and the service's overview row. */
+/** The signals card's two reads: log volume by severity, and the service's overview row. */
 export const LogBucket = Schema.Struct({
 	bucket: Schema.String,
 	series: Schema.Record(Schema.String, Schema.Number),
@@ -80,7 +78,7 @@ export const Model = Schema.Struct({
 	/** The thread's report card: the action its rows opened, from local state, in its own sheet. */
 	reportActionIndex: Schema.NullOr(Schema.Number),
 	reportSheet: Dialog.Model,
-	/** `KnownServicesProvider`: table cells that name a service link to it; `null` until asked for. */
+	/** Table cells that name a service link to it; `null` until asked for. */
 	knownServices: Schema.NullOr(Schema.Array(Schema.String)),
 })
 export type Model = typeof Model.Type

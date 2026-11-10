@@ -13,8 +13,6 @@ import { LoadFailure, toLoadFailure, settleTo } from "@maple/views/data/load-fai
 import { MapleInternalApiClient } from "../../../../platform/api-clients"
 import { Message } from "../../../integrations/message"
 
-// `CloudflareAccountCard` and the Cloudflare half of `IntegrationConnectProvider`: state and reads.
-
 export const ZoneSortKey = Schema.Literals(["name", "status", "requests"])
 export type ZoneSortKey = typeof ZoneSortKey.Type
 
@@ -44,16 +42,15 @@ export const initCloudflareCard = () => ({
 })
 
 export const CloudflareCardModel = Schema.Struct({
-	/** `retainedInternalQuery("integrations", "cloudflareUsage")`. */
 	usage: KeyedSchema(CloudflareUsageResponse, LoadFailure),
-	/** Whether this attempt's prime already ran against a live grant (`primedRef`). */
+	/** Whether this attempt's prime already ran against a live grant. */
 	isPrimed: Schema.Boolean,
 	isPriming: Schema.Boolean,
-	/** `CloudflareZoneBoard`: name search, status chips (single-select), sort. */
+	/** The zone board: name search, status chips (single-select), sort. */
 	zoneSearch: Schema.String,
 	zoneFilter: ToggleGroup.Model,
 	zoneSort: Schema.Struct({ key: ZoneSortKey, dir: Schema.Literals(["asc", "desc"]) }),
-	/** `CloudflareWorkersCard`'s "View all". */
+	/** The Workers card's "View all". */
 	workersExpanded: Schema.Boolean,
 	chartRuntime: ChartRuntime,
 	/** "Manage zones": the dialog, its per-account draft and name filter, and the save. */

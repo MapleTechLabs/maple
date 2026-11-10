@@ -33,7 +33,7 @@ import {
 import { type Message, SlotName } from "./message"
 import type { Model, Search, SearchSort, SearchTable } from "./model"
 
-// The reads the page makes, each keyed by its input (S6).
+// The reads the page makes, each keyed by its input.
 
 type Cmd = Command.Command<Message, never, Resources>
 

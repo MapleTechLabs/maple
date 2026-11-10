@@ -9,7 +9,7 @@ import type { Model } from "./model"
 import { filtersOf, searchSiteOf, tabOf } from "./requests"
 import { pollTicks } from "../../data/poll"
 
-/** `AnalyticsLiveBadge`'s poll: twice inside the server's 15s cache TTL. */
+/** The live badge's poll: twice inside the server's 15s cache TTL. */
 const POLL_SECONDS = 15
 /** The Search tab's status re-read while the first import runs (it lands within minutes). */
 const SEARCH_IMPORT_POLL_SECONDS = 60
@@ -22,7 +22,7 @@ const isFirstImportRunning = (model: Model): boolean => {
 
 export const subscriptions = Subscription.make<PageSubscriptionInput<Model>, Message, Resources>()(
 	(entry) => ({
-		/** `useIntervalRefresh`: restarts when the filters (the badge's atom) change; paused while hidden or offline. */
+		/** Restarts when the filters (the badge's read) change; paused while hidden or offline. */
 		livePoll: entry(
 			{ filters: Schema.String },
 			{

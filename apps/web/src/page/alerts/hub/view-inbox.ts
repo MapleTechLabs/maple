@@ -42,8 +42,6 @@ import { barFillClass } from "@maple/views/ui/meter"
 import { borderedBox } from "@maple/views/ui/bordered-box"
 import { Array as Arr } from "effect"
 
-// `InboxTab` and `HeadroomList`: the hub's Inbox tab.
-
 const HOUR_MS = 60 * 60 * 1000
 const INCIDENT_GRID = "grid grid-cols-[minmax(0,1fr)_150px_90px_120px] items-center gap-4"
 const MAX_LANES = 8
@@ -166,8 +164,6 @@ const quietStreak = <M>(
 	])
 }
 
-// OPEN INCIDENTS
-
 const openIncidentsList = <M>(
 	h: HtmlBuilder<M>,
 	incidents: ReadonlyArray<AlertIncidentDocument>,
@@ -279,8 +275,6 @@ const openIncidentRow = <M>(
 		]),
 	])
 }
-
-// LAST 24 HOURS
 
 const fireStrip = <M>(
 	h: HtmlBuilder<M>,
@@ -400,8 +394,6 @@ const fireLaneRow = <M>(h: HtmlBuilder<M>, lane: FireLane): Html =>
 		],
 	)
 
-// BLIND SPOTS
-
 const BLIND_SPOT_META = new Map<BlindSpotKind, { label: string; action: string; className: string }>([
 	["error", { label: "Error", action: "Fix", className: "text-severity-error" }],
 	["stale", { label: "Stale", action: "Check", className: "text-severity-warn" }],
@@ -477,8 +469,6 @@ const blindSpotRow = <M>(h: HtmlBuilder<M>, spot: BlindSpot): Html => {
 		],
 	)
 }
-
-// HEADROOM
 
 const ruleValue = (rule: AlertRuleDocument, value: number): string => {
 	const draft = rule.queryBuilderDraft

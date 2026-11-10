@@ -8,8 +8,6 @@ import { spinner } from "@maple/views/ui/spinner"
 import { gcpMessage } from "../gcp-message"
 import type { H } from "./view-rows"
 
-// `GcpNotice`: what the connections say, above the lists.
-
 const integration = (h: H, label: string): Html =>
 	alertAction(h, [
 		linkButton(

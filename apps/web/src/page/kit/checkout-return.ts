@@ -4,8 +4,8 @@ import { defineMessageUnion } from "foldkit/message"
 import { trackProduct } from "../../data/analytics"
 import { CHECKOUT_CONFIRM_POLL_MS, CHECKOUT_CONFIRM_TIMEOUT_MS } from "../../lib/billing/checkout-return"
 
-// `useCheckoutReturn`: back from Stripe (`?checkout=complete`), a page waits on the Autumn sync. It
-// re-reads the customer every poll until the plan shows up, or gives up at the timeout.
+// Back from Stripe (`?checkout=complete`), a page waits on the Autumn sync. It re-reads the customer
+// every poll until the plan shows up, or gives up at the timeout.
 
 export const Model = Schema.Literals(["Idle", "Confirming", "TimedOut"])
 export type Model = typeof Model.Type

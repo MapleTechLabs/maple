@@ -25,8 +25,6 @@ import { typography, typographyClass } from "@maple/views/ui/typography"
 import { hstack, vstack } from "@maple/views/ui/stack"
 import { Array as Arr } from "effect"
 
-// `SamplesPane` and `Sample` of `ToolErrorModal`: the failed calls, newest first, one open at a time.
-
 type H = HtmlBuilder<Message>
 
 /** The read's own page size: what "Load N more" promises. */

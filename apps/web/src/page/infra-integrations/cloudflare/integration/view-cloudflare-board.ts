@@ -38,8 +38,6 @@ import { Array as Arr, String as Str, Order, Ordering } from "effect"
 import { textLink } from "@maple/views/ui/text-link"
 import { PROVIDERS } from "../../../kit/providers"
 
-// `CloudflareZoneBoard`, `ResourceRow`, `CountChip` and `CloudflareWorkersCard`.
-
 type H = HtmlBuilder<Message>
 
 const CHART_MODEL = Chart.init()

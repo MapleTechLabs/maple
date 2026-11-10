@@ -11,8 +11,6 @@ import { CopyText } from "./command"
 import { Message } from "./message"
 import type { Model } from "./model"
 
-// The issue overflow menu: copies, and the alert rule for alert issues.
-
 const decodeRuleId = Schema.decodeUnknownOption(AlertRuleId)
 const ruleIdOf = (issue: ErrorIssueDocument) => Option.getOrNull(decodeRuleId(issue.sourceRef?.ruleId))
 

@@ -151,7 +151,7 @@ const syncPeek = (context: PageContext, result: Return): Return => {
 	}
 }
 
-/** The restarts of the page on screen, once it has rows (`PodTableWithRestarts` mounts with them). */
+/** The restarts of the page on screen, once it has rows. */
 const followPods =
 	(context: PageContext) =>
 	(result: Return): Return =>

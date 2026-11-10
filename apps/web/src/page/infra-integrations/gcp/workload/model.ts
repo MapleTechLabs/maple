@@ -21,8 +21,6 @@ import {
 	TraceSide,
 } from "../data"
 
-// `/infra/gcp/$service/$name`.
-
 export const Model = Schema.Struct({
 	service: ServiceId,
 	name: Schema.String,
@@ -42,7 +40,7 @@ export const Model = Schema.Struct({
 	traceSide: KeyedSchema(TraceSide, LoadFailure),
 	fleet: KeyedSchema(Schema.Array(FleetRead), LoadFailure),
 	showAllQueries: Schema.Boolean,
-	/** `GcpQueryPeekSheet`, opened by `search.peek`. */
+	/** The query peek sheet, opened by `search.peek`. */
 	queryPeek: Dialog.Model,
 	/** The peeked statement's slowest spans. */
 	statementSpans: KeyedSchema(Schema.Array(StatementSpan), LoadFailure),

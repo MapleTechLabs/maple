@@ -8,8 +8,6 @@ import { typography, type TypographyTone } from "@maple/views/ui/typography"
 import { alertStatusBadge } from "./badges"
 import { budgetTone, formatBudget, openIncident, type Slo } from "./slo-derive"
 
-// The SLO marks the tab and the detail page share: the budget bar and the alerting state.
-
 /** Budget left as a short bar and its percent; an overspent budget shows an empty red bar. */
 export const budgetBar = <M>(h: HtmlBuilder<M>, budget: number, className?: string): Html => {
 	const tone = budgetTone(budget)

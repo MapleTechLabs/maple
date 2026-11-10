@@ -133,5 +133,5 @@ export const groupPreviewOf = (
 	return new AlertRulePreviewResponse({ ...preview, series, wouldFire: [] })
 }
 
-/** `clockAtSync`: the minute the incident was last seen. */
+/** The minute the incident was last seen. */
 export const minuteOf = (nowMs: number): number => Math.floor(nowMs / MINUTE_MS) * MINUTE_MS

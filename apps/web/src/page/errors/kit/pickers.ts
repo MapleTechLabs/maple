@@ -14,9 +14,6 @@ import { WORKFLOW_LABEL, workflowRingIcon } from "../../kit/issue-workflow"
 import { Array as Arr } from "effect"
 import { typography } from "@maple/views/ui/typography"
 
-// The severity and state pickers: their triggers and the
-// rows their `QuickPickMenu` offers.
-
 export type PickerKind = "severity" | "state"
 
 /** Hotkeys shown in the pickers and handled by the hub on the focused row. */
@@ -25,7 +22,7 @@ export const PICKER_HOTKEY = { severity: "P", state: "S" } as const
 const TRIGGER =
 	"rounded-md hover:bg-surface-sunken active:bg-surface-sunken data-popup-open:bg-surface-sunken focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:pointer-events-none"
 
-/** `PopoverTrigger`'s closed-state attributes; an open popover supplies its own. */
+/** Base UI's popover trigger attributes while closed; an open popover supplies its own. */
 const closedTrigger = <M>(h: HtmlBuilder<M>) => [
 	h.AriaExpanded(false),
 	h.AriaHasPopup("dialog"),
@@ -34,7 +31,6 @@ const closedTrigger = <M>(h: HtmlBuilder<M>) => [
 	h.Tabindex(0),
 ]
 
-/** `trigger`: the open Popover's attributes, or the closed trigger's own click. */
 export type TriggerAttributes<M> =
 	| Readonly<{ isOpen: boolean; attributes: ReadonlyArray<ChildAttribute> }>
 	| Readonly<{ isOpen: false; onClick: M }>
@@ -94,7 +90,6 @@ export const statePickerTrigger = <M>(
 		],
 	)
 
-/** `SEVERITY_ITEMS`: "No severity" on 0, the levels on 1 to 4. */
 export const severityItems = <M>(h: HtmlBuilder<M>): ReadonlyArray<QuickPickItem> => [
 	{
 		value: "none",

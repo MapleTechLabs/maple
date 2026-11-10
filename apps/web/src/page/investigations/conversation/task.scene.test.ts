@@ -4,7 +4,7 @@ import { formatElapsed } from "./kit/view-tool"
 import { Message } from "./message"
 import { init, update } from "./update"
 
-// A sub-agent row's sheet (`TaskCard`'s `Sheet`) and the running clock's wording.
+// A sub-agent row's sheet and the running clock's wording.
 
 const step = (model: ReturnType<typeof init>["model"], message: Message) => update(model, message)
 

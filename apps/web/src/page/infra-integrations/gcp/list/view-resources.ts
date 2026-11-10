@@ -24,8 +24,7 @@ import { stripClass } from "@maple/views/ui/rule"
 import { columnClass } from "@maple/views/ui/column"
 import { Array as Arr, Record as Rec, Option } from "effect"
 
-// `GcpResources`: the inventory filtered by type and project.
-// TODO(select-align): these Selects should open below the trigger (`alignItemWithTrigger={false}`).
+// TODO(select-align): these Selects should open below the trigger, not over it.
 
 const ALL = "all"
 const CELL = "truncate font-mono text-xs text-foreground-soft"

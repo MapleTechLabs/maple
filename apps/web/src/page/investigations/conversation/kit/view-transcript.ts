@@ -37,8 +37,6 @@ import { timestamp } from "@maple/views/ui/timestamp"
 import { Array as Arr, String as Str } from "effect"
 import { typography } from "@maple/views/ui/typography"
 
-// The transcript: the scrolling thread.
-
 export type MarkdownCache = Readonly<
 	Record<string, { readonly document: MarkdownDocument | null; readonly isStale: boolean }>
 >
@@ -55,7 +53,6 @@ export type TranscriptHost<M> = PanelHost<M> &
 		/** Copy status by button id (`copy:<messageId>`). */
 		copies: Readonly<Record<string, CopyButton.Model>>
 		onCopy: (id: string, message: CopyButton.Message) => M
-		/** Cards the transcript does not own: inline `<<maple:…>>` cards, approvals, sub-agents. */
 		/** The autoscroll Mount (`MountMessageScroller()`), typed for the host's Message. */
 		scrollerMount: Parameters<HtmlBuilder<M>["OnMount"]>[0]
 		/** The turn rail's state and its Mount (`MountTurnMinimap` lifted to the host). */
@@ -69,9 +66,9 @@ export type TranscriptHost<M> = PanelHost<M> &
 			draw: Readonly<{ richText: (text: string) => Html; tool: (part: ToolPart) => Html }>,
 		) => Html
 		markdownOverrides?: ViewOverrides
-		/** `fallbackDiagnosis`: the report card an investigation thread leads with until its own turn lands. */
+		/** The report card an investigation thread leads with until its own turn lands. */
 		fallback?: Html
-		/** `JumpToDiagnosis`: the thread's `submit_diagnosis` turn and the Mount (`MountJumpToMessage`). */
+		/** The thread's `submit_diagnosis` turn and the Mount of its jump button. */
 		jump?: Readonly<{ messageId: string; mount: Parameters<HtmlBuilder<M>["OnMount"]>[0] }>
 	}>
 
@@ -99,7 +96,7 @@ const markdownBody = <M>(
 		host.markdownOverrides,
 	)
 
-/** `RichText`: markdown, split at inline cards when the text carries any. */
+/** Markdown, split at inline cards when the text carries any. */
 export const richText = <M>(h: HtmlBuilder<M>, host: TranscriptHost<M>, text: string): Html => {
 	const body = richTextSegments(text)
 	if (body._tag === "Plain") return markdownBody(h, host, text)
@@ -156,7 +153,7 @@ const messageParts = <M>(
 	return [...nodes, ...toolNodes(h, buffer, `tool-${nodes.length}`, host)]
 }
 
-/** `StatusMarker`: the live "Thinking…" row. */
+/** The live "Thinking…" row. */
 export const statusMarker = <M>(
 	h: HtmlBuilder<M>,
 	label = "Thinking…",
@@ -298,7 +295,7 @@ const toolRunItem = <M>(
 		]),
 	])
 
-/** `JumpToDiagnosis`: back to the report once it scrolled away (its Mount shows and presses it). */
+/** Back to the report once it scrolled away (its Mount shows and presses it). */
 const jumpButton = <M>(
 	h: HtmlBuilder<M>,
 	messageId: string,

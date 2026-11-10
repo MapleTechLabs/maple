@@ -15,7 +15,7 @@ export const boardBreadcrumbLabel = (model: Model): string =>
 				? "Not found"
 				: model.document.name
 
-/** `/dashboards/$dashboardId`: one instance per dashboard; `mode=edit` and view params are search. */
+/** One instance per dashboard; `mode=edit` and view params are search. */
 export const page = definePage(
 	"DashboardView",
 	{ Model, Message },

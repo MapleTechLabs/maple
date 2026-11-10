@@ -35,7 +35,7 @@ import { selectableRow } from "@maple/views/ui/selectable-row"
 const PEEK_ROW =
 	"flex items-center gap-3 border-b border-border-subtle px-1 py-2 last:border-0 hover:bg-surface-sunken active:bg-surface-sunken"
 
-// `GcpQueryPeekSheet`: one Query Insights statement, its callers and its slowest traced calls.
+// One Query Insights statement, its callers and its slowest traced calls.
 
 type H = HtmlBuilder<Message>
 type TimeSearch = Readonly<{ startTime?: string; endTime?: string; timePreset?: string }>

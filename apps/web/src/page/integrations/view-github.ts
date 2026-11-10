@@ -27,8 +27,6 @@ import { Array as Arr } from "effect"
 import { textLink } from "@maple/views/ui/text-link"
 import { providerBrand } from "../kit/providers"
 
-// `GithubIntegrationCard`.
-
 const ACCOUNT_TYPE = { organization: "Organization", user: "Personal account" } as const
 
 /** Starts GitHub authorization again, which finds installations made outside Maple too. */
@@ -310,7 +308,7 @@ const byState = (h: H, model: Model, status: GithubIntegrationStatus, timeZone: 
 					: status.state === "disconnected" || status.state === "suspended"
 						? githubDeactivated(h, model, status)
 						: githubReconnect(h)
-// TODO(clerk): `useIsOrgAdmin` gates the CI traces switch; self-hosted is the root admin.
+// TODO(clerk): gate the CI traces switch on org admin; self-hosted is the root admin.
 
 type H = HtmlBuilder<Message>
 

@@ -15,7 +15,7 @@ export const Message = defineMessageUnion({
 		key: Schema.String,
 		result: Schema.Result(Schema.Array(RailwayServiceRow), LoadFailure),
 	},
-	/** `useIntervalRefresh` while the list is empty (and the status while environments sync). */
+	/** While the list is empty (and the status while environments sync). */
 	TickedEmptyRefresh: { includeStatus: Schema.Boolean },
 	ClickedRetryServices: {},
 	ClickedRetryStatus: {},

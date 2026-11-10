@@ -34,7 +34,6 @@ export type DimensionDef = Readonly<{
 	liveDimension?: "host" | "path"
 }>
 
-/** `DIMENSIONS`. */
 export const DIMENSIONS: ReadonlyArray<DimensionDef> = [
 	{ id: "path", tab: "Paths", column: "Path", noun: "paths", filterKey: "paths", liveDimension: "path" },
 	{ id: "host", tab: "Hosts", column: "Host", noun: "hosts", filterKey: "hosts", liveDimension: "host" },
@@ -175,7 +174,6 @@ export const zoneAccountOf = (model: Model): ZoneAccount | null => {
 	}
 }
 
-/** The header dot's tone. */
 export const severityOf = (model: Model): Tone | null => {
 	const detail = successOf(model.detail.data)
 	if (detail === null) return null

@@ -3,8 +3,6 @@ import type { GcpCollectLock, GcpDraftEffect } from "../connector-state"
 import { docsUrl } from "../../../../lib/docs"
 import type { Capability } from "./gcp-configure-schema"
 
-// `GcpConfigure`'s copy.
-
 export const DOCS = docsUrl("gcp")
 export const OTEL_DOCS = docsUrl("gcpOpenTelemetry")
 export const MANUAL_DOCS = docsUrl("gcpManualSetup")

@@ -81,7 +81,7 @@ const draftsOf = (search: Search): Model["rangeDrafts"] =>
 		}),
 	)
 
-/** `Some(next)` writes the slot and returns its fetch (S6). */
+/** `Some(next)` writes the slot and returns its fetch. */
 const keyed = <A, E>(
 	slot: Keyed.Keyed<A, E>,
 	key: string,
@@ -93,11 +93,9 @@ const keyed = <A, E>(
 		onSome: (next) => [next, [fetch(key)]] as const,
 	})
 
-// REQUESTS
-
 /**
- * Every read for the current search over the held window. Only the first page follows Reload
- * (`useRefreshableAtomValue`); the facets, distributions and tab counts re-read when the window rolls.
+ * Every read for the current search over the held window. Only the first page follows Reload; the facets,
+ * distributions and tab counts re-read when the window rolls.
  */
 const requestAll = (model: Model, context: PageContext, mode: RequestMode): Return => {
 	const { window, tabWindow } = model
@@ -245,8 +243,6 @@ const follow = (result: Return): Return => {
 	}
 }
 
-// NAVIGATION
-
 const navigate = (model: Model, search: Search): Return => ({
 	model,
 	outMessage: PageOutMessage.RequestedNavigation({
@@ -323,8 +319,6 @@ const applyRange = (
 	return navigate(next, withRange(model.search, range, min, max))
 }
 
-// ENTRY
-
 export const init = (route: { readonly search: Search }, context: PageContext): Return => {
 	const model: Model = {
 		search: route.search,
@@ -389,7 +383,7 @@ export const routeChanged = (
 			(range) => [range, draftsOf(route.search)[range] ?? { min: "", max: "" }],
 		),
 	)
-	// `ToolbarSearch` resyncs on an outside change, never on its own echo.
+	// The toolbar search resyncs on an outside change, never on its own echo.
 	const isOutsideQuery = query !== (model.search.q ?? "") && query !== model.lastSentQuery
 	return requestAll(
 		{
@@ -493,7 +487,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			model: { ...model, detections: { ...model.detections, [key]: models } },
 		}),
 		ChangedListWindow: ({ window }) => ({ model: { ...model, listWindow: window } }),
-		// `useDetectedModels` in the rail: with no facets yet it detects the empty list (`[]`).
+		// The rail with no facets yet detects the empty list (`[]`).
 		MountedFilterRail: () =>
 			model.isFilterRailMounted
 				? { model }

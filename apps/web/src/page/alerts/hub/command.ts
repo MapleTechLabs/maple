@@ -55,7 +55,7 @@ export const FetchHubDeliveries = Command.define("FetchAlertsHubDeliveries", {
 })
 
 /**
- * The Routing tab renders `deliveryEventsResult.cause`, which can carry no typed failure
+ * The Routing tab renders the read's failure, which can carry no typed one
  * (observed: "An unexpected error occurred" for a 500), so the slot keeps the unexpected body too.
  */
 export const FetchRoutingDeliveries = Command.define("FetchAlertsRoutingDeliveries", {
@@ -81,7 +81,6 @@ export const ToggleRule = Command.define("ToggleAlertRule", {
 		),
 })
 
-/** The inbox row's acknowledge button. */
 export const AcknowledgeIncident = Command.define("AcknowledgeAlertIncident", {
 	args: { incidentId: AlertIncidentId, acknowledged: Schema.Boolean },
 	messages: [Message.CompletedAcknowledgeIncident],
@@ -94,7 +93,7 @@ export const AcknowledgeIncident = Command.define("AcknowledgeAlertIncident", {
 		),
 })
 
-/** `DestinationManager.toggle` and the dialog's save: PATCH the destination. */
+/** The row's toggle and the dialog's save: PATCH the destination. */
 export const UpdateDestination = Command.define("UpdateAlertDestination", {
 	args: { destinationId: AlertDestinationId, payload: V2AlertDestinationUpdateParams },
 	messages: [Message.CompletedUpdateDestination],
@@ -175,7 +174,6 @@ export const DeleteMonitor = Command.define("DeleteUptimeMonitor", {
 		),
 })
 
-/** The SLOs tab's list, each row with its status. */
 export const FetchHubSlos = Command.define("FetchAlertsHubSlos", {
 	args: { key: Schema.String },
 	messages: [Message.CompletedFetchSlos],
@@ -186,7 +184,6 @@ export const FetchHubSlos = Command.define("FetchAlertsHubSlos", {
 		),
 })
 
-/** The Routing tab's escalation chains. */
 export const FetchHubChains = Command.define("FetchAlertsHubChains", {
 	args: { key: Schema.String },
 	messages: [Message.CompletedFetchChains],

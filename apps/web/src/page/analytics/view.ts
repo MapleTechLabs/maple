@@ -29,11 +29,9 @@ import { filtersRail, searchEventRail, showsBreakdownCards } from "./view-filter
 import { overviewContent, sharedPageFailure } from "./view-overview"
 import { hstack } from "@maple/views/ui/stack"
 
-// The web analytics page.
-
 type H = HtmlBuilder<Message>
 
-/** `AnalyticsLiveBadge`: silent until its first poll lands, then the last number it saw. */
+/** The live badge: silent until its first poll lands, then the last number it saw. */
 const liveBadge = (h: H, model: Model): ReadonlyArray<Html> => {
 	const live = Option.getOrUndefined(AsyncData.getData(model.live.data))
 	if (live === undefined) return []

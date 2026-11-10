@@ -29,8 +29,6 @@ import { gridClass } from "@maple/views/ui/grid"
 import { Array as Arr, String as Str } from "effect"
 import { textLink } from "@maple/views/ui/text-link"
 
-// `CorrelationStrips` as the workload's signals, and `GcpWorkloadCharts`.
-
 type H = HtmlBuilder<Message>
 type TimeSearch = Readonly<{ startTime?: string; endTime?: string; timePreset?: string }>
 
@@ -140,7 +138,7 @@ export const correlationStrips = (
 	)
 }
 
-/** `GcpWorkloadCharts`: every chart of a read, each linking its metric into the explorer. */
+/** Every chart of a read, each linking its metric into the explorer. */
 export const workloadCharts = (
 	h: H,
 	model: Model,

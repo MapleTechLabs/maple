@@ -18,9 +18,6 @@ import { Array as Arr } from "effect"
 import { hstack } from "@maple/views/ui/stack"
 import { toEpochMs } from "@maple/ui/lib/time-format"
 
-// `RuleEditImpact`: the saved rule and the draft replayed
-// over one window, every changed field, and the open incidents the draft would clear.
-
 type H = HtmlBuilder<Message>
 
 const figure = (
@@ -54,13 +51,12 @@ const figure = (
 		],
 	)
 
-/** What the comparison block reads off the Model. */
 export type ImpactView = Pick<
 	Model,
 	"savedForm" | "savedPreview" | "preview" | "previewWindow" | "incidents" | "editingRuleId"
 >
 
-/** The comparison block, once the draft differs from the saved rule (`comparison !== null`). */
+/** The comparison block, once the draft differs from the saved rule. */
 export const editImpact = (h: H, model: ImpactView, form: RuleForm): Html => {
 	const saved = model.savedForm
 	if (saved === null) return null
@@ -186,7 +182,7 @@ const clearedBlock = (
 				),
 			]
 
-/** `FireRail`: would-fire marks across the window, placed by start time. */
+/** Would-fire marks across the window, placed by start time. */
 const fireRail = (
 	h: H,
 	label: string,

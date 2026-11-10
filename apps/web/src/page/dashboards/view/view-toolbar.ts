@@ -18,8 +18,6 @@ import { variableSelects } from "./view-variables"
 import type { PageContext } from "../../contract"
 import { hstack } from "@maple/views/ui/stack"
 
-// The dashboard toolbar and `RefreshControls`.
-
 type H = HtmlBuilder<Message>
 
 const refreshControls = (h: H, model: Model): Html =>
@@ -83,7 +81,6 @@ const moreEntries = (isEdit: boolean): ReadonlyArray<MenuView.MenuEntry> => [
 	},
 ]
 
-/** `RowActionsMenu label="More dashboard actions"`. */
 const moreMenu = (h: H, model: Model): Html =>
 	rowActionsMenu(h, {
 		slotId: model.moreMenu.id,

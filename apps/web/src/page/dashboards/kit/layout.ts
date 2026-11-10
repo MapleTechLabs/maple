@@ -10,14 +10,12 @@ import { groupWidgetsByContainer } from "@maple/widgets/dashboard"
 import type { DocumentFields } from "./store"
 import { Array as Arr, String as Str, Option, Order } from "effect"
 
-// The pure layout and widget edits over the stored document.
-
 type Widget = DashboardDocument["widgets"][number]
 type Section = NonNullable<DashboardDocument["sections"]>[number]
 
 type Sectioned = Pick<DashboardDocument, "widgets" | "sections">
 
-/** `widgetsInContainer`: the widgets sharing one grid, as drawn (a vanished group's tiles are root). */
+/** The widgets sharing one grid, as drawn (a vanished group's tiles are root). */
 export const widgetsInContainer = (document: Sectioned, target: SectionTarget): ReadonlyArray<Widget> =>
 	groupWidgetsByContainer(document).get(containerKeyFor(target)) ?? []
 
@@ -34,7 +32,7 @@ const drawnKeyOf = (sections: ReadonlyArray<Section>) => {
 	}
 }
 
-/** `containerRank`: root first, then sections and tabs in order; a vanished container ranks as root. */
+/** Root first, then sections and tabs in order; a vanished container ranks as root. */
 const containerRank = (widget: Widget, sections: ReadonlyArray<Section>): number => {
 	if (widget.sectionId === undefined || widget.tabId === undefined) return -1
 	const rank = Option.flatMap(
@@ -50,7 +48,7 @@ const containerRank = (widget: Widget, sections: ReadonlyArray<Section>): number
 	return Option.getOrElse(rank, () => -1)
 }
 
-/** `sortWidgetsForLayout`: array order matches visual order, container first. */
+/** Array order matches visual order, container first. */
 export const sortWidgetsForLayout = (
 	widgets: ReadonlyArray<Widget>,
 	sections: ReadonlyArray<Section>,
@@ -66,7 +64,7 @@ export const sortWidgetsForLayout = (
 
 export type LayoutChange = Readonly<{ i: string; x: number; y: number; w: number; h: number }>
 
-/** `updateWidgetLayouts`: the changed boxes written in, the widgets re-sorted; unchanged is `null`. */
+/** The changed boxes written in, the widgets re-sorted; unchanged is `null`. */
 export const withLayouts = (
 	document: DashboardDocument,
 	layouts: ReadonlyArray<LayoutChange>,
@@ -102,7 +100,6 @@ export const withLayouts = (
 	}
 }
 
-/** `removeWidget`. */
 export const withoutWidget = (
 	document: DashboardDocument,
 	widgetId: string,
@@ -113,7 +110,7 @@ export const withoutWidget = (
 	updatedAt: nowIso,
 })
 
-/** `cloneWidget`: a copy beside its source, in the same container, under a fresh id. */
+/** A copy beside its source, in the same container, under a fresh id. */
 export const withClone = (
 	document: DashboardDocument,
 	widgetId: string,
@@ -153,7 +150,7 @@ export const withClone = (
 	}
 }
 
-/** `addWidget`: the next free slot for its default size, in the grid it is dropped into. */
+/** The next free slot for its default size, in the grid it is dropped into. */
 export const withAddedWidget = (
 	document: DashboardDocument,
 	widget: Omit<Widget, "layout"> & { readonly layout: Omit<Widget["layout"], "x" | "y"> },
@@ -165,11 +162,11 @@ export const withAddedWidget = (
 	return { ...document, widgets: [...document.widgets, placed], updatedAt: nowIso }
 }
 
-/** `widgetId` from `generateId`: wall clock and a random suffix. */
+/** Wall clock and a random suffix. */
 export const generateWidgetId = (nowMs: number, random: number): string =>
 	`${nowMs}-${Str.slice(2, 9)(random.toString(36))}`
 
-/** `CANONICAL_COLS`: the editable canvas's width in columns. */
+/** The editable canvas's width in columns. */
 const CANONICAL_COLS = 12
 
 type Flow = Readonly<{
@@ -195,8 +192,8 @@ const flowContainer = (bucket: ReadonlyArray<Widget>): Flow["placed"] =>
 	}).placed
 
 /**
- * `autoLayoutPerContainer`: every container re-flowed on its own, in the board's sorted order.
- * Keyed by the widget object, not its id: stored ids are not validated unique.
+ * Every container re-flowed on its own, in the board's sorted order. Keyed by the widget object, not
+ * its id: stored ids are not validated unique.
  */
 export const autoLaidOut = (
 	widgets: ReadonlyArray<Widget>,

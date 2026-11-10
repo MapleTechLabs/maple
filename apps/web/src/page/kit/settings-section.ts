@@ -7,7 +7,7 @@ import { emptyMessage } from "@maple/views/ui/empty"
 import { typography, typographyClass } from "@maple/views/ui/typography"
 import { vstack } from "@maple/views/ui/stack"
 
-// `SettingsSection`, `SettingsSections`, `AdminOnlyNote`.
+// A settings tab's titled sections, the stack they sit in, and the admin-only note.
 
 type Children = ReadonlyArray<Html | string>
 

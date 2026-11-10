@@ -36,8 +36,6 @@ import { Array as Arr, String as Str, Option } from "effect"
 import { ALERT_SEVERITY_LABEL } from "../shared/badges"
 import { everyMinutes } from "../../kit/alert-time"
 
-// `RuleConditionFields`: the rule's condition row.
-
 type H = HtmlBuilder<Message>
 
 const COMPARATOR_SELECT_ID = "rule-comparator"
@@ -50,7 +48,6 @@ type ConditionView = Pick<Model, "mountedForm" | "savedForm"> &
 		slowedMinutes: number | null
 	}>
 
-/** `COMPARATOR_ITEMS`, in `comparatorLabels` order. */
 const COMPARATOR_ITEMS = Arr.map([...COMPARATOR_WORDS], ([value, label]) => ({ value, label }))
 
 const SEVERITY_OPTIONS: ReadonlyArray<{
@@ -75,7 +72,7 @@ const SEVERITY_OPTIONS: ReadonlyArray<{
 
 const filledState = fieldStateOf("x", undefined)
 
-/** `SeverityPicker`: the one tier's severity, as two pills. */
+/** The one tier's severity, as two pills. */
 const severityPicker = (h: H, value: AlertSeverity): Html => {
 	const config: RadioGroup.RadioGroupViewConfig<Message> = {
 		model: RadioGroup.init(value),
@@ -124,7 +121,7 @@ const severityPicker = (h: H, value: AlertSeverity): Html => {
 	])
 }
 
-/** `TierLabel`: the fixed severity of a row once a rule has two tiers. */
+/** The fixed severity of a row once a rule has two tiers. */
 const tierLabel = (h: H, severity: AlertSeverity): Html => {
 	const option = Option.getOrElse(
 		Arr.findFirst(SEVERITY_OPTIONS, (candidate) => candidate.value === severity),
@@ -239,7 +236,7 @@ const criticalRow = (
 		],
 	)
 
-/** `windowDescription`: what a check reads and how often the scheduler runs one. */
+/** What a check reads and how often the scheduler runs one. */
 const windowDescription = (form: RuleForm): string => {
 	const minutes = Number(Str.trim(form.windowMinutes))
 	if (!Number.isFinite(minutes) || minutes <= 0) return "Each check looks at this much data."

@@ -28,8 +28,6 @@ import { filtersOf, tabOf } from "./requests"
 import { presenceOf } from "@maple/views/data/signal-presence"
 import { favicon, isHostLike } from "./view-icons"
 
-// `AnalyticsFilterSidebar`: the page's filter rail.
-
 type H = HtmlBuilder<Message>
 
 const toSections = (message: FilterSections.Message) => Message.GotFilterSectionsMessage({ message })

@@ -43,7 +43,7 @@ export type ListData = Readonly<{
 	workerRows: ReadonlyArray<WorkerListRow> | null
 }>
 
-/** `CloudflareData`'s reads: null while loading (a failed read stays loading). */
+/** Null while loading (a failed read stays loading). */
 export const listDataOf = (model: Model): ListData => {
 	const timeseries = successOf(model.timeseries.data)
 	const platform = successOf(model.platform.data)
@@ -74,7 +74,7 @@ export type ListScope = Readonly<{
 	scopedAccount: CloudflareAccount | undefined
 }>
 
-/** `CloudflareListPage`'s account scoping, counts, and the view fallback. */
+/** The account scoping, counts, and the view fallback. */
 export const listScopeOf = (
 	model: Model,
 	data: ListData,

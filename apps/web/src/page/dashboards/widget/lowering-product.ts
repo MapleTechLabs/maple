@@ -30,12 +30,9 @@ import {
 import { Option, Schema, Array as Arr, String as Str } from "effect"
 import type { FunnelDraft, PathsDraft, StepDraft } from "./editor-state"
 
-// The funnel's and the paths widget's editor drafts, read from a stored widget
-// and checked (`validate`).
-
 type Widget = DashboardDocument["widgets"][number]
 
-/** `defaultFunnelDraft`: the query-set funnel, no steps, the /analytics defaults. */
+/** The query-set funnel, no steps, the /analytics defaults. */
 export const defaultFunnelDraft = (): FunnelDraft => ({
 	source: "query_set",
 	steps: [],
@@ -47,7 +44,7 @@ export const defaultFunnelDraft = (): FunnelDraft => ({
 	addOns: { keyBy: false, window: false, breakdown: false },
 })
 
-/** `DEFAULT_PATHS_DRAFT`: an empty event anchor, three steps forward, four branches. */
+/** An empty event anchor, three steps forward, four branches. */
 export const defaultPathsDraft = (): PathsDraft => ({
 	anchor: { kind: "event", eventName: "" },
 	direction: "after",
@@ -74,7 +71,7 @@ const pathsParamsOf = (widget: Widget) =>
 		? Option.getOrUndefined(decodePathsParams(dataSourceRouteParams(widget.dataSource) ?? {}))
 		: undefined
 
-/** `funnelWidgetType.initialState`: the display is the definition's home, the route params a fallback. */
+/** The display is the definition's home, the route params a fallback. */
 export const funnelInitialState = (widget: Widget): FunnelDraft => {
 	const stored = widget.display.funnel
 	const routeParams = funnelParamsOf(widget)
@@ -99,7 +96,6 @@ export const funnelInitialState = (widget: Widget): FunnelDraft => {
 	}
 }
 
-/** `pathsWidgetType.initialState`. */
 export const pathsInitialState = (widget: Widget): PathsDraft => {
 	const stored = widget.display.paths
 	const routeParams = pathsParamsOf(widget)
@@ -142,7 +138,6 @@ const compiledOrBare = (draft: StepDraft): FunnelStep => {
 	return step
 }
 
-/** `funnelDefinition`. */
 export const funnelDefinitionOf = (funnel: FunnelDraft) => {
 	const filters = populationFiltersOf(funnel.filterClause)
 	return {
@@ -162,7 +157,7 @@ const parseExclude = (text: string): ReadonlyArray<string> =>
 		(entry) => entry !== "",
 	)
 
-/** `pathsDefinition`: a session step cannot anchor a sequence. */
+/** A session step cannot anchor a sequence. */
 export const pathsDefinitionOf = (paths: PathsDraft) => {
 	const anchor = compiledOrBare(paths.anchor)
 	const filters = populationFiltersOf(paths.filterClause)
@@ -180,7 +175,6 @@ export const pathsDefinitionOf = (paths: PathsDraft) => {
 	}
 }
 
-/** `funnelWidgetType.validate` on a product-event funnel. */
 export const funnelValidationError = (funnel: FunnelDraft): string | null => {
 	const { steps, filterClause, windowSeconds } = funnel
 	if (steps.length === 0) return "Add at least one step"
@@ -197,7 +191,6 @@ export const funnelValidationError = (funnel: FunnelDraft): string | null => {
 	return null
 }
 
-/** `pathsWidgetType.validate`. */
 export const pathsValidationError = (paths: PathsDraft): string | null => {
 	const { anchor, filterClause, windowSeconds, depth, branches } = paths
 	if (completedSteps([anchor]).length === 0) return "The anchor needs an event name or page path"

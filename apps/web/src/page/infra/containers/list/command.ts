@@ -12,7 +12,6 @@ import { settleTo } from "@maple/views/data/load-failure"
 import { TimeWindow } from "../../../../data/time-range"
 import { Message } from "./message"
 
-/** `PAGE_SIZE`. */
 export const PAGE_SIZE = 50
 
 const StringList = Schema.optional(Schema.Array(Schema.String))
@@ -86,7 +85,7 @@ export const FetchFacets = Command.define("FetchInfraContainerFacets", {
 		),
 })
 
-/** `useDebouncedValue(searchText, 300)`: the query lands after 300 ms of quiet. */
+/** The query lands after 300 ms of quiet. */
 export const DebounceSearch = Command.define("DebounceInfraContainersSearch", {
 	args: { query: Schema.String },
 	messages: [Message.ElapsedSearchDebounce],

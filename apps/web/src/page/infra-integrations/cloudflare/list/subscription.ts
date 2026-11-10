@@ -7,9 +7,9 @@ import { Message } from "./model"
 import type { Model } from "./model"
 import { pollTicks } from "../../../../data/poll"
 
-/** `useCloudflareIngestPhase`'s poll, matched to the poller's own cadence. */
+/** The ingest poll, matched to the poller's own cadence. */
 const INGEST_POLL = Duration.seconds(30)
-/** `useLiveClock`: "synced 2m ago" ages while the page stays open. */
+/** "synced 2m ago" ages while the page stays open. */
 const CLOCK_TICK = Duration.minutes(1)
 
 const isSettling = (model: Model): boolean => {

@@ -27,8 +27,6 @@ import { Message } from "./message"
 import type { Model } from "./model"
 import { chain, requestStatus } from "./update-status"
 
-// `ScrapeTargetsSection`'s state changes.
-
 type Return = PageReturn<Model, Message>
 
 const withCard = (model: Model, card: Partial<PrometheusCardModel>): Model => ({
@@ -44,7 +42,7 @@ const toast = (model: Model, type: "success" | "error", title: string, descripti
 const refreshTargets = (model: Model, context: PageContext): Return =>
 	requestStatus(model, context, "scrapeTargets", "Supersede")
 
-/** The prometheus targets (`sourceFilter`), as the list read answered them. */
+/** The prometheus targets, as the list read answered them. */
 export const prometheusTargets = (model: Model): ReadonlyArray<V2ScrapeTarget> =>
 	Option.match(AsyncData.getData(model.statuses.scrapeTargets.data), {
 		onNone: () => [],
@@ -126,8 +124,6 @@ export const completedToggle = (
 		: toast(settled, "error", "Couldn't update scrape target", failure.message)
 }
 
-// FORM
-
 const formDialogStep = (model: Model, step: ReturnType<typeof Dialog.update>): Return => ({
 	model: withCard(model, { formDialog: step.model }),
 	commands: FoldkitCommand.mapMessages(step.commands ?? [], (message) =>
@@ -202,7 +198,6 @@ export const gotAuthSelect = (model: Model, message: Select.Message): Return => 
 
 const decodeInterval = Schema.decodeUnknownOption(ScrapeIntervalSeconds)
 
-/** `parsedInterval`: `Number.parseInt(value) || 15`, then the 5..300 integer check. */
 export const parsedInterval = (form: ScrapeForm): number | null => {
 	const parsed = Number.parseInt(form.interval.value, 10)
 	return Option.getOrNull(decodeInterval(Number.isNaN(parsed) || parsed === 0 ? 15 : parsed))
@@ -283,8 +278,6 @@ export const completedSave = (
 	])
 }
 
-// DELETE
-
 const deleteDialogStep = (model: Model, step: ReturnType<typeof Dialog.update>): Return => ({
 	model: withCard(model, { deleteDialog: step.model }),
 	commands: FoldkitCommand.mapMessages(step.commands ?? [], (message) =>
@@ -300,7 +293,7 @@ export const gotDeleteDialog = (model: Model, message: Dialog.Message): Return =
 		? { model }
 		: deleteDialogStep(model, Dialog.update(model.prometheusCard.deleteDialog, message))
 
-/** The confirm button stays pending until the delete answers (`ConfirmDialog`'s promise). */
+/** The confirm button stays pending until the delete answers. */
 export const confirmedDelete = (model: Model): Return => {
 	const id = model.prometheusCard.deleteId
 	if (id === null || model.prometheusCard.isDeleting) return { model }
@@ -328,8 +321,6 @@ export const completedDelete = (
 			),
 	])
 }
-
-// ROW MENU
 
 export const gotTargetMenu = (model: Model, id: ScrapeTargetId, message: Menu.Message): Return => {
 	const menuId = `scrape-target-menu-${id}`

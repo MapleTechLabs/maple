@@ -9,7 +9,7 @@ import type { Status, Usage } from "./data"
 import { ingestPhaseOf } from "./ingest"
 import { successOf } from "../kit/success-of"
 
-/** `useCloudflareIngestPhase`'s poll while a connection is still settling. */
+/** The poll while a connection is still settling. */
 const INGEST_POLL = Duration.seconds(30)
 
 type IngestModel = Readonly<{

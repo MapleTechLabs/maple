@@ -12,8 +12,6 @@ import type { Model, SourceId, SourceSummary } from "./model"
 import { SOURCE_IDS } from "./model"
 import { Array as Arr } from "effect"
 
-// `SourceState` and `presentSources`.
-
 export type SourceState =
 	| { readonly status: "loading" }
 	/** `failure` is the read's error; a reading with nothing usable has none. */
@@ -49,7 +47,7 @@ const NOT_CONNECTED: IntegrationFlags = {
 	aws: false,
 }
 
-/** `useInfraSurfaces(window)`: the page's probe (the last answer while a new window loads) and the shell's statuses. */
+/** The page's presence probe (the last answer while a new window loads) and the shell's statuses. */
 export const surfacesOf = (model: Model, context: PageContext): InfraSurfaces =>
 	resolveInfraSurfaces(
 		probeOf(model.presence.data),

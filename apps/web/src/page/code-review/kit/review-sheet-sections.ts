@@ -33,8 +33,6 @@ import { typography, typographyClass } from "@maple/views/ui/typography"
 import { hstack, vstack } from "@maple/views/ui/stack"
 import { Array as Arr, Option } from "effect"
 
-// `ReviewDetailContent`'s body.
-
 type H = HtmlBuilder<SheetMessage>
 
 const modelLabel = (model: string | null) =>

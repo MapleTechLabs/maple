@@ -34,8 +34,6 @@ import { type Model, NODE_LIST_LIMIT, type NodeFacets, type NodeRow } from "./mo
 import { DEFAULT_PRESET, filtersOf } from "./update"
 import { nodeTable, nodeTableLoading } from "./view-table"
 
-// `NodesPage` and `NodesFilterSidebarView`.
-
 type H = HtmlBuilder<Message>
 
 const STATUS_CELLS: ReadonlyArray<Readonly<{ status: HostStatus; hint: string; tone: Tone }>> = [

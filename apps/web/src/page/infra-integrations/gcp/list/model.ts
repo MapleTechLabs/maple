@@ -12,8 +12,6 @@ import * as Select from "@maple/views/ui/select"
 import * as TimeRangePicker from "../../../kit/time-range-picker"
 import { FleetRead, GcpStatus, Resources, SparkRead } from "../data"
 
-// `/infra/gcp`.
-
 export const Model = Schema.Struct({
 	search: InfraGcpSearch,
 	window: Schema.NullOr(TimeWindow),
@@ -55,11 +53,11 @@ export const Message = defineMessageUnion({
 	CompletedFetchCloudSqlInventory: result(Resources),
 	CompletedFetchResources: result(Resources),
 	...ChartEnvMessages,
-	/** `useIntervalRefresh`: the status while connected, the fleet while waiting, resources while empty. */
+	/** The status while connected, the fleet while waiting, resources while empty. */
 	TickedStatusRefresh: {},
 	TickedFleetRefresh: {},
 	TickedResourcesRefresh: {},
-	/** `useLiveClock`: connector states that expire on a timer (setup, waiting) age while open. */
+	/** Connector states that expire on a timer (setup, waiting) age while open. */
 	TickedLiveClock: { nowMs: Schema.Number },
 	ClickedRetryStatus: {},
 	ClickedRetryFleet: {},

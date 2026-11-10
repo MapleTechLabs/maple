@@ -30,7 +30,7 @@ const result = <A extends Schema.Top>(schema: A) => ({
 	result: Schema.Result(schema, LoadFailure),
 })
 
-/** The issue workflow writes the rail sends (`useMutationAction` in the route). */
+/** The issue workflow writes the rail sends. */
 export const IssueWrite = Schema.Union([
 	/** `fromState` is the state the rail showed; the server refuses the move (409) once it moved on. */
 	Schema.TaggedStruct("Transition", { fromState: WorkflowState, toState: WorkflowState }),

@@ -8,8 +8,6 @@ import { endKeyboardMove, keyboardStep } from "./keyboard-move"
 import { isEditing } from "./mode"
 import { Option, Array as Arr } from "effect"
 
-// Grid interaction: pointer drag and resize
-// over the canvas, one commit on release. The pointer is tracked by a window subscription.
 // TODO(motion): the glide into place is not animated.
 
 type GestureMessage = Extract<
@@ -72,8 +70,8 @@ const press = (
 type Frame = Readonly<{ clientX: number; clientY: number; gridLeft: number; gridTop: number }>
 
 /**
- * `step`: the lifted tile follows the pointer, with any auto-scroll since the press folded in;
- * the layout changes only when the cell does.
+ * The lifted tile follows the pointer, with any auto-scroll since the press folded in; the layout
+ * changes only when the cell does.
  */
 const move = (model: Model, gesture: GridGesture, frame: Frame): Return => {
 	const grid = gridOfWidget(model, gesture.widgetId)

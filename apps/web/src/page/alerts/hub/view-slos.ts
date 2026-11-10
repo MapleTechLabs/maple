@@ -43,11 +43,8 @@ import { Message } from "./message"
 import { type Model, type SloListRow } from "./model"
 import { canManageAlerts } from "../../kit/session-grants"
 
-// The hub's SLOs tab: each SLO with its SLI, budget left, fastest burn and alerting state.
-
 type H = HtmlBuilder<Message>
 
-/** The empty org: what an SLO is, in one line, and the first one to add. */
 const slosEmptyState = (h: H, serviceName: string | undefined, canEdit: boolean): Html =>
 	empty(
 		h,

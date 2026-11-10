@@ -41,8 +41,6 @@ import { grid } from "@maple/views/ui/grid"
 import { Array as Arr, String as Str } from "effect"
 import { textLink } from "@maple/views/ui/text-link"
 
-// The destination dialog. The Email, Linear and chat fields live in `*-fields-view.ts`.
-
 type H = HtmlBuilder<Message>
 
 const IDLE: FieldState = {
@@ -113,7 +111,7 @@ const providerTile = (
 		label?: string
 		description?: string
 		isSelected: boolean
-		/** `busy`: the tile's popup is out; it disables and spins. */
+		/** The tile's popup is out: it disables and spins. */
 		isBusy?: boolean
 		onSelect: Message
 	}>,
@@ -161,7 +159,7 @@ const providerTile = (
 	)
 }
 
-/** `ProviderPicker`: linked chat workspaces first, then the provider types. */
+/** Linked chat workspaces first, then the provider types. */
 const providerPicker = (h: H, model: Model): Html => {
 	const connectors = model.connectors ?? []
 	const isDiscordLinked = Arr.some(connectors, (c) => c.id === "discord" && c.workspaces.length > 0)

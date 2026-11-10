@@ -9,8 +9,6 @@ import type { AgentSessionsSearch } from "../../../route/search"
 import type { Model, RangeKey, SessionRow } from "./model"
 import { urlSortPatch } from "../../kit/table-sort"
 
-// The list's filter inputs and paging arithmetic.
-
 export type Search = typeof AgentSessionsSearch.Type
 
 export const PAGE_SIZE = 50
@@ -157,7 +155,6 @@ export const countedFilters = (inputs: FilterInputs) => ({
 	search: inputs.search,
 })
 
-/** `JSON.stringify` keys, like the hook's memo keys. */
 export const filterKeyOf = (inputs: FilterInputs): string => encodeJson(inputs)
 export const detailsKeyOf = (inputs: FilterInputs): string => encodeJson(countedFilters(inputs))
 

@@ -40,8 +40,6 @@ import { Array as Arr, String as Str } from "effect"
 import { canManageAlerts } from "../../kit/session-grants"
 import { toEpochMs } from "@maple/ui/lib/time-format"
 
-// `RulesTab`: the hub's Rules tab.
-
 const DAY_MS = 24 * 60 * 60 * 1000
 const RIBBON_DAYS = 7
 const RIBBON_CELLS = RIBBON_DAYS * 4
@@ -271,7 +269,6 @@ export const rulesTab = (h: H, model: Model, inputs: RulesTabInputs): Html => {
 	)
 }
 
-/** `SearchInput size="sm"`, the toolbar size. */
 const rulesSearch = (h: H, value: string): Html =>
 	searchInput(h, {
 		id: "alerts-rules-search",

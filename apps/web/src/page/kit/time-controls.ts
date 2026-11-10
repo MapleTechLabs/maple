@@ -6,8 +6,8 @@ import { Array as Arr, String as Str, Option } from "effect"
 
 // The time range header controls: the picker trigger, the reset for a custom range, and Reload.
 
-/** The picker's preset rail (`PRESET_OPTIONS`); a page default must be one so the open picker marks it.
- * "24h" is rolling; "1d" would be today since midnight (`resolveRelativeRange` counts calendar days). */
+/** The picker's preset rail; a page default must be one so the open picker marks it. "24h" is
+ * rolling; "1d" would be today since midnight (relative ranges count calendar days). */
 export const PRESET_VALUES = ["5m", "15m", "30m", "1h", "6h", "12h", "24h", "3d", "1w", "2w", "1mo"] as const
 export const LONG_RANGE_PRESET_VALUES = [...PRESET_VALUES, "3mo", "6mo", "12mo"] as const
 export type PresetValue = (typeof LONG_RANGE_PRESET_VALUES)[number]
@@ -15,7 +15,6 @@ export type PresetValue = (typeof LONG_RANGE_PRESET_VALUES)[number]
 export const isPresetValue = (value: string): value is PresetValue =>
 	Arr.some(LONG_RANGE_PRESET_VALUES, (preset) => preset === value)
 
-// `PRESET_OPTIONS` labels and `presetLabel`.
 const PRESET_LABELS = new Map<string, string>([
 	["5m", "Last 5 minutes"],
 	["15m", "Last 15 minutes"],
@@ -64,7 +63,7 @@ export const presetSpanLabel = (shorthand: string): string => {
 
 export type TimeSearch = Readonly<{ startTime?: string; endTime?: string; timePreset?: string }>
 
-/** `resolveSearchPreset`: the URL's own preset, else the default unless it pins an absolute range. */
+/** The URL's own preset, else the default unless it pins an absolute range. */
 export const searchPreset = (search: TimeSearch, defaultPreset: PresetValue): string | undefined =>
 	search.timePreset ?? (search.startTime !== undefined ? undefined : defaultPreset)
 
@@ -78,7 +77,7 @@ export type TimeControlsOptions<M> = Readonly<{
 	onReset: M
 	onReload: M
 	isReloading: boolean
-	/** Replaces the plain Reload button (`reloadControls`: a `RefreshControls` with a cadence). */
+	/** Replaces the plain Reload button (a refresh control with a cadence). */
 	reloadControls?: Html
 	/** Drops Reload while the page's failure card offers Try again, so there is one retry. */
 	isReloadHidden?: boolean
@@ -90,7 +89,7 @@ export const timeControls = <M>(h: HtmlBuilder<M>, options: TimeControlsOptions<
 	const startTime = options.search.startTime ?? options.window?.startTime
 	const endTime = options.search.endTime ?? options.window?.endTime
 	const hasCustomRange = preset === undefined && startTime !== undefined
-	// TODO(range-label): an absolute range should show `formatTimeRangeDisplay` (zone-aware).
+	// TODO(range-label): an absolute range should show a zone-aware label, not the raw bounds.
 	const label = preset !== undefined ? presetLabel(preset) : `${startTime ?? ""} - ${endTime ?? ""}`
 	return h.div(
 		[h.Class("flex flex-wrap items-center gap-2")],
@@ -132,13 +131,13 @@ export const timeControls = <M>(h: HtmlBuilder<M>, options: TimeControlsOptions<
 	)
 }
 
-/** The closed picker trigger (`TimeRangePicker`'s `PopoverTrigger` Button), clock and label. */
+/** The closed picker trigger's content: clock and label. */
 export const timeRangeTriggerContent = <M>(h: HtmlBuilder<M>, label: string): ReadonlyArray<Html> => [
 	icon(h, "ClockIcon"),
 	h.span([], [label]),
 ]
 
-// `WIDEN_TIME_PRESET` / `canWidenTimeRange`: the preset an empty page offers to widen to.
+// The preset an empty page offers to widen to.
 export const WIDEN_TIME_PRESET = "7d"
 const WIDE_TIME_PRESETS = new Set([
 	"7d",

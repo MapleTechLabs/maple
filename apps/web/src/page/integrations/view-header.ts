@@ -14,16 +14,14 @@ import { typography, typographyClass } from "@maple/views/ui/typography"
 import { hstack, hstackClass, vstack } from "@maple/views/ui/stack"
 import { Array as Arr } from "effect"
 
-// `IntegrationHeader`.
-
 type H = HtmlBuilder<Message>
 
 export type HeaderSlots = Readonly<{
-	/** `GcpHeaderStatus`, replacing the status line while Google Cloud is connected. */
+	/** Google Cloud's status line, replacing the default one while it is connected. */
 	statusLine?: Html
-	/** Controls before the Connect button (`CloudflareHeaderActions`). */
+	/** Controls before the Connect button (Cloudflare's). */
 	actions?: ReadonlyArray<Html>
-	/** `useIntegrationConnect()`'s header button, shown while the integration is available. */
+	/** The Connect button, shown while the integration is available. */
 	connect?: Html
 }>
 

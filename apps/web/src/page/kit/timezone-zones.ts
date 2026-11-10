@@ -74,7 +74,6 @@ const splitZone = (zone: string): { readonly region: string; readonly city: stri
 	})
 }
 
-/** `itemLabel`: the option's text label. */
 export const zoneLabel = (row: ZoneRow): string =>
 	row.value === SYSTEM_VALUE ? `System (${row.zone})` : row.value
 
@@ -103,7 +102,7 @@ const rowOf = (
 	startsGroup,
 })
 
-/** `groupZones`: System and UTC pinned, then every other zone west to east, A-Z within an offset. */
+/** System and UTC pinned, then every other zone west to east, A-Z within an offset. */
 export const zoneRows = (
 	zones: ReadonlyArray<string>,
 	browser: string,

@@ -40,8 +40,6 @@ import { ServiceNamespaces } from "./uptime-groups"
 import { LiveRows } from "../../kit/load-schemas"
 import { UptimeMonitorKind } from "@maple/domain/primitives"
 
-// The `/alerts` hub.
-
 export const UptimeStatusFilter = Schema.Literals(["all", "down", "degraded", "paused"])
 export const UptimeKindFilter = Schema.Literals(["all", ...UptimeMonitorKind.literals])
 export type UptimeKindFilter = typeof UptimeKindFilter.Type
@@ -69,7 +67,7 @@ export const Model = Schema.Struct({
 	/** Rules tab: the search box and "Show all". */
 	rulesQuery: Schema.String,
 	isShowingAllRules: Schema.Boolean,
-	/** The enable/disable PATCH in flight (`toggleRule.state`) and whether the last one failed. */
+	/** The enable/disable PATCH in flight and whether the last one failed. */
 	togglingRuleId: Schema.NullOr(AlertRuleId),
 	hasToggleFailed: Schema.Boolean,
 	/** The rules or incidents stream stopped, or stalled, before its first answer. */
@@ -81,7 +79,7 @@ export const Model = Schema.Struct({
 	deletingDestinationIds: Schema.Array(AlertDestinationId),
 	confirmDeleteId: Schema.NullOr(AlertDestinationId),
 	deleteDialog: Dialog.Model,
-	/** Provider brand images that failed to load (`ProviderLogo`'s `errored`), by destination type. */
+	/** Provider brand images that failed to load, by destination type. */
 	brokenLogos: Schema.Array(Schema.String),
 	/** Row action menus by menu id, created on first use. */
 	menus: Schema.Record(Schema.String, Menu.Model),

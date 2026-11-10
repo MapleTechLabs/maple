@@ -6,7 +6,7 @@ import * as Dialog from "@maple/views/ui/dialog"
 import { ChartModels, SeriesSlots } from "../../../kit/series"
 import { PodMetric, PodSummary } from "../pod-data"
 
-// `PodPeekSheet`: a pod's page in a sheet over the list.
+// A pod's page in a sheet over the list.
 
 /** Limits first (what the list is sorted by), then the raw cores and the requests. */
 export const PEEK_METRICS: ReadonlyArray<PodMetric> = [

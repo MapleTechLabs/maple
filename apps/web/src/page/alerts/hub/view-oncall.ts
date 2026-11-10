@@ -30,9 +30,6 @@ import { dividedList } from "@maple/views/ui/rule"
 import { canManageAlerts } from "../../kit/session-grants"
 import { toEpochMs } from "@maple/ui/lib/time-format"
 
-// The hub's On-call tab (each schedule with who is on call and the next handoff), the inbox's
-// "On call now" strip, and the schedule delete confirmation.
-
 type H = HtmlBuilder<Message>
 
 /**
@@ -61,7 +58,6 @@ const onCallPerson = (h: H, model: Model, schedule: V2OnCallSchedule, withZone: 
 const layerCount = (schedule: V2OnCallSchedule) =>
 	`${schedule.layers.length} ${pluralize(schedule.layers.length, "layer")}`
 
-/** `ScheduleRow`: name and zone, who is on call until when, the next handoff, and its actions. */
 const scheduleRow = (h: H, model: Model, schedule: V2OnCallSchedule, nowMs: number): Html => {
 	const menuId = scheduleMenuId(schedule.id)
 	const entries: ReadonlyArray<MenuEntry> = [
@@ -286,7 +282,6 @@ export const deleteScheduleDialog = (h: H, model: Model): Html => {
 	})
 }
 
-/** The tab header's "New schedule", once one exists. */
 export const newScheduleButton = (h: H): Html =>
 	linkButton(h, { size: "sm", variant: "outline", href: newScheduleHref() }, [
 		icon(h, "PlusIcon"),

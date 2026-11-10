@@ -167,7 +167,7 @@ const navigate = (model: Model, url: string, isReplace = false): Return => ({
 	outMessage: PageOutMessage.RequestedNavigation({ url, isReplace }),
 })
 
-/** `handleToggleEdit`: the per-viewer controls survive, except a viewer's range, which editing replaces. */
+/** The per-viewer controls survive, except a viewer's range, which editing replaces. */
 const toggleEdit = (model: Model): Return =>
 	navigate(
 		model,
@@ -182,7 +182,7 @@ const editModeHref = (model: Model): string => {
 	return dashboardHref(model, { ...kept, mode: "edit" })
 }
 
-/** `PageRefreshProvider.reload`: a new clock, an unsnapped window and the Reload spinner. */
+/** A new clock, an unsnapped window and the Reload spinner. */
 const reload = (model: Model): Return => {
 	const refreshVersion = model.refreshVersion + 1
 	return {
@@ -191,7 +191,7 @@ const reload = (model: Model): Return => {
 	}
 }
 
-/** `open={readOnly ? false : chartPickerOpen}`: the picker closes once writes are unavailable. */
+/** The picker closes once writes are unavailable. */
 const closePicker = (model: Model): Return => {
 	if (!model.pickerDialog.isOpen) return { model }
 	const closed = Dialog.close(model.pickerDialog)
@@ -204,8 +204,8 @@ const closePicker = (model: Model): Return => {
 }
 
 /**
- * The picker's `onSelect` (`addWidget`): the dialog closes on the add, and an add from view mode
- * carries the board into edit mode with the viewer's controls.
+ * The dialog closes on the add, and an add from view mode carries the board into edit mode with the
+ * viewer's controls.
  */
 const addPicked = (
 	model: Model,
@@ -256,8 +256,8 @@ const decodeInterval = (value: string) =>
 	Schema.decodeUnknownOption(DashboardRefreshIntervalSeconds)(Number(value))
 
 /**
- * `handleRefreshIntervalChange`: the cadence rides in `?refresh=` for this viewer, and in edit
- * mode it is also saved as the board's default.
+ * The cadence rides in `?refresh=` for this viewer, and in edit mode it is also saved as the board's
+ * default.
  */
 const pickRefreshInterval = (
 	model: Model,
@@ -377,7 +377,7 @@ const readSnapshot = (model: Model, reason: typeof FallbackReason.Type): Return 
 
 const sortStep = (model: Model, widgetId: string, field: string, isText: boolean): Return => {
 	const current = model.tableSorts[widgetId] ?? { key: null, dir: "desc" as const }
-	// `useSortState` with `resettable`: desc, then asc, then unsorted; text columns start ascending.
+	// desc, then asc, then unsorted; text columns start ascending.
 	const next =
 		current.key === field
 			? current.dir === "asc"
@@ -575,7 +575,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			updated.orgId === context.orgId
 				? receiveDocument(model, context, updated.maybeDocument, { _tag: "Idle" })
 				: { model },
-		// `handleCollectionStuck`: the collections reconnect while the snapshot loads.
+		// The collections reconnect while the snapshot loads.
 		TimedOutLiveDashboard: ({ orgId }) =>
 			orgId !== context.orgId || model.status !== "Loading" || model.snapshot._tag !== "Idle"
 				? { model }
@@ -598,7 +598,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 										},
 									},
 					}),
-		// `retryOrgCollections`: a board that could not be read is read again after the reconnect.
+		// A board that could not be read is read again after the reconnect.
 		ClickedRetrySync: () =>
 			model.status === "Failed"
 				? readSnapshot(model, "retry")

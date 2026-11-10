@@ -24,7 +24,6 @@ const keyToInput = (key: LogKey) => ({
 	spanId: key.spanId === "" ? undefined : key.spanId,
 })
 
-/** `getLogResultAtom({ data: keyToInput(key) })`. */
 export const FetchLog = Command.define("FetchLogPageLog", {
 	args: {
 		key: Schema.String,
@@ -99,6 +98,6 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			})
 		},
 		ClickedRetry: () => requestLog(model, context, "Refresh"),
-		// `openLog`: a log picked from the trace or the context opens its own page.
+		// A log picked from the trace or the context opens its own page.
 		GotDetailMessage: ({ message: inner }) => liftDetail(model, LogDetail.update(model.detail, inner)),
 	})

@@ -50,7 +50,7 @@ import {
 } from "./update"
 import { DEFAULT_THRESHOLD_COLOR } from "./view-rail-thresholds"
 
-/** `emitAttribute`: only a non-empty key becomes a breakdown. */
+/** Only a non-empty key becomes a breakdown. */
 const breakdownValueOf = (key: string): string | null =>
 	Str.trim(key) === "" ? null : `attribute:${Str.trim(key)}`
 
@@ -120,7 +120,7 @@ const tabsStep = (model: Model, context: PageContext, message: Tabs.Message): Re
 	}
 }
 
-/** `useSortState` with `resettable`: desc, then asc, then unsorted; text columns start ascending. */
+/** desc, then asc, then unsorted; text columns start ascending. */
 const sortStep = (model: Model, field: string, isText: boolean): Return => {
 	const current = model.tableSort
 	const tableSort =
@@ -148,8 +148,8 @@ const withListQueryId = (state: EditorState, id: string | null): EditorState =>
 			}
 
 /**
- * `applyChanges`: an invalid query set, or a save in flight, leaves Apply a no-op. An engine list
- * first asks for its query's fresh id (`listQueryId`).
+ * An invalid query set, or a save in flight, leaves Apply a no-op. An engine list first asks for its
+ * query's fresh id (`listQueryId`).
  */
 const apply = (model: Model, context: PageContext, listQueryId: string | null): Return => {
 	const widget = widgetOf(model)

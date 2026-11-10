@@ -236,7 +236,7 @@ export const routeChanged = (
 		searchInput: isOutsideQuery ? query : model.searchInput,
 		lastSentQuery: isOutsideQuery ? query : model.lastSentQuery,
 	}
-	// `useEffectiveTimeRange` re-resolves only on a time change; every other change reads its new keys.
+	// The window re-resolves only on a time change; every other change reads its new keys.
 	return isSameTime(model.search, route.search)
 		? requestAll(next, context, "Load")
 		: {
@@ -325,7 +325,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			const commands = Command.mapMessages(next.commands ?? [], (toggle) =>
 				Message.GotPercentileMessage({ message: toggle }),
 			)
-			// A press on the pressed item empties the group: Base UI reports no value and the page keeps its own.
+			// A press on the pressed item reports no value, and the page keeps its own.
 			const picked = PERCENTILES.find((candidate) => candidate === next.model.values[0])
 			return inner._tag === "ClickedItem" && picked !== undefined
 				? {

@@ -28,8 +28,6 @@ import { Message } from "./message"
 import { type Model } from "./model"
 import { canManageAlerts } from "../../kit/session-grants"
 
-// The Silences tab: what is silenced now, what is scheduled, and what ended recently.
-
 type H = HtmlBuilder<Message>
 
 /** Ended silences stay listed for a week, so a recent maintenance window is still visible. */

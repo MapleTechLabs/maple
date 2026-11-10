@@ -13,7 +13,7 @@ const FALLBACK_TIMEOUT = "10 seconds"
 /** Why the snapshot was read: the live board timed out, or the viewer asked again. */
 export const FallbackReason = Schema.Literals(["live_sync_timeout", "retry"])
 
-/** The board over plain HTTP while the shape stream is down (`useDashboardsFallback` for one board). */
+/** The board over plain HTTP while the shape stream is down. */
 export const FetchDashboardFallback = Command.define("FetchDashboardFallback", {
 	args: { dashboardId: Schema.String, reason: FallbackReason },
 	messages: [Message.CompletedFetchDashboardFallback],

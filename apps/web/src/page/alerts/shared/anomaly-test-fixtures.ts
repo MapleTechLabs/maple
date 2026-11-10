@@ -9,9 +9,6 @@ import type { AlertIncidentRow, AlertRuleRow } from "@maple/web-data/collections
 import { Array as Arr, Schema } from "effect"
 import { DESTINATION_ID, incidentRow, NOW, ruleId, ruleRow } from "../../kit/alert-test-rows"
 
-// Anomaly rules, their alert incidents and the detector's anomaly behind one, for the scene tests
-// and `/lab/anomaly-alerts`.
-
 const MINUTE = 60_000
 const iso = (msBefore: number) => new Date(NOW - msBefore).toISOString()
 

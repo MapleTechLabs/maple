@@ -32,9 +32,6 @@ import { editImpact, type ImpactView } from "./view-impact"
 import { typography, typographyClass } from "@maple/views/ui/typography"
 import { hstack } from "@maple/views/ui/stack"
 
-// `RuleLiveChartHero`: the evaluator's replay of the
-// draft with the threshold, would-fire bands and the dry-run verdict.
-
 type H = HtmlBuilder<Message>
 
 const breachPill = (h: H, stats: BreachStats): ReadonlyArray<Html> => {
@@ -72,7 +69,6 @@ const breachPill = (h: H, stats: BreachStats): ReadonlyArray<Html> => {
 	]
 }
 
-/** `PreviewBadge`: the dry run's value and verdict. */
 const dryRunBadge = (h: H, dryRun: DryRun, form: RuleForm): Html => {
 	if (dryRun.status === "skipped")
 		return typography(h, { size: "xs", tone: "muted" }, ["Skipped · insufficient samples"])
@@ -241,7 +237,7 @@ export const liveChartHero = (
 	)
 }
 
-/** `SkippedWindowsWarning`: windows the evaluator would skip can never fire. */
+/** Windows the evaluator would skip can never fire. */
 const skippedWarning = (h: H, slot: Model["preview"], form: RuleForm): ReadonlyArray<Html> => {
 	const preview = previewStateOf(slot, true, null).preview
 	const skipped = countSkippedWindows(preview)

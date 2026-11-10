@@ -9,9 +9,6 @@ import * as RadioGroup from "@maple/views/ui/radio-group"
 import * as Tabs from "@maple/views/ui/tabs"
 import { defineMessageUnion } from "foldkit/message"
 
-// `ShareDashboardDialog` and `EmbedWidgetDialog`: the board's share
-// links (`dashboardSharesAtom`), the access pick held until the server confirms it, and the writes.
-
 export const ShareRow = Schema.Struct({
 	widgetId: Schema.NullOr(Schema.String),
 	mode: DashboardShareMode,
@@ -48,7 +45,7 @@ export const SharingState = Schema.Struct({
 	embedWidgetId: Schema.NullOr(Schema.String),
 	embedTabs: Tabs.Model,
 	snippetCopy: CopyButton.Model,
-	/** `useState(() => Date.now())` in `EmbedUrlOptions`: the from/to example's clock. */
+	/** The from/to example's clock, read when the embed dialog opens. */
 	embedNowMs: Schema.Number,
 	/** "Make dashboard public" runs two writes; the chart link is minted after the board's. */
 	queuedChart: Schema.NullOr(Schema.String),

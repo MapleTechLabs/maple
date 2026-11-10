@@ -1,6 +1,6 @@
 import { Array as Arr } from "effect"
 
-// The include/exclude arithmetic of a tri-state `FilterSection`, as applied to a page's URL search:
+// The include/exclude arithmetic of a tri-state facet filter, as applied to a page's URL search:
 // an empty list leaves the URL, and a value is never both included and excluded.
 
 export type FacetLists = Readonly<{
@@ -79,7 +79,7 @@ export const facetChipsOf = <P extends string>(
 			: [{ param, label: facet.label, values, isNegated }]
 	})
 
-/** `*FilterChips`: the applied facets, exclusions first. */
+/** The applied facets, exclusions first. */
 export const facetChips = <P extends string>(
 	facets: ReadonlyArray<Readonly<{ label: string; include: P; exclude: P }>>,
 	read: (param: P) => ReadonlyArray<string> | undefined,

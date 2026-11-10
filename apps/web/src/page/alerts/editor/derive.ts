@@ -17,8 +17,6 @@ import type { RuleForm } from "./form"
 import { intervalWindowIssue, queryTimingIssue } from "./interval"
 import { nonZeroOr } from "@maple/ui/lib/number"
 
-// The rule editor's pure helpers: form surface, condition bar, live chart hero, notifications.
-
 /** Editing the org's default anomaly rule: its scope, kind and enabled state are the server's. */
 export const isProtectedDefault = (
 	model: Readonly<{ editingRuleId: string | null; savedForm: RuleForm | null }>,
@@ -92,7 +90,7 @@ export const suggestCriticalThreshold = (form: RuleForm): string => {
 	return String(Number(worse.toPrecision(12)))
 }
 
-/** `deriveValidationIssues`: what the action bar lists as missing. */
+/** What the action bar lists as missing. */
 export const validationIssues = (form: RuleForm, isDefault = false): ReadonlyArray<string> => {
 	if (form.signalType === "anomaly") return anomalyIssues(form, isDefault)
 	const issues: Array<string> = []
@@ -153,7 +151,7 @@ export const saveIssues = (
 	return timingIssue === null ? issues : [...issues, timingIssue]
 }
 
-/** `previewIdentityKey`: the rule as evaluated; a dry-run verdict is only shown while it matches. */
+/** The rule as evaluated; a dry-run verdict is only shown while it matches. */
 export const previewIdentityKey = (form: RuleForm): string => {
 	const {
 		name: _name,
@@ -172,7 +170,7 @@ export const previewIdentityKey = (form: RuleForm): string => {
 	return encodeJson({ ...evaluated, tiers })
 }
 
-/** `makeSuggestedName`: signal and scope, offered while the name is empty. */
+/** Signal and scope, offered while the name is empty. */
 export const suggestedName = (form: RuleForm): string | null => {
 	if (Str.trim(form.name).length > 0) return null
 	if (form.signalType === "anomaly") return `Anomalies · ${anomalyScopeSummary(form)}`
@@ -202,7 +200,7 @@ export const suggestedName = (form: RuleForm): string | null => {
 	return suffix.length > 0 ? `${base} · ${suffix}` : base
 }
 
-/** `formatGroupBySummary`: the hero's "per …" next to the subject. */
+/** The hero's "per …" next to the subject. */
 export const groupBySummary = (form: RuleForm): string | null => {
 	const groupBy =
 		form.signalType === "builder_query" && form.queryBuilderDraft.addOns.groupBy
@@ -212,7 +210,7 @@ export const groupBySummary = (form: RuleForm): string | null => {
 	return visible.length === 0 ? null : Arr.join(visible, ", ")
 }
 
-/** `destinationTarget`: where a destination delivers, ahead of its name. */
+/** Where a destination delivers, ahead of its name. */
 export const destinationTarget = (
 	destination: AlertDestinationDocument,
 ): { primary: string; secondary: string } => {

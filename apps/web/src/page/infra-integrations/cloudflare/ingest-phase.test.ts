@@ -116,7 +116,7 @@ describe("cloudflareIngestPhase", () => {
 		expect(result).toEqual({ kind: "partial", live: 1, total: 2 })
 	})
 
-	// Past the stall window a zone with no traffic is just quiet — nagging about it forever
+	// Past the stall window a zone with no traffic is just quiet: nagging about it forever
 	// would make the banner permanent furniture on any account with an idle domain.
 	it("stops calling a long-quiet zone partial", () => {
 		const result = cloudflareIngestPhase(
@@ -170,7 +170,7 @@ describe("cloudflareIngestPhase", () => {
 			NOW,
 		)
 		// other.com has only walked back 6h, so 18 of the 24 hours are still missing from a
-		// day-wide chart — the caught-up zone next to it must not round that away.
+		// day-wide chart, and the caught-up zone next to it must not round that away.
 		expect(result).toEqual({ kind: "backfilling", progress: 6 / 24 })
 	})
 

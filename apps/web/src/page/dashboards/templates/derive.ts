@@ -51,7 +51,7 @@ export const templateMatches = (template: V2DashboardTemplate, query: string): b
 	)
 }
 
-/** Where a gated template sends you to fix the gap (`setupDestination`). */
+/** Where a gated template sends you to fix the gap. */
 export const setupHref = (template: V2DashboardTemplate): string =>
 	template.requirement?.kind === "integration" ? "/sources/new" : "/settings?tab=ingestion"
 
@@ -88,11 +88,9 @@ const CATEGORY_ICONS = new Map<string, IconName>([
 	["messaging", "PaperPlaneIcon"],
 ])
 
-/** `templateIcon`: the template's own mark, else its category's. */
+/** The template's own mark, else its category's. */
 export const templateIcon = (templateId: string, category: string): IconName =>
 	TEMPLATE_ICONS.get(templateId) ?? CATEGORY_ICONS.get(category) ?? "ChartLineIcon"
-
-// READINESS (`use-template-readiness.ts`)
 
 /** The window `listMetrics` looks back over. */
 export const READINESS_WINDOW_LABEL = "the last 24 h"
@@ -118,7 +116,7 @@ const prefixLabel = (prefix: string): string | null => (prefix === "" ? null : `
 const firstPrefixLabel = (prefixes: ReadonlyArray<string>): string | null =>
 	Option.getOrNull(Arr.findFirst(Arr.map(prefixes, prefixLabel), (value) => value !== null))
 
-/** `computeTemplateReadiness`: `metrics: null` (unknown) reads every template as ready. */
+/** `metrics: null` (unknown) reads every template as ready. */
 export const computeReadiness = (
 	templates: ReadonlyArray<V2DashboardTemplate>,
 	metrics: ReadonlyArray<MetricSeen> | null,
@@ -152,8 +150,8 @@ export const computeReadiness = (
 }
 
 /**
- * `previewVariableValues`: what a template's variables start on with no options loaded, the
- * declared default, else All. Without these a `"$project"` filter reaches the query literally.
+ * What a template's variables start on with no options loaded: the declared default, else All.
+ * Without these a `"$project"` filter reaches the query literally.
  */
 export const previewVariableValues = (variables: V2DashboardTemplatePreview["variables"]): VariableValues =>
 	Rec.fromEntries(

@@ -59,8 +59,6 @@ import { hstack, vstack } from "@maple/views/ui/stack"
 import { typography } from "@maple/views/ui/typography"
 import { canManageAlerts } from "../../kit/session-grants"
 
-// `AlertsPage` and `AlertsHub`: the `/alerts` page and the rail of its sections.
-
 type H = HtmlBuilder<Message>
 
 const TAB_LABEL = {
@@ -176,7 +174,6 @@ const rail = (h: H, model: Model, overview: Option.Option<AlertsOverviewReady>, 
 		"Alerts sections",
 	)
 
-/** A "New rule" menu row: icon, label and one line of what it watches. */
 const newRuleItem = (
 	h: H,
 	value: string,

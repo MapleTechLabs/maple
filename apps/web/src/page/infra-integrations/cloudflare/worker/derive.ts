@@ -18,7 +18,6 @@ export type PageData = Readonly<{
 	currentVersion: string | null
 }>
 
-/** `WorkerDetailPage`'s reads, combined as the route does. */
 export const pageOf = (model: Model): PageData => {
 	const workers = successOf(model.workers.data)
 	const durableObjects = successOf(model.platform.data)?.durableObjects ?? []

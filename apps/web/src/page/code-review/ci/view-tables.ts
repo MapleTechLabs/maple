@@ -28,8 +28,6 @@ import { typography, typographyClass } from "@maple/views/ui/typography"
 import { hstack } from "@maple/views/ui/stack"
 import { Array as Arr } from "effect"
 
-// `WorkflowsTable`, `RedStreakLine` and `JobsTable`.
-
 type H = HtmlBuilder<Message>
 type TimeContext = Readonly<{ nowMs: number; timeZone: string }>
 
@@ -77,7 +75,7 @@ const redStreakLine = (h: H, red: CodeReviewCiRedStreak, time: TimeContext): Htm
 							h.Class(typographyClass({ tone: "foreground", hoverUnderline: true })),
 							h.Href(traceHref),
 							h.Title("Open the first failed run's trace"),
-							// `event.stopPropagation()` keeps the row's click off; the page follows the link itself.
+							// Keeps the row's click off; the page follows the link itself.
 							h.OnClick(Message.ClickedTraceLink({ url: traceHref }), {
 								defaultAction: "Prevent",
 								propagation: "Stop",

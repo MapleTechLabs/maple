@@ -10,8 +10,8 @@ import {
 import { Effect, Schema } from "effect"
 import { settled } from "@maple/views/data/load-failure"
 
-// The pod list and its restarts as every Kubernetes page reads them (`listPodsResultAtom`,
-// `podRestartsResultAtom`). Pages wrap these Effects in their own Commands.
+// The pod list and its restarts as every Kubernetes page reads them. Pages wrap these Effects in
+// their own Commands.
 
 export const PodsPage = Schema.Struct(ListPodsResponse.fields)
 export type PodsPage = typeof PodsPage.Type
@@ -123,7 +123,6 @@ export const fetchPodSeries = (input: PodSeriesInput) =>
 		settled,
 	)
 
-/** `POD_METRIC_LABELS`. */
 export const POD_METRIC_LABELS = new Map<PodMetric, string>([
 	["cpu_usage", "CPU usage"],
 	["cpu_limit", "CPU / limit"],

@@ -45,7 +45,7 @@ export const warehouseFiltersOf = (search: Search, window: TimeWindow): Warehous
 	deploymentEnvs: search.env ? [search.env] : undefined,
 })
 
-/** `listQuery` (`ErrorsHub`): every param a filter the issues API applies itself. */
+/** Every param a filter the issues API applies itself. */
 export const listQueryOf = (search: Search, rankedHashes: ReadonlyArray<string> | null): ListQuery => {
 	const view = viewOf(search)
 	const sort = sortOf(search)
@@ -68,7 +68,6 @@ export const listQueryOf = (search: Search, rankedHashes: ReadonlyArray<string> 
 	}
 }
 
-// The states each hub view covers, and the signal sort.
 const VIEW_STATES = {
 	open: ["triage", "regressed", "todo", "in_progress", "in_review"],
 	closed: ["verifying", "done", "cancelled", "wontfix"],
@@ -110,7 +109,6 @@ export const uniqueIssues = (
 	return Arr.filter([...byId.values()], (issue) => viewCovers(view, issue.workflowState))
 }
 
-// The error kind labels and the active filter chips.
 export const KIND_LABEL = {
 	error: "Exceptions",
 	alert: "Alert rules",
@@ -157,7 +155,6 @@ export const sparkWindowOf = (window: TimeWindow) => ({
 const dataOr = <A, E>(data: AsyncData.AsyncData<A, E>, fallback: A): A =>
 	Option.getOrElse(AsyncData.getData(data), () => fallback)
 
-/** The issues on screen: every loaded page, in order. */
 export const issuesOf = (model: Model): ReadonlyArray<ErrorIssueDocument> =>
 	uniqueIssues(
 		Arr.map(model.pages, (slot) =>

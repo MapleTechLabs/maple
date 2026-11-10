@@ -7,8 +7,8 @@ import type * as MenuView from "@maple/views/ui/menu-view"
 import { pickList } from "./pick-list"
 
 /**
- * `DestinationPicker`: the alert destinations a form notifies, each removable, then an "Add
- * destination" menu of the rest; the owner keeps the menu's Model and the chosen ids.
+ * The alert destinations a form notifies, each removable, then an "Add destination" menu of the
+ * rest; the owner keeps the menu's Model and the chosen ids.
  */
 export const destinationPicker = <M, Id extends string>(
 	h: HtmlBuilder<M>,

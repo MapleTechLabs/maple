@@ -11,12 +11,9 @@ import type { Resources } from "../../../platform/resources"
 import * as Combobox from "@maple/views/ui/combobox"
 import type { DestinationForm } from "./form"
 
-// `ChatDestinationFields`: the channel a `chat`
-// destination posts to, from what the workspace's connector says the bot can post in.
-
 export const Model = Schema.Struct({
 	channels: Keyed.KeyedSchema(Schema.Array(V2ChatDestination), LoadFailure),
-	/** Single mode over channel labels: Base UI writes the picked label into the input. */
+	/** Single mode over channel labels: the combobox writes the picked label into the input. */
 	combobox: Combobox.Model,
 })
 export type Model = typeof Model.Type
@@ -103,7 +100,7 @@ export const update = (model: Model, message: Message, form: DestinationForm): R
 		CompletedFetchChannels: ({ key, result }) => {
 			const channels = Keyed.accept(model.channels, key, result)
 			const next = { ...model, channels }
-			// The stored channel's label is known once its list answers (`itemToStringLabel`).
+			// The stored channel's label is known once its list answers.
 			const isEchoing = model.combobox.inputValue === selectedLabel(model, form)
 			return {
 				model: isEchoing

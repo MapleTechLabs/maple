@@ -90,7 +90,7 @@ export const FetchLiveTraffic = Command.define("FetchCloudflareTopTraffic", {
 
 export const CompleteReloadSpin = reloadSpin("CompleteCloudflareZoneReloadSpin", Message.CompletedReloadSpin)
 
-/** `useLinkedCursor` on the signal strips. */
+/** One cursor shared by the signal strips. */
 export const MountLinkedCursor = Mount.defineStream("MountCloudflareZoneLinkedCursor", {
 	messages: [Message.AttachedLinkedCursor],
 	execute: ({ element }) => linkedCursorStream(element, Message.AttachedLinkedCursor()),

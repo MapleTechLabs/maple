@@ -26,8 +26,6 @@ import { hstack } from "@maple/views/ui/stack"
 import { columnClass } from "@maple/views/ui/column"
 import { Array as Arr } from "effect"
 
-// The AI tab's building blocks: its sections and product icons.
-
 type H = HtmlBuilder<Message>
 
 export const plural = (count: number, one: string, many: string) =>
@@ -70,7 +68,7 @@ const PRODUCT_COLORS = new Map<string, readonly [string, string]>([
 
 const FALLBACK = ["var(--muted-foreground)", "var(--muted-foreground)"] as const
 
-/** `AiProductIcon`: the brand mark in its own hue, a light and a dark variant. */
+/** The brand mark in its own hue, a light and a dark variant. */
 export const aiProductIcon = (h: H, product: string, size = 16, className?: string): Html => {
 	const [light, dark] = PRODUCT_COLORS.get(product) ?? FALLBACK
 	return icon(h, PRODUCT_ICONS.get(product) ?? "ChatBubbleSparkleIcon", {
@@ -84,7 +82,7 @@ export const aiProductIcon = (h: H, product: string, size = 16, className?: stri
 	})
 }
 
-/** `AiPanel`: a titled card, optionally with the capped table and its Expand button. */
+/** A titled card, optionally with the capped table and its Expand button. */
 export const aiPanel = (
 	h: H,
 	options: Readonly<{
@@ -180,7 +178,6 @@ const crawlLine = (
 
 const formatRatio = (ratio: number) => (ratio < 10 ? ratio.toFixed(1) : formatNumber(Math.round(ratio)))
 
-/** `AiProductCard`. */
 export const aiProductCard = (
 	h: H,
 	product: AiProduct,
@@ -252,7 +249,6 @@ export type TableSurface = Readonly<{ maxHeight: string; surfaceClass: string }>
 export const CARD_SURFACE: TableSurface = { maxHeight: "360px", surfaceClass: "bg-card" }
 export const DIALOG_SURFACE: TableSurface = { maxHeight: "min(62vh, 640px)", surfaceClass: "bg-popover" }
 
-/** `shareBar`. */
 const shareBarStyle = (share: number): Readonly<Record<string, string>> => {
 	const pct = Math.min(100, share * 100)
 	if (!Number.isFinite(pct) || pct < 0.5) return {}
@@ -282,7 +278,6 @@ const shareChange = (h: H, share: number, points: number | null): Html => {
 	)
 }
 
-/** `AiReferralRanking`'s table. */
 export const rankingTable = (h: H, ranks: ReadonlyArray<AiReferralRank>, surface: TableSurface): Html =>
 	dataTable(
 		h,
@@ -356,7 +351,6 @@ const purposeBadge = (h: H, purpose: AiCrawlPurpose): Html => {
 	)
 }
 
-/** `AiCrawlerTable`'s table. */
 export const crawlerTable = (
 	h: H,
 	crawlers: AiCrawlers["crawlers"],
@@ -475,7 +469,7 @@ const crawlerMarks = (h: H, crawlers: ReadonlyArray<string>): Html => {
 	])
 }
 
-/** `AiContentFormats`: one card per format, then the other files. */
+/** One card per format, then the other files. */
 export const contentFormats = (h: H, formats: AiCrawlers["formats"]): Html => {
 	const byFormat = new Map(Arr.map(formats, (row) => [row.format, row]))
 	const other = byFormat.get("other")

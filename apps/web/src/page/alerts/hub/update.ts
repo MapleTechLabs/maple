@@ -86,7 +86,6 @@ export const NEW_RULE_MENU_ID = "alerts-new-rule-menu"
 export const WINDOW_DIALOG_ID = "alerts-maintenance-window"
 const DELETE_WINDOW_DIALOG_ID = "alerts-delete-window"
 
-/** Runs the delete dialog's update; `Closed` (Escape, Cancel, success) forgets the target. */
 const updateDeleteDialog = (model: Model, step: ReturnType<typeof Dialog.update>): Return => ({
 	model: {
 		...model,
@@ -101,7 +100,6 @@ const updateDeleteDialog = (model: Model, step: ReturnType<typeof Dialog.update>
 const deliveriesKey = (context: PageContext) =>
 	requestKey(context.orgId, "alertDeliveries.list", { query: { limit: 100 } })
 
-/** One `Keyed.request` on the deliveries slot; `Refresh` is the `alertDeliveryEvents` invalidation. */
 const requestDeliveries = (model: Model, context: PageContext, mode: Keyed.RequestMode): Requested => {
 	const key = deliveriesKey(context)
 	return Option.match(Keyed.request(model.deliveries, key, mode), {
@@ -278,7 +276,6 @@ const clockRead = (model: Model, context: PageContext, nowMs: number): Return =>
 	return { model: step.model, commands: step.commands }
 }
 
-/** `reactivityKeys: ["alertDeliveryEvents"]`: both reads revalidate. */
 const refreshDeliveries = (model: Model, context: PageContext) => {
 	const overview = requestDeliveries(model, context, "Refresh")
 	const routing = requestRoutingDeliveries(overview.model, context, "Refresh")
@@ -424,7 +421,6 @@ const destinationById = (model: Model, id: AlertDestinationId) =>
 	)
 
 const toggleRule = (model: Model, ruleId: AlertRuleId, isEnabled: boolean): Return =>
-	// `Mutation.make` serializes the write on one permit: a second toggle waits for the first.
 	model.togglingRuleId !== null
 		? { model }
 		: { model: { ...model, togglingRuleId: ruleId }, commands: [ToggleRule({ ruleId, isEnabled })] }
@@ -464,8 +460,6 @@ const confirmDelete = (model: Model): Return => {
 			}
 }
 
-// DESTINATION DIALOG
-
 /** The dialog's outcome as the page reports it: toasts, and "Destination created" for a new one. */
 const liftDestinationDialog = (model: Model, step: ReturnType<typeof DestinationDialog.update>): Return => ({
 	model: { ...model, destinationDialog: step.model },
@@ -481,8 +475,6 @@ const liftDestinationDialog = (model: Model, step: ReturnType<typeof Destination
 				}),
 })
 
-// ESCALATION CHAINS
-
 const chainsOf = (model: Model): ReadonlyArray<V2EscalationChain> =>
 	Option.getOrElse(AsyncData.getData(model.chains.data), () => [])
 
@@ -493,7 +485,6 @@ const refreshChains = (model: Model, context: PageContext): Return => {
 	return { model: schedules.model, commands: [...chains.commands, ...schedules.commands] }
 }
 
-/** The chain dialog's outcome: a toast, and the list read again. */
 const liftChainDialog = (
 	model: Model,
 	context: PageContext,
@@ -548,7 +539,6 @@ const inUseMessage = (model: Model, chainId: EscalationChainId): string => {
 	return `Still used by ${listed}. Remove it from ${tiers} first.`
 }
 
-/** Runs the chain delete dialog's update; `Closed` forgets the target and its error. */
 const updateDeleteChainDialog = (model: Model, step: ReturnType<typeof Dialog.update>): Return => {
 	const isClosed = step.outMessage?._tag === "Closed"
 	return {
@@ -628,9 +618,6 @@ const deletedChain = (
 	})
 }
 
-// ON-CALL SCHEDULES
-
-/** A write changed the schedules: read them again under a new generation. */
 const refreshSchedules = (model: Model, context: PageContext): Return => {
 	const step = requestSchedules(model, context, "Supersede")
 	return { model: step.model, commands: step.commands }
@@ -657,7 +644,6 @@ const scheduleInUseMessage = (model: Model, scheduleId: OnCallScheduleId): strin
 		: `Still paged by ${Array.join(names, ", ")}. Remove it from those chains first.`
 }
 
-/** Runs the schedule delete dialog's update; `Closed` forgets the target and its error. */
 const updateDeleteScheduleDialog = (model: Model, step: ReturnType<typeof Dialog.update>): Return => {
 	const isClosed = step.outMessage?._tag === "Closed"
 	return {
@@ -733,8 +719,6 @@ const deletedSchedule = (
 	})
 }
 
-// SILENCES
-
 const liftSilenceDialog = (
 	model: Model,
 	context: PageContext,
@@ -769,8 +753,6 @@ const endSilence = (model: Model, silenceId: AlertSilenceId): Return =>
 				model: { ...model, endingSilenceIds: [...model.endingSilenceIds, silenceId] },
 				commands: [EndHubSilence({ silenceId })],
 			}
-
-// MAINTENANCE WINDOWS
 
 const windowsOf = (model: Model): ReadonlyArray<V2AlertMaintenanceWindow> =>
 	Option.getOrElse(AsyncData.getData(model.windows.data), () => [])
@@ -811,7 +793,6 @@ const toggleWindow = (model: Model, windowId: AlertMaintenanceWindowId): Return 
 		},
 	)
 
-/** Runs the window delete dialog's update; `Closed` forgets the target. */
 const updateDeleteWindowDialog = (model: Model, step: ReturnType<typeof Dialog.update>): Return => ({
 	model: {
 		...model,
@@ -877,10 +858,7 @@ const deletedWindow = (
 	})
 }
 
-// ROW MENUS
-
 /**
-
  * Row menu ids carry what they act on: `rule:<id>@<tag group>` (a rule is listed under each of
  * its tags) or `destination:<id>`.
  */
@@ -901,7 +879,6 @@ const toggleMonitor = (model: Model, monitorId: UptimeMonitorId, enabled: boolea
 				commands: [ToggleMonitor({ monitorId, enabled })],
 			}
 
-/** Runs the monitor delete dialog's update; `Closed` forgets the target. */
 const updateDeleteMonitorDialog = (model: Model, step: ReturnType<typeof Dialog.update>): Return => ({
 	model: {
 		...model,
@@ -947,7 +924,6 @@ const confirmDeleteMonitor = (model: Model): Return => {
 		: { model: { ...model, deletingMonitorId: id }, commands: [DeleteMonitor({ monitorId: id })] }
 }
 
-/** A write changed the list: read it again under a new generation. */
 const refreshMonitors = (model: Model, context: PageContext): Return => {
 	const step = requestMonitors(model, context, "Supersede")
 	return { model: step.model, commands: step.commands }
@@ -1064,7 +1040,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			orgId === context.orgId && (model.rules === null || model.incidents === null)
 				? { model: { ...model, isLoadFailed: true } }
 				: { model },
-		// `retryOrgCollections`: a stopped shape syncs again only on fresh collections.
+		// A stopped shape syncs again only on fresh collections.
 		ClickedRetryLoad: () => ({
 			model: { ...model, isLoadFailed: false },
 			outMessage: PageOutMessage.RequestedReconnectOrgCollections(),
@@ -1157,7 +1133,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 				...model,
 				testingDestinationIds: withoutId(model.testingDestinationIds, destinationId),
 			}
-			// The test lands in the delivery log: `reactivityKeys: ["alertDeliveryEvents"]`.
+			// The test lands in the delivery log.
 			const refreshed = refreshDeliveries(settled, context)
 			return {
 				model: refreshed.model,
@@ -1171,7 +1147,6 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		},
 		ClickedConfirmDeleteDestination: () => confirmDelete(model),
 		GotDeleteDialogMessage: ({ message: child }) =>
-			// `ConfirmDialog` ignores dismissal while the delete is pending.
 			model.confirmDeleteId !== null && model.deletingDestinationIds.includes(model.confirmDeleteId)
 				? { model }
 				: updateDeleteDialog(model, Dialog.update(model.deleteDialog, child)),

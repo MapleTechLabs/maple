@@ -7,8 +7,6 @@ import * as TimeRangePicker from "../../../kit/time-range-picker"
 import { TracedService } from "../../kit/traced"
 import { AwsStatus, FleetRead, SparkRead } from "../data"
 
-// `/infra/aws`.
-
 export const Model = Schema.Struct({
 	search: InfraAwsSearch,
 	window: Schema.NullOr(TimeWindow),

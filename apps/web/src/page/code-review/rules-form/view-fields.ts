@@ -13,8 +13,6 @@ import { typography } from "@maple/views/ui/typography"
 import { vstackClass } from "@maple/views/ui/stack"
 import { Array as Arr } from "effect"
 
-// The form's text fields and lenses (`ReviewRulesForm`).
-
 type H = HtmlBuilder<Message>
 
 export const idsOf = (model: Model, name: string): FieldIds => ({
@@ -24,7 +22,7 @@ export const idsOf = (model: Model, name: string): FieldIds => ({
 	description: `${model.id}-${name}-description`,
 })
 
-/** Base UI's field state for a text control: dirty against what it was built with. */
+/** The field state of a text control: dirty against what it was built with. */
 export const textState = (model: Model, name: TextField): FieldState => ({
 	isInvalid: false,
 	isDirty: model.state[name] !== model.saved[name],
@@ -66,7 +64,6 @@ export type TextFieldOptions = Readonly<{
 	description: ReadonlyArray<Html | string>
 }>
 
-/** A `<Field>` with a small `<Textarea>`. */
 export const textareaField = (h: H, model: Model, options: TextFieldOptions): Html => {
 	const ids = idsOf(model, options.slug)
 	const state = textState(model, options.name)
@@ -102,7 +99,6 @@ export type NumberFieldOptions = Readonly<{
 	description: ReadonlyArray<Html | string>
 }>
 
-/** A `<Field>` with a numeric `<Input>`. */
 export const numberField = (h: H, model: Model, options: NumberFieldOptions): Html => {
 	const ids = idsOf(model, options.slug)
 	const state = textState(model, options.name)

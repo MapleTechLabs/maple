@@ -68,8 +68,6 @@ export type FrameReturn = Readonly<{
 	out: FrameOut | null
 }>
 
-// COMMANDS
-
 export const ResolveWindow = resolveWindowCommand(
 	"ResolveCodeReviewWindow",
 	FrameMessage.CompletedResolveWindow,

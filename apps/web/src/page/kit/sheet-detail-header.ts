@@ -3,8 +3,7 @@ import type { Html, HtmlBuilder } from "foldkit/html"
 import { dialogDescription, dialogHeader, dialogTitle } from "@maple/views/ui/dialog-view"
 import { detailEyebrow } from "./detail-header"
 
-// `SheetDetailHeader`: a detail sheet's
-// eyebrow kind, title, screen-reader description and meta row.
+// A detail sheet's eyebrow kind, title, screen-reader description and meta row.
 
 export type SheetDetailHeaderOptions = Readonly<{
 	/** The sheet Dialog's id: the title and description are its `aria-labelledby`/`describedby`. */

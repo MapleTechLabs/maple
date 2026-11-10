@@ -25,11 +25,9 @@ import { DEFAULT_PRESET } from "./update"
 import { hostTable, hostTableLoading } from "./view-table"
 import { hstack } from "@maple/views/ui/stack"
 
-// `HostsPage` / `HostList`.
-
 type H = HtmlBuilder<Message>
 
-/** `HostRow` columns `useTableSort` reads by key. */
+/** The `HostRow` columns the table sorts by key. */
 export const HOST_SORT_ACCESSORS: SortAccessors<HostRow> = new Map<string, (row: HostRow) => string | number>(
 	[
 		["cpuPct", (row) => row.cpuPct],
