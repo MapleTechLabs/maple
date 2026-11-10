@@ -38,7 +38,7 @@ import {
 } from "effect"
 import { FetchHttpClient, HttpClient } from "effect/http"
 import { Database } from "@maple/backend/platform/DatabaseLive"
-import { makeDbExecute } from "@maple/backend/platform/db-execute"
+import { makeDbExecute, makePersistenceErrorMapper } from "@maple/backend/platform/db-execute"
 import { Env } from "@maple/backend/platform/Env"
 import { PlanetScaleOAuthService } from "@maple/backend/services/auth/PlanetScaleOAuthService"
 import { PlanetScaleWebhookService } from "./PlanetScaleWebhookService"
@@ -182,10 +182,10 @@ export interface PlanetScaleServiceApi {
 	>
 }
 
-const toPersistenceError = (error: unknown) =>
-	new IntegrationsPersistenceError({
-		message: error instanceof Error ? error.message : "PlanetScale inventory persistence failed",
-	})
+const toPersistenceError = makePersistenceErrorMapper(
+	IntegrationsPersistenceError,
+	"PlanetScale inventory persistence failed",
+)
 
 // Lenient decoders for the fields we consume. The SDK returns bodies unchecked while typing
 // them as complete, and the region/kind shapes differ between the Vitess and Postgres

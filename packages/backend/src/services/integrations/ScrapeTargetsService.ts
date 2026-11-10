@@ -53,7 +53,7 @@ import {
 } from "@maple/backend/platform/Crypto"
 import { forkRequestScoped } from "@maple/backend/platform/fork-request-scoped"
 import { Database } from "@maple/backend/platform/DatabaseLive"
-import { makeDbExecute } from "@maple/backend/platform/db-execute"
+import { makeDbExecute, makePersistenceErrorMapper } from "@maple/backend/platform/db-execute"
 import { msToSqlTimestamp } from "@maple/backend/platform/time"
 import { Env } from "@maple/backend/platform/Env"
 import {
@@ -288,10 +288,10 @@ export interface ScrapeTargetsServiceApi {
 /** A probe parses at most this much of a target's body; the scraper itself reads up to 32 MiB. */
 const PROBE_MAX_BODY_BYTES = 4 * 1024 * 1024
 
-const toPersistenceError = (error: unknown) =>
-	new ScrapeTargetPersistenceError({
-		message: error instanceof Error ? error.message : "Scrape target persistence failed",
-	})
+const toPersistenceError = makePersistenceErrorMapper(
+	ScrapeTargetPersistenceError,
+	"Scrape target persistence failed",
+)
 
 const toEncryptionError = (message: string) => new ScrapeTargetEncryptionError({ message })
 

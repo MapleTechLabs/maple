@@ -35,7 +35,7 @@ import {
 } from "effect"
 import { FetchHttpClient, HttpClient } from "effect/http"
 import { Database } from "@maple/backend/platform/DatabaseLive"
-import { makeDbExecute } from "@maple/backend/platform/db-execute"
+import { makeDbExecute, makePersistenceErrorMapper } from "@maple/backend/platform/db-execute"
 import { summarizeCause } from "@maple/backend/platform/describe-cause"
 import { Env } from "@maple/backend/platform/Env"
 import { PlanetScaleOAuthService } from "@maple/backend/services/auth/PlanetScaleOAuthService"
@@ -86,10 +86,10 @@ type OrgOutcome =
 	| { readonly _tag: "Skipped" }
 	| { readonly _tag: "Polled"; readonly branches: number; readonly rows: number; readonly failed: boolean }
 
-const toPersistenceError = (error: unknown) =>
-	new IntegrationsPersistenceError({
-		message: error instanceof Error ? error.message : "PlanetScale metrics persistence failed",
-	})
+const toPersistenceError = makePersistenceErrorMapper(
+	IntegrationsPersistenceError,
+	"PlanetScale metrics persistence failed",
+)
 
 /** A managed target scraping with a stored service token: Prometheus already has the branch. */
 export const scrapesWithToken = (target: ScrapeTargetRow | null) =>
