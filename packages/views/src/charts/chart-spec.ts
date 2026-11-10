@@ -500,6 +500,24 @@ export const specCache = <Rows extends ReadonlyArray<unknown>, Rest extends obje
 		return spec
 	}
 }
+
+/**
+ * A function of a rows array alone that keeps its answer per array: a chart re-rendered over the
+ * same rows gets the same value back, which is what `specCache` keys on. Rows are never edited in place.
+ */
+export const rowsCache = <Rows extends ReadonlyArray<unknown>, A extends object>(
+	compute: (data: Rows) => A,
+): ((data: Rows) => A) => {
+	const cache = new WeakMap<Rows, A>()
+	return (data) => {
+		const cached = cache.get(data)
+		if (cached !== undefined) return cached
+		const result = compute(data)
+		cache.set(data, result)
+		return result
+	}
+}
+
 export const decodeChartSpec = Schema.decodeUnknownOption(ChartSpecJson)
 
 /** What a tooltip body renders: the focused datum, reduced to data. */
