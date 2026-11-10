@@ -145,9 +145,9 @@ import {
 	CH,
 	computeBucketSecondsForRange,
 	formatWarehouseDateTime,
-	QueryEngineExecuteBatchResponse,
 	parseSpanEvents,
 } from "@maple/query-engine"
+import { QueryEngineExecuteBatchResponse } from "@maple/domain/query-engine"
 
 import {
 	containerMetricSpec,

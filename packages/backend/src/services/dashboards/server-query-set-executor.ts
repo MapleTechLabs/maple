@@ -12,7 +12,7 @@
  * be a second set of bucketing, formula and comparison-window decisions to keep
  * in step, and they would drift.
  */
-import { QueryEngineExecuteRequest } from "@maple/query-engine"
+import { QueryEngineExecuteRequest } from "@maple/domain/query-engine"
 import type { QuerySetExecutor } from "@maple/query-engine/query-set"
 import { Effect } from "effect"
 import type { QueryEngineServiceApi } from "@maple/backend/services/warehouse/QueryEngineService"

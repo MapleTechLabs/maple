@@ -1,11 +1,11 @@
 import { Clock, Effect, Schema, Array as Arr } from "effect"
 import {
-	QueryEngineExecuteRequest,
 	coerceErrorsByTypeRows,
 	coerceErrorsSummary,
 	warehouseDateTimeToIso,
 	formatWarehouseDateTime,
 } from "@maple/query-engine"
+import { QueryEngineExecuteRequest } from "@maple/domain/query-engine"
 import {
 	DeploymentEnvironment,
 	ErrorsByTypeRequest,

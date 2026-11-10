@@ -1,12 +1,12 @@
 import { Clock, Effect, Schema, Array as Arr, String as Str } from "effect"
 import {
-	QueryEngineExecuteRequest,
 	coerceServiceOverviewRows,
 	formatWarehouseDateTime,
 	parseWarehouseDateTime,
 	serviceHealthSnapshotHours,
 	windowDurationSeconds,
 } from "@maple/query-engine"
+import { QueryEngineExecuteRequest } from "@maple/domain/query-engine"
 import {
 	CommitSha,
 	DeploymentEnvironment,

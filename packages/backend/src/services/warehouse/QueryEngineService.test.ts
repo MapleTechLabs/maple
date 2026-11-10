@@ -27,10 +27,12 @@ import {
 	baselineWarehouseCapabilities,
 	deriveWarehouseCapabilities,
 	type WarehouseCapabilities,
+} from "@maple/query-engine"
+import {
 	QueryEngineExecuteRequest,
 	type QueryEngineResult,
 	type TimeseriesPoint,
-} from "@maple/query-engine"
+} from "@maple/domain/query-engine"
 import {
 	type AlertEvaluateRequest,
 	makeQueryEngineEvaluate,

@@ -49,11 +49,11 @@ import {
 	formatWarehouseDateTime,
 	parseWarehouseDateTime,
 	planWidgetRequest,
-	QueryEngineExecuteRequest,
 	rawSqlRowsForDisplay,
 	type PlannedWidgetRequest,
 	type VariableValues,
 } from "@maple/query-engine"
+import { QueryEngineExecuteRequest } from "@maple/domain/query-engine"
 import { fallbackStrategyFromWire, runQuerySet } from "@maple/query-engine/query-set"
 import { makeExecuteRawSql } from "@maple/query-engine/runtime"
 import type { WarehouseExecutionError } from "@maple/query-engine/execution"

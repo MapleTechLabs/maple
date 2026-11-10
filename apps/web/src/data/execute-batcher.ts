@@ -4,7 +4,7 @@ import {
 	type QueryEngineBatchOutcome,
 	type QueryEngineExecuteRequest,
 	QueryEngineExecuteResponse,
-} from "@maple/query-engine"
+} from "@maple/domain/query-engine"
 import { MissingBatchResultError } from "@maple/web-data/warehouse/warehouse-services"
 import { Cause, Deferred, Duration, Effect, Option, Ref, type Scope, Array as Arr } from "effect"
 

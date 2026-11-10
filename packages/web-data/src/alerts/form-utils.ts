@@ -38,7 +38,7 @@ import type {
 	V2AlertThreshold,
 } from "@maple/domain/http/v2"
 import { fromV2Threshold } from "@maple/domain/http/v2"
-import type { QueryEngineAlertReducer } from "@maple/query-engine"
+import type { QueryEngineAlertReducer } from "@maple/domain/query-engine"
 import { Array as Arr, Option, Schema, Record as Rec, String as Str } from "effect"
 import {
 	buildTimeseriesQuerySpec,

@@ -9,7 +9,7 @@ import { doc, type DocBlock, type NextCall, type ToolDoc } from "../lib/tool-doc
 import { Effect, Schema, Array as Arr } from "effect"
 import { ExploreAttributesOutput } from "@maple/domain/mcp-outputs"
 import { exploreAttributeKeys, exploreAttributeValues } from "@maple/query-engine/observability"
-import { MetricType } from "@maple/query-engine"
+import { MetricType } from "@maple/domain/query-engine"
 import { provideWarehouseExecutorFromTenant } from "@maple/backend/services/warehouse/WarehouseQueryService"
 
 const WINDOW = P.timeWindow({ defaultHours: 6, maxHours: MCP_DISCOVERY_MAX_HOURS })

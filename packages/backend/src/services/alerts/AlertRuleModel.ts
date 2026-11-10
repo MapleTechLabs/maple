@@ -1,13 +1,11 @@
+import { alertQueryLimits, alertRuleIntervalMinutes, alertWindowBucketSeconds } from "@maple/query-engine"
 import {
-	alertQueryLimits,
-	alertRuleIntervalMinutes,
-	alertWindowBucketSeconds,
 	CompiledAlertQueryPlan,
 	QueryEngineAlertReducer,
 	QueryEngineNoDataBehavior,
 	type QueryEngineSampleCountStrategy,
 	QuerySpec,
-} from "@maple/query-engine"
+} from "@maple/domain/query-engine"
 import { buildTimeseriesQuerySpec, resolveGroupBy } from "@maple/query-engine/query-builder"
 import { prepareRawSql, type AlertBucketSource } from "@maple/query-engine/runtime"
 import {

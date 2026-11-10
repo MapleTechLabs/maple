@@ -2,7 +2,7 @@ import {
 	QUERY_ENGINE_BATCH_MAX,
 	type QueryEngineBatchOutcome,
 	QueryEngineExecuteRequest,
-} from "@maple/query-engine"
+} from "@maple/domain/query-engine"
 import { Effect, Exit, Fiber, Ref, type Scope, Array as Arr } from "effect"
 import { TestClock } from "effect/testing"
 import { assert, describe, expect, test } from "vitest"
