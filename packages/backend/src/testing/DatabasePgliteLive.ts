@@ -3,7 +3,7 @@ import type { MapleDb } from "@maple/db/client"
 import { makeMaplePgliteDb } from "@maple/db/pglite"
 import { Effect, type Scope } from "effect"
 import type { SqlError } from "effect/sql/SqlError"
-import { Database, type DatabaseApi, executeWithSpan } from "./DatabaseLive"
+import { Database, type DatabaseApi, executeWithSpan } from "../platform/DatabaseLive"
 
 /** `db.namespace` for the embedded Postgres used by vitest / local entrypoints. */
 export const PGLITE_DB_NAMESPACE = "pglite"

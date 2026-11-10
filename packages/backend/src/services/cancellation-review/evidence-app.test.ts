@@ -2,7 +2,7 @@ import type { IntegrationInventory } from "@maple/domain/integration-inventory"
 import { OrgId, SourceId, SourcePlatform } from "@maple/domain/primitives"
 import { Effect, Layer, Schema, Array as Arr, String as Str } from "effect"
 import { afterEach, describe, expect, it } from "vitest"
-import { cleanupTestDbs, createTestDb, executeSql, type TestDb } from "@maple/backend/platform/test-pglite"
+import { cleanupTestDbs, createTestDb, executeSql, type TestDb } from "@maple/backend/testing/test-pglite"
 import {
 	agentFeedbackOf,
 	apiKeysOf,

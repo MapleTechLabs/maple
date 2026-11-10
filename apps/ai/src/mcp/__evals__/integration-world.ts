@@ -11,7 +11,7 @@
  * - Prometheus: `legacy-exporter` scrapes fail with connection refused; `node-exporter` is fine.
  * - No chat workspace is linked.
  */
-import { executeSql } from "@maple/backend/platform/test-pglite"
+import { executeSql } from "@maple/backend/testing/test-pglite"
 import { parseWarehouseDateTime } from "@maple/query-engine"
 import type { EvalRuntime } from "./eval-runtime"
 import type { FixtureRule } from "./fake-warehouse"

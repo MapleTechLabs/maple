@@ -17,7 +17,7 @@ import {
 import { afterEach, assert, describe, it } from "@effect/vitest"
 import { Clock, Duration, Effect, Layer, Schema, Array as Arr, String as Str } from "effect"
 import { TestClock } from "effect/testing"
-import { cleanupTestDbs, createTestDb, executeSql, type TestDb } from "@maple/backend/platform/test-pglite"
+import { cleanupTestDbs, createTestDb, executeSql, type TestDb } from "@maple/backend/testing/test-pglite"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { AlertsService, type AlertsServiceApi } from "./AlertsService"
 import { AlertSilencesService } from "./AlertSilencesService"

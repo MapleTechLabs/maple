@@ -34,7 +34,7 @@ import {
 	executeSql,
 	queryFirstRow,
 	type TestDb,
-} from "@maple/backend/platform/test-pglite"
+} from "@maple/backend/testing/test-pglite"
 import { AuditLogService } from "@maple/backend/services/audit/AuditLogService"
 import { AutumnClient } from "@maple/backend/services/billing/autumn-http"
 import { StripeClient } from "@maple/backend/services/billing/stripe-http"

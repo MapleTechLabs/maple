@@ -51,7 +51,7 @@ import { OrgClickHouseSettingsService } from "@maple/backend/services/org/OrgCli
 import { OrgMembersService, type OrgMember } from "@maple/backend/services/org/OrgMembersService"
 import { AlertMemberNotifier } from "./AlertMemberNotifier"
 import { QueryEngineService } from "@maple/backend/services/warehouse/QueryEngineService"
-import { executeSql, type TestDb } from "@maple/backend/platform/test-pglite"
+import { executeSql, type TestDb } from "@maple/backend/testing/test-pglite"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { InvestigationService } from "@maple/backend/services/errors/InvestigationService"
 import {

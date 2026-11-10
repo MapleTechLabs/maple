@@ -1,7 +1,7 @@
 import { afterEach, assert, describe, it } from "@effect/vitest"
 import { Effect, Layer, Schema, Array as Arr, String as Str } from "effect"
 import { OrgId, UserId, WorldEntityId, type WorldEntity, type WorldOp } from "@maple/domain/http"
-import { cleanupTestDbs, createTestDb, executeSql, type TestDb } from "@maple/backend/platform/test-pglite"
+import { cleanupTestDbs, createTestDb, executeSql, type TestDb } from "@maple/backend/testing/test-pglite"
 import { ServiceMapWorldService } from "./ServiceMapWorldService"
 
 const trackedDbs: TestDb[] = []

@@ -10,7 +10,7 @@ import {
 	sha256Base64Url,
 	type StatusPageTheme,
 } from "@maple/domain/status-page"
-import { cleanupTestDbs, createTestDb, executeSql, type TestDb } from "@maple/backend/platform/test-pglite"
+import { cleanupTestDbs, createTestDb, executeSql, type TestDb } from "@maple/backend/testing/test-pglite"
 import { StatusPagesService, type CreateStatusPageIncidentInput } from "./StatusPagesService"
 
 const trackedDbs: TestDb[] = []

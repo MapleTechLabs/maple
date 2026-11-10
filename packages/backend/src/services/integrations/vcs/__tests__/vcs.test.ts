@@ -36,7 +36,7 @@ import {
 	executeSql,
 	queryFirstRow,
 	type TestDb,
-} from "@maple/backend/platform/test-pglite"
+} from "@maple/backend/testing/test-pglite"
 import {
 	COMMIT_PAGES_PER_INVOCATION,
 	GithubAppClient,

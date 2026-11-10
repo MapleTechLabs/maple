@@ -25,7 +25,7 @@ import {
 	clickhouseE2eEnabled,
 	clickhouseExec,
 	uniqueDatabase,
-} from "./clickhouse-e2e-support"
+} from "../../testing/clickhouse-e2e-support"
 
 const database = uniqueDatabase("maple_metrics_fuzz_e2e")
 const SEED = Number(process.env.METRICS_FUZZ_SEED || Date.now() % 2 ** 31)

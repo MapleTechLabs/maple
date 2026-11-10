@@ -3,7 +3,7 @@ import { Effect, Exit, Layer, Array as Arr, DateTime } from "effect"
 import * as SecureRandom from "effect/crypto/SecureRandom"
 import { OrgId, StatusPageComponentId, StatusPageIncidentId, UptimeMonitorId } from "@maple/domain/primitives"
 import { DEFAULT_STATUS_PAGE_THEME, utcDay } from "@maple/domain/status-page"
-import { cleanupTestDbs, createTestDb, executeSql, type TestDb } from "@maple/backend/platform/test-pglite"
+import { cleanupTestDbs, createTestDb, executeSql, type TestDb } from "@maple/backend/testing/test-pglite"
 import {
 	DRAFT_PAGE_ID,
 	draftComponentId,

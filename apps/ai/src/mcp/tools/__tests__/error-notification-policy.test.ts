@@ -7,7 +7,7 @@ import { AlertDestinationId, AlertPersistenceError, OrgId, RoleName, UserId } fr
 import { encodePublicId, PublicIdPrefixes } from "@maple/domain/http/v2"
 import { GetErrorNotificationPolicyOutput } from "@maple/domain/mcp-outputs"
 import { Database } from "@maple/backend/platform/DatabaseLive"
-import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/platform/test-pglite"
+import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/testing/test-pglite"
 import { AlertsService } from "@maple/backend/services/alerts/AlertsService"
 import { ErrorPolicyService } from "@maple/backend/services/errors/ErrorPolicyService"
 import { CurrentMcpTenant } from "../../lib/query-warehouse"

@@ -5,7 +5,7 @@ import { Clock, ConfigProvider, Effect, Layer, Schema, Array as Arr } from "effe
 import { CacheBackend, EdgeCacheService, makeMemoryBackend } from "@maple/cache"
 import { formatWarehouseDateTime } from "@maple/query-engine"
 import { Env } from "@maple/backend/platform/Env"
-import { cleanupTestDbs, createTestDb, executeSql, type TestDb } from "@maple/backend/platform/test-pglite"
+import { cleanupTestDbs, createTestDb, executeSql, type TestDb } from "@maple/backend/testing/test-pglite"
 import { WarehouseQueryService } from "@maple/backend/services/warehouse/WarehouseQueryService"
 import { OrgClickHouseSettingsService } from "@maple/backend/services/org/OrgClickHouseSettingsService"
 import { makeWarehouseServiceStub } from "@maple/backend/testing/warehouse-test-support"

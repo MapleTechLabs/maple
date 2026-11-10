@@ -18,7 +18,7 @@ import {
 import type { WarehouseQueryServiceApi } from "@maple/backend/services/warehouse/WarehouseQueryService"
 import { AlertsService, type AlertsServiceApi } from "./AlertsService"
 import { baselineWarehouseCapabilities } from "@maple/query-engine"
-import { cleanupTestDbs, createTestDb, queryFirstRow, type TestDb } from "@maple/backend/platform/test-pglite"
+import { cleanupTestDbs, createTestDb, queryFirstRow, type TestDb } from "@maple/backend/testing/test-pglite"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { compiledQueryOf } from "@maple/query-engine/execution"
 import {

@@ -6,7 +6,7 @@ import { TestClock } from "effect/testing"
 import type { OrgId } from "@maple/domain/http"
 import type { WarehouseQueryServiceApi } from "@maple/backend/services/warehouse/WarehouseQueryService"
 import { AlertsService } from "./AlertsService"
-import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/platform/test-pglite"
+import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/testing/test-pglite"
 import {
 	tracesRow,
 	makeWarehouseStub,

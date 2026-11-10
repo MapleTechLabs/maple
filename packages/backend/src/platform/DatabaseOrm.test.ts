@@ -5,7 +5,7 @@ import { ApiKeyId, OrgId, UserId } from "@maple/domain/primitives"
 import { Effect, Schema, Tracer, Array as Arr, Option } from "effect"
 import { Database, DatabaseError } from "./DatabaseLive"
 import { postgresErrorType, postgresSqlState } from "./postgres-errors"
-import { cleanupTestDbs, createTestDb, type TestDb } from "./test-pglite"
+import { cleanupTestDbs, createTestDb, type TestDb } from "../testing/test-pglite"
 
 // effect-orm through Maple's `Database.execute`: one span per call, statement
 // capture, transactions and error absorption.

@@ -6,7 +6,7 @@ import * as PG from "@maple-dev/effect-orm/postgres"
 import { Actors, ErrorIssueEvents, ErrorIssues, IssueEscalations } from "@maple/db/tables"
 import { Effect, Schema, Array as Arr, Clock } from "effect"
 import { Database } from "@maple/backend/platform/DatabaseLive"
-import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/platform/test-pglite"
+import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/testing/test-pglite"
 import {
 	applyTriageSeverity,
 	type ApplyTriageSeverityInput,

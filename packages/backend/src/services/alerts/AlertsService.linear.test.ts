@@ -3,7 +3,7 @@ import { ConfigProvider, Duration, Effect, Layer, Schema, Array as Arr, Option }
 import { TestClock } from "effect/testing"
 import { FetchHttpClient } from "effect/http"
 import { Env } from "@maple/backend/platform/Env"
-import { cleanupTestDbs, createTestDb, queryFirstRow, type TestDb } from "@maple/backend/platform/test-pglite"
+import { cleanupTestDbs, createTestDb, queryFirstRow, type TestDb } from "@maple/backend/testing/test-pglite"
 import { LinearOAuthService } from "@maple/backend/services/auth/LinearOAuthService"
 import { AlertsService } from "./AlertsService"
 import { LinearIssueTracker } from "./LinearIssueTracker"

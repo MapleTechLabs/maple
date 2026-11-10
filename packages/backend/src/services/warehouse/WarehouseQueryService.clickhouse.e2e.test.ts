@@ -10,7 +10,7 @@ import { OrgClickHouseSettingsService } from "@maple/backend/services/org/OrgCli
 import { TinybirdOrgTokenService } from "@maple/backend/services/integrations/TinybirdOrgTokenService"
 import type { TenantContext } from "@maple/backend/services/auth/AuthService"
 import { Env } from "@maple/backend/platform/Env"
-import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/platform/test-pglite"
+import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/testing/test-pglite"
 import { WarehouseQueryService, __testables } from "./WarehouseQueryService"
 import {
 	applyRealMigrations,
@@ -20,7 +20,7 @@ import {
 	clickhouseUrl,
 	clickhouseUser,
 	uniqueDatabase,
-} from "./clickhouse-e2e-support"
+} from "../../testing/clickhouse-e2e-support"
 
 const enabled = clickhouseE2eEnabled
 const database = uniqueDatabase("maple_raw_sql_e2e")

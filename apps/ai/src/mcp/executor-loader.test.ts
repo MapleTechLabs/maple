@@ -4,7 +4,7 @@ import { Config, ConfigProvider, Deferred, Effect, Fiber, Layer, Ref, Schema } f
 import { AfterResponse } from "@maple/backend/platform/after-response"
 import { HttpRouter } from "effect/http"
 import { Env } from "@maple/backend/platform/Env"
-import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/platform/test-pglite"
+import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/testing/test-pglite"
 import { ApiKeysService } from "@maple/backend/services/org/ApiKeysService"
 import { ErrorActorsService } from "@maple/backend/services/errors/ErrorActorsService"
 import { AuthService } from "@maple/backend/services/auth/AuthService"

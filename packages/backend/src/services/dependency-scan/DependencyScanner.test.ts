@@ -14,7 +14,7 @@ import {
 } from "effect"
 import { HttpClient, type HttpClientRequest, HttpClientResponse } from "effect/http"
 import { TestClock } from "effect/testing"
-import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/platform/test-pglite"
+import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/testing/test-pglite"
 import type { VcsTreeFile } from "@maple/backend/services/integrations/vcs/VcsProviderClient"
 import { PackageAdvisoryCatalog } from "@maple/backend/services/security/PackageAdvisoryCatalog"
 import osvFixture from "../security/__fixtures__/osv.json"

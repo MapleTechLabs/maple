@@ -42,11 +42,11 @@ import {
 	executeSql,
 	queryFirstRow,
 	type TestDb,
-} from "@maple/backend/platform/test-pglite"
+} from "@maple/backend/testing/test-pglite"
 import { Database, DatabaseError } from "@maple/backend/platform/DatabaseLive"
 import { compiledQueryOf } from "@maple/query-engine/execution"
 import { makeRecordingTracer, spansNamed } from "@maple/backend/testing/recording-tracer"
-import { fakeChatSessions } from "@maple/backend/platform/chat-sessions-fake"
+import { fakeChatSessions } from "@maple/backend/testing/chat-sessions-fake"
 import { IncidentClassifier } from "@maple/backend/services/errors/IncidentClassifier"
 import {
 	tracesRow,

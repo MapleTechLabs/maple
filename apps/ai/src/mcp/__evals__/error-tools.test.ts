@@ -10,7 +10,7 @@ import {
 	ListErrorIncidentsOutput,
 	ListErrorIssuesOutput,
 } from "@maple/domain/mcp-outputs"
-import { executeSql } from "@maple/backend/platform/test-pglite"
+import { executeSql } from "@maple/backend/testing/test-pglite"
 import { makeEvalRuntime, markdown, runToolDirect, type EvalRuntime } from "./eval-runtime"
 import { installFakeWarehouse, readsTraceSpans, restoreWarehouse, type FixtureRule } from "./fake-warehouse"
 import { FIXTURES } from "./utils"

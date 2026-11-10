@@ -13,7 +13,7 @@ import {
 	executeSql,
 	queryFirstRow,
 	type TestDb,
-} from "@maple/backend/platform/test-pglite"
+} from "@maple/backend/testing/test-pglite"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import * as PG from "@maple-dev/effect-orm/postgres"
 import { AlertRules, UptimeMonitorStates, UptimeMonitors } from "@maple/db/tables"

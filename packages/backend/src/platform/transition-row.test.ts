@@ -9,7 +9,7 @@ import {
 	OrgId,
 } from "@maple/domain/http"
 import { Database } from "./DatabaseLive"
-import { cleanupTestDbs, createTestDb, type TestDb } from "./test-pglite"
+import { cleanupTestDbs, createTestDb, type TestDb } from "../testing/test-pglite"
 import { transitionRow } from "./transition-row"
 
 const createdDbs: TestDb[] = []

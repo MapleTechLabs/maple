@@ -10,7 +10,7 @@ import { ListMaintenanceWindowsOutput, MaintenanceWindowMutationOutput } from "@
 import { encodePublicId, PublicIdPrefixes } from "@maple/domain/http/v2"
 import { Env } from "@maple/backend/platform/Env"
 import { EdgeCacheServiceLive } from "@maple/backend/platform/CacheBackendLive"
-import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/platform/test-pglite"
+import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/testing/test-pglite"
 import { AlertMaintenanceWindowsService } from "@maple/backend/services/alerts/AlertMaintenanceWindowsService"
 import { AlertSilencesService } from "@maple/backend/services/alerts/AlertSilencesService"
 import { CurrentMcpTenant } from "../../lib/query-warehouse"

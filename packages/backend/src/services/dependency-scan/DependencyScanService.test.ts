@@ -4,7 +4,7 @@ import { GitCommitSha, VcsRepositoryId, type VcsSyncJob } from "@maple/domain/ht
 import { OrgId, UserId } from "@maple/domain/primitives"
 import { Effect, Layer, Schema, Array as Arr, String as Str, Option } from "effect"
 import { TestClock } from "effect/testing"
-import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/platform/test-pglite"
+import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/testing/test-pglite"
 import { VcsRepository } from "@maple/backend/services/integrations/vcs/VcsRepository"
 import {
 	recordingQueueLayer,

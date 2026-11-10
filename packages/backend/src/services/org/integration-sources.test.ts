@@ -7,7 +7,7 @@ import {
 	createTestDb,
 	insertTestSource,
 	type TestDb,
-} from "@maple/backend/platform/test-pglite"
+} from "@maple/backend/testing/test-pglite"
 import { pollReportDue, upsertWithSource } from "./integration-sources"
 
 const trackedDbs: TestDb[] = []

@@ -13,7 +13,7 @@ import {
 	type AlertMaintenanceWindowId,
 	type AlertSilenceMatchers,
 } from "@maple/domain/http"
-import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/platform/test-pglite"
+import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/testing/test-pglite"
 import { AlertMaintenanceWindowsService } from "./AlertMaintenanceWindowsService"
 import { AlertSilencesService } from "./AlertSilencesService"
 import {

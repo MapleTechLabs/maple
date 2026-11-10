@@ -9,7 +9,7 @@ import {
 	executeSql,
 	queryFirstRow,
 	type TestDb,
-} from "@maple/backend/platform/test-pglite"
+} from "@maple/backend/testing/test-pglite"
 import { CloudflareOAuthService } from "@maple/backend/services/auth/CloudflareOAuthService"
 import { SourcesService } from "@maple/backend/services/org/SourcesService"
 import { AwsConnectionService } from "./AwsConnectionService"

@@ -35,7 +35,7 @@ import {
 	clickhouseE2eEnabled,
 	clickhouseExec,
 	uniqueDatabase,
-} from "./clickhouse-e2e-support"
+} from "../../testing/clickhouse-e2e-support"
 import { Array as Arr, Option, Record as Rec, String as Str } from "effect"
 
 const database = uniqueDatabase("maple_service_overview_parity_e2e")

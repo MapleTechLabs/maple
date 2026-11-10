@@ -11,7 +11,7 @@ import type { ChatTurnOrigin } from "@maple/domain/chat-session"
 import { ErrorPersistenceError } from "@maple/domain/http"
 import { ActorId, OrgId, UserId } from "@maple/domain/primitives"
 import type { TenantContext } from "@maple/backend/services/auth/tenant-context"
-import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/platform/test-pglite"
+import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/testing/test-pglite"
 import { ErrorActorsService } from "@maple/backend/services/errors/ErrorActorsService"
 import { withConnectorActor } from "./turn-actor"
 

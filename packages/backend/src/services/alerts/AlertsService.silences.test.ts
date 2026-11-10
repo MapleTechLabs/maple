@@ -12,7 +12,7 @@ import {
 	type AlertSilenceMatchers,
 } from "@maple/domain/http"
 import { Schema } from "effect"
-import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/platform/test-pglite"
+import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/testing/test-pglite"
 import { AlertsService, type AlertsServiceApi } from "./AlertsService"
 import { AlertSilencesService } from "./AlertSilencesService"
 import { AlertIncidentAckService } from "./AlertIncidentAckService"

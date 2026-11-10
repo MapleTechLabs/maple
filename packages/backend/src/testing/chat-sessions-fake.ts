@@ -4,7 +4,7 @@
  */
 import { type ChatSessionStub, chatSessionClientFromStub } from "@maple/domain/chat-session-stub"
 import { Layer } from "effect"
-import { ChatSessions, type ChatSessionsApi } from "./bindings"
+import { ChatSessions, type ChatSessionsApi } from "../platform/bindings"
 
 const notFaked = (method: string) => () => Promise.reject(`ChatSession.${method} is not faked in this test`)
 

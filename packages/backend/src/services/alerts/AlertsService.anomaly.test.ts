@@ -16,7 +16,7 @@ import {
 import { Array as Arr, Clock, Duration, Effect, Layer, Result, Schema } from "effect"
 import { TestClock } from "effect/testing"
 import { Database } from "@maple/backend/platform/DatabaseLive"
-import { fakeChatSessions } from "@maple/backend/platform/chat-sessions-fake"
+import { fakeChatSessions } from "@maple/backend/testing/chat-sessions-fake"
 import type { IncidentPushEvent } from "@maple/backend/services/push/MobilePushService"
 import {
 	cleanupTestDbs,
@@ -24,7 +24,7 @@ import {
 	executeSql,
 	queryFirstRow,
 	type TestDb,
-} from "@maple/backend/platform/test-pglite"
+} from "@maple/backend/testing/test-pglite"
 import { AlertsService } from "./AlertsService"
 import { AnomalyAlertSource } from "./anomaly/AnomalyAlertSource"
 import {
