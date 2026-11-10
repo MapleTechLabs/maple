@@ -4,6 +4,8 @@ dist/
 public/cli/
 # generated types
 .astro/
+# evidence written by `bun run check:lightbox`
+.lightbox-check/
 
 # dependencies
 node_modules/

@@ -13,7 +13,8 @@ export default (element: HTMLElement) =>
 	(component: unknown, props: unknown): Promise<void> => {
 		if (!isIsland(component)) return Promise.resolve()
 		const server = element.firstElementChild
-		const container = server instanceof HTMLElement ? server : element.appendChild(document.createElement("div"))
+		const container =
+			server instanceof HTMLElement ? server : element.appendChild(document.createElement("div"))
 		mounts += 1
 		container.id = `${component.name}-${mounts}`
 		return Effect.runPromise(
@@ -26,6 +27,7 @@ export default (element: HTMLElement) =>
 								init: () => config.init(decoded),
 								update: config.update,
 								view: config.view,
+								viewTransition: config.viewTransition,
 								container,
 								devTools: false,
 							}),

@@ -1,4 +1,4 @@
-import { isEditableTarget } from "@maple/ui/lib/keyboard"
+import { isDialogOpen, isEditableTarget } from "@maple/ui/lib/keyboard"
 import { cn } from "@maple/ui/lib/utils"
 import * as Combobox from "@maple/views/ui/combobox"
 import {
@@ -159,14 +159,13 @@ const ListenForShortcuts = Mount.defineStream("ListenForDocsSearchShortcuts", {
 			Effect.acquireRelease(
 				Effect.sync(() => {
 					const onKeyDown = (event: KeyboardEvent) => {
+						// Another dialog (the screenshot viewer) owns the keyboard while it is open.
+						const isPaletteOpen = document.getElementById(Dialog.popupId(PALETTE_ID)) !== null
+						if (isDialogOpen() && !isPaletteOpen) return
 						if ((event.key === "k" || event.key === "K") && (event.metaKey || event.ctrlKey)) {
 							event.preventDefault()
 							Queue.offerUnsafe(queue, Message.PressedToggleShortcut())
-						} else if (
-							event.key === "/" &&
-							!isEditableTarget(event.target) &&
-							document.getElementById(Dialog.popupId(PALETTE_ID)) === null
-						) {
+						} else if (event.key === "/" && !isEditableTarget(event.target) && !isPaletteOpen) {
 							event.preventDefault()
 							Queue.offerUnsafe(queue, Message.PressedSlash())
 						}
