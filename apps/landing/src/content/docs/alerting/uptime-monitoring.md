@@ -153,9 +153,8 @@ Open **Metrics** and search for `httpcheck`. The metrics appear after the first 
 ## Limits
 
 - One Collector probes from one place, through one DNS resolver. It cannot show that users in another region are cut off, and a network problem next to the Collector looks the same as an outage.
-- There is no status page.
 
-For probes from several regions, a public status page, or an availability report for customers, run a dedicated uptime product next to Maple.
+For probes from several regions, or an availability report for customers, run a dedicated uptime product next to Maple.
 
 ## Troubleshooting
 

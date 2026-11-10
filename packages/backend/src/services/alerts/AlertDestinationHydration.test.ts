@@ -5,7 +5,7 @@ import { AlertDestinations } from "@maple/db/tables"
 import { AlertDestinationId, ChatWorkspaceId, OrgId } from "@maple/domain/http"
 import { Effect, Option, Schema } from "effect"
 import type { EncryptedValue } from "@maple/backend/platform/Crypto"
-import { parseSecretKeyring, sealSecret, sealSecretV2 } from "@maple/backend/platform/SecretBox"
+import { parseSecretKeyring, sealSecret } from "@maple/backend/platform/SecretBox"
 import { alertDestinationSecretSlot } from "@maple/backend/platform/secret-slots"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/testing/test-pglite"
@@ -224,7 +224,7 @@ describe("hydrateDestinationRow", () => {
 		const publicConfig = { summary: "Discord", channelLabel: null }
 		return Effect.gen(function* () {
 			const keyring = yield* makeKeyring
-			const storedSecret = yield* sealSecretV2(
+			const storedSecret = yield* sealSecret(
 				keyring,
 				alertDestinationSecretSlot,
 				{ orgId: ORG, id: ownId },

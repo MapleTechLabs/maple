@@ -26,6 +26,7 @@ import { PrReviewPostMergeService } from "@maple/backend/services/pr-review/PrRe
 import { RailwayMetricsService } from "@maple/backend/services/integrations/RailwayMetricsService"
 import { SearchConsoleImportService } from "@maple/backend/services/integrations/SearchConsoleImportService"
 import { AwsConnectionService } from "@maple/backend/services/integrations/AwsConnectionService"
+import { SecretResealService } from "@maple/backend/services/secrets/SecretResealService"
 import { SupabaseConnectionService } from "@maple/backend/services/integrations/SupabaseConnectionService"
 import { SupabaseInsightsService } from "@maple/backend/services/integrations/SupabaseInsightsService"
 import { SupabaseLogsService } from "@maple/backend/services/integrations/SupabaseLogsService"
@@ -82,6 +83,7 @@ export const layerTick = (
 		RailwayMetricsService.layer,
 		SearchConsoleImportService.layer,
 		AwsConnectionService.layer,
+		SecretResealService.layer,
 		SupabaseConnectionService.layer,
 		SupabaseLogsService.layer,
 		SupabaseInsightsService.layer,
@@ -377,6 +379,17 @@ const awsConnectionsTick = makeTick(
 			: undefined,
 )
 
+const secretResealTick = makeTick(
+	SecretResealService.use((secrets) => secrets.resealDue),
+	"secret_reseal",
+	// Logged every pass, zeros included: a key is only retired once this reports nothing remaining.
+	(result) => ({
+		secretsResealed: result.resealed,
+		secretsResealFailed: result.failed,
+		secretsResealRemaining: result.remaining,
+	}),
+)
+
 const railwayMetricsTick = makeTick(
 	RailwayMetricsService.use((railway) => railway.pollAllOrgs),
 	"railway_metrics",
@@ -520,6 +533,7 @@ const scheduledTicks = {
 	prReviewPostMerge: prReviewPostMergeTick,
 	railwayMetrics: railwayMetricsTick,
 	searchConsole: searchConsoleTick,
+	secretReseal: secretResealTick,
 	serviceMapRollup: serviceMapRollupTick,
 	statusPages: statusPagesTick,
 	supabaseDiscovery: supabaseDiscoveryTick,
@@ -563,6 +577,8 @@ const LANE_TICKS = {
 	digest: ["digest"],
 	service_map_rollup: ["serviceMapRollup"],
 	aws_connections: ["awsConnections"],
+	// Moves stored credentials onto the current key (docs/secret-encryption.md).
+	secret_reseal: ["secretReseal"],
 	supabase_discovery: ["supabaseDiscovery"],
 	supabase_logs: ["supabaseLogs"],
 	supabase_insights: ["supabaseInsights"],

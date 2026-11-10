@@ -12,7 +12,7 @@ You manage rules on the **Rules** tab of the **Alerts** page. Creating, editing 
 ## Prerequisites
 
 - Telemetry arriving in Maple. Built-in signals read traces.
-- At least one [notification destination](/docs/alerting/notification-destinations), or the admin role to add one from the editor. A rule cannot be saved without one.
+- At least one [notification destination](/docs/alerting/notification-destinations) or escalation chain, or the admin role to add a destination from the editor. A rule cannot be saved without one of them.
 
 ## Create a rule
 
@@ -41,7 +41,7 @@ To alert on a dashboard chart instead, open the chart's menu on the dashboard an
 
 ## What to watch
 
-The **Query mode** is **Built-in**, **Query builder** or **SQL**. A blank rule opens in **Query builder**. The templates use **Built-in**.
+The **Query mode** is **Built-in**, **Query builder**, **SQL** or **Anomaly**. A blank rule opens in **Query builder**. The templates use **Built-in**.
 
 ### Built-in
 
@@ -81,6 +81,10 @@ Built-in rules pick their services and environments here:
 The editor times the query as you write it and shows **Query time** against the limit of the check interval. See the [SQL reference](/docs/reference/sql) for the macros, and [Query time limits](/docs/alerting/rule-evaluation#query-time-limits) for the limits.
 
 For **Query builder** and **SQL** rules the query carries its own filters, so the service and environment fields are hidden.
+
+### Anomaly
+
+**Anomaly** (`anomaly`) has no query and no threshold. It notifies when Maple's [anomaly detection](/docs/alerting/anomalies) opens an anomaly in the rule's scope: **Services**, **Environment** and **Signals** (**Error rate**, **p95 latency**, **Throughput**, **Error spikes**, **Log volume**). An empty field covers every value, but a new rule needs at least one of them set. The organization's default anomaly rule already covers everything, and the most specific rule handles each anomaly. **When to alert** is not shown for this mode.
 
 ## When to alert
 
@@ -129,9 +133,11 @@ For a **Throughput** drop rule, set **Minimum samples** to 0, as the **Throughpu
 
 Click **Add destination** to attach an existing destination, or create one from the same menu. With a critical tier, the section has one list for **Warning** and one for **Critical, on top of the warning destinations**.
 
+**Escalation chain** pages the steps of an escalation chain instead of, or as well as, the destinations. Create chains on the **Routing** tab. A rule needs a destination or a chain.
+
 **Send test** delivers a test notification for this rule to the selected destinations.
 
-**Message template** customizes the **Title** and **Body (Markdown)** of Slack, Hazel, Discord, Telegram and PagerDuty notifications with `{{ variable }}` substitution, for example `{{ rule.name }}`, `{{ value }}` or `{{ links.app }}`. Leave it blank for the built-in format. Email and webhook destinations always use the built-in format.
+**Message template** customizes the **Title** and **Body (Markdown)** of Slack, Hazel, Discord, Telegram, Google Chat, Microsoft Teams, PagerDuty, incident.io and Linear notifications with `{{ variable }}` substitution, for example `{{ rule.name }}`, `{{ value }}` or `{{ links.app }}`. Leave it blank for the built-in format. Email and webhook destinations always use the built-in format.
 
 ## Name it
 
@@ -202,7 +208,7 @@ The response lists the value and status of each window per group in `series`, an
 
 - **The rule never fires.** Open the rule and look at its **Checks**. **Skipped** checks mean the window had no data or fewer samples than **Minimum samples**. In the editor, the chart says how many windows would be skipped and why. Check the service names and environments against what is arriving.
 - **The rule fires and resolves over and over.** Raise **Breaches to fire** and **Resolve after**, or widen the window.
-- **Save is disabled.** The bar at the bottom of the editor lists what is missing, such as a rule name or a destination.
+- **Save is disabled.** The bar at the bottom of the editor lists what is missing, such as a rule name, or a destination or escalation chain.
 
 ## Next steps
 
