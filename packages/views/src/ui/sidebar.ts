@@ -229,7 +229,7 @@ export type SidebarGroupToggleOptions<Message> = Readonly<{
 	onToggle: Message
 }>
 
-/** A group label that collapses its rows: a chevron button with `aria-expanded`. */
+/** A group label that collapses its rows: a 28px button with `aria-expanded` and a faint chevron. */
 export const sidebarGroupToggle = <Message>(
 	h: HtmlBuilder<Message>,
 	options: SidebarGroupToggleOptions<Message>,
@@ -240,7 +240,7 @@ export const sidebarGroupToggle = <Message>(
 			h.Class(
 				cn(
 					...sidebarGroupLabelStyles,
-					"group/toggle h-6 w-full cursor-pointer gap-1 text-left text-muted-foreground hover:text-sidebar-foreground active:text-sidebar-foreground",
+					"group/toggle h-7 w-full cursor-pointer gap-1 text-left text-muted-foreground hover:text-sidebar-foreground active:text-sidebar-foreground",
 				),
 			),
 			h.DataAttribute("sidebar", "group-label"),
@@ -253,9 +253,10 @@ export const sidebarGroupToggle = <Message>(
 			h.span([h.Class("flex-1 truncate")], [options.label]),
 			icon(h, "ChevronDownIcon", {
 				size: 12,
+				// Faint at rest so folding is discoverable, full tone on hover and focus.
 				className: cn(
-					"opacity-0 transition-[opacity,rotate] duration-150 group-hover/toggle:opacity-100 group-focus-visible/toggle:opacity-100 motion-reduce:transition-none",
-					options.isExpanded ? "" : "-rotate-90 opacity-100",
+					"text-foreground-faint transition-[rotate] duration-150 group-hover/toggle:text-sidebar-foreground group-focus-visible/toggle:text-sidebar-foreground motion-reduce:transition-none",
+					options.isExpanded ? "" : "-rotate-90",
 				),
 			}),
 		],
@@ -364,6 +365,11 @@ export type SidebarMenuButtonOptions<Message> = Readonly<{
 	size?: "default" | "lg" | "sm"
 	className?: string
 	isActive?: boolean
+	/**
+	 * A sub-item of this row is the current page: the row keeps its medium weight and leaves the
+	 * tint to that sub-item (`data-active="child"`).
+	 */
+	hasActiveChild?: boolean
 	/** Rendered as a router link instead of a button. */
 	link?: LinkTarget
 	/** `render={<a href />}`: a plain anchor, no router active state (apps/local-ui's hash links). */
@@ -400,7 +406,10 @@ export const sidebarMenuButton = <Message>(
 	)
 	const attributes: Array<Attribute<Message> | ChildAttribute> = [
 		h.Class(linkActive ? `${className} active` : className),
-		h.DataAttribute("active", String(options.isActive ?? false)),
+		h.DataAttribute(
+			"active",
+			options.hasActiveChild === true ? "child" : String(options.isActive ?? false),
+		),
 		...(options.hasTooltip === true ? [h.DataAttribute("base-ui-tooltip-trigger", "")] : []),
 		h.DataAttribute("sidebar", "menu-button"),
 		h.DataAttribute("size", size),

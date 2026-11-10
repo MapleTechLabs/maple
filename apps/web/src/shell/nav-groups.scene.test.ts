@@ -81,6 +81,25 @@ describe("sidebar groups", () => {
 		)
 	})
 
+	test("a folded group on a sub-item's page shows the parent row alone, highlighted", () => {
+		const explore = role("link", { name: "Explore" })
+		const logs = role("link", { name: "Logs" })
+		scene(
+			{ update, view: shellAt("/logs") },
+			given(signedIn()),
+			measured,
+			// Open: the tint is the sub-item's, the parent only keeps its weight.
+			expect(logs).toHaveAttr("data-active", "true"),
+			expect(explore).toHaveAttr("data-active", "child"),
+			click(analyze),
+			Command.resolve(SaveCollapsedNavGroups, Message.CompletedSaveNavGroups()),
+			expect(explore).toHaveAttr("data-active", "true"),
+			expect(logs).toBeAbsent(),
+			expect(role("link", { name: "Traces" })).toBeAbsent(),
+			expect(dashboards).toBeAbsent(),
+		)
+	})
+
 	test("the collapsed rail shows every row of a folded group and its labels are no tab stops", () => {
 		scene(
 			{ update, view: shellAt("/") },
