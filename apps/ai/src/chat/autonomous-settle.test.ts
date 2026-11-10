@@ -7,7 +7,9 @@ import {
 	NO_DIAGNOSIS_INTERRUPTED,
 	makeUnfinishedSettler,
 	runAutonomousTurn,
+	NO_REPLY_INTERRUPTED,
 	settleAbandoned,
+	settleAbandonedTurn,
 } from "./autonomous-settle"
 import { interruptOnAbort, makeTurnObservability } from "./turn-outcome"
 
@@ -145,5 +147,64 @@ describe("settleAbandoned", () => {
 		)
 
 		assert.deepEqual(writes, ["reply"])
+	})
+})
+
+describe("settleAbandonedTurn", () => {
+	const calls = () => {
+		const made: Array<ReadonlyArray<string>> = []
+		const record =
+			(write: string) =>
+			(...args: ReadonlyArray<string>) =>
+				Effect.sync(() => void made.push([write, ...args]))
+		return { made, failReview: record("failReview"), failReply: record("failReply") }
+	}
+
+	it("fails an evicted reply turn's row once, with the interrupted message, and nothing else", async () => {
+		const { made, failReview, failReply } = calls()
+		await Effect.runPromise(
+			settleAbandonedTurn({
+				orgId: "org_1",
+				prReviewId: undefined,
+				prReplyId: "reply_1",
+				reviewInterrupted: "review interrupted",
+				failReview,
+				failReply,
+			}),
+		)
+
+		assert.deepEqual(made, [["failReply", "org_1", "reply_1", NO_REPLY_INTERRUPTED]])
+	})
+
+	it("fails an evicted review turn's row with the interrupted review error", async () => {
+		const { made, failReview, failReply } = calls()
+		await Effect.runPromise(
+			settleAbandonedTurn({
+				orgId: "org_1",
+				prReviewId: "review_1",
+				prReplyId: undefined,
+				reviewInterrupted: "review interrupted",
+				failReview,
+				failReply,
+			}),
+		)
+
+		assert.deepEqual(made, [["failReview", "org_1", "review_1", "review interrupted"]])
+	})
+
+	it("writes nothing for a turn that owns neither row", async () => {
+		const { made, failReview, failReply } = calls()
+		await Effect.runPromise(
+			settleAbandonedTurn({
+				orgId: "org_1",
+				prReviewId: undefined,
+				prReplyId: undefined,
+				reviewInterrupted: "review interrupted",
+				failReview,
+				failReply,
+			}),
+		)
+
+		assert.deepEqual(made, [])
 	})
 })
