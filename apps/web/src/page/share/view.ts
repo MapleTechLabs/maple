@@ -2,11 +2,7 @@ import { containerKeyFor, containerKeyOf, ROOT_CONTAINER_KEY } from "@maple/doma
 import { normalizeLayout } from "@maple/grid-engine"
 import { ALL_VALUE, type VariableValues } from "@maple/query-engine"
 import { resolveSectionView } from "../../lib/dashboards/section-view-state"
-import {
-	GRID_ROW_HEIGHT,
-	projectLayout,
-	tierForWidth,
-} from "../../components/dashboard-builder/canvas/grid-breakpoints"
+import { GRID_ROW_HEIGHT, projectLayout, tierForWidth } from "../dashboards/kit/grid-breakpoints"
 import { Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { WIDGET_CHART_TOKENS } from "../dashboards/kit/chart-tokens"

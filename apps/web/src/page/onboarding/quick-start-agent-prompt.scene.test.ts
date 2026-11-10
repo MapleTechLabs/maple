@@ -1,7 +1,7 @@
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { click, Command, expect as expectView, given, Mount, role, scene, text } from "foldkit/scene"
 import { describe, test } from "vitest"
-import { agentSetupPrompt } from "../../components/ingest/onboard-skill"
+import { agentSetupPrompt } from "../kit/onboard-skill"
 import { ingestUrl } from "../../lib/services/common/ingest-url"
 import * as CopyButton from "@maple/views/ui/copy-button"
 import * as Tabs from "@maple/views/ui/tabs"

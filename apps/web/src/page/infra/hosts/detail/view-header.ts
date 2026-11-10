@@ -1,4 +1,4 @@
-import { severityLevel } from "../../../../components/infra/format"
+import { severityLevel } from "../../kit/format"
 import { formatLoad, formatPercent } from "@maple/ui/lib/format"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { AppRoute, hrefOf } from "../../../../route"

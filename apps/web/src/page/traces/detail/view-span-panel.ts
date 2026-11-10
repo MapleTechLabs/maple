@@ -1,6 +1,6 @@
 import * as SpanPanel from "@maple/views/traces/span-panel"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { getActiveInfraCorrelations } from "../../../components/infra/infra-correlations"
+import { getActiveInfraCorrelations } from "../../kit/infra-correlation/correlations"
 import { docsUrl } from "../../../lib/docs"
 import * as InfraCorrelation from "../../kit/infra-correlation"
 import { Message } from "./message"

@@ -1,4 +1,4 @@
-import type { FrameworkId } from "../../components/quick-start/sdk-snippets"
+import type { FrameworkId } from "../kit/sdk-snippets"
 import type { IconName } from "@maple/views/ui/icon"
 import type { DocsPage } from "../../lib/docs"
 import { ONBOARDING_INTENT_IDS, type OnboardingIntent } from "../../lib/onboarding-intent"

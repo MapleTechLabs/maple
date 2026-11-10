@@ -5,7 +5,7 @@ import {
 	deriveServiceHealthFromCauses,
 	type LatencyBaselineSignal,
 	type ServiceHealth,
-} from "../../../components/dashboard/service-health"
+} from "../../kit/service-health-rollup"
 import { Array as Arr, String as Str, Order } from "effect"
 import type { ServicesSearch } from "../../../route/search"
 import { type HealthIncident, serviceHealthCauses } from "../../kit/service-health"

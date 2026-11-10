@@ -1,4 +1,4 @@
-import { formatCores } from "../../../../components/infra/format"
+import { formatCores } from "../../../infra/kit/format"
 import { shareOfLimit } from "../format"
 import { formatBytes, formatPercent } from "@maple/ui/lib/format"
 import { Option, Array as Arr } from "effect"

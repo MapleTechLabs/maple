@@ -4,7 +4,7 @@ import {
 	healthRank,
 	type ServiceHealth,
 	type ServiceHealthCause,
-} from "../../components/dashboard/service-health"
+} from "../kit/service-health-rollup"
 import { Option, Array as Arr, String as Str } from "effect"
 import { AsyncData } from "foldkit"
 import type { SelectEntry } from "@maple/views/ui/select-view"

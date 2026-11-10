@@ -6,7 +6,7 @@ import {
 	productForCrawler,
 	purposeForCrawler,
 } from "./ai-traffic-model"
-import { SPARK_COLOR } from "../../components/infra/severity-tokens"
+import { SPARK_COLOR } from "../kit/severity-tokens"
 import { formatNumber, formatPercent, pluralize } from "@maple/ui/lib/format"
 import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"

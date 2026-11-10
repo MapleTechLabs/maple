@@ -1,4 +1,4 @@
-import { KUBERNETES_ROOT, KUBERNETES_VIEWS } from "../components/infra/kubernetes/views"
+import { KUBERNETES_ROOT, KUBERNETES_VIEWS } from "../page/infra/kubernetes/views"
 import { Schema, Array as Arr, String as Str } from "effect"
 import type { IconName } from "@maple/views/ui/icon"
 import { PROVIDERS } from "../page/kit/providers"

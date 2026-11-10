@@ -7,7 +7,7 @@ import {
 	buildBaselineMap,
 	deriveServiceHealthFromCauses,
 	healthRank,
-} from "./service-health"
+} from "./service-health-rollup"
 
 describe("anomalyDirection", () => {
 	it("shows throughput drops as down and upward-only detectors as up", () => {

@@ -9,7 +9,7 @@ import { countLabel, formatBytes, formatPercent, formatUptime } from "@maple/ui/
 import { formatClock } from "@maple/ui/lib/replay-format"
 
 import type { ListHostsResponse, ListPodsResponse } from "@maple/domain/http"
-import type { Finding } from "../components/infra/overview/summaries"
+import type { Finding } from "../page/infra/overview/summaries"
 import type { ReleaseServiceImpact } from "../page/releases/release-model"
 import type { Log } from "@maple/web-data/warehouse/logs"
 import { domainThresholdToForm, formatSignalValue } from "@maple/web-data/alerts/form-utils"

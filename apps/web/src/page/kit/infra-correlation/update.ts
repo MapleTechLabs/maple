@@ -1,8 +1,5 @@
 import { chartEnvHandlers } from "@maple/views/charts/chart-env"
-import {
-	getActiveInfraCorrelations,
-	type InfraCorrelation,
-} from "../../../components/infra/infra-correlations"
+import { getActiveInfraCorrelations, type InfraCorrelation } from "./correlations"
 import { Command } from "foldkit"
 import * as Chart from "@maple/views/charts/chart"
 import { LoadChartRuntime } from "@maple/views/charts/chart-runtime"

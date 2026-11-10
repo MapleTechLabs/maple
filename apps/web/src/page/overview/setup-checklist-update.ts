@@ -1,4 +1,4 @@
-import type { FrameworkId } from "../../components/quick-start/sdk-snippets"
+import type { FrameworkId } from "../kit/sdk-snippets"
 import { isOwnService, TEST_TRACE_SERVICE } from "../../lib/own-services"
 import type { OnboardingRole } from "../../lib/onboarding-role"
 import { AsyncData, Command } from "foldkit"

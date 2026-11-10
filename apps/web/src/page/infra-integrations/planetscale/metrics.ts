@@ -3,7 +3,7 @@
 // percentages; utilization divides them onto the shared 0-1 thresholds (`@maple/ui/lib/utilization`)
 // so an 85% reads the same colour here as on every other infra gauge.
 
-import { type Tone, VALUE_TONE } from "../../../components/infra/severity-tokens"
+import { type Tone, VALUE_TONE } from "../../kit/severity-tokens"
 import { utilizationLevel } from "@maple/ui/lib/utilization"
 import { String as Str } from "effect"
 

@@ -1,5 +1,5 @@
-import { severityLevel } from "../../../../components/infra/format"
-import { podKey } from "../../../../components/infra/pod-restarts"
+import { severityLevel } from "../../kit/format"
+import { podKey } from "../pod-restarts"
 import { formatPercent } from "@maple/ui/lib/format"
 import { refreshingClass } from "@maple/ui/lib/refreshing"
 import { AsyncData, Submodel } from "foldkit"

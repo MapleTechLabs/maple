@@ -1,6 +1,6 @@
 import { McpToolCatalogEntry } from "@maple/domain/http"
 import { V2McpConnection } from "@maple/domain/http/v2"
-import { MCP_CLIENTS } from "../../../components/settings/mcp-client-config"
+import { MCP_CLIENTS } from "../../kit/mcp-client-config"
 import { Schema, Array as Arr } from "effect"
 import { AsyncData } from "foldkit"
 import { LoadFailure } from "@maple/views/data/load-failure"

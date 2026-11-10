@@ -1,5 +1,5 @@
 import { cn } from "@maple/ui/lib/utils"
-import { REPLAY_BLOCK_CLASS } from "../../../components/common/replay-privacy"
+import { REPLAY_BLOCK_CLASS } from "../../kit/replay-privacy"
 import { Option, String as Str } from "effect"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"

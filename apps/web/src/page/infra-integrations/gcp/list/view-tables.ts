@@ -22,7 +22,7 @@ import {
 	type GcpWorkloadScope,
 } from "../list-model"
 import { formatGcpValue, GCP_INFRA_COLUMNS, type GcpColumn } from "../tabs"
-import { BAR_VALUE_TONE } from "../../../../components/infra/severity-tokens"
+import { BAR_VALUE_TONE } from "../../../kit/severity-tokens"
 import { errorRateClass } from "@maple/ui/lib/error-rate"
 import {
 	EMPTY_VALUE,

@@ -9,7 +9,7 @@
 
 // Framework-free and relative-imported: the Foldkit app imports it too.
 import type { ListPodsResponse } from "@maple/domain/http"
-import { formatWholePercent } from "../format"
+import { formatWholePercent } from "../../kit/format"
 import { Array as Arr, Order } from "effect"
 
 type PodRow = ListPodsResponse["data"][number]

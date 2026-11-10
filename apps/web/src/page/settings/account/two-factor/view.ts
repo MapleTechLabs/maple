@@ -1,4 +1,4 @@
-import { REPLAY_BLOCK_CLASS } from "../../../../components/common/replay-privacy"
+import { REPLAY_BLOCK_CLASS } from "../../../kit/replay-privacy"
 import { Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { button } from "@maple/views/ui/button"

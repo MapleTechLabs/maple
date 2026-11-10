@@ -7,11 +7,7 @@ import { requestKey, type RequestKey } from "@maple/views/data/request-key"
 import { Schema, Stream, Array as Arr } from "effect"
 import { AsyncData, Command } from "foldkit"
 import type { CallableTaggedStruct } from "foldkit/schema"
-import {
-	alertIncidentCauseLabel,
-	anomalyDirection,
-	type ServiceHealthCause,
-} from "../../components/dashboard/service-health"
+import { alertIncidentCauseLabel, anomalyDirection, type ServiceHealthCause } from "./service-health-rollup"
 import { loadAnomalyServiceCounts } from "../../data/anomaly-service-counts"
 import { type OrgCollections, orgLive } from "../../data/collections/org-collections"
 import { liveQueryStream } from "../../data/live-query"

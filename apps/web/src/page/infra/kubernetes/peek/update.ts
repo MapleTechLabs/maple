@@ -1,6 +1,6 @@
 import { chartEnvHandlers } from "@maple/views/charts/chart-env"
-import { bucketSecondsForRange } from "../../../../components/infra/constants"
-import { podKey } from "../../../../components/infra/pod-restarts"
+import { bucketSecondsForRange } from "../../kit/constants"
+import { podKey } from "../pod-restarts"
 import type { Result } from "effect"
 import { Command, type Update } from "foldkit"
 import * as Chart from "@maple/views/charts/chart"

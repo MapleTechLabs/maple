@@ -1,4 +1,4 @@
-import { countryLabel, languageLabel, referrerLabel, utmLabel } from "../../components/analytics/labels"
+import { countryLabel, languageLabel, referrerLabel, utmLabel } from "./labels"
 import {
 	ANALYTICS_METRICS,
 	type AnalyticsMetricDescriptor,

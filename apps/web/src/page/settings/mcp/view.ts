@@ -1,13 +1,8 @@
 import * as Policy from "@maple/domain/policy"
 import { cn } from "@maple/ui/lib/utils"
 import { mcpUrl } from "../../../lib/services/common/mcp-url"
-import {
-	claudeCodeCommand,
-	isMcpClient,
-	type McpClient,
-	mcpClientConfig,
-} from "../../../components/settings/mcp-client-config"
-import { REPLAY_BLOCK_CLASS } from "../../../components/common/replay-privacy"
+import { claudeCodeCommand, isMcpClient, type McpClient, mcpClientConfig } from "../../kit/mcp-client-config"
+import { REPLAY_BLOCK_CLASS } from "../../kit/replay-privacy"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { Submodel } from "foldkit"
 import { button } from "@maple/views/ui/button"

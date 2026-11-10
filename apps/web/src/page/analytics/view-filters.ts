@@ -1,6 +1,6 @@
 import { WEB_ANALYTICS_UNSET } from "@maple/domain/query-engine"
 import { activeFilterChips, FILTER_SECTION_LABEL, hasActiveFilters, trafficIncludes } from "./filters"
-import { countryLabel, languageLabel, referrerLabel, utmLabel } from "../../components/analytics/labels"
+import { countryLabel, languageLabel, referrerLabel, utmLabel } from "./labels"
 import { Option, Array as Arr, Record as Rec } from "effect"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"

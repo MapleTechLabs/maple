@@ -1,10 +1,5 @@
-import { formatCores, formatWholePercent } from "../../../components/infra/format"
-import {
-	formatRestarts,
-	podKey,
-	type PodRestartSummary,
-	restartTone,
-} from "../../../components/infra/pod-restarts"
+import { formatCores, formatWholePercent } from "../kit/format"
+import { formatRestarts, podKey, type PodRestartSummary, restartTone } from "./pod-restarts"
 import { TONE_TEXT } from "@maple/ui/lib/tone"
 import { cn } from "@maple/ui/lib/utils"
 import { Option, Array as Arr } from "effect"

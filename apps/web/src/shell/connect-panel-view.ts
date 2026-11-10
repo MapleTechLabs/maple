@@ -2,12 +2,8 @@ import { countLabel } from "@maple/ui/lib/format"
 import { cn } from "@maple/ui/lib/utils"
 import { ingestUrl } from "../lib/services/common/ingest-url"
 import { mcpUrl } from "../lib/services/common/mcp-url"
-import {
-	claudeCodeCommand,
-	cursorInstallUrl,
-	vscodeInstallUrl,
-} from "../components/settings/mcp-client-config"
-import { ONBOARD_SKILL_COMMAND } from "../components/ingest/onboard-skill"
+import { claudeCodeCommand, cursorInstallUrl, vscodeInstallUrl } from "../page/kit/mcp-client-config"
+import { ONBOARD_SKILL_COMMAND } from "../page/kit/onboard-skill"
 import { Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { AppRoute, hrefOf } from "../route"

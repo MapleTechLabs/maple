@@ -4,7 +4,7 @@ import type { CloudflareZoneRow } from "@maple/web-data/warehouse/cloudflare-inf
 import type { RailwayServiceRow } from "@maple/web-data/warehouse/railway-infra"
 import type { PlanetScaleDatabaseStat } from "@maple/web-data/warehouse/service-map"
 
-import { gcpFleet } from "../../../page/infra-integrations/gcp/tabs"
+import { gcpFleet } from "../../infra-integrations/gcp/tabs"
 import type { ListHostsResponse } from "@maple/domain/http"
 import {
 	summarizeCloudflare,

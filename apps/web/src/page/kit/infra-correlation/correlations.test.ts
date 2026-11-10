@@ -1,5 +1,5 @@
 import { assert, describe, expect, it } from "vitest"
-import { getActiveInfraCorrelations } from "./infra-correlations"
+import { getActiveInfraCorrelations } from "./correlations"
 import { Array as Arr } from "effect"
 
 describe("getActiveInfraCorrelations", () => {

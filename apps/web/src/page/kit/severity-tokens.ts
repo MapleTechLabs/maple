@@ -4,7 +4,7 @@
 
 import { TONE_COLOR, TONE_FILL, TONE_TEXT, type Tone } from "@maple/ui/lib/tone"
 
-import type { HostStatus, SeverityLevel } from "./format"
+import type { HostStatus, SeverityLevel } from "../infra/kit/format"
 
 export type { Tone }
 

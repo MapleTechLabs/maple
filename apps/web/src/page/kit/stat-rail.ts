@@ -1,4 +1,4 @@
-import { SPARK_COLOR, VALUE_TONE } from "../../components/infra/severity-tokens"
+import { SPARK_COLOR, VALUE_TONE } from "./severity-tokens"
 import type { Tone } from "@maple/ui/lib/tone"
 import { cn } from "@maple/ui/lib/utils"
 import { rowSelectedClass } from "@maple/views/ui/list-row.styles"
