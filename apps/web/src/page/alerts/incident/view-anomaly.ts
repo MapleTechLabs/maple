@@ -19,7 +19,7 @@ import { keyValue, keyValueList } from "@maple/views/ui/key-value"
 import { skeleton } from "@maple/views/ui/skeleton"
 import { hstack } from "@maple/views/ui/stack"
 import { typography } from "@maple/views/ui/typography"
-import { anomalyIncidentFromV2 } from "../../../lib/services/anomalies"
+import { anomalyIncidentFromV2 } from "../../../data/anomaly-incidents"
 import { AppRoute, hrefOf } from "../../../route"
 import { anomalyFingerprintRow, anomalySignalChart, anomalySummary } from "../../kit/anomaly-evidence"
 

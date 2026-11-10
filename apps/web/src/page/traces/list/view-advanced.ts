@@ -1,8 +1,5 @@
 import { parseWhereClause } from "../advanced-filter-sync"
-import {
-	tokenizeWhereClause,
-	WHERE_CLAUSE_TOKEN_COLOR,
-} from "../../../lib/query-builder/where-clause-highlight"
+import { tokenizeWhereClause, WHERE_CLAUSE_TOKEN_COLOR } from "../../kit/query-builder/where-clause-highlight"
 import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { kbd } from "@maple/views/ui/display"

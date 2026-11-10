@@ -4,7 +4,7 @@ import {
 	ChatSendResponse,
 	decodeChatEvent,
 } from "@maple/domain/chat-session"
-import { apiBaseUrl } from "../../../../lib/services/common/api-base-url"
+import { apiBaseUrl } from "../../../../platform/api-base-url"
 import { Clock, Effect, Option, Ref, Schema, Stream, Array as Arr, String as Str } from "effect"
 import { HttpClientRequest, HttpClientResponse } from "effect/http"
 import { MapleSyncHttpClient } from "../../../../platform/api-clients"

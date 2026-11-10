@@ -10,7 +10,7 @@ import { completeOAuthReturn } from "./oauth-return"
 import { BillingCustomerCache } from "../../data/billing-customer"
 import { readGrants } from "../../data/session-tenant"
 import { organizationFeatureFlagsFrom } from "@maple/domain/organization-feature-flags"
-import { isClerkAuthEnabled } from "../../lib/services/common/auth-mode"
+import { isClerkAuthEnabled } from "../../platform/auth-mode"
 import { trackProduct } from "../../data/analytics"
 import { readAllPages } from "../../platform/read-all-pages"
 

@@ -6,7 +6,7 @@ import {
 	type SdkSnippet,
 	sdkSnippets,
 } from "../../kit/sdk-snippets"
-import { ingestUrl } from "../../../lib/services/common/ingest-url"
+import { ingestUrl } from "../../../platform/ingest-url"
 import { dockerCommand, HOST_CONFIG, helmCommand, hostCommand } from "../../infra/kit/install-snippets"
 import { Array as Arr, String as Str, Option } from "effect"
 

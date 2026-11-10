@@ -1,6 +1,6 @@
 import { buildErrorsLabFixture } from "../errors-fixture"
 import { errorSignal, sampleTraces } from "../worst-case-docs"
-import type { ErrorSignal } from "../../lib/models/error-signal"
+import type { ErrorSignal } from "../../page/errors/kit/error-signal"
 import { Submodel } from "foldkit"
 import type { Html } from "foldkit/html"
 import type { Message as SignalMessage } from "../../page/errors/hub/message"

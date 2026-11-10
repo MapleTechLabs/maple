@@ -1,4 +1,4 @@
-import { resolveRefreshIntervalSeconds } from "../../../lib/dashboard-controls/search-params"
+import { resolveRefreshIntervalSeconds } from "../../../route/dashboard-controls"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { button } from "@maple/views/ui/button"
 import { icon } from "@maple/views/ui/icon"

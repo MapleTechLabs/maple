@@ -2,7 +2,7 @@ import type { V2ScrapeTarget } from "@maple/domain/http/v2"
 import { formatDuration, formatNumber } from "@maple/ui/lib/format"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { heading } from "@maple/views/ui/heading"
-import { diagnoseScrapeError } from "../../lib/scrape-error-diagnosis"
+import { diagnoseScrapeError } from "./scrape-error-diagnosis"
 import { button } from "@maple/views/ui/button"
 import { inlineCode } from "@maple/views/ui/inline-code"
 import {

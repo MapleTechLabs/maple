@@ -1,5 +1,5 @@
 import type { SourcePlatform } from "@maple/primitives"
-import { ingestUrl } from "../../../lib/services/common/ingest-url"
+import { ingestUrl } from "../../../platform/ingest-url"
 import { Schema, Array as Arr, Option } from "effect"
 import { Command, type Update } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"

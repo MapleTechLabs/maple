@@ -6,7 +6,7 @@ import {
 } from "@maple/domain/http"
 import { cn } from "@maple/ui/lib/utils"
 import { suggestedDestinationName } from "@maple/web-data/alerts/form-utils"
-import { isClerkAuthEnabled } from "../../../lib/services/common/auth-mode"
+import { isClerkAuthEnabled } from "../../../platform/auth-mode"
 import { Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { button } from "@maple/views/ui/button"

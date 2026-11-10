@@ -12,7 +12,7 @@ import { isEditing } from "./update"
 import { viewTile } from "./view-widgets"
 import type { VariableValues } from "@maple/query-engine"
 import { sectionView } from "./view-sections"
-import { resolveSectionView } from "../../../lib/dashboards/section-view-state"
+import { resolveSectionView } from "../kit/section-view-state"
 import { containerKeyFor } from "@maple/domain/http"
 import { Array as Arr, Option } from "effect"
 

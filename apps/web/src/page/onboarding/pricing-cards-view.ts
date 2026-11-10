@@ -1,5 +1,5 @@
 import type { CatalogPlan } from "@maple/domain/http"
-import { getPlanDescription, getPlanFeatures, TRIAL_DURATION_DAYS } from "../../lib/billing/plans"
+import { getPlanDescription, getPlanFeatures, TRIAL_DURATION_DAYS } from "../kit/billing/plans"
 import { cn } from "@maple/ui/lib/utils"
 import { AsyncData, Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"

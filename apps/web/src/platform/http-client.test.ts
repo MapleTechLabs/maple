@@ -12,7 +12,7 @@ import {
 	WarehouseUnreachableError,
 } from "@maple/web-data/warehouse/effect-utils"
 import { MapleInternalHttp } from "@maple/web-data/warehouse/warehouse-services"
-import { ApiReachabilityLive } from "../../../data/warehouse"
+import { ApiReachabilityLive } from "../data/warehouse"
 import { apiBaseUrl } from "./api-base-url"
 import { withRequestTimeout } from "./http-client"
 import { isRetryableTransportError } from "./retry-policy"

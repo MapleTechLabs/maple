@@ -13,7 +13,7 @@ import type { Finding } from "../page/infra/overview/summaries"
 import type { ReleaseServiceImpact } from "../page/releases/release-model"
 import type { Log } from "@maple/web-data/warehouse/logs"
 import { domainThresholdToForm, formatSignalValue } from "@maple/web-data/alerts/form-utils"
-import { formatUsage } from "../lib/billing/usage"
+import { formatUsage } from "../page/kit/billing/usage"
 import { Array as Arr, Record as Rec, String as Str } from "effect"
 
 // Relative and domain-typed imports keep this fixture loadable from apps/web.

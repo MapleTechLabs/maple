@@ -1,4 +1,4 @@
-import { ONBOARDING_INTENTS } from "../../lib/onboarding-intent"
+import { ONBOARDING_INTENTS } from "./onboarding-intent"
 import {
 	filledSurfaces,
 	languageDocsOf,
@@ -25,7 +25,7 @@ import * as CopyButton from "@maple/views/ui/copy-button"
 import * as GuidedSetup from "../kit/guided-setup"
 import { presenceOf, type TelemetrySignalKind } from "@maple/views/data/signal-presence"
 import { ConnectMessage } from "./quick-start-connect"
-import { TEST_TRACE_SERVICE } from "../../lib/own-services"
+import { TEST_TRACE_SERVICE } from "../kit/own-services"
 import type { LiveFindings } from "./quick-start-live"
 import { regionStep } from "./quick-start-region-view"
 import { isResumable } from "./quick-start-drawer"

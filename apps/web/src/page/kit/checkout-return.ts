@@ -2,7 +2,7 @@ import { Duration, Effect, Schema } from "effect"
 import { Command } from "foldkit"
 import { defineMessageUnion } from "foldkit/message"
 import { trackProduct } from "../../data/analytics"
-import { CHECKOUT_CONFIRM_POLL_MS, CHECKOUT_CONFIRM_TIMEOUT_MS } from "../../lib/billing/checkout-return"
+import { CHECKOUT_CONFIRM_POLL_MS, CHECKOUT_CONFIRM_TIMEOUT_MS } from "./billing/checkout-return"
 
 // Back from Stripe (`?checkout=complete`), a page waits on the Autumn sync. It re-reads the customer
 // every poll until the plan shows up, or gives up at the timeout.

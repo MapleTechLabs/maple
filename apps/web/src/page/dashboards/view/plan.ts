@@ -8,7 +8,7 @@ import type { PageContext } from "../../contract"
 import { DEFAULT_WIDGET_WIDTH_PX, maxDataPointsForWidth, toPanelType } from "../kit/chart-registry"
 import { planWidget, type WidgetGate } from "../kit/widget-data"
 import { FetchVariableOptions, FetchWidget } from "./command"
-import { timeRangeFromSearch, variableValuesFromSearch } from "../../../lib/dashboard-controls/search-params"
+import { timeRangeFromSearch, variableValuesFromSearch } from "../../../route/dashboard-controls"
 import { AsyncData } from "foldkit"
 import {
 	optionsByNameOf as optionsByNameFor,

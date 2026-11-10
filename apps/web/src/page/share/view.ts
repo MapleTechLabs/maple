@@ -1,7 +1,7 @@
 import { containerKeyFor, containerKeyOf, ROOT_CONTAINER_KEY } from "@maple/domain/http"
 import { normalizeLayout } from "@maple/grid-engine"
 import { ALL_VALUE, type VariableValues } from "@maple/query-engine"
-import { resolveSectionView } from "../../lib/dashboards/section-view-state"
+import { resolveSectionView } from "../dashboards/kit/section-view-state"
 import { GRID_ROW_HEIGHT, projectLayout, tierForWidth } from "../dashboards/kit/grid-breakpoints"
 import { Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"

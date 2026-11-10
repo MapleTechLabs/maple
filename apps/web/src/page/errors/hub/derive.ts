@@ -8,12 +8,8 @@ import {
 	type HubView,
 	type SeverityFilter,
 } from "./hub-params"
-import {
-	buildErrorSignals,
-	type ErrorSignal,
-	indexInvestigationsByIssue,
-} from "../../../lib/models/error-signal"
-import { errorIssueFromV2 } from "../../../lib/services/error-issues"
+import { buildErrorSignals, type ErrorSignal, indexInvestigationsByIssue } from "../kit/error-signal"
+import { errorIssueFromV2 } from "../../../data/error-issues"
 import { Option, Array as Arr, String as Str, Order } from "effect"
 import { AsyncData } from "foldkit"
 import type { TimeWindow } from "../../../data/time-range"

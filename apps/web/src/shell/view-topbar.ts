@@ -1,5 +1,5 @@
 import { cn } from "@maple/ui/lib/utils"
-import { isClerkAuthEnabled } from "../lib/services/common/auth-mode"
+import { isClerkAuthEnabled } from "../platform/auth-mode"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import * as ChecklistView from "./onboarding-checklist-view"
 import * as ConnectPanelView from "./connect-panel-view"

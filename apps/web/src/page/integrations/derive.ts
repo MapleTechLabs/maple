@@ -18,7 +18,7 @@ import {
 } from "../infra-integrations/planetscale/setup-steps"
 import type { Keyed } from "@maple/views/data/keyed"
 import { chatIntegrationId, type IntegrationId } from "./catalog"
-import { hasBringYourOwnCloudAddOn } from "../../lib/billing/plan-gating"
+import { hasBringYourOwnCloudAddOn } from "../kit/billing/plan-gating"
 import type { Visibility } from "../settings/nav"
 import type { Model, Statuses } from "./model"
 

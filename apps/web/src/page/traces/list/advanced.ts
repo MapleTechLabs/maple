@@ -2,7 +2,7 @@ import {
 	applyWhereClauseSuggestion,
 	getWhereClauseAutocomplete,
 	type WhereClauseAutocompleteResult,
-} from "../../../lib/query-builder/where-clause-autocomplete"
+} from "../../kit/query-builder/where-clause-autocomplete"
 import { applyWhereClause, type TracesSearchLike } from "../advanced-filter-sync"
 import { Option, type Result, Array as Arr } from "effect"
 import { AsyncData, Command, type Update } from "foldkit"

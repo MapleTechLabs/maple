@@ -1,4 +1,4 @@
-import type { ProductEvent } from "../lib/analytics"
+import type { ProductEvent } from "./product-events"
 import { Effect, Schema } from "effect"
 import type { SessionIdentity } from "../platform/session-identity"
 
@@ -17,7 +17,7 @@ const sdk = Effect.tryPromise({
 })
 
 /**
- * `trackProduct` (apps/web/src/lib/analytics.ts): a `custom` session event on the session the
+ * `trackProduct` (apps/web/src/data/product-events.ts): a `custom` session event on the session the
  * Foldkit telemetry started. Never fails: the engine queues events until that session's sink runs.
  */
 export const trackProduct = (event: ProductEvent, props?: Readonly<Record<string, unknown>>) =>

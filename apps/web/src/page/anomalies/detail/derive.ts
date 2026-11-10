@@ -1,6 +1,6 @@
 import type { AnomalyIncidentDocument } from "@maple/domain/http"
 import type { V2InvestigationCreateParams } from "@maple/domain/http/v2"
-import { anomalyIncidentFromV2 } from "../../../lib/services/anomalies"
+import { anomalyIncidentFromV2 } from "../../../data/anomaly-incidents"
 import { SIGNAL_LABEL } from "@maple/web-data/anomalies/format"
 import { Option, Array as Arr } from "effect"
 import { AsyncData } from "foldkit"

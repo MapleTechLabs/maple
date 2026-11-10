@@ -1,6 +1,6 @@
 import type { AnomalyIncidentDocument } from "@maple/domain/http"
 import { formatNumber, pluralize } from "@maple/ui/lib/format"
-import { errorIssueFromV2 } from "../../../lib/services/error-issues"
+import { errorIssueFromV2 } from "../../../data/error-issues"
 import { SIGNAL_LABEL } from "@maple/web-data/anomalies/format"
 import { META_CHIP_CLASS } from "@maple/views/lib/anomaly-display"
 import { TONE_SOFT } from "@maple/ui/lib/tone"

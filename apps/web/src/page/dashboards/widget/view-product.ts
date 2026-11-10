@@ -7,7 +7,7 @@ import {
 	FUNNEL_SESSION_DIMENSIONS,
 	FUNNEL_WINDOW_OPTIONS,
 } from "../kit/funnel-definition"
-import { parseProductEventsFilterClause } from "../../../lib/query-builder/funnel-filters"
+import { parseProductEventsFilterClause } from "./funnel-filters"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { button } from "@maple/views/ui/button"
 import { badge } from "@maple/views/ui/display"

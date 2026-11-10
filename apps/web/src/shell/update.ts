@@ -1,4 +1,4 @@
-import { isClerkAuthEnabled } from "../lib/services/common/auth-mode"
+import { isClerkAuthEnabled } from "../platform/auth-mode"
 import { Array, Equal, Option, Record, Struct } from "effect"
 import { AsyncData, Command, type Update } from "foldkit"
 import { modifyFields } from "foldkit/struct"

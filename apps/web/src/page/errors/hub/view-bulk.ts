@@ -13,7 +13,7 @@ import type { Model } from "./model"
 import { hstack, hstackClass } from "@maple/views/ui/stack"
 import { Array as Arr, Order } from "effect"
 import { formatNumber } from "@maple/ui/lib/format"
-import type { ErrorSignal } from "../../../lib/models/error-signal"
+import type { ErrorSignal } from "../kit/error-signal"
 
 type H = HtmlBuilder<Message>
 

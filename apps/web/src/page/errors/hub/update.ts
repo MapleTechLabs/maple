@@ -10,7 +10,7 @@ import {
 	SEVERITY_FILTERS,
 } from "./hub-params"
 import type { IssueKind } from "@maple/domain/http"
-import { sparkFingerprintHashes } from "../../../lib/models/error-signal"
+import { sparkFingerprintHashes } from "../kit/error-signal"
 import { Option, Array as Arr, String as Str } from "effect"
 import { AsyncData, Command } from "foldkit"
 import * as Keyed from "@maple/views/data/keyed"

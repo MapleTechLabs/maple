@@ -1,6 +1,6 @@
 import { TONE_TEXT } from "@maple/ui/lib/tone"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { TRIAL_DURATION_DAYS } from "../../lib/billing/plans"
+import { TRIAL_DURATION_DAYS } from "../kit/billing/plans"
 import { AppRoute, hrefOf } from "../../route"
 import { button, linkButton } from "@maple/views/ui/button"
 import { heading } from "@maple/views/ui/heading"

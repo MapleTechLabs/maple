@@ -1,9 +1,6 @@
 import type { Operator } from "@maple/domain/where-clause"
 import { whereKeyMatchesAnyOf, whereKeyRule, whereOperatorsOf } from "@maple/query-engine/query-builder"
-import {
-	getWhereClauseAutocomplete,
-	type WhereClauseAutocompleteValues,
-} from "../../../lib/query-builder/where-clause-autocomplete"
+import { getWhereClauseAutocomplete, type WhereClauseAutocompleteValues } from "./where-clause-autocomplete"
 import { Array as Arr, Option, Schema, String as Str } from "effect"
 import type { QueryDraft } from "./draft"
 

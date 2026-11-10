@@ -1,5 +1,5 @@
 import type { FunnelPopulationFilterField } from "@maple/query-model"
-import type { WhereClauseAutocompleteValues } from "../../../lib/query-builder/where-clause-autocomplete"
+import type { WhereClauseAutocompleteValues } from "../../kit/query-builder/where-clause-autocomplete"
 import { Option, Array as Arr } from "effect"
 import { AsyncData } from "foldkit"
 import type { TimeWindow } from "../../../data/time-range"

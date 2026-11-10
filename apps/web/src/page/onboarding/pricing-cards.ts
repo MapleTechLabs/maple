@@ -1,5 +1,5 @@
 import { AttachRequest, CatalogPlansResponse } from "@maple/domain/http"
-import { buildCheckoutSuccessUrl } from "../../lib/billing/checkout-return"
+import { buildCheckoutSuccessUrl } from "../kit/billing/checkout-return"
 import { displayError } from "@maple/web-data/lib/error-messages"
 import { Effect, Schema, Array as Arr, Option } from "effect"
 import { AsyncData, Command, type Update } from "foldkit"

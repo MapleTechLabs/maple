@@ -1,4 +1,4 @@
-import { type DocsPage, docsUrl } from "../../lib/docs"
+import { type DocsPage, docsUrl } from "./docs"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { linkButton } from "@maple/views/ui/button"
 import { icon } from "@maple/views/ui/icon"

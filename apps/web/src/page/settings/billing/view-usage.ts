@@ -2,7 +2,7 @@ import { AI_CREDITS_FEATURE_ID } from "@maple/domain/billing"
 import { formatCurrency } from "@maple/domain/format"
 import type { AiCreditSourceUsage, BillingCustomer } from "@maple/domain/http"
 import { cn } from "@maple/ui/lib/utils"
-import { capApplies, parseCapInput, spendLimitFor } from "../../../lib/billing/controls"
+import { capApplies, parseCapInput, spendLimitFor } from "./controls"
 import {
 	FEATURE_COLORS,
 	type FeatureSpend,
@@ -12,8 +12,8 @@ import {
 	SPEND_FEATURES,
 	type SpendModel,
 	usageMeter,
-} from "../../../lib/billing/spend"
-import { formatCount, formatUsage, formatUsageAgainst } from "../../../lib/billing/usage"
+} from "./spend"
+import { formatCount, formatUsage, formatUsageAgainst } from "../../kit/billing/usage"
 import { Option, Schema, Array as Arr } from "effect"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"

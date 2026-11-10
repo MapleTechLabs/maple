@@ -1,6 +1,6 @@
 import type { V2ScrapeTarget, V2ScrapeTargetCheck } from "@maple/domain/http/v2"
 import { EMPTY_VALUE, formatDuration, formatNumber } from "@maple/ui/lib/format"
-import { diagnoseScrapeError } from "../../lib/scrape-error-diagnosis"
+import { diagnoseScrapeError } from "./scrape-error-diagnosis"
 import { Option, Schema, Array as Arr, Record as Rec } from "effect"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"

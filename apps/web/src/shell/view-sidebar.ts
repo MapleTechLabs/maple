@@ -1,7 +1,7 @@
 import { cn } from "@maple/ui/lib/utils"
 import { MAPLE_REGION_LABELS } from "@maple/domain/organization-regions"
 import { initialsFrom } from "@maple/ui/lib/initials"
-import { hasMultipleRegions } from "../lib/region"
+import { hasMultipleRegions } from "../platform/region"
 import { Option, Record, Array as Arr, String as Str } from "effect"
 import { AsyncData } from "foldkit"
 import type { ChildAttribute, Html, HtmlBuilder } from "foldkit/html"

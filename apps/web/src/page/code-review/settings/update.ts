@@ -8,8 +8,8 @@ import {
 	PrReviewRepositoryConfig,
 	type VcsRepositoryId,
 } from "@maple/domain/http"
-import { isClerkAuthEnabled } from "../../../lib/services/common/auth-mode"
-import { currentRegion } from "../../../lib/region"
+import { isClerkAuthEnabled } from "../../../platform/auth-mode"
+import { currentRegion } from "../../../platform/region"
 import { isUnexpectedError } from "@maple/web-data/lib/error-messages"
 import { Option, Schema, Array as Arr, Record as Rec } from "effect"
 import { AsyncData, Command } from "foldkit"

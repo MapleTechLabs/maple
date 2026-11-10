@@ -4,7 +4,7 @@ import {
 	pickDashboardControlParams,
 	resolveRefreshIntervalSeconds,
 	timeRangeFromSearch,
-} from "./search-params"
+} from "./dashboard-controls"
 
 describe("pickDashboardControlParams", () => {
 	it("retains every `var-*` selection", () => {

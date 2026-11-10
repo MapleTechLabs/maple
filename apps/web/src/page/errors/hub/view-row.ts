@@ -1,6 +1,6 @@
 import { EMPTY_VALUE, formatNumber } from "@maple/ui/lib/format"
 import { cn } from "@maple/ui/lib/utils"
-import type { ErrorSignal } from "../../../lib/models/error-signal"
+import type { ErrorSignal } from "../kit/error-signal"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import * as Checkbox from "@maple/views/ui/checkbox"
 import { eyebrow } from "@maple/views/ui/eyebrow"

@@ -7,9 +7,9 @@ import {
 	type SnippetBlock,
 	sdkSnippets,
 } from "./sdk-snippets"
-import { type DocsPage, docsUrl } from "../../lib/docs"
+import { type DocsPage, docsUrl } from "./docs"
 import type { Lang } from "@maple/views/lib/highlight"
-import { ingestUrl } from "../../lib/services/common/ingest-url"
+import { ingestUrl } from "../../platform/ingest-url"
 import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { button } from "@maple/views/ui/button"

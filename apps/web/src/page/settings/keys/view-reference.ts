@@ -1,4 +1,4 @@
-import { apiPublicUrl } from "../../../lib/services/common/api-base-url"
+import { apiPublicUrl } from "../../../platform/api-base-url"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { collapsible } from "@maple/views/ui/collapsible"
 import { copyableField } from "@maple/views/ui/copyable-field"

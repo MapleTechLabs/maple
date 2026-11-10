@@ -1,4 +1,4 @@
-import { isClerkAuthEnabled } from "./lib/services/common/auth-mode"
+import { isClerkAuthEnabled } from "./platform/auth-mode"
 import {
 	Array as Arr,
 	Clock,

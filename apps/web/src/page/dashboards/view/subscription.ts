@@ -1,4 +1,4 @@
-import { resolveRefreshIntervalSeconds } from "../../../lib/dashboard-controls/search-params"
+import { resolveRefreshIntervalSeconds } from "../../../route/dashboard-controls"
 import { Duration, Effect, Queue, Schema, Stream } from "effect"
 import { Dom, Subscription } from "foldkit"
 import type { Resources } from "../../../platform/resources"

@@ -1,4 +1,4 @@
-import { resolveRefreshIntervalSeconds } from "../../../lib/dashboard-controls/search-params"
+import { resolveRefreshIntervalSeconds } from "../../../route/dashboard-controls"
 import { isDialogOpen, isEditableTarget } from "@maple/ui/lib/keyboard"
 import { Duration, Option, Schema, Stream } from "effect"
 import { Dom, Subscription } from "foldkit"

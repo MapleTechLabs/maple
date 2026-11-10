@@ -2,14 +2,14 @@ import {
 	applyWhereClauseSuggestion,
 	getWhereClauseAutocomplete,
 	type WhereClauseAutocompleteResult,
-} from "../../lib/query-builder/where-clause-autocomplete"
+} from "./query-builder/where-clause-autocomplete"
 import type { QueryBuilderDataSource } from "@maple/query-model"
 import { Effect, Option, Schema, Stream, String as Str } from "effect"
 import { Dom } from "foldkit"
 import { defineMessageUnion } from "foldkit/message"
 
 // The where clause autocomplete and its suggestion list, shared by every where editor
-// (see lib/query-builder/where-clause-autocomplete.ts).
+// (see query-builder/where-clause-autocomplete.ts).
 
 /** The textarea's box when the caret last moved: the fixed listbox is anchored to it. */
 export const AnchorRect = Schema.Struct({
