@@ -16239,6 +16239,28 @@ mod tests {
         assert_eq!(metered_bytes, 0, "a refused batch is not billed");
         assert!(recorded_key_uses(&store).await.is_empty());
 
+        // Over gRPC the refusal is answered OK, and is not key use either.
+        let resolved = state
+            .resolver
+            .resolve_ingest_key(raw_key)
+            .await
+            .expect("resolution should not fail")
+            .expect("the test key resolves");
+        let payload = test_log_request("refused over grpc");
+        let decoded_bytes = payload.encoded_len();
+        accept_grpc_decoded(
+            &state,
+            Signal::Logs,
+            DecodedPayload::Logs(payload),
+            &resolved,
+            KeyAdmission::Ingest,
+            decoded_bytes,
+            &ClaimOutcome::default(),
+        )
+        .await
+        .expect("a collector refusal over gRPC is answered OK");
+        assert!(recorded_key_uses(&store).await.is_empty());
+
         drop(std::fs::remove_dir_all(&queue_dir));
     }
 
