@@ -1033,7 +1033,7 @@ describe("dueVerifications", () => {
 	)
 
 	// A page with no order lets the same rows fill every tick while others wait.
-	it.effect("returns the longest overdue rows first when the page is smaller than the backlog", () =>
+	it.effect("returns the least recently touched rows first, so a deferred row goes to the back", () =>
 		Effect.gen(function* () {
 			const layer = makeLayer()
 			yield* Effect.gen(function* () {
@@ -1049,12 +1049,25 @@ describe("dueVerifications", () => {
 					`https://github.com/${REPO}/pull/613`,
 					"agent",
 				)
-				// Opened in the opposite order to their deadlines.
 				yield* service.onPullRequestEvent(mergeEvent({ mergedAtMs: nowMs }))
 				yield* service.onPullRequestEvent(mergeEvent({ number: 613, mergedAtMs: nowMs - 30 * DAY }))
+				const dueAt = nowMs + 365 * DAY
+				const rows = yield* service.dueVerifications(dueAt, 10)
+				const defer = (issueId: ErrorIssueId, atMs: number) =>
+					Effect.forEach(
+						Arr.filter(rows, (row) => row.issueId === issueId),
+						(row) => service.deferVerification(row, atMs),
+					)
 
-				const page = yield* service.dueVerifications(nowMs + 365 * DAY, 1)
-				expect(Arr.map(page, (row) => row.issueId)).toEqual([overdue])
+				// Deferring one row puts the other ahead of it, whichever was opened first.
+				yield* defer(recent, dueAt)
+				expect(Arr.map(yield* service.dueVerifications(dueAt, 1), (row) => row.issueId)).toEqual([
+					overdue,
+				])
+				yield* defer(overdue, dueAt + 1)
+				expect(Arr.map(yield* service.dueVerifications(dueAt + 1, 1), (row) => row.issueId)).toEqual([
+					recent,
+				])
 			}).pipe(Effect.provide(layer))
 		}),
 	)
