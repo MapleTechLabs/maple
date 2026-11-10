@@ -23,7 +23,14 @@ import { MeasureSidebarOverflow, PositionMenu } from "./mounts"
 import { isMenuKey } from "./update"
 import { menuContent } from "./view-menus"
 import { navGroupSections, pinnedGroup, shellNavGroups } from "./view-nav"
-import { NO_TIP, type RailTip, shellSidebarFooter, shellSidebarHeader } from "./view-sidebar"
+import {
+	NO_TIP,
+	type RailTip,
+	shellOnCallStatus,
+	shellSidebarFooter,
+	shellSidebarHeader,
+} from "./view-sidebar"
+import { isPillShown, onCallDetail } from "./oncall"
 import { type BreadcrumbEntry, hidesTopbarConnect, topbar } from "./view-topbar"
 import { splitPageRails } from "./page-rails"
 import { filterSheet, filterSheetTrigger, rightSheet, rightSheetTrigger } from "./view-page-sheets"
@@ -54,13 +61,17 @@ const sidebarRegions = (
 
 const RAIL_TIP_PREFIX = "shell-rail-tip-"
 
-/** The rows that carry a rail tooltip: Search, the nav rows this org is shown, the footer links. */
-const railTipTitles = (clerk: ShellClerk | null): ReadonlyArray<string> => [
-	"Search",
-	...Arr.flatMap(shellNavGroups(clerk), (group) => Arr.map(group.items, (item) => item.title)),
-	"Sources",
-	"Settings",
-]
+/** The rows that carry a rail tooltip: Search, the nav rows, the on-call pill, the footer links. */
+const railTipTitles = (model: Model, clerk: ShellClerk | null): ReadonlyArray<string> => {
+	const onCall = shellOnCallStatus(model)
+	return [
+		"Search",
+		...Arr.flatMap(shellNavGroups(clerk), (group) => Arr.map(group.items, (item) => item.title)),
+		...(isPillShown(onCall) ? [onCallDetail(onCall)] : []),
+		"Sources",
+		"Settings",
+	]
+}
 
 /** The desktop rail; collapsed, its rows share one Tooltip naming the row (`tooltip={title}`). */
 const desktopSidebar = (
@@ -97,7 +108,7 @@ const desktopSidebar = (
 					isInstant,
 				),
 			toContent: (triggerId) => [Str.slice(RAIL_TIP_PREFIX.length)(triggerId)],
-			triggerIds: Arr.map(railTipTitles(clerk), (title) => `${RAIL_TIP_PREFIX}${title}`),
+			triggerIds: Arr.map(railTipTitles(model, clerk), (title) => `${RAIL_TIP_PREFIX}${title}`),
 		},
 		toParentMessage: (message) => Message.GotRailTooltipMessage({ message }),
 	})

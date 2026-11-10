@@ -508,6 +508,14 @@ export const LAB_ENTRIES: ReadonlyArray<LabEntry> = [
 		session: "none",
 	},
 	{
+		path: "/lab/shell",
+		title: "Shell states",
+		description:
+			"The real sidebar with foldable groups and the on-call pill's three states, and a right sheet held in ?sheet= with a demo form.",
+		kind: "lab",
+		session: "none",
+	},
+	{
 		path: "/lab/query-builder",
 		title: "Query builder",
 		description: "MVP query builder against real warehouse data for the signed-in org.",
