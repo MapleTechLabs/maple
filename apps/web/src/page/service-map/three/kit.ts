@@ -75,6 +75,8 @@ export const disposeTree = (root: THREE.Object3D, shared: ReadonlySet<THREE.Text
 	root.traverse((object) => {
 		if (!isDrawable(object)) return
 		object.geometry.dispose()
+		// An instanced mesh also holds per-instance buffers that only its own dispose frees.
+		if (object instanceof THREE.InstancedMesh) object.dispose()
 		const materials: ReadonlyArray<THREE.Material> = Arr.isArray(object.material)
 			? object.material
 			: [object.material]
