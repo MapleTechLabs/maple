@@ -17,7 +17,7 @@ import { V2InvestigationCreateParams } from "@maple/domain/http/v2"
 import { Effect, Schema } from "effect"
 import { Command, Mount } from "foldkit"
 import { MapleApiV2Client, MapleInternalApiClient } from "../../../platform/api-clients"
-import { writeClipboard } from "../../kit/clipboard"
+import { writeClipboard } from "@maple/ui/lib/clipboard"
 import { IssueWrite, Message } from "./message"
 
 export const ResolveWindow = resolveWindowCommand("ResolveIssueWindow", Message.CompletedResolveWindow)

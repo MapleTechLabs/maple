@@ -1,6 +1,6 @@
 import { Duration, Effect, Option, Result, Schema } from "effect"
 import { Command } from "foldkit"
-import { writeClipboard } from "../../ui/copy-button"
+import { writeClipboard } from "@maple/ui/lib/clipboard"
 import { TraceSource } from "../trace-source"
 import { DetailFetch, LogsFetch, Message } from "./message"
 

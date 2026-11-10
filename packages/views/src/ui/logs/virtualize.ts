@@ -11,7 +11,7 @@ import {
 	virtualizerStream,
 	whileLive,
 } from "../../lib/virtualizer"
-import { writeClipboardApi } from "../copy-button"
+import { writeClipboard } from "@maple/ui/lib/clipboard"
 import { Message, type VirtualRow } from "./logs-stream-message"
 
 /**
@@ -201,20 +201,19 @@ export const ScrollStreamToIndex = Command.define("ScrollStreamToIndex", {
 })
 
 /** `useCopy`'s write. A refused clipboard (no permission, no focus) is not an error the stream shows. */
-const writeClipboard = (text: string) =>
-	writeClipboardApi(text).pipe(Effect.ignore, Effect.as(Message.CompletedCopy()))
+const copyText = (text: string) => Effect.as(writeClipboard(text), Message.CompletedCopy())
 
 export const CopyText = Command.define("CopyText", {
 	args: { text: Schema.String },
 	messages: [Message.CompletedCopy],
-	execute: ({ text }) => writeClipboard(text),
+	execute: ({ text }) => copyText(text),
 })
 
 /** The row's own log page on this origin. */
 export const CopyLogLink = Command.define("CopyLogLink", {
 	args: { href: Schema.String },
 	messages: [Message.CompletedCopy],
-	execute: ({ href }) => Effect.suspend(() => writeClipboard(`${window.location.origin}${href}`)),
+	execute: ({ href }) => Effect.suspend(() => copyText(`${window.location.origin}${href}`)),
 })
 
 /** Back to the newest rows. */

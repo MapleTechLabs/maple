@@ -1,12 +1,11 @@
 /**
- * Framework-free clipboard writes. Lives outside the React hook so the non-React
- * surfaces (the Astro landing site) share one implementation of the fiddly
- * insecure-origin fallback instead of keeping their own copy of it.
+ * Clipboard writes for every surface: the dashboard's commands and the non-Effect pages (the Astro
+ * landing site, the crash page) share one implementation of the fiddly insecure-origin fallback.
  */
 
-import { Option } from "effect"
+import { Effect, Option, Schema } from "effect"
 
-import { tryPromise, trySync } from "./try-sync"
+import { trySync } from "./try-sync"
 
 /**
  * Last-resort clipboard write for insecure origins and embedded contexts where
@@ -45,19 +44,36 @@ export function writeClipboardFallback(text: string): boolean {
 	return ok
 }
 
+class ClipboardWriteError extends Schema.TaggedError<ClipboardWriteError>()(
+	"@maple/web/ClipboardWriteError",
+	{
+		message: Schema.String,
+		cause: Schema.Defect(),
+	},
+) {}
+
 /**
- * Write `text` through `navigator.clipboard`, falling back to the hidden
- * textarea when the API is missing or rejects.
+ * Write `text` through `navigator.clipboard`, falling back to the hidden textarea when the API is
+ * missing or rejects (an insecure origin, a denied permission, an unfocused document). Whether it landed.
  */
+export const writeClipboard = (text: string): Effect.Effect<boolean> =>
+	Effect.tryPromise({
+		try: () => navigator.clipboard.writeText(text),
+		catch: (cause) => new ClipboardWriteError({ message: "The clipboard API refused the write", cause }),
+	}).pipe(
+		Effect.as(true),
+		Effect.catch(() =>
+			Effect.try({
+				try: () => writeClipboardFallback(text),
+				catch: (cause) =>
+					new ClipboardWriteError({ message: "The fallback clipboard write failed", cause }),
+			}),
+		),
+		Effect.orElseSucceed(() => false),
+	)
+
+/** `writeClipboard` as a promise for the non-Effect surfaces; an empty value is refused. */
 export async function writeClipboardText(text: string): Promise<boolean> {
 	if (!text) return false
-
-	if (navigator.clipboard?.writeText !== undefined) {
-		const written = await tryPromise(() => navigator.clipboard.writeText(text))
-		if (Option.isSome(written)) return true
-	}
-
-	// The API is missing, or it rejected — an insecure origin, a denied
-	// permission, a document that was not focused. The textarea covers all three.
-	return writeClipboardFallback(text)
+	return Effect.runPromise(writeClipboard(text))
 }

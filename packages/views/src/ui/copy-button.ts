@@ -1,4 +1,4 @@
-import { writeClipboardFallback } from "@maple/ui/lib/clipboard"
+import { writeClipboard } from "@maple/ui/lib/clipboard"
 import { cn } from "@maple/ui/lib/utils"
 import {
 	copyButtonStatusStyles,
@@ -45,33 +45,6 @@ export const Message = defineMessageUnion({
 	ElapsedCopyStatus: { generation: Schema.Finite },
 })
 export type Message = typeof Message.Type
-
-export class ClipboardWriteError extends Schema.TaggedError<ClipboardWriteError>()(
-	"@maple/web/ClipboardWriteError",
-	{ message: Schema.String, cause: Schema.Defect() },
-) {}
-
-/** `navigator.clipboard.writeText` as an Effect, failing with `ClipboardWriteError`. */
-export const writeClipboardApi = (text: string): Effect.Effect<void, ClipboardWriteError> =>
-	Effect.tryPromise({
-		try: () => navigator.clipboard.writeText(text),
-		catch: (cause) => new ClipboardWriteError({ message: "The clipboard API refused the write", cause }),
-	})
-
-/** Whether the text reached the clipboard. */
-export const writeClipboard = (text: string): Effect.Effect<boolean> =>
-	writeClipboardApi(text).pipe(
-		Effect.as(true),
-		// A rejected clipboard API falls back to the `execCommand` textarea write.
-		Effect.catch(() =>
-			Effect.try({
-				try: () => writeClipboardFallback(text),
-				catch: (cause) =>
-					new ClipboardWriteError({ message: "The fallback clipboard write failed", cause }),
-			}),
-		),
-		Effect.orElseSucceed(() => false),
-	)
 
 export const WriteClipboard = Command.define("WriteClipboard", {
 	args: { text: Schema.String, generation: Schema.Finite },
