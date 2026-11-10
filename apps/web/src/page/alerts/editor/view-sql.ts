@@ -7,9 +7,7 @@ import { TONE_FILL, TONE_TEXT, type Tone } from "@maple/ui/lib/tone"
 import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { button } from "@maple/views/ui/button"
-import { badge } from "@maple/views/ui/display"
 import { icon } from "@maple/views/ui/icon"
-import { iconButton } from "@maple/views/ui/icon-button"
 import { inlineCode } from "@maple/views/ui/inline-code"
 import { label } from "@maple/views/ui/label"
 import type * as Select from "@maple/views/ui/select"
@@ -21,7 +19,7 @@ import type { Model } from "./model"
 import { formSelect } from "./view-select"
 import { typography, typographyClass } from "@maple/views/ui/typography"
 import { hstack } from "@maple/views/ui/stack"
-import { queryPanelBar } from "../../kit/query-panel-bar"
+import { SQL_MACRO_HINTS, sqlPanelHeader } from "../../kit/query-builder/sql-panel"
 import { Array as Arr, Record as Rec } from "effect"
 import { stripClass } from "@maple/views/ui/rule"
 
@@ -37,53 +35,17 @@ export type SqlView = Pick<Model, "isSqlCollapsed"> & Readonly<{ reducerSelect: 
 
 export const SQL_TEXTAREA_ID = "alert-rule-sql"
 
-const MACRO_HINTS: ReadonlyArray<string> = [
-	"$__orgFilter",
-	"$__timeFilter(Column)",
-	"$__startTime",
-	"$__endTime",
-	"$__interval_s",
-]
-
 const REDUCER_OPTIONS = Arr.map(Rec.toEntries(RAW_QUERY_REDUCER_LABELS), ([value, text]) => ({
 	value,
 	label: text,
 }))
 
-const header = (h: H, model: SqlView, sql: string): Html => {
-	const issue = rawSqlIssue(sql)
-	return queryPanelBar(h, [
-		iconButton(
-			h,
-			{
-				size: "icon-xs",
-				label: model.isSqlCollapsed ? "Expand SQL" : "Collapse SQL",
-				hasTooltip: false,
-				className: typographyClass({ tone: "muted", hoverTone: "foreground" }),
-				attributes: [h.OnClick(Message.ToggledSqlCollapsed())],
-			},
-			[icon(h, model.isSqlCollapsed ? "ChevronRightIcon" : "ChevronDownIcon")],
-		),
-		badge(
-			h,
-			{
-				variant: "outline",
-				className: "font-mono text-2xs text-primary-foreground border-0 shrink-0 bg-primary/80",
-			},
-			["sql"],
-		),
-		typography(h, { size: "2xs", tone: "muted" }, ["ClickHouse"]),
-		h.div([h.Class("flex-1")], []),
-		...(issue !== null && !model.isSqlCollapsed
-			? [
-					h.span(
-						[h.Class(cn("text-2xs", TONE_TEXT.crit)), h.Title(issue.message)],
-						[issue.code === "MissingOrgFilter" ? "Missing $__orgFilter" : issue.message],
-					),
-				]
-			: []),
-	])
-}
+const header = (h: H, model: SqlView, sql: string): Html =>
+	sqlPanelHeader(h, {
+		isCollapsed: model.isSqlCollapsed,
+		issue: rawSqlIssue(sql),
+		toggled: Message.ToggledSqlCollapsed(),
+	})
 
 const editor = (h: H, sql: string): Html =>
 	sqlEditor(h, {
@@ -99,7 +61,7 @@ const macros = (h: H): Html =>
 		hstack(
 			h,
 			{ gap: "1.5", align: "stretch", wrap: true, grow: true, className: "pt-2" },
-			Arr.map(MACRO_HINTS, (token) =>
+			Arr.map(SQL_MACRO_HINTS, ([token]) =>
 				button(
 					h,
 					{

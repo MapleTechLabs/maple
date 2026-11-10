@@ -16,7 +16,8 @@ import { stableSlice } from "../../kit/stable-slice"
 import { queryPanelView } from "../../kit/query-builder/view"
 import { isProtectedDefault } from "./derive"
 import { spanAttributeKeysOf, traceFacetsOf } from "./derive-rows"
-import { baseValuesOf, metricKeysOf } from "./where-inputs"
+import { metricKeysOf } from "../../kit/query-builder/where-values"
+import { baseValuesOf } from "./where-inputs"
 import type { RuleForm } from "./form"
 import type { AlertQueryTiming } from "@maple/domain/http"
 import { draftTimingOf } from "./derive-rows"
@@ -447,7 +448,7 @@ const builderPanel = (h: H, model: QueryView, form: RuleForm): Html =>
 					hasVisibilityToggle: false,
 					metricOptions: model.metricOptions?.options ?? [],
 					metricSearch: model.metricSearch,
-					metricBreakdownKeys: metricKeysOf(model, form.queryBuilderDraft),
+					metricBreakdownKeys: metricKeysOf(model.metricKeys, form.queryBuilderDraft),
 					autocompleteValues: baseValuesOf(model, form.queryBuilderDraft),
 				},
 				toParentMessage: (message) => Message.GotQueryPanelMessage({ message }),
