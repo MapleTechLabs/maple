@@ -25,12 +25,9 @@ import {
 } from "@maple/db/tables"
 import { Clock, Effect, Option, Redacted, Schedule, Schema, Semaphore } from "effect"
 import { HttpClient, HttpClientRequest } from "effect/http"
-import {
-	decryptAes256Gcm,
-	encryptAes256Gcm,
-	parseBase64Aes256GcmKey,
-	type EncryptedValue,
-} from "@maple/backend/platform/Crypto"
+import type { EncryptedValue } from "@maple/backend/platform/Crypto"
+import { openSecret, sealSecret, secretKeyringFromEnv } from "@maple/backend/platform/SecretBox"
+import { oauthAccessTokenSlot, oauthRefreshTokenSlot } from "@maple/backend/platform/secret-slots"
 import type { DatabaseApi } from "@maple/backend/platform/DatabaseLive"
 import { deleteSourcesOf, createIntegrationSource } from "@maple/backend/services/org/integration-sources"
 import { makeDbExecute, makePersistenceErrorMapper } from "@maple/backend/platform/db-execute"
@@ -167,17 +164,9 @@ export const makeOAuthConnectionHelpers = (options: MakeOAuthConnectionHelpersOp
 		const { provider, providerLabel, database, env, source, onUpsert } = options
 		const httpClient = yield* HttpClient.HttpClient
 
-		const encryptionKey = yield* parseBase64Aes256GcmKey(
-			Redacted.value(env.MAPLE_INGEST_KEY_ENCRYPTION_KEY),
-			(message) =>
-				new IntegrationsValidationError({
-					message:
-						message === "Expected a non-empty base64 encryption key"
-							? "MAPLE_INGEST_KEY_ENCRYPTION_KEY is required"
-							: message === "Expected base64 for exactly 32 bytes"
-								? "MAPLE_INGEST_KEY_ENCRYPTION_KEY must be base64 for exactly 32 bytes"
-								: message,
-				}),
+		const keyring = yield* secretKeyringFromEnv(
+			env,
+			(message) => new IntegrationsValidationError({ message }),
 		)
 
 		const toPersistenceError = makePersistenceErrorMapper(
@@ -187,25 +176,28 @@ export const makeOAuthConnectionHelpers = (options: MakeOAuthConnectionHelpersOp
 
 		const dbExecute = makeDbExecute(database, `${providerLabel} integration`, toPersistenceError)
 
-		const encryptValue = (plaintext: string) =>
-			encryptAes256Gcm(
-				plaintext,
-				encryptionKey,
-				(message) =>
-					new IntegrationsPersistenceError({
-						message: `Failed to encrypt ${providerLabel} token: ${message}`,
-					}),
-			)
+		const sealError = (message: string) =>
+			new IntegrationsPersistenceError({
+				message: `Failed to encrypt ${providerLabel} token: ${message}`,
+			})
 
-		const decryptValue = (encrypted: EncryptedValue) =>
-			decryptAes256Gcm(
-				encrypted,
-				encryptionKey,
-				() =>
-					new IntegrationsPersistenceError({
-						message: `Failed to decrypt stored ${providerLabel} token`,
-					}),
-			)
+		const openError = () =>
+			new IntegrationsPersistenceError({
+				message: `Failed to decrypt stored ${providerLabel} token`,
+			})
+
+		// Tokens bind to the upsert target (org, provider): a reconnect keeps the old row id.
+		const sealAccessToken = (orgId: OrgId, plaintext: string) =>
+			sealSecret(keyring, oauthAccessTokenSlot, { orgId, provider }, plaintext, sealError)
+
+		const sealRefreshToken = (orgId: OrgId, plaintext: string) =>
+			sealSecret(keyring, oauthRefreshTokenSlot, { orgId, provider }, plaintext, sealError)
+
+		const openAccessToken = (orgId: OrgId, stored: EncryptedValue) =>
+			openSecret(keyring, oauthAccessTokenSlot, { orgId, provider }, stored, openError)
+
+		const openRefreshToken = (orgId: OrgId, stored: EncryptedValue) =>
+			openSecret(keyring, oauthRefreshTokenSlot, { orgId, provider }, stored, openError)
 
 		const purgeExpiredStates = (currentTime: number) =>
 			dbExecute((db) =>
@@ -498,9 +490,9 @@ export const makeOAuthConnectionHelpers = (options: MakeOAuthConnectionHelpersOp
 			row: OAuthConnectionRow,
 			tokenResponse: OAuthTokenResponse,
 		) {
-			const accessEnc = yield* encryptValue(tokenResponse.access_token)
+			const accessEnc = yield* sealAccessToken(row.orgId, tokenResponse.access_token)
 			const refreshEnc = tokenResponse.refresh_token
-				? yield* encryptValue(tokenResponse.refresh_token)
+				? yield* sealRefreshToken(row.orgId, tokenResponse.refresh_token)
 				: null
 			const currentTime = yield* Clock.currentTimeMillis
 			const expiresAt =
@@ -512,9 +504,14 @@ export const makeOAuthConnectionHelpers = (options: MakeOAuthConnectionHelpersOp
 							accessTokenCiphertext: accessEnc.ciphertext,
 							accessTokenIv: accessEnc.iv,
 							accessTokenTag: accessEnc.tag,
-							refreshTokenCiphertext: refreshEnc?.ciphertext ?? row.refreshTokenCiphertext,
-							refreshTokenIv: refreshEnc?.iv ?? row.refreshTokenIv,
-							refreshTokenTag: refreshEnc?.tag ?? row.refreshTokenTag,
+							// Left alone when the provider kept the refresh token: `row` may predate a reseal.
+							...(refreshEnc === null
+								? undefined
+								: {
+										refreshTokenCiphertext: refreshEnc.ciphertext,
+										refreshTokenIv: refreshEnc.iv,
+										refreshTokenTag: refreshEnc.tag,
+									}),
 							expiresAt,
 							// A successful refresh proves the grant alive, even if a racing isolate stamped it.
 							revokedAt: null,
@@ -535,7 +532,7 @@ export const makeOAuthConnectionHelpers = (options: MakeOAuthConnectionHelpersOp
 			row.expiresAt === null || row.expiresAt - currentTime > OAUTH_REFRESH_LEEWAY_MS
 
 		const accessTokenFromRow = (row: OAuthConnectionRow) =>
-			decryptValue({
+			openAccessToken(row.orgId, {
 				ciphertext: row.accessTokenCiphertext,
 				iv: row.accessTokenIv,
 				tag: row.accessTokenTag,
@@ -556,7 +553,7 @@ export const makeOAuthConnectionHelpers = (options: MakeOAuthConnectionHelpersOp
 					})
 				}
 
-				const refreshToken = yield* decryptValue({
+				const refreshToken = yield* openRefreshToken(row.orgId, {
 					ciphertext: row.refreshTokenCiphertext,
 					iv: row.refreshTokenIv,
 					tag: row.refreshTokenTag,
@@ -739,8 +736,10 @@ export const makeOAuthConnectionHelpers = (options: MakeOAuthConnectionHelpersOp
 		return {
 			toPersistenceError,
 			dbExecute,
-			encryptValue,
-			decryptValue,
+			sealAccessToken,
+			sealRefreshToken,
+			openAccessToken,
+			openRefreshToken,
 			purgeExpiredStates,
 			consumeStateRow,
 			loadConnection,

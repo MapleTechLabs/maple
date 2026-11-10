@@ -16,7 +16,7 @@ const dashboardSharesColumns = {
 	// resolution looks up; deterministic, so it stays one indexed equality.
 	tokenHash: PG.column(PG.text, { name: "token_hash" }),
 	// The raw token, AES-256-GCM encrypted under MAPLE_INGEST_KEY_ENCRYPTION_KEY
-	// with an AAD binding it to this row (see SharedDashboardService).
+	// with an AAD binding it to this row (docs/secret-encryption.md).
 	//
 	// Stored recoverably on purpose: a share link nobody can read back is a
 	// link you have to destroy in order to see, and rotating just to re-copy
