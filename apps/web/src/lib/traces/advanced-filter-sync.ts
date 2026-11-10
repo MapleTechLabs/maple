@@ -6,12 +6,7 @@ import {
 	parseFilterClauses,
 } from "../query-builder/where-clause-filters"
 
-export {
-	type AttributeFilterEntry,
-	type AttributeMatchMode,
-	attributeFilterOperator,
-	formatAttributeClause,
-} from "../query-builder/where-clause-filters"
+export { type AttributeFilterEntry, formatAttributeClause } from "../query-builder/where-clause-filters"
 
 export interface TracesSearchLike {
 	services?: string[]
