@@ -6,24 +6,14 @@ import {
 	getServiceOverview,
 	type GetServiceOverviewInput,
 } from "@maple/web-data/warehouse/services"
-import {
-	Duration,
-	Effect,
-	Queue,
-	Schema,
-	Stream,
-	Array as Arr,
-	Record as Rec,
-	String as Str,
-	Option,
-} from "effect"
+import { Effect, Queue, Schema, Stream, Array as Arr, Record as Rec } from "effect"
 import { Command, Mount } from "foldkit"
 import { IdleTtl } from "../../../data/idle-ttl"
 import { settleTo } from "@maple/views/data/load-failure"
 import { readThrough } from "../../../data/read-cache"
 import { TimeWindow } from "../../../data/time-range"
 import { writeClipboard } from "@maple/views/ui/copy-button"
-import { ARM_DELAY_MS, loadCommitDetail, readCommitDetails } from "../../kit/commit-card"
+import { commitCardCommands, firstLine, readCommitDetails } from "../../kit/commit-card"
 import { loadSignalPresences } from "../../kit/signal-presence"
 import { fetchAnomaliesCommand } from "../../kit/service-health"
 import { loadServicesFacets } from "../../../data/services-facets-probe"
@@ -153,33 +143,11 @@ export const FetchCommitMessages = Command.define("FetchCommitMessages", {
 		}).pipe(settleTo((result) => Message.CompletedFetchCommitMessages({ key, result }))),
 })
 
-/** `CommitShaHoverCard`'s arm timer: the lookup starts 20 ms into a hover, ahead of the card. */
-export const ArmCommitLookup = Command.define("ArmServicesCommitLookup", {
-	args: { sha: Schema.String, generation: Schema.Number },
-	messages: [Message.ElapsedCommitArm],
-	execute: ({ sha, generation }) =>
-		Effect.as(Effect.sleep(Duration.millis(ARM_DELAY_MS)), Message.ElapsedCommitArm({ sha, generation })),
-})
-
-/** `commitQueryAtom(sha)`, for the hover card. */
-export const FetchCommitDetail = Command.define("FetchServicesCommitDetail", {
-	args: { key: Schema.String, sha: Schema.String },
-	messages: [Message.CompletedFetchCommitDetail],
-	execute: ({ key, sha }) =>
-		Effect.map(loadCommitDetail(key, sha), (result) =>
-			Message.CompletedFetchCommitDetail({ sha, result }),
-		),
-})
-
-// The first line of a commit message.
-const firstLine = (message: string): string => {
-	return Str.trim(
-		Option.match(Str.indexOf("\n")(message), {
-			onNone: () => message,
-			onSome: (index) => Str.slice(0, index)(message),
-		}),
-	)
-}
+/** `CommitShaHoverCard`'s arm timer and `commitQueryAtom(sha)`. */
+export const CommitCard = commitCardCommands(
+	{ arm: "ArmServicesCommitLookup", fetch: "FetchServicesCommitDetail" },
+	{ elapsed: Message.ElapsedCommitArm, completed: Message.CompletedFetchCommitDetail },
+)
 
 /** Where a click in the table goes: a service link is the link's alone (the row ignores it). */
 export const tableLinkClick = (

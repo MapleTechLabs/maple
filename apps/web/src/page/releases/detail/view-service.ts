@@ -20,7 +20,7 @@ import { textLinkClass } from "@maple/views/ui/text-link"
 import { serviceDot } from "@maple/views/ui/values"
 import { relativeTime } from "../../kit/relative-time"
 import { CHART_TOKENS, metricsGridOf } from "../../services/detail/view-charts"
-import { commitRangesKey, isResolvableSha, releaseHealthFigure, withQueryOrder } from "../kit"
+import { commitRangesKey, releaseHealthFigure, withQueryOrder } from "../kit"
 import { commitTrigger, type Overlays, releaseHealthPill } from "../overlays-view"
 import { Message } from "./message"
 import type { Model } from "./model"
@@ -37,6 +37,7 @@ import { type ChangesetState, type Clock, issueList, releaseChangeset, sectionCa
 import { typography } from "@maple/views/ui/typography"
 import { hstack, vstack } from "@maple/views/ui/stack"
 import { grid } from "@maple/views/ui/grid"
+import { isResolvableSha } from "../../kit/commit-card"
 
 // The release body for one service (`?service=`) and its issues panel.
 

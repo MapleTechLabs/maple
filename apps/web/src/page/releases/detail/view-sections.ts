@@ -26,12 +26,13 @@ import { table, tableBody, tableCell, tableHead, tableHeader, tableRow } from "@
 import { truncatedText } from "@maple/views/ui/truncated-text"
 import { serviceDot } from "@maple/views/ui/values"
 import { relativeTime } from "../../kit/relative-time"
-import { commitAvatar, firstLine, releaseHealthFigure, releaseHref } from "../kit"
+import { releaseHealthFigure, releaseHref } from "../kit"
 import { type Overlays, releaseHealthPill } from "../overlays-view"
 import { textLink } from "@maple/views/ui/text-link"
 import { typography, typographyClass } from "@maple/views/ui/typography"
 import { hstack, vstack } from "@maple/views/ui/stack"
 import { Array as Arr, String as Str, Option, Order } from "effect"
+import { commitAvatar, firstLine } from "../../kit/commit-card"
 
 // `ReleaseDeployOverview`'s sections, `ReleaseChangeset` and `IssueList` + `IssueLine`.
 

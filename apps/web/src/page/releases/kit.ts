@@ -1,10 +1,9 @@
 import { formatPercent } from "@maple/ui/lib/format"
 import { TONE_FILL } from "@maple/ui/lib/tone"
-import { cn } from "@maple/ui/lib/utils"
 import type { ReleaseHealth } from "./release-model"
-import type { Html, HtmlBuilder } from "foldkit/html"
 import { AppRoute, hrefOf } from "../../route"
-import { Array as Arr, Record as Rec, String as Str, Option, Order } from "effect"
+import { isResolvableSha } from "../kit/commit-card"
+import { Array as Arr, Record as Rec, String as Str, Order } from "effect"
 
 // Release health and commit helpers, shared by the list and the detail.
 
@@ -60,19 +59,6 @@ export const releaseHealthFigure = (impact: {
 	}
 }
 
-/** `isResolvableSha`: a full 40-hex git SHA, the only kind the VCS endpoint resolves. */
-export const isResolvableSha = (sha: string): boolean => /^[0-9a-f]{40}$/i.test(sha)
-
-/** `firstLine`: a commit message's subject. */
-export const firstLine = (message: string): string => {
-	return Str.trim(
-		Option.match(Str.indexOf("\n")(message), {
-			onNone: () => message,
-			onSome: (index) => Str.slice(0, index)(message),
-		}),
-	)
-}
-
 /** `commitsQueryKey`: the resolvable shas, deduped and sorted. */
 export const commitsQueryKey = (shas: Iterable<string>): string =>
 	Arr.join(Arr.sort(Arr.filter([...new Set(shas)], isResolvableSha), Order.String), ",")
@@ -96,35 +82,6 @@ export const commitRangesKey = (ranges: Iterable<Readonly<{ base: string; head: 
 		),
 		",",
 	)
-
-/** `CommitAvatar`. TODO(avatar-error): a broken avatar URL does not fall back to initials. */
-export const commitAvatar = <M>(
-	h: HtmlBuilder<M>,
-	url: string | null,
-	name: string,
-	isCompact = true,
-): Html => {
-	const size = isCompact ? "size-5" : "size-7"
-	return url === null
-		? h.div(
-				[
-					h.Class(
-						cn(
-							size,
-							"flex shrink-0 items-center justify-center rounded-full bg-muted text-2xs font-medium uppercase text-muted-foreground",
-						),
-					),
-				],
-				[Str.slice(0, 2)(name)],
-			)
-		: h.img([
-				h.Src(url),
-				h.Alt(""),
-				h.Class(cn(size, "shrink-0 rounded-full ring-1 ring-foreground/10")),
-				h.Attribute("loading", "lazy"),
-				h.Attribute("referrerpolicy", "no-referrer"),
-			])
-}
 
 /**
  * `<Link search={...}>` writes the query in the object's key order; `hrefOf` writes it in the

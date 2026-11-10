@@ -9,6 +9,7 @@ import {
 import { Array as Arr, String as Str, Order } from "effect"
 import type { ServicesSearch } from "../../../route/search"
 import { type HealthIncident, serviceHealthCauses } from "../../kit/service-health"
+import { isResolvableSha } from "../../kit/commit-card"
 import type { ServiceRow } from "./model"
 
 // Pure derivations of the services table and its health summary.
@@ -193,9 +194,6 @@ export const deployInfo = (commits: ReadonlyArray<Commit>): DeployInfo | undefin
 			: undefined
 	return { sha: latest.commitSha, firstSeen: latest.firstSeen, rollout, errorsSince }
 }
-
-const FULL_SHA = /^[0-9a-f]{40}$/i
-export const isResolvableSha = (sha: string): boolean => FULL_SHA.test(sha)
 
 /** `commitsQueryKey`: the deduped, sorted resolvable shas of the rows on screen; "" means no request. */
 export const commitsKey = (services: ReadonlyArray<ServiceRow>): string =>

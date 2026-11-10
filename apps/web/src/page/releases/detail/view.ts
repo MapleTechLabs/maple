@@ -14,7 +14,6 @@ import type { PageViewInputs } from "../../contract"
 import { dashboardPage } from "../../kit/dashboard-page"
 import { timeControls } from "../../kit/time-controls"
 import * as TimeRangePicker from "../../kit/time-range-picker"
-import { commitAvatar, firstLine, isResolvableSha } from "../kit"
 import { DEFAULT_PRESET, deriveOf } from "../list/derive"
 import { groupOf } from "./derive"
 import { Message } from "./message"
@@ -24,6 +23,7 @@ import { type Clock, deploySummary, deployServices, issueList, releaseChangeset 
 import { typography } from "@maple/views/ui/typography"
 import { hstack, hstackClass, vstack } from "@maple/views/ui/stack"
 import { grid } from "@maple/views/ui/grid"
+import { commitAvatar, firstLine, isResolvableSha } from "../../kit/commit-card"
 
 // The release detail page: the deploy overview, or with `?service=` the service body
 // (view-service.ts).

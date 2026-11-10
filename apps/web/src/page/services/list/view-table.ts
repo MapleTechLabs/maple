@@ -35,7 +35,6 @@ import {
 	hasActiveServiceFilters,
 	type HealthSummary,
 	healthOf,
-	isResolvableSha,
 	NO_NAMESPACE,
 	resolveGroupBy,
 	type ServiceHealth,
@@ -49,6 +48,7 @@ import { hstack, hstackClass, vstack } from "@maple/views/ui/stack"
 import { textLink } from "@maple/views/ui/text-link"
 import { selectableRow } from "@maple/views/ui/selectable-row"
 import { stripClass } from "@maple/views/ui/rule"
+import { isResolvableSha } from "../../kit/commit-card"
 
 /** The Throughput chart's colour, so every calls sparkline across the service pages matches. */
 export const THROUGHPUT_COLOR = "--chart-throughput"

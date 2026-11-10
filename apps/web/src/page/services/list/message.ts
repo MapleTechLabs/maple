@@ -6,9 +6,8 @@ import * as Chart from "@maple/views/charts/chart"
 import { LoadFailure } from "@maple/views/data/load-failure"
 import { TimeWindow } from "../../../data/time-range"
 import * as FilterSections from "@maple/views/ui/filters/filter-sections"
-import * as HoverCard from "@maple/views/ui/hover-card"
 import * as Tooltip from "@maple/views/ui/tooltip"
-import { CommitDetail, CommitFailure } from "../../kit/commit-card"
+import { CommitCardMessages } from "../../kit/commit-card"
 import { SignalPresences } from "@maple/views/data/signal-presence"
 import * as TimeRangePicker from "../../kit/time-range-picker"
 import { HealthMessages } from "../../kit/service-health"
@@ -68,9 +67,7 @@ export const Message = defineMessageUnion({
 	GotSparklineMessage: { message: Chart.Message },
 	GotTimePickerMessage: { message: TimeRangePicker.Message },
 	GotRowTooltipMessage: { tooltip: RowTooltip, message: Tooltip.Message },
-	GotCommitCardMessage: { message: HoverCard.Message },
-	ElapsedCommitArm: { sha: Schema.String, generation: Schema.Number },
-	CompletedFetchCommitDetail: { sha: Schema.String, result: Schema.Result(CommitDetail, CommitFailure) },
+	...CommitCardMessages,
 	ClickedCopyCommitSha: { sha: Schema.String, serviceName: Schema.String, environment: Schema.String },
 	/** The SHA write landed; the row opens with its toast now that the outcome is known. */
 	CompletedCopyCommitSha: { rowUrl: Schema.String, isCopied: Schema.Boolean },

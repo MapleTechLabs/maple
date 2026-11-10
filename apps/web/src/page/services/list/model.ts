@@ -6,9 +6,8 @@ import { LoadFailure } from "@maple/views/data/load-failure"
 import { TimeWindow } from "../../../data/time-range"
 import { ServicesSearch } from "../../../route/search"
 import * as FilterSections from "@maple/views/ui/filters/filter-sections"
-import * as HoverCard from "@maple/views/ui/hover-card"
 import * as Tooltip from "@maple/views/ui/tooltip"
-import { CommitDetailData } from "../../kit/commit-card"
+import { CommitCardState } from "../../kit/commit-card"
 import { SignalPresenceData } from "@maple/views/data/signal-presence"
 import * as TimeRangePicker from "../../kit/time-range-picker"
 import { IncidentsData } from "../../kit/service-health"
@@ -91,10 +90,7 @@ export const Model = Schema.Struct({
 	samplingTooltip: Tooltip.Model,
 	unnamedTooltip: Tooltip.Model,
 	/** `CommitShaHoverCard` over the deploy cells, and the commits it looked up (`commitQueryAtom`). */
-	commitCard: HoverCard.Model,
-	commitDetails: Schema.Record(Schema.String, CommitDetailData.schema),
-	/** Bumped on every trigger enter and leave: a pending 20 ms arm only fires for its own hover. */
-	commitArm: Schema.Number,
+	...CommitCardState.fields,
 	filterSections: FilterSections.Model,
 	timePicker: TimeRangePicker.Model,
 	...ChartEnvFields,
