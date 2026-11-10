@@ -22,9 +22,9 @@ const parseRules = (source: string): ReadonlyArray<Rule> =>
 		},
 	)
 
-// One splat per pattern, spanning any characters.
+// A splat spans any characters.
 const matches = (pattern: string, pathname: string): boolean =>
-	new RegExp(`^${Str.replace("*", ".*")(Str.replace(/[.+?^${}()|[\]\\]/g, "\\$&")(pattern))}$`).test(
+	new RegExp(`^${Str.replace(/\*/g, ".*")(Str.replace(/[.+?^${}()|[\]\\]/g, "\\$&")(pattern))}$`).test(
 		pathname,
 	)
 
