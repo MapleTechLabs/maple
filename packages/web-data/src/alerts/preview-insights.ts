@@ -142,6 +142,26 @@ export function incidentsClearedByDraft(
 	)
 }
 
+/**
+ * The builder draft as the query reads it: an add-on section opened but left empty (Group by with
+ * no keys) is the same query as with it closed, so opening one is not an edit.
+ */
+const appliedQueryDraft = (form: RuleFormState): RuleFormState["queryBuilderDraft"] | null => {
+	if (form.signalType !== "builder_query") return null
+	const draft = form.queryBuilderDraft
+	const isFilled = (value: string) => Str.trim(value).length > 0
+	return {
+		...draft,
+		addOns: {
+			groupBy: draft.addOns.groupBy && draft.groupBy.length > 0,
+			having: draft.addOns.having && isFilled(draft.having),
+			orderBy: draft.addOns.orderBy && isFilled(draft.orderBy),
+			limit: draft.addOns.limit && isFilled(draft.limit),
+			legend: draft.addOns.legend && isFilled(draft.legend),
+		},
+	}
+}
+
 export interface RuleFieldChange {
 	readonly field: string
 	readonly before: string
@@ -175,7 +195,7 @@ export function diffRuleForms(saved: RuleFormState, draft: RuleFormState): RuleF
 			after: query(draft),
 			same:
 				a.signal_type === b.signal_type &&
-				sameJson(a.query_builder_draft, b.query_builder_draft) &&
+				sameJson(appliedQueryDraft(saved), appliedQueryDraft(draft)) &&
 				a.raw_query_sql === b.raw_query_sql,
 		},
 		{

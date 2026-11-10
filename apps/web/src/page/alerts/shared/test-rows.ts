@@ -1,3 +1,4 @@
+import { UNGROUPED_GROUP_KEY } from "@maple/domain/http"
 import type {
 	AlertDestinationRow,
 	AlertIncidentRow,
@@ -66,7 +67,7 @@ export const ruleRow = (n: number, fields: Partial<AlertRuleRow> = {}): AlertRul
 export const stateRow = (n: number, fields: Partial<AlertRuleStateRow> = {}): AlertRuleStateRow => ({
 	org_id: ORG,
 	rule_id: ruleId(n),
-	group_key: "all",
+	group_key: UNGROUPED_GROUP_KEY,
 	consecutive_breaches: 0,
 	consecutive_healthy: 40,
 	last_status: "healthy",
@@ -84,7 +85,7 @@ export const incidentRow = (fields: Partial<AlertIncidentRow> = {}): AlertIncide
 	rule_id: ruleId(2),
 	incident_key: "rule-2:all",
 	rule_name: "Rule 2",
-	group_key: "all",
+	group_key: UNGROUPED_GROUP_KEY,
 	signal_type: "p95_latency",
 	severity: "critical",
 	status: "open",

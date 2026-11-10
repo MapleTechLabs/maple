@@ -64,6 +64,10 @@ export type RuleForm = typeof RuleForm.Type
 export const asFormState = (form: RuleForm): RuleFormState => form
 export const fromFormState = (form: RuleFormState): RuleForm => form
 
+/** The editor's sentence cards: "When" (signal and scope), "Alert when", "Notify", "Name". */
+export const RuleCard = Schema.Literals(["watch", "condition", "notify", "name"])
+export type RuleCard = typeof RuleCard.Type
+
 /** The warning tier's destinations, or the critical tier's. */
 export const Tier = Schema.Literals(["warning", "critical"])
 export type Tier = typeof Tier.Type

@@ -46,6 +46,8 @@ const SAMPLE_PATHS = [
 	"/alerts/slos/slo_YofPTrK9782DWwcnXhpcCw",
 	"/alerts/schedules/new",
 	"/alerts/schedules/onc_gQtGH2s65G6a7sJmuayXL6",
+	"/alerts/escalation-chains/new",
+	"/alerts/escalation-chains/esc_gQtGH2s65G6a7sJmuayXL6",
 	"/alerts/uptime/upm_abc",
 	"/status-pages",
 	"/status-pages/new",

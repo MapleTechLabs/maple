@@ -28,7 +28,7 @@ import * as TimeRangePicker from "../../kit/time-range-picker"
 import * as DestinationDialog from "../destination/dialog"
 import * as ChatConnect from "../shared/chat-connect"
 import { PreviewSlot } from "../shared/preview"
-import { RuleForm, Tier } from "./form"
+import { RuleCard, RuleForm, Tier } from "./form"
 
 // `/alerts/create`: `AlertCreatePageContent` and the
 // `AlertCreateFormSurface` it mounts once the draft is known.
@@ -122,6 +122,14 @@ export const Model = Schema.Struct({
 	/** The switch notice under the mode toggle (`notice`), cleared by the next switch. */
 	kindNotice: Schema.NullOr(Schema.String),
 	isNotesOpen: Schema.Boolean,
+	/** The sentence cards opened for editing; a card with something missing is open regardless. */
+	expandedCards: Schema.Array(RuleCard),
+	/** "Out of the last N" was picked for the breach count: its field stays while N is retyped. */
+	isBreachWindowOpen: Schema.Boolean,
+	/** Save was pressed with something missing: every field then shows its error. */
+	hasAttemptedSave: Schema.Boolean,
+	/** The controls the user has left (by element id): each shows its error from then on. */
+	touchedFields: Schema.Array(Schema.String),
 	/** Tags already in use across the org's rules, sorted; kept by reference while they stay the same. */
 	tagSuggestions: Schema.Array(Schema.String),
 	isSqlCollapsed: Schema.Boolean,

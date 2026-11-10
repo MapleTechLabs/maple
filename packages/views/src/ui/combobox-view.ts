@@ -393,6 +393,8 @@ export type ChipsViewInputs = Readonly<{
 	/** The Empty line. Left out, a list with no item to show stays closed instead of opening on nothing. */
 	emptyText?: string
 	className?: string
+	/** `<ComboboxChipsInput size>`: the field is as tall as a control of that size. */
+	size?: "sm" | "default"
 	/**
 	 * `MultiSelectCombobox disabled`: the field stays mounted, dimmed and inert, so cards holding
 	 * several conditionally disabled pickers never reflow.
@@ -489,8 +491,15 @@ export const chipsView = Submodel.defineView<Model, Message, ChipsViewInputs>((m
 			}),
 			...(isOpen ? [dismissButton(h)] : []),
 			h.input([
-				h.Class(cn(C.comboboxChipsInputStyles, C.comboboxChipsInputDefaultStyles)),
-				h.DataAttribute("size", "default"),
+				h.Class(
+					cn(
+						C.comboboxChipsInputStyles,
+						inputs.size === "sm"
+							? C.comboboxChipsInputSmStyles
+							: C.comboboxChipsInputDefaultStyles,
+					),
+				),
+				h.DataAttribute("size", inputs.size ?? "default"),
 				...(isDisabled ? [h.Disabled(true)] : []),
 				...inputAttributes(
 					h,

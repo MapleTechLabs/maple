@@ -106,7 +106,7 @@ describe("alerts hub", () => {
 			{ update: pageUpdate, view },
 			given(loaded()),
 			expectView(text("1 firing")).toExist(),
-			expectView(role("link", { name: "P95 latency 1.84s on all" })).toHaveAttr(
+			expectView(role("link", { name: "P95 latency 1.84s" })).toHaveAttr(
 				"href",
 				"/alerts/incidents/0199a003-0000-7000-8000-000000000001",
 			),
@@ -284,7 +284,7 @@ describe("alerts hub", () => {
 			expectView(text("0 firing")).toExist(),
 			expectView(text(/1 acknowledged/)).toExist(),
 			expectView(text(/^Acknowledged by Dana Kim ·/)).toExist(),
-			expectView(role("button", { name: "Unacknowledge P95 latency 1.84s on all" })).toExist(),
+			expectView(role("button", { name: "Unacknowledge P95 latency 1.84s" })).toExist(),
 		)
 		const clicked = pageUpdate(
 			loaded(),
@@ -400,6 +400,90 @@ describe("alerts hub", () => {
 			given(withIncident("open")),
 			expectView(text("Two steps to your first alert")).not.toExist(),
 			expectView(text("Checkout health")).toExist(),
+		)
+	})
+
+	test("a rule's whole row is one link to the rule, with its actions menu beside it", () => {
+		scene(
+			{ update: pageUpdate, view },
+			given(loaded({ tab: "rules" })),
+			expectView(role("link", { name: "Payment p95 latency" })).toHaveAttr(
+				"href",
+				`/alerts/rules/${ruleId(2)}`,
+			),
+			expectView(role("button", { name: "Actions for Payment p95 latency" })).toExist(),
+		)
+	})
+
+	test("untagged rules alone get no group header; with a tagged rule each group is named", () => {
+		scene(
+			{ update: pageUpdate, view },
+			given(loaded({ tab: "rules" })),
+			expectView(text("No tag")).not.toExist(),
+		)
+		const tagged = pageUpdate(
+			loaded({ tab: "rules" }),
+			Message.UpdatedRules({ orgId: ORG, rows: [ruleRow(1), ruleRow(2, { tags_json: ["api"] })] }),
+		).model
+		scene(
+			{ update: pageUpdate, view },
+			given(tagged),
+			expectView(text("No tag")).toExist(),
+			expectView(text("api")).toExist(),
+		)
+	})
+
+	test("a quiet Inbox stays calm: no Anomalies toggle without anomalies, MTTR n/a, an ungrouped reading has no group line", () => {
+		// Nothing open, and one rule routed nowhere: a blind spot, so the last 24 hours are drawn.
+		const quiet = Arr.reduce(
+			[
+				Message.UpdatedIncidents({ orgId: ORG, rows: [] }),
+				Message.UpdatedRules({
+					orgId: ORG,
+					rows: [
+						ruleRow(1, { destination_ids_json: [] }),
+						ruleRow(2, { name: "Payment p95 latency" }),
+					],
+				}),
+			],
+			loaded(),
+			(model, message) => pageUpdate(model, message).model,
+		)
+		scene(
+			{ update: pageUpdate, view },
+			given(quiet),
+			expectView(role("heading", { name: /^Nothing firing/ })).toExist(),
+			expectView(role("button", { name: /^Anomalies/ })).not.toExist(),
+			expectView(text("0 incidents · MTTR n/a · 0 rules fired")).toExist(),
+			expectView(role("link", { name: "Payment p95 latency" })).toExist(),
+			expectView(text("all")).not.toExist(),
+			expectView(text("__total__")).not.toExist(),
+		)
+	})
+
+	test("acknowledged and unacknowledged incidents both offer a button to flip the state", () => {
+		const acknowledged = pageUpdate(
+			loaded(),
+			Message.UpdatedIncidents({
+				orgId: ORG,
+				rows: [
+					incidentRow({ rule_name: "Payment p95 latency" }),
+					incidentRow({
+						id: "0199a003-0000-7000-8000-000000000002",
+						rule_name: "Payment p95 latency",
+						group_key: "checkout",
+						acknowledged_at: new Date(NOW - 60_000).toISOString(),
+						acknowledged_by_name: "Dana Kim",
+						acknowledged_via: "slack",
+					}),
+				],
+			}),
+		).model
+		scene(
+			{ update: pageUpdate, view },
+			given(acknowledged),
+			expectView(role("button", { name: /^Acknowledge / })).toExist(),
+			expectView(role("button", { name: /^Unacknowledge / })).toExist(),
 		)
 	})
 

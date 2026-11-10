@@ -30,6 +30,9 @@ export const buttonVariants = cva(
 					"not-disabled:inset-shadow-highlight border-destructive bg-destructive text-on-fill shadow-raised hover:bg-destructive/90 active:bg-destructive/90 data-pressed:bg-destructive/90 dark:border-destructive/80 dark:bg-destructive/80 dark:hover:bg-destructive/72 dark:active:bg-destructive/72 dark:data-pressed:bg-destructive/72 *:data-[slot=button-loading-indicator]:text-on-fill [:active,[data-pressed]]:inset-shadow-pressed [:disabled,:active,[data-pressed]]:shadow-none",
 				"destructive-outline":
 					"border-input bg-popover not-dark:bg-clip-padding text-destructive-foreground shadow-raised not-disabled:not-active:not-data-pressed:before:shadow-control hover:border-destructive-a3 active:border-destructive-a3 hover:bg-destructive-a1 active:bg-destructive-a1 data-pressed:border-destructive-a3 data-pressed:bg-destructive-a1 *:data-[slot=button-loading-indicator]:text-foreground dark:bg-input/32 [:disabled,:active,[data-pressed]]:shadow-none",
+				// A quiet delete beside other content ("Delete chain"): destructive ink, a wash only on hover.
+				"destructive-ghost":
+					"border-transparent text-destructive-foreground hover:bg-destructive-a1 active:bg-destructive-a1 data-pressed:bg-destructive-a1 *:data-[slot=button-loading-indicator]:text-foreground",
 				// Add-a-row affordances ("Add threshold", "New dashboard"): an outline that reads as an empty slot.
 				dashed: "active:scale-100! border-dashed border-input bg-transparent text-muted-foreground hover:bg-surface-sunken active:bg-surface-sunken hover:text-foreground active:text-foreground data-pressed:bg-surface-sunken *:data-[slot=button-loading-indicator]:text-foreground",
 				ghost: "border-transparent text-foreground hover:bg-accent active:bg-accent data-pressed:bg-accent *:data-[slot=button-loading-indicator]:text-foreground",

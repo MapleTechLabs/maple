@@ -27,12 +27,13 @@ import * as Chart from "@maple/views/charts/chart"
 import { MountChart } from "@maple/views/charts/chart-mounts"
 import { ResolveThemeColors, ThemeMessage } from "@maple/views/charts/theme-colors"
 import * as Menu from "@maple/views/ui/menu"
-import * as RadioGroup from "@maple/views/ui/radio-group"
+import * as Select from "@maple/views/ui/select"
 import * as Tooltip from "@maple/views/ui/tooltip"
 import type { PageContext } from "../../contract"
 import { destinationRow, NOW, ORG, ruleId, ruleRow } from "../shared/test-rows"
-import { FetchEditorPreview, ReloadPage } from "./command"
+import { FetchEditorPreview, FocusRuleCard, ReloadPage } from "./command"
 import { init } from "./init"
+import { INTERVAL_SELECT_ID } from "./interval"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { update } from "./update"
@@ -153,6 +154,8 @@ describe("alert rule editor", () => {
 			{ update: pageUpdate, view },
 			given(withWindow(editing, "60")),
 			themeResolved(),
+			click(role("button", { name: /^Alert when: / })),
+			Command.resolve(FocusRuleCard, Message.CompletedFocusCard()),
 			expectView(text(`${saved} min`)).toExist(),
 			expectView(hint("5 min")).toExist(),
 		)
@@ -161,10 +164,11 @@ describe("alert rule editor", () => {
 	test("the check interval picker sets how often the rule runs, and refuses one longer than the window", () => {
 		const hint = (every: string) => text(`Each check looks at this much data, checked every ${every}.`)
 		const pick = (value: string) =>
-			Message.GotRadioMessage({
-				group: "interval",
-				message: RadioGroup.Message.SelectedRadio({ value }),
+			Message.GotSelectMessage({
+				id: INTERVAL_SELECT_ID,
+				message: Select.Message.SelectedItem({ index: 0, value }),
 			})
+		const interval = role("combobox", { name: "Check every" })
 		const draft = run(withLists(entered({ template: "slow_p95" })), [
 			Message.ChangedField({ field: "windowMinutes", value: "15" }),
 		])
@@ -174,17 +178,26 @@ describe("alert rule editor", () => {
 			{ update: pageUpdate, view },
 			given(draft),
 			themeResolved(),
-			expectView(role("radio", { name: /^Auto · 3 min/ })).toHaveAttr("aria-checked", "true"),
-			// The preview pins the interval, so picking one never re-queries.
-			click(role("radio", { name: /^10 min/ })),
+			expectView(interval).toContainText("Auto · 3 min"),
+		)
+		scene(
+			{ update: pageUpdate, view },
+			given(every10),
+			themeResolved(),
 			expectView(hint("10 min")).toExist(),
-			expectView(role("radio", { name: /^10 min/ })).toHaveAttr("aria-checked", "true"),
-			click(role("radio", { name: /^30 min/ })),
+			expectView(interval).toContainText("10 min"),
+		)
+		scene(
+			{ update: pageUpdate, view },
+			given(every30),
+			themeResolved(),
+			expectView(interval).toContainText("30 min"),
 			expectView(text("Longer than the window, so data between checks would go unread.")).toExist(),
 		)
+		// The preview pins the interval, so picking one never re-queries.
 		expect(every10.preview.key).toBe(draft.preview.key)
 		expect(every30.form?.evaluationIntervalMinutes).toBe("30")
-		expect(names(pageUpdate(every30, Message.ClickedSave()).commands)).toEqual([])
+		expect(names(pageUpdate(every30, Message.ClickedSave()).commands)).not.toContain("SaveAlertRule")
 	})
 
 	test("a raw SQL query too slow for its interval says so, blocks save, and switches in one click", () => {
@@ -220,7 +233,7 @@ describe("alert rule editor", () => {
 			Message.ClickedSignalKind({ kind: "raw_query" }),
 		])
 		const slow = run(sql, [answer(sql, 7_800)])
-		expect(names(pageUpdate(slow, Message.ClickedSave()).commands)).toEqual([])
+		expect(names(pageUpdate(slow, Message.ClickedSave()).commands)).not.toContain("SaveAlertRule")
 		scene(
 			{ update: pageUpdate, view },
 			given(slow),
@@ -233,7 +246,7 @@ describe("alert rule editor", () => {
 				),
 			).toExist(),
 			click(role("button", { name: "Check every 5 min" })),
-			expectView(role("radio", { name: /^5 min/ })).toHaveAttr("aria-checked", "true"),
+			expectView(role("combobox", { name: "Check every" })).toContainText("5 min"),
 			expectView(text("Fits checks every 5 min.")).toExist(),
 		)
 		scene(
@@ -366,7 +379,7 @@ describe("alert rule editor", () => {
 					"It ran out of memory with the most any interval allows, so checking less often will not help.",
 				),
 			).toExist(),
-			expectView(role("radio", { name: /too slow/ })).not.toExist(),
+			expectView(text(/^Over or too close to/)).not.toExist(),
 		)
 	})
 
@@ -382,10 +395,12 @@ describe("alert rule editor", () => {
 			{ update: pageUpdate, view },
 			given(slowed),
 			themeResolved(),
+			click(role("button", { name: /^Alert when: / })),
+			Command.resolve(FocusRuleCard, Message.CompletedFocusCard()),
 			expectView(notice).toExist(),
 			click(role("button", { name: "Keep 5 min" })),
 			expectView(notice).not.toExist(),
-			expectView(role("radio", { name: /^5 min/ })).toHaveAttr("aria-checked", "true"),
+			expectView(role("combobox", { name: "Check every" })).toContainText("5 min"),
 		)
 	})
 
@@ -576,7 +591,10 @@ describe("alert rule editor", () => {
 
 	test("an incomplete rule cannot be saved", () => {
 		const unnamed = pageUpdate(withLists(entered()), Message.ChangedField({ field: "name", value: "" }))
-		expect(names(pageUpdate(unnamed.model, Message.ClickedSave()).commands)).toEqual([])
+		// The press is an attempt: it lands on what to fix and sends nothing.
+		expect(names(pageUpdate(unnamed.model, Message.ClickedSave()).commands)).toEqual([
+			"FocusAlertRuleCard",
+		])
 	})
 
 	test("switching SQL to Built-in says what it dropped; a template lands in the query builder", () => {

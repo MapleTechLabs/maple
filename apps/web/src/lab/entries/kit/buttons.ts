@@ -31,6 +31,7 @@ const VARIANTS = [
 	"ghost",
 	"destructive",
 	"destructive-outline",
+	"destructive-ghost",
 	"link",
 	"dashed",
 ] as const
@@ -417,16 +418,27 @@ const actionBars = (h: HtmlBuilder<Message>): ReadonlyArray<Html> => [
 				statusDot(h, { tone: "live" }),
 				typography(h, { size: "sm", tone: "foreground" }, ["Unsaved changes"]),
 			],
-			actions: [button(h, { variant: "ghost", size: "sm" }, ["Discard"]), button(h, { size: "sm" }, ["Save"])],
+			actions: [
+				button(h, { variant: "ghost", size: "sm" }, ["Discard"]),
+				button(h, { size: "sm" }, ["Save"]),
+			],
 		}),
 	]),
 	kitRow(h, "Editor, with a notice", [
 		actionBar(h, {
 			label: "Rule actions",
 			className: "static w-full",
-			notice: [alert(h, { variant: "crit", size: "sm" }, [icon(h, "CircleXmarkIcon"), alertTitle(h, ["Couldn't save the rule"])])],
+			notice: [
+				alert(h, { variant: "crit", size: "sm" }, [
+					icon(h, "CircleXmarkIcon"),
+					alertTitle(h, ["Couldn't save the rule"]),
+				]),
+			],
 			leading: [typography(h, { size: "sm", tone: "muted" }, ["Drop health checks from api-gateway"])],
-			actions: [button(h, { variant: "outline", size: "sm" }, ["Cancel"]), button(h, { size: "sm" }, ["Save changes"])],
+			actions: [
+				button(h, { variant: "outline", size: "sm" }, ["Cancel"]),
+				button(h, { size: "sm" }, ["Save changes"]),
+			],
 		}),
 	]),
 	kitRow(h, "Step flow", [

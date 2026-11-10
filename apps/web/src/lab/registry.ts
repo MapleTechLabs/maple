@@ -89,7 +89,15 @@ export const LAB_ENTRIES: ReadonlyArray<LabEntry> = [
 		path: "/lab/escalation",
 		title: "Escalation chains",
 		description:
-			"The Routing tab's escalation chains empty and populated, the chain dialog new, editing, invalid and failing, a rule tier's chain picker, and the incident rail escalating, paused or finished (`?state=`).",
+			"The Routing tab's escalation chains empty and populated, a rule tier's chain picker, and the incident rail escalating, paused or finished (`?state=`).",
+		kind: "lab",
+		session: "none",
+	},
+	{
+		path: "/lab/escalation-editor",
+		title: "Escalation chain editor",
+		description:
+			"The escalation chain editor page new, populated, with a step inserted, invalid, asking to delete or to leave, read-only and with a long chain (`?state=`).",
 		kind: "lab",
 		session: "none",
 	},
@@ -448,6 +456,22 @@ export const LAB_ENTRIES: ReadonlyArray<LabEntry> = [
 		title: "Status pages",
 		description:
 			"The status pages list, the look picker and the form fields (hint and error) over fixture pages.",
+		kind: "lab",
+		session: "none",
+	},
+	{
+		path: "/lab/condition-builder",
+		title: "Condition builder",
+		description:
+			"The query panel's where clause as field, operator and value rows: empty, populated, a clause the rows can't show, and text mode.",
+		kind: "lab",
+		session: "none",
+	},
+	{
+		path: "/lab/rule-editor",
+		title: "Rule editor",
+		description:
+			"The alert rule editor over fixture rows: a saved error rate rule (?variant=populated), a blank new rule (new) and a scoped anomaly rule (anomaly). ?theme=light|dark.",
 		kind: "lab",
 		session: "none",
 	},

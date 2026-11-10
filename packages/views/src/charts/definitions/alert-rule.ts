@@ -23,7 +23,8 @@ type AlertRuleSpec = Extract<ChartSpec, { readonly _tag: "AlertRule" }>
 type SignalPoint = Record<string, unknown> & { t: number; at: Date }
 type Band = Readonly<{ x1: number; x2: number }>
 
-const PLOT_RIGHT = 12
+// Room for half of the last tick's label, which sits on the plot's right edge.
+const PLOT_RIGHT = 28
 const Y_AXIS_WIDTH = 72
 const isSignalType = Schema.is(AlertSignalType)
 
