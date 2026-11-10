@@ -20,7 +20,7 @@ import { Env } from "@maple/backend/platform/Env"
 import { cleanupTestDbs, createTestDb, queryFirstRow, type TestDb } from "@maple/backend/testing/test-pglite"
 import { OrgIngestKeysService } from "@maple/backend/services/org/OrgIngestKeysService"
 import { publicSourceId } from "@maple/backend/services/org/integration-sources"
-import { SourceId } from "@maple/domain/primitives"
+import { SourceId } from "@maple/primitives"
 import { nextWindow, RailwayMetricsService } from "./RailwayMetricsService"
 
 const now = Date.UTC(2026, 9, 3, 12, 30, 30)

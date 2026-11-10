@@ -15,7 +15,7 @@ import {
 	type GcpMetric,
 	type GcpMetricGroup,
 } from "@maple/domain/gcp-metrics"
-import type { GcpConnectorId, GcpProjectId } from "@maple/domain/primitives"
+import type { GcpConnectorId, GcpProjectId } from "@maple/primitives"
 import {
 	Duration,
 	Effect,

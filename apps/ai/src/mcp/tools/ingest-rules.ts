@@ -23,7 +23,7 @@ import {
 } from "@maple/domain/ingest-rules"
 import { IngestRuleValidationError, type SelfDescribingHttpError } from "@maple/domain/http"
 import type { ListLogsRow as ListLogsOutput } from "@maple/query-engine/ch"
-import type { OrgId } from "@maple/domain/primitives"
+import type { OrgId } from "@maple/primitives"
 import * as Policy from "@maple/domain/policy"
 import { IngestRuleService } from "@maple/backend/services/org/IngestRuleService"
 import { provideWarehouseExecutorFromTenant } from "@maple/backend/services/warehouse/WarehouseQueryService"

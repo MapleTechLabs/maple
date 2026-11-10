@@ -25,7 +25,7 @@ import {
 	connectorTurnTenant,
 	type ChatConnectorOrigin,
 } from "@maple/domain/chat-session"
-import { ActorId, OrgId, UserId } from "@maple/domain/primitives"
+import { ActorId, OrgId, UserId } from "@maple/primitives"
 import { ErrorActorsService } from "@maple/backend/services/errors/ErrorActorsService"
 import { OrgMembershipService } from "@maple/backend/services/auth/OrgMembershipService"
 import { auditAttribution } from "@maple/backend/services/audit/audit-access"

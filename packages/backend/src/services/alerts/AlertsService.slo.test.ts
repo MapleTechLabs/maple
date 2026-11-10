@@ -3,7 +3,7 @@ import { Clock, Duration, Effect, Layer, Option, Order, Array as Arr } from "eff
 import { TestClock } from "effect/testing"
 import { compiledQueryOf } from "@maple/query-engine/execution"
 import { formatWarehouseDateTime } from "@maple/query-engine"
-import { AlertDestinationId } from "@maple/domain/primitives"
+import { AlertDestinationId } from "@maple/primitives"
 import { WebhookAlertDestinationConfig } from "@maple/domain/http"
 import { type AlertsServiceApi } from "./AlertsService"
 import {

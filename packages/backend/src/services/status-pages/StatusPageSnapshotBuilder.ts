@@ -24,7 +24,7 @@ import {
 	type StatusPageUpdateSource,
 	type UptimeMonitorId,
 	type UptimeMonitorStatus,
-} from "@maple/domain/primitives"
+} from "@maple/primitives"
 import {
 	DEFAULT_STATUS_PAGE_THEME,
 	deriveComponentStatus,

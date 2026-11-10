@@ -6,7 +6,7 @@
 import { BillingCustomerResolver } from "@maple/backend/services/billing/BillingCustomerResolver"
 import { AI_CREDITS_FEATURE_ID } from "@maple/domain/billing"
 import { BillingCustomer } from "@maple/domain/http"
-import type { OrgId } from "@maple/domain/primitives"
+import type { OrgId } from "@maple/primitives"
 import { EdgeCacheService } from "@maple/cache"
 import { Array as Arr, Clock, Context, Effect, Layer, Option, Schema } from "effect"
 import { Env } from "@maple/backend/platform/Env"

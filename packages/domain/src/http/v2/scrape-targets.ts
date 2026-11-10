@@ -1,6 +1,6 @@
 import { HttpApiEndpoint, HttpApiGroup, OpenApi } from "effect/http-api"
 import { Schema } from "effect"
-import { ScrapeAuthType, ScrapeIntervalSeconds, ScrapeTargetId, ScrapeTargetType } from "../../primitives"
+import { ScrapeAuthType, ScrapeIntervalSeconds, ScrapeTargetId, ScrapeTargetType } from "@maple/primitives"
 import {
 	IntegrationsConfigurationError,
 	IntegrationsNotConnectedError,

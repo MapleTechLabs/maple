@@ -15,7 +15,7 @@ import {
 import { HttpRouter } from "effect/http"
 import { HttpApi, HttpApiBuilder } from "effect/http-api"
 import { DashboardNotFoundError, DashboardPersistenceError, OrgId, UserId } from "@maple/domain/http"
-import { AlertRuleId } from "@maple/domain/primitives"
+import { AlertRuleId } from "@maple/primitives"
 import { alertChartId } from "@maple/backend/platform/signed-ids"
 import { DashboardPublicId, DashboardTemplatePublicId, MapleApiV2 } from "@maple/domain/http/v2"
 import { Env } from "@maple/backend/platform/Env"

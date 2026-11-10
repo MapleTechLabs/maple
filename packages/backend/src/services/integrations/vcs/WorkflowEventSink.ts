@@ -1,5 +1,5 @@
 import type { WorkflowJobAnnotation, WorkflowJobJob, WorkflowRunJob } from "@maple/domain/http"
-import type { OrgId } from "@maple/domain/primitives"
+import type { OrgId } from "@maple/primitives"
 import { Context, type Effect, type Stream } from "effect"
 
 /**

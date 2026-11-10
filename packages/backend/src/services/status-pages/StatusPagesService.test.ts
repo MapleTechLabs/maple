@@ -3,7 +3,7 @@ import { Effect, Layer, Schema, Array as Arr, String as Str } from "effect"
 import { TestClock } from "effect/testing"
 import { OrgId, UserId } from "@maple/domain/http"
 import { StatusPageComponentPublicId, type StatusPageConfig } from "@maple/domain/http/v2"
-import { StatusPageComponentId, StatusPageId, UptimeMonitorId } from "@maple/domain/primitives"
+import { StatusPageComponentId, StatusPageId, UptimeMonitorId } from "@maple/primitives"
 import {
 	DEFAULT_STATUS_PAGE_THEME,
 	STATUS_PAGE_BREAK_GLASS_PREFIX,

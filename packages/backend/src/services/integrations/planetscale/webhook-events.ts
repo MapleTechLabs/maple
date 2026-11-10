@@ -10,7 +10,7 @@ import {
 	type SignalSourceAdapter,
 } from "@maple/eventing-core"
 import type { IssueSeverity, OrgId, PlanetScaleEventCategory, WorkflowState } from "@maple/domain/http"
-import { ActorId, ErrorIssueEventId, ErrorIssueId } from "@maple/domain/primitives"
+import { ActorId, ErrorIssueEventId, ErrorIssueId } from "@maple/primitives"
 import * as Orm from "@maple-dev/effect-orm/database"
 import * as PG from "@maple-dev/effect-orm/postgres"
 import {

@@ -11,7 +11,7 @@ import {
 	ErrorIssueId,
 	OrgId,
 	UserId,
-} from "@maple/domain/primitives"
+} from "@maple/primitives"
 import { StoredAlertMaintenanceSchedule } from "@maple/domain/alert-maintenance-windows"
 import { AlertIncidentLabels } from "@maple/domain/alerts"
 import { AnomalySignalType } from "@maple/domain/anomalies"

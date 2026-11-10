@@ -1,6 +1,6 @@
 import { ChartEnvFields } from "@maple/views/charts/chart-env"
 import { V2SourceUsage } from "@maple/domain/http/v2"
-import { SourceId } from "@maple/domain/primitives"
+import { SourceId } from "@maple/primitives"
 import * as Policy from "@maple/domain/policy"
 import { Schema } from "effect"
 import * as Chart from "@maple/views/charts/chart"

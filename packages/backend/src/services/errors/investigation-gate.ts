@@ -19,7 +19,7 @@ import type {
 	IssueSeverity,
 	WorkflowState,
 } from "@maple/domain/http"
-import type { InvestigationId } from "@maple/domain/primitives"
+import type { InvestigationId } from "@maple/primitives"
 import { isInvestigationStale } from "@maple/backend/services/errors/investigation-stale"
 
 /**

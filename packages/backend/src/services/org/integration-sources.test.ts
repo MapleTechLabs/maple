@@ -1,6 +1,6 @@
 import { afterEach, assert, describe, expect, it } from "@effect/vitest"
 import { Effect, Schema, Array as Arr } from "effect"
-import { OrgId, SourceId } from "@maple/domain/primitives"
+import { OrgId, SourceId } from "@maple/primitives"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import {
 	cleanupTestDbs,

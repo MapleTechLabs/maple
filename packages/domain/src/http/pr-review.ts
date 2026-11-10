@@ -1,5 +1,5 @@
 import { Array as Arr, Schema, String as Str } from "effect"
-import { OrgId } from "../primitives"
+import { OrgId } from "@maple/primitives"
 import { HttpTaggedError } from "./error-policy"
 import { PrReviewPostMerge, PrReviewPostMergeStatus, PrReviewTelemetry } from "./pr-review-telemetry"
 import { GitCommitSha, VcsRepositoryId } from "./vcs"

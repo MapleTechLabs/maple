@@ -20,7 +20,7 @@ import {
 } from "@maple/backend/services/security-audit/SecurityAuditStore"
 import { aiCreditsUsd } from "@maple/domain/billing"
 import { OrgId as OrgIdSchema } from "@maple/domain/http"
-import { UserId } from "@maple/domain/primitives"
+import { UserId } from "@maple/primitives"
 import type { SecurityAuditTargetId, SecurityAuditWorkflowPayload } from "@maple/domain/security-audit"
 import {
 	type AgentInvocation,

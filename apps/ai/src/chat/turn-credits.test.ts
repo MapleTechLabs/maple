@@ -5,7 +5,7 @@ import {
 	AiCreditsUnavailable,
 	type AiCreditsApi,
 } from "@maple/backend/services/billing/AiCredits"
-import { OrgId } from "@maple/domain/primitives"
+import { OrgId } from "@maple/primitives"
 import { Effect, Option, Schema } from "effect"
 import { creditRefusalError, turnCreditRefusal } from "./turn-credits"
 

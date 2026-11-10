@@ -1,6 +1,6 @@
 import { settleTo } from "@maple/views/data/load-failure"
 import { readClock } from "@maple/views/data/timing"
-import { SourceId } from "@maple/domain/primitives"
+import { SourceId } from "@maple/primitives"
 import { Clock, DateTime, Effect, Schema } from "effect"
 import { Command } from "foldkit"
 import { baseKey } from "@maple/views/data/keyed"

@@ -1,4 +1,4 @@
-import { UserId } from "@maple/domain/primitives"
+import { UserId } from "@maple/primitives"
 import { Schema } from "effect"
 import { describe, expect, it } from "vitest"
 import { apiKeyRowPermissions } from "./api-key-permissions"

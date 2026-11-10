@@ -34,7 +34,7 @@ import type {
 	V2DashboardWidgetDataOutcome,
 } from "@maple/domain/http/v2"
 import type { DashboardShare, DashboardShareMode, ShareWidgetDataOutcome } from "@maple/domain/http"
-import { DashboardId } from "@maple/domain/primitives"
+import { DashboardId } from "@maple/primitives"
 import { Clock, DateTime, Effect, Option, Ref, Result, Schema, Array as Arr } from "effect"
 import { Base64Url } from "effect/encoding"
 import { resolveTimeRangeWindow } from "@maple/query-engine"

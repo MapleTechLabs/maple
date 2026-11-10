@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto"
 import type { SourceInsert, SourceRow } from "@maple/db/tables"
 import type { SourceTokenStatus } from "@maple/domain/http"
 import { type SourceHealthInput, sourceHealth } from "@maple/domain/source-health"
-import { type OrgId, type PullSourcePlatform, SourceId } from "@maple/domain/primitives"
+import { type OrgId, type PullSourcePlatform, SourceId } from "@maple/primitives"
 import { Schema } from "effect"
 
 const decodeSourceIdSync = Schema.decodeUnknownSync(SourceId)

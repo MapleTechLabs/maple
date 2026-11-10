@@ -17,7 +17,7 @@ import {
 	orgIdFromChatSessionId,
 	type ChatProposalApproval,
 } from "@maple/domain/chat-session"
-import { OrgId } from "@maple/domain/primitives"
+import { OrgId } from "@maple/primitives"
 import { summarizeCause } from "@maple/backend/platform/describe-cause"
 import { withPgConnectionScope } from "@maple/backend/platform/pg-connection-scope"
 import { Cause, Effect, Layer, ManagedRuntime, Option, Schema, Array as Arr } from "effect"

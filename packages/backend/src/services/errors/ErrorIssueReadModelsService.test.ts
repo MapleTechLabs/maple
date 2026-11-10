@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto"
 import { afterEach, assert, describe, expect, it } from "@effect/vitest"
-import { ErrorIncidentId, ErrorIssueId, OrgId } from "@maple/domain/primitives"
+import { ErrorIncidentId, ErrorIssueId, OrgId } from "@maple/primitives"
 import * as PG from "@maple-dev/effect-orm/postgres"
 import { ErrorIncidents, ErrorIssueFingerprints, ErrorIssues } from "@maple/db/tables"
 import { baselineWarehouseCapabilities } from "@maple/query-engine"

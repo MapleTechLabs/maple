@@ -1,6 +1,6 @@
 import { Effect, Schema, Stream, String as Str } from "effect"
 import { describe, expect, it } from "vitest"
-import { OrgId } from "./primitives"
+import { OrgId } from "@maple/primitives"
 import {
 	ChatConnectorId,
 	ChatConversationKey,

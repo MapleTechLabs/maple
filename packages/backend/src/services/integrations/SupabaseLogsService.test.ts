@@ -13,7 +13,7 @@ import {
 import { TestClock } from "effect/testing"
 import { FetchHttpClient } from "effect/http"
 import { OrgId, UserId, SupabaseProjectUpdateRequest } from "@maple/domain/http"
-import { SourceId, SupabaseProjectRef } from "@maple/domain/primitives"
+import { SourceId, SupabaseProjectRef } from "@maple/primitives"
 import { Env } from "@maple/backend/platform/Env"
 import { cleanupTestDbs, createTestDb, queryFirstRow, type TestDb } from "@maple/backend/testing/test-pglite"
 import { SupabaseOAuthService } from "@maple/backend/services/auth/SupabaseOAuthService"

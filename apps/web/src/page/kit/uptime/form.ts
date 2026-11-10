@@ -1,11 +1,11 @@
 import { AlertDestinationId } from "@maple/domain/http"
 import { Schema } from "effect"
-import { UptimeMonitorKind } from "@maple/domain/primitives"
+import { UptimeMonitorKind } from "@maple/primitives"
 import { UptimeDnsRecordType, UptimeHttpMethod } from "@maple/domain/uptime"
 
 // The uptime form's draft: every field as the inputs hold it, strings until the payload is built.
 
-export { UptimeMonitorKind as MonitorKind } from "@maple/domain/primitives"
+export { UptimeMonitorKind as MonitorKind } from "@maple/primitives"
 export { UptimeHttpMethod as HttpMethod, UptimeDnsRecordType as RecordType } from "@maple/domain/uptime"
 export const ScheduleMode = Schema.Literals(["interval", "cron"])
 export const EveryUnit = Schema.Literals(["seconds", "minutes", "hours"])

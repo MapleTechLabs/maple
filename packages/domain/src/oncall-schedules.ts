@@ -1,6 +1,6 @@
 // Stored shapes shared by the HTTP contract (`./http/oncall-schedules.ts`) and the Postgres tables.
 
-import { UserId } from "./primitives"
+import { UserId } from "@maple/primitives"
 import { Schema } from "effect"
 
 export const MAX_ONCALL_LAYERS = 5

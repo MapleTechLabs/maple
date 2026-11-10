@@ -1,6 +1,6 @@
 import { HttpApiEndpoint, HttpApiGroup } from "effect/http-api"
 import { Schema } from "effect"
-import { SessionId, TraceId, UserId } from "../primitives"
+import { SessionId, TraceId, UserId } from "@maple/primitives"
 import { SessionTag, TinybirdDateTime } from "../query-engine"
 import { AuditedRead } from "./audit-log"
 import { SessionAuthorization } from "./current-tenant"

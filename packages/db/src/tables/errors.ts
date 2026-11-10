@@ -29,7 +29,7 @@ import {
 	InvestigationId,
 	OrgId,
 	UserId,
-} from "@maple/domain/primitives"
+} from "@maple/primitives"
 import { Schema } from "effect"
 
 const StringList = Schema.Array(Schema.String)

@@ -8,7 +8,7 @@ import {
 	type OrgId,
 	SearchConsoleSiteChoice,
 } from "@maple/domain/http"
-import { SearchConsoleSiteId, type SearchConsoleSiteUrl } from "@maple/domain/primitives"
+import { SearchConsoleSiteId, type SearchConsoleSiteUrl } from "@maple/primitives"
 import * as PG from "@maple-dev/effect-orm/postgres"
 import { OAuthConnections, SearchConsoleSites, type SearchConsoleSiteRow } from "@maple/db/tables"
 import { Clock, Context, Effect, Layer, Option, Schema, String as Str, Array as Arr, Order } from "effect"

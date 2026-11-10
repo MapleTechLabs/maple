@@ -24,7 +24,7 @@ import {
 	OrgId,
 	RoleName,
 	UserId,
-} from "./primitives"
+} from "@maple/primitives"
 
 /**
  * `"<orgId>:<tabId>"`. Mirrors the addressing Flue used (and the chat-agent Durable Object naming
@@ -106,7 +106,7 @@ export const chatSessionKind = (sessionId: string): ChatSessionKind => {
 const CONNECTOR_TAB_PREFIX = "bot-"
 
 // Owned by `./primitives` so the engine and the connector packages cannot drift apart.
-export { ChatConnectorId, ChatConversationKey } from "./primitives"
+export { ChatConnectorId, ChatConversationKey } from "@maple/primitives"
 
 /**
  * The session a connector conversation lives in.

@@ -19,6 +19,7 @@
 	"dependencies": {
 		"@maple/alerting-core": "workspace:*",
 		"@maple/domain": "workspace:*",
+		"@maple/primitives": "workspace:*",
 		"@maple/query-engine": "workspace:*",
 		"@maple/query-model": "workspace:*",
 		"@maple/ui": "workspace:*",

@@ -6,7 +6,7 @@ import {
 	ListSlosOutput,
 	SloMutationOutput,
 } from "@maple/domain/mcp-outputs"
-import { RoleName } from "@maple/domain/primitives"
+import { RoleName } from "@maple/primitives"
 import { formatWarehouseDateTime } from "@maple/query-engine"
 import type { McpToolResult } from "../types"
 import { makeEvalRuntime, markdown, runToolDirect, type EvalRuntime } from "../../__evals__/eval-runtime"

@@ -5,7 +5,7 @@ import {
 	UptimeMonitorId,
 	UptimeMonitorKind,
 	UptimeMonitorStatus,
-} from "../../primitives"
+} from "@maple/primitives"
 import {
 	UptimeDnsRecordType,
 	UptimeHttpMethod,

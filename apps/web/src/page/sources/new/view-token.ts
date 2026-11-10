@@ -1,4 +1,4 @@
-import { isPublicSourcePlatform, isPushSourcePlatform } from "@maple/domain/primitives"
+import { isPublicSourcePlatform, isPushSourcePlatform } from "@maple/primitives"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { button, linkButton } from "@maple/views/ui/button"
 import { copyableField } from "@maple/views/ui/copyable-field"

@@ -1,6 +1,6 @@
 import { Clock, Effect, Option, String as Str } from "effect"
 import type { HttpServerRequest } from "effect/http"
-import type { ApiKeyId, OrgId, UserId } from "@maple/domain/primitives"
+import type { ApiKeyId, OrgId, UserId } from "@maple/primitives"
 import { httpRequestForensics, type AuditLogServiceApi } from "@maple/backend/services/audit/AuditLogService"
 
 /** Suppress duplicate denial rows for the same key/reason within this window. */

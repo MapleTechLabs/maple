@@ -1,6 +1,6 @@
 import { readClock } from "@maple/views/data/timing"
 import { SupabaseProjectUpdateRequest } from "@maple/domain/http"
-import { SupabaseProjectRef } from "@maple/domain/primitives"
+import { SupabaseProjectRef } from "@maple/primitives"
 import { Effect, Schema } from "effect"
 import { Command } from "foldkit"
 import { idle, KeyedSchema } from "@maple/views/data/keyed"

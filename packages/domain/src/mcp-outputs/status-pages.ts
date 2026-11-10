@@ -6,7 +6,7 @@ import {
 	StatusPageIncidentImpact,
 	StatusPageIncidentKind,
 	StatusPageIncidentStatus,
-} from "../primitives"
+} from "@maple/primitives"
 
 export const StatusPageRow = Schema.Struct({
 	/** REST id (`stp_…`). */

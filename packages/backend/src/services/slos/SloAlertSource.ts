@@ -1,7 +1,7 @@
 import * as PG from "@maple-dev/effect-orm/postgres"
 import { Slos } from "@maple/db/tables"
 import { SloPersistenceError, type WarehouseReadError } from "@maple/domain/http"
-import type { AlertRuleId, OrgId } from "@maple/domain/primitives"
+import type { AlertRuleId, OrgId } from "@maple/primitives"
 import type { SloBurnWindow } from "@maple/domain/slo"
 import { Context, Effect, Layer, Option } from "effect"
 import { Database } from "@maple/backend/platform/DatabaseLive"

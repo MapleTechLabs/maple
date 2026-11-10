@@ -5,7 +5,7 @@ import {
 	OnCallOverrideId,
 	OnCallScheduleId,
 	UserId,
-} from "../primitives"
+} from "@maple/primitives"
 import { HttpTaggedError } from "./error-policy"
 
 import { EpochMillis, OnCallLayers } from "../oncall-schedules"

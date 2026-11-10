@@ -9,7 +9,7 @@ import {
 	RoleName,
 	UserId,
 } from "@maple/domain/http"
-import { AlertDestinationId, ErrorIssueId, IssueEscalationId } from "@maple/domain/primitives"
+import { AlertDestinationId, ErrorIssueId, IssueEscalationId } from "@maple/primitives"
 import * as PG from "@maple-dev/effect-orm/postgres"
 import { AlertDestinations, IssueEscalations } from "@maple/db/tables"
 import { Clock, Effect, Layer, Schema, Array as Arr } from "effect"

@@ -1,7 +1,7 @@
 import { HttpApiEndpoint, HttpApiGroup } from "effect/http-api"
 import { Schema, SchemaGetter } from "effect"
 import { McpClientKind, McpSessionSource } from "./mcp"
-import { ErrorIssueId, ServiceNamespace } from "../primitives"
+import { ErrorIssueId, ServiceNamespace } from "@maple/primitives"
 import { ErrorPersistenceError, WorkflowState } from "./errors"
 import { TinybirdDateTime } from "../query-engine"
 import { AuditedRead } from "./audit-log"

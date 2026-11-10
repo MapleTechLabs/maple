@@ -1,6 +1,6 @@
 import { HttpApiEndpoint, HttpApiGroup, OpenApi } from "effect/http-api"
 import { Schema } from "effect"
-import { UserId } from "../../primitives"
+import { UserId } from "@maple/primitives"
 import {
 	AnomalyForbiddenError,
 	AnomalyIncidentNotFoundError,

@@ -1,5 +1,5 @@
 import * as PG from "@maple-dev/effect-orm/postgres"
-import { DashboardId, DashboardVersionId, OrgId, UserId } from "@maple/domain/primitives"
+import { DashboardId, DashboardVersionId, OrgId, UserId } from "@maple/primitives"
 
 export const Dashboards = PG.table("dashboards", {
 	columns: {

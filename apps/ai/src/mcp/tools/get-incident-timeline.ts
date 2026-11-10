@@ -4,7 +4,7 @@ import { CurrentMcpTenant } from "../tenant"
 import { AlertReadModelsService } from "@maple/backend/services/alerts/AlertReadModelsService"
 import { AlertIncidentPagesService } from "@maple/backend/services/alerts/AlertIncidentPagesService"
 import { AlertSilencesService } from "@maple/backend/services/alerts/AlertSilencesService"
-import type { AlertSilenceId, OrgId } from "@maple/domain/primitives"
+import type { AlertSilenceId, OrgId } from "@maple/primitives"
 import {
 	ackLabel,
 	ALERT_INCIDENT_STATUSES,

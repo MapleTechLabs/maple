@@ -1,4 +1,4 @@
-import type { GcpConnectorId, GcpScopeType } from "./primitives"
+import type { GcpConnectorId, GcpScopeType } from "@maple/primitives"
 import { Schema, String as Str } from "effect"
 
 /** The read-only account's roles: on the scope, and on the host project its reads are billed to. */

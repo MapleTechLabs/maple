@@ -1,5 +1,5 @@
 import { Effect, Schema, String as Str } from "effect"
-import { OrgId, UserId } from "../primitives"
+import { OrgId, UserId } from "@maple/primitives"
 import { PullRequestLinkState } from "./fix-verification"
 
 import {

@@ -1,4 +1,4 @@
-import type { StatusPageComponentStatus } from "@maple/domain/primitives"
+import type { StatusPageComponentStatus } from "@maple/primitives"
 import {
 	overallStatus,
 	type StatusPageFreshness,

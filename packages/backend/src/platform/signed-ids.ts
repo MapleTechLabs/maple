@@ -1,6 +1,6 @@
 /** Signed public ids: social previews of shares, alert chart images and chat chart images. */
 import { createHmac, timingSafeEqual } from "node:crypto"
-import type { AlertRuleId, OrgId } from "@maple/domain/primitives"
+import type { AlertRuleId, OrgId } from "@maple/primitives"
 import { ChartBreachSide, ChartUnit } from "@maple/domain/http"
 import { Option, Result, Schema, String as Str } from "effect"
 

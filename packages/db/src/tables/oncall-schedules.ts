@@ -1,6 +1,6 @@
 import * as PG from "@maple-dev/effect-orm/postgres"
 import { OnCallLayers } from "@maple/domain/oncall-schedules"
-import { OnCallOverrideId, OnCallScheduleId, OrgId, UserId } from "@maple/domain/primitives"
+import { OnCallOverrideId, OnCallScheduleId, OrgId, UserId } from "@maple/primitives"
 
 /** Who is on call when: layered rotations in one time zone. Overrides sit on top. */
 export const OnCallSchedules = PG.table("oncall_schedules", {

@@ -1,4 +1,4 @@
-import type { GcpScopeType } from "@maple/domain/primitives"
+import type { GcpScopeType } from "@maple/primitives"
 import type { GcpCollectLock, GcpDraftEffect } from "../connector-state"
 import { docsUrl } from "../../../../lib/docs"
 import type { Capability } from "./gcp-configure-schema"

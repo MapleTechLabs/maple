@@ -12,7 +12,7 @@ import {
 	WorkflowState,
 	MAX_ISSUE_MERGE_SOURCES,
 } from "../errors"
-import { SpanId, TraceId, UserId } from "../../primitives"
+import { SpanId, TraceId, UserId } from "@maple/primitives"
 import { AuditedRead } from "../audit-log"
 import { AuthorizationV2 } from "./auth"
 import { ListOf, ListQuery, Timestamp } from "./envelopes"

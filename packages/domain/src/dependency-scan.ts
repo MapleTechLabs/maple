@@ -4,7 +4,7 @@
  */
 import { Schema } from "effect"
 import { DependencyScanTrigger, GitCommitSha, VcsRepositoryId } from "./http/vcs"
-import { UserId } from "./primitives"
+import { UserId } from "@maple/primitives"
 import { AdvisorySeverity, PackageEcosystem } from "./package-advisories"
 import { SecurityAuditFindingStatus } from "./security-audit"
 

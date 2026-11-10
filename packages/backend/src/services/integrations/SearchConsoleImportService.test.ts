@@ -14,7 +14,7 @@ import {
 import { TestClock } from "effect/testing"
 import { FetchHttpClient } from "effect/http"
 import { OrgId, UserId, WarehouseUpstreamError } from "@maple/domain/http"
-import { SearchConsoleSiteUrl } from "@maple/domain/primitives"
+import { SearchConsoleSiteUrl } from "@maple/primitives"
 import { Env } from "@maple/backend/platform/Env"
 import {
 	cleanupTestDbs,

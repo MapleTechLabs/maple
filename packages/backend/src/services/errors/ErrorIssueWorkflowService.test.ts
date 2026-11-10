@@ -8,7 +8,7 @@ import {
 	ErrorIssuePullRequestId,
 	OrgId,
 	UserId,
-} from "@maple/domain/primitives"
+} from "@maple/primitives"
 import {
 	ErrorIncidents,
 	ErrorIssues,

@@ -13,7 +13,7 @@
  */
 import { GCP_METRIC_GROUPS, type GcpMetric, type GcpMetricGroup } from "@maple/domain/gcp-metrics"
 import { IntegrationsPersistenceError, UserId } from "@maple/domain/http"
-import type { OrgId } from "@maple/domain/primitives"
+import type { OrgId } from "@maple/primitives"
 import * as PG from "@maple-dev/effect-orm/postgres"
 import { leaseClaimable } from "./lease"
 import { GcpConnectors, GcpResources, type GcpConnectorRow } from "@maple/db/tables"

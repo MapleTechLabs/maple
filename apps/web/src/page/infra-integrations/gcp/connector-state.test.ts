@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest"
 
 import { Option, Array as Arr } from "effect"
-import { GcpLogRuntime } from "@maple/domain/primitives"
+import { GcpLogRuntime } from "@maple/primitives"
 import {
 	GCP_LOG_RUNTIMES,
 	cloudShellUrl,

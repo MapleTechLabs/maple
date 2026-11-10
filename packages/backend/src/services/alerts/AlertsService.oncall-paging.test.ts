@@ -27,7 +27,7 @@ import {
 import {
 	AlertEscalationRunId as AlertEscalationRunIdSchema,
 	ChatIdentityId as ChatIdentityIdSchema,
-} from "@maple/domain/primitives"
+} from "@maple/primitives"
 import { EmailService } from "@maple/backend/platform/EmailService"
 import { OrgMembersService, type OrgMember } from "@maple/backend/services/org/OrgMembersService"
 import { type AlertsServiceApi } from "./AlertsService"

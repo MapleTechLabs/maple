@@ -24,7 +24,7 @@ import {
 	verificationWindowMs,
 	MAX_VERIFICATION_ATTEMPTS,
 } from "@maple/domain/http"
-import { ErrorIssueId as ErrorIssueIdSchema, type InvestigationId } from "@maple/domain/primitives"
+import { ErrorIssueId as ErrorIssueIdSchema, type InvestigationId } from "@maple/primitives"
 import * as PG from "@maple-dev/effect-orm/postgres"
 import {
 	ErrorIssueEvents,

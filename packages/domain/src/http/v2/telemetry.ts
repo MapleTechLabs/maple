@@ -1,6 +1,6 @@
 import { HttpApiEndpoint, HttpApiGroup, OpenApi } from "effect/http-api"
 import { Schema } from "effect"
-import { MetricName, ServiceName, SpanId, StatusCode, TraceId } from "../../primitives"
+import { MetricName, ServiceName, SpanId, StatusCode, TraceId } from "@maple/primitives"
 import { AuditedRead } from "../audit-log"
 import { AuthorizationV2 } from "./auth"
 import { wireExample, ListOf, ListQuery, Timestamp } from "./envelopes"

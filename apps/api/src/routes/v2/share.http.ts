@@ -37,7 +37,7 @@ import {
 	ShareWrongOrgError,
 } from "@maple/domain/http"
 import { MapleApiV2 } from "@maple/domain/http/v2"
-import type { DashboardId } from "@maple/domain/primitives"
+import type { DashboardId } from "@maple/primitives"
 import { MAX_LIST_RANGE_SECONDS, MAX_QUERY_RANGE_SECONDS } from "@maple/query-engine"
 import { hashShareToken } from "@maple/backend/platform/credential-tokens"
 import {

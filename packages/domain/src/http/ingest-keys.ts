@@ -1,5 +1,5 @@
 import { Schema } from "effect"
-import { IsoDateTimeString } from "../primitives"
+import { IsoDateTimeString } from "@maple/primitives"
 import { HttpTaggedError } from "./error-policy"
 
 export class IngestKeysResponse extends Schema.Class<IngestKeysResponse>("IngestKeysResponse")({

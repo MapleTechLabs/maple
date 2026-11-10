@@ -10,7 +10,7 @@ import {
 	type ChatTurnOrigin,
 	type ChatTurnTenantEncoded,
 } from "@maple/domain/chat-session"
-import { type OrgId, UserId } from "@maple/domain/primitives"
+import { type OrgId, UserId } from "@maple/primitives"
 import { chatConnectorAgentName } from "@maple/domain/system-agents"
 import { summarizeCause } from "@maple/backend/platform/describe-cause"
 import type { ActorDocument, TenantContext } from "@maple/domain/http"

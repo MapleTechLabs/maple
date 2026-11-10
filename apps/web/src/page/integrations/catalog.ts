@@ -1,5 +1,5 @@
 import { type ChatConnectorManifest, chatConnectorManifests } from "@maple/chat-platform/manifests"
-import { ChatConnectorId } from "@maple/domain/primitives"
+import { ChatConnectorId } from "@maple/primitives"
 import { Option, Schema, String as Str, Array as Arr } from "effect"
 import type { IconName } from "@maple/views/ui/icon"
 import { type Provider, type ProviderId, PROVIDERS } from "../kit/providers"

@@ -1,6 +1,6 @@
 import { Context } from "effect"
 import type { AuditLogSource } from "@maple/domain/http"
-import type { ApiKeyId } from "@maple/domain/primitives"
+import type { ApiKeyId } from "@maple/primitives"
 
 /**
  * How the current request authenticated, for audit attribution. The tenant

@@ -1,5 +1,5 @@
 import { Cron, Option, Result, Schema, Array as Arr, Record as Rec, String as Str } from "effect"
-import { OrgId, UptimeIntervalSeconds, UptimeMonitorId, UptimeMonitorStatus } from "./primitives"
+import { OrgId, UptimeIntervalSeconds, UptimeMonitorId, UptimeMonitorStatus } from "@maple/primitives"
 
 // Uptime monitors: the stored config per kind, the probe contract between the API and
 // `apps/scraper`, and the pure rules both sides share (assertions, the up/down machine).

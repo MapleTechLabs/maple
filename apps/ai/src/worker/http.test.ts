@@ -24,7 +24,7 @@ import { AuditEventsQueueProducer, MapleDbConnection } from "@maple/backend/plat
 import { AuditLogService } from "@maple/backend/services/audit/AuditLogService"
 import { WarehouseQueryService } from "@maple/backend/services/warehouse/WarehouseQueryService"
 import { makeWarehouseServiceStub } from "@maple/backend/testing/warehouse-test-support"
-import { OrgId } from "@maple/domain/primitives"
+import { OrgId } from "@maple/primitives"
 import { runAfterResponse } from "@maple/backend/platform/after-response"
 import { makeFetch } from "./http"
 

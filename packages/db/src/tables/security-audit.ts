@@ -1,6 +1,6 @@
 import * as PG from "@maple-dev/effect-orm/postgres"
 import { VcsRepositoryId } from "@maple/domain/http/vcs"
-import { OrgId, UserId } from "@maple/domain/primitives"
+import { OrgId, UserId } from "@maple/primitives"
 import {
 	SecurityAuditEventKind,
 	SecurityAuditFindingStatus,

@@ -5,7 +5,7 @@ import {
 	IssueEscalationStatus,
 	IssueSeverity,
 } from "@maple/domain/error-issues"
-import { ErrorIssueId, InvestigationId, IssueEscalationId, OrgId } from "@maple/domain/primitives"
+import { ErrorIssueId, InvestigationId, IssueEscalationId, OrgId } from "@maple/primitives"
 import { Schema } from "effect"
 
 /**

@@ -14,7 +14,7 @@ import {
 	type RoleName,
 	type UserId,
 } from "@maple/domain/http"
-import { DeviceCredentialId } from "@maple/domain/primitives"
+import { DeviceCredentialId } from "@maple/primitives"
 import { Clock, Context, Effect, Layer, Option, Schema, Array as Arr, String as Str } from "effect"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { makeDbExecute, makePersistenceErrorMapper } from "@maple/backend/platform/db-execute"

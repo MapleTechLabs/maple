@@ -1,4 +1,4 @@
-import type { SupabaseProjectRef } from "@maple/domain/primitives"
+import type { SupabaseProjectRef } from "@maple/primitives"
 import { Option, type Result, Array as Arr } from "effect"
 import { AsyncData } from "foldkit"
 import * as Keyed from "@maple/views/data/keyed"

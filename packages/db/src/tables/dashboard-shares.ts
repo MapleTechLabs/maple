@@ -1,6 +1,6 @@
 import * as PG from "@maple-dev/effect-orm/postgres"
 import { DashboardShareMode as DashboardShareModeSchema } from "@maple/domain/dashboard-shares"
-import { DashboardId, DashboardShareId, OrgId, UserId } from "@maple/domain/primitives"
+import { DashboardId, DashboardShareId, OrgId, UserId } from "@maple/primitives"
 import { Dashboards } from "./dashboards"
 
 const dashboardSharesColumns = {

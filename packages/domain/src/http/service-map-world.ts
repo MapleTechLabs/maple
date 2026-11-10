@@ -1,6 +1,6 @@
 import { HttpApiEndpoint, HttpApiGroup } from "effect/http-api"
 import { Array as Arr, Option, Result, Schema, SchemaGetter } from "effect"
-import { IsoDateTimeString, UserId } from "../primitives"
+import { IsoDateTimeString, UserId } from "@maple/primitives"
 import { SessionAuthorization } from "./current-tenant"
 
 // The org's 3D service map as a world the team builds: one row per entity, each with its own

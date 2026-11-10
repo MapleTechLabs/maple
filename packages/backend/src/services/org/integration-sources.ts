@@ -15,7 +15,7 @@ import { AWS_METRICS_OFF, AWS_NO_DELIVERY, awsStreamState } from "@maple/domain/
 import { scrapeStaleAfterMs } from "../integrations/integration-inventory"
 import type { SourceResourceCount } from "@maple/domain/source-health"
 import { SourcePublicId } from "@maple/domain/http/v2"
-import type { OrgId, PullSourcePlatform, SourceId } from "@maple/domain/primitives"
+import type { OrgId, PullSourcePlatform, SourceId } from "@maple/primitives"
 import * as PG from "@maple-dev/effect-orm/postgres"
 import { Array as Arr, Effect, Schema, Record as Rec } from "effect"
 import {

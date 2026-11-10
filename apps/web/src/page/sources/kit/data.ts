@@ -1,4 +1,4 @@
-import type { SourceId } from "@maple/domain/primitives"
+import type { SourceId } from "@maple/primitives"
 import { V2Source, V2SourceUsage, V2SourceUsageSummary } from "@maple/domain/http/v2"
 import { collectV2Pages } from "@maple/web-data/lib/v2-pagination"
 import { Effect, type Result, Schema } from "effect"

@@ -1,6 +1,6 @@
 import { EdgeCacheServiceLive } from "@maple/backend/platform/CacheBackendLive"
 import type { Message } from "@cloudflare/workers-types"
-import type { OrgId } from "@maple/domain/primitives"
+import type { OrgId } from "@maple/primitives"
 import { Cause, Clock, Effect, Layer, Array as Arr } from "effect"
 import { summarizeCause } from "@maple/backend/platform/describe-cause"
 import { EventBaseLive } from "@maple/backend/platform/DatabasePgLive"

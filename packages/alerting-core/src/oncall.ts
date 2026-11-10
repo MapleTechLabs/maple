@@ -8,7 +8,7 @@ import type {
 	OnCallScheduleConfig,
 	OnCallWeekday,
 } from "@maple/domain/http"
-import type { OnCallOverrideId, UserId } from "@maple/domain/primitives"
+import type { OnCallOverrideId, UserId } from "@maple/primitives"
 
 // Pure on-call resolution. Handoffs and restrictions are local wall-clock times in the
 // schedule's zone. A local time inside a DST gap moves forward by the gap (02:30 becomes

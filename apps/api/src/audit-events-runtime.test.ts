@@ -1,5 +1,5 @@
 import { describe, expect, it } from "@effect/vitest"
-import { OrgId } from "@maple/domain/primitives"
+import { OrgId } from "@maple/primitives"
 import type { AuditLogRow } from "@maple/domain/tinybird"
 import { WarehouseUpstreamError } from "@maple/domain/http"
 import { Effect, Layer, Schema, Array as Arr } from "effect"

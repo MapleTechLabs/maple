@@ -1,6 +1,6 @@
 // Stored shapes shared by the HTTP contract (`./http/escalation-chains.ts`) and the Postgres tables.
 
-import { AlertDestinationId, OnCallScheduleId, UserId } from "./primitives"
+import { AlertDestinationId, OnCallScheduleId, UserId } from "@maple/primitives"
 import { Schema } from "effect"
 
 export const MAX_ESCALATION_STEPS = 10

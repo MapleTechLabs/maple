@@ -37,7 +37,7 @@ import * as WindowDialog from "../maintenance-dialog/dialog"
 import * as SilenceDialog from "../silence-dialog/dialog"
 import { ServiceNamespaces } from "./uptime-groups"
 import { LiveRows } from "../../kit/load-schemas"
-import { UptimeMonitorKind } from "@maple/domain/primitives"
+import { UptimeMonitorKind } from "@maple/primitives"
 
 export const UptimeStatusFilter = Schema.Literals(["all", "down", "degraded", "paused"])
 export const UptimeKindFilter = Schema.Literals(["all", ...UptimeMonitorKind.literals])

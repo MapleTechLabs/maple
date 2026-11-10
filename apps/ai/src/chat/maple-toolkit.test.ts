@@ -1,5 +1,5 @@
 /** The Maple toolkit a chat run offers, and what it pins for a review session. */
-import { UserId, OrgId } from "@maple/domain/primitives"
+import { UserId, OrgId } from "@maple/primitives"
 import type { TenantContext } from "@maple/domain/http"
 import { Effect, Schema } from "effect"
 import { assert, describe, it } from "vitest"

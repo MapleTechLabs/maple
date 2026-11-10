@@ -18,7 +18,7 @@ import {
 } from "@maple/db/tables"
 import type { IntegrationInventory } from "@maple/domain/integration-inventory"
 import { buildIntegrationInventory, withSourceHealth } from "./integration-inventory"
-import type { OrgId } from "@maple/domain/primitives"
+import type { OrgId } from "@maple/primitives"
 import { Clock, Context, Effect, Layer, Option, Schema, Array as Arr, Record as Rec } from "effect"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { makeDbExecute } from "@maple/backend/platform/db-execute"

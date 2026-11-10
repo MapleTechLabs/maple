@@ -13,7 +13,7 @@ import {
 	type DependencyScanTrigger,
 } from "@maple/domain/dependency-scan"
 import type { GitCommitSha, VcsRepositoryId } from "@maple/domain/http/vcs"
-import type { OrgId, UserId } from "@maple/domain/primitives"
+import type { OrgId, UserId } from "@maple/primitives"
 import {
 	DependencyFindings,
 	DependencyScanMatches,

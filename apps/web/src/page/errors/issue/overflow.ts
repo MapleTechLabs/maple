@@ -1,6 +1,6 @@
 import type { ErrorIssueDocument } from "@maple/domain/http"
 import { agentPromptFromIssue } from "../kit/agent-debug-prompt"
-import { AlertRuleId } from "@maple/domain/primitives"
+import { AlertRuleId } from "@maple/primitives"
 import { Option, Schema } from "effect"
 import { Command, type Update } from "foldkit"
 import { AppRoute, hrefOf } from "../../../route"

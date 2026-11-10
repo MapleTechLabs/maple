@@ -19,7 +19,7 @@ import {
 } from "@maple/domain/chat-session"
 import { makeChatTranscript } from "@maple/domain/chat-transcript"
 import { type ChatSessionStub, chatSessionClientFromStub } from "@maple/domain/chat-session-stub"
-import { ChatConnectorId, OrgId, UserId } from "@maple/domain/primitives"
+import { ChatConnectorId, OrgId, UserId } from "@maple/primitives"
 import {
 	chatActionControlId,
 	chatAlertAckControlId,

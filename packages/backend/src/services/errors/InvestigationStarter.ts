@@ -19,8 +19,8 @@ import type {
 	IssueSeverity,
 	OrgId,
 } from "@maple/domain/http"
-import type { InvestigationId } from "@maple/domain/primitives"
-import { UserId } from "@maple/domain/primitives"
+import type { InvestigationId } from "@maple/primitives"
+import { UserId } from "@maple/primitives"
 import { Context, Effect, Exit, Layer, Option, Schema } from "effect"
 import * as SecureRandom from "effect/crypto/SecureRandom"
 import { ChatSessions } from "@maple/backend/platform/bindings"

@@ -31,7 +31,7 @@ import {
 	VcsRepositoryId,
 	VcsRepositoryDiscovery,
 } from "@maple/domain/vcs"
-import { OrgId, SourceId, UserId } from "@maple/domain/primitives"
+import { OrgId, SourceId, UserId } from "@maple/primitives"
 import { Schema } from "effect"
 import { Sources } from "./sources"
 

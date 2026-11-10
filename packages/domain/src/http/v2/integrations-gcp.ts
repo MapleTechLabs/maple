@@ -6,7 +6,7 @@ import {
 	GcpProjectId,
 	GcpResourceNumber,
 	GcpScopeType,
-} from "../../primitives"
+} from "@maple/primitives"
 import {
 	GcpMetricsUnavailableError,
 	GcpScopeAlreadyConnectedError,

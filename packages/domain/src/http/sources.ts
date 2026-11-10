@@ -8,7 +8,7 @@ import {
 	SourcePlatform,
 	SourceResourceAttribute,
 	SourceSignal,
-} from "../primitives"
+} from "@maple/primitives"
 import { HttpTaggedError } from "./error-policy"
 
 /** Resource attribute the ingest gateway stamps with the `src_` id of the source that sent the data. */

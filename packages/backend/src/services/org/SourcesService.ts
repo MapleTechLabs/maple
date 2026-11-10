@@ -20,7 +20,7 @@ import {
 	sourceTokenPrefix,
 	type SourceResourceAttribute,
 	type SourceSignal,
-} from "@maple/domain/primitives"
+} from "@maple/primitives"
 import { hashIngestKey } from "../../platform/credential-tokens"
 import * as Orm from "@maple-dev/effect-orm/database"
 import * as PG from "@maple-dev/effect-orm/postgres"

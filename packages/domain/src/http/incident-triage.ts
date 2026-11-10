@@ -9,7 +9,7 @@
  */
 import { Schema } from "effect"
 import { HttpApiEndpoint, HttpApiGroup } from "effect/http-api"
-import { InvestigationId } from "../primitives"
+import { InvestigationId } from "@maple/primitives"
 import { IssueSeverity } from "./errors"
 
 /**

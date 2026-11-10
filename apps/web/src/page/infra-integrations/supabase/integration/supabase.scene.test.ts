@@ -1,6 +1,6 @@
 import { OrgId } from "@maple/domain"
 import { SupabaseIntegrationStatus } from "@maple/domain/http"
-import { SupabaseProjectRef } from "@maple/domain/primitives"
+import { SupabaseProjectRef } from "@maple/primitives"
 import { Result, Schema, Array as Arr, Option } from "effect"
 import { expect as expectView, given, role, scene, text, withViewInputs } from "foldkit/scene"
 import { describe, expect, test } from "vitest"

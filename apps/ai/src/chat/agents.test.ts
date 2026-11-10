@@ -11,7 +11,7 @@ import {
 	makeChatSessionId,
 } from "@maple/domain/chat-session"
 import { evaluatePermission } from "@maple/domain/permission"
-import { ExternalUserId, OrgId, UserId } from "@maple/domain/primitives"
+import { ExternalUserId, OrgId, UserId } from "@maple/primitives"
 import { Effect, Schema, Array as Arr } from "effect"
 import { assert, describe, it } from "vitest"
 import type { McpToolExecutorApi } from "../mcp/dispatcher"

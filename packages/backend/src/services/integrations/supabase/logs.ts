@@ -7,7 +7,7 @@
 import { SOURCE_ID_ATTRIBUTE } from "@maple/domain/http"
 import { Effect, Option, Schema, Array as Arr, Record as Rec, String as Str } from "effect"
 import { HttpClient, HttpClientRequest } from "effect/http"
-import type { SupabaseProjectRef } from "@maple/domain/primitives"
+import type { SupabaseProjectRef } from "@maple/primitives"
 import { timestampMs } from "@maple/backend/platform/time"
 import { send, SupabaseApiError } from "./api"
 import { SUPABASE_SERVICE_NAME } from "./scrape-targets"

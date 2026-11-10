@@ -2,7 +2,7 @@ import type {
 	StatusPageComponentStatus,
 	StatusPageIncidentImpact,
 	StatusPageIncidentStatus,
-} from "@maple/domain/primitives"
+} from "@maple/primitives"
 import type { StatusPageDayBar, StatusPageDayState } from "@maple/domain/status-page"
 import { Array as Arr, String as Str } from "effect"
 

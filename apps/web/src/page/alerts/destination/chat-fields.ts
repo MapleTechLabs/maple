@@ -1,5 +1,5 @@
 import { V2ChatDestination } from "@maple/domain/http/v2"
-import { ChatWorkspaceId } from "@maple/domain/primitives"
+import { ChatWorkspaceId } from "@maple/primitives"
 import { channelLabel } from "../shared/channel-search"
 import { Effect, Option, Schema, Array as Arr } from "effect"
 import { AsyncData, Command } from "foldkit"

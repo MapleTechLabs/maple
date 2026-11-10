@@ -9,7 +9,7 @@ import {
 	IsoDateTimeString,
 	PostgresTransactionId,
 	UserId,
-} from "../primitives"
+} from "@maple/primitives"
 import { HttpTaggedError } from "./error-policy"
 
 // The versioned dashboard *document* schema lives in `@maple/widgets/dashboard`;

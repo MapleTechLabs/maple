@@ -15,7 +15,7 @@ import {
 	type WarehouseReadError,
 	type TenantContext,
 } from "@maple/domain/http"
-import type { OrgId } from "@maple/domain/primitives"
+import type { OrgId } from "@maple/primitives"
 import * as PG from "@maple-dev/effect-orm/postgres"
 import { VcsRepositories } from "@maple/db/tables"
 import { CH, formatWarehouseDateTime } from "@maple/query-engine"

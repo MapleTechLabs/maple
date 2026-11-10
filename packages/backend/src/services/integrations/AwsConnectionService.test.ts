@@ -3,7 +3,7 @@ import { ConfigProvider, Effect, Layer, Schema, Array as Arr, String as Str } fr
 import { TestClock } from "effect/testing"
 import { HttpClient } from "effect/http"
 import { hashIngestKey } from "../../platform/credential-tokens"
-import { AwsAccountId, AwsRegion, OrgId, UserId } from "@maple/domain/primitives"
+import { AwsAccountId, AwsRegion, OrgId, UserId } from "@maple/primitives"
 import { encryptAes256Gcm } from "@maple/backend/platform/Crypto"
 import { Env } from "@maple/backend/platform/Env"
 import {

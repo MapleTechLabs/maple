@@ -6,7 +6,7 @@ import {
 	UptimeMonitorMutationOutput,
 } from "@maple/domain/mcp-outputs"
 import { UptimeMonitorLimitReachedError } from "@maple/domain/http"
-import { RoleName } from "@maple/domain/primitives"
+import { RoleName } from "@maple/primitives"
 import { executeSql } from "@maple/backend/testing/test-pglite"
 import type { McpToolResult } from "../types"
 import { makeEvalRuntime, markdown, runToolDirect, type EvalRuntime } from "../../__evals__/eval-runtime"

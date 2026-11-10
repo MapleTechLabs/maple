@@ -1,5 +1,5 @@
 import { Array as Arr, DateTime, Option, Schema, String as Str } from "effect"
-import { AlertMaintenanceWindowId, IsoDateTimeString, UserId } from "../primitives"
+import { AlertMaintenanceWindowId, IsoDateTimeString, UserId } from "@maple/primitives"
 import { HttpTaggedError } from "./error-policy"
 import { AlertSilenceMatchers, MAX_ALERT_SILENCE_DURATION_MS } from "./alert-silences"
 

@@ -4,7 +4,7 @@ import { AiCreditSource } from "../billing"
 import { TAX_ID_TYPE_VALUES } from "../billing-tax-ids"
 import { SessionAuthorization } from "./current-tenant"
 import { HttpTaggedError } from "./error-policy"
-import { OrgId } from "../primitives"
+import { OrgId } from "@maple/primitives"
 import {
 	BillingAccount,
 	BillingAccountPersistenceError,

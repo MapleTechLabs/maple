@@ -13,7 +13,7 @@ import {
 	type SloHistoryPoint,
 	type SloSli,
 } from "@maple/domain/slo"
-import type { OrgId } from "@maple/domain/primitives"
+import type { OrgId } from "@maple/primitives"
 import { Array as Arr, DateTime, Effect, Record as Rec } from "effect"
 import { WarehouseQueryService } from "@maple/backend/services/warehouse/WarehouseQueryService"
 import type { TenantContext } from "@maple/domain/http"

@@ -1,6 +1,6 @@
 import { HttpApiEndpoint, HttpApiGroup, OpenApi } from "effect/http-api"
 import { Schema } from "effect"
-import { ApiKeyId, PostgresTransactionId, UserId } from "../../primitives"
+import { ApiKeyId, PostgresTransactionId, UserId } from "@maple/primitives"
 import { ApiKeyKind, ApiKeyNotFoundError, ApiKeyPersistenceError } from "../api-keys"
 import { AuthorizationV2, V2Scope } from "./auth"
 import { wireExample, ListOf, ListQuery, Timestamp } from "./envelopes"

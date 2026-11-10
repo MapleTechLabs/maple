@@ -19,7 +19,7 @@ import {
 	type VcsSyncJob,
 	type TenantContext,
 } from "@maple/domain/http"
-import type { OrgId, UserId } from "@maple/domain/primitives"
+import type { OrgId, UserId } from "@maple/primitives"
 import type { DependencyFindingStatus } from "@maple/domain/dependency-scan"
 import { EdgeCacheService } from "@maple/cache"
 import { Clock, Context, Effect, Layer, Option, Schema, Array as Arr, String as Str } from "effect"

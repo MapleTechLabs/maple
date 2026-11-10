@@ -11,7 +11,7 @@ import {
 	SourceId,
 	SupabaseProjectRef,
 	UserId,
-} from "../primitives"
+} from "@maple/primitives"
 import { SessionAuthorization } from "./current-tenant"
 import { OAuthCompleteRequest, OAuthCompleteResponse } from "./oauth-return"
 import { HttpTaggedError } from "./error-policy"

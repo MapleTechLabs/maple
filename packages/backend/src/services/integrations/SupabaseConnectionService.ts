@@ -23,7 +23,7 @@ import {
 	SupabaseConnectionId,
 	SupabaseProjectId,
 	type SupabaseProjectRef,
-} from "@maple/domain/primitives"
+} from "@maple/primitives"
 import * as PG from "@maple-dev/effect-orm/postgres"
 import { leaseClaimable, leaseStillOurs } from "./lease"
 import {

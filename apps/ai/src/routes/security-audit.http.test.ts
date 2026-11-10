@@ -11,7 +11,7 @@ import {
 	ENABLED_ORGANIZATION_FEATURE_FLAGS,
 } from "@maple/domain/organization-feature-flags"
 import { aiCreditsUsd } from "@maple/domain/billing"
-import { OrgId, RoleName, UserId } from "@maple/domain/primitives"
+import { OrgId, RoleName, UserId } from "@maple/primitives"
 import type { SecurityAuditWorkflowPayload } from "@maple/domain/security-audit"
 import type { EstimatedSeverity, Finding } from "@maple/security-audit"
 import { ApiErrorBoundaryLive } from "@maple/backend/http/error-boundary"

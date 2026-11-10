@@ -2,7 +2,7 @@ import { afterEach, assert, describe, it } from "@effect/vitest"
 import { ConfigProvider, Effect, Layer, Schema, Array as Arr, String as Str, DateTime, Option } from "effect"
 import { TestClock } from "effect/testing"
 import { CreateSourceRequest, OrgId, UpdateSourceRequest, UserId } from "@maple/domain/http"
-import { SourceId } from "@maple/domain/primitives"
+import { SourceId } from "@maple/primitives"
 import { hashIngestKey } from "../../platform/credential-tokens"
 import { Env } from "@maple/backend/platform/Env"
 import {

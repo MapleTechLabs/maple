@@ -80,7 +80,7 @@ import {
 	type CloudflareHyperdriveConfig,
 	type CloudflareZone,
 } from "@maple/backend/services/integrations/CloudflareApi"
-import type { SourceId, UserId } from "@maple/domain/primitives"
+import type { SourceId, UserId } from "@maple/primitives"
 import { pollStatus } from "./integration-inventory"
 import type { SourceResourceCount } from "@maple/domain/source-health"
 import { Database } from "@maple/backend/platform/DatabaseLive"

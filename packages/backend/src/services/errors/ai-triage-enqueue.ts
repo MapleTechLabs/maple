@@ -13,7 +13,7 @@ import {
 	type OrgId,
 	PRIOR_DIAGNOSES_LIMIT,
 } from "@maple/domain/http"
-import { InvestigationId, IsoDateTimeString } from "@maple/domain/primitives"
+import { InvestigationId, IsoDateTimeString } from "@maple/primitives"
 import * as PG from "@maple-dev/effect-orm/postgres"
 import type { MapleDb } from "@maple/db/client"
 import { AiTriageSettings, ErrorIssues, Investigations } from "@maple/db/tables"

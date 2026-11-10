@@ -11,7 +11,7 @@ import {
 	type ScrapeTargetId,
 	type SourceAttributeMode,
 	type SourceSignal,
-} from "@maple/domain/primitives"
+} from "@maple/primitives"
 import { Option, Schema, Array as Arr, Order } from "effect"
 import { formatTimestampInTimezone } from "@maple/ui/lib/timezone-format"
 import { timestamp } from "@maple/views/ui/timestamp"

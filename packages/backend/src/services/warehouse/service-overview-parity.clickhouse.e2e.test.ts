@@ -26,7 +26,7 @@
 //     cannot coincide.
 
 import { afterAll, assert, beforeAll, describe, it } from "@effect/vitest"
-import { SLO_LATENCY_THRESHOLDS_MS } from "@maple/domain/primitives"
+import { SLO_LATENCY_THRESHOLDS_MS } from "@maple/primitives"
 import { SLO_LATENCY_COVERAGE_COLUMN, sloLatencyColumnName } from "@maple/domain/tinybird/datasources"
 import * as CH from "@maple/query-engine/ch"
 import { normalizeSqlForClickHouseClient } from "@maple/query-engine/execution"

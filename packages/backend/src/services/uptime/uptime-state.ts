@@ -3,7 +3,7 @@
 
 import type { MapleDb } from "@maple/db/client"
 import { UptimeMonitorPersistenceError } from "@maple/domain/http"
-import type { OrgId, UptimeMonitorId, UptimeMonitorStatus } from "@maple/domain/primitives"
+import type { OrgId, UptimeMonitorId, UptimeMonitorStatus } from "@maple/primitives"
 import { appendRecentCheck, type UptimeRecentCheck } from "@maple/domain/uptime"
 import { Effect } from "effect"
 import { bumpPagesForMonitors } from "@maple/backend/services/status-pages/outbox"

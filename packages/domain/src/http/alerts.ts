@@ -16,7 +16,7 @@ import {
 	PostgresTransactionId,
 	RoleName,
 	UserId,
-} from "../primitives"
+} from "@maple/primitives"
 import { QueryBuilderQueryDraftSchema } from "./query-engine"
 import { HttpTaggedError } from "./error-policy"
 import { AnomalySignalType } from "./anomalies"

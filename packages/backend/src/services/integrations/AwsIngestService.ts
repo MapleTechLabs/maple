@@ -5,7 +5,7 @@ import {
 	IntegrationsPersistenceError,
 	type TenantContext,
 } from "@maple/domain/http"
-import type { AwsConnectionId } from "@maple/domain/primitives"
+import type { AwsConnectionId } from "@maple/primitives"
 import { CH, formatWarehouseDateTime, parseWarehouseDateTime } from "@maple/query-engine"
 import { Clock, Context, Effect, Layer, Array as Arr } from "effect"
 import { Database } from "@maple/backend/platform/DatabaseLive"

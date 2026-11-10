@@ -1,5 +1,5 @@
 import * as PG from "@maple-dev/effect-orm/postgres"
-import { ApiKeyId, OrgId, UserId } from "@maple/domain/primitives"
+import { ApiKeyId, OrgId, UserId } from "@maple/primitives"
 import { Schema } from "effect"
 
 const StringList = Schema.Array(Schema.String)

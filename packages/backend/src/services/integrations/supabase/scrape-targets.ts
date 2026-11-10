@@ -10,7 +10,7 @@ import {
 	type SupabaseConnectionRow,
 	type SupabaseProjectRow,
 } from "@maple/db/tables"
-import { ScrapeTargetId, type SupabaseConnectionId } from "@maple/domain/primitives"
+import { ScrapeTargetId, type SupabaseConnectionId } from "@maple/primitives"
 import * as PG from "@maple-dev/effect-orm/postgres"
 import { Effect, Schema, Array as Arr, Record as Rec } from "effect"
 

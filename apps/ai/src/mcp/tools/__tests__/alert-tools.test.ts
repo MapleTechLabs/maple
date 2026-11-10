@@ -23,7 +23,7 @@ import {
 	UserId,
 } from "@maple/domain/http"
 import { encodePublicId } from "@maple/domain/http/v2"
-import { AlertIncidentId } from "@maple/domain/primitives"
+import { AlertIncidentId } from "@maple/primitives"
 import {
 	CreateAlertRuleOutput,
 	GetAlertRuleOutput,

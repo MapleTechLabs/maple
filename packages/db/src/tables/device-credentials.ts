@@ -1,5 +1,5 @@
 import * as PG from "@maple-dev/effect-orm/postgres"
-import { DeviceCredentialId, OrgId, RoleName, UserId } from "@maple/domain/primitives"
+import { DeviceCredentialId, OrgId, RoleName, UserId } from "@maple/primitives"
 import { Schema } from "effect"
 
 /** The registered public key: EC P-256 only, so every proof is ES256. */

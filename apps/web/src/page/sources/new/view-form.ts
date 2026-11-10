@@ -1,4 +1,4 @@
-import { isPublicSourcePlatform, type PushSourcePlatform } from "@maple/domain/primitives"
+import { isPublicSourcePlatform, type PushSourcePlatform } from "@maple/primitives"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { button } from "@maple/views/ui/button"
 import { collapsible } from "@maple/views/ui/collapsible"

@@ -9,7 +9,7 @@ import {
 	DataSourceStatus,
 	ExternalDataSourceId,
 } from "@maple/domain/data-sources"
-import { OrgId, UserId } from "@maple/domain/primitives"
+import { OrgId, UserId } from "@maple/primitives"
 import { Schema } from "effect"
 
 // A system an org connects so Maple can query it in place: a database or an API. Nothing is

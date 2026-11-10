@@ -1,4 +1,4 @@
-import type { StatusPageComponentStatus, StatusPageIncidentImpact } from "@maple/domain/primitives"
+import type { StatusPageComponentStatus, StatusPageIncidentImpact } from "@maple/primitives"
 import {
 	incidentComponentStatus,
 	STATUS_PAGE_HISTORY_DAYS,

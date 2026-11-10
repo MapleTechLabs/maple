@@ -14,7 +14,7 @@ import {
 	type SupabaseAdvisorLint,
 	SupabaseProjectInsights,
 } from "@maple/domain/http"
-import type { SupabaseProjectRef } from "@maple/domain/primitives"
+import type { SupabaseProjectRef } from "@maple/primitives"
 import * as PG from "@maple-dev/effect-orm/postgres"
 import { leaseClaimable, leaseStillOurs } from "./lease"
 import {

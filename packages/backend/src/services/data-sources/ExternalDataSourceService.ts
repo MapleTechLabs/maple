@@ -35,7 +35,7 @@ import {
 	type UpdateCatalogEntryInput,
 	type UpdateExternalDataSourceInput,
 } from "@maple/domain/data-sources"
-import type { OrgId, UserId } from "@maple/domain/primitives"
+import type { OrgId, UserId } from "@maple/primitives"
 import {
 	ExternalDataSourceCatalogEntries,
 	ExternalDataSources,

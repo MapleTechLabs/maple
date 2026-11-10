@@ -29,7 +29,7 @@ import {
 	type StatusPageComponentId,
 	type StatusPageId,
 	type StatusPageIncidentStatus,
-} from "@maple/domain/primitives"
+} from "@maple/primitives"
 import { isActiveIncident, overallStatus, pageFreshness } from "@maple/domain/status-page"
 import { parseWarehouseDateTime } from "@maple/query-engine"
 import { AuditLogService } from "@maple/backend/services/audit/AuditLogService"

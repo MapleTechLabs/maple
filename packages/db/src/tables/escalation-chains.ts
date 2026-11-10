@@ -1,13 +1,7 @@
 import * as PG from "@maple-dev/effect-orm/postgres"
 import { AlertIncidentPageStatus, AlertSeverity } from "@maple/domain/alerts"
 import { AlertEscalationRunStatus, EscalationSteps } from "@maple/domain/escalation-chains"
-import {
-	AlertEscalationRunId,
-	AlertIncidentId,
-	EscalationChainId,
-	OrgId,
-	UserId,
-} from "@maple/domain/primitives"
+import { AlertEscalationRunId, AlertIncidentId, EscalationChainId, OrgId, UserId } from "@maple/primitives"
 import { Schema } from "effect"
 import { AlertIncidents } from "./alerts"
 

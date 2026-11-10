@@ -5,7 +5,7 @@
  * with the org's public key, so it is metered and routed like any other telemetry.
  */
 import type { WorkflowJobJob, WorkflowRunJob } from "@maple/domain/http"
-import { type OrgId, UserId } from "@maple/domain/primitives"
+import { type OrgId, UserId } from "@maple/primitives"
 import { VcsInstallations } from "@maple/db/tables"
 import * as PG from "@maple-dev/effect-orm/postgres"
 import { Clock, Duration, Effect, Layer, Option, Schedule, Schema, Stream } from "effect"

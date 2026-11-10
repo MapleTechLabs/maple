@@ -5,7 +5,7 @@ import {
 	ScrapeIntervalSeconds,
 	ScrapeTargetId,
 	ScrapeTargetType,
-} from "../primitives"
+} from "@maple/primitives"
 import { HttpTaggedError } from "./error-policy"
 
 export class ScrapeTargetResponse extends Schema.Class<ScrapeTargetResponse>("ScrapeTargetResponse")({

@@ -1,7 +1,7 @@
 // Supabase Management API calls made with an OAuth access token. Field names follow the OpenAPI specs
 // (https://api.supabase.com/api/v1-json, v2-json for log drains); extra fields are ignored so
 // additions never break decode.
-import { SupabaseProjectRef } from "@maple/domain/primitives"
+import { SupabaseProjectRef } from "@maple/primitives"
 import { Duration, Effect, Option, Redacted, Schema, Array as Arr, String as Str } from "effect"
 import { HttpClient, HttpClientRequest } from "effect/http"
 import { parseDeltaSeconds, VENDOR_TRANSIENT_RETRY } from "../vendor-retry"

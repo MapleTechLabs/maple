@@ -1,5 +1,5 @@
 import type { V2ChatConnector } from "@maple/domain/http/v2"
-import { ChatConnectorId, type ChatWorkspaceId } from "@maple/domain/primitives"
+import { ChatConnectorId, type ChatWorkspaceId } from "@maple/primitives"
 import { Option, Schema, Array as Arr } from "effect"
 import { defineMessageUnion } from "foldkit/message"
 

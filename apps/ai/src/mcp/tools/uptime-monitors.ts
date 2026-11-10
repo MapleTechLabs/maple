@@ -12,7 +12,7 @@ import {
 	UptimeMonitorStatus,
 	type AlertDestinationId,
 	type OrgId,
-} from "@maple/domain/primitives"
+} from "@maple/primitives"
 import { UptimeDnsRecordType, UptimeHttpMethod } from "@maple/domain/uptime"
 import * as Policy from "@maple/domain/policy"
 import { UptimeMonitorsService } from "@maple/backend/services/uptime/UptimeMonitorsService"

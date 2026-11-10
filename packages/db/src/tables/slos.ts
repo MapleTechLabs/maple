@@ -1,5 +1,5 @@
 import * as PG from "@maple-dev/effect-orm/postgres"
-import { AlertRuleId, OrgId, SloId, SloWindowDays, UserId } from "@maple/domain/primitives"
+import { AlertRuleId, OrgId, SloId, SloWindowDays, UserId } from "@maple/primitives"
 import { SloSli } from "@maple/domain/slo"
 import { Schema } from "effect"
 

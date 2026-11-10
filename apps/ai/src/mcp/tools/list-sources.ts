@@ -1,7 +1,7 @@
 import { McpQueryError, type McpToolRegistrar } from "./types"
 import { truncate } from "../lib/format"
 import { Clock, DateTime, Effect, Schema, Array as Arr } from "effect"
-import { SourcePlatform } from "@maple/domain/primitives"
+import { SourcePlatform } from "@maple/primitives"
 import { SOURCE_HEALTH_STATUSES } from "@maple/domain/source-health"
 import { CurrentMcpTenant } from "../tenant"
 import * as P from "../lib/params"

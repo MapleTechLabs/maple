@@ -1,5 +1,5 @@
 import { V2Source } from "@maple/domain/http/v2"
-import { PushSourcePlatform } from "@maple/domain/primitives"
+import { PushSourcePlatform } from "@maple/primitives"
 import * as Policy from "@maple/domain/policy"
 import { Schema } from "effect"
 import { KeyedSchema } from "@maple/views/data/keyed"

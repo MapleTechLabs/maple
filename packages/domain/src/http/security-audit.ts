@@ -2,7 +2,7 @@ import { HttpApiEndpoint, HttpApiGroup } from "effect/http-api"
 import { Schema, String as Str } from "effect"
 import { ExecutionProfile } from "@maple/security-audit/ecosystems"
 import { AuditReportsRecord, Finding, UnitStatus } from "@maple/security-audit/schema"
-import { IsoDateTimeString, UserId } from "../primitives"
+import { IsoDateTimeString, UserId } from "@maple/primitives"
 import {
 	isSafeScopePath,
 	SecurityAuditEventKind,

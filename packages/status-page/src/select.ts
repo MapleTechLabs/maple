@@ -5,7 +5,7 @@ import {
 	type StatusPageSnapshotIncident,
 	worstStatus,
 } from "@maple/domain/status-page"
-import type { StatusPageComponentStatus } from "@maple/domain/primitives"
+import type { StatusPageComponentStatus } from "@maple/primitives"
 import { Array as Arr } from "effect"
 
 /** Open incidents and maintenance underway, newest first. */

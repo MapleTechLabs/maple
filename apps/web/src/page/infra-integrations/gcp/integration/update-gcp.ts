@@ -1,5 +1,5 @@
 import type { V2GcpConnector } from "@maple/domain/http/v2"
-import type { GcpConnectorId } from "@maple/domain/primitives"
+import type { GcpConnectorId } from "@maple/primitives"
 import { gcpNothingSeen, gcpScopeLabel } from "../connector-state"
 import { encodeLogAttributeFilter } from "@maple/views/lib/log-attribute-filters"
 import { Option, Array as Arr } from "effect"

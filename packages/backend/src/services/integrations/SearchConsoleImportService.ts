@@ -2,7 +2,7 @@
 // (trailing days through today) or BACKFILL (toward the 16-month floor), one day at a time at all
 // three grains. Each whole day moves the frontier as it lands; a failure backs the property off.
 import { IntegrationsPersistenceError, OrgId } from "@maple/domain/http"
-import { SearchConsoleSiteId } from "@maple/domain/primitives"
+import { SearchConsoleSiteId } from "@maple/primitives"
 import type { SearchConsoleDailyRow } from "@maple/domain/tinybird"
 import * as PG from "@maple-dev/effect-orm/postgres"
 import { leaseClaimable, leaseStillOurs } from "./lease"

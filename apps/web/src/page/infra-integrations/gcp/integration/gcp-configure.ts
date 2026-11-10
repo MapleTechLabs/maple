@@ -3,7 +3,7 @@ import {
 	V2GcpUpdateConnectorRequest,
 	type V2GcpConnector,
 } from "@maple/domain/http/v2"
-import { GcpConnectorId, GcpLogRuntime } from "@maple/domain/primitives"
+import { GcpConnectorId, GcpLogRuntime } from "@maple/primitives"
 import { Effect, Schema, Option, Array as Arr } from "effect"
 import { Command } from "foldkit"
 import * as Keyed from "@maple/views/data/keyed"

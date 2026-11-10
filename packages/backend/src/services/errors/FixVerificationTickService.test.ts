@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto"
 import { afterEach, assert, describe, it } from "@effect/vitest"
 import { OrgId, verificationVerdictAutoCloses, WarehouseQueryError } from "@maple/domain/http"
-import { ErrorIssueId } from "@maple/domain/primitives"
+import { ErrorIssueId } from "@maple/primitives"
 import * as PG from "@maple-dev/effect-orm/postgres"
 import { ErrorIssues, ErrorIssueVerifications } from "@maple/db/tables"
 import { Array as Arr, ConfigProvider, Effect, Layer, Schema } from "effect"

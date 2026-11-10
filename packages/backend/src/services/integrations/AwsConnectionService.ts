@@ -30,7 +30,7 @@ import {
 	type AwsModule,
 	type OrgId,
 	type UserId,
-} from "@maple/domain/primitives"
+} from "@maple/primitives"
 import { Cause, Clock, Context, Effect, Layer, Option, Array as Arr } from "effect"
 import { FetchHttpClient, HttpClient } from "effect/http"
 import { ingestKeyLookupHmacKey } from "@maple/backend/platform/Crypto"

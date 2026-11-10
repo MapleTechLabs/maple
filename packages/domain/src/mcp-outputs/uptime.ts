@@ -1,5 +1,5 @@
 import { Schema } from "effect"
-import { UptimeMonitorKind, UptimeMonitorStatus } from "../primitives"
+import { UptimeMonitorKind, UptimeMonitorStatus } from "@maple/primitives"
 
 export const UptimeMonitorLastCheckRow = Schema.Struct({
 	at: Schema.String,

@@ -4,12 +4,7 @@
 
 import { Option, Schema, Array as Arr, String as Str } from "effect"
 import { V2GcpCreateConnectorRequest, type V2GcpConnector } from "@maple/domain/http/v2"
-import {
-	GcpProjectId,
-	GcpResourceNumber,
-	type GcpLogRuntime,
-	type GcpScopeType,
-} from "@maple/domain/primitives"
+import { GcpProjectId, GcpResourceNumber, type GcpLogRuntime, type GcpScopeType } from "@maple/primitives"
 import type { Tone } from "@maple/ui/lib/tone"
 
 const MINUTE_MS = 60_000

@@ -11,7 +11,7 @@ import {
 	StatusPageIncidentStatus,
 	StatusPageIncidentUpdateId,
 	StatusPageUpdateSource,
-} from "../../primitives"
+} from "@maple/primitives"
 import {
 	DEFAULT_STATUS_PAGE_THEME,
 	StatusPageThemeAppearance,

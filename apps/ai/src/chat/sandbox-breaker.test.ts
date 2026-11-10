@@ -1,6 +1,6 @@
 import { REPO_SANDBOX_IMPLEMENTATION } from "@maple/backend/services/sandbox/repo-mount"
 import { SandboxRunCheckoutPending, SandboxRunUnavailable } from "@maple/domain/sandbox"
-import { OrgId, UserId } from "@maple/domain/primitives"
+import { OrgId, UserId } from "@maple/primitives"
 import { SandboxSpawnError } from "@maple/backend/services/sandbox/contract"
 import { Effect, Schema } from "effect"
 import { assert, describe, it } from "vitest"

@@ -28,7 +28,7 @@ import type {
 	StatusPageIncidentImpact,
 	StatusPageIncidentKind,
 	StatusPageIncidentStatus,
-} from "@maple/domain/primitives"
+} from "@maple/primitives"
 import { DEFAULT_STATUS_PAGE_THEME, isActiveIncident } from "@maple/domain/status-page"
 import { Clock, Effect, Option, Array as Arr, String as Str } from "effect"
 import { auditDiff, diffAuditChanges } from "@/routes/v2/audit-changes"

@@ -1,5 +1,5 @@
 import { Schema, Array as Arr } from "effect"
-import { InvestigationId, IsoDateTimeString, UserId } from "../primitives"
+import { InvestigationId, IsoDateTimeString, UserId } from "@maple/primitives"
 import { AiTriageResult } from "./ai-triage"
 import { HttpTaggedError } from "./error-policy"
 import { IssueSeverity } from "./errors"

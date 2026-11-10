@@ -1,6 +1,6 @@
 import { HttpApiMiddleware, HttpApiSecurity } from "effect/http-api"
 import { Schema, Context as EffectContext } from "effect"
-import { type ActorId, AuthMode, OrgId, RoleName, UserId } from "../primitives"
+import { type ActorId, AuthMode, OrgId, RoleName, UserId } from "@maple/primitives"
 import type { ChatTurnOrigin } from "../chat-session"
 import { MapleRegion } from "../organization-regions"
 import { HttpTaggedError } from "./error-policy"

@@ -17,7 +17,7 @@ import {
 	VcsRepositories,
 } from "@maple/db/tables"
 import { clickHouseSchemaVersion } from "@maple/domain/clickhouse"
-import type { OrgId } from "@maple/domain/primitives"
+import type { OrgId } from "@maple/primitives"
 import {
 	classifyLogCorrelation,
 	type ConfigAuditInputs,

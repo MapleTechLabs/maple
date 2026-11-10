@@ -4,7 +4,7 @@
  */
 import { Effect, Order, Result, Schema, Array as Arr } from "effect"
 import { type SloConfigRow, type SloListRow } from "@maple/domain/mcp-outputs"
-import type { AlertDestinationId } from "@maple/domain/primitives"
+import type { AlertDestinationId } from "@maple/primitives"
 import * as Policy from "@maple/domain/policy"
 import { SlosService } from "@maple/backend/services/slos/SlosService"
 import { McpInvalidInputError, McpUnavailableError, type McpToolRegistrar } from "./types"

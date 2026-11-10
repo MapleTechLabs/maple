@@ -7,7 +7,7 @@ import {
 	AlertSilenceStatus,
 	MAX_ALERT_SILENCE_MATCHER_VALUES,
 } from "../alert-silences"
-import { AlertSilenceId } from "../../primitives"
+import { AlertSilenceId } from "@maple/primitives"
 import { AuthorizationV2 } from "./auth"
 import { wireExample, ListOf, ListQuery, Timestamp } from "./envelopes"
 import { V2ParameterInvalid } from "./errors"

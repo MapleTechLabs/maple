@@ -1,7 +1,7 @@
 import { HttpApiEndpoint, HttpApiGroup, OpenApi } from "effect/http-api"
 import { Array as Arr, Effect, Schema } from "effect"
 import { QueryEngineAlertReducer, QueryEngineNoDataBehavior } from "../../query-engine"
-import { PostgresTransactionId, UserId } from "../../primitives"
+import { PostgresTransactionId, UserId } from "@maple/primitives"
 import {
 	AlertCheckStatus,
 	AlertSkipReason,

@@ -14,7 +14,7 @@ import {
 	Clock,
 } from "effect"
 import { OrgId, type PullRequestSummary, type WorkflowState } from "@maple/domain/http"
-import { ErrorIssueId } from "@maple/domain/primitives"
+import { ErrorIssueId } from "@maple/primitives"
 import * as Orm from "@maple-dev/effect-orm/database"
 import * as PG from "@maple-dev/effect-orm/postgres"
 import type { MapleDb } from "@maple/db/client"

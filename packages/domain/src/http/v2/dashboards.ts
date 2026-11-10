@@ -26,7 +26,7 @@ import {
 	DashboardVersionId,
 	PostgresTransactionId,
 	UserId,
-} from "../../primitives"
+} from "@maple/primitives"
 import {
 	DashboardConcurrencyError,
 	DashboardNotFoundError,

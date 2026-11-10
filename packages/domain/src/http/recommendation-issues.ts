@@ -1,5 +1,5 @@
 import { Schema } from "effect"
-import { IsoDateTimeString, RecommendationIssueId } from "../primitives"
+import { IsoDateTimeString, RecommendationIssueId } from "@maple/primitives"
 import { HttpTaggedError } from "./error-policy"
 
 import { RecommendationIssueStatus } from "../recommendation-issues"

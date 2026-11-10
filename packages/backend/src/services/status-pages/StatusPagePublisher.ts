@@ -1,7 +1,7 @@
 import * as PG from "@maple-dev/effect-orm/postgres"
 import { StatusPageCleanups, StatusPages } from "@maple/db/tables"
 import type { StatusPageCleanupRow } from "@maple/db/tables"
-import type { StatusPageId } from "@maple/domain/primitives"
+import type { StatusPageId } from "@maple/primitives"
 import { Clock, Context, Effect, Layer, Schema, Array as Arr, String as Str } from "effect"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { makeDbExecute, makePersistenceErrorMapper } from "@maple/backend/platform/db-execute"

@@ -12,7 +12,7 @@ import {
 	type InvestigationId,
 	IssueEscalationId,
 	OrgId,
-} from "@maple/domain/primitives"
+} from "@maple/primitives"
 import * as PG from "@maple-dev/effect-orm/postgres"
 import type { MapleDb, MapleDbError } from "@maple/db/client"
 import { Actors, ErrorIssueEvents, ErrorIssues, IssueEscalations } from "@maple/db/tables"

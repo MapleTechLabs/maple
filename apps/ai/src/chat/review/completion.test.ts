@@ -4,7 +4,7 @@
  */
 import type { ChatTurnOrigin } from "@maple/domain/chat-session"
 import { MAPLE_NATIVE_SESSION_ID_ATTR } from "@maple/domain/gen-ai"
-import { ChatConnectorId, ExternalUserId } from "@maple/domain/primitives"
+import { ChatConnectorId, ExternalUserId } from "@maple/primitives"
 import { Effect, Result, Schema, Array as Arr } from "effect"
 import { assert, describe, it } from "vitest"
 import {

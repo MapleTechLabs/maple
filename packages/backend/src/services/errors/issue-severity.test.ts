@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto"
 import { afterEach, describe, expect, it } from "@effect/vitest"
 import { AiTriageResult } from "@maple/domain/http"
-import { ErrorIssueId, OrgId } from "@maple/domain/primitives"
+import { ErrorIssueId, OrgId } from "@maple/primitives"
 import * as PG from "@maple-dev/effect-orm/postgres"
 import { Actors, ErrorIssueEvents, ErrorIssues, IssueEscalations } from "@maple/db/tables"
 import { Effect, Schema, Array as Arr, Clock } from "effect"

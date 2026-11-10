@@ -19,7 +19,7 @@ import {
 	OrgId,
 	SubmitDiagnosisRequest,
 } from "@maple/domain/http"
-import { AnomalyIncidentId, ErrorIssueId } from "@maple/domain/primitives"
+import { AnomalyIncidentId, ErrorIssueId } from "@maple/primitives"
 import * as Orm from "@maple-dev/effect-orm/database"
 import * as PG from "@maple-dev/effect-orm/postgres"
 import {

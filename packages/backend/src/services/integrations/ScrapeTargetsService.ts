@@ -83,7 +83,7 @@ import {
 } from "@maple/backend/services/org/integration-sources"
 import type { MapleDb } from "@maple/db/client"
 import { scrapeResource } from "./integration-inventory"
-import type { SourceId } from "@maple/domain/primitives"
+import type { SourceId } from "@maple/primitives"
 
 type ScrapeTargetSet = PG.UpdateSetOf<typeof ScrapeTargets>
 type MutableScrapeTargetSet = { -readonly [K in keyof ScrapeTargetSet]: ScrapeTargetSet[K] }

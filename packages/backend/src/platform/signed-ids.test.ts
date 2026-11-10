@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest"
 import { Schema, String as Str } from "effect"
-import { AlertRuleId, OrgId } from "@maple/domain/primitives"
+import { AlertRuleId, OrgId } from "@maple/primitives"
 import { generateShareToken, hashShareToken, shareTokenSuffix } from "./credential-tokens"
 import {
 	alertChartId,

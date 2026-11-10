@@ -22,7 +22,7 @@ import {
 	type PrReviewId,
 	type VcsRepositoryId,
 } from "@maple/domain/http"
-import type { OrgId } from "@maple/domain/primitives"
+import type { OrgId } from "@maple/primitives"
 import * as PG from "@maple-dev/effect-orm/postgres"
 import { PrReviewFindings, PrReviews, VcsRepositories } from "@maple/db/tables"
 import { Context, Effect, Layer, Option, Order, Schema, String as Str, Array as Arr } from "effect"

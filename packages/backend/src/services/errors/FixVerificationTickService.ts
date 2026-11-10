@@ -3,7 +3,7 @@ import {
 	MAX_VERIFICATION_ATTEMPTS,
 	type VerificationVerdict,
 } from "@maple/domain/http"
-import { UserId } from "@maple/domain/primitives"
+import { UserId } from "@maple/primitives"
 import * as PG from "@maple-dev/effect-orm/postgres"
 import { ErrorIssuePullRequests, ErrorIssues, type ErrorIssueVerificationRow } from "@maple/db/tables"
 import { CH } from "@maple/query-engine"

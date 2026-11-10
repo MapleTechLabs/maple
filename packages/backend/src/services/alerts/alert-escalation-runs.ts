@@ -22,7 +22,7 @@ import type {
 	OnCallScheduleId,
 	OrgId,
 } from "@maple/domain/http"
-import type { AlertEscalationRunId, ChatConnectorId, ChatIdentityId, UserId } from "@maple/domain/primitives"
+import type { AlertEscalationRunId, ChatConnectorId, ChatIdentityId, UserId } from "@maple/primitives"
 import * as PG from "@maple-dev/effect-orm/postgres"
 import {
 	AlertDeliveryEvents,

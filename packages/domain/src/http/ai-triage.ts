@@ -1,6 +1,6 @@
 import { HttpApiEndpoint, HttpApiGroup } from "effect/http-api"
 import { Option, Predicate, Schema, SchemaGetter, Array as Arr, String as Str } from "effect"
-import { IsoDateTimeString, UserId } from "../primitives"
+import { IsoDateTimeString, UserId } from "@maple/primitives"
 import { SessionAuthorization } from "./current-tenant"
 import { IssueSeverity } from "./errors"
 import { normalizeRepoFullName } from "./vcs"

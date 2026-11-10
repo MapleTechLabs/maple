@@ -6,7 +6,7 @@ import {
 	type AlertRuleId,
 	ErrorIssueEventId,
 	ErrorIssueId,
-} from "@maple/domain/primitives"
+} from "@maple/primitives"
 import * as PG from "@maple-dev/effect-orm/postgres"
 import { AlertIncidents, ErrorIssueEvents, ErrorIssues, type ErrorIssueRow } from "@maple/db/tables"
 import { Clock, Effect, Option, Schema } from "effect"

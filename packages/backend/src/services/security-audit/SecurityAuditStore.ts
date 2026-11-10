@@ -11,7 +11,7 @@ import type {
 	SecurityAuditTarget,
 	SecurityAuditUnit,
 } from "@maple/domain/http"
-import type { OrgId, UserId } from "@maple/domain/primitives"
+import type { OrgId, UserId } from "@maple/primitives"
 import type { VcsRepositoryId } from "@maple/domain/http/vcs"
 import {
 	SecurityAuditRunId,

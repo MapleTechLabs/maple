@@ -1,5 +1,5 @@
 import { Schema } from "effect"
-import { AnomalyIncidentId, ErrorIssueId, IsoDateTimeString, UserId } from "../primitives"
+import { AnomalyIncidentId, ErrorIssueId, IsoDateTimeString, UserId } from "@maple/primitives"
 import { HttpTaggedError } from "./error-policy"
 
 import {

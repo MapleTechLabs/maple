@@ -1,4 +1,4 @@
-import type { PushSourcePlatform } from "@maple/domain/primitives"
+import type { PushSourcePlatform } from "@maple/primitives"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { type DocsPage, docsUrl } from "../../../lib/docs"
 import { ingestUrl } from "../../../lib/services/common/ingest-url"

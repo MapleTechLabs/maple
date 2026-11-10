@@ -1,5 +1,5 @@
 import * as PG from "@maple-dev/effect-orm/postgres"
-import { OrgId, UserId } from "@maple/domain/primitives"
+import { OrgId, UserId } from "@maple/primitives"
 import { Schema } from "effect"
 
 // Which zones of a Cloudflare account the customer collects: `zoneOverrides[zoneId] ?? watchNewZones`,

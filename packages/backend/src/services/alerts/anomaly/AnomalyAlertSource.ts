@@ -8,7 +8,7 @@ import {
 	AlertThresholds as AlertThresholdsSchema,
 	type AnomalySignalType,
 } from "@maple/domain/http"
-import { AlertRuleId, AnomalyIncidentId, type ErrorIssueId, type OrgId } from "@maple/domain/primitives"
+import { AlertRuleId, AnomalyIncidentId, type ErrorIssueId, type OrgId } from "@maple/primitives"
 import { Array as Arr, Clock, Context, Effect, HashMap, HashSet, Layer, Option, Result, Schema } from "effect"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { makeDbExecute } from "@maple/backend/platform/db-execute"

@@ -6,7 +6,7 @@ import {
 	UptimeMonitorKind,
 	UptimeMonitorStatus,
 	UserId,
-} from "@maple/domain/primitives"
+} from "@maple/primitives"
 import { UptimeCheckDetail, UptimeMonitorConfig, UptimeRecentCheck } from "@maple/domain/uptime"
 import { Schema } from "effect"
 

@@ -17,7 +17,7 @@ import {
 	PrReviewSeverity,
 	VcsRepositoryId,
 } from "@maple/domain/http"
-import { PushSourcePlatform } from "@maple/domain/primitives"
+import { PushSourcePlatform } from "@maple/primitives"
 import { QUERY_BUILDER_METRIC_TYPES } from "@maple/query-model"
 import { TOOL_METRICS, TOOL_PERCENTILES } from "@maple/web-data/lib/tool-analytics"
 import { VARIABLE_PARAM_PREFIX } from "../lib/dashboard-controls/search-params"

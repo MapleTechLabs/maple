@@ -14,7 +14,7 @@ import {
 	IntegrationsValidationError,
 	type OrgId,
 } from "@maple/domain/http"
-import type { PullSourcePlatform, SourceId } from "@maple/domain/primitives"
+import type { PullSourcePlatform, SourceId } from "@maple/primitives"
 import type { MapleDb } from "@maple/db/client"
 import * as PG from "@maple-dev/effect-orm/postgres"
 import { OAuthConnections, type OAuthConnectionInsert, type OAuthConnectionRow } from "@maple/db/tables"

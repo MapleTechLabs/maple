@@ -1,7 +1,7 @@
 import type { ErrorIssueDetailResponse, ErrorIssueDocument } from "@maple/domain/http"
 import { warehouseDateTimeToIso } from "@maple/query-engine"
 import { errorIssueDetailFromV2 } from "../../../lib/services/error-issues"
-import { AlertIncidentId } from "@maple/domain/primitives"
+import { AlertIncidentId } from "@maple/primitives"
 import type { V2InvestigationCreateParams } from "@maple/domain/http/v2"
 import { Option, Schema, Array as Arr } from "effect"
 import { AsyncData } from "foldkit"

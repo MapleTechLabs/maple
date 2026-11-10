@@ -1,7 +1,7 @@
 import { assert, describe, expect, it } from "@effect/vitest"
 import { Context, Effect, Layer, Option, Schema, Tracer, Array as Arr, String as Str } from "effect"
 import type { McpToolNotFoundError } from "@maple/domain/mcp-tool-contract"
-import { ActorId } from "@maple/domain/primitives"
+import { ActorId } from "@maple/primitives"
 import { McpToolExecutor } from "./dispatcher"
 import { listMcpTools } from "./tool-descriptors-render"
 import { MCP_ANTICIPATED_ERROR_IDENTIFIERS, recordExpectedMcpFailure } from "./expected-failures"

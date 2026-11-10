@@ -37,7 +37,7 @@ import {
 	ErrorIssueEventId,
 	ErrorIssueId,
 	IssueEscalationId,
-} from "@maple/domain/primitives"
+} from "@maple/primitives"
 import { FINGERPRINT_VERSION } from "@maple/domain/tinybird/fingerprint"
 import * as PG from "@maple-dev/effect-orm/postgres"
 import {

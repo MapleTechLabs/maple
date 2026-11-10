@@ -1,5 +1,5 @@
 import { Array as Arr, Schema } from "effect"
-import { AlertIncidentId, AlertRuleId, EscalationChainId, IsoDateTimeString } from "../primitives"
+import { AlertIncidentId, AlertRuleId, EscalationChainId, IsoDateTimeString } from "@maple/primitives"
 import { HttpTaggedError } from "./error-policy"
 
 import {

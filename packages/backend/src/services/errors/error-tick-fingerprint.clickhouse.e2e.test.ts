@@ -18,7 +18,7 @@ import {
 import { FetchHttpClient } from "effect/http"
 import { migrations } from "@maple/domain/clickhouse"
 import { OrgId } from "@maple/domain/http"
-import { ErrorIssueId } from "@maple/domain/primitives"
+import { ErrorIssueId } from "@maple/primitives"
 import { FINGERPRINT_VERSION } from "@maple/domain/tinybird/fingerprint"
 import * as PG from "@maple-dev/effect-orm/postgres"
 import { ErrorIssueFingerprints, ErrorIssues } from "@maple/db/tables"

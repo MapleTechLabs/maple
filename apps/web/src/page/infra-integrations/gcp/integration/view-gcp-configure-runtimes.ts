@@ -1,4 +1,4 @@
-import type { GcpLogRuntime } from "@maple/domain/primitives"
+import type { GcpLogRuntime } from "@maple/primitives"
 import { cn } from "@maple/ui/lib/utils"
 import { GCP_LOG_RUNTIMES } from "../connector-state"
 import type { Html, HtmlBuilder } from "foldkit/html"

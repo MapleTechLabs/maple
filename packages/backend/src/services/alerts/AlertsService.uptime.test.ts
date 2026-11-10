@@ -20,7 +20,7 @@ import {
 	AlertRuleId as AlertRuleIdSchema,
 	UptimeMonitorId as UptimeMonitorIdSchema,
 	type UptimeMonitorStatus,
-} from "@maple/domain/primitives"
+} from "@maple/primitives"
 import type { UptimeMonitorConfig } from "@maple/domain/uptime"
 import { uptimeRuleFields } from "./AlertRuleModel"
 import {

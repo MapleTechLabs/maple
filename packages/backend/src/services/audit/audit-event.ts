@@ -1,5 +1,5 @@
 import { AuditActorType, AuditChanges, AuditLogSource, AuditOutcome } from "@maple/domain/http"
-import { ActorId, ApiKeyId, AuditLogEntryId, OrgId, UserId } from "@maple/domain/primitives"
+import { ActorId, ApiKeyId, AuditLogEntryId, OrgId, UserId } from "@maple/primitives"
 import type { AuditLogRow } from "@maple/domain/tinybird"
 import { DateTime, Schema, SchemaTransformation } from "effect"
 import { warehouseDateTime64 } from "@maple/query-engine/datetime"

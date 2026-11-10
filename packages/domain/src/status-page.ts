@@ -8,7 +8,7 @@ import {
 	StatusPageIncidentStatus,
 	StatusPageUpdateSource,
 	type UptimeMonitorStatus,
-} from "./primitives"
+} from "@maple/primitives"
 
 // Status pages: the snapshot the publisher writes to edge storage and `apps/status` serves
 // without touching Maple, plus the pure rules both sides share (component status, bars,

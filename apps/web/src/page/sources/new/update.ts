@@ -1,6 +1,6 @@
 import type { V2Source } from "@maple/domain/http/v2"
 import * as Policy from "@maple/domain/policy"
-import type { PushSourcePlatform } from "@maple/domain/primitives"
+import type { PushSourcePlatform } from "@maple/primitives"
 import { Option, Result, String as Str } from "effect"
 import { AsyncData, Command } from "foldkit"
 import * as Keyed from "@maple/views/data/keyed"

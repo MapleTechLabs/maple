@@ -20,7 +20,7 @@ import {
 	type GcpScopeType,
 	type OrgId,
 	type UserId,
-} from "@maple/domain/primitives"
+} from "@maple/primitives"
 import { Clock, Context, Effect, Layer, Option, Array as Arr, String as Str } from "effect"
 import { ingestKeyLookupHmacKey } from "@maple/backend/platform/Crypto"
 import { openSecret, sealSecret, secretKeyringFromEnv } from "@maple/backend/platform/SecretBox"

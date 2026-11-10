@@ -6,7 +6,7 @@ import {
 	InvestigationSubjectSnapshot,
 	type OrgId,
 } from "@maple/domain/http"
-import { InvestigationId, IsoDateTimeString } from "@maple/domain/primitives"
+import { InvestigationId, IsoDateTimeString } from "@maple/primitives"
 import * as PG from "@maple-dev/effect-orm/postgres"
 import { ErrorIssues, Investigations, type ErrorIssueVerificationRow } from "@maple/db/tables"
 import { DateTime, Clock, Effect, Schema, Array as Arr, String as Str } from "effect"

@@ -7,7 +7,7 @@ import {
 	IssueEscalationPolicyUpsertRequest,
 	type IssueSeverity,
 } from "@maple/domain/http"
-import { AlertDestinationId } from "@maple/domain/primitives"
+import { AlertDestinationId } from "@maple/primitives"
 import { Array, Effect, Option, Result, Schema, Record as Rec } from "effect"
 import { AsyncData, Command } from "foldkit"
 import { settleTo } from "@maple/views/data/load-failure"

@@ -7,7 +7,7 @@ import {
 	ErrorIssuePullRequestId,
 	ErrorIssueVerificationId,
 	InvestigationId,
-} from "@maple/domain/primitives"
+} from "@maple/primitives"
 import * as PG from "@maple-dev/effect-orm/postgres"
 import {
 	AiTriageSettings,

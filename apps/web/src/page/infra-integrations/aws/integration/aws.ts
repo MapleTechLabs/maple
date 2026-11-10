@@ -6,7 +6,7 @@ import {
 	type V2AwsIntegration,
 	V2AwsSetup,
 } from "@maple/domain/http/v2"
-import { AWS_METRIC_NAMESPACES, AwsConnectionId, AwsMetricNamespace } from "@maple/domain/primitives"
+import { AWS_METRIC_NAMESPACES, AwsConnectionId, AwsMetricNamespace } from "@maple/primitives"
 import { readLocalStorage, writeLocalStorage } from "@maple/ui/lib/local-storage"
 import { displayError, isUnexpectedError } from "@maple/web-data/lib/error-messages"
 import { Effect, Option, Schema, Array as Arr, String as Str } from "effect"

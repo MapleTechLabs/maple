@@ -15,7 +15,7 @@ import {
 	SourceKind,
 	SourcePlatform,
 	SourceSignal,
-} from "../../primitives"
+} from "@maple/primitives"
 import { AuthorizationV2 } from "./auth"
 import { wireExample, ListOf, ListQuery, Timestamp } from "./envelopes"
 import { V2InsufficientPermissions, V2ParameterInvalid } from "./errors"

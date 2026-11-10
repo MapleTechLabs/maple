@@ -8,7 +8,7 @@ import {
 	SupabaseProjectId,
 	SupabaseProjectRef,
 	UserId,
-} from "@maple/domain/primitives"
+} from "@maple/primitives"
 import { SupabaseAdvisorLint, SupabaseLogDrainSummary, SupabaseTopQuery } from "@maple/domain/supabase"
 import { Sources } from "./sources"
 

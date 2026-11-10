@@ -7,7 +7,7 @@ import {
 	AnomalySignalType,
 	AnomalyTriageStatus,
 } from "@maple/domain/anomalies"
-import { AnomalyIncidentId, ErrorIssueId, OrgId, UserId } from "@maple/domain/primitives"
+import { AnomalyIncidentId, ErrorIssueId, OrgId, UserId } from "@maple/primitives"
 import { Schema } from "effect"
 
 /**

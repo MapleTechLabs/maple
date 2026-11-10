@@ -1,7 +1,7 @@
 import { afterEach, assert, describe, it } from "@effect/vitest"
 import * as PG from "@maple-dev/effect-orm/postgres"
 import { ApiKeys } from "@maple/db/tables"
-import { ApiKeyId, OrgId, UserId } from "@maple/domain/primitives"
+import { ApiKeyId, OrgId, UserId } from "@maple/primitives"
 import { Effect, Schema, Tracer, Array as Arr, Option } from "effect"
 import { Database, DatabaseError } from "./DatabaseLive"
 import { postgresErrorType, postgresSqlState } from "./postgres-errors"

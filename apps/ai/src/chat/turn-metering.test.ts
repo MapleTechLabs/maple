@@ -17,7 +17,7 @@ import {
 	ChatConversationKey,
 	connectorSessionId,
 } from "@maple/domain/chat-session"
-import { ExternalUserId, OrgId } from "@maple/domain/primitives"
+import { ExternalUserId, OrgId } from "@maple/primitives"
 import { ConfigProvider, Effect, Logger, Schema, Array as Arr, String as Str } from "effect"
 import { FetchHttpClient } from "effect/http"
 import { afterEach, assert, beforeEach, describe, it } from "vitest"

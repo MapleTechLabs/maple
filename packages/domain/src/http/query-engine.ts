@@ -19,7 +19,7 @@ import {
 	SupabaseProjectRef,
 	TraceId,
 	UptimeMonitorId,
-} from "../primitives"
+} from "@maple/primitives"
 import {
 	AttributeFilter,
 	QueryEngineExecuteBatchRequest,

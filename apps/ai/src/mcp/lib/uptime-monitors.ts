@@ -2,7 +2,7 @@
 import { Effect, Option, Schema, Array as Arr, Record as Rec } from "effect"
 import type { UptimeMonitorRow } from "@maple/domain/mcp-outputs"
 import { UPTIME_DEFAULT_TIMEOUT_MS } from "@maple/domain/http/v2"
-import type { UptimeMonitorKind } from "@maple/domain/primitives"
+import type { UptimeMonitorKind } from "@maple/primitives"
 import {
 	UptimeMonitorConfig,
 	type UptimeAssertion,

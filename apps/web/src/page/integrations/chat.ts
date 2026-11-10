@@ -1,4 +1,4 @@
-import { ChatConnectorId, ChatWorkspaceId } from "@maple/domain/primitives"
+import { ChatConnectorId, ChatWorkspaceId } from "@maple/primitives"
 import { Effect, Schema } from "effect"
 import { Command } from "foldkit"
 import { toLoadFailure } from "@maple/views/data/load-failure"

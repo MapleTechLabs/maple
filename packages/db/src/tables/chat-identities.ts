@@ -1,5 +1,5 @@
 import * as PG from "@maple-dev/effect-orm/postgres"
-import { ChatConnectorId, ChatIdentityId, OrgId, UserId } from "@maple/domain/primitives"
+import { ChatConnectorId, ChatIdentityId, OrgId, UserId } from "@maple/primitives"
 
 // One row per chat account a person has proved they control, bound to the Maple user they were
 // signed in as when they proved it. It is the whole answer to "who is this clicking a button":

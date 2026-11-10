@@ -60,7 +60,6 @@
 		"./mcp-outputs": "./src/mcp-outputs/index.ts",
 		"./permission": "./src/permission.ts",
 		"./policy": "./src/policy/index.ts",
-		"./primitives": "./src/primitives.ts",
 		"./data-sources": "./src/data-sources.ts",
 		"./query-engine": "./src/query-engine.ts",
 		"./raw-sql": "./src/raw-sql.ts",

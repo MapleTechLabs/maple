@@ -15,7 +15,7 @@ import {
 	SpanId,
 	TraceId,
 	UserId,
-} from "../primitives"
+} from "@maple/primitives"
 import { AuditedRead } from "./audit-log"
 import { SessionAuthorization } from "./current-tenant"
 import { AlertSeverity } from "./alerts"

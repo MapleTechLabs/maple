@@ -1,5 +1,5 @@
 import type { V2AwsConnection, V2AwsIngest, V2AwsSetup } from "@maple/domain/http/v2"
-import type { AwsConnectionId, AwsMetricNamespace } from "@maple/domain/primitives"
+import type { AwsConnectionId, AwsMetricNamespace } from "@maple/primitives"
 import { Option, type Result, Array as Arr } from "effect"
 import { AsyncData, Command as FoldkitCommand } from "foldkit"
 import * as Keyed from "@maple/views/data/keyed"

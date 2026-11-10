@@ -1,4 +1,4 @@
-import type { PushSourcePlatform } from "@maple/domain/primitives"
+import type { PushSourcePlatform } from "@maple/primitives"
 import { Submodel } from "foldkit"
 import { AppRoute } from "../../../route"
 import type { PageContext } from "../../contract"

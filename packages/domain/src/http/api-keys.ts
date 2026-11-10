@@ -1,6 +1,6 @@
 import { Schema } from "effect"
 import { HttpTaggedError } from "./error-policy"
-import { ApiKeyId, PostgresTransactionId, UserId } from "../primitives"
+import { ApiKeyId, PostgresTransactionId, UserId } from "@maple/primitives"
 
 import { ApiKeyKind } from "../api-keys"
 export { ApiKeyKind } from "../api-keys"

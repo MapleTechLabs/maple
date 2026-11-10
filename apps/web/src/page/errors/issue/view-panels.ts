@@ -1,5 +1,5 @@
 import type { ErrorIssueDocument, ErrorIssuePullRequestDocument } from "@maple/domain/http"
-import { AlertRuleId } from "@maple/domain/primitives"
+import { AlertRuleId } from "@maple/primitives"
 import { Option, Schema, Array as Arr } from "effect"
 import { TONE_SOFT } from "@maple/ui/lib/tone"
 import { cn } from "@maple/ui/lib/utils"

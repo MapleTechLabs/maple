@@ -9,7 +9,7 @@ import {
 	InvestigationSubject,
 	InvestigationSubjectSnapshot,
 } from "@maple/domain/investigations"
-import { ErrorIssueId, InvestigationId, OrgId, UserId } from "@maple/domain/primitives"
+import { ErrorIssueId, InvestigationId, OrgId, UserId } from "@maple/primitives"
 
 /**
  * A durable investigation "war-room". One row per investigation; it both backs

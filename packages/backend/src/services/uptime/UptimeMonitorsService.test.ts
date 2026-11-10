@@ -14,7 +14,7 @@ import {
 import { HttpClient, type HttpClientRequest, HttpClientResponse } from "effect/http"
 import { TestClock } from "effect/testing"
 import { BillingCustomer, OrgId, UserId } from "@maple/domain/http"
-import { AlertDestinationId, UptimeIntervalSeconds, UptimeMonitorId } from "@maple/domain/primitives"
+import { AlertDestinationId, UptimeIntervalSeconds, UptimeMonitorId } from "@maple/primitives"
 import { UPTIME_USER_AGENT, UptimeCheckReport, type UptimeMonitorConfig } from "@maple/domain/uptime"
 import { Env } from "@maple/backend/platform/Env"
 import {

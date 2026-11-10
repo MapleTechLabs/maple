@@ -11,7 +11,7 @@ import { AuthService } from "@maple/backend/services/auth/AuthService"
 import { ApiKeysService } from "@maple/backend/services/org/ApiKeysService"
 import { ErrorActorsService } from "@maple/backend/services/errors/ErrorActorsService"
 import { connectorSessionId } from "@maple/domain/chat-session"
-import { ChatConnectorId, ChatConversationKey } from "@maple/domain/primitives"
+import { ChatConnectorId, ChatConversationKey } from "@maple/primitives"
 import { ChatSessionsRouter } from "./chat-sessions.http"
 
 const trackedDbs: TestDb[] = []

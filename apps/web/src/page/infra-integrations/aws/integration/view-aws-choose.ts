@@ -1,5 +1,5 @@
 import type { V2AwsConnection } from "@maple/domain/http/v2"
-import { AWS_METRIC_NAMESPACES, type AwsMetricNamespace } from "@maple/domain/primitives"
+import { AWS_METRIC_NAMESPACES, type AwsMetricNamespace } from "@maple/primitives"
 import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { label } from "@maple/views/ui/label"

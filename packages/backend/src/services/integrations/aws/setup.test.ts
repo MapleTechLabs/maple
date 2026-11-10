@@ -4,7 +4,7 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { afterEach, describe, expect, it } from "vitest"
 import { Effect, Schema, Array as Arr, String as Str, Option } from "effect"
-import { AwsAccountId } from "@maple/domain/primitives"
+import { AwsAccountId } from "@maple/primitives"
 import { renderAwsCleanupScript, renderAwsSetupScript } from "./setup"
 
 const accountId = Schema.decodeSync(AwsAccountId)("123456789012")

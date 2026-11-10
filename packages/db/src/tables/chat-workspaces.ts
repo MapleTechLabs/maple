@@ -1,5 +1,5 @@
 import * as PG from "@maple-dev/effect-orm/postgres"
-import { ChatConnectorId, ChatWorkspaceId, OrgId } from "@maple/domain/primitives"
+import { ChatConnectorId, ChatWorkspaceId, OrgId } from "@maple/primitives"
 import { Schema } from "effect"
 
 // One row per chat workspace linked to a Maple org (a server, a team, a tenant,

@@ -1,5 +1,5 @@
 import * as PG from "@maple-dev/effect-orm/postgres"
-import { OrgId, SourceId } from "@maple/domain/primitives"
+import { OrgId, SourceId } from "@maple/primitives"
 import { Sources } from "./sources"
 
 /**

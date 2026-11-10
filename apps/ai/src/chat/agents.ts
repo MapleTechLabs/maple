@@ -29,7 +29,7 @@ import {
 	type ChatTurnOrigin,
 } from "@maple/domain/chat-session"
 import { PrReviewId, PrReviewReplyId } from "@maple/domain/http"
-import { InvestigationId } from "@maple/domain/primitives"
+import { InvestigationId } from "@maple/primitives"
 import type { AiUsageSource } from "@maple/backend/services/billing/autumn-tracker"
 import {
 	type AgentBudget,

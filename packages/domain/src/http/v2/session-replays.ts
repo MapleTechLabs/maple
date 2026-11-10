@@ -1,6 +1,6 @@
 import { HttpApiEndpoint, HttpApiGroup, OpenApi } from "effect/http-api"
 import { Schema } from "effect"
-import { SessionId, TraceId } from "../../primitives"
+import { SessionId, TraceId } from "@maple/primitives"
 import { SessionTag } from "../../session-tags"
 import { AuditedRead } from "../audit-log"
 import { AuthorizationV2 } from "./auth"

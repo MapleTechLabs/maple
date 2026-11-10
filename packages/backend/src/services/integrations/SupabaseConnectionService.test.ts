@@ -3,7 +3,7 @@ import { ConfigProvider, Effect, Layer, Schema, Array as Arr, String as Str, Opt
 import { TestClock } from "effect/testing"
 import { FetchHttpClient } from "effect/http"
 import { OrgId, UserId, SupabaseProjectUpdateRequest } from "@maple/domain/http"
-import { SupabaseProjectRef } from "@maple/domain/primitives"
+import { SupabaseProjectRef } from "@maple/primitives"
 import { Env } from "@maple/backend/platform/Env"
 import {
 	cleanupTestDbs,

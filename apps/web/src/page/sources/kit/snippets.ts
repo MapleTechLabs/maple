@@ -1,4 +1,4 @@
-import type { SourcePlatform } from "@maple/domain/primitives"
+import type { SourcePlatform } from "@maple/primitives"
 import {
 	type FrameworkId,
 	fillSnippet,

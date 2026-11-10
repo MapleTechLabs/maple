@@ -1,5 +1,5 @@
-import type { PushSourcePlatform, SourcePlatform } from "@maple/domain/primitives"
-import { PUSH_SOURCE_PLATFORMS } from "@maple/domain/primitives"
+import type { PushSourcePlatform, SourcePlatform } from "@maple/primitives"
+import { PUSH_SOURCE_PLATFORMS } from "@maple/primitives"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { icon, type IconName } from "@maple/views/ui/icon"
 import { type ProviderId, PROVIDERS } from "../../kit/providers"

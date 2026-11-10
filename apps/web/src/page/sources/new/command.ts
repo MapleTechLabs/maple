@@ -1,5 +1,5 @@
 import { V2SourceUpdateParams } from "@maple/domain/http/v2"
-import { PushSourcePlatform, SourceId } from "@maple/domain/primitives"
+import { PushSourcePlatform, SourceId } from "@maple/primitives"
 import { Clock, Duration, Effect, Schema } from "effect"
 import { Command } from "foldkit"
 import { baseKey } from "@maple/views/data/keyed"

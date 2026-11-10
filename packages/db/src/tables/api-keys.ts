@@ -1,6 +1,6 @@
 import * as PG from "@maple-dev/effect-orm/postgres"
 import { ApiKeyKind } from "@maple/domain/api-keys"
-import { ApiKeyId, OrgId, UserId } from "@maple/domain/primitives"
+import { ApiKeyId, OrgId, UserId } from "@maple/primitives"
 import { Schema } from "effect"
 
 export const ApiKeys = PG.table("api_keys", {

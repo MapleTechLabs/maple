@@ -13,7 +13,7 @@ import {
 	type IngestRule,
 	type IngestRuleSpec,
 } from "@maple/domain/ingest-rules"
-import { IngestRuleId } from "@maple/domain/primitives"
+import { IngestRuleId } from "@maple/primitives"
 import * as Orm from "@maple-dev/effect-orm/database"
 import * as PG from "@maple-dev/effect-orm/postgres"
 import {

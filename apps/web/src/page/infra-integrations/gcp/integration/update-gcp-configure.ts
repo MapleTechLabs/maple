@@ -1,5 +1,5 @@
 import type { V2GcpConnector, V2GcpSetupScripts } from "@maple/domain/http/v2"
-import type { GcpLogRuntime } from "@maple/domain/primitives"
+import type { GcpLogRuntime } from "@maple/primitives"
 import { gcpCollectLock, gcpLogFilterChoice, gcpScriptNeeded } from "../connector-state"
 import { isUnexpectedError } from "@maple/web-data/lib/error-messages"
 import { AsyncData, Command as FoldkitCommand } from "foldkit"

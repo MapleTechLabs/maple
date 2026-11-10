@@ -27,7 +27,7 @@ import {
 } from "@maple/domain/http"
 import { wrapChatContext } from "@maple/domain/chat-preamble"
 import { encodeChatTurnTenant, prReplySessionId } from "@maple/domain/chat-session"
-import { UserId } from "@maple/domain/primitives"
+import { UserId } from "@maple/primitives"
 import * as PG from "@maple-dev/effect-orm/postgres"
 import {
 	PrReviewEdits,

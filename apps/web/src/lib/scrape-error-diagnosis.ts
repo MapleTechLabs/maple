@@ -1,4 +1,4 @@
-import type { ScrapeTargetType } from "@maple/domain/primitives"
+import type { ScrapeTargetType } from "@maple/primitives"
 import { Option, String as Str } from "effect"
 
 /**

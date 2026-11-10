@@ -23,7 +23,7 @@ import {
 	SecurityAuditStartError,
 	SecurityAuditTargetNotFoundError,
 } from "@maple/domain/http"
-import { IsoDateTimeString } from "@maple/domain/primitives"
+import { IsoDateTimeString } from "@maple/primitives"
 import {
 	SecurityAuditRunId,
 	securityAuditSpendWindow,

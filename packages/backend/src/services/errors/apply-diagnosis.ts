@@ -14,7 +14,7 @@ import {
 	type InvestigationSubjectType,
 	type OrgId,
 } from "@maple/domain/http"
-import { ErrorIssueEventId, ErrorIssueId, type InvestigationId } from "@maple/domain/primitives"
+import { ErrorIssueEventId, ErrorIssueId, type InvestigationId } from "@maple/primitives"
 import { createHash } from "node:crypto"
 import { Effect, identity, Option, Schema, Array as Arr, String as Str } from "effect"
 import { Database, type DatabaseError } from "@maple/backend/platform/DatabaseLive"

@@ -4,7 +4,7 @@
 import { Schema, Array as Arr, String as Str } from "effect"
 
 import type { GcpInfraServiceId } from "@maple/domain/gcp-infra"
-import { GcpProjectId } from "@maple/domain/primitives"
+import { GcpProjectId } from "@maple/primitives"
 import type { GcpResource } from "@maple/domain/http"
 
 import type { GcpBucketPoint } from "../page/infra-integrations/gcp/charts"

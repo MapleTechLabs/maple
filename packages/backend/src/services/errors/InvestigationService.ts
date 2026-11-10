@@ -25,7 +25,7 @@ import {
 	type SubmitDiagnosisRequest,
 	type UserId,
 } from "@maple/domain/http"
-import { AnomalyIncidentId, ErrorIssueId, InvestigationId } from "@maple/domain/primitives"
+import { AnomalyIncidentId, ErrorIssueId, InvestigationId } from "@maple/primitives"
 
 import * as PG from "@maple-dev/effect-orm/postgres"
 import { AnomalyIncidents, Investigations, type InvestigationRow } from "@maple/db/tables"

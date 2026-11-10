@@ -10,7 +10,7 @@
 
 import { Effect, Schema, String as Str, Option } from "effect"
 import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/http"
-import { OrgId } from "@maple/domain/primitives"
+import { OrgId } from "@maple/primitives"
 
 /**
  * Local mode's single synthetic tenant. The ingest binary writes every span,

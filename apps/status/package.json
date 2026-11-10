@@ -10,6 +10,7 @@
 		"@alchemy.run/cloudflare": "catalog:alchemy",
 		"@maple/domain": "workspace:*",
 		"@maple/infra": "workspace:*",
+		"@maple/primitives": "workspace:*",
 		"@maple/status-page": "workspace:*",
 		"@maple/strings": "workspace:*",
 		"alchemy": "catalog:alchemy",

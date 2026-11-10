@@ -1,7 +1,7 @@
 import { encodeJson } from "@maple/views/data/request-key"
 import { SOURCE_LIMITS } from "@maple/domain/http"
 import { V2Source, type V2SourceUpdateParams } from "@maple/domain/http/v2"
-import { SourceAttributeMode, SourceSignal } from "@maple/domain/primitives"
+import { SourceAttributeMode, SourceSignal } from "@maple/primitives"
 import { Schema, Array as Arr, String as Str, Option } from "effect"
 import { Command, type Update } from "foldkit"
 import { defineMessageUnion } from "foldkit/message"

@@ -10,7 +10,7 @@ import {
 	type UptimeMonitorId,
 	type UptimeMonitorStatus,
 	type UserId,
-} from "@maple/domain/primitives"
+} from "@maple/primitives"
 import { describeMissedHeartbeat, heartbeatDeadline, type UptimeMonitorConfig } from "@maple/domain/uptime"
 import { Clock, Context, Effect, Layer, Option, Ref, Array as Arr } from "effect"
 import { Database } from "@maple/backend/platform/DatabaseLive"

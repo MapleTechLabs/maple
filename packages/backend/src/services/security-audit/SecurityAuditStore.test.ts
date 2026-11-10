@@ -1,6 +1,6 @@
 import { afterEach, assert, describe, it } from "@effect/vitest"
 import { aiCreditsUsd } from "@maple/domain/billing"
-import { OrgId, UserId } from "@maple/domain/primitives"
+import { OrgId, UserId } from "@maple/primitives"
 import { VcsRepositoryId } from "@maple/domain/http/vcs"
 import type { SecurityAuditRunId, SecurityAuditTargetId } from "@maple/domain/security-audit"
 import type {

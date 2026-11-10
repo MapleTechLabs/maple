@@ -16,7 +16,7 @@ import {
 	SloId,
 	SloWindowDays,
 	type UserId,
-} from "@maple/domain/primitives"
+} from "@maple/primitives"
 import {
 	budgetRemaining,
 	sliRatio,

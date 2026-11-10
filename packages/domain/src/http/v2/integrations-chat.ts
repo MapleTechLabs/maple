@@ -8,7 +8,7 @@ import {
 	IntegrationsUpstreamError,
 	IntegrationsValidationError,
 } from "../integrations"
-import { ChatConnectorId, ChatWorkspaceId } from "../../primitives"
+import { ChatConnectorId, ChatWorkspaceId } from "@maple/primitives"
 import { AuthorizationV2 } from "./auth"
 import { wireExample, Timestamp } from "./envelopes"
 import { V2CallbackHostUnavailable, V2InsufficientPermissions } from "./errors"

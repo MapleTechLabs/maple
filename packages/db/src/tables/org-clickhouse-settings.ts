@@ -1,5 +1,5 @@
 import * as PG from "@maple-dev/effect-orm/postgres"
-import { OrgId } from "@maple/domain/primitives"
+import { OrgId } from "@maple/primitives"
 
 export const OrgClickHouseSettings = PG.table("org_clickhouse_settings", {
 	columns: {

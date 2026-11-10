@@ -10,7 +10,7 @@ import {
 	type SupabaseAdvisorLint,
 	type SupabaseTopQuery,
 } from "@maple/domain/http"
-import type { SupabaseProjectRef } from "@maple/domain/primitives"
+import type { SupabaseProjectRef } from "@maple/primitives"
 import { Effect, Option, Schema, Array as Arr } from "effect"
 import { HttpClient, HttpClientRequest } from "effect/http"
 import { send, SupabaseApiError } from "./api"

@@ -49,7 +49,7 @@ import {
 	type WarehouseQueryServiceApi,
 } from "@maple/backend/services/warehouse/WarehouseQueryService"
 import { createIntegrationSource, publicSourceId } from "@maple/backend/services/org/integration-sources"
-import { SourceId } from "@maple/domain/primitives"
+import { SourceId } from "@maple/primitives"
 import { CloudflareAnalyticsService, hasAnalyticsScopes } from "./CloudflareAnalyticsService"
 import { CloudflareOAuthService } from "@maple/backend/services/auth/CloudflareOAuthService"
 import { OrgClickHouseSettingsService } from "@maple/backend/services/org/OrgClickHouseSettingsService"

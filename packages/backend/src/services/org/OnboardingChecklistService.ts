@@ -5,7 +5,7 @@ import {
 	type TenantContext,
 } from "@maple/domain/http"
 import { ownBillingCustomer } from "@maple/backend/services/billing/billing-customer"
-import type { OrgId } from "@maple/domain/primitives"
+import type { OrgId } from "@maple/primitives"
 import {
 	emptyOnboardingChecklistInputs,
 	evaluateOnboardingChecklist,

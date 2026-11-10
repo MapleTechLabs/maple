@@ -9,7 +9,7 @@ import {
 	type ClickHouseDataSourceConfig,
 	type SourceCatalog,
 } from "@maple/domain/data-sources"
-import { OrgId, UserId } from "@maple/domain/primitives"
+import { OrgId, UserId } from "@maple/primitives"
 import { ExternalDataSources } from "@maple/db/tables"
 import * as PG from "@maple-dev/effect-orm/postgres"
 import {

@@ -1,4 +1,4 @@
-import type { ChatWorkspaceId } from "@maple/domain/primitives"
+import type { ChatWorkspaceId } from "@maple/primitives"
 import { Option, Array as Arr } from "effect"
 import { AsyncData, Command as FoldkitCommand } from "foldkit"
 import type { LoadFailure } from "@maple/views/data/load-failure"

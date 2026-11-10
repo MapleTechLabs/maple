@@ -1,4 +1,4 @@
-import type { ChatConnectorId } from "@maple/domain/primitives"
+import type { ChatConnectorId } from "@maple/primitives"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { heading } from "@maple/views/ui/heading"

@@ -1,4 +1,4 @@
-import type { PushSourcePlatform } from "@maple/domain/primitives"
+import type { PushSourcePlatform } from "@maple/primitives"
 import { cardButton } from "@maple/views/ui/card-button"
 import { revealIcon } from "@maple/views/ui/reveal-icon"
 import type { Html, HtmlBuilder } from "foldkit/html"

@@ -2,7 +2,7 @@
 
 import { IssueSeverity } from "./error-issues"
 import { AiTriageIncidentKind } from "./ai-triage"
-import { ErrorIssueId, ErrorIssueVerificationId, IsoDateTimeString } from "./primitives"
+import { ErrorIssueId, ErrorIssueVerificationId, IsoDateTimeString } from "@maple/primitives"
 import { Schema } from "effect"
 
 /**

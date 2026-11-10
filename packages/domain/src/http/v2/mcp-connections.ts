@@ -1,6 +1,6 @@
 import { HttpApiEndpoint, HttpApiGroup, OpenApi } from "effect/http-api"
 import { Schema } from "effect"
-import { UserId } from "../../primitives"
+import { UserId } from "@maple/primitives"
 import { McpConnectionNotFoundError, McpConnectionPersistenceError } from "../mcp-connections"
 import { AuthorizationV2 } from "./auth"
 import { wireExample, ListOf, ListQuery, Timestamp } from "./envelopes"

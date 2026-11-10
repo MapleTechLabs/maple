@@ -28,7 +28,7 @@ import {
 	UptimeMonitorStatus,
 	OrgId,
 	type UserId,
-} from "@maple/domain/primitives"
+} from "@maple/primitives"
 import {
 	appendRecentCheck,
 	applyUptimeCheck,
