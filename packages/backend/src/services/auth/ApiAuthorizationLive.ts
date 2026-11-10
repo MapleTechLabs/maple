@@ -1,6 +1,6 @@
 import { HttpServerRequest } from "effect/http"
-import { CurrentTenant, RoleName, UnauthorizedError } from "@maple/domain/http"
-import { Effect, Layer, Option, Schema, String as Str } from "effect"
+import { CurrentTenant, UnauthorizedError } from "@maple/domain/http"
+import { Effect, Layer, Option } from "effect"
 import { ApiKeysService } from "@maple/backend/services/org/ApiKeysService"
 import { makeResolveTenant } from "@maple/auth"
 import { annotateAuthSpan } from "@maple/backend/services/auth/auth-span"
@@ -10,17 +10,7 @@ import { recordApiDenial } from "@maple/backend/services/auth/audit-denial"
 import { withAuditedRead } from "@maple/backend/services/audit/audit-access"
 import { Env } from "@maple/backend/platform/Env"
 import { OrganizationRegionService } from "@maple/backend/services/org/OrganizationRegionService"
-
-const decodeRoleNameSync = Schema.decodeUnknownSync(RoleName)
-const apiKeyDefaultRoles = [decodeRoleNameSync("root")] as const
-
-const getBearerToken = (headers: Record<string, string | undefined>): string | undefined => {
-	const header = headers["authorization"] ?? headers["Authorization"]
-	if (!header) return undefined
-	const [scheme, token] = Str.split(" ")(header)
-	if (!scheme || !token || Str.toLowerCase(scheme) !== "bearer") return undefined
-	return token
-}
+import { API_KEY_DEFAULT_ROLES, getBearerToken } from "./bearer-token"
 
 export const ApiAuthorizationLive = Layer.effect(
 	CurrentTenant.Authorization,
@@ -81,7 +71,7 @@ export const ApiAuthorizationLive = Layer.effect(
 						const tenant = new CurrentTenant.TenantSchema({
 							orgId: resolved.orgId,
 							userId: resolved.userId,
-							roles: resolved.roles ?? apiKeyDefaultRoles,
+							roles: resolved.roles ?? API_KEY_DEFAULT_ROLES,
 							authMode: "self_hosted",
 						})
 						return yield* httpEffect.pipe(

@@ -1,5 +1,5 @@
 import { HttpEffect, HttpRouter, HttpServerRequest, HttpServerResponse } from "effect/http"
-import { ApiKeyLookupPersistenceError, CurrentTenant, RoleName } from "@maple/domain/http"
+import { ApiKeyLookupPersistenceError, CurrentTenant } from "@maple/domain/http"
 import {
 	AuthorizationV2,
 	isScopeExemptRoute,
@@ -32,17 +32,7 @@ import {
 	apiV2RateLimitKey,
 	deviceRateLimitKey,
 } from "./ApiV2RateLimiter"
-
-const decodeRoleNameSync = Schema.decodeUnknownSync(RoleName)
-const apiKeyDefaultRoles = [decodeRoleNameSync("root")] as const
-
-const getBearerToken = (headers: Record<string, string | undefined>): string | undefined => {
-	const header = headers["authorization"] ?? headers["Authorization"]
-	if (!header) return undefined
-	const [scheme, token] = Str.split(" ")(header)
-	if (!scheme || !token || Str.toLowerCase(scheme) !== "bearer") return undefined
-	return token
-}
+import { API_KEY_DEFAULT_ROLES, getBearerToken } from "./bearer-token"
 
 /** The access token of an RFC 9449 `Authorization: DPoP <token>` request. */
 const getDpopToken = (headers: Record<string, string | undefined>): string | undefined => {
@@ -232,7 +222,7 @@ export const ApiAuthorizationV2Live = Layer.effect(
 						}
 
 						// A device credential's authority is entirely its pinned
-						// roles, and `apiKeyDefaultRoles` below is `root`. A device
+						// roles, and `API_KEY_DEFAULT_ROLES` below is `root`. A device
 						// row that reaches here without them is not a key with a
 						// permissive default — it is a key whose defining property
 						// is missing, so it is rejected rather than promoted.
@@ -306,7 +296,7 @@ export const ApiAuthorizationV2Live = Layer.effect(
 						const tenant = new CurrentTenant.TenantSchema({
 							orgId: resolved.orgId,
 							userId: resolved.userId,
-							roles: resolved.roles ?? apiKeyDefaultRoles,
+							roles: resolved.roles ?? API_KEY_DEFAULT_ROLES,
 							authMode: "self_hosted",
 							...(resolved.scopes !== null ? { scopes: resolved.scopes } : undefined),
 						})
