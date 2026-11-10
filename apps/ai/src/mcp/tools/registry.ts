@@ -147,7 +147,7 @@ import { filterNextCalls, nextCallsOf, type NextCall, type ToolDoc } from "../li
 import { stringifyJson } from "../lib/json"
 import { renderToolDocWithinBudget } from "./tool-output"
 import { CurrentWindowNotes, WindowNotes } from "../lib/window-notes"
-import type { McpToolRequirements } from "./runtime-requirements"
+import type { McpToolRequirements } from "./runtime-services"
 import { registerUpdateDashboardTool } from "./update-dashboard"
 import { registerUpdateDashboardWidgetTool } from "./update-dashboard-widget"
 

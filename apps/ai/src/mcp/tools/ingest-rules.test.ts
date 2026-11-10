@@ -8,7 +8,7 @@ import { IngestRuleService } from "@maple/backend/services/org/IngestRuleService
 import { CurrentMcpTenant } from "../tenant"
 import { parameterOfProblem, previewNotes, previewOver, registerIngestRuleTools } from "./ingest-rules"
 import type { McpToolError, McpToolRegistrar } from "./types"
-import type { McpToolRequirements } from "./runtime-requirements"
+import type { McpToolRequirements } from "./runtime-services"
 import { unimplementedMcpToolServices } from "../../../test/mcp/unimplemented-tool-services"
 
 const trackedDbs: TestDb[] = []

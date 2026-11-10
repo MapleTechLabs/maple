@@ -27,7 +27,7 @@ import { CurrentMcpTenant } from "../tenant"
 import { registerUpdateDashboardTool } from "../tools/update-dashboard"
 import { registerUpdateDashboardWidgetTool } from "../tools/update-dashboard-widget"
 import type { McpToolError, McpToolRegistrar } from "../tools/types"
-import type { McpToolRequirements } from "../tools/runtime-requirements"
+import type { McpToolRequirements } from "../tools/runtime-services"
 import { unimplementedMcpToolServices } from "../../../test/mcp/unimplemented-tool-services"
 
 const trackedDbs: TestDb[] = []

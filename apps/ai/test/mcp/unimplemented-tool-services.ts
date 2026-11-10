@@ -45,6 +45,7 @@ import { SecurityAuditStore } from "@maple/backend/services/security-audit/Secur
 import { DependencyScanReader } from "@maple/backend/services/dependency-scan/DependencyScanService"
 import { RuntimeReleaseCatalog } from "@maple/backend/services/security/RuntimeReleaseCatalog"
 import { RuntimeAdvisoryCatalog } from "@maple/backend/services/security/RuntimeAdvisoryCatalog"
+import type { McpToolRuntimeRequirements } from "../../src/mcp/tools/runtime-services"
 
 export const unimplementedMcpToolServices = Layer.mergeAll(
 	Layer.mock(AuditLogService)({}),
@@ -92,3 +93,7 @@ export const unimplementedMcpToolServices = Layer.mergeAll(
 	Layer.mock(RuntimeAdvisoryCatalog)({}),
 	WarehouseQueryService.layer,
 )
+
+/** A tool service the runtime gains without a stand-in here fails to compile, not at test time. */
+type Uncovered = Exclude<McpToolRuntimeRequirements, Layer.Success<typeof unimplementedMcpToolServices>>
+export const coversEveryToolService: [Uncovered] extends [never] ? true : Uncovered = true

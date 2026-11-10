@@ -11,7 +11,7 @@ import { registerAcknowledgeAlertIncidentTool } from "./acknowledge-alert-incide
 import { renderToolDoc } from "../lib/tool-doc"
 import { CurrentAuditActor } from "@maple/backend/services/auth/audit-actor"
 import type { McpToolError, McpToolRegistrar } from "./types"
-import type { McpToolRequirements } from "./runtime-requirements"
+import type { McpToolRequirements } from "./runtime-services"
 import { unimplementedMcpToolServices } from "../../../test/mcp/unimplemented-tool-services"
 
 const trackedDbs: TestDb[] = []

@@ -9,7 +9,7 @@ import { CurrentMcpTenant } from "../tenant"
 import { renderToolDoc } from "../lib/tool-doc"
 import { registerCompareCommitsTool } from "./compare-commits"
 import type { McpToolError, McpToolRegistrar } from "./types"
-import type { McpToolRequirements } from "./runtime-requirements"
+import type { McpToolRequirements } from "./runtime-services"
 import { unimplementedMcpToolServices } from "../../../test/mcp/unimplemented-tool-services"
 
 const trackedDbs: TestDb[] = []

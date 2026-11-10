@@ -2,7 +2,7 @@ import type { Effect } from "effect"
 import { Schema } from "effect"
 import type { McpToolSurface } from "@maple/domain/mcp-manifest"
 import type { McpToolName, McpToolOutputs } from "@maple/domain/mcp-outputs"
-import type { McpToolRequirements } from "./runtime-requirements"
+import type { McpToolRequirements } from "./runtime-services"
 import type { ToolDoc } from "../lib/tool-doc"
 
 export class McpAuthMissingError extends Schema.TaggedError<McpAuthMissingError>()(
