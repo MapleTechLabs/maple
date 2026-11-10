@@ -10124,7 +10124,6 @@ const CLICKHOUSE_PASSWORD_SLOT: &str = "org_clickhouse_settings.ch_password";
 struct SecretKey {
     /// Fingerprint the v2 envelope names its sealing key by.
     id: String,
-    master: [u8; 32],
     clickhouse_password_subkey: [u8; 32],
 }
 
@@ -10158,8 +10157,8 @@ impl SecretKeyring {
         Ok(Self { keys })
     }
 
-    /// Opens `org_clickhouse_settings.ch_password_*` for `org_id`. A `v2.<keyId>.<base64>`
-    /// ciphertext is bound to the org; one without the prefix is the older unbound format.
+    /// Opens `org_clickhouse_settings.ch_password_*` for `org_id`. Only the
+    /// `v2.<keyId>.<base64>` envelope, which is bound to the org, is accepted.
     fn open_clickhouse_password(
         &self,
         org_id: &str,
@@ -10168,28 +10167,21 @@ impl SecretKeyring {
         tag: &str,
     ) -> Result<String, String> {
         let parts: Vec<&str> = ciphertext.split('.').collect();
-        if let ["v2", key_id, sealed] = parts.as_slice() {
-            let key = self
-                .keys
-                .iter()
-                .find(|key| key.id == *key_id)
-                .ok_or_else(|| "Sealed with a key this deployment does not hold".to_owned())?;
-            return decrypt_aes256_gcm(
-                sealed,
-                iv,
-                tag,
-                &key.clickhouse_password_subkey,
-                &secret_aad(&[CLICKHOUSE_PASSWORD_SLOT, org_id]),
-            );
-        }
-        let mut outcome = Err("Decryption failed".to_owned());
-        for key in &self.keys {
-            outcome = decrypt_aes256_gcm(ciphertext, iv, tag, &key.master, &[]);
-            if outcome.is_ok() {
-                break;
-            }
-        }
-        outcome
+        let ["v2", key_id, sealed] = parts.as_slice() else {
+            return Err("Stored value is not in the v2 envelope".to_owned());
+        };
+        let key = self
+            .keys
+            .iter()
+            .find(|key| key.id == *key_id)
+            .ok_or_else(|| "Sealed with a key this deployment does not hold".to_owned())?;
+        decrypt_aes256_gcm(
+            sealed,
+            iv,
+            tag,
+            &key.clickhouse_password_subkey,
+            &secret_aad(&[CLICKHOUSE_PASSWORD_SLOT, org_id]),
+        )
     }
 }
 
@@ -10199,7 +10191,6 @@ impl SecretKey {
         let info = format!("maple/secret-box/v2/slot/{CLICKHOUSE_PASSWORD_SLOT}");
         Ok(Self {
             id: URL_SAFE_NO_PAD.encode(&id_block[..6]),
-            master,
             clickhouse_password_subkey: hkdf_sha256_block(&master, info.as_bytes())?,
         })
     }
@@ -15695,13 +15686,21 @@ mod tests {
             .expect("keyring parses");
         let v2 = rotated.open_clickhouse_password("org_fixture", V2_CIPHERTEXT, V2_IV, V2_TAG);
         assert_eq!(v2, Ok("ch-secret-123".to_owned()));
-        let legacy = rotated.open_clickhouse_password(
+    }
+
+    #[test]
+    fn secret_keyring_refuses_a_password_from_before_the_v2_envelope() {
+        let keyring = SecretKeyring::parse(FIXTURE_KEY, None).expect("keyring parses");
+        let old = keyring.open_clickhouse_password(
             "org_fixture",
             "vDjK0A+Vv5bHlJ2a3A==",
             "AQIDBAUGBwgJCgsM",
             "b7D1umrvI8557NFvR9nJ/A==",
         );
-        assert_eq!(legacy, Ok("ch-secret-123".to_owned()));
+        assert_eq!(
+            old,
+            Err("Stored value is not in the v2 envelope".to_owned())
+        );
     }
 
     #[test]
@@ -15774,13 +15773,13 @@ mod tests {
     async fn clickhouse_target_resolver_decrypts_current_schema_password() {
         let store = Arc::new(FakeKeyStore::default());
         store.insert_clickhouse_target(
-            "org_ready",
+            "org_fixture",
             ClickHouseTargetRow {
                 ch_url: "https://clickhouse.example/".to_owned(),
                 ch_user: "ingest".to_owned(),
-                ch_password_ciphertext: Some("vDjK0A+Vv5bHlJ2a3A==".to_owned()),
-                ch_password_iv: Some("AQIDBAUGBwgJCgsM".to_owned()),
-                ch_password_tag: Some("b7D1umrvI8557NFvR9nJ/A==".to_owned()),
+                ch_password_ciphertext: Some(V2_CIPHERTEXT.to_owned()),
+                ch_password_iv: Some(V2_IV.to_owned()),
+                ch_password_tag: Some(V2_TAG.to_owned()),
                 ch_database: "maple".to_owned(),
                 schema_version: CLICKHOUSE_SCHEMA_VERSION.to_owned(),
             },
@@ -15795,7 +15794,7 @@ mod tests {
         );
 
         let target = resolver
-            .resolve_clickhouse_target("org_ready")
+            .resolve_clickhouse_target("org_fixture")
             .await
             .expect("target lookup should not fail")
             .expect("target should resolve");
@@ -15809,13 +15808,13 @@ mod tests {
     async fn clickhouse_target_resolver_rejects_password_over_http() {
         let store = Arc::new(FakeKeyStore::default());
         store.insert_clickhouse_target(
-            "org_insecure",
+            "org_fixture",
             ClickHouseTargetRow {
                 ch_url: "http://clickhouse.example/".to_owned(),
                 ch_user: "ingest".to_owned(),
-                ch_password_ciphertext: Some("vDjK0A+Vv5bHlJ2a3A==".to_owned()),
-                ch_password_iv: Some("AQIDBAUGBwgJCgsM".to_owned()),
-                ch_password_tag: Some("b7D1umrvI8557NFvR9nJ/A==".to_owned()),
+                ch_password_ciphertext: Some(V2_CIPHERTEXT.to_owned()),
+                ch_password_iv: Some(V2_IV.to_owned()),
+                ch_password_tag: Some(V2_TAG.to_owned()),
                 ch_database: "maple".to_owned(),
                 schema_version: CLICKHOUSE_SCHEMA_VERSION.to_owned(),
             },
@@ -15830,7 +15829,7 @@ mod tests {
         );
 
         let error = resolver
-            .resolve_clickhouse_target("org_insecure")
+            .resolve_clickhouse_target("org_fixture")
             .await
             .expect_err("password-authenticated http endpoint should be rejected");
         assert!(error.contains("https"));

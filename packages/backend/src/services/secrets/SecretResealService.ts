@@ -2,8 +2,7 @@
  * Brings stored secrets onto the current key and envelope.
  *
  * A value needs resealing when its ciphertext does not start with the primary key's v2 prefix:
- * it is in the pre-v2 envelope, or it was sealed by a key that has since been rotated out of
- * the primary slot. One pass serves both the v2 migration and every later rotation
+ * it was sealed by a key that has since been rotated out of the primary slot
  * (docs/secret-encryption.md).
  */
 import { Array as Arr, Context, Effect, Layer, Option, Record as Rec } from "effect"
@@ -12,7 +11,6 @@ import { makeDbExecute, makePersistenceErrorMapper } from "@maple/backend/platfo
 import { Env } from "@maple/backend/platform/Env"
 import { currentEnvelopePrefix, secretKeyringFromEnv } from "@maple/backend/platform/SecretBox"
 import { RESEAL_TARGETS, SecretResealError, type PendingSecret, type ResealTarget } from "./reseal-targets"
-import { uptimePlaintextHeadersTarget } from "./uptime-plaintext-headers"
 
 interface SecretResealSweep {
 	/** Values rewritten under the current key and envelope. */
@@ -101,7 +99,7 @@ export class SecretResealService extends Context.Service<SecretResealService>()(
 
 			/** One pass over every sealed column. Safe to run concurrently with writers. */
 			const resealDue: Effect.Effect<SecretResealSweep, SecretResealError> = Effect.forEach(
-				[...Rec.values(RESEAL_TARGETS), uptimePlaintextHeadersTarget],
+				Rec.values(RESEAL_TARGETS),
 				(target) => Effect.result(resealTarget(target)),
 			).pipe(
 				Effect.flatMap((results) => {

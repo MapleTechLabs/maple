@@ -1,6 +1,6 @@
 import { afterEach, assert, describe, it } from "@effect/vitest"
-import { Array as Arr, ConfigProvider, Effect, Layer, Option, Schema, String as Str } from "effect"
-import { encryptAes256Gcm, type EncryptedValue } from "@maple/backend/platform/Crypto"
+import { Array as Arr, ConfigProvider, Effect, Layer, Option, String as Str } from "effect"
+import type { EncryptedValue } from "@maple/backend/platform/Crypto"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { Env } from "@maple/backend/platform/Env"
 import { openSecret, parseSecretKeyring, sealSecret } from "@maple/backend/platform/SecretBox"
@@ -17,8 +17,6 @@ import {
 	queryFirstRow,
 	type TestDb,
 } from "@maple/backend/platform/test-pglite"
-import * as slots from "@maple/backend/platform/secret-slots"
-import { UptimeHeadersJson } from "@maple/backend/services/uptime/uptime-headers"
 import { RESEAL_TARGETS } from "./reseal-targets"
 import { SecretResealService } from "./SecretResealService"
 
@@ -136,12 +134,10 @@ const clickHousePassword = (testDb: TestDb, orgId: string) =>
 		[orgId],
 	)
 
-const legacy = (plaintext: string, key: number, aad?: string) =>
-	encryptAes256Gcm(
-		plaintext,
-		Buffer.alloc(32, key),
-		fail,
-		aad === undefined ? undefined : Buffer.from(aad, "utf8"),
+/** A ClickHouse password sealed for `orgId` by a deployment whose primary key was `key`. */
+const sealedPassword = (key: number, orgId: string, password: string) =>
+	Effect.flatMap(keyring(key), (ring) =>
+		sealSecret(ring, clickHousePasswordSlot, { orgId }, password, fail),
 	)
 
 describe("SecretResealService", () => {
@@ -152,142 +148,126 @@ describe("SecretResealService", () => {
 		})
 	})
 
-	it.effect("moves pre-v2 values onto the current key, bound to their rows, and then rests", () => {
-		const testDb = createTestDb(trackedDbs)
-		return Effect.gen(function* () {
-			const ring = yield* keyring(1)
-			yield* seedClickHouseSettings(testDb, "org_a", yield* legacy("ch-pass", 1))
-			yield* seedOpenRouterKey(
-				testDb,
-				"org_a",
-				yield* legacy("sk-or-old", 1, "org_openrouter_keys:v1:org_a"),
-			)
-			yield* seedOAuthConnection(
-				testDb,
-				"org_a",
-				"linear",
-				yield* legacy("access-1", 1),
-				yield* legacy("refresh-1", 1),
-			)
+	it.effect(
+		"after a rotation, moves values onto the new key, still bound to their rows, and then rests",
+		() => {
+			const testDb = createTestDb(trackedDbs)
+			return Effect.gen(function* () {
+				const oldRing = yield* keyring(1)
+				const ref = { orgId: "org_a", provider: "linear" }
+				yield* seedClickHouseSettings(testDb, "org_a", yield* sealedPassword(1, "org_a", "ch-pass"))
+				yield* seedOpenRouterKey(
+					testDb,
+					"org_a",
+					yield* sealSecret(oldRing, openRouterKeySlot, { orgId: "org_a" }, "sk-or-old", fail),
+				)
+				yield* seedOAuthConnection(
+					testDb,
+					"org_a",
+					"linear",
+					yield* sealSecret(oldRing, oauthAccessTokenSlot, ref, "access-1", fail),
+					yield* sealSecret(oldRing, oauthRefreshTokenSlot, ref, "refresh-1", fail),
+				)
 
-			assert.deepStrictEqual(yield* sweep(testDb, 1), { resealed: 4, failed: 0, remaining: 0 })
+				assert.deepStrictEqual(yield* sweep(testDb, 2, [1]), { resealed: 4, failed: 0, remaining: 0 })
 
-			const password = yield* clickHousePassword(testDb, "org_a")
-			assert.isTrue(Str.startsWith(`v2.${ring.primary.id}.`)(password.ciphertext))
-			assert.strictEqual(
-				yield* openSecret(ring, clickHousePasswordSlot, { orgId: "org_a" }, password, fail),
-				"ch-pass",
-			)
-			const moved = yield* openSecret(
-				ring,
-				clickHousePasswordSlot,
-				{ orgId: "org_b" },
-				password,
-				fail,
-			).pipe(Effect.option)
-			assert.deepStrictEqual(moved, Option.none())
-
-			const openRouterKey = yield* readTriple(
-				testDb,
-				`select key_ciphertext as ciphertext, key_iv as iv, key_tag as tag
-				 from org_openrouter_keys where org_id = $1`,
-				["org_a"],
-			)
-			assert.strictEqual(
-				yield* openSecret(ring, openRouterKeySlot, { orgId: "org_a" }, openRouterKey, fail),
-				"sk-or-old",
-			)
-
-			const ref = { orgId: "org_a", provider: "linear" }
-			const access = yield* readTriple(
-				testDb,
-				`select access_token_ciphertext as ciphertext, access_token_iv as iv, access_token_tag as tag
-				 from oauth_connections where org_id = $1`,
-				["org_a"],
-			)
-			const refresh = yield* readTriple(
-				testDb,
-				`select refresh_token_ciphertext as ciphertext, refresh_token_iv as iv, refresh_token_tag as tag
-				 from oauth_connections where org_id = $1`,
-				["org_a"],
-			)
-			assert.strictEqual(yield* openSecret(ring, oauthAccessTokenSlot, ref, access, fail), "access-1")
-			assert.strictEqual(
-				yield* openSecret(ring, oauthRefreshTokenSlot, ref, refresh, fail),
-				"refresh-1",
-			)
-
-			assert.deepStrictEqual(yield* sweep(testDb, 1), { resealed: 0, failed: 0, remaining: 0 })
-		})
-	})
-
-	it.effect("after a rotation, reseals values held under the old key and the old key can go", () => {
-		const testDb = createTestDb(trackedDbs)
-		return Effect.gen(function* () {
-			const oldRing = yield* keyring(1)
-			yield* seedClickHouseSettings(
-				testDb,
-				"org_a",
-				yield* sealSecret(oldRing, clickHousePasswordSlot, { orgId: "org_a" }, "ch-pass", fail),
-			)
-
-			assert.deepStrictEqual(yield* sweep(testDb, 2, [1]), { resealed: 1, failed: 0, remaining: 0 })
-
-			const newRingAlone = yield* keyring(2)
-			assert.strictEqual(
-				yield* openSecret(
-					newRingAlone,
+				// The old key is gone from this keyring: everything must open with the new one alone.
+				const ring = yield* keyring(2)
+				const password = yield* clickHousePassword(testDb, "org_a")
+				assert.isTrue(Str.startsWith(`v2.${ring.primary.id}.`)(password.ciphertext))
+				assert.strictEqual(
+					yield* openSecret(ring, clickHousePasswordSlot, { orgId: "org_a" }, password, fail),
+					"ch-pass",
+				)
+				const moved = yield* openSecret(
+					ring,
 					clickHousePasswordSlot,
-					{ orgId: "org_a" },
-					yield* clickHousePassword(testDb, "org_a"),
+					{ orgId: "org_b" },
+					password,
 					fail,
-				),
-				"ch-pass",
-			)
-		})
-	})
+				).pipe(Effect.option)
+				assert.deepStrictEqual(moved, Option.none())
+
+				const openRouterKey = yield* readTriple(
+					testDb,
+					`select key_ciphertext as ciphertext, key_iv as iv, key_tag as tag
+				 from org_openrouter_keys where org_id = $1`,
+					["org_a"],
+				)
+				assert.strictEqual(
+					yield* openSecret(ring, openRouterKeySlot, { orgId: "org_a" }, openRouterKey, fail),
+					"sk-or-old",
+				)
+
+				const access = yield* readTriple(
+					testDb,
+					`select access_token_ciphertext as ciphertext, access_token_iv as iv, access_token_tag as tag
+				 from oauth_connections where org_id = $1`,
+					["org_a"],
+				)
+				const refresh = yield* readTriple(
+					testDb,
+					`select refresh_token_ciphertext as ciphertext, refresh_token_iv as iv, refresh_token_tag as tag
+				 from oauth_connections where org_id = $1`,
+					["org_a"],
+				)
+				assert.strictEqual(
+					yield* openSecret(ring, oauthAccessTokenSlot, ref, access, fail),
+					"access-1",
+				)
+				assert.strictEqual(
+					yield* openSecret(ring, oauthRefreshTokenSlot, ref, refresh, fail),
+					"refresh-1",
+				)
+
+				assert.deepStrictEqual(yield* sweep(testDb, 2, [1]), { resealed: 0, failed: 0, remaining: 0 })
+			})
+		},
+	)
 
 	it.effect("leaves a value it cannot open untouched and still reseals the rest", () => {
 		const testDb = createTestDb(trackedDbs)
 		return Effect.gen(function* () {
-			const lost = yield* legacy("unreadable", 7)
-			yield* seedClickHouseSettings(testDb, "org_a", lost)
-			yield* seedClickHouseSettings(testDb, "org_b", yield* legacy("ch-pass", 1))
+			const lostKey = yield* sealedPassword(7, "org_a", "unreadable")
+			const preV2 = {
+				ciphertext: Buffer.from("old-ciphertext").toString("base64"),
+				iv: Buffer.alloc(12, 1).toString("base64"),
+				tag: Buffer.alloc(16, 1).toString("base64"),
+			}
+			yield* seedClickHouseSettings(testDb, "org_a", lostKey)
+			yield* seedClickHouseSettings(testDb, "org_b", yield* sealedPassword(1, "org_b", "ch-pass"))
+			yield* seedClickHouseSettings(testDb, "org_c", preV2)
 
-			assert.deepStrictEqual(yield* sweep(testDb, 1), { resealed: 1, failed: 1, remaining: 1 })
-			assert.deepStrictEqual(yield* clickHousePassword(testDb, "org_a"), lost)
+			assert.deepStrictEqual(yield* sweep(testDb, 2, [1]), { resealed: 1, failed: 2, remaining: 2 })
+			assert.deepStrictEqual(yield* clickHousePassword(testDb, "org_a"), lostKey)
+			assert.deepStrictEqual(yield* clickHousePassword(testDb, "org_c"), preV2)
 		})
 	})
 
 	it.effect("works through more rows than one page holds", () => {
 		const testDb = createTestDb(trackedDbs)
 		return Effect.gen(function* () {
-			const password = yield* legacy("ch-pass", 1)
-			yield* Effect.promise(() =>
-				executeSql(
-					testDb,
-					`insert into org_clickhouse_settings
-						(org_id, ch_url, ch_user, ch_password_ciphertext, ch_password_iv, ch_password_tag,
-						 ch_database, sync_status, created_at, updated_at, created_by, updated_by)
-					 select 'org_' || lpad(n::text, 4, '0'), 'https://ch.example', 'maple', $1, $2, $3,
-						'maple', 'connected', $4, $4, 'u', 'u'
-					 from generate_series(1, 450) as n`,
-					[password.ciphertext, password.iv, password.tag, NOW],
-				),
-			)
+			yield* Effect.forEach(Arr.range(1, 450), (n) => {
+				const orgId = `org_${Str.padStart(4, "0")(String(n))}`
+				return Effect.flatMap(sealedPassword(1, orgId, "ch-pass"), (password) =>
+					seedClickHouseSettings(testDb, orgId, password),
+				)
+			})
 
-			assert.deepStrictEqual(yield* sweep(testDb, 1), { resealed: 450, failed: 0, remaining: 0 })
+			assert.deepStrictEqual(yield* sweep(testDb, 2, [1]), { resealed: 450, failed: 0, remaining: 0 })
 		})
 	})
 
 	it.effect("does not overwrite a value that changed after it was read", () => {
 		const testDb = createTestDb(trackedDbs)
 		return Effect.gen(function* () {
-			const ring = yield* keyring(1)
+			const ring = yield* keyring(2, [1])
 			const target = RESEAL_TARGETS.clickHousePasswordSlot
-			yield* seedClickHouseSettings(testDb, "org_a", yield* legacy("old-pass", 1))
+			yield* seedClickHouseSettings(testDb, "org_a", yield* sealedPassword(1, "org_a", "old-pass"))
 			const database = yield* Database
-			const [row] = yield* database.execute((db) => target.pending(db, "v2.none.", null, 10))
+			const [row] = yield* database.execute((db) =>
+				target.pending(db, `v2.${ring.primary.id}.`, null, 10),
+			)
 			assert.isDefined(row)
 
 			const newer = yield* sealSecret(
@@ -310,65 +290,5 @@ describe("SecretResealService", () => {
 			assert.isFalse(yield* database.execute((db) => row.write(db, stale)))
 			assert.deepStrictEqual(yield* clickHousePassword(testDb, "org_a"), newer)
 		}).pipe(Effect.provide(testDb.layer))
-	})
-
-	it.effect("seals uptime check headers that are still in the config, and only those", () => {
-		const testDb = createTestDb(trackedDbs)
-		const seedMonitor = (id: string, headers: Record<string, string>) =>
-			Effect.promise(() =>
-				executeSql(
-					testDb,
-					`insert into uptime_monitors
-						(id, org_id, name, kind, config_json, created_by, created_at, updated_at)
-					 values ($1, 'org_a', $1, 'http', $2::jsonb, 'user_1', $3, $3)`,
-					[
-						id,
-						JSON.stringify({
-							_tag: "http",
-							url: "https://status.example.com/health",
-							method: "GET",
-							headers,
-							assertions: [],
-							timeoutMs: 5000,
-						}),
-						NOW,
-					],
-				),
-			)
-		const stored = (id: string) =>
-			Effect.promise(() =>
-				queryFirstRow<EncryptedValue & { readonly headers: string }>(
-					testDb,
-					`select (config_json -> 'headers')::text as headers, headers_ciphertext as ciphertext,
-						headers_iv as iv, headers_tag as tag
-					 from uptime_monitors where id = $1`,
-					[id],
-				),
-			).pipe(
-				Effect.flatMap((row) => Effect.fromNullishOr(row)),
-				Effect.orDie,
-			)
-		return Effect.gen(function* () {
-			const ring = yield* keyring(1)
-			yield* seedMonitor("mon_with", { Authorization: "Bearer s3cr3t" })
-			yield* seedMonitor("mon_without", {})
-
-			assert.deepStrictEqual(yield* sweep(testDb, 1), { resealed: 1, failed: 0, remaining: 0 })
-
-			const sealed = yield* stored("mon_with")
-			assert.strictEqual(sealed.headers, "{}")
-			const opened = yield* openSecret(
-				ring,
-				slots.uptimeMonitorHeadersSlot,
-				{ orgId: "org_a", id: "mon_with" },
-				sealed,
-				fail,
-			)
-			assert.deepStrictEqual(yield* Schema.decodeEffect(UptimeHeadersJson)(opened), {
-				Authorization: "Bearer s3cr3t",
-			})
-			assert.isNull((yield* stored("mon_without")).ciphertext)
-			assert.deepStrictEqual(yield* sweep(testDb, 1), { resealed: 0, failed: 0, remaining: 0 })
-		})
 	})
 })

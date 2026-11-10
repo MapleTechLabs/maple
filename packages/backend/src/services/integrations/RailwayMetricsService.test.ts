@@ -15,7 +15,6 @@ import {
 import { TestClock } from "effect/testing"
 import { FetchHttpClient } from "effect/http"
 import { OrgId, UserId } from "@maple/domain/http"
-import { encryptAes256Gcm } from "@maple/backend/platform/Crypto"
 import { Env } from "@maple/backend/platform/Env"
 import { cleanupTestDbs, createTestDb, queryFirstRow, type TestDb } from "@maple/backend/platform/test-pglite"
 import { OrgIngestKeysService } from "@maple/backend/services/org/OrgIngestKeysService"
@@ -430,7 +429,7 @@ describe("RailwayMetricsService", () => {
 		)
 	})
 
-	it.effect("polls with a token that was stored before secrets were sealed per slot", () => {
+	it.effect("refuses to poll with a stored token that is not in the v2 envelope", () => {
 		const testDb = createTestDb(trackedDbs)
 		const calls: StubCalls = { railway: [], ingest: [] }
 		const stub = stubFetch(calls)
@@ -440,12 +439,11 @@ describe("RailwayMetricsService", () => {
 			Effect.gen(function* () {
 				const railway = yield* RailwayMetricsService
 				yield* railway.connect(orgId, userId, "rw_token_123")
-				const stored = yield* encryptAes256Gcm(
-					"rw_stored_earlier",
-					Buffer.alloc(32, 9),
-					(message) => message,
-					Buffer.from(`railway-token:${orgId}`),
-				)
+				const stored = {
+					ciphertext: Buffer.from("old").toString("base64"),
+					iv: Buffer.alloc(12, 1).toString("base64"),
+					tag: Buffer.alloc(16, 2).toString("base64"),
+				}
 				yield* Effect.promise(() =>
 					queryFirstRow(
 						testDb,
@@ -456,10 +454,9 @@ describe("RailwayMetricsService", () => {
 				)
 				yield* resetWatermarks(testDb)
 				const before = calls.railway.length
-				yield* railway.sync(orgId)
-				const polled = Arr.drop(calls.railway, before)
-				assert.isAbove(polled.length, 0)
-				assert.isTrue(Arr.every(polled, (call) => call.authorization === "Bearer rw_stored_earlier"))
+				const error = yield* railway.pollOrg(orgId).pipe(Effect.flip)
+				assert.strictEqual(error.message, "Failed to decrypt the Railway token")
+				assert.strictEqual(calls.railway.length, before)
 			}),
 		)
 	})

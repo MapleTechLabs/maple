@@ -4,8 +4,9 @@ import { createHash } from "node:crypto"
 import { EdgeCacheService, type EdgeCacheServiceApi } from "@maple/cache"
 import { OrgId, RoleName, UserId } from "@maple/domain/http"
 import { ConfigProvider, Effect, Layer, Option, Schema, Array as Arr } from "effect"
-import { encryptAes256Gcm } from "@maple/backend/platform/Crypto"
 import { Env } from "@maple/backend/platform/Env"
+import { parseSecretKeyring, sealSecret } from "@maple/backend/platform/SecretBox"
+import { alertDestinationSecretSlot } from "@maple/backend/platform/secret-slots"
 import { cleanupTestDbs, createTestDb, queryFirstRow, type TestDb } from "@maple/backend/platform/test-pglite"
 import { ApiKeysService } from "@maple/backend/services/org/ApiKeysService"
 import { CliDeviceAuthService } from "./CliDeviceAuthService"
@@ -83,10 +84,17 @@ const seedEmailDestination = (db: TestDb, id: string, org: OrgId, members: Array
 				name: null,
 			})),
 		})
-		const encrypted = yield* encryptAes256Gcm(
+		const onError = (message: string) => new AlertValidationError({ message, details: [] })
+		const keyring = yield* parseSecretKeyring(
+			{ primary: ENCRYPTION_KEY.toString("base64"), decryptOnly: Option.none() },
+			onError,
+		)
+		const encrypted = yield* sealSecret(
+			keyring,
+			alertDestinationSecretSlot,
+			{ orgId: org, id },
 			secret,
-			ENCRYPTION_KEY,
-			(message) => new AlertValidationError({ message, details: [] }),
+			onError,
 		)
 		yield* Effect.promise(() =>
 			db.pglite.query(

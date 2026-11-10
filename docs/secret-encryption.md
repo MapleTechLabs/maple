@@ -7,12 +7,11 @@ code is `packages/backend/src/platform/SecretBox.ts`; the list of sealed columns
 
 ## Storage
 
-Each secret is a `(ciphertext, iv, tag)` column triple.
+Each secret is a `(ciphertext, iv, tag)` column triple. A ciphertext that is not in the
+envelope below is refused: values from before it carried no row binding.
 
-| Envelope | `ciphertext` column   | Key                         | Bound to                     |
-| -------- | --------------------- | --------------------------- | ---------------------------- |
-| v2       | `v2.<keyId>.<base64>` | subkey derived for the slot | slot, org and row            |
-| pre-v2   | `<base64>`            | master key                  | nothing, or a per-column AAD |
+The `ciphertext` column holds `v2.<keyId>.<base64>`: sealed under a subkey derived for the
+slot, and bound to the slot, the org and the row.
 
 - **Slot**: one secret column, named `table.column`. The name is part of every ciphertext, so
   it never changes once rows exist.
@@ -58,13 +57,11 @@ the schema-apply workflow and the ingest gateway.
 
 `SecretResealService.resealDue` runs hourly in the alerting Worker (lane `secret_reseal`). It
 rewrites every stored value whose ciphertext does not start with the primary key's prefix
-(`v2.<primary key id>.`): values in the pre-v2 envelope and values sealed by a key that is no
-longer primary. Each write is conditional on the row still holding the value that was read, so
+(`v2.<primary key id>.`), which is every value sealed by a key that is no longer primary. A
+value left over from before the v2 envelope is not opened: it counts as failed and as
+remaining on every pass, which is how one gets noticed. Each write is conditional on the row still holding the value that was read, so
 it never overwrites a concurrent change. A value that will not open is left as it is, logged as
 `Stored secret could not be resealed` with its slot and row, and retried on the next pass.
-
-The same pass seals the request headers of HTTP uptime checks that still sit in
-`uptime_monitors.config_json` (saved before headers were sealed) and empties them there.
 
 Every pass logs `Alerting tick completed` with `maple.alerting.tick = secret_reseal` and the
 counts `maple.alerting.secretsResealed`, `secretsResealFailed` and `secretsResealRemaining`,
@@ -86,9 +83,9 @@ writer seals with it.
    with the old key.
 4. Remove the old key from `MAPLE_INGEST_KEY_DECRYPTION_KEYS` and deploy.
 
-## Rollout state
+## Upgrading a deployment
 
-Writers emit v2 and uptime check headers are sealed on write. Readers still open the pre-v2
-envelope, and headers still found in `config_json`, until the reseal pass has reported nothing
-remaining in production. Both read paths are removed after that, which is what finally stops
-an old ciphertext from being replayed onto another row.
+The pre-v2 envelope was read, and rewritten by the hourly pass, only by the releases between
+the one that introduced v2 and the one that stopped reading it. A deployment that skips those
+releases keeps values nothing can open any more, the ingest keys among them. Run one of them
+until `secretsResealRemaining` is 0 before upgrading further.

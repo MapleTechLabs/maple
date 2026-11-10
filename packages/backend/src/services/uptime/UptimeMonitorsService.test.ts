@@ -1299,7 +1299,7 @@ describe("UptimeMonitorsService backing alert rule", () => {
 			}).pipe(Effect.provide(makeLayer(testDb)))
 		})
 
-		it.effect("still reads a monitor saved with its headers in the config", () => {
+		it.effect("sends only sealed headers, never ones written into the config", () => {
 			const testDb = createTestDb(trackedDbs)
 			return Effect.gen(function* () {
 				const service = yield* UptimeMonitorsService
@@ -1313,9 +1313,9 @@ describe("UptimeMonitorsService backing alert rule", () => {
 					),
 				)
 
-				assert.deepStrictEqual(headersOf((yield* service.get(ORG, monitor.id)).config), SECRET)
+				assert.deepStrictEqual(headersOf((yield* service.get(ORG, monitor.id)).config), {})
 				const [target] = yield* service.listProbeTargets
-				assert.deepStrictEqual(target === undefined ? null : headersOf(target.config), SECRET)
+				assert.deepStrictEqual(target === undefined ? null : headersOf(target.config), {})
 			}).pipe(Effect.provide(makeLayer(testDb)))
 		})
 	})

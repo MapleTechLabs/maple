@@ -24,7 +24,6 @@ import {
 	String as Str,
 } from "effect"
 import { FetchHttpClient } from "effect/http"
-import { encryptAes256Gcm } from "@maple/backend/platform/Crypto"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { Env } from "@maple/backend/platform/Env"
 import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/platform/test-pglite"
@@ -268,38 +267,42 @@ describe("ExternalDataSourceService", () => {
 		}).pipe(Effect.provide(makeLayer(world)))
 	})
 
-	it.effect("opens a secret stored before secrets were sealed per slot, then a replaced one", () => {
+	it.effect("runs queries with a password replaced through an update", () => {
 		const world = makeWorld()
-		const sql = { _tag: "sql", sql: "SELECT 1" } as const
 		return Effect.gen(function* () {
 			const service = yield* ExternalDataSourceService
 			const created = yield* service.create(ORG, USER, shopProd)
-			const stored = yield* encryptAes256Gcm(
-				"sk_stored_earlier",
-				Buffer.alloc(32, 7),
-				(message) => message,
-				Buffer.from(`external_data_sources:v1:${ORG}:${created.id}`, "utf8"),
-			)
+			yield* service.update(ORG, USER, created.id, {
+				connection: { ...shopProd.connection, password: "sk_replaced_later" },
+			})
+			yield* service.query(ORG, "shop-prod", { _tag: "sql", sql: "SELECT 1" }, window, { agent: false })
+			expect(world.seenSecrets.at(-1)).toBe("sk_replaced_later")
+		}).pipe(Effect.provide(makeLayer(world)))
+	})
+
+	it.effect("refuses a stored secret that is not in the v2 envelope", () => {
+		const world = makeWorld()
+		return Effect.gen(function* () {
+			const service = yield* ExternalDataSourceService
+			const created = yield* service.create(ORG, USER, shopProd)
 			const database = yield* Database
 			yield* database.execute((db) =>
 				db.run(
 					PG.update(ExternalDataSources)
 						.set({
-							secretCiphertext: stored.ciphertext,
-							secretIv: stored.iv,
-							secretTag: stored.tag,
+							secretCiphertext: Buffer.from("old").toString("base64"),
+							secretIv: Buffer.alloc(12, 1).toString("base64"),
+							secretTag: Buffer.alloc(16, 2).toString("base64"),
 						})
 						.where(($) => [$.id.eq(created.id)]),
 				),
 			)
-			yield* service.query(ORG, "shop-prod", sql, window, { agent: false })
-			expect(world.seenSecrets.at(-1)).toBe("sk_stored_earlier")
-
-			yield* service.update(ORG, USER, created.id, {
-				connection: { ...shopProd.connection, password: "sk_replaced_later" },
-			})
-			yield* service.query(ORG, "shop-prod", sql, window, { agent: false })
-			expect(world.seenSecrets.at(-1)).toBe("sk_replaced_later")
+			const runsBefore = world.runs
+			const error = yield* service
+				.query(ORG, "shop-prod", { _tag: "sql", sql: "SELECT 1" }, window, { agent: false })
+				.pipe(Effect.flip)
+			expect(error._tag).toBe("@maple/data-sources/Persistence")
+			expect(world.runs).toBe(runsBefore)
 		}).pipe(Effect.provide(makeLayer(world)))
 	})
 

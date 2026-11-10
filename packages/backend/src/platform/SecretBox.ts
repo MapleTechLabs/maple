@@ -7,8 +7,8 @@
  * belongs to, so a triple copied onto another row, column or org does not open. `keyId` names
  * the master key that sealed it, which is what makes rotation possible (docs/secret-encryption.md).
  *
- * A ciphertext with no prefix is the pre-v2 format (master key, at most a per-column AAD). It is
- * still opened, never written: `SecretResealService` rewrites what is left of it.
+ * A ciphertext without that prefix is not opened: an unbound value from before v2 could
+ * otherwise be replayed onto another row.
  */
 import { createHmac } from "node:crypto"
 import { Array as Arr, Effect, Option, Redacted, String as Str } from "effect"
@@ -39,8 +39,6 @@ export interface SecretKeyring {
 export interface SecretSlot<Ref> {
 	readonly name: string
 	readonly binding: (ref: Ref) => ReadonlyArray<string>
-	/** The AAD the pre-v2 envelope used, for the columns that already had one. */
-	readonly legacyAad?: (ref: Ref) => Buffer
 }
 
 /** HKDF-SHA256 (RFC 5869) with an empty salt: the first 32-byte output block. */
@@ -137,17 +135,17 @@ export const secretKeyringFromEnv = <E>(
 		onError,
 	)
 
-type Envelope =
-	| { readonly _tag: "legacy" }
-	| { readonly _tag: "v2"; readonly keyId: string; readonly ciphertext: string }
+interface Envelope {
+	readonly keyId: string
+	readonly ciphertext: string
+}
 
-/** Base64 never contains a dot, so a v2 prefix cannot be mistaken for a legacy ciphertext. */
-const parseEnvelope = (stored: string): Envelope => {
+const parseEnvelope = (stored: string): Option.Option<Envelope> => {
 	const parts = Str.split(stored, ".")
 	const [prefix, keyId, ciphertext] = parts
 	return parts.length === 3 && prefix === ENVELOPE_PREFIX && keyId !== undefined && ciphertext !== undefined
-		? { _tag: "v2", keyId, ciphertext }
-		: { _tag: "legacy" }
+		? Option.some({ keyId, ciphertext })
+		: Option.none()
 }
 
 /** What every ciphertext sealed by the primary key starts with. */
@@ -181,25 +179,21 @@ export const openSecret = <Ref, E>(
 	ref: Ref,
 	stored: EncryptedValue,
 	onError: (message: string) => E,
-): Effect.Effect<string, E> => {
-	const envelope = parseEnvelope(stored.ciphertext)
-	if (envelope._tag === "legacy") {
-		const legacyAad = slot.legacyAad?.(ref)
-		return Effect.firstSuccessOf(
-			Arr.map(keyring.keys, (key) => decryptAes256Gcm(stored, key.master, onError, legacyAad)),
-		)
-	}
-	return Option.match(
-		Arr.findFirst(keyring.keys, (key) => key.id === envelope.keyId),
-		{
-			onNone: () => Effect.fail(onError("Sealed with a key this deployment does not hold")),
-			onSome: (key) =>
-				decryptAes256Gcm(
-					{ ciphertext: envelope.ciphertext, iv: stored.iv, tag: stored.tag },
-					subkeyFor(key, slot.name),
-					onError,
-					secretAad(slot.name, slot.binding(ref)),
-				),
-		},
-	)
-}
+): Effect.Effect<string, E> =>
+	Option.match(parseEnvelope(stored.ciphertext), {
+		onNone: () => Effect.fail(onError("Stored value is not in the v2 envelope")),
+		onSome: (envelope) =>
+			Option.match(
+				Arr.findFirst(keyring.keys, (key) => key.id === envelope.keyId),
+				{
+					onNone: () => Effect.fail(onError("Sealed with a key this deployment does not hold")),
+					onSome: (key) =>
+						decryptAes256Gcm(
+							{ ciphertext: envelope.ciphertext, iv: stored.iv, tag: stored.tag },
+							subkeyFor(key, slot.name),
+							onError,
+							secretAad(slot.name, slot.binding(ref)),
+						),
+				},
+			),
+	})

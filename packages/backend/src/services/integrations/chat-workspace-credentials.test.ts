@@ -7,7 +7,6 @@
  */
 import { assert, describe, it } from "@effect/vitest"
 import { Array as Arr, Effect, Option } from "effect"
-import { encryptAes256Gcm } from "@maple/backend/platform/Crypto"
 import { parseSecretKeyring } from "@maple/backend/platform/SecretBox"
 import {
 	openChatWorkspaceCredentials,
@@ -96,16 +95,15 @@ describe("chat workspace credentials", () => {
 		}),
 	)
 
-	it.effect("opens a row written before the keyring, bound to the same org, connector and workspace", () =>
+	it.effect("refuses a stored value that is not in the v2 envelope", () =>
 		Effect.gen(function* () {
-			const stored = yield* encryptAes256Gcm(
-				SECRET,
-				KEY,
-				fail,
-				Buffer.from("chat_workspaces:v1:org_1:testchat:workspace-1", "utf8"),
-			)
-			assert.strictEqual(yield* open(stored), SECRET)
-			assert.isTrue(yield* Effect.isFailure(open(stored, { ...REF, orgId: "org_2" })))
+			const stored = {
+				ciphertext: Buffer.from("old").toString("base64"),
+				iv: Buffer.alloc(12, 1).toString("base64"),
+				tag: Buffer.alloc(16, 2).toString("base64"),
+			}
+			const error = yield* open(stored).pipe(Effect.flip)
+			assert.strictEqual(error.message, "Stored value is not in the v2 envelope")
 		}),
 	)
 

@@ -77,10 +77,8 @@ const One = Schema.Tuple([Schema.String])
 const Two = Schema.Tuple([Schema.String, Schema.String])
 const Three = Schema.Tuple([Schema.String, Schema.String, Schema.String])
 
-/** One `count(*)::text as pending` row. */
-export const PendingCountRow = Schema.Struct({ pending: Schema.NumberFromString })
-/** One `returning 1 as written` row. */
-export const WrittenRow = Schema.Struct({ written: Schema.Number })
+const PendingCountRow = Schema.Struct({ pending: Schema.NumberFromString })
+const WrittenRow = Schema.Struct({ written: Schema.Number })
 
 const tripleTarget = <T extends TableLike, Keys extends ReadonlyArray<string>, Ref>(config: {
 	readonly slot: SecretSlot<Ref>
