@@ -58,9 +58,6 @@ export const SaveFacetsHint = Command.define("SaveOverviewFacetsHint", {
 export const CompleteReloadSpin = reloadSpin("CompleteOverviewReloadSpin", Message.CompletedReloadSpin)
 
 const Names = Schema.optional(Schema.Array(Schema.String))
-const mutable = <A>(values: ReadonlyArray<A> | undefined): Array<A> | undefined =>
-	values === undefined ? undefined : [...values]
-
 /** The window plus the environment filter (`environmentFilter`). */
 export const ScopedInput = Schema.Struct({
 	startTime: Schema.String,
@@ -108,7 +105,7 @@ export const FetchSnapshot = Command.define("FetchServiceHealthSnapshot", {
 			data: {
 				startTime: input.startTime,
 				endTime: input.endTime,
-				environments: mutable(input.environments),
+				environments: input.environments,
 			},
 		}).pipe(
 			Effect.map((response) => response.data),
@@ -153,7 +150,7 @@ export const FetchOverviewSeries = Command.define("FetchOverviewTimeSeries", {
 			data: {
 				startTime: input.startTime,
 				endTime: input.endTime,
-				environments: mutable(input.environments),
+				environments: input.environments,
 			},
 		}).pipe(
 			Effect.map((response) => response.data),
@@ -175,8 +172,8 @@ export const FetchLogSeries = Command.define("FetchOverviewLogVolume", {
 				endTime: input.endTime,
 				filters: {
 					serviceName: undefined,
-					environments: mutable(input.environments),
-					namespaces: mutable(input.namespaces),
+					environments: input.environments,
+					namespaces: input.namespaces,
 				},
 			},
 		}).pipe(
@@ -203,7 +200,7 @@ export const FetchRefinement = Command.define("FetchOverviewThroughputRefinement
 			data: {
 				startTime: input.startTime,
 				endTime: input.endTime,
-				environments: mutable(input.environments),
+				environments: input.environments,
 				samplingActive: input.samplingActive,
 			},
 		}).pipe(

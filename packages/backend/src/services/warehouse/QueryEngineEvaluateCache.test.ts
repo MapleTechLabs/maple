@@ -3,7 +3,8 @@ import { ConfigProvider, Effect, Layer, Option, Ref, Schema, Array as Arr } from
 import { strict as assert } from "node:assert"
 import { makeRecordingTracer, spansNamed } from "@maple/backend/testing/recording-tracer"
 import { OrgId, UserId } from "@maple/domain"
-import { baselineWarehouseCapabilities, type QueryEngineEvaluateRequest } from "@maple/query-engine"
+import { baselineWarehouseCapabilities } from "@maple/query-engine"
+import { type QueryEngineEvaluateRequest } from "@maple/domain/query-engine"
 import type { CompiledQuery } from "@maple/query-engine/ch"
 import {
 	makeQueryEngineEvaluate,

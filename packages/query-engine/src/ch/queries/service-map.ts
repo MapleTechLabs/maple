@@ -19,7 +19,7 @@ import {
 import { deploymentEnvExpr, messagingDestinationExpr } from "@maple/domain/tinybird/semconv-renames"
 import { type DateTime, Schema, Effect } from "effect"
 import { utcAsWireString } from "./utc-bridge"
-import { compile, type CompiledQuery, type CompiledQueryRowSchema } from "@maple-dev/effect-orm/clickhouse"
+import { compile, type CompiledQuery } from "@maple-dev/effect-orm/clickhouse"
 import { defineCondFn, defineFn } from "@maple-dev/effect-orm/clickhouse"
 import * as CH from "@maple-dev/effect-orm/expr"
 // From the root, not `/expr`: this overload takes a `CHQuery`, so the subquery
@@ -56,12 +56,12 @@ export interface ServiceDependenciesOpts {
 	deploymentEnv?: string
 }
 
-export interface ServiceDependenciesOutput {
-	readonly sourceService: string
-	readonly targetService: string
-	readonly callCount: number
-	readonly errorCount: number
-	readonly avgDurationMs: number
+const ServiceDependenciesOutputSchema = Schema.Struct({
+	sourceService: Schema.String,
+	targetService: Schema.String,
+	callCount: CHNumber,
+	errorCount: CHNumber,
+	avgDurationMs: CHNumberOrZero,
 	/**
 	 * The window's slowest call, NOT a percentile — and unlike the database and
 	 * external edges, this one has no `p95DurationMs` beside it.
@@ -77,19 +77,11 @@ export interface ServiceDependenciesOutput {
 	 * `serviceOverview`, which is a real merged tDigest. This value reaches only
 	 * the MCP table and the chat renderer, both of which label it "Max Duration".
 	 */
-	readonly maxDurationMs: number
-	readonly estimatedSpanCount: number
-}
-
-const ServiceDependenciesOutputSchema: CompiledQueryRowSchema<ServiceDependenciesOutput> = Schema.Struct({
-	sourceService: Schema.String,
-	targetService: Schema.String,
-	callCount: CHNumber,
-	errorCount: CHNumber,
-	avgDurationMs: CHNumberOrZero,
 	maxDurationMs: CHNumber,
 	estimatedSpanCount: CHNumber,
 })
+
+export type ServiceDependenciesOutput = typeof ServiceDependenciesOutputSchema.Type
 
 /** The `th:` TraceState marker for a consistent-probability sampling decision. */
 const SAMPLED_TRACE_STATE_RE = "th:[0-9a-f]+"
@@ -446,20 +438,20 @@ export interface ServiceDbEdgesOpts {
 	minuteTier?: boolean
 }
 
-export interface ServiceDbEdgesOutput {
-	readonly sourceService: string
-	readonly dbSystem: string
-	readonly dbNamespace: string
-	readonly callCount: number
-	readonly errorCount: number
-	readonly avgDurationMs: number
+const ServiceDbEdgesOutputSchema = Schema.Struct({
+	sourceService: Schema.String,
+	dbSystem: Schema.String,
+	dbNamespace: Schema.String,
+	callCount: CHNumber,
+	errorCount: CHNumber,
+	avgDurationMs: CHNumberOrZero,
 	/**
 	 * The window's slowest call. Kept beside `p95DurationMs` rather than replaced:
 	 * it is the only latency figure available for buckets sealed before migration
 	 * 0022, and it is a genuinely useful outlier signal in its own right. Present
 	 * it AS a max wherever it is shown.
 	 */
-	readonly maxDurationMs: number
+	maxDurationMs: CHNumber,
 	/**
 	 * Sample-weighted p95 in ms, merged from the edge rollup's t-digest.
 	 *
@@ -468,21 +460,11 @@ export interface ServiceDbEdgesOutput {
 	 * `maxDurationMs` and must present it AS a max; substituting one for the other
 	 * under a "p95" label is the bug this pair replaced.
 	 */
-	readonly p95DurationMs: number
-	readonly estimatedSpanCount: number
-}
-
-const ServiceDbEdgesOutputSchema: CompiledQueryRowSchema<ServiceDbEdgesOutput> = Schema.Struct({
-	sourceService: Schema.String,
-	dbSystem: Schema.String,
-	dbNamespace: Schema.String,
-	callCount: CHNumber,
-	errorCount: CHNumber,
-	avgDurationMs: CHNumberOrZero,
-	maxDurationMs: CHNumber,
 	p95DurationMs: CHNumberOrZero,
 	estimatedSpanCount: CHNumber,
 })
+
+export type ServiceDbEdgesOutput = typeof ServiceDbEdgesOutputSchema.Type
 
 export function serviceDbEdgesSQL(
 	opts: ServiceDbEdgesOpts,
@@ -750,19 +732,7 @@ export interface ServiceDbQuerySummaryParams {
 	readonly topN?: number
 }
 
-export interface ServiceDbQuerySummaryOutput {
-	readonly queryCount: number
-	readonly estimatedQueryCount: number
-	readonly errorCount: number
-	readonly estimatedErrorCount: number
-	readonly errorRate: number
-	readonly avgDurationMs: number
-	readonly p50DurationMs: number
-	readonly p95DurationMs: number
-	readonly activeServiceCount: number
-}
-
-const ServiceDbQuerySummaryOutputSchema: CompiledQueryRowSchema<ServiceDbQuerySummaryOutput> = Schema.Struct({
+const ServiceDbQuerySummaryOutputSchema = Schema.Struct({
 	queryCount: CHNumber,
 	estimatedQueryCount: CHNumber,
 	errorCount: CHNumber,
@@ -774,46 +744,22 @@ const ServiceDbQuerySummaryOutputSchema: CompiledQueryRowSchema<ServiceDbQuerySu
 	activeServiceCount: CHNumber,
 })
 
-export interface ServiceDbQueryTimeseriesOutput {
-	readonly bucket: DateTime.Utc
-	readonly queryCount: number
-	readonly estimatedQueryCount: number
-	readonly errorCount: number
-	readonly errorRate: number
-	readonly avgDurationMs: number
-	readonly p50DurationMs: number
-	readonly p95DurationMs: number
-}
+export type ServiceDbQuerySummaryOutput = typeof ServiceDbQuerySummaryOutputSchema.Type
 
-const ServiceDbQueryTimeseriesOutputSchema: CompiledQueryRowSchema<ServiceDbQueryTimeseriesOutput> =
-	Schema.Struct({
-		bucket: DateTimeUtcFromWarehouse,
-		queryCount: CHNumber,
-		estimatedQueryCount: CHNumber,
-		errorCount: CHNumber,
-		errorRate: CHNumber,
-		avgDurationMs: CHNumberOrZero,
-		p50DurationMs: CHNumber,
-		p95DurationMs: CHNumber,
-	})
+const ServiceDbQueryTimeseriesOutputSchema = Schema.Struct({
+	bucket: DateTimeUtcFromWarehouse,
+	queryCount: CHNumber,
+	estimatedQueryCount: CHNumber,
+	errorCount: CHNumber,
+	errorRate: CHNumber,
+	avgDurationMs: CHNumberOrZero,
+	p50DurationMs: CHNumber,
+	p95DurationMs: CHNumber,
+})
 
-export interface ServiceDbTopQueryOutput {
-	readonly queryKey: string
-	readonly queryLabel: string
-	readonly sampleStatement: string
-	readonly sampleService: string
-	readonly serviceCount: number
-	readonly queryCount: number
-	readonly estimatedQueryCount: number
-	readonly errorCount: number
-	readonly errorRate: number
-	readonly avgDurationMs: number
-	readonly p50DurationMs: number
-	readonly p95DurationMs: number
-	readonly lastSeen: DateTime.Utc
-}
+export type ServiceDbQueryTimeseriesOutput = typeof ServiceDbQueryTimeseriesOutputSchema.Type
 
-const ServiceDbTopQueryOutputSchema: CompiledQueryRowSchema<ServiceDbTopQueryOutput> = Schema.Struct({
+const ServiceDbTopQueryOutputSchema = Schema.Struct({
 	queryKey: Schema.String,
 	queryLabel: Schema.String,
 	sampleStatement: Schema.String,
@@ -828,6 +774,8 @@ const ServiceDbTopQueryOutputSchema: CompiledQueryRowSchema<ServiceDbTopQueryOut
 	p95DurationMs: CHNumber,
 	lastSeen: DateTimeUtcFromWarehouse,
 })
+
+export type ServiceDbTopQueryOutput = typeof ServiceDbTopQueryOutputSchema.Type
 
 // Finalized sample-weighted quantiles over raw rows — used by the sub-hour
 // timeseries path (which can't be served by the hourly rollup).
@@ -1199,27 +1147,7 @@ export interface ServiceExternalEdgesOpts {
 	serviceName: string
 }
 
-export interface ServiceExternalEdgesOutput {
-	readonly sourceService: string
-	readonly targetType: "http" | "messaging" | "rpc"
-	readonly targetSystem: string
-	readonly targetName: string
-	readonly callCount: number
-	readonly errorCount: number
-	readonly avgDurationMs: number
-	/**
-	 * The window's slowest call. Kept beside `p95DurationMs` rather than replaced:
-	 * it is the only latency figure available for buckets sealed before migration
-	 * 0022, and it is a genuinely useful outlier signal in its own right. Present
-	 * it AS a max wherever it is shown.
-	 */
-	readonly maxDurationMs: number
-	/** See `ServiceDbEdgesOutput.p95DurationMs` — same state, same 0-means-absent. */
-	readonly p95DurationMs: number
-	readonly estimatedSpanCount: number
-}
-
-const ServiceExternalEdgesOutputSchema: CompiledQueryRowSchema<ServiceExternalEdgesOutput> = Schema.Struct({
+const ServiceExternalEdgesOutputSchema = Schema.Struct({
 	sourceService: Schema.String,
 	targetType: Schema.Literals(["http", "messaging", "rpc"]),
 	targetSystem: Schema.String,
@@ -1227,10 +1155,19 @@ const ServiceExternalEdgesOutputSchema: CompiledQueryRowSchema<ServiceExternalEd
 	callCount: CHNumber,
 	errorCount: CHNumber,
 	avgDurationMs: CHNumberOrZero,
+	/**
+	 * The window's slowest call. Kept beside `p95DurationMs` rather than replaced:
+	 * it is the only latency figure available for buckets sealed before migration
+	 * 0022, and it is a genuinely useful outlier signal in its own right. Present
+	 * it AS a max wherever it is shown.
+	 */
 	maxDurationMs: CHNumber,
+	/** See `ServiceDbEdgesOutput.p95DurationMs` — same state, same 0-means-absent. */
 	p95DurationMs: CHNumberOrZero,
 	estimatedSpanCount: CHNumber,
 })
+
+export type ServiceExternalEdgesOutput = typeof ServiceExternalEdgesOutputSchema.Type
 
 export function serviceExternalEdgesSQL(
 	opts: ServiceExternalEdgesOpts,
@@ -1469,19 +1406,6 @@ export interface DbQueryVolumeOpts {
 	readonly limit?: number
 }
 
-export interface DbQueryVolumeOutput {
-	readonly serviceName: string
-	readonly dbSystem: string
-	readonly dbNamespace: string
-	readonly queryLabel: string
-	readonly queryCount: number
-	readonly estimatedQueryCount: number
-	readonly errorCount: number
-	readonly avgDurationMs: number
-	readonly p95DurationMs: number
-	readonly lastSeen: DateTime.Utc
-}
-
 export const dbQueryVolumeRowSchema = Schema.Struct({
 	serviceName: Schema.String,
 	dbSystem: Schema.String,
@@ -1493,7 +1417,9 @@ export const dbQueryVolumeRowSchema = Schema.Struct({
 	avgDurationMs: CHNumberOrZero,
 	p95DurationMs: CHNumber,
 	lastSeen: DateTimeUtcFromWarehouse,
-}) satisfies CompiledQueryRowSchema<DbQueryVolumeOutput>
+})
+
+export type DbQueryVolumeOutput = typeof dbQueryVolumeRowSchema.Type
 
 export function dbQueryVolumeQuery(opts: DbQueryVolumeOpts) {
 	const sealed = from(Datasources.serviceMapDbQuerySignaturesHourly)

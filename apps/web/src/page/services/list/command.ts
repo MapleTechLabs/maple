@@ -43,18 +43,15 @@ export const OverviewInput = Schema.Struct({
 })
 export type OverviewInput = typeof OverviewInput.Type
 
-const mutable = <A>(values: ReadonlyArray<A> | undefined): Array<A> | undefined =>
-	values === undefined ? undefined : [...values]
-
 const toWarehouseInput = (input: OverviewInput): GetServiceOverviewInput => ({
 	startTime: input.startTime,
 	endTime: input.endTime,
-	environments: mutable(input.environments),
-	namespaces: mutable(input.namespaces),
-	commitShas: mutable(input.commitShas),
-	excludedEnvironments: mutable(input.excludedEnvironments),
-	excludedNamespaces: mutable(input.excludedNamespaces),
-	excludedCommitShas: mutable(input.excludedCommitShas),
+	environments: input.environments,
+	namespaces: input.namespaces,
+	commitShas: input.commitShas,
+	excludedEnvironments: input.excludedEnvironments,
+	excludedNamespaces: input.excludedNamespaces,
+	excludedCommitShas: input.excludedCommitShas,
 })
 
 /** `useEffectiveTimeRange`: snapped on entry, re-resolved against the real clock on Reload. */
@@ -125,8 +122,8 @@ export const FetchBaseline = Command.define("FetchServiceHealthBaseline", {
 		getServiceHealthBaseline({
 			data: {
 				rangeStartTime: input.rangeStartTime,
-				environments: mutable(input.environments),
-				namespaces: mutable(input.namespaces),
+				environments: input.environments,
+				namespaces: input.namespaces,
 			},
 		}).pipe(
 			Effect.map((response) => response.data),

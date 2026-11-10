@@ -26,6 +26,7 @@
 		"./gcp-metrics": "./src/gcp-metrics.ts",
 		"./gen-ai": "./src/gen-ai.ts",
 		"./glob": "./src/glob.ts",
+		"./wire": "./src/wire.ts",
 		"./ingest-rules": "./src/ingest-rules.ts",
 		"./ai-triage": "./src/ai-triage.ts",
 		"./alert-maintenance-windows": "./src/alert-maintenance-windows.ts",

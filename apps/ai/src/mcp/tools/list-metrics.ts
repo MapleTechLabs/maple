@@ -6,7 +6,7 @@ import { formatNumber, truncate } from "../lib/format"
 import * as P from "../lib/params"
 import { doc } from "../lib/tool-doc"
 import { Effect, Schema, Array as Arr } from "effect"
-import { MetricType } from "@maple/query-engine"
+import { MetricType } from "@maple/domain/query-engine"
 
 const WINDOW = P.timeWindow({ defaultHours: 6, maxHours: MCP_DISCOVERY_MAX_HOURS })
 

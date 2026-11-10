@@ -40,9 +40,6 @@ export const brushRange = (
 	}
 }
 
-const mutable = <A>(values: ReadonlyArray<A> | undefined): Array<A> | undefined =>
-	values === undefined ? undefined : [...values]
-
 /**
  * `buildQueryParams`: the org-global pin overrides the URL's namespace filters (they stay in the
  * URL; unpinning restores them). The first page and every later page send exactly this.
@@ -56,16 +53,16 @@ export const listInput = (
 	return {
 		startTime: window.startTime,
 		endTime: window.endTime,
-		services: mutable(search.services),
-		severities: mutable(search.severities),
-		deploymentEnvs: mutable(search.deploymentEnvs),
+		services: search.services,
+		severities: search.severities,
+		deploymentEnvs: search.deploymentEnvs,
 		deploymentEnvMatchMode: search.deploymentEnvMatchMode,
-		namespaces: isPinned ? [pinnedNamespace] : mutable(search.namespaces),
+		namespaces: isPinned ? [pinnedNamespace] : search.namespaces,
 		namespaceMatchMode: isPinned ? undefined : search.namespaceMatchMode,
-		excludedServices: mutable(search.excludedServices),
-		excludedSeverities: mutable(search.excludedSeverities),
-		excludedDeploymentEnvs: mutable(search.excludedDeploymentEnvs),
-		excludedNamespaces: isPinned ? undefined : mutable(search.excludedNamespaces),
+		excludedServices: search.excludedServices,
+		excludedSeverities: search.excludedSeverities,
+		excludedDeploymentEnvs: search.excludedDeploymentEnvs,
+		excludedNamespaces: isPinned ? undefined : search.excludedNamespaces,
 		search: search.search,
 		traceId: search.traceId,
 		...logAttributeQueryFilters(search.attrs),
@@ -178,14 +175,14 @@ export const volumeInput = (
 	endTime: window.endTime,
 	bucketSeconds,
 	filters: {
-		serviceNames: mutable(search.services),
-		severities: mutable(search.severities),
-		environments: mutable(search.deploymentEnvs),
-		namespaces: pinnedNamespace !== null ? [pinnedNamespace] : mutable(search.namespaces),
-		excludedServiceNames: mutable(search.excludedServices),
-		excludedSeverities: mutable(search.excludedSeverities),
-		excludedEnvironments: mutable(search.excludedDeploymentEnvs),
-		excludedNamespaces: pinnedNamespace === null ? mutable(search.excludedNamespaces) : undefined,
+		serviceNames: search.services,
+		severities: search.severities,
+		environments: search.deploymentEnvs,
+		namespaces: pinnedNamespace !== null ? [pinnedNamespace] : search.namespaces,
+		excludedServiceNames: search.excludedServices,
+		excludedSeverities: search.excludedSeverities,
+		excludedEnvironments: search.excludedDeploymentEnvs,
+		excludedNamespaces: pinnedNamespace === null ? search.excludedNamespaces : undefined,
 		traceId: search.traceId,
 		...logAttributeQueryFilters(search.attrs),
 	},

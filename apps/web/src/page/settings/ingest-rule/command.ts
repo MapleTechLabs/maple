@@ -1,6 +1,6 @@
 import { IngestRuleId } from "@maple/domain"
 import { V2IngestRuleCreateParams } from "@maple/domain/http/v2"
-import { QueryEngineExecuteRequest } from "@maple/query-engine"
+import { QueryEngineExecuteRequest } from "@maple/domain/query-engine"
 import { executeQueryEngine } from "@maple/web-data/warehouse/effect-utils"
 import { getLogAttributeKeys, getLogsFacets, listLogs } from "@maple/web-data/warehouse/logs"
 import {

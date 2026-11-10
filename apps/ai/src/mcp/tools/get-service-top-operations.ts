@@ -7,7 +7,7 @@ import * as P from "../lib/params"
 import { doc } from "../lib/tool-doc"
 import { Effect, Schema, Array as Arr, String as Str } from "effect"
 import { topOperations } from "@maple/query-engine/observability"
-import { TracesMetric } from "@maple/query-engine"
+import { TracesMetric } from "@maple/domain/query-engine"
 import { provideWarehouseExecutorFromTenant } from "@maple/backend/services/warehouse/WarehouseQueryService"
 import {
 	isMissingServiceOperationsRollup,

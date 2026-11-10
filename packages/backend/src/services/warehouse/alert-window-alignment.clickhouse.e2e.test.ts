@@ -5,7 +5,8 @@
 import { afterAll, assert, beforeAll, describe, it } from "@effect/vitest"
 import { Effect, Schema, Array as Arr, String as Str } from "effect"
 import { MetricName, OrgId, ServiceName, UserId } from "@maple/domain"
-import { baselineWarehouseCapabilities, type QuerySpec } from "@maple/query-engine"
+import { baselineWarehouseCapabilities } from "@maple/query-engine"
+import { type QuerySpec } from "@maple/domain/query-engine"
 import { type AlertEvaluateRequest, makeQueryEngineEvaluate } from "@maple/query-engine/runtime"
 import { compiledQueryOf, normalizeSqlForClickHouseClient } from "@maple/query-engine/execution"
 import {

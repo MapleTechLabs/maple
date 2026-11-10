@@ -1,4 +1,4 @@
-import { QueryEngineExecuteBatchRequest } from "@maple/query-engine"
+import { QueryEngineExecuteBatchRequest } from "@maple/domain/query-engine"
 import {
 	MapleApiV2Http,
 	MapleInternalHttp,

@@ -24,9 +24,6 @@ export const ReleasesInput = Schema.Struct({
 })
 export type ReleasesInput = typeof ReleasesInput.Type
 
-const mutable = <A>(values: ReadonlyArray<A> | undefined): Array<A> | undefined =>
-	values === undefined ? undefined : [...values]
-
 export const ResolveReleasesWindow = resolveWindowCommand(
 	"ResolveReleasesWindow",
 	Message.CompletedResolveWindow,
@@ -42,10 +39,10 @@ export const FetchReleases = Command.define("FetchReleases", {
 				data: {
 					startTime: input.startTime,
 					endTime: input.endTime,
-					environments: mutable(input.environments),
-					excludedEnvironments: mutable(input.excludedEnvironments),
-					services: mutable(input.services),
-					namespaces: mutable(input.namespaces),
+					environments: input.environments,
+					excludedEnvironments: input.excludedEnvironments,
+					services: input.services,
+					namespaces: input.namespaces,
 				},
 			}),
 		).pipe(settleTo((result) => Message.CompletedFetchReleases({ key, result }))),

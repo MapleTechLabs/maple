@@ -8,7 +8,7 @@ import {
 	UserId,
 } from "@maple/domain/http"
 import { MapleApiV2 } from "@maple/domain/http/v2"
-import { QueryEngineExecuteResponse } from "@maple/query-engine"
+import { QueryEngineExecuteResponse } from "@maple/domain/query-engine"
 import { ConfigProvider, Context, Effect, Layer, ManagedRuntime, Option, Schema, String as Str } from "effect"
 import { HttpRouter } from "effect/http"
 import { HttpApi, HttpApiBuilder } from "effect/http-api"

@@ -20,7 +20,7 @@
 import { finiteOrZero } from "@maple/query-engine/ch/format"
 import { Schema } from "effect"
 import * as CH from "@maple-dev/effect-orm/expr"
-import { from, fromQuery, param, type CompiledQueryRowSchema } from "@maple-dev/effect-orm/clickhouse"
+import { from, fromQuery, param } from "@maple-dev/effect-orm/clickhouse"
 import { CHNumber } from "@maple/query-engine/ch/schema"
 import * as Datasources from "@maple/domain/tinybird/datasources"
 import { orgIdParam } from "@maple/query-engine/ch/tables"
@@ -83,35 +83,6 @@ export interface PlanetScaleBranchStatsOutput extends PlanetScaleDatabaseStatsOu
 	readonly branch: string
 }
 
-export interface PlanetScaleStorageOutput {
-	readonly database: string
-	/**
-	 * Worst branch's used percentage (0–100) over the window. Computed per branch
-	 * and then maxed — NOT from the database's max capacity over its min free
-	 * space, which would pair two different branches' numbers and invent a
-	 * percentage neither of them ever had.
-	 */
-	readonly storageUsedPercent: number
-	/**
-	 * Free-space samples behind the number. Capacity is scraped slightly more
-	 * often than free space, so zero samples means "we never saw free space",
-	 * not "the volume is full" — the caller must not render 100% off a missing
-	 * series.
-	 */
-	readonly storageSamples: number
-}
-
-export interface PlanetScaleBranchStorageOutput {
-	readonly database: string
-	readonly branch: string
-	readonly storageUsedPercent: number
-	/** Volume size in bytes — the largest seen in the window (branches can resize). */
-	readonly storageCapacityBytes: number
-	/** Least free space seen in the window: the high-water mark of storage pressure. */
-	readonly storageAvailableBytes: number
-	readonly storageSamples: number
-}
-
 export interface PlanetScaleConnectionsOutput {
 	readonly database: string
 	/** Average of the per-timestamp total (summed across series) — “typical” concurrency. */
@@ -124,21 +95,38 @@ export interface PlanetScaleBranchConnectionsOutput extends PlanetScaleConnectio
 	readonly branch: string
 }
 
-export const planetscaleStorageRowSchema: CompiledQueryRowSchema<PlanetScaleStorageOutput> = Schema.Struct({
+export const planetscaleStorageRowSchema = Schema.Struct({
 	database: Schema.String,
+	/**
+	 * Worst branch's used percentage (0–100) over the window. Computed per branch
+	 * and then maxed — NOT from the database's max capacity over its min free
+	 * space, which would pair two different branches' numbers and invent a
+	 * percentage neither of them ever had.
+	 */
 	storageUsedPercent: CHNumber,
+	/**
+	 * Free-space samples behind the number. Capacity is scraped slightly more
+	 * often than free space, so zero samples means "we never saw free space",
+	 * not "the volume is full" — the caller must not render 100% off a missing
+	 * series.
+	 */
 	storageSamples: CHNumber,
 })
 
-export const planetscaleBranchStorageRowSchema: CompiledQueryRowSchema<PlanetScaleBranchStorageOutput> =
-	Schema.Struct({
-		database: Schema.String,
-		branch: Schema.String,
-		storageUsedPercent: CHNumber,
-		storageCapacityBytes: CHNumber,
-		storageAvailableBytes: CHNumber,
-		storageSamples: CHNumber,
-	})
+export type PlanetScaleStorageOutput = typeof planetscaleStorageRowSchema.Type
+
+export const planetscaleBranchStorageRowSchema = Schema.Struct({
+	database: Schema.String,
+	branch: Schema.String,
+	storageUsedPercent: CHNumber,
+	/** Volume size in bytes — the largest seen in the window (branches can resize). */
+	storageCapacityBytes: CHNumber,
+	/** Least free space seen in the window: the high-water mark of storage pressure. */
+	storageAvailableBytes: CHNumber,
+	storageSamples: CHNumber,
+})
+
+export type PlanetScaleBranchStorageOutput = typeof planetscaleBranchStorageRowSchema.Type
 
 /**
  * CPU/memory/replica-lag rollup over `metrics_gauge`, one row per database.

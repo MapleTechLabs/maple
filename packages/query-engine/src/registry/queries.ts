@@ -62,7 +62,7 @@ import { attributeIndexMode, logBodySearchMode } from "../capabilities"
 import * as CH from "../ch"
 import { LOGS_BODY_SEARCH_SETTINGS } from "../profiles"
 import { makeTimeRangeCachePolicy, timeRangeCache } from "../runtime/cache-policy"
-import { defineQuery } from "./query-definition"
+import { defineQuery, windowParams } from "./query-definition"
 
 export { logsCount, logsTimeseries } from "./logs"
 export {
@@ -97,22 +97,7 @@ export const errorsByType = defineQuery({
 	profile: "aggregation",
 	cache: timeRangeCache,
 	compile: (payload: ErrorsByTypeRequest, orgId: OrgId) =>
-		CH.compile(
-			CH.errorsByTypeQuery({
-				rootOnly: payload.rootOnly,
-				services: payload.services,
-				deploymentEnvs: payload.deploymentEnvs,
-				fingerprintHashes: payload.fingerprintHashes,
-				errorLabels: payload.errorLabels,
-				serviceVersions: payload.serviceVersions,
-				excludedServices: payload.excludedServices,
-				excludedDeploymentEnvs: payload.excludedDeploymentEnvs,
-				excludedErrorLabels: payload.excludedErrorLabels,
-				excludedServiceVersions: payload.excludedServiceVersions,
-				limit: payload.limit,
-			}),
-			{ orgId, startTime: payload.startTime, endTime: payload.endTime },
-		),
+		CH.compile(CH.errorsByTypeQuery(payload), windowParams(payload, orgId)),
 })
 
 export const errorsSpark = defineQuery({
@@ -120,26 +105,13 @@ export const errorsSpark = defineQuery({
 	profile: "aggregation",
 	cache: timeRangeCache,
 	compile: (payload: ErrorsSparkRequest, orgId: OrgId) =>
-		CH.compile(
-			CH.errorsSparkQuery({
-				fingerprintHashes: payload.fingerprintHashes,
-				services: payload.services,
-				deploymentEnvs: payload.deploymentEnvs,
-				errorLabels: payload.errorLabels,
-				serviceVersions: payload.serviceVersions,
-				excludedServices: payload.excludedServices,
-				excludedDeploymentEnvs: payload.excludedDeploymentEnvs,
-				excludedErrorLabels: payload.excludedErrorLabels,
-				excludedServiceVersions: payload.excludedServiceVersions,
-			}),
-			{
-				orgId,
-				startTime: payload.startTime,
-				endTime: payload.endTime,
-				// Optional buckets default to one hour.
-				bucketSeconds: payload.bucketSeconds ?? 3600,
-			},
-		),
+		CH.compile(CH.errorsSparkQuery(payload), {
+			orgId,
+			startTime: payload.startTime,
+			endTime: payload.endTime,
+			// Optional buckets default to one hour.
+			bucketSeconds: payload.bucketSeconds ?? 3600,
+		}),
 })
 
 export const errorsSummary = defineQuery({
@@ -147,17 +119,7 @@ export const errorsSummary = defineQuery({
 	profile: "aggregation",
 	cache: timeRangeCache,
 	compile: (payload: ErrorsSummaryRequest, orgId: OrgId) =>
-		CH.compile(
-			CH.errorsSummaryQuery({
-				rootOnly: payload.rootOnly,
-				services: payload.services,
-				deploymentEnvs: payload.deploymentEnvs,
-				fingerprintHashes: payload.fingerprintHashes,
-				errorLabels: payload.errorLabels,
-				serviceVersions: payload.serviceVersions,
-			}),
-			{ orgId, startTime: payload.startTime, endTime: payload.endTime },
-		),
+		CH.compile(CH.errorsSummaryQuery(payload), windowParams(payload, orgId)),
 })
 
 export const errorRateByService = defineQuery({
@@ -165,11 +127,7 @@ export const errorRateByService = defineQuery({
 	profile: "aggregation",
 	cache: timeRangeCache,
 	compile: (payload: ErrorRateByServiceRequest, orgId: OrgId) =>
-		CH.compile(CH.errorRateByServiceQuery(), {
-			orgId,
-			startTime: payload.startTime,
-			endTime: payload.endTime,
-		}),
+		CH.compile(CH.errorRateByServiceQuery(), windowParams(payload, orgId)),
 })
 
 export const serviceOverview = defineQuery({
@@ -182,17 +140,7 @@ export const serviceOverview = defineQuery({
 	// thing standing between a deploy and that.
 	cache: makeTimeRangeCachePolicy({ version: 3 }),
 	compile: (payload: ServiceOverviewRequest, orgId: OrgId) =>
-		CH.compile(
-			CH.serviceOverviewQuery({
-				environments: payload.environments,
-				namespaces: payload.namespaces,
-				commitShas: payload.commitShas,
-				excludedEnvironments: payload.excludedEnvironments,
-				excludedNamespaces: payload.excludedNamespaces,
-				excludedCommitShas: payload.excludedCommitShas,
-			}),
-			{ orgId, startTime: payload.startTime, endTime: payload.endTime },
-		),
+		CH.compile(CH.serviceOverviewQuery(payload), windowParams(payload, orgId)),
 })
 
 export const errorDetailTraces = defineQuery({
@@ -200,15 +148,7 @@ export const errorDetailTraces = defineQuery({
 	profile: "list",
 	cache: timeRangeCache,
 	compile: (payload: ErrorDetailTracesRequest, orgId: OrgId) =>
-		CH.compile(
-			CH.errorDetailTracesQuery({
-				fingerprintHash: payload.fingerprintHash,
-				rootOnly: payload.rootOnly,
-				services: payload.services,
-				limit: payload.limit,
-			}),
-			{ orgId, startTime: payload.startTime, endTime: payload.endTime },
-		),
+		CH.compile(CH.errorDetailTracesQuery(payload), windowParams(payload, orgId)),
 })
 
 export const serviceHealthSnapshot = defineQuery({
@@ -216,11 +156,7 @@ export const serviceHealthSnapshot = defineQuery({
 	profile: "aggregation",
 	cache: timeRangeCache,
 	compile: (payload: ServiceHealthSnapshotRequest, orgId: OrgId) =>
-		CH.compile(CH.serviceHealthSnapshotQuery({ environments: payload.environments }), {
-			orgId,
-			startTime: payload.startTime,
-			endTime: payload.endTime,
-		}),
+		CH.compile(CH.serviceHealthSnapshotQuery(payload), windowParams(payload, orgId)),
 })
 
 export const serviceHealthBaseline = defineQuery({
@@ -228,13 +164,7 @@ export const serviceHealthBaseline = defineQuery({
 	profile: "aggregation",
 	cache: 3600,
 	compile: (payload: ServiceHealthBaselineRequest, orgId: OrgId) =>
-		CH.compile(
-			CH.serviceHealthBaselineQuery({
-				environments: payload.environments,
-				namespaces: payload.namespaces,
-			}),
-			{ orgId, startTime: payload.startTime, endTime: payload.endTime },
-		),
+		CH.compile(CH.serviceHealthBaselineQuery(payload), windowParams(payload, orgId)),
 })
 
 export const serviceApdex = defineQuery({
@@ -250,9 +180,7 @@ export const serviceApdex = defineQuery({
 				bucketSeconds,
 			}),
 			{
-				orgId,
-				startTime: payload.startTime,
-				endTime: payload.endTime,
+				...windowParams(payload, orgId),
 				bucketSeconds,
 			},
 		)
@@ -264,17 +192,7 @@ export const serviceDependenciesForService = defineQuery({
 	profile: "aggregation",
 	cache: timeRangeCache,
 	compile: (payload: ServiceDependenciesForServiceRequest, orgId: OrgId) =>
-		CH.compile(
-			CH.serviceDependenciesForServiceQuery({
-				serviceName: payload.serviceName,
-				deploymentEnv: payload.deploymentEnv,
-			}),
-			{
-				orgId,
-				startTime: payload.startTime,
-				endTime: payload.endTime,
-			},
-		),
+		CH.compile(CH.serviceDependenciesForServiceQuery(payload), windowParams(payload, orgId)),
 })
 
 // The minute-tier/raw pairs share ids and cache keys: both return the exact window.
@@ -290,11 +208,7 @@ const serviceDbEdgesForServiceDef = (minuteTier: boolean) => ({
 				deploymentEnv: payload.deploymentEnv,
 				minuteTier,
 			}),
-			{
-				orgId,
-				startTime: payload.startTime,
-				endTime: payload.endTime,
-			},
+			windowParams(payload, orgId),
 		),
 })
 
@@ -356,7 +270,7 @@ export const listLogs = defineQuery({
 				limit: payload.limit,
 				order: payload.order,
 			}),
-			{ orgId, startTime: payload.startTime, endTime: payload.endTime },
+			windowParams(payload, orgId),
 		),
 })
 
@@ -373,7 +287,7 @@ export const listMetrics = defineQuery({
 				limit: payload.limit,
 				offset: payload.offset,
 			}),
-			{ orgId, startTime: payload.startTime, endTime: payload.endTime },
+			windowParams(payload, orgId),
 		),
 })
 
@@ -382,11 +296,7 @@ export const metricsSummary = defineQuery({
 	profile: "discovery",
 	cache: 60,
 	compile: (payload: MetricsSummaryRequest, orgId: OrgId) =>
-		CH.compile(CH.metricsSummaryQuery({ serviceName: payload.service }), {
-			orgId,
-			startTime: payload.startTime,
-			endTime: payload.endTime,
-		}),
+		CH.compile(CH.metricsSummaryQuery({ serviceName: payload.service }), windowParams(payload, orgId)),
 })
 
 /**
@@ -400,11 +310,7 @@ export const infraPresence = defineQuery({
 	profile: "discovery",
 	cache: 300,
 	compile: (payload: InfraPresenceRequest, orgId: OrgId) =>
-		CH.compileUnion(CH.infraPresenceQuery(), {
-			orgId,
-			startTime: payload.startTime,
-			endTime: payload.endTime,
-		}),
+		CH.compileUnion(CH.infraPresenceQuery(), windowParams(payload, orgId)),
 })
 
 export const listHosts = defineQuery({
@@ -412,14 +318,7 @@ export const listHosts = defineQuery({
 	profile: "list",
 	cache: timeRangeCache,
 	compile: (payload: ListHostsRequest, orgId: OrgId) =>
-		CH.compile(
-			CH.listHostsQuery({
-				search: payload.search,
-				limit: payload.limit,
-				offset: payload.offset,
-			}),
-			{ orgId, startTime: payload.startTime, endTime: payload.endTime },
-		),
+		CH.compile(CH.listHostsQuery(payload), windowParams(payload, orgId)),
 })
 
 export const hostDetailSummary = defineQuery({
@@ -427,11 +326,7 @@ export const hostDetailSummary = defineQuery({
 	profile: "aggregation",
 	cache: timeRangeCache,
 	compile: (payload: HostDetailSummaryRequest, orgId: OrgId) =>
-		CH.compile(CH.hostDetailSummaryQuery({ hostName: payload.hostName }), {
-			orgId,
-			startTime: payload.startTime,
-			endTime: payload.endTime,
-		}),
+		CH.compile(CH.hostDetailSummaryQuery(payload), windowParams(payload, orgId)),
 })
 
 export const podsSummary = defineQuery({
@@ -439,14 +334,7 @@ export const podsSummary = defineQuery({
 	profile: "aggregation",
 	cache: timeRangeCache,
 	compile: (payload: PodsSummaryRequest, orgId: OrgId) =>
-		CH.compile(
-			CH.listPodsSummaryQuery({
-				namespaces: payload.namespaces,
-				clusters: payload.clusters,
-				environments: payload.environments,
-			}),
-			{ orgId, startTime: payload.startTime, endTime: payload.endTime },
-		),
+		CH.compile(CH.listPodsSummaryQuery(payload), windowParams(payload, orgId)),
 })
 
 export const podDetailSummary = defineQuery({
@@ -454,11 +342,7 @@ export const podDetailSummary = defineQuery({
 	profile: "aggregation",
 	cache: timeRangeCache,
 	compile: (payload: PodDetailSummaryRequest, orgId: OrgId) =>
-		CH.compile(CH.podDetailSummaryQuery({ podName: payload.podName, namespace: payload.namespace }), {
-			orgId,
-			startTime: payload.startTime,
-			endTime: payload.endTime,
-		}),
+		CH.compile(CH.podDetailSummaryQuery(payload), windowParams(payload, orgId)),
 })
 
 export const podRestarts = defineQuery({
@@ -466,14 +350,7 @@ export const podRestarts = defineQuery({
 	profile: "aggregation",
 	cache: timeRangeCache,
 	compile: (payload: PodRestartsRequest, orgId: OrgId) =>
-		CH.compile(
-			CH.podRestartsQuery({
-				podNames: payload.podNames,
-				namespace: payload.namespace,
-				limit: payload.limit,
-			}),
-			{ orgId, startTime: payload.startTime, endTime: payload.endTime },
-		),
+		CH.compile(CH.podRestartsQuery(payload), windowParams(payload, orgId)),
 })
 
 export const listNodes = defineQuery({
@@ -481,17 +358,7 @@ export const listNodes = defineQuery({
 	profile: "list",
 	cache: timeRangeCache,
 	compile: (payload: ListNodesRequest, orgId: OrgId) =>
-		CH.compile(
-			CH.listNodesQuery({
-				search: payload.search,
-				nodeNames: payload.nodeNames,
-				clusters: payload.clusters,
-				environments: payload.environments,
-				limit: payload.limit,
-				offset: payload.offset,
-			}),
-			{ orgId, startTime: payload.startTime, endTime: payload.endTime },
-		),
+		CH.compile(CH.listNodesQuery(payload), windowParams(payload, orgId)),
 })
 
 export const nodeDetailSummary = defineQuery({
@@ -499,11 +366,7 @@ export const nodeDetailSummary = defineQuery({
 	profile: "aggregation",
 	cache: timeRangeCache,
 	compile: (payload: NodeDetailSummaryRequest, orgId: OrgId) =>
-		CH.compile(CH.nodeDetailSummaryQuery({ nodeName: payload.nodeName }), {
-			orgId,
-			startTime: payload.startTime,
-			endTime: payload.endTime,
-		}),
+		CH.compile(CH.nodeDetailSummaryQuery(payload), windowParams(payload, orgId)),
 })
 
 export const listWorkloads = defineQuery({
@@ -511,20 +374,7 @@ export const listWorkloads = defineQuery({
 	profile: "list",
 	cache: timeRangeCache,
 	compile: (payload: ListWorkloadsRequest, orgId: OrgId) =>
-		CH.compile(
-			CH.listWorkloadsQuery({
-				kind: payload.kind,
-				search: payload.search,
-				workloadNames: payload.workloadNames,
-				namespaces: payload.namespaces,
-				clusters: payload.clusters,
-				environments: payload.environments,
-				computeTypes: payload.computeTypes,
-				limit: payload.limit,
-				offset: payload.offset,
-			}),
-			{ orgId, startTime: payload.startTime, endTime: payload.endTime },
-		),
+		CH.compile(CH.listWorkloadsQuery(payload), windowParams(payload, orgId)),
 })
 
 export const workloadDetailSummary = defineQuery({
@@ -532,14 +382,7 @@ export const workloadDetailSummary = defineQuery({
 	profile: "aggregation",
 	cache: timeRangeCache,
 	compile: (payload: WorkloadDetailSummaryRequest, orgId: OrgId) =>
-		CH.compile(
-			CH.workloadDetailSummaryQuery({
-				kind: payload.kind,
-				workloadName: payload.workloadName,
-				namespace: payload.namespace,
-			}),
-			{ orgId, startTime: payload.startTime, endTime: payload.endTime },
-		),
+		CH.compile(CH.workloadDetailSummaryQuery(payload), windowParams(payload, orgId)),
 })
 
 // Releases page. The list and the timeline share one payload so the bundle
@@ -557,7 +400,7 @@ export const releasesList = defineQuery({
 				serviceNames: payload.services,
 				excludedEnvironments: payload.excludedEnvironments,
 			}),
-			{ orgId, startTime: payload.startTime, endTime: payload.endTime },
+			windowParams(payload, orgId),
 			{ rowSchema: CH.releasesListRowSchema },
 		),
 })
@@ -588,7 +431,7 @@ export const uptimeChecks = defineQuery({
 	cache: timeRangeCache,
 	compile: (payload: UptimeChecksRequest, orgId: OrgId) =>
 		CH.compile(
-			CH.uptimeChecksQuery({ limit: payload.limit }),
+			CH.uptimeChecksQuery(payload),
 			{ orgId, monitorId: payload.monitorId, startTime: payload.startTime, endTime: payload.endTime },
 			{ rowSchema: CH.uptimeChecksRowSchema },
 		),
@@ -608,9 +451,7 @@ export const releasesTimeline = defineQuery({
 				bucketSeconds: payload.bucketSeconds,
 			}),
 			{
-				orgId,
-				startTime: payload.startTime,
-				endTime: payload.endTime,
+				...windowParams(payload, orgId),
 				bucketSeconds: payload.bucketSeconds,
 			},
 		),
@@ -627,7 +468,7 @@ export const releaseVersions = defineQuery({
 				environments: payload.environments,
 				limit: 100,
 			}),
-			{ orgId, startTime: payload.startTime, endTime: payload.endTime },
+			windowParams(payload, orgId),
 			{ rowSchema: CH.releasesListRowSchema },
 		),
 })
@@ -637,19 +478,10 @@ export const releaseTimeline = defineQuery({
 	profile: "list",
 	cache: timeRangeCache,
 	compile: (payload: ReleaseDetailRequest, orgId: OrgId) =>
-		CH.compile(
-			CH.releasesTimelineQuery({
-				serviceName: payload.serviceName,
-				environments: payload.environments,
-				bucketSeconds: payload.bucketSeconds,
-			}),
-			{
-				orgId,
-				startTime: payload.startTime,
-				endTime: payload.endTime,
-				bucketSeconds: payload.bucketSeconds,
-			},
-		),
+		CH.compile(CH.releasesTimelineQuery(payload), {
+			...windowParams(payload, orgId),
+			bucketSeconds: payload.bucketSeconds,
+		}),
 })
 
 export const releaseErrorFingerprints = defineQuery({
@@ -657,18 +489,10 @@ export const releaseErrorFingerprints = defineQuery({
 	profile: "list",
 	cache: timeRangeCache,
 	compile: (payload: ReleaseDetailRequest, orgId: OrgId) =>
-		CH.compile(
-			CH.releaseErrorFingerprintsQuery({
-				serviceName: payload.serviceName,
-				environments: payload.environments,
-			}),
-			{
-				orgId,
-				startTime: payload.startTime,
-				endTime: payload.endTime,
-				serviceVersion: payload.commitSha,
-			},
-		),
+		CH.compile(CH.releaseErrorFingerprintsQuery(payload), {
+			...windowParams(payload, orgId),
+			serviceVersion: payload.commitSha,
+		}),
 })
 
 // Bundle subqueries keep distinct ids and minimal payloads to preserve standalone cache keys.
@@ -689,9 +513,7 @@ export const serviceReleases = defineQuery({
 		return CH.compile(
 			CH.serviceReleasesTimelineQuery({ serviceName: payload.serviceName, bucketSeconds }),
 			{
-				orgId,
-				startTime: payload.startTime,
-				endTime: payload.endTime,
+				...windowParams(payload, orgId),
 				bucketSeconds,
 			},
 		)
@@ -706,11 +528,10 @@ export const serviceEnvironments = defineQuery({
 		payload: { readonly serviceName: string; readonly startTime: string; readonly endTime: string },
 		orgId: OrgId,
 	) =>
-		CH.compile(CH.serviceEnvironmentsQuery({ serviceName: payload.serviceName }), {
-			orgId,
-			startTime: payload.startTime,
-			endTime: payload.endTime,
-		}),
+		CH.compile(
+			CH.serviceEnvironmentsQuery({ serviceName: payload.serviceName }),
+			windowParams(payload, orgId),
+		),
 })
 
 export const serviceExternalEdges = defineQuery({
@@ -728,7 +549,7 @@ export const serviceExternalEdges = defineQuery({
 	) =>
 		CH.serviceExternalEdgesSQL(
 			{ deploymentEnv: payload.deploymentEnv, serviceName: payload.serviceName },
-			{ orgId, startTime: payload.startTime, endTime: payload.endTime },
+			windowParams(payload, orgId),
 		),
 })
 
@@ -742,17 +563,11 @@ export const serviceUsage = defineQuery({
 		const prevEnd = payload.previousEndTime
 		return prevStart != null && prevEnd != null
 			? CH.compile(CH.serviceUsageWithPreviousQuery({ serviceName: payload.service }), {
-					orgId,
-					startTime: payload.startTime,
-					endTime: payload.endTime,
+					...windowParams(payload, orgId),
 					previousStartTime: prevStart,
 					previousEndTime: prevEnd,
 				})
-			: CH.compile(CH.serviceUsageQuery({ serviceName: payload.service }), {
-					orgId,
-					startTime: payload.startTime,
-					endTime: payload.endTime,
-				})
+			: CH.compile(CH.serviceUsageQuery({ serviceName: payload.service }), windowParams(payload, orgId))
 	},
 })
 
@@ -761,10 +576,7 @@ export const serviceDependencies = defineQuery({
 	profile: "aggregation",
 	cache: timeRangeCache,
 	compile: (payload: ServiceDependenciesRequest, orgId: OrgId) =>
-		CH.serviceDependenciesSQL(
-			{ deploymentEnv: payload.deploymentEnv },
-			{ orgId, startTime: payload.startTime, endTime: payload.endTime },
-		),
+		CH.serviceDependenciesSQL({ deploymentEnv: payload.deploymentEnv }, windowParams(payload, orgId)),
 })
 
 const serviceDbEdgesDef = (minuteTier: boolean) => ({
@@ -774,7 +586,7 @@ const serviceDbEdgesDef = (minuteTier: boolean) => ({
 	compile: (payload: ServiceDbEdgesRequest, orgId: OrgId) =>
 		CH.serviceDbEdgesSQL(
 			{ deploymentEnv: payload.deploymentEnv, minuteTier },
-			{ orgId, startTime: payload.startTime, endTime: payload.endTime },
+			windowParams(payload, orgId),
 		),
 })
 
@@ -786,10 +598,7 @@ export const serviceWorkloads = defineQuery({
 	profile: "aggregation",
 	cache: timeRangeCache,
 	compile: (payload: ServiceWorkloadsRequest, orgId: OrgId) =>
-		CH.serviceWorkloadsSQL(
-			{ services: payload.services },
-			{ orgId, startTime: payload.startTime, endTime: payload.endTime },
-		),
+		CH.serviceWorkloadsSQL({ services: payload.services }, windowParams(payload, orgId)),
 })
 
 export const serviceRuntimes = defineQuery({
@@ -797,10 +606,7 @@ export const serviceRuntimes = defineQuery({
 	profile: "aggregation",
 	cache: timeRangeCache,
 	compile: (payload: ServiceRuntimesRequest, orgId: OrgId) =>
-		CH.serviceRuntimesSQL(
-			{ services: payload.services },
-			{ orgId, startTime: payload.startTime, endTime: payload.endTime },
-		),
+		CH.serviceRuntimesSQL({ services: payload.services }, windowParams(payload, orgId)),
 })
 
 export const servicePlatforms = defineQuery({
@@ -808,10 +614,7 @@ export const servicePlatforms = defineQuery({
 	profile: "aggregation",
 	cache: timeRangeCache,
 	compile: (payload: ServicePlatformsRequest, orgId: OrgId) =>
-		CH.servicePlatformsSQL(
-			{ deploymentEnv: payload.deploymentEnv },
-			{ orgId, startTime: payload.startTime, endTime: payload.endTime },
-		),
+		CH.servicePlatformsSQL({ deploymentEnv: payload.deploymentEnv }, windowParams(payload, orgId)),
 })
 
 const dbQueryParams = (payload: ServiceDbQuerySummaryRequest, orgId: OrgId) => ({
@@ -893,11 +696,10 @@ const webAnalyticsSummaryDef = (useProductEvents: boolean) => ({
 	profile: "aggregation" as const,
 	cache: timeRangeCache,
 	compile: (payload: WebAnalyticsSummaryRequest, orgId: OrgId) =>
-		CH.compile(CH.webAnalyticsSummaryQuery(webAnalyticsFilters(payload, useProductEvents)), {
-			orgId,
-			startTime: payload.startTime,
-			endTime: payload.endTime,
-		}),
+		CH.compile(
+			CH.webAnalyticsSummaryQuery(webAnalyticsFilters(payload, useProductEvents)),
+			windowParams(payload, orgId),
+		),
 })
 
 export const webAnalyticsSummary = defineQuery(webAnalyticsSummaryDef(true))
@@ -954,7 +756,7 @@ const webAnalyticsTimeseriesDef = (useProductEvents: boolean) => ({
 				...webAnalyticsFilters(payload, useProductEvents),
 				bucketSeconds: payload.bucketSeconds,
 			}),
-			{ orgId, startTime: payload.startTime, endTime: payload.endTime },
+			windowParams(payload, orgId),
 		),
 })
 
@@ -971,7 +773,7 @@ const webAnalyticsPageviewsDef = (useProductEvents: boolean) => ({
 				...webAnalyticsFilters(payload, useProductEvents),
 				bucketSeconds: payload.bucketSeconds,
 			}),
-			{ orgId, startTime: payload.startTime, endTime: payload.endTime },
+			windowParams(payload, orgId),
 		),
 })
 
@@ -988,7 +790,7 @@ const webAnalyticsPagesDef = (useProductEvents: boolean) => ({
 				...webAnalyticsFilters(payload, useProductEvents),
 				limit: payload.limit,
 			}),
-			{ orgId, startTime: payload.startTime, endTime: payload.endTime },
+			windowParams(payload, orgId),
 		),
 })
 
@@ -1005,7 +807,7 @@ const webAnalyticsEventsDef = (useProductEvents: boolean) => ({
 				...webAnalyticsFilters(payload, useProductEvents),
 				limit: payload.limit,
 			}),
-			{ orgId, startTime: payload.startTime, endTime: payload.endTime },
+			windowParams(payload, orgId),
 		),
 })
 
@@ -1024,7 +826,7 @@ const webAnalyticsBreakdownsDef = (useProductEvents: boolean) => ({
 				...webAnalyticsFilters(payload, useProductEvents),
 				limitPerDimension: payload.limitPerDimension,
 			}),
-			{ orgId, startTime: payload.startTime, endTime: payload.endTime },
+			windowParams(payload, orgId),
 		),
 })
 
@@ -1041,7 +843,7 @@ const webAnalyticsAiReferralsDef = (useProductEvents: boolean) => ({
 				...webAnalyticsFilters(payload, useProductEvents),
 				bucketSeconds: payload.bucketSeconds,
 			}),
-			{ orgId, startTime: payload.startTime, endTime: payload.endTime },
+			windowParams(payload, orgId),
 		),
 })
 
@@ -1049,21 +851,14 @@ export const webAnalyticsAiReferrals = defineQuery(webAnalyticsAiReferralsDef(tr
 export const webAnalyticsAiReferralsRaw = defineQuery(webAnalyticsAiReferralsDef(false))
 
 // The three crawler reads share one request; each is a small scan of `ai_crawler_requests`.
-const aiCrawlerWindow = (payload: WebAnalyticsAiCrawlersRequest, orgId: OrgId) => ({
-	orgId,
-	startTime: payload.startTime,
-	endTime: payload.endTime,
-})
+const aiCrawlerWindow = (payload: WebAnalyticsAiCrawlersRequest, orgId: OrgId) => windowParams(payload, orgId)
 
 export const webAnalyticsAiCrawlers = defineQuery({
 	id: "webAnalyticsAiCrawlers",
 	profile: "aggregation",
 	cache: timeRangeCache,
 	compile: (payload: WebAnalyticsAiCrawlersRequest, orgId: OrgId) =>
-		CH.compile(
-			CH.webAnalyticsAiCrawlersQuery({ host: payload.host, pagePath: payload.pagePath }),
-			aiCrawlerWindow(payload, orgId),
-		),
+		CH.compile(CH.webAnalyticsAiCrawlersQuery(payload), aiCrawlerWindow(payload, orgId)),
 })
 
 export const webAnalyticsAiCrawlerFormats = defineQuery({
@@ -1071,10 +866,7 @@ export const webAnalyticsAiCrawlerFormats = defineQuery({
 	profile: "aggregation",
 	cache: timeRangeCache,
 	compile: (payload: WebAnalyticsAiCrawlersRequest, orgId: OrgId) =>
-		CH.compile(
-			CH.webAnalyticsAiCrawlerFormatsQuery({ host: payload.host, pagePath: payload.pagePath }),
-			aiCrawlerWindow(payload, orgId),
-		),
+		CH.compile(CH.webAnalyticsAiCrawlerFormatsQuery(payload), aiCrawlerWindow(payload, orgId)),
 })
 
 export const webAnalyticsAiCrawledPages = defineQuery({
@@ -1094,11 +886,8 @@ export const webAnalyticsAiCrawledPages = defineQuery({
 
 // Security Center telemetry. The four exposure reads share one request; each is a small scan of
 // `scanner_requests`.
-const securityWindow = (payload: SecurityExposureRequest | SecurityRuntimesRequest, orgId: OrgId) => ({
-	orgId,
-	startTime: payload.startTime,
-	endTime: payload.endTime,
-})
+const securityWindow = (payload: SecurityExposureRequest | SecurityRuntimesRequest, orgId: OrgId) =>
+	windowParams(payload, orgId)
 
 export const scannerSignatures = defineQuery({
 	id: "scannerSignatures",
@@ -1160,32 +949,7 @@ export const podFacets = defineQuery({
 	settings: { maxThreads: 4 },
 	cache: 60,
 	compile: (payload: PodFacetsRequest, orgId: OrgId) =>
-		CH.compileUnion(
-			CH.podFacetsQuery({
-				search: payload.search,
-				podNames: payload.podNames,
-				namespaces: payload.namespaces,
-				nodeNames: payload.nodeNames,
-				clusters: payload.clusters,
-				deployments: payload.deployments,
-				statefulsets: payload.statefulsets,
-				daemonsets: payload.daemonsets,
-				jobs: payload.jobs,
-				environments: payload.environments,
-				computeTypes: payload.computeTypes,
-				excludedPodNames: payload.excludedPodNames,
-				excludedNamespaces: payload.excludedNamespaces,
-				excludedNodeNames: payload.excludedNodeNames,
-				excludedClusters: payload.excludedClusters,
-				excludedDeployments: payload.excludedDeployments,
-				excludedStatefulsets: payload.excludedStatefulsets,
-				excludedDaemonsets: payload.excludedDaemonsets,
-				excludedJobs: payload.excludedJobs,
-				excludedEnvironments: payload.excludedEnvironments,
-				excludedComputeTypes: payload.excludedComputeTypes,
-			}),
-			{ orgId: orgId, startTime: payload.startTime, endTime: payload.endTime },
-		),
+		CH.compileUnion(CH.podFacetsQuery(payload), windowParams(payload, orgId)),
 })
 
 export const nodeFacets = defineQuery({
@@ -1195,15 +959,7 @@ export const nodeFacets = defineQuery({
 	settings: { maxThreads: 4 },
 	cache: 60,
 	compile: (payload: NodeFacetsRequest, orgId: OrgId) =>
-		CH.compileUnion(
-			CH.nodeFacetsQuery({
-				search: payload.search,
-				nodeNames: payload.nodeNames,
-				clusters: payload.clusters,
-				environments: payload.environments,
-			}),
-			{ orgId: orgId, startTime: payload.startTime, endTime: payload.endTime },
-		),
+		CH.compileUnion(CH.nodeFacetsQuery(payload), windowParams(payload, orgId)),
 })
 
 export const workloadFacets = defineQuery({
@@ -1213,18 +969,7 @@ export const workloadFacets = defineQuery({
 	settings: { maxThreads: 4 },
 	cache: 60,
 	compile: (payload: WorkloadFacetsRequest, orgId: OrgId) =>
-		CH.compileUnion(
-			CH.workloadFacetsQuery({
-				kind: payload.kind,
-				search: payload.search,
-				workloadNames: payload.workloadNames,
-				namespaces: payload.namespaces,
-				clusters: payload.clusters,
-				environments: payload.environments,
-				computeTypes: payload.computeTypes,
-			}),
-			{ orgId: orgId, startTime: payload.startTime, endTime: payload.endTime },
-		),
+		CH.compileUnion(CH.workloadFacetsQuery(payload), windowParams(payload, orgId)),
 })
 
 // Keep page and denominator filters identical.
@@ -1271,7 +1016,7 @@ export const listPods = defineQuery({
 				limit: payload.limit,
 				offset: payload.offset,
 			}),
-			{ orgId, startTime: payload.startTime, endTime: payload.endTime },
+			windowParams(payload, orgId),
 		),
 })
 
@@ -1280,11 +1025,7 @@ export const listPodsCount = defineQuery({
 	profile: "aggregation",
 	cache: timeRangeCache,
 	compile: (payload: ListPodsRequest, orgId: OrgId) =>
-		CH.compile(CH.listPodsSummaryQuery(listPodsFilters(payload)), {
-			orgId,
-			startTime: payload.startTime,
-			endTime: payload.endTime,
-		}),
+		CH.compile(CH.listPodsSummaryQuery(listPodsFilters(payload)), windowParams(payload, orgId)),
 })
 
 // Containers (Docker) — keep page and denominator filters identical.
@@ -1318,7 +1059,7 @@ export const listContainers = defineQuery({
 				limit: payload.limit,
 				offset: payload.offset,
 			}),
-			{ orgId, startTime: payload.startTime, endTime: payload.endTime },
+			windowParams(payload, orgId),
 		),
 })
 
@@ -1327,11 +1068,10 @@ export const listContainersCount = defineQuery({
 	profile: "aggregation",
 	cache: timeRangeCache,
 	compile: (payload: ListContainersRequest, orgId: OrgId) =>
-		CH.compile(CH.listContainersSummaryQuery(listContainersFilters(payload)), {
-			orgId,
-			startTime: payload.startTime,
-			endTime: payload.endTime,
-		}),
+		CH.compile(
+			CH.listContainersSummaryQuery(listContainersFilters(payload)),
+			windowParams(payload, orgId),
+		),
 })
 
 export const containersSummary = defineQuery({
@@ -1339,13 +1079,7 @@ export const containersSummary = defineQuery({
 	profile: "aggregation",
 	cache: timeRangeCache,
 	compile: (payload: ContainersSummaryRequest, orgId: OrgId) =>
-		CH.compile(
-			CH.listContainersSummaryQuery({
-				hostNames: payload.hostNames,
-				environments: payload.environments,
-			}),
-			{ orgId, startTime: payload.startTime, endTime: payload.endTime },
-		),
+		CH.compile(CH.listContainersSummaryQuery(payload), windowParams(payload, orgId)),
 })
 
 export const containerDetailSummary = defineQuery({
@@ -1353,13 +1087,7 @@ export const containerDetailSummary = defineQuery({
 	profile: "aggregation",
 	cache: timeRangeCache,
 	compile: (payload: ContainerDetailSummaryRequest, orgId: OrgId) =>
-		CH.compile(
-			CH.containerDetailSummaryQuery({
-				containerName: payload.containerName,
-				hostName: payload.hostName,
-			}),
-			{ orgId, startTime: payload.startTime, endTime: payload.endTime },
-		),
+		CH.compile(CH.containerDetailSummaryQuery(payload), windowParams(payload, orgId)),
 })
 
 export const containerCountersSummary = defineQuery({
@@ -1367,13 +1095,7 @@ export const containerCountersSummary = defineQuery({
 	profile: "aggregation",
 	cache: timeRangeCache,
 	compile: (payload: ContainerDetailSummaryRequest, orgId: OrgId) =>
-		CH.compile(
-			CH.containerCountersSummaryQuery({
-				containerName: payload.containerName,
-				hostName: payload.hostName,
-			}),
-			{ orgId, startTime: payload.startTime, endTime: payload.endTime },
-		),
+		CH.compile(CH.containerCountersSummaryQuery(payload), windowParams(payload, orgId)),
 })
 
 export const containerFacets = defineQuery({
@@ -1383,11 +1105,10 @@ export const containerFacets = defineQuery({
 	settings: { maxThreads: 4 },
 	cache: 60,
 	compile: (payload: ContainerFacetsRequest, orgId: OrgId) =>
-		CH.compileUnion(CH.containerFacetsQuery(listContainersFilters(payload)), {
-			orgId,
-			startTime: payload.startTime,
-			endTime: payload.endTime,
-		}),
+		CH.compileUnion(
+			CH.containerFacetsQuery(listContainersFilters(payload)),
+			windowParams(payload, orgId),
+		),
 })
 
 // Probes resolve a time bound so hierarchy reads avoid ~30 daily partitions.
@@ -1448,12 +1169,6 @@ const serviceOperationsSummaryOptions = (payload: ServiceOperationsRequest) => (
 	limit: payload.limit,
 })
 
-const serviceOperationsParams = (payload: ServiceOperationsRequest, orgId: OrgId) => ({
-	orgId,
-	startTime: payload.startTime,
-	endTime: payload.endTime,
-})
-
 export const serviceOperationsSummary = defineQuery({
 	id: "serviceOperations",
 	profile: "aggregation",
@@ -1461,7 +1176,7 @@ export const serviceOperationsSummary = defineQuery({
 	compile: (payload: ServiceOperationsRequest, orgId: OrgId) =>
 		CH.compile(
 			CH.serviceOperationsSummaryQuery(serviceOperationsSummaryOptions(payload)),
-			serviceOperationsParams(payload, orgId),
+			windowParams(payload, orgId),
 			{ rowSchema: CH.serviceOperationsSummaryRowSchema },
 		),
 })
@@ -1480,7 +1195,7 @@ export const serviceOperationsSummaryRaw = defineQuery({
 	compile: (payload: ServiceOperationsRequest, orgId: OrgId) =>
 		CH.compile(
 			CH.serviceOperationsSummaryRawQuery(serviceOperationsSummaryOptions(payload)),
-			serviceOperationsParams(payload, orgId),
+			windowParams(payload, orgId),
 			{ rowSchema: CH.serviceOperationsSummaryRowSchema },
 		),
 })
@@ -1498,7 +1213,7 @@ export const serviceEndpointsSummary = defineQuery({
 	compile: (payload: ServiceOperationsRequest, orgId: OrgId) =>
 		CH.compile(
 			CH.serviceEndpointsSummaryQuery(serviceOperationsSummaryOptions(payload)),
-			serviceOperationsParams(payload, orgId),
+			windowParams(payload, orgId),
 			{ rowSchema: CH.serviceEndpointsSummaryRowSchema },
 		),
 })
@@ -1511,7 +1226,7 @@ export const serviceEndpointsSummaryRaw = defineQuery({
 	compile: (payload: ServiceOperationsRequest, orgId: OrgId) =>
 		CH.compile(
 			CH.serviceEndpointsSummaryRawQuery(serviceOperationsSummaryOptions(payload)),
-			serviceOperationsParams(payload, orgId),
+			windowParams(payload, orgId),
 			{ rowSchema: CH.serviceEndpointsSummaryRowSchema },
 		),
 })
@@ -1535,7 +1250,7 @@ export const serviceOperationsTimeseries = defineQuery({
 	cache: undefined,
 	compile: (payload: ServiceOperationsTimeseriesInput, orgId: OrgId) =>
 		CH.compile(CH.serviceOperationsTimeseriesQuery(serviceOperationsTimeseriesOptions(payload)), {
-			...serviceOperationsParams(payload, orgId),
+			...windowParams(payload, orgId),
 			bucketSeconds: payload.bucketSeconds,
 		}),
 })
@@ -1547,7 +1262,7 @@ export const serviceOperationsTimeseriesRaw = defineQuery({
 	cache: undefined,
 	compile: (payload: ServiceOperationsTimeseriesInput, orgId: OrgId) =>
 		CH.compile(CH.serviceOperationsTimeseriesRawQuery(serviceOperationsTimeseriesOptions(payload)), {
-			...serviceOperationsParams(payload, orgId),
+			...windowParams(payload, orgId),
 			bucketSeconds: payload.bucketSeconds,
 		}),
 })
@@ -1567,12 +1282,6 @@ type ServiceApiTimeseriesInput = ServiceApiWindowInput & {
 	readonly spanNames?: ReadonlyArray<string> | undefined
 }
 
-const serviceApiWindowParams = (payload: ServiceApiWindowInput, orgId: OrgId) => ({
-	orgId,
-	startTime: payload.startTime,
-	endTime: payload.endTime,
-})
-
 const serviceApiScope = (payload: ServiceApiWindowInput, tiers: CH.ServiceApiTiers) => ({
 	serviceName: payload.serviceName,
 	environments: payload.environments,
@@ -1588,7 +1297,7 @@ const serviceApiTotalsFor = (tiers: CH.ServiceApiTiers) =>
 		compile: (payload: ServiceApiWindowInput, orgId: OrgId) =>
 			CH.compile(
 				CH.serviceApiTotalsQuery(serviceApiScope(payload, tiers)),
-				serviceApiWindowParams(payload, orgId),
+				windowParams(payload, orgId),
 				{
 					rowSchema: CH.serviceApiTotalsRowSchema,
 				},
@@ -1611,7 +1320,7 @@ const serviceApiTimeseriesFor = (tiers: CH.ServiceApiTiers) =>
 					bucketSeconds: payload.bucketSeconds,
 					spanNames: payload.spanNames,
 				}),
-				{ ...serviceApiWindowParams(payload, orgId), bucketSeconds: payload.bucketSeconds },
+				{ ...windowParams(payload, orgId), bucketSeconds: payload.bucketSeconds },
 				{ rowSchema: CH.serviceApiTimeseriesRowSchema },
 			),
 	})
@@ -1630,7 +1339,7 @@ export const serviceEndpointStatusBreakdown = defineQuery({
 				environments: payload.environments,
 				spanName: payload.spanName,
 			}),
-			serviceApiWindowParams(payload, orgId),
+			windowParams(payload, orgId),
 			{ rowSchema: CH.serviceEndpointStatusBreakdownRowSchema },
 		),
 })
@@ -1650,7 +1359,7 @@ export const serviceEndpointDistribution = defineQuery({
 	compile: (payload: ServiceEndpointDetailInput, orgId: OrgId) =>
 		CH.compile(
 			CH.serviceEndpointDistributionQuery(endpointDetailOpts(payload)),
-			serviceApiWindowParams(payload, orgId),
+			windowParams(payload, orgId),
 			{ rowSchema: CH.serviceEndpointDistributionRowSchema },
 		),
 })
@@ -1662,7 +1371,7 @@ export const serviceEndpointSlowest = defineQuery({
 	compile: (payload: ServiceEndpointDetailInput, orgId: OrgId) =>
 		CH.compile(
 			CH.serviceEndpointSlowestQuery(endpointDetailOpts(payload)),
-			serviceApiWindowParams(payload, orgId),
+			windowParams(payload, orgId),
 			{ rowSchema: CH.serviceEndpointSlowestRowSchema },
 		),
 })

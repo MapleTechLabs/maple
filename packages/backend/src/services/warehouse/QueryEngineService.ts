@@ -1,12 +1,7 @@
 // BOUNDARY-FILE: This module owns unparsed external values and narrows them before domain use.
 import { Clock, Context, Effect, Layer, Metric, type Schema } from "effect"
-import {
-	computeBucketSeconds,
-	formatWarehouseDateTime as msToTinybirdDateTime,
-	parseWarehouseDateTime as toEpochMs,
-	QueryEngineExecuteRequest,
-	QueryEngineExecuteResponse,
-} from "@maple/query-engine"
+import { computeBucketSeconds, formatWarehouseDateTime, parseWarehouseDateTime } from "@maple/query-engine"
+import { QueryEngineExecuteRequest, QueryEngineExecuteResponse } from "@maple/domain/query-engine"
 import type { QueryEngineTimeoutError, TenantContext } from "@maple/domain/http"
 import {
 	buildCacheKey,
@@ -134,7 +129,10 @@ export class QueryEngineService extends Context.Service<QueryEngineService, Quer
 				const resolvedBucketSeconds =
 					bucketSeconds ??
 					request.query.bucketSeconds ??
-					computeBucketSeconds(toEpochMs(request.startTime), toEpochMs(request.endTime))
+					computeBucketSeconds(
+						parseWarehouseDateTime(request.startTime),
+						parseWarehouseDateTime(request.endTime),
+					)
 				if (request.query.source === "product_events") {
 					return migrated(
 						"time-buckets",
@@ -279,8 +277,8 @@ export class QueryEngineService extends Context.Service<QueryEngineService, Quer
 							new QueryEngineExecuteRequest({
 								...request,
 								query: pinnedQuery,
-								startTime: msToTinybirdDateTime(startMs),
-								endTime: msToTinybirdDateTime(endMs),
+								startTime: formatWarehouseDateTime(startMs),
+								endTime: formatWarehouseDateTime(endMs),
 							}),
 						).pipe(
 							Effect.map((response) =>
@@ -346,8 +344,8 @@ export class QueryEngineService extends Context.Service<QueryEngineService, Quer
 						if (!bucketCache.enabled) return yield* useBlobPath("bucket_cache_disabled")
 						if (request.query.kind !== "timeseries") return yield* useBlobPath("not_timeseries")
 
-						const startEpochMs = toEpochMs(request.startTime)
-						const endEpochMs = toEpochMs(request.endTime)
+						const startEpochMs = parseWarehouseDateTime(request.startTime)
+						const endEpochMs = parseWarehouseDateTime(request.endTime)
 						if (
 							Number.isNaN(startEpochMs) ||
 							Number.isNaN(endEpochMs) ||

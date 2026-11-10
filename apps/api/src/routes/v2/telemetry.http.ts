@@ -34,7 +34,6 @@ import {
 } from "@maple/domain/http/v2"
 import {
 	CH,
-	QueryEngineExecuteRequest,
 	formatWarehouseDateTime,
 	parseUtc,
 	formatWarehouseDateTimeMs,
@@ -49,6 +48,7 @@ import {
 	MAX_UNFILTERED_BREAKDOWN_RANGE_SECONDS,
 	timeWindowViolation,
 } from "@maple/query-engine"
+import { QueryEngineExecuteRequest } from "@maple/domain/query-engine"
 import {
 	Array as Arr,
 	DateTime,

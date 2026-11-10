@@ -1,7 +1,7 @@
 import { Array as Arr } from "effect"
 import * as CH from "@maple/query-engine/ch"
 import * as Integrations from "@maple/query-engine-integrations"
-import { defineQuery } from "@maple/query-engine/registry"
+import { defineQuery, windowParams } from "@maple/query-engine/registry"
 import { Queries as Core } from "@maple/query-engine/registry"
 import type {
 	AwsInfraMetricsRequest,
@@ -63,11 +63,7 @@ const cloudflareInfraZoneCounters = defineQuery({
 	profile: "aggregation",
 	cache: 15,
 	compile: (payload: CloudflareInfraZonesRequest, orgId: OrgId) => {
-		const params = {
-			orgId: orgId,
-			startTime: payload.startTime,
-			endTime: payload.endTime,
-		}
+		const params = windowParams(payload, orgId)
 		// Counters (metrics_sum) + percentiles (metrics_gauge) run
 		// concurrently, then merge by ServiceName — same shape as
 		// serviceCloudflareStats above.
@@ -81,11 +77,7 @@ const cloudflareInfraZoneLatency = defineQuery({
 	profile: "aggregation",
 	cache: 15,
 	compile: (payload: CloudflareInfraZonesRequest, orgId: OrgId) => {
-		const params = {
-			orgId: orgId,
-			startTime: payload.startTime,
-			endTime: payload.endTime,
-		}
+		const params = windowParams(payload, orgId)
 		// Zone-wide by design; the handler reports the filters as `ignoredFilters`.
 		return CH.compile(Integrations.cloudflareZoneLatencySQL(), params)
 	},
@@ -166,11 +158,7 @@ const cloudflareInfraWorkerCounters = defineQuery({
 	profile: "aggregation",
 	cache: 15,
 	compile: (payload: CloudflareInfraWorkersRequest, orgId: OrgId) => {
-		const params = {
-			orgId: orgId,
-			startTime: payload.startTime,
-			endTime: payload.endTime,
-		}
+		const params = windowParams(payload, orgId)
 		return CH.compile(Integrations.cloudflareWorkerCountersSQL(), params)
 	},
 })
@@ -180,11 +168,7 @@ const cloudflareInfraWorkerLatency = defineQuery({
 	profile: "aggregation",
 	cache: 15,
 	compile: (payload: CloudflareInfraWorkersRequest, orgId: OrgId) => {
-		const params = {
-			orgId: orgId,
-			startTime: payload.startTime,
-			endTime: payload.endTime,
-		}
+		const params = windowParams(payload, orgId)
 		return CH.compile(Integrations.cloudflareWorkerLatencySQL(), params)
 	},
 })
@@ -194,11 +178,7 @@ const cloudflareInfraQueueGauges = defineQuery({
 	profile: "aggregation",
 	cache: 15,
 	compile: (payload: CloudflareInfraPlatformResourcesRequest, orgId: OrgId) => {
-		const params = {
-			orgId: orgId,
-			startTime: payload.startTime,
-			endTime: payload.endTime,
-		}
+		const params = windowParams(payload, orgId)
 		return CH.compile(Integrations.cloudflareQueueGaugesSQL(), params)
 	},
 })
@@ -208,11 +188,7 @@ const cloudflareInfraDurableObjects = defineQuery({
 	profile: "aggregation",
 	cache: 15,
 	compile: (payload: CloudflareInfraPlatformResourcesRequest, orgId: OrgId) => {
-		const params = {
-			orgId: orgId,
-			startTime: payload.startTime,
-			endTime: payload.endTime,
-		}
+		const params = windowParams(payload, orgId)
 		return CH.compile(Integrations.cloudflareDurableObjectCountersSQL(), params)
 	},
 })
@@ -222,11 +198,7 @@ const cloudflareServiceCounters = defineQuery({
 	profile: "aggregation",
 	cache: 15,
 	compile: (payload: ServiceCloudflareStatsRequest, orgId: OrgId) => {
-		const params = {
-			orgId: orgId,
-			startTime: payload.startTime,
-			endTime: payload.endTime,
-		}
+		const params = windowParams(payload, orgId)
 		// Counters (metrics_sum) + percentiles (metrics_gauge) run
 		// concurrently, then merge by ServiceName. Routed through the org's
 		// configured warehouse exactly like the metric explorer reads these
@@ -240,11 +212,7 @@ const cloudflareServiceLatency = defineQuery({
 	profile: "aggregation",
 	cache: 15,
 	compile: (payload: ServiceCloudflareStatsRequest, orgId: OrgId) => {
-		const params = {
-			orgId: orgId,
-			startTime: payload.startTime,
-			endTime: payload.endTime,
-		}
+		const params = windowParams(payload, orgId)
 		// Counters (metrics_sum) + percentiles (metrics_gauge) run
 		// concurrently, then merge by ServiceName. Routed through the org's
 		// configured warehouse exactly like the metric explorer reads these
@@ -259,9 +227,7 @@ const planetscaleInfraTimeseries = defineQuery({
 	cache: 15,
 	compile: (payload: PlanetScaleInfraTimeseriesRequest, orgId: OrgId) => {
 		const base = {
-			orgId: orgId,
-			startTime: payload.startTime,
-			endTime: payload.endTime,
+			...windowParams(payload, orgId),
 			bucketSeconds: Math.max(60, Math.floor(payload.bucketSeconds)),
 			database: payload.database,
 		}
@@ -279,11 +245,7 @@ const railwayInfraServices = defineQuery({
 	profile: "aggregation",
 	cache: 15,
 	compile: (payload: RailwayInfraServicesRequest, orgId: OrgId) =>
-		CH.compile(Integrations.railwayServicesSQL(), {
-			orgId,
-			startTime: payload.startTime,
-			endTime: payload.endTime,
-		}),
+		CH.compile(Integrations.railwayServicesSQL(), windowParams(payload, orgId)),
 })
 
 const railwayInfraServiceTimeseries = defineQuery({
@@ -292,9 +254,7 @@ const railwayInfraServiceTimeseries = defineQuery({
 	cache: 15,
 	compile: (payload: RailwayInfraServiceTimeseriesRequest, orgId: OrgId) =>
 		CH.compile(Integrations.railwayServiceTimeseriesSQL(), {
-			orgId,
-			startTime: payload.startTime,
-			endTime: payload.endTime,
+			...windowParams(payload, orgId),
 			bucketSeconds: Math.max(60, Math.floor(payload.bucketSeconds)),
 			environmentId: payload.environmentId,
 			serviceId: payload.serviceId,
@@ -308,11 +268,7 @@ const supabaseInfraProjectGauges = defineQuery({
 	profile: "aggregation",
 	cache: 15,
 	compile: (payload: SupabaseInfraProjectsRequest, orgId: OrgId) =>
-		CH.compile(Integrations.supabaseProjectGaugesSQL(), {
-			orgId,
-			startTime: payload.startTime,
-			endTime: payload.endTime,
-		}),
+		CH.compile(Integrations.supabaseProjectGaugesSQL(), windowParams(payload, orgId)),
 })
 
 const supabaseInfraProjectCpu = defineQuery({
@@ -320,17 +276,11 @@ const supabaseInfraProjectCpu = defineQuery({
 	profile: "aggregation",
 	cache: 15,
 	compile: (payload: SupabaseInfraProjectsRequest, orgId: OrgId) =>
-		CH.compile(Integrations.supabaseProjectCpuSQL(), {
-			orgId,
-			startTime: payload.startTime,
-			endTime: payload.endTime,
-		}),
+		CH.compile(Integrations.supabaseProjectCpuSQL(), windowParams(payload, orgId)),
 })
 
 const supabaseProjectSeriesParams = (payload: SupabaseInfraProjectTimeseriesRequest, orgId: OrgId) => ({
-	orgId,
-	startTime: payload.startTime,
-	endTime: payload.endTime,
+	...windowParams(payload, orgId),
 	bucketSeconds: Math.max(60, Math.floor(payload.bucketSeconds)),
 	projectRef: payload.projectRef,
 })
@@ -353,9 +303,7 @@ const supabaseInfraProjectRateSeries = defineQuery({
 
 // /infra/supabase insights: the polled Supabase logs and the org's client spans to a project.
 const supabaseProjectParams = (payload: SupabaseProjectWindowRequest, orgId: OrgId) => ({
-	orgId,
-	startTime: payload.startTime,
-	endTime: payload.endTime,
+	...windowParams(payload, orgId),
 	projectRef: payload.projectRef,
 })
 
@@ -364,11 +312,7 @@ const supabaseLogsProjectsSummary = defineQuery({
 	profile: "aggregation",
 	cache: 15,
 	compile: (payload: SupabaseInfraProjectsRequest, orgId: OrgId) =>
-		CH.compile(Integrations.supabaseLogsProjectsSummarySQL(), {
-			orgId,
-			startTime: payload.startTime,
-			endTime: payload.endTime,
-		}),
+		CH.compile(Integrations.supabaseLogsProjectsSummarySQL(), windowParams(payload, orgId)),
 })
 
 const supabaseApiTrafficSeries = defineQuery({
@@ -421,15 +365,12 @@ const supabaseLogIssues = defineQuery({
 	cache: 15,
 	compile: (payload: SupabaseLogIssuesRequest, orgId: OrgId) =>
 		payload.projectRef === undefined
-			? CH.compile(Integrations.supabaseLogIssuesSQL({ byProject: false }), {
-					orgId,
-					startTime: payload.startTime,
-					endTime: payload.endTime,
-				})
+			? CH.compile(
+					Integrations.supabaseLogIssuesSQL({ byProject: false }),
+					windowParams(payload, orgId),
+				)
 			: CH.compile(Integrations.supabaseLogIssuesSQL({ byProject: true }), {
-					orgId,
-					startTime: payload.startTime,
-					endTime: payload.endTime,
+					...windowParams(payload, orgId),
 					projectRef: payload.projectRef,
 				}),
 })
@@ -440,11 +381,7 @@ const awsInfraPresence = defineQuery({
 	profile: "discovery",
 	cache: 60,
 	compile: (payload: AwsInfraPresenceRequest, orgId: OrgId) =>
-		CH.compile(Integrations.awsInfraPresenceSQL(), {
-			orgId,
-			startTime: payload.startTime,
-			endTime: payload.endTime,
-		}),
+		CH.compile(Integrations.awsInfraPresenceSQL(), windowParams(payload, orgId)),
 })
 
 const awsInfraMetrics = defineQuery({
@@ -452,11 +389,7 @@ const awsInfraMetrics = defineQuery({
 	profile: "aggregation",
 	cache: 15,
 	compile: (payload: AwsInfraMetricsRequest, orgId: OrgId) =>
-		CH.compile(Integrations.awsInfraMetricsSQL(payload.kind), {
-			orgId,
-			startTime: payload.startTime,
-			endTime: payload.endTime,
-		}),
+		CH.compile(Integrations.awsInfraMetricsSQL(payload.kind), windowParams(payload, orgId)),
 })
 
 const awsInfraSparklines = defineQuery({
@@ -468,9 +401,7 @@ const awsInfraSparklines = defineQuery({
 		const bucketSeconds = Math.max(60, payload.bucketSeconds)
 		const buckets = Integrations.awsInfraBucketCount(payload.startTime, payload.endTime, bucketSeconds)
 		return CH.compile(Integrations.awsInfraSparklinesSQL(payload.kind, buckets), {
-			orgId,
-			startTime: payload.startTime,
-			endTime: payload.endTime,
+			...windowParams(payload, orgId),
 			bucketSeconds,
 		})
 	},
@@ -482,9 +413,7 @@ const awsInfraTimeseries = defineQuery({
 	cache: 15,
 	compile: (payload: AwsInfraTimeseriesRequest, orgId: OrgId) =>
 		CH.compile(Integrations.awsInfraTimeseriesSQL(payload.kind, payload.keys), {
-			orgId,
-			startTime: payload.startTime,
-			endTime: payload.endTime,
+			...windowParams(payload, orgId),
 			bucketSeconds: Math.max(60, payload.bucketSeconds),
 		}),
 })
@@ -495,11 +424,7 @@ const gcpInfraPresence = defineQuery({
 	profile: "discovery",
 	cache: 60,
 	compile: (payload: GcpInfraPresenceRequest, orgId: OrgId) =>
-		CH.compile(Integrations.gcpInfraPresenceSQL(), {
-			orgId,
-			startTime: payload.startTime,
-			endTime: payload.endTime,
-		}),
+		CH.compile(Integrations.gcpInfraPresenceSQL(), windowParams(payload, orgId)),
 })
 
 const gcpInfraMetrics = defineQuery({
@@ -507,11 +432,7 @@ const gcpInfraMetrics = defineQuery({
 	profile: "aggregation",
 	cache: 15,
 	compile: (payload: GcpInfraMetricsRequest, orgId: OrgId) =>
-		CH.compile(Integrations.gcpInfraMetricsSQL(payload.service), {
-			orgId,
-			startTime: payload.startTime,
-			endTime: payload.endTime,
-		}),
+		CH.compile(Integrations.gcpInfraMetricsSQL(payload.service), windowParams(payload, orgId)),
 })
 
 const gcpInfraTimeseries = defineQuery({
@@ -547,11 +468,7 @@ const gcpCloudSqlTopQueries = defineQuery({
 	profile: "aggregation",
 	cache: 15,
 	compile: (payload: GcpCloudSqlInstanceRequest, orgId: OrgId) =>
-		CH.compile(Integrations.gcpCloudSqlTopQueriesSQL(payload.keys), {
-			orgId,
-			startTime: payload.startTime,
-			endTime: payload.endTime,
-		}),
+		CH.compile(Integrations.gcpCloudSqlTopQueriesSQL(payload.keys), windowParams(payload, orgId)),
 })
 
 const gcpCloudSqlDatabases = defineQuery({
@@ -559,11 +476,7 @@ const gcpCloudSqlDatabases = defineQuery({
 	profile: "list",
 	cache: 15,
 	compile: (payload: GcpCloudSqlInstanceRequest, orgId: OrgId) =>
-		CH.compile(Integrations.gcpCloudSqlDatabasesSQL(payload.keys), {
-			orgId,
-			startTime: payload.startTime,
-			endTime: payload.endTime,
-		}),
+		CH.compile(Integrations.gcpCloudSqlDatabasesSQL(payload.keys), windowParams(payload, orgId)),
 })
 
 const gcpCloudSqlStatementSpans = defineQuery({
@@ -578,7 +491,7 @@ const gcpCloudSqlStatementSpans = defineQuery({
 				queryKeys: payload.queryKeys,
 				limit: 5,
 			}),
-			{ orgId, startTime: payload.startTime, endTime: payload.endTime },
+			windowParams(payload, orgId),
 		),
 })
 
@@ -673,18 +586,12 @@ const cloudflareInfraWorkerDetailDurableObjects = defineQuery({
 // whether a database was requested. The branch lives inside `compile` so the id,
 // profile and row schema stay one decision per sub-query rather than two.
 
-const planetscaleStatsParams = (payload: ServicePlanetScaleStatsRequest, orgId: OrgId) => ({
-	orgId,
-	startTime: payload.startTime,
-	endTime: payload.endTime,
-})
-
 const planetscaleServiceGauges = defineQuery({
 	id: "planetscaleServiceGauges",
 	profile: "aggregation",
 	cache: 15,
 	compile: (payload: ServicePlanetScaleStatsRequest, orgId: OrgId) => {
-		const params = planetscaleStatsParams(payload, orgId)
+		const params = windowParams(payload, orgId)
 		return payload.database !== undefined
 			? CH.compile(Integrations.planetscaleBranchGaugesSQL(), { ...params, database: payload.database })
 			: CH.compile(Integrations.planetscaleGaugesSQL(), params)
@@ -696,7 +603,7 @@ const planetscaleServiceConnections = defineQuery({
 	profile: "aggregation",
 	cache: 15,
 	compile: (payload: ServicePlanetScaleStatsRequest, orgId: OrgId) => {
-		const params = planetscaleStatsParams(payload, orgId)
+		const params = windowParams(payload, orgId)
 		return payload.database !== undefined
 			? CH.compile(Integrations.planetscaleBranchConnectionsSQL(), {
 					...params,
@@ -711,7 +618,7 @@ const planetscaleServiceStorage = defineQuery({
 	profile: "aggregation",
 	cache: 15,
 	compile: (payload: ServicePlanetScaleStatsRequest, orgId: OrgId) => {
-		const params = planetscaleStatsParams(payload, orgId)
+		const params = windowParams(payload, orgId)
 		return payload.database !== undefined
 			? CH.compile(
 					Integrations.planetscaleBranchStorageSQL(),
@@ -757,10 +664,8 @@ const hostInfraNetworkTimeseries = defineQuery({
 	profile: "aggregation",
 	cache: 15,
 	compile: (payload: HostInfraTimeseriesRequest, orgId: OrgId) =>
-		CH.compile(CH.hostNetworkTimeseriesQuery({ hostName: payload.hostName }), {
-			orgId,
-			startTime: payload.startTime,
-			endTime: payload.endTime,
+		CH.compile(CH.hostNetworkTimeseriesQuery(payload), {
+			...windowParams(payload, orgId),
 			bucketSeconds: payload.bucketSeconds ?? 60,
 		}),
 })
@@ -772,13 +677,11 @@ const hostInfraGaugeTimeseries = defineQuery({
 	compile: (payload: HostInfraTimeseriesRequest, orgId: OrgId) => {
 		const spec = hostMetricSpec(payload.metric)
 		const params = {
-			orgId,
-			startTime: payload.startTime,
-			endTime: payload.endTime,
+			...windowParams(payload, orgId),
 			bucketSeconds: payload.bucketSeconds ?? 60,
 		}
 		return spec.family === "filesystem"
-			? CH.compile(CH.hostFilesystemTimeseriesQuery({ hostName: payload.hostName }), params)
+			? CH.compile(CH.hostFilesystemTimeseriesQuery(payload), params)
 			: CH.compile(
 					CH.hostGaugeTimeseriesQuery({
 						hostName: payload.hostName,
@@ -810,9 +713,7 @@ const containerInfraSumTimeseries = defineQuery({
 				average: spec.average,
 			}),
 			{
-				orgId,
-				startTime: payload.startTime,
-				endTime: payload.endTime,
+				...windowParams(payload, orgId),
 				bucketSeconds: payload.bucketSeconds ?? 60,
 			},
 		)
@@ -833,9 +734,7 @@ const containerInfraGaugeTimeseries = defineQuery({
 				divideBy: spec.divideBy,
 			}),
 			{
-				orgId,
-				startTime: payload.startTime,
-				endTime: payload.endTime,
+				...windowParams(payload, orgId),
 				bucketSeconds: payload.bucketSeconds ?? 60,
 			},
 		)
@@ -935,14 +834,12 @@ export const Queries = {
 		cache: 15,
 		compile: (payload: GetLogRequest, orgId: OrgId) => {
 			const { startTime, endTime } = partitionWindowAround(payload.timestamp)
-			return CH.compile(
-				CH.getLogByKeyQuery({
-					serviceName: payload.serviceName,
-					traceId: payload.traceId,
-					spanId: payload.spanId,
-				}),
-				{ orgId, startTime, endTime, timestamp: payload.timestamp },
-			)
+			return CH.compile(CH.getLogByKeyQuery(payload), {
+				orgId,
+				startTime,
+				endTime,
+				timestamp: payload.timestamp,
+			})
 		},
 	}),
 
@@ -996,7 +893,7 @@ export const Queries = {
 					serviceName: payload.serviceName,
 					spanName: payload.spanName,
 				}),
-				{ orgId, startTime: payload.startTime, endTime: payload.endTime },
+				windowParams(payload, orgId),
 			),
 	}),
 
@@ -1007,11 +904,7 @@ export const Queries = {
 		cache: (payload: TraceSpanEventsRequest, nowMs: number) =>
 			traceCacheTtlSeconds(payload.endTime, nowMs),
 		compile: (payload: TraceSpanEventsRequest, orgId: OrgId) =>
-			CH.compile(CH.spanEventsByTraceQuery({ traceId: payload.traceId }), {
-				orgId,
-				startTime: payload.startTime,
-				endTime: payload.endTime,
-			}),
+			CH.compile(CH.spanEventsByTraceQuery(payload), windowParams(payload, orgId)),
 	}),
 
 	podInfraTimeseries: defineQuery({
@@ -1026,9 +919,7 @@ export const Queries = {
 					metricName: podMetricSpec(payload.metric).metricName,
 				}),
 				{
-					orgId,
-					startTime: payload.startTime,
-					endTime: payload.endTime,
+					...windowParams(payload, orgId),
 					bucketSeconds: payload.bucketSeconds ?? 60,
 				},
 			),
@@ -1045,9 +936,7 @@ export const Queries = {
 					...nodeMetricSpec(payload.metric),
 				}),
 				{
-					orgId,
-					startTime: payload.startTime,
-					endTime: payload.endTime,
+					...windowParams(payload, orgId),
 					bucketSeconds: payload.bucketSeconds ?? 60,
 				},
 			),
@@ -1067,9 +956,7 @@ export const Queries = {
 					groupByPod: payload.groupByPod,
 				}),
 				{
-					orgId,
-					startTime: payload.startTime,
-					endTime: payload.endTime,
+					...windowParams(payload, orgId),
 					bucketSeconds: payload.bucketSeconds ?? 60,
 				},
 			),
@@ -1081,9 +968,7 @@ export const Queries = {
 		cache: 15,
 		compile: (payload: CloudflareInfraZoneTimeseriesRequest, orgId: OrgId) =>
 			CH.compile(Integrations.cloudflareZoneTimeseriesSQL(toCloudflareFilters(payload)), {
-				orgId,
-				startTime: payload.startTime,
-				endTime: payload.endTime,
+				...windowParams(payload, orgId),
 				bucketSeconds: payload.bucketSeconds,
 			}),
 	}),

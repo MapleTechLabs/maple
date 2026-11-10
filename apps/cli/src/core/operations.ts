@@ -11,7 +11,8 @@
 // renderers never learn which backend answered.
 
 import { Clock, DateTime, Effect, Option, References, Schema, Array as Arr, String as Str } from "effect"
-import { CH, computeBucketSecondsForRange, type TracesMetric } from "@maple/query-engine"
+import { CH, computeBucketSecondsForRange } from "@maple/query-engine"
+import { type TracesMetric } from "@maple/domain/query-engine"
 import { prepareRawSql } from "@maple/query-engine/runtime"
 import {
 	type SqlQueryOptions,

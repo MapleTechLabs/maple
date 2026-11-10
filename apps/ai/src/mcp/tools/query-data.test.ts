@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest"
 import { Schema } from "effect"
-import { QuerySpec } from "@maple/query-engine"
+import { QuerySpec } from "@maple/domain/query-engine"
 import { buildRawSpec, isEmptyResult, type ResolvedQuery } from "./query-data"
 import { pickAttributeScope } from "../lib/attribute-scope"
 
@@ -100,7 +100,12 @@ describe("buildRawSpec", () => {
 			),
 		).toMatchObject({ filters: { spanName: "reset", matchModes: { spanName: "contains" } } })
 		const logs = buildRawSpec(
-			params({ source: "logs", attribute_key: "code.file", attribute_value: "a.ts", environments: ["prod"] }),
+			params({
+				source: "logs",
+				attribute_key: "code.file",
+				attribute_value: "a.ts",
+				environments: ["prod"],
+			}),
 			resolved({ groupBy: "service" }),
 		)
 		expect(logs).toMatchObject({

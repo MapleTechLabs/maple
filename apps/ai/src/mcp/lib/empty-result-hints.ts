@@ -1,7 +1,7 @@
 import { Effect, Schema, Array as Arr } from "effect"
 import { QueryEngineService } from "@maple/backend/services/warehouse/QueryEngineService"
 import { exploreAttributeKeys } from "@maple/query-engine/observability"
-import { QueryEngineExecuteRequest, QuerySpec } from "@maple/query-engine"
+import { QueryEngineExecuteRequest, QuerySpec } from "@maple/domain/query-engine"
 import { queryWarehouse, withTenantExecutor } from "./query-warehouse"
 import { CurrentMcpTenant } from "../tenant"
 import { missingFilterHints, type KnownValues, type RequestedFilters } from "./filter-suggestions"

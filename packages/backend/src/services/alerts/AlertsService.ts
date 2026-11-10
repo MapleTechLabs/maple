@@ -14,7 +14,6 @@ import {
 	alertIntervalsFitting,
 	alertQueryLimits,
 	alertRuleIntervalMinutes,
-	CompiledAlertQueryPlan,
 	nextSlowerAlertInterval,
 	ENGINE_UNGROUPED_GROUP_KEY,
 	formatWarehouseDateTime,
@@ -23,6 +22,7 @@ import {
 	warehouseDateTime64,
 	parseWarehouseDateTime,
 } from "@maple/query-engine"
+import { CompiledAlertQueryPlan } from "@maple/domain/query-engine"
 import {
 	AlertComparator as AlertComparatorSchema,
 	type AlertEvaluationErrorKind,

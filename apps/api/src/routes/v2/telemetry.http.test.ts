@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it } from "@effect/vitest"
 import { OrgId, UserId, WarehouseQueryError } from "@maple/domain/http"
 import { MapleApiV2 } from "@maple/domain/http/v2"
-import { QueryEngineExecuteResponse, type QueryEngineExecuteRequest } from "@maple/query-engine"
+import { QueryEngineExecuteResponse, type QueryEngineExecuteRequest } from "@maple/domain/query-engine"
 import {
 	ConfigProvider,
 	Context,

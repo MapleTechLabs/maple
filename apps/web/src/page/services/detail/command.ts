@@ -25,9 +25,6 @@ import { listMonitors } from "../../kit/uptime/commands"
 import { Message } from "./message"
 
 const Names = Schema.optional(Schema.Array(Schema.String))
-const mutable = <A>(values: ReadonlyArray<A> | undefined): Array<A> | undefined =>
-	values === undefined ? undefined : [...values]
-
 /** Entry and Reload: the clock, so the window resolves (snapped on entry, unsnapped after Reload). */
 export const ResolveClock = Command.define("ResolveServiceDetailClock", {
 	args: { mode: RequestMode },
@@ -88,7 +85,7 @@ export const FetchOverview = Command.define("FetchServiceDetailOverview", {
 	args: { key: Schema.String, input: DetailInput },
 	messages: [Message.CompletedFetchOverview],
 	execute: ({ key, input }) =>
-		getServiceDetailOverview({ data: { ...input, environments: mutable(input.environments) } }).pipe(
+		getServiceDetailOverview({ data: { ...input, environments: input.environments } }).pipe(
 			Effect.map((response) => ({
 				points: response.data,
 				releases: response.releases,
@@ -104,7 +101,7 @@ export const FetchRefinement = Command.define("FetchServiceDetailRefinement", {
 	messages: [Message.CompletedFetchRefinement],
 	execute: ({ key, input }) =>
 		getServiceDetailThroughputRefinement({
-			data: { ...input, environments: mutable(input.environments) },
+			data: { ...input, environments: input.environments },
 		}).pipe(
 			Effect.map((response) => response.data),
 			settleTo((result) => Message.CompletedFetchRefinement({ key, result })),
@@ -245,7 +242,7 @@ export const FetchApiOverview = Command.define("FetchServiceApiOverview", {
 	args: { key: Schema.String, input: ApiOverviewInput },
 	messages: [Message.CompletedFetchApiOverview],
 	execute: ({ key, input }) =>
-		getServiceApiOverview({ data: { ...input, environments: mutable(input.environments) } }).pipe(
+		getServiceApiOverview({ data: { ...input, environments: input.environments } }).pipe(
 			settleTo((result) => Message.CompletedFetchApiOverview({ key, result })),
 		),
 })
@@ -263,7 +260,7 @@ export const FetchEndpointSeries = Command.define("FetchServiceEndpointSeries", 
 	messages: [Message.CompletedFetchEndpointSeries],
 	execute: ({ key, input }) =>
 		getServiceEndpointsTimeseries({
-			data: { ...input, environments: mutable(input.environments), spanNames: [...input.spanNames] },
+			data: { ...input, environments: input.environments, spanNames: [...input.spanNames] },
 		}).pipe(
 			Effect.map((response) => response.buckets),
 			settleTo((result) => Message.CompletedFetchEndpointSeries({ key, result })),
@@ -276,7 +273,7 @@ export const FetchStatusBreakdown = Command.define("FetchServiceEndpointStatusBr
 	messages: [Message.CompletedFetchStatusBreakdown],
 	execute: ({ key, input }) =>
 		getServiceEndpointStatusBreakdown({
-			data: { ...input, environments: mutable(input.environments) },
+			data: { ...input, environments: input.environments },
 		}).pipe(
 			Effect.map((response) => response.rows),
 			settleTo((result) => Message.CompletedFetchStatusBreakdown({ key, result })),

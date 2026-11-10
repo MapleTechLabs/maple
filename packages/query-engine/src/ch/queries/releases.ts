@@ -8,13 +8,7 @@
 import { type DateTime, Schema } from "effect"
 import * as T from "@maple-dev/effect-orm/clickhouse"
 import * as CH from "@maple-dev/effect-orm/expr"
-import {
-	param,
-	from,
-	fromQuery,
-	type CHQuery,
-	type CompiledQueryRowSchema,
-} from "@maple-dev/effect-orm/clickhouse"
+import { param, from, fromQuery, type CHQuery } from "@maple-dev/effect-orm/clickhouse"
 import type { ColumnDefs } from "@maple-dev/effect-orm/clickhouse"
 import * as Datasources from "@maple/domain/tinybird/datasources"
 import { orgIdParam, utcSecondsParam } from "../tables"
@@ -48,20 +42,6 @@ export interface ReleasesListOpts {
 	readonly limit?: number
 }
 
-export interface ReleasesListOutput {
-	readonly serviceName: string
-	readonly environment: string
-	readonly commitSha: string
-	readonly firstSeen: DateTime.Utc
-	readonly spanCount: number
-	readonly errorCount: number
-	readonly p50LatencyMs: number
-	readonly p95LatencyMs: number
-	readonly p99LatencyMs: number
-	readonly apdexSatisfiedCount: number
-	readonly apdexToleratingCount: number
-}
-
 export const releasesListRowSchema = Schema.Struct({
 	serviceName: Schema.String,
 	environment: Schema.String,
@@ -76,7 +56,9 @@ export const releasesListRowSchema = Schema.Struct({
 	p99LatencyMs: CHNumber,
 	apdexSatisfiedCount: CHNumber,
 	apdexToleratingCount: CHNumber,
-}) satisfies CompiledQueryRowSchema<ReleasesListOutput>
+})
+
+export type ReleasesListOutput = typeof releasesListRowSchema.Type
 
 /**
  * One row per (service, environment, commit) in the window, newest first.
@@ -137,19 +119,14 @@ export function releasesListQuery(opts: ReleasesListOpts = {}) {
 /** At most this many (service, environment, commit) rows, busiest first. */
 export const RUNNING_COMMITS_CAP = 200
 
-export interface RunningCommitsOutput {
-	readonly serviceName: string
-	readonly environment: string
-	readonly commitSha: string
-	readonly spanCount: number
-}
-
 export const runningCommitsRowSchema = Schema.Struct({
 	serviceName: Schema.String,
 	environment: Schema.String,
 	commitSha: Schema.String,
 	spanCount: CHNumber,
-}) satisfies CompiledQueryRowSchema<RunningCommitsOutput>
+})
+
+export type RunningCommitsOutput = typeof runningCommitsRowSchema.Type
 
 /** The releases list without its latency and error columns, ordered by traffic. */
 export function runningCommitsQuery() {
@@ -318,14 +295,12 @@ export interface ServiceDeploymentsOpts {
 	readonly perServiceLimit?: number
 }
 
-export interface ServiceDeploymentsOutput extends ReleasesListOutput {
-	readonly lastSeen: DateTime.Utc
-}
-
 export const serviceDeploymentsRowSchema = Schema.Struct({
 	...releasesListRowSchema.fields,
 	lastSeen: DateTimeUtcFromWarehouse,
-}) satisfies CompiledQueryRowSchema<ServiceDeploymentsOutput>
+})
+
+export type ServiceDeploymentsOutput = typeof serviceDeploymentsRowSchema.Type
 
 export const DEPLOYMENTS_PER_SERVICE_CAP = 20
 
