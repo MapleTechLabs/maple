@@ -405,11 +405,9 @@ const make: Effect.Effect<
 			)
 	})
 
-	// Actors
 	const { ensureSystemActor, touchActor } = actorService
 	const rowToActor = actorRowToDocument
 	const { requireIssue, hydrateIssue, recordEvent, applyTransition } = workflow
-	// Events / audit log
 
 	const recordAnomalyLinkEvent: ErrorsServiceApi["recordAnomalyLinkEvent"] = Effect.fn(
 		"ErrorsService.recordAnomalyLinkEvent",
@@ -421,8 +419,6 @@ const make: Effect.Effect<
 		})
 		yield* recordEvent(orgId, issueId, actorId, "anomaly_linked", { payload: { ...payload } })
 	})
-
-	// State transitions
 
 	const transitionIssue: ErrorsServiceApi["transitionIssue"] = Effect.fn("ErrorsService.transitionIssue")(
 		function* (orgId, actorId, issueId, toState, opts) {
@@ -506,8 +502,6 @@ const make: Effect.Effect<
 			return yield* hydrateIssue(orgId, updated)
 		},
 	)
-
-	// Claim / lease
 
 	const leaseConflict = (issueId: ErrorIssueId, row: ErrorIssueRow | null) =>
 		new ErrorIssueLeaseConflictError({
@@ -1009,8 +1003,6 @@ const make: Effect.Effect<
 			{ concurrency: 5 },
 		)
 	})
-
-	// Scheduled tick
 
 	/**
 	 * The four unconditional reads at the head of every per-org tick, in ONE

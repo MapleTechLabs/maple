@@ -463,9 +463,8 @@ const make: Effect.Effect<
 			)
 		}
 
-		// Read back rather than trusting a driver write-result shape (see the
-		// Postgres conventions in CLAUDE.md) — and because on a conflict the insert
-		// wrote nothing and the existing row is what callers need.
+		// Read back rather than trusting a driver write-result shape, and because on
+		// a conflict the insert wrote nothing and the existing row is what callers need.
 		const rows = yield* dbExecute((db) =>
 			db.run(
 				PG.from(ErrorIssuePullRequests)
@@ -530,7 +529,7 @@ const make: Effect.Effect<
 			nowMs,
 		})
 		if (row === null) {
-			// Not an invalid URL — it parsed at `:388`. The insert-and-read-back found
+			// Not an invalid URL: it parsed above. The insert-and-read-back found
 			// no row, which is a persistence anomaly: reporting it as a 400 would tell
 			// the caller their well-formed URL was unrecognizable, and because the
 			// invalid-URL tag is an anticipated error its span exception is suppressed,

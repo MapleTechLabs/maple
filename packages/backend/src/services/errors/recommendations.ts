@@ -163,9 +163,6 @@ export function detectAttributeRecommendations(
 	return out
 }
 
-// Reconcile planning — pure decision logic for persisting recommendations as durable issues.
-// Kept separate from IO so it can be unit-tested without a warehouse or database.
-
 export type RecommendationIssueStatus = "open" | "dismissed" | "applied" | "resolved"
 
 /** Minimal shape `planReconcileIssues` needs from a stored issue row. */

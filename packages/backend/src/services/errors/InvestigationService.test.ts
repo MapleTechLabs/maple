@@ -461,10 +461,9 @@ describe("InvestigationService", () => {
 	)
 
 	/**
-	 * Stub `ChatSession` namespace. The autonomous turn now claims the turn on the ChatSession
-	 * Durable Object in process instead of POSTing back to chat-flue over a service binding, so the
-	 * observable contract is one `beginTurn` call rather than an HTTP request. The real object
-	 * also runs the turn inside itself; nothing here does, which is the point.
+	 * Stub `ChatSession` namespace: a start's observable contract is one `beginTurn` call on the
+	 * investigation's session. The real object also runs the turn inside itself; nothing here does,
+	 * which is the point.
 	 */
 	const chatSessionHarness = (options?: { readonly busy?: boolean }) => {
 		const beginTurns: Array<{ messageId: string; text: string }> = []

@@ -177,7 +177,6 @@ describe("ErrorIssueMergeService", () => {
 				merges.mergeIssues(ORG, actorId, target, [asIssueId(randomUUID())]),
 			)
 			assert.strictEqual(missing._tag, "@maple/http/errors/ErrorIssueNotFoundError")
-			// Nothing moved.
 			assert.lengthOf(yield* aliasesOf(target), 0)
 		}).pipe(Effect.provide(makeLayer())),
 	)

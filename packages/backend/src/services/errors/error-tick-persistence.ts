@@ -93,12 +93,6 @@ export interface PersistErrorTickWindowResult {
 }
 
 /**
- * Carried in the thrown message because the driver and `Database.execute`
- * rewrap the error on its way out of the transaction, leaving the message as
- * the only field that survives intact. `isErrorTickClaimLost` is the only
- * supported way to test for it.
- */
-/**
  * Occurrences a brand-new fingerprint must accumulate before it becomes an
  * Issue once the org's early-promotion budget is spent. Below this it waits in
  * `error_fingerprint_candidates`.
@@ -148,7 +142,6 @@ const BULK_CHUNK_ROWS = 500
 
 const chunks = <A>(items: ReadonlyArray<A>) => Arr.chunksOf(items, BULK_CHUNK_ROWS)
 
-/** Run a row-returning statement once per chunk and concatenate what came back. */
 const inChunks = <A, B, E>(
 	items: ReadonlyArray<A>,
 	run: (chunk: Array<A>) => Effect.Effect<ReadonlyArray<B>, E>,

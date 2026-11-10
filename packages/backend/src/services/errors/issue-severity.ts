@@ -203,7 +203,7 @@ export interface ApplyTriageSeverityInput {
 	readonly orgId: OrgId
 	readonly issueId: ErrorIssueId
 	readonly runId: string
-	/** Durable investigation id; omitted by the short-lived legacy workflow. */
+	/** Recorded on the escalation row when present. */
 	readonly investigationId?: InvestigationId
 	/**
 	 * Undefined when the report carried no assessment. The issue is left at the

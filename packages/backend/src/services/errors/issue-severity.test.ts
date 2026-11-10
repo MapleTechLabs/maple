@@ -208,7 +208,7 @@ describe("applyTriageSeverity", () => {
 	)
 
 	/**
-	 * The partial: a validator that promoted nothing has no cause whose severity it
+	 * The partial: a run that established no cause has nothing whose severity it
 	 * could assess, so the report omits the field. Before it was optional the agent
 	 * had to fabricate a level here, and an inconclusive run could quietly downgrade
 	 * an issue a detector had already ranked.
