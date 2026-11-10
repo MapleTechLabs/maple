@@ -54,7 +54,19 @@ export const openConfigHeaders = <E>(
 ): Effect.Effect<UptimeMonitorConfig, E> => {
 	if (config._tag !== "http") return Effect.succeed(config)
 	if (row.headersCiphertext === null || row.headersIv === null || row.headersTag === null) {
-		return Effect.succeed({ ...config, headers: {} })
+		const unsealed = { ...config, headers: {} }
+		// Nothing writes headers into the config any more, so say so when a row still has them:
+		// they are not sent, and the check would otherwise just start failing.
+		return Rec.isEmptyRecord(config.headers)
+			? Effect.succeed(unsealed)
+			: Effect.logWarning("Uptime monitor has request headers outside the sealed columns").pipe(
+					Effect.annotateLogs({
+						"maple.uptime.monitor_id": row.id,
+						orgId: row.orgId,
+						"maple.uptime.unsealed_header_count": Rec.size(config.headers),
+					}),
+					Effect.as(unsealed),
+				)
 	}
 	return openSecret(
 		keyring,
