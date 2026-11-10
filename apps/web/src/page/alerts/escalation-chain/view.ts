@@ -1,7 +1,8 @@
-import { MAX_ESCALATION_REPEATS, MAX_ESCALATION_WAIT_MINUTES } from "@maple/domain/http"
+import { MAX_ESCALATION_REPEATS, MAX_ESCALATION_STEPS, MAX_ESCALATION_WAIT_MINUTES } from "@maple/domain/http"
 import type { AlertDestinationId } from "@maple/domain/http"
 import type { V2EscalationTarget } from "@maple/domain/http/v2"
 import { pluralize } from "@maple/ui/lib/format"
+import { rowToAlertDestinationDocument } from "@maple/web-data/collections/alerts"
 import { Option, Array as Arr, String as Str } from "effect"
 import { AsyncData, Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
@@ -9,12 +10,9 @@ import { failureMessage } from "@maple/views/data/load-failure"
 import { alert, alertDescription, alertTitle } from "@maple/views/ui/alert"
 import { button, linkButton } from "@maple/views/ui/button"
 import { confirmDialog } from "@maple/views/ui/confirm-dialog"
-import { separator } from "@maple/views/ui/display"
 import { errorState } from "@maple/views/ui/error-state"
-import { resourceNotFound } from "../../kit/resource-not-found"
 import { fieldErrorText, type FieldIds, fieldLabel, input } from "@maple/views/ui/field"
 import { icon } from "@maple/views/ui/icon"
-import { iconButton } from "@maple/views/ui/icon-button"
 import type { FieldState } from "@maple/views/ui/input"
 import * as Menu from "@maple/views/ui/menu"
 import type { MenuEntry } from "@maple/views/ui/menu-view"
@@ -22,17 +20,20 @@ import { panel } from "@maple/views/ui/panel"
 import { personAvatar } from "@maple/views/ui/person-avatar"
 import { rowActionsMenu } from "@maple/views/ui/row-actions-menu"
 import { skeleton } from "@maple/views/ui/skeleton"
-import { hstack, vstack } from "@maple/views/ui/stack"
+import { hstack, hstackClass, vstack } from "@maple/views/ui/stack"
 import { textLink } from "@maple/views/ui/text-link"
 import { textarea } from "@maple/views/ui/textarea"
 import { typography } from "@maple/views/ui/typography"
 import type { PageViewInputs } from "../../contract"
+import { chainConnector } from "../../kit/chain-connector"
 import { dashboardPage } from "../../kit/dashboard-page"
 import { managersOnlyPage } from "../../kit/form-section"
-import { type PickedEntry, pickList } from "../../kit/pick-list"
-import { chainSummary } from "../shared/escalation-chains"
+import { type PickedChip, pickChips } from "../../kit/pick-chips"
+import { resourceNotFound } from "../../kit/resource-not-found"
+import { CHAIN_NOT_FOUND_CODE, chainSummary, routingTabHref } from "../shared/escalation-chains"
 import { ruleHref } from "../shared/links"
 import { memberName, memberOf } from "../shared/org-members"
+import { providerLogo } from "../shared/providers"
 import {
 	canAddStep,
 	descriptionError,
@@ -49,7 +50,7 @@ import {
 } from "./form"
 import { Message } from "./message"
 import { canManage, type Model } from "./model"
-import { backHref, DELETE_DIALOG_ID, menuIdOf } from "./update"
+import { backHref, DELETE_DIALOG_ID, insertButtonId, LEAVE_DIALOG_ID, menuIdOf } from "./update"
 
 // The escalation chain editor: the chain as a column of sentence cards, its name and preview beside it.
 
@@ -77,6 +78,10 @@ const nameOr = <A extends { readonly id: string; readonly name: string }>(
 		() => (rows === null ? fallback : `Unavailable ${Str.toLowerCase(fallback)}`),
 	)
 
+/** A person by id; someone removed from the org reads "Unavailable member", as a deleted destination does. */
+const personName = (model: Model, userId: string): string =>
+	memberName(model.members, userId, "Unavailable member")
+
 /** A field's error once a save was tried, or at once for a number typed out of range. */
 const shown = (model: Model, error: Option.Option<string>, isImmediate = false): Option.Option<string> =>
 	model.isShowingErrors || isImmediate ? error : Option.none()
@@ -99,10 +104,47 @@ const stateOf = (value: string, isInvalid: boolean): FieldState => ({
 	isTouched: false,
 })
 
+/** Nothing can be typed: a save is in flight, or the viewer may only read the chain. */
+const isLocked = (model: Model): boolean => model.isSaving || !canManage(model)
+
 // STEP CARDS
 
-/** A picked target's row: a destination's bell, a member's avatar, a schedule's calendar. */
-const targetEntry = (h: H, model: Model, key: string, target: V2EscalationTarget): PickedEntry<Message> => {
+/** A destination's own mark (Slack, PagerDuty, email); a bell once the destination is gone. */
+const destinationMedia = (h: H, model: Model, id: AlertDestinationId): Html =>
+	Option.match(
+		Option.flatMap(
+			Arr.findFirst(model.destinations ?? [], (row) => row.id === id),
+			rowToAlertDestinationDocument,
+		),
+		{
+			onNone: () => icon(h, "BellIcon", { size: 14, className: "shrink-0 text-muted-foreground" }),
+			onSome: (destination) =>
+				providerLogo(h, {
+					type: destination.type,
+					chatConnector: destination.chatConnector ?? undefined,
+					size: 30,
+					isBare: true,
+					className: hstackClass({ className: "shrink-0" }),
+					isLogoBroken: model.brokenLogos.includes(destination.type),
+					onLogoError: Message.FailedLoadProviderLogo({ type: destination.type }),
+				}),
+		},
+	)
+
+/** Who a schedule pages right now, once the schedules have loaded. */
+const onCallNote = (model: Model, scheduleId: string): string | undefined =>
+	Option.getOrUndefined(
+		Option.map(
+			Arr.findFirst(model.schedules ?? [], (schedule) => schedule.id === scheduleId),
+			(schedule) =>
+				schedule.on_call_now === null
+					? "nobody on call"
+					: `${personName(model, schedule.on_call_now.user_id)} on call`,
+		),
+	)
+
+/** A picked target's chip: a destination's logo, a member's avatar, a schedule's calendar. */
+const targetChip = (h: H, model: Model, key: string, target: V2EscalationTarget): PickedChip<Message> => {
 	const onRemove = Message.ClickedRemoveTarget({ key, target: targetKey(target) })
 	switch (target.type) {
 		case "destination": {
@@ -110,13 +152,13 @@ const targetEntry = (h: H, model: Model, key: string, target: V2EscalationTarget
 			return {
 				key: targetKey(target),
 				label: name,
-				media: icon(h, "BellIcon", { className: "text-muted-foreground" }),
+				media: destinationMedia(h, model, target.destination_id),
 				removeLabel: `Stop notifying ${name}`,
 				onRemove,
 			}
 		}
 		case "user": {
-			const name = memberName(model.members, target.user_id)
+			const name = personName(model, target.user_id)
 			return {
 				key: targetKey(target),
 				label: name,
@@ -127,18 +169,18 @@ const targetEntry = (h: H, model: Model, key: string, target: V2EscalationTarget
 						Option.map(memberOf(model.members, target.user_id), (member) => member.imageUrl),
 					),
 				}),
-				detail: "email and chat DM",
 				removeLabel: `Stop paging ${name}`,
 				onRemove,
 			}
 		}
 		case "schedule": {
 			const name = nameOr(model.schedules, target.schedule_id, "Schedule")
+			const detail = onCallNote(model, target.schedule_id)
 			return {
 				key: targetKey(target),
 				label: name,
-				media: icon(h, "CalendarIcon", { className: "text-muted-foreground" }),
-				detail: "whoever is on call",
+				media: icon(h, "CalendarIcon", { size: 14, className: "shrink-0 text-muted-foreground" }),
+				...(detail === undefined ? undefined : { detail }),
 				removeLabel: `Stop paging ${name}`,
 				onRemove,
 			}
@@ -146,8 +188,26 @@ const targetEntry = (h: H, model: Model, key: string, target: V2EscalationTarget
 	}
 }
 
+/** The picker with nothing to offer: where a destination is made (in its own tab, keeping the draft). */
+const nothingToAdd = (h: H, model: Model): Html =>
+	h.div(
+		[h.Class("px-2 py-1.5")],
+		[
+			typography(h, { size: "xs", tone: "muted", as: "p" }, [
+				(model.destinations ?? []).length === 0
+					? "No destinations yet. "
+					: "Everything is on this step already. ",
+				textLink(h, { href: routingTabHref(), attributes: [h.Target("_blank"), h.Rel("noopener")] }, [
+					"Create a destination",
+				]),
+			]),
+		],
+	)
+
+const loadingEntry = (label: string): MenuEntry => ({ _tag: "Label", label })
+
 /** The target picker: destinations, people and schedules not yet on the step, by kind. */
-const addEntries = (model: Model, step: StepDraft): ReadonlyArray<MenuEntry> => {
+const addEntries = (h: H, model: Model, step: StepDraft): ReadonlyArray<MenuEntry> => {
 	const picked = new Set(Arr.map(step.targets, targetKey))
 	const group = (
 		groupLabel: string,
@@ -164,11 +224,16 @@ const addEntries = (model: Model, step: StepDraft): ReadonlyArray<MenuEntry> => 
 					},
 				]
 	}
-	return [
-		...group(
-			"Destinations",
-			Arr.map(model.destinations ?? [], (row) => ({ value: `destination:${row.id}`, label: row.name })),
-		),
+	const entries: ReadonlyArray<MenuEntry> = [
+		...(model.destinations === null
+			? [loadingEntry("Loading destinations")]
+			: group(
+					"Destinations",
+					Arr.map(model.destinations, (row) => ({
+						value: `destination:${row.id}`,
+						label: row.name,
+					})),
+				)),
 		...group(
 			"People",
 			Arr.map(model.members ?? [], (member) => ({
@@ -176,14 +241,19 @@ const addEntries = (model: Model, step: StepDraft): ReadonlyArray<MenuEntry> => 
 				label: member.name,
 			})),
 		),
-		...group(
-			"Whoever is on call on",
-			Arr.map(model.schedules ?? [], (schedule) => ({
-				value: `schedule:${schedule.id}`,
-				label: schedule.name,
-			})),
-		),
+		...(model.schedules === null
+			? model.isSchedulesFailed
+				? []
+				: [loadingEntry("Loading schedules")]
+			: group(
+					"Whoever is on call on",
+					Arr.map(model.schedules, (schedule) => ({
+						value: `schedule:${schedule.id}`,
+						label: schedule.name,
+					})),
+				)),
 	]
+	return entries.length === 0 ? [{ _tag: "Content", content: nothingToAdd(h, model) }] : entries
 }
 
 const stepActions = (model: Model, index: number): ReadonlyArray<MenuEntry> => {
@@ -216,13 +286,13 @@ const stepActions = (model: Model, index: number): ReadonlyArray<MenuEntry> => {
 	]
 }
 
-/** What the wait after a step is for: the next step, a repeat, or nothing once the chain stops. */
-const waitTail = (model: Model, index: number): string =>
-	index < model.form.steps.length - 1
-		? "for an acknowledgement"
-		: (numberOf(model.form.repeatCount) ?? 0) > 0
-			? "for an acknowledgement, then repeat"
-			: "for an acknowledgement"
+/** What follows a step's wait: the next step, another pass, or nothing once the chain stops. */
+const waitTail = (model: Model, index: number): string => {
+	if (index < model.form.steps.length - 1) return "minutes for an acknowledgement"
+	return (numberOf(model.form.repeatCount) ?? 0) > 0
+		? "minutes for an acknowledgement, then repeat"
+		: "minutes, then stop"
+}
 
 const stepCard = (h: H, model: Model, step: StepDraft, index: number): Html => {
 	const key = step.key
@@ -230,31 +300,39 @@ const stepCard = (h: H, model: Model, step: StepDraft, index: number): Html => {
 	const targetsMenuId = menuIdOf("targets", key)
 	const actionsMenuId = menuIdOf("actions", key)
 	const waitId = `escalation-chain-wait-${key}`
-	const waitState = stateOf(
-		step.waitMinutes,
-		Option.isSome(shown(model, wait, isOutOfRange(step.waitMinutes, wait))),
-	)
-	return panel(h, { padded: "sm", className: "gap-3", attributes: [h.Key(key)] }, [
-		hstack(h, { gap: "2", justify: "between" }, [
-			typography(h, { size: "sm", weight: "medium" }, [index === 0 ? "Notify" : "Then notify"]),
-			rowActionsMenu(h, {
-				slotId: actionsMenuId,
-				model: model.menus[actionsMenuId] ?? Menu.init(actionsMenuId),
-				entries: stepActions(model, index),
-				label: `Actions for step ${index + 1}`,
-				toParentMessage: (message) => Message.GotMenuMessage({ kind: "actions", key, message }),
-			}),
+	const shownWait = shown(model, wait, isOutOfRange(step.waitMinutes, wait))
+	const waitState = stateOf(step.waitMinutes, Option.isSome(shownWait))
+	return panel(h, { padded: "sm", className: "gap-2", attributes: [h.Key(key)] }, [
+		hstack(h, { gap: "2", align: "start" }, [
+			hstack(h, { gap: "1.5", wrap: true, grow: true, shrink: true, className: "min-h-7" }, [
+				typography(h, { size: "sm", weight: "medium", className: "mr-0.5" }, [
+					index === 0 ? "Notify" : "Then notify",
+				]),
+				...pickChips(h, {
+					entries: Arr.map(step.targets, (target) => targetChip(h, model, key, target)),
+					menu: model.menus[targetsMenuId] ?? Menu.init(targetsMenuId),
+					toMenuMessage: (message) => Message.GotMenuMessage({ kind: "targets", key, message }),
+					addEntries: addEntries(h, model, step),
+					addLabel: "Add destination, person or schedule",
+					addAriaLabel: `Add destination, person or schedule to step ${index + 1}`,
+					isDisabled: model.isSaving,
+					isReadOnly: !canManage(model),
+					emptyText: "nobody",
+				}),
+			]),
+			...(canManage(model)
+				? [
+						rowActionsMenu(h, {
+							slotId: actionsMenuId,
+							model: model.menus[actionsMenuId] ?? Menu.init(actionsMenuId),
+							entries: stepActions(model, index),
+							label: `Actions for step ${index + 1}`,
+							toParentMessage: (message) =>
+								Message.GotMenuMessage({ kind: "actions", key, message }),
+						}),
+					]
+				: []),
 		]),
-		pickList(h, {
-			entries: Arr.map(step.targets, (target) => targetEntry(h, model, key, target)),
-			menu: model.menus[targetsMenuId] ?? Menu.init(targetsMenuId),
-			toMenuMessage: (message) => Message.GotMenuMessage({ kind: "targets", key, message }),
-			addEntries: addEntries(model, step),
-			addLabel: "Add destination, person or schedule",
-			isDisabled: model.isSaving,
-			context: `step ${index + 1}`,
-			emptyText: "Pick who this step pages",
-		}),
 		...errorText(h, shown(model, targetsError(step.targets))),
 		hstack(h, { gap: "2", wrap: true }, [
 			fieldLabel(h, { ids: idsOf(waitId), state: waitState, className: "font-normal" }, "then wait"),
@@ -262,7 +340,7 @@ const stepCard = (h: H, model: Model, step: StepDraft, index: number): Html => {
 				ids: idsOf(waitId),
 				state: waitState,
 				className: "w-20",
-				isDisabled: model.isSaving,
+				isDisabled: isLocked(model),
 				attributes: [
 					h.Type("number"),
 					h.Min("1"),
@@ -273,34 +351,37 @@ const stepCard = (h: H, model: Model, step: StepDraft, index: number): Html => {
 					h.OnInput((value) => Message.ChangedWait({ key, value })),
 				],
 			}),
-			typography(h, { size: "sm" }, [`minutes ${waitTail(model, index)}`]),
+			typography(h, { size: "sm" }, [waitTail(model, index)]),
 		]),
-		...errorText(h, shown(model, wait, isOutOfRange(step.waitMinutes, wait))),
+		...errorText(h, shownWait),
 	])
 }
 
-/** The line between two cards, with a "+" that adds a step there. */
-const connector = (h: H, model: Model, index: number): Html =>
-	vstack(h, { align: "center", attributes: [h.Key(`connector-${index}`)] }, [
-		separator(h, "vertical", "h-3"),
-		iconButton(
-			h,
-			{
-				label: index === 0 ? "Add a step at the start" : `Add a step after step ${index}`,
-				variant: "outline",
-				size: "icon-xs",
-				isDisabled: model.isSaving || !canAddStep(model.form),
-				attributes: [h.OnClick(Message.ClickedInsertStep({ index }))],
-			},
-			[icon(h, "PlusIcon", { size: 12 })],
-		),
-		separator(h, "vertical", "h-3"),
-	])
+/** The line between two cards; while a step can be added, an editor gets a + on it that adds one there. */
+const connector = (h: H, model: Model, index: number): Html => {
+	const count = model.form.steps.length
+	return chainConnector(h, {
+		attributes: [h.Key(`connector-${index}`)],
+		insert:
+			canManage(model) && !model.isSaving && canAddStep(model.form)
+				? {
+						id: insertButtonId(index),
+						label:
+							index === 0
+								? "Add a step at the start"
+								: index === count
+									? "Add a step at the end"
+									: `Add a step after step ${index}`,
+						onClick: Message.ClickedInsertStep({ index }),
+					}
+				: null,
+	})
+}
 
 const startCard = (h: H): Html =>
 	panel(h, { padded: "sm", tone: "muted" }, [
 		hstack(h, { gap: "2" }, [
-			icon(h, "BellIcon", { className: "text-muted-foreground" }),
+			icon(h, "BellIcon", { size: 16, className: "shrink-0 text-muted-foreground" }),
 			typography(h, { size: "sm" }, ["When an alert escalates to this chain"]),
 		]),
 	])
@@ -309,35 +390,35 @@ const endCard = (h: H, model: Model): Html => {
 	const repeat = repeatError(model.form.repeatCount)
 	const count = numberOf(model.form.repeatCount) ?? 0
 	const id = "escalation-chain-repeat"
-	const state = stateOf(
-		model.form.repeatCount,
-		Option.isSome(shown(model, repeat, isOutOfRange(model.form.repeatCount, repeat))),
-	)
+	const shownRepeat = shown(model, repeat, isOutOfRange(model.form.repeatCount, repeat))
+	const state = stateOf(model.form.repeatCount, Option.isSome(shownRepeat))
 	return panel(h, { padded: "sm", tone: "muted", className: "gap-2" }, [
-		hstack(h, { gap: "2", wrap: true }, [
-			icon(h, "ArrowPathIcon", { className: "text-muted-foreground" }),
-			fieldLabel(
-				h,
-				{ ids: idsOf(id), state, className: "font-normal" },
-				"If nobody acknowledges, repeat the chain",
-			),
-			input(h, {
-				ids: idsOf(id),
-				state,
-				className: "w-20",
-				isDisabled: model.isSaving,
-				attributes: [
-					h.Type("number"),
-					h.Min("0"),
-					h.Attribute("max", String(MAX_ESCALATION_REPEATS)),
-					h.Attribute("step", "1"),
-					h.Value(model.form.repeatCount),
-					h.OnInput((value) => Message.ChangedRepeatCount({ value })),
-				],
-			}),
-			typography(h, { size: "sm" }, [count === 0 ? "times, then stop" : pluralize(count, "time")]),
+		hstack(h, { gap: "2" }, [
+			icon(h, "ArrowPathIcon", { size: 16, className: "shrink-0 text-muted-foreground" }),
+			hstack(h, { gap: "2", wrap: true, shrink: true }, [
+				fieldLabel(
+					h,
+					{ ids: idsOf(id), state, className: "font-normal" },
+					"If nobody acknowledges, repeat the chain",
+				),
+				input(h, {
+					ids: idsOf(id),
+					state,
+					className: "w-16",
+					isDisabled: isLocked(model),
+					attributes: [
+						h.Type("number"),
+						h.Min("0"),
+						h.Attribute("max", String(MAX_ESCALATION_REPEATS)),
+						h.Attribute("step", "1"),
+						h.Value(model.form.repeatCount),
+						h.OnInput((value) => Message.ChangedRepeatCount({ value })),
+					],
+				}),
+				typography(h, { size: "sm" }, [count === 0 ? "times, then stop" : pluralize(count, "time")]),
+			]),
 		]),
-		...errorText(h, shown(model, repeat, isOutOfRange(model.form.repeatCount, repeat))),
+		...errorText(h, shownRepeat),
 	])
 }
 
@@ -351,6 +432,13 @@ const chainColumn = (h: H, model: Model): Html =>
 		connector(h, model, model.form.steps.length),
 		endCard(h, model),
 		...errorText(h, shown(model, stepsError(model.form.steps))),
+		...(canManage(model) && !canAddStep(model.form)
+			? [
+					typography(h, { size: "xs", tone: "muted", as: "p", className: "mt-2" }, [
+						`A chain has at most ${MAX_ESCALATION_STEPS} steps`,
+					]),
+				]
+			: []),
 	])
 
 // ASIDE
@@ -367,13 +455,60 @@ const preview = (h: H, model: Model): Html => {
 		chain.steps.length === 0
 			? "Pick who the first step pages to see the chain in one line."
 			: chainSummary(chain, destinationName(model), {
-					userName: (id) => memberName(model.members, id),
+					userName: (id) => personName(model, id),
 					scheduleName: (id) =>
 						model.schedules === null ? undefined : nameOr(model.schedules, id, "Schedule"),
 				})
 	return vstack(h, { gap: "1.5" }, [
 		typography(h, { size: "xs", tone: "muted", weight: "medium" }, ["Preview"]),
 		typography(h, { size: "sm", as: "p", className: "break-words" }, [summary]),
+	])
+}
+
+/** Name, notes and the one-line preview. */
+const details = (h: H, model: Model): Html => {
+	const name = shown(model, nameError(model.form.name))
+	const description = shown(model, descriptionError(model.form.description))
+	const nameState = stateOf(model.form.name, Option.isSome(name))
+	const notesIds = idsOf("escalation-chain-description")
+	return panel(h, { padded: "sm", className: "order-first gap-4 lg:order-none" }, [
+		vstack(h, { gap: "1.5" }, [
+			fieldLabel(h, { ids: idsOf("escalation-chain-name"), state: nameState }, "Name"),
+			input(h, {
+				ids: idsOf("escalation-chain-name"),
+				state: nameState,
+				isDisabled: isLocked(model),
+				attributes: [
+					h.Value(model.form.name),
+					h.Placeholder("Checkout on-call"),
+					h.Attribute("autocomplete", "off"),
+					h.OnInput((value) => Message.ChangedName({ value })),
+				],
+			}),
+			...errorText(h, name),
+		]),
+		vstack(h, { gap: "1.5" }, [
+			fieldLabel(
+				h,
+				{ ids: notesIds, state: stateOf(model.form.description, Option.isSome(description)) },
+				"Notes",
+			),
+			textarea(h, {
+				id: notesIds.control,
+				defaultValue: model.form.description,
+				isDisabled: isLocked(model),
+				attributes: [
+					// Uncontrolled: keyed on the chain, so a loaded chain rebuilds it with its text.
+					h.Key(`escalation-chain-description-${model.editingId ?? "new"}`),
+					h.AriaLabelledBy(notesIds.label),
+					h.Placeholder("Optional: who is on this chain and when to change it"),
+					h.Rows(2),
+					h.OnInput((value) => Message.ChangedDescription({ value })),
+				],
+			}),
+			...errorText(h, description),
+		]),
+		preview(h, model),
 	])
 }
 
@@ -405,6 +540,14 @@ const usedBy = (h: H, model: Model): ReadonlyArray<Html> =>
 													typography(h, { size: "sm" }, [
 														textLink(h, { href: ruleHref(rule.id) }, [rule.name]),
 													]),
+													// A paused rule starts no chain until it is resumed.
+													...(rule.enabled
+														? []
+														: [
+																typography(h, { size: "xs", tone: "muted" }, [
+																	" · paused",
+																]),
+															]),
 												],
 											),
 										),
@@ -428,72 +571,35 @@ const usedBy = (h: H, model: Model): ReadonlyArray<Html> =>
 		},
 	})
 
-const aside = (h: H, model: Model): Html => {
-	const name = shown(model, nameError(model.form.name))
-	const description = shown(model, descriptionError(model.form.description))
-	const nameState = stateOf(model.form.name, Option.isSome(name))
-	const notesIds = idsOf("escalation-chain-description")
-	return h.aside(
-		[h.Class("order-first min-w-0 lg:order-none")],
-		[
-			panel(h, { padded: "sm", className: "gap-4 lg:sticky lg:top-4" }, [
-				vstack(h, { gap: "1.5" }, [
-					fieldLabel(h, { ids: idsOf("escalation-chain-name"), state: nameState }, "Name"),
-					input(h, {
-						ids: idsOf("escalation-chain-name"),
-						state: nameState,
-						isDisabled: model.isSaving,
-						attributes: [
-							h.Value(model.form.name),
-							h.Placeholder("Checkout on-call"),
-							h.Attribute("autocomplete", "off"),
-							h.OnInput((value) => Message.ChangedName({ value })),
-						],
-					}),
-					...errorText(h, name),
-				]),
-				vstack(h, { gap: "1.5" }, [
-					fieldLabel(
+/** Under the details: who uses the chain, and its quiet Delete. */
+const meta = (h: H, model: Model): ReadonlyArray<Html> => {
+	const rows = [
+		...usedBy(h, model),
+		...(model.editingId !== null && canManage(model)
+			? [
+					button(
 						h,
-						{ ids: notesIds, state: stateOf(model.form.description, Option.isSome(description)) },
-						"Notes",
+						{
+							variant: "destructive-ghost",
+							size: "sm",
+							className: "-ml-2 self-start",
+							isDisabled: model.isSaving || model.isDeleting,
+							attributes: [h.OnClick(Message.ClickedDelete())],
+						},
+						[icon(h, "TrashIcon"), "Delete chain"],
 					),
-					textarea(h, {
-						id: notesIds.control,
-						defaultValue: model.form.description,
-						isDisabled: model.isSaving,
-						attributes: [
-							// Uncontrolled: keyed on the chain, so a loaded chain rebuilds it with its text.
-							h.Key(`escalation-chain-description-${model.editingId ?? "new"}`),
-							h.AriaLabelledBy(notesIds.label),
-							h.Placeholder("Optional: who is on this chain and when to change it"),
-							h.Rows(3),
-							h.OnInput((value) => Message.ChangedDescription({ value })),
-						],
-					}),
-					...errorText(h, description),
-				]),
-				preview(h, model),
-				...usedBy(h, model),
-				...(model.editingId === null
-					? []
-					: [
-							button(
-								h,
-								{
-									variant: "outline",
-									size: "sm",
-									className: "self-start",
-									isDisabled: model.isSaving || model.isDeleting,
-									attributes: [h.OnClick(Message.ClickedDelete())],
-								},
-								[icon(h, "TrashIcon"), "Delete chain"],
-							),
-						]),
-			]),
-		],
-	)
+				]
+			: []),
+	]
+	return rows.length === 0 ? [] : [vstack(h, { gap: "3", className: "px-1" }, rows)]
 }
+
+// Below `lg` the aside dissolves into the grid: the details lead, the chain follows, then the rest.
+const aside = (h: H, model: Model): Html =>
+	h.aside(
+		[h.Class("contents lg:sticky lg:top-0 lg:block lg:space-y-4")],
+		[details(h, model), ...meta(h, model)],
+	)
 
 /** "Delete {chain}?": lists the rules that start it, which the API makes move off it first. */
 const deleteDialog = (h: H, model: Model): Html => {
@@ -530,7 +636,9 @@ const deleteDialog = (h: H, model: Model): Html => {
 												[],
 												[
 													typography(h, { size: "sm", tone: "muted" }, [
-														`and ${ruleIds.length - names.length} more`,
+														names.length === 0
+															? `${ruleIds.length} ${pluralize(ruleIds.length, "rule")}`
+															: `and ${ruleIds.length - names.length} more`,
 													]),
 												],
 											),
@@ -557,23 +665,42 @@ const deleteDialog = (h: H, model: Model): Html => {
 	})
 }
 
+/** "Unsaved changes": a link, Back or Cancel held while the form has edits. */
+const leaveDialog = (h: H, model: Model): Html =>
+	confirmDialog(h, {
+		slotId: LEAVE_DIALOG_ID,
+		model: model.leaveDialog,
+		toParentMessage: (message) => Message.GotLeaveDialogMessage({ message }),
+		title: "Unsaved changes",
+		description: "This chain has changes you have not saved. Leave without saving them?",
+		cancelLabel: "Stay",
+		confirmLabel: "Discard changes",
+		onConfirm: Message.ClickedDiscard(),
+	})
+
 // PAGE
 
 const actions = (h: H, model: Model): Html =>
-	hstack(h, { gap: "2" }, [
-		linkButton(h, { variant: "outline", href: backHref(model) }, ["Cancel"]),
-		button(
-			h,
-			{
-				isDisabled: !canManage(model),
-				isLoading: model.isSaving,
-				attributes: [h.OnClick(Message.ClickedSave())],
-			},
-			[model.editingId === null ? "Create chain" : "Save chain"],
-		),
-	])
+	canManage(model)
+		? hstack(h, { gap: "2" }, [
+				button(h, { variant: "outline", attributes: [h.OnClick(Message.ClickedCancel())] }, [
+					"Cancel",
+				]),
+				button(h, { isLoading: model.isSaving, attributes: [h.OnClick(Message.ClickedSave())] }, [
+					model.editingId === null ? "Create chain" : "Save chain",
+				]),
+			])
+		: linkButton(h, { variant: "outline", href: backHref() }, ["Back to routing"])
 
-const saveNotice = (h: H, model: Model): ReadonlyArray<Html> => [
+const notices = (h: H, model: Model): ReadonlyArray<Html> => [
+	...(canManage(model)
+		? []
+		: [
+				alert(h, { variant: "info", size: "sm" }, [
+					icon(h, "ShieldIcon"),
+					alertTitle(h, ["Only org admins and engineers can change escalation chains"]),
+				]),
+			]),
 	...(model.saveFailure === null
 		? []
 		: [
@@ -582,7 +709,11 @@ const saveNotice = (h: H, model: Model): ReadonlyArray<Html> => [
 					alertTitle(h, [
 						model.editingId === null ? "Couldn't create chain" : "Couldn't save chain",
 					]),
-					alertDescription(h, [failureMessage(model.saveFailure)]),
+					alertDescription(h, [
+						model.saveFailure.code === CHAIN_NOT_FOUND_CODE
+							? "This chain no longer exists. Someone deleted it while you were editing."
+							: failureMessage(model.saveFailure),
+					]),
 				]),
 			]),
 	...(model.isShowingErrors && formIssues(model.form).length > 0
@@ -594,6 +725,13 @@ const saveNotice = (h: H, model: Model): ReadonlyArray<Html> => [
 		: []),
 ]
 
+const notFound = (h: H): Html =>
+	resourceNotFound(h, {
+		title: "Escalation chain not found",
+		description: "It may have been deleted, or the link is wrong.",
+		back: { href: backHref(), label: "Back to routing" },
+	})
+
 export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, _inputs, h) => {
 	const isEdit = model.editingId !== null
 	const header = {
@@ -601,36 +739,36 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 		description:
 			"Page step by step until someone acknowledges. Acknowledging pauses it, resolving ends it.",
 	}
-	if (model.isSessionLoaded && !canManage(model))
+	const loading = dashboardPage(h, header, [skeleton(h, "h-24 w-full"), skeleton(h, "h-80 w-full")])
+	if (model.isBadId) return dashboardPage(h, header, [notFound(h)])
+	if (!model.isSessionLoaded) return loading
+	// Nothing to read on a new chain: a viewer who cannot create one is told who can.
+	if (!isEdit && !canManage(model))
 		return managersOnlyPage(h, {
 			header,
-			title: "Only org admins and engineers can create or change escalation chains",
-			back: { href: backHref(model), label: "Back to routing" },
+			title: "Only org admins and engineers can create escalation chains",
+			back: { href: backHref(), label: "Back to routing" },
 		})
-	if (model.isBadId)
-		return dashboardPage(h, header, [
-			resourceNotFound(h, {
-				title: "Escalation chain not found",
-				description: "This link does not name an escalation chain.",
-				back: { href: backHref(model), label: "Back to routing" },
-			}),
-		])
 	if (isEdit && AsyncData.isFailure(model.existing.data))
 		return dashboardPage(h, header, [
-			errorState(h, {
-				failure: model.existing.data.error,
-				title: "Couldn't load the chain",
-				onRetry: Message.ClickedRetryExisting(),
-			}),
+			model.existing.data.error.code === CHAIN_NOT_FOUND_CODE
+				? notFound(h)
+				: errorState(h, {
+						failure: model.existing.data.error,
+						title: "Couldn't load the chain",
+						onRetry: Message.ClickedRetryExisting(),
+					}),
 		])
-	if (isEdit && !AsyncData.isSuccess(model.existing.data))
-		return dashboardPage(h, header, [skeleton(h, "h-24 w-full"), skeleton(h, "h-80 w-full")])
+	if (isEdit && Option.isNone(AsyncData.getData(model.existing.data))) return loading
 	return dashboardPage(h, { ...header, actions: actions(h, model) }, [
-		...saveNotice(h, model),
-		h.div(
-			[h.Class("grid gap-6 lg:grid-cols-[minmax(0,1fr)_20rem] lg:items-start")],
-			[chainColumn(h, model), aside(h, model)],
-		),
+		vstack(h, { gap: "4" }, [
+			...notices(h, model),
+			h.div(
+				[h.Class("grid gap-6 lg:grid-cols-[minmax(0,1fr)_20rem] lg:items-start")],
+				[chainColumn(h, model), aside(h, model)],
+			),
+		]),
 		deleteDialog(h, model),
+		leaveDialog(h, model),
 	])
 })

@@ -1,7 +1,7 @@
 import { EscalationChainId } from "@maple/domain/http"
 import { V2EscalationChainCreateParams } from "@maple/domain/http/v2"
 import { Effect, Schema } from "effect"
-import { Command } from "foldkit"
+import { Command, Dom } from "foldkit"
 import { readGrants } from "../../../data/session-tenant"
 import {
 	deleteEscalationChain,
@@ -63,4 +63,12 @@ export const DeleteChain = Command.define("DeleteEscalationChainFromEditor", {
 			Effect.result,
 			Effect.map((result) => Message.CompletedDelete({ result })),
 		),
+})
+
+/** Moves focus after a step edit, to an element by id once it is on the page. */
+export const FocusChainElement = Command.define("FocusEscalationChainElement", {
+	args: { id: Schema.String },
+	messages: [Message.CompletedFocus],
+	execute: ({ id }) =>
+		Dom.focus(`#${CSS.escape(id)}`).pipe(Effect.ignore, Effect.as(Message.CompletedFocus())),
 })

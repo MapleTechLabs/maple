@@ -17,7 +17,7 @@ import {
 	type V2EscalationStep,
 	V2EscalationTarget,
 } from "@maple/domain/http/v2"
-import { Option, Schema, Array as Arr, String as Str } from "effect"
+import { Equal, Option, Schema, Array as Arr, String as Str } from "effect"
 import type { ChainOutline } from "../shared/escalation-chains"
 
 // The escalation chain editor's form: its drafts, the API's limits as field errors, and step edits.
@@ -67,6 +67,16 @@ export const formFromChain = (chain: V2EscalationChain): Form => ({
 	repeatCount: String(chain.repeat_count),
 	nextKey: chain.steps.length,
 })
+
+const contentOf = (form: Form) => ({
+	name: form.name,
+	description: form.description,
+	repeatCount: form.repeatCount,
+	steps: Arr.map(form.steps, (step) => ({ targets: step.targets, waitMinutes: step.waitMinutes })),
+})
+
+/** Two forms describe the same chain: step keys aside, nothing a save sends differs. */
+export const isSameChain = (a: Form, b: Form): boolean => Equal.equals(contentOf(a), contentOf(b))
 
 // VALIDATION: the same limits the API's schemas hold.
 

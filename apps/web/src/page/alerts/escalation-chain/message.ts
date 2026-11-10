@@ -7,7 +7,6 @@ import { LoadFailure } from "@maple/views/data/load-failure"
 import * as Dialog from "@maple/views/ui/dialog"
 import * as Menu from "@maple/views/ui/menu"
 import { OrgMember } from "../shared/org-members"
-import { Direction } from "./form"
 
 const rows = <S extends Schema.Top>(row: S) => ({ orgId: Schema.String, rows: Schema.Array(row) })
 const outcome = <S extends Schema.Top>(success: S) => Schema.Result(success, LoadFailure)
@@ -29,9 +28,6 @@ export const Message = defineMessageUnion({
 	ChangedWait: { key: Schema.String, value: Schema.String },
 	/** The "+" between two cards: a new step at `index`. */
 	ClickedInsertStep: { index: Schema.Number },
-	ClickedRemoveStep: { key: Schema.String },
-	ClickedDuplicateStep: { key: Schema.String },
-	ClickedMoveStep: { key: Schema.String, direction: Direction },
 	/** A step's target picker or its actions menu. */
 	GotMenuMessage: { kind: MenuKind, key: Schema.String, message: Menu.Message },
 	ClickedRemoveTarget: { key: Schema.String, target: Schema.String },
@@ -41,5 +37,10 @@ export const Message = defineMessageUnion({
 	ClickedDelete: {},
 	ClickedConfirmDelete: {},
 	CompletedDelete: { result: outcome(Schema.Void) },
+	ClickedCancel: {},
+	GotLeaveDialogMessage: { message: Dialog.Message },
+	ClickedDiscard: {},
+	FailedLoadProviderLogo: { type: Schema.String },
+	CompletedFocus: {},
 })
 export type Message = typeof Message.Type

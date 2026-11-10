@@ -1,7 +1,7 @@
 import { Option, Array as Arr, Schema } from "effect"
 import { AlertDestinationId, MAX_ESCALATION_STEPS } from "@maple/domain/http"
 import { describe, expect, it } from "vitest"
-import { chainSummary, safeReturnTo } from "../shared/escalation-chains"
+import { chainSummary } from "../shared/escalation-chains"
 import { chainDestinationUuid, chainOf } from "../shared/escalation-test-fixtures"
 import { mixedTargetChain } from "../shared/oncall-test-fixtures"
 import {
@@ -12,6 +12,7 @@ import {
 	formFromChain,
 	formIssues,
 	insertStep,
+	isSameChain,
 	moveStep,
 	payloadOf,
 	previewOf,
@@ -123,11 +124,12 @@ describe("escalation chain form", () => {
 		expect(previewOf(emptyForm).steps).toEqual([])
 	})
 
-	it("follows only an in-app returnTo", () => {
-		expect(safeReturnTo("/alerts/rules/abc")).toEqual(Option.some("/alerts/rules/abc"))
-		expect(safeReturnTo("https://evil.example")).toEqual(Option.none())
-		expect(safeReturnTo("//evil.example")).toEqual(Option.none())
-		expect(safeReturnTo("/\\evil.example")).toEqual(Option.none())
-		expect(safeReturnTo(undefined)).toEqual(Option.none())
+	it("reads an edit that was undone as the chain it started from", () => {
+		const form = loaded()
+		expect(isSameChain(form, form)).toBe(true)
+		expect(isSameChain(removeStep(insertStep(form, 1), "s2"), form)).toBe(true)
+		expect(isSameChain({ ...form, name: "Checkout on-call (EU)" }, form)).toBe(false)
+		expect(isSameChain(moveStep(form, "s1", "up"), form)).toBe(false)
+		expect(isSameChain(addTarget(form, "s0", destination(3)), form)).toBe(false)
 	})
 })

@@ -12,11 +12,10 @@ import {
 	type V2EscalationChainCreateParams,
 } from "@maple/domain/http/v2"
 import { formatAlertTimeNear } from "@maple/web-data/alerts/form-utils"
-import { Array as Arr, Effect, Option, Schema, String as Str } from "effect"
+import { Array as Arr, Effect, Option, Schema } from "effect"
 import { toLoadFailure } from "@maple/views/data/load-failure"
 import { MapleApiV2Client } from "../../../platform/api-clients"
 import { AppRoute, hrefOf } from "../../../route"
-import type { AlertsEscalationChainSearch } from "../../../route/search"
 
 // Escalation chain reads and writes as Effects the pages' Commands wrap, and how a chain and an
 // incident's run read in one line.
@@ -76,20 +75,13 @@ const decodeChainId = Schema.decodeUnknownOption(EscalationChainPublicId)
 /** The `esc_…` id in a URL as the internal id. */
 export const chainIdFromUrl = (raw: string): Option.Option<EscalationChainId> => decodeChainId(raw)
 
-export const chainHref = (
-	id: EscalationChainId,
-	search: typeof AlertsEscalationChainSearch.Type = {},
-): string => hrefOf(AppRoute.AlertsEscalationChain({ chainId: encodeChainId(id), search }))
+export const chainHref = (id: EscalationChainId): string =>
+	hrefOf(AppRoute.AlertsEscalationChain({ chainId: encodeChainId(id), search: {} }))
 
-export const newChainHref = (search: typeof AlertsEscalationChainSearch.Type = {}): string =>
-	hrefOf(AppRoute.AlertsEscalationChainNew({ search }))
+export const newChainHref = (): string => hrefOf(AppRoute.AlertsEscalationChainNew({ search: {} }))
 
-/** A `returnTo` the editor may follow: an in-app path only, never another origin. */
-export const safeReturnTo = (raw: string | undefined): Option.Option<string> =>
-	Option.filter(
-		Option.fromNullishOr(raw),
-		(path) => Str.startsWith("/")(path) && !Str.startsWith("//")(path) && !Str.includes("\\")(path),
-	)
+/** 404 on a read or a write: the chain was deleted elsewhere. */
+export const CHAIN_NOT_FOUND_CODE = "escalation_chain_not_found"
 
 // SUMMARY
 

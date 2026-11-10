@@ -1,8 +1,8 @@
 import * as Policy from "@maple/domain/policy"
 import { OrgId } from "@maple/domain"
-import { EscalationChainId } from "@maple/domain/http"
+import { OnCallScheduleId } from "@maple/domain/http"
 import { EscalationChainPublicId } from "@maple/domain/http/v2"
-import { Effect, Option, Result, Schema, Array as Arr } from "effect"
+import { Effect, Option, Result, Schema, Array as Arr, String as Str } from "effect"
 import { Command, type Update } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { defineMessageUnion } from "foldkit/message"
@@ -13,10 +13,11 @@ import { chainTitle, view as chainView } from "../page/alerts/escalation-chain/v
 import { routingTabHref } from "../page/alerts/shared/escalation-chains"
 import {
 	chainDestinations,
-	chainDestinationUuid,
-	chainUuid,
+	chainOf,
+	chainScheduleUuid,
 	populatedChains,
 } from "../page/alerts/shared/escalation-test-fixtures"
+import { memberId, oncallMembers, populatedSchedules } from "../page/alerts/shared/oncall-test-fixtures"
 import { ORG, ruleId, ruleRow } from "../page/alerts/shared/test-rows"
 import type { PageContext } from "../page/contract"
 import type { Resources } from "../platform/resources"
@@ -24,7 +25,16 @@ import { keepLocal } from "./local-commands"
 
 // `/lab/escalation-editor`: the escalation chain editor page over fixtures. `?state=` picks one.
 
-export const LabState = Schema.Literals(["new", "populated", "inserted", "invalid", "delete"])
+export const LabState = Schema.Literals([
+	"new",
+	"populated",
+	"inserted",
+	"invalid",
+	"delete",
+	"leave",
+	"readonly",
+	"long",
+])
 export type LabState = typeof LabState.Type
 
 export const Flags = Schema.Struct({ state: LabState })
@@ -49,11 +59,57 @@ type PageCommands = ReadonlyArray<Command.Command<ChainMessage.Message, never, R
 const CONTEXT: PageContext = { orgId: Schema.decodeSync(OrgId)(ORG), pinnedNamespace: null, timeZone: "UTC" }
 const RULES = [
 	ruleRow(1, { name: "Checkout error rate" }),
-	ruleRow(2, { name: "Checkout p95 latency" }),
+	ruleRow(2, { name: "Checkout p95 latency", enabled: false }),
 	ruleRow(3, { name: "Payments webhook failures" }),
 ]
-const CHAINS = populatedChains([ruleId(1), ruleId(2), ruleId(3)])
 const M = ChainMessage.Message
+
+/** The fixture destinations with the type their name says, so each draws its own mark. */
+const TYPES: ReadonlyArray<readonly [prefix: string, type: string, chatConnector?: string]> = [
+	["Slack", "chat", "slack"],
+	["PagerDuty", "pagerduty"],
+	["Email", "email"],
+	["Discord", "discord"],
+	["Microsoft Teams", "microsoft-teams"],
+]
+const DESTINATIONS = Arr.map(chainDestinations, (row) =>
+	Option.match(
+		Arr.findFirst(TYPES, ([prefix]) => Str.startsWith(prefix)(row.name)),
+		{
+			onNone: () => row,
+			onSome: ([, type, chatConnector]) => ({
+				...row,
+				type,
+				config_json: {
+					summary: row.name,
+					channelLabel: null,
+					...(chatConnector === undefined ? undefined : { chatConnector }),
+				},
+			}),
+		},
+	),
+)
+
+/** One schedule, under the id the fixture chains page. */
+const SCHEDULES = Arr.map(Arr.take(populatedSchedules(), 1), (schedule) => ({
+	...schedule,
+	id: Schema.decodeSync(OnCallScheduleId)(chainScheduleUuid(1)),
+}))
+
+/** The everyday chain, paging a schedule and a person beside its destinations. */
+const EVERYDAY = chainOf({
+	n: 1,
+	name: "Checkout on-call",
+	description: "Checkout team first, then the platform lead.",
+	steps: [
+		{ destinations: [1], schedules: [1], wait: 10 },
+		{ destinations: [2], wait: 15 },
+		{ destinations: [3], users: [memberId(0)], wait: 30 },
+	],
+	repeat: 2,
+	ruleIds: [ruleId(1), ruleId(2)],
+})
+const LONG = populatedChains([])[2]
 
 const NO_COMMANDS: PageCommands = []
 
@@ -65,46 +121,40 @@ const run = (model: ChainModel.Model, messages: ReadonlyArray<ChainMessage.Messa
 
 const pageFor = (state: LabState) => {
 	const isNew = state === "new" || state === "invalid"
-	const chainId = Schema.encodeSync(EscalationChainPublicId)(
-		Schema.decodeSync(EscalationChainId)(chainUuid(1)),
-	)
+	const chain = state === "long" ? (LONG ?? EVERYDAY) : EVERYDAY
 	const entered = chainInit(
 		isNew
 			? { _tag: "AlertsEscalationChainNew", search: {} }
-			: { _tag: "AlertsEscalationChain", chainId, search: {} },
+			: {
+					_tag: "AlertsEscalationChain",
+					chainId: Schema.encodeSync(EscalationChainPublicId)(chain.id),
+					search: {},
+				},
 		CONTEXT,
 	).model
 	const base = [
-		M.CompletedFetchSession({ orgId: ORG, grants: Policy.grantsOf(["org:engineer"]) }),
-		M.CompletedFetchMembers({ result: Result.succeed([]) }),
-		M.CompletedFetchSchedules({ result: Result.succeed([]) }),
-		M.UpdatedDestinations({ orgId: ORG, rows: chainDestinations }),
+		M.CompletedFetchSession({
+			orgId: ORG,
+			grants: Policy.grantsOf([state === "readonly" ? "org:member" : "org:engineer"]),
+		}),
+		M.CompletedFetchMembers({ result: Result.succeed(oncallMembers) }),
+		M.CompletedFetchSchedules({ result: Result.succeed(SCHEDULES) }),
+		M.UpdatedDestinations({ orgId: ORG, rows: DESTINATIONS }),
 		M.UpdatedRules({ orgId: ORG, rows: RULES }),
 	]
 	const loaded = isNew
 		? []
-		: Arr.map(Arr.take(CHAINS, 1), (chain) =>
-				M.CompletedFetchExisting({ key: entered.existing.key ?? "", result: Result.succeed(chain) }),
-			)
+		: [M.CompletedFetchExisting({ key: entered.existing.key ?? "", result: Result.succeed(chain) })]
 	const extra: ReadonlyArray<ChainMessage.Message> =
 		state === "invalid"
 			? [M.ChangedWait({ key: "s0", value: "2000" }), M.ClickedSave()]
 			: state === "inserted"
-				? [
-						M.ClickedInsertStep({ index: 1 }),
-						M.GotMenuMessage({
-							kind: "targets",
-							key: "s3",
-							message: {
-								_tag: "ClickedItem",
-								index: 0,
-								item: { kind: "Item", value: `destination:${chainDestinationUuid(3)}` },
-							},
-						}),
-					]
+				? [M.ClickedInsertStep({ index: 1 })]
 				: state === "delete"
 					? [M.ClickedDelete()]
-					: []
+					: state === "leave"
+						? [M.ChangedWait({ key: "s0", value: "20" }), M.ClickedCancel()]
+						: []
 	return run(entered, [...base, ...loaded, ...extra])
 }
 
