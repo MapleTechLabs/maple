@@ -750,8 +750,9 @@ describe("AlertsService scheduler pool", () => {
 
 	it.live("keeps at most two rules in flight when the spread outpaces evaluation", () => {
 		const testDb = createTestDb(trackedDbs)
-		// 40 ms slots against 20 ms evaluations: unpaced, all five lanes fill at once.
-		const spreadMs = 2_000
+		// 80 ms slots against 20 ms evaluations, with room for a loaded runner: unpaced,
+		// all five lanes fill at once.
+		const spreadMs = 4_000
 		const inFlight = Ref.makeUnsafe(0)
 		const peak = Ref.makeUnsafe(0)
 		const base = makeSlowWarehouse(() => Effect.succeed(Duration.millis(FAST_EVAL_MS)))

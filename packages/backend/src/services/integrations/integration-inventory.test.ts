@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import type { IntegrationInventory } from "@maple/domain/integration-inventory"
+import { INTEGRATION_PROVIDERS, type IntegrationInventory } from "@maple/domain/integration-inventory"
 import {
 	buildIntegrationInventory,
 	type IntegrationInventoryInputs,
@@ -57,15 +57,7 @@ describe("buildIntegrationInventory", () => {
 	it("lists every provider as available when nothing is connected", () => {
 		const inventory = build({})
 		expect(inventory.integrations).toEqual([])
-		expect(Arr.map(inventory.available, (a) => a.provider)).toEqual([
-			"github",
-			"cloudflare",
-			"railway",
-			"planetscale",
-			"prometheus",
-			"chat",
-			"search_console",
-		])
+		expect(Arr.map(inventory.available, (a) => a.provider)).toEqual([...INTEGRATION_PROVIDERS])
 	})
 
 	it("points a revoked Google grant at Integrations, where the Search Console card lives", () => {
