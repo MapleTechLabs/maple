@@ -14,4 +14,3 @@ export const QueryComparisonSchema = Schema.Struct({
 	mode: Schema.optional(Schema.Literals(QUERY_COMPARISON_MODES)),
 	includePercentChange: Schema.optional(Schema.Boolean),
 })
-export type QueryComparisonPayload = Schema.Schema.Type<typeof QueryComparisonSchema>

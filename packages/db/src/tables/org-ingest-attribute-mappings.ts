@@ -20,4 +20,3 @@ export const OrgIngestAttributeMappings = PG.table("org_ingest_attribute_mapping
 })
 
 export type OrgIngestAttributeMappingRow = PG.SelectRowOf<typeof OrgIngestAttributeMappings>
-export type OrgIngestAttributeMappingInsert = PG.InsertRowOf<typeof OrgIngestAttributeMappings>

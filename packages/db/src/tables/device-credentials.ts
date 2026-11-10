@@ -68,7 +68,6 @@ export const DeviceCredentials = PG.table("device_credentials", {
 })
 
 export type DeviceCredentialRow = PG.SelectRowOf<typeof DeviceCredentials>
-export type DeviceCredentialInsert = PG.InsertRowOf<typeof DeviceCredentials>
 
 /**
  * Single-use values that must not be accepted twice while they are still fresh: DPoP proof
@@ -83,5 +82,3 @@ export const DeviceProofReplays = PG.table("device_proof_replays", {
 	primaryKey: ["key"],
 	indexes: [PG.index("device_proof_replays_expires_idx", ["expiresAt"])],
 })
-
-export type DeviceProofReplayRow = PG.SelectRowOf<typeof DeviceProofReplays>

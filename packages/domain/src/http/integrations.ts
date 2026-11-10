@@ -1520,16 +1520,6 @@ export class AwsIntegrationUnavailableError extends HttpTaggedError<AwsIntegrati
 	},
 ) {}
 
-export type IntegrationHttpError =
-	| IntegrationsForbiddenError
-	| IntegrationsConfigurationError
-	| IntegrationsNotFoundError
-	| IntegrationsNotConnectedError
-	| IntegrationsRevokedError
-	| IntegrationsValidationError
-	| IntegrationsUpstreamError
-	| IntegrationsPersistenceError
-
 /**
  * Dashboard control surface for the Linear, Cloudflare, Railway and GitHub
  * integrations, plus VCS lookups. Internal transport: session-only, absent from

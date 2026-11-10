@@ -20,5 +20,3 @@ export const ServiceMapWorldEntities = PG.table("service_map_world_entities", {
 	primaryKey: ["orgId", "entityId"],
 	tenantColumn: "orgId",
 })
-
-export type ServiceMapWorldEntityRow = PG.SelectRowOf<typeof ServiceMapWorldEntities>

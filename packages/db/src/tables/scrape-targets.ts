@@ -53,7 +53,6 @@ export const ScrapeTargets = PG.table("scrape_targets", {
 })
 
 export type ScrapeTargetRow = PG.SelectRowOf<typeof ScrapeTargets>
-export type ScrapeTargetInsert = PG.InsertRowOf<typeof ScrapeTargets>
 
 /**
  * One row per scheduled scrape attempt, reported by the scraper via
@@ -90,4 +89,3 @@ export const ScrapeTargetChecks = PG.table("scrape_target_checks", {
 })
 
 export type ScrapeTargetCheckRow = PG.SelectRowOf<typeof ScrapeTargetChecks>
-export type ScrapeTargetCheckInsert = PG.InsertRowOf<typeof ScrapeTargetChecks>

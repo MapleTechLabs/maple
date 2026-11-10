@@ -69,4 +69,3 @@ export const MobileDevices = PG.table("mobile_devices", {
 })
 
 export type MobileDeviceRow = PG.SelectRowOf<typeof MobileDevices>
-export type MobileDeviceInsert = PG.InsertRowOf<typeof MobileDevices>

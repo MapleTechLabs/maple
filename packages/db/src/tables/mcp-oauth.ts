@@ -77,6 +77,4 @@ export const McpOAuthRefreshTokens = PG.table("mcp_oauth_refresh_tokens", {
 	tenantColumn: "orgId",
 })
 
-export type McpOAuthClientRow = PG.SelectRowOf<typeof McpOAuthClients>
-export type McpOAuthAuthorizationRow = PG.SelectRowOf<typeof McpOAuthAuthorizations>
 export type McpOAuthRefreshTokenRow = PG.SelectRowOf<typeof McpOAuthRefreshTokens>

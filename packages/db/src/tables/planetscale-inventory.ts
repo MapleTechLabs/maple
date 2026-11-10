@@ -45,9 +45,6 @@ export const PlanetscalePollState = PG.table("planetscale_poll_state", {
 	tenantColumn: "orgId",
 })
 
-export type PlanetScalePollStateRow = PG.SelectRowOf<typeof PlanetscalePollState>
-export type PlanetScalePollStateInsert = PG.InsertRowOf<typeof PlanetscalePollState>
-
 /** One branch of a PlanetScale database, stored inline on the database row. */
 export const PlanetScaleBranchInfo = Schema.Struct({
 	id: Schema.String,
@@ -99,7 +96,6 @@ export const PlanetscaleDatabases = PG.table("planetscale_databases", {
 })
 
 export type PlanetScaleDatabaseRow = PG.SelectRowOf<typeof PlanetscaleDatabases>
-export type PlanetScaleDatabaseInsert = PG.InsertRowOf<typeof PlanetscaleDatabases>
 
 /**
  * The PlanetScale lifecycle timeline: deploy-request state transitions and
@@ -172,7 +168,6 @@ export const PlanetscaleEvents = PG.table("planetscale_events", {
 })
 
 export type PlanetScaleEventRow = PG.SelectRowOf<typeof PlanetscaleEvents>
-export type PlanetScaleEventInsert = PG.InsertRowOf<typeof PlanetscaleEvents>
 
 /**
  * Exactly-once guard for issue mutations driven by an at-least-once queue.
@@ -189,5 +184,3 @@ export const PlanetscaleIssueReceipts = PG.table("planetscale_issue_receipts", {
 	indexes: [PG.index("planetscale_issue_receipts_processed_at_idx", ["processedAt"])],
 	tenantColumn: "orgId",
 })
-
-export type PlanetScaleIssueReceiptRow = PG.SelectRowOf<typeof PlanetscaleIssueReceipts>

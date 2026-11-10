@@ -1437,11 +1437,6 @@ export class AlertIncidentResolvedError extends HttpTaggedError<AlertIncidentRes
 	},
 ) {}
 
-export type AlertNotFoundError =
-	| AlertRuleNotFoundError
-	| AlertDestinationNotFoundError
-	| AlertIncidentNotFoundError
-
 // Alert delivery failures are one class per failure mode, discriminated by
 // `_tag`/`catchTags`, for the same reason the warehouse errors are (see the
 // header comment in `warehouse-errors.ts`): `retryable` is derived from the
@@ -1608,12 +1603,3 @@ export class AlertChecksListResponse extends Schema.Class<AlertChecksListRespons
 		checks: Schema.Array(AlertCheckDocument),
 	},
 ) {}
-
-export const ListRuleChecksQuery = Schema.Struct({
-	groupKey: Schema.optionalKey(Schema.String),
-	since: Schema.optionalKey(IsoDateTimeString),
-	until: Schema.optionalKey(IsoDateTimeString),
-	limit: Schema.optionalKey(
-		Schema.NumberFromString.check(Schema.isInt(), Schema.isBetween({ minimum: 1, maximum: 2000 })),
-	),
-})

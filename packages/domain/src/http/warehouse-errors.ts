@@ -373,7 +373,6 @@ export type WarehouseSettingsRouteError =
 	| ErrorInstance<(typeof warehouseSettingsRouteHttpErrors)[number]>
 	| WarehouseUpstreamError
 export type WarehouseTokenRouteError = ErrorInstance<(typeof warehouseTokenRouteHttpErrors)[number]>
-export type WarehouseRouteError = WarehouseSettingsRouteError | WarehouseTokenRouteError
 
 /** Exact tags derived from the class tuple for tag-based consumers. */
 export const warehouseErrorTags = Arr.map(

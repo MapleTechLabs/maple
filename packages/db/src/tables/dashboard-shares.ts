@@ -107,5 +107,4 @@ export const DashboardShares = PG.table("dashboard_shares", {
 })
 
 export type DashboardShareRow = PG.SelectRowOf<typeof DashboardShares>
-export type DashboardShareInsert = PG.InsertRowOf<typeof DashboardShares>
 export type DashboardShareMode = DashboardShareRow["mode"]

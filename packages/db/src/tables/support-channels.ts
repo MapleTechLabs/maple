@@ -26,4 +26,3 @@ export const OrgSupportChannels = PG.table("org_support_channels", {
 })
 
 export type OrgSupportChannelRow = PG.SelectRowOf<typeof OrgSupportChannels>
-export type OrgSupportChannelInsert = PG.InsertRowOf<typeof OrgSupportChannels>

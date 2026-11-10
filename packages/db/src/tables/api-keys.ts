@@ -35,4 +35,3 @@ export const ApiKeys = PG.table("api_keys", {
 })
 
 export type ApiKeyRow = PG.SelectRowOf<typeof ApiKeys>
-export type ApiKeyInsert = PG.InsertRowOf<typeof ApiKeys>

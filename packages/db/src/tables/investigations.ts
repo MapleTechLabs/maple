@@ -77,4 +77,3 @@ export const Investigations = PG.table("investigations", {
 })
 
 export type InvestigationRow = PG.SelectRowOf<typeof Investigations>
-export type InvestigationInsert = PG.InsertRowOf<typeof Investigations>

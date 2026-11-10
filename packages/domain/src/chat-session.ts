@@ -257,9 +257,6 @@ export type ChatTaskRef = Schema.Schema.Type<typeof ChatTaskRef>
  */
 export const DELEGATION_TOOL_PREFIX = "task_"
 
-/** The tool that delegates to `agent`. */
-export const delegationToolName = (agent: string): string => `${DELEGATION_TOOL_PREFIX}${agent}`
-
 /** The sub-agent a tool name delegates to, or `undefined` for an ordinary tool. */
 export const delegatedAgentOf = (toolName: string): string | undefined =>
 	Str.startsWith(DELEGATION_TOOL_PREFIX)(toolName) && toolName.length > DELEGATION_TOOL_PREFIX.length
@@ -323,7 +320,7 @@ const eventFields = {
 		attempt: Schema.Number,
 		/** Characters of this message's text that never happened; readers truncate by this much. */
 		retractChars: Schema.Number,
-		/** `LlmCallError.reason`, for display and for triage. */
+		/** The model error's reason tag, for display and for triage. */
 		reason: Schema.String,
 		/** Milliseconds until the attempt starts, so a client can show a countdown. */
 		delayMs: Schema.Number,

@@ -27,4 +27,3 @@ export const OrgIngestKeys = PG.table("org_ingest_keys", {
 })
 
 export type OrgIngestKeyRow = PG.SelectRowOf<typeof OrgIngestKeys>
-export type OrgIngestKeyInsert = PG.InsertRowOf<typeof OrgIngestKeys>

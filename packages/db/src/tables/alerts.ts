@@ -470,7 +470,5 @@ export type AlertRuleRow = PG.SelectRowOf<typeof AlertRules>
 export type AlertRuleStateRow = PG.SelectRowOf<typeof AlertRuleStates>
 export type AlertIncidentRow = PG.SelectRowOf<typeof AlertIncidents>
 export type AlertDeliveryEventRow = PG.SelectRowOf<typeof AlertDeliveryEvents>
-export type AlertIncidentEventRow = PG.SelectRowOf<typeof AlertIncidentEvents>
-export type AlertLinearIssueRow = PG.SelectRowOf<typeof AlertLinearIssues>
 export type AlertSilenceRow = PG.SelectRowOf<typeof AlertSilences>
 export type AlertMaintenanceWindowRow = PG.SelectRowOf<typeof AlertMaintenanceWindows>

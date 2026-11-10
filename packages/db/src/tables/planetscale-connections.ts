@@ -59,4 +59,3 @@ export const PlanetscaleConnections = PG.table("planetscale_connections", {
 })
 
 export type PlanetScaleConnectionRow = PG.SelectRowOf<typeof PlanetscaleConnections>
-export type PlanetScaleConnectionInsert = PG.InsertRowOf<typeof PlanetscaleConnections>

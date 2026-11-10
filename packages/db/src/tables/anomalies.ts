@@ -160,6 +160,4 @@ export const AnomalyIncidents = PG.table("anomaly_incidents", {
 
 export type AnomalyDetectorSettingsRow = PG.SelectRowOf<typeof AnomalyDetectorSettings>
 export type AnomalyDetectorStateRow = PG.SelectRowOf<typeof AnomalyDetectorStates>
-export type AnomalyDetectorStateInsert = PG.InsertRowOf<typeof AnomalyDetectorStates>
 export type AnomalyIncidentRow = PG.SelectRowOf<typeof AnomalyIncidents>
-export type AnomalyIncidentInsert = PG.InsertRowOf<typeof AnomalyIncidents>

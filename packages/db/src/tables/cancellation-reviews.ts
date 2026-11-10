@@ -35,5 +35,3 @@ export const CancellationReviews = PG.table("cancellation_reviews", {
 	],
 	tenantColumn: "orgId",
 })
-
-export type CancellationReviewRow = PG.SelectRowOf<typeof CancellationReviews>

@@ -39,5 +39,3 @@ export const GcpResources = PG.table("gcp_resources", {
 	],
 	tenantColumn: "orgId",
 })
-
-export type GcpResourceRow = PG.SelectRowOf<typeof GcpResources>

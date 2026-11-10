@@ -40,4 +40,3 @@ export const LiveActivities = PG.table("live_activities", {
 })
 
 export type LiveActivityRow = PG.SelectRowOf<typeof LiveActivities>
-export type LiveActivityInsert = PG.InsertRowOf<typeof LiveActivities>

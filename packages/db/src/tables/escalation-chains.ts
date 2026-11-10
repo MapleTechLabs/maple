@@ -96,7 +96,6 @@ export const AlertEscalationRuns = PG.table("alert_escalation_runs", {
 })
 
 export type EscalationChainRow = PG.SelectRowOf<typeof EscalationChains>
-export type AlertEscalationRunRow = PG.SelectRowOf<typeof AlertEscalationRuns>
 
 /**
  * Outbox of pages to people: an escalation step that targets a user or an on-call schedule queues

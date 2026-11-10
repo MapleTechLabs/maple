@@ -81,9 +81,6 @@ export const DashboardTemplateCategory = Schema.Literals([
 })
 export type DashboardTemplateCategory = Schema.Schema.Type<typeof DashboardTemplateCategory>
 
-export const IngestKeyId = MapleId("@maple/IngestKeyId", "Ingest Key ID")
-export type IngestKeyId = Schema.Schema.Type<typeof IngestKeyId>
-
 export const ApiKeyId = MapleUuidId("@maple/ApiKeyId", "API Key ID")
 export type ApiKeyId = Schema.Schema.Type<typeof ApiKeyId>
 
@@ -581,15 +578,6 @@ export type SourceResourceAttribute = Schema.Schema.Type<typeof SourceResourceAt
 export const RecommendationIssueId = MapleUuidId("@maple/RecommendationIssueId", "Recommendation Issue ID")
 export type RecommendationIssueId = Schema.Schema.Type<typeof RecommendationIssueId>
 
-export const TinybirdDeploymentId = MapleId("@maple/TinybirdDeploymentId", "Tinybird Deployment ID")
-export type TinybirdDeploymentId = Schema.Schema.Type<typeof TinybirdDeploymentId>
-
-export const TinybirdProjectRevision = MapleId("@maple/TinybirdProjectRevision", "Tinybird Project Revision")
-export type TinybirdProjectRevision = Schema.Schema.Type<typeof TinybirdProjectRevision>
-
-export const TinybirdHost = MapleId("@maple/TinybirdHost", "Tinybird Host")
-export type TinybirdHost = Schema.Schema.Type<typeof TinybirdHost>
-
 // Telemetry dimension primitives
 
 export const ServiceName = MapleTelemetry("@maple/ServiceName", "Service Name")
@@ -649,12 +637,6 @@ export type HttpMethod = Schema.Schema.Type<typeof HttpMethod>
 
 export const ExternalUserId = MapleId("@maple/ExternalUserId", "External User ID")
 export type ExternalUserId = Schema.Schema.Type<typeof ExternalUserId>
-
-export const WidgetId = MapleId("@maple/WidgetId", "Widget ID")
-export type WidgetId = Schema.Schema.Type<typeof WidgetId>
-
-export const ChartId = MapleId("@maple/ChartId", "Chart ID")
-export type ChartId = Schema.Schema.Type<typeof ChartId>
 
 /**
  * Which chat connector a conversation reached Maple through.
