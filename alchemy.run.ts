@@ -36,7 +36,7 @@ import {
 	resolveWorkerName,
 } from "@maple/infra/cloudflare"
 import { DB_ACCESS_ROLES } from "@maple/db/roles"
-import { type MapleProfile, resolveMapleProfile } from "@maple/infra/profile"
+import { deployedDomains, type MapleProfile, resolveMapleProfile } from "@maple/infra/profile"
 import * as Acm from "@maple/infra/acm"
 import { createAwsSecurityBaseline } from "@maple/infra/security-baseline"
 import { optionalPlain, plainWithDefault, requiredPlain } from "@maple/infra/env"
@@ -222,12 +222,11 @@ const MapleStackLive = Layer.effect(
 		const webOnlyPreview =
 			deployment.stage.kind === "pr" &&
 			(yield* optionalPlain("MAPLE_PREVIEW_WEB_ONLY")).MAPLE_PREVIEW_WEB_ONLY === "1"
-		const allDomains = resolveMapleDomains(deployment)
-		// Without ingest and Electric their hostnames would resolve nowhere.
-		const domains = webOnlyPreview
-			? { web: allDomains.web, api: allDomains.api, sync: allDomains.sync, status: allDomains.status }
-			: allDomains
-		const profile = resolveMapleProfile(deployment, { webOnlyPreview })
+		// The `preview:collector` label: one preview tests the collector (scripts/ingest-preview-verify.sh).
+		const forceCollector =
+			(yield* optionalPlain("MAPLE_DEPLOY_AWS_COLLECTOR")).MAPLE_DEPLOY_AWS_COLLECTOR === "1"
+		const profile = resolveMapleProfile(deployment, { webOnlyPreview, forceCollector })
+		const domains = deployedDomains(resolveMapleDomains(deployment), profile)
 		const context: MapleStackContext = {
 			...deployment,
 			domains,

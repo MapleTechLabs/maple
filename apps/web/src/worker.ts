@@ -22,7 +22,7 @@ const encodeJson = Schema.encodeEffect(Schema.fromJsonString(Schema.Unknown))
 
 const props = Effect.gen(function* () {
 	const stack = yield* MapleStack
-	const { stage, region, domains, urls } = stack
+	const { stage, region, domains, urls, profile } = stack
 	const api = yield* ApiWorker
 	return {
 		...mapleSiteProps("web", stack),
@@ -60,7 +60,7 @@ const props = Effect.gen(function* () {
 					: urls.ingest,
 			VITE_ELECTRIC_SYNC_URL: urls.electricSync,
 			// A `preview:web` stage has no Electric, so its shape proxy can only 503 (as electric-sync's env).
-			...(stage.kind === "pr" && domains.electric === undefined
+			...(stage.kind === "pr" && !profile.deploys.electric
 				? { VITE_ELECTRIC_SYNC_DISABLED: "1" }
 				: undefined),
 			// The status Worker's origin for public page links; empty hides them (prd has no domain yet).

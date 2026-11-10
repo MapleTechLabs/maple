@@ -2,6 +2,7 @@ import * as Cloudflare from "@alchemy.run/cloudflare"
 import * as RemovalPolicy from "alchemy/RemovalPolicy"
 import * as Effect from "effect/Effect"
 import { plainFrom, requiredPlain } from "../env.ts"
+import { DEFAULT_MAPLE_REGION } from "../region.ts"
 import { MapleStack } from "./stack.ts"
 import { prdOrigin } from "./stage.ts"
 import { String as Str } from "effect"
@@ -15,8 +16,8 @@ const PRD_TRACES_DESTINATION = "maple-workers-traces"
  * prd; every other stage references the slugs (the deploy token cannot list them to adopt).
  */
 export const WorkersObservabilityDestinations = Effect.gen(function* () {
-	const { stage, profile } = yield* MapleStack
-	if (stage.kind !== "prd" || !profile.deploys.sharedApps) {
+	const { stage, region } = yield* MapleStack
+	if (stage.kind !== "prd" || region !== DEFAULT_MAPLE_REGION) {
 		return { logsDestination: undefined, tracesDestination: undefined }
 	}
 

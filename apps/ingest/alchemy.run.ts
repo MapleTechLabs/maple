@@ -376,11 +376,8 @@ export const createMapleIngest = ({ stage, region, hostname, profile, dbLogin }:
 			: undefined
 
 		// ── OTel collector ──────────────────────────────────────────────────
-		// prd only (`profile.deploys.collector`); MAPLE_DEPLOY_AWS_COLLECTOR=1 forces it
-		// on for one deploy, which is how a preview tests it.
-		const deployCollector =
-			profile.deploys.collector ||
-			(yield* optionalPlain("MAPLE_DEPLOY_AWS_COLLECTOR")).MAPLE_DEPLOY_AWS_COLLECTOR === "1"
+		// prd only, or one preview that forces it (`profile.deploys.collector`).
+		const deployCollector = profile.deploys.collector
 		const collectorEndpoint = deployCollector ? resolveCollectorEndpoint(stage, region) : undefined
 		if (deployCollector) {
 			// Reachable only from the gateway hosts. The tasks carry public IPs, so
