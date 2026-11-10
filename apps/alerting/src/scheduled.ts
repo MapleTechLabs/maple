@@ -27,6 +27,7 @@ import { PrReviewPostMergeService } from "@maple/backend/services/pr-review/PrRe
 import { RailwayMetricsService } from "@maple/backend/services/integrations/RailwayMetricsService"
 import { SearchConsoleImportService } from "@maple/backend/services/integrations/SearchConsoleImportService"
 import { AwsConnectionService } from "@maple/backend/services/integrations/AwsConnectionService"
+import { SecretResealService } from "@maple/backend/services/secrets/SecretResealService"
 import { SupabaseConnectionService } from "@maple/backend/services/integrations/SupabaseConnectionService"
 import { SupabaseInsightsService } from "@maple/backend/services/integrations/SupabaseInsightsService"
 import { SupabaseLogsService } from "@maple/backend/services/integrations/SupabaseLogsService"
@@ -85,6 +86,7 @@ export const layerTick = (
 		VercelIntegrationService.layer,
 		SearchConsoleImportService.layer,
 		AwsConnectionService.layer,
+		SecretResealService.layer,
 		SupabaseConnectionService.layer,
 		SupabaseLogsService.layer,
 		SupabaseInsightsService.layer,
@@ -384,6 +386,17 @@ const awsConnectionsTick = makeTick(
 			: undefined,
 )
 
+const secretResealTick = makeTick(
+	SecretResealService.use((secrets) => secrets.resealDue),
+	"secret_reseal",
+	// Logged every pass, zeros included: a key is only retired once this reports nothing remaining.
+	(result) => ({
+		secretsResealed: result.resealed,
+		secretsResealFailed: result.failed,
+		secretsResealRemaining: result.remaining,
+	}),
+)
+
 const railwayMetricsTick = makeTick(
 	RailwayMetricsService.use((railway) => railway.pollAllOrgs),
 	"railway_metrics",
@@ -541,6 +554,7 @@ export interface ScheduledTickPrograms<R = never> {
 	readonly prReviewPostMerge: Effect.Effect<void, never, R>
 	readonly railwayMetrics: Effect.Effect<void, never, R>
 	readonly searchConsole: Effect.Effect<void, never, R>
+	readonly secretReseal: Effect.Effect<void, never, R>
 	readonly serviceMapRollup: Effect.Effect<void, never, R>
 	readonly statusPages: Effect.Effect<void, never, R>
 	readonly supabaseDiscovery: Effect.Effect<void, never, R>
@@ -572,6 +586,7 @@ const laneProgram = <R>(lane: TickLane, ticks: ScheduledTickPrograms<R>): Effect
 		Match.when("digest", () => ticks.digest),
 		Match.when("service_map_rollup", () => ticks.serviceMapRollup),
 		Match.when("aws_connections", () => ticks.awsConnections),
+		Match.when("secret_reseal", () => ticks.secretReseal),
 		Match.when("supabase_discovery", () => ticks.supabaseDiscovery),
 		Match.when("supabase_logs", () => ticks.supabaseLogs),
 		Match.when("supabase_insights", () => ticks.supabaseInsights),
@@ -630,6 +645,7 @@ type ScheduledServices =
 	| PrReviewPostMergeService
 	| RailwayMetricsService
 	| SearchConsoleImportService
+	| SecretResealService
 	| ServiceMapRollupService
 	| SupabaseConnectionService
 	| SupabaseLogsService
@@ -641,6 +657,7 @@ export const scheduledTicks: ScheduledTickPrograms<ScheduledServices> = {
 	alertLongQuery: alertLongQueryTick,
 	anomaly: anomalyTick,
 	awsConnections: awsConnectionsTick,
+	secretReseal: secretResealTick,
 	cloudflareAnalytics: cloudflareAnalyticsTick,
 	digest: digestTick,
 	error: errorTick,

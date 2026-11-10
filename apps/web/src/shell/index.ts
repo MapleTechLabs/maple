@@ -9,6 +9,10 @@ export { Platform } from "./palette/shortcuts"
 export {
 	favoritesChanges,
 	filterViewportChanges,
+	onCallChanges,
+	onCallReadAt,
+	onCallTimer,
+	onCallWakes,
 	sidebarShortcut,
 	smallViewportChanges,
 	viewportChanges,
