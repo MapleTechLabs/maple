@@ -177,6 +177,7 @@ import { advisoryTargetOf } from "@maple/domain/runtime-advisories"
 import { type RuntimeProduct, runtimeProductOf } from "@maple/domain/runtime-posture"
 import type { ExecutionTenant, WarehouseExecutionError } from "@maple/query-engine/execution"
 import * as Integrations from "@maple/query-engine-integrations"
+import { CLOUDFLARE_BREAKDOWN_OTHER_KEY } from "@maple/domain/cloud-platform"
 import { decodeTraceId, decodeSpanId, decodeServiceName } from "../warehouse-ids"
 import { makeServeRows, serveData } from "./serve-rows"
 
@@ -932,10 +933,10 @@ export const HttpQueryEngineLive = HttpApiBuilder.group(MapleInternalApi, "query
 							{ concurrency: 3 },
 						)
 						const topKeys = Arr.map(
-							Arr.filter(
-								totalRows,
-								(row) => row.key !== Integrations.CLOUDFLARE_BREAKDOWN_OTHER_KEY,
-							).slice(0, Integrations.CLOUDFLARE_BREAKDOWN_SERIES_LIMIT),
+							Arr.filter(totalRows, (row) => row.key !== CLOUDFLARE_BREAKDOWN_OTHER_KEY).slice(
+								0,
+								Integrations.CLOUDFLARE_BREAKDOWN_SERIES_LIMIT,
+							),
 							(row) => row.key,
 						)
 						const bucketRows: ReadonlyArray<Integrations.CloudflareZoneBreakdownTimeseriesOutput> =
