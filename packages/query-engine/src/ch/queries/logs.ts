@@ -24,7 +24,6 @@ import {
 	severitySpellings,
 	soleValue,
 	timeseriesBucket,
-	utcHourFloor,
 	wholeRangeEnd,
 } from "./query-helpers"
 import { Array as Arr, String as Str } from "effect"
@@ -835,12 +834,10 @@ export function logsFacetsQuery(
 	facet?: LogsFacetDimension,
 ): CHUnionQuery<LogsFacetsOutput> {
 	// Facets only filter on dimensions the hourly MV carries (service, severity,
-	// deployment env), so route to `logs_aggregates_hourly` and collapse three
-	// full raw-`logs` scans into three cheap pre-aggregated reads. The lone
-	// exception is the `contains` env match mode, which needs a substring scan on
-	// the raw map column — fall back to raw `logs` there (mirrors the
-	// `canUseLogsAggregatesHourly` guard used by the timeseries query). Attribute
-	// filters read the raw maps the MV does not carry, so they take the raw path too.
+	// deployment env, namespace), so the whole hours of the window come from
+	// `logs_aggregates_hourly` and only the partial hours at its ends scan raw
+	// `logs`. A `contains` match mode needs a substring scan on the raw map column
+	// and attribute filters read maps the MV does not carry: both take the raw path.
 	if (
 		opts.matchModes?.deploymentEnv === "contains" ||
 		opts.matchModes?.serviceNamespace === "contains" ||
@@ -849,75 +846,110 @@ export function logsFacetsQuery(
 	) {
 		return logsFacetsQueryFromRaw(opts, facet)
 	}
-	return logsFacetsQueryFromMv(opts, facet)
+	return logsFacetsQuerySpliced(opts, facet)
 }
 
-function logsFacetsQueryFromMv(
+/**
+ * One dimension's values with exact counts for the window: raw `logs` for the
+ * partial hours at each end, the hourly rollup for the whole hours between.
+ */
+function splicedLogsFacetValues(
+	opts: LogsQueryOpts,
+	rawValue: ($: ColumnAccessor<typeof Logs.columns>) => CH.Expr<string>,
+	mvValue: ($: ColumnAccessor<typeof LogsAggregatesHourly.columns>) => CH.Expr<string>,
+	dropEmpty: boolean,
+) {
+	const rawEdges = from(Logs)
+		.select(($) => ({ value: rawValue($), count: CH.count() }))
+		.where(($) => [
+			$.OrgId.eq(orgIdParam),
+			...rawLogsTimeRange($),
+			rawLogEdgeCondition(),
+			...serviceSeverityConditions($, opts),
+			...rawEnvNamespaceConditions($, opts),
+			dropEmpty ? rawValue($).neq("") : undefined,
+		])
+		.groupBy("value")
+
+	const mvInterior = from(LogsAggregatesHourly)
+		.select(($) => ({ value: mvValue($), count: CH.sum($.Count) }))
+		.where(($) => [
+			$.OrgId.eq(orgIdParam),
+			...utcInteriorConditions($.Hour),
+			...mvFacetConditions($, opts),
+			dropEmpty ? mvValue($).neq("") : undefined,
+		])
+		.groupBy("value")
+
+	return fromUnion(unionAll(rawEdges, mvInterior), "facet")
+}
+
+function logsFacetsQuerySpliced(
 	opts: LogsQueryOpts,
 	facet?: LogsFacetDimension,
 ): CHUnionQuery<LogsFacetsOutput> {
-	const baseWhere = (
-		$: ColumnAccessor<typeof LogsAggregatesHourly.columns>,
-	): Array<CH.Condition | undefined> => [
-		$.OrgId.eq(orgIdParam),
-		// Floored: an unfloored bound skips the bucket the window starts in, so a
-		// window inside one clock hour matched no rows and every facet was empty.
-		$.Hour.gte(utcHourFloor("startTime")),
-		$.Hour.lte(utcSecondsParam("endTime")),
-		CH.when(opts.serviceName, (v: string) => $.ServiceName.eq(v)),
-		CH.when(opts.severity, (v: string) => inclusionCondition($.SeverityText, severitySpellings(v))),
-		opts.environments !== undefined && opts.environments.length > 0
-			? CH.inList($.DeploymentEnv, opts.environments)
-			: undefined,
-		mvNamespaceCondition($, opts),
-	]
-
-	const severityQuery = from(LogsAggregatesHourly)
+	const severityQuery = splicedLogsFacetValues(
+		opts,
+		($) => $.SeverityText,
+		($) => $.SeverityText,
+		false,
+	)
 		.select(($) => ({
-			severityText: $.SeverityText,
+			severityText: $.value,
 			serviceName: CH.lit(""),
 			deploymentEnv: CH.lit(""),
 			namespace: CH.lit(""),
-			count: CH.sum($.Count),
+			count: CH.sum($.count),
 			facetType: CH.lit("severity"),
 		}))
-		.where(baseWhere)
 		.groupBy("severityText")
 
-	const serviceQuery = from(LogsAggregatesHourly)
+	const serviceQuery = splicedLogsFacetValues(
+		opts,
+		($) => $.ServiceName,
+		($) => $.ServiceName,
+		false,
+	)
 		.select(($) => ({
 			severityText: CH.lit(""),
-			serviceName: $.ServiceName,
+			serviceName: $.value,
 			deploymentEnv: CH.lit(""),
 			namespace: CH.lit(""),
-			count: CH.sum($.Count),
+			count: CH.sum($.count),
 			facetType: CH.lit("service"),
 		}))
-		.where(baseWhere)
 		.groupBy("serviceName")
 
-	const envQuery = from(LogsAggregatesHourly)
+	const envQuery = splicedLogsFacetValues(
+		opts,
+		($) => deploymentEnvExpr($.ResourceAttributes),
+		($) => $.DeploymentEnv,
+		true,
+	)
 		.select(($) => ({
 			severityText: CH.lit(""),
 			serviceName: CH.lit(""),
-			deploymentEnv: $.DeploymentEnv,
+			deploymentEnv: $.value,
 			namespace: CH.lit(""),
-			count: CH.sum($.Count),
+			count: CH.sum($.count),
 			facetType: CH.lit("deploymentEnv"),
 		}))
-		.where(($) => [...baseWhere($), $.DeploymentEnv.neq("")])
 		.groupBy("deploymentEnv")
 
-	const namespaceQuery = from(LogsAggregatesHourly)
+	const namespaceQuery = splicedLogsFacetValues(
+		opts,
+		($) => $.ResourceAttributes.get("service.namespace"),
+		($) => $.ServiceNamespace,
+		true,
+	)
 		.select(($) => ({
 			severityText: CH.lit(""),
 			serviceName: CH.lit(""),
 			deploymentEnv: CH.lit(""),
-			namespace: $.ServiceNamespace,
-			count: CH.sum($.Count),
+			namespace: $.value,
+			count: CH.sum($.count),
 			facetType: CH.lit("namespace"),
 		}))
-		.where(($) => [...baseWhere($), $.ServiceNamespace.neq("")])
 		.groupBy("namespace")
 
 	const byFacet = {
