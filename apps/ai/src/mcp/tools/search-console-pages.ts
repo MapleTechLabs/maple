@@ -53,7 +53,6 @@ export function registerSearchConsolePagesTool(server: McpToolRegistrar) {
 			),
 			limit: P.limit({ default: 25, max: MAX_LIMIT, noun: "pages" }),
 		}),
-		output: SearchConsolePagesOutput,
 		hints: { readOnly: true },
 		phrases: ["Reading Search Console pages", "Joining search pages with sessions"],
 		handler: Effect.fn("McpTool.searchConsolePages")(function* (params) {

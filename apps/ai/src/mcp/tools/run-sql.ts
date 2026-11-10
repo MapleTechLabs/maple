@@ -1,6 +1,5 @@
 import { McpInvalidInputError, McpQueryBudgetError, McpQueryError, type McpToolRegistrar } from "./types"
 import { Effect, Schema, Array as Arr, Record as Rec, String as Str } from "effect"
-import { RunSqlOutput } from "@maple/domain/mcp-outputs"
 import { CurrentMcpTenant } from "../tenant"
 import { autoBucketSeconds, runRawSql } from "../lib/run-raw-sql"
 import { truncate } from "../lib/format"
@@ -358,7 +357,6 @@ export function registerRunSqlTool(server: McpToolRegistrar) {
 		title: "Run SQL",
 		description: runSqlDescription,
 		parameters: runSqlSchema,
-		output: RunSqlOutput,
 		hints: { readOnly: true },
 		phrases: ["Running a query", "Running SQL", "Querying the warehouse"],
 		handler: Effect.fn("McpTool.runSql")(function* (params) {

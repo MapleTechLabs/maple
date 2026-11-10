@@ -1,14 +1,8 @@
 import { McpServer } from "effect/ai"
 import { Effect } from "effect"
 
-export const InstructionsResource = McpServer.resource({
-	uri: "maple://instructions",
-	name: "Maple MCP Usage Guide",
-	description: "Cross-cutting rules for using Maple MCP tools effectively",
-	audience: ["assistant"] as ReadonlyArray<"user" | "assistant">,
-	priority: 1,
-	content: Effect.succeed(
-		`# Maple MCP Tool Usage Guide
+/** The usage guide's text: cross-cutting rules every Maple MCP client reads. */
+export const MCP_INSTRUCTIONS = `# Maple MCP Tool Usage Guide
 
 ## Time Format
 - Always use YYYY-MM-DD HH:mm:ss in UTC
@@ -177,6 +171,13 @@ downgrades a verdict on its own.
 Whole-document writes (\`create_dashboard\`/\`update_dashboard\` with \`dashboard_json\`) report the
 same problems as warnings but never block — they are the restore path, and a board that predates
 a rule still has to round-trip.
-`,
-	),
+`
+
+export const InstructionsResource = McpServer.resource({
+	uri: "maple://instructions",
+	name: "Maple MCP Usage Guide",
+	description: "Cross-cutting rules for using Maple MCP tools effectively",
+	audience: ["assistant"] as ReadonlyArray<"user" | "assistant">,
+	priority: 1,
+	content: Effect.succeed(MCP_INSTRUCTIONS),
 })

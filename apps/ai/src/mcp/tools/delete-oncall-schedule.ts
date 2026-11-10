@@ -1,6 +1,5 @@
 import type { McpToolRegistrar } from "./types"
 import { Effect, Schema } from "effect"
-import { DeleteOnCallScheduleOutput } from "@maple/domain/mcp-outputs"
 import { OnCallSchedulesService } from "@maple/backend/services/alerts/OnCallSchedulesService"
 import { CurrentMcpTenant } from "../tenant"
 import { deleteScheduleErrors } from "../lib/oncall-schedules"
@@ -15,7 +14,6 @@ export function registerDeleteOnCallScheduleTool(server: McpToolRegistrar) {
 		parameters: Schema.Struct({
 			schedule_id: P.resourceId("oncallSchedule", "On-call schedule to delete"),
 		}),
-		output: DeleteOnCallScheduleOutput,
 		hints: { readOnly: false, destructive: true, idempotent: false },
 		phrases: ["Deleting an on-call schedule"],
 		handler: Effect.fn("McpTool.deleteOnCallSchedule")(function* (params) {

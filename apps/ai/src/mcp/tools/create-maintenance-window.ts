@@ -1,7 +1,6 @@
 import { McpInvalidInputError, type McpToolRegistrar } from "./types"
 import { Clock, DateTime, Effect, Schema } from "effect"
 import { AlertMaintenanceWindowCreateRequest, MAINTENANCE_WEEKDAYS } from "@maple/domain/http"
-import { MaintenanceWindowMutationOutput } from "@maple/domain/mcp-outputs"
 import { AlertMaintenanceWindowsService } from "@maple/backend/services/alerts/AlertMaintenanceWindowsService"
 import { parseWarehouseDateTime } from "@maple/query-engine"
 import { CurrentMcpTenant } from "../tenant"
@@ -109,7 +108,6 @@ export function registerCreateMaintenanceWindowTool(server: McpToolRegistrar) {
 			),
 		}),
 		aliases: { service_names: "services" },
-		output: MaintenanceWindowMutationOutput,
 		hints: { readOnly: false, destructive: false, idempotent: false },
 		phrases: ["Scheduling a maintenance window", "Creating a maintenance window"],
 		handler: Effect.fn("McpTool.createMaintenanceWindow")(function* (params) {

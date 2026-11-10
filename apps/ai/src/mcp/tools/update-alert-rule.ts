@@ -1,6 +1,5 @@
 import { McpInvalidInputError, type McpToolRegistrar } from "./types"
 import { Array as Arr, Effect, Option, Schema, String as Str } from "effect"
-import { UpdateAlertRuleOutput } from "@maple/domain/mcp-outputs"
 import { toMcpHttpError } from "../lib/map-http-error"
 import { CurrentMcpTenant } from "../tenant"
 import { AlertsService } from "@maple/backend/services/alerts/AlertsService"
@@ -344,7 +343,6 @@ export function registerUpdateAlertRuleTool(server: McpToolRegistrar) {
 			"Ids from list_alert_rules and list_alert_destinations.",
 		parameters: UpdateAlertRuleParameters,
 		aliases: { service_names: "services" },
-		output: UpdateAlertRuleOutput,
 		hints: { readOnly: false, destructive: false, idempotent: true },
 		phrases: ["Updating an alert rule"],
 		handler: Effect.fn("McpTool.updateAlertRule")(function* (params) {

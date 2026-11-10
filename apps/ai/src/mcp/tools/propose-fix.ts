@@ -1,6 +1,5 @@
 import { McpInvalidInputError, type McpToolRegistrar } from "./types"
 import { Effect, Schema, Array as Arr, String as Str } from "effect"
-import { ProposeFixOutput } from "@maple/domain/mcp-outputs"
 import { CurrentMcpTenant } from "../tenant"
 import { resolveActorId } from "../lib/resolve-actor"
 import * as P from "../lib/params"
@@ -43,7 +42,6 @@ export function registerProposeFixTool(server: McpToolRegistrar) {
 				"JSON array of URLs backing the proposal (logs, traces, analysis docs)",
 			),
 		}),
-		output: ProposeFixOutput,
 		hints: { readOnly: false, destructive: false, idempotent: false, openWorld: true },
 		phrases: ["Drafting a fix"],
 		handler: Effect.fn("McpTool.proposeFix")(function* (params) {

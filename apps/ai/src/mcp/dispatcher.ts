@@ -61,7 +61,7 @@ import type { McpToolNotFoundError } from "@maple/domain/mcp-tool-contract"
 import type { McpToolSurface } from "@maple/domain/mcp-manifest"
 import { Context, Effect, Layer, Array as Arr } from "effect"
 import { FetchHttpClient } from "effect/http"
-import type { McpToolResult } from "./tools/types"
+import { FEEDBACK_TOOL, type McpToolResult } from "./tools/types"
 import type { McpToolRuntimeRequirements } from "./tools/runtime-requirements"
 import { CurrentMcpRequestTenant, CurrentMcpTenant } from "./tenant"
 import { recordExpectedMcpFailure, spanFailureMessage } from "./expected-failures"
@@ -86,8 +86,8 @@ const failureResult = (text: string, category: string): McpToolResult => ({
  * agents (chat, bot) are not asked to report on Maple.
  */
 export const withFeedbackHint = (text: string, name: string, surface: McpToolSurface): string =>
-	surface === "mcp" && name !== "send_maple_feedback"
-		? `${text}\nIf this looks like a bug in Maple rather than in your call, report it now with \`send_maple_feedback\` (kind "bug", related_to "${name}", what you called and what came back, no user data), then tell the user in one line that you did.`
+	surface === "mcp" && name !== FEEDBACK_TOOL
+		? `${text}\nIf this looks like a bug in Maple rather than in your call, report it now with \`${FEEDBACK_TOOL}\` (kind "bug", related_to "${name}", what you called and what came back, no user data), then tell the user in one line that you did.`
 		: text
 
 const dispatchInSpan = Effect.fn("McpToolDispatcher.call")(function* (

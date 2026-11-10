@@ -3,14 +3,7 @@
  * hidden burn-rate alert rule. Anyone may read them; writes need `alerts:manage`, like the REST routes.
  */
 import { Effect, Order, Result, Schema, Array as Arr } from "effect"
-import {
-	DeleteSloOutput,
-	InspectSloOutput,
-	ListSlosOutput,
-	SloMutationOutput,
-	type SloConfigRow,
-	type SloListRow,
-} from "@maple/domain/mcp-outputs"
+import { type SloConfigRow, type SloListRow } from "@maple/domain/mcp-outputs"
 import type { AlertDestinationId } from "@maple/domain/primitives"
 import * as Policy from "@maple/domain/policy"
 import { SlosService } from "@maple/backend/services/slos/SlosService"
@@ -159,7 +152,6 @@ export function registerSloTools(server: McpToolRegistrar) {
 			service: P.service("Only SLOs on this service (exact `service.name`)"),
 		}),
 		aliases: P.SERVICE_ALIASES,
-		output: ListSlosOutput,
 		hints: { readOnly: true, destructive: false, idempotent: true },
 		phrases: ["Checking SLOs"],
 		handler: Effect.fn("McpTool.listSlos")(function* (params) {
@@ -280,7 +272,6 @@ export function registerSloTools(server: McpToolRegistrar) {
 		parameters: Schema.Struct({
 			slo: P.text("The SLO's name or id (list_slos lists them)"),
 		}),
-		output: InspectSloOutput,
 		hints: { readOnly: true, destructive: false, idempotent: true },
 		phrases: ["Inspecting an SLO"],
 		handler: Effect.fn("McpTool.inspectSlo")(function* (params) {
@@ -370,7 +361,6 @@ export function registerSloTools(server: McpToolRegistrar) {
 			...sloParameters,
 		}),
 		aliases: P.SERVICE_ALIASES,
-		output: SloMutationOutput,
 		hints: { readOnly: false, destructive: false, idempotent: false },
 		phrases: ["Adding an SLO"],
 		handler: Effect.fn("McpTool.createSlo")(function* (params) {
@@ -415,7 +405,6 @@ export function registerSloTools(server: McpToolRegistrar) {
 			clear_description: P.optionalFlag("Remove the SLO's description"),
 		}),
 		aliases: P.SERVICE_ALIASES,
-		output: SloMutationOutput,
 		hints: { readOnly: false, destructive: false, idempotent: true },
 		phrases: ["Updating an SLO"],
 		handler: Effect.fn("McpTool.updateSlo")(function* (params) {
@@ -462,7 +451,6 @@ export function registerSloTools(server: McpToolRegistrar) {
 			slo: P.text("The SLO's name or id"),
 			confirm: P.flag("Must be true. There is no undo."),
 		}),
-		output: DeleteSloOutput,
 		hints: { readOnly: false, destructive: true, idempotent: false },
 		phrases: ["Deleting an SLO"],
 		handler: Effect.fn("McpTool.deleteSlo")(function* (params) {

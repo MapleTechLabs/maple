@@ -8,6 +8,7 @@ import {
 	type SandboxError,
 } from "@maple/backend/sandbox/contract"
 import {
+	McpToolOutputs,
 	SandboxExecOutput,
 	SandboxGrepOutput,
 	SandboxListFilesOutput,
@@ -64,7 +65,7 @@ registerSandboxTools({
 				Effect.flatMap(spec.handler),
 				Effect.map((output) => ({
 					text: renderToolDoc(spec.render(output)),
-					structured: Schema.encodeUnknownSync(spec.output)(output),
+					structured: Schema.encodeUnknownSync(McpToolOutputs[spec.name])(output),
 				})),
 			)
 		tools.set(spec.name, run as Run)

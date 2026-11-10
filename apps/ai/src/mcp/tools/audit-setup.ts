@@ -348,7 +348,6 @@ export function registerAuditSetupTool(server: McpToolRegistrar) {
 				"Also list passing and skipped checks (default false: findings only)",
 			),
 		}),
-		output: AuditSetupOutput,
 		hints: { readOnly: true },
 		phrases: ["Auditing the setup", "Checking the telemetry setup"],
 		handler: Effect.fn("McpTool.auditSetup")(function* ({ include_passing }) {

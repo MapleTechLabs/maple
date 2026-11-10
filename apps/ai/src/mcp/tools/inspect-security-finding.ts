@@ -56,7 +56,6 @@ export function registerInspectSecurityFindingTool(server: McpToolRegistrar) {
 			),
 			...WINDOW.fields,
 		}),
-		output: InspectSecurityFindingOutput,
 		hints: { readOnly: true },
 		phrases: ["Inspecting a security finding"],
 		handler: Effect.fn("McpTool.inspectSecurityFinding")(function* (params) {

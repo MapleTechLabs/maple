@@ -4,13 +4,7 @@
  * rule rewrites or discards the whole organization's incoming data.
  */
 import { Effect, Schema, Array as Arr, Record as Rec, String as Str } from "effect"
-import {
-	DeleteIngestRuleOutput,
-	IngestRuleMutationOutput,
-	ListIngestRulesOutput,
-	PreviewIngestRuleOutput,
-	type IngestRuleRow,
-} from "@maple/domain/mcp-outputs"
+import { type IngestRuleRow } from "@maple/domain/mcp-outputs"
 import {
 	decodePublicId,
 	encodePublicId,
@@ -307,7 +301,6 @@ export function registerIngestRuleTools(server: McpToolRegistrar) {
 		description:
 			"The organization's ingest rules: what telemetry is dropped or redacted before Maple stores or bills it, in the order they run (drop rules first, then redact rules by position).",
 		parameters: Schema.Struct({}),
-		output: ListIngestRulesOutput,
 		hints: { readOnly: true, destructive: false, idempotent: true },
 		phrases: ["Listing ingest rules"],
 		handler: Effect.fn("McpTool.listIngestRules")(function* () {
@@ -368,7 +361,6 @@ export function registerIngestRuleTools(server: McpToolRegistrar) {
 			limit: P.limit({ default: 200, max: 500, noun: "sample records" }),
 		}),
 		aliases: P.SERVICE_ALIASES,
-		output: PreviewIngestRuleOutput,
 		hints: { readOnly: true, destructive: false, idempotent: true },
 		phrases: ["Previewing an ingest rule"],
 		handler: Effect.fn("McpTool.previewIngestRule")(function* (params) {
@@ -465,7 +457,6 @@ export function registerIngestRuleTools(server: McpToolRegistrar) {
 			enabled: P.optionalFlag("Start disabled with false; default true"),
 			position: P.optionalNumber("Run order among redact rules; default after the last rule"),
 		}),
-		output: IngestRuleMutationOutput,
 		hints: { readOnly: false, destructive: false, idempotent: false },
 		phrases: ["Adding an ingest rule"],
 		handler: Effect.fn("McpTool.createIngestRule")(function* (params) {
@@ -502,7 +493,6 @@ export function registerIngestRuleTools(server: McpToolRegistrar) {
 			conditions: conditionsParam,
 			action: P.optionalJson(V2IngestRuleAction, `Replaces the action: ${actionDescription}`),
 		}),
-		output: IngestRuleMutationOutput,
 		hints: { readOnly: false, destructive: false, idempotent: true },
 		phrases: ["Updating an ingest rule"],
 		handler: Effect.fn("McpTool.updateIngestRule")(function* (params) {
@@ -545,7 +535,6 @@ export function registerIngestRuleTools(server: McpToolRegistrar) {
 			rule: P.text("The rule's name or id (list_ingest_rules lists them)"),
 			confirm: P.flag("Must be true"),
 		}),
-		output: DeleteIngestRuleOutput,
 		hints: { readOnly: false, destructive: true, idempotent: false },
 		phrases: ["Deleting an ingest rule"],
 		handler: Effect.fn("McpTool.deleteIngestRule")(function* (params) {

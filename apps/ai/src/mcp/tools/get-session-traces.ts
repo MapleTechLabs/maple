@@ -1,5 +1,4 @@
 import { DateTime, Effect, Schema, Array as Arr } from "effect"
-import { GetSessionTracesOutput } from "@maple/domain/mcp-outputs"
 import { getSessionTraces } from "@maple/query-engine/observability"
 import { McpInvalidInputError, type McpToolRegistrar } from "./types"
 import { warehouseToMcpHandlers } from "../lib/map-warehouse-error"
@@ -19,7 +18,6 @@ export function registerGetSessionTracesTool(server: McpToolRegistrar) {
 			session_id: P.text("The session id to read (from search_sessions)"),
 			limit: P.limit({ default: 50, max: 100, noun: "traces" }),
 		}),
-		output: GetSessionTracesOutput,
 		hints: { readOnly: true },
 		phrases: ["Loading session traces"],
 		handler: Effect.fn("McpTool.getSessionTraces")(function* ({ session_id, limit }) {

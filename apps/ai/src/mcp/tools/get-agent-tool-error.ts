@@ -9,7 +9,6 @@ import {
 	AiToolErrorDetailRequest,
 	AiToolErrorSamplesRequest,
 } from "@maple/domain/http"
-import { GetAgentToolErrorOutput } from "@maple/domain/mcp-outputs"
 import {
 	AI_TOOL_ERROR_PAYLOAD_MAX,
 	AI_TOOL_ERROR_SESSIONS_LIMIT,
@@ -82,7 +81,6 @@ export function registerGetAgentToolErrorTool(server: McpToolRegistrar) {
 				description: "Characters kept of each argument and result block",
 			}),
 		}),
-		output: GetAgentToolErrorOutput,
 		hints: { readOnly: true },
 		phrases: ["Inspecting an agent tool error"],
 		handler: Effect.fn("McpTool.getAgentToolError")(function* (params) {

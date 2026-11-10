@@ -52,7 +52,6 @@ export function registerCompareOperationsTool(server: McpToolRegistrar) {
 			limit: P.limit({ default: 30, max: 100, noun: "changed operations" }),
 		}),
 		aliases: P.SERVICE_ALIASES,
-		output: CompareOperationsOutput,
 		hints: { readOnly: true },
 		phrases: ["Comparing operations", "Diffing a service's operations across a deploy"],
 		handler: Effect.fn("McpTool.compareOperations")(function* (params) {

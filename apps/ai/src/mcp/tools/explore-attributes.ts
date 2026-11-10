@@ -212,7 +212,6 @@ export function registerExploreAttributesTool(server: McpToolRegistrar) {
 			}),
 		}),
 		aliases: P.SERVICE_ALIASES,
-		output: ExploreAttributesOutput,
 		hints: { readOnly: true },
 		phrases: ["Exploring attributes", "Looking up attribute values"],
 		handler: Effect.fn("McpTool.exploreAttributes")(function* (params) {

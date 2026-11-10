@@ -1,7 +1,7 @@
 /** The GitHub-backed source tools: typed output, and VCS failures mapped to what a model can act on. */
 import { assert, describe, it } from "@effect/vitest"
 import { IntegrationsUpstreamError, OrgId, UserId } from "@maple/domain/http"
-import { ReadSourceFileOutput } from "@maple/domain/mcp-outputs"
+import { McpToolOutputs, ReadSourceFileOutput } from "@maple/domain/mcp-outputs"
 import {
 	VcsSourceRepositoryNotFoundError,
 	VcsSourceService,
@@ -29,7 +29,7 @@ registerSourceCodeTools({
 				Effect.flatMap(spec.handler),
 				Effect.map((output) => ({
 					text: renderToolDoc(spec.render(output)),
-					structured: Schema.encodeUnknownSync(spec.output)(output),
+					structured: Schema.encodeUnknownSync(McpToolOutputs[spec.name])(output),
 				})),
 			)
 		tools.set(spec.name, run as Run)

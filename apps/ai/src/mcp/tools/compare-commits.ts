@@ -57,7 +57,6 @@ export function registerCompareCommitsTool(server: McpToolRegistrar) {
 			limit: P.limit({ default: 30, max: VCS_COMMIT_RANGE_COMMITS_MAX, noun: "commits" }),
 		}),
 		aliases: P.SERVICE_ALIASES,
-		output: CompareCommitsOutput,
 		// An unknown SHA is probed against the connected repositories on GitHub.
 		hints: { readOnly: true, openWorld: true },
 		// Maple's own agents only: the org's commit history is not for third-party MCP clients.

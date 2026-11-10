@@ -1,6 +1,5 @@
 import type { McpToolRegistrar } from "./types"
 import { Array as Arr, Effect, Schema } from "effect"
-import { ListAlertSilencesOutput } from "@maple/domain/mcp-outputs"
 import { AlertSilencesService } from "@maple/backend/services/alerts/AlertSilencesService"
 import { CurrentMcpTenant } from "../tenant"
 import { toMcpHttpError } from "../lib/map-http-error"
@@ -25,7 +24,6 @@ export function registerListAlertSilencesTool(server: McpToolRegistrar) {
 			limit: P.limit({ default: 50, max: MAX_LIMIT, noun: "silences" }),
 			offset: P.offset({ max: 10_000 }),
 		}),
-		output: ListAlertSilencesOutput,
 		hints: { readOnly: true },
 		phrases: ["Listing alert silences", "Checking alert silences"],
 		handler: Effect.fn("McpTool.listAlertSilences")(function* (params) {

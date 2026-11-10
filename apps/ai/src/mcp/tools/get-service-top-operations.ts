@@ -6,7 +6,6 @@ import { toMcpQueryError } from "../lib/map-warehouse-error"
 import * as P from "../lib/params"
 import { doc } from "../lib/tool-doc"
 import { Effect, Schema, Array as Arr, String as Str } from "effect"
-import { GetServiceTopOperationsOutput } from "@maple/domain/mcp-outputs"
 import { topOperations } from "@maple/query-engine/observability"
 import { TracesMetric } from "@maple/query-engine"
 import { provideWarehouseExecutorFromTenant } from "@maple/backend/services/warehouse/WarehouseQueryService"
@@ -51,7 +50,6 @@ export function registerGetServiceTopOperationsTool(server: McpToolRegistrar) {
 			limit: P.limit({ default: 20, max: 500, noun: "operations" }),
 		}),
 		aliases: P.SERVICE_ALIASES,
-		output: GetServiceTopOperationsOutput,
 		hints: { readOnly: true },
 		phrases: ["Finding top operations", "Ranking a service's operations"],
 		handler: Effect.fn("McpTool.getServiceTopOperations")(function* (params) {

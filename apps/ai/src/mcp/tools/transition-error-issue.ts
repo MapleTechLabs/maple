@@ -1,6 +1,5 @@
 import type { McpToolRegistrar } from "./types"
 import { Effect, Schema, Array as Arr } from "effect"
-import { TransitionErrorIssueOutput } from "@maple/domain/mcp-outputs"
 import { CurrentMcpTenant } from "../tenant"
 import { resolveActorId } from "../lib/resolve-actor"
 import * as P from "../lib/params"
@@ -61,7 +60,6 @@ export function registerTransitionErrorIssueTool(server: McpToolRegistrar) {
 				"For a `wontfix` move: time after which new occurrences reopen the issue as `triage`",
 			),
 		}),
-		output: TransitionErrorIssueOutput,
 		hints: { readOnly: false, destructive: false, idempotent: true },
 		phrases: ["Updating an issue's status"],
 		handler: Effect.fn("McpTool.transitionErrorIssue")(function* (params) {

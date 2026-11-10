@@ -1,7 +1,6 @@
 import { DateTime, Effect, Schema } from "effect"
 import { AgentFeedbackImpact, AgentFeedbackKind, OrgId } from "@maple/domain/http"
 import { AgentFeedbackPublicId } from "@maple/domain/http/v2"
-import { ListMapleFeedbackOutput } from "@maple/domain/mcp-outputs"
 import { parseWarehouseDateTime } from "@maple/query-engine"
 import { AgentFeedbackService } from "@maple/backend/services/feedback/AgentFeedbackService"
 import { CurrentAuditActor } from "@maple/backend/services/auth/audit-actor"
@@ -37,7 +36,6 @@ export function registerListMapleFeedbackTool(server: McpToolRegistrar) {
 			org_id: P.optionalText("Only feedback from this organization (`org_…`)"),
 			limit: P.limit({ default: 50, max: 200, noun: "reports" }),
 		}),
-		output: ListMapleFeedbackOutput,
 		aliases: { since: "start_time" },
 		hints: { readOnly: true },
 		phrases: ["Reading agent feedback"],

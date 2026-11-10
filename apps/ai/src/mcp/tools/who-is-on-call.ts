@@ -1,7 +1,6 @@
 import type { McpToolRegistrar } from "./types"
 import { Array as Arr, Clock, Effect, Option, Schema } from "effect"
 import { parseWarehouseDateTime } from "@maple/query-engine"
-import { WhoIsOnCallOutput } from "@maple/domain/mcp-outputs"
 import { OnCallSchedulesService } from "@maple/backend/services/alerts/OnCallSchedulesService"
 import { CurrentMcpTenant } from "../tenant"
 import { toMcpHttpError } from "../lib/map-http-error"
@@ -23,7 +22,6 @@ export function registerWhoIsOnCallTool(server: McpToolRegistrar) {
 			schedule: P.text("On-call schedule: its UUID, its REST id (onc_…) or its name"),
 			at: P.optionalTimestamp("The instant to ask about (default now)"),
 		}),
-		output: WhoIsOnCallOutput,
 		hints: { readOnly: true },
 		phrases: ["Checking who is on call"],
 		handler: Effect.fn("McpTool.whoIsOnCall")(function* (params) {

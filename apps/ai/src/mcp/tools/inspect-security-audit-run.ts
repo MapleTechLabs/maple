@@ -46,7 +46,6 @@ export function registerInspectSecurityAuditRunTool(server: McpToolRegistrar) {
 			run_id: P.optionalText("A run id from list_security_audit_runs"),
 			repository: P.optionalText("Instead of run_id: this repository's (owner/name) latest run"),
 		}),
-		output: InspectSecurityAuditRunOutput,
 		hints: { readOnly: true },
 		phrases: ["Inspecting a security audit run"],
 		handler: Effect.fn("McpTool.inspectSecurityAuditRun")(function* (params) {

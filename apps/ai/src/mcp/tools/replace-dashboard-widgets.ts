@@ -1,7 +1,6 @@
 import { McpInvalidInputError, type McpToolRegistrar } from "./types"
 import { Effect, Schema, Array as Arr, String as Str } from "effect"
 import { DashboardWidgetSchema, WidgetLayoutSchema } from "@maple/domain/http"
-import { ReplaceDashboardWidgetsOutput } from "@maple/domain/mcp-outputs"
 import {
 	defaultSizeForVisualization,
 	findNextWidgetPosition,
@@ -66,7 +65,6 @@ export function registerReplaceDashboardWidgetsTool(server: McpToolRegistrar) {
 				legacyWidgetsHint,
 			),
 		}),
-		output: ReplaceDashboardWidgetsOutput,
 		hints: { readOnly: false, destructive: true, idempotent: false },
 		phrases: ["Replacing widgets"],
 		handler: Effect.fn("McpTool.replaceDashboardWidgets")(function* ({

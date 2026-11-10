@@ -25,7 +25,6 @@ import { envPorts } from "@maple/backend/platform/env-ports"
 import { runtimeTelemetry } from "@maple/infra/worker-telemetry"
 import { Cause, Effect, Layer, ManagedRuntime, Option, Schema, Array as Arr } from "effect"
 import { MCP_ANTICIPATED_ERROR_IDENTIFIERS } from "../mcp/expected-failures"
-import { MUTATING_TOOL_NAMES } from "../mcp/tools/mutating"
 import { linkedUserTenant, toTenantContext, withConnectorActor } from "./turn-actor"
 
 /** Disposing the proposal's runtime or flushing its spans rejected; both are best effort. */
@@ -122,6 +121,8 @@ export const applyChatProposal = async (input: ApplyChatProposalInput): Promise<
 	// an entry in a session's own log and an org-admin execution — which is why it answers here,
 	// ahead of a runtime whose layers can die on a misconfigured environment, rather than from
 	// inside one.
+	// Loaded here, not with this module: the set is derived from the tool registry.
+	const { MUTATING_TOOL_NAMES } = await import("./permissions")
 	if (!MUTATING_TOOL_NAMES.has(input.tool)) {
 		return failure(`"${input.tool}" is not a change Maple applies from an approval.`)
 	}

@@ -1,6 +1,5 @@
 import { McpInvalidInputError, type McpToolRegistrar } from "./types"
 import { Effect, Schema, Array as Arr, String as Str } from "effect"
-import { ListErrorIncidentsOutput } from "@maple/domain/mcp-outputs"
 import { CurrentMcpTenant } from "../tenant"
 import * as P from "../lib/params"
 import { doc } from "../lib/tool-doc"
@@ -32,7 +31,6 @@ export function registerListErrorIncidentsTool(server: McpToolRegistrar) {
 			),
 			limit: P.limit({ default: 100, max: MAX_LIMIT, noun: "incidents" }),
 		}),
-		output: ListErrorIncidentsOutput,
 		hints: { readOnly: true },
 		phrases: ["Listing error incidents"],
 		handler: Effect.fn("McpTool.listErrorIncidents")(function* (params) {

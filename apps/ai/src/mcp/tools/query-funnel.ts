@@ -7,7 +7,6 @@ import {
 	funnelStepLabel,
 	type FunnelKeyBy as FunnelKeyByType,
 } from "@maple/query-model"
-import { QueryFunnelOutput } from "@maple/domain/mcp-outputs"
 import { productEventsFunnel, productEventsFunnelBreakdown } from "@maple/query-engine/observability"
 import { McpInvalidInputError, type McpToolRegistrar } from "./types"
 import { warehouseToMcpHandlers } from "../lib/map-warehouse-error"
@@ -78,7 +77,6 @@ export function registerQueryFunnelTool(server: McpToolRegistrar) {
 			),
 			browser: P.optionalText("Only persons with a session in this browser (e.g. Chrome)."),
 		}),
-		output: QueryFunnelOutput,
 		hints: { readOnly: true },
 		phrases: ["Computing a funnel", "Querying a funnel"],
 		handler: Effect.fn("McpTool.queryFunnel")(function* (params) {

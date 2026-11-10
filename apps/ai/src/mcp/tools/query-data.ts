@@ -461,7 +461,6 @@ export function registerQueryDataTool(server: McpToolRegistrar) {
 		description: queryDataDescription,
 		parameters: queryDataSchema,
 		aliases: P.SERVICE_ALIASES,
-		output: QueryDataOutput,
 		hints: { readOnly: true },
 		phrases: ["Querying telemetry", "Running a query", "Pulling the numbers"],
 		handler: Effect.fn("McpTool.queryData")(function* (input) {

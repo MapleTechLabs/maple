@@ -1,6 +1,5 @@
 import { McpInvalidInputError, type McpToolRegistrar } from "./types"
 import { Effect, Schema, Array as Arr } from "effect"
-import { LinkPullRequestOutput } from "@maple/domain/mcp-outputs"
 import { CurrentMcpTenant } from "../tenant"
 import { resolveActorId } from "../lib/resolve-actor"
 import * as P from "../lib/params"
@@ -27,7 +26,6 @@ export function registerLinkPullRequestTool(server: McpToolRegistrar) {
 				"Full GitHub pull request URL, e.g. https://github.com/owner/repo/pull/123",
 			),
 		}),
-		output: LinkPullRequestOutput,
 		// Linking the same PR again updates the one link; it reads the PR's state from GitHub.
 		hints: { readOnly: false, destructive: false, idempotent: true, openWorld: true },
 		phrases: ["Linking a pull request"],

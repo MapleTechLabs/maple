@@ -1,6 +1,5 @@
 import type { McpToolRegistrar } from "./types"
 import { Effect, Schema, Array as Arr, String as Str } from "effect"
-import { DescribeDashboardSchemaOutput } from "@maple/domain/mcp-outputs"
 import {
 	DASHBOARD_SCHEMA_SECTIONS,
 	renderDashboardSchemaIndex,
@@ -58,7 +57,6 @@ export function registerDescribeDashboardSchemaTool(server: McpToolRegistrar) {
 		parameters: Schema.Struct({
 			section: P.optionalOneOf(SECTIONS, "Omit for the index plus the panel-type table."),
 		}),
-		output: DescribeDashboardSchemaOutput,
 		hints: { readOnly: true },
 		phrases: ["Reading the dashboard schema"],
 		handler: Effect.fn("McpTool.describeDashboardSchema")(function* ({ section }) {

@@ -92,7 +92,6 @@ export function registerGetSessionTranscriptTool(server: McpToolRegistrar) {
 			offset: P.offset({ max: 10_000 }),
 			limit: P.limit({ default: 100, max: 250, noun: "events" }),
 		}),
-		output: GetSessionTranscriptOutput,
 		hints: { readOnly: true },
 		phrases: ["Reading a session transcript"],
 		handler: Effect.fn("McpTool.getSessionTranscript")(function* (params) {

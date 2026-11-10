@@ -1,5 +1,5 @@
 import { Effect, Schema, Array as Arr, String as Str } from "effect"
-import { ListProductEventsOutput, ProductEventKind } from "@maple/domain/mcp-outputs"
+import { ProductEventKind } from "@maple/domain/mcp-outputs"
 import { productEventNames } from "@maple/query-engine/observability"
 import type { McpToolRegistrar } from "./types"
 import { warehouseToMcpHandlers } from "../lib/map-warehouse-error"
@@ -42,7 +42,6 @@ export function registerListProductEventsTool(server: McpToolRegistrar) {
 			utm_campaign: P.optionalText("Only events from sessions carrying this utm_campaign."),
 			limit: P.limit({ default: 50, max: QUERY_MAX, noun: "event names" }),
 		}),
-		output: ListProductEventsOutput,
 		hints: { readOnly: true },
 		phrases: ["Listing product events"],
 		handler: Effect.fn("McpTool.listProductEvents")(function* (params) {

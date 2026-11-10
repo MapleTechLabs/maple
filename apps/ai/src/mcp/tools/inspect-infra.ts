@@ -1,5 +1,5 @@
 import { Effect, Schema, Array as Arr, Record as Rec } from "effect"
-import { InspectInfraOutput, type InfraSeriesStats } from "@maple/domain/mcp-outputs"
+import { type InfraSeriesStats } from "@maple/domain/mcp-outputs"
 import type { McpToolRegistrar } from "./types"
 import { warehouseToMcpHandlers } from "../lib/map-warehouse-error"
 import { withTenantExecutor } from "../lib/query-warehouse"
@@ -145,7 +145,6 @@ export function registerInspectInfraTool(server: McpToolRegistrar) {
 			),
 			...WINDOW.fields,
 		}),
-		output: InspectInfraOutput,
 		hints: { readOnly: true },
 		phrases: ["Inspecting infrastructure", "Checking resource usage"],
 		handler: Effect.fn("McpTool.inspectInfra")(function* (params) {

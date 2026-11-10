@@ -1,6 +1,5 @@
 import type { McpToolRegistrar } from "./types"
 import { Effect, Schema } from "effect"
-import { DeleteOnCallOverrideOutput } from "@maple/domain/mcp-outputs"
 import { OnCallSchedulesService } from "@maple/backend/services/alerts/OnCallSchedulesService"
 import { CurrentMcpTenant } from "../tenant"
 import { deleteOverrideErrors } from "../lib/oncall-schedules"
@@ -17,7 +16,6 @@ export function registerDeleteOnCallOverrideTool(server: McpToolRegistrar) {
 			schedule_id: P.resourceId("oncallSchedule", "On-call schedule the override is on"),
 			override_id: P.resourceId("oncallOverride", "Override to delete"),
 		}),
-		output: DeleteOnCallOverrideOutput,
 		hints: { readOnly: false, destructive: true, idempotent: false },
 		phrases: ["Deleting an on-call override"],
 		handler: Effect.fn("McpTool.deleteOnCallOverride")(function* (params) {

@@ -185,7 +185,6 @@ export function registerGetInvestigationTool(server: McpToolRegistrar) {
 			),
 		}),
 		aliases: { id: "investigation_id" },
-		output: GetInvestigationOutput,
 		hints: { readOnly: true },
 		// The same gate as `GET /v2/investigations/:id`: a scoped key needs `investigations:read`.
 		scopeFamily: "investigations",

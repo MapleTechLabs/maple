@@ -94,7 +94,6 @@ export function registerListIntegrationsTool(server: McpToolRegistrar) {
 				"Only this provider, with all of its resources. Omit for every provider with its worst resources",
 			),
 		}),
-		output: ListIntegrationsOutput,
 		hints: { readOnly: true },
 		phrases: ["Checking integrations", "Listing connected integrations"],
 		handler: Effect.fn("McpTool.listIntegrations")(function* ({ provider }) {

@@ -106,7 +106,6 @@ export function registerListSecurityFindingsTool(server: McpToolRegistrar) {
 			offset: P.offset({ max: 2000 }),
 			...WINDOW.fields,
 		}),
-		output: ListSecurityFindingsOutput,
 		hints: { readOnly: true },
 		phrases: ["Checking security findings", "Reading the Security Center"],
 		handler: Effect.fn("McpTool.listSecurityFindings")(function* (params) {

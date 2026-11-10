@@ -33,7 +33,6 @@ export function registerListSecurityAuditRunsTool(server: McpToolRegistrar) {
 			status: P.optionalOneOf(RUN_STATUSES, "Only runs in this state"),
 			limit: P.limit({ default: 20, max: 100, noun: "runs" }),
 		}),
-		output: ListSecurityAuditRunsOutput,
 		hints: { readOnly: true },
 		phrases: ["Reading security audit runs"],
 		handler: Effect.fn("McpTool.listSecurityAuditRuns")(function* (params) {

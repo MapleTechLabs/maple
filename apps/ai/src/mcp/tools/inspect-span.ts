@@ -177,7 +177,6 @@ export function registerInspectSpanTool(server: McpToolRegistrar) {
 				description: "Max characters per captured message or payload (AI spans only)",
 			}),
 		}),
-		output: InspectSpanOutput,
 		hints: { readOnly: true },
 		phrases: ["Inspecting a span", "Reading span details"],
 		handler: Effect.fn("McpTool.inspectSpan")(function* ({

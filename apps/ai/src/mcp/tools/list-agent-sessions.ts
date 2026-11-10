@@ -69,7 +69,6 @@ export function registerListAgentSessionsTool(server: McpToolRegistrar) {
 			offset: P.offset({ max: 10_000 }),
 		}),
 		aliases: { service: "services" },
-		output: ListAgentSessionsOutput,
 		hints: { readOnly: true },
 		phrases: ["Listing agent sessions"],
 		handler: Effect.fn("McpTool.listAgentSessions")(function* (params) {

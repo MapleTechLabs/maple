@@ -426,7 +426,6 @@ export function registerGetAgentSessionTranscriptTool(server: McpToolRegistrar) 
 			limit: P.limit({ default: 120, max: 500, noun: "steps" }),
 			offset: P.offset({ max: 50_000 }),
 		}),
-		output: GetAgentSessionTranscriptOutput,
 		hints: { readOnly: true },
 		phrases: ["Reading an agent session"],
 		handler: Effect.fn("McpTool.getAgentSessionTranscript")(

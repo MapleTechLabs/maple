@@ -217,7 +217,6 @@ export function registerListErrorIssuesTool(server: McpToolRegistrar) {
 			include_archived: P.optionalFlag("Also return archived issues"),
 		}),
 		aliases: P.SERVICE_ALIASES,
-		output: ListErrorIssuesOutput,
 		hints: { readOnly: true },
 		phrases: ["Listing error issues", "Checking open issues"],
 		handler: Effect.fn("McpTool.listErrorIssues")(function* (params) {

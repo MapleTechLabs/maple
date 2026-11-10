@@ -5,8 +5,6 @@
  */
 import { Clock, Effect, Schema, Array as Arr, String as Str } from "effect"
 import {
-	ApplyStatusPageConfigOutput,
-	GetStatusPageOutput,
 	StatusPageIncidentMutationOutput,
 	type StatusPageDetail,
 	type StatusPageIncidentRow,
@@ -479,7 +477,6 @@ export function registerStatusPageTools(server: McpToolRegistrar) {
 				"true adds the editable config document (needs `page`). Same document as GET /v2/status_pages/{id}/config",
 			),
 		}),
-		output: GetStatusPageOutput,
 		hints: { readOnly: true, destructive: false, idempotent: true },
 		phrases: ["Reading status pages"],
 		handler: Effect.fn("McpTool.getStatusPage")(function* (params) {
@@ -540,7 +537,6 @@ export function registerStatusPageTools(server: McpToolRegistrar) {
 			),
 			publish: publishParameter,
 		}),
-		output: StatusPageIncidentMutationOutput,
 		hints: MUTATION_HINTS,
 		phrases: ["Posting a status page update"],
 		handler: Effect.fn("McpTool.postStatusPageUpdate")(function* (params) {
@@ -678,7 +674,6 @@ export function registerStatusPageTools(server: McpToolRegistrar) {
 			),
 		}),
 		rejectUnknownKeys: true,
-		output: ApplyStatusPageConfigOutput,
 		hints: { readOnly: false, destructive: true, idempotent: false, openWorld: true },
 		phrases: ["Applying a status page config"],
 		handler: Effect.fn("McpTool.applyStatusPageConfig")(function* (params) {

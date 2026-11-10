@@ -8,7 +8,6 @@ import {
 	WidgetDisplayConfigSchema,
 	WidgetLayoutSchema,
 } from "@maple/domain/http"
-import { AddDashboardWidgetOutput } from "@maple/domain/mcp-outputs"
 import {
 	DATA_SOURCE_VARIANTS,
 	defaultSizeForPanelType,
@@ -93,7 +92,6 @@ export function registerAddDashboardWidgetTool(server: McpToolRegistrar) {
 					'Only for a tile that means a different window (a 30-minute "active now" stat on a 7-day board); the header labels the override.',
 			),
 		}),
-		output: AddDashboardWidgetOutput,
 		hints: { readOnly: false, destructive: false, idempotent: false },
 		phrases: ["Adding a widget"],
 		handler: Effect.fn("McpTool.addDashboardWidget")(function* ({

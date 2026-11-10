@@ -1,6 +1,5 @@
 import type { McpToolRegistrar } from "./types"
 import { Array as Arr, Effect, Schema } from "effect"
-import { ListEscalationChainsOutput } from "@maple/domain/mcp-outputs"
 import { EscalationChainsService } from "@maple/backend/services/alerts/EscalationChainsService"
 import { CurrentMcpTenant } from "../tenant"
 import { toMcpHttpError } from "../lib/map-http-error"
@@ -15,7 +14,6 @@ export function registerListEscalationChainsTool(server: McpToolRegistrar) {
 			"List escalation chains: ordered paging steps that notify destinations one step at a time until an incident is acknowledged or resolved. " +
 			"Shows each chain's steps, repeats and the rules using it. Attach one to a rule with create_alert_rule / update_alert_rule escalation_chain_id.",
 		parameters: Schema.Struct({}),
-		output: ListEscalationChainsOutput,
 		hints: { readOnly: true },
 		phrases: ["Listing escalation chains"],
 		handler: Effect.fn("McpTool.listEscalationChains")(function* () {

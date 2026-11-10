@@ -1,6 +1,5 @@
 import { Effect, Schema, Array as Arr } from "effect"
 import { UserDetailRequest, type UserIssueItem, type UserProfileItem } from "@maple/domain/http"
-import { InspectUserOutput } from "@maple/domain/mcp-outputs"
 import { formatWarehouseDateTime } from "@maple/query-engine"
 import { UsersReadService } from "@maple/backend/services/users/UsersReadService"
 import type { McpToolRegistrar } from "./types"
@@ -112,7 +111,6 @@ export function registerInspectUserTool(server: McpToolRegistrar) {
 			...WINDOW.fields,
 			namespaces: P.optionalList("Only signals from these service namespaces (`service.namespace`)"),
 		}),
-		output: InspectUserOutput,
 		hints: { readOnly: true },
 		scopeFamily: "users",
 		phrases: ["Looking up a user"],

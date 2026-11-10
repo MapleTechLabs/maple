@@ -1,6 +1,5 @@
 import { McpInvalidInputError, McpQueryError, type McpToolRegistrar } from "./types"
 import { DateTime, Effect, Option, Schema, Array as Arr, String as Str } from "effect"
-import { GetIncidentTimelineOutput } from "@maple/domain/mcp-outputs"
 import { CurrentMcpTenant } from "../tenant"
 import { AlertReadModelsService } from "@maple/backend/services/alerts/AlertReadModelsService"
 import { AlertIncidentPagesService } from "@maple/backend/services/alerts/AlertIncidentPagesService"
@@ -171,7 +170,6 @@ export function registerGetIncidentTimelineTool(server: McpToolRegistrar) {
 			group_key: P.optionalText("Only incidents with this exact group key"),
 			limit: P.limit({ default: 20, max: MAX_LIMIT, noun: "incidents" }),
 		}),
-		output: GetIncidentTimelineOutput,
 		hints: { readOnly: true },
 		phrases: ["Loading the incident timeline", "Building the incident timeline"],
 		handler: Effect.fn("McpTool.getIncidentTimeline")(function* (params) {

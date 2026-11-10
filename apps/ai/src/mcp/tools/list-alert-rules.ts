@@ -1,7 +1,6 @@
 import type { McpToolRegistrar } from "./types"
 import { toMcpHttpError } from "../lib/map-http-error"
 import { Effect, Schema, Array as Arr } from "effect"
-import { ListAlertRulesOutput } from "@maple/domain/mcp-outputs"
 import { CurrentMcpTenant } from "../tenant"
 import { AlertRulesService } from "@maple/backend/services/alerts/AlertRulesService"
 import {
@@ -29,7 +28,6 @@ export function registerListAlertRulesTool(server: McpToolRegistrar) {
 			enabled_only: P.optionalFlag("Only enabled rules"),
 		}),
 		aliases: { service_names: "services" },
-		output: ListAlertRulesOutput,
 		hints: { readOnly: true },
 		phrases: ["Listing alert rules", "Checking alert rules"],
 		handler: Effect.fn("McpTool.listAlertRules")(function* (params) {

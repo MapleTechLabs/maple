@@ -5,7 +5,6 @@ import { toMcpQueryError } from "../lib/map-warehouse-error"
 import * as P from "../lib/params"
 import { doc, type DocBlock } from "../lib/tool-doc"
 import { Effect, Result, Schema, Array as Arr, String as Str } from "effect"
-import { DiagnoseServiceOutput } from "@maple/domain/mcp-outputs"
 import { diagnoseService } from "@maple/query-engine/observability"
 import { provideWarehouseExecutorFromTenant } from "@maple/backend/services/warehouse/WarehouseQueryService"
 import { serviceInfrastructure } from "../lib/infra"
@@ -43,7 +42,6 @@ export function registerDiagnoseServiceTool(server: McpToolRegistrar) {
 			environment: P.environment(),
 		}),
 		aliases: P.SERVICE_ALIASES,
-		output: DiagnoseServiceOutput,
 		hints: { readOnly: true },
 		phrases: ["Diagnosing a service", "Checking a service's health"],
 		handler: Effect.fn("McpTool.diagnoseService")(function* (params) {

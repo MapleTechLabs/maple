@@ -98,7 +98,6 @@ export function registerInspectChartDataTool(server: McpToolRegistrar) {
 			),
 			end_time: P.optionalTimestamp("End of the override window (pass with start_time)"),
 		}),
-		output: InspectChartDataOutput,
 		hints: { readOnly: true },
 		phrases: ["Inspecting chart data"],
 		handler: Effect.fn("McpTool.inspectChartData")(function* ({

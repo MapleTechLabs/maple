@@ -1,5 +1,4 @@
 import { DateTime, Effect, Schema, Array as Arr } from "effect"
-import { DbQueryVolumeOutput } from "@maple/domain/mcp-outputs"
 import { CH } from "@maple/query-engine"
 import { WarehouseExecutor } from "@maple/query-engine/observability"
 import type { McpToolRegistrar } from "./types"
@@ -28,7 +27,6 @@ export function registerDbQueryVolumeTool(server: McpToolRegistrar) {
 			limit: P.limit({ default: 30, max: 500, noun: "query shapes" }),
 		}),
 		aliases: P.SERVICE_ALIASES,
-		output: DbQueryVolumeOutput,
 		hints: { readOnly: true },
 		phrases: ["Ranking database queries"],
 		handler: Effect.fn("McpTool.dbQueryVolume")(function* (params) {

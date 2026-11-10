@@ -10,7 +10,6 @@ import {
 	AiToolsTotalsRequest,
 	type AiToolsAggregate,
 } from "@maple/domain/http"
-import { GetAgentToolsOverviewOutput } from "@maple/domain/mcp-outputs"
 import { parseWarehouseDateTime } from "@maple/query-engine"
 import type { McpToolRegistrar } from "./types"
 import {
@@ -80,7 +79,6 @@ export function registerGetAgentToolsOverviewTool(server: McpToolRegistrar) {
 			tool: agentToolTextParam("Only this tool (exact `gen_ai.tool.name`). Omit to compare every tool"),
 			...agentToolSelectionParams,
 		}),
-		output: GetAgentToolsOverviewOutput,
 		hints: { readOnly: true },
 		phrases: ["Checking agent tool usage"],
 		handler: Effect.fn("McpTool.getAgentToolsOverview")(function* (params) {

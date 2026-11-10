@@ -384,7 +384,6 @@ export function registerCreateDashboardTool(server: McpToolRegistrar) {
 			validate: P.optionalFlag("Pass false to skip the post-create inspection"),
 		}),
 		aliases: P.SERVICE_ALIASES,
-		output: CreateDashboardOutput,
 		hints: { readOnly: false, destructive: false, idempotent: false },
 		phrases: ["Creating a dashboard"],
 		handler: Effect.fn("McpTool.createDashboard")(function* (params) {

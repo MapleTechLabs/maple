@@ -302,7 +302,6 @@ export function registerErrorDetailTool(server: McpToolRegistrar) {
 			limit: P.limit({ default: 5, max: 20, noun: "sample traces" }),
 		}),
 		aliases: { ...P.SERVICE_ALIASES, fingerprint_hash: "fingerprint" },
-		output: ErrorDetailOutput,
 		hints: { readOnly: true },
 		phrases: ["Reading error details", "Looking into an error"],
 		handler: Effect.fn("McpTool.errorDetail")(function* (params) {

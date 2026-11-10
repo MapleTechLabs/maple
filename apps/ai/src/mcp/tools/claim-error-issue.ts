@@ -1,6 +1,5 @@
 import { McpInvalidInputError, McpQueryError, type McpToolRegistrar } from "./types"
 import { Effect, Schema } from "effect"
-import { ClaimErrorIssueOutput } from "@maple/domain/mcp-outputs"
 import { CurrentMcpTenant } from "../tenant"
 import { resolveActorId } from "../lib/resolve-actor"
 import * as P from "../lib/params"
@@ -29,7 +28,6 @@ export function registerClaimErrorIssueTool(server: McpToolRegistrar) {
 				`How long the lease lasts without activity, ${MIN_LEASE_SECONDS} to ${MAX_LEASE_SECONDS} seconds (default 1800)`,
 			),
 		}),
-		output: ClaimErrorIssueOutput,
 		// Not idempotent: claiming again moves the lease expiry.
 		hints: { readOnly: false, destructive: false, idempotent: false },
 		phrases: ["Claiming an issue"],

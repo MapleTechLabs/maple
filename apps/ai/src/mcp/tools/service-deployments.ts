@@ -52,7 +52,6 @@ export function registerServiceDeploymentsTool(server: McpToolRegistrar) {
 			limit: P.limit({ default: 100, max: CH.RELEASES_LIST_CAP, noun: "service versions" }),
 		}),
 		aliases: P.SERVICE_ALIASES,
-		output: ServiceDeploymentsOutput,
 		hints: { readOnly: true },
 		phrases: ["Checking deployed versions", "Comparing releases"],
 		handler: Effect.fn("McpTool.serviceDeployments")(function* (params) {

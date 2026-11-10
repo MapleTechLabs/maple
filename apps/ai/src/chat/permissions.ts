@@ -1,15 +1,18 @@
-/**
- * The rulesets Maple's chat agents run under.
- *
- * `MUTATING_TOOL_NAMES` stays exactly where it is and keeps its shape: it seeds `DEFAULT_RULESET`
- * here, and it remains the allowlist floor for applying an approval. The equivalence is pinned
- * by a test in `apps/api/src/mcp/tools/mutating.test.ts` so day-one behaviour cannot drift by
- * accident.
- */
+/** The rulesets Maple's chat agents run under. */
 import { PermissionRule, type PermissionRuleset } from "@maple/domain/permission"
-import { MUTATING_TOOL_NAMES } from "../mcp/tools/mutating"
 import { mapleToolCatalog } from "../mcp/tools/registry"
 import { Array as Arr } from "effect"
+
+/**
+ * Every tool that changes org data (`hints.readOnly: false`). The chat gates them behind approval,
+ * and they are the only tools an approval may apply (`ChatSession.settleProposal`).
+ */
+export const MUTATING_TOOL_NAMES: ReadonlySet<string> = new Set(
+	Arr.map(
+		Arr.filter(mapleToolCatalog, (definition) => !definition.hints.readOnly),
+		(definition) => definition.name,
+	),
+)
 
 /**
  * Today's behaviour, expressed as data: everything runs, mutations stop and ask.

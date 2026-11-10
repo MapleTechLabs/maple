@@ -4,7 +4,7 @@
  * The chat agent and the investigation agents share this wrapper so tool dispatch, runtime
  * provisioning, and safe failure summaries cannot drift.
  *
- * Dynamic (`Tool.dynamic` over raw JSON Schema) is the right fit for every tool here: `toInputSchema`
+ * Dynamic (`Tool.dynamic` over raw JSON Schema) is the right fit for every tool here: `inputSchemaOf`
  * already produces the exact JSON Schema the MCP surface publishes, and `callMcpTool` does its own
  * Effect Schema decode with the tool's own error messages. Decoding twice would only give the model
  * a second, worse phrasing of the same validation failure.
@@ -26,7 +26,7 @@ import { Tool, Toolkit } from "effect/ai"
 import { AgentSpawner } from "@yielded/agent/agent-runtime"
 import type { McpToolExecutorApi } from "../dispatcher"
 import type { McpToolSurface } from "@maple/domain/mcp-manifest"
-import { mapleToolCatalogFor, toInputSchema } from "./registry"
+import { inputSchemaOf, mapleToolCatalogFor } from "./registry"
 import { truncateToolOutput } from "./tool-output"
 import { MAX_FAILURE_MESSAGE_CHARS } from "../expected-failures"
 import { toolHandlersWithContent } from "../../platform/genai-spans"
@@ -229,7 +229,7 @@ export const buildMapleToolkit = (
 		const gated = options.gate?.(definition.name) ?? false
 		return Tool.dynamic(definition.name, {
 			description: describe(definition, gated),
-			parameters: toInputSchema(definition.schema),
+			parameters: inputSchemaOf(definition),
 			success: Schema.String,
 			failure: ToolFailure,
 			// A proposal must end the run; any other failure goes back to the model as the call's result.

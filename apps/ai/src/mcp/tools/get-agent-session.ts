@@ -64,7 +64,6 @@ export function registerGetAgentSessionTool(server: McpToolRegistrar) {
 			).check(Schema.isMinLength(1)),
 			...sessionWindowParams,
 		}),
-		output: GetAgentSessionOutput,
 		hints: { readOnly: true },
 		phrases: ["Opening an agent session"],
 		handler: Effect.fn("McpTool.getAgentSession")(

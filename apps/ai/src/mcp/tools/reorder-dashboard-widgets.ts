@@ -1,6 +1,5 @@
 import { McpInvalidInputError, type McpToolRegistrar } from "./types"
 import { Effect, Schema, Array as Arr, String as Str } from "effect"
-import { ReorderDashboardWidgetsOutput } from "@maple/domain/mcp-outputs"
 import { toDashboardRow, withDashboardMutation } from "../lib/dashboard-mutations"
 import * as P from "../lib/params"
 import { doc } from "../lib/tool-doc"
@@ -72,7 +71,6 @@ export function registerReorderDashboardWidgetsTool(server: McpToolRegistrar) {
 				`Layout per widget, as JSON text: [{ widget_id, x, y, w, h, minW?, minH?, maxW?, maxH? }, ...]. Integers on a ${GRID_COLS}-column grid: x, y >= 0, 1 <= w <= ${GRID_COLS}, x + w <= ${GRID_COLS}, h >= 1.`,
 			),
 		}),
-		output: ReorderDashboardWidgetsOutput,
 		hints: { readOnly: false, destructive: false, idempotent: true },
 		phrases: ["Reordering widgets"],
 		handler: Effect.fn("McpTool.reorderDashboardWidgets")(function* ({

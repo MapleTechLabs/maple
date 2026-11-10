@@ -5,11 +5,7 @@
  * passes through a model.
  */
 import { Clock, Effect, Schema, Array as Arr, String as Str } from "effect"
-import {
-	DeleteScrapeTargetOutput,
-	ScrapeTargetMutationOutput,
-	SyncRailwayOutput,
-} from "@maple/domain/mcp-outputs"
+import { ScrapeTargetMutationOutput } from "@maple/domain/mcp-outputs"
 import { CreateScrapeTargetRequest, UpdateScrapeTargetRequest } from "@maple/domain/http"
 import { decodePublicId, PublicIdPrefixes } from "@maple/domain/http/v2"
 import { ScrapeIntervalSeconds } from "@maple/domain/primitives"
@@ -156,7 +152,6 @@ export function registerIntegrationWriteTools(server: McpToolRegistrar) {
 		description:
 			"Poll Railway now instead of waiting for the next 5-minute tick, then report each environment's last sync and error. Use after fixing a Railway token or project access, to confirm metrics flow again. Org admins and engineers only. Environments already caught up cost no Railway call.",
 		parameters: Schema.Struct({}),
-		output: SyncRailwayOutput,
 		hints: { readOnly: false, destructive: false, idempotent: true, openWorld: true },
 		phrases: ["Syncing Railway"],
 		handler: Effect.fn("McpTool.syncRailway")(function* () {
@@ -247,7 +242,6 @@ export function registerIntegrationWriteTools(server: McpToolRegistrar) {
 			interval_seconds: intervalParam("How often to scrape, default 15"),
 		}),
 		aliases: P.SERVICE_ALIASES,
-		output: ScrapeTargetMutationOutput,
 		hints: { readOnly: false, destructive: false, idempotent: false, openWorld: true },
 		phrases: ["Adding a scrape target"],
 		handler: Effect.fn("McpTool.createScrapeTarget")(function* (params) {
@@ -316,7 +310,6 @@ export function registerIntegrationWriteTools(server: McpToolRegistrar) {
 			interval_seconds: intervalParam("A new scrape interval"),
 		}),
 		aliases: P.SERVICE_ALIASES,
-		output: ScrapeTargetMutationOutput,
 		hints: { readOnly: false, destructive: false, idempotent: true, openWorld: true },
 		phrases: ["Updating a scrape target"],
 		handler: Effect.fn("McpTool.updateScrapeTarget")(function* (params) {
@@ -371,7 +364,6 @@ export function registerIntegrationWriteTools(server: McpToolRegistrar) {
 			target: P.text("The target's name or id"),
 			confirm: P.flag("Must be true. There is no undo."),
 		}),
-		output: DeleteScrapeTargetOutput,
 		hints: { readOnly: false, destructive: true, idempotent: false },
 		phrases: ["Deleting a scrape target"],
 		handler: Effect.fn("McpTool.deleteScrapeTarget")(function* (params) {

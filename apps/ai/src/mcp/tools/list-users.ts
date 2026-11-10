@@ -60,7 +60,6 @@ export function registerListUsersTool(server: McpToolRegistrar) {
 			limit: P.limit({ default: 25, max: 100, noun: "users" }),
 			cursor: P.optionalText("The `nextCursor` from a previous page, to read the next one"),
 		}),
-		output: ListUsersOutput,
 		hints: { readOnly: true },
 		scopeFamily: "users",
 		phrases: ["Listing users"],

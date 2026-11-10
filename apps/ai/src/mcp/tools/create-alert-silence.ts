@@ -1,7 +1,6 @@
 import { McpInvalidInputError, type McpToolRegistrar } from "./types"
 import { Clock, DateTime, Effect, Schema } from "effect"
 import { AlertSilenceCreateRequest } from "@maple/domain/http"
-import { AlertSilenceMutationOutput } from "@maple/domain/mcp-outputs"
 import { AlertSilencesService } from "@maple/backend/services/alerts/AlertSilencesService"
 import { parseWarehouseDateTime } from "@maple/query-engine"
 import { CurrentMcpTenant } from "../tenant"
@@ -41,7 +40,6 @@ export function registerCreateAlertSilenceTool(server: McpToolRegistrar) {
 			starts_at: P.optionalTimestamp("When the silence starts (default: now)"),
 		}),
 		aliases: { service_names: "services" },
-		output: AlertSilenceMutationOutput,
 		hints: { readOnly: false, destructive: false, idempotent: false },
 		phrases: ["Creating an alert silence", "Silencing alerts"],
 		handler: Effect.fn("McpTool.createAlertSilence")(function* (params) {

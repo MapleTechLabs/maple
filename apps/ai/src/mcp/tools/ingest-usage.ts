@@ -82,7 +82,6 @@ export function registerIngestUsageTool(server: McpToolRegistrar) {
 			service: P.service(),
 		}),
 		aliases: P.SERVICE_ALIASES,
-		output: IngestUsageOutput,
 		hints: { readOnly: true },
 		phrases: ["Measuring ingest volume"],
 		handler: Effect.fn("McpTool.ingestUsage")(function* (params) {

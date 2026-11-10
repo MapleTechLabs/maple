@@ -1,7 +1,6 @@
 import { McpInvalidInputError, type McpToolRegistrar } from "./types"
 import { Effect, Schema } from "effect"
 import { OnCallScheduleCreateRequest } from "@maple/domain/http"
-import { OnCallScheduleMutationOutput } from "@maple/domain/mcp-outputs"
 import { OnCallSchedulesService } from "@maple/backend/services/alerts/OnCallSchedulesService"
 import { CurrentMcpTenant } from "../tenant"
 import {
@@ -31,7 +30,6 @@ export function registerCreateOnCallScheduleTool(server: McpToolRegistrar) {
 			layers: P.json(LayersInput, layersParameterDescription),
 			description: P.optionalText("Free-form notes"),
 		}),
-		output: OnCallScheduleMutationOutput,
 		hints: { readOnly: false, destructive: false, idempotent: false },
 		phrases: ["Creating an on-call schedule"],
 		handler: Effect.fn("McpTool.createOnCallSchedule")(function* (params) {

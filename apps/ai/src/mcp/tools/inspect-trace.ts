@@ -4,7 +4,6 @@ import { withTenantExecutor } from "../lib/query-warehouse"
 import * as P from "../lib/params"
 import { buildTraceOverview, renderTraceOverview } from "../lib/render-trace"
 import { DateTime, Effect, Option, Schema } from "effect"
-import { InspectTraceOutput } from "@maple/domain/mcp-outputs"
 import { parseWarehouseDateTime } from "@maple/query-engine"
 import { inspectTrace } from "@maple/query-engine/observability"
 
@@ -38,7 +37,6 @@ export function registerInspectTraceTool(server: McpToolRegistrar) {
 				description: "Max spans to render in the tree; errors and roots are always kept",
 			}),
 		}),
-		output: InspectTraceOutput,
 		hints: { readOnly: true },
 		phrases: ["Inspecting a trace", "Opening a trace"],
 		handler: Effect.fn("McpTool.inspectTrace")(function* ({

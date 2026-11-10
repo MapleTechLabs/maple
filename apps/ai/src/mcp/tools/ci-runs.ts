@@ -96,7 +96,6 @@ export function registerCiRunsTool(server: McpToolRegistrar) {
 			result: P.optionalOneOf(RESULTS, "Only runs with this result"),
 			limit: P.limit({ default: 20, max: 100, noun: "runs to list" }),
 		}),
-		output: CiRunsOutput,
 		hints: { readOnly: true },
 		// Maple's own agents only: the org's CI history is not for third-party MCP clients.
 		audience: "agent",

@@ -1,6 +1,5 @@
 import { McpInvalidInputError, type McpToolRegistrar } from "./types"
 import { Effect, Schema, String as Str } from "effect"
-import { CreateAlertRuleOutput } from "@maple/domain/mcp-outputs"
 import { MAX_RAW_SQL_ALERT_GROUPS } from "@maple/domain/raw-sql"
 import { toMcpHttpError } from "../lib/map-http-error"
 import { CurrentMcpTenant } from "../tenant"
@@ -325,7 +324,6 @@ export function registerCreateAlertRuleTool(server: McpToolRegistrar) {
 			"destination_ids is required (at least one, from list_alert_destinations). escalation_chain_id adds step-by-step paging on top.",
 		parameters: CreateAlertRuleParameters,
 		aliases: { service_names: "services" },
-		output: CreateAlertRuleOutput,
 		hints: { readOnly: false, destructive: false, idempotent: false },
 		phrases: ["Creating an alert rule"],
 		handler: Effect.fn("McpTool.createAlertRule")(function* (params) {

@@ -1,7 +1,6 @@
 import { McpInvalidInputError, type McpToolRegistrar } from "./types"
 import { toMcpHttpError } from "../lib/map-http-error"
 import { Effect, Schema } from "effect"
-import { DeleteAlertRuleOutput } from "@maple/domain/mcp-outputs"
 import { CurrentMcpTenant } from "../tenant"
 import { AlertRulesService } from "@maple/backend/services/alerts/AlertRulesService"
 import { parseRuleId, ruleNotFoundFromError } from "../lib/alert-rules"
@@ -19,7 +18,6 @@ export function registerDeleteAlertRuleTool(server: McpToolRegistrar) {
 			rule_id: P.resourceId("alertRule", "Alert rule ID"),
 			confirm: P.flag("Must be true. There is no undo."),
 		}),
-		output: DeleteAlertRuleOutput,
 		hints: { readOnly: false, destructive: true, idempotent: false },
 		phrases: ["Deleting an alert rule"],
 		handler: Effect.fn("McpTool.deleteAlertRule")(function* (params) {

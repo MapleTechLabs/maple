@@ -1,5 +1,5 @@
 import { DateTime, Effect, Schema, Array as Arr } from "effect"
-import { RouteUsageOutput, RouteUsageSort } from "@maple/domain/mcp-outputs"
+import { RouteUsageSort } from "@maple/domain/mcp-outputs"
 import { CH } from "@maple/query-engine"
 import { WarehouseExecutor } from "@maple/query-engine/observability"
 import type { McpToolRegistrar } from "./types"
@@ -38,7 +38,6 @@ export function registerRouteUsageTool(server: McpToolRegistrar) {
 			offset: P.offset({ max: MAX_OFFSET }),
 		}),
 		aliases: P.SERVICE_ALIASES,
-		output: RouteUsageOutput,
 		hints: { readOnly: true },
 		phrases: ["Checking route usage", "Finding unused routes"],
 		handler: Effect.fn("McpTool.routeUsage")(function* (params) {

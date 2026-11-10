@@ -2,6 +2,7 @@
 import { McpToolNotFoundError } from "@maple/domain/mcp-tool-contract"
 import { scopeAllows } from "@maple/domain/http/v2"
 import type { McpToolSurface } from "@maple/domain/mcp-manifest"
+import { McpToolOutputs } from "@maple/domain/mcp-outputs"
 import { Clock, Effect, Schema, type SchemaAST, Array as Arr, Record as Rec, String as Str } from "effect"
 import { registerAddDashboardWidgetTool } from "./add-dashboard-widget"
 import { registerDescribeWarehouseTablesTool } from "./describe-warehouse-tables"
@@ -391,14 +392,15 @@ export const toInputSchema = (schema: Schema.Top): Record<string, unknown> => {
 const collectMapleToolDefinitions = (): ReadonlyArray<MapleToolDefinition> => {
 	const definitions: MapleToolDefinition[] = []
 	const define: McpToolRegistrar["define"] = (spec) => {
-		const encode = Schema.encodeUnknownEffect(spec.output)
+		const outputSchema: Schema.Codec<unknown, unknown> = McpToolOutputs[spec.name]
+		const encode = Schema.encodeUnknownEffect(outputSchema)
 		definitions.push({
 			name: spec.name,
 			title: spec.title,
 			description: spec.description,
 			schema: spec.parameters,
 			parseOptions: { onExcessProperty: spec.rejectUnknownKeys === true ? "error" : "ignore" },
-			outputSchema: spec.output,
+			outputSchema,
 			hints: spec.hints,
 			aliases: spec.aliases ?? {},
 			valueAliases: spec.valueAliases ?? {},

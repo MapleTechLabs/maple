@@ -147,7 +147,6 @@ export function registerPreviewAlertRuleTool(server: McpToolRegistrar) {
 			"Pass rule_id to preview a saved rule, optionally with overrides, or a create_alert_rule definition to dry-run a new one. Run it before saving a raw_query rule.",
 		parameters: Parameters,
 		aliases: { service_names: "services", since: "start_time", until: "end_time" },
-		output: PreviewAlertRuleOutput,
 		hints: { readOnly: true },
 		phrases: ["Previewing an alert rule"],
 		handler: Effect.fn("McpTool.previewAlertRule")(function* (params) {

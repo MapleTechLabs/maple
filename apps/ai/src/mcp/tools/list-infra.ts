@@ -1,5 +1,4 @@
 import { Effect, Schema, Array as Arr } from "effect"
-import { ListInfraOutput } from "@maple/domain/mcp-outputs"
 import type { McpToolRegistrar } from "./types"
 import { warehouseToMcpHandlers } from "../lib/map-warehouse-error"
 import { withTenantExecutor } from "../lib/query-warehouse"
@@ -130,7 +129,6 @@ export function registerListInfraTool(server: McpToolRegistrar) {
 			limit: P.limit({ default: 20, max: 200, noun: "rows per kind" }),
 			...WINDOW.fields,
 		}),
-		output: ListInfraOutput,
 		hints: { readOnly: true },
 		phrases: ["Listing infrastructure", "Checking hosts, pods, containers and providers"],
 		handler: Effect.fn("McpTool.listInfra")(function* (params) {

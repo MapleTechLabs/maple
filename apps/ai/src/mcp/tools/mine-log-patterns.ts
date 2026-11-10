@@ -6,7 +6,6 @@ import { truncate, formatNumber, topKey } from "../lib/format"
 import * as P from "../lib/params"
 import { doc } from "../lib/tool-doc"
 import { Effect, Schema, Array as Arr, Record as Rec, String as Str } from "effect"
-import { MineLogPatternsOutput } from "@maple/domain/mcp-outputs"
 import { mineLogPatterns } from "@maple/query-engine/observability"
 import { provideWarehouseExecutorFromTenant } from "@maple/backend/services/warehouse/WarehouseQueryService"
 import { LOG_SEVERITIES, logFilterScope, logFilters } from "./search-logs"
@@ -36,7 +35,6 @@ export function registerMineLogPatternsTool(server: McpToolRegistrar) {
 			limit: P.limit({ default: 50, max: 200, noun: "patterns" }),
 		}),
 		aliases: P.SERVICE_ALIASES,
-		output: MineLogPatternsOutput,
 		hints: { readOnly: true },
 		phrases: ["Grouping log patterns", "Finding common log patterns"],
 		handler: Effect.fn("McpTool.mineLogPatterns")(function* (params) {
