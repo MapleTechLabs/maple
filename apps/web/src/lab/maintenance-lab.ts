@@ -15,7 +15,7 @@ import {
 	weeklyWindow,
 } from "../page/alerts/shared/maintenance-test-fixtures"
 import { windowPublicId } from "../page/alerts/shared/maintenance-windows"
-import { NOW, ORG, ruleRow } from "../page/kit/alert-test-rows"
+import { hubAt, type HubAt, NOW, ORG, ruleRow } from "../page/kit/alert-test-rows"
 import type { PageContext } from "../page/contract"
 import type { Resources } from "../platform/resources"
 import { keepLocal } from "./local-commands"
@@ -78,7 +78,7 @@ const fold = (start: HubModel.Model, messages: ReadonlyArray<HubMessage.Message>
 
 const dialog = (message: WindowDialog.Message) => HubMessage.Message.GotWindowDialogMessage({ message })
 
-const searchFor = (state: LabState): HubModel.Model["search"] =>
+const searchFor = (state: LabState): HubAt =>
 	state === "silences"
 		? { tab: "silences" }
 		: state === "silences-filtered"
@@ -112,7 +112,7 @@ const extraFor = (state: LabState): ReadonlyArray<HubMessage.Message> =>
 			: []
 
 const hubFor = (state: LabState): Step => {
-	const entered = HubUpdate.init({ _tag: "Alerts", search: searchFor(state) }, CONTEXT).model
+	const entered = HubUpdate.init(hubAt(searchFor(state)), CONTEXT).model
 	const windows = state === "empty" ? [] : populatedWindows
 	return fold(entered, [
 		HubMessage.Message.ReadClock({ nowMs: NOW }),

@@ -80,6 +80,8 @@ export const Message = defineMessageUnion({
 	FailedLoadSources: { orgId: Schema.String },
 	SucceededLoadDashboards: { orgId: Schema.String, dashboards: Schema.Array(PinnedDashboardRow) },
 	FailedLoadDashboards: { orgId: Schema.String },
+	/** The Alerts › Inbox count: open incidents nobody has acknowledged. */
+	UpdatedAlertsInboxCount: { orgId: Schema.String, count: Schema.Number },
 	/** `isFromCache`: the org's fresh "no schedules" answer stood in for the request. */
 	SucceededLoadOnCall: {
 		orgId: Schema.String,

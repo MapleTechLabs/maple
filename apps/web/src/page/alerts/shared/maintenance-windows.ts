@@ -83,7 +83,7 @@ export const windowIdOfParam = (raw: string | undefined): Option.Option<AlertMai
 
 /** The Silences tab showing only this window's occurrences. */
 export const windowSilencesHref = (id: AlertMaintenanceWindowId): string =>
-	alertsHref({ tab: "silences", window: windowPublicId(id) })
+	alertsHref({ window: windowPublicId(id) }, "silences")
 
 export const WEEKDAYS: ReadonlyArray<{ value: MaintenanceWeekday; label: string }> = [
 	{ value: "mon", label: "Mon" },

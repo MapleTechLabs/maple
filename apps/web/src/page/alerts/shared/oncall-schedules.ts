@@ -140,7 +140,7 @@ export const newScheduleHref = (search: typeof AlertsScheduleNewSearch.Type = {}
 export const editScheduleHref = (id: OnCallScheduleId): string =>
 	newScheduleHref({ scheduleId: encodePublicId(id) })
 
-export const oncallTabHref = (): string => hrefOf(AppRoute.Alerts({ search: { tab: "oncall" } }))
+export const oncallTabHref = (): string => hrefOf(AppRoute.AlertsSection({ section: "on-call", search: {} }))
 
 const edgeFormatters = new Map<string, Intl.DateTimeFormat>()
 

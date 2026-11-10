@@ -14,7 +14,8 @@ import { QUERY_BUILDER_SPACE_AGGREGATIONS } from "@maple/query-model"
 import { groupBySelectionOf, type QueryDraft } from "./draft"
 import { Message, metricPickerIdOf, type Model } from "./panel"
 import { type MetricOption, metricValueOf } from "./metric-options"
-import { panelSelect, textInput, whereClauseEditor } from "./parts"
+import { panelSelect } from "./panel-select"
+import { textInput, whereClauseEditor } from "./parts"
 import { Array as Arr, Schema, String as Str, Option } from "effect"
 
 // A metrics query's body: the metric picker, the where clause, and the two aggregation stages: each

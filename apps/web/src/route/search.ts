@@ -506,8 +506,23 @@ export const AgentSessionsSearch = Schema.Struct({
 	sortDir: Schema.optional(AiSessionSortDir),
 })
 
-export const AlertsSearch = Schema.Struct({
-	tab: StringParam,
+/** The Alerts hub's sections past the Inbox, each at `/alerts/<section>`. */
+export const AlertsSection = Schema.Literals([
+	"rules",
+	"uptime",
+	"slos",
+	"silences",
+	"maintenance",
+	"on-call",
+	"routing",
+])
+export type AlertsSection = typeof AlertsSection.Type
+
+/** A hub section: the Inbox at `/alerts`, the rest at `/alerts/<section>`. */
+export const AlertsTab = Schema.Union([Schema.Literal("inbox"), AlertsSection])
+export type AlertsTab = typeof AlertsTab.Type
+
+const alertsHubSearchFields = {
 	serviceName: StringParam,
 	status: StringParam,
 	/** The Inbox narrowed to one kind of incident: "anomaly" lists anomalies alone. */
@@ -516,7 +531,15 @@ export const AlertsSearch = Schema.Struct({
 	anomalyStatus: StringParam,
 	/** The Silences tab narrowed to one maintenance window's occurrences (`mw_…`). */
 	window: StringParam,
-})
+	/** The open side panel (`SHEET_PARAM`): "silence" is the new-silence form. */
+	sheet: StringParam,
+}
+
+/** `/alerts` and `/alerts/<section>`: the filters every section shares. */
+export const AlertsHubSearch = Schema.Struct(alertsHubSearchFields)
+
+/** `/alerts`: a legacy `tab` redirects to its section's own path. */
+export const AlertsSearch = Schema.Struct({ tab: StringParam, ...alertsHubSearchFields })
 
 export const AnalyticsSearch = Schema.Struct({
 	...analyticsFilterSearchFields,

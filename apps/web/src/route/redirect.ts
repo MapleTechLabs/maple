@@ -3,7 +3,14 @@ import { Option, Predicate, Schema } from "effect"
 import { AppRoute } from "./app-route"
 import { hrefOf } from "./routers"
 import { DATA_INTEGRATIONS } from "./data-integrations"
-import { type AlertsSearch, type AnomaliesSearch, ErrorsSearch } from "./search"
+import {
+	type AlertsHubSearch,
+	type AlertsSearch,
+	AlertsSection,
+	type AlertsTab,
+	type AnomaliesSearch,
+	ErrorsSearch,
+} from "./search"
 
 /** Where a route sends the browser instead of rendering, and whether it replaces history. */
 export const Redirect = Schema.Struct({ url: Schema.String, isReplace: Schema.Boolean })
@@ -60,6 +67,23 @@ const anomaliesViewSearch = (search: typeof AnomaliesSearch.Type): typeof Alerts
 	}
 }
 
+const decodeAlertsSection = Schema.decodeUnknownOption(AlertsSection)
+
+/** The section an old `?tab=` named: "oncall" and "settings" were renamed, the rest is the Inbox. */
+const legacyAlertsSection = (tab: string): AlertsTab =>
+	tab === "oncall"
+		? "on-call"
+		: tab === "settings"
+			? "routing"
+			: Option.getOrElse(decodeAlertsSection(tab), (): "inbox" => "inbox")
+
+/** `/alerts` for the Inbox, else `/alerts/<section>`, with the hub's filters. */
+export const alertsSectionRoute = (
+	section: AlertsTab,
+	search: typeof AlertsHubSearch.Type,
+): Extract<AppRoute, { readonly _tag: "Alerts" | "AlertsSection" }> =>
+	section === "inbox" ? AppRoute.Alerts({ search }) : AppRoute.AlertsSection({ section, search })
+
 const DATA_INTEGRATION_IDS: ReadonlySet<string> = new Set(DATA_INTEGRATIONS)
 
 const redirect = (to: AppRoute, isReplace: boolean) =>
@@ -97,12 +121,18 @@ export const routeRedirect = (route: AppRoute): Option.Option<Redirect> =>
 			InfraDiscover: () => redirect(AppRoute.Infra({ search: {} }), true),
 			InfraLegacyHost: ({ hostName }) => redirect(AppRoute.InfraHost({ hostName, search: {} }), true),
 			AlertIncidentsIndex: () => redirect(AppRoute.Alerts({ search: {} }), true),
+			/** A rule moved under Rules; old links (notifications, the apps) keep their tab and window. */
+			AlertRuleLegacy: ({ ruleId, search }) => redirect(AppRoute.AlertRule({ ruleId, search }), true),
 			/** The anomalies list is the Alerts Inbox's Anomalies view; one service and the status carry over. */
 			Anomalies: ({ search }) =>
 				redirect(AppRoute.Alerts({ search: anomaliesViewSearch(search) }), true),
-			/** Status pages left the Alerts hub for their own sidebar entry. */
-			Alerts: ({ search }) =>
-				search.tab === "status-pages" ? redirect(AppRoute.StatusPages(), true) : Option.none(),
+			/** A legacy `?tab=` opens its section's own path; status pages left the hub for the sidebar. */
+			Alerts: ({ search: { tab, ...search } }) =>
+				tab === undefined
+					? Option.none()
+					: tab === "status-pages"
+						? redirect(AppRoute.StatusPages(), true)
+						: redirect(alertsSectionRoute(legacyAlertsSection(tab), search), true),
 			AlertsStatusPage: ({ pageId, search }) =>
 				redirect(
 					AppRoute.StatusPage({

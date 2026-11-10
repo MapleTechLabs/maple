@@ -21,7 +21,17 @@ import {
 	defaultAnomalyRuleRow,
 	scopedAnomalyRuleRow,
 } from "../shared/anomaly-test-fixtures"
-import { destinationRow, incidentRow, NOW, ORG, ruleId, ruleRow, stateRow } from "../../kit/alert-test-rows"
+import {
+	destinationRow,
+	hubAt,
+	type HubAt,
+	incidentRow,
+	NOW,
+	ORG,
+	ruleId,
+	ruleRow,
+	stateRow,
+} from "../../kit/alert-test-rows"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { init, ruleMenuId, update } from "./update"
@@ -57,7 +67,7 @@ const RESOLVED_CHECKOUT = anomalyIncidentRow({
 })
 
 const loaded = (
-	search: Model["search"],
+	at: HubAt,
 	incidents = [
 		incidentRow({ rule_name: "Payment p95 latency" }),
 		OPEN_CHECKOUT,
@@ -87,7 +97,7 @@ const loaded = (
 			Message.UpdatedDestinations({ orgId: ORG, rows: [destinationRow()] }),
 			Message.CompletedFetchSession({ orgId: ORG, grants: ENGINEER }),
 		],
-		init({ _tag: "Alerts", search }, context).model,
+		init(hubAt(at), context).model,
 		(model, message) => pageUpdate(model, message).model,
 	)
 
@@ -100,7 +110,7 @@ describe("alerts hub: anomalies", () => {
 			click(role("button", { name: /^Anomalies/ })),
 			expectOutMessage(
 				PageOutMessage.RequestedNavigation({
-					url: "/alerts?tab=inbox&signal=anomaly",
+					url: "/alerts?signal=anomaly",
 					isReplace: false,
 				}),
 			),
@@ -243,21 +253,6 @@ describe("alerts hub: anomalies", () => {
 			),
 			expectView(text("Unrouted")).toExist(),
 			expectView(text("Search anomalies")).toExist(),
-		)
-	})
-
-	test("leaving the Inbox drops the Anomalies view's filters from the tab links", () => {
-		scene(
-			{ update: pageUpdate, view },
-			given(loaded({ signal: "anomaly", anomalyStatus: "resolved", serviceName: "checkout" })),
-			expectView(role("link", { name: /^Rules/ })).toHaveAttr(
-				"href",
-				"/alerts?tab=rules&serviceName=checkout",
-			),
-			expectView(role("link", { name: /^Inbox/ })).toHaveAttr(
-				"href",
-				"/alerts?tab=inbox&serviceName=checkout&signal=anomaly&anomalyStatus=resolved",
-			),
 		)
 	})
 })

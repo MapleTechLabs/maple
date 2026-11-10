@@ -137,7 +137,7 @@ const bar = (h: H, model: BarView, form: RuleForm, timing: AlertQueryTiming | nu
 								: `${changeCount} unsaved ${pluralize(changeCount, "change")}`,
 						]),
 					]),
-			linkButton(h, { variant: "outline", size: "sm", href: alertsHref({}) }, ["Cancel"]),
+			linkButton(h, { variant: "outline", size: "sm", href: alertsHref({}, "rules") }, ["Cancel"]),
 			button(
 				h,
 				{

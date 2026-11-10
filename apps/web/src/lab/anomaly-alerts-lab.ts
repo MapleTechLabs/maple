@@ -38,7 +38,17 @@ import {
 	defaultAnomalyRuleRow,
 	scopedAnomalyRuleRow,
 } from "../page/alerts/shared/anomaly-test-fixtures"
-import { destinationRow, incidentRow, NOW, ORG, ruleId, ruleRow, stateRow } from "../page/kit/alert-test-rows"
+import {
+	destinationRow,
+	hubAt,
+	type HubAt,
+	incidentRow,
+	NOW,
+	ORG,
+	ruleId,
+	ruleRow,
+	stateRow,
+} from "../page/kit/alert-test-rows"
 import type { PageContext } from "../page/contract"
 import type { Resources } from "../platform/resources"
 
@@ -148,7 +158,7 @@ const RESOLVED = [
 ]
 
 const hubFor = (state: LabState) => {
-	const search: HubModel.Model["search"] =
+	const search: HubAt =
 		state === "hub-rules"
 			? { tab: "rules" }
 			: state === "hub-anomalies-resolved"
@@ -159,7 +169,7 @@ const hubFor = (state: LabState) => {
 			? [incidentRow({ rule_name: "Payment p95 latency" })]
 			: [incidentRow({ rule_name: "Payment p95 latency" }), ...OPEN, ...RESOLVED]
 	return fold(
-		HubUpdate.init({ _tag: "Alerts", search }, CONTEXT).model,
+		HubUpdate.init(hubAt(search), CONTEXT).model,
 		[
 			HubMessage.Message.ReadClock({ nowMs: NOW }),
 			HubMessage.Message.UpdatedRules({ orgId: ORG, rows: RULES }),

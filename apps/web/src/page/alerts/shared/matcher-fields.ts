@@ -3,6 +3,7 @@ import { Option, Schema, Array as Arr, String as Str } from "effect"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { fieldDescription, fieldError, fieldLabel, type FieldIds, input } from "@maple/views/ui/field"
 import type { FieldState } from "@maple/views/ui/input"
+import { label } from "@maple/views/ui/label"
 import { vstack } from "@maple/views/ui/stack"
 import { typography } from "@maple/views/ui/typography"
 
@@ -26,7 +27,8 @@ export const typedFromMatchers = (matchers: V2AlertSilenceMatchers): TypedMatche
 	environments: Arr.join(matchers.environments ?? [], ", "),
 })
 
-const splitList = (value: string): ReadonlyArray<string> =>
+/** A comma-separated list as its names: trimmed, the empty ones dropped, each once. */
+export const splitList = (value: string): ReadonlyArray<string> =>
 	Arr.dedupe(Arr.filter(Arr.map(Str.split(value, ","), Str.trim), Str.isNonEmpty))
 
 /** The matchers the fields describe; an empty field is left out. */
@@ -55,6 +57,30 @@ const stateOf = (value: string, isInvalid = false): FieldState => ({
 	isFocused: false,
 	isTouched: false,
 })
+
+/** A dialog field's label for a control the text field doesn't draw (chips, a segmented choice): the same look. */
+export const dialogLabel = <M>(
+	h: HtmlBuilder<M>,
+	options: Readonly<{ id: string; htmlFor?: string }>,
+	text: string,
+): Html =>
+	label(
+		h,
+		{
+			className: "text-xs",
+			attributes: [
+				h.Id(options.id),
+				...(options.htmlFor === undefined ? [] : [h.For(options.htmlFor)]),
+			],
+		},
+		[text],
+	)
+
+/** A line of help under a group of dialog fields, in the face a field's own description uses. */
+export const dialogHelp = <M>(h: HtmlBuilder<M>, id: string, text: string): Html =>
+	fieldDescription(h, { ids: { control: id, label: id, error: id, description: id }, state: stateOf("") }, [
+		text,
+	])
 
 export type DialogTextFieldOptions<M> = Readonly<{
 	idPrefix: string

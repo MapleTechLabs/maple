@@ -17,6 +17,7 @@ import { IdleTtl } from "../../../data/idle-ttl"
 import { readThrough } from "../../../data/read-cache"
 import { toLoadFailure, settleTo } from "@maple/views/data/load-failure"
 import { Command } from "foldkit"
+import { dismissSheetUrl, pushSheetUrl } from "../../kit/sheet-param"
 import {
 	deleteDestination,
 	listDeliveries,
@@ -41,6 +42,29 @@ import {
 import { Message } from "./message"
 import { ServiceNamespaces, serviceNamespaces } from "./uptime-groups"
 import { fetchSessionGrants } from "../../kit/session-grants"
+
+const sheetArgs = { href: Schema.String, id: Schema.String }
+
+/** A command must answer with a message: a sheet change answers with the clock, as a route change reads it. */
+const thenReadClock = (effect: Effect.Effect<void>) =>
+	effect.pipe(
+		Effect.andThen(Clock.currentTimeMillis),
+		Effect.map((nowMs) => Message.ReadClock({ nowMs })),
+	)
+
+/** Opens a side panel: a history entry carrying `?sheet=`, marked as this tab's. */
+export const PushHubSheet = Command.define("PushAlertsHubSheet", {
+	args: sheetArgs,
+	messages: [Message.ReadClock],
+	execute: ({ href, id }) => thenReadClock(pushSheetUrl(href, id)),
+})
+
+/** Closes it: Back over the entry this tab pushed, else `?sheet=` replaced away. */
+export const DismissHubSheet = Command.define("DismissAlertsHubSheet", {
+	args: sheetArgs,
+	messages: [Message.ReadClock],
+	execute: ({ href, id }) => thenReadClock(dismissSheetUrl(href, id)),
+})
 
 export const ReadHubClock = readClock("ReadAlertsHubClock", Message.ReadClock)
 

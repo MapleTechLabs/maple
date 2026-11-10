@@ -39,7 +39,7 @@ const SAMPLE_PATHS = [
 	"/services/checkout",
 	"/alerts",
 	"/alerts/incidents/inc_1",
-	"/alerts/00000000-0000-4000-8000-000000000002",
+	"/alerts/rules/00000000-0000-4000-8000-000000000002",
 	"/alerts/create",
 	"/alerts/uptime/new",
 	"/alerts/slos/new",

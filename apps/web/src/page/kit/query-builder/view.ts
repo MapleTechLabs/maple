@@ -21,8 +21,10 @@ import type { QueryDraft } from "./draft"
 import { Message, type Model } from "./panel"
 import type { MetricOption } from "./metric-options"
 import { type MetricKeys, metricsBody } from "./metrics-body"
-import { addOnSections, ADD_ON_KEYS, addOnToggles, panelSelect, textInput, whereClauseEditor } from "./parts"
-import { Array as Arr, String as Str } from "effect"
+import { unshowableReasonOf } from "./condition-rows"
+import { panelSelect } from "./panel-select"
+import { addOnSections, ADD_ON_KEYS, addOnToggles, textInput, whereClauseEditor } from "./parts"
+import { Array as Arr, Option, String as Str } from "effect"
 
 // One query's builder panel and its frame.
 
@@ -147,11 +149,12 @@ const body = (h: H, model: Model, inputs: QueryPanelInputs): ReadonlyArray<Html>
 			intervalPlaceholder,
 			autocompleteValues: inputs.autocompleteValues ?? {},
 		})
+	// The span select rides with the editor's Builder/Text switch, top right of the where area.
 	const whereRow = (parts: ReadonlyArray<Html>) =>
-		h.div(
-			[h.Class("flex items-start gap-2")],
-			[whereClauseEditor(h, model, query, inputs.autocompleteValues ?? {}), ...parts],
-		)
+		whereClauseEditor(h, model, query, inputs.autocompleteValues ?? {}, {
+			className: "min-w-0",
+			trailing: parts,
+		})
 	return [
 		query.dataSource === "traces"
 			? panelSelect(
@@ -188,6 +191,35 @@ const body = (h: H, model: Model, inputs: QueryPanelInputs): ReadonlyArray<Html>
 	]
 }
 
+// The engine's warning for a dropped OR group ends in the group's text: which filter is missing.
+const OR_GROUP_DROPPED = /OR group ignored: only attribute filters can be OR-ed: (.+)$/s
+const OR_RULE = "Only attribute filters can be OR-ed."
+
+/**
+ * The engine's warnings in the panel's words: a dropped OR group names its group, one line per
+ * distinct group. `isRuleStated`: the editor's note already says the field can't be OR-ed.
+ */
+export const panelWarningsOf = (
+	warnings: ReadonlyArray<string>,
+	options: Readonly<{ isRuleStated?: boolean }> = {},
+): ReadonlyArray<string> =>
+	Arr.dedupe(
+		Arr.map(warnings, (warning) =>
+			Option.match(
+				Option.flatMap(Str.match(OR_GROUP_DROPPED)(warning), (match) =>
+					Option.fromNullishOr(match[1]),
+				),
+				{
+					onNone: () => warning,
+					onSome: (group) =>
+						options.isRuleStated === true
+							? `This OR group is not applied: ${group}.`
+							: `This OR group is not applied: ${group}. ${OR_RULE}`,
+				},
+			),
+		),
+	)
+
 /** Clauses the builder could not apply as written. */
 const warningList = (h: H, warnings: ReadonlyArray<string>): ReadonlyArray<Html> =>
 	warnings.length === 0
@@ -214,7 +246,15 @@ export const queryPanelView = Submodel.defineView<Model, Message, QueryPanelInpu
 	const content = () => [
 		...body(h, model, inputs),
 		// TODO(query-builder): the product-events setup hint (a signal empty state).
-		...warningList(h, buildTimeseriesQuerySpec(query).warnings),
+		...warningList(
+			h,
+			panelWarningsOf(buildTimeseriesQuerySpec(query).warnings, {
+				isRuleStated: Option.contains(
+					unshowableReasonOf(query.whereClause, query.dataSource),
+					"orNotApplied",
+				),
+			}),
+		),
 		// A metrics query groups from its "across" row; a Group by toggle would only hide that choice.
 		addOnToggles(
 			h,

@@ -24,7 +24,7 @@ import type { V2EscalationChain } from "@maple/domain/http/v2"
 import type { PageContext } from "../../contract"
 import { CHAIN_IN_USE_CODE } from "../shared/escalation-chains"
 import { chainDestinations, chainUuid, populatedChains } from "../shared/escalation-test-fixtures"
-import { NOW, ORG, ruleId, ruleRow } from "../../kit/alert-test-rows"
+import { hubAt, NOW, ORG, ruleId, ruleRow } from "../../kit/alert-test-rows"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { chainMenuId, init, update } from "./update"
@@ -43,7 +43,7 @@ const RULES = [ruleRow(1, { name: "Checkout errors" }), ruleRow(2, { name: "Chec
 const CHAINS = populatedChains([ruleId(1), ruleId(2), ruleId(3)])
 
 const onRouting = (grants: ReturnType<typeof Policy.grantsOf>, chains: ReadonlyArray<V2EscalationChain>) => {
-	const entered = init({ _tag: "Alerts", search: { tab: "routing" } }, context)
+	const entered = init(hubAt({ tab: "routing" }), context)
 	expect(names(entered.commands)).toContain("FetchAlertsHubChains")
 	return Arr.reduce(
 		[

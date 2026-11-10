@@ -71,10 +71,17 @@ const routers = {
 		Route.mapTo(AppRoute.AgentSession),
 	),
 	AlertRule: pipe(
-		path("alerts"),
+		path("alerts", "rules"),
 		slash(schemaSegment("ruleId", AlertRuleId)),
 		search(Search.AlertRuleSearch),
 		Route.mapTo(AppRoute.AlertRule),
+	),
+	// A rule's page before it moved under Rules; notifications still link here, `routeRedirect` sends them on.
+	AlertRuleLegacy: pipe(
+		path("alerts"),
+		slash(schemaSegment("ruleId", AlertRuleId)),
+		search(Search.AlertRuleSearch),
+		Route.mapTo(AppRoute.AlertRuleLegacy),
 	),
 	AlertsCreate: pipe(
 		path("alerts", "create"),
@@ -284,6 +291,12 @@ const routers = {
 		Route.mapTo(AppRoute.AgentSessions),
 	),
 	Alerts: pipe(path("alerts"), search(Search.AlertsSearch), Route.mapTo(AppRoute.Alerts)),
+	AlertsSection: pipe(
+		path("alerts"),
+		slash(schemaSegment("section", Search.AlertsSection)),
+		search(Search.AlertsHubSearch),
+		Route.mapTo(AppRoute.AlertsSection),
+	),
 	Analytics: pipe(path("analytics"), search(Search.AnalyticsSearch), Route.mapTo(AppRoute.Analytics)),
 	Anomalies: pipe(path("anomalies"), search(Search.AnomaliesSearch), Route.mapTo(AppRoute.Anomalies)),
 	CodeReview: pipe(path("code-review"), search(Search.CodeReviewSearch), Route.mapTo(AppRoute.CodeReview)),
@@ -521,6 +534,7 @@ const routers = {
 // Literal routes come before the param routes that would also match them (`/infra/hosts`).
 export const urlToAppRoute = Route.parseUrlWithFallback(
 	Route.oneOf(
+		routers.AlertsSection,
 		routers.AlertsCreate,
 		routers.AlertsUptimeNew,
 		routers.AlertsUptimeMonitor,

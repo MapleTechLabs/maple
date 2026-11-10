@@ -288,7 +288,7 @@ const stageAction = (h: H, action: NonNullable<DiagnosisStage["action"]>): Reado
 		]
 	if (action.kind === "destinations")
 		return [
-			linkButton(h, { variant: "outline", size: "xs", href: alertsHref({ tab: "routing" }) }, [
+			linkButton(h, { variant: "outline", size: "xs", href: alertsHref({}, "routing") }, [
 				action.label,
 			]),
 		]

@@ -390,8 +390,11 @@ export type ChipsViewInputs = Readonly<{
 	ariaLabelledBy?: string
 	ariaDescribedBy?: string
 	placeholder: string
-	emptyText: string
+	/** The Empty line. Left out, a list with no item to show stays closed instead of opening on nothing. */
+	emptyText?: string
 	className?: string
+	/** `<ComboboxChipsInput size>`: the field is as tall as a control of that size. */
+	size?: "sm" | "default"
 	/**
 	 * `MultiSelectCombobox disabled`: the field stays mounted, dimmed and inert, so cards holding
 	 * several conditionally disabled pickers never reflow.
@@ -461,7 +464,10 @@ const chip = (
 /** `<Combobox multiple>` with `ComboboxChips`: chips for the selection, then the chips input. */
 export const chipsView = Submodel.defineView<Model, Message, ChipsViewInputs>((model, inputs, h) => {
 	const chipsSelector = `[data-slot=combobox-chips]:has(> #${inputId(model.id)})`
-	const isOpen = isMounted(model.isOpen, model.animation)
+	const listed = inputs.isUnfiltered === true ? inputs.items : visibleItems(model, inputs.items)
+	// No Empty line and no item: the field reads closed, whatever opened it.
+	const hasList = inputs.emptyText !== undefined || listed.length > 0
+	const isOpen = hasList && isMounted(model.isOpen, model.animation)
 	const isDisabled = inputs.isDisabled ?? false
 	const chips = h.div(
 		[
@@ -485,12 +491,19 @@ export const chipsView = Submodel.defineView<Model, Message, ChipsViewInputs>((m
 			}),
 			...(isOpen ? [dismissButton(h)] : []),
 			h.input([
-				h.Class(cn(C.comboboxChipsInputStyles, C.comboboxChipsInputDefaultStyles)),
-				h.DataAttribute("size", "default"),
+				h.Class(
+					cn(
+						C.comboboxChipsInputStyles,
+						inputs.size === "sm"
+							? C.comboboxChipsInputSmStyles
+							: C.comboboxChipsInputDefaultStyles,
+					),
+				),
+				h.DataAttribute("size", inputs.size ?? "default"),
 				...(isDisabled ? [h.Disabled(true)] : []),
 				...inputAttributes(
 					h,
-					model,
+					hasList ? model : { ...model, isOpen: false },
 					{
 						slot: "combobox-chips-input",
 						ariaLabel: inputs.ariaLabel,
@@ -513,7 +526,7 @@ export const chipsView = Submodel.defineView<Model, Message, ChipsViewInputs>((m
 					listPopup(h, model, {
 						slot: "combobox",
 						items: inputs.items,
-						emptyText: inputs.emptyText,
+						emptyText: inputs.emptyText ?? "",
 						anchorSelector: chipsSelector,
 						isUnfiltered: inputs.isUnfiltered,
 						renderItem: (value: string) => inputs.renderItem?.(h, value) ?? [value],

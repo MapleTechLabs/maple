@@ -91,7 +91,7 @@ describe("on-call pill", () => {
 			given(withOnCall([shift()])),
 			measured,
 			expect(pill).toHaveText("On call until Mon 09:00"),
-			expect(pill).toHaveAttr("href", "/alerts?tab=oncall"),
+			expect(pill).toHaveAttr("href", "/alerts/on-call"),
 			expect(pill).toHaveAttr("data-tooltip", "On call until Mon 09:00 CET, 16 Nov · Checkout primary"),
 		)
 	})
@@ -118,7 +118,7 @@ describe("on-call pill", () => {
 			{ update, view },
 			given(withOnCall([shift({ userId: "user_someone" })])),
 			measured,
-			expect(pill).toHaveAttr("href", "/alerts?tab=oncall"),
+			expect(pill).toHaveAttr("href", "/alerts/on-call"),
 			expect(pill).not.toHaveAttr("data-tooltip"),
 		)
 	})

@@ -25,10 +25,20 @@ import { encodePublicId, PublicIdPrefixes, publicError, V2AlertIncident } from "
 import { toLoadFailure } from "@maple/views/data/load-failure"
 import * as Menu from "@maple/views/ui/menu"
 import { PageOutMessage, type PageContext } from "../../contract"
-import { destinationRow, incidentRow, NOW, ORG, ruleId, ruleRow, stateRow } from "../../kit/alert-test-rows"
+import {
+	destinationRow,
+	hubAt,
+	type HubAt,
+	incidentRow,
+	NOW,
+	ORG,
+	ruleId,
+	ruleRow,
+	stateRow,
+} from "../../kit/alert-test-rows"
 import { Message } from "./message"
 import type { Model } from "./model"
-import { init, ruleMenuId, update } from "./update"
+import { init, routeChanged, ruleMenuId, update } from "./update"
 import { breadcrumbs, view as pageView } from "./view"
 
 const ENGINEER = Policy.grantsOf(["org:engineer"])
@@ -42,10 +52,10 @@ const names = (commands: ReadonlyArray<{ readonly name: string }> | undefined) =
 const RULE_2 = Schema.decodeSync(AlertRuleId)(ruleId(2))
 const DESTINATION = Schema.decodeSync(AlertDestinationId)(destinationRow().id)
 
-const entered = (search: Model["search"] = {}) => init({ _tag: "Alerts", search }, context)
+const entered = (at: HubAt = {}) => init(hubAt(at), context)
 
 /** The four shapes and the clock have answered: rule 2 is firing, rule 4 is off. */
-const loaded = (search: Model["search"] = {}): Model =>
+const loaded = (at: HubAt = {}): Model =>
 	Arr.reduce(
 		[
 			Message.ReadClock({ nowMs: NOW }),
@@ -68,7 +78,7 @@ const loaded = (search: Model["search"] = {}): Model =>
 			Message.UpdatedDestinations({ orgId: ORG, rows: [destinationRow()] }),
 			Message.CompletedFetchSession({ orgId: ORG, grants: ENGINEER }),
 		],
-		entered(search).model,
+		entered(at).model,
 		(model, message) => pageUpdate(model, message).model,
 	)
 
@@ -96,7 +106,6 @@ describe("alerts hub", () => {
 			{ update: pageUpdate, view },
 			given(loaded()),
 			expectView(text("1 firing")).toExist(),
-			expectView(role("link", { name: /^Inbox\s*1$/ })).toExist(),
 			expectView(role("link", { name: "P95 latency 1.84s on all" })).toHaveAttr(
 				"href",
 				"/alerts/incidents/0199a003-0000-7000-8000-000000000001",
@@ -104,31 +113,121 @@ describe("alerts hub", () => {
 		)
 	})
 
-	test("the section rail marks the open section, which titles the page and its crumbs", () => {
+	test("each section's own path opens it, titled by it with its crumbs", () => {
+		const sections = [
+			["rules", "Rules"],
+			["uptime", "Uptime"],
+			["slos", "SLOs"],
+			["silences", "Silences"],
+			["maintenance", "Maintenance"],
+			["on-call", "On-call"],
+			["routing", "Routing"],
+		] as const
+		for (const [tab, label] of sections) {
+			scene(
+				{ update: pageUpdate, view },
+				given(loaded({ tab })),
+				expectView(role("heading", { name: label })).toExist(),
+			)
+			expect(breadcrumbs(loaded({ tab }))).toEqual([{ label: "Alerts", href: "/alerts" }, { label }])
+		}
 		scene(
 			{ update: pageUpdate, view },
-			given(loaded({ tab: "rules" })),
-			expectView(role("link", { name: /^Rules\s*3$/ })).toHaveAttr("aria-current", "page"),
-			expectView(role("link", { name: /^Inbox\s*1$/ })).not.toHaveAttr("aria-current", "page"),
-			expectView(role("heading", { name: "Rules" })).toExist(),
+			given(loaded()),
+			expectView(role("heading", { name: "Inbox" })).toExist(),
 		)
-		// The anomaly filters belong to the Inbox: its row keeps them, every other row drops them.
+	})
+
+	test("each section's header has one primary action: its own, and New rule only on the Inbox and Rules", () => {
+		const newRule = role("link", { name: "New rule" })
+		const moreKinds = role("button", { name: "More rule types" })
+		for (const tab of ["inbox", "rules"] as const) {
+			scene(
+				{ update: pageUpdate, view },
+				given(loaded({ tab })),
+				expectView(newRule).toHaveAttr("href", "/alerts/create"),
+				expectView(moreKinds).toExist(),
+			)
+		}
+		for (const tab of ["uptime", "slos", "silences", "maintenance", "on-call", "routing"] as const) {
+			scene(
+				{ update: pageUpdate, view },
+				given(loaded({ tab })),
+				expectView(newRule).not.toExist(),
+				expectView(moreKinds).not.toExist(),
+			)
+		}
 		scene(
 			{ update: pageUpdate, view },
-			given(loaded({ tab: "inbox", signal: "anomaly", serviceName: "checkout" })),
-			expectView(role("link", { name: /^Inbox\s*1$/ })).toHaveAttr(
-				"href",
-				"/alerts?tab=inbox&serviceName=checkout&signal=anomaly",
-			),
-			expectView(role("link", { name: "Silences" })).toHaveAttr(
-				"href",
-				"/alerts?tab=silences&serviceName=checkout",
-			),
+			given(loaded({ tab: "silences" })),
+			expectView(role("button", { name: "New silence" })).toExist(),
 		)
-		expect(breadcrumbs(loaded({ tab: "silences" }))).toEqual([
-			{ label: "Alerts", href: "/alerts" },
-			{ label: "Silences" },
+		scene(
+			{ update: pageUpdate, view },
+			given(loaded({ tab: "routing" })),
+			expectView(role("button", { name: "Add destination" })).toExist(),
+		)
+		// A viewer who can't create a section's thing gets no header action there.
+		const asMember = pageUpdate(
+			loaded({ tab: "silences" }),
+			Message.CompletedFetchSession({ orgId: ORG, grants: Policy.grantsOf(["org:member"]) }),
+		).model
+		scene(
+			{ update: pageUpdate, view },
+			given(asMember),
+			expectView(role("button", { name: "New silence" })).not.toExist(),
+			expectView(newRule).not.toExist(),
+		)
+	})
+
+	test("an org without rules gets the create actions from the empty state alone, on the Inbox and on Rules", () => {
+		const newRule = role("link", { name: "New rule" })
+		const firstRun = (at: HubAt, grants = ENGINEER): Model =>
+			Arr.reduce(
+				[
+					Message.ReadClock({ nowMs: NOW }),
+					Message.UpdatedRules({ orgId: ORG, rows: [] }),
+					Message.UpdatedRuleStates({ orgId: ORG, rows: [] }),
+					Message.UpdatedIncidents({ orgId: ORG, rows: [] }),
+					Message.UpdatedDestinations({ orgId: ORG, rows: [] }),
+					Message.CompletedFetchSession({ orgId: ORG, grants }),
+				],
+				entered(at).model,
+				(model, message) => pageUpdate(model, message).model,
+			)
+		const tabs: ReadonlyArray<"inbox" | "rules"> = ["inbox", "rules"]
+		Arr.forEach(tabs, (tab) => {
+			scene(
+				{ update: pageUpdate, view },
+				given(firstRun({ tab })),
+				expectView(role("link", { name: "Start from scratch" })).toExist(),
+				expectView(role("button", { name: "Add destination" })).toExist(),
+				expectView(newRule).not.toExist(),
+				expectView(role("button", { name: "More rule types" })).not.toExist(),
+			)
+			// A member's empty state offers nothing to create, so the header keeps its action.
+			scene(
+				{ update: pageUpdate, view },
+				given(firstRun({ tab }, Policy.grantsOf(["org:member"]))),
+				expectView(role("link", { name: "Start from scratch" })).not.toExist(),
+				expectView(newRule).toExist(),
+			)
+		})
+		// Still loading: nothing says the org is empty yet.
+		scene({ update: pageUpdate, view }, given(entered().model), expectView(newRule).toExist())
+	})
+
+	test("moving between sections keeps what was read: the Inbox and Rules share it, a section reads its own once", () => {
+		const inbox = loaded()
+		expect(names(routeChanged(inbox, hubAt({ tab: "rules" }), context).commands)).toEqual([
+			"ReadAlertsHubClock",
 		])
+		const uptime = routeChanged(inbox, hubAt({ tab: "uptime" }), context)
+		expect(names(uptime.commands)).toContain("FetchAlertsHubMonitors")
+		const back = routeChanged(uptime.model, hubAt(), context)
+		expect(names(routeChanged(back.model, hubAt({ tab: "uptime" }), context).commands)).not.toContain(
+			"FetchAlertsHubMonitors",
+		)
 	})
 
 	const v2Incident = Schema.decodeSync(V2AlertIncident)({
@@ -183,8 +282,6 @@ describe("alerts hub", () => {
 			{ update: pageUpdate, view },
 			given(acknowledged),
 			expectView(text("0 firing")).toExist(),
-			// The tab's red badge counts only what nobody is on yet.
-			expectView(role("link", { name: "Inbox" })).toExist(),
 			expectView(text(/1 acknowledged/)).toExist(),
 			expectView(text(/^Acknowledged by Dana Kim ·/)).toExist(),
 			expectView(role("button", { name: "Unacknowledge P95 latency 1.84s on all" })).toExist(),
@@ -313,7 +410,7 @@ describe("alerts hub", () => {
 			click(role("button", { name: /^Firing/ })),
 			expectOutMessage(
 				PageOutMessage.RequestedNavigation({
-					url: "/alerts?tab=rules&status=firing",
+					url: "/alerts/rules?status=firing",
 					isReplace: false,
 				}),
 			),
@@ -323,7 +420,7 @@ describe("alerts hub", () => {
 			Message.ClickedStatusFilter({ bucket: "firing" }),
 		)
 		expect(cleared.outMessage).toEqual(
-			PageOutMessage.RequestedNavigation({ url: "/alerts?tab=rules", isReplace: false }),
+			PageOutMessage.RequestedNavigation({ url: "/alerts/rules", isReplace: false }),
 		)
 	})
 

@@ -56,7 +56,7 @@ export const retrieveIncidentEscalation = (id: AlertIncidentId) =>
 		return incident.escalation
 	}).pipe(Effect.mapError(toLoadFailure))
 
-export const routingTabHref = (): string => hrefOf(AppRoute.Alerts({ search: { tab: "routing" } }))
+export const routingTabHref = (): string => hrefOf(AppRoute.AlertsSection({ section: "routing", search: {} }))
 
 /** `10m`, `1h`, `1h 30m`, `1d`. */
 export const formatWait = (minutes: number): string => {

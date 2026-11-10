@@ -1,9 +1,9 @@
 import * as Animation from "@foldkit/ui/animation"
-import { Array, Effect, Option, Schema, Stream, String as Str } from "effect"
+import { Array, Effect, Option, Queue, Schema, Stream, String as Str } from "effect"
 import { Mount, type Update } from "foldkit"
 import { defineMessageUnion } from "foldkit/message"
 import { anchoredPopup } from "./overlay/anchored"
-import { containEscape } from "./overlay/portal"
+import { containEscape, keepFocusOnPress } from "./overlay/portal"
 import { initPopup, makeTransition, PopupState } from "./overlay/popup-state"
 import { Align, positionDefaults, Side } from "./overlay/position"
 import { isRovingKey, nextIndex } from "./overlay/roving"
@@ -235,8 +235,49 @@ export const MountCombobox = Mount.defineStream("MountCombobox", {
 				}
 			}),
 			Stream.merge(escapeContained(anchorSelector)),
+			// A press on the list leaves focus in the input that takes the keys: the field's own, or
+			// the popup's search input. Left on the listbox, Escape and Enter reached nothing.
+			Stream.merge(pressesKeepFocus(element)),
+			// A popup with its own search input: Escape there is stopped at the portal, which the
+			// anchor does not enclose. A field's list instead closes once focus leaves the field.
+			Stream.merge(
+				returnFocusId === undefined
+					? focusLeaves(element, anchorSelector)
+					: escapeContainedIn(element),
+			),
 		),
 })
+
+type PressedOutside = Extract<Message, { _tag: "PressedOutside" }>
+
+/** Base UI keeps focus in the input while the list is pressed, so typing, Enter and Escape go on working. */
+const pressesKeepFocus = (root: Element): Stream.Stream<never> =>
+	Stream.callback<never>(() => keepFocusOnPress(root).pipe(Effect.andThen(Effect.never)))
+
+/** Focus moved (Tab) to something outside the field and its list: the list closes, as on a press outside. */
+export const focusLeaves = (
+	root: Pick<Element, "contains">,
+	anchorSelector: string,
+): Stream.Stream<PressedOutside> =>
+	Stream.callback<PressedOutside>((queue) =>
+		Effect.acquireRelease(
+			Effect.sync(() => {
+				const onFocusIn = (event: Event) => {
+					const target = event.target
+					if (!(target instanceof Element)) return
+					if (root.contains(target) || target.closest(anchorSelector) !== null) return
+					Queue.offerUnsafe(queue, Message.PressedOutside())
+				}
+				document.addEventListener("focusin", onFocusIn)
+				return onFocusIn
+			}),
+			(onFocusIn) => Effect.sync(() => document.removeEventListener("focusin", onFocusIn)),
+		).pipe(Effect.andThen(Effect.never)),
+	)
+
+/** Escape typed in the popup's own input stops at the portal, short of an enclosing dialog or page. */
+const escapeContainedIn = (root: Element): Stream.Stream<never> =>
+	Stream.callback<never>(() => containEscape(root).pipe(Effect.andThen(Effect.never)))
 
 /** While the list is open, Escape in the input closes it and stops short of an enclosing dialog. */
 const escapeContained = (anchorSelector: string): Stream.Stream<never> =>

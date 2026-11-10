@@ -66,7 +66,13 @@ export type ViewInputs = Readonly<{
 	leading?: ReadonlyArray<Html>
 	/** `<Select disabled>`: the trigger and hidden input are disabled and out of the tab order. */
 	isDisabled?: boolean
+	/** `<SelectPositioner alignItemWithTrigger={false}>`: the popup opens below the trigger. */
+	alignItemWithTrigger?: boolean
 }>
+
+/** The popup sits over the trigger (`data-side="none"`), unless the caller anchors it below. */
+const sideOf = (model: Model, inputs: Pick<ViewInputs, "alignItemWithTrigger">): string =>
+	inputs.alignItemWithTrigger !== false && model.isAlignedWithTrigger ? "none" : model.side
 
 type H = HtmlBuilder<Message>
 
@@ -193,13 +199,13 @@ const listKeys = (h: H, options: ReadonlyArray<SelectOption>) =>
 const TRIGGER_KEYS = new Set(["ArrowDown", "ArrowUp", "Enter", " "])
 
 /** `SelectScrollUpArrow` / `SelectScrollDownArrow`, while the list can scroll that way. */
-const scrollArrow = (h: H, model: Model, direction: "up" | "down"): Html =>
+const scrollArrow = (h: H, model: Model, inputs: ViewInputs, direction: "up" | "down"): Html =>
 	h.div(
 		[
 			h.AriaHidden(true),
 			h.Class(direction === "up" ? selectScrollUpArrowStyles : selectScrollDownArrowStyles),
 			h.DataAttribute("direction", direction),
-			h.DataAttribute("side", model.isAlignedWithTrigger ? "none" : model.side),
+			h.DataAttribute("side", sideOf(model, inputs)),
 			h.DataAttribute("slot", `select-scroll-${direction}-arrow`),
 			h.DataAttribute("visible", ""),
 			h.Style({ position: "absolute" }),
@@ -217,14 +223,14 @@ const portal = (h: H, model: Model, inputs: ViewInputs): Html => {
 	const placement = [
 		h.DataAttribute("align", model.align),
 		...state,
-		h.DataAttribute("side", model.isAlignedWithTrigger ? "none" : model.side),
+		h.DataAttribute("side", sideOf(model, inputs)),
 	]
 	return h.div(
 		[
 			h.Key(portalId(model.id)),
 			h.DataAttribute("base-ui-portal", ""),
 			h.Id(portalId(model.id)),
-			h.OnMount(MountSelect({ id: model.id })),
+			h.OnMount(MountSelect({ id: model.id, alignItemWithTrigger: inputs.alignItemWithTrigger })),
 		],
 		[
 			h.div([
@@ -249,7 +255,7 @@ const portal = (h: H, model: Model, inputs: ViewInputs): Html => {
 							h.DataAttribute("align", model.align),
 							h.DataAttribute("base-ui-focusable", ""),
 							...state,
-							h.DataAttribute("side", model.isAlignedWithTrigger ? "none" : model.side),
+							h.DataAttribute("side", sideOf(model, inputs)),
 							h.DataAttribute("slot", "select-popup"),
 							listKeys(h, optionsOf(inputs.entries)),
 							h.Id(`${model.id}-popup`),
@@ -257,7 +263,7 @@ const portal = (h: H, model: Model, inputs: ViewInputs): Html => {
 							h.Tabindex(-1),
 						],
 						[
-							...(model.scrollArrows.up ? [scrollArrow(h, model, "up")] : []),
+							...(model.scrollArrows.up ? [scrollArrow(h, model, inputs, "up")] : []),
 							h.div(
 								[h.Class(selectPopupSurfaceStyles)],
 								[
@@ -277,7 +283,7 @@ const portal = (h: H, model: Model, inputs: ViewInputs): Html => {
 									),
 								],
 							),
-							...(model.scrollArrows.down ? [scrollArrow(h, model, "down")] : []),
+							...(model.scrollArrows.down ? [scrollArrow(h, model, inputs, "down")] : []),
 						],
 					),
 					focusGuard(h, "inside"),

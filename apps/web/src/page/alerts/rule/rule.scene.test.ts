@@ -27,7 +27,7 @@ import { ToggleRuleEnabled } from "./command"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { init, routeChanged, update } from "./update"
-import { view as pageView } from "./view"
+import { breadcrumbsOf, view as pageView } from "./view"
 
 const orgId = Schema.decodeSync(OrgId)(ORG)
 const context: PageContext = { orgId, pinnedNamespace: null, timeZone: "UTC" }
@@ -138,7 +138,7 @@ describe("alert rule", () => {
 
 	test("the Overview and History tab links keep the time range", () => {
 		const search = { timePreset: "7d" }
-		const href = (tab: string) => `/alerts/${RULE}?tab=${tab}&timePreset=7d`
+		const href = (tab: string) => `/alerts/rules/${RULE}?tab=${tab}&timePreset=7d`
 		scene(
 			{ update: pageUpdate, view },
 			given(loaded(search)),
@@ -169,7 +169,16 @@ describe("alert rule", () => {
 			given(model),
 			themeResolved(),
 			expectView(text("Rule not found")).toExist(),
+			expectView(role("link", { name: "Back to rules" })).toHaveAttr("href", "/alerts/rules"),
 		)
+	})
+
+	test("the crumbs go through Rules to the rule", () => {
+		expect(breadcrumbsOf(loaded())).toEqual([
+			{ label: "Alerts", href: "/alerts" },
+			{ label: "Rules", href: "/alerts/rules" },
+			{ label: "Payment p95 latency" },
+		])
 	})
 
 	test("a raw SQL rule slowed down by its timeouts shows its query time per check and why", () => {
@@ -348,7 +357,7 @@ describe("alert rule", () => {
 			}),
 		)
 		expect(viewAll.outMessage).toEqual(
-			PageOutMessage.RequestedNavigation({ url: "/alerts?tab=overview", isReplace: false }),
+			PageOutMessage.RequestedNavigation({ url: "/alerts", isReplace: false }),
 		)
 	})
 })

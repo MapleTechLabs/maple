@@ -65,7 +65,7 @@ export const LAB_ENTRIES: ReadonlyArray<LabEntry> = [
 		path: "/lab/alerts-hub",
 		title: "Alerts hub",
 		description:
-			"The alerts Inbox, Rules and Silences tabs loading, failing and populated, with a rule skipped for too few samples and a cancelled silence, and the silence dialog (`?state=`).",
+			"The alerts Inbox, Rules and Silences tabs loading, failing and populated, with a rule skipped for too few samples and a cancelled silence, and the silence side panel empty, picking a time and filled in (`?state=`).",
 		kind: "lab",
 		session: "none",
 	},
@@ -448,6 +448,14 @@ export const LAB_ENTRIES: ReadonlyArray<LabEntry> = [
 		title: "Status pages",
 		description:
 			"The status pages list, the look picker and the form fields (hint and error) over fixture pages.",
+		kind: "lab",
+		session: "none",
+	},
+	{
+		path: "/lab/condition-builder",
+		title: "Condition builder",
+		description:
+			"The query panel's where clause as field, operator and value rows: empty, populated, a clause the rows can't show, and text mode.",
 		kind: "lab",
 		session: "none",
 	},

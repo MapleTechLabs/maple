@@ -28,7 +28,7 @@ import {
 import { Schema } from "effect"
 import { KeyedSchema } from "@maple/views/data/keyed"
 import { LoadFailure } from "@maple/views/data/load-failure"
-import { AlertsSearch } from "../../../route/search"
+import { AlertsHubSearch, AlertsTab } from "../../../route/search"
 import * as Dialog from "@maple/views/ui/dialog"
 import * as Menu from "@maple/views/ui/menu"
 import * as DestinationDialog from "../destination/dialog"
@@ -51,7 +51,8 @@ export type SloListRow = typeof SloListRow.Type
 export const TestOutcome = Schema.Struct({ message: Schema.String, success: Schema.Boolean })
 
 export const Model = Schema.Struct({
-	search: AlertsSearch,
+	tab: AlertsTab,
+	search: AlertsHubSearch,
 	/** `Clock.currentTimeMillis` when the overview model was built; `null` until read. */
 	nowMs: Schema.NullOr(Schema.Number),
 	rules: LiveRows(AlertRuleRowSchema),

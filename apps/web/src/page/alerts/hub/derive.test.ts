@@ -2,7 +2,7 @@ import { OrgId } from "@maple/domain"
 import { Array as Arr, Option, Schema } from "effect"
 import { describe, expect, test } from "vitest"
 import type { PageContext } from "../../contract"
-import { incidentRow, NOW, ORG, ruleRow } from "../../kit/alert-test-rows"
+import { hubAt, incidentRow, NOW, ORG, ruleRow } from "../../kit/alert-test-rows"
 import { overviewOf } from "./derive"
 import { Message } from "./message"
 import type { Model } from "./model"
@@ -17,7 +17,7 @@ const loaded = (): Model =>
 			Message.UpdatedRules({ orgId: ORG, rows: [ruleRow(1), ruleRow(2)] }),
 			Message.UpdatedIncidents({ orgId: ORG, rows: [incidentRow()] }),
 		],
-		init({ _tag: "Alerts", search: {} }, context).model,
+		init(hubAt(), context).model,
 		(model, message) => update(model, message, context).model,
 	)
 

@@ -8,7 +8,7 @@ import * as Menu from "@maple/views/ui/menu"
 import { PageOutMessage, type PageContext } from "../../contract"
 import { sloHref } from "../shared/slo-commands"
 import { checkoutSlo, SLO_RULE_UUID, searchSlo, sloStatus, sloUuid } from "../shared/slo-test-fixtures"
-import { incidentRow, NOW, ORG } from "../../kit/alert-test-rows"
+import { hubAt, incidentRow, NOW, ORG } from "../../kit/alert-test-rows"
 import { Message } from "./message"
 import type { Model, SloListRow } from "./model"
 import { init, update } from "./update"
@@ -25,7 +25,7 @@ const names = (commands: ReadonlyArray<{ readonly name: string }> | undefined) =
 	Arr.map(commands ?? [], ({ name }) => name)
 
 const onSlos = (grants = ENGINEER): Model => {
-	const entered = init({ _tag: "Alerts", search: { tab: "slos" } }, context).model
+	const entered = init(hubAt({ tab: "slos" }), context).model
 	return Arr.reduce(
 		[Message.ReadClock({ nowMs: NOW }), Message.CompletedFetchSession({ orgId: ORG, grants })],
 		entered,
@@ -46,12 +46,8 @@ const HEALTHY_AND_BURNING: ReadonlyArray<SloListRow> = [
 
 describe("alerts hub, SLOs tab", () => {
 	test("the SLOs and their statuses are read only while the tab is open", () => {
-		expect(names(init({ _tag: "Alerts", search: {} }, context).commands)).not.toContain(
-			"FetchAlertsHubSlos",
-		)
-		expect(names(init({ _tag: "Alerts", search: { tab: "slos" } }, context).commands)).toContain(
-			"FetchAlertsHubSlos",
-		)
+		expect(names(init(hubAt(), context).commands)).not.toContain("FetchAlertsHubSlos")
+		expect(names(init(hubAt({ tab: "slos" }), context).commands)).toContain("FetchAlertsHubSlos")
 	})
 
 	test("an org without SLOs is told what one is and offered the first", () => {
@@ -204,18 +200,19 @@ describe("alerts hub, SLOs tab", () => {
 		expect(names(pageUpdate(failed, Message.ClickedRetrySlos()).commands)).toEqual(["FetchAlertsHubSlos"])
 	})
 
-	test("the header's main create button makes an SLO here, for admins only, and the menu offers it too", () => {
+	test("the header's one primary action is New SLO here, for admins only, and the Inbox's menu offers it too", () => {
 		scene(
 			{ update: pageUpdate, view },
 			given(withSlos(HEALTHY_AND_BURNING)),
 			expectView(role("link", { name: "New SLO" })).toHaveAttr("href", "/alerts/slos/new"),
 			expectView(role("link", { name: "New rule" })).not.toExist(),
+			expectView(role("button", { name: "More rule types" })).not.toExist(),
 		)
 		scene(
 			{ update: pageUpdate, view },
 			given(withSlos(HEALTHY_AND_BURNING, onSlos(MEMBER))),
 			expectView(role("link", { name: "New SLO" })).not.toExist(),
-			expectView(role("link", { name: "New rule" })).toHaveAttr("href", "/alerts/create"),
+			expectView(role("link", { name: "New rule" })).not.toExist(),
 		)
 		const picked = pageUpdate(
 			withSlos(HEALTHY_AND_BURNING),
@@ -231,7 +228,7 @@ describe("alerts hub, SLOs tab", () => {
 
 describe("alerts hub inbox, SLO incidents", () => {
 	test("an org whose only rules are SLOs' sees their open incidents, not the empty state", () => {
-		const entered = init({ _tag: "Alerts", search: {} }, context).model
+		const entered = init(hubAt(), context).model
 		const model = Arr.reduce(
 			[
 				Message.ReadClock({ nowMs: NOW }),
