@@ -18,29 +18,22 @@
  *     `env: workerEnv ?? {}` fallback silently degrading the model config when a caller forgot to
  *     thread the worker env through.
  */
-import { MCP_ANTICIPATED_ERROR_IDENTIFIERS } from "../mcp/expected-failures"
 import { type ChatTurnOrigin, type ChatTurnTenantEncoded } from "@maple/domain/chat-session"
 import type { BillingCustomerId, PrReviewFailureReason } from "@maple/domain/http"
-import { type ChatSessionNamespace, chatSessionsLayerIfBound } from "@maple/backend/platform/chat-sessions"
-import { envPorts } from "@maple/backend/platform/env-ports"
 import { CodeLoader } from "@maple/backend/platform/bindings"
 import { forkRequestScoped } from "@maple/backend/platform/fork-request-scoped"
-import { runtimeTelemetry } from "@maple/infra/worker-telemetry"
-import {
-	Effect,
-	Layer,
-	ManagedRuntime,
-	Match,
-	Option,
-	Redacted,
-	Schema,
-	Array as Arr,
-	String as Str,
-} from "effect"
+import { Effect, Layer, ManagedRuntime, Match, Option, Redacted, Array as Arr, String as Str } from "effect"
 import { FetchHttpClient } from "effect/http"
 import type { WorkersAiBinding } from "../platform/WorkersAiHttpClient"
 import { ReturnedToolFailuresOkLive } from "../platform/genai-spans"
 import type { ChatSession } from "./ChatSession"
+import {
+	chatPlatformLayer,
+	type ChatRuntimeInput,
+	ChatRuntimeStepError,
+	chatTelemetry,
+	releaseChatRuntime,
+} from "./do-runtime"
 import { INVESTIGATION_PROGRESS_HEARTBEAT, makeProgressFeed, parseToolInput, stepLabel } from "./progress"
 import { makeChildFindings } from "./review/child-findings"
 import { makeReviewCoverage } from "./review/coverage"
@@ -71,50 +64,12 @@ import type { AiCreditsExhausted } from "@maple/backend/services/billing/AiCredi
 import { summarizeCause } from "@maple/backend/platform/describe-cause"
 import { trackAiCredits, trackTokenUsage } from "@maple/backend/services/billing/autumn-tracker"
 
-/** A best-effort turn step (loading the code executor, disposing the runtime, flushing spans) rejected. */
-class TurnRuntimeStepError extends Schema.TaggedError<TurnRuntimeStepError>()(
-	"@maple/ai/chat/TurnRuntimeStepError",
-	{
-		message: Schema.String,
-		cause: Schema.Defect(),
-	},
-) {}
-
-/**
- * The engine's per-step bookkeeping, which is named and therefore traced.
- *
- * Until effect-agent beta.104 this list also held `AgentRuntime.ownModelResponsePart`, one span per
- * streamed delta: 99.8% of this service's spans on 2026-09-18, evicting the run's real spans from
- * the SDK's 10,000-span buffer. Upstream removed it; these are the zero-content leftovers.
- *
- * Named one by one rather than by an `AgentRuntime.` prefix: `AgentRuntime.model` is the model
- * call, and `dropSpanNames` matches on prefix.
- */
-const ENGINE_BOOKKEEPING_SPANS = [
-	"AgentRuntime.estimateContextTokens",
-	"AgentRuntime.nextContextEstimate",
-	"AgentRuntime.decodeEventJson",
-	"AgentRuntime.schedulingConcurrency",
-	"ToolExposure.eligibleCatalog",
-]
-
-// Deliberately not `maple-api`: background work sharing the request-facing
-// service's name skewed its percentiles (p99 32s, 2026-09-04).
-const telemetry = runtimeTelemetry({
-	serviceName: "maple-chat",
-	anticipatedErrorIdentifiers: MCP_ANTICIPATED_ERROR_IDENTIFIERS,
-	dropSpanNames: ENGINE_BOOKKEEPING_SPANS,
-})
-
-export interface RunChatSessionTurnInput {
+export interface RunChatSessionTurnInput extends ChatRuntimeInput {
 	/** The Durable Object itself. Appends are direct calls, not stub RPC. */
 	readonly session: ChatSession
 	readonly sessionId: string
-	readonly env: Record<string, unknown>
 	/** The Workers AI gateway binding, from the activation; none sends Workers AI calls over REST. */
 	readonly workersAi?: Option.Option<WorkersAiBinding>
-	/** This Worker's `ChatSession` namespace, from the activation; the graph's `ChatSessions` port. */
-	readonly chatSessions?: ChatSessionNamespace
 	readonly messageId: string
 	readonly tenant: ChatTurnTenantEncoded
 	/** Who is driving the turn, stated by whoever raised it. */
@@ -243,8 +198,7 @@ export const runChatSessionTurn = async (input: RunChatSessionTurnInput): Promis
 
 	const [
 		{ InvestigationServicesLive },
-		{ DatabasePgLive },
-		{ layerMapleDbConnection },
+		platform,
 		{
 			layerDecisionModelFromConfig,
 			FindingEmbedderFromConfigLive,
@@ -259,8 +213,7 @@ export const runChatSessionTurn = async (input: RunChatSessionTurnInput): Promis
 		{ withSandboxBreaker },
 	] = await Promise.all([
 		import("../runtime/mcp-service-graph"),
-		import("@maple/backend/platform/DatabasePgLive"),
-		import("@maple/backend/platform/pg-connection-source"),
+		chatPlatformLayer(input, ReturnedToolFailuresOkLive.pipe(Layer.provideMerge(chatTelemetry.layer))),
 		import("../platform/Llm"),
 		import("../mcp/dispatcher"),
 		import("./sandbox-breaker"),
@@ -279,11 +232,7 @@ export const runChatSessionTurn = async (input: RunChatSessionTurnInput): Promis
 			// Read by `PrReviewService` as it is built: the review's feedback filter.
 			Layer.provideMerge(FindingEmbedderFromConfigLive),
 			Layer.provideMerge(layerLlmFromConfig(input.workersAi)),
-			Layer.provideMerge(DatabasePgLive),
-			Layer.provideMerge(layerMapleDbConnection(input.env)),
-			Layer.provideMerge(envPorts(input.env)),
-			Layer.provideMerge(chatSessionsLayerIfBound(input.chatSessions, input.env)),
-			Layer.provideMerge(ReturnedToolFailuresOkLive.pipe(Layer.provideMerge(telemetry.layer))),
+			Layer.provideMerge(platform),
 		),
 	)
 
@@ -501,7 +450,7 @@ export const runChatSessionTurn = async (input: RunChatSessionTurnInput): Promis
 					: yield* Effect.tryPromise({
 							try: () => import("@yielded/agent-platform-cloudflare/cloudflare-code-mode"),
 							catch: (cause) =>
-								new TurnRuntimeStepError({
+								new ChatRuntimeStepError({
 									message: "Failed to load the code executor",
 									cause,
 								}),
@@ -760,27 +709,5 @@ export const runChatSessionTurn = async (input: RunChatSessionTurnInput): Promis
 	// A turn that failed is ended by the session once this returns (`ChatSession.runTurn`), with
 	// stable copy: the detailed cause stays in server logs and the failed span.
 	await runtime.runPromiseExit(program)
-	await Effect.runPromise(releaseQuietly(runtime, () => telemetry.flush(input.env)))
+	await Effect.runPromise(releaseChatRuntime(runtime, input.env))
 }
-
-/**
- * Dispose the turn's runtime, then flush its spans. Best effort: the turn's outcome is already in
- * the log, so a failed dispose or export is dropped rather than failing the caller.
- */
-const releaseQuietly = (
-	runtime: { readonly dispose: () => Promise<void> },
-	flush: () => Promise<void>,
-): Effect.Effect<void> =>
-	Effect.tryPromise({
-		try: () => runtime.dispose(),
-		catch: (cause) => new TurnRuntimeStepError({ message: "Failed to dispose the turn runtime", cause }),
-	}).pipe(
-		Effect.ignore,
-		Effect.andThen(
-			Effect.tryPromise({
-				try: flush,
-				catch: (cause) =>
-					new TurnRuntimeStepError({ message: "Failed to flush the turn spans", cause }),
-			}).pipe(Effect.ignore),
-		),
-	)
