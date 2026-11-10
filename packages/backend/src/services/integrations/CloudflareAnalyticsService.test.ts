@@ -2166,14 +2166,13 @@ describe("CloudflareAnalyticsService", () => {
 				// discovery created this tick simply have no watermark yet.)
 				if (row.watermarkAt != null) assert.strictEqual(row.watermarkAt, T0 - 30 * MIN)
 			}
-			// The very first call was refused, so the connection backs off 10 minutes on its anchor
-			// row and the lease is released.
+			// A rate limit writes no persisted backoff: the connection sits out a 5-minute lease hold.
 			const anchor = Option.getOrThrow(
 				Arr.findFirst(rows, (row) => row.dataset === "workers_invocations" && row.zoneId === ""),
 			)
-			assert.strictEqual(anchor.backoffReason, "rate_limited")
-			assert.strictEqual(anchor.backoffUntil, T0 + 10 * MIN)
-			assert.isNull(anchor.leaseUntil)
+			assert.isNull(anchor.backoffReason)
+			assert.isNull(anchor.backoffUntil)
+			assert.strictEqual(anchor.leaseUntil, T0 + 5 * MIN)
 			assert.strictEqual(captured.length, 0)
 		}).pipe(
 			Effect.provide(
@@ -2208,7 +2207,7 @@ describe("CloudflareAnalyticsService", () => {
 			assert.deepStrictEqual(yield* grantCapsOf, [30])
 
 			// Near the floor a halving clamps to it, and a further rate limit keeps it there. Each
-			// poll waits out the first-call backoff (10, then 20 minutes).
+			// poll comes after the previous one's 5-minute lease hold.
 			yield* seedGrantCap(8)
 			yield* TestClock.setTime(T0 + 11 * MIN)
 			yield* service.pollOrg(ORG)
@@ -2881,48 +2880,72 @@ describe("CloudflareAnalyticsService", () => {
 			},
 		)
 
+		it.effect("a rate limit on the first call holds the lease 5 minutes and writes no backoff", () => {
+			const testDb = createTestDb(trackedDbs)
+			const captured: CapturedIngest[] = []
+			const graphqlCalls = { count: 0 }
+			const fetchOptions: FetchOptions = { graphqlErrors: RATE_LIMITED, graphqlCalls }
+			return Effect.gen(function* () {
+				yield* TestClock.setTime(T0)
+				yield* seedConnection()
+				yield* seedBehindAnchor()
+
+				yield* pollAt(T0)
+				assert.strictEqual(graphqlCalls.count, 1)
+				const first = yield* anchorRow
+				assert.isNull(first.backoffUntil)
+				assert.isNull(first.backoffReason)
+				assert.strictEqual(first.backoffStreak, 0)
+				assert.strictEqual(first.leaseUntil, T0 + 5 * MIN)
+
+				// Inside the hold the next tick asks Cloudflare nothing.
+				yield* pollAt(T0 + 2 * MIN)
+				assert.strictEqual(graphqlCalls.count, 1)
+
+				// A repeat refusal does not escalate: the same 5-minute hold, still no backoff.
+				yield* pollAt(T0 + 6 * MIN)
+				assert.isAbove(graphqlCalls.count, 1)
+				const second = yield* anchorRow
+				assert.isNull(second.backoffUntil)
+				assert.strictEqual(second.backoffStreak, 0)
+				assert.strictEqual(second.leaseUntil, T0 + 11 * MIN)
+
+				// Once the hold runs out the next tick polls normally.
+				fetchOptions.graphqlErrors = undefined
+				const recovered = yield* pollAt(T0 + 12 * MIN)
+				assert.isAbove(recovered.rowsIngested, 0)
+				const after = yield* anchorRow
+				assert.isNull(after.backoffUntil)
+				assert.isNull(after.leaseUntil)
+				assert.isAbove(after.watermarkAt ?? 0, T0 - 30 * MIN)
+			}).pipe(Effect.provide(makeLayer(testDb, captured, fetchOptions)))
+		})
+
 		it.effect(
-			"a rate limit on the first call backs off 10 then 20 minutes and resets once a call is answered",
+			"a rate_limited backoff stored before the ladder was dropped clears on the next answered poll",
 			() => {
 				const testDb = createTestDb(trackedDbs)
 				const captured: CapturedIngest[] = []
-				const graphqlCalls = { count: 0 }
-				const fetchOptions: FetchOptions = { graphqlErrors: RATE_LIMITED, graphqlCalls }
 				return Effect.gen(function* () {
 					yield* TestClock.setTime(T0)
 					yield* seedConnection()
-					yield* seedBehindAnchor()
+					yield* seedBehindAnchor({
+						backoffUntil: T0 + 10 * MIN,
+						backoffStreak: 2,
+						backoffReason: "rate_limited",
+					})
+					// The stored row is still honoured until it expires.
+					const skipped = yield* pollAt(T0)
+					assert.include(skipped.skipped ?? "", "backoff")
+					assert.strictEqual(skipped.callsMade, 0)
 
-					yield* pollAt(T0)
-					assert.strictEqual(graphqlCalls.count, 1)
-					const first = yield* anchorRow
-					assert.strictEqual(first.backoffReason, "rate_limited")
-					assert.strictEqual(first.backoffStreak, 1)
-					assert.strictEqual(first.backoffUntil, T0 + 10 * MIN)
-					assert.isNull(first.leaseUntil)
-
-					// Inside the backoff the next tick asks Cloudflare nothing.
-					yield* pollAt(T0 + 5 * MIN)
-					assert.strictEqual(graphqlCalls.count, 1)
-
-					yield* pollAt(T0 + 11 * MIN)
-					const second = yield* anchorRow
-					assert.strictEqual(second.backoffStreak, 2)
-					assert.strictEqual(second.backoffUntil, T0 + 31 * MIN)
-
-					yield* pollAt(T0 + 32 * MIN)
-					const capped = yield* anchorRow
-					assert.strictEqual(capped.backoffStreak, 2)
-					assert.strictEqual(capped.backoffUntil, T0 + 52 * MIN)
-
-					fetchOptions.graphqlErrors = undefined
-					const recovered = yield* pollAt(T0 + 53 * MIN)
-					assert.isAbove(recovered.rowsIngested, 0)
-					const cleared = yield* anchorRow
-					assert.isNull(cleared.backoffUntil)
-					assert.isNull(cleared.backoffReason)
-					assert.strictEqual(cleared.backoffStreak, 0)
-				}).pipe(Effect.provide(makeLayer(testDb, captured, fetchOptions)))
+					const polled = yield* pollAt(T0 + 11 * MIN)
+					assert.isAbove(polled.rowsIngested, 0)
+					const anchor = yield* anchorRow
+					assert.isNull(anchor.backoffUntil)
+					assert.isNull(anchor.backoffReason)
+					assert.strictEqual(anchor.backoffStreak, 0)
+				}).pipe(Effect.provide(makeLayer(testDb, captured)))
 			},
 		)
 
@@ -2957,7 +2980,7 @@ describe("CloudflareAnalyticsService", () => {
 		})
 
 		it.effect(
-			"a rate limit after an answered call keeps the 5-minute lease hold and clears the streak",
+			"a rate limit after an answered call takes the 5-minute lease hold and clears the stored streak",
 			() => {
 				const testDb = createTestDb(trackedDbs)
 				const captured: CapturedIngest[] = []
@@ -2965,7 +2988,7 @@ describe("CloudflareAnalyticsService", () => {
 				return Effect.gen(function* () {
 					yield* TestClock.setTime(T0)
 					yield* seedConnection()
-					// Two documents (zone + account) are owed, and an earlier first-call backoff expired.
+					// Two documents (zone + account) are owed, and a stored rate_limited backoff expired.
 					yield* seedStateRow({
 						dataset: "http_requests",
 						zoneId: ZONE_ID,
