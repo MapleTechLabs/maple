@@ -42,38 +42,40 @@ import { hstack } from "@maple/views/ui/stack"
 
 type H = HtmlBuilder<Message>
 
+// The verdict is the point of the chart: a phone gives it its own line under the title, and from
+// `sm` it sits beside the title as before.
+const verdictClass = (tone: string): string =>
+	typographyClass({ size: "xs", className: cn("basis-full sm:basis-auto", tone) })
+
 const breachPill = (h: H, stats: BreachStats): ReadonlyArray<Html> => {
 	if (stats.bucketCount === 0) return []
 	if (stats.breachCount === 0)
 		return [
-			h.span(
-				[h.Class("hidden items-center gap-1 text-xs text-severity-info sm:inline-flex")],
-				[icon(h, "CheckIcon", { size: 12 }), "No breaches in this window"],
-			),
+			hstack(h, { gap: "1", inline: true, as: "span", className: verdictClass("text-severity-info") }, [
+				icon(h, "CheckIcon", { size: 12 }),
+				"No breaches in this window",
+			]),
 		]
 	return [
-		h.span(
-			[h.Class("hidden items-center gap-1 text-xs text-severity-error sm:inline-flex")],
-			[
-				icon(h, "FireIcon", { size: 12 }),
-				"Would have fired",
-				" ",
-				typography(h, { weight: "semibold", mono: true, numeric: true }, [
-					String(stats.breachCount),
-					"×",
-				]),
-				...(stats.longestRunMs === null
-					? []
-					: [
-							" ",
-							"· longest",
-							" ",
-							typography(h, { weight: "semibold", mono: true, numeric: true }, [
-								formatBreachDuration(stats.longestRunMs),
-							]),
+		hstack(h, { gap: "1", inline: true, as: "span", className: verdictClass("text-severity-error") }, [
+			icon(h, "FireIcon", { size: 12 }),
+			"Would have fired",
+			" ",
+			typography(h, { weight: "semibold", mono: true, numeric: true }, [
+				String(stats.breachCount),
+				"×",
+			]),
+			...(stats.longestRunMs === null
+				? []
+				: [
+						" ",
+						"· longest",
+						" ",
+						typography(h, { weight: "semibold", mono: true, numeric: true }, [
+							formatBreachDuration(stats.longestRunMs),
 						]),
-			],
-		),
+					]),
+		]),
 	]
 }
 
@@ -115,7 +117,7 @@ const header = (h: H, model: HeaderView, form: RuleForm, timeZone: string): Html
 		h,
 		{ gap: "2", align: "center", justify: "between", wrap: true, className: "px-4 pt-3 pb-2" },
 		[
-			hstack(h, { gap: "2", shrink: true }, [
+			hstack(h, { gap: "2", shrink: true, wrap: true }, [
 				badge(h, { variant: "outline", className: typographyClass({ size: "xs", mono: true }) }, [
 					conditionSubject(form),
 				]),
