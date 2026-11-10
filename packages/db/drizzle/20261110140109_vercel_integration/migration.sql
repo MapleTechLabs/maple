@@ -15,10 +15,22 @@ CREATE TABLE IF NOT EXISTS "vercel_connections" (
 	"sampling_rate" double precision NOT NULL DEFAULT 1,
 	"logs_enabled" boolean NOT NULL DEFAULT true,
 	"traces_enabled" boolean NOT NULL DEFAULT true,
+	"ai_gateway_enabled" boolean NOT NULL DEFAULT true,
+	"speed_insights_enabled" boolean NOT NULL DEFAULT false,
+	"web_analytics_enabled" boolean NOT NULL DEFAULT false,
+	"audit_log_enabled" boolean NOT NULL DEFAULT false,
 	"log_drain_id" text,
 	"trace_drain_id" text,
+	"ai_gateway_drain_id" text,
+	"speed_insights_drain_id" text,
+	"web_analytics_drain_id" text,
+	"audit_log_drain_id" text,
 	"log_drain_state" jsonb,
 	"trace_drain_state" jsonb,
+	"ai_gateway_drain_state" jsonb,
+	"speed_insights_drain_state" jsonb,
+	"web_analytics_drain_state" jsonb,
+	"audit_log_drain_state" jsonb,
 	"drain_key_hash" text,
 	"auth_failed_at" timestamp with time zone,
 	"discovered_at" timestamp with time zone,
@@ -47,7 +59,9 @@ CREATE TABLE IF NOT EXISTS "vercel_deployments" (
 	"commit_message" text,
 	"creator" text,
 	"error_code" text,
+	"error_message" text,
 	"created_at_vercel" timestamp with time zone NOT NULL,
+	"building_at" timestamp with time zone,
 	"ready_at" timestamp with time zone,
 	"inspector_url" text,
 	"updated_at" timestamp with time zone NOT NULL,
@@ -84,4 +98,10 @@ CREATE INDEX IF NOT EXISTS "vercel_deployments_org_project_created_idx" ON "verc
 CREATE UNIQUE INDEX IF NOT EXISTS "vercel_projects_org_project_idx" ON "vercel_projects" USING btree ("org_id", "project_id");
 --> statement-breakpoint
 -- metadata
-ALTER TABLE "vercel_connections" ADD CONSTRAINT "vercel_connections_source_id_sources_id_fk" FOREIGN KEY ("source_id") REFERENCES "sources" ("id") ON DELETE CASCADE;
+-- Guarded: PR previews already applied an earlier version of this migration.
+DO $$
+BEGIN
+	ALTER TABLE "vercel_connections" ADD CONSTRAINT "vercel_connections_source_id_sources_id_fk" FOREIGN KEY ("source_id") REFERENCES "sources" ("id") ON DELETE CASCADE;
+EXCEPTION
+	WHEN duplicate_object THEN NULL;
+END $$;
