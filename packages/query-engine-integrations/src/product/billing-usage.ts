@@ -29,7 +29,6 @@ import { utcHourFloor } from "@maple/query-engine/ch/query-helpers"
 const DAY_SECONDS = 86_400
 
 export interface DailySignalVolumeOutput {
-	/** The UTC day boundary. */
 	readonly day: DateTime.Utc
 	readonly logBytes: number
 	readonly traceBytes: number

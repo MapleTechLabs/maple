@@ -215,7 +215,7 @@ const WINDOW_PAD_SECONDS = 86_400
 const hasSessionId = (attrs: CH.Expr<Record<string, string>>, get: CH.Expr<string>) =>
 	CH.mapContains(attrs, SESSION_ID_ATTR).and(get.neq(""))
 
-/** Not in the builder's function set; same local helper `tracesDetailQuery` uses. */
+/** Not in the builder's function set; same local helper `traceListQuery` uses. */
 const fromUnixTimestamp64Nano = (nanos: CH.Expr<number>): CH.Expr<string> =>
 	compileFnCall<string>("fromUnixTimestamp64Nano", nanos)
 
@@ -992,7 +992,7 @@ export function aiSessionDetailsQuery(opts: AiSessionDetailsOpts) {
 				// single long span reports a duration of 0, and every other session
 				// under-reports by exactly the last-starting span's duration, which
 				// is invisible because it always looks like plausible jitter. Same
-				// idiom as `tracesDetailQuery`.
+				// idiom as `traceListQuery`.
 				traceEndNanos: CH.max_(CH.toUnixTimestamp64Nano($.Timestamp).add(CH.toInt64($.Duration))),
 			}
 		})
@@ -1129,8 +1129,6 @@ export function mergeAiSessionDetails(
 	return [...merged.values()]
 }
 
-// List facets (UNION ALL — one branch per index dimension)
-
 export interface AiSessionFacetsOutput {
 	readonly name: string
 	readonly count: number
@@ -1217,8 +1215,6 @@ export function aiSessionFacetsQuery(): CHUnionQuery<AiSessionFacetsOutput> {
 		facet("tool", ($) => $.ToolName),
 	).format("JSON")
 }
-
-// Range distributions (the sidebar's histograms and percentile presets)
 
 /** The session measures the list's range filters read, by the name the list row gives each. */
 export type AiSessionDistributionMeasure = "durationMs" | "cost" | "totalTokens" | "llmCalls" | "toolCalls"
@@ -1321,8 +1317,6 @@ export function aiSessionDistributionsQuery() {
 		.groupBy("measure")
 		.format("JSON")
 }
-
-// Session window resolution (id → bounds)
 
 export interface AiSessionWindowOutput {
 	/** Warehouse datetime literals, already padded — feed them straight back in. */
@@ -1591,10 +1585,6 @@ export function aiTraceSpansQuery(opts: AiTraceSpansOpts = {}) {
 		.limit(limit)
 		.format("JSON")
 }
-
-// ---------------------------------------------------------------------------
-// Session summary — the whole session's totals, computed where the spans are
-// ---------------------------------------------------------------------------
 
 const summaryMeasures = {
 	startTime: Schema.String,

@@ -164,8 +164,6 @@ const usedShare = (available: CH.Expr<number>, total: CH.Expr<number>) => CH.lit
 
 const counterWindowStart = () => CH.intervalSub(param.dateTime("startTime"), COUNTER_LOOKBACK_SECONDS)
 
-// PROJECTS
-
 export interface SupabaseProjectGaugesOutput {
 	readonly projectRef: string
 	readonly memoryAvg: number
@@ -268,8 +266,6 @@ export function supabaseProjectCpuSQL() {
 		.limit(1000)
 		.format("JSON")
 }
-
-// ONE PROJECT
 
 export interface SupabaseProjectGaugeSeriesOutput {
 	readonly bucket: DateTime.Utc

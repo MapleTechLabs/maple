@@ -39,8 +39,6 @@ const quoteList = (values: ReadonlyArray<string>) =>
 		", ",
 	)
 
-// A2 — attribute key inventory (all scopes, one scan)
-
 export interface AuditAttributeKeyRow {
 	readonly scope: string
 	readonly attributeKey: string
@@ -79,8 +77,6 @@ export function auditAttributeKeyInventoryQuery(opts: { limit?: number } = {}) {
 		.limit(opts.limit ?? 2000)
 		.format("JSON")
 }
-
-// A3 — per-service span shape
 
 export interface AuditSpanProfileRow {
 	readonly serviceName: string
@@ -163,8 +159,6 @@ export function auditSpanProfileByServiceQuery(opts: { limit?: number } = {}) {
 		.format("JSON")
 }
 
-// A3b — span-name templates
-
 export interface AuditSpanNameTemplateRow {
 	readonly serviceName: string
 	readonly rawNameCount: number
@@ -241,8 +235,6 @@ export function auditSpanNameTemplatesQuery() {
 		.format("JSON")
 }
 
-// A4 — per-service sampling weight and commit tagging
-
 export interface AuditSamplingRow {
 	readonly serviceName: string
 	readonly spanCount: number
@@ -284,8 +276,6 @@ export function auditSamplingByServiceQuery(opts: { limit?: number } = {}) {
 		.format("JSON")
 }
 
-// A5 — per-service log severity distribution
-
 export interface AuditLogSeverityRow {
 	readonly serviceName: string
 	readonly severityText: string
@@ -319,8 +309,6 @@ export function auditLogSeverityByServiceQuery(opts: { limit?: number } = {}) {
 		.limit(opts.limit ?? 2000)
 		.format("JSON")
 }
-
-// A6 — metric label cardinality
 
 export interface AuditMetricLabelRow {
 	readonly attributeKey: string
@@ -360,8 +348,6 @@ export function auditMetricLabelCardinalityQuery(opts: { limit?: number } = {}) 
 		.limit(opts.limit ?? 200)
 		.format("JSON")
 }
-
-// A7 — peer / dependency identifier values
 
 /** Keys whose *values* name a dependency, where inconsistent spelling fragments a service-map node. */
 export const AUDIT_PEER_KEYS = [
@@ -412,8 +398,6 @@ export function auditPeerValueInventoryQuery(opts: { limit?: number } = {}) {
 		.format("JSON")
 }
 
-// A8 — database edge identity
-
 export interface AuditDbEdgeRow {
 	readonly serviceName: string
 	readonly dbSystem: string
@@ -453,8 +437,6 @@ export function auditDbEdgeIdentityQuery(opts: { limit?: number } = {}) {
 		.limit(opts.limit ?? 500)
 		.format("JSON")
 }
-
-// A9 — service identity, for telling Maple-written and client services apart
 
 export interface AuditServiceIdentityRow {
 	readonly serviceName: string
@@ -513,8 +495,6 @@ export function auditServiceSdkQuery(opts: { limit?: number } = {}) {
 		.format("JSON")
 }
 
-// A10 — resource values behind suspect keys
-
 export interface AuditResourceValueRow {
 	readonly attributeKey: string
 	readonly attributeValue: string
@@ -548,8 +528,6 @@ export function auditResourceValueSamplesQuery(keys: ReadonlyArray<string>, opts
 		.format("JSON")
 }
 
-// A11 — which services emit a given key (bounded raw follow-ups)
-//
 // The key rollups carry no service, so naming the emitter takes a raw read. Both run only for the
 // handful of keys a check already flagged, read one map's keys and nothing else, and cap their rows.
 
@@ -741,8 +719,6 @@ export function auditMetricLabelByMetricQuery(
 		.format("JSON")
 }
 
-// A12 — release keys per service (bounded raw read)
-
 /** Upper bound on the raw `traces` window for per-service resource keys. */
 export const AUDIT_SERVICE_RESOURCE_MAX_HOURS = 6
 
@@ -797,8 +773,6 @@ export function auditServiceResourceKeysQuery(
 		.limit(500)
 		.format("JSON")
 }
-
-// B1 — log ↔ trace correlation (bounded raw read)
 
 /** Upper bound on the raw `logs` window, applied in the builder — callers cannot widen it. */
 export const AUDIT_LOG_CORRELATION_MAX_HOURS = 6
@@ -916,8 +890,6 @@ export function auditUncorrelatedLogMessagesQuery(serviceNames: Arr.NonEmptyRead
 		.format("JSON")
 }
 
-// B2 / B3 — trace completeness
-//
 // The orphan join mirrors the service-map edge join, which is the same join over the same two tables
 // and the same window size that `ServiceMapRollupService` already runs once per org per hour in
 // production. The rootless join reads raw `traces` over the same two hours, narrow columns only, so

@@ -257,8 +257,6 @@ export function cloudflareZoneBreakdownCoverageSQL(dimension: CloudflareBreakdow
 		.format("JSON")
 }
 
-// Filter facets
-
 export interface CloudflareZoneFacetsOutput {
 	readonly name: string
 	/**

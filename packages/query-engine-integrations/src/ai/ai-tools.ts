@@ -198,8 +198,8 @@ const parentModels = <W extends AiToolsWindow>(window: W) =>
  * none. Tool calls attributed this way are the vercel/unknown minority.
  *
  * `traceVendorId` and `traceAgentName` name the session the way the sessions
- * list does — the same `argMin` orderings as `aiSessionsListQuery`'s per-trace
- * level — for the failure modal, which links each failure to its session. The
+ * list does (the same `argMin` orderings as `aiSessionPageQuery`'s per-trace
+ * level), for the failure modal, which links each failure to its session. The
  * overview's aggregates never select them, and ClickHouse prunes unselected
  * columns of a derived table.
  *
@@ -600,10 +600,8 @@ export function aiToolsBreakdownsQuery(opts: AiToolsFilterOpts = {}) {
 		.format("JSON")
 }
 
-/* -------------------------------------------------------------------------------------------------
- * Tool detail — the failures of one tool
- *
- * Grouped by `ErrorFingerprint` (migration 0032): a hash of what the failure
+/*
+ * Tool failures are grouped by `ErrorFingerprint` (migration 0032): a hash of what the failure
  * SAYS — the failed call's result, else its status message — after the
  * redactions `error_events` fingerprints messages with. `error.type` is not the
  * key, because a vendor that reports every failure as `tool_error` would fold
@@ -1062,10 +1060,6 @@ export function aiToolErrorPayloadSlice(
 		),
 	}
 }
-
-/* -------------------------------------------------------------------------------------------------
- * Tool detail — the header's description
- * -----------------------------------------------------------------------------------------------*/
 
 export const aiToolDescriptionRowSchema = Schema.Struct({
 	/** `''` where no call of the window stamped one. */

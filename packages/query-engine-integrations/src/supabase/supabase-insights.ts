@@ -76,8 +76,6 @@ const edgeLogsOfProject = ($: LogColumns) => [
 	isEdge($),
 ]
 
-// API TRAFFIC
-
 export interface SupabaseApiTrafficSeriesOutput {
 	readonly bucket: string
 	readonly status2xx: number
@@ -145,8 +143,6 @@ export function supabaseApiTopPathsSQL() {
 		.limit(TOP_PATHS_LIMIT)
 		.format("JSON")
 }
-
-// LOG ISSUES
 
 export interface SupabaseLogIssuesOpts {
 	/** Scope to the `projectRef` param; otherwise every project of the org. */
@@ -219,8 +215,6 @@ export function supabaseLogIssuesSQL(opts: SupabaseLogIssuesOpts) {
 		.format("JSON")
 }
 
-// PROJECTS SUMMARY
-
 export interface SupabaseLogsProjectSummaryOutput {
 	readonly projectRef: string
 	readonly requests: number
@@ -248,8 +242,6 @@ export function supabaseLogsProjectsSummarySQL() {
 		.limit(1000)
 		.format("JSON")
 }
-
-// CALLERS
 
 const SUPABASE_API_HOST_SUFFIX = ".supabase.co"
 const SUPABASE_POOLER_HOST_PATTERN = "%.pooler.supabase.com"

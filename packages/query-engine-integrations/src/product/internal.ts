@@ -12,8 +12,6 @@ import { from } from "@maple-dev/effect-orm/clickhouse"
 import * as Datasources from "@maple/domain/tinybird/datasources"
 import { orgIdParam } from "@maple/query-engine/ch/tables"
 
-// db.statement samples
-
 /**
  * Pull the recent SQL we ran in production, grouped by fingerprint and ranked
  * by p95 duration. Drives the `bench fetch` step of the query benchmarking

@@ -40,7 +40,6 @@ const spanParams = { ...params, sessionId: "wrun_01M0CSAEW96BH2W9185XZPRPKH" }
 const TRACE_ID = "7f3a4b5c6d7e8f901234567890abcdef"
 const traceParams = { ...params, traceId: TRACE_ID }
 
-/** The trace's session id, or the synthesized one — the grouping key. */
 // The trace's session key as the builder qualifies it: by the subquery each read takes it from.
 const sessionKey = (source: string, traceSource = source) =>
 	`if(${source}.rawSessionId = '', concat('trace:', ${traceSource}.traceId), ${source}.rawSessionId)`
@@ -934,8 +933,8 @@ describe("aiSessionFacetsQuery", () => {
 	it("counts over the same population the list detects, and drops the blank option", () => {
 		const { sql } = compileUnionUnsafe(aiSessionFacetsQuery(), params)
 
-		// Same surface as `aiSessionListQuery`'s detection — index membership is
-		// the vendor guard — so the population a facet describes is exactly the
+		// Same surface as `aiSessionPageQuery`'s detection (index membership is
+		// the vendor guard), so the population a facet describes is exactly the
 		// population its filter selects. Only the blank-option guard remains as a
 		// predicate.
 		expect(Str.split("FROM ai_trace_index")(sql).length - 1).toBe(6)

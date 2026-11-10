@@ -24,10 +24,6 @@ import {
 	type CloudflareFilterOpts,
 } from "./cloudflare-infra-filters"
 
-// Same NaN guard as cloudflare-infra.ts.
-
-// Firewall/WAF events (single zone)
-
 export interface CloudflareZoneFirewallTimeseriesOutput {
 	readonly bucket: string
 	/** Cloudflare action: block / challenge / jschallenge / managed_challenge / skip / log / …. */
@@ -88,8 +84,6 @@ export function cloudflareZoneFirewallTopSQL(opts: CloudflareFilterOpts = {}) {
 		.format("JSON")
 }
 
-// DNS analytics (single zone)
-
 export interface CloudflareZoneDnsTimeseriesOutput {
 	readonly bucket: string
 	/** DNS RCODE name (NOERROR / NXDOMAIN / SERVFAIL / …). */
@@ -146,8 +140,6 @@ export function cloudflareZoneDnsBreakdownSQL(opts: CloudflareFilterOpts = {}) {
 		.limit(25)
 		.format("JSON")
 }
-
-// Workers-platform resources (org-wide)
 
 export interface CloudflareQueueGaugesOutput {
 	/** `cloudflare-queue/{queueId}`. */
