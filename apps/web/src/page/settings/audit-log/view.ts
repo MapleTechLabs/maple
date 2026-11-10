@@ -186,7 +186,8 @@ const dateRange = (h: H, model: Model, range: AuditDateRange, timeZone: string):
 		view: Popover.view,
 		toParentMessage: (message) => Message.GotDateRangeMessage({ message }),
 		viewInputs: {
-			className: model.customRange === null ? "w-48 p-0" : "w-auto p-0",
+			// `w-max`, not `w-auto`: the positioner keeps the presets' width, and auto would stay inside it.
+			className: model.customRange === null ? "w-48 p-0" : "w-max max-w-(--available-width) p-0",
 			toView: ({ trigger, withTrigger }) =>
 				h.div(
 					[h.Class("contents")],
@@ -625,7 +626,7 @@ const listBody = (h: H, model: Model, inputs: ViewInputs, isFiltered: boolean): 
 	if (view.entries.length === 0 && isFiltered)
 		return filteredEmpty(h, {
 			noun: "entries",
-			description: "Nothing recorded for this range, person, actor type and outcome.",
+			description: "Nothing recorded matches these filters.",
 			onClear: Message.ClickedClearFilters(),
 			className: "py-8",
 		})
