@@ -1,5 +1,5 @@
 /**
- * Maple's own durable chat transport, replacing Flue's `/agents/maple-chat/:id` surface.
+ * Maple's own durable chat transport.
  *
  *   GET  /api/chat/sessions/:sessionId/history          materialized transcript + resume cursor
  *   POST /api/chat/sessions/:sessionId/messages         submit a prompt, start the turn
@@ -15,8 +15,7 @@
  *
  * **Tenancy.** The org is recovered from the session id (`"<orgId>:<tabId>"`) and matched against
  * the caller's resolved tenant. It is never taken from a body or header, so a client cannot address
- * another org's conversation by asking nicely — the same deny-by-default rule Flue's
- * `instanceIdFromAgentPath` guard enforced, kept at the one place that now matters.
+ * another org's conversation by asking nicely.
  *
  * **Lifetime.** No handler here runs a turn. `beginTurn` starts it inside the Durable Object, which
  * owns its own lifetime; a turn forked off this request would be cancelled the moment the 202 was

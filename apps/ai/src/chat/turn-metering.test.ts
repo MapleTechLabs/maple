@@ -315,8 +315,8 @@ describe("meterTurn", () => {
 	})
 
 	it("bounds the tracker request itself, not just the finalizer", async () => {
-		// Belt and braces: `METERING_TIMEOUT` abandons the wait, `TRACK_TIMEOUT_MS` aborts the
-		// request. Without the abort the fetch outlives the turn on an isolate that is winding down.
+		// Belt and braces: `METERING_TIMEOUT` abandons the wait, the tracker's `TRACK_TIMEOUT` aborts
+		// the request. Without the abort the fetch outlives the turn on an isolate that is winding down.
 		const signals: Array<AbortSignal | null | undefined> = []
 		const passthrough = globalThis.fetch
 		globalThis.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {

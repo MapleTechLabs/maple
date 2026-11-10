@@ -90,8 +90,6 @@ export const validateWidgetRenderability = (input: ValidateWidgetRenderabilityIn
 	const kind = (widget.dataSource as { kind?: unknown }).kind
 	const isStatic = kind === "static"
 
-	// --- fatal -------------------------------------------------------------
-
 	// A note renders `display.markdown.content` and issues no request; anything
 	// else backing it means the query runs and its result is thrown away.
 	if (panelType === "markdown" && !isStatic) {
@@ -106,7 +104,7 @@ export const validateWidgetRenderability = (input: ValidateWidgetRenderabilityIn
 	}
 
 	// `list` deliberately has no raw-SQL display type, so the lookup falls back to
-	// `"line"` and the widget renders as a line chart. Silent before this check.
+	// `"line"` and the widget renders as a line chart.
 	if (panelType === "list" && rawSql !== null) {
 		fatal.push(
 			'`panel_type: "list"` has no raw-SQL rendering — a list is configured by its `display_json.listDataSource`, not by SQL. For tabular SQL results use `panel_type: "table"`.',
@@ -200,8 +198,6 @@ export const validateWidgetRenderability = (input: ValidateWidgetRenderabilityIn
 	if (panelType !== "paths" && widget.display.paths !== undefined) {
 		warnings.push('`display_json.paths` only applies to `panel_type: "paths"`; other panels ignore it.')
 	}
-
-	// --- warnings ----------------------------------------------------------
 
 	// The breakdown endpoint is meaningless ungrouped: one bucket per time slice
 	// instead of one slice per category. The web editor blocks this; the MCP path

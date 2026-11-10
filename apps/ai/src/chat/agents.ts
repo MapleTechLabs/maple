@@ -31,8 +31,6 @@ import {
 import { PrReviewId, PrReviewReplyId } from "@maple/domain/http"
 import { InvestigationId } from "@maple/domain/primitives"
 import type { AiUsageSource } from "@maple/backend/services/billing/autumn-tracker"
-// The specific file, not the `./loop` barrel: the barrel re-exports `turn.ts`, which imports this
-// module back. `budgets.ts` depends on nothing but `effect`.
 import {
 	type AgentBudget,
 	CHAT_BUDGET,
@@ -85,7 +83,7 @@ export interface AgentDefinition {
 	readonly permission: PermissionRuleset
 	/**
 	 * The narrower ruleset the agent's *unattended* pass runs under, when it has one of its own.
-	 * Without it an autonomous turn runs read-only; see `rulesetForTurn`.
+	 * Without it an autonomous turn runs read-only; see `profileForTurn`.
 	 */
 	readonly autonomousPermission?: PermissionRuleset
 	/**

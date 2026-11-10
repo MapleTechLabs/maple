@@ -9,12 +9,9 @@ import { describeFailure, recordRawSqlAudit } from "@maple/backend/services/audi
 /**
  * `$__interval_s` when the caller doesn't pin `granularitySeconds`.
  *
- * `BUCKET_POLICIES.rawSql` — the same policy the signed-in raw-SQL route
- * (`executeRawSql` in `routes/internal/query-engine.http.ts`) applies. This
- * used to be a private 120-point ladder starting at 1s that "mirrored" the web
- * path and drifted from it, so `inspect_chart_data` and a shared dashboard's
- * raw-SQL tile bucketed a 12h window at 5m while the board itself used 30m —
- * different values for the same chart. One policy now.
+ * `BUCKET_POLICIES.rawSql`, the same policy the signed-in raw-SQL route
+ * (`executeRawSql` in `routes/internal/query-engine.http.ts`) applies, so
+ * `inspect_chart_data` buckets a raw-SQL tile exactly as the board does.
  */
 export function autoBucketSeconds(startTime: string, endTime: string): number {
 	return computeBucketSecondsForRange(startTime, endTime, "rawSql")

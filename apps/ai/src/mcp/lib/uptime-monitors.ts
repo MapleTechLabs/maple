@@ -123,8 +123,6 @@ export const toMcpUptimeError = (tool: string) => (error: UptimeServiceError) =>
 	}
 }
 
-// --- Config from flat tool parameters ---
-
 export interface UptimeConfigFields {
 	readonly url?: string | undefined
 	readonly method?: UptimeHttpMethod | undefined

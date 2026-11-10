@@ -108,7 +108,7 @@ export default MapleAi.make(
 			WorkerTelemetry({
 				serviceName: "maple-ai",
 				// Expected MCP 400/401s export as `Ok` (only 5xx is `Error`);
-				// `chat/turn-runner.ts` passes the same set to its own tracer.
+				// `chat/do-runtime.ts` passes the same set to its own tracer.
 				dropSpanNames: ["McpServer/Notifications."],
 				anticipatedErrorIdentifiers: MCP_ANTICIPATED_ERROR_IDENTIFIERS,
 			}),

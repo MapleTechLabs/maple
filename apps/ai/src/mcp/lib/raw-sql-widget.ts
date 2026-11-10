@@ -4,12 +4,9 @@ import type { RawSqlDisplayType, WidgetDataSourceSchema } from "@maple/domain/ht
 import { dataSourceQuerySet, dataSourceTransform, makeRawSqlDataSource } from "@maple/widgets/dashboard"
 
 // MCP-side mirror of the web's raw-SQL widget builder so agents can create
-// raw-SQL widgets without hand-crafting the dataSource JSON.
-//
-// The visualization → display-type mapping used to be duplicated here and in
-// apps/web/src/lib/raw-sql/templates.ts. Both now read `rawSqlDisplayTypeFor`
-// from the shared widget-type table, so only `buildRawSqlDataSource` (which
-// mirrors widget-query-builder-page.tsx) still has a web-side twin.
+// raw-SQL widgets without hand-crafting the dataSource JSON. The display type
+// comes from the shared `rawSqlDisplayTypeFor`; `buildRawSqlDataSource` mirrors
+// its twin in apps/web/src/page/dashboards/widget/raw-sql.ts.
 
 type WidgetDataSource = typeof WidgetDataSourceSchema.Type
 
@@ -65,12 +62,8 @@ export function withScalarReduction(dataSource: WidgetDataSource, isScalar: bool
 }
 
 /**
- * Static raw-SQL validation for the widget tools.
- *
- * Delegates to the shared `rawSqlIssue` — this used to check `$__orgFilter` and
- * nothing else, so an agent could save a widget whose SQL was deny-listed, held
- * a SETTINGS clause, or was several statements, and it failed only when someone
- * opened the dashboard.
+ * Static raw-SQL validation for the widget tools, through the shared `rawSqlIssue`, so
+ * deny-listed, SETTINGS or multi-statement SQL fails on save, not when the dashboard opens.
  */
 export function validateRawSql(sql: string): string | null {
 	const issue = rawSqlIssue(sql, { workload: "dashboard" })

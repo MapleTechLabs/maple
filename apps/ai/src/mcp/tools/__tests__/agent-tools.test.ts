@@ -252,7 +252,6 @@ const renderWith = async (rules: FixtureRule[], name: string, params: ToolParams
 	}
 }
 
-// Each tool and its required params.
 const REGISTERED: Array<[string, Array<string>]> = [
 	[OVERVIEW, []],
 	[ERROR_DETAIL, ["tool", "fingerprint"]],

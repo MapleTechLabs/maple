@@ -1,23 +1,22 @@
 /**
- * `ChatSession` — the durable transcript, one Durable Object per `"<orgId>:<tabId>"`.
+ * `ChatSession`: the durable transcript, one Durable Object per `"<orgId>:<tabId>"`.
  *
- * Replaces Flue's `FlueMapleChatAgent` + `FlueRegistry` SQLite Durable Objects. The DO owns four
- * things:
+ * The DO owns four things:
  *
  *   1. **Ordering.** It assigns every event a monotonic `seq`. That is what makes the client
  *      transport resumable by construction: reconnect is `?cursor=<last seq you saw>`, not a
  *      heuristic about whether you missed something.
  *   2. **The event log**, in SQLite, replayed on reconnect and folded into a transcript on cold
  *      load. Both roles replay, so a conversation opened on another device is complete.
- *   3. **Turn lifecycle** — at most one turn in flight, abortable, and self-healing.
+ *   3. **Turn lifecycle**: at most one turn in flight, abortable, and self-healing.
  *   4. **Running the turn.** The turn executes *here*, under `ctx.waitUntil` on the DO's own
  *      request context, not in whichever request asked for it.
  *
  * That last point is the load-bearing one. A turn is a multi-second model stream plus N tool
  * calls; the `POST /messages` request that starts it answers in milliseconds. Forking the turn off
  * that request and returning meant Cloudflare was free to cancel it the moment the response was
- * written — and the autonomous path was worse, since cron ticks run under `runScheduledEffect`,
- * which disposes the Effect runtime as soon as the tick's program settles. A Durable Object owns
+ * written, and the autonomous path was worse, since a cron tick's Effect runtime is disposed as
+ * soon as the tick's program settles. A Durable Object owns
  * its own lifetime, so hosting the turn here is what actually makes it survive. It also removes
  * every cross-process hop: appending an event is a method call, not a stub RPC.
  *
@@ -28,10 +27,9 @@
  *
  * Startup-CPU note (Cloudflare error 10021): this class is reachable from `worker.ts`, whose
  * module scope Cloudflare evaluates during upload validation. It must therefore import nothing
- * from the app service graph at module scope — hence `@maple/domain` (the wire contract and its
- * transcript fold) being the only import, and `./turn-runner` (which pulls in the whole graph)
- * arriving through a dynamic import inside the method that needs it, exactly as `worker.ts` does
- * for the route graph.
+ * from the app service graph at module scope: `./turn-runner` and `./apply-proposal` (which pull in
+ * the whole graph) arrive through a dynamic import inside the method that needs them, exactly as
+ * `worker.ts` does for the route graph.
  */
 import * as Cloudflare from "@alchemy.run/cloudflare"
 import * as SecureRandom from "effect/crypto/SecureRandom"

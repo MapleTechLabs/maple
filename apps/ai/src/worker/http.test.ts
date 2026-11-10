@@ -32,10 +32,6 @@ import { makeFetch } from "./http"
 const requestBodyText = (body: BodyInit | null | undefined): string =>
 	typeof body === "string" ? body : body instanceof Uint8Array ? new TextDecoder().decode(body) : "{}"
 
-/**
- * Requests the way alchemy's bridge runs them, with the SDK telemetry built into each event's
- * scope as `WorkerTelemetry` registers it, so the assertions read the exported server span.
- */
 const ExportedSpan = Schema.Struct({
 	name: Schema.String,
 	kind: Schema.optionalKey(Schema.Finite),
@@ -92,6 +88,10 @@ const capturedServerSpans = Effect.acquireRelease(
 	}),
 )
 
+/**
+ * Requests the way alchemy's bridge runs them, with the SDK telemetry built into each event's
+ * scope as `WorkerTelemetry` registers it, so the assertions read the exported server span.
+ */
 const event = (fetch: HttpEffect<RuntimeContext>, method: string, path: string) =>
 	Effect.gen(function* () {
 		const serverSpans = yield* capturedServerSpans

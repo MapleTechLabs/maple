@@ -93,8 +93,6 @@ const positiveInt = (raw: string | undefined, fallback: number, name: string): n
 	return n
 }
 
-// Mining
-
 /** The old-side line ranges a commit changed, per file, for files a review would read. */
 const changedOldRanges = (sha: string): Array<Location> => {
 	const ranges: Array<Location> = []
@@ -238,8 +236,6 @@ const mine = (argv: ReadonlyArray<string>) => {
 	}
 	console.log(encodeTabbedJson({ cases: candidates }))
 }
-
-// Running
 
 const overlaps = (finding: Finding, location: Location) =>
 	finding.path === location.path &&

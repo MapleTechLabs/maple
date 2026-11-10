@@ -550,10 +550,6 @@ export function registerGetAgentSessionTranscriptTool(server: McpToolRegistrar) 
 	})
 }
 
-/* -------------------------------------------------------------------------- */
-/* Rendering                                                                  */
-/* -------------------------------------------------------------------------- */
-
 const at = (row: Row): string => (row.offsetMs === undefined ? "" : `[${offsetLabel(row.offsetMs)}] `)
 const indent = (row: Row): string => Str.repeat(row.depth)("  ")
 const spanRef = (row: Row): string => (row.spanId === undefined ? "" : ` · span ${row.spanId}`)

@@ -2,10 +2,8 @@
 /**
  * Wire-level proof that OpenRouter calls are attributed and tagged.
  *
- * `LLMClient.prepare` is deliberately not used here: it returns the *protocol* body, which is built
- * before `http.body` is overlaid onto it, so it cannot see the tags at all. The only place the tags
- * and the attribution headers exist together is the outgoing HTTP request — so the test swaps
- * `FetchHttpClient.Fetch` for a capture and reads what would have gone over the wire.
+ * The only place the tags and the attribution headers exist together is the outgoing HTTP request,
+ * so the test swaps `FetchHttpClient.Fetch` for a capture and reads what would have gone over the wire.
  *
  * The fake responds 400, which the provider classifies as a non-retryable invalid request. That
  * keeps the run to a single request with no backoff; the resulting failure is expected and ignored.
@@ -51,10 +49,10 @@ interface CapturedRequest {
 }
 
 /**
- * Run one `LLM.generate` against a fetch that records the request instead of sending it.
+ * Run one `LanguageModel.generateText` against a fetch that records the request instead of sending it.
  *
- * `resolve` picks which resolver builds the model, because the lens stage differs from triage in its
- * defaults and the only honest way to check a default is to watch what leaves.
+ * `resolve` picks which resolver builds the model, because the review model differs from triage in
+ * its defaults and the only honest way to check a default is to watch what leaves.
  */
 const captureRequest = (
 	env: LlmSettings,

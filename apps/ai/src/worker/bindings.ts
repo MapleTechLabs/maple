@@ -96,7 +96,6 @@ export const WorkersAiGatewayLive = Layer.effect(WorkersAiGateway, bindWorkersAi
 	Layer.provide(Cloudflare.AI.QueryGatewayBinding),
 )
 
-/** The binding layers the init needs. */
 export const AiBindingsLive = Layer.mergeAll(
 	Cloudflare.Hyperdrive.ConnectBinding,
 	Cloudflare.Workers.RateLimitBinding,

@@ -128,7 +128,6 @@ export const buildUpdatedRequest = Effect.fnUntraced(function* (
 	current: AlertRuleDocument,
 	params: typeof UpdateAlertRuleParameters.Type,
 ) {
-	// Merge notification template fields onto the existing template (null-safe).
 	const touchesTemplate = params.notification_title !== undefined || params.notification_body !== undefined
 	const title = params.notification_title ?? current.notificationTemplate?.title ?? undefined
 	const body = params.notification_body ?? current.notificationTemplate?.body ?? undefined
@@ -255,7 +254,6 @@ const mergeThresholds = (
 	)
 }
 
-/** Sets the chain on the only tier, or on the critical one of two; `undefined` keeps every tier's. */
 /**
  * Sets or detaches a tier's chain. A named tier changes only that tier; without one, an id sets the
  * critical (or only) tier and "none" detaches every tier.

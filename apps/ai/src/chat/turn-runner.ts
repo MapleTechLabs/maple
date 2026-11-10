@@ -14,9 +14,7 @@
  *   - **`submit_diagnosis` resolves itself.** It used to be threaded in as a callback from three
  *     call sites, because `InvestigationService` starting an investigation's own turn would have
  *     made the service require itself through the Effect requirements channel. Here the turn builds
- *     its *own* runtime, so it just resolves `InvestigationService` — no cycle, and no
- *     `env: workerEnv ?? {}` fallback silently degrading the model config when a caller forgot to
- *     thread the worker env through.
+ *     its *own* runtime, so it just resolves `InvestigationService` without a cycle.
  */
 import { type ChatTurnOrigin, type ChatTurnTenantEncoded } from "@maple/domain/chat-session"
 import type { BillingCustomerId, PrReviewFailureReason } from "@maple/domain/http"
@@ -247,8 +245,6 @@ export const runChatSessionTurn = async (input: RunChatSessionTurnInput): Promis
 	// so there is no later moment to hand it a total — and the metering finalizer reads it after the
 	// turn has ended, including when it ended by failing.
 	const usage = makeRunUsage()
-	// `empty_output` and `recovery_count` are gone with the machinery that produced them: they
-	// counted the old loop's own repair attempts, and the engine has no equivalent to report.
 	const annotateTurn = () => Effect.annotateCurrentSpan(turnSpanAttributes(observability, input.signal))
 
 	const investigationId = row?.kind === "investigate" ? row.id : undefined

@@ -119,10 +119,6 @@ const didYouMean = (suggestions: ReadonlyArray<string>): string =>
 			)}?`
 
 /**
- * Apply aliases and drop keys the schema does not declare. A dropped key is reported rather than
- * silently ignored: a model that sent `service_name` to a tool without it believed it filtered.
- */
-/**
  * The published value a string matches ignoring case, when exactly one does: `"error"` for an
  * `ERROR` severity is the model saying the right thing in the wrong case, not a wrong value.
  */
@@ -147,6 +143,10 @@ export const enumValues = (
 	)
 }
 
+/**
+ * Apply aliases and drop keys the schema does not declare. A dropped key is reported rather than
+ * silently ignored: a model that sent `service_name` to a tool without it believed it filtered.
+ */
 export const normalizeArguments = (
 	input: unknown,
 	known: ReadonlyArray<string>,

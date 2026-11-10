@@ -60,6 +60,5 @@ export const resolveActor = Effect.fn("McpActor.resolveActor")(function* (tenant
 	return { actorId: actor.id, isAgent: false }
 })
 
-/** Convenience for tools that only need the id. */
 export const resolveActorId = (tenant: TenantContext) =>
 	Effect.map(resolveActor(tenant), (resolved) => resolved.actorId)

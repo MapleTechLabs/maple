@@ -92,8 +92,6 @@ import { layerLlm, loadLlmSettings, resolveReviewModel, type ResolvedModel } fro
 
 const SCRIPT_DIR = dirname(fileURLToPath(import.meta.url))
 
-// Arguments
-
 interface Args {
 	readonly owner: string
 	readonly repo: string
@@ -168,8 +166,6 @@ const parseArgs = (argv: ReadonlyArray<string>): Args => {
 		codeOnly: flags.has("code-only"),
 	}
 }
-
-// Processes
 
 /**
  * The rule files at the base, as production's kickoff states them. A file absent from the base is
@@ -441,8 +437,6 @@ const ensureCommits = (dir: string, remote: string, number: number, shas: Readon
 	if (missing.length > 0) must(["git", "fetch", "--quiet", remote, ...missing], dir)
 }
 
-// The local tool executor
-
 const text = (lines: ReadonlyArray<string>): McpToolResult => ({
 	content: [{ type: "text", text: Arr.join(lines, "\n") }],
 })
@@ -543,7 +537,6 @@ const unsafeGitArg = (arg: string): boolean =>
 /** The same answer `pr_context` gives in production, read with the caller's own `gh` login. */
 const fetchPullRequestContext = (args: Args, headSha: string): PullRequestContext => {
 	const slug = `repos/${args.owner}/${args.repo}`
-	// Decoded at the boundary, one schema per read.
 	const read = <A>(schema: Schema.Decoder<A>, path: string): A =>
 		Schema.decodeSync(Schema.fromJsonString(schema))(must(["gh", "api", path]))
 	const commits = read(GhContextCommits, `${slug}/pulls/${args.number}/commits?per_page=100`)
@@ -820,8 +813,6 @@ export const makeExecutor = (input: {
 	return { executor, cleanup }
 }
 
-// Posting, as the caller
-
 const GhComment = Schema.Struct({
 	id: Schema.Number,
 	html_url: Schema.String,
@@ -870,8 +861,6 @@ const postSummaryComment = (
 	return orExit(decodeCommentJson(written), "comment").html_url
 }
 
-// Reporting
-
 interface ToolRecord {
 	readonly id: string
 	readonly name: string
@@ -900,10 +889,6 @@ const newSideLines = (file: PullRequestFile | undefined): Map<number, string> =>
 	return lines
 }
 
-/**
- * One local review. `injected.model` replaces the resolved model, which is how the wiring is
- * exercised with a scripted model when no provider key is at hand.
- */
 /** A child reviewer's tool calls in order, each with its result and whether it failed. */
 const childCalls = (child: SettledChild) => {
 	const messages = child.history?.content ?? []
@@ -970,6 +955,10 @@ const childTranscript = (child: SettledChild, index: number): ReadonlyArray<stri
 	]
 }
 
+/**
+ * One local review. `injected.model` replaces the resolved model, which is how the wiring is
+ * exercised with a scripted model when no provider key is at hand.
+ */
 export const reviewLocally = async (
 	argv: ReadonlyArray<string>,
 	injected: { readonly model?: ResolvedModel } = {},
@@ -1210,7 +1199,6 @@ export const reviewLocally = async (
 
 	removeWorktrees()
 
-	// Output
 	const durationMs = Date.now() - started
 	const stamp = Str.replace(/[:.]/g, "-")(new Date(started).toISOString())
 	const dir = join(args.out, `${args.owner}__${args.repo}__${args.number}__${stamp}`)

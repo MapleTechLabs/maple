@@ -299,7 +299,6 @@ const readSecret = (
 /** The client services a resolved model needs. `layerLlm` provides both, so either branch runs. */
 export type LlmClients = OpenRouterClient.OpenRouterClient | OpenAiClient.OpenAiClient
 
-/** The services a resolved model provides to a run. */
 type ModelServices = LanguageModel.LanguageModel | AiModel.ProviderName | AiModel.ModelName
 
 /**
