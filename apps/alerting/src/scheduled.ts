@@ -583,6 +583,8 @@ const laneProgram = <R>(lane: TickLane, ticks: ScheduledTickPrograms<R>): Effect
 		Match.when("railway_metrics", () => ticks.railwayMetrics),
 		Match.when("pr_review_post_merge", () => ticks.prReviewPostMerge),
 		Match.when("vercel", () => ticks.vercel),
+	).pipe(
+		// `pipe` takes at most 20 functions, so the lanes continue in a second call.
 		Match.when("digest", () => ticks.digest),
 		Match.when("service_map_rollup", () => ticks.serviceMapRollup),
 		Match.when("aws_connections", () => ticks.awsConnections),
