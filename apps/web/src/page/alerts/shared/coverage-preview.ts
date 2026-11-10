@@ -212,8 +212,6 @@ const gapLinks = <M>(h: HtmlBuilder<M>, options: CoveragePreviewOptions<M>): Htm
 const gapSummaryView = <M>(h: HtmlBuilder<M>, options: CoveragePreviewOptions<M>): Html => {
 	const scope = {
 		timeZone: options.timeZone,
-		weekOffset: options.weekOffset,
-		days: Number(options.rangeDays),
 		checkedFromMs: Math.max(options.fromMs, options.nowMs),
 		checkedToMs: options.toMs,
 	}
@@ -326,8 +324,19 @@ export const coveragePreview = <M>(h: HtmlBuilder<M>, options: CoveragePreviewOp
 		[h.Class("@container min-w-0 space-y-3"), h.DataAttribute("slot", "coverage-preview")],
 		[
 			hstack(h, { gap: "2", justify: "between", align: "start", wrap: true }, [
-				vstack(h, { gap: "0" }, [
-					heading(h, { level: 2, variant: "section" }, [options.title]),
+				// A set basis, not the title's own width: a long name truncates beside the controls
+				// while there is room for a readable one, and takes its own row when there is not.
+				vstack(h, { gap: "0", shrink: true, className: "grow basis-48" }, [
+					heading(
+						h,
+						{
+							level: 2,
+							variant: "section",
+							className: "truncate",
+							attributes: [h.Title(options.title)],
+						},
+						[options.title],
+					),
 					typography(h, { size: "xs", tone: "muted", as: "p" }, [
 						periodLabel(options.fromMs, options.toMs, options.timeZone),
 					]),

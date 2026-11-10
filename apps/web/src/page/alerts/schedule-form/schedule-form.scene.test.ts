@@ -329,12 +329,12 @@ describe("schedule form", () => {
 	})
 
 	describe("coverage preview", () => {
-		test("a layer with nobody in it leaves the next 14 days uncovered and says why", () => {
+		test("a layer with nobody in it leaves the period uncovered and says why", () => {
 			scene(
 				{ update: pageUpdate, view },
 				given(ready()),
 				expectView(text("Primary has no people, so it covers nothing.")).toExist(),
-				expectView(text("Nobody is on call for the next 14 days")).toExist(),
+				expectView(text("Nobody is on call in this period")).toExist(),
 				expectView(text("Add people to see shifts")).toExist(),
 				// One gap that is the whole range has no link of its own.
 				expectView(role("button", { name: /^From /u })).not.toExist(),
@@ -347,7 +347,7 @@ describe("schedule form", () => {
 			scene(
 				{ update: pageUpdate, view },
 				given(staffed),
-				expectView(text("Covered for the next 14 days")).toExist(),
+				expectView(text("Covered in this period")).toExist(),
 				// A new layer starts today at 09:00, which is not worth a note even after 09:00.
 				expectView(text(/started before today/u)).not.toExist(),
 				expectView(role("rowheader", { name: /Final schedule/u })).toExist(),
@@ -358,9 +358,7 @@ describe("schedule form", () => {
 				{ update: pageUpdate, view },
 				given(nights),
 				expectView(
-					text(
-						"10 gaps in the next 14 days, longest 2d 10h (Sat 14 Nov 08:00 to Mon 16 Nov 18:00)",
-					),
+					text("10 gaps in this period, longest 2d 10h (Sat 14 Nov 08:00 to Mon 16 Nov 18:00)"),
 				).toExist(),
 				expectView(role("button", { name: "Sat 14 Nov 08:00 to Mon 16 Nov 18:00" })).toExist(),
 			)
@@ -380,8 +378,8 @@ describe("schedule form", () => {
 				{ update: pageUpdate, view },
 				given(noDays),
 				expectView(text("Fix this layer to see shifts")).toExist(),
-				expectView(text("Nobody is on call for the next 14 days")).toExist(),
-				expectView(text("Covered for the next 14 days")).not.toExist(),
+				expectView(text("Nobody is on call in this period")).toExist(),
+				expectView(text("Covered in this period")).not.toExist(),
 			)
 		})
 
@@ -431,7 +429,7 @@ describe("schedule form", () => {
 			scene(
 				{ update: pageUpdate, view },
 				given(staffed),
-				expectView(text("Covered for the next 7 days")).toExist(),
+				expectView(text("Covered in this period")).toExist(),
 				expectView(text("10 Nov to 16 Nov")).toExist(),
 			)
 			const later = run(staffed, [Message.ClickedPreviewNext()])
@@ -460,7 +458,7 @@ describe("schedule form", () => {
 			scene(
 				{ update: pageUpdate, view },
 				given(run(ready(), [addPerson("l0", 0)])),
-				expectView(text("Covered for the next 14 days")).toExist(),
+				expectView(text("Covered in this period")).toExist(),
 			)
 		})
 
@@ -470,7 +468,7 @@ describe("schedule form", () => {
 				given(weeknightsOnly(ready({ scheduleId: schedulePublicId(1) }))),
 				expectView(text("Coverage preview")).toExist(),
 				expectView(role("rowheader", { name: /Final schedule/u })).not.toExist(),
-				expectView(text(/gaps? in the next/u)).not.toExist(),
+				expectView(text(/gaps? in this period/u)).not.toExist(),
 				expectView(text(/^Covered/u)).not.toExist(),
 				expectView(text(/^Nobody is on call/u)).not.toExist(),
 			)
@@ -496,9 +494,7 @@ describe("schedule form", () => {
 				expectView(role("button", { name: "Sat 14 Nov 12:00 to Mon 16 Nov 18:00" })).toExist(),
 				// The first weekend is partly covered now, so the second is the longest gap.
 				expectView(
-					text(
-						"10 gaps in the next 14 days, longest 2d 10h (Sat 21 Nov 08:00 to Mon 23 Nov 18:00)",
-					),
+					text("10 gaps in this period, longest 2d 10h (Sat 21 Nov 08:00 to Mon 23 Nov 18:00)"),
 				).toExist(),
 				expectView(text(/Overrides are not shown/u)).not.toExist(),
 				expectView(text(/Overrides could not be loaded/u)).not.toExist(),

@@ -2,7 +2,7 @@ import * as Policy from "@maple/domain/policy"
 import { OrgId } from "@maple/domain"
 import { OnCallOverrideId } from "@maple/domain/http"
 import { zonedDayStart } from "@maple/views/ui/shift-timeline"
-import { Option, Result, Schema, Array as Arr } from "effect"
+import { Option, Result, Schema, Array as Arr, String as Str } from "effect"
 import { AsyncData } from "foldkit"
 import { isoMs, msIso } from "../shared/time"
 import { memberName } from "../shared/org-members"
@@ -99,6 +99,28 @@ describe("on-call schedule page", () => {
 			expectView(role("button", { name: /^Override: Ana Souza, Wed,? 11 Nov/u })).toExist(),
 			expectView(text("Upcoming overrides")).toExist(),
 			expectView(role("button", { name: /^Delete Dana Kim's override, /u })).toExist(),
+		)
+	})
+
+	test("the calendar's heading carries the whole schedule name as its title, for a name too long to show", () => {
+		const entered = init({ _tag: "AlertsSchedule", scheduleId: schedulePublicId(1), search: {} }, context)
+		const name = `checkout-primary-${Str.repeat(120)("x")}`
+		const long = run(entered.model, [
+			Message.CompletedFetchSession({ orgId: ORG, grants: ENGINEER }),
+			Message.ReadClock({ nowMs: ONCALL_NOW }),
+			Message.CompletedFetchSchedule({
+				key: entered.model.schedule.key ?? "",
+				readAtMs: ONCALL_NOW,
+				result: Result.succeed({ ...checkoutSchedule(ONCALL_NOW), name }),
+			}),
+		])
+		scene(
+			{ update: pageUpdate, view },
+			given(long),
+			expectView(role("heading", { name: `Shifts for ${name}` })).toHaveAttr(
+				"title",
+				`Shifts for ${name}`,
+			),
 		)
 	})
 
@@ -460,7 +482,7 @@ describe("on-call schedule page", () => {
 		scene(
 			{ update: pageUpdate, view },
 			given(model),
-			expectView(text("Covered for the next 14 days")).toExist(),
+			expectView(text("Covered in this period")).toExist(),
 			expectView(role("group", { name: "Range" })).toExist(),
 		)
 		const month = pageUpdate(model, Message.PickedRange({ days: "28" }))

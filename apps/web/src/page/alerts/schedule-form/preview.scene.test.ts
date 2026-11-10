@@ -56,13 +56,13 @@ test("typing the name keeps the drawn preview; a new range draws it again", () =
 	scene(
 		{ update: pageUpdate, view },
 		given(staffed()),
-		expectView(text("Covered for the next 14 days")).toExist(),
+		expectView(text("Covered in this period")).toExist(),
 		keep,
 		type(role("textbox", { name: "Name" }), "Checkout primary"),
 		type(role("textbox", { name: "Description (optional)" }), "Who swaps with whom"),
 		keep,
 		click(role("button", { name: "4 weeks" })),
-		expectView(text("Covered for the next 28 days")).toExist(),
+		expectView(text("Covered in this period")).toExist(),
 		keep,
 	)
 	expect(drawn[0]).not.toBeNull()
