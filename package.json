@@ -18,8 +18,6 @@
 		"seed:demo:env": "bun run ./scripts/seed-demo/make-env.ts",
 		"seed:demo:code-review": "bun run ./scripts/seed-demo/code-review.ts",
 		"prepare": "effect-tsgo unpatch --no-typescript --oxlint --tsrs && effect-tsgo patch --no-typescript --oxlint --tsrs",
-		"docker:build": "COMPOSE_PARALLEL_LIMIT=1 docker compose build",
-		"docker:up": "COMPOSE_PARALLEL_LIMIT=1 docker compose up --build",
 		"db:up": "docker compose up -d postgres electric",
 		"ch:up": "docker compose -f docker-compose.development.yml up -d clickhouse",
 		"ch:down": "docker compose -f docker-compose.development.yml stop clickhouse",

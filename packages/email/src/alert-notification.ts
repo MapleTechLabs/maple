@@ -6,7 +6,8 @@
  * This module only splices those strings together.
  */
 import { FRAGMENTS, PAGE } from "./generated/alert-notification"
-import { escapeHtml, fill, preheaderPadding, truncate } from "./template"
+import { escapeHtml } from "@maple/strings"
+import { fill, preheaderPadding, truncate } from "./template"
 import { Array as Arr } from "effect"
 
 /**

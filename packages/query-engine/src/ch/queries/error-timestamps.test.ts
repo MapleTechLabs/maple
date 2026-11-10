@@ -14,7 +14,7 @@ import {
 	errorTickFirstErrorMinuteQuery,
 	errorTickIssuesQuery,
 } from "./errors"
-import { anomalyErrorSpikeServiceTimeseriesQuery, anomalyErrorSpikeTimeseriesQuery } from "./anomaly"
+import { anomalyErrorSpikeTimeseriesQuery } from "./anomaly"
 import { releaseErrorFingerprintsQuery } from "./releases"
 
 // Rows reach callers through `decodeRows`. A query whose row schema is not
@@ -146,12 +146,6 @@ describe("error queries decode timestamps to DateTime.Utc", () => {
 		{
 			name: "anomalyErrorSpikeTimeseriesQuery",
 			compiled: compile(anomalyErrorSpikeTimeseriesQuery(), params),
-			row: { bucket: "2024-01-01 10:05:00", count: "3" },
-			fields: { bucket: "2024-01-01T10:05:00.000Z" },
-		},
-		{
-			name: "anomalyErrorSpikeServiceTimeseriesQuery",
-			compiled: compile(anomalyErrorSpikeServiceTimeseriesQuery(), params),
 			row: { bucket: "2024-01-01 10:05:00", count: "3" },
 			fields: { bucket: "2024-01-01T10:05:00.000Z" },
 		},

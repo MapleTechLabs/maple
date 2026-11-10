@@ -26,8 +26,6 @@ export interface ServiceMapLayout {
 
 export const SNAPSHOT_LIMIT = 4
 
-export const EMPTY_SERVICE_MAP_LAYOUT: ServiceMapLayout = { snapshots: [] }
-
 /** Upsert `signature`'s snapshot at the front of the LRU, capped at {@link SNAPSHOT_LIMIT}. */
 export function upsertSnapshot(
 	layout: ServiceMapLayout,
@@ -54,9 +52,4 @@ export interface ServiceMapViewPrefs {
 	/** 0 = off; otherwise hide edges under this % of the peak edge rate. */
 	minTrafficPct: number
 	collapsedNamespaces: ReadonlyArray<string>
-}
-
-export const DEFAULT_SERVICE_MAP_VIEW_PREFS: ServiceMapViewPrefs = {
-	minTrafficPct: 0,
-	collapsedNamespaces: [],
 }

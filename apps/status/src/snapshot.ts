@@ -48,9 +48,13 @@ const decodeFound = <A>(
 ): Option.Option<Found<A>> =>
 	raw === null ? Option.none() : Option.map(decode(raw), (value) => ({ raw, value }))
 
+/** Cached in place of a value when KV answered that the key does not exist. */
+const KV_MISS = "missing"
+
 /**
  * Cache (fresh) -> KV -> R2 -> cache (any age). An undecodable value is a miss, and a value read
- * from KV or R2 refreshes the cache. With `kvMissIsFinal`, a KV `null` ends the search.
+ * from KV or R2 refreshes the cache. With `kvMissIsFinal`, a KV `null` ends the search, and with
+ * `rememberMiss` that answer is cached for as long as a hit is.
  */
 const readThrough = <A>(
 	env: StatusEnv,
@@ -59,6 +63,7 @@ const readThrough = <A>(
 		readonly kvKey: string
 		readonly r2Key: string | null
 		readonly kvMissIsFinal: boolean
+		readonly rememberMiss: boolean
 		readonly decode: (raw: string) => Option.Option<A>
 	},
 ): Effect.Effect<Lookup<A>> =>
@@ -66,8 +71,9 @@ const readThrough = <A>(
 		const { storage } = env
 		const cached = yield* storage.cacheGet(input.cacheKey).pipe(Effect.orElseSucceed(() => null))
 		const fromCache = decodeFound(cached?.value ?? null, input.decode)
-		if (cached !== null && Option.isSome(fromCache) && env.nowMs - cached.storedAt < CACHE_FRESH_MS) {
-			return found(fromCache.value.value)
+		if (cached !== null && env.nowMs - cached.storedAt < CACHE_FRESH_MS) {
+			if (Option.isSome(fromCache)) return found(fromCache.value.value)
+			if (input.rememberMiss && cached.value === KV_MISS) return MISSING
 		}
 		const remember = (hit: Found<A>) =>
 			storage
@@ -77,7 +83,15 @@ const readThrough = <A>(
 		const kv = yield* Effect.result(storage.kvGet(input.kvKey))
 		const fromKv = Result.isSuccess(kv) ? decodeFound(kv.success, input.decode) : Option.none()
 		if (Option.isSome(fromKv)) return yield* remember(fromKv.value)
-		if (input.kvMissIsFinal && Result.isSuccess(kv) && kv.success === null) return MISSING
+		if (input.kvMissIsFinal && Result.isSuccess(kv) && kv.success === null) {
+			// Never over a cached value: that copy is the fallback for when KV and R2 both fail.
+			if (input.rememberMiss && Option.isNone(fromCache)) {
+				yield* storage
+					.cachePut(input.cacheKey, { value: KV_MISS, storedAt: env.nowMs })
+					.pipe(Effect.ignore)
+			}
+			return MISSING
+		}
 
 		const r2 = input.r2Key === null ? null : yield* Effect.result(storage.r2Get(input.r2Key))
 		const fromR2 =
@@ -93,13 +107,17 @@ const decodePageId = (raw: string): Option.Option<string> => {
 	return /^[0-9a-f-]{36}$/u.test(id) ? Option.some(id) : Option.none()
 }
 
-/** The page a hostname serves: KV `host:`, R2 `hosts/` when KV fails, then any cached answer. */
+/**
+ * The page a hostname serves: KV `host:`, R2 `hosts/` when KV fails, then any cached answer.
+ * A miss is remembered: the shared host has no page, and every `/s/<slug>` request asks it first.
+ */
 export const pageIdForHost = (env: StatusEnv, hostname: string): Effect.Effect<Lookup<string>> =>
 	readThrough(env, {
 		cacheKey: cacheKey("host", Str.toLowerCase(hostname)),
 		kvKey: StatusPageKeys.host(hostname),
 		r2Key: StatusPageKeys.hostObject(hostname),
 		kvMissIsFinal: true,
+		rememberMiss: true,
 		decode: decodePageId,
 	})
 
@@ -110,6 +128,7 @@ export const pageIdForSlug = (env: StatusEnv, slug: string): Effect.Effect<Looku
 		kvKey: StatusPageKeys.slug(slug),
 		r2Key: StatusPageKeys.slugObject(slug),
 		kvMissIsFinal: true,
+		rememberMiss: false,
 		decode: decodePageId,
 	})
 
@@ -123,6 +142,7 @@ export const loadSnapshot = (
 		kvKey: StatusPageKeys.snapshot(pageId),
 		r2Key: StatusPageKeys.snapshotObject(pageId),
 		kvMissIsFinal: false,
+		rememberMiss: false,
 		decode: decodeStatusPageSnapshotJson,
 	}).pipe(Effect.map((lookup) => (lookup._tag === "found" ? Option.some(lookup.value) : Option.none())))
 

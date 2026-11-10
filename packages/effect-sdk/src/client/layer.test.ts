@@ -83,4 +83,33 @@ describe("Maple.layer (client) — session linking after refactor", () => {
 		expect(payload).not.toContain('"noise.poll"')
 		expect(payload).toContain("sess-xyz")
 	})
+
+	it("names the SDK and its version on export requests, with or without an ingest key", async () => {
+		const hints: Array<{ readonly sdk: string | null; readonly authorization: string | null }> = []
+		onFetch = async (request) => {
+			if (Str.endsWith("/v1/traces")(request.url))
+				hints.push({
+					sdk: request.headers.get("x-maple-sdk"),
+					authorization: request.headers.get("authorization"),
+				})
+			return new Response(null, { status: 200 })
+		}
+		restore = () => void (onFetch = ok)
+
+		const run = (ingestKey: string | undefined) =>
+			Effect.runPromise(
+				Effect.void.pipe(
+					Effect.withSpan("page-load"),
+					Effect.provide(
+						layer({ serviceName: "web-test", endpoint: "https://collector.test", ingestKey }),
+					),
+				),
+			)
+		await run("secret")
+		await run(undefined)
+
+		expect(Arr.map(hints, (hint) => hint.authorization)).toEqual(["Bearer secret", null])
+		expect(hints).toHaveLength(2)
+		for (const hint of hints) expect(hint.sdk).toMatch(/^maple-effect-sdk-client\/\d+\.\d+\.\d+$/)
+	})
 })

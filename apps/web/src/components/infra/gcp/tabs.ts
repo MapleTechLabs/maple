@@ -382,10 +382,6 @@ export const gcpWorkloadName = (service: GcpInfraServiceId, keys: ReadonlyArray<
 			)(keys[0] ?? "")
 		: (keys[0] ?? "")
 
-/** Whether a service's workloads run in a region or zone; a subscription and a URL map are global. */
-export const gcpHasRegion = (service: GcpInfraServiceId): boolean =>
-	Arr.some(GCP_INFRA_SERVICES[service].identity, ([label]) => REGION_LABELS.includes(label))
-
 /** What one row of a tab is, in running text: "container", "URL map". */
 export const gcpWorkloadNoun = (service: GcpInfraServiceId): string =>
 	replaceWith(GCP_INFRA_SERVICES[service].identity[0][0], /^[A-Z](?=[a-z])/, (letter) =>
@@ -419,10 +415,6 @@ export const GCP_VIEW_SERVICES = {
 	computeEngine: ["computeEngine"],
 	loadBalancing: ["loadBalancing"],
 } as const satisfies Record<GcpServiceView, ReadonlyArray<GcpInfraServiceId>>
-
-/** The list a service's workloads are in: `?view=` of the way back from a workload's page. */
-export const gcpServiceView = (service: GcpInfraServiceId): GcpServiceView =>
-	service === "cloudRun" || service === "cloudFunctions" ? "services" : service
 
 export type GcpInfraNotice =
 	/** A connector's reads fail, or arrive with part of the metrics missing. */
