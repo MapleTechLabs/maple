@@ -423,6 +423,40 @@ describe("alerts hub, silence side panel", () => {
 		).toBe(false)
 	})
 
+	test("a `?sheet=` that opens nothing is replaced away: another section's panel, or a made-up one", () => {
+		const dismissals = (commands: Parameters<typeof callsOf>[0]) =>
+			Arr.filter(callsOf(commands), ([name]) => name === "DismissAlertsHubSheet")
+		const onRules = routeChanged(
+			onSilences(ENGINEER, []),
+			hubAt({ tab: "rules", sheet: "silence" }),
+			context,
+		)
+		expect(onRules.model.search.sheet).toBeUndefined()
+		expect(dismissals(onRules.commands)).toEqual([
+			["DismissAlertsHubSheet", { href: "/alerts/rules?sheet=silence", id: "silence" }],
+		])
+		const onInbox = routeChanged(onSilences(ENGINEER, []), hubAt({ sheet: "silence" }), context)
+		expect(dismissals(onInbox.commands)).toEqual([
+			["DismissAlertsHubSheet", { href: "/alerts?sheet=silence", id: "silence" }],
+		])
+		const bogus = routeChanged(
+			onSilences(ENGINEER, []),
+			hubAt({ tab: "silences", sheet: "bogus" }),
+			context,
+		)
+		expect(bogus.model.search.sheet).toBeUndefined()
+		expect(bogus.model.silenceDialog.dialog.isOpen).toBe(false)
+		expect(dismissals(bogus.commands)).toEqual([
+			["DismissAlertsHubSheet", { href: `${SILENCES_URL}?sheet=bogus`, id: "bogus" }],
+		])
+		// Asked once: the clock tick that follows finds nothing left to drop.
+		expect(dismissals(pageUpdate(bogus.model, Message.ReadClock({ nowMs: NOW })).commands)).toEqual([])
+		// The open panel leaving its section closes with the param.
+		const left = routeChanged(withPanel().model, hubAt({ tab: "rules", sheet: "silence" }), context)
+		expect(left.model.silenceDialog.dialog.isOpen).toBe(false)
+		expect(dismissals(left.commands)).toHaveLength(1)
+	})
+
 	test("a clock tick after Cancel, before the URL change lands, leaves it closed", () => {
 		const cancelled = pageUpdate(withPanel().model, silenceMessage(SilenceDialog.Message.ClickedCancel()))
 		expect(cancelled.model.search.sheet).toBeUndefined()
