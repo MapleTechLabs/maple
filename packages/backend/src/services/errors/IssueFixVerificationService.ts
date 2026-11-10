@@ -206,10 +206,12 @@ export interface IssueFixVerificationServiceApi {
 		row: ErrorIssueVerificationRow,
 		nowMs: number,
 	) => Effect.Effect<void, ErrorPersistenceError>
-	/** Move a row's window out, so one that cannot be read yet stops heading the due queue. */
+	/**
+	 * Send a row that cannot be read yet to the back of the due queue. Its window is
+	 * left alone: an inconclusive verdict measures its retry from `verifyAfter`.
+	 */
 	readonly deferVerification: (
 		row: ErrorIssueVerificationRow,
-		verifyAfterMs: number,
 		nowMs: number,
 	) => Effect.Effect<void, ErrorPersistenceError>
 	readonly applyVerdict: (
@@ -1026,9 +1028,9 @@ const make: Effect.Effect<
 				PG.from(ErrorIssueVerifications)
 					.select()
 					.where(($) => [$.status.eq("waiting"), $.verifyAfter.lte(nowMs)])
-					// Longest overdue first. Unordered, the same rows could fill every
-					// tick's page while the rest never came up.
-					.orderBy(["verifyAfter", "asc"])
+					// Least recently touched first, so a row the tick deferred goes to the
+					// back. Unordered, the same rows could fill every page while the rest never came up.
+					.orderBy(["updatedAt", "asc"])
 					.limit(limit),
 			),
 		)
@@ -1069,11 +1071,11 @@ const make: Effect.Effect<
 
 	const deferVerification: IssueFixVerificationServiceApi["deferVerification"] = Effect.fn(
 		"IssueFixVerificationService.deferVerification",
-	)(function* (row, verifyAfterMs, nowMs) {
+	)(function* (row, nowMs) {
 		yield* dbExecute((db) =>
 			db.run(
 				PG.update(ErrorIssueVerifications)
-					.set({ verifyAfter: verifyAfterMs, updatedAt: nowMs })
+					.set({ updatedAt: nowMs })
 					.where(($) => [$.id.eq(row.id), $.status.eq(row.status), $.attempt.eq(row.attempt)]),
 			),
 		)
