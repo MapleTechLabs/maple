@@ -69,15 +69,17 @@ const answer = (shifts: ReadonlyArray<OnCallShift>, readAtMs = NOW, isFromCache 
 const commandsOf = (step: UpdateReturn) =>
 	Arr.map(step.commands ?? [], (command) => ({ name: command.name, args: command.args }))
 
-const view = (() => {
+const viewAt = (currentPath: string) => {
 	const frame = withViewInputs(frameView, {
-		currentPath: "/",
+		currentPath,
 		breadcrumbs: [{ label: "Overview" }],
 		page: () => null,
 		topbarActions: () => null,
 	})()
 	return (model: Model, h: HtmlBuilder<Message>) => frame(model, h)
-})()
+}
+
+const view = viewAt("/")
 
 const measured = Mount.resolve(MeasureSidebarOverflow, Message.MeasuredSidebarOverflow())
 
@@ -138,6 +140,20 @@ describe("on-call pill", () => {
 			given(withOnCall([shift()], { onCallNowMs: HANDOFF + 1 })),
 			measured,
 			...absent,
+		)
+	})
+
+	test("the pill is a shortcut: on the page it links to, the nav's row is the current page, not the pill", () => {
+		const pill = role("link", { name: "Not on call" })
+		// Where the pill links today, and where it links once on-call has a page of its own.
+		Arr.forEach(["/alerts?tab=oncall", "/alerts/on-call"], (currentPath) =>
+			scene(
+				{ update, view: viewAt(currentPath) },
+				given(withOnCall([shift({ userId: "user_someone" })])),
+				measured,
+				expect(pill).toExist(),
+				expect(pill).not.toHaveAttr("aria-current"),
+			),
 		)
 	})
 

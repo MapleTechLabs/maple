@@ -262,7 +262,6 @@ export const shellOnCallStatus = (model: Model): OnCallStatus =>
  */
 const onCallPill = (
 	h: HtmlBuilder<Message>,
-	currentPath: string,
 	status: OnCallStatus,
 	tip: RailTip,
 	isRail: boolean,
@@ -281,7 +280,8 @@ const onCallPill = (
 				h,
 				{
 					className: isOnCall ? undefined : "text-muted-foreground",
-					link: { href: oncallTabHref(), currentPath },
+					// A shortcut, not a nav row: a plain anchor, so it never claims `aria-current="page"`.
+					href: oncallTabHref(),
 					hasTooltip: true,
 					attributes: [
 						// The rail's tooltip names the glyph; the open sidebar's adds what the row leaves out.
@@ -405,13 +405,7 @@ export const shellSidebarFooter = (
 		),
 		sidebarMenu(h, undefined, [
 			// A row of the footer's list, so it keeps the list's 4px rhythm.
-			...onCallPill(
-				h,
-				currentPath,
-				shellOnCallStatus(model),
-				tip,
-				!model.isSidebarOpen && !model.isMobile,
-			),
+			...onCallPill(h, shellOnCallStatus(model), tip, !model.isSidebarOpen && !model.isMobile),
 			footerNavRow(h, currentPath, { href: "/sources", title: "Sources", icon: "ConnectionIcon" }, tip),
 			// `/integrations` renders inside the settings rail, so Settings owns it.
 			footerNavRow(

@@ -367,7 +367,7 @@ export type SidebarMenuButtonOptions<Message> = Readonly<{
 	isActive?: boolean
 	/**
 	 * A sub-item of this row is the current page: the row keeps its medium weight and leaves the
-	 * tint to that sub-item (`data-active="child"`).
+	 * tint and `aria-current="page"` to that sub-item (`data-active="child"`).
 	 */
 	hasActiveChild?: boolean
 	/** Rendered as a router link instead of a button. */
@@ -421,7 +421,9 @@ export const sidebarMenuButton = <Message>(
 	return h.a(
 		[
 			h.Href(options.link.href),
-			...(linkActive ? [h.AriaCurrent("page"), h.DataAttribute("status", "active")] : []),
+			// One link is the current page: a section row leaves that to its current sub-item.
+			...(linkActive && options.hasActiveChild !== true ? [h.AriaCurrent("page")] : []),
+			...(linkActive ? [h.DataAttribute("status", "active")] : []),
 			...attributes,
 		],
 		children,
