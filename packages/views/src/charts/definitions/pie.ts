@@ -1,5 +1,5 @@
 import { formatNumber, formatPercent, formatValueByUnit } from "@maple/ui/lib/format"
-import { muteColor } from "../plot/color-scale"
+import { muteColor } from "../oklch"
 import { defineChart, type ChartFocusStrategy, type ChartPoint } from "@tanstack/charts"
 import {
 	focusGroupAngle,

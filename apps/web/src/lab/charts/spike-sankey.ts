@@ -1,4 +1,4 @@
-import { muteColor } from "@maple/views/charts/plot/color-scale"
+import { muteColor } from "@maple/views/charts/oklch"
 import { type ChartCurve, type ChartValue, defineChart } from "@tanstack/charts"
 import { link } from "@tanstack/charts/link"
 import {

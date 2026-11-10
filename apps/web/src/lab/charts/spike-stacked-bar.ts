@@ -1,4 +1,4 @@
-import { muteColor } from "@maple/views/charts/plot/color-scale"
+import { muteColor } from "@maple/views/charts/oklch"
 import { formatBucketLabel, formatNumber } from "@maple/ui/lib/format"
 import {
 	STACKED_BAR_PARTIAL_ROWS,

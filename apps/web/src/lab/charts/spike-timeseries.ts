@@ -1,5 +1,5 @@
 import { focusCrosshair, focusDot } from "@maple/views/charts/plot/plot-focus"
-import { muteColor } from "@maple/views/charts/plot/color-scale"
+import { muteColor } from "@maple/views/charts/oklch"
 import { formatBucketLabel, formatLatency, formatNumber } from "@maple/ui/lib/format"
 import {
 	errorThroughput,
