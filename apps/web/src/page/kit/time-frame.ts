@@ -4,12 +4,13 @@ import { Clock, Effect, Schema } from "effect"
 import { Command, type Update } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { defineMessageUnion } from "foldkit/message"
-import { resolveWindow, TimeWindow } from "../../../data/time-range"
-import { type PresetValue, timeControls, type TimeSearch } from "../../kit/time-controls"
+import type { CallableTaggedStruct } from "foldkit/schema"
+import { resolveWindow, TimeWindow } from "../../data/time-range"
+import { type PresetValue, timeControls, type TimeSearch } from "./time-controls"
 import { INITIAL_LOCALE, readLocale } from "@maple/views/lib/locale"
-import * as TimeRangePicker from "../../kit/time-range-picker"
+import * as TimeRangePicker from "./time-range-picker"
 
-// The time scope every infra page shares: `useEffectiveTimeRange`, `PageRefreshProvider` (Reload
+// A page's time scope (the infra pages embed it whole): `useEffectiveTimeRange`, `PageRefreshProvider` (Reload
 // re-resolves unsnapped and spins 600 ms) and `TimeRangeHeaderControls`. The page owns its search;
 // the frame reports a resolved window or a new time search as OutMessages.
 
@@ -64,14 +65,45 @@ export type OutMessage = typeof OutMessage.Type
 /** What a resolve needs from the page: its URL window, default preset and the viewer's zone. */
 export type Scope = Readonly<{ search: TimeSearch; defaultPreset: PresetValue; timeZone: string }>
 
+/** The URL window a resolve reads: its bounds or preset, and the viewer's zone. */
+export const WindowArgs = {
+	mode: RequestMode,
+	startTime: Schema.optional(Schema.String),
+	endTime: Schema.optional(Schema.String),
+	preset: Schema.String,
+	timeZone: Schema.String,
+}
+
+/** A page's own resolve Command (`useEffectiveTimeRange`): snapped on `Load`, unsnapped on `Refresh`. */
+export const resolveWindowCommand = <const Name extends string, const Tag extends string>(
+	name: Name,
+	completed: CallableTaggedStruct<
+		Tag,
+		{
+			readonly window: typeof TimeWindow
+			readonly nowMs: Schema.Number
+			readonly mode: typeof RequestMode
+		}
+	>,
+) =>
+	Command.define(name, {
+		args: WindowArgs,
+		messages: [completed],
+		execute: ({ mode, startTime, endTime, preset, timeZone }) =>
+			Effect.map(Clock.currentTimeMillis, (nowMs) =>
+				completed({
+					window: resolveWindow(
+						{ startTime, endTime, preset, snap: mode === "Load", timeZone },
+						nowMs,
+					),
+					nowMs,
+					mode,
+				}),
+			),
+	})
+
 export const ResolveWindow = Command.define("ResolveInfraWindow", {
-	args: {
-		mode: RequestMode,
-		startTime: Schema.optional(Schema.String),
-		endTime: Schema.optional(Schema.String),
-		preset: Schema.String,
-		timeZone: Schema.String,
-	},
+	args: WindowArgs,
 	messages: [Message.CompletedResolveWindow],
 	execute: ({ mode, startTime, endTime, preset, timeZone }) =>
 		Effect.zipWith(Clock.currentTimeMillis, readLocale, (nowMs, locale) =>
@@ -174,27 +206,6 @@ export const controls = <M>(
 				},
 			}),
 	})
-
-// `WIDEN_TIME_PRESET` / `canWidenTimeRange`: the preset an empty page offers to widen to.
-export const WIDEN_TIME_PRESET = "7d"
-const WIDE_TIME_PRESETS = new Set([
-	"7d",
-	"1w",
-	"10d",
-	"14d",
-	"2w",
-	"30d",
-	"6w",
-	"1mo",
-	"2mo",
-	"3mo",
-	"6mo",
-	"12mo",
-])
-
-/** Widening only helps from a short relative preset. */
-export const canWidenTimeRange = (search: TimeSearch, defaultPreset: string): boolean =>
-	search.startTime === undefined && !WIDE_TIME_PRESETS.has(search.timePreset ?? defaultPreset)
 
 /** Resolve for `scope`: snapped on entry, unsnapped after a Reload (`refreshVersion > 0`). */
 export const resolve = (model: Model, scope: Scope, mode?: RequestMode) =>

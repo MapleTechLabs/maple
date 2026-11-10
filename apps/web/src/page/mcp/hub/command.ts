@@ -1,5 +1,5 @@
+import { resolveWindowCommand } from "../../kit/time-frame"
 import { reloadSpin, SEARCH_DEBOUNCE } from "@maple/views/data/timing"
-import { RequestMode } from "@maple/views/data/keyed"
 import { MCP_CLIENT_KINDS } from "@maple/domain/mcp-clients"
 import {
 	getMcpOverview,
@@ -8,10 +8,9 @@ import {
 	getMcpSessions,
 	getMcpTool,
 } from "@maple/web-data/warehouse/mcp"
-import { Clock, Effect, Schema } from "effect"
+import { Effect, Schema } from "effect"
 import { Command } from "foldkit"
 import { settleTo } from "@maple/views/data/load-failure"
-import { resolveWindow } from "../../../data/time-range"
 import { SEMCONV_MCP_URL } from "../view-kit"
 import { Message } from "./message"
 
@@ -21,24 +20,7 @@ const Selection = {
 	kind: Schema.UndefinedOr(Schema.Literals(MCP_CLIENT_KINDS)),
 }
 
-export const ResolveWindow = Command.define("ResolveMcpWindow", {
-	args: {
-		mode: RequestMode,
-		startTime: Schema.UndefinedOr(Schema.String),
-		endTime: Schema.UndefinedOr(Schema.String),
-		preset: Schema.String,
-		timeZone: Schema.String,
-	},
-	messages: [Message.CompletedResolveWindow],
-	execute: ({ mode, startTime, endTime, preset, timeZone }) =>
-		Effect.map(Clock.currentTimeMillis, (nowMs) =>
-			Message.CompletedResolveWindow({
-				window: resolveWindow({ startTime, endTime, preset, snap: mode === "Load", timeZone }, nowMs),
-				nowMs,
-				mode,
-			}),
-		),
-})
+export const ResolveWindow = resolveWindowCommand("ResolveMcpWindow", Message.CompletedResolveWindow)
 
 export const FetchServers = Command.define("FetchMcpServers", {
 	args: { key: Schema.String, ...Window },

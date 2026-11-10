@@ -1,13 +1,13 @@
+import { resolveWindowCommand } from "../../kit/time-frame"
 import { reloadSpin, SEARCH_DEBOUNCE } from "@maple/views/data/timing"
-import { RequestMode } from "@maple/views/data/keyed"
 import { getReplaysFacets, listReplays, type ListReplaysInput } from "@maple/web-data/warehouse/replays"
 import { sessionTagsFromSearch } from "../kit/session-tags"
-import { Clock, Duration, Effect, Queue, Schema, Stream } from "effect"
+import { Duration, Effect, Queue, Schema, Stream } from "effect"
 import { Command, Mount } from "foldkit"
 import { IdleTtl } from "../../../data/idle-ttl"
 import { settleTo, settled } from "@maple/views/data/load-failure"
 import { readThrough } from "../../../data/read-cache"
-import { resolveWindow, TimeWindow } from "../../../data/time-range"
+import { TimeWindow } from "../../../data/time-range"
 import { ReplaysSearch } from "../../../route/search"
 import { loadSignalPresences } from "../../kit/signal-presence"
 import { virtualizeSessions } from "../kit/virtualize"
@@ -40,24 +40,7 @@ export const filterInputs = (search: Search, window: TimeWindow) => ({
 	activeTimeMaxMs: search.activeMax !== undefined ? search.activeMax * 1000 : undefined,
 })
 
-export const ResolveWindow = Command.define("ResolveReplaysWindow", {
-	args: {
-		mode: RequestMode,
-		startTime: Schema.optional(Schema.String),
-		endTime: Schema.optional(Schema.String),
-		preset: Schema.String,
-		timeZone: Schema.String,
-	},
-	messages: [Message.CompletedResolveWindow],
-	execute: ({ mode, startTime, endTime, preset, timeZone }) =>
-		Effect.map(Clock.currentTimeMillis, (nowMs) =>
-			Message.CompletedResolveWindow({
-				window: resolveWindow({ startTime, endTime, preset, snap: mode === "Load", timeZone }, nowMs),
-				nowMs,
-				mode,
-			}),
-		),
-})
+export const ResolveWindow = resolveWindowCommand("ResolveReplaysWindow", Message.CompletedResolveWindow)
 
 const listPage = (input: ListReplaysInput) =>
 	Effect.map(listReplays({ data: input }), (page): ReplaysPage => ({

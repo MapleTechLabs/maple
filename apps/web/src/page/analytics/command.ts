@@ -1,5 +1,5 @@
+import { resolveWindowCommand } from "../kit/time-frame"
 import { reloadSpin } from "@maple/views/data/timing"
-import { RequestMode } from "@maple/views/data/keyed"
 import { getProductEventTraceSamples } from "@maple/web-data/warehouse/product-events"
 import {
 	getWebAnalyticsAiCrawlers,
@@ -20,10 +20,9 @@ import {
 	getSearchConsoleTopPages,
 	getSearchConsoleTopQueries,
 } from "@maple/web-data/warehouse/search-console"
-import { Clock, Effect, Schema } from "effect"
+import { Effect, Schema } from "effect"
 import { Command } from "foldkit"
 import { settleTo } from "@maple/views/data/load-failure"
-import { resolveWindow } from "../../data/time-range"
 import { MapleInternalApiClient } from "../../platform/api-clients"
 import { loadSignalPresences } from "../kit/signal-presence"
 import { Message, SlotName } from "./message"
@@ -31,24 +30,7 @@ import { Message, SlotName } from "./message"
 // The page's reads. Every fetch answers `CompletedFetch` with its slot and key (S6); the request
 // itself is the web-data function, with the input it was keyed on.
 
-export const ResolveWindow = Command.define("ResolveAnalyticsWindow", {
-	args: {
-		mode: RequestMode,
-		startTime: Schema.optional(Schema.String),
-		endTime: Schema.optional(Schema.String),
-		preset: Schema.String,
-		timeZone: Schema.String,
-	},
-	messages: [Message.CompletedResolveWindow],
-	execute: ({ mode, startTime, endTime, preset, timeZone }) =>
-		Effect.map(Clock.currentTimeMillis, (nowMs) =>
-			Message.CompletedResolveWindow({
-				window: resolveWindow({ startTime, endTime, preset, snap: mode === "Load", timeZone }, nowMs),
-				nowMs,
-				mode,
-			}),
-		),
-})
+export const ResolveWindow = resolveWindowCommand("ResolveAnalyticsWindow", Message.CompletedResolveWindow)
 
 const Filters = WebAnalyticsFilterFields
 const Window = { startTime: Schema.String, endTime: Schema.String }

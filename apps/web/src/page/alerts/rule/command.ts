@@ -1,12 +1,11 @@
+import { resolveWindowCommand } from "../../kit/time-frame"
 import { reloadSpin, readClock } from "@maple/views/data/timing"
-import { RequestMode } from "@maple/views/data/keyed"
 import { AlertRuleId, IsoDateTimeString } from "@maple/domain/http"
 import { V2AlertRulePreviewParams, V2InvestigationCreateParams } from "@maple/domain/http/v2"
 import { v2CheckToDocument } from "@maple/web-data/alerts/form-utils"
-import { Clock, Effect, Schema, Array as Arr } from "effect"
+import { Effect, Schema, Array as Arr } from "effect"
 import { Command } from "foldkit"
 import { settleTo } from "@maple/views/data/load-failure"
-import { resolveWindow } from "../../../data/time-range"
 import { MapleApiV2Client } from "../../../platform/api-clients"
 import { listDeliveries, setRuleEnabled } from "../shared/commands"
 import { listActiveSilences } from "../shared/silences"
@@ -18,24 +17,10 @@ import { Message } from "./message"
 
 const PAGE_LIMIT = 100
 /** `useEffectiveTimeRange(search…, "24h")`: snapped on entry, against the real clock on Reload. */
-export const ResolveRuleWindow = Command.define("ResolveAlertRuleWindow", {
-	args: {
-		mode: RequestMode,
-		startTime: Schema.optional(Schema.String),
-		endTime: Schema.optional(Schema.String),
-		preset: Schema.String,
-		timeZone: Schema.String,
-	},
-	messages: [Message.CompletedResolveWindow],
-	execute: ({ mode, startTime, endTime, preset, timeZone }) =>
-		Effect.map(Clock.currentTimeMillis, (nowMs) =>
-			Message.CompletedResolveWindow({
-				window: resolveWindow({ startTime, endTime, preset, snap: mode === "Load", timeZone }, nowMs),
-				nowMs,
-				mode,
-			}),
-		),
-})
+export const ResolveRuleWindow = resolveWindowCommand(
+	"ResolveAlertRuleWindow",
+	Message.CompletedResolveWindow,
+)
 
 export const ReadDiagnosisClock = readClock("ReadAlertRuleDiagnosisClock", Message.ReadDiagnosisClock)
 

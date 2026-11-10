@@ -1,6 +1,6 @@
+import { resolveWindowCommand } from "../../kit/time-frame"
 import { reloadSpin } from "@maple/views/data/timing"
 import { encodeJson } from "@maple/views/data/request-key"
-import { RequestMode } from "@maple/views/data/keyed"
 import { MetricsQueryDraftSchema, QUERY_BUILDER_METRIC_TYPES } from "@maple/query-model"
 import {
 	getMetricAttributeKeys,
@@ -9,11 +9,11 @@ import {
 } from "@maple/web-data/warehouse/metrics"
 import { getQueryBuilderBreakdown } from "@maple/web-data/warehouse/query-builder-breakdown"
 import { getQueryBuilderTimeseries } from "@maple/web-data/warehouse/query-builder-timeseries"
-import { Clock, Duration, Effect, Schema, Stream, Array as Arr, String as Str } from "effect"
+import { Duration, Effect, Schema, Stream, Array as Arr, String as Str } from "effect"
 import * as SecureRandom from "effect/crypto/SecureRandom"
 import { Command, Mount } from "foldkit"
 import { settled } from "@maple/views/data/load-failure"
-import { resolveWindow, TimeWindow } from "../../../data/time-range"
+import { TimeWindow } from "../../../data/time-range"
 import { AppRoute, hrefOf } from "../../../route"
 import { Message } from "./message"
 import { AutocompleteLookup } from "./model"
@@ -21,24 +21,7 @@ import { autocompleteLookup } from "../../kit/autocomplete-lookups"
 import { caretEvents, placeCaret, WHERE_TEXTAREA_ID } from "./where-editor"
 import { listboxEvents } from "../../kit/where-autocomplete"
 
-export const ResolveWindow = Command.define("ResolveMetricWindow", {
-	args: {
-		mode: RequestMode,
-		startTime: Schema.optional(Schema.String),
-		endTime: Schema.optional(Schema.String),
-		preset: Schema.String,
-		timeZone: Schema.String,
-	},
-	messages: [Message.CompletedResolveWindow],
-	execute: ({ mode, startTime, endTime, preset, timeZone }) =>
-		Effect.map(Clock.currentTimeMillis, (nowMs) =>
-			Message.CompletedResolveWindow({
-				window: resolveWindow({ startTime, endTime, preset, snap: mode === "Load", timeZone }, nowMs),
-				nowMs,
-				mode,
-			}),
-		),
-})
+export const ResolveWindow = resolveWindowCommand("ResolveMetricWindow", Message.CompletedResolveWindow)
 
 export const FetchCatalog = Command.define("FetchMetricCatalog", {
 	args: { key: Schema.String, metricName: Schema.String, window: TimeWindow },

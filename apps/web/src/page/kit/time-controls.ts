@@ -137,3 +137,24 @@ export const timeRangeTriggerContent = <M>(h: HtmlBuilder<M>, label: string): Re
 	icon(h, "ClockIcon"),
 	h.span([], [label]),
 ]
+
+// `WIDEN_TIME_PRESET` / `canWidenTimeRange`: the preset an empty page offers to widen to.
+export const WIDEN_TIME_PRESET = "7d"
+const WIDE_TIME_PRESETS = new Set([
+	"7d",
+	"1w",
+	"10d",
+	"14d",
+	"2w",
+	"30d",
+	"6w",
+	"1mo",
+	"2mo",
+	"3mo",
+	"6mo",
+	"12mo",
+])
+
+/** Widening only helps from a short relative preset. */
+export const canWidenTimeRange = (search: TimeSearch, defaultPreset: string): boolean =>
+	search.startTime === undefined && !WIDE_TIME_PRESETS.has(search.timePreset ?? defaultPreset)

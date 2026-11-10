@@ -1,33 +1,16 @@
+import { resolveWindowCommand } from "../../kit/time-frame"
 import { reloadSpin, SEARCH_DEBOUNCE } from "@maple/views/data/timing"
-import { RequestMode } from "@maple/views/data/keyed"
 import { getAiSessionsFacets } from "@maple/web-data/warehouse/ai-sessions"
 import { getAiToolBreakdowns, getAiToolSeries } from "@maple/web-data/warehouse/ai-session-tools"
-import { Clock, Effect, Schema } from "effect"
+import { Effect, Schema } from "effect"
 import { Command } from "foldkit"
 import { settleTo } from "@maple/views/data/load-failure"
-import { resolveWindow, TimeWindow } from "../../../data/time-range"
+import { TimeWindow } from "../../../data/time-range"
 import { loadSignalPresences } from "../../kit/signal-presence"
 import { fetchTotals, Selection, toInput } from "../../kit/tools/reads"
 import { Message } from "./message"
 
-export const ResolveWindow = Command.define("ResolveAgentToolsWindow", {
-	args: {
-		mode: RequestMode,
-		startTime: Schema.UndefinedOr(Schema.String),
-		endTime: Schema.UndefinedOr(Schema.String),
-		preset: Schema.String,
-		timeZone: Schema.String,
-	},
-	messages: [Message.CompletedResolveWindow],
-	execute: ({ mode, startTime, endTime, preset, timeZone }) =>
-		Effect.map(Clock.currentTimeMillis, (nowMs) =>
-			Message.CompletedResolveWindow({
-				window: resolveWindow({ startTime, endTime, preset, snap: mode === "Load", timeZone }, nowMs),
-				nowMs,
-				mode,
-			}),
-		),
-})
+export const ResolveWindow = resolveWindowCommand("ResolveAgentToolsWindow", Message.CompletedResolveWindow)
 
 export const FetchSeries = Command.define("FetchAgentToolsSeries", {
 	args: { key: Schema.String, selection: Selection, bucketSeconds: Schema.Number, isScope: Schema.Boolean },

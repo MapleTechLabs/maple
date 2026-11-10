@@ -1,9 +1,10 @@
+import { canWidenTimeRange } from "../../kit/time-controls"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { button } from "@maple/views/ui/button"
 import { excludedEmptyHint } from "@maple/views/ui/filters/excluded-empty-hint"
 import { docsLink, signalEmptyState } from "../../kit/signal-empty-state"
 import { presenceOf } from "@maple/views/data/signal-presence"
-import { canWidenRange, type LogFilterChip, logFilterChips } from "./derive"
+import { type LogFilterChip, logFilterChips } from "./derive"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { toolbar } from "./view-toolbar"
@@ -112,7 +113,7 @@ export const emptyState = (h: HtmlBuilder<Message>, model: Model, timeZone: stri
 							timeZone,
 							isFiltered: logFilterChips(model.search).length > 0,
 							onClearFilters: Message.ClickedClearFilterChips(),
-							onWidenRange: canWidenRange(model.search)
+							onWidenRange: canWidenTimeRange(model.search, "")
 								? Message.ClickedWidenRange()
 								: undefined,
 							detail: exclusionsHint(h, model),

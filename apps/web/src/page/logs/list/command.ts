@@ -1,13 +1,13 @@
+import { resolveWindowCommand } from "../../kit/time-frame"
 import { reloadSpin, SEARCH_DEBOUNCE } from "@maple/views/data/timing"
-import { RequestMode } from "@maple/views/data/keyed"
 import { Density, readLogsViewPreferences, saveLogsViewPreferences } from "@maple/views/ui/logs/viewer"
 import { logAttributeQueryFilters } from "@maple/views/lib/log-attribute-filters"
 import { getCustomChartTimeSeries } from "@maple/web-data/warehouse/custom-charts"
 import { getLogAttributeKeys, getLogsFacets, listLogs } from "@maple/web-data/warehouse/logs"
-import { Clock, Effect, Schema, Array as Arr } from "effect"
+import { Effect, Schema, Array as Arr } from "effect"
 import { Command, Mount } from "foldkit"
 import { settleTo } from "@maple/views/data/load-failure"
-import { resolveWindow, TimeWindow } from "../../../data/time-range"
+import { TimeWindow } from "../../../data/time-range"
 import { LogsSearch } from "../../../route/search"
 import { loadSignalPresences } from "../../kit/signal-presence"
 import { listInput, PAGE_SIZE, toVolumeBuckets, volumeInput } from "./derive"
@@ -15,24 +15,7 @@ import { Message } from "./message"
 import type { LogRowSchema, LogsPage } from "./model"
 
 /** `useEffectiveTimeRange`: snapped on entry, re-resolved against the real clock on Reload. */
-export const ResolveWindow = Command.define("ResolveLogsWindow", {
-	args: {
-		mode: RequestMode,
-		startTime: Schema.optional(Schema.String),
-		endTime: Schema.optional(Schema.String),
-		preset: Schema.String,
-		timeZone: Schema.String,
-	},
-	messages: [Message.CompletedResolveWindow],
-	execute: ({ mode, startTime, endTime, preset, timeZone }) =>
-		Effect.map(Clock.currentTimeMillis, (nowMs) =>
-			Message.CompletedResolveWindow({
-				window: resolveWindow({ startTime, endTime, preset, snap: mode === "Load", timeZone }, nowMs),
-				nowMs,
-				mode,
-			}),
-		),
-})
+export const ResolveWindow = resolveWindowCommand("ResolveLogsWindow", Message.CompletedResolveWindow)
 
 const ListArgs = {
 	key: Schema.String,

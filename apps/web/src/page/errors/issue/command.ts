@@ -1,6 +1,6 @@
+import { resolveWindowCommand } from "../../kit/time-frame"
 import { settleTo } from "@maple/views/data/load-failure"
 import { reloadSpin } from "@maple/views/data/timing"
-import { RequestMode } from "@maple/views/data/keyed"
 import {
 	ErrorIssueClaimRequest,
 	ErrorIssueCommentRequest,
@@ -14,32 +14,14 @@ import {
 	IssueSeverity,
 } from "@maple/domain/http"
 import { V2InvestigationCreateParams } from "@maple/domain/http/v2"
-import { Clock, Effect, Schema } from "effect"
+import { Effect, Schema } from "effect"
 import { Command, Mount } from "foldkit"
-import { resolveWindow } from "../../../data/time-range"
 import { MapleApiV2Client, MapleInternalApiClient } from "../../../platform/api-clients"
 import { writeClipboard } from "../../kit/clipboard"
 import { IssueWrite, Message } from "./message"
 
 /** `useEffectiveTimeRange(search.startTime, search.endTime, preset)`. */
-export const ResolveWindow = Command.define("ResolveIssueWindow", {
-	args: {
-		mode: RequestMode,
-		startTime: Schema.optional(Schema.String),
-		endTime: Schema.optional(Schema.String),
-		preset: Schema.String,
-		timeZone: Schema.String,
-	},
-	messages: [Message.CompletedResolveWindow],
-	execute: ({ mode, startTime, endTime, preset, timeZone }) =>
-		Effect.map(Clock.currentTimeMillis, (nowMs) =>
-			Message.CompletedResolveWindow({
-				window: resolveWindow({ startTime, endTime, preset, snap: mode === "Load", timeZone }, nowMs),
-				nowMs,
-				mode,
-			}),
-		),
-})
+export const ResolveWindow = resolveWindowCommand("ResolveIssueWindow", Message.CompletedResolveWindow)
 
 export const DetailQuery = Schema.Struct({
 	start_time: Schema.String,

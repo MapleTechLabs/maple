@@ -4,7 +4,7 @@ import { Schema } from "effect"
 import { KeyedSchema } from "@maple/views/data/keyed"
 import { LoadFailure } from "@maple/views/data/load-failure"
 import { InfraHostSearch } from "../../../../route/search"
-import * as Frame from "../../kit/frame"
+import * as Frame from "../../../kit/time-frame"
 import { Copies } from "../../kit/resource-attributes"
 import { ChartModels, SeriesSlots } from "../../../kit/series"
 

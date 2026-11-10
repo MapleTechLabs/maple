@@ -1,3 +1,4 @@
+import { WIDEN_TIME_PRESET } from "../../../kit/time-controls"
 import { chartEnvHandlers } from "@maple/views/charts/chart-env"
 import { bucketSecondsForRange } from "../../../../components/infra/constants"
 import * as Chart from "@maple/views/charts/chart"
@@ -6,8 +7,8 @@ import * as Keyed from "@maple/views/data/keyed"
 import { requestKey } from "@maple/views/data/request-key"
 import { AppRoute, hrefOf } from "../../../../route"
 import { type PageContext, PageOutMessage, type PageReturn } from "../../../contract"
-import * as Frame from "../../kit/frame"
-import { liftFrame, resolveFrame, routeFrame } from "../../kit/frame-step"
+import * as Frame from "../../../kit/time-frame"
+import { liftFrame, resolveFrame, routeFrame } from "../../../kit/time-frame-step"
 import { applySteps, keyed, seriesSteps } from "../../../kit/requests"
 import { FetchSeries, FetchSummary, type SeriesInput } from "./command"
 import { Message } from "./message"
@@ -144,7 +145,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 				...model.search,
 				startTime: undefined,
 				endTime: undefined,
-				timePreset: Frame.WIDEN_TIME_PRESET,
+				timePreset: WIDEN_TIME_PRESET,
 			}),
 		...chartEnvHandlers(model),
 		GotChartMessage: ({ metric, message: inner }) => {

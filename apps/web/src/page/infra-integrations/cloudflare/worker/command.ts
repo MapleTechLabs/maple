@@ -1,8 +1,7 @@
+import { resolveWindowCommand } from "../../../kit/time-frame"
 import { reloadSpin } from "@maple/views/data/timing"
-import { RequestMode } from "@maple/views/data/keyed"
-import { Clock, Effect, Schema } from "effect"
+import { Effect, Schema } from "effect"
 import { Command, Mount } from "foldkit"
-import { resolveWindow } from "../../../../data/time-range"
 import { linkedCursorStream } from "@maple/views/charts/linked-cursor"
 import {
 	loadPlatform,
@@ -17,24 +16,10 @@ import {
 } from "../data"
 import { Message } from "./model"
 
-export const ResolveWindow = Command.define("ResolveCloudflareWorkerWindow", {
-	args: {
-		mode: RequestMode,
-		startTime: Schema.optional(Schema.String),
-		endTime: Schema.optional(Schema.String),
-		preset: Schema.String,
-		timeZone: Schema.String,
-	},
-	messages: [Message.CompletedResolveWindow],
-	execute: ({ mode, startTime, endTime, preset, timeZone }) =>
-		Effect.map(Clock.currentTimeMillis, (nowMs) =>
-			Message.CompletedResolveWindow({
-				window: resolveWindow({ startTime, endTime, preset, snap: mode === "Load", timeZone }, nowMs),
-				nowMs,
-				mode,
-			}),
-		),
-})
+export const ResolveWindow = resolveWindowCommand(
+	"ResolveCloudflareWorkerWindow",
+	Message.CompletedResolveWindow,
+)
 
 export const LoadStatus = Command.define("LoadCloudflareWorkerStatus", {
 	args: { key: Schema.String, refresh: Schema.Boolean },

@@ -4,7 +4,7 @@ import { Schema } from "effect"
 import { KeyedSchema } from "@maple/views/data/keyed"
 import { LoadFailure } from "@maple/views/data/load-failure"
 import { InfraKubernetesNodeSearch } from "../../../../route/search"
-import * as Frame from "../../kit/frame"
+import * as Frame from "../../../kit/time-frame"
 import { ChartModels, SeriesSlots } from "../../../kit/series"
 import { PodsPage } from "../pod-data"
 

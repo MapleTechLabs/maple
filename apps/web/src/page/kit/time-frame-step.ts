@@ -1,8 +1,8 @@
 import type { RequestMode } from "@maple/views/data/keyed"
 import { Command } from "foldkit"
-import type { PageReturn } from "../../contract"
-import { routeWindowStep } from "../../kit/route-window"
-import * as Frame from "./frame"
+import type { PageReturn } from "../contract"
+import { routeWindowStep } from "./route-window"
+import * as Frame from "./time-frame"
 
 // A page's `GotFrameMessage` handler: runs the frame's update, then lets the page act on a resolved
 // window (request its data) or a new time search (navigate), keeping the frame's own Commands.

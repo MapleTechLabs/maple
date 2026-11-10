@@ -123,22 +123,3 @@ export const hasSidebarFilters = (search: Search): boolean =>
 	search.maxDurationMs !== undefined ||
 	(search.attributeFilters?.length ?? 0) > 0 ||
 	(search.resourceAttributeFilters?.length ?? 0) > 0
-
-// Whether the list can widen its time range, and the preset it widens to.
-export const WIDEN_TIME_PRESET = "7d"
-const WIDE_TIME_PRESETS = new Set([
-	"7d",
-	"1w",
-	"10d",
-	"14d",
-	"2w",
-	"30d",
-	"6w",
-	"1mo",
-	"2mo",
-	"3mo",
-	"6mo",
-	"12mo",
-])
-export const canWidenTimeRange = (search: Search, defaultPreset: string): boolean =>
-	search.startTime === undefined && !WIDE_TIME_PRESETS.has(search.timePreset ?? defaultPreset)

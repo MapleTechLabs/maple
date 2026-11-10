@@ -91,26 +91,6 @@ export const hasNextPage = (firstPage: LogsPage | undefined, pagination: Paginat
 	!pagination.isStopped &&
 	lastCursor(firstPage, pagination) !== null
 
-// Presets already wide enough that widening the range would not help.
-const WIDE_TIME_PRESETS = new Set([
-	"7d",
-	"1w",
-	"10d",
-	"14d",
-	"2w",
-	"30d",
-	"6w",
-	"1mo",
-	"2mo",
-	"3mo",
-	"6mo",
-	"12mo",
-])
-
-/** Widening only helps from a short relative preset (`LogsTable` passes `""` as the default). */
-export const canWidenRange = (search: Search): boolean =>
-	search.startTime === undefined && !WIDE_TIME_PRESETS.has(search.timePreset ?? "")
-
 // FILTER CHIPS
 
 const FACETS = [

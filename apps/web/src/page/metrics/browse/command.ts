@@ -1,32 +1,15 @@
+import { resolveWindowCommand } from "../../kit/time-frame"
 import { reloadSpin, SEARCH_DEBOUNCE } from "@maple/views/data/timing"
-import { RequestMode } from "@maple/views/data/keyed"
 import { getMetricSparklines, getMetricsSummary, listMetrics } from "@maple/web-data/warehouse/metrics"
 import { QUERY_BUILDER_METRIC_TYPES } from "@maple/query-model"
-import { Clock, Effect, Schema } from "effect"
+import { Effect, Schema } from "effect"
 import { Command } from "foldkit"
 import { settleTo, settled } from "@maple/views/data/load-failure"
-import { resolveWindow, TimeWindow } from "../../../data/time-range"
+import { TimeWindow } from "../../../data/time-range"
 import { loadSignalPresences } from "../../kit/signal-presence"
 import { Message } from "./message"
 
-export const ResolveWindow = Command.define("ResolveMetricsWindow", {
-	args: {
-		mode: RequestMode,
-		startTime: Schema.optional(Schema.String),
-		endTime: Schema.optional(Schema.String),
-		preset: Schema.String,
-		timeZone: Schema.String,
-	},
-	messages: [Message.CompletedResolveWindow],
-	execute: ({ mode, startTime, endTime, preset, timeZone }) =>
-		Effect.map(Clock.currentTimeMillis, (nowMs) =>
-			Message.CompletedResolveWindow({
-				window: resolveWindow({ startTime, endTime, preset, snap: mode === "Load", timeZone }, nowMs),
-				nowMs,
-				mode,
-			}),
-		),
-})
+export const ResolveWindow = resolveWindowCommand("ResolveMetricsWindow", Message.CompletedResolveWindow)
 
 const MetricType = Schema.Literals(QUERY_BUILDER_METRIC_TYPES)
 

@@ -16,7 +16,7 @@ import {
 import { describe, expect, test } from "vitest"
 import { type LoadFailure, toLoadFailure } from "@maple/views/data/load-failure"
 import type { PageContext } from "../../contract"
-import * as Frame from "../kit/frame"
+import * as Frame from "../../kit/time-frame"
 import { Message } from "./message"
 import type { Model, SourceId, SourceReading } from "./model"
 import { presentSources, sourceState, surfacesOf } from "./state"

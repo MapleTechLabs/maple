@@ -1,3 +1,4 @@
+import { WIDEN_TIME_PRESET } from "../../kit/time-controls"
 import { chartEnvHandlers } from "@maple/views/charts/chart-env"
 import type { RequestMode } from "@maple/views/data/keyed"
 import { shortId } from "@maple/ui/lib/ids"
@@ -65,9 +66,6 @@ import type { LoadFailure } from "@maple/views/data/load-failure"
 
 export type Return = PageReturn<Model, Message>
 type Commands = ReadonlyArray<Command.Command<Message, never, Resources>>
-
-// The preset "widen the time range" switches to.
-const WIDEN_TIME_PRESET = "7d"
 
 /** The stream's default window (`DashboardPage`'s `defaultPreset`). */
 export const DEFAULT_PRESET = "12h"

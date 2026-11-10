@@ -3,7 +3,7 @@ import { Schema } from "effect"
 import { defineMessageUnion } from "foldkit/message"
 import * as Chart from "@maple/views/charts/chart"
 import { LoadFailure } from "@maple/views/data/load-failure"
-import * as Frame from "../../kit/frame"
+import * as Frame from "../../../kit/time-frame"
 import { SeriesResult } from "../../../kit/series"
 import { ContainerMetric, ContainerSummary } from "./model"
 

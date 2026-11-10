@@ -4,7 +4,7 @@ import { KeyedSchema } from "@maple/views/data/keyed"
 import { LoadFailure } from "@maple/views/data/load-failure"
 import { InfraKubernetesWorkloadsSearch } from "../../../../route/search"
 import * as FilterSections from "@maple/views/ui/filters/filter-sections"
-import * as Frame from "../../kit/frame"
+import * as Frame from "../../../kit/time-frame"
 import * as InstallModal from "../../kit/install-modal"
 import { SortState } from "../../../kit/table-sort"
 

@@ -1,12 +1,12 @@
+import { resolveWindowCommand } from "../../kit/time-frame"
 import { reloadSpin } from "@maple/views/data/timing"
-import { RequestMode } from "@maple/views/data/keyed"
 import { AI_TOOL_ERRORS_MAX } from "@maple/domain/http"
 import { getAiSessionsFacets, listAiSessions } from "@maple/web-data/warehouse/ai-sessions"
 import { getAiToolErrors, getAiToolSeries } from "@maple/web-data/warehouse/ai-session-tools"
-import { Clock, Effect, Schema } from "effect"
+import { Effect, Schema } from "effect"
 import { Command } from "foldkit"
 import { settleTo } from "@maple/views/data/load-failure"
-import { resolveWindow, TimeWindow } from "../../../data/time-range"
+import { TimeWindow } from "../../../data/time-range"
 import { presentInputs } from "../list/derive"
 import { fetchTotals, Selection, toInput } from "../../kit/tools/reads"
 import { Message } from "./message"
@@ -14,24 +14,7 @@ import { Message } from "./message"
 /** Sessions the page lists: the most recent, not the busiest. */
 export const SESSIONS_LIMIT = 50
 
-export const ResolveWindow = Command.define("ResolveAgentToolWindow", {
-	args: {
-		mode: RequestMode,
-		startTime: Schema.UndefinedOr(Schema.String),
-		endTime: Schema.UndefinedOr(Schema.String),
-		preset: Schema.String,
-		timeZone: Schema.String,
-	},
-	messages: [Message.CompletedResolveWindow],
-	execute: ({ mode, startTime, endTime, preset, timeZone }) =>
-		Effect.map(Clock.currentTimeMillis, (nowMs) =>
-			Message.CompletedResolveWindow({
-				window: resolveWindow({ startTime, endTime, preset, snap: mode === "Load", timeZone }, nowMs),
-				nowMs,
-				mode,
-			}),
-		),
-})
+export const ResolveWindow = resolveWindowCommand("ResolveAgentToolWindow", Message.CompletedResolveWindow)
 
 export const FetchSeries = Command.define("FetchAgentToolSeries", {
 	args: { key: Schema.String, selection: Selection, bucketSeconds: Schema.Number },

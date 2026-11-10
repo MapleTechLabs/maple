@@ -1,12 +1,11 @@
+import { resolveWindowCommand } from "../../kit/time-frame"
 import { reloadSpin } from "@maple/views/data/timing"
-import { RequestMode } from "@maple/views/data/keyed"
 import { getReleaseDetail, getReleases } from "@maple/web-data/warehouse/releases"
-import { Clock, Effect, Predicate, type Result, Schema } from "effect"
+import { Effect, Predicate, type Result, Schema } from "effect"
 import { Command } from "foldkit"
 import { IdleTtl } from "../../../data/idle-ttl"
 import { type LoadFailure, settleTo } from "@maple/views/data/load-failure"
 import { readThrough } from "../../../data/read-cache"
-import { resolveWindow } from "../../../data/time-range"
 import { readCommitDetail } from "../../kit/commit-card"
 import { MapleApiV2Client, MapleInternalApiClient } from "../../../platform/api-clients"
 import { ReleasesData } from "../list/model"
@@ -18,24 +17,10 @@ const finish = <A, E, R, M>(
 	toMessage: (result: Result.Result<A, LoadFailure>) => M,
 ) => effect.pipe(settleTo(toMessage))
 
-export const ResolveReleaseWindow = Command.define("ResolveReleaseWindow", {
-	args: {
-		mode: RequestMode,
-		startTime: Schema.optional(Schema.String),
-		endTime: Schema.optional(Schema.String),
-		preset: Schema.String,
-		timeZone: Schema.String,
-	},
-	messages: [Message.CompletedResolveWindow],
-	execute: ({ mode, startTime, endTime, preset, timeZone }) =>
-		Effect.map(Clock.currentTimeMillis, (nowMs) =>
-			Message.CompletedResolveWindow({
-				window: resolveWindow({ startTime, endTime, preset, snap: mode === "Load", timeZone }, nowMs),
-				nowMs,
-				mode,
-			}),
-		),
-})
+export const ResolveReleaseWindow = resolveWindowCommand(
+	"ResolveReleaseWindow",
+	Message.CompletedResolveWindow,
+)
 
 /** `commitQueryAtom(sha)`. */
 export const FetchReleaseCommit = Command.define("FetchReleaseCommit", {

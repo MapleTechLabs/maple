@@ -1,12 +1,13 @@
+import { resolveWindowCommand } from "../../kit/time-frame"
 import { reloadSpin } from "@maple/views/data/timing"
 import { RequestMode } from "@maple/views/data/keyed"
 import { GithubIntegrationStatus, VcsRepositoryId } from "@maple/domain/http"
-import { Clock, Effect, Schema } from "effect"
+import { Effect, Schema } from "effect"
 import { Command } from "foldkit"
 import { defineMessageUnion } from "foldkit/message"
 import * as Keyed from "@maple/views/data/keyed"
 import { LoadFailure, settleTo } from "@maple/views/data/load-failure"
-import { resolveWindow, TimeWindow } from "../../../data/time-range"
+import { TimeWindow } from "../../../data/time-range"
 import { MapleInternalApiClient } from "../../../platform/api-clients"
 import type { Resources } from "../../../platform/resources"
 import * as Select from "@maple/views/ui/select"
@@ -69,24 +70,10 @@ export type FrameReturn = Readonly<{
 
 // COMMANDS
 
-export const ResolveWindow = Command.define("ResolveCodeReviewWindow", {
-	args: {
-		mode: RequestMode,
-		startTime: Schema.optional(Schema.String),
-		endTime: Schema.optional(Schema.String),
-		preset: Schema.String,
-		timeZone: Schema.String,
-	},
-	messages: [FrameMessage.CompletedResolveWindow],
-	execute: ({ mode, startTime, endTime, preset, timeZone }) =>
-		Effect.map(Clock.currentTimeMillis, (nowMs) =>
-			FrameMessage.CompletedResolveWindow({
-				window: resolveWindow({ startTime, endTime, preset, snap: mode === "Load", timeZone }, nowMs),
-				nowMs,
-				mode,
-			}),
-		),
-})
+export const ResolveWindow = resolveWindowCommand(
+	"ResolveCodeReviewWindow",
+	FrameMessage.CompletedResolveWindow,
+)
 
 export const FetchGithubStatus = Command.define("FetchCodeReviewGithubStatus", {
 	args: { key: Schema.String },

@@ -1,4 +1,4 @@
-import { RequestMode } from "@maple/views/data/keyed"
+import { resolveWindowCommand } from "../../kit/time-frame"
 import { getCustomChartServiceSparklines } from "@maple/web-data/warehouse/custom-charts"
 import { isMapleService, MAPLE_SERVICES_NAMESPACE } from "@maple/domain/uptime"
 import {
@@ -7,7 +7,6 @@ import {
 	type GetServiceOverviewInput,
 } from "@maple/web-data/warehouse/services"
 import {
-	Clock,
 	Duration,
 	Effect,
 	Queue,
@@ -22,7 +21,7 @@ import { Command, Mount } from "foldkit"
 import { IdleTtl } from "../../../data/idle-ttl"
 import { settleTo } from "@maple/views/data/load-failure"
 import { readThrough } from "../../../data/read-cache"
-import { resolveWindow, TimeWindow } from "../../../data/time-range"
+import { TimeWindow } from "../../../data/time-range"
 import { writeClipboard } from "@maple/views/ui/copy-button"
 import { ARM_DELAY_MS, loadCommitDetail, readCommitDetails } from "../../kit/commit-card"
 import { loadSignalPresences } from "../../kit/signal-presence"
@@ -59,24 +58,7 @@ const toWarehouseInput = (input: OverviewInput): GetServiceOverviewInput => ({
 })
 
 /** `useEffectiveTimeRange`: snapped on entry, re-resolved against the real clock on Reload. */
-export const ResolveWindow = Command.define("ResolveServicesWindow", {
-	args: {
-		mode: RequestMode,
-		startTime: Schema.optional(Schema.String),
-		endTime: Schema.optional(Schema.String),
-		preset: Schema.String,
-		timeZone: Schema.String,
-	},
-	messages: [Message.CompletedResolveWindow],
-	execute: ({ mode, startTime, endTime, preset, timeZone }) =>
-		Effect.map(Clock.currentTimeMillis, (nowMs) =>
-			Message.CompletedResolveWindow({
-				window: resolveWindow({ startTime, endTime, preset, snap: mode === "Load", timeZone }, nowMs),
-				nowMs,
-				mode,
-			}),
-		),
-})
+export const ResolveWindow = resolveWindowCommand("ResolveServicesWindow", Message.CompletedResolveWindow)
 
 // Fetches carry their request key back so `update` drops a superseded answer (S6).
 

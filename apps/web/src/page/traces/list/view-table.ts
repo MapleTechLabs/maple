@@ -1,3 +1,4 @@
+import { canWidenTimeRange } from "../../kit/time-controls"
 import { peekPosition } from "./peek"
 import { MountPeekRows } from "./command"
 import { refreshingClass } from "@maple/ui/lib/refreshing"
@@ -20,7 +21,7 @@ import {
 import { tableSkeleton } from "@maple/views/ui/table-skeleton"
 import { signalEmptyState } from "../../kit/signal-empty-state"
 import { presenceOf } from "@maple/views/data/signal-presence"
-import { canWidenTimeRange, isFiltered, type TraceFilterChip, traceFilterChips } from "./derive"
+import { isFiltered, type TraceFilterChip, traceFilterChips } from "./derive"
 import { Message, type SortKey } from "./message"
 import type { Model } from "./model"
 import { allRows, DEFAULT_PRESET, hasNextPage, hiddenCount, MAX_RETAINED_TRACES } from "./update"
