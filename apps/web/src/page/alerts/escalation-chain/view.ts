@@ -26,6 +26,7 @@ import { textarea } from "@maple/views/ui/textarea"
 import { typography } from "@maple/views/ui/typography"
 import type { PageViewInputs } from "../../contract"
 import { chainConnector } from "../../kit/chain-connector"
+import { chainDeleteConfirm } from "../shared/chain-delete-confirm"
 import { dashboardPage } from "../../kit/dashboard-page"
 import { managersOnlyPage } from "../../kit/form-section"
 import { type PickedChip, pickChips } from "../../kit/pick-chips"
@@ -612,51 +613,15 @@ const aside = (h: H, model: Model): Html =>
 
 /** "Delete {chain}?": lists the rules that start it, which the API makes move off it first. */
 const deleteDialog = (h: H, model: Model): Html => {
-	const chain = AsyncData.getData(model.existing.data)
-	const ruleIds: ReadonlyArray<string> = Option.match(chain, {
-		onNone: () => [],
-		onSome: (found) => found.rule_ids,
-	})
-	const names = Arr.map(
-		Arr.filter(model.rules ?? [], (rule) => Arr.some(ruleIds, (id) => id === rule.id)),
-		(rule) => rule.name,
-	)
-	const isInUse = ruleIds.length > 0
+	const confirm = chainDeleteConfirm(h, AsyncData.getData(model.existing.data), model.rules)
 	return confirmDialog(h, {
 		slotId: DELETE_DIALOG_ID,
 		model: model.deleteDialog,
 		toParentMessage: (message) => Message.GotDeleteDialogMessage({ message }),
 		title: `Delete ${chainTitle(model)}?`,
-		description: isInUse
-			? "These rules would stop escalating. Remove the chain from their severity tiers first."
-			: "Escalations already running finish on their own copy. This cannot be undone.",
+		description: confirm.description,
 		children: [
-			...(isInUse
-				? [
-						h.ul(
-							[h.Class("list-disc space-y-1 pl-5")],
-							[
-								...Arr.map(names, (ruleName) =>
-									h.li([h.Key(ruleName)], [typography(h, { size: "sm" }, [ruleName])]),
-								),
-								...(ruleIds.length > names.length
-									? [
-											h.li(
-												[],
-												[
-													typography(h, { size: "sm", tone: "muted" }, [
-														names.length === 0
-															? `${ruleIds.length} ${pluralize(ruleIds.length, "rule")}`
-															: `and ${ruleIds.length - names.length} more`,
-													]),
-												],
-											),
-										]
-									: []),
-							],
-						),
-					]
-				: []),
+			...confirm.ruleList,
 			...(model.deleteError === null
 				? []
 				: [
@@ -669,7 +634,7 @@ const deleteDialog = (h: H, model: Model): Html => {
 		],
 		confirmLabel: "Delete chain",
 		isPending: model.isDeleting,
-		isConfirmDisabled: isInUse,
+		isConfirmDisabled: confirm.isInUse,
 		onConfirm: Message.ClickedConfirmDelete(),
 	})
 }
