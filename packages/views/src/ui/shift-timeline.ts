@@ -1,6 +1,6 @@
 import { zonedDateParts, zonedPartsToEpochMs } from "@maple/query-engine/datetime"
 import { cn } from "@maple/ui/lib/utils"
-import { Array as Arr, Option, Result } from "effect"
+import { Array as Arr, Option, Result, String as Str } from "effect"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { pressable } from "./pressable"
 import { hstack, vstack } from "./stack"
@@ -13,13 +13,15 @@ import { typography } from "./typography"
 // 23 or 25 hours wide.
 
 /** A bar's look: a layer's shift, the effective shift, an override over it, or a gap nobody covers. */
-export type TimelineBarTone = "neutral" | "primary" | "info" | "warning"
+export type TimelineBarTone = "neutral" | "primary" | "info" | "gap"
 
 export type TimelineBar<M> = Readonly<{
 	key: string
 	startMs: number
 	endMs: number
 	label: string
+	/** Drawn when the label cannot fit but two characters can (a person's initials). */
+	shortLabel?: string
 	/** The tooltip and accessible name: who, and from when to when. */
 	title: string
 	tone: TimelineBarTone
@@ -33,6 +35,8 @@ export type TimelineRow<M> = Readonly<{
 	label: string
 	detail?: string
 	bars: ReadonlyArray<TimelineBar<M>>
+	/** False keeps the row's read-only bars out of the tab order (a layer under the final row). */
+	isTabStop?: boolean
 	/** What an empty row says, for a row with no bars in the range. */
 	emptyText?: string
 }>
@@ -110,8 +114,8 @@ const BAR_TONE = {
 	// An override is the one bar that must stand out, even 8px wide on a dark surface: a stronger
 	// wash and the tone's own edge.
 	info: "bg-severity-info-a3 border-severity-info text-severity-info",
-	// A gap reads as missing cover: a dashed warning edge over a faint wash.
-	warning: "border-dashed bg-warning-a2 border-warning text-warning-foreground",
+	// A gap reads as missing cover: no fill, a dashed error edge and the error tone's hatch.
+	gap: "hatch-error border-dashed border-severity-error text-severity-error",
 } as const satisfies Record<TimelineBarTone, string>
 
 /** The narrowest a bar draws, so a short shift stays visible and clickable. */
@@ -119,7 +123,8 @@ const MIN_BAR_PX = 8
 
 const FOCUS_CLASS = "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
 
-const BAR_CLASS = "absolute inset-y-1 overflow-hidden rounded-sm border px-1.5 text-left"
+// A container, so the label can leave when the bar is too narrow to hold it.
+const BAR_CLASS = "@container absolute inset-y-1 overflow-hidden rounded-sm border text-left"
 
 /** How far a bar may grow to reach its floor: up to the next bar's start in the lane, or the range's end. */
 export const barRoomPct = <M>(
@@ -145,6 +150,7 @@ const barView = <M>(
 	toMs: number,
 	bar: TimelineBar<M>,
 	limitPct: number,
+	isTabStop: boolean,
 ): ReadonlyArray<Html> =>
 	Option.match(placeBar(fromMs, toMs, bar.startMs, bar.endMs), {
 		onNone: () => [],
@@ -156,9 +162,29 @@ const barView = <M>(
 				width: `calc(${widthPct}% - 2px)`,
 				"min-width": `min(${MIN_BAR_PX}px, calc(${limitPct - leftPct}% - 2px))`,
 			})
-			const text = typography(h, { size: "xs", truncate: true, className: "block leading-6" }, [
-				bar.label,
-			])
+			// The label shows from 3.75rem of bar (3rem of text), the short one from two characters'
+			// room; the name stays in the tooltip.
+			const text = [
+				typography(
+					h,
+					{ size: "xs", truncate: true, className: "hidden px-1.5 leading-6 @min-[3.75rem]:block" },
+					[bar.label],
+				),
+				...(bar.shortLabel === undefined
+					? []
+					: [
+							typography(
+								h,
+								{
+									size: "xs",
+									className:
+										"hidden text-center leading-6 @min-[1.25rem]:block @min-[3.75rem]:hidden",
+									attributes: [h.AriaHidden(true)],
+								},
+								[bar.shortLabel],
+							),
+						]),
+			]
 			const attributes = [
 				h.Key(bar.key),
 				style,
@@ -173,10 +199,10 @@ const barView = <M>(
 								h.Class(cn(BAR_CLASS, BAR_TONE[bar.tone], FOCUS_CLASS)),
 								// Read-only bars still reach the keyboard and a screen reader, named by their tooltip.
 								h.Role("img"),
-								h.Tabindex(0),
+								h.Tabindex(isTabStop ? 0 : -1),
 								h.AriaLabel(bar.title),
 							],
-							[text],
+							text,
 						)
 					: pressable(
 							h,
@@ -190,13 +216,14 @@ const barView = <M>(
 								),
 								attributes,
 							},
-							[text],
+							text,
 						),
 			]
 		},
 	})
 
-const LABEL_COLUMN = "sticky left-0 z-10 w-32 shrink-0 border-r bg-background px-3 sm:w-40"
+// Sized by the timeline's own width, so it stays narrow in a side panel on a wide screen.
+const LABEL_COLUMN = "sticky left-0 z-10 w-32 shrink-0 border-r bg-background px-3 @2xl:w-40"
 
 /**
  * The timeline: a header of days, then one row per lane (label column, bars track), ruled by day,
@@ -277,16 +304,17 @@ export const shiftTimeline = <M>(
 			// One header for the track, as each row has one cell for it; the days label it visually.
 			h.div(
 				[h.Class("relative h-8 grow"), h.Role("columnheader"), h.AriaLabel("Shifts")],
-				Arr.map(days, (day) =>
+				Arr.map(days, (day, index) =>
 					h.div(
 						[
 							h.Key(`day-${day.startMs}`),
 							h.Class(
-								"absolute inset-y-0 overflow-hidden border-l border-border-subtle px-1.5 py-1.5",
+								"@container absolute inset-y-0 overflow-hidden border-l border-border-subtle",
 							),
 							h.Style({ left: `${day.leftPct}%`, width: `${day.widthPct}%` }),
 						],
 						[
+							// "Tue 10" where a day is wide enough, else the weekday's letter over the date.
 							typography(
 								h,
 								{
@@ -294,9 +322,38 @@ export const shiftTimeline = <M>(
 									tone: "muted",
 									numeric: true,
 									truncate: true,
-									className: "block",
+									className: "hidden px-1.5 py-1.5 @min-[3.5rem]:block",
 								},
 								[`${day.weekday} ${day.dayOfMonth}`],
+							),
+							vstack(
+								h,
+								{
+									gap: "0",
+									align: "center",
+									justify: "center",
+									className: "h-full @min-[3.5rem]:hidden",
+									attributes: [h.AriaHidden(true)],
+								},
+								[
+									typography(h, { size: "2xs", tone: "faint", className: "leading-3" }, [
+										Str.slice(0, 1)(day.weekday),
+									]),
+									typography(
+										h,
+										{
+											size: "2xs",
+											tone: "muted",
+											numeric: true,
+											// Days too narrow for two digits date only the first day and each Monday.
+											className:
+												index === 0 || day.weekday === "Mon"
+													? "leading-3"
+													: "invisible leading-3 @min-[1.25rem]:visible",
+										},
+										[String(day.dayOfMonth)],
+									),
+								],
 							),
 						],
 					),
@@ -338,7 +395,14 @@ export const shiftTimeline = <M>(
 								),
 							]
 						: Arr.flatMap(row.bars, (bar) =>
-								barView(h, fromMs, toMs, bar, barRoomPct(fromMs, toMs, row.bars, bar)),
+								barView(
+									h,
+									fromMs,
+									toMs,
+									bar,
+									barRoomPct(fromMs, toMs, row.bars, bar),
+									row.isTabStop ?? true,
+								),
 							),
 				),
 			],
@@ -350,10 +414,15 @@ export const shiftTimeline = <M>(
 		]),
 	)
 	const frame = h.div(
-		[h.Class("overflow-x-auto rounded-md border"), h.DataAttribute("slot", "shift-timeline")],
+		[h.Class("@container overflow-x-auto rounded-md border"), h.DataAttribute("slot", "shift-timeline")],
 		[
 			h.div(
-				[h.Class("relative min-w-[720px]"), h.Role("table"), h.AriaLabel(options.ariaLabel)],
+				[
+					// Fits a frame from 30rem; a narrower one (a phone) scrolls a 45rem track sideways.
+					h.Class("relative min-w-[45rem] @min-[30rem]:min-w-0"),
+					h.Role("table"),
+					h.AriaLabel(options.ariaLabel),
+				],
 				[
 					...(options.nowLabel === undefined || Option.isNone(now)
 						? []
@@ -365,7 +434,7 @@ export const shiftTimeline = <M>(
 							h.div(
 								[
 									h.Class(
-										"pointer-events-none absolute inset-y-0 right-0 left-32 sm:left-40",
+										"pointer-events-none absolute inset-y-0 right-0 left-32 @2xl:left-40",
 									),
 								],
 								[rules, ...nowLine],

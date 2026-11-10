@@ -55,4 +55,15 @@ describe("shift timeline layout", () => {
 			"2026-11-11T05:00:00.000Z",
 		)
 	})
+
+	test("Saturdays and Sundays are marked as the weekend, on the zone's own days", () => {
+		const from = Date.parse("2026-11-12T23:00:00.000Z") // Fri 13 Nov, 00:00 in Berlin
+		const days = timelineDays(from, from + 4 * 24 * HOUR, "Europe/Berlin")
+		expect(Arr.map(days, (day) => [day.weekday, day.isWeekend])).toEqual([
+			["Fri", false],
+			["Sat", true],
+			["Sun", true],
+			["Mon", false],
+		])
+	})
 })

@@ -33,11 +33,21 @@ const view = (model: Model, h: HtmlBuilder<Message>): Html =>
 						tone: "primary",
 						onClick: Message.ClickedBar(),
 					},
+					{
+						key: "gap",
+						id: "gap-0",
+						startMs: FROM + HOUR,
+						endMs: FROM + 3 * HOUR,
+						label: "No one",
+						title: "No one on call, Mon 9 Nov 01:00 to 03:00",
+						tone: "gap",
+					},
 				],
 			},
 			{
 				key: "layer",
 				label: "Primary",
+				isTabStop: false,
 				bars: [
 					{
 						key: "b",
@@ -96,6 +106,22 @@ describe("shift timeline", () => {
 			given<Model>({ nowMs: FROM + 35 * HOUR }),
 			expectView(text("Not active in this range")).toExist(),
 			expectView(role("img", { name: "Cy, next week" })).not.toExist(),
+		)
+	})
+
+	test("a gap is a named, focusable bar a summary can reach by id; a layer's bars leave the tab order", () => {
+		scene(
+			{ update, view },
+			given<Model>({ nowMs: FROM + 35 * HOUR }),
+			expectView(role("img", { name: "No one on call, Mon 9 Nov 01:00 to 03:00" })).toHaveAttr(
+				"id",
+				"gap-0",
+			),
+			expectView(role("img", { name: "No one on call, Mon 9 Nov 01:00 to 03:00" })).toHaveAttr(
+				"tabIndex",
+				"0",
+			),
+			expectView(role("img", { name: "Ben, Mon" })).toHaveAttr("tabIndex", "-1"),
 		)
 	})
 })
