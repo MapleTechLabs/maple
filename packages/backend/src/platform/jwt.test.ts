@@ -38,7 +38,7 @@ describe("signJwt", () => {
 	it("mints an RS256 compact JWS the public key verifies", async () => {
 		const key = await crypto.subtle.importKey("pkcs8", pemToPkcs8(pkcs1), RS256, false, ["sign"])
 		const token = await Effect.runPromise(signJwt(key, RS256, { alg: "RS256" }, { sub: "maple" }))
-		const [header = "", payload = "", signature = ""] = Str.split(".")(token)
+		const [header, payload = "", signature = ""] = Str.split(".")(token)
 		expect(JSON.parse(Buffer.from(payload, "base64url").toString("utf8"))).toEqual({ sub: "maple" })
 		const data = Buffer.from(`${header}.${payload}`)
 		expect(verify("sha256", data, publicKey, Buffer.from(signature, "base64url"))).toBe(true)

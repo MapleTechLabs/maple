@@ -51,6 +51,7 @@ import { Database } from "@maple/backend/platform/DatabaseLive"
 import { makeDbExecute, makePersistenceErrorMapper } from "@maple/backend/platform/db-execute"
 import { summarizeCause } from "@maple/backend/platform/describe-cause"
 import { Env } from "@maple/backend/platform/Env"
+import { ingestBaseUrl } from "@maple/backend/services/ingest/ingest-sender"
 import {
 	type SupabaseAccessTokenError,
 	SupabaseOAuthService,
@@ -199,9 +200,9 @@ export class SupabaseConnectionService extends Context.Service<
 		const httpClient = yield* HttpClient.HttpClient
 		const sources = yield* SourcesService
 		const env = yield* Env
-		const ingestBaseUrl = Str.replace(/\/+$/, "")(env.MAPLE_INGEST_PUBLIC_URL)
-		const ingestLogsUrl = `${ingestBaseUrl}/v1/logs`
-		const ingestHost = URL.canParse(ingestBaseUrl) ? new URL(ingestBaseUrl).host : null
+		const ingestBase = ingestBaseUrl(env)
+		const ingestLogsUrl = `${ingestBase}/v1/logs`
+		const ingestHost = URL.canParse(ingestBase) ? new URL(ingestBase).host : null
 		const dbExecute = makeDbExecute(database, "SupabaseConnectionService", toPersistenceError)
 
 		const loadConnection = (orgId: OrgId) =>

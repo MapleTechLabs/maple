@@ -26,6 +26,7 @@ import { decryptAes256Gcm, encryptAes256Gcm, parseBase64Aes256GcmKey } from "@ma
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { makeDbExecute, makePersistenceErrorMapper } from "@maple/backend/platform/db-execute"
 import { Env } from "@maple/backend/platform/Env"
+import { ingestBaseUrl } from "@maple/backend/services/ingest/ingest-sender"
 import { gcpSetupPlan } from "@maple/domain/gcp"
 import { renderGcpAlchemy } from "./gcp/alchemy"
 import { gcpLogFilter, renderGcpCleanupScript, renderGcpSetupScript } from "./gcp/setup-scripts"
@@ -199,7 +200,7 @@ export class GcpConnectorService extends Context.Service<GcpConnectorService, Gc
 				Redacted.value(env.MAPLE_INGEST_KEY_LOOKUP_HMAC_KEY),
 				(message) => new IntegrationsPersistenceError({ message }),
 			)
-			const ingestBaseUrl = Str.replace(/\/+$/, "")(env.MAPLE_INGEST_PUBLIC_URL)
+			const ingestBase = ingestBaseUrl(env)
 			const mapleServiceAccountEmail = Option.getOrUndefined(env.MAPLE_GCP_SERVICE_ACCOUNT_EMAIL)
 			const mapleUrl = `${Str.replace(/\/+$/, "")(env.MAPLE_APP_BASE_URL)}/integrations?integration=gcp`
 			const dbExecute = makeDbExecute(database, "GcpConnectorService", toPersistenceError)
@@ -530,7 +531,7 @@ export class GcpConnectorService extends Context.Service<GcpConnectorService, Gc
 						}),
 					secretAad(row.id),
 				)
-				const pushEndpoint = `${ingestBaseUrl}/v1/logpush/gcp/${connectorId}`
+				const pushEndpoint = `${ingestBase}/v1/logpush/gcp/${connectorId}`
 				const target = {
 					connectorId,
 					scopeType: row.scopeType,
