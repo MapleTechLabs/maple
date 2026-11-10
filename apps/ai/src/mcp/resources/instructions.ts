@@ -12,7 +12,7 @@ export const InstructionsResource = McpServer.resource({
 
 ## Time Format
 - Always use YYYY-MM-DD HH:mm:ss in UTC
-- Default window is 6 hours for most tools, 1 hour for query_data
+- Default window is 6 hours for most tools, query_data included; each tool's \`start_time\` description states its own default and cap
 - Specify explicit time ranges for targeted investigations
 
 ## Investigation Workflow
@@ -89,7 +89,7 @@ first occurrences ──> (candidate) ──> issue in \`triage\`
 
 ## Attribute Filtering
 - Call \`explore_attributes\` before filtering by custom attributes
-- Prefer service_name filters to narrow results before free-text search
+- Prefer the \`service\` filter to narrow results before free-text search
 - Common span attributes: http.method, http.route, http.status_code, db.system
 - Common resource attributes: service.name, deployment.environment, service.version
 
@@ -102,9 +102,9 @@ first occurrences ──> (candidate) ──> issue in \`triage\`
 - Histogram percentiles (p50/p95/p99) are not available for metrics in query_data; use avg, or source=traces p95_duration for request latency
 
 ## Pagination
-- Tools that return lists support pagination via offset parameter
-- Check the hasMore field in responses to know if more results exist
-- Use nextOffset value to fetch the next page
+- Most list and search tools page by \`offset\`: when more rows remain the response says so and gives the \`offset\` of the next page (\`nextOffset\`)
+- \`list_error_issues\` and \`list_users\` page by \`cursor\` instead: pass the response's \`nextCursor\` back as \`cursor\`; it is absent on the last page
+- A tool with neither parameter returns one capped page: narrow the filters or the window to see the rest
 
 ## Tool Selection Guide
 - Error investigation: find_errors -> error_detail -> inspect_trace

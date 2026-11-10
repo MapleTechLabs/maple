@@ -3,7 +3,12 @@ import type { PrReviewFailureReason } from "@maple/domain/http"
 import { Deferred, Effect, Fiber } from "effect"
 import { assert, describe, it } from "vitest"
 import { makeAutonomousOutcome } from "./autonomous-outcome"
-import { NO_DIAGNOSIS_INTERRUPTED, makeUnfinishedSettler, runAutonomousTurn } from "./autonomous-settle"
+import {
+	NO_DIAGNOSIS_INTERRUPTED,
+	makeUnfinishedSettler,
+	runAutonomousTurn,
+	settleAbandoned,
+} from "./autonomous-settle"
 import { interruptOnAbort, makeTurnObservability } from "./turn-outcome"
 
 /** A turn that owns all three rows, recording every write that marks one failed. */
@@ -119,5 +124,26 @@ describe("runAutonomousTurn", () => {
 		await Effect.runPromise(Fiber.await(fiber))
 
 		assert.deepEqual(turn.writes, ["settled"])
+	})
+})
+
+describe("settleAbandoned", () => {
+	it("fails the reply row of an evicted reply turn", async () => {
+		const writes: Array<string> = []
+		await Effect.runPromise(settleAbandoned({ failReply: Effect.sync(() => void writes.push("reply")) }))
+
+		assert.deepEqual(writes, ["reply"])
+	})
+
+	it("still fails the reply when the review's write fails", async () => {
+		const writes: Array<string> = []
+		await Effect.runPromise(
+			settleAbandoned({
+				failReview: Effect.fail("the database is away"),
+				failReply: Effect.sync(() => void writes.push("reply")),
+			}),
+		)
+
+		assert.deepEqual(writes, ["reply"])
 	})
 })

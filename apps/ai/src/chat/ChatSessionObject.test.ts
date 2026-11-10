@@ -3,8 +3,16 @@ import { encodeChatTurnTenant, type ChatTurnTenant } from "@maple/domain/chat-se
 import * as Cloudflare from "@alchemy.run/cloudflare"
 import { Effect, Layer, Option, Array as Arr } from "effect"
 import { applyChatSessionMigrations, makeFakeDurableObjectState } from "../../test/chat/fake-do-state"
+import {
+	AuditEventsQueueProducer,
+	DataSourceDevelopmentCallLimit,
+	DataSourceProductionCallLimit,
+} from "@maple/backend/platform/bindings"
 import { WorkersAiGateway } from "../platform/WorkersAiHttpClient"
-import { makeChatSessionActivation } from "./ChatSession"
+import { BoundAiClients } from "../worker/bindings"
+import { makeChatSessionActivation, type ProposalApplier, type TurnRunner } from "./ChatSession"
+import type { ApplyChatProposalInput } from "./apply-proposal"
+import type { RunChatSessionTurnInput } from "./turn-runner"
 
 const TENANT = encodeChatTurnTenant({
 	orgId: "org_test" as ChatTurnTenant["orgId"],
@@ -13,25 +21,63 @@ const TENANT = encodeChatTurnTenant({
 	authMode: "self_hosted",
 })
 
+/** The clients the Worker bound, recording what reaches them: every limiter refuses, the queue accepts. */
+const makeBoundClients = () => {
+	const limited: Array<string> = []
+	const queued: Array<unknown> = []
+	const limiter = (name: string) => ({
+		limit: (options: { readonly key: string }) =>
+			Effect.sync(() => {
+				limited.push(`${name}:${options.key}`)
+				return { success: false }
+			}),
+	})
+	const clients = {
+		mcpToolsRateLimit: limiter("mcp"),
+		dataSourceProductionCallLimit: limiter("production"),
+		dataSourceDevelopmentCallLimit: limiter("development"),
+		auditEvents: {
+			raw: Effect.succeed({
+				sendBatch: (messages: ReadonlyArray<{ readonly body: unknown }>) => {
+					queued.push(...Arr.map(messages, (message) => message.body))
+					return Promise.resolve()
+				},
+			}),
+		},
+	}
+	// SAFETY: the ports read `limit` off a limiter and `raw.sendBatch` off the queue, and nothing else.
+	const layer = Layer.succeed(BoundAiClients, clients as unknown as typeof BoundAiClients.Service)
+	return { layer, limited, queued }
+}
+
 /** Alchemy's `SqlMigrations` captures the files at deploy; a test applies the same files directly. */
-const activateChatSession = Effect.flatMap(Cloudflare.DurableObjectState, (state) =>
-	makeChatSessionActivation(
-		Effect.succeed({
-			apply: () => Effect.sync(() => applyChatSessionMigrations(state.raw.storage.sql)),
-		}),
-	),
-)
+const activateChatSession = (ports?: { readonly apply: ProposalApplier; readonly run: TurnRunner }) =>
+	Effect.flatMap(Cloudflare.DurableObjectState, (state) =>
+		makeChatSessionActivation(
+			Effect.succeed({
+				apply: () => Effect.sync(() => applyChatSessionMigrations(state.raw.storage.sql)),
+			}),
+			ports,
+		),
+	)
 
 /** One activation the way alchemy's Durable Object bridge performs it: the outer phase under the state, then the inner. */
-const activateOn = (state: ReturnType<typeof makeFakeDurableObjectState>) =>
+const activateOn = (
+	state: ReturnType<typeof makeFakeDurableObjectState>,
+	options: {
+		readonly clients?: ReturnType<typeof makeBoundClients>
+		readonly ports?: { readonly apply: ProposalApplier; readonly run: TurnRunner }
+	} = {},
+) =>
 	Effect.gen(function* () {
 		// SAFETY: the fake carries the `storage.sql` and `waitUntil` the class reads, and nothing else.
 		const raw = state as unknown as import("@cloudflare/workers-types").DurableObjectState
-		const build = yield* activateChatSession.pipe(
+		const build = yield* activateChatSession(options.ports).pipe(
 			Effect.provide([
 				Layer.succeed(Cloudflare.DurableObjectState, Cloudflare.fromDurableObjectState(raw)),
 				Layer.succeed(Cloudflare.WorkerEnvironment, {}),
 				Layer.succeed(WorkersAiGateway, Option.none()),
+				(options.clients ?? makeBoundClients()).layer,
 			]),
 		)
 		return { rpc: yield* build, state }
@@ -46,11 +92,12 @@ describe("the ChatSession Durable Object on alchemy's form", () => {
 			// alchemy evaluates the outer Effect at plan time with `{ storage: {} }` as the state.
 			// SAFETY: that is alchemy's own mock, reproduced here.
 			const mock = { storage: {} } as unknown as import("@cloudflare/workers-types").DurableObjectState
-			const build = yield* activateChatSession.pipe(
+			const build = yield* activateChatSession().pipe(
 				Effect.provide([
 					Layer.succeed(Cloudflare.DurableObjectState, Cloudflare.fromDurableObjectState(mock)),
 					Layer.succeed(Cloudflare.WorkerEnvironment, {}),
 					Layer.succeed(WorkersAiGateway, Option.none()),
+					makeBoundClients().layer,
 				]),
 			)
 			assert.isTrue(Effect.isEffect(build))
@@ -115,4 +162,93 @@ describe("the ChatSession Durable Object on alchemy's form", () => {
 			])
 		}),
 	)
+
+	/** A turn or an approval builds its own runtime, so the Worker's limiters and queue are handed to it. */
+	describe("hands the Worker's bound clients to the runtimes it starts", () => {
+		const recordingPorts = () => {
+			const runs: Array<RunChatSessionTurnInput> = []
+			const applies: Array<ApplyChatProposalInput> = []
+			return {
+				runs,
+				applies,
+				ports: {
+					run: (input: RunChatSessionTurnInput) => {
+						runs.push(input)
+						return Promise.resolve()
+					},
+					apply: (input: ApplyChatProposalInput) => {
+						applies.push(input)
+						return Promise.resolve({ output: "Created alert rule ar_1.", isError: false })
+					},
+				},
+			}
+		}
+
+		it.effect("a turn spends the data-source call budget on the bound limiters", () =>
+			Effect.gen(function* () {
+				const clients = makeBoundClients()
+				const recorded = recordingPorts()
+				const { rpc, state } = yield* activateOn(makeFakeDurableObjectState({ migrated: false }), {
+					clients,
+					ports: recorded.ports,
+				})
+				yield* rpc.beginTurn({
+					sessionId: "org_test:tab",
+					messageId: "m1",
+					text: "how many users signed up today?",
+					tenant: TENANT,
+					origin: { kind: "app" },
+				})
+				yield* Effect.promise(() => Promise.all(state.pending))
+
+				const bindingPorts = recorded.runs[0]?.bindingPorts
+				assert.isDefined(bindingPorts)
+				if (bindingPorts === undefined) return
+				const outcomes = yield* Effect.gen(function* () {
+					const production = yield* DataSourceProductionCallLimit
+					const development = yield* DataSourceDevelopmentCallLimit
+					return [yield* production.limit("src_1"), yield* development.limit("src_2")]
+				}).pipe(Effect.provide(bindingPorts))
+				assert.deepStrictEqual(outcomes, [{ success: false }, { success: false }])
+				assert.deepStrictEqual(clients.limited, ["production:src_1", "development:src_2"])
+			}),
+		)
+
+		it.effect("an approved change queues its audit entry on the bound queue", () =>
+			Effect.gen(function* () {
+				const clients = makeBoundClients()
+				const recorded = recordingPorts()
+				const { rpc } = yield* activateOn(makeFakeDurableObjectState({ migrated: false }), {
+					clients,
+					ports: recorded.ports,
+				})
+				yield* rpc.append({ type: "turn-start", messageId: "a1" })
+				yield* rpc.append({
+					type: "tool-call",
+					messageId: "a1",
+					callId: "call_9",
+					name: "create_alert_rule",
+					input: { name: "checkout p95" },
+					proposed: true,
+				})
+				yield* rpc.append({ type: "turn-end", messageId: "a1", reason: "stop" })
+				yield* rpc.settleProposal({
+					sessionId: "org_test:tab",
+					toolCallId: "call_9",
+					decision: "approve",
+					approver: { kind: "app" },
+					tenant: TENANT,
+				})
+
+				const bindingPorts = recorded.applies[0]?.bindingPorts
+				assert.isDefined(bindingPorts)
+				if (bindingPorts === undefined) return
+				yield* Effect.gen(function* () {
+					const queue = yield* AuditEventsQueueProducer
+					yield* queue.sendBatch([{ body: { action: "alert_rule.create" } }])
+				}).pipe(Effect.provide(bindingPorts))
+				assert.deepStrictEqual(clients.queued, [{ action: "alert_rule.create" }])
+			}),
+		)
+	})
 })

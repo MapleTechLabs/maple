@@ -10,6 +10,8 @@ import { abortReason, type TurnObservability } from "./turn-outcome"
 /** What the investigation row records when the turn was stopped before its report. */
 export const NO_DIAGNOSIS_INTERRUPTED =
 	"interrupted: the run was stopped before it submitted a diagnosis; retry"
+/** What the reply row records when its turn was evicted: a reply is never started again. */
+export const NO_REPLY_INTERRUPTED = "interrupted: the run was restarted before it submitted an answer"
 /** How long a row write that settles an unfinished turn may take; it can run in a finalizer. */
 const ROW_WRITE_TIMEOUT = "10 seconds"
 
@@ -25,6 +27,21 @@ export const settleRow = <E>(write: Effect.Effect<void, E>, failed: string) =>
 		Effect.timeout(ROW_WRITE_TIMEOUT),
 		Effect.catchCause((cause) => Effect.logError(failed, cause)),
 	)
+
+/**
+ * A turn the session gave up after an eviction. Nothing runs: the rows it owned are marked failed,
+ * which is also what tells the pull request, since the dead fiber's own settling never ran.
+ */
+export const settleAbandoned = <ER, EV>(rows: {
+	readonly failReply?: Effect.Effect<void, ER>
+	readonly failReview?: Effect.Effect<void, EV>
+}) =>
+	Effect.gen(function* () {
+		if (rows.failReview !== undefined)
+			yield* settleRow(rows.failReview, "Could not record the abandoned review")
+		if (rows.failReply !== undefined)
+			yield* settleRow(rows.failReply, "Could not record the abandoned reply")
+	})
 
 export const makeUnfinishedSettler = <EI, ER, EV>(options: {
 	readonly outcome: AutonomousOutcome
