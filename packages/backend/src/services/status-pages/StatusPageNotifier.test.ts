@@ -8,7 +8,7 @@ import { EmailDeliveryError, EmailService } from "@maple/backend/platform/EmailS
 import { cleanupTestDbs, createTestDb, executeSql, type TestDb } from "@maple/backend/testing/test-pglite"
 import { testEnv } from "@maple/backend/services/integrations/vcs/__tests__/harness"
 import { OrganizationFeatureFlagsService } from "@maple/backend/services/org/OrganizationFeatureFlagsService"
-import { NOW, ORG } from "./status-page-test-support"
+import { NOW, ORG, seedCustomDomain } from "./status-page-test-support"
 import { STATUS_PAGE_NOTIFY_LOOKBACK_MS, StatusPageNotifier } from "./StatusPageNotifier"
 import { StatusPagesService } from "./StatusPagesService"
 
@@ -108,6 +108,33 @@ const recipients = (sent: ReadonlyArray<SentEmail>) =>
 	)
 
 describe("StatusPageNotifier", () => {
+	it.effect("links the page and unsubscribe at its active custom domain", () => {
+		const { testDb, sent, layer } = makeHarness()
+		return Effect.gen(function* () {
+			const { pageId, api } = yield* createPage
+			yield* seedCustomDomain(testDb, { pageId, hostname: "status.acme.com", status: "active" })
+			yield* seedSubscriber(testDb, pageId, "all@example.com")
+			const pages = yield* StatusPagesService
+			const incident = yield* pages.createIncident(ORG, pageId, {
+				kind: "incident",
+				title: "API errors",
+				impact: "major",
+				status: "investigating",
+				body: "Looking into it.",
+				componentIds: [api],
+				source: "dashboard",
+			})
+
+			yield* TestClock.adjust("1 minute")
+			yield* sweepNow
+			assert.include(sent[0]?.html ?? "", `https://status.acme.com#incident-${incident.id}`)
+			assert.match(
+				sent[0]?.headers["List-Unsubscribe"] ?? "",
+				/^<https:\/\/status\.acme\.com\/unsubscribe\?token=[^>]+>$/u,
+			)
+		}).pipe(Effect.provide(layer))
+	})
+
 	it.effect("emails each update once, to confirmed subscribers whose components it touches", () => {
 		const { testDb, sent, layer } = makeHarness()
 		return Effect.gen(function* () {

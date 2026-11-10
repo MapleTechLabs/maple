@@ -1,4 +1,4 @@
-import { Effect, Option, Schema, Array as Arr, String as Str } from "effect"
+import { Effect, Option, Schema, SchemaTransformation, Array as Arr, String as Str } from "effect"
 import {
 	StatusPageComponentId,
 	StatusPageComponentStatus,
@@ -31,6 +31,92 @@ export const StatusPageSlug = Schema.String.check(
 	Schema.isPattern(/^[a-z0-9](?:[a-z0-9-]{1,46}[a-z0-9])$/u),
 ).annotate({ identifier: "@maple/StatusPageSlug", title: "Status Page Slug" })
 export type StatusPageSlug = Schema.Schema.Type<typeof StatusPageSlug>
+
+/** Longest custom domain hostname Maple stores (DNS caps a name at 253 characters). */
+export const STATUS_PAGE_CUSTOM_DOMAIN_MAX_LENGTH = 253
+
+/**
+ * Hostnames a customer may not claim: Maple's own, Cloudflare's shared ones and names that never
+ * resolve publicly. A suffix match covers the name itself and every name under it.
+ */
+const RESERVED_CUSTOM_DOMAIN_SUFFIXES = [
+	"maple.dev",
+	"workers.dev",
+	"pages.dev",
+	"cloudflare.com",
+	"localhost",
+	"local",
+	"internal",
+	"test",
+	"example",
+	"invalid",
+	"arpa",
+] as const
+
+const HOSTNAME_LABEL = /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/u
+
+/** Trimmed, lower-cased, without a trailing dot: the one spelling a custom domain is stored in. */
+export const normalizeCustomDomain = (raw: string): string =>
+	Str.replace(/\.$/u, "")(Str.toLowerCase(Str.trim(raw)))
+
+/**
+ * Why a normalized hostname cannot be a status page's custom domain, or null when it can. A
+ * subdomain is required (`status.acme.com`): an apex cannot CNAME to Maple.
+ */
+export const customDomainIssue = (hostname: string): string | null => {
+	if (hostname === "") return "Enter a hostname, like status.acme.com."
+	if (hostname.length > STATUS_PAGE_CUSTOM_DOMAIN_MAX_LENGTH)
+		return `A hostname has at most ${STATUS_PAGE_CUSTOM_DOMAIN_MAX_LENGTH} characters.`
+	if (Str.includes("/")(hostname)) return "Enter the hostname alone, without https:// or a path."
+	const labels = Str.split(".")(hostname)
+	if (!Arr.every(labels, (label) => HOSTNAME_LABEL.test(label)))
+		return "Use letters, digits and hyphens between the dots, like status.acme.com."
+	if (/^[0-9]+$/u.test(labels.at(-1) ?? "")) return "Enter a hostname, not an IP address."
+	if (labels.length < 3)
+		return "Use a subdomain, like status.acme.com: an apex domain cannot point at Maple."
+	const reserved = Arr.findFirst(
+		RESERVED_CUSTOM_DOMAIN_SUFFIXES,
+		(suffix) => hostname === suffix || Str.endsWith(`.${suffix}`)(hostname),
+	)
+	return Option.match(reserved, {
+		onNone: () => null,
+		onSome: (suffix) => `Names under ${suffix} cannot be a custom domain.`,
+	})
+}
+
+/** Why a customer adds a DNS record: to route the hostname to Maple, prove they own it, or get its certificate. */
+export const StatusPageCustomDomainRecordPurpose = Schema.Literals(["routing", "ownership", "certificate"])
+export type StatusPageCustomDomainRecordPurpose = Schema.Schema.Type<
+	typeof StatusPageCustomDomainRecordPurpose
+>
+
+/** One DNS record the customer adds at their DNS provider. */
+export const StatusPageCustomDomainDnsRecord = Schema.Struct({
+	type: Schema.Literals(["CNAME", "TXT"]),
+	name: Schema.String,
+	value: Schema.String,
+	purpose: StatusPageCustomDomainRecordPurpose,
+})
+export type StatusPageCustomDomainDnsRecord = Schema.Schema.Type<typeof StatusPageCustomDomainDnsRecord>
+
+/** A custom domain as the API takes it: any case, trimmed, then checked by {@link customDomainIssue}. */
+export const StatusPageCustomDomainHostname = Schema.String.pipe(
+	Schema.decodeTo(
+		Schema.String.check(
+			Schema.makeFilter((hostname: string) => customDomainIssue(hostname) ?? undefined),
+		),
+		SchemaTransformation.transform<string, string>({
+			decode: normalizeCustomDomain,
+			encode: (hostname) => hostname,
+		}),
+	),
+).annotate({
+	identifier: "@maple/StatusPageCustomDomainHostname",
+	title: "Status Page Custom Domain",
+	description:
+		"A subdomain you control, like `status.acme.com`. Not an apex domain, an IP address or a Maple hostname.",
+	examples: ["status.acme.com"],
+})
 
 /** `YYYY-MM-DD`, UTC. */
 export const StatusPageDay = Schema.String.check(Schema.isPattern(/^\d{4}-\d{2}-\d{2}$/u))
@@ -572,6 +658,11 @@ export const StatusPageSnapshotPage = Schema.Struct({
 	// Footer links; absent from snapshots published before they existed.
 	privacyUrl: Schema.NullOr(Schema.String).pipe(Schema.withDecodingDefaultTypeKey(Effect.succeed(null))),
 	termsUrl: Schema.NullOr(Schema.String).pipe(Schema.withDecodingDefaultTypeKey(Effect.succeed(null))),
+	/**
+	 * The page's active custom domain (`status.acme.com`), or null. When set it is the page's
+	 * canonical address: feeds, the Slack command and emails link there.
+	 */
+	customDomain: Schema.NullOr(Schema.String).pipe(Schema.withDecodingDefaultTypeKey(Effect.succeed(null))),
 })
 export type StatusPageSnapshotPage = Schema.Schema.Type<typeof StatusPageSnapshotPage>
 

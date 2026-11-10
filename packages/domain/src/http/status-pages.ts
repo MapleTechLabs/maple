@@ -155,6 +155,59 @@ export class StatusPagesDisabledError extends HttpTaggedError<StatusPagesDisable
 	},
 ) {}
 
+/** The page has no custom domain to check or remove. */
+export class StatusPageCustomDomainNotFoundError extends HttpTaggedError<StatusPageCustomDomainNotFoundError>()(
+	"@maple/http/errors/StatusPageCustomDomainNotFoundError",
+	{
+		pageId: StatusPageId,
+		message: Schema.String,
+	},
+	{
+		status: 404,
+		code: "status_page_custom_domain_not_found",
+		title: "No custom domain",
+		message: "This status page has no custom domain.",
+		param: "id",
+		retry: "never",
+		recovery: "none",
+		exposure: "redacted",
+	},
+) {}
+
+/** Another status page, in any organization, already uses the hostname. */
+export class StatusPageCustomDomainTakenError extends HttpTaggedError<StatusPageCustomDomainTakenError>()(
+	"@maple/http/errors/StatusPageCustomDomainTakenError",
+	{
+		hostname: Schema.String,
+		message: Schema.String,
+	},
+	{
+		status: 409,
+		code: "status_page_custom_domain_taken",
+		title: "Custom domain is taken",
+		message: "Another status page already uses this hostname.",
+		param: "hostname",
+		retry: "never",
+		recovery: "fix_request",
+		exposure: "redacted",
+	},
+) {}
+
+/** This deployment has no Cloudflare for SaaS zone set up, so pages cannot take custom domains. */
+export class StatusPageCustomDomainsUnavailableError extends HttpTaggedError<StatusPageCustomDomainsUnavailableError>()(
+	"@maple/http/errors/StatusPageCustomDomainsUnavailableError",
+	{ message: Schema.String },
+	{
+		status: 503,
+		code: "status_page_custom_domains_unavailable",
+		title: "Custom domains are unavailable",
+		message: "Custom domains are not available on this Maple deployment.",
+		retry: "never",
+		recovery: "contact_support",
+		exposure: "redacted",
+	},
+) {}
+
 /** A page as its owners see it; the break-glass hash never leaves the service. */
 export const StatusPageRecord = Schema.Struct({
 	id: StatusPageId,

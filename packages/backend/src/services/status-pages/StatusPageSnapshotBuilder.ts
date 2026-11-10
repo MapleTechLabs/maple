@@ -2,6 +2,7 @@ import * as PG from "@maple-dev/effect-orm/postgres"
 import type { MapleDb } from "@maple/db/client"
 import {
 	StatusPageComponents,
+	StatusPageCustomDomains,
 	StatusPageIncidentComponents,
 	StatusPageIncidents,
 	StatusPageIncidentUpdates,
@@ -67,6 +68,8 @@ export interface SnapshotPageInput {
 	readonly showPoweredBy: boolean
 	readonly breakGlassTokenSha256: string | null
 	readonly revision: number
+	/** The page's custom domain once it serves traffic; null otherwise. */
+	readonly customDomain: string | null
 }
 
 export interface SnapshotComponentInput {
@@ -256,6 +259,7 @@ export const toSnapshot = (input: SnapshotInput): StatusPageSnapshot => {
 			showPoweredBy: input.page.showPoweredBy,
 			privacyUrl: input.page.privacyUrl,
 			termsUrl: input.page.termsUrl,
+			customDomain: input.page.customDomain,
 		},
 		breakGlassTokenSha256: input.page.breakGlassTokenSha256,
 		components,
@@ -266,7 +270,7 @@ export const toSnapshot = (input: SnapshotInput): StatusPageSnapshot => {
 
 /** A page that has no row yet: what the builder previews before anything is saved. */
 export interface StatusPageDraft {
-	readonly page: Omit<SnapshotPageInput, "id" | "breakGlassTokenSha256" | "revision">
+	readonly page: Omit<SnapshotPageInput, "id" | "breakGlassTokenSha256" | "revision" | "customDomain">
 	readonly components: ReadonlyArray<Omit<SnapshotComponentInput, "id" | "monitorStatus">>
 }
 
@@ -413,6 +417,12 @@ export class StatusPageSnapshotBuilder extends Context.Service<
 					)
 					if (page === undefined) return null
 					const orgId = page.orgId
+					const [domain] = yield* db.run(
+						PG.from(StatusPageCustomDomains)
+							.select(($) => ({ hostname: $.hostname }))
+							.where(($) => [$.pageId.eq(pageId), $.status.eq("active")])
+							.limit(1),
+					)
 					const rows = yield* db.run(
 						PG.from(StatusPageComponents)
 							.select(($) => ({
@@ -508,7 +518,14 @@ export class StatusPageSnapshotBuilder extends Context.Service<
 											PG.inList($.incidentId, incidentIds),
 										]),
 								)
-					return { page, components, daily, incidents, updates, incidentComponents }
+					return {
+						page: { ...page, customDomain: domain?.hostname ?? null },
+						components,
+						daily,
+						incidents,
+						updates,
+						incidentComponents,
+					}
 				}),
 			)
 			if (input === null) {
@@ -538,7 +555,13 @@ export class StatusPageSnapshotBuilder extends Context.Service<
 				),
 			)
 			return toSnapshot({
-				page: { ...draft.page, id: DRAFT_PAGE_ID, breakGlassTokenSha256: null, revision: 0 },
+				page: {
+					...draft.page,
+					id: DRAFT_PAGE_ID,
+					breakGlassTokenSha256: null,
+					revision: 0,
+					customDomain: null,
+				},
 				components: Arr.map(draft.components, (component, index) => ({
 					...component,
 					id: draftComponentId(index),

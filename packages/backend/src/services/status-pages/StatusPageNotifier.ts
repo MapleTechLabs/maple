@@ -22,7 +22,7 @@ import { msToSqlTimestamp } from "@maple/backend/platform/time"
 import { EmailService } from "@maple/backend/platform/EmailService"
 import { Env } from "@maple/backend/platform/Env"
 import { OrganizationFeatureFlagsService } from "@maple/backend/services/org/OrganizationFeatureFlagsService"
-import { statusPageUrl } from "./StatusPageSubscriptionsService"
+import { activeCustomDomain, statusPagePublicUrl } from "./StatusPageSubscriptionsService"
 import { mintUnsubscribeToken } from "./subscription-tokens"
 
 /** An update older than this when first seen is history, not news: it is never emailed. */
@@ -155,6 +155,7 @@ export class StatusPageNotifier extends Context.Service<StatusPageNotifier, Stat
 						)
 						if (incident === undefined || !incident.published || page === undefined || page.draft)
 							return Option.none()
+						const customDomain = yield* activeCustomDomain(db, notification.pageId)
 						const components = yield* db.run(
 							PG.from(StatusPageIncidentComponents, "l")
 								.innerJoin(StatusPageComponents, "c", (l, c) => l.componentId.eq(c.id))
@@ -162,7 +163,7 @@ export class StatusPageNotifier extends Context.Service<StatusPageNotifier, Stat
 								.where(($) => [$.incidentId.eq(incident.id)])
 								.orderBy(["position", "asc"]),
 						)
-						return Option.some({ update, incident, page, components })
+						return Option.some({ update, incident, page: { ...page, customDomain }, components })
 					}),
 				)
 
@@ -205,7 +206,7 @@ export class StatusPageNotifier extends Context.Service<StatusPageNotifier, Stat
 			/** Sends one batch of the update; answers how many went out and failed, and whether it is done. */
 			const deliver = Effect.fnUntraced(function* (
 				notification: StatusPageUpdateNotificationRow,
-				baseUrl: string,
+				baseUrl: Option.Option<string>,
 				budget: number,
 				nowMs: number,
 			) {
@@ -223,6 +224,17 @@ export class StatusPageNotifier extends Context.Service<StatusPageNotifier, Stat
 					return { sent: 0, failed: 0, done: expired }
 				}
 				const { update, incident, page, components } = context.value
+				const publicUrl = statusPagePublicUrl({
+					baseUrl,
+					slug: page.slug,
+					customDomain: page.customDomain,
+				})
+				// No address to link to (no status domain, no active custom domain): nothing can be sent.
+				if (Option.isNone(publicUrl)) {
+					yield* complete(notification, nowMs)
+					return { sent: 0, failed: 0, done: true }
+				}
+				const pageUrl = publicUrl.value
 				const limit = Math.min(SUBSCRIBER_BATCH, budget)
 				const cursor = notification.lastSubscriberId
 				const subscribers = yield* dbExecute((db) =>
@@ -241,7 +253,6 @@ export class StatusPageNotifier extends Context.Service<StatusPageNotifier, Stat
 				const touched = new Set<string>(Arr.map(components, (component) => component.id))
 				const statusLabel = STATUS_LABEL[update.status]
 				const kindLabel = incident.kind === "maintenance" ? "Maintenance" : "Incident"
-				const pageUrl = statusPageUrl(baseUrl, page.slug)
 				const message = {
 					subject:
 						incident.kind === "maintenance"
@@ -299,8 +310,9 @@ export class StatusPageNotifier extends Context.Service<StatusPageNotifier, Stat
 			const sweep = Effect.fn("StatusPageNotifier.sweep")(function* (nowMs: number) {
 				const empty = { queued: 0, sent: 0, failed: 0, completed: 0 }
 				// Nothing could be sent, so nothing is queued to pile up.
-				if (Option.isNone(env.MAPLE_STATUS_PAGE_BASE_URL) || !email.isConfigured) return empty
-				const baseUrl = env.MAPLE_STATUS_PAGE_BASE_URL.value
+				if (!email.isConfigured) return empty
+				// Pages with an active custom domain link there; the rest need the status Worker's origin.
+				const baseUrl = env.MAPLE_STATUS_PAGE_BASE_URL
 				const queued = yield* dbExecute((db) => queueNewUpdates(db, nowMs))
 				const pending = yield* dbExecute((db) =>
 					db.run(

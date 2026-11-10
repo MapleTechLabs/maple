@@ -9,7 +9,7 @@ import { EmailService } from "@maple/backend/platform/EmailService"
 import { cleanupTestDbs, createTestDb, queryFirstRow, type TestDb } from "@maple/backend/testing/test-pglite"
 import { testEnv } from "@maple/backend/services/integrations/vcs/__tests__/harness"
 import { OrganizationFeatureFlagsService } from "@maple/backend/services/org/OrganizationFeatureFlagsService"
-import { ORG, NOW } from "./status-page-test-support"
+import { ORG, NOW, seedCustomDomain } from "./status-page-test-support"
 import { StatusPagesService } from "./StatusPagesService"
 import {
 	STATUS_PAGE_CONFIRMATIONS_PER_HOUR,
@@ -278,6 +278,38 @@ describe("StatusPageSubscriptionsService", () => {
 			assert.strictEqual(sent.length, 0)
 		}).pipe(Effect.provide(layer))
 	})
+
+	it.effect(
+		"links the confirmation to the page's active custom domain, with or without a status origin",
+		() => {
+			const withOrigin = makeHarness()
+			const withoutOrigin = makeHarness({ baseUrl: null })
+			const subscribeOn = (testDb: TestDb, status: "active" | "pending_dns") =>
+				Effect.gen(function* () {
+					const { pageId } = yield* createPage("acme")
+					yield* seedCustomDomain(testDb, { pageId, hostname: "status.acme.com", status })
+					const subscriptions = yield* StatusPageSubscriptionsService
+					yield* subscriptions.subscribe(pageId, { email: "ana@example.com" })
+				})
+			return Effect.gen(function* () {
+				yield* subscribeOn(withOrigin.testDb, "active").pipe(Effect.provide(withOrigin.layer))
+				yield* subscribeOn(withoutOrigin.testDb, "active").pipe(Effect.provide(withoutOrigin.layer))
+				assert.include(
+					withOrigin.sent[0]?.html ?? "",
+					"https://status.acme.com/subscribe/confirm?token=",
+				)
+				assert.include(
+					withoutOrigin.sent[0]?.html ?? "",
+					"https://status.acme.com/subscribe/confirm?token=",
+				)
+
+				// A domain not live yet is no address: the shared origin it is.
+				const pending = makeHarness()
+				yield* subscribeOn(pending.testDb, "pending_dns").pipe(Effect.provide(pending.layer))
+				assert.include(pending.sent[0]?.html ?? "", `${BASE_URL}/s/acme/subscribe/confirm?token=`)
+			})
+		},
+	)
 
 	it.effect("unsubscribes by signed link, idempotently, and refuses a forged one", () => {
 		const { testDb, sent, layer } = makeHarness()

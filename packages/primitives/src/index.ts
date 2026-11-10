@@ -444,6 +444,21 @@ export const StatusPageAutoIncidents = Schema.Literals(["off", "draft", "publish
 })
 export type StatusPageAutoIncidents = Schema.Schema.Type<typeof StatusPageAutoIncidents>
 
+/**
+ * Where a page's custom domain stands: waiting for the customer's DNS (CNAME and ownership),
+ * waiting for its certificate, serving the page, or stopped with an error to fix.
+ */
+export const StatusPageCustomDomainStatus = Schema.Literals([
+	"pending_dns",
+	"pending_ssl",
+	"active",
+	"failed",
+]).annotate({
+	identifier: "@maple/StatusPageCustomDomainStatus",
+	title: "Status Page Custom Domain Status",
+})
+export type StatusPageCustomDomainStatus = Schema.Schema.Type<typeof StatusPageCustomDomainStatus>
+
 export const StatusPageUpdateSource = Schema.Literals([
 	"dashboard",
 	"api",

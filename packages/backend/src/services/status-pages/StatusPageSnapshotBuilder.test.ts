@@ -57,6 +57,7 @@ const baseInput = (overrides: Partial<SnapshotInput> = {}): SnapshotInput => ({
 		showPoweredBy: true,
 		breakGlassTokenSha256: null,
 		revision: 3,
+		customDomain: null,
 	},
 	components: [API_COMPONENT],
 	daily: [],

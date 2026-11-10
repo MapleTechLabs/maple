@@ -72,6 +72,7 @@ const hostileSnapshot = makeSnapshot({
 		showPoweredBy: false,
 		privacyUrl: "javascript:alert(1)",
 		termsUrl: null,
+		customDomain: null,
 	},
 	components: [makeComponent(0, { name: HOSTILE, group: HOSTILE, description: HOSTILE })],
 	incidents: [

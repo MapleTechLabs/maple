@@ -1,9 +1,12 @@
-import { Option, Array as Arr } from "effect"
+import { Option, Result, Schema, Array as Arr, String as Str } from "effect"
 import { assert, describe, expect, it } from "vitest"
 import { StatusPageComponentId, StatusPageId } from "@maple/primitives"
 import {
 	applyOverlay,
 	contrastRatio,
+	customDomainIssue,
+	normalizeCustomDomain,
+	StatusPageCustomDomainHostname,
 	DEFAULT_STATUS_PAGE_THEME,
 	decodeStatusPageSnapshotJson,
 	resolveStatusPageTheme,
@@ -43,6 +46,7 @@ const snapshot = (overrides: Partial<StatusPageSnapshot> = {}): StatusPageSnapsh
 		showPoweredBy: true,
 		privacyUrl: null,
 		termsUrl: null,
+		customDomain: null,
 	},
 	breakGlassTokenSha256: null,
 	components: [
@@ -589,5 +593,44 @@ describe("isListedIncident", () => {
 				NOW,
 			),
 		).toBe(false)
+	})
+})
+
+describe("custom domain hostnames", () => {
+	const decode = Schema.decodeUnknownResult(StatusPageCustomDomainHostname)
+
+	it("stores one spelling: trimmed, lower-cased, no trailing dot", () => {
+		assert.strictEqual(normalizeCustomDomain("  Status.ACME.com. "), "status.acme.com")
+		assert.deepStrictEqual(Result.getOrNull(decode(" Status.Acme.com ")), "status.acme.com")
+	})
+
+	it("takes a subdomain, punycode included", () => {
+		for (const hostname of [
+			"status.acme.com",
+			"status.acme.co.uk",
+			"xn--bcher-kva.acme.io",
+			"a-b.c-d.example.org",
+		])
+			assert.isNull(customDomainIssue(hostname), hostname)
+	})
+
+	it("refuses apexes, IPs, URLs, wildcards, Maple's and Cloudflare's names", () => {
+		for (const hostname of [
+			"",
+			"acme.com",
+			"10.0.0.1",
+			"https://status.acme.com",
+			"status.acme.com/path",
+			"*.acme.com",
+			"-status.acme.com",
+			"status..acme.com",
+			"status.maple.dev",
+			"acme.status-pr-12.maple.dev",
+			"my-worker.acme.workers.dev",
+			"status.localhost",
+			`${Str.repeat(64)("a")}.acme.com`,
+		])
+			assert.isNotNull(customDomainIssue(normalizeCustomDomain(hostname)), hostname)
+		assert.isTrue(Result.isFailure(decode("status.maple.dev")))
 	})
 })

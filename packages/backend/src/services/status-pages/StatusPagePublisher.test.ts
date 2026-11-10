@@ -5,9 +5,12 @@ import { TestClock } from "effect/testing"
 import { decodeStatusPageSnapshotJson, StatusPageKeys, utcDay } from "@maple/domain/status-page"
 import { StatusPageId } from "@maple/primitives"
 import { cleanupTestDbs, createTestDb, executeSql, type TestDb } from "@maple/backend/testing/test-pglite"
+import { CloudflareCustomHostnames } from "./CloudflareCustomHostnames"
 import { STATUS_PAGE_SWEEP_BATCH, StatusPagePublisher } from "./StatusPagePublisher"
+import { StatusPageSnapshotBuilder } from "./StatusPageSnapshotBuilder"
 import { StatusPageStore, type InMemoryStatusPageStore, type StatusPageStoreApi } from "./StatusPageStore"
 import {
+	type InMemoryCustomHostnames,
 	bumpRevision,
 	cleanupRows,
 	DAY_MS,
@@ -18,6 +21,7 @@ import {
 	seedComponent,
 	seedDaily,
 	seedMonitor,
+	seedCustomDomain,
 	seedPage,
 } from "./status-page-test-support"
 
@@ -29,6 +33,7 @@ const withPublisher = <A, E>(
 	body: (ctx: {
 		readonly testDb: TestDb
 		readonly store: InMemoryStatusPageStore
+		readonly cloudflare: InMemoryCustomHostnames
 		readonly publisher: StatusPagePublisher["Service"]
 	}) => Effect.Effect<A, E>,
 	/** Wraps the store the publisher sees, to land a concurrent change mid-publish. */
@@ -38,13 +43,16 @@ const withPublisher = <A, E>(
 		yield* TestClock.setTime(NOW)
 		const testDb = createTestDb(trackedDbs)
 		const store = yield* StatusPageStore.makeInMemory
-		const layer = StatusPagePublisher.layer.pipe(
+		const cloudflare = yield* CloudflareCustomHostnames.makeInMemory()
+		const layer = Layer.effect(StatusPagePublisher, StatusPagePublisher.make).pipe(
+			Layer.provide(StatusPageSnapshotBuilder.layer),
+			Layer.provide(Layer.succeed(CloudflareCustomHostnames, cloudflare.api)),
 			Layer.provide(Layer.succeed(StatusPageStore, wrap(store.api, testDb))),
 			Layer.provide(testDb.layer),
 		)
-		return yield* StatusPagePublisher.use((publisher) => body({ testDb, store, publisher })).pipe(
-			Effect.provide(layer),
-		)
+		return yield* StatusPagePublisher.use((publisher) =>
+			body({ testDb, store, cloudflare, publisher }),
+		).pipe(Effect.provide(layer))
 	})
 
 describe("StatusPagePublisher.publish", () => {
@@ -495,6 +503,205 @@ describe("StatusPagePublisher.sweep edge cleanups", () => {
 				assert.isTrue(kv.has(StatusPageKeys.overlayEntry(other, "e3")))
 				assert.isTrue(kv.has(StatusPageKeys.snapshot(other)))
 				assert.deepStrictEqual(yield* cleanupRows(testDb), [])
+			}),
+		),
+	)
+})
+
+describe("StatusPagePublisher custom domains", () => {
+	it.effect("routes an active custom domain to the page and names it in the snapshot", () =>
+		withPublisher(({ testDb, store, publisher }) =>
+			Effect.gen(function* () {
+				const pageId = newPageId()
+				yield* seedPage(testDb, { id: pageId, slug: "acme" })
+				yield* seedCustomDomain(testDb, { pageId, hostname: "status.acme.com", status: "active" })
+
+				yield* publisher.publish(pageId)
+				const { kv, objects } = yield* store.contents
+				assert.strictEqual(kv.get(StatusPageKeys.host("status.acme.com")), pageId)
+				assert.strictEqual(objects.get(StatusPageKeys.hostObject("status.acme.com")), pageId)
+				assert.strictEqual(kv.get(StatusPageKeys.slug("acme")), pageId)
+				const snapshot = decodeStatusPageSnapshotJson(kv.get(StatusPageKeys.snapshot(pageId)))
+				assert.strictEqual(Option.getOrNull(snapshot)?.page.customDomain, "status.acme.com")
+			}),
+		),
+	)
+
+	it.effect("routes nothing for a domain still waiting on DNS", () =>
+		withPublisher(({ testDb, store, publisher }) =>
+			Effect.gen(function* () {
+				const pageId = newPageId()
+				yield* seedPage(testDb, { id: pageId, slug: "acme" })
+				yield* seedCustomDomain(testDb, {
+					pageId,
+					hostname: "status.acme.com",
+					status: "pending_dns",
+				})
+
+				yield* publisher.publish(pageId)
+				const { kv } = yield* store.contents
+				assert.isFalse(kv.has(StatusPageKeys.host("status.acme.com")))
+				const snapshot = decodeStatusPageSnapshotJson(kv.get(StatusPageKeys.snapshot(pageId)))
+				assert.isNull(Option.getOrNull(snapshot)?.page.customDomain)
+			}),
+		),
+	)
+
+	it.effect("restores a host route lost at the edge on an unchanged republish", () =>
+		withPublisher(({ testDb, store, publisher }) =>
+			Effect.gen(function* () {
+				const pageId = newPageId()
+				yield* seedPage(testDb, { id: pageId, slug: "acme" })
+				yield* seedCustomDomain(testDb, { pageId, hostname: "status.acme.com", status: "active" })
+				yield* publisher.publish(pageId)
+				yield* store.api.deleteHostRoute("status.acme.com")
+
+				const result = yield* publisher.publish(pageId)
+				assert.isFalse(result.written)
+				const { kv } = yield* store.contents
+				assert.strictEqual(kv.get(StatusPageKeys.host("status.acme.com")), pageId)
+			}),
+		),
+	)
+
+	it.effect("takes a removed domain down at Cloudflare and at the edge, keeping the page", () =>
+		withPublisher(({ testDb, store, cloudflare, publisher }) =>
+			Effect.gen(function* () {
+				const pageId = newPageId()
+				yield* seedPage(testDb, { id: pageId, slug: "acme" })
+				const hostname = yield* cloudflare.api.createHostname("status.acme.com")
+				const routeId = yield* cloudflare.api.createRoute("status.acme.com")
+				yield* seedCustomDomain(testDb, {
+					pageId,
+					hostname: "status.acme.com",
+					status: "active",
+					cloudflareHostnameId: hostname.id,
+					cloudflareRouteId: routeId,
+				})
+				yield* publisher.sweep(NOW)
+				yield* Effect.promise(() =>
+					executeSql(testDb, `DELETE FROM status_page_custom_domains WHERE page_id = $1`, [pageId]),
+				)
+				yield* seedCleanup(testDb, {
+					pageId,
+					slug: null,
+					deleteSnapshot: false,
+					at: NOW,
+					hostname: "status.acme.com",
+					cloudflareHostnameId: hostname.id,
+					cloudflareRouteId: routeId,
+				})
+
+				const result = yield* publisher.sweep(NOW + 60_000)
+				assert.strictEqual(result.cleaned, 1)
+				assert.strictEqual((yield* cloudflare.hostnames).size, 0)
+				assert.strictEqual((yield* cloudflare.routes).size, 0)
+				const { kv, objects } = yield* store.contents
+				assert.isFalse(kv.has(StatusPageKeys.host("status.acme.com")))
+				assert.isFalse(objects.has(StatusPageKeys.hostObject("status.acme.com")))
+				assert.strictEqual(kv.get(StatusPageKeys.slug("acme")), pageId)
+				assert.isTrue(kv.has(StatusPageKeys.snapshot(pageId)))
+				assert.deepStrictEqual(yield* cleanupRows(testDb), [])
+			}),
+		),
+	)
+
+	it.effect("takes a deleted page's custom domain down with it", () =>
+		withPublisher(({ testDb, store, cloudflare, publisher }) =>
+			Effect.gen(function* () {
+				const pageId = newPageId()
+				yield* seedPage(testDb, { id: pageId, slug: "acme" })
+				const hostname = yield* cloudflare.api.createHostname("status.acme.com")
+				const routeId = yield* cloudflare.api.createRoute("status.acme.com")
+				yield* seedCustomDomain(testDb, {
+					pageId,
+					hostname: "status.acme.com",
+					status: "active",
+					cloudflareHostnameId: hostname.id,
+					cloudflareRouteId: routeId,
+				})
+				yield* publisher.sweep(NOW)
+				yield* Effect.promise(async () => {
+					await executeSql(
+						testDb,
+						`INSERT INTO status_page_cleanups (id, org_id, page_id, slug, delete_snapshot,
+							hostname, cloudflare_hostname_id, cloudflare_route_id, created_at)
+						 SELECT gen_random_uuid()::text, p.org_id, p.id, p.slug, true,
+							d.hostname, d.cloudflare_hostname_id, d.cloudflare_route_id, now()
+						 FROM status_pages p LEFT JOIN status_page_custom_domains d ON d.page_id = p.id
+						 WHERE p.id = $1`,
+						[pageId],
+					)
+					await executeSql(testDb, `DELETE FROM status_pages WHERE id = $1`, [pageId])
+				})
+
+				yield* publisher.sweep(NOW + 60_000)
+				assert.strictEqual((yield* cloudflare.hostnames).size, 0)
+				assert.strictEqual((yield* cloudflare.routes).size, 0)
+				const { kv } = yield* store.contents
+				assert.isFalse(kv.has(StatusPageKeys.host("status.acme.com")))
+				assert.isFalse(kv.has(StatusPageKeys.snapshot(pageId)))
+				assert.deepStrictEqual(yield* cleanupRows(testDb), [])
+			}),
+		),
+	)
+
+	it.effect("keeps a hostname another page claimed since, with the Cloudflare pieces it took over", () =>
+		withPublisher(({ testDb, store, cloudflare, publisher }) =>
+			Effect.gen(function* () {
+				const oldPage = newPageId()
+				const newPage = newPageId()
+				yield* seedPage(testDb, { id: oldPage, slug: "old-acme" })
+				yield* seedPage(testDb, { id: newPage, slug: "new-acme" })
+				const hostname = yield* cloudflare.api.createHostname("status.acme.com")
+				const routeId = yield* cloudflare.api.createRoute("status.acme.com")
+				yield* seedCustomDomain(testDb, {
+					pageId: newPage,
+					hostname: "status.acme.com",
+					status: "active",
+					cloudflareHostnameId: hostname.id,
+					cloudflareRouteId: routeId,
+				})
+				yield* publisher.sweep(NOW)
+				yield* seedCleanup(testDb, {
+					pageId: oldPage,
+					slug: null,
+					deleteSnapshot: false,
+					at: NOW,
+					hostname: "status.acme.com",
+					cloudflareHostnameId: hostname.id,
+					cloudflareRouteId: routeId,
+				})
+
+				yield* publisher.sweep(NOW + 60_000)
+				assert.strictEqual((yield* cloudflare.hostnames).size, 1)
+				assert.strictEqual((yield* cloudflare.routes).size, 1)
+				const { kv } = yield* store.contents
+				assert.strictEqual(kv.get(StatusPageKeys.host("status.acme.com")), newPage)
+				assert.deepStrictEqual(yield* cleanupRows(testDb), [])
+			}),
+		),
+	)
+
+	it.effect("keeps the cleanup queued while Cloudflare is failing", () =>
+		withPublisher(({ testDb, cloudflare, publisher }) =>
+			Effect.gen(function* () {
+				const pageId = newPageId()
+				yield* seedPage(testDb, { id: pageId, slug: "acme" })
+				const hostname = yield* cloudflare.api.createHostname("status.acme.com")
+				yield* seedCleanup(testDb, {
+					pageId,
+					slug: null,
+					deleteSnapshot: false,
+					at: NOW,
+					hostname: "status.acme.com",
+					cloudflareHostnameId: hostname.id,
+				})
+				yield* cloudflare.setFailing(true)
+
+				const result = yield* publisher.sweep(NOW + 60_000)
+				assert.strictEqual(result.cleanupsFailed, 1)
+				assert.strictEqual((yield* cleanupRows(testDb)).length, 1)
 			}),
 		),
 	)

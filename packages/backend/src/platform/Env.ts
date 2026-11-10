@@ -59,6 +59,16 @@ export interface EnvConfig {
 	 * subscriber email is built from it. Unset: email subscriptions are refused.
 	 */
 	readonly MAPLE_STATUS_PAGE_BASE_URL: Option.Option<string>
+	/**
+	 * Status page custom domains (Cloudflare for SaaS, docs/status-page-custom-domains.md): the
+	 * zone holding the custom hostnames, a token that may edit its custom hostnames and Worker
+	 * routes, the hostname customers CNAME to, and the status Worker's script name for the
+	 * per-hostname route. Any of them unset: custom domains are unavailable on this deployment.
+	 */
+	readonly MAPLE_STATUS_DOMAINS_ZONE_ID: Option.Option<string>
+	readonly MAPLE_STATUS_DOMAINS_API_TOKEN: Option.Option<Redacted.Redacted>
+	readonly MAPLE_STATUS_DOMAINS_CNAME_TARGET: Option.Option<string>
+	readonly MAPLE_STATUS_WORKER_NAME: Option.Option<string>
 	/** Deployment environment (`production`, `pr-<n>`, `development`) — set by alchemy from the stage. */
 	readonly MAPLE_ENVIRONMENT: string
 	/** The regional instance this worker belongs to, derived by the stack from the stage (`prd-eu` → `eu`). */
@@ -253,6 +263,10 @@ const envConfig = Config.all({
 	MAPLE_APP_BASE_URL: stringWithDefault("MAPLE_APP_BASE_URL", "http://127.0.0.1:3471"),
 	MAPLE_API_BASE_URL: stringWithDefault("MAPLE_API_BASE_URL", "http://127.0.0.1:3472"),
 	MAPLE_STATUS_PAGE_BASE_URL: optionalString("MAPLE_STATUS_PAGE_BASE_URL"),
+	MAPLE_STATUS_DOMAINS_ZONE_ID: optionalString("MAPLE_STATUS_DOMAINS_ZONE_ID"),
+	MAPLE_STATUS_DOMAINS_API_TOKEN: optionalRedacted("MAPLE_STATUS_DOMAINS_API_TOKEN"),
+	MAPLE_STATUS_DOMAINS_CNAME_TARGET: optionalString("MAPLE_STATUS_DOMAINS_CNAME_TARGET"),
+	MAPLE_STATUS_WORKER_NAME: optionalString("MAPLE_STATUS_WORKER_NAME"),
 	MAPLE_ENVIRONMENT: stringWithDefault("MAPLE_ENVIRONMENT", "development"),
 	MAPLE_REGION: stringWithDefault("MAPLE_REGION", "us").pipe(Config.map(parseMapleRegion)),
 	MAPLE_IGNORE_ORG_CLICKHOUSE: stringWithDefault("MAPLE_IGNORE_ORG_CLICKHOUSE", "false").pipe(

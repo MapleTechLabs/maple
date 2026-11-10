@@ -1,7 +1,12 @@
 import { randomUUID } from "node:crypto"
 import * as PG from "@maple-dev/effect-orm/postgres"
 import type { MapleDb } from "@maple/db/client"
-import { StatusPageComponents, StatusPages, StatusPageSubscribers } from "@maple/db/tables"
+import {
+	StatusPageComponents,
+	StatusPageCustomDomains,
+	StatusPages,
+	StatusPageSubscribers,
+} from "@maple/db/tables"
 import {
 	StatusPageSubscriptionInvalidError,
 	StatusPageSubscriptionPageNotFoundError,
@@ -38,9 +43,29 @@ export const STATUS_PAGE_CONFIRMATIONS_PER_HOUR = 50
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@.]+(?:\.[^\s@.]+)+$/u
 
-/** Where a page lives on the status Worker; every link in a subscriber email starts here. */
-export const statusPageUrl = (baseUrl: string, slug: string): string =>
-	`${Str.replace(/\/+$/u, "")(baseUrl)}/s/${slug}`
+/**
+ * Where a page lives; every link in a subscriber email starts here. Its active custom domain when
+ * it has one, else `<status Worker origin>/s/<slug>`; none when this deployment has neither.
+ */
+export const statusPagePublicUrl = (input: {
+	readonly baseUrl: Option.Option<string>
+	readonly slug: string
+	readonly customDomain: string | null
+}): Option.Option<string> =>
+	input.customDomain !== null
+		? Option.some(`https://${input.customDomain}`)
+		: Option.map(input.baseUrl, (baseUrl) => `${Str.replace(/\/+$/u, "")(baseUrl)}/s/${input.slug}`)
+
+/** A page's active custom domain hostname, or null. */
+export const activeCustomDomain = (db: MapleDb, pageId: StatusPageId) =>
+	db
+		.run(
+			PG.from(StatusPageCustomDomains)
+				.select(($) => ({ hostname: $.hostname }))
+				.where(($) => [$.pageId.eq(pageId), $.status.eq("active")])
+				.limit(1),
+		)
+		.pipe(Effect.map(([row]) => row?.hostname ?? null))
 
 export interface StatusPageSubscriptionsServiceApi {
 	/**
@@ -83,6 +108,7 @@ interface PublicPage {
 	readonly orgId: OrgId
 	readonly name: string
 	readonly slug: string
+	readonly customDomain: string | null
 }
 
 const unavailable = (cause: unknown) =>
@@ -125,13 +151,20 @@ export class StatusPageSubscriptionsService extends Context.Service<
 			const flags = yield* featureFlags.flags(page.orgId)
 			if (!flags.statusPages) return yield* pageNotFound(pageId)
 			yield* Effect.annotateCurrentSpan({ orgId: page.orgId })
-			return { id: page.id, orgId: page.orgId, name: page.name, slug: page.slug } satisfies PublicPage
+			const customDomain = yield* dbExecute((db) => activeCustomDomain(db, page.id))
+			return {
+				id: page.id,
+				orgId: page.orgId,
+				name: page.name,
+				slug: page.slug,
+				customDomain,
+			} satisfies PublicPage
 		})
 
 		const sendConfirmation = (input: {
 			readonly to: string
 			readonly page: PublicPage
-			readonly baseUrl: string
+			readonly pageUrl: string
 			readonly token: string
 			readonly scope: string
 		}) =>
@@ -142,7 +175,7 @@ export class StatusPageSubscriptionsService extends Context.Service<
 					renderStatusPageConfirmEmail({
 						pageName: input.page.name,
 						scope: input.scope,
-						confirmUrl: `${statusPageUrl(input.baseUrl, input.page.slug)}/subscribe/confirm?token=${encodeURIComponent(input.token)}`,
+						confirmUrl: `${input.pageUrl}/subscribe/confirm?token=${encodeURIComponent(input.token)}`,
 						expiresIn: "48 hours",
 					}),
 				)
@@ -166,12 +199,16 @@ export class StatusPageSubscriptionsService extends Context.Service<
 			if (componentIds !== null && componentIds.length === 0)
 				return yield* invalid("Pick at least one component, or subscribe to all of them.")
 			const page = yield* requirePublicPage(pageId)
-			if (Option.isNone(env.MAPLE_STATUS_PAGE_BASE_URL)) {
+			const pageUrl = statusPagePublicUrl({
+				baseUrl: env.MAPLE_STATUS_PAGE_BASE_URL,
+				slug: page.slug,
+				customDomain: page.customDomain,
+			})
+			if (Option.isNone(pageUrl)) {
 				return yield* new StatusPageSubscriptionUnavailableError({
 					message: "Email subscriptions are not configured on this deployment",
 				})
 			}
-			const baseUrl = env.MAPLE_STATUS_PAGE_BASE_URL.value
 			const token = newConfirmToken()
 			const tokenHash = yield* hashToken(token)
 			const now = yield* Clock.currentTimeMillis
@@ -261,7 +298,7 @@ export class StatusPageSubscriptionsService extends Context.Service<
 				sendConfirmation({
 					to: address,
 					page,
-					baseUrl,
+					pageUrl: pageUrl.value,
 					token,
 					scope: componentIds === null ? "all components" : Arr.join(componentNames.value, ", "),
 				}),
