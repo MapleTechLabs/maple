@@ -8,7 +8,7 @@ import * as Dialog from "@maple/views/ui/dialog"
 import type { Resources } from "../../../platform/resources"
 import { MAX_ALERT_SILENCE_DURATION_MS } from "@maple/domain/http"
 import { shortZoneName } from "../../kit/timezone-zones"
-import { hasMatchers, MatcherField } from "../shared/matcher-fields"
+import { hasMatchers, MatcherField, splitList } from "../shared/matcher-fields"
 import { createSilence } from "../shared/silences"
 
 // "Silence notifications": the side panel the hub, a rule and an incident open, as one Submodel.
@@ -266,13 +266,26 @@ export const openFor = (
 export const openNew = (model: Model, timeZone: string, nowMs: number): Return =>
 	open(model, NO_CHIPS, timeZone, nowMs)
 
+/** The chips for what was picked or typed: "checkout, payments" is two names, each listed once. */
+const chipsOf = (names: ReadonlyArray<string>): ReadonlyArray<string> =>
+	Arr.dedupe(Arr.flatMap(names, splitList))
+
 /** A chips input's step: its popup state stays on the combo, a changed selection lands on the scope. */
 const scopeComboStep = (model: Model, field: ScopeField, message: Combobox.Message): Return => {
 	if (model.scope._tag === "Fixed") return { model }
-	const step = Combobox.update({ ...model.combos[field], selected: model.scope[field] }, message)
+	const chips = model.scope[field]
+	const step = Combobox.update({ ...model.combos[field], selected: chips }, message)
+	// Enter on typed text only ever adds: the combobox would toggle a name that is already a chip off.
+	const isTypedEntry =
+		message._tag === "PressedInputKey" && Str.isNonEmpty(Str.trim(model.combos[field].inputValue))
 	const scope =
 		step.outMessage?._tag === "ChangedSelection"
-			? { ...model.scope, [field]: step.outMessage.selected }
+			? {
+					...model.scope,
+					[field]: chipsOf(
+						isTypedEntry ? [...chips, ...step.outMessage.selected] : step.outMessage.selected,
+					),
+				}
 			: model.scope
 	return {
 		model: { ...model, scope, combos: { ...model.combos, [field]: step.model } },

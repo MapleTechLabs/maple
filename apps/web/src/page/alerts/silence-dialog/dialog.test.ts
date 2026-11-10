@@ -141,6 +141,53 @@ describe("scope chips", () => {
 		expect(matchersOf(openNew(entered, BERLIN, NOW).model.scope)).toEqual({})
 	})
 
+	it("commas in a typed entry make one chip per name, trimmed, without empties or repeats", () => {
+		const opened = openNew(init("silence"), BERLIN, NOW).model
+		const services = (message: Combobox.Message) =>
+			Message.GotScopeComboMessage({ field: "services", message })
+		const enter = (model: Model, value: string) =>
+			update(
+				update(model, services(Combobox.Message.ChangedInput({ value }))).model,
+				services(Combobox.Message.PressedInputKey({ key: "Enter", items: ["demo-api", value] })),
+			).model
+		const entered = enter(opened, "demo-worker, demo-api,,")
+		expect(matchersOf(entered.scope)).toEqual({ services: ["demo-worker", "demo-api"] })
+		expect(entered.combos.services.inputValue).toBe("")
+		// A name that is already a chip stays where it is; only the new one is added.
+		expect(matchersOf(enter(entered, "demo-api,demo-web").scope)).toEqual({
+			services: ["demo-worker", "demo-api", "demo-web"],
+		})
+		// A list picked from the popup with the pointer splits the same way.
+		expect(matchersOf(pick(opened, "services", "a , b").scope)).toEqual({ services: ["a", "b"] })
+	})
+
+	it("typing a name that is already a chip, then Enter, keeps the chip and clears the input", () => {
+		const opened = openNew(init("silence"), BERLIN, NOW).model
+		const services = (message: Combobox.Message) =>
+			Message.GotScopeComboMessage({ field: "services", message })
+		const picked = pick(opened, "services", "demo-api")
+		const typed = update(picked, services(Combobox.Message.ChangedInput({ value: "demo-api" }))).model
+		const entered = update(
+			typed,
+			services(Combobox.Message.PressedInputKey({ key: "Enter", items: ["demo-api"] })),
+		).model
+		expect(matchersOf(entered.scope)).toEqual({ services: ["demo-api"] })
+		expect(entered.combos.services.inputValue).toBe("")
+		// With nothing typed, Enter on a highlighted option still toggles it, as a pointer pick does.
+		const highlighted = update(
+			picked,
+			services(Combobox.Message.PressedInputKey({ key: "ArrowDown", items: ["demo-api"] })),
+		).model
+		expect(
+			matchersOf(
+				update(
+					highlighted,
+					services(Combobox.Message.PressedInputKey({ key: "Enter", items: ["demo-api"] })),
+				).model.scope,
+			),
+		).toEqual({})
+	})
+
 	it("a scope fixed by a rule ignores the chips", () => {
 		const fixed = openFor(
 			init("silence"),
