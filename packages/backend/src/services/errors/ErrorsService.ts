@@ -33,10 +33,13 @@ import {
 	ErrorIssues,
 	ErrorIssueEvents,
 	ErrorIssueFingerprints,
+	ErrorIssuePullRequests,
 	type ErrorIssueRow,
 	ErrorIssueStates,
+	ErrorIssueVerifications,
 	ErrorNotificationPolicies,
 	ErrorTickStates,
+	IssueEscalations,
 	OrgClickHouseSettings,
 	OrgIngestKeys,
 } from "@maple/db/tables"
@@ -80,7 +83,7 @@ import {
 	quarantineOnConfigClassCause,
 } from "@maple/backend/services/warehouse/warehouse-org-quarantine"
 import { actorRowToDocument, ErrorActorsService } from "./ErrorActorsService"
-import { ErrorIssueWorkflowService } from "./ErrorIssueWorkflowService"
+import { ErrorIssueWorkflowService, leaseConflict } from "./ErrorIssueWorkflowService"
 import { IssueFixVerificationService } from "./IssueFixVerificationService"
 import { ErrorPolicyService } from "./ErrorPolicyService"
 import { makeErrorDatabaseExecute, makePersistenceError } from "./error-persistence"
@@ -89,7 +92,6 @@ import { summarizeCause } from "@maple/backend/platform/describe-cause"
 const decodeErrorIssueIdSync = Schema.decodeUnknownSync(ErrorIssueDocument.fields.id)
 const decodeErrorIncidentIdSync = Schema.decodeUnknownSync(ErrorIncidentDocument.fields.id)
 const decodeEventIdSync = Schema.decodeUnknownSync(ErrorIssueEventIdSchema)
-const decodeIsoDateTimeStringSync = Schema.decodeUnknownSync(ErrorIssueDocument.fields.firstSeenAt)
 const decodeRoleNameSync = Schema.decodeUnknownSync(RoleName)
 const decodeUserIdSync = Schema.decodeUnknownSync(UserIdSchema)
 
@@ -166,6 +168,8 @@ const ACTIVE_ORGS_CACHE_TTL_S = 6 * 60 * 60
 export const CANDIDATE_RETENTION_MS = 7 * 24 * 60 * 60 * 1000
 const RESOLVED_RETENTION_DAYS = 14
 const ARCHIVED_RETENTION_DAYS = 90
+/** How long a delivered, failed or silenced notification outbox row is kept for debugging. */
+const NOTIFICATION_DELIVERY_RETENTION_DAYS = 30
 /**
  * Retention runs one tick an hour. The phase is bucketed on the CRON period,
  * not on the evaluator's catch-up window: the alerting cron fires every minute,
@@ -298,8 +302,6 @@ const make: Effect.Effect<
 	const newEventId = () => decodeEventIdSync(randomUUID())
 
 	const dbExecute = makeErrorDatabaseExecute(database, "ErrorsService")
-
-	const isoFromMs = (ms: number) => decodeIsoDateTimeStringSync(new Date(ms).toISOString())
 
 	const systemTenant = (orgId: OrgId): TenantContext => ({
 		orgId,
@@ -523,14 +525,6 @@ const make: Effect.Effect<
 
 	// Claim / lease
 
-	const leaseConflict = (issueId: ErrorIssueId, row: ErrorIssueRow | null) =>
-		new ErrorIssueLeaseConflictError({
-			message: "Issue is held by another actor",
-			issueId,
-			currentHolderActorId: row?.leaseHolderActorId ?? null,
-			leaseExpiresAt: row?.leaseExpiresAt == null ? null : isoFromMs(row.leaseExpiresAt),
-		})
-
 	/**
 	 * Take (or renew) the lease on an issue and return the freshly-read row.
 	 *
@@ -751,17 +745,26 @@ const make: Effect.Effect<
 					)
 			}
 
+			// Linking can move the issue itself: a PR that had already merged opens the
+			// verification window and puts the issue in `verifying`. Walk from the row
+			// as it is now, or the first hop's guard matches nothing and the caller is
+			// told the proposal failed after the event, link and window were written.
+			const linked = request.prUrl === undefined ? row : yield* requireIssue(orgId, issueId)
+
 			// Usually `triage → in_progress → in_review`; one hop from a state the
-			// matrix lets straight through. Validated above, so no hop can fail here.
-			const next = yield* Effect.reduce(
-				fixProposalRoute(row.workflowState),
-				() => row,
-				(current, hop) =>
-					applyTransition(orgId, actorId, current, hop, {
-						payload: { viaProposeFix: true },
-						timestamp,
-					}),
-			)
+			// matrix lets straight through. `verifying` is already past review.
+			const next =
+				linked.workflowState === "verifying"
+					? linked
+					: yield* Effect.reduce(
+							fixProposalRoute(linked.workflowState),
+							() => linked,
+							(current, hop) =>
+								applyTransition(orgId, actorId, current, hop, {
+									payload: { viaProposeFix: true },
+									timestamp,
+								}),
+						)
 			yield* touchActor(orgId, actorId, timestamp)
 			yield* maybeNotifyTransition(orgId, actorId, next, current.workflowState)
 			return yield* hydrateIssue(orgId, next)
@@ -1028,9 +1031,9 @@ const make: Effect.Effect<
 
 	/**
 	 * The four unconditional reads at the head of every per-org tick, in ONE
-	 * `Database.execute`. Under `DatabasePgLive` each execute dials and tears
-	 * down its own postgres.js client, so the handshake count is what costs, not
-	 * the statement count — same trade as `scrape-check-retention.ts`.
+	 * `Database.execute`: one span and one retry boundary for the group. The
+	 * invocation's pool is reused across executes (`docs/persistence.md`), so
+	 * the batching no longer saves a handshake per read.
 	 *
 	 * The stale-incident sweep is deliberately NOT batched in here: it has to
 	 * observe the `last_triggered_at` writes the fingerprint loop makes, so
@@ -1590,6 +1593,19 @@ const make: Effect.Effect<
 				),
 			)
 
+			// Outbox rows are only ever inserted and updated. One that has reached a
+			// terminal status is history; the delivery key it deduplicates on belongs
+			// to a tick window that committed long ago.
+			yield* dbExecute((db) =>
+				db.run(
+					PG.deleteFrom(ErrorNotificationDeliveries).where(($) => [
+						$.orgId.eq(orgId),
+						$.status.in_("success", "failed", "silenced"),
+						$.updatedAt.lt(nowMs - NOTIFICATION_DELIVERY_RETENTION_DAYS * DAY_MS),
+					]),
+				),
+			)
+
 			const archivedCutoff = nowMs - ARCHIVED_RETENTION_DAYS * DAY_MS
 			const toDelete = yield* dbExecute((db) =>
 				db.run(
@@ -1627,6 +1643,33 @@ const make: Effect.Effect<
 				yield* dbExecute((db) =>
 					db.run(
 						PG.deleteFrom(ErrorIssueEvents).where(($) => [
+							$.orgId.eq(orgId),
+							$.issueId.in_(...ids),
+						]),
+					),
+				)
+				// Rows that only mean something next to their issue. No FK cascades exist,
+				// so each is deleted here. Investigations are left: each keys a chat session
+				// whose storage only the AI worker can release.
+				yield* dbExecute((db) =>
+					db.run(
+						PG.deleteFrom(ErrorIssueVerifications).where(($) => [
+							$.orgId.eq(orgId),
+							$.issueId.in_(...ids),
+						]),
+					),
+				)
+				yield* dbExecute((db) =>
+					db.run(
+						PG.deleteFrom(ErrorIssuePullRequests).where(($) => [
+							$.orgId.eq(orgId),
+							$.issueId.in_(...ids),
+						]),
+					),
+				)
+				yield* dbExecute((db) =>
+					db.run(
+						PG.deleteFrom(IssueEscalations).where(($) => [
 							$.orgId.eq(orgId),
 							$.issueId.in_(...ids),
 						]),
@@ -1900,9 +1943,14 @@ const make: Effect.Effect<
 		// rows a call — together ~36% of all database CPU. Walk the btree instead.
 		// `org_ingest_keys` stays a plain DISTINCT on purpose: it is ~1 row per org,
 		// where a loose index scan costs an index descent per row and wins nothing.
-		const stateOrgs = yield* dbExecute((db) => selectDistinctOrgIds(db, ErrorIssueStates))
-		const issueOrgs = yield* dbExecute((db) => selectDistinctOrgIds(db, ErrorIssues))
-		const ingestOrgs = yield* dbExecute((db) => db.run(PG.from(OrgIngestKeys).select("orgId").distinct()))
+		const [stateOrgs, issueOrgs, ingestOrgs] = yield* Effect.all(
+			[
+				dbExecute((db) => selectDistinctOrgIds(db, ErrorIssueStates)),
+				dbExecute((db) => selectDistinctOrgIds(db, ErrorIssues)),
+				dbExecute((db) => db.run(PG.from(OrgIngestKeys).select("orgId").distinct())),
+			],
+			{ concurrency: "unbounded" },
+		)
 		const knownOrgs = new Set<OrgId>([...stateOrgs, ...issueOrgs, ...Arr.map(ingestOrgs, (r) => r.orgId)])
 
 		const { active: activeOrgs, discovered } = yield* resolveActiveOrgs([...knownOrgs], nowMs)

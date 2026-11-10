@@ -211,12 +211,23 @@ loop in verification without a human ever seeing it.
 
 ## Rules worth not re-deriving
 
-- **Every state write is guarded on the state it was decided from.** `applyTransition`, the
-  errors tick's regression and the alert/integration reopen all go through `transitionRow`
+- **Every state write is guarded on the state it was decided from.** `applyTransition` and the
+  alert/integration reopen go through `transitionRow`
   (`packages/backend/src/platform/transition-row.ts`): the UPDATE carries
-  `workflow_state IN (<what was read>)`, so a concurrent move wins and the late writer gets a 409
-  (or, for a tick, skips the row). A fixed alert or integration issue that fires again lands in
-  `regressed` too, never `triage`.
+  `workflow_state IN (<what was read>)`, so a concurrent move wins and the late writer gets a 409.
+  The errors tick's regression carries the same guard in its own bulk UPDATE (`applyRegressions`
+  in `error-tick-persistence.ts`, `workflow_state = 'done'`) and skips the rows it lost. A fixed
+  alert or integration issue that fires again lands in `regressed` too, never `triage`.
+- **A pull request link is verified once.** GitHub reports `merged: true` on every event after the
+  merge, so a later edit or a redelivery must not reopen a settled check. The guard is on the link
+  row, so unlinking a PR and linking it again is a new link and verifies again.
+- **A verification row never waits forever.** The tick reads due rows longest overdue first. A row
+  whose issue or link is gone is settled as `abandoned`, and one whose occurrences cannot be read
+  has its window moved out 15 minutes, so neither can hold a slot in every tick's page.
+- **Retention deletes an issue's children by issue id.** There are no FK cascades. Incidents,
+  evaluator state, events, aliases, pull request links, verifications and escalations go with the
+  issue. Investigations stay: each keys a chat session whose storage only `apps/ai` can release.
+  Notification outbox rows in a terminal status are pruned after 30 days.
 
 - **Never make the claim a step an agent has to remember.** Any new tool that starts work on an
   issue takes the lease itself. See above for what happened when it did not.
