@@ -190,6 +190,7 @@ existing copies onto it (see `apps/web/CLAUDE.md`).
 - `apps/web/src/page/kit/anomaly-row.ts` `shortIssueId`, `anomalyHref`, `anomalyRow`: `AnomalyRow`: one anomaly in a list.
 - `apps/web/src/page/kit/autocomplete-lookups.ts` `lookupField`, `autocompleteLookup`: The autocomplete lookups a query builder fetches once it is first focused, each reduced to the names it suggests.
 - `apps/web/src/page/kit/chart-card.ts` `chartCard`, `chartCardMessage`: `ChartCard` and `ChartCardMessage`.
+- `apps/web/src/page/kit/checkout-return.ts` `confirmed` (stateful: Model, init, update): `useCheckoutReturn`: back from Stripe (`?checkout=complete`), a page waits on the Autumn sync.
 - `apps/web/src/page/kit/clipboard.ts` `writeClipboard`, `copyToast`: `useCopy`'s write: the clipboard API, then the `execCommand` fallback; `true` when it landed.
 - `apps/web/src/page/kit/code-block.ts` `codeBlock`: `CodeBlock`: language eyebrow, copy button, highlighted markup.
 - `apps/web/src/page/kit/collection-load.ts` `collectionLoadFailed`: Whether a collection a page is still waiting on failed to load.
@@ -213,6 +214,7 @@ existing copies onto it (see `apps/web/CLAUDE.md`).
 - `apps/web/src/page/kit/infra-correlation/view.ts` `view`: The panel; keyed by the record, so another record remounts it and reads its own window.
 - `apps/web/src/page/kit/infra-correlation/window.ts` `anchoredWindow`: `infraCorrelationWindow` for a parseable anchor: 15 minutes either side, covering the span, on snapped to a 15 s grid before the request is sent.
 - `apps/web/src/page/kit/integration-empty.ts` `integrationIconPlate`, `integrationEmptyFeatures`, `integrationEmptyMedia`, `integrationEmptyCard`, `integrationEmptyHint`, `integrationEmptyFooter`, `integrationEmpty`, `integrationConnectCta`: `IntegrationEmpty` and its parts and `IntegrationIconPlate`.
+- `apps/web/src/page/kit/integration-status-keys.ts` `integrationStatusKey`: One cache key per integration status read: `/integrations` and the provider pages share each read.
 - `apps/web/src/page/kit/issue-actor.ts` `resolveActorIdentity`, `identityAvatar`, `actorAvatar`, `noActor`, `actorChip`: Actor avatars and chips.
 - `apps/web/src/page/kit/issue-severity.ts` `severityRank`, `severityDot`, `severityBadge`, `severityIcon`: The severity badge's maps and marks.
 - `apps/web/src/page/kit/issue-workflow.ts` `workflowRingIcon`: `WorkflowRingIcon`: the state as a ring that fills as the work progresses.
@@ -228,6 +230,7 @@ existing copies onto it (see `apps/web/CLAUDE.md`).
 - `apps/web/src/page/kit/peek-keys.ts` `peekStepFor`: The list peeks' step keys: down/J forward, up/K back, except in a text field or with a modifier.
 - `apps/web/src/page/kit/pick-list.ts` `pickList`: `PickList`: what a form has picked (destinations, people, schedules), each removable and, in an ordered list, movable, then an "Add" menu of the rest.
 - `apps/web/src/page/kit/pinned-namespace-notice.ts` `pinnedNamespaceNotice`: `PinnedNamespaceNotice`: replaces a rail's Namespace section while the org-global pin is on.
+- `apps/web/src/page/kit/providers.ts` `providerBrand`: The integration providers: each one's name, mark, accent, docs and infra page, read by the integrations catalog, the sidebar, the infra overview, Sources and the provider pages.
 - `apps/web/src/page/kit/query-builder/change.ts` `withRootOnly`, `switchDataSource`, `applyQueryChange`: One edit a `QueryPanel` makes to its draft (its `onUpdate`, `onAggregationChange` and `onDataSourceChange` callbacks), as data the host applies.
 - `apps/web/src/page/kit/query-builder/draft.ts` `groupBySelectionOf`: `QueryBuilderQueryDraft` (@maple/query-engine/query-builder) as a Schema: the query one `QueryPanel` edits, shared by the widget editor and the alert rule editor.
 - `apps/web/src/page/kit/query-builder/metric-options.ts` `metricValueOf`, `listMetricOptions`, `readMetricKeys`, `unaskedMetrics`, `pickedMetric`: The metric picker's reads, shared by every host of a metrics `QueryPanel`: one page of the org's metrics for what was searched, and each picked metric's own keys.
@@ -238,6 +241,7 @@ existing copies onto it (see `apps/web/CLAUDE.md`).
 - `apps/web/src/page/kit/query-builder/where-editor.ts` `whereEditor`, `highlightOverlay`: The suggestions of a field kept in the owner's `WhereFields` (`page/kit/where-field.ts`).
 - `apps/web/src/page/kit/query-builder/where.ts` `whereTextareaId`, `whereSpecOf`, `whereStep`: `WhereClauseEditor` inside a `QueryPanel`: one `WhereFields` field per query, keyed by query id.
 - `apps/web/src/page/kit/query-panel-bar.ts` `queryPanelBar`: A query panel's header bar on the sunken wash: its collapse toggle, query badge, source and actions.
+- `apps/web/src/page/kit/recommendations.ts` `listRecommendations`, `listAttributeMappings`: Instrumentation recommendations, as the recommendation page and Settings > Ingestion both show them: the reads and the kind and status words.
 - `apps/web/src/page/kit/refresh-controls.ts` `formatRefreshInterval`, `refreshControls`: `RefreshControls`: Reload joined to the auto-refresh cadence menu.
 - `apps/web/src/page/kit/relative-time.ts` `relativeTime`, `listRelativeTime`: `RelativeTime`: `timestamp` with relative text.
 - `apps/web/src/page/kit/resource-not-found.ts` `resourceNotFound`
