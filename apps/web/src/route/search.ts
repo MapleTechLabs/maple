@@ -317,6 +317,13 @@ export const SettingsSearch = Schema.Struct({
 	actor: StringParam,
 	actor_type: StringParam,
 	outcome: StringParam,
+	kind: StringParam,
+	resource_type: StringParam,
+	action: StringParam,
+	resource: StringParam,
+	affected: StringParam,
+	request: StringParam,
+	entry: StringParam,
 	// Data sources deep links from `/integrations`: one source, or the connect form of a kind.
 	source: StringParam,
 	connect: Schema.optional(Schema.Literals(DATA_SOURCE_KINDS)),
