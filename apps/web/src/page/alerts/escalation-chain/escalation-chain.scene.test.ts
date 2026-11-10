@@ -36,7 +36,7 @@ import { payloadOf } from "./form"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { init, insertButtonId, isBlockingNavigation, menuIdOf, update } from "./update"
-import { view as pageView } from "./view"
+import { chainTitle, view as pageView } from "./view"
 
 const orgId = Schema.decodeSync(OrgId)(ORG)
 const context: PageContext = { orgId, pinnedNamespace: null, timeZone: "UTC" }
@@ -423,11 +423,20 @@ describe("escalation chain editor", () => {
 		)
 	})
 
-	test("a link with a malformed chain id says the chain was not found", () => {
-		scene(
-			{ update: pageUpdate, view },
-			given(entered({ _tag: "AlertsEscalationChain", chainId: "nope", search: {} })),
-			expectView(text("Escalation chain not found")).toExist(),
-		)
+	test("a link with a malformed chain id says the chain was not found, under the heading a deleted one gets", () => {
+		Arr.forEach(["nope", "esc_notAChainId"], (chainId) => {
+			const bad = entered({ _tag: "AlertsEscalationChain", chainId, search: {} })
+			scene(
+				{ update: pageUpdate, view },
+				given(bad),
+				expectView(text("Escalation chain not found")).toExist(),
+				expectView(role("heading", { name: "Escalation chain" })).toExist(),
+				expectView(role("heading", { name: "New escalation chain" })).not.toExist(),
+			)
+			// The breadcrumb's last entry is the same title.
+			expect(chainTitle(bad)).toBe("Escalation chain")
+		})
+		// The new-chain page keeps its own name.
+		expect(chainTitle(newChain())).toBe("New escalation chain")
 	})
 })

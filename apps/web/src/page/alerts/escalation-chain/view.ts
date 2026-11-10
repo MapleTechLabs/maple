@@ -57,9 +57,9 @@ import { backHref, DELETE_DIALOG_ID, insertButtonId, LEAVE_DIALOG_ID, menuIdOf }
 
 type H = HtmlBuilder<Message>
 
-/** The page's name: the chain as last read, or "New escalation chain". */
-export const chainTitle = (model: Pick<Model, "editingId" | "existing">): string =>
-	model.editingId === null
+/** The page's name: the chain as last read, or "New escalation chain". A URL id that is no chain's is not a new one. */
+export const chainTitle = (model: Pick<Model, "editingId" | "isBadId" | "existing">): string =>
+	model.editingId === null && !model.isBadId
 		? "New escalation chain"
 		: Option.getOrElse(
 				Option.map(AsyncData.getData(model.existing.data), (chain) => chain.name),
