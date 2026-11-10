@@ -267,7 +267,6 @@ export {
 	productEventsFunnelLeaversQuery,
 	productEventsFunnelLeaversRowSchema,
 	ProductEventsFunnelError,
-	FUNNEL_MAX_STEPS,
 	FUNNEL_BREAKDOWN_MAX_GROUPS,
 	FUNNEL_LEAVERS_PER_STEP,
 	type FunnelStep,

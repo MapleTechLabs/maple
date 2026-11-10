@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest"
+import type { AuditCheckResult } from "@maple/domain/setup-audit"
 import {
-	type AuditCheckResult,
 	type ConfigAuditInputs,
 	type SetupAuditInputs,
 	type WarehouseAuditInputs,
@@ -9,7 +9,10 @@ import {
 	quoteSafely,
 	runSetupAudit,
 } from "./setup-audit"
-import { buildIntegrationInventory, type IntegrationInventoryInputs } from "./integration-inventory"
+import {
+	buildIntegrationInventory,
+	type IntegrationInventoryInputs,
+} from "../integrations/integration-inventory"
 import { Array as Arr, Option, Record as Rec, String as Str } from "effect"
 
 const NOW = Date.UTC(2026, 6, 27, 12, 0, 0)

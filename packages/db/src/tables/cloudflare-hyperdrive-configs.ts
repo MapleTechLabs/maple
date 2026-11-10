@@ -38,4 +38,3 @@ export const CloudflareHyperdriveConfigs = PG.table("cloudflare_hyperdrive_confi
 })
 
 export type CloudflareHyperdriveConfigRow = PG.SelectRowOf<typeof CloudflareHyperdriveConfigs>
-export type CloudflareHyperdriveConfigInsert = PG.InsertRowOf<typeof CloudflareHyperdriveConfigs>

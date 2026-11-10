@@ -6,7 +6,7 @@ import {
 	AnomalySensitivity,
 	AnomalySignalType,
 	AnomalyTriageStatus,
-} from "@maple/domain/http"
+} from "@maple/domain/anomalies"
 import { AnomalyIncidentId, ErrorIssueId, OrgId, UserId } from "@maple/domain/primitives"
 import { Schema } from "effect"
 
@@ -160,6 +160,4 @@ export const AnomalyIncidents = PG.table("anomaly_incidents", {
 
 export type AnomalyDetectorSettingsRow = PG.SelectRowOf<typeof AnomalyDetectorSettings>
 export type AnomalyDetectorStateRow = PG.SelectRowOf<typeof AnomalyDetectorStates>
-export type AnomalyDetectorStateInsert = PG.InsertRowOf<typeof AnomalyDetectorStates>
 export type AnomalyIncidentRow = PG.SelectRowOf<typeof AnomalyIncidents>
-export type AnomalyIncidentInsert = PG.InsertRowOf<typeof AnomalyIncidents>

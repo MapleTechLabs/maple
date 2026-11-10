@@ -2,7 +2,7 @@ import { afterEach, assert, describe, it } from "@effect/vitest"
 import { Effect, Exit, Layer, Option, Schema, Array as Arr, String as Str } from "effect"
 import * as SecureRandom from "effect/crypto/SecureRandom"
 import { OrgId, UserId } from "@maple/domain/http"
-import { supportChannelName } from "@maple/domain/support-channel"
+import { supportChannelName } from "./SupportChannelService"
 import {
 	cleanupTestDbs,
 	createTestDb,

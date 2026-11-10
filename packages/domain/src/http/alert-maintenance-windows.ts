@@ -3,22 +3,29 @@ import { AlertMaintenanceWindowId, IsoDateTimeString, UserId } from "../primitiv
 import { HttpTaggedError } from "./error-policy"
 import { AlertSilenceMatchers, MAX_ALERT_SILENCE_DURATION_MS } from "./alert-silences"
 
-export const MAX_MAINTENANCE_WINDOW_NAME_LENGTH = 120
-export const MAX_MAINTENANCE_WINDOW_REASON_LENGTH = 400
-export const MIN_MAINTENANCE_DURATION_MINUTES = 5
-export const MAX_MAINTENANCE_DURATION_MINUTES = 7 * 24 * 60
-/** How far ahead occurrences are written as silences. */
-export const MAINTENANCE_MATERIALIZE_HORIZON_MS = 48 * 60 * 60_000
+import {
+	AlertMaintenanceScheduleWeekly,
+	MAX_MAINTENANCE_WINDOW_NAME_LENGTH,
+	MAX_MAINTENANCE_WINDOW_REASON_LENGTH,
+	MaintenanceWeekday,
+	StoredAlertMaintenanceSchedule,
+} from "../alert-maintenance-windows"
+export {
+	AlertMaintenanceScheduleWeekly,
+	MAINTENANCE_MATERIALIZE_HORIZON_MS,
+	MAINTENANCE_WEEKDAYS,
+	MAX_MAINTENANCE_DURATION_MINUTES,
+	MAX_MAINTENANCE_WINDOW_NAME_LENGTH,
+	MAX_MAINTENANCE_WINDOW_REASON_LENGTH,
+	MIN_MAINTENANCE_DURATION_MINUTES,
+	MaintenanceDurationMinutes,
+	MaintenanceStartTime,
+	MaintenanceTimeZone,
+	MaintenanceWeekday,
+	StoredAlertMaintenanceSchedule,
+} from "../alert-maintenance-windows"
 
 const DAY_MS = 24 * 60 * 60_000
-
-export const MAINTENANCE_WEEKDAYS = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"] as const
-
-export const MaintenanceWeekday = Schema.Literals(MAINTENANCE_WEEKDAYS).annotate({
-	identifier: "@maple/MaintenanceWeekday",
-	title: "Maintenance Weekday",
-})
-export type MaintenanceWeekday = Schema.Schema.Type<typeof MaintenanceWeekday>
 
 /** `DateTime` parts number weekdays like `Date#getUTCDay`: 0 is Sunday. */
 const WEEKDAY_NUMBER = {
@@ -30,34 +37,6 @@ const WEEKDAY_NUMBER = {
 	fri: 5,
 	sat: 6,
 } as const satisfies Record<MaintenanceWeekday, number>
-
-export const MaintenanceTimeZone = Schema.String.check(
-	Schema.makeFilter(
-		(zone: string) =>
-			Option.isSome(DateTime.zoneMakeNamed(zone)) || "Expected an IANA time zone such as Europe/Berlin",
-	),
-).annotate({ identifier: "@maple/MaintenanceTimeZone", title: "Maintenance Time Zone" })
-
-export const MaintenanceStartTime = Schema.String.check(
-	Schema.isPattern(/^([01]\d|2[0-3]):[0-5]\d$/, { description: "Expected a 24-hour time as HH:MM" }),
-)
-
-export const MaintenanceDurationMinutes = Schema.Int.check(
-	Schema.isBetween({
-		minimum: MIN_MAINTENANCE_DURATION_MINUTES,
-		maximum: MAX_MAINTENANCE_DURATION_MINUTES,
-	}),
-)
-
-const MaintenanceDays = Schema.Array(MaintenanceWeekday).check(Schema.isMinLength(1), Schema.isUnique())
-
-export const AlertMaintenanceScheduleWeekly = Schema.TaggedStruct("weekly", {
-	timeZone: MaintenanceTimeZone,
-	days: MaintenanceDays,
-	startTime: MaintenanceStartTime,
-	durationMinutes: MaintenanceDurationMinutes,
-})
-export type AlertMaintenanceScheduleWeekly = Schema.Schema.Type<typeof AlertMaintenanceScheduleWeekly>
 
 const checkOnceWindow = (startsAtMs: number, endsAtMs: number): string | true =>
 	endsAtMs <= startsAtMs
@@ -79,13 +58,6 @@ export const AlertMaintenanceSchedule = Schema.Union([
 	AlertMaintenanceScheduleWeekly,
 ]).annotate({ identifier: "@maple/AlertMaintenanceSchedule", title: "Alert Maintenance Schedule" })
 export type AlertMaintenanceSchedule = Schema.Schema.Type<typeof AlertMaintenanceSchedule>
-
-/** The schedule as stored: one-off times are epoch ms. */
-export const StoredAlertMaintenanceSchedule = Schema.Union([
-	Schema.TaggedStruct("once", { startsAt: Schema.Number, endsAt: Schema.Number }),
-	AlertMaintenanceScheduleWeekly,
-])
-export type StoredAlertMaintenanceSchedule = Schema.Schema.Type<typeof StoredAlertMaintenanceSchedule>
 
 export const toStoredMaintenanceSchedule = (
 	schedule: AlertMaintenanceSchedule,

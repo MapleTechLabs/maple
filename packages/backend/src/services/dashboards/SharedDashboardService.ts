@@ -28,7 +28,7 @@ import {
 	UserId,
 } from "@maple/domain/http"
 import * as PG from "@maple-dev/effect-orm/postgres"
-import { generateShareToken, hashShareToken, shareTokenSuffix } from "@maple/db"
+import { generateShareToken, hashShareToken, shareTokenSuffix } from "../../platform/credential-tokens"
 import { DashboardShares, type DashboardShareRow as DashboardShareTableRow } from "@maple/db/tables"
 import { Clock, Context, Effect, Layer, Option, Redacted, Schema } from "effect"
 import { randomUUID } from "node:crypto"

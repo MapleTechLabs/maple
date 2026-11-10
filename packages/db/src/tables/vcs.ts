@@ -1,6 +1,5 @@
 import * as PG from "@maple-dev/effect-orm/postgres"
 import {
-	GitCommitSha,
 	PrReviewCategory,
 	PrReviewFindingStatus,
 	PrReviewId,
@@ -17,6 +16,9 @@ import {
 	PrReviewSkipReason,
 	PrReviewStatus,
 	PrReviewTelemetry,
+} from "@maple/domain/http"
+import {
+	GitCommitSha,
 	VcsAccountType,
 	VcsBranchId,
 	VcsCommitRowId,
@@ -28,7 +30,7 @@ import {
 	VcsRepoSyncStatus,
 	VcsRepositoryId,
 	VcsRepositoryDiscovery,
-} from "@maple/domain/http"
+} from "@maple/domain/vcs"
 import { OrgId, SourceId, UserId } from "@maple/domain/primitives"
 import { Schema } from "effect"
 import { Sources } from "./sources"
@@ -455,17 +457,9 @@ export const PrReviewSettings = PG.table("pr_review_settings", {
 })
 
 export type VcsInstallationRow = PG.SelectRowOf<typeof VcsInstallations>
-export type VcsInstallationInsert = PG.InsertRowOf<typeof VcsInstallations>
 export type VcsRepositoryRow = PG.SelectRowOf<typeof VcsRepositories>
-export type VcsRepositoryInsert = PG.InsertRowOf<typeof VcsRepositories>
 export type VcsCommitRow = PG.SelectRowOf<typeof VcsCommits>
-export type VcsCommitInsert = PG.InsertRowOf<typeof VcsCommits>
 export type VcsRepositoryBranchRow = PG.SelectRowOf<typeof VcsRepositoryBranches>
-export type VcsRepositoryBranchInsert = PG.InsertRowOf<typeof VcsRepositoryBranches>
 export type PrReviewRow = PG.SelectRowOf<typeof PrReviews>
-export type PrReviewSettingsRow = PG.SelectRowOf<typeof PrReviewSettings>
-export type PrReviewInsert = PG.InsertRowOf<typeof PrReviews>
 export type PrReviewFindingRow = PG.SelectRowOf<typeof PrReviewFindings>
-export type PrReviewFindingEmbeddingRow = PG.SelectRowOf<typeof PrReviewFindingEmbeddings>
 export type PrReviewReplyRow = PG.SelectRowOf<typeof PrReviewReplies>
-export type PrReviewEditRow = PG.SelectRowOf<typeof PrReviewEdits>

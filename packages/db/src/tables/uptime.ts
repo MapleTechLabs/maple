@@ -44,7 +44,6 @@ export const UptimeMonitors = PG.table("uptime_monitors", {
 })
 
 export type UptimeMonitorRow = PG.SelectRowOf<typeof UptimeMonitors>
-export type UptimeMonitorInsert = PG.InsertRowOf<typeof UptimeMonitors>
 
 /**
  * The monitor's live state, written only when a check changes something worth showing
@@ -109,6 +108,3 @@ export const UptimeMonitorDaily = PG.table("uptime_monitor_daily", {
 	],
 	tenantColumn: "orgId",
 })
-
-export type UptimeMonitorDailyRow = PG.SelectRowOf<typeof UptimeMonitorDaily>
-export type UptimeMonitorStateInsert = PG.InsertRowOf<typeof UptimeMonitorStates>

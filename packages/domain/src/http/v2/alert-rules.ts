@@ -20,6 +20,7 @@ import {
 	AlertRuleDestinationNotFoundError,
 	AlertRuleNotFoundError,
 	AlertRuleStoredConfigInvalidError,
+	AlertSeriesFailure,
 	AlertSeverity,
 	AlertSignalType,
 	AlertValidationError,
@@ -698,9 +699,7 @@ export const V2AlertRulePreviewResult = Schema.Struct({
 	query_timing: Schema.optionalKey(V2AlertQueryTiming).annotate({
 		description: "Raw SQL rules only: one check timed against the time limit of the rule's interval.",
 	}),
-	series_failure: Schema.optionalKey(
-		Schema.Literals(["query_too_slow", "query_too_much_memory", "not_time_grouped"]),
-	).annotate({
+	series_failure: Schema.optionalKey(AlertSeriesFailure).annotate({
 		description:
 			"Raw SQL rules only: `series` is empty. `query_too_slow` / `query_too_much_memory`: the range was too heavy to chart within the longest limit (`query_timing` still says whether one check fits; preview a shorter range). `not_time_grouped`: the SQL returns no `bucket` column, so it has one value for the whole range and no per-window series; select `$__timeGroup(<time column>) AS bucket` to chart it.",
 	}),

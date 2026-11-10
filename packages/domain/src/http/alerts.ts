@@ -21,6 +21,9 @@ import { QueryBuilderQueryDraftSchema } from "./query-engine"
 import { HttpTaggedError } from "./error-policy"
 import { AnomalySignalType } from "./anomalies"
 
+import { AlertDeliveryStatus, AlertIncidentLabels, AlertIncidentPageStatus, AlertSeverity } from "../alerts"
+export { AlertDeliveryStatus, AlertIncidentLabels, AlertIncidentPageStatus, AlertSeverity } from "../alerts"
+
 export const AlertDestinationType = Schema.Literals([
 	"pagerduty",
 	"webhook",
@@ -37,12 +40,6 @@ export const AlertDestinationType = Schema.Literals([
 	title: "Alert Destination Type",
 })
 export type AlertDestinationType = Schema.Schema.Type<typeof AlertDestinationType>
-
-export const AlertSeverity = Schema.Literals(["warning", "critical"]).annotate({
-	identifier: "@maple/AlertSeverity",
-	title: "Alert Severity",
-})
-export type AlertSeverity = Schema.Schema.Type<typeof AlertSeverity>
 
 export const AlertSignalType = Schema.Literals([
 	"error_rate",
@@ -129,13 +126,6 @@ export const AlertIncidentStatus = Schema.Literals(["open", "resolved"]).annotat
 })
 export type AlertIncidentStatus = Schema.Schema.Type<typeof AlertIncidentStatus>
 
-/** Facts about what an incident is about, for rules whose group key does not say (anomaly rules). */
-export const AlertIncidentLabels = Schema.Struct({
-	service: Schema.optionalKey(Schema.String),
-	environment: Schema.optionalKey(Schema.String),
-})
-export type AlertIncidentLabels = Schema.Schema.Type<typeof AlertIncidentLabels>
-
 /**
  * Why an open incident is waiting on telemetry instead of resolving. The
  * breach stopped appearing in evaluations, but the liveness probe could not
@@ -204,19 +194,6 @@ export const AlertEventType = Schema.Literals([
 export const isAlertNotificationEventType = (type: AlertEventType): type is AlertNotificationEventType =>
 	type !== "acknowledge"
 export type AlertEventType = Schema.Schema.Type<typeof AlertEventType>
-
-/** `silenced`: written while an alert silence matched, never sent. */
-export const AlertDeliveryStatus = Schema.Literals([
-	"queued",
-	"processing",
-	"success",
-	"failed",
-	"silenced",
-]).annotate({
-	identifier: "@maple/AlertDeliveryStatus",
-	title: "Alert Delivery Status",
-})
-export type AlertDeliveryStatus = Schema.Schema.Type<typeof AlertDeliveryStatus>
 
 export const AlertEvaluationStatus = Schema.Literals(["breached", "healthy", "skipped"]).annotate({
 	identifier: "@maple/AlertEvaluationStatus",
@@ -1026,6 +1003,13 @@ export class AlertQueryTiming extends Schema.Class<AlertQueryTiming>("AlertQuery
  * buckets — the live scheduler slides every tick, so `wouldFire` spans are an
  * approximation between bucket boundaries).
  */
+/** Why a raw SQL preview has no series: too heavy to chart, or no time bucket. */
+export const AlertSeriesFailure = Schema.Literals([
+	"query_too_slow",
+	"query_too_much_memory",
+	"not_time_grouped",
+])
+
 export class AlertRulePreviewResponse extends Schema.Class<AlertRulePreviewResponse>(
 	"AlertRulePreviewResponse",
 )({
@@ -1042,9 +1026,7 @@ export class AlertRulePreviewResponse extends Schema.Class<AlertRulePreviewRespo
 	/** Raw SQL rules only: how long one check takes against each interval's limit. */
 	queryTiming: Schema.optionalKey(AlertQueryTiming),
 	/** Raw SQL rules only: the range was too heavy to chart, or the SQL has no time bucket, so `series` is empty. */
-	seriesFailure: Schema.optionalKey(
-		Schema.Literals(["query_too_slow", "query_too_much_memory", "not_time_grouped"]),
-	),
+	seriesFailure: Schema.optionalKey(AlertSeriesFailure),
 }) {}
 
 export class AlertIncidentDocument extends Schema.Class<AlertIncidentDocument>("AlertIncidentDocument")({
@@ -1094,19 +1076,6 @@ export class AlertIncidentDocument extends Schema.Class<AlertIncidentDocument>("
 	/** Set while a silenced notification is still owed; cleared once one is sent after the silence. */
 	silencedAt: Schema.NullOr(IsoDateTimeString),
 }) {}
-
-/** Where a page to a person stands: queued, out, refused, or dropped because the incident moved on. */
-export const AlertIncidentPageStatus = Schema.Literals([
-	"queued",
-	"sending",
-	"sent",
-	"failed",
-	"skipped",
-]).annotate({
-	identifier: "@maple/AlertIncidentPageStatus",
-	title: "Alert Incident Page Status",
-})
-export type AlertIncidentPageStatus = Schema.Schema.Type<typeof AlertIncidentPageStatus>
 
 /** A person an escalation step paged, on one channel. Never carries the address. */
 export const AlertIncidentPage = Schema.Struct({
@@ -1437,11 +1406,6 @@ export class AlertIncidentResolvedError extends HttpTaggedError<AlertIncidentRes
 	},
 ) {}
 
-export type AlertNotFoundError =
-	| AlertRuleNotFoundError
-	| AlertDestinationNotFoundError
-	| AlertIncidentNotFoundError
-
 // Alert delivery failures are one class per failure mode, discriminated by
 // `_tag`/`catchTags`, for the same reason the warehouse errors are (see the
 // header comment in `warehouse-errors.ts`): `retryable` is derived from the
@@ -1608,12 +1572,3 @@ export class AlertChecksListResponse extends Schema.Class<AlertChecksListRespons
 		checks: Schema.Array(AlertCheckDocument),
 	},
 ) {}
-
-export const ListRuleChecksQuery = Schema.Struct({
-	groupKey: Schema.optionalKey(Schema.String),
-	since: Schema.optionalKey(IsoDateTimeString),
-	until: Schema.optionalKey(IsoDateTimeString),
-	limit: Schema.optionalKey(
-		Schema.NumberFromString.check(Schema.isInt(), Schema.isBetween({ minimum: 1, maximum: 2000 })),
-	),
-})

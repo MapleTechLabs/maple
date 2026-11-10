@@ -29,6 +29,3 @@ export const Slos = PG.table("slos", {
 	indexes: [PG.index("slos_org_idx", ["orgId"]), PG.uniqueIndex("slos_org_name_unq", ["orgId", "name"])],
 	tenantColumn: "orgId",
 })
-
-export type SloRow = PG.SelectRowOf<typeof Slos>
-export type SloInsert = PG.InsertRowOf<typeof Slos>

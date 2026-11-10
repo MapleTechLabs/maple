@@ -9,11 +9,7 @@ import {
 	RecommendationIssuePersistenceError,
 	RecommendationIssuesListResponse,
 } from "@maple/domain/http"
-import {
-	canonicalKeysToProbe,
-	detectAttributeRecommendations,
-	planReconcileIssues,
-} from "@maple/domain/recommendations"
+import { canonicalKeysToProbe, detectAttributeRecommendations, planReconcileIssues } from "./recommendations"
 import * as PG from "@maple-dev/effect-orm/postgres"
 import {
 	OrgIngestAttributeMappings,

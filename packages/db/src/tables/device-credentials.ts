@@ -1,6 +1,5 @@
 import * as PG from "@maple-dev/effect-orm/postgres"
-import { RoleName } from "@maple/domain/http"
-import { DeviceCredentialId, OrgId, UserId } from "@maple/domain/primitives"
+import { DeviceCredentialId, OrgId, RoleName, UserId } from "@maple/domain/primitives"
 import { Schema } from "effect"
 
 /** The registered public key: EC P-256 only, so every proof is ES256. */
@@ -68,7 +67,6 @@ export const DeviceCredentials = PG.table("device_credentials", {
 })
 
 export type DeviceCredentialRow = PG.SelectRowOf<typeof DeviceCredentials>
-export type DeviceCredentialInsert = PG.InsertRowOf<typeof DeviceCredentials>
 
 /**
  * Single-use values that must not be accepted twice while they are still fresh: DPoP proof
@@ -83,5 +81,3 @@ export const DeviceProofReplays = PG.table("device_proof_replays", {
 	primaryKey: ["key"],
 	indexes: [PG.index("device_proof_replays_expires_idx", ["expiresAt"])],
 })
-
-export type DeviceProofReplayRow = PG.SelectRowOf<typeof DeviceProofReplays>

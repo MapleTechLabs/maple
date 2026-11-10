@@ -3,7 +3,7 @@ import { Schema } from "effect"
 import { AuditedRead } from "../audit-log"
 import { ErrorPersistenceError, WorkflowState } from "../errors"
 import { McpClientKind, McpSessionSource } from "../mcp"
-import { END_USER_ID_MAX_LENGTH, UserChannelKind, UserSignalKind } from "../users"
+import { END_USER_ID_MAX_LENGTH, UserActivityKind, UserChannelKind, UserSignalKind } from "../users"
 import { AuthorizationV2 } from "./auth"
 import { ListOf, ListQuery, Timestamp, wireExample } from "./envelopes"
 import { defineV2Error, V2CursorInvalid, V2ParameterInvalid, V2TimeRangeInvalid } from "./errors"
@@ -221,10 +221,8 @@ export const V2UserMcpSession = Schema.Struct({
 	last_seen_at: Timestamp,
 }).annotate({ identifier: "UserMcpSession", title: "User MCP session" })
 
-export const V2UserActivityKind = Schema.Literals(["session", "event", "mcp", "error", "request", "log"])
-
 export const V2UserActivityEntry = Schema.Struct({
-	kind: V2UserActivityKind,
+	kind: UserActivityKind,
 	timestamp: Timestamp,
 	service_name: Schema.String,
 	title: Schema.String,

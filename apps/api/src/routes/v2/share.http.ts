@@ -39,7 +39,13 @@ import {
 import { MapleApiV2 } from "@maple/domain/http/v2"
 import type { DashboardId } from "@maple/domain/primitives"
 import { MAX_LIST_RANGE_SECONDS, MAX_QUERY_RANGE_SECONDS } from "@maple/query-engine"
-import { hashShareToken, shareOgId, verifyAlertChartId, verifyChatChartId, verifyShareOgId } from "@maple/db"
+import { hashShareToken } from "@maple/backend/platform/credential-tokens"
+import {
+	shareOgId,
+	verifyAlertChartId,
+	verifyChatChartId,
+	verifyShareOgId,
+} from "@maple/backend/platform/signed-ids"
 import { ChatSessions } from "@maple/backend/platform/bindings"
 import { DashboardDocument, redactForShare, variablesForWidget } from "@maple/widgets/dashboard"
 import { Effect, Option, Redacted, Schema, Array as Arr, String as Str } from "effect"

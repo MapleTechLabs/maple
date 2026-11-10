@@ -1,4 +1,5 @@
 import { Match, Option, pipe, Array as Arr, String as Str } from "effect"
+import { currentThenDeprecated, deprecatedThenCurrent } from "@maple/domain/semconv"
 import { normalizeSpanKind } from "./span-kind"
 
 export const HTTP_METHODS = ["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"] as const
@@ -84,21 +85,24 @@ const parseSpanName = (name: string): Option.Option<NameInfo> => {
 const clientRouteFromAttrs = (attrs: Record<string, string>): Option.Option<string> => {
 	// Prefer parsing url.full / http.url first — new URL() reliably strips the scheme.
 	// Some emitters put a scheme into server.address, which would otherwise leak through.
-	const fromFullUrl = pipe(attr(attrs, "url.full", "http.url"), Option.flatMap(parseUrlHostPath))
+	const fromFullUrl = pipe(
+		attr(attrs, ...currentThenDeprecated("http.url")),
+		Option.flatMap(parseUrlHostPath),
+	)
 	if (Option.isSome(fromFullUrl)) return fromFullUrl
 
 	const host = pipe(
-		attr(attrs, "server.address", "net.peer.name"),
+		attr(attrs, ...currentThenDeprecated("net.peer.name")),
 		Option.map((h) => Str.replace(/^https?:\/\//, "")(h)),
 		Option.flatMap(nonEmpty),
 	)
-	const path = attr(attrs, "url.path", "http.target")
+	const path = attr(attrs, ...currentThenDeprecated("http.target"))
 	if (Option.isSome(host) && Option.isSome(path)) return Option.some(`${host.value}${path.value}`)
 	return path
 }
 
 const serverRouteFromAttrs = (attrs: Record<string, string>): Option.Option<string> =>
-	attr(attrs, "http.target", "url.path")
+	attr(attrs, ...deprecatedThenCurrent("http.target"))
 
 const routeFromAttrs = (attrs: Record<string, string>, isClient: boolean): Option.Option<string> =>
 	pipe(
@@ -132,11 +136,12 @@ export function getHttpInfo({ spanName, spanAttributes, spanKind }: HttpSpanInpu
 	)
 	// server spans can legitimately emit url.full too, but if they do we still want to
 	// fall back to host+path composition.
-	const useClientRoute = kind === "client" || Option.isSome(attr(attrs, "url.full", "http.url"))
+	const useClientRoute =
+		kind === "client" || Option.isSome(attr(attrs, ...currentThenDeprecated("http.url")))
 	const nameInfo = parseSpanName(spanName)
 
 	const method = pipe(
-		attr(attrs, "http.method", "http.request.method"),
+		attr(attrs, ...deprecatedThenCurrent("http.method")),
 		Option.orElse(() =>
 			pipe(
 				nameInfo,
@@ -160,7 +165,7 @@ export function getHttpInfo({ spanName, spanAttributes, spanKind }: HttpSpanInpu
 
 	// `attr` skips blanks: projected attribute maps carry every key, absent ones as "".
 	const statusCode = pipe(
-		attr(attrs, "http.status_code", "http.response.status_code"),
+		attr(attrs, ...deprecatedThenCurrent("http.status_code")),
 		Option.map((raw) => {
 			const code = parseInt(raw, 10)
 			return Number.isNaN(code) || code === 0 ? null : code

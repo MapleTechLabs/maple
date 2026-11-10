@@ -1,6 +1,6 @@
 import { HttpApiEndpoint, HttpApiGroup, OpenApi } from "effect/http-api"
 import { Schema } from "effect"
-import { MetricName, ServiceName, SpanId, TraceId } from "../../primitives"
+import { MetricName, ServiceName, SpanId, StatusCode, TraceId } from "../../primitives"
 import { AuditedRead } from "../audit-log"
 import { AuthorizationV2 } from "./auth"
 import { wireExample, ListOf, ListQuery, Timestamp } from "./envelopes"
@@ -231,7 +231,7 @@ const AttributeFilterCollection = Schema.Array(V2AttributeFilter).check(Schema.i
 const TraceFilters = Schema.Struct({
 	service_name: Schema.optionalKey(ServiceName),
 	span_name: Schema.optionalKey(NonEmptyString),
-	status_code: Schema.optionalKey(Schema.Literals(["Ok", "Error", "Unset"])),
+	status_code: Schema.optionalKey(Schema.Literals(StatusCode.literals)),
 	has_error: Schema.optionalKey(Schema.Boolean),
 	min_duration_ms: Schema.optionalKey(NonNegativeFinite),
 	max_duration_ms: Schema.optionalKey(NonNegativeFinite),

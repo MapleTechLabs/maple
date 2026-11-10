@@ -37,6 +37,7 @@ import {
 	DashboardTemplatePreviewKind,
 	DashboardValidationError,
 	DashboardVersionNotFoundError,
+	DashboardTemplateRequirementKind,
 	DashboardVersionChangeKind,
 } from "../dashboards"
 import {
@@ -45,6 +46,7 @@ import {
 	ShareNotConfiguredError,
 	ShareNotFoundError,
 	SharePersistenceError,
+	ShareWidgetFailureReason,
 	ShareWidgetNotFoundError,
 } from "../share"
 import { WireValue } from "../../wire"
@@ -253,7 +255,7 @@ const V2DashboardTemplatePreviewWidget = Schema.Struct({
 })
 
 export const V2DashboardTemplateRequirement = Schema.Struct({
-	kind: Schema.Literals(["metrics", "integration", "telemetry"]).annotate({
+	kind: DashboardTemplateRequirementKind.annotate({
 		description:
 			"`metrics` is gated on `required_metric_prefixes`, `integration` on a connected integration, `telemetry` is never gated.",
 	}),
@@ -448,7 +450,7 @@ export const V2DashboardWidgetDataOutcome = Schema.Struct({
 	// Set when the server narrowed the window for a list-shaped tile.
 	narrowed_to_seconds: optional(Schema.Number),
 	// Present when not `ok`. `unsupported` is a muted tile; `failed` is retryable.
-	reason: optional(Schema.Literals(["unsupported", "not_found", "failed"])),
+	reason: optional(ShareWidgetFailureReason),
 	message: optional(Schema.String),
 }).annotate({
 	identifier: "DashboardWidgetDataOutcome",

@@ -45,7 +45,6 @@ export const RailwayConnections = PG.table("railway_connections", {
 })
 
 export type RailwayConnectionRow = PG.SelectRowOf<typeof RailwayConnections>
-export type RailwayConnectionInsert = PG.InsertRowOf<typeof RailwayConnections>
 
 /**
  * Poll state per discovered Railway environment: one `metrics` call per environment per tick.
@@ -80,4 +79,3 @@ export const RailwayEnvironments = PG.table("railway_environments", {
 })
 
 export type RailwayEnvironmentRow = PG.SelectRowOf<typeof RailwayEnvironments>
-export type RailwayEnvironmentInsert = PG.InsertRowOf<typeof RailwayEnvironments>

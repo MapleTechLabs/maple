@@ -12,7 +12,7 @@ import {
 	String as Str,
 } from "effect"
 import { IngestKeyEncryptionError, IngestKeyPersistenceError, OrgId, UserId } from "@maple/domain/http"
-import { hashIngestKey } from "@maple/db"
+import { hashIngestKey } from "../../platform/credential-tokens"
 import { Database, DatabaseError } from "@maple/backend/platform/DatabaseLive"
 import { Env } from "@maple/backend/platform/Env"
 import type { OrgIngestKeyRow } from "@maple/db/tables"

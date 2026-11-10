@@ -35,4 +35,3 @@ export const OrgOnboardingState = PG.table("org_onboarding_state", {
 })
 
 export type OrgOnboardingStateRow = PG.SelectRowOf<typeof OrgOnboardingState>
-export type OrgOnboardingStateInsert = PG.InsertRowOf<typeof OrgOnboardingState>

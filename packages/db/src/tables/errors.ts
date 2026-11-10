@@ -1,8 +1,7 @@
 import * as PG from "@maple-dev/effect-orm/postgres"
+import { AlertDeliveryStatus, AlertSeverity } from "@maple/domain/alerts"
 import {
 	ActorType,
-	AlertDeliveryStatus,
-	AlertSeverity,
 	ErrorIncidentReason,
 	ErrorIncidentStatus,
 	ErrorIssueEventType,
@@ -10,13 +9,15 @@ import {
 	IssueKind,
 	IssueSeverity,
 	IssueSeveritySource,
+	WorkflowState,
+} from "@maple/domain/error-issues"
+import {
 	PullRequestLinkSource,
 	PullRequestLinkState,
-	VcsProviderId,
 	VerificationStatus,
 	VerificationVerdict,
-	WorkflowState,
-} from "@maple/domain/http"
+} from "@maple/domain/fix-verification"
+import { VcsProviderId } from "@maple/domain/vcs"
 import {
 	ActorId,
 	AlertDestinationId,
@@ -542,16 +543,11 @@ export type ActorRow = PG.SelectRowOf<typeof Actors>
 export type ActorInsert = PG.InsertRowOf<typeof Actors>
 export type ErrorIssueRow = PG.SelectRowOf<typeof ErrorIssues>
 export type ErrorFingerprintCandidateRow = PG.SelectRowOf<typeof ErrorFingerprintCandidates>
-export type ErrorFingerprintCandidateInsert = PG.InsertRowOf<typeof ErrorFingerprintCandidates>
-export type ErrorIssueStateRow = PG.SelectRowOf<typeof ErrorIssueStates>
 export type ErrorIssueEventRow = PG.SelectRowOf<typeof ErrorIssueEvents>
 export type ErrorIssueEventInsert = PG.InsertRowOf<typeof ErrorIssueEvents>
 export type ErrorIncidentRow = PG.SelectRowOf<typeof ErrorIncidents>
 export type ErrorNotificationPolicyRow = PG.SelectRowOf<typeof ErrorNotificationPolicies>
-export type ErrorTickStateRow = PG.SelectRowOf<typeof ErrorTickStates>
 export type ErrorNotificationDeliveryRow = PG.SelectRowOf<typeof ErrorNotificationDeliveries>
 export type ErrorNotificationDeliveryStatus = ErrorNotificationDeliveryRow["status"]
 export type ErrorIssuePullRequestRow = PG.SelectRowOf<typeof ErrorIssuePullRequests>
-export type ErrorIssuePullRequestInsert = PG.InsertRowOf<typeof ErrorIssuePullRequests>
 export type ErrorIssueVerificationRow = PG.SelectRowOf<typeof ErrorIssueVerifications>
-export type ErrorIssueVerificationInsert = PG.InsertRowOf<typeof ErrorIssueVerifications>

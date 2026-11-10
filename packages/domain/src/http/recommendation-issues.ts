@@ -2,11 +2,11 @@ import { Schema } from "effect"
 import { IsoDateTimeString, RecommendationIssueId } from "../primitives"
 import { HttpTaggedError } from "./error-policy"
 
+import { RecommendationIssueStatus } from "../recommendation-issues"
+export { RecommendationIssueStatus } from "../recommendation-issues"
+
 export const RecommendationIssueKind = Schema.Literals(["rename", "double-emission", "naming"])
 export type RecommendationIssueKind = typeof RecommendationIssueKind.Type
-
-export const RecommendationIssueStatus = Schema.Literals(["open", "dismissed", "applied", "resolved"])
-export type RecommendationIssueStatus = typeof RecommendationIssueStatus.Type
 
 export class RecommendationIssue extends Schema.Class<RecommendationIssue>("RecommendationIssue")({
 	id: RecommendationIssueId,

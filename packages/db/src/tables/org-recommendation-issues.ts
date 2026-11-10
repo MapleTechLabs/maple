@@ -1,5 +1,5 @@
 import * as PG from "@maple-dev/effect-orm/postgres"
-import { RecommendationIssueStatus } from "@maple/domain/http"
+import { RecommendationIssueStatus } from "@maple/domain/recommendation-issues"
 import { OrgId } from "@maple/domain/primitives"
 
 // Durable, numbered attribute-recommendation issues (PlanetScale-style). Recommendations are

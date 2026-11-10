@@ -31,6 +31,18 @@ import {
 	VcsRepositoryDiscovery,
 } from "./vcs"
 
+import { GcpCloudSqlSettings } from "../gcp"
+export { GcpCloudSqlSettings } from "../gcp"
+
+import { SupabaseAdvisorLint, SupabaseLogDrainSummary, SupabaseTopQuery } from "../supabase"
+export {
+	SupabaseAdvisorKind,
+	SupabaseAdvisorLevel,
+	SupabaseAdvisorLint,
+	SupabaseLogDrainSummary,
+	SupabaseTopQuery,
+} from "../supabase"
+
 const RETURN_PATH_MAX_LENGTH = 2048
 // One leading `/`, never `//` or `/\` (protocol-relative or backslash origin
 // tricks), and no backslash, whitespace or control character anywhere — which
@@ -471,6 +483,13 @@ export class PlanetScaleApiMetricsStatus extends Schema.Class<PlanetScaleApiMetr
 	lastError: Schema.NullOr(Schema.String),
 }) {}
 
+export const PlanetScaleWebhookState = Schema.Literals([
+	"active",
+	"pending",
+	"failing",
+	"needs_reauthorization",
+])
+
 /** The webhooks Maple registers on the bound organization's databases. */
 export class PlanetScaleWebhookStatus extends Schema.Class<PlanetScaleWebhookStatus>(
 	"PlanetScaleWebhookStatus",
@@ -479,7 +498,7 @@ export class PlanetScaleWebhookStatus extends Schema.Class<PlanetScaleWebhookSta
 	 * `needs_reauthorization`: the grant predates the `write_databases` access webhooks need.
 	 * `pending`: not every database has one yet. `failing`: registering one failed.
 	 */
-	state: Schema.Literals(["active", "pending", "failing", "needs_reauthorization"]),
+	state: PlanetScaleWebhookState,
 	registeredDatabases: Schema.Number,
 	databases: Schema.Number,
 	/** The most recent registration failure, or null. */
@@ -1027,31 +1046,6 @@ export class VcsCommitRangesResponse extends Schema.Class<VcsCommitRangesRespons
 	},
 ) {}
 
-/** A Cloud SQL instance's settings, read off its Cloud Asset Inventory resource. */
-export const GcpCloudSqlSettings = Schema.Struct({
-	/** `POSTGRES_15`, `MYSQL_8_0`, `SQLSERVER_2022_STANDARD`, ... */
-	databaseVersion: Schema.NullOr(Schema.String),
-	/** `ENTERPRISE` or `ENTERPRISE_PLUS`. */
-	edition: Schema.NullOr(Schema.String),
-	tier: Schema.NullOr(Schema.String),
-	/** Read off the tier; null for a tier Maple does not know. */
-	cpus: Schema.NullOr(Schema.Finite),
-	memoryGb: Schema.NullOr(Schema.Finite),
-	/** `REGIONAL` is high availability, `ZONAL` is not. */
-	availabilityType: Schema.NullOr(Schema.String),
-	/** The primary of a read replica, as `<project>:<instance>`. */
-	primary: Schema.NullOr(Schema.String),
-	diskSizeGb: Schema.NullOr(Schema.Finite),
-	queryInsightsEnabled: Schema.Boolean,
-	/**
-	 * The `max_connections` flag, or PostgreSQL's default for the memory of the larger of the
-	 * instance and its primary. Null when neither is known.
-	 */
-	maxConnections: Schema.NullOr(Schema.Finite),
-	maxConnectionsSource: Schema.NullOr(Schema.Literals(["flag", "default"])),
-})
-export type GcpCloudSqlSettings = Schema.Schema.Type<typeof GcpCloudSqlSettings>
-
 /** Rows one read of the Google Cloud resource inventory returns. */
 export const GCP_RESOURCES_LIMIT = 500
 
@@ -1120,24 +1114,6 @@ export class RailwayDisconnectResponse extends Schema.Class<RailwayDisconnectRes
 )({
 	disconnected: Schema.Boolean,
 }) {}
-
-/**
- * A log drain configured on a Supabase project, as discovery last listed it. Only the destination
- * host is kept: drain configs carry API keys and auth headers.
- */
-export const SupabaseLogDrainSummary = Schema.Struct({
-	id: Schema.String,
-	name: Schema.String,
-	/** Supabase's `backend_type`: `otlp`, `datadog`, `s3`, `webhook`, ... */
-	backendType: Schema.String,
-	/** Host, bucket or region the drain sends to; null when the config names none. */
-	destination: Schema.NullOr(Schema.String),
-	/** The drain sends to this Maple deployment's ingest gateway. */
-	toMaple: Schema.Boolean,
-	/** Maple's integration created it (the project's managed drain). */
-	managedByMaple: Schema.Boolean,
-})
-export type SupabaseLogDrainSummary = typeof SupabaseLogDrainSummary.Type
 
 /** One project discovered under the connected Supabase organization. */
 export class SupabaseProjectStatus extends Schema.Class<SupabaseProjectStatus>("SupabaseProjectStatus")({
@@ -1216,49 +1192,6 @@ export class SupabaseDisconnectResponse extends Schema.Class<SupabaseDisconnectR
 )({
 	disconnected: Schema.Boolean,
 }) {}
-
-export const SupabaseAdvisorLevel = Schema.Literals(["ERROR", "WARN", "INFO"])
-export type SupabaseAdvisorLevel = typeof SupabaseAdvisorLevel.Type
-
-/** Which Management API advisor reported a lint. */
-export const SupabaseAdvisorKind = Schema.Literals(["performance", "security"])
-export type SupabaseAdvisorKind = typeof SupabaseAdvisorKind.Type
-
-/** One advisor finding (a Splinter lint such as `unindexed_foreign_keys`), as stored and served. */
-export const SupabaseAdvisorLint = Schema.Struct({
-	advisor: SupabaseAdvisorKind,
-	/** The lint id, e.g. `rls_disabled_in_public`. */
-	name: Schema.String,
-	title: Schema.String,
-	level: SupabaseAdvisorLevel,
-	/** `PERFORMANCE`, `SECURITY`, `HEALTH`. */
-	categories: Schema.Array(Schema.String),
-	description: Schema.String,
-	/** The finding itself, naming the object (markdown-ish text from Supabase). */
-	detail: Schema.String,
-	/** A docs URL. */
-	remediation: Schema.String,
-	/** The database object the lint is about, when it names one. */
-	schema: Schema.NullOr(Schema.String),
-	object: Schema.NullOr(Schema.String),
-	/** `table`, `view`, `function`, `extension`, `auth`... */
-	objectType: Schema.NullOr(Schema.String),
-	cacheKey: Schema.String,
-})
-export type SupabaseAdvisorLint = typeof SupabaseAdvisorLint.Type
-
-/** One `pg_stat_statements` entry, ranked by total execution time. */
-export const SupabaseTopQuery = Schema.Struct({
-	/** `queryid` as text (a 64-bit hash). */
-	queryId: Schema.String,
-	/** Normalized statement text (`$1` placeholders), cut at 2000 chars. */
-	query: Schema.String,
-	calls: Schema.Number,
-	totalExecMs: Schema.Number,
-	meanExecMs: Schema.Number,
-	rows: Schema.Number,
-})
-export type SupabaseTopQuery = typeof SupabaseTopQuery.Type
 
 export class SupabaseAdvisorsByLevel extends Schema.Class<SupabaseAdvisorsByLevel>("SupabaseAdvisorsByLevel")(
 	{
@@ -1519,16 +1452,6 @@ export class AwsIntegrationUnavailableError extends HttpTaggedError<AwsIntegrati
 		exposure: "public_message",
 	},
 ) {}
-
-export type IntegrationHttpError =
-	| IntegrationsForbiddenError
-	| IntegrationsConfigurationError
-	| IntegrationsNotFoundError
-	| IntegrationsNotConnectedError
-	| IntegrationsRevokedError
-	| IntegrationsValidationError
-	| IntegrationsUpstreamError
-	| IntegrationsPersistenceError
 
 /**
  * Dashboard control surface for the Linear, Cloudflare, Railway and GitHub

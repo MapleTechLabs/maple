@@ -5,7 +5,6 @@ import {
 	SupportChannelBusyError,
 	SupportChannelNoEmailError,
 	SupportChannelNotConfiguredError,
-	supportChannelName,
 	SupportChannelUnavailableError,
 } from "@maple/domain/support-channel"
 import {
@@ -27,6 +26,30 @@ import type { TenantContext } from "@maple/backend/services/auth/AuthService"
 import { OrgMembersService } from "@maple/backend/services/org/OrgMembersService"
 import { OrganizationService } from "@maple/backend/services/org/OrganizationService"
 import { SupportSlackClient } from "./SupportSlackClient"
+
+/**
+ * `maple-<org>` in Slack's channel-name alphabet: lowercase letters, digits, `-` and `_`, at most
+ * 80 characters. Falls back to the org id when the name has nothing usable in it.
+ */
+export const supportChannelName = (orgName: string | null, orgId: string, attempt = 0): string => {
+	const slug = Str.replace(
+		/^-|-$/g,
+		"",
+	)(
+		Str.replace(
+			/-+/g,
+			"-",
+		)(
+			Str.replace(
+				/[^a-z0-9_-]+/g,
+				"-",
+			)(Str.toLowerCase(Str.replace(/\p{M}+/gu, "")(Str.normalize("NFKD")(orgName ?? "")))),
+		),
+	)
+	const base = `maple-${slug.length > 0 ? slug : Str.replace(/[^a-z0-9_-]+/g, "")(Str.toLowerCase(orgId))}`
+	const suffix = attempt === 0 ? "" : `-${attempt + 1}`
+	return `${Str.replace(/-$/, "")(Str.slice(0, 80 - suffix.length)(base))}${suffix}`
+}
 
 /** How long a creation may sit unfinished before another request may take it over. */
 export const CREATE_LEASE_MS = 2 * 60 * 1000

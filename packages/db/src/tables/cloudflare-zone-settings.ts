@@ -20,5 +20,3 @@ export const CloudflareZoneSettings = PG.table("cloudflare_zone_settings", {
 	primaryKey: ["orgId", "accountId"],
 	tenantColumn: "orgId",
 })
-
-export type CloudflareZoneSettingsRow = PG.SelectRowOf<typeof CloudflareZoneSettings>

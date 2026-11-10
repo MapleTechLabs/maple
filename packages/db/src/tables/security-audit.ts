@@ -257,7 +257,6 @@ export const SecurityAuditOrgSettings = PG.table("security_audit_org_settings", 
 export type SecurityAuditTargetRow = PG.SelectRowOf<typeof SecurityAuditTargets>
 export type SecurityAuditRunRow = PG.SelectRowOf<typeof SecurityAuditRuns>
 export type SecurityAuditUnitRow = PG.SelectRowOf<typeof SecurityAuditUnits>
-export type SecurityAuditRunFindingRow = PG.SelectRowOf<typeof SecurityAuditRunFindings>
 export type SecurityAuditFindingRow = PG.SelectRowOf<typeof SecurityAuditFindings>
 export type SecurityAuditEventRow = PG.SelectRowOf<typeof SecurityAuditEvents>
 export type SecurityAuditOrgSettingsRow = PG.SelectRowOf<typeof SecurityAuditOrgSettings>

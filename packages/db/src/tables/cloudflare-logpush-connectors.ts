@@ -48,6 +48,3 @@ export const CloudflareLogpushConnectors = PG.table("cloudflare_logpush_connecto
 	],
 	tenantColumn: "orgId",
 })
-
-export type CloudflareLogpushConnectorRow = PG.SelectRowOf<typeof CloudflareLogpushConnectors>
-export type CloudflareLogpushConnectorInsert = PG.InsertRowOf<typeof CloudflareLogpushConnectors>

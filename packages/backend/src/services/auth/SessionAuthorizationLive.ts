@@ -1,5 +1,5 @@
 import { HttpServerRequest } from "effect/http"
-import { API_KEY_PREFIX } from "@maple/db"
+import { API_KEY_PREFIX } from "../../platform/credential-tokens"
 import { CurrentTenant } from "@maple/domain/http"
 import { Effect, Layer, String as Str } from "effect"
 import { makeResolveTenant } from "./AuthService"

@@ -26,13 +26,12 @@ import {
 	inventedResourceKeys,
 	MAPLE_GENERATED_SERVICE_NAMES,
 	MAPLE_INTEGRATION_SERVICE_PREFIXES,
-	SetupAuditUnavailableError,
-	type SetupAuditReport,
 	type TraceCompletenessInputs,
 	type WarehouseAuditInputs,
 	runSetupAudit,
 	sensitiveSpanKeys,
-} from "@maple/domain/setup-audit"
+} from "./setup-audit"
+import { SetupAuditUnavailableError, type SetupAuditReport } from "@maple/domain/setup-audit"
 import { alertRuleIntervalMinutes, CH, formatWarehouseDateTime } from "@maple/query-engine"
 import { Cause, Clock, Context, Effect, Layer, Option, Result, Schema, Array as Arr } from "effect"
 import type { TenantContext } from "@maple/backend/services/auth/AuthService"

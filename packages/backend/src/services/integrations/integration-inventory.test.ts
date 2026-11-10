@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest"
+import type { IntegrationInventory } from "@maple/domain/integration-inventory"
 import {
 	buildIntegrationInventory,
-	type IntegrationInventory,
 	type IntegrationInventoryInputs,
 	withSourceHealth,
 } from "./integration-inventory"

@@ -32,4 +32,3 @@ export const OrgClickHouseSettings = PG.table("org_clickhouse_settings", {
 })
 
 export type OrgClickHouseSettingsRow = PG.SelectRowOf<typeof OrgClickHouseSettings>
-export type OrgClickHouseSettingsInsert = PG.InsertRowOf<typeof OrgClickHouseSettings>

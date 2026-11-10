@@ -51,4 +51,3 @@ export const SearchConsoleSites = PG.table("search_console_sites", {
 })
 
 export type SearchConsoleSiteRow = PG.SelectRowOf<typeof SearchConsoleSites>
-export type SearchConsoleSiteInsert = PG.InsertRowOf<typeof SearchConsoleSites>

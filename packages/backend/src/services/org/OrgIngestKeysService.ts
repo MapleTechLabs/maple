@@ -1,4 +1,3 @@
-import { randomBytes } from "node:crypto"
 import {
 	IsoDateTimeString,
 	IngestKeyEncryptionError,
@@ -10,11 +9,13 @@ import {
 import {
 	computeHmacFingerprint,
 	createIngestKeyId,
+	generatePrivateIngestKey,
+	generatePublicIngestKey,
 	hashIngestKey,
 	inferIngestKeyType,
 	parseIngestKeyLookupHmacKey,
 	type ResolvedIngestKey,
-} from "@maple/db"
+} from "../../platform/credential-tokens"
 import * as PG from "@maple-dev/effect-orm/postgres"
 import { OrgIngestKeys, type OrgIngestKeyRow, Sources } from "@maple/db/tables"
 import { defaultSourceRow } from "./source-rows"
@@ -94,9 +95,6 @@ const decryptPrivateKey = (
 	decryptAes256Gcm(encrypted, encryptionKey, () =>
 		toEncryptionError("Failed to decrypt private ingest key"),
 	)
-
-const generatePublicKey = () => `maple_pk_${randomBytes(24).toString("base64url")}`
-const generatePrivateKey = () => `maple_sk_${randomBytes(24).toString("base64url")}`
 
 export class OrgIngestKeysService extends Context.Service<OrgIngestKeysService>()(
 	"@maple/backend/services/OrgIngestKeysService",
@@ -179,8 +177,8 @@ export class OrgIngestKeysService extends Context.Service<OrgIngestKeysService>(
 					return existing.value
 				}
 
-				const publicKey = generatePublicKey()
-				const privateKey = generatePrivateKey()
+				const publicKey = generatePublicIngestKey()
+				const privateKey = generatePrivateIngestKey()
 				const publicKeyHash = hashIngestKey(publicKey, lookupHmacKey)
 				const privateKeyHash = hashIngestKey(privateKey, lookupHmacKey)
 				const encryptedPrivate = yield* encryptPrivateKey(privateKey, encryptionKey)
@@ -297,7 +295,7 @@ export class OrgIngestKeysService extends Context.Service<OrgIngestKeysService>(
 				yield* ensureRow(orgId, userId)
 
 				const now = yield* Clock.currentTimeMillis
-				const publicKey = generatePublicKey()
+				const publicKey = generatePublicIngestKey()
 				const publicKeyHash = hashIngestKey(publicKey, lookupHmacKey)
 
 				yield* dbExecute((db) =>
@@ -336,7 +334,7 @@ export class OrgIngestKeysService extends Context.Service<OrgIngestKeysService>(
 				yield* ensureRow(orgId, userId)
 
 				const now = yield* Clock.currentTimeMillis
-				const privateKey = generatePrivateKey()
+				const privateKey = generatePrivateIngestKey()
 				const privateKeyHash = hashIngestKey(privateKey, lookupHmacKey)
 				const encryptedPrivate = yield* encryptPrivateKey(privateKey, encryptionKey)
 

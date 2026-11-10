@@ -35,6 +35,3 @@ export const OrgClickHouseSchemaApplyRuns = PG.table("org_clickhouse_schema_appl
 	primaryKey: { columns: ["orgId"], name: "org_clickhouse_schema_apply_runs_org_id_pk" },
 	tenantColumn: "orgId",
 })
-
-export type OrgClickHouseSchemaApplyRunRow = PG.SelectRowOf<typeof OrgClickHouseSchemaApplyRuns>
-export type OrgClickHouseSchemaApplyRunInsert = PG.InsertRowOf<typeof OrgClickHouseSchemaApplyRuns>

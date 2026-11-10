@@ -330,12 +330,6 @@ export function publicHttpErrorDefinitionFor<Error extends PublicTaggedError>(
 	return definition
 }
 
-/** Read the public policy owned by an error class, including for wire-shaped presenters. */
-export const publicHttpErrorPolicyFor = <Error extends PublicTaggedError>(
-	errorClass: Function,
-): PublicHttpErrorPolicy<Error, PublicHttpErrorStatus> =>
-	publicHttpErrorDefinitionFor<Error>(errorClass).policy
-
 const resolve = <Error, Value>(value: Value | ((error: Error) => Value), error: Error): Value =>
 	typeof value === "function" ? (value as (error: Error) => Value)(error) : value
 

@@ -157,9 +157,6 @@ export const STATUS_PAGE_PRESET_DEFAULTS = {
 	{ readonly font: StatusPageThemeFont; readonly radius: StatusPageThemeRadius }
 >
 
-/** The colour overrides a forced appearance takes; Auto ignores them. */
-export const STATUS_PAGE_THEME_COLOR_FIELDS = ["background", "text", "card", "border"] as const
-
 /** Concrete CSS tokens for one colour scheme. */
 export interface StatusPageThemeTokens {
 	readonly bg: string

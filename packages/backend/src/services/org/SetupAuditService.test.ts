@@ -1,7 +1,7 @@
 import { afterEach, assert, describe, it } from "@effect/vitest"
 import { Effect, Layer, Option, Schema, Array as Arr, String as Str } from "effect"
 import { OrgId, UserId } from "@maple/domain/http"
-import { SETUP_AUDIT_CHECKS } from "@maple/domain/setup-audit"
+import { SETUP_AUDIT_CHECKS } from "./setup-audit"
 import { compiledQueryOf } from "@maple/query-engine/execution"
 import {
 	cleanupTestDbs,

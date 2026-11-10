@@ -12,7 +12,9 @@ import {
 	OrgId,
 	UserId,
 } from "@maple/domain/primitives"
-import { AlertIncidentLabels, AnomalySignalType, StoredAlertMaintenanceSchedule } from "@maple/domain/http"
+import { StoredAlertMaintenanceSchedule } from "@maple/domain/alert-maintenance-windows"
+import { AlertIncidentLabels } from "@maple/domain/alerts"
+import { AnomalySignalType } from "@maple/domain/anomalies"
 import { Schema } from "effect"
 
 const StringArray = Schema.Array(Schema.String)
@@ -470,7 +472,5 @@ export type AlertRuleRow = PG.SelectRowOf<typeof AlertRules>
 export type AlertRuleStateRow = PG.SelectRowOf<typeof AlertRuleStates>
 export type AlertIncidentRow = PG.SelectRowOf<typeof AlertIncidents>
 export type AlertDeliveryEventRow = PG.SelectRowOf<typeof AlertDeliveryEvents>
-export type AlertIncidentEventRow = PG.SelectRowOf<typeof AlertIncidentEvents>
-export type AlertLinearIssueRow = PG.SelectRowOf<typeof AlertLinearIssues>
 export type AlertSilenceRow = PG.SelectRowOf<typeof AlertSilences>
 export type AlertMaintenanceWindowRow = PG.SelectRowOf<typeof AlertMaintenanceWindows>
