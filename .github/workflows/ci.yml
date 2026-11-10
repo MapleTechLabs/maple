@@ -78,6 +78,9 @@ jobs:
                         - 'apps/ios/Packages/MapleAPI/Sources/MapleAPI/openapi.json'
                         # Generated; clickhouse:schema:check verifies it.
                         - 'apps/ingest/src/clickhouse_insert_mappings.rs'
+                        # Typechecked by `tsrs -p tsconfig.alchemy.json`; ingest's is the one the extglob drops.
+                        - 'apps/*/alchemy.run.ts'
+                        - 'apps/ingest/package.json'
                       # What apps/cli + apps/local-ui are built from. Their workspace closure
                       # is 21 of packages/ and 6 of lib/, so both are listed whole, as in `workers`.
                       cli:
