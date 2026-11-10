@@ -269,7 +269,17 @@ describe("installNetworkCapture", () => {
 			// `fetch` stringifies a `Location`; it has no `url` of its own.
 			const response = await fetchAny(window, window.location)
 			expect(response.status).toBe(200)
-			expect(events.map((event) => event.net?.url)).toEqual([window.location.href])
+			// A `url` property on something that is not a Request is not where `fetch` looks.
+			const tagged = Object.assign(new URL("/orders", window.location.href), {
+				url: "https://elsewhere.invalid/",
+			})
+			await fetchAny(window, tagged)
+			await fetchAny(window, new Request(new URL("/from-request", window.location.href)))
+			expect(events.map((event) => event.net?.url)).toEqual([
+				window.location.href,
+				tagged.href,
+				new URL("/from-request", window.location.href).href,
+			])
 		} finally {
 			uninstall?.()
 			uninstall = undefined
