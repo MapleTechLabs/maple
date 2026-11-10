@@ -144,6 +144,39 @@ describe("world reconciliation", () => {
 		expect(kinds).toEqual(["default", "tank", "default", "default"])
 	})
 
+	it("runs one wind for every machine: held by a pause, kept across a rebuild", () => {
+		const state = { flowing: true }
+		const winds = new Map<string, () => number>()
+		const parts: WorldParts = {
+			...fakeParts().parts,
+			machine: (_scope, { node: { id }, wind }) => {
+				winds.set(id, wind)
+				return new THREE.Group()
+			},
+		}
+		const world = makeWorld(parts)
+		const flowing = () => state.flowing
+		world.sync(input({ flowing }))
+		const read = (id: string) => winds.get(id)?.() ?? Number.NaN
+		Arr.forEach(
+			Arr.makeBy(10, () => 0.03),
+			world.frame,
+		)
+		expect(read("a")).toBeCloseTo(0.3)
+		state.flowing = false
+		Arr.forEach(
+			Arr.makeBy(10, () => 0.03),
+			world.frame,
+		)
+		expect(read("a")).toBeCloseTo(0.3)
+		state.flowing = true
+		// Selecting `a` rebuilds it; the new building reads the same wind as the ones kept.
+		world.sync(input({ flowing, selectedId: "a" }))
+		world.frame(0.03)
+		expect(read("a")).toBeCloseTo(0.33)
+		expect(read("a")).toBe(read("b"))
+	})
+
 	it("previews a machine's position without a rebuild and restores it on null", () => {
 		const { parts, built } = fakeParts()
 		const world = makeWorld(parts)
