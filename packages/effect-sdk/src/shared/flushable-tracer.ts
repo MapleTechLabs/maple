@@ -17,6 +17,12 @@ export interface CaptureExceptionOptions {
 	readonly attributes?: Record<string, unknown> | undefined
 }
 
+/** The span an exception was recorded on. */
+export interface CapturedExceptionSpan {
+	readonly traceId: string
+	readonly spanId: string
+}
+
 export interface SpanBuffer {
 	readonly tracerLayer: Layer.Layer<never>
 	/**
@@ -38,7 +44,10 @@ export interface SpanBuffer {
 	 * BOUNDARY: a thrown value is unparsed by definition — JavaScript can throw
 	 * anything. `Cause.prettyErrors` narrows it on the way into the event.
 	 */
-	readonly captureException: (error: unknown, options?: CaptureExceptionOptions) => void
+	readonly captureException: (
+		error: unknown,
+		options?: CaptureExceptionOptions,
+	) => CapturedExceptionSpan | undefined
 	readonly drain: () => Array<OtlpSpan>
 	readonly restore: (items: ReadonlyArray<OtlpSpan>) => void
 	readonly setDisabled: (value: boolean) => void
@@ -160,8 +169,11 @@ export const makeSpanBuffer = (options: SpanBufferOptions = {}): SpanBuffer => {
 
 	const tracer = makeMapleTracer(filter, exportFn, options.watchConnection)
 
-	const captureException = (error: unknown, captureOptions: CaptureExceptionOptions = {}): void => {
-		if (disabled) return
+	const captureException = (
+		error: unknown,
+		captureOptions: CaptureExceptionOptions = {},
+	): CapturedExceptionSpan | undefined => {
+		if (disabled) return undefined
 		const now = BigInt(Date.now()) * 1_000_000n
 		const span = makeSpan({
 			name: captureOptions.name ?? "exception",
@@ -175,6 +187,7 @@ export const makeSpanBuffer = (options: SpanBufferOptions = {}): SpanBuffer => {
 			export: exportFn,
 		})
 		span.end(now, Exit.failCause(Cause.die(error)))
+		return { traceId: span.traceId, spanId: span.spanId }
 	}
 
 	return {
