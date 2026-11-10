@@ -7,6 +7,7 @@
 // own paragraph.
 
 import { finiteOrZero } from "./format"
+import { utcHourFloor } from "./query-helpers"
 import {
 	DB_QUERY_KEY_LAZY_SQL,
 	DB_QUERY_KEY_SQL,
@@ -1249,8 +1250,8 @@ export function serviceExternalEdgesSQL(
 	opts: ServiceExternalEdgesOpts,
 	params: { orgId: OrgId; startTime: string; endTime: string },
 ): Effect.Effect<CompiledQuery<ServiceExternalEdgesOutput>, QueryBuilderError> {
-	const startHour = CH.toStartOfHour(CH.toDateTime(utcSecondsParam("startTime")))
-	const endHour = CH.toStartOfHour(CH.toDateTime(utcSecondsParam("endTime")))
+	const startHour = utcHourFloor("startTime")
+	const endHour = utcHourFloor("endTime")
 
 	// Hourly branch: sealed buckets from the MV-fed table. Carries `bucket*`
 	// aliases so the outer aggregate can't collide with inner ones (same
@@ -1404,7 +1405,7 @@ export function serviceExternalEdgesSQL(
 //
 // Per-service rollup of the OTel resource attributes that identify where a
 // service runs. The caller derives a single `Platform` label from these raw
-// values (see apps/web/src/api/tinybird/service-map.ts).
+// values (see `toServicePlatformRow` in apps/api/src/routes/internal/query-engine.http.ts).
 //
 // Reads from `service_platforms_hourly` (populated by
 // `service_platforms_hourly_mv`). The MV uses SimpleAggregateFunction("max")
@@ -1452,7 +1453,7 @@ export function servicePlatformsSQL(
 		}))
 		.where(($) => [
 			$.OrgId.eq(orgIdParam),
-			$.Hour.gte(CH.toStartOfHour(CH.toDateTime(utcSecondsParam("startTime")))),
+			$.Hour.gte(utcHourFloor("startTime")),
 			$.Hour.lte(utcSecondsParam("endTime")),
 			$.ServiceName.neq(""),
 			opts.deploymentEnv ? $.DeploymentEnv.eq(opts.deploymentEnv) : undefined,
