@@ -94,7 +94,7 @@ type MutationPayload = typeof MutationPayload.Type
 
 const decodePayload = Schema.decodeUnknownOption(Schema.fromJsonString(MutationPayload))
 
-/** `createDualContent` writes the payload as one line of its own, after the report. */
+/** A recorded `__maple_ui` payload is one line of its own, after the report. */
 const structuredOf = (lines: ReadonlyArray<string>, app: string): Described | null => {
 	for (const line of lines) {
 		const trimmed = Str.trim(line)

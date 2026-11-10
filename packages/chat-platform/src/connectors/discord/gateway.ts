@@ -36,8 +36,8 @@ import {
 /**
  * The bot token, from the application's Bot tab. See this directory's README.
  *
- * Named in `./api.ts`, which is also where the outbound half's `DiscordBotToken`
- * service says the host reads it from — one secret under one name.
+ * Named in `./api.ts` (`BOT_TOKEN_CONFIG`), which the outbound half's `requiredConfig`
+ * declares too: one secret under one name.
  */
 export const BOT_TOKEN = BOT_TOKEN_CONFIG
 
