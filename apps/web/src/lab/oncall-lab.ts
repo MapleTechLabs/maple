@@ -43,7 +43,7 @@ import {
 import { incidentRow, INCIDENT_ID, ORG, ruleRow } from "../page/kit/alert-test-rows"
 import type { PageContext } from "../page/contract"
 import type { Resources } from "../platform/resources"
-import { isoMs } from "../page/kit/alert-time"
+import { toEpochMs } from "@maple/ui/lib/time-format"
 
 // `/lab/oncall`: on-call schedules in the hub (the On-call tab and the inbox's "On call now"
 // strip), the schedule form, the calendar with overrides and a DST week, the chain dialog with
@@ -334,7 +334,7 @@ const incidentFor = (): Step<IncidentModel.Model, IncidentMessage.Message> => {
 	const synced = fold(
 		start,
 		[
-			IncidentMessage.Message.ReadClock({ nowMs: isoMs(row.first_triggered_at) + 20 * 60_000 }),
+			IncidentMessage.Message.ReadClock({ nowMs: toEpochMs(row.first_triggered_at) + 20 * 60_000 }),
 			IncidentMessage.Message.UpdatedIncidents({ orgId: ORG, rows: [row] }),
 			IncidentMessage.Message.UpdatedRules({
 				orgId: ORG,
@@ -349,7 +349,7 @@ const incidentFor = (): Step<IncidentModel.Model, IncidentMessage.Message> => {
 		[
 			IncidentMessage.Message.CompletedFetchActivity({
 				key: synced.model.activity.key ?? "",
-				result: Result.succeed(pagedEvents(INCIDENT_ID, isoMs(row.first_triggered_at))),
+				result: Result.succeed(pagedEvents(INCIDENT_ID, toEpochMs(row.first_triggered_at))),
 			}),
 			IncidentMessage.Message.CompletedFetchEscalation({
 				key: synced.model.escalation.key ?? "",

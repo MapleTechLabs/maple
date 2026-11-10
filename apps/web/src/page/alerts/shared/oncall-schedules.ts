@@ -11,8 +11,9 @@ import { type LoadFailure, toLoadFailure } from "@maple/views/data/load-failure"
 import { MapleApiV2Client } from "../../../platform/api-clients"
 import { AppRoute, hrefOf } from "../../../route"
 import type { AlertsScheduleNewSearch } from "../../../route/search"
-import { isoMs, msIso } from "../../kit/alert-time"
+import { msIso } from "../../kit/alert-time"
 import { formatSpan } from "../../kit/alert-time"
+import { toEpochMs } from "@maple/ui/lib/time-format"
 
 // On-call schedule reads and writes as Effects the pages' Commands wrap, their links, and how a
 // shift's edges read.
@@ -156,4 +157,4 @@ export const formatUntil = (nowMs: number, atMs: number): string => {
 
 /** When the current shift hands off, as epoch ms; none while nobody is on call. */
 export const handoffMs = (schedule: V2OnCallSchedule): Option.Option<number> =>
-	Option.map(Option.fromNullishOr(schedule.on_call_now), (now) => isoMs(now.ends_at))
+	Option.map(Option.fromNullishOr(schedule.on_call_now), (now) => toEpochMs(now.ends_at))

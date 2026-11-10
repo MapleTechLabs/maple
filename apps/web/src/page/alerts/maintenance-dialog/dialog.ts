@@ -33,9 +33,10 @@ import {
 	typedFromMatchers,
 } from "../shared/matcher-fields"
 import { SaveRequest, saveMaintenanceWindow, WEEKDAYS } from "../shared/maintenance-windows"
-import { isoMs, msIso } from "../../kit/alert-time"
+import { msIso } from "../../kit/alert-time"
 import { localInputOf } from "../schedule-form/form"
 import { parseLocalDateTime } from "../silence-dialog/dialog"
+import { toEpochMs } from "@maple/ui/lib/time-format"
 
 // "New maintenance window" / "Edit maintenance window": the hub's dialog, as one Submodel.
 
@@ -197,7 +198,7 @@ const weekOrder = (days: ReadonlyArray<MaintenanceWeekday>): ReadonlyArray<Maint
 	)
 
 /** The dialog edits one-off times to the minute, so seconds from an API-created window never count as a change. */
-const minuteOf = (iso: string): number => Math.floor(isoMs(iso) / 60_000)
+const minuteOf = (iso: string): number => Math.floor(toEpochMs(iso) / 60_000)
 
 const scheduleKey = (schedule: V2MaintenanceSchedule): string =>
 	schedule.type === "once"
@@ -444,8 +445,8 @@ export const openEdit = (
 			typed: typedFromMatchers(window.matchers),
 			ruleIds: window.matchers.rule_ids ?? [],
 			kind: schedule.type,
-			startsAt: schedule.type === "once" ? localInputOf(isoMs(schedule.starts_at), zone) : "",
-			endsAt: schedule.type === "once" ? localInputOf(isoMs(schedule.ends_at), zone) : "",
+			startsAt: schedule.type === "once" ? localInputOf(toEpochMs(schedule.starts_at), zone) : "",
+			endsAt: schedule.type === "once" ? localInputOf(toEpochMs(schedule.ends_at), zone) : "",
 			days: schedule.type === "weekly" ? schedule.days : [],
 			startTime: schedule.type === "weekly" ? schedule.start_time : DEFAULT_START_TIME,
 			durationMinutes:

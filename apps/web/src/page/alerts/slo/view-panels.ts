@@ -46,10 +46,10 @@ import {
 	overspentText,
 } from "../shared/slo-derive"
 import { toneText } from "../shared/slo-view"
-import { isoMs } from "../../kit/alert-time"
 import { Message } from "./message"
 import { type Model } from "./model"
 import { canManageAlerts } from "../../kit/session-grants"
+import { toEpochMs } from "@maple/ui/lib/time-format"
 
 // The SLO page's panels: the figures, the two charts, the burn windows, alerting and incidents.
 
@@ -438,7 +438,7 @@ const incidentRow = (h: H, row: AlertIncidentRow, nowMs: number, timeZone: strin
 		leading: statusDot(h, { tone: row.status === "open" ? "crit" : "neutral" }),
 		title: row.status === "open" ? "Open" : "Resolved",
 		meta: relativeTime(h, {
-			value: isoMs(row.first_triggered_at),
+			value: toEpochMs(row.first_triggered_at),
 			nowMs,
 			timeZone,
 			prefix: "Opened",

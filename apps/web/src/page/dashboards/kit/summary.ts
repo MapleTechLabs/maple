@@ -1,7 +1,7 @@
 import type { DashboardDocument } from "@maple/domain/http"
 import { EMPTY_VALUE } from "@maple/ui/lib/format"
 import { dataSourceEndpoint, dataSourceQuerySet, dataSourceRawSql } from "@maple/widgets/dashboard"
-import { DateTime, Option, Array as Arr } from "effect"
+import { Array as Arr } from "effect"
 
 export type DashboardDomain = "Traces" | "Logs" | "Errors" | "Metrics" | "Raw SQL"
 
@@ -82,7 +82,3 @@ export const readsFromLabel = (dashboard: DashboardDocument): { short: string; f
 	const shown = Arr.join(domains.slice(0, MAX_DOMAIN_TERMS), " · ")
 	return { short: `${shown} +${domains.length - MAX_DOMAIN_TERMS}`, full }
 }
-
-/** `Date.parse` (lint-banned): NaN for an unparseable value, as the comparators expect. */
-export const epochOf = (iso: string): number =>
-	Option.match(DateTime.make(iso), { onNone: () => Number.NaN, onSome: DateTime.toEpochMillis })

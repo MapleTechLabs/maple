@@ -4,7 +4,7 @@ import { OnCallOverrideId } from "@maple/domain/http"
 import { zonedDayStart } from "@maple/views/ui/shift-timeline"
 import { Option, Result, Schema, Array as Arr } from "effect"
 import { AsyncData } from "foldkit"
-import { isoMs, msIso } from "../../kit/alert-time"
+import { msIso } from "../../kit/alert-time"
 import { memberName } from "../shared/org-members"
 import { formatShiftEdge } from "../shared/oncall-schedules"
 import { expect as expectView, given, Mount, role, scene, text, withViewInputs } from "foldkit/scene"
@@ -28,6 +28,7 @@ import { Message } from "./message"
 import type { Model } from "./model"
 import { init, overrideIssue, rangeOf, readRangeOf, update } from "./update"
 import { view as pageView } from "./view"
+import { toEpochMs } from "@maple/ui/lib/time-format"
 
 const orgId = Schema.decodeSync(OrgId)(ORG)
 const context: PageContext = { orgId, pinnedNamespace: null, timeZone: "UTC" }
@@ -142,15 +143,15 @@ describe("on-call schedule page", () => {
 		const shifts = Option.getOrElse(AsyncData.getData(model.shifts.data), () => checkoutShifts(0, 0, 1))
 		const crossing = Arr.findFirst(
 			shifts.final,
-			(shift) => isoMs(shift.starts_at) < weekEnd && isoMs(shift.ends_at) > weekEnd,
+			(shift) => toEpochMs(shift.starts_at) < weekEnd && toEpochMs(shift.ends_at) > weekEnd,
 		)
 		expect(Option.isSome(crossing)).toBe(true)
 		const shift = Option.getOrElse(crossing, () => shifts.final[0])
 		const created = pageUpdate(
 			run(model, [
 				Message.ClickedShift({
-					startMs: isoMs(shift?.starts_at ?? ""),
-					endMs: isoMs(shift?.ends_at ?? ""),
+					startMs: toEpochMs(shift?.starts_at ?? ""),
+					endMs: toEpochMs(shift?.ends_at ?? ""),
 				}),
 				Message.ChangedOverrideUser({ value: memberId(7) }),
 			]),
@@ -196,7 +197,7 @@ describe("on-call schedule page", () => {
 		const model = loaded(ONCALL_NOW)
 		const handoff = Option.getOrElse(
 			Option.flatMap(AsyncData.getData(model.schedule.data), (schedule) =>
-				Option.map(Option.fromNullishOr(schedule.on_call_now), (now) => isoMs(now.ends_at)),
+				Option.map(Option.fromNullishOr(schedule.on_call_now), (now) => toEpochMs(now.ends_at)),
 			),
 			() => 0,
 		)
@@ -224,7 +225,7 @@ describe("on-call schedule page", () => {
 		const model = loaded(ONCALL_NOW)
 		const handoff = Option.getOrElse(
 			Option.flatMap(AsyncData.getData(model.schedule.data), (schedule) =>
-				Option.map(Option.fromNullishOr(schedule.on_call_now), (now) => isoMs(now.ends_at)),
+				Option.map(Option.fromNullishOr(schedule.on_call_now), (now) => toEpochMs(now.ends_at)),
 			),
 			() => 0,
 		)
@@ -408,16 +409,16 @@ describe("on-call schedule page", () => {
 		const ended = Option.getOrThrow(
 			Arr.findFirst(
 				shifts.final,
-				(shift) => isoMs(shift.starts_at) >= weekStart && isoMs(shift.ends_at) <= ONCALL_NOW,
+				(shift) => toEpochMs(shift.starts_at) >= weekStart && toEpochMs(shift.ends_at) <= ONCALL_NOW,
 			),
 		)
 		const running = Option.getOrThrow(
 			Arr.findFirst(
 				shifts.final,
-				(shift) => isoMs(shift.starts_at) <= ONCALL_NOW && ONCALL_NOW < isoMs(shift.ends_at),
+				(shift) => toEpochMs(shift.starts_at) <= ONCALL_NOW && ONCALL_NOW < toEpochMs(shift.ends_at),
 			),
 		)
-		const endedName = `${memberName(oncallMembers, ended.user_id)}, ${formatShiftEdge(isoMs(ended.starts_at), BERLIN)} to ${formatShiftEdge(isoMs(ended.ends_at), BERLIN)}`
+		const endedName = `${memberName(oncallMembers, ended.user_id)}, ${formatShiftEdge(toEpochMs(ended.starts_at), BERLIN)} to ${formatShiftEdge(toEpochMs(ended.ends_at), BERLIN)}`
 		scene(
 			{ update: pageUpdate, view },
 			given(model),
@@ -426,11 +427,14 @@ describe("on-call schedule page", () => {
 		)
 		const ignored = pageUpdate(
 			model,
-			Message.ClickedShift({ startMs: isoMs(ended.starts_at), endMs: isoMs(ended.ends_at) }),
+			Message.ClickedShift({ startMs: toEpochMs(ended.starts_at), endMs: toEpochMs(ended.ends_at) }),
 		)
 		expect(ignored.model.overrideOpenCount).toBe(model.overrideOpenCount)
 		const opened = run(model, [
-			Message.ClickedShift({ startMs: isoMs(running.starts_at), endMs: isoMs(running.ends_at) }),
+			Message.ClickedShift({
+				startMs: toEpochMs(running.starts_at),
+				endMs: toEpochMs(running.ends_at),
+			}),
 			Message.ChangedOverrideUser({ value: memberId(7) }),
 		])
 		expect(overrideIssue(opened.overrideDraft, BERLIN, ONCALL_NOW)).toEqual(Option.none())

@@ -3,12 +3,13 @@ import { warehouseDateTimeToIso } from "@maple/query-engine"
 import { errorIssueDetailFromV2 } from "../../../lib/services/error-issues"
 import { AlertIncidentId } from "@maple/domain/primitives"
 import type { V2InvestigationCreateParams } from "@maple/domain/http/v2"
-import { DateTime, Option, Schema, String as Str, Array as Arr } from "effect"
+import { Option, Schema, Array as Arr } from "effect"
 import { AsyncData } from "foldkit"
 import type { TimeWindow } from "../../../data/time-range"
 import type { ErrorIssueSearch, ISSUE_TABS } from "../../../route/search"
 import type { DetailQuery } from "./command"
 import type { Model } from "./model"
+import { toEpochMs } from "@maple/ui/lib/time-format"
 
 export type Search = typeof ErrorIssueSearch.Type
 
@@ -23,8 +24,10 @@ const SAMPLE_LIMIT = 50
 export type Tab = (typeof ISSUE_TABS)[number]
 export const tabOf = (search: Search): Tab => search.tab ?? "overview"
 
-const warehouseMs = (value: string): number | null =>
-	Option.getOrNull(Option.map(DateTime.make(Str.replace(" ", "T")(value) + "Z"), DateTime.toEpochMillis))
+const warehouseMs = (value: string): number | null => {
+	const ms = toEpochMs(value)
+	return Number.isNaN(ms) ? null : ms
+}
 
 export type ChartWindow = Readonly<{
 	startMs: number

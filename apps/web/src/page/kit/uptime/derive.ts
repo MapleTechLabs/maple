@@ -1,7 +1,8 @@
 import type { V2UptimeMonitor } from "@maple/domain/http/v2"
 import type { Tone } from "@maple/ui/lib/tone"
-import { isoMs, formatSpan } from "../alert-time"
+import { formatSpan } from "../alert-time"
 import { Array as Arr, String as Str } from "effect"
+import { toEpochMs } from "@maple/ui/lib/time-format"
 
 // Pure reads of an uptime monitor shared by the Uptime tab, the monitor page and the service card.
 
@@ -32,7 +33,7 @@ export const formatEvery = (seconds: number): string => formatSpan(seconds * 100
 
 const sinceChange = (monitor: UptimeMonitor, nowMs: number): string | null => {
 	const changed = monitor.state.status_changed_at
-	return changed === null ? null : formatSpan(nowMs - isoMs(changed))
+	return changed === null ? null : formatSpan(nowMs - toEpochMs(changed))
 }
 
 /** The chip text, sentence case: "Down 6m", "Degraded", "Paused". */
@@ -83,7 +84,8 @@ export const targetLine = (monitor: UptimeMonitor, nowMs: number): string => {
 			return `${config.record_type} ${config.hostname}${config.expected === undefined ? "" : ` = ${config.expected}`}`
 		case "heartbeat": {
 			const ping = monitor.state.last_ping_at
-			const pinged = ping === null ? "no ping yet" : `last ping ${formatSpan(nowMs - isoMs(ping))} ago`
+			const pinged =
+				ping === null ? "no ping yet" : `last ping ${formatSpan(nowMs - toEpochMs(ping))} ago`
 			return `${heartbeatScheduleLabel(config)}, ${formatEvery(config.grace_seconds)} grace · ${pinged}`
 		}
 	}

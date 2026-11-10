@@ -18,7 +18,8 @@ import type {
 } from "@maple/domain/http/v2"
 import { zonedDateParts, zonedPartsToEpochMs } from "@maple/query-engine/datetime"
 import { Array as Arr, Option, Schema, String as Str } from "effect"
-import { isoMs, msIso } from "../../kit/alert-time"
+import { msIso } from "../../kit/alert-time"
+import { toEpochMs } from "@maple/ui/lib/time-format"
 
 // The schedule form's draft: name, zone and up to five layers, each with its rotation and
 // restrictions, held as typed text and checked against the API's own schemas.
@@ -145,8 +146,8 @@ export const formFromSchedule = (schedule: V2OnCallSchedule): Form => {
 			handoffWeekday: rotation.kind === "weekly" ? rotation.handoff_weekday : "mon",
 			handoffTime: rotation.kind === "custom" ? "09:00" : rotation.handoff_time,
 			lengthHours: rotation.kind === "custom" ? String(rotation.length_hours) : "12",
-			startsAt: localInputOf(isoMs(layer.starts_at), schedule.time_zone),
-			startsAtMs: isoMs(layer.starts_at),
+			startsAt: localInputOf(toEpochMs(layer.starts_at), schedule.time_zone),
+			startsAtMs: toEpochMs(layer.starts_at),
 			restrictions: Arr.map(layer.restrictions ?? [], (restriction, index) => ({
 				key: `r${layerIndex}x${index}`,
 				weekdays: restriction.weekdays,

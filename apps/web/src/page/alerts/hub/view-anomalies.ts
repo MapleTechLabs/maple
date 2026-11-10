@@ -1,5 +1,5 @@
 import type { AlertIncidentDocument } from "@maple/domain/http"
-import { formatRelativeFrom } from "@maple/ui/lib/time-format"
+import { formatRelativeFrom, toEpochMs } from "@maple/ui/lib/time-format"
 import { cn } from "@maple/ui/lib/utils"
 import { formatAlertDuration } from "@maple/web-data/alerts/form-utils"
 import type { AlertsOverviewReady } from "@maple/web-data/alerts/overview"
@@ -21,7 +21,6 @@ import { typography, typographyClass } from "@maple/views/ui/typography"
 import { listToolbar } from "../../kit/list-toolbar"
 import { severityBadge } from "../shared/badges"
 import { incidentHref } from "../../kit/alert-links"
-import { isoMs } from "../../kit/alert-time"
 import { inboxTab, type InboxAcknowledge } from "./view-inbox"
 import { Message, type InboxSignal, type IncidentStatusFilter } from "./message"
 
@@ -106,7 +105,7 @@ const anomaliesEmpty = (h: H, status: IncidentStatusFilter, serviceName: string 
 
 const byResolvedDesc = Order.flip(
 	Order.mapInput(Order.Number, (incident: AlertIncidentDocument) =>
-		isoMs(incident.resolvedAt ?? incident.lastTriggeredAt),
+		toEpochMs(incident.resolvedAt ?? incident.lastTriggeredAt),
 	),
 )
 
@@ -133,7 +132,7 @@ const resolvedRow = (h: H, incident: AlertIncidentDocument, now: number): Html =
 			],
 		),
 		typography(h, { size: "xs", tone: "muted", mono: true, numeric: true }, [
-			incident.resolvedAt === null ? "" : formatRelativeFrom(isoMs(incident.resolvedAt), now),
+			incident.resolvedAt === null ? "" : formatRelativeFrom(toEpochMs(incident.resolvedAt), now),
 		]),
 		typography(h, { size: "xs", mono: true, numeric: true }, [
 			formatAlertDuration(incident.firstTriggeredAt, incident.resolvedAt),

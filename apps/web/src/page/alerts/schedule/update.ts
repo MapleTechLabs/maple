@@ -22,9 +22,10 @@ import {
 } from "./command"
 import { Message } from "./message"
 import { type Model, type OverrideDraft } from "./model"
-import { isoMs, msIso } from "../../kit/alert-time"
+import { msIso } from "../../kit/alert-time"
 import { acceptGrants } from "../../kit/session-grants"
 import { canManageAlerts } from "../../kit/session-grants"
+import { toEpochMs } from "@maple/ui/lib/time-format"
 
 type Return = PageReturn<Model, Message>
 type ScheduleRoute = Extract<AppRoute, { readonly _tag: "AlertsSchedule" }>
@@ -179,7 +180,7 @@ export const isScheduleStale = (model: Model, nowMs: number): boolean =>
 	!isScheduleRetryWaiting(model, nowMs) &&
 	Option.exists(scheduleOf(model), (schedule) =>
 		Option.match(Option.fromNullishOr(schedule.on_call_now), {
-			onSome: (now) => isoMs(now.ends_at) <= nowMs,
+			onSome: (now) => toEpochMs(now.ends_at) <= nowMs,
 			onNone: () => nowMs - (model.schedule.updatedAtMs ?? nowMs) >= SCHEDULE_MAX_AGE_MS,
 		}),
 	)

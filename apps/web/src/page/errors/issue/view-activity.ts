@@ -20,7 +20,6 @@ import {
 	DOT_CLASS,
 	EVENT_LABEL,
 	isContinuation,
-	isoMs,
 	MESSAGE_TYPES,
 	MESSAGE_VERB,
 	renderPayload,
@@ -29,6 +28,7 @@ import { Message } from "./message"
 import { typography, typographyClass } from "@maple/views/ui/typography"
 import { spaced } from "@maple/views/ui/spaced"
 import { hstack } from "@maple/views/ui/stack"
+import { toEpochMs } from "@maple/ui/lib/time-format"
 
 // The issue timeline and the comment composer.
 
@@ -262,7 +262,7 @@ export const issueTimeline = (
 			createdAt: escalation.createdAt,
 			escalation,
 		})),
-	].sort((a, b) => isoMs(a.createdAt) - isoMs(b.createdAt))
+	].sort((a, b) => toEpochMs(a.createdAt) - toEpochMs(b.createdAt))
 	if (items.length === 0)
 		return emptyMessage(h, { dashed: true, className: "py-10" }, [
 			typography(h, { size: "sm", tone: "foreground", weight: "medium", as: "p" }, ["No activity yet"]),

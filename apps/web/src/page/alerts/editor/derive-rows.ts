@@ -11,10 +11,10 @@ import { normalizeTimestampInput } from "@maple/ui/lib/timezone-format"
 import { AsyncData } from "foldkit"
 import { lookupField } from "../../kit/autocomplete-lookups"
 import { previewIssue, previewPayload, previewStateOf, type PreviewState } from "../shared/preview"
-import { isoMs } from "../../kit/alert-time"
 import type { RuleForm } from "./form"
 import type { Model, TraceFacets } from "./model"
 import { Array as Arr } from "effect"
+import { toEpochMs } from "@maple/ui/lib/time-format"
 
 // The live rows as the documents the editor reads.
 
@@ -85,8 +85,8 @@ export const windowMsOf = (model: Pick<Model, "previewWindow">): { min: number; 
 	model.previewWindow === null
 		? { min: 0, max: 0 }
 		: {
-				min: isoMs(normalizeTimestampInput(model.previewWindow.startTime)),
-				max: isoMs(normalizeTimestampInput(model.previewWindow.endTime)),
+				min: toEpochMs(normalizeTimestampInput(model.previewWindow.startTime)),
+				max: toEpochMs(normalizeTimestampInput(model.previewWindow.endTime)),
 			}
 
 const hasPayload = (model: Pick<Model, "previewWindow">, form: RuleForm): boolean =>

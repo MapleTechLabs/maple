@@ -37,9 +37,9 @@ import { eyebrow } from "@maple/views/ui/eyebrow"
 import { pressable } from "@maple/views/ui/pressable"
 import { chartEmpty, chartError, chartLoading } from "@maple/views/ui/chart-state"
 import { seriesLegend } from "../../kit/series-legend"
-import { isoMs } from "../../kit/alert-time"
 import { typography, typographyClass } from "@maple/views/ui/typography"
 import { hstack } from "@maple/views/ui/stack"
+import { toEpochMs } from "@maple/ui/lib/time-format"
 
 // The view half of the alert rule chart; the
 // definition is `charts/definitions/alert-rule.ts`, built by the chart Mount from the spec here.
@@ -169,7 +169,7 @@ export const ruleChart = <M>(h: HtmlBuilder<M>, inputs: RuleChartInputs<M>): Htm
 			x2: incident.resolvedAt
 				? new Date(incident.resolvedAt).getTime()
 				: incident.heldSince
-					? isoMs(incident.heldSince)
+					? toEpochMs(incident.heldSince)
 					: domain.max,
 			open: incident.status === "open",
 		})),
@@ -178,7 +178,7 @@ export const ruleChart = <M>(h: HtmlBuilder<M>, inputs: RuleChartInputs<M>): Htm
 	const heldBands = clipToDomain(
 		Arr.flatMap(incidents, (incident) =>
 			incident.status === "open" && incident.heldSince
-				? [{ x1: isoMs(incident.heldSince), x2: domain.max }]
+				? [{ x1: toEpochMs(incident.heldSince), x2: domain.max }]
 				: [],
 		),
 		domain,
@@ -188,8 +188,8 @@ export const ruleChart = <M>(h: HtmlBuilder<M>, inputs: RuleChartInputs<M>): Htm
 			? []
 			: clipToDomain(
 					Arr.map(inputs.preview.wouldFire, (span) => ({
-						x1: isoMs(span.start),
-						x2: isoMs(span.end),
+						x1: toEpochMs(span.start),
+						x2: toEpochMs(span.end),
 					})),
 					domain,
 				)
@@ -443,7 +443,7 @@ export const ruleChart = <M>(h: HtmlBuilder<M>, inputs: RuleChartInputs<M>): Htm
 				? [
 						typography(h, { size: "2xs", tone: "muted", as: "p" }, [
 							clampedToPreview ? "Axis starts at " : "Query series starts at ",
-							formatTime(isoMs(truncatedTo), "tooltip"),
+							formatTime(toEpochMs(truncatedTo), "tooltip"),
 							". The range needs more windows than one preview replays: widen the rule's window or shorten the range.",
 						]),
 					]

@@ -8,7 +8,6 @@ import type { Html, HtmlBuilder } from "foldkit/html"
 import { eyebrow } from "@maple/views/ui/eyebrow"
 import { skeleton } from "@maple/views/ui/skeleton"
 import { previewIssue, previewStateOf } from "../shared/preview"
-import { isoMs } from "../../kit/alert-time"
 import { draftPreviewOf, openIncidentsOf, windowMsOf } from "./derive-rows"
 import type { RuleForm } from "./form"
 import type { Message } from "./message"
@@ -17,6 +16,7 @@ import { isEvaluationChanged } from "./plan"
 import { typography } from "@maple/views/ui/typography"
 import { Array as Arr } from "effect"
 import { hstack } from "@maple/views/ui/stack"
+import { toEpochMs } from "@maple/ui/lib/time-format"
 
 // `RuleEditImpact`: the saved rule and the draft replayed
 // over one window, every changed field, and the open incidents the draft would clear.
@@ -196,8 +196,8 @@ const fireRail = (
 ): Html => {
 	const span = Math.max(domain.max - domain.min, 1)
 	const marks = Arr.flatMap(preview?.wouldFire ?? [], (fire) => {
-		const start = isoMs(fire.start)
-		const end = isoMs(fire.end)
+		const start = toEpochMs(fire.start)
+		const end = toEpochMs(fire.end)
 		if (!Number.isFinite(start) || !Number.isFinite(end)) return []
 		const left = Math.min(Math.max((start - domain.min) / span, 0), 1)
 		const width = Math.max((end - start) / span, 0.004)

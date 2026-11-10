@@ -16,7 +16,7 @@ import { Effect, Option, Order, Array as Arr } from "effect"
 import { formatDateInTimezone, formatTimeInTimezone } from "@maple/ui/lib/timezone-format"
 import { toLoadFailure } from "@maple/views/data/load-failure"
 import { MapleApiV2Client } from "../../../platform/api-clients"
-import { isoMs } from "../../kit/alert-time"
+import { toEpochMs } from "@maple/ui/lib/time-format"
 
 // Alert silences: the reads and writes the hub, rule and incident pages share, and how a page
 // tells which silence covers a rule or an incident.
@@ -63,8 +63,8 @@ export const endSilence = (id: AlertSilenceId) =>
 		return yield* client.alertSilences.end({ params: { id } })
 	}).pipe(Effect.mapError(toLoadFailure))
 
-export const startsAtMs = (silence: V2AlertSilence): number => isoMs(silence.starts_at)
-export const endsAtMs = (silence: V2AlertSilence): number => isoMs(silence.ends_at)
+export const startsAtMs = (silence: V2AlertSilence): number => toEpochMs(silence.starts_at)
+export const endsAtMs = (silence: V2AlertSilence): number => toEpochMs(silence.ends_at)
 
 /** Cancelled before it started: the API collapses its window to one instant. */
 export const isCancelledSilence = (silence: V2AlertSilence): boolean =>
