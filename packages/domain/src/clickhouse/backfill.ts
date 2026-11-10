@@ -38,24 +38,6 @@ export interface BackfillSpec {
 export const isBackfill = (stmt: unknown): stmt is BackfillSpec =>
 	typeof stmt === "object" && stmt !== null && (stmt as { readonly kind?: unknown }).kind === "backfill"
 
-/**
- * Reliable time column per source table backfills read from. Used to window
- * chunks. Keep in sync with `CLICKHOUSE_MV_SOURCE_TABLES` in `qualify.ts`.
- */
-export const SOURCE_TIME_COLUMNS: Readonly<Record<string, string>> = {
-	traces: "Timestamp",
-	logs: "TimestampTime",
-	metrics_sum: "TimeUnix",
-	metrics_gauge: "TimeUnix",
-	metrics_histogram: "TimeUnix",
-	metrics_exponential_histogram: "TimeUnix",
-	service_overview_spans: "Timestamp",
-	service_operations_minutely: "Minute",
-	trace_list_mv: "Timestamp",
-	session_events: "Timestamp",
-	session_replays: "StartTime",
-} satisfies Readonly<Record<string, string>>
-
 const ident = (db: string, name: string): string => `\`${db}\`.\`${name}\``
 
 const buildInsert = (spec: BackfillSpec, db: string, timePredicate?: string): string => {

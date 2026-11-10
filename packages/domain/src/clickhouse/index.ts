@@ -24,7 +24,6 @@ export { performanceOnlySearchColumns } from "./migrations/0010_search_indexes"
 export {
 	type BackfillSpec,
 	isBackfill,
-	SOURCE_TIME_COLUMNS,
 	renderBackfillFull,
 	renderStatementFull,
 	compileBackfillChunk,
