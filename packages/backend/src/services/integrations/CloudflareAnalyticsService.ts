@@ -192,6 +192,8 @@ const SAFETY_LAG_MS = 10 * 60_000
 const MIN_HEAD_WINDOW_MS = 15 * 60_000
 /** How far back the first poll reaches (further bounded by the plan's `notOlderThan`). */
 const BACKFILL_MS = 24 * 60 * 60_000
+/** How far a backlogged head may lag before its oldest buckets are skipped (see `headFloor`). */
+const HEAD_MAX_LAG_MS = 3 * 24 * 60 * 60_000
 /**
  * Max window per GraphQL call. 12 buckets × worst-case ~200 (cacheStatus × status) groups stays
  * comfortably under Cloudflare's 5000-rows-per-selection cap.
@@ -757,22 +759,40 @@ const backfillFloor = (row: CloudflareAnalyticsStateRow, now: number): number =>
 }
 
 /**
+ * Oldest bucket a lagging head may read. With a known plan retention it reaches back to that
+ * retention (at most {@link HEAD_MAX_LAG_MS}), so a backlog past the 24h backfill floor keeps
+ * draining instead of skipping unread buckets. Unknown retention keeps the backfill floor.
+ */
+const headFloor = (row: CloudflareAnalyticsStateRow, now: number): number => {
+	const { notOlderThanMs } = parseStoredSettings(row.settingsJson)
+	if (notOlderThanMs == null) return backfillFloor(row, now)
+	return Math.max(
+		floorToBucket(now - SAFETY_LAG_MS - HEAD_MAX_LAG_MS),
+		floorToBucket(now - notOlderThanMs) + BUCKET_MS,
+	)
+}
+
+/**
  * HEAD window — the newest un-ingested slice, fetched FIRST every tick so a freshly-connected
  * integration surfaces near-live data within one tick. The first poll (null watermark) grabs just
  * the newest window; steady state is the `[watermark, horizon]` delta once it reaches
  * {@link MIN_HEAD_WINDOW_MS}. Null until then.
+ *
+ * A backlogged window ends on a multiple of the window size, so zones whose watermarks drifted
+ * apart (one chunk rate-limited, its siblings not) share windows again and batch into full documents.
  */
 const headWindow = (row: CloudflareAnalyticsStateRow, now: number): PollWindow | null => {
 	const effectiveEnd = floorToBucket(now - SAFETY_LAG_MS)
-	const floor = backfillFloor(row, now)
 	const window = maxWindowMs(row)
-	const watermarkMs = row.watermarkAt
-	let start = watermarkMs ?? floorToBucket(effectiveEnd - window)
-	if (start < floor) start = floor
-	start = floorToBucket(start)
-	const end = Math.min(start + window, effectiveEnd)
-	if (end - start < Math.min(MIN_HEAD_WINDOW_MS, window)) return null
-	return { start, end }
+	const start = floorToBucket(Math.max(row.watermarkAt ?? effectiveEnd - window, headFloor(row, now)))
+	const fullEnd = start + window
+	if (fullEnd >= effectiveEnd) {
+		return effectiveEnd - start < Math.min(MIN_HEAD_WINDOW_MS, window)
+			? null
+			: { start, end: effectiveEnd }
+	}
+	const grid = floorToBucket(window)
+	return { start, end: grid < BUCKET_MS ? fullEnd : fullEnd - (fullEnd % grid) }
 }
 
 /**
