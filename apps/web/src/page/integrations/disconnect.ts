@@ -128,7 +128,7 @@ export const DISCONNECTS: ReadonlyMap<string, DisconnectSpec> = new Map<string, 
 			success: "Remove the drains on Vercel",
 			successType: "warning",
 			successDescription:
-				"Maple couldn't delete them. Delete Maple logs, Maple traces and Maple AI Gateway in the team's drain settings.",
+				"Maple couldn't delete them. In the team's drain settings, delete every drain whose name starts with Maple.",
 		},
 	],
 ])

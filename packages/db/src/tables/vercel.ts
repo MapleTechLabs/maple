@@ -27,14 +27,30 @@ export const VercelConnections = PG.table("vercel_connections", {
 		logsEnabled: PG.column(PG.bool, { name: "logs_enabled", default: true }),
 		tracesEnabled: PG.column(PG.bool, { name: "traces_enabled", default: true }),
 		aiGatewayEnabled: PG.column(PG.bool, { name: "ai_gateway_enabled", default: true }),
+		// Opt-in: Vercel bills these events, and Speed Insights and Audit Log need a plan the team may lack.
+		speedInsightsEnabled: PG.column(PG.bool, { name: "speed_insights_enabled", default: false }),
+		webAnalyticsEnabled: PG.column(PG.bool, { name: "web_analytics_enabled", default: false }),
+		auditLogEnabled: PG.column(PG.bool, { name: "audit_log_enabled", default: false }),
 		logDrainId: PG.column(PG.nullable(PG.text), { name: "log_drain_id" }),
 		traceDrainId: PG.column(PG.nullable(PG.text), { name: "trace_drain_id" }),
 		aiGatewayDrainId: PG.column(PG.nullable(PG.text), { name: "ai_gateway_drain_id" }),
+		speedInsightsDrainId: PG.column(PG.nullable(PG.text), { name: "speed_insights_drain_id" }),
+		webAnalyticsDrainId: PG.column(PG.nullable(PG.text), { name: "web_analytics_drain_id" }),
+		auditLogDrainId: PG.column(PG.nullable(PG.text), { name: "audit_log_drain_id" }),
 		/** What the last check of each drain found; null until one ran. */
 		logDrainState: PG.column(PG.nullable(PG.jsonb(VercelDrainState)), { name: "log_drain_state" }),
 		traceDrainState: PG.column(PG.nullable(PG.jsonb(VercelDrainState)), { name: "trace_drain_state" }),
 		aiGatewayDrainState: PG.column(PG.nullable(PG.jsonb(VercelDrainState)), {
 			name: "ai_gateway_drain_state",
+		}),
+		speedInsightsDrainState: PG.column(PG.nullable(PG.jsonb(VercelDrainState)), {
+			name: "speed_insights_drain_state",
+		}),
+		webAnalyticsDrainState: PG.column(PG.nullable(PG.jsonb(VercelDrainState)), {
+			name: "web_analytics_drain_state",
+		}),
+		auditLogDrainState: PG.column(PG.nullable(PG.jsonb(VercelDrainState)), {
+			name: "audit_log_drain_state",
 		}),
 		/** Lookup hash of the ingest key in the drains' Authorization header; a mismatch re-keys them. */
 		drainKeyHash: PG.column(PG.nullable(PG.text), { name: "drain_key_hash" }),

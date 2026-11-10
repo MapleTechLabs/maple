@@ -205,9 +205,15 @@ describe("buildIntegrationInventory", () => {
 			logsEnabled: true,
 			tracesEnabled: true,
 			aiGatewayEnabled: true,
+			speedInsightsEnabled: false,
+			webAnalyticsEnabled: false,
+			auditLogEnabled: false,
 			logDrainState: { status: "enabled", lastError: null },
 			traceDrainState: { status: "enabled", lastError: null },
 			aiGatewayDrainState: { status: "enabled", lastError: null },
+			speedInsightsDrainState: null,
+			webAnalyticsDrainState: null,
+			auditLogDrainState: null,
 			lastSuccessAt: NOW - MINUTE,
 			lastErrorAt: null,
 			lastError: null,
@@ -236,6 +242,21 @@ describe("buildIntegrationInventory", () => {
 			expect(vercel?.status).toBe("failing")
 			expect(vercel?.resources).toHaveLength(1)
 			expect(vercel?.problem).toBe("1 of 1 failing, e.g. drain logs: Drains need a Pro plan")
+		})
+
+		it("fails on an opt-in drain Vercel refused for the team's plan", () => {
+			const vercel = providerOf(
+				{
+					vercelConnection: {
+						...connection,
+						auditLogEnabled: true,
+						auditLogDrainState: { status: "errored", lastError: "Audit Log drains need Enterprise" },
+					},
+				},
+				"vercel",
+			)
+			expect(vercel?.status).toBe("failing")
+			expect(vercel?.problem).toBe("1 of 4 failing, e.g. drain audit log: Audit Log drains need Enterprise")
 		})
 
 		it("reports a rejected token as disconnected", () => {

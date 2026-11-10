@@ -19,7 +19,12 @@ import {
 const drain = (status: VercelDrainStatus["status"], lastError: string | null = null) =>
 	new VercelDrainStatus({ id: `drn_${status}`, status, lastError })
 
-const connected = (overrides: Partial<ConstructorParameters<typeof VercelIntegrationStatus>[0]> = {}) =>
+type StatusFields = ConstructorParameters<typeof VercelIntegrationStatus>[0]
+
+const connected = ({
+	drains,
+	...overrides
+}: Partial<Omit<StatusFields, "drains">> & { readonly drains?: Partial<StatusFields["drains"]> } = {}) =>
 	new VercelIntegrationStatus({
 		connected: true,
 		team: { id: "team_1", slug: "acme", name: "Acme" },
@@ -29,7 +34,18 @@ const connected = (overrides: Partial<ConstructorParameters<typeof VercelIntegra
 		logsEnabled: true,
 		tracesEnabled: true,
 		aiGatewayEnabled: true,
-		drains: { logs: drain("enabled"), traces: drain("enabled"), aiGateway: drain("enabled") },
+		speedInsightsEnabled: false,
+		webAnalyticsEnabled: false,
+		auditLogEnabled: false,
+		drains: {
+			logs: drain("enabled"),
+			traces: drain("enabled"),
+			aiGateway: drain("enabled"),
+			speedInsights: null,
+			webAnalytics: null,
+			auditLog: null,
+			...drains,
+		},
 		projects: [],
 		authFailed: false,
 		connectedAt: 1,
@@ -97,9 +113,10 @@ describe("stoppedByDraft", () => {
 			aiGatewayEnabled: false,
 			samplingRate: 0.1,
 		}
-		expect(stoppedByDraft(DEFAULT_VERCEL_DRAFT, draft, names)).toEqual([
+		expect(stoppedByDraft({ ...DEFAULT_VERCEL_DRAFT, auditLogEnabled: true }, draft, names)).toEqual([
 			"Logs: the Maple logs drain is deleted",
 			"AI Gateway: the Maple AI Gateway drain is deleted",
+			"Audit log: the Maple audit log drain is deleted",
 			"Sampling drops to 10% of events",
 		])
 	})
@@ -114,8 +131,16 @@ describe("draftProblem", () => {
 				tracesEnabled: false,
 				aiGatewayEnabled: false,
 			}),
-		).toBe("Forward logs, traces or AI Gateway usage.")
-		expect(draftProblem({ ...DEFAULT_VERCEL_DRAFT, logsEnabled: false, tracesEnabled: false })).toBeNull()
+		).toBe("Turn on at least one drain.")
+		expect(
+			draftProblem({
+				...DEFAULT_VERCEL_DRAFT,
+				logsEnabled: false,
+				tracesEnabled: false,
+				aiGatewayEnabled: false,
+				webAnalyticsEnabled: true,
+			}),
+		).toBeNull()
 		expect(draftProblem({ ...DEFAULT_VERCEL_DRAFT, projectScope: "some" })).toBe(
 			"Pick at least one project.",
 		)
@@ -162,6 +187,28 @@ describe("vercelIssues", () => {
 		])
 	})
 
+	it("says an opt-in drain Vercel refused needs the product turned on", () => {
+		const issues = vercelIssues(
+			connected({
+				auditLogEnabled: true,
+				drains: {
+					auditLog: new VercelDrainStatus({
+						id: null,
+						status: "errored",
+						lastError: "Audit Log drains need Enterprise",
+					}),
+				},
+			}),
+		)
+		expect(issues).toEqual([
+			expect.objectContaining({
+				title: "The audit log drain was refused by Vercel",
+				vercelError: "Audit Log drains need Enterprise",
+				fix: "reapply",
+			}),
+		])
+	})
+
 	it("treats an enabled signal without a drain as broken", () => {
 		expect(
 			vercelIssues(
@@ -199,6 +246,14 @@ describe("signalsLabel", () => {
 		expect(signalsLabel({ ...DEFAULT_VERCEL_DRAFT, logsEnabled: false, tracesEnabled: false })).toBe(
 			"AI Gateway",
 		)
+		expect(
+			signalsLabel({
+				...DEFAULT_VERCEL_DRAFT,
+				tracesEnabled: false,
+				speedInsightsEnabled: true,
+				auditLogEnabled: true,
+			}),
+		).toBe("Logs, AI Gateway, Speed Insights and audit log")
 	})
 })
 

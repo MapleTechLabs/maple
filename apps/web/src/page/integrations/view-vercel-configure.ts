@@ -302,6 +302,24 @@ const SIGNALS = [
 		drain: "Maple AI Gateway",
 		description: "Model usage and cost from Vercel AI Gateway: every request with its model, tokens and cost.",
 	},
+	{
+		flag: "speedInsightsEnabled",
+		title: "Speed Insights",
+		drain: "Maple Speed Insights",
+		description: "Core Web Vitals (LCP, INP, CLS, FCP, TTFB) from real visits. Needs Speed Insights Plus on the project.",
+	},
+	{
+		flag: "webAnalyticsEnabled",
+		title: "Web Analytics",
+		drain: "Maple Web Analytics",
+		description: "Page views and custom events. Needs Web Analytics on the project; Vercel bills each event.",
+	},
+	{
+		flag: "auditLogEnabled",
+		title: "Audit log",
+		drain: "Maple audit log",
+		description: "Who changed what on the team, for the whole team whatever projects you pick. Enterprise plan only.",
+	},
 ] as const
 
 const projectList = (h: H, configure: VercelConfigureModel, projects: ReadonlyArray<VercelPickableProject>): Html => {
@@ -484,7 +502,7 @@ const settingsFields = (h: H, configure: VercelConfigureModel, projects: Readonl
 						],
 					),
 					h.p([h.Class(SMALL)], [
-						"Vercel samples logs and traces before it sends, so a lower rate also lowers its bill. AI Gateway usage is never sampled, so its cost totals stay exact.",
+						"Vercel samples logs and traces before it sends, so a lower rate also lowers its bill. The other drains are never sampled, so their counts and totals stay exact.",
 					]),
 				],
 			),
@@ -505,7 +523,7 @@ export const vercelCostNote = (h: H): Html =>
 				[
 					h.li(
 						[],
-						[typography(h, { weight: "medium", tone: "foreground" }, ["$0.50 per GB"]), " of logs and traces sent"],
+						[typography(h, { weight: "medium", tone: "foreground" }, ["$0.50 per GB"]), " of data sent"],
 					),
 					h.li(
 						[],

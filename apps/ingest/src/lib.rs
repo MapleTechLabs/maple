@@ -17,5 +17,6 @@ pub mod session_analytics;
 pub mod telemetry;
 pub mod usage_metrics;
 pub mod vercel_ai_gateway_drain;
+pub mod vercel_event_drains;
 pub mod vercel_logs;
 pub mod wal_store;

@@ -17,7 +17,7 @@ use std::collections::hash_map::{Entry, HashMap};
 pub const INGEST_SOURCE: &str = "vercel_log_drain";
 
 type JsonObject = JsonMap<String, JsonValue>;
-type ResourceAttributes = Vec<(&'static str, String)>;
+pub(crate) type ResourceAttributes = Vec<(&'static str, String)>;
 
 /// Top-level string fields copied verbatim.
 const LOG_ATTRIBUTES: &[(&str, &str)] = &[
@@ -108,14 +108,26 @@ pub fn parse(payload: &[u8]) -> Result<Parsed, serde_json::Error> {
 /// Every entry with a `projectId` (which every Vercel log has) as a record,
 /// grouped under its resource.
 pub fn build_logs_request(entries: &[JsonObject], now_unix_nano: u64) -> ExportLogsServiceRequest {
+    grouped_logs_request(
+        "vercel.log_drain",
+        entries.iter().filter_map(|entry| {
+            Some((
+                resource_attributes(entry)?,
+                log_record(entry, now_unix_nano),
+            ))
+        }),
+    )
+}
+
+/// Records grouped under their resources, in first-seen order, in one scope.
+pub(crate) fn grouped_logs_request(
+    scope: &str,
+    records: impl IntoIterator<Item = (ResourceAttributes, LogRecord)>,
+) -> ExportLogsServiceRequest {
     // Groups in first-seen order, found by resource through `index`.
     let mut groups: Vec<(ResourceAttributes, Vec<LogRecord>)> = Vec::new();
     let mut index: HashMap<ResourceAttributes, usize> = HashMap::new();
-    for entry in entries {
-        let Some(resource) = resource_attributes(entry) else {
-            continue;
-        };
-        let record = log_record(entry, now_unix_nano);
+    for (resource, record) in records {
         match index.entry(resource) {
             Entry::Occupied(group) => groups[*group.get()].1.push(record),
             Entry::Vacant(group) => {
@@ -137,7 +149,7 @@ pub fn build_logs_request(entries: &[JsonObject], now_unix_nano: u64) -> ExportL
                 }),
                 scope_logs: vec![ScopeLogs {
                     scope: Some(InstrumentationScope {
-                        name: "vercel.log_drain".to_owned(),
+                        name: scope.to_owned(),
                         ..Default::default()
                     }),
                     log_records,

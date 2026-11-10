@@ -1265,13 +1265,13 @@ const integrationChecks: ReadonlyArray<AuditCheck> = [
 		title: "Vercel drains are forwarding",
 		severity: "warn",
 		fixHint:
-			"Settings → Integrations → Vercel: save a new access token if Vercel rejected it; a missing or errored drain is re-created on the next sync, and drains need a Pro or Enterprise team.",
+			"Settings → Integrations → Vercel: save a new access token if Vercel rejected it; a missing or errored drain is re-created on the next sync, and drains need a Pro or Enterprise team (Speed Insights needs Speed Insights Plus on the project, the audit log an Enterprise team).",
 		evaluate: ({ config, now }) => {
 			const affected = inventoryFindings(config.integrationInventory, "vercel", now)
 			return affected.length === 0
 				? PASS
 				: fail(
-						`Vercel has ${plural(affected.length, "problem")}: logs, traces or AI Gateway usage from the affected drains are not arriving.`,
+						`Vercel has ${plural(affected.length, "problem")}: telemetry from the affected drains is not arriving.`,
 						affected,
 					)
 		},

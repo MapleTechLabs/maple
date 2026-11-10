@@ -68,10 +68,16 @@ export const VERCEL_STATUS = new VercelIntegrationStatus({
 	logsEnabled: true,
 	tracesEnabled: true,
 	aiGatewayEnabled: true,
+	speedInsightsEnabled: false,
+	webAnalyticsEnabled: false,
+	auditLogEnabled: false,
 	drains: {
 		logs: new VercelDrainStatus({ id: "drn_logs", status: "enabled", lastError: null }),
 		traces: new VercelDrainStatus({ id: "drn_traces", status: "enabled", lastError: null }),
 		aiGateway: new VercelDrainStatus({ id: "drn_ai_gateway", status: "enabled", lastError: null }),
+		speedInsights: null,
+		webAnalytics: null,
+		auditLog: null,
 	},
 	projects: [
 		project(

@@ -37,7 +37,12 @@ const PROJECTS = [
 const drain = (status: VercelDrainStatus["status"]) =>
 	new VercelDrainStatus({ id: status === "missing" ? null : `drn_${status}`, status, lastError: null })
 
-const connected = (fields: Partial<ConstructorParameters<typeof VercelIntegrationStatus>[0]> = {}) =>
+type StatusFields = ConstructorParameters<typeof VercelIntegrationStatus>[0]
+
+const connected = ({
+	drains,
+	...fields
+}: Partial<Omit<StatusFields, "drains">> & { readonly drains?: Partial<StatusFields["drains"]> } = {}) =>
 	new VercelIntegrationStatus({
 		connected: true,
 		team: ACME,
@@ -47,7 +52,18 @@ const connected = (fields: Partial<ConstructorParameters<typeof VercelIntegratio
 		logsEnabled: true,
 		tracesEnabled: true,
 		aiGatewayEnabled: true,
-		drains: { logs: drain("enabled"), traces: drain("enabled"), aiGateway: drain("enabled") },
+		speedInsightsEnabled: false,
+		webAnalyticsEnabled: false,
+		auditLogEnabled: false,
+		drains: {
+			logs: drain("enabled"),
+			traces: drain("enabled"),
+			aiGateway: drain("enabled"),
+			speedInsights: null,
+			webAnalytics: null,
+			auditLog: null,
+			...drains,
+		},
 		projects: Arr.map(
 			PROJECTS,
 			(project) =>
@@ -69,7 +85,10 @@ const NOT_CONNECTED = new VercelIntegrationStatus({
 	logsEnabled: true,
 	tracesEnabled: true,
 	aiGatewayEnabled: true,
-	drains: { logs: null, traces: null, aiGateway: null },
+	speedInsightsEnabled: false,
+	webAnalyticsEnabled: false,
+	auditLogEnabled: false,
+	drains: { logs: null, traces: null, aiGateway: null, speedInsights: null, webAnalytics: null, auditLog: null },
 	projects: [],
 	authFailed: false,
 	connectedAt: null,
@@ -323,7 +342,7 @@ describe("vercel card: connected", () => {
 				type: "warning",
 				title: "Remove the drains on Vercel",
 				description:
-					"Maple couldn't delete them. Delete Maple logs, Maple traces and Maple AI Gateway in the team's drain settings.",
+					"Maple couldn't delete them. In the team's drain settings, delete every drain whose name starts with Maple.",
 			}),
 		)
 	})
@@ -368,6 +387,25 @@ describe("vercel card: configure", () => {
 		expect(
 			Option.getOrUndefined(Arr.findFirst(saved.commands ?? [], ({ name }) => name === "SaveVercelSettings"))?.args,
 		).toEqual(expect.objectContaining({ request: { aiGatewayEnabled: false } }))
+	})
+
+	test("turning on the audit log names its plan and saves only that switch at once", () => {
+		const opened = configured(connected())
+		scene(
+			{ update: step, view },
+			given(opened),
+			mounted(),
+			expectView(
+				text("Who changed what on the team, for the whole team whatever projects you pick. Enterprise plan only."),
+			).toExist(),
+		)
+		const sent = step(
+			run(opened, [Message.ToggledVercelSignal({ signal: "auditLogEnabled" })]),
+			Message.ClickedVercelSave(),
+		)
+		expect(
+			Option.getOrUndefined(Arr.findFirst(sent.commands ?? [], ({ name }) => name === "SaveVercelSettings"))?.args,
+		).toEqual(expect.objectContaining({ request: { auditLogEnabled: true } }))
 	})
 
 	test("a change that forwards more applies at once; a refusal stays in the dialog", () => {

@@ -44,6 +44,9 @@ const userId = asUserId("user_1")
 const LOGS_ENDPOINT = "https://ingest.test/v1/logpush/vercel?maple_org=org_vercel"
 const TRACES_ENDPOINT = "https://ingest.test/v1/traces?maple_org=org_vercel"
 const AI_GATEWAY_ENDPOINT = "https://ingest.test/v1/vercel/ai-gateway?maple_org=org_vercel"
+const SPEED_INSIGHTS_ENDPOINT = "https://ingest.test/v1/vercel/speed-insights?maple_org=org_vercel"
+const WEB_ANALYTICS_ENDPOINT = "https://ingest.test/v1/vercel/web-analytics?maple_org=org_vercel"
+const AUDIT_LOG_ENDPOINT = "https://ingest.test/v1/vercel/audit-log?maple_org=org_vercel"
 
 interface VercelCall {
 	readonly method: string
@@ -373,6 +376,11 @@ describe("VercelIntegrationService", () => {
 					{ ...connected.drains.aiGateway },
 					{ id: "drn_3", status: "enabled", lastError: null },
 				)
+				// The opt-in drains stay off unless asked for.
+				assert.deepStrictEqual(
+					[connected.speedInsightsEnabled, connected.webAnalyticsEnabled, connected.auditLogEnabled],
+					[false, false, false],
+				)
 				assert.isTrue(connected.aiGatewayEnabled)
 				// The first sync ran inline and left the drains as they were.
 				assert.strictEqual(callsTo(fake, "PATCH", "/v1/drains").length, 0)
@@ -393,6 +401,139 @@ describe("VercelIntegrationService", () => {
 			}),
 		)
 	})
+
+	it.effect(
+		"the opt-in drains are never sampled, the audit log covers the whole team, and disconnect removes them",
+		() => {
+			const testDb = createTestDb(trackedDbs)
+			const fake = makeFake()
+			return run(
+				testDb,
+				fake,
+				Effect.gen(function* () {
+					const connected = yield* connect({
+						speedInsightsEnabled: true,
+						webAnalyticsEnabled: true,
+						auditLogEnabled: true,
+					})
+					const headers = {
+						authorization: `Bearer ${(yield* OrgIngestKeysService.use((service) => service.getOrCreate(orgId, userId))).privateKey}`,
+						"x-maple-source-id": yield* vercelSourceId(testDb),
+					}
+					const delivery = (endpoint: string) => ({
+						type: "http",
+						endpoint,
+						encoding: "json",
+						compression: "none",
+						headers,
+					})
+					const created = Arr.map(callsTo(fake, "POST", "/v1/drains"), (call) => call.body)
+					assert.deepStrictEqual(Arr.drop(created, 3), [
+						{
+							name: "Maple Speed Insights",
+							projects: "some",
+							projectIds: ["prj_web"],
+							schemas: { speed_insights: { version: "v1" } },
+							delivery: delivery(SPEED_INSIGHTS_ENDPOINT),
+						},
+						{
+							name: "Maple Web Analytics",
+							projects: "some",
+							projectIds: ["prj_web"],
+							schemas: { analytics: { version: "v2" } },
+							delivery: delivery(WEB_ANALYTICS_ENDPOINT),
+						},
+						// Team-wide, whatever projects the other drains forward.
+						{
+							name: "Maple audit log",
+							projects: "all",
+							schemas: { audit_log: { version: "v1" } },
+							delivery: delivery(AUDIT_LOG_ENDPOINT),
+						},
+					])
+					assert.deepStrictEqual(
+						[
+							connected.drains.speedInsights?.id,
+							connected.drains.webAnalytics?.id,
+							connected.drains.auditLog?.id,
+						],
+						["drn_4", "drn_5", "drn_6"],
+					)
+					// The audit log drain matches the settings even though the connection picks projects.
+					yield* poll()
+					assert.strictEqual(callsTo(fake, "PATCH", "/v1/drains").length, 0)
+
+					yield* disconnect()
+					assert.strictEqual(fake.drains.size, 0)
+				}),
+			)
+		},
+	)
+
+	it.effect(
+		"a drain Vercel refuses for the team's plan is marked errored and the other drains still converge",
+		() => {
+			const testDb = createTestDb(trackedDbs)
+			const fake = makeFake()
+			const refuses = (call: VercelCall, schema: string) =>
+				call.method === "POST" &&
+				call.path === "/v1/drains" &&
+				Str.includes(`"${schema}"`)(JSON.stringify(call.body))
+			fake.respond = (call) =>
+				refuses(call, "audit_log")
+					? vercelError(403, "Audit Log drains are only available on Enterprise plans")
+					: refuses(call, "speed_insights")
+						? vercelError(400, "Speed Insights Plus is required")
+						: undefined
+			return run(
+				testDb,
+				fake,
+				Effect.gen(function* () {
+					const connected = yield* connect({ auditLogEnabled: true })
+					assert.deepStrictEqual(
+						{ ...connected.drains.auditLog },
+						{
+							id: null,
+							status: "errored",
+							lastError: "Audit Log drains are only available on Enterprise plans",
+						},
+					)
+					assert.deepStrictEqual(
+						[
+							connected.drains.logs?.status,
+							connected.drains.traces?.status,
+							connected.drains.aiGateway?.status,
+						],
+						["enabled", "enabled", "enabled"],
+					)
+					assert.isNull(connected.lastError)
+
+					const updated = yield* VercelIntegrationService.use((vercel) =>
+						vercel.updateSettings(
+							orgId,
+							VercelSettingsRequest.make({
+								speedInsightsEnabled: true,
+								webAnalyticsEnabled: true,
+							}),
+						),
+					)
+					assert.strictEqual(updated.drains.speedInsights?.status, "errored")
+					assert.strictEqual(
+						updated.drains.speedInsights?.lastError,
+						"Speed Insights Plus is required",
+					)
+					assert.strictEqual(updated.drains.webAnalytics?.status, "enabled")
+
+					// The poll tries the refused drains again, and re-keys nothing: every drain that exists has the key.
+					const posts = callsTo(fake, "POST", "/v1/drains").length
+					const summary = yield* poll()
+					assert.strictEqual(summary.failures, 0)
+					assert.strictEqual(callsTo(fake, "POST", "/v1/drains").length, posts + 2)
+					assert.strictEqual(callsTo(fake, "PATCH", "/v1/drains").length, 0)
+				}),
+			)
+		},
+	)
 
 	it.effect("connect leaves sampling out at a rate of 1 and fails on a token Vercel rejects", () => {
 		const testDb = createTestDb(trackedDbs)

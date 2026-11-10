@@ -19,7 +19,14 @@ import * as RadioGroup from "@maple/views/ui/radio-group"
 export const VercelConfigureTarget = Schema.Literals(["connect", "configure", "token"])
 export type VercelConfigureTarget = typeof VercelConfigureTarget.Type
 
-export const VercelSignal = Schema.Literals(["logsEnabled", "tracesEnabled", "aiGatewayEnabled"])
+export const VercelSignal = Schema.Literals([
+	"logsEnabled",
+	"tracesEnabled",
+	"aiGatewayEnabled",
+	"speedInsightsEnabled",
+	"webAnalyticsEnabled",
+	"auditLogEnabled",
+])
 export type VercelSignal = typeof VercelSignal.Type
 
 /** `VercelDraft` (`vercel-model.ts`) as a Schema. */
@@ -30,6 +37,9 @@ export const VercelDraftSchema = Schema.Struct({
 	logsEnabled: Schema.Boolean,
 	tracesEnabled: Schema.Boolean,
 	aiGatewayEnabled: Schema.Boolean,
+	speedInsightsEnabled: Schema.Boolean,
+	webAnalyticsEnabled: Schema.Boolean,
+	auditLogEnabled: Schema.Boolean,
 })
 
 export type VercelPickableProject = VercelDiscoverResponse["projects"][number]

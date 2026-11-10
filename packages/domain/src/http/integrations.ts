@@ -1203,10 +1203,16 @@ export class VercelIntegrationStatus extends Schema.Class<VercelIntegrationStatu
 		logsEnabled: Schema.Boolean,
 		tracesEnabled: Schema.Boolean,
 		aiGatewayEnabled: Schema.Boolean,
+		speedInsightsEnabled: Schema.Boolean,
+		webAnalyticsEnabled: Schema.Boolean,
+		auditLogEnabled: Schema.Boolean,
 		drains: Schema.Struct({
 			logs: Schema.NullOr(VercelDrainStatus),
 			traces: Schema.NullOr(VercelDrainStatus),
 			aiGateway: Schema.NullOr(VercelDrainStatus),
+			speedInsights: Schema.NullOr(VercelDrainStatus),
+			webAnalytics: Schema.NullOr(VercelDrainStatus),
+			auditLog: Schema.NullOr(VercelDrainStatus),
 		}),
 		projects: Schema.Array(VercelProjectStatus),
 		/** True when Vercel rejected the stored token; polling is paused until a new one is saved. */
@@ -1240,6 +1246,10 @@ export class VercelConnectRequest extends Schema.Class<VercelConnectRequest>("Ve
 	tracesEnabled: Schema.Boolean,
 	/** Absent from older clients; treated as true. */
 	aiGatewayEnabled: Schema.optionalKey(Schema.Boolean),
+	/** Opt-in drains; absent is false. */
+	speedInsightsEnabled: Schema.optionalKey(Schema.Boolean),
+	webAnalyticsEnabled: Schema.optionalKey(Schema.Boolean),
+	auditLogEnabled: Schema.optionalKey(Schema.Boolean),
 }) {}
 
 export class VercelSettingsRequest extends Schema.Class<VercelSettingsRequest>("VercelSettingsRequest")({
@@ -1249,6 +1259,9 @@ export class VercelSettingsRequest extends Schema.Class<VercelSettingsRequest>("
 	logsEnabled: Schema.optionalKey(Schema.Boolean),
 	tracesEnabled: Schema.optionalKey(Schema.Boolean),
 	aiGatewayEnabled: Schema.optionalKey(Schema.Boolean),
+	speedInsightsEnabled: Schema.optionalKey(Schema.Boolean),
+	webAnalyticsEnabled: Schema.optionalKey(Schema.Boolean),
+	auditLogEnabled: Schema.optionalKey(Schema.Boolean),
 }) {}
 
 export class VercelDisconnectResponse extends Schema.Class<VercelDisconnectResponse>(

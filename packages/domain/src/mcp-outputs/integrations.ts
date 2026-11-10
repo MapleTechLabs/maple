@@ -82,6 +82,9 @@ export const SyncVercelOutput = Schema.Struct({
 	logDrain: Schema.NullOr(SyncVercelDrain),
 	traceDrain: Schema.NullOr(SyncVercelDrain),
 	aiGatewayDrain: Schema.NullOr(SyncVercelDrain),
+	speedInsightsDrain: Schema.NullOr(SyncVercelDrain),
+	webAnalyticsDrain: Schema.NullOr(SyncVercelDrain),
+	auditLogDrain: Schema.NullOr(SyncVercelDrain),
 	projects: Schema.Array(
 		Schema.Struct({
 			name: Schema.String,

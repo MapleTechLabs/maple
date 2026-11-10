@@ -710,6 +710,9 @@ export const HttpIntegrationsLive = HttpApiBuilder.group(MapleInternalApi, "inte
 								logsEnabled: payload.logsEnabled,
 								tracesEnabled: payload.tracesEnabled,
 								aiGatewayEnabled: status.aiGatewayEnabled,
+								speedInsightsEnabled: status.speedInsightsEnabled,
+								webAnalyticsEnabled: status.webAnalyticsEnabled,
+								auditLogEnabled: status.auditLogEnabled,
 							},
 						})
 						return status
@@ -728,6 +731,9 @@ export const HttpIntegrationsLive = HttpApiBuilder.group(MapleInternalApi, "inte
 								logsEnabled: status.logsEnabled,
 								tracesEnabled: status.tracesEnabled,
 								aiGatewayEnabled: status.aiGatewayEnabled,
+								speedInsightsEnabled: status.speedInsightsEnabled,
+								webAnalyticsEnabled: status.webAnalyticsEnabled,
+								auditLogEnabled: status.auditLogEnabled,
 							},
 						})
 						return status

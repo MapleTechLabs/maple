@@ -14,8 +14,29 @@ export interface VercelDraft {
 	readonly logsEnabled: boolean
 	readonly tracesEnabled: boolean
 	readonly aiGatewayEnabled: boolean
+	readonly speedInsightsEnabled: boolean
+	readonly webAnalyticsEnabled: boolean
+	readonly auditLogEnabled: boolean
 }
 
+/** The drains Maple can install: the switch, the drain's status key, its name in a sentence and on Vercel. */
+export const VERCEL_DRAINS = [
+	{ flag: "logsEnabled", key: "logs", name: "logs", drain: "Maple logs" },
+	{ flag: "tracesEnabled", key: "traces", name: "traces", drain: "Maple traces" },
+	{ flag: "aiGatewayEnabled", key: "aiGateway", name: "AI Gateway", drain: "Maple AI Gateway" },
+	{
+		flag: "speedInsightsEnabled",
+		key: "speedInsights",
+		name: "Speed Insights",
+		drain: "Maple Speed Insights",
+	},
+	{ flag: "webAnalyticsEnabled", key: "webAnalytics", name: "Web Analytics", drain: "Maple Web Analytics" },
+	{ flag: "auditLogEnabled", key: "auditLog", name: "audit log", drain: "Maple audit log" },
+] as const
+
+export type VercelDrainFlag = (typeof VERCEL_DRAINS)[number]["flag"]
+
+/** Logs, traces and AI Gateway by default; the others cost extra or need a plan the team may lack. */
 export const DEFAULT_VERCEL_DRAFT: VercelDraft = {
 	projectScope: "all",
 	projectIds: [],
@@ -23,6 +44,9 @@ export const DEFAULT_VERCEL_DRAFT: VercelDraft = {
 	logsEnabled: true,
 	tracesEnabled: true,
 	aiGatewayEnabled: true,
+	speedInsightsEnabled: false,
+	webAnalyticsEnabled: false,
+	auditLogEnabled: false,
 }
 
 /** The sampling choices offered; Vercel accepts any rate in 0.01–1. */
@@ -38,12 +62,15 @@ export const draftOf = (status: VercelIntegrationStatus): VercelDraft => ({
 	logsEnabled: status.logsEnabled,
 	tracesEnabled: status.tracesEnabled,
 	aiGatewayEnabled: status.aiGatewayEnabled,
+	speedInsightsEnabled: status.speedInsightsEnabled,
+	webAnalyticsEnabled: status.webAnalyticsEnabled,
+	auditLogEnabled: status.auditLogEnabled,
 })
 
 /** A draft Maple can apply: something to forward, and at least one project when picking. */
 export const draftProblem = (draft: VercelDraft): string | null =>
-	!draft.logsEnabled && !draft.tracesEnabled && !draft.aiGatewayEnabled
-		? "Forward logs, traces or AI Gateway usage."
+	!Arr.some(VERCEL_DRAINS, ({ flag }) => draft[flag])
+		? "Turn on at least one drain."
 		: draft.projectScope === "some" && draft.projectIds.length === 0
 			? "Pick at least one project."
 			: null
@@ -65,9 +92,9 @@ export function settingsPatch(saved: VercelDraft, draft: VercelDraft): VercelSet
 		patch.projectIds = draft.projectIds
 	}
 	if (draft.samplingRate !== saved.samplingRate) patch.samplingRate = draft.samplingRate
-	if (draft.logsEnabled !== saved.logsEnabled) patch.logsEnabled = draft.logsEnabled
-	if (draft.tracesEnabled !== saved.tracesEnabled) patch.tracesEnabled = draft.tracesEnabled
-	if (draft.aiGatewayEnabled !== saved.aiGatewayEnabled) patch.aiGatewayEnabled = draft.aiGatewayEnabled
+	for (const { flag } of VERCEL_DRAINS) {
+		if (draft[flag] !== saved[flag]) patch[flag] = draft[flag]
+	}
 	return patch
 }
 
@@ -81,10 +108,8 @@ export function stoppedByDraft(
 	projectNames: ReadonlyMap<string, string>,
 ): ReadonlyArray<string> {
 	const stops: Array<string> = []
-	if (saved.logsEnabled && !draft.logsEnabled) stops.push("Logs: the Maple logs drain is deleted")
-	if (saved.tracesEnabled && !draft.tracesEnabled) stops.push("Traces: the Maple traces drain is deleted")
-	if (saved.aiGatewayEnabled && !draft.aiGatewayEnabled) {
-		stops.push("AI Gateway: the Maple AI Gateway drain is deleted")
+	for (const { flag, name, drain } of VERCEL_DRAINS) {
+		if (saved[flag] && !draft[flag]) stops.push(`${Str.capitalize(name)}: the ${drain} drain is deleted`)
 	}
 	if (draft.projectScope === "some") {
 		const dropped =
@@ -132,11 +157,18 @@ function drainProblem(
 	}
 	switch (drain.status) {
 		case "errored":
-			return {
-				problem: "is failing on Vercel",
-				description:
-					"Vercel can't deliver to Maple, usually because the ingest key changed. Re-applying the settings sends Maple's current ingest key to the drain.",
-			}
+			// No id: Vercel would not create it.
+			return drain.id === null
+				? {
+						problem: "was refused by Vercel",
+						description:
+							"Vercel would not create it, usually because the team's plan or the project lacks the product. Turn the product on in Vercel and re-apply the settings, or switch the drain off.",
+					}
+				: {
+						problem: "is failing on Vercel",
+						description:
+							"Vercel can't deliver to Maple, usually because the ingest key changed. Re-applying the settings sends Maple's current ingest key to the drain.",
+					}
 		case "disabled":
 			return {
 				problem: "is disabled on Vercel",
@@ -164,17 +196,13 @@ export function vercelIssues(status: VercelIntegrationStatus): ReadonlyArray<Ver
 		]
 	}
 	const issues: Array<VercelIssue> = []
-	const drains = [
-		["Logs", "logs", status.logsEnabled, status.drains.logs],
-		["Traces", "traces", status.tracesEnabled, status.drains.traces],
-		["AI Gateway", "AI Gateway", status.aiGatewayEnabled, status.drains.aiGateway],
-	] as const
-	for (const [key, name, enabled, drain] of drains) {
-		if (!enabled) continue
+	for (const { flag, key, name } of VERCEL_DRAINS) {
+		if (!status[flag]) continue
+		const drain = status.drains[key]
 		const found = drainProblem(drain)
 		if (found === null) continue
 		issues.push({
-			key,
+			key: Str.capitalize(name),
 			tone: "warn",
 			title: `The ${name} drain ${found.problem}`,
 			description: found.description,
@@ -191,14 +219,8 @@ export function vercelHealth(status: VercelIntegrationStatus): VercelHealth {
 }
 
 /** "Logs, traces and AI Gateway" / "Logs and traces" / "AI Gateway" / … */
-export const signalsLabel = (
-	draft: Pick<VercelDraft, "logsEnabled" | "tracesEnabled" | "aiGatewayEnabled">,
-): string => {
-	const names = [
-		...(draft.logsEnabled ? ["logs"] : []),
-		...(draft.tracesEnabled ? ["traces"] : []),
-		...(draft.aiGatewayEnabled ? ["AI Gateway"] : []),
-	]
+export const signalsLabel = (draft: Pick<VercelDraft, VercelDrainFlag>): string => {
+	const names = Arr.flatMap(VERCEL_DRAINS, ({ flag, name }) => (draft[flag] ? [name] : []))
 	const last = names.pop() ?? ""
 	return Str.capitalize(names.length === 0 ? last : `${Arr.join(names, ", ")} and ${last}`)
 }

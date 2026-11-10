@@ -118,9 +118,15 @@ export interface IntegrationInventoryInputs {
 				readonly logsEnabled: boolean
 				readonly tracesEnabled: boolean
 				readonly aiGatewayEnabled: boolean
+				readonly speedInsightsEnabled: boolean
+				readonly webAnalyticsEnabled: boolean
+				readonly auditLogEnabled: boolean
 				readonly logDrainState: VercelDrainSnapshot | null
 				readonly traceDrainState: VercelDrainSnapshot | null
 				readonly aiGatewayDrainState: VercelDrainSnapshot | null
+				readonly speedInsightsDrainState: VercelDrainSnapshot | null
+				readonly webAnalyticsDrainState: VercelDrainSnapshot | null
+				readonly auditLogDrainState: VercelDrainSnapshot | null
 				readonly createdAt: number
 		  })
 		| null
@@ -497,6 +503,9 @@ const vercel = (inputs: IntegrationInventoryInputs, now: number): IntegrationEnt
 			...drain("logs", connection.logsEnabled, connection.logDrainState),
 			...drain("traces", connection.tracesEnabled, connection.traceDrainState),
 			...drain("AI Gateway", connection.aiGatewayEnabled, connection.aiGatewayDrainState),
+			...drain("Speed Insights", connection.speedInsightsEnabled, connection.speedInsightsDrainState),
+			...drain("Web Analytics", connection.webAnalyticsEnabled, connection.webAnalyticsDrainState),
+			...drain("audit log", connection.auditLogEnabled, connection.auditLogDrainState),
 		],
 	})
 }

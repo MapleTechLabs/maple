@@ -18,6 +18,8 @@ import {
 	signalsLabel,
 	vercelHealth,
 	vercelIssues,
+	VERCEL_DRAINS,
+	type VercelDrainFlag,
 	type VercelIssue,
 } from "../../components/integrations/vercel-model"
 import { AppRoute, hrefOf } from "../../route"
@@ -76,13 +78,8 @@ const HEALTH_BADGE = {
 } as const
 
 /** The drains Maple installed, as Vercel lists them: only the enabled signals have one. */
-export const drainNamesOf = (
-	status: Pick<VercelIntegrationStatus, "logsEnabled" | "tracesEnabled" | "aiGatewayEnabled">,
-) => [
-	...(status.logsEnabled ? ["Maple logs"] : []),
-	...(status.tracesEnabled ? ["Maple traces"] : []),
-	...(status.aiGatewayEnabled ? ["Maple AI Gateway"] : []),
-]
+export const drainNamesOf = (status: Pick<VercelIntegrationStatus, VercelDrainFlag>) =>
+	Arr.flatMap(VERCEL_DRAINS, ({ flag, drain }) => (status[flag] ? [drain] : []))
 
 const mono = (h: H, text: string): Html => typography(h, { tone: "foreground", mono: true }, [text])
 
@@ -490,11 +487,9 @@ const drainsPanel = (h: H, status: VercelIntegrationStatus): Html => {
 				dividedList(
 					h,
 					{ as: "ul", bordered: false, className: "border-b border-border-subtle" },
-					[
-						drainRow(h, "Maple logs", status.logsEnabled, status.drains.logs),
-						drainRow(h, "Maple traces", status.tracesEnabled, status.drains.traces),
-						drainRow(h, "Maple AI Gateway", status.aiGatewayEnabled, status.drains.aiGateway),
-					],
+					Arr.map(VERCEL_DRAINS, ({ flag, key, drain }) =>
+						drainRow(h, drain, status[flag], status.drains[key]),
+					),
 				),
 				h.dl(
 					[h.Class("grid grid-cols-[auto_1fr] gap-x-4 gap-y-1.5 px-4 py-3 text-xs")],
@@ -540,7 +535,7 @@ const disconnectDialog = (h: H, model: Model, status: VercelIntegrationStatus): 
 				[h.Class(vstackClass({ gap: "3", className: "pb-3 text-sm" }))],
 				[
 					fact("On Vercel, right away", ["Deletes ", ...drains, " on ", team, "."]),
-					fact("In Maple", ["Removes the token. Logs, traces and AI Gateway usage already in Maple stay until retention ends."]),
+					fact("In Maple", ["Removes the token. Data the drains already sent to Maple stays until retention ends."]),
 				],
 			),
 		],

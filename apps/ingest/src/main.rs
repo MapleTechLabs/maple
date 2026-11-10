@@ -74,6 +74,7 @@ use maple_ingest::telemetry::{
 };
 use maple_ingest::usage_metrics::{billable_gb, usage_cardinality_view, UsageMetrics};
 use maple_ingest::vercel_ai_gateway_drain;
+use maple_ingest::vercel_event_drains::{self, EventDrain};
 use maple_ingest::vercel_logs;
 use maple_ingest::wal_store::WalSegmentStore;
 use moka::future::Cache;
@@ -1778,13 +1779,14 @@ enum Ingress {
     Otlp(Signal),
     VercelLogDrain,
     VercelAiGatewayDrain,
+    VercelEventDrain(EventDrain),
 }
 
 impl Ingress {
     fn signal(self) -> Signal {
         match self {
             Self::Otlp(signal) => signal,
-            Self::VercelLogDrain => Signal::Logs,
+            Self::VercelLogDrain | Self::VercelEventDrain(_) => Signal::Logs,
             Self::VercelAiGatewayDrain => Signal::Traces,
         }
     }
@@ -1794,6 +1796,7 @@ impl Ingress {
             Self::Otlp(signal) => format!("/v1/{}", signal.path()),
             Self::VercelLogDrain => "/v1/logpush/vercel".to_owned(),
             Self::VercelAiGatewayDrain => "/v1/vercel/ai-gateway".to_owned(),
+            Self::VercelEventDrain(drain) => drain.route().to_owned(),
         }
     }
 }
@@ -3234,6 +3237,7 @@ async fn main() {
         .route("/v1/logpush/gcp/{connector_id}", post(handle_gcp_logpush))
         .route("/v1/logpush/vercel", post(handle_vercel_logpush))
         .route("/v1/vercel/ai-gateway", post(handle_vercel_ai_gateway))
+        .route("/v1/vercel/{drain}", post(handle_vercel_event_drain))
         .route(
             "/v1/firehose/aws/{connection_id}",
             post(handle_aws_firehose),
@@ -4059,6 +4063,20 @@ async fn handle_vercel_ai_gateway(
     body: Bytes,
 ) -> Response {
     handle_signal(state, headers, body, Ingress::VercelAiGatewayDrain).await
+}
+
+/// A Vercel Speed Insights, Web Analytics or Audit Log drain, authenticated by
+/// the org's ingest key like OTLP.
+async fn handle_vercel_event_drain(
+    State(state): State<Arc<AppState>>,
+    Path(drain): Path<String>,
+    headers: HeaderMap,
+    body: Bytes,
+) -> Response {
+    let Some(drain) = EventDrain::from_path(&drain) else {
+        return StatusCode::NOT_FOUND.into_response();
+    };
+    handle_signal(state, headers, body, Ingress::VercelEventDrain(drain)).await
 }
 
 // Session replay ingest
@@ -5642,7 +5660,9 @@ async fn handle_signal_inner(
             warn!(content_type = %content_type, "Unsupported content type");
             (e, "unsupported_media")
         })?,
-        Ingress::VercelLogDrain | Ingress::VercelAiGatewayDrain => PayloadFormat::Protobuf,
+        Ingress::VercelLogDrain | Ingress::VercelAiGatewayDrain | Ingress::VercelEventDrain(_) => {
+            PayloadFormat::Protobuf
+        }
     };
     Span::current().record("maple.ingest.payload_format", payload_format.label());
 
@@ -5722,6 +5742,7 @@ async fn handle_signal_inner(
         Ingress::VercelAiGatewayDrain => {
             stamp_drain_source(&mut decoded, vercel_ai_gateway_drain::INGEST_SOURCE);
         }
+        Ingress::VercelEventDrain(drain) => stamp_drain_source(&mut decoded, drain.ingest_source()),
         Ingress::Otlp(_) => {}
     }
     let kept_claim = claims.kept_claim;
@@ -7282,10 +7303,10 @@ async fn decode_otlp_body(
         // A drain's body is JSON whatever `payload_format` it is forwarded as.
         let estimate = match ingress {
             Ingress::Otlp(_) => otlp_decode_cost(signal, payload_format, &payload, heap_budget),
-            Ingress::VercelLogDrain | Ingress::VercelAiGatewayDrain => {
-                decode_budget::json_cost(&payload, heap_budget)
-                    .map_err(|decode_budget::OverBudget| over_decode_budget(heap_budget))
-            }
+            Ingress::VercelLogDrain
+            | Ingress::VercelAiGatewayDrain
+            | Ingress::VercelEventDrain(_) => decode_budget::json_cost(&payload, heap_budget)
+                .map_err(|decode_budget::OverBudget| over_decode_budget(heap_budget)),
         }
         .map_err(|error| refuse(&parse_span, error, "payload_too_large"))?;
         parse_span.record("maple.ingest.decode_heap_estimate", estimate);
@@ -7296,6 +7317,7 @@ async fn decode_otlp_body(
             Ingress::Otlp(_) => decode_otlp_payload(signal, payload_format, &payload),
             Ingress::VercelLogDrain => decode_vercel_logs(&payload),
             Ingress::VercelAiGatewayDrain => decode_vercel_ai_gateway(&payload),
+            Ingress::VercelEventDrain(drain) => decode_vercel_event_drain(drain, &payload),
         }
         .map_err(|error| refuse(&parse_span, error, "enrich"))?;
         parse_span.record("maple.ingest.item_count", decoded.item_count());
@@ -7390,6 +7412,25 @@ fn decode_vercel_ai_gateway(payload: &[u8]) -> Result<DecodedPayload, ApiError> 
     }
     Ok(DecodedPayload::Traces(
         vercel_ai_gateway_drain::build_traces_request(&parsed.entries),
+    ))
+}
+
+fn decode_vercel_event_drain(
+    drain: EventDrain,
+    payload: &[u8],
+) -> Result<DecodedPayload, ApiError> {
+    let label = drain.label();
+    let parsed = vercel_logs::parse(payload)
+        .map_err(|e| ApiError::bad_request(format!("Invalid Vercel {label} drain payload: {e}")))?;
+    if parsed.malformed_lines > 0 {
+        warn!(
+            malformed_lines = parsed.malformed_lines,
+            drain = label,
+            "Vercel drain delivery had lines that are not JSON; skipped them"
+        );
+    }
+    Ok(DecodedPayload::Logs(
+        vercel_event_drains::build_logs_request(drain, &parsed.entries, current_time_unix_nano()),
     ))
 }
 
@@ -11083,6 +11124,43 @@ mod tests {
         assert_eq!(
             value("maple_org_id"),
             Some(any_value::Value::StringValue("org_real".to_owned()))
+        );
+    }
+
+    #[test]
+    fn vercel_event_drains_reach_logs_under_their_own_source() {
+        let mut decoded = decode_vercel_event_drain(
+            EventDrain::AuditLog,
+            br#"[{"schema":"vercel.audit_log.v1","id":"evt_1","teamId":"team_1","action":"drain-created","timestamp":1694723400000,"actor":{"type":"user","id":"usr_1","name":"Test User"}}]"#,
+        )
+        .expect("a drain delivery decodes");
+        enrich_decoded_payload(&mut decoded, &test_key(), &[]);
+        stamp_drain_source(&mut decoded, EventDrain::AuditLog.ingest_source());
+        let DecodedPayload::Logs(request) = decoded else {
+            panic!("an Audit Log delivery decodes to logs");
+        };
+        let resource_logs = &request.resource_logs[0];
+        let attributes = &resource_logs.resource.as_ref().unwrap().attributes;
+        let value = |key: &str| {
+            attributes
+                .iter()
+                .find(|attribute| attribute.key == key)
+                .and_then(|attribute| attribute.value.clone()?.value)
+        };
+        let string = |value: &str| Some(any_value::Value::StringValue(value.to_owned()));
+        assert_eq!(
+            value("maple_ingest_source"),
+            string("vercel_audit_log_drain")
+        );
+        assert_eq!(value("service.name"), string("vercel-audit-log"));
+        assert_eq!(value("maple_org_id"), string("org_real"));
+        assert_eq!(
+            resource_logs.scope_logs[0].log_records[0]
+                .body
+                .clone()
+                .unwrap()
+                .value,
+            string("drain-created by Test User")
         );
     }
 
