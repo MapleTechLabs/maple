@@ -94,6 +94,11 @@ export interface EnvConfig {
 	 */
 	readonly MAPLE_CANCELLATION_SLACK_CHANNEL_ID: Option.Option<string>
 	/**
+	 * Channel in the Hazel workspace `MAPLE_INTERNAL_ORG_ID` linked that plan-cancellation reports
+	 * are also posted to. Unset, or no Hazel workspace linked → reports go to Slack alone.
+	 */
+	readonly MAPLE_CANCELLATION_HAZEL_CHANNEL_ID: Option.Option<string>
+	/**
 	 * The Clerk dashboard's instance URL (`https://dashboard.clerk.com/apps/<app>/instances/<ins>`)
 	 * that cancellation reports link orgs into. Unset → a link to the last-active instance.
 	 */
@@ -266,6 +271,7 @@ const envConfig = Config.all({
 	MAPLE_SUPPORT_SLACK_BOT_TOKEN: optionalRedacted("MAPLE_SUPPORT_SLACK_BOT_TOKEN"),
 	MAPLE_SUPPORT_SLACK_TEAM_USER_IDS: optionalString("MAPLE_SUPPORT_SLACK_TEAM_USER_IDS"),
 	MAPLE_CANCELLATION_SLACK_CHANNEL_ID: optionalString("MAPLE_CANCELLATION_SLACK_CHANNEL_ID"),
+	MAPLE_CANCELLATION_HAZEL_CHANNEL_ID: optionalString("MAPLE_CANCELLATION_HAZEL_CHANNEL_ID"),
 	MAPLE_CLERK_DASHBOARD_URL: optionalString("MAPLE_CLERK_DASHBOARD_URL"),
 	MAPLE_INGEST_KEY: optionalRedacted("MAPLE_INGEST_KEY"),
 	MAPLE_ENDPOINT: optionalString("MAPLE_ENDPOINT"),

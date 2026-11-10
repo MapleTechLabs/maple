@@ -36,7 +36,7 @@ import * as Connect from "./update-connect"
 import { isClerkAuthEnabled } from "../../lib/services/common/auth-mode"
 import { CompleteOAuthReturn, LoadCustomer, LoadSession, ReadClock, StripChatParams } from "./command"
 import type { OAuthReturnOutcome } from "./oauth-return"
-import { chain, requestStatus, STATUS_NAMES } from "./update-status"
+import { chain, requestStatus, statusNamesOf } from "./update-status"
 import { Message } from "./message"
 import type { Model, Statuses } from "./model"
 
@@ -142,10 +142,12 @@ export const init = (route: { readonly search: Search }, context: PageContext): 
 			searchConsole: Keyed.idle(),
 			chat: Keyed.idle(),
 			scrapeTargets: Keyed.idle(),
+			dataSources: Keyed.idle(),
 		},
 		customer: Keyed.idle(),
 		grants: isClerkAuthEnabled ? [] : Policy.allPermissions,
 		hasDataSources: !isClerkAuthEnabled,
+		filter: "all",
 		connect: initConnect(),
 		disconnect: { dialog: Dialog.init("integration-disconnect", "alert-dialog"), isPending: false },
 		chatCard: { busy: null, confirmId: null, identityBusy: false },
@@ -160,7 +162,10 @@ export const init = (route: { readonly search: Search }, context: PageContext): 
 		searchConsoleCard: initSearchConsoleCard(),
 	}
 	const loaded = chain(model, [
-		...Arr.map(STATUS_NAMES, (name) => (next: Model) => requestStatus(next, context, name, "Load")),
+		...Arr.map(
+			statusNamesOf(model),
+			(name) => (next: Model) => requestStatus(next, context, name, "Load"),
+		),
 		(next: Model) => requestCustomer(next, context),
 		(next: Model) => enterIntegration(next, context),
 		(next: Model) => handleChatCallback(next, false),
@@ -290,9 +295,27 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		CompletedLoadCustomer: ({ key, result }) => ({
 			model: { ...model, customer: Keyed.accept(model.customer, key, result) },
 		}),
-		CompletedLoadSession: ({ grants, hasDataSources }) => ({
-			model: { ...model, grants, hasDataSources },
-		}),
+		CompletedLoadSession: ({ grants, hasDataSources }) => {
+			const next = { ...model, grants, hasDataSources }
+			return hasDataSources ? requestStatus(next, context, "dataSources", "Load") : { model: next }
+		},
+		CompletedLoadDataSources: ({ key, result }) =>
+			accepted(model, { ...s, dataSources: Keyed.accept(s.dataSources, key, result) }),
+		SelectedFilter: ({ filter }) => ({ model: { ...model, filter } }),
+		ClickedDataSource: ({ source, connect }) =>
+			navigateTo(
+				model,
+				hrefOf(
+					AppRoute.Settings({
+						search: {
+							tab: "data-sources",
+							source: source ?? undefined,
+							connect: connect ?? undefined,
+						},
+					}),
+				),
+				false,
+			),
 		CompletedTrackConnected: () => ({ model }),
 		ClickedIntegration: ({ integration }) =>
 			navigateTo(model, hrefOfSearch(integration === null ? {} : { integration }), false),
@@ -562,7 +585,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			chain(
 				model,
 				Arr.map(
-					Arr.filter(STATUS_NAMES, (name) => {
+					Arr.filter(statusNamesOf(model), (name) => {
 						const tag = model.statuses[name].data._tag
 						return tag === "Failure" || tag === "Stale"
 					}),

@@ -135,12 +135,24 @@ export const leftSheet = <Message>(
 
 // SIDE PANEL SHEET
 
+/**
+ * How wide a side panel is, by what it holds: `compact` (28rem) a short form of a few fields,
+ * `form` (42rem) a full create or edit form, `wide` (48rem) reading content.
+ */
+export type SidePanelSize = "compact" | "form" | "wide"
+
+const SIDE_PANEL_SIZE = {
+	compact: "default",
+	form: "form",
+	wide: "wide",
+} satisfies Record<SidePanelSize, SheetSize>
+
 export type SidePanelSheetOptions<Message> = Readonly<{
 	sheet: Dialog.Model
 	title: string
 	description?: string
-	/** `form` (672px) by default; `wide` for reading content. */
-	size?: SheetSize
+	/** `form` by default; pick `compact` when the form is a handful of short fields. */
+	size?: SidePanelSize
 	/** The scrolling body. */
 	body: ReadonlyArray<Html>
 	/**
@@ -159,7 +171,8 @@ const REDUCED_MOTION =
 
 /**
  * A full-height panel from the right over the Dialog Submodel: title, close, a scrolling body and a
- * sticky footer. Escape, the backdrop and the close button close it (`isDismissed`).
+ * sticky footer. Its dim is light and unblurred, so the page it belongs to stays readable. Escape,
+ * the backdrop and the close button close it (`isDismissed`).
  */
 export const sidePanelSheet = <Message>(
 	h: HtmlBuilder<Message>,
@@ -172,7 +185,8 @@ export const sidePanelSheet = <Message>(
 		view: DialogView.view,
 		viewInputs: {
 			side: "right",
-			size: options.size ?? "form",
+			size: SIDE_PANEL_SIZE[options.size ?? "form"],
+			scrim: "panel",
 			className: REDUCED_MOTION,
 			hasDescription: options.description !== undefined,
 			toView: ({ portal }) => portal,

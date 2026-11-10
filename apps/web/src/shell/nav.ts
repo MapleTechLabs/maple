@@ -38,7 +38,7 @@ export interface NavSubItem {
 	readonly alsoActive?: ReadonlyArray<string>
 	/** A live count beside the title, read by the shell (the Inbox's unacknowledged incidents). */
 	readonly count?: "alertsInbox"
-	/** Starts a group of rows: a thin rule above it, no heading. */
+	/** Starts a group of rows: a small gap above it, no heading. */
 	readonly startsGroup?: boolean
 }
 

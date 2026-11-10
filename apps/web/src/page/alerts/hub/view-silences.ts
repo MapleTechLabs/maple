@@ -18,6 +18,7 @@ import { sectionHeading } from "../../kit/section-heading"
 import { windowIdOfParam } from "../shared/maintenance-windows"
 import {
 	endsAtMs,
+	formatSilenceRange,
 	formatSilenceTime,
 	isCancelledSilence,
 	silenceScopeParts,
@@ -51,12 +52,11 @@ const silencesEmptyState = (h: H): Html =>
 
 const windowText = (silence: V2AlertSilence, nowMs: number, timeZone: string): string => {
 	const status = silenceStatusAt(silence, nowMs)
-	const start = formatSilenceTime(startsAtMs(silence), nowMs, timeZone)
 	const end = formatSilenceTime(endsAtMs(silence), nowMs, timeZone)
 	return status === "active"
 		? `Until ${end}`
 		: status === "scheduled"
-			? `${start} to ${end}`
+			? formatSilenceRange(startsAtMs(silence), endsAtMs(silence), nowMs, timeZone)
 			: isCancelledSilence(silence)
 				? `Cancelled ${end}`
 				: `Ended ${end}`

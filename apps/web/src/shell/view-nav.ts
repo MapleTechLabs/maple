@@ -1,4 +1,5 @@
 import { isClerkAuthEnabled } from "../lib/services/common/auth-mode"
+import { cn } from "@maple/ui/lib/utils"
 import { Option, Array as Arr, String as Str } from "effect"
 import type { InfraSurfaceLiteral } from "@maple/domain/http"
 import { AsyncData } from "foldkit"
@@ -16,7 +17,6 @@ import {
 	sidebarMenuSub,
 	sidebarMenuSubButton,
 	sidebarMenuSubItem,
-	sidebarSeparator,
 } from "@maple/views/ui/sidebar"
 import type { PinnedDashboardRow } from "./dashboards-shape"
 import { Menu, Message } from "./message"
@@ -104,10 +104,6 @@ const subCountOf = (model: Model, sub: NavSubItem): number | undefined =>
 		? model.alertsInboxCount
 		: undefined
 
-// A rule between groups keeps the sub-list's lane line unbroken.
-const groupRule = (h: HtmlBuilder<Message>): Html =>
-	sidebarMenuSubItem(h, "border-sidebar-border border-l-2 py-1 ps-2.5", [sidebarSeparator(h)])
-
 const subList = (
 	h: HtmlBuilder<Message>,
 	model: Model,
@@ -118,65 +114,69 @@ const subList = (
 	return sidebarMenuSub(
 		h,
 		"mx-0 ms-4 translate-x-0 gap-0 border-l-0 px-0 py-0",
-		Arr.flatMap(subItems, (sub, index) => {
+		Arr.map(subItems, (sub, index) => {
 			const count = subCountOf(model, sub)
-			return [
-				...(sub.startsGroup === true && index > 0 ? [groupRule(h)] : []),
-				sidebarMenuSubItem(
-					h,
-					sub.href === activeSubHref
-						? "border-sidebar-primary border-l-2 ps-2.5"
-						: "border-sidebar-border border-l-2 ps-2.5",
-					[
-						sidebarMenuSubButton(
-							h,
-							{
-								className:
-									"h-7 translate-x-0 data-[active=true]:text-sidebar-primary sm:h-6 [&>svg]:text-current",
-								isActive: sub.href === activeSubHref,
-								link: { href: sub.href, currentPath },
-							},
-							[
-								...(sub.icon === undefined
-									? []
-									: [
-											icon(h, sub.icon, {
-												className: "size-3.5",
-												...iconColor(sub.iconColor),
-											}),
-										]),
-								h.span([], [sub.title]),
-							],
-						),
-						...(count === undefined
-							? []
-							: [
-									sidebarMenuBadge(
-										h,
-										[
-											typography(
-												h,
-												{ size: "xs", mono: true, numeric: true, tone: "error" },
-												[String(count)],
-											),
-										],
-										"top-1 sm:top-0.5",
-									),
-								]),
-					],
+			return sidebarMenuSubItem(
+				h,
+				cn(
+					"border-l-2 ps-2.5",
+					sub.href === activeSubHref ? "border-sidebar-primary" : "border-sidebar-border",
+					// A 4px gap, not a rule, sets a group of rows apart.
+					sub.startsGroup === true && index > 0 && "mt-1",
 				),
-			]
+				[
+					sidebarMenuSubButton(
+						h,
+						{
+							className:
+								"translate-x-0 data-[active=true]:text-sidebar-primary [&>svg]:text-current",
+							isActive: sub.href === activeSubHref,
+							link: { href: sub.href, currentPath },
+						},
+						[
+							...(sub.icon === undefined
+								? []
+								: [
+										icon(h, sub.icon, {
+											className: "size-3.5",
+											...iconColor(sub.iconColor),
+										}),
+									]),
+							h.span([], [sub.title]),
+						],
+					),
+					...(count === undefined
+						? []
+						: [
+								sidebarMenuBadge(
+									h,
+									[
+										typography(
+											h,
+											{ size: "xs", mono: true, numeric: true, tone: "error" },
+											[String(count)],
+										),
+									],
+									"top-1/2 -translate-y-1/2",
+								),
+							]),
+				],
+			)
 		}),
 	)
 }
 
-/** `NavRow`: a link, a section with its children while active, or on the collapsed rail a menu. */
+/**
+ * `NavRow`: a link, a section with its children while active, or on the collapsed rail a menu. In a
+ * folded group the current page's row stands alone, highlighted, without its children.
+ */
 const navRow = (
 	h: HtmlBuilder<Message>,
 	model: Model,
 	item: NavItem,
 	currentPath: string,
 	tip: RailTip,
+	isGroupFolded = false,
 ): Html => {
 	const isActive = isNavItemActive(currentPath, item)
 	const isCollapsed = !model.isSidebarOpen && !model.isMobile
@@ -186,7 +186,9 @@ const navRow = (
 			: partitionSubItems(item.subItems, surfacesOf(model), currentPath).shown
 	if (isCollapsed && subItems !== undefined && subItems.length > 0)
 		return collapsedSectionRow(h, model, item, isActive)
-	const isOpen = subItems !== undefined && subItems.length > 0 && isActive
+	const isOpen = subItems !== undefined && subItems.length > 0 && isActive && !isGroupFolded
+	// The tint belongs to the sub-item that is the current page, when one is.
+	const hasActiveChild = isOpen && activeSubHrefOf(subItems, currentPath) !== undefined
 	const preview = isOpen || subItems === undefined ? undefined : navPreview(item, subItems)
 	return sidebarMenuItem(h, undefined, [
 		sidebarMenuButton(
@@ -194,6 +196,7 @@ const navRow = (
 			{
 				rail: isOpen ? "lane" : "active",
 				isActive,
+				hasActiveChild,
 				link: { href: item.href, currentPath },
 				hasTooltip: true,
 				attributes: tip(item.title),
@@ -235,7 +238,9 @@ const navRow = (
 			],
 		),
 		...(item.badge === undefined ? [] : [navBadge(h, item.badge)]),
-		...(subItems !== undefined && isActive ? [subList(h, model, subItems, currentPath)] : []),
+		...(subItems !== undefined && isActive && !isGroupFolded
+			? [subList(h, model, subItems, currentPath)]
+			: []),
 	])
 }
 
@@ -317,7 +322,7 @@ export type NavGroupFold = "unlabelled" | "rail" | "expanded" | "collapsed"
 
 /**
  * How a group's rows show. The collapsed rail hides labels, so every row shows there; elsewhere a
- * labelled group folds to the rows of the current page, if it holds it.
+ * labelled group folds to the current page's row (without its sub-items), if it holds it.
  */
 export const navGroupFold = (model: Model, group: NavGroup): NavGroupFold => {
 	if (group.label === undefined) return "unlabelled"
@@ -362,7 +367,9 @@ export const navGroupSections = (
 							sidebarMenu(
 								h,
 								undefined,
-								Arr.map(rows, (item) => navRow(h, model, item, currentPath, tip)),
+								Arr.map(rows, (item) =>
+									navRow(h, model, item, currentPath, tip, fold === "collapsed"),
+								),
 							),
 						],
 				[h.Id(navGroupContentId(group))],

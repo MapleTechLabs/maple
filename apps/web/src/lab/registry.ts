@@ -54,10 +54,18 @@ export const LAB_ENTRIES: ReadonlyArray<LabEntry> = [
 		session: "none",
 	},
 	{
+		path: "/lab/heartbeat",
+		title: "Heartbeat monitor",
+		description:
+			"The new-monitor form filled in for a nightly cron heartbeat, and the heartbeat's page with its Ping URL panel (`?state=`).",
+		kind: "lab",
+		session: "none",
+	},
+	{
 		path: "/lab/alerts-hub",
 		title: "Alerts hub",
 		description:
-			"The alerts Inbox, Rules and Silences tabs loading, failing and populated, with a rule skipped for too few samples and a cancelled silence, and the silence side panel (`?state=`).",
+			"The alerts Inbox, Rules and Silences tabs loading, failing and populated, with a rule skipped for too few samples and a cancelled silence, and the silence side panel empty, picking a time and filled in (`?state=`).",
 		kind: "lab",
 		session: "none",
 	},
