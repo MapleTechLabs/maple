@@ -1,7 +1,19 @@
 import * as THREE from "three"
 import { bunting } from "./decor"
-import { type Child, group, inkBox, inkLines, inkPlate, inkSolid, type Scope, type Vec3 } from "./kit"
-import { grain, inkParts, type MapleFinish, mapleSmoke, type Part, range, variant } from "./props-kit"
+import {
+	type Child,
+	group,
+	inkBox,
+	inkLines,
+	inkOutline,
+	inkPlate,
+	inkSolid,
+	mesh,
+	paperMaterial,
+	type Scope,
+	type Vec3,
+} from "./kit"
+import { breeze, grain, inkParts, type MapleFinish, mapleSmoke, type Part, range, variant } from "./props-kit"
 import { Array as Arr } from "effect"
 
 export { inkParts, type MachineFinish, type MapleFinish, type Part, seedOf, variant } from "./props-kit"
@@ -177,32 +189,109 @@ export function windowDressing(
 	]
 }
 
-/** A shingled eave band round a flat cabin roof, standing proud of the walls. */
-export function eaves(
+/** How a pitched slope catches the light: brightest falling to the front, then to the side. */
+const SLOPE_TONE = { front: 0.97, side: 0.88, away: 0.8 } as const
+
+/** A shingled hip roof over a square cabin: a short ridge along x, eaves proud of the walls on a
+ * timber fascia. */
+export function hipRoof(
 	scope: Scope,
-	{ half, top, finish }: { half: number; top: number; finish: MapleFinish },
+	{
+		base,
+		half,
+		rise,
+		ridge,
+		finish,
+	}: { base: number; half: number; rise: number; ridge: number; finish: MapleFinish },
 ): Child {
-	const edge = half + 0.04
-	const [depth, tall] = [0.1, 0.12]
-	const y = top - 0.03
-	const inner = edge * 2 - depth * 2
-	const parts: Part[] = [
-		{ box: [edge * 2, tall, depth], at: [0, y, edge - depth / 2] },
-		{ box: [edge * 2, tall, depth], at: [0, y, -edge + depth / 2] },
-		{ box: [depth, tall, inner], at: [edge - depth / 2, y, 0] },
-		{ box: [depth, tall, inner], at: [-edge + depth / 2, y, 0] },
+	const fascia = 0.06
+	const frontLeft: Vec3 = [-half, 0, half]
+	const frontRight: Vec3 = [half, 0, half]
+	const backRight: Vec3 = [half, 0, -half]
+	const backLeft: Vec3 = [-half, 0, -half]
+	const ridgeLeft: Vec3 = [-ridge, rise, 0]
+	const ridgeRight: Vec3 = [ridge, rise, 0]
+	const slopes: ReadonlyArray<{ tone: number; corners: ReadonlyArray<Vec3> }> = [
+		{
+			tone: SLOPE_TONE.front,
+			corners: [frontLeft, frontRight, ridgeRight, frontLeft, ridgeRight, ridgeLeft],
+		},
+		{ tone: SLOPE_TONE.side, corners: [frontRight, backRight, ridgeRight] },
+		{
+			tone: SLOPE_TONE.away,
+			corners: [backRight, backLeft, ridgeLeft, backRight, ridgeLeft, ridgeRight],
+		},
+		{ tone: SLOPE_TONE.away, corners: [backLeft, frontLeft, ridgeLeft] },
 	]
-	// One row of shingle butts on the two walls the camera sees.
-	const face = edge + 0.001
-	const low = y - tall / 2
-	const ticks = Arr.flatMap(range(Math.floor((edge * 2) / 0.12)), (i) => {
-		const s = -edge + 0.06 + i * 0.12
-		return [s, low, face, s, y, face, face, low, s, face, y, s]
+	const geometry = new THREE.BufferGeometry()
+	geometry.setAttribute(
+		"position",
+		new THREE.Float32BufferAttribute(
+			Arr.flatMap(slopes, (slope) => Arr.flatten(slope.corners)),
+			3,
+		),
+	)
+	geometry.setAttribute(
+		"color",
+		new THREE.Float32BufferAttribute(
+			Arr.flatMap(slopes, (slope) =>
+				Arr.flatMap(slope.corners, () => [slope.tone, slope.tone, slope.tone]),
+			),
+			3,
+		),
+	)
+	// Two shingle courses on the slopes the camera sees.
+	const courses = Arr.flatMap([1, 2], (i) => {
+		const t = i / 3
+		const [y, out, along] = [base + fascia + rise * t + 0.003, half * (1 - t), half - (half - ridge) * t]
+		return [-along, y, out, along, y, out, along, y, -out, along, y, out]
 	})
-	const course = [-edge, y, face, face, y, face, face, y, face, face, y, -edge]
 	return [
-		inkParts(scope, { parts, color: finish.shingle, ink: finish.ink }),
-		inkLines([...ticks, ...course], finish.ink),
+		inkParts(scope, {
+			parts: [{ box: [half * 2, fascia, half * 2], at: [0, base + fascia / 2, 0] }],
+			color: finish.timber,
+			ink: finish.ink,
+		}),
+		group({ position: [0, base + fascia, 0] }, [
+			mesh(geometry, paperMaterial(finish.shingle)),
+			inkOutline(new THREE.EdgesGeometry(geometry, 20), finish.ink),
+		]),
+		inkLines(courses, finish.ink),
+	]
+}
+
+/** An iron weathervane on a ridge, its arrow veering slowly with the breeze. */
+export function weathervane(
+	scope: Scope,
+	{ position, finish }: { position: Vec3; finish: MapleFinish },
+): Child {
+	const [x, y, z] = position
+	const arrow = group({ position: [x, y + 0.3, z] }, [
+		inkParts(scope, {
+			parts: [
+				{ box: [0.34, 0.025, 0.025], at: [0, 0, 0] },
+				{ prism: [0, 0.05, 0.1, 4], at: [0.2, 0, 0], turn: [0, 0, -Math.PI / 2] },
+				{ box: [0.1, 0.1, 0.012], at: [-0.15, 0, 0] },
+			],
+			color: finish.iron,
+			ink: finish.ink,
+		}),
+	])
+	const phase = variant(finish.seed, 13, 628) / 100
+	breeze(scope, finish, (seconds) => {
+		arrow.rotation.y =
+			0.6 + Math.sin(seconds * 0.5 + phase) * 0.45 + Math.sin(seconds * 1.3 + phase) * 0.1
+	})
+	return [
+		inkParts(scope, {
+			parts: [
+				{ prism: [0.012, 0.012, 0.3, 6], at: [x, y + 0.15, z] },
+				{ prism: [0.035, 0.035, 0.03, 6], at: [x, y + 0.015, z] },
+			],
+			color: finish.iron,
+			ink: finish.ink,
+		}),
+		arrow,
 	]
 }
 
@@ -414,18 +503,32 @@ export function hangingSign(
 	},
 ): Child {
 	const [x, y, z] = position
-	const hang = y - ([0.25, 0.29, 0.27][cut % 3] ?? 0.25)
+	const drop = ([0.25, 0.29, 0.27][cut % 3] ?? 0.25) - 0.02
 	const sign: Part =
 		cut % 3 === 2
-			? { prism: [0.13, 0.13, 0.03, 8], at: [x + 0.01, hang, z], turn: [Math.PI / 2, 0, 0] }
-			: { box: cut % 3 === 1 ? [0.2, 0.26, 0.03] : [0.3, 0.18, 0.03], at: [x + 0.01, hang, z] }
+			? { prism: [0.13, 0.13, 0.03, 8], at: [0.01, -drop, 0], turn: [Math.PI / 2, 0, 0] }
+			: { box: cut % 3 === 1 ? [0.2, 0.26, 0.03] : [0.3, 0.18, 0.03], at: [0.01, -drop, 0] }
 	// Each chain zigzags a little so it reads as links rather than a rod.
 	const chain = (cx: number) =>
 		Arr.flatMap(range(4), (i) => {
-			const [a, b] = [y - 0.02 - i * 0.035, y - 0.02 - (i + 1) * 0.035]
-			const [za, zb] = [z + (i % 2 === 0 ? -0.012 : 0.012), z + (i % 2 === 0 ? 0.012 : -0.012)]
+			const [a, b] = [-i * 0.035, -(i + 1) * 0.035]
+			const [za, zb] = [i % 2 === 0 ? -0.012 : 0.012, i % 2 === 0 ? 0.012 : -0.012]
 			return [cx, a, za, cx, b, zb]
 		})
+	// Chains and board hang from the arm and swing about it.
+	const swing = group({ position: [x, y - 0.02, z] }, [
+		inkLines([...chain(-0.08), ...chain(0.1)], finish.ink),
+		inkParts(scope, { parts: [sign], color: finish.kraft, ink: finish.ink }),
+		inkParts(scope, {
+			parts: [{ box: [0.08, 0.08, 0.01], at: [0.01, -drop, 0.018], turn: [0, 0, Math.PI / 4] }],
+			color: finish.gifts[0] ?? finish.signal,
+			ink: finish.ink,
+		}),
+	])
+	const phase = variant(finish.seed, 14, 628) / 100
+	breeze(scope, finish, (seconds) => {
+		swing.rotation.x = Math.sin(seconds * 1.6 + phase) * 0.12
+	})
 	return [
 		inkParts(scope, {
 			parts: [
@@ -435,13 +538,7 @@ export function hangingSign(
 			color: finish.timber,
 			ink: finish.ink,
 		}),
-		inkLines([...chain(x - 0.08), ...chain(x + 0.1)], finish.ink),
-		inkParts(scope, { parts: [sign], color: finish.kraft, ink: finish.ink }),
-		inkParts(scope, {
-			parts: [{ box: [0.08, 0.08, 0.01], at: [x + 0.01, hang, z + 0.018], turn: [0, 0, Math.PI / 4] }],
-			color: finish.gifts[0] ?? finish.signal,
-			ink: finish.ink,
-		}),
+		swing,
 	]
 }
 
