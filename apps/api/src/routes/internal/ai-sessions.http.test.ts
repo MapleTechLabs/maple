@@ -1177,10 +1177,6 @@ describe("POST /internal/ai-sessions/summary", () => {
 	})
 })
 
-// ---------------------------------------------------------------------------
-// Agent Sessions › Tools
-// ---------------------------------------------------------------------------
-
 const TOOLS_WINDOW = { startTime: "2026-08-19 09:00:00", endTime: "2026-08-19 11:00:00" }
 
 /** One row of the tools measures, in the wire shape the derived row schema decodes. */

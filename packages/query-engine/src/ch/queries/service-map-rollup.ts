@@ -213,8 +213,6 @@ export function serviceMapEdgesRollupSQL(
 	)
 }
 
-// Resolutions rollup (companion of the edges rollup)
-//
 // Emits one row per resolved `(SourceService, parent.server.address) →
 // child.ServiceName` triple per hour. Used by `serviceExternalEdgesSQL`'s
 // LEFT ANTI JOIN to suppress internal-service HTTP overlap from the

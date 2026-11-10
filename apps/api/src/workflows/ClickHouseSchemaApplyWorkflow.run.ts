@@ -159,8 +159,6 @@ export const loadOptionalFeatureState = <E, R>(
 
 const STEP: DurableStepConfig = { retries: { limit: 5, delay: "2 seconds", backoff: "exponential" } }
 
-// --- ClickHouse exec --------------------------------------------------------
-
 interface ChConfig {
 	readonly url: string
 	readonly user: string
@@ -265,8 +263,6 @@ const parseSortingKeyRows = parseJsonEachRow(
 	Schema.Struct({ sorting_key: Schema.optionalKey(Schema.String) }),
 )
 
-// --- migration bookkeeping (shared with the CLI) -----------------------------
-
 const ensureMigrationsTable = (cfg: ChConfig) =>
 	execClickHouse(cfg, createSchemaMigrationsTableSql).pipe(Effect.asVoid)
 
@@ -298,8 +294,6 @@ const recordFeature = (cfg: ChConfig, id: string, revision: number, description:
 
 const normalizeExpression = (value: string): string =>
 	Str.toLowerCase(Str.replace(/\s+/g, "")(Str.replace(/`/g, "")(value)))
-
-// --- config load + decrypt (mirror of the service helper) -------------------
 
 /** The Workflow was started with an `orgId` that is not one. */
 export class SchemaApplyPayloadError extends Schema.TaggedError<SchemaApplyPayloadError>()(
@@ -391,8 +385,6 @@ const loadConfig = (
 		return { url: row.chUrl, user: row.chUser, password, database: row.chDatabase }
 	})
 
-// --- run-row progress (org_clickhouse_schema_apply_runs) --------------------
-
 type RunPatch = Partial<{
 	status: "queued" | "running" | "succeeded" | "failed"
 	phase: string | null
@@ -481,8 +473,6 @@ export const withRunHeartbeat = <A, E, R>(fence: RunFence, statement: Effect.Eff
 const fencedExec = (fence: RunFence, cfg: ChConfig, patch: RunPatch, sql: string) =>
 	updateRun(fence, patch).pipe(Effect.andThen(withRunHeartbeat(fence, execClickHouse(cfg, sql))))
 
-// --- snapshot-diff additive (mirror of OrgClickHouseSettingsService) --------
-
 const parseDesiredTables = (): ReadonlyArray<DesiredTable> => {
 	const out: DesiredTable[] = []
 	for (const stmt of clickHouseMigrations[0]?.statements ?? []) {
@@ -565,8 +555,6 @@ const reconcileSchemaSnapshot = (
 			discard: true,
 		})
 	})
-
-// --- orchestration ----------------------------------------------------------
 
 interface SkippedFeature {
 	readonly id: string

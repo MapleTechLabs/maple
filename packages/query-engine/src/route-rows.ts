@@ -3,7 +3,7 @@
  * registry query's rows and what a dashboard tile renders.
  *
  * Each of these used to live only in the browser's server function for the
- * endpoint (`apps/web/src/api/warehouse/*`), so the signed-in board saw shaped
+ * endpoint (now `packages/web-data/src/warehouse/*`), so the signed-in board saw shaped
  * rows while the share API — which reuses the same registry `QueryDefinition`
  * but returned its rows verbatim — served the unshaped ones. For
  * `service_overview` that is not cosmetic: the browser turns `spanCount` into a
@@ -19,9 +19,7 @@ import { SpanId, TraceId } from "@maple/domain"
 import { parseWarehouseDateTime, warehouseDateTimeToIso } from "./datetime"
 import { rowText } from "./row-text"
 
-// ---------------------------------------------------------------------------
-// Sampling helpers (shared with the browser's service pages and custom charts)
-// ---------------------------------------------------------------------------
+// Sampling helpers, shared with the browser's service pages and custom charts.
 
 /**
  * Summarize sampling-aware throughput for a single (service, env, …) row.
@@ -86,10 +84,6 @@ export function windowDurationSeconds(
 	const endMs = endTime ? parseWarehouseDateTime(endTime) : 0
 	return startMs > 0 && endMs > 0 ? Math.max((endMs - startMs) / 1000, 1) : fallbackSeconds
 }
-
-// ---------------------------------------------------------------------------
-// service_overview
-// ---------------------------------------------------------------------------
 
 export interface CommitBreakdown {
 	commitSha: string
@@ -200,10 +194,6 @@ export function coerceServiceOverviewRows(
 	return Arr.map(rows, (row) => coerceServiceOverviewRow(row, durationSeconds))
 }
 
-// ---------------------------------------------------------------------------
-// service_usage
-// ---------------------------------------------------------------------------
-
 export interface ServiceUsage {
 	serviceName: string
 	totalLogs: number
@@ -266,10 +256,6 @@ export function serviceUsagePreviousTotals(rows: ReadonlyArray<Record<string, un
 	)
 }
 
-// ---------------------------------------------------------------------------
-// errors_by_type / errors_summary
-// ---------------------------------------------------------------------------
-
 export interface ErrorByType {
 	fingerprintHash: string
 	errorLabel: string
@@ -315,10 +301,6 @@ export function coerceErrorsSummary(row: Record<string, unknown> | null | undefi
 		affectedTracesCount: Number(row.affectedTracesCount),
 	}
 }
-
-// ---------------------------------------------------------------------------
-// list_logs
-// ---------------------------------------------------------------------------
 
 export interface LogRow {
 	/** ISO-8601 UTC, millisecond precision. */

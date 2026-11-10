@@ -110,8 +110,6 @@ describe("traceSpanStatsByTraceIdsQuery", () => {
 	})
 })
 
-// tracesListQuery
-
 describe("tracesListQuery", () => {
 	it("defaults to 25 rows from raw traces", () => {
 		const q = tracesListQuery({})
@@ -245,8 +243,6 @@ describe("tracesListQuery", () => {
 	})
 })
 
-// traceServicesByTraceIdsQuery
-
 describe("traceServicesByTraceIdsQuery", () => {
 	it("aggregates one page of trace services, seeked through trace_index", () => {
 		const { sql } = compileUnsafe(
@@ -260,8 +256,6 @@ describe("traceServicesByTraceIdsQuery", () => {
 		expect(sql).toContain("GROUP BY traceId")
 	})
 })
-
-// tracesRootListQuery
 
 describe("tracesRootListQuery", () => {
 	it("defaults to 25 root rows from raw traces", () => {
@@ -339,8 +333,6 @@ describe("tracesRootListQuery", () => {
 		expect(Arr.fromIterable(Str.matchAll(/StatusCode = 'Error'/g)(sql))).toHaveLength(3)
 	})
 })
-
-// traceListQuery
 
 /**
  * Body of the `TraceId IN (SELECT traceId FROM (…))` page subquery. Scans for
@@ -590,8 +582,6 @@ describe("traceListQuery", () => {
 	})
 })
 
-// slowTracesQuery
-
 describe("slowTracesQuery", () => {
 	it("reads slow root spans from the pre-extracted trace list MV", () => {
 		const q = slowTracesQuery({ service: "api", environment: "prod", limit: 5 })
@@ -603,8 +593,6 @@ describe("slowTracesQuery", () => {
 		expect(sql).not.toContain("ResourceAttributes")
 	})
 })
-
-// spanSearchQuery
 
 describe("spanSearchQuery", () => {
 	it("seeks the trace through trace_index when a trace id is provided", () => {

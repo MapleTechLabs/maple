@@ -422,9 +422,8 @@ export const HttpBillingLive = HttpApiBuilder.group(MapleInternalApi, "billing",
 						// normally still gets the event (the fiber finishes long before
 						// the response is written) while a stalled one is interrupted at
 						// the response instead of holding the user. Losing it there costs
-						// nothing durable — `plan_events.ts` is explicit that this emit is
-						// the low-latency COMPLEMENT and the `billing.updated` webhook is
-						// the authoritative `plan_started`.
+						// nothing durable: this emit is the low-latency COMPLEMENT and the
+						// `billing.updated` webhook is the authoritative `plan_started`.
 						yield* forkRequestScoped(
 							emitPlanStartedFromAttach(productEvents, {
 								orgId: tenant.orgId,

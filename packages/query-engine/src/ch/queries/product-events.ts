@@ -68,8 +68,6 @@ export function argMinIf<T>(value: CH.Expr<T>, orderBy: CH.Expr<unknown>, cond: 
 type FunnelEventRow = { readonly [column: string]: unknown }
 type FunnelBranch = CHQuery<ColumnDefs, FunnelEventRow, Record<string, ColumnDefs>>
 
-// Public option types
-
 /** Which `session_replays` dimension a `session` step (or a breakdown) reads. */
 export type FunnelSessionDimension =
 	| "referrerHost"
@@ -142,8 +140,6 @@ export interface ProductEventNamesOpts {
 	readonly limit?: number
 }
 
-// Row schemas
-
 export const productEventsFunnelRowSchema = Schema.Struct({
 	step: CHNumber,
 	count: CHNumber,
@@ -165,8 +161,6 @@ export const productEventNamesRowSchema = Schema.Struct({
 	persons: CHNumber,
 })
 export type ProductEventNamesOutput = typeof productEventNamesRowSchema.Type
-
-// Validation
 
 /** A funnel definition the builder cannot compile; the builders return it as a `Result` failure. */
 export class ProductEventsFunnelError extends Schema.TaggedError<ProductEventsFunnelError>()(
@@ -217,8 +211,6 @@ function validate(opts: ProductEventsFunnelOpts): ProductEventsFunnelError | und
 	}
 	return undefined
 }
-
-// Shared pieces
 
 export type EventsAccessor = ColumnAccessor<typeof Datasources.productEvents.columns>
 type ReplaysAccessor = ColumnAccessor<typeof Datasources.sessionReplays.columns>
@@ -576,8 +568,6 @@ function stepCounts(stepCount: number): CH.Expr<ReadonlyArray<number>> {
 function stepIndex(stepCount: number): CH.Expr<number> {
 	return CH.arrayJoin(CH.arrayOf(...Array.from({ length: stepCount }, (_, i) => CH.lit(i + 1))))
 }
-
-// Public builders
 
 /**
  * Per-step funnel counts: how many persons (per `keyBy`) reached at least step

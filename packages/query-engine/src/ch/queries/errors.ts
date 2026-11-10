@@ -151,8 +151,6 @@ const sharedFilterConditions = (
 		: undefined,
 ]
 
-// Errors by type
-//
 // Top Errors groups the canonical `error_events` rows by the ingest-computed
 // `FingerprintHash` (the same identity the Issues system uses) and labels them
 // with the stored `ErrorLabel`. The error identity is the stable fingerprint
@@ -240,8 +238,6 @@ export function errorsByTypeQuery(opts: ErrorsByTypeOpts) {
 /** A namespace prefix is a literal, so its `%`/`_` must not act as LIKE wildcards. */
 const likeLiteral = (value: string): string => Str.replace(/[\\%_]/g, "\\$&")(value)
 
-// Errors timeseries
-
 export interface ErrorsTimeseriesOpts {
 	fingerprintHash: string
 	services?: readonly string[]
@@ -272,8 +268,6 @@ export function errorsTimeseriesQuery(opts: ErrorsTimeseriesOpts) {
 		.format("JSON")
 }
 
-// Errors spark — bucketed counts for MANY fingerprints in one scan
-//
 // `errorsTimeseriesQuery` answers "how did this one fingerprint behave"; the
 // unified errors list needs the same shape for every row it is about to draw,
 // and one request per row would be 50 round trips. Rows come back tall
@@ -315,8 +309,6 @@ export function errorsSparkQuery(opts: ErrorsSparkOpts) {
 		.format("JSON")
 }
 
-// Span hierarchy
-
 /**
  * Span attribute keys the waterfall / timeline / flow views actually read
  * (via `getHttpInfo` + `getCacheInfo`). The hierarchy query projects only
@@ -348,7 +340,7 @@ const TREE_SPAN_ATTR_KEYS = [
 	// server, …) is loaded lazily by `spanDetailQuery` for the detail panel.
 	"db.system.name",
 	"db.system",
-	// Cloudflare Workers Observability — read by `getCloudflareInfo` to mark
+	// Cloudflare Workers Observability, read by `detectPlatform` (domain) to mark
 	// Worker spans and render the edge-location + outcome badges in the tree
 	// views. The full set (ray id, cpu/wall time, script version, geo city) is
 	// lazy-loaded per-span by `spanDetailQuery` for the detail panel.
@@ -471,8 +463,6 @@ export function spanHierarchyQuery(opts: SpanHierarchyOpts) {
 	)
 }
 
-// Span detail — full attributes for a single span
-
 export interface SpanDetailOpts {
 	traceId: string
 	spanId: string
@@ -540,8 +530,6 @@ export function spanDetailQuery(opts: SpanDetailOpts) {
 		.format("JSON")
 }
 
-// Span events — the OTel events (incl. `exception`) recorded on one span
-
 export interface SpanEventsOpts {
 	traceId: string
 	spanId: string
@@ -584,8 +572,6 @@ export function spanEventsQuery(opts: SpanEventsOpts) {
 		.format("JSON")
 }
 
-// Span events by trace — event markers for every span of one trace
-
 export interface SpanEventsByTraceOutput {
 	readonly spanId: string
 	/** The span's own start, rendered like the event timestamps so offsets keep ns precision. */
@@ -626,8 +612,6 @@ export function spanEventsByTraceQuery(opts: { traceId: string; limit?: number }
 			.format("JSON")
 	)
 }
-
-// Trace timestamp probe — resolve any one span timestamp for a trace
 
 export interface TraceTimeProbeOutput {
 	readonly traceId: string
@@ -673,8 +657,6 @@ export function recentTraceTimeProbeQuery(opts: { traceId: string; endBounded?: 
 	])
 }
 
-// Traces duration stats and facets
-//
 // Both count root spans over the window. When `trace_facets_hourly` carries the
 // filters, its whole hours answer the interior and `trace_list_mv` only the
 // partial hour at each end (`rollup-splice`); otherwise `trace_list_mv` answers
@@ -847,8 +829,6 @@ export function tracesDurationStatsQuery(
 		.format("JSON")
 }
 
-// Traces facets (UNION ALL — 6 facet dimensions and the error count)
-
 export type TracesFacetDimension =
 	| "service"
 	| "spanName"
@@ -1014,8 +994,6 @@ export function tracesFacetsQuery(opts: TracesFacetsOpts): CHUnionQuery<TracesFa
 	).format("JSON")
 }
 
-// Errors facets (UNION ALL — service + environment + error_type facets)
-
 export interface ErrorsFacetsOpts extends ErrorsSharedFilters {
 	rootOnly?: boolean
 	fingerprintHashes?: readonly string[]
@@ -1098,8 +1076,6 @@ export function errorsFacetsQuery(opts: ErrorsFacetsOpts): CHUnionQuery<ErrorsFa
 
 	return unionAll(serviceQuery, envQuery, errorTypeQuery, versionQuery).format("JSON")
 }
-
-// Errors summary (CROSS JOIN between the error-events table and service_usage)
 
 export interface ErrorsSummaryOpts extends ErrorsSharedFilters {
 	rootOnly?: boolean
@@ -1218,8 +1194,6 @@ export function errorsSummaryQuery(opts: ErrorsSummaryOpts) {
 		})),
 	)
 }
-
-// Error Issues — fingerprint-grouped aggregate from error_events
 
 export interface ErrorIssuesOpts {
 	services?: readonly string[]
@@ -1381,8 +1355,6 @@ export function errorTickBootstrapIssuesQuery() {
 		.format("JSON")
 }
 
-// Error fingerprints — distinct fingerprint hashes observed in a scope
-
 export interface ErrorFingerprintsOpts {
 	services?: readonly string[]
 	deploymentEnvs?: readonly string[]
@@ -1421,8 +1393,6 @@ export function errorFingerprintsQuery(opts: ErrorFingerprintsOpts) {
 		.format("JSON")
 }
 
-// Error Issue timeseries: per-issue occurrence buckets
-
 /** An issue's whole fingerprint set: its own hash plus any merged-in or re-keyed ones. */
 export interface IssueFingerprintsOpts {
 	readonly fingerprintHashes: readonly string[]
@@ -1450,9 +1420,7 @@ export function errorIssueTimeseriesQuery(opts: IssueFingerprintsOpts) {
 		.format("JSON")
 }
 
-// Error Issue sample traces — most recent occurrences for one issue
-
-/** `TraceId`/`SpanId` brands come off `ErrorEvents`' branded columns — the
+/** `TraceId`/`SpanId` brands come off `error_events`' branded columns: the
  *  derived row schema carries them, so no declared schema is needed. */
 export interface ErrorIssueSampleTracesOutput {
 	readonly traceId: TraceId
@@ -1549,8 +1517,6 @@ export function errorIssueEnvironmentsQuery(opts: IssueFingerprintsOpts & { limi
 /** The response status from either semconv spelling; the current key wins. */
 const httpStatusOf = (current: CH.Expr<string>, legacy: CH.Expr<string>) =>
 	CH.if_(current.neq(""), current, legacy)
-
-// Error detail traces (INNER JOIN with error subquery)
 
 export interface ErrorDetailTracesOpts {
 	fingerprintHash: string

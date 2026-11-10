@@ -50,8 +50,6 @@ const _matchRegex = defineCondFn<[CH.Expr<string>, string]>("match")
  */
 const SERVICE_MAP_EXCLUDED_SERVICES: ReadonlyArray<string> = [UPTIME_SERVICE_NAME]
 
-// Service dependencies
-
 export interface ServiceDependenciesOpts {
 	deploymentEnv?: string
 }
@@ -258,8 +256,6 @@ export function serviceDependenciesSQL(
 	)
 }
 
-// Service ↔ service dependencies — scoped to one source service
-//
 // The service-detail page's Dependencies tab only needs outbound edges for the
 // currently-displayed service. The org-wide variant above is kept for the
 // global Services map (which renders every edge). This variant pushes the
@@ -416,8 +412,6 @@ export function serviceDependenciesInvolvingServiceQuery(opts: ServiceDependenci
 	})
 }
 
-// Service ↔ database edges
-//
 // Surfaces DB calls (Client/Producer spans with `db.system.name` or `db.system`) as a separate
 // dependency relation so the service map can reify databases as nodes.
 // One row per (sourceService, dbSystem).
@@ -681,8 +675,6 @@ function serviceDbEdgesQueryBase(opts: {
 		.format("JSON")
 }
 
-// Service ↔ database edges — scoped to one source service
-//
 // Same shape as `serviceDbEdgesSQL` but pre-filters both branches by
 // `ServiceName = ?`. Mirrors the `serviceExternalEdgesSQL` pattern (which is
 // already service-scoped).
@@ -704,8 +696,6 @@ export function serviceDbEdgesForServiceQuery(opts: ServiceDbEdgesForServiceOpts
 	return serviceDbEdgesQueryBase(opts)
 }
 
-// Service-map database query summaries
-//
 // Selected database drill-down ("Query Activity" + "Top Query Shapes"). Reads
 // the `service_map_db_query_shapes_hourly` rollup for sealed hours and UNIONs
 // raw `traces` for the in-progress hour — same dual-source pattern as
@@ -850,7 +840,7 @@ const serviceDbRawFilters = (
 	$.SpanKind.in_("Client", "Producer"),
 	$.ServiceName.neq(""),
 	dbSystemExpr($).eq(params.dbSystem),
-	// Same undefined-vs-'' semantics as `shapesHourlyFilters`.
+	// Same undefined-vs-'' semantics as `signaturesHourlyFilters`.
 	params.dbNamespace !== undefined ? dbNamespaceExpr($).eq(params.dbNamespace) : undefined,
 	params.sourceService ? $.ServiceName.eq(params.sourceService) : undefined,
 	params.deploymentEnv ? deploymentEnvExpr($.ResourceAttributes).eq(params.deploymentEnv) : undefined,
@@ -1132,8 +1122,6 @@ export function serviceDbQuerySpansQuery(params: {
 		.format("JSON")
 }
 
-// Service ↔ external target edges (http / messaging / rpc)
-//
 // Surfaces non-DB Client/Producer outbound calls — HTTP endpoints, message
 // queues, RPC targets — as a unified inventory for the service-detail page's
 // "Dependencies" tab. Mirrors the DB-edges pattern: hourly MV (sealed buckets)
@@ -1324,11 +1312,9 @@ export function serviceExternalEdgesSQL(
 	return compile(query, params, { rowSchema: ServiceExternalEdgesOutputSchema })
 }
 
-// Service hosting platform
-//
 // Per-service rollup of the OTel resource attributes that identify where a
 // service runs. The caller derives a single `Platform` label from these raw
-// values (see apps/web/src/api/tinybird/service-map.ts).
+// values (see packages/web-data/src/warehouse/service-map.ts).
 //
 // Reads from `service_platforms_hourly` (populated by
 // `service_platforms_hourly_mv`). The MV uses SimpleAggregateFunction("max")
@@ -1392,8 +1378,6 @@ export function servicePlatformsSQL(
 	})
 }
 
-// DB query volume
-//
 // Query shapes across every service and database, not one db system's detail
 // panel: the same sealed-rollup + raw-edge splice as `serviceDbTopQueriesSQL`,
 // keyed per (service, db system, namespace, shape). The raw edge mirrors the

@@ -111,8 +111,6 @@ export function releasesListQuery(opts: ReleasesListOpts = {}) {
 		.format("JSON")
 }
 
-// Running commits
-//
 // Which commit each service served traffic from in the window, for the dependency scanner: a
 // vulnerable package matters most in the commit a busy service is running.
 
@@ -145,8 +143,6 @@ export function runningCommitsQuery() {
 		.format("JSON")
 }
 
-// Releases timeline
-//
 // The org-wide sibling of `serviceReleasesTimelineQuery`: per bucket, per
 // service, per commit. Feeds the swimlanes and the per-service rollout share
 // (which version carried the last bucket's traffic).
@@ -235,8 +231,6 @@ export function releasesTimelineQuery(
 		.format("JSON")
 }
 
-// Error fingerprints on a version
-//
 // The bridge from a release to the issues system. Traces key a release on
 // `vcs.ref.head.revision`; error events key on `service.version`, which Maple's
 // SDKs stamp with the same sha. Reads the per-occurrence projection because a
@@ -278,8 +272,6 @@ export function releaseErrorFingerprintsQuery(opts: ReleaseErrorFingerprintsOpts
 		.format("JSON")
 }
 
-// Service deployments
-//
 // The releases list plus when each version last served, for deploy
 // verification in one call. `lastSeen` is the start of the last bucket the
 // version had traffic in: minute precision without the hourly tier, hour

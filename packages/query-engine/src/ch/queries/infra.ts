@@ -214,8 +214,6 @@ function hostDiskPctQuery(hosts: HostFilter) {
 		.groupBy("hostName")
 }
 
-// List hosts — one row per host.name with latest-window headline gauges
-
 export interface ListHostsOpts {
 	search?: string
 	limit?: number
@@ -284,8 +282,6 @@ export function listHostsQuery(opts: ListHostsOpts = {}) {
 		.orderBy(["lastSeen", "desc"], ["hostName", "asc"])
 		.format("JSON")
 }
-
-// Host detail summary — single host, latest-window headline gauges + uptime
 
 export interface HostDetailSummaryOpts {
 	hostName: string
@@ -1715,8 +1711,6 @@ export function workloadFacetsQuery(opts: ListWorkloadsOpts): CHUnionQuery<Workl
 	).format("JSON")
 }
 
-// Infrastructure presence — which surfaces this org actually reports
-//
 // The sidebar's Infrastructure section has seven children, and almost no org
 // runs all seven. To show only the ones an org has, something has to answer
 // "does this surface report anything?" on every page load — so the probe has

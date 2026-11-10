@@ -158,8 +158,6 @@ const httpOutputs = <
 	requestBodyCount: CH.sum($.bRequestBodyCount),
 })
 
-// A. Per-endpoint rows
-
 export interface ServiceEndpointsWithHttpOpts extends ServiceApiScopeOpts {
 	readonly limit?: number
 }
@@ -236,8 +234,6 @@ export function serviceEndpointsWithHttpQuery(opts: ServiceEndpointsWithHttpOpts
 		.format("JSON")
 }
 
-// B. One row across every HTTP endpoint of the service
-
 export interface ServiceApiTotalsOutput {
 	readonly spanCount: number
 	readonly estimatedSpanCount: number
@@ -279,8 +275,6 @@ export function serviceApiTotalsQuery(opts: ServiceApiScopeOpts) {
 		}))
 		.format("JSON")
 }
-
-// C. Timeseries, merged across endpoints or per named endpoint
 
 export interface ServiceApiTimeseriesOpts extends ServiceApiScopeOpts {
 	/** Build-time copy of the `bucketSeconds` param: an hour or more unlocks the hourly tier. */

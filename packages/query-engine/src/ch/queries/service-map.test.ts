@@ -43,8 +43,6 @@ const baseParams = {
 	endTime: "2024-01-02 00:00:00",
 }
 
-// serviceExternalEdgesSQL
-
 describe("serviceExternalEdgesSQL", () => {
 	it("derives tenant scope from its union branches, not from the anti-join", () => {
 		const compiled = Effect.runSync(serviceExternalEdgesSQL({ serviceName: "artifacts-api" }, baseParams))
@@ -159,8 +157,6 @@ describe("serviceExternalEdgesSQL", () => {
 	)
 })
 
-// serviceMapResolutionsRollupSQL — companion of the edges rollup
-
 describe("serviceMapResolutionsRollupSQL", () => {
 	const hourParams = {
 		orgId: OrgId.make("org_1"),
@@ -184,8 +180,6 @@ describe("serviceMapResolutionsRollupSQL", () => {
 		)
 	})
 })
-
-// serviceDependenciesForServiceQuery — service-scoped service↔service edges
 
 // The splice fragments `./rollup-splice` emits for the 10:15 → 12:30 window the
 // boundary tests use. Spelled out rather than imported: a test that derived them
@@ -374,8 +368,6 @@ describe("serviceDependenciesForServiceQuery", () => {
 	})
 })
 
-// serviceDbEdgesForServiceQuery — service-scoped service↔database edges
-
 describe("serviceDbEdgesForServiceQuery", () => {
 	it.effect("decodes org-wide database edge rows with numeric strings from ClickHouse JSON", () =>
 		Effect.gen(function* () {
@@ -468,8 +460,6 @@ describe("serviceDbEdgesForServiceQuery", () => {
 		expect(sql).toContain("ServiceName = 'weird\\'service'")
 	})
 })
-
-// serviceDbQuerySummarySQL / serviceDbQueryTimeseriesSQL / serviceDbTopQueriesSQL
 
 describe("service-map database query summaries", () => {
 	const params = {
@@ -785,8 +775,6 @@ describe("servicePlatformsSQL", () => {
 		}),
 	)
 })
-
-// serviceDbQuerySpansQuery
 
 describe("serviceDbQuerySpansQuery", () => {
 	const spans = () =>

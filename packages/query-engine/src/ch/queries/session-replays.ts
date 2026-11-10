@@ -51,7 +51,6 @@ function has<T>(array: CH.Expr<ReadonlyArray<T>>, element: CH.Expr<T>): CH.Condi
 	return compileFnCallCond("has", array, element)
 }
 
-// length(array) — element count.
 function arrayLength<T>(array: CH.Expr<ReadonlyArray<T>>): CH.Expr<number> {
 	return CH.compileTypedFnCall("length", T.uint64.schema, array)
 }
@@ -131,8 +130,6 @@ function tagFilter(
 		]),
 	)
 }
-
-// List query
 
 export interface SessionReplaysListOpts {
 	serviceName?: string
@@ -506,8 +503,6 @@ export function sessionReplaysListQuery(
 		.format("JSON")
 }
 
-// List facets (UNION ALL — browser / device / country / service + error count)
-//
 // Populates the replays filter sidebar. Counts use uniq(SessionId) so the two
 // ReplacingMergeTree rows per session (Version 1 + 2) don't double-count. Each
 // dimension's own equality filter is excluded from its branch so the currently
@@ -753,8 +748,6 @@ export function sessionReplaysFacetsQuery(
 	).format("JSON")
 }
 
-// Single session detail
-//
 // (OrgId, SessionId) is the full sort-key prefix, so this is an O(log N)
 // lookup. Dedup the ReplacingMergeTree versions by taking the highest Version.
 //
@@ -845,8 +838,6 @@ export function getSessionReplayQuery(opts: SessionReplayDetailOpts = {}) {
 		.format("JSON")
 }
 
-// Chunk reads for one session (ordered for playback)
-//
 // Two builders, deliberately split: `sessionReplayChunkIndexQuery` returns the
 // timeline without payloads, and `sessionReplayEventsQuery` returns payloads for
 // a bounded chunk range. Playback fetches the index once, then pulls ranges on
@@ -970,8 +961,6 @@ export function sessionReplayEventsQuery(opts: SessionReplayEventsOpts = {}) {
 	return (opts.offset === undefined ? limited : limited.offset(opts.offset)).format("JSON")
 }
 
-// Reverse correlation: sessions that observed a given trace id
-
 export interface SessionsForTraceOpts {
 	traceId: string
 	limit?: number
@@ -1004,8 +993,6 @@ export function sessionsForTraceQuery(opts: SessionsForTraceOpts) {
 		.format("JSON")
 }
 
-// Per-trace summaries for a session's correlated traces
-//
 // One row per TraceId, used to draw a single bar per trace on the session
 // replay timeline (the expandable span lanes fetch full spans on demand via
 // spanHierarchyQuery). Reads `traces` seeked through `trace_index`; the

@@ -50,8 +50,6 @@ function datapointFilterConditions(
 	return Arr.map(filters ?? [], (af) => buildAttrFilterCondition(af, "Attributes"))
 }
 
-// Shared options & output types
-
 /** Time aggregations the value tables take; `rate`/`increase` go through `metricsTimeseriesRateQuery`. */
 export type MetricsValueAggregation = Exclude<MetricsMetric, "rate" | "increase">
 
@@ -204,8 +202,6 @@ function metricsWhere($: MetricsWhereColumns, opts: MetricsTimeseriesOpts) {
 		...resourceFilterConditions(opts.resourceAttributeFilters),
 	]
 }
-
-// Timeseries query: two stages for sum/gauge, bucket merge for histograms
 
 /**
  * Sum and gauge rows reduce in two stages, the model every metrics backend
@@ -655,8 +651,6 @@ export function metricsTimeseriesRateQuery(
 	return finalizeTimeseries(inner, metricsTimeseriesColumns, "value", opts)
 }
 
-// Sparklines query — batched preview series for the metrics browse grid
-
 export interface MetricsSparklinesOpts {
 	metricType: MetricType
 	/** Matched with `MetricName IN (...)` — one query covers a whole grid page. */
@@ -695,8 +689,6 @@ export function metricsSparklinesQuery(opts: MetricsSparklinesOpts) {
 		.orderBy(["bucket", "asc"])
 		.format("JSON")
 }
-
-// Breakdown query
 
 export interface MetricsBreakdownOpts {
 	metricType: MetricType
@@ -775,8 +767,6 @@ export function metricsBreakdownQuery(opts: MetricsBreakdownOpts) {
 		.format("JSON")
 }
 
-// List metrics — reads the hourly `metric_catalog` rollup
-
 export interface ListMetricsOpts {
 	serviceName?: string
 	metricType?: string
@@ -826,8 +816,6 @@ export function listMetricsQuery(opts: ListMetricsOpts) {
 		.offset(opts.offset ?? 0)
 		.format("JSON")
 }
-
-// Metrics summary — reads the hourly `metric_catalog` rollup
 
 export interface MetricsSummaryOutput {
 	readonly metricType: string

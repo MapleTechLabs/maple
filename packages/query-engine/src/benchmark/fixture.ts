@@ -44,7 +44,6 @@ export const FIXTURE_WINDOW = {
 	endTime: FIXTURE_END_TIME,
 }
 
-/** A catalog entry compiled from a builder fixture. */
 export interface BuilderCatalogEntry {
 	readonly id: string
 	readonly source: "builder"

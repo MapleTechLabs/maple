@@ -24,8 +24,6 @@ export function matchedHoursOfDay(currentHourOfDay: number): readonly number[] {
 	return [(currentHourOfDay + 23) % 24, currentHourOfDay, (currentHourOfDay + 1) % 24]
 }
 
-// Golden signals — per (service, env, hour) from traces_aggregates_hourly
-
 export interface AnomalyTraceSignalsOpts {
 	/** Hour-of-day values (0–23) to include; see `matchedHoursOfDay`. */
 	hoursOfDay: readonly number[]
@@ -67,8 +65,6 @@ export function anomalyTraceSignalsQuery(opts: AnomalyTraceSignalsOpts) {
 		.format("JSON")
 }
 
-// Log volume — per (service, env, hour) from logs_aggregates_hourly
-
 const ERROR_SEVERITIES = ["error", "fatal", "critical"] as const
 const WARN_SEVERITIES = ["warn", "warning"] as const
 
@@ -99,8 +95,6 @@ export function anomalyLogVolumeQuery(opts: AnomalyTraceSignalsOpts) {
 		.limit(25000)
 		.format("JSON")
 }
-
-// Error fingerprint spikes — current 30-min window per (fingerprint, env)
 
 export interface AnomalyErrorSpikeCurrentOutput {
 	readonly fingerprintHash: string

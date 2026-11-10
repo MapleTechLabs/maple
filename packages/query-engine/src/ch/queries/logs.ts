@@ -29,8 +29,6 @@ import {
 } from "./query-helpers"
 import { Array as Arr, String as Str } from "effect"
 
-// Shared options
-
 interface LogsQueryOpts {
 	serviceName?: string
 	severity?: string
@@ -265,8 +263,6 @@ function canUseLogsAggregateInterior(opts: LogsQueryOpts): boolean {
 	return true
 }
 
-// Timeseries query
-
 export interface LogsTimeseriesOpts extends LogsQueryOpts {
 	groupBy?: readonly string[]
 	/**
@@ -426,8 +422,6 @@ function buildLogsGroupNameExpr(
 	return CH.coalesce(CH.nullIf(CH.arrayStringConcat(filtered, " \u00b7 "), ""), CH.lit("all"))
 }
 
-// Breakdown query
-
 export interface LogsBreakdownOpts extends LogsQueryOpts {
 	groupBy: "service" | "severity" | "attribute" | "resource_attribute"
 	/** LogAttributes key for groupBy "attribute". */
@@ -539,8 +533,6 @@ export function logsBreakdownQuery(opts: LogsBreakdownOpts): CHQuery<ColumnDefs,
 	return result
 }
 
-// Count query
-
 export interface LogsCountOutput {
 	readonly total: number
 }
@@ -595,8 +587,6 @@ export function logsCountQuery(opts: LogsQueryOpts): CHQuery<ColumnDefs, LogsCou
 		.format("JSON")
 	return combined
 }
-
-// List query
 
 export interface LogsListOpts extends LogsQueryOpts {
 	minSeverity?: number
@@ -735,8 +725,6 @@ export function logsListQuery(opts: LogsListOpts) {
 	return query
 }
 
-// Single log lookup (exact-match by composite key)
-//
 // Logs have no native primary id; the public identity combines the indexed
 // timestamp with a deterministic hash of the complete stored record. Used by
 // the shareable `/logs/$logId` detail page.
@@ -779,8 +767,6 @@ export function getLogByKeyQuery(opts: LogByKeyOpts) {
 		.format("JSON")
 }
 
-// Error rate by service
-
 export interface ErrorRateByServiceOutput {
 	readonly serviceName: string
 	readonly totalLogs: number
@@ -820,8 +806,6 @@ export function errorRateByServiceQuery() {
 		.orderBy(["errorRate", "desc"])
 		.format("JSON")
 }
-
-// Logs facets (UNION ALL — severity + service facets)
 
 export interface LogsFacetsOutput {
 	readonly severityText: string

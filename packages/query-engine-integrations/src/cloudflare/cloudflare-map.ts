@@ -38,7 +38,6 @@ export interface CloudflareServiceLatencyOutput {
 	readonly serviceName: string
 	/** Wall-time duration p99. */
 	readonly latencyP99Ms: number
-	/** CPU time p99. */
 	readonly cpuP99Ms: number
 }
 
@@ -69,9 +68,6 @@ export function cloudflareServiceCountersSQL() {
  * template's own treatment and is fine for a node-level KPI.
  */
 export function cloudflareServiceLatencySQL() {
-	// `avgIf` over a metric with no matching rows is NaN, which serializes to
-	// JSON `null` and would break row decoding — so guard each with
-	// `if(countIf > 0, avgIf, 0)`.
 	return from(Datasources.metricsGauge)
 		.select(($) => ({
 			serviceName: $.ServiceName,

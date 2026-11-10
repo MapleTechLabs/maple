@@ -55,12 +55,6 @@ const CACHE_SERVED_STATUSES = ["hit", "stale", "revalidated", "updating"] as con
 /** Cache statuses for traffic Cloudflare was never going to cache, plus a missing status ("" in a Map read); excluded from the hit-rate denominator. */
 const CACHE_UNCACHEABLE_STATUSES = ["", "none", "dynamic", "bypass", "unknown"] as const
 
-// `avgIf` over a metric with no matching rows is NaN, which serializes to
-// JSON `null` and would break row decoding — so guard each with
-// `if(countIf > 0, avgIf, 0)`. (Same guard as cloudflare-map.ts.)
-
-// Zones
-
 export interface CloudflareZoneCountersOutput {
 	readonly serviceName: string
 	/** Edge HTTP requests (ABR-adjusted estimate). */
@@ -224,8 +218,6 @@ export function cloudflareZoneTimeseriesSQL(opts: CloudflareFilterOpts = {}) {
 		.format("JSON")
 }
 
-// Zone detail (single zone, scoped by ServiceName)
-//
 // The poller stores `http.status_class` and `cache.status` on every
 // `cloudflare.http.requests` row, so a single zone supports bucketed
 // breakdowns by either dimension plus a latency-percentile timeseries.
@@ -330,8 +322,6 @@ export function cloudflareZoneLatencyTimeseriesSQL() {
 		.format("JSON")
 }
 
-// Workers
-
 export interface CloudflareWorkerCountersOutput {
 	readonly serviceName: string
 	/** Same-named scripts in two accounts are two rows. */
@@ -340,7 +330,6 @@ export interface CloudflareWorkerCountersOutput {
 	readonly requests: number
 	/** Worker invocation errors. */
 	readonly errors: number
-	/** Worker subrequests. */
 	readonly subrequests: number
 }
 

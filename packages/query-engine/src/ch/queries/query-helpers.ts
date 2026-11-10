@@ -44,8 +44,6 @@ export function wholeRangeEnd<Q>(
 	return wholeRange ? column.lt(utcSecondsParam("endTime")) : undefined
 }
 
-// APDEX expressions
-
 /**
  * Build the standard APDEX aggregation expressions (satisfiedCount,
  * toleratingCount, apdexScore) from a duration expression and threshold.
@@ -90,8 +88,6 @@ export function apdexExprs(
 	}
 }
 
-// Attribute map projection
-
 /**
  * HTTP attribute keys projected into `rootSpanAttributes`. Mirrors the web app's
  * trace-list projection and the hierarchy query's `TREE_SPAN_ATTR_KEYS` so the
@@ -131,8 +127,6 @@ export function buildProjectedMapExpr(
 	})
 	return CH.mapLiteral(...pairs)
 }
-
-// Traces base WHERE conditions
 
 interface TracesMatchModes {
 	serviceName?: "contains"
@@ -465,8 +459,6 @@ export function tracesBaseWhereConditions(
 	return conditions
 }
 
-// ServiceOverviewSpans MV compatibility
-//
 // The service_overview_spans MV pre-filters traces at write time to
 // `SpanKind IN ('Server','Consumer') OR ParentSpanId = ''` and pre-extracts
 // `DeploymentEnv` / `CommitSha` from ResourceAttributes. It is ~20-100x cheaper
@@ -477,7 +469,6 @@ export function tracesBaseWhereConditions(
 // MV's column set. The MV lacks SpanName, SpanKind, ParentSpanId,
 // SpanAttributes, and ResourceAttributes.
 
-/** Returns true iff the opts + groupBy can be served by service_overview_spans_mv. */
 export function canUseServiceOverviewMv(opts: TracesBaseWhereOpts, groupBy?: readonly string[]): boolean {
 	// The MV is *lossy*: it stores only entry-point spans (Server/Consumer OR
 	// root). That set is equivalent to the raw table only when the query itself
@@ -565,8 +556,6 @@ export function serviceOverviewWhereConditions(
 	return conditions
 }
 
-// TracesAggregatesHourly MV compatibility
-//
 // `traces_aggregates_hourly` is the generalized aggregating MV. Its dimensions
 // are (OrgId, Hour, ServiceName, SpanName, SpanKind, StatusCode, IsEntryPoint,
 // DeploymentEnv) and it stores sample-weighted -State columns (count, duration
@@ -664,8 +653,6 @@ export function tracesAggregatesWhereConditions(
 	// raw traces.
 	return conditions
 }
-
-// Metrics table lookup + SELECT factory
 
 const VALUE_TABLES = {
 	sum: Datasources.metricsSum,

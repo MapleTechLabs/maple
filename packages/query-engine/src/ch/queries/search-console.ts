@@ -108,8 +108,6 @@ const metrics = (sums: Sums) => ({
 	position: ratio(sums.positionSum, sums.impressions),
 })
 
-// Overview
-
 export interface SearchConsoleOverviewOutput {
 	readonly clicks: number
 	readonly impressions: number
@@ -156,8 +154,6 @@ export function searchConsoleOverviewQuery() {
 		.route("ingest")
 }
 
-// Timeseries
-
 export interface SearchConsoleTimeseriesOutput {
 	/** Midnight UTC of Google's (Pacific) day. */
 	readonly date: DateTime.Utc
@@ -183,8 +179,6 @@ export function searchConsoleTimeseriesQuery() {
 		.format("JSON")
 		.route("ingest")
 }
-
-// Top queries and pages
 
 export interface SearchConsoleSortOpts {
 	readonly sortBy?: SearchConsoleSortKey

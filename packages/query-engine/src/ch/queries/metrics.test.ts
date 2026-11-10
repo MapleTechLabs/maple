@@ -19,8 +19,6 @@ const baseParams = {
 	metricName: "cpu.utilization",
 }
 
-// metricsTimeseriesQuery
-
 describe("metricsTimeseriesQuery", () => {
 	it("compiles value timeseries (sum)", () => {
 		const q = metricsTimeseriesQuery({ metricType: "sum" })
@@ -148,8 +146,6 @@ describe("metricsTimeseriesQuery", () => {
 		expect(sql).toContain("ResourceAttributes['k8s.cluster.name'] = 'prod-us-east'")
 	})
 })
-
-// metricsTimeseriesRateQuery
 
 describe("metricsTimeseriesRateQuery", () => {
 	it("caps grouped rate timeseries before returning the long tail", () => {
@@ -386,8 +382,6 @@ describe("metricsTimeseriesRateQuery", () => {
 	})
 })
 
-// metricsBreakdownQuery
-
 describe("metricsBreakdownQuery resource group-by", () => {
 	it("groups by a resource attribute, not by service", () => {
 		const q = metricsBreakdownQuery({
@@ -400,8 +394,6 @@ describe("metricsBreakdownQuery resource group-by", () => {
 		expect(sql).not.toContain("ServiceName AS name")
 	})
 })
-
-// metricsSparklinesQuery
 
 describe("metricsSparklinesQuery", () => {
 	it("compiles a batched IN query grouped per metric and bucket", () => {
@@ -537,8 +529,6 @@ describe("metricsBreakdownQuery", () => {
 	})
 })
 
-// listMetricsQuery
-
 describe("listMetricsQuery", () => {
 	it("reads the metric_catalog rollup", () => {
 		const q = listMetricsQuery({})
@@ -576,8 +566,6 @@ describe("listMetricsQuery", () => {
 		expect(sql).toContain("OFFSET 10")
 	})
 })
-
-// metricsSummaryQuery
 
 describe("metricsSummaryQuery", () => {
 	it("aggregates the metric_catalog rollup by metric type", () => {

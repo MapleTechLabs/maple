@@ -156,7 +156,7 @@ describe("computeBucketSeconds", () => {
 		})
 
 		it("leaves the default (unfloored) ladder alone", () => {
-			expect(computeBucketSeconds(0, 3600_000)).toBe(computeBucketSeconds(0, 3600_000, {}))
+			expect(computeBucketSeconds(0, 3600_000, {})).toBe(60)
 		})
 	})
 })
