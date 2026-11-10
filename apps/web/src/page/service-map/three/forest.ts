@@ -38,7 +38,7 @@ import type { District, SpatialLayout } from "../../../components/service-map/th
 import type * as THREE from "three"
 import { birds, blimp, campfire, deerHead, ducks } from "./critters"
 import { type Child, group, type Running, type Scope, sketchDrawing, type Vec3 } from "./kit"
-import { fallingLeaves, fireflies, isNight, leafLitter, ripples } from "./life"
+import { butterflies, fallingLeaves, fireflies, isNight, leafLitter, ripples } from "./life"
 import { Array as Arr, Order } from "effect"
 import type { LeafSource } from "./falling-leaves"
 
@@ -129,7 +129,9 @@ export function mapleForest(
 		blimp(scope, { bounds, palette, running }),
 		campfire(scope, { at: marks.campfire, palette, night, running }),
 		deerHead(scope, { at: marks.deer, palette, running }),
-		night ? fireflies(scope, { anchors: glades, floor, palette, running }) : null,
+		night
+			? fireflies(scope, { anchors: glades, floor, palette, running })
+			: butterflies(scope, { anchors: Arr.take(glades, 14), floor, palette, running }),
 		leafLitter(scope, { districts, palette }),
 		fallingLeaves(scope, {
 			world: { sources: leafSources(plants, floor), districts, floor },
