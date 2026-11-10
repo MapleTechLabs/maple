@@ -6,6 +6,7 @@ import { defaultRuleForm } from "./form-utils"
 import {
 	blindSpots,
 	fireLanes,
+	headroomTone,
 	incidentScope,
 	incidentSubline,
 	incidentTitle,
@@ -170,6 +171,13 @@ describe("incident lines", () => {
 		expect(incidentSubline(incident)).toBe("High error rate · checkout")
 	})
 
+	it("titles an ungrouped telemetry incident without a group, whichever way storage spells ungrouped", () => {
+		const ungrouped = (groupKey: string | null) =>
+			makeIncident({ groupKey, status: "open", resolvedAt: null })
+		expect(incidentTitle(ungrouped(null))).toBe("Error rate 8.0%")
+		expect(incidentTitle(ungrouped("__total__"))).toBe("Error rate 8.0%")
+	})
+
 	it("shows an anomaly incident's stored label, never its incident-id group key", () => {
 		const anomaly = (groupLabel?: string) =>
 			makeIncident({
@@ -280,15 +288,30 @@ describe("ruleRibbon", () => {
 })
 
 describe("ruleHeadroom near firing", () => {
-	it("calls a value near when under a fifth of the threshold is left, for floors and ceilings alike", () => {
+	it("calls a value near when under a tenth of the threshold is left, for floors and ceilings alike", () => {
 		const ceiling = makeRule({ comparator: "gt", threshold: 0.05 })
 		const floor = makeRule({ comparator: "lt", threshold: 0.05 })
-		expect(ruleHeadroom(ceiling, 0.042).isNear).toBe(true)
-		expect(ruleHeadroom(ceiling, 0.03).isNear).toBe(false)
+		expect(ruleHeadroom(ceiling, 0.046).isNear).toBe(true)
+		// 4.2% against a 5% ceiling leaves 16%: not near.
+		expect(ruleHeadroom(ceiling, 0.042).isNear).toBe(false)
 		expect(ruleHeadroom(ceiling, 0.063).isNear).toBe(true)
 		// 6.3% against a 5% floor leaves 26%: healthy, not near.
 		expect(ruleHeadroom(floor, 0.063).isNear).toBe(false)
-		expect(ruleHeadroom(floor, 0.055).isNear).toBe(true)
+		expect(ruleHeadroom(floor, 0.054).isNear).toBe(true)
+	})
+
+	it("draws one tone everywhere: neutral, warning under a tenth left, error once breached", () => {
+		const ceiling = makeRule({ comparator: "gt", threshold: 0.05 })
+		const floor = makeRule({ comparator: "lt", threshold: 0.05 })
+		expect(headroomTone(ruleHeadroom(ceiling, 0.03))).toBe("neutral")
+		expect(headroomTone(ruleHeadroom(ceiling, 0.042))).toBe("neutral")
+		expect(headroomTone(ruleHeadroom(ceiling, 0.046))).toBe("warning")
+		expect(headroomTone(ruleHeadroom(ceiling, 0.063))).toBe("error")
+		expect(headroomTone(ruleHeadroom(floor, 0.063))).toBe("neutral")
+		expect(headroomTone(ruleHeadroom(floor, 0.054))).toBe("warning")
+		expect(headroomTone(ruleHeadroom(floor, 0.04))).toBe("error")
+		// A range has no single direction: neutral until it is breached.
+		expect(headroomTone({ breached: false, isNear: false })).toBe("neutral")
 	})
 })
 

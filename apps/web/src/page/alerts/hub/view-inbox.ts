@@ -1,6 +1,6 @@
 import type { AlertIncidentDocument, AlertIncidentId, AlertRuleDocument } from "@maple/domain/http"
 import { acknowledgedLine } from "@maple/web-data/alerts/incident-timeline"
-import { countLabel, EMPTY_VALUE } from "@maple/ui/lib/format"
+import { countLabel } from "@maple/ui/lib/format"
 import { formatRelativeShortFrom, toEpochMs } from "@maple/ui/lib/time-format"
 import { cn } from "@maple/ui/lib/utils"
 import {
@@ -17,6 +17,7 @@ import {
 	blindSpots as deriveBlindSpots,
 	type FireLane,
 	fireLanes,
+	headroomTone,
 	incidentSubline,
 	incidentTitle,
 	incidentValues,
@@ -30,6 +31,7 @@ import { eyebrow } from "@maple/views/ui/eyebrow"
 import { icon } from "@maple/views/ui/icon"
 import { ROW_LINK_LIFT, rowLink } from "@maple/views/ui/table"
 import { severityBadge } from "../shared/badges"
+import { HEADROOM_FILL, HEADROOM_TEXT } from "../shared/headroom-tone"
 import { incidentHref, ruleHref } from "../../kit/alert-links"
 import { sortIncidents } from "../shared/sort"
 import { msIso } from "../../kit/alert-time"
@@ -43,7 +45,7 @@ import { borderedBox } from "@maple/views/ui/bordered-box"
 import { Array as Arr } from "effect"
 
 const HOUR_MS = 60 * 60 * 1000
-const INCIDENT_GRID = "grid grid-cols-[minmax(0,1fr)_150px_90px_120px] items-center gap-4"
+const INCIDENT_GRID = "grid grid-cols-[minmax(0,1fr)_150px_90px_140px] items-center gap-4"
 const MAX_LANES = 8
 const MAX_HEADROOM_ROWS = 8
 // Below `sm` the bar has no room: the row keeps the name, the value and when it was checked.
@@ -256,8 +258,9 @@ const openIncidentRow = <M>(
 			button(
 				h,
 				{
-					variant: acked === null ? "outline" : "ghost",
-					size: "xs",
+					// Both states are the same small outline button: one row never reads as bare text.
+					variant: "outline",
+					size: "sm",
 					isLoading: acknowledge.pendingIds.includes(incident.id),
 					attributes: [
 						h.OnClick(acknowledge.onAcknowledge(incident.id, acked === null)),
@@ -283,7 +286,7 @@ const fireStrip = <M>(
 	const resolved = Arr.filter(inWindow, (i) => i.resolvedAt !== null)
 	const mttr =
 		resolved.length === 0
-			? EMPTY_VALUE
+			? "n/a"
 			: formatResolutionDuration(
 					Arr.reduce(
 						resolved,
@@ -315,13 +318,7 @@ const fireStrip = <M>(
 			hstack(h, { gap: "4", align: "baseline", justify: "between" }, [
 				eyebrow(h, { as: "h3" }, ["Last 24 hours"]),
 				typography(h, { size: "xs", tone: "muted", mono: true }, [
-					countLabel(inWindow.length, "incident"),
-					" · MTTR ",
-					mttr,
-					" ·",
-					" ",
-					countLabel(lanes.length, "rule"),
-					" fired",
+					`${countLabel(inWindow.length, "incident")} · MTTR ${mttr} · ${countLabel(lanes.length, "rule")} fired`,
 				]),
 			]),
 			shown.length === 0
@@ -515,7 +512,8 @@ const headroomList = <M>(h: HtmlBuilder<M>, rows: ReadonlyArray<RuleHeadroom>, n
 
 const headroomRow = <M>(h: HtmlBuilder<M>, row: RuleHeadroom, now: number): Html => {
 	const { rule, closeness } = row
-	const { isNear } = row
+	const tone = headroomTone(row)
+	const valueTone = HEADROOM_TEXT[tone]
 	const isFloor = rule.comparator === "lt" || rule.comparator === "lte"
 	return h.li(
 		[
@@ -547,33 +545,30 @@ const headroomRow = <M>(h: HtmlBuilder<M>, row: RuleHeadroom, now: number): Html
 				],
 			),
 			h.div(
-				[h.Class("relative hidden h-2 rounded-xs bg-surface-strong sm:block"), h.AriaHidden(true)],
+				[
+					h.Class("relative hidden h-1.5 rounded-full bg-surface-strong sm:block"),
+					h.AriaHidden(true),
+				],
 				[
 					...(closeness !== null
 						? [
 								h.span([
-									h.Class(
-										barFillClass(isNear ? "bg-severity-warn" : "bg-foreground-faint"),
-									),
+									h.Class(barFillClass(HEADROOM_FILL[tone])),
 									h.Style({ width: `${Math.max(closeness * 100, 1.5)}%` }),
 								]),
 							]
 						: []),
+					// The threshold, at the bar's end: a neutral tick, as in the rules table.
 					h.span([
 						h.AriaHidden(true),
-						h.Class(
-							cn(
-								"absolute -inset-y-1 right-0 w-0.5 rounded-full",
-								rule.severity === "critical" ? "bg-severity-error" : "bg-severity-warn",
-							),
-						),
+						h.Class("absolute -inset-y-0.5 right-0 w-px bg-foreground/70"),
 					]),
 				],
 			),
 			h.span(
 				[h.Class("truncate text-right font-mono text-xs tabular-nums")],
 				[
-					h.span(isNear ? [h.Class("text-severity-warn")] : [], [ruleValue(rule, row.value)]),
+					h.span(valueTone === undefined ? [] : [h.Class(valueTone)], [ruleValue(rule, row.value)]),
 					typography(h, { tone: "muted" }, [
 						isFloor ? " / min " : " / ",
 						ruleValue(rule, rule.threshold),

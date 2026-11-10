@@ -35,8 +35,24 @@ const STATUS_OPTIONS: ReadonlyArray<{ value: IncidentStatusFilter; label: string
 	{ value: "all", label: "All" },
 ]
 
-/** The Inbox's filter row: the Anomalies view toggle and, inside it, the status and service. */
+/**
+ * The Inbox's filter row: the Anomalies view toggle and, inside it, the status and service. An
+ * org with no anomaly in the window has no row at all, and a zero count is left off the toggle.
+ */
 export const inboxFilters = (
+	h: H,
+	options: Readonly<{
+		signal: InboxSignal
+		status: IncidentStatusFilter
+		serviceName: string | undefined
+		openAnomalies: number
+		/** Any anomaly incident on hand, open or resolved: the view has something to show. */
+		hasAnomalies: boolean
+	}>,
+): ReadonlyArray<Html> =>
+	options.signal !== "anomaly" && !options.hasAnomalies ? [] : [inboxFilterRow(h, options)]
+
+const inboxFilterRow = (
 	h: H,
 	options: Readonly<{
 		signal: InboxSignal
@@ -55,7 +71,7 @@ export const inboxFilters = (
 					onClick: Message.ClickedInboxSignal({
 						signal: options.signal === "anomaly" ? null : "anomaly",
 					}),
-					count: String(options.openAnomalies),
+					...(options.openAnomalies > 0 ? { count: String(options.openAnomalies) } : undefined),
 				},
 				["Anomalies"],
 			),
