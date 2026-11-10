@@ -16,7 +16,6 @@ import { countChipItem } from "./kit/count-chip"
 import * as ToggleGroup from "@maple/views/ui/toggle-group"
 import { truncatedText } from "@maple/views/ui/truncated-text"
 import { columnHead } from "../kit/data-table"
-import { CLOUDFLARE_ACCENT } from "./catalog"
 import type { ZoneSortKey } from "./cloudflare"
 import {
 	CHIP_ORDER,
@@ -37,6 +36,7 @@ import { tooltipTrigger } from "@maple/views/ui/tooltip-host"
 import { relativeTime } from "../kit/relative-time"
 import { Array as Arr, String as Str, Order, Ordering } from "effect"
 import { textLink } from "@maple/views/ui/text-link"
+import { PROVIDERS } from "../kit/providers"
 
 // `CloudflareZoneBoard`, `ResourceRow`, `CountChip` and `CloudflareWorkersCard`.
 
@@ -88,7 +88,7 @@ const sparkline = (h: H, model: Model, name: string, usage: RowUsage): Html =>
 						viewInputs: {
 							chartId: `cf-integration-spark-${Str.replace(/\W+/g, "_")(name)}`,
 							values: usage.points,
-							color: CLOUDFLARE_ACCENT,
+							color: PROVIDERS.cloudflare.accent,
 							className: "h-full w-full",
 							revision: 0,
 							curve: "monotone",

@@ -4,7 +4,13 @@ import type { Html, HtmlBuilder } from "foldkit/html"
 import type { PageViewInputs } from "../contract"
 import { dashboardPage } from "../kit/dashboard-page"
 import { button } from "@maple/views/ui/button"
-import { catalogEntry, chatConnectorOf, integrationOfSearch, type IntegrationId } from "./catalog"
+import {
+	type CatalogEntry,
+	catalogEntry,
+	chatConnectorOf,
+	entryOfSearch,
+	type IntegrationId,
+} from "./catalog"
 import { ConnectProvider } from "./connect"
 import { Message } from "./message"
 import { canManage, type Model } from "./model"
@@ -93,8 +99,9 @@ export const cardView = (
 	}
 }
 
-const detailView = (h: H, model: Model, integration: IntegrationId, timeZone: string): Html =>
-	dashboardPage(
+const detailView = (h: H, model: Model, entry: CatalogEntry, timeZone: string): Html => {
+	const integration = entry.id
+	return dashboardPage(
 		h,
 		{
 			filtersLabel: "Settings",
@@ -102,7 +109,7 @@ const detailView = (h: H, model: Model, integration: IntegrationId, timeZone: st
 			titleContent: integrationHeader(
 				h,
 				model,
-				integration,
+				entry,
 				{
 					connect: connectButton(h, model, integration),
 					actions: integration === "cloudflare" ? cloudflareHeaderActions(h, model) : undefined,
@@ -115,6 +122,7 @@ const detailView = (h: H, model: Model, integration: IntegrationId, timeZone: st
 		},
 		cardView(h, model, integration, timeZone),
 	)
+}
 
 /** The settings rail with "Integrations" the active link, gated like `/settings`. */
 const settingsNav = (h: HtmlBuilder<Message>, model: Model): Html =>
@@ -123,8 +131,8 @@ const settingsNav = (h: HtmlBuilder<Message>, model: Model): Html =>
 	)
 
 export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, inputs, h) => {
-	const integration = integrationOfSearch(model.search.integration)
-	return integration === null
+	const entry = entryOfSearch(model.search.integration)
+	return entry === null
 		? dashboardPage(
 				h,
 				{
@@ -136,5 +144,5 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 				},
 				[integrationCatalog(h, model, selectIntegration)],
 			)
-		: detailView(h, model, integration, inputs.context.timeZone)
+		: detailView(h, model, entry, inputs.context.timeZone)
 })

@@ -1,7 +1,6 @@
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { AppRoute, hrefOf } from "../../../route"
 import {
-	type IntegrationBrand,
 	integrationConnectCta,
 	integrationEmpty,
 	integrationEmptyCard,
@@ -9,11 +8,11 @@ import {
 	integrationEmptyHint,
 	integrationEmptyMedia,
 } from "../../kit/integration-empty"
+import { providerBrand } from "../../kit/providers"
 
 // The Supabase on-ramp /infra/supabase shows while nothing is connected.
 
-export const SUPABASE_ACCENT = "#3FCF8E"
-export const SUPABASE_BRAND: IntegrationBrand = { icon: "SupabaseIcon", accent: SUPABASE_ACCENT }
+export const SUPABASE_BRAND = providerBrand("supabase")
 
 export const SUPABASE_NOT_CONFIGURED = "Supabase isn't configured on this deployment."
 

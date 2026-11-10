@@ -15,7 +15,6 @@ import { skeleton, skeletonBlock } from "@maple/views/ui/skeleton"
 import { statusDot } from "@maple/views/ui/status-dot"
 import { switchControl } from "@maple/views/ui/switch"
 import { integrationIconPlate } from "../kit/integration-empty"
-import { GITHUB_ACCENT } from "./catalog"
 import { integrationNotice } from "./kit/notice"
 import { Message } from "./message"
 import type { Model } from "./model"
@@ -26,6 +25,7 @@ import { typography } from "@maple/views/ui/typography"
 import { hstack, vstack } from "@maple/views/ui/stack"
 import { Array as Arr } from "effect"
 import { textLink } from "@maple/views/ui/text-link"
+import { providerBrand } from "../kit/providers"
 
 // `GithubIntegrationCard`.
 
@@ -314,7 +314,7 @@ const byState = (h: H, model: Model, status: GithubIntegrationStatus, timeZone: 
 
 type H = HtmlBuilder<Message>
 
-const BRAND = { icon: "GithubIcon", accent: GITHUB_ACCENT, iconClassName: "text-foreground" } as const
+const BRAND = providerBrand("github")
 
 const loadingState = (h: H): Html =>
 	h.div(

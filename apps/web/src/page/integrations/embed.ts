@@ -1,9 +1,9 @@
-import { Schema } from "effect"
-import { DATA_INTEGRATIONS } from "../../route/data-integrations"
+import { DATA_INTEGRATIONS, DataIntegration, isDataIntegration } from "../../route/data-integrations"
 import { Submodel } from "foldkit"
 import { icon } from "@maple/views/ui/icon"
 import type { PageContext, PageReturn } from "../contract"
-import { catalogEntry, type IntegrationId } from "./catalog"
+import { catalogEntry } from "./catalog"
+import type { ProviderId } from "../kit/providers"
 import { overviewOf } from "./derive"
 import type { Message } from "./message"
 import type { Model } from "./model"
@@ -19,10 +19,7 @@ import { hstack, hstackClass, vstack } from "@maple/views/ui/stack"
 
 // The integrations page module, embedded by Sources: the connect step and a source's Connection tab.
 
-export { DATA_INTEGRATIONS }
-export const DataIntegration = Schema.Literals(DATA_INTEGRATIONS)
-export type DataIntegration = typeof DataIntegration.Type
-export const isDataIntegration = Schema.is(DataIntegration)
+export { DATA_INTEGRATIONS, DataIntegration, isDataIntegration }
 
 /** `/integrations?integration=<id>`'s state and reads, without the page around it. */
 export const initEmbedded = (
@@ -31,7 +28,7 @@ export const initEmbedded = (
 ): PageReturn<Model, Message> => init({ search: integration === null ? {} : { integration } }, context)
 
 export type EmbedInputs = Readonly<{
-	integration: IntegrationId
+	integration: ProviderId
 	timeZone: string
 	/** The integration record a source stands for (`integration_id`): its card shows only that one. */
 	focusId?: string | null

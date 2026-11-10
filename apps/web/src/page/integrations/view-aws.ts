@@ -25,7 +25,6 @@ import {
 	metricStreamOf,
 	selectionOf,
 } from "./aws"
-import { AWS_ACCENT } from "./catalog"
 import { AWS_CONDITION_LABEL, type AwsConnectionCondition, awsConditionOf, awsStreamOf } from "./derive"
 import { Message } from "./message"
 import type { Model } from "./model"
@@ -35,12 +34,13 @@ import { disconnectConfirm } from "./view-disconnect"
 import { externalLink } from "./view-gcp-configure-parts"
 import { typography, typographyClass } from "@maple/views/ui/typography"
 import { hstack, vstack } from "@maple/views/ui/stack"
+import { providerBrand } from "../kit/providers"
 
 // `AwsIntegrationCard`.
 
 type H = HtmlBuilder<Message>
 
-const BRAND = { icon: "AwsIcon", accent: AWS_ACCENT, iconClassName: "text-foreground" } as const
+const BRAND = providerBrand("aws")
 
 export const AWS_FLOW_HREF = hrefOf(AppRoute.SourcesNew({ search: { integration: "aws" } }))
 

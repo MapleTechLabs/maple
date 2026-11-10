@@ -1,6 +1,7 @@
 import { KUBERNETES_ROOT, KUBERNETES_VIEWS } from "../components/infra/kubernetes/views"
 import { Schema, Array as Arr, String as Str } from "effect"
 import type { IconName } from "@maple/views/ui/icon"
+import { PROVIDERS } from "../page/kit/providers"
 
 // The sidebar's nav tree and helpers, with generated icon names.
 
@@ -52,8 +53,16 @@ export interface NavGroup {
 	readonly items: ReadonlyArray<NavItem>
 }
 
-/** `PLANETSCALE_COLOR`. */
-const PLANETSCALE_COLOR = "oklch(0.62 0.02 270)"
+type InfraProvider = "cloudflare" | "planetscale" | "railway" | "supabase" | "gcp" | "aws"
+
+/** A provider's `/infra` page row, named and marked by the provider registry. */
+const providerItem = (id: InfraProvider, iconColor?: string): NavSubItem => ({
+	title: PROVIDERS[id].name,
+	href: PROVIDERS[id].infraHref,
+	icon: PROVIDERS[id].icon,
+	iconColor,
+	surfaces: [id],
+})
 
 export const NAV_PREVIEW_MAX_GLYPHS = 7
 
@@ -84,23 +93,12 @@ const infrastructureItem: NavItem = {
 			surfaces: ["k8sPods", "k8sNodes", "k8sWorkloads"],
 			views: KUBERNETES_VIEWS,
 		},
-		{
-			title: "Cloudflare",
-			href: "/infra/cloudflare",
-			icon: "CloudflareBrandIcon",
-			surfaces: ["cloudflare"],
-		},
-		{
-			title: "PlanetScale",
-			href: "/infra/planetscale",
-			icon: "PlanetScaleIcon",
-			iconColor: PLANETSCALE_COLOR,
-			surfaces: ["planetscale"],
-		},
-		{ title: "Railway", href: "/infra/railway", icon: "RailwayIcon", surfaces: ["railway"] },
-		{ title: "Supabase", href: "/infra/supabase", icon: "SupabaseIcon", surfaces: ["supabase"] },
-		{ title: "Google Cloud", href: "/infra/gcp", icon: "GoogleCloudIcon", surfaces: ["gcp"] },
-		{ title: "AWS", href: "/infra/aws", icon: "AwsIcon", surfaces: ["aws"] },
+		providerItem("cloudflare"),
+		providerItem("planetscale", PROVIDERS.planetscale.accent),
+		providerItem("railway"),
+		providerItem("supabase"),
+		providerItem("gcp"),
+		providerItem("aws"),
 	],
 }
 // GROUPS

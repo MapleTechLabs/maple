@@ -19,7 +19,6 @@ import { pageHeroParts, searchToolbar } from "../../../infra/kit/page-parts"
 import { viewTabStrip } from "../../../kit/view-tabs"
 import { integrationNotConnected } from "../../kit/empty-states"
 import { integrationConnectCta } from "../../../kit/integration-empty"
-import { AWS_ACCENT } from "../../../integrations/catalog"
 import { pageTime } from "../../../kit/page-time"
 import type { AwsStatus, FleetRead } from "../data"
 import {
@@ -39,6 +38,7 @@ import { awsTable, awsTableLoading, type TableContext } from "./view-table"
 import { hstack, vstackClass } from "@maple/views/ui/stack"
 import { Array as Arr, Option } from "effect"
 import { typography } from "@maple/views/ui/typography"
+import { providerBrand } from "../../../kit/providers"
 
 // `/infra/aws`: every streamed resource of the connected accounts, problems first.
 
@@ -191,7 +191,7 @@ const FEATURES = [
 
 const awsConnectCta = (h: H): Html =>
 	integrationConnectCta(h, {
-		brand: { icon: "AwsIcon", accent: AWS_ACCENT, iconClassName: "text-foreground" },
+		brand: providerBrand("aws"),
 		features: FEATURES,
 		hint: "Deploy a read-only role, pick regions and services, then Maple streams their CloudWatch metrics.",
 		label: "Connect AWS",

@@ -8,7 +8,6 @@ import { spinner } from "@maple/views/ui/spinner"
 import { truncatedText } from "@maple/views/ui/truncated-text"
 import { columnHead, dataTable, dataTableEmpty } from "../kit/data-table"
 import { relativeTime } from "../kit/relative-time"
-import { RAILWAY_ACCENT } from "./catalog"
 import { railwayTokenForm } from "./view-railway-token"
 import { integrationNotice } from "./kit/notice"
 import { Message } from "./message"
@@ -27,12 +26,13 @@ import { hstack, vstack } from "@maple/views/ui/stack"
 import { stripClass } from "@maple/views/ui/rule"
 import { columnClass } from "@maple/views/ui/column"
 import { Array as Arr } from "effect"
+import { providerBrand } from "../kit/providers"
 
 // `RailwayIntegrationCard`.
 
 type H = HtmlBuilder<Message>
 
-const BRAND = { icon: "RailwayIcon", accent: RAILWAY_ACCENT, iconClassName: "text-foreground" } as const
+const BRAND = providerBrand("railway")
 
 const environmentsTable = (h: H, model: Model, status: RailwayIntegrationStatus, timeZone: string): Html =>
 	dataTable(

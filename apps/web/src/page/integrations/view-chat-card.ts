@@ -15,7 +15,7 @@ import {
 	integrationIconPlate,
 } from "../kit/integration-empty"
 import { relativeTime } from "../kit/relative-time"
-import { catalogEntry, chatIntegrationId, chatManifestOf } from "./catalog"
+import { chatEntry, chatManifestOf } from "./catalog"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { chatConnectorStatus } from "./update-chat"
@@ -46,7 +46,7 @@ export const chatCard = (h: H, model: Model, connector: ChatConnectorId, timeZon
 			title: `Couldn't load the ${manifest.name} integration`,
 			onRetry: Message.ClickedRetryStatus({ name: "chat" }),
 		})
-	const entry = catalogEntry(chatIntegrationId(connector))
+	const entry = chatEntry(manifest)
 	const brand = { ...entryBrand(h, entry), backerGlyph: (size: number) => monoGlyph(h, manifest, size) }
 	const workspaces = status?.workspaces ?? []
 	const available = status?.available === true

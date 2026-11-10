@@ -8,11 +8,11 @@ import type { Html, HtmlBuilder } from "foldkit/html"
 import type { Keyed } from "@maple/views/data/keyed"
 import type { LoadFailure } from "@maple/views/data/load-failure"
 import { statRailItem, statRailItemSkeleton } from "../kit/stat-rail"
-import { GCP_ACCENT } from "./catalog"
 import type { LogVolume } from "./gcp-schema"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { Array as Arr } from "effect"
+import { PROVIDERS } from "../kit/providers"
 
 // `GcpUsageBand`, its tiles, `Workloads` and `Resources`.
 
@@ -68,7 +68,7 @@ const tile = <A>(
 		eyebrow: options.eyebrow,
 		value: count === null ? "–" : formatNumber(count),
 		spark: failed || options.spark === undefined ? undefined : options.spark(read),
-		sparkColor: GCP_ACCENT,
+		sparkColor: PROVIDERS.gcp.accent,
 		subline: h.span(
 			[h.Class("block whitespace-normal")],
 			[failed ? "Not available right now" : options.caption(read)],

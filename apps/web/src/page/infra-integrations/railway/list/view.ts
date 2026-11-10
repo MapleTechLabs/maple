@@ -12,7 +12,6 @@ import { dashboardPage } from "../../../kit/dashboard-page"
 import { timeControls } from "../../../kit/time-controls"
 import * as TimeRangePicker from "../../../kit/time-range-picker"
 import { integrationNotConnected } from "../../kit/empty-states"
-import { RAILWAY_ACCENT } from "../../../integrations/catalog"
 import { integrationConnectCta } from "../../../kit/integration-empty"
 import { AppRoute, hrefOf } from "../../../../route"
 import { filteredEmpty } from "@maple/views/ui/signal-empty-state"
@@ -26,6 +25,7 @@ import { DEFAULT_PRESET } from "./update"
 import { railwayFleetBand, railwayFleetBandLoading } from "./view-band"
 import { type Clock, railwayTable, railwayTableLoading, triggerIds } from "./view-table"
 import { Array as Arr, Record as Rec } from "effect"
+import { providerBrand } from "../../../kit/providers"
 
 // `RailwayPage`.
 
@@ -175,7 +175,7 @@ const FEATURES = [
 /** Nothing connected: what this page will show, and the way to the connect flow. */
 const railwayConnectCta = (h: H): Html =>
 	integrationConnectCta(h, {
-		brand: { icon: "RailwayIcon", accent: RAILWAY_ACCENT, iconClassName: "text-foreground" },
+		brand: providerBrand("railway"),
 		features: FEATURES,
 		hint: "Connecting pulls the last hour of metrics right away, then Maple keeps it fresh every 5 minutes.",
 		label: "Connect Railway",

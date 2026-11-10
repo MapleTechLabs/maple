@@ -21,10 +21,10 @@ import {
 } from "../../kit/integration-empty"
 import { liveChecklist } from "../../kit/connect-flow"
 import { relativeTime } from "../../kit/relative-time"
+import { providerBrand } from "../../kit/providers"
 
 // PlanetScale absence notices and the setup state.
 
-export const PLANETSCALE_COLOR = "oklch(0.62 0.02 270)"
 export const BRANCH_ABSENCE_COPY = {
 	excluded: "Excluded from metrics collection by this connection's branch filters.",
 	"no-data": "No metrics for this branch in this window",
@@ -97,7 +97,7 @@ const INVENTORY_STALE_MS = 90 * 60 * 1000
 export const inventoryIsStale = (lastInventoryAt: string | null, nowMs: number): boolean =>
 	lastInventoryAt !== null && nowMs - toEpochMs(lastInventoryAt) > INVENTORY_STALE_MS
 
-const BRAND = { icon: "PlanetScaleIcon", accent: PLANETSCALE_COLOR } as const
+const BRAND = providerBrand("planetscale")
 
 /** `PlanetScaleSetupState`: metrics have never arrived for this connection. */
 export const setupState = <M>(h: HtmlBuilder<M>, checks: ReadonlyArray<LiveCheck>): Html =>

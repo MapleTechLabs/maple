@@ -1,5 +1,5 @@
 import { definePage } from "../contract"
-import { catalogEntry, integrationOfSearch } from "./catalog"
+import { entryOfSearch } from "./catalog"
 import { Message } from "./message"
 import { Model } from "./model"
 import { subscriptions } from "./subscription"
@@ -19,13 +19,13 @@ export const page = definePage(
 		view,
 		subscriptions,
 		breadcrumbs: (model) => {
-			const integration = integrationOfSearch(model.search.integration)
-			return integration === null
+			const entry = entryOfSearch(model.search.integration)
+			return entry === null
 				? [{ label: "Settings", href: "/settings" }, { label: "Integrations" }]
 				: [
 						{ label: "Settings", href: "/settings" },
 						{ label: "Integrations", href: "/integrations" },
-						{ label: catalogEntry(integration).name },
+						{ label: entry.name },
 					]
 		},
 	},

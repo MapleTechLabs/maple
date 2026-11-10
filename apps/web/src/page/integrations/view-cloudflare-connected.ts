@@ -14,7 +14,6 @@ import { skeleton } from "@maple/views/ui/skeleton"
 import { truncatedText } from "@maple/views/ui/truncated-text"
 import { statRail, statRailItem } from "../kit/stat-rail"
 import { ingestBanner, ingestPhaseOf } from "../infra-integrations/cloudflare/ingest"
-import { CLOUDFLARE_ACCENT } from "./catalog"
 import {
 	accountErrorOf,
 	type ConnectedAccountEntry,
@@ -33,6 +32,7 @@ import { vstack } from "@maple/views/ui/stack"
 import { Array as Arr } from "effect"
 import { textLink } from "@maple/views/ui/text-link"
 import { dividedList } from "@maple/views/ui/rule"
+import { PROVIDERS } from "../kit/providers"
 
 // The connected `CloudflareAccountCard` and `CloudflareStatCards`.
 
@@ -121,14 +121,14 @@ const statCards = (h: H, usage: CloudflareUsageResponse | null): Html => {
 			eyebrow: "Traffic · 24h",
 			value: formatNumber(usage.totalRequests),
 			spark: totalPoints,
-			sparkColor: CLOUDFLARE_ACCENT,
+			sparkColor: PROVIDERS.cloudflare.accent,
 			subline: trafficDelta(h, usage),
 		}),
 		statRailItem(h, {
 			eyebrow: "Workers",
 			value: `${active.length} active`,
 			spark: workerPoints,
-			sparkColor: CLOUDFLARE_ACCENT,
+			sparkColor: PROVIDERS.cloudflare.accent,
 			subline:
 				invocations > 0
 					? `${formatNumber(invocations)} invocations · on service map`

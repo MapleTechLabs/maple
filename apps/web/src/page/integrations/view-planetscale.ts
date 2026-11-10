@@ -11,7 +11,6 @@ import { panel } from "@maple/views/ui/panel"
 import { skeletonBlock } from "@maple/views/ui/skeleton"
 import { integrationIconPlate } from "../kit/integration-empty"
 import { liveChecklist } from "../kit/connect-flow"
-import { catalogEntry } from "./catalog"
 import { integrationNotice } from "./kit/notice"
 import { Message } from "./message"
 import type { Model } from "./model"
@@ -23,13 +22,13 @@ import { pickerDialog } from "./view-planetscale-picker"
 import { typography } from "@maple/views/ui/typography"
 import { hstack, vstack } from "@maple/views/ui/stack"
 import { strip } from "@maple/views/ui/rule"
+import { providerBrand } from "../kit/providers"
 
 // `PlanetScaleIntegrationCard` and `PlanetScaleWebhooks`: the source page's Connection tab.
 
 type H = HtmlBuilder<Message>
 
-const ENTRY = catalogEntry("planetscale")
-const BRAND = { icon: "PlanetScaleIcon", accent: ENTRY.accent } as const
+const BRAND = providerBrand("planetscale")
 
 const reconnectButton = (h: H, model: Model): Html =>
 	button(

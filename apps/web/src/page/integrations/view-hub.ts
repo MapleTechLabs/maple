@@ -13,14 +13,8 @@ import { panel } from "@maple/views/ui/panel"
 import { skeleton } from "@maple/views/ui/skeleton"
 import { statusDot } from "@maple/views/ui/status-dot"
 import { AppRoute, hrefOf } from "../../route"
-import {
-	CAPABILITY_LABEL,
-	type CatalogEntry,
-	type DataSourceKindEntry,
-	DATA_SOURCE_KIND_ENTRY,
-	type HubFilter,
-	type IntegrationId,
-} from "./catalog"
+import { CAPABILITY_LABEL, type CatalogEntry, type HubFilter, type IntegrationId } from "./catalog"
+import { DATA_SOURCE_KIND_ENTRY, type DataSourceKindEntry } from "../kit/providers"
 import {
 	activeFilter,
 	type ConnectedRow,

@@ -43,7 +43,6 @@ import { dashboardPage } from "../../../kit/dashboard-page"
 import { integrationNotConnected } from "../../kit/empty-states"
 import { integrationConnectCta } from "../../../kit/integration-empty"
 import { AppRoute, hrefOf } from "../../../../route"
-import { GCP_ACCENT } from "../../../integrations/catalog"
 import { heroFieldChip } from "../../../infra/kit/hero-chip"
 import { viewTabStrip } from "../../../kit/view-tabs"
 import { pageHeroParts, searchToolbar, headerActions } from "../../../infra/kit/page-parts"
@@ -84,6 +83,7 @@ import {
 import { removableChip } from "@maple/views/ui/removable-chip"
 import { typography } from "@maple/views/ui/typography"
 import { hstack } from "@maple/views/ui/stack"
+import { providerBrand } from "../../../kit/providers"
 
 // `GcpPage`, `GcpInfra` and `GcpListPage`. `gcpListPageParts` and `titleRow` are what the lab reuses.
 
@@ -645,7 +645,7 @@ const content = (h: H, model: Model): PageParts =>
 /** Nothing connected: what this page will show, and the way to the connect flow. */
 const gcpConnectCta = (h: H): Html =>
 	integrationConnectCta(h, {
-		brand: { icon: "GoogleCloudIcon", backerIcon: "GoogleCloudMonoIcon", accent: GCP_ACCENT },
+		brand: providerBrand("gcp"),
 		features: [
 			{
 				label: "Metrics",

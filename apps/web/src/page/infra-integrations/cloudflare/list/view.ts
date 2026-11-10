@@ -37,7 +37,6 @@ import { pageTime } from "../../../kit/page-time"
 import type { Status, ZoneRow } from "../data"
 import { ingestBanner, ingestEmpty, needsPermissions } from "../ingest"
 import { integrationConnectCta } from "../../../kit/integration-empty"
-import { CLOUDFLARE_ACCENT } from "../../../integrations/catalog"
 import { AppRoute, hrefOf } from "../../../../route"
 import {
 	accountCounts,
@@ -57,6 +56,7 @@ import { DEFAULT_PRESET, viewHref } from "./update"
 import { accountHealthLine, accountMenu, accountsStrip } from "./view-accounts"
 import { type SparkContext, queueTable, workerTable, zoneTable, zoneTableLoading } from "./view-tables"
 import { Array as Arr, String as Str, Option } from "effect"
+import { providerBrand } from "../../../kit/providers"
 
 // `CloudflarePage` and `CloudflareListPage`.
 
@@ -439,7 +439,7 @@ const FEATURES = [
 /** Nothing connected: what this page will show, and the way to the connect flow. */
 const cloudflareConnectCta = (h: H): Html =>
 	integrationConnectCta(h, {
-		brand: { icon: "CloudflareBrandIcon", backerIcon: "CloudflareMonoIcon", accent: CLOUDFLARE_ACCENT },
+		brand: providerBrand("cloudflare"),
 		features: FEATURES,
 		hint: "Read-only. Your zones and Workers appear here within about 15 minutes of connecting.",
 		label: "Connect Cloudflare",
