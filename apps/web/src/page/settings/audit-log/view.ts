@@ -47,7 +47,7 @@ import { relativeTime } from "../../kit/relative-time"
 import { filteredEmpty } from "@maple/views/ui/signal-empty-state"
 import { settingsSection } from "../kit/section"
 import { Message, type Model } from "./model"
-import { ACTOR_ICONS, auditActionIcon, OUTCOME_ICONS, SOURCE_ICONS } from "./icons"
+import { ACTION_ICON, ACTOR_ICONS, auditActionIcon, OUTCOME_ICONS, SOURCE_ICONS } from "./icons"
 import { ANY, ANYONE, entryRowId } from "./update"
 import { auditDetail, memberName, resourceHref } from "./view-detail"
 import { typography, typographyClass } from "@maple/views/ui/typography"
@@ -90,12 +90,12 @@ const withGlyphs = <Value extends string>(h: H, options: ReadonlyArray<FilterOpt
 	Arr.map(options, (option) =>
 		option.icon === undefined
 			? { value: option.value, label: option.label }
-			: { value: option.value, label: option.label, icon: icon(h, option.icon, { size: 13 }) },
+			: { value: option.value, label: option.label, icon: icon(h, option.icon) },
 	)
 
 /** The glyph a filter's trigger leads with, naming the filter once its value replaces the label. */
 const filterGlyph = (h: H, name: IconName): ReadonlyArray<Html> => [
-	icon(h, name, { size: 14, className: "text-muted-foreground shrink-0" }),
+	icon(h, name, { className: "text-muted-foreground shrink-0" }),
 ]
 
 export const SOURCE_LABELS = {
@@ -106,7 +106,7 @@ export const SOURCE_LABELS = {
 	system: "System",
 } as const satisfies { readonly [Source in AuditLogSource]: string }
 
-export const ACTOR_BADGES = {
+const ACTOR_BADGES = {
 	user: { label: "User", variant: "secondary" },
 	api_key: { label: "API key", variant: "ok" },
 	agent: { label: "Agent", variant: "info" },
@@ -117,11 +117,12 @@ export const ACTOR_BADGES = {
 
 const COL = {
 	time: "flex w-22 shrink-0 items-center gap-2",
-	actor: "min-w-0 flex-1 @md:w-38 @md:flex-none @3xl:w-44",
+	actor: "min-w-0 flex-1 @md:w-38 @md:flex-none @3xl:w-42",
 	action: "min-w-0 basis-full pl-5 @md:basis-0 @md:flex-1 @md:pl-0",
-	resource: "hidden w-56 min-w-0 shrink-0 @3xl:block",
-	source: "hidden w-22 shrink-0 @2xl:block",
-	outcome: "hidden w-15 shrink-0 @md:block",
+	// Shares the row's spare width with the action, so neither starves the other when it appears.
+	resource: "hidden min-w-0 @3xl:block @3xl:basis-0 @3xl:flex-1",
+	source: "hidden w-20 shrink-0 @2xl:block",
+	outcome: "hidden w-16 shrink-0 @md:block",
 }
 
 const initialsOf = (label: string) => (Str.startsWith("user_")(label) ? "?" : initialsFrom(label))
@@ -351,7 +352,6 @@ const personFilter = (
 // ROWS
 
 const actorCell = (h: H, model: Model, entry: V2AuditLogEntry): Html => {
-	const actor = ACTOR_BADGES[entry.actor_type]
 	const name = actorDisplayName(model, entry)
 	const isNamed = entry.actor_name !== null || memberName(model, entry.actor_id) !== null
 	return h.div(
@@ -363,10 +363,7 @@ const actorCell = (h: H, model: Model, entry: V2AuditLogEntry): Html => {
 						{ className: "size-4 shrink-0" },
 						typography(h, { size: "4xs" }, [initialsOf(name ?? "")]),
 					)
-				: badge(h, { variant: actor.variant, size: "sm", className: "shrink-0" }, [
-						icon(h, ACTOR_ICONS[entry.actor_type]),
-						actor.label,
-					]),
+				: actorBadge(h, entry.actor_type),
 			...(name === null
 				? []
 				: [
@@ -406,10 +403,18 @@ const actionLabel = (h: H, action: string, isQuiet: boolean): ReadonlyArray<Html
 	]
 }
 
-const deniedBadge = (h: H) =>
+/** The refused outcome, as the rows and an entry's detail both show it. */
+export const deniedBadge = (h: H): Html =>
 	badge(h, { variant: "crit", size: "sm", className: "shrink-0" }, [
 		icon(h, OUTCOME_ICONS.denied),
 		"Denied",
+	])
+
+/** What kind of actor made an entry: its glyph and its name. */
+export const actorBadge = (h: H, actorType: AuditActorType): Html =>
+	badge(h, { variant: ACTOR_BADGES[actorType].variant, size: "sm", className: "shrink-0" }, [
+		icon(h, ACTOR_ICONS[actorType]),
+		ACTOR_BADGES[actorType].label,
 	])
 
 const resourceCell = (h: H, model: Model, entry: V2AuditLogEntry): Html => {
@@ -675,7 +680,7 @@ const lookupField = (h: H, model: Model): ReadonlyArray<Html> => [
 		onEnter: Message.SubmittedLookup(),
 		onClear: Message.ClearedLookup(),
 		clearLabel: "Clear lookup",
-		className: "h-8 w-full",
+		className: "h-7 w-full",
 	}),
 	...(model.isLookupUnknown
 		? [
@@ -760,7 +765,7 @@ export const view = Submodel.defineView<Model, Message, ViewInputs>((model, inpu
 									value: filters.action,
 									anyLabel: "Any action",
 									ariaLabel: "Action",
-									icon: "BoltIcon",
+									icon: ACTION_ICON,
 									items: actionItems(filters.resourceType),
 									toMessage: (message) => Message.GotActionSelectMessage({ message }),
 								}),

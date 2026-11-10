@@ -17,8 +17,8 @@ import { inlineCode } from "@maple/views/ui/inline-code"
 import { keyValue, keyValueList } from "@maple/views/ui/key-value"
 import { table, tableBody, tableCell, tableHead, tableHeader, tableRow } from "@maple/views/ui/table"
 import { Message, type Model } from "./model"
-import { ACTOR_ICONS, OUTCOME_ICONS, SOURCE_ICONS } from "./icons"
-import { ACTOR_BADGES, SOURCE_LABELS } from "./view"
+import { OUTCOME_ICONS, SOURCE_ICONS } from "./icons"
+import { actorBadge, deniedBadge, SOURCE_LABELS } from "./view"
 import { icon } from "@maple/views/ui/icon"
 import { typography } from "@maple/views/ui/typography"
 import { hstack } from "@maple/views/ui/stack"
@@ -302,7 +302,6 @@ export const auditDetail = (
 	timeZone: string,
 	nowMs: number,
 ): Html => {
-	const actor = ACTOR_BADGES[entry.actor_type]
 	const full = (value: string) =>
 		timestamp(h, { value, timeZone, nowMs, withYear: true, className: "tabular-nums" })
 	const actionText = auditActionLabel(entry.action)
@@ -318,10 +317,7 @@ export const auditDetail = (
 				keyValue(h, { wrap: true, label: "Recorded" }, [full(entry.recorded_at)]),
 				keyValue(h, { wrap: true, label: "Actor" }, [
 					valueRow(h, [
-						badge(h, { variant: actor.variant, size: "sm" }, [
-							icon(h, ACTOR_ICONS[entry.actor_type]),
-							actor.label,
-						]),
+						actorBadge(h, entry.actor_type),
 						...(actorName === null ? [] : [h.span([], [actorName])]),
 						...(entry.actor_id === null
 							? []
@@ -336,10 +332,7 @@ export const auditDetail = (
 						...(actionText === null ? [] : [h.span([], [actionText])]),
 						inlineCode(h, { variant: "plain", size: "2xs", tone: "foreground" }, [entry.action]),
 						entry.outcome === "denied"
-							? badge(h, { variant: "crit", size: "sm" }, [
-									icon(h, OUTCOME_ICONS.denied),
-									"Denied",
-								])
+							? deniedBadge(h)
 							: badge(h, { variant: "ok", size: "sm" }, [
 									icon(h, OUTCOME_ICONS.allowed),
 									"Allowed",

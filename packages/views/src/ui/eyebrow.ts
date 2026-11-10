@@ -36,15 +36,19 @@ export const eyebrow = <Message>(
 	options: EyebrowOptions<Message>,
 	rawChildren: ReadonlyArray<Html | string>,
 ): Html => {
-	const children = [
-		...(options.icon === undefined ? [] : [icon(h, options.icon, { size: 12, className: "shrink-0" })]),
-		...Arr.flatMap(rawChildren, (child) => withHint(h, child)),
-	]
+	const label = Arr.flatMap(rawChildren, (child) => withHint(h, child))
+	// With an icon the label is one flex item, so a "(hint)" keeps its own spacing.
+	const children =
+		options.icon === undefined
+			? label
+			: [icon(h, options.icon, { size: 12, className: "shrink-0" }), h.span([], label)]
+	const isInline = options.as === undefined || options.as === "span"
 	const attributes = [
 		h.Class(
 			cn(
 				eyebrowVariants({ variant: options.variant }),
-				options.icon !== undefined && "inline-flex items-center gap-1.5",
+				options.icon !== undefined && (isInline ? "inline-flex" : "flex"),
+				options.icon !== undefined && "items-center gap-1.5",
 				options.className,
 			),
 		),

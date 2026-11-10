@@ -28,7 +28,7 @@ export const OUTCOME_ICONS = {
 
 type AuditVerb = (typeof AuditResources)[AuditResourceType]["verbs"][number]
 
-/** The verbs with a picture of their own; a verb left out reads as a plain event. */
+/** A glyph for every declared verb: a new verb fails the build until it has one. */
 const VERB_ICONS = {
 	created: "PlusIcon",
 	added: "PlusIcon",
@@ -56,10 +56,10 @@ const VERB_ICONS = {
 	removed: "TrashIcon",
 	removal_confirmed: "TrashIcon",
 	uninstalled: "TrashIcon",
+	disconnected: "TrashIcon",
+	identity_unlinked: "TrashIcon",
 	revoked: "LockIcon",
 	break_glass_revoked: "LockIcon",
-	disconnected: "LockIcon",
-	identity_unlinked: "LockIcon",
 	cancelled: "SquareIcon",
 	ended: "SquareIcon",
 	rolled: "ArrowRotateClockwiseIcon",
@@ -78,8 +78,14 @@ const VERB_ICONS = {
 	published: "PaperPlaneIcon",
 	update_posted: "PaperPlaneIcon",
 	invite_sent: "PaperPlaneIcon",
-	resolved: "CircleCheckIcon",
+	resolved: "CheckIcon",
 	regression: "CircleWarningIcon",
+	state_change: "PencilIcon",
+	severity_change: "PencilIcon",
+	anomaly_linked: "LinkIcon",
+	lease_expired: "ClockIcon",
+	verification_started: "MediaPlayIcon",
+	verification_verdict: "ShieldCheckIcon",
 	comment: "ChatBubbleIcon",
 	agent_note: "ChatBubbleIcon",
 	ai_triage: "SparkleIcon",
@@ -94,13 +100,16 @@ const VERB_ICONS = {
 	pr_merged: "PullRequestIcon",
 	merge: "BranchForkIcon",
 	unmerge: "BranchForkIcon",
-} as const satisfies { readonly [Verb in AuditVerb]?: IconName }
+} as const satisfies { readonly [Verb in AuditVerb]: IconName }
 
 const hasVerbIcon = (verb: string): verb is keyof typeof VERB_ICONS =>
 	Rec.has<string, IconName>(VERB_ICONS, verb)
 
+/** The glyph for "an action", and for one this build does not know. */
+export const ACTION_ICON = "BoltIcon" satisfies IconName
+
 /** The glyph for a `<resource>.<verb>` action, by its verb. */
 export const auditActionIcon = (action: string): IconName => {
 	const verb = Arr.lastNonEmpty(Str.split(".")(action))
-	return hasVerbIcon(verb) ? VERB_ICONS[verb] : "BoltIcon"
+	return hasVerbIcon(verb) ? VERB_ICONS[verb] : ACTION_ICON
 }
