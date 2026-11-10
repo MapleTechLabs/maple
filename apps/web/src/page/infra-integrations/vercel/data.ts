@@ -1,7 +1,14 @@
-import type { VercelInfraProject, VercelInfraRequestBucket } from "@maple/domain/http"
+import type {
+	VercelInfraBreakdownRow,
+	VercelInfraLatencyBucket,
+	VercelInfraProject,
+	VercelInfraRequestBucket,
+} from "@maple/domain/http"
 import {
 	getVercelAiGateway,
 	getVercelAuditLog,
+	getVercelBreakdown,
+	getVercelLatencyTimeseries,
 	getVercelDependencies,
 	getVercelFunctions,
 	getVercelProjectDetail,
@@ -73,6 +80,35 @@ export const loadVercelRequestSeries = (input: SeriesInput) =>
 	getVercelRequestTimeseries({ data: { ...input } }).pipe(
 		Effect.mapBoth({
 			onSuccess: (response): ReadonlyArray<VercelInfraRequestBucket> => response.buckets,
+			onFailure: toLoadFailure,
+		}),
+		Effect.result,
+	)
+
+/** Edge latency, invocations and cold starts per bucket, from the trace drain. */
+export const loadVercelLatencySeries = (input: SeriesInput) =>
+	getVercelLatencyTimeseries({ data: { ...input } }).pipe(
+		Effect.mapBoth({
+			onSuccess: (response): ReadonlyArray<VercelInfraLatencyBucket> => response.buckets,
+			onFailure: toLoadFailure,
+		}),
+		Effect.result,
+	)
+
+/** The traffic tab's breakdown: one project's requests by one log attribute. */
+export const BreakdownInput = Schema.Struct({
+	startTime: Schema.String,
+	endTime: Schema.String,
+	projectId: Schema.String,
+	dimension: Schema.Literals(["path", "host", "region", "source", "cache", "waf", "status"]),
+	status: Schema.optional(Schema.Literals(["4xx", "5xx"])),
+})
+export type BreakdownInput = typeof BreakdownInput.Type
+
+export const loadVercelBreakdown = (input: BreakdownInput) =>
+	getVercelBreakdown({ data: { ...input } }).pipe(
+		Effect.mapBoth({
+			onSuccess: (response): ReadonlyArray<VercelInfraBreakdownRow> => response.rows,
 			onFailure: toLoadFailure,
 		}),
 		Effect.result,

@@ -123,12 +123,15 @@ export const getVercelBreakdown = Effect.fn("QueryEngine.getVercelBreakdown")(fu
 		Effect.gen(function* () {
 			const client = yield* MapleInternalHttp
 			return yield* client.queryEngine.vercelInfraBreakdown({
-				payload: new VercelInfraBreakdownRequest({
-					...range,
-					projectId: input.projectId,
-					dimension: input.dimension,
-					...(input.status === undefined ? {} : { status: input.status }),
-				}),
+				payload:
+					input.status === undefined
+						? new VercelInfraBreakdownRequest({ ...range, projectId: input.projectId, dimension: input.dimension })
+						: new VercelInfraBreakdownRequest({
+								...range,
+								projectId: input.projectId,
+								dimension: input.dimension,
+								status: input.status,
+							}),
 			})
 		}),
 	)

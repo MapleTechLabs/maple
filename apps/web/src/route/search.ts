@@ -760,20 +760,24 @@ export const InfraRailwayServiceSearch = Schema.Struct({
 	environmentId: LenientString,
 })
 
-export const VercelProjectTab = Schema.Literals([
-	"traffic",
-	"functions",
-	"dependencies",
-	"builds",
-	"aiGateway",
-	"speedInsights",
-	"webAnalytics",
-])
+export const VercelProjectTab = Schema.Literals(["traffic", "functions", "builds", "users", "aiGateway"])
 export type VercelProjectTab = typeof VercelProjectTab.Type
+
+/** Tabs folded into others; old links still decode: `dependencies` → functions, the event drains → users. */
+export const RetiredVercelProjectTab = Schema.Literals(["dependencies", "speedInsights", "webAnalytics"])
+export type RetiredVercelProjectTab = typeof RetiredVercelProjectTab.Type
+
+/** What the traffic tab's breakdown groups a project's requests by. */
+export const VercelBreakdownBy = Schema.Literals(["path", "host", "region", "source", "cache", "waf", "status"])
+export type VercelBreakdownBy = typeof VercelBreakdownBy.Type
 
 export const InfraVercelProjectSearch = Schema.Struct({
 	/** `traffic` when absent. */
-	tab: Schema.optional(VercelProjectTab),
+	tab: Schema.optional(Schema.Literals([...VercelProjectTab.literals, ...RetiredVercelProjectTab.literals])),
+	/** The breakdown's grouping; `path` when absent. */
+	by: Schema.optional(VercelBreakdownBy),
+	/** Narrows the breakdown to failing requests. */
+	status: Schema.optional(Schema.Literals(["4xx", "5xx"])),
 	...TimeRangeSearchFields,
 })
 
@@ -869,13 +873,16 @@ export const InfraRailwaySearch = Schema.Struct({
 	...TimeRangeSearchFields,
 })
 
-export const VercelView = Schema.Literals(["projects"])
-export type VercelView = typeof VercelView.Type
+/** The overview's health filters on the projects table. */
+export const VercelProjectScope = Schema.Literals(["erroring", "failedDeploys", "slow", "coldStarts"])
+export type VercelProjectScope = typeof VercelProjectScope.Type
 
 export const InfraVercelSearch = Schema.Struct({
 	q: StringParam,
-	/** The overview when absent. The retired `aiGateway` view still decodes and reads as the overview. */
-	view: Schema.optional(Schema.Literals([...VercelView.literals, "aiGateway"])),
+	/** Retired: the overview and projects list are one page now. Old links still decode. */
+	view: Schema.optional(Schema.Literals(["projects", "aiGateway"])),
+	/** A health filter on the projects table. */
+	scope: Schema.optional(VercelProjectScope),
 	...TimeRangeSearchFields,
 })
 

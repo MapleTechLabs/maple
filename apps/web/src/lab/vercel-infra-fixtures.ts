@@ -8,6 +8,7 @@ import {
 	VercelSpeedInsightsResponse,
 	VercelWebAnalyticsResponse,
 	VercelDrainStatus,
+	VercelInfraBreakdownResponse,
 	VercelInfraProjectDetailResponse,
 	VercelIntegrationStatus,
 	VercelProjectStatus,
@@ -16,6 +17,7 @@ import {
 	type VercelAuditEvent,
 	type VercelInfraDependency,
 	type VercelInfraFunction,
+	type VercelInfraLatencyBucket,
 	type VercelInfraProject,
 	type VercelInfraRequestBucket,
 } from "@maple/domain/http"
@@ -203,11 +205,53 @@ export const VERCEL_BUCKETS: ReadonlyArray<VercelInfraRequestBucket> = Array.fro
 			requests3xx,
 			requests4xx,
 			requests5xx,
-			cacheHits: Math.round(requests * 0.55),
+			cacheHits: Math.round(requests * (i > 70 && i < 76 ? 0.42 : 0.74)),
+			cacheLookups: Math.round(requests * 0.85),
 			errorLogs: Math.round(requests5xx * 0.7) + 2,
 		}
 	},
 )
+
+/** Edge and function latency for the same buckets; invocations slow and cold-start during the 5xx spike. */
+export const VERCEL_LATENCY_BUCKETS: ReadonlyArray<VercelInfraLatencyBucket> = Array.from(
+	{ length: BUCKETS },
+	(_, i) => {
+		const incident = i > 70 && i < 76
+		const invocations = Math.round(wave(i, 22_000) * 0.38)
+		return {
+			bucket: bucketAt(i),
+			edgeP50Ms: 42 + (i % 7),
+			edgeP95Ms: incident ? 1_840 : 260 + ((i * 37) % 90),
+			invocations,
+			coldStarts: Math.round(invocations * (incident ? 0.16 : 0.04)),
+			invokeP50Ms: incident ? 620 : 96 + (i % 11),
+			invokeP95Ms: incident ? 2_310 : 380 + ((i * 53) % 120),
+		}
+	},
+)
+
+/** One project's requests by path, the traffic tab's default breakdown. */
+export const VERCEL_BREAKDOWN = new VercelInfraBreakdownResponse({
+	rows: Arr.map(
+		[
+			["/api/checkout", 212_000, 0.004, 0.21, 1.9e9],
+			["/api/cart", 164_000, 0.002, 0.08, 6.1e8],
+			["/api/products/[id]", 121_000, 0.11, 0, 2.4e9],
+			["/api/search", 88_000, 0.001, 0.62, 9.8e8],
+			["/api/webhooks/stripe", 31_000, 0.024, 0, 4.2e7],
+			["", 26_000, 0, 0.99, 1.1e7],
+		],
+		([key, requests, share5xx, cached, bytes]) => ({
+			key: String(key),
+			requests: Number(requests),
+			requests4xx: Math.round(Number(requests) * 0.015),
+			requests5xx: Math.round(Number(requests) * Number(share5xx)),
+			cacheHits: Math.round(Number(requests) * 0.9 * Number(cached)),
+			cacheLookups: Number(cached) === 0 ? 0 : Math.round(Number(requests) * 0.9),
+			bytes: Number(bytes),
+		}),
+	),
+})
 
 const MODELS = [
 	["anthropic/claude-sonnet-4.5", "anthropic", 18_400, 61.42, 0.004, 3_900],
@@ -342,6 +386,9 @@ export const VERCEL_API_DETAIL = new VercelInfraProjectDetailResponse({
 
 export const VERCEL_API_DEPLOYMENTS: ReadonlyArray<VercelDeploymentSummary> = [
 	deployment("api-y2", "BUILDING", "feat/batch-writes", "Batch the order writes", 6 * MINUTE, null),
+	// The spike's buckets run 71–75: the bad deploy lands just before it, the revert just after.
+	deployment("api-z4", "READY", "main", "Revert: cache product prices at the edge", (BUCKETS - 76) * BUCKET_MS - MINUTE),
+	deployment("api-z3", "READY", "main", "Cache product prices at the edge", (BUCKETS - 71) * BUCKET_MS + 4 * MINUTE),
 	deployment("api-x8", "READY", "main", "Move rate limits to the edge config", 26 * HOUR),
 	deployment("api-w5", "ERROR", "fix/cold-start", "Lazy-load the PDF renderer", 30 * HOUR, null),
 	deployment("api-v1", "READY", "main", "Products: cache the price table for 60s", 3 * 24 * HOUR),

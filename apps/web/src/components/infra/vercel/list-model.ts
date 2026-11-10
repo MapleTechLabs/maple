@@ -177,6 +177,7 @@ export const zeroRequestBucket = (bucket: string): VercelInfraRequestBucket => (
 	requests4xx: 0,
 	requests5xx: 0,
 	cacheHits: 0,
+	cacheLookups: 0,
 	errorLogs: 0,
 })
 
