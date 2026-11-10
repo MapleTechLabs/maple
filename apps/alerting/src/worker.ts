@@ -5,7 +5,7 @@
  */
 import {
 	AiWorker,
-	cachedRecoverable,
+	createMapleAwsOidcKey,
 	MapleDb,
 	mapleDbEnv,
 	type MapleDomains,
@@ -16,30 +16,27 @@ import {
 	StatusSnapshotsBucket,
 	StatusSnapshotsKv,
 } from "@maple/infra/cloudflare"
+import { cachedRecoverable } from "@maple/infra/cached-recoverable"
 import {
 	apnsEnv,
-	appUrlsEnv,
-	authEnv,
 	cloudflareOAuthEnv,
-	githubAppSourceEnv,
-	ingestKeyCryptoEnv,
+	configKeysEnv,
+	linearOAuthEnv,
+	mapleServerEnv,
 	merge,
 	optionalPlain,
 	optionalSecret,
 	planetScaleOAuthEnv,
-	selfObservabilityEnv,
 	supabaseOAuthEnv,
-	tinybirdEnv,
 } from "@maple/infra/env"
 import { WORKER_PURE_OPTIONS } from "@maple/infra/worker-build"
-import { workerEnvLayer } from "@maple/infra/worker-runtime"
+import { dischargeRuntimeContext, workerEnvLayer } from "@maple/infra/worker-runtime"
 import { WorkerTelemetry } from "@maple/infra/worker-telemetry"
 import { bindChatSessions } from "@maple/backend/platform/chat-sessions"
 import { bindEmailSender } from "@maple/backend/platform/email-sender"
 import { chatConnectorOutboundConfigKeys } from "@maple/chat-platform"
 import * as Cloudflare from "@alchemy.run/cloudflare"
-import { dischargeRuntimeContext } from "@maple/backend/platform/alchemy-runtime"
-import { Cause, Config, Effect, Option, Ref, Array as Arr } from "effect"
+import { Cause, Config, Effect, Option, Ref } from "effect"
 import { FetchHttpClient, HttpClient, HttpServerResponse } from "effect/http"
 import { ALERTING_CRONS, scheduleFor } from "./schedule.ts"
 import { authorizeTickRequest, dispatchTick, SELF_BINDING } from "./tick-dispatch.ts"
@@ -55,25 +52,10 @@ export type AlertingWorkerEnv = Record<string, unknown>
 /** Config-sourced env; largely shared with api via `@maple/infra/env`. */
 const configuredEnv = (stage: MapleStage, region: MapleRegion, domains: MapleDomains) =>
 	merge(
-		tinybirdEnv,
-		authEnv,
-		ingestKeyCryptoEnv,
-		appUrlsEnv(domains),
-		// MAPLE_ENVIRONMENT must stay stage-derived, not overridable: it gates both the
-		// non-prod cron skip and `EmailService.emailAllowed`.
-		selfObservabilityEnv(stage, region),
+		mapleServerEnv(stage, region, domains),
 		// "1" runs crons on a non-prod stage (which otherwise skips them).
 		optionalPlain("MAPLE_ALERTING_ALLOW_NONPROD"),
-		// Dev-only escape hatch from per-org BYO rows (see apps/api/src/resources/env.ts).
-		optionalPlain("MAPLE_IGNORE_ORG_CLICKHOUSE"),
-		optionalSecret("AUTUMN_SECRET_KEY"),
-		optionalSecret("INTERNAL_SERVICE_TOKEN"),
-		// Linear alert destinations refresh the org's Linear token at delivery time.
-		optionalPlain("LINEAR_OAUTH_CLIENT_ID"),
-		optionalSecret("LINEAR_OAUTH_CLIENT_SECRET"),
-		// The Search Console importer refreshes the org's Google token each tick.
-		optionalPlain("GOOGLE_SEARCH_CONSOLE_CLIENT_ID"),
-		optionalSecret("GOOGLE_SEARCH_CONSOLE_CLIENT_SECRET"),
+		linearOAuthEnv,
 		// Signs the chart image URL in notifications; unset sends them text-only.
 		optionalSecret("MAPLE_SHARE_TOKEN_HMAC_KEY"),
 		// Push for incidents, plus OAuth refresh for the Cloudflare, PlanetScale and Supabase pollers.
@@ -83,19 +65,15 @@ const configuredEnv = (stage: MapleStage, region: MapleRegion, domains: MapleDom
 		supabaseOAuthEnv,
 		// Sign-in for the Google Cloud metrics poller; unset leaves its tick a no-op.
 		optionalSecret("MAPLE_GCP_SERVICE_ACCOUNT_KEY"),
-		// Ticks post pull-request replies through the GitHub App; without it each one fails.
-		githubAppSourceEnv,
 		// Outbound config for `chat` destinations' connectors.
-		...Arr.map(chatConnectorOutboundConfigKeys, (key) =>
-			key.secret ? optionalSecret(key.name) : optionalPlain(key.name),
-		),
+		configKeysEnv(chatConnectorOutboundConfigKeys),
 	)
 
 /** `__ALCHEMY_RUNTIME__` folds to `true` in the bundle, so the stack-side branch is tree-shaken. */
 const props = Effect.gen(function* () {
 	if (globalThis.__ALCHEMY_RUNTIME__) return { main: import.meta.url }
 	const stack = yield* MapleStack
-	const { stage, region, domains, devEnv, db, awsOidc } = stack
+	const { stage, region, domains, devEnv, db } = stack
 	// For `IncidentClassifier`. Yielded, not `Worker.ref`: a ref cannot see a sibling this deploy creates.
 	const ai = yield* AiWorker
 	const env = yield* configuredEnv(stage, region, domains)
@@ -114,7 +92,8 @@ const props = Effect.gen(function* () {
 			// Cron fires hop through it so their ticks run where placement applies.
 			[SELF_BINDING]: Cloudflare.Workers.Self,
 			...env,
-			...awsOidc,
+			// The same key as api's: alchemy registers a resource by id.
+			...(yield* createMapleAwsOidcKey),
 			...devEnv,
 		},
 	}

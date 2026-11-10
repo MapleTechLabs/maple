@@ -1,38 +1,23 @@
 import { existsSync } from "node:fs"
 import { resolve } from "node:path"
-import { adopt } from "alchemy/AdoptPolicy"
 import * as AWS from "@alchemy.run/aws"
-import * as Cloudflare from "@alchemy.run/cloudflare"
 import * as Output from "alchemy/Output"
-import * as RemovalPolicy from "alchemy/RemovalPolicy"
-import * as Config from "effect/Config"
 import * as Effect from "effect/Effect"
-import * as Schema from "effect/Schema"
-import * as SchemaTransformation from "effect/SchemaTransformation"
-import {
-	COLLECTOR_DNS_LABEL,
-	COLLECTOR_OTLP_HTTP_PORT,
-	ecsSecrets,
-	pgUrlRequireSsl,
-	resolveAwsRegion,
-	resolveAwsResourceName,
-	resolveCollectorEndpoint,
-	resolveIngestCidrBlock,
-	resolveIngestNamespaceName,
-} from "@maple/infra/aws"
-import { ReplayBlobs } from "../api/src/resources/replay-blobs.ts"
+import { ecsSecrets, pgUrlRequireSsl, resolveAwsRegion } from "@maple/infra/aws"
 import { cloudflareIpv4Ranges, issueRegionalCertificate, publishProxiedCname } from "@maple/infra/acm"
 import type { MapleDbLogin, MapleRegion, MapleStackContext, MapleStage } from "@maple/infra/cloudflare"
 import {
-	MAPLE_REGIONS,
+	REGION_INFRA,
+	ReplayBlobs,
 	resolveDeploymentEnvironment,
-	resolveMapleDomains,
-	resolveStorageJurisdiction,
 	resolveWorkerName,
 } from "@maple/infra/cloudflare"
 import { r2BucketCredentials } from "@maple/infra/r2-credentials"
 // Only the primitives: these values feed ECS `env:` and Secrets Manager, not Worker bindings.
-import { optionalPlain, requiredPlain } from "@maple/infra/env"
+import { commitShaEnv, optionalPlain, requiredPlain } from "@maple/infra/env"
+import { createIngestCollector } from "./alchemy/collector.ts"
+import { blockedIngestKeysEnv, blockIngestKeysAtEdge } from "./alchemy/edge-block.ts"
+import { gatewayTuningEnv } from "./alchemy/gateway-env.ts"
 
 /** Compiled ahead of time by CI so the image build is a COPY. Absent on a dev machine. */
 const PREBUILT_BINARY = "apps/ingest/dist/maple-ingest"
@@ -41,10 +26,6 @@ const PREBUILT_BINARY = "apps/ingest/dist/maple-ingest"
  * between releases, and each change broke the deploy (docs/infra.md).
  */
 const PREBUILT_DOCKERFILE = resolve("apps/ingest/Dockerfile.prebuilt")
-
-/** Its own build context so a collector config change does not rebuild and roll the gateway. */
-const COLLECTOR_CONTEXT = "packages/infra/otel-collector"
-const COLLECTOR_DOCKERFILE = resolve(COLLECTOR_CONTEXT, "Dockerfile")
 
 /** Port the gateway binds (`apps/ingest/Dockerfile` EXPOSEs the same). */
 const INGEST_PORT = 3474
@@ -106,17 +87,16 @@ ECS_CONTAINER_STOP_TIMEOUT=120s
 CONFIG
 `
 
-export interface CreateMapleIngestOptions extends Pick<
-	MapleStackContext,
-	"stage" | "region" | "domains" | "profile"
-> {
+export interface CreateMapleIngestOptions extends Pick<MapleStackContext, "stage" | "region" | "profile"> {
+	/** The public hostname (`domains.ingest`). Every stage that deploys a fleet has one. */
+	hostname: string
 	/** The declared database's gateway login; a stage without one reads `MAPLE_INGEST_PG_URL` instead. */
 	dbLogin?: MapleDbLogin
 }
 
 /**
  * The gateway's write credentials for the replay payload store
- * (`apps/api/src/resources/replay-blobs.ts`), or `undefined` on a stage that
+ * (`ReplayBlobs`), or `undefined` on a stage that
  * keeps payloads inline (`profile.deploys.replayBlobs`).
  */
 const replayBlobWriterCredentials = (stage: MapleStage, region: MapleRegion, enabled: boolean) =>
@@ -129,121 +109,48 @@ const replayBlobWriterCredentials = (stage: MapleStage, region: MapleRegion, ena
 			id: "replay-blobs-writer",
 			tokenName: `${bucket}-writer`,
 			bucketName: bucket,
-			jurisdiction: resolveStorageJurisdiction(region),
+			jurisdiction: REGION_INFRA[region].storageJurisdiction,
 			permissions: ["Workers R2 Storage Bucket Item Write"],
 		})
 		return { ...credentials, bucket }
 	})
 
-/** The zone every prd ingest hostname lives in. */
-const PRD_ZONE = "maple.dev"
-
-/**
- * `INGEST_BLOCKED_KEYS`, comma-separated. Keys are `maple_pk_`/`maple_sk_`/`maple_src_` + base64url,
- * so a value can never break out of the WAF expression.
- */
-const blockedIngestKeys = Config.schema(
-	Schema.String.pipe(
-		Schema.decodeTo(
-			Schema.Array(Schema.String.check(Schema.isPattern(/^maple_(pk|sk|src)_[A-Za-z0-9_-]+$/))),
-			SchemaTransformation.transform<ReadonlyArray<string>, string>({
-				decode: (raw) =>
-					raw
-						.split(",")
-						.map((key) => key.trim())
-						.filter((key) => key !== ""),
-				encode: (keys) => keys.join(","),
-			}),
-		),
-	),
-	"INGEST_BLOCKED_KEYS",
-).pipe(Config.withDefault([]))
-
-/** The same keys for the gateway's own check (`parse_blocked_ingest_keys`). */
-const blockedIngestKeysEnv = (keys: ReadonlyArray<string>) =>
-	keys.length > 0 ? { INGEST_BLOCKED_KEYS: keys.join(",") } : undefined
-
-/**
- * Edge block for abusive ingest keys (`INGEST_BLOCKED_KEYS`), so their
- * traffic never reaches the ALB. This owns the zone's whole custom-WAF phase: a rule added
- * in the dashboard is overwritten, so add it here instead. One owner (us) covers both regions.
- */
-const blockIngestKeys = (stage: MapleStage) =>
-	Effect.gen(function* () {
-		const keys = yield* blockedIngestKeys
-		const hosts = MAPLE_REGIONS.flatMap((region) => resolveMapleDomains({ stage, region }).ingest ?? [])
-		const set = (values: ReadonlyArray<string>) => `{${values.map((value) => `"${value}"`).join(" ")}}`
-
-		const zone = yield* Cloudflare.Zone.Zone("maple-dev-zone", { name: PRD_ZONE }).pipe(
-			adopt(true),
-			RemovalPolicy.retain(),
-		)
-		return yield* Cloudflare.Ruleset.Ruleset("waf-custom-rules", {
-			zone,
-			phase: "http_request_firewall_custom",
-			description: "Managed by alchemy (apps/ingest/alchemy.run.ts)",
-			rules:
-				keys.length === 0
-					? []
-					: [
-							{
-								description: "Block revoked ingest keys",
-								action: "block",
-								expression:
-									`http.host in ${set(hosts)} and (` +
-									`any(http.request.headers["authorization"][*] in ${set(keys.map((key) => `Bearer ${key}`))}) or ` +
-									`any(http.request.headers["x-maple-ingest-key"][*] in ${set(keys)}))`,
-							},
-						],
-		})
-	})
-
 /**
  * The Rust OTLP gateway (`apps/ingest`) on ECS, one fleet per `MapleRegion`:
  * ARM64 EC2 hosts with the WAL on local NVMe, behind a public ALB, plus an OTel
- * collector for the gateway's own telemetry, reached by Cloud Map private DNS.
+ * collector for the gateway's own telemetry (`./alchemy/collector.ts`).
  */
-export const createMapleIngest = ({ stage, region, domains, profile, dbLogin }: CreateMapleIngestOptions) =>
+export const createMapleIngest = ({ stage, region, hostname, profile, dbLogin }: CreateMapleIngestOptions) =>
 	Effect.gen(function* () {
 		const replayBlobs = yield* replayBlobWriterCredentials(stage, region, profile.deploys.replayBlobs)
 		const { desiredCount, scaling, instanceType, taskSize, collectorTaskSize, selfTraceSampleRatio } =
 			profile.ingest
-		const name = (base: string) => resolveAwsResourceName(base, stage, region)
+		const name = (base: string) => resolveWorkerName(base, stage, region)
 		const tags = { Service: "maple-ingest", Region: region }
 
 		// Public subnets and NO NAT gateway: NAT's per-GB processing fee would
 		// outweigh compute and egress combined for a service that pushes telemetry out.
 		const network = yield* AWS.EC2.Network("ingest-network", {
-			cidrBlock: resolveIngestCidrBlock(region),
+			cidrBlock: REGION_INFRA[region].ingestCidrBlock,
 			availabilityZones: 2,
 			nat: "none",
 			gatewayEndpoints: ["s3"],
 			tags,
 		})
 
-		// With an ingest domain the ALB terminates TLS on 443 behind Cloudflare's proxy, and
-		// admits only Cloudflare's edge: that is what makes `Cf-IPCountry` trustworthy. A stage
-		// without one (PR previews) gets alchemy's default HTTP listener on 80, open to all.
-		// The group's `description` must not change: AWS treats it as immutable (a replace).
-		const listenerPort = domains.ingest ? 443 : 80
-		// ALB gRPC needs an HTTPS listener, so a stage without a domain serves OTLP/HTTP only.
-		const serveGrpc = domains.ingest !== undefined
-		const albSources = domains.ingest
-			? (yield* cloudflareIpv4Ranges).map((cidr) => ({
-					cidr,
-					description: "OTLP over HTTPS from Cloudflare",
-				}))
-			: [{ cidr: "0.0.0.0/0", description: "OTLP over HTTP (no ingest domain, no certificate)" }]
+		// The ALB terminates TLS on 443 behind Cloudflare's proxy and admits only Cloudflare's
+		// edge: that is what makes `Cf-IPCountry` trustworthy. The group's `description` must not
+		// change: AWS treats it as immutable (a replace).
 		const albSecurityGroup = yield* AWS.EC2.SecurityGroup("ingest-alb-sg", {
 			vpcId: network.vpcId,
 			groupName: name("ingest-alb"),
-			description: `Maple OTLP ingest - public ${listenerPort === 443 ? "HTTPS" : "HTTP"} to the load balancer`,
-			ingress: albSources.map(({ cidr, description }) => ({
+			description: "Maple OTLP ingest - public HTTPS to the load balancer",
+			ingress: (yield* cloudflareIpv4Ranges).map((cidr) => ({
 				ipProtocol: "tcp",
-				fromPort: listenerPort,
-				toPort: listenerPort,
+				fromPort: 443,
+				toPort: 443,
 				cidrIpv4: cidr,
-				description,
+				description: "OTLP over HTTPS from Cloudflare",
 			})),
 		})
 
@@ -267,17 +174,13 @@ export const createMapleIngest = ({ stage, region, domains, profile, dbLogin }: 
 					referencedGroupId: albSecurityGroup.groupId,
 					description: "ALB to gateway",
 				},
-				...(serveGrpc
-					? [
-							{
-								ipProtocol: "tcp",
-								fromPort: INGEST_GRPC_PORT,
-								toPort: INGEST_GRPC_PORT,
-								referencedGroupId: albSecurityGroup.groupId,
-								description: "ALB to gateway OTLP/gRPC",
-							},
-						]
-					: []),
+				{
+					ipProtocol: "tcp",
+					fromPort: INGEST_GRPC_PORT,
+					toPort: INGEST_GRPC_PORT,
+					referencedGroupId: albSecurityGroup.groupId,
+					description: "ALB to gateway OTLP/gRPC",
+				},
 			],
 		})
 
@@ -363,13 +266,6 @@ export const createMapleIngest = ({ stage, region, domains, profile, dbLogin }: 
 			tags,
 		})
 
-		const revisions = {
-			...(yield* optionalPlain("INGEST_COMMIT_SHA")),
-			...(yield* optionalPlain("COMMIT_SHA")),
-			...(yield* optionalPlain("GITHUB_SHA")),
-		}
-		const ingestRevision = revisions.INGEST_COMMIT_SHA || revisions.COMMIT_SHA || revisions.GITHUB_SHA
-
 		const secret = ecsSecrets(name("ingest"), tags)
 
 		const tinybirdTokenValue = yield* requiredPlain("TINYBIRD_TOKEN")
@@ -400,79 +296,23 @@ export const createMapleIngest = ({ stage, region, domains, profile, dbLogin }: 
 			: undefined
 
 		// ── OTel collector ──────────────────────────────────────────────────
-		// prd only (`profile.deploys.collector`); MAPLE_DEPLOY_AWS_COLLECTOR=1 forces it
-		// on for one deploy, which is how a preview tests it.
-		const deployCollector =
-			profile.deploys.collector ||
-			(yield* optionalPlain("MAPLE_DEPLOY_AWS_COLLECTOR")).MAPLE_DEPLOY_AWS_COLLECTOR === "1"
-		const collectorEndpoint = deployCollector ? resolveCollectorEndpoint(stage, region) : undefined
-		if (deployCollector) {
-			// Reachable only from the gateway hosts. The tasks carry public IPs, so
-			// without this rule the receiver would be dialable from anywhere.
-			const collectorSecurityGroup = yield* AWS.EC2.SecurityGroup("otel-collector-sg", {
-				vpcId: network.vpcId,
-				groupName: name("otel-collector"),
-				description: "Maple OTel collector - OTLP/HTTP from the ingest gateway tasks",
-				ingress: [
-					{
-						ipProtocol: "tcp",
-						fromPort: COLLECTOR_OTLP_HTTP_PORT,
-						toPort: COLLECTOR_OTLP_HTTP_PORT,
-						referencedGroupId: instanceSecurityGroup.groupId,
-						description: "Ingest gateway hosts to collector",
-					},
-				],
-			})
-
-			// Both DNS labels are chosen here, so `resolveCollectorEndpoint` is a plain
-			// string at plan time. Hence the explicit Cloud Map service rather than
-			// alchemy's `serviceRegistry:` sugar, which generates the name.
-			const namespace = yield* AWS.CloudMap.PrivateDnsNamespace("ingest-dns", {
-				name: resolveIngestNamespaceName(stage, region),
-				vpc: network.vpcId,
-				description: "Maple ingest fleet - private service discovery",
-				tags,
-			})
-			const collectorDiscovery = yield* AWS.CloudMap.Service("otel-collector-discovery", {
-				name: COLLECTOR_DNS_LABEL,
-				namespaceId: namespace.namespaceId,
-				description: "Maple OTel collector",
-				dnsRecords: [{ type: "A", ttl: "10 seconds" }],
-				healthCheckCustomConfig: { failureThreshold: 1 },
-				tags,
-			})
-
-			yield* AWS.ECS.Service("otel-collector", {
-				cluster,
-				serviceName: name("otel-collector"),
-				// The pinned upstream contrib image with the config baked in. Not the ghcr
-				// `otel-collector-maple` image: that build has no `tinybird` exporter.
-				context: COLLECTOR_CONTEXT,
-				dockerfile: COLLECTOR_DOCKERFILE,
-				runtimePlatform: { cpuArchitecture: "ARM64", operatingSystemFamily: "LINUX" },
-				cpu: collectorTaskSize.cpu,
-				memory: collectorTaskSize.memory,
-				// One task: the gateway's OTLP exporters retry in memory across a restart.
-				desiredCount: 1,
-				vpcId: network.vpcId,
-				subnets: network.publicSubnetIds,
-				securityGroups: [collectorSecurityGroup.groupId],
-				assignPublicIp: true,
-				port: COLLECTOR_OTLP_HTTP_PORT,
-				serviceRegistries: [{ registryArn: collectorDiscovery.serviceArn }],
-				logging: { retention: "30 days" },
-				secrets: { TINYBIRD_TOKEN: tinybirdToken.secretArn },
-				env: { TINYBIRD_HOST: yield* requiredPlain("TINYBIRD_HOST") } satisfies Record<
-					string,
-					string
-				>,
-				tags,
-			})
-		}
+		// prd only, or one preview that forces it (`profile.deploys.collector`).
+		const collectorEndpoint = profile.deploys.collector
+			? yield* createIngestCollector({
+					stage,
+					region,
+					tags,
+					network,
+					cluster,
+					gatewaySecurityGroupId: instanceSecurityGroup.groupId,
+					tinybirdTokenArn: tinybirdToken.secretArn,
+					taskSize: collectorTaskSize,
+				})
+			: undefined
 
 		const issuedCertificateArn = yield* issueRegionalCertificate({
 			id: "ingest-cert",
-			hostname: domains.ingest,
+			hostname,
 			region: resolveAwsRegion(region),
 			tags,
 		})
@@ -576,13 +416,11 @@ export const createMapleIngest = ({ stage, region, domains, profile, dbLogin }: 
 				stopTimeout: 120,
 				mountPoints: [{ sourceVolume: "wal", containerPath: WAL_CONTAINER_DIR }],
 				// Replaces the mapping alchemy derives from `port`; host mode needs hostPort = containerPort.
-				...(serveGrpc && {
-					portMappings: [INGEST_PORT, INGEST_GRPC_PORT].map((port) => ({
-						containerPort: port,
-						hostPort: port,
-						protocol: "tcp",
-					})),
-				}),
+				portMappings: [INGEST_PORT, INGEST_GRPC_PORT].map((port) => ({
+					containerPort: port,
+					hostPort: port,
+					protocol: "tcp",
+				})),
 			},
 
 			desiredCount,
@@ -594,23 +432,21 @@ export const createMapleIngest = ({ stage, region, domains, profile, dbLogin }: 
 
 			// The conditionless rule is the listener's default action, the same ALB, listener
 			// and target group `true` composes. OTLP/gRPC paths go to a gRPC target group.
-			loadBalancer: serveGrpc
-				? {
-						rules: [
-							{},
-							{
-								path: OTLP_GRPC_PATH,
-								forward: `${INGEST_GRPC_PORT}/http`,
-								protocolVersion: "GRPC",
-							},
-						],
-					}
-				: true,
+			loadBalancer: {
+				rules: [
+					{},
+					{
+						path: OTLP_GRPC_PATH,
+						forward: `${INGEST_GRPC_PORT}/http`,
+						protocolVersion: "GRPC",
+					},
+				],
+			},
 			// `port` is the CONTAINER port; the listener defaults to 443 with a
 			// certificate. Do not set `listenerPort`: Cloudflare cannot proxy to 3474.
 			port: INGEST_PORT,
 			healthCheckPath: "/health",
-			...(issuedCertificateArn ? { certificateArn: issuedCertificateArn } : undefined),
+			certificateArn: issuedCertificateArn,
 			// Covers the startup Postgres probe, which exits the process on failure.
 			healthCheckGracePeriod: "60 seconds",
 			// Old tasks stay scale-in protected for up to 15 minutes while the WAL drains,
@@ -637,7 +473,7 @@ export const createMapleIngest = ({ stage, region, domains, profile, dbLogin }: 
 			// variable is silently dropped. The `satisfies` below turns that into a type error.
 			env: {
 				INGEST_PORT: String(INGEST_PORT),
-				...(serveGrpc && { INGEST_OTLP_GRPC_PORT: String(INGEST_GRPC_PORT) }),
+				INGEST_OTLP_GRPC_PORT: String(INGEST_GRPC_PORT),
 				MAPLE_ENVIRONMENT: resolveDeploymentEnvironment(stage),
 				// Lets the unknown-key 401 name the other region's ingest URL.
 				...(stage.kind === "prd" && { MAPLE_REGION: region }),
@@ -647,17 +483,14 @@ export const createMapleIngest = ({ stage, region, domains, profile, dbLogin }: 
 				// new secret before alchemy deletes the old role.
 				...(dbLogin && { MAPLE_PG_ROLE_ID: dbLogin.id }),
 
-				// Trust `Cf-IPCountry` (fills `session_replays.Country`) only where the ALB admits
-				// nothing but Cloudflare; a preview's open ALB would let any client set it.
-				...(domains.ingest && { MAPLE_INGEST_TRUST_PROXY_GEO: "true" }),
+				// Trust `Cf-IPCountry` (fills `session_replays.Country`): the ALB admits only Cloudflare.
+				MAPLE_INGEST_TRUST_PROXY_GEO: "true",
 
 				INGEST_QUEUE_MAX_BYTES: String(WAL_STORAGE[instanceType].maxBytes),
 				INGEST_WAL_SHARDS: String(WAL_SHARDS),
 				// The task role signs these requests; the S3 gateway endpoint keeps them private.
 				INGEST_WAL_S3_BUCKET: walBucketName,
 				INGEST_WAL_S3_REGION: resolveAwsRegion(region),
-				...(yield* optionalPlain("INGEST_WAL_SEGMENT_MAX_BYTES")),
-				...(yield* optionalPlain("INGEST_WAL_S3_ORPHAN_AFTER_SECS")),
 
 				...(replayBlobs
 					? {
@@ -675,63 +508,28 @@ export const createMapleIngest = ({ stage, region, domains, profile, dbLogin }: 
 				...(selfTraceSampleRatio
 					? { INGEST_SELF_TRACE_SAMPLE_RATIO: selfTraceSampleRatio }
 					: yield* optionalPlain("INGEST_SELF_TRACE_SAMPLE_RATIO")),
-				...(yield* optionalPlain("INGEST_WRITE_MODE")),
-				...(yield* optionalPlain("INGEST_BATCH_MAX_ROWS")),
-				...(yield* optionalPlain("INGEST_BATCH_MAX_BYTES")),
-				...(yield* optionalPlain("INGEST_BATCH_MAX_WAIT_MS")),
-				...(yield* optionalPlain("INGEST_ORG_QUEUE_MAX_BYTES")),
-				...(yield* optionalPlain("INGEST_ORG_MAX_IN_FLIGHT")),
 				// Source token rps limits are split across this many tasks. The scaling
 				// floor, so a scaled-out fleet admits more rather than throttling below the limit.
 				INGEST_RATE_LIMIT_FLEET_SIZE: String(scaling?.min ?? desiredCount),
-				...(yield* optionalPlain("INGEST_GCP_ORG_MAX_IN_FLIGHT")),
-				...(yield* optionalPlain("INGEST_REQUEST_TIMEOUT_SECS")),
-				...(yield* optionalPlain("INGEST_QUEUE_MAX_AGE_SECS")),
-				// Customer ingest rules (docs/ingest-rules.md): the gateway defaults to on; set "false" only to
-				// switch rule application off in an emergency.
-				...(yield* optionalPlain("INGEST_RULES_ENABLED")),
-				...(yield* optionalPlain("INGEST_RULES_CACHE_TTL_SECS")),
-				...(yield* optionalPlain("INGEST_MAX_REQUEST_BODY_BYTES")),
-				...(yield* optionalPlain("INGEST_MAX_DECODED_BODY_BYTES")),
-				...(yield* optionalPlain("INGEST_MAX_DECODE_HEAP_BYTES")),
-				...(yield* optionalPlain("INGEST_DECODE_MEMORY_BYTES")),
-				// The edge rule matches exact header values only; the gateway refuses these
-				// keys again after normalizing the header, so a respelled one is still blocked.
-				...(yield* Config.map(blockedIngestKeys, blockedIngestKeysEnv)),
-				...(yield* optionalPlain("INGEST_EXPORT_MAX_ATTEMPTS")),
-				...(yield* optionalPlain("INGEST_TINYBIRD_CONCURRENCY_PER_SHARD")),
-				...(yield* optionalPlain("INGEST_REPLAY_MAX_SESSION_BYTES")),
+				...(yield* blockedIngestKeysEnv),
 				// The org Maple's own telemetry is filed under. Required, no fallback.
 				MAPLE_INTERNAL_ORG_ID: yield* requiredPlain("MAPLE_INTERNAL_ORG_ID"),
-				...(yield* optionalPlain("AUTUMN_API_URL")),
-				// Entitlement cache TTLs (defaults in `AppConfig::from_env`). The allow TTL
-				// is how soft a hard cap is.
-				...(yield* optionalPlain("AUTUMN_ENTITLEMENT_ALLOW_TTL_SECS")),
-				...(yield* optionalPlain("AUTUMN_ENTITLEMENT_DENY_TTL_SECS")),
-				// 30s instead of the binary's 1s cuts Autumn track calls ~30x.
-				...(yield* optionalPlain("AUTUMN_FLUSH_INTERVAL_SECS", "30")),
-				...(yield* optionalPlain("INGEST_SHUTDOWN_DRAIN_SECS")),
+				...(yield* gatewayTuningEnv),
 				// `INGEST_COMMIT_SHA` (prd) is the image's own revision, so a deploy that leaves
 				// `apps/ingest` alone does not change the task definition and roll the hosts.
-				...(ingestRevision ? { COMMIT_SHA: ingestRevision } : undefined),
+				...(yield* commitShaEnv("INGEST_COMMIT_SHA")),
 			} satisfies Record<string, string | Output.Output<string>>,
 
 			tags,
 		})
 
 		// The public name, proxied through Cloudflare to the ALB.
-		if (domains.ingest) {
-			yield* publishProxiedCname({
-				id: "ingest-public-cname",
-				hostname: domains.ingest,
-				serviceUrl: service.url,
-			})
-		}
+		yield* publishProxiedCname({ id: "ingest-public-cname", hostname, serviceUrl: service.url })
 
-		if (stage.kind === "prd" && region === "us") yield* blockIngestKeys(stage)
+		if (stage.kind === "prd" && region === "us") yield* blockIngestKeysAtEdge(stage)
 
 		return {
-			// The ALB. A PR preview has no ingest domain and is reached here.
+			// The ALB itself, behind the public hostname.
 			serviceUrl: service.url,
 			// Shared with `apps/electric`: two `AWS.EC2.Network`s in one stack fight
 			// over the internet gateway.

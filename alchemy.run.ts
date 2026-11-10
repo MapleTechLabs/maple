@@ -15,12 +15,11 @@ import { SourceError } from "effect/ConfigProvider"
 import * as Effect from "effect/Effect"
 import * as Layer from "effect/Layer"
 import * as Redacted from "effect/Redacted"
-import { AwsRegionMismatchError, createMapleAwsOidcKey, resolveAwsRegion } from "@maple/infra/aws"
+import { AwsRegionMismatchError, resolveAwsRegion } from "@maple/infra/aws"
 import {
 	ApiWorker,
 	AiWorker,
 	SandboxWorker,
-	createMapleDeviceTokenKey,
 	formatMapleDeployment,
 	formatMapleStage,
 	ManagedMapleDb,
@@ -28,16 +27,16 @@ import {
 	type MapleDbLogin,
 	type MapleDbResources,
 	type MapleDeployment,
-	type MapleProfile,
 	MapleStack,
 	type MapleStackContext,
 	parseMapleDeploymentEffect,
+	prdOrigin,
 	resolveMapleDomains,
-	resolveMapleProfile,
 	resolvePlanetscaleDatabase,
 	resolveWorkerName,
 } from "@maple/infra/cloudflare"
 import { DB_ACCESS_ROLES } from "@maple/db/roles"
+import { deployedDomains, type MapleProfile, resolveMapleProfile } from "@maple/infra/profile"
 import * as Acm from "@maple/infra/acm"
 import { createAwsSecurityBaseline } from "@maple/infra/security-baseline"
 import { optionalPlain, plainWithDefault, requiredPlain } from "@maple/infra/env"
@@ -223,12 +222,11 @@ const MapleStackLive = Layer.effect(
 		const webOnlyPreview =
 			deployment.stage.kind === "pr" &&
 			(yield* optionalPlain("MAPLE_PREVIEW_WEB_ONLY")).MAPLE_PREVIEW_WEB_ONLY === "1"
-		const allDomains = resolveMapleDomains(deployment)
-		// Without ingest and Electric their hostnames would resolve nowhere.
-		const domains = webOnlyPreview
-			? { web: allDomains.web, api: allDomains.api, sync: allDomains.sync, status: allDomains.status }
-			: allDomains
-		const profile = resolveMapleProfile(deployment, { webOnlyPreview })
+		// The `preview:collector` label: one preview tests the collector (scripts/ingest-preview-verify.sh).
+		const forceCollector =
+			(yield* optionalPlain("MAPLE_DEPLOY_AWS_COLLECTOR")).MAPLE_DEPLOY_AWS_COLLECTOR === "1"
+		const profile = resolveMapleProfile(deployment, { webOnlyPreview, forceCollector })
+		const domains = deployedDomains(resolveMapleDomains(deployment), profile)
 		const context: MapleStackContext = {
 			...deployment,
 			domains,
@@ -239,7 +237,7 @@ const MapleStackLive = Layer.effect(
 				// would go to production ingest.
 				ingest:
 					devEnv?.MAPLE_INGEST_URL ??
-					(yield* resolveUrl(domains.ingest, "VITE_INGEST_URL", "https://ingest.maple.dev")),
+					(yield* resolveUrl(domains.ingest, "VITE_INGEST_URL", prdOrigin("ingest"))),
 				electricSync:
 					devEnv?.MAPLE_ELECTRIC_SYNC_URL ??
 					(yield* resolveUrl(domains.sync, "MAPLE_ELECTRIC_SYNC_URL")),
@@ -250,8 +248,6 @@ const MapleStackLive = Layer.effect(
 			workerDev,
 			devEnv,
 			db: yield* declareMapleDb(deployment, profile),
-			awsOidc: yield* createMapleAwsOidcKey,
-			deviceToken: yield* createMapleDeviceTokenKey,
 		}
 		return context
 	}),
@@ -315,9 +311,17 @@ export default Alchemy.Stack(
 			})
 		}
 
-		const ingest = profile.deploys.ingest
-			? yield* createMapleIngest({ stage, region, domains, profile, dbLogin: db?.ingest })
-			: undefined
+		// Every stage that deploys a fleet has its hostname (`resolveMapleDomains`).
+		const ingest =
+			profile.deploys.ingest && domains.ingest
+				? yield* createMapleIngest({
+						stage,
+						region,
+						hostname: domains.ingest,
+						profile,
+						dbLogin: db?.ingest,
+					})
+				: undefined
 
 		// Account audit controls (CloudTrail, Config, GuardDuty): prd instances only.
 		const { awsSecurityBaseline } = profile.deploys
@@ -345,11 +349,11 @@ export default Alchemy.Stack(
 		// prd's electric-sync reads `ELECTRIC_URL` from the secret store, so its cutover is
 		// separate; a preview's points at this one. Electric runs in ingest's VPC, hence `ingest &&`.
 		const electric =
-			ingest && db?.electric
+			ingest && db?.electric && domains.electric
 				? yield* createMapleElectric({
 						stage,
 						region,
-						domains,
+						hostname: domains.electric,
 						profile,
 						network: ingest.network,
 						dbLogin: db.electric,

@@ -5,7 +5,9 @@ import {
 	DEFAULT_MAPLE_REGION,
 	isMapleRegion,
 	MAPLE_REGIONS,
+	type AwsRegionName,
 	type MapleRegion,
+	REGION_INFRA,
 	regionSuffix,
 } from "../region.ts"
 import { Option, Array as Arr, Record as Rec, String as Str } from "effect"
@@ -55,28 +57,14 @@ export interface MapleDomains {
 
 /**
  * Best-effort Worker placement beside the instance's database and Tinybird workspace. Not a
- * residency guarantee; storage jurisdiction is ({@link resolveStorageJurisdiction}).
+ * residency guarantee; the storage jurisdiction in `REGION_INFRA` is.
  */
-export function resolveWorkerPlacement(region: MapleRegion = DEFAULT_MAPLE_REGION): {
-	readonly region: "aws:us-east-1" | "aws:eu-central-1"
-} {
-	switch (region) {
-		case "us":
-			return { region: "aws:us-east-1" }
-		case "eu":
-			return { region: "aws:eu-central-1" }
-	}
-}
+export const resolveWorkerPlacement = (
+	region: MapleRegion = DEFAULT_MAPLE_REGION,
+): { readonly region: `aws:${AwsRegionName}` } => ({ region: `aws:${REGION_INFRA[region].awsRegion}` })
 
-/**
- * The R2 / Durable Object jurisdiction (a hard guarantee), or `undefined` for the default.
- * Fixed at creation: an existing bucket cannot move.
- */
-export function resolveStorageJurisdiction(region: MapleRegion): "eu" | undefined {
-	return region === "eu" ? "eu" : undefined
-}
-
-const PRD_DOMAINS: MapleDomains = {
+/** The US prd hostnames, also the default wherever a stage has no hostname of its own. */
+export const PRD_DOMAINS = {
 	web: "app.maple.dev",
 	api: "api.maple.dev",
 	ingest: "ingest.maple.dev",
@@ -85,7 +73,10 @@ const PRD_DOMAINS: MapleDomains = {
 	landing: "maple.dev",
 	local: "local.maple.dev",
 	chat: "chat.maple.dev",
-}
+} satisfies MapleDomains
+
+/** An app's US prd origin (`https://ingest.maple.dev`). */
+export const prdOrigin = (app: keyof typeof PRD_DOMAINS): string => `https://${PRD_DOMAINS[app]}`
 
 /** EU hostnames under `eu.maple.dev`. No landing or local-ui (shared apps run in `us` only). */
 const PRD_DOMAINS_EU: MapleDomains = {
@@ -264,7 +255,24 @@ export function resolveHyperdriveRefId(stage: MapleStage, consumer: MapleDbConsu
 	}
 }
 
-/** Physical Worker/bucket/Hyperdrive name, e.g. `maple-api-eu-dev-makisuo`; mirrors `resolveAwsResourceName`. */
+/** A PR preview's resource name (`maple-<base>-pr-<n>`); a dev stage's `-dev-` names never match. */
+const PREVIEW_RESOURCE_RE = /^maple-((?:(?!-dev-).)+)-pr-(\d+)$/
+
+/**
+ * The inverse of {@link resolveWorkerName} for a PR preview's resource, for the orphan sweeps:
+ * `maple-db-pr-12` is `{ base: "db", prNumber: "12" }`.
+ */
+export const parsePreviewResourceName = (
+	name: string,
+): Option.Option<{ readonly base: string; readonly prNumber: string }> =>
+	Option.flatMap(Str.match(PREVIEW_RESOURCE_RE)(name), ([, base, prNumber]) =>
+		base === undefined || prNumber === undefined ? Option.none() : Option.some({ base, prNumber }),
+	)
+
+/**
+ * Physical name of a per-stage resource on either cloud (Worker, bucket, Hyperdrive, ALB, ECS),
+ * e.g. `maple-api-eu-dev-makisuo`. AWS callers keep their base short: ALB names cap at 32 chars.
+ */
 export function resolveWorkerName(
 	base: string,
 	stage: MapleStage,

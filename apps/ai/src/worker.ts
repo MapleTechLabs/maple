@@ -5,25 +5,14 @@
  * Heavy graphs stay behind dynamic imports (startup CPU limit, error 10021).
  */
 import {
-	cachedRecoverable,
 	mapleDbEnv,
 	MapleStack,
 	type MapleStackContext,
 	mapleWorkerProps,
 	SandboxWorker,
 } from "@maple/infra/cloudflare"
-import {
-	appUrlsEnv,
-	authEnv,
-	githubAppSourceEnv,
-	ingestKeyCryptoEnv,
-	merge,
-	optionalPlain,
-	optionalSecret,
-	requireSecretEntry,
-	selfObservabilityEnv,
-	tinybirdEnv,
-} from "@maple/infra/env"
+import { cachedRecoverable } from "@maple/infra/cached-recoverable"
+import { mapleServerEnv, merge, optionalPlain, optionalSecret, requireSecretEntry } from "@maple/infra/env"
 import { IsolateAge } from "@maple/infra/isolate-age"
 import { isolateContext } from "@maple/infra/worker-http"
 import { WorkerTelemetry } from "@maple/infra/worker-telemetry"
@@ -42,36 +31,21 @@ import { AiObservabilityLive } from "./worker/observability"
 /** Config-sourced env. The tools query the warehouse as the calling org, so this is largely api's set. */
 const configuredEnv = ({ stage, region, domains, profile }: MapleStackContext) =>
 	merge(
-		tinybirdEnv,
-		authEnv,
-		appUrlsEnv(domains),
-		selfObservabilityEnv(stage, region),
-		ingestKeyCryptoEnv,
+		// Also the GitHub App reader the source and sandbox tools resolve repositories through, and
+		// the Search Console client its tools need to report a connectable org.
+		mapleServerEnv(stage, region, domains),
 		// `MAPLE_LLM_PROVIDER` picks OpenRouter (default) or Workers AI (`@/platform/Llm`).
 		optionalPlain("MAPLE_LLM_PROVIDER"),
 		optionalPlain("MAPLE_TRIAGE_MODEL_OPENROUTER"),
 		optionalPlain("MAPLE_TRIAGE_MODEL_WORKERS_AI"),
 		optionalPlain("MAPLE_REVIEW_MODEL_OPENROUTER"),
 		optionalSecret("OPENROUTER_API_KEY"),
-		// Chat meters AI credits and checks the BYOK entitlement through Autumn. Without
-		// the key both fail open: usage goes unbilled and every org is entitled.
-		optionalSecret("AUTUMN_SECRET_KEY"),
 		// Decision model, on Workers AI via the gateway binding (`layerDecisionModel`).
 		optionalPlain("MAPLE_DECISION_MODEL"),
-		// The chat agent authenticates to `/mcp` as an internal caller.
-		optionalSecret("INTERNAL_SERVICE_TOKEN"),
 		// Maple's own org: the only one `list_maple_feedback` reads across orgs for.
 		optionalPlain("MAPLE_INTERNAL_ORG_ID"),
-		// The Search Console tools report a connectable org only when the Google OAuth client is set.
-		optionalPlain("GOOGLE_SEARCH_CONSOLE_CLIENT_ID"),
-		optionalSecret("GOOGLE_SEARCH_CONSOLE_CLIENT_SECRET"),
-		// The source and sandbox tools resolve repositories through the GitHub App, so
-		// they need its reader credentials here too, not only on api.
-		githubAppSourceEnv,
 		// Required wherever a sandbox Worker deploys: without it every sandbox call is refused.
 		...(profile.deploys.sandbox ? [requireSecretEntry("SANDBOX_INTERNAL_SERVICE_TOKEN")] : []),
-		// Dev-only escape hatch from per-org BYO rows (see apps/api/src/resources/env.ts).
-		optionalPlain("MAPLE_IGNORE_ORG_CLICKHOUSE"),
 	)
 
 /** `__ALCHEMY_RUNTIME__` folds to `true` in the bundle, so the stack-side branch is tree-shaken. */
