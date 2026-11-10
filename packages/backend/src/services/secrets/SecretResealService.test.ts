@@ -1,5 +1,5 @@
 import { afterEach, assert, describe, it } from "@effect/vitest"
-import { Array as Arr, ConfigProvider, Effect, Layer, Option, String as Str } from "effect"
+import { Array as Arr, ConfigProvider, Effect, Layer, Option, Schema, String as Str } from "effect"
 import { encryptAes256Gcm, type EncryptedValue } from "@maple/backend/platform/Crypto"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { Env } from "@maple/backend/platform/Env"
@@ -17,6 +17,8 @@ import {
 	queryFirstRow,
 	type TestDb,
 } from "@maple/backend/platform/test-pglite"
+import * as slots from "@maple/backend/platform/secret-slots"
+import { UptimeHeadersJson } from "@maple/backend/services/uptime/uptime-headers"
 import { RESEAL_TARGETS } from "./reseal-targets"
 import { SecretResealService } from "./SecretResealService"
 
@@ -308,5 +310,65 @@ describe("SecretResealService", () => {
 			assert.isFalse(yield* database.execute((db) => row.write(db, stale)))
 			assert.deepStrictEqual(yield* clickHousePassword(testDb, "org_a"), newer)
 		}).pipe(Effect.provide(testDb.layer))
+	})
+
+	it.effect("seals uptime check headers that are still in the config, and only those", () => {
+		const testDb = createTestDb(trackedDbs)
+		const seedMonitor = (id: string, headers: Record<string, string>) =>
+			Effect.promise(() =>
+				executeSql(
+					testDb,
+					`insert into uptime_monitors
+						(id, org_id, name, kind, config_json, created_by, created_at, updated_at)
+					 values ($1, 'org_a', $1, 'http', $2::jsonb, 'user_1', $3, $3)`,
+					[
+						id,
+						JSON.stringify({
+							_tag: "http",
+							url: "https://status.example.com/health",
+							method: "GET",
+							headers,
+							assertions: [],
+							timeoutMs: 5000,
+						}),
+						NOW,
+					],
+				),
+			)
+		const stored = (id: string) =>
+			Effect.promise(() =>
+				queryFirstRow<EncryptedValue & { readonly headers: string }>(
+					testDb,
+					`select (config_json -> 'headers')::text as headers, headers_ciphertext as ciphertext,
+						headers_iv as iv, headers_tag as tag
+					 from uptime_monitors where id = $1`,
+					[id],
+				),
+			).pipe(
+				Effect.flatMap((row) => Effect.fromNullishOr(row)),
+				Effect.orDie,
+			)
+		return Effect.gen(function* () {
+			const ring = yield* keyring(1)
+			yield* seedMonitor("mon_with", { Authorization: "Bearer s3cr3t" })
+			yield* seedMonitor("mon_without", {})
+
+			assert.deepStrictEqual(yield* sweep(testDb, 1), { resealed: 1, failed: 0, remaining: 0 })
+
+			const sealed = yield* stored("mon_with")
+			assert.strictEqual(sealed.headers, "{}")
+			const opened = yield* openSecret(
+				ring,
+				slots.uptimeMonitorHeadersSlot,
+				{ orgId: "org_a", id: "mon_with" },
+				sealed,
+				fail,
+			)
+			assert.deepStrictEqual(yield* Schema.decodeEffect(UptimeHeadersJson)(opened), {
+				Authorization: "Bearer s3cr3t",
+			})
+			assert.isNull((yield* stored("mon_without")).ciphertext)
+			assert.deepStrictEqual(yield* sweep(testDb, 1), { resealed: 0, failed: 0, remaining: 0 })
+		})
 	})
 })

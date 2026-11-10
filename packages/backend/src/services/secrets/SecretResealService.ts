@@ -12,6 +12,7 @@ import { makeDbExecute, makePersistenceErrorMapper } from "@maple/backend/platfo
 import { Env } from "@maple/backend/platform/Env"
 import { currentEnvelopePrefix, secretKeyringFromEnv } from "@maple/backend/platform/SecretBox"
 import { RESEAL_TARGETS, SecretResealError, type PendingSecret, type ResealTarget } from "./reseal-targets"
+import { uptimePlaintextHeadersTarget } from "./uptime-plaintext-headers"
 
 interface SecretResealSweep {
 	/** Values rewritten under the current key and envelope. */
@@ -100,7 +101,7 @@ export class SecretResealService extends Context.Service<SecretResealService>()(
 
 			/** One pass over every sealed column. Safe to run concurrently with writers. */
 			const resealDue: Effect.Effect<SecretResealSweep, SecretResealError> = Effect.forEach(
-				Rec.values(RESEAL_TARGETS),
+				[...Rec.values(RESEAL_TARGETS), uptimePlaintextHeadersTarget],
 				(target) => Effect.result(resealTarget(target)),
 			).pipe(
 				Effect.flatMap((results) => {
