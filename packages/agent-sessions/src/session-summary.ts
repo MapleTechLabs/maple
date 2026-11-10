@@ -369,7 +369,7 @@ export function findIdleGaps(spans: readonly AiSessionSpan[]): readonly IdleGap[
  * carries the time, and borrows a TTFT from a nested span when it reported
  * none.
  */
-export function computeAgentTime(spans: readonly AiSessionSpan[]): SessionAgentTime {
+function computeAgentTime(spans: readonly AiSessionSpan[]): SessionAgentTime {
 	const totals = new Map<AgentTimeKind, number>()
 	const add = (kind: AgentTimeKind, ms: number) => {
 		if (ms > 0) totals.set(kind, (totals.get(kind) ?? 0) + ms)
@@ -1138,7 +1138,7 @@ const AGENT_LIMIT_PATTERN =
 	/\b(?:exceeded|reached) its ((?:[\w$.]+ ){0,6}?(?:duration (?:limit|budget)|limit|budget|allowance|bound|cap|duration))\b/i
 
 /** `duration limit`, `consecutive tool call failure limit`: the budget without its figure. */
-export function agentLimitName(text: string): string | undefined {
+function agentLimitName(text: string): string | undefined {
 	const match = AGENT_LIMIT_PATTERN.exec(text)?.[1]
 	if (match === undefined) return undefined
 	const words = Arr.filter(
@@ -1217,7 +1217,7 @@ function countFailures(events: readonly SessionFailureEvent[]): SessionFailureCo
 }
 
 /** Events sharing a label, counted, busiest first. */
-export function groupFailures(events: readonly SessionFailureEvent[]): readonly SessionFailureGroup[] {
+function groupFailures(events: readonly SessionFailureEvent[]): readonly SessionFailureGroup[] {
 	const groups = new Map<string, SessionFailureGroup>()
 	for (const event of events) {
 		const existing = groups.get(event.label)

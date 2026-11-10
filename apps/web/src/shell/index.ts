@@ -4,6 +4,7 @@ export { readShellFlags } from "./flags"
 export { NavSurface } from "./nav"
 export { Message, OutMessage, Theme } from "./message"
 export { init, Model, type ShellClerk } from "./model"
+export { Platform } from "./palette/shortcuts"
 
 export {
 	favoritesChanges,

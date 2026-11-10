@@ -10,7 +10,7 @@ import {
 	MAX_BAR_SERIES,
 	OTHER_LABEL,
 } from "@maple/ui/components/charts/_shared/bucket-series"
-import { ChartSpec, ChartTooltip, specCache, type TimeseriesAxisSpec } from "./chart-spec"
+import { ChartSpec, ChartTooltip, rowsCache, specCache, type TimeseriesAxisSpec } from "./chart-spec"
 import { bucketTooltipBody } from "./bucket-tooltip"
 import { plotFrame } from "./plot-frame"
 import { resolveColor, type ThemeColors } from "./theme-colors"
@@ -49,7 +49,7 @@ export interface BarChartInputs {
 type Row = Readonly<Record<string, string | number | boolean>>
 
 /** `bucketBarSeries`: past `MAX_BAR_SERIES` the long tail folds into one "Other" series. */
-export const bucketBarSeries = (data: ReadonlyArray<Row>): ReadonlyArray<Row> => {
+export const bucketBarSeries = rowsCache((data: ReadonlyArray<Row>): ReadonlyArray<Row> => {
 	const seriesKeys = [
 		...new Set(
 			Arr.flatMap(data, (row) =>
@@ -60,7 +60,7 @@ export const bucketBarSeries = (data: ReadonlyArray<Row>): ReadonlyArray<Row> =>
 	if (seriesKeys.length <= MAX_BAR_SERIES) return data
 	const { rows } = bucketTimeseries(data, seriesKeys, MAX_BAR_SERIES)
 	return Arr.map(rows, (row, index) => (data[index]?.partial === true ? { ...row, partial: true } : row))
-}
+})
 
 const barSpec = specCache(
 	(data: ReadonlyArray<Row>, rest: Omit<Parameters<typeof ChartSpec.QueryBuilderBar>[0], "data">) =>

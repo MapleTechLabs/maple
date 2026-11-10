@@ -1,6 +1,7 @@
-import { afterEach, describe, expect, it, vi } from "vitest"
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import { noteStartedTraceId } from "../../events/trace-id"
 import type { SessionEvent } from "../../events/events-sink"
+import { forgetPatchesForTests } from "../../capture/patch"
 import { installNetworkCapture } from "./network"
 
 const originalOpen = XMLHttpRequest.prototype.open
@@ -20,6 +21,10 @@ interface AnyUrlOpen {
 	open(method: string, url: AnyUrl): void
 }
 const openAny = (xhr: AnyUrlOpen, url: AnyUrl): void => xhr.open("GET", url)
+interface AnyUrlFetch {
+	fetch(input: AnyUrl): Promise<Response>
+}
+const fetchAny = (target: AnyUrlFetch, input: AnyUrl): Promise<Response> => target.fetch(input)
 
 const request = (xhr: XMLHttpRequest): Promise<void> =>
 	new Promise((resolve) => {
@@ -250,6 +255,38 @@ describe("installNetworkCapture", () => {
 		await request(nullXhr)
 		expect(events.map((event) => event.net?.url)).toEqual(["/?from-object", "null"])
 	})
+
+	it("resolves a fetch given an object that is neither a URL nor a Request, as the browser does", async () => {
+		const realFetch = window.fetch
+		// Under the capture, like the network would be.
+		window.fetch = async () => new Response("ok")
+		try {
+			const events: SessionEvent[] = []
+			uninstall = installNetworkCapture(
+				(event) => events.push(event),
+				// What the sink's own filter does with the URL: without one this throws.
+				(url) => url.startsWith("https://ingest.invalid/"),
+			)
+			// `fetch` stringifies a `Location`; it has no `url` of its own.
+			const response = await fetchAny(window, window.location)
+			expect(response.status).toBe(200)
+			// A `url` property on something that is not a Request is not where `fetch` looks.
+			const tagged = Object.assign(new URL("/orders", window.location.href), {
+				url: "https://elsewhere.invalid/",
+			})
+			await fetchAny(window, tagged)
+			await fetchAny(window, new Request(new URL("/from-request", window.location.href)))
+			expect(events.map((event) => event.net?.url)).toEqual([
+				window.location.href,
+				tagged.href,
+				new URL("/from-request", window.location.href).href,
+			])
+		} finally {
+			uninstall?.()
+			uninstall = undefined
+			window.fetch = realFetch
+		}
+	})
 })
 
 describe("installNetworkCapture next to the app's own wrappers", () => {
@@ -329,5 +366,100 @@ describe("installNetworkCapture next to the app's own wrappers", () => {
 		stop()
 		expect(depth).toBe(1)
 		expect(events.filter((event) => event.type === "network")).toHaveLength(1)
+	})
+})
+
+describe("installNetworkCapture when capture itself throws", () => {
+	const realFetch = window.fetch
+	// The tests above leave an inert wrapper registered for a `fetch` that is gone.
+	beforeEach(() => forgetPatchesForTests(window))
+	afterEach(() => {
+		// Capture first: it only unwraps while its wrapper is still the page's fetch.
+		uninstall?.()
+		uninstall = undefined
+		window.fetch = realFetch
+	})
+	const brokenFilter = (): boolean => {
+		throw new Error("filter broke")
+	}
+
+	it("resolves the app's fetch with the real response", async () => {
+		window.fetch = async () => new Response("ok", { status: 201 })
+		uninstall = installNetworkCapture(() => {}, brokenFilter)
+
+		const response = await fetch("https://api.test/orders")
+
+		expect(response.status).toBe(201)
+		expect(await response.text()).toBe("ok")
+	})
+
+	it("resolves it when the body is read in the background, with no stray rejection", async () => {
+		window.fetch = async () => new Response("ok", { headers: { "content-type": "text/plain" } })
+		const rejections: unknown[] = []
+		const onRejection = (event: PromiseRejectionEvent): void => {
+			event.preventDefault()
+			rejections.push(event.reason)
+		}
+		window.addEventListener("unhandledrejection", onRejection)
+		try {
+			uninstall = installNetworkCapture(() => {}, brokenFilter, { urls: ["/orders"], maxLength: 100 })
+
+			const response = await fetch("https://api.test/orders")
+			expect(await response.text()).toBe("ok")
+			// `unhandledrejection` is dispatched a task after the microtasks drain.
+			await new Promise((resolve) => setTimeout(resolve, 50))
+
+			expect(rejections).toEqual([])
+		} finally {
+			window.removeEventListener("unhandledrejection", onRejection)
+		}
+	})
+
+	it("rejects with the real fetch's own error", async () => {
+		const failure = new TypeError("Failed to fetch")
+		window.fetch = async () => {
+			throw failure
+		}
+		uninstall = installNetworkCapture(() => {}, brokenFilter)
+
+		await expect(fetch("https://api.test/orders")).rejects.toBe(failure)
+	})
+
+	it("still records a request the real fetch failed", async () => {
+		const failure = new TypeError("Failed to fetch")
+		window.fetch = async () => {
+			throw failure
+		}
+		const events: SessionEvent[] = []
+		uninstall = installNetworkCapture(
+			(event) => events.push(event),
+			() => false,
+		)
+
+		await expect(fetch("https://api.test/orders")).rejects.toBe(failure)
+
+		expect(events.map((event) => [event.net?.status, event.attrs?.error])).toEqual([
+			[0, "TypeError: Failed to fetch"],
+		])
+	})
+
+	it("keeps an XHR's loadend listener from throwing on the page", async () => {
+		const errors: unknown[] = []
+		const onError = (event: ErrorEvent): void => {
+			event.preventDefault()
+			errors.push(event.error)
+		}
+		window.addEventListener("error", onError)
+		try {
+			uninstall = installNetworkCapture(() => {}, brokenFilter)
+			const xhr = new XMLHttpRequest()
+			xhr.open("GET", "/")
+			await request(xhr)
+
+			expect(xhr.readyState).toBe(XMLHttpRequest.DONE)
+			expect(errors).toEqual([])
+		} finally {
+			window.removeEventListener("error", onError)
+		}
 	})
 })

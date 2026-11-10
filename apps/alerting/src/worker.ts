@@ -20,6 +20,7 @@ import {
 	apnsEnv,
 	appUrlsEnv,
 	authEnv,
+	clickhouseEnv,
 	cloudflareOAuthEnv,
 	githubAppSourceEnv,
 	ingestKeyCryptoEnv,
@@ -56,6 +57,8 @@ export type AlertingWorkerEnv = Record<string, unknown>
 const configuredEnv = (stage: MapleStage, region: MapleRegion, domains: MapleDomains) =>
 	merge(
 		tinybirdEnv,
+		// Same upstream as api, so a tick evaluates the warehouse the dashboard reads.
+		clickhouseEnv,
 		authEnv,
 		ingestKeyCryptoEnv,
 		appUrlsEnv(domains),

@@ -26,6 +26,8 @@ import { runtimeTelemetry } from "@maple/infra/worker-telemetry"
 import { Cause, Effect, Layer, ManagedRuntime, Option, Schema, Array as Arr } from "effect"
 import { MCP_ANTICIPATED_ERROR_IDENTIFIERS } from "../mcp/expected-failures"
 import { MUTATING_TOOL_NAMES } from "../mcp/tools/mutating"
+import type { AiSessionPortsLayer } from "../worker/bindings"
+import { provideSessionPorts } from "./session-ports"
 import { linkedUserTenant, toTenantContext, withConnectorActor } from "./turn-actor"
 
 /** Disposing the proposal's runtime or flushing its spans rejected; both are best effort. */
@@ -47,6 +49,8 @@ export type ApplyChatProposalInput = ChatProposalApproval & {
 	readonly env: Record<string, unknown>
 	/** This Worker's `ChatSession` namespace, from the activation; the graph's `ChatSessions` port. */
 	readonly chatSessions?: ChatSessionNamespace
+	/** The data-source call limiters and the audit queue, from the activation: the tool's audit entry is queued. */
+	readonly bindingPorts?: AiSessionPortsLayer
 	/** `"<orgId>:<tabId>"` — the org the change is made in. */
 	readonly sessionId: string
 	/** The tool and arguments the session read out of its own log, never off the wire. */
@@ -142,6 +146,7 @@ export const applyChatProposal = async (input: ApplyChatProposalInput): Promise<
 			Layer.provideMerge(layerMapleDbConnection(input.env)),
 			Layer.provideMerge(envPorts(input.env)),
 			Layer.provideMerge(chatSessionsLayerIfBound(input.chatSessions, input.env)),
+			provideSessionPorts(input.bindingPorts),
 			Layer.provideMerge(telemetry.layer),
 		),
 	)

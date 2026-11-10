@@ -17,10 +17,12 @@
 		"test": "vitest run",
 		"typecheck": "tsrs --noEmit"
 	},
-	"devDependencies": {
+	"dependencies": {
 		"@maple/strings": "workspace:*",
+		"effect": "catalog:effect"
+	},
+	"devDependencies": {
 		"@types/bun": "^1.4.4",
-		"effect": "catalog:effect",
 		"foldkit": "0.170.0",
 		"tailwindcss": "^4.3.5",
 		"typescript": "catalog:tooling",

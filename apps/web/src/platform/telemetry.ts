@@ -42,7 +42,7 @@ const maple = MapleFoldkit.make({
 	slowPhases: { View: 16, Patch: 16 },
 	// LCP, INP and CLS as `browser.web_vital` logs, linked to the pageload span.
 	webVitals: true,
-	// The perf bench builds with VITE_MAPLE_REPLAY=off and VITE_MAPLE_CAPTURE=off.
+	// A developer turns self-recording off with VITE_MAPLE_REPLAY=off (see .env.example).
 	replay: {
 		enabled: import.meta.env.VITE_MAPLE_REPLAY !== "off",
 		// Dashboard charts draw to <canvas>, which replays leave blank without this.
@@ -52,7 +52,6 @@ const maple = MapleFoldkit.make({
 		...(import.meta.env.VITE_MAPLE_COOKIE_DOMAIN
 			? { cookieDomain: import.meta.env.VITE_MAPLE_COOKIE_DOMAIN }
 			: undefined),
-		...(import.meta.env.VITE_MAPLE_CAPTURE === "off" ? { requireConsent: true } : undefined),
 	},
 })
 

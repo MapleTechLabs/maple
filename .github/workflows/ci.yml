@@ -55,39 +55,42 @@ jobs:
                         - '.github/workflows/ci.yml'
                         - '.github/actions/**'
                         - 'scripts/ci/**'
+                      # Patterns are OR-ed, so a negated one ('!apps/ingest/**') would match
+                      # every file outside that path and make this always true. The extglob
+                      # is a positive pattern: every app except ingest (Rust) and ios (Swift,
+                      # ios.yml's). It excludes by prefix, so an app named ingest* or ios*
+                      # needs its own line.
                       ts:
                         - *base
                         - 'alchemy.run.ts'
+                        - 'knip.json'
+                        - 'bunfig.toml'
+                        - 'patches/**'
                         - 'test/**'
-                        - 'apps/**'
+                        - 'apps/!(ingest|ios)/**'
                         - 'examples/**'
                         - 'packages/**'
                         - 'lib/**'
                         - 'scripts/**'
                         - 'skills/**'
-                        - '!apps/ingest/**'
                         # Read by @maple/domain's tests (turbo.json test inputs).
                         - 'apps/ingest/src/ai_session/**'
                         - 'apps/ios/Packages/MapleAPI/Sources/MapleAPI/openapi.json'
-                        # Swift is ios.yml's; ios:openapi:check below still covers the contract.
-                        - '!apps/ios/**'
-                      # The workspace closure of apps/cli + apps/local-ui. Update it when
-                      # their package.json workspace deps change.
+                        # Generated; clickhouse:schema:check verifies it.
+                        - 'apps/ingest/src/clickhouse_insert_mappings.rs'
+                        # Typechecked by `tsrs -p tsconfig.alchemy.json`; ingest's is the one the extglob drops.
+                        - 'apps/*/alchemy.run.ts'
+                        - 'apps/ingest/package.json'
+                      # What apps/cli + apps/local-ui are built from. Their workspace closure
+                      # is 21 of packages/ and 6 of lib/, so both are listed whole, as in `workers`.
                       cli:
                         - *base
                         - 'apps/cli/**'
-                        - 'packages/local-server/**'
                         - 'apps/local-ui/**'
-                        # local-ui renders apps/web's source modules and the shared kit.
+                        # local-ui renders apps/web's source modules.
                         - 'apps/web/src/**'
-                        - 'packages/views/**'
-                        - 'packages/effect-sdk/**'
-                        - 'packages/domain/**'
-                        - 'packages/query-engine/**'
-                        - 'packages/infra/**'
-                        - 'packages/ui/**'
-                        - 'packages/browser/**'
-                        - 'packages/browser-session/**'
+                        - 'packages/**'
+                        - 'lib/**'
                         - 'scripts/build-local-binary.sh'
                         - 'scripts/gen-ui-embed.ts'
                       # The archive probes test the CLI's own on-disk format, which only
@@ -183,21 +186,8 @@ jobs:
             # shellcheck is preinstalled; a runner of its own would be ~90% setup.
             - name: shellcheck
               if: ${{ steps.filter.outputs.shell == 'true' }}
-              run: >-
-                  shellcheck scripts/install.sh scripts/uninstall.sh scripts/build-local-binary.sh
-                  apps/cli/test/native-checkpoint-smoke.sh
-                  apps/cli/test/native-checkpoint-refresh-probe.sh
-                  apps/cli/test/native-local-store-migration.sh
-                  apps/cli/test/native-archive-smoke.sh
-                  apps/cli/test/native-archive-crash-recovery-probe.sh
-                  apps/cli/test/native-archive-adversarial-probe.sh
-                  apps/cli/test/native-archive-gc-probe.sh
-                  apps/cli/test/native-archive-merge-probe.sh
-                  apps/cli/test/native-retention-probe.sh
-                  apps/cli/test/native-remote-auth-smoke.sh
-                  apps/cli/docker/entrypoint.sh
-                  apps/cli/docker/build-image.sh
-                  apps/cli/docker/image-smoke.sh
+              # The same globs as the `shell` filter, so a new script is linted without a list edit.
+              run: shellcheck scripts/*.sh apps/cli/test/*.sh apps/cli/docker/*.sh
 
             # The installers claim POSIX /bin/sh; check them against it.
             - name: sh -n

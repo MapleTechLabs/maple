@@ -132,7 +132,7 @@ Effect.runPromise(program.pipe(Effect.provide(telemetry.layer)))
 await telemetry.flush()
 ```
 
-It takes `serviceName`, `region`, `endpoint`, `ingestKey`, `serviceVersion`, `serviceNamespace`, `environment`, `attributes`, `excludeLogSpans`, `replay`, `emitSessionMeta` and `privacy` as `Maple.layer` does, the span filters (`dropSpanNames`, `dropSpanSubtrees`, `dropSpan`, `anticipatedErrorTags`, `anticipatedErrorIdentifiers`, `isAnticipatedError`), and these options of its own:
+It takes `serviceName`, `region`, `endpoint`, `ingestKey`, `serviceVersion`, `serviceNamespace`, `environment`, `attributes`, `excludeLogSpans`, `replay`, `emitSessionMeta` and `privacy` as `Maple.layer` does, the span filters (`dropSpanNames`, `dropSpanSubtrees`, `dropSpan`, `anticipatedErrorIdentifiers`, `isAnticipatedError`, and the deprecated `anticipatedErrorTags`, which `anticipatedErrorIdentifiers` replaces with the same values), and these options of its own:
 
 | Option                | Default       | Description                                                                                                 |
 | --------------------- | ------------- | ----------------------------------------------------------------------------------------------------------- |

@@ -24,8 +24,6 @@ import * as Output from "@yielded/agent/output"
 import { Schema } from "effect"
 import type { Toolkit } from "effect/ai"
 import { chatModeFromSessionId, type ChatMode } from "@maple/domain/chat-session"
-// The specific file, not the `./loop` barrel: the barrel re-exports `turn.ts`, which imports this
-// module back. `budgets.ts` depends on nothing but `effect`.
 import {
 	type AgentBudget,
 	CHAT_BUDGET,
@@ -54,7 +52,7 @@ export interface AgentDefinition {
 	readonly permission: PermissionRuleset
 	/**
 	 * The narrower ruleset the agent's *unattended* pass runs under, when it has one of its own.
-	 * Without it an autonomous turn runs read-only; see `rulesetForTurn`.
+	 * Without it an autonomous turn runs read-only; see `profileForTurn`.
 	 */
 	readonly autonomousPermission?: PermissionRuleset
 	/**

@@ -322,7 +322,6 @@ const GithubApiPullRequestFileSchema = Schema.Struct({
 	deletions: Schema.Number,
 	patch: Schema.optionalKey(Schema.String),
 })
-export type GithubApiPullRequestFile = Schema.Schema.Type<typeof GithubApiPullRequestFileSchema>
 const GithubApiPullRequestFileList = Schema.Array(GithubApiPullRequestFileSchema)
 
 const GithubApiPullRequestCommitList = Schema.Array(
@@ -479,12 +478,6 @@ const GithubReviewThreadsResponse = Schema.Struct({
 	errors: GithubGraphqlErrors,
 })
 const GithubMutationResponse = Schema.Struct({ errors: GithubGraphqlErrors })
-export type GithubReviewThread = NonNullable<
-	NonNullable<
-		NonNullable<Schema.Schema.Type<typeof GithubReviewThreadsResponse>["data"]>["repository"]
-	>["pullRequest"]
->["reviewThreads"]["nodes"][number]
-
 export type GithubApiDiscussionComment = Schema.Schema.Type<typeof GithubApiDiscussionCommentList>[number]
 
 const GithubApiCheckRunSchema = Schema.Struct({

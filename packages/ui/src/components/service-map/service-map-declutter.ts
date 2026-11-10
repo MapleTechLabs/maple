@@ -36,12 +36,6 @@ export interface DeclutterState {
 	collapsedNamespaces: readonly string[]
 }
 
-export const DECLUTTER_OFF: DeclutterState = {
-	minTrafficPct: 0,
-	focus: null,
-	collapsedNamespaces: [],
-}
-
 export interface DeclutterResult {
 	nodes: Node<ServiceNodeData>[]
 	edges: Edge<ServiceEdgeData>[]

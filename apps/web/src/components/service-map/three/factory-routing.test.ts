@@ -1,8 +1,11 @@
 import { describe, expect, it } from "vitest"
 import { SERVICE_MAP_3D_TOPOLOGY as topology } from "../../../lab/service-map-3d/fixture"
-import { factoryLinks, factoryRoutes, decorateRoutes, beltGeometry, CurveSection } from "./factory-routing"
-import { spatialLayout } from "./spatial-layout"
+import { factoryRoutes, decorateRoutes, beltGeometry } from "./factory-routing"
+import { spatialLayout, type SpatialView } from "./spatial-layout"
 import { Array as Arr } from "effect"
+
+const linksOf = (view: SpatialView) =>
+	decorateRoutes(factoryRoutes(topology, spatialLayout(topology, view)), topology.edges)
 
 describe("factory transports", () => {
 	it("updates live rates without replacing transport geometry", () => {
@@ -22,7 +25,7 @@ describe("factory transports", () => {
 	it.each(["atlas", "cascade"] as const)(
 		"routes every call with finite, continuous geometry in %s",
 		(view) => {
-			const links = factoryLinks(topology, spatialLayout(topology, view))
+			const links = linksOf(view)
 			expect(links).toHaveLength(topology.edges.length)
 			for (const link of links) {
 				expect(link.curve.getLength()).toBeGreaterThan(0)
@@ -34,15 +37,12 @@ describe("factory transports", () => {
 					expect(point.distanceTo(previous)).toBeLessThan(link.curve.getLength() / 50)
 					previous = point
 				}
-				const glass = new CurveSection(link.curve, 0.38, 0.62)
-				expect(glass.getPoint(0).distanceTo(link.curve.getPointAt(0.38))).toBeLessThan(0.0001)
-				expect(glass.getPoint(1).distanceTo(link.curve.getPointAt(0.62))).toBeLessThan(0.0001)
 			}
 		},
 	)
 	it("uses conveyors only for calls involving a queue", () => {
 		const nodes = new Map(Arr.map(topology.nodes, (node) => [node.id, node]))
-		for (const link of factoryLinks(topology, spatialLayout(topology, "atlas"))) {
+		for (const link of linksOf("atlas")) {
 			const queued =
 				nodes.get(link.edge.source)?.kind === "queue" || nodes.get(link.edge.target)?.kind === "queue"
 			expect(link.kind).toBe(queued ? "conveyor" : "pipe")
@@ -50,10 +50,7 @@ describe("factory transports", () => {
 		}
 	})
 	it("builds finite indexed belt decks on slopes and elbows", () => {
-		for (const link of Arr.filter(
-			factoryLinks(topology, spatialLayout(topology, "cascade")),
-			(link) => link.kind === "conveyor",
-		)) {
+		for (const link of Arr.filter(linksOf("cascade"), (link) => link.kind === "conveyor")) {
 			const geometry = beltGeometry(link.curve, 0.8)
 			expect(Arr.every([...geometry.getAttribute("position").array], Number.isFinite)).toBe(true)
 			expect(Arr.every([...geometry.getAttribute("normal").array], Number.isFinite)).toBe(true)

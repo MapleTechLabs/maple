@@ -40,40 +40,26 @@ export interface ToolUiPayload {
 	readonly data: Schema.Json
 }
 
-const LegacyUiBlock = Schema.fromJsonString(
-	Schema.Struct({ [UI_MARKER]: Schema.Literal(true), tool: Schema.String, data: Schema.Json }),
-)
-const decodeLegacyUiBlock = Schema.decodeUnknownOption(LegacyUiBlock)
-
-const isLegacyUiBlock = (text: string): boolean => Str.startsWith(`{"${UI_MARKER}":true`)(text)
-
 /**
  * The model's text and the UI's payload, split. The payload is never shown to a model: it doubled
  * every result it rode along on, and half of all tool results carried one.
  */
-export const splitToolResult = (
+const splitToolResult = (
 	name: string,
 	result: {
 		readonly content: ReadonlyArray<{ readonly text: string }>
 		readonly structuredContent?: Schema.Json
 	},
-): { readonly text: string; readonly ui: ToolUiPayload | undefined } => {
-	const legacy = result.content.find((block) => isLegacyUiBlock(block.text))
-	const ui: ToolUiPayload | undefined =
-		result.structuredContent !== undefined
-			? { [UI_MARKER]: true, tool: name, data: result.structuredContent }
-			: legacy === undefined
-				? undefined
-				: Option.getOrUndefined(decodeLegacyUiBlock(legacy.text))
-	const text = Arr.join(
-		Arr.map(
-			Arr.filter(result.content, (block) => !isLegacyUiBlock(block.text)),
-			(block) => block.text,
-		),
+): { readonly text: string; readonly ui: ToolUiPayload | undefined } => ({
+	text: Arr.join(
+		Arr.map(result.content, (block) => block.text),
 		"\n\n",
-	)
-	return { text, ui }
-}
+	),
+	ui:
+		result.structuredContent === undefined
+			? undefined
+			: { [UI_MARKER]: true, tool: name, data: result.structuredContent },
+})
 
 /**
  * Capped, because "one line" is a convention the error's author never agreed to: a ClickHouse syntax

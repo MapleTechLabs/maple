@@ -6,6 +6,7 @@ import { EventBaseLive } from "@maple/backend/platform/DatabasePgLive"
 import type { QueueBatch } from "@maple/backend/platform/queue-batch"
 import { CancellationReviewJob } from "@maple/backend/services/cancellation-review/CancellationReviewQueue"
 import { CancellationReviewService } from "@maple/backend/services/cancellation-review/CancellationReviewService"
+import { CANCELLATION_REVIEW_MAX_RETRIES } from "./queue-retry-limits"
 
 /** Not `maple-api`: a review's minute of upstream reads would skew the request service's percentiles. */
 export const cancellationReviewTelemetry = eventTelemetry({ serviceName: "maple-cancellation-reviews" })
@@ -17,12 +18,6 @@ export const cancellationReviewTelemetry = eventTelemetry({ serviceName: "maple-
 export const CancellationReviewLive = CancellationReviewService.layer.pipe(
 	Layer.provide(Layer.mergeAll(EventBaseLive, EdgeCacheServiceLive)),
 )
-
-/**
- * Must match `maxRetries` on the cancellation-reviews consumer
- * (`worker/consumers.ts`). The attempt past it logs the drop and acks.
- */
-const CANCELLATION_REVIEW_MAX_RETRIES = 5
 
 /**
  * 1, 2, 4, 8, 16 minutes: about half an hour for Clerk, Autumn, Postgres or

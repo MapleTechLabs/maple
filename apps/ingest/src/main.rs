@@ -276,6 +276,16 @@ fn uses_forward_path_for(write_mode: WriteMode, destination: ExportDestination) 
     write_mode.uses_forward() && destination != ExportDestination::ClickHouse
 }
 
+/// Whether a request left rows behind: the collector took it, or the native
+/// pipeline had already accepted it before the forward (dual mode).
+fn batch_was_stored(
+    forwarded_ok: bool,
+    write_mode: WriteMode,
+    destination: ExportDestination,
+) -> bool {
+    forwarded_ok || uses_native_pipeline_for(write_mode, destination)
+}
+
 #[derive(Clone)]
 enum KeyStoreBackend {
     // No-DB local backend: every well-formed ingest key resolves to a single
@@ -411,11 +421,6 @@ impl AppConfig {
                 std::env::var("INGEST_BATCH_MAX_WAIT_MS").ok(),
                 100,
             )?),
-            export_concurrency_per_shard: parse_usize(
-                "INGEST_TINYBIRD_CONCURRENCY_PER_SHARD",
-                std::env::var("INGEST_TINYBIRD_CONCURRENCY_PER_SHARD").ok(),
-                1,
-            )?,
             export_max_attempts: parse_u32(
                 "INGEST_EXPORT_MAX_ATTEMPTS",
                 std::env::var("INGEST_EXPORT_MAX_ATTEMPTS").ok(),
@@ -3295,8 +3300,9 @@ async fn main() {
         // Even a clean drain runs this: it marks the owner retired, so a
         // successor claims anything left instead of waiting out the staleness
         // window. With a backlog it also seals and ships the tail, which is the
-        // difference between "replays if this task's storage survives" (it does
-        // not — Fargate ephemeral storage dies with the task) and "replays".
+        // difference between "replays if this task's storage survives" (the
+        // instance store under `/mnt/wal` is wiped when the host is stopped or
+        // replaced) and "replays".
         let shipped = pipeline.flush_wal_to_object_store().await;
         if shipped > 0 {
             info!(
@@ -3868,6 +3874,16 @@ async fn accept_grpc_decoded(
     .await;
 
     match result {
+        // A collector refusal that left nothing stored is neither key use nor billed.
+        Ok(response)
+            if !batch_was_stored(
+                response.status().is_success(),
+                state.config.write_mode,
+                native_destination_for(resolved),
+            ) =>
+        {
+            Ok(())
+        }
         Ok(_) => {
             state.resolver.note_source_use(resolved, claims.kept_claim);
             state
@@ -5664,7 +5680,13 @@ async fn handle_signal_inner(
         let kind = error.error_kind();
         (error, if kind == INGEST_RULES_SCAN_BUDGET.error_kind { kind } else { "forward" })
     })?;
-    if response.status().is_success() {
+    // A collector refusal that left nothing stored is not key use, and 0 bytes to meter.
+    let stored = batch_was_stored(
+        response.status().is_success(),
+        state.config.write_mode,
+        native_destination_for(&resolved_key),
+    );
+    if stored {
         state.resolver.note_source_use(&resolved_key, kept_claim);
         state
             .resolver
@@ -5675,7 +5697,7 @@ async fn handle_signal_inner(
         response,
         item_count,
         resolved_key.org_id.clone(),
-        decoded_bytes,
+        if stored { decoded_bytes } else { 0 },
     ))
 }
 
@@ -11217,6 +11239,26 @@ mod tests {
         ));
     }
 
+    #[test]
+    fn a_refused_relay_still_counts_when_the_native_pipeline_took_the_batch() {
+        let refused = false;
+        assert!(!batch_was_stored(
+            refused,
+            WriteMode::Forward,
+            ExportDestination::Tinybird
+        ));
+        assert!(batch_was_stored(
+            refused,
+            WriteMode::Dual,
+            ExportDestination::Tinybird
+        ));
+        assert!(batch_was_stored(
+            true,
+            WriteMode::Forward,
+            ExportDestination::Tinybird
+        ));
+    }
+
     /// In-memory KeyStore used to exercise the resolver's behavior (caching,
     /// key-type inference, ResolvedIngestKey construction) without a database.
     /// Keyed on the same `(hash, column)` shape the real key store sees.
@@ -11714,7 +11756,6 @@ mod tests {
             batch_max_bytes: 1024 * 1024,
             queue_max_age: Duration::ZERO,
             batch_max_wait: Duration::from_millis(1),
-            export_concurrency_per_shard: 1,
             export_max_attempts: 1,
             clickhouse_export_timeout: Duration::from_secs(5),
             clickhouse_breaker: ClickHouseBreakerConfig::default(),
@@ -16190,11 +16231,34 @@ mod tests {
         .await;
         let body = Bytes::from(test_log_request("refused").encode_to_vec());
 
-        let (response, ..) =
+        let (response, _items, _org_id, metered_bytes) =
             handle_signal_inner(&state, &test_headers(raw_key), body, Signal::Logs)
                 .await
                 .expect("a collector 4xx is relayed, not raised");
         assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+        assert_eq!(metered_bytes, 0, "a refused batch is not billed");
+        assert!(recorded_key_uses(&store).await.is_empty());
+
+        // Over gRPC the refusal is answered OK, and is not key use either.
+        let resolved = state
+            .resolver
+            .resolve_ingest_key(raw_key)
+            .await
+            .expect("resolution should not fail")
+            .expect("the test key resolves");
+        let payload = test_log_request("refused over grpc");
+        let decoded_bytes = payload.encoded_len();
+        accept_grpc_decoded(
+            &state,
+            Signal::Logs,
+            DecodedPayload::Logs(payload),
+            &resolved,
+            KeyAdmission::Ingest,
+            decoded_bytes,
+            &ClaimOutcome::default(),
+        )
+        .await
+        .expect("a collector refusal over gRPC is answered OK");
         assert!(recorded_key_uses(&store).await.is_empty());
 
         drop(std::fs::remove_dir_all(&queue_dir));

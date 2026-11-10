@@ -38,7 +38,7 @@ import {
 	type ChatThreadRequest,
 	type ChatWritePhase,
 } from "../../outbound"
-import type { ChatBlock } from "../../render/blocks"
+import type { ChatBlock, ChatPageBlock } from "../../render/blocks"
 import { API_BASE, API_HOST, BOT_TOKEN_CONFIG } from "./api"
 import { mentionOf } from "./gateway-events"
 import { HAZEL_CONNECTOR_ID } from "./id"
@@ -47,6 +47,7 @@ import {
 	renderHazelLive,
 	renderHazelMessage,
 	type HazelEmbed,
+	type HazelEmbedHtml,
 	type HazelLiveBody,
 	type HazelMessageBody,
 } from "./render"
@@ -138,6 +139,11 @@ const finishedEmbeds = (body: HazelLiveBody): ReadonlyArray<HazelEmbed> => [
 const MessageCreated = Schema.Struct({ data: Schema.Struct({ id: Schema.String }) })
 
 const ThreadCreated = Schema.Struct({ data: Schema.Struct({ id: Schema.String }) })
+
+/** `POST /html-renders` answers with the embed's `html` to post the page in. */
+const HtmlRenderPublished = Schema.Struct({
+	data: Schema.Struct({ renderId: Schema.String, title: Schema.String, height: Schema.Number }),
+})
 
 /** One earlier message, as far as the model's context reads it. */
 const HistoryMessage = Schema.Struct({
@@ -293,15 +299,41 @@ export const hazelOutbound: ChatOutbound<HttpClient.HttpClient | ConnectorCreden
 				threadChannelId: null,
 			})
 
+		/**
+		 * A page block's HTML, stored for the channel it is posted in; Hazel then serves it only to
+		 * that channel's members.
+		 */
+		const publishPage = (channelId: string, page: ChatPageBlock) =>
+			send(
+				"post",
+				"/html-renders",
+				HttpClientRequest.post(`${API_BASE}/html-renders`).pipe(
+					HttpClientRequest.bodyJsonUnsafe({
+						channelId,
+						title: page.title,
+						html: page.html,
+						height: page.height,
+					}),
+				),
+			).pipe(
+				Effect.flatMap((response) => read("post", response, HtmlRenderPublished, "no HTML render")),
+				Effect.map((published): HazelEmbedHtml => published.data),
+			)
+
 		const post = Effect.fn("Hazel.post")(function* (
 			target: ChatTarget,
 			blocks: ReadonlyArray<ChatBlock>,
 		) {
+			const channelId = channelOf(target)
+			const pages = yield* Effect.forEach(
+				Arr.filter(blocks, (block): block is ChatPageBlock => block.kind === "page"),
+				(page) => publishPage(channelId, page),
+			)
 			const response = yield* send(
 				"post",
 				"/messages",
 				HttpClientRequest.post(`${API_BASE}/messages`).pipe(
-					postBody(channelOf(target), renderHazelMessage(blocks)),
+					postBody(channelId, renderHazelMessage(blocks, pages)),
 				),
 			)
 			const created = yield* read("post", response, MessageCreated, "no message id")
