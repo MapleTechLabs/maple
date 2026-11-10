@@ -1,4 +1,5 @@
-// Vercel integration queries: the /infra/vercel project table, per-project charts and AI Gateway usage.
+// Vercel integration queries: the /infra/vercel project table, per-project charts,
+// functions, the event drains and AI Gateway usage.
 
 export {
 	vercelProjectLatencySQL,
@@ -8,6 +9,15 @@ export {
 	vercelRequestTimeseriesSQL,
 	type VercelProjectScope,
 } from "./vercel-infra"
+export { vercelFunctionRoutesSQL, vercelProjectDependenciesSQL, vercelProjectFunctionsSQL } from "./vercel-functions"
+export {
+	vercelAuditLogSQL,
+	vercelSpeedInsightsSQL,
+	vercelWebAnalyticsSummarySQL,
+	vercelWebAnalyticsTopSQL,
+	type VercelSpeedInsightsGroup,
+	type VercelWebAnalyticsDimension,
+} from "./vercel-event-drains"
 export {
 	VERCEL_AI_GATEWAY_SERVICE,
 	vercelAiGatewayByModelSQL,

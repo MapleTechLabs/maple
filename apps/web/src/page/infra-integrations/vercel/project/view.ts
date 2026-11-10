@@ -1,5 +1,4 @@
 import type {
-	VercelDeploymentSummary,
 	VercelInfraProjectDetailResponse,
 	VercelInfraRequestBucket,
 	VercelProjectStatus,
@@ -14,7 +13,7 @@ import {
 } from "@maple/ui/lib/format"
 import { TONE_TEXT } from "@maple/ui/lib/tone"
 import { cn } from "@maple/ui/lib/utils"
-import { Array as Arr, Option, String as Str } from "effect"
+import { Array as Arr, Option } from "effect"
 import { Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { STATUS_CLASS_COLORS } from "@maple/views/lib/cloudflare-constants"
@@ -27,11 +26,7 @@ import {
 	type VercelProjectRow,
 	zeroRequestBucket,
 } from "../../../../components/infra/vercel/list-model"
-import {
-	deploymentStateLabel,
-	deploymentTone,
-	percentOf,
-} from "../../../../components/integrations/vercel-model"
+import { percentOf } from "../../../../components/integrations/vercel-model"
 import * as BarChart from "@maple/views/charts/bar-chart"
 import * as Chart from "@maple/views/charts/chart"
 import { CHART_EMPTY_MESSAGE } from "@maple/views/charts/infra-metric-chart"
@@ -46,9 +41,7 @@ import { chartLoading } from "@maple/views/ui/chart-state"
 import { badge } from "@maple/views/ui/display"
 import { errorState } from "@maple/views/ui/error-state"
 import { icon } from "@maple/views/ui/icon"
-import { skeleton } from "@maple/views/ui/skeleton"
 import { hstack } from "@maple/views/ui/stack"
-import { statusDot } from "@maple/views/ui/status-dot"
 import { textLink } from "@maple/views/ui/text-link"
 import { typography, typographyClass } from "@maple/views/ui/typography"
 import type { PageViewInputs } from "../../../contract"
@@ -58,13 +51,15 @@ import { sectionHeading } from "../../../kit/section-heading"
 import { seriesLegend } from "../../../kit/series-legend"
 import { statRail, statRailItem, statRailLoading } from "../../../kit/stat-rail"
 import { heroChip } from "../../../infra/kit/hero-chip"
-import { columnHead, dataTable, dataTableEmpty, skeletonRows } from "../../../infra/kit/data-table"
+import { columnHead, dataTable, dataTableEmpty } from "../../../infra/kit/data-table"
 import { pageHero } from "../../../infra/kit/page-parts"
-import { pickTimeSearch, type TimeSearch } from "../../../infra/kit/view-tabs"
+import { pickTimeSearch, type TimeSearch, viewTabStrip } from "../../../infra/kit/view-tabs"
 import { CHART_HEIGHT, chartCard, chartCardMessage } from "../../kit/chart-card"
 import { pageTime } from "../../kit/page-time"
 import { DEFAULT_PRESET, seriesInput } from "../data"
 import {
+	aiGatewayEmpty,
+	aiGatewayLoading,
 	aiGatewayPanel,
 	barChartSlot,
 	type BarChartSlot,
@@ -73,8 +68,21 @@ import {
 	deploymentInline,
 	failureOf,
 	fillAiSeries,
+	LEAD_COLUMN,
+	ROW_CLASS,
 } from "../view-parts"
+import type { VercelProjectTab } from "../../../../route/search"
+import {
+	buildsSection,
+	dependenciesSection,
+	drainNotice,
+	functionsSection,
+	readSection,
+	speedInsightsSection,
+	webAnalyticsSection,
+} from "../sections"
 import { Message, type Model } from "./model"
+import { tabOf } from "./update"
 
 // `VercelProjectPage`.
 
@@ -82,7 +90,6 @@ type H = HtmlBuilder<Message>
 
 const THEME_TOKENS = [...INFRA_CHART_TOKENS, "--chart-2", ...BarChart.BAR_CHART_TOKENS]
 const STATUS_ORDER = ["2xx", "3xx", "4xx", "5xx", "unknown"]
-const ROW_CLASS = "flex items-center gap-4 border-b border-border/40 px-4 py-3 last:border-0"
 const NUM = typographyClass({ size: "xs", tone: "soft", mono: true, numeric: true, className: "text-right" })
 
 const rate = (part: number, whole: number) => (percentOf(part, whole) ?? 0) / 100
@@ -259,7 +266,11 @@ const charts = (
 	if (theme === null || model.chartRuntime._tag === "Loading") return chartsLoading(h)
 	const xDomain = Arr.map(buckets, (bucket) => bucket.bucket)
 	const single = (pick: (bucket: VercelInfraRequestBucket) => number): ReadonlyArray<LongRow> =>
-		Arr.map(buckets, (bucket) => ({ bucket: bucket.bucket, attributeValue: "value", value: pick(bucket) }))
+		Arr.map(buckets, (bucket) => ({
+			bucket: bucket.bucket,
+			attributeValue: "value",
+			value: pick(bucket),
+		}))
 	return h.div(
 		[h.Class(CHART_GRID)],
 		[
@@ -369,7 +380,7 @@ const topErrors = (h: H, errors: VercelInfraProjectDetailResponse["errors"], clo
 				h,
 				{ ariaLabel: "Top errors" },
 				[
-					columnHead(h, { label: "Message", width: "w-0 flex-1 min-w-[200px]" }),
+					columnHead(h, { label: "Message", width: LEAD_COLUMN }),
 					columnHead(h, { label: "Count", width: "w-[64px]", align: "right" }),
 					columnHead(h, { label: "Last seen", width: "w-[72px]", align: "right" }),
 				],
@@ -381,11 +392,22 @@ const topErrors = (h: H, errors: VercelInfraProjectDetailResponse["errors"], clo
 								[
 									hstack(
 										h,
-										{ align: "baseline", gap: "2", grow: true, className: "w-0 min-w-[200px]" },
+										{
+											align: "baseline",
+											gap: "2",
+											grow: true,
+											className: "w-0 min-w-[200px]",
+										},
 										[
 											...(error.source === ""
 												? []
-												: [badge(h, { variant: "muted", size: "xs", mono: true }, [error.source])]),
+												: [
+														badge(
+															h,
+															{ variant: "muted", size: "xs", mono: true },
+															[error.source],
+														),
+													]),
 											typography(
 												h,
 												{
@@ -422,188 +444,48 @@ const topErrors = (h: H, errors: VercelInfraProjectDetailResponse["errors"], clo
 		],
 	)
 
-const deploymentRow = (h: H, deployment: VercelDeploymentSummary, clock: Clock): Html =>
-	h.div(
-		[h.Key(deployment.id), h.Class(ROW_CLASS)],
-		[
-			hstack(
-				h,
-				{ as: "span", gap: "1.5", className: "w-[104px] text-xs" },
-				[
-					statusDot(h, { tone: deploymentTone(deployment.state), size: "lg" }),
-					deploymentStateLabel(deployment.state),
-				],
-			),
-			h.span(
-				[h.Class("hidden w-[88px] text-2xs text-muted-foreground md:block")],
-				[deployment.target ?? "preview"],
-			),
-			hstack(
-				h,
-				{ as: "span", align: "baseline", gap: "2", grow: true, className: "w-0 min-w-[260px]" },
-				[
-					...(deployment.branch === null || deployment.branch === ""
-						? []
-						: [
-								h.span(
-									[
-										h.Class(
-											"max-w-[40%] shrink-0 truncate font-mono text-2xs text-foreground-soft",
-										),
-									],
-									[deployment.branch],
-								),
-							]),
-					typography(
-						h,
-						{
-							size: "xs",
-							tone: "foreground",
-							truncate: true,
-							attributes:
-								deployment.commitMessage === null ? [] : [h.Title(deployment.commitMessage)],
-						},
-						[
-							deployment.commitMessage === null
-								? deployment.url
-								: Str.split(deployment.commitMessage, "\n")[0],
-						],
-					),
-					...(deployment.commitSha === null || deployment.commitSha === ""
-						? []
-						: [
-								typography(
-									h,
-									{ size: "3xs", tone: "muted", mono: true, className: "shrink-0" },
-									[Str.slice(0, 7)(deployment.commitSha)],
-								),
-							]),
-				],
-			),
-			h.span(
-				[h.Class("hidden w-[120px] truncate text-2xs text-muted-foreground lg:block")],
-				[deployment.creator ?? EMPTY_VALUE],
-			),
-			h.span(
-				[h.Class("w-[72px] text-right")],
-				[
-					relativeTime(h, {
-						value: deployment.createdAt,
-						...clock,
-						variant: "short",
-						mono: true,
-						className: typographyClass({ size: "2xs", tone: "muted" }),
-					}),
-				],
-			),
-			hstack(
-				h,
-				{ as: "span", justify: "end", className: "w-[16px]" },
-				deployment.inspectorUrl === null
-					? []
-					: [
-							textLink(
-								h,
-								{
-									href: deployment.inspectorUrl,
-									tone: "muted",
-									attributes: [
-										h.Target("_blank"),
-										h.Rel("noopener noreferrer"),
-										h.AriaLabel("Open in Vercel"),
-										h.Title("Open in Vercel"),
-									],
-								},
-								[icon(h, "ExternalLinkIcon", { size: 12 })],
-							),
-						],
-			),
-		],
-	)
+const aiGatewaySection = (h: H, model: Model, time: TimeSearch, bar: BarChartSlot, enabled: boolean): Html =>
+	readSection(h, {
+		title: "AI Gateway",
+		hint: "requests this project made through Vercel AI Gateway",
+		read: { data: model.aiGateway.data, onRetry: Message.ClickedRetryAiGateway() },
+		off: enabled
+			? null
+			: {
+					lead: "AI Gateway is off.",
+					text: "Turn on the AI Gateway drain to see this project's model spend, tokens and errors.",
+				},
+		failure: "Couldn't load AI Gateway usage",
+		loading: () => [aiGatewayLoading(h)],
+		body: (data) =>
+			data.summary.requests === 0
+				? [aiGatewayEmpty(h, true)]
+				: [
+						aiGatewayPanel(h, {
+							data,
+							timeseries: fillAiSeries(data.timeseries, model.window),
+							projectNames: new Map(),
+							time,
+							bar,
+						}),
+					],
+	})
 
-const deployments = (h: H, model: Model, clock: Clock): Html => {
-	const rows = dataOf(model.deployments.data)
-	const failure = failureOf(model.deployments.data)
-	return h.section(
-		[h.Class("space-y-3")],
-		[
-			sectionHeading(h, {
-				title: "Deployments",
-				hint: "newest first, from Vercel's API",
-				count: rows === null ? undefined : String(rows.length),
-			}),
-			dataTable(
-				h,
-				{ ariaLabel: "Deployments" },
-				[
-					columnHead(h, { label: "State", width: "w-[104px]" }),
-					columnHead(h, { label: "Target", width: "w-[88px]", hidden: "hidden md:flex" }),
-					columnHead(h, { label: "Commit", width: "w-0 flex-1 min-w-[260px]" }),
-					columnHead(h, { label: "By", width: "w-[120px]", hidden: "hidden lg:flex" }),
-					columnHead(h, { label: "Created", width: "w-[72px]", align: "right" }),
-					columnHead(h, { label: "", width: "w-[16px]" }),
-				],
-				failure !== null
-					? [
-							errorState(h, {
-								failure,
-								title: "Couldn't load deployments",
-								onRetry: Message.ClickedRetryDeployments(),
-								variant: "inline",
-								className: "px-4",
-							}),
-						]
-					: rows === null
-						? skeletonRows(h, 3, () => [skeleton(h, "h-3 w-full")])
-						: rows.length === 0
-							? [
-									dataTableEmpty(h, [
-										"No deployments recorded yet. Maple reads them from Vercel every few minutes.",
-									]),
-								]
-							: Arr.map(rows, (deployment) => deploymentRow(h, deployment, clock)),
-			),
-		],
-	)
-}
-
-const AI_HINT = "requests this project made through Vercel AI Gateway"
-
-const aiGatewaySection = (h: H, model: Model, time: TimeSearch, bar: BarChartSlot): ReadonlyArray<Html> => {
-	const failure = failureOf(model.aiGateway.data)
-	const data = dataOf(model.aiGateway.data)
-	const heading = sectionHeading(h, { title: "AI Gateway", hint: AI_HINT })
-	if (failure !== null)
-		return [
-			h.section(
-				[h.Class("space-y-3")],
-				[
-					heading,
-					errorState(h, {
-						failure,
-						title: "Couldn't load AI Gateway usage",
-						onRetry: Message.ClickedRetryAiGateway(),
-					}),
-				],
-			),
-		]
-	if (data === null || data.summary.requests === 0) return []
-	return [
-		h.section(
-			[h.Class("space-y-3")],
-			[
-				heading,
-				aiGatewayPanel(h, {
-					data,
-					timeseries: fillAiSeries(data.timeseries, model.window),
-					projectNames: new Map(),
-					time,
-					bar,
+const functionsStats = (h: H, row: VercelProjectRow | null): Html =>
+	row === null
+		? statRailLoading(h, 2, 2)
+		: statRail(h, { columns: 2 }, [
+				statRailItem(h, { eyebrow: "Invocations", value: formatNumber(row.invocations) }),
+				statRailItem(h, {
+					eyebrow: "Cold starts",
+					value:
+						row.coldStartPercent === null
+							? EMPTY_VALUE
+							: formatPercent(row.coldStartPercent / 100),
+					tone: errorRateLevel(row.coldStartPercent === null ? 0 : row.coldStartPercent / 100),
+					subline: "of invocations started a new instance",
 				}),
-			],
-		),
-	]
-}
+			])
 
 const requestsSection = (h: H, model: Model, clock: Clock): ReadonlyArray<Html> => {
 	const failure = failureOf(model.projects.data) ?? failureOf(model.buckets.data)
@@ -701,27 +583,117 @@ const header = (h: H, model: Model, time: TimeSearch, clock: Clock): Html => {
 	})
 }
 
-/** `VercelProjectPage` below the top bar. */
+const TABS: ReadonlyArray<Readonly<{ id: VercelProjectTab; title: string }>> = [
+	{ id: "traffic", title: "Traffic" },
+	{ id: "functions", title: "Functions" },
+	{ id: "dependencies", title: "Dependencies" },
+	{ id: "builds", title: "Builds" },
+	{ id: "aiGateway", title: "AI Gateway" },
+	{ id: "speedInsights", title: "Speed Insights" },
+	{ id: "webAnalytics", title: "Web Analytics" },
+]
+
+const tabStrip = (h: H, model: Model, time: TimeSearch): Html =>
+	viewTabStrip(
+		h,
+		"Project views",
+		Arr.map(TABS, (tab) => ({
+			id: tab.id,
+			title: tab.title,
+			href: hrefOf(
+				AppRoute.InfraVercelProject({
+					projectId: model.projectId,
+					search: tab.id === "traffic" ? time : { ...time, tab: tab.id },
+				}),
+			),
+		})),
+		tabOf(model),
+	)
+
+/** The project's own service on the service map: ingest names Vercel's runtime spans after the project. */
+const serviceMapHref = (model: Model, time: TimeSearch): string =>
+	hrefOf(AppRoute.ServiceMap({ search: { ...time, focusService: titleOf(model) } }))
+
+const tabBody = (h: H, model: Model, time: TimeSearch, clock: Clock): ReadonlyArray<Html> => {
+	const status = dataOf(model.status.data)
+	const tracesEnabled = status?.tracesEnabled ?? true
+	switch (tabOf(model)) {
+		case "traffic":
+			return [
+				...(status === null || status.logsEnabled
+					? []
+					: [
+							drainNotice(h, {
+								lead: "Logs are off.",
+								text: "Requests, status codes, cache hits and error logs come from the logs drain.",
+								actionLabel: "Forward logs",
+							}),
+						]),
+				...requestsSection(h, model, clock),
+				...detailSection(h, model, clock),
+			]
+		case "functions":
+			return [
+				...(tracesEnabled ? [functionsStats(h, projectRowOf(model))] : []),
+				functionsSection(h, {
+					read: { data: model.functions.data, onRetry: Message.ClickedRetryFunctions() },
+					tracesEnabled,
+				}),
+			]
+		case "dependencies":
+			return [
+				dependenciesSection(h, {
+					read: { data: model.dependencies.data, onRetry: Message.ClickedRetryDependencies() },
+					tracesEnabled,
+					serviceMapHref: serviceMapHref(model, time),
+				}),
+			]
+		case "builds":
+			return [
+				buildsSection(h, {
+					read: { data: model.deployments.data, onRetry: Message.ClickedRetryDeployments() },
+					clock,
+					projectName: null,
+				}),
+			]
+		case "aiGateway":
+			return [
+				aiGatewaySection(
+					h,
+					model,
+					time,
+					barChartSlot(
+						h,
+						model,
+						(chartId, message) => Message.GotChartMessage({ chartId, message }),
+						clock.timeZone,
+					),
+					status?.aiGatewayEnabled ?? true,
+				),
+			]
+		case "speedInsights":
+			return [
+				speedInsightsSection(h, {
+					read: { data: model.speedInsights.data, onRetry: Message.ClickedRetrySpeedInsights() },
+					enabled: status?.speedInsightsEnabled ?? true,
+				}),
+			]
+		case "webAnalytics":
+			return [
+				webAnalyticsSection(h, {
+					read: { data: model.webAnalytics.data, onRetry: Message.ClickedRetryWebAnalytics() },
+					enabled: status?.webAnalyticsEnabled ?? true,
+					compact: false,
+				}),
+			]
+	}
+}
+
+/** `VercelProjectPage` below the top bar: the header, the tabs, then the active tab. */
 export const projectPage = (h: H, model: Model, timeZone: string): ReadonlyArray<Html> => {
 	const time = pickTimeSearch(model.search)
 	const clock = { nowMs: model.nowMs, timeZone }
-	return [
-		header(h, model, time, clock),
-		...requestsSection(h, model, clock),
-		...detailSection(h, model, clock),
-		deployments(h, model, clock),
-		...aiGatewaySection(
-			h,
-			model,
-			time,
-			barChartSlot(
-				h,
-				model,
-				(chartId, message) => Message.GotChartMessage({ chartId, message }),
-				timeZone,
-			),
-		),
-	]
+	return [header(h, model, time, clock), tabStrip(h, model, time), ...tabBody(h, model, time, clock)]
 }
 
 export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, inputs, h) =>

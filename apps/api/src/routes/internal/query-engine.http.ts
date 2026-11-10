@@ -22,9 +22,14 @@ import {
 	PlanetScaleInfraTimeseriesResponse,
 	RailwayInfraRowsResponse,
 	VercelAiGatewayResponse,
+	VercelAuditLogResponse,
+	VercelInfraDependenciesResponse,
+	VercelInfraFunctionsResponse,
 	VercelInfraProjectDetailResponse,
 	VercelInfraProjectsResponse,
 	VercelInfraRequestTimeseriesResponse,
+	VercelSpeedInsightsResponse,
+	VercelWebAnalyticsResponse,
 	SupabaseInfraRowsResponse,
 	SupabaseApiPath,
 	SupabaseApiTopPathsResponse,
@@ -903,15 +908,41 @@ export const HttpQueryEngineLive = HttpApiBuilder.group(MapleInternalApi, "query
 					Effect.gen(function* () {
 						const tenant = yield* CurrentTenant.Context
 						yield* warehouse.warmRoute(tenant)
-						const [requestRows, latencyRows] = yield* Effect.all(
+						const [requestRows, latencyRows, functionRows] = yield* Effect.all(
 							[
 								runQuery(Queries.vercelInfraProjectRequests, tenant, payload),
 								runQuery(Queries.vercelInfraProjectLatency, tenant, payload),
+								runQuery(Queries.vercelInfraProjectFunctions, tenant, payload),
 							],
-							{ concurrency: 2 },
+							{ concurrency: 3 },
 						)
 						const latencyByProject = new Map(Arr.map(latencyRows, (row) => [row.projectId, row]))
+						const functionsByProject = new Map(Arr.map(functionRows, (row) => [row.projectId, row]))
+						const functionUsage = (projectId: string) => ({
+							invocations: functionsByProject.get(projectId)?.invocations ?? 0,
+							coldStarts: functionsByProject.get(projectId)?.coldStarts ?? 0,
+						})
 						const withLogs = new Set(Arr.map(requestRows, (row) => row.projectId))
+						const withLatency = new Set(Arr.map(latencyRows, (row) => row.projectId))
+						// Projects that only send traces: the logs drain is off, or not delivering.
+						const tracesOnly = (row: {
+							projectId: string
+							serviceName: string
+							lastSeen: DateTime.Utc
+						}) => ({
+							projectId: row.projectId,
+							projectName: "",
+							// The project's own service, which ingest gives its invocations; the edge's otherwise.
+							serviceName: functionsByProject.get(row.projectId)?.serviceName || row.serviceName,
+							requests: 0,
+							requests4xx: 0,
+							requests5xx: 0,
+							cacheHits: 0,
+							cacheLookups: 0,
+							errorLogs: 0,
+							lastSeen: DateTime.formatIso(row.lastSeen),
+							...functionUsage(row.projectId),
+						})
 						return new VercelInfraProjectsResponse({
 							projects: [
 								...Arr.map(requestRows, (row) => {
@@ -921,25 +952,23 @@ export const HttpQueryEngineLive = HttpApiBuilder.group(MapleInternalApi, "query
 										lastSeen: DateTime.formatIso(row.lastSeen),
 										p50DurationMs: latency?.p50DurationMs ?? null,
 										p95DurationMs: latency?.p95DurationMs ?? null,
+										...functionUsage(row.projectId),
 									}
 								}),
-								// Projects that only send traces: the logs drain is off, or not delivering.
 								...Arr.map(
 									Arr.filter(latencyRows, (row) => !withLogs.has(row.projectId)),
 									(row) => ({
-										projectId: row.projectId,
-										projectName: "",
-										serviceName: row.serviceName,
-										requests: 0,
-										requests4xx: 0,
-										requests5xx: 0,
-										cacheHits: 0,
-										cacheLookups: 0,
-										errorLogs: 0,
-										lastSeen: DateTime.formatIso(row.lastSeen),
+										...tracesOnly(row),
 										p50DurationMs: row.p50DurationMs,
 										p95DurationMs: row.p95DurationMs,
 									}),
+								),
+								...Arr.map(
+									Arr.filter(
+										functionRows,
+										(row) => !withLogs.has(row.projectId) && !withLatency.has(row.projectId),
+									),
+									(row) => ({ ...tracesOnly(row), p50DurationMs: null, p95DurationMs: null }),
 								),
 							],
 						})
@@ -998,6 +1027,65 @@ export const HttpQueryEngineLive = HttpApiBuilder.group(MapleInternalApi, "query
 							p95DurationMs: null,
 						}
 						return new VercelAiGatewayResponse({ summary, models, projects, timeseries })
+					}),
+				)
+				.handle("vercelInfraFunctions", ({ payload }) =>
+					Effect.gen(function* () {
+						const tenant = yield* CurrentTenant.Context
+						const functions = yield* runQuery(Queries.vercelInfraFunctionRoutes, tenant, payload)
+						return new VercelInfraFunctionsResponse({ functions })
+					}),
+				)
+				.handle("vercelInfraDependencies", ({ payload }) =>
+					Effect.gen(function* () {
+						const tenant = yield* CurrentTenant.Context
+						const dependencies = yield* runQuery(Queries.vercelInfraDependencies, tenant, payload)
+						return new VercelInfraDependenciesResponse({ dependencies })
+					}),
+				)
+				.handle("vercelSpeedInsights", ({ payload }) =>
+					Effect.gen(function* () {
+						const tenant = yield* CurrentTenant.Context
+						yield* warehouse.warmRoute(tenant)
+						// Route and device breakdowns only for one project: across projects they mix sites.
+						const scoped = payload.projectId !== undefined
+						const [metrics, routes, devices] = yield* Effect.all(
+							[
+								runQuery(Queries.vercelSpeedInsightsMetrics, tenant, payload),
+								scoped ? runQuery(Queries.vercelSpeedInsightsRoutes, tenant, payload) : Effect.succeed([]),
+								scoped ? runQuery(Queries.vercelSpeedInsightsDevices, tenant, payload) : Effect.succeed([]),
+							],
+							{ concurrency: 3 },
+						)
+						return new VercelSpeedInsightsResponse({ metrics, routes, devices })
+					}),
+				)
+				.handle("vercelWebAnalytics", ({ payload }) =>
+					Effect.gen(function* () {
+						const tenant = yield* CurrentTenant.Context
+						yield* warehouse.warmRoute(tenant)
+						const [summaryRows, pages, referrers, countries, events] = yield* Effect.all(
+							[
+								runQuery(Queries.vercelWebAnalyticsSummary, tenant, payload),
+								runQuery(Queries.vercelWebAnalyticsPages, tenant, payload),
+								runQuery(Queries.vercelWebAnalyticsReferrers, tenant, payload),
+								runQuery(Queries.vercelWebAnalyticsCountries, tenant, payload),
+								runQuery(Queries.vercelWebAnalyticsEvents, tenant, payload),
+							],
+							{ concurrency: 5 },
+						)
+						// An aggregate without GROUP BY always returns its one row.
+						const summary = summaryRows[0] ?? { pageViews: 0, uniqueDevices: 0, customEvents: 0 }
+						return new VercelWebAnalyticsResponse({ summary, pages, referrers, countries, events })
+					}),
+				)
+				.handle("vercelAuditLog", ({ payload }) =>
+					Effect.gen(function* () {
+						const tenant = yield* CurrentTenant.Context
+						const rows = yield* runQuery(Queries.vercelAuditLog, tenant, payload)
+						return new VercelAuditLogResponse({
+							events: Arr.map(rows, (row) => ({ ...row, timestamp: DateTime.formatIso(row.timestamp) })),
+						})
 					}),
 				)
 				.handle("gcpInfraPresence", ({ payload }) =>

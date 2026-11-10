@@ -3,13 +3,18 @@ import { Command } from "foldkit"
 import { resolveWindow, TimeWindow } from "../../../../data/time-range"
 import {
 	loadVercelAiGateway,
+	loadVercelDependencies,
 	loadVercelDeployments,
+	loadVercelFunctions,
 	loadVercelProjectDetail,
 	loadVercelProjects,
 	loadVercelRequestSeries,
+	loadVercelSpeedInsights,
 	loadVercelStatus,
+	loadVercelWebAnalytics,
 	ProjectInput,
 	SeriesInput,
+	WindowInput,
 } from "../data"
 import { Message, RequestMode } from "./model"
 
@@ -76,6 +81,40 @@ export const FetchAiGateway = Command.define("FetchVercelProjectAiGateway", {
 	messages: [Message.CompletedFetchAiGateway],
 	execute: ({ key, input }) =>
 		Effect.map(loadVercelAiGateway(input), (result) => Message.CompletedFetchAiGateway({ key, result })),
+})
+
+export const FetchFunctions = Command.define("FetchVercelProjectFunctions", {
+	args: { key: Schema.String, input: ProjectInput },
+	messages: [Message.CompletedFetchFunctions],
+	execute: ({ key, input }) =>
+		Effect.map(loadVercelFunctions(input), (result) => Message.CompletedFetchFunctions({ key, result })),
+})
+
+export const FetchDependencies = Command.define("FetchVercelProjectDependencies", {
+	args: { key: Schema.String, input: ProjectInput },
+	messages: [Message.CompletedFetchDependencies],
+	execute: ({ key, input }) =>
+		Effect.map(loadVercelDependencies(input), (result) =>
+			Message.CompletedFetchDependencies({ key, result }),
+		),
+})
+
+export const FetchSpeedInsights = Command.define("FetchVercelProjectSpeedInsights", {
+	args: { key: Schema.String, input: WindowInput },
+	messages: [Message.CompletedFetchSpeedInsights],
+	execute: ({ key, input }) =>
+		Effect.map(loadVercelSpeedInsights(input), (result) =>
+			Message.CompletedFetchSpeedInsights({ key, result }),
+		),
+})
+
+export const FetchWebAnalytics = Command.define("FetchVercelProjectWebAnalytics", {
+	args: { key: Schema.String, input: WindowInput },
+	messages: [Message.CompletedFetchWebAnalytics],
+	execute: ({ key, input }) =>
+		Effect.map(loadVercelWebAnalytics(input), (result) =>
+			Message.CompletedFetchWebAnalytics({ key, result }),
+		),
 })
 
 export const CompleteReloadSpin = Command.define("CompleteVercelProjectReloadSpin", {

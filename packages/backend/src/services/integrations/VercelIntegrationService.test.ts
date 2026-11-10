@@ -62,6 +62,10 @@ interface Deployment {
 	readonly readyState: string
 	readonly target: string | null
 	readonly projectId: string
+	readonly buildingAt?: number
+	readonly ready?: number
+	readonly errorCode?: string
+	readonly errorMessage?: string | null
 }
 
 interface FakeDrain {
@@ -73,7 +77,7 @@ interface FakeDrain {
 	body: Readonly<Record<string, unknown>>
 }
 
-/** A fake Vercel account: its teams, one project, its deployments, and the drains on its teams. */
+/** A fake Vercel account: its teams, `prj_web` plus any project its deployments name, its deployments, and the drains on its teams. */
 interface Fake {
 	readonly calls: Array<VercelCall>
 	readonly drains: Map<string, FakeDrain>
@@ -193,11 +197,18 @@ const fakeFetch = (fake: Fake): typeof fetch =>
 						framework: "nextjs",
 						targets: { production: { id: "dpl_1" } },
 					},
+					...Arr.map(
+						Arr.filter(
+							[...new Set(Arr.map(fake.deployments, (d) => d.projectId))],
+							(id) => id !== "prj_web",
+						),
+						(id) => ({ id, name: id, framework: null }),
+					),
 				],
 				pagination: { next: null },
 			})
 		}
-		if (url.pathname === "/v6/deployments") {
+		if (url.pathname === "/v7/deployments") {
 			return json({
 				deployments: Arr.map(fake.deployments, (d) => ({
 					...d,
@@ -1091,7 +1102,7 @@ describe("VercelIntegrationService", () => {
 			Effect.gen(function* () {
 				yield* connect()
 				fake.respond = (call) =>
-					call.path === "/v6/deployments" ? vercelError(429, "Too many requests") : undefined
+					call.path === "/v7/deployments" ? vercelError(429, "Too many requests") : undefined
 				const limited = yield* poll()
 				assert.strictEqual(limited.skipped, "rate_limited")
 				assert.include((yield* status()).lastError ?? "", "429")
@@ -1134,6 +1145,85 @@ describe("VercelIntegrationService", () => {
 					),
 				)
 				assert.strictEqual(count?.count, 50)
+			}),
+		)
+	})
+
+	it.effect("a build's start, end and failure are stored and updated when a later poll sees it fail", () => {
+		const testDb = createTestDb(trackedDbs)
+		const building = {
+			uid: "dpl_f",
+			created: now - 10 * minute,
+			buildingAt: now - 9 * minute,
+			readyState: "BUILDING",
+			target: "production",
+			projectId: "prj_web",
+		}
+		const fake = makeFake([building])
+		const latest = () =>
+			VercelIntegrationService.use((vercel) => vercel.deployments(orgId, "prj_web", 1)).pipe(
+				Effect.map((deployments) => deployments[0]),
+			)
+		return run(
+			testDb,
+			fake,
+			Effect.gen(function* () {
+				yield* connect()
+				const started = yield* latest()
+				assert.strictEqual(started?.state, "BUILDING")
+				assert.strictEqual(started?.buildingAt, building.buildingAt)
+				assert.isNull(started?.readyAt)
+				assert.isNull(started?.errorCode)
+				const failed = {
+					...building,
+					readyState: "ERROR",
+					ready: now - 4 * minute,
+					errorCode: "BUILD_FAILED",
+					errorMessage: 'Command "next build" exited with 1',
+				}
+				fake.deployments = [failed]
+				yield* poll()
+				const ended = yield* latest()
+				assert.strictEqual(ended?.state, "ERROR")
+				assert.strictEqual(ended?.buildingAt, failed.buildingAt)
+				assert.strictEqual(ended?.readyAt, failed.ready)
+				assert.strictEqual(ended?.errorCode, failed.errorCode)
+				assert.strictEqual(ended?.errorMessage, failed.errorMessage)
+			}),
+		)
+	})
+
+	it.effect("deployments without a project are the whole team's, newest first", () => {
+		const testDb = createTestDb(trackedDbs)
+		const deployment = (uid: string, projectId: string, minutesAgo: number) => ({
+			uid,
+			created: now - minutesAgo * minute,
+			readyState: "READY",
+			target: null,
+			projectId,
+		})
+		const fake = makeFake([
+			deployment("dpl_web_old", "prj_web", 30),
+			deployment("dpl_api_new", "prj_api", 5),
+			deployment("dpl_web_new", "prj_web", 10),
+			deployment("dpl_api_old", "prj_api", 40),
+		])
+		return run(
+			testDb,
+			fake,
+			Effect.gen(function* () {
+				yield* connect()
+				const deployments = yield* VercelIntegrationService.use((vercel) =>
+					vercel.deployments(orgId, undefined, 3),
+				)
+				assert.deepStrictEqual(
+					Arr.map(deployments, (d) => [d.id, d.projectId]),
+					[
+						["dpl_api_new", "prj_api"],
+						["dpl_web_new", "prj_web"],
+						["dpl_web_old", "prj_web"],
+					],
+				)
 			}),
 		)
 	})

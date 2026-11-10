@@ -21,12 +21,33 @@ import * as VercelList from "../../page/infra-integrations/vercel/list/model"
 import { listBody } from "../../page/infra-integrations/vercel/list/view"
 import * as VercelProject from "../../page/infra-integrations/vercel/project/model"
 import { projectPage } from "../../page/infra-integrations/vercel/project/view"
-import { barChartSlot } from "../../page/infra-integrations/vercel/view-parts"
+import {
+	auditLogSection,
+	buildsSection,
+	dependenciesSection,
+	functionsSection,
+	type SectionRead,
+	speedInsightsSection,
+	webAnalyticsSection,
+} from "../../page/infra-integrations/vercel/sections"
 import { pickTimeSearch } from "../../page/infra/kit/view-tabs"
 import { sectionHeading } from "../../page/kit/section-heading"
 import { sortRowsBy } from "../../page/kit/table-sort"
 import { eyebrow } from "@maple/views/ui/eyebrow"
-import { VERCEL_STATUS } from "../vercel-infra-fixtures"
+import { AsyncData } from "foldkit"
+import { toLoadFailure } from "@maple/views/data/load-failure"
+import {
+	VERCEL_ALL_DRAINS_STATUS,
+	VERCEL_AUDIT_LOG,
+	VERCEL_DEPENDENCIES,
+	VERCEL_EMPTY_SPEED_INSIGHTS,
+	VERCEL_EMPTY_WEB_ANALYTICS,
+	VERCEL_FUNCTIONS,
+	VERCEL_PROJECT_SPEED_INSIGHTS,
+	VERCEL_READ_FAILURE,
+	VERCEL_TEAM_DEPLOYMENTS,
+	VERCEL_WEB_ANALYTICS,
+} from "../vercel-infra-fixtures"
 import { Message, type Model } from "./update"
 import { Array as Arr, Order } from "effect"
 
@@ -158,26 +179,107 @@ const railway = (h: H, model: Model, fixture: InfraLabFixture): Html =>
 type VercelInputs = Readonly<{ timeZone: string }>
 
 /** `VercelListPage` over the fixtures, in the view its search names. */
-const vercelListView = Submodel.defineView<VercelList.Model, VercelList.Message, VercelInputs>((list, inputs, h) =>
-	listBody(h, list, {
-		status: VERCEL_STATUS,
-		time: pickTimeSearch(list.search),
-		clock: { nowMs: list.nowMs, timeZone: inputs.timeZone },
-		bar: barChartSlot(
-			h,
-			list,
-			(chartId, message) => VercelList.Message.GotChartMessage({ chartId, message }),
-			inputs.timeZone,
-		),
-	}),
+const vercelListView = Submodel.defineView<VercelList.Model, VercelList.Message, VercelInputs>(
+	(list, inputs, h) =>
+		listBody(h, list, {
+			status: VERCEL_ALL_DRAINS_STATUS,
+			time: pickTimeSearch(list.search),
+			clock: { nowMs: list.nowMs, timeZone: inputs.timeZone },
+		}),
 )
 
 const vercelProjectView = Submodel.defineView<VercelProject.Model, VercelProject.Message, VercelInputs>(
 	(project, inputs, h) => h.div([h.Class("space-y-6")], projectPage(h, project, inputs.timeZone)),
 )
 
+type SectionState = "data" | "empty" | "off" | "error"
+const SECTION_STATES: ReadonlyArray<SectionState> = ["data", "empty", "off", "error"]
+
+const sectionRead = <A>(state: SectionState, data: A, empty: A): SectionRead<A, Message> => ({
+	data:
+		state === "error"
+			? AsyncData.Failure({ error: toLoadFailure(VERCEL_READ_FAILURE) })
+			: AsyncData.Success({ data: state === "empty" ? empty : data }),
+	onRetry: Message.ClickedVercelSectionRetry(),
+})
+
+/** Every section the Vercel pages share, in each state: data, empty, drain off, failed. */
+const vercelSections = (h: H, model: Model): Html => {
+	const clock = { nowMs: model.nowMs, timeZone: model.timeZone }
+	const names = new Map(Arr.map(VERCEL_ALL_DRAINS_STATUS.projects, (project) => [project.id, project.name]))
+	const nameOf = (projectId: string) => names.get(projectId) ?? projectId
+	const variants = (
+		label: string,
+		draw: (state: SectionState) => Html,
+		states: ReadonlyArray<SectionState> = SECTION_STATES,
+	) =>
+		Arr.map(states, (state) =>
+			h.div(
+				[h.Key(`${label}:${state}`), h.Class("space-y-2")],
+				[eyebrow(h, { as: "div" }, [`${label} · ${state}`]), draw(state)],
+			),
+		)
+	return frame(h, "Vercel sections", [
+		// Builds come from Vercel's API, not a drain: no off state.
+		...variants(
+			"Builds",
+			(state) =>
+				buildsSection(h, {
+					read: sectionRead(state, VERCEL_TEAM_DEPLOYMENTS, []),
+					clock,
+					projectName: nameOf,
+				}),
+			["data", "empty", "error"],
+		),
+		...variants("Functions", (state) =>
+			functionsSection(h, {
+				read: sectionRead(state, VERCEL_FUNCTIONS, []),
+				tracesEnabled: state !== "off",
+			}),
+		),
+		...variants("Dependencies", (state) =>
+			dependenciesSection(h, {
+				read: sectionRead(state, VERCEL_DEPENDENCIES, []),
+				tracesEnabled: state !== "off",
+				serviceMapHref: "/service-map",
+			}),
+		),
+		...variants("Speed Insights", (state) =>
+			speedInsightsSection(h, {
+				read: sectionRead(state, VERCEL_PROJECT_SPEED_INSIGHTS, VERCEL_EMPTY_SPEED_INSIGHTS),
+				enabled: state !== "off",
+			}),
+		),
+		...variants("Web Analytics", (state) =>
+			webAnalyticsSection(h, {
+				read: sectionRead(state, VERCEL_WEB_ANALYTICS, VERCEL_EMPTY_WEB_ANALYTICS),
+				enabled: state !== "off",
+				compact: false,
+			}),
+		),
+		...variants("Audit log", (state) =>
+			auditLogSection(h, {
+				read: sectionRead(state, VERCEL_AUDIT_LOG, []),
+				enabled: state !== "off",
+				clock,
+				projectName: nameOf,
+			}),
+		),
+	])
+}
+
 const vercel = (h: H, model: Model): ReadonlyArray<Html> => [
 	frame(h, "/infra/vercel", [
+		h.submodel({
+			slotId: "lab-vercel-overview",
+			model: model.vercelOverview,
+			view: vercelListView,
+			viewInputs: { timeZone: model.timeZone },
+			toParentMessage: (message: VercelList.Message) =>
+				Message.GotVercelListMessage({ view: "overview", message }),
+		}),
+	]),
+	frame(h, "/infra/vercel?view=projects", [
 		h.submodel({
 			slotId: "lab-vercel-projects",
 			model: model.vercelProjects,
@@ -185,16 +287,6 @@ const vercel = (h: H, model: Model): ReadonlyArray<Html> => [
 			viewInputs: { timeZone: model.timeZone },
 			toParentMessage: (message: VercelList.Message) =>
 				Message.GotVercelListMessage({ view: "projects", message }),
-		}),
-	]),
-	frame(h, "/infra/vercel?view=aiGateway", [
-		h.submodel({
-			slotId: "lab-vercel-ai-gateway",
-			model: model.vercelAiGateway,
-			view: vercelListView,
-			viewInputs: { timeZone: model.timeZone },
-			toParentMessage: (message: VercelList.Message) =>
-				Message.GotVercelListMessage({ view: "aiGateway", message }),
 		}),
 	]),
 	frame(h, "/infra/vercel/$projectId", [
@@ -206,6 +298,7 @@ const vercel = (h: H, model: Model): ReadonlyArray<Html> => [
 			toParentMessage: (message: VercelProject.Message) => Message.GotVercelProjectMessage({ message }),
 		}),
 	]),
+	vercelSections(h, model),
 ]
 
 const THEME_TOKENS = [...INFRA_CHART_TOKENS, "--chart-2", ...BarChart.BAR_CHART_TOKENS]
@@ -213,7 +306,10 @@ const THEME_TOKENS = [...INFRA_CHART_TOKENS, "--chart-2", ...BarChart.BAR_CHART_
 export const view = (model: Model, h: H): Html => {
 	const fixture = buildInfraLabFixture(model.nowMs)
 	return h.div(
-		[h.Class("mx-auto max-w-6xl space-y-16 p-8"), h.OnMount(ResolveThemeColors({ tokens: THEME_TOKENS }))],
+		[
+			h.Class("mx-auto max-w-6xl space-y-16 p-8"),
+			h.OnMount(ResolveThemeColors({ tokens: THEME_TOKENS })),
+		],
 		[overview(h, fixture), hosts(h, model, fixture), railway(h, model, fixture), ...vercel(h, model)],
 	)
 }

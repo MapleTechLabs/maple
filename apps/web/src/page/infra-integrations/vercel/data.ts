@@ -1,9 +1,14 @@
 import type { VercelInfraProject, VercelInfraRequestBucket } from "@maple/domain/http"
 import {
 	getVercelAiGateway,
+	getVercelAuditLog,
+	getVercelDependencies,
+	getVercelFunctions,
 	getVercelProjectDetail,
 	getVercelProjects,
 	getVercelRequestTimeseries,
+	getVercelSpeedInsights,
+	getVercelWebAnalytics,
 } from "@maple/web-data/warehouse/vercel-infra"
 import { Effect, Schema } from "effect"
 import { toLoadFailure } from "@maple/views/data/load-failure"
@@ -31,6 +36,14 @@ export const seriesInput = (window: TimeWindow): SeriesInput => ({
 	endTime: window.endTime,
 	bucketSeconds: chartBucketSeconds(window.startTime, window.endTime),
 })
+
+/** The Speed Insights and Web Analytics reads: the window, for one project or all. */
+export const WindowInput = Schema.Struct({
+	startTime: Schema.String,
+	endTime: Schema.String,
+	projectId: Schema.optional(Schema.String),
+})
+export type WindowInput = typeof WindowInput.Type
 
 export const ProjectInput = Schema.Struct({
 	startTime: Schema.String,
@@ -73,14 +86,46 @@ export const loadVercelAiGateway = (input: SeriesInput) =>
 export const loadVercelProjectDetail = (input: ProjectInput) =>
 	getVercelProjectDetail({ data: { ...input } }).pipe(Effect.mapError(toLoadFailure), Effect.result)
 
+/** `vercelFunctionsResultAtom({ data })`. */
+export const loadVercelFunctions = (input: ProjectInput) =>
+	getVercelFunctions({ data: { ...input } }).pipe(
+		Effect.mapBoth({ onSuccess: (response) => response.functions, onFailure: toLoadFailure }),
+		Effect.result,
+	)
+
+/** `vercelDependenciesResultAtom({ data })`. */
+export const loadVercelDependencies = (input: ProjectInput) =>
+	getVercelDependencies({ data: { ...input } }).pipe(
+		Effect.mapBoth({ onSuccess: (response) => response.dependencies, onFailure: toLoadFailure }),
+		Effect.result,
+	)
+
+/** `vercelSpeedInsightsResultAtom({ data })`. */
+export const loadVercelSpeedInsights = (input: WindowInput) =>
+	getVercelSpeedInsights({ data: { ...input } }).pipe(Effect.mapError(toLoadFailure), Effect.result)
+
+/** `vercelWebAnalyticsResultAtom({ data })`. */
+export const loadVercelWebAnalytics = (input: WindowInput) =>
+	getVercelWebAnalytics({ data: { ...input } }).pipe(Effect.mapError(toLoadFailure), Effect.result)
+
+/** `vercelAuditLogResultAtom({ data: window })`. */
+export const loadVercelAuditLog = (window: TimeWindow) =>
+	getVercelAuditLog({ data: { startTime: window.startTime, endTime: window.endTime } }).pipe(
+		Effect.mapBoth({ onSuccess: (response) => response.events, onFailure: toLoadFailure }),
+		Effect.result,
+	)
+
 export const DEPLOYMENTS_LIMIT = 20
 
-/** `integrations.vercelDeployments`: the project's newest deployments, from Vercel's API. */
-export const loadVercelDeployments = (projectId: string) =>
+/** `integrations.vercelDeployments`: the newest deployments of one project, or of the whole team. */
+export const loadVercelDeployments = (projectId: string | undefined) =>
 	Effect.gen(function* () {
 		const client = yield* MapleInternalApiClient
 		const response = yield* client.integrations.vercelDeployments({
-			query: { projectId, limit: DEPLOYMENTS_LIMIT },
+			query:
+				projectId === undefined
+					? { limit: DEPLOYMENTS_LIMIT }
+					: { projectId, limit: DEPLOYMENTS_LIMIT },
 		})
 		return response.deployments
 	}).pipe(Effect.mapError(toLoadFailure), Effect.result)

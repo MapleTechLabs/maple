@@ -2,7 +2,7 @@
 //
 // Reads what the Vercel drains deliver. The log drain lands in `logs` with
 // `cloud.provider = vercel` and the project on `vercel.project.id`; a record is
-// a request when it carries `http.request.method`. Deployment traces keep
+// a request when it carries `http.request.method`. The trace drain's spans keep
 // Vercel's own resource attributes (`vercel.projectId`).
 
 import * as CH from "@maple-dev/effect-orm/expr"
@@ -16,6 +16,19 @@ export interface VercelProjectScope {
 }
 
 type LogColumns = ColumnAccessor<typeof Logs.columns>
+type TraceColumns = ColumnAccessor<typeof Traces.columns>
+
+/** The trace drain's service for Vercel's edge: one request span per request, plus routing children. */
+export const VERCEL_EDGE_SERVICE = "vercel.edge-network"
+
+/**
+ * The edge request span. Its children (`Resolve Route`, `Resolve Deployment`,
+ * `Route across regions`) are server spans too, but carry no attributes.
+ */
+export const isEdgeRequest = ($: TraceColumns) =>
+	$.ServiceName.eq(VERCEL_EDGE_SERVICE)
+		.and($.SpanKind.eq("Server"))
+		.and($.SpanAttributes.get("http.response.status_code").neq(""))
 
 /** Logs severity number for ERROR; FATAL is above it. */
 const ERROR_SEVERITY = 17
@@ -36,11 +49,14 @@ const vercelLogsWhere = ($: LogColumns) => [
 	$.ResourceAttributes.get("cloud.provider").eq("vercel"),
 ]
 
+/** Answered from Vercel's cache: a hit, a stale copy, or a prerendered page. */
+const servedFromCache = ($: LogColumns) => CH.inList($.LogAttributes.get("vercel.cache"), ["HIT", "STALE", "PRERENDER"])
+
 const requestColumns = ($: LogColumns) => ({
 	requests: CH.countIf(isRequest($)),
 	requests4xx: requestsInClass($, 400),
 	requests5xx: requestsInClass($, 500),
-	cacheHits: CH.countIf(isRequest($).and($.LogAttributes.get("vercel.cache").eq("HIT"))),
+	cacheHits: CH.countIf(isRequest($).and(servedFromCache($))),
 	/** Requests Vercel reported a cache status for: the hit-ratio denominator. */
 	cacheLookups: CH.countIf(isRequest($).and($.LogAttributes.get("vercel.cache").neq(""))),
 	errorLogs: CH.countIf($.SeverityNumber.gte(ERROR_SEVERITY)),
@@ -73,7 +89,7 @@ export function vercelRequestTimeseriesSQL(scope: VercelProjectScope = {}) {
 			requests3xx: requestsInClass($, 300),
 			requests4xx: requestsInClass($, 400),
 			requests5xx: requestsInClass($, 500),
-			cacheHits: CH.countIf(isRequest($).and($.LogAttributes.get("vercel.cache").eq("HIT"))),
+			cacheHits: CH.countIf(isRequest($).and(servedFromCache($))),
 			errorLogs: CH.countIf($.SeverityNumber.gte(ERROR_SEVERITY)),
 		}))
 		.where(($) => [
@@ -94,7 +110,7 @@ export function vercelProjectTopPathsSQL() {
 			requests: CH.count(),
 			requests4xx: CH.countIf(statusCode($).between(400, 499)),
 			requests5xx: CH.countIf(statusCode($).between(500, 599)),
-			cacheHits: CH.countIf($.LogAttributes.get("vercel.cache").eq("HIT")),
+			cacheHits: CH.countIf(servedFromCache($)),
 			cacheLookups: CH.countIf($.LogAttributes.get("vercel.cache").neq("")),
 		}))
 		.where(($) => [
@@ -129,8 +145,8 @@ export function vercelProjectTopErrorsSQL() {
 }
 
 /**
- * Root-span latency per project from deployment traces (`@vercel/otel` or Vercel's own
- * instrumentation). Empty for projects that send no traces.
+ * Request latency per project at Vercel's edge, from the trace drain's edge request
+ * spans. Empty for projects that send no traces.
  */
 export function vercelProjectLatencySQL() {
 	return from(Traces)
@@ -151,7 +167,7 @@ export function vercelProjectLatencySQL() {
 			CH.mapContains($.ResourceAttributes, "vercel.projectId"),
 			$.ResourceAttributes.get("vercel.projectId").neq(""),
 			// Server spans, not roots: a caller's propagated context gives the request span a parent.
-			$.SpanKind.eq("Server"),
+			isEdgeRequest($),
 		])
 		.groupBy("projectId")
 		.limit(1000)

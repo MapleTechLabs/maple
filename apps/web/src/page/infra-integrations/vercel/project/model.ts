@@ -1,10 +1,14 @@
 import {
 	VercelAiGatewayResponse,
 	VercelDeploymentSummary,
+	VercelInfraDependency,
+	VercelInfraFunction,
 	VercelInfraProject,
 	VercelInfraProjectDetailResponse,
 	VercelInfraRequestBucket,
 	VercelIntegrationStatus,
+	VercelSpeedInsightsResponse,
+	VercelWebAnalyticsResponse,
 } from "@maple/domain/http"
 import { Schema } from "effect"
 import { defineMessageUnion } from "foldkit/message"
@@ -17,7 +21,7 @@ import { TimeWindow } from "../../../../data/time-range"
 import { InfraVercelProjectSearch } from "../../../../route/search"
 import * as TimeRangePicker from "../../../kit/time-range-picker"
 
-// `/infra/vercel/$projectId`.
+// `/infra/vercel/$projectId`: one tab at a time (`tab`), each reading only what it shows.
 
 export const Model = Schema.Struct({
 	projectId: Schema.String,
@@ -32,6 +36,10 @@ export const Model = Schema.Struct({
 	detail: KeyedSchema(VercelInfraProjectDetailResponse, LoadFailure),
 	deployments: KeyedSchema(Schema.Array(VercelDeploymentSummary), LoadFailure),
 	aiGateway: KeyedSchema(VercelAiGatewayResponse, LoadFailure),
+	functions: KeyedSchema(Schema.Array(VercelInfraFunction), LoadFailure),
+	dependencies: KeyedSchema(Schema.Array(VercelInfraDependency), LoadFailure),
+	speedInsights: KeyedSchema(VercelSpeedInsightsResponse, LoadFailure),
+	webAnalytics: KeyedSchema(VercelWebAnalyticsResponse, LoadFailure),
 	charts: Schema.Record(Schema.String, Chart.Model),
 	chartRuntime: ChartRuntime,
 	themeColors: Schema.NullOr(ThemeColors),
@@ -57,6 +65,10 @@ export const Message = defineMessageUnion({
 	CompletedFetchDetail: result(VercelInfraProjectDetailResponse),
 	CompletedFetchDeployments: result(Schema.Array(VercelDeploymentSummary)),
 	CompletedFetchAiGateway: result(VercelAiGatewayResponse),
+	CompletedFetchFunctions: result(Schema.Array(VercelInfraFunction)),
+	CompletedFetchDependencies: result(Schema.Array(VercelInfraDependency)),
+	CompletedFetchSpeedInsights: result(VercelSpeedInsightsResponse),
+	CompletedFetchWebAnalytics: result(VercelWebAnalyticsResponse),
 	CompletedLoadChartRuntime: {},
 	FailedLoadChartRuntime: { reason: Schema.String },
 	ResolvedThemeColors: { colors: ThemeColors },
@@ -64,6 +76,10 @@ export const Message = defineMessageUnion({
 	ClickedRetryDetail: {},
 	ClickedRetryDeployments: {},
 	ClickedRetryAiGateway: {},
+	ClickedRetryFunctions: {},
+	ClickedRetryDependencies: {},
+	ClickedRetrySpeedInsights: {},
+	ClickedRetryWebAnalytics: {},
 	ClickedReload: {},
 	ClickedResetTimeRange: {},
 	CompletedReloadSpin: { version: Schema.Number },

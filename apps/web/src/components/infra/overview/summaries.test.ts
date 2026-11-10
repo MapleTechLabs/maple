@@ -117,6 +117,8 @@ describe("summarizeVercel", () => {
 		lastSeen: END,
 		p50DurationMs: null,
 		p95DurationMs: null,
+		invocations: 0,
+		coldStarts: 0,
 	})
 
 	it("flags projects returning 5xx, worst first, skipping ones too quiet to mean anything", () => {

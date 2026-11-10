@@ -5495,6 +5495,257 @@ SELECT
         LIMIT 2000
         FORMAT JSON
 
+-- builder:vercel-event-drains:vercelAuditLogSQL:default
+SELECT
+          logs.Timestamp AS timestamp,
+          logs.LogAttributes['vercel.audit.action'] AS action,
+          if(logs.LogAttributes['vercel.audit.actor.name'] != '', logs.LogAttributes['vercel.audit.actor.name'], logs.LogAttributes['vercel.audit.actor.id']) AS actor,
+          logs.LogAttributes['vercel.audit.actor.type'] AS actorType,
+          logs.ResourceAttributes['vercel.project.id'] AS projectId
+        FROM logs
+        WHERE logs.OrgId = 'org_sql_catalog'
+          AND logs.ServiceName = 'vercel-audit-log'
+          AND logs.TimestampTime >= '2026-01-01 10:30:00'
+          AND logs.TimestampTime <= '2026-01-03 14:15:00'
+          AND logs.Timestamp >= '2026-01-01 10:30:00'
+          AND logs.Timestamp <= '2026-01-03 14:15:00'
+        ORDER BY timestamp DESC
+        LIMIT 25
+        FORMAT JSON
+
+-- builder:vercel-event-drains:vercelSpeedInsightsSQL:device
+SELECT
+          logs.LogAttributes['vercel.device.type'] AS key,
+          logs.LogAttributes['vercel.speed_insights.metric'] AS metric,
+          ifNull(ifNotFinite(quantile(0.75)(toFloat64OrZero(logs.LogAttributes['vercel.speed_insights.value'])), 0), 0) AS p75,
+          count() AS samples
+        FROM logs
+        WHERE logs.OrgId = 'org_sql_catalog'
+          AND logs.ServiceName = 'vercel-speed-insights'
+          AND logs.TimestampTime >= '2026-01-01 10:30:00'
+          AND logs.TimestampTime <= '2026-01-03 14:15:00'
+          AND logs.Timestamp >= '2026-01-01 10:30:00'
+          AND logs.Timestamp <= '2026-01-03 14:15:00'
+          AND logs.ResourceAttributes['vercel.project.id'] = 'prj_sql_catalog'
+          AND logs.LogAttributes['vercel.speed_insights.metric'] != ''
+        GROUP BY key, metric
+        ORDER BY samples DESC
+        LIMIT 200
+        FORMAT JSON
+
+-- builder:vercel-event-drains:vercelSpeedInsightsSQL:metric
+SELECT
+          '' AS key,
+          logs.LogAttributes['vercel.speed_insights.metric'] AS metric,
+          ifNull(ifNotFinite(quantile(0.75)(toFloat64OrZero(logs.LogAttributes['vercel.speed_insights.value'])), 0), 0) AS p75,
+          count() AS samples
+        FROM logs
+        WHERE logs.OrgId = 'org_sql_catalog'
+          AND logs.ServiceName = 'vercel-speed-insights'
+          AND logs.TimestampTime >= '2026-01-01 10:30:00'
+          AND logs.TimestampTime <= '2026-01-03 14:15:00'
+          AND logs.Timestamp >= '2026-01-01 10:30:00'
+          AND logs.Timestamp <= '2026-01-03 14:15:00'
+          AND logs.LogAttributes['vercel.speed_insights.metric'] != ''
+        GROUP BY key, metric
+        ORDER BY samples DESC
+        LIMIT 200
+        FORMAT JSON
+
+-- builder:vercel-event-drains:vercelSpeedInsightsSQL:route
+SELECT
+          if(logs.LogAttributes['vercel.route'] != '', logs.LogAttributes['vercel.route'], logs.LogAttributes['url.path']) AS key,
+          logs.LogAttributes['vercel.speed_insights.metric'] AS metric,
+          ifNull(ifNotFinite(quantile(0.75)(toFloat64OrZero(logs.LogAttributes['vercel.speed_insights.value'])), 0), 0) AS p75,
+          count() AS samples
+        FROM logs
+        WHERE logs.OrgId = 'org_sql_catalog'
+          AND logs.ServiceName = 'vercel-speed-insights'
+          AND logs.TimestampTime >= '2026-01-01 10:30:00'
+          AND logs.TimestampTime <= '2026-01-03 14:15:00'
+          AND logs.Timestamp >= '2026-01-01 10:30:00'
+          AND logs.Timestamp <= '2026-01-03 14:15:00'
+          AND logs.ResourceAttributes['vercel.project.id'] = 'prj_sql_catalog'
+          AND logs.LogAttributes['vercel.speed_insights.metric'] != ''
+        GROUP BY key, metric
+        ORDER BY samples DESC
+        LIMIT 200
+        FORMAT JSON
+
+-- builder:vercel-event-drains:vercelWebAnalyticsSummarySQL:default
+SELECT
+          countIf(logs.LogAttributes['vercel.web_analytics.event.type'] = 'pageview') AS pageViews,
+          uniqIf(logs.LogAttributes['vercel.web_analytics.device_id'], (logs.LogAttributes['vercel.web_analytics.event.type'] = 'pageview' AND logs.LogAttributes['vercel.web_analytics.device_id'] != '')) AS uniqueDevices,
+          countIf(logs.LogAttributes['vercel.web_analytics.event.type'] = 'event') AS customEvents
+        FROM logs
+        WHERE logs.OrgId = 'org_sql_catalog'
+          AND logs.ServiceName = 'vercel-web-analytics'
+          AND logs.TimestampTime >= '2026-01-01 10:30:00'
+          AND logs.TimestampTime <= '2026-01-03 14:15:00'
+          AND logs.Timestamp >= '2026-01-01 10:30:00'
+          AND logs.Timestamp <= '2026-01-03 14:15:00'
+        FORMAT JSON
+
+-- builder:vercel-event-drains:vercelWebAnalyticsSummarySQL:project
+SELECT
+          countIf(logs.LogAttributes['vercel.web_analytics.event.type'] = 'pageview') AS pageViews,
+          uniqIf(logs.LogAttributes['vercel.web_analytics.device_id'], (logs.LogAttributes['vercel.web_analytics.event.type'] = 'pageview' AND logs.LogAttributes['vercel.web_analytics.device_id'] != '')) AS uniqueDevices,
+          countIf(logs.LogAttributes['vercel.web_analytics.event.type'] = 'event') AS customEvents
+        FROM logs
+        WHERE logs.OrgId = 'org_sql_catalog'
+          AND logs.ServiceName = 'vercel-web-analytics'
+          AND logs.TimestampTime >= '2026-01-01 10:30:00'
+          AND logs.TimestampTime <= '2026-01-03 14:15:00'
+          AND logs.Timestamp >= '2026-01-01 10:30:00'
+          AND logs.Timestamp <= '2026-01-03 14:15:00'
+          AND logs.ResourceAttributes['vercel.project.id'] = 'prj_sql_catalog'
+        FORMAT JSON
+
+-- builder:vercel-event-drains:vercelWebAnalyticsTopSQL:country
+SELECT
+          logs.LogAttributes['geo.country.iso_code'] AS value,
+          count() AS count,
+          uniqIf(logs.LogAttributes['vercel.web_analytics.device_id'], logs.LogAttributes['vercel.web_analytics.device_id'] != '') AS devices
+        FROM logs
+        WHERE logs.OrgId = 'org_sql_catalog'
+          AND logs.ServiceName = 'vercel-web-analytics'
+          AND logs.TimestampTime >= '2026-01-01 10:30:00'
+          AND logs.TimestampTime <= '2026-01-03 14:15:00'
+          AND logs.Timestamp >= '2026-01-01 10:30:00'
+          AND logs.Timestamp <= '2026-01-03 14:15:00'
+          AND logs.LogAttributes['vercel.web_analytics.event.type'] = 'pageview'
+          AND logs.LogAttributes['geo.country.iso_code'] != ''
+        GROUP BY value
+        ORDER BY count DESC
+        LIMIT 10
+        FORMAT JSON
+
+-- builder:vercel-event-drains:vercelWebAnalyticsTopSQL:event
+SELECT
+          logs.LogAttributes['vercel.web_analytics.event.name'] AS value,
+          count() AS count,
+          uniqIf(logs.LogAttributes['vercel.web_analytics.device_id'], logs.LogAttributes['vercel.web_analytics.device_id'] != '') AS devices
+        FROM logs
+        WHERE logs.OrgId = 'org_sql_catalog'
+          AND logs.ServiceName = 'vercel-web-analytics'
+          AND logs.TimestampTime >= '2026-01-01 10:30:00'
+          AND logs.TimestampTime <= '2026-01-03 14:15:00'
+          AND logs.Timestamp >= '2026-01-01 10:30:00'
+          AND logs.Timestamp <= '2026-01-03 14:15:00'
+          AND logs.ResourceAttributes['vercel.project.id'] = 'prj_sql_catalog'
+          AND logs.LogAttributes['vercel.web_analytics.event.type'] = 'event'
+          AND logs.LogAttributes['vercel.web_analytics.event.name'] != ''
+        GROUP BY value
+        ORDER BY count DESC
+        LIMIT 10
+        FORMAT JSON
+
+-- builder:vercel-event-drains:vercelWebAnalyticsTopSQL:page
+SELECT
+          logs.LogAttributes['url.path'] AS value,
+          count() AS count,
+          uniqIf(logs.LogAttributes['vercel.web_analytics.device_id'], logs.LogAttributes['vercel.web_analytics.device_id'] != '') AS devices
+        FROM logs
+        WHERE logs.OrgId = 'org_sql_catalog'
+          AND logs.ServiceName = 'vercel-web-analytics'
+          AND logs.TimestampTime >= '2026-01-01 10:30:00'
+          AND logs.TimestampTime <= '2026-01-03 14:15:00'
+          AND logs.Timestamp >= '2026-01-01 10:30:00'
+          AND logs.Timestamp <= '2026-01-03 14:15:00'
+          AND logs.LogAttributes['vercel.web_analytics.event.type'] = 'pageview'
+          AND logs.LogAttributes['url.path'] != ''
+        GROUP BY value
+        ORDER BY count DESC
+        LIMIT 10
+        FORMAT JSON
+
+-- builder:vercel-event-drains:vercelWebAnalyticsTopSQL:referrer
+SELECT
+          logs.LogAttributes['http.request.header.referer'] AS value,
+          count() AS count,
+          uniqIf(logs.LogAttributes['vercel.web_analytics.device_id'], logs.LogAttributes['vercel.web_analytics.device_id'] != '') AS devices
+        FROM logs
+        WHERE logs.OrgId = 'org_sql_catalog'
+          AND logs.ServiceName = 'vercel-web-analytics'
+          AND logs.TimestampTime >= '2026-01-01 10:30:00'
+          AND logs.TimestampTime <= '2026-01-03 14:15:00'
+          AND logs.Timestamp >= '2026-01-01 10:30:00'
+          AND logs.Timestamp <= '2026-01-03 14:15:00'
+          AND logs.LogAttributes['vercel.web_analytics.event.type'] = 'pageview'
+          AND logs.LogAttributes['http.request.header.referer'] != ''
+        GROUP BY value
+        ORDER BY count DESC
+        LIMIT 10
+        FORMAT JSON
+
+-- builder:vercel-functions:vercelFunctionRoutesSQL:default
+SELECT
+          t.route AS route,
+          sum(t.traceInvocations) AS invocations,
+          sum(t.traceColdStarts) AS coldStarts,
+          ifNull(ifNotFinite(quantile(0.95)(t.invokeMs), 0), 0) AS p95DurationMs,
+          quantile(0.5)(t.initMs) AS initP50Ms,
+          quantile(0.95)(t.initMs) AS initP95Ms
+        FROM (SELECT
+          traces.TraceId AS traceId,
+          anyIf(traces.SpanAttributes['http.route'], traces.ServiceName = 'vercel.edge-network') AS route,
+          countIf(traces.SpanName = 'Invoke Function') AS traceInvocations,
+          countIf(traces.SpanName = 'Start VM') AS traceColdStarts,
+          maxIf(traces.Duration, traces.SpanName = 'Invoke Function') / 1000000 AS invokeMs,
+          nullIf(sumIf(traces.Duration, traces.SpanName IN ('Start VM', 'Spawn Node.js', 'Init User Code')), 0) / 1000000 AS initMs
+        FROM traces
+        WHERE traces.OrgId = 'org_sql_catalog'
+          AND traces.Timestamp >= '2026-01-01 10:30:00'
+          AND traces.Timestamp <= '2026-01-03 14:15:00'
+          AND mapContains(traces.ResourceAttributes, 'vercel.projectId')
+          AND traces.ResourceAttributes['vercel.projectId'] = 'prj_sql_catalog'
+          AND (((traces.ServiceName = 'vercel.edge-network' AND traces.SpanKind = 'Server') AND traces.SpanAttributes['http.response.status_code'] != '') OR (((mapContains(traces.ResourceAttributes, 'maple_vercel.platform_service') AND traces.ResourceAttributes['maple_vercel.platform_service'] = 'vercel.serverless-runtime') AND traces.SpanKind = 'Server') AND traces.SpanName IN ('Invoke Function', 'Start VM', 'Spawn Node.js', 'Init User Code')))
+        GROUP BY traceId) AS t
+        WHERE t.traceInvocations > 0
+        GROUP BY route
+        ORDER BY invocations DESC
+        LIMIT 50
+        FORMAT JSON
+
+-- builder:vercel-functions:vercelProjectDependenciesSQL:default
+SELECT
+          if(traces.SpanAttributes['server.address'] != '', traces.SpanAttributes['server.address'], traces.SpanAttributes['http.host']) AS host,
+          count() AS calls,
+          countIf((traces.StatusCode = 'Error' OR toInt32OrZero(traces.SpanAttributes['http.status_code']) >= 500 OR toInt32OrZero(traces.SpanAttributes['http.status_code']) < 0)) AS errors,
+          ifNull(ifNotFinite(quantile(0.5)(traces.Duration) / 1000000, 0), 0) AS p50DurationMs,
+          ifNull(ifNotFinite(quantile(0.95)(traces.Duration) / 1000000, 0), 0) AS p95DurationMs
+        FROM traces
+        WHERE traces.OrgId = 'org_sql_catalog'
+          AND traces.Timestamp >= '2026-01-01 10:30:00'
+          AND traces.Timestamp <= '2026-01-03 14:15:00'
+          AND (mapContains(traces.ResourceAttributes, 'maple_vercel.platform_service') AND traces.ResourceAttributes['maple_vercel.platform_service'] = 'vercel.serverless-runtime')
+          AND traces.SpanKind = 'Client'
+          AND traces.ResourceAttributes['vercel.projectId'] = 'prj_sql_catalog'
+          AND (traces.SpanAttributes['server.address'] != '' OR traces.SpanAttributes['http.host'] != '')
+        GROUP BY host
+        ORDER BY calls DESC
+        LIMIT 50
+        FORMAT JSON
+
+-- builder:vercel-functions:vercelProjectFunctionsSQL:default
+SELECT
+          traces.ResourceAttributes['vercel.projectId'] AS projectId,
+          anyIf(traces.ServiceName, traces.SpanName = 'Invoke Function') AS serviceName,
+          countIf(traces.SpanName = 'Invoke Function') AS invocations,
+          countIf(traces.SpanName = 'Start VM') AS coldStarts,
+          max(traces.Timestamp) AS lastSeen
+        FROM traces
+        WHERE traces.OrgId = 'org_sql_catalog'
+          AND traces.Timestamp >= '2026-01-01 10:30:00'
+          AND traces.Timestamp <= '2026-01-03 14:15:00'
+          AND (mapContains(traces.ResourceAttributes, 'maple_vercel.platform_service') AND traces.ResourceAttributes['maple_vercel.platform_service'] = 'vercel.serverless-runtime')
+          AND traces.SpanKind = 'Server'
+          AND traces.SpanName IN ('Invoke Function', 'Start VM')
+          AND traces.ResourceAttributes['vercel.projectId'] != ''
+        GROUP BY projectId
+        LIMIT 1000
+        FORMAT JSON
+
 -- builder:vercel-infra:vercelProjectLatencySQL:default
 SELECT
           traces.ResourceAttributes['vercel.projectId'] AS projectId,
@@ -5509,7 +5760,7 @@ SELECT
           AND traces.Timestamp <= '2026-01-03 14:15:00'
           AND mapContains(traces.ResourceAttributes, 'vercel.projectId')
           AND traces.ResourceAttributes['vercel.projectId'] != ''
-          AND traces.SpanKind = 'Server'
+          AND ((traces.ServiceName = 'vercel.edge-network' AND traces.SpanKind = 'Server') AND traces.SpanAttributes['http.response.status_code'] != '')
         GROUP BY projectId
         LIMIT 1000
         FORMAT JSON
@@ -5522,7 +5773,7 @@ SELECT
           countIf(logs.LogAttributes['http.request.method'] != '') AS requests,
           countIf((logs.LogAttributes['http.request.method'] != '' AND toUInt16OrZero(logs.LogAttributes['http.response.status_code']) BETWEEN 400 AND 499)) AS requests4xx,
           countIf((logs.LogAttributes['http.request.method'] != '' AND toUInt16OrZero(logs.LogAttributes['http.response.status_code']) BETWEEN 500 AND 599)) AS requests5xx,
-          countIf((logs.LogAttributes['http.request.method'] != '' AND logs.LogAttributes['vercel.cache'] = 'HIT')) AS cacheHits,
+          countIf((logs.LogAttributes['http.request.method'] != '' AND logs.LogAttributes['vercel.cache'] IN ('HIT', 'STALE', 'PRERENDER'))) AS cacheHits,
           countIf((logs.LogAttributes['http.request.method'] != '' AND logs.LogAttributes['vercel.cache'] != '')) AS cacheLookups,
           countIf(logs.SeverityNumber >= 17) AS errorLogs,
           max(logs.Timestamp) AS lastSeen
@@ -5565,7 +5816,7 @@ SELECT
           count() AS requests,
           countIf(toUInt16OrZero(logs.LogAttributes['http.response.status_code']) BETWEEN 400 AND 499) AS requests4xx,
           countIf(toUInt16OrZero(logs.LogAttributes['http.response.status_code']) BETWEEN 500 AND 599) AS requests5xx,
-          countIf(logs.LogAttributes['vercel.cache'] = 'HIT') AS cacheHits,
+          countIf(logs.LogAttributes['vercel.cache'] IN ('HIT', 'STALE', 'PRERENDER')) AS cacheHits,
           countIf(logs.LogAttributes['vercel.cache'] != '') AS cacheLookups
         FROM logs
         WHERE logs.OrgId = 'org_sql_catalog'
@@ -5589,7 +5840,7 @@ SELECT
           countIf((logs.LogAttributes['http.request.method'] != '' AND toUInt16OrZero(logs.LogAttributes['http.response.status_code']) BETWEEN 300 AND 399)) AS requests3xx,
           countIf((logs.LogAttributes['http.request.method'] != '' AND toUInt16OrZero(logs.LogAttributes['http.response.status_code']) BETWEEN 400 AND 499)) AS requests4xx,
           countIf((logs.LogAttributes['http.request.method'] != '' AND toUInt16OrZero(logs.LogAttributes['http.response.status_code']) BETWEEN 500 AND 599)) AS requests5xx,
-          countIf((logs.LogAttributes['http.request.method'] != '' AND logs.LogAttributes['vercel.cache'] = 'HIT')) AS cacheHits,
+          countIf((logs.LogAttributes['http.request.method'] != '' AND logs.LogAttributes['vercel.cache'] IN ('HIT', 'STALE', 'PRERENDER'))) AS cacheHits,
           countIf(logs.SeverityNumber >= 17) AS errorLogs
         FROM logs
         WHERE logs.OrgId = 'org_sql_catalog'
@@ -5611,7 +5862,7 @@ SELECT
           countIf((logs.LogAttributes['http.request.method'] != '' AND toUInt16OrZero(logs.LogAttributes['http.response.status_code']) BETWEEN 300 AND 399)) AS requests3xx,
           countIf((logs.LogAttributes['http.request.method'] != '' AND toUInt16OrZero(logs.LogAttributes['http.response.status_code']) BETWEEN 400 AND 499)) AS requests4xx,
           countIf((logs.LogAttributes['http.request.method'] != '' AND toUInt16OrZero(logs.LogAttributes['http.response.status_code']) BETWEEN 500 AND 599)) AS requests5xx,
-          countIf((logs.LogAttributes['http.request.method'] != '' AND logs.LogAttributes['vercel.cache'] = 'HIT')) AS cacheHits,
+          countIf((logs.LogAttributes['http.request.method'] != '' AND logs.LogAttributes['vercel.cache'] IN ('HIT', 'STALE', 'PRERENDER'))) AS cacheHits,
           countIf(logs.SeverityNumber >= 17) AS errorLogs
         FROM logs
         WHERE logs.OrgId = 'org_sql_catalog'

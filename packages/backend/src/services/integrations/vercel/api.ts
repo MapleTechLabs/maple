@@ -224,7 +224,9 @@ export interface VercelDeploymentInfo {
 	readonly commitMessage: string | null
 	readonly creator: string | null
 	readonly errorCode: string | null
+	readonly errorMessage: string | null
 	readonly createdAt: number
+	readonly buildingAt: number | null
 	readonly readyAt: number | null
 	readonly inspectorUrl: string | null
 }
@@ -241,8 +243,10 @@ const DeploymentsBody = Schema.Struct({
 			projectId: Schema.optionalKey(Schema.String),
 			meta: Schema.optionalKey(Schema.Record(Schema.String, Schema.Unknown)),
 			creator: Schema.optionalKey(Schema.Struct({ username: Schema.optionalKey(Schema.String) })),
+			buildingAt: Schema.optionalKey(Schema.NullOr(Schema.Number)),
 			ready: Schema.optionalKey(Schema.NullOr(Schema.Number)),
 			errorCode: Schema.optionalKey(Schema.NullOr(Schema.String)),
+			errorMessage: Schema.optionalKey(Schema.NullOr(Schema.String)),
 			inspectorUrl: Schema.optionalKey(Schema.NullOr(Schema.String)),
 		}),
 	),
@@ -275,7 +279,7 @@ export const listDeployments = Effect.fn("VercelApi.listDeployments")(function* 
 			httpClient,
 			token,
 			pageFrom(
-				teamUrl("/v6/deployments", teamId, { limit: String(PAGE_SIZE), since: String(sinceMs) }),
+				teamUrl("/v7/deployments", teamId, { limit: String(PAGE_SIZE), since: String(sinceMs) }),
 				next,
 			),
 			DeploymentsBody,
@@ -293,7 +297,9 @@ export const listDeployments = Effect.fn("VercelApi.listDeployments")(function* 
 				commitMessage: gitMeta(d.meta, "CommitMessage"),
 				creator: d.creator?.username ?? null,
 				errorCode: d.errorCode ?? null,
+				errorMessage: d.errorMessage ?? null,
 				createdAt: d.created,
+				buildingAt: d.buildingAt ?? null,
 				readyAt: d.ready ?? null,
 				inspectorUrl: d.inspectorUrl ?? null,
 			})

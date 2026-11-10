@@ -1,4 +1,4 @@
-import { Array as Arr, Record as Rec } from "effect"
+import { Array as Arr, Option, Record as Rec } from "effect"
 import { AsyncData, Command } from "foldkit"
 import * as Chart from "@maple/views/charts/chart"
 import { LoadChartRuntime } from "@maple/views/charts/chart-runtime"
@@ -13,13 +13,19 @@ import { stepTimePicker, withPreset } from "../../kit/page-time"
 import { requestSlot } from "../../kit/slot"
 import { DEFAULT_PRESET, DEPLOYMENTS_LIMIT, seriesInput } from "../data"
 import { AI_GATEWAY_CHART_IDS } from "../view-parts"
+import type { VercelIntegrationStatus } from "@maple/domain/http"
+import type { VercelProjectTab } from "../../../../route/search"
 import {
 	CompleteReloadSpin,
 	FetchAiGateway,
 	FetchBuckets,
+	FetchDependencies,
 	FetchDeployments,
 	FetchDetail,
+	FetchFunctions,
 	FetchProjects,
+	FetchSpeedInsights,
+	FetchWebAnalytics,
 	LoadStatus,
 	ResolveWindow,
 } from "./command"
@@ -49,9 +55,47 @@ const navigate = (model: Model, search: Search): Return => ({
 	outMessage: PageOutMessage.RequestedNavigation({ url: hrefOfSearch(model, search), isReplace: false }),
 })
 
-type Slot = "requests" | "detail" | "deployments" | "aiGateway"
+type Slot =
+	| "projects"
+	| "buckets"
+	| "detail"
+	| "deployments"
+	| "aiGateway"
+	| "functions"
+	| "dependencies"
+	| "speedInsights"
+	| "webAnalytics"
 
-/** Every read the page makes; the window's wait for it, the deployments only for the project. */
+export const tabOf = (model: Model): VercelProjectTab => model.search.tab ?? "traffic"
+
+/** What each tab shows; a drain-fed read waits for the status to say its drain is on. */
+const TAB_SLOTS = {
+	traffic: ["projects", "buckets", "detail"],
+	functions: ["projects", "functions"],
+	dependencies: ["dependencies"],
+	builds: ["deployments"],
+	aiGateway: ["aiGateway"],
+	speedInsights: ["speedInsights"],
+	webAnalytics: ["webAnalytics"],
+} satisfies Record<VercelProjectTab, ReadonlyArray<Slot>>
+
+const drainOn = (slot: Slot, status: VercelIntegrationStatus | null): boolean => {
+	switch (slot) {
+		case "functions":
+		case "dependencies":
+			return status?.tracesEnabled === true
+		case "aiGateway":
+			return status?.aiGatewayEnabled === true
+		case "speedInsights":
+			return status?.speedInsightsEnabled === true
+		case "webAnalytics":
+			return status?.webAnalyticsEnabled === true
+		default:
+			return true
+	}
+}
+
+/** The active tab's reads; the window's wait for it, the deployments only for the project. */
 const sync = (
 	model: Model,
 	context: PageContext,
@@ -60,6 +104,8 @@ const sync = (
 ): Return => {
 	const org = context.orgId
 	const { projectId } = model
+	const status = Option.getOrNull(AsyncData.getData(model.status.data))
+	const shown: ReadonlyArray<Slot> = TAB_SLOTS[tabOf(model)]
 	const commands: Array<Commands[number]> = []
 	const take = <A, E>(
 		slot: Slot,
@@ -67,6 +113,7 @@ const sync = (
 		key: string,
 		fetch: () => Commands[number],
 	) => {
+		if (!shown.includes(slot) || !drainOn(slot, status)) return current
 		if (only !== undefined && !only.includes(slot)) return current
 		const [next, fetches] = requestSlot(current, key, mode, fetch)
 		commands.push(...fetches)
@@ -90,13 +137,17 @@ const sync = (
 	const bucketsKey = requestKey(org, "getVercelRequestTimeseries", { data: series })
 	const detailKey = requestKey(org, "getVercelProjectDetail", { data: detailInput })
 	const aiKey = requestKey(org, "getVercelAiGateway", { data: series })
+	const functionsKey = requestKey(org, "getVercelFunctions", { data: detailInput })
+	const dependenciesKey = requestKey(org, "getVercelDependencies", { data: detailInput })
+	const speedKey = requestKey(org, "getVercelSpeedInsights", { data: detailInput })
+	const webKey = requestKey(org, "getVercelWebAnalytics", { data: detailInput })
 	return {
 		model: {
 			...withDeployments,
-			projects: take("requests", model.projects, projectsKey, () =>
+			projects: take("projects", model.projects, projectsKey, () =>
 				FetchProjects({ key: projectsKey, window }),
 			),
-			buckets: take("requests", model.buckets, bucketsKey, () =>
+			buckets: take("buckets", model.buckets, bucketsKey, () =>
 				FetchBuckets({ key: bucketsKey, input: series }),
 			),
 			detail: take("detail", model.detail, detailKey, () =>
@@ -104,6 +155,18 @@ const sync = (
 			),
 			aiGateway: take("aiGateway", model.aiGateway, aiKey, () =>
 				FetchAiGateway({ key: aiKey, input: series }),
+			),
+			functions: take("functions", model.functions, functionsKey, () =>
+				FetchFunctions({ key: functionsKey, input: detailInput }),
+			),
+			dependencies: take("dependencies", model.dependencies, dependenciesKey, () =>
+				FetchDependencies({ key: dependenciesKey, input: detailInput }),
+			),
+			speedInsights: take("speedInsights", model.speedInsights, speedKey, () =>
+				FetchSpeedInsights({ key: speedKey, input: detailInput }),
+			),
+			webAnalytics: take("webAnalytics", model.webAnalytics, webKey, () =>
+				FetchWebAnalytics({ key: webKey, input: detailInput }),
 			),
 		},
 		commands,
@@ -123,6 +186,10 @@ export const init = (route: Route, context: PageContext): Return => {
 		detail: Keyed.idle(),
 		deployments: Keyed.idle(),
 		aiGateway: Keyed.idle(),
+		functions: Keyed.idle(),
+		dependencies: Keyed.idle(),
+		speedInsights: Keyed.idle(),
+		webAnalytics: Keyed.idle(),
 		charts: Rec.fromEntries(Arr.map(CHART_IDS, (id) => [id, Chart.init()])),
 		chartRuntime: { _tag: "Loading" },
 		themeColors: null,
@@ -163,9 +230,8 @@ export const contextChanged = (model: Model, context: PageContext): Return => sy
 export const update = (model: Model, message: Message, context: PageContext): Return =>
 	Message.match<Return>(message, {
 		CompletedResolveWindow: ({ window, nowMs, mode }) => sync({ ...model, window, nowMs }, context, mode),
-		CompletedLoadStatus: ({ key, result }) => ({
-			model: { ...model, status: Keyed.accept(model.status, key, result) },
-		}),
+		CompletedLoadStatus: ({ key, result }) =>
+			sync({ ...model, status: Keyed.accept(model.status, key, result) }, context, "Load"),
 		CompletedFetchProjects: ({ key, result }) => ({
 			model: { ...model, projects: Keyed.accept(model.projects, key, result) },
 		}),
@@ -181,15 +247,31 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		CompletedFetchAiGateway: ({ key, result }) => ({
 			model: { ...model, aiGateway: Keyed.accept(model.aiGateway, key, result) },
 		}),
+		CompletedFetchFunctions: ({ key, result }) => ({
+			model: { ...model, functions: Keyed.accept(model.functions, key, result) },
+		}),
+		CompletedFetchDependencies: ({ key, result }) => ({
+			model: { ...model, dependencies: Keyed.accept(model.dependencies, key, result) },
+		}),
+		CompletedFetchSpeedInsights: ({ key, result }) => ({
+			model: { ...model, speedInsights: Keyed.accept(model.speedInsights, key, result) },
+		}),
+		CompletedFetchWebAnalytics: ({ key, result }) => ({
+			model: { ...model, webAnalytics: Keyed.accept(model.webAnalytics, key, result) },
+		}),
 		CompletedLoadChartRuntime: () => ({ model: { ...model, chartRuntime: { _tag: "Ready" } } }),
 		FailedLoadChartRuntime: ({ reason }) => ({
 			model: { ...model, chartRuntime: { _tag: "Failed", reason } },
 		}),
 		ResolvedThemeColors: ({ colors }) => ({ model: { ...model, themeColors: colors } }),
-		ClickedRetryRequests: () => sync(model, context, "Refresh", ["requests"]),
+		ClickedRetryRequests: () => sync(model, context, "Refresh", ["projects", "buckets"]),
 		ClickedRetryDetail: () => sync(model, context, "Refresh", ["detail"]),
 		ClickedRetryDeployments: () => sync(model, context, "Refresh", ["deployments"]),
 		ClickedRetryAiGateway: () => sync(model, context, "Refresh", ["aiGateway"]),
+		ClickedRetryFunctions: () => sync(model, context, "Refresh", ["functions"]),
+		ClickedRetryDependencies: () => sync(model, context, "Refresh", ["dependencies"]),
+		ClickedRetrySpeedInsights: () => sync(model, context, "Refresh", ["speedInsights"]),
+		ClickedRetryWebAnalytics: () => sync(model, context, "Refresh", ["webAnalytics"]),
 		ClickedReload: () => {
 			const reloaded = { ...model, refreshVersion: model.refreshVersion + 1, isReloading: true }
 			return {

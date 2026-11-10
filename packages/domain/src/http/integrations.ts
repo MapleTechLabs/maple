@@ -1169,15 +1169,22 @@ export class VercelDrainStatus extends Schema.Class<VercelDrainStatus>("VercelDr
 export class VercelDeploymentSummary extends Schema.Class<VercelDeploymentSummary>("VercelDeploymentSummary")(
 	{
 		id: Schema.String,
+		projectId: Schema.String,
 		url: Schema.String,
 		target: Schema.NullOr(Schema.String),
+		/** Vercel's `readyState`: `READY`, `ERROR`, `CANCELED`, `BUILDING`, `QUEUED`, … */
 		state: Schema.String,
 		branch: Schema.NullOr(Schema.String),
 		commitSha: Schema.NullOr(Schema.String),
 		commitMessage: Schema.NullOr(Schema.String),
 		creator: Schema.NullOr(Schema.String),
 		createdAt: Schema.Number,
+		/** When the build started; with `readyAt`, the build's duration. */
+		buildingAt: Schema.NullOr(Schema.Number),
 		readyAt: Schema.NullOr(Schema.Number),
+		/** Why an `ERROR` or `CANCELED` deployment stopped, as Vercel reports it. */
+		errorCode: Schema.NullOr(Schema.String),
+		errorMessage: Schema.NullOr(Schema.String),
 		inspectorUrl: Schema.NullOr(Schema.String),
 	},
 ) {}
@@ -2019,7 +2026,10 @@ export class IntegrationsApiGroup extends HttpApiGroup.make("integrations")
 	.add(
 		HttpApiEndpoint.get("vercelDeployments", "/vercel/deployments", {
 			query: Schema.Struct({
-				projectId: Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(128)),
+				/** The whole team's newest deployments when absent. */
+				projectId: Schema.optional(
+					Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(128)),
+				),
 				limit: Schema.optional(
 					Schema.NumberFromString.check(
 						Schema.isInt(),

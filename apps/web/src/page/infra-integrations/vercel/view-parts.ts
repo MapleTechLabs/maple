@@ -30,7 +30,14 @@ import type { TimeWindow } from "../../../data/time-range"
 import { deploymentStateLabel, deploymentTone } from "../../../components/integrations/vercel-model"
 import { AppRoute, hrefOf } from "../../../route"
 import { chartLoading } from "@maple/views/ui/chart-state"
-import { empty, emptyContent, emptyDescription, emptyHeader, emptyMedia, emptyTitle } from "@maple/views/ui/empty"
+import {
+	empty,
+	emptyContent,
+	emptyDescription,
+	emptyHeader,
+	emptyMedia,
+	emptyTitle,
+} from "@maple/views/ui/empty"
 import { icon } from "@maple/views/ui/icon"
 import { hstack } from "@maple/views/ui/stack"
 import { statusDot } from "@maple/views/ui/status-dot"
@@ -86,35 +93,31 @@ export const deploymentInline = <M>(
 	deployment: VercelDeploymentSummary,
 	clock: Clock,
 ): Html =>
-	hstack(
-		h,
-		{ as: "span", gap: "1.5", shrink: true, className: "text-2xs" },
-		[
-			statusDot(h, { tone: deploymentTone(deployment.state), size: "lg" }),
-			typography(h, { tone: "soft", className: "shrink-0" }, [deploymentStateLabel(deployment.state)]),
-			...(deployment.branch === null || deployment.branch === ""
-				? []
-				: [
-						typography(
-							h,
-							{
-								tone: "muted",
-								mono: true,
-								truncate: true,
-								attributes: [h.Title(deployment.branch)],
-							},
-							[deployment.branch],
-						),
-					]),
-			relativeTime(h, {
-				value: deployment.createdAt,
-				...clock,
-				variant: "short",
-				mono: true,
-				className: "shrink-0 text-muted-foreground",
-			}),
-		],
-	)
+	hstack(h, { as: "span", gap: "1.5", shrink: true, className: "text-2xs" }, [
+		statusDot(h, { tone: deploymentTone(deployment.state), size: "lg" }),
+		typography(h, { tone: "soft", className: "shrink-0" }, [deploymentStateLabel(deployment.state)]),
+		...(deployment.branch === null || deployment.branch === ""
+			? []
+			: [
+					typography(
+						h,
+						{
+							tone: "muted",
+							mono: true,
+							truncate: true,
+							attributes: [h.Title(deployment.branch)],
+						},
+						[deployment.branch],
+					),
+				]),
+		relativeTime(h, {
+			value: deployment.createdAt,
+			...clock,
+			variant: "short",
+			mono: true,
+			className: "shrink-0 text-muted-foreground",
+		}),
+	])
 
 /** Nothing went through AI Gateway in the window: what makes it show up, or that its drain is off. */
 export const aiGatewayEmpty = <M>(h: HtmlBuilder<M>, enabled: boolean): Html =>
@@ -200,7 +203,11 @@ export const barChartSlot =
 		})
 	}
 
-const ROW_CLASS = "flex items-center gap-4 border-b border-border/40 px-4 py-3 last:border-0"
+/** A Vercel table's leading column: it takes the room the numbers leave. */
+export const LEAD_COLUMN = "w-0 flex-1 min-w-[200px]"
+
+/** A Vercel table body row. */
+export const ROW_CLASS = "flex items-center gap-4 border-b border-border/40 px-4 py-3 last:border-0"
 const NUM = "w-[96px] text-right font-mono text-xs tabular-nums text-foreground-soft"
 
 const errorRate = (errors: number, requests: number) => (requests > 0 ? errors / requests : 0)
@@ -243,8 +250,7 @@ const mostSpendFirst = Order.combine(
 	Order.mapInput(Order.flip(Order.Number), (usage: Usage) => usage.requests),
 )
 
-const bySpend = <T extends Usage>(rows: ReadonlyArray<T>): ReadonlyArray<T> =>
-	Arr.sort(rows, mostSpendFirst)
+const bySpend = <T extends Usage>(rows: ReadonlyArray<T>): ReadonlyArray<T> => Arr.sort(rows, mostSpendFirst)
 
 const modelsTable = <M>(h: HtmlBuilder<M>, models: VercelAiGatewayResponse["models"]): Html =>
 	h.section(
@@ -315,7 +321,8 @@ const modelsTable = <M>(h: HtmlBuilder<M>, models: VercelAiGatewayResponse["mode
 		],
 	)
 
-const projectsTable = <M>(
+/** The rows of AI Gateway usage per calling project, most spend first; requests outside a project are one row. */
+export const aiGatewayProjectsTable = <M>(
 	h: HtmlBuilder<M>,
 	projects: VercelAiGatewayResponse["projects"],
 	projectNames: ReadonlyMap<string, string>,
@@ -340,32 +347,22 @@ const projectsTable = <M>(
 				),
 			],
 		)
-	return h.section(
-		[h.Class("space-y-3")],
-		[
-			sectionHeading(h, {
-				title: "By project",
-				hint: "most spend first",
-				count: String(projects.length),
-			}),
-			dataTable(
-				h,
-				{ ariaLabel: "AI Gateway projects" },
-				[columnHead(h, { label: "Project", width: "w-0 flex-1 min-w-[220px]" }), ...usageHeads(h)],
-				Arr.map(bySpend(projects), (project) =>
-					project.projectId === ""
-						? h.div([h.Key(""), h.Class(ROW_CLASS)], [name(""), ...usageCells(h, project)])
-						: h.a(
-								[
-									h.Key(project.projectId),
-									h.Class(ROW_LINK_CLASS),
-									h.Href(projectHref(project.projectId, time)),
-								],
-								[name(project.projectId), ...usageCells(h, project)],
-							),
-				),
-			),
-		],
+	return dataTable(
+		h,
+		{ ariaLabel: "AI Gateway projects" },
+		[columnHead(h, { label: "Project", width: "w-0 flex-1 min-w-[220px]" }), ...usageHeads(h)],
+		Arr.map(bySpend(projects), (project) =>
+			project.projectId === ""
+				? h.div([h.Key(""), h.Class(ROW_CLASS)], [name(""), ...usageCells(h, project)])
+				: h.a(
+						[
+							h.Key(project.projectId),
+							h.Class(ROW_LINK_CLASS),
+							h.Href(projectHref(project.projectId, time)),
+						],
+						[name(project.projectId), ...usageCells(h, project)],
+					),
+		),
 	)
 }
 
@@ -473,7 +470,24 @@ export const aiGatewayPanel = <M>(h: HtmlBuilder<M>, inputs: AiGatewayPanelInput
 			charts(h, series, inputs.bar),
 			modelsTable(h, inputs.data.models),
 			...(inputs.data.projects.length > 0
-				? [projectsTable(h, inputs.data.projects, inputs.projectNames, inputs.time)]
+				? [
+						h.section(
+							[h.Class("space-y-3")],
+							[
+								sectionHeading(h, {
+									title: "By project",
+									hint: "most spend first",
+									count: String(inputs.data.projects.length),
+								}),
+								aiGatewayProjectsTable(
+									h,
+									inputs.data.projects,
+									inputs.projectNames,
+									inputs.time,
+								),
+							],
+						),
+					]
 				: []),
 		],
 	)

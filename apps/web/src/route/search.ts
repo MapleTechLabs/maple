@@ -760,7 +760,20 @@ export const InfraRailwayServiceSearch = Schema.Struct({
 	environmentId: LenientString,
 })
 
+export const VercelProjectTab = Schema.Literals([
+	"traffic",
+	"functions",
+	"dependencies",
+	"builds",
+	"aiGateway",
+	"speedInsights",
+	"webAnalytics",
+])
+export type VercelProjectTab = typeof VercelProjectTab.Type
+
 export const InfraVercelProjectSearch = Schema.Struct({
+	/** `traffic` when absent. */
+	tab: Schema.optional(VercelProjectTab),
 	...TimeRangeSearchFields,
 })
 
@@ -856,12 +869,13 @@ export const InfraRailwaySearch = Schema.Struct({
 	...TimeRangeSearchFields,
 })
 
-export const VercelView = Schema.Literals(["projects", "aiGateway"])
+export const VercelView = Schema.Literals(["projects"])
 export type VercelView = typeof VercelView.Type
 
 export const InfraVercelSearch = Schema.Struct({
 	q: StringParam,
-	view: Schema.optional(VercelView),
+	/** The overview when absent. The retired `aiGateway` view still decodes and reads as the overview. */
+	view: Schema.optional(Schema.Literals([...VercelView.literals, "aiGateway"])),
 	...TimeRangeSearchFields,
 })
 

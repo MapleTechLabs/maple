@@ -3,10 +3,15 @@ import { Command } from "foldkit"
 import { resolveWindow, TimeWindow } from "../../../../data/time-range"
 import {
 	loadVercelAiGateway,
+	loadVercelAuditLog,
+	loadVercelDeployments,
 	loadVercelProjects,
 	loadVercelRequestSeries,
+	loadVercelSpeedInsights,
 	loadVercelStatus,
+	loadVercelWebAnalytics,
 	SeriesInput,
+	WindowInput,
 } from "../data"
 import { Message, RequestMode } from "./model"
 
@@ -57,6 +62,40 @@ export const FetchAiGateway = Command.define("FetchVercelAiGateway", {
 	messages: [Message.CompletedFetchAiGateway],
 	execute: ({ key, input }) =>
 		Effect.map(loadVercelAiGateway(input), (result) => Message.CompletedFetchAiGateway({ key, result })),
+})
+
+export const FetchDeployments = Command.define("FetchVercelTeamDeployments", {
+	args: { key: Schema.String },
+	messages: [Message.CompletedFetchDeployments],
+	execute: ({ key }) =>
+		Effect.map(loadVercelDeployments(undefined), (result) =>
+			Message.CompletedFetchDeployments({ key, result }),
+		),
+})
+
+export const FetchSpeedInsights = Command.define("FetchVercelSpeedInsights", {
+	args: { key: Schema.String, input: WindowInput },
+	messages: [Message.CompletedFetchSpeedInsights],
+	execute: ({ key, input }) =>
+		Effect.map(loadVercelSpeedInsights(input), (result) =>
+			Message.CompletedFetchSpeedInsights({ key, result }),
+		),
+})
+
+export const FetchWebAnalytics = Command.define("FetchVercelWebAnalytics", {
+	args: { key: Schema.String, input: WindowInput },
+	messages: [Message.CompletedFetchWebAnalytics],
+	execute: ({ key, input }) =>
+		Effect.map(loadVercelWebAnalytics(input), (result) =>
+			Message.CompletedFetchWebAnalytics({ key, result }),
+		),
+})
+
+export const FetchAuditLog = Command.define("FetchVercelAuditLog", {
+	args: { key: Schema.String, window: TimeWindow },
+	messages: [Message.CompletedFetchAuditLog],
+	execute: ({ key, window }) =>
+		Effect.map(loadVercelAuditLog(window), (result) => Message.CompletedFetchAuditLog({ key, result })),
 })
 
 export const CompleteReloadSpin = Command.define("CompleteVercelReloadSpin", {

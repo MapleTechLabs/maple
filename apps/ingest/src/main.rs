@@ -15,7 +15,7 @@ mod rules_gateway;
 mod sources;
 mod task_protection;
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::io::Write;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
@@ -76,6 +76,7 @@ use maple_ingest::usage_metrics::{billable_gb, usage_cardinality_view, UsageMetr
 use maple_ingest::vercel_ai_gateway_drain;
 use maple_ingest::vercel_event_drains::{self, EventDrain};
 use maple_ingest::vercel_logs;
+use maple_ingest::vercel_traces;
 use maple_ingest::wal_store::WalSegmentStore;
 use moka::future::Cache;
 use opentelemetry::trace::TracerProvider as _;
@@ -1018,6 +1019,15 @@ struct AttributeMappingResolver {
     cache: Cache<String, Arc<Vec<AttributeMappingRule>>>,
 }
 
+/// Each org's Vercel project names by project id, for `vercel_traces::restate`.
+struct VercelProjectNameResolver {
+    store: Arc<dyn KeyStore>,
+    cache: Cache<String, Arc<HashMap<String, String>>>,
+}
+
+/// Short enough that a project the API's hourly poller discovers is named soon after.
+const VERCEL_PROJECT_NAMES_TTL: Duration = Duration::from_mins(5);
+
 struct ClickHouseTargetResolver {
     store: Arc<dyn KeyStore>,
     encryption_key: Option<[u8; 32]>,
@@ -1125,6 +1135,14 @@ trait KeyStore: Send + Sync {
         &self,
         org_id: &str,
     ) -> Result<Vec<AttributeMappingRow>, String>;
+
+    /// `(project_id, name)` of the org's Vercel projects.
+    async fn fetch_vercel_project_names(
+        &self,
+        _org_id: &str,
+    ) -> Result<Vec<(String, String)>, String> {
+        Ok(Vec::new())
+    }
 
     /// The org's enabled ingest rules in `position` order, and its hash salt.
     async fn fetch_ingest_rules(&self, org_id: &str) -> Result<IngestRuleRows, String>;
@@ -1562,6 +1580,7 @@ struct AppState {
     gcp_inflight_limiter: OrgInFlightLimiter,
     sampling_resolver: SamplingPolicyResolver,
     attribute_mapping_resolver: AttributeMappingResolver,
+    vercel_project_name_resolver: VercelProjectNameResolver,
     /// Each org's compiled ingest rules; inert unless `INGEST_RULES_ENABLED`.
     ingest_rule_resolver: IngestRuleResolver,
     /// Per-rule counts awaiting the next flush to `org_ingest_rule_stats`.
@@ -3169,6 +3188,13 @@ async fn main() {
         attribute_mapping_resolver: AttributeMappingResolver {
             store: Arc::clone(&store),
             cache: attribute_mapping_cache,
+        },
+        vercel_project_name_resolver: VercelProjectNameResolver {
+            store: Arc::clone(&store),
+            cache: Cache::builder()
+                .time_to_live(VERCEL_PROJECT_NAMES_TTL)
+                .max_capacity(10_000)
+                .build(),
         },
         ingest_rule_resolver: IngestRuleResolver::new(
             Arc::clone(&store),
@@ -5743,7 +5769,17 @@ async fn handle_signal_inner(
             stamp_drain_source(&mut decoded, vercel_ai_gateway_drain::INGEST_SOURCE);
         }
         Ingress::VercelEventDrain(drain) => stamp_drain_source(&mut decoded, drain.ingest_source()),
-        Ingress::Otlp(_) => {}
+        Ingress::Otlp(_) => {
+            if let DecodedPayload::Traces(request) = &mut decoded {
+                if vercel_traces::has_runtime_resources(request) {
+                    let names = state
+                        .vercel_project_name_resolver
+                        .resolve(&resolved_key.org_id)
+                        .await;
+                    vercel_traces::restate(request, &names);
+                }
+            }
+        }
     }
     let kept_claim = claims.kept_claim;
     let item_count = decoded.item_count();
@@ -9074,6 +9110,32 @@ impl AttributeMappingResolver {
     }
 }
 
+impl VercelProjectNameResolver {
+    /// A failed lookup is not cached, and names nothing: the spans keep Vercel's service.
+    async fn resolve(&self, org_id: &str) -> Arc<HashMap<String, String>> {
+        if let Some(names) = self.cache.get(org_id).await {
+            return names;
+        }
+        match self.store.fetch_vercel_project_names(org_id).await {
+            Ok(rows) => {
+                let names = Arc::new(rows.into_iter().collect::<HashMap<_, _>>());
+                self.cache
+                    .insert(org_id.to_owned(), Arc::clone(&names))
+                    .await;
+                names
+            }
+            Err(error) => {
+                warn!(
+                    org_id,
+                    error = %error,
+                    "Vercel project name lookup failed; keeping Vercel's runtime service name"
+                );
+                Arc::default()
+            }
+        }
+    }
+}
+
 /// The schema revision this binary needs an org's ClickHouse to be at, as a
 /// number. Non-numeric (legacy hash) revisions parse to 0, which is older than
 /// every real migration — the same "not ready" answer they get today.
@@ -9689,6 +9751,30 @@ impl KeyStore for PostgresKeyStore {
                 target_key: row.get("target_key"),
                 operation: row.get("operation"),
             })
+            .collect())
+    }
+
+    async fn fetch_vercel_project_names(
+        &self,
+        org_id: &str,
+    ) -> Result<Vec<(String, String)>, String> {
+        let client = self.client().await?;
+        let rows = client
+            .query(
+                "SELECT project_id, name FROM vercel_projects WHERE org_id = $1",
+                &[&org_id],
+            )
+            .instrument(postgres_client_span(
+                "fetch_vercel_project_names",
+                "SELECT",
+                "vercel_projects",
+                &self.target,
+            ))
+            .await
+            .map_err(|error| format!("postgres fetch_vercel_project_names failed: {error}"))?;
+        Ok(rows
+            .into_iter()
+            .map(|row| (row.get("project_id"), row.get("name")))
             .collect())
     }
 
@@ -12253,6 +12339,13 @@ mod tests {
                 store: Arc::clone(&key_store),
                 cache: Cache::builder()
                     .time_to_live(Duration::from_secs(30))
+                    .max_capacity(16)
+                    .build(),
+            },
+            vercel_project_name_resolver: VercelProjectNameResolver {
+                store: Arc::clone(&key_store),
+                cache: Cache::builder()
+                    .time_to_live(VERCEL_PROJECT_NAMES_TTL)
                     .max_capacity(16)
                     .build(),
             },

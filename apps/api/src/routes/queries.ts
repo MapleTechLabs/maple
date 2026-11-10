@@ -38,6 +38,7 @@ import type {
 	VercelInfraProjectDetailRequest,
 	VercelInfraProjectsRequest,
 	VercelInfraTimeseriesRequest,
+	VercelInfraWindowRequest,
 	SupabaseInfraProjectsRequest,
 	SupabaseInfraProjectTimeseriesRequest,
 	SupabaseLogIssuesRequest,
@@ -403,6 +404,105 @@ const vercelAiGatewayTimeseries = defineQuery({
 			Integrations.vercelAiGatewayTimeseriesSQL({ projectId: payload.projectId }),
 			vercelBucketed(payload, orgId),
 		),
+})
+
+const vercelInfraProjectFunctions = defineQuery({
+	id: "vercelInfraProjectFunctions",
+	profile: "aggregation",
+	cache: 15,
+	compile: (payload: VercelInfraProjectsRequest, orgId: OrgId) =>
+		CH.compile(Integrations.vercelProjectFunctionsSQL(), vercelWindow(payload, orgId)),
+})
+
+const vercelInfraFunctionRoutes = defineQuery({
+	id: "vercelInfraFunctionRoutes",
+	profile: "aggregation",
+	cache: 15,
+	compile: (payload: VercelInfraProjectDetailRequest, orgId: OrgId) =>
+		CH.compile(Integrations.vercelFunctionRoutesSQL(), {
+			...vercelWindow(payload, orgId),
+			projectId: payload.projectId,
+		}),
+})
+
+const vercelInfraDependencies = defineQuery({
+	id: "vercelInfraDependencies",
+	profile: "aggregation",
+	cache: 15,
+	compile: (payload: VercelInfraProjectDetailRequest, orgId: OrgId) =>
+		CH.compile(Integrations.vercelProjectDependenciesSQL(), {
+			...vercelWindow(payload, orgId),
+			projectId: payload.projectId,
+		}),
+})
+
+const vercelSpeedInsightsMetrics = defineQuery({
+	id: "vercelSpeedInsightsMetrics",
+	profile: "aggregation",
+	cache: 15,
+	compile: (payload: VercelInfraWindowRequest, orgId: OrgId) =>
+		CH.compile(
+			Integrations.vercelSpeedInsightsSQL("metric", { projectId: payload.projectId }),
+			vercelWindow(payload, orgId),
+		),
+})
+
+const vercelSpeedInsightsRoutes = defineQuery({
+	id: "vercelSpeedInsightsRoutes",
+	profile: "aggregation",
+	cache: 15,
+	compile: (payload: VercelInfraWindowRequest, orgId: OrgId) =>
+		CH.compile(
+			Integrations.vercelSpeedInsightsSQL("route", { projectId: payload.projectId }),
+			vercelWindow(payload, orgId),
+		),
+})
+
+const vercelSpeedInsightsDevices = defineQuery({
+	id: "vercelSpeedInsightsDevices",
+	profile: "aggregation",
+	cache: 15,
+	compile: (payload: VercelInfraWindowRequest, orgId: OrgId) =>
+		CH.compile(
+			Integrations.vercelSpeedInsightsSQL("device", { projectId: payload.projectId }),
+			vercelWindow(payload, orgId),
+		),
+})
+
+const vercelWebAnalyticsSummary = defineQuery({
+	id: "vercelWebAnalyticsSummary",
+	profile: "aggregation",
+	cache: 15,
+	compile: (payload: VercelInfraWindowRequest, orgId: OrgId) =>
+		CH.compile(
+			Integrations.vercelWebAnalyticsSummarySQL({ projectId: payload.projectId }),
+			vercelWindow(payload, orgId),
+		),
+})
+
+const vercelWebAnalyticsTop = (id: string, dimension: Integrations.VercelWebAnalyticsDimension) =>
+	defineQuery({
+		id,
+		profile: "aggregation",
+		cache: 15,
+		compile: (payload: VercelInfraWindowRequest, orgId: OrgId) =>
+			CH.compile(
+				Integrations.vercelWebAnalyticsTopSQL(dimension, { projectId: payload.projectId }),
+				vercelWindow(payload, orgId),
+			),
+	})
+
+const vercelWebAnalyticsPages = vercelWebAnalyticsTop("vercelWebAnalyticsPages", "page")
+const vercelWebAnalyticsReferrers = vercelWebAnalyticsTop("vercelWebAnalyticsReferrers", "referrer")
+const vercelWebAnalyticsCountries = vercelWebAnalyticsTop("vercelWebAnalyticsCountries", "country")
+const vercelWebAnalyticsEvents = vercelWebAnalyticsTop("vercelWebAnalyticsEvents", "event")
+
+const vercelAuditLog = defineQuery({
+	id: "vercelAuditLog",
+	profile: "aggregation",
+	cache: 15,
+	compile: (payload: VercelInfraProjectsRequest, orgId: OrgId) =>
+		CH.compile(Integrations.vercelAuditLogSQL(), vercelWindow(payload, orgId)),
 })
 
 // /infra/supabase: gauges and counter rates are separate reads (metrics_gauge, metrics_sum),
@@ -1217,6 +1317,18 @@ export const Queries = {
 	vercelAiGatewayByModel,
 	vercelAiGatewayByProject,
 	vercelAiGatewayTimeseries,
+	vercelInfraProjectFunctions,
+	vercelInfraFunctionRoutes,
+	vercelInfraDependencies,
+	vercelSpeedInsightsMetrics,
+	vercelSpeedInsightsRoutes,
+	vercelSpeedInsightsDevices,
+	vercelWebAnalyticsSummary,
+	vercelWebAnalyticsPages,
+	vercelWebAnalyticsReferrers,
+	vercelWebAnalyticsCountries,
+	vercelWebAnalyticsEvents,
+	vercelAuditLog,
 	supabaseInfraProjectGauges,
 	supabaseInfraProjectCpu,
 	supabaseInfraProjectGaugeSeries,

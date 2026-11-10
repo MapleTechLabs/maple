@@ -757,9 +757,12 @@ export const VercelInfraProject = Schema.Struct({
 	errorLogs: Schema.Number,
 	/** ISO-8601. */
 	lastSeen: Schema.String,
-	/** Root-span latency from deployment traces; null when the project sends none. */
+	/** Request latency at Vercel's edge, from the trace drain; null when the project sends no traces. */
 	p50DurationMs: Schema.NullOr(Schema.Number),
 	p95DurationMs: Schema.NullOr(Schema.Number),
+	/** Function invocations and the cold starts among them, from the trace drain's platform spans. */
+	invocations: Schema.Number,
+	coldStarts: Schema.Number,
 })
 export type VercelInfraProject = typeof VercelInfraProject.Type
 
@@ -879,6 +882,115 @@ export class VercelAiGatewayResponse extends Schema.Class<VercelAiGatewayRespons
 		timeseries: Schema.Array(VercelAiGatewayBucket),
 	},
 ) {}
+
+/** A window, for every project or one. */
+export class VercelInfraWindowRequest extends Schema.Class<VercelInfraWindowRequest>(
+	"VercelInfraWindowRequest",
+)({
+	startTime: TinybirdDateTime,
+	endTime: TinybirdDateTime,
+	/** Every project when absent. */
+	projectId: Schema.optionalKey(VercelProjectId),
+}) {}
+
+/** One route of a project: the function behind it, from the trace drain's platform spans. */
+export const VercelInfraFunction = Schema.Struct({
+	/** The edge request's `http.route`; empty when Vercel reported none. */
+	route: Schema.String,
+	invocations: Schema.Number,
+	coldStarts: Schema.Number,
+	p95DurationMs: Schema.Number,
+	/** Start VM, Spawn Node.js and Init User Code of one cold start, summed; null without cold starts. */
+	initP50Ms: Schema.NullOr(Schema.Number),
+	initP95Ms: Schema.NullOr(Schema.Number),
+})
+export type VercelInfraFunction = typeof VercelInfraFunction.Type
+
+export class VercelInfraFunctionsResponse extends Schema.Class<VercelInfraFunctionsResponse>(
+	"VercelInfraFunctionsResponse",
+)({
+	functions: Schema.Array(VercelInfraFunction),
+}) {}
+
+/** One host a project's functions called. */
+export const VercelInfraDependency = Schema.Struct({
+	host: Schema.String,
+	calls: Schema.Number,
+	/** Calls that failed: an error status, a 5xx, or no response. */
+	errors: Schema.Number,
+	p50DurationMs: Schema.Number,
+	p95DurationMs: Schema.Number,
+})
+export type VercelInfraDependency = typeof VercelInfraDependency.Type
+
+export class VercelInfraDependenciesResponse extends Schema.Class<VercelInfraDependenciesResponse>(
+	"VercelInfraDependenciesResponse",
+)({
+	dependencies: Schema.Array(VercelInfraDependency),
+}) {}
+
+export const VercelWebVital = Schema.Literals(["LCP", "INP", "CLS", "FCP", "TTFB"])
+export type VercelWebVital = typeof VercelWebVital.Type
+
+/** The 75th percentile of one Web Vital over a group; milliseconds, or a score for CLS. */
+export const VercelSpeedInsightsReading = Schema.Struct({
+	/** The route or device type; empty in `metrics`. */
+	key: Schema.String,
+	metric: Schema.String,
+	p75: Schema.Number,
+	samples: Schema.Number,
+})
+export type VercelSpeedInsightsReading = typeof VercelSpeedInsightsReading.Type
+
+export class VercelSpeedInsightsResponse extends Schema.Class<VercelSpeedInsightsResponse>(
+	"VercelSpeedInsightsResponse",
+)({
+	metrics: Schema.Array(VercelSpeedInsightsReading),
+	/** By route and by device type; empty when the request named no project. */
+	routes: Schema.Array(VercelSpeedInsightsReading),
+	devices: Schema.Array(VercelSpeedInsightsReading),
+}) {}
+
+export const VercelWebAnalyticsSummary = Schema.Struct({
+	pageViews: Schema.Number,
+	/** Distinct device ids among page views; Vercel rotates them daily. */
+	uniqueDevices: Schema.Number,
+	customEvents: Schema.Number,
+})
+export type VercelWebAnalyticsSummary = typeof VercelWebAnalyticsSummary.Type
+
+/** One value of a breakdown: page views, or occurrences for a custom event. */
+export const VercelWebAnalyticsTop = Schema.Struct({
+	value: Schema.String,
+	count: Schema.Number,
+	devices: Schema.Number,
+})
+export type VercelWebAnalyticsTop = typeof VercelWebAnalyticsTop.Type
+
+export class VercelWebAnalyticsResponse extends Schema.Class<VercelWebAnalyticsResponse>(
+	"VercelWebAnalyticsResponse",
+)({
+	summary: VercelWebAnalyticsSummary,
+	pages: Schema.Array(VercelWebAnalyticsTop),
+	referrers: Schema.Array(VercelWebAnalyticsTop),
+	countries: Schema.Array(VercelWebAnalyticsTop),
+	events: Schema.Array(VercelWebAnalyticsTop),
+}) {}
+
+export const VercelAuditEvent = Schema.Struct({
+	/** ISO-8601. */
+	timestamp: Schema.String,
+	action: Schema.String,
+	actor: Schema.String,
+	actorType: Schema.String,
+	/** Empty for team-level events. */
+	projectId: Schema.String,
+})
+export type VercelAuditEvent = typeof VercelAuditEvent.Type
+
+export class VercelAuditLogResponse extends Schema.Class<VercelAuditLogResponse>("VercelAuditLogResponse")({
+	events: Schema.Array(VercelAuditEvent),
+}) {}
 
 // Google Cloud infrastructure page (/infra/gcp): `gcp.*` metrics from the Google Cloud poller.
 const GcpInfraService = Schema.Literals(GCP_INFRA_SERVICE_IDS)
@@ -3902,6 +4014,41 @@ export class QueryEngineApiGroup extends HttpApiGroup.make("queryEngine")
 		HttpApiEndpoint.post("vercelAiGateway", "/vercel-ai-gateway", {
 			payload: VercelInfraTimeseriesRequest,
 			success: VercelAiGatewayResponse,
+			error: queryEngineEndpointErrors,
+		}),
+	)
+	.add(
+		HttpApiEndpoint.post("vercelInfraFunctions", "/vercel-infra-functions", {
+			payload: VercelInfraProjectDetailRequest,
+			success: VercelInfraFunctionsResponse,
+			error: queryEngineEndpointErrors,
+		}),
+	)
+	.add(
+		HttpApiEndpoint.post("vercelInfraDependencies", "/vercel-infra-dependencies", {
+			payload: VercelInfraProjectDetailRequest,
+			success: VercelInfraDependenciesResponse,
+			error: queryEngineEndpointErrors,
+		}),
+	)
+	.add(
+		HttpApiEndpoint.post("vercelSpeedInsights", "/vercel-speed-insights", {
+			payload: VercelInfraWindowRequest,
+			success: VercelSpeedInsightsResponse,
+			error: queryEngineEndpointErrors,
+		}),
+	)
+	.add(
+		HttpApiEndpoint.post("vercelWebAnalytics", "/vercel-web-analytics", {
+			payload: VercelInfraWindowRequest,
+			success: VercelWebAnalyticsResponse,
+			error: queryEngineEndpointErrors,
+		}),
+	)
+	.add(
+		HttpApiEndpoint.post("vercelAuditLog", "/vercel-audit-log", {
+			payload: VercelInfraProjectsRequest,
+			success: VercelAuditLogResponse,
 			error: queryEngineEndpointErrors,
 		}),
 	)

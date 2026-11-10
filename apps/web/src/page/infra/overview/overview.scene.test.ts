@@ -229,7 +229,11 @@ describe("infra overview", () => {
 			...context,
 			infra: { ...context.infra!, integrations: { ...integrations, vercel: true } },
 		}
-		const entry = update(init({ search: {} }, connected).model, resolvedAt(window, "Load"), connected).model
+		const entry = update(
+			init({ search: {} }, connected).model,
+			resolvedAt(window, "Load"),
+			connected,
+		).model
 		const known = update(
 			entry,
 			Message.CompletedFetchPresence({ key: entry.presence.key ?? "", result: Result.succeed([]) }),
@@ -249,6 +253,8 @@ describe("infra overview", () => {
 			lastSeen: "2026-10-01T11:59:00.000Z",
 			p50DurationMs: null,
 			p95DurationMs: null,
+			invocations: 0,
+			coldStarts: 0,
 		}
 		const completeIn = (model: Model, source: SourceId, reading: SourceReading) =>
 			update(

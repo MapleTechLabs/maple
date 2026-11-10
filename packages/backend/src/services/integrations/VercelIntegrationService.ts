@@ -319,6 +319,7 @@ const uniqueById = <A extends { readonly id: string }>(items: ReadonlyArray<A>) 
 const toSummary = (row: VercelDeploymentRow) =>
 	new VercelDeploymentSummary({
 		id: row.deploymentId,
+		projectId: row.projectId,
 		url: row.url,
 		target: row.target,
 		state: row.state,
@@ -327,7 +328,10 @@ const toSummary = (row: VercelDeploymentRow) =>
 		commitMessage: row.commitMessage,
 		creator: row.creator,
 		createdAt: row.createdAtVercel,
+		buildingAt: row.buildingAt,
 		readyAt: row.readyAt,
+		errorCode: row.errorCode,
+		errorMessage: row.errorMessage,
 		inspectorUrl: row.inspectorUrl,
 	})
 
@@ -381,9 +385,10 @@ export interface VercelIntegrationServiceApi {
 		{ readonly disconnected: boolean; readonly drainsRemoved: boolean },
 		IntegrationsPersistenceError
 	>
+	/** Newest first; the whole team's when `projectId` is undefined. */
 	readonly deployments: (
 		orgId: OrgId,
-		projectId: string,
+		projectId: string | undefined,
 		limit: number,
 	) => Effect.Effect<ReadonlyArray<VercelDeploymentSummary>, IntegrationsPersistenceError>
 	readonly pollOrg: (orgId: OrgId) => Effect.Effect<VercelPollOrgSummary, IntegrationsPersistenceError>
@@ -881,7 +886,9 @@ export class VercelIntegrationService extends Context.Service<
 									commitMessage: d.commitMessage,
 									creator: d.creator,
 									errorCode: d.errorCode,
+									errorMessage: d.errorMessage,
 									createdAtVercel: d.createdAt,
+									buildingAt: d.buildingAt,
 									readyAt: d.readyAt,
 									inspectorUrl: d.inspectorUrl,
 									updatedAt: now,
@@ -896,6 +903,8 @@ export class VercelIntegrationService extends Context.Service<
 									target: excluded.target,
 									state: excluded.state,
 									errorCode: excluded.errorCode,
+									errorMessage: excluded.errorMessage,
+									buildingAt: excluded.buildingAt,
 									readyAt: excluded.readyAt,
 									inspectorUrl: excluded.inspectorUrl,
 									updatedAt: excluded.updatedAt,
@@ -1337,14 +1346,17 @@ export class VercelIntegrationService extends Context.Service<
 
 		const deployments = Effect.fn("VercelIntegrationService.deployments")(function* (
 			orgId: OrgId,
-			projectId: string,
+			projectId: string | undefined,
 			limit: number,
 		) {
 			const rows = yield* dbExecute((db) =>
 				db.run(
 					PG.from(VercelDeployments)
 						.select()
-						.where(($) => [$.orgId.eq(orgId), $.projectId.eq(projectId)])
+						.where(($) => [
+							$.orgId.eq(orgId),
+							projectId === undefined ? undefined : $.projectId.eq(projectId),
+						])
 						.orderBy(["createdAtVercel", "desc"])
 						.limit(limit),
 				),

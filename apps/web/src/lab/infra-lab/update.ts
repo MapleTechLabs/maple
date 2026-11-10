@@ -18,12 +18,17 @@ import * as VercelProjectUpdate from "../../page/infra-integrations/vercel/proje
 import type { Resources } from "../../platform/resources"
 import {
 	VERCEL_AI_GATEWAY,
+	VERCEL_ALL_DRAINS_STATUS,
 	VERCEL_API_AI_GATEWAY,
 	VERCEL_API_DEPLOYMENTS,
 	VERCEL_API_DETAIL,
+	VERCEL_AUDIT_LOG,
 	VERCEL_BUCKETS,
 	VERCEL_PROJECTS,
+	VERCEL_SPEED_INSIGHTS,
 	VERCEL_STATUS,
+	VERCEL_TEAM_DEPLOYMENTS,
+	VERCEL_WEB_ANALYTICS,
 } from "../vercel-infra-fixtures"
 
 // `/lab/infra`: the infra overview, hosts list, Railway list and the Vercel pages
@@ -44,9 +49,9 @@ export const Model = Schema.Struct({
 	/** `HostTable`'s own `useTableSort`: CPU, descending. */
 	hostSort: SortState,
 	railway: RailwayModel,
-	/** The Vercel list's projects and AI Gateway views and one project's page, their reads answered. */
+	/** The Vercel overview, projects list and one project's page, their reads answered. */
+	vercelOverview: VercelList.Model,
 	vercelProjects: VercelList.Model,
-	vercelAiGateway: VercelList.Model,
 	vercelProject: VercelProject.Model,
 })
 export type Model = typeof Model.Type
@@ -56,7 +61,9 @@ export const Message = defineMessageUnion({
 	ChangedHostScope: { scope: Schema.optional(HostsList.HostScope) },
 	ClickedHostSort: { key: HostsList.HostSortKey },
 	GotRailwayMessage: { message: RailwayList.Message },
-	GotVercelListMessage: { view: Schema.Literals(["projects", "aiGateway"]), message: VercelList.Message },
+	GotVercelListMessage: { view: Schema.Literals(["overview", "projects"]), message: VercelList.Message },
+	/** A retry in the Vercel sections frame: the fixtures have nothing to ask again. */
+	ClickedVercelSectionRetry: {},
 	GotVercelProjectMessage: { message: VercelProject.Message },
 	SettledChartRuntime: { runtime: ChartRuntime },
 	ResolvedThemeColors: { colors: ThemeColors },
@@ -83,14 +90,18 @@ const vercelWindow = (nowMs: number) => ({
 	endTime: formatWarehouseDateTime(nowMs),
 })
 
-const vercelList = (flags: Flags, view: "projects" | "aiGateway"): VercelList.Model => ({
-	...VercelListUpdate.init({ search: view === "projects" ? {} : { view } }, LAB_CONTEXT).model,
+const vercelList = (flags: Flags, view: "overview" | "projects"): VercelList.Model => ({
+	...VercelListUpdate.init({ search: view === "projects" ? { view } : {} }, LAB_CONTEXT).model,
 	window: vercelWindow(flags.nowMs),
 	nowMs: flags.nowMs,
-	status: answered(VERCEL_STATUS),
+	status: answered(VERCEL_ALL_DRAINS_STATUS),
 	projects: answered(VERCEL_PROJECTS),
 	buckets: answered(VERCEL_BUCKETS),
 	aiGateway: answered(VERCEL_AI_GATEWAY),
+	deployments: answered(VERCEL_TEAM_DEPLOYMENTS),
+	speedInsights: answered(VERCEL_SPEED_INSIGHTS),
+	webAnalytics: answered(VERCEL_WEB_ANALYTICS),
+	auditLog: answered(VERCEL_AUDIT_LOG),
 })
 
 const vercelProject = (flags: Flags): VercelProject.Model => ({
@@ -112,8 +123,8 @@ export const init = (flags: Flags): Return => ({
 		hostQuery: "",
 		hostSort: { key: "cpuPct", dir: "desc" },
 		railway: RailwayUpdate.init({ search: {} }, LAB_CONTEXT).model,
+		vercelOverview: vercelList(flags, "overview"),
 		vercelProjects: vercelList(flags, "projects"),
-		vercelAiGateway: vercelList(flags, "aiGateway"),
 		vercelProject: vercelProject(flags),
 	},
 	commands: [
@@ -128,11 +139,12 @@ export const init = (flags: Flags): Return => ({
 	],
 })
 
-/** The chart runtime and theme reach every Vercel frame at once. */
-const vercelPatch = (model: Model, patch: Partial<Pick<VercelList.Model, "chartRuntime" | "themeColors">>): Model => ({
+/** The chart runtime and theme reach the Vercel project frame. */
+const vercelPatch = (
+	model: Model,
+	patch: Partial<Pick<VercelProject.Model, "chartRuntime" | "themeColors">>,
+): Model => ({
 	...model,
-	vercelProjects: { ...model.vercelProjects, ...patch },
-	vercelAiGateway: { ...model.vercelAiGateway, ...patch },
 	vercelProject: { ...model.vercelProject, ...patch },
 })
 
@@ -148,7 +160,7 @@ export const update = (model: Model, message: Message): Return =>
 		}),
 		GotVercelListMessage: ({ view, message: inner }) => {
 			if (!LOCAL_VERCEL_MESSAGES.has(inner._tag)) return { model }
-			const field = view === "projects" ? "vercelProjects" : "vercelAiGateway"
+			const field = view === "projects" ? "vercelProjects" : "vercelOverview"
 			const next = VercelListUpdate.update(model[field], inner, LAB_CONTEXT)
 			return {
 				model: { ...model, [field]: next.model },
@@ -167,6 +179,7 @@ export const update = (model: Model, message: Message): Return =>
 				),
 			}
 		},
+		ClickedVercelSectionRetry: () => ({ model }),
 		SettledChartRuntime: ({ runtime }) => ({ model: vercelPatch(model, { chartRuntime: runtime }) }),
 		ResolvedThemeColors: ({ colors }) => ({ model: vercelPatch(model, { themeColors: colors }) }),
 		// Only the table's sort and tooltips; the Railway search box here is inert.

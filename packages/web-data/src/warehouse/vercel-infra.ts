@@ -3,6 +3,7 @@ import {
 	VercelInfraProjectDetailRequest,
 	VercelInfraProjectsRequest,
 	VercelInfraTimeseriesRequest,
+	VercelInfraWindowRequest,
 } from "@maple/domain/http"
 import { formatWarehouseDateTime } from "@maple/query-engine"
 import { MapleInternalHttp } from "./warehouse-services"
@@ -26,7 +27,13 @@ const ProjectInputSchema = Schema.Struct({
 	projectId: Schema.String,
 })
 
+const WindowInputSchema = Schema.Struct({
+	...TimeRangeInputSchema.fields,
+	projectId: Schema.optional(Schema.String),
+})
+
 export type VercelTimeRangeInput = (typeof TimeRangeInputSchema)["Encoded"]
+export type VercelWindowInput = (typeof WindowInputSchema)["Encoded"]
 export type VercelTimeseriesInput = (typeof TimeseriesInputSchema)["Encoded"]
 export type VercelProjectInput = (typeof ProjectInputSchema)["Encoded"]
 
@@ -106,6 +113,97 @@ export const getVercelAiGateway = Effect.fn("QueryEngine.getVercelAiGateway")(fu
 		Effect.gen(function* () {
 			const client = yield* MapleInternalHttp
 			return yield* client.queryEngine.vercelAiGateway({ payload })
+		}),
+	)
+})
+
+const windowRequest = (input: (typeof WindowInputSchema)["Type"], nowMillis: number) => {
+	const range = resolveRange(input, nowMillis)
+	return input.projectId === undefined
+		? new VercelInfraWindowRequest(range)
+		: new VercelInfraWindowRequest({ ...range, projectId: input.projectId })
+}
+
+export const getVercelFunctions = Effect.fn("QueryEngine.getVercelFunctions")(function* ({
+	data,
+}: {
+	data: VercelProjectInput
+}) {
+	const input = yield* decodeInput(ProjectInputSchema, data, "getVercelFunctions")
+	const nowMillis = yield* Clock.currentTimeMillis
+	const range = resolveRange(input, nowMillis)
+	return yield* runWarehouseQuery("vercelInfraFunctions", () =>
+		Effect.gen(function* () {
+			const client = yield* MapleInternalHttp
+			return yield* client.queryEngine.vercelInfraFunctions({
+				payload: new VercelInfraProjectDetailRequest({ ...range, projectId: input.projectId }),
+			})
+		}),
+	)
+})
+
+export const getVercelDependencies = Effect.fn("QueryEngine.getVercelDependencies")(function* ({
+	data,
+}: {
+	data: VercelProjectInput
+}) {
+	const input = yield* decodeInput(ProjectInputSchema, data, "getVercelDependencies")
+	const nowMillis = yield* Clock.currentTimeMillis
+	const range = resolveRange(input, nowMillis)
+	return yield* runWarehouseQuery("vercelInfraDependencies", () =>
+		Effect.gen(function* () {
+			const client = yield* MapleInternalHttp
+			return yield* client.queryEngine.vercelInfraDependencies({
+				payload: new VercelInfraProjectDetailRequest({ ...range, projectId: input.projectId }),
+			})
+		}),
+	)
+})
+
+export const getVercelSpeedInsights = Effect.fn("QueryEngine.getVercelSpeedInsights")(function* ({
+	data,
+}: {
+	data: VercelWindowInput
+}) {
+	const input = yield* decodeInput(WindowInputSchema, data, "getVercelSpeedInsights")
+	const nowMillis = yield* Clock.currentTimeMillis
+	const payload = windowRequest(input, nowMillis)
+	return yield* runWarehouseQuery("vercelSpeedInsights", () =>
+		Effect.gen(function* () {
+			const client = yield* MapleInternalHttp
+			return yield* client.queryEngine.vercelSpeedInsights({ payload })
+		}),
+	)
+})
+
+export const getVercelWebAnalytics = Effect.fn("QueryEngine.getVercelWebAnalytics")(function* ({
+	data,
+}: {
+	data: VercelWindowInput
+}) {
+	const input = yield* decodeInput(WindowInputSchema, data, "getVercelWebAnalytics")
+	const nowMillis = yield* Clock.currentTimeMillis
+	const payload = windowRequest(input, nowMillis)
+	return yield* runWarehouseQuery("vercelWebAnalytics", () =>
+		Effect.gen(function* () {
+			const client = yield* MapleInternalHttp
+			return yield* client.queryEngine.vercelWebAnalytics({ payload })
+		}),
+	)
+})
+
+export const getVercelAuditLog = Effect.fn("QueryEngine.getVercelAuditLog")(function* ({
+	data,
+}: {
+	data: VercelTimeRangeInput
+}) {
+	const input = yield* decodeInput(TimeRangeInputSchema, data, "getVercelAuditLog")
+	const nowMillis = yield* Clock.currentTimeMillis
+	const range = resolveRange(input, nowMillis)
+	return yield* runWarehouseQuery("vercelAuditLog", () =>
+		Effect.gen(function* () {
+			const client = yield* MapleInternalHttp
+			return yield* client.queryEngine.vercelAuditLog({ payload: new VercelInfraProjectsRequest(range) })
 		}),
 	)
 })
