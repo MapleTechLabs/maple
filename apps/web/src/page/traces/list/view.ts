@@ -1,15 +1,9 @@
 import { peekSheet } from "./view-peek"
 import { advancedFilterDialog, suggestionList } from "./view-advanced"
 import { Submodel } from "foldkit"
-import type { Html, HtmlBuilder } from "foldkit/html"
-import { button } from "@maple/views/ui/button"
-import { kbd } from "@maple/views/ui/display"
 import { activeFilterChips } from "@maple/views/ui/filters/active-filter-chips"
-import { icon } from "@maple/views/ui/icon"
-import { iconButton } from "@maple/views/ui/icon-button"
-import { panel } from "@maple/views/ui/panel"
-import { truncatedText } from "@maple/views/ui/truncated-text"
 import type { PageViewInputs } from "../../contract"
+import { advancedFilterButton, appliedWhereClause } from "../../kit/advanced-filter"
 import { dashboardPage } from "../../kit/dashboard-page"
 import { timeControls } from "../../kit/time-controls"
 import * as TimeRangePicker from "../../kit/time-range-picker"
@@ -19,59 +13,8 @@ import type { Model } from "./model"
 import { DEFAULT_PRESET } from "./update"
 import { filtersRail } from "./view-filters"
 import { tracesTable } from "./view-table"
-import { typographyClass } from "@maple/views/ui/typography"
 import { hstack } from "@maple/views/ui/stack"
 import { Array as Arr, String as Str } from "effect"
-
-/**
- * `AdvancedFilterDialog`'s trigger.
- */
-const advancedFilterButton = (h: HtmlBuilder<Message>, model: Model): Html => {
-	const isActive = Str.trim(model.search.whereClause ?? "").length > 0
-	return button(
-		h,
-		{
-			variant: isActive ? "secondary" : "outline",
-			size: "sm",
-			className: "gap-2",
-			attributes: [
-				h.DataAttribute("shortcut-focus", "search"),
-				h.OnClick(Message.ClickedAdvancedFilter()),
-			],
-		},
-		[
-			icon(h, "FilterIcon", { className: isActive ? "text-primary" : "text-muted-foreground" }),
-			h.span([], ["Advanced filter"]),
-			kbd(h, undefined, ["F"]),
-		],
-	)
-}
-
-const whereClausePanel = (h: HtmlBuilder<Message>, whereClause: string): Html =>
-	panel(h, { tone: "muted", className: "mb-4 flex-row items-center justify-between gap-2 px-3 py-2" }, [
-		hstack(h, { gap: "2", shrink: true }, [
-			icon(h, "FilterIcon", { className: "size-3.5 shrink-0 text-primary" }),
-			truncatedText(h, {
-				text: whereClause,
-				mono: true,
-				className: typographyClass({ size: "xs", tone: "foreground" }),
-			}),
-		]),
-		iconButton(
-			h,
-			{
-				label: "Clear filter",
-				size: "icon-xs",
-				className: typographyClass({
-					tone: "muted",
-					hoverTone: "foreground",
-					className: "shrink-0",
-				}),
-				attributes: [h.OnClick(Message.ClickedClearWhereClause())],
-			},
-			[icon(h, "XmarkIcon")],
-		),
-	])
 
 /** The chip bar: URL namespace chips hide while the org pin is on. */
 const chips = (model: Model, pinnedNamespace: string | null) =>
@@ -86,6 +29,7 @@ const chips = (model: Model, pinnedNamespace: string | null) =>
 			label: chip.label,
 			values: chip.values,
 			isNegated: chip.negated,
+			operator: chip.operator,
 			onRemove: Message.RemovedFilterChip({ id: chip.id }),
 		}),
 	)
@@ -93,14 +37,18 @@ const chips = (model: Model, pinnedNamespace: string | null) =>
 const toTimePicker = (message: TimeRangePicker.Message) => Message.GotTimePickerMessage({ message })
 
 export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, inputs, h) => {
-	const whereClause = model.search.whereClause ?? ""
+	const whereClause = Str.trim(model.search.whereClause ?? "")
 	return dashboardPage(
 		h,
 		{
 			title: "Traces",
 			filters: filtersRail(h, model, inputs.context.pinnedNamespace),
 			actions: hstack(h, { gap: "2", wrap: true }, [
-				advancedFilterButton(h, model),
+				advancedFilterButton(h, {
+					isActive: whereClause !== "",
+					onClick: Message.ClickedAdvancedFilter(),
+					attributes: [h.DataAttribute("shortcut-focus", "search")],
+				}),
 				timeControls(h, {
 					search: model.search,
 					defaultPreset: DEFAULT_PRESET,
@@ -126,7 +74,9 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 			]),
 		},
 		[
-			...(whereClause === "" ? [] : [whereClausePanel(h, whereClause)]),
+			...(whereClause === ""
+				? []
+				: [appliedWhereClause(h, { whereClause, onClear: Message.ClickedClearWhereClause() })]),
 			activeFilterChips(h, {
 				chips: chips(model, inputs.context.pinnedNamespace),
 				onClearAll: Message.ClickedClearAllChips(),

@@ -77,6 +77,16 @@ export const caretEvents = (element: Element): Stream.Stream<CaretMessage> => {
 			type: "blur",
 			filterMapEvent: () => Option.some(CaretMessage.BlurredEditor()),
 		}),
+		// Escape on an open list closes only the list, not a dialog or sheet around the editor.
+		Dom.streamFromEventFilterMap({
+			target: element,
+			type: "keydown",
+			filterMapEvent: (event): Option.Option<CaretMessage> => {
+				if (event.key === "Escape" && element.getAttribute("aria-expanded") === "true")
+					event.stopPropagation()
+				return Option.none()
+			},
+		}),
 	]
 	return Stream.mergeAll(streams, { concurrency: "unbounded" })
 }
@@ -108,6 +118,13 @@ const anchorEvents = (textareaId: string): Stream.Stream<CaretMessage> => {
 		Dom.streamFromEventFilterMap({
 			target: window,
 			type: "scroll",
+			filterMapEvent: measured,
+			options: { capture: true },
+		}),
+		// A dialog's open animation scales the textarea: measure again once it settles.
+		Dom.streamFromEventFilterMap({
+			target: window,
+			type: "transitionend",
 			filterMapEvent: measured,
 			options: { capture: true },
 		}),
