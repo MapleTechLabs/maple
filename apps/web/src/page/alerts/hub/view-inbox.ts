@@ -1,4 +1,5 @@
 import type { AlertIncidentDocument, AlertIncidentId, AlertRuleDocument } from "@maple/domain/http"
+import { ENGINE_UNGROUPED_GROUP_KEY } from "@maple/query-engine"
 import { acknowledgedLine } from "@maple/web-data/alerts/incident-timeline"
 import { countLabel } from "@maple/ui/lib/format"
 import { formatRelativeShortFrom } from "@maple/ui/lib/time-format"
@@ -519,9 +520,6 @@ const headroomList = <M>(h: HtmlBuilder<M>, rows: ReadonlyArray<RuleHeadroom>, n
 	)
 }
 
-/** The query engine's key for an ungrouped reading, which older state rows still carry. */
-const ALL_GROUPS = "all"
-
 const headroomRow = <M>(h: HtmlBuilder<M>, row: RuleHeadroom, now: number): Html => {
 	const { rule, closeness } = row
 	const tone = headroomTone(row)
@@ -550,7 +548,11 @@ const headroomRow = <M>(h: HtmlBuilder<M>, row: RuleHeadroom, now: number): Html
 								typography(
 									h,
 									{ size: "2xs", tone: "muted", mono: true, truncate: true, as: "p" },
-									[row.groupLabel === ALL_GROUPS ? "all services" : row.groupLabel],
+									[
+										row.groupLabel === ENGINE_UNGROUPED_GROUP_KEY
+											? "all services"
+											: row.groupLabel,
+									],
 								),
 							]
 						: []),
