@@ -34,7 +34,6 @@ export interface ChatWorkspaceCredentialsRef {
 	readonly externalWorkspaceId: string
 }
 
-/** Seal a connector's credential string for storage. */
 export const sealChatWorkspaceCredentials = <E>(
 	credentials: string,
 	encryptionKey: Buffer,

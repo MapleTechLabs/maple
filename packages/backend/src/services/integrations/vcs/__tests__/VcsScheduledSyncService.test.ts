@@ -32,7 +32,6 @@ const schedulerLayer = (testDb: TestDb, sent: Array<VcsSyncJob>, opts?: { readon
 	return Layer.mergeAll(service, data)
 }
 
-// Seed one installation for an org with a given external id; returns the entity.
 const seedInstallation = (repo: VcsRepo, orgId: OrgId, externalInstallationId: string) =>
 	Effect.gen(function* () {
 		yield* repo.upsertInstallation({

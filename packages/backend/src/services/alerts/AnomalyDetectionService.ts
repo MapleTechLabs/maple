@@ -833,8 +833,6 @@ const make: Effect.Effect<
 		}
 	})
 
-	// Incident timeseries — observed-vs-baseline chart data
-
 	/** Max chart window; matches the detector's own baseline horizon. */
 	const TIMESERIES_MAX_WINDOW_MS = BASELINE_WINDOW_MS
 
@@ -982,8 +980,6 @@ const make: Effect.Effect<
 			thresholdValue: row.thresholdValue,
 		})
 	})
-
-	// Tick: data fetch
 
 	interface HourRow {
 		/** Epoch ms, not a `DateTime.Utc`: baseline rows are cached as JSON. */
@@ -1243,8 +1239,6 @@ const make: Effect.Effect<
 		}
 		return { observations, baselines }
 	})
-
-	// Tick: per-org processing
 
 	const claimOrg = (orgId: OrgId, nowMs: number) =>
 		dbExecute((db) =>
@@ -2132,11 +2126,7 @@ const make: Effect.Effect<
 											? {
 													lastObservedValue: nextEntry.value.lastValue,
 													// The count comes from the promoted series' state row, not
-													// from the fingerprint entry — entries carry only a value.
-													// This previously read `nextEntry.lastValue`, i.e. the
-													// metric reading (a p95 in ms) into an `integer` column,
-													// so every detach failed with `invalid input syntax for
-													// type integer: "4729.711321330495"`.
+													// from the fingerprint entry: entries carry only a value.
 													lastSampleCount: next.lastSampleCount ?? 0,
 												}
 											: undefined),

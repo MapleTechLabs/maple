@@ -291,7 +291,6 @@ export type MemberRecipient =
 			readonly externalUserId: string
 	  }
 
-/** A step's destination targets. */
 export const stepDestinationIds = (step: EscalationStep): ReadonlyArray<AlertDestinationId> =>
 	Arr.dedupe(
 		Arr.flatMap(step.targets, (target) => (target.type === "destination" ? [target.destinationId] : [])),

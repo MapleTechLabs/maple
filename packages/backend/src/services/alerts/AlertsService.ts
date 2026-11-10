@@ -442,10 +442,6 @@ const TRIAGE_START_CONCURRENCY = 8
 const LIVE_ACTIVITY_CHECK_HISTORY = 30
 const DELIVERY_LEASE_TTL_MS = 30_000
 
-/* -------------------------------------------------------------------------- */
-/*  Schemas for stored JSON formats                                           */
-/* -------------------------------------------------------------------------- */
-
 const decodeAlertRuleIdSync = Schema.decodeUnknownSync(AlertRuleDocument.fields.id)
 const decodeAlertIncidentIdSync = Schema.decodeUnknownSync(AlertIncidentDocument.fields.id)
 const decodeAlertIncidentEventIdSync = Schema.decodeUnknownSync(AlertIncidentEventId)
@@ -545,8 +541,6 @@ const parseDeliveryPayload = (
 	Schema.decodeUnknownEffect(StoredDeliveryPayloadSchema)(value).pipe(
 		Effect.mapError((cause) => makeValidationError("Stored delivery payload is invalid", [], cause)),
 	)
-
-// Formatting helpers imported from AlertDeliveryDispatch
 
 /** The alert operations that span rules, destinations and evaluation; the rest live on the narrow services. */
 export interface AlertsServiceApi {
@@ -1804,10 +1798,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 				const newNormalized = yield* normalizeRule(orgId, request)
 				const result = yield* upsertRuleRow(orgId, userId, ruleId, request)
 
-				// Resolve stale incidents caused by the configuration change
-
 				if (oldNormalized.enabled && !newNormalized.enabled) {
-					// Rule was disabled — resolve all open incidents
 					yield* resolveStaleIncidents(orgId, ruleId, newNormalized, {
 						resolveAll: true,
 					})
@@ -4230,10 +4221,6 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 				if (!staged) yield* Ref.update(pendingChecks, Chunk.append(checkRow))
 			})
 
-			/* -------------------------------------------------------------------------- */
-			/*  Stale incident resolution                                               */
-			/* -------------------------------------------------------------------------- */
-
 			const computeStaleGroupKeys = (
 				oldRule: NormalizedRule,
 				newRule: NormalizedRule,
@@ -4768,8 +4755,6 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 						const [first, ...rest] = claimed
 						if (first === undefined) return claimed
 
-						// Matches the `Effect.ignore` this call carried when it was a
-						// separate execute.
 						yield* db
 							.run(
 								PG.update(AlertRules)
@@ -5699,7 +5684,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 						// above only deletes incident-backed rows. Zero rows touched in
 						// steady state, so the Electric shape stays quiet.
 						//
-						// Applied set-based after the loop (see `flushSelfHeal`). Safe to
+						// Applied set-based after the loop (see `flushRuleStateHousekeeping`). Safe to
 						// defer: it is scoped to this rule and this rule's own writes are
 						// already done, so end-of-tick is the same state it would have seen
 						// here.
@@ -5983,7 +5968,6 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 					),
 				)
 
-				// Resolve stale incidents for disabled rules
 				const sweepDisabledRules = Effect.gen(function* () {
 					const disabledRulesWithOpenIncidents = yield* dbExecute((db) =>
 						db.run(

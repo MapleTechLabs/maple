@@ -675,7 +675,6 @@ describe("ScrapeTargetsService", () => {
 			assert.strictEqual(checks[1]?.samplesScraped, 120)
 			assert.strictEqual(checks[1]?.samplesPostRelabel, 118)
 
-			// Time-range + limit filtering.
 			const limited = yield* service.listChecks(orgId, target.id, { limit: 1 })
 			assert.lengthOf(limited, 1)
 			assert.strictEqual(limited[0]?.checkedAt, scrapedAt + 15_000)

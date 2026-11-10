@@ -108,8 +108,8 @@ export const routeEndpointPlan = (endpoint: string): RouteEndpointPlan | undefin
 /**
  * What a plan hands the tile: the browser's server function's return value for
  * the same endpoint, `{ data, …extras }`. The client unwraps `data` through the
- * one `toReadyWidgetData` in `use-widget-data.ts` for both paths. (Renderers do
- * NOT unwrap it themselves — that assumption once left every chart on a shared
+ * one `toReadyData` in `apps/web/src/page/dashboards/kit/widget-data.ts` for both paths.
+ * (Renderers do NOT unwrap it themselves: that assumption once left every chart on a shared
  * board holding an object where an array belongs.)
  */
 export interface RouteEndpointResponse {

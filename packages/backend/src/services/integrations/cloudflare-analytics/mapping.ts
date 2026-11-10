@@ -1,7 +1,7 @@
 /**
  * Pure mapping from decoded Cloudflare GraphQL analytics groups to Tinybird metric rows
- * (`metrics_sum` / `metrics_gauge`, collector-exporter shape — the same row layout
- * `apps/api/src/services/demo/fixtures.ts` writes).
+ * (`metrics_sum` / `metrics_gauge`, collector-exporter shape, the same row layout
+ * `services/org/demo/fixtures.ts` writes).
  *
  * Conventions:
  * - ServiceName `cloudflare/{zoneName}` for edge HTTP metrics (matches the Logpush ingest path)

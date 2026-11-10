@@ -862,7 +862,6 @@ describe("GithubConnectService", () => {
 				mode: "install",
 			})
 
-			// Advance past the 10-minute STATE_TTL_MS before the callback returns.
 			yield* TestClock.adjust("11 minutes")
 
 			const exit = yield* svc.completeConnect("42", state, TEST_CODE, INITIATOR).pipe(Effect.exit)

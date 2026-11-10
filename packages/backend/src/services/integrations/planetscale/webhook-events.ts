@@ -32,7 +32,7 @@ import { applyIssueReopen, issueReopenFor } from "@maple/backend/services/errors
  * PlanetScale webhook event handling: signature verification, payload decode,
  * event → action classification, and the issue-hub upsert for events that
  * warrant triage (OOM restarts, storage thresholds, anomalies). Mirrors
- * `lib/issue-hub.ts` (alert incidents → kind="alert" issues) but standalone,
+ * `services/errors/issue-hub.ts` (alert incidents → kind="alert" issues) but standalone,
  * with kind="integration" and the `planetscale:{database}:{event}` fingerprint
  * so repeated firings dedupe into one issue that re-opens.
  */
@@ -317,9 +317,6 @@ export const planetScaleWebhookPayloadFromEvent = (
 		),
 	)
 
-// ---------------------------------------------------------------------------
-// Classification
-// ---------------------------------------------------------------------------
 export interface PlanetScaleTimelineSpec {
 	/** Where the event belongs on the timeline. Mirrored by the web vocabulary table. */
 	readonly category: typeof PlanetScaleEventCategory.Type
@@ -584,8 +581,6 @@ export const insertPlanetScaleEvent: (
 		}),
 	)
 })
-
-// Issue upsert (kind="integration")
 
 const SYSTEM_INTEGRATIONS_AGENT_NAME = "system-integrations"
 

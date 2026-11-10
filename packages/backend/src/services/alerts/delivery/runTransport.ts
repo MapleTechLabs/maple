@@ -70,10 +70,7 @@ const readErrorBody = (response: HttpClientResponse.HttpClientResponse, deadline
 			),
 	)
 
-/**
- * The one copy of the sentence that used to be hand-concatenated in five
- * separate provider arms.
- */
+/** The delivery failure sentence every provider shares. */
 const statusFailureMessage = (providerLabel: string, status: number, detail: string) =>
 	`${providerLabel} delivery failed with ${status}${detail ? `: ${detail}` : ""}`
 

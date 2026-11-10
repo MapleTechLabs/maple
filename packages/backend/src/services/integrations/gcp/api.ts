@@ -160,8 +160,6 @@ const call = <A>(
 	)
 }
 
-// Maple's service account
-
 const ServiceAccountKey = Schema.Struct({
 	client_email: Schema.String,
 	private_key: Schema.String,
@@ -294,8 +292,6 @@ export const impersonateReader = Effect.fnUntraced(function* (
 	return { accessToken: response.accessToken, quotaProject: connector.projectId } satisfies GcpReader
 })
 
-// Cloud Monitoring
-
 const BucketOptions = Schema.Struct({
 	linearBuckets: Schema.optionalKey(
 		Schema.Struct({
@@ -399,8 +395,6 @@ export const listTimeSeriesPage = (
 		),
 		decodeTimeSeriesPage,
 	)
-
-// Cloud Asset Inventory
 
 const ResourceSearchResult = Schema.Struct({
 	/** Full resource name, e.g. `//run.googleapis.com/projects/p/locations/l/services/s`. */

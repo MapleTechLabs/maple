@@ -204,8 +204,6 @@ export interface TestOverrides extends Partial<AlertRuntimeApi> {
 	readonly pushes?: Array<IncidentPushEvent>
 }
 
-// The fixed epoch scheduler tests start TestClock at, mirroring the previous
-// manual clock's default start time.
 export const DEFAULT_CLOCK_EPOCH_MS = 1_700_000_000_000
 
 export const stubEmailService = (

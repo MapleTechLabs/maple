@@ -53,7 +53,7 @@ const IDENTITY_CALLBACK = "https://api.localhost/oauth/chat/testchatid/identity/
  */
 const CONFIG_NAME = chatConnectorConfigNames[0] ?? "CHAT_CONNECTOR_CONFIG_MISSING"
 
-/** Mirror of the service's (unexported) state TTL — 10 minutes. */
+/** Mirrors `OAUTH_STATE_TTL_MS` in `services/auth/oauth/oauth-state.ts`. */
 const STATE_TTL_MS = 10 * 60_000
 
 /** No frame ever reaches the fake connector's socket half — see its `ingress` below. */

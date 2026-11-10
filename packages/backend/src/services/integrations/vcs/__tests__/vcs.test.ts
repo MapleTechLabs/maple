@@ -1708,7 +1708,6 @@ describe("VcsRepository", () => {
 			])
 			yield* markRemovedFor(repo, orgId, "8")
 
-			// Exercise the repo method directly (by internal installation id + scope).
 			const inst = yield* installationFor(repo, "42")
 			const active = yield* repo.listRepositoriesByInstallation(inst.id, "active")
 			const all = yield* repo.listRepositoriesByInstallation(inst.id, "all")

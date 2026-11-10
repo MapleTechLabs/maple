@@ -411,7 +411,7 @@ export class DashboardWidgetDataService extends Context.Service<
 			})
 
 			// `{ data: rows }` in every branch — the envelope the browser's server
-			// functions return, which the shared `toReadyWidgetData` unwraps on
+			// functions return, which the shared `toReadyData` unwraps on
 			// the client for both paths alike.
 			// Branches on the same path the scope gate classified, never on the stored shape.
 			if (path._tag === "QuerySet") {

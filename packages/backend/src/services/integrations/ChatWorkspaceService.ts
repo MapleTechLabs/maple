@@ -72,8 +72,6 @@ export type { ChatIdentityLink, ChatWorkspaceResolution }
  * the contract, not in a branch.
  */
 
-/** How long an install may sit between the authorize redirect and the callback. */
-
 /** `oauth_auth_states.provider` for a chat install, namespaced per connector. */
 const stateProvider = (connector: ChatConnectorId): string => `chat:${connector}`
 

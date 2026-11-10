@@ -175,7 +175,6 @@ const pages = <B extends { readonly nextPageToken?: string | undefined }, E, R>(
 		}),
 	)
 
-/** Whether a listing's last page was its end. */
 const readToEnd = <B extends { readonly nextPageToken?: string | undefined }>(last: Option.Option<B>) =>
 	Option.isSome(last) && last.value.nextPageToken === undefined
 

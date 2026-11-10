@@ -21,7 +21,6 @@ interface CheckToCount {
 	readonly down: boolean
 }
 
-/** One check as its day's counts. */
 export const countOne = (check: CheckToCount): UptimeDailyCount => ({
 	day: utcDay(check.at),
 	checks: 1,
@@ -30,7 +29,6 @@ export const countOne = (check: CheckToCount): UptimeDailyCount => ({
 	lastCheckAt: check.at,
 })
 
-/** Adds one check to its day's counts. */
 export const countCheck = (
 	counts: ReadonlyArray<UptimeDailyCount>,
 	check: CheckToCount,

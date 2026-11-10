@@ -287,8 +287,6 @@ export const probeLiveness: (input: LivenessProbeInput) => Effect.Effect<Livenes
 	return result
 })
 
-// Pure verdict logic
-
 /**
  * Yesterday's window wins when it carried traffic; a service too young for a
  * prior day (or one that was dark then) falls back to the onset window. A
