@@ -1,10 +1,8 @@
-// System prompts ported from apps/chat-agent/src/services/system-prompt.ts.
-//
 // Tools are named exactly as the toolkit registers them (`find_errors`), so the prompts use those
 // names directly. Mutating tools follow the propose-then-apply pattern (see agents.ts / the
 // approval layer): calling one surfaces an approval step in the UI before it takes effect.
 
-const APPROVAL_NOTE = `## Mutating actions are approved before they take effect
+const UI_APPROVAL_NOTE = `## Mutating actions are approved before they take effect
 Tools that create, update, delete, or transition state (dashboards, alert rules,
 error issues, notification policies, comments, fix proposals) do not take effect
 immediately — the Maple UI surfaces an approval step for the proposed action.
@@ -16,7 +14,7 @@ that; acknowledge briefly and stop. Do not retry a denied action without a new
 directive.`
 
 /**
- * {@link APPROVAL_NOTE} for a surface with no Maple UI in front of it.
+ * {@link UI_APPROVAL_NOTE} for a surface with no Maple UI in front of it.
  *
  * Same gate, same prohibition on imitating it; only where the approval is rendered differs — the
  * platform connector posts the proposal under the bot's own message, for the channel to act on.
@@ -59,11 +57,13 @@ const CHART_FENCE_CONTRACT = `\`\`\`chart
 - Pick percent or fraction by the numbers you are holding, not by what the column is called: a rate a tool printed as "4.5%" is percent, and the 0.045 the same rate comes back as from SQL is fraction. Labelling 0.045 percent charts it as 0.045%, a hundredth of the real rate
 - Only numbers a tool actually returned. Never interpolate a missing bucket, and never chart a series you did not measure`
 
-/** The entity-annotation grammar, which every renderer parses. */
+/** The entity-annotation grammar, which every renderer parses, and what each field means. */
 const ANNOTATION_GRAMMAR = `<<maple:trace:{"id":"TRACE_ID","name":"ROOT_SPAN_NAME","durationMs":DURATION,"hasError":BOOL,"spanCount":N,"services":["svc1","svc2"]}>>
 <<maple:service:{"name":"SERVICE_NAME","throughputRpm":REQ_PER_MINUTE,"errorRate":PERCENT,"p95Ms":LATENCY,"p99Ms":LATENCY}>>
 <<maple:error:{"errorType":"ERROR_MESSAGE","count":N,"affectedServices":["svc1"]}>>
-<<maple:log:{"severity":"WARN","body":"MESSAGE","serviceName":"SVC","traceId":"TRACE_ID"}>>`
+<<maple:log:{"severity":"WARN","body":"MESSAGE","serviceName":"SVC","traceId":"TRACE_ID"}>>
+
+Omit any field you did not measure. Each number is labelled with the unit its field names, so a value in the wrong field is published as a wrong number: \`throughputRpm\` is requests per minute (list_services reports it; diagnose_service's throughput is a raw span count, so omit it there), \`errorRate\` is a percentage so 4.5 means 4.5%, and latencies are milliseconds. Send whichever percentile the tool returned, never one number as both.`
 
 /** How a dashboard widget is authored. Identical on every surface that can propose one. */
 const DASHBOARD_NOTE = `## Dashboards
@@ -96,14 +96,12 @@ ${CHART_FENCE_CONTRACT}
 
 ${DASHBOARD_NOTE}
 
-${APPROVAL_NOTE}
+${UI_APPROVAL_NOTE}
 
 ## Inline References
 A card renders one entity inline with its metrics and a link to its detail page. Syntax: <<maple:TYPE:JSON>> — never inside a code fence, always alone on its own line with a blank line on each side, never inside a bullet, a sentence, or a table cell. The JSON must be valid and match a shape below exactly; anything else reaches the user as raw text.
 
 ${ANNOTATION_GRAMMAR}
-
-Omit any field you did not measure. The card labels each number with the unit its field names, so a value in the wrong field is published as a wrong number: \`throughputRpm\` is requests per minute (list_services reports it; diagnose_service's throughput is a raw span count, so omit it there), \`errorRate\` is a percentage so 4.5 means 4.5%, and latencies are milliseconds. Send whichever percentile the tool returned, never one number as both.
 
 A card and a table row are two renderings of the same entity — never emit both. Use a card when you name a single entity outside a table and the user is likely to click through. Zero cards is a normal reply; more than three is always wrong.
 `
@@ -153,7 +151,7 @@ Never report a bare label as a cause. "Unknown Error" is a grouping label for sp
 ## After diagnosing
 Stay in the conversation. Answer follow-up questions using the same tools, referencing the evidence you already gathered. When the user asks you to act — create an alert, transition an issue, propose a fix — call the matching mutating tool; it is approval-gated (see below).
 
-${APPROVAL_NOTE}
+${UI_APPROVAL_NOTE}
 `
 
 /**
@@ -199,8 +197,6 @@ ${CHART_FENCE_CONTRACT}
 An entity annotation is rendered as a link into Maple, with the entity's own numbers beside it. Syntax: <<maple:TYPE:JSON>> — never inside a code fence, always alone on its own line with a blank line on each side, never inside a bullet or a sentence. The JSON must be valid and match a shape below exactly; anything else reaches the user as raw text.
 
 ${ANNOTATION_GRAMMAR}
-
-Omit any field you did not measure. Each number is labelled with the unit its field names, so a value in the wrong field is published as a wrong number: \`throughputRpm\` is requests per minute (list_services reports it; diagnose_service's throughput is a raw span count, so omit it there), \`errorRate\` is a percentage so 4.5 means 4.5%, and latencies are milliseconds. Send whichever percentile the tool returned, never one number as both.
 
 Use one when you name a single entity the reader is likely to open, and never repeat in prose what it already carries. Zero is a normal reply; more than three is always wrong.
 `

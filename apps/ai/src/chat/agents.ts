@@ -39,7 +39,7 @@ import {
 } from "./budgets"
 import type { PermissionRuleset } from "@maple/domain/permission"
 import type { ResolvedModel } from "../platform/Llm"
-import { DEFAULT_RULESET, PR_REPLY_RULESET, PR_REVIEW_RULESET } from "./permissions"
+import { DEFAULT_RULESET, PR_REVIEW_RULESET } from "./permissions"
 import {
 	INVESTIGATE_SYSTEM_PROMPT,
 	PR_REPLY_SYSTEM_PROMPT,
@@ -114,7 +114,7 @@ export const AGENTS: Readonly<Record<ChatMode, AgentDefinition>> = {
 		description: "Answers a mention on a pull request, and makes a fix when asked.",
 		prompt: PR_REPLY_SYSTEM_PROMPT,
 		permission: DEFAULT_RULESET,
-		autonomousPermission: PR_REPLY_RULESET,
+		autonomousPermission: PR_REVIEW_RULESET,
 		budget: PR_REPLY_BUDGET,
 		model: "review",
 	},
@@ -123,9 +123,6 @@ export const AGENTS: Readonly<Record<ChatMode, AgentDefinition>> = {
 /** Every `ChatMode` literal names an agent; the mode string *is* the agent name. */
 export const agentForSession = (sessionId: string): AgentDefinition =>
 	AGENTS[chatModeFromSessionId(sessionId)]
-
-/** The system prompt for a turn: the agent's own persona. */
-export const buildSystemPrompt = (agent: AgentDefinition): string => agent.prompt
 
 /**
  * A Maple agent record as a finite policy.
@@ -191,7 +188,7 @@ export const chatAgent = (
 			// two characters, and Agent Sessions replays that escaped blob back to the engineer.
 			inputPrompt: (text: string) => text,
 			output: Output.text(Schema.String),
-			instructions: buildSystemPrompt(agent),
+			instructions: agent.prompt,
 			description: agent.description,
 			toolkit,
 			policy: agentPolicyFor(agent, model.limits.context, options.autonomous === true),

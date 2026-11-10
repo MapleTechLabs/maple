@@ -80,12 +80,10 @@ export const PR_REVIEW_TOOLS: ReadonlyArray<string> = [
 	"error_detail",
 ]
 
-/** A reply reads what a review reads; its only writes are its own completion tools. */
-export const PR_REPLY_RULESET: PermissionRuleset = [
-	new PermissionRule({ tool: "*", action: "deny" }),
-	...Arr.map([...PR_REVIEW_TOOLS].sort(), (tool) => new PermissionRule({ tool, action: "allow" })),
-]
-
+/**
+ * The reviewer's tools and nothing else. A reply to a review thread runs under it too: it reads what
+ * a review reads, and its only writes are its own completion tools.
+ */
 export const PR_REVIEW_RULESET: PermissionRuleset = [
 	new PermissionRule({ tool: "*", action: "deny" }),
 	...Arr.map([...PR_REVIEW_TOOLS].sort(), (tool) => new PermissionRule({ tool, action: "allow" })),
