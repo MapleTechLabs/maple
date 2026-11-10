@@ -3,7 +3,7 @@ import { ConfigProvider, Effect, Layer, Schema, Array as Arr, String as Str, Dat
 import { TestClock } from "effect/testing"
 import { CreateSourceRequest, OrgId, UpdateSourceRequest, UserId } from "@maple/domain/http"
 import { SourceId } from "@maple/domain/primitives"
-import { hashIngestKey } from "@maple/db"
+import { hashIngestKey } from "../../platform/credential-tokens"
 import { Env } from "@maple/backend/platform/Env"
 import {
 	cleanupTestDbs,

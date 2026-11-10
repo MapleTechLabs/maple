@@ -1,6 +1,6 @@
 import { afterEach, assert, describe, it } from "@effect/vitest"
 import { ConfigProvider, Effect, Layer, Schema, Array as Arr } from "effect"
-import { hashIngestKey } from "@maple/db"
+import { hashIngestKey } from "../../platform/credential-tokens"
 import { gcpConnectorResourceNames } from "@maple/domain/gcp"
 import { GcpProjectId, GcpResourceNumber, OrgId, UserId } from "@maple/domain/primitives"
 import { Env } from "@maple/backend/platform/Env"

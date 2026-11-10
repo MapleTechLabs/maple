@@ -12,7 +12,7 @@ import {
 	type UserId,
 } from "@maple/domain/http"
 import * as PG from "@maple-dev/effect-orm/postgres"
-import { generateApiKey, hashApiKey, parseIngestKeyLookupHmacKey } from "@maple/db"
+import { generateApiKey, hashApiKey, parseIngestKeyLookupHmacKey } from "../../platform/credential-tokens"
 import { ApiKeys, McpOAuthAuthorizations, McpOAuthClients, McpOAuthRefreshTokens } from "@maple/db/tables"
 import { REFRESH_FAMILY_ABSOLUTE_TTL_MS, revokeRefreshFamily } from "./mcp-oauth-family"
 import {

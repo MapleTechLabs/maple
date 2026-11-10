@@ -5,6 +5,7 @@ import { secretsEqual } from "@maple/backend/services/auth/secret-equal"
 import { ApiKeysService } from "@maple/backend/services/org/ApiKeysService"
 import { ErrorActorsService } from "@maple/backend/services/errors/ErrorActorsService"
 import { Env } from "@maple/backend/platform/Env"
+import { API_KEY_PREFIX } from "@maple/backend/platform/credential-tokens"
 import { ActorId, OrgId, RoleName, UserId } from "@maple/domain/http"
 import { INVESTIGATION_READ_FAMILIES, missingReadScopes, scopeAllows } from "@maple/domain/http/v2"
 import {
@@ -108,7 +109,6 @@ export const mcpScopeAccess = (
 		: "read"
 }
 
-const MAPLE_API_KEY_PREFIX = "maple_ak_"
 const PLACEHOLDER = /\$\{[^}]*\}|^\$[A-Za-z_][A-Za-z0-9_]*$|^<[^>]+>$/
 
 /**
@@ -116,12 +116,12 @@ const PLACEHOLDER = /\$\{[^}]*\}|^\$[A-Za-z_][A-Za-z0-9_]*$|^<[^>]+>$/
  * a JWT parse error. Undefined when the token may be valid and should be looked up.
  */
 export const describeMalformedBearer = (token: string | undefined): string | undefined => {
-	if (token === undefined || Str.startsWith(MAPLE_API_KEY_PREFIX)(token)) return undefined
+	if (token === undefined || Str.startsWith(API_KEY_PREFIX)(token)) return undefined
 	if (PLACEHOLDER.test(token)) {
-		return `The bearer token \`${token}\` is an unexpanded placeholder: your MCP client sent the variable name, not its value. Set the variable or paste the key; Maple API keys start with \`${MAPLE_API_KEY_PREFIX}\`.`
+		return `The bearer token \`${token}\` is an unexpanded placeholder: your MCP client sent the variable name, not its value. Set the variable or paste the key; Maple API keys start with \`${API_KEY_PREFIX}\`.`
 	}
 	if (Str.split(".")(token).length === 3) return undefined
-	return `The bearer token is not a Maple API key. Maple API keys start with \`${MAPLE_API_KEY_PREFIX}\`; create one in Maple's settings, or connect with OAuth.`
+	return `The bearer token is not a Maple API key. Maple API keys start with \`${API_KEY_PREFIX}\`; create one in Maple's settings, or connect with OAuth.`
 }
 
 /**

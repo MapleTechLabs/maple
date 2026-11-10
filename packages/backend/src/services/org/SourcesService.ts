@@ -21,7 +21,7 @@ import {
 	type SourceResourceAttribute,
 	type SourceSignal,
 } from "@maple/domain/primitives"
-import { hashIngestKey, parseIngestKeyLookupHmacKey } from "@maple/db"
+import { hashIngestKey, parseIngestKeyLookupHmacKey } from "../../platform/credential-tokens"
 import * as Orm from "@maple-dev/effect-orm/database"
 import * as PG from "@maple-dev/effect-orm/postgres"
 import { Sources, type SourceRow } from "@maple/db/tables"

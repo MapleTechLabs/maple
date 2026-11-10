@@ -14,7 +14,12 @@ import {
 	RoleName,
 } from "@maple/domain/http"
 import * as PG from "@maple-dev/effect-orm/postgres"
-import { API_KEY_PREFIX, generateApiKey, hashApiKey, parseIngestKeyLookupHmacKey } from "@maple/db"
+import {
+	API_KEY_PREFIX,
+	generateApiKey,
+	hashApiKey,
+	parseIngestKeyLookupHmacKey,
+} from "../../platform/credential-tokens"
 import { ApiKeys, type ApiKeyRow } from "@maple/db/tables"
 import { Clock, Effect, Layer, Option, Redacted, Schema, Context, String as Str, Array as Arr } from "effect"
 import { Database } from "@maple/backend/platform/DatabaseLive"

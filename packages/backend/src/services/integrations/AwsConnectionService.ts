@@ -1,6 +1,6 @@
 import { randomBytes, randomUUID } from "node:crypto"
 import * as PG from "@maple-dev/effect-orm/postgres"
-import { hashIngestKey, parseIngestKeyLookupHmacKey } from "@maple/db"
+import { hashIngestKey, parseIngestKeyLookupHmacKey } from "../../platform/credential-tokens"
 import { AwsConnections, type AwsConnectionRow, Sources } from "@maple/db/tables"
 import {
 	AWS_MODULE_SPECS,

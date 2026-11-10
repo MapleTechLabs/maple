@@ -18,7 +18,7 @@ import {
 	type UserId,
 } from "@maple/domain/http"
 import * as PG from "@maple-dev/effect-orm/postgres"
-import { generateApiKey, hashApiKey, parseIngestKeyLookupHmacKey } from "@maple/db"
+import { generateApiKey, hashApiKey, parseIngestKeyLookupHmacKey } from "../../platform/credential-tokens"
 import { ApiKeys, CliDeviceAuthorizations, type CliDeviceAuthorizationRow } from "@maple/db/tables"
 import { DateTime, Clock, Context, Effect, Layer, Option, Redacted, Schema, String as Str } from "effect"
 import { Database } from "@maple/backend/platform/DatabaseLive"

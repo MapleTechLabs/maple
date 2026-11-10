@@ -1,6 +1,6 @@
 import { randomBytes, randomUUID } from "node:crypto"
 import * as PG from "@maple-dev/effect-orm/postgres"
-import { hashIngestKey, parseIngestKeyLookupHmacKey } from "@maple/db"
+import { hashIngestKey, parseIngestKeyLookupHmacKey } from "../../platform/credential-tokens"
 import { GcpConnectors, GcpResources, type GcpConnectorRow } from "@maple/db/tables"
 import { GCP_PROJECT_ASSET_TYPE } from "@maple/domain/gcp-metrics"
 import {

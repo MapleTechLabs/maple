@@ -27,7 +27,7 @@
 import * as CH from "@maple/query-engine/ch"
 import { CHNumber } from "@maple/query-engine/ch"
 import type { AlertComparator, AlertRuleId, OrgId } from "@maple/domain/http"
-import { alertChartId } from "@maple/db"
+import { alertChartId } from "../../platform/signed-ids"
 import {
 	downsample,
 	sparkline,

@@ -1,17 +1,15 @@
 import { describe, expect, it } from "vitest"
 import { Schema, String as Str } from "effect"
 import { AlertRuleId, OrgId } from "@maple/domain/primitives"
+import { generateShareToken, hashShareToken, shareTokenSuffix } from "./credential-tokens"
 import {
 	alertChartId,
 	chatChartId,
-	generateShareToken,
-	hashShareToken,
 	shareOgId,
-	shareTokenSuffix,
 	verifyAlertChartId,
 	verifyChatChartId,
 	verifyShareOgId,
-} from "./share-token-hash"
+} from "./signed-ids"
 
 const KEY = "test-share-hmac-key"
 const SHARE_ID = "dshare_0f2b6a8e-6c1b-4f2a-9f6e-1d2c3b4a5e6f"
