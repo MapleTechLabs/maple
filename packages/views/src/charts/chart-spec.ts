@@ -147,7 +147,7 @@ export const ChartSpec = defineTaggedUnion({
 		containerWidth: Schema.Number,
 		gradientPrefix: Schema.String,
 		showTooltip: Schema.Boolean,
-		/** `QueryBuilderLineChart` draws lines over the same rows; absent is the area chart. */
+		/** `line` draws lines over the same rows; absent is the area chart. */
 		mark: Schema.optionalKey(Schema.Literals(["area", "line"])),
 		/** `stacked`: bands on top of each other, flat fills, no closed-run edges. */
 		stacked: Schema.optionalKey(Schema.Boolean),
