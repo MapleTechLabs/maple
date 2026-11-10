@@ -373,6 +373,7 @@ const connector = (h: H, model: Model, index: number): Html => {
 									? "Add a step at the end"
 									: `Add a step after step ${index}`,
 						onClick: Message.ClickedInsertStep({ index }),
+						isPinned: index === count,
 					}
 				: null,
 	})
