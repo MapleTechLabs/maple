@@ -17,7 +17,9 @@ import { inlineCode } from "@maple/views/ui/inline-code"
 import { keyValue, keyValueList } from "@maple/views/ui/key-value"
 import { table, tableBody, tableCell, tableHead, tableHeader, tableRow } from "@maple/views/ui/table"
 import { Message, type Model } from "./model"
-import { ACTOR_BADGES, SOURCE_LABELS } from "./view"
+import { OUTCOME_ICONS, SOURCE_ICONS } from "./icons"
+import { actorBadge, deniedBadge, SOURCE_LABELS } from "./view"
+import { icon } from "@maple/views/ui/icon"
 import { typography } from "@maple/views/ui/typography"
 import { hstack } from "@maple/views/ui/stack"
 import { timestamp } from "@maple/views/ui/timestamp"
@@ -164,6 +166,7 @@ const pivot = (h: H, key: string, value: string, what: string): Html =>
 	attributeFilterAction(h, {
 		label: `Show every entry with this ${what}`,
 		text: "Filter",
+		icon: "FilterIcon",
 		onClick: Message.ClickedPivot({ key, value }),
 	})
 
@@ -241,10 +244,16 @@ const originSection = (h: H, model: Model, entry: V2AuditLogEntry): ReadonlyArra
 		h.section(
 			[h.Class("space-y-1.5")],
 			[
-				eyebrow(h, { variant: "mono", as: "h4" }, ["Origin"]),
+				eyebrow(h, { variant: "mono", as: "h4", icon: "GlobeIcon" }, ["Origin"]),
 				keyValueList(h, { layout: "grid", className: DETAIL_GRID }, [
 					keyValue(h, { wrap: true, label: "Surface" }, [
-						h.span([], [SOURCE_LABELS[entry.source]]),
+						valueRow(h, [
+							icon(h, SOURCE_ICONS[entry.source], {
+								size: 13,
+								className: "text-muted-foreground shrink-0",
+							}),
+							h.span([], [SOURCE_LABELS[entry.source]]),
+						]),
 					]),
 					...(entry.origin_ip === null
 						? []
@@ -293,7 +302,6 @@ export const auditDetail = (
 	timeZone: string,
 	nowMs: number,
 ): Html => {
-	const actor = ACTOR_BADGES[entry.actor_type]
 	const full = (value: string) =>
 		timestamp(h, { value, timeZone, nowMs, withYear: true, className: "tabular-nums" })
 	const actionText = auditActionLabel(entry.action)
@@ -309,7 +317,7 @@ export const auditDetail = (
 				keyValue(h, { wrap: true, label: "Recorded" }, [full(entry.recorded_at)]),
 				keyValue(h, { wrap: true, label: "Actor" }, [
 					valueRow(h, [
-						badge(h, { variant: actor.variant, size: "sm" }, [actor.label]),
+						actorBadge(h, entry.actor_type),
 						...(actorName === null ? [] : [h.span([], [actorName])]),
 						...(entry.actor_id === null
 							? []
@@ -324,8 +332,11 @@ export const auditDetail = (
 						...(actionText === null ? [] : [h.span([], [actionText])]),
 						inlineCode(h, { variant: "plain", size: "2xs", tone: "foreground" }, [entry.action]),
 						entry.outcome === "denied"
-							? badge(h, { variant: "crit", size: "sm" }, ["Denied"])
-							: badge(h, { variant: "ok", size: "sm" }, ["Allowed"]),
+							? deniedBadge(h)
+							: badge(h, { variant: "ok", size: "sm" }, [
+									icon(h, OUTCOME_ICONS.allowed),
+									"Allowed",
+								]),
 						...(actionText === null ? [] : [pivot(h, "action", entry.action, "action")]),
 					]),
 					...(entry.denial_reason === null
@@ -379,6 +390,7 @@ export const auditDetail = (
 							"Entry id",
 						),
 						textLink(h, { href: entryHref(entry) }, [
+							icon(h, "LinkIcon", { size: 12 }),
 							typography(h, { size: "2xs" }, ["Link to entry"]),
 						]),
 					]),
@@ -390,7 +402,7 @@ export const auditDetail = (
 						h.section(
 							[h.Class("space-y-1.5")],
 							[
-								eyebrow(h, { variant: "mono", as: "h4" }, ["Changes"]),
+								eyebrow(h, { variant: "mono", as: "h4", icon: "PencilIcon" }, ["Changes"]),
 								changesTable(h, changes),
 							],
 						),
@@ -401,7 +413,9 @@ export const auditDetail = (
 						h.section(
 							[h.Class("space-y-1.5")],
 							[
-								eyebrow(h, { variant: "mono", as: "h4" }, ["Details"]),
+								eyebrow(h, { variant: "mono", as: "h4", icon: "CircleInfoIcon" }, [
+									"Details",
+								]),
 								...metadataList(h, metadata),
 							],
 						),
