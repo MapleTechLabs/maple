@@ -178,6 +178,7 @@ import { type RuntimeProduct, runtimeProductOf } from "@maple/domain/runtime-pos
 import type { ExecutionTenant, WarehouseExecutionError } from "@maple/query-engine/execution"
 import * as Integrations from "@maple/query-engine-integrations"
 import { decodeTraceId, decodeSpanId, decodeServiceName } from "../warehouse-ids"
+import { makeServeRows } from "./serve-rows"
 
 /**
  * Payload → query-engine filter opts. Every Cloudflare zone endpoint carries the same optional
@@ -354,6 +355,7 @@ export const HttpQueryEngineLive = HttpApiBuilder.group(MapleInternalApi, "query
 		const runtimeAdvisories = yield* RuntimeAdvisoryCatalog
 		const reads = makeDashboardReads({ warehouse, queryEngine })
 		const { runQuery, runQueryFirst } = reads
+		const serve = makeServeRows(runQuery, runQueryFirst)
 		const searchConsole = makeSearchConsoleReads({ warehouse, queryEngine })
 
 		const dbEdgesWithinBudget = <A, P, E extends QueryEngineDirectError, R>(
@@ -458,91 +460,15 @@ export const HttpQueryEngineLive = HttpApiBuilder.group(MapleInternalApi, "query
 						})
 					}),
 				)
-				.handle("errorsByType", ({ payload }) =>
-					Effect.gen(function* () {
-						const tenant = yield* CurrentTenant.Context
-						const rows = yield* runQuery(Queries.errorsByType, tenant, payload)
-						return new ErrorsByTypeResponse({
-							data: Arr.map(rows, (row) => ({
-								fingerprintHash: decodeFingerprintHash(row.fingerprintHash),
-								errorLabel: row.errorLabel,
-								sampleMessage: row.sampleMessage,
-								count: row.count,
-								affectedServicesCount: row.affectedServicesCount,
-								firstSeen: DateTime.formatIso(row.firstSeen),
-								lastSeen: DateTime.formatIso(row.lastSeen),
-							})),
-						})
-					}),
+				.handle("errorsByType", serve.rows(Queries.errorsByType, ErrorsByTypeResponse))
+				.handle("errorsSpark", serve.rows(Queries.errorsSpark, ErrorsSparkResponse))
+				.handle("errorsSummary", serve.first(Queries.errorsSummary, ErrorsSummaryResponse))
+				.handle("errorDetailTraces", serve.rows(Queries.errorDetailTraces, ErrorDetailTracesResponse))
+				.handle(
+					"errorRateByService",
+					serve.rows(Queries.errorRateByService, ErrorRateByServiceResponse),
 				)
-				.handle("errorsSpark", ({ payload }) =>
-					Effect.gen(function* () {
-						const tenant = yield* CurrentTenant.Context
-						const rows = yield* runQuery(Queries.errorsSpark, tenant, payload)
-						return new ErrorsSparkResponse({
-							data: Arr.map(rows, (row) => ({
-								fingerprintHash: decodeFingerprintHash(row.fingerprintHash),
-								bucket: DateTime.formatIso(row.bucket),
-								count: row.count,
-							})),
-						})
-					}),
-				)
-				.handle("errorsSummary", ({ payload }) =>
-					Effect.gen(function* () {
-						const tenant = yield* CurrentTenant.Context
-						const row = yield* runQueryFirst(Queries.errorsSummary, tenant, payload)
-						return new ErrorsSummaryResponse({
-							data: row
-								? {
-										totalErrors: row.totalErrors,
-										totalSpans: row.totalSpans,
-										errorRate: row.errorRate,
-										affectedServicesCount: row.affectedServicesCount,
-										affectedTracesCount: row.affectedTracesCount,
-									}
-								: null,
-						})
-					}),
-				)
-				.handle("errorDetailTraces", ({ payload }) =>
-					Effect.gen(function* () {
-						const tenant = yield* CurrentTenant.Context
-						const rows = yield* runQuery(Queries.errorDetailTraces, tenant, payload)
-						return new ErrorDetailTracesResponse({
-							data: Arr.map(rows, (row) => ({
-								traceId: decodeTraceId(row.traceId),
-								startTime: DateTime.formatIso(row.startTime),
-								durationMicros: row.durationMicros,
-								spanCount: row.spanCount,
-								services: Arr.map(row.services, (service) => decodeServiceName(service)),
-								rootSpanName: row.rootSpanName,
-								errorMessage: row.errorMessage,
-							})),
-						})
-					}),
-				)
-				.handle("errorRateByService", ({ payload }) =>
-					Effect.gen(function* () {
-						const tenant = yield* CurrentTenant.Context
-						const rows = yield* runQuery(Queries.errorRateByService, tenant, payload)
-						return new ErrorRateByServiceResponse({
-							data: Arr.map(rows, (row) => ({
-								serviceName: decodeServiceName(row.serviceName),
-								totalLogs: row.totalLogs,
-								errorLogs: row.errorLogs,
-								errorRate: row.errorRate,
-							})),
-						})
-					}),
-				)
-				.handle("serviceOverview", ({ payload }) =>
-					Effect.gen(function* () {
-						const tenant = yield* CurrentTenant.Context
-						const rows = yield* runQuery(Queries.serviceOverview, tenant, payload)
-						return new ServiceOverviewResponse({ data: rows })
-					}),
-				)
+				.handle("serviceOverview", serve.rows(Queries.serviceOverview, ServiceOverviewResponse))
 				.handle("serviceHealthSnapshot", ({ payload }) =>
 					Effect.gen(function* () {
 						const tenant = yield* CurrentTenant.Context
