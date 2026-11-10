@@ -36,6 +36,20 @@ const chart = (imageUrl: string | null): ChatBlock => ({
 })
 
 describe("renderDiscordMessage", () => {
+	it("posts a page as its fallback", () => {
+		expect(
+			renderDiscordMessage([
+				{
+					kind: "page",
+					title: "Acme cancelled",
+					html: "<p>report</p>",
+					height: 900,
+					fallback: "**Acme** cancelled",
+				},
+			]).content,
+		).toBe("**Acme** cancelled")
+	})
+
 	it("writes prose, a linked entity and a status line into one body", () => {
 		const payload = renderDiscordMessage([
 			{ kind: "prose", markdown: "Checkout is slow." },

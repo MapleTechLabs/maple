@@ -15,7 +15,7 @@ import {
 import { formatWarehouseDateTime, parseWarehouseDateTime } from "@maple/query-engine/datetime"
 import * as CustomRange from "../../kit/custom-range"
 import { Clock, DateTime, Effect, Option, Result, Schema, Array as Arr, String as Str } from "effect"
-import { Command } from "foldkit"
+import { Command, Dom } from "foldkit"
 import { toLoadFailure } from "@maple/views/data/load-failure"
 import { isClerkAuthEnabled } from "../../../lib/services/common/auth-mode"
 import { MapleApiV2Client } from "../../../platform/api-clients"
@@ -24,6 +24,7 @@ import { memberDisplayName } from "../kit/members"
 import { AppRoute, hrefOf } from "../../../route"
 import type { SettingsSearch as SettingsSearchSchema } from "../../../route/search"
 import * as CopyButton from "@maple/views/ui/copy-button"
+import { popupId } from "@maple/views/ui/overlay/popup-state"
 import * as Popover from "@maple/views/ui/popover"
 import * as Select from "@maple/views/ui/select"
 import { PageOutMessage, type PageReturn } from "../../contract"
@@ -324,6 +325,17 @@ const ScrollToAuditEntry = Command.define("ScrollToAuditEntry", {
 		}),
 })
 
+/** Focus back inside the popover once the calendar replaces the pressed preset, so Escape still closes it. */
+const FocusAuditDateRange = Command.define("FocusAuditDateRange", {
+	args: { id: Schema.String },
+	messages: [Message.CompletedFocusDateRange],
+	execute: ({ id }) =>
+		Dom.focus(`#${CSS.escape(popupId(id))}`).pipe(
+			Effect.ignore,
+			Effect.as(Message.CompletedFocusDateRange()),
+		),
+})
+
 /** The filters a detail pivot navigates to: the value replaces that filter, the rest stay. */
 const pivoted = (filters: AuditLogFilters, key: string, value: string): AuditLogFilters => {
 	switch (key) {
@@ -485,6 +497,7 @@ export const update = (model: Model, message: Message, search: SettingsSearch): 
 			)
 		},
 		CompletedScrollToEntry: () => ({ model }),
+		CompletedFocusDateRange: () => ({ model }),
 		ClickedCustomRange: ({ timeZone }) => ({ model, commands: [ResolveAuditCustomToday({ timeZone })] }),
 		ResolvedCustomToday: ({ timeZone, today, lastDay }) => {
 			const range = filters.range
@@ -499,6 +512,7 @@ export const update = (model: Model, message: Message, search: SettingsSearch): 
 						lastDay,
 					}),
 				),
+				commands: [FocusAuditDateRange({ id: model.dateRange.id })],
 			}
 		},
 		GotCustomRangeMessage: ({ message: child }) => {

@@ -1,4 +1,4 @@
-// System prompts ported from apps/chat-agent/src/services/system-prompt.ts.
+// The chat agents' system prompts.
 //
 // Tools are named exactly as the toolkit registers them (`find_errors`), so the prompts use those
 // names directly. Mutating tools follow the propose-then-apply pattern (see agents.ts / the

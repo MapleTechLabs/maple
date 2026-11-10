@@ -125,7 +125,7 @@ describe("sql catalog", () => {
 		expect(
 			unsplicedTwoTierQueries(entries),
 			"these queries read a rollup AND a raw table but compute their own boundary — " +
-				"use `interiorConditions` / `edgeCondition` from ch/queries/rollup-splice",
+				"use `utcInteriorConditions` / `edgeCondition` from ch/queries/rollup-splice",
 		).toEqual([])
 	})
 

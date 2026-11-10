@@ -13,6 +13,7 @@ import {
 } from "@maple/domain/mcp-clients"
 import { ServiceOperationsHourly, Traces, orgIdParam, utcSecondsParam } from "../tables"
 import { finiteOrZero, isoBucket } from "./format"
+import { utcHourFloor } from "./query-helpers"
 import { Array as Arr, String as Str } from "effect"
 
 /** The toolbar's selection, applied in SQL so percentiles are measured over what is shown. */
@@ -155,7 +156,7 @@ export function mcpServicesQuery() {
 		.where(($) => [
 			$.OrgId.eq(orgIdParam),
 			// The hour holding the window's start counts.
-			$.Hour.gte(CH.toStartOfHour(CH.toDateTime(utcSecondsParam("startTime")))),
+			$.Hour.gte(utcHourFloor("startTime")),
 			$.Hour.lte(utcSecondsParam("endTime")),
 			$.SpanName.like("tools/call %").or($.SpanName.eq("tools/call")),
 		])

@@ -17,12 +17,15 @@ import {
 } from "effect"
 import { TestClock } from "effect/testing"
 import {
+	ErrorIssuePullRequestId,
+	ErrorIssueVerificationId,
 	ErrorPersistenceError,
 	IssueEscalationPolicyRule,
 	IssueEscalationPolicyUpsertRequest,
 	IssueListCursor,
 	IssueSeverityListCursor,
 	OrgId,
+	type PullRequestSummary,
 	UserId,
 	WarehouseAuthError,
 	WarehouseQueryError,
@@ -33,6 +36,7 @@ import {
 	ErrorIncidentId,
 	ErrorIssueEventId,
 	ErrorIssueId,
+	IssueEscalationId,
 } from "@maple/domain/primitives"
 import { FINGERPRINT_VERSION } from "@maple/domain/tinybird/fingerprint"
 import * as PG from "@maple-dev/effect-orm/postgres"
@@ -44,7 +48,9 @@ import {
 	ErrorNotificationDeliveries,
 	ErrorIssues,
 	ErrorIssueEvents,
+	ErrorIssuePullRequests,
 	ErrorIssueStates,
+	ErrorIssueVerifications,
 	ErrorNotificationPolicies,
 	ErrorTickStates,
 	IssueEscalations,
@@ -69,7 +75,9 @@ import { ErrorActorsService } from "./ErrorActorsService"
 import { ErrorIssueReadModelsService } from "./ErrorIssueReadModelsService"
 import { ErrorIssueWorkflowService } from "./ErrorIssueWorkflowService"
 import { ErrorPolicyService } from "./ErrorPolicyService"
-import { CANDIDATE_RETENTION_MS, ErrorsService } from "./ErrorsService"
+import { CANDIDATE_RETENTION_MS, ErrorsService, NOTIFICATION_DELIVERY_PRUNE_BATCH } from "./ErrorsService"
+import { IssueFixVerificationService } from "./IssueFixVerificationService"
+import { PullRequestLookup } from "./PullRequestLookup"
 import { describeCause, makePersistenceError } from "./error-persistence"
 import { EarlyPromotionsPerDay, isErrorTickClaimLost, persistErrorTickWindow } from "./error-tick-persistence"
 import { NotificationDispatcher } from "@maple/backend/services/alerts/NotificationDispatcher"
@@ -201,6 +209,8 @@ const makeErrorsLayer = (
 	fingerprintRows?: () => ReadonlyArray<Record<string, unknown>>,
 	dispatcher?: (typeof NotificationDispatcher)["Service"],
 	lineageRows?: () => ReadonlyArray<Record<string, unknown>>,
+	// What the provider reports for a linked PR. Present, it also wires fix verification in.
+	pullRequest?: () => PullRequestSummary,
 ) => {
 	const testDb = createTestDb(createdDbs)
 	const envLive = Env.layer.pipe(Layer.provide(testConfig()))
@@ -236,6 +246,23 @@ const makeErrorsLayer = (
 			dispatch: () => Effect.succeed({ delivered: 0, failed: 0 }),
 		},
 	)
+	const fixVerificationLive =
+		pullRequest === undefined
+			? Layer.empty
+			: Layer.effect(IssueFixVerificationService, IssueFixVerificationService.make).pipe(
+					Layer.provide(
+						Layer.mergeAll(
+							databaseLive,
+							envLive,
+							errorActorsLive,
+							errorIssueWorkflowLive,
+							Layer.succeed(PullRequestLookup, {
+								fetch: () => Effect.sync(() => Option.some(pullRequest())),
+								listRepositories: () => Effect.succeed([]),
+							}),
+						),
+					),
+				)
 	const errorsLive = Layer.effect(ErrorsService, ErrorsService.make).pipe(
 		Layer.provide(OrgClickHouseSettingsService.layer),
 		Layer.provide(envLive),
@@ -249,6 +276,7 @@ const makeErrorsLayer = (
 		Layer.provide(errorIssueWorkflowLive),
 		Layer.provide(errorPolicyLive),
 		Layer.provide(investigationsLive),
+		Layer.provide(fixVerificationLive),
 	)
 	return Layer.mergeAll(
 		errorsLive,
@@ -391,6 +419,9 @@ const asIssueId = Schema.decodeUnknownSync(ErrorIssueId)
 const asIncidentId = Schema.decodeUnknownSync(ErrorIncidentId)
 const asEventId = Schema.decodeUnknownSync(ErrorIssueEventId)
 const asDestinationId = Schema.decodeUnknownSync(AlertDestinationId)
+const asPullRequestId = Schema.decodeUnknownSync(ErrorIssuePullRequestId)
+const asVerificationId = Schema.decodeUnknownSync(ErrorIssueVerificationId)
+const asEscalationId = Schema.decodeUnknownSync(IssueEscalationId)
 const asJsonRecord = Schema.decodeUnknownSync(Schema.Record(Schema.String, Schema.Unknown))
 
 const ORG = asOrgId("org_errors_service_test")
@@ -3008,6 +3039,184 @@ describe("ErrorsService.runTick", () => {
 		}).pipe(Effect.provide(makeErrorsLayer())),
 	)
 
+	// No FK cascades: whatever retention does not delete by issue id stays forever.
+	it.effect("purging an issue takes its pull requests, verifications and escalations with it", () =>
+		Effect.gen(function* () {
+			const errors = yield* ErrorsService
+			const database = yield* Database
+			yield* TestClock.setTime(RETENTION_TICK_MS)
+			const seededAt = RETENTION_TICK_MS - 120 * DAY_MS
+
+			const purged = asIssueId(randomUUID())
+			yield* seedIssue(purged, {
+				workflowState: "done",
+				resolvedAt: seededAt,
+				archivedAt: RETENTION_TICK_MS - 91 * DAY_MS,
+				lastSeenAt: seededAt,
+			})
+			// Still live, so its own link must survive the purge of the other issue.
+			const kept = asIssueId(randomUUID())
+			yield* seedIssue(kept, { workflowState: "in_review" })
+
+			const linkOf = (issueId: ErrorIssueId, number: number) => ({
+				id: asPullRequestId(randomUUID()),
+				orgId: ORG,
+				issueId,
+				provider: "github" as const,
+				repoFullName: "MapleTechLabs/maple",
+				number,
+				url: `https://github.com/MapleTechLabs/maple/pull/${number}`,
+				linkSource: "agent" as const,
+				createdAt: seededAt,
+				updatedAt: seededAt,
+			})
+			const purgedLink = linkOf(purged, 612)
+			yield* database.execute((db) =>
+				db.run(PG.insertInto(ErrorIssuePullRequests).values([purgedLink, linkOf(kept, 613)])),
+			)
+			yield* database.execute((db) =>
+				db.run(
+					PG.insertInto(ErrorIssueVerifications).values({
+						id: asVerificationId(randomUUID()),
+						orgId: ORG,
+						issueId: purged,
+						pullRequestId: purgedLink.id,
+						status: "verified",
+						mergedAt: seededAt,
+						verifyAfter: seededAt + DAY_MS,
+						createdAt: seededAt,
+						updatedAt: seededAt,
+					}),
+				),
+			)
+			yield* database.execute((db) =>
+				db.run(
+					PG.insertInto(IssueEscalations).values({
+						id: asEscalationId(randomUUID()),
+						orgId: ORG,
+						issueId: purged,
+						severity: "high",
+						source: "ai",
+						reason: "severity_set",
+						status: "sent",
+						dedupeKey: `esc:${ORG}:${purged}:high`,
+						createdAt: seededAt,
+					}),
+				),
+			)
+
+			assert.strictEqual((yield* errors.runTick).issuesDeleted, 1)
+
+			const links = yield* database.execute((db) =>
+				db.run(PG.from(ErrorIssuePullRequests).select("issueId")),
+			)
+			assert.deepStrictEqual(
+				Arr.map(links, (row) => row.issueId),
+				[kept],
+			)
+			assert.lengthOf(
+				yield* database.execute((db) => db.run(PG.from(ErrorIssueVerifications).select("id"))),
+				0,
+			)
+			assert.lengthOf(
+				yield* database.execute((db) => db.run(PG.from(IssueEscalations).select("id"))),
+				0,
+			)
+		}).pipe(Effect.provide(makeErrorsLayer())),
+	)
+
+	it.effect("the retention phase prunes notification deliveries that settled over 30 days ago", () =>
+		Effect.gen(function* () {
+			const errors = yield* ErrorsService
+			const database = yield* Database
+			yield* TestClock.setTime(RETENTION_TICK_MS)
+			// Retention runs per org with issue state, so the org needs an issue.
+			yield* seedIssue(asIssueId(randomUUID()), { workflowState: "in_review" })
+
+			const delivery = (key: string, status: "success" | "failed" | "queued", settledAt: number) => ({
+				id: randomUUID(),
+				orgId: ORG,
+				destinationId: asDestinationId("7d31c9e1-0000-4000-8000-000000000001"),
+				deliveryKey: key,
+				payloadJson: {},
+				status,
+				attemptCount: 1,
+				// Never due, so the outbox drain in the same tick leaves the row alone.
+				scheduledAt: RETENTION_TICK_MS + DAY_MS,
+				claimedAt: null,
+				claimExpiresAt: null,
+				claimedBy: null,
+				attemptedAt: settledAt,
+				errorMessage: null,
+				createdAt: settledAt,
+				updatedAt: settledAt,
+			})
+			const old = RETENTION_TICK_MS - 31 * DAY_MS
+			yield* database.execute((db) =>
+				db.run(
+					PG.insertInto(ErrorNotificationDeliveries).values([
+						delivery("old-success", "success", old),
+						delivery("old-failed", "failed", old),
+						// Not terminal: still owed a delivery, however old.
+						delivery("old-queued", "queued", old),
+						delivery("recent-success", "success", RETENTION_TICK_MS - 29 * DAY_MS),
+					]),
+				),
+			)
+
+			assert.isTrue((yield* errors.runTick).retentionRan)
+
+			const remaining = yield* database.execute((db) =>
+				db.run(PG.from(ErrorNotificationDeliveries).select("deliveryKey")),
+			)
+			expect(new Set(Arr.map(remaining, (row) => row.deliveryKey))).toEqual(
+				new Set(["old-queued", "recent-success"]),
+			)
+		}).pipe(Effect.provide(makeErrorsLayer())),
+	)
+
+	it.effect("one retention run prunes a bounded batch of deliveries and leaves the rest for the next", () =>
+		Effect.gen(function* () {
+			const errors = yield* ErrorsService
+			const database = yield* Database
+			yield* TestClock.setTime(RETENTION_TICK_MS)
+			yield* seedIssue(asIssueId(randomUUID()), { workflowState: "in_review" })
+
+			const old = RETENTION_TICK_MS - 31 * DAY_MS
+			const backlog = NOTIFICATION_DELIVERY_PRUNE_BATCH + 5
+			yield* database.execute((db) =>
+				db.run(
+					PG.insertInto(ErrorNotificationDeliveries).values(
+						Arr.makeBy(backlog, (index) => ({
+							id: randomUUID(),
+							orgId: ORG,
+							destinationId: asDestinationId("7d31c9e1-0000-4000-8000-000000000001"),
+							deliveryKey: `backlog-${index}`,
+							payloadJson: {},
+							status: "success" as const,
+							attemptCount: 1,
+							scheduledAt: RETENTION_TICK_MS + DAY_MS,
+							claimedAt: null,
+							claimExpiresAt: null,
+							claimedBy: null,
+							attemptedAt: old,
+							errorMessage: null,
+							createdAt: old,
+							updatedAt: old,
+						})),
+					),
+				),
+			)
+
+			assert.isTrue((yield* errors.runTick).retentionRan)
+
+			const remaining = yield* database.execute((db) =>
+				db.run(PG.from(ErrorNotificationDeliveries).select("id")),
+			)
+			expect(remaining).toHaveLength(5)
+		}).pipe(Effect.provide(makeErrorsLayer())),
+	)
+
 	it.effect("an archived fixed issue that old clients still hit is kept, not re-minted as new", () => {
 		let rows: Array<Record<string, unknown>> = []
 		return Effect.gen(function* () {
@@ -4548,6 +4757,46 @@ describe("ErrorsService.proposeFix claims the issue", () => {
 			).toEqual(["in_progress", "in_review"])
 		}).pipe(Effect.provide(makeErrorsLayer())),
 	)
+
+	// Attaching a PR that already merged opens the verification window and moves
+	// the issue to `verifying`. The walk to `in_review` then started from the row
+	// read before the link, matched nothing, and the caller got a transition
+	// error for a proposal whose event, link and window were all committed.
+	it.effect("reports success, in verifying, when the proposed PR had already merged", () => {
+		const mergedAtMs = 1_750_000_000_000
+		const prUrl = "https://github.com/MapleTechLabs/maple/pull/612"
+		return Effect.gen(function* () {
+			const errors = yield* ErrorsService
+			const actorService = yield* ErrorActorsService
+			const actor = yield* actorService.ensureUserActor(ORG, USER)
+			const issueId = asIssueId(randomUUID())
+			yield* seedIssue(issueId, { workflowState: "in_progress" })
+
+			const issue = yield* errors.proposeFix(ORG, actor.id, issueId, {
+				patchSummary: "Guard the null customer id",
+				prUrl,
+			})
+
+			assert.strictEqual(issue.workflowState, "verifying")
+			assert.strictEqual((yield* loadIssueById(issueId))?.workflowState, "verifying")
+		}).pipe(
+			Effect.provide(
+				makeErrorsLayer(undefined, undefined, undefined, undefined, undefined, undefined, () => ({
+					number: 612,
+					title: "Guard the null customer id",
+					url: prUrl,
+					authorLogin: "octocat",
+					state: "merged",
+					headRef: "fix/null-customer",
+					baseRef: "main",
+					isDraft: false,
+					updatedAtMs: mergedAtMs,
+					mergedAtMs,
+					mergeCommitSha: Str.repeat(40)("a"),
+				})),
+			),
+		)
+	})
 
 	it.effect("works from every state an issue can be worked from", () =>
 		Effect.gen(function* () {

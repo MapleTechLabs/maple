@@ -11,21 +11,34 @@ import { Option, Result, Schema, Array as Arr, String as Str } from "effect"
 import type { LoadFailure } from "@maple/views/data/load-failure"
 import type { PageContext } from "../../contract"
 import { componentStatus, isOpenIncident, STATUSES_OF_KIND } from "../shared/derive"
-import { CreateIncident, FocusEditorElement, PostIncidentUpdate, PublishIncident } from "./command"
+import * as Dialog from "@maple/views/ui/dialog"
+import {
+	CreateIncident,
+	DeleteIncident,
+	FocusEditorElement,
+	PostIncidentUpdate,
+	PublishIncident,
+	SaveIncident,
+} from "./command"
 import {
 	emptyIncidentForm,
+	type IncidentEditField,
+	incidentEditFormOf,
+	incidentEditPayload,
 	type IncidentTextField,
 	incidentIssues,
 	incidentPayload,
 	type UpdateForm,
 	updateFormFor,
 } from "../shared/form"
+import { Message } from "./message"
 import type { Model, UpdateFormState } from "./model"
 import {
 	chain,
 	componentsOf,
 	errorToast,
 	incidentsOf,
+	liftDialog,
 	monitorsOf,
 	readIncidents,
 	readPage,
@@ -36,6 +49,9 @@ import { focusPanel } from "./update-components"
 
 /** The update form's message field: focused when Post update or Resolve opens it. */
 export const UPDATE_BODY_ID = "status-page-update-body"
+
+/** The details form's title field: focused when Edit opens it. */
+export const INCIDENT_EDIT_TITLE_ID = "status-page-incident-edit-title"
 
 // Incidents in the side panel: the composer, an update or a resolve, publishing a draft.
 
@@ -76,7 +92,14 @@ export const openComposer = (model: Model, kind: StatusPageIncidentKind): Return
 					componentIds: Arr.map(affected, (component) => component.id),
 					impact: IMPACT_OF_STATUS[worstStatus(Arr.map(affected, statusOf))],
 				}
-	return focusPanel({ ...model, panel: { _tag: "Compose" }, incidentForm: form, incidentFailure: null })
+	return focusPanel({
+		...model,
+		panel: { _tag: "Compose" },
+		incidentForm: form,
+		incidentFailure: null,
+		incidentEdit: null,
+		incidentEditFailure: null,
+	})
 }
 
 /** Switching Incident and Maintenance keeps what was typed; only kind-specific defaults reset. */
@@ -164,13 +187,15 @@ export const createdIncident = (
 	})
 }
 
-/** Opens the incident in the panel, its update form closed. */
+/** Opens the incident in the panel, its update and details forms closed. */
 export const selectIncident = (model: Model, incidentId: StatusPageIncidentId): Return =>
 	Arr.some(incidentsOf(model), (incident) => incident.id === incidentId)
 		? focusPanel({
 				...model,
 				panel: { _tag: "Incident", incidentId },
 				updateForm: CLOSED,
+				incidentEdit: null,
+				incidentEditFailure: null,
 			})
 		: { model }
 
@@ -183,6 +208,7 @@ export const openUpdate = (model: Model, incidentId: StatusPageIncidentId, isRes
 					...model,
 					panel: { _tag: "Incident", incidentId },
 					updateForm: { _tag: "Editing", form: updateFormFor(incident, isResolving) },
+					incidentEdit: model.isSavingIncident ? model.incidentEdit : null,
 				},
 				commands: [FocusEditorElement({ id: UPDATE_BODY_ID })],
 			}
@@ -281,6 +307,160 @@ export const publishedIncident = (
 		onFailure: (failure): Return => ({
 			model: settled,
 			outMessage: errorToast("Couldn't publish the draft", failure),
+		}),
+	})
+}
+
+// DETAILS
+
+const nounOf = (kind: StatusPageIncidentKind): string => (kind === "incident" ? "Incident" : "Maintenance")
+
+/** The title, impact and components as saved, open for editing; the update form gives way. */
+export const openIncidentEdit = (model: Model, incidentId: StatusPageIncidentId): Return =>
+	model.updateForm._tag === "Posting" || model.isSavingIncident
+		? { model }
+		: Option.match(
+				Arr.findFirst(incidentsOf(model), (row) => row.id === incidentId),
+				{
+					onNone: (): Return => ({ model }),
+					onSome: (incident): Return => ({
+						model: {
+							...model,
+							panel: { _tag: "Incident", incidentId },
+							updateForm: CLOSED,
+							incidentEdit: incidentEditFormOf(incident),
+							incidentEditFailure: null,
+						},
+						commands: [FocusEditorElement({ id: INCIDENT_EDIT_TITLE_ID })],
+					}),
+				},
+			)
+
+/** Edits apply until the save is sent; impact arrives as a select value. */
+export const changeIncidentEdit = (model: Model, field: IncidentEditField, value: string): Return => {
+	const form = model.incidentEdit
+	if (form === null || model.isSavingIncident) return { model }
+	return field === "title"
+		? { model: { ...model, incidentEdit: { ...form, title: value } } }
+		: Option.match(decodeImpact(value), {
+				onNone: () => ({ model }),
+				onSome: (impact) => ({ model: { ...model, incidentEdit: { ...form, impact } } }),
+			})
+}
+
+export const toggleIncidentEditComponent = (model: Model, componentId: StatusPageComponentId): Return => {
+	const form = model.incidentEdit
+	return form === null || model.isSavingIncident
+		? { model }
+		: {
+				model: {
+					...model,
+					incidentEdit: {
+						...form,
+						componentIds: form.componentIds.includes(componentId)
+							? Arr.filter(form.componentIds, (id) => id !== componentId)
+							: [...form.componentIds, componentId],
+					},
+				},
+			}
+}
+
+export const cancelIncidentEdit = (model: Model): Return =>
+	model.isSavingIncident
+		? { model }
+		: { model: { ...model, incidentEdit: null, incidentEditFailure: null } }
+
+export const submitIncidentEdit = (model: Model): Return => {
+	const form = model.incidentEdit
+	return form === null || model.isSavingIncident || Str.trim(form.title) === ""
+		? { model }
+		: {
+				model: { ...model, isSavingIncident: true, incidentEditFailure: null },
+				commands: [SaveIncident({ incidentId: form.incidentId, payload: incidentEditPayload(form) })],
+			}
+}
+
+/** A saved edit closes the form; a refused one keeps it open with the reason. */
+export const savedIncident = (
+	model: Model,
+	result: Result.Result<V2StatusPageIncident, LoadFailure>,
+	context: PageContext,
+): Return => {
+	const settled = { ...model, isSavingIncident: false }
+	return Result.match(result, {
+		onSuccess: (incident): Return => ({
+			...reread({ ...settled, incidentEdit: null }, context),
+			outMessage: toast("success", `${nounOf(incident.kind)} updated`, incident.title),
+		}),
+		onFailure: (incidentEditFailure): Return =>
+			settled.incidentEdit === null
+				? { model: settled, outMessage: errorToast("Couldn't save the changes", incidentEditFailure) }
+				: { model: { ...settled, incidentEditFailure } },
+	})
+}
+
+// DELETE
+
+export const deleteIncidentDialog = (model: Model, step: ReturnType<typeof Dialog.update>): Return => {
+	const lifted = liftDialog(
+		model,
+		step,
+		(next, deleteIncidentDialog) => ({ ...next, deleteIncidentDialog }),
+		(message) => Message.GotDeleteIncidentDialogMessage({ message }),
+	)
+	return step.outMessage?._tag === "Closed"
+		? { ...lifted, model: { ...lifted.model, confirmDeleteIncidentId: null } }
+		: lifted
+}
+
+export const askDeleteIncident = (model: Model, incidentId: StatusPageIncidentId): Return =>
+	Arr.some(incidentsOf(model), (incident) => incident.id === incidentId)
+		? deleteIncidentDialog(
+				{ ...model, confirmDeleteIncidentId: incidentId },
+				Dialog.open(model.deleteIncidentDialog),
+			)
+		: { model }
+
+export const confirmDeleteIncident = (model: Model): Return => {
+	const incidentId = model.confirmDeleteIncidentId
+	return incidentId === null || model.isDeletingIncident
+		? { model }
+		: { model: { ...model, isDeletingIncident: true }, commands: [DeleteIncident({ incidentId })] }
+}
+
+/** A deleted incident leaves the page: its panel closes and the list is read again. */
+export const deletedIncident = (
+	model: Model,
+	result: Result.Result<void, LoadFailure>,
+	context: PageContext,
+): Return => {
+	const settled = { ...model, isDeletingIncident: false }
+	return Result.match(result, {
+		onSuccess: (): Return => {
+			const removedId = model.confirmDeleteIncidentId
+			const removed = Arr.findFirst(incidentsOf(model), (row) => row.id === removedId)
+			const closed = deleteIncidentDialog(settled, Dialog.close(settled.deleteIncidentDialog))
+			const isShown =
+				closed.model.panel?._tag === "Incident" && closed.model.panel.incidentId === removedId
+			const refreshed = reread(
+				isShown
+					? { ...closed.model, panel: null, updateForm: CLOSED, incidentEdit: null }
+					: closed.model,
+				context,
+			)
+			return {
+				model: refreshed.model,
+				commands: [...(closed.commands ?? []), ...(refreshed.commands ?? [])],
+				outMessage: toast(
+					"success",
+					`${Option.match(removed, { onNone: () => "Incident", onSome: (row) => nounOf(row.kind) })} deleted`,
+					Option.match(removed, { onNone: () => "", onSome: (row) => row.title }),
+				),
+			}
+		},
+		onFailure: (failure): Return => ({
+			model: settled,
+			outMessage: errorToast("Couldn't delete it", failure),
 		}),
 	})
 }

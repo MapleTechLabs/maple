@@ -9,7 +9,6 @@ import { button } from "@maple/views/ui/button"
 import { eyebrow } from "@maple/views/ui/eyebrow"
 import { icon } from "@maple/views/ui/icon"
 import { iconButton } from "@maple/views/ui/icon-button"
-import { segmentedSelect } from "@maple/views/ui/segmented-select"
 import { pressable } from "@maple/views/ui/pressable"
 import {
 	COMPONENT_STATUS_LABEL,
@@ -21,9 +20,12 @@ import {
 import {
 	daysOf,
 	isListedIncident,
+	previewControls,
 	previewDocument,
+	previewExampleNote,
 	previewFrame,
 	previewTheme,
+	simulatePreview,
 	toSnapshotIncident,
 } from "../shared/preview"
 import { Message } from "./message"
@@ -48,6 +50,7 @@ const asEdited = (model: Model, component: V2StatusPageComponent) => {
 	return {
 		...component,
 		name: Str.trim(form.name) === "" ? component.name : Str.trim(form.name),
+		description: Str.trim(form.description) === "" ? null : Str.trim(form.description),
 		group: Str.trim(form.group) === "" ? null : Str.trim(form.group),
 		monitor_id: Option.getOrNull(decodeMonitorId(form.monitorId)),
 		manual_status: Option.getOrNull(decodeStatus(form.manualStatus)),
@@ -75,19 +78,7 @@ export const selectedIds = (model: Model): ReadonlyArray<string> => {
 export const canvasDocument = (model: Model, page: V2StatusPage): string => {
 	const nowMs = model.nowMs ?? 0
 	const monitors = monitorsOf(model)
-	const snapshot = previewSnapshot({
-		pageId: page.id,
-		page: {
-			name: page.name,
-			slug: page.slug,
-			description: page.description,
-			websiteUrl: page.website_url,
-			logoUrl: page.logo_url,
-			privacyUrl: page.privacy_url,
-			termsUrl: page.terms_url,
-			showPoweredBy: page.show_powered_by,
-			theme: previewTheme(page.theme, model.previewScheme),
-		},
+	const shown = simulatePreview(model.previewState, {
 		components: Arr.map(componentsOf(model), (saved) => {
 			const component = asEdited(model, saved)
 			return {
@@ -106,6 +97,23 @@ export const canvasDocument = (model: Model, page: V2StatusPage): string => {
 			Arr.filter(incidentsOf(model), (incident) => isListedIncident(incident, nowMs)),
 			toSnapshotIncident,
 		),
+		nowMs,
+	})
+	const snapshot = previewSnapshot({
+		pageId: page.id,
+		page: {
+			name: page.name,
+			slug: page.slug,
+			description: page.description,
+			websiteUrl: page.website_url,
+			logoUrl: page.logo_url,
+			privacyUrl: page.privacy_url,
+			termsUrl: page.terms_url,
+			showPoweredBy: page.show_powered_by,
+			theme: previewTheme(page.theme, model.previewScheme),
+		},
+		components: shown.components,
+		incidents: shown.incidents,
 		nowMs,
 	})
 	return previewDocument({ snapshot, nowMs, isSelectable: true, selectedIds: selectedIds(model) })
@@ -338,29 +346,26 @@ const panelView = (h: H, model: Model, time: TimeInputs): ReadonlyArray<Html> =>
 
 const previewColumn = (h: H, model: Model, page: V2StatusPage): Html =>
 	vstack(h, { gap: "2", shrink: true, as: "section", attributes: [h.AriaLabel("Page preview")] }, [
-		hstack(h, { gap: "3", justify: "between", className: "min-h-7" }, [
+		hstack(h, { gap: "3", justify: "between", wrap: true, className: "min-h-7" }, [
 			typography(h, { size: "xs", tone: "muted", as: "p" }, [
 				"Click a component or incident to edit it.",
 			]),
-			...(page.theme.appearance === "auto"
-				? [
-						segmentedSelect(h, {
-							size: "xs",
-							ariaLabel: "Preview mode",
-							value: model.previewScheme,
-							onChange: (scheme) => Message.PickedPreviewScheme({ scheme }),
-							options: [
-								{ value: "light", label: "Light" },
-								{ value: "dark", label: "Dark" },
-							],
-						}),
-					]
-				: []),
+			previewControls(h, {
+				state: model.previewState,
+				width: model.previewWidth,
+				scheme: page.theme.appearance === "auto" ? model.previewScheme : null,
+				onState: (state) => Message.PickedPreviewState({ state }),
+				onWidth: (width) => Message.PickedPreviewWidth({ width }),
+				onScheme: (scheme) => Message.PickedPreviewScheme({ scheme }),
+			}),
 		]),
+		// Above the frame: the frame fills the viewport, so a note under it is never seen.
+		...previewExampleNote(h, model.previewState),
 		previewFrame(h, {
 			title: `${page.name} as visitors see it`,
 			document: canvasDocument(model, page),
 			isSelectable: true,
+			width: model.previewWidth,
 			className: "h-[640px] lg:h-[calc(100vh-16rem)] lg:min-h-[520px]",
 		}),
 	])

@@ -952,15 +952,13 @@ width = its duration */
 	}
 }
 
-.infra-ref-line line,
-.recharts-reference-line-line.infra-ref-line {
+.infra-ref-line line {
 	stroke-dasharray: 4 4;
 	animation: ref-line-draw 1.4s ease-out 0.1s both;
 }
 
 @media (prefers-reduced-motion: reduce) {
-	.infra-ref-line line,
-	.recharts-reference-line-line.infra-ref-line {
+	.infra-ref-line line {
 		animation: none;
 	}
 }

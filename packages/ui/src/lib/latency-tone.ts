@@ -4,7 +4,7 @@
 // rendered (services table, infra tables, service map, chat renderers).
 
 /** Emphasis steps, low → high. Warm-only: nothing is colored for being fine. */
-export type LatencyLevel = "quiet" | "nominal" | "elevated" | "slow" | "critical"
+type LatencyLevel = "quiet" | "nominal" | "elevated" | "slow" | "critical"
 
 /**
  * Which budget a value is measured against. p99 is *expected* to be higher than
@@ -84,15 +84,6 @@ export const LATENCY_BAR_TONE: Record<LatencyLevel, string> = {
 	elevated: "bg-foreground/20",
 	slow: "bg-severity-warn-a3",
 	critical: "bg-severity-error-a3",
-} satisfies Record<LatencyLevel, string>
-
-/** Raw color strings for SVG fills and inline styles (no Tailwind class). */
-export const LATENCY_COLOR: Record<LatencyLevel, string> = {
-	quiet: "var(--color-muted-foreground)",
-	nominal: "var(--color-muted-foreground)",
-	elevated: "var(--color-foreground)",
-	slow: "var(--color-severity-warn)",
-	critical: "var(--color-severity-error)",
 } satisfies Record<LatencyLevel, string>
 
 /** Level → text class in one call. Mirrors the shape of `errorRateClass`. */

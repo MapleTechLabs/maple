@@ -3,7 +3,14 @@ import type { PrReviewFailureReason } from "@maple/domain/http"
 import { Deferred, Effect, Fiber } from "effect"
 import { assert, describe, it } from "vitest"
 import { makeAutonomousOutcome } from "./autonomous-outcome"
-import { NO_DIAGNOSIS_INTERRUPTED, makeUnfinishedSettler, runAutonomousTurn } from "./autonomous-settle"
+import {
+	NO_DIAGNOSIS_INTERRUPTED,
+	makeUnfinishedSettler,
+	runAutonomousTurn,
+	NO_REPLY_INTERRUPTED,
+	settleAbandoned,
+	settleAbandonedTurn,
+} from "./autonomous-settle"
 import { interruptOnAbort, makeTurnObservability } from "./turn-outcome"
 
 /** A turn that owns all three rows, recording every write that marks one failed. */
@@ -119,5 +126,85 @@ describe("runAutonomousTurn", () => {
 		await Effect.runPromise(Fiber.await(fiber))
 
 		assert.deepEqual(turn.writes, ["settled"])
+	})
+})
+
+describe("settleAbandoned", () => {
+	it("fails the reply row of an evicted reply turn", async () => {
+		const writes: Array<string> = []
+		await Effect.runPromise(settleAbandoned({ failReply: Effect.sync(() => void writes.push("reply")) }))
+
+		assert.deepEqual(writes, ["reply"])
+	})
+
+	it("still fails the reply when the review's write fails", async () => {
+		const writes: Array<string> = []
+		await Effect.runPromise(
+			settleAbandoned({
+				failReview: Effect.fail("the database is away"),
+				failReply: Effect.sync(() => void writes.push("reply")),
+			}),
+		)
+
+		assert.deepEqual(writes, ["reply"])
+	})
+})
+
+describe("settleAbandonedTurn", () => {
+	const calls = () => {
+		const made: Array<ReadonlyArray<string>> = []
+		const record =
+			(write: string) =>
+			(...args: ReadonlyArray<string>) =>
+				Effect.sync(() => void made.push([write, ...args]))
+		return { made, failReview: record("failReview"), failReply: record("failReply") }
+	}
+
+	it("fails an evicted reply turn's row once, with the interrupted message, and nothing else", async () => {
+		const { made, failReview, failReply } = calls()
+		await Effect.runPromise(
+			settleAbandonedTurn({
+				orgId: "org_1",
+				prReviewId: undefined,
+				prReplyId: "reply_1",
+				reviewInterrupted: "review interrupted",
+				failReview,
+				failReply,
+			}),
+		)
+
+		assert.deepEqual(made, [["failReply", "org_1", "reply_1", NO_REPLY_INTERRUPTED]])
+	})
+
+	it("fails an evicted review turn's row with the interrupted review error", async () => {
+		const { made, failReview, failReply } = calls()
+		await Effect.runPromise(
+			settleAbandonedTurn({
+				orgId: "org_1",
+				prReviewId: "review_1",
+				prReplyId: undefined,
+				reviewInterrupted: "review interrupted",
+				failReview,
+				failReply,
+			}),
+		)
+
+		assert.deepEqual(made, [["failReview", "org_1", "review_1", "review interrupted"]])
+	})
+
+	it("writes nothing for a turn that owns neither row", async () => {
+		const { made, failReview, failReply } = calls()
+		await Effect.runPromise(
+			settleAbandonedTurn({
+				orgId: "org_1",
+				prReviewId: undefined,
+				prReplyId: undefined,
+				reviewInterrupted: "review interrupted",
+				failReview,
+				failReply,
+			}),
+		)
+
+		assert.deepEqual(made, [])
 	})
 })

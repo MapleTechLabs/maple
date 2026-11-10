@@ -5,7 +5,6 @@
 	"exports": {
 		".": "./src/index.ts",
 		"./client": "./src/client.ts",
-		"./config": "./src/config.ts",
 		"./migrate": "./src/migrate.ts",
 		"./pglite": "./src/pglite.ts",
 		"./roles": "./src/roles.ts",

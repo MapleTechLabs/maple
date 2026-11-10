@@ -8,8 +8,9 @@ import { API_PROXY_PREFIX } from "./api-proxy.ts"
 export const WORKER_FIRST_PATHS: ReadonlyArray<string> = [
 	API_PROXY_PREFIX,
 	`${API_PROXY_PREFIX}/*`,
-	// Share link preview images.
-	"/share/og/*",
+	// Share pages and their preview images. The page needs the Worker: it inlines the link's own
+	// `og:*` tags, which a crawler reads from the HTML and the assets layer cannot write.
+	"/share/*",
 	// Alert and chat reply chart images.
 	"/alerts/chart/*",
 	"/chat/chart/*",

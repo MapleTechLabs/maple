@@ -5,6 +5,10 @@ import { type MapleRegion, warnIfKeylessMapleIngest } from "@maple/browser-sessi
 import { makeOtlpLayer } from "../shared/otlp-layer.js"
 import type { MapleSpanOptions } from "../shared/span-options.js"
 import { type ResolvedResource, resolveResource } from "./resource.js"
+import { SDK_VERSION } from "../version.js"
+
+/** `<sdk>/<version>`, as the other server presets send it. */
+const SERVER_SDK_HINT = `maple-effect-sdk-server/${SDK_VERSION}`
 
 /**
  * A warning rather than a no-op: disabling export here would silently break
@@ -121,9 +125,14 @@ export const layer = (config: MapleConfig = {}) =>
 			return makeOtlpLayer({
 				baseUrl: resolved.endpoint,
 				resource: resolved.resource,
-				headers: resolved.ingestKey
-					? { Authorization: `Bearer ${Redacted.value(resolved.ingestKey)}` }
-					: undefined,
+				headers: {
+					// The exporter appends its own agent to this one.
+					"user-agent": SERVER_SDK_HINT,
+					"x-maple-sdk": SERVER_SDK_HINT,
+					...(resolved.ingestKey
+						? { Authorization: `Bearer ${Redacted.value(resolved.ingestKey)}` }
+						: undefined),
+				},
 				maxBatchSize: config.maxBatchSize,
 				loggerExportInterval: config.loggerExportInterval,
 				metricsExportInterval: config.metricsExportInterval,

@@ -22,9 +22,6 @@ export const dialogFooterStyles =
 
 export const dialogFooterDefaultStyles = "border-t bg-surface-strong py-4"
 
-export const dialogFooterBareStyles =
-	"in-[[data-slot=dialog-popup]:has([data-slot=dialog-panel])]:pt-3 pt-4 pb-6"
-
 export const dialogTitleStyles = "font-heading font-semibold text-xl leading-none"
 
 export const dialogDescriptionStyles = "text-muted-foreground text-sm"
