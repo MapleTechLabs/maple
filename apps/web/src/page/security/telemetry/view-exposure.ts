@@ -387,7 +387,27 @@ const sourcesPanel = (h: H, clock: Clock, sources: Exposure["sources"]): Html =>
 					tableRow(
 						h,
 						[
-							tableCell(h, [source.clientAddress], typographyClass({ size: "xs", mono: true })),
+							tableCell(
+								h,
+								[
+									source.clientAddress,
+									// Phones drop the Tool column; its name rides here.
+									...(source.scanner === ""
+										? []
+										: [
+												typography(
+													h,
+													{
+														size: "xs",
+														tone: "muted",
+														className: "block sm:hidden",
+													},
+													[source.scanner],
+												),
+											]),
+								],
+								typographyClass({ size: "xs", mono: true }),
+							),
 							tableCell(
 								h,
 								[source.scanner === "" ? "Unnamed" : source.scanner],
