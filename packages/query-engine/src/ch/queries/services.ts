@@ -28,21 +28,9 @@ import {
 	type FacetOutput,
 } from "./query-helpers"
 import { edgeCondition, hourGrain, minuteGrain, utcInteriorConditions } from "./rollup-splice"
+import { DURATION_STATE, RAW_DURATION_STATE, ROLLUP_DURATION_STATE } from "./service-operations"
 
 // Service overview
-
-const SERVICE_RAW_DURATION_STATE = "quantilesTDigestState(0.5, 0.95, 0.99)(Duration)"
-const SERVICE_ROLLUP_DURATION_STATE = "quantilesTDigestMergeState(0.5, 0.95, 0.99)(DurationQuantiles)"
-
-/**
- * The type both of the above produce — the raw branch and the rollup branch
- * UNION-merge cleanly precisely because they agree on it.
- *
- * Opaque by design: the value is a t-digest an outer `-Merge` consumes, never a
- * row anyone decodes. Declaring it is what lets the queries carrying it derive
- * a row schema for their *other* columns.
- */
-export const DURATION_STATE = T.aggregateState("quantilesTDigest(0.5, 0.95, 0.99)", "UInt64")
 
 /** A commit tuple as JSON: `[sha, spanCount, errorCount, firstSeen]`. */
 const COMMIT_TUPLE = T.array(
@@ -175,7 +163,7 @@ export function serviceOverviewWindows(filters: ServiceWindowFilters, tiers: Ser
 			bErrorCount: CH.countIf($.StatusCode.eq("Error")),
 			bEstimatedErrorCount: CH.sumIf($.SampleRate, $.StatusCode.eq("Error")),
 			bDurationSum: CH.sum(CH.rawExpr("toFloat64(Duration)", T.float64)),
-			bDurationQuantiles: CH.rawExpr(SERVICE_RAW_DURATION_STATE, DURATION_STATE),
+			bDurationQuantiles: CH.rawExpr(RAW_DURATION_STATE, DURATION_STATE),
 			bFirstSeen: CH.min_($.Timestamp),
 			bApdexSatisfiedCount: CH.countIf($.StatusCode.neq("Error").and($.Duration.lt(500_000_000))),
 			bApdexToleratingCount: CH.countIf(
@@ -200,7 +188,7 @@ export function serviceOverviewWindows(filters: ServiceWindowFilters, tiers: Ser
 			bErrorCount: CH.sum($.ErrorCount),
 			bEstimatedErrorCount: CH.sum($.EstimatedErrorCount),
 			bDurationSum: CH.sum($.DurationSum),
-			bDurationQuantiles: CH.rawExpr(SERVICE_ROLLUP_DURATION_STATE, DURATION_STATE),
+			bDurationQuantiles: CH.rawExpr(ROLLUP_DURATION_STATE, DURATION_STATE),
 			bFirstSeen: CH.min_($.FirstSeen),
 			bApdexSatisfiedCount: CH.sum($.ApdexSatisfiedCount),
 			bApdexToleratingCount: CH.sum($.ApdexToleratingCount),
@@ -230,7 +218,7 @@ export function serviceOverviewWindows(filters: ServiceWindowFilters, tiers: Ser
 			bErrorCount: CH.sum($.ErrorCount),
 			bEstimatedErrorCount: CH.sum($.EstimatedErrorCount),
 			bDurationSum: CH.sum($.DurationSum),
-			bDurationQuantiles: CH.rawExpr(SERVICE_ROLLUP_DURATION_STATE, DURATION_STATE),
+			bDurationQuantiles: CH.rawExpr(ROLLUP_DURATION_STATE, DURATION_STATE),
 			bFirstSeen: CH.min_($.FirstSeen),
 			bApdexSatisfiedCount: CH.sum($.ApdexSatisfiedCount),
 			bApdexToleratingCount: CH.sum($.ApdexToleratingCount),
