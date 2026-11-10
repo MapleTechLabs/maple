@@ -7,7 +7,7 @@ import {
 	renderRssFeed,
 	renderStatusJson,
 } from "@maple/status-page"
-import { Effect, Option, Schema } from "effect"
+import { Effect, Option, Schema, String as Str } from "effect"
 import { parseForm, postBreakGlassUpdate } from "./break-glass"
 import type { StatusEnv } from "./ports"
 import { asset, html, notFound, PUBLIC_CACHE_CONTROL, plain, redirect } from "./responses"
@@ -19,6 +19,22 @@ const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
 /** `/s/<slug>` and `/s/<slug>/<rest>`: path addressing for hosts without a page of their own. */
 const SLUG_PATH = /^\/s\/([a-z0-9][a-z0-9-]{1,46}[a-z0-9])(\/.*)?$/u
 
+/**
+ * Whether a hostname is one of Maple's own for this Worker: its status domain, workers.dev, or a
+ * local dev name. Only these serve `/s/<slug>`; any other host is a custom domain.
+ */
+export const sharedHostMatcher =
+	(statusHost: string | null) =>
+	(hostname: string): boolean => {
+		const host = Str.toLowerCase(hostname)
+		return (
+			host === statusHost ||
+			Str.endsWith(".workers.dev")(host) ||
+			host === "localhost" ||
+			Str.endsWith(".localhost")(host)
+		)
+	}
+
 interface Target {
 	readonly pageId: string
 	/** Prefix for the page's own links. */
@@ -29,7 +45,10 @@ interface Target {
 	readonly slug: string | null
 }
 
-/** The page a request is for: its hostname first, then the `/s/<slug>` path form. */
+/**
+ * The page a request is for: its hostname first, then the `/s/<slug>` path form. Path addressing
+ * is for Maple's own hosts only: a customer's domain never serves another customer's page.
+ */
 const resolveTarget = (env: StatusEnv, url: URL): Effect.Effect<Lookup<Target>> =>
 	Effect.gen(function* () {
 		const byHost = yield* pageIdForHost(env, url.hostname)
@@ -38,6 +57,7 @@ const resolveTarget = (env: StatusEnv, url: URL): Effect.Effect<Lookup<Target>> 
 				_tag: "found",
 				value: { pageId: byHost.value, basePath: "", path: url.pathname, slug: null },
 			}
+		if (!env.isSharedHost(url.hostname)) return byHost
 		const match = SLUG_PATH.exec(url.pathname)
 		const slug = match?.[1]
 		if (slug === undefined) return byHost
@@ -99,8 +119,18 @@ const postManage = (env: StatusEnv, request: Request, view: PageView, target: Ta
 		)
 	})
 
+/**
+ * The page's canonical address: its custom domain once active, else where this request found it.
+ * Feeds, `status.json` and the Slack command publish it, so readers land on the customer's domain.
+ */
+const canonicalUrl = (url: URL, view: PageView, target: Target): string =>
+	view.snapshot.page.customDomain === null
+		? `${url.origin}${target.basePath}`
+		: `https://${view.snapshot.page.customDomain}`
+
 const servePage = (env: StatusEnv, request: Request, url: URL, view: PageView, target: Target) => {
 	const isRead = request.method === "GET" || request.method === "HEAD"
+	const pageUrl = canonicalUrl(url, view, target)
 	if (target.path === "/_manage") {
 		if (isRead) return Effect.succeed(managePage(env, view, target, 200))
 		if (request.method === "POST") return postManage(env, request, view, target)
@@ -114,14 +144,14 @@ const servePage = (env: StatusEnv, request: Request, url: URL, view: PageView, t
 			const body = renderPage(view.snapshot, view.freshness, env.nowMs, {
 				nonce,
 				basePath: target.basePath,
-				publicUrl: `${url.origin}${target.basePath}`,
+				publicUrl: pageUrl,
 			})
 			return Effect.succeed(html(body, { cacheControl: PUBLIC_CACHE_CONTROL, nonce }))
 		}
 		case "/api/v1/status.json":
 			return Effect.succeed(
 				asset(
-					encodeJson(renderStatusJson(view.snapshot, view.freshness)),
+					encodeJson(renderStatusJson(view.snapshot, view.freshness, pageUrl)),
 					"application/json; charset=utf-8",
 					{
 						"access-control-allow-origin": "*",
@@ -134,17 +164,11 @@ const servePage = (env: StatusEnv, request: Request, url: URL, view: PageView, t
 			)
 		case "/feed.atom":
 			return Effect.succeed(
-				asset(
-					renderAtomFeed(view.snapshot, `${url.origin}${target.basePath}`),
-					"application/atom+xml; charset=utf-8",
-				),
+				asset(renderAtomFeed(view.snapshot, pageUrl), "application/atom+xml; charset=utf-8"),
 			)
 		case "/feed.rss":
 			return Effect.succeed(
-				asset(
-					renderRssFeed(view.snapshot, `${url.origin}${target.basePath}`),
-					"application/rss+xml; charset=utf-8",
-				),
+				asset(renderRssFeed(view.snapshot, pageUrl), "application/rss+xml; charset=utf-8"),
 			)
 		default:
 			return Effect.succeed(notFound())

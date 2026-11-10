@@ -230,7 +230,9 @@ describe("serving a page", () => {
 		const rss = await send(fake, `${PAGE}feed.rss`)
 		expect(rss.headers.get("content-type")).toBe("application/rss+xml; charset=utf-8")
 		expect(rss.headers.get("cache-control")).toBe(feed.headers.get("cache-control"))
-		expect(await rss.text()).toContain(`<atom:link href="https://status.acme.example/feed.rss" rel="self"`)
+		expect(await rss.text()).toContain(
+			`<atom:link href="https://status.acme.example/feed.rss" rel="self"`,
+		)
 	})
 
 	it("serves the RSS feed under the slug path with links under the prefix", async () => {
@@ -494,5 +496,48 @@ describe("break-glass updates", () => {
 			]),
 		)
 		expect(overlayEntries(fake)[0]?.componentIds).toEqual([fixtureComponentId(0), fixtureComponentId(1)])
+	})
+})
+
+describe("custom domains", () => {
+	const CUSTOM = "https://status.acme.com"
+	let fake: FakeStorage
+	beforeEach(() => {
+		fake = makeFakeStorage()
+		publish(fake, makeSnapshot({ page: { ...makeSnapshot().page, customDomain: "status.acme.com" } }), {
+			host: "status.acme.com",
+		})
+	})
+
+	it("serves the page and every route of it on the custom domain", async () => {
+		const page = await send(fake, `${CUSTOM}/`)
+		expect(page.status).toBe(200)
+		expect(await page.text()).toContain("<title>Acme status</title>")
+		for (const path of ["/feed.atom", "/feed.rss", "/api/v1/status.json", "/badge.svg", "/_manage"])
+			expect((await send(fake, `${CUSTOM}${path}`)).status, path).toBe(200)
+		const subscribe = await send(fake, postForm(`${CUSTOM}/subscribe`, [["email", "ana@example.com"]]))
+		expect(subscribe.status).toBe(200)
+		expect(Arr.map(fake.subscriptionCalls, (call) => call.pageId)).toEqual([FIXTURE_PAGE_ID])
+	})
+
+	it("links feeds, status.json and the Slack command to the custom domain, wherever the page is read", async () => {
+		const viaSlug = "https://status.maple.workers.dev/s/acme"
+		expect(await (await send(fake, `${viaSlug}/feed.atom`)).text()).toContain(
+			`<link rel="self" href="${CUSTOM}/feed.atom"/>`,
+		)
+		expect(await (await send(fake, `${viaSlug}/feed.rss`)).text()).toContain(`<link>${CUSTOM}/</link>`)
+		expect(await (await send(fake, `${viaSlug}/api/v1/status.json`)).json()).toMatchObject({
+			page: { status_url: CUSTOM },
+		})
+		expect(await (await send(fake, `${viaSlug}/`)).text()).toContain(`/feed subscribe ${CUSTOM}/feed.rss`)
+	})
+
+	it("answers 404 on a host with no page, and never serves another page by path there", async () => {
+		const unknown = await send(fake, "https://status.other.com/")
+		expect(unknown.status).toBe(404)
+		const bySlug = await send(fake, "https://status.other.com/s/acme/")
+		expect(bySlug.status).toBe(404)
+		// A page's own domain does not serve /s/<slug> of any page either.
+		expect((await send(fake, `${CUSTOM}/s/acme/`)).status).toBe(404)
 	})
 })

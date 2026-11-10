@@ -44,8 +44,15 @@ const incidentJson = (incident: StatusPageSnapshotIncident) => ({
 	})),
 })
 
-/** A statuspage.io-style `summary.json`, plus whether live checks are delayed. */
-export const renderStatusJson = (snapshot: StatusPageSnapshot, freshness: StatusPageFreshness) => {
+/**
+ * A statuspage.io-style `summary.json`, plus whether live checks are delayed. `pageUrl` is the
+ * page's canonical address (its custom domain once active), published as `status_url`.
+ */
+export const renderStatusJson = (
+	snapshot: StatusPageSnapshot,
+	freshness: StatusPageFreshness,
+	pageUrl: string,
+) => {
 	const overall = overallStatus(snapshot)
 	const active = activeIncidents(snapshot)
 	return {
@@ -53,6 +60,7 @@ export const renderStatusJson = (snapshot: StatusPageSnapshot, freshness: Status
 			id: snapshot.pageId,
 			name: snapshot.page.name,
 			url: snapshot.page.websiteUrl,
+			status_url: pageUrl,
 			time_zone: "Etc/UTC",
 			updated_at: iso(freshness.updatedAt),
 		},

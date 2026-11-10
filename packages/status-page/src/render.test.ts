@@ -599,7 +599,7 @@ describe("renderStatusJson", () => {
 	]
 	it.each(cases)("maps a worst component of %s to indicator %s", (status, indicator) => {
 		const snapshot = makeSnapshot({ components: [makeComponent(0), makeComponent(1, { status })] })
-		expect(renderStatusJson(snapshot, live).status.indicator).toBe(indicator)
+		expect(renderStatusJson(snapshot, live, "https://status.acme.com").status.indicator).toBe(indicator)
 	})
 
 	it("lists only unresolved incidents and reports a delayed page", () => {
@@ -609,7 +609,7 @@ describe("renderStatusJson", () => {
 				makeIncident("done", { status: "resolved", resolvedAt: FIXTURE_NOW }),
 			],
 		})
-		const json = renderStatusJson(snapshot, delayed)
+		const json = renderStatusJson(snapshot, delayed, "https://status.acme.com")
 		expect(Arr.map(json.incidents, (incident) => incident.id)).toEqual(["open"])
 		expect(json.status.delayed).toBe(true)
 		expect(json.updated_at).toBe("2026-10-28T11:00:00.000Z")
