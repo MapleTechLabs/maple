@@ -170,6 +170,8 @@ const RESOLVED_RETENTION_DAYS = 14
 const ARCHIVED_RETENTION_DAYS = 90
 /** How long a delivered, failed or silenced notification outbox row is kept for debugging. */
 const NOTIFICATION_DELIVERY_RETENTION_DAYS = 30
+/** Outbox rows pruned per org per retention run. */
+export const NOTIFICATION_DELIVERY_PRUNE_BATCH = 1000
 /**
  * Retention runs one tick an hour. The phase is bucketed on the CRON period,
  * not on the evaluator's catch-up window: the alerting cron fires every minute,
@@ -1596,15 +1598,31 @@ const make: Effect.Effect<
 			// Outbox rows are only ever inserted and updated. One that has reached a
 			// terminal status is history; the delivery key it deduplicates on belongs
 			// to a tick window that committed long ago.
-			yield* dbExecute((db) =>
+			// A bounded batch, like the issue purge below: nothing pruned these before, so
+			// an org's first run can face a large backlog. Later runs drain the rest.
+			const staleDeliveries = yield* dbExecute((db) =>
 				db.run(
-					PG.deleteFrom(ErrorNotificationDeliveries).where(($) => [
-						$.orgId.eq(orgId),
-						$.status.in_("success", "failed", "silenced"),
-						$.updatedAt.lt(nowMs - NOTIFICATION_DELIVERY_RETENTION_DAYS * DAY_MS),
-					]),
+					PG.from(ErrorNotificationDeliveries)
+						.select("id")
+						.where(($) => [
+							$.orgId.eq(orgId),
+							$.status.in_("success", "failed", "silenced"),
+							$.updatedAt.lt(nowMs - NOTIFICATION_DELIVERY_RETENTION_DAYS * DAY_MS),
+						])
+						.limit(NOTIFICATION_DELIVERY_PRUNE_BATCH),
 				),
 			)
+			if (staleDeliveries.length > 0) {
+				const deliveryIds = Arr.map(staleDeliveries, (row) => row.id)
+				yield* dbExecute((db) =>
+					db.run(
+						PG.deleteFrom(ErrorNotificationDeliveries).where(($) => [
+							$.orgId.eq(orgId),
+							$.id.in_(...deliveryIds),
+						]),
+					),
+				)
+			}
 
 			const archivedCutoff = nowMs - ARCHIVED_RETENTION_DAYS * DAY_MS
 			const toDelete = yield* dbExecute((db) =>
