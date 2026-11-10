@@ -1,25 +1,10 @@
-import { Option, Array as Arr, String as Str } from "effect"
+import { Option, Array as Arr } from "effect"
+import { envUrl } from "./env-url"
 
-const configuredApiBaseUrl = Option.map(
-	Option.fromNullishOr(import.meta.env.VITE_API_BASE_URL),
-	Str.trim,
-).pipe(Option.getOrUndefined)
-
-export const apiBaseUrl =
-	configuredApiBaseUrl && configuredApiBaseUrl.length > 0
-		? Str.replace(/\/$/, "")(configuredApiBaseUrl)
-		: "http://127.0.0.1:3472"
-
-const configuredApiPublicUrl = Option.map(
-	Option.fromNullishOr(import.meta.env.VITE_API_PUBLIC_URL),
-	Str.trim,
-).pipe(Option.getOrUndefined)
+export const apiBaseUrl = envUrl(import.meta.env.VITE_API_BASE_URL) ?? "http://127.0.0.1:3472"
 
 /** The API's real URL, for what users copy. `apiBaseUrl` can be the same-origin proxy. */
-export const apiPublicUrl =
-	configuredApiPublicUrl && configuredApiPublicUrl.length > 0
-		? Str.replace(/\/$/, "")(configuredApiPublicUrl)
-		: apiBaseUrl
+export const apiPublicUrl = envUrl(import.meta.env.VITE_API_PUBLIC_URL) ?? apiBaseUrl
 
 const originOf = Option.liftThrowable((url: string) => new URL(url).origin)
 
