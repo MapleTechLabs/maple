@@ -6,10 +6,14 @@ import {
 	AUDIT_RANGE_PRESETS,
 	type AuditDateRange,
 	type AuditLogFilters,
+	auditLogKindOf,
 	auditLogSearchFrom,
 	parseAuditLogSearch,
+	parseAuditLookup,
 } from "../../../components/settings/audit-log-filters"
-import { Clock, Effect, Option, Result, Schema, Array as Arr } from "effect"
+import { formatWarehouseDateTime, parseWarehouseDateTime } from "@maple/query-engine/datetime"
+import * as CustomRange from "../../kit/custom-range"
+import { Clock, DateTime, Effect, Option, Result, Schema, Array as Arr, String as Str } from "effect"
 import { Command } from "foldkit"
 import { toLoadFailure } from "@maple/views/data/load-failure"
 import { isClerkAuthEnabled } from "../../../lib/services/common/auth-mode"
@@ -28,6 +32,8 @@ type Return = PageReturn<Model, Message>
 type SettingsSearch = typeof SettingsSearchSchema.Type
 
 export const ANYONE = "anyone"
+/** The "no filter" value of the resource type, action and affected user selects. */
+export const ANY = "any"
 
 const asActorType = Schema.decodeUnknownOption(AuditActorType)
 const asOutcome = Schema.decodeUnknownOption(AuditOutcome)
@@ -35,7 +41,14 @@ const asOutcome = Schema.decodeUnknownOption(AuditOutcome)
 /** The filter input `AuditLogSection` derives from the URL; a rolling preset resolves in the Command. */
 export const baseRequestOf = (filters: AuditLogFilters): PageRequest => {
 	const range = filters.range
+	const kind = auditLogKindOf(filters)
 	return {
+		...(kind !== "all" && { kind }),
+		...(filters.resourceType !== undefined && { resourceType: filters.resourceType }),
+		...(filters.action !== undefined && { action: filters.action }),
+		...(filters.resourceId !== undefined && { resourceId: filters.resourceId }),
+		...(filters.affectedUserId !== undefined && { affectedUserId: filters.affectedUserId }),
+		...(filters.requestId !== undefined && { requestId: filters.requestId }),
 		...(filters.actorType !== undefined && { actorType: filters.actorType }),
 		...(filters.actorId !== undefined && { actorId: filters.actorId }),
 		...(filters.outcome !== undefined && { outcome: filters.outcome }),
@@ -53,14 +66,23 @@ const presetMsOf = (range: AuditDateRange): number | null =>
 			)
 		: null
 
-const sameRequest = (a: PageRequest, b: PageRequest) =>
-	a.cursor === b.cursor &&
-	a.actorType === b.actorType &&
-	a.actorId === b.actorId &&
-	a.outcome === b.outcome &&
-	a.since === b.since &&
-	a.until === b.until &&
-	a.preset === b.preset
+const REQUEST_KEYS = [
+	"cursor",
+	"kind",
+	"actorType",
+	"actorId",
+	"outcome",
+	"resourceType",
+	"action",
+	"resourceId",
+	"affectedUserId",
+	"requestId",
+	"since",
+	"until",
+	"preset",
+] as const satisfies ReadonlyArray<keyof PageRequest>
+
+const sameRequest = (a: PageRequest, b: PageRequest) => Arr.every(REQUEST_KEYS, (key) => a[key] === b[key])
 
 /** `auditLogPageAtom`: one page, newest first; a preset window resolves against the clock now. */
 const FetchAuditPage = Command.define("FetchAuditLogPage", {
@@ -87,6 +109,12 @@ const fetchPage = (request: PageRequest, presetSince: string | null) =>
 			query: {
 				limit: AUDIT_LOG_PAGE_LIMIT,
 				...(request.cursor !== undefined && { cursor: request.cursor }),
+				kind: request.kind ?? "all",
+				...(request.resourceType !== undefined && { resource_type: request.resourceType }),
+				...(request.action !== undefined && { action: request.action }),
+				...(request.resourceId !== undefined && { resource_id: request.resourceId }),
+				...(request.affectedUserId !== undefined && { affected_user: request.affectedUserId }),
+				...(request.requestId !== undefined && { request_id: request.requestId }),
 				...(request.actorType !== undefined && { actor_type: request.actorType }),
 				...(request.actorId !== undefined && { actor_id: request.actorId }),
 				...(request.outcome !== undefined && { outcome: request.outcome }),
@@ -155,7 +183,13 @@ export const init = (search: SettingsSearch): Return => {
 			expanded: [],
 			copies: {},
 			personSelect: Select.init("audit-person", { value: ANYONE, selectedIndex: 0 }),
+			resourceTypeSelect: Select.init("audit-resource-type", { value: ANY, selectedIndex: 0 }),
+			actionSelect: Select.init("audit-action", { value: ANY, selectedIndex: 0 }),
+			affectedSelect: Select.init("audit-affected", { value: ANY, selectedIndex: 0 }),
 			dateRange: Popover.init("audit-date-range", { align: "start" }),
+			customRange: null,
+			lookup: "",
+			isLookupUnknown: false,
 		},
 		baseRequestOf(parseAuditLogSearch(search)),
 		search,
@@ -209,6 +243,68 @@ export const revisit = (model: Model, search: SettingsSearch): Return => {
 		commands: [FetchAuditPage({ request, presetMs: presetMsOf(filters.range), resolvedSince: null })],
 	}
 }
+
+/** "Custom range…" opens on the list's own window once the clock gave today. */
+const ResolveAuditCustomToday = Command.define("ResolveAuditCustomToday", {
+	args: { timeZone: Schema.String },
+	messages: [Message.ResolvedCustomToday],
+	execute: ({ timeZone }) =>
+		Effect.map(CustomRange.readToday(timeZone), (days) =>
+			Message.ResolvedCustomToday({ timeZone, ...days }),
+		),
+})
+
+const isoToWarehouse = (iso: string | undefined): string | null =>
+	iso === undefined ? null : formatWarehouseDateTime(DateTime.toEpochMillis(DateTime.makeUnsafe(iso)))
+const warehouseToIso = (value: string): string => new Date(parseWarehouseDateTime(value)).toISOString()
+
+type SelectField = "personSelect" | "resourceTypeSelect" | "actionSelect" | "affectedSelect"
+
+/** One select's step; `onChange` turns a picked value into the filters to navigate to. */
+const selectStep = (
+	model: Model,
+	search: SettingsSearch,
+	field: SelectField,
+	child: Select.Message,
+	wrap: (message: Select.Message) => Message,
+	onChange: (value: string) => AuditLogFilters,
+): Return => {
+	const step = Select.update(model[field], child)
+	const lifted: Return = {
+		model: { ...model, [field]: step.model },
+		commands: Command.mapMessages(step.commands ?? [], wrap),
+	}
+	if (step.outMessage === undefined) return lifted
+	return {
+		...lifted,
+		outMessage: navigateFilters(lifted.model, search, onChange(step.outMessage.value)).outMessage,
+	}
+}
+
+const orAny = (value: string) => (value === ANY ? undefined : value)
+
+/** The filters without one of them: what a chip's x navigates to. */
+const withoutFilter = (filters: AuditLogFilters, key: string): AuditLogFilters => {
+	switch (key) {
+		case "range":
+			return { ...filters, range: { kind: "all" } }
+		case "resourceType":
+			// An action belongs to its resource type; it goes with it.
+			return { ...filters, resourceType: undefined, action: undefined }
+		case "actorId":
+		case "actorType":
+		case "outcome":
+		case "action":
+		case "resourceId":
+		case "affectedUserId":
+		case "requestId":
+			return { ...filters, [key]: undefined }
+		default:
+			return filters
+	}
+}
+
+const liftCustom = (model: Model, customRange: CustomRange.Model | null): Model => ({ ...model, customRange })
 
 export const update = (model: Model, message: Message, search: SettingsSearch): Return => {
 	const filters = parseAuditLogSearch(search)
@@ -273,25 +369,109 @@ export const update = (model: Model, message: Message, search: SettingsSearch): 
 			}),
 		ClickedOutcome: ({ value }) =>
 			navigateFilters(model, search, { ...filters, outcome: Option.getOrUndefined(asOutcome(value)) }),
-		GotPersonSelectMessage: ({ message: child }) => {
-			const step = Select.update(model.personSelect, child)
-			const lifted: Return = {
-				model: { ...model, personSelect: step.model },
-				commands: Command.mapMessages(step.commands ?? [], (inner) =>
-					Message.GotPersonSelectMessage({ message: inner }),
+		GotPersonSelectMessage: ({ message: child }) =>
+			selectStep(
+				model,
+				search,
+				"personSelect",
+				child,
+				(inner) => Message.GotPersonSelectMessage({ message: inner }),
+				(value) => ({ ...filters, actorId: value === ANYONE ? undefined : value }),
+			),
+		GotResourceTypeSelectMessage: ({ message: child }) =>
+			selectStep(
+				model,
+				search,
+				"resourceTypeSelect",
+				child,
+				(inner) => Message.GotResourceTypeSelectMessage({ message: inner }),
+				(value) => ({ ...filters, resourceType: orAny(value), action: undefined }),
+			),
+		GotActionSelectMessage: ({ message: child }) =>
+			selectStep(
+				model,
+				search,
+				"actionSelect",
+				child,
+				(inner) => Message.GotActionSelectMessage({ message: inner }),
+				(value) => ({ ...filters, action: orAny(value) }),
+			),
+		GotAffectedSelectMessage: ({ message: child }) =>
+			selectStep(
+				model,
+				search,
+				"affectedSelect",
+				child,
+				(inner) => Message.GotAffectedSelectMessage({ message: inner }),
+				(value) => ({ ...filters, affectedUserId: orAny(value) }),
+			),
+		ClickedKind: ({ value }) =>
+			navigateFilters(model, search, {
+				...filters,
+				kind: value === "access" || value === "all" ? value : undefined,
+			}),
+		ChangedLookup: ({ value }) => ({ model: { ...model, lookup: value, isLookupUnknown: false } }),
+		ClearedLookup: () => ({ model: { ...model, lookup: "", isLookupUnknown: false } }),
+		SubmittedLookup: () =>
+			Option.match(parseAuditLookup(model.lookup), {
+				onNone: () => ({
+					model: { ...model, isLookupUnknown: Str.isNonEmpty(Str.trim(model.lookup)) },
+				}),
+				onSome: (lookup) =>
+					navigateFilters({ ...model, lookup: "", isLookupUnknown: false }, search, {
+						...filters,
+						[lookup.key]: lookup.value,
+						// A looked-up action names its resource type; a stale one would hide it.
+						...(lookup.key === "action" && { resourceType: undefined }),
+					}),
+			}),
+		RemovedFilter: ({ key }) => navigateFilters(model, search, withoutFilter(filters, key)),
+		ClickedCustomRange: ({ timeZone }) => ({ model, commands: [ResolveAuditCustomToday({ timeZone })] }),
+		ResolvedCustomToday: ({ timeZone, today, lastDay }) => {
+			const range = filters.range
+			return {
+				model: liftCustom(
+					model,
+					CustomRange.init({
+						startTime: range.kind === "custom" ? isoToWarehouse(range.since) : null,
+						endTime: range.kind === "custom" ? isoToWarehouse(range.until) : null,
+						timeZone,
+						today,
+						lastDay,
+					}),
 				),
 			}
-			if (step.outMessage === undefined) return lifted
-			const actorId = step.outMessage.value === ANYONE ? undefined : step.outMessage.value
-			return {
-				...lifted,
-				outMessage: navigateFilters(lifted.model, search, { ...filters, actorId }).outMessage,
-			}
+		},
+		GotCustomRangeMessage: ({ message: child }) => {
+			if (model.customRange === null) return { model }
+			const step = CustomRange.update(model.customRange, child)
+			const out = step.outMessage
+			if (out === undefined) return { model: liftCustom(model, step.model) }
+			return CustomRange.OutMessage.match<Return>(out, {
+				CancelledRange: () => ({ model: liftCustom(model, null) }),
+				AppliedRange: ({ startTime, endTime }) => {
+					const closed = Popover.close(model.dateRange)
+					return {
+						...navigateFilters({ ...liftCustom(model, null), dateRange: closed.model }, search, {
+							...filters,
+							range: {
+								kind: "custom",
+								since: warehouseToIso(startTime),
+								until: warehouseToIso(endTime),
+							},
+						}),
+						commands: Command.mapMessages(closed.commands ?? [], (inner) =>
+							Message.GotDateRangeMessage({ message: inner }),
+						),
+					}
+				},
+			})
 		},
 		GotDateRangeMessage: ({ message: child }) => {
 			const step = Popover.update(model.dateRange, child)
 			return {
-				model: { ...model, dateRange: step.model },
+				// Closing the popover drops a half-picked custom range.
+				model: { ...model, dateRange: step.model, ...(!step.model.isOpen && { customRange: null }) },
 				commands: Command.mapMessages(step.commands ?? [], (inner) =>
 					Message.GotDateRangeMessage({ message: inner }),
 				),
@@ -313,6 +493,7 @@ export const update = (model: Model, message: Message, search: SettingsSearch): 
 				),
 			}
 		},
-		ClickedClearFilters: () => navigateFilters(model, search, { range: { kind: "all" } }),
+		ClickedClearFilters: () =>
+			navigateFilters(model, search, { range: { kind: "all" }, kind: filters.kind }),
 	})
 }

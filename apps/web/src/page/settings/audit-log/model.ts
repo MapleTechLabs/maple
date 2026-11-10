@@ -6,6 +6,7 @@ import { LoadFailure } from "@maple/views/data/load-failure"
 import * as CopyButton from "@maple/views/ui/copy-button"
 import * as Popover from "@maple/views/ui/popover"
 import * as Select from "@maple/views/ui/select"
+import * as CustomRange from "../../kit/custom-range"
 
 // `AuditLogSection`. Filters live in the `/settings` search; the page passes them in and a change comes back
 // as a navigation.
@@ -16,6 +17,13 @@ export const PageRequest = Schema.Struct({
 	actorType: Schema.optional(AuditActorType),
 	actorId: Schema.optional(Schema.String),
 	outcome: Schema.optional(AuditOutcome),
+	/** `changes` or `access`; absent lists both. */
+	kind: Schema.optional(Schema.Literals(["changes", "access"])),
+	resourceType: Schema.optional(Schema.String),
+	action: Schema.optional(Schema.String),
+	resourceId: Schema.optional(Schema.String),
+	affectedUserId: Schema.optional(Schema.String),
+	requestId: Schema.optional(Schema.String),
 	since: Schema.optional(Schema.String),
 	until: Schema.optional(Schema.String),
 	/** A rolling preset: part of the key, resolved to `since` when the page is fetched. */
@@ -60,7 +68,16 @@ export const Model = Schema.Struct({
 	expanded: Schema.Array(Schema.String),
 	copies: Schema.Record(Schema.String, CopyButton.Model),
 	personSelect: Select.Model,
+	resourceTypeSelect: Select.Model,
+	actionSelect: Select.Model,
+	affectedSelect: Select.Model,
 	dateRange: Popover.Model,
+	/** The date popover's custom tab, open once the clock gave today. */
+	customRange: Schema.NullOr(CustomRange.Model),
+	/** The lookup field's draft: a pasted id or action, applied on Enter. */
+	lookup: Schema.String,
+	/** The last Enter matched no id shape or action. */
+	isLookupUnknown: Schema.Boolean,
 })
 export type Model = typeof Model.Type
 
@@ -83,5 +100,21 @@ export const Message = defineMessageUnion({
 	GotDateRangeMessage: { message: Popover.Message },
 	ClickedRangePreset: { value: Schema.String },
 	ClickedClearFilters: {},
+	ClickedKind: { value: Schema.String },
+	GotResourceTypeSelectMessage: { message: Select.Message },
+	GotActionSelectMessage: { message: Select.Message },
+	GotAffectedSelectMessage: { message: Select.Message },
+	ChangedLookup: { value: Schema.String },
+	SubmittedLookup: {},
+	ClearedLookup: {},
+	/** A filter chip's x: the key of the filter it removes. */
+	RemovedFilter: { key: Schema.String },
+	ClickedCustomRange: { timeZone: Schema.String },
+	ResolvedCustomToday: {
+		timeZone: Schema.String,
+		today: CustomRange.CalendarDate,
+		lastDay: CustomRange.CalendarDate,
+	},
+	GotCustomRangeMessage: { message: CustomRange.Message },
 })
 export type Message = typeof Message.Type
