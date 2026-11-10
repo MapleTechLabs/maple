@@ -69,6 +69,7 @@ export const init = (route: ChainRoute, context: PageContext): Return => {
 		destinations: null,
 		rules: null,
 		members: null,
+		isMembersFailed: false,
 		schedules: null,
 		isSchedulesFailed: false,
 		brokenLogos: [],
@@ -286,11 +287,11 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			orgId === context.orgId ? { model: { ...model, destinations: rows } } : { model },
 		UpdatedRules: ({ orgId, rows }) =>
 			orgId === context.orgId ? { model: { ...model, rules: rows } } : { model },
-		// Without members a person reads "Member"; destinations and schedules still show.
+		// Without members a person reads "Member", and the picker says people could not be loaded.
 		CompletedFetchMembers: ({ result }) =>
 			Result.match(result, {
-				onSuccess: (members) => ({ model: { ...model, members } }),
-				onFailure: () => ({ model }),
+				onSuccess: (members) => ({ model: { ...model, members, isMembersFailed: false } }),
+				onFailure: () => ({ model: { ...model, isMembersFailed: true } }),
 			}),
 		CompletedFetchSchedules: ({ result }) =>
 			Result.match(result, {

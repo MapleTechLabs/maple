@@ -24,7 +24,9 @@ export const Model = Schema.Struct({
 	baseline: Form,
 	destinations: Schema.NullOr(Schema.Array(AlertDestinationRowSchema)),
 	rules: Schema.NullOr(Schema.Array(AlertRuleRowSchema)),
+	/** `null` until the members load, and after a failed read (`isMembersFailed`). */
 	members: Schema.NullOr(Schema.Array(OrgMember)),
+	isMembersFailed: Schema.Boolean,
 	/** `null` until the schedules load, and after a failed read (`isSchedulesFailed`). */
 	schedules: Schema.NullOr(Schema.Array(V2OnCallSchedule)),
 	isSchedulesFailed: Schema.Boolean,

@@ -144,8 +144,16 @@ const onCallNote = (model: Model, scheduleId: string): string | undefined =>
 	)
 
 /** A picked target's chip: a destination's logo, a member's avatar, a schedule's calendar. */
-const targetChip = (h: H, model: Model, key: string, target: V2EscalationTarget): PickedChip<Message> => {
+const targetChip = (
+	h: H,
+	model: Model,
+	key: string,
+	index: number,
+	target: V2EscalationTarget,
+): PickedChip<Message> => {
 	const onRemove = Message.ClickedRemoveTarget({ key, target: targetKey(target) })
+	// The step is named: the same target may sit on several steps.
+	const onStep = `on step ${index + 1}`
 	switch (target.type) {
 		case "destination": {
 			const name = nameOr(model.destinations, target.destination_id, "Destination")
@@ -153,7 +161,7 @@ const targetChip = (h: H, model: Model, key: string, target: V2EscalationTarget)
 				key: targetKey(target),
 				label: name,
 				media: destinationMedia(h, model, target.destination_id),
-				removeLabel: `Stop notifying ${name}`,
+				removeLabel: `Stop notifying ${name} ${onStep}`,
 				onRemove,
 			}
 		}
@@ -169,7 +177,7 @@ const targetChip = (h: H, model: Model, key: string, target: V2EscalationTarget)
 						Option.map(memberOf(model.members, target.user_id), (member) => member.imageUrl),
 					),
 				}),
-				removeLabel: `Stop paging ${name}`,
+				removeLabel: `Stop paging ${name} ${onStep}`,
 				onRemove,
 			}
 		}
@@ -181,7 +189,7 @@ const targetChip = (h: H, model: Model, key: string, target: V2EscalationTarget)
 				label: name,
 				media: icon(h, "CalendarIcon", { size: 14, className: "shrink-0 text-muted-foreground" }),
 				...(detail === undefined ? undefined : { detail }),
-				removeLabel: `Stop paging ${name}`,
+				removeLabel: `Stop paging ${name} ${onStep}`,
 				onRemove,
 			}
 		}
@@ -234,17 +242,17 @@ const addEntries = (h: H, model: Model, step: StepDraft): ReadonlyArray<MenuEntr
 						label: row.name,
 					})),
 				)),
-		...group(
-			"People",
-			Arr.map(model.members ?? [], (member) => ({
-				value: `user:${member.userId}`,
-				label: member.name,
-			})),
-		),
+		...(model.members === null
+			? [loadingEntry(model.isMembersFailed ? "People could not be loaded" : "Loading people")]
+			: group(
+					"People",
+					Arr.map(model.members, (member) => ({
+						value: `user:${member.userId}`,
+						label: member.name,
+					})),
+				)),
 		...(model.schedules === null
-			? model.isSchedulesFailed
-				? []
-				: [loadingEntry("Loading schedules")]
+			? [loadingEntry(model.isSchedulesFailed ? "Schedules could not be loaded" : "Loading schedules")]
 			: group(
 					"Whoever is on call on",
 					Arr.map(model.schedules, (schedule) => ({
@@ -309,7 +317,7 @@ const stepCard = (h: H, model: Model, step: StepDraft, index: number): Html => {
 					index === 0 ? "Notify" : "Then notify",
 				]),
 				...pickChips(h, {
-					entries: Arr.map(step.targets, (target) => targetChip(h, model, key, target)),
+					entries: Arr.map(step.targets, (target) => targetChip(h, model, key, index, target)),
 					menu: model.menus[targetsMenuId] ?? Menu.init(targetsMenuId),
 					toMenuMessage: (message) => Message.GotMenuMessage({ kind: "targets", key, message }),
 					addEntries: addEntries(h, model, step),

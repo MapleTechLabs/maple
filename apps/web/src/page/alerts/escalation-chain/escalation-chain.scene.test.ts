@@ -270,6 +270,13 @@ describe("escalation chain editor", () => {
 			expectView(text(/No destinations yet/u)).toExist(),
 			expectView(role("link", { name: "Create a destination" })).toHaveAttr("href", "/alerts/routing"),
 		)
+		// A failed read is said, so an empty People group is not mistaken for an org of one.
+		scene(
+			{ update: pageUpdate, view },
+			given(open({ ...newChain(), members: null, isMembersFailed: true })),
+			Mount.resolve(Menu.MountMenu, Menu.Message.CompletedMountMenu()),
+			expectView(text("People could not be loaded")).toExist(),
+		)
 	})
 
 	test("delete lists the rules that would stop escalating and holds the delete while they use it", () => {
@@ -392,7 +399,7 @@ describe("escalation chain editor", () => {
 			expectView(role("button", { name: "Delete chain" })).not.toExist(),
 			expectView(role("button", { name: "Actions for step 1" })).not.toExist(),
 			expectView(role("button", { name: "Add a step after step 1" })).not.toExist(),
-			expectView(role("button", { name: "Stop notifying Slack #alerts-api" })).not.toExist(),
+			expectView(role("button", { name: "Stop notifying Slack #alerts-api on step 1" })).not.toExist(),
 			expectView(role("link", { name: "Back to routing" })).toExist(),
 		)
 		// The update holds the same line as the view.
