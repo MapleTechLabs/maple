@@ -14,7 +14,13 @@ export const SetupAuditCheckRow = Schema.Struct({
 	status: Schema.Literals(["pass", "fail", "skip"]),
 	detail: Schema.NullOr(Schema.String),
 	affected: Schema.Array(
-		Schema.Struct({ kind: Schema.String, name: Schema.String, note: Schema.NullOr(Schema.String) }),
+		Schema.Struct({
+			kind: Schema.String,
+			/** Public id (`alrt_…`, `dest_…`) when the entity is an addressable resource. */
+			id: Schema.optionalKey(Schema.String),
+			name: Schema.String,
+			note: Schema.NullOr(Schema.String),
+		}),
 	),
 	affectedCount: Schema.Number,
 	fixHint: Schema.String,

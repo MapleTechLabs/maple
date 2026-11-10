@@ -5,13 +5,18 @@ import {
 	type SetupAuditInputs,
 	type WarehouseAuditInputs,
 	SETUP_AUDIT_CHECKS,
+	classifyService,
+	quoteSafely,
 	runSetupAudit,
 } from "./setup-audit"
 import { buildIntegrationInventory, type IntegrationInventoryInputs } from "./integration-inventory"
-import { Array as Arr, Option, String as Str } from "effect"
+import { Array as Arr, Option, Record as Rec, String as Str } from "effect"
 
 const NOW = Date.UTC(2026, 6, 27, 12, 0, 0)
 const HOUR = 60 * 60_000
+
+/** A destination with no delivery failures recorded. */
+const deliveringOk = { consecutiveFailures: 0, disabledAt: null, disabledReason: null }
 
 /** A fully healthy org — every check passes. Each test perturbs exactly one field. */
 const healthyConfig: ConfigAuditInputs = {
@@ -22,6 +27,7 @@ const healthyConfig: ConfigAuditInputs = {
 			name: "API error rate",
 			enabled: true,
 			destinationIds: ["dest-1"],
+			escalationChainIds: [],
 			windowMinutes: 5,
 			evaluationIntervalMinutes: 1,
 			lastScheduledAt: NOW - 60_000,
@@ -29,7 +35,9 @@ const healthyConfig: ConfigAuditInputs = {
 		},
 	],
 	alertRuleStates: [{ ruleId: "rule-1", lastEvaluatedAt: NOW - 60_000, lastError: null }],
-	alertDestinations: [{ id: "dest-1", name: "#alerts", enabled: true, lastTestError: null }],
+	alertDestinations: [
+		{ id: "dest-1", name: "#alerts", enabled: true, lastTestError: null, ...deliveringOk },
+	],
 	errorNotificationPolicy: { enabled: true, destinationIds: ["dest-1"] },
 	anomalyDetector: { enabled: true },
 	dashboardCount: 2,
@@ -62,6 +70,7 @@ const withOrgTotals = (
 		readonly traceCount: number
 		readonly rootlessCount: number
 		readonly sampledRootlessCount: number
+		readonly externalParentCount?: number
 	}>,
 ) => {
 	const sum = (pick: (row: (typeof rows)[number]) => number) =>
@@ -70,8 +79,9 @@ const withOrgTotals = (
 		orgTraceCount: sum((row) => row.traceCount),
 		orgRootlessCount: sum((row) => row.rootlessCount),
 		orgSampledRootlessCount: sum((row) => row.sampledRootlessCount),
+		orgExternalParentCount: sum((row) => row.externalParentCount ?? 0),
 	}
-	return Arr.map(rows, (row) => ({ ...row, ...totals }))
+	return Arr.map(rows, (row) => ({ externalParentCount: 0, ...row, ...totals }))
 }
 
 const healthyRule = Arr.getUnsafe(healthyConfig.alertRules, 0)
@@ -107,14 +117,7 @@ const healthyWarehouse: WarehouseAuditInputs = {
 	logSeverity: [{ serviceName: "api", severityText: "INFO", logCount: 500 }],
 	metricLabels: [{ attributeKey: "http.route", valueCardinality: 40 }],
 	peerValues: [{ attributeKey: "peer.service", attributeValue: "tinybird", usageCount: 20 }],
-	dbEdges: [
-		{
-			serviceName: "api",
-			dbSystem: "postgresql",
-			callCount: 100,
-			unknownNamespaceCallCount: 0,
-		},
-	],
+	dbEdges: [{ serviceName: "api", dbSystem: "postgresql", dbNamespace: "orders", callCount: 100 }],
 	logCorrelation: [
 		{
 			serviceName: "api",
@@ -133,13 +136,20 @@ const healthyWarehouse: WarehouseAuditInputs = {
 				childCount: 800,
 				orphanCount: 4,
 				sampledOrphanCount: 0,
+				externalParentCount: 0,
 				sampleTraceIds: [],
 			},
 		],
 		rootless: withOrgTotals([
 			{ entryService: "api", traceCount: 10_000, rootlessCount: 1, sampledRootlessCount: 0 },
 		]),
+		inboundRoutes: [],
 	},
+	services: [
+		{ serviceName: "api", namespaces: [], environments: ["production"], sdkLanguages: ["nodejs"] },
+	],
+	resourceKeySamples: [],
+	resourceKeyServices: [],
 }
 
 const healthyServiceSpans = Arr.getUnsafe(healthyWarehouse.spanShape, 0)
@@ -177,6 +187,13 @@ describe("runSetupAudit — baseline", () => {
 		expect(report.dataStatus).toBe("ok")
 	})
 
+	it("words every fix as something a person does, not an API call or agent tool", () => {
+		const machineSpeak = Arr.filter(SETUP_AUDIT_CHECKS, (row) =>
+			/\bMCP\b|\/v2\/|\b(?:GET|PATCH|POST|PUT)\s\/|_policy`/.test(row.fixHint),
+		)
+		expect(Arr.map(machineSpeak, (row) => row.id)).toEqual([])
+	})
+
 	it("uses unique check ids", () => {
 		const ids = Arr.map(SETUP_AUDIT_CHECKS, (row) => row.id)
 		expect(new Set(ids).size).toBe(ids.length)
@@ -207,6 +224,7 @@ describe("runSetupAudit — baseline", () => {
 					name: `dest ${i}`,
 					enabled: true,
 					lastTestError: "boom",
+					...deliveringOk,
 				})),
 				scrapeTargets: each((i) => ({
 					id: `t-${i}`,
@@ -286,8 +304,8 @@ describe("runSetupAudit — baseline", () => {
 				dbEdges: each((i) => ({
 					serviceName: `svc-${i}`,
 					dbSystem: "redis",
+					dbNamespace: "",
 					callCount: 100,
-					unknownNamespaceCallCount: 100,
 				})),
 				logCorrelation: each((i) => ({
 					serviceName: `svc-${i}`,
@@ -304,6 +322,7 @@ describe("runSetupAudit — baseline", () => {
 						childCount: 800,
 						orphanCount: 400,
 						sampledOrphanCount: 0,
+						externalParentCount: 0,
 						sampleTraceIds: [],
 					})),
 					rootless: withOrgTotals([
@@ -315,6 +334,7 @@ describe("runSetupAudit — baseline", () => {
 							sampledRootlessCount: 0,
 						})),
 					]),
+					inboundRoutes: [],
 				},
 			}
 			return runSetupAudit({ now: NOW, config, warehouse: telemetry }).checks
@@ -371,13 +391,12 @@ describe("runSetupAudit — baseline", () => {
 	it("counts each failure under its own severity", () => {
 		const report = runSetupAudit(
 			inputs({
-				alertDestinations: [], // CFG-ALERT-01 critical (+ CFG-ALERT-03 critical, CFG-NOTIF-01 warn)
+				alertDestinations: [], // CFG-ALERT-01, CFG-ALERT-03 and CFG-NOTIF-01, all critical
 				dashboardCount: 0, // CFG-DASH-01 info
 			}),
 		)
-		expect(report.summary.critical).toBe(2)
+		expect(report.summary.critical).toBe(3)
 		expect(report.summary.info).toBe(1)
-		expect(report.summary.warn).toBeGreaterThanOrEqual(1)
 		expect(
 			report.summary.critical + report.summary.warn + report.summary.info + report.summary.pass,
 		).toBe(SETUP_AUDIT_CHECKS.length)
@@ -388,7 +407,9 @@ describe("CFG-ALERT-01 — a notification path exists", () => {
 	it("fails when no destination is enabled", () => {
 		const report = runSetupAudit(
 			inputs({
-				alertDestinations: [{ id: "dest-1", name: "#alerts", enabled: false, lastTestError: null }],
+				alertDestinations: [
+					{ id: "dest-1", name: "#alerts", enabled: false, lastTestError: null, ...deliveringOk },
+				],
 			}),
 		)
 		expect(check(report, "CFG-ALERT-01").status).toBe("fail")
@@ -423,6 +444,7 @@ describe("CFG-ALERT-02 — alert rules exist", () => {
 						name: "retired",
 						enabled: false,
 						destinationIds: [],
+						escalationChainIds: [],
 						windowMinutes: 5,
 						evaluationIntervalMinutes: 1,
 						lastScheduledAt: null,
@@ -457,10 +479,42 @@ describe("CFG-ALERT-03 — rules route somewhere", () => {
 	it("fails a rule whose only destination is disabled", () => {
 		const report = runSetupAudit(
 			inputs({
-				alertDestinations: [{ id: "dest-1", name: "#alerts", enabled: false, lastTestError: null }],
+				alertDestinations: [
+					{ id: "dest-1", name: "#alerts", enabled: false, lastTestError: null, ...deliveringOk },
+				],
 			}),
 		)
 		expect(check(report, "CFG-ALERT-03").status).toBe("fail")
+	})
+
+	it("names the destinations Maple turned off when they were a rule's only route", () => {
+		const report = runSetupAudit(
+			inputs({
+				alertDestinations: [
+					{
+						id: "dest-1",
+						name: "#alerts",
+						enabled: false,
+						lastTestError: null,
+						consecutiveFailures: 5,
+						disabledAt: NOW - HOUR,
+						disabledReason: "404 no_service",
+					},
+				],
+			}),
+		)
+		const result = check(report, "CFG-ALERT-03")
+		expect(result.severity).toBe("critical")
+		expect(result.affected[0]?.note).toBe(
+			"every selected destination is off; Maple turned off #alerts (404 no_service)",
+		)
+	})
+
+	it("passes a rule with no destinations whose tier starts an escalation chain", () => {
+		const report = runSetupAudit(
+			inputs({ alertRules: [{ ...healthyRule, destinationIds: [], escalationChainIds: ["chain-1"] }] }),
+		)
+		expect(check(report, "CFG-ALERT-03").status).toBe("pass")
 	})
 
 	it("passes when at least one selected destination is live", () => {
@@ -476,6 +530,7 @@ describe("CFG-ALERT-03 — rules route somewhere", () => {
 			name: `rule ${index}`,
 			enabled: true,
 			destinationIds: [],
+			escalationChainIds: [],
 			windowMinutes: 5,
 			evaluationIntervalMinutes: 1,
 			lastScheduledAt: NOW - 60_000,
@@ -492,34 +547,45 @@ describe("CFG-ALERT-04 — destinations delivered on last test", () => {
 		const report = runSetupAudit(
 			inputs({
 				alertDestinations: [
-					{ id: "dest-1", name: "#alerts", enabled: true, lastTestError: "404 from Slack webhook" },
+					{
+						id: "dest-1",
+						name: "#alerts",
+						enabled: true,
+						lastTestError: "404 from Slack webhook",
+						...deliveringOk,
+					},
 				],
 			}),
 		)
 		const result = check(report, "CFG-ALERT-04")
 		expect(result.status).toBe("fail")
-		expect(result.affected[0]?.note).toBe("404 from Slack webhook")
+		expect(result.affected[0]?.note).toBe("last test failed: 404 from Slack webhook")
 	})
 
 	it("truncates a pathologically long provider error", () => {
 		const report = runSetupAudit(
 			inputs({
 				alertDestinations: [
-					{ id: "dest-1", name: "#alerts", enabled: true, lastTestError: Str.repeat(500)("x") },
+					{
+						id: "dest-1",
+						name: "#alerts",
+						enabled: true,
+						lastTestError: Str.repeat(500)("x"),
+						...deliveringOk,
+					},
 				],
 			}),
 		)
 		const note = check(report, "CFG-ALERT-04").affected[0]?.note ?? ""
-		expect(note).toHaveLength(160)
-		expect(Str.endsWith("…")(note)).toBe(true)
+		expect(note).toBe(`last test failed: ${Str.repeat(159)("x")}…`)
 	})
 
 	it("ignores a disabled destination that failed its test", () => {
 		const report = runSetupAudit(
 			inputs({
 				alertDestinations: [
-					{ id: "dest-1", name: "#alerts", enabled: true, lastTestError: null },
-					{ id: "dest-2", name: "old", enabled: false, lastTestError: "boom" },
+					{ id: "dest-1", name: "#alerts", enabled: true, lastTestError: null, ...deliveringOk },
+					{ id: "dest-2", name: "old", enabled: false, lastTestError: "boom", ...deliveringOk },
 				],
 			}),
 		)
@@ -529,6 +595,89 @@ describe("CFG-ALERT-04 — destinations delivered on last test", () => {
 	it("never fires just because a destination was never tested", () => {
 		const report = runSetupAudit(inputs())
 		expect(check(report, "CFG-ALERT-04").status).toBe("pass")
+	})
+
+	it("reports a destination Maple turned off after failed deliveries, with its reason", () => {
+		const report = runSetupAudit(
+			inputs({
+				alertDestinations: [
+					...healthyConfig.alertDestinations,
+					{
+						id: "dest-2",
+						name: "pager",
+						enabled: false,
+						lastTestError: null,
+						consecutiveFailures: 5,
+						disabledAt: NOW - 3 * HOUR,
+						disabledReason: "403 channel_not_found",
+					},
+				],
+			}),
+		)
+		const result = check(report, "CFG-ALERT-04")
+		expect(result.status).toBe("fail")
+		expect(result.affected[0]).toMatchObject({
+			id: "dest-2",
+			note: "turned off by Maple 3 hours ago: 403 channel_not_found",
+		})
+	})
+
+	it("reports real delivery failures on an enabled destination nobody tested", () => {
+		const report = runSetupAudit(
+			inputs({
+				alertDestinations: [
+					{
+						id: "dest-1",
+						name: "#alerts",
+						enabled: true,
+						lastTestError: null,
+						...deliveringOk,
+						consecutiveFailures: 2,
+					},
+				],
+			}),
+		)
+		expect(check(report, "CFG-ALERT-04").affected[0]?.note).toBe("2 deliveries in a row failed")
+	})
+
+	it("stays quiet on a single transient delivery failure", () => {
+		const report = runSetupAudit(
+			inputs({
+				alertDestinations: [
+					{
+						id: "dest-1",
+						name: "#alerts",
+						enabled: true,
+						lastTestError: null,
+						...deliveringOk,
+						consecutiveFailures: 1,
+					},
+				],
+			}),
+		)
+		expect(check(report, "CFG-ALERT-04").status).toBe("pass")
+	})
+
+	it("reports why Maple turned a destination off when its last recipient left", () => {
+		const report = runSetupAudit(
+			inputs({
+				alertDestinations: [
+					{
+						id: "dest-1",
+						name: "email",
+						enabled: false,
+						lastTestError: null,
+						consecutiveFailures: 0,
+						disabledAt: NOW - HOUR,
+						disabledReason: "Last recipient left the organization",
+					},
+				],
+			}),
+		)
+		expect(check(report, "CFG-ALERT-04").detail).not.toContain("failures")
+		expect(check(report, "CFG-ALERT-03").affected[0]?.note).toBe(
+			"every selected destination is off; Maple turned off email (Last recipient left the organization)",
+		)
 	})
 })
 
@@ -540,6 +689,7 @@ describe("CFG-ALERT-05 — rules are evaluating", () => {
 			}),
 		)
 		const result = check(report, "CFG-ALERT-05")
+		expect(result.severity).toBe("critical")
 		expect(result.status).toBe("fail")
 		expect(result.affected[0]?.note).toBe("evaluation error: query timed out")
 	})
@@ -616,7 +766,9 @@ describe("CFG-NOTIF-01 — error notifications reach someone", () => {
 		const report = runSetupAudit(
 			inputs({ errorNotificationPolicy: { enabled: false, destinationIds: ["dest-1"] } }),
 		)
-		expect(check(report, "CFG-NOTIF-01").detail).toContain("turned off")
+		const result = check(report, "CFG-NOTIF-01")
+		expect(result.detail).toContain("turned off")
+		expect(result.severity).toBe("critical")
 	})
 
 	it("fails when enabled with no destinations", () => {
@@ -907,7 +1059,7 @@ describe("integration checks", () => {
 			const result = check(report, "CFG-INTEG-04")
 			expect(result.status).toBe("fail")
 			expect(result.affected[0]?.name).toBe("environment shop / preview")
-			expect(result.affected[0]?.note).toContain("no successful update for 4 h")
+			expect(result.affected[0]?.note).toBe("no successful update for 4 hours")
 		})
 
 		it("CFG-INTEG-04 reports a rejected Railway token even with no environments", () => {
@@ -947,6 +1099,94 @@ describe("integration checks", () => {
 				}),
 			)
 			expect(check(revoked, "CFG-INTEG-05").status).toBe("pass")
+		})
+
+		const planetscaleConnection = {
+			psOrganization: "acme",
+			detectedPermissions: { readDatabases: true, readOrganization: true },
+			lastInventoryAt: NOW - 30 * 60_000,
+			lastInventoryError: null,
+			createdAt: NOW - 30 * 24 * HOUR,
+		}
+		const planetscaleDatabase = {
+			databaseId: "db-1",
+			name: "maple",
+			kind: "postgresql",
+			region: "us-east",
+			state: "ready",
+		}
+		const neverPolled = { databaseId: "db-1", lastSuccessAt: null, lastErrorAt: null, lastError: null }
+
+		it("CFG-INTEG-05 says a database never polled, instead of quoting its metadata as an error", () => {
+			const report = runSetupAudit(
+				inputs({
+					integrationInventory: inventoryOf({
+						planetscaleConnection,
+						planetscaleDatabases: [planetscaleDatabase],
+						planetscalePollStates: [neverPolled],
+					}),
+				}),
+			)
+			const result = check(report, "CFG-INTEG-05")
+			expect(result.affected).toEqual([
+				{ kind: "integration", name: "database maple", note: "never polled successfully yet" },
+			])
+			expect(result.fixHint).not.toContain("organization")
+		})
+
+		it("CFG-INTEG-05 gives a database on a connection under an hour old time for its first poll", () => {
+			const report = runSetupAudit(
+				inputs({
+					integrationInventory: inventoryOf({
+						planetscaleConnection: { ...planetscaleConnection, createdAt: NOW - 20 * 60_000 },
+						planetscaleDatabases: [planetscaleDatabase],
+						planetscalePollStates: [neverPolled],
+					}),
+				}),
+			)
+			expect(check(report, "CFG-INTEG-05").status).toBe("pass")
+		})
+
+		it("CFG-INTEG-05 reports a missing permission alongside failing databases, with a reconnect fix", () => {
+			const report = runSetupAudit(
+				inputs({
+					integrationInventory: inventoryOf({
+						planetscaleConnection: {
+							...planetscaleConnection,
+							detectedPermissions: { readDatabases: false, readOrganization: true },
+						},
+						planetscaleDatabases: [planetscaleDatabase],
+						planetscalePollStates: [
+							{ ...neverPolled, lastErrorAt: NOW - 60_000, lastError: "401 unauthorized" },
+						],
+					}),
+				}),
+			)
+			const result = check(report, "CFG-INTEG-05")
+			expect(Arr.map(result.affected, (entity) => entity.note)).toEqual([
+				expect.stringContaining("The grant lacks readDatabases"),
+				"401 unauthorized",
+			])
+			expect(result.fixHint).toContain("reconnect PlanetScale")
+		})
+
+		it("CFG-INTEG-05 tells an org with no PlanetScale organization selected to pick one", () => {
+			const report = runSetupAudit(
+				inputs({
+					integrationInventory: inventoryOf({
+						oauthConnections: [
+							{
+								provider: "planetscale",
+								externalAccountName: "acme",
+								externalUserEmail: null,
+								revokedAt: null,
+								createdAt: NOW - 2 * HOUR,
+							},
+						],
+					}),
+				}),
+			)
+			expect(check(report, "CFG-INTEG-05").fixHint).toContain("pick the PlanetScale organization")
 		})
 
 		it("CFG-INTEG-06 fails only on a Logpush job that errored, not one still waiting for traffic", () => {
@@ -1019,6 +1259,72 @@ describe("integration checks", () => {
 		expect(result.affected[0]?.name).toBe("firewallEvents")
 	})
 
+	it("CFG-INTEG-02 folds one error stamped across many zones into a single finding", () => {
+		const zones = Arr.makeBy(17, (i) => ({
+			dataset: "firewall_events",
+			zoneName: `zone-${i}.dev`,
+			lastSuccessAt: NOW - 2 * 24 * HOUR,
+			lastErrorAt: NOW - 3 * HOUR,
+			lastError: "Token refresh failed with 500",
+		}))
+		const result = check(runSetupAudit(inputs({ cloudflareAnalytics: zones })), "CFG-INTEG-02")
+		expect(result.detail).toContain("17 Cloudflare datasets")
+		// One row per group (the detail carries the dataset count); two days without a poll is data loss.
+		expect(result.affectedCount).toBe(1)
+		expect(result.severity).toBe("critical")
+		expect(result.detail).toContain("all for over 24 hours, so that data is missing")
+		expect(result.affected).toEqual([
+			{
+				kind: "integration",
+				name: "firewall_events on 17 zones",
+				note: "last success 2 days ago; Token refresh failed with 500 (3 hours ago)",
+			},
+		])
+		expect(result.fixHint).toContain("reconnect the Cloudflare integration in Sources now")
+	})
+
+	it("CFG-INTEG-02 masks credentials quoted in a stored provider error", () => {
+		const result = check(
+			runSetupAudit(
+				inputs({
+					cloudflareAnalytics: [
+						{
+							dataset: "httpRequests",
+							zoneName: "example.com",
+							lastSuccessAt: NOW - 3 * HOUR,
+							lastErrorAt: NOW - HOUR,
+							lastError: "401 from upstream: Authorization: Bearer abc123secretvalue",
+						},
+					],
+				}),
+			),
+			"CFG-INTEG-02",
+		)
+		expect(result.affected[0]?.note).toContain("Authorization: [redacted]")
+		expect(result.affected[0]?.note).not.toContain("abc123secretvalue")
+	})
+
+	it("CFG-INTEG-02 stays a warning while the last success is under a day old", () => {
+		const result = check(
+			runSetupAudit(
+				inputs({
+					cloudflareAnalytics: [
+						{
+							dataset: "httpRequests",
+							zoneName: "example.com",
+							lastSuccessAt: NOW - 3 * HOUR,
+							lastErrorAt: NOW - HOUR,
+							lastError: "502",
+						},
+					],
+				}),
+			),
+			"CFG-INTEG-02",
+		)
+		expect(result.status).toBe("fail")
+		expect(result.severity).toBe("warn")
+	})
+
 	it("CFG-INTEG-02 treats a never-successful dataset that errored as failing", () => {
 		const report = runSetupAudit(
 			inputs({
@@ -1033,7 +1339,9 @@ describe("integration checks", () => {
 				],
 			}),
 		)
-		expect(check(report, "CFG-INTEG-02").status).toBe("fail")
+		const result = check(report, "CFG-INTEG-02")
+		expect(result.status).toBe("fail")
+		expect(result.affected[0]?.note).toBe("missing permission (1 minute ago), never succeeded")
 	})
 
 	it("CFG-INTEG-03 flags a repository whose sync errored", () => {
@@ -1121,7 +1429,21 @@ describe("ING-01 — service names agree across signals", () => {
 		})
 		const result = check(report, "ING-01")
 		expect(result.status).toBe("fail")
-		expect(result.affected[0]).toMatchObject({ name: "api-server", note: "logs but no traces" })
+		expect(result.affected[0]).toMatchObject({
+			name: "api-server",
+			note: 'logs only; traces arrive as "api"',
+		})
+	})
+
+	it("ignores a logs-only service with no traced twin: it logs without a tracer", () => {
+		const report = telemetry({
+			serviceUsage: [
+				{ serviceName: "maple-api", logCount: 500, traceCount: 900, metricCount: 40 },
+				{ serviceName: "maple-sandbox", logCount: 300, traceCount: 0, metricCount: 0 },
+				{ serviceName: "maple-api-pr-2408", logCount: 30, traceCount: 0, metricCount: 0 },
+			],
+		})
+		expect(check(report, "ING-01").status).toBe("pass")
 	})
 
 	it("ignores metrics-only names — scraped exporters legitimately never trace", () => {
@@ -1185,7 +1507,7 @@ describe("LOG-02 — logs carry trace context", () => {
 	it("flags a traced service whose logs have no trace_id", () => {
 		const result = check(telemetry({ logCorrelation: broken }), "LOG-02")
 		expect(result.status).toBe("fail")
-		expect(result.severity).toBe("critical")
+		expect(result.severity).toBe("warn")
 		expect(result.affected[0]?.note).toContain("100% of logs have no trace_id")
 		expect(result.affected[0]?.note).toContain("20 error-level")
 	})
@@ -1226,6 +1548,69 @@ describe("LOG-02 — logs carry trace context", () => {
 			],
 		})
 		expect(check(report, "LOG-02").status).toBe("pass")
+	})
+
+	it("is only info when some logs are correlated, naming the line logged outside spans", () => {
+		const report = telemetry({
+			logCorrelation: [
+				{
+					serviceName: "api",
+					logCount: 461,
+					uncorrelatedCount: 444,
+					errorLogCount: 0,
+					uncorrelatedErrorCount: 0,
+					topUncorrelatedMessage: "Skipping chat connector with no configuration",
+				},
+			],
+		})
+		const result = check(report, "LOG-02")
+		expect(result.status).toBe("fail")
+		expect(result.severity).toBe("info")
+		expect(result.affected[0]?.note).toBe(
+			'96% of logs are emitted outside any span, mostly: "Skipping chat connector with no configuration"',
+		)
+		expect(report.summary.warn).toBe(0)
+	})
+
+	it("never quotes a secret from the sampled message", () => {
+		const report = telemetry({
+			logCorrelation: [
+				{
+					serviceName: "api",
+					logCount: 461,
+					uncorrelatedCount: 444,
+					errorLogCount: 0,
+					uncorrelatedErrorCount: 0,
+					topUncorrelatedMessage: "booting with token=ghp_9f8e7d6c5b4a3210fedcba9876543210abcd",
+				},
+			],
+		})
+		const note = check(report, "LOG-02").affected[0]?.note ?? ""
+		expect(note).toContain("token=[redacted]")
+		expect(note).not.toContain("ghp_")
+	})
+
+	it("warns for a bridgeless service and lists the info-level one beside it", () => {
+		const report = telemetry({
+			serviceUsage: [
+				{ serviceName: "api", logCount: 500, traceCount: 900, metricCount: 0 },
+				{ serviceName: "bot", logCount: 461, traceCount: 100, metricCount: 0 },
+			],
+			logCorrelation: [
+				...broken,
+				{
+					serviceName: "bot",
+					logCount: 461,
+					uncorrelatedCount: 444,
+					errorLogCount: 0,
+					uncorrelatedErrorCount: 0,
+				},
+			],
+		})
+		const result = check(report, "LOG-02")
+		expect(result.severity).toBe("warn")
+		expect(result.detail).toContain("1 service emits logs with no trace context")
+		expect(Arr.map(result.affected, (entity) => entity.name)).toEqual(["api", "bot"])
 	})
 })
 
@@ -1271,6 +1656,30 @@ describe("LOG-04 — standard severities", () => {
 		expect(result.status).toBe("fail")
 		expect(result.affected[0]?.note).toContain('severity "NOTICE"')
 	})
+
+	it("drops a non-standard text that always carries a valid SeverityNumber", () => {
+		const correlation = Arr.getUnsafe(healthyWarehouse.logCorrelation, 0)
+		const report = telemetry({
+			logSeverity: [
+				{ serviceName: "api", severityText: "log", logCount: 10_000 },
+				{ serviceName: "api", severityText: "NOTICE", logCount: 90 },
+				{ serviceName: "api", severityText: "verbose", logCount: 30 },
+			],
+			logCorrelation: [
+				{
+					...correlation,
+					numberedOddSeverities: ["log", "verbose"],
+					// `verbose` also arrives without a number, so the logger still needs mapping.
+					unnumberedOddSeverities: ["NOTICE", "verbose"],
+				},
+			],
+		})
+		const result = check(report, "LOG-04")
+		expect(Arr.map(result.affected, (entity) => entity.note)).toEqual([
+			'severity "NOTICE" (90 records)',
+			'severity "verbose" (30 records)',
+		])
+	})
 })
 
 describe("resource-attribute coverage", () => {
@@ -1296,6 +1705,62 @@ describe("resource-attribute coverage", () => {
 		expect(check(withoutResourceKey("vcs.ref.head.revision"), "RES-05").status).toBe("fail")
 	})
 
+	it("names each service missing a key, even when another service sets it; clients owe only a version", () => {
+		const report = telemetry({
+			services: [
+				{
+					serviceName: "api",
+					namespaces: [],
+					environments: ["production"],
+					sdkLanguages: ["nodejs"],
+				},
+				{
+					serviceName: "landing",
+					namespaces: [],
+					environments: ["production"],
+					sdkLanguages: ["webjs"],
+				},
+				{ serviceName: "ios", namespaces: [], environments: ["production"], sdkLanguages: ["swift"] },
+				{ serviceName: "pr-app", namespaces: [], environments: ["pr-12"], sdkLanguages: ["nodejs"] },
+			],
+			serviceResourceKeys: [
+				{
+					serviceName: "api",
+					keys: ["service.version", "vcs.repository.url.full", "vcs.ref.head.revision"],
+				},
+				{ serviceName: "landing", keys: [] },
+				{ serviceName: "ios", keys: ["service.version"] },
+				// Maple's own and preview-only services are not the user's to fix here.
+				{ serviceName: "maple-uptime", keys: [] },
+				{ serviceName: "pr-app", keys: [] },
+				{ serviceName: "worker", keys: ["service.version"] },
+			],
+		})
+		const names = (id: string) => Arr.map(check(report, id).affected, (entity) => entity.name)
+		expect(names("RES-02")).toEqual(["landing"])
+		// Source links and revisions anchor server deploys; a browser or app build is judged on its version.
+		expect(names("RES-04")).toEqual(["worker"])
+		expect(names("RES-05")).toEqual(["worker"])
+		expect(check(report, "RES-04").detail).toContain("1 service sets no `vcs.repository.url.full`")
+	})
+
+	it("passes per service when every service sets the key", () => {
+		const report = telemetry({
+			serviceResourceKeys: [{ serviceName: "api", keys: ["service.version"] }],
+		})
+		expect(check(report, "RES-02").status).toBe("pass")
+		expect(check(report, "RES-04").status).toBe("fail")
+	})
+
+	it("falls back to the org-wide key check when the per-service read returns no rows", () => {
+		expect(check(telemetry({ serviceResourceKeys: [] }), "RES-02").status).toBe("pass")
+		const missing = telemetry({
+			serviceResourceKeys: [],
+			attributeKeys: Arr.filter(healthyWarehouse.attributeKeys, (row) => row.key !== "service.version"),
+		})
+		expect(check(missing, "RES-02").status).toBe("fail")
+	})
+
 	it("RES-06 flags invented parallel keys, including the retired deployment.commit_sha", () => {
 		const invented = telemetry({
 			attributeKeys: [
@@ -1312,6 +1777,48 @@ describe("resource-attribute coverage", () => {
 			"env",
 			"git.repo",
 		])
+	})
+
+	it("RES-06 names the emitter and judges the advice by the value the key holds", () => {
+		const report = telemetry({
+			attributeKeys: [
+				...healthyWarehouse.attributeKeys,
+				resourceKey("deployment.commit_sha"),
+				resourceKey("git.sha"),
+			],
+			resourceKeySamples: [
+				{ key: "deployment.commit_sha", value: "0.1.0+685", usageCount: 45 },
+				{ key: "deployment.commit_sha", value: "0.1.0+684", usageCount: 12 },
+				{ key: "git.sha", value: "1c65f321af", usageCount: 30 },
+			],
+			resourceKeyServices: [{ key: "deployment.commit_sha", serviceName: "ios" }],
+		})
+		const notes = Rec.fromEntries(
+			Arr.map(check(report, "RES-06").affected, (entity) => [entity.name, entity.note ?? ""] as const),
+		)
+		expect(notes["deployment.commit_sha"]).toBe(
+			'from ios; e.g. "0.1.0+685"; holds a version, so send it as `service.version`',
+		)
+		expect(notes["git.sha"]).toBe('e.g. "1c65f321af"; rename to `vcs.ref.head.revision`')
+	})
+
+	it("RES-06 says remove the key when the service already sends its semconv twin with the same value", () => {
+		const report = telemetry({
+			attributeKeys: [...healthyWarehouse.attributeKeys, resourceKey("deployment.commit_sha")],
+			resourceKeySamples: [{ key: "deployment.commit_sha", value: "0.1.0+1100", usageCount: 45 }],
+			resourceKeyServices: [
+				{ key: "deployment.commit_sha", serviceName: "ios", duplicateOf: "service.version" },
+			],
+		})
+		const result = check(report, "RES-06")
+		expect(result.affected[0]?.note).toBe(
+			'same value as its `service.version`, so remove this key; from ios; e.g. "0.1.0+1100"',
+		)
+		// Pure duplication loses nothing, so it is advisory and says so.
+		expect(result.severity).toBe("info")
+		expect(result.detail).toBe(
+			"`deployment.commit_sha` already arrives as `service.version` with the same value; the extra key only adds noise.",
+		)
 	})
 })
 
@@ -1330,12 +1837,54 @@ describe("RES-03 — spans carry an environment", () => {
 })
 
 describe("NAME-02 — span-name cardinality", () => {
-	it("flags a service whose span names look like IDs", () => {
-		const report = telemetry({
-			spanShape: [{ ...healthyServiceSpans, spanNameCount: 40_000 }],
+	const templates = (row: Partial<NonNullable<WarehouseAuditInputs["spanNameTemplates"]>[number]>) =>
+		telemetry({
+			spanNameTemplates: [
+				{
+					serviceName: "api",
+					rawNameCount: 545,
+					templateCount: 542,
+					topTemplateNameCount: 2,
+					exampleNames: ["a"],
+					...row,
+				},
+			],
 		})
-		const result = check(report, "NAME-02")
+
+	it("passes a large set of real operation names", () => {
+		expect(check(templates({}), "NAME-02").status).toBe("pass")
+	})
+
+	it("flags names that collapse onto far fewer templates, with examples", () => {
+		const result = check(
+			templates({
+				rawNameCount: 4_000,
+				templateCount: 30,
+				topTemplateNameCount: 3_900,
+				exampleNames: ["GET /orders/1", "GET /orders/2"],
+			}),
+			"NAME-02",
+		)
 		expect(result.status).toBe("fail")
+		expect(result.affected[0]?.note).toBe(
+			'4,000 distinct span names but only 30 once IDs are removed; e.g. "GET /orders/1", "GET /orders/2"',
+		)
+	})
+
+	it("flags an extreme number of distinct operations even without IDs", () => {
+		const result = check(templates({ rawNameCount: 2_500, templateCount: 2_400 }), "NAME-02")
+		expect(result.affected[0]?.note).toBe("2,400 distinct span names even with IDs removed")
+	})
+
+	it("falls back to the raw count, at the extreme limit, when the template read failed", () => {
+		expect(
+			check(telemetry({ spanShape: [{ ...healthyServiceSpans, spanNameCount: 545 }] }), "NAME-02")
+				.status,
+		).toBe("pass")
+		const result = check(
+			telemetry({ spanShape: [{ ...healthyServiceSpans, spanNameCount: 40_000 }] }),
+			"NAME-02",
+		)
 		expect(result.affected[0]?.note).toBe("40,000 distinct span names")
 	})
 })
@@ -1356,15 +1905,44 @@ describe("NAME-03 — reserved namespace", () => {
 		})
 		expect(check(report, "NAME-03").status).toBe("pass")
 	})
+
+	it("does not flag the maple_ai.* keys Maple's ingest stamps on agent spans", () => {
+		const report = telemetry({
+			attributeKeys: [
+				...healthyWarehouse.attributeKeys,
+				spanKey("maple_ai.session.id"),
+				spanKey("maple_ai.usage.input_tokens"),
+			],
+		})
+		expect(check(report, "NAME-03").status).toBe("pass")
+	})
 })
 
 describe("PII-01 — secrets in attribute names", () => {
+	it("names the service and span that emit a flagged key", () => {
+		const key = "http.request.header.x-maple-maintenance-token"
+		const report = telemetry({
+			attributeKeys: [...healthyWarehouse.attributeKeys, spanKey(key)],
+			sensitiveKeyEmitters: [{ key, serviceName: "cli", spanName: "http.client POST" }],
+		})
+		expect(check(report, "PII-01").affected[0]?.note).toBe('span; sent by cli on "http.client POST"')
+	})
+
 	it.each([
 		"user.password",
 		"http.request.header.authorization",
 		"api_key",
 		"auth.accessToken",
 		"payment.credit_card",
+		"http.request.header.x-maple-maintenance-token",
+		"cookie",
+		"session.cookie",
+		"http.request.header.cookie",
+		"oauth.client_secret",
+		"credit.card.number",
+		"creditcard_number",
+		"db.password.hash",
+		"user.ssn_last4",
 	])("flags %s", (key) => {
 		const report = telemetry({ attributeKeys: [...healthyWarehouse.attributeKeys, spanKey(key)] })
 		expect(check(report, "PII-01").status).toBe("fail")
@@ -1376,6 +1954,20 @@ describe("PII-01 — secrets in attribute names", () => {
 		"db.query.text",
 		"http.route",
 		"user.id",
+		// Keys that describe a credential rather than hold one.
+		"maple.api_key.id",
+		"cookie_consent",
+		"has_cookie",
+		"maple.api_key.kind",
+		"maple.api_key.last_used_memo_hit",
+		"maple.app.auth.has_token",
+		"maple.device.credential_id",
+		"maple.tinybird.token.scope",
+		"vcs.provider.token_cache",
+		"maple.app.widget.fetch.credential_rejected",
+		"user.password_changed",
+		"auth.password.policy",
+		"maple.app.auth.has_password",
 	])("does not flag %s", (key) => {
 		const report = telemetry({ attributeKeys: [...healthyWarehouse.attributeKeys, spanKey(key)] })
 		expect(check(report, "PII-01").status).toBe("pass")
@@ -1394,6 +1986,71 @@ describe("MET-01 — metric label cardinality", () => {
 		expect(result.status).toBe("fail")
 		expect(result.affected[0]?.name).toBe("user.id")
 		expect(result.detail).toContain("Counter metrics only")
+	})
+
+	it("judges each metric on its own once the per-metric read ran", () => {
+		const flagged = [{ attributeKey: "url.path", valueCardinality: 3_383 }]
+		const series = (cardinalities: ReadonlyArray<readonly [string, number]>, serviceName = "api") =>
+			telemetry({
+				metricLabels: flagged,
+				metricLabelsMeasured: cardinalities.length > 0 ? ["url.path"] : [],
+				metricLabelSeries: Arr.map(cardinalities, ([metricName, valueCardinality]) => ({
+					attributeKey: "url.path",
+					serviceName,
+					metricName,
+					valueCardinality,
+				})),
+			})
+		// The union across metrics is high, but no single metric is.
+		expect(
+			check(
+				series([
+					["http.requests", 600],
+					["http.bytes", 600],
+				]),
+				"MET-01",
+			).status,
+		).toBe("pass")
+		// Only Maple's folded integration rows carry the label: not the user's to fix.
+		expect(
+			check(series([["cloudflare.http.requests.by_path", 3_600]], "cloudflare/"), "MET-01").status,
+		).toBe("pass")
+		// No row at all (outside the read's window): the rollup's count stands, marked unconfirmed.
+		expect(check(series([]), "MET-01").affected[0]?.note).toBe(
+			"~3,383 distinct values across all metrics (org-wide, not confirmed per metric)",
+		)
+
+		const result = check(
+			series([
+				["http.requests", 2_400],
+				["http.bytes", 1_100],
+				["other", 10],
+			]),
+			"MET-01",
+		)
+		expect(result.status).toBe("fail")
+		expect(result.affected[0]?.note).toBe(
+			"~2,400 values on `http.requests` (api), ~1,100 values on `http.bytes` (api)",
+		)
+	})
+
+	it("keeps reporting flagged labels past the per-metric read's key cap from the rollup", () => {
+		const labels = Arr.makeBy(11, (index) => ({
+			attributeKey: `label.${index + 1}`,
+			valueCardinality: 5_000,
+		}))
+		const report = telemetry({
+			metricLabels: labels,
+			// The read covers the first ten keys and finds each one low per metric.
+			metricLabelsMeasured: Arr.map(Arr.take(labels, 10), (label) => label.attributeKey),
+			metricLabelSeries: Arr.map(Arr.take(labels, 10), (label) => ({
+				attributeKey: label.attributeKey,
+				serviceName: "api",
+				metricName: "http.requests",
+				valueCardinality: 20,
+			})),
+		})
+		expect(Arr.map(check(report, "MET-01").affected, (entity) => entity.name)).toEqual(["label.11"])
 	})
 })
 
@@ -1458,20 +2115,94 @@ describe("STAT-04 — entry-point spans", () => {
 })
 
 describe("MAP-02 — database identity", () => {
-	it("flags edges whose namespace is mostly empty", () => {
-		const report = telemetry({
-			dbEdges: [
-				{
-					serviceName: "api",
-					dbSystem: "postgresql",
-					callCount: 100,
-					unknownNamespaceCallCount: 100,
-				},
-			],
+	const edges = (
+		...rows: ReadonlyArray<readonly [service: string, system: string, namespace: string, calls: number]>
+	) =>
+		telemetry({
+			dbEdges: Arr.map(rows, ([serviceName, dbSystem, dbNamespace, callCount]) => ({
+				serviceName,
+				dbSystem,
+				dbNamespace,
+				callCount,
+			})),
 		})
-		const result = check(report, "MAP-02")
+
+	it("flags a dependency whose calls carry no namespace", () => {
+		const result = check(edges(["api", "postgresql", "", 100]), "MAP-02")
 		expect(result.status).toBe("fail")
-		expect(result.affected[0]?.name).toBe("api → postgresql")
+		expect(result.affected[0]?.name).toBe("api")
+		expect(result.affected[0]?.note).toBe("postgresql calls carry no `db.namespace`")
+		expect(result.detail).toContain("1 database dependency arrives with no database name")
+	})
+
+	it("says a database is split across nodes when some calls do name it", () => {
+		const result = check(
+			edges(["cli", "clickhouse", "", 446], ["cli", "clickhouse", "default", 28]),
+			"MAP-02",
+		)
+		expect(result.affected[0]?.note).toBe(
+			"clickhouse split across nodes: 446 calls unnamed; 28 as `default`",
+		)
+		expect(result.detail).toContain("1 database dependency is split between a named and an unnamed node")
+	})
+
+	it("groups Hyperdrive services under one cause and names it in the headline and fix", () => {
+		const result = check(
+			edges(
+				["api", "postgresql", "hyperdrive", 500],
+				["worker", "postgresql", "hyperdrive", 900],
+				["cron", "mysql", "db.internal.example.com", 40],
+				["ingest", "postgresql", "postgres", 300],
+			),
+			"MAP-02",
+		)
+		expect(Arr.map(result.affected, (entity) => [entity.name, entity.note])).toEqual([
+			["worker", "postgresql: namespace is an opaque Hyperdrive id"],
+			["cron", "mysql node named after the host `db.internal.example.com`"],
+			["api", "postgresql: namespace is an opaque Hyperdrive id"],
+		])
+		expect(result.detail).toMatch(
+			/^3 database dependencies lack a usable name \(2 behind Cloudflare Hyperdrive, 1 with no name\)\. 2 services connect through Cloudflare Hyperdrive/,
+		)
+		expect(result.detail).toContain("1 database dependency arrives with no database name")
+		expect(result.fixHint).toContain("Through Hyperdrive")
+	})
+
+	it("leads with both causes and keeps a split service in view beside many Hyperdrive ones", () => {
+		const result = check(
+			edges(
+				["a", "postgresql", "hyperdrive", 900],
+				["b", "postgresql", "hyperdrive", 800],
+				["c", "postgresql", "hyperdrive", 700],
+				["d", "postgresql", "hyperdrive", 600],
+				["cli", "clickhouse", "", 446],
+				["cli", "clickhouse", "default", 28],
+			),
+			"MAP-02",
+		)
+		expect(result.detail).toMatch(
+			/^5 database dependencies lack a usable name \(4 behind Cloudflare Hyperdrive, 1 split across nodes\)\./,
+		)
+		expect(Arr.map(Arr.take(result.affected, 2), (entity) => entity.name)).toEqual(["a", "cli"])
+		expect(result.affectedCount).toBe(5)
+	})
+
+	it("accepts an HTTP-API warehouse named after its regional host", () => {
+		const result = check(
+			edges(
+				["api", "tinybird", "api.us-east.aws.tinybird.co", 300],
+				["api", "tinybird", "api.eu-central-1.aws.tinybird.co", 30],
+			),
+			"MAP-02",
+		)
+		expect(result.status).toBe("pass")
+	})
+
+	it("accepts a mostly named dependency and dotted database names", () => {
+		expect(
+			check(edges(["api", "postgresql", "orders", 90], ["api", "postgresql", "", 10]), "MAP-02").status,
+		).toBe("pass")
+		expect(check(edges(["api", "postgresql", "orders.public", 90]), "MAP-02").status).toBe("pass")
 	})
 })
 
@@ -1481,7 +2212,7 @@ describe("trace completeness", () => {
 
 	it("skips all three checks when the joins did not run", () => {
 		const report = telemetry({ traceCompleteness: undefined })
-		for (const id of ["TRC-01", "TRC-02", "TRC-03"]) {
+		for (const id of ["TRC-01", "TRC-02", "TRC-03", "TRC-04"]) {
 			// The joins degrade independently of the rest of the telemetry reads, so the checks pass
 			// rather than skip — the report never claims a gap it did not measure.
 			expect(check(report, id).status).toBe("pass")
@@ -1497,6 +2228,7 @@ describe("trace completeness", () => {
 						childCount: 800,
 						orphanCount: 400,
 						sampledOrphanCount: 0,
+						externalParentCount: 0,
 						sampleTraceIds: ["abc123"],
 					},
 				],
@@ -1515,6 +2247,7 @@ describe("trace completeness", () => {
 						childCount: 800,
 						orphanCount: 400,
 						sampledOrphanCount: 400,
+						externalParentCount: 0,
 						sampleTraceIds: [],
 					},
 				],
@@ -1534,12 +2267,131 @@ describe("trace completeness", () => {
 						childCount: 10,
 						orphanCount: 10,
 						sampledOrphanCount: 0,
+						externalParentCount: 0,
 						sampleTraceIds: [],
 					},
 				],
 			})
 			expect(check(report, "TRC-01").status).toBe("pass")
 			expect(check(report, "TRC-03").status).toBe("pass")
+		})
+	})
+
+	describe("TRC-04 — inbound requests continuing an outside trace", () => {
+		// maple-api in prod: every orphan and rootless trace came from an external MCP client.
+		const external = traces({
+			orphans: [
+				{
+					serviceName: "api",
+					childCount: 1_500,
+					orphanCount: 140,
+					sampledOrphanCount: 0,
+					externalParentCount: 140,
+					sampleTraceIds: [],
+				},
+			],
+			rootless: withOrgTotals([
+				{
+					entryService: "api",
+					traceCount: 7_400,
+					rootlessCount: 44,
+					sampledRootlessCount: 0,
+					externalParentCount: 44,
+				},
+				{ entryService: "cli", traceCount: 22_000, rootlessCount: 0, sampledRootlessCount: 0 },
+			]),
+			inboundRoutes: [
+				{ serviceName: "api", route: "/mcp", traceCount: 9 },
+				{ serviceName: "api", route: "/oauth/token", traceCount: 1 },
+			],
+		})
+
+		it("keeps them out of TRC-01 and TRC-02", () => {
+			expect(check(external, "TRC-01").status).toBe("pass")
+			expect(check(external, "TRC-02").status).toBe("pass")
+		})
+
+		it("reports them as info, naming the routes they arrive on", () => {
+			const result = check(external, "TRC-04")
+			expect(result.status).toBe("fail")
+			expect(result.severity).toBe("info")
+			expect(result.affected).toEqual([
+				{
+					kind: "service",
+					name: "api",
+					note: "44 traces started by an outside caller, mostly via `/mcp`, `/oauth/token`; your instrumented services call it too, so the missing caller may be one of yours",
+				},
+			])
+			expect(result.detail).toContain("an upstream service of yours that is not exporting spans")
+		})
+
+		it("never quotes a query string, and omits the in-org hint when no instrumented service calls it", () => {
+			const report = traces({
+				rootless: withOrgTotals([
+					{
+						entryService: "auth",
+						traceCount: 100,
+						rootlessCount: 5,
+						sampledRootlessCount: 0,
+						externalParentCount: 5,
+					},
+				]),
+				inboundRoutes: [{ serviceName: "auth", route: "/cb?code=s3cr3t&state=xyz", traceCount: 5 }],
+			})
+			expect(check(report, "TRC-04").affected[0]?.note).toBe(
+				"5 traces started by an outside caller, mostly via `/cb`",
+			)
+		})
+
+		it("still reports the orphans that are not external under TRC-01", () => {
+			const report = traces({
+				orphans: [
+					{
+						serviceName: "api",
+						childCount: 1_000,
+						orphanCount: 400,
+						sampledOrphanCount: 0,
+						externalParentCount: 100,
+						sampleTraceIds: ["abc"],
+					},
+				],
+			})
+			expect(check(report, "TRC-01").affected[0]?.note).toContain("30% of entry spans")
+		})
+
+		it("passes when nothing arrives from outside", () => {
+			expect(check(traces({}), "TRC-04").status).toBe("pass")
+		})
+
+		it("names only services with at least three such traces and counts the rest", () => {
+			const row = (entryService: string, externalParentCount: number) => ({
+				entryService,
+				traceCount: 1_000,
+				rootlessCount: externalParentCount,
+				sampledRootlessCount: 0,
+				externalParentCount,
+			})
+			// One rootless trace stays one, however many of its spans continue the caller.
+			const sparse = traces({
+				rootless: withOrgTotals([row("web", 1), row("alerting", 1)]),
+				orphans: [
+					{
+						serviceName: "web",
+						childCount: 19,
+						orphanCount: 9,
+						sampledOrphanCount: 0,
+						externalParentCount: 9,
+						sampleTraceIds: [],
+					},
+				],
+			})
+			expect(check(sparse, "TRC-04").status).toBe("pass")
+			const result = check(
+				traces({ rootless: withOrgTotals([row("api", 69), row("web", 1), row("alerting", 1)]) }),
+				"TRC-04",
+			)
+			expect(Arr.map(result.affected, (entity) => entity.name)).toEqual(["api"])
+			expect(result.detail).toContain("2 other services see fewer than 3 such traces each.")
 		})
 	})
 
@@ -1559,6 +2411,12 @@ describe("trace completeness", () => {
 					})),
 				),
 			})
+
+		it("names a service only on three or more sampled rootless traces", () => {
+			const result = check(rootless(["api", 9_000, 30], ["web", 7, 1]), "TRC-02")
+			expect(Arr.map(result.affected, (entity) => entity.name)).toEqual(["api"])
+			expect(result.detail).toContain("1 other service loses a root on too few sampled traces to name.")
+		})
 
 		it("passes with a single trace that lacks a root", () => {
 			expect(check(rootless(["api", 9_000, 1]), "TRC-02").status).toBe("pass")
@@ -1585,27 +2443,32 @@ describe("trace completeness", () => {
 			expect(report.summary.warn).toBe(1)
 		})
 
-		it("is critical above 1% of traces", () => {
+		it("stays at warn above 1% of traces", () => {
 			const report = rootless(["worker", 500, 500], ["api", 5_000, 30], ["cli", 40_000, 3])
 			const result = check(report, "TRC-02")
-			expect(result.severity).toBe("critical")
+			expect(result.severity).toBe("warn")
 			expect(result.detail).toContain("1.2% of traces")
 			expect(Arr.map(result.affected, (entity) => entity.name)).toEqual(["worker", "api", "cli"])
-			expect(report.summary.critical).toBe(1)
-			expect(report.summary.warn).toBe(0)
+			expect(report.summary.critical).toBe(0)
+			expect(report.summary.warn).toBe(1)
 		})
 
 		it("keeps its base severity while passing", () => {
 			expect(check(rootless(["api", 1_000, 0]), "TRC-02").severity).toBe("warn")
 		})
 
-		it("never escalates past info below 50 traces", () => {
-			expect(check(rootless(["api", 40, 40]), "TRC-02").severity).toBe("info")
+		it("does not fail or name a service on fewer than 50 sampled traces", () => {
+			// A thin sample (3 of 15) flips between runs, so it is no evidence on its own.
+			const result = check(rootless(["ingest", 2_000, 0], ["electric-sync", 15, 3]), "TRC-02")
+			expect(result.status).toBe("pass")
 		})
 
-		it("does not blame upstream when no service has 50 traces", () => {
-			const result = check(rootless(["api", 40, 40]), "TRC-02")
-			expect(result.detail).toContain("100% of traces have no root span: 40 of 40 traces")
+		it("still counts an under-sampled service toward the org-wide rate", () => {
+			const result = check(rootless(["api", 9_000, 4], ["web", 30, 5]), "TRC-02")
+			expect(result.status).toBe("fail")
+			expect(result.detail).toContain("9 of 9030 traces")
+			expect(Arr.map(result.affected, (entity) => entity.name)).toEqual(["api"])
+			expect(result.detail).toContain("1 other service loses a root on too few sampled traces to name.")
 		})
 
 		it("does not blame upstream when the row cap cut services it cannot see", () => {
@@ -1617,6 +2480,8 @@ describe("trace completeness", () => {
 				orgTraceCount: 10_000,
 				orgRootlessCount: 9_800,
 				orgSampledRootlessCount: 0,
+				externalParentCount: 0,
+				orgExternalParentCount: 0,
 			}
 			const result = check(traces({ rootless: [api] }), "TRC-02")
 			expect(result.detail).toContain("98% of traces have no root span: 9800 of 10000 traces")
@@ -1632,6 +2497,8 @@ describe("trace completeness", () => {
 				orgTraceCount: 100_000,
 				orgRootlessCount: 200,
 				orgSampledRootlessCount: 0,
+				externalParentCount: 0,
+				orgExternalParentCount: 0,
 			}
 			const report = traces({ rootless: [api] })
 			const result = check(report, "TRC-02")
@@ -1643,14 +2510,19 @@ describe("trace completeness", () => {
 			expect(check(rootless(["api", 1_000, 50, 50]), "TRC-02").status).toBe("pass")
 		})
 
-		it("says when the counts come from a trace sample", () => {
+		it("scales sampled counts and says they come from a trace sample", () => {
 			const report = traces({
 				traceSampleModulus: 4,
 				rootless: withOrgTotals([
 					{ entryService: "api", traceCount: 1_000, rootlessCount: 5, sampledRootlessCount: 0 },
 				]),
 			})
-			expect(check(report, "TRC-02").detail).toContain("(1 in 4 sampled)")
+			const result = check(report, "TRC-02")
+			// Leads with the rate; counts are scaled up and labelled as an estimate, never exact.
+			expect(result.detail).toContain(
+				"0.5% of traces have no root span: about 20 traces an hour, estimated from a 1-in-4 trace sample",
+			)
+			expect(result.affected[0]?.note).toContain("(5 of 1000 in a 1-in-4 sample)")
 		})
 
 		it("warns, not escalates, at exactly 1% of traces", () => {
@@ -1659,7 +2531,7 @@ describe("trace completeness", () => {
 
 		it("blames upstream when every service's traces arrive without a root", () => {
 			const result = check(rootless(["api", 800, 800], ["checkout", 800, 796]), "TRC-02")
-			expect(result.severity).toBe("critical")
+			expect(result.severity).toBe("warn")
 			expect(result.detail).toContain("created upstream of your instrumented services")
 			expect(Arr.map(result.affected, (entity) => entity.name)).toEqual(["api", "checkout"])
 		})
@@ -1669,6 +2541,230 @@ describe("trace completeness", () => {
 			expect(result.detail).toContain("97% of traces have no root span")
 			expect(Arr.map(result.affected, (entity) => entity.name)).toEqual(["gateway-fronted"])
 		})
+	})
+})
+
+describe("services Maple writes itself", () => {
+	const identity = (
+		serviceName: string,
+		over: Partial<WarehouseAuditInputs["services"][number]> = {},
+	): WarehouseAuditInputs["services"][number] => ({
+		serviceName,
+		namespaces: [],
+		environments: [],
+		sdkLanguages: [],
+		...over,
+	})
+	const noEntrySpans = (serviceName: string) => ({
+		...healthyServiceSpans,
+		serviceName,
+		serverCount: 0,
+		consumerCount: 0,
+		noEnvCount: 900,
+		spanNameCount: 9_000,
+	})
+
+	it("never blames the user for uptime checks, CI traces or pulled integration data", () => {
+		const report = telemetry({
+			services: [
+				...healthyWarehouse.services,
+				identity("maple-uptime", { namespaces: ["maple-services"] }),
+				identity("github-actions"),
+				identity("synthetic-probe", { namespaces: ["maple-services"] }),
+			],
+			serviceUsage: [
+				...healthyWarehouse.serviceUsage,
+				{ serviceName: "maple-uptime", logCount: 0, traceCount: 1_500, metricCount: 0 },
+				{ serviceName: "github-actions", logCount: 0, traceCount: 600, metricCount: 0 },
+			],
+			spanShape: [
+				healthyServiceSpans,
+				noEntrySpans("maple-uptime"),
+				noEntrySpans("github-actions"),
+				noEntrySpans("synthetic-probe"),
+			],
+			logSeverity: [
+				...healthyWarehouse.logSeverity,
+				{ serviceName: "cloudflare-worker/api", severityText: "log", logCount: 50 },
+			],
+		})
+		for (const id of ["LOG-01", "RES-03", "NAME-02", "STAT-04", "LOG-04"]) {
+			expect(check(report, id).status).toBe("pass")
+		}
+	})
+
+	it("still reports the same telemetry from a service the user runs", () => {
+		const report = telemetry({ spanShape: [healthyServiceSpans, noEntrySpans("worker")] })
+		for (const id of ["RES-03", "NAME-02", "STAT-04"]) {
+			expect(Arr.map(check(report, id).affected, (entity) => entity.name)).toEqual(["worker"])
+		}
+	})
+
+	it("drops Maple's services from the per-metric series", () => {
+		const exploded = [{ attributeKey: "url.path", valueCardinality: 3_500 }]
+		const series = (serviceName: string) => ({
+			attributeKey: "url.path",
+			serviceName,
+			metricName: "cloudflare.http.requests.by_path",
+			valueCardinality: 1_500,
+		})
+		const integrationOnly = telemetry({
+			metricLabels: exploded,
+			metricLabelsMeasured: ["url.path"],
+			metricLabelSeries: [series("cloudflare/example.com"), series("cloudflare/example.org")],
+		})
+		expect(check(integrationOnly, "MET-01").status).toBe("pass")
+		expect(
+			check(
+				telemetry({
+					metricLabels: exploded,
+					metricLabelsMeasured: ["url.path"],
+					metricLabelSeries: [series("api")],
+				}),
+				"MET-01",
+			).status,
+		).toBe("fail")
+		// No per-metric read (it failed) keeps the rollup's finding.
+		expect(check(telemetry({ metricLabels: exploded }), "MET-01").status).toBe("fail")
+	})
+
+	it("rates rootless traces without Maple's services in the org totals", () => {
+		const report = telemetry({
+			traceCompleteness: {
+				...healthyWarehouse.traceCompleteness!,
+				rootless: withOrgTotals([
+					{ entryService: "api", traceCount: 1_000, rootlessCount: 1, sampledRootlessCount: 0 },
+					{
+						entryService: "maple-uptime",
+						traceCount: 1_000,
+						rootlessCount: 900,
+						sampledRootlessCount: 0,
+					},
+				]),
+			},
+		})
+		expect(check(report, "TRC-02").status).toBe("pass")
+	})
+
+	it("classifies by namespace, name, integration prefix, SDK language and environment", () => {
+		expect(classifyService("maple-uptime", undefined)).toBe("maple")
+		expect(classifyService("probe", identity("probe", { namespaces: ["maple-services"] }))).toBe("maple")
+		expect(classifyService("cloudflare-queue/abc", undefined)).toBe("maple")
+		expect(classifyService("web", identity("web", { sdkLanguages: ["webjs"] }))).toBe("client")
+		expect(classifyService("ios", identity("ios", { sdkLanguages: ["swift"] }))).toBe("client")
+		expect(classifyService("cli", identity("cli", { environments: ["cli"] }))).toBe("client")
+		expect(classifyService("status", identity("status", { environments: ["pr-2404", "pr-2419"] }))).toBe(
+			"preview",
+		)
+		expect(
+			classifyService(
+				"api",
+				identity("api", { environments: ["production", "pr-2419"], sdkLanguages: ["nodejs"] }),
+			),
+		).toBe("app")
+		expect(classifyService("node-cadvisor", undefined)).toBe("app")
+	})
+})
+
+describe("client and preview services", () => {
+	const clients: WarehouseAuditInputs["services"] = [
+		...healthyWarehouse.services,
+		{ serviceName: "web", namespaces: [], environments: ["production"], sdkLanguages: ["webjs"] },
+		{ serviceName: "ios", namespaces: [], environments: ["production"], sdkLanguages: ["swift"] },
+		{ serviceName: "cli", namespaces: [], environments: ["cli"], sdkLanguages: ["nodejs"] },
+		{ serviceName: "status", namespaces: [], environments: ["pr-2404"], sdkLanguages: [] },
+	]
+
+	it("does not expect logs from browsers, mobile apps, CLIs or preview-only services", () => {
+		const report = telemetry({
+			services: clients,
+			serviceUsage: [
+				...healthyWarehouse.serviceUsage,
+				...Arr.map(["web", "ios", "cli", "status"], (serviceName) => ({
+					serviceName,
+					logCount: 0,
+					traceCount: 300,
+					metricCount: 0,
+				})),
+			],
+		})
+		expect(check(report, "LOG-01").status).toBe("pass")
+	})
+
+	it("does not expect entry-point spans from client apps, but names a server's root span", () => {
+		const report = telemetry({
+			services: clients,
+			spanShape: [
+				...Arr.map(["web", "ios", "cli"], (serviceName) => ({
+					...healthyServiceSpans,
+					serviceName,
+					serverCount: 0,
+					consumerCount: 0,
+				})),
+				{
+					...healthyServiceSpans,
+					serviceName: "cancellation-reviews",
+					serverCount: 0,
+					consumerCount: 0,
+					rootSpanName: "CancellationReviewQueue.processMessage",
+					rootSpanKind: "Internal",
+				},
+			],
+		})
+		const result = check(report, "STAT-04")
+		expect(result.affected).toEqual([
+			{
+				kind: "service",
+				name: "cancellation-reviews",
+				note: 'traces start at "CancellationReviewQueue.processMessage" (Internal), not a Server or Consumer span',
+			},
+		])
+	})
+})
+
+describe("quoteSafely", () => {
+	it("masks credentials and opaque tokens but keeps ordinary words", () => {
+		expect(quoteSafely("login failed password=hunter2 for user")).toBe(
+			"login failed password=[redacted] for user",
+		)
+		expect(quoteSafely("Authorization: Bearer abc.def")).toContain("[redacted]")
+		expect(quoteSafely("connecting to postgres://admin:s3cret@db:5432")).toBe(
+			"connecting to postgres://[redacted]@db:5432",
+		)
+		expect(quoteSafely("key sk_live_51HxQ2abcdEFGH12345678 loaded")).toBe("key [redacted] loaded")
+		expect(quoteSafely("CancellationReviewQueue.processMessage started")).toBe(
+			"CancellationReviewQueue.processMessage started",
+		)
+	})
+
+	it.each([
+		["refresh_token=abc123def", "refresh_token=[redacted]"],
+		["auth_token=zz9 ok", "auth_token=[redacted] ok"],
+		["client_secret: hunter2x", "client_secret: [redacted]"],
+		["GET /cb?access_token=ab12cd&x=1", "GET /cb?access_token=[redacted]&x=1"],
+		["Authorization: Basic dXNlcjpw", "Authorization: [redacted]"],
+		["proxy-authorization=Bearer abc", "proxy-authorization=[redacted]"],
+		['{"password":"hunter2"}', '{"password":"[redacted]"}'],
+		["x-api-key: k1 sent", "x-api-key: [redacted] sent"],
+		["db_credentials=u:p", "db_credentials=[redacted]"],
+	])("masks %s", (raw, expected) => {
+		expect(quoteSafely(raw)).toBe(expected)
+	})
+
+	it.each([
+		// Plural `tokens` is a usage count, not a credential.
+		"usage output_tokens=40 input_tokens=12",
+		"tokens used: 40",
+		"secret santa draw finished",
+		"basic auth disabled for /health",
+	])("keeps %s", (raw) => {
+		expect(quoteSafely(raw)).toBe(raw)
+	})
+
+	it("caps long messages", () => {
+		const quoted = quoteSafely(Arr.join(Arr.replicate("word", 40), " "))
+		expect(quoted.length).toBe(80)
+		expect(Str.endsWith("…")(quoted)).toBe(true)
 	})
 })
 
