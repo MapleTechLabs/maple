@@ -3470,6 +3470,7 @@ impl ExportWorker {
             let response = request.send().instrument(span).await;
 
             let last_status: String;
+            let throttled: bool;
             match response {
                 Ok(response) if response.status().is_success() => {
                     span_handle.record("http.response.status_code", response.status().as_u16());
@@ -3482,13 +3483,18 @@ impl ExportWorker {
                     );
                     return Ok(());
                 }
-                Ok(response) if response.status().is_client_error() => {
+                // 408 and 429 are the upstream asking us to slow down, not bad data:
+                // they fall through to the retry arm, as on the ClickHouse path.
+                Ok(response)
+                    if response.status().is_client_error()
+                        && !is_retryable_clickhouse_status(response.status().as_u16()) =>
+                {
                     let status = response.status().as_u16();
                     let body = outbound::read_body_capped(response, MAX_ERROR_BODY_BYTES).await;
                     span_handle.record("http.response.status_code", status);
                     span_handle.record("maple.ingest.outcome", "dropped");
-                    // Terminal: these rows are gone. 4xx from Tinybird means we
-                    // sent bad data, so this one is genuinely ours.
+                    // Terminal: these rows are gone. Any other 4xx from Tinybird means
+                    // we sent bad data, so this one is genuinely ours.
                     record_stage_error(&span_handle, "non_retryable", &body, true);
                     metrics::tinybird_export_dropped(
                         destination,
@@ -3502,9 +3508,17 @@ impl ExportWorker {
                 Ok(response) => {
                     let status = response.status().as_u16();
                     last_status = status.to_string();
+                    throttled = status == 408 || status == 429;
                     span_handle.record("http.response.status_code", status);
                     span_handle.record("maple.ingest.outcome", "retry");
-                    span_handle.record("error.type", "upstream_5xx");
+                    span_handle.record(
+                        "error.type",
+                        if throttled {
+                            "upstream_throttled"
+                        } else {
+                            "upstream_5xx"
+                        },
+                    );
                     metrics::tinybird_export_retry(destination, datasource, &last_status);
                     warn!(
                         datasource,
@@ -3513,6 +3527,7 @@ impl ExportWorker {
                 }
                 Err(error) => {
                     last_status = "transport".to_owned();
+                    throttled = false;
                     span_handle.record("maple.ingest.outcome", "retry");
                     span_handle.record("error.type", "transport");
                     span_handle.record("otel.status_description", error.to_string().as_str());
@@ -3522,7 +3537,7 @@ impl ExportWorker {
             }
 
             attempt = attempt.saturating_add(1);
-            if attempt >= max_attempts {
+            if attempt >= tinybird_attempt_budget(max_attempts, throttled) {
                 span_handle.record("maple.ingest.outcome", "dropped");
                 record_stage_error(
                     &span_handle,
@@ -3985,6 +4000,20 @@ fn status_bucket(status: u16) -> &'static str {
 
 fn is_retryable_clickhouse_status(status: u16) -> bool {
     status == 408 || status == 429 || status >= 500
+}
+
+/// Attempts a throttled (408/429) Tinybird batch gets, about 7 seconds of
+/// backoff. Tinybird can throttle one datasource, and a lane exports one batch
+/// at a time, so a full retry budget here would hold every other datasource on
+/// the lane behind it until their frames aged out.
+const TINYBIRD_THROTTLE_MAX_ATTEMPTS: u32 = 5;
+
+fn tinybird_attempt_budget(max_attempts: u32, throttled: bool) -> u32 {
+    if throttled {
+        max_attempts.min(TINYBIRD_THROTTLE_MAX_ATTEMPTS)
+    } else {
+        max_attempts
+    }
 }
 
 async fn backoff(attempt: u32) {
@@ -6449,6 +6478,68 @@ mod tests {
         assert_eq!(attempts, cfg.export_max_attempts);
 
         assert!(cfg.tinybird_target(ExportDestination::ClickHouse).is_none());
+    }
+
+    #[test]
+    fn a_throttled_batch_gets_a_short_retry_budget_so_its_lane_keeps_moving() {
+        assert_eq!(
+            tinybird_attempt_budget(20, true),
+            TINYBIRD_THROTTLE_MAX_ATTEMPTS
+        );
+        // Never more than the operator allowed.
+        assert_eq!(tinybird_attempt_budget(3, true), 3);
+        // An outage keeps the whole budget: every datasource is waiting on it anyway.
+        assert_eq!(tinybird_attempt_budget(20, false), 20);
+    }
+
+    /// Answers 429 to the first import and 200 to every later one.
+    async fn throttling_tinybird_import(
+        State(count): State<Arc<std::sync::atomic::AtomicUsize>>,
+        _body: Bytes,
+    ) -> StatusCode {
+        if count.fetch_add(1, Ordering::SeqCst) == 0 {
+            StatusCode::TOO_MANY_REQUESTS
+        } else {
+            StatusCode::OK
+        }
+    }
+
+    #[tokio::test]
+    async fn a_throttled_tinybird_batch_is_retried_instead_of_dropped() {
+        let count = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let listener = tokio::net::TcpListener::bind(("127.0.0.1", 0))
+            .await
+            .unwrap();
+        let addr = listener.local_addr().unwrap();
+        let app = Router::new()
+            .route("/v0/events", post(throttling_tinybird_import))
+            .with_state(Arc::clone(&count));
+        tokio::spawn(async move {
+            axum::serve(listener, app).await.unwrap();
+        });
+
+        let queue_dir = unique_test_dir("tinybird-throttled");
+        let mut cfg = test_cfg();
+        cfg.endpoint = format!("http://{addr}");
+        cfg.queue_dir = queue_dir.clone();
+        cfg.wal_shards = 1;
+        cfg.batch_max_wait = Duration::from_millis(1);
+
+        let pipeline = TelemetryPipeline::new(cfg, Client::new()).await.unwrap();
+        pipeline
+            .accept_logs("org_throttled", &populated_log_request())
+            .await
+            .unwrap();
+
+        // A dropped batch advances the cursor too, so the request count is what tells them apart.
+        wait_for_export_drain(queue_dir.clone(), 0, ExportDestination::Tinybird).await;
+        assert_eq!(
+            count.load(Ordering::SeqCst),
+            2,
+            "the 429 is answered with a second attempt, which delivers the batch"
+        );
+
+        drop(std::fs::remove_dir_all(queue_dir));
     }
 
     /// A fake Tinybird that reports every import it receives.

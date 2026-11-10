@@ -314,10 +314,21 @@ interface XhrMeta extends XMLHttpRequest {
 /** The request with the fields capture keeps on it; all optional, so any request is one. */
 const xhrMeta = (xhr: XMLHttpRequest): XhrMeta => xhr
 
-function requestUrl(input: RequestInfo | URL): string {
+/** What `fetch` takes besides a string: a `Request`, or anything it stringifies (a `URL`, a `Location`). */
+interface FetchInputLike {
+	readonly url?: string
+	toString(): string
+}
+
+/** True for a `Request` from any realm; `instanceof` misses one made in another frame. */
+const isRequest = (input: FetchInputLike): boolean =>
+	Object.prototype.toString.call(input) === "[object Request]"
+
+function requestUrl(input: string | FetchInputLike): string {
 	if (typeof input === "string") return input
-	if (input instanceof URL) return input.href
-	return input.url
+	// Only a `Request` carries its URL in `url`. Anything else is read by `toString`, as `fetch`
+	// reads it: a `Location` has no `url`, and one added to a `URL` is not the request's.
+	return isRequest(input) ? (input.url ?? input.toString()) : input.toString()
 }
 
 function requestMethod(input: RequestInfo | URL, init?: RequestInit): string {
