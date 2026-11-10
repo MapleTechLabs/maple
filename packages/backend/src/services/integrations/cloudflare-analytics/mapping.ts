@@ -32,7 +32,7 @@ import type {
 	WorkersGroupDefinition,
 } from "./queries"
 import { parseWarehouseDateTime } from "@maple/query-engine"
-import { CF_METRIC } from "@maple/query-engine-integrations/cloudflare"
+import { CF_ATTR, CF_METRIC } from "@maple/query-engine-integrations/cloudflare"
 import { Array as Arr, Option, String as Str } from "effect"
 
 type Attrs = Record<string, string>
@@ -167,9 +167,9 @@ export const mapHttpGroups = (input: MapHttpGroupsInput): CloudflareMetricRows =
 		const bucket = group.dimensions.datetimeFiveMinutes
 		const host = group.dimensions.clientRequestHTTPHost ?? "unknown"
 		const attributes: Attrs = {
-			"cache.status": group.dimensions.cacheStatus ?? "unknown",
-			"http.status_class": statusClass(group.dimensions.edgeResponseStatus),
-			"server.address": topHosts.has(host) ? host : OTHER_BUCKET,
+			[CF_ATTR.cacheStatus]: group.dimensions.cacheStatus ?? "unknown",
+			[CF_ATTR.statusClass]: statusClass(group.dimensions.edgeResponseStatus),
+			[CF_ATTR.host]: topHosts.has(host) ? host : OTHER_BUCKET,
 		} satisfies Attrs
 		const counters: ReadonlyArray<readonly [string, string, string, number]> = [
 			[
@@ -313,7 +313,7 @@ export const mapHttpPathGroups = (input: MapHttpPathGroupsInput): CloudflareMetr
 				metricName,
 				description,
 				unit,
-				attributes: { "url.path": foldPath(normalizePath(group.dimensions.clientRequestPath)) },
+				attributes: { [CF_ATTR.path]: foldPath(normalizePath(group.dimensions.clientRequestPath)) },
 				serviceName,
 				resourceAttributes,
 				value,
@@ -376,7 +376,7 @@ export const mapHttpDimensionGroups = (input: MapHttpDimensionGroupsInput): Clou
 
 	for (const group of input.countries) {
 		const attributes: Attrs = {
-			"geo.country_iso_code": foldCountry(group.dimensions.clientCountryName ?? "unknown"),
+			[CF_ATTR.country]: foldCountry(group.dimensions.clientCountryName ?? "unknown"),
 		} satisfies Attrs
 		const counters: ReadonlyArray<readonly [string, string, string, number]> = [
 			[
@@ -420,9 +420,9 @@ export const mapHttpDimensionGroups = (input: MapHttpDimensionGroupsInput): Clou
 				description: "Edge HTTP requests by method, protocol and device (ABR-adjusted estimate)",
 				unit: "{requests}",
 				attributes: {
-					"http.request.method": group.dimensions.clientRequestHTTPMethodName ?? "unknown",
-					"network.protocol.version": normalizeProtocol(group.dimensions.clientRequestHTTPProtocol),
-					"cloudflare.device.type": group.dimensions.clientDeviceType ?? "unknown",
+					[CF_ATTR.method]: group.dimensions.clientRequestHTTPMethodName ?? "unknown",
+					[CF_ATTR.protocol]: normalizeProtocol(group.dimensions.clientRequestHTTPProtocol),
+					[CF_ATTR.deviceType]: group.dimensions.clientDeviceType ?? "unknown",
 				},
 				serviceName,
 				resourceAttributes,
@@ -469,10 +469,10 @@ export const mapFirewallGroups = (input: MapFirewallGroupsInput): CloudflareMetr
 				description: "Firewall/WAF security events (ABR-adjusted estimate)",
 				unit: "{events}",
 				attributes: {
-					"firewall.action": group.dimensions.action ?? "unknown",
-					"firewall.source": group.dimensions.source ?? "unknown",
-					"firewall.rule_id": foldRule(group.dimensions.ruleId ?? "unknown"),
-					"server.address": foldHost(group.dimensions.clientRequestHTTPHost ?? "unknown"),
+					[CF_ATTR.firewallAction]: group.dimensions.action ?? "unknown",
+					[CF_ATTR.firewallSource]: group.dimensions.source ?? "unknown",
+					[CF_ATTR.firewallRuleId]: foldRule(group.dimensions.ruleId ?? "unknown"),
+					[CF_ATTR.host]: foldHost(group.dimensions.clientRequestHTTPHost ?? "unknown"),
 				},
 				serviceName,
 				resourceAttributes,
@@ -515,8 +515,8 @@ export const mapDnsGroups = (input: MapDnsGroupsInput): CloudflareMetricRows => 
 				description: "Authoritative DNS queries (ABR-adjusted estimate)",
 				unit: "{queries}",
 				attributes: {
-					"dns.query_name": foldName(group.dimensions.queryName ?? "unknown"),
-					"dns.response_code": group.dimensions.responseCode ?? "unknown",
+					[CF_ATTR.dnsQueryName]: foldName(group.dimensions.queryName ?? "unknown"),
+					[CF_ATTR.dnsResponseCode]: group.dimensions.responseCode ?? "unknown",
 				},
 				serviceName,
 				resourceAttributes,
