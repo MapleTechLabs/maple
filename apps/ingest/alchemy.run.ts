@@ -154,7 +154,6 @@ export const createMapleIngest = ({ stage, region, hostname, profile, dbLogin }:
 			})),
 		})
 
-		// ── Capacity ────────────────────────────────────────────────────────
 		// Host networking: an awsvpc task on EC2 cannot take a public IP, and without
 		// one it has no egress in a VPC with no NAT. The ALB then targets instances,
 		// which needs the `usesAwsvpc` change in `patches/alchemy@*.patch`.
@@ -295,7 +294,6 @@ export const createMapleIngest = ({ stage, region, hostname, profile, dbLogin }:
 			? yield* secret("replay-r2-access-key-id", replayBlobs.accessKeyId)
 			: undefined
 
-		// ── OTel collector ──────────────────────────────────────────────────
 		// prd only, or one preview that forces it (`profile.deploys.collector`).
 		const collectorEndpoint = profile.deploys.collector
 			? yield* createIngestCollector({
