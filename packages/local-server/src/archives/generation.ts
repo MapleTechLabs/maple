@@ -1138,8 +1138,6 @@ const reconcilePrePublication = async (
 	await advancePhase(archiveDir, intent.operationId, endPhase)
 	// Quarantine incomplete building output if present (retain, don't delete).
 	if (existsSync(building)) {
-		// Move the building debris into a quarantine subdir named for the
-		// operation, retaining it for inspection.
 		const quarantineBuilding = join(
 			archiveRoot(archiveDir),
 			"quarantine",
@@ -1164,7 +1162,6 @@ const reconcilePrePublication = async (
 			await assertRealDirectory(quarantineBuilding, "archive building quarantine")
 		}
 	}
-	// Remove owned scratch.
 	await removeOwnedScratch(intent.scratchRoot, intent.scratchSubdir)
 	// Release the owned pin if it still exists. A pin absence before
 	// "pin-released" would be an error, but a pre-publication abort releasing its

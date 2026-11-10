@@ -1,7 +1,6 @@
 // Per-datasource INSERT templates for the embedded chDB, built from the
 // generated `local-inserts.json` so the snake_case NDJSON the OTLP encoders
-// emit maps to the PascalCase table columns with zero divergence. Direct port
-// of `Templates::build` in the former `apps/ingest/src/chdb.rs`.
+// emit maps to the PascalCase table columns with zero divergence.
 
 import insertMappings from "./schema/local-inserts.json"
 import { Array as Arr, Record as Rec, String as Str } from "effect"

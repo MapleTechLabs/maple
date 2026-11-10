@@ -13,10 +13,6 @@ import {
 	serverPidPath,
 } from "./store-version"
 
-// ---------------------------------------------------------------------------
-// Process liveness: is the owner named by a PID file still that process?
-// ---------------------------------------------------------------------------
-
 /** Parse `ps -o etime=` (`[[dd-]hh:]mm:ss`) into whole seconds. */
 export const parseElapsedSeconds = (raw: string): number | undefined => {
 	const found = Str.match(/^(?:(\d+)-)?(?:(\d+):)?(\d+):(\d+)$/)(Str.trim(raw))
@@ -70,10 +66,6 @@ export const isProcessAlive = (pid: number): boolean => {
 		return false
 	}
 }
-
-// ---------------------------------------------------------------------------
-// PID file: the one claim that serializes every process opening a store.
-// ---------------------------------------------------------------------------
 
 export interface PidFileSnapshot {
 	readonly raw: string
