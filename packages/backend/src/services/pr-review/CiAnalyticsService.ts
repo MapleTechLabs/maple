@@ -15,6 +15,7 @@ import {
 	type WarehouseReadError,
 	type TenantContext,
 } from "@maple/domain/http"
+import { CI_TTL_DAYS } from "@maple/domain/tinybird/datasources"
 import type { OrgId } from "@maple/primitives"
 import * as PG from "@maple-dev/effect-orm/postgres"
 import { VcsRepositories } from "@maple/db/tables"
@@ -40,8 +41,7 @@ export interface CiAnalyticsServiceApi {
 
 const HOUR = 3_600
 const DAY = 86_400
-/** How far back `ci_runs` and `ci_jobs` keep runs. */
-const CI_RETENTION_MS = 365 * DAY * 1000
+const CI_RETENTION_MS = CI_TTL_DAYS * DAY * 1000
 /** The longest window read: the retention plus a day to absorb a DST change at either end. */
 export const CI_MAX_SPAN_MS = CI_RETENTION_MS + DAY * 1000
 /** Runs read per possibly red workflow to find where its streak began. */

@@ -23,6 +23,12 @@ export const utcDateTime64 = (precision: 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9) 
 export const TRACE_BUCKET_FN = "toStartOfFiveMinutes"
 export const TRACE_BUCKET_EXPR = `${TRACE_BUCKET_FN}(Timestamp)`
 
+/** How long `traces` and `trace_index` keep a row; trace-id lookups scan no further back. */
+export const TRACES_TTL_DAYS = 30
+
+/** How long `ci_runs` and `ci_jobs` keep a run. */
+export const CI_TTL_DAYS = 365
+
 /**
  * OpenTelemetry logs datasource
  * Matches the official OpenTelemetry Collector Tinybird exporter format
@@ -286,7 +292,7 @@ export const traces = defineDatasource("traces", {
 	engine: engine.mergeTree({
 		partitionKey: "toDate(Timestamp)",
 		sortingKey: ["OrgId", "ServiceName", TRACE_BUCKET_EXPR, "TraceId"],
-		ttl: "toDate(Timestamp) + INTERVAL 30 DAY",
+		ttl: `toDate(Timestamp) + INTERVAL ${TRACES_TTL_DAYS} DAY`,
 	}),
 })
 
@@ -1255,7 +1261,7 @@ export const traceIndex = defineDatasource("trace_index", {
 	engine: engine.aggregatingMergeTree({
 		partitionKey: "toDate(Bucket)",
 		sortingKey: ["OrgId", "TraceId", "ServiceName", "Bucket"],
-		ttl: "toDate(Bucket) + INTERVAL 30 DAY",
+		ttl: `toDate(Bucket) + INTERVAL ${TRACES_TTL_DAYS} DAY`,
 	}),
 })
 
@@ -1560,7 +1566,7 @@ export const ciRuns = defineDatasource("ci_runs", {
 	engine: engine.mergeTree({
 		partitionKey: "toYYYYMM(Timestamp)",
 		sortingKey: ["OrgId", "Timestamp", "TraceId"],
-		ttl: "toDate(Timestamp) + INTERVAL 365 DAY",
+		ttl: `toDate(Timestamp) + INTERVAL ${CI_TTL_DAYS} DAY`,
 	}),
 })
 
@@ -1598,7 +1604,7 @@ export const ciJobs = defineDatasource("ci_jobs", {
 	engine: engine.mergeTree({
 		partitionKey: "toYYYYMM(Timestamp)",
 		sortingKey: ["OrgId", "Timestamp", "TraceId"],
-		ttl: "toDate(Timestamp) + INTERVAL 365 DAY",
+		ttl: `toDate(Timestamp) + INTERVAL ${CI_TTL_DAYS} DAY`,
 	}),
 })
 
