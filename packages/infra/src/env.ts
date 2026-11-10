@@ -196,6 +196,50 @@ export const PRD_LOCKSTEP_REVISION_SERVICES = [
 	"maple-web",
 ] as const
 
+/** Each declared config key as an optional plain value or secret; unset means unavailable. */
+export const configKeysEnv = (
+	keys: ReadonlyArray<{ readonly name: string; readonly secret: boolean }>,
+): Config.Config<WorkerEnv> =>
+	merge(...Arr.map(keys, (key) => (key.secret ? optionalSecret(key.name) : optionalPlain(key.name))))
+
+/** Linear OAuth client: api installs it, alerting refreshes the org's token at delivery time. */
+export const linearOAuthEnv: Config.Config<WorkerEnv> = merge(
+	optionalPlain("LINEAR_OAUTH_CLIENT_ID"),
+	optionalSecret("LINEAR_OAUTH_CLIENT_SECRET"),
+)
+
+/** Google Search Console OAuth client: api connects, alerting's importer refreshes, maple-ai reports it. */
+export const searchConsoleOAuthEnv: Config.Config<WorkerEnv> = merge(
+	optionalPlain("GOOGLE_SEARCH_CONSOLE_CLIENT_ID"),
+	optionalSecret("GOOGLE_SEARCH_CONSOLE_CLIENT_SECRET"),
+)
+
+/**
+ * What every Worker running Maple's service graph (api, maple-ai, alerting) reads: warehouse,
+ * auth, ingest-key crypto, public URLs, self-telemetry, billing, the internal service token and
+ * the GitHub App and Search Console clients. MAPLE_ENVIRONMENT stays stage-derived: it gates the
+ * non-prod cron skip and `EmailService.emailAllowed`.
+ */
+export const mapleServerEnv = (
+	stage: MapleStage,
+	region: MapleRegion,
+	domains: MapleDomains,
+): Config.Config<WorkerEnv> =>
+	merge(
+		tinybirdEnv,
+		authEnv,
+		ingestKeyCryptoEnv,
+		appUrlsEnv(domains),
+		selfObservabilityEnv(stage, region),
+		// Dev-only; the runtime ignores it outside MAPLE_ENVIRONMENT=development.
+		optionalPlain("MAPLE_IGNORE_ORG_CLICKHOUSE"),
+		// Without it billing and the BYOK entitlement fail open.
+		optionalSecret("AUTUMN_SECRET_KEY"),
+		optionalSecret("INTERNAL_SERVICE_TOKEN"),
+		githubAppSourceEnv,
+		searchConsoleOAuthEnv,
+	)
+
 /** Cloudflare account integration (account OAuth — Authorization Code + PKCE). */
 export const cloudflareOAuthEnv: Config.Config<WorkerEnv> = merge(
 	optionalPlain("CLOUDFLARE_OAUTH_CLIENT_ID"),
