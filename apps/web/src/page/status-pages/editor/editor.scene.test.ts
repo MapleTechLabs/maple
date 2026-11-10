@@ -959,6 +959,39 @@ describe("header", () => {
 			expectView(role("link", { name: "Appearance" })).toHaveAttr("aria-current", "page"),
 		)
 	})
+
+	test("Open page opens the published page in a new tab", () => {
+		scene(
+			{ update: pageUpdate, view },
+			given({ ...loaded({ tab: "settings" }), publicBaseUrl: "https://status-pr-7.maple.dev" }),
+			expectView(role("link", { name: "Open page" })).toHaveAttr(
+				"href",
+				"https://status-pr-7.maple.dev/s/acme-status",
+			),
+			expectView(role("link", { name: "Open page" })).toHaveAttr("target", "_blank"),
+			expectView(role("link", { name: "Open page" })).toHaveAttr("rel", "noopener"),
+		)
+	})
+
+	test("Open page is disabled, with the reason, while the page has no public address", () => {
+		scene(
+			{ update: pageUpdate, view },
+			given({
+				...loaded({ page: statusPage({ draft: true, published_at: null }) }),
+				publicBaseUrl: "https://status-pr-7.maple.dev",
+			}),
+			expectView(role("link", { name: "Open page" })).not.toExist(),
+			expectView(role("button", { name: "Open page" })).toBeDisabled(),
+			expectView(selector('[title="Publish the page to open it"]')).toExist(),
+		)
+		scene(
+			{ update: pageUpdate, view },
+			given({ ...loaded(), publicBaseUrl: "" }),
+			expectView(role("link", { name: "Open page" })).not.toExist(),
+			expectView(role("button", { name: "Open page" })).toBeDisabled(),
+			expectView(selector('[title="No status domain is configured yet"]')).toExist(),
+		)
+	})
 })
 
 describe("drafts", () => {

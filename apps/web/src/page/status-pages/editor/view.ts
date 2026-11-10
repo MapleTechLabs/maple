@@ -6,7 +6,7 @@ import { AsyncData, Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import type { LoadFailure } from "@maple/views/data/load-failure"
 import { alert, alertDescription, alertTitle } from "@maple/views/ui/alert"
-import { button } from "@maple/views/ui/button"
+import { button, linkButton } from "@maple/views/ui/button"
 import { confirmDialog } from "@maple/views/ui/confirm-dialog"
 import { badge } from "@maple/views/ui/display"
 import { errorState } from "@maple/views/ui/error-state"
@@ -20,7 +20,7 @@ import { detailActions, detailTitle, detailTitleSkeleton } from "../../kit/detai
 import { relativeTime } from "../../kit/relative-time"
 import { resourceNotFound } from "../../kit/resource-not-found"
 import { linkTabStrip } from "../../kit/underline-tabs"
-import { type EditorView, statusPageHref, statusPagesHref } from "../shared/commands"
+import { type EditorView, publicUrl, statusPageHref, statusPagesHref } from "../shared/commands"
 import {
 	COMPONENT_STATUS_LABEL,
 	COMPONENT_STATUS_TONE,
@@ -105,6 +105,23 @@ const publishButton = (h: H, model: Model): Html =>
 		[icon(h, "PaperPlaneIcon"), "Publish page"],
 	)
 
+/** The public page in a new tab; disabled, with the reason on hover, while it has no address. */
+const openPageButton = (h: H, model: Model, page: V2StatusPage): Html => {
+	const url = publicUrl(model.publicBaseUrl, page.slug)
+	const label = [icon(h, "ExternalLinkIcon"), "Open page"]
+	if (url !== null && !page.draft)
+		return linkButton(
+			h,
+			{ size: "sm", variant: "outline", href: url, attributes: [h.Target("_blank"), h.Rel("noopener")] },
+			label,
+		)
+	// A disabled button fires no hover, so its wrapper carries the reason as a tooltip.
+	return h.span(
+		[h.Title(url === null ? "No status domain is configured yet" : "Publish the page to open it")],
+		[button(h, { size: "sm", variant: "outline", isDisabled: true }, label)],
+	)
+}
+
 /** A draft's next step is publishing it, so Publish leads and Post incident steps back. */
 const headerActions = (h: H, model: Model, page: V2StatusPage): Html => {
 	const canPublish = canManage(model) && page.draft
@@ -125,6 +142,7 @@ const headerActions = (h: H, model: Model, page: V2StatusPage): Html => {
 				]
 			: []),
 		...(canPublish ? [publishButton(h, model)] : []),
+		openPageButton(h, model, page),
 		rowActionsMenu(h, {
 			slotId: PAGE_MENU_ID,
 			model: model.pageMenu,

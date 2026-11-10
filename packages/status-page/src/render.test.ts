@@ -21,6 +21,7 @@ import {
 	renderBadgeSvg,
 	renderManagePage,
 	renderPage,
+	renderRssFeed,
 	renderStatusJson,
 } from "./index"
 
@@ -646,6 +647,42 @@ describe("renderAtomFeed", () => {
 		])
 		expect(xml).toContain('<content type="text">Fixed &lt;now&gt;</content>')
 		expect(xml).toContain('href="https://status.acme.example/#incident-a"')
+	})
+})
+
+describe("renderRssFeed", () => {
+	const snapshot = makeSnapshot({
+		incidents: [
+			makeIncident("a", {
+				title: "Errors & timeouts",
+				updates: [
+					update("a2", FIXTURE_NOW - 60_000, "Fixed <now>", "resolved"),
+					update("a1", FIXTURE_NOW - 600_000, "Looking"),
+				],
+			}),
+			makeIncident("b", { updates: [update("b1", FIXTURE_NOW - 300_000, "Other")] }),
+		],
+	})
+
+	it("has one item per update, newest first, with escaped text and RFC 822 dates", () => {
+		const xml = renderRssFeed(snapshot, "https://status.acme.example/")
+		const items = Arr.map(
+			allMatches(xml, /<item><title>([^<]*)<\/title>.*?<pubDate>([^<]*)<\/pubDate><guid isPermaLink="false">([^<]*)<\/guid><\/item>/gu),
+			(match) => [match[1], match[2], match[3]],
+		)
+		expect(items).toEqual([
+			["Errors &amp; timeouts: Resolved", "Wed, 28 Oct 2026 11:59:00 GMT", `urn:maple:status:${snapshot.pageId}:a:a2`],
+			["Incident b: Investigating", "Wed, 28 Oct 2026 11:55:00 GMT", `urn:maple:status:${snapshot.pageId}:b:b1`],
+			["Errors &amp; timeouts: Investigating", "Wed, 28 Oct 2026 11:50:00 GMT", `urn:maple:status:${snapshot.pageId}:a:a1`],
+		])
+		expect(xml).toContain("<description>Fixed &lt;now&gt;</description>")
+		expect(xml).toContain("<link>https://status.acme.example/#incident-a</link>")
+		expect(xml).toContain('<atom:link href="https://status.acme.example/feed.rss" rel="self"')
+	})
+
+	it("is advertised next to the Atom feed in the page head", () => {
+		const head = between(renderPage(snapshot, live, FIXTURE_NOW, { basePath: "/s/acme" }), "<head>", "</head>")
+		expect(head).toContain('type="application/rss+xml" title="Acme status" href="/s/acme/feed.rss"')
 	})
 })
 

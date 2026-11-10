@@ -226,6 +226,17 @@ describe("serving a page", () => {
 
 		const feed = await send(fake, `${PAGE}feed.atom`)
 		expect(await feed.text()).toContain(`<link rel="self" href="https://status.acme.example/feed.atom"/>`)
+
+		const rss = await send(fake, `${PAGE}feed.rss`)
+		expect(rss.headers.get("content-type")).toBe("application/rss+xml; charset=utf-8")
+		expect(rss.headers.get("cache-control")).toBe(feed.headers.get("cache-control"))
+		expect(await rss.text()).toContain(`<atom:link href="https://status.acme.example/feed.rss" rel="self"`)
+	})
+
+	it("serves the RSS feed under the slug path with links under the prefix", async () => {
+		const rss = await send(fake, "https://status.maple.workers.dev/s/acme/feed.rss")
+		expect(rss.status).toBe(200)
+		expect(await rss.text()).toContain("<link>https://status.maple.workers.dev/s/acme/</link>")
 	})
 
 	it("answers /_health without touching storage", async () => {
