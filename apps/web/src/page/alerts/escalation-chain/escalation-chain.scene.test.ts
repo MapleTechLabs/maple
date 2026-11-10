@@ -35,8 +35,8 @@ import { FocusChainElement } from "./command"
 import { payloadOf } from "./form"
 import { Message } from "./message"
 import type { Model } from "./model"
-import { init, insertButtonId, isBlockingNavigation, menuIdOf, update } from "./update"
-import { view as pageView } from "./view"
+import { init, insertButtonId, isBlockingNavigation, menuIdOf, removeTargetButtonId, update } from "./update"
+import { chainTitle, view as pageView } from "./view"
 
 const orgId = Schema.decodeSync(OrgId)(ORG)
 const context: PageContext = { orgId, pinnedNamespace: null, timeZone: "UTC" }
@@ -185,6 +185,43 @@ describe("escalation chain editor", () => {
 		expect(Arr.last(removedFirst.commands ?? [])).toMatchObject(
 			Option.some({ args: { id: insertButtonId(0) } }),
 		)
+	})
+
+	test("removing a target moves focus to the chip that takes its place, or to the step's Add button", () => {
+		const slack = `destination:${chainDestinationUuid(1)}`
+		const pagerDuty = `destination:${chainDestinationUuid(2)}`
+		const both = run(newChain(), [pick("s0", slack), pick("s0", pagerDuty)])
+		const focused = (model: Model, target: string) =>
+			pageUpdate(model, Message.ClickedRemoveTarget({ key: "s0", target })).commands
+		// The first of two: the one after it, which now leads the step.
+		expect(focused(both, slack)).toMatchObject([
+			{ name: "FocusEscalationChainElement", args: { id: removeTargetButtonId("s0", pagerDuty) } },
+		])
+		// The last one, and the only one: the Add button that follows the chips.
+		const add = {
+			name: "FocusEscalationChainElement",
+			args: { id: triggerId(menuIdOf("targets", "s0")) },
+		}
+		expect(focused(both, pagerDuty)).toMatchObject([add])
+		const one = pageUpdate(both, Message.ClickedRemoveTarget({ key: "s0", target: slack })).model
+		expect(focused(one, pagerDuty)).toMatchObject([add])
+		// The chip the focus is sent to is on the page under that id.
+		scene(
+			{ update: pageUpdate, view },
+			given(both),
+			click(role("button", { name: "Stop notifying Slack #alerts-api on step 1" })),
+			Command.resolve(FocusChainElement, Message.CompletedFocus()),
+			expectView(role("button", { name: "Stop notifying Slack #alerts-api on step 1" })).not.toExist(),
+			expectView(role("button", { name: /^Stop notifying .+ on step 1$/u })).toHaveAttr(
+				"id",
+				removeTargetButtonId("s0", pagerDuty),
+			),
+		)
+		// A target that is not on the step, and a viewer who cannot edit: nothing moves.
+		expect(focused(both, "destination:missing") ?? []).toEqual([])
+		expect(
+			focused(run(both, [Message.CompletedFetchSession({ orgId: ORG, grants: MEMBER })]), slack) ?? [],
+		).toEqual([])
 	})
 
 	test("saving with missing fields shows each problem and sends nothing", () => {
@@ -423,11 +460,20 @@ describe("escalation chain editor", () => {
 		)
 	})
 
-	test("a link with a malformed chain id says the chain was not found", () => {
-		scene(
-			{ update: pageUpdate, view },
-			given(entered({ _tag: "AlertsEscalationChain", chainId: "nope", search: {} })),
-			expectView(text("Escalation chain not found")).toExist(),
-		)
+	test("a link with a malformed chain id says the chain was not found, under the heading a deleted one gets", () => {
+		Arr.forEach(["nope", "esc_notAChainId"], (chainId) => {
+			const bad = entered({ _tag: "AlertsEscalationChain", chainId, search: {} })
+			scene(
+				{ update: pageUpdate, view },
+				given(bad),
+				expectView(text("Escalation chain not found")).toExist(),
+				expectView(role("heading", { name: "Escalation chain" })).toExist(),
+				expectView(role("heading", { name: "New escalation chain" })).not.toExist(),
+			)
+			// The breadcrumb's last entry is the same title.
+			expect(chainTitle(bad)).toBe("Escalation chain")
+		})
+		// The new-chain page keeps its own name.
+		expect(chainTitle(newChain())).toBe("New escalation chain")
 	})
 })

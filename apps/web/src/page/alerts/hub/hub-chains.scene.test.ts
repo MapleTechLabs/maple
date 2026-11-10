@@ -3,7 +3,9 @@ import { OrgId } from "@maple/domain"
 import { Result, Schema, Array as Arr } from "effect"
 import { EscalationChainId } from "@maple/domain/http"
 import * as Menu from "@maple/views/ui/menu"
-import { expect as expectView, given, role, scene, text, withViewInputs } from "foldkit/scene"
+import * as Dialog from "@maple/views/ui/dialog"
+import { MountDialog } from "@maple/views/ui/dialog"
+import { expect as expectView, given, Mount, role, scene, text, within, withViewInputs } from "foldkit/scene"
 import { describe, expect, test } from "vitest"
 import type { V2EscalationChain } from "@maple/domain/http/v2"
 import type { PageContext } from "../../contract"
@@ -116,6 +118,43 @@ describe("alerts hub, escalation chains", () => {
 			_tag: "RequestedNavigation",
 			url: expect.stringMatching(/^\/alerts\/escalation-chains\/esc_/u),
 		})
+	})
+
+	test("Delete on a chain that rules start lists them and holds the delete, as its own page does", () => {
+		const askToDelete = (n: number) =>
+			pageUpdate(
+				onRouting(ENGINEER, CHAINS),
+				Message.GotRowMenuMessage({
+					menuId: chainMenuId(Schema.decodeSync(EscalationChainId)(chainUuid(n))),
+					message: Menu.Message.ClickedItem({ index: 2, item: { kind: "Item", value: "delete" } }),
+				}),
+			).model
+		const confirm = within(role("alertdialog"), role("button", { name: "Delete chain" }))
+		scene(
+			{ update: pageUpdate, view },
+			given(askToDelete(1)),
+			Mount.resolve(MountDialog, Dialog.Message.CompletedMountDialog()),
+			expectView(text(/These rules would stop escalating/u)).toExist(),
+			expectView(within(role("alertdialog"), text("Checkout errors"))).toExist(),
+			expectView(within(role("alertdialog"), text("Checkout p95"))).toExist(),
+			expectView(confirm).toBeDisabled(),
+		)
+		// Before the rules list has loaded they are counted instead of named, and still hold it.
+		scene(
+			{ update: pageUpdate, view },
+			given({ ...askToDelete(1), rules: null }),
+			Mount.resolve(MountDialog, Dialog.Message.CompletedMountDialog()),
+			expectView(within(role("alertdialog"), text("2 rules"))).toExist(),
+			expectView(confirm).toBeDisabled(),
+		)
+		// A chain no rule starts deletes as before.
+		scene(
+			{ update: pageUpdate, view },
+			given(askToDelete(3)),
+			Mount.resolve(MountDialog, Dialog.Message.CompletedMountDialog()),
+			expectView(text(/Escalations already running finish on their own copy/u)).toExist(),
+			expectView(confirm).not.toBeDisabled(),
+		)
 	})
 
 	test("a refused delete stays open and names the rules that still start the chain", () => {

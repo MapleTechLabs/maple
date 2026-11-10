@@ -26,6 +26,7 @@ import { textarea } from "@maple/views/ui/textarea"
 import { typography } from "@maple/views/ui/typography"
 import type { PageViewInputs } from "../../contract"
 import { chainConnector } from "../../kit/chain-connector"
+import { chainDeleteConfirm } from "../shared/chain-delete-confirm"
 import { dashboardPage } from "../../kit/dashboard-page"
 import { managersOnlyPage } from "../../kit/form-section"
 import { type PickedChip, pickChips } from "../../kit/pick-chips"
@@ -50,15 +51,22 @@ import {
 } from "./form"
 import { Message } from "./message"
 import { canManage, type Model } from "./model"
-import { backHref, DELETE_DIALOG_ID, insertButtonId, LEAVE_DIALOG_ID, menuIdOf } from "./update"
+import {
+	backHref,
+	DELETE_DIALOG_ID,
+	insertButtonId,
+	LEAVE_DIALOG_ID,
+	menuIdOf,
+	removeTargetButtonId,
+} from "./update"
 
 // The escalation chain editor: the chain as a column of sentence cards, its name and preview beside it.
 
 type H = HtmlBuilder<Message>
 
-/** The page's name: the chain as last read, or "New escalation chain". */
-export const chainTitle = (model: Pick<Model, "editingId" | "existing">): string =>
-	model.editingId === null
+/** The page's name: the chain as last read, or "New escalation chain". A URL id that is no chain's is not a new one. */
+export const chainTitle = (model: Pick<Model, "editingId" | "isBadId" | "existing">): string =>
+	model.editingId === null && !model.isBadId
 		? "New escalation chain"
 		: Option.getOrElse(
 				Option.map(AsyncData.getData(model.existing.data), (chain) => chain.name),
@@ -152,6 +160,7 @@ const targetChip = (
 	target: V2EscalationTarget,
 ): PickedChip<Message> => {
 	const onRemove = Message.ClickedRemoveTarget({ key, target: targetKey(target) })
+	const removeId = removeTargetButtonId(key, targetKey(target))
 	// The step is named: the same target may sit on several steps.
 	const onStep = `on step ${index + 1}`
 	switch (target.type) {
@@ -162,6 +171,7 @@ const targetChip = (
 				label: name,
 				media: destinationMedia(h, model, target.destination_id),
 				removeLabel: `Stop notifying ${name} ${onStep}`,
+				removeId,
 				onRemove,
 			}
 		}
@@ -178,6 +188,7 @@ const targetChip = (
 					),
 				}),
 				removeLabel: `Stop paging ${name} ${onStep}`,
+				removeId,
 				onRemove,
 			}
 		}
@@ -190,6 +201,7 @@ const targetChip = (
 				media: icon(h, "CalendarIcon", { size: 14, className: "shrink-0 text-muted-foreground" }),
 				...(detail === undefined ? undefined : { detail }),
 				removeLabel: `Stop paging ${name} ${onStep}`,
+				removeId,
 				onRemove,
 			}
 		}
@@ -612,51 +624,15 @@ const aside = (h: H, model: Model): Html =>
 
 /** "Delete {chain}?": lists the rules that start it, which the API makes move off it first. */
 const deleteDialog = (h: H, model: Model): Html => {
-	const chain = AsyncData.getData(model.existing.data)
-	const ruleIds: ReadonlyArray<string> = Option.match(chain, {
-		onNone: () => [],
-		onSome: (found) => found.rule_ids,
-	})
-	const names = Arr.map(
-		Arr.filter(model.rules ?? [], (rule) => Arr.some(ruleIds, (id) => id === rule.id)),
-		(rule) => rule.name,
-	)
-	const isInUse = ruleIds.length > 0
+	const confirm = chainDeleteConfirm(h, AsyncData.getData(model.existing.data), model.rules)
 	return confirmDialog(h, {
 		slotId: DELETE_DIALOG_ID,
 		model: model.deleteDialog,
 		toParentMessage: (message) => Message.GotDeleteDialogMessage({ message }),
 		title: `Delete ${chainTitle(model)}?`,
-		description: isInUse
-			? "These rules would stop escalating. Remove the chain from their severity tiers first."
-			: "Escalations already running finish on their own copy. This cannot be undone.",
+		description: confirm.description,
 		children: [
-			...(isInUse
-				? [
-						h.ul(
-							[h.Class("list-disc space-y-1 pl-5")],
-							[
-								...Arr.map(names, (ruleName) =>
-									h.li([h.Key(ruleName)], [typography(h, { size: "sm" }, [ruleName])]),
-								),
-								...(ruleIds.length > names.length
-									? [
-											h.li(
-												[],
-												[
-													typography(h, { size: "sm", tone: "muted" }, [
-														names.length === 0
-															? `${ruleIds.length} ${pluralize(ruleIds.length, "rule")}`
-															: `and ${ruleIds.length - names.length} more`,
-													]),
-												],
-											),
-										]
-									: []),
-							],
-						),
-					]
-				: []),
+			...confirm.ruleList,
 			...(model.deleteError === null
 				? []
 				: [
@@ -669,7 +645,7 @@ const deleteDialog = (h: H, model: Model): Html => {
 		],
 		confirmLabel: "Delete chain",
 		isPending: model.isDeleting,
-		isConfirmDisabled: isInUse,
+		isConfirmDisabled: confirm.isInUse,
 		onConfirm: Message.ClickedConfirmDelete(),
 	})
 }

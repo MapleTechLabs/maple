@@ -22,6 +22,7 @@ import { textLink } from "@maple/views/ui/text-link"
 import { typography } from "@maple/views/ui/typography"
 import { alert, alertDescription, alertTitle } from "@maple/views/ui/alert"
 import { sectionHeading } from "../../kit/section-heading"
+import { chainDeleteConfirm } from "../shared/chain-delete-confirm"
 import { chainHref, chainSummary, newChainHref } from "../shared/escalation-chains"
 import { memberName } from "../shared/org-members"
 import { Message } from "./message"
@@ -234,7 +235,10 @@ export const chainsSection = (h: H, model: Model): Html =>
 		],
 	)
 
-/** "Delete {chain}?": the 409 that names the rules holding it stays in the dialog. */
+/**
+ * "Delete {chain}?": as on the chain's page, the rules that start it are listed and hold the
+ * delete. A 409 from a rule attached since the list was read stays in the dialog.
+ */
 export const deleteChainDialog = (h: H, model: Model): Html => {
 	const chain = Arr.findFirst(
 		Option.getOrElse(AsyncData.getData(model.chains.data), () => []),
@@ -244,24 +248,29 @@ export const deleteChainDialog = (h: H, model: Model): Html => {
 		Option.map(chain, (found) => found.name),
 		() => "escalation chain",
 	)
+	const confirm = chainDeleteConfirm(h, chain, model.rules)
+	const children = [
+		...confirm.ruleList,
+		...(model.deleteChainError === null
+			? []
+			: [
+					alert(h, { variant: "crit", size: "sm" }, [
+						icon(h, "CircleXmarkIcon"),
+						alertTitle(h, ["Couldn't delete chain"]),
+						alertDescription(h, [model.deleteChainError]),
+					]),
+				]),
+	]
 	return confirmDialog(h, {
 		slotId: "alerts-delete-chain",
 		model: model.deleteChainDialog,
 		toParentMessage: (message) => Message.GotDeleteChainDialogMessage({ message }),
 		title: `Delete ${name}?`,
-		description: "Escalations already running finish on their own copy. This cannot be undone.",
-		children:
-			model.deleteChainError === null
-				? undefined
-				: [
-						alert(h, { variant: "crit", size: "sm" }, [
-							icon(h, "CircleXmarkIcon"),
-							alertTitle(h, ["Couldn't delete chain"]),
-							alertDescription(h, [model.deleteChainError]),
-						]),
-					],
+		description: confirm.description,
+		children: children.length === 0 ? undefined : children,
 		confirmLabel: "Delete chain",
 		isPending: model.deletingChainId !== null,
+		isConfirmDisabled: confirm.isInUse,
 		onConfirm: Message.ClickedConfirmDeleteChain(),
 	})
 }
