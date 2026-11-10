@@ -110,7 +110,6 @@ const rotationClock = (
 	const step = rotation.kind === "daily" ? 1 : 7
 	const weekdayOffset = (day: number) =>
 		rotation.kind === "daily" ? 0 : mod(weekdayOfDay(day) - weekdayIndex(rotation.handoffWeekday), 7)
-	// The handoff day of the shift containing `ms`.
 	const handoffDayAt = (ms: number): number => {
 		const day = localDayOf(zone, ms)
 		const candidate = day - weekdayOffset(day)

@@ -21,7 +21,6 @@ export interface EscalationRunPosition {
 export interface EscalationIncidentState {
 	readonly open: boolean
 	readonly acknowledged: boolean
-	/** A silence covers the incident right now. */
 	readonly silenced: boolean
 }
 
