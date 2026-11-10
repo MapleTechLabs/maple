@@ -14,7 +14,8 @@ export const SessionTimeRange = Schema.Struct({
 })
 export type SessionTimeRange = typeof SessionTimeRange.Type
 
-const ONE_YEAR_SECONDS = 365 * 24 * 60 * 60
+/** The long-range tier's ceiling, a year: these routes and every page on the long-range preset rail. */
+export const LONG_RANGE_MAX_SECONDS = 365 * 24 * 60 * 60
 /** `DEFAULT_MAX_RANGE_SECONDS`: the widest standard preset, a calendar month. */
 const DEFAULT_MAX_RANGE_SECONDS = 32 * 24 * 60 * 60
 
@@ -22,7 +23,7 @@ const DEFAULT_MAX_RANGE_SECONDS = 32 * 24 * 60 * 60
 const CEILINGS: ReadonlyMap<RouteTag, number> = new Map<RouteTag, number>([
 	...Arr.map(
 		["Services", "Service", "ServiceMap", "Releases", "Release", "AlertRule"] as const,
-		(tag) => [tag, ONE_YEAR_SECONDS] as const,
+		(tag) => [tag, LONG_RANGE_MAX_SECONDS] as const,
 	),
 	...Arr.map(
 		[

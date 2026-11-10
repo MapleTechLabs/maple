@@ -29,6 +29,7 @@ import * as CustomRange from "./custom-range"
 import * as CustomRangeView from "./custom-range-view"
 import { LONG_RANGE_PRESET_VALUES, PRESET_VALUES, timeRangeTriggerContent } from "./time-controls"
 import { presetLabel } from "@maple/ui/lib/time-preset"
+import { LONG_RANGE_MAX_SECONDS } from "../../route/session-time-range"
 
 // The header's time range popover: the preset rail and quick select. Picking a range is an
 // OutMessage; the page writes it to its URL search.
@@ -315,11 +316,10 @@ const LONG_LABELS = new Map([
 // Shortest to longest; "today" is calendar-anchored, so it sits last.
 const QUICK_SELECT = ["3h", "12h", "4d", "10d", "2w", "6w", "2mo", "today"]
 
-const ONE_YEAR_SECONDS = 365 * 24 * 60 * 60
-
 /** The page's maximum; every page on the long-range presets also caps at a year. */
 const maxRangeOf = (inputs: ViewInputs): number | undefined =>
-	inputs.maxRangeSeconds ?? (inputs.presets === LONG_RANGE_PRESET_VALUES ? ONE_YEAR_SECONDS : undefined)
+	inputs.maxRangeSeconds ??
+	(inputs.presets === LONG_RANGE_PRESET_VALUES ? LONG_RANGE_MAX_SECONDS : undefined)
 
 /** The page's maximum on a Message, when it has one. */
 const withMax = (inputs: ViewInputs) => {
