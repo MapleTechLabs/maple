@@ -78,6 +78,20 @@ export const formatSilenceTime = (ms: number, nowMs: number, timeZone: string): 
 		: `${formatDateInTimezone(ms, { timeZone, withYear: false })}, ${time}`
 }
 
+/** "15:00 to 16:00" today, "Nov 7, 15:00 to 16:00" on another day: the day is named once when both ends share it. */
+export const formatSilenceRange = (
+	startMs: number,
+	endMs: number,
+	nowMs: number,
+	timeZone: string,
+): string => {
+	const isOneDay = formatDateInTimezone(startMs, { timeZone }) === formatDateInTimezone(endMs, { timeZone })
+	const end = isOneDay
+		? formatTimeInTimezone(endMs, { timeZone, withSeconds: false })
+		: formatSilenceTime(endMs, nowMs, timeZone)
+	return `${formatSilenceTime(startMs, nowMs, timeZone)} to ${end}`
+}
+
 /** Where a silence stands at `nowMs`, from its window rather than the status it was read with. */
 export const silenceStatusAt = (silence: V2AlertSilence, nowMs: number): V2AlertSilence["status"] =>
 	nowMs < startsAtMs(silence) ? "scheduled" : nowMs < endsAtMs(silence) ? "active" : "ended"

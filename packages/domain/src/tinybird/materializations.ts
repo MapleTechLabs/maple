@@ -1002,10 +1002,11 @@ const errorEventsWithSql = `
           ) AS _exStack,
           if(_useAttrs, _exMsg, StatusMessage) AS _msgText,
           -- A user key replaces type, frames, message and salt in the hash: the
-          -- exception event's value first, then the span's. Trimmed and capped.
+          -- exception event's value unless blank after trimming, then the span's.
+          -- Trimmed and capped.
           substringUTF8(
             ${chRedactChain(
-				`coalesce(nullIf(if(_ei > 0, EventsAttributes[_ei][${chPattern(CUSTOM_FINGERPRINT_ATTRIBUTE)}], ''), ''), SpanAttributes[${chPattern(CUSTOM_FINGERPRINT_ATTRIBUTE)}])`,
+				`coalesce(nullIf(${chRedactChain(`if(_ei > 0, EventsAttributes[_ei][${chPattern(CUSTOM_FINGERPRINT_ATTRIBUTE)}], '')`, CUSTOM_FINGERPRINT_REDACTIONS)}, ''), SpanAttributes[${chPattern(CUSTOM_FINGERPRINT_ATTRIBUTE)}])`,
 				CUSTOM_FINGERPRINT_REDACTIONS,
 			)},
             1, ${CUSTOM_FINGERPRINT_MAX_CHARS}
@@ -1272,6 +1273,9 @@ export const errorFingerprintLineageMv = defineMaterializedView("error_fingerpri
 	description:
 		"Records the previous-version fingerprint hashes of each error fingerprint a version bump re-keyed, for the issue evaluator.",
 	datasource: errorFingerprintLineage,
+	// Shares the error views' WITH block, so a fingerprint change reaches it too: swap the
+	// query in place rather than replay `traces`, the same as error_events_mv.
+	deploymentMethod: "alter",
 	nodes: [
 		node({
 			name: "error_fingerprint_lineage_mv_node",

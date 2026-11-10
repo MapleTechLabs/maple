@@ -505,7 +505,9 @@ export const createMapleIngest = ({ stage, region, domains, profile, dbLogin }: 
 		})
 
 		// Its own logical id: alchemy keys resources by id alone, and a repeat id
-		// silently returns the first registration.
+		// silently returns the first registration. Keep these policies without a
+		// `description`: changing one replaces the policy under the same name, and the
+		// patched delete detaches the old one from the live task role.
 		const walSegmentsPolicy = yield* AWS.IAM.Policy("ingest-wal-segments-access", {
 			policyName: name("ingest-wal-segments"),
 			policyDocument: {

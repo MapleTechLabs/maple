@@ -3,10 +3,12 @@ import { zonedDateParts, zonedPartsToEpochMs } from "@maple/query-engine/datetim
 import { Clock, DateTime, Effect, Option, Result, Schema, Array as Arr, String as Str } from "effect"
 import { Command, type Update } from "foldkit"
 import { defineMessageUnion } from "foldkit/message"
+import * as Combobox from "@maple/views/ui/combobox"
 import * as Dialog from "@maple/views/ui/dialog"
 import type { Resources } from "../../../platform/resources"
 import { MAX_ALERT_SILENCE_DURATION_MS } from "@maple/domain/http"
-import { hasMatchers, MatcherField, matchersFromTyped, TypedMatchers } from "../shared/matcher-fields"
+import { shortZoneName } from "../../kit/timezone-zones"
+import { hasMatchers, MatcherField } from "../shared/matcher-fields"
 import { createSilence } from "../shared/silences"
 
 // "Silence notifications": the side panel the hub, a rule and an incident open, as one Submodel.
@@ -17,16 +19,41 @@ export type SilenceDuration = typeof SilenceDuration.Type
 export const ScopeField = MatcherField
 export type ScopeField = MatcherField
 
-/** What the silence covers: fixed by the page that opened it, or typed in (the hub's "New silence"). */
+const Chips = Schema.Array(Schema.String)
+
+/** What the silence covers: fixed by the page that opened it, or picked as chips (the hub's "New silence"). */
 export const Scope = Schema.Union([
 	Schema.TaggedStruct("Fixed", { label: Schema.String, matchers: V2AlertSilenceMatchers }),
-	Schema.TaggedStruct("Typed", TypedMatchers.fields),
+	Schema.TaggedStruct("Typed", { services: Chips, tags: Chips, environments: Chips }),
 ])
 export type Scope = typeof Scope.Type
+
+/** What each chips input offers before anything is typed: the names the org's rules already use. */
+export type ScopeSuggestions = Readonly<Record<ScopeField, ReadonlyArray<string>>>
+
+const NO_CHIPS: Extract<Scope, { readonly _tag: "Typed" }> = {
+	_tag: "Typed",
+	services: [],
+	tags: [],
+	environments: [],
+}
+
+/** One chips input per scope field; each field's chips live on the scope. */
+const ScopeCombos = Schema.Struct({
+	services: Combobox.Model,
+	tags: Combobox.Model,
+	environments: Combobox.Model,
+})
+
+const initCombos = (id: string): typeof ScopeCombos.Type => {
+	const combo = (field: ScopeField) => Combobox.init(`${id}-${field}`, "multiple", { autoHighlight: true })
+	return { services: combo("services"), tags: combo("tags"), environments: combo("environments") }
+}
 
 export const Model = Schema.Struct({
 	dialog: Dialog.Model,
 	scope: Scope,
+	combos: ScopeCombos,
 	reason: Schema.String,
 	duration: SilenceDuration,
 	/** The custom end, as a `datetime-local` input holds it (`2026-11-06T18:30`), in `timeZone`. */
@@ -42,7 +69,8 @@ export type Model = typeof Model.Type
 
 export const init = (id: string): Model => ({
 	dialog: Dialog.init(id, "sheet"),
-	scope: { _tag: "Typed", services: "", tags: "", environments: "" },
+	scope: NO_CHIPS,
+	combos: initCombos(id),
 	reason: "",
 	duration: "1h",
 	until: "",
@@ -57,7 +85,7 @@ export const Message = defineMessageUnion({
 	ChangedReason: { value: Schema.String },
 	ChangedDuration: { duration: SilenceDuration },
 	ChangedUntil: { value: Schema.String },
-	ChangedScopeField: { field: ScopeField, value: Schema.String },
+	GotScopeComboMessage: { field: ScopeField, message: Combobox.Message },
 	ClickedCancel: {},
 	ClickedSave: {},
 	CompletedSave: { openCount: Schema.Number, result: Schema.Result(V2AlertSilence, Schema.String) },
@@ -122,9 +150,22 @@ export const silenceEndMs = (
 	}
 }
 
-/** The matchers the form describes; empty matchers mean there is nothing to save yet. */
+/** The matchers the form describes; a field without chips is left out, and none mean nothing to save yet. */
 export const matchersOf = (scope: Scope): V2AlertSilenceMatchers =>
-	scope._tag === "Fixed" ? scope.matchers : matchersFromTyped(scope)
+	scope._tag === "Fixed"
+		? scope.matchers
+		: {
+				...(scope.services.length === 0 ? undefined : { services: scope.services }),
+				...(scope.tags.length === 0 ? undefined : { tags: scope.tags }),
+				...(scope.environments.length === 0 ? undefined : { environments: scope.environments }),
+			}
+
+/** The zone the custom end is read in, as the viewer knows it at that end ("CET", then "CEST" past the change). */
+export const endZoneLabel = (model: Pick<Model, "until" | "timeZone" | "nowMs">): string =>
+	shortZoneName(
+		model.timeZone,
+		Option.getOrElse(parseLocalDateTime(model.until, model.timeZone), () => model.nowMs),
+	)
 
 /** Why a typed custom end cannot be used, or none when it can (or nothing is typed yet). */
 export const untilError = (model: Model): Option.Option<string> => {
@@ -187,6 +228,7 @@ const open = (model: Model, scope: Scope, timeZone: string, nowMs: number): Retu
 		{
 			...model,
 			scope,
+			combos: initCombos(model.dialog.id),
 			timeZone,
 			nowMs,
 			reason: "",
@@ -208,7 +250,23 @@ export const openFor = (
 
 /** A silence the user scopes by service, tag and environment. */
 export const openNew = (model: Model, timeZone: string, nowMs: number): Return =>
-	open(model, { _tag: "Typed", services: "", tags: "", environments: "" }, timeZone, nowMs)
+	open(model, NO_CHIPS, timeZone, nowMs)
+
+/** A chips input's step: its popup state stays on the combo, a changed selection lands on the scope. */
+const scopeComboStep = (model: Model, field: ScopeField, message: Combobox.Message): Return => {
+	if (model.scope._tag === "Fixed") return { model }
+	const step = Combobox.update({ ...model.combos[field], selected: model.scope[field] }, message)
+	const scope =
+		step.outMessage?._tag === "ChangedSelection"
+			? { ...model.scope, [field]: step.outMessage.selected }
+			: model.scope
+	return {
+		model: { ...model, scope, combos: { ...model.combos, [field]: step.model } },
+		commands: Command.mapMessages(step.commands ?? [], (inner) =>
+			Message.GotScopeComboMessage({ field, message: inner }),
+		),
+	}
+}
 
 /** Closes the panel, as Cancel does; a page whose URL holds it closes it on Back. */
 export const close = (model: Model): Return => liftDialog(model, Dialog.close(model.dialog))
@@ -236,10 +294,7 @@ export const update = (model: Model, message: Message): Return =>
 		ChangedReason: ({ value }) => ({ model: { ...model, reason: value } }),
 		ChangedDuration: ({ duration }) => ({ model: { ...model, duration } }),
 		ChangedUntil: ({ value }) => ({ model: { ...model, until: value } }),
-		ChangedScopeField: ({ field, value }) =>
-			model.scope._tag === "Fixed"
-				? { model }
-				: { model: { ...model, scope: { ...model.scope, [field]: value } } },
+		GotScopeComboMessage: ({ field, message: child }) => scopeComboStep(model, field, child),
 		ClickedCancel: () => close(model),
 		ClickedSave: () => save(model),
 		CompletedSave: ({ openCount, result }) =>

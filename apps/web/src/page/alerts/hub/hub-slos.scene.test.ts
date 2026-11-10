@@ -200,18 +200,19 @@ describe("alerts hub, SLOs tab", () => {
 		expect(names(pageUpdate(failed, Message.ClickedRetrySlos()).commands)).toEqual(["FetchAlertsHubSlos"])
 	})
 
-	test("the header's main create button makes an SLO here, for admins only, and the menu offers it too", () => {
+	test("the header's one primary action is New SLO here, for admins only, and the Inbox's menu offers it too", () => {
 		scene(
 			{ update: pageUpdate, view },
 			given(withSlos(HEALTHY_AND_BURNING)),
 			expectView(role("link", { name: "New SLO" })).toHaveAttr("href", "/alerts/slos/new"),
 			expectView(role("link", { name: "New rule" })).not.toExist(),
+			expectView(role("button", { name: "More rule types" })).not.toExist(),
 		)
 		scene(
 			{ update: pageUpdate, view },
 			given(withSlos(HEALTHY_AND_BURNING, onSlos(MEMBER))),
 			expectView(role("link", { name: "New SLO" })).not.toExist(),
-			expectView(role("link", { name: "New rule" })).toHaveAttr("href", "/alerts/create"),
+			expectView(role("link", { name: "New rule" })).not.toExist(),
 		)
 		const picked = pageUpdate(
 			withSlos(HEALTHY_AND_BURNING),

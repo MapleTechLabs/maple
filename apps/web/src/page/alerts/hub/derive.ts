@@ -6,11 +6,12 @@ import {
 	rowsToAlertIncidentDocuments,
 	rowsToAlertRuleDocuments,
 } from "@maple/web-data/collections/alerts"
-import { Option, Array as Arr, String as Str } from "effect"
+import { Option, Order, Array as Arr, Record as Rec, String as Str } from "effect"
 import { AsyncData } from "foldkit"
 import { lastBy } from "../../kit/last-by"
 import type { InboxSignal, IncidentStatusFilter, RuleBucket } from "./message"
 import type { Model } from "./model"
+import type { ScopeSuggestions } from "../silence-dialog/dialog"
 
 type OverviewKey = readonly [
 	Model["rules"],
@@ -111,6 +112,33 @@ const destinationsFor = lastBy(
 /** `useAlertDestinationsList()`, `orElse(() => [])`. */
 export const destinationsOf = (model: Model): ReadonlyArray<AlertDestinationDocument> =>
 	destinationsFor([model.destinations])
+
+const sortedNames = (names: ReadonlyArray<string>): ReadonlyArray<string> =>
+	Arr.sort(Arr.dedupe(Arr.filter(names, Str.isNonEmpty)), Order.String)
+
+const silenceSuggestionsFor = lastBy(
+	([rules, namespaces]: readonly [
+		Model["rules"],
+		Model["serviceNamespaces"]["data"],
+	]): ScopeSuggestions => {
+		const documents = rowsToAlertRuleDocuments(rules ?? [], buildRuleStatesByRuleId([]))
+		return {
+			services: sortedNames([
+				...Arr.flatMap(documents, (rule) => rule.serviceNames),
+				...Option.match(AsyncData.getData(namespaces), { onNone: () => [], onSome: Rec.keys }),
+			]),
+			environments: sortedNames(Arr.flatMap(documents, (rule) => rule.environments)),
+			tags: sortedNames(Arr.flatMap(documents, (rule) => rule.tags)),
+		}
+	},
+)
+
+/**
+ * What the silence panel suggests, from what the hub already holds: the services, environments and
+ * tags its rules name, and the services the Uptime section listed if it was opened.
+ */
+export const silenceSuggestionsOf = (model: Model): ScopeSuggestions =>
+	silenceSuggestionsFor([model.rules, model.serviceNamespaces.data])
 
 /** `attention` is the legacy name of the blind bucket. */
 export const resolveStatus = (status: string | undefined): RuleBucket | undefined => {

@@ -3,12 +3,14 @@ import { OrgId } from "@maple/domain"
 import { AlertRuleId, AlertSilenceId } from "@maple/domain/http"
 import { AlertMaintenanceWindowPublicId, type V2AlertSilence } from "@maple/domain/http/v2"
 import { Result, Schema, Array as Arr } from "effect"
+import * as Combobox from "@maple/views/ui/combobox"
 import * as Dialog from "@maple/views/ui/dialog"
 import { MountDialog } from "@maple/views/ui/dialog"
 import { expect as expectView, Mount, given, role, scene, text, withViewInputs } from "foldkit/scene"
 import { describe, expect, test } from "vitest"
 import type { PageContext } from "../../contract"
-import { NOW, ORG, hubAt } from "../shared/test-rows"
+import { NOW, ORG, hubAt, ruleRow } from "../shared/test-rows"
+import { silenceSuggestionsOf } from "./derive"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { init, routeChanged, update } from "./update"
@@ -193,6 +195,8 @@ const callsOf = (commands: ReadonlyArray<{ readonly name: string; readonly args?
 const namesOf = (commands: ReadonlyArray<{ readonly name: string }> | undefined) =>
 	Arr.map(commands ?? [], ({ name }) => name)
 const silenceMessage = (message: SilenceDialog.Message) => Message.GotSilenceDialogMessage({ message })
+const scopeCombo = (field: SilenceDialog.ScopeField, message: Combobox.Message) =>
+	silenceMessage(SilenceDialog.Message.GotScopeComboMessage({ field, message }))
 
 /** The Silences tab with `?sheet=silence` followed: the panel is open. */
 const withPanel = (grants = ENGINEER) =>
@@ -208,7 +212,7 @@ describe("alerts hub, silence side panel", () => {
 		expect(step.model.silenceDialog.dialog.isOpen).toBe(false)
 	})
 
-	test("the URL opens it with typed scope fields, Cancel and a save that waits for a valid form", () => {
+	test("the URL opens it with a chips input per scope field, Cancel and a save that waits for a valid form", () => {
 		const opened = withPanel()
 		expect(opened.model.silenceDialog.dialog.isOpen).toBe(true)
 		scene(
@@ -216,9 +220,77 @@ describe("alerts hub, silence side panel", () => {
 			given(opened.model),
 			Mount.resolve(MountDialog, Dialog.Message.CompletedMountDialog()),
 			expectView(role("dialog", { name: "Silence notifications" })).toExist(),
-			expectView(role("textbox", { name: "Services" })).toExist(),
+			expectView(role("combobox", { name: "Services" })).toExist(),
+			expectView(role("combobox", { name: "Environments" })).toExist(),
+			expectView(role("combobox", { name: "Tags" })).toExist(),
+			expectView(
+				text("Fill in at least one. A rule is silenced only if it matches every field you fill in."),
+			).toExist(),
 			expectView(role("button", { name: "Cancel" })).toExist(),
 			expectView(role("button", { name: "Silence for 1 hour" })).toBeDisabled(),
+		)
+	})
+
+	test("the chips inputs suggest what the org's rules name, and a picked one becomes a chip", () => {
+		const withRules = pageUpdate(
+			withPanel().model,
+			Message.UpdatedRules({
+				orgId: ORG,
+				rows: [
+					ruleRow(1, { service_names_json: ["checkout"], tags_json: ["db"] }),
+					ruleRow(2, {
+						service_names_json: ["payments", "checkout"],
+						environments_json: ["staging"],
+					}),
+				],
+			}),
+		).model
+		expect(silenceSuggestionsOf(withRules)).toEqual({
+			services: ["checkout", "payments"],
+			environments: ["production", "staging"],
+			tags: ["db"],
+		})
+		const listed = pageUpdate(withRules, scopeCombo("services", Combobox.Message.ClickedInput())).model
+		scene(
+			{ update: pageUpdate, view },
+			given(listed),
+			Mount.resolve(MountDialog, Dialog.Message.CompletedMountDialog()),
+			Mount.resolve(Combobox.MountCombobox, Combobox.Message.CompletedMountCombobox()),
+			expectView(role("option", { name: "checkout" })).toExist(),
+			expectView(role("option", { name: "payments" })).toExist(),
+		)
+		const picked = pageUpdate(
+			listed,
+			scopeCombo("services", Combobox.Message.ClickedItem({ value: "payments" })),
+		).model
+		scene(
+			{ update: pageUpdate, view },
+			given(picked),
+			Mount.resolve(MountDialog, Dialog.Message.CompletedMountDialog()),
+			Mount.resolve(Combobox.MountCombobox, Combobox.Message.CompletedMountCombobox()),
+			expectView(role("button", { name: "Remove payments" })).toExist(),
+		)
+	})
+
+	test("a picked end is on the viewer's clock, and the field names the zone", () => {
+		const berlin: PageContext = { ...context, timeZone: "Europe/Berlin" }
+		const opened = routeChanged(
+			onSilences(ENGINEER, []),
+			hubAt({ tab: "silences", sheet: "silence" }),
+			berlin,
+		).model
+		const custom = update(
+			opened,
+			silenceMessage(SilenceDialog.Message.ChangedDuration({ duration: "custom" })),
+			berlin,
+		).model
+		scene(
+			{ update: (model: Model, message: Message) => update(model, message, berlin), view },
+			given(custom),
+			Mount.resolve(MountDialog, Dialog.Message.CompletedMountDialog()),
+			// NOW is 1 October: Berlin is on summer time.
+			expectView(text("Ends, CEST")).toExist(),
+			expectView(text("Your local time. At most 30 days from now.")).toExist(),
 		)
 	})
 
@@ -306,9 +378,7 @@ describe("alerts hub, silence side panel", () => {
 	test("saving creates the silence, closes the panel, clears the URL and reads the list again", () => {
 		const filled = Arr.reduce(
 			[
-				silenceMessage(
-					SilenceDialog.Message.ChangedScopeField({ field: "services", value: "checkout" }),
-				),
+				scopeCombo("services", Combobox.Message.ClickedItem({ value: "checkout" })),
 				silenceMessage(SilenceDialog.Message.ChangedReason({ value: "Deploying checkout v2.3" })),
 			],
 			withPanel().model,

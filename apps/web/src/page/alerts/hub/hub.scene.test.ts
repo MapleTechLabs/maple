@@ -138,6 +138,48 @@ describe("alerts hub", () => {
 		)
 	})
 
+	test("each section's header has one primary action: its own, and New rule only on the Inbox and Rules", () => {
+		const newRule = role("link", { name: "New rule" })
+		const moreKinds = role("button", { name: "More rule types" })
+		for (const tab of ["inbox", "rules"] as const) {
+			scene(
+				{ update: pageUpdate, view },
+				given(loaded({ tab })),
+				expectView(newRule).toHaveAttr("href", "/alerts/create"),
+				expectView(moreKinds).toExist(),
+			)
+		}
+		for (const tab of ["uptime", "slos", "silences", "maintenance", "on-call", "routing"] as const) {
+			scene(
+				{ update: pageUpdate, view },
+				given(loaded({ tab })),
+				expectView(newRule).not.toExist(),
+				expectView(moreKinds).not.toExist(),
+			)
+		}
+		scene(
+			{ update: pageUpdate, view },
+			given(loaded({ tab: "silences" })),
+			expectView(role("button", { name: "New silence" })).toExist(),
+		)
+		scene(
+			{ update: pageUpdate, view },
+			given(loaded({ tab: "routing" })),
+			expectView(role("button", { name: "Add destination" })).toExist(),
+		)
+		// A viewer who can't create a section's thing gets no header action there.
+		const asMember = pageUpdate(
+			loaded({ tab: "silences" }),
+			Message.CompletedFetchSession({ orgId: ORG, grants: Policy.grantsOf(["org:member"]) }),
+		).model
+		scene(
+			{ update: pageUpdate, view },
+			given(asMember),
+			expectView(role("button", { name: "New silence" })).not.toExist(),
+			expectView(newRule).not.toExist(),
+		)
+	})
+
 	test("moving between sections keeps what was read: the Inbox and Rules share it, a section reads its own once", () => {
 		const inbox = loaded()
 		expect(names(routeChanged(inbox, hubAt({ tab: "rules" }), context).commands)).toEqual([

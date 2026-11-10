@@ -320,20 +320,28 @@ describe("alerts hub, Uptime tab", () => {
 		expect(done.model.deletingMonitorId).toBeNull()
 	})
 
-	test("the header's main create button makes an uptime check here, for admins only", () => {
+	test("the header's one primary action is New monitor here, for admins only", () => {
 		scene(
 			{ update: pageUpdate, view },
 			given(withMonitors(THREE)),
-			expectView(role("link", { name: "New check" })).toHaveAttr("href", "/alerts/uptime/new"),
+			expectView(role("link", { name: "New monitor" })).toHaveAttr("href", "/alerts/uptime/new"),
 			expectView(role("link", { name: "New rule" })).not.toExist(),
+			expectView(role("button", { name: "More rule types" })).not.toExist(),
 		)
 		scene(
 			{ update: pageUpdate, view },
-			given({ ...withMonitors(THREE), search: { tab: "uptime", serviceName: "checkout-api" } }),
-			expectView(role("link", { name: "New check" })).toHaveAttr(
+			given({ ...withMonitors(THREE), search: { serviceName: "checkout-api" } }),
+			expectView(role("link", { name: "New monitor" })).toHaveAttr(
 				"href",
 				"/alerts/uptime/new?serviceName=checkout-api",
 			),
+		)
+		// The empty state offers the first check itself, so the header stays empty.
+		scene(
+			{ update: pageUpdate, view },
+			given(withMonitors([])),
+			expectView(role("link", { name: "New monitor" })).not.toExist(),
+			expectView(role("link", { name: "New uptime check" })).toExist(),
 		)
 		const asMember = pageUpdate(
 			withMonitors(THREE),
@@ -342,15 +350,16 @@ describe("alerts hub, Uptime tab", () => {
 		scene(
 			{ update: pageUpdate, view },
 			given(asMember),
-			expectView(role("link", { name: "New check" })).not.toExist(),
-			expectView(role("link", { name: "New rule" })).toHaveAttr("href", "/alerts/create"),
+			expectView(role("link", { name: "New monitor" })).not.toExist(),
+			expectView(role("link", { name: "New rule" })).not.toExist(),
 		)
 	})
 
-	test("the New rule chevron opens both kinds, and Uptime check goes to the uptime form", () => {
+	test("on the Inbox the New rule chevron opens every kind, and Uptime check goes to the uptime form", () => {
 		scene(
 			{ update: pageUpdate, view },
-			given(withMonitors(THREE)),
+			given({ ...withMonitors(THREE), tab: "inbox" as const }),
+			expectView(role("link", { name: "New rule" })).toHaveAttr("href", "/alerts/create"),
 			click(role("button", { name: "More rule types" })),
 			Command.resolve(
 				Animation.WaitForPaint,

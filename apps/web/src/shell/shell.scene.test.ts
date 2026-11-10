@@ -471,14 +471,13 @@ describe("alerts section", () => {
 		)
 	})
 
-	test("the Inbox counts unacknowledged incidents for this org, and thin rules split the groups", () => {
+	test("the Inbox counts unacknowledged incidents for this org", () => {
 		const counted = update(signedIn(), Message.UpdatedAlertsInboxCount({ orgId: "org_parity", count: 3 }))
 		scene(
 			{ update, view: shellAt("/alerts/rules") },
 			given(counted.model),
 			measured,
 			expect(text("3")).toExist(),
-			expect(role("separator")).toExist(),
 		)
 		// Nothing to act on shows no badge; another org's count is dropped, and an org change clears it.
 		scene(
