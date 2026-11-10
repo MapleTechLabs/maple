@@ -49,6 +49,7 @@ import {
 } from "./form"
 import { type LayerField, Message } from "./message"
 import { canManage, type Model, zoneItems } from "./model"
+import { schedulePreview } from "./preview"
 import { participantMenuId } from "./update"
 import { stripClass } from "@maple/views/ui/rule"
 
@@ -557,9 +558,37 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 	if (!model.isReady || (isEdit && !AsyncData.isSuccess(model.existing.data)))
 		return dashboardPage(h, header, [skeleton(h, "h-24 w-full"), skeleton(h, "h-80 w-full")])
 	return dashboardPage(h, { ...header, fill: true }, [
-		formScrollArea(h, [
-			formCard(h, [nameSection(h, model), zoneSection(h, model), layersSection(h, model)], FORM_WIDTH),
-		]),
+		formScrollArea(
+			h,
+			[
+				// From 46rem of room (a 1024px screen beside the sidebar) the form keeps a narrow column and
+				// the preview takes the rest, held in view while the form scrolls. Under that it follows the form.
+				h.div(
+					[
+						h.Class(
+							"grid gap-4 @min-[46rem]/scroll:grid-cols-[26rem_minmax(0,1fr)] @min-[46rem]/scroll:items-start",
+						),
+					],
+					[
+						formCard(
+							h,
+							[nameSection(h, model), zoneSection(h, model), layersSection(h, model)],
+							FORM_WIDTH,
+						),
+						h.div(
+							[
+								h.Class(
+									"min-w-0 rounded-md border bg-card p-4 @min-[46rem]/scroll:sticky @min-[46rem]/scroll:top-0 @min-[46rem]/scroll:max-h-[100cqh] @min-[46rem]/scroll:overflow-y-auto",
+								),
+							],
+							[schedulePreview(h, model)],
+						),
+					],
+				),
+			],
+			// A size container: the columns read its width and the preview's height limit its height.
+			"@container-[size]/scroll",
+		),
 		actionBar(h, model),
 	])
 })

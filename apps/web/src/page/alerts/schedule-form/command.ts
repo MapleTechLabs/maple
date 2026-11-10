@@ -4,7 +4,7 @@ import { Clock, Effect, Schema } from "effect"
 import { Command } from "foldkit"
 import { readGrants } from "../../../data/session-tenant"
 import { browserZone, readSupportedTimeZones } from "../../../platform/time-zone"
-import { retrieveOnCallSchedule, saveOnCallSchedule } from "../shared/oncall-schedules"
+import { listOverrides, retrieveOnCallSchedule, saveOnCallSchedule } from "../shared/oncall-schedules"
 import { listOrgMembers } from "../shared/org-members"
 import { Message } from "./message"
 
@@ -24,6 +24,17 @@ export const FetchExistingSchedule = Command.define("FetchScheduleFormSchedule",
 		retrieveOnCallSchedule(scheduleId).pipe(
 			Effect.result,
 			Effect.map((result) => Message.CompletedFetchExisting({ key, result })),
+		),
+})
+
+/** The edited schedule's overrides that have not ended, for the preview. */
+export const FetchScheduleFormOverrides = Command.define("FetchScheduleFormOverrides", {
+	args: { key: Schema.String, scheduleId: OnCallScheduleId },
+	messages: [Message.CompletedFetchOverrides],
+	execute: ({ key, scheduleId }) =>
+		listOverrides(scheduleId).pipe(
+			Effect.result,
+			Effect.map((result) => Message.CompletedFetchOverrides({ key, result })),
 		),
 })
 
