@@ -51,7 +51,14 @@ import {
 } from "./form"
 import { Message } from "./message"
 import { canManage, type Model } from "./model"
-import { backHref, DELETE_DIALOG_ID, insertButtonId, LEAVE_DIALOG_ID, menuIdOf } from "./update"
+import {
+	backHref,
+	DELETE_DIALOG_ID,
+	insertButtonId,
+	LEAVE_DIALOG_ID,
+	menuIdOf,
+	removeTargetButtonId,
+} from "./update"
 
 // The escalation chain editor: the chain as a column of sentence cards, its name and preview beside it.
 
@@ -153,6 +160,7 @@ const targetChip = (
 	target: V2EscalationTarget,
 ): PickedChip<Message> => {
 	const onRemove = Message.ClickedRemoveTarget({ key, target: targetKey(target) })
+	const removeId = removeTargetButtonId(key, targetKey(target))
 	// The step is named: the same target may sit on several steps.
 	const onStep = `on step ${index + 1}`
 	switch (target.type) {
@@ -163,6 +171,7 @@ const targetChip = (
 				label: name,
 				media: destinationMedia(h, model, target.destination_id),
 				removeLabel: `Stop notifying ${name} ${onStep}`,
+				removeId,
 				onRemove,
 			}
 		}
@@ -179,6 +188,7 @@ const targetChip = (
 					),
 				}),
 				removeLabel: `Stop paging ${name} ${onStep}`,
+				removeId,
 				onRemove,
 			}
 		}
@@ -191,6 +201,7 @@ const targetChip = (
 				media: icon(h, "CalendarIcon", { size: 14, className: "shrink-0 text-muted-foreground" }),
 				...(detail === undefined ? undefined : { detail }),
 				removeLabel: `Stop paging ${name} ${onStep}`,
+				removeId,
 				onRemove,
 			}
 		}

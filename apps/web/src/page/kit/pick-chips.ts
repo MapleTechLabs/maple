@@ -17,6 +17,8 @@ export type PickedChip<M> = Readonly<{
 	/** A muted note after the name ("Ben Brook on call"). */
 	detail?: string
 	removeLabel: string
+	/** The remove button's id, for a form that moves focus to it when the chip before it goes. */
+	removeId?: string
 	onRemove: M
 }>
 
@@ -50,7 +52,11 @@ const chip = <M>(h: HtmlBuilder<M>, entry: PickedChip<M>, canEdit: boolean, isDi
 								variant: "ghost",
 								size: "icon-2xs",
 								isDisabled,
-								attributes: [h.AriaLabel(entry.removeLabel), h.OnClick(entry.onRemove)],
+								attributes: [
+									...(entry.removeId === undefined ? [] : [h.Id(entry.removeId)]),
+									h.AriaLabel(entry.removeLabel),
+									h.OnClick(entry.onRemove),
+								],
 							},
 							[icon(h, "XmarkIcon")],
 						),

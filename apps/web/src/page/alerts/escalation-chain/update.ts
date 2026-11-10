@@ -35,6 +35,7 @@ import {
 	payloadOf,
 	removeStep,
 	removeTarget,
+	targetKey,
 	targetOfKey,
 } from "./form"
 import { Message, type MenuKind } from "./message"
@@ -53,6 +54,10 @@ export const menuIdOf = (kind: MenuKind, key: string): string => `escalation-cha
 
 /** The + on the connector above the step at `index` (or below the last one). */
 export const insertButtonId = (index: number): string => `escalation-chain-insert-${index}`
+
+/** The remove button of one target chip on a step. */
+export const removeTargetButtonId = (key: string, target: string): string =>
+	`escalation-chain-remove-${key}-${target}`
 
 /** Where Cancel, Save and Delete go back to. */
 export const backHref = (): string => routingTabHref()
@@ -191,6 +196,35 @@ const removed = (model: Model, key: string): Return => {
 	}
 }
 
+/** A removed target hands focus to the chip that takes its place, or to the step's Add button after the last. */
+const removedTarget = (model: Model, key: string, target: string): Return => {
+	if (!canEdit(model)) return { model }
+	const targets = Option.match(
+		Arr.findFirst(model.form.steps, (step) => step.key === key),
+		{
+			onNone: (): ReadonlyArray<string> => [],
+			onSome: (step) => Arr.map(step.targets, targetKey),
+		},
+	)
+	return Option.match(
+		Arr.findFirstIndex(targets, (existing) => existing === target),
+		{
+			onNone: () => ({ model }),
+			onSome: (index) => {
+				const next = targets[index + 1]
+				return {
+					model: { ...model, form: removeTarget(model.form, key, target) },
+					commands: focus(
+						next === undefined
+							? triggerId(menuIdOf("targets", key))
+							: removeTargetButtonId(key, next),
+					),
+				}
+			},
+		},
+	)
+}
+
 const stepAction = (model: Model, key: string, value: string): Return => {
 	switch (value) {
 		case "up":
@@ -308,7 +342,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		ClickedInsertStep: ({ index }) =>
 			canEdit(model) ? added(model, insertStep(model.form, index)) : { model },
 		GotMenuMessage: ({ kind, key, message: child }) => stepMenu(model, kind, key, child),
-		ClickedRemoveTarget: ({ key, target }) => withForm(model, (form) => removeTarget(form, key, target)),
+		ClickedRemoveTarget: ({ key, target }) => removedTarget(model, key, target),
 		ClickedSave: () => save(model),
 		CompletedSave: ({ result }) =>
 			Result.match(result, {
