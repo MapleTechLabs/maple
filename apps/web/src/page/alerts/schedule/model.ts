@@ -5,6 +5,7 @@ import { Schema } from "effect"
 import { KeyedSchema } from "@maple/views/data/keyed"
 import { LoadFailure } from "@maple/views/data/load-failure"
 import * as Dialog from "@maple/views/ui/dialog"
+import { RangeDays } from "../shared/coverage-preview"
 import { OrgMember } from "../shared/org-members"
 
 /** The override form as typed: who, and from when to when on the schedule zone's wall clock. */
@@ -28,6 +29,8 @@ export const Model = Schema.Struct({
 	scheduleAskedAtMs: Schema.NullOr(Schema.Number),
 	/** Weeks from this one the calendar shows: 0 is the week starting today. */
 	weekOffset: Schema.Number,
+	/** How many days the calendar shows from its week's first day. */
+	rangeDays: RangeDays,
 	shifts: KeyedSchema(V2OnCallShifts, LoadFailure),
 	overrides: KeyedSchema(Schema.Array(V2OnCallOverride), LoadFailure),
 	/** `null` until Clerk answers, and after a failed read: names then read neutrally. */

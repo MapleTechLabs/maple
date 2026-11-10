@@ -199,7 +199,7 @@ export type LayerErrors = Readonly<{
 	restrictions: ReadonlyArray<Option.Option<string>>
 }>
 
-const restrictionError = (restriction: RestrictionDraft): Option.Option<string> =>
+export const restrictionError = (restriction: RestrictionDraft): Option.Option<string> =>
 	restriction.weekdays.length === 0
 		? Option.some("Pick at least one day")
 		: !isLocalTime(restriction.startTime) || !isLocalTime(restriction.endTime)
@@ -207,7 +207,7 @@ const restrictionError = (restriction: RestrictionDraft): Option.Option<string> 
 			: Option.none()
 
 /** The layer's start: the saved instant while untouched, else its text on the zone's clock. */
-const layerStartMs = (layer: LayerDraft, timeZone: string): Option.Option<number> =>
+export const layerStartMs = (layer: LayerDraft, timeZone: string): Option.Option<number> =>
 	layer.startsAtMs === null ? localInputMs(layer.startsAt, timeZone) : Option.some(layer.startsAtMs)
 
 export const layerErrors = (layer: LayerDraft, timeZone: string): LayerErrors => {

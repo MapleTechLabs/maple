@@ -264,7 +264,8 @@ export const deleteScheduleDialog = (h: H, model: Model): Html => {
 		slotId: DELETE_SCHEDULE_DIALOG_ID,
 		model: model.deleteScheduleDialog,
 		toParentMessage: (message) => Message.GotDeleteScheduleDialogMessage({ message }),
-		title: `Delete ${name}?`,
+		// A long unbroken name wraps inside the dialog instead of running out of it.
+		title: [typography(h, { className: "wrap-anywhere" }, [`Delete ${name}?`])],
 		description: "Its overrides go with it. This cannot be undone.",
 		children:
 			model.deleteScheduleError === null

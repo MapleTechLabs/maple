@@ -1,4 +1,4 @@
-import { UserId } from "@maple/domain/http"
+import { type OnCallScheduleId, UserId } from "@maple/domain/http"
 import { Option, Result, Schema, Array as Arr } from "effect"
 import { AsyncData, Command as FoldkitCommand } from "foldkit"
 import * as Keyed from "@maple/views/data/keyed"
@@ -7,10 +7,12 @@ import * as Combobox from "@maple/views/ui/combobox"
 import * as Menu from "@maple/views/ui/menu"
 import type { AppRoute } from "../../../route"
 import { type PageContext, PageOutMessage, type PageReturn } from "../../contract"
+import { DEFAULT_RANGE_DAYS, FocusGap } from "../shared/coverage-preview"
 import { scheduleHref, scheduleIdFromUrl } from "../shared/oncall-schedules"
 import {
 	FetchExistingSchedule,
 	FetchScheduleFormMembers,
+	FetchScheduleFormOverrides,
 	FetchScheduleFormSession,
 	ReadScheduleFormDefaults,
 	SaveSchedule,
@@ -37,7 +39,22 @@ type FormRoute = Extract<AppRoute, { readonly _tag: "AlertsScheduleNew" }>
 
 export const ZONE_PICKER_ID = "schedule-form-zone"
 
+/** Prefixes the preview's gap bar ids. */
+export const PREVIEW_SCOPE = "schedule-preview"
+
 export const participantMenuId = (layerKey: string) => `schedule-form-people-${layerKey}`
+
+/** Reads the edited schedule's overrides (again), for the preview. */
+const requestOverrides = (model: Model, context: PageContext, scheduleId: OnCallScheduleId) => {
+	const overrides = Keyed.supersede(
+		model.overrides,
+		requestKey(context.orgId, "oncallSchedules.listOverrides", { id: scheduleId }),
+	)
+	return {
+		model: { ...model, overrides },
+		commands: [FetchScheduleFormOverrides({ key: overrides.key, scheduleId })],
+	}
+}
 
 export const init = (route: FormRoute, context: PageContext): Return => {
 	const editingId = Option.getOrNull(
@@ -47,6 +64,7 @@ export const init = (route: FormRoute, context: PageContext): Return => {
 		search: route.search,
 		editingId,
 		existing: Keyed.idle(),
+		overrides: Keyed.idle(),
 		form: emptyForm("UTC", 0),
 		isReady: false,
 		nowMs: 0,
@@ -60,19 +78,27 @@ export const init = (route: FormRoute, context: PageContext): Return => {
 		saveFailure: null,
 		grants: [],
 		isSessionLoaded: false,
+		previewWeekOffset: 0,
+		previewRange: DEFAULT_RANGE_DAYS,
 	}
 	const common = [
 		ReadScheduleFormDefaults(),
 		FetchScheduleFormMembers(),
 		FetchScheduleFormSession({ orgId: context.orgId }),
 	]
+	// A new schedule has no overrides, so nothing is read for it.
 	if (editingId === null) return { model, commands: common }
+	const overrides = requestOverrides(model, context, editingId)
 	const key = requestKey(context.orgId, "oncallSchedules.retrieve", { id: editingId })
 	return Option.match(Keyed.request(model.existing, key, "Load"), {
-		onNone: () => ({ model, commands: common }),
+		onNone: () => ({ model: overrides.model, commands: [...common, ...overrides.commands] }),
 		onSome: (existing) => ({
-			model: { ...model, existing },
-			commands: [...common, FetchExistingSchedule({ key, scheduleId: editingId })],
+			model: { ...overrides.model, existing },
+			commands: [
+				...common,
+				FetchExistingSchedule({ key, scheduleId: editingId }),
+				...overrides.commands,
+			],
 		}),
 	})
 }
@@ -201,6 +227,8 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 				? { model: ready }
 				: { model: syncZone({ ...ready, form: emptyForm(timeZone, nowMs) }) }
 		},
+		// The preview's now line and the gaps counted from it follow the clock while the editor is open.
+		ReadClock: ({ nowMs }) => ({ model: model.isReady ? { ...model, nowMs } : model }),
 		CompletedFetchExisting: ({ key, result }) => {
 			const existing = Keyed.accept(model.existing, key, result)
 			const loaded = Option.getOrNull(AsyncData.getData(existing.data))
@@ -266,6 +294,11 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 				commands: [FetchExistingSchedule({ key: existing.key, scheduleId: editingId })],
 			}
 		},
+		CompletedFetchOverrides: ({ key, result }) => ({
+			model: { ...model, overrides: Keyed.accept(model.overrides, key, result) },
+		}),
+		ClickedRetryOverrides: () =>
+			model.editingId === null ? { model } : requestOverrides(model, context, model.editingId),
 		ChangedLayerText: ({ key, field, value }) =>
 			field === "startsAt"
 				? editLayer(model, key, (layer) => ({ ...layer, startsAt: value, startsAtMs: null }))
@@ -304,6 +337,22 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			editRestriction(model, key, restrictionKey, (restriction) =>
 				edge === "start" ? { ...restriction, startTime: value } : { ...restriction, endTime: value },
 			),
+		// A draft has no past: the preview never steps back from today.
+		ClickedPreviewPrevious: () => ({
+			model: { ...model, previewWeekOffset: Math.max(0, model.previewWeekOffset - 1) },
+		}),
+		ClickedPreviewNext: () => ({ model: { ...model, previewWeekOffset: model.previewWeekOffset + 1 } }),
+		ClickedPreviewToday: () => ({ model: { ...model, previewWeekOffset: 0 } }),
+		PickedPreviewRange: ({ days }) => ({ model: { ...model, previewRange: days } }),
+		ClickedPreviewGap: ({ index }) => ({
+			model,
+			commands: [
+				FoldkitCommand.mapMessage(FocusGap({ scope: PREVIEW_SCOPE, index }), () =>
+					Message.CompletedFocusGap(),
+				),
+			],
+		}),
+		CompletedFocusGap: () => ({ model }),
 		ClickedSave: () => save(model),
 		CompletedSave: ({ result }) =>
 			Result.match(result, {

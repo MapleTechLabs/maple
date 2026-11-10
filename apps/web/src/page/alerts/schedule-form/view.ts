@@ -49,6 +49,7 @@ import {
 } from "./form"
 import { type LayerField, Message } from "./message"
 import { type Model, zoneItems } from "./model"
+import { schedulePreview } from "./preview"
 import { participantMenuId } from "./update"
 import { stripClass } from "@maple/views/ui/rule"
 import { canManageAlerts } from "../../kit/session-grants"
@@ -552,9 +553,38 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 	if (!model.isReady || (isEdit && !AsyncData.isSuccess(model.existing.data)))
 		return dashboardPage(h, header, [skeleton(h, "h-24 w-full"), skeleton(h, "h-80 w-full")])
 	return dashboardPage(h, { ...header, fill: true }, [
-		formScrollArea(h, [
-			formCard(h, [nameSection(h, model), zoneSection(h, model), layersSection(h, model)], FORM_WIDTH),
-		]),
+		formScrollArea(
+			h,
+			[
+				// From 60rem of room (the form column, the gap, the preview's padding and borders, and the 30rem
+				// the timeline needs unscrolled, rounded up) the form keeps a narrow column and the preview takes
+				// the rest, held in view. Under that it follows the form.
+				h.div(
+					[
+						h.Class(
+							"grid gap-4 @min-[60rem]/scroll:grid-cols-[26rem_minmax(0,1fr)] @min-[60rem]/scroll:items-start",
+						),
+					],
+					[
+						formCard(
+							h,
+							[nameSection(h, model), zoneSection(h, model), layersSection(h, model)],
+							FORM_WIDTH,
+						),
+						h.div(
+							[
+								h.Class(
+									"min-w-0 rounded-md border bg-card p-4 @min-[60rem]/scroll:sticky @min-[60rem]/scroll:top-0 @min-[60rem]/scroll:max-h-[100cqh] @min-[60rem]/scroll:overflow-y-auto",
+								),
+							],
+							[schedulePreview(h, model)],
+						),
+					],
+				),
+			],
+			// A size container: the columns read its width and the preview's height limit its height.
+			"@container-[size]/scroll",
+		),
 		actionBar(h, model),
 	])
 })

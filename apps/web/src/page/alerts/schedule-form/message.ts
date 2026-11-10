@@ -1,10 +1,11 @@
 import { OnCallWeekday, UserId } from "@maple/domain/http"
-import { V2OnCallSchedule } from "@maple/domain/http/v2"
+import { V2OnCallOverride, V2OnCallSchedule } from "@maple/domain/http/v2"
 import { Schema } from "effect"
 import { defineMessageUnion } from "foldkit/message"
 import * as Combobox from "@maple/views/ui/combobox"
 import * as Menu from "@maple/views/ui/menu"
 import { OrgMember } from "../shared/org-members"
+import { RangeDays } from "../shared/coverage-preview"
 import { RotationKind } from "./form"
 import { LoadOutcome } from "../../kit/load-schemas"
 import { SessionGrants } from "../../kit/session-grants"
@@ -18,8 +19,11 @@ export type LayerField = typeof LayerField.Type
 
 export const Message = defineMessageUnion({
 	ReadDefaults: { timeZone: Schema.String, nowMs: Schema.Number, zones: Schema.Array(Schema.String) },
+	ReadClock: { nowMs: Schema.Number },
 	CompletedFetchExisting: { key: Schema.String, result: LoadOutcome(V2OnCallSchedule) },
 	ClickedRetryExisting: {},
+	CompletedFetchOverrides: { key: Schema.String, result: LoadOutcome(Schema.Array(V2OnCallOverride)) },
+	ClickedRetryOverrides: {},
 	CompletedFetchMembers: { result: Schema.Result(Schema.Array(OrgMember), Schema.String) },
 	CompletedFetchSession: SessionGrants,
 	ChangedName: { value: Schema.String },
@@ -44,6 +48,13 @@ export const Message = defineMessageUnion({
 		edge: Schema.Literals(["start", "end"]),
 		value: Schema.String,
 	},
+	ClickedPreviewPrevious: {},
+	ClickedPreviewNext: {},
+	ClickedPreviewToday: {},
+	PickedPreviewRange: { days: RangeDays },
+	/** A gap in the summary: its bar on the timeline takes focus. */
+	ClickedPreviewGap: { index: Schema.Number },
+	CompletedFocusGap: {},
 	ClickedSave: {},
 	CompletedSave: { result: LoadOutcome(V2OnCallSchedule) },
 })

@@ -15,7 +15,6 @@ import { input } from "@maple/views/ui/input"
 import { label } from "@maple/views/ui/label"
 import { nativeOption, nativeSelect } from "@maple/views/ui/native-select"
 import { personLabel } from "@maple/views/ui/person-avatar"
-import { shiftTimeline, type TimelineBar, type TimelineRow } from "@maple/views/ui/shift-timeline"
 import { skeleton } from "@maple/views/ui/skeleton"
 import { hstack, vstack } from "@maple/views/ui/stack"
 import { typography, typographyClass } from "@maple/views/ui/typography"
@@ -24,11 +23,14 @@ import { dashboardPage } from "../../kit/dashboard-page"
 import { detailActions, detailTitle, detailTitleSkeleton } from "../../kit/detail-header"
 import { resourceNotFound } from "../../kit/resource-not-found"
 import { sectionHeading } from "../../kit/section-heading"
+import { coveragePreview, type PreviewShift } from "../shared/coverage-preview"
 import { editScheduleHref, formatShiftEdge, oncallTabHref } from "../shared/oncall-schedules"
+import { gapsOf } from "../shared/schedule-coverage"
 import { memberName, memberOf, type OrgMember } from "../shared/org-members"
 import { Message } from "./message"
 import { type Model } from "./model"
 import {
+	CALENDAR_SCOPE,
 	DELETE_OVERRIDE_DIALOG_ID,
 	OVERRIDE_DIALOG_ID,
 	overrideIssue,
@@ -56,147 +58,100 @@ const onCallLine = (model: Model, schedule: V2OnCallSchedule): string =>
 			`${memberName(model.members, now.user_id)} is on call until ${formatShiftEdge(toEpochMs(now.ends_at), schedule.time_zone)}`,
 	})
 
-/** A shift as a bar: the person's name, and who and when in its tooltip. */
-const barOf = (
-	model: Model,
-	schedule: V2OnCallSchedule,
-	shift: V2OnCallShift,
-	key: string,
-	isFinal: boolean,
-): TimelineBar<Message> => {
-	const startMs = toEpochMs(shift.starts_at)
-	const endMs = toEpochMs(shift.ends_at)
-	const name = memberName(model.members, shift.user_id)
-	const isOverride = shift.source.kind === "override"
-	const bar: TimelineBar<Message> = {
-		key,
-		startMs,
-		endMs,
-		label: name,
-		title: `${isOverride ? "Override: " : ""}${name}, ${rangeText(startMs, endMs, schedule.time_zone)}`,
-		tone: isOverride ? "info" : isFinal ? "primary" : "neutral",
-	}
-	// Only a final shift that has not ended opens an override, and only for someone who may add one.
-	return isFinal && canManageAlerts(model) && endMs > (model.nowMs ?? 0)
-		? { ...bar, onClick: Message.ClickedShift({ startMs, endMs }) }
-		: bar
-}
+const previewShiftOf = (shift: V2OnCallShift): PreviewShift => ({
+	userId: shift.user_id,
+	startMs: toEpochMs(shift.starts_at),
+	endMs: toEpochMs(shift.ends_at),
+	isOverride: shift.source.kind === "override",
+})
 
-/** The final row on top, then the layers from the top one down, as they stack. */
-const timelineRows = (
-	model: Model,
-	schedule: V2OnCallSchedule,
-	shifts: V2OnCallShifts,
-): ReadonlyArray<TimelineRow<Message>> => [
-	{
-		key: "final",
-		label: "Final schedule",
-		detail: "Who gets paged",
-		bars: Arr.map(shifts.final, (shift, index) => barOf(model, schedule, shift, `final-${index}`, true)),
-		emptyText: "Nobody on call in this period",
-	},
-	...Arr.reverse(
-		Arr.map(schedule.layers, (layer, index): TimelineRow<Message> => ({
-			key: `layer-${index}`,
-			label: layer.name,
-			detail: `Layer ${index + 1}`,
-			bars: Arr.map(shifts.layers[index] ?? [], (shift, at) =>
-				barOf(model, schedule, shift, `layer-${index}-${at}`, false),
-			),
-			emptyText: "Not active in this period",
-		})),
-	),
-]
-
-/** "10 Nov to 16 Nov": the first and last day the calendar shows. */
-const weekLabel = (fromMs: number, toMs: number, timeZone: string): string => {
-	const day = new Intl.DateTimeFormat("en-GB", { timeZone, day: "numeric", month: "short" })
-	return `${day.format(fromMs)} to ${day.format(toMs - 1)}`
-}
-
-/** The calendar's header: the week, prev/this week/next, and which zone the times read in. */
+/** The calendar: the same coverage timeline the editor previews, from the server's shifts. */
 const calendarSection = (h: H, model: Model, schedule: V2OnCallSchedule, viewerZone: string): Html => {
 	const range = rangeOf(model)
 	const nowMs = model.nowMs ?? 0
-	// Shifts kept from another week (a week's read still in flight) draw as the skeleton, not blank rows.
-	const timeline = (fromMs: number, toMs: number, shifts: V2OnCallShifts): Html =>
-		!Option.exists(readRangeOf(model), (read) => toEpochMs(shifts.from) === read.fromMs)
-			? skeleton(h, "h-40 w-full")
-			: shiftTimeline(h, {
-					fromMs,
-					toMs,
-					timeZone: schedule.time_zone,
-					nowMs,
-					rows: timelineRows(model, schedule, shifts),
-					ariaLabel: `Shifts for ${schedule.name}`,
-					nowLabel: `Now, ${formatShiftEdge(nowMs, schedule.time_zone)}`,
-					legend: [
-						{ tone: "primary", label: "On call" },
-						{ tone: "info", label: "Override" },
-						{ tone: "neutral", label: "Layer shift" },
-					],
-				})
+	// The axis names the schedule's zone; the note only says when the viewer's differs.
+	const noteParts = [
+		...(viewerZone === schedule.time_zone ? [] : [`Your time zone is ${viewerZone}.`]),
+		...(canManageAlerts(model) ? ["Pick a shift in the final row to cover it with an override."] : []),
+	]
+	const note = noteParts.length === 0 ? undefined : Arr.join(noteParts, " ")
+	const preview = (
+		fromMs: number,
+		toMs: number,
+		shifts: Option.Option<V2OnCallShifts>,
+		placeholder?: Html,
+	): Html => {
+		const final = Option.match(shifts, {
+			onNone: () => [],
+			onSome: (s) => Arr.map(s.final, previewShiftOf),
+		})
+		return coveragePreview(h, {
+			scope: CALENDAR_SCOPE,
+			title: `Shifts for ${schedule.name}`,
+			timeZone: schedule.time_zone,
+			fromMs,
+			toMs,
+			nowMs,
+			weekOffset: model.weekOffset,
+			rangeDays: model.rangeDays,
+			lanes: Arr.map(schedule.layers, (layer, index) => ({
+				key: `layer-${index}`,
+				label: layer.name,
+				detail: `Layer ${index + 1}`,
+				shifts: Option.map(shifts, (s) => Arr.map(s.layers[index] ?? [], previewShiftOf)),
+				emptyText: "Not active in this period",
+			})),
+			final,
+			gaps: gapsOf(final, Math.max(fromMs, nowMs), toMs),
+			nameOf: (userId) => memberName(model.members, userId),
+			onPrevious: Message.ClickedPreviousWeek(),
+			onNext: Message.ClickedNextWeek(),
+			onToday: Message.ClickedThisWeek(),
+			onRange: (days) => Message.PickedRange({ days }),
+			onFocusGap: (index) => Message.ClickedGap({ index }),
+			// Only a final shift that has not ended opens an override, and only for someone who may add one.
+			onFinalShift: (shift) =>
+				canManageAlerts(model) && shift.endMs > nowMs
+					? Option.some(Message.ClickedShift({ startMs: shift.startMs, endMs: shift.endMs }))
+					: Option.none(),
+			note,
+			placeholder,
+		})
+	}
+	const loading = (fromMs: number, toMs: number) =>
+		preview(fromMs, toMs, Option.none(), skeleton(h, "h-40 w-full"))
+	// Shifts kept from another range (a read in flight, either end moved) draw as the skeleton: a
+	// shorter read on a longer axis would show its missing days as one long gap.
+	const loaded = (fromMs: number, toMs: number, shifts: V2OnCallShifts): Html =>
+		Option.exists(
+			readRangeOf(model),
+			(read) => toEpochMs(shifts.from) === read.fromMs && toEpochMs(shifts.to) === read.toMs,
+		)
+			? preview(fromMs, toMs, Option.some(shifts))
+			: loading(fromMs, toMs)
 	const body = Option.match(range, {
 		onNone: () => skeleton(h, "h-40 w-full"),
 		onSome: ({ fromMs, toMs }) =>
 			AsyncData.match(model.shifts.data, {
-				onIdle: () => skeleton(h, "h-40 w-full"),
-				onLoading: () => skeleton(h, "h-40 w-full"),
+				onIdle: () => loading(fromMs, toMs),
+				onLoading: () => loading(fromMs, toMs),
 				onFailure: (failure) =>
-					errorState(h, {
-						failure,
-						title: "Couldn't load the shifts",
-						onRetry: Message.ClickedRetryShifts(),
-					}),
-				onRefreshing: (shifts) => timeline(fromMs, toMs, shifts),
-				onStale: ({ data }) => timeline(fromMs, toMs, data),
-				onSuccess: (shifts) => timeline(fromMs, toMs, shifts),
+					preview(
+						fromMs,
+						toMs,
+						Option.none(),
+						errorState(h, {
+							failure,
+							title: "Couldn't load the shifts",
+							onRetry: Message.ClickedRetryShifts(),
+						}),
+					),
+				onRefreshing: (shifts) => loaded(fromMs, toMs, shifts),
+				onStale: ({ data }) => loaded(fromMs, toMs, data),
+				onSuccess: (shifts) => loaded(fromMs, toMs, shifts),
 			}),
 	})
-	const zoneNote =
-		viewerZone === schedule.time_zone
-			? `Times in ${schedule.time_zone}.`
-			: `Times in ${schedule.time_zone}. Yours is ${viewerZone}.`
-	return h.section(
-		[h.Class("space-y-3")],
-		[
-			sectionHeading(h, {
-				title: Option.match(range, {
-					onNone: () => "This week",
-					onSome: ({ fromMs, toMs }) => weekLabel(fromMs, toMs, schedule.time_zone),
-				}),
-				actions: hstack(h, { gap: "1" }, [
-					iconButton(
-						h,
-						{ label: "Previous week", attributes: [h.OnClick(Message.ClickedPreviousWeek())] },
-						[icon(h, "ChevronLeftIcon")],
-					),
-					button(
-						h,
-						{
-							size: "sm",
-							variant: "outline",
-							isDisabled: model.weekOffset === 0,
-							attributes: [h.OnClick(Message.ClickedThisWeek())],
-						},
-						["Today"],
-					),
-					iconButton(
-						h,
-						{ label: "Next week", attributes: [h.OnClick(Message.ClickedNextWeek())] },
-						[icon(h, "ChevronRightIcon")],
-					),
-				]),
-			}),
-			typography(h, { size: "xs", tone: "muted", as: "p" }, [
-				zoneNote,
-				...(canManageAlerts(model)
-					? [" Pick a shift in the final row to cover it with an override."]
-					: []),
-			]),
-			body,
-		],
-	)
+	return h.section([h.Class("space-y-3")], [body])
 }
 
 const overrideRow = (h: H, model: Model, schedule: V2OnCallSchedule, override: V2OnCallOverride): Html => {
