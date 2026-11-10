@@ -28,7 +28,13 @@ import { isSameMenu, popupIdOf, triggerIdOf } from "./menus"
 import { BUILT_COMMIT, CheckDeployedCommit, ReloadPage } from "./version"
 import { openPalette, openShortcuts, paletteStep, shortcutsDialogStep, toggleTheme } from "./update-palette"
 import { Menu, Message, OutMessage } from "./message"
-import { ONCALL_WAKE_MIN_MS, type OnCallSnapshot, scheduleAfterAnswer, scheduleAfterFailure } from "./oncall"
+import {
+	isNoSchedulesFresh,
+	ONCALL_WAKE_MIN_MS,
+	type OnCallSnapshot,
+	scheduleAfterAnswer,
+	scheduleAfterFailure,
+} from "./oncall"
 import {
 	DashboardsData,
 	InfraPresenceData,
@@ -166,13 +172,20 @@ const onCallFailed = (model: Model, orgId: string, failedAtMs: number): UpdateRe
 	}
 }
 
-/** Back in view or focus: move the pill's clock, and read again if the last event is a minute old. */
-const onCallWoke = (model: Model, nowMs: number): UpdateReturn => {
-	const hasSchedules = Option.exists(AsyncData.getData(model.onCall), (data) => data.shifts.length > 0)
-	if (!hasSchedules) return { model }
-	const moved = modifyFields(model, { onCallNowMs: () => nowMs })
-	return nowMs - model.onCallNowMs >= ONCALL_WAKE_MIN_MS ? readOnCall(moved) : { model: moved }
-}
+/**
+ * Back in view or focus: move the pill's clock, and read again if the last event is a minute old.
+ * An org without schedules is asked again once that answer has aged: a teammate may have made one.
+ */
+const onCallWoke = (model: Model, nowMs: number): UpdateReturn =>
+	Option.match(Option.all([model.maybeOrgId, AsyncData.getData(model.onCall)]), {
+		onNone: () => ({ model }),
+		onSome: ([orgId, data]) => {
+			if (data.shifts.length === 0)
+				return isNoSchedulesFresh(model.noScheduleOrgs[orgId], nowMs) ? { model } : readOnCall(model)
+			const moved = modifyFields(model, { onCallNowMs: () => nowMs })
+			return nowMs - model.onCallNowMs >= ONCALL_WAKE_MIN_MS ? readOnCall(moved) : { model: moved }
+		},
+	})
 
 /** A page wrote a schedule or override: the org may have its first schedule now. */
 const onCallChanged = (model: Model): UpdateReturn =>

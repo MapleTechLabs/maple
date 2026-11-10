@@ -21,6 +21,7 @@ import { MeasureSidebarOverflow } from "./mounts"
 import {
 	isNoSchedulesFresh,
 	nextHandoffMs,
+	NO_SCHEDULES_TTL_MS,
 	ONCALL_IDLE_READ_MS,
 	ONCALL_RETRY_MS,
 	type OnCallShift,
@@ -234,8 +235,45 @@ describe("on-call reads", () => {
 			{ name: "LoadOnCall", args: { orgId: ORG, noSchedulesCheckedAtMs: null } },
 			{ name: "SaveNoSchedules", args: { orgId: ORG, checkedAtMs: null } },
 		])
-		expectVitest(isNoSchedulesFresh(NOW, NOW + 23 * 60 * 60_000)).toBe(true)
-		expectVitest(isNoSchedulesFresh(NOW, NOW + 25 * 60 * 60_000)).toBe(false)
+	})
+
+	test("a teammate's first schedule: back in focus, an aged 'no schedules' answer is asked again", () => {
+		// The marker was read from storage at sign-in, so the first read never reached the API.
+		const booted = enter(ORG)(init({ ...flags, noScheduleOrgs: { [ORG]: NOW } }))
+		const cached = update(booted.model, answer([], NOW + 1_000, true)).model
+		expectVitest(commandsOf(update(cached, Message.WokeOnCall({ nowMs: NOW + 61_000 })))).toEqual([])
+
+		const agedAtMs = NOW + NO_SCHEDULES_TTL_MS
+		expectVitest(isNoSchedulesFresh(NOW, agedAtMs - 1)).toBe(true)
+		expectVitest(isNoSchedulesFresh(NOW, agedAtMs)).toBe(false)
+		const woke = update(cached, Message.WokeOnCall({ nowMs: agedAtMs }))
+		expectVitest(commandsOf(woke)).toEqual([
+			{ name: "LoadOnCall", args: { orgId: ORG, noSchedulesCheckedAtMs: NOW } },
+		])
+
+		const found = update(woke.model, answer([shift({ userId: "user_someone" })], agedAtMs))
+		expectVitest(commandsOf(found)).toEqual([
+			{ name: "SaveNoSchedules", args: { orgId: ORG, checkedAtMs: null } },
+		])
+		scene(
+			{ update, view },
+			given(found.model),
+			measured,
+			expect(role("link", { name: "Not on call" })).toExist(),
+		)
+	})
+
+	test("an org still without schedules is asked at most once per lifetime of its answer", () => {
+		const empty = update(signedIn(), answer([])).model
+		const agedAtMs = NOW + NO_SCHEDULES_TTL_MS
+		const woke = update(empty, Message.WokeOnCall({ nowMs: agedAtMs }))
+		const stillEmpty = update(woke.model, answer([], agedAtMs))
+		expectVitest(commandsOf(stillEmpty)).toEqual([
+			{ name: "SaveNoSchedules", args: { orgId: ORG, checkedAtMs: agedAtMs } },
+		])
+		expectVitest(
+			commandsOf(update(stillEmpty.model, Message.WokeOnCall({ nowMs: agedAtMs + 61_000 }))),
+		).toEqual([])
 	})
 })
 
