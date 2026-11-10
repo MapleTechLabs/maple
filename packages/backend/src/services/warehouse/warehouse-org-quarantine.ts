@@ -55,11 +55,7 @@ export const isOrgWarehouseQuarantined = (edgeCache: EdgeCache, orgId: string) =
 export const quarantineOrgWarehouse = (edgeCache: EdgeCache, orgId: string, nowMs: number) =>
 	edgeCache.rawPut(QUARANTINE_BUCKET, orgId, nowMs, QUARANTINE_TTL_S).pipe(Effect.ignore)
 
-/**
- * Shared per-org failure seam for the alerting ticks: when the failure is
- * config-class, quarantine the org and log at Info (expected, parked); anything
- * else is logged at Error as before. Returns whether the org was quarantined.
- */
+/** Parks the org when the failure is config-class. Returns whether the org was quarantined. */
 export const quarantineOnConfigClassCause = <E>(
 	edgeCache: EdgeCache,
 	orgId: string,

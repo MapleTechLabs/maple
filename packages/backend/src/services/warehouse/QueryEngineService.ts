@@ -432,8 +432,8 @@ export class QueryEngineService extends Context.Service<QueryEngineService, Quer
 						// times in 36.
 						//
 						// Hoisting it does not merely reorder the two reads, it removes the
-						// second: `resolveCachedSettings` keeps an isolate-level memo, so
-						// the call inside `compute` now answers from memory.
+						// second: `resolveRuntimeConfig` keeps an isolate-level memo
+						// (`runtimeConfigMemo`), so the call inside `compute` now answers from memory.
 						//
 						// `warmRoute` swallows its own failures — this is a warm, not a
 						// gate. A genuine config failure still surfaces from `compute`,
@@ -468,14 +468,13 @@ export class QueryEngineService extends Context.Service<QueryEngineService, Quer
 
 			// `withTimeout` INSIDE the span, not outside it. `Effect.timeoutOrElse` is
 			// `raceFirst(self, flatMap(sleep, orElse))`, so `orElse` runs as a sibling
-			// of `self` — with the wrapping the other way round, the `query.timeout`
+			// of `self`: with the wrapping the other way round, the `query.timeout`
 			// attribute it sets landed on whatever span was current at the call site.
-			// These two are plain arrows with no `Effect.fn` of their own, so that was
-			// `AlertsService.evaluateRule` (AlertsService.ts:1613, :2988, :3008): a 30s
-			// query-engine ceiling tagged on an alerting span, invisible to any
-			// dashboard scoped to query-engine spans. This ordering also lets the span
-			// record the `QueryEngineTimeoutError` (504, so `Error` status) instead of
-			// closing interrupt-only as `Ok` — which is the point of marking timeouts.
+			// This is a plain arrow with no `Effect.fn` of its own, so that was an
+			// `AlertsService` span: a 30s query-engine ceiling tagged on an alerting span,
+			// invisible to any dashboard scoped to query-engine spans. This ordering also
+			// lets the span record the `QueryEngineTimeoutError` (504, so `Error` status)
+			// instead of closing interrupt-only as `Ok`, which is the point of marking timeouts.
 			const evaluateSeries = (tenant: TenantContext, request: AlertEvaluateRequest) =>
 				withTimeout(evaluateSeriesImpl(tenant, request)).pipe(
 					Effect.withSpan("QueryEngineService.evaluateSeries", {
