@@ -47,6 +47,15 @@ export const validateHost = (host: string): string => {
 export const resolveBindHost = (environmentValue: string | undefined): string =>
 	normalizeHost(environmentValue || DEFAULT_LOCAL_HOST) || DEFAULT_LOCAL_HOST
 
+/** The bind host from `MAPLE_LOCAL_BIND_HOST`, else 127.0.0.1. */
+export const configuredBindHost: Effect.Effect<string> = Effect.map(
+	optionalEnvString("MAPLE_LOCAL_BIND_HOST"),
+	resolveBindHost,
+)
+
+/** {@link configuredBindHost} read synchronously, for flag defaults built at module load. */
+export const defaultBindHost = (): string => Effect.runSync(configuredBindHost)
+
 /** Wildcard bind addresses are not connection targets. Use their matching
  * loopback address for same-machine clients and readiness probes. */
 export const connectionHostForBindHost = (host: string): string => {
@@ -92,6 +101,14 @@ export const serverProbeUrl = (host: string, port: number): string =>
 
 export const defaultLocalUrl = (environmentHost: string | undefined): string =>
 	serverProbeUrl(resolveBindHost(environmentHost), DEFAULT_LOCAL_PORT)
+
+/** The local server URL clients use: `MAPLE_LOCAL_URL`, else the default for the bind host. */
+export const configuredLocalUrl: Effect.Effect<string> = Effect.gen(function* () {
+	const configured = yield* optionalEnvString("MAPLE_LOCAL_URL")
+	if (configured !== undefined) return configured
+	const bindHost = yield* optionalEnvString("MAPLE_LOCAL_BIND_HOST")
+	return defaultLocalUrl(bindHost)
+})
 
 /** Canonical URL hostname, including brackets for IPv6 to match URL.hostname. */
 export const canonicalUrlHostname = (host: string): string => new URL(serverUrl(host, 80)).hostname

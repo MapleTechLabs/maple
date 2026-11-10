@@ -108,15 +108,16 @@ import {
 	PID_HANDOVER_ENV,
 	prettyPath,
 	resolveAdvertiseHost,
-	resolveBindHost,
 	ServerDiscovery,
 	serverProbeUrl,
 	serverUrl,
 	validateHost,
 } from "./server-args"
 import {
+	configuredBindHost,
 	configuredLocalUiUrl,
 	DEFAULT_LOCAL_PORT,
+	defaultBindHost,
 	isLoopbackHostname,
 	optionalEnvString,
 } from "@maple/local-server/local-address"
@@ -276,7 +277,7 @@ const host = Flag.String("host").pipe(
 	Flag.withDescription(
 		`Local server host (env: MAPLE_LOCAL_BIND_HOST; off loopback, set ${INGEST_KEY_ENV} and ${ACCESS_TOKEN_ENV})`,
 	),
-	Flag.withDefault(resolveBindHost(process.env.MAPLE_LOCAL_BIND_HOST)),
+	Flag.withDefault(defaultBindHost()),
 )
 
 const checkpointPort = Flag.optional(
@@ -291,7 +292,7 @@ const checkpointHost = Flag.String("host").pipe(
 	Flag.withDescription(
 		"Host of the running `maple start` server to checkpoint (env: MAPLE_LOCAL_BIND_HOST)",
 	),
-	Flag.withDefault(resolveBindHost(process.env.MAPLE_LOCAL_BIND_HOST)),
+	Flag.withDefault(defaultBindHost()),
 )
 
 const advertiseHostFlag = Flag.optional(
@@ -1380,9 +1381,7 @@ const statusConfirmsPid = (
 ): Effect.Effect<boolean, never, HttpClient.HttpClient> =>
 	Effect.gen(function* () {
 		const discovery = yield* readDiscovery(serverDiscoveryPath(dataDir))
-		const probeHost =
-			scope.host ??
-			(yield* optionalEnvString("MAPLE_LOCAL_BIND_HOST").pipe(Effect.map(resolveBindHost)))
+		const probeHost = scope.host ?? (yield* configuredBindHost)
 		const urls = [
 			...(Option.isSome(discovery) && discovery.value.pid === pid ? [discovery.value.url] : []),
 			serverProbeUrl(probeHost, scope.port ?? DEFAULT_LOCAL_PORT),

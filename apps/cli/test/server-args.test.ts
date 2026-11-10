@@ -28,6 +28,7 @@ import {
 	startedBeforeWrite,
 } from "@maple/local-server/store-claim"
 import { Array as Arr } from "effect"
+import { defaultBindHost } from "@maple/local-server/local-address"
 
 describe("local server bind host", () => {
 	it("defaults to loopback and accepts a trimmed environment override", () => {
@@ -193,7 +194,7 @@ describe("recovery hints keep the user's target", () => {
 		const scope = commandScope({
 			dataDir: defaultDataDir(),
 			port: 4318,
-			host: process.env.MAPLE_LOCAL_BIND_HOST ?? "127.0.0.1",
+			host: defaultBindHost(),
 		})
 		strictEqual(mapleCommand("reset --yes", scope), "maple reset --yes")
 		strictEqual(mapleCommand("start --reset", scope), "maple start --reset")
