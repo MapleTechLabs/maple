@@ -50,13 +50,13 @@ import {
 	podMetricSpec,
 	toCloudflareFilters,
 	workloadMetricSpec,
-} from "@maple/backend/queries/query-helpers"
+} from "./query-helpers"
 import { traceCacheTtlSeconds } from "@maple/backend/services/warehouse/trace-detail-cache"
 import type { OrgId } from "@maple/domain"
 
-// App-side queries depend on integrations or API-only helpers, so moving them
-// into the core registry would invert dependencies. Entries own query inputs;
-// handlers retain only response metadata such as `ignoredFilters`.
+// Queries that depend on integrations or backend helpers, so they cannot live in
+// the core registry. Entries own query inputs; handlers retain only response
+// metadata such as `ignoredFilters`.
 
 const cloudflareInfraZoneCounters = defineQuery({
 	id: "cloudflareInfraZoneCounters",

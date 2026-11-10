@@ -158,7 +158,7 @@ import {
 	validatePathsDefinition,
 	workloadMetricSpec,
 } from "@maple/backend/queries/query-helpers"
-import { Queries } from "@/routes/queries"
+import { Queries } from "@maple/backend/queries/registry"
 import { isMapleService } from "@maple/domain/uptime"
 import { productEventsFunnelOpts, productEventsPathsOpts } from "@maple/query-engine/registry"
 import {

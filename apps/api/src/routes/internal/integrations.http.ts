@@ -96,7 +96,7 @@ import {
 } from "@/routes/integrations-callback.http"
 import { isTrustedCallbackOrigin, resolveRequestOrigin } from "@/routes/v2/integrations.http"
 import { makeOAuthCompleter } from "@/routes/oauth-complete"
-import { Queries } from "@/routes/queries"
+import { Queries } from "@maple/backend/queries/registry"
 import { settleInfraSurfaces } from "./infra-surfaces"
 
 /**
