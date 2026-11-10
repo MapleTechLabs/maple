@@ -23,7 +23,6 @@ import {
 	type PullRequestCommentJob,
 	type PullRequestEventJob,
 	type PullRequestHead,
-	type VcsRepo,
 	parseReplyCommand,
 } from "@maple/domain/http"
 import { wrapChatContext } from "@maple/domain/chat-preamble"
@@ -55,7 +54,8 @@ import { makeDbExecute } from "@maple/backend/platform/db-execute"
 import { summarizeCause } from "@maple/backend/platform/describe-cause"
 import { VcsProviderRegistry } from "@maple/backend/services/integrations/vcs/VcsProviderRegistry"
 import { VcsRepository } from "@maple/backend/services/integrations/vcs/VcsRepository"
-import { isTrustedAuthorAssociation, PrReviewService, PUSH_PERMISSIONS } from "./PrReviewService"
+import { isTrustedAuthorAssociation, PrReviewService } from "./PrReviewService"
+import { makeRepoUpstream } from "./repo-upstream"
 
 const internalServiceUserId = Schema.decodeSync(UserId)("internal-service")
 
@@ -266,37 +266,7 @@ export class PrReviewConversationService extends Context.Service<
 			skipReason: reason,
 		})
 
-		const upstreamFor = Effect.fn("PrReviewConversationService.upstreamFor")(function* (
-			orgId: OrgId,
-			repo: VcsRepo,
-		) {
-			const installation = yield* repositories
-				.getInstallationById(orgId, repo.installationId)
-				.pipe(Effect.mapError(toPersistence))
-			if (Option.isNone(installation)) return Option.none()
-			const provider = yield* providers.resolve(repo.provider).pipe(Effect.option)
-			if (Option.isNone(provider)) return Option.none()
-			return Option.some({
-				provider: provider.value,
-				installation: installation.value,
-				ref: { externalRepoId: repo.externalRepoId, owner: repo.owner, name: repo.name },
-			})
-		})
-
-		/** Whether a person can push to the repository; an unreadable permission is no. */
-		const canPush = Effect.fn("PrReviewConversationService.canPush")(function* (
-			orgId: OrgId,
-			repo: VcsRepo,
-			login: string,
-		) {
-			const upstream = yield* upstreamFor(orgId, repo)
-			if (Option.isNone(upstream)) return false
-			const { provider, installation, ref } = upstream.value
-			const permission = yield* provider
-				.fetchCommenterPermission(installation, ref, login)
-				.pipe(Effect.orElseSucceed(() => "none"))
-			return PUSH_PERMISSIONS.has(permission)
-		})
+		const { upstreamFor, pushAccess, canPush } = yield* makeRepoUpstream("PrReviewConversationService")
 
 		const updateReply = (
 			orgId: OrgId,
@@ -494,10 +464,7 @@ export class PrReviewConversationService extends Context.Service<
 			}
 
 			if (command === "fix") {
-				const permission = yield* provider
-					.fetchCommenterPermission(installation, ref, job.authorLogin)
-					.pipe(Effect.orElseSucceed(() => "none"))
-				if (!PUSH_PERMISSIONS.has(permission))
+				if (!(yield* pushAccess(upstream.value, job.authorLogin)).canPush)
 					return yield* fail(
 						"fix_not_permitted",
 						`@${job.authorLogin} I only push fixes for people with write access to this repository.`,
@@ -633,11 +600,9 @@ export class PrReviewConversationService extends Context.Service<
 			if (Option.isNone(upstream)) return yield* annotate("disconnected")
 			const { provider, installation, ref } = upstream.value
 			// Anyone can re-run CI on their own pull request; only write access vouches for someone else's.
-			const permission = yield* provider
-				.fetchCommenterPermission(installation, ref, job.approverLogin)
-				.pipe(Effect.orElseSucceed(() => "none"))
-			if (!PUSH_PERMISSIONS.has(permission))
-				return yield* annotate("not_permitted", { "vcs.repository.permission": permission })
+			const access = yield* pushAccess(upstream.value, job.approverLogin)
+			if (!access.canPush)
+				return yield* annotate("not_permitted", { "vcs.repository.permission": access.permission })
 			// Fork runs carry no pull request number: the open one from the run's branch is it.
 			const numbers =
 				job.pullRequestNumbers.length > 0
