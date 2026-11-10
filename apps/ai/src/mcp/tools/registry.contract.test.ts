@@ -8,8 +8,10 @@ import { McpToolOutputs } from "@maple/domain/mcp-outputs"
 import { Array as Arr, Record as Rec, String as Str } from "effect"
 import { MCP_INSTRUCTIONS } from "../resources/instructions"
 import * as Prompts from "../../chat/prompts"
-import { diagnosisTool, proposeEditTool, recordFindingTool, replyTool, reviewTool } from "../../chat/tools"
-import { REVIEW_FILES } from "../../chat/review-fanout"
+import { diagnosisTool } from "../../chat/investigation"
+import { proposeEditTool, replyTool } from "../../chat/reply"
+import { recordFindingTool, reviewTool } from "../../chat/review/completion"
+import { REVIEW_FILES } from "../../chat/review/fanout"
 
 /** Every parameter name and enum value a tool publishes, at any depth. */
 const vocabulary = (node: unknown, into: Set<string>): Set<string> => {

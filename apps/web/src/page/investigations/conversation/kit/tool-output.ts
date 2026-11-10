@@ -1,4 +1,4 @@
-import { STRUCTURED_MARKER } from "./structured-marker"
+import { TOOL_UI_MARKER as STRUCTURED_MARKER } from "@maple/domain/mcp-outputs"
 import { Option, Predicate, Schema, Record as Rec, String as Str, Array as Arr } from "effect"
 
 const encodePrettyJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown, { space: 2 }))

@@ -2,7 +2,7 @@ import { AgentPolicyError } from "@yielded/agent/agent-error"
 import { Effect, Layer, Stream } from "effect"
 import { LanguageModel, Prompt, Tool, Toolkit } from "effect/ai"
 import { assert, describe, it } from "vitest"
-import { answeringWhenWarned, childFailureMessage, fanoutTimeRefusal } from "./review-fanout"
+import { answeringWhenWarned, childFailureMessage, fanoutTimeRefusal } from "./fanout"
 
 describe("fanoutTimeRefusal", () => {
 	it("starts a group with time for the child and the parent's submit", () => {

@@ -49,7 +49,7 @@ import {
 	type ChatProposalSettlement,
 	type ChatTurnOrigin,
 	type ChatTurnTenantEncoded,
-	prReviewIdFromChatSessionId,
+	chatSessionKind,
 } from "@maple/domain/chat-session"
 import { type ChatAbortReason, type ChatSessionRpc, isChatAbortReason } from "@maple/domain/chat-session-stub"
 import { type ChatSessionNamespace, ChatSessionObject } from "@maple/backend/platform/chat-sessions"
@@ -225,7 +225,7 @@ const encodeTurnInput = Schema.encodeSync(Schema.fromJsonString(TurnInput))
  * has its own abandoned-run sweep.
  */
 const resumable = (input: TurnInput): boolean =>
-	input.origin.kind === "autonomous" && prReviewIdFromChatSessionId(input.sessionId) !== undefined
+	input.origin.kind === "autonomous" && chatSessionKind(input.sessionId).mode === "pr-review"
 
 /** How the session runs a turn: a port for the same reason as {@link ProposalApplier}. */
 export type TurnRunner = (input: RunChatSessionTurnInput) => Promise<void>

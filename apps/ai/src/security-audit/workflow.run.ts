@@ -9,7 +9,11 @@
 import { BillingCustomerResolver } from "@maple/backend/services/billing/BillingCustomerResolver"
 import { aiCreditsUsd } from "@maple/domain/billing"
 import { OrgId } from "@maple/domain/http"
-import type { SandboxError } from "@maple/backend/services/sandbox/contract"
+import {
+	type SandboxError,
+	SandboxOutputLimitError,
+	SandboxTimeoutError,
+} from "@maple/backend/services/sandbox/contract"
 import {
 	ORG_NO_AI_CREDITS,
 	ORG_SPEND_LIMIT_REACHED,
@@ -103,16 +107,12 @@ export class AuditSandboxStepError extends Schema.TaggedError<AuditSandboxStepEr
 	{ message: Schema.String, step: Schema.String, sandboxTag: Schema.String },
 ) {}
 
-const describeSandboxError = (error: SandboxError): string => {
-	switch (error._tag) {
-		case "@maple/backend/sandbox/SandboxTimeoutError":
-			return `timed out after ${Duration.toMillis(error.maxWallTime)} ms`
-		case "@maple/backend/sandbox/SandboxOutputLimitError":
-			return `${error.stream} reached ${error.observed} bytes, over its ${error.limit} byte limit`
-		default:
-			return error.message
-	}
-}
+const describeSandboxError = (error: SandboxError): string =>
+	Schema.is(SandboxTimeoutError)(error)
+		? `timed out after ${Duration.toMillis(error.maxWallTime)} ms`
+		: Schema.is(SandboxOutputLimitError)(error)
+			? `${error.stream} reached ${error.observed} bytes, over its ${error.limit} byte limit`
+			: error.message
 
 export const toSandboxStepError =
 	(step: string) =>

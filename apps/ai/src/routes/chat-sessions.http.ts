@@ -27,7 +27,7 @@ import {
 	ChatSendRequest,
 	ChatSendResponse,
 	encodeChatTurnTenant,
-	investigationIdFromChatSessionId,
+	chatSessionKind,
 	orgIdFromChatSessionId,
 	originForTenant,
 	type ChatTurnTenantEncoded,
@@ -138,7 +138,7 @@ const resolveSession = Effect.fn("ChatSessionsRouter.resolveSession")(function* 
 	}
 
 	// The dashboard's only conversation is an investigation's; bot threads and reviews have their own drivers.
-	if (investigationIdFromChatSessionId(sessionId) === undefined) {
+	if (chatSessionKind(sessionId).mode !== "investigate") {
 		return { ok: false, failure: problem("Chat session not found", 404) } as const
 	}
 

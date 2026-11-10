@@ -4,8 +4,8 @@
 import type { PullRequestFile } from "@maple/domain/http"
 import { renderFollowUp, renderIgnoredPaths } from "@maple/backend/services/pr-review/findings"
 import { assert, describe, it } from "vitest"
-import { renderChangedFiles, renderFileDiffs } from "../mcp/tools/pull-request"
-import { makeReviewCoverage, unreadRefusal } from "./review-coverage"
+import { renderChangedFiles, renderFileDiffs } from "../../mcp/tools/pull-request"
+import { makeReviewCoverage, unreadRefusal } from "./coverage"
 import { Array as Arr } from "effect"
 
 const file = (path: string): PullRequestFile => ({

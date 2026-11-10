@@ -11,7 +11,7 @@ import { Effect, Array as Arr } from "effect"
 import { Response } from "effect/ai"
 import { assert, describe, it } from "vitest"
 import { autumnModelId } from "../platform/ai-credits"
-import { accumulateUsage, makeRunUsage, type RunUsage } from "./tools"
+import { accumulateUsage, makeRunUsage, type RunUsage } from "./usage"
 
 const GLM = "z-ai/glm-5.3-flash:nitro"
 const SONNET = "anthropic/claude-sonnet-5.5"

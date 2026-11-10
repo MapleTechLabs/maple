@@ -14,7 +14,7 @@
  * *model* stream, while this is a *session* stream that also carries user turns, approval gates and
  * turn lifecycle. `apps/api/src/chat/events.ts` is the only place the two are mapped.
  */
-import { Option, Schema, String as Str } from "effect"
+import { Array as Arr, Option, Schema, String as Str } from "effect"
 import {
 	ActorId,
 	AuthMode,
@@ -60,29 +60,11 @@ export const tabIdFromChatSessionId = (sessionId: string): string => {
 	})
 }
 
-/** Recover the investigation id from an `inv-<id>` tab. `undefined` for other modes. */
-export const investigationIdFromChatSessionId = (sessionId: string): string | undefined => {
-	const tab = tabIdFromChatSessionId(sessionId)
-	return Str.startsWith("inv-")(tab) ? Str.slice("inv-".length)(tab) : undefined
-}
-
 /** The chat session a pull request review runs on: `<orgId>:pr-<reviewId>`. */
 export const prReviewSessionId = (orgId: string, reviewId: string): string => `${orgId}:pr-${reviewId}`
 
-/** Recover the pull-request review id from a `pr-<id>` tab. `undefined` for other modes. */
-export const prReviewIdFromChatSessionId = (sessionId: string): string | undefined => {
-	const tab = tabIdFromChatSessionId(sessionId)
-	return Str.startsWith("pr-")(tab) ? Str.slice("pr-".length)(tab) : undefined
-}
-
 /** The chat session a reply to a pull request comment runs on: `<orgId>:prr-<replyId>`. */
 export const prReplySessionId = (orgId: string, replyId: string): string => `${orgId}:prr-${replyId}`
-
-/** Recover the reply id from a `prr-<id>` tab. `undefined` for other modes. */
-export const prReplyIdFromChatSessionId = (sessionId: string): string | undefined => {
-	const tab = tabIdFromChatSessionId(sessionId)
-	return Str.startsWith("prr-")(tab) ? Str.slice("prr-".length)(tab) : undefined
-}
 
 /**
  * What a conversation *is* — its persona and its budget.
@@ -95,13 +77,32 @@ export const prReplyIdFromChatSessionId = (sessionId: string): string | undefine
 export const ChatMode = Schema.Literals(["default", "investigate", "pr-review", "pr-reply"])
 export type ChatMode = Schema.Schema.Type<typeof ChatMode>
 
+/**
+ * A session's mode, read off its tab prefix, and for a row-backed mode the raw id after it.
+ * `rawId` is undecoded: the server decides whether it names a real investigation, review or reply.
+ */
+export type ChatSessionKind =
+	| { readonly mode: "default" }
+	| { readonly mode: Exclude<ChatMode, "default">; readonly rawId: string }
+
+/** `prr-` does not start with `pr-`, so the order is only for reading. */
+const MODE_PREFIXES = [
+	["inv-", "investigate"],
+	["prr-", "pr-reply"],
+	["pr-", "pr-review"],
+] as const
+
 /** Mode is derived from the tab-id prefix, never sent by the client. */
-export const chatModeFromSessionId = (sessionId: string): ChatMode => {
+export const chatSessionKind = (sessionId: string): ChatSessionKind => {
 	const tab = tabIdFromChatSessionId(sessionId)
-	if (Str.startsWith("inv-")(tab)) return "investigate"
-	if (Str.startsWith("prr-")(tab)) return "pr-reply"
-	if (Str.startsWith("pr-")(tab)) return "pr-review"
-	return "default"
+	return Option.getOrElse(
+		Arr.findFirst(MODE_PREFIXES, ([prefix, mode]) =>
+			Str.startsWith(prefix)(tab)
+				? Option.some({ mode, rawId: Str.slice(prefix.length)(tab) })
+				: Option.none(),
+		),
+		(): ChatSessionKind => ({ mode: "default" }),
+	)
 }
 
 const CONNECTOR_TAB_PREFIX = "bot-"

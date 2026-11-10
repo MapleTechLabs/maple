@@ -2,7 +2,7 @@ import { AiTriageResult } from "@maple/domain/http"
 import { Option, Schema } from "effect"
 
 /**
- * An investigation's `submit_diagnosis` output (apps/ai/src/chat/tools.ts): the report, already
+ * An investigation's `submit_diagnosis` output (apps/ai/src/chat/investigation.ts): the report, already
  * persisted server-side (not a proposal), drawn as the inline report card.
  */
 export interface DiagnosisMarker {

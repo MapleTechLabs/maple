@@ -6,6 +6,7 @@
  * verbatim put a report's headings and a dashboard's validation table into a thread. The record
  * stays as it is — the model reads it on its next turn — and a channel gets one sentence and a link.
  */
+import { TOOL_UI_MARKER } from "@maple/domain/mcp-outputs"
 import { Option, Schema, String as Str } from "effect"
 import { MAX_APPROVAL_OUTCOME_CHARS, type ChatApprovalOutcome, type ChatRenderContext } from "./blocks"
 
@@ -56,7 +57,7 @@ const OnDashboard = Schema.Struct({ dashboard: Named })
 const OnRule = Schema.Struct({ rule: Named })
 const OnIssue = Schema.Struct({ id: Schema.String })
 const Payload = <Tool extends string, Data extends Schema.Top>(tool: Tool, data: Data) =>
-	Schema.Struct({ __maple_ui: Schema.Literal(true), tool: Schema.Literal(tool), data })
+	Schema.Struct({ [TOOL_UI_MARKER]: Schema.Literal(true), tool: Schema.Literal(tool), data })
 
 const MutationPayload = Schema.Union([
 	Payload("create_dashboard", OnDashboard),

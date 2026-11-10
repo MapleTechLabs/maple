@@ -6,7 +6,7 @@ import { prReviewFailureReason } from "@maple/domain/http"
 import { Cause } from "effect"
 import { AiError, AuthenticationError, QuotaExhaustedError, RateLimitError } from "effect/ai/AiError"
 import { assert, describe, it } from "vitest"
-import { reviewFailureError, reviewFailureReason } from "./review-failure"
+import { reviewFailureError, reviewFailureReason } from "./failure"
 
 const MAPLE_KEY = { ownKey: false }
 const ORG_KEY = { ownKey: true }
