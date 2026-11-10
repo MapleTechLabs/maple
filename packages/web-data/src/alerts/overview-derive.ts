@@ -126,8 +126,21 @@ export interface Headroom {
 	readonly isNear: boolean
 }
 
-/** Under a fifth of the threshold left counts as near firing, on every surface that says so. */
-export const NEAR_HEADROOM = 0.2
+/** Under a tenth of the threshold left counts as near firing, on every surface that says so. */
+export const NEAR_HEADROOM = 0.1
+
+export type HeadroomTone = "neutral" | "warning" | "error"
+
+/**
+ * How a reading against its threshold is drawn, in the rules table and the Inbox alike: neutral
+ * unless under `NEAR_HEADROOM` is left (warning) or the threshold is passed (error).
+ */
+export const headroomTone = (reading: Pick<Headroom, "breached" | "headroom">): HeadroomTone =>
+	reading.breached
+		? "error"
+		: reading.headroom !== null && reading.headroom < NEAR_HEADROOM
+			? "warning"
+			: "neutral"
 
 const breaches = (rule: AlertRuleDocument, value: number): boolean => {
 	const upper = rule.thresholdUpper ?? rule.threshold

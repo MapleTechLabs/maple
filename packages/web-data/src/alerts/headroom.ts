@@ -21,6 +21,8 @@ export interface RuleHeadroom {
 	readonly headroom: number | null
 	/** Past the threshold or close to it, by the same test as the Rules tab's meter. */
 	readonly isNear: boolean
+	/** Past the threshold without an open incident yet (it has to breach a few times in a row). */
+	readonly breached: boolean
 	readonly checkedAt: number | null
 }
 
@@ -85,6 +87,7 @@ export function ruleHeadroom(
 								...Struct.pick(thresholdHeadroom(rule, state.last_value), [
 									"headroom",
 									"isNear",
+									"breached",
 								]),
 								checkedAt:
 									state.last_evaluated_at === null
