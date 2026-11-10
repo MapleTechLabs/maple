@@ -27,12 +27,8 @@ import { formatUtcOffset, readZoneRows, ZoneRow } from "./timezone-zones"
 import { isMounted } from "@maple/views/ui/overlay/transition"
 import * as CustomRange from "./custom-range"
 import * as CustomRangeView from "./custom-range-view"
-import {
-	LONG_RANGE_PRESET_VALUES,
-	PRESET_VALUES,
-	presetLabel,
-	timeRangeTriggerContent,
-} from "./time-controls"
+import { LONG_RANGE_PRESET_VALUES, PRESET_VALUES, timeRangeTriggerContent } from "./time-controls"
+import { presetLabel } from "@maple/ui/lib/time-preset"
 
 // The header's time range popover: the preset rail and quick select. Picking a range is an
 // OutMessage; the page writes it to its URL search.

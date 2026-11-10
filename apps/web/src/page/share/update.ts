@@ -15,7 +15,7 @@ import { AppRoute, hrefOf } from "../../route"
 import { validTimeZone } from "../../platform/time-zone"
 import * as Menu from "@maple/views/ui/menu"
 import { type PageReturn, PageOutMessage } from "../contract"
-import { presetLabel } from "../kit/time-controls"
+import { presetLabel } from "@maple/ui/lib/time-preset"
 import { withActiveTab, withSectionCollapsed } from "../../lib/dashboards/section-view-state"
 import {
 	DATA_UNAVAILABLE_MESSAGE,

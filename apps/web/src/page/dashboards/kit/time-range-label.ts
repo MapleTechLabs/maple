@@ -1,7 +1,7 @@
 import type { TimeRange } from "@maple/widgets/dashboard"
 import { formatTimestampInTimezone } from "@maple/ui/lib/timezone-format"
 import { pluralize } from "@maple/ui/lib/format"
-import { presetLabel } from "../../kit/time-controls"
+import { presetLabel } from "@maple/ui/lib/time-preset"
 import { toEpochMs } from "@maple/ui/lib/time-format"
 
 // The clock is passed in instead of read.

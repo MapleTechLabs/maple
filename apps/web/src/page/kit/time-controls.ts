@@ -2,7 +2,8 @@ import type { Html, HtmlBuilder } from "foldkit/html"
 import { button } from "@maple/views/ui/button"
 import { icon } from "@maple/views/ui/icon"
 import { refreshButton } from "@maple/views/ui/refresh-button"
-import { Array as Arr, String as Str, Option } from "effect"
+import { presetLabel } from "@maple/ui/lib/time-preset"
+import { Array as Arr } from "effect"
 
 // The time range header controls: the picker trigger, the reset for a custom range, and Reload.
 
@@ -14,52 +15,6 @@ export type PresetValue = (typeof LONG_RANGE_PRESET_VALUES)[number]
 
 export const isPresetValue = (value: string): value is PresetValue =>
 	Arr.some(LONG_RANGE_PRESET_VALUES, (preset) => preset === value)
-
-const PRESET_LABELS = new Map<string, string>([
-	["5m", "Last 5 minutes"],
-	["15m", "Last 15 minutes"],
-	["30m", "Last 30 minutes"],
-	["1h", "Last 1 hour"],
-	["6h", "Last 6 hours"],
-	["12h", "Last 12 hours"],
-	["24h", "Last 24 hours"],
-	["1d", "Last 1 day"],
-	["3d", "Last 3 days"],
-	["1w", "Last 1 week"],
-	["2w", "Last 2 weeks"],
-	["1mo", "Last 1 month"],
-])
-
-const UNIT_LABELS = new Map<string, readonly [string, string]>([
-	["m", ["minute", "minutes"]],
-	["h", ["hour", "hours"]],
-	["d", ["day", "days"]],
-	["w", ["week", "weeks"]],
-	["mo", ["month", "months"]],
-])
-
-export const presetLabel = (shorthand: string): string => {
-	if (shorthand === "12mo") return "Last 1 year"
-	const known = PRESET_LABELS.get(shorthand)
-	if (known !== undefined) return known
-	const trimmed = Str.toLowerCase(Str.trim(shorthand))
-	if (trimmed === "today") return "Today"
-	const matched = Str.match(/^(\d+)(mo|m|h|d|w)$/)(trimmed)
-	if (Option.isNone(matched)) return shorthand
-	const match = matched.value
-	const amount = Number.parseInt(match[1] ?? "0", 10)
-	const [singular, plural] = UNIT_LABELS.get(match[2] ?? "") ?? [match[2] ?? "", match[2] ?? ""]
-	return `Last ${amount} ${amount === 1 ? singular : plural}`
-}
-
-/** The span a preset names, for "vs previous …" copy: "1mo" is "month", "2w" is "2 weeks". */
-export const presetSpanLabel = (shorthand: string): string => {
-	const label = presetLabel(shorthand)
-	if (label === "Today") return "day"
-	if (!Str.startsWith("Last ")(label)) return label
-	const span = Str.slice("Last ".length)(label)
-	return Str.startsWith("1 ")(span) ? Str.slice(2)(span) : span
-}
 
 export type TimeSearch = Readonly<{ startTime?: string; endTime?: string; timePreset?: string }>
 
