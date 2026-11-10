@@ -76,6 +76,18 @@ export function lantern(_scope: Scope, { position, finish }: { position: Vec3; f
 	])
 }
 
+/** The pool of light a lit lamp throws on the ground at night: steady, and never catches a click. */
+export function lampPool({ position, radius, color }: { position: Vec3; radius: number; color: string }) {
+	const pool = mesh(
+		new THREE.CircleGeometry(radius, 24).rotateX(-Math.PI / 2),
+		new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.16, depthWrite: false }),
+		{ position },
+	)
+	pool.renderOrder = 1
+	pool.raycast = () => {}
+	return pool
+}
+
 /** A sugaring spout tapped into a vat with its sap bucket hanging below. */
 export function mapleTap(_scope: Scope, { position, finish }: { position: Vec3; finish: MachineFinish }) {
 	const bucket = new THREE.CylinderGeometry(0.11, 0.08, 0.2, 6)
