@@ -1,4 +1,5 @@
-import { Effect, Array as Arr, String as Str } from "effect"
+import { Effect, Option, Array as Arr, String as Str } from "effect"
+import { Headers as HttpHeaders, HttpTraceContext } from "effect/http"
 import { apiProxyPath } from "./api-proxy"
 import { forwardToApi } from "./api-proxy-forward"
 import { OG_IMAGE_PREFIX, ogIdFromPath, shareTokenFromPath } from "./og/share-links"
@@ -96,6 +97,40 @@ export const handleRequest = async (
 	// An image path whose id did not parse (a lone `%`, a nested segment) is still an image path.
 	if (isImagePath(url.pathname)) return new Response(null, { status: 404 })
 
+	// A share page is the one document the Worker serves itself, so it is the one with a trace.
+	return shareTokenFromPath(url.pathname) === undefined
+		? serveDocument(request, url, env, api)
+		: runTraced(traceShareDocument(request, () => serveDocument(request, url, env, api)))
+}
+
+const SHARE_ROUTE = "/share/:token"
+
+/** A server span for a share page load. Named for the route, never the path: the token is a credential. */
+const traceShareDocument = (request: Request, serve: () => Promise<Response>): Effect.Effect<Response> =>
+	Effect.useSpan(
+		`${request.method} ${SHARE_ROUTE}`,
+		{
+			kind: "server",
+			parent: Option.getOrUndefined(
+				HttpTraceContext.fromHeaders(HttpHeaders.fromInput(request.headers)),
+			),
+			attributes: { "http.request.method": request.method, "http.route": SHARE_ROUTE },
+		},
+		(server) =>
+			Effect.promise(serve).pipe(
+				Effect.tap((response) =>
+					Effect.sync(() => server.attribute("http.response.status_code", response.status)),
+				),
+			),
+	)
+
+/** The app shell for a path, with the path's security headers and, on a share link, its preview tags. */
+const serveDocument = async (
+	request: Request,
+	url: URL,
+	env: WebWorkerEnv,
+	api: ApiTarget | undefined,
+): Promise<Response> => {
 	const assetResponse = await env.ASSETS.fetch(request)
 	if (assetResponse.status !== 404) {
 		// `/version.json` is the one asset whose whole job is to be stale-free:
