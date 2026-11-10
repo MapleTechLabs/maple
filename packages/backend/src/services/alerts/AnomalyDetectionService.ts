@@ -425,7 +425,15 @@ const make: Effect.Effect<
 		yield* Effect.annotateCurrentSpan("maple.anomaly.known_orgs", knownOrgs.length)
 		const byoRows = yield* dbExecute((db) =>
 			db.run(PG.from(OrgClickHouseSettings).select("orgId").distinct()),
-		).pipe(Effect.orElseSucceed((): ReadonlyArray<{ readonly orgId: string }> => []))
+		).pipe(
+			// Without the list this tick evaluates no BYO-ClickHouse org; say so instead of going quiet.
+			Effect.tapError((error) =>
+				Effect.logWarning("Anomaly BYO-ClickHouse org lookup failed").pipe(
+					Effect.annotateLogs({ error: error.message }),
+				),
+			),
+			Effect.orElseSucceed((): ReadonlyArray<{ readonly orgId: string }> => []),
+		)
 		const byo = new Set<string>(Arr.map(byoRows, (r) => r.orgId))
 
 		const [routingOrg] = knownOrgs
