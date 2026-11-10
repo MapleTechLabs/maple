@@ -54,10 +54,12 @@ import {
 	type ChildFindings,
 	childFindingsRefusal,
 	childFindingsToFile,
+	closeOutFindings,
 	unaccountedChildFindings,
 } from "./review-child-findings"
 import { type ReviewCoverage, unreadRefusal } from "./review-coverage"
 import type { ReviewLedger } from "./review-ledger"
+import type { AutonomousOutcome } from "./autonomous-outcome"
 import {
 	type CompletionRun,
 	type RunCompletion,
@@ -349,6 +351,56 @@ export const savedFindingsRequest = (input: {
 		outputTokens: input.usage.output,
 		partial: true,
 		...(input.reason === undefined ? undefined : { partialReason: input.reason }),
+	})
+
+/** A partial carries why the pass before it stopped, so the pull request is told that. */
+export const withPartialReason = (
+	request: SubmitPrReviewRequest,
+	reason: PrReviewFailureReason | undefined,
+): SubmitPrReviewRequest =>
+	reason !== undefined && request.partial === true
+		? new SubmitPrReviewRequest({ ...request, partialReason: reason })
+		: request
+
+/** How long filing a review's saved findings may take once the turn has started settling. */
+const SUBMIT_SAVED_TIMEOUT = "60 seconds"
+
+/**
+ * Settle a review that filed no report: the findings its pass saved, and its children's warnings,
+ * are posted as a partial rather than lost with the report. Recorded in `outcome` as the verdict.
+ */
+export const fileSavedFindings = <E>(input: {
+	readonly outcome: AutonomousOutcome
+	readonly review: ReviewTurnState
+	readonly modelName: string
+	readonly usage: RunUsage
+	readonly submit: (request: SubmitPrReviewRequest) => Effect.Effect<unknown, E>
+}) =>
+	Effect.gen(function* () {
+		const { outcome, review } = input
+		const saved = closeOutFindings(review.ledger.findings(), review.childFindings.all())
+		if (outcome.submitted() || saved.length === 0) return
+		const failure = outcome.failure()
+		const filed = yield* input
+			.submit(
+				savedFindingsRequest({
+					findings: saved,
+					unreviewed: review.coverage.unread(),
+					modelName: input.modelName,
+					usage: input.usage,
+					...(failure === undefined ? undefined : { reason: failure }),
+				}),
+			)
+			.pipe(
+				Effect.as(true),
+				// Settling is uninterruptible, so a hung submit is bounded; `failReview` skips a filed review.
+				Effect.timeout(SUBMIT_SAVED_TIMEOUT),
+				Effect.catchCause((cause) =>
+					Effect.logError("Could not file the saved findings", cause).pipe(Effect.as(false)),
+				),
+			)
+		outcome.record("verdict", filed)
+		yield* Effect.annotateCurrentSpan("maple.pr_review.filed_saved_findings", filed)
 	})
 
 /**

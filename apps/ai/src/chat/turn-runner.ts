@@ -19,17 +19,14 @@
  *     thread the worker env through.
  */
 import { MCP_ANTICIPATED_ERROR_IDENTIFIERS } from "../mcp/expected-failures"
-import { ChatMessage, type ChatTurnOrigin, type ChatTurnTenantEncoded } from "@maple/domain/chat-session"
-import { type BillingCustomerId, type PrReviewFailureReason, SubmitPrReviewRequest } from "@maple/domain/http"
+import { type ChatTurnOrigin, type ChatTurnTenantEncoded } from "@maple/domain/chat-session"
+import type { BillingCustomerId, PrReviewFailureReason } from "@maple/domain/http"
 import { type ChatSessionNamespace, chatSessionsLayerIfBound } from "@maple/backend/platform/chat-sessions"
 import { envPorts } from "@maple/backend/platform/env-ports"
 import { CodeLoader } from "@maple/backend/platform/bindings"
 import { forkRequestScoped } from "@maple/backend/platform/fork-request-scoped"
 import { runtimeTelemetry } from "@maple/infra/worker-telemetry"
 import {
-	Cause,
-	Clock,
-	Duration,
 	Effect,
 	Layer,
 	ManagedRuntime,
@@ -44,27 +41,28 @@ import { FetchHttpClient } from "effect/http"
 import type { WorkersAiBinding } from "../platform/WorkersAiHttpClient"
 import { ReturnedToolFailuresOkLive } from "../platform/genai-spans"
 import type { ChatSession } from "./ChatSession"
-import { withToolTranscript } from "./close-out"
 import { INVESTIGATION_PROGRESS_HEARTBEAT, makeProgressFeed, parseToolInput, stepLabel } from "./progress"
-import { closeOutFindings, makeChildFindings } from "./review-child-findings"
+import { makeChildFindings } from "./review-child-findings"
 import { makeReviewCoverage } from "./review-coverage"
-import { reviewFailureError, reviewFailureReason } from "./review-failure"
+import { reviewFailureError } from "./review-failure"
 import { makeReviewLedger } from "./review-ledger"
 import {
 	diagnosisCompletion,
+	fileSavedFindings,
 	makeRunUsage,
 	replyCompletion,
 	reviewCompletion,
 	type ReviewTurnState,
 	type RunUsage,
-	savedFindingsRequest,
+	withPartialReason,
 } from "./tools"
 import type { MakeCompletion } from "./completion"
 
 import { interruptOnAbort, makeTurnObservability, turnSpanAttributes } from "./turn-outcome"
-import { makeAutonomousOutcome, type PhaseKind } from "./autonomous-outcome"
+import { makeAutonomousOutcome } from "./autonomous-outcome"
+import { type PhaseTurn, runAutonomousPhases } from "./autonomous-phases"
 import { makeUnfinishedSettler, runAutonomousTurn, settleRow } from "./autonomous-settle"
-import { AGENTS, type AgentDefinition, isAutonomousTurn, sessionOf } from "./agents"
+import { AGENTS, isAutonomousTurn, sessionOf } from "./agents"
 import { profileForTurn } from "./profiles"
 import { runChatTurn } from "./run"
 import { toTenantContext, turnTenant } from "./turn-actor"
@@ -149,10 +147,6 @@ const METERING_TIMEOUT = "5 seconds"
 /** What the row records when the pass and its close-out both ended in prose or on an error. */
 const NO_DIAGNOSIS_ERROR = "no_diagnosis: the agent ended its pass without submitting a diagnosis; retry"
 const NO_REPLY_ERROR = "no_reply: the agent ended its pass without submitting an answer"
-/** How long filing a review's saved findings may take once the turn has started settling. */
-const SUBMIT_SAVED_TIMEOUT = "60 seconds"
-/** A review pass that answered in prose gets another pass only with at least this much of its clock left. */
-const MIN_CONTINUE_MS = 2 * 60 * 1000
 
 /**
  * Meter what this turn spent into the org's AI usage.
@@ -596,14 +590,7 @@ export const runChatSessionTurn = async (input: RunChatSessionTurnInput): Promis
 									reviews.submitReview(
 										tenant.orgId,
 										prReviewId,
-										// A partial carries why the pass before it stopped, so the pull request is told that.
-										Option.match(Option.fromUndefinedOr(outcome.failure()), {
-											onNone: () => request,
-											onSome: (partialReason) =>
-												request.partial === true
-													? new SubmitPrReviewRequest({ ...request, partialReason })
-													: request,
-										}),
+										withPartialReason(request, outcome.failure()),
 									),
 								),
 							)
@@ -618,13 +605,7 @@ export const runChatSessionTurn = async (input: RunChatSessionTurnInput): Promis
 			const holdsTurn = () => input.session.holdsTurn(input.messageId)
 			// Whether a conversation turn's run wrote its own ending (non-autonomous only).
 			let recordedTerminal = false
-			const run = (turn: {
-				readonly text: string
-				readonly history: ReadonlyArray<ChatMessage>
-				readonly closeOut?: boolean
-				/** A continuation's agent: the session's, with only what is left of the pass's clock. */
-				readonly agent?: AgentDefinition
-			}) =>
+			const run = (turn: PhaseTurn) =>
 				runChatTurn({
 					sessionId: input.sessionId,
 					messageId: input.messageId,
@@ -672,147 +653,44 @@ export const runChatSessionTurn = async (input: RunChatSessionTurnInput): Promis
 					// oxlint-disable-next-line effecttsgo/strict-effect-provide -- the turn's OpenRouter client is built per turn from its settings
 				}).pipe(Effect.provide(openRouterClient))
 
-			/**
-			 * One phase, settled into `outcome`. A pass that failed is a pass with no report yet, not a
-			 * dead turn: the close-out still gets its say. Interrupts stay interrupts.
-			 */
-			const phase = (kind: PhaseKind, turn: Parameters<typeof run>[0]) =>
-				run(turn).pipe(
-					Effect.map((result) => ({ result, raised: undefined })),
-					Effect.catchCauseIf(
-						(cause) => !Cause.hasInterruptsOnly(cause),
-						(cause) =>
-							Effect.logWarning("Autonomous pass failed; closing it out").pipe(
-								Effect.annotateLogs({
-									sessionId: input.sessionId,
-									messageId: input.messageId,
-									cause: summarizeCause(cause),
-								}),
-								Effect.as({
-									result: { submitted: false, compactions: 0 },
-									raised: reviewFailureReason(cause, { ownKey: Option.isSome(orgKey) }),
-								}),
-							),
-					),
-					Effect.map(({ result, raised }) => {
-						observability.compactions = (observability.compactions ?? 0) + result.compactions
-						return outcome.record(kind, result.submitted, raised)
-					}),
-				)
-
-			if (!autonomous) {
+			// `autonomous` implies a row, so this is the row's agent's completion; the narrowing is for the compiler.
+			const rowCompletion = row === undefined ? undefined : AGENTS[row.kind].completion
+			if (!autonomous || rowCompletion === undefined) {
 				observability.compactions = (yield* run({ text, history: prior })).compactions
 				if (!recordedTerminal && !holdsTurn()) observability.outcome = "aborted"
 				yield* annotateTurn()
 				return
 			}
 
-			const autonomousTurn = Effect.gen(function* () {
-				const settings = row === undefined ? undefined : AGENTS[row.kind].completion
-				const passDeadline =
-					(yield* Clock.currentTimeMillis) +
-					Duration.toMillis(Duration.fromInputUnsafe(agent.budget.maxDuration))
-				const remainingAgent = (remaining: number): AgentDefinition => ({
-					...agent,
-					budget: { ...agent.budget, maxDuration: Duration.millis(remaining) },
-				})
-				yield* phase("pass", { text, history: prior })
-				// A review stopped for failing tool calls is usually a bad start, not an impossible review:
-				// it starts over once from the kickoff, inside the same wall clock, without the failed calls.
-				if (
-					!outcome.submitted() &&
-					outcome.failure() === "stuck" &&
-					prReviewId !== undefined &&
-					holdsTurn()
-				) {
-					const remaining = passDeadline - (yield* Clock.currentTimeMillis)
-					if (remaining >= MIN_CONTINUE_MS) {
-						const restarted = yield* phase("restart", {
-							text,
-							history: prior,
-							agent: remainingAgent(remaining),
-						})
-						yield* Effect.annotateCurrentSpan("maple.pr_review.restarted", restarted.submitted)
-					}
-				}
-				// A review that answered in prose with no limit hit was not stopped, it stopped itself. With
-				// time left it gets one more pass that may still read, inside the same wall clock.
-				if (
-					!outcome.submitted() &&
-					outcome.failure() === undefined &&
-					prReviewId !== undefined &&
-					holdsTurn()
-				) {
-					const remaining = passDeadline - (yield* Clock.currentTimeMillis)
-					if (remaining >= MIN_CONTINUE_MS) {
-						const continued = yield* phase("continue", {
-							// The replayed history keeps only its newest part, which can drop the kickoff.
-							text: `${settings?.continuePrompt ?? ""}\n\n${text}`,
-							history: withToolTranscript(input.session.history()),
-							agent: remainingAgent(remaining),
-						})
-						yield* Effect.annotateCurrentSpan("maple.pr_review.continued", continued.submitted)
-					}
-					if (!outcome.submitted() && outcome.failure() === undefined)
-						outcome.fail("answered_in_prose")
-				}
-				if (!outcome.submitted() && holdsTurn()) {
-					const closeOut = yield* phase("close-out", {
-						text: settings?.closeOutPrompt ?? "",
-						history: withToolTranscript(input.session.history()),
-						closeOut: true,
-					})
-					yield* Effect.annotateCurrentSpan(settings?.closedOutAttribute ?? "", closeOut.submitted)
-				}
-
-				yield* closeFeeds
-			})
+			const autonomousTurn = runAutonomousPhases({
+				agent,
+				completion: rowCompletion,
+				text,
+				prior,
+				outcome,
+				holdsTurn,
+				transcript: () => input.session.history(),
+				run,
+				ownKey: Option.isSome(orgKey),
+				onCompactions: (compactions) => {
+					observability.compactions = (observability.compactions ?? 0) + compactions
+				},
+				logAnnotations: { sessionId: input.sessionId, messageId: input.messageId },
+			}).pipe(Effect.andThen(closeFeeds))
 
 			// A turn that still holds its slot after the phases settles here, once (`runAutonomousTurn`).
 			const settleTurn = Effect.gen(function* () {
-				// Findings the pass saved, and its children's warnings, are posted as a partial rather
-				// than lost with the report.
-				const saved = closeOutFindings(
-					review?.ledger.findings() ?? [],
-					review?.childFindings?.all() ?? [],
-				)
-				if (
-					!outcome.submitted() &&
-					prReviewId !== undefined &&
-					review !== undefined &&
-					saved.length > 0
-				) {
-					const failure = outcome.failure()
-					const filed = yield* reviews
-						.submitReview(
-							tenant.orgId,
-							prReviewId,
-							savedFindingsRequest({
-								findings: saved,
-								unreviewed: review.coverage.unread(),
-								modelName: model.name,
-								usage,
-								...(failure === undefined ? undefined : { reason: failure }),
-							}),
-						)
-						.pipe(
-							Effect.as(true),
-							// Settling is uninterruptible, so a hung submit is bounded; `failReview` skips a filed review.
-							Effect.timeout(SUBMIT_SAVED_TIMEOUT),
-							Effect.catchCause((cause) =>
-								Effect.logError("Could not file the saved findings", cause).pipe(
-									Effect.as(false),
-								),
-							),
-						)
-					outcome.record("verdict", filed)
-					yield* Effect.annotateCurrentSpan("maple.pr_review.filed_saved_findings", filed)
+				if (prReviewId !== undefined && review !== undefined) {
+					yield* fileSavedFindings({
+						outcome,
+						review,
+						modelName: model.name,
+						usage,
+						submit: (request) => reviews.submitReview(tenant.orgId, prReviewId, request),
+					})
 				}
 				yield* failUnfinished(outcome.failure() ?? "no_report", NO_DIAGNOSIS_ERROR)
-				input.session.endTurn(
-					input.messageId,
-					outcome.ending(row === undefined ? "" : AGENTS[row.kind].completion.noReportMessage),
-				)
+				input.session.endTurn(input.messageId, outcome.ending(rowCompletion.noReportMessage))
 			})
 
 			yield* runAutonomousTurn({ phases: autonomousTurn, settle: settleTurn, aborted, holdsTurn })
