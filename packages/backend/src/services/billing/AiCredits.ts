@@ -47,7 +47,6 @@ const creditsResetAt = (customer: BillingCustomer, nextResetAt: number | null | 
 	return Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1)
 }
 
-/** Why `customer` may not spend AI credits now, or None when it may. */
 export const missingAiCredits = (
 	customer: BillingCustomer,
 	nowMs: number,

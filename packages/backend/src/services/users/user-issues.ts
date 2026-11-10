@@ -140,10 +140,6 @@ const issueServices = Effect.fn("UsersReads.issueServices")(function* (
 })
 
 /**
- * The issues one user hit in the window and scope, `None` on a cluster whose `error_events` lacks
- * `UserId` (migration 0057).
- */
-/**
  * Services a caller already resolved for the request's namespaces (`undefined` when unscoped), so a
  * read that has a scope in hand does not look the namespace up again.
  */
@@ -152,6 +148,10 @@ export type ResolvedServices = Readonly<{ serviceNames: ReadonlyArray<string> | 
 const servicesFor = (tenant: TenantContext, payload: UserDetailRequest, resolved?: ResolvedServices) =>
 	resolved === undefined ? issueServices(tenant, payload) : Effect.succeed(resolved.serviceNames)
 
+/**
+ * The issues one user hit in the window and scope, `None` on a cluster whose `error_events` lacks
+ * `UserId` (migration 0057).
+ */
 export const readUserIssueItems = Effect.fn("UsersReads.issueItems")(function* (
 	tenant: TenantContext,
 	payload: UserDetailRequest,

@@ -39,15 +39,11 @@ export interface TestDb {
 /**
  * Reject a bound `Date`.
  *
- * The postgres.js driver this suite used to model refused a `Date` param
- * outright, and a raw `sql` template binding one reached production and
- * stalled the error tick for 25 hours because PGlite serializes it happily.
- * node-postgres accepts a `Date` too, so the guard no longer mirrors a driver
- * difference; it enforces the convention that outlived it. There is no
- * legitimate `Date` param: every timestamptz column is `mode: "date"`, whose
- * `mapToDriverValue` already returns an ISO string. A `Date` surviving into the
- * param array therefore always means a raw `sql` fragment with no column type
- * behind it — use `msToSqlTimestamp` there.
+ * A raw `sql` template binding one reached production and stalled the error tick
+ * for 25 hours, because PGlite serialized it happily and the tests passed. There
+ * is no legitimate `Date` param: timestamptz columns are `PG.timestamptzMillis`
+ * and encode their own values, so a `Date` in the param array always means a raw
+ * `sql` fragment with no column type behind it. Use `msToSqlTimestamp` there.
  */
 const assertNoDateParams = (sql: string, params: unknown[] | undefined): void => {
 	const index = Arr.findFirstIndex(params ?? [], (param) => param instanceof Date)
@@ -95,8 +91,7 @@ export const createTestDb = (track?: TestDb[], startParams: ReadonlyArray<string
 	// Building the layer twice over the same DB is legitimate (tests that provide
 	// makeLayer twice to simulate concurrent service instances). Restoring the
 	// snapshot is the constructor's job and happens once, so both builds just wait
-	// on the same readiness promise — there is no longer a non-idempotent `exec`
-	// to memoize around.
+	// on the same readiness promise.
 	const layer = Layer.effect(
 		Database,
 		Effect.gen(function* () {

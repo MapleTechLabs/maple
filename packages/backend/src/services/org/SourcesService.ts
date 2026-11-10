@@ -273,7 +273,6 @@ export class SourcesService extends Context.Service<SourcesService>()(
 					),
 				)
 
-			// The default source first, then newest first as selected.
 			const ownerOf = (
 				owners: Effect.Success<ReturnType<typeof readSourceOwners>>,
 				id: SourceId,
@@ -282,6 +281,7 @@ export class SourcesService extends Context.Service<SourcesService>()(
 				overrides: owners.overrides.get(id),
 			})
 
+			// The default source first, then newest first as selected.
 			const toSources = (
 				rows: ReadonlyArray<SourceRow>,
 				owners: Effect.Success<ReturnType<typeof readSourceOwners>>,

@@ -248,7 +248,6 @@ export class WebAnalyticsDigestService extends Context.Service<WebAnalyticsDiges
 					),
 				)
 
-				// Summary
 				const summaryOf = (rows: ReadonlyArray<CH.WebAnalyticsSummaryOutput>) => {
 					const row = rows[0]
 					const identified = row?.identifiedSessions ?? 0
@@ -271,7 +270,6 @@ export class WebAnalyticsDigestService extends Context.Service<WebAnalyticsDiges
 				const curPageViews = sumViews(Arr.filter(pageviewSeries, inCurrentWeek))
 				const prevPageViews = sumViews(Arr.filter(pageviewSeries, (row) => !inCurrentWeek(row)))
 
-				// Pages
 				const prevViewsByPage = new Map(
 					Arr.map(prevPages, (row) => [`${row.host}${row.pagePath}`, row.pageViews] as const),
 				)

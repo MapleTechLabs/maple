@@ -1,7 +1,7 @@
 // Shared OAuth-connection machinery for provider integrations (Cloudflare,
 // Linear, ...). Providers persist into the same `oauth_connections` /
 // `oauth_auth_states` tables, so the state-row lifecycle, encrypted token
-// persistence, token-endpoint HTTP calls, and refresh semantics live here —
+// persistence, token-endpoint HTTP calls, and refresh semantics live here:
 // parameterized by provider id and display label. Provider-specific flow
 // (PKCE, OIDC discovery, account resolution) stays in each service.
 
@@ -33,14 +33,14 @@ import { makeDbExecute, makePersistenceErrorMapper } from "@maple/backend/platfo
 import type { EnvApi } from "@maple/backend/platform/Env"
 import { makeOAuthStateStore, type OAuthFlowInitiator } from "./oauth-state"
 
-export const OAUTH_REFRESH_LEEWAY_MS = 60_000 // refresh when the access token is within 1 minute of expiry
+export const OAUTH_REFRESH_LEEWAY_MS = 60_000
 
 /**
  * How long `getValidConnectionToken` may serve a connection row from the
  * in-isolate memo instead of re-reading Postgres.
  *
  * Why this exists: an uncached read on a hot path is a network call exposed to
- * the dial itself — measured at p50 11ms but with ~4% of dials stalling out.
+ * the dial itself: measured at p50 11ms but with ~4% of dials stalling out.
  * Poller and scrape paths call this once per tick per org, which made it one of
  * the largest sources of dial volume on the api worker. Requests now share one
  * connection per invocation (`pg-connection-scope.ts`), which amortizes the
@@ -48,7 +48,7 @@ export const OAUTH_REFRESH_LEEWAY_MS = 60_000 // refresh when the access token i
  *
  * 60s is deliberately far tighter than the token's own lifetime: the memo is
  * about collapsing a burst of same-tick reads, not about holding credentials.
- * It is also bounded twice over — an entry is only served while `rowIsValid`
+ * It is also bounded twice over: an entry is only served while `rowIsValid`
  * still holds for it, so a token nearing expiry re-reads regardless of TTL.
  */
 const CONNECTION_MEMO_TTL_MS = 60_000
@@ -68,9 +68,9 @@ const decodeTokenResponse = Schema.decodeUnknownEffect(OAuthTokenResponseSchema)
 const decodeJsonUnknown = Schema.decodeUnknownEffect(Schema.fromJsonString(Schema.Unknown))
 
 /**
- * RFC 6749 §5.2 error body. Token endpoints answer 400/401 for many reasons —
+ * RFC 6749 §5.2 error body. Token endpoints answer 400/401 for many reasons:
  * `invalid_client` (rotated/misconfigured client secret), `invalid_request`,
- * `invalid_scope` — and only `invalid_grant` means the grant itself is dead.
+ * `invalid_scope`. Only `invalid_grant` means the grant itself is dead.
  * Classifying any other 400/401 as revoked would let one bad Maple client
  * secret stamp every tenant connection revoked at once.
  */
@@ -228,7 +228,7 @@ export const makeOAuthConnectionHelpers = (options: MakeOAuthConnectionHelpersOp
 
 		/**
 		 * Drop the memoized row for an org. Must be called from every path that
-		 * writes or removes the connection — a stale entry here serves a token for
+		 * writes or removes the connection: a stale entry here serves a token for
 		 * a grant that was just revoked or reconnected.
 		 */
 		const invalidateConnectionMemo = (orgId: OrgId) =>
@@ -324,7 +324,7 @@ export const makeOAuthConnectionHelpers = (options: MakeOAuthConnectionHelpersOp
 			).pipe(Effect.ensuring(invalidateConnectionMemo(orgId)))
 
 		/**
-		 * Stamp the connection as revoked (idempotent — only the first stamp writes).
+		 * Stamp the connection as revoked (idempotent: only the first stamp writes).
 		 * Pollers filter on `revokedAt IS NULL`, so a revoked grant stops being
 		 * retried every tick; `upsertConnection` (reconnect) clears the stamp.
 		 * With `unchangedSince`, the stamp is a no-op once the row was rewritten after that read.
@@ -448,8 +448,8 @@ export const makeOAuthConnectionHelpers = (options: MakeOAuthConnectionHelpersOp
 		/**
 		 * Refresh-grant call with the shared classification rule: only a 400/401
 		 * whose RFC 6749 error body says `invalid_grant` means the grant itself is
-		 * gone (revoked / rotated away). Every other failure — `invalid_client`
-		 * from a rotated Maple secret, a bodyless 400, 429s, 5xx — is a
+		 * gone (revoked / rotated away). Every other failure (`invalid_client`
+		 * from a rotated Maple secret, a bodyless 400, 429s, 5xx) is a
 		 * non-mutating upstream failure and must not stamp the connection revoked.
 		 */
 		const refreshAccessToken = Effect.fn("OAuthConnectionHelpers.refreshAccessToken")(function* (
@@ -520,7 +520,7 @@ export const makeOAuthConnectionHelpers = (options: MakeOAuthConnectionHelpersOp
 				),
 			).pipe(
 				// The provider already rotated the refresh token, so this write holds the
-				// only usable copy — losing it to a transient Postgres blip turns into a
+				// only usable copy; losing it to a transient Postgres blip turns into a
 				// permanent disconnect on the next refresh. Retry hard before giving up.
 				Effect.retry({ times: 3, schedule: Schedule.exponential("100 millis") }),
 			)
@@ -538,7 +538,7 @@ export const makeOAuthConnectionHelpers = (options: MakeOAuthConnectionHelpersOp
 			}).pipe(Effect.map((accessToken) => ({ accessToken, row })))
 
 		// Providers rotate refresh tokens on use, so two concurrent refreshes with the same
-		// stored token make the loser 400 — which would falsely surface as "revoked". Serialize
+		// stored token make the loser 400, which would falsely surface as "revoked". Serialize
 		// refreshes within this isolate (refreshes are rare, one permit is fine) and re-check the
 		// row after acquiring: a fiber that waited usually finds the winner's fresh tokens.
 		const refreshSemaphore = Semaphore.makeUnsafe(1)
@@ -565,7 +565,7 @@ export const makeOAuthConnectionHelpers = (options: MakeOAuthConnectionHelpersOp
 					Effect.map((accessToken) => ({ accessToken, row })),
 					// Cross-isolate race: a concurrent worker isolate may have consumed the rotated
 					// refresh token and persisted new tokens between our read and our refresh. Before
-					// declaring the connection revoked, re-read the row — if a newer, valid token
+					// declaring the connection revoked, re-read the row: if a newer, valid token
 					// landed, use it.
 					Effect.catchTag("@maple/http/errors/IntegrationsRevokedError", (error) =>
 						Effect.gen(function* () {
@@ -685,7 +685,7 @@ export const makeOAuthConnectionHelpers = (options: MakeOAuthConnectionHelpersOp
 				}
 				// Deliberately not memoized. `refreshWithSingleFlight` resolves to the
 				// row as it was read *before* the refresh, so its ciphertext is the
-				// superseded token — caching it would serve a stale credential for the
+				// superseded token; caching it would serve a stale credential for the
 				// whole TTL. Refreshes are rare; the next call re-reads and memoizes
 				// the persisted row.
 				return yield* refreshWithSingleFlight(config, orgId)

@@ -119,13 +119,6 @@ export interface VerifiedAlertChartClaims extends Omit<AlertChartClaims, "orgId"
 }
 
 /**
- * Canonical, order-independent encoding of the claims.
- *
- * Hand-built rather than `JSON.stringify` of the object: key order there is
- * insertion order, so a caller that built the claims differently would produce
- * a different signature for the same claims.
- */
-/**
  * The signed payload, positionally.
  *
  * A tuple rather than an object because the bytes are what is signed: object

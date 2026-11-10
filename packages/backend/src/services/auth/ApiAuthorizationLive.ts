@@ -40,7 +40,7 @@ export const ApiAuthorizationLive = Layer.effect(
 					if (Option.isSome(apiKeyResolved)) {
 						const resolved = apiKeyResolved.value
 						// Denied attempts are audited with the same attribution as
-						// successes — a key probing a surface it is not valid for is
+						// successes: a key probing a surface it is not valid for is
 						// exactly what the audit log exists to surface. This layer has
 						// no rate limiter, so coalescing is what bounds the volume.
 						const recordDenied = (denialReason: string) =>

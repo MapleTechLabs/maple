@@ -278,7 +278,6 @@ export class DependencyScanReader extends Context.Service<DependencyScanReader, 
 			const vcs = yield* VcsRepository
 			const runningCommits = yield* RunningCommits
 
-			/** The org's repositories under a processable installation, active ones only. */
 			const connectedRepositories = Effect.fn("DependencyScanReader.connectedRepositories")(
 				function* (orgId: OrgId) {
 					const allInstallations = yield* vcs.listInstallationsByOrg(orgId)

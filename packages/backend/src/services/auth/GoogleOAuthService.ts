@@ -76,7 +76,6 @@ const resolveConfig = Effect.fn("GoogleOAuthService.resolveConfig")(function* (e
 	return { tokenUrl: TOKEN_URL, clientId, clientSecret } satisfies OAuthTokenEndpointConfig
 })
 
-/** Exact failures involved in resolving a usable Google access token. */
 export type GoogleAccessTokenError =
 	| IntegrationsNotConnectedError
 	| IntegrationsRevokedError
@@ -295,7 +294,6 @@ export class GoogleOAuthService extends Context.Service<GoogleOAuthService, Goog
 	static readonly layer = Layer.effect(this, this.make).pipe(Layer.provide(FetchHttpClient.layer))
 }
 
-/** Whether Google is configured for this deployment (both client id and secret set). */
 export const isGoogleOAuthConfigured = (env: EnvConfig): boolean =>
 	Option.isSome(env.GOOGLE_SEARCH_CONSOLE_CLIENT_ID) &&
 	Option.isSome(env.GOOGLE_SEARCH_CONSOLE_CLIENT_SECRET)

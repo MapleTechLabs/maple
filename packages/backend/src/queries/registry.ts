@@ -65,8 +65,7 @@ const cloudflareInfraZoneCounters = defineQuery({
 	compile: (payload: CloudflareInfraZonesRequest, orgId: OrgId) => {
 		const params = windowParams(payload, orgId)
 		// Counters (metrics_sum) + percentiles (metrics_gauge) run
-		// concurrently, then merge by ServiceName — same shape as
-		// serviceCloudflareStats above.
+		// concurrently, then merge by ServiceName, like `cloudflareServiceCounters`.
 		const filters = toCloudflareFilters(payload)
 		return CH.compile(Integrations.cloudflareZoneCountersSQL(filters), params)
 	},
@@ -826,7 +825,7 @@ export const Queries = {
 	/**
 	 * Bounded to a ±1h window around the requested log so ClickHouse can prune
 	 * partitions instead of reading every retained daily partition for an
-	 * exact-timestamp match. That window used to be computed in the handler.
+	 * exact-timestamp match.
 	 */
 	getLog: defineQuery({
 		id: "getLog",
@@ -973,7 +972,6 @@ export const Queries = {
 			}),
 	}),
 
-	// Integration queries, declared above.
 	cloudflareInfraZoneCounters,
 	cloudflareInfraZoneLatency,
 	cloudflareInfraZoneFirewallTimeseries,
@@ -1012,7 +1010,6 @@ export const Queries = {
 	gcpCloudSqlDatabases,
 	gcpCloudSqlStatementSpans,
 
-	// ZoneDetail / PlanetScaleStats sub-queries, declared above.
 	cloudflareInfraZoneDetailStatus,
 	cloudflareInfraZoneDetailCache,
 	cloudflareInfraZoneDetailLatency,

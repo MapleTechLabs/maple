@@ -769,13 +769,10 @@ describe("SecurityAuditStore replays", () => {
 				// Events in one millisecond order by id; these are sequential in time.
 				yield* TestClock.adjust("1 millis")
 				yield* scoped.recordEvent(runId, note)
-				// Events in one millisecond order by id; these are sequential in time.
 				yield* TestClock.adjust("1 millis")
 				yield* scoped.recordEvent(runId, agent("ok"))
-				// Events in one millisecond order by id; these are sequential in time.
 				yield* TestClock.adjust("1 millis")
 				yield* scoped.recordEvent(runId, note)
-				// Events in one millisecond order by id; these are sequential in time.
 				yield* TestClock.adjust("1 millis")
 				yield* scoped.recordEvent(runId, agent("failed"))
 				const events = yield* scoped.listEvents(runId)

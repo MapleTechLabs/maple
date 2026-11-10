@@ -694,10 +694,9 @@ export class ApiKeysService extends Context.Service<ApiKeysService>()(
 			//     and Postgres writes no WAL tuple for a row it never touched. Without
 			//     it, isolate churn would put us straight back to a write per request.
 			//
-			// The Map is built per service instance rather than at module scope for the
-			// reason spelled out in ScrapeTargetsService — module scope would share one
-			// memo across every database in a process, which breaks tests that build a
-			// fresh PGlite per case.
+			// The Map is built per service instance rather than at module scope: module
+			// scope would share one memo across every database in a process, which breaks
+			// tests that build a fresh PGlite per case.
 			const LAST_USED_HEARTBEAT_MS = 5 * 60_000
 			const lastUsedTouchMemo = new Map<string, number>()
 

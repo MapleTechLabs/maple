@@ -958,7 +958,6 @@ const usageOf = (row: Integrations.AiSessionTotalsOutput | Integrations.AiSessio
 	return { reporting, tokens, cost }
 }
 
-/** The session's row and its turn rows, as the response shape. */
 const foldSummary = (
 	totals: Integrations.AiSessionTotalsOutput | undefined,
 	rows: readonly Integrations.AiSessionSummaryOutput[],

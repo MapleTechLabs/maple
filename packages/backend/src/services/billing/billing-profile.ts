@@ -120,7 +120,6 @@ const StripeTaxIdList = Schema.Struct({
 	data: Schema.Array(StripeTaxIdRow),
 })
 
-/** An unlinked org's profile: nothing to show, nothing to edit yet. */
 export const unlinkedProfile = (): BillingProfile => new BillingProfile({ linked: false, taxIds: [] })
 
 /**
@@ -166,7 +165,6 @@ export const readBillingProfile = (
 		})
 	})
 
-/** The `code` of the Autumn-shaped rejection body a Stripe call returns. */
 const rejectionCode = (result: AutumnResult): string | undefined => {
 	const code = decodeStripeCode(result.response)
 	return Option.getOrUndefined(code)

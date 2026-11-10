@@ -20,7 +20,7 @@ import type { AutumnResult, AutumnTransportFailure } from "./autumn-http"
 /**
  * Caching and decoding plumbing shared by the billing routes.
  *
- * Lives outside `routes/billing.http.ts` so the customer cache and the upstream
+ * Lives outside `routes/internal/billing.http.ts` (apps/api) so the customer cache and the upstream
  * result handling share one boundary; the calls themselves live in
  * `autumn-http.ts`. Everything here is a plain function: the caller owns the
  * secret key and cache instance.
@@ -229,12 +229,12 @@ export const classifyAutumn = (result: AutumnResult): Effect.Effect<unknown, Aut
 /**
  * Classify, then collapse the caller-input failures back into a 502.
  *
- * For an endpoint that sends no user input — `getCustomer`, `getUsage`,
- * `listInvoices`, `listPlans`, `openCustomerPortal` — an upstream 4xx means
+ * For an endpoint that sends no user input (`getCustomer`, `getUsage`,
+ * `listInvoices`, `listPlans`, `openCustomerPortal`), an upstream 4xx means
  * *we* built a bad request. Answering the browser with a 400/402/409 would
  * blame a caller who supplied nothing, so those endpoints keep reporting 502
  * and the real status stays visible on the `autumn.request` span (which carries
- * `http.response.status_code` and `autumn.code`). Nothing is lost by collapsing
+ * `http.response.status_code` and `maple.autumn.code`). Nothing is lost by collapsing
  * here; the diagnosis lives in telemetry, where it belongs.
  */
 export const ensureOk = (

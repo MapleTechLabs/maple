@@ -3,12 +3,10 @@ import { escapeClickHouseString } from "@maple-dev/effect-orm/sql"
 import { Array as Arr, String as Str } from "effect"
 import { signHs256Jwt } from "@maple/backend/platform/jwt"
 
-// Tinybird per-org read JWT minting.
-//
 // Tinybird "Forward" enforces row-level security via self-signed JWTs: a token
 // carrying a `DATASOURCES:READ` scope with a `filter` has that filter ANDed onto
-// every scan of the datasource server-side — inside subqueries, every UNION arm,
-// both JOIN sides — regardless of the user's SQL. Verified live against the
+// every scan of the datasource server-side (inside subqueries, every UNION arm,
+// both JOIN sides) regardless of the user's SQL. Verified live against the
 // `/v0/sql` Query API: `WHERE 1=1` / `OR 1=1` / subqueries / direct other-org
 // queries cannot escape the filter, and any datasource NOT listed in the token is
 // denied outright (deny-by-default).

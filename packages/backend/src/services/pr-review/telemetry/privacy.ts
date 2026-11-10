@@ -327,7 +327,6 @@ const CARD_CANDIDATE = /\b(?:\d[ -]?){13,19}\b/g
 /** Card networks' leading digits, so a long numeric id is not read as a card. */
 const CARD_ISSUER = /^(?:4|5[1-5]|2[2-7]|3[47]|6011|65)/
 
-/** Whether a digit string passes the Luhn check card numbers carry. */
 const luhn = (digits: string): boolean =>
 	Arr.reduce(Array.from(digits).reverse(), 0, (sum, char, i) => {
 		const doubled = Number(char) * (i % 2 === 1 ? 2 : 1)
@@ -359,7 +358,6 @@ interface LineLiteral {
 	readonly key: "object" | "argument" | undefined
 }
 
-/** How many times a global pattern matches. */
 const matchCount = (pattern: RegExp, text: string): number =>
 	Option.match(Str.match(pattern)(text), { onNone: () => 0, onSome: (found) => found.length })
 

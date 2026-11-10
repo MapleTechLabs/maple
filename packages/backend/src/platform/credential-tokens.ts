@@ -9,15 +9,11 @@ import { Result, String as Str } from "effect"
 const hmacDigest = (raw: string, hmacKey: string): string =>
 	createHmac("sha256", hmacKey).update(raw, "utf8").digest("base64url")
 
-// --- API keys ---
-
 export const API_KEY_PREFIX = "maple_ak_"
 
 export const generateApiKey = (): string => `${API_KEY_PREFIX}${randomBytes(32).toString("base64url")}`
 
 export const hashApiKey = (rawKey: string, hmacKey: string): string => hmacDigest(rawKey, hmacKey)
-
-// --- Ingest keys ---
 
 export const PUBLIC_INGEST_KEY_PREFIX = "maple_pk_"
 export const PRIVATE_INGEST_KEY_PREFIX = "maple_sk_"
@@ -62,8 +58,6 @@ export const HMAC_FINGERPRINT_SENTINEL = "MAPLE_HMAC_FINGERPRINT_V1"
 
 export const computeHmacFingerprint = (hmacKey: string): string =>
 	Str.slice(0, 8)(hashIngestKey(HMAC_FINGERPRINT_SENTINEL, hmacKey))
-
-// --- Dashboard share tokens ---
 
 const SHARE_TOKEN_PREFIX = "mshare_"
 

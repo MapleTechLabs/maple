@@ -42,7 +42,7 @@ const makeRepo = () => {
 	writeFileSync(`${dir}/README.md`, "# shop\n")
 	// git prints this name quoted in its index listing.
 	writeFileSync(`${dir}/src/a"b.ts`, "export const quoted = 1\n")
-	// A committed symlink out of the checkout: tracked, so `--error-unmatch` alone
+	// A committed symlink out of the checkout: tracked, so a tracked-file check alone
 	// would let `awk` follow it.
 	symlinkSync(SENTINEL, `${dir}/escape.txt`)
 	git("add", "-A")
@@ -104,7 +104,6 @@ const localSandbox = (repo: string, seen: string[][] = []): Layer.Layer<Sandbox>
 			),
 	})
 
-/** The service over a real checkout, as one layer. */
 const overRepo = () => RepoSandboxService.layer.pipe(Layer.provide(localSandbox(makeRepo())))
 
 describe("gitPathspec", () => {

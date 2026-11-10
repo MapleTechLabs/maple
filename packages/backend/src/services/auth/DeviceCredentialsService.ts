@@ -605,8 +605,8 @@ export class DeviceCredentialsService extends Context.Service<DeviceCredentialsS
 				).pipe(Effect.ignore)
 			}
 
-			/** `POST /v2/device_tokens`: a proof signed by a registered key earns a bound token. */
 			/**
+			 * `POST /v2/device_tokens`: a proof signed by a registered key earns a bound token.
 			 * `admit` runs once the key is known to belong to a live credential and before any
 			 * write or signing, so the caller's rate limit bounds the expensive half of issuance.
 			 */

@@ -20,8 +20,8 @@ import { ES256, ES256_SIGN, pemToPkcs8, signJwt } from "./jwt"
  *
  * APNs is HTTP/2-only. Workers' `fetch` negotiates HTTP/2 to origins in
  * production, so this is a plain HTTP client; the known gap is *local*
- * `workerd`, which speaks HTTP/1.1 outbound and gets the connection dropped
- * — hence `ApnsUnavailable` rather than a hard failure when the send blows up
+ * `workerd`, which speaks HTTP/1.1 outbound and gets the connection dropped,
+ * hence a typed `ApnsError` rather than a hard failure when the send blows up
  * in dev. Do not route this through the SSRF `guard` client: the host is
  * ours, fixed, and must be reachable over HTTP/2.
  *

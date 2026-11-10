@@ -301,7 +301,6 @@ export interface DestinationRow {
 	readonly disabledReason: string | null
 }
 
-/** The destinations that existed at the cancellation. */
 export const destinationsAtCancel = (rows: ReadonlyArray<DestinationRow>, atMs: number) =>
 	Arr.filter(rows, (row) => knownAtCancel(atMs, row.createdAt))
 
@@ -425,8 +424,10 @@ export class CancellationAppEvidenceReader extends Context.Service<
 		const one = <A>(query: Query<A>) =>
 			rows(query).pipe(Effect.flatMap((result) => Effect.fromNullishOr(result[0])))
 
-		/** One part of the section: null when it fails or is slow, never the end of the section. */
-		/** `name` is the part's span name, written out at each call so it stays a literal. */
+		/**
+		 * One part of the section: null when it fails or is slow, never the end of the section.
+		 * `name` is the part's span name, written out at each call so it stays a literal.
+		 */
 		const part = <A, E>(name: string, read: Effect.Effect<A, E>): Effect.Effect<A | null> =>
 			read.pipe(
 				Effect.timeout(SUB_READ_TIMEOUT),

@@ -15,7 +15,7 @@ import { getBearerToken } from "./bearer-token"
  * Authorization for the internal API: Clerk sessions only.
  *
  * The public `ApiAuthorizationLive` tries an API key first and falls back to a
- * session. This one inverts the posture — an API-key-shaped token is refused
+ * session. This one inverts the posture: an API-key-shaped token is refused
  * outright, because these endpoints are dashboard transport whose request and
  * response shapes change with the UI.
  *

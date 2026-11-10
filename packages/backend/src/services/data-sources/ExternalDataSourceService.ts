@@ -349,8 +349,6 @@ export class ExternalDataSourceService extends Context.Service<
 				}),
 		})
 
-		// ── Rows ───────────────────────────────────────────────────────────
-
 		const loadRows = (orgId: OrgId) =>
 			dbExecute((db) =>
 				db.run(
@@ -490,8 +488,6 @@ export class ExternalDataSourceService extends Context.Service<
 						.where(($) => [$.orgId.eq(orgId), $.id.eq(id)]),
 				),
 			)
-
-		// ── Catalog ────────────────────────────────────────────────────────
 
 		const storeCatalog = Effect.fn("ExternalDataSourceService.storeCatalog")(function* (
 			orgId: OrgId,
@@ -640,8 +636,6 @@ export class ExternalDataSourceService extends Context.Service<
 			truncated: false,
 		})
 
-		// ── Test ───────────────────────────────────────────────────────────
-
 		const runTest = (
 			driver: DataSourceDriver,
 			connection: DriverConnection,
@@ -680,8 +674,6 @@ export class ExternalDataSourceService extends Context.Service<
 					attributes: { "maple.data_source.kind": driver.kind },
 				}),
 			)
-
-		// ── Public API ─────────────────────────────────────────────────────
 
 		const list = Effect.fn("ExternalDataSourceService.list")(function* (
 			orgId: OrgId,

@@ -29,7 +29,6 @@ import type { TemplateDefinition, TemplateMetadata, TemplatePreviewWidget } from
 import { Array as Arr } from "effect"
 
 export const DASHBOARD_TEMPLATES: ReadonlyArray<TemplateDefinition> = [
-	// Application
 	serviceHealthTemplate,
 	errorTrackingTemplate,
 	platformOverviewTemplate,
@@ -40,12 +39,10 @@ export const DASHBOARD_TEMPLATES: ReadonlyArray<TemplateDefinition> = [
 	nodejsRuntimeTemplate,
 	grpcServiceTemplate,
 	blankTemplate,
-	// Database
 	postgresTemplate,
 	mongodbTemplate,
 	redisTemplate,
 	mysqlTemplate,
-	// Infrastructure
 	cloudflareTemplate,
 	planetscaleTemplate,
 	gcpTemplate,
@@ -53,7 +50,6 @@ export const DASHBOARD_TEMPLATES: ReadonlyArray<TemplateDefinition> = [
 	kubernetesClusterTemplate,
 	kubernetesPodTemplate,
 	dockerContainersTemplate,
-	// Messaging
 	kafkaTemplate,
 	natsTemplate,
 	rabbitmqTemplate,

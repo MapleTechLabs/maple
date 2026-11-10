@@ -153,7 +153,6 @@ export const patchLines = (patch: string): ReadonlyArray<PatchLine> =>
 		})[1],
 	)
 
-/** A diff's lines split by kind. */
 const splitPatch = (patch: string | null) => {
 	const [added, removed] = Arr.partition(patch === null ? [] : patchLines(patch), (line) =>
 		line.kind === "added" ? Result.succeed(line) : Result.fail(line.text),

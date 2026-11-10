@@ -64,6 +64,15 @@ export const originMetadata = (origin: ChatTurnOrigin | undefined) =>
 			}
 		: undefined
 
+/** The tenant facts attribution needs; both `TenantContext` and `TenantSchema` satisfy it. */
+export interface AuditTenant {
+	readonly orgId: OrgId
+	readonly userId: UserId
+	readonly actorId?: ActorId | undefined
+	readonly mcpClientName?: string | undefined
+	readonly turnOrigin?: ChatTurnOrigin | undefined
+}
+
 /**
  * Attribute an action performed under `tenant`. The credential and surface
  * come from the auth layer's `CurrentAuditActor` when one set it; an agent
@@ -74,15 +83,6 @@ export const originMetadata = (origin: ChatTurnOrigin | undefined) =>
  * something the surface it arrived on can answer: Maple's own unattended pass
  * is `system`, and a chat-platform turn is the connector's agent actor.
  */
-/** The tenant facts attribution needs; both `TenantContext` and `TenantSchema` satisfy it. */
-export interface AuditTenant {
-	readonly orgId: OrgId
-	readonly userId: UserId
-	readonly actorId?: ActorId | undefined
-	readonly mcpClientName?: string | undefined
-	readonly turnOrigin?: ChatTurnOrigin | undefined
-}
-
 export const auditAttribution = (tenant: AuditTenant, info: AuditActorInfo | undefined): AuditAttribution => {
 	const origin = tenant.turnOrigin
 	// Maple acting on its own, through an internal token or a pass nobody is reading.
@@ -274,6 +274,5 @@ export const recordRawSqlAudit = (input: RawSqlAuditInput) =>
 		})
 	})
 
-/** A one-line description of a typed failure for the audit metadata. */
 export const describeFailure = (error: { readonly _tag: string; readonly message?: string }): string =>
 	error.message ?? error._tag

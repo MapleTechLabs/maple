@@ -163,7 +163,6 @@ const toBillingUpstreamError = (error: unknown) =>
 /** Ceiling on one billing call, so a stalled Autumn or Stripe cannot hang the request. */
 export const BILLING_REQUEST_TIMEOUT = Duration.seconds(25)
 
-/** Bounds `call` and surfaces the timeout as the typed `BillingUpstreamError`. */
 export const withBillingTimeout =
 	(vendor: string, route: string) =>
 	<A, E, R>(call: Effect.Effect<A, E, R>): Effect.Effect<A, E | BillingUpstreamError, R> =>
@@ -183,7 +182,6 @@ const JsonBody = Schema.fromJsonString(Schema.Unknown)
 
 const decodeJson = Schema.decodeEffect(JsonBody)
 
-/** Total, synchronous JSON parse: `None` where `JSON.parse` would have thrown. */
 const parseJsonOption = Schema.decodeUnknownOption(JsonBody)
 
 const trimTrailingSlash = (url: string) => Str.replace(/\/+$/, "")(url)
@@ -358,7 +356,6 @@ export interface AutumnClientApi {
 		customerId: BillingCustomerId,
 		controls: AutumnBillingControlsUpdate,
 	) => AutumnCall
-	/** Overwrites the customer's display name. */
 	readonly updateCustomerName: (customerId: BillingCustomerId, name: string) => AutumnCall
 }
 
@@ -372,12 +369,6 @@ const customerDataFields = (data: AutumnCustomerData | undefined): Record<string
 				...(data.metadata !== undefined ? { metadata: data.metadata } : undefined),
 			}
 
-/**
- * Customer billing controls live on the canonical REST surface — `autumnHandler`
- * never exposed an RPC route for them, so this call was always hand-rolled. Its
- * explicit `x-api-version` pin now matches the routes above, which send the same
- * version the SDK defaulted to.
- */
 const callUpdateBillingControls = (
 	client: HttpClient.HttpClient,
 	secretKey: string | undefined,
@@ -386,10 +377,7 @@ const callUpdateBillingControls = (
 	controls: AutumnBillingControlsUpdate,
 ): Effect.Effect<AutumnResult, AutumnTransportFailure> =>
 	secretKey === undefined
-		? // A missing key is OUR deployment fault, not Autumn's. This used to answer
-			// 502, which pointed every investigation upstream at a service that was
-			// never even called.
-			Effect.fail(new BillingNotConfiguredError({ message: "Billing is not configured" }))
+		? Effect.fail(new BillingNotConfiguredError({ message: "Billing is not configured" }))
 		: Effect.gen(function* () {
 				const request = yield* HttpClientRequest.bodyJson(
 					autumnPost(apiUrl, secretKey, ROUTE_PATHS.updateCustomer),

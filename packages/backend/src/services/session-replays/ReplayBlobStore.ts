@@ -1,8 +1,6 @@
 import { Array as Arr, Context, Effect, Layer, Option, Schema, String as Str } from "effect"
 import { type ObjectStore, ReplayBlobBucket } from "@maple/backend/platform/bindings"
 
-// ReplayBlobStore — reads rrweb chunk payloads out of R2.
-//
 // The ingest gateway stores each replay chunk's gzipped rrweb array as an
 // object and writes a `session_replay_events` row that carries only the chunk's
 // metadata, with an empty `Events`. This service turns those rows back into the

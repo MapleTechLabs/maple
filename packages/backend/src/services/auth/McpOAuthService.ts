@@ -779,8 +779,8 @@ export class McpOAuthService extends Context.Service<
 				}
 				// The grant's absolute ceiling. Rotation resets `expires_at`, so this is
 				// the only thing that ever ends a grant nobody explicitly revoked.
-				// A pre-column row is anchored from the row in hand — at most one
-				// rotation window old — rather than being grandfathered in forever.
+				// A pre-column row is anchored from the row in hand (at most one
+				// rotation window old) rather than being grandfathered in forever.
 				const familyExpiresAtMs =
 					row.familyExpiresAt ?? row.createdAt + REFRESH_FAMILY_ABSOLUTE_TTL_MS
 				if (familyExpiresAtMs <= now) {
@@ -793,7 +793,7 @@ export class McpOAuthService extends Context.Service<
 				// The visible `api_keys` row is the only handle a member has on this
 				// grant in the UI, and revoking it used to be a no-op the next rotation
 				// undid. Treating it as the grant's kill switch is what makes that
-				// button — and the membership-removal sweep — actually bite.
+				// button (and the membership-removal sweep) actually bite.
 				const accessKeyRows = yield* dbExecute((db) =>
 					db.run(
 						PG.from(ApiKeys)
