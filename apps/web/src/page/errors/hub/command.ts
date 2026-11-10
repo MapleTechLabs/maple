@@ -25,14 +25,11 @@ export const WarehouseFilters = Schema.Struct({
 })
 export type WarehouseFilters = typeof WarehouseFilters.Type
 
-const mutable = <A>(values: ReadonlyArray<A> | undefined): Array<A> | undefined =>
-	values === undefined ? undefined : [...values]
-
 const warehouseData = (filters: WarehouseFilters) => ({
 	startTime: filters.startTime,
 	endTime: filters.endTime,
-	services: mutable(filters.services),
-	deploymentEnvs: mutable(filters.deploymentEnvs),
+	services: filters.services,
+	deploymentEnvs: filters.deploymentEnvs,
 })
 
 /** `useEffectiveTimeRange(undefined, undefined, ERRORS_WINDOW)`. */

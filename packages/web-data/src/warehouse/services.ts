@@ -49,12 +49,12 @@ export {
 const GetServiceOverviewInput = Schema.Struct({
 	startTime: Schema.optional(dateTimeString),
 	endTime: Schema.optional(dateTimeString),
-	environments: Schema.optional(Schema.mutable(Schema.Array(DeploymentEnvironment))),
-	namespaces: Schema.optional(Schema.mutable(Schema.Array(ServiceNamespace))),
-	commitShas: Schema.optional(Schema.mutable(Schema.Array(CommitSha))),
-	excludedEnvironments: Schema.optional(Schema.mutable(Schema.Array(DeploymentEnvironment))),
-	excludedNamespaces: Schema.optional(Schema.mutable(Schema.Array(ServiceNamespace))),
-	excludedCommitShas: Schema.optional(Schema.mutable(Schema.Array(CommitSha))),
+	environments: Schema.optional(Schema.Array(DeploymentEnvironment)),
+	namespaces: Schema.optional(Schema.Array(ServiceNamespace)),
+	commitShas: Schema.optional(Schema.Array(CommitSha)),
+	excludedEnvironments: Schema.optional(Schema.Array(DeploymentEnvironment)),
+	excludedNamespaces: Schema.optional(Schema.Array(ServiceNamespace)),
+	excludedCommitShas: Schema.optional(Schema.Array(CommitSha)),
 })
 
 export type GetServiceOverviewInput = (typeof GetServiceOverviewInput)["Encoded"]
@@ -121,10 +121,10 @@ export interface ServiceHealthSnapshot {
 const GetServiceHealthSnapshotInput = Schema.Struct({
 	startTime: Schema.optional(dateTimeString),
 	endTime: Schema.optional(dateTimeString),
-	environments: Schema.optional(Schema.mutable(Schema.Array(DeploymentEnvironment))),
+	environments: Schema.optional(Schema.Array(DeploymentEnvironment)),
 	// traces_aggregates_hourly has no ServiceNamespace column — lowered to
 	// service membership (see `scopeServicesToNamespaces`) after the query.
-	namespaces: Schema.optional(Schema.mutable(Schema.Array(ServiceNamespace))),
+	namespaces: Schema.optional(Schema.Array(ServiceNamespace)),
 })
 
 export type GetServiceHealthSnapshotInput = (typeof GetServiceHealthSnapshotInput)["Encoded"]
@@ -205,8 +205,8 @@ const GetServiceHealthBaselineInput = Schema.Struct({
 	// days BEFORE this point so an ongoing regression can't inflate its own
 	// baseline. Optional — defaults to "now".
 	rangeStartTime: Schema.optional(dateTimeString),
-	environments: Schema.optional(Schema.mutable(Schema.Array(DeploymentEnvironment))),
-	namespaces: Schema.optional(Schema.mutable(Schema.Array(ServiceNamespace))),
+	environments: Schema.optional(Schema.Array(DeploymentEnvironment)),
+	namespaces: Schema.optional(Schema.Array(ServiceNamespace)),
 })
 
 export type GetServiceHealthBaselineInput = (typeof GetServiceHealthBaselineInput)["Encoded"]

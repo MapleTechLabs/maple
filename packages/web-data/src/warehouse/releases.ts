@@ -52,10 +52,10 @@ const toTimelineBucket = (row: ReleaseTimelinePoint): ReleaseTimelineBucket => (
 const GetReleasesInput = Schema.Struct({
 	startTime: Schema.optional(dateTimeString),
 	endTime: Schema.optional(dateTimeString),
-	environments: Schema.optional(Schema.mutable(Schema.Array(DeploymentEnvironment))),
-	namespaces: Schema.optional(Schema.mutable(Schema.Array(ServiceNamespace))),
-	services: Schema.optional(Schema.mutable(Schema.Array(ServiceName))),
-	excludedEnvironments: Schema.optional(Schema.mutable(Schema.Array(DeploymentEnvironment))),
+	environments: Schema.optional(Schema.Array(DeploymentEnvironment)),
+	namespaces: Schema.optional(Schema.Array(ServiceNamespace)),
+	services: Schema.optional(Schema.Array(ServiceName)),
+	excludedEnvironments: Schema.optional(Schema.Array(DeploymentEnvironment)),
 })
 
 export type GetReleasesInput = (typeof GetReleasesInput)["Encoded"]
@@ -127,7 +127,7 @@ const GetReleaseDetailInput = Schema.Struct({
 	baselineCommitSha: Schema.optional(CommitSha),
 	startTime: Schema.optional(dateTimeString),
 	endTime: Schema.optional(dateTimeString),
-	environments: Schema.optional(Schema.mutable(Schema.Array(DeploymentEnvironment))),
+	environments: Schema.optional(Schema.Array(DeploymentEnvironment)),
 })
 
 export type GetReleaseDetailInput = (typeof GetReleaseDetailInput)["Encoded"]
