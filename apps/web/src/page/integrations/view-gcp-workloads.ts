@@ -13,6 +13,7 @@ import {
 	gcpWorkloadSearch,
 	gcpWorkloadTone,
 } from "../../components/infra/gcp/tabs"
+import { filterChipItem } from "@maple/views/ui/filter-chip"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { stripClass } from "@maple/views/ui/rule"
 import { heading } from "@maple/views/ui/heading"
@@ -22,7 +23,6 @@ import { icon } from "@maple/views/ui/icon"
 import { panel, panelHeader } from "@maple/views/ui/panel"
 import { skeleton } from "@maple/views/ui/skeleton"
 import { statusDot } from "@maple/views/ui/status-dot"
-import { countChipItem } from "./kit/count-chip"
 import * as ToggleGroup from "@maple/views/ui/toggle-group"
 import { truncatedText } from "@maple/views/ui/truncated-text"
 import { statRail } from "../kit/stat-rail"
@@ -85,9 +85,9 @@ const workloads = (h: H, model: Model, className: string): Html => {
 								size: "xs",
 								className: "gap-1.5",
 								items: [
-									countChipItem(h, { value: "all", label: "All", count: all.length }),
+									filterChipItem(h, { value: "all", label: "All", count: all.length }),
 									...Arr.map(services, (entry) =>
-										countChipItem(h, {
+										filterChipItem(h, {
 											value: entry.service,
 											label: GCP_INFRA_SERVICES[entry.service].title,
 											count: entry.workloads.length,

@@ -27,12 +27,14 @@ import {
 	scrapeTargetIdOf,
 	tabsOf,
 } from "../kit/shared"
-import { initEmbedded } from "../../integrations/embed"
-import * as Integrations from "../../integrations/update"
-import { connectionsOf as awsConnectionsOf } from "../../integrations/update-aws"
-import { gcpConnectors } from "../../integrations/update-gcp"
-import { Message as IntegrationMessage } from "../../integrations/message"
-import type { Model as IntegrationModel } from "../../integrations/model"
+import {
+	initEmbedded,
+	awsConnectionsOf,
+	gcpConnectors,
+	Message as IntegrationMessage,
+	type Model as IntegrationModel,
+} from "../../integrations/embed"
+import * as Integrations from "../../integrations/embed"
 import {
 	DeleteSource,
 	FetchSourceList,

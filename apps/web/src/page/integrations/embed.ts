@@ -18,6 +18,16 @@ import { typographyClass } from "@maple/views/ui/typography"
 import { hstack, hstackClass, vstack } from "@maple/views/ui/stack"
 
 // The integrations page module, embedded by Sources: the connect step and a source's Connection tab.
+// Sources imports the module through this file only.
+
+export { canManage, Model } from "./model"
+export { Message } from "./message"
+export { routeChanged, update } from "./update"
+export { subscriptions } from "./subscription"
+export { HEALTH_TONE, overviewOf } from "./derive"
+export { canContinue, type FlowSpec, FlowStage, flowOf, nextStage, previousStage } from "./flow"
+export { connectionsOf as awsConnectionsOf } from "./update-aws"
+export { gcpConnectors } from "./update-gcp"
 
 export { DATA_INTEGRATIONS, DataIntegration, isDataIntegration }
 

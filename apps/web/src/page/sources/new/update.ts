@@ -21,12 +21,20 @@ import {
 	ScrollToTop,
 	WaitFirstDataPoll,
 } from "./command"
-import { type DataIntegration, initEmbedded, isDataIntegration } from "../../integrations/embed"
-import type { Message as IntegrationMessage } from "../../integrations/message"
-import type { Model as IntegrationModel } from "../../integrations/model"
-import * as Integrations from "../../integrations/update"
+import {
+	type DataIntegration,
+	initEmbedded,
+	isDataIntegration,
+	type Message as IntegrationMessage,
+	type Model as IntegrationModel,
+	canContinue,
+	type FlowSpec,
+	flowOf,
+	nextStage,
+	previousStage,
+} from "../../integrations/embed"
+import * as Integrations from "../../integrations/embed"
 import { Message } from "./message"
-import { canContinue, type FlowSpec, flowOf, nextStage, previousStage } from "../../integrations/flow"
 import type { Model } from "./model"
 
 type Return = PageReturn<Model, Message>

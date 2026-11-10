@@ -10,13 +10,13 @@ import { click, Command, expect as expectView, given, role, scene, text, withVie
 import { describe, expect, test } from "vitest"
 import { toLoadFailure } from "@maple/views/data/load-failure"
 import * as Field from "@maple/views/ui/field"
-import type { PageContext } from "../contract"
-import { ScrollToTop } from "../sources/new/command"
-import { Message } from "../sources/new/message"
-import type { Model } from "../sources/new/model"
-import { init, update } from "../sources/new/update"
-import { view as pageView } from "../sources/new/view"
-import { Message as IntegrationMessage } from "./message"
+import type { PageContext } from "../../contract"
+import { ScrollToTop } from "./command"
+import { Message } from "./message"
+import type { Model } from "./model"
+import { init, update } from "./update"
+import { view as pageView } from "./view"
+import { Message as IntegrationMessage } from "../../integrations/embed"
 
 const context: PageContext = {
 	orgId: Schema.decodeSync(OrgId)("org_acme"),

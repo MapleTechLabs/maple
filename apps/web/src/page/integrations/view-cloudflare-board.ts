@@ -1,6 +1,7 @@
 import type { CloudflareServiceUsage } from "@maple/domain/http"
 import { EMPTY_VALUE, formatNumber } from "@maple/ui/lib/format"
 import { cn } from "@maple/ui/lib/utils"
+import { filterChipItem } from "@maple/views/ui/filter-chip"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { heading } from "@maple/views/ui/heading"
 import * as Chart from "@maple/views/charts/chart"
@@ -12,7 +13,6 @@ import { panel, panelHeader } from "@maple/views/ui/panel"
 import { stripClass } from "@maple/views/ui/rule"
 import { searchInput } from "@maple/views/ui/search-input"
 import { statusDot } from "@maple/views/ui/status-dot"
-import { countChipItem } from "./kit/count-chip"
 import * as ToggleGroup from "@maple/views/ui/toggle-group"
 import { truncatedText } from "@maple/views/ui/truncated-text"
 import { columnHead } from "../kit/data-table"
@@ -226,11 +226,11 @@ export const zoneBoard = (
 					size: "xs",
 					className: "ml-auto gap-1.5",
 					items: [
-						countChipItem(h, { value: "all", label: "All", count: decorated.length }),
+						filterChipItem(h, { value: "all", label: "All", count: decorated.length }),
 						...Arr.map(
 							Arr.filter(CHIP_ORDER, (kind) => counts(kind) > 0),
 							(kind) =>
-								countChipItem(h, {
+								filterChipItem(h, {
 									value: kind,
 									label: STATUS_META[kind].label,
 									count: counts(kind),

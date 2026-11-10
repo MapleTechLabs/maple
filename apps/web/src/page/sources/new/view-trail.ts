@@ -1,7 +1,7 @@
 import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { icon } from "@maple/views/ui/icon"
-import type { FlowStage } from "../../integrations/flow"
+import type { FlowStage } from "../../integrations/embed"
 import { platformMeta } from "../kit/platforms"
 import { Message } from "./message"
 import type { Model } from "./model"

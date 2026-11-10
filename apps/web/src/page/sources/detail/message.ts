@@ -11,7 +11,7 @@ import * as Menu from "@maple/views/ui/menu"
 import { SourceList } from "../kit/data"
 import * as Rules from "../kit/rules"
 import * as Setup from "../kit/setup"
-import { Message as IntegrationMessage } from "../../integrations/message"
+import { Message as IntegrationMessage } from "../../integrations/embed"
 
 export const Message = defineMessageUnion({
 	ReadClock: { nowMs: Schema.Number },
