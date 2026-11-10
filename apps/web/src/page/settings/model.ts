@@ -47,8 +47,6 @@ export const TabModel = Schema.Union([
 	Schema.TaggedStruct("General", { model: General.Model }),
 	Schema.TaggedStruct("Members", { model: Members.Model }),
 	Schema.TaggedStruct("Billing", { model: Billing.Model }),
-	/** A tab whose section is not ported yet. */
-	Schema.TaggedStruct("Unported", { tab: Schema.String }),
 ])
 export type TabModel = typeof TabModel.Type
 
