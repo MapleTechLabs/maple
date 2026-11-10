@@ -11,9 +11,9 @@ import {
 	type ChatWorkspaceId,
 	type OrgId,
 } from "@maple/domain/http"
-import { Context, Duration, Effect, Layer, Option, Redacted, Ref, Array as Arr } from "effect"
+import { Context, Duration, Effect, Layer, Option, Ref, Array as Arr } from "effect"
 import { FetchHttpClient, HttpClient } from "effect/http"
-import { parseBase64Aes256GcmKey } from "@maple/backend/platform/Crypto"
+import { ingestKeyEncryptionKey } from "@maple/backend/platform/Crypto"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { Env } from "@maple/backend/platform/Env"
 import {
@@ -122,10 +122,7 @@ const make: Effect.Effect<ChatAlertPosterApi, never, Database | Env | HttpClient
 
 		// Held as an Option rather than failing the layer: the services this sits beside already
 		// refuse to boot on a bad key, so this is never the first to notice.
-		const encryptionKey = yield* parseBase64Aes256GcmKey(
-			Redacted.value(env.MAPLE_INGEST_KEY_ENCRYPTION_KEY),
-			(message) => message,
-		).pipe(Effect.option)
+		const encryptionKey = yield* ingestKeyEncryptionKey(env, (message) => message).pipe(Effect.option)
 
 		const deliveryError = (message: string, cause?: unknown) =>
 			new AlertDeliveryError({

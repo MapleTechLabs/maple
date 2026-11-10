@@ -29,13 +29,12 @@ import {
 	Effect,
 	Layer,
 	Option,
-	Redacted,
 	Schema,
 	Record as Rec,
 	String as Str,
 } from "effect"
 import { FetchHttpClient, HttpClient } from "effect/http"
-import { parseBase64Aes256GcmKey } from "@maple/backend/platform/Crypto"
+import { ingestKeyEncryptionKey } from "@maple/backend/platform/Crypto"
 import { Database, type DatabaseError } from "@maple/backend/platform/DatabaseLive"
 import { makeDbExecute } from "@maple/backend/platform/db-execute"
 import { Env } from "@maple/backend/platform/Env"
@@ -250,8 +249,8 @@ const make: Effect.Effect<
 	 * Read lazily rather than at layer build: only a connector whose install mints a credential
 	 * needs it, and a deployment without one must still list, link and unlink everything else.
 	 */
-	const credentialKey = parseBase64Aes256GcmKey(
-		Redacted.value(env.MAPLE_INGEST_KEY_ENCRYPTION_KEY),
+	const credentialKey = ingestKeyEncryptionKey(
+		env,
 		(message) =>
 			new IntegrationsConfigurationError({
 				message: `Chat workspace credentials cannot be stored on this deployment: ${message}`,

@@ -5,8 +5,10 @@ import {
 	type ConnectorConfig,
 } from "@maple/chat-platform"
 import { optionalRedacted, optionalString, stringWithDefault } from "@maple/infra/config-helpers"
-import { Config, Context, Effect, Layer, Option, Redacted, Schema, String as Str } from "effect"
+import { Config, Context, Effect, Layer, Option, Redacted, Result, Schema, String as Str } from "effect"
 import { type MapleRegion, parseMapleRegion } from "@maple/domain/organization-regions"
+import { aes256GcmKeyFromBase64 } from "./Crypto"
+import { ingestKeyLookupHmacKeyFrom } from "./credential-tokens"
 
 /** Fatal misconfiguration discovered at startup: fails the layer build, so the worker refuses to boot. */
 class EnvValidationError extends Schema.TaggedError<EnvValidationError>()(
@@ -456,9 +458,23 @@ const makeEnv = Effect.gen(function* () {
 		return yield* new EnvValidationError({ message: "MAPLE_ROOT_PASSWORD cannot be empty" })
 	}
 
-	return Env.of(env)
+	return Env.of({
+		...env,
+		ingestKeyEncryptionKey: aes256GcmKeyFromBase64(Redacted.value(env.MAPLE_INGEST_KEY_ENCRYPTION_KEY)),
+		ingestKeyLookupHmacKey: ingestKeyLookupHmacKeyFrom(
+			Redacted.value(env.MAPLE_INGEST_KEY_LOOKUP_HMAC_KEY),
+		),
+	})
 })
 
-export class Env extends Context.Service<Env, EnvConfig>()("@maple/backend/lib/Env") {
+/** The config, plus the keys every service that encrypts or hashes would otherwise parse itself. */
+export interface EnvApi extends EnvConfig {
+	/** `MAPLE_INGEST_KEY_ENCRYPTION_KEY` as an AES-256-GCM key; read through `ingestKeyEncryptionKey`. */
+	readonly ingestKeyEncryptionKey: Result.Result<Buffer, string>
+	/** `MAPLE_INGEST_KEY_LOOKUP_HMAC_KEY`, trimmed; read through `ingestKeyLookupHmacKey`. */
+	readonly ingestKeyLookupHmacKey: Result.Result<string, string>
+}
+
+export class Env extends Context.Service<Env, EnvApi>()("@maple/backend/lib/Env") {
 	static readonly layer = Layer.effect(this, makeEnv)
 }

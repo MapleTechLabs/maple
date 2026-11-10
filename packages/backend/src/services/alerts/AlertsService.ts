@@ -652,9 +652,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 				),
 			)
 			const mobilePush = yield* MobilePushService
-			const encryptionKey = yield* parseAlertDestinationEncryptionKey(
-				Redacted.value(env.MAPLE_INGEST_KEY_ENCRYPTION_KEY),
-			)
+			const encryptionKey = yield* parseAlertDestinationEncryptionKey(env)
 			const destinationDelivery = makeAlertDestinationDelivery({
 				encryptionKey,
 				appBaseUrl: env.MAPLE_APP_BASE_URL,

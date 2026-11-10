@@ -54,7 +54,7 @@ import {
 } from "effect"
 import * as SecureRandom from "effect/crypto/SecureRandom"
 import { FetchHttpClient, HttpClient } from "effect/http"
-import { parseBase64Aes256GcmKey } from "@maple/backend/platform/Crypto"
+import { ingestKeyEncryptionKey } from "@maple/backend/platform/Crypto"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { Env } from "@maple/backend/platform/Env"
 import { summarizeCause } from "@maple/backend/platform/describe-cause"
@@ -264,10 +264,7 @@ export class CancellationReviewService extends Context.Service<
 		const chatConnectors = yield* ChatConnectorRegistry
 		// An Option rather than failing the layer: a bad key costs only the Hazel report, and the
 		// services that seal chat credentials refuse to boot on one first.
-		const encryptionKey = yield* parseBase64Aes256GcmKey(
-			Redacted.value(env.MAPLE_INGEST_KEY_ENCRYPTION_KEY),
-			(message) => message,
-		).pipe(Effect.option)
+		const encryptionKey = yield* ingestKeyEncryptionKey(env, (message) => message).pipe(Effect.option)
 
 		const clerkOrgUrl = (orgId: string) =>
 			Option.match(env.MAPLE_CLERK_DASHBOARD_URL, {

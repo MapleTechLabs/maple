@@ -1,5 +1,5 @@
 import { createCipheriv, createDecipheriv, randomBytes } from "node:crypto"
-import { Effect, String as Str } from "effect"
+import { Effect, Result, String as Str } from "effect"
 
 export interface EncryptedValue {
 	readonly ciphertext: string
@@ -7,20 +7,43 @@ export interface EncryptedValue {
 	readonly tag: string
 }
 
+/** A base64 AES-256-GCM key, or why it is unusable. */
+export const aes256GcmKeyFromBase64 = (raw: string): Result.Result<Buffer, string> => {
+	const trimmed = Str.trim(raw)
+	if (trimmed.length === 0) return Result.fail("Expected a non-empty base64 encryption key")
+	const decoded = Buffer.from(trimmed, "base64")
+	if (decoded.length !== 32) return Result.fail("Expected base64 for exactly 32 bytes")
+	return Result.succeed(decoded)
+}
+
 export const parseBase64Aes256GcmKey = <E>(raw: string, onError: (message: string) => E) =>
-	Effect.suspend((): Effect.Effect<Buffer, E> => {
-		const trimmed = Str.trim(raw)
-		if (trimmed.length === 0) {
-			return Effect.fail(onError("Expected a non-empty base64 encryption key"))
-		}
+	Effect.suspend(() => keyOrFail(aes256GcmKeyFromBase64(raw), onError))
 
-		const decoded = Buffer.from(trimmed, "base64")
-		if (decoded.length !== 32) {
-			return Effect.fail(onError("Expected base64 for exactly 32 bytes"))
-		}
+const keyOrFail = <A, E>(
+	key: Result.Result<A, string>,
+	onError: (message: string) => E,
+): Effect.Effect<A, E> =>
+	Result.match(key, { onSuccess: Effect.succeed, onFailure: (message) => Effect.fail(onError(message)) })
 
-		return Effect.succeed(decoded)
-	})
+/** A bad ingest encryption key's problem, naming the variable to fix. */
+export const ingestKeyEncryptionProblem = (message: string): string =>
+	message === "Expected a non-empty base64 encryption key"
+		? "MAPLE_INGEST_KEY_ENCRYPTION_KEY is required"
+		: message === "Expected base64 for exactly 32 bytes"
+			? "MAPLE_INGEST_KEY_ENCRYPTION_KEY must be base64 for exactly 32 bytes"
+			: message
+
+/** `MAPLE_INGEST_KEY_ENCRYPTION_KEY`, parsed once with `Env`; `onError` names a bad key in the caller's terms. */
+export const ingestKeyEncryptionKey = <E>(
+	env: { readonly ingestKeyEncryptionKey: Result.Result<Buffer, string> },
+	onError: (message: string) => E,
+): Effect.Effect<Buffer, E> => keyOrFail(env.ingestKeyEncryptionKey, onError)
+
+/** `MAPLE_INGEST_KEY_LOOKUP_HMAC_KEY`, trimmed and checked once with `Env`. */
+export const ingestKeyLookupHmacKey = <E>(
+	env: { readonly ingestKeyLookupHmacKey: Result.Result<string, string> },
+	onError: (message: string) => E,
+): Effect.Effect<string, E> => keyOrFail(env.ingestKeyLookupHmacKey, onError)
 
 /**
  * Optional additional authenticated data. AAD is authenticated but not stored,

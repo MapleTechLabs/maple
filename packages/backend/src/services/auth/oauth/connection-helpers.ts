@@ -23,13 +23,14 @@ import { HttpClient, HttpClientRequest } from "effect/http"
 import {
 	decryptAes256Gcm,
 	encryptAes256Gcm,
-	parseBase64Aes256GcmKey,
+	ingestKeyEncryptionKey,
 	type EncryptedValue,
+	ingestKeyEncryptionProblem,
 } from "@maple/backend/platform/Crypto"
 import type { DatabaseApi } from "@maple/backend/platform/DatabaseLive"
 import { deleteSourcesOf, createIntegrationSource } from "@maple/backend/services/org/integration-sources"
 import { makeDbExecute, makePersistenceErrorMapper } from "@maple/backend/platform/db-execute"
-import type { EnvConfig } from "@maple/backend/platform/Env"
+import type { EnvApi } from "@maple/backend/platform/Env"
 import { makeOAuthStateStore, type OAuthFlowInitiator } from "./oauth-state"
 
 export const OAUTH_REFRESH_LEEWAY_MS = 60_000 // refresh when the access token is within 1 minute of expiry
@@ -128,7 +129,7 @@ export interface MakeOAuthConnectionHelpersOptions {
 	/** Display name used in error messages ("Cloudflare", "Linear"). */
 	readonly providerLabel: string
 	readonly database: DatabaseApi
-	readonly env: EnvConfig
+	readonly env: EnvApi
 	/** Set when the connection sends data: it owns a source, created and deleted with it. */
 	readonly source?: {
 		readonly platform: PullSourcePlatform
@@ -161,16 +162,11 @@ export const makeOAuthConnectionHelpers = (options: MakeOAuthConnectionHelpersOp
 		const { provider, providerLabel, database, env, source, onUpsert } = options
 		const httpClient = yield* HttpClient.HttpClient
 
-		const encryptionKey = yield* parseBase64Aes256GcmKey(
-			Redacted.value(env.MAPLE_INGEST_KEY_ENCRYPTION_KEY),
+		const encryptionKey = yield* ingestKeyEncryptionKey(
+			env,
 			(message) =>
 				new IntegrationsValidationError({
-					message:
-						message === "Expected a non-empty base64 encryption key"
-							? "MAPLE_INGEST_KEY_ENCRYPTION_KEY is required"
-							: message === "Expected base64 for exactly 32 bytes"
-								? "MAPLE_INGEST_KEY_ENCRYPTION_KEY must be base64 for exactly 32 bytes"
-								: message,
+					message: ingestKeyEncryptionProblem(message),
 				}),
 		)
 

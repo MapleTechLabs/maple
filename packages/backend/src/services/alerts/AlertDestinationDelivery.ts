@@ -14,7 +14,8 @@ import {
 import { projectAlertLifecycleEvent } from "@maple/alerting-core"
 import { Effect, Result, Schema } from "effect"
 import { HttpClient } from "effect/http"
-import { parseBase64Aes256GcmKey } from "@maple/backend/platform/Crypto"
+import { ingestKeyEncryptionKey, ingestKeyEncryptionProblem } from "@maple/backend/platform/Crypto"
+import type { EnvApi } from "@maple/backend/platform/Env"
 import type { EmailServiceApi } from "@maple/backend/platform/EmailService"
 import type { ChatAlertPosterApi } from "./ChatAlertPoster"
 import { buildAlertRuleUrl, type DispatchContext as DeliveryDispatchContext } from "./AlertDeliveryDispatch"
@@ -44,18 +45,13 @@ export type AlertDeliveryPayloadContext = Omit<
 >
 
 export const parseAlertDestinationEncryptionKey = (
-	raw: string,
+	env: EnvApi,
 ): Effect.Effect<Buffer, AlertValidationError> =>
-	parseBase64Aes256GcmKey(
-		raw,
+	ingestKeyEncryptionKey(
+		env,
 		(message) =>
 			new AlertValidationError({
-				message:
-					message === "Expected a non-empty base64 encryption key"
-						? "MAPLE_INGEST_KEY_ENCRYPTION_KEY is required"
-						: message === "Expected base64 for exactly 32 bytes"
-							? "MAPLE_INGEST_KEY_ENCRYPTION_KEY must be base64 for exactly 32 bytes"
-							: message,
+				message: ingestKeyEncryptionProblem(message),
 				details: [],
 			}),
 	)

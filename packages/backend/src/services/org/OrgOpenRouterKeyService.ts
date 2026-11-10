@@ -15,7 +15,7 @@ import { OrgOpenRouterKeys, type OrgOpenRouterKeyRow } from "@maple/db/tables"
 import { EdgeCacheService } from "@maple/cache"
 import { Clock, Context, Duration, Effect, Layer, Option, Redacted, Schema, String as Str } from "effect"
 import { FetchHttpClient, HttpClient } from "effect/http"
-import { decryptAes256Gcm, encryptAes256Gcm, parseBase64Aes256GcmKey } from "@maple/backend/platform/Crypto"
+import { decryptAes256Gcm, encryptAes256Gcm, ingestKeyEncryptionKey } from "@maple/backend/platform/Crypto"
 import { EU_DEFAULT_OPENROUTER_MODEL, type MapleRegion } from "@maple/domain/organization-regions"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { makeDbExecute, makePersistenceErrorMapper } from "@maple/backend/platform/db-execute"
@@ -113,8 +113,8 @@ export class OrgOpenRouterKeyService extends Context.Service<
 		const autumn = yield* AutumnClient
 		const billingCustomers = yield* BillingCustomerResolver
 		const httpClient = yield* HttpClient.HttpClient
-		const encryptionKey = yield* parseBase64Aes256GcmKey(
-			Redacted.value(env.MAPLE_INGEST_KEY_ENCRYPTION_KEY),
+		const encryptionKey = yield* ingestKeyEncryptionKey(
+			env,
 			(message) => new OpenRouterKeyPersistenceError({ message }),
 		)
 		const dbExecute = makeDbExecute(database, "OrgOpenRouterKeyService", toPersistenceError)

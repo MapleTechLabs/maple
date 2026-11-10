@@ -32,7 +32,7 @@ import { generateShareToken, hashShareToken, shareTokenSuffix } from "../../plat
 import { DashboardShares, type DashboardShareRow as DashboardShareTableRow } from "@maple/db/tables"
 import { Clock, Context, Effect, Layer, Option, Redacted, Schema } from "effect"
 import { randomUUID } from "node:crypto"
-import { decryptAes256Gcm, encryptAes256Gcm, parseBase64Aes256GcmKey } from "@maple/backend/platform/Crypto"
+import { decryptAes256Gcm, encryptAes256Gcm, ingestKeyEncryptionKey } from "@maple/backend/platform/Crypto"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { makeDbExecute } from "@maple/backend/platform/db-execute"
 import { postgresSqlState } from "@maple/backend/platform/postgres-errors"
@@ -231,8 +231,8 @@ export class SharedDashboardService extends Context.Service<
 		 * configured" case to model: a value that is not base64 for 32 bytes is a
 		 * broken deployment, so it fails the layer build with a typed config error.
 		 */
-		const encryptionKey = yield* parseBase64Aes256GcmKey(
-			Redacted.value(env.MAPLE_INGEST_KEY_ENCRYPTION_KEY),
+		const encryptionKey = yield* ingestKeyEncryptionKey(
+			env,
 			(message) =>
 				new ShareEncryptionKeyConfigError({
 					message: `MAPLE_INGEST_KEY_ENCRYPTION_KEY: ${message}`,

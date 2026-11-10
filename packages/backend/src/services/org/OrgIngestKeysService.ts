@@ -13,33 +13,23 @@ import {
 	generatePublicIngestKey,
 	hashIngestKey,
 	inferIngestKeyType,
-	parseIngestKeyLookupHmacKey,
 	type ResolvedIngestKey,
 } from "../../platform/credential-tokens"
 import * as PG from "@maple-dev/effect-orm/postgres"
 import { OrgIngestKeys, type OrgIngestKeyRow, Sources } from "@maple/db/tables"
 import { defaultSourceRow } from "./source-rows"
-import {
-	DateTime,
-	Array as Arr,
-	Clock,
-	Context,
-	Effect,
-	Layer,
-	Option,
-	Redacted,
-	Result,
-	Schema,
-} from "effect"
+import { DateTime, Array as Arr, Clock, Context, Effect, Layer, Option, Result, Schema } from "effect"
 import {
 	decryptAes256Gcm,
 	encryptAes256Gcm,
-	parseBase64Aes256GcmKey,
+	ingestKeyEncryptionKey,
+	ingestKeyLookupHmacKey,
 	type EncryptedValue,
+	ingestKeyEncryptionProblem,
 } from "@maple/backend/platform/Crypto"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { makeDbExecute } from "@maple/backend/platform/db-execute"
-import { Env } from "@maple/backend/platform/Env"
+import { Env, type EnvApi } from "@maple/backend/platform/Env"
 import { makeExpiringStore } from "@maple/backend/platform/expiring-store"
 import { SharedIngestKeysMemo } from "./shared-ingest-keys-memo"
 
@@ -66,19 +56,11 @@ const decodeIsoDateTimeStringSync = Schema.decodeUnknownSync(IsoDateTimeString)
 // provides `SharedIngestKeysMemo`.
 const ORG_INGEST_KEYS_MEMO_TTL_MS = 300_000
 
-const parseEncryptionKey = (raw: string): Effect.Effect<Buffer, IngestKeyEncryptionError> =>
-	parseBase64Aes256GcmKey(raw, (message) =>
-		toEncryptionError(
-			message === "Expected a non-empty base64 encryption key"
-				? "MAPLE_INGEST_KEY_ENCRYPTION_KEY is required"
-				: message === "Expected base64 for exactly 32 bytes"
-					? "MAPLE_INGEST_KEY_ENCRYPTION_KEY must be base64 for exactly 32 bytes"
-					: message,
-		),
-	)
+const parseEncryptionKey = (env: EnvApi): Effect.Effect<Buffer, IngestKeyEncryptionError> =>
+	ingestKeyEncryptionKey(env, (message) => toEncryptionError(ingestKeyEncryptionProblem(message)))
 
-const parseLookupHmacKey = (raw: string): Effect.Effect<string, IngestKeyEncryptionError> =>
-	parseIngestKeyLookupHmacKey(raw, toEncryptionError)
+const parseLookupHmacKey = (env: EnvApi): Effect.Effect<string, IngestKeyEncryptionError> =>
+	ingestKeyLookupHmacKey(env, toEncryptionError)
 
 const encryptPrivateKey = (
 	plaintext: string,
@@ -106,12 +88,8 @@ export class OrgIngestKeysService extends Context.Service<OrgIngestKeysService>(
 			const ingestKeysMemo =
 				(yield* SharedIngestKeysMemo) ?? (yield* makeExpiringStore<OrgIngestKeyRow>())
 			const env = yield* Env
-			const encryptionKey = yield* parseEncryptionKey(
-				Redacted.value(env.MAPLE_INGEST_KEY_ENCRYPTION_KEY),
-			)
-			const lookupHmacKey = yield* parseLookupHmacKey(
-				Redacted.value(env.MAPLE_INGEST_KEY_LOOKUP_HMAC_KEY),
-			)
+			const encryptionKey = yield* parseEncryptionKey(env)
+			const lookupHmacKey = yield* parseLookupHmacKey(env)
 
 			// One-way fingerprint of the configured HMAC key. Operators diff this
 			// against the ingest gateway's `maple.ingest.hmac_fingerprint` to detect

@@ -59,7 +59,7 @@ import {
 	String as Str,
 } from "effect"
 import { FetchHttpClient, HttpClient } from "effect/http"
-import { decryptAes256Gcm, encryptAes256Gcm, parseBase64Aes256GcmKey } from "@maple/backend/platform/Crypto"
+import { decryptAes256Gcm, encryptAes256Gcm, ingestKeyEncryptionKey } from "@maple/backend/platform/Crypto"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { makeDbExecute, makePersistenceErrorMapper } from "@maple/backend/platform/db-execute"
 import { Env } from "@maple/backend/platform/Env"
@@ -290,8 +290,8 @@ export class ExternalDataSourceService extends Context.Service<
 		const drivers = yield* DataSourceDrivers
 		const budget = yield* DataSourceCallBudget
 		const httpClient = yield* HttpClient.HttpClient
-		const encryptionKey = yield* parseBase64Aes256GcmKey(
-			Redacted.value(env.MAPLE_INGEST_KEY_ENCRYPTION_KEY),
+		const encryptionKey = yield* ingestKeyEncryptionKey(
+			env,
 			(message) => new DataSourcePersistenceError({ message }),
 		)
 		const dbExecute = makeDbExecute(database, "ExternalDataSourceService", toPersistenceError)

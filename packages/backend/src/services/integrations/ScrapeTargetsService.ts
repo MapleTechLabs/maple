@@ -40,7 +40,6 @@ import {
 	Exit,
 	Layer,
 	Option,
-	Redacted,
 	Schema,
 	Record as Rec,
 	String as Str,
@@ -48,14 +47,15 @@ import {
 import { HttpClient, HttpClientRequest } from "effect/http"
 import {
 	encryptAes256Gcm,
-	parseBase64Aes256GcmKey,
+	ingestKeyEncryptionKey,
 	type EncryptedValue,
+	ingestKeyEncryptionProblem,
 } from "@maple/backend/platform/Crypto"
 import { forkRequestScoped } from "@maple/backend/platform/fork-request-scoped"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { makeDbExecute, makePersistenceErrorMapper } from "@maple/backend/platform/db-execute"
 import { msToSqlTimestamp } from "@maple/backend/platform/time"
-import { Env } from "@maple/backend/platform/Env"
+import { Env, type EnvApi } from "@maple/backend/platform/Env"
 import {
 	BasicCredentialsSchema,
 	BearerCredentialsSchema,
@@ -329,16 +329,8 @@ const normalizeBranchPatterns = (patterns: ReadonlyArray<string> | undefined): s
 	return [...seen]
 }
 
-const parseEncryptionKey = (raw: string): Effect.Effect<Buffer, ScrapeTargetEncryptionError> =>
-	parseBase64Aes256GcmKey(raw, (message) =>
-		toEncryptionError(
-			message === "Expected a non-empty base64 encryption key"
-				? "MAPLE_INGEST_KEY_ENCRYPTION_KEY is required"
-				: message === "Expected base64 for exactly 32 bytes"
-					? "MAPLE_INGEST_KEY_ENCRYPTION_KEY must be base64 for exactly 32 bytes"
-					: message,
-		),
-	)
+const parseEncryptionKey = (env: EnvApi): Effect.Effect<Buffer, ScrapeTargetEncryptionError> =>
+	ingestKeyEncryptionKey(env, (message) => toEncryptionError(ingestKeyEncryptionProblem(message)))
 
 const encryptCredentials = (
 	plaintext: string,
@@ -644,9 +636,7 @@ export class ScrapeTargetsService extends Context.Service<ScrapeTargetsService, 
 			// Scoped per hop, so an unread body (non-2xx, PlanetScale) is cancelled on exit.
 			const httpClient = yield* HttpClient.HttpClient
 			const probeClient = guard(HttpClient.withScope(httpClient))
-			const encryptionKey = yield* parseEncryptionKey(
-				Redacted.value(env.MAPLE_INGEST_KEY_ENCRYPTION_KEY),
-			)
+			const encryptionKey = yield* parseEncryptionKey(env)
 
 			const selectById = Effect.fn("ScrapeTargetsService.selectById")(function* (
 				orgId: OrgId,
