@@ -73,6 +73,8 @@ const forwardOverBinding = (
 			// Copying the request copies the browser's `Host: app.…`, and a service binding passes it
 			// through as-is. The API builds OAuth redirect URIs from Host, so it must name the API.
 			forwarded.headers.set("host", target.host)
+			// The app authenticates with a bearer. The page's cookies are not the API's to read.
+			forwarded.headers.delete("cookie")
 			// @effect-diagnostics-next-line preferEffectRecord:off -- not a record type; Rec.toEntries would need a cast
 			Arr.forEach(Object.entries(HttpTraceContext.toHeaders(client)), ([name, value]) =>
 				forwarded.headers.set(name, value),

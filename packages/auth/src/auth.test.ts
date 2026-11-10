@@ -123,6 +123,44 @@ describe("makeResolveTenant", () => {
 		}),
 	)
 
+	it.effect("signs a request in by its bearer, never by a session cookie", () =>
+		Effect.gen(function* () {
+			// Stands in for the provider, which accepts either credential it is shown.
+			const resolveTenant = makeResolveTenant(
+				{
+					...baseEnv,
+					MAPLE_AUTH_MODE: "clerk",
+					CLERK_SECRET_KEY: Option.some(Redacted.make("sk_test_123")),
+					CLERK_JWT_KEY: Option.some(Redacted.make("jwt_test_123")),
+				},
+				async (request) => {
+					const shown = request.headers.has("authorization") || request.headers.has("cookie")
+					return {
+						isAuthenticated: shown,
+						message: shown ? null : "No credential",
+						toAuth: () => ({
+							isAuthenticated: true,
+							tokenType: "session_token",
+							userId: "user_123",
+							orgId: "org_123",
+							orgRole: "org:admin",
+						}),
+					}
+				},
+			)
+
+			assertRejected(
+				yield* Effect.exit(resolveTenant({ cookie: "__session=test-token" })),
+				"No credential",
+			)
+			const tenant = yield* resolveTenant({
+				Authorization: "Bearer test-token",
+				cookie: "__session=other-token",
+			})
+			assert.strictEqual(tenant.userId, asUserId("user_123"))
+		}),
+	)
+
 	it.effect("rejects invalid or expired Clerk tokens", () =>
 		Effect.gen(function* () {
 			const resolveTenant = makeResolveTenant(
