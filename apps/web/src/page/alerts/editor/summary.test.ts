@@ -9,6 +9,7 @@ import {
 	cardOfIssue,
 	cardsOf,
 	conditionSummary,
+	isProblemIssue,
 	issueFieldId,
 	missingCards,
 	nameSummary,
@@ -227,6 +228,15 @@ describe("nameSummary", () => {
 })
 
 describe("field errors", () => {
+	it("tells a problem to fix from a field left empty, so a card says only empty fields are missing", () => {
+		expect(isProblemIssue("Threshold")).toBe(false)
+		expect(isProblemIssue("Rule name")).toBe(false)
+		expect(isProblemIssue("Critical threshold past warning")).toBe(true)
+		expect(isProblemIssue("Critical recovery past warning")).toBe(true)
+		expect(isProblemIssue("Check interval longer than the window")).toBe(true)
+		expect(isProblemIssue("Query too slow for this check interval")).toBe(true)
+	})
+
 	it("points each issue at the control that fixes it", () => {
 		expect(issueFieldId("Threshold")).toBe("rule-threshold")
 		expect(issueFieldId("Critical threshold past warning")).toBe("rule-critical-threshold")

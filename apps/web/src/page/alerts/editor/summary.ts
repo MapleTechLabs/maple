@@ -1,13 +1,4 @@
 import { Array as Arr, String as Str } from "effect"
-
-// Blockers that are a problem with the rule, not a field left empty: a card says them in full.
-const PROBLEM_ISSUES: ReadonlyArray<string> = [
-	"Check interval longer than the window",
-	"Query too slow for this check interval",
-]
-
-/** Whether a blocker is a problem to fix (said as it is), not a missing field (said after "Missing:"). */
-export const isProblemIssue = (issue: string): boolean => Arr.contains(PROBLEM_ISSUES, issue)
 import type { AlertDestinationId, AlertQueryTiming, EscalationChainId } from "@maple/domain/http"
 import {
 	comparatorSupportsTiers,
@@ -26,6 +17,17 @@ import {
 	saveIssues,
 	thresholdValue,
 } from "./derive"
+
+// Blockers that are a problem with the rule, not a field left empty: a card says them in full.
+const PROBLEM_ISSUES: ReadonlyArray<string> = [
+	"Critical threshold past warning",
+	"Critical recovery past warning",
+	"Check interval longer than the window",
+	"Query too slow for this check interval",
+]
+
+/** Whether a blocker is a problem to fix (said as it is), not a missing field (said after "Missing:"). */
+export const isProblemIssue = (issue: string): boolean => Arr.contains(PROBLEM_ISSUES, issue)
 
 // The rule editor's sentence cards: which card each field lives on, and each card's one-line summary.
 
