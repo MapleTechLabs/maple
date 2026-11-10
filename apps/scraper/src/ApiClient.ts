@@ -41,7 +41,10 @@ const encodeUptimeReports = Schema.encodeSync(UptimeCheckReportList)
 const decodeJson = Schema.decodeUnknownEffect(Schema.fromJsonString(Schema.Unknown))
 const encodeJson = Schema.encodeEffect(Schema.fromJsonString(Schema.Unknown))
 
-/** Not idempotent: a timeout may follow a batch that landed, so only an explicit refusal retries. */
+/**
+ * The in-request retry covers an explicit refusal only: a timeout may follow a batch that landed.
+ * The batch reporter redelivers every transient failure until it lands, so delivery is at-least-once.
+ */
 const isRefusal = (status: number | null): boolean => status === 429 || status === 503
 
 export class ApiClient extends Context.Service<ApiClient, ApiClientApi>()("@maple/scraper/ApiClient", {

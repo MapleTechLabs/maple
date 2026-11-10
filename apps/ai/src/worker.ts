@@ -15,6 +15,7 @@ import {
 import {
 	appUrlsEnv,
 	authEnv,
+	clickhouseEnv,
 	githubAppSourceEnv,
 	ingestKeyCryptoEnv,
 	merge,
@@ -43,6 +44,8 @@ import { AiObservabilityLive } from "./worker/observability"
 const configuredEnv = ({ stage, region, domains, profile }: MapleStackContext) =>
 	merge(
 		tinybirdEnv,
+		// Same upstream as api, so a tool answers from the warehouse the dashboard reads.
+		clickhouseEnv,
 		authEnv,
 		appUrlsEnv(domains),
 		selfObservabilityEnv(stage, region),

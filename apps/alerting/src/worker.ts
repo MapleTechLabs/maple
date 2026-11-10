@@ -20,6 +20,7 @@ import {
 	apnsEnv,
 	appUrlsEnv,
 	authEnv,
+	clickhouseEnv,
 	cloudflareOAuthEnv,
 	githubAppSourceEnv,
 	ingestKeyCryptoEnv,
@@ -56,11 +57,12 @@ export type AlertingWorkerEnv = Record<string, unknown>
 const configuredEnv = (stage: MapleStage, region: MapleRegion, domains: MapleDomains) =>
 	merge(
 		tinybirdEnv,
+		// Same upstream as api, so a tick evaluates the warehouse the dashboard reads.
+		clickhouseEnv,
 		authEnv,
 		ingestKeyCryptoEnv,
 		appUrlsEnv(domains),
-		// MAPLE_ENVIRONMENT must stay stage-derived, not overridable: it gates both the
-		// non-prod cron skip and `EmailService.emailAllowed`.
+		// MAPLE_ENVIRONMENT must stay stage-derived, not overridable: it gates the non-prod cron skip.
 		selfObservabilityEnv(stage, region),
 		// "1" runs crons on a non-prod stage (which otherwise skips them).
 		optionalPlain("MAPLE_ALERTING_ALLOW_NONPROD"),

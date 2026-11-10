@@ -61,8 +61,7 @@ writes: endpoint captures the Postgres txid on the mutating statement
 | `alert_rules`           | alert_rules        | none                                                            |
 | `alert_rule_states`     | alert_rule_states  | none                                                            |
 | `alert_incidents`       | alert_incidents    | none                                                            |
-| `alert_destinations`    | alert_destinations | columns: drops the encrypted `secret_*` (previous builds only)  |
-| `alert_destinations_v2` | alert_destinations | columns: as v1, plus `disabled_at` / `disabled_reason`          |
+| `alert_destinations_v2` | alert_destinations | columns: drops the encrypted `secret_*`                         |
 | `api_keys`              | api_keys           | columns: drops `key_hash` / `metadata_json`                     |
 | `investigation_v2`      | investigations     | scoped to one `id` (client supplies the value as `$2`); columns |
 

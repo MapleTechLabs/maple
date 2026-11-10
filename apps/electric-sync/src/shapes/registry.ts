@@ -19,13 +19,14 @@ import { Schema, Record as Rec } from "effect"
 // requires the PK in the projection).
 //
 // Every table listed here MUST also be a member of `electric_publication_default`
-// (packages/db/drizzle/0009 + later publication migrations) — Electric runs with
+// (packages/db/drizzle/20260704212005_electric_publication + later publication
+// migrations): Electric runs with
 // ELECTRIC_MANUAL_TABLE_PUBLISHING=true and will not publish a table itself, so a
 // shape over an unpublished table never receives changes. The reverse also holds:
 // a published table with no shape here (and no client collection) is pure
 // replication cost, so drop it from the publication instead of leaving it. That
 // is why the errors vertical (error_issues / actors / open_error_incidents) and
-// scrape_target_checks are gone — see 0022_electric_publication_prune.
+// scrape_target_checks are gone (20260727105910_electric_publication_prune).
 const SUBSCRIPTIONS = {
 	dashboards: { table: "dashboards" },
 	alert_rules: { table: "alert_rules" },
@@ -58,23 +59,8 @@ const SUBSCRIPTIONS = {
 	// workspace); the encrypted webhook secrets live in separate `secret_*` columns
 	// that MUST NOT reach the browser, so the projection drops them (and the
 	// unused `created_by`/`updated_by`). The PK `id` is required in the projection.
-	alert_destinations: {
-		table: "alert_destinations",
-		columns: [
-			"id",
-			"org_id",
-			"name",
-			"type",
-			"enabled",
-			"config_json",
-			"last_tested_at",
-			"last_test_error",
-			"created_at",
-			"updated_at",
-		],
-	},
-	// `_v2` adds the auto-disable state, so the browser can say why Maple stopped
-	// delivering. The v1 shape stays for clients still on the previous build.
+	// `_v2` because `columns` gained the auto-disable state, so the browser can say
+	// why Maple stopped delivering.
 	alert_destinations_v2: {
 		table: "alert_destinations",
 		columns: [
