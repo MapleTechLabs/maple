@@ -1109,12 +1109,10 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 			// Present where webhooks are consumed; without it a push's review starts at once.
 			const syncQueueOption = yield* Effect.serviceOption(VcsSyncQueue)
 			const syncQueue = Option.getOrUndefined(syncQueueOption)
-			// Present where the agent runs; without it the feedback filter is off.
-			const embedderOption = yield* Effect.serviceOption(FindingEmbedder)
+			// None outside the agent's Worker; then the feedback filter is off.
+			const embedderOption = yield* FindingEmbedder
 			const embedder = Option.getOrUndefined(embedderOption)
-			// Present where a warehouse is wired; without it reviews read the diff alone.
-			const telemetryReaderOption = yield* Effect.serviceOption(PrReviewTelemetryService)
-			const telemetryReader = Option.getOrUndefined(telemetryReaderOption)
+			const telemetryReader = yield* PrReviewTelemetryService
 
 			const getReview: PrReviewServiceApi["getReview"] = Effect.fn("PrReviewService.getReview")(
 				function* (orgId, reviewId) {
@@ -1329,7 +1327,6 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 			 */
 			const telemetryFor = (orgId: OrgId, repo: VcsRepo, number: number, headSha: GitCommitSha) =>
 				Effect.gen(function* () {
-					if (telemetryReader === undefined) return undefined
 					const target = yield* upstreamFor(orgId, repo)
 					if (Option.isNone(target)) return undefined
 					const { provider, installation, ref } = target.value

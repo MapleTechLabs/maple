@@ -1,8 +1,5 @@
 import { Effect, Option, Schema, Array as Arr, String as Str } from "effect"
-import {
-	readAiToolErrorDetail,
-	readAiToolErrorSamples,
-} from "@maple/backend/services/ai-sessions/ai-session-reads"
+import { AiSessionReadService } from "@maple/backend/services/ai-sessions/AiSessionReadService"
 import {
 	AI_TOOL_ERROR_SESSION_MAX_CHARS,
 	AI_TOOLS_SELECTION_MAX_CHARS,
@@ -106,6 +103,7 @@ export function registerGetAgentToolErrorTool(server: McpToolRegistrar) {
 			const payloadChars = params.payload_chars
 			const selection = agentToolSelection(params, tool)
 			const tenant = yield* CurrentMcpTenant
+			const reads = yield* AiSessionReadService
 			yield* Effect.annotateCurrentSpan({
 				orgId: tenant.orgId,
 				"maple.ai.tools.tool": tool,
@@ -122,8 +120,8 @@ export function registerGetAgentToolErrorTool(server: McpToolRegistrar) {
 			}
 			const [detail, samples] = yield* Effect.all(
 				[
-					readAiToolErrorDetail(tenant, new AiToolErrorDetailRequest(scope)),
-					readAiToolErrorSamples(
+					reads.toolErrorDetail(tenant, new AiToolErrorDetailRequest(scope)),
+					reads.toolErrorSamples(
 						tenant,
 						new AiToolErrorSamplesRequest({
 							...scope,

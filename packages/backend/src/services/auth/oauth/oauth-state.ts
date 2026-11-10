@@ -1,3 +1,4 @@
+import { randomBytes } from "node:crypto"
 import { IntegrationsValidationError, type OrgId, type UserId } from "@maple/domain/http"
 import * as PG from "@maple-dev/effect-orm/postgres"
 import { OAuthAuthStates, type OAuthAuthStateRow } from "@maple/db/tables"
@@ -22,13 +23,57 @@ export interface ConsumeOAuthStateParams {
 	readonly initiator: OAuthFlowInitiator
 }
 
+/** How long a minted state redeems: one trip through the provider's consent screen. */
+export const OAUTH_STATE_TTL_MS = 10 * 60_000
+
+/** A fresh state nonce: 24 random bytes, base64url. */
+export const newOAuthState = Effect.sync(() => randomBytes(24).toString("base64url"))
+
+export interface SaveOAuthStateParams {
+	readonly state: string
+	readonly provider: string
+	readonly initiator: OAuthFlowInitiator
+	readonly redirectUri: string
+	readonly returnTo: string | null
+	/** PKCE verifier, for providers that use Authorization Code + PKCE. */
+	readonly codeVerifier?: string
+	/** A GitHub selection's installation ids, proven by user OAuth. */
+	readonly githubInstallationIds?: ReadonlyArray<string>
+}
+
 /**
- * The one way to redeem an `oauth_auth_states` row: claimed and deleted in one statement, and only
- * when it was minted by `initiator` for `provider`. Expired rows are spent and refused.
+ * The store over `oauth_auth_states`: `save` writes a state for `OAUTH_STATE_TTL_MS` after purging
+ * expired rows, and `consume` is the one way to redeem one: claimed and deleted in one statement,
+ * only when it was minted by `initiator` for `provider`. Expired rows are spent and refused.
  */
-export const makeOAuthStateConsumer = <E>(database: DatabaseApi, mapError: (error: DatabaseError) => E) => {
+export const makeOAuthStateStore = <E>(database: DatabaseApi, mapError: (error: DatabaseError) => E) => {
 	const dbExecute = makeDbExecute(database, "OAuthState", mapError)
-	return Effect.fn("OAuthState.consume")(function* (params: ConsumeOAuthStateParams) {
+	const save = Effect.fn("OAuthState.save")(function* (params: SaveOAuthStateParams) {
+		yield* Effect.annotateCurrentSpan({
+			orgId: params.initiator.orgId,
+			"maple.oauth.provider": params.provider,
+		})
+		const now = yield* Clock.currentTimeMillis
+		yield* dbExecute((db) => db.run(PG.deleteFrom(OAuthAuthStates).where(($) => [$.expiresAt.lt(now)])))
+		yield* dbExecute((db) =>
+			db.run(
+				PG.insertInto(OAuthAuthStates).values({
+					state: params.state,
+					orgId: params.initiator.orgId,
+					provider: params.provider,
+					initiatedByUserId: params.initiator.userId,
+					redirectUri: params.redirectUri,
+					returnTo: params.returnTo,
+					codeVerifier: params.codeVerifier ?? null,
+					githubInstallationIds:
+						params.githubInstallationIds === undefined ? null : [...params.githubInstallationIds],
+					createdAt: now,
+					expiresAt: now + OAUTH_STATE_TTL_MS,
+				}),
+			),
+		)
+	})
+	const consume = Effect.fn("OAuthState.consume")(function* (params: ConsumeOAuthStateParams) {
 		const { state, provider, initiator } = params
 		yield* Effect.annotateCurrentSpan({ orgId: initiator.orgId, "maple.oauth.provider": provider })
 		const claimed = yield* dbExecute((db) =>
@@ -59,4 +104,5 @@ export const makeOAuthStateConsumer = <E>(database: DatabaseApi, mapError: (erro
 		}
 		return row satisfies OAuthAuthStateRow
 	})
+	return { save, consume }
 }

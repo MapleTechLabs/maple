@@ -9,7 +9,7 @@ import {
 	type SignalProjector,
 	type SignalSourceAdapter,
 } from "@maple/eventing-core"
-import type { IssueSeverity, OrgId, WorkflowState } from "@maple/domain/http"
+import type { IssueSeverity, OrgId, PlanetScaleEventCategory, WorkflowState } from "@maple/domain/http"
 import { ActorId, ErrorIssueEventId, ErrorIssueId } from "@maple/domain/primitives"
 import * as Orm from "@maple-dev/effect-orm/database"
 import * as PG from "@maple-dev/effect-orm/postgres"
@@ -320,11 +320,9 @@ export const planetScaleWebhookPayloadFromEvent = (
 // ---------------------------------------------------------------------------
 // Classification
 // ---------------------------------------------------------------------------
-/** Where an event belongs on the timeline. Mirrored by the web vocabulary table. */
-export type PlanetScaleEventCategory = "deploy_request" | "branch" | "database" | "cluster" | "keyspace"
-
 export interface PlanetScaleTimelineSpec {
-	readonly category: PlanetScaleEventCategory
+	/** Where the event belongs on the timeline. Mirrored by the web vocabulary table. */
+	readonly category: typeof PlanetScaleEventCategory.Type
 	/** Normalized lifecycle state; null when the event isn't a state transition. */
 	readonly state: string | null
 	readonly title: (payload: PlanetScaleWebhookPayload) => string
@@ -521,7 +519,7 @@ export interface InsertPlanetScaleEventInput {
 	readonly orgId: OrgId
 	readonly databaseName: string
 	readonly branchName: string
-	readonly category: PlanetScaleEventCategory
+	readonly category: typeof PlanetScaleEventCategory.Type
 	readonly eventType: string
 	readonly state: string | null
 	readonly externalId: string

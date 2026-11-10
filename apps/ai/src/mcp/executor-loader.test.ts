@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it } from "@effect/vitest"
 import { OrgId, UserId } from "@maple/domain/http"
 import { Config, ConfigProvider, Deferred, Effect, Fiber, Layer, Ref, Schema } from "effect"
 import { AfterResponse } from "@maple/backend/platform/after-response"
+import { SandboxFetcher } from "@maple/backend/platform/bindings"
 import { HttpRouter } from "effect/http"
 import { Env } from "@maple/backend/platform/Env"
 import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/testing/test-pglite"
@@ -123,7 +124,11 @@ const mcpClient = async (
 		ErrorActorsService.layer,
 		AuthService.layer,
 		Layer.succeed(McpToolRateLimiter, { check: () => Effect.succeed("allowed" as const) }),
-	).pipe(Layer.provideMerge(Layer.mergeAll(db.layer, Env.layer.pipe(Layer.provide(testConfig)))))
+	).pipe(
+		Layer.provideMerge(
+			Layer.mergeAll(db.layer, Env.layer.pipe(Layer.provide(testConfig)), SandboxFetcher.none),
+		),
+	)
 	const key = await Effect.runPromise(
 		Effect.gen(function* () {
 			const apiKeys = yield* ApiKeysService
@@ -354,7 +359,11 @@ describe("McpToolExecutorLoader", () => {
 					Effect.provide(
 						loader.pipe(
 							Layer.provideMerge(
-								Layer.merge(afterResponse.layer, createTestDb(createdDbs).layer),
+								Layer.mergeAll(
+									afterResponse.layer,
+									createTestDb(createdDbs).layer,
+									SandboxFetcher.none,
+								),
 							),
 						),
 					),

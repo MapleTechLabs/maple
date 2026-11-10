@@ -1,7 +1,7 @@
 import { randomBytes, randomUUID } from "node:crypto"
 import * as PG from "@maple-dev/effect-orm/postgres"
 import { leaseClaimable } from "./lease"
-import { hashIngestKey, parseIngestKeyLookupHmacKey } from "../../platform/credential-tokens"
+import { hashIngestKey } from "../../platform/credential-tokens"
 import { AwsConnections, type AwsConnectionRow, Sources } from "@maple/db/tables"
 import {
 	AWS_MODULE_SPECS,
@@ -31,9 +31,14 @@ import {
 	type OrgId,
 	type UserId,
 } from "@maple/domain/primitives"
-import { Cause, Clock, Context, Effect, Layer, Option, Redacted, Array as Arr } from "effect"
+import { Cause, Clock, Context, Effect, Layer, Option, Array as Arr } from "effect"
 import { FetchHttpClient, HttpClient } from "effect/http"
-import { decryptAes256Gcm, encryptAes256Gcm, parseBase64Aes256GcmKey } from "@maple/backend/platform/Crypto"
+import {
+	decryptAes256Gcm,
+	encryptAes256Gcm,
+	ingestKeyEncryptionKey,
+	ingestKeyLookupHmacKey,
+} from "@maple/backend/platform/Crypto"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { makeDbExecute, makePersistenceErrorMapper } from "@maple/backend/platform/db-execute"
 import { Env } from "@maple/backend/platform/Env"
@@ -348,15 +353,9 @@ export class AwsConnectionService extends Context.Service<AwsConnectionService, 
 			const httpClient = yield* HttpClient.HttpClient
 			const dbExecute = makeDbExecute(database, "AwsConnectionService", toPersistenceError)
 			const persistence = (message: string) => new IntegrationsPersistenceError({ message })
-			const encryptionKey = yield* parseBase64Aes256GcmKey(
-				Redacted.value(env.MAPLE_INGEST_KEY_ENCRYPTION_KEY),
-				persistence,
-			)
+			const encryptionKey = yield* ingestKeyEncryptionKey(env, persistence)
 			// The ingest gateway hashes a delivery's access key with this and looks the row up by it.
-			const lookupHmacKey = yield* parseIngestKeyLookupHmacKey(
-				Redacted.value(env.MAPLE_INGEST_KEY_LOOKUP_HMAC_KEY),
-				persistence,
-			)
+			const lookupHmacKey = yield* ingestKeyLookupHmacKey(env, persistence)
 			const ingestBase = ingestBaseUrl(env)
 
 			/** A new stream secret as the four columns that hold it. */

@@ -2,7 +2,7 @@ import { Effect, Schema, Array as Arr, String as Str } from "effect"
 import { AI_SESSION_SEARCH_MAX_CHARS, AI_SESSION_SORT_KEYS, ListAiSessionsRequest } from "@maple/domain/http"
 import { ListAgentSessionsOutput } from "@maple/domain/mcp-outputs"
 import { formatCost } from "@maple/agent-sessions"
-import { listAiSessions } from "@maple/backend/services/ai-sessions/ai-session-reads"
+import { AiSessionReadService } from "@maple/backend/services/ai-sessions/AiSessionReadService"
 import type { McpToolRegistrar } from "./types"
 import { CurrentMcpTenant } from "../tenant"
 import { MCP_SEARCH_MAX_HOURS } from "../lib/time"
@@ -85,6 +85,7 @@ export function registerListAgentSessionsTool(server: McpToolRegistrar) {
 			}
 
 			const tenant = yield* CurrentMcpTenant
+			const reads = yield* AiSessionReadService
 			yield* Effect.annotateCurrentSpan({
 				orgId: tenant.orgId,
 				"maple.ai.sort_by": sortBy,
@@ -92,24 +93,26 @@ export function registerListAgentSessionsTool(server: McpToolRegistrar) {
 				"maple.ai.offset": offset,
 			})
 
-			const page = yield* listAiSessions(
-				tenant,
-				new ListAiSessionsRequest({
-					startTime: st,
-					endTime: et,
-					limit,
-					offset,
-					vendorIds: lists.vendors,
-					serviceNames: lists.services,
-					models: lists.models,
-					agentNames: lists.agents,
-					toolNames: lists.tools,
-					search: params.search,
-					hasErrors: params.has_errors,
-					sortBy,
-					sortDir,
-				}),
-			).pipe(Effect.catchTags(warehouseReadToMcpHandlers("list_agent_sessions")))
+			const page = yield* reads
+				.list(
+					tenant,
+					new ListAiSessionsRequest({
+						startTime: st,
+						endTime: et,
+						limit,
+						offset,
+						vendorIds: lists.vendors,
+						serviceNames: lists.services,
+						models: lists.models,
+						agentNames: lists.agents,
+						toolNames: lists.tools,
+						search: params.search,
+						hasErrors: params.has_errors,
+						sortBy,
+						sortDir,
+					}),
+				)
+				.pipe(Effect.catchTags(warehouseReadToMcpHandlers("list_agent_sessions")))
 
 			const sessions = page.data
 			yield* Effect.annotateCurrentSpan("result.rowCount", sessions.length)

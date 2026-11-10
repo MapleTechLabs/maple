@@ -20,7 +20,6 @@ import { FixVerificationTickService } from "@maple/backend/services/errors/FixVe
 import { GcpMetricsService } from "@maple/backend/services/integrations/GcpMetricsService"
 import { IncidentClassifier } from "@maple/backend/services/errors/IncidentClassifier"
 import { DatabasePgLive } from "@maple/backend/platform/DatabasePgLive"
-import { PullRequestLookupLive } from "@maple/backend/services/errors/pull-request-lookup-live"
 import { PlanetScaleMetricsService } from "@maple/backend/services/integrations/PlanetScaleMetricsService"
 import { PlanetScaleService } from "@maple/backend/services/integrations/PlanetScaleService"
 import { PrReviewPostMergeService } from "@maple/backend/services/pr-review/PrReviewPostMergeService"
@@ -98,7 +97,6 @@ export const layerTick = (
 		IncidentClassifier.layer,
 		statusPagesLayerIfBound(statusPages),
 	).pipe(
-		Layer.provide(PullRequestLookupLive),
 		Layer.provide(Layer.mergeAll(Env.layer, DatabasePgLive, EdgeCacheServiceLive, FetchHttpClient.layer)),
 		Layer.provideMerge(
 			Layer.mergeAll(

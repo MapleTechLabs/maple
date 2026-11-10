@@ -825,25 +825,25 @@ export const resolveDecisionModel = (settings: LlmSettings): string | undefined 
  * private to this layer, so it never replaces the Workers AI one `layerLlm` provides. Without an
  * OpenRouter key there is no embedder, and the filter is off.
  */
-export const layerFindingEmbedder = (
-	settings: LlmSettings,
-): Layer.Layer<FindingEmbedder> | Layer.Layer<never> => {
+export const layerFindingEmbedder = (settings: LlmSettings): Layer.Layer<FindingEmbedder> => {
 	const apiKey = readSecret(settings, "OPENROUTER_API_KEY")
-	if (apiKey === undefined) return Layer.empty
+	if (apiKey === undefined) return FindingEmbedder.none
 	const model = readString(settings, "MAPLE_EMBEDDING_MODEL") ?? DEFAULT_EMBEDDING_MODEL
 	return Layer.effect(FindingEmbedder)(
-		Effect.map(OpenAiEmbeddingModel.make({ model }), (embeddings) => ({
-			model,
-			embed: (inputs: ReadonlyArray<string>) =>
-				embeddings.embedMany(inputs).pipe(
-					Effect.mapBoth({
-						onSuccess: (response) =>
-							Arr.map(response.embeddings, (embedding) => embedding.vector),
-						onFailure: (error) =>
-							new PrReviewEmbeddingError({ message: error.message, model, cause: error }),
-					}),
-				),
-		})),
+		Effect.map(OpenAiEmbeddingModel.make({ model }), (embeddings) =>
+			Option.some({
+				model,
+				embed: (inputs: ReadonlyArray<string>) =>
+					embeddings.embedMany(inputs).pipe(
+						Effect.mapBoth({
+							onSuccess: (response) =>
+								Arr.map(response.embeddings, (embedding) => embedding.vector),
+							onFailure: (error) =>
+								new PrReviewEmbeddingError({ message: error.message, model, cause: error }),
+						}),
+					),
+			}),
+		),
 	).pipe(
 		Layer.provide(
 			OpenAiClient.layer({ apiKey, apiUrl: openRouterApiUrl(settings) }).pipe(
@@ -866,6 +866,6 @@ export const layerDecisionModelFromConfig = (
 	Layer.unwrap(Effect.map(loadLlmSettings, (settings) => layerDecisionModel(settings, workersAi)))
 
 /** {@link layerFindingEmbedder} on the settings the graph's ConfigProvider holds. */
-export const FindingEmbedderFromConfigLive: Layer.Layer<FindingEmbedder> | Layer.Layer<never> = Layer.unwrap(
+export const FindingEmbedderFromConfigLive: Layer.Layer<FindingEmbedder> = Layer.unwrap(
 	Effect.map(loadLlmSettings, layerFindingEmbedder),
 )

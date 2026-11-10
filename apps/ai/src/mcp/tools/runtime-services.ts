@@ -1,4 +1,5 @@
 import { AuditLogService } from "@maple/backend/services/audit/AuditLogService"
+import { EmailSender } from "@maple/backend/platform/bindings"
 import { WarehouseQueryService } from "@maple/backend/services/warehouse/WarehouseQueryService"
 import { SandboxClient } from "@maple/backend/services/sandbox/client"
 import { CloudflareRepoSandboxLive } from "@maple/backend/services/sandbox/CloudflareRepoSandbox"
@@ -16,6 +17,7 @@ import { DashboardPersistenceService } from "@maple/backend/services/dashboards/
 import { ErrorActorsService } from "@maple/backend/services/errors/ErrorActorsService"
 import { ErrorIssueReadModelsService } from "@maple/backend/services/errors/ErrorIssueReadModelsService"
 import { UsersReadService } from "@maple/backend/services/users/UsersReadService"
+import { AiSessionReadService } from "@maple/backend/services/ai-sessions/AiSessionReadService"
 import { ErrorIssueMergeService } from "@maple/backend/services/errors/ErrorIssueMergeService"
 import { ErrorIssueWorkflowService } from "@maple/backend/services/errors/ErrorIssueWorkflowService"
 import { ErrorPolicyService } from "@maple/backend/services/errors/ErrorPolicyService"
@@ -23,7 +25,6 @@ import { ErrorsService } from "@maple/backend/services/errors/ErrorsService"
 import { InvestigationService } from "@maple/backend/services/errors/InvestigationService"
 import { IssueFixVerificationService } from "@maple/backend/services/errors/IssueFixVerificationService"
 import { RecommendationIssueService } from "@maple/backend/services/errors/RecommendationIssueService"
-import { PullRequestLookupLive } from "@maple/backend/services/errors/pull-request-lookup-live"
 import { SetupAuditService } from "@maple/backend/services/org/SetupAuditService"
 import { RailwayMetricsService } from "@maple/backend/services/integrations/RailwayMetricsService"
 import { ScrapeTargetsService } from "@maple/backend/services/integrations/ScrapeTargetsService"
@@ -94,6 +95,7 @@ export const McpRuntimeServicesLive = Layer.mergeAll(
 	StatusPagesService.layer,
 	UptimeMonitorsService.layer,
 	UsersReadService.layer,
+	AiSessionReadService.layer,
 	IngestRuleService.layer,
 	VcsCommitService.layer,
 	VcsSourceService.layer,
@@ -104,8 +106,9 @@ export const McpRuntimeServicesLive = Layer.mergeAll(
 			Layer.provide(Layer.mergeAll(VcsSourceService.layer, SandboxClient.layer)),
 		),
 	),
-	Layer.provide(PullRequestLookupLive),
 	Layer.provide(FetchHttpClient.layer),
+	// maple-ai binds no `send_email`: the alert services' email is off here.
+	Layer.provide(EmailSender.none),
 )
 
 /**

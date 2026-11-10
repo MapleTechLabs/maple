@@ -18,12 +18,17 @@ import {
 	type UserId,
 } from "@maple/domain/http"
 import * as PG from "@maple-dev/effect-orm/postgres"
-import { generateApiKey, hashApiKey, parseIngestKeyLookupHmacKey } from "../../platform/credential-tokens"
+import { generateApiKey, hashApiKey } from "../../platform/credential-tokens"
 import { ApiKeys, CliDeviceAuthorizations, type CliDeviceAuthorizationRow } from "@maple/db/tables"
-import { DateTime, Clock, Context, Effect, Layer, Option, Redacted, Schema, String as Str } from "effect"
+import { DateTime, Clock, Context, Effect, Layer, Option, Schema, String as Str } from "effect"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { makeDbExecute } from "@maple/backend/platform/db-execute"
-import { decryptAes256Gcm, encryptAes256Gcm, parseBase64Aes256GcmKey } from "@maple/backend/platform/Crypto"
+import {
+	decryptAes256Gcm,
+	encryptAes256Gcm,
+	ingestKeyEncryptionKey,
+	ingestKeyLookupHmacKey,
+} from "@maple/backend/platform/Crypto"
 import { Env } from "@maple/backend/platform/Env"
 import { CliAuthRateLimit } from "@maple/backend/platform/bindings"
 
@@ -119,12 +124,12 @@ export class CliDeviceAuthService extends Context.Service<
 		const env = yield* Env
 		// Absent outside the api Worker (tests, the CLI): the check then passes.
 		const rateLimit = yield* Effect.serviceOption(CliAuthRateLimit)
-		const apiKeyHmacKey = yield* parseIngestKeyLookupHmacKey(
-			Redacted.value(env.MAPLE_INGEST_KEY_LOOKUP_HMAC_KEY),
+		const apiKeyHmacKey = yield* ingestKeyLookupHmacKey(
+			env,
 			(message) => new CliDevicePersistenceError({ message }),
 		)
-		const encryptionKey = yield* parseBase64Aes256GcmKey(
-			Redacted.value(env.MAPLE_INGEST_KEY_ENCRYPTION_KEY),
+		const encryptionKey = yield* ingestKeyEncryptionKey(
+			env,
 			(message) => new CliDevicePersistenceError({ message }),
 		)
 

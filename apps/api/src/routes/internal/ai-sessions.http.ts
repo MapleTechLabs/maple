@@ -1,20 +1,7 @@
 import { HttpApiBuilder } from "effect/http-api"
 import { CurrentTenant, MapleInternalApi, type TenantContext } from "@maple/domain/http"
 import { Effect } from "effect"
-import {
-	listAiSessions,
-	readAiSessionDetails,
-	readAiSessionDistributions,
-	readAiSessionFacets,
-	readAiSessionSpans,
-	readAiSessionSummary,
-	readAiToolErrorDetail,
-	readAiToolErrorSamples,
-	readAiToolErrors,
-	readAiToolsBreakdowns,
-	readAiToolsSeries,
-	readAiToolsTotals,
-} from "@maple/backend/services/ai-sessions/ai-session-reads"
+import { AiSessionReadService } from "@maple/backend/services/ai-sessions/AiSessionReadService"
 
 /**
  * Dashboard-only AI agent session reads.
@@ -22,11 +9,11 @@ import {
  * Serves the Agent Sessions page. Scoping is `CurrentTenant`, like every other
  * warehouse read.
  *
- * Every handler is the tenant plus one call into `ai-session-reads`, which the
- * MCP tools read through as well: the reads and their spans live there.
+ * Every handler is the tenant plus one call into `AiSessionReadService`, which the
+ * MCP tools read through as well.
  */
 const withTenant =
-	<Payload, A, E, R>(read: (tenant: TenantContext, payload: Payload) => Effect.Effect<A, E, R>) =>
+	<Payload, A, E>(read: (tenant: TenantContext, payload: Payload) => Effect.Effect<A, E>) =>
 	({ payload }: { readonly payload: Payload }) =>
 		Effect.flatMap(CurrentTenant.Context, (tenant) => read(tenant, payload))
 
@@ -34,17 +21,20 @@ export const HttpAiSessionsInternalLive = HttpApiBuilder.group(
 	MapleInternalApi,
 	"aiSessionsInternal",
 	(handlers) =>
-		handlers
-			.handle("list", withTenant(listAiSessions))
-			.handle("details", withTenant(readAiSessionDetails))
-			.handle("facets", withTenant(readAiSessionFacets))
-			.handle("distributions", withTenant(readAiSessionDistributions))
-			.handle("spans", withTenant(readAiSessionSpans))
-			.handle("summary", withTenant(readAiSessionSummary))
-			.handle("toolsSeries", withTenant(readAiToolsSeries))
-			.handle("toolsTotals", withTenant(readAiToolsTotals))
-			.handle("toolsBreakdowns", withTenant(readAiToolsBreakdowns))
-			.handle("toolErrors", withTenant(readAiToolErrors))
-			.handle("toolErrorDetail", withTenant(readAiToolErrorDetail))
-			.handle("toolErrorSamples", withTenant(readAiToolErrorSamples)),
+		Effect.gen(function* () {
+			const reads = yield* AiSessionReadService
+			return handlers
+				.handle("list", withTenant(reads.list))
+				.handle("details", withTenant(reads.details))
+				.handle("facets", withTenant(reads.facets))
+				.handle("distributions", withTenant(reads.distributions))
+				.handle("spans", withTenant(reads.spans))
+				.handle("summary", withTenant(reads.summary))
+				.handle("toolsSeries", withTenant(reads.toolsSeries))
+				.handle("toolsTotals", withTenant(reads.toolsTotals))
+				.handle("toolsBreakdowns", withTenant(reads.toolsBreakdowns))
+				.handle("toolErrors", withTenant(reads.toolErrors))
+				.handle("toolErrorDetail", withTenant(reads.toolErrorDetail))
+				.handle("toolErrorSamples", withTenant(reads.toolErrorSamples))
+		}),
 )

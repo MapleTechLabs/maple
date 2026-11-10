@@ -37,7 +37,7 @@ import {
 	EscalationChains,
 	type AlertDestinationRow,
 } from "@maple/db/tables"
-import { Context, Effect, Layer, Match, Option, Redacted, Schema, Array as Arr, String as Str } from "effect"
+import { Context, Effect, Layer, Match, Option, Schema, Array as Arr, String as Str } from "effect"
 import { HttpClient } from "effect/http"
 import { encryptAes256Gcm, type EncryptedValue } from "@maple/backend/platform/Crypto"
 import { Database } from "@maple/backend/platform/DatabaseLive"
@@ -417,9 +417,7 @@ export class AlertDestinationsService extends Context.Service<
 		const email = yield* EmailService
 		const orgMembers = yield* OrgMembersService
 		const chatAlertPoster = yield* ChatAlertPoster
-		const encryptionKey = yield* parseAlertDestinationEncryptionKey(
-			Redacted.value(env.MAPLE_INGEST_KEY_ENCRYPTION_KEY),
-		)
+		const encryptionKey = yield* parseAlertDestinationEncryptionKey(env)
 		const delivery = makeAlertDestinationDelivery({
 			encryptionKey,
 			appBaseUrl: env.MAPLE_APP_BASE_URL,

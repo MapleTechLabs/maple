@@ -8,7 +8,6 @@
  * Ingest keys and API keys are minted per instance, so this steers people to the right app; it is
  * not what keeps data in a region. That is why a Clerk read that fails lets the request through.
  */
-import { createClerkClient } from "@clerk/backend"
 import { EdgeCacheService } from "@maple/cache"
 import { OrganizationWrongRegionError, type OrgId } from "@maple/domain/http"
 import {
@@ -19,21 +18,10 @@ import {
 	organizationRegionsFrom,
 	organizationServedIn,
 } from "@maple/domain/organization-regions"
-import {
-	Clock,
-	Context,
-	Effect,
-	Fiber,
-	HashMap,
-	Layer,
-	Option,
-	Redacted,
-	Ref,
-	Schema,
-	String as Str,
-} from "effect"
+import { Clock, Context, Effect, Fiber, HashMap, Layer, Option, Ref, Schema } from "effect"
 import { Env } from "@maple/backend/platform/Env"
 import { type ClerkRequestError, clerkRequest } from "@maple/backend/services/auth/clerk-request"
+import { clerkModeClient } from "@maple/auth"
 
 /**
  * A region that can no longer change: chosen, or past the choice window (`REGION_CHOICE_WINDOW_MS`,
@@ -444,12 +432,7 @@ export class OrganizationRegionService extends Context.Service<
 >()("@maple/backend/services/org/OrganizationRegionService", {
 	make: Effect.gen(function* () {
 		const env = yield* Env
-		const clerk =
-			Str.toLowerCase(env.MAPLE_AUTH_MODE) === "clerk"
-				? Option.map(env.CLERK_SECRET_KEY, (secretKey) =>
-						createClerkClient({ secretKey: Redacted.value(secretKey) }),
-					)
-				: Option.none()
+		const clerk = Option.fromUndefinedOr(clerkModeClient(env))
 		return yield* makeOrganizationRegionService(
 			env.MAPLE_REGION,
 			Option.map(

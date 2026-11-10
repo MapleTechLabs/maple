@@ -1,4 +1,3 @@
-import { randomBytes } from "node:crypto"
 import {
 	IntegrationsNotConnectedError,
 	IntegrationsPersistenceError,
@@ -8,8 +7,6 @@ import {
 	OrgId,
 	type UserId,
 } from "@maple/domain/http"
-import * as PG from "@maple-dev/effect-orm/postgres"
-import { OAuthAuthStates } from "@maple/db/tables"
 import { Clock, Context, Effect, Layer, Option, Redacted, Schema, String as Str, Array as Arr } from "effect"
 import { FetchHttpClient, HttpClient } from "effect/http"
 import { Env, type EnvConfig } from "@maple/backend/platform/Env"
@@ -19,12 +16,9 @@ import {
 	linearData,
 	linearGraphql,
 } from "@maple/backend/services/integrations/linear/LinearGraphql"
-import {
-	makeOAuthConnectionHelpers,
-	OAUTH_STATE_TTL_MS,
-	type OAuthTokenEndpointConfig,
-} from "./oauth/connection-helpers"
+import { makeOAuthConnectionHelpers, type OAuthTokenEndpointConfig } from "./oauth/connection-helpers"
 import type { OAuthFlowInitiator } from "./oauth/oauth-state"
+import { newOAuthState } from "./oauth/oauth-state"
 
 const LINEAR_PROVIDER = "linear"
 const AUTHORIZE_URL = "https://linear.app/oauth/authorize"
@@ -149,23 +143,11 @@ export class LinearOAuthService extends Context.Service<LinearOAuthService, Line
 				options: { readonly callbackUrl: string; readonly returnTo?: string },
 			) {
 				const config = yield* resolveConfig(env)
-				const state = randomBytes(24).toString("base64url")
-				const currentTime = yield* Clock.currentTimeMillis
-
-				yield* oauth.purgeExpiredStates(currentTime)
-				yield* oauth.dbExecute((db) =>
-					db.run(
-						PG.insertInto(OAuthAuthStates).values({
-							state,
-							orgId,
-							provider: LINEAR_PROVIDER,
-							initiatedByUserId: userId,
-							redirectUri: options.callbackUrl,
-							returnTo: options.returnTo ?? null,
-							createdAt: currentTime,
-							expiresAt: currentTime + OAUTH_STATE_TTL_MS,
-						}),
-					),
+				const state = yield* newOAuthState
+				yield* oauth.saveState(
+					state,
+					{ orgId, userId },
+					{ redirectUri: options.callbackUrl, returnTo: options.returnTo ?? null },
 				)
 
 				const params = new URLSearchParams({

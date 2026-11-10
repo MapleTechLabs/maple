@@ -38,10 +38,7 @@ import {
 } from "@maple/db/tables"
 import { CH, parseWarehouseDateTime, formatWarehouseDateTime } from "@maple/query-engine"
 import { EdgeCacheService } from "@maple/cache"
-import {
-	isOrgWarehouseQuarantined,
-	quarantineOnConfigClassCause,
-} from "@maple/backend/services/warehouse/warehouse-org-quarantine"
+import { runWarehouseOrgTurn } from "@maple/backend/services/warehouse/warehouse-org-quarantine"
 import {
 	Array as Arr,
 	Cause,
@@ -59,7 +56,7 @@ import {
 } from "effect"
 import { isTriageSkipReason, maybeEnqueueTriage } from "@maple/backend/services/errors/ai-triage-enqueue"
 import { issuesOwningHashes } from "@maple/backend/services/errors/issue-fingerprints"
-import { ChatSessions } from "@maple/backend/platform/bindings"
+import { InvestigationStarter } from "@maple/backend/services/errors/InvestigationStarter"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { makeDbExecute, makePersistenceErrorMapper } from "@maple/backend/platform/db-execute"
 import { transitionRow } from "@maple/backend/platform/transition-row"
@@ -290,16 +287,14 @@ export interface AnomalyDetectionServiceApi {
 const make: Effect.Effect<
 	AnomalyDetectionServiceApi,
 	never,
-	Database | WarehouseQueryService | OrgClickHouseSettingsService | EdgeCacheService
+	Database | WarehouseQueryService | OrgClickHouseSettingsService | EdgeCacheService | InvestigationStarter
 > = Effect.gen(function* () {
 	const database = yield* Database
 	const warehouse = yield* WarehouseQueryService
 	const orgChSettings = yield* OrgClickHouseSettingsService
 	const edgeCache = yield* EdgeCacheService
-	// Optional: present only inside a Worker isolate. Used to start the
-	// investigation agent when an incident opens (org opt-in).
-	const chatSessionsOption = yield* Effect.serviceOption(ChatSessions)
-	const chatSessions = Option.getOrUndefined(chatSessionsOption)
+	// Starts the investigation agent when an incident opens (org opt-in).
+	const starter = yield* InvestigationStarter
 
 	const dbExecute = makeDbExecute(database, "AnomalyDetectionService", makePersistenceError)
 
@@ -1830,7 +1825,6 @@ const make: Effect.Effect<
 							incidentId,
 							issueId: errorIssueId ?? undefined,
 							context: {
-								kind: "anomaly",
 								signalType: evaluation.signalType,
 								serviceName: evaluation.serviceName,
 								deploymentEnv: evaluation.deploymentEnv,
@@ -1839,14 +1833,13 @@ const make: Effect.Effect<
 								// anomaly reached the snapshot as an unclassified incident.
 								severity: issueSeverityFromAlert(evaluation.severity),
 								observedValue: evaluation.value,
-								baselineMedian: evaluation.baselineMedian,
-								baselineSigma: evaluation.baselineSigma,
 								thresholdValue: evaluation.threshold,
-								sampleCount: evaluation.sampleCount,
-								detectedAt: DateTime.formatIso(DateTime.makeUnsafe(nowMs)),
+								startedAtMs: nowMs,
 							},
-							chatSessions,
-						}).pipe(Effect.provideService(Database, database))
+						}).pipe(
+							Effect.provideService(Database, database),
+							Effect.provideService(InvestigationStarter, starter),
+						)
 						// A gate skip is recorded as `skipped`, not left at `none`: the
 						// incident was judged, and the hub should say so rather than
 						// read as one automation never reached.
@@ -2307,53 +2300,14 @@ const make: Effect.Effect<
 		const results = yield* Effect.forEach(
 			orgsToProcess,
 			(org) =>
-				Effect.gen(function* () {
-					// Orgs whose warehouse rejected queries with an auth/config-class
-					// error are parked (see warehouse-org-quarantine.ts).
-					if (yield* withOutboundPermit(isOrgWarehouseQuarantined(edgeCache, org))) {
-						yield* Effect.logInfo("Skipping org with quarantined warehouse").pipe(
-							Effect.annotateLogs({ orgId: org }),
-						)
-						return emptyStats
-					}
-					return yield* processOrg(org, nowMs, runRetention)
-				}).pipe(
-					// Isolate genuine per-org failures/defects so one bad org can't fail
-					// the whole tick. Interrupts (isolate teardown) are NOT per-org
-					// failures — re-raise them so the tick cancels promptly instead of
-					// logging a phantom failure and marching through the remaining orgs.
-					Effect.catchCause((cause) =>
-						Cause.hasInterruptsOnly(cause)
-							? Effect.interrupt
-							: Effect.gen(function* () {
-									const quarantined = yield* quarantineOnConfigClassCause(
-										edgeCache,
-										org,
-										cause,
-										nowMs,
-									)
-									if (quarantined) {
-										yield* Effect.logInfo(
-											"Org warehouse rejected queries with a config-class error; quarantined",
-										).pipe(
-											Effect.annotateLogs({
-												orgId: org,
-												error: summarizeCause(cause),
-											}),
-										)
-									} else {
-										yield* Effect.logError("Anomaly tick failed for org").pipe(
-											Effect.annotateLogs({
-												orgId: org,
-												error: summarizeCause(cause),
-											}),
-										)
-									}
-									yield* Ref.update(orgFailures, (n) => n + 1)
-									return emptyStats
-								}),
-					),
-				),
+				// A parked org is skipped; one bad org cannot fail the tick.
+				runWarehouseOrgTurn(edgeCache, org, nowMs, processOrg(org, nowMs, runRetention), {
+					skipped: emptyStats,
+					failed: Ref.update(orgFailures, (n) => n + 1).pipe(Effect.as(emptyStats)),
+					failureMessage: "Anomaly tick failed for org",
+					skipMessage: "Skipping org with quarantined warehouse",
+					gateLookup: withOutboundPermit,
+				}),
 			{ concurrency: 4 },
 		)
 
@@ -2395,6 +2349,12 @@ export class AnomalyDetectionService extends Context.Service<
 	AnomalyDetectionServiceApi
 >()("@maple/backend/services/AnomalyDetectionService", { make }) {
 	static readonly layer = Layer.effect(this, this.make).pipe(
-		Layer.provide(Layer.mergeAll(WarehouseQueryService.layer, OrgClickHouseSettingsService.layer)),
+		Layer.provide(
+			Layer.mergeAll(
+				WarehouseQueryService.layer,
+				OrgClickHouseSettingsService.layer,
+				InvestigationStarter.layer,
+			),
+		),
 	)
 }

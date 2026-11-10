@@ -1,4 +1,4 @@
-import { randomBytes, randomUUID } from "node:crypto"
+import { randomUUID } from "node:crypto"
 import {
 	ChatConnectorId,
 	ChatIdentityId,
@@ -29,13 +29,12 @@ import {
 	Effect,
 	Layer,
 	Option,
-	Redacted,
 	Schema,
 	Record as Rec,
 	String as Str,
 } from "effect"
 import { FetchHttpClient, HttpClient } from "effect/http"
-import { parseBase64Aes256GcmKey } from "@maple/backend/platform/Crypto"
+import { ingestKeyEncryptionKey } from "@maple/backend/platform/Crypto"
 import { Database, type DatabaseError } from "@maple/backend/platform/DatabaseLive"
 import { makeDbExecute } from "@maple/backend/platform/db-execute"
 import { Env } from "@maple/backend/platform/Env"
@@ -58,6 +57,7 @@ import {
 	loadOwnedChatWorkspace,
 	missingOutboundConfig,
 } from "@maple/backend/services/integrations/chat-outbound"
+import { newOAuthState } from "@maple/backend/services/auth/oauth/oauth-state"
 
 export { ChatConnectorRegistry }
 export type { ChatIdentityLink, ChatWorkspaceResolution }
@@ -73,7 +73,6 @@ export type { ChatIdentityLink, ChatWorkspaceResolution }
  */
 
 /** How long an install may sit between the authorize redirect and the callback. */
-const STATE_TTL_MS = 10 * 60_000
 
 /** `oauth_auth_states.provider` for a chat install, namespaced per connector. */
 const stateProvider = (connector: ChatConnectorId): string => `chat:${connector}`
@@ -250,8 +249,8 @@ const make: Effect.Effect<
 	 * Read lazily rather than at layer build: only a connector whose install mints a credential
 	 * needs it, and a deployment without one must still list, link and unlink everything else.
 	 */
-	const credentialKey = parseBase64Aes256GcmKey(
-		Redacted.value(env.MAPLE_INGEST_KEY_ENCRYPTION_KEY),
+	const credentialKey = ingestKeyEncryptionKey(
+		env,
 		(message) =>
 			new IntegrationsConfigurationError({
 				message: `Chat workspace credentials cannot be stored on this deployment: ${message}`,
@@ -353,24 +352,19 @@ const make: Effect.Effect<
 	) {
 		yield* Effect.annotateCurrentSpan({ orgId, "maple.chat.connector": connectorId })
 		const connector = yield* requireConnector(connectorId)
-		const state = randomBytes(24).toString("base64url")
+		const state = yield* newOAuthState
 		// The URL first: an unconfigured connector fails here, before a state row
 		// nobody will ever redeem is written.
 		const url = yield* connector.install
 			.authorizeUrl({ config, state, redirectUri: callbackUrl })
 			.pipe(Effect.mapError((error) => new IntegrationsConfigurationError({ message: error.message })))
-		const now = yield* Clock.currentTimeMillis
-		yield* states.purgeExpired(now).pipe(Effect.mapError(toPersistenceError))
 		yield* states
-			.insert({
+			.save({
 				state,
-				orgId,
 				provider: stateProvider(connectorId),
-				initiatedByUserId: userId,
+				initiator: { orgId, userId },
 				redirectUri: callbackUrl,
 				returnTo: null,
-				createdAt: now,
-				expiresAt: now + STATE_TTL_MS,
 			})
 			.pipe(Effect.mapError(toPersistenceError))
 		return { url }
@@ -493,25 +487,20 @@ const make: Effect.Effect<
 		yield* Effect.annotateCurrentSpan({ orgId, "maple.chat.connector": connectorId })
 		const connector = yield* requireConnector(connectorId)
 		const identity = yield* requireIdentity(connector)
-		const state = randomBytes(24).toString("base64url")
+		const state = yield* newOAuthState
 		// The URL first, as the install does: an unconfigured connector fails here,
 		// before a state row nobody will ever redeem is written.
 		const url = yield* identity
 			.authorizeUrl({ config, state, redirectUri: callbackUrl })
 			.pipe(Effect.mapError((error) => new IntegrationsConfigurationError({ message: error.message })))
-		const now = yield* Clock.currentTimeMillis
-		yield* states.purgeExpired(now).pipe(Effect.mapError(toPersistenceError))
 		yield* states
-			.insert({
+			.save({
 				state,
-				orgId,
 				provider: identityStateProvider(connectorId),
-				// The Maple user the callback will bind the chat account to — see `completeLink`.
-				initiatedByUserId: userId,
+				// The Maple user the callback will bind the chat account to: see `completeLink`.
+				initiator: { orgId, userId },
 				redirectUri: callbackUrl,
 				returnTo: null,
-				createdAt: now,
-				expiresAt: now + STATE_TTL_MS,
 			})
 			.pipe(Effect.mapError(toPersistenceError))
 		return { url }

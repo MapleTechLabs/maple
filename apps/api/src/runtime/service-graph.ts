@@ -45,7 +45,6 @@ import { ErrorActorsService } from "@maple/backend/services/errors/ErrorActorsSe
 import { ErrorIssueReadModelsService } from "@maple/backend/services/errors/ErrorIssueReadModelsService"
 import { ErrorIssueMergeService } from "@maple/backend/services/errors/ErrorIssueMergeService"
 import { ErrorIssueWorkflowService } from "@maple/backend/services/errors/ErrorIssueWorkflowService"
-import { PullRequestLookupLive } from "@maple/backend/services/errors/pull-request-lookup-live"
 import { IssueFixVerificationService } from "@maple/backend/services/errors/IssueFixVerificationService"
 import { ErrorPolicyService } from "@maple/backend/services/errors/ErrorPolicyService"
 import { ErrorsService } from "@maple/backend/services/errors/ErrorsService"
@@ -100,6 +99,8 @@ import { SetupAuditService } from "@maple/backend/services/org/SetupAuditService
 import { SignalPresenceService } from "@maple/backend/services/org/SignalPresenceService"
 import { SessionReplayReadService } from "@maple/backend/services/session-replays/SessionReplayReadService"
 import { UsersReadService } from "@maple/backend/services/users/UsersReadService"
+import { McpReadService } from "@maple/backend/services/mcp/McpReadService"
+import { AiSessionReadService } from "@maple/backend/services/ai-sessions/AiSessionReadService"
 import { ProductEventsService } from "@maple/backend/services/product-events/ProductEventsService"
 
 import { AuditLogService } from "@maple/backend/services/audit/AuditLogService"
@@ -217,6 +218,8 @@ export const HttpServicesLive = Layer.mergeAll(
 	SignalPresenceService.layer,
 	SessionReplayReadService.layer,
 	UsersReadService.layer,
+	McpReadService.layer,
+	AiSessionReadService.layer,
 	DigestService.layer,
 	WebAnalyticsDigestService.layer,
 	DemoService.layer,
@@ -228,7 +231,4 @@ export const HttpServicesLive = Layer.mergeAll(
 	VcsCommitService.layer,
 	VcsSourceService.layer,
 	ChatWorkspaceService.layer,
-).pipe(
-	Layer.provide(PullRequestLookupLive),
-	Layer.provideMerge(Layer.mergeAll(Env.layer, EdgeCacheServiceLive)),
-)
+).pipe(Layer.provideMerge(Layer.mergeAll(Env.layer, EdgeCacheServiceLive)))

@@ -25,6 +25,7 @@ import { V2TransportErrorBoundaryLive } from "./error-envelope"
 import { ApiV2RateLimiterAllowAllLayer } from "./v2-test-support"
 import { SlosService } from "@maple/backend/services/slos/SlosService"
 import { HttpV2SlosLive } from "./slos.http"
+import { SloReadService } from "@maple/backend/services/slos/SloReadService"
 
 /** `/v2/slos` over an embedded PGlite with the real service. */
 
@@ -75,7 +76,15 @@ const makeHarness = (warehouse: WarehouseQueryServiceApi = makeWarehouseServiceS
 	).pipe(Layer.provideMerge(Layer.mergeAll(envLive, testDb.layer)))
 
 	const routes = HttpApiBuilder.layer(HttpApi.make("MapleApiV2").add(MapleApiV2.groups.slos)).pipe(
-		Layer.provide(HttpV2SlosLive.pipe(Layer.provide(Layer.effect(SlosService, SlosService.make)))),
+		Layer.provide(
+			HttpV2SlosLive.pipe(
+				Layer.provide(
+					Layer.effect(SlosService, SlosService.make).pipe(
+						Layer.provide(Layer.effect(SloReadService, SloReadService.make)),
+					),
+				),
+			),
+		),
 		Layer.provide(Layer.succeed(WarehouseQueryService, warehouse)),
 		Layer.provide(V2TransportErrorBoundaryLive),
 		Layer.provideMerge(ApiAuthorizationV2Live),

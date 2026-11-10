@@ -292,17 +292,16 @@ const layerFor = (
 							sendBatch: () => Effect.void,
 						}),
 				options.embedder === undefined
-					? Layer.empty
-					: Layer.succeed(FindingEmbedder, options.embedder),
-				options.telemetry === undefined
-					? Layer.empty
-					: Layer.succeed(PrReviewTelemetryService, telemetryReaderFake(options.telemetry)),
+					? FindingEmbedder.none
+					: Layer.succeed(FindingEmbedder, Option.some(options.embedder)),
+				Layer.succeed(PrReviewTelemetryService, telemetryReaderFake(options.telemetry)),
 			),
 		),
 	)
 }
 
-const telemetryReaderFake = (telemetry: PrReviewTelemetry): PrReviewTelemetryServiceApi => ({
+/** Without `telemetry`, a warehouse with nothing to say: the review reads the diff alone. */
+const telemetryReaderFake = (telemetry: PrReviewTelemetry | undefined): PrReviewTelemetryServiceApi => ({
 	analyze: () => Effect.succeed(telemetry),
 	commitTimes: () => Effect.succeed(new Map()),
 	deploymentsSince: () => Effect.succeed([]),

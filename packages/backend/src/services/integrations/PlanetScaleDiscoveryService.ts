@@ -19,7 +19,6 @@ import {
 	HashMap,
 	Layer,
 	Option,
-	Redacted,
 	Ref,
 	Result,
 	Schema,
@@ -28,7 +27,7 @@ import {
 	String as Str,
 } from "effect"
 import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/http"
-import { parseBase64Aes256GcmKey } from "@maple/backend/platform/Crypto"
+import { ingestKeyEncryptionKey } from "@maple/backend/platform/Crypto"
 import { Env } from "@maple/backend/platform/Env"
 import { buildScrapeAuthHeaders } from "@maple/backend/services/auth/scrape-auth"
 import { parseExternalUrl } from "@maple/safe-fetch"
@@ -244,8 +243,8 @@ export class PlanetScaleDiscoveryService extends Context.Service<
 		const env = yield* Env
 		const psOAuth = yield* PlanetScaleOAuthService
 		const httpClient = yield* HttpClient.HttpClient
-		const encryptionKey = yield* parseBase64Aes256GcmKey(
-			Redacted.value(env.MAPLE_INGEST_KEY_ENCRYPTION_KEY),
+		const encryptionKey = yield* ingestKeyEncryptionKey(
+			env,
 			(message) => new ScrapeTargetEncryptionError({ message }),
 		)
 

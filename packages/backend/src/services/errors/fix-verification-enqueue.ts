@@ -8,20 +8,10 @@ import {
 } from "@maple/domain/http"
 import { InvestigationId, IsoDateTimeString } from "@maple/domain/primitives"
 import * as PG from "@maple-dev/effect-orm/postgres"
-import {
-	AiTriageSettings,
-	ErrorIssues,
-	Investigations,
-	type ErrorIssueVerificationRow,
-} from "@maple/db/tables"
+import { ErrorIssues, Investigations, type ErrorIssueVerificationRow } from "@maple/db/tables"
 import { DateTime, Clock, Effect, Schema, Array as Arr, String as Str } from "effect"
-import type { ChatSessionsApi } from "@maple/backend/platform/bindings"
 import { Database, type DatabaseError } from "@maple/backend/platform/DatabaseLive"
-import { startInvestigationTurn } from "@maple/backend/services/errors/investigation-start"
-import {
-	evaluateInvestigationQuota,
-	selectInvestigationUsage,
-} from "@maple/backend/services/errors/investigation-quota"
+import { InvestigationStarter } from "@maple/backend/services/errors/InvestigationStarter"
 
 const decodeInvestigationId = Schema.decodeUnknownSync(InvestigationId)
 const decodeIso = Schema.decodeUnknownSync(IsoDateTimeString)
@@ -33,8 +23,6 @@ export interface EnqueueFixVerificationInput {
 	readonly postMergeOccurrences: number
 	/** Occurrences since the merge from builds that were already running. */
 	readonly staleClientOccurrences: number
-	/** The `ChatSession` port. Absent outside a Worker isolate. */
-	readonly chatSessions?: ChatSessionsApi
 }
 
 export type EnqueueFixVerificationResult =
@@ -50,8 +38,8 @@ export type EnqueueFixVerificationResult =
  *
  * Deliberately NOT routed through `maybeEnqueueTriage`: that path dedupes on
  * `(incidentKind, incidentId)` and builds an incident snapshot, and a
- * verification has neither. What it does share — and what is reused here — is
- * the org's daily investigation quota and the agent start, so a burst of merges
+ * verification has neither. What it shares is `InvestigationStarter`: the org's
+ * daily quota, its admission lock and the agent start, so a burst of merges
  * cannot outspend a burst of incidents.
  *
  * The snapshot carries the deterministic evidence as facts. That is the point of
@@ -60,43 +48,14 @@ export type EnqueueFixVerificationResult =
  */
 export const enqueueFixVerification: (
 	input: EnqueueFixVerificationInput,
-) => Effect.Effect<EnqueueFixVerificationResult, DatabaseError, Database> = Effect.fn(
+) => Effect.Effect<EnqueueFixVerificationResult, DatabaseError, Database | InvestigationStarter> = Effect.fn(
 	"FixVerificationEnqueue.enqueueFixVerification",
 )(function* (input) {
 	const database = yield* Database
+	const starter = yield* InvestigationStarter
 	const nowMs = yield* Clock.currentTimeMillis
 	const { verification } = input
 	const orgId: OrgId = verification.orgId
-
-	const settingsRows = yield* database.execute((db) =>
-		db.run(
-			PG.from(AiTriageSettings)
-				.select()
-				.where(($) => [$.orgId.eq(orgId)])
-				.limit(1),
-		),
-	)
-	const settings = settingsRows[0]
-
-	const usage = yield* database.execute((db) => selectInvestigationUsage(db, orgId, nowMs))
-	const quota = evaluateInvestigationQuota({
-		usage,
-		limits:
-			settings !== undefined
-				? { maxRunsPerDay: settings.maxRunsPerDay, maxPassesPerDay: settings.maxPassesPerDay }
-				: undefined,
-		passCount: 1,
-		nowMs,
-	})
-	if (quota.kind === "exceeded") {
-		yield* Effect.annotateCurrentSpan({
-			orgId,
-			"maple.investigation.start_result": "quota_exceeded",
-			"maple.investigation.quota_dimension": quota.dimension,
-			"maple.investigation.quota_limit": quota.limit,
-		})
-		return { enqueued: false, reason: "daily_cap" as const }
-	}
 
 	const issueRows = yield* database.execute((db) =>
 		db.run(
@@ -170,31 +129,38 @@ export const enqueueFixVerification: (
 		serviceName: issue.serviceName,
 	})
 
+	// Judged as an ordinary start: a verification carries no incident severity of its own.
 	const investigationId = decodeInvestigationId(randomUUID())
-	const inserted = yield* database.execute((db) =>
-		db.run(
-			PG.insertInto(Investigations)
-				.values({
-					id: investigationId,
-					orgId,
-					status: "investigating",
-					seededBy: "system",
-					subjectJson: subject,
-					snapshotJson: snapshot,
-					// No incidentKind/incidentId: a verification is not an incident, and
-					// leaving them null keeps it out of the one-per-incident dedup index.
-					issueId: verification.issueId,
-					severity: issue.severity ?? null,
-					startedAt: nowMs,
-					autonomousTurns: 1,
-					createdAt: nowMs,
-					updatedAt: nowMs,
-				})
-				.onConflictDoNothing()
-				.returning("id"),
-		),
-	)
-	if (inserted.length === 0) {
+	const admission = yield* starter.admit({
+		orgId,
+		nowMs,
+		severity: null,
+		annotations: { "maple.verification.id": verification.id },
+		spend: (db) =>
+			db.run(
+				PG.insertInto(Investigations)
+					.values({
+						id: investigationId,
+						orgId,
+						status: "investigating",
+						seededBy: "system",
+						subjectJson: subject,
+						snapshotJson: snapshot,
+						// No incidentKind/incidentId: a verification is not an incident, and
+						// leaving them null keeps it out of the one-per-incident dedup index.
+						issueId: verification.issueId,
+						severity: issue.severity ?? null,
+						startedAt: nowMs,
+						autonomousTurns: 1,
+						createdAt: nowMs,
+						updatedAt: nowMs,
+					})
+					.onConflictDoNothing()
+					.returning("id"),
+			),
+	})
+	if (!admission.admitted) return { enqueued: false, reason: "daily_cap" as const }
+	if (admission.value.length === 0) {
 		yield* Effect.annotateCurrentSpan({
 			orgId,
 			"maple.investigation.start_result": "insert_conflict",
@@ -202,12 +168,11 @@ export const enqueueFixVerification: (
 		return { enqueued: false, reason: "error" as const }
 	}
 
-	const started = yield* startInvestigationTurn({
+	const started = yield* starter.startTurn({
 		orgId,
 		investigationId,
 		subject,
 		snapshot,
-		chatSessions: input.chatSessions,
 		nowMs,
 		// The tick reads this outcome back and can answer `no_binding` with a
 		// terminal `verified` verdict that auto-closes the issue. Without the id,

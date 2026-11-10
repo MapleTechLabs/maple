@@ -77,6 +77,18 @@ import { InvestigationService } from "@maple/backend/services/errors/Investigati
 
 import { formatWarehouseDateTime, parseWarehouseDateTime } from "@maple/query-engine"
 import { compiledQueryOf } from "@maple/query-engine/execution"
+import { InvestigationStarter } from "@maple/backend/services/errors/InvestigationStarter"
+import { IssueFixVerificationService } from "./IssueFixVerificationService"
+import { ErrorIssuePullRequestInvalidError } from "@maple/domain/http"
+/** Fix-verification as far as the errors tick reaches it: nothing is linked, nothing is verifying. */
+const fixVerificationStub = Layer.mock(IssueFixVerificationService)({
+	linkPullRequest: (_orgId, _actorId, _issueId, url) =>
+		Effect.fail(
+			new ErrorIssuePullRequestInvalidError({ message: "Not linked in this suite", rawUrl: url }),
+		),
+	refuteOnPostMergeOccurrence: () => Effect.succeed(false),
+})
+
 describe("makePersistenceError", () => {
 	it("omits the cause key when the source has no cause", () => {
 		const err = makePersistenceError(new Error("boom"))
@@ -237,6 +249,8 @@ const makeErrorsLayer = (
 		},
 	)
 	const errorsLive = Layer.effect(ErrorsService, ErrorsService.make).pipe(
+		Layer.provide(InvestigationStarter.layer),
+		Layer.provide(fixVerificationStub),
 		Layer.provide(OrgClickHouseSettingsService.layer),
 		Layer.provide(envLive),
 		Layer.provide(databaseLive),
@@ -300,6 +314,8 @@ const makeTickLayerOver = (
 		extras.dispatcher ?? { dispatch: () => Effect.succeed({ delivered: 0, failed: 0 }) },
 	)
 	return Layer.effect(ErrorsService, ErrorsService.make).pipe(
+		Layer.provide(InvestigationStarter.layer),
+		Layer.provide(fixVerificationStub),
 		Layer.provide(
 			"compiledQuery" in warehouse ? Layer.succeed(WarehouseQueryService, warehouse) : warehouse,
 		),

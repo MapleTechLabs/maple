@@ -8,12 +8,12 @@ import {
 	type AlertSignalType,
 	type OrgId,
 } from "@maple/domain/http"
-import { DateTime, Clock, Context, Effect, Layer, Option, Redacted, Schema, Array as Arr } from "effect"
+import { DateTime, Clock, Context, Effect, Layer, Option, Schema, Array as Arr } from "effect"
 import { HttpClient } from "effect/http"
 import { dispatchDelivery as dispatchDeliveryImpl } from "./delivery/dispatch"
 import type { DispatchContext } from "./delivery/context"
 import { hydrateDestinationRow } from "./AlertDestinationHydration"
-import { parseBase64Aes256GcmKey } from "@maple/backend/platform/Crypto"
+import { ingestKeyEncryptionKey } from "@maple/backend/platform/Crypto"
 import { ChatAlertPoster } from "./ChatAlertPoster"
 import { LinearIssueTracker } from "./LinearIssueTracker"
 import { Database } from "@maple/backend/platform/DatabaseLive"
@@ -115,8 +115,8 @@ const make: Effect.Effect<
 	const linear = yield* LinearIssueTracker
 	const runtime = yield* AlertRuntime
 
-	const encryptionKey = yield* parseBase64Aes256GcmKey(
-		Redacted.value(env.MAPLE_INGEST_KEY_ENCRYPTION_KEY),
+	const encryptionKey = yield* ingestKeyEncryptionKey(
+		env,
 		(message) =>
 			new NotificationDispatchError({
 				message: `MAPLE_INGEST_KEY_ENCRYPTION_KEY: ${message}`,

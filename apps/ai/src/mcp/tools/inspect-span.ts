@@ -12,10 +12,7 @@ import { detectPlatform, type PlatformSummary } from "@maple/domain/cloud-platfo
 import { parseWarehouseDateTime } from "@maple/query-engine"
 import { spanDetail, type SpanDetailResult } from "@maple/query-engine/observability"
 import { AI_SESSION_SPANS_MAX_SPANS, GetAiSessionSpansRequest, TraceIdHex } from "@maple/domain/http"
-import {
-	readAiSessionSpans,
-	resolveAiSessionWindow,
-} from "@maple/backend/services/ai-sessions/ai-session-reads"
+import { AiSessionReadService } from "@maple/backend/services/ai-sessions/AiSessionReadService"
 import { padSessionWindow } from "@maple/agent-sessions"
 
 /** What to do about a trace whose spans no read can carry. */
@@ -336,18 +333,19 @@ const decodeAiSpan = Effect.fn("McpInspectSpan.decodeAiSpan")(
 	}) {
 		const tenant = yield* CurrentMcpTenant
 		const sessionId = `trace:${opts.traceId}`
+		const reads = yield* AiSessionReadService
 		// With a timestamp the trace's bounds are not resolved: the read looks back
 		// an hour and ahead a day, where a tool's result lands after the call that
 		// made it; a trace longer than that pages, and the answer says so.
 		const window =
 			opts.timestampMs === undefined
-				? (yield* resolveAiSessionWindow(tenant, sessionId)).window
+				? (yield* reads.resolveWindow(tenant, sessionId)).window
 				: padSessionWindow(opts.timestampMs, opts.timestampMs + DECODE_LOOKAHEAD_MS)
 		// No bounds at all: the trace carries nothing the AI reads can key on, so
 		// the raw attributes below are the whole answer.
 		if (window === undefined) return undefined
 
-		const page = yield* readAiSessionSpans(
+		const page = yield* reads.spans(
 			tenant,
 			new GetAiSessionSpansRequest({
 				sessionId,

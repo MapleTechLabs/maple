@@ -18,6 +18,7 @@ import type { MapleDb, MapleDbError } from "@maple/db/client"
 import { Actors, ErrorIssueEvents, ErrorIssues, IssueEscalations } from "@maple/db/tables"
 import { Effect, Option, Schema, Array as Arr, String as Str } from "effect"
 import { TRIAGE_AGENT_NAME } from "@maple/domain/system-agents"
+import { currentTxid } from "@maple/backend/platform/electric-txid"
 import { ensureAgentActorRow } from "./agent-actor-row"
 
 /**
@@ -83,6 +84,100 @@ export const escalationReasonFor = (
 	if (from === null) return "severity_set"
 	return severityRank(to) > severityRank(from) ? "severity_escalated" : null
 }
+
+export interface IssueSeverityWrite {
+	readonly orgId: OrgId
+	readonly issueId: ErrorIssueId
+	readonly actorId: ActorId
+	/** The severity the change was decided from: it decides the timeline event and the escalation. */
+	readonly from: IssueSeverity | null
+	/** `null` clears the severity, which never escalates. */
+	readonly severity: IssueSeverity | null
+	readonly source: "ai" | "manual"
+	readonly timestamp: number
+	readonly eventId: ErrorIssueEventId
+	readonly eventPayload: Record<string, unknown>
+	readonly escalation: {
+		readonly id: IssueEscalationId
+		readonly runId: string | null
+		readonly investigationId: InvestigationId | null
+		readonly payload: Record<string, unknown>
+	}
+}
+
+/**
+ * The one severity write: the guarded UPDATE (an `ai` write never lands over a manual one), the
+ * `severity_change` event when the value moved, and the escalation-outbox row when it newly sets
+ * or strictly escalates. Returns the UPDATE's txid rows; empty means a concurrent manual write won.
+ */
+export const writeIssueSeverity = (
+	db: TriageSeverityDb,
+	write: IssueSeverityWrite,
+): Effect.Effect<ReadonlyArray<{ readonly txid: string }>, MapleDbError> =>
+	Effect.gen(function* () {
+		const { orgId, issueId, severity, from, timestamp } = write
+		const rows = yield* db.run(
+			PG.update(ErrorIssues)
+				.set({
+					severity,
+					severitySource: severity === null ? null : write.source,
+					updatedAt: timestamp,
+				})
+				.where(($) => [
+					$.orgId.eq(orgId),
+					$.id.eq(issueId),
+					// Repeated in SQL so a manual write between the caller's read and this one still wins.
+					write.source === "ai"
+						? PG.or($.severitySource.isNull(), $.severitySource.neq("manual"))
+						: undefined,
+				])
+				.returning(() => ({ txid: currentTxid })),
+		)
+		if (rows.length === 0) return rows
+		if (from !== severity) {
+			yield* db.run(
+				PG.insertInto(ErrorIssueEvents)
+					.values({
+						id: write.eventId,
+						orgId,
+						issueId,
+						actorId: write.actorId,
+						type: "severity_change",
+						fromState: null,
+						toState: null,
+						payloadJson: write.eventPayload,
+						createdAt: timestamp,
+					})
+					.onConflictDoNothing(),
+			)
+		}
+		const reason = severity === null ? null : escalationReasonFor(from, severity)
+		if (severity !== null && reason !== null) {
+			yield* db.run(
+				PG.insertInto(IssueEscalations)
+					.values({
+						id: write.escalation.id,
+						orgId,
+						issueId,
+						severity,
+						source: write.source,
+						reason,
+						runId: write.escalation.runId,
+						investigationId: write.escalation.investigationId,
+						payloadJson: write.escalation.payload,
+						deliveryResultsJson: [],
+						status: "queued",
+						attempts: 0,
+						dedupeKey: escalationDedupeKey(orgId, issueId, severity),
+						error: null,
+						createdAt: timestamp,
+						processedAt: null,
+					})
+					.onConflictDoNothing(),
+			)
+		}
+		return rows
+	})
 
 const ensureTriageAgentActor = (
 	db: TriageSeverityDb,
@@ -159,75 +254,35 @@ export const applyTriageSeverity = (
 			return { applied: false, actorId }
 		}
 
-		// Guard repeated in SQL so a concurrent manual write between the read above
-		// and this update still wins.
-		const updated = yield* db.run(
-			PG.update(ErrorIssues)
-				.set({ severity, severitySource: "ai", updatedAt: input.timestamp })
-				.where(($) => [
-					$.orgId.eq(input.orgId),
-					$.id.eq(input.issueId),
-					PG.or($.severitySource.isNull(), $.severitySource.neq("manual")),
-				])
-				// The returned row is the guard outcome: empty means a concurrent
-				// manual severity write won.
-				.returning("id"),
-		)
+		// Deterministic ids, so a retried diagnosis writes its event and escalation once.
+		const updated = yield* writeIssueSeverity(db, {
+			orgId: input.orgId,
+			issueId: input.issueId,
+			actorId,
+			from,
+			severity,
+			source: "ai",
+			timestamp: input.timestamp,
+			eventId: decodeEventId(deterministicUuid(`ai-triage-severity:${input.runId}`)),
+			eventPayload: {
+				from,
+				to: severity,
+				source: "ai",
+				runId: input.runId,
+				confidence: input.confidence,
+			},
+			escalation: {
+				id: decodeEscalationId(deterministicUuid(`ai-triage-escalation:${input.runId}`)),
+				runId: input.runId,
+				investigationId: input.investigationId ?? null,
+				payload: {
+					confidence: input.confidence,
+					...(input.result ? { triage: input.result } : undefined),
+				},
+			},
+		})
 		if (updated.length === 0) {
 			return { applied: false, actorId }
-		}
-
-		if (from !== severity) {
-			yield* db.run(
-				PG.insertInto(ErrorIssueEvents)
-					.values({
-						id: decodeEventId(deterministicUuid(`ai-triage-severity:${input.runId}`)),
-						orgId: input.orgId,
-						issueId: input.issueId,
-						actorId,
-						type: "severity_change",
-						fromState: null,
-						toState: null,
-						payloadJson: {
-							from,
-							to: severity,
-							source: "ai",
-							runId: input.runId,
-							confidence: input.confidence,
-						},
-						createdAt: input.timestamp,
-					})
-					.onConflictDoNothing(),
-			)
-		}
-
-		const reason = escalationReasonFor(from, severity)
-		if (reason !== null) {
-			yield* db.run(
-				PG.insertInto(IssueEscalations)
-					.values({
-						id: decodeEscalationId(deterministicUuid(`ai-triage-escalation:${input.runId}`)),
-						orgId: input.orgId,
-						issueId: input.issueId,
-						severity,
-						source: "ai",
-						reason,
-						runId: input.runId,
-						investigationId: input.investigationId ?? null,
-						payloadJson: {
-							confidence: input.confidence,
-							...(input.result ? { triage: input.result } : undefined),
-						},
-						deliveryResultsJson: [],
-						status: "queued",
-						attempts: 0,
-						dedupeKey: escalationDedupeKey(input.orgId, input.issueId, severity),
-						error: null,
-						createdAt: input.timestamp,
-						processedAt: null,
-					})
-					.onConflictDoNothing(),
-			)
 		}
 
 		yield* db.run(

@@ -3,7 +3,7 @@
  * looked up by. Minting and parsing read the same prefixes, so they cannot drift apart.
  */
 import { createHmac, randomBytes } from "node:crypto"
-import { Effect, String as Str } from "effect"
+import { Result, String as Str } from "effect"
 
 /** Lookup digest for a random token, not a human-chosen password. */
 const hmacDigest = (raw: string, hmacKey: string): string =>
@@ -42,16 +42,13 @@ export const inferIngestKeyType = (rawKey: string): IngestKeyType | null => {
 	return null
 }
 
-export const parseIngestKeyLookupHmacKey = <E>(
-	raw: string,
-	onError: (message: string) => E,
-): Effect.Effect<string, E> =>
-	Effect.suspend(() => {
-		const trimmed = Str.trim(raw)
-		return trimmed.length === 0
-			? Effect.fail(onError("MAPLE_INGEST_KEY_LOOKUP_HMAC_KEY is required"))
-			: Effect.succeed(trimmed)
-	})
+/** The lookup HMAC key, trimmed, or why it is unusable. */
+export const ingestKeyLookupHmacKeyFrom = (raw: string): Result.Result<string, string> => {
+	const trimmed = Str.trim(raw)
+	return trimmed.length === 0
+		? Result.fail("MAPLE_INGEST_KEY_LOOKUP_HMAC_KEY is required")
+		: Result.succeed(trimmed)
+}
 
 export const hashIngestKey = (rawKey: string, hmacKey: string): string => hmacDigest(rawKey, hmacKey)
 

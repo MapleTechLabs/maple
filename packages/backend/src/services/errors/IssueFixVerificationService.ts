@@ -54,6 +54,7 @@ import { Env } from "@maple/backend/platform/Env"
 import { ErrorActorsService } from "./ErrorActorsService"
 import { ErrorIssueWorkflowService } from "./ErrorIssueWorkflowService"
 import { PullRequestLookup } from "./PullRequestLookup"
+import { PullRequestLookupLive } from "./pull-request-lookup-live"
 import { makeErrorDatabaseExecute } from "./error-persistence"
 
 const decodePullRequestIdSync = Schema.decodeUnknownSync(ErrorIssuePullRequestIdSchema)
@@ -1226,6 +1227,8 @@ export class IssueFixVerificationService extends Context.Service<
 	IssueFixVerificationServiceApi
 >()("@maple/backend/services/errors/IssueFixVerificationService", { make }) {
 	static readonly layer = Layer.effect(this, this.make).pipe(
-		Layer.provide(Layer.mergeAll(ErrorActorsService.layer, ErrorIssueWorkflowService.layer)),
+		Layer.provide(
+			Layer.mergeAll(ErrorActorsService.layer, ErrorIssueWorkflowService.layer, PullRequestLookupLive),
+		),
 	)
 }

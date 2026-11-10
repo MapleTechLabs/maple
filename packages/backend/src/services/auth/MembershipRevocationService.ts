@@ -11,7 +11,7 @@ import {
 	MobileDevices,
 } from "@maple/db/tables"
 import { RoleName, type OrgId, type UserId } from "@maple/domain/http"
-import { Clock, Context, Effect, Layer, Redacted, Schema, Array as Arr } from "effect"
+import { Clock, Context, Effect, Layer, Schema, Array as Arr } from "effect"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { Env } from "@maple/backend/platform/Env"
 import { makeDbExecute } from "@maple/backend/platform/db-execute"
@@ -19,7 +19,7 @@ import {
 	DestinationPublicConfigSchema,
 	SecretConfigFromJson,
 } from "@maple/backend/services/alerts/AlertDestinationHydration"
-import { decryptAes256Gcm, encryptAes256Gcm, parseBase64Aes256GcmKey } from "@maple/backend/platform/Crypto"
+import { decryptAes256Gcm, encryptAes256Gcm, ingestKeyEncryptionKey } from "@maple/backend/platform/Crypto"
 import { ORG_MEMBERSHIP_CACHE_BUCKET, forgetMembershipMemo } from "./OrgMembershipService"
 import * as Policy from "@maple/domain/policy"
 import { revokeFamiliesForAccessKeys, revokeRefreshFamiliesForMember } from "./mcp-oauth-family"
@@ -122,8 +122,8 @@ const make = Effect.gen(function* () {
 	const edgeCache = yield* EdgeCacheService
 	const dbExecute = makeDbExecute(database, "MembershipRevocationService", toRevocationError)
 
-	const encryptionKey = yield* parseBase64Aes256GcmKey(
-		Redacted.value(env.MAPLE_INGEST_KEY_ENCRYPTION_KEY),
+	const encryptionKey = yield* ingestKeyEncryptionKey(
+		env,
 		(message) => new MembershipRevocationError({ message }),
 	)
 

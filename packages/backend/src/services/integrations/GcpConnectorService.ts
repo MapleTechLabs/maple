@@ -1,6 +1,6 @@
 import { randomBytes, randomUUID } from "node:crypto"
 import * as PG from "@maple-dev/effect-orm/postgres"
-import { hashIngestKey, parseIngestKeyLookupHmacKey } from "../../platform/credential-tokens"
+import { hashIngestKey } from "../../platform/credential-tokens"
 import { GcpConnectors, GcpResources, type GcpConnectorRow } from "@maple/db/tables"
 import { GCP_PROJECT_ASSET_TYPE } from "@maple/domain/gcp-metrics"
 import {
@@ -21,8 +21,13 @@ import {
 	type OrgId,
 	type UserId,
 } from "@maple/domain/primitives"
-import { Clock, Context, Effect, Layer, Option, Redacted, Array as Arr, String as Str } from "effect"
-import { decryptAes256Gcm, encryptAes256Gcm, parseBase64Aes256GcmKey } from "@maple/backend/platform/Crypto"
+import { Clock, Context, Effect, Layer, Option, Array as Arr, String as Str } from "effect"
+import {
+	decryptAes256Gcm,
+	encryptAes256Gcm,
+	ingestKeyEncryptionKey,
+	ingestKeyLookupHmacKey,
+} from "@maple/backend/platform/Crypto"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { makeDbExecute, makePersistenceErrorMapper } from "@maple/backend/platform/db-execute"
 import { Env } from "@maple/backend/platform/Env"
@@ -191,13 +196,13 @@ export class GcpConnectorService extends Context.Service<GcpConnectorService, Gc
 		make: Effect.gen(function* () {
 			const database = yield* Database
 			const env = yield* Env
-			const encryptionKey = yield* parseBase64Aes256GcmKey(
-				Redacted.value(env.MAPLE_INGEST_KEY_ENCRYPTION_KEY),
+			const encryptionKey = yield* ingestKeyEncryptionKey(
+				env,
 				(message) => new IntegrationsPersistenceError({ message }),
 			)
 			// The ingest gateway hashes a pushed secret with this key and looks the row up by it.
-			const lookupHmacKey = yield* parseIngestKeyLookupHmacKey(
-				Redacted.value(env.MAPLE_INGEST_KEY_LOOKUP_HMAC_KEY),
+			const lookupHmacKey = yield* ingestKeyLookupHmacKey(
+				env,
 				(message) => new IntegrationsPersistenceError({ message }),
 			)
 			const ingestBase = ingestBaseUrl(env)
