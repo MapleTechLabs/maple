@@ -75,11 +75,9 @@ import { StatusPagesService } from "@maple/backend/services/status-pages/StatusP
 import { StatusPagePublisher } from "@maple/backend/services/status-pages/StatusPagePublisher"
 import { StatusPageSnapshotBuilder } from "@maple/backend/services/status-pages/StatusPageSnapshotBuilder"
 import { ChatWorkspaceService } from "@maple/backend/services/integrations/ChatWorkspaceService"
-import { TinybirdOrgTokenService } from "@maple/backend/services/integrations/TinybirdOrgTokenService"
 import { PlanetScaleWebhookQueue } from "@maple/backend/services/integrations/planetscale/PlanetScaleWebhookQueue"
 import { CancellationReviewQueue } from "@maple/backend/services/cancellation-review/CancellationReviewQueue"
 import { VcsCommitService } from "@maple/backend/services/integrations/vcs/VcsCommitService"
-import { VcsRepository } from "@maple/backend/services/integrations/vcs/VcsRepository"
 import { VcsSyncQueue } from "@maple/backend/services/integrations/vcs/VcsSyncQueue"
 import { GithubConnectService } from "@maple/backend/services/integrations/vcs/vendor/github/GithubConnectService"
 import { ApiKeysService } from "@maple/backend/services/org/ApiKeysService"
@@ -88,7 +86,6 @@ import { IngestAttributeMappingService } from "@maple/backend/services/org/Inges
 import { IngestRuleService } from "@maple/backend/services/org/IngestRuleService"
 import { OnboardingChecklistService } from "@maple/backend/services/org/OnboardingChecklistService"
 import { SupportChannelService } from "@maple/backend/services/support/SupportChannelService"
-import { OnboardingService } from "@maple/backend/services/org/OnboardingService"
 import { OrgIngestKeysService } from "@maple/backend/services/org/OrgIngestKeysService"
 import { SourcesService } from "@maple/backend/services/org/SourcesService"
 import { SourceRemovalService } from "@maple/backend/services/integrations/SourceRemovalService"
@@ -115,13 +112,15 @@ import { CiAnalyticsService } from "@maple/backend/services/pr-review/CiAnalytic
 import { CodeReviewTeamService } from "@maple/backend/services/pr-review/CodeReviewTeamService"
 import { PrReviewAnalyticsService } from "@maple/backend/services/pr-review/PrReviewAnalyticsService"
 
-/** Services consumed by HTTP routes; each service owns its implementation dependencies. */
+/**
+ * Services the HTTP routes read, at group build or per request; each service owns its
+ * implementation dependencies. A service only other services consume is theirs to provide.
+ */
 export const HttpServicesLive = Layer.mergeAll(
 	VcsProviderRegistry.layer,
 	OrgMembersService.layer,
 	PlanetScaleDiscoveryService.layer,
 	PlanetScaleOAuthService.layer,
-	VcsRepository.layer,
 	VcsSyncQueue.layer,
 	AuthService.layer,
 	ApiKeysService.layer,
@@ -136,14 +135,12 @@ export const HttpServicesLive = Layer.mergeAll(
 	GoogleOAuthService.layer,
 	SearchConsoleService.layer,
 	SearchConsoleImportService.layer,
-	OnboardingService.layer,
 	OnboardingChecklistService.layer,
 	SupportChannelService.layer,
 	OrgIngestKeysService.layer,
 	SourcesService.layer,
 	SourceUsageService.layer,
 	OrgClickHouseSettingsService.layer,
-	TinybirdOrgTokenService.layer,
 	OrganizationService.layer,
 	MobileDevicesService.layer,
 	AgentFeedbackService.layer,
