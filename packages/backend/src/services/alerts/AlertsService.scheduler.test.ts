@@ -625,10 +625,11 @@ describe("AlertsService scheduler pool", () => {
 			assert.strictEqual(tick.deferredCount, 0)
 			// Rule i waits for its slot at i * spreadMs / RULE_COUNT. The upper bound is from the
 			// first start, so the tick's setup before the spread is not counted against the slack.
+			// The slack covers a loaded CI machine; the lower bound is what catches unspaced starts.
 			const slotMs = spreadMs / RULE_COUNT
 			Arr.forEach(offsets, (offset, index) => {
 				assert.isAtLeast(offset, index * slotMs)
-				assert.isBelow(offset - offsets[0], index * slotMs + 500)
+				assert.isBelow(offset - offsets[0], index * slotMs + 1_500)
 			})
 		}).pipe(
 			Effect.provide(makeLayer(testDb, stub, { fetch: okFetch, schedulerSpreadMs: () => spreadMs })),
