@@ -234,8 +234,6 @@ export const deletedComponent = (
 	})
 }
 
-// ADD
-
 /** The monitors not on the page yet, none picked; a URL or a component by hand join them. */
 export const openAdd = (model: Model): Return => {
 	if (!canManage(model) || model.isAddingComponents) return { model }

@@ -26,8 +26,6 @@ const distinct = (values: ReadonlyArray<string>): number => new Set(values).size
 
 type SignatureRow = Exposure["signatures"][number]
 
-// EXPOSURE
-
 /** The sources query returns the most active addresses only, so past this the count is a floor. */
 export const SOURCES_SHOWN = 20
 
@@ -219,8 +217,6 @@ export const timelineValues = (
 		(_, index) => byBucket.get(last - (count - 1 - index) * bucketMs) ?? 0,
 	)
 }
-
-// RUNTIMES
 
 export type RuntimeStatus = RuntimePosture["status"]
 

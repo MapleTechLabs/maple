@@ -64,8 +64,6 @@ export const Message = defineMessageUnion({
 })
 export type Message = typeof Message.Type
 
-// COMMANDS
-
 export const LoadInvitations = Command.define("LoadUserInvitations", {
 	messages: [Message.LoadedInvitations, Message.FailedLoadInvitations],
 	execute: pendingUserInvitations.pipe(
@@ -133,8 +131,6 @@ export const MountDitherField = Mount.define("MountOnboardingDitherField", {
 			(stop) => Effect.sync(stop),
 		).pipe(Effect.as(Message.CompletedMountDitherField())),
 })
-
-// INIT AND UPDATE
 
 type Result = Update.Return<Model, Message, Resources>
 

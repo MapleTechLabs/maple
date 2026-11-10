@@ -26,7 +26,7 @@ import type { Model } from "./model"
 
 export type Return = PageReturn<Model, Message>
 
-// The page's requests: one `Keyed` slot per read (S6), and its navigation.
+// The page's requests: one `Keyed` slot per read, and its navigation.
 
 type Step = KitStep<Model, Message>
 
@@ -94,7 +94,7 @@ const overlaySteps = (model: Model, context: PageContext, mode: RequestMode): Re
 		keyed(
 			model.planetscaleInventory,
 			integrationStatusKey(org, "planetscaleDatabases"),
-			// `useAtomValue`, not page-refreshable: Reload leaves the inventories alone.
+			// Not page-refreshable: Reload leaves the inventories alone.
 			"Load",
 			(planetscaleInventory) => ({ planetscaleInventory }),
 			(key) => FetchPlanetScaleInventory({ key }),
@@ -109,7 +109,7 @@ const overlaySteps = (model: Model, context: PageContext, mode: RequestMode): Re
 	]
 }
 
-/** `pickDbSummaryBucketSeconds`. */
+/** The bucket sizes the query engine's db summary query is built for (5 and 15 min, 1 h, 6 h). */
 const dbSummaryBucketSeconds = (durationSeconds: number): number =>
 	durationSeconds <= 6 * 60 * 60
 		? 5 * 60
@@ -134,7 +134,7 @@ export const selectedDatabase = (model: Model) =>
 		),
 	)
 
-/** What `DatabaseDetailPanel` requests: the query summary, and the branches of a PlanetScale node. */
+/** What the database panel requests: the query summary, and the branches of a PlanetScale node. */
 export const databaseSteps = (model: Model, context: PageContext, mode: RequestMode): ReadonlyArray<Step> => {
 	const window = model.window
 	const database = selectedDatabase(model)
@@ -184,8 +184,6 @@ export const requestAll = (model: Model, context: PageContext, mode: RequestMode
 		...overlaySteps(model, context, mode),
 		...databaseSteps(model, context, mode),
 	])
-
-// NAVIGATION
 
 export const navigate = (model: Model, search: Search, isReplace = false): Return => ({
 	model,

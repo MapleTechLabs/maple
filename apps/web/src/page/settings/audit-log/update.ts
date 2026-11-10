@@ -1,6 +1,5 @@
 import { AuditActorType, AuditOutcome } from "@maple/domain/http"
 import type { V2AuditLogEntry } from "@maple/domain/http/v2"
-/** Entries per audit log page. */
 const AUDIT_LOG_PAGE_LIMIT = 50
 import {
 	AUDIT_RANGE_PRESETS,
@@ -40,7 +39,7 @@ export const ANY = "any"
 const asActorType = Schema.decodeUnknownOption(AuditActorType)
 const asOutcome = Schema.decodeUnknownOption(AuditOutcome)
 
-/** The filter input `AuditLogSection` derives from the URL; a rolling preset resolves in the Command. */
+/** The filter input derived from the URL; a rolling preset resolves in the Command. */
 export const baseRequestOf = (filters: AuditLogFilters): PageRequest => {
 	const range = filters.range
 	const kind = auditLogKindOf(filters)
@@ -86,7 +85,7 @@ const REQUEST_KEYS = [
 
 const sameRequest = (a: PageRequest, b: PageRequest) => Arr.every(REQUEST_KEYS, (key) => a[key] === b[key])
 
-/** `auditLogPageAtom`: one page, newest first; a preset window resolves against the clock now. */
+/** One page, newest first; a preset window resolves against the clock now. */
 const FetchAuditPage = Command.define("FetchAuditLogPage", {
 	args: {
 		request: PageRequest,
@@ -127,7 +126,7 @@ const fetchPage = (request: PageRequest, presetSince: string | null) =>
 		return { data: response.data, has_more: response.has_more, next_cursor: response.next_cursor }
 	}).pipe(settleTo((result) => Message.CompletedFetchPage({ request, resolvedSince: presetSince, result })))
 
-/** `useOrganization({ memberships: { pageSize: 100 } })`: members by user id; none on a failed read. */
+/** Members by user id; none on a failed read. */
 const FetchAuditMembers = Command.define("FetchAuditLogMembers", {
 	messages: [Message.CompletedFetchMembers],
 	execute: currentClerkOrganization.pipe(
@@ -210,7 +209,7 @@ const dedupeById = (existing: ReadonlyArray<V2AuditLogEntry>, next: ReadonlyArra
 	return [...existing, ...Arr.filter(next, (entry) => !seen.has(entry.id))]
 }
 
-/** `setFilters`: the new filters replace the URL's audit params (`navigate({ replace: true })`). */
+/** The new filters replace the URL's audit params. */
 const navigateFilters = (model: Model, search: SettingsSearch, filters: AuditLogFilters): Return => ({
 	model,
 	outMessage: PageOutMessage.RequestedNavigation({

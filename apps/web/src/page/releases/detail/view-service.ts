@@ -49,7 +49,7 @@ const timeSearchOf = (model: Model) => ({
 	timePreset: model.search.timePreset,
 })
 
-/** `ReleaseChangeset`'s state for `base..head`, off the changeset slot. */
+/** The changeset's state for `base..head`, off the changeset slot. */
 export const changesetState = (model: Model, base: string | undefined): ChangesetState => {
 	if (base === undefined) return { _tag: "NoBase" }
 	if (commitRangesKey([{ base, head: model.commitSha }]) === "") return { _tag: "NotShas" }
@@ -103,7 +103,7 @@ export const overlaysOf = (model: Model, clock: Clock): Overlays<Message> => ({
 	clock,
 })
 
-/** `ReleaseMeta`: author, repo and the provider link once the sha resolves. */
+/** Author, repo and the provider link once the sha resolves. */
 const releaseMeta = (h: H, model: Model, clock: Clock): ReadonlyArray<Html> => {
 	if (!isResolvableSha(model.commitSha)) return [h.span([], ["deployment reference"])]
 	return Option.match(AsyncData.getData(model.commit.data), {
@@ -181,7 +181,7 @@ type Split = Readonly<{
 	ongoing: Array<ErrorIssueDocument>
 }>
 
-/** `splitReleaseIssues`: new with this version, fixed and back, or already open. */
+/** New with this version, fixed and back, or already open. */
 const splitIssues = (issues: ReadonlyArray<ErrorIssueDocument>, releaseFirstSeen: string): Split => {
 	const cutoff = toEpochMs(releaseFirstSeen) - NEW_ISSUE_SLACK_MS
 	const isFresh = (issue: ErrorIssueDocument) => toEpochMs(issue.firstSeenAt) >= cutoff
@@ -237,7 +237,7 @@ const issueLists = (
 
 const NO_SPLIT: Split = { fresh: [], regressed: [], ongoing: [] }
 
-/** `ReleaseIssuesPanel`: every fingerprint this version carried, split against its first-seen. */
+/** Every fingerprint this version carried, split against its first-seen. */
 const issuesPanel = (
 	h: H,
 	model: Model,
@@ -391,7 +391,7 @@ const detailState = (h: H, model: Model, serviceName: string, clock: Clock): Htm
 	})
 }
 
-/** `ReleaseBody`: a skeleton until the list answers the baseline, then the detail bundle. */
+/** A skeleton until the list answers the baseline, then the detail bundle. */
 export const serviceBody = (h: H, model: Model, serviceName: string, clock: Clock): Html =>
 	h.div(
 		[h.Class("contents"), h.OnMount(ResolveThemeColors({ tokens: CHART_TOKENS }))],

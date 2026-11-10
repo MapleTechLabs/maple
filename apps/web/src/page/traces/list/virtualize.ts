@@ -36,9 +36,8 @@ type VirtualizerState = {
 }
 
 /**
- * `useVirtualizer` from `TracesTableView` on @tanstack/virtual-core: the same estimate, overscan
- * and measuring of every mounted row (`VirtualTableBody`'s `measureRef`). Changes raised
- * while measuring are batched to a microtask; a scroll renders synchronously.
+ * A @tanstack/virtual-core virtualizer over the scroller, measuring every mounted row. Changes
+ * raised while measuring are batched to a microtask; a scroll renders synchronously.
  */
 const virtualize = (scroller: HTMLElement): Stream.Stream<WindowMessage> =>
 	virtualizerStream<WindowMessage>((offer) => {

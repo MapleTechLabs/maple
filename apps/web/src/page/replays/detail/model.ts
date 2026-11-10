@@ -8,7 +8,7 @@ import { RangeMeta, ReplayMeta } from "../kit/replay-meta"
 
 // The replay detail page.
 
-/** `replayDetailFromV2`: the session row the studio renders. */
+/** The session row the studio renders. */
 export const ReplayDetail = Schema.Struct({
 	sessionId: Schema.String,
 	startTime: Schema.String,
@@ -62,7 +62,7 @@ export const Manifest = Schema.Struct({
 })
 export type Manifest = typeof Manifest.Type
 
-/** One `session_events` row of the rail (`EventRow`). */
+/** One `session_events` row of the rail. */
 export const EventRow = Schema.Struct({
 	timestamp: Schema.String,
 	type: Schema.String,
@@ -125,7 +125,6 @@ export const LoadedRange = Schema.Struct({
 })
 export type LoadedRange = typeof LoadedRange.Type
 
-/** `useReplayChunkLoader`'s state. */
 export const Loader = Schema.Struct({
 	isPlanned: Schema.Boolean,
 	loaded: Schema.Array(LoadedRange),
@@ -136,9 +135,9 @@ export const Loader = Schema.Struct({
 	/** Where the current seed starts after a seek or slide; `isLoading` until its window is cut. */
 	seek: Schema.NullOr(Schema.Struct({ targetMs: Schema.Number, isLoading: Schema.Boolean })),
 	playheadMs: Schema.Number,
-	/** The range the events subscription reads (`subscribedRange`). */
+	/** The range the events subscription reads. */
 	range: KeyedSchema(RangeRows, LoadFailure),
-	/** Answers already received, by range request key (the atom cache), oldest first, capped. */
+	/** Answers already received, by range request key, oldest first, capped. */
 	rangeCache: Schema.Record(Schema.String, RangeRows),
 	/** Seeds so far: the engine element is keyed by it, so a new seed mounts a new engine. */
 	seedVersion: Schema.Number,

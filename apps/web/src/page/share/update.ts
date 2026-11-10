@@ -41,7 +41,7 @@ const decodeTimeRange = Schema.decodeUnknownOption(TimeRangeSchema)
 export const shareTimeZoneOf = (search: Model["search"], pageTimeZone: string): string =>
 	search.tz === undefined ? pageTimeZone : Option.getOrElse(validTimeZone(search.tz), () => pageTimeZone)
 
-/** `resolveShareWindow`: `?from`/`?to`, then `?range`, then the board's own range. */
+/** `?from`/`?to`, then `?range`, then the board's own range. */
 export const resolveShareWindow = (
 	model: Model,
 	share: SharedDashboard,
@@ -89,7 +89,6 @@ const variableValuesOf = (model: Model): Record<string, string> => ({
 	...variableValuesFromSearch(model.search),
 })
 
-/** Queued batches cut down to the widgets still requested under the same key; empty ones drop. */
 const liveBatches = (
 	batches: ReadonlyArray<QueuedBatch>,
 	requested: Model["requested"],
@@ -99,7 +98,7 @@ const liveBatches = (
 		return requests.length === 0 ? [] : [{ ...batch, requests }]
 	})
 
-/** `useShareWidgetData`'s effect: every reported widget whose request key moved, in batches of four. */
+/** Every reported widget whose request key moved, in batches of four. */
 const flush = (model: Model): Return => {
 	const share = shareOf(model)
 	const window = model.window
@@ -161,8 +160,6 @@ const reload = (model: Model, pageTimeZone: string): Return => {
 	const next = withWindow({ ...model, refreshTick, requested: {} }, pageTimeZone)
 	return flush(next)
 }
-
-// ENTRY POINTS
 
 export const init = (route: Route): Return => ({
 	model: {

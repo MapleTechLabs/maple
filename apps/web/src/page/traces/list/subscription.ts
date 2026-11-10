@@ -7,12 +7,11 @@ import { Message } from "./message"
 import type { Model } from "./model"
 import { allRows } from "./update"
 
-// `useListNavigation` over the rows and `TracePeekSheet`'s keys (↑/↓/J/K step, Enter opens the
-// page): document keys while no field has focus. The peek's keys work with its sheet open.
+// List navigation over the rows and the peek sheet's keys (↑/↓/J/K step, Enter opens the page): document keys while no field has focus. The peek's keys work with its sheet open.
 
 const KEYS = new Set(["j", "J", "k", "K", "ArrowDown", "ArrowUp", "Enter", "Escape", "f", "F"])
 
-/** A focused control keeps its own Enter (`keepsEnter`). */
+/** A focused control keeps its own Enter. */
 const keepsEnter = (target: EventTarget | null): boolean => {
 	if (!(target instanceof HTMLElement)) return false
 	const control = target.closest("a, button, [role='tab'], [role='menuitem'], [role='option'], tr")

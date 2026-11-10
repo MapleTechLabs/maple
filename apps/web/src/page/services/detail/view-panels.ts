@@ -26,7 +26,7 @@ type H = HtmlBuilder<Message>
 /** Calls and requests draw in the Throughput chart's colour on every tab. */
 export const SPARKLINE_TOKEN = "--chart-throughput"
 
-/** `SectionCard`: a `Panel` with a header title, an optional trailing action, and a body. */
+/** A `Panel` with a header title, an optional trailing action, and a body. */
 export const sectionCard = (
 	h: H,
 	options: Readonly<{ title: string; action?: Html; className?: string }>,
@@ -37,7 +37,7 @@ export const sectionCard = (
 		panelBody(h, children),
 	])
 
-/** `ViewAllButton`: jumps from an Overview card to the full tab. */
+/** Jumps from an Overview card to the full tab. */
 export const viewAllButton = (h: H, onClick: Message): Html =>
 	textLink(h, { className: "text-xs", onClick }, ["View all →"])
 
@@ -45,7 +45,7 @@ const PANEL_LIMIT = 5
 const SPARKLINE_MODEL = Chart.init()
 const toSparkline = (message: Chart.Message) => Message.GotChartMessage({ chartId: "sparkline", message })
 
-/** `ServiceTopOperationsPanel`: nothing while loading or empty, five rows otherwise. */
+/** Nothing while loading or empty, five rows otherwise. */
 export const topOperationsPanel = (h: H, model: Model, theme: ThemeColors | null): Html => {
 	const operations = AsyncData.getOrElse(model.operations.data, () => []).slice(0, PANEL_LIMIT)
 	if (operations.length === 0 || model.window === null) return null

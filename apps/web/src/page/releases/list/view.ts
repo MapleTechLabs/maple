@@ -37,8 +37,6 @@ import { typography } from "@maple/views/ui/typography"
 import { hstack, vstack } from "@maple/views/ui/stack"
 import { Array as Arr } from "effect"
 
-// TODO(session-range): `sessionTimeRangeSearchMiddleware` (the range carried across pages).
-
 type H = HtmlBuilder<Message>
 
 const chipsOf = (model: Model) => {
@@ -89,7 +87,6 @@ const loadingSkeleton = (h: H): Html =>
 		skeleton(h, "h-52 w-full rounded-md"),
 		tableSkeleton(h, {
 			rows: 8,
-			// The loaded table sits in a card panel.
 			className: "bg-card",
 			columns: [
 				{ header: "Release", headClassName: "w-[46%] min-w-64", skeleton: "w-48" },

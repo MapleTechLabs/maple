@@ -354,7 +354,7 @@ const serviceRow = (
 	)
 }
 
-/** `serviceDetailSearch`: the row's environment plus the list's window. */
+/** The row's environment plus the list's window. */
 const serviceHref = (model: Model, service: ServiceRow): string =>
 	hrefOf(
 		AppRoute.Service({
@@ -704,7 +704,6 @@ const SKELETON_COLUMNS = [
 	{ header: "Last deploy", headClassName: "w-[18%]", skeleton: "w-24" },
 ]
 
-/** `LoadingState`. */
 export const loadingState = (h: HtmlBuilder<Message>): Html =>
 	h.div(
 		[h.Class("space-y-4")],

@@ -49,14 +49,10 @@ import { selectableRow } from "@maple/views/ui/selectable-row"
 
 type H = HtmlBuilder<Message>
 
-/** `OnboardingLayout`'s right cluster: the progress trail, then the account actions. */
+/** The header's right cluster: the progress trail, then the account actions. */
 export const accountClusterOf = <M>(h: HtmlBuilder<M>, children: ReadonlyArray<Html>): Html =>
 	hstack(h, { gap: "3" }, children)
 
-/**
- * `MotionStep key={step}` at rest (reduced motion: no slide). A new step is a new element, as
- * AnimatePresence remounts it, so no card is patched over from the previous step.
- */
 /** The agent prompt's copy state, kept with the snippets'. */
 const AGENT_PROMPT_COPY = "agent-prompt"
 
@@ -257,8 +253,6 @@ const shell = (h: H, options: ShellOptions, children: ReadonlyArray<Html>): Html
 		],
 	)
 }
-
-// STACK
 
 /** A compact pick: one line of label and description, so the whole stack fits on a laptop screen. */
 const stackCard = (h: H, item: StackItem, isChecked: boolean, onChange: Message): Html =>
@@ -523,8 +517,6 @@ const stackPreview = (h: H, orgName: string, state: QuickStartState): Html => {
 				]),
 	])
 }
-
-// CONNECT
 
 const toConnect = (message: ConnectMessage): Message => Message.GotConnectMessage({ message })
 
@@ -871,8 +863,6 @@ const connectPreview = (h: H, orgName: string, model: Model, state: QuickStartSt
 		),
 	])
 }
-
-// LIVE
 
 type StartCard = Readonly<{
 	glyph: PixelGlyphName

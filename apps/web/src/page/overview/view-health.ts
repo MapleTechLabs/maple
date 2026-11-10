@@ -45,7 +45,7 @@ export type HealthData = readonly [
 	ReadonlyArray<HealthIncident>,
 ]
 
-/** `Result.all([snapshot, anomalies, alertIncidents])`. */
+/** The snapshot with the anomalies and alert incidents; those two read as empty when they failed. */
 export const healthData = (model: Model): AsyncData.AsyncData<HealthData, LoadFailure> =>
 	AsyncData.all([
 		model.snapshot.data,
@@ -60,7 +60,7 @@ export type SliceSearch = Readonly<{
 	environments: ReadonlyArray<string> | undefined
 }>
 
-/** `servicesLinkSearch`: the dashboard's slice carried over to `/services`. */
+/** The dashboard's slice carried over to `/services`. */
 export const servicesHref = (slice: SliceSearch, health?: ServiceHealth): string =>
 	hrefOf(
 		AppRoute.Services({
@@ -103,7 +103,7 @@ export type HealthOverviewInputs = Readonly<{
 	nowMs: number
 }>
 
-/** `ServiceHealthOverview`: the banner once alerts are known; the rail loading, absent on error, counted on success. */
+/** The banner once alerts are known; the rail loading, absent on error, counted on success. */
 export const healthOverview = <M>(h: HtmlBuilder<M>, { model, slice, nowMs }: HealthOverviewInputs): Html => {
 	const incidents = AsyncData.getOrElse(model.incidents, () => [])
 	const rules = AsyncData.getOrElse(model.rules, () => [])
@@ -191,7 +191,7 @@ export type HealthListInputs = HealthOverviewInputs &
 		isNeverReceived: boolean
 	}>
 
-/** `ServiceHealthList`: up to seven rows, worst first, under the section header. */
+/** Up to seven rows, worst first, under the section header. */
 export const healthList = <M>(
 	h: HtmlBuilder<M>,
 	{ model, slice, nowMs, emptyState, isNeverReceived }: HealthListInputs,
@@ -246,7 +246,7 @@ type MetricTone = "ok" | "warn" | "crit"
 const metricTone = (cause: ServiceHealthCause | undefined): MetricTone =>
 	cause === undefined ? "ok" : cause.severity === "critical" ? "crit" : "warn"
 
-/** `Metric`: a right-aligned value over its eyebrow; `valueClassName` wins over the tone. */
+/** A right-aligned value over its eyebrow; `valueClassName` wins over the tone. */
 const metric = <M>(
 	h: HtmlBuilder<M>,
 	label: string,
@@ -289,7 +289,7 @@ const causeBadge = <M>(h: HtmlBuilder<M>, cause: ServiceHealthCause): Html => {
 	)
 }
 
-/** `serviceDetailSearch` plus the row's environment: the service page scoped to it. */
+/** The service page, scoped to the row's environment. */
 const serviceHref = (slice: SliceSearch, service: HealthSnapshot): string =>
 	hrefOf(
 		AppRoute.Service({
@@ -303,7 +303,6 @@ const serviceHref = (slice: SliceSearch, service: HealthSnapshot): string =>
 		}),
 	)
 
-/** `ServiceHealthRow`. */
 const serviceRow = <M>(
 	h: HtmlBuilder<M>,
 	{ service, health, causes }: EnrichedService,

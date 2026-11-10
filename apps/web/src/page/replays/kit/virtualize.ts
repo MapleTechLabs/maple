@@ -11,8 +11,8 @@ import {
 	virtualizerStream,
 } from "@maple/views/lib/virtualizer"
 
-// `SessionsList`'s `useVirtualizer` over the page scroller (`usePageScrollMargin`), on
-// @tanstack/virtual-core: same estimate, overscan, item keys and measuring of every mounted row.
+// The sessions list's virtualizer over the page scroller, on @tanstack/virtual-core, measuring
+// every mounted row.
 
 /** The list container carries its item keys, so the Mount sees every change without re-mounting. */
 export const KEYS_ATTRIBUTE = "session-keys"

@@ -17,7 +17,7 @@ import { Message } from "./message"
 import { ProductEvent } from "./model"
 import { SpanEvents, TraceData } from "@maple/views/traces/trace-data"
 
-/** `decodeTraceIdParam`: a pasted id may carry whitespace; anything still undecodable is not found. */
+/** A pasted id may carry whitespace; anything still undecodable is not found. */
 export const decodeTraceId = (raw: string): Option.Option<TraceId> =>
 	Schema.decodeOption(TraceId)(Str.trim(raw))
 
@@ -47,7 +47,7 @@ export const ReadListQuery = Command.define("ReadTraceListQuery", {
 	),
 })
 
-/** `getSpanHierarchyResultAtom({ data })`'s identity, shared with the investigation's trace chips. */
+/** The span hierarchy read's identity, shared with the investigation's trace chips. */
 export const spanHierarchyKey = (
 	orgId: string,
 	traceId: TraceId,
@@ -122,7 +122,7 @@ export const FetchProductEvents = Command.define("FetchTraceProductEvents", {
 		).pipe(settleTo((result) => Message.CompletedFetchProductEvents({ key, result }))),
 })
 
-/** `getReplaysForTraceResultAtom`: the first session that observed the trace, if any. */
+/** The first session that observed the trace, if any. */
 export const FetchReplays = Command.define("FetchTraceReplays", {
 	args: { key: Schema.String, traceId: TraceId },
 	messages: [Message.CompletedFetchReplays],
@@ -136,7 +136,6 @@ export const FetchReplays = Command.define("FetchTraceReplays", {
 		).pipe(settleTo((result) => Message.CompletedFetchReplays({ key, result }))),
 })
 
-/** `TraceIdBadge`'s `useCopy({ label: "trace ID" })`. */
 export const CopyTraceId = Command.define("CopyTraceId", {
 	args: { traceId: Schema.String },
 	messages: [Message.CompletedCopyTraceId],

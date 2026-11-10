@@ -49,7 +49,7 @@ export const Model = Schema.Struct({
 	/** The traffic toggle; `null` until clicked, so it follows the system's reduced-motion setting. */
 	traffic: Schema.NullOr(Schema.Boolean),
 	command: CameraCommand,
-	/** `useTheme()`: read from `<html>` by a Mount, `null` until it ran. */
+	/** The `<html>` theme, read by a Mount; `null` until it ran. */
 	isDark: Schema.NullOr(Schema.Boolean),
 	/** WebGL could not start: the fallback shows instead. */
 	isFailed: Schema.Boolean,
@@ -104,7 +104,7 @@ export const OutMessage = defineMessageUnion({
 })
 export type OutMessage = typeof OutMessage.Type
 
-// SCENE INPUT: the Mount reads it from data attributes, so a re-render patches, never remounts.
+// Scene input: the Mount reads it from data attributes, so a re-render patches, never remounts.
 
 const Node3D = Schema.Struct({
 	id: Schema.String,
@@ -157,7 +157,6 @@ const decodeState = Schema.decodeUnknownOption(Schema.fromJsonString(SceneState)
 const decodeCommand = Schema.decodeUnknownOption(Schema.fromJsonString(CameraCommand))
 const decodeWorld = Schema.decodeUnknownOption(Schema.fromJsonString(SceneWorld))
 
-/** The three attributes as one `SceneInput`; `None` while any is missing or malformed. */
 /** The last raw attribute and what it decoded to: an unchanged string keeps its object. */
 interface Decoded<A> {
 	raw: string | null
@@ -242,7 +241,7 @@ export const update = (
 	message: Message,
 ): Update.ReturnWithOutMessage<Model, Message, OutMessage> =>
 	Message.match<Update.ReturnWithOutMessage<Model, Message, OutMessage>>(message, {
-		// `onValueChange`: the newly pressed value, if it is a perspective; a release changes nothing.
+		// The newly pressed value, if it is a perspective; a release changes nothing.
 		GotPerspectiveMessage: ({ message: inner }) => {
 			const step = ToggleGroup.update(model.perspectiveGroup, inner)
 			const next = step.model
@@ -357,8 +356,6 @@ const withPerspective = (model: Model, perspective: Perspective): Model => ({
 	perspectiveGroup: { ...model.perspectiveGroup, values: [perspective] },
 })
 
-// MOUNTS
-
 type SceneMessage =
 	| ReturnType<typeof Message.PickedNode>
 	| ReturnType<typeof Message.FailedScene>
@@ -391,7 +388,7 @@ const attach = (
 		}
 	})
 
-/** `<Canvas>` and its scene for the element's lifetime. WebGL failing becomes `FailedScene`. */
+/** The canvas and its scene for the element's lifetime. WebGL failing becomes `FailedScene`. */
 export const MountScene = Mount.defineStream("MountServiceMapScene", {
 	messages: [Message.PickedNode, Message.FailedScene, Message.EditedWorld],
 	execute: ({ element }) =>
@@ -426,7 +423,7 @@ export const MountScene = Mount.defineStream("MountServiceMapScene", {
 				),
 })
 
-/** `useTheme()` for the palette: the `<html>` class now and on every flip. */
+/** The `<html>` theme class for the palette, now and on every flip. */
 export const WatchTheme = Mount.defineStream("WatchServiceMapSceneTheme", {
 	messages: [Message.ResolvedTheme],
 	execute: () =>

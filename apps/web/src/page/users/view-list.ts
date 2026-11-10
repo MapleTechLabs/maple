@@ -102,7 +102,7 @@ export type UsersListOptions<M> = Readonly<{
 	scope: ReadonlyArray<string>
 	onSearch: (value: string) => M
 	onClearSearch: M
-	/** Where a row links; rows are plain until the user page exists. */
+	/** Where a row links; without it rows are plain. */
 	userHref?: (userId: string) => string
 }>
 
@@ -130,7 +130,6 @@ export type UsersRailOptions<M> = Readonly<{
 const hasRailFilters = (filters: UsersFilters): boolean =>
 	filters.hasErrors || filters.hasReplay || filters.namespaces.length > 0 || filters.groups.length > 0
 
-/** The users filter rail: the toggles, then Namespace (or the pin's notice) and Group. */
 /** While the facets are out or failed: no counts and no options, only the picks already made. */
 const NO_FACETS: UsersFacets = { namespaces: [], groups: [], withErrors: 0, withReplay: 0 }
 

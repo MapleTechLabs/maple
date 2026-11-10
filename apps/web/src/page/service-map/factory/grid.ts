@@ -7,7 +7,6 @@ import type { Vec3 } from "../three/types"
 /** 0.7 units: the atlas spacing (4.2) is 6 cells and a 1.6-wide machine fits a 3x3 footprint. */
 export const CELL_SIZE = 0.7
 
-/** A cell's centre on the ground plane (`y` defaults to 0). */
 export const cellToScene = (cell: WorldCell, y = 0): Vec3 => [cell.x * CELL_SIZE, y, cell.z * CELL_SIZE]
 
 /** The cell a scene point falls in (snap to the nearest lattice point). */

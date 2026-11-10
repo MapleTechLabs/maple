@@ -5,7 +5,6 @@ import { settleTo } from "@maple/views/data/load-failure"
 import { MapleAiClient, MapleApiV2Client } from "../../../platform/api-clients"
 import { Message } from "./message"
 
-/** `retainedQueryV2("mcpConnections", "list", { query: { limit: 100 } })`. */
 export const FetchConnections = Command.define("FetchMcpConnections", {
 	messages: [Message.CompletedFetchConnections],
 	execute: Effect.gen(function* () {
@@ -15,7 +14,6 @@ export const FetchConnections = Command.define("FetchMcpConnections", {
 	}).pipe(settleTo((result) => Message.CompletedFetchConnections({ result }))),
 })
 
-/** `MapleAiAtomClient.query("mcpTools", "list")`. */
 export const FetchTools = Command.define("FetchMcpTools", {
 	messages: [Message.CompletedFetchTools],
 	execute: Effect.gen(function* () {

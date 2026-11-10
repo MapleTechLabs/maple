@@ -18,7 +18,7 @@ import { pollTicks } from "../../data/poll"
 
 /**
  * Tabs that read the `api_keys` shape: Keys lists them, the audit log names their actors, and an
- * MCP key creation preloads it (`useApiKeyMutationSync().prepareForMutation`).
+ * MCP key creation preloads it.
  */
 const readsApiKeys = (model: Model): boolean => {
 	const tab = model.tab
@@ -38,10 +38,8 @@ const readsApiKeys = (model: Model): boolean => {
 /** Like the alerts hub: a keys list still empty after this shows the error block with Try again. */
 const KEYS_LOAD_TIMEOUT_MS = 10_000
 
-/** `useIntervalRefresh(refresh, { intervalMs: 15000 })` while the Ingestion tab is mounted. */
 const INGEST_POLL = "15 seconds"
 
-/** `useApiKeysList()`: newest first, as one live query over the org's collection. */
 export const apiKeyRows = <M>(
 	orgId: string,
 	toMessage: (rows: ReadonlyArray<ApiKeyRow>) => M,
@@ -68,7 +66,6 @@ export const subscriptions = Subscription.make<PageSubscriptionInput<Model>, Mes
 						: Stream.empty,
 			},
 		),
-		/** `useCollectionLoadFailed` while a tab waits on the first `api_keys` answer. */
 		apiKeysLoad: entry(
 			{ orgId: Schema.String, isWatching: Schema.Boolean },
 			{
@@ -86,7 +83,6 @@ export const subscriptions = Subscription.make<PageSubscriptionInput<Model>, Mes
 						: Stream.empty,
 			},
 		),
-		/** `useAlertDestinationsList()` while the Automation tab routes to them. */
 		destinations: entry(
 			{ orgId: Schema.String, isReading: Schema.Boolean },
 			{
@@ -120,7 +116,6 @@ export const subscriptions = Subscription.make<PageSubscriptionInput<Model>, Mes
 						: Stream.empty,
 			},
 		),
-		/** `useIntervalRefresh(refreshStatus, { intervalMs: 2_000, enabled: runActive })`. */
 		applyPoll: entry(
 			{ isPolling: Schema.Boolean },
 			{

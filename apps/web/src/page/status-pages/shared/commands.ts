@@ -208,8 +208,6 @@ export const postIncidentUpdate = (id: StatusPageIncidentId, payload: V2StatusPa
 		return yield* client.statusPageIncidents.postUpdate({ params: { id }, payload })
 	}).pipe(Effect.mapError(toLoadFailure))
 
-// LINKS
-
 const encodePublicId = Schema.encodeSync(StatusPagePublicId)
 const decodePublicId = Schema.decodeUnknownOption(StatusPagePublicId)
 const decodeInternalId = Schema.decodeUnknownOption(StatusPageId)

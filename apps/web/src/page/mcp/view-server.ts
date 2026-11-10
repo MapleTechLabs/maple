@@ -699,7 +699,7 @@ const detailGrid = <M>(h: HtmlBuilder<M>, data: McpServerOverview, options: Serv
 	)
 }
 
-/** `McpServerBody`: everything under the page header. */
+/** Everything under the page header. */
 export const serverBody = <M>(
 	h: HtmlBuilder<M>,
 	data: McpServerOverview,

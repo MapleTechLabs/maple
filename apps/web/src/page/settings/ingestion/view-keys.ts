@@ -15,8 +15,6 @@ import { Message } from "./message"
 import { canRollKeys, type IngestKeyKind, type Model } from "./model"
 import { hstack, vstack } from "@maple/views/ui/stack"
 
-// `CredentialRow`.
-
 type H = HtmlBuilder<Message>
 
 export type CredentialRowOptions = Readonly<{
@@ -159,7 +157,7 @@ export const credentialRow = (h: H, options: CredentialRowOptions): Html => {
 	)
 }
 
-/** `IngestKeyRows`: the org's pair, masked until revealed. Admin-only. */
+/** The org's pair, masked until revealed. Admin-only. */
 export const ingestKeyRows = (h: H, model: Model): ReadonlyArray<Html> => {
 	// Only Success (incl. waiting) has keys; a failed refetch drops them.
 	const hasKeys = AsyncData.isSuccess(model.ingest) || AsyncData.isRefreshing(model.ingest)

@@ -18,7 +18,7 @@ import { REPLAY_EVENTS, runReplayEngine } from "../kit/replay-engine-mount"
 import { Message } from "./message"
 import { EventRow, Manifest, ReplayDetail } from "./model"
 
-// The detail page's reads, each carrying its request key back (S6), and the player Mounts.
+// The detail page's reads, each carrying its request key back, and the player Mounts.
 
 const Window = {
 	windowStart: Schema.optional(Schema.String),
@@ -77,7 +77,7 @@ export const FetchTraceSummaries = Command.define("FetchReplayTraceSummaries", {
 		),
 })
 
-/** `decodeRange`'s per-chunk parse: a malformed chunk is skipped, not fatal. */
+/** Per-chunk parse: a malformed chunk is skipped, not fatal. */
 const decodeChunk = Schema.decodeUnknownOption(Schema.fromJsonString(Schema.Array(Schema.Unknown)))
 
 export const FetchRange = Command.define("FetchReplayRange", {
@@ -103,7 +103,7 @@ export const FetchRange = Command.define("FetchReplayRange", {
 
 const decodeTraceId = Schema.decodeUnknownOption(TraceId)
 
-/** `TraceSpanLane`: an expanded trace row's spans, fetched when it opens. */
+/** An expanded trace row's spans, fetched when it opens. */
 export const FetchSpans = Command.define("FetchReplayTraceSpans", {
 	args: { traceId: Schema.String, timestamp: Schema.String },
 	messages: [Message.CompletedFetchSpans],
@@ -188,7 +188,7 @@ export const FeedEvents = Mount.defineStream("FeedReplayEvents", {
 export const isFigureFullscreen = (fullscreen: Pick<Element, "hasAttribute"> | null): boolean =>
 	fullscreen !== null && fullscreen.hasAttribute("data-replay-figure")
 
-/** `useReplayKeyboardShortcuts` and `fullscreenchange`, for the page's lifetime. */
+/** The player's keyboard shortcuts and `fullscreenchange`, for the page's lifetime. */
 export const WatchPlayerKeys = Mount.defineStream("WatchReplayPlayerKeys", {
 	messages: [Message.ClickedPlay, Message.RequestedSeekBy, Message.ChangedFullscreen],
 	execute: () =>
@@ -240,7 +240,7 @@ export const WatchPlayerKeys = Mount.defineStream("WatchReplayPlayerKeys", {
 		),
 })
 
-/** Where a press landed along a scrub surface (`msFromClientX`), as a 0 to 1 share. */
+/** Where a press landed along a scrub surface, as a 0 to 1 share. */
 export const MeasureScrub = Command.define("MeasureReplayScrub", {
 	args: { surface: Schema.String, clientX: Schema.Number },
 	messages: [Message.MeasuredScrub],

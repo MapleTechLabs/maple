@@ -21,7 +21,10 @@ export type DigestDraft = typeof DigestDraft.Type
 /** `null`: never subscribed (the 404), so Maple's defaults apply. */
 export const SubscriptionData = AsyncData.Schema(Schema.NullOr(DigestSubscriptionResponse), LoadFailure)
 
-export const Facets = Schema.Struct({ namespaces: Schema.Array(Schema.String), environments: Schema.Array(Schema.String) })
+export const Facets = Schema.Struct({
+	namespaces: Schema.Array(Schema.String),
+	environments: Schema.Array(Schema.String),
+})
 
 export const Model = Schema.Struct({
 	isLoaded: Schema.Boolean,
@@ -32,7 +35,7 @@ export const Model = Schema.Struct({
 	browserZone: Schema.NullOr(Schema.String),
 	subscription: SubscriptionData.schema,
 	facets: Facets,
-	/** `ScopeFields` reads the facets once it mounts: when the ops digest's panel first shows. */
+	/** Set once the ops digest's scope panel first shows, which starts the facets read. */
 	isFacetsRequested: Schema.Boolean,
 	draft: DraftState(DigestDraft),
 	isTogglingOps: Schema.Boolean,
@@ -56,7 +59,9 @@ export const Message = defineMessageUnion({
 		supportedZones: Schema.Array(Schema.String),
 		browserZone: Schema.NullOr(Schema.String),
 	},
-	CompletedFetchSubscription: { result: Schema.Result(Schema.NullOr(DigestSubscriptionResponse), LoadFailure) },
+	CompletedFetchSubscription: {
+		result: Schema.Result(Schema.NullOr(DigestSubscriptionResponse), LoadFailure),
+	},
 	CompletedFetchFacets: { facets: Facets },
 	ClickedRetry: {},
 	ToggledOps: {},

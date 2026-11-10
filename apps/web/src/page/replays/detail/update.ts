@@ -53,8 +53,6 @@ const initialPlayer: Player = {
 
 const sessionInput = (model: Model) => ({ sessionId: model.sessionId, ...windowOf(model) })
 
-// REQUESTS
-
 /** The route loader's reads: the session row, the manifest and the transcript. */
 const requestEntry = (model: Model, context: PageContext, mode: Keyed.RequestMode): Return => {
 	const data = sessionInput(model)
@@ -167,8 +165,6 @@ const withMeta = (before: Model, after: Model): Model => {
 	return { ...after, meta: combineRangeMetas(originMs, rangeMetas) }
 }
 
-// TRANSPORT
-
 const instruct = (
 	model: Model,
 	action: TransportAction,
@@ -192,7 +188,6 @@ const isReady = (model: Model): boolean => {
 	return session !== undefined && playerStatus(model, session).status === "ready"
 }
 
-/** `togglePlay`. */
 const togglePlay = (model: Model): Model => {
 	if (!isReady(model)) return model
 	switch (model.player.playback._tag) {
@@ -211,7 +206,7 @@ const togglePlay = (model: Model): Model => {
 const isPlayingThrough = (playback: Playback): boolean =>
 	playback._tag === "Playing" || (playback._tag === "Buffering" && playback.resumeAfter)
 
-/** `applySeek`: rebuild outside the loaded span, else drive the engine. */
+/** Rebuild outside the loaded span, else drive the engine. */
 const seekTo = (model: Model, context: PageContext, offsetMs: number): Return => {
 	if (!isReady(model)) return { model }
 	const { player } = model
@@ -239,8 +234,6 @@ const seekTo = (model: Model, context: PageContext, offsetMs: number): Return =>
 		}),
 	})
 }
-
-// ENTRY POINTS
 
 export const init = (route: Route, context: PageContext): Return => {
 	const model: Model = {

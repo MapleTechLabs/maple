@@ -81,7 +81,11 @@ describe("the server page keeps its filters in the URL", () => {
 
 	it("ignores a search debounce that lands after leaving the server page", () => {
 		const typed = update(serverPage({}), Message.ChangedSearchInput({ value: "sql" }), context).model
-		const onTool = { ...typed, view: { _tag: "Tool" as const, service: "maple-ai", tool: "run_sql" } }
+		const onTool = routeChanged(
+			typed,
+			AppRoute.McpServerTool({ serviceName: "maple-ai", toolName: "run_sql", search: {} }),
+			context,
+		).model
 		expect(
 			navigatedTo(
 				update(onTool, Message.ElapsedSearchDebounce({ version: typed.searchVersion }), context),

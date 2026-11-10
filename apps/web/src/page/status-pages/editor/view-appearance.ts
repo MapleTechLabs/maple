@@ -210,8 +210,6 @@ export const appearanceSection = (h: H, model: Model, form: SettingsForm): Html 
 	)
 }
 
-// PREVIEW
-
 const orNull = (value: string): string | null => (Str.trim(value) === "" ? null : Str.trim(value))
 
 /** The public page as the draft would render it, from the loaded components and incidents. */

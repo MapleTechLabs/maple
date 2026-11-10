@@ -27,7 +27,7 @@ interface SpanRange {
 	/** Span end, clamped to `[0, realTotalMs]` (≥ startMs). */
 	readonly endMs: number
 	/**
-	 * True when the span falls outside `[0, realTotalMs]` — clock skew between the
+	 * True when the span falls outside `[0, realTotalMs]`: clock skew between the
 	 * browser recording and backend spans is normal. Callers pin these to the
 	 * nearest edge with a subtle affordance rather than dropping them.
 	 */

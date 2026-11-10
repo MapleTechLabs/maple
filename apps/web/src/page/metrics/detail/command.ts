@@ -108,7 +108,7 @@ export const FetchBreakdown = Command.define("FetchMetricBreakdown", {
 						queries: [{ ...input.query }],
 					},
 				}),
-				// `BreakdownBars`: names stringified, values numbers, blank names dropped.
+				// The breakdown bars: names stringified, values numbers, blank names dropped.
 				(response) =>
 					Arr.filter(
 						Arr.map(response.data, (row) => ({
@@ -121,7 +121,7 @@ export const FetchBreakdown = Command.define("FetchMetricBreakdown", {
 		).pipe(Effect.map((result) => Message.CompletedFetchBreakdown({ key, result }))),
 })
 
-/** `encodeAlertChartToSearchParam` (lib/alerts/widget-chart-param.ts imports `@/` modules) over `toBase64Url`. */
+/** Keeps the encoded `chart` param well under practical URL limits. */
 const MAX_ENCODED_LENGTH = 12_000
 const toBase64Url = (input: string): string =>
 	Str.replace(
@@ -135,7 +135,7 @@ const toBase64Url = (input: string): string =>
 	)
 
 /**
- * `MetricGraduationActions`' Create alert: the current query as a chart widget snapshot in the
+ * Create alert: the current query as a chart widget snapshot in the
  * `chart` param. Fresh ids, so it runs here rather than in `update`.
  */
 export const BuildAlertLink = Command.define("BuildMetricAlertLink", {
@@ -166,7 +166,7 @@ export const BuildAlertLink = Command.define("BuildMetricAlertLink", {
 		}),
 })
 
-/** `MetricQueryControls`' where commit: 400 ms after the last keystroke. */
+/** The where commit: 400 ms after the last keystroke. */
 export const DebounceWhere = Command.define("DebounceMetricWhere", {
 	args: { generation: Schema.Number },
 	messages: [Message.CompletedWhereDebounce],
@@ -174,7 +174,7 @@ export const DebounceWhere = Command.define("DebounceMetricWhere", {
 		Effect.as(Effect.sleep(Duration.millis(400)), Message.CompletedWhereDebounce({ generation })),
 })
 
-/** `CopyButton value={() => window.location.href}`: read when clicked. */
+/** The page URL for the copy button, read when clicked. */
 export const ReadLocation = Command.define("ReadMetricLocation", {
 	messages: [Message.ReadLocationHref],
 	execute: Effect.sync(() => Message.ReadLocationHref({ href: window.location.href })),
@@ -213,7 +213,7 @@ export const AttributeValuesInput = Schema.Struct({
 	metricType: Schema.Literals(QUERY_BUILDER_METRIC_TYPES),
 })
 
-/** `getMetricAttributeValuesResultAtom`: the values offered after `attr.<key> =`. */
+/** The values offered after `attr.<key> =`. */
 export const FetchAttributeValues = Command.define("FetchMetricAttributeValues", {
 	args: { key: Schema.String, input: AttributeValuesInput },
 	messages: [Message.CompletedFetchAttributeValues],

@@ -21,7 +21,7 @@ import { hstack } from "@maple/views/ui/stack"
 // The trace anatomy strip, over the @maple/ui strip.
 // TODO(tooltip): the commit hover card (interactive, so a hover card, not a tooltip).
 
-/** `TraceStartedAt`: the absolute start in the viewer's zone, with its age. */
+/** The absolute start in the viewer's zone, with its age. */
 const startedAt = (
 	h: HtmlBuilder<Message>,
 	startTime: string,

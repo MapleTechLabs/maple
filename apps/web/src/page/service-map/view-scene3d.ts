@@ -83,7 +83,7 @@ export type Scene3dOptions<M> = Readonly<{
 	toMessage: (message: Message) => M
 }>
 
-/** `ServiceMap3DViewport`'s props: a fixed topology, as the 3D lab passes it with `sample`. */
+/** The viewport's options: a fixed topology, as the 3D lab passes it with `sample`. */
 export type ViewportOptions<M> = Readonly<{
 	model: Model
 	topology: Topology3D
@@ -95,7 +95,7 @@ export type ViewportOptions<M> = Readonly<{
 
 type Palette = ReturnType<typeof mapPalette>
 
-/** `topology` as `LiveServiceMap3D` builds it from the effective graph and its dimming. */
+/** The 3D topology from the map's effective graph and its dimming. */
 export const topologyOf = (map: ServiceMap.Model): Topology3D =>
 	liveTopology(
 		map.graph.nodes,
@@ -269,7 +269,7 @@ const districtPlanks = <M>(
 		),
 	)
 
-/** R3F's `<Canvas style={{ position: "absolute", inset: 0 }}>`: two wrapper divs and the canvas. */
+/** Two wrapper divs and the canvas: `startScene` sizes to the inner one and listens on the outer. */
 const canvas = <M>(
 	h: HtmlBuilder<M>,
 	input: {
@@ -388,7 +388,7 @@ export const scene3dView = <M>(h: HtmlBuilder<M>, { model, map, toMessage }: Sce
 		toMessage,
 	})
 
-/** `ServiceMap3DViewport` over any topology. */
+/** The viewport over any topology. */
 export const viewportView = <M>(h: HtmlBuilder<M>, options: ViewportOptions<M>): Html => {
 	const { model, topology, selectedId, toMessage } = options
 	const isDark = model.isDark ?? true

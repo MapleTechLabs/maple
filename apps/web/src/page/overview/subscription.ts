@@ -20,11 +20,11 @@ const withSet = (
 	stream: (set: OrgCollectionSet) => Stream.Stream<Message>,
 ): Stream.Stream<Message, never, OrgCollections> => orgLive(orgId, stream)
 
-/** `useAlertIncidentsList()`: what the banner and health read. */
+/** The alert incidents the banner and health read. */
 const incidents = (orgId: string) =>
 	incidentsStream(orgId, (list) => Message.UpdatedIncidents({ orgId, incidents: list }))
 
-/** `useAlertRulesList()`'s rules query, reduced to `enabled` (the banner counts them). */
+/** The alert rules, reduced to `enabled` (the banner counts them). */
 const rules = (orgId: string) =>
 	withSet(orgId, (set) =>
 		liveQueryStream(
@@ -33,7 +33,7 @@ const rules = (orgId: string) =>
 		),
 	)
 
-/** `useAlertRulesList()`'s states query: synced alongside the rules, unread by this page. */
+/** The rule states: synced alongside the rules, unread by this page. */
 const ruleStates = (orgId: string) =>
 	withSet(orgId, (set) =>
 		liveQueryStream(

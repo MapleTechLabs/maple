@@ -33,8 +33,6 @@ import { scrollRegion } from "@maple/views/ui/scroll-region"
 import { Array as Arr, Record as Rec } from "effect"
 import { textLink } from "@maple/views/ui/text-link"
 
-// `SharePage`: its own chrome outside the app shell.
-
 type H = HtmlBuilder<Message>
 
 const shell = (h: H, children: ReadonlyArray<Html>, title?: string): Html =>
@@ -123,7 +121,7 @@ const errorCard = (h: H, error: ShareError): Html => {
 	}
 }
 
-/** `NotEmbeddableCard`: only a public single-chart link may be framed, and the API decides which. */
+/** Only a public single-chart link may be framed, and the API decides which. */
 const notEmbeddableCard = (h: H): Html =>
 	centeredCard(
 		h,
@@ -143,7 +141,7 @@ const dataStateOf = (state: WidgetState | undefined): WidgetDataState => {
 	return { _tag: "Error", title: null, message: state.message, kind: state.kind }
 }
 
-/** `SharedWidgetRenderer`: the board's tile from the page's batched state, no actions. */
+/** The board's tile from the page's batched state, no actions. */
 const sharedTile = (
 	h: H,
 	model: Model,
@@ -241,7 +239,7 @@ const gridOf = (
 	)
 }
 
-/** `ReadOnlyDashboardView`: the root grid, then each group with its active tab's grid. */
+/** The root grid, then each group with its active tab's grid. */
 const board = (
 	h: H,
 	model: Model,
@@ -279,7 +277,7 @@ const board = (
 	])
 }
 
-/** `SingleWidgetShare`: one chart filling the page, no grid. */
+/** One chart filling the page, no grid. */
 const singleWidget = (
 	h: H,
 	model: Model,
@@ -301,7 +299,6 @@ const singleWidget = (
 		),
 	)
 
-/** `ShareBody`. */
 const shareBody = (h: H, model: Model, share: SharedDashboard, isEmbed: boolean, timeZone: string): Html => {
 	const window = model.window
 	if (window === null)
@@ -354,7 +351,7 @@ const shareBody = (h: H, model: Model, share: SharedDashboard, isEmbed: boolean,
 	])
 }
 
-/** What `SharePage`'s layout effect changes: a `?theme=` override, an embed's backdrop, or nothing. */
+/** What the appearance effect changes: a `?theme=` override, an embed's backdrop, or nothing. */
 export const appearanceOf = (search: Model["search"]): { theme: string | null; isEmbed: boolean } | null => {
 	const theme = search.theme === "light" || search.theme === "dark" ? search.theme : null
 	const isEmbed = search.embed === true

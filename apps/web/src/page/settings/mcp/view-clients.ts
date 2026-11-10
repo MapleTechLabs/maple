@@ -16,8 +16,6 @@ import { timestamp } from "@maple/views/ui/timestamp"
 import { Array as Arr } from "effect"
 import { dividedList } from "@maple/views/ui/rule"
 
-// `McpConnectedClientsSection`.
-
 type H = HtmlBuilder<Message>
 type Inputs = Readonly<{ grants: ReadonlyArray<Policy.Permission>; nowMs: number; timeZone: string }>
 

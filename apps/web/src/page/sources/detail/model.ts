@@ -17,7 +17,7 @@ import { Model as IntegrationModel } from "../../integrations/embed"
 
 // `/sources/$sourceId`.
 
-/** `RevealedToken`: the one-time token from a roll, held while this page is open. */
+/** The one-time token from a roll, held while this page is open. */
 export const RevealedToken = Schema.Struct({
 	sourceId: SourceId,
 	secret: Schema.String,
@@ -25,11 +25,11 @@ export const RevealedToken = Schema.Struct({
 })
 export type RevealedToken = typeof RevealedToken.Type
 
-/** The one write in flight (`useAsyncAction`'s pending, the delete dialog's running state). */
+/** The one write in flight. */
 export const BusyAction = Schema.NullOr(Schema.Literals(["pause", "resume", "roll", "delete"]))
 export type BusyAction = typeof BusyAction.Type
 
-/** `SourceSettings key={source.updated_at}`: the form, rebuilt when the source it was built from changes. */
+/** The settings form, rebuilt when the source it was built from changes. */
 export const SettingsForm = Schema.Struct({
 	builtFrom: Schema.String,
 	name: Schema.String,
@@ -48,7 +48,7 @@ export const Model = Schema.Struct({
 	/** `Date.now()` at render, read once on entry for the relative times. */
 	nowMs: Schema.NullOr(Schema.Number),
 	list: KeyedSchema(SourceList, LoadFailure),
-	/** `SourceOverview`'s usage read; requested once the overview shows a found source. */
+	/** The overview's usage read; requested once the overview shows a found source. */
 	usage: KeyedSchema(V2SourceUsage, LoadFailure),
 	revealed: Schema.NullOr(RevealedToken),
 	busy: BusyAction,

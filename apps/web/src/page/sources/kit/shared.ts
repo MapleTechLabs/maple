@@ -20,8 +20,6 @@ import { AppRoute, hrefOf } from "../../../route"
 import { SOURCE_TABS, type SourceTab } from "../../../route/search"
 import { statusRank } from "./status"
 
-// Shared source constants and `orderSources`.
-
 export const SIGNALS: ReadonlyArray<{ value: SourceSignal; label: string; hint: string }> = [
 	{ value: "traces", label: "Traces", hint: "/v1/traces" },
 	{ value: "logs", label: "Logs", hint: "/v1/logs" },

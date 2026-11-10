@@ -39,8 +39,7 @@ import { hstack } from "@maple/views/ui/stack"
 import { sidePanelFrame } from "@maple/views/ui/side-panel"
 import { grid } from "@maple/views/ui/grid"
 
-// The database detail panel.
-// TODO(gcp): `GcpCloudSqlSection` renders only while a GCP connection collects metrics; not ported.
+// TODO(gcp): the Cloud SQL section that shows while a GCP connection collects metrics is not ported.
 
 type H = HtmlBuilder<Message>
 

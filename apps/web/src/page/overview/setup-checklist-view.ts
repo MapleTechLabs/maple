@@ -22,7 +22,7 @@ import { textLink } from "@maple/views/ui/text-link"
 
 type H = HtmlBuilder<Message>
 
-/** `IngestKeysUnavailableNote`: neither key could be read. */
+/** Neither key could be read. */
 const keysUnavailable = (h: H): Html =>
 	h.p(
 		[
@@ -45,7 +45,7 @@ const keysUnavailable = (h: H): Html =>
 		],
 	)
 
-/** `ConnectInstructions showCredentials`: the endpoint and the private key beside the tabs. */
+/** The endpoint and the private key beside the tabs. */
 const credentials = (h: H, model: Model): Html =>
 	h.div(
 		[h.Class("space-y-3")],
@@ -84,7 +84,7 @@ const credentials = (h: H, model: Model): Html =>
 		],
 	)
 
-/** `GuidedSetup showCredentials`: the stack picker, then credentials beside the boxed tabs. */
+/** The guided setup: the stack picker, then credentials beside the boxed tabs. */
 const guidedSetup = (h: H, model: Model, framework: string): Html =>
 	h.div(
 		[h.Class("space-y-4")],
@@ -127,7 +127,7 @@ const watchingStrip = (h: H): Html =>
 		],
 	)
 
-/** `FirstTraceCelebration`: shown once non-demo telemetry is observed. */
+/** The celebration, shown once non-demo telemetry is observed. */
 const celebration = (h: H, serviceName: string | undefined): Html =>
 	card(
 		h,
@@ -188,7 +188,7 @@ const celebration = (h: H, serviceName: string | undefined): Html =>
 		"mb-4 shrink-0 overflow-hidden",
 	)
 
-/** `SetupChecklistCard` while waiting: the collapsible "Connect your app" card. */
+/** While waiting: the collapsible "Connect your app" card. */
 const waitingCard = (
 	h: H,
 	model: Model,

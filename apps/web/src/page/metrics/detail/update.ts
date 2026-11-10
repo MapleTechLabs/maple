@@ -60,9 +60,8 @@ type Return = PageReturn<Model, Message>
 export type Search = typeof MetricSearch.Type
 type Route = { readonly metricName: string; readonly search: Search }
 
-/** `DashboardPage`'s `defaultPreset` for a metric. */
 export const DEFAULT_PRESET: PresetValue = "24h"
-/** `MetricQueryControls`' "no breakdown" item, shown as its label (`itemToStringLabel`). */
+/** The "no breakdown" item, shown as its label. */
 export const GROUP_BY_NONE_LABEL = "Everything (no breakdown)"
 
 const resolveCommand = (model: Model, context: PageContext, mode: RequestMode) =>
@@ -84,7 +83,7 @@ export const summaryOf = (model: Model): CatalogSummary | null =>
 export const draftOf = (model: Model, summary: CatalogSummary) =>
 	buildMetricExplorerDraft(summary, model.search)
 
-/** `MetricBreakdown`'s key: the URL's `bd`, else `service.name`. */
+/** The breakdown key: the URL's `bd`, else `service.name`. */
 export const breakdownKeyOf = (search: Search): string => search.bd ?? SERVICE_KEY
 
 const LOOKUP_OPERATION = new Map<AutocompleteLookup, string>([
@@ -97,7 +96,7 @@ const LOOKUP_OPERATION = new Map<AutocompleteLookup, string>([
 	["productEventAttributeKeys", "getProductEventAttributeKeys"],
 ])
 
-/** `AutocompleteValuesProvider`'s lookups for the window, fired when it mounts with the page. */
+/** The autocomplete lookups for the window, fired with the page. */
 const requestAutocomplete = (model: Model, context: PageContext, window: TimeWindow, mode: RequestMode) => {
 	const steps = Arr.map(AutocompleteLookup.literals, (lookup) => {
 		const operation = LOOKUP_OPERATION.get(lookup) ?? lookup
@@ -121,7 +120,7 @@ const requestAutocomplete = (model: Model, context: PageContext, window: TimeWin
 	}
 }
 
-/** What `MetricDetailContent` reads once the summary exists: scoped keys, the chart and the breakdown. */
+/** What the content reads once the summary exists: scoped keys, the chart and the breakdown. */
 const requestContent = (model: Model, context: PageContext, mode: RequestMode): Return => {
 	const summary = summaryOf(model)
 	if (summary === null || model.window === null) return { model }
@@ -137,7 +136,7 @@ const requestContent = (model: Model, context: PageContext, mode: RequestMode): 
 	const attributeKeys = keyedSlot(
 		model.attributeKeys,
 		requestKey(org, "getMetricAttributeKeys", { data: keysInput }),
-		// The scoped keys are read with `useAtomValue`: Reload leaves them alone.
+		// Reload leaves the scoped keys alone.
 		"Load",
 		(key) => FetchAttributeKeys({ key, input: keysInput }),
 	)
@@ -174,7 +173,7 @@ const requestAll = (model: Model, context: PageContext, window: TimeWindow, mode
 		mode,
 		(key) => FetchCatalog({ key, metricName: model.metricName, window }),
 	)
-	// Reload leaves the provider's lookups alone: they are read with `useAtomValue`.
+	// Reload leaves the autocomplete lookups alone.
 	const lookups = requestAutocomplete(model, context, window, "Load")
 	const content = requestContent(
 		{ ...model, window, catalog: catalog.slot, autocomplete: lookups.autocomplete },
@@ -208,18 +207,16 @@ const syncControls = (model: Model): Model => {
 	}
 }
 
-// NAVIGATION
-
 const metricHref = (model: Model, search: Search) =>
 	hrefOf(AppRoute.Metric({ metricName: model.metricName, search }))
 
-/** `handlePatch`: query changes replace the history entry. */
+/** Query changes replace the history entry. */
 const patchSearch = (model: Model, search: Search): Return => ({
 	model,
 	outMessage: PageOutMessage.RequestedNavigation({ url: metricHref(model, search), isReplace: true }),
 })
 
-/** `buildBackToMetricsHref`: back to the browse page with the time range only. */
+/** Back to the browse page with the time range only. */
 export const backToMetricsHref = (search: Search): string =>
 	hrefOf(
 		AppRoute.Metrics({
@@ -254,8 +251,6 @@ const liftAddToDashboard = (
 		}),
 	}
 }
-
-// ENTRY POINTS
 
 export const AGGREGATION_SELECT_ID = "metric-aggregation"
 
@@ -317,8 +312,6 @@ export const routeChanged = (model: Model, route: Route, context: PageContext): 
 
 export const contextChanged = (model: Model, context: PageContext): Return =>
 	model.window === null ? { model } : requestAll(model, context, model.window, "Load")
-
-// SUBMODELS
 
 const liftAggregation = (model: Model, message: Select.Message): Return => {
 	const next = Select.update(model.aggregationSelect, message)
@@ -429,7 +422,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 						where: model.whereInput === "" ? undefined : model.whereInput,
 					})
 				: { model },
-		// Where clauses are single-line: Enter never inserts a newline (suggestions are not ported).
+		// Where clauses are single-line: Enter off the list never inserts a newline.
 		PressedWhereEnter: () => ({ model }),
 		GotCaretMessage: ({ message: caret }) => caretMessage(model, caret, context, summaryOf(model)),
 		MovedWhereSuggestion: ({ step }) => (isWhereOpen(model) ? movedSuggestion(model, step) : { model }),

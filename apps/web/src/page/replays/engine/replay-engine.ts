@@ -1,28 +1,8 @@
 // BOUNDARY-FILE: This module owns unparsed external values and narrows them before domain use.
-// The replay engine seam
-//
-// The player used to construct `new Replayer(...)` inline, which made rrweb the
-// only thing it could ever play. The iOS SDK records H.264 segments and wraps
-// each one in rrweb-*shaped* events so the chunk pipeline carries them
-// untouched — but there is no DOM to rebuild, so rrweb renders nothing.
-//
-// Everything above this interface (the provider's transport state, the
-// timeline, markers, idle bands, the chunk loader) is format-agnostic and stays
-// exactly as it was. Everything rrweb-specific lives in `rrweb-engine.ts`;
-// everything video-specific in `video-engine.ts`.
-//
-// The contract is deliberately shaped like the rrweb surface the provider
-// already depended on, so the refactor is behaviour-preserving:
-//
-//   new Replayer(events, {root})   -> ReplayEngineFactory.create({mount, events})
-//   getMetaData().totalTime        -> totalTimeMs
-//   getCurrentTime()               -> getCurrentTimeMs()
-//   play(o) / pause(o?)            -> play(o) / pause(o?)
-//   setConfig({speed})             -> setSpeed(speed)
-//   addEvent(e)                    -> addEvent(e)
-//   destroy()                      -> destroy()
-//   on(Finish) / on(Resize)        -> onFinish / onResize callbacks
-//   .iframe + .wrapper.style       -> fit(container)
+// The replay engine seam. The iOS SDK records H.264 segments and wraps each one in rrweb-shaped
+// events so the chunk pipeline carries them untouched, but there is no DOM to rebuild, so rrweb
+// renders nothing. Everything above this interface (transport, timeline, markers, idle bands, chunk
+// loader) is format-agnostic; rrweb lives in `rrweb-engine.ts`, video in `video-engine.ts`.
 
 /** The recorded viewport, used to letterbox the recording inside the surface. */
 export interface Viewport {
@@ -35,10 +15,7 @@ export interface ReplayEngineCreateInput {
 	readonly mount: HTMLElement
 	/** The seed events. Later events arrive through `addEvent`, forward-only. */
 	readonly events: ReadonlyArray<unknown>
-	/**
-	 * Viewport to fall back to when the engine can't report its own — derived
-	 * from the stream's `meta` events by `deriveMeta`.
-	 */
+	/** Viewport to fall back to when the engine can't report its own, from `deriveMeta`. */
 	readonly fallbackViewport: Viewport
 	/** Playback reached the end of the recording. */
 	onFinish(): void
@@ -53,7 +30,7 @@ export interface ReplayEngine {
 	 * Playhead as a real-ms offset from session start, matching the clock the
 	 * trimmed `Timeline` and backend span alignment are built against.
 	 *
-	 * Implementations must never return a negative or non-finite value — the
+	 * Implementations must never return a negative or non-finite value: the
 	 * provider feeds this straight back into `play()`.
 	 */
 	getCurrentTimeMs(): number
@@ -66,7 +43,7 @@ export interface ReplayEngine {
 	 *
 	 * Forward-only by contract: every trailing event postdates the seed. A
 	 * backward seek rebuilds the engine from the nearest checkpoint instead
-	 * (see `requestSeek` in `use-replay-chunk-loader.ts`).
+	 * (see `requestSeek` in `detail/loader.ts`).
 	 */
 	addEvent(event: unknown): void
 	/** Fit the recording inside `container`, letterboxed and centred. */

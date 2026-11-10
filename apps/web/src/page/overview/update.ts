@@ -57,19 +57,18 @@ import * as Setup from "./setup-checklist-update"
 export type Return = PageReturn<Model, Message>
 type Search = typeof HomeSearch.Type
 
-/** The grid's cards, in `OVERVIEW_CHARTS` order. */
 export const CHART_IDS = ["throughput", "error-rate", "latency", "log-volume"] as const
 
 const FACETS_RANGE_MS = 24 * 60 * 60 * 1000
 
-/** `facetsRange`: a fixed 24 h, snapped to the cache grid, once per mount. */
+/** The facets range: a fixed 24 h, snapped to the cache grid, once per mount. */
 const facetsWindowAt = (nowMs: number): TimeWindow =>
 	snapRangeForCache({
 		startTime: formatWarehouseDateTime(nowMs - FACETS_RANGE_MS),
 		endTime: formatWarehouseDateTime(nowMs),
 	})
 
-/** `useEffectiveTimeRange` for the URL and the current default preset; snapped until a Reload. */
+/** The window for the URL and the current default preset; snapped until a Reload. */
 export const windowOf = (model: Model, context: PageContext, nowMs: number): TimeWindow =>
 	resolveWindow(
 		{
@@ -82,7 +81,7 @@ export const windowOf = (model: Model, context: PageContext, nowMs: number): Tim
 		nowMs,
 	)
 
-/** `shiftRangeBack`: the equally long window that ends where this one starts. */
+/** The window plus the equally long one that ends where it starts. */
 export const usageInput = (window: TimeWindow): UsageInput => {
 	const start = parseWarehouseDateTime(window.startTime)
 	const end = parseWarehouseDateTime(window.endTime)
@@ -93,8 +92,6 @@ export const usageInput = (window: TimeWindow): UsageInput => {
 		previousEndTime: formatWarehouseDateTime(start),
 	}
 }
-
-// REQUESTS
 
 type Step = KitStep<Model, Message>
 
@@ -120,7 +117,7 @@ export const scopedInput = (model: Model, window: TimeWindow): ScopedInput => ({
 	...environmentsInput(model),
 })
 
-/** Sampling verdict from the loaded overview series (`overviewSamplingActive`). */
+/** Sampling verdict from the loaded overview series. */
 const samplingActive = (model: Model): boolean =>
 	canFetch(model) &&
 	Option.match(AsyncData.getData(model.overviewSeries.data), {
@@ -141,7 +138,7 @@ const alwaysSteps = (
 			keyed(
 				model.facets,
 				requestKey(context.orgId, "getServicesFacets", { data: facetsWindow }),
-				// Reload leaves the facets probe alone (`useAtomValue`, not refreshable).
+				// Reload leaves the facets probe alone: it is not refreshable.
 				"Load",
 				(facets) => ({ facets }),
 				(key) => FetchFacets({ key, window: facetsWindow, refresh: false }),
@@ -225,7 +222,7 @@ const gatedSteps = (
 const isSameHint = (a: Model["hint"], b: Model["hint"]) =>
 	a.environment === b.environment && a.preset === b.preset && a.seen === b.seen
 
-/** `FacetsHintPersister`: once facets are ready, store the derived defaults when they changed. */
+/** Once facets are ready, store the derived defaults when they changed. */
 const persistHint =
 	(context: PageContext) =>
 	(model: Model): Step => {
@@ -251,8 +248,6 @@ export const sync = (model: Model, context: PageContext, mode: RequestMode): Ret
 	])
 }
 
-// SETUP CHECKLIST
-
 /** Runs a setup-checklist step on top of `result`, lifting its Commands and OutMessage. */
 const withSetup = (
 	result: Return,
@@ -272,7 +267,7 @@ const withSetup = (
 	return next.outMessage === undefined ? lifted : { ...lifted, outMessage: next.outMessage }
 }
 
-/** `useIngestConnection`'s `useEffectiveTimeRange(undefined, undefined, "1h")`. */
+/** The setup card's last-hour window. */
 const resolveSetupWindow = (result: Return, context: PageContext): Return => {
 	const nowMs = result.model.nowMs
 	if (nowMs === null) return result
@@ -283,8 +278,6 @@ const resolveSetupWindow = (result: Return, context: PageContext): Return => {
 	return withSetup(result, (setup) => Setup.windowResolved(setup, window, context.pinnedNamespace))
 }
 
-// NAVIGATION
-
 const navigate = (model: Model, search: Search): Return => ({
 	model,
 	outMessage: PageOutMessage.RequestedNavigation({
@@ -293,11 +286,9 @@ const navigate = (model: Model, search: Search): Return => ({
 	}),
 })
 
-// ENTRY POINTS
-
 const loadChartRuntime = () => LoadChartRuntime()
 
-/** `init`, with the Clerk gate as an input (`{isClerkAuthEnabled && <SetupChecklist />}`). */
+/** `init`, with the Clerk gate as an input: the setup checklist shows only in Clerk mode. */
 export const initWith =
 	(isClerk: boolean) =>
 	(route: { readonly search: Search }, context: PageContext): Return => {
@@ -398,7 +389,7 @@ export const revive = (model: Model, route: { readonly search: Search }, context
 export const contextChanged = (model: Model, context: PageContext): Return =>
 	resolveSetupWindow(sync(model, context, "Load"), context)
 
-/** Retry (`useAtomRefresh` on a failed read): forget the slot, so the next sync requests it again. */
+/** Retry a failed read: forget the slot, so the next sync requests it again. */
 const RETRY_SLOT = {
 	Facets: "facets",
 	Overview: "overviewSeries",
@@ -454,7 +445,7 @@ const retryPage = (model: Model, context: PageContext): Return => {
 }
 
 const withPicker = (model: Model, message: TimeRangePicker.Message): Return => {
-	// `applyTimeRangeSearch` with a preset: the absolute bounds leave the URL.
+	// A preset: the absolute bounds leave the URL.
 	return pickerStep(
 		model,
 		message,

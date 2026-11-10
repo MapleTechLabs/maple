@@ -109,7 +109,7 @@ export type GridContext = Readonly<{
 	isChartReady: boolean
 	timeZone: string
 	nowMs: number
-	/** `overviewSamplingActive` over every environment: the refinement is merged and may fail. */
+	/** Sampling is on over every environment: the refinement is merged and may fail. */
 	useRefinement: boolean
 	/** The strips' `failureKey`s joined (a string keeps the cards cached); a card failing the same way says so in one line. */
 	pageFailureKeys: string
@@ -143,7 +143,7 @@ const throughputColors = (context: GridContext) => ({
 	error: resolveColor(context.colors, "--chart-error"),
 })
 
-/** The header chips a throughput chart hoists into its card (`usePlotLegendSlot`). */
+/** The header chips a throughput chart hoists into its card. */
 const throughputChips = (rows: ReadonlyArray<FixedMetricRow>, perSecond: boolean, context: GridContext) =>
 	throughputLegend(
 		throughputPlot(fixedMetricModel(rows, context.timeZone, context.nowMs), perSecond),

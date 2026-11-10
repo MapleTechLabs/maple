@@ -73,8 +73,6 @@ export const SaveSecuritySettings = Command.define("SecurityApiUpdateSettings", 
 		Effect.map(updateSettings(payload), (result) => Message.CompletedSave({ attempt, result })),
 })
 
-// VALIDATION
-
 const isDiscoveryModel = Schema.is(SecurityAuditDiscoveryModel)
 const isValidationModel = Schema.is(SecurityAuditValidationModel)
 
@@ -122,8 +120,6 @@ export const requestOf = (model: Model): SecurityAuditUpdateSettingsRequest | nu
 /** The limit the form would save, for the usage bar while it is typed; the saved one otherwise. */
 export const draftLimitOf = (model: Model): number | null =>
 	parseLimit(model.limit.value) ?? model.current?.monthlySpendLimitUsd ?? null
-
-// UPDATE
 
 type Return = Update.ReturnWithOutMessage<Model, Message, OutMessage, Resources>
 

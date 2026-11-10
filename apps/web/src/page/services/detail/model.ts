@@ -15,8 +15,6 @@ import * as EndpointPeek from "./endpoint-peek/model"
 import { ApiBucket, ApiOverview, DependencyBundle, Endpoint, Operation, StatusRow } from "./model-tabs"
 import { CommitData, DetailPoint, Release } from "../../kit/service-metrics/points"
 
-// The service detail page.
-
 /** `ServiceDetailOverviewResult`: the charts, the release timeline and the switcher's options. */
 export const OverviewData = Schema.Struct({
 	points: Schema.Array(DetailPoint),
@@ -27,7 +25,7 @@ export type OverviewData = typeof OverviewData.Type
 
 export const RefinementPoint = Schema.Struct({ bucket: Schema.String, throughput: Schema.Number })
 
-/** The `ErrorIssueDocument` fields `IssueLine` reads. */
+/** The `ErrorIssueDocument` fields an issue row reads. */
 export const Issue = Schema.Struct({
 	id: Schema.String,
 	title: Schema.String,
@@ -89,18 +87,18 @@ export const Model = Schema.Struct({
 	workloads: KeyedSchema(Schema.Array(Workload), LoadFailure),
 	runtimes: KeyedSchema(Schema.Array(ServiceRuntime), LoadFailure),
 	dependencies: KeyedSchema(DependencyBundle, LoadFailure),
-	/** `commitQueryAtom(sha)`, shared by the deploy rows and the marker labels. */
+	/** Commits by sha, shared by the deploy rows and the marker labels. */
 	commits: Schema.Record(Schema.String, CommitData.schema),
-	/** `ServiceRecentDeploys`' "Show all" toggle. */
+	/** The recent deploys panel's "Show all" toggle. */
 	isDeploysExpanded: Schema.Boolean,
-	/** Each tab table's `useTableSort` state. */
+	/** Each tab table's sort. */
 	sorts: Schema.Struct({ operations: SortState, endpoints: SortState, dependencies: SortState }),
 	environmentSelect: Select.Model,
 	timePicker: TimeRangePicker.Model,
 	/** One chart Submodel per card and per operation sparkline, by id. */
 	charts: Schema.Record(Schema.String, Chart.Model),
 	...ChartEnvFields,
-	/** `PageRefreshProvider`: Reloads so far (non-zero stops snapping) and the 600 ms spinner. */
+	/** Reloads so far (non-zero stops snapping) and the 600 ms spinner. */
 	refreshVersion: Schema.Number,
 	isReloading: Schema.Boolean,
 })

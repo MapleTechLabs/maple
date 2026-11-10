@@ -121,7 +121,7 @@ const addTaxRow = (h: H, model: Model, profile: BillingProfile): Html => {
 	])
 }
 
-/** `BillingTaxIdsEditor`: saved as they are added or removed, each its own Stripe object. */
+/** Tax IDs save as they are added or removed, each its own Stripe object. */
 const taxIdsEditor = (h: H, model: Model, profile: BillingProfile): Html =>
 	field(h, { state: IDLE, className: "gap-2" }, [
 		fieldLabel(h, { ids: fieldIds("billing-tax-ids"), state: IDLE }, "Tax IDs"),

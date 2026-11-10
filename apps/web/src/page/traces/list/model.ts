@@ -11,8 +11,6 @@ import { Model as TraceDetailModel } from "../detail/model"
 import * as TimeRangePicker from "../../kit/time-range-picker"
 import { laterPagesFields } from "../../kit/infinite-pages"
 
-// The `/traces` list.
-
 const FacetItem = Schema.Struct({ name: Schema.String, count: Schema.Number })
 
 /** `TracesFacets` (`@maple/web-data/warehouse/traces`). */
@@ -59,11 +57,11 @@ export const TracesPage = Schema.Struct({
 })
 export type TracesPage = typeof TracesPage.Type
 
-/** One rendered row of the virtual window (`VirtualItem`). */
+/** One rendered row of the virtual window. */
 export const VirtualRow = Schema.Struct({ index: Schema.Number, start: Schema.Number, end: Schema.Number })
 export type VirtualRow = typeof VirtualRow.Type
 
-/** `useInfiniteTraces`' pages after the first, for the current first-page key. */
+/** The pages after the first, for the current first-page key. */
 export const Pagination = Schema.Struct({
 	key: Schema.NullOr(Schema.String),
 	...laterPagesFields(TracesPage),
@@ -73,13 +71,13 @@ export type Pagination = typeof Pagination.Type
 export const Model = Schema.Struct({
 	search: TracesSearch,
 	window: Schema.NullOr(TimeWindow),
-	/** The zone `window` was resolved in: a zone change re-resolves "today" (`useEffectiveTimeRange`). */
+	/** The zone `window` was resolved in: a zone change re-resolves "today". */
 	windowZone: Schema.NullOr(Schema.String),
 	nowMs: Schema.Number,
 	facets: KeyedSchema(TracesFacets, LoadFailure),
 	firstPage: KeyedSchema(TracesPage, LoadFailure),
 	pagination: Pagination,
-	/** Settled first pages by key: an atom revisited in the same visit answers from its cache. */
+	/** Settled first pages by key: a query revisited in the same visit answers from this cache. */
 	firstPageCache: Schema.Record(Schema.String, TracesPage),
 	/** The virtualizer's window over the loaded rows, as the scroller Mount reports it. */
 	virtualRows: Schema.Array(VirtualRow),
@@ -92,7 +90,7 @@ export const Model = Schema.Struct({
 	durationDraftVersion: Schema.Number,
 	refreshVersion: Schema.Number,
 	isReloading: Schema.Boolean,
-	/** `useListNavigation`'s focused row, by index (the list is append-only per query). */
+	/** The keyboard-focused row, by index (the list is append-only per query). */
 	focusedIndex: Schema.NullOr(Schema.Number),
 	/** The peek sheet and the trace page running inside it while `peek` is in the URL. */
 	peekDialog: Dialog.Model,

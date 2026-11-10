@@ -148,8 +148,6 @@ export const clearedFilters = (search: Search): Search => ({
 	groups: undefined,
 })
 
-// ENTRY POINTS
-
 export const init = (route: { readonly search: Search }, context: PageContext): Return => {
 	const search = usersSearch(route.search)
 	const model: Model = {

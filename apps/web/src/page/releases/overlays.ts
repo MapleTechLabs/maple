@@ -13,7 +13,7 @@ import {
 	stepCommitCard,
 } from "../kit/commit-card"
 
-// The releases pages' overlays: `ReleaseHealthPill`'s description tooltip and `CommitShaHoverCard`
+// The releases pages' overlays: the health pill's description tooltip and the commit hover card
 // (one Model each, shared by every trigger on the page), and the commits the card looked up.
 
 export const Model = Schema.Struct({
@@ -33,7 +33,7 @@ export const Message = defineMessageUnion({
 })
 export type Message = typeof Message.Type
 
-/** `CommitShaHoverCard`'s arm timer and `commitQueryAtom(sha)`. */
+/** The commit hover card's arm timer and its commit read. */
 export const CommitCard = commitCardCommands(
 	{ arm: "ArmReleasesCommitLookup", fetch: "FetchReleasesCommitDetail" },
 	{ elapsed: Message.ElapsedCommitArm, completed: Message.CompletedFetchCommitDetail },

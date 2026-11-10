@@ -40,7 +40,7 @@ const legacyRedirects = {
 	developer: { kind: "tab", tab: "keys" },
 } as const satisfies { readonly [Tab in LegacySettingsTab]: LegacySettingsRedirect }
 
-/** Where a retired `?tab=` value now lives (`resolveLegacySettingsTab`). */
+/** Where a retired `?tab=` value now lives. */
 export const resolveLegacySettingsTab = (tab: string | undefined): Option.Option<LegacySettingsRedirect> =>
 	Option.map(
 		Array.findFirst(legacySettingsTabValues, (value) => value === tab),
@@ -116,7 +116,6 @@ const isVisible = (id: string, visibility: Visibility): boolean => {
 	return true
 }
 
-/** `useVisibleSettingsSections().visibleSections`. */
 export const visibleSections = (visibility: Visibility): ReadonlyArray<NavShellSection<SettingsTab>> =>
 	Array.filter(
 		Array.map(navSections, (section) => ({
@@ -136,7 +135,6 @@ export const visibleTabs = (
 
 const DEFAULT_SETTINGS_TAB_ORDER: ReadonlyArray<SettingsTab> = ["general", "ingestion"]
 
-/** `resolveActiveSettingsTab`. */
 export const resolveActiveSettingsTab = (
 	requested: string | undefined,
 	tabs: ReadonlyArray<SettingsTab>,

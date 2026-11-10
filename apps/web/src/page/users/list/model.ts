@@ -9,8 +9,6 @@ import { TimeWindow } from "../../../data/time-range"
 import { UsersSearch } from "../../../route/search"
 import * as TimeRangePicker from "../../kit/time-range-picker"
 
-// The `/users` directory.
-
 export type Search = typeof UsersSearch.Type
 
 /** One `listUsers` answer: the window's users under the filters, the latest seen first. */

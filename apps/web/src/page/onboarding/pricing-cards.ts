@@ -12,7 +12,7 @@ import { LoadFailure, toLoadFailure } from "@maple/views/data/load-failure"
 import * as CheckoutReturn from "../kit/checkout-return"
 import { getScenario } from "./pricing-plans"
 
-// `PricingCards` for a planless org: the catalog (`billingPlansAtom`), and a plan's trial or subscribe
+// `PricingCards` for a planless org: the catalog, and a plan's trial or subscribe
 // button, which attaches it and follows Autumn's checkout link to Stripe.
 
 export const PlansData = AsyncData.Schema(CatalogPlansResponse, LoadFailure)
@@ -21,7 +21,7 @@ export const Model = Schema.Struct({
 	plans: PlansData.schema,
 	/** The plan whose button spins; kept while the page leaves for Stripe. */
 	loadingPlanId: Schema.NullOr(Schema.String),
-	/** `useCheckoutReturn`: back from Stripe (`?checkout=complete`), waiting on the Autumn sync. */
+	/** Back from Stripe (`?checkout=complete`), waiting on the Autumn sync. */
 	checkoutReturn: CheckoutReturn.Model,
 })
 export type Model = typeof Model.Type
@@ -90,7 +90,7 @@ export const OpenCheckout = Command.define("OpenCheckout", {
 	execute: ({ url }) => load(url).pipe(Effect.as(Message.CompletedOpenCheckout())),
 })
 
-/** `useBillingActions().attach`: checkout intent, recorded before the tab leaves for Stripe. */
+/** Checkout intent, recorded before the tab leaves for Stripe. */
 export const TrackCheckoutStarted = Command.define("TrackCheckoutStarted", {
 	args: { planId: Schema.String },
 	messages: [Message.CompletedTrackCheckoutStarted],

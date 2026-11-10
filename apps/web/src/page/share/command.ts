@@ -7,7 +7,7 @@ import { Message } from "./message"
 import { DashboardSectionSchema } from "@maple/widgets/dashboard"
 import { type Resolve, type ShareError, SharedDashboard, type WidgetState } from "./model"
 
-// The share's reads: resolve the token, then widget data in batches of four (`useShareWidgetData`).
+// The share's reads: resolve the token, then widget data in batches of four.
 
 const SHARE_UNAVAILABLE_MESSAGE = "Couldn't load this dashboard. Try again later."
 export const DATA_UNAVAILABLE_MESSAGE = "Couldn't load this data."
@@ -23,7 +23,7 @@ export class FrameReadError extends Schema.TaggedError<FrameReadError>()("@maple
 	cause: Schema.Defect(),
 }) {}
 
-/** `isFramed`: reading a cross-origin `top` throws, and that means framed by someone unseen. */
+/** Reading a cross-origin `top` throws, and that means framed by someone unseen. */
 export const ReadFrame = Command.define("ReadShareFrame", {
 	messages: [Message.CompletedReadFrame],
 	execute: Effect.try({
@@ -39,7 +39,7 @@ const decodeDashboard = Schema.decodeUnknownEffect(SharedDashboard)
 const decodeSections = Schema.decodeUnknownOption(Schema.Array(DashboardSectionSchema))
 const decodeSectionsField = Schema.decodeUnknownOption(Schema.Struct({ sections: Schema.Unknown }))
 
-/** `decodeShare`: sections that fail to decode render an ungrouped board, never a dead page. */
+/** Sections that fail to decode render an ungrouped board, never a dead page. */
 export const sectionsOf = (dashboard: unknown) =>
 	Option.getOrElse(
 		Option.flatMap(decodeSectionsField(dashboard), ({ sections }) => decodeSections(sections)),
@@ -70,7 +70,6 @@ const tagOf = (error: unknown): string =>
 		() => "",
 	)
 
-/** `toResolveError`: the typed share errors by tag, everything else unavailable. */
 const toShareError = (error: unknown): ShareError => {
 	switch (tagOf(error)) {
 		case "@maple/http/errors/ShareSignInRequiredError":
@@ -195,7 +194,7 @@ export const FetchBatch = Command.define("FetchShareWidgetBatch", {
 	},
 })
 
-/** `signIn`: a full navigation, carrying this share back as the redirect. */
+/** A full navigation, carrying this share back as the redirect. */
 export const GoToSignIn = Command.define("GoToShareSignIn", {
 	messages: [Message.StartedSignInRedirect],
 	execute: Effect.sync(() => {
@@ -205,7 +204,6 @@ export const GoToSignIn = Command.define("GoToShareSignIn", {
 	}),
 })
 
-/** `useContainerWidth` of the board container. */
 export const MeasureGrid = Mount.defineStream("MeasureShareGrid", {
 	messages: [Message.MeasuredGrid],
 	execute: ({ element }) =>
@@ -237,7 +235,7 @@ const quantize = (widthPx: number): Option.Option<number> =>
 		? Option.none()
 		: Option.some(Math.max(100, Math.floor(widthPx / 100) * 100))
 
-/** `useMeasuredWidgetMaxDataPoints`: the tile's width on a 100 px grid, as data points for its panel. */
+/** The tile's width on a 100 px grid, as data points for its panel. */
 export const WatchTile = Mount.defineStream("WatchShareTile", {
 	args: { widgetId: Schema.String, isBar: Schema.Boolean },
 	messages: [Message.MeasuredWidget],
@@ -289,8 +287,8 @@ const applyThemeClass = (theme: string) => {
 const isThemeOverride = (theme: string | null) => theme === "light" || theme === "dark"
 
 /**
- * `SharePage`'s layout effect: `?theme=` applies without persisting, and an embed clears the
- * backdrop (`body` and `color-scheme`) so the host page shows around the card. Restored on leave.
+ * `?theme=` applies without persisting, and an embed clears the backdrop (`body` and
+ * `color-scheme`) so the host page shows around the card. Restored on leave.
  */
 export const ApplyShareAppearance = Mount.defineStream("ApplyShareAppearance", {
 	args: { theme: Schema.NullOr(Schema.String), isEmbed: Schema.Boolean },

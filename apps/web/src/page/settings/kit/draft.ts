@@ -6,7 +6,10 @@ import { Schema } from "effect"
 export const DraftState = <S extends Schema.Top>(value: S) =>
 	Schema.Struct({
 		edits: Schema.NullOr(
-			Schema.Struct({ value, committedOver: Schema.NullOr(Schema.Struct({ saved: value, sent: value })) }),
+			Schema.Struct({
+				value,
+				committedOver: Schema.NullOr(Schema.Struct({ saved: value, sent: value })),
+			}),
 		),
 		inFlight: Schema.NullOr(Schema.Struct({ submitted: value, sent: Schema.NullOr(value), base: value })),
 	})
@@ -23,7 +26,7 @@ export type Equal<T> = (a: T, b: T) => boolean
 
 export const emptyDraft = <T>(): DraftState<T> => ({ edits: null, inFlight: null })
 
-/** Drops committed edits once `saved` caught up, and a save once `saved` moved (the render-phase resets). */
+/** Drops committed edits once `saved` caught up, and a save once `saved` moved. */
 export const settle = <T>(state: DraftState<T>, saved: T, isEqual: Equal<T>): DraftState<T> => {
 	const edits = state.edits
 	const isEditsSettled =
@@ -45,7 +48,8 @@ export const settle = <T>(state: DraftState<T>, saved: T, isEqual: Equal<T>): Dr
 }
 
 /** What the form shows: the edits, else the saved value. */
-export const draftOf = <T>(state: DraftState<T>, saved: T): T => (state.edits === null ? saved : state.edits.value)
+export const draftOf = <T>(state: DraftState<T>, saved: T): T =>
+	state.edits === null ? saved : state.edits.value
 
 export const isDirty = <T>(state: DraftState<T>, saved: T, isEqual: Equal<T>): boolean => {
 	const current = settle(state, saved, isEqual)
@@ -65,7 +69,7 @@ export const setDraft = <T>(state: DraftState<T>, next: T): DraftState<T> => ({
 
 export const discard = <T>(): DraftState<T> => emptyDraft()
 
-/** A save starts: records the draft it sends (`submit()`). */
+/** A save starts: records the draft it sends. */
 export const submit = <T>(state: DraftState<T>, saved: T): DraftState<T> => ({
 	...state,
 	inFlight: { submitted: draftOf(state, saved), sent: null, base: saved },

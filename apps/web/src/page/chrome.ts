@@ -9,7 +9,7 @@ import { resolveLegacySettingsTab } from "./settings/nav"
 import { vstack } from "@maple/views/ui/stack"
 
 /**
- * Signed-in routes rendered without `DashboardLayout`: onboarding and auth handoffs with
+ * Signed-in routes rendered without the dashboard shell: onboarding and auth handoffs with
  * their own layouts.
  */
 const isBareRoute = AppRoute.isAnyOf(["CliLogin", "McpAuthorize", "QuickStart", "SelectPlan"])
@@ -17,13 +17,13 @@ const isBareRoute = AppRoute.isAnyOf(["CliLogin", "McpAuthorize", "QuickStart", 
 export const rendersShell = (route: AppRoute): boolean => !isPublicRoute(route) && !isBareRoute(route)
 
 /**
- * A retired settings tab only redirects, with no `DashboardLayout`, so the top bar's pill is not
+ * A retired settings tab only redirects, with no dashboard shell, so the top bar's pill is not
  * mounted and the redirect re-reads nothing.
  */
 export const isRedirectOnlyRoute = (route: AppRoute): boolean =>
 	route._tag === "Settings" && Option.isSome(resolveLegacySettingsTab(route.search.tab))
 
-/** The trail each page passes to `DashboardPage`; pages without one show their route tag. */
+/** The trail each page passes to the shell; pages without one show their route tag. */
 export const breadcrumbsOf = (route: AppRoute): ReadonlyArray<BreadcrumbEntry> =>
 	AppRoute.matchOrElse<ReadonlyArray<BreadcrumbEntry>>(
 		route,
@@ -32,7 +32,7 @@ export const breadcrumbsOf = (route: AppRoute): ReadonlyArray<BreadcrumbEntry> =
 	)
 
 /**
- * `PageLayout.Content` while the page has no slot or context yet (no org open, a plan-gate
+ * The page content while the page has no slot or context yet (no org open, a plan-gate
  * redirect in flight): a page skeleton, so nothing but loading ever paints there.
  */
 export const placeholderContent = <Message>(h: HtmlBuilder<Message>): Html =>

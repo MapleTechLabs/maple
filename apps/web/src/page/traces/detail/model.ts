@@ -12,8 +12,6 @@ import * as Timeline from "@maple/views/traces/timeline"
 import { SpanEvents, TraceData } from "@maple/views/traces/trace-data"
 import * as Waterfall from "@maple/views/traces/waterfall"
 
-// `/traces/$traceId`.
-
 export const ProductEvent = Schema.Struct({
 	eventName: Schema.String,
 	spanId: Schema.String,
@@ -42,9 +40,9 @@ export const Model = Schema.Struct({
 	productEvents: KeyedSchema(Schema.Array(ProductEvent), LoadFailure),
 	logsCount: KeyedSchema(Schema.Number, LoadFailure),
 	replaySessionId: KeyedSchema(Schema.NullOr(Schema.String), LoadFailure),
-	/** `TraceViewTabs`' colour-by state: it outlives the timeline when the tab changes. */
+	/** The view tabs' colour-by state: it outlives the timeline when the tab changes. */
 	colorBy: Schema.String,
-	/** The view tabs (Base UI Tabs, controlled by the URL's `view`). */
+	/** The view tabs, controlled by the URL's `view`. */
 	tabs: Tabs.Model,
 	/** The trace pane and, with a span selected, the span panel beside it. */
 	split: Resizable.Model,
@@ -56,7 +54,7 @@ export const Model = Schema.Struct({
 	spanPanel: Schema.NullOr(SpanPanel.Model),
 	/** The span panel's Infrastructure tab, mounted with the panel. */
 	spanInfra: Schema.NullOr(InfraCorrelation.Model),
-	/** Inside the list's peek sheet: no span or product events are read (`TracePeekLoaded`). */
+	/** Inside the list's peek sheet: no span or product events are read. */
 	isPeek: Schema.Boolean,
 })
 export type Model = typeof Model.Type

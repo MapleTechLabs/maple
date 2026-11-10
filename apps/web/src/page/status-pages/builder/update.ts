@@ -62,8 +62,6 @@ const readMonitors = (model: Model, context: PageContext, mode: Keyed.ReadMode):
 
 export const monitorsOf = (model: Model) => AsyncData.getOrElse(model.monitors.data, () => [])
 
-// ISSUES
-
 export const nameIssue = (model: Model): string | null =>
 	model.isNameTouched && Str.trim(model.name) === "" ? "Add a name." : null
 
@@ -84,8 +82,6 @@ export const canSubmit = (model: Model): boolean =>
 	slugIssue(model.slug) === null &&
 	model.takenSlug !== model.slug &&
 	!hasRowIssues(model.picker)
-
-// DRAFT
 
 /** The preset carries its own font and corners; the builder offers no other choice of either. */
 const themeOf = (model: Model) => ({

@@ -66,12 +66,12 @@ export const revived = (model: Model): Return => ({
 /** `SetupChecklist` renders (and polls) once the state is read and the checklist is not dismissed. */
 export const isMounted = (model: Model): boolean => model.state !== null && !model.state.checklistDismissed
 
-/** `useGuidedFramework`: the picked framework, else the role's default. */
+/** The picked framework, else the role's default. */
 export const frameworkOf = (state: QuickStartState): string =>
 	state.selectedFramework ??
 	(state.qualifyAnswers.role === null ? "nodejs" : ROLE_DEFAULT_FRAMEWORK[state.qualifyAnswers.role])
 
-/** `useIngestConnection`: the org's own services; seeded `demo-` ones and onboarding's test trace do not count. */
+/** The org's own services; seeded `demo-` ones and onboarding's test trace do not count. */
 export const realServices = (model: Model): ReadonlyArray<ServiceRow> =>
 	Arr.filter(
 		AsyncData.getOrElse(model.services, (): ReadonlyArray<ServiceRow> => []),
@@ -128,7 +128,7 @@ const toast = (type: "success" | "error", title: string) =>
 const dismissed = (model: Model): Return =>
 	model.state === null ? { model } : saveState(model, { ...model.state, checklistDismissed: true })
 
-/** `FirstTraceCelebration`'s explore: dismiss, then the traces of the first real service. */
+/** The celebration's explore: dismiss, then the traces of the first real service. */
 const explore = (model: Model): Return => {
 	const first = realServices(model)[0]
 	const url = hrefOf(
@@ -179,7 +179,7 @@ export const update = (model: Model, message: Message, context: SetupContext): R
 		ReadState: ({ state }) => {
 			const next = { ...model, state }
 			if (!isMounted(next)) return { model: next }
-			// The card mounts: `useIngestConnection` reads the keys and the overview.
+			// The card mounts: it reads the keys and the overview.
 			const overview = fetchOverview(next, pinnedNamespace)
 			return { model: overview.model, commands: [FetchSetupKeys(), ...(overview.commands ?? [])] }
 		},

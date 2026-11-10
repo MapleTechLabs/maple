@@ -27,8 +27,6 @@ import type { Model, SparklinePoint } from "./model"
 import { typography, typographyClass } from "@maple/views/ui/typography"
 import { hstack } from "@maple/views/ui/stack"
 
-// The metric preview grid and its cards.
-
 type H = HtmlBuilder<Message>
 
 const GRID_CLASS = "grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4"
@@ -46,7 +44,7 @@ type PageSparklines = Readonly<{
 	failedTypes: ReadonlySet<string>
 }>
 
-/** `usePageSparklines`: one query per metric type on the page, folded into points by metric. */
+/** One query per metric type on the page, folded into points by metric. */
 const pageSparklines = (
 	model: Model,
 	orgId: string,

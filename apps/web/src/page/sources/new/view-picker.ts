@@ -13,7 +13,7 @@ import { typography } from "@maple/views/ui/typography"
 import { hstack, vstack } from "@maple/views/ui/stack"
 import { Array as Arr } from "effect"
 
-// `PlatformPicker`: the Source step.
+// The Source step.
 
 type H = HtmlBuilder<Message>
 

@@ -7,7 +7,6 @@ import {
 	countIssues,
 	deriveReleaseImpacts,
 	groupReleases,
-	lastBucketShares,
 	liveVersions,
 	previousSha,
 	releaseHeadline,
@@ -191,15 +190,19 @@ describe("deriveReleaseImpacts", () => {
 	})
 })
 
-describe("lastBucketShares", () => {
+describe("last-bucket shares", () => {
 	it("reads 0 for a version absent from the service's last bucket", () => {
+		const rows = [
+			release({ commitSha: SHA_B, serviceName: API, firstSeen: "2026-09-05T10:30:00.000Z" }),
+			release({ commitSha: SHA_A, serviceName: API }),
+		]
 		const timeline = [
 			bucket("2026-09-05T10:00:00.000Z", API, SHA_A, 10),
 			bucket("2026-09-05T11:00:00.000Z", API, SHA_B, 10),
 		]
-		const shares = lastBucketShares(timeline)
-		expect(shares.get(`api ${SHA_A}`)).toBe(0)
-		expect(shares.get(`api ${SHA_B}`)).toBe(1)
+		const [newer, older] = deriveReleaseImpacts(rows, timeline)
+		expect(newer?.share).toBe(1)
+		expect(older?.share).toBe(0)
 	})
 })
 

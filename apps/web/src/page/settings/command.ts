@@ -35,7 +35,7 @@ export const FetchSettingsSession = Command.define("FetchSettingsSession", {
 /** A customer read still pending after this reads as unreachable, so Billing shows Retry, not shimmer. */
 const CUSTOMER_TIMEOUT = Duration.seconds(10)
 
-/** `billingCustomerAtom`: the nav's data-platform gate and the Billing tab. */
+/** The billing customer, for the nav's data-platform gate and the Billing tab. */
 export const FetchSettingsCustomer = Command.define("FetchSettingsCustomer", {
 	// `orgId` on entry; a refresh passes null and reads under the org the entry named.
 	args: { orgId: Schema.NullOr(Schema.String), refresh: Schema.Boolean },

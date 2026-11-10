@@ -47,7 +47,6 @@ import {
 	searchHref,
 } from "./request"
 
-/** The service panel's tabs (`<Tabs defaultValue="service">`). */
 const initServiceTabs = () =>
 	Tabs.init({ idBase: 60, values: ["service", "infrastructure"], selected: "service" })
 
@@ -94,8 +93,6 @@ export const init = (route: { readonly search: Search }, context: PageContext): 
 		],
 	}
 }
-
-// THE MAP
 
 const merge = (result: Return, next: Return): Return => ({
 	model: next.model,
@@ -158,7 +155,6 @@ const afterMap = (before: Option.Option<ServiceMap.Model>, result: Return, conte
 	}
 }
 
-/** Folds a map step into the page: the map Model, its lifted Commands, then `afterMap`. */
 const withMapStep = (
 	model: Model,
 	before: Option.Option<ServiceMap.Model>,
@@ -175,8 +171,8 @@ const withMapStep = (
 	)
 
 /**
- * Rebuild the graph from whatever has landed (`buildFlowElements`): the
- * first time the bundle and the stored prefs are both in, the map is created; later rows refine it.
+ * Rebuild the graph from whatever has landed (`buildFlowElements`): the first time the bundle
+ * and the stored prefs are both in, the map is created; later rows refine it.
  */
 const syncMap =
 	(context: PageContext) =>
@@ -298,7 +294,7 @@ const withScene3d = (model: Model, message: Scene3d.Message, context: PageContex
 }
 
 const withTimePicker = (model: Model, message: TimeRangePicker.Message): Return => {
-	// `applyTimeRangeSearch` with a preset: the absolute bounds leave the URL.
+	// A preset: the absolute bounds leave the URL.
 	return pickerStep(
 		model,
 		message,

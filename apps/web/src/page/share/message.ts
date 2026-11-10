@@ -8,7 +8,7 @@ import { Resolve, WidgetState } from "./model"
 export const Message = defineMessageUnion({
 	CompletedResolveClock: { nowMs: Schema.Number },
 	CompletedResolveShare: { token: Schema.String, resolve: Resolve },
-	/** A tile measured itself: its `maxDataPoints` (`ShareWidgetOptionsReporter`). */
+	/** A tile measured itself: its `maxDataPoints`. */
 	MeasuredWidget: { widgetId: Schema.String, maxDataPoints: Schema.Number },
 	MeasuredGrid: { width: Schema.Number },
 	/** The frame the tiles reported in has passed: send what changed, in batches of four. */

@@ -39,14 +39,14 @@ import { hstack } from "@maple/views/ui/stack"
 import { Array as Arr, String as Str } from "effect"
 import { typography } from "@maple/views/ui/typography"
 
-// TODO(unnamed-service): `UnnamedServiceHint` beside an unnamed service's title is not ported.
+// TODO(unnamed-service): the unnamed-service hint beside the title is not ported.
 
 type H = HtmlBuilder<Message>
 
 const toTimePicker = (message: TimeRangePicker.Message) => Message.GotTimePickerMessage({ message })
 const toSelect = (message: Select.Message) => Message.GotEnvironmentSelectMessage({ message })
 
-/** `ServiceEnvironmentSwitcher`: the overview's environments, the active one kept selectable. */
+/** The environment switcher's items: the overview's environments, the active one kept selectable. */
 const environmentItems = (model: Model): ReadonlyArray<SelectView.SelectEntry> => {
 	const loaded = AsyncData.getOrElse(
 		AsyncData.map(model.overview.data, (data) => data.environments),
@@ -158,7 +158,7 @@ const titleContent = (h: H, model: Model): Html =>
 		model.serviceName,
 	])
 
-/** `UnderlineTabStrip navigation`: route links; TanStack marks a link whose search the URL contains `active`. */
+/** Route links. As TanStack Router did, a link whose search the URL contains is `active`, so Overview always is. */
 const tabs = (h: H, model: Model): Html => {
 	const active = tabOf(model.search)
 	return underlineTabStrip(

@@ -61,7 +61,7 @@ const withForm = (model: Model, platform: PushSourcePlatform | null): Model => (
 	isSaving: false,
 })
 
-/** The form's list read; `refresh` when it mounts again in the same visit (the atom was dropped). */
+/** The form's list read; `refresh` when it mounts again in the same visit (the cached list was dropped). */
 const readList = (model: Model, context: PageContext, refresh: boolean): Return => {
 	const key = sourcesListKey(context.orgId)
 	const next = refresh
@@ -197,7 +197,7 @@ export const flowSpecOf = (model: Model): FlowSpec | null =>
 export const isIntegrationConnected = (model: Model): boolean =>
 	(flowSpecOf(model)?.connected ?? null) !== null
 
-/** `FirstDataStatus`'s `latest`: the polled source, else the one the create answered. */
+/** The polled source, else the one the create answered. */
 export const latestOf = (model: Model): V2Source | null =>
 	model.created === null
 		? null
@@ -246,7 +246,7 @@ const delegate = <Child, ChildMessage>(
 	wrap: (message: ChildMessage) => Message,
 ): Return => ({ model: set(step.model), commands: Command.mapMessages(step.commands ?? [], wrap) })
 
-/** Polls on while nothing has arrived, success or failure (`enabled: !receiving`). */
+/** Polls on while nothing has arrived, success or failure. */
 const pollUnlessReceiving = (step: Return): Return =>
 	step.model.created === null || isReceiving(step.model) || step.model.firstData.key === null
 		? step

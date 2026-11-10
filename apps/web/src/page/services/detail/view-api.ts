@@ -58,7 +58,6 @@ export type RowContext = Readonly<{
 	isOneMethod: boolean
 }>
 
-/** `methodTone`: only the mutating verbs are tinted. */
 const methodTone = (method: string): string =>
 	method === "POST" || method === "PUT" || method === "PATCH"
 		? "text-severity-warn"
@@ -318,7 +317,7 @@ const endpointRow = (
 	)
 }
 
-/** `GroupHeaderRow`: the group's totals; p95/p99 are the worst in the group. */
+/** The group's totals; p95/p99 are the worst in the group. */
 const groupHeaderRow = (
 	h: H,
 	options: Readonly<{
@@ -401,7 +400,7 @@ const formatLatencyText = (ms: number) => (ms > 0 ? formatLatency(ms) : EMPTY_VA
 const sharesRoute = (endpoints: ReadonlyArray<Endpoint>, endpoint: Endpoint) =>
 	Arr.some(endpoints, (other) => other !== endpoint && other.route === endpoint.route)
 
-/** `GroupRows`: a collapsed bucket with its explainer, or a stem header and its rows. */
+/** A collapsed bucket with its explainer, or a stem header and its rows. */
 export const groupRows = (
 	h: H,
 	group: EndpointGroup<Endpoint>,

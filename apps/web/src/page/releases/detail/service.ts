@@ -35,7 +35,7 @@ const busiestFirst = Order.flip(
 	Order.mapInput(Order.Number, (impact: { readonly spanCount: number }) => impact.spanCount),
 )
 
-/** `ReleaseBody`: the busiest environment's baseline for this service and version. */
+/** The busiest environment's baseline for this service and version. */
 export const baselineOf = (model: Model, serviceName: string): string | undefined =>
 	Option.getOrUndefined(
 		Option.flatMap(AsyncData.getData(model.releases.data), (data) =>
@@ -59,7 +59,7 @@ export type ServiceDerived = Readonly<{
 	releases: ReadonlyArray<{ bucket: string; commitSha: string; count: number; errorCount: number }>
 }>
 
-/** `ReleaseBodyLoaded`'s memo: impacts, the busiest one of this version, the service's timeline. */
+/** Impacts, the busiest one of this version, the service's timeline. */
 export const derivedOf = (model: Model, serviceName: string): ServiceDerived | undefined =>
 	Option.getOrUndefined(
 		Option.map(AsyncData.getData(model.detail.data), (detail) => {
@@ -95,7 +95,7 @@ export const seriesPoints = (model: Model, derived: ServiceDerived | undefined) 
 			? derived.detail.points
 			: derived.detail.baselinePoints
 
-/** This release's own commit is the title's read; the markers share it (one `commitQueryAtom`). */
+/** This release's own commit is the title's read; the markers share it (one read). */
 const commitsOf = (model: Model): Model["markerCommits"] =>
 	Option.match(AsyncData.getData(model.commit.data), {
 		onNone: () => model.markerCommits,

@@ -16,7 +16,7 @@ const KEY_FIELD: FieldIds = {
 	error: "preview-access-key-error",
 }
 
-/** `PreviewAccessForm`: the shared reviewer's access key, traded for a Clerk sign-in ticket. */
+/** The shared reviewer's access key, traded for a Clerk sign-in ticket. */
 const previewAccessForm = (h: H, model: Model, wrap: Wrap): Html => {
 	const state: FieldState = {
 		isInvalid: model.errorMessage !== null,
@@ -34,9 +34,7 @@ const previewAccessForm = (h: H, model: Model, wrap: Wrap): Html => {
 			h.div(
 				[h.Class("space-y-1")],
 				[
-					typography(h, { size: "xs", mono: true, as: "p" }, [
-						"PR preview",
-					]),
+					typography(h, { size: "xs", mono: true, as: "p" }, ["PR preview"]),
 					h.p(
 						[h.Class("font-display text-muted-foreground text-sm leading-relaxed")],
 						["Sign in as the shared preview reviewer with the preview access key."],

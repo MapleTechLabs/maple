@@ -58,7 +58,7 @@ import { stripClass } from "@maple/views/ui/rule"
 import { commitMarkers, markerLayout } from "../../kit/service-metrics/markers"
 import { markersOverlay } from "../../kit/service-metrics/markers-view"
 
-// `ServiceApiTab`: the KPI strip, the responses chart beside the non-2xx breakdown, and the
+// The API tab: the KPI strip, the responses chart beside the non-2xx breakdown, and the
 // endpoint table with its filters. The endpoint drawer is the page's (`endpoint-peek`).
 
 type H = HtmlBuilder<Message>
@@ -71,8 +71,6 @@ export type ApiTabInputs = Readonly<{ bucketSeconds: number; timeZone: string; w
 // Deploy labels sit in a gutter above the plot (18px label, 10px gap), off the plotted lines.
 const MARKER_LABEL_GAP = 10
 const MARKER_GUTTER = 32
-
-// KPI STRIP
 
 type Tile = Readonly<{
 	label: string
@@ -223,8 +221,6 @@ const kpiStrip = (
 
 const kpiSkeleton = (h: H): Html => statRailLoading(h, 5, 5, "w-full overflow-hidden")
 
-// RESPONSES CHART
-
 const legendItem = (h: H, swatch: Html, label: string): Html =>
 	hstack(h, { gap: "1.5", attributes: [h.Key(label)] }, [swatch, h.span([], [label])])
 
@@ -316,8 +312,6 @@ const responsesChart = (
 	])
 }
 
-// NON-2XX BREAKDOWN
-
 const codeRow = (h: H, summary: StatusCodeSummary): Html => {
 	const isServer = isServerError(summary.code)
 	const [errorType] = summary.errorTypes
@@ -406,8 +400,6 @@ const breakdownPanel = (h: H, summaries: ReadonlyArray<StatusCodeSummary> | null
 		),
 	])
 }
-
-// TABLE
 
 const toolbar = (h: H, model: Model, count: number): Html =>
 	tableTitle(h, {
@@ -550,8 +542,6 @@ const endpointsTable = (
 	])
 }
 
-// STATES
-
 const loadingState = (h: H): Html =>
 	vstack(h, { gap: "3" }, [
 		kpiSkeleton(h),
@@ -589,7 +579,7 @@ const loadingState = (h: H): Html =>
 		]),
 	])
 
-/** `ApiEmptyState`: names the two conditions an endpoint needs. */
+/** Names the two conditions an endpoint needs. */
 const emptyState = (h: H, serviceName: string): Html => {
 	const mono = (text: string) => typography(h, { tone: "soft" }, [text])
 	return panel(h, { className: "items-center gap-3.5 px-4 py-11 text-center" }, [

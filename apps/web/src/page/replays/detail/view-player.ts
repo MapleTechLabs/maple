@@ -157,7 +157,7 @@ export const bufferedTrack = (h: H, model: Model, surface: TrackSurface): Html =
 export const markersTrack = (h: H, model: Model, surface: TrackSurface): Html =>
 	trackSlots(`markers-${surface}`, markersView, [h, model.meta.actionMarkers, model.player.totalMs])
 
-/** `PlayerMessage`: the surface's centred note when there is nothing to play. */
+/** The surface's centred note when there is nothing to play. */
 const playerMessage = (h: H, children: ReadonlyArray<Html | string>, hasSpinner = false): Html =>
 	hstack(h, { align: "center", justify: "center", className: "aspect-video w-full p-8" }, [
 		vstack(h, { gap: "3", align: "center", className: "max-w-sm text-center" }, [
@@ -169,7 +169,7 @@ const playerMessage = (h: H, children: ReadonlyArray<Html | string>, hasSpinner 
 		]),
 	])
 
-/** `PlayerError`: the failure in the app's error contract, retry when it can help. */
+/** The failure in the app's error contract, retry when it can help. */
 const playerError = (h: H, failure: LoadFailure): Html => {
 	const canRetry = failure.recovery === "retry" || failure.recovery === "refresh"
 	return hstack(h, { align: "center", justify: "center", className: "aspect-video w-full p-8" }, [
@@ -408,7 +408,7 @@ const stageView = (
 const urlBarSlot = createLazy()
 const stageSlot = createLazy()
 
-/** `ReplaySurface detachedTransport docked`: browser chrome over the recording. */
+/** Browser chrome over the recording. */
 export const replaySurface = (h: H, model: Model, session: ReplayDetail, state: SurfaceState): Html => {
 	const { isFullscreen } = model.player
 	const isHolding = model.player.playback._tag === "Playing" && isBuffering(model)
@@ -438,7 +438,7 @@ export const replaySurface = (h: H, model: Model, session: ReplayDetail, state: 
 	)
 }
 
-/** `Scrubber`: a pointer press seeks to where it lands. */
+/** A pointer press seeks to where it lands. */
 const scrubber = (h: H, model: Model, surface: TrackSurface): Html => {
 	const playhead = playheadOf(model)
 	const pct = playhead.totalMs > 0 ? Math.min(100, (playhead.currentMs / playhead.totalMs) * 100) : 0
@@ -538,7 +538,7 @@ const settings = (h: H, speed: number, isSkippingIdle: boolean, isFullscreen: bo
 
 const controlSlots = createKeyedLazy()
 
-/** `ReplayControls`: play, scrubber, clock, speed, skip idle, fullscreen. */
+/** Play, scrubber, clock, speed, skip idle, fullscreen. */
 export const replayControls = (h: H, model: Model, isDetached: boolean): Html => {
 	const { player } = model
 	const surface = isDetached ? "docked" : "fullscreen"
@@ -583,7 +583,7 @@ export const replayControls = (h: H, model: Model, isDetached: boolean): Html =>
 	)
 }
 
-/** `ReplayTransport docked`: the controls flush under the surface (hidden in fullscreen). */
+/** The controls flush under the surface (hidden in fullscreen). */
 export const replayTransport = (h: H, model: Model, status: PlayerStatus): Html | null =>
 	model.player.isFullscreen || status === "unrecorded"
 		? null

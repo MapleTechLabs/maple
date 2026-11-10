@@ -38,7 +38,7 @@ export const environmentsOf = (search: Search): ReadonlyArray<string> | undefine
 	return selected !== undefined && selected.length > 0 ? selected : undefined
 }
 
-/** `toSingleDeploymentEnv`: one selected environment, `"unknown"` as the raw empty value. */
+/** One selected environment, `"unknown"` as the raw empty value. */
 export const singleDeploymentEnv = (environments: ReadonlyArray<string> | undefined): string | undefined =>
 	environments?.length === 1 ? (environments[0] === "unknown" ? "" : environments[0]) : undefined
 
@@ -76,5 +76,5 @@ export const previousWindow = (
 	}
 }
 
-/** The open-issues window is capped at 90 days (`detailLimited`). */
+/** The open-issues window is capped at 90 days. */
 export const ISSUES_DETAIL_LIMIT_MS = 90 * 24 * 60 * 60 * 1000

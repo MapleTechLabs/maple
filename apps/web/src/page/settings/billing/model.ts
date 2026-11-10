@@ -25,7 +25,7 @@ import * as CheckoutReturn from "../../kit/checkout-return"
 import * as Details from "./details/model"
 
 // The Billing tab: this cycle's spend, usage and caps, the plan, invoices and billing details. The customer
-// is the settings page's (one `billingCustomerAtom`).
+// is the settings page's one read.
 
 export const SpendFeatureId = Schema.Literals([
 	"logs",
@@ -37,7 +37,7 @@ export const SpendFeatureId = Schema.Literals([
 ])
 export type SpendFeatureId = typeof SpendFeatureId.Type
 
-/** The open cap editor's input (`autoFocus`). */
+/** The open cap editor's input, focused as it opens. */
 export const CAP_INPUT_ID = "billing-cap-input"
 
 /** A profile read that failed: a deployment without Stripe reads differently from an outage. */

@@ -13,7 +13,7 @@ export const ResolveWindow = resolveWindowCommand("ResolveMetricsWindow", Messag
 
 const MetricType = Schema.Literals(QUERY_BUILDER_METRIC_TYPES)
 
-/** `listMetricsResultAtom`'s input: what the grid and the table send. */
+/** The metrics list input: what the grid and the table send. */
 export const ListInput = Schema.Struct({
 	search: Schema.optional(Schema.String),
 	metricType: Schema.optional(MetricType),
@@ -71,7 +71,7 @@ export const FetchSparklines = Command.define("FetchMetricSparklines", {
 		),
 })
 
-/** `ToolbarSearch`'s `useDebouncedCallback(..., 300)`. */
+/** The toolbar search's debounce. */
 export const DebounceSearch = Command.define("DebounceMetricsSearch", {
 	args: { generation: Schema.Number },
 	messages: [Message.CompletedSearchDebounce],

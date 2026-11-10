@@ -4,7 +4,7 @@ import { Array as Arr, String as Str } from "effect"
 
 const OWN_PARAMS = ["spanId", "t", "view"]
 
-/** `buildBackToTracesHref`'s params: the URL's query without the page's own. */
+/** The URL's query without the page's own. */
 export const listQueryOf = (search: string): string => {
 	const params = new URLSearchParams(search)
 	Arr.forEach(OWN_PARAMS, (name) => params.delete(name))
@@ -15,7 +15,7 @@ export const listQueryOf = (search: string): string => {
 export const backToTracesHref = (listQuery: string): string =>
 	listQuery === "" ? "/traces" : `/traces?${listQuery}`
 
-/** A trace page href that keeps the list's params (`search: (prev) => ({ ...prev, ... })`). */
+/** A trace page href that keeps the list's params. */
 export const withListQuery = (href: string, listQuery: string): string => {
 	if (listQuery === "") return href
 	const [path, own = ""] = Str.split("?")(href)

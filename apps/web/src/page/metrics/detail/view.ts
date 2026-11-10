@@ -72,7 +72,6 @@ const noData = (h: H, metricName: string): Html =>
 		h.span([h.Class("mt-3")], [docsLink(h, "metrics")]),
 	])
 
-/** `MetricDetailContent`. */
 const content = (h: H, model: Model, summary: CatalogSummary, timeZone: string): Html => {
 	const draft = draftOf(model, summary)
 	return vstack(h, { gap: "4" }, [

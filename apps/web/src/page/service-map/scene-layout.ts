@@ -12,8 +12,8 @@ import { Schema, Array as Arr, String as Str, Order } from "effect"
 import type { OccupancyWorld } from "./factory/occupancy"
 import { resolveWorld } from "./factory/resolve"
 
-// The three-free half of the 3D layout (`ServiceMap3DViewport`'s memos), shared by the labels
-// in the view and the scene chunk, so both place the same districts and belts.
+// The three-free half of the 3D layout, shared by the labels in the view and the scene chunk,
+// so both place the same districts and belts.
 
 const LayoutTopology = Schema.Struct({
 	nodes: Schema.Array(
@@ -39,7 +39,7 @@ export const topologyKeyOf = (topology: Topology3D): string =>
 		}),
 	})
 
-/** `JSON.parse(topologyKey)`: the sorted topology the layout and routes are computed from. */
+/** The sorted topology the layout and routes are computed from. */
 export const layoutTopologyOf = (topologyKey: string): LayoutTopology & SpatialTopology =>
 	decodeLayoutTopology(topologyKey)
 

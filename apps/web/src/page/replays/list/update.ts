@@ -91,7 +91,7 @@ const requestAll = (model: Model, context: PageContext, window: TimeWindow, mode
 	}
 }
 
-/** `use-infinite-replays`: a server repeating an earlier cursor would loop, so paging stops. */
+/** A server repeating an earlier cursor would loop, so paging stops. */
 const isRepeatedCursor = (model: Model, page: ReplaysPage): boolean =>
 	page.hasMore &&
 	page.nextCursor !== null &&
@@ -136,8 +136,6 @@ export const navigate = (model: Model, search: Search): Return => ({
 
 const searchHref = (search: Search) => hrefOf(AppRoute.Replays({ search }))
 
-// ENTRY POINTS
-
 export const init = (route: { readonly search: Search }, context: PageContext): Return => {
 	const { search } = route
 	const model: Model = {
@@ -175,8 +173,7 @@ export const init = (route: { readonly search: Search }, context: PageContext): 
 	}
 }
 
-/** A new search: inputs keyed on the URL value (text filters, the toolbar search) resync. */
-/** The route loader warms the first page and the facets (`listReplaysResultAtom`, `replaysFacetsResultAtom`). */
+/** The route loader warms the first page and the facets. */
 export const preload = (route: { readonly search: Search }, context: PageContext, nowMs: number) => {
 	const { model } = init(route, context)
 	const window = resolveWindow(
@@ -192,6 +189,7 @@ export const preload = (route: { readonly search: Search }, context: PageContext
 	return pickCommands(requestAll(model, context, window, "Load"), [FetchFirstPage.name, FetchFacets.name])
 }
 
+/** A new search: inputs keyed on the URL value (text filters, the toolbar search) resync. */
 export const routeChanged = (
 	model: Model,
 	route: { readonly search: Search },

@@ -6,7 +6,7 @@ import { skeleton } from "@maple/views/ui/skeleton"
 import { settingsSections } from "../../kit/settings-section"
 import { vstack } from "@maple/views/ui/stack"
 
-// `AccountSectionSkeleton`: what a settings or account section shows while its Clerk resource loads.
+// What a settings or account section shows while its Clerk resource loads.
 
 export const accountSectionSkeleton = <M>(h: HtmlBuilder<M>, children?: ReadonlyArray<Html>): Html =>
 	settingsSections(h, [

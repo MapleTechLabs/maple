@@ -14,10 +14,9 @@ import { virtualizeSessions } from "../kit/virtualize"
 import { Message } from "./message"
 import { ReplaysFacets, ReplaysPage, type Search } from "./model"
 
-/** `REPLAYS_PAGE_SIZE`. */
 export const PAGE_SIZE = 50
 
-/** `replaysFilterInputs`: the window and the URL filters, seconds mapped to ms. */
+/** The window and the URL filters, seconds mapped to ms. */
 export const filterInputs = (search: Search, window: TimeWindow) => ({
 	startTime: window.startTime,
 	endTime: window.endTime,
@@ -63,7 +62,7 @@ export const FetchFirstPage = Command.define("FetchReplaysFirstPage", {
 		).pipe(settleTo((result) => Message.CompletedFetchFirstPage({ key, result }))),
 })
 
-/** `fetchNextPage`: the cursor the last page handed back. */
+/** Fetches with the cursor the last page handed back. */
 export const FetchNextPage = Command.define("FetchReplaysNextPage", {
 	args: { ...PageArgs, cursor: Schema.String, generation: Schema.Number },
 	messages: [Message.CompletedFetchNextPage],
@@ -90,7 +89,7 @@ export const LoadSignalPresence = Command.define("LoadReplaysSignalPresence", {
 		Effect.map(loadSignalPresences(orgId), (result) => Message.CompletedLoadSignalPresence({ result })),
 })
 
-/** `ReachEndSentinel`: the 1px marker under the list came within 400 px of the viewport. */
+/** The 1px marker under the list came within 400 px of the viewport. */
 export const WatchListEnd = Mount.defineStream("WatchReplaysListEnd", {
 	messages: [Message.ReachedListEnd],
 	execute: ({ element }) =>
@@ -112,7 +111,7 @@ export const WatchListEnd = Mount.defineStream("WatchReplaysListEnd", {
 		),
 })
 
-/** `useVirtualizer` over the page scroller: the rows to render and where. */
+/** The virtualizer over the page scroller: the rows to render and where. */
 export const VirtualizeList = Mount.defineStream("VirtualizeReplaysList", {
 	messages: [Message.ChangedVirtualWindow],
 	execute: ({ element }) =>
@@ -121,7 +120,7 @@ export const VirtualizeList = Mount.defineStream("VirtualizeReplaysList", {
 			: Stream.never,
 })
 
-/** `ToolbarSearch`'s 300 ms debounce. */
+/** The toolbar search's debounce. */
 export const DebounceQuery = Command.define("DebounceReplaysQuery", {
 	args: { generation: Schema.Number },
 	messages: [Message.CompletedQueryDebounce],
@@ -129,7 +128,7 @@ export const DebounceQuery = Command.define("DebounceReplaysQuery", {
 		Effect.as(Effect.sleep(SEARCH_DEBOUNCE), Message.CompletedQueryDebounce({ generation })),
 })
 
-/** `RangeFilterSection`'s 400 ms pause before typed values commit. */
+/** The range filters' 400 ms pause before typed values commit. */
 export const DebounceDraft = Command.define("DebounceReplaysRangeDraft", {
 	args: { version: Schema.Number },
 	messages: [Message.CompletedDraftDebounce],

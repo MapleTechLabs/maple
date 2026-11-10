@@ -33,7 +33,7 @@ type H = HtmlBuilder<Message>
 const plainSha = (h: H, sha: string, label: string): Html =>
 	typography(h, { mono: true, truncate: true, attributes: [h.Title(sha)] }, [label])
 
-/** `ReleaseTitle`: the commit message once the sha resolves, the short sha until then. */
+/** The commit message once the sha resolves, the short sha until then. */
 const releaseTitle = (h: H, model: Model): Html => {
 	if (!isResolvableSha(model.commitSha)) return plainSha(h, model.commitSha, model.commitSha)
 	return Option.match(AsyncData.getData(model.commit.data), {

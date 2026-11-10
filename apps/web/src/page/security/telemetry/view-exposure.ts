@@ -59,8 +59,6 @@ const lastSeen = (h: H, clock: Clock, value: string): Html =>
 
 const count = (value: number): string => formatNumber(value)
 
-// EXPOSED PROBES
-
 const EXPOSED_COPY =
 	"A scanner asked for something that should never be public and the service answered with a 2xx. Check that the response does not contain it. Services that answer almost every path are listed separately as likely catch-all routes."
 
@@ -171,8 +169,6 @@ const exposedPanel = (h: H, clock: Clock, rows: Exposure["exposed"], capped: boo
 		]),
 	])
 
-// TOTALS
-
 const totalsRail = (h: H, clock: Clock, exposure: Exposure): Html => {
 	const totals = exposureTotals(exposure)
 	const floor = totals.isSignaturesCapped ? "+" : ""
@@ -213,8 +209,6 @@ const totalsRail = (h: H, clock: Clock, exposure: Exposure): Html => {
 		}),
 	])
 }
-
-// CATCH-ALL ROUTES
 
 const CATCH_ALL_COPY =
 	"These services answer almost every probe path with a success, which usually means they serve the same page for any path. Their answered probes are left out above."
@@ -263,8 +257,6 @@ const catchAllPanel = (h: H, services: ReadonlyArray<CatchAllService>): Html =>
 			),
 		),
 	])
-
-// CATEGORIES
 
 /** Answered probes alarm only where a success means something leaked; WordPress probes do not. */
 const answeredCell = (h: H, row: CategoryRow): Html => {
@@ -349,8 +341,6 @@ const categoriesPanel = (h: H, rows: ReadonlyArray<CategoryRow>): Html =>
 		]),
 	])
 
-// SOURCES
-
 const sourcesPanel = (h: H, clock: Clock, sources: Exposure["sources"]): Html =>
 	panel(h, { className: "overflow-hidden" }, [
 		panelHeader(h, {
@@ -415,8 +405,6 @@ const sourcesPanel = (h: H, clock: Clock, sources: Exposure["sources"]): Html =>
 			),
 		]),
 	])
-
-// STATES
 
 const exposureEmpty = (h: H): Html =>
 	empty(

@@ -57,7 +57,7 @@ const boundsOf = (layout: Layout["layout"]) => {
 	return { points, center: new THREE.Box3().setFromPoints(points).getCenter(new THREE.Vector3()) }
 }
 
-/** What CameraRig memoizes per input: rebuilt when the topology, layout or links change. */
+/** The rig's memo, rebuilt when the topology or the layout changes. */
 const derive = (input: RigInput) => ({
 	input,
 	linksById: new Map(Arr.map(input.layout.links, (link) => [link.id, link])),

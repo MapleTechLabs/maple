@@ -14,8 +14,6 @@ import * as Select from "@maple/views/ui/select"
 import * as TimeRangePicker from "../../kit/time-range-picker"
 import { MetricRow } from "../shared"
 
-// `/metrics/$metricName`.
-
 export const AttributeKeyRow = Schema.Struct({ attributeKey: Schema.String, usageCount: Schema.Number })
 export type AttributeKeyRow = typeof AttributeKeyRow.Type
 
@@ -35,18 +33,18 @@ export const Model = Schema.Struct({
 	search: MetricSearch,
 	window: Schema.NullOr(TimeWindow),
 	nowMs: Schema.Number,
-	/** `listMetricsResultAtom({ search: metricName, limit: 1000 })`. */
+	/** The catalog rows matching the metric name (limit 1000). */
 	catalog: KeyedSchema(Schema.Array(MetricRow), LoadFailure),
 	/** Each provider lookup's slot; the values are the names the editor suggests. */
 	autocomplete: Schema.Record(Schema.String, KeyedSchema(LookupNames, LoadFailure)),
-	/** `getMetricAttributeKeysResultAtom` scoped to the metric (controls, breakdown, metadata). */
+	/** The attribute keys scoped to the metric (controls, breakdown, metadata). */
 	attributeKeys: KeyedSchema(Schema.Array(AttributeKeyRow), LoadFailure),
 	timeseries: KeyedSchema(TimeseriesRows, LoadFailure),
 	breakdown: KeyedSchema(Schema.Array(BreakdownRow), LoadFailure),
 	/** The where clause as typed; committed to the URL 400 ms after the last keystroke. */
 	whereInput: Schema.String,
 	whereGeneration: Schema.Number,
-	/** The where editor's caret, focus and suggestion list (`useWhereClauseAutocomplete`). */
+	/** The where editor's caret, focus and suggestion list. */
 	whereEditor: WhereEditor,
 	/** The step interval as typed; committed on blur or Enter. */
 	stepInput: Schema.String,
@@ -54,7 +52,6 @@ export const Model = Schema.Struct({
 	groupByCombobox: Combobox.Model,
 	breakdownCombobox: Combobox.Model,
 	copyLink: CopyButton.Model,
-	/** `AddToDashboardDialog`. */
 	addToDashboard: AddToDashboard.Model,
 	chart: Chart.Model,
 	timePicker: TimeRangePicker.Model,

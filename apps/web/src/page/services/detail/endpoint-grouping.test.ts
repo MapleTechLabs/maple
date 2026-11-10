@@ -36,7 +36,7 @@ describe("groupEndpoints", () => {
 			endpoint("POST", "/v2/webhooks/stripe"),
 			endpoint("POST", "/v2/webhooks/github"),
 		])
-		// NOT "/v2" or "/v2/organizations" — both are legal prefixes and useless ones.
+		// NOT "/v2" or "/v2/organizations": both are legal prefixes and useless ones.
 		expect(stems(groups)).toEqual(["/v2/organizations/{orgId}/subscriptions", "/v2/webhooks"])
 	})
 
@@ -237,7 +237,7 @@ describe("looksLikeProbe", () => {
 		["/v2/organizations/{orgId}/subscriptions", false],
 		["/healthz", false],
 		["/graphql", false],
-		// Legitimately served by real services — must never be swept up.
+		// Legitimately served by real services: must never be swept up.
 		["/.well-known/acme-challenge/{token}", false],
 		["/.well-known/security.txt", false],
 		["/actuator/health", false],

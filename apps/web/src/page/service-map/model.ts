@@ -20,8 +20,6 @@ import { SignalPresenceData } from "@maple/views/data/signal-presence"
 import * as TimeRangePicker from "../kit/time-range-picker"
 import * as Scene3d from "./scene3d"
 
-// `/service-map`.
-
 // The warehouse answers feed `buildFlowElements` unchanged, so they stay the web-data shapes,
 // boxed as opaque values (as `SourceGraph` is) rather than re-declared as Schemas.
 
@@ -95,7 +93,7 @@ export const Model = Schema.Struct({
 	/** The selected database node's query summary and PlanetScale branches. */
 	dbSummary: KeyedSchema(DbSummarySchema, LoadFailure),
 	branchStats: KeyedSchema(BranchStatsSchema, LoadFailure),
-	/** The service panel's Service / Infrastructure tabs (`defaultValue="service"`, reset per node). */
+	/** The service panel's Service / Infrastructure tabs, back on Service per node. */
 	serviceTabs: Tabs.Model,
 	/** The database panel's query volume and latency plots. */
 	dbCharts: Schema.Struct({ volume: Chart.Model, latency: Chart.Model }),
@@ -103,7 +101,7 @@ export const Model = Schema.Struct({
 	timePicker: TimeRangePicker.Model,
 	/** The 3D view's own state; fresh each time the view switches to 3D. */
 	scene3d: Scene3d.Model,
-	/** `useSignalPresence("traces")` of the empty canvas, requested once it painted. */
+	/** Traces presence for the empty canvas, requested once it painted. */
 	presence: SignalPresenceData.schema,
 	...ChartEnvFields,
 	refreshVersion: Schema.Number,

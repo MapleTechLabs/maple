@@ -28,7 +28,7 @@ const FACETS = [
 
 type ChipParam = (typeof FACETS)[number]["include" | "exclude"]
 
-/** `serviceFilterChips`: exclusions first; URL namespace chips hide while the org pin is on. */
+/** Exclusions first; URL namespace chips hide while the org pin is on. */
 const filterChips = (model: Model, pinnedNamespace: string | null) => {
 	const chipOf = (param: ChipParam, label: string, isNegated: boolean) => {
 		const values = model.search[param]

@@ -13,7 +13,6 @@ export const Model = Schema.Struct({
 	nowMs: Schema.NullOr(Schema.Number),
 	/** The session's permissions: anyone reads sources, `sources:manage` adds and changes them. */
 	grants: Schema.Array(Policy.PermissionName),
-	/** `sourcesListAtom`. */
 	list: KeyedSchema(SourceList, LoadFailure),
 	/** Every source's volume over the last 24 hours; the list shows without it. */
 	usage: KeyedSchema(V2SourceUsageSummary, LoadFailure),

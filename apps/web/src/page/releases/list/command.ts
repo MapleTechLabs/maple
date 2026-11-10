@@ -12,14 +12,14 @@ import { MapleApiV2Client, MapleInternalApiClient } from "../../../platform/api-
 import { Message } from "./message"
 import { ReleasesData } from "./model"
 
-/** `releasesQueryInput`: the window plus the URL filters the warehouse reads. */
+/** The window plus the URL filters the warehouse reads. */
 export const ReleasesInput = Schema.Struct({
 	startTime: Schema.String,
 	endTime: Schema.String,
 	environments: Schema.optional(Schema.Array(Schema.String)),
 	excludedEnvironments: Schema.optional(Schema.Array(Schema.String)),
 	services: Schema.optional(Schema.Array(Schema.String)),
-	/** The namespace pin, `globalNamespace: "top"`. */
+	/** The namespace pin. */
 	namespaces: Schema.optional(Schema.Array(Schema.String)),
 })
 export type ReleasesInput = typeof ReleasesInput.Type
@@ -48,7 +48,7 @@ export const FetchReleases = Command.define("FetchReleases", {
 		).pipe(settleTo((result) => Message.CompletedFetchReleases({ key, result }))),
 })
 
-/** `useReleaseIssueCounts`: issues introduced inside the window, one page. */
+/** Issues introduced inside the window, one page. */
 export const FetchReleaseIssues = Command.define("FetchReleaseIssues", {
 	args: { key: Schema.String, introducedAfter: Schema.String },
 	messages: [Message.CompletedFetchIssues],
@@ -62,7 +62,7 @@ export const FetchReleaseIssues = Command.define("FetchReleaseIssues", {
 		}).pipe(settleTo((result) => Message.CompletedFetchIssues({ key, result }))),
 })
 
-/** `commitsQueryAtom(shasKey)`: every release sha on screen in one request. */
+/** Every release sha on screen in one request. */
 export const FetchReleaseCommits = Command.define("FetchReleaseCommits", {
 	args: { key: Schema.String, shas: Schema.String, refresh: Schema.Boolean },
 	messages: [Message.CompletedFetchCommits],
@@ -73,7 +73,7 @@ export const FetchReleaseCommits = Command.define("FetchReleaseCommits", {
 		}).pipe(settleTo((result) => Message.CompletedFetchCommits({ key, result }))),
 })
 
-/** `commitRangesAtom`: the commits each release carried, counts only (`limit: 0`). */
+/** The commits each release carried, counts only (`limit: 0`). */
 export const FetchReleaseRanges = Command.define("FetchReleaseRanges", {
 	args: { key: Schema.String, ranges: Schema.String, limit: Schema.Number },
 	messages: [Message.CompletedFetchRanges],
@@ -97,7 +97,7 @@ export const CompleteReleasesReloadSpin = reloadSpin(
 	Message.CompletedReloadSpin,
 )
 
-/** The table is on screen: what `ReleasesTable` reads once it mounts follows. */
+/** The table is on screen: what it reads once it mounts follows. */
 export const MountReleasesTable = Mount.define("MountReleasesTable", {
 	messages: [Message.PaintedTable],
 	execute: () =>
@@ -109,7 +109,7 @@ export const MountReleasesTable = Mount.define("MountReleasesTable", {
 		}),
 })
 
-/** `useTrackWidth`: the first lane's track width, now and on every resize. */
+/** The first lane's track width, now and on every resize. */
 export const MeasureReleasesTrack = Mount.defineStream("MeasureReleasesTrack", {
 	messages: [Message.MeasuredTrack],
 	execute: ({ element }) =>

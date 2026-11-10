@@ -26,8 +26,6 @@ import { textLink } from "@maple/views/ui/text-link"
 
 type H = HtmlBuilder<Message>
 
-// `BillingPlanSection` and `PlanOffer` (apps/web/src/components/settings/).
-
 const ENTERPRISE_CALL_URL = "https://cal.com/david-granzin/30min?overlayCalendar=true"
 const CURRENT_PLAN_CAPTION = "Change or cancel it in Manage billing"
 

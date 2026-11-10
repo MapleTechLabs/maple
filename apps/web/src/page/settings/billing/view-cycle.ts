@@ -39,8 +39,6 @@ import { stripClass } from "@maple/views/ui/rule"
 
 type H = HtmlBuilder<Message>
 
-// `BillingCyclePanel`, `SpendChart` and `CostBreakdown` (apps/web/src/components/settings/).
-
 const dollars = (cents: number, currency: string) => formatCurrency(cents / 100, currency)
 
 /** The plot itself; the states around it reserve the legend strip too. */
@@ -94,7 +92,6 @@ export const cyclePanelSkeleton = (h: H): Html =>
 
 type PlotInputs = Readonly<{ spec: ChartSpec }>
 
-/** `CursorPlot` with `ariaLabel="Cumulative spend this cycle"`. */
 const spendPlot = Submodel.defineView<Chart.Model, Chart.Message, PlotInputs>((model, inputs, h) =>
 	plotFrame(h, {
 		chartId: "billing-spend",

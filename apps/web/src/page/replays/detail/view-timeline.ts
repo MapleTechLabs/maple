@@ -37,7 +37,6 @@ const KINDS = ["click", "input", "scroll", "nav"] as const
 const pct = (ms: number, totalMs: number): number =>
 	totalMs <= 0 ? 0 : Math.min(100, Math.max(0, (ms / totalMs) * 100))
 
-/** `MarkerLegend`. */
 export const markerLegend = (h: H): Html =>
 	hstack(
 		h,

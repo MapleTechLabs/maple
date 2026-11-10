@@ -12,8 +12,8 @@ import * as Dialog from "@maple/views/ui/dialog"
 import * as Field from "@maple/views/ui/field"
 import * as Select from "@maple/views/ui/select"
 
-// The add / edit dialog of `AttributeMappingsSection`, with `AttributeKeyAutocomplete`'s two key lists (read
-// once, when the dialog first opens).
+// The add / edit dialog of attribute mappings, with its two key lists (read once, when the dialog
+// first opens).
 
 export const KeysData = AsyncData.Schema(Schema.Array(Schema.String), LoadFailure)
 
@@ -103,8 +103,6 @@ const SaveMapping = Command.define("SaveAttributeMapping", {
 		}).pipe(settleTo((result) => Message.CompletedSave({ isCreate: editingId === null, result }))),
 })
 
-// DERIVED
-
 export const sourceContextOf = (model: Model): IngestMappingSourceContext =>
 	model.sourceContext.value === "resource" ? "resource" : "span"
 export const operationOf = (model: Model): IngestMappingOperation =>
@@ -114,8 +112,6 @@ export const isFormValid = (model: Model): boolean =>
 	Str.trim(model.name.value).length > 0 &&
 	Str.trim(model.sourceKey.inputValue).length > 0 &&
 	Str.trim(model.targetKey.inputValue).length > 0
-
-// UPDATE
 
 const liftDialog = (model: Model, step: ReturnType<typeof Dialog.update>): Return => ({
 	model: { ...model, dialog: step.model },
@@ -127,7 +123,7 @@ const withKey = (current: Combobox.Model, value: string): Combobox.Model => ({
 	inputValue: value,
 })
 
-/** `openAddDialog` / `openEditDialog`: the form filled from the mapping, or empty. */
+/** The form filled from the mapping, or empty. */
 export const open = (model: Model, editing: V2AttributeMapping | null): Return => {
 	const fresh = init(model.dialog.id)
 	const filled: Model = {
@@ -142,7 +138,6 @@ export const open = (model: Model, editing: V2AttributeMapping | null): Return =
 		targetKey: withKey(fresh.targetKey, editing?.target_key ?? ""),
 		operation: { ...fresh.operation, value: editing?.operation ?? "copy" },
 	}
-	// Both key lists are subscribed on mount, as `AttributeKeyAutocomplete` does.
 	const isFirstOpen = AsyncData.isIdle(model.spanKeys)
 	const opened = liftDialog(
 		isFirstOpen

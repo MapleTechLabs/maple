@@ -81,7 +81,7 @@ const keyed = <A, E>(
 	fetch: (key: string) => Command.Command<Message, never, Resources>,
 ): Step => keyedStep(slot, key, mode, write, fetch, { keepFailure: true })
 
-/** `useEffectiveTimeRange(startTime, endTime, timePreset ?? "12h")`; snapped until a Reload. */
+/** The URL's window, `12h` when it names none; snapped until a Reload. */
 export const windowOf = (model: Model, context: PageContext, nowMs: number): TimeWindow =>
 	resolveWindow(
 		{
@@ -102,11 +102,9 @@ export const detailInput = (model: Model, window: TimeWindow): DetailInput => ({
 	environments: environmentsOf(model.search),
 })
 
-// REQUESTS
-
 type Steps = ReadonlyArray<(model: Model) => Step>
 
-/** The header's environment switcher reads the overview on every tab (`ServiceEnvironmentSwitcher`). */
+/** The header's environment switcher reads the overview on every tab. */
 const overviewStep =
 	(context: PageContext, window: TimeWindow, mode: RequestMode) =>
 	(model: Model): Step => {
@@ -120,7 +118,7 @@ const overviewStep =
 		)
 	}
 
-/** `getServiceOperationsResultAtom`: the Overview panel and the Operations tab share the key. */
+/** The Overview panel and the Operations tab share the key. */
 const operationsStep =
 	(context: PageContext, window: TimeWindow, mode: RequestMode) =>
 	(model: Model): Step => {
@@ -138,7 +136,7 @@ const operationsStep =
 		)
 	}
 
-/** `getServiceDependenciesBundleResultAtom`: the strip and the Dependencies tab share the key. */
+/** The dependency strip and the Dependencies tab share the key. */
 const dependenciesStep =
 	(context: PageContext, window: TimeWindow, mode: RequestMode) =>
 	(model: Model): Step => {
@@ -164,7 +162,7 @@ const samplingActive = (model: Model): boolean =>
 		onSome: (overview) => Arr.some(overview.points, (point) => point.hasSampling),
 	})
 
-/** `ServiceErrorsPanel`'s query: one selected environment scopes it to the window, capped at 90 days. */
+/** The errors panel's query: one selected environment scopes it to the window, capped at 90 days. */
 const issuesQuery = (model: Model, window: TimeWindow) => {
 	const environments = environmentsOf(model.search)
 	const environment = environments?.length === 1 ? environments[0] : undefined
@@ -198,7 +196,7 @@ const overviewShas = (model: Model): ReadonlyArray<string> =>
 export const DEPLOYS_RAIL = 8
 export const DEPLOYS_EXPANDED = 50
 
-/** `commitQueryAtom(sha)` is cached per sha for the page's life; only missing ones are requested. */
+/** A commit is cached per sha for the page's life; only missing ones are requested. */
 const commitsStep =
 	(context: PageContext) =>
 	(model: Model): Step => {
@@ -218,7 +216,6 @@ const commitsStep =
 				}
 	}
 
-/** What `OverviewTab` mounts: the panels' reads, the refinement once sampling shows, the commits. */
 /** Where the service runs, which the header links on every tab. */
 const runsOnSteps = (context: PageContext, window: TimeWindow, mode: RequestMode): Steps => [
 	(model) => {
@@ -247,7 +244,7 @@ const overviewTabSteps = (context: PageContext, window: TimeWindow, mode: Reques
 	operationsStep(context, window, mode),
 	(model) => {
 		const query = issuesQuery(model, window)
-		// A plain `useAtomValue`: Reload re-requests it only when its key moved (an environment's window).
+		// "Load": Reload re-requests it only when its key moved (an environment's window).
 		return keyed(
 			model.issues,
 			requestKey(context.orgId, "errorIssues.list", { query }),
@@ -275,7 +272,7 @@ const overviewTabSteps = (context: PageContext, window: TimeWindow, mode: Reques
 			: keyed(
 					model.refinement,
 					requestKey(context.orgId, "getServiceDetailThroughputRefinement", { data: input }),
-					// `useAtomValue` too: only a moved key re-requests it.
+					// "Load" too: only a moved key re-requests it.
 					"Load",
 					(refinement) => ({ refinement }),
 					(key) => FetchRefinement({ key, input }),
@@ -341,7 +338,7 @@ export const seriesSpanNames = (model: Model): ReadonlyArray<string> =>
 				Order.String,
 			)
 
-/** What `ServiceApiTab` mounts: the endpoints, the KPI overview, the status rows and the sparklines. */
+/** What the API tab reads: the endpoints, the KPI overview, the status rows and the sparklines. */
 const apiTabSteps = (context: PageContext, window: TimeWindow, mode: RequestMode): Steps => [
 	(model) => {
 		const input = { ...detailInput(model, window), limit: ENDPOINTS_LIMIT }
@@ -515,8 +512,6 @@ export const sync = (model: Model, context: PageContext, mode: RequestMode): Ret
 	return syncPeek(requested, context, mode)
 }
 
-// NAVIGATION
-
 type Search = Model["search"]
 
 export const searchHref = (serviceName: string, search: Search) =>
@@ -527,14 +522,12 @@ const navigate = (model: Model, search: Search, isReplace: boolean): Return => (
 	outMessage: PageOutMessage.RequestedNavigation({ url: searchHref(model.serviceName, search), isReplace }),
 })
 
-/** `handleTabChange`: Overview leaves the URL, and the history entry is replaced. */
+/** Overview leaves the URL, and the history entry is replaced. */
 export const tabSearch = (search: Search, tab: ServiceTab): Search => ({
 	...search,
 	endpoint: undefined,
 	tab: tab === "overview" ? undefined : tab,
 })
-
-// ENTRY POINTS
 
 export const CHART_IDS = ["latency", "throughput", "apdex", "error-rate"] as const
 
@@ -595,7 +588,7 @@ export const routeChanged = (
 	return isWindowChange(model.search, route.search) ? resolveClock(next) : sync(next, context, "Load")
 }
 
-/** `useEffectiveTimeRange` re-resolves against now on a window or zone change. */
+/** The window re-resolves against now on a window or zone change. */
 const isWindowChange = (a: Search, b: Search) =>
 	a.startTime !== b.startTime || a.endTime !== b.endTime || a.timePreset !== b.timePreset
 
@@ -614,7 +607,7 @@ const isSameWindow = (a: TimeWindow | null, b: TimeWindow) =>
 	a !== null && a.startTime === b.startTime && a.endTime === b.endTime
 
 const withPicker = (model: Model, message: TimeRangePicker.Message): Return => {
-	// `applyTimeRangeSearch` with a preset: the absolute bounds leave the URL.
+	// Picking a preset drops the absolute bounds from the URL.
 	return pickerStep(
 		model,
 		message,
@@ -681,7 +674,7 @@ const traceWindow = (model: Model) => {
 			}
 }
 
-/** `handleRowClick` on an operation or endpoint. */
+/** The trace search a click on an operation or endpoint row opens. */
 export const traceSearch = (model: Model, spanName: string) =>
 	operationTraceSearch({
 		serviceName: model.serviceName,
@@ -829,7 +822,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		},
 		CompletedReloadSpin: ({ version }) =>
 			version === model.refreshVersion ? { model: { ...model, isReloading: false } } : { model },
-		// `useAtomRefresh` on the failed overview: forget the slot, so the next sync requests it again.
+		// Retrying the failed overview forgets the slot, so the next sync requests it again.
 		ClickedRetry: ({ target }) => sync(retrying(model, target), context, "Load"),
 		ClickedResetTimeRange: () =>
 			navigate(

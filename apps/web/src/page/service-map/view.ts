@@ -129,7 +129,7 @@ const serviceDetail = (
 	})
 }
 
-/** `renderDetailPanel`: a database node gets its panel, anything else the service panel. */
+/** A database node gets its panel, anything else the service panel. */
 const detailPanel =
 	(
 		h: H,
@@ -173,7 +173,7 @@ const dbEdgesTimedOutNotice = (h: H, model: Model): ReadonlyArray<Html> =>
 				: [],
 	})
 
-/** `ResultView` over the bundle: the loading skeleton, the error, or the map. */
+/** The bundle's loading skeleton, its error, or the map. */
 const mapArea = (h: H, model: Model, inputs: PageViewInputs): Html =>
 	AsyncData.matchData(model.bundle.data, {
 		onEmpty: () => serviceMapLoading(h),

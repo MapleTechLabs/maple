@@ -245,8 +245,6 @@ const kpis = (h: H, model: Model): Html => {
 	])
 }
 
-// TARGETS TABLE
-
 /** "3 high, 1 unverified": how many of a severity's count are estimates. */
 const countTitle = (
 	count: number,
@@ -475,8 +473,6 @@ const targetsPanel = (h: H, model: Model, targets: ReadonlyArray<SecurityAuditTa
 			),
 		]),
 	])
-
-// BOTTOM PANELS
 
 const findingHref = (finding: SecurityAuditFinding) =>
 	hrefOf(AppRoute.SecurityFinding({ targetId: finding.targetId, fingerprint: finding.fingerprint }))

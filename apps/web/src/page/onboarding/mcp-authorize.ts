@@ -10,8 +10,6 @@ import { endpointMessage, localeTimeOf } from "./request"
 
 // `/mcp-authorize`: OAuth consent for an MCP client.
 
-// MODEL
-
 export const AuthorizationInfo = Schema.Struct({
 	clientName: Schema.String,
 	/** `redirectTarget(redirectUri)`: the host, or `scheme:path` for a custom scheme. */
@@ -36,8 +34,6 @@ export type Model = typeof Model.Type
 
 const Action = Schema.Literals(["approve", "deny"])
 
-// MESSAGE
-
 export const Message = defineMessageUnion({
 	SucceededInspectMcpAuthorization: { info: AuthorizationInfo, isPending: Schema.Boolean },
 	FailedInspectMcpAuthorization: { message: Schema.String },
@@ -48,8 +44,6 @@ export const Message = defineMessageUnion({
 })
 export type Message = typeof Message.Type
 
-// COMMAND
-
 /** Custom schemes (`cursor://...`) have an empty host, so those show `scheme:path`. */
 const redirectTarget = (uri: string): string => {
 	if (!URL.canParse(uri)) return uri
@@ -57,7 +51,7 @@ const redirectTarget = (uri: string): string => {
 	return url.host === "" ? `${url.protocol}${url.pathname}` : url.host
 }
 
-/** `inspectMcpAuthorization`: `GET /api/auth/mcp/oauth/authorization/:requestId`. */
+/** `GET /api/auth/mcp/oauth/authorization/:requestId`. */
 export const InspectMcpAuthorization = Command.define("InspectMcpAuthorization", {
 	args: { requestId: Schema.String },
 	messages: [Message.SucceededInspectMcpAuthorization, Message.FailedInspectMcpAuthorization],
@@ -85,7 +79,7 @@ export const InspectMcpAuthorization = Command.define("InspectMcpAuthorization",
 		),
 })
 
-/** `decideMcpAuthorization`: `POST .../approve|deny`, answered with where to send the user. */
+/** `POST .../approve|deny`, answered with where to send the user. */
 export const DecideMcpAuthorization = Command.define("DecideMcpAuthorization", {
 	args: { requestId: Schema.String, action: Action },
 	messages: [Message.SucceededDecideMcpAuthorization, Message.FailedDecideMcpAuthorization],
@@ -107,14 +101,12 @@ export const DecideMcpAuthorization = Command.define("DecideMcpAuthorization", {
 		),
 })
 
-/** `window.location.assign(result.redirectUri)`: back to the MCP client, off this origin. */
+/** Back to the MCP client, off this origin. */
 export const ReturnToClient = Command.define("ReturnToClient", {
 	args: { href: Schema.String },
 	messages: [Message.CompletedReturnToClient],
 	execute: ({ href }) => load(href).pipe(Effect.as(Message.CompletedReturnToClient())),
 })
-
-// UPDATE
 
 type UpdateReturn = Update.Return<Model, Message, Resources>
 

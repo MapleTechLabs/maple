@@ -20,7 +20,7 @@ import { canManage, type InvitationRow, type MemberRow, Message, type Model, Org
 
 type Return = PageReturn<Model, Message>
 
-/** Clerk's default page size for `useOrganization`'s infinite lists. */
+/** Clerk's default page size for its paginated lists. */
 const PAGE_SIZE = 10
 
 const settleClerk =
@@ -291,7 +291,7 @@ const liftRevoke = lift("revokeDialog", (message) => Message.GotRevokeDialogMess
 const stopPaging = <A extends { readonly isFetchingMore: boolean }, E>(data: AsyncData.AsyncData<A, E>) =>
 	AsyncData.map(data, (list) => ({ ...list, isFetchingMore: false }))
 
-/** `memberships.revalidate()`: the list reads again from its first page, dropping older answers. */
+/** The list reads again from its first page, dropping older answers. */
 const revalidateMembers = (model: Model): Return => {
 	const members = stopPaging(model.members)
 	const generation = model.membersGeneration + 1

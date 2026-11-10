@@ -311,6 +311,5 @@ export const findingGroups = <M>(h: HtmlBuilder<M>, options: FindingGroupsOption
 		}),
 	)
 
-/** Muted text for a trailing slot. */
 export const trailingText = <M>(h: HtmlBuilder<M>, text: string, className?: string): Html =>
 	h.span([h.Class(cn(typographyClass({ size: "xs", tone: "muted" }), className))], [text])

@@ -330,7 +330,7 @@ export const updatePage = (
 const toHeld = (step: Option.Option<PageStep<PageSlot, PageMessage>>): Option.Option<PageTransition> => step
 
 /**
- * `useBlocker`: a navigation to `route` that would drop the open instance, held by a page that
+ * A navigation to `route` that would drop the open instance, held by a page that
  * blocks it; `None` lets it through (no page, a page that allows it, or the same instance).
  */
 export const blockNavigation = (
@@ -418,7 +418,7 @@ export const viewPage = <ParentMessage>(
 			),
 	})
 
-/** The active page's top-bar actions (`DashboardPage topbarActions`), or nothing. */
+/** The active page's top-bar actions, or nothing. */
 export const viewPageTopbarActions = <ParentMessage>(
 	h: HtmlBuilder<ParentMessage>,
 	slot: PageSlotBase,

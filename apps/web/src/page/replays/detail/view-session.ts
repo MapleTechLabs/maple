@@ -52,7 +52,6 @@ const value = (h: H, text: string, options: Readonly<{ isMono?: boolean; classNa
 		[text],
 	)
 
-/** `CopyButton iconSize={12} className="ml-1 size-5 shrink-0" toast={false}`. */
 export const copy = (
 	h: H,
 	model: Pick<Model, "copies">,

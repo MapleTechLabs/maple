@@ -94,7 +94,7 @@ export const traceFilterChips = (search: Search): ReadonlyArray<TraceFilterChip>
 export const removeTraceFilterChips = (search: Search, chips: ReadonlyArray<TraceFilterChip>): Search =>
 	Arr.reduce(chips, search, (acc, chip) => chip.remove(acc))
 
-/** `TracesTable`'s `filtered`: any facet, attribute, where-clause or error/duration filter. */
+/** Any facet, attribute, where-clause or error/duration filter. */
 export const isFiltered = (search: Search): boolean =>
 	traceFilterChips(search).length > 0 ||
 	Str.trim(search.whereClause ?? "") !== "" ||
@@ -103,7 +103,7 @@ export const isFiltered = (search: Search): boolean =>
 	search.maxDurationMs !== undefined ||
 	search.minSpanCount !== undefined
 
-/** The sidebar's `hasActiveFilters`. */
+/** Any sidebar filter is set. */
 export const hasSidebarFilters = (search: Search): boolean =>
 	Arr.some(
 		FACETS,

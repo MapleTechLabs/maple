@@ -4,7 +4,6 @@ import { isSessionLive } from "@maple/ui/lib/replay-format"
 import { noiseTierOf, SESSION_TAG_LABELS } from "./session-tags"
 import { Schema, Array as Arr, String as Str } from "effect"
 
-/** A session list row, the list's view of `replayListItemFromV2`. */
 export const SessionRow = Schema.Struct({
 	sessionId: Schema.String,
 	startTime: Schema.String,
@@ -88,7 +87,7 @@ const runItems = (
 	]
 }
 
-/** `sessionListItems`: runs of two or more adjacent low-signal sessions fold into one row. */
+/** Runs of two or more adjacent low-signal sessions fold into one row. */
 export const sessionListItems = (
 	sessions: ReadonlyArray<SessionRow>,
 	options: { readonly collapse: boolean; readonly expanded: ReadonlyArray<string>; readonly nowMs: number },

@@ -17,8 +17,6 @@ import { emptyMessage } from "@maple/views/ui/empty"
 import { typography, typographyClass } from "@maple/views/ui/typography"
 import { Array as Arr, String as Str } from "effect"
 
-// `McpToolsList`.
-
 type H = HtmlBuilder<Message>
 
 const OPEN_GROUPS = 3

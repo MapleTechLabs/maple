@@ -5,7 +5,7 @@
 // carry duplicate/overwritten chunk-index rows whose blobs decode out of order,
 // so the concatenated stream may be scrambled or contain duplicates. rrweb's
 // `getMetaData().totalTime` (last − first timestamp) and the player's
-// idle-skip both assume a clean, chronologically-ordered stream — feed them
+// idle-skip both assume a clean, chronologically-ordered stream; feed them
 // a corrupted one and the reported length balloons to the whole tab lifetime.
 //
 // `normalizeEvents` repairs the stream so those legacy sessions stay playable.
@@ -13,7 +13,7 @@
 import { encodeJson } from "@maple/views/data/request-key"
 import { Array as Arr, Order } from "effect"
 
-/** True when `event` is an object carrying a numeric `timestamp` — narrows without a cast. */
+/** True when `event` is an object carrying a numeric `timestamp`; narrows without a cast. */
 const hasTimestamp = (event: unknown): event is { timestamp: number } =>
 	typeof event === "object" && event !== null && "timestamp" in event && typeof event.timestamp === "number"
 
@@ -22,7 +22,6 @@ const timestampOf = (event: unknown): number => (hasTimestamp(event) ? event.tim
 /** Order events by timestamp; ties keep input order (Arr.sort is a stable native sort). */
 const byTimestamp = Order.mapInput(Order.Number, timestampOf)
 
-/** The `type` field, when the event has a numeric one. */
 const typeOf = (event: unknown): number | undefined =>
 	typeof event === "object" && event !== null && "type" in event && typeof event.type === "number"
 		? event.type
@@ -35,7 +34,7 @@ const typeOf = (event: unknown): number | undefined =>
  * carries a whole base64-encoded MP4, so stringifying both sides of every
  * adjacent pair would serialize hundreds of KB per comparison, on every range
  * decode. Since duplicates must agree on timestamp and type anyway, checking
- * those first rejects nearly every pair for two field reads — and only genuine
+ * those first rejects nearly every pair for two field reads, and only genuine
  * candidates pay for the full comparison.
  */
 const isSameEvent = (a: unknown, b: unknown): boolean => {

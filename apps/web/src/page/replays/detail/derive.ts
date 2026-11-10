@@ -19,7 +19,7 @@ export const windowOf = (model: Model): ReplayPartitionWindow | undefined =>
 const TRACE_WINDOW_MARGIN_MS = 15 * 60 * 1000
 
 /**
- * The trace bars' window: the session's own span plus slack (`sessionTraceWindow` on the server).
+ * The trace bars' window: the session's own span plus slack.
  * Far tighter than the `t` hint's day, which the summaries query read and timed out on.
  */
 export const traceWindowOf = (model: Model, session: ReplayDetail): ReplayPartitionWindow | undefined => {
@@ -50,7 +50,6 @@ export const durationOf = (session: ReplayDetail): number | null => sessionDurat
 export const labelOf = (session: ReplayDetail): string =>
 	session.userName || session.userEmail || session.userId || "Anonymous session"
 
-/** The player's load status (`ReplayPlayerProvider`'s memo). */
 export const playerStatus = (
 	model: Model,
 	session: ReplayDetail,

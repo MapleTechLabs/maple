@@ -2,7 +2,7 @@ import type { Node3D } from "./types"
 import { machineBadge } from "../badge"
 import { MARK_PATHS } from "./mark-paths.generated"
 
-/** factory-badge.ts's `MachineBadge`: the plate's artwork, resolved to an SVG path or a wordmark. */
+/** The plate's artwork, resolved to an SVG path or a wordmark. */
 export type MachineBadge = {
 	readonly label: string
 } & (
@@ -10,7 +10,7 @@ export type MachineBadge = {
 	| { readonly wordmark: string; readonly path?: never }
 )
 
-/** `resolveMachineBadge` with the mark key resolved to its path. */
+/** `machineBadge` with the mark key resolved to its path. */
 export function resolveMachineBadge(node: Pick<Node3D, "kind" | "system" | "runtime">): MachineBadge | null {
 	const badge = machineBadge(node)
 	if (badge === null) return null

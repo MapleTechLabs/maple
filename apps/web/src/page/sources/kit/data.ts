@@ -10,14 +10,13 @@ import { readThrough } from "../../../data/read-cache"
 import { type RequestKey, requestKey } from "@maple/views/data/request-key"
 import { MapleApiV2Client } from "../../../platform/api-clients"
 
-// The sources list and the detail page's `retainedQueryV2("sources", "usage" | "retrieve")` reads, through
-// the read cache.
+// The sources list and the detail page's usage and retrieve reads, through the read cache.
 
 const PAGE_LIMIT = 100
 
 /**
- * The list atom has no idle TTL: it is dropped once no page reads it. A route swap between two
- * source pages keeps it mounted, so one second after a release covers the handover.
+ * The list is dropped once no page reads it; one second after a release covers a route swap
+ * between two source pages.
  */
 export const SOURCES_LIST_IDLE_TTL_MS = 1_000
 
@@ -26,7 +25,7 @@ export const SourceList = Schema.Array(V2Source)
 export const sourcesListKey = (orgId: string): RequestKey =>
 	requestKey(orgId, "sources.list", { query: { limit: PAGE_LIMIT } })
 
-/** Every page of the org's sources; `refresh` is `useAtomRefresh(sourcesListAtom)`. */
+/** Every page of the org's sources. */
 export const loadSources = (key: RequestKey, refresh: boolean) =>
 	readThrough(
 		{ key, idleTtlMs: SOURCES_LIST_IDLE_TTL_MS, schema: SourceList, refresh },
@@ -43,7 +42,6 @@ export const loadSources = (key: RequestKey, refresh: boolean) =>
 export const sourceUsageKey = (orgId: string, id: SourceId): RequestKey =>
 	requestKey(orgId, "sources.usage", { params: { id } })
 
-/** `retainedQueryV2("sources", "usage", { params: { id } })`. */
 export const loadSourceUsage = (key: RequestKey, id: SourceId) =>
 	readThrough(
 		{ key, idleTtlMs: IdleTtl.retainedQuery, schema: V2SourceUsage },
@@ -62,7 +60,7 @@ export const loadSourcesUsage = (key: RequestKey, refresh: boolean) =>
 export const sourceRetrieveKey = (orgId: string, id: SourceId): RequestKey =>
 	requestKey(orgId, "sources.retrieve", { params: { id } })
 
-/** `retainedQueryV2("sources", "retrieve", { params: { id } })`; `refresh` is the 5 s poll. */
+/** One source; `refresh` is the 5 s poll. */
 export const loadSource = (key: RequestKey, id: SourceId, refresh: boolean) =>
 	readThrough(
 		{ key, idleTtlMs: IdleTtl.retainedQuery, schema: V2Source, refresh },
@@ -75,7 +73,7 @@ type ListDone<M> = Schema.Top &
 		readonly result: Result.Result<typeof SourceList.Type, LoadFailure>
 	}) => M)
 
-/** `sourcesListAtom`, read through the cache and answered with the page's Message; a superseded key re-reads. */
+/** The sources list, read through the cache and answered with the page's Message; a superseded key re-reads. */
 export const fetchSourcesList = <M>(done: ListDone<M>) =>
 	Command.define("FetchSourcesList", {
 		args: { key: Schema.String, refresh: Schema.Boolean },

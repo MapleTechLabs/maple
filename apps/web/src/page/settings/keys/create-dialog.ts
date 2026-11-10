@@ -13,7 +13,7 @@ import * as Dialog from "@maple/views/ui/dialog"
 import * as Field from "@maple/views/ui/field"
 import * as Select from "@maple/views/ui/select"
 
-// `CreateApiKeyDialog`, as one Submodel shared by the Keys and MCP tabs.
+// The create-key dialog, one Submodel shared by the Keys and MCP tabs.
 
 export const EXPIRATION_OPTIONS = [
 	{ value: "never", label: "Never" },
@@ -135,8 +135,6 @@ export const TrackKeyCreated = Command.define("TrackApiKeyCreated", {
 		trackProduct("api_key_created", { kind, access }).pipe(Effect.as(Message.CompletedTrackKeyCreated())),
 })
 
-// DERIVED
-
 const levelOf = (model: Model, family: string): ScopeLevel => model.scopeLevels[family] ?? "none"
 
 export const selectedFamilyCount = (model: Model): number =>
@@ -164,16 +162,14 @@ export const blockedReason = (model: Model): string | null =>
 			? "Give at least one resource family read or write access."
 			: null
 
-// UPDATE
-
 const liftDialog = (model: Model, step: ReturnType<typeof Dialog.update>): Return => ({
 	model: { ...model, dialog: step.model },
 	commands: Command.mapMessages(step.commands ?? [], (message) => Message.GotDialogMessage({ message })),
 })
 
 /**
- * `handleClose(false)`: the form resets as the dialog closes, but a create in flight stays in
- * flight, so its secret lands in `created` and no second create starts.
+ * The form resets as the dialog closes, but a create in flight stays in flight, so its secret
+ * lands in `created` and no second create starts.
  */
 const reset = (model: Model): Model => ({
 	...init(model.dialog.id),
@@ -184,7 +180,7 @@ const reset = (model: Model): Model => ({
 
 const close = (model: Model): Return => liftDialog(reset(model), Dialog.close(model.dialog))
 
-/** Opens empty for `kind` (`openCreate`); a key created while it was closed is shown. */
+/** Opens empty for `kind`; a key created while it was closed is shown. */
 export const open = (model: Model, kind: ApiKeyKind): Return => {
 	const fresh = init(model.dialog.id)
 	const kept = { isCreating: model.isCreating, created: model.created }

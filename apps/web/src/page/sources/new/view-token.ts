@@ -14,7 +14,7 @@ import { showsUpRail } from "./view-push-rail"
 import { typography } from "@maple/views/ui/typography"
 import { vstack } from "@maple/views/ui/stack"
 
-// `TokenStep`: the Send data step. The one-time token, the setup snippet, then the first-data poll.
+// The Send data step. The one-time token, the setup snippet, then the first-data poll.
 
 type H = HtmlBuilder<Message>
 

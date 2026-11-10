@@ -42,7 +42,7 @@ export const ReplaysFacets = Schema.Struct({
 })
 export type ReplaysFacets = typeof ReplaysFacets.Type
 
-/** `useInfiniteReplays`' pages after the first, for the current first-page key. */
+/** The pages after the first, for the current first-page key. */
 export const Pagination = Schema.Struct({
 	key: Schema.NullOr(Schema.String),
 	/** `generation` is also bumped by a Reload. */
@@ -64,7 +64,7 @@ export const Model = Schema.Struct({
 	/** The virtualizer's window over the rows, as the list Mount reports it. */
 	virtualWindow: VirtualWindow,
 	presence: SignalPresenceData.schema,
-	/** `ToolbarSearch`: what is typed, and the debounce run that may still commit it. */
+	/** The toolbar search: what is typed, and the debounce run that may still commit it. */
 	query: Schema.String,
 	queryGeneration: Schema.Number,
 	/** The sidebar's identity inputs; each commits on Enter. */
@@ -72,7 +72,7 @@ export const Model = Schema.Struct({
 	userIdText: Schema.String,
 	durationDraft: Draft,
 	activeDraft: Draft,
-	/** The hovered histogram bar per range (`RangeHistogram`'s readout). */
+	/** The hovered histogram bar per range, for its readout. */
 	histogramHover: Schema.Record(Schema.String, Schema.Number),
 	draftVersion: Schema.Number,
 	filterSections: FilterSections.Model,
