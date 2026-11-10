@@ -10,9 +10,10 @@ import type { PermissionRuleset } from "@maple/domain/permission"
 import type { AgentDefinition } from "./agents"
 import { READ_ONLY_RULESET } from "./permissions"
 import { CONNECTOR_SYSTEM_PROMPT } from "./prompts"
+import type { LlmCallTags } from "../platform/Llm"
 
 /** The tool audience, and the label on the LLM tags, the billing source and the turn span. */
-export type ChatSurface = "chat" | "bot"
+export type ChatSurface = LlmCallTags["surface"]
 
 export interface TurnProfile {
 	readonly surface: ChatSurface

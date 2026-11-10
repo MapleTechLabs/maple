@@ -154,36 +154,6 @@ const GEN_AI_PROVIDER_NAMES = {
  */
 const BINDING_PLACEHOLDER = "workers-ai-binding"
 
-/** The deployment's LLM configuration, keyed by the variable each field is read from. */
-export interface LlmSettings {
-	readonly CLOUDFLARE_ACCOUNT_ID?: string | undefined
-	readonly CLOUDFLARE_API_KEY?: Redacted.Redacted | undefined
-	readonly MAPLE_LLM_PROVIDER?: string | undefined
-	/** The instance this Worker runs in. `eu` sends every OpenRouter call to its EU endpoint. */
-	readonly MAPLE_REGION?: string | undefined
-	readonly MAPLE_TRIAGE_MODEL_OPENROUTER?: string | undefined
-	readonly MAPLE_TRIAGE_MODEL_WORKERS_AI?: string | undefined
-	/** OpenRouter model id for pull request reviews and replies, overriding {@link DEFAULT_REVIEW_MODEL}. */
-	readonly MAPLE_REVIEW_MODEL_OPENROUTER?: string | undefined
-	/** OpenRouter model for security-audit discovery (reconnaissance, hunters, critics). */
-	readonly MAPLE_AUDIT_DISCOVERY_MODEL_OPENROUTER?: string | undefined
-	/** OpenRouter model for security-audit validation; a different model from discovery by design. */
-	readonly MAPLE_AUDIT_VALIDATION_MODEL_OPENROUTER?: string | undefined
-	/** Context window in tokens, overriding {@link MODEL_LIMITS} for the configured model. */
-	readonly MAPLE_TRIAGE_MODEL_CONTEXT?: string | undefined
-	/** Max completion tokens, overriding {@link MODEL_LIMITS} for the configured model. */
-	readonly MAPLE_TRIAGE_MODEL_OUTPUT?: string | undefined
-	/** `low` | `medium` | `high` | `off`. See {@link ReasoningEffort}. */
-	readonly MAPLE_TRIAGE_REASONING_EFFORT?: string | undefined
-	/** Seconds an unattended model call streams before it is cut and retried; see {@link MODEL_ATTEMPT_CAP}. */
-	readonly MAPLE_MODEL_ATTEMPT_CAP_SECONDS?: string | undefined
-	readonly OPENROUTER_API_KEY?: Redacted.Redacted | undefined
-	/** Decision model id, overriding {@link DEFAULT_DECISION_MODEL}. */
-	readonly MAPLE_DECISION_MODEL?: string | undefined
-	/** Embedding model id, overriding {@link DEFAULT_EMBEDDING_MODEL}. */
-	readonly MAPLE_EMBEDDING_MODEL?: string | undefined
-}
-
 /** A trimmed, non-blank value, or `undefined`; a malformed one falls back like an unset one. */
 const optionalTrimmed = (key: string): Config.Config<string | undefined> =>
 	Config.option(Config.String(key)).pipe(
@@ -201,25 +171,38 @@ const optionalTrimmed = (key: string): Config.Config<string | undefined> =>
 const optionalSecret = (key: string): Config.Config<Redacted.Redacted | undefined> =>
 	optionalTrimmed(key).pipe(Config.map((value) => (value === undefined ? undefined : Redacted.make(value))))
 
-/** {@link LlmSettings} from Effect `Config`, so the Worker env reaches it through the ConfigProvider. */
-export const llmSettingsConfig: Config.Config<LlmSettings> = Config.all({
+/** The deployment's LLM configuration from Effect `Config`, keyed by the variable each field reads. */
+export const llmSettingsConfig = Config.all({
 	CLOUDFLARE_ACCOUNT_ID: optionalTrimmed("CLOUDFLARE_ACCOUNT_ID"),
 	CLOUDFLARE_API_KEY: optionalSecret("CLOUDFLARE_API_KEY"),
 	MAPLE_LLM_PROVIDER: optionalTrimmed("MAPLE_LLM_PROVIDER"),
+	/** The instance this Worker runs in. `eu` sends every OpenRouter call to its EU endpoint. */
 	MAPLE_REGION: optionalTrimmed("MAPLE_REGION"),
 	MAPLE_TRIAGE_MODEL_OPENROUTER: optionalTrimmed("MAPLE_TRIAGE_MODEL_OPENROUTER"),
 	MAPLE_TRIAGE_MODEL_WORKERS_AI: optionalTrimmed("MAPLE_TRIAGE_MODEL_WORKERS_AI"),
+	/** OpenRouter model id for pull request reviews and replies, overriding {@link DEFAULT_REVIEW_MODEL}. */
 	MAPLE_REVIEW_MODEL_OPENROUTER: optionalTrimmed("MAPLE_REVIEW_MODEL_OPENROUTER"),
+	/** OpenRouter model for security-audit discovery (reconnaissance, hunters, critics). */
 	MAPLE_AUDIT_DISCOVERY_MODEL_OPENROUTER: optionalTrimmed("MAPLE_AUDIT_DISCOVERY_MODEL_OPENROUTER"),
+	/** OpenRouter model for security-audit validation; a different model from discovery by design. */
 	MAPLE_AUDIT_VALIDATION_MODEL_OPENROUTER: optionalTrimmed("MAPLE_AUDIT_VALIDATION_MODEL_OPENROUTER"),
+	/** Context window in tokens, overriding {@link MODEL_LIMITS} for the configured model. */
 	MAPLE_TRIAGE_MODEL_CONTEXT: optionalTrimmed("MAPLE_TRIAGE_MODEL_CONTEXT"),
+	/** Max completion tokens, overriding {@link MODEL_LIMITS} for the configured model. */
 	MAPLE_TRIAGE_MODEL_OUTPUT: optionalTrimmed("MAPLE_TRIAGE_MODEL_OUTPUT"),
+	/** `low` | `medium` | `high` | `off`. See {@link ReasoningEffort}. */
 	MAPLE_TRIAGE_REASONING_EFFORT: optionalTrimmed("MAPLE_TRIAGE_REASONING_EFFORT"),
+	/** Seconds an unattended model call streams before it is cut and retried; see {@link MODEL_ATTEMPT_CAP}. */
 	MAPLE_MODEL_ATTEMPT_CAP_SECONDS: optionalTrimmed("MAPLE_MODEL_ATTEMPT_CAP_SECONDS"),
 	OPENROUTER_API_KEY: optionalSecret("OPENROUTER_API_KEY"),
+	/** Decision model id, overriding {@link DEFAULT_DECISION_MODEL}. */
 	MAPLE_DECISION_MODEL: optionalTrimmed("MAPLE_DECISION_MODEL"),
+	/** Embedding model id, overriding {@link DEFAULT_EMBEDDING_MODEL}. */
 	MAPLE_EMBEDDING_MODEL: optionalTrimmed("MAPLE_EMBEDDING_MODEL"),
 })
+
+/** The deployment's LLM configuration; any key may be absent, and then its default applies. */
+export type LlmSettings = Partial<Config.Success<typeof llmSettingsConfig>>
 
 /** Every key falls back on its own, so loading never fails: an unreadable value means the default. */
 export const loadLlmSettings: Effect.Effect<LlmSettings> = Effect.orElseSucceed(llmSettingsConfig, () => ({}))
