@@ -10,6 +10,7 @@ import {
 	FINGERPRINT_HASH_SALT,
 	LIBRARY_FRAME_PATTERN,
 	PREVIOUS_FINGERPRINT_HASH_SALT,
+	resolveCustomFingerprint,
 	FRAME_LINE_PATTERN,
 	FRAME_REDACTIONS,
 	INTERNAL_FRAME_PATTERN,
@@ -61,6 +62,19 @@ describe("maple.fingerprint override", () => {
 			FINGERPRINT_HASH_SALT,
 		])
 		expect(nodeError("charge", "card declined").hashInputs).toEqual(blank.hashInputs)
+	})
+
+	it("reads the span's key when the event's is absent, empty or blank after trimming", () => {
+		expect(resolveCustomFingerprint(undefined, "span")).toBe("span")
+		expect(resolveCustomFingerprint("", "span")).toBe("span")
+		expect(resolveCustomFingerprint(" \t\n\r ", "span")).toBe("span")
+		expect(resolveCustomFingerprint(" \t ", undefined)).toBeUndefined()
+	})
+
+	it("reads a nonblank event key, padding kept for the trim, before the span's", () => {
+		expect(resolveCustomFingerprint("  event\n", "span")).toBe("  event\n")
+		const inputs = nodeError("charge", "x", resolveCustomFingerprint("  event\n", "span"))
+		expect(inputs.hashInputs).toEqual([CUSTOM_FINGERPRINT_ATTRIBUTE, "event"])
 	})
 
 	it("caps the key by code point", () => {
