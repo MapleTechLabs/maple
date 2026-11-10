@@ -25,7 +25,7 @@ import { TimeWindow } from "../../../data/time-range"
 import { writeClipboard } from "@maple/views/ui/copy-button"
 import { ARM_DELAY_MS, loadCommitDetail, readCommitDetails } from "../../kit/commit-card"
 import { loadSignalPresences } from "../../kit/signal-presence"
-import { loadAnomalyServiceCounts } from "../../../data/anomaly-service-counts"
+import { fetchAnomaliesCommand } from "../../kit/service-health"
 import { loadServicesFacets } from "../../../data/services-facets-probe"
 import { Message } from "./message"
 import { ServiceRow, Sparklines } from "./model"
@@ -135,14 +135,10 @@ export const FetchBaseline = Command.define("FetchServiceHealthBaseline", {
 })
 
 /** `openAnomalyServiceCountsAtom`. */
-export const FetchAnomalies = Command.define("FetchOpenAnomalyServiceCounts", {
-	args: { key: Schema.String },
-	messages: [Message.CompletedFetchAnomalies],
-	execute: ({ key }) =>
-		loadAnomalyServiceCounts(key).pipe(
-			settleTo((result) => Message.CompletedFetchAnomalies({ key, result })),
-		),
-})
+export const FetchAnomalies = fetchAnomaliesCommand(
+	"FetchOpenAnomalyServiceCounts",
+	Message.CompletedFetchAnomalies,
+)
 
 /** `commitsQueryAtom(shasKey)`: every deploy sha on screen in one request, first lines by sha. */
 export const FetchCommitMessages = Command.define("FetchCommitMessages", {

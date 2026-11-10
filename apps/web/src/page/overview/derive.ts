@@ -1,17 +1,15 @@
 import type { V2AnomalyServiceCount } from "@maple/domain/http/v2"
-import type { AnomalySignalType } from "@maple/domain/http"
 import {
-	alertIncidentCauseLabel,
-	anomalyDirection,
 	deriveServiceHealthFromCauses,
 	healthRank,
 	type ServiceHealth,
 	type ServiceHealthCause,
 } from "../../components/dashboard/service-health"
-import { DateTime, Option, Array as Arr, String as Str } from "effect"
+import { Option, Array as Arr, String as Str } from "effect"
 import { AsyncData } from "foldkit"
 import { isPresetValue, type PresetValue } from "../kit/time-controls"
-import type { FacetsHint, HealthSnapshot, Incident, Model } from "./model"
+import { type HealthIncident, serviceHealthCauses } from "../kit/service-health"
+import type { FacetsHint, HealthSnapshot, Model } from "./model"
 
 // Pure derivations of the home page (`defaultPreset`, `environmentFilter`) and its service health
 // section (`enrichServices`, `countByHealth`).
@@ -76,50 +74,6 @@ export const derivedHint = (model: Model): FacetsHint => ({
 	seen: true,
 })
 
-// The label and metric of each anomaly signal.
-const ANOMALY_LABEL = new Map<AnomalySignalType, string>([
-	["error_rate", "Error rate anomaly"],
-	["latency_p95", "Latency anomaly"],
-	["throughput", "Traffic outage"],
-	["error_spike", "Error frequency increase"],
-	["log_volume", "Log volume anomaly"],
-])
-const ANOMALY_METRIC = new Map<AnomalySignalType, ServiceHealthCause["metric"]>([
-	["error_rate", "error"],
-	["latency_p95", "latency"],
-	["throughput", "traffic"],
-	["log_volume", "error"],
-])
-
-/** An ISO-8601 instant in epoch ms; `NaN` when unparseable, like `Date.parse`. */
-const isoMs = (iso: string): number =>
-	Option.match(DateTime.make(iso), { onNone: () => Number.NaN, onSome: DateTime.toEpochMillis })
-
-// Whether an anomaly count row affects service health; every count row is open.
-const ANOMALY_STALE_AFTER_MS = 60 * 60 * 1000
-const affectsHealth = (row: V2AnomalyServiceCount, nowMs: number): boolean => {
-	const lastTriggeredMs = isoMs(row.last_triggered_at)
-	const isStale = !Number.isFinite(lastTriggeredMs) || nowMs - lastTriggeredMs > ANOMALY_STALE_AFTER_MS
-	return row.signal_type !== "error_spike" && !isStale
-}
-
-const serviceKey = (name: string, environment: string): string => `${name}\u0000${environment}`
-
-const groupCauses = <A>(
-	rows: ReadonlyArray<A>,
-	keyOf: (row: A) => string,
-	causeOf: (row: A) => ServiceHealthCause,
-): Map<string, Array<ServiceHealthCause>> => {
-	const byKey = new Map<string, Array<ServiceHealthCause>>()
-	for (const row of rows) {
-		const key = keyOf(row)
-		const list = byKey.get(key)
-		if (list) list.push(causeOf(row))
-		else byKey.set(key, [causeOf(row)])
-	}
-	return byKey
-}
-
 export interface EnrichedService {
 	readonly service: HealthSnapshot
 	readonly health: ServiceHealth
@@ -129,31 +83,13 @@ export interface EnrichedService {
 /** `enrichServices`: alert and anomaly causes per row, worst health first, then error rate. */
 export const enrichServices = (
 	services: ReadonlyArray<HealthSnapshot>,
-	incidents: ReadonlyArray<Incident>,
+	incidents: ReadonlyArray<HealthIncident>,
 	anomalies: ReadonlyArray<V2AnomalyServiceCount>,
 	nowMs: number,
 ): Array<EnrichedService> => {
-	// Indexed once so each row is a lookup, not a scan of every incident and anomaly (with a date parse).
-	const alertCausesByService = groupCauses(
-		Arr.filter(incidents, (incident) => incident.status === "open" && incident.groupKey !== null),
-		(incident) => incident.groupKey ?? "",
-		(incident) => ({ severity: incident.severity, label: alertIncidentCauseLabel(incident.signalType) }),
-	)
-	const anomalyCausesByService = groupCauses(
-		Arr.filter(anomalies, (row) => affectsHealth(row, nowMs)),
-		(row) => serviceKey(row.service_name, row.deployment_env || "unknown"),
-		(row) => ({
-			severity: row.severity,
-			label: ANOMALY_LABEL.get(row.signal_type) ?? "",
-			metric: ANOMALY_METRIC.get(row.signal_type),
-			direction: anomalyDirection(row.signal_type),
-		}),
-	)
+	const causesOf = serviceHealthCauses(incidents, anomalies, nowMs, { dropEmptyGroupKey: false })
 	return Arr.map(services, (service) => {
-		const alertCauses = alertCausesByService.get(service.serviceName) ?? []
-		const anomalyCauses =
-			anomalyCausesByService.get(serviceKey(service.serviceName, service.environment)) ?? []
-		const causes = [...alertCauses, ...anomalyCauses].sort((a, b) =>
+		const causes = [...causesOf(service.serviceName, service.environment)].sort((a, b) =>
 			a.severity === b.severity ? 0 : a.severity === "critical" ? -1 : 1,
 		)
 		return { service, causes, health: deriveServiceHealthFromCauses(causes) }

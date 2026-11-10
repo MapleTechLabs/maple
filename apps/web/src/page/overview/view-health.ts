@@ -26,7 +26,7 @@ import {
 	type ServiceHealth,
 	type ServiceHealthCause,
 } from "./derive"
-import type { HealthSnapshot, Incident, Model } from "./model"
+import type { HealthSnapshot, Model } from "./model"
 import { alertFiringHero, heroCountsOf } from "./view-hero"
 import { statRail, statRailItem, statRailLoading } from "../kit/stat-rail"
 import { hstack, vstack } from "@maple/views/ui/stack"
@@ -34,6 +34,7 @@ import { Array as Arr, Option } from "effect"
 import { typography, typographyClass } from "@maple/views/ui/typography"
 import { textLink } from "@maple/views/ui/text-link"
 import { dividedList } from "@maple/views/ui/rule"
+import type { HealthIncident } from "../kit/service-health"
 
 // The service health overview: the alerts banner and
 // the health summary rail above the usage cards.
@@ -41,7 +42,7 @@ import { dividedList } from "@maple/views/ui/rule"
 export type HealthData = readonly [
 	ReadonlyArray<HealthSnapshot>,
 	ReadonlyArray<V2AnomalyServiceCount>,
-	ReadonlyArray<Incident>,
+	ReadonlyArray<HealthIncident>,
 ]
 
 /** `Result.all([snapshot, anomalies, alertIncidents])`. */

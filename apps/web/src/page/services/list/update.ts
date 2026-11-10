@@ -30,7 +30,8 @@ import {
 } from "./command"
 import { commitsKey, displayedServices, healthSummary, isServiceHealth, type Search } from "./derive"
 import { type Facet, Message } from "./message"
-import { IncidentsData, type Model } from "./model"
+import type { Model } from "./model"
+import { anomaliesKey, failedIncidents, IncidentsData, receivedIncidents } from "../../kit/service-health"
 import {
 	clickedCopySha,
 	commitCardMessage,
@@ -136,10 +137,10 @@ const requestAll = (model: Model, context: PageContext, window: TimeWindow, mode
 		),
 		keyed(
 			model.anomalies,
-			requestKey(org, "anomalies.serviceCounts", { status: "open" }),
+			anomaliesKey(org),
 			"Load",
 			(anomalies) => ({ anomalies }),
-			(key) => FetchAnomalies({ key }),
+			(key) => FetchAnomalies({ key, refresh: false }),
 		),
 	])
 }
@@ -305,8 +306,11 @@ export const init = (route: { readonly search: Search }, context: PageContext): 
 /** Back after leaving: the last rows stay on screen while the window re-resolves like entry (snapped). */
 export const revive = (model: Model, route: { readonly search: Search }, context: PageContext): Return => {
 	// The open-anomalies key never changes, so the window re-resolve alone would keep the parked counts.
-	const anomaliesKey = requestKey(context.orgId, "anomalies.serviceCounts", { status: "open" })
-	const anomalies = Keyed.request(Keyed.forgetFailure(model.anomalies), anomaliesKey, "Refresh")
+	const anomalies = Keyed.request(
+		Keyed.forgetFailure(model.anomalies),
+		anomaliesKey(context.orgId),
+		"Refresh",
+	)
 	const next = {
 		...model,
 		...initOverlays(),
@@ -329,7 +333,9 @@ export const revive = (model: Model, route: { readonly search: Search }, context
 		commands: [
 			LoadSignalPresence({ orgId: context.orgId }),
 			resolveCommand(next, context, "Load"),
-			...(Option.isSome(anomalies) ? [FetchAnomalies({ key: anomaliesKey })] : []),
+			...(Option.isSome(anomalies)
+				? [FetchAnomalies({ key: anomaliesKey(context.orgId), refresh: false })]
+				: []),
 			...(model.chartRuntime._tag === "Failed" ? [loadChartRuntime()] : []),
 		],
 	}
@@ -421,18 +427,18 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		CompletedLoadSignalPresence: ({ result }) => ({
 			model: { ...model, presence: AsyncData.settle(model.presence, result) },
 		}),
-		UpdatedIncidents: ({ orgId, incidents }) =>
-			orgId === context.orgId
-				? followData(context)({
-						model: { ...model, incidents: IncidentsData.Success({ data: incidents }) },
-					})
-				: { model },
-		FailedLoadIncidents: ({ orgId }) =>
-			orgId === context.orgId && AsyncData.isLoading(model.incidents)
-				? followData(context)({
-						model: { ...model, incidents: IncidentsData.Failure({ error: "Unavailable" }) },
-					})
-				: { model },
+		UpdatedIncidents: ({ orgId, incidents }) => {
+			const next = receivedIncidents(orgId, context.orgId, incidents)
+			return next === undefined
+				? { model }
+				: followData(context)({ model: { ...model, incidents: next } })
+		},
+		FailedLoadIncidents: ({ orgId }) => {
+			const next = failedIncidents(model.incidents, orgId, context.orgId)
+			return next === undefined
+				? { model }
+				: followData(context)({ model: { ...model, incidents: next } })
+		},
 		...chartEnvHandlers(model),
 		ClickedReload: () => {
 			const reloaded = { ...model, refreshVersion: model.refreshVersion + 1, isReloading: true }

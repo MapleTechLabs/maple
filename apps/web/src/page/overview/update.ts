@@ -45,7 +45,8 @@ import {
 	timePresetOf,
 } from "./derive"
 import { Message, type RetryTarget } from "./message"
-import { IncidentsData, type Model, RulesData } from "./model"
+import { type Model, RulesData } from "./model"
+import { anomaliesKey, failedIncidents, IncidentsData, receivedIncidents } from "../kit/service-health"
 import { isClerkAuthEnabled } from "../../lib/services/common/auth-mode"
 import { storageKeyOf } from "../onboarding/quick-start-state"
 import type * as SetupChecklist from "./setup-checklist"
@@ -147,7 +148,7 @@ const alwaysSteps = (
 		(model) =>
 			keyed(
 				model.anomalies,
-				requestKey(context.orgId, "anomalies.serviceCounts", { status: "open" }),
+				anomaliesKey(context.orgId),
 				mode,
 				(anomalies) => ({ anomalies }),
 				(key) => FetchAnomalies({ key, refresh: mode === "Refresh" }),
@@ -358,8 +359,11 @@ export const init = initWith(isClerkAuthEnabled)
 /** Back after leaving: the last data stays on screen while entry re-reads the clock (snapped, so cached reads serve). */
 export const revive = (model: Model, route: { readonly search: Search }, context: PageContext): Return => {
 	// The open-anomalies key never changes, so entry alone would keep the parked counts.
-	const anomaliesKey = requestKey(context.orgId, "anomalies.serviceCounts", { status: "open" })
-	const anomalies = Keyed.request(Keyed.forgetFailure(model.anomalies), anomaliesKey, "Refresh")
+	const anomalies = Keyed.request(
+		Keyed.forgetFailure(model.anomalies),
+		anomaliesKey(context.orgId),
+		"Refresh",
+	)
 	// A runtime that failed before parking is asked for again, as entry does.
 	const isRuntimeFailed = model.chartRuntime._tag === "Failed"
 	const revived: Return = {
@@ -381,7 +385,9 @@ export const revive = (model: Model, route: { readonly search: Search }, context
 		commands: [
 			ReadEntry({ orgId: context.orgId }),
 			LoadSignalPresence({ orgId: context.orgId }),
-			...(Option.isSome(anomalies) ? [FetchAnomalies({ key: anomaliesKey, refresh: false })] : []),
+			...(Option.isSome(anomalies)
+				? [FetchAnomalies({ key: anomaliesKey(context.orgId), refresh: false })]
+				: []),
 			...(isRuntimeFailed ? [loadChartRuntime()] : []),
 		],
 	}
@@ -527,14 +533,14 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			model: { ...model, refinement: Keyed.accept(model.refinement, key, result) },
 		}),
 		CompletedSaveFacetsHint: () => ({ model }),
-		UpdatedIncidents: ({ orgId, incidents }) =>
-			orgId === context.orgId
-				? { model: { ...model, incidents: IncidentsData.Success({ data: incidents }) } }
-				: { model },
-		FailedLoadIncidents: ({ orgId }) =>
-			orgId === context.orgId && AsyncData.isLoading(model.incidents)
-				? { model: { ...model, incidents: IncidentsData.Failure({ error: "Unavailable" }) } }
-				: { model },
+		UpdatedIncidents: ({ orgId, incidents }) => {
+			const next = receivedIncidents(orgId, context.orgId, incidents)
+			return { model: next === undefined ? model : { ...model, incidents: next } }
+		},
+		FailedLoadIncidents: ({ orgId }) => {
+			const next = failedIncidents(model.incidents, orgId, context.orgId)
+			return { model: next === undefined ? model : { ...model, incidents: next } }
+		},
 		FailedLoadRules: ({ orgId }) =>
 			orgId === context.orgId && AsyncData.isLoading(model.rules)
 				? { model: { ...model, rules: RulesData.Failure({ error: "Unavailable" }) } }

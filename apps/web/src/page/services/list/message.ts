@@ -1,6 +1,5 @@
 import { ChartEnvMessages } from "@maple/views/charts/chart-env"
 import { RequestMode } from "@maple/views/data/keyed"
-import { V2AnomalyServiceCount } from "@maple/domain/http/v2"
 import { Schema } from "effect"
 import { defineMessageUnion } from "foldkit/message"
 import * as Chart from "@maple/views/charts/chart"
@@ -12,7 +11,8 @@ import * as Tooltip from "@maple/views/ui/tooltip"
 import { CommitDetail, CommitFailure } from "../../kit/commit-card"
 import { SignalPresences } from "@maple/views/data/signal-presence"
 import * as TimeRangePicker from "../../kit/time-range-picker"
-import { IncidentCause, LatencyBaseline, ServiceRow, ServicesFacets, Sparklines } from "./model"
+import { HealthMessages } from "../../kit/service-health"
+import { LatencyBaseline, ServiceRow, ServicesFacets, Sparklines } from "./model"
 
 /** The URL's facet filters, by their include param. */
 export const Facet = Schema.Literals(["environments", "namespaces", "commitShas"])
@@ -44,12 +44,10 @@ export const Message = defineMessageUnion({
 	CompletedFetchSparklines: result(Sparklines),
 	CompletedFetchFacets: result(ServicesFacets),
 	CompletedFetchBaseline: result(Schema.Array(LatencyBaseline)),
-	CompletedFetchAnomalies: result(Schema.Array(V2AnomalyServiceCount)),
 	CompletedFetchCommitMessages: result(Schema.Record(Schema.String, Schema.String)),
 	PaintedTable: {},
 	CompletedLoadSignalPresence: { result: Schema.Result(SignalPresences, LoadFailure) },
-	UpdatedIncidents: { orgId: Schema.String, incidents: Schema.Array(IncidentCause) },
-	FailedLoadIncidents: { orgId: Schema.String },
+	...HealthMessages,
 	...ChartEnvMessages,
 	ClickedReload: {},
 	CompletedReloadSpin: { version: Schema.Number },
