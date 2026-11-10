@@ -26,11 +26,8 @@ import {
 import {
 	AlertComparator as AlertComparatorSchema,
 	type AlertEvaluationErrorKind,
-	AlertDeliveryAuthError,
 	AlertDeliveryError,
 	type AlertDeliveryFailure,
-	AlertDeliveryRejectedError,
-	AlertDeliveryTargetMissingError,
 	AlertDestinationDecryptionError,
 	AlertDestinationDocument,
 	AlertDestinationStoredConfigInvalidError,
@@ -185,7 +182,11 @@ import { LinearIssueTracker } from "./LinearIssueTracker"
 import { MobilePushService, type ResolvedAfterHold } from "@maple/backend/services/push/MobilePushService"
 import { AlertRuntime } from "./AlertRuntime"
 import { firstMatchingSilence, selectActiveSilences, type MatchedSilence } from "./alert-silence-store"
-import { makeAlertDestinationDelivery, parseAlertDestinationEncryptionKey } from "./AlertDestinationDelivery"
+import {
+	isAlertDeliveryFailure,
+	makeAlertDestinationDelivery,
+	parseAlertDestinationEncryptionKey,
+} from "./AlertDestinationDelivery"
 import { AlertReadModelsService } from "./AlertReadModelsService"
 import { makeAlertRulePersistence } from "./AlertRulesService"
 import { UptimeAlertSource } from "@maple/backend/services/uptime/UptimeAlertSource"
@@ -507,13 +508,6 @@ const orderAlertRulesByLastClaim = <T extends { readonly id: string }>(
 		rows,
 		Order.mapInput(Order.Number, (row: T) => lastClaimedAt.get(row.id) ?? 0),
 	)
-
-/** The destination's provider refused the delivery, as opposed to Maple failing to send it. */
-const isProviderDeliveryFailure = (error: unknown): error is AlertDeliveryFailure =>
-	Schema.is(AlertDeliveryError)(error) ||
-	Schema.is(AlertDeliveryAuthError)(error) ||
-	Schema.is(AlertDeliveryTargetMissingError)(error) ||
-	Schema.is(AlertDeliveryRejectedError)(error)
 
 // Deliveries claimed per batch. The drain takes batches until the queue is
 // empty or DELIVERY_DRAIN_BUDGET_MS has passed; the rest wait for the next tick.
@@ -2927,7 +2921,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 					return recordFailedAttempt(
 						row,
 						failure,
-						countable && !failure.retryable && isProviderDeliveryFailure(error),
+						countable && !failure.retryable && isAlertDeliveryFailure(error),
 					)
 				}
 
