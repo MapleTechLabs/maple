@@ -26,8 +26,9 @@ import { typography } from "@maple/views/ui/typography"
 import { identityLabel } from "@maple/views/ui/identity-label"
 import { hstack } from "@maple/views/ui/stack"
 import { statusDot } from "@maple/views/ui/status-dot"
+import { tooltipTrigger } from "@maple/views/ui/tooltip-host"
 import { oncallTabHref } from "../page/alerts/shared/oncall-schedules"
-import { isPillShown, type OnCallStatus, onCallSentence, onCallStatusOf, scheduleLabel } from "./oncall"
+import { isPillShown, onCallDetail, onCallLabel, type OnCallStatus, onCallStatusOf } from "./oncall"
 
 export const GROUP_LABEL = "h-6 text-muted-foreground"
 
@@ -255,8 +256,9 @@ export const shellOnCallStatus = (model: Model): OnCallStatus =>
 	})
 
 /**
- * "You're on call until …" with the schedule, or "You're not on call" with a way to the schedules;
- * a dot with the sentence as its tooltip on the collapsed rail.
+ * One 32px footer row: a status dot and "On call until Mon 09:00" (or a muted "Not on call"),
+ * linking to the schedules. The zone, the date and the schedule names are its tooltip and
+ * accessible name. On the collapsed rail it is a calendar glyph, badged with the dot.
  */
 const onCallPill = (
 	h: HtmlBuilder<Message>,
@@ -264,72 +266,48 @@ const onCallPill = (
 	status: OnCallStatus,
 	tip: RailTip,
 	isRail: boolean,
-): ReadonlyArray<Html> =>
-	!isPillShown(status)
-		? []
-		: [
-				sidebarMenu(h, undefined, [
-					sidebarMenuItem(h, undefined, [
-						sidebarMenuButton(
-							h,
-							{
-								size: "lg",
-								className:
-									"h-auto gap-2.5 border border-sidebar-border py-1.5 group-data-[collapsible=icon]:border-transparent",
-								link: { href: oncallTabHref(), currentPath },
-								hasTooltip: true,
-								// The rail hides the lines, so the link names itself there.
-								attributes: [
-									...tip(onCallSentence(status)),
-									...(isRail ? [h.AriaLabel(onCallSentence(status))] : []),
-								],
-							},
-							[
-								hstack(
-									h,
-									{ align: "center", justify: "center", className: "size-4 shrink-0" },
-									[
-										statusDot(h, {
-											tone: status._tag === "OnCall" ? "ok" : "neutral",
-											size: "lg",
-										}),
-									],
-								),
-								// Three short lines: the full sentence does not fit the rail's width.
-								identityLabel(
-									h,
-									status._tag === "OnCall"
-										? [
-												typography(
-													h,
-													{ size: "xs", weight: "medium", truncate: true },
-													["You're on call"],
-												),
-												typography(h, { size: "xs", truncate: true }, [
-													`until ${status.until}`,
-												]),
-												typography(h, { size: "xs", tone: "muted", truncate: true }, [
-													scheduleLabel(status),
-												]),
-											]
-										: [
-												typography(
-													h,
-													{ size: "xs", weight: "medium", truncate: true },
-													["You're not on call"],
-												),
-												typography(h, { size: "xs", tone: "muted", truncate: true }, [
-													"My schedules",
-												]),
-											],
-									// The rail shows the dot; the tooltip says the sentence.
-									"group-data-[collapsible=icon]:hidden",
-								),
-							],
-						),
-					]),
-				]),
-			]
+): ReadonlyArray<Html> => {
+	if (!isPillShown(status)) return []
+	const label = onCallLabel(status)
+	const detail = onCallDetail(status)
+	const isOnCall = status._tag === "OnCall"
+	const dot = (className?: string) =>
+		statusDot(h, { tone: isOnCall ? "ok" : "neutral", size: "lg", className })
+	const glyphBox = (className: string, children: ReadonlyArray<Html>) =>
+		hstack(h, { align: "center", justify: "center", className }, children)
+	return [
+		sidebarMenuItem(h, undefined, [
+			sidebarMenuButton(
+				h,
+				{
+					className: isOnCall ? undefined : "text-muted-foreground",
+					link: { href: oncallTabHref(), currentPath },
+					hasTooltip: true,
+					attributes: [
+						// The rail's tooltip names the glyph; the open sidebar's adds what the row leaves out.
+						...(isRail
+							? tip(detail)
+							: detail === label
+								? []
+								: tooltipTrigger(h, detail, { side: "right" })),
+						...(isRail || detail !== label ? [h.AriaLabel(detail)] : []),
+					],
+				},
+				isRail
+					? [
+							glyphBox("relative size-4 shrink-0", [
+								icon(h, "CalendarIcon", { className: "size-4" }),
+								// On call only: a grey badge on a grey glyph says nothing.
+								...(isOnCall
+									? [dot("absolute -top-0.5 -right-0.5 ring-2 ring-sidebar")]
+									: []),
+							]),
+						]
+					: [glyphBox("size-4 shrink-0", [dot()]), h.span([], [label])],
+			),
+		]),
+	]
+}
 
 /** The user avatar: the Clerk image over the initials on a warm tile keyed by the name. */
 export const userAvatar = (
@@ -425,8 +403,15 @@ export const shellSidebarFooter = (
 			],
 			[],
 		),
-		...onCallPill(h, currentPath, shellOnCallStatus(model), tip, !model.isSidebarOpen && !model.isMobile),
 		sidebarMenu(h, undefined, [
+			// A row of the footer's list, so it keeps the list's 4px rhythm.
+			...onCallPill(
+				h,
+				currentPath,
+				shellOnCallStatus(model),
+				tip,
+				!model.isSidebarOpen && !model.isMobile,
+			),
 			footerNavRow(h, currentPath, { href: "/sources", title: "Sources", icon: "ConnectionIcon" }, tip),
 			// `/integrations` renders inside the settings rail, so Settings owns it.
 			footerNavRow(

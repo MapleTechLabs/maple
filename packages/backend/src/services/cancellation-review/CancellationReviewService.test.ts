@@ -1,5 +1,12 @@
 import { afterEach, assert, describe, it } from "@effect/vitest"
 import {
+	type ChatBlock,
+	chatConnectorId,
+	ChatOutboundError,
+	type ChatTarget,
+	socketIngress,
+} from "@maple/chat-platform"
+import {
 	CancellationModelRead,
 	type CancellationModelRequest,
 	DailySpendResponse,
@@ -7,8 +14,18 @@ import {
 	OrgId,
 } from "@maple/domain/http"
 import { compiledQueryOf } from "@maple/query-engine/execution"
-import { ConfigProvider, DateTime, Effect, Layer, Schema, Array as Arr, String as Str } from "effect"
+import {
+	ConfigProvider,
+	DateTime,
+	Duration,
+	Effect,
+	Layer,
+	Schema,
+	Array as Arr,
+	String as Str,
+} from "effect"
 import * as SecureRandom from "effect/crypto/SecureRandom"
+import { FetchHttpClient } from "effect/http"
 import { TestClock } from "effect/testing"
 import { Env } from "@maple/backend/platform/Env"
 import {
@@ -30,6 +47,10 @@ import {
 import { OrganizationService } from "@maple/backend/services/org/OrganizationService"
 import { OrgIngestKeysService } from "@maple/backend/services/org/OrgIngestKeysService"
 import { OrgMembersService } from "@maple/backend/services/org/OrgMembersService"
+import {
+	ChatConnectorRegistry,
+	type RegisteredChatConnector,
+} from "@maple/backend/services/integrations/chat-outbound"
 import { IntegrationInventoryService } from "@maple/backend/services/integrations/IntegrationInventoryService"
 import { SupportChannelUnavailableError } from "@maple/domain/support-channel"
 import {
@@ -68,6 +89,11 @@ const job: CancellationToReview = {
 
 interface World {
 	channel: string | null
+	/** The Hazel channel the deployment names; Maple's org (`OWN_ORG`) is set beside it. */
+	hazelChannel: string | null
+	/** `refused`: Hazel answered no. `unreachable`: it did not answer. */
+	hazel: "ok" | "refused" | "unreachable"
+	hazelPosts: Array<{ target: ChatTarget; blocks: ReadonlyArray<ChatBlock> }>
 	/** What the region lookup answers. */
 	home: HomeAnswer
 	/** Autumn's HTTP status, and the subscriptions it reports the org holding now. */
@@ -98,6 +124,9 @@ interface World {
 
 const freshWorld = (): World => ({
 	channel: "C_CANCELLATIONS",
+	hazelChannel: null,
+	hazel: "ok",
+	hazelPosts: [],
 	home: "here",
 	autumnStatus: 200,
 	subscriptions: [{ planId: "startup", status: "active" }],
@@ -370,6 +399,86 @@ const evidenceStubs = (world: World) => [
 	Layer.succeed(CancellationTelemetryEvidenceReader, evidenceReader(world, "telemetry")),
 ]
 
+const HAZEL = chatConnectorId("hazel")
+const HAZEL_TOKEN_CONFIG = "MAPLE_HAZEL_BOT_TOKEN"
+
+const unreachable = () => Effect.die("the report reached another connector method")
+
+/** Hazel's connector with its outbound half faked: what it is asked to post, and how it answers. */
+const fakeHazel = (world: World): RegisteredChatConnector => ({
+	id: HAZEL,
+	manifest: {
+		id: HAZEL,
+		name: "Hazel",
+		description: "Hazel, faked for this test.",
+		icon: { viewBox: "0 0 24 24", paths: [] },
+		accent: "#000000",
+		settingsFields: [],
+	},
+	install: {
+		requiredConfig: [],
+		authorizeUrl: unreachable,
+		complete: unreachable,
+		decodeSettings: unreachable,
+	},
+	outbound: {
+		connectorId: HAZEL,
+		limits: { maxMessageChars: 3600, minEditInterval: Duration.millis(500) },
+		requiredConfig: [{ name: HAZEL_TOKEN_CONFIG, secret: true }],
+		transport: Effect.succeed({
+			post: (target, blocks) =>
+				Effect.suspend(() => {
+					if (world.hazel === "ok") {
+						world.hazelPosts.push({ target, blocks })
+						return Effect.succeed({ target, messageId: `message-${world.hazelPosts.length}` })
+					}
+					return Effect.fail(
+						new ChatOutboundError({
+							message:
+								world.hazel === "refused"
+									? "Hazel refused: channel not found"
+									: "Hazel is down",
+							connectorId: HAZEL,
+							operation: "post",
+							...(world.hazel === "refused"
+								? { reason: "not_found" as const }
+								: { status: 503 }),
+						}),
+					)
+				}),
+			edit: unreachable,
+			whisper: unreachable,
+			typing: unreachable,
+			openThread: unreachable,
+			directMessage: unreachable,
+			conversation: unreachable,
+			history: unreachable,
+			destinations: unreachable,
+		}),
+	},
+	ingress: socketIngress({
+		requiredConfig: [],
+		stateSchema: Schema.String,
+		initialState: "",
+		connectUrl: () => "wss://hazel.test/gateway",
+		onOpen: (state) => ({ state }),
+		onFrame: (state) => ({ state }),
+		onClose: (state) => ({ state }),
+		heartbeat: (state) => ({ state }),
+	}),
+})
+
+/** Maple's own org links its Hazel workspace, as a completed install leaves it. */
+const linkHazel = (testDb: TestDb, orgId: string = OWN_ORG) =>
+	Effect.promise(() =>
+		executeSql(
+			testDb,
+			`INSERT INTO chat_workspaces (id, org_id, connector, external_workspace_id, name, settings, created_at)
+			 VALUES ('33333333-3333-4333-8333-333333333333', $1, $2, 'hazel-maple', 'Maple', '{}'::jsonb, now())`,
+			[orgId, HAZEL],
+		),
+	)
+
 const makeLayer = (world: World, testDb: TestDb) =>
 	Layer.effect(CancellationReviewService, CancellationReviewService.make).pipe(
 		Layer.provide(
@@ -379,6 +488,8 @@ const makeLayer = (world: World, testDb: TestDb) =>
 				IntegrationInventoryService.layer.pipe(Layer.provide(testDb.layer)),
 				testDb.layer,
 				SecureRandom.layerWebCrypto,
+				FetchHttpClient.layer,
+				Layer.succeed(ChatConnectorRegistry, [fakeHazel(world)]),
 			),
 		),
 		Layer.provide(Env.layer),
@@ -397,10 +508,26 @@ const BASE_CONFIG = {
 	MAPLE_INGEST_KEY: "maple_sk_test",
 }
 
-const config = (world: World) =>
-	world.channel === null
-		? BASE_CONFIG
-		: { ...BASE_CONFIG, MAPLE_CANCELLATION_SLACK_CHANNEL_ID: world.channel }
+const config = (world: World) => ({
+	...BASE_CONFIG,
+	...(world.channel === null ? undefined : { MAPLE_CANCELLATION_SLACK_CHANNEL_ID: world.channel }),
+	...(world.hazelChannel === null
+		? undefined
+		: {
+				MAPLE_CANCELLATION_HAZEL_CHANNEL_ID: world.hazelChannel,
+				MAPLE_INTERNAL_ORG_ID: OWN_ORG,
+				[HAZEL_TOKEN_CONFIG]: "hazel-bot-token",
+			}),
+})
+
+/** Everything the report's Hazel messages say, one message after another. */
+const hazelText = (world: World) =>
+	Arr.join(
+		Arr.flatMap(world.hazelPosts, (post) =>
+			Arr.map(post.blocks, (block) => (block.kind === "prose" ? block.markdown : "")),
+		),
+		"\n",
+	)
 
 const review = (
 	world: World,
@@ -880,6 +1007,140 @@ describe("CancellationReviewService", () => {
 			const testDb = createTestDb(trackedDbs)
 			assert.strictEqual(yield* review(world, testDb), "not_configured")
 			assert.isUndefined(yield* storedReview(testDb))
+		}),
+	)
+
+	it.effect("posts the same report to Maple's Hazel workspace beside Slack", () =>
+		Effect.gen(function* () {
+			const world = freshWorld()
+			world.hazelChannel = "hazel-cancellations"
+			const testDb = createTestDb(trackedDbs)
+			yield* seed(testDb)
+			yield* linkHazel(testDb)
+
+			assert.strictEqual(yield* review(world, testDb), "posted")
+			assert.strictEqual(
+				world.posts[0]?.text,
+				"Acme Inc. cancelled the startup plan (Stopped sending telemetry)",
+			)
+			assert.deepStrictEqual(
+				Arr.map(world.hazelPosts, (post) => post.target),
+				[{ workspaceId: "hazel-maple", channelId: "hazel-cancellations" }],
+			)
+			const text = hazelText(world)
+			assert.include(text, "**Acme Inc. cancelled the startup plan**")
+			assert.include(text, "**Likely reason:** Stopped sending telemetry")
+			assert.include(text, "42 GB · last data 24 days ago")
+			assert.include(text, "founder@acme.test")
+			assert.include(text, "[Stripe](https://dashboard.stripe.com/customers/cus_acme)")
+			assert.include(text, "**Acme New**  `org_acme_new`")
+			assert.isNotNull((yield* storedReview(testDb))?.posted_at)
+		}),
+	)
+
+	it.effect("reports to Hazel alone on a deployment with no Slack channel", () =>
+		Effect.gen(function* () {
+			const world = freshWorld()
+			world.channel = null
+			world.hazelChannel = "hazel-cancellations"
+			const testDb = createTestDb(trackedDbs)
+			yield* linkHazel(testDb)
+
+			assert.strictEqual(yield* review(world, testDb), "posted")
+			assert.strictEqual(world.posts.length, 0)
+			assert.strictEqual(world.hazelPosts.length, 1)
+			assert.isNotNull((yield* storedReview(testDb))?.posted_at)
+			assert.strictEqual(yield* review(world, testDb), "duplicate")
+			assert.strictEqual(world.hazelPosts.length, 1)
+		}),
+	)
+
+	it.effect(
+		"records the review when Hazel fails after Slack took it, so a retry never posts Slack twice",
+		() =>
+			Effect.gen(function* () {
+				const world = freshWorld()
+				world.hazelChannel = "hazel-cancellations"
+				world.hazel = "unreachable"
+				const testDb = createTestDb(trackedDbs)
+				yield* linkHazel(testDb)
+
+				assert.strictEqual(yield* review(world, testDb), "posted")
+				assert.isNotNull((yield* storedReview(testDb))?.posted_at)
+				world.hazel = "ok"
+				assert.strictEqual(yield* review(world, testDb), "duplicate")
+				assert.strictEqual(world.posts.length, 1)
+				assert.strictEqual(world.hazelPosts.length, 0)
+			}),
+	)
+
+	it.effect(
+		"posts to Hazel only once Slack has taken the report, so a Slack retry never posts Hazel twice",
+		() =>
+			Effect.gen(function* () {
+				const world = freshWorld()
+				world.hazelChannel = "hazel-cancellations"
+				world.slack = "unreachable"
+				const testDb = createTestDb(trackedDbs)
+				yield* linkHazel(testDb)
+
+				assert.strictEqual(yield* failedStep(world, testDb), "post")
+				assert.strictEqual(world.hazelPosts.length, 0)
+				world.slack = "ok"
+				assert.strictEqual(yield* review(world, testDb), "posted")
+				assert.strictEqual(world.posts.length, 1)
+				assert.strictEqual(world.hazelPosts.length, 1)
+			}),
+	)
+
+	it.effect("counts the review as posted when Slack refuses it and Hazel takes it", () =>
+		Effect.gen(function* () {
+			const world = freshWorld()
+			world.hazelChannel = "hazel-cancellations"
+			world.slack = "refused"
+			const testDb = createTestDb(trackedDbs)
+			yield* linkHazel(testDb)
+
+			assert.strictEqual(yield* review(world, testDb), "posted")
+			assert.strictEqual(world.hazelPosts.length, 1)
+			assert.isNotNull((yield* storedReview(testDb))?.posted_at)
+		}),
+	)
+
+	it.effect("retries a Hazel-only report Hazel did not answer for, and settles one it refused", () =>
+		Effect.gen(function* () {
+			const world = freshWorld()
+			world.channel = null
+			world.hazelChannel = "hazel-cancellations"
+			world.hazel = "unreachable"
+			const testDb = createTestDb(trackedDbs)
+			yield* linkHazel(testDb)
+
+			assert.strictEqual(yield* failedStep(world, testDb), "post")
+			assert.isNull((yield* storedReview(testDb))?.posted_at)
+			world.hazel = "refused"
+			assert.strictEqual(yield* review(world, testDb), "refused")
+			assert.isNull((yield* storedReview(testDb))?.posted_at)
+			world.hazel = "ok"
+			world.subscriptions = [{ planId: "startup", status: "expired" }]
+			const expiry = { ...job, phase: "ended" as const }
+			assert.strictEqual(yield* review(world, testDb, expiry, CANCELED_AT + 12 * DAY_MS), "posted")
+			assert.strictEqual(world.hazelPosts.length, 1)
+		}),
+	)
+
+	it.effect("does nothing with a Hazel channel but no Hazel workspace linked to Maple's org", () =>
+		Effect.gen(function* () {
+			const world = freshWorld()
+			world.channel = null
+			world.hazelChannel = "hazel-cancellations"
+			const testDb = createTestDb(trackedDbs)
+			// Somebody else's Hazel workspace is not Maple's.
+			yield* linkHazel(testDb, "org_someone_else")
+
+			assert.strictEqual(yield* review(world, testDb), "not_configured")
+			assert.isUndefined(yield* storedReview(testDb))
+			assert.strictEqual(world.hazelPosts.length, 0)
 		}),
 	)
 })

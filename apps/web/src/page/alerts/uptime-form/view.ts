@@ -283,7 +283,10 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 	const isEdit = model.editingId !== null
 	const header = {
 		title: isEdit ? "Edit monitor" : "New monitor",
-		description: "Maple checks it from Ashburn, US and records every check as a trace.",
+		description:
+			model.form.kind === "heartbeat"
+				? "Maple records every ping and alerts when one is late or reports a failure."
+				: "Maple checks it from Ashburn, US and records every check as a trace.",
 	}
 	if (model.isSessionLoaded && !canManage(model)) return adminOnlyPage(h, model, header)
 	if (isEdit && AsyncData.isFailure(model.existing.data))

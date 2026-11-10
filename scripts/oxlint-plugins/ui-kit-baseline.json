@@ -126,7 +126,7 @@
 		"apps/web/src/page/integrations/view-gcp.ts": 2,
 		"apps/web/src/page/integrations/view-github-repos.ts": 6,
 		"apps/web/src/page/integrations/view-github.ts": 1,
-		"apps/web/src/page/integrations/view-hub.ts": 5,
+		"apps/web/src/page/integrations/view-hub.ts": 4,
 		"apps/web/src/page/integrations/view-planetscale-parts.ts": 1,
 		"apps/web/src/page/integrations/view-prometheus-details.ts": 3,
 		"apps/web/src/page/integrations/view-prometheus.ts": 1,
