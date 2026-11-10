@@ -1,13 +1,6 @@
 import { timestampMs } from "@maple/backend/platform/time"
 import { HttpApiBuilder } from "effect/http-api"
-import {
-	CurrentTenant,
-	MetricName,
-	QueryEngineResultMismatchError,
-	ServiceName,
-	SpanId,
-	TraceId,
-} from "@maple/domain/http"
+import { CurrentTenant, MetricName, QueryEngineResultMismatchError } from "@maple/domain/http"
 import {
 	MapleApiV2,
 	paginateOffsetQuery,
@@ -77,10 +70,8 @@ import {
 } from "@maple/backend/services/warehouse/TelemetryReadService"
 import { QueryEngineService } from "@maple/backend/services/warehouse/QueryEngineService"
 import type { OperationRow } from "@maple/backend/queries/dashboard-reads"
+import { decodeTraceId, decodeSpanId, decodeServiceName } from "../warehouse-ids"
 
-const decodeTraceId = Schema.decodeSync(TraceId)
-const decodeSpanId = Schema.decodeSync(SpanId)
-const decodeServiceName = Schema.decodeSync(ServiceName)
 const decodeMetricName = Schema.decodeSync(MetricName)
 
 const PUBLIC_TIMESERIES_DEFAULT_SERIES_LIMIT = 50
