@@ -63,6 +63,9 @@ longer primary. Each write is conditional on the row still holding the value tha
 it never overwrites a concurrent change. A value that will not open is left as it is, logged as
 `Stored secret could not be resealed` with its slot and row, and retried on the next pass.
 
+The same pass seals the request headers of HTTP uptime checks that still sit in
+`uptime_monitors.config_json` (saved before headers were sealed) and empties them there.
+
 Every pass logs `Alerting tick completed` with `maple.alerting.tick = secret_reseal` and the
 counts `maple.alerting.secretsResealed`, `secretsResealFailed` and `secretsResealRemaining`,
 zeros included. `secretsResealRemaining` is counted in Postgres after the pass, so it is the
@@ -85,6 +88,7 @@ writer seals with it.
 
 ## Rollout state
 
-Writers emit v2. Readers still open the pre-v2 envelope until the reseal pass has reported
-nothing remaining in production; the read path for it is removed after that, which is what
-finally stops an old ciphertext from being replayed onto another row.
+Writers emit v2 and uptime check headers are sealed on write. Readers still open the pre-v2
+envelope, and headers still found in `config_json`, until the reseal pass has reported nothing
+remaining in production. Both read paths are removed after that, which is what finally stops
+an old ciphertext from being replayed onto another row.
