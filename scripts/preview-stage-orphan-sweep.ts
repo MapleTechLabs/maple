@@ -13,7 +13,7 @@
  *   - Workers named `maple-<base>-pr-<n>` (packages/infra/src/cloudflare/stage.ts),
  *   - Neon branches named `pr-<n>` in NEON_PROJECT_ID (alchemy.run.ts, declarePreviewDb),
  *   - R2 buckets named `maple-replay-blobs-pr-<n>`, which alchemy RETAINS on destroy
- *     (apps/api/src/resources/replay-blobs.ts), so every deployed stage keeps one.
+ *     (packages/infra/src/cloudflare/replay-blobs.ts), so every deployed stage keeps one.
  * For each PR the GitHub API affirmatively reports retired (unknown/live → keep), it runs
  * `alchemy destroy --yes --stage pr-<n>`, then deletes the Neon branch and empties and
  * deletes the R2 bucket. If the destroy fails, the branch and bucket stay so the next run

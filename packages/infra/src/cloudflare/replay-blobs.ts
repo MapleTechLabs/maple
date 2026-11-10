@@ -5,7 +5,8 @@
  * Never add or change `locationHint` or `jurisdiction`: either replaces the
  * name-pinned bucket, which GC then deletes. Colocation needs a new bucket.
  */
-import { REGION_INFRA, stageProps } from "@maple/infra/cloudflare"
+import { REGION_INFRA } from "../region.ts"
+import { stageProps } from "./stack.ts"
 import * as Cloudflare from "@alchemy.run/cloudflare"
 import * as RemovalPolicy from "alchemy/RemovalPolicy"
 

@@ -8,7 +8,7 @@
  */
 import { StatusPageStore } from "@maple/backend/services/status-pages/StatusPageStore"
 import { StatusSnapshotsBucket, StatusSnapshotsKv } from "@maple/infra/cloudflare"
-import { AuditEventsQueue, MapleDb } from "@maple/infra/cloudflare"
+import { AuditEventsQueue, MapleDb, ReplayBlobs } from "@maple/infra/cloudflare"
 import * as Cloudflare from "@alchemy.run/cloudflare"
 import { dischargeRuntimeContext } from "@maple/infra/worker-runtime"
 import { Effect, Layer, Option } from "effect"
@@ -54,7 +54,6 @@ import {
 	VcsBackfillQueue,
 	VcsSyncQueue,
 } from "../resources/queues"
-import { ReplayBlobs } from "../resources/replay-blobs"
 
 /**
  * The clients the init obtains. Each `yield*` binds its resource to the
