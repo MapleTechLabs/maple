@@ -4,7 +4,7 @@
 // strings (`'YYYY-MM-DD HH:MM:SS'`, UTC); chDB returns tz-less UTC strings too.
 // Everything the user reads is rendered in the browser's local zone.
 
-import { DateTime, Option, Array as Arr, String as Str } from "effect"
+import { DateTime, Option, Array as Arr } from "effect"
 import { computeBucketSeconds, formatWarehouseDateTime } from "@maple/query-engine"
 import { toEpochMs } from "@maple/ui/lib/time-format"
 
@@ -85,30 +85,6 @@ export function parseClickHouseDateTime(chDateTime: WarehouseTime): number | nul
 	if (chDateTime == null || chDateTime === "") return null
 	const ms = DateTime.isDateTime(chDateTime) ? DateTime.toEpochMillis(chDateTime) : toEpochMs(chDateTime)
 	return Number.isFinite(ms) && ms > 0 ? ms : null
-}
-
-const pad = (value: number, width = 2) => Str.padStart(width, "0")(String(value))
-
-function isSameLocalDay(a: Date, b: Date): boolean {
-	return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate()
-}
-
-/**
- * Local wall-clock time for a warehouse timestamp: `14:05:01.940` today,
- * `Sep 25 14:05:01.940` on other days. `precision: "s"` drops the millis.
- */
-export function formatLocalTimestamp(
-	chDateTime: string | null | undefined,
-	options: { precision?: "ms" | "s"; nowMs?: number } = {},
-): string {
-	const ms = parseClickHouseDateTime(chDateTime)
-	if (ms === null) return "-"
-	const date = new Date(ms)
-	const clock = `${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`
-	const time = options.precision === "s" ? clock : `${clock}.${pad(date.getMilliseconds(), 3)}`
-	if (isSameLocalDay(date, new Date(options.nowMs ?? Date.now()))) return time
-	const day = date.toLocaleDateString(undefined, { month: "short", day: "numeric" })
-	return `${day} ${time}`
 }
 
 /** The stored value, verbatim and zone-marked, for `title` tooltips and copy. */

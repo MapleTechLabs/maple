@@ -21,7 +21,7 @@ export type SpacedOptions<M> = Readonly<{
 }>
 
 /** `spaced`'s classes, for an element the kit already renders. */
-export const spacedClass = (options: Omit<SpacedOptions<never>, "attributes">): string =>
+const spacedClass = (options: Omit<SpacedOptions<never>, "attributes">): string =>
 	cn((options.fill ?? false) && "min-w-0 flex-1", SPACE[options.space], options.className)
 
 /** A spaced `div`. */

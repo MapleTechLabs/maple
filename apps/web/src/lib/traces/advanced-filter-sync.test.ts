@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest"
 
-import { applyWhereClause, parseWhereClause, toWhereClause } from "./advanced-filter-sync"
+import { applyWhereClause, formatAttributeClause, parseWhereClause } from "./advanced-filter-sync"
 import { Array as Arr } from "effect"
 
 describe("parseWhereClause", () => {
@@ -193,16 +193,14 @@ describe("parseWhereClause", () => {
 		expect(filters.spanName).toBeUndefined()
 	})
 
-	it("round-trips service.namespace in both polarities", () => {
+	it("reads service.namespace in both polarities", () => {
 		// The excludedNamespaces search param and its API mapping shipped before the clause knew the
 		// key, so a namespace filter used to survive the sidebar and vanish through the dialog.
 		const { filters } = parseWhereClause('service.namespace != "internal"')
 		expect(filters.excludedNamespaces).toEqual(["internal"])
-		expect(toWhereClause(filters)).toBe('service.namespace != "internal"')
 
 		const positive = parseWhereClause('service.namespace = "checkout"').filters
 		expect(positive.namespace).toBe("checkout")
-		expect(toWhereClause(positive)).toBe('service.namespace = "checkout"')
 	})
 
 	it("marks attr.* filters as negated for !=", () => {
@@ -222,137 +220,6 @@ describe("parseWhereClause", () => {
 	it("aggregates multiple excluded values for the same field", () => {
 		const { filters } = parseWhereClause('service.name != "checkout" AND service.name != "billing"')
 		expect(filters.excludedServices).toEqual(["checkout", "billing"])
-	})
-})
-
-describe("toWhereClause", () => {
-	it("builds a where clause from filters", () => {
-		const clause = toWhereClause({
-			service: "checkout",
-			spanName: "GET /orders",
-			hasError: true,
-			minDurationMs: 25,
-			attributeFilters: [],
-			resourceAttributeFilters: [],
-		})
-		expect(clause).toBe(
-			'service.name = "checkout" AND span.name = "GET /orders" AND has_error = true AND min_duration_ms = 25',
-		)
-	})
-
-	it("returns undefined for empty filters", () => {
-		expect(toWhereClause({ attributeFilters: [], resourceAttributeFilters: [] })).toBeUndefined()
-	})
-
-	it("includes attr.* clauses", () => {
-		const clause = toWhereClause({
-			attributeFilters: [{ key: "http.route", value: "/orders/:id" }],
-			resourceAttributeFilters: [],
-		})
-		expect(clause).toBe('attr.http.route = "/orders/:id"')
-	})
-
-	it("includes both attr.* and resource.* clauses", () => {
-		const clause = toWhereClause({
-			attributeFilters: [{ key: "http.route", value: "/orders/:id" }],
-			resourceAttributeFilters: [{ key: "service.version", value: "1.2.3" }],
-		})
-		expect(clause).toBe('attr.http.route = "/orders/:id" AND resource.service.version = "1.2.3"')
-	})
-
-	it("uses contains operator when matchModes is set", () => {
-		const clause = toWhereClause({
-			service: "check",
-			matchModes: { service: "contains" },
-			attributeFilters: [],
-			resourceAttributeFilters: [],
-		})
-		expect(clause).toBe('service.name contains "check"')
-	})
-
-	it("uses contains for attr.* when matchMode is set per-filter", () => {
-		const clause = toWhereClause({
-			attributeFilters: [{ key: "http.route", value: "/api", matchMode: "contains" }],
-			resourceAttributeFilters: [],
-		})
-		expect(clause).toBe('attr.http.route contains "/api"')
-	})
-
-	it("round-trips multiple attr.* filters", () => {
-		const original = 'attr.http.route = "/api" AND attr.db.system contains "postgres"'
-		const { filters } = parseWhereClause(original)
-		const clause = toWhereClause(filters)
-		expect(clause).toBe('attr.http.route = "/api" AND attr.db.system contains "postgres"')
-	})
-
-	it("emits != for negated attribute filters", () => {
-		const clause = toWhereClause({
-			attributeFilters: [{ key: "env", value: "prod", negated: true }],
-			resourceAttributeFilters: [],
-		})
-		expect(clause).toBe('attr.env != "prod"')
-	})
-
-	it("emits !contains for negated contains attribute filters", () => {
-		const clause = toWhereClause({
-			attributeFilters: [{ key: "http.route", value: "/health", matchMode: "contains", negated: true }],
-			resourceAttributeFilters: [],
-		})
-		expect(clause).toBe('attr.http.route !contains "/health"')
-	})
-
-	it("emits != clauses for excluded named-field arrays", () => {
-		const clause = toWhereClause({
-			attributeFilters: [],
-			resourceAttributeFilters: [],
-			excludedServices: ["checkout"],
-			excludedSpanNames: ["GET /health"],
-		})
-		expect(clause).toBe('service.name != "checkout" AND span.name != "GET /health"')
-	})
-
-	it("emits exists and comparison operators for attribute filters", () => {
-		const clause = toWhereClause({
-			attributeFilters: [
-				{ key: "user.id", value: "", matchMode: "exists" },
-				{ key: "retry.count", value: "3", matchMode: "gte" },
-			],
-			resourceAttributeFilters: [
-				{ key: "k8s.pod.name", value: "", matchMode: "exists", negated: true },
-			],
-		})
-		expect(clause).toBe(
-			'attr.user.id exists AND attr.retry.count >= "3" AND resource.k8s.pod.name !exists',
-		)
-		expect(parseWhereClause(clause ?? "").filters.attributeFilters).toEqual([
-			{ key: "user.id", value: "", matchMode: "exists" },
-			{ key: "retry.count", value: "3", matchMode: "gte" },
-		])
-	})
-
-	it("quotes values with the grammar's quotes, not backslash escapes", () => {
-		const withDouble = toWhereClause({
-			attributeFilters: [{ key: "msg", value: 'say "hi"' }],
-			resourceAttributeFilters: [],
-			service: "C:\\app",
-		})
-		expect(withDouble).toBe(`service.name = "C:\\app" AND attr.msg = 'say "hi"'`)
-		const { filters, warnings } = parseWhereClause(withDouble ?? "")
-		expect(warnings).toEqual([])
-		expect(filters.service).toBe("C:\\app")
-		expect(Arr.getUnsafe(filters.attributeFilters, 0).value).toBe('say "hi"')
-	})
-
-	it("round-trips negated clauses (canonical emit order: attr.* before excluded named fields)", () => {
-		const input =
-			'service.name = "api" AND span.name != "GET /health" AND attr.http.route !contains "/health"'
-		const { filters } = parseWhereClause(input)
-		const clause = toWhereClause(filters)
-		expect(clause).toBe(
-			'service.name = "api" AND attr.http.route !contains "/health" AND span.name != "GET /health"',
-		)
-		// And parsing the emitted output yields the same filter state.
-		expect(parseWhereClause(clause ?? "").filters).toEqual(filters)
 	})
 })
 
@@ -571,9 +438,11 @@ describe("OR groups", () => {
 		}
 	})
 
-	it("round-trips a group through toWhereClause", () => {
+	it("round-trips a group through formatAttributeClause", () => {
 		const whereClause = '(attr.a = "1" OR attr.b !exists)'
 		const { filters } = parseWhereClause(whereClause)
-		expect(toWhereClause(filters)).toBe(whereClause)
+		expect(Arr.map(filters.attributeFilters, (entry) => formatAttributeClause("attr.", entry))).toEqual([
+			whereClause,
+		])
 	})
 })

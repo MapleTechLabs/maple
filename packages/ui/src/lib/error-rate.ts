@@ -2,7 +2,7 @@
 // stat tile: >= 5% is critical, >= 1% is a warning, anything lower is quiet.
 
 import { formatErrorRate } from "./format"
-import { TONE_COLOR, TONE_FILL, TONE_TEXT, type Tone } from "./tone"
+import { TONE_FILL, TONE_TEXT, type Tone } from "./tone"
 
 export const ERROR_RATE_CRIT = 0.05
 export const ERROR_RATE_WARN = 0.01
@@ -27,12 +27,6 @@ export const ERROR_RATE_FILL: Record<ErrorRateLevel, string> = {
 	crit: TONE_FILL.crit,
 	warn: TONE_FILL.warn,
 	neutral: "bg-foreground-faint",
-} satisfies Record<ErrorRateLevel, string>
-
-export const ERROR_RATE_COLOR: Record<ErrorRateLevel, string> = {
-	crit: TONE_COLOR.crit,
-	warn: TONE_COLOR.warn,
-	neutral: TONE_COLOR.neutral,
 } satisfies Record<ErrorRateLevel, string>
 
 /** `neutral` overrides the quiet-floor class, e.g. a panel that keeps calm values at full contrast. */

@@ -218,7 +218,7 @@ export const region = Submodel.defineView<Model, Message>((model, h) => {
 })
 
 /** `AnchoredToasts`: the region for toasts pinned to an element (none are anchored yet). */
-export const anchoredRegion = Submodel.defineView<Model, Message>((model, h) =>
+const anchoredRegion = Submodel.defineView<Model, Message>((model, h) =>
 	h.div(
 		[
 			h.DataAttribute("base-ui-portal", ""),

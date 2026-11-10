@@ -2,7 +2,7 @@ import { cn } from "@maple/ui/lib/utils"
 import type { Attribute, Html, HtmlBuilder } from "foldkit/html"
 
 /** The classes of a layer, for an element the kit doesn't render. */
-export const layerClass = (options: { readonly clip?: boolean; readonly className?: string } = {}): string =>
+const layerClass = (options: { readonly clip?: boolean; readonly className?: string } = {}): string =>
 	cn("pointer-events-none absolute inset-0", options.clip === true && "overflow-hidden", options.className)
 
 /** A layer stretched over its positioned parent that lets the pointer through (a vignette, a backdrop

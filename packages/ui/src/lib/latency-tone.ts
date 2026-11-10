@@ -86,15 +86,6 @@ export const LATENCY_BAR_TONE: Record<LatencyLevel, string> = {
 	critical: "bg-severity-error-a3",
 } satisfies Record<LatencyLevel, string>
 
-/** Raw color strings for SVG fills and inline styles (no Tailwind class). */
-export const LATENCY_COLOR: Record<LatencyLevel, string> = {
-	quiet: "var(--color-muted-foreground)",
-	nominal: "var(--color-muted-foreground)",
-	elevated: "var(--color-foreground)",
-	slow: "var(--color-severity-warn)",
-	critical: "var(--color-severity-error)",
-} satisfies Record<LatencyLevel, string>
-
 /** Level → text class in one call. Mirrors the shape of `errorRateClass`. */
 export function latencyToneClass(ms: number, scale: LatencyScale = "p95", budgetMs?: number): string {
 	return LATENCY_TEXT_TONE[latencyLevel(ms, scale, budgetMs)]
