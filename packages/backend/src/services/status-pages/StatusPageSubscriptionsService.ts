@@ -28,8 +28,11 @@ import { newConfirmToken, verifyUnsubscribeToken } from "./subscription-tokens"
 
 /** How long a confirmation link works. */
 export const STATUS_PAGE_CONFIRM_TTL_MS = 48 * 60 * 60_000
-/** A pending address gets another confirmation email at most this often. */
-export const STATUS_PAGE_CONFIRM_RESEND_MS = 20 * 60_000
+/**
+ * A pending address gets another confirmation email at most this often. One hour, the cap's
+ * window: each row then holds at most one send in the window, so counting rows counts emails.
+ */
+export const STATUS_PAGE_CONFIRM_RESEND_MS = 60 * 60_000
 /** Confirmation emails one page sends per hour at most, whoever asks: the cap on mailing strangers. */
 export const STATUS_PAGE_CONFIRMATIONS_PER_HOUR = 50
 
@@ -176,6 +179,13 @@ export class StatusPageSubscriptionsService extends Context.Service<
 			const componentNames = yield* dbExecute((db) =>
 				db.transaction(
 					Effect.gen(function* () {
+						// Serializes subscribes per page, so concurrent requests can't each pass the cap.
+						yield* db.run(
+							PG.from(StatusPages)
+								.select(($) => ({ id: $.id }))
+								.where(($) => [$.id.eq(page.id)])
+								.forUpdate(),
+						)
 						const names = yield* componentNamesOnPage(db, page, componentIds)
 						const [existing] = yield* db.run(
 							PG.from(StatusPageSubscribers)

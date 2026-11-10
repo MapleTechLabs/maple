@@ -145,7 +145,7 @@ describe("StatusPageSubscriptionsService", () => {
 			yield* subscriptions.subscribe(pageId, { email: "ana@example.com" })
 			assert.strictEqual(sent.length, 1)
 
-			yield* TestClock.adjust("21 minutes")
+			yield* TestClock.adjust("61 minutes")
 			yield* subscriptions.subscribe(pageId, { email: "ana@example.com" })
 			assert.strictEqual(sent.length, 2)
 
@@ -198,6 +198,28 @@ describe("StatusPageSubscriptionsService", () => {
 			)
 			yield* TestClock.adjust("21 minutes")
 			yield* subscriptions.subscribe(pageId, { email: "visitor1@example.com" })
+			assert.strictEqual(sent.length, STATUS_PAGE_CONFIRMATIONS_PER_HOUR)
+		}).pipe(Effect.provide(layer))
+	})
+
+	it.effect("never sends more than the hourly cap, whatever mix of new addresses and resends", () => {
+		const { sent, layer } = makeHarness()
+		return Effect.gen(function* () {
+			const { pageId } = yield* createPage("acme")
+			const subscriptions = yield* StatusPageSubscriptionsService
+			const half = Math.floor(STATUS_PAGE_CONFIRMATIONS_PER_HOUR / 2)
+			const subscribeAll = (from: number, to: number) =>
+				Effect.forEach(
+					Arr.range(from, to),
+					(n) => subscriptions.subscribe(pageId, { email: `visitor${n}@example.com` }),
+					{ discard: true, concurrency: 10 },
+				)
+			yield* subscribeAll(1, half)
+			// Resends of the first half, plus new addresses, inside one hour.
+			for (const minutes of ["21 minutes", "21 minutes"]) {
+				yield* TestClock.adjust(minutes)
+				yield* subscribeAll(1, STATUS_PAGE_CONFIRMATIONS_PER_HOUR * 2)
+			}
 			assert.strictEqual(sent.length, STATUS_PAGE_CONFIRMATIONS_PER_HOUR)
 		}).pipe(Effect.provide(layer))
 	})
