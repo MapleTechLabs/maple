@@ -1,8 +1,9 @@
 import { describe, expect, it } from "vitest"
 import { callerSqlAsInvalidInput } from "../run-sql"
 import { McpQueryBudgetError, McpQueryError } from "../types"
+import { WarehouseInvalidSqlError, WarehouseQueryError } from "@maple/domain/http/warehouse-errors"
 
-const invalidSql = { _tag: "@maple/http/errors/WarehouseInvalidSqlError" }
+const invalidSql = new WarehouseInvalidSqlError({ message: "rejected", pipeName: "run_sql" })
 const queryErr = new McpQueryError({
 	message: "There is no supertype for types String, UInt8",
 	pipeName: "run_sql",
@@ -17,9 +18,12 @@ describe("callerSqlAsInvalidInput", () => {
 	})
 
 	it("keeps genuine query failures as McpQueryError", () => {
-		expect(callerSqlAsInvalidInput({ _tag: "@maple/http/errors/WarehouseQueryError" }, queryErr)).toBe(
-			queryErr,
-		)
+		expect(
+			callerSqlAsInvalidInput(
+				new WarehouseQueryError({ message: "failed", pipeName: "run_sql" }),
+				queryErr,
+			),
+		).toBe(queryErr)
 	})
 
 	it("keeps budget errors", () => {
