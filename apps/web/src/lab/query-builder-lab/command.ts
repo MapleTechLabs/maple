@@ -5,7 +5,7 @@ import { getQueryBuilderTimeseries } from "@maple/web-data/warehouse/query-build
 import { Clock, Effect, Option, Queue, Schema, Stream, Array as Arr } from "effect"
 import * as SecureRandom from "effect/crypto/SecureRandom"
 import { Command, Mount } from "foldkit"
-import { toLoadFailure } from "@maple/views/data/load-failure"
+import { settleTo } from "@maple/views/data/load-failure"
 import { currentWindow, TimeWindow } from "../../data/time-range"
 import { AutocompleteLookup, autocompleteLookup } from "../../page/kit/autocomplete-lookups"
 import { MapleAuthApi, readSessionToken } from "../../platform/auth-api"
@@ -48,9 +48,7 @@ export const FetchAutocomplete = Command.define("FetchQueryBuilderLabAutocomplet
 	messages: [Message.CompletedFetchAutocomplete],
 	execute: ({ key, lookup, window }) =>
 		autocompleteLookup(lookup, window).pipe(
-			Effect.mapError(toLoadFailure),
-			Effect.result,
-			Effect.map((result) => Message.CompletedFetchAutocomplete({ key, lookup, result })),
+			settleTo((result) => Message.CompletedFetchAutocomplete({ key, lookup, result })),
 		),
 })
 
@@ -60,16 +58,13 @@ export const FetchMetrics = Command.define("FetchQueryBuilderLabMetrics", {
 	messages: [Message.CompletedFetchMetrics],
 	execute: ({ key }) =>
 		listMetrics({ data: { limit: 300 } }).pipe(
-			Effect.mapBoth({
-				onSuccess: (response) =>
-					Arr.map(response.data, (row) => ({
-						metricName: row.metricName,
-						metricType: row.metricType,
-					})),
-				onFailure: toLoadFailure,
-			}),
-			Effect.result,
-			Effect.map((result) => Message.CompletedFetchMetrics({ key, result })),
+			Effect.map((response) =>
+				Arr.map(response.data, (row) => ({
+					metricName: row.metricName,
+					metricType: row.metricType,
+				})),
+			),
+			settleTo((result) => Message.CompletedFetchMetrics({ key, result })),
 		),
 })
 
@@ -86,15 +81,11 @@ export const FetchTimeseries = Command.define("FetchQueryBuilderLabTimeseries", 
 				formulas: Arr.map(input.formulas, (formula) => ({ ...formula })),
 			},
 		}).pipe(
-			Effect.mapBoth({
-				onSuccess: (response) => ({
-					points: toRunPoints(response.data),
-					warnings: debugWarnings(response.diagnostics),
-				}),
-				onFailure: toLoadFailure,
-			}),
-			Effect.result,
-			Effect.map((result) => Message.CompletedFetchTimeseries({ key, result })),
+			Effect.map((response) => ({
+				points: toRunPoints(response.data),
+				warnings: debugWarnings(response.diagnostics),
+			})),
+			settleTo((result) => Message.CompletedFetchTimeseries({ key, result })),
 		),
 })
 

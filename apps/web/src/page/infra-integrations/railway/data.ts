@@ -1,7 +1,7 @@
 import { getRailwayServices, getRailwayServiceTimeseries } from "@maple/web-data/warehouse/railway-infra"
 import { Effect } from "effect"
 import { IntegrationStatuses } from "../../../data/integration-statuses"
-import { toLoadFailure } from "@maple/views/data/load-failure"
+import { settled } from "@maple/views/data/load-failure"
 import type { TimeWindow } from "../../../data/time-range"
 import type { RailwayServiceRow, RailwayServiceTimeseriesRow } from "./model"
 
@@ -10,18 +10,15 @@ import type { RailwayServiceRow, RailwayServiceTimeseriesRow } from "./model"
 
 export const loadRailwayServices = (window: TimeWindow) =>
 	getRailwayServices({ data: window }).pipe(
-		Effect.mapBoth({
-			onSuccess: (response): ReadonlyArray<RailwayServiceRow> => response.services,
-			onFailure: toLoadFailure,
-		}),
-		Effect.result,
+		Effect.map((response): ReadonlyArray<RailwayServiceRow> => response.services),
+		settled,
 	)
 
 export const loadRailwayStatus = (refresh: boolean) =>
 	Effect.gen(function* () {
 		const statuses = yield* IntegrationStatuses
 		return yield* statuses.railway({ refresh })
-	}).pipe(Effect.mapError(toLoadFailure), Effect.result)
+	}).pipe(settled)
 
 export const loadRailwayTimeseries = (
 	input: TimeWindow & {
@@ -31,9 +28,6 @@ export const loadRailwayTimeseries = (
 	},
 ) =>
 	getRailwayServiceTimeseries({ data: { ...input } }).pipe(
-		Effect.mapBoth({
-			onSuccess: (response): ReadonlyArray<RailwayServiceTimeseriesRow> => response.buckets,
-			onFailure: toLoadFailure,
-		}),
-		Effect.result,
+		Effect.map((response): ReadonlyArray<RailwayServiceTimeseriesRow> => response.buckets),
+		settled,
 	)

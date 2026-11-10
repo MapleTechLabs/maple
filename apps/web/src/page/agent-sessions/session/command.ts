@@ -3,7 +3,7 @@ import { getAiSessionSpans, getAiSessionSummary } from "@maple/web-data/warehous
 import { snapTimestamp } from "@maple/web-data/lib/time-range"
 import { Clock, Duration, Effect, Schema } from "effect"
 import { Command } from "foldkit"
-import { toLoadFailure } from "@maple/views/data/load-failure"
+import { settleTo } from "@maple/views/data/load-failure"
 import { TimeWindow } from "../../../data/time-range"
 import { detectModels } from "../kit/detected-models"
 import { writeClipboard } from "../../kit/clipboard"
@@ -40,12 +40,8 @@ export const FetchFirstPage = Command.define("FetchAgentSessionFirstPage", {
 	messages: [Message.CompletedFetchFirstPage],
 	execute: ({ key, sessionId, window }) =>
 		getAiSessionSpans({ data: sessionInput(sessionId, window) }).pipe(
-			Effect.mapBoth({
-				onSuccess: (page) => ({ data: page.data, nextCursor: page.nextCursor ?? null }),
-				onFailure: toLoadFailure,
-			}),
-			Effect.result,
-			Effect.map((result) => Message.CompletedFetchFirstPage({ key, result })),
+			Effect.map((page) => ({ data: page.data, nextCursor: page.nextCursor ?? null })),
+			settleTo((result) => Message.CompletedFetchFirstPage({ key, result })),
 		),
 })
 
@@ -63,12 +59,8 @@ export const FetchMorePage = Command.define("FetchAgentSessionMorePage", {
 	messages: [Message.CompletedFetchMorePage],
 	execute: ({ key, sessionId, window, scope, after, limit, index }) =>
 		getAiSessionSpans({ data: { ...sessionInput(sessionId, window), scope, after, limit } }).pipe(
-			Effect.mapBoth({
-				onSuccess: (page) => ({ data: page.data, nextCursor: page.nextCursor ?? null }),
-				onFailure: toLoadFailure,
-			}),
-			Effect.result,
-			Effect.map((result) =>
+			Effect.map((page) => ({ data: page.data, nextCursor: page.nextCursor ?? null })),
+			settleTo((result) =>
 				Message.CompletedFetchMorePage({
 					key,
 					index,
@@ -86,9 +78,7 @@ export const FetchTotals = Command.define("FetchAgentSessionTotals", {
 	messages: [Message.CompletedFetchTotals],
 	execute: ({ key, sessionId, window }) =>
 		getAiSessionSummary({ data: sessionInput(sessionId, window) }).pipe(
-			Effect.mapError(toLoadFailure),
-			Effect.result,
-			Effect.map((result) => Message.CompletedFetchTotals({ key, result })),
+			settleTo((result) => Message.CompletedFetchTotals({ key, result })),
 		),
 })
 

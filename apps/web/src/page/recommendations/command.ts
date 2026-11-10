@@ -4,7 +4,7 @@ import { V2AttributeMappingCreateParams } from "@maple/domain/http/v2"
 import { collectV2Pages } from "@maple/web-data/lib/v2-pagination"
 import { Effect, Schema } from "effect"
 import { Command } from "foldkit"
-import { toLoadFailure } from "@maple/views/data/load-failure"
+import { settleTo } from "@maple/views/data/load-failure"
 import { MapleApiV2Client } from "../../platform/api-clients"
 import { Message } from "./message"
 
@@ -22,11 +22,7 @@ export const FetchRecommendations = Command.define("FetchRecommendations", {
 		Effect.gen(function* () {
 			const client = yield* MapleApiV2Client
 			return yield* collectV2Pages((cursor) => client.instrumentationRecommendations.list(page(cursor)))
-		}).pipe(
-			Effect.mapError(toLoadFailure),
-			Effect.result,
-			Effect.map((result) => Message.CompletedFetchList({ key, result })),
-		),
+		}).pipe(settleTo((result) => Message.CompletedFetchList({ key, result }))),
 })
 
 export const FetchAttributeMappings = Command.define("FetchRecommendationAttributeMappings", {
@@ -36,11 +32,7 @@ export const FetchAttributeMappings = Command.define("FetchRecommendationAttribu
 		Effect.gen(function* () {
 			const client = yield* MapleApiV2Client
 			return yield* collectV2Pages((cursor) => client.attributeMappings.list(page(cursor)))
-		}).pipe(
-			Effect.mapError(toLoadFailure),
-			Effect.result,
-			Effect.map((result) => Message.CompletedFetchMappings({ key, result })),
-		),
+		}).pipe(settleTo((result) => Message.CompletedFetchMappings({ key, result }))),
 })
 
 export const CreateMapping = Command.define("CreateRecommendationMapping", {
@@ -50,11 +42,7 @@ export const CreateMapping = Command.define("CreateRecommendationMapping", {
 		Effect.gen(function* () {
 			const client = yield* MapleApiV2Client
 			return yield* client.attributeMappings.create({ payload })
-		}).pipe(
-			Effect.mapError(toLoadFailure),
-			Effect.result,
-			Effect.map((result) => Message.CompletedApply({ result })),
-		),
+		}).pipe(settleTo((result) => Message.CompletedApply({ result }))),
 })
 
 export const DismissRecommendation = Command.define("DismissRecommendation", {
@@ -64,11 +52,7 @@ export const DismissRecommendation = Command.define("DismissRecommendation", {
 		Effect.gen(function* () {
 			const client = yield* MapleApiV2Client
 			yield* client.instrumentationRecommendations.dismiss({ params: { id } })
-		}).pipe(
-			Effect.mapError(toLoadFailure),
-			Effect.result,
-			Effect.map((result) => Message.CompletedDismiss({ result })),
-		),
+		}).pipe(settleTo((result) => Message.CompletedDismiss({ result }))),
 })
 
 export const ReopenRecommendation = Command.define("ReopenRecommendation", {
@@ -78,9 +62,5 @@ export const ReopenRecommendation = Command.define("ReopenRecommendation", {
 		Effect.gen(function* () {
 			const client = yield* MapleApiV2Client
 			yield* client.instrumentationRecommendations.reopen({ params: { id } })
-		}).pipe(
-			Effect.mapError(toLoadFailure),
-			Effect.result,
-			Effect.map((result) => Message.CompletedReopen({ result })),
-		),
+		}).pipe(settleTo((result) => Message.CompletedReopen({ result }))),
 })

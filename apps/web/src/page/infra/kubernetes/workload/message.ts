@@ -4,7 +4,7 @@ import { Command } from "foldkit"
 import { defineMessageUnion } from "foldkit/message"
 import * as Chart from "@maple/views/charts/chart"
 import { ThemeColors } from "@maple/views/charts/theme-colors"
-import { LoadFailure, toLoadFailure } from "@maple/views/data/load-failure"
+import { LoadFailure, settleTo } from "@maple/views/data/load-failure"
 import * as Frame from "../../kit/frame"
 import { SeriesResult } from "../../../kit/series"
 import { fetchPods, PodsInput, PodsPage } from "../pod-data"
@@ -40,9 +40,8 @@ export const FetchSummary = Command.define("FetchInfraWorkloadSummary", {
 	messages: [Message.CompletedFetchSummary],
 	execute: ({ key, input }) =>
 		workloadDetailSummary({ data: input }).pipe(
-			Effect.mapBoth({ onSuccess: (response) => response.data, onFailure: toLoadFailure }),
-			Effect.result,
-			Effect.map((result) => Message.CompletedFetchSummary({ key, result })),
+			Effect.map((response) => response.data),
+			settleTo((result) => Message.CompletedFetchSummary({ key, result })),
 		),
 })
 
@@ -70,11 +69,7 @@ export const FetchSeries = Command.define("FetchInfraWorkloadSeries", {
 	messages: [Message.CompletedFetchSeries],
 	execute: ({ id, key, input }) =>
 		workloadInfraTimeseries({ data: input }).pipe(
-			Effect.mapBoth({
-				onSuccess: (response) => ({ rows: response.data, unit: response.unit }),
-				onFailure: toLoadFailure,
-			}),
-			Effect.result,
-			Effect.map((result) => Message.CompletedFetchSeries({ id, key, result })),
+			Effect.map((response) => ({ rows: response.data, unit: response.unit })),
+			settleTo((result) => Message.CompletedFetchSeries({ id, key, result })),
 		),
 })

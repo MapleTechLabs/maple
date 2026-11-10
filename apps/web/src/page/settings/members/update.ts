@@ -2,7 +2,7 @@ import * as Policy from "@maple/domain/policy"
 import { orgRoleKeys, orgRoleNoun, toOrgRole } from "../kit/org-membership"
 import { Array, Effect, Option, Record as Rec, Result, Schema, String as Str } from "effect"
 import { AsyncData, Command } from "foldkit"
-import { toLoadFailure } from "@maple/views/data/load-failure"
+import { settleTo } from "@maple/views/data/load-failure"
 import type {
 	ClerkInvitationResource,
 	ClerkMembershipResource,
@@ -86,18 +86,14 @@ const FetchMembers = Command.define("FetchClerkMemberships", {
 	execute: ({ page, generation }) =>
 		currentClerkOrganization.pipe(
 			Effect.flatMap((organization) => membershipsPage(organization, page)),
-			Effect.mapBoth({
-				onSuccess: (result) => {
-					const userId = window.Clerk?.user?.id ?? null
-					return {
-						rows: Array.map(result.data, (member) => memberRow(member, userId)),
-						total: result.total_count,
-					}
-				},
-				onFailure: toLoadFailure,
+			Effect.map((result) => {
+				const userId = window.Clerk?.user?.id ?? null
+				return {
+					rows: Array.map(result.data, (member) => memberRow(member, userId)),
+					total: result.total_count,
+				}
 			}),
-			Effect.result,
-			Effect.map((result) => Message.CompletedFetchMembers({ page, generation, result })),
+			settleTo((result) => Message.CompletedFetchMembers({ page, generation, result })),
 		),
 })
 
@@ -107,15 +103,11 @@ const FetchInvitations = Command.define("FetchClerkInvitations", {
 	execute: ({ page, generation }) =>
 		currentClerkOrganization.pipe(
 			Effect.flatMap((organization) => invitationsPage(organization, page)),
-			Effect.mapBoth({
-				onSuccess: (result) => ({
-					rows: Array.map(result.data, invitationRow),
-					total: result.total_count,
-				}),
-				onFailure: toLoadFailure,
-			}),
-			Effect.result,
-			Effect.map((result) => Message.CompletedFetchInvitations({ page, generation, result })),
+			Effect.map((result) => ({
+				rows: Array.map(result.data, invitationRow),
+				total: result.total_count,
+			})),
+			settleTo((result) => Message.CompletedFetchInvitations({ page, generation, result })),
 		),
 })
 

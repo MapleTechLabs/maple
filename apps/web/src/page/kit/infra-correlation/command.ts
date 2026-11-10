@@ -7,7 +7,7 @@ import {
 import { Effect, Schema } from "effect"
 import { Command } from "foldkit"
 import { IdleTtl } from "../../../data/idle-ttl"
-import { toLoadFailure } from "@maple/views/data/load-failure"
+import { settleTo } from "@maple/views/data/load-failure"
 import { readThrough } from "../../../data/read-cache"
 import { SeriesData } from "../series"
 import { Message } from "./model"
@@ -107,8 +107,6 @@ export const FetchCorrelationSeries = Command.define("FetchInfraCorrelationSerie
 	messages: [Message.CompletedFetchSeries],
 	execute: ({ key, chartId, request }) =>
 		readThrough({ key, idleTtlMs: IdleTtl.infraTimeseries, schema: SeriesData }, load(request).read).pipe(
-			Effect.mapError(toLoadFailure),
-			Effect.result,
-			Effect.map((result) => Message.CompletedFetchSeries({ chartId, key, result })),
+			settleTo((result) => Message.CompletedFetchSeries({ chartId, key, result })),
 		),
 })

@@ -4,7 +4,7 @@ import { getReleases } from "@maple/web-data/warehouse/releases"
 import { Clock, Effect, Queue, Schema, Stream } from "effect"
 import { Command, Mount } from "foldkit"
 import { IdleTtl } from "../../../data/idle-ttl"
-import { toLoadFailure } from "@maple/views/data/load-failure"
+import { settleTo } from "@maple/views/data/load-failure"
 import { readThrough } from "../../../data/read-cache"
 import { resolveWindow } from "../../../data/time-range"
 import { readCommitDetails } from "../../kit/commit-card"
@@ -63,11 +63,7 @@ export const FetchReleases = Command.define("FetchReleases", {
 					namespaces: mutable(input.namespaces),
 				},
 			}),
-		).pipe(
-			Effect.mapError(toLoadFailure),
-			Effect.result,
-			Effect.map((result) => Message.CompletedFetchReleases({ key, result })),
-		),
+		).pipe(settleTo((result) => Message.CompletedFetchReleases({ key, result }))),
 })
 
 /** `useReleaseIssueCounts`: issues introduced inside the window, one page. */
@@ -81,11 +77,7 @@ export const FetchReleaseIssues = Command.define("FetchReleaseIssues", {
 				query: { introduced_after: introducedAfter, limit: 100 },
 			})
 			return { data: page.data, hasMore: page.has_more }
-		}).pipe(
-			Effect.mapError(toLoadFailure),
-			Effect.result,
-			Effect.map((result) => Message.CompletedFetchIssues({ key, result })),
-		),
+		}).pipe(settleTo((result) => Message.CompletedFetchIssues({ key, result }))),
 })
 
 /** `commitsQueryAtom(shasKey)`: every release sha on screen in one request. */
@@ -96,11 +88,7 @@ export const FetchReleaseCommits = Command.define("FetchReleaseCommits", {
 		Effect.gen(function* () {
 			const response = yield* readCommitDetails(key, shas, refresh)
 			return response.commits
-		}).pipe(
-			Effect.mapError(toLoadFailure),
-			Effect.result,
-			Effect.map((result) => Message.CompletedFetchCommits({ key, result })),
-		),
+		}).pipe(settleTo((result) => Message.CompletedFetchCommits({ key, result }))),
 })
 
 /** `commitRangesAtom`: the commits each release carried, counts only (`limit: 0`). */
@@ -112,11 +100,7 @@ export const FetchReleaseRanges = Command.define("FetchReleaseRanges", {
 			const client = yield* MapleInternalApiClient
 			const response = yield* client.integrations.vcsCommitRanges({ query: { ranges, limit } })
 			return response.ranges
-		}).pipe(
-			Effect.mapError(toLoadFailure),
-			Effect.result,
-			Effect.map((result) => Message.CompletedFetchRanges({ key, result })),
-		),
+		}).pipe(settleTo((result) => Message.CompletedFetchRanges({ key, result }))),
 })
 
 export const LoadReleasesSignalPresence = Command.define("LoadReleasesSignalPresence", {

@@ -10,7 +10,7 @@ import {
 import { getAiToolBreakdowns, getAiToolTotals } from "@maple/web-data/warehouse/ai-session-tools"
 import { Clock, Duration, Effect, Option, Order, Queue, Schema, Stream, Array as Arr } from "effect"
 import { Command, Mount } from "foldkit"
-import { toLoadFailure } from "@maple/views/data/load-failure"
+import { settleTo, settled } from "@maple/views/data/load-failure"
 import { resolveWindow, TimeWindow } from "../../../data/time-range"
 import { AgentSessionsSearch } from "../../../route/search"
 import { loadSignalPresences } from "../../kit/signal-presence"
@@ -42,11 +42,8 @@ const fetchPage = (search: typeof AgentSessionsSearch.Type, window: TimeWindow, 
 	listAiSessions({
 		data: { ...presentInputs(filterInputs(search, window)), limit: PAGE_SIZE, offset },
 	}).pipe(
-		Effect.mapBoth({
-			onSuccess: (response) => ({ data: response.data, ranked: rankedOf(response) }),
-			onFailure: toLoadFailure,
-		}),
-		Effect.result,
+		Effect.map((response) => ({ data: response.data, ranked: rankedOf(response) })),
+		settled,
 	)
 
 const pageArgs = { key: Schema.String, search: AgentSessionsSearch, window: TimeWindow }
@@ -94,9 +91,8 @@ export const FetchDetails = Command.define("FetchAgentSessionDetails", {
 				...countedFilters(filterInputs(search, window)),
 			},
 		}).pipe(
-			Effect.mapBoth({ onSuccess: (response) => response.data, onFailure: toLoadFailure }),
-			Effect.result,
-			Effect.map((result) =>
+			Effect.map((response) => response.data),
+			settleTo((result) =>
 				Message.CompletedFetchDetails({
 					detailsKey,
 					sessionIds: Arr.map(rows, (row) => row.sessionId),
@@ -113,9 +109,7 @@ export const FetchFacets = Command.define("FetchAgentSessionsFacets", {
 	messages: [Message.CompletedFetchFacets],
 	execute: ({ key, window }) =>
 		getAiSessionsFacets({ data: window }).pipe(
-			Effect.mapError(toLoadFailure),
-			Effect.result,
-			Effect.map((result) => Message.CompletedFetchFacets({ key, result })),
+			settleTo((result) => Message.CompletedFetchFacets({ key, result })),
 		),
 })
 
@@ -124,9 +118,7 @@ export const FetchDistributions = Command.define("FetchAgentSessionsDistribution
 	messages: [Message.CompletedFetchDistributions],
 	execute: ({ key, window }) =>
 		getAiSessionsDistributions({ data: window }).pipe(
-			Effect.mapError(toLoadFailure),
-			Effect.result,
-			Effect.map((result) => Message.CompletedFetchDistributions({ key, result })),
+			settleTo((result) => Message.CompletedFetchDistributions({ key, result })),
 		),
 })
 
@@ -136,9 +128,8 @@ export const FetchTabSessions = Command.define("FetchAgentSessionsTabSessions", 
 	messages: [Message.CompletedFetchTabSessions],
 	execute: ({ key, window }) =>
 		getAiToolTotals({ data: window }).pipe(
-			Effect.mapBoth({ onSuccess: (totals) => totals.allSessions, onFailure: toLoadFailure }),
-			Effect.result,
-			Effect.map((result) => Message.CompletedFetchTabSessions({ key, result })),
+			Effect.map((totals) => totals.allSessions),
+			settleTo((result) => Message.CompletedFetchTabSessions({ key, result })),
 		),
 })
 
@@ -147,9 +138,8 @@ export const FetchTabTools = Command.define("FetchAgentSessionsTabTools", {
 	messages: [Message.CompletedFetchTabTools],
 	execute: ({ key, window }) =>
 		getAiToolBreakdowns({ data: window }).pipe(
-			Effect.mapBoth({ onSuccess: (breakdowns) => breakdowns.tools.length, onFailure: toLoadFailure }),
-			Effect.result,
-			Effect.map((result) => Message.CompletedFetchTabTools({ key, result })),
+			Effect.map((breakdowns) => breakdowns.tools.length),
+			settleTo((result) => Message.CompletedFetchTabTools({ key, result })),
 		),
 })
 

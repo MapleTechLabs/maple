@@ -5,7 +5,7 @@ import { AsyncData, Command } from "foldkit"
 import { defineMessageUnion } from "foldkit/message"
 import * as Keyed from "@maple/views/data/keyed"
 import { KeyedSchema } from "@maple/views/data/keyed"
-import { LoadFailure, toLoadFailure } from "@maple/views/data/load-failure"
+import { LoadFailure, settleTo, settled } from "@maple/views/data/load-failure"
 import { requestKey } from "@maple/views/data/request-key"
 import type { TimeWindow } from "../../../../data/time-range"
 import type { PageContext } from "../../../contract"
@@ -73,13 +73,8 @@ export const FetchNames = Command.define("FetchLensServiceNames", {
 							namespaces: [...input.namespaces],
 						},
 		}).pipe(
-			Effect.mapBoth({
-				onSuccess: (response) =>
-					[...new Set(Arr.map(response.data, (row) => row.serviceName))].sort(),
-				onFailure: toLoadFailure,
-			}),
-			Effect.result,
-			Effect.map((result) => Message.CompletedFetchNames({ key, result })),
+			Effect.map((response) => [...new Set(Arr.map(response.data, (row) => row.serviceName))].sort()),
+			settleTo((result) => Message.CompletedFetchNames({ key, result })),
 		),
 })
 
@@ -93,8 +88,8 @@ export type WorkloadsInput = typeof WorkloadsInput.Type
 /** `getServiceWorkloadsResultAtom`: an empty list answers locally, sending nothing. */
 export const fetchServiceWorkloads = (input: WorkloadsInput) =>
 	getServiceWorkloads({ data: { ...input, services: [...input.services] } }).pipe(
-		Effect.mapBoth({ onSuccess: (response) => response.workloads, onFailure: toLoadFailure }),
-		Effect.result,
+		Effect.map((response) => response.workloads),
+		settled,
 	)
 
 export const FetchWorkloads = Command.define("FetchLensServiceWorkloads", {

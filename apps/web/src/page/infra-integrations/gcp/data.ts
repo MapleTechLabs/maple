@@ -16,7 +16,7 @@ import {
 import { getServiceOverview } from "@maple/web-data/warehouse/services"
 import { Effect, Schema, Array as Arr } from "effect"
 import { IntegrationStatuses } from "../../../data/integration-statuses"
-import { toLoadFailure } from "@maple/views/data/load-failure"
+import { settled } from "@maple/views/data/load-failure"
 import type { TimeWindow } from "../../../data/time-range"
 import { MapleInternalApiClient } from "../../../platform/api-clients"
 
@@ -64,16 +64,13 @@ export const loadStatus = (refresh: boolean) =>
 	Effect.gen(function* () {
 		const statuses = yield* IntegrationStatuses
 		return yield* statuses.gcp({ refresh })
-	}).pipe(Effect.mapError(toLoadFailure), Effect.result)
+	}).pipe(settled)
 
 /** `gcpInfraFleetResultAtom({ data: window })`: presence, then every reporting service's metrics. */
 export const loadFleet = (window: TimeWindow) =>
 	getGcpInfraFleet({ data: window }).pipe(
-		Effect.mapBoth({
-			onSuccess: (response): ReadonlyArray<FleetRead> => response.services,
-			onFailure: toLoadFailure,
-		}),
-		Effect.result,
+		Effect.map((response): ReadonlyArray<FleetRead> => response.services),
+		settled,
 	)
 
 export const SparksInput = Schema.Struct({
@@ -87,11 +84,8 @@ export type SparksInput = typeof SparksInput.Type
 /** `gcpInfraSparklinesResultAtom`. */
 export const loadSparks = (input: SparksInput) =>
 	getGcpInfraSparklines({ data: input }).pipe(
-		Effect.mapBoth({
-			onSuccess: (response): ReadonlyArray<SparkRead> => response.services,
-			onFailure: toLoadFailure,
-		}),
-		Effect.result,
+		Effect.map((response): ReadonlyArray<SparkRead> => response.services),
+		settled,
 	)
 
 export const ResourcesQuery = Schema.Struct({
@@ -105,7 +99,7 @@ export const loadResources = (query: ResourcesQuery) =>
 	Effect.gen(function* () {
 		const client = yield* MapleInternalApiClient
 		return yield* client.integrations.gcpResources({ query })
-	}).pipe(Effect.mapError(toLoadFailure), Effect.result)
+	}).pipe(settled)
 
 export const BucketPoint = GcpInfraTimeseriesResponse.fields.data.value
 export type BucketPoint = typeof BucketPoint.Type
@@ -122,11 +116,8 @@ export type TimeseriesInput = typeof TimeseriesInput.Type
 /** `gcpInfraTimeseriesResultAtom`: one source's points for one workload (or cluster). */
 export const loadTimeseries = (input: TimeseriesInput) =>
 	getGcpInfraTimeseries({ data: { ...input, keys: [...input.keys] } }).pipe(
-		Effect.mapBoth({
-			onSuccess: (response): ReadonlyArray<BucketPoint> => response.points,
-			onFailure: toLoadFailure,
-		}),
-		Effect.result,
+		Effect.map((response): ReadonlyArray<BucketPoint> => response.points),
+		settled,
 	)
 
 export const Statement = GcpCloudSqlTopQueriesResponse.fields.data.value
@@ -141,11 +132,8 @@ export type CloudSqlInput = typeof CloudSqlInput.Type
 
 export const loadTopQueries = (input: CloudSqlInput) =>
 	getGcpCloudSqlTopQueries({ data: { ...input, keys: [...input.keys] } }).pipe(
-		Effect.mapBoth({
-			onSuccess: (response): ReadonlyArray<Statement> => response.statements,
-			onFailure: toLoadFailure,
-		}),
-		Effect.result,
+		Effect.map((response): ReadonlyArray<Statement> => response.statements),
+		settled,
 	)
 
 export const TraceSide = Schema.Struct({
@@ -166,22 +154,19 @@ export type TraceSide = typeof TraceSide.Type
 
 export const loadTraceSide = (input: CloudSqlInput) =>
 	getGcpCloudSqlTraceSide({ data: { ...input, keys: [...input.keys] } }).pipe(
-		Effect.mapBoth({
-			onSuccess: (response): TraceSide => ({
-				databases: response.databases,
-				tracedQueries: Arr.map(response.tracedQueries, (query) => ({
-					queryKey: query.queryKey,
-					sampleStatement: query.sampleStatement,
-					sampleService: query.sampleService,
-					serviceCount: query.serviceCount,
-					estimatedQueryCount: query.estimatedQueryCount,
-					p95DurationMs: query.p95DurationMs,
-				})),
-				services: response.services,
-			}),
-			onFailure: toLoadFailure,
-		}),
-		Effect.result,
+		Effect.map((response): TraceSide => ({
+			databases: response.databases,
+			tracedQueries: Arr.map(response.tracedQueries, (query) => ({
+				queryKey: query.queryKey,
+				sampleStatement: query.sampleStatement,
+				sampleService: query.sampleService,
+				serviceCount: query.serviceCount,
+				estimatedQueryCount: query.estimatedQueryCount,
+				p95DurationMs: query.p95DurationMs,
+			})),
+			services: response.services,
+		})),
+		settled,
 	)
 
 /** One client span of a statement's traced shapes: see `serviceDbQuerySpansSQL`. */
@@ -207,11 +192,8 @@ export const loadStatementSpans = (input: StatementSpansInput) =>
 	getGcpCloudSqlStatementSpans({
 		data: { ...input, databases: [...input.databases], queryKeys: [...input.queryKeys] },
 	}).pipe(
-		Effect.mapBoth({
-			onSuccess: (response): ReadonlyArray<StatementSpan> => response.spans,
-			onFailure: toLoadFailure,
-		}),
-		Effect.result,
+		Effect.map((response): ReadonlyArray<StatementSpan> => response.spans),
+		settled,
 	)
 
 /** The entry spans the trace-gap callout counts errors on: `ServiceOverview`'s fields it reads. */
@@ -237,14 +219,12 @@ export const loadOverview = (input: OverviewInput) =>
 				? { startTime: input.startTime, endTime: input.endTime }
 				: { ...input, namespaces: [...input.namespaces] },
 	}).pipe(
-		Effect.mapBoth({
-			onSuccess: (response): ReadonlyArray<OverviewRow> =>
-				Arr.map(response.data, (row) => ({
-					serviceName: row.serviceName,
-					errorRate: row.errorRate,
-					throughput: row.throughput,
-				})),
-			onFailure: toLoadFailure,
-		}),
-		Effect.result,
+		Effect.map((response): ReadonlyArray<OverviewRow> =>
+			Arr.map(response.data, (row) => ({
+				serviceName: row.serviceName,
+				errorRate: row.errorRate,
+				throughput: row.throughput,
+			})),
+		),
+		settled,
 	)

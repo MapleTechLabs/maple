@@ -12,7 +12,7 @@ import { Effect, Option, Queue, Result, Schedule, Schema, Stream, Array as Arr }
 import { isDialogOpen, isEditableTarget } from "@maple/ui/lib/keyboard"
 import { Command, Mount } from "foldkit"
 import { IdleTtl } from "../../../data/idle-ttl"
-import { toLoadFailure } from "@maple/views/data/load-failure"
+import { settleTo } from "@maple/views/data/load-failure"
 import { readThrough } from "../../../data/read-cache"
 import { REPLAY_EVENTS, runReplayEngine } from "../kit/replay-engine-mount"
 import { Message } from "./message"
@@ -37,11 +37,7 @@ export const FetchDetail = Command.define("FetchReplayDetail", {
 				getReplay({ data: { sessionId, windowStart, windowEnd } }),
 				(response) => response.data,
 			),
-		).pipe(
-			Effect.mapError(toLoadFailure),
-			Effect.result,
-			Effect.map((result) => Message.CompletedFetchDetail({ key, result })),
-		),
+		).pipe(settleTo((result) => Message.CompletedFetchDetail({ key, result }))),
 })
 
 export const FetchManifest = Command.define("FetchReplayManifest", {
@@ -55,11 +51,7 @@ export const FetchManifest = Command.define("FetchReplayManifest", {
 				maxBytesPerRequest: manifest.max_bytes_per_request,
 				maxChunksPerRequest: manifest.max_chunks_per_request,
 			})),
-		).pipe(
-			Effect.mapError(toLoadFailure),
-			Effect.result,
-			Effect.map((result) => Message.CompletedFetchManifest({ key, result })),
-		),
+		).pipe(settleTo((result) => Message.CompletedFetchManifest({ key, result }))),
 })
 
 export const FetchTranscript = Command.define("FetchReplayTranscript", {
@@ -72,11 +64,7 @@ export const FetchTranscript = Command.define("FetchReplayTranscript", {
 				getSessionTranscript({ data: { sessionId, windowStart, windowEnd } }),
 				(response) => response.data,
 			),
-		).pipe(
-			Effect.mapError(toLoadFailure),
-			Effect.result,
-			Effect.map((result) => Message.CompletedFetchTranscript({ key, result })),
-		),
+		).pipe(settleTo((result) => Message.CompletedFetchTranscript({ key, result }))),
 })
 
 export const FetchTraceSummaries = Command.define("FetchReplayTraceSummaries", {
@@ -84,9 +72,8 @@ export const FetchTraceSummaries = Command.define("FetchReplayTraceSummaries", {
 	messages: [Message.CompletedFetchTraceSummaries],
 	execute: ({ key, traceIds, windowStart, windowEnd }) =>
 		getSessionTraceSummaries({ data: { traceIds, windowStart, windowEnd } }).pipe(
-			Effect.mapBoth({ onSuccess: (response) => response.data, onFailure: toLoadFailure }),
-			Effect.result,
-			Effect.map((result) => Message.CompletedFetchTraceSummaries({ key, result })),
+			Effect.map((response) => response.data),
+			settleTo((result) => Message.CompletedFetchTraceSummaries({ key, result })),
 		),
 })
 
@@ -104,16 +91,13 @@ export const FetchRange = Command.define("FetchReplayRange", {
 	messages: [Message.CompletedFetchRange],
 	execute: ({ key, ...data }) =>
 		getReplayEvents({ data }).pipe(
-			Effect.mapBoth({
-				onSuccess: (response) =>
-					Arr.map(response.chunks, (chunk) => ({
-						chunk_seq: chunk.chunk_seq,
-						events: Option.getOrElse(decodeChunk(chunk.events), () => []),
-					})),
-				onFailure: toLoadFailure,
-			}),
-			Effect.result,
-			Effect.map((result) => Message.CompletedFetchRange({ key, result })),
+			Effect.map((response) =>
+				Arr.map(response.chunks, (chunk) => ({
+					chunk_seq: chunk.chunk_seq,
+					events: Option.getOrElse(decodeChunk(chunk.events), () => []),
+				})),
+			),
+			settleTo((result) => Message.CompletedFetchRange({ key, result })),
 		),
 })
 
@@ -129,22 +113,19 @@ export const FetchSpans = Command.define("FetchReplayTraceSpans", {
 				Effect.succeed(Message.CompletedFetchSpans({ traceId, result: Result.succeed([]) })),
 			onSome: (id) =>
 				getSpanHierarchy({ data: { traceId: id, timestamp } }).pipe(
-					Effect.mapBoth({
-						onSuccess: (response) =>
-							Arr.map(response.spans, (span) => ({
-								spanId: span.spanId,
-								spanName: span.spanName,
-								serviceName: span.serviceName,
-								startTime: span.startTime,
-								durationMs: span.durationMs,
-								statusCode: span.statusCode,
-								spanAttributes: span.spanAttributes,
-								spanKind: span.spanKind,
-							})),
-						onFailure: toLoadFailure,
-					}),
-					Effect.result,
-					Effect.map((result) => Message.CompletedFetchSpans({ traceId, result })),
+					Effect.map((response) =>
+						Arr.map(response.spans, (span) => ({
+							spanId: span.spanId,
+							spanName: span.spanName,
+							serviceName: span.serviceName,
+							startTime: span.startTime,
+							durationMs: span.durationMs,
+							statusCode: span.statusCode,
+							spanAttributes: span.spanAttributes,
+							spanKind: span.spanKind,
+						})),
+					),
+					settleTo((result) => Message.CompletedFetchSpans({ traceId, result })),
 				),
 		}),
 })

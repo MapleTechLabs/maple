@@ -1,7 +1,7 @@
 import { getNodeFacets, listNodes } from "@maple/web-data/warehouse/infra"
 import { Effect, Schema } from "effect"
 import { Command } from "foldkit"
-import { toLoadFailure } from "@maple/views/data/load-failure"
+import { settleTo } from "@maple/views/data/load-failure"
 import { TimeWindow } from "../../../../data/time-range"
 import { Message } from "./message"
 
@@ -20,9 +20,8 @@ export const FetchNodes = Command.define("FetchInfraNodes", {
 	messages: [Message.CompletedFetchNodes],
 	execute: ({ key, input }) =>
 		listNodes({ data: input }).pipe(
-			Effect.mapBoth({ onSuccess: (response) => response.data, onFailure: toLoadFailure }),
-			Effect.result,
-			Effect.map((result) => Message.CompletedFetchNodes({ key, result })),
+			Effect.map((response) => response.data),
+			settleTo((result) => Message.CompletedFetchNodes({ key, result })),
 		),
 })
 
@@ -31,8 +30,7 @@ export const FetchFacets = Command.define("FetchInfraNodeFacets", {
 	messages: [Message.CompletedFetchFacets],
 	execute: ({ key, window }) =>
 		getNodeFacets({ data: window }).pipe(
-			Effect.mapBoth({ onSuccess: (response) => response.data, onFailure: toLoadFailure }),
-			Effect.result,
-			Effect.map((result) => Message.CompletedFetchFacets({ key, result })),
+			Effect.map((response) => response.data),
+			settleTo((result) => Message.CompletedFetchFacets({ key, result })),
 		),
 })

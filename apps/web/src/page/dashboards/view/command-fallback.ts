@@ -1,7 +1,7 @@
 import { DashboardId } from "@maple/domain/http"
 import { Effect, Schema } from "effect"
 import { Command } from "foldkit"
-import { toLoadFailure } from "@maple/views/data/load-failure"
+import { settleTo } from "@maple/views/data/load-failure"
 import { MapleApiV2Client } from "../../../platform/api-clients"
 import { documentOf } from "./command-history"
 import { Message } from "./message"
@@ -29,8 +29,6 @@ export const FetchDashboardFallback = Command.define("FetchDashboardFallback", {
 			Effect.withSpan("dashboard.board.fetchFallback", {
 				attributes: { "maple.dashboard.fallback_reason": reason },
 			}),
-			Effect.mapError(toLoadFailure),
-			Effect.result,
-			Effect.map((result) => Message.CompletedFetchDashboardFallback({ dashboardId, result })),
+			settleTo((result) => Message.CompletedFetchDashboardFallback({ dashboardId, result })),
 		),
 })

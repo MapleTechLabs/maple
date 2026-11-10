@@ -8,7 +8,7 @@ import {
 } from "@maple/web-data/warehouse/infra"
 import { Effect, Schema } from "effect"
 import { Command } from "foldkit"
-import { toLoadFailure } from "@maple/views/data/load-failure"
+import { settleTo } from "@maple/views/data/load-failure"
 import { TimeWindow } from "../../../../data/time-range"
 import { Message } from "./message"
 
@@ -49,12 +49,8 @@ export const FetchContainers = Command.define("FetchInfraContainers", {
 	messages: [Message.CompletedFetchContainers],
 	execute: ({ key, input }) =>
 		listContainers({ data: input satisfies ListContainersInput }).pipe(
-			Effect.mapBoth({
-				onSuccess: ({ data, totalCount }) => ({ data, totalCount }),
-				onFailure: toLoadFailure,
-			}),
-			Effect.result,
-			Effect.map((result) => Message.CompletedFetchContainers({ key, result })),
+			Effect.map(({ data, totalCount }) => ({ data, totalCount })),
+			settleTo((result) => Message.CompletedFetchContainers({ key, result })),
 		),
 })
 
@@ -70,17 +66,13 @@ export const FetchSummary = Command.define("FetchInfraContainersSummary", {
 	messages: [Message.CompletedFetchSummary],
 	execute: ({ key, input }) =>
 		containersSummary({ data: input satisfies ContainersSummaryInput }).pipe(
-			Effect.mapBoth({
-				onSuccess: (counts) => ({
-					totalContainers: counts.totalContainers,
-					saturatedContainers: counts.saturatedContainers,
-					elevatedContainers: counts.elevatedContainers,
-					staleContainers: counts.staleContainers,
-				}),
-				onFailure: toLoadFailure,
-			}),
-			Effect.result,
-			Effect.map((result) => Message.CompletedFetchSummary({ key, result })),
+			Effect.map((counts) => ({
+				totalContainers: counts.totalContainers,
+				saturatedContainers: counts.saturatedContainers,
+				elevatedContainers: counts.elevatedContainers,
+				staleContainers: counts.staleContainers,
+			})),
+			settleTo((result) => Message.CompletedFetchSummary({ key, result })),
 		),
 })
 
@@ -89,9 +81,8 @@ export const FetchFacets = Command.define("FetchInfraContainerFacets", {
 	messages: [Message.CompletedFetchFacets],
 	execute: ({ key, window }) =>
 		getContainerFacets({ data: window }).pipe(
-			Effect.mapBoth({ onSuccess: (response) => response.data, onFailure: toLoadFailure }),
-			Effect.result,
-			Effect.map((result) => Message.CompletedFetchFacets({ key, result })),
+			Effect.map((response) => response.data),
+			settleTo((result) => Message.CompletedFetchFacets({ key, result })),
 		),
 })
 

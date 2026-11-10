@@ -4,7 +4,7 @@ import { getAiSessionsFacets } from "@maple/web-data/warehouse/ai-sessions"
 import { getAiToolBreakdowns, getAiToolSeries } from "@maple/web-data/warehouse/ai-session-tools"
 import { Clock, Effect, Schema } from "effect"
 import { Command } from "foldkit"
-import { toLoadFailure } from "@maple/views/data/load-failure"
+import { settleTo } from "@maple/views/data/load-failure"
 import { resolveWindow, TimeWindow } from "../../../data/time-range"
 import { loadSignalPresences } from "../../kit/signal-presence"
 import { fetchTotals, Selection, toInput } from "../../kit/tools/reads"
@@ -36,9 +36,7 @@ export const FetchSeries = Command.define("FetchAgentToolsSeries", {
 		getAiToolSeries({
 			data: { ...toInput(selection), bucketSeconds, split: isScope ? "none" : undefined },
 		}).pipe(
-			Effect.mapError(toLoadFailure),
-			Effect.result,
-			Effect.map((result) =>
+			settleTo((result) =>
 				isScope
 					? Message.CompletedFetchScopeSeries({ key, result })
 					: Message.CompletedFetchSeries({ key, result }),
@@ -62,9 +60,7 @@ export const FetchBreakdowns = Command.define("FetchAgentToolsBreakdowns", {
 	messages: [Message.CompletedFetchBreakdowns, Message.CompletedFetchTabBreakdowns],
 	execute: ({ key, selection, isTab }) =>
 		getAiToolBreakdowns({ data: toInput(selection) }).pipe(
-			Effect.mapError(toLoadFailure),
-			Effect.result,
-			Effect.map((result) =>
+			settleTo((result) =>
 				isTab
 					? Message.CompletedFetchTabBreakdowns({ key, result })
 					: Message.CompletedFetchBreakdowns({ key, result }),
@@ -77,9 +73,7 @@ export const FetchFacets = Command.define("FetchAgentToolsFacets", {
 	messages: [Message.CompletedFetchFacets],
 	execute: ({ key, window }) =>
 		getAiSessionsFacets({ data: window }).pipe(
-			Effect.mapError(toLoadFailure),
-			Effect.result,
-			Effect.map((result) => Message.CompletedFetchFacets({ key, result })),
+			settleTo((result) => Message.CompletedFetchFacets({ key, result })),
 		),
 })
 

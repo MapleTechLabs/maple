@@ -2,7 +2,7 @@ import { AiToolErrorSampleCursor } from "@maple/domain/http"
 import { getAiToolErrorDetail, getAiToolErrorSamples } from "@maple/web-data/warehouse/ai-session-tools"
 import { Effect, Option, Schema, Stream } from "effect"
 import { Command, Dom } from "foldkit"
-import { toLoadFailure } from "@maple/views/data/load-failure"
+import { settleTo } from "@maple/views/data/load-failure"
 import { writeClipboard } from "../../kit/clipboard"
 import { Selection, toInput } from "../../kit/tools/reads"
 import { Message, type ModalKey } from "./error-modal-model"
@@ -14,11 +14,7 @@ export const FetchErrorDetail = Command.define("FetchAgentToolErrorDetail", {
 	execute: ({ key, selection, fingerprint }) =>
 		getAiToolErrorDetail({
 			data: { ...toInput(selection), tool: selection.tool ?? "", fingerprint },
-		}).pipe(
-			Effect.mapError(toLoadFailure),
-			Effect.result,
-			Effect.map((result) => Message.CompletedFetchDetail({ key, result })),
-		),
+		}).pipe(settleTo((result) => Message.CompletedFetchDetail({ key, result }))),
 })
 
 /** One page of `aiToolErrorSamplesResultAtom`: the narrowing and the cursor that fetched it. */
@@ -43,12 +39,8 @@ export const FetchErrorSamples = Command.define("FetchAgentToolErrorSamples", {
 				before,
 			},
 		}).pipe(
-			Effect.mapBoth({
-				onSuccess: (page) => ({ occurrences: page.occurrences, nextCursor: page.nextCursor }),
-				onFailure: toLoadFailure,
-			}),
-			Effect.result,
-			Effect.map((result) => Message.CompletedFetchSamples({ key, result })),
+			Effect.map((page) => ({ occurrences: page.occurrences, nextCursor: page.nextCursor })),
+			settleTo((result) => Message.CompletedFetchSamples({ key, result })),
 		),
 })
 

@@ -9,7 +9,7 @@ import {
 import { Clock, Duration, Effect, Queue, Schema, Stream, Array as Arr, Predicate } from "effect"
 import { Command, Mount } from "foldkit"
 import { IdleTtl } from "../../../data/idle-ttl"
-import { toLoadFailure } from "@maple/views/data/load-failure"
+import { settleTo, settled } from "@maple/views/data/load-failure"
 import { readThrough } from "../../../data/read-cache"
 import { resolveWindow, TimeWindow } from "../../../data/time-range"
 import { TracesSearch } from "../../../route/search"
@@ -54,11 +54,7 @@ export const FetchFacets = Command.define("FetchTracesFacets", {
 				getTracesFacets({ data: { startTime: window.startTime, endTime: window.endTime } }),
 				(response) => response.data,
 			),
-		).pipe(
-			Effect.mapError(toLoadFailure),
-			Effect.result,
-			Effect.map((result) => Message.CompletedFetchFacets({ key, result })),
-		),
+		).pipe(settleTo((result) => Message.CompletedFetchFacets({ key, result }))),
 })
 
 /** `buildQueryParams`: the URL filters and window, the org pin overriding URL namespaces. */
@@ -121,15 +117,12 @@ const toRow = (trace: Trace): TraceRow => ({
 
 const fetchPage = (search: Search, window: TimeWindow, pinnedNamespace: string | null, offset: number) =>
 	listTraces({ data: listInput(search, window, pinnedNamespace, offset) }).pipe(
-		Effect.mapBoth({
-			onSuccess: (response): TracesPage => ({
-				rows: Arr.map(response.data, toRow),
-				scannedCount: response.meta.scannedCount,
-				hiddenCount: response.meta.hiddenCount,
-			}),
-			onFailure: toLoadFailure,
-		}),
-		Effect.result,
+		Effect.map((response): TracesPage => ({
+			rows: Arr.map(response.data, toRow),
+			scannedCount: response.meta.scannedCount,
+			hiddenCount: response.meta.hiddenCount,
+		})),
+		settled,
 	)
 
 const PageArgs = {
@@ -221,9 +214,7 @@ export const FetchAdvancedLookup = Command.define("FetchTracesAdvancedLookup", {
 	messages: [Message.CompletedAdvancedLookup],
 	execute: ({ key, lookup, window }) =>
 		autocompleteLookup(lookup, window).pipe(
-			Effect.mapError(toLoadFailure),
-			Effect.result,
-			Effect.map((result) => Message.CompletedAdvancedLookup({ key, lookup, result })),
+			settleTo((result) => Message.CompletedAdvancedLookup({ key, lookup, result })),
 		),
 })
 

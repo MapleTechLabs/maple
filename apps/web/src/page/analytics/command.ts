@@ -22,7 +22,7 @@ import {
 } from "@maple/web-data/warehouse/search-console"
 import { Clock, Effect, Schema } from "effect"
 import { Command } from "foldkit"
-import { toLoadFailure } from "@maple/views/data/load-failure"
+import { settleTo } from "@maple/views/data/load-failure"
 import { resolveWindow } from "../../data/time-range"
 import { MapleInternalApiClient } from "../../platform/api-clients"
 import { loadSignalPresences } from "../kit/signal-presence"
@@ -57,11 +57,7 @@ const N = Schema.optional(Schema.Number)
 const toMessage =
 	(slot: SlotName, key: string) =>
 	<A, E, R>(effect: Effect.Effect<A, E, R>) =>
-		effect.pipe(
-			Effect.mapError(toLoadFailure),
-			Effect.result,
-			Effect.map((result) => Message.CompletedFetch({ slot, key, result })),
-		)
+		effect.pipe(settleTo((result) => Message.CompletedFetch({ slot, key, result })))
 
 const define = <Fields extends Schema.Struct.Fields, E, R>(
 	name: string,

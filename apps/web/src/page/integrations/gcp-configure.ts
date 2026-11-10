@@ -7,7 +7,7 @@ import { GcpConnectorId, GcpLogRuntime } from "@maple/domain/primitives"
 import { Effect, Schema, Option, Array as Arr } from "effect"
 import { Command } from "foldkit"
 import * as Keyed from "@maple/views/data/keyed"
-import { toLoadFailure } from "@maple/views/data/load-failure"
+import { toLoadFailure, settleTo } from "@maple/views/data/load-failure"
 import { MapleApiV2Client } from "../../platform/api-clients"
 import * as CopyButton from "@maple/views/ui/copy-button"
 import * as Dialog from "@maple/views/ui/dialog"
@@ -127,11 +127,7 @@ export const LoadConfigureScripts = Command.define("LoadGcpConfigureScripts", {
 				params: { id },
 				payload: applicationLogs === null ? {} : { application_logs: applicationLogs },
 			})
-		}).pipe(
-			Effect.mapError(toLoadFailure),
-			Effect.result,
-			Effect.map((result) => Message.CompletedGcpConfigureScripts({ key, result })),
-		),
+		}).pipe(settleTo((result) => Message.CompletedGcpConfigureScripts({ key, result }))),
 })
 
 /** `confirmRemoval`: records, on the admin's word, that what was switched off is gone. */

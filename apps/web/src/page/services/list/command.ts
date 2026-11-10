@@ -20,7 +20,7 @@ import {
 } from "effect"
 import { Command, Mount } from "foldkit"
 import { IdleTtl } from "../../../data/idle-ttl"
-import { toLoadFailure } from "@maple/views/data/load-failure"
+import { settleTo } from "@maple/views/data/load-failure"
 import { readThrough } from "../../../data/read-cache"
 import { resolveWindow, TimeWindow } from "../../../data/time-range"
 import { writeClipboard } from "@maple/views/ui/copy-button"
@@ -90,11 +90,7 @@ export const FetchOverview = Command.define("FetchServiceOverview", {
 			Effect.map(getServiceOverview({ data: toWarehouseInput(input) }), (response) =>
 				Arr.filter(response.data, (row) => !isMapleService(row)),
 			),
-		).pipe(
-			Effect.mapError(toLoadFailure),
-			Effect.result,
-			Effect.map((result) => Message.CompletedFetchOverview({ key, result })),
-		),
+		).pipe(settleTo((result) => Message.CompletedFetchOverview({ key, result }))),
 })
 
 export const FetchSparklines = Command.define("FetchServiceSparklines", {
@@ -114,11 +110,7 @@ export const FetchSparklines = Command.define("FetchServiceSparklines", {
 					]),
 				),
 			),
-		).pipe(
-			Effect.mapError(toLoadFailure),
-			Effect.result,
-			Effect.map((result) => Message.CompletedFetchSparklines({ key, result })),
-		),
+		).pipe(settleTo((result) => Message.CompletedFetchSparklines({ key, result }))),
 })
 
 /** `getServicesFacetsResultAtom`: shared with the Overview through the facets probe. */
@@ -127,19 +119,12 @@ export const FetchFacets = Command.define("FetchServicesFacets", {
 	messages: [Message.CompletedFetchFacets],
 	execute: ({ key, window, refresh }) =>
 		loadServicesFacets(window, { refresh, key }).pipe(
-			Effect.mapBoth({
-				onSuccess: ({ data }) => ({
-					environments: data.environments,
-					namespaces: Arr.filter(
-						data.namespaces,
-						(facet) => facet.name !== MAPLE_SERVICES_NAMESPACE,
-					),
-					commitShas: data.commitShas,
-				}),
-				onFailure: toLoadFailure,
-			}),
-			Effect.result,
-			Effect.map((result) => Message.CompletedFetchFacets({ key, result })),
+			Effect.map(({ data }) => ({
+				environments: data.environments,
+				namespaces: Arr.filter(data.namespaces, (facet) => facet.name !== MAPLE_SERVICES_NAMESPACE),
+				commitShas: data.commitShas,
+			})),
+			settleTo((result) => Message.CompletedFetchFacets({ key, result })),
 		),
 })
 
@@ -162,9 +147,8 @@ export const FetchBaseline = Command.define("FetchServiceHealthBaseline", {
 				namespaces: mutable(input.namespaces),
 			},
 		}).pipe(
-			Effect.mapBoth({ onSuccess: (response) => response.data, onFailure: toLoadFailure }),
-			Effect.result,
-			Effect.map((result) => Message.CompletedFetchBaseline({ key, result })),
+			Effect.map((response) => response.data),
+			settleTo((result) => Message.CompletedFetchBaseline({ key, result })),
 		),
 })
 
@@ -174,9 +158,7 @@ export const FetchAnomalies = Command.define("FetchOpenAnomalyServiceCounts", {
 	messages: [Message.CompletedFetchAnomalies],
 	execute: ({ key }) =>
 		loadAnomalyServiceCounts(key).pipe(
-			Effect.mapError(toLoadFailure),
-			Effect.result,
-			Effect.map((result) => Message.CompletedFetchAnomalies({ key, result })),
+			settleTo((result) => Message.CompletedFetchAnomalies({ key, result })),
 		),
 })
 
@@ -190,11 +172,7 @@ export const FetchCommitMessages = Command.define("FetchCommitMessages", {
 			return Rec.fromEntries(
 				Arr.map(response.commits, (commit) => [commit.sha, firstLine(commit.message)]),
 			)
-		}).pipe(
-			Effect.mapError(toLoadFailure),
-			Effect.result,
-			Effect.map((result) => Message.CompletedFetchCommitMessages({ key, result })),
-		),
+		}).pipe(settleTo((result) => Message.CompletedFetchCommitMessages({ key, result }))),
 })
 
 /** `CommitShaHoverCard`'s arm timer: the lookup starts 20 ms into a hover, ahead of the card. */

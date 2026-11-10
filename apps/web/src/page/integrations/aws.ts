@@ -12,7 +12,7 @@ import { displayError, isUnexpectedError } from "@maple/web-data/lib/error-messa
 import { Effect, Option, Schema, Array as Arr, String as Str } from "effect"
 import { AsyncData, Command } from "foldkit"
 import { KeyedSchema } from "@maple/views/data/keyed"
-import { LoadFailure, toLoadFailure } from "@maple/views/data/load-failure"
+import { LoadFailure, toLoadFailure, settleTo } from "@maple/views/data/load-failure"
 import { MapleApiV2Client } from "../../platform/api-clients"
 import * as CopyButton from "@maple/views/ui/copy-button"
 import * as Dialog from "@maple/views/ui/dialog"
@@ -202,11 +202,7 @@ export const LoadAwsSetup = Command.define("LoadAwsSetup", {
 		Effect.gen(function* () {
 			const client = yield* MapleApiV2Client
 			return yield* client.awsIntegration.setup({ params: { id } })
-		}).pipe(
-			Effect.mapError(toLoadFailure),
-			Effect.result,
-			Effect.map((result) => Message.CompletedLoadAwsSetup({ key, result })),
-		),
+		}).pipe(settleTo((result) => Message.CompletedLoadAwsSetup({ key, result }))),
 })
 
 export const LoadAwsIngest = Command.define("LoadAwsIngest", {
@@ -216,11 +212,7 @@ export const LoadAwsIngest = Command.define("LoadAwsIngest", {
 		Effect.gen(function* () {
 			const client = yield* MapleApiV2Client
 			return yield* client.awsIntegration.ingest({ params: { id } })
-		}).pipe(
-			Effect.mapError(toLoadFailure),
-			Effect.result,
-			Effect.map((result) => Message.CompletedLoadAwsIngest({ id, key, result })),
-		),
+		}).pipe(settleTo((result) => Message.CompletedLoadAwsIngest({ id, key, result }))),
 })
 
 /** `quiet`: the background re-check while a setup is open, which raises no toast. */

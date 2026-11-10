@@ -3,7 +3,7 @@ import { DashboardVariableSchema, DashboardWidgetSchema } from "@maple/domain/ht
 import { Effect, Queue, Schema, Stream, Array as Arr } from "effect"
 import * as SecureRandom from "effect/crypto/SecureRandom"
 import { Command, Mount } from "foldkit"
-import { toLoadFailure } from "@maple/views/data/load-failure"
+import { settleTo } from "@maple/views/data/load-failure"
 import { TimeWindow } from "../../../data/time-range"
 import { AutocompleteLookup, autocompleteLookup } from "../../kit/autocomplete-lookups"
 import { errorMessageOf, mutateDashboard } from "../kit/store"
@@ -18,9 +18,7 @@ export const FetchSuggestions = Command.define("FetchWidgetEditorSuggestions", {
 	messages: [Message.CompletedFetchSuggestions],
 	execute: ({ key, lookup, window }) =>
 		fetchSuggestions(lookup, window).pipe(
-			Effect.mapError(toLoadFailure),
-			Effect.result,
-			Effect.map((result) => Message.CompletedFetchSuggestions({ key, lookup, result })),
+			settleTo((result) => Message.CompletedFetchSuggestions({ key, lookup, result })),
 		),
 })
 
@@ -118,8 +116,6 @@ export const FetchAutocomplete = Command.define("FetchWidgetEditorAutocomplete",
 	messages: [Message.CompletedFetchAutocomplete],
 	execute: ({ key, lookup, window }) =>
 		autocompleteLookup(lookup, window).pipe(
-			Effect.mapError(toLoadFailure),
-			Effect.result,
-			Effect.map((result) => Message.CompletedFetchAutocomplete({ key, lookup, result })),
+			settleTo((result) => Message.CompletedFetchAutocomplete({ key, lookup, result })),
 		),
 })

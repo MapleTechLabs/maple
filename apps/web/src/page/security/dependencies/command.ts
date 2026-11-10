@@ -3,7 +3,7 @@ import { DependencyFindingId, DependencyFindingTriageStatus } from "@maple/domai
 import { VcsRepositoryId } from "@maple/domain/http"
 import { Effect, Schema } from "effect"
 import { Command } from "foldkit"
-import { toLoadFailure } from "@maple/views/data/load-failure"
+import { settled } from "@maple/views/data/load-failure"
 import { MapleInternalApiClient } from "../../../platform/api-clients"
 import { readGrants } from "../../../data/session-tenant"
 import { Message } from "./model"
@@ -17,7 +17,7 @@ const call = <A, E, R>(run: (api: Api) => Effect.Effect<A, E, R>) =>
 	Effect.gen(function* () {
 		const api = yield* MapleInternalApiClient
 		return yield* run(api)
-	}).pipe(Effect.mapError(toLoadFailure), Effect.result)
+	}).pipe(settled)
 
 export const ReadDependenciesClock = readClock("ReadSecurityDependenciesClock", Message.ReadClock)
 

@@ -8,7 +8,7 @@ import { getCustomChartTimeSeries } from "@maple/web-data/warehouse/custom-chart
 import { Effect, Option, Schema } from "effect"
 import { AsyncData, Command } from "foldkit"
 import { KeyedSchema } from "@maple/views/data/keyed"
-import { LoadFailure, toLoadFailure } from "@maple/views/data/load-failure"
+import { LoadFailure, toLoadFailure, settleTo } from "@maple/views/data/load-failure"
 import { TimeWindow } from "../../data/time-range"
 import { MapleApiV2Client } from "../../platform/api-clients"
 import * as CopyButton from "@maple/views/ui/copy-button"
@@ -93,17 +93,14 @@ export const LoadLogVolume = Command.define("LoadGcpIntegrationLogVolume", {
 				filters: { resourceAttributeFilters: [{ ...GCP_LOG_SOURCE, mode: "equals" }] },
 			},
 		}).pipe(
-			Effect.mapBoth({
-				onSuccess: (response) =>
-					gcpLogVolume(
-						response.data,
-						parseWarehouseDateTime(window.startTime),
-						parseWarehouseDateTime(window.endTime),
-					),
-				onFailure: toLoadFailure,
-			}),
-			Effect.result,
-			Effect.map((result) => Message.CompletedGcpLogVolume({ key, result })),
+			Effect.map((response) =>
+				gcpLogVolume(
+					response.data,
+					parseWarehouseDateTime(window.startTime),
+					parseWarehouseDateTime(window.endTime),
+				),
+			),
+			settleTo((result) => Message.CompletedGcpLogVolume({ key, result })),
 		),
 })
 
@@ -151,11 +148,7 @@ export const LoadScripts = Command.define("LoadGcpSetupScripts", {
 		Effect.gen(function* () {
 			const client = yield* MapleApiV2Client
 			return yield* client.gcpIntegration.setupScripts({ params: { id }, payload: {} })
-		}).pipe(
-			Effect.mapError(toLoadFailure),
-			Effect.result,
-			Effect.map((result) => Message.CompletedGcpScripts({ key, result })),
-		),
+		}).pipe(settleTo((result) => Message.CompletedGcpScripts({ key, result }))),
 })
 
 const storageKey = (orgId: string) => `maple.gcp.removed-connectors.${orgId}`

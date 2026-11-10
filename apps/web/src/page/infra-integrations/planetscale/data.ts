@@ -7,7 +7,7 @@ import { getPlanetScaleBranchStats, getServiceMapPlanetScale } from "@maple/web-
 import { V2PlanetScaleDatabaseList, V2PlanetScaleIntegration } from "@maple/domain/http/v2"
 import { Effect, Schema } from "effect"
 import { IntegrationStatuses } from "../../../data/integration-statuses"
-import { toLoadFailure } from "@maple/views/data/load-failure"
+import { settled } from "@maple/views/data/load-failure"
 import type { TimeWindow } from "../../../data/time-range"
 import { MapleApiV2Client } from "../../../platform/api-clients"
 
@@ -35,22 +35,19 @@ export const loadStatus = (refresh: boolean) =>
 	Effect.gen(function* () {
 		const statuses = yield* IntegrationStatuses
 		return yield* statuses.planetscale({ refresh })
-	}).pipe(Effect.mapError(toLoadFailure), Effect.result)
+	}).pipe(settled)
 
 /** `retainedQueryV2("planetscaleIntegration", "databases")`. */
 export const loadDatabases = Effect.gen(function* () {
 	const client = yield* MapleApiV2Client
 	return yield* client.planetscaleIntegration.databases()
-}).pipe(Effect.mapError(toLoadFailure), Effect.result)
+}).pipe(settled)
 
 /** `getServiceMapPlanetScaleResultAtom({ data: window })`. */
 export const loadDatabaseStats = (window: TimeWindow) =>
 	getServiceMapPlanetScale({ data: window }).pipe(
-		Effect.mapBoth({
-			onSuccess: (response): ReadonlyArray<DatabaseStat> => response.databases,
-			onFailure: toLoadFailure,
-		}),
-		Effect.result,
+		Effect.map((response): ReadonlyArray<DatabaseStat> => response.databases),
+		settled,
 	)
 
 export const BranchStat = Schema.Struct({ ...DatabaseStat.fields, branch: Schema.String })
@@ -106,11 +103,8 @@ export type QueryInsights = typeof QueryInsights.Type
 /** `getPlanetScaleBranchStatsResultAtom`. */
 export const loadBranchStats = (input: TimeWindow & { readonly database: string }) =>
 	getPlanetScaleBranchStats({ data: input }).pipe(
-		Effect.mapBoth({
-			onSuccess: (response): ReadonlyArray<BranchStat> => response.branches,
-			onFailure: toLoadFailure,
-		}),
-		Effect.result,
+		Effect.map((response): ReadonlyArray<BranchStat> => response.branches),
+		settled,
 	)
 
 export const TimeseriesInput = Schema.Struct({
@@ -124,11 +118,8 @@ export type TimeseriesInput = typeof TimeseriesInput.Type
 
 export const loadTimeseries = (input: TimeseriesInput) =>
 	getPlanetScaleInfraTimeseries({ data: input }).pipe(
-		Effect.mapBoth({
-			onSuccess: (response): ReadonlyArray<TimeseriesRow> => response.buckets,
-			onFailure: toLoadFailure,
-		}),
-		Effect.result,
+		Effect.map((response): ReadonlyArray<TimeseriesRow> => response.buckets),
+		settled,
 	)
 
 export const EpochWindowInput = Schema.Struct({
@@ -142,15 +133,12 @@ export type EpochWindowInput = typeof EpochWindowInput.Type
 
 export const loadEvents = (input: EpochWindowInput) =>
 	getPlanetScaleEvents({ data: input }).pipe(
-		Effect.mapBoth({
-			onSuccess: (response): ReadonlyArray<EventEntry> => response.events,
-			onFailure: toLoadFailure,
-		}),
-		Effect.result,
+		Effect.map((response): ReadonlyArray<EventEntry> => response.events),
+		settled,
 	)
 
 export const loadInsights = (input: EpochWindowInput) =>
 	getPlanetScaleQueryInsights({ data: input }).pipe(
-		Effect.mapBoth({ onSuccess: (response): QueryInsights => response, onFailure: toLoadFailure }),
-		Effect.result,
+		Effect.map((response): QueryInsights => response),
+		settled,
 	)

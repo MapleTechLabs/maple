@@ -6,7 +6,7 @@ import {
 import { Effect, Option, Schema, Array as Arr } from "effect"
 import { AsyncData, Command } from "foldkit"
 import { KeyedSchema } from "@maple/views/data/keyed"
-import { LoadFailure, toLoadFailure } from "@maple/views/data/load-failure"
+import { LoadFailure, toLoadFailure, settleTo } from "@maple/views/data/load-failure"
 import { MapleInternalApiClient } from "../../platform/api-clients"
 import { Message } from "./message"
 
@@ -104,11 +104,7 @@ export const FetchSearchConsoleSites = Command.define("FetchSearchConsoleSites",
 		Effect.gen(function* () {
 			const client = yield* MapleInternalApiClient
 			return yield* client.integrations.searchConsoleSites()
-		}).pipe(
-			Effect.mapError(toLoadFailure),
-			Effect.result,
-			Effect.map((result) => Message.CompletedLoadSearchConsoleSites({ key, result })),
-		),
+		}).pipe(settleTo((result) => Message.CompletedLoadSearchConsoleSites({ key, result }))),
 })
 
 /** `searchConsolePrime`: a first import now instead of on the next cron tick; a failure is left to the cron. */

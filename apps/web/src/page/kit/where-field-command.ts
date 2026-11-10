@@ -3,7 +3,7 @@ import { getMetricAttributeValues } from "@maple/web-data/warehouse/metrics"
 import { getResourceAttributeValues, getSpanAttributeValues } from "@maple/web-data/warehouse/traces"
 import { Effect, Schema, Stream, Array as Arr } from "effect"
 import { Command, Mount } from "foldkit"
-import { toLoadFailure } from "@maple/views/data/load-failure"
+import { settleTo } from "@maple/views/data/load-failure"
 import { caretEvents, listboxEvents, placeCaret } from "./where-autocomplete"
 import { WhereFieldMessage } from "./where-field"
 
@@ -49,9 +49,7 @@ export const FetchWhereFieldValues = Command.define("FetchWhereFieldValues", {
 	messages: [WhereFieldMessage.CompletedFetchValues],
 	execute: ({ slot, key, request }) =>
 		lookupWhereValues(request).pipe(
-			Effect.mapError(toLoadFailure),
-			Effect.result,
-			Effect.map((result) => WhereFieldMessage.CompletedFetchValues({ slot, key, result })),
+			settleTo((result) => WhereFieldMessage.CompletedFetchValues({ slot, key, result })),
 		),
 })
 

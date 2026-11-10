@@ -5,7 +5,7 @@ import { Clock, Effect, Schema } from "effect"
 import { Command } from "foldkit"
 import { defineMessageUnion } from "foldkit/message"
 import * as Keyed from "@maple/views/data/keyed"
-import { LoadFailure, toLoadFailure } from "@maple/views/data/load-failure"
+import { LoadFailure, settleTo } from "@maple/views/data/load-failure"
 import { resolveWindow, TimeWindow } from "../../../data/time-range"
 import { MapleInternalApiClient } from "../../../platform/api-clients"
 import type { Resources } from "../../../platform/resources"
@@ -95,11 +95,7 @@ export const FetchGithubStatus = Command.define("FetchCodeReviewGithubStatus", {
 		Effect.gen(function* () {
 			const client = yield* MapleInternalApiClient
 			return yield* client.integrations.githubStatus()
-		}).pipe(
-			Effect.mapError(toLoadFailure),
-			Effect.result,
-			Effect.map((result) => FrameMessage.CompletedFetchGithubStatus({ key, result })),
-		),
+		}).pipe(settleTo((result) => FrameMessage.CompletedFetchGithubStatus({ key, result }))),
 })
 
 export const CompleteReloadSpin = reloadSpin("CompleteCodeReviewReloadSpin", FrameMessage.CompletedReloadSpin)

@@ -8,7 +8,7 @@ import {
 } from "@maple/web-data/warehouse/users"
 import { Array as Arr, Clock, Effect, Schema, String as Str } from "effect"
 import { Command } from "foldkit"
-import { toLoadFailure } from "@maple/views/data/load-failure"
+import { settleTo } from "@maple/views/data/load-failure"
 import { IdleTtl } from "../../../data/idle-ttl"
 import { readThrough } from "../../../data/read-cache"
 import { TimeWindow } from "../../../data/time-range"
@@ -123,11 +123,7 @@ export const FetchUsers = Command.define("FetchUsers", {
 				listUsers({ data: listInputs(search, window, pinnedNamespace) }),
 				(response): UsersPage => ({ users: response.users }),
 			),
-		).pipe(
-			Effect.mapError(toLoadFailure),
-			Effect.result,
-			Effect.map((result) => Message.CompletedFetchUsers({ key, result })),
-		),
+		).pipe(settleTo((result) => Message.CompletedFetchUsers({ key, result }))),
 })
 
 /** The group view reads over the list's filters; a list narrowed to one group reads its whole size. */
@@ -146,11 +142,7 @@ export const FetchGroups = Command.define("FetchUserGroups", {
 				listUserGroups({ data: groupsReadInputs(search, window, pinnedNamespace) }),
 				(response): UsersGroupsPage => ({ groups: response.groups, truncated: response.truncated }),
 			),
-		).pipe(
-			Effect.mapError(toLoadFailure),
-			Effect.result,
-			Effect.map((result) => Message.CompletedFetchGroups({ key, result })),
-		),
+		).pipe(settleTo((result) => Message.CompletedFetchGroups({ key, result }))),
 })
 
 export const FetchFacets = Command.define("FetchUsersFacets", {
@@ -171,11 +163,7 @@ export const FetchFacets = Command.define("FetchUsersFacets", {
 					anonymousVisitors: response.anonymousVisitors,
 				}),
 			),
-		).pipe(
-			Effect.mapError(toLoadFailure),
-			Effect.result,
-			Effect.map((result) => Message.CompletedFetchFacets({ key, result })),
-		),
+		).pipe(settleTo((result) => Message.CompletedFetchFacets({ key, result }))),
 })
 
 export const LoadSignalPresence = Command.define("LoadUsersSignalPresence", {

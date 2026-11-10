@@ -1,7 +1,7 @@
 import { containerDetailSummary, containerInfraTimeseries } from "@maple/web-data/warehouse/infra"
 import { Effect, Schema } from "effect"
 import { Command } from "foldkit"
-import { toLoadFailure } from "@maple/views/data/load-failure"
+import { settleTo } from "@maple/views/data/load-failure"
 import { Message } from "./message"
 import { ContainerMetric } from "./model"
 
@@ -18,9 +18,8 @@ export const FetchSummary = Command.define("FetchInfraContainerSummary", {
 	messages: [Message.CompletedFetchSummary],
 	execute: ({ key, input }) =>
 		containerDetailSummary({ data: input }).pipe(
-			Effect.mapBoth({ onSuccess: (response) => response.data, onFailure: toLoadFailure }),
-			Effect.result,
-			Effect.map((result) => Message.CompletedFetchSummary({ key, result })),
+			Effect.map((response) => response.data),
+			settleTo((result) => Message.CompletedFetchSummary({ key, result })),
 		),
 })
 
@@ -39,11 +38,7 @@ export const FetchSeries = Command.define("FetchInfraContainerSeries", {
 	messages: [Message.CompletedFetchSeries],
 	execute: ({ key, input }) =>
 		containerInfraTimeseries({ data: input }).pipe(
-			Effect.mapBoth({
-				onSuccess: (response) => ({ rows: response.data, unit: response.unit }),
-				onFailure: toLoadFailure,
-			}),
-			Effect.result,
-			Effect.map((result) => Message.CompletedFetchSeries({ metric: input.metric, key, result })),
+			Effect.map((response) => ({ rows: response.data, unit: response.unit })),
+			settleTo((result) => Message.CompletedFetchSeries({ metric: input.metric, key, result })),
 		),
 })

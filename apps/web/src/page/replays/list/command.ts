@@ -5,7 +5,7 @@ import { sessionTagsFromSearch } from "../kit/session-tags"
 import { Clock, Duration, Effect, Queue, Schema, Stream } from "effect"
 import { Command, Mount } from "foldkit"
 import { IdleTtl } from "../../../data/idle-ttl"
-import { toLoadFailure } from "@maple/views/data/load-failure"
+import { settleTo, settled } from "@maple/views/data/load-failure"
 import { readThrough } from "../../../data/read-cache"
 import { resolveWindow, TimeWindow } from "../../../data/time-range"
 import { ReplaysSearch } from "../../../route/search"
@@ -66,8 +66,7 @@ const listPage = (input: ListReplaysInput) =>
 		nextCursor: page.nextCursor,
 	}))
 
-const fetchPage = (input: ListReplaysInput) =>
-	listPage(input).pipe(Effect.mapError(toLoadFailure), Effect.result)
+const fetchPage = (input: ListReplaysInput) => listPage(input).pipe(settled)
 
 const PageArgs = { key: Schema.String, search: ReplaysSearch, window: TimeWindow }
 
@@ -78,11 +77,7 @@ export const FetchFirstPage = Command.define("FetchReplaysFirstPage", {
 		readThrough(
 			{ key, refresh, idleTtlMs: IdleTtl.listReplays, schema: ReplaysPage },
 			listPage({ ...filterInputs(search, window), limit: PAGE_SIZE }),
-		).pipe(
-			Effect.mapError(toLoadFailure),
-			Effect.result,
-			Effect.map((result) => Message.CompletedFetchFirstPage({ key, result })),
-		),
+		).pipe(settleTo((result) => Message.CompletedFetchFirstPage({ key, result }))),
 })
 
 /** `fetchNextPage`: the cursor the last page handed back. */
@@ -102,11 +97,7 @@ export const FetchFacets = Command.define("FetchReplaysFacets", {
 		readThrough(
 			{ key, refresh, idleTtlMs: IdleTtl.replaysFacets, schema: ReplaysFacets },
 			getReplaysFacets({ data: filterInputs(search, window) }),
-		).pipe(
-			Effect.mapError(toLoadFailure),
-			Effect.result,
-			Effect.map((result) => Message.CompletedFetchFacets({ key, result })),
-		),
+		).pipe(settleTo((result) => Message.CompletedFetchFacets({ key, result }))),
 })
 
 export const LoadSignalPresence = Command.define("LoadReplaysSignalPresence", {

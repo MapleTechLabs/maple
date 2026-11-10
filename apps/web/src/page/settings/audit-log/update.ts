@@ -15,7 +15,7 @@ import { formatWarehouseDateTime, parseWarehouseDateTime } from "@maple/query-en
 import * as CustomRange from "../../kit/custom-range"
 import { Clock, DateTime, Effect, Option, Result, Schema, Array as Arr, String as Str } from "effect"
 import { Command } from "foldkit"
-import { toLoadFailure } from "@maple/views/data/load-failure"
+import { settleTo } from "@maple/views/data/load-failure"
 import { isClerkAuthEnabled } from "../../../lib/services/common/auth-mode"
 import { MapleApiV2Client } from "../../../platform/api-clients"
 import { clerkTry, currentClerkOrganization } from "../../../platform/clerk"
@@ -123,11 +123,7 @@ const fetchPage = (request: PageRequest, presetSince: string | null) =>
 			},
 		})
 		return { data: response.data, has_more: response.has_more, next_cursor: response.next_cursor }
-	}).pipe(
-		Effect.mapError(toLoadFailure),
-		Effect.result,
-		Effect.map((result) => Message.CompletedFetchPage({ request, resolvedSince: presetSince, result })),
-	)
+	}).pipe(settleTo((result) => Message.CompletedFetchPage({ request, resolvedSince: presetSince, result })))
 
 /** `useOrganization({ memberships: { pageSize: 100 } })`: members by user id; none on a failed read. */
 const FetchAuditMembers = Command.define("FetchAuditLogMembers", {

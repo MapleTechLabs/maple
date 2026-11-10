@@ -2,7 +2,7 @@ import { retrieveIngestKeys } from "../../../data/ingest-keys"
 import { Effect, Schema } from "effect"
 import { AsyncData, Command, Mount, type Update } from "foldkit"
 import { defineMessageUnion } from "foldkit/message"
-import { LoadFailure, toLoadFailure } from "@maple/views/data/load-failure"
+import { LoadFailure, settleTo } from "@maple/views/data/load-failure"
 import type { Resources } from "../../../platform/resources"
 import * as CopyButton from "@maple/views/ui/copy-button"
 import * as Dialog from "@maple/views/ui/dialog"
@@ -70,11 +70,7 @@ export const FetchIngestKey = Command.define("FetchInstallIngestKey", {
 	execute: Effect.gen(function* () {
 		const response = yield* retrieveIngestKeys
 		return response.private_key
-	}).pipe(
-		Effect.mapError(toLoadFailure),
-		Effect.result,
-		Effect.map((result) => Message.CompletedFetchIngestKey({ result })),
-	),
+	}).pipe(settleTo((result) => Message.CompletedFetchIngestKey({ result }))),
 })
 
 export type Return = Update.Return<Model, Message, Resources>

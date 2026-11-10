@@ -5,7 +5,7 @@ import { Effect, Option, Schema, Array as Arr } from "effect"
 import { AsyncData, Command } from "foldkit"
 import { defineMessageUnion } from "foldkit/message"
 import * as Keyed from "@maple/views/data/keyed"
-import { LoadFailure, toLoadFailure } from "@maple/views/data/load-failure"
+import { LoadFailure, settleTo } from "@maple/views/data/load-failure"
 import { MapleApiV2Client } from "../../../platform/api-clients"
 import type { Resources } from "../../../platform/resources"
 import * as Combobox from "@maple/views/ui/combobox"
@@ -47,11 +47,7 @@ export const FetchChatChannels = Command.define("FetchAlertChatChannels", {
 			const client = yield* MapleApiV2Client
 			const response = yield* client.chatIntegration.destinations({ params: { id: workspaceId } })
 			return response.destinations
-		}).pipe(
-			Effect.mapError(toLoadFailure),
-			Effect.result,
-			Effect.map((result) => Message.CompletedFetchChannels({ key, result })),
-		),
+		}).pipe(settleTo((result) => Message.CompletedFetchChannels({ key, result }))),
 })
 
 export type Return = Readonly<{

@@ -8,7 +8,7 @@ import { isClerkAuthEnabled } from "../../lib/services/common/auth-mode"
 import { NetworkErrorBody } from "@maple/web-data/lib/error-messages"
 import { Duration, Effect, Schema } from "effect"
 import { Command } from "foldkit"
-import { toLoadFailure } from "@maple/views/data/load-failure"
+import { toLoadFailure, settleTo } from "@maple/views/data/load-failure"
 import { SessionTenant } from "../../data/session-tenant"
 import { Message } from "./message"
 import { BillingCustomerCache } from "../../data/billing-customer"
@@ -29,11 +29,7 @@ export const FetchSettingsSession = Command.define("FetchSettingsSession", {
 			hasAiAutoTriage: flags.aiAutoTriage,
 			hasDataSources: flags.dataSources,
 		}
-	}).pipe(
-		Effect.mapError(toLoadFailure),
-		Effect.result,
-		Effect.map((result) => Message.CompletedFetchSession({ result })),
-	),
+	}).pipe(settleTo((result) => Message.CompletedFetchSession({ result }))),
 })
 
 /** A customer read still pending after this reads as unreachable, so Billing shows Retry, not shimmer. */

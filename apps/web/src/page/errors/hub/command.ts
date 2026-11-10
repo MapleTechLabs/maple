@@ -10,7 +10,7 @@ import {
 } from "@maple/web-data/warehouse/errors"
 import { Clock, Effect, Queue, Schema, Stream, Array as Arr } from "effect"
 import { Command, Mount } from "foldkit"
-import { toLoadFailure } from "@maple/views/data/load-failure"
+import { settleTo } from "@maple/views/data/load-failure"
 import { resolveWindow, TimeWindow } from "../../../data/time-range"
 import { MapleApiV2Client } from "../../../platform/api-clients"
 import { loadSignalPresences } from "../../kit/signal-presence"
@@ -56,9 +56,8 @@ export const FetchSummary = Command.define("FetchErrorsSummary", {
 	messages: [Message.CompletedFetchSummary],
 	execute: ({ key, filters }) =>
 		getErrorsSummary({ data: warehouseData(filters) }).pipe(
-			Effect.mapBoth({ onSuccess: (response) => response.data, onFailure: toLoadFailure }),
-			Effect.result,
-			Effect.map((result) => Message.CompletedFetchSummary({ key, result })),
+			Effect.map((response) => response.data),
+			settleTo((result) => Message.CompletedFetchSummary({ key, result })),
 		),
 })
 
@@ -71,11 +70,7 @@ export const FetchServiceCounts = Command.define("FetchErrorIssueServiceCounts",
 			const client = yield* MapleApiV2Client
 			const response = yield* client.errorIssues.serviceCounts()
 			return response.data
-		}).pipe(
-			Effect.mapError(toLoadFailure),
-			Effect.result,
-			Effect.map((result) => Message.CompletedFetchServiceCounts({ key, result })),
-		),
+		}).pipe(settleTo((result) => Message.CompletedFetchServiceCounts({ key, result }))),
 })
 
 /** `getErrorsFacets` over the trend window: the Environment section's names. */
@@ -84,12 +79,8 @@ export const FetchEnvironments = Command.define("FetchErrorsEnvironments", {
 	messages: [Message.CompletedFetchEnvironments],
 	execute: ({ key, window }) =>
 		getErrorsFacets({ data: { startTime: window.startTime, endTime: window.endTime } }).pipe(
-			Effect.mapBoth({
-				onSuccess: (response) => Arr.map(response.data.deploymentEnvs, (env) => env.name),
-				onFailure: toLoadFailure,
-			}),
-			Effect.result,
-			Effect.map((result) => Message.CompletedFetchEnvironments({ key, result })),
+			Effect.map((response) => Arr.map(response.data.deploymentEnvs, (env) => env.name)),
+			settleTo((result) => Message.CompletedFetchEnvironments({ key, result })),
 		),
 })
 
@@ -99,12 +90,8 @@ export const FetchRanking = Command.define("FetchErrorsRanking", {
 	messages: [Message.CompletedFetchRanking],
 	execute: ({ key, filters, limit }) =>
 		getErrorsByType({ data: { ...warehouseData(filters), limit } }).pipe(
-			Effect.mapBoth({
-				onSuccess: (response) => Arr.map(response.data, (row) => row.fingerprintHash),
-				onFailure: toLoadFailure,
-			}),
-			Effect.result,
-			Effect.map((result) => Message.CompletedFetchRanking({ key, result })),
+			Effect.map((response) => Arr.map(response.data, (row) => row.fingerprintHash)),
+			settleTo((result) => Message.CompletedFetchRanking({ key, result })),
 		),
 })
 
@@ -119,11 +106,7 @@ export const FetchPage = Command.define("FetchErrorIssuesPage", {
 			const client = yield* MapleApiV2Client
 			const response = yield* client.errorIssues.list({ query })
 			return { data: response.data, hasMore: response.has_more, nextCursor: response.next_cursor }
-		}).pipe(
-			Effect.mapError(toLoadFailure),
-			Effect.result,
-			Effect.map((result) => Message.CompletedFetchPage({ key, result })),
-		),
+		}).pipe(settleTo((result) => Message.CompletedFetchPage({ key, result }))),
 })
 
 /** Window counts for the rows on screen, asked for by fingerprint. */
@@ -138,9 +121,8 @@ export const FetchVolume = Command.define("FetchErrorsVolume", {
 				limit: Math.max(1, fingerprintHashes.length),
 			},
 		}).pipe(
-			Effect.mapBoth({ onSuccess: (response) => response.data, onFailure: toLoadFailure }),
-			Effect.result,
-			Effect.map((result) => Message.CompletedFetchVolume({ key, result })),
+			Effect.map((response) => response.data),
+			settleTo((result) => Message.CompletedFetchVolume({ key, result })),
 		),
 })
 
@@ -156,9 +138,8 @@ export const FetchSpark = Command.define("FetchErrorsSpark", {
 		getErrorsSpark({
 			data: { ...warehouseData(filters), fingerprintHashes: [...fingerprintHashes], bucketSeconds },
 		}).pipe(
-			Effect.mapBoth({ onSuccess: (response) => response.data, onFailure: toLoadFailure }),
-			Effect.result,
-			Effect.map((result) => Message.CompletedFetchSpark({ key, result })),
+			Effect.map((response) => response.data),
+			settleTo((result) => Message.CompletedFetchSpark({ key, result })),
 		),
 })
 
@@ -171,11 +152,7 @@ export const FetchInvestigations = Command.define("FetchErrorsInvestigations", {
 			const client = yield* MapleApiV2Client
 			const response = yield* client.investigations.list({ query: { limit } })
 			return response.data
-		}).pipe(
-			Effect.mapError(toLoadFailure),
-			Effect.result,
-			Effect.map((result) => Message.CompletedFetchInvestigations({ key, result })),
-		),
+		}).pipe(settleTo((result) => Message.CompletedFetchInvestigations({ key, result }))),
 })
 
 export const LoadSignalPresence = Command.define("LoadErrorsSignalPresence", {

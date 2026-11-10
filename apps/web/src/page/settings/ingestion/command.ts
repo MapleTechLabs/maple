@@ -2,20 +2,15 @@ import { AttributeMappingPublicId, RecommendationPublicId } from "@maple/domain/
 import { readLocalStorage } from "@maple/ui/lib/local-storage"
 import { collectV2Pages } from "@maple/web-data/lib/v2-pagination"
 import { getServiceOverview } from "@maple/web-data/warehouse/services"
-import { Clock, Effect, Option, type Result, Schema, Array as Arr } from "effect"
+import { Clock, Effect, Option, Schema, Array as Arr } from "effect"
 import { Command } from "foldkit"
-import { type LoadFailure, toLoadFailure } from "@maple/views/data/load-failure"
+import { settleTo } from "@maple/views/data/load-failure"
 import { resolveWindow } from "../../../data/time-range"
 import { MapleApiV2Client } from "../../../platform/api-clients"
 import { Message } from "./message"
 import { IngestKeyKind } from "./model"
 
 const PAGE_LIMIT = 100
-
-const settle =
-	<A, B>(toMessage: (result: Result.Result<A, LoadFailure>) => B) =>
-	<E, R>(effect: Effect.Effect<A, E, R>) =>
-		effect.pipe(Effect.mapError(toLoadFailure), Effect.result, Effect.map(toMessage))
 
 /** `useIngestConnection`: the last hour's service overview, snapped like `useEffectiveTimeRange`. */
 export const FetchIngestOverview = Command.define("FetchIngestOverview", {
@@ -34,13 +29,13 @@ export const FetchIngestOverview = Command.define("FetchIngestOverview", {
 				serviceName: String(row.serviceName),
 				spanCount: row.spanCount ?? 0,
 			}))
-		}).pipe(settle((result) => Message.CompletedFetchOverview({ result }))),
+		}).pipe(settleTo((result) => Message.CompletedFetchOverview({ result }))),
 })
 
 export const FetchIngestionKeys = Command.define("FetchIngestionKeys", {
 	messages: [Message.CompletedFetchIngestKeys],
 	execute: Effect.flatMap(MapleApiV2Client, (client) => client.ingestKeys.retrieve()).pipe(
-		settle((result) => Message.CompletedFetchIngestKeys({ result })),
+		settleTo((result) => Message.CompletedFetchIngestKeys({ result })),
 	),
 })
 
@@ -53,7 +48,7 @@ export const RollIngestKey = Command.define("RollIngestKey", {
 			kind === "public" ? client.ingestKeys.rollPublic() : client.ingestKeys.rollPrivate(),
 		).pipe(
 			Effect.asVoid,
-			settle((result) => Message.CompletedRollKey({ kind, result })),
+			settleTo((result) => Message.CompletedRollKey({ kind, result })),
 		),
 })
 
@@ -67,7 +62,7 @@ export const FetchRecommendations = Command.define("FetchRecommendations", {
 				query: cursor === undefined ? { limit: PAGE_LIMIT } : { limit: PAGE_LIMIT, cursor },
 			}),
 		)
-	}).pipe(settle((result) => Message.CompletedFetchRecommendations({ result }))),
+	}).pipe(settleTo((result) => Message.CompletedFetchRecommendations({ result }))),
 })
 
 /** `ingestAttributeMappingsListAtom`: every page. */
@@ -80,7 +75,7 @@ export const FetchMappings = Command.define("FetchAttributeMappings", {
 				query: cursor === undefined ? { limit: PAGE_LIMIT } : { limit: PAGE_LIMIT, cursor },
 			}),
 		)
-	}).pipe(settle((result) => Message.CompletedFetchMappings({ result }))),
+	}).pipe(settleTo((result) => Message.CompletedFetchMappings({ result }))),
 })
 
 // QUICK-START FRAMEWORK (`quickStartAtomFamily`, an `Atom.kvs` JSON entry)
@@ -147,7 +142,7 @@ export const ApplyRecommendation = Command.define("ApplyRecommendation", {
 			}),
 		).pipe(
 			Effect.asVoid,
-			settle((result) =>
+			settleTo((result) =>
 				Message.CompletedRecommendationAction({
 					id,
 					action: "apply",
@@ -168,7 +163,7 @@ export const TriageRecommendation = Command.define("TriageRecommendation", {
 				: client.instrumentationRecommendations.reopen({ params: { id } }),
 		).pipe(
 			Effect.asVoid,
-			settle((result) => Message.CompletedRecommendationAction({ id, action, label: "", result })),
+			settleTo((result) => Message.CompletedRecommendationAction({ id, action, label: "", result })),
 		),
 })
 
@@ -180,7 +175,7 @@ export const ToggleMapping = Command.define("ToggleAttributeMapping", {
 			client.attributeMappings.update({ params: { id }, payload: { enabled: isEnabled } }),
 		).pipe(
 			Effect.asVoid,
-			settle((result) => Message.CompletedToggleMapping({ id, result })),
+			settleTo((result) => Message.CompletedToggleMapping({ id, result })),
 		),
 })
 
@@ -192,6 +187,6 @@ export const DeleteMapping = Command.define("DeleteAttributeMapping", {
 			client.attributeMappings.delete({ params: { id } }),
 		).pipe(
 			Effect.asVoid,
-			settle((result) => Message.CompletedDelete({ result })),
+			settleTo((result) => Message.CompletedDelete({ result })),
 		),
 })

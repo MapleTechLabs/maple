@@ -8,7 +8,7 @@ import { getSpanHierarchy, getTraceSpanEvents } from "@maple/web-data/warehouse/
 import { Effect, Option, Schema, Array as Arr, Record as Rec, String as Str } from "effect"
 import { Command } from "foldkit"
 import { IdleTtl } from "../../../data/idle-ttl"
-import { toLoadFailure } from "@maple/views/data/load-failure"
+import { settleTo } from "@maple/views/data/load-failure"
 import { readThrough } from "../../../data/read-cache"
 import { requestKey, type RequestKey } from "@maple/views/data/request-key"
 import { writeClipboard } from "../../kit/clipboard"
@@ -66,9 +66,7 @@ export const FetchHierarchy = Command.define("FetchSpanHierarchy", {
 	messages: [Message.CompletedFetchHierarchy],
 	execute: ({ key, traceId, timestamp }) =>
 		readSpanHierarchy(key, traceId, timestamp).pipe(
-			Effect.mapError(toLoadFailure),
-			Effect.result,
-			Effect.map((result) => Message.CompletedFetchHierarchy({ key, result })),
+			settleTo((result) => Message.CompletedFetchHierarchy({ key, result })),
 		),
 })
 
@@ -86,11 +84,7 @@ export const FetchSpanEvents = Command.define("FetchTraceSpanEvents", {
 			Effect.map(getTraceSpanEvents({ data: { traceId, traceStartTime, totalDurationMs } }), (events) =>
 				Rec.fromEntries(events),
 			),
-		).pipe(
-			Effect.mapError(toLoadFailure),
-			Effect.result,
-			Effect.map((result) => Message.CompletedFetchSpanEvents({ key, result })),
-		),
+		).pipe(settleTo((result) => Message.CompletedFetchSpanEvents({ key, result }))),
 })
 
 const WindowArgs = { key: Schema.String, traceId: TraceId, startTime: Schema.String, endTime: Schema.String }
@@ -105,11 +99,7 @@ export const FetchLogsCount = Command.define("FetchTraceLogsCount", {
 				getLogsCount({ data: { traceId, startTime, endTime } }),
 				(response) => response.data[0]?.total ?? 0,
 			),
-		).pipe(
-			Effect.mapError(toLoadFailure),
-			Effect.result,
-			Effect.map((result) => Message.CompletedFetchLogsCount({ key, result })),
-		),
+		).pipe(settleTo((result) => Message.CompletedFetchLogsCount({ key, result }))),
 })
 
 export const FetchProductEvents = Command.define("FetchTraceProductEvents", {
@@ -129,11 +119,7 @@ export const FetchProductEvents = Command.define("FetchTraceProductEvents", {
 					attributes: event.attributes,
 				})),
 			),
-		).pipe(
-			Effect.mapError(toLoadFailure),
-			Effect.result,
-			Effect.map((result) => Message.CompletedFetchProductEvents({ key, result })),
-		),
+		).pipe(settleTo((result) => Message.CompletedFetchProductEvents({ key, result }))),
 })
 
 /** `getReplaysForTraceResultAtom`: the first session that observed the trace, if any. */
@@ -147,11 +133,7 @@ export const FetchReplays = Command.define("FetchTraceReplays", {
 				getReplaysForTrace({ data: { traceId } }),
 				(response) => response.data[0]?.sessionId ?? null,
 			),
-		).pipe(
-			Effect.mapError(toLoadFailure),
-			Effect.result,
-			Effect.map((result) => Message.CompletedFetchReplays({ key, result })),
-		),
+		).pipe(settleTo((result) => Message.CompletedFetchReplays({ key, result }))),
 })
 
 /** `TraceIdBadge`'s `useCopy({ label: "trace ID" })`. */

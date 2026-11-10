@@ -7,7 +7,7 @@ import {
 import { Effect, Schema, Array as Arr, String as Str } from "effect"
 import { AsyncData, Command } from "foldkit"
 import { KeyedSchema } from "@maple/views/data/keyed"
-import { LoadFailure, toLoadFailure } from "@maple/views/data/load-failure"
+import { LoadFailure, toLoadFailure, settleTo } from "@maple/views/data/load-failure"
 import { MapleApiV2Client } from "../../platform/api-clients"
 import * as Dialog from "@maple/views/ui/dialog"
 import * as Field from "@maple/views/ui/field"
@@ -85,11 +85,7 @@ export const FetchOrganizations = Command.define("FetchPlanetscaleOrganizations"
 		Effect.gen(function* () {
 			const client = yield* MapleApiV2Client
 			return yield* client.planetscaleIntegration.organizations()
-		}).pipe(
-			Effect.mapError(toLoadFailure),
-			Effect.result,
-			Effect.map((result) => Message.CompletedFetchOrganizations({ key, result })),
-		),
+		}).pipe(settleTo((result) => Message.CompletedFetchOrganizations({ key, result }))),
 })
 
 export const SelectOrganization = Command.define("SelectPlanetscaleOrganization", {

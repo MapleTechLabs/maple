@@ -4,7 +4,7 @@ import { getMetricSparklines, getMetricsSummary, listMetrics } from "@maple/web-
 import { QUERY_BUILDER_METRIC_TYPES } from "@maple/query-model"
 import { Clock, Effect, Schema } from "effect"
 import { Command } from "foldkit"
-import { toLoadFailure } from "@maple/views/data/load-failure"
+import { settleTo, settled } from "@maple/views/data/load-failure"
 import { resolveWindow, TimeWindow } from "../../../data/time-range"
 import { loadSignalPresences } from "../../kit/signal-presence"
 import { Message } from "./message"
@@ -42,8 +42,8 @@ export type ListInput = typeof ListInput.Type
 
 const fetchList = (input: ListInput) =>
 	listMetrics({ data: input }).pipe(
-		Effect.mapBoth({ onSuccess: (response) => response.data, onFailure: toLoadFailure }),
-		Effect.result,
+		Effect.map((response) => response.data),
+		settled,
 	)
 
 export const FetchCatalog = Command.define("FetchMetricsCatalog", {
@@ -65,9 +65,8 @@ export const FetchSummary = Command.define("FetchMetricsSummary", {
 	messages: [Message.CompletedFetchSummary],
 	execute: ({ key, window }) =>
 		getMetricsSummary({ data: window }).pipe(
-			Effect.mapBoth({ onSuccess: (response) => response.data, onFailure: toLoadFailure }),
-			Effect.result,
-			Effect.map((result) => Message.CompletedFetchSummary({ key, result })),
+			Effect.map((response) => response.data),
+			settleTo((result) => Message.CompletedFetchSummary({ key, result })),
 		),
 })
 
@@ -84,9 +83,8 @@ export const FetchSparklines = Command.define("FetchMetricSparklines", {
 	messages: [Message.CompletedFetchSparklines],
 	execute: ({ slot, key, input }) =>
 		getMetricSparklines({ data: input }).pipe(
-			Effect.mapBoth({ onSuccess: (response) => response.data, onFailure: toLoadFailure }),
-			Effect.result,
-			Effect.map((result) => Message.CompletedFetchSparklines({ slot, key, result })),
+			Effect.map((response) => response.data),
+			settleTo((result) => Message.CompletedFetchSparklines({ slot, key, result })),
 		),
 })
 

@@ -5,7 +5,7 @@ import { V2AlertRulePreviewParams, V2InvestigationCreateParams } from "@maple/do
 import { v2CheckToDocument } from "@maple/web-data/alerts/form-utils"
 import { Clock, Effect, Schema, Array as Arr } from "effect"
 import { Command } from "foldkit"
-import { toLoadFailure } from "@maple/views/data/load-failure"
+import { settleTo } from "@maple/views/data/load-failure"
 import { resolveWindow } from "../../../data/time-range"
 import { MapleApiV2Client } from "../../../platform/api-clients"
 import { listDeliveries, setRuleEnabled } from "../shared/commands"
@@ -74,11 +74,7 @@ export const FetchRuleChecks = Command.define("FetchAlertRuleChecks", {
 				nextCursor: response.next_cursor,
 				summary,
 			}
-		}).pipe(
-			Effect.mapError(toLoadFailure),
-			Effect.result,
-			Effect.map((result) => Message.CompletedFetchChecks({ key, result })),
-		),
+		}).pipe(settleTo((result) => Message.CompletedFetchChecks({ key, result }))),
 })
 
 /** `handleSelectBucket`: one bucket's checks, bounded; the request number drops stale answers. */
@@ -93,11 +89,7 @@ export const FetchBucketChecks = Command.define("FetchAlertRuleBucketChecks", {
 				query: { since, until, limit: PAGE_LIMIT },
 			})
 			return Arr.map(page.data, v2CheckToDocument)
-		}).pipe(
-			Effect.mapError(toLoadFailure),
-			Effect.result,
-			Effect.map((result) => Message.CompletedFetchBucketChecks({ request, result })),
-		),
+		}).pipe(settleTo((result) => Message.CompletedFetchBucketChecks({ request, result }))),
 })
 
 /** `ChecksPanel`'s "Load 100 more". */
@@ -120,11 +112,7 @@ export const LoadMoreChecks = Command.define("LoadMoreAlertRuleChecks", {
 				query: status === "all" ? query : { ...query, status },
 			})
 			return { checks: Arr.map(page.data, v2CheckToDocument), nextCursor: page.next_cursor }
-		}).pipe(
-			Effect.mapError(toLoadFailure),
-			Effect.result,
-			Effect.map((result) => Message.CompletedLoadMoreChecks({ generation, result })),
-		),
+		}).pipe(settleTo((result) => Message.CompletedLoadMoreChecks({ generation, result }))),
 })
 
 export const FetchRulePreview = Command.define("FetchAlertRulePreview", {
@@ -155,11 +143,7 @@ export const OpenRuleInvestigation = Command.define("OpenAlertRuleInvestigation"
 			const client = yield* MapleApiV2Client
 			const investigation = yield* client.investigations.create({ payload })
 			return String(investigation.id)
-		}).pipe(
-			Effect.mapError(toLoadFailure),
-			Effect.result,
-			Effect.map((result) => Message.CompletedOpenInvestigation({ result })),
-		),
+		}).pipe(settleTo((result) => Message.CompletedOpenInvestigation({ result }))),
 })
 
 export const FetchRuleSilences = Command.define("FetchAlertRuleSilences", {

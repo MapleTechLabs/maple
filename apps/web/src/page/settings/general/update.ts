@@ -2,7 +2,7 @@ import * as Policy from "@maple/domain/policy"
 import { organizationHomeRegion } from "@maple/domain/organization-regions"
 import { Effect, Option, Result, Schema, String as Str } from "effect"
 import { AsyncData, Command, File } from "foldkit"
-import { toLoadFailure } from "@maple/views/data/load-failure"
+import { settleTo } from "@maple/views/data/load-failure"
 import { MapleInternalApiClient } from "../../../platform/api-clients"
 import { clerkTry, currentClerkOrganization, currentClerkUser, switchAwayFrom } from "../../../platform/clerk"
 import * as Dialog from "@maple/views/ui/dialog"
@@ -55,15 +55,11 @@ export const FetchAdmins = Command.define("FetchClerkOrganizationAdmins", {
 				organization.getMemberships({ role: ["org:admin"], pageSize: 2 }),
 			),
 		),
-		Effect.mapBoth({
-			onSuccess: (page): AdminsInfo => ({
-				count: page.total_count,
-				firstAdminName: otherAdminName(page.data, window.Clerk?.user?.id),
-			}),
-			onFailure: toLoadFailure,
-		}),
-		Effect.result,
-		Effect.map((result) => Message.CompletedFetchAdmins({ result })),
+		Effect.map((page): AdminsInfo => ({
+			count: page.total_count,
+			firstAdminName: otherAdminName(page.data, window.Clerk?.user?.id),
+		})),
+		settleTo((result) => Message.CompletedFetchAdmins({ result })),
 	),
 })
 
@@ -117,9 +113,7 @@ const DeleteOrganization = Command.define("DeleteOrganization", {
 	messages: [Message.CompletedDelete],
 	execute: Effect.flatMap(MapleInternalApiClient, (client) => client.organizations.delete()).pipe(
 		Effect.asVoid,
-		Effect.mapError(toLoadFailure),
-		Effect.result,
-		Effect.map((result) => Message.CompletedDelete({ result })),
+		settleTo((result) => Message.CompletedDelete({ result })),
 	),
 })
 

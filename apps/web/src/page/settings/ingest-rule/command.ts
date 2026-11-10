@@ -10,7 +10,7 @@ import {
 } from "@maple/web-data/warehouse/traces"
 import { Effect, Schema, Array as Arr } from "effect"
 import { Command } from "foldkit"
-import { toLoadFailure } from "@maple/views/data/load-failure"
+import { settleTo } from "@maple/views/data/load-failure"
 import { currentWindow } from "../../../data/time-range"
 import { MapleApiV2Client } from "../../../platform/api-clients"
 import { readGrants } from "../../../data/session-tenant"
@@ -24,9 +24,7 @@ export const FetchRule = Command.define("FetchIngestRule", {
 	messages: [Message.CompletedFetchExisting],
 	execute: ({ id }) =>
 		Effect.flatMap(MapleApiV2Client, (client) => client.ingestRules.retrieve({ params: { id } })).pipe(
-			Effect.mapError(toLoadFailure),
-			Effect.result,
-			Effect.map((result) => Message.CompletedFetchExisting({ result })),
+			settleTo((result) => Message.CompletedFetchExisting({ result })),
 		),
 })
 
@@ -148,11 +146,7 @@ export const FetchSamples = Command.define("FetchIngestRuleSamples", {
 			return signal === "logs"
 				? yield* recentLogs(window, service)
 				: yield* recentSpans(window, service)
-		}).pipe(
-			Effect.mapError(toLoadFailure),
-			Effect.result,
-			Effect.map((result) => Message.CompletedFetchSamples({ key, result })),
-		),
+		}).pipe(settleTo((result) => Message.CompletedFetchSamples({ key, result }))),
 })
 
 export const SaveRule = Command.define("SaveIngestRule", {
@@ -163,9 +157,5 @@ export const SaveRule = Command.define("SaveIngestRule", {
 			editingId === null
 				? client.ingestRules.create({ payload })
 				: client.ingestRules.update({ params: { id: editingId }, payload }),
-		).pipe(
-			Effect.mapError(toLoadFailure),
-			Effect.result,
-			Effect.map((result) => Message.CompletedSave({ result })),
-		),
+		).pipe(settleTo((result) => Message.CompletedSave({ result }))),
 })

@@ -4,7 +4,7 @@ import { collectV2Pages } from "@maple/web-data/lib/v2-pagination"
 import { Effect, Schema } from "effect"
 import { Command } from "foldkit"
 import { IntegrationStatuses } from "../../data/integration-statuses"
-import { toLoadFailure } from "@maple/views/data/load-failure"
+import { settled, settleTo } from "@maple/views/data/load-failure"
 import { MapleApiV2Client, MapleInternalApiClient } from "../../platform/api-clients"
 import { Message } from "./message"
 import { completeOAuthReturn } from "./oauth-return"
@@ -14,9 +14,6 @@ import { organizationFeatureFlagsFrom } from "@maple/domain/organization-feature
 import { isClerkAuthEnabled } from "../../lib/services/common/auth-mode"
 import { trackProduct } from "../../data/analytics"
 import { readAllPages } from "../../platform/read-all-pages"
-
-const settle = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
-	effect.pipe(Effect.mapError(toLoadFailure), Effect.result)
 
 const Args = { key: Schema.String }
 const RefreshArgs = { key: Schema.String, refresh: Schema.Boolean }
@@ -41,7 +38,7 @@ export const LoadCloudflare = Command.define("LoadIntegrationsCloudflareStatus",
 	messages: [Message.CompletedLoadCloudflare],
 	execute: ({ key, refresh }) =>
 		Effect.map(
-			settle(
+			settled(
 				Effect.gen(function* () {
 					const statuses = yield* IntegrationStatuses
 					return yield* statuses.cloudflare({ refresh })
@@ -56,7 +53,7 @@ export const LoadRailway = Command.define("LoadIntegrationsRailwayStatus", {
 	messages: [Message.CompletedLoadRailway],
 	execute: ({ key, refresh }) =>
 		Effect.map(
-			settle(
+			settled(
 				Effect.gen(function* () {
 					const statuses = yield* IntegrationStatuses
 					return yield* statuses.railway({ refresh })
@@ -71,7 +68,7 @@ export const LoadPlanetscale = Command.define("LoadIntegrationsPlanetscaleStatus
 	messages: [Message.CompletedLoadPlanetscale],
 	execute: ({ key, refresh }) =>
 		Effect.map(
-			settle(
+			settled(
 				Effect.gen(function* () {
 					const statuses = yield* IntegrationStatuses
 					return yield* statuses.planetscale({ refresh })
@@ -86,7 +83,7 @@ export const LoadGcp = Command.define("LoadIntegrationsGcpStatus", {
 	messages: [Message.CompletedLoadGcp],
 	execute: ({ key, refresh }) =>
 		Effect.map(
-			settle(
+			settled(
 				Effect.gen(function* () {
 					const statuses = yield* IntegrationStatuses
 					return yield* statuses.gcp({ refresh })
@@ -103,10 +100,7 @@ export const LoadAws = Command.define("LoadIntegrationsAwsStatus", {
 		Effect.gen(function* () {
 			const client = yield* MapleApiV2Client
 			return yield* client.awsIntegration.status()
-		}).pipe(
-			settle,
-			Effect.map((result) => Message.CompletedLoadAws({ key, result })),
-		),
+		}).pipe(settleTo((result) => Message.CompletedLoadAws({ key, result }))),
 })
 
 /** Shared with the sidebar and /infra/supabase through `IntegrationStatuses`. */
@@ -115,7 +109,7 @@ export const LoadSupabase = Command.define("LoadIntegrationsSupabaseStatus", {
 	messages: [Message.CompletedLoadSupabase],
 	execute: ({ key, refresh }) =>
 		Effect.map(
-			settle(
+			settled(
 				Effect.gen(function* () {
 					const statuses = yield* IntegrationStatuses
 					return yield* statuses.supabase({ refresh })
@@ -133,10 +127,7 @@ export const LoadPlanetscaleDatabases = Command.define("LoadIntegrationsPlanetsc
 		Effect.gen(function* () {
 			const client = yield* MapleApiV2Client
 			return yield* client.planetscaleIntegration.databases()
-		}).pipe(
-			settle,
-			Effect.map((result) => Message.CompletedLoadPlanetscaleDatabases({ key, result })),
-		),
+		}).pipe(settleTo((result) => Message.CompletedLoadPlanetscaleDatabases({ key, result }))),
 })
 
 export const LoadLinear = Command.define("LoadIntegrationsLinearStatus", {
@@ -146,10 +137,7 @@ export const LoadLinear = Command.define("LoadIntegrationsLinearStatus", {
 		Effect.gen(function* () {
 			const client = yield* MapleInternalApiClient
 			return yield* client.integrations.linearStatus()
-		}).pipe(
-			settle,
-			Effect.map((result) => Message.CompletedLoadLinear({ key, result })),
-		),
+		}).pipe(settleTo((result) => Message.CompletedLoadLinear({ key, result }))),
 })
 
 export const LoadSearchConsole = Command.define("LoadIntegrationsSearchConsoleStatus", {
@@ -159,10 +147,7 @@ export const LoadSearchConsole = Command.define("LoadIntegrationsSearchConsoleSt
 		Effect.gen(function* () {
 			const client = yield* MapleInternalApiClient
 			return yield* client.integrations.searchConsoleStatus()
-		}).pipe(
-			settle,
-			Effect.map((result) => Message.CompletedLoadSearchConsole({ key, result })),
-		),
+		}).pipe(settleTo((result) => Message.CompletedLoadSearchConsole({ key, result }))),
 })
 
 export const LoadGithub = Command.define("LoadIntegrationsGithubStatus", {
@@ -172,10 +157,7 @@ export const LoadGithub = Command.define("LoadIntegrationsGithubStatus", {
 		Effect.gen(function* () {
 			const client = yield* MapleInternalApiClient
 			return yield* client.integrations.githubStatus()
-		}).pipe(
-			settle,
-			Effect.map((result) => Message.CompletedLoadGithub({ key, result })),
-		),
+		}).pipe(settleTo((result) => Message.CompletedLoadGithub({ key, result }))),
 })
 
 export const LoadChat = Command.define("LoadIntegrationsChatConnectors", {
@@ -185,10 +167,7 @@ export const LoadChat = Command.define("LoadIntegrationsChatConnectors", {
 		Effect.gen(function* () {
 			const client = yield* MapleApiV2Client
 			return yield* client.chatIntegration.connectors()
-		}).pipe(
-			settle,
-			Effect.map((result) => Message.CompletedLoadChat({ key, result })),
-		),
+		}).pipe(settleTo((result) => Message.CompletedLoadChat({ key, result }))),
 })
 
 /** `scrapeTargetsListAtom`: every page of 100. */
@@ -204,10 +183,7 @@ export const LoadScrapeTargets = Command.define("LoadIntegrationsScrapeTargets",
 				}),
 			)
 			return data
-		}).pipe(
-			settle,
-			Effect.map((result) => Message.CompletedLoadScrapeTargets({ key, result })),
-		),
+		}).pipe(settleTo((result) => Message.CompletedLoadScrapeTargets({ key, result }))),
 })
 
 /** `useIntegrationMessage`: a successful callback is the `integration_connected` product event. */
@@ -227,10 +203,7 @@ export const LoadDataSources = Command.define("LoadIntegrationsDataSources", {
 	execute: ({ key }) =>
 		Effect.flatMap(MapleApiV2Client, (client) =>
 			readAllPages((cursor) => client.dataSources.list({ query: { limit: 100, cursor } })),
-		).pipe(
-			settle,
-			Effect.map((result) => Message.CompletedLoadDataSources({ key, result })),
-		),
+		).pipe(settleTo((result) => Message.CompletedLoadDataSources({ key, result }))),
 })
 
 /** The session the shell already read (`SessionTenant`): the settings rail and connecting read its grants. */
@@ -253,8 +226,5 @@ export const LoadCustomer = Command.define("LoadIntegrationsCustomer", {
 	execute: ({ key, orgId }) =>
 		Effect.gen(function* () {
 			return yield* (yield* BillingCustomerCache).get({ orgId })
-		}).pipe(
-			settle,
-			Effect.map((result) => Message.CompletedLoadCustomer({ key, result })),
-		),
+		}).pipe(settleTo((result) => Message.CompletedLoadCustomer({ key, result }))),
 })

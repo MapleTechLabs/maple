@@ -1,3 +1,4 @@
+import { settleTo } from "@maple/views/data/load-failure"
 import { reloadSpin } from "@maple/views/data/timing"
 import { RequestMode } from "@maple/views/data/keyed"
 import {
@@ -13,19 +14,12 @@ import {
 	IssueSeverity,
 } from "@maple/domain/http"
 import { V2InvestigationCreateParams } from "@maple/domain/http/v2"
-import { Clock, Effect, Result, Schema } from "effect"
+import { Clock, Effect, Schema } from "effect"
 import { Command, Mount } from "foldkit"
-import { type LoadFailure, toLoadFailure } from "@maple/views/data/load-failure"
 import { resolveWindow } from "../../../data/time-range"
 import { MapleApiV2Client, MapleInternalApiClient } from "../../../platform/api-clients"
 import { writeClipboard } from "../../kit/clipboard"
 import { IssueWrite, Message } from "./message"
-
-/** The fetch's outcome, its error already the `displayError` body. */
-const settle = <A, E, R>(
-	effect: Effect.Effect<A, E, R>,
-): Effect.Effect<Result.Result<A, LoadFailure>, never, R> =>
-	effect.pipe(Effect.mapError(toLoadFailure), Effect.result)
 
 /** `useEffectiveTimeRange(search.startTime, search.endTime, preset)`. */
 export const ResolveWindow = Command.define("ResolveIssueWindow", {
@@ -62,10 +56,7 @@ export const FetchDetail = Command.define("FetchErrorIssueDetail", {
 		Effect.gen(function* () {
 			const client = yield* MapleApiV2Client
 			return yield* client.errorIssues.retrieve({ params: { id: issueId }, query })
-		}).pipe(
-			settle,
-			Effect.map((result) => Message.CompletedFetchDetail({ key, result })),
-		),
+		}).pipe(settleTo((result) => Message.CompletedFetchDetail({ key, result }))),
 })
 
 export const FetchEvents = Command.define("FetchErrorIssueEvents", {
@@ -75,10 +66,7 @@ export const FetchEvents = Command.define("FetchErrorIssueEvents", {
 		Effect.gen(function* () {
 			const client = yield* MapleInternalApiClient
 			return yield* client.errors.listIssueEvents({ params: { issueId }, query: { limit: 200 } })
-		}).pipe(
-			settle,
-			Effect.map((result) => Message.CompletedFetchEvents({ key, result })),
-		),
+		}).pipe(settleTo((result) => Message.CompletedFetchEvents({ key, result }))),
 })
 
 /** The end users the issue hit in the page's window, for the rail's Affected users group. */
@@ -92,10 +80,7 @@ export const FetchAffectedUsers = Command.define("FetchErrorIssueAffectedUsers",
 				params: { issueId },
 				query: { startTime, endTime },
 			})
-		}).pipe(
-			settle,
-			Effect.map((result) => Message.CompletedFetchAffectedUsers({ key, result })),
-		),
+		}).pipe(settleTo((result) => Message.CompletedFetchAffectedUsers({ key, result }))),
 })
 
 export const FetchInvestigations = Command.define("FetchErrorIssueInvestigations", {
@@ -106,10 +91,7 @@ export const FetchInvestigations = Command.define("FetchErrorIssueInvestigations
 			const client = yield* MapleApiV2Client
 			const response = yield* client.investigations.list({ query: { issue_id: issueId, limit: 10 } })
 			return response.data
-		}).pipe(
-			settle,
-			Effect.map((result) => Message.CompletedFetchInvestigations({ key, result })),
-		),
+		}).pipe(settleTo((result) => Message.CompletedFetchInvestigations({ key, result }))),
 })
 
 export const FetchPullRequests = Command.define("FetchErrorIssuePullRequests", {
@@ -119,10 +101,7 @@ export const FetchPullRequests = Command.define("FetchErrorIssuePullRequests", {
 		Effect.gen(function* () {
 			const client = yield* MapleInternalApiClient
 			return yield* client.errors.listIssuePullRequests({ params: { issueId } })
-		}).pipe(
-			settle,
-			Effect.map((result) => Message.CompletedFetchPullRequests({ key, result })),
-		),
+		}).pipe(settleTo((result) => Message.CompletedFetchPullRequests({ key, result }))),
 })
 
 export const FetchVerifications = Command.define("FetchErrorIssueVerifications", {
@@ -132,10 +111,7 @@ export const FetchVerifications = Command.define("FetchErrorIssueVerifications",
 		Effect.gen(function* () {
 			const client = yield* MapleInternalApiClient
 			return yield* client.errors.listIssueVerifications({ params: { issueId } })
-		}).pipe(
-			settle,
-			Effect.map((result) => Message.CompletedFetchVerifications({ key, result })),
-		),
+		}).pipe(settleTo((result) => Message.CompletedFetchVerifications({ key, result }))),
 })
 
 export const FetchEscalations = Command.define("FetchErrorIssueEscalations", {
@@ -145,10 +121,7 @@ export const FetchEscalations = Command.define("FetchErrorIssueEscalations", {
 		Effect.gen(function* () {
 			const client = yield* MapleInternalApiClient
 			return yield* client.errors.listIssueEscalations({ params: { issueId } })
-		}).pipe(
-			settle,
-			Effect.map((result) => Message.CompletedFetchEscalations({ key, result })),
-		),
+		}).pipe(settleTo((result) => Message.CompletedFetchEscalations({ key, result }))),
 })
 
 /** `useRelatedAnomalies`: detector incidents linked to this issue. */
@@ -162,10 +135,7 @@ export const FetchAnomalies = Command.define("FetchErrorIssueAnomalies", {
 				query: { error_issue_id: issueId, limit: 50 },
 			})
 			return response.data
-		}).pipe(
-			settle,
-			Effect.map((result) => Message.CompletedFetchAnomalies({ key, result })),
-		),
+		}).pipe(settleTo((result) => Message.CompletedFetchAnomalies({ key, result }))),
 })
 
 /** The rail (and the attach dialog in it) is in the DOM; it reads as it renders. */
@@ -182,10 +152,7 @@ export const FetchGithubStatus = Command.define("FetchGithubStatus", {
 		Effect.gen(function* () {
 			const client = yield* MapleInternalApiClient
 			return yield* client.integrations.githubStatus()
-		}).pipe(
-			settle,
-			Effect.map((result) => Message.CompletedFetchGithubStatus({ key, result })),
-		),
+		}).pipe(settleTo((result) => Message.CompletedFetchGithubStatus({ key, result }))),
 })
 
 /** `VCS_PULL_REQUESTS_DEFAULT_LIMIT` pull requests of the selected repository. */
@@ -196,10 +163,7 @@ export const FetchVcsPullRequests = Command.define("FetchVcsPullRequests", {
 		Effect.gen(function* () {
 			const client = yield* MapleInternalApiClient
 			return yield* client.integrations.vcsPullRequests({ query: { repository, limit: 50 } })
-		}).pipe(
-			settle,
-			Effect.map((result) => Message.CompletedFetchVcsPullRequests({ key, result })),
-		),
+		}).pipe(settleTo((result) => Message.CompletedFetchVcsPullRequests({ key, result }))),
 })
 
 export const CompleteReloadSpin = reloadSpin("CompleteIssueReloadSpin", Message.CompletedReloadSpin)
@@ -243,8 +207,7 @@ export const RunIssueWrite = Command.define("RunErrorIssueWrite", {
 	execute: ({ issueId, write }) =>
 		runWrite(issueId, write).pipe(
 			Effect.map((issue) => ({ severity: issue.severity })),
-			settle,
-			Effect.map((result) => Message.CompletedIssueWrite({ write, result })),
+			settleTo((result) => Message.CompletedIssueWrite({ write, result })),
 		),
 })
 
@@ -257,10 +220,7 @@ export const CreateInvestigation = Command.define("CreateErrorIssueInvestigation
 			const client = yield* MapleApiV2Client
 			const investigation = yield* client.investigations.create({ payload })
 			return String(investigation.id)
-		}).pipe(
-			settle,
-			Effect.map((result) => Message.CompletedCreateInvestigation({ result })),
-		),
+		}).pipe(settleTo((result) => Message.CompletedCreateInvestigation({ result }))),
 })
 
 /** `attachPullRequest`: links a pull request by URL. */
@@ -275,10 +235,7 @@ export const LinkPullRequest = Command.define("LinkErrorIssuePullRequest", {
 				payload: new ErrorIssueLinkPullRequestRequest({ url }),
 			})
 			return null
-		}).pipe(
-			settle,
-			Effect.map((result) => Message.CompletedLinkPullRequest({ result })),
-		),
+		}).pipe(settleTo((result) => Message.CompletedLinkPullRequest({ result }))),
 })
 
 /** `submitComment`. */
@@ -293,10 +250,7 @@ export const CommentOnIssue = Command.define("CommentOnErrorIssue", {
 				payload: new ErrorIssueCommentRequest({ body }),
 			})
 			return null
-		}).pipe(
-			settle,
-			Effect.map((result) => Message.CompletedComment({ result })),
-		),
+		}).pipe(settleTo((result) => Message.CompletedComment({ result }))),
 })
 
 /** `detachPullRequest`. */
@@ -308,10 +262,7 @@ export const UnlinkPullRequest = Command.define("UnlinkErrorIssuePullRequest", {
 			const client = yield* MapleInternalApiClient
 			yield* client.errors.unlinkIssuePullRequest({ params: { issueId, pullRequestId } })
 			return null
-		}).pipe(
-			settle,
-			Effect.map((result) => Message.CompletedUnlinkPullRequest({ result })),
-		),
+		}).pipe(settleTo((result) => Message.CompletedUnlinkPullRequest({ result }))),
 })
 
 /** `useCopy({ label })`; `path` copies as an absolute link on this origin. */
@@ -335,8 +286,5 @@ export const EvaluateEscalation = Command.define("EvaluateErrorIssueEscalation",
 				payload: new EscalationPolicyEvaluationRequest({ severity, source: "manual" }),
 			})
 			return { outcome: preview.outcome, destinationIds: preview.destinationIds }
-		}).pipe(
-			settle,
-			Effect.map((result) => Message.CompletedEvaluateEscalation({ severity, pick, result })),
-		),
+		}).pipe(settleTo((result) => Message.CompletedEvaluateEscalation({ severity, pick, result }))),
 })

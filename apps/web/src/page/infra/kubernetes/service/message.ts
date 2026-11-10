@@ -5,7 +5,7 @@ import { Command } from "foldkit"
 import { defineMessageUnion } from "foldkit/message"
 import * as Chart from "@maple/views/charts/chart"
 import { ThemeColors } from "@maple/views/charts/theme-colors"
-import { LoadFailure, toLoadFailure } from "@maple/views/data/load-failure"
+import { LoadFailure, settleTo } from "@maple/views/data/load-failure"
 import * as Frame from "../../kit/frame"
 import { SeriesRow } from "../../../kit/series"
 import * as Rail from "../lens/rail"
@@ -53,18 +53,15 @@ export const FetchOverview = Command.define("FetchLensServiceOverview", {
 	messages: [Message.CompletedFetchOverview],
 	execute: ({ key, input }) =>
 		getServiceDetailOverview({ data: input }).pipe(
-			Effect.mapBoth({
-				onSuccess: (response) =>
-					Arr.map(response.data, (point) => ({
-						bucket: point.bucket,
-						p99LatencyMs: point.p99LatencyMs,
-						throughput: point.throughput,
-						totalCount: point.totalCount,
-					})),
-				onFailure: toLoadFailure,
-			}),
-			Effect.result,
-			Effect.map((result) => Message.CompletedFetchOverview({ key, result })),
+			Effect.map((response) =>
+				Arr.map(response.data, (point) => ({
+					bucket: point.bucket,
+					p99LatencyMs: point.p99LatencyMs,
+					throughput: point.throughput,
+					totalCount: point.totalCount,
+				})),
+			),
+			settleTo((result) => Message.CompletedFetchOverview({ key, result })),
 		),
 })
 
@@ -85,9 +82,8 @@ export const FetchCpu = Command.define("FetchLensCpu", {
 	messages: [Message.CompletedFetchCpu],
 	execute: ({ key, input }) =>
 		workloadInfraTimeseries({ data: input }).pipe(
-			Effect.mapBoth({ onSuccess: (response) => response.data, onFailure: toLoadFailure }),
-			Effect.result,
-			Effect.map((result) => Message.CompletedFetchCpu({ key, result })),
+			Effect.map((response) => response.data),
+			settleTo((result) => Message.CompletedFetchCpu({ key, result })),
 		),
 })
 

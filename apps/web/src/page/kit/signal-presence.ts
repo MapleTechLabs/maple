@@ -1,6 +1,6 @@
 import { Clock, DateTime, Effect, Option, Array as Arr, Record as Rec } from "effect"
 import { IdleTtl } from "../../data/idle-ttl"
-import { toLoadFailure } from "@maple/views/data/load-failure"
+import { settled } from "@maple/views/data/load-failure"
 import { readThrough } from "../../data/read-cache"
 import { requestKey } from "@maple/views/data/request-key"
 import { type SignalPresence, SignalPresences, UNKNOWN_PRESENCE } from "@maple/views/data/signal-presence"
@@ -49,4 +49,4 @@ export const loadSignalPresences = (orgId: string) =>
 			},
 			fetchSignalPresences,
 		),
-	).pipe(Effect.mapError(toLoadFailure), Effect.result)
+	).pipe(settled)

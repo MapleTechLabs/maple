@@ -5,7 +5,7 @@ import { getAiSessionsFacets, listAiSessions } from "@maple/web-data/warehouse/a
 import { getAiToolErrors, getAiToolSeries } from "@maple/web-data/warehouse/ai-session-tools"
 import { Clock, Effect, Schema } from "effect"
 import { Command } from "foldkit"
-import { toLoadFailure } from "@maple/views/data/load-failure"
+import { settleTo } from "@maple/views/data/load-failure"
 import { resolveWindow, TimeWindow } from "../../../data/time-range"
 import { presentInputs } from "../list/derive"
 import { fetchTotals, Selection, toInput } from "../../kit/tools/reads"
@@ -38,9 +38,7 @@ export const FetchSeries = Command.define("FetchAgentToolSeries", {
 	messages: [Message.CompletedFetchSeries],
 	execute: ({ key, selection, bucketSeconds }) =>
 		getAiToolSeries({ data: { ...toInput(selection), bucketSeconds, split: "none" } }).pipe(
-			Effect.mapError(toLoadFailure),
-			Effect.result,
-			Effect.map((result) => Message.CompletedFetchSeries({ key, result })),
+			settleTo((result) => Message.CompletedFetchSeries({ key, result })),
 		),
 })
 
@@ -60,11 +58,7 @@ export const FetchErrors = Command.define("FetchAgentToolErrors", {
 	execute: ({ key, selection, tool, bucketSeconds }) =>
 		getAiToolErrors({
 			data: { ...toInput(selection), tool, bucketSeconds, limit: AI_TOOL_ERRORS_MAX },
-		}).pipe(
-			Effect.mapError(toLoadFailure),
-			Effect.result,
-			Effect.map((result) => Message.CompletedFetchErrors({ key, result })),
-		),
+		}).pipe(settleTo((result) => Message.CompletedFetchErrors({ key, result }))),
 })
 
 export const SessionsInput = Schema.Struct({
@@ -94,11 +88,7 @@ export const FetchSessions = Command.define("FetchAgentToolSessions", {
 				}),
 				limit: SESSIONS_LIMIT,
 			},
-		}).pipe(
-			Effect.mapError(toLoadFailure),
-			Effect.result,
-			Effect.map((result) => Message.CompletedFetchSessions({ key, result })),
-		),
+		}).pipe(settleTo((result) => Message.CompletedFetchSessions({ key, result }))),
 })
 
 export const FetchFacets = Command.define("FetchAgentToolFacets", {
@@ -106,9 +96,7 @@ export const FetchFacets = Command.define("FetchAgentToolFacets", {
 	messages: [Message.CompletedFetchFacets],
 	execute: ({ key, window }) =>
 		getAiSessionsFacets({ data: window }).pipe(
-			Effect.mapError(toLoadFailure),
-			Effect.result,
-			Effect.map((result) => Message.CompletedFetchFacets({ key, result })),
+			settleTo((result) => Message.CompletedFetchFacets({ key, result })),
 		),
 })
 

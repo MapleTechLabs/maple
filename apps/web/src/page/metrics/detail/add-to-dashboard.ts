@@ -15,7 +15,7 @@ import { pressable } from "@maple/views/ui/pressable"
 import { defineMessageUnion } from "foldkit/message"
 import { rowToDocument } from "../../../data/collections/dashboards"
 import { trackProduct } from "../../../data/analytics"
-import { LoadFailure, toLoadFailure } from "@maple/views/data/load-failure"
+import { LoadFailure, settleTo } from "@maple/views/data/load-failure"
 import { liveQueryStream } from "../../../data/live-query"
 import { orgLive } from "../../../data/collections/org-collections"
 import { MapleApiV2Client } from "../../../platform/api-clients"
@@ -145,11 +145,7 @@ export const AddWidget = Command.define("AddMetricWidgetToDashboard", {
 			return yield* mutateDashboard(orgId, dashboardId, (document, nowIso) =>
 				withAddedWidget(document, { id, ...widget, layout: defaultWidgetLayout("chart") }, nowIso),
 			)
-		}).pipe(
-			Effect.mapError(toLoadFailure),
-			Effect.result,
-			Effect.map((result) => Message.CompletedAddWidget({ dashboardId, result })),
-		),
+		}).pipe(settleTo((result) => Message.CompletedAddWidget({ dashboardId, result }))),
 })
 
 /** `importDashboard` with the widget in it: one create, so a not-yet-synced board cannot drop it. */
@@ -180,11 +176,7 @@ export const CreateDashboard = Command.define("CreateDashboardWithMetricWidget",
 			yield* trackProduct("dashboard_created", { widgets: 1 })
 			yield* awaitTxid(orgId, created.txid)
 			return created.id
-		}).pipe(
-			Effect.mapError(toLoadFailure),
-			Effect.result,
-			Effect.map((result) => Message.CompletedCreateDashboard({ result })),
-		),
+		}).pipe(settleTo((result) => Message.CompletedCreateDashboard({ result }))),
 })
 
 /** The org's dashboards, as the dialog lists them. */

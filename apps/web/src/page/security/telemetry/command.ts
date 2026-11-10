@@ -2,7 +2,7 @@ import { readClock } from "@maple/views/data/timing"
 import { getSecurityExposure, getSecurityRuntimes } from "@maple/web-data/warehouse/security-telemetry"
 import { Effect, Schema } from "effect"
 import { Command } from "foldkit"
-import { toLoadFailure } from "@maple/views/data/load-failure"
+import { settleTo } from "@maple/views/data/load-failure"
 import { currentWindow } from "../../../data/time-range"
 import { Message } from "./model"
 
@@ -25,9 +25,7 @@ export const FetchExposure = Command.define("SecurityApiExposure", {
 			Effect.flatMap((window) =>
 				getSecurityExposure({ data: { ...window, bucketSeconds: TIMELINE_BUCKET_SECONDS } }),
 			),
-			Effect.mapError(toLoadFailure),
-			Effect.result,
-			Effect.map((result) => Message.CompletedFetchExposure({ key, result })),
+			settleTo((result) => Message.CompletedFetchExposure({ key, result })),
 		),
 })
 
@@ -37,8 +35,6 @@ export const FetchRuntimes = Command.define("SecurityApiRuntimes", {
 	execute: ({ key, timeZone }) =>
 		lastWeek(timeZone).pipe(
 			Effect.flatMap((window) => getSecurityRuntimes({ data: window })),
-			Effect.mapError(toLoadFailure),
-			Effect.result,
-			Effect.map((result) => Message.CompletedFetchRuntimes({ key, result })),
+			settleTo((result) => Message.CompletedFetchRuntimes({ key, result })),
 		),
 })

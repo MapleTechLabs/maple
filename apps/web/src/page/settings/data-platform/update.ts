@@ -3,7 +3,7 @@ import { snapTimestamp } from "@maple/web-data/lib/time-range"
 import { getServiceUsage } from "@maple/web-data/warehouse/service-usage"
 import { Duration, Effect, Option, Result, Schema, Array as Arr, String as Str } from "effect"
 import { AsyncData, Command } from "foldkit"
-import { toLoadFailure } from "@maple/views/data/load-failure"
+import { settleTo } from "@maple/views/data/load-failure"
 import { MapleInternalApiClient } from "../../../platform/api-clients"
 import * as Dialog from "@maple/views/ui/dialog"
 import { PageOutMessage, type PageReturn } from "../../contract"
@@ -11,11 +11,6 @@ import { revisitData } from "../kit/revisit"
 import { type ConnectionDraft, Message, type Model } from "./model"
 
 type Return = PageReturn<Model, Message>
-
-const settle =
-	<A, B>(toMessage: (result: Result.Result<A, ReturnType<typeof toLoadFailure>>) => B) =>
-	<E, R>(effect: Effect.Effect<A, E, R>) =>
-		effect.pipe(Effect.mapError(toLoadFailure), Effect.result, Effect.map(toMessage))
 
 /** "Total in the DB": fixed bounds keep the key stable and cover all stored data. */
 const ALL_TIME = {
@@ -27,7 +22,7 @@ const ALL_TIME = {
 const FetchSettings = Command.define("FetchOrgClickHouseSettings", {
 	messages: [Message.CompletedFetchSettings],
 	execute: Effect.flatMap(MapleInternalApiClient, (client) => client.orgClickHouseSettings.get()).pipe(
-		settle((result) => Message.CompletedFetchSettings({ result })),
+		settleTo((result) => Message.CompletedFetchSettings({ result })),
 	),
 })
 
@@ -35,7 +30,7 @@ const FetchDiff = Command.define("FetchOrgClickHouseSchemaDiff", {
 	messages: [Message.CompletedFetchDiff],
 	execute: Effect.flatMap(MapleInternalApiClient, (client) =>
 		client.orgClickHouseSettings.schemaDiff(),
-	).pipe(settle((result) => Message.CompletedFetchDiff({ result }))),
+	).pipe(settleTo((result) => Message.CompletedFetchDiff({ result }))),
 })
 
 const FetchApplyStatus = Command.define("FetchOrgClickHouseApplyStatus", {
@@ -44,7 +39,7 @@ const FetchApplyStatus = Command.define("FetchOrgClickHouseApplyStatus", {
 	execute: ({ sequence }) =>
 		Effect.flatMap(MapleInternalApiClient, (client) =>
 			client.orgClickHouseSettings.applySchemaStatus(),
-		).pipe(settle((result) => Message.CompletedFetchApplyStatus({ sequence, result }))),
+		).pipe(settleTo((result) => Message.CompletedFetchApplyStatus({ sequence, result }))),
 })
 
 const FetchUsage = Command.define("FetchDataPlatformUsage", {
@@ -58,7 +53,7 @@ const FetchUsage = Command.define("FetchDataPlatformUsage", {
 				dataSize: acc.dataSize + service.dataSizeBytes,
 			})),
 		),
-		settle((result) => Message.CompletedFetchUsage({ result })),
+		settleTo((result) => Message.CompletedFetchUsage({ result })),
 	),
 })
 
@@ -68,14 +63,14 @@ const SaveConnection = Command.define("SaveOrgClickHouseConnection", {
 	execute: ({ request }) =>
 		Effect.flatMap(MapleInternalApiClient, (client) =>
 			client.orgClickHouseSettings.upsert({ payload: request }),
-		).pipe(settle((result) => Message.CompletedSave({ result }))),
+		).pipe(settleTo((result) => Message.CompletedSave({ result }))),
 })
 
 const Disconnect = Command.define("DisconnectOrgClickHouse", {
 	messages: [Message.CompletedDisconnect],
 	execute: Effect.flatMap(MapleInternalApiClient, (client) => client.orgClickHouseSettings.delete()).pipe(
 		Effect.asVoid,
-		settle((result) => Message.CompletedDisconnect({ result })),
+		settleTo((result) => Message.CompletedDisconnect({ result })),
 	),
 })
 
@@ -83,7 +78,7 @@ const ApplySchema = Command.define("ApplyOrgClickHouseSchema", {
 	messages: [Message.CompletedApply],
 	execute: Effect.flatMap(MapleInternalApiClient, (client) =>
 		client.orgClickHouseSettings.applySchema(),
-	).pipe(settle((result) => Message.CompletedApply({ result }))),
+	).pipe(settleTo((result) => Message.CompletedApply({ result }))),
 })
 
 /** The button stays busy until the status poll reports the run (`setTimeout(…, 1500)`). */

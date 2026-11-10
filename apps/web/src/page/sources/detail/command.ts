@@ -1,9 +1,9 @@
+import { settleTo } from "@maple/views/data/load-failure"
 import { readClock } from "@maple/views/data/timing"
 import { SourceId } from "@maple/domain/primitives"
 import { Clock, DateTime, Effect, Schema } from "effect"
 import { Command } from "foldkit"
 import { baseKey } from "@maple/views/data/keyed"
-import { toLoadFailure } from "@maple/views/data/load-failure"
 import { MapleApiV2Client } from "../../../platform/api-clients"
 import { V2SourceUpdateParams } from "@maple/domain/http/v2"
 import { readGrants } from "../../../data/session-tenant"
@@ -40,9 +40,6 @@ export const FetchSourceUsage = Command.define("FetchSourceUsage", {
 		),
 })
 
-const write = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
-	effect.pipe(Effect.mapError(toLoadFailure), Effect.result)
-
 /** `pause({ until })`: `hours` from now, or `null` for until resumed. */
 export const PauseSource = Command.define("PauseSource", {
 	args: { id: SourceId, hours: Schema.NullOr(Schema.Number) },
@@ -54,10 +51,7 @@ export const PauseSource = Command.define("PauseSource", {
 				hours === null ? null : DateTime.formatIso(DateTime.makeUnsafe(now + hours * HOUR_MS))
 			const client = yield* MapleApiV2Client
 			return yield* client.sources.pause({ params: { id }, payload: { until } })
-		}).pipe(
-			write,
-			Effect.map((result) => Message.CompletedPause({ result })),
-		),
+		}).pipe(settleTo((result) => Message.CompletedPause({ result }))),
 })
 
 export const ResumeSource = Command.define("ResumeSource", {
@@ -65,8 +59,7 @@ export const ResumeSource = Command.define("ResumeSource", {
 	messages: [Message.CompletedResume],
 	execute: ({ id }) =>
 		Effect.flatMap(MapleApiV2Client, (client) => client.sources.resume({ params: { id } })).pipe(
-			write,
-			Effect.map((result) => Message.CompletedResume({ result })),
+			settleTo((result) => Message.CompletedResume({ result })),
 		),
 })
 
@@ -75,8 +68,7 @@ export const RollSourceToken = Command.define("RollSourceToken", {
 	messages: [Message.CompletedRoll],
 	execute: ({ id }) =>
 		Effect.flatMap(MapleApiV2Client, (client) => client.sources.roll({ params: { id } })).pipe(
-			write,
-			Effect.map((result) => Message.CompletedRoll({ result })),
+			settleTo((result) => Message.CompletedRoll({ result })),
 		),
 })
 
@@ -86,8 +78,7 @@ export const DeleteSource = Command.define("DeleteSource", {
 	execute: ({ id }) =>
 		Effect.flatMap(MapleApiV2Client, (client) => client.sources.delete({ params: { id } })).pipe(
 			Effect.asVoid,
-			write,
-			Effect.map((result) => Message.CompletedDelete({ result })),
+			settleTo((result) => Message.CompletedDelete({ result })),
 		),
 })
 
@@ -104,8 +95,5 @@ export const SaveSource = Command.define("SaveSource", {
 				params: { id },
 				payload: expiresAt === undefined ? payload : { ...payload, expires_at: expiresAt },
 			})
-		}).pipe(
-			write,
-			Effect.map((result) => Message.CompletedSave({ result })),
-		),
+		}).pipe(settleTo((result) => Message.CompletedSave({ result }))),
 })

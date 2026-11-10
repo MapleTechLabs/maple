@@ -9,7 +9,7 @@ import { ChartRuntime } from "@maple/views/charts/chart-runtime"
 import * as Dialog from "@maple/views/ui/dialog"
 import * as ToggleGroup from "@maple/views/ui/toggle-group"
 import { KeyedSchema } from "@maple/views/data/keyed"
-import { LoadFailure, toLoadFailure } from "@maple/views/data/load-failure"
+import { LoadFailure, toLoadFailure, settleTo } from "@maple/views/data/load-failure"
 import { MapleInternalApiClient } from "../../platform/api-clients"
 import { Message } from "./message"
 
@@ -72,11 +72,7 @@ export const LoadCloudflareUsage = Command.define("LoadIntegrationsCloudflareUsa
 		Effect.gen(function* () {
 			const client = yield* MapleInternalApiClient
 			return yield* client.integrations.cloudflareUsage()
-		}).pipe(
-			Effect.mapError(toLoadFailure),
-			Effect.result,
-			Effect.map((result) => Message.CompletedLoadCloudflareUsage({ key, result })),
-		),
+		}).pipe(settleTo((result) => Message.CompletedLoadCloudflareUsage({ key, result }))),
 })
 
 /** `cloudflarePrime`: discovery and a first poll now instead of on the next cron tick. */

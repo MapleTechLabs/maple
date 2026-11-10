@@ -12,7 +12,7 @@ import { getQueryBuilderTimeseries } from "@maple/web-data/warehouse/query-build
 import { Clock, Duration, Effect, Schema, Stream, Array as Arr, String as Str } from "effect"
 import * as SecureRandom from "effect/crypto/SecureRandom"
 import { Command, Mount } from "foldkit"
-import { toLoadFailure } from "@maple/views/data/load-failure"
+import { settled } from "@maple/views/data/load-failure"
 import { resolveWindow, TimeWindow } from "../../../data/time-range"
 import { AppRoute, hrefOf } from "../../../route"
 import { Message } from "./message"
@@ -40,14 +40,11 @@ export const ResolveWindow = Command.define("ResolveMetricWindow", {
 		),
 })
 
-const settle = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
-	effect.pipe(Effect.mapError(toLoadFailure), Effect.result)
-
 export const FetchCatalog = Command.define("FetchMetricCatalog", {
 	args: { key: Schema.String, metricName: Schema.String, window: TimeWindow },
 	messages: [Message.CompletedFetchCatalog],
 	execute: ({ key, metricName, window }) =>
-		settle(
+		settled(
 			Effect.map(
 				listMetrics({
 					data: {
@@ -66,7 +63,7 @@ export const FetchAutocomplete = Command.define("FetchMetricAutocomplete", {
 	args: { key: Schema.String, lookup: AutocompleteLookup, window: TimeWindow },
 	messages: [Message.CompletedFetchAutocomplete],
 	execute: (args) =>
-		settle(autocompleteLookup(args.lookup, args.window)).pipe(
+		settled(autocompleteLookup(args.lookup, args.window)).pipe(
 			Effect.map((result) =>
 				Message.CompletedFetchAutocomplete({ key: args.key, lookup: args.lookup, result }),
 			),
@@ -85,7 +82,7 @@ export const FetchAttributeKeys = Command.define("FetchMetricAttributeKeys", {
 	args: { key: Schema.String, input: AttributeKeysInput },
 	messages: [Message.CompletedFetchAttributeKeys],
 	execute: ({ key, input }) =>
-		settle(Effect.map(getMetricAttributeKeys({ data: input }), (response) => response.data)).pipe(
+		settled(Effect.map(getMetricAttributeKeys({ data: input }), (response) => response.data)).pipe(
 			Effect.map((result) => Message.CompletedFetchAttributeKeys({ key, result })),
 		),
 })
@@ -101,7 +98,7 @@ export const FetchTimeseries = Command.define("FetchMetricTimeseries", {
 	args: { key: Schema.String, input: DraftInput },
 	messages: [Message.CompletedFetchTimeseries],
 	execute: ({ key, input }) =>
-		settle(
+		settled(
 			Effect.map(
 				getQueryBuilderTimeseries({
 					data: {
@@ -119,7 +116,7 @@ export const FetchBreakdown = Command.define("FetchMetricBreakdown", {
 	args: { key: Schema.String, input: DraftInput },
 	messages: [Message.CompletedFetchBreakdown],
 	execute: ({ key, input }) =>
-		settle(
+		settled(
 			Effect.map(
 				getQueryBuilderBreakdown({
 					data: {
@@ -238,7 +235,7 @@ export const FetchAttributeValues = Command.define("FetchMetricAttributeValues",
 	args: { key: Schema.String, input: AttributeValuesInput },
 	messages: [Message.CompletedFetchAttributeValues],
 	execute: ({ key, input }) =>
-		settle(
+		settled(
 			Effect.map(getMetricAttributeValues({ data: input }), (response) =>
 				Arr.map(response.data, (row) => row.attributeValue),
 			),

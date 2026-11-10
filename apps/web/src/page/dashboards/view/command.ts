@@ -29,7 +29,7 @@ import { deriveDefaultWidgetTitle } from "../widget/drafts"
 import { Message } from "./message"
 import { LayoutChange } from "./model"
 import { ShareMessage } from "./share"
-import { toLoadFailure } from "@maple/views/data/load-failure"
+import { settleTo } from "@maple/views/data/load-failure"
 import { presetById } from "./picker-catalog"
 import { applySectionEdit, SectionEdit } from "./section-edit"
 
@@ -106,9 +106,7 @@ export const FetchShares = Command.define("FetchDashboardShares", {
 					: [{ widgetId: share.widgetId ?? null, mode: share.mode, token: share.token }],
 			)
 		}).pipe(
-			Effect.mapError(toLoadFailure),
-			Effect.result,
-			Effect.map((result) =>
+			settleTo((result) =>
 				Message.GotShareMessage({ message: ShareMessage.CompletedFetchShares({ seq, result }) }),
 			),
 		),

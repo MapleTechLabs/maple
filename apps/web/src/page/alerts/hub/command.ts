@@ -16,7 +16,7 @@ import { Cause, Clock, Effect, Schema } from "effect"
 import { IdleTtl } from "../../../data/idle-ttl"
 import { readThrough } from "../../../data/read-cache"
 import { readGrants } from "../../../data/session-tenant"
-import { toLoadFailure } from "@maple/views/data/load-failure"
+import { toLoadFailure, settleTo } from "@maple/views/data/load-failure"
 import { Command } from "foldkit"
 import {
 	deleteDestination,
@@ -157,11 +157,7 @@ export const FetchServiceNamespaces = Command.define("FetchAlertsHubServiceNames
 					serviceNamespaces(response.data),
 				),
 			)
-		}).pipe(
-			Effect.mapError(toLoadFailure),
-			Effect.result,
-			Effect.map((result) => Message.CompletedFetchServiceNamespaces({ key, result })),
-		),
+		}).pipe(settleTo((result) => Message.CompletedFetchServiceNamespaces({ key, result }))),
 })
 
 export const ToggleMonitor = Command.define("ToggleUptimeMonitor", {

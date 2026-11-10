@@ -3,7 +3,7 @@ import { getLog } from "@maple/web-data/warehouse/logs"
 import { Effect, Option, Schema } from "effect"
 import { AsyncData, Command } from "foldkit"
 import * as Keyed from "@maple/views/data/keyed"
-import { toLoadFailure } from "@maple/views/data/load-failure"
+import { settleTo } from "@maple/views/data/load-failure"
 import { requestKey } from "@maple/views/data/request-key"
 import type { AppRoute } from "../../../route"
 import { LOG_PAGE_PATH, logPageHref } from "../log-links"
@@ -36,9 +36,8 @@ export const FetchLog = Command.define("FetchLogPageLog", {
 	messages: [Message.CompletedFetchLog],
 	execute: ({ key, ...logKey }) =>
 		getLog({ data: keyToInput(logKey) }).pipe(
-			Effect.mapBoth({ onSuccess: (response) => response.data, onFailure: toLoadFailure }),
-			Effect.result,
-			Effect.map((result) => Message.CompletedFetchLog({ key, result })),
+			Effect.map((response) => response.data),
+			settleTo((result) => Message.CompletedFetchLog({ key, result })),
 		),
 })
 

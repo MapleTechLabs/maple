@@ -6,7 +6,7 @@ import { Effect, Option, Schema, Array as Arr } from "effect"
 import { Command, type Update } from "foldkit"
 import * as Chart from "@maple/views/charts/chart"
 import * as Keyed from "@maple/views/data/keyed"
-import { toLoadFailure } from "@maple/views/data/load-failure"
+import { settleTo } from "@maple/views/data/load-failure"
 import { requestKey } from "@maple/views/data/request-key"
 import type { TimeWindow } from "../../../../data/time-range"
 import type { Resources } from "../../../../platform/resources"
@@ -71,11 +71,7 @@ export const FetchEndpointDetail = Command.define("FetchServiceEndpointDetail", 
 				...input,
 				environments: input.environments === undefined ? undefined : [...input.environments],
 			},
-		}).pipe(
-			Effect.mapError(toLoadFailure),
-			Effect.result,
-			Effect.map((result) => Message.CompletedFetchDetail({ spanName, key, result })),
-		),
+		}).pipe(settleTo((result) => Message.CompletedFetchDetail({ spanName, key, result }))),
 })
 
 export const SeriesInput = Schema.Struct({
@@ -99,9 +95,8 @@ export const FetchEndpointPeekSeries = Command.define("FetchServiceEndpointPeekS
 				spanNames: [input.spanName],
 			},
 		}).pipe(
-			Effect.mapBoth({ onSuccess: (response) => response.buckets, onFailure: toLoadFailure }),
-			Effect.result,
-			Effect.map((result) => Message.CompletedFetchSeries({ spanName, key, result })),
+			Effect.map((response) => response.buckets),
+			settleTo((result) => Message.CompletedFetchSeries({ spanName, key, result })),
 		),
 })
 

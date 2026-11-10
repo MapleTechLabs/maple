@@ -5,7 +5,7 @@ import { Effect, Result, Schema, Array as Arr, Record as Rec, String as Str } fr
 import { Command, type Update } from "foldkit"
 import { defineMessageUnion } from "foldkit/message"
 import { trackProduct } from "../../../data/analytics"
-import { LoadFailure, toLoadFailure } from "@maple/views/data/load-failure"
+import { LoadFailure, settleTo } from "@maple/views/data/load-failure"
 import { MapleApiV2Client } from "../../../platform/api-clients"
 import type { Resources } from "../../../platform/resources"
 import * as CopyButton from "@maple/views/ui/copy-button"
@@ -124,11 +124,7 @@ export const CreateApiKey = Command.define("CreateApiKey", {
 		Effect.gen(function* () {
 			const client = yield* MapleApiV2Client
 			return yield* client.apiKeys.create({ payload })
-		}).pipe(
-			Effect.mapError(toLoadFailure),
-			Effect.result,
-			Effect.map((result) => Message.CompletedCreate({ kind, result })),
-		),
+		}).pipe(settleTo((result) => Message.CompletedCreate({ kind, result }))),
 })
 
 /** `api_key_created`: the key's kind and access (an MCP key is always full access). */

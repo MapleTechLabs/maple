@@ -4,7 +4,7 @@ import { LIST_LIMIT_MAX } from "@maple/domain/http/v2"
 import { listMetrics } from "@maple/web-data/warehouse/metrics"
 import { Duration, Effect, Queue, Schema, Stream, Array as Arr, Record as Rec, String as Str } from "effect"
 import { Command, Mount } from "foldkit"
-import { toLoadFailure } from "@maple/views/data/load-failure"
+import { settleTo } from "@maple/views/data/load-failure"
 import { MapleApiV2Client } from "../../../platform/api-clients"
 import { fetchWidgetData, toWidgetFailure } from "../kit/widget-data"
 import { awaitTxid } from "../kit/store"
@@ -21,11 +21,7 @@ export const FetchTemplates = Command.define("FetchDashboardTemplates", {
 			const client = yield* MapleApiV2Client
 			const response = yield* client.dashboards.listTemplates({ query: { limit: LIST_LIMIT_MAX } })
 			return response.data
-		}).pipe(
-			Effect.mapError(toLoadFailure),
-			Effect.result,
-			Effect.map((result) => Message.CompletedFetchTemplates({ key, result })),
-		),
+		}).pipe(settleTo((result) => Message.CompletedFetchTemplates({ key, result }))),
 })
 
 /** Readiness reads the org's metric names from the last 24 h (`METRIC_LIMIT` 1000). */
@@ -34,16 +30,13 @@ export const FetchMetrics = Command.define("FetchTemplateReadinessMetrics", {
 	messages: [Message.CompletedFetchMetrics],
 	execute: ({ key }) =>
 		listMetrics({ data: { limit: 1000 } }).pipe(
-			Effect.mapBoth({
-				onSuccess: (response) =>
-					Arr.map(response.data, (metric) => ({
-						metricName: metric.metricName,
-						lastSeen: metric.lastSeen,
-					})),
-				onFailure: toLoadFailure,
-			}),
-			Effect.result,
-			Effect.map((result) => Message.CompletedFetchMetrics({ key, result })),
+			Effect.map((response) =>
+				Arr.map(response.data, (metric) => ({
+					metricName: metric.metricName,
+					lastSeen: metric.lastSeen,
+				})),
+			),
+			settleTo((result) => Message.CompletedFetchMetrics({ key, result })),
 		),
 })
 
@@ -94,11 +87,7 @@ export const FetchPreview = Command.define("FetchDashboardTemplatePreview", {
 				params: { template_id },
 				payload: parametersPayload(parameters),
 			})
-		}).pipe(
-			Effect.mapError(toLoadFailure),
-			Effect.result,
-			Effect.map((result) => Message.CompletedFetchPreview({ key, result })),
-		),
+		}).pipe(settleTo((result) => Message.CompletedFetchPreview({ key, result }))),
 })
 
 export const FetchWidget = Command.define("FetchTemplatePreviewWidget", {
@@ -129,11 +118,7 @@ export const CreateFromTemplate = Command.define("CreateDashboardFromTemplate", 
 				payload: Rec.keys(parameters).length > 0 ? { parameters } : {},
 			})
 			return { id: created.id, name: created.name, txid: created.txid ?? null }
-		}).pipe(
-			Effect.mapError(toLoadFailure),
-			Effect.result,
-			Effect.map((result) => Message.CompletedCreate({ result })),
-		),
+		}).pipe(settleTo((result) => Message.CompletedCreate({ result }))),
 })
 
 /** `reconcileTxid`: waits for the new row on the shape stream; nothing waits on it. */

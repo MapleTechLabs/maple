@@ -9,7 +9,7 @@ import { fieldOrNull } from "../../../../lib/billing/billing-profile"
 import { countryName, sortedCountryCodes } from "../../../../lib/billing/countries"
 import { Effect, Option, Result, Array as Arr, Record as Rec, String as Str, Predicate } from "effect"
 import { Command } from "foldkit"
-import { toLoadFailure } from "@maple/views/data/load-failure"
+import { settleTo } from "@maple/views/data/load-failure"
 import { MapleInternalApiClient } from "../../../../platform/api-clients"
 import * as Combobox from "@maple/views/ui/combobox"
 import * as Dialog from "@maple/views/ui/dialog"
@@ -56,11 +56,7 @@ const SaveDetails = Command.define("UpdateBillingProfile", {
 	execute: ({ payload }) =>
 		Effect.flatMap(MapleInternalApiClient, (client) =>
 			client.billing.updateBillingProfile({ payload }),
-		).pipe(
-			Effect.mapError(toLoadFailure),
-			Effect.result,
-			Effect.map((result) => Message.CompletedSave({ result })),
-		),
+		).pipe(settleTo((result) => Message.CompletedSave({ result }))),
 })
 
 const AddTaxId = Command.define("AddBillingTaxId", {
@@ -68,9 +64,7 @@ const AddTaxId = Command.define("AddBillingTaxId", {
 	messages: [Message.CompletedAddTax],
 	execute: ({ payload }) =>
 		Effect.flatMap(MapleInternalApiClient, (client) => client.billing.addBillingTaxId({ payload })).pipe(
-			Effect.mapError(toLoadFailure),
-			Effect.result,
-			Effect.map((result) => Message.CompletedAddTax({ result })),
+			settleTo((result) => Message.CompletedAddTax({ result })),
 		),
 })
 
@@ -80,11 +74,7 @@ const RemoveTaxId = Command.define("RemoveBillingTaxId", {
 	execute: ({ taxId }) =>
 		Effect.flatMap(MapleInternalApiClient, (client) =>
 			client.billing.removeBillingTaxId({ params: { taxIdId: taxId.id } }),
-		).pipe(
-			Effect.mapError(toLoadFailure),
-			Effect.result,
-			Effect.map((result) => Message.CompletedRemoveTax({ taxId, result })),
-		),
+		).pipe(settleTo((result) => Message.CompletedRemoveTax({ taxId, result }))),
 })
 
 const taxTypeSelect = (type: string): Select.Model =>

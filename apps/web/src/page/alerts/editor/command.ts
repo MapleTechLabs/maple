@@ -12,7 +12,7 @@ import { Effect, Exit, Schema, Array as Arr, String as Str } from "effect"
 import * as SecureRandom from "effect/crypto/SecureRandom"
 import { HttpClientError } from "effect/http"
 import { Command } from "foldkit"
-import { toLoadFailure } from "@maple/views/data/load-failure"
+import { settleTo } from "@maple/views/data/load-failure"
 import { TimeWindow } from "../../../data/time-range"
 import { MapleApiV2Client } from "../../../platform/api-clients"
 import { AutocompleteLookup, autocompleteLookup } from "../../kit/autocomplete-lookups"
@@ -67,18 +67,14 @@ export const FetchTraceFacets = Command.define("FetchAlertEditorTraceFacets", {
 	messages: [Message.CompletedFetchTraceFacets],
 	execute: ({ key, window }) =>
 		getTracesFacets({ data: window }).pipe(
-			Effect.mapBoth({
-				onSuccess: (response) => ({
-					services: Arr.map(response.data.services, (row) => row.name),
-					environments: Arr.map(response.data.deploymentEnvs, (row) => row.name),
-					spanNames: Arr.map(response.data.spanNames, (row) => row.name),
-					httpMethods: Arr.map(response.data.httpMethods, (row) => row.name),
-					httpStatusCodes: Arr.map(response.data.httpStatusCodes, (row) => row.name),
-				}),
-				onFailure: toLoadFailure,
-			}),
-			Effect.result,
-			Effect.map((result) => Message.CompletedFetchTraceFacets({ key, result })),
+			Effect.map((response) => ({
+				services: Arr.map(response.data.services, (row) => row.name),
+				environments: Arr.map(response.data.deploymentEnvs, (row) => row.name),
+				spanNames: Arr.map(response.data.spanNames, (row) => row.name),
+				httpMethods: Arr.map(response.data.httpMethods, (row) => row.name),
+				httpStatusCodes: Arr.map(response.data.httpStatusCodes, (row) => row.name),
+			})),
+			settleTo((result) => Message.CompletedFetchTraceFacets({ key, result })),
 		),
 })
 
@@ -87,9 +83,7 @@ export const FetchEditorAutocomplete = Command.define("FetchAlertEditorAutocompl
 	messages: [Message.CompletedFetchAutocomplete],
 	execute: ({ key, lookup, window }) =>
 		autocompleteLookup(lookup, window).pipe(
-			Effect.mapError(toLoadFailure),
-			Effect.result,
-			Effect.map((result) => Message.CompletedFetchAutocomplete({ key, lookup, result })),
+			settleTo((result) => Message.CompletedFetchAutocomplete({ key, lookup, result })),
 		),
 })
 

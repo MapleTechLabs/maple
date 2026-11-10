@@ -2,7 +2,7 @@ import { type DigestSubscriptionResponse, UpsertDigestSubscriptionRequest } from
 import { formatWarehouseDateTime, snapRangeForCache } from "@maple/query-engine"
 import { Clock, Effect, Option, Predicate, Result, Schema, Array as Arr, String as Str } from "effect"
 import { AsyncData, Command } from "foldkit"
-import { toLoadFailure } from "@maple/views/data/load-failure"
+import { settleTo, settled } from "@maple/views/data/load-failure"
 import { loadServicesFacets } from "../../../../data/services-facets-probe"
 import { MapleInternalApiClient } from "../../../../platform/api-clients"
 import * as Combobox from "@maple/views/ui/combobox"
@@ -87,9 +87,7 @@ const FetchSubscription = Command.define("FetchDigestSubscription", {
 			(error) => Predicate.isTagged(error, DIGEST_NOT_FOUND),
 			() => Effect.succeed(null),
 		),
-		Effect.mapError(toLoadFailure),
-		Effect.result,
-		Effect.map((result) => Message.CompletedFetchSubscription({ result })),
+		settleTo((result) => Message.CompletedFetchSubscription({ result })),
 	),
 })
 
@@ -146,7 +144,7 @@ const upsert = (enabled: boolean, fields: UpsertFields) =>
 				}),
 			}),
 		}),
-	).pipe(Effect.asVoid, Effect.mapError(toLoadFailure), Effect.result)
+	).pipe(Effect.asVoid, settled)
 
 const ToggleDigest = Command.define("ToggleDigest", {
 	args: {
@@ -183,9 +181,8 @@ const PreviewDigest = Command.define("PreviewDigest", {
 		Effect.flatMap(MapleInternalApiClient, (client) =>
 			digest === "ops" ? client.digest.preview() : client.digest.previewWebAnalytics(),
 		).pipe(
-			Effect.mapBoth({ onSuccess: (response) => response.html, onFailure: toLoadFailure }),
-			Effect.result,
-			Effect.map((result) => Message.CompletedPreview({ result })),
+			Effect.map((response) => response.html),
+			settleTo((result) => Message.CompletedPreview({ result })),
 		),
 })
 

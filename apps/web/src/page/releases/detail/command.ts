@@ -4,7 +4,7 @@ import { getReleaseDetail, getReleases } from "@maple/web-data/warehouse/release
 import { Clock, Effect, Predicate, type Result, Schema } from "effect"
 import { Command } from "foldkit"
 import { IdleTtl } from "../../../data/idle-ttl"
-import { type LoadFailure, toLoadFailure } from "@maple/views/data/load-failure"
+import { type LoadFailure, settleTo } from "@maple/views/data/load-failure"
 import { readThrough } from "../../../data/read-cache"
 import { resolveWindow } from "../../../data/time-range"
 import { readCommitDetail } from "../../kit/commit-card"
@@ -16,7 +16,7 @@ import { Message } from "./message"
 const finish = <A, E, R, M>(
 	effect: Effect.Effect<A, E, R>,
 	toMessage: (result: Result.Result<A, LoadFailure>) => M,
-) => effect.pipe(Effect.mapError(toLoadFailure), Effect.result, Effect.map(toMessage))
+) => effect.pipe(settleTo(toMessage))
 
 export const ResolveReleaseWindow = Command.define("ResolveReleaseWindow", {
 	args: {

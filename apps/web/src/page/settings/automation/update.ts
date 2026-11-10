@@ -10,7 +10,7 @@ import {
 import { AlertDestinationId } from "@maple/domain/primitives"
 import { Array, Effect, Option, Result, Schema, Record as Rec } from "effect"
 import { AsyncData, Command } from "foldkit"
-import { toLoadFailure } from "@maple/views/data/load-failure"
+import { settleTo } from "@maple/views/data/load-failure"
 import { MapleInternalApiClient } from "../../../platform/api-clients"
 import * as Select from "@maple/views/ui/select"
 import { PageOutMessage, type PageReturn } from "../../contract"
@@ -28,15 +28,10 @@ import {
 
 type Return = PageReturn<Model, Message>
 
-const settle =
-	<A, B>(toMessage: (result: Result.Result<A, ReturnType<typeof toLoadFailure>>) => B) =>
-	<E, R>(effect: Effect.Effect<A, E, R>) =>
-		effect.pipe(Effect.mapError(toLoadFailure), Effect.result, Effect.map(toMessage))
-
 const FetchEscalationPolicy = Command.define("FetchEscalationPolicy", {
 	messages: [Message.CompletedFetchPolicy],
 	execute: Effect.flatMap(MapleInternalApiClient, (client) => client.errors.getEscalationPolicy()).pipe(
-		settle((result) => Message.CompletedFetchPolicy({ result })),
+		settleTo((result) => Message.CompletedFetchPolicy({ result })),
 	),
 })
 
@@ -44,7 +39,7 @@ const FetchRecentEscalations = Command.define("FetchRecentEscalations", {
 	messages: [Message.CompletedFetchAttempts],
 	execute: Effect.flatMap(MapleInternalApiClient, (client) =>
 		client.errors.listRecentEscalations({ query: { limit: 20 } }),
-	).pipe(settle((result) => Message.CompletedFetchAttempts({ result }))),
+	).pipe(settleTo((result) => Message.CompletedFetchAttempts({ result }))),
 })
 
 const SaveEscalationPolicy = Command.define("SaveEscalationPolicy", {
@@ -53,7 +48,7 @@ const SaveEscalationPolicy = Command.define("SaveEscalationPolicy", {
 	execute: ({ request }) =>
 		Effect.flatMap(MapleInternalApiClient, (client) =>
 			client.errors.upsertEscalationPolicy({ payload: request }),
-		).pipe(settle((result) => Message.CompletedSavePolicy({ result }))),
+		).pipe(settleTo((result) => Message.CompletedSavePolicy({ result }))),
 })
 
 const EvaluateEscalationPolicy = Command.define("EvaluateEscalationPolicy", {
@@ -62,7 +57,7 @@ const EvaluateEscalationPolicy = Command.define("EvaluateEscalationPolicy", {
 	execute: ({ request, revision }) =>
 		Effect.flatMap(MapleInternalApiClient, (client) =>
 			client.errors.evaluateEscalationPolicy({ payload: request }),
-		).pipe(settle((result) => Message.CompletedEvaluate({ revision, result }))),
+		).pipe(settleTo((result) => Message.CompletedEvaluate({ revision, result }))),
 })
 
 export const init = (grants: ReadonlyArray<Policy.Permission>): Return => ({

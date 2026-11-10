@@ -5,7 +5,7 @@ import { formatWarehouseDateTime } from "@maple/query-engine"
 import { getUptimeCheckStats } from "@maple/web-data/warehouse/uptime"
 import { Clock, Effect, Schema } from "effect"
 import { Command } from "foldkit"
-import { toLoadFailure } from "@maple/views/data/load-failure"
+import { settleTo } from "@maple/views/data/load-failure"
 import { readGrants } from "../../../data/session-tenant"
 import { retrieveMonitor, setMonitorEnabled, testMonitorConfig } from "../../kit/uptime/commands"
 import { Message } from "./message"
@@ -71,9 +71,5 @@ export const FetchCheckStats = Command.define("FetchUptimeCheckStats", {
 				endTime: formatWarehouseDateTime(nowMs),
 				withPhases,
 			}).pipe(Effect.map((stats) => ({ ...stats, window })))
-		}).pipe(
-			Effect.mapError(toLoadFailure),
-			Effect.result,
-			Effect.map((result) => Message.CompletedFetchStats({ key, result })),
-		),
+		}).pipe(settleTo((result) => Message.CompletedFetchStats({ key, result }))),
 })

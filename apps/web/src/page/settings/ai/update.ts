@@ -5,7 +5,7 @@ import { limitsUpdate } from "../kit/ai-triage-limits"
 import { Effect, Option, Result, Schema, String as Str } from "effect"
 import { AsyncData, Command } from "foldkit"
 import { trackProduct } from "../../../data/analytics"
-import { toLoadFailure } from "@maple/views/data/load-failure"
+import { settleTo } from "@maple/views/data/load-failure"
 import { MapleInternalApiClient } from "../../../platform/api-clients"
 import * as Dialog from "@maple/views/ui/dialog"
 import * as Field from "@maple/views/ui/field"
@@ -15,22 +15,17 @@ import { type LimitsDraft, Message, type Model } from "./model"
 
 type Return = PageReturn<Model, Message>
 
-const settle =
-	<A, B>(toMessage: (result: Result.Result<A, ReturnType<typeof toLoadFailure>>) => B) =>
-	<E, R>(effect: Effect.Effect<A, E, R>) =>
-		effect.pipe(Effect.mapError(toLoadFailure), Effect.result, Effect.map(toMessage))
-
 export const FetchOpenRouterKey = Command.define("FetchOpenRouterKey", {
 	messages: [Message.CompletedFetchKey],
 	execute: Effect.flatMap(MapleInternalApiClient, (client) => client.openRouterKey.get()).pipe(
-		settle((result) => Message.CompletedFetchKey({ result })),
+		settleTo((result) => Message.CompletedFetchKey({ result })),
 	),
 })
 
 export const FetchTriageSettings = Command.define("FetchAiTriageSettings", {
 	messages: [Message.CompletedFetchTriage],
 	execute: Effect.flatMap(MapleInternalApiClient, (client) => client.aiTriage.getSettings()).pipe(
-		settle((result) => Message.CompletedFetchTriage({ result })),
+		settleTo((result) => Message.CompletedFetchTriage({ result })),
 	),
 })
 
@@ -40,13 +35,13 @@ const SaveOpenRouterKey = Command.define("SaveOpenRouterKey", {
 	execute: ({ apiKey }) =>
 		Effect.flatMap(MapleInternalApiClient, (client) =>
 			client.openRouterKey.set({ payload: new OpenRouterKeyUpdateRequest({ apiKey }) }),
-		).pipe(settle((result) => Message.CompletedSaveKey({ result }))),
+		).pipe(settleTo((result) => Message.CompletedSaveKey({ result }))),
 })
 
 const RemoveOpenRouterKey = Command.define("RemoveOpenRouterKey", {
 	messages: [Message.CompletedRemoveKey],
 	execute: Effect.flatMap(MapleInternalApiClient, (client) => client.openRouterKey.remove()).pipe(
-		settle((result) => Message.CompletedRemoveKey({ result })),
+		settleTo((result) => Message.CompletedRemoveKey({ result })),
 	),
 })
 
@@ -59,7 +54,7 @@ const AttachAddOn = Command.define("AttachOpenRouterAddOn", {
 		return yield* client.billing.attach({
 			payload: new AttachRequest({ planId: OPENROUTER_BYOK_ADDON_ID, successUrl }),
 		})
-	}).pipe(settle((result) => Message.CompletedAttachAddOn({ result }))),
+	}).pipe(settleTo((result) => Message.CompletedAttachAddOn({ result }))),
 })
 
 /** `plan_checkout_started`, then the tab leaves for Stripe (`useBillingActions().attach`). */
@@ -95,7 +90,7 @@ const UpdateTriage = Command.define("UpdateAiTriageSettings", {
 				}),
 			}),
 		).pipe(
-			settle((result) =>
+			settleTo((result) =>
 				purpose === "toggle"
 					? Message.CompletedToggleTriage({ isEnabled: enabled ?? false, result })
 					: Message.CompletedSaveLimits({ result }),

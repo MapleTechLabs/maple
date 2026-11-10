@@ -3,7 +3,7 @@ import { AlertIncidentId, AlertRuleId, AnomalyIncidentId, IsoDateTimeString } fr
 import { V2AlertRulePreviewParams, V2InvestigationCreateParams } from "@maple/domain/http/v2"
 import { Effect, Schema } from "effect"
 import { Command } from "foldkit"
-import { toLoadFailure } from "@maple/views/data/load-failure"
+import { settleTo, settled } from "@maple/views/data/load-failure"
 import { MapleApiV2Client } from "../../../platform/api-clients"
 import { listDeliveries, listIncidentActivity, setIncidentAcknowledged } from "../shared/commands"
 import { listSlos } from "../shared/slo-commands"
@@ -32,9 +32,7 @@ export const FetchIncidentChecks = Command.define("FetchAlertIncidentChecks", {
 	messages: [Message.CompletedFetchChecks],
 	execute: ({ key, ruleId, since, until }) =>
 		fetchCheckSummary(ruleId, since, until).pipe(
-			Effect.mapError(toLoadFailure),
-			Effect.result,
-			Effect.map((result) => Message.CompletedFetchChecks({ key, result })),
+			settleTo((result) => Message.CompletedFetchChecks({ key, result })),
 		),
 })
 
@@ -79,11 +77,7 @@ export const FetchIncidentInvestigation = Command.define("FetchAlertIncidentInve
 				query: { incident_kind: "alert", incident_id: incidentId, limit: 1 },
 			})
 			return page.data[0] ?? null
-		}).pipe(
-			Effect.mapError(toLoadFailure),
-			Effect.result,
-			Effect.map((result) => Message.CompletedFetchInvestigation({ key, result })),
-		),
+		}).pipe(settleTo((result) => Message.CompletedFetchInvestigation({ key, result }))),
 })
 
 export const CreateInvestigation = Command.define("CreateAlertInvestigation", {
@@ -94,11 +88,7 @@ export const CreateInvestigation = Command.define("CreateAlertInvestigation", {
 			const client = yield* MapleApiV2Client
 			const investigation = yield* client.investigations.create({ payload })
 			return String(investigation.id)
-		}).pipe(
-			Effect.mapError(toLoadFailure),
-			Effect.result,
-			Effect.map((result) => Message.CompletedCreateInvestigation({ result })),
-		),
+		}).pipe(settleTo((result) => Message.CompletedCreateInvestigation({ result }))),
 })
 
 export const FetchIncidentEscalation = Command.define("FetchAlertIncidentEscalation", {
@@ -140,9 +130,7 @@ export const FetchIncidentAnomaly = Command.define("FetchAlertIncidentAnomaly", 
 	execute: ({ key, id }) =>
 		Effect.gen(function* () {
 			const client = yield* MapleApiV2Client
-			const result = yield* client.anomalies
-				.getIncident({ params: { id } })
-				.pipe(Effect.mapError(toLoadFailure), Effect.result)
+			const result = yield* client.anomalies.getIncident({ params: { id } }).pipe(settled)
 			return Message.CompletedFetchAnomaly({ key, result })
 		}),
 })
@@ -156,7 +144,7 @@ export const FetchIncidentAnomalyTimeseries = Command.define("FetchAlertIncident
 			const client = yield* MapleApiV2Client
 			const result = yield* client.anomalies
 				.getIncidentTimeseries({ params: { id }, query: {} })
-				.pipe(Effect.mapError(toLoadFailure), Effect.result)
+				.pipe(settled)
 			return Message.CompletedFetchAnomalyTimeseries({ key, result })
 		}),
 })

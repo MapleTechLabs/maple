@@ -2,7 +2,7 @@ import { readClock, SEARCH_DEBOUNCE } from "@maple/views/data/timing"
 import { Effect, Schema } from "effect"
 import { Command, Mount } from "foldkit"
 import { readGrants } from "../../../data/session-tenant"
-import { toLoadFailure } from "@maple/views/data/load-failure"
+import { settleTo, settled } from "@maple/views/data/load-failure"
 import { MapleApiV2Client, MapleInternalApiClient } from "../../../platform/api-clients"
 import { loadSignalPresences } from "../../kit/signal-presence"
 import { clickStream, factsOf, rowClickId } from "../clicks"
@@ -19,7 +19,7 @@ const fetchPage = (cursor: string | undefined) =>
 			query: cursor === undefined ? { limit: PAGE_SIZE } : { limit: PAGE_SIZE, cursor },
 		})
 		return { data: page.data, hasMore: page.has_more, nextCursor: page.next_cursor }
-	}).pipe(Effect.mapError(toLoadFailure), Effect.result)
+	}).pipe(settled)
 
 export const FetchInvestigations = Command.define("FetchInvestigations", {
 	args: { key: Schema.String },
@@ -50,11 +50,7 @@ export const FetchTriageBudget = Command.define("FetchTriageBudget", {
 				pausedDimension: settings.pausedDimension,
 				resumesAt: settings.resumesAt,
 			}
-		}).pipe(
-			Effect.mapError(toLoadFailure),
-			Effect.result,
-			Effect.map((result) => Message.CompletedFetchBudget({ key, result })),
-		),
+		}).pipe(settleTo((result) => Message.CompletedFetchBudget({ key, result }))),
 })
 
 /** `investigations.create` with a freeform subject: the investigate bar and the hero. */
@@ -80,11 +76,7 @@ export const CreateQuestion = Command.define("CreateInvestigationQuestion", {
 				},
 			})
 			return String(created.id)
-		}).pipe(
-			Effect.mapError(toLoadFailure),
-			Effect.result,
-			Effect.map((result) => Message.CompletedCreate({ result })),
-		),
+		}).pipe(settleTo((result) => Message.CompletedCreate({ result }))),
 })
 
 export const WaitInvestigationsSearch = Command.define("WaitInvestigationsSearch", {

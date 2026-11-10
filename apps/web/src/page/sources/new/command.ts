@@ -3,7 +3,7 @@ import { PushSourcePlatform, SourceId } from "@maple/domain/primitives"
 import { Clock, Duration, Effect, Schema } from "effect"
 import { Command } from "foldkit"
 import { baseKey } from "@maple/views/data/keyed"
-import { toLoadFailure } from "@maple/views/data/load-failure"
+import { settleTo } from "@maple/views/data/load-failure"
 import { MapleApiV2Client } from "../../../platform/api-clients"
 import { readGrants } from "../../../data/session-tenant"
 import { loadSource, loadSources } from "../kit/data"
@@ -77,9 +77,5 @@ export const CreateSource = Command.define("CreateSource", {
 			return yield* client.sources.create({
 				payload: { name, platform, ...rules, expires_at: expiresAtOf(expiry, nowMs) ?? null },
 			})
-		}).pipe(
-			Effect.mapError(toLoadFailure),
-			Effect.result,
-			Effect.map((result) => Message.CompletedCreate({ result })),
-		),
+		}).pipe(settleTo((result) => Message.CompletedCreate({ result }))),
 })

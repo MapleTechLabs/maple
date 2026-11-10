@@ -21,7 +21,7 @@ import { Effect, Option, Schema, Array as Arr } from "effect"
 import { Command } from "foldkit"
 import { IntegrationStatuses } from "../../../data/integration-statuses"
 import { loadInfraPresence } from "../../../data/infra-surfaces"
-import { toLoadFailure } from "@maple/views/data/load-failure"
+import { settleTo } from "@maple/views/data/load-failure"
 import { TimeWindow } from "../../../data/time-range"
 import { Message } from "./message"
 import { SourceId, type SourceReading } from "./model"
@@ -86,9 +86,7 @@ export const FetchPresence = Command.define("FetchInfraOverviewPresence", {
 	messages: [Message.CompletedFetchPresence],
 	execute: ({ orgId, key, window }) =>
 		loadInfraPresence(orgId, window).pipe(
-			Effect.mapError(toLoadFailure),
-			Effect.result,
-			Effect.map((result) => Message.CompletedFetchPresence({ key, result })),
+			settleTo((result) => Message.CompletedFetchPresence({ key, result })),
 		),
 })
 
@@ -97,8 +95,6 @@ export const FetchSource = Command.define("FetchInfraOverviewSource", {
 	messages: [Message.CompletedFetchSource],
 	execute: ({ source, key, window }) =>
 		read(source, window).pipe(
-			Effect.mapError(toLoadFailure),
-			Effect.result,
-			Effect.map((result) => Message.CompletedFetchSource({ source, key, result })),
+			settleTo((result) => Message.CompletedFetchSource({ source, key, result })),
 		),
 })
