@@ -6,7 +6,7 @@ import {
 	messageGroupStyles,
 	messageHeaderStyles,
 	messageStyles,
-} from "@maple/ui/styles/ui/message"
+} from "./message.styles"
 import type { Html, HtmlBuilder } from "foldkit/html"
 
 // One chat message (avatar, header, bubbles).

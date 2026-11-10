@@ -7,7 +7,7 @@ import {
 	pageContentStyles,
 	pageScrollAreaStyles,
 	pageStickyAreaStyles,
-} from "@maple/ui/styles/ui/page-layout"
+} from "@maple/views/ui/page-layout.styles"
 import { cn } from "@maple/ui/lib/utils"
 import type { PageContext } from "../../page/contract"
 import { detectLookup, missingDetection } from "../../page/agent-sessions/kit/detected-models"

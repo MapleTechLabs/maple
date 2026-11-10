@@ -7,7 +7,7 @@ import {
 import { QUERY_BUILDER_DATA_SOURCES } from "@maple/query-model"
 import type { WhereClauseAutocompleteValues } from "../../../lib/query-builder/where-clause-autocomplete"
 import { cn } from "@maple/ui/lib/utils"
-import { badgeVariants } from "@maple/ui/styles/ui/badge"
+import { badgeVariants } from "@maple/views/ui/badge.styles"
 import { Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { alert, alertDescription } from "@maple/views/ui/alert"

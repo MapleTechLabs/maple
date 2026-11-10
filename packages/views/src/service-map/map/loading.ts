@@ -1,4 +1,4 @@
-import "@maple/ui/components/service-map/service-map.css"
+import "../graph/service-map.css"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { eyebrow } from "../../ui/eyebrow"
 import { hstack, hstackClass, vstack } from "../../ui/stack"

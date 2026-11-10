@@ -5,7 +5,7 @@ import {
 	skeletonListRowStyles,
 	skeletonListStyles,
 	skeletonStyles,
-} from "@maple/ui/styles/ui/skeleton"
+} from "./skeleton.styles"
 import type { Html, HtmlBuilder } from "foldkit/html"
 
 // Loading placeholders: a pulse block, its list, meter and switch shapes, and the slow-load note.

@@ -1,4 +1,4 @@
-import { createSequentialColorScale } from "@maple/ui/components/plot/color-scale"
+import { createSequentialColorScale } from "../plot/color-scale"
 import { cell, defineChart, type ChartPoint } from "@tanstack/charts"
 import { scaleBand } from "@tanstack/charts-scales/band"
 import { tooltip } from "@tanstack/charts/tooltip"

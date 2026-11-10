@@ -12,7 +12,7 @@ import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { Array as Arr, String as Str } from "effect"
 
-// Small value components from packages/ui/src/components: LatencyValue, ErrorRateValue, ServiceDot.
+// Small value components: LatencyValue, ErrorRateValue, ServiceDot.
 
 /** A zero, a missing value and the `—` placeholder all read in this one quiet grey. */
 export const NIL_VALUE = "text-foreground-subtle"

@@ -3,7 +3,7 @@ import {
 	copyableFieldLabelStyles,
 	copyableFieldRevealVisibleStyles,
 	copyableFieldStyles,
-} from "@maple/ui/styles/ui/copyable-field"
+} from "./copyable-field.styles"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import * as CopyButton from "./copy-button"
 import { icon } from "./icon"

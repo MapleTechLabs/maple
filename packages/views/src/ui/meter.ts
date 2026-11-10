@@ -9,7 +9,7 @@ import {
 	meterStyles,
 	segmentedBarSegmentStyles,
 	segmentedBarStyles,
-} from "@maple/ui/styles/ui/meter"
+} from "./meter.styles"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { Array as Arr } from "effect"
 

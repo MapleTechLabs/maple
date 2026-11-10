@@ -1,4 +1,4 @@
-import { cellText } from "@maple/ui/components/charts/_shared/breakdown-rows"
+import { cellText } from "./series/breakdown-rows"
 import { EMPTY_VALUE, formatNumber } from "@maple/ui/lib/format"
 import { Option, Array as Arr, Record as Rec } from "effect"
 import { Submodel } from "foldkit"

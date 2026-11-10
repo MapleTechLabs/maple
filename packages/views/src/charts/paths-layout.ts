@@ -1,4 +1,4 @@
-import { asFiniteNumber } from "@maple/ui/components/charts/_shared/breakdown-rows"
+import { asFiniteNumber } from "./series/breakdown-rows"
 import { Array as Arr, Order, String as Str } from "effect"
 
 // The graph and layout of `PathsChart`: rows are hops, column 0 is the anchor, `''` ended and

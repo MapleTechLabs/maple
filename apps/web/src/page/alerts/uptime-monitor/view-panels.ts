@@ -1,5 +1,5 @@
 import { MAPLE_SERVICES_NAMESPACE } from "@maple/domain/uptime"
-import { bucketTimeScale } from "@maple/ui/components/plot/plot-scales"
+import { bucketTimeScale } from "@maple/views/charts/plot/plot-scales"
 import { countLabel, formatBucketLabel, formatNumber } from "@maple/ui/lib/format"
 import { TONE_COLOR, TONE_TEXT } from "@maple/ui/lib/tone"
 import { cn } from "@maple/ui/lib/utils"

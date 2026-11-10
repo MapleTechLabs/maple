@@ -6,7 +6,7 @@ import {
 	inputSearchStyles,
 	inputSmStyles,
 	inputStyles,
-} from "@maple/ui/styles/ui/input"
+} from "./input.styles"
 import type { Attribute, Html, HtmlBuilder } from "foldkit/html"
 
 /** Base UI's field state, which it mirrors as data attributes on every field part. */

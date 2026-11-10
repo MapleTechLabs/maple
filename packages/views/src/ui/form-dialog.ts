@@ -3,7 +3,7 @@ import {
 	formDialogFooterStartStyles,
 	formDialogFormStyles,
 	formDialogPanelStyles,
-} from "@maple/ui/styles/ui/form-dialog"
+} from "./form-dialog.styles"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { button } from "./button"
 import type * as Dialog from "./dialog"

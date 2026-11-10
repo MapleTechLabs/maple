@@ -1,6 +1,6 @@
 import * as Animation from "@foldkit/ui/animation"
 import { cn } from "@maple/ui/lib/utils"
-import { hoverCardContentStyles, hoverCardPositionerStyles } from "@maple/ui/styles/ui/hover-card"
+import { hoverCardContentStyles, hoverCardPositionerStyles } from "./hover-card.styles"
 import { Duration, Effect, Number, Option, Schema, Stream, Array as Arr } from "effect"
 import { Command, Mount, Submodel, type Update } from "foldkit"
 import { type ChildAttribute, childAttributes, type Html } from "foldkit/html"

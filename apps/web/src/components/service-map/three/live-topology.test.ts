@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest"
 import type { EdgeBase, NodeBase } from "@xyflow/system"
-import type { ServiceNodeData, ServiceEdgeData } from "@maple/ui/components/service-map/service-map-utils"
+import type { ServiceNodeData, ServiceEdgeData } from "@maple/views/service-map/graph/service-map-utils"
 import { liveTopology } from "./live-topology"
 
 const node = (id: string, data: Partial<ServiceNodeData> = {}): NodeBase<ServiceNodeData> => ({

@@ -1,5 +1,5 @@
 import { cn } from "@maple/ui/lib/utils"
-import * as A from "@maple/ui/styles/ui/autocomplete"
+import * as A from "./autocomplete.styles"
 import {
 	commandEmptyStyles,
 	commandFooterStyles,
@@ -8,7 +8,7 @@ import {
 	commandItemStyles,
 	commandListStyles,
 	commandShortcutStyles,
-} from "@maple/ui/styles/ui/command"
+} from "./command.styles"
 import { Array, Effect, Queue, Stream } from "effect"
 import { Mount } from "foldkit"
 import type { Attribute, Html, HtmlBuilder } from "foldkit/html"

@@ -4,7 +4,7 @@ import {
 	resizableHandleStyles,
 	resizablePanelGroupStyles,
 	resizablePanelStyles,
-} from "@maple/ui/styles/ui/resizable"
+} from "./resizable.styles"
 import { Array, Effect, Number, Option, Queue, Schema, Stream } from "effect"
 import { Mount, Submodel, type Update } from "foldkit"
 import type { Html } from "foldkit/html"

@@ -1,4 +1,4 @@
-import { getDbStyle } from "@maple/ui/components/service-map/service-map-db-style"
+import { getDbStyle } from "@maple/views/service-map/graph/service-map-db-style"
 import type { Node3D } from "../../components/service-map/three/types"
 import { resolveRuntimeGlyph } from "@maple/views/service-map/map/runtime"
 import { String as Str } from "effect"

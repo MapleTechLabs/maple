@@ -5,7 +5,7 @@ import {
 	pageLayoutStyles,
 	pageScrollAreaStyles,
 	pageStickyAreaStyles,
-} from "@maple/ui/styles/ui/page-layout"
+} from "@maple/views/ui/page-layout.styles"
 import { Clock, Effect, Schema, Stream, Array as Arr } from "effect"
 import { Mount } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"

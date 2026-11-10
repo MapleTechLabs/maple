@@ -24,7 +24,7 @@ existing copies onto it (see `apps/web/CLAUDE.md`).
 - `packages/views/src/ui/calendar-view.ts` `view`: react-day-picker's DOM for `<Calendar mode="single">` (en-US): rdp-* classes, Maple's `calendarClassNames`, the same ARIA labels.
 - `packages/views/src/ui/calendar.ts` `isoDay`, `gridWeeks`, `tabbableDay` (stateful: Model, init, update): Single mode: react-day-picker's state as a Submodel.
 - `packages/views/src/ui/card-button.ts` `cardButtonClass`, `cardButton`: `CardButton`: a whole card as one click target (template tiles, source and destination pickers, metric cards).
-- `packages/views/src/ui/card.ts` `card`, `cardHeader`, `cardTitle`, `cardDescription`, `cardPanel`, `cardFooter`, `cardAction`: The Card surface (styles in packages/ui/src/components/ui/card.styles.ts): rounded-md, and its parts.
+- `packages/views/src/ui/card.ts` `card`, `cardHeader`, `cardTitle`, `cardDescription`, `cardPanel`, `cardFooter`, `cardAction`: The Card surface (styles in ./card.styles.ts): rounded-md, and its parts.
 - `packages/views/src/ui/chart-frame.ts` `chartFrameClass`, `chartNoData`: The classes of a chart's box: `fill` is the className a host gives a chart to fill its tile instead of keeping an aspect ratio, `plot` a chart's own root, `centered` its message...
 - `packages/views/src/ui/chart-skeleton-shapes.ts` `heatmapGhost`, `hbarGhost`, `funnelGhost`, `pathsGhost`, `pieGhost`, `gaugeGhost`, `statGhost`, `dropoffGhost`: The heatmap, hbar, funnel, drop-off, paths, pie, gauge and stat ghosts of `ChartSkeleton`, markup and numbers as there.
 - `packages/views/src/ui/chart-skeleton.ts` `chartSkeleton`: `ChartSkeleton`, every ghost shape.
@@ -178,7 +178,7 @@ existing copies onto it (see `apps/web/CLAUDE.md`).
 - `packages/views/src/ui/truncated-id.ts` `truncatedId`: A shortened id in mono with the full value as the native tooltip.
 - `packages/views/src/ui/truncated-text.ts` `truncatedText`: One line of text cut with an ellipsis, the full text as its tooltip.
 - `packages/views/src/ui/typography.ts` `typographyClass`, `typography`: `Typography`: a run of text on the type scale and the text tones, instead of a hand-written `text-xs text-muted-foreground` string.
-- `packages/views/src/ui/values.ts` `emptyValue`, `measure`, `latencyValue`, `errorRateValue`, `serviceDot`: Small value components from packages/ui/src/components: LatencyValue, ErrorRateValue, ServiceDot.
+- `packages/views/src/ui/values.ts` `emptyValue`, `measure`, `latencyValue`, `errorRateValue`, `serviceDot`: Small value components: LatencyValue, ErrorRateValue, ServiceDot.
 
 ## apps/web/src/page/kit
 

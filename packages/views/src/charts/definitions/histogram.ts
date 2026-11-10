@@ -1,11 +1,6 @@
 import { formatNumber } from "@maple/ui/lib/format"
-import { DASHED_Y_GRID } from "@maple/ui/components/plot/plot-grid"
-import {
-	integerTickValues,
-	logYScale,
-	minBarLength,
-	niceLinearDomain,
-} from "@maple/ui/components/plot/plot-scales"
+import { DASHED_Y_GRID } from "../plot/plot-grid"
+import { integerTickValues, logYScale, minBarLength, niceLinearDomain } from "../plot/plot-scales"
 import { barY, defineChart, rect, type ChartPoint } from "@tanstack/charts"
 import { binX } from "@tanstack/charts/transform/bin"
 import { scaleBand } from "@tanstack/charts-scales/band"

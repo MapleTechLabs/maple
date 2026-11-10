@@ -1,4 +1,4 @@
-import type { ServicePlatform } from "@maple/ui/components/service-map/service-map-types"
+import type { ServicePlatform } from "../graph/service-map-types"
 import type { IconName } from "../../ui/icon"
 import { String as Str } from "effect"
 

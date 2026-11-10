@@ -1,9 +1,5 @@
-import { clampViewport, viewportBounds } from "@maple/ui/components/traces/clamp-viewport"
-import {
-	isStatusCodePreset,
-	resolveColorValue,
-	type ColorByField,
-} from "@maple/ui/components/traces/color-by"
+import { clampViewport, viewportBounds } from "../clamp-viewport"
+import { isStatusCodePreset, resolveColorValue, type ColorByField } from "../color-by"
 import {
 	DEFAULT_MAX_WINDOW_MS,
 	MIN_TICK_PX,
@@ -11,7 +7,7 @@ import {
 	ROW_GAP,
 	ROW_HEIGHT,
 	type ViewportState,
-} from "@maple/ui/components/traces/trace-timeline-types"
+} from "../trace-timeline-types"
 import { getValueHue } from "@maple/ui/lib/colors"
 import { spanStartMs } from "@maple/ui/lib/span-tree"
 import type { SpanNodeData } from "@maple/views/traces/trace-data"

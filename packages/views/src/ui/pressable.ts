@@ -1,5 +1,5 @@
 import { cn } from "@maple/ui/lib/utils"
-import { rowSelectedClass } from "@maple/ui/styles/ui/list-row"
+import { rowSelectedClass } from "./list-row.styles"
 import type { Attribute, ChildAttribute, Html, HtmlBuilder } from "foldkit/html"
 
 // `Pressable`: a click target that draws its own look (a timeline lane, a chart bar, a colour

@@ -1,11 +1,11 @@
-import { getDbNodeColor } from "@maple/ui/components/service-map/service-map-db-style"
+import { getDbNodeColor } from "../graph/service-map-db-style"
 import {
 	isDbNodeId,
 	isNsAggregateId,
 	NS_AGGREGATE_PREFIX,
 	parseDbNodeId,
 	type ServiceEdgeData,
-} from "@maple/ui/components/service-map/service-map-utils"
+} from "../graph/service-map-utils"
 import { getServiceColor, getValueHue } from "@maple/ui/lib/colors"
 import { errorRateClass } from "@maple/ui/lib/error-rate"
 import { formatErrorRate, formatNumber } from "@maple/ui/lib/format"

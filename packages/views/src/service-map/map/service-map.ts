@@ -4,7 +4,7 @@ import {
 	DEFAULT_LAYOUT_CONFIG,
 	isNsAggregateId,
 	NS_AGGREGATE_PREFIX,
-} from "@maple/ui/components/service-map/service-map-utils"
+} from "../graph/service-map-utils"
 import {
 	Duration,
 	Effect,
@@ -157,7 +157,7 @@ export const RunElkLayout = Command.define("RunElkLayout", {
 	execute: ({ signature, graph, previous }) =>
 		Effect.tryPromise({
 			try: () =>
-				import("@maple/ui/components/service-map/service-map-elk").then((elk) =>
+				import("../graph/service-map-elk").then((elk) =>
 					elk.layoutServiceMapWithElk(
 						[...graph.nodes],
 						[...graph.edges],

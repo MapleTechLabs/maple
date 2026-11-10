@@ -1,5 +1,5 @@
-import type { DbIconKey } from "@maple/ui/components/service-map/service-map-db-style"
-import type { ServicePlatform } from "@maple/ui/components/service-map/service-map-types"
+import type { DbIconKey } from "../graph/service-map-db-style"
+import type { ServicePlatform } from "../graph/service-map-types"
 import { ERROR_RATE_TEXT, type ErrorRateLevel, errorRateLevel } from "@maple/ui/lib/error-rate"
 import { formatErrorRate, formatLatency, formatRate } from "@maple/ui/lib/format"
 import { latencyToneClass } from "@maple/ui/lib/latency-tone"

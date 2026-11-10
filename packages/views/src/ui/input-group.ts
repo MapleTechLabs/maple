@@ -1,9 +1,5 @@
 import { cn } from "@maple/ui/lib/utils"
-import {
-	inputGroupAddonVariants,
-	inputGroupStyles,
-	inputGroupTextStyles,
-} from "@maple/ui/styles/ui/input-group"
+import { inputGroupAddonVariants, inputGroupStyles, inputGroupTextStyles } from "./input-group.styles"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { button, type ButtonOptions } from "./button"
 import { input, type InputOptions } from "./input"

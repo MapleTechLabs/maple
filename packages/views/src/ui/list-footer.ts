@@ -5,7 +5,7 @@ import {
 	loadingMoreRowStyles,
 	listFooterStartStyles,
 	listFooterStyles,
-} from "@maple/ui/styles/ui/list-footer"
+} from "./list-footer.styles"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { button } from "./button"
 import { spinner } from "./spinner"

@@ -10,11 +10,11 @@ import {
 	toastTitleStyles,
 	toastViewportAnchoredStyles,
 	toastViewportStyles,
-} from "@maple/ui/styles/ui/toast"
+} from "./toast.styles"
 import { Array, Option } from "effect"
 import { Submodel } from "foldkit"
 import type { Attribute, Html, HtmlBuilder } from "foldkit/html"
-import { buttonVariants } from "@maple/ui/styles/ui/button"
+import { buttonVariants } from "./button.styles"
 import { icon, type IconName } from "./icon"
 import {
 	descriptionId,

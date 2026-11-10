@@ -10,7 +10,7 @@ import {
 	tabsPanelStyles,
 	tabsStyles,
 	tabsTabStyles,
-} from "@maple/ui/styles/ui/tabs"
+} from "./tabs.styles"
 import { Option, Schema, Array as Arr } from "effect"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { defineView } from "foldkit/submodel"

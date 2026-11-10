@@ -1,4 +1,5 @@
 import { BREAKDOWN_OTHER_KEY, BREAKDOWN_OTHER_LABEL } from "../lib/cloudflare-constants"
+import { OTHER_COLOR } from "@maple/ui/lib/colors"
 import { resolveSeriesColors } from "@maple/ui/lib/semantic-series-colors"
 import type { ChartSpec } from "./chart-spec"
 import { type LongRow, transformRows } from "./infra-metric-series"
@@ -10,8 +11,6 @@ import { Array as Arr, Order, Record as Rec, String as Str } from "effect"
 
 export type StackedBreakdownSpec = Extract<ChartSpec, { readonly _tag: "StackedBreakdown" }>
 
-/** `OTHER_COLOR` (packages/ui/src/components/charts/_shared/bucket-series.ts). */
-const OTHER_COLOR = "var(--muted-foreground)"
 /** Series ceiling for a dimension with no fixed vocabulary. */
 const MAX_SERIES = 6
 

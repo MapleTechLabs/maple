@@ -18,7 +18,7 @@ export const STACK_TOKENS = [...STACK_TOKEN_BY_SERVICE.values(), "--foreground",
 /** A token with the literal `resolvePlotColor` falls back to when the property is unset. */
 export type TokenWithFallback = readonly [token: string, fallback: string]
 
-/** `HEATMAP_RAMP_TOKENS` and `DENSITY_RAMP_TOKENS` (packages/ui/src/components/plot/color-scale.ts). */
+/** `HEATMAP_RAMP_TOKENS` and `DENSITY_RAMP_TOKENS` (@maple/views/charts/plot/color-scale). */
 export const RAMP_TOKENS = {
 	amber: [
 		["--heatmap-amber-0", "oklch(0.32 0.035 70)"],

@@ -4,7 +4,7 @@ import {
 	cellText,
 	pickValueField,
 	toBreakdownRows,
-} from "@maple/ui/components/charts/_shared/breakdown-rows"
+} from "./series/breakdown-rows"
 import { resolveSeriesColors } from "@maple/ui/lib/semantic-series-colors"
 import { Array as Arr, Option, String as Str } from "effect"
 

@@ -7,7 +7,7 @@ import {
 	deltaMutedStyles,
 	deltaStyles,
 	deltaSuffixStyles,
-} from "@maple/ui/styles/ui/delta"
+} from "./delta.styles"
 import type { Html, HtmlBuilder } from "foldkit/html"
 
 // Change against a previous window.

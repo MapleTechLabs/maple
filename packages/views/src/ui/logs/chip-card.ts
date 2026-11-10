@@ -8,7 +8,7 @@ import { icon } from "../icon"
 import type { LogChip } from "./log-row-view"
 import type { Model } from "./logs-stream"
 import { Message } from "./logs-stream-message"
-import { hoverCardContentStyles } from "@maple/ui/styles/ui/hover-card"
+import { hoverCardContentStyles } from "../hover-card.styles"
 import { CHIP_FILTER_ACTION_CLASS } from "./styles"
 
 /** Base UI PreviewCard positioning for `side="bottom" align="start"`, offsets 4, collision padding 5. */

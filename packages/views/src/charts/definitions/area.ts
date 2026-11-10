@@ -1,11 +1,7 @@
 import { formatBucketLabel, formatValueByUnit } from "@maple/ui/lib/format"
-import { isolatedPointIndexes, pointsFit } from "@maple/ui/components/charts/_shared/sparse-series"
-import {
-	findFirstPartialIndex,
-	splitAtFirstPartial,
-	trimEmptyTrailingBuckets,
-} from "@maple/ui/components/plot/partial-buckets"
-import { focusCrosshair, focusDot } from "@maple/ui/components/plot/plot-focus"
+import { isolatedPointIndexes, pointsFit } from "../series/sparse-series"
+import { findFirstPartialIndex, splitAtFirstPartial, trimEmptyTrailingBuckets } from "../plot/partial-buckets"
+import { focusCrosshair, focusDot } from "../plot/plot-focus"
 import { areaY, d3Curve, defineChart, dot, lineY, type ChartValue } from "@tanstack/charts"
 import { curveMonotoneX } from "d3-shape"
 import { Option, Array as Arr, Record as Rec } from "effect"
@@ -20,7 +16,7 @@ import {
 	timeseriesYAxis,
 } from "../timeseries"
 import { asFiniteNumber, type TimeseriesRow } from "../timeseries-rows"
-import { timeseriesXAxis } from "@maple/ui/components/plot/timeseries-axis"
+import { timeseriesXAxis } from "../plot/timeseries-axis"
 import type { BuiltChart } from "./built-chart"
 import {
 	AREA_FILL_END,

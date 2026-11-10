@@ -127,10 +127,15 @@
 				"maple/ui-copy": "error"
 			}
 		},
-		// The kit draws the controls, so it alone gives a control its `accent` hover.
+		// The kit draws the controls, so it alone gives a control its `accent` hover; its style
+		// modules carry the raw surfaces (a sheet's popup) the wrappers compose.
 		{
-			"files": ["packages/ui/src/**"],
+			"files": ["packages/ui/src/**", "packages/views/src/ui/*.styles.ts"],
 			"rules": { "maple/surface-washes": ["error", { "allowControlHover": true }] }
+		},
+		{
+			"files": ["packages/views/src/ui/*.styles.ts"],
+			"rules": { "maple/popup-radius": "off" }
 		},
 		// The kit itself, the lab that showcases it, and tests render raw elements.
 		{

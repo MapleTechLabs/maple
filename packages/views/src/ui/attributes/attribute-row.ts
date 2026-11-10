@@ -1,5 +1,5 @@
 import { cn } from "@maple/ui/lib/utils"
-import { badgeVariants } from "@maple/ui/styles/ui/badge"
+import { badgeVariants } from "../badge.styles"
 import { prettyJson, tryParseJson } from "../../lib/display-text"
 import { Option, String as Str } from "effect"
 import type { Html, HtmlBuilder } from "foldkit/html"

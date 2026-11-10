@@ -9,7 +9,7 @@ import {
 	sheetTitleStyles,
 	sheetViewportLeftStyles,
 	sheetViewportStyles,
-} from "@maple/ui/styles/ui/sheet"
+} from "./sheet.styles"
 import type { Attribute, Html, HtmlBuilder } from "foldkit/html"
 import { button } from "./button"
 import { icon } from "./icon"

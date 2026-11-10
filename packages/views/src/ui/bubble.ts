@@ -1,5 +1,5 @@
 import { cn } from "@maple/ui/lib/utils"
-import { bubbleContentStyles, bubbleGroupStyles, bubbleVariants } from "@maple/ui/styles/ui/bubble"
+import { bubbleContentStyles, bubbleGroupStyles, bubbleVariants } from "./bubble.styles"
 import type { VariantProps } from "class-variance-authority"
 import type { Html, HtmlBuilder } from "foldkit/html"
 

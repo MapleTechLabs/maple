@@ -4,7 +4,7 @@ import {
 	middleTruncateMonoStyles,
 	middleTruncateStyles,
 	middleTruncateTailStyles,
-} from "@maple/ui/styles/ui/middle-truncate"
+} from "./middle-truncate.styles"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { Array as Arr } from "effect"
 

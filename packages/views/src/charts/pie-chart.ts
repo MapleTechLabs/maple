@@ -4,8 +4,8 @@ import {
 	OTHER_COLOR,
 	OTHER_LABEL,
 	type CategoricalRow,
-} from "@maple/ui/components/charts/_shared/bucket-series"
-import { cellText } from "@maple/ui/components/charts/_shared/breakdown-rows"
+} from "./series/bucket-series"
+import { cellText } from "./series/breakdown-rows"
 import { EMPTY_VALUE, formatNumber, formatPercent, formatValueByUnit } from "@maple/ui/lib/format"
 import { resolveSeriesColors } from "@maple/ui/lib/semantic-series-colors"
 import { cn } from "@maple/ui/lib/utils"

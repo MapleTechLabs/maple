@@ -1,5 +1,5 @@
 import { cn } from "@maple/ui/lib/utils"
-import { refreshButtonIconPendingStyles, refreshButtonIconStyles } from "@maple/ui/styles/ui/refresh-button"
+import { refreshButtonIconPendingStyles, refreshButtonIconStyles } from "./refresh-button.styles"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { button } from "./button"
 import { icon } from "./icon"

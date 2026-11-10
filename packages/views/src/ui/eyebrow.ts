@@ -1,5 +1,5 @@
 import { cn } from "@maple/ui/lib/utils"
-import { eyebrowVariants } from "@maple/ui/styles/ui/eyebrow"
+import { eyebrowVariants } from "./eyebrow.styles"
 import type { VariantProps } from "class-variance-authority"
 import type { Attribute, Html, HtmlBuilder } from "foldkit/html"
 import { Array as Arr } from "effect"

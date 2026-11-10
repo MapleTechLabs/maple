@@ -1,5 +1,5 @@
 import { cn } from "@maple/ui/lib/utils"
-import { radioGroupStyles, radioIndicatorStyles, radioStyles } from "@maple/ui/styles/ui/radio-group"
+import { radioGroupStyles, radioIndicatorStyles, radioStyles } from "./radio-group.styles"
 import { Effect, Option, Schema, Array as Arr } from "effect"
 import { Command, Dom, type Update } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"

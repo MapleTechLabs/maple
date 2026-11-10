@@ -7,7 +7,7 @@ import {
 	itemMediaVariants,
 	itemTitleStyles,
 	itemVariants,
-} from "@maple/ui/styles/ui/item"
+} from "./item.styles"
 import type { VariantProps } from "class-variance-authority"
 import type { Html, HtmlBuilder } from "foldkit/html"
 

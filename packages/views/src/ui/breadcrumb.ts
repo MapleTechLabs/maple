@@ -7,7 +7,7 @@ import {
 	breadcrumbListStyles,
 	breadcrumbPageStyles,
 	breadcrumbSeparatorStyles,
-} from "@maple/ui/styles/ui/breadcrumb"
+} from "./breadcrumb.styles"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { icon } from "./icon"
 

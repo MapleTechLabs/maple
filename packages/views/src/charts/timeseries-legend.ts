@@ -1,11 +1,11 @@
-import { findFirstPartialIndex } from "@maple/ui/components/plot/partial-buckets"
+import { findFirstPartialIndex } from "./plot/partial-buckets"
 import {
 	computeSeriesStats,
 	isAllZeroStats,
 	type SeriesStats,
 	type SeriesStatsMap,
 	sortZeroSeriesLast,
-} from "@maple/ui/components/plot/series-stats"
+} from "./plot/series-stats"
 import { EMPTY_VALUE, formatValueByUnit } from "@maple/ui/lib/format"
 import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"

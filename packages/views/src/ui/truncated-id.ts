@@ -1,6 +1,6 @@
 import { type IdKind, shortId } from "@maple/ui/lib/ids"
 import { cn } from "@maple/ui/lib/utils"
-import { truncatedIdCopyStyles, truncatedIdStyles } from "@maple/ui/styles/ui/truncated-id"
+import { truncatedIdCopyStyles, truncatedIdStyles } from "./truncated-id.styles"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { type CopyStatus, copyButton } from "./copy-button"
 

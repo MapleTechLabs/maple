@@ -1,8 +1,8 @@
 import { cn } from "@maple/ui/lib/utils"
-import * as AlertDialogStyles from "@maple/ui/styles/ui/alert-dialog"
-import * as CommandStyles from "@maple/ui/styles/ui/command"
-import * as DialogStyles from "@maple/ui/styles/ui/dialog"
-import * as SheetStyles from "@maple/ui/styles/ui/sheet"
+import * as AlertDialogStyles from "./alert-dialog.styles"
+import * as CommandStyles from "./command.styles"
+import * as DialogStyles from "./dialog.styles"
+import * as SheetStyles from "./sheet.styles"
 import { Option } from "effect"
 import { Submodel } from "foldkit"
 import {

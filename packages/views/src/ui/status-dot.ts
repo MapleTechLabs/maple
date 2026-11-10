@@ -1,5 +1,5 @@
 import { cn } from "@maple/ui/lib/utils"
-import { statusDotVariants } from "@maple/ui/styles/ui/status-dot"
+import { statusDotVariants } from "./status-dot.styles"
 import type { VariantProps } from "class-variance-authority"
 import type { Attribute, Html, HtmlBuilder } from "foldkit/html"
 

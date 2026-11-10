@@ -1,4 +1,4 @@
-import { DB_NODE_PREFIX, parseDbNodeId } from "@maple/ui/components/service-map/service-map-utils"
+import { DB_NODE_PREFIX, parseDbNodeId } from "@maple/views/service-map/graph/service-map-utils"
 import { Option, Array as Arr, String as Str } from "effect"
 import { AsyncData, Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"

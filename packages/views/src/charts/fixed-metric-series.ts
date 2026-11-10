@@ -1,4 +1,4 @@
-import { findFirstPartialIndex, trimEmptyTrailingBuckets } from "@maple/ui/components/plot/partial-buckets"
+import { findFirstPartialIndex, trimEmptyTrailingBuckets } from "./plot/partial-buckets"
 import { bucketIntervalLabel, inferBucketSeconds, inferRangeMs, parseBucketMs } from "@maple/ui/lib/format"
 
 // The series model of the fixed metric charts. No `@tanstack/charts` import: views read this too.

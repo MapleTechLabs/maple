@@ -1,4 +1,4 @@
-import { histogramSampleData } from "@maple/ui/components/charts/_shared/sample-data"
+import { histogramSampleData } from "@maple/views/charts/series/sample-data"
 import { formatNumber } from "@maple/ui/lib/format"
 import { cn } from "@maple/ui/lib/utils"
 import { Option, Array as Arr, String as Str } from "effect"

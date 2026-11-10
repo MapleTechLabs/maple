@@ -1,9 +1,9 @@
 import { cn } from "@maple/ui/lib/utils"
-import { alertDialogMediaStyles } from "@maple/ui/styles/ui/alert-dialog"
+import { alertDialogMediaStyles } from "./alert-dialog.styles"
 import {
 	confirmDialogIconDestructiveStyles,
 	confirmDialogMediaDestructiveStyles,
-} from "@maple/ui/styles/ui/confirm-dialog"
+} from "./confirm-dialog.styles"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { button } from "./button"
 import type * as Dialog from "./dialog"

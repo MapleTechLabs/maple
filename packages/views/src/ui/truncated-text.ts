@@ -1,5 +1,5 @@
 import { cn } from "@maple/ui/lib/utils"
-import { truncatedTextMonoStyles, truncatedTextStyles } from "@maple/ui/styles/ui/truncated-text"
+import { truncatedTextMonoStyles, truncatedTextStyles } from "./truncated-text.styles"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { tooltipTrigger } from "./tooltip-host"
 

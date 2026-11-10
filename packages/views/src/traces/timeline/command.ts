@@ -1,4 +1,4 @@
-import { SIDEBAR_WIDTH_STORAGE_KEY } from "@maple/ui/components/traces/trace-timeline-types"
+import { SIDEBAR_WIDTH_STORAGE_KEY } from "../trace-timeline-types"
 import { readLocalStorage } from "@maple/ui/lib/local-storage"
 import { Effect, Option, Queue, Schema, Stream, Array as Arr } from "effect"
 import { Command, Mount } from "foldkit"

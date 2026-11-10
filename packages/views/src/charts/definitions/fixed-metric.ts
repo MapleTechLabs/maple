@@ -1,8 +1,8 @@
 import { areaY, d3Curve, defineChart, dot, lineY, type ChartPoint, type ChartValue } from "@tanstack/charts"
 import { curveMonotoneX } from "d3-shape"
-import { focusCrosshair, focusDot } from "@maple/ui/components/plot/plot-focus"
-import { findFirstPartialIndex, splitAtFirstPartial } from "@maple/ui/components/plot/partial-buckets"
-import { seriesRuns, silenceBridges } from "@maple/ui/components/plot/series-gaps"
+import { focusCrosshair, focusDot } from "../plot/plot-focus"
+import { findFirstPartialIndex, splitAtFirstPartial } from "../plot/partial-buckets"
+import { seriesRuns, silenceBridges } from "../plot/series-gaps"
 import { formatBucketLabel, formatErrorRate, formatLatency, formatThroughput } from "@maple/ui/lib/format"
 import { Option, Array as Arr } from "effect"
 import { ChartTooltip, type ChartSpec } from "../chart-spec"
@@ -15,8 +15,8 @@ import {
 	throughputPlot,
 	TRACED_KEY,
 } from "../fixed-metric-series"
-import { pinnedTimeXAxis } from "@maple/ui/components/plot/bucket-axis"
-import { timeseriesXAxis } from "@maple/ui/components/plot/timeseries-axis"
+import { pinnedTimeXAxis } from "../plot/bucket-axis"
+import { timeseriesXAxis } from "../plot/timeseries-axis"
 import { timeseriesYAxis } from "../timeseries"
 import { asFiniteNumber, type TimeseriesRow } from "../timeseries-rows"
 import type { BuiltChart } from "./built-chart"

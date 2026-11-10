@@ -1,5 +1,5 @@
 import { cn } from "@maple/ui/lib/utils"
-import { switchStyles, switchThumbStyles } from "@maple/ui/styles/ui/switch"
+import { switchStyles, switchThumbStyles } from "./switch.styles"
 import { Option, Schema } from "effect"
 import type { Update } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"

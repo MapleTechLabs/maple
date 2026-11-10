@@ -7,8 +7,8 @@ import {
 } from "@maple/ui/lib/format"
 import { resolveSeriesColors } from "@maple/ui/lib/semantic-series-colors"
 import { DEFAULT_TOKEN_FALLBACK } from "@maple/ui/lib/colors"
-import { hasOnlyIntegerValues } from "@maple/ui/components/charts/_shared/sparse-series"
-import { DASHED_Y_GRID } from "@maple/ui/components/plot/plot-grid"
+import { hasOnlyIntegerValues } from "./series/sparse-series"
+import { DASHED_Y_GRID } from "./plot/plot-grid"
 import {
 	integerTickValues,
 	linearYDomain,
@@ -16,7 +16,7 @@ import {
 	logYScale,
 	NICE_TICK_COUNT,
 	niceLinearDomain,
-} from "@maple/ui/components/plot/plot-scales"
+} from "./plot/plot-scales"
 import { scaleLinear } from "@tanstack/charts-scales/linear"
 import {
 	asFiniteNumber,

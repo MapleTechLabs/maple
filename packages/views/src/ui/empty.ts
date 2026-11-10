@@ -11,7 +11,7 @@ import {
 	emptyMessageStyles,
 	emptyStyles,
 	emptyTitleStyles,
-} from "@maple/ui/styles/ui/empty"
+} from "./empty.styles"
 import type { Html, HtmlBuilder } from "foldkit/html"
 
 // The Empty state: a centred media, title, description and content stack.

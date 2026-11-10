@@ -12,7 +12,7 @@ import {
 	dropdownMenuShortcutStyles,
 	dropdownMenuSubTriggerIconStyles,
 	dropdownMenuSubTriggerStyles,
-} from "@maple/ui/styles/ui/dropdown-menu"
+} from "./dropdown-menu.styles"
 import { Option } from "effect"
 import type { Attribute, Html, HtmlBuilder } from "foldkit/html"
 import type { Align, PopupPosition, Side } from "./anchor"

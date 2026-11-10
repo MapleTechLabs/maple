@@ -6,7 +6,7 @@ import {
 	pageHeaderTextStyles,
 	pageLayoutStyles,
 	pageTitleStyles,
-} from "@maple/ui/styles/ui/page-layout"
+} from "./page-layout.styles"
 import type { Attribute, Html, HtmlBuilder } from "foldkit/html"
 
 // A page's root and header: title, description and header actions.

@@ -1,5 +1,5 @@
 import type { EdgeBase, NodeBase } from "@xyflow/system"
-import type { ServiceEdgeData, ServiceNodeData } from "@maple/ui/components/service-map/service-map-utils"
+import type { ServiceEdgeData, ServiceNodeData } from "@maple/views/service-map/graph/service-map-utils"
 import type { Node3DKind, Topology3D } from "./types"
 import { Array as Arr } from "effect"
 

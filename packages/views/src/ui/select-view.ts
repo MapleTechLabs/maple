@@ -18,7 +18,7 @@ import {
 	selectTriggerIconClassName,
 	selectTriggerVariants,
 	selectValueStyles,
-} from "@maple/ui/styles/ui/select"
+} from "./select.styles"
 import { Array, Option } from "effect"
 import { Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"

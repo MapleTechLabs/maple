@@ -10,7 +10,7 @@ import {
 	panelStyles,
 	panelTitleStyles,
 	panelToneStyles,
-} from "@maple/ui/styles/ui/panel"
+} from "./panel.styles"
 import type { Attribute, Html, HtmlBuilder } from "foldkit/html"
 
 // The flat bordered section frame.

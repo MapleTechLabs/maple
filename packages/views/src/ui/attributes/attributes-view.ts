@@ -1,7 +1,7 @@
 import { splitGenAiAttributes } from "@maple/ui/lib/gen-ai"
 import { groupAttributesByNamespace } from "@maple/ui/lib/log-attributes"
 import { cn } from "@maple/ui/lib/utils"
-import { collapsiblePanelStyles } from "@maple/ui/styles/ui/collapsible"
+import { collapsiblePanelStyles } from "../collapsible.styles"
 import { Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { badge } from "../display"

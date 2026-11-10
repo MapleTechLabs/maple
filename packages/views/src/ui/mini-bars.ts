@@ -1,5 +1,5 @@
 import { cn } from "@maple/ui/lib/utils"
-import { miniBarsStyles } from "@maple/ui/styles/ui/mini-bars"
+import { miniBarsStyles } from "./mini-bars.styles"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { Array as Arr } from "effect"
 

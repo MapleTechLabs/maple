@@ -10,7 +10,7 @@ import {
 	settingRowLeadStyles,
 	settingRowStyles,
 	settingRowTextStyles,
-} from "@maple/ui/styles/ui/setting-row"
+} from "./setting-row.styles"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { Array as Arr } from "effect"
 

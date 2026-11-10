@@ -1,5 +1,5 @@
 import { cn } from "@maple/ui/lib/utils"
-import { collapsiblePanelStyles } from "@maple/ui/styles/ui/collapsible"
+import { collapsiblePanelStyles } from "./collapsible.styles"
 import {
 	traceCollapsibleContentStyles,
 	traceCollapsibleStyles,
@@ -10,7 +10,7 @@ import {
 	traceLineStyles,
 	traceStyles,
 	traceTitleStyles,
-} from "@maple/ui/styles/ui/trace"
+} from "./trace.styles"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { icon } from "./icon"
 

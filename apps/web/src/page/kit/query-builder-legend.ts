@@ -1,4 +1,4 @@
-import { isAllZeroStats, type SeriesStats, type SeriesStatsMap } from "@maple/ui/components/plot/series-stats"
+import { isAllZeroStats, type SeriesStats, type SeriesStatsMap } from "@maple/views/charts/plot/series-stats"
 import { EMPTY_VALUE, formatValueByUnit } from "@maple/ui/lib/format"
 import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"

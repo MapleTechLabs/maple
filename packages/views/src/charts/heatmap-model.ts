@@ -1,5 +1,5 @@
 import { DateTime, Option, Array as Arr, Record as Rec, String as Str } from "effect"
-import { cellText } from "@maple/ui/components/charts/_shared/breakdown-rows"
+import { cellText } from "./series/breakdown-rows"
 import { formatNumber, formatValueByUnit } from "@maple/ui/lib/format"
 import { resolveSequentialDomain, type SequentialScaleType } from "./sequential-domain"
 

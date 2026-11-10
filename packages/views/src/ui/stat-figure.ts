@@ -11,7 +11,7 @@ import {
 	statFigureValueMonoStyles,
 	statFigureValueSizeStyles,
 	statFigureValueStyles,
-} from "@maple/ui/styles/ui/stat-figure"
+} from "./stat-figure.styles"
 import type { Html, HtmlBuilder } from "foldkit/html"
 
 // A headline number with a muted unit. With a `label` or `caption` it is a whole KPI: label

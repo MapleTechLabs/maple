@@ -1,5 +1,5 @@
 import { dbSystemAccentClass } from "@maple/ui/lib/cloud-platforms/accents"
-import { getDbStyle } from "@maple/ui/components/service-map/service-map-db-style"
+import { getDbStyle } from "../../service-map/graph/service-map-db-style"
 import { humanizeDbSystem, pickAttr } from "@maple/views/service-map/trace-flow/cloud-platforms"
 import { DB_ICON } from "@maple/views/service-map/map/node-card"
 import { resolveRuntimeGlyph } from "@maple/views/service-map/map/runtime"

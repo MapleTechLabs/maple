@@ -1,10 +1,5 @@
 import { cn } from "@maple/ui/lib/utils"
-import {
-	alertActionStyles,
-	alertDescriptionStyles,
-	alertTitleStyles,
-	alertVariants,
-} from "@maple/ui/styles/ui/alert"
+import { alertActionStyles, alertDescriptionStyles, alertTitleStyles, alertVariants } from "./alert.styles"
 import type { VariantProps } from "class-variance-authority"
 import type { Attribute, Html, HtmlBuilder } from "foldkit/html"
 

@@ -1,12 +1,12 @@
-import type { DeclutterResult, DeclutterState } from "@maple/ui/components/service-map/service-map-declutter"
-import { applyDeclutter } from "@maple/ui/components/service-map/service-map-declutter"
-import type { BuildFlowElementsInput } from "@maple/ui/components/service-map/service-map-utils"
+import type { DeclutterResult, DeclutterState } from "../graph/service-map-declutter"
+import { applyDeclutter } from "../graph/service-map-declutter"
+import type { BuildFlowElementsInput } from "../graph/service-map-utils"
 import {
 	buildFlowElements,
 	DB_NODE_PREFIX,
 	DEFAULT_LAYOUT_CONFIG,
 	topologyKey,
-} from "@maple/ui/components/service-map/service-map-utils"
+} from "../graph/service-map-utils"
 import { Order, Schema, Array as Arr, String as Str } from "effect"
 
 /** The layout config in the graph signature: a config change re-lays every graph. */

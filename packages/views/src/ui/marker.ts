@@ -1,5 +1,5 @@
 import { cn } from "@maple/ui/lib/utils"
-import { markerContentStyles, markerIconStyles, markerVariants } from "@maple/ui/styles/ui/marker"
+import { markerContentStyles, markerIconStyles, markerVariants } from "./marker.styles"
 import type { Html, HtmlBuilder } from "foldkit/html"
 
 // An inline event marker in a timeline or thread.

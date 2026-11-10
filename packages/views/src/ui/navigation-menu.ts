@@ -12,7 +12,7 @@ import {
 	navigationMenuTriggerIconStyles,
 	navigationMenuTriggerStyle,
 	navigationMenuViewportStyles,
-} from "@maple/ui/styles/ui/navigation-menu"
+} from "./navigation-menu.styles"
 import { Array, Duration, Effect, Number, Option, Queue, Schema, Stream } from "effect"
 import { Command, Dom, Mount, Submodel, type Update } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"

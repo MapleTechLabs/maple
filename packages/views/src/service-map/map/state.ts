@@ -1,4 +1,4 @@
-import { upsertSnapshot } from "@maple/ui/components/service-map/service-map-layout-state"
+import { upsertSnapshot } from "../graph/service-map-layout-state"
 import { Array as Arr, Option, Schema } from "effect"
 import { Point, Viewport } from "../xyflow/geometry"
 

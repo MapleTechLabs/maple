@@ -2,7 +2,7 @@ import {
 	getPlatformColor,
 	getServiceMapNodeColor,
 	type ServiceMapColorMode,
-} from "@maple/ui/components/service-map/service-map-utils"
+} from "../graph/service-map-utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import * as Popover from "../../ui/popover"
 import { pressable } from "../../ui/pressable"

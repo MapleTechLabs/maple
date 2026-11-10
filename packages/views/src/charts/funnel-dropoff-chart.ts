@@ -1,4 +1,4 @@
-import { pickValueField } from "@maple/ui/components/charts/_shared/breakdown-rows"
+import { pickValueField } from "./series/breakdown-rows"
 import { EMPTY_VALUE, formatPercent } from "@maple/ui/lib/format"
 import { TONE_TEXT } from "@maple/ui/lib/tone"
 import { cn } from "@maple/ui/lib/utils"

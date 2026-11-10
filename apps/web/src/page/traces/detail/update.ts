@@ -39,7 +39,7 @@ type Return = PageReturn<Model, Message>
 type Cmd = Command.Command<Message, never, Resources>
 type Route = { readonly traceId: string; readonly search: Model["search"] }
 
-/** `DEFAULT_COLOR_BY` (packages/ui/src/components/traces/color-by.ts). */
+/** `DEFAULT_COLOR_BY` (@maple/views/traces/color-by). */
 const DEFAULT_COLOR_BY = "service"
 
 export const viewOf = (model: Model): TraceView => model.search.view ?? "timeline"

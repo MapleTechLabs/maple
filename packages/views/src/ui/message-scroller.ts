@@ -7,7 +7,7 @@ import {
 	messageScrollerItemStyles,
 	messageScrollerStyles,
 	messageScrollerViewportStyles,
-} from "@maple/ui/styles/ui/message-scroller"
+} from "./message-scroller.styles"
 import type { Attribute, Html, HtmlBuilder } from "foldkit/html"
 import { button } from "./button"
 import { icon } from "./icon"

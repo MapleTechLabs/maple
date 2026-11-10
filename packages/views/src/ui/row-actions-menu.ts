@@ -1,4 +1,4 @@
-import { rowActionsMenuContentStyles, rowActionsMenuIconStyles } from "@maple/ui/styles/ui/row-actions-menu"
+import { rowActionsMenuContentStyles, rowActionsMenuIconStyles } from "./row-actions-menu.styles"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { button } from "./button"
 import { icon } from "./icon"

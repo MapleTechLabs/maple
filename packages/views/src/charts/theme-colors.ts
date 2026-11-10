@@ -23,7 +23,7 @@ export const tokenProperty = (token: string): string | undefined => {
 	return Str.startsWith("--")(name) ? name : undefined
 }
 
-/** `resolvePlotColor` (packages/ui/src/components/plot/theme.ts) against a resolved snapshot. */
+/** `resolvePlotColor` (./plot/theme.ts) against a resolved snapshot. */
 export const resolveColor = (
 	colors: ThemeColors,
 	token: string,

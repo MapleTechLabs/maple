@@ -19,7 +19,7 @@ import {
 	keyValueValueStyles,
 	keyValueValueTruncateStyles,
 	keyValueValueWrapStyles,
-} from "@maple/ui/styles/ui/key-value"
+} from "./key-value.styles"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { type CopyStatus, copyButton } from "./copy-button"
 

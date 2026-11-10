@@ -1,4 +1,4 @@
-import { SIDEBAR_WIDTH_NARROW_MIN } from "@maple/ui/components/traces/trace-timeline-types"
+import { SIDEBAR_WIDTH_NARROW_MIN } from "../trace-timeline-types"
 import { Option, Array as Arr, String as Str } from "effect"
 import { Submodel } from "foldkit"
 import { createKeyedLazy, type Html, type HtmlBuilder } from "foldkit/html"

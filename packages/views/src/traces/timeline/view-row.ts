@@ -1,4 +1,4 @@
-import { DEPTH_INDENT, ROW_HEIGHT } from "@maple/ui/components/traces/trace-timeline-types"
+import { DEPTH_INDENT, ROW_HEIGHT } from "../trace-timeline-types"
 import { getServiceColor } from "@maple/ui/lib/colors"
 import { countLabel, formatDuration } from "@maple/ui/lib/format"
 import { spanEventMarkers, type TimelineSpanEvent } from "@maple/ui/lib/span-event-markers"

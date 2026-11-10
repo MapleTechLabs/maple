@@ -3,7 +3,7 @@ import {
 	dropdownMenuContentStyles,
 	dropdownMenuPositionerStyles,
 	dropdownMenuSubContentStyles,
-} from "@maple/ui/styles/ui/dropdown-menu"
+} from "./dropdown-menu.styles"
 import { Array, Option } from "effect"
 import { Submodel } from "foldkit"
 import { type ChildAttribute, childAttributes, type Html, type HtmlBuilder } from "foldkit/html"

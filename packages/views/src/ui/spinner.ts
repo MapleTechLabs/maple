@@ -1,5 +1,5 @@
 import { cn } from "@maple/ui/lib/utils"
-import { spinnerStyles } from "@maple/ui/styles/ui/spinner"
+import { spinnerStyles } from "./spinner.styles"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { icon } from "./icon"
 

@@ -1,8 +1,8 @@
 import { cn } from "@maple/ui/lib/utils"
-import { avatarFallbackStyles, avatarImageStyles, avatarStyles } from "@maple/ui/styles/ui/avatar"
-import { badgeVariants } from "@maple/ui/styles/ui/badge"
-import { kbdGroupStyles, kbdStyles } from "@maple/ui/styles/ui/kbd"
-import { separatorStyles } from "@maple/ui/styles/ui/separator"
+import { avatarFallbackStyles, avatarImageStyles, avatarStyles } from "./avatar.styles"
+import { badgeVariants } from "./badge.styles"
+import { kbdGroupStyles, kbdStyles } from "./kbd.styles"
+import { separatorStyles } from "./separator.styles"
 import type { VariantProps } from "class-variance-authority"
 import type { Attribute, ChildAttribute, ClickOptions, Html, HtmlBuilder } from "foldkit/html"
 
@@ -62,7 +62,10 @@ export const badge = <Message>(
 	if (options.href !== undefined) return h.a([...attributes, h.Href(options.href)], children)
 	return options.onClick === undefined
 		? h.span(attributes, children)
-		: h.button([h.Type("button"), ...attributes, h.OnClick(options.onClick, options.clickOptions)], children)
+		: h.button(
+				[h.Type("button"), ...attributes, h.OnClick(options.onClick, options.clickOptions)],
+				children,
+			)
 }
 
 /** `<Separator orientation>` (Base UI): a `role="separator"` div with its orientation attributes. */

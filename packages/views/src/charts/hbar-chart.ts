@@ -1,4 +1,4 @@
-import { pickValueField, toBreakdownRows } from "@maple/ui/components/charts/_shared/breakdown-rows"
+import { pickValueField, toBreakdownRows } from "./series/breakdown-rows"
 import { formatNumber, formatPercent, formatValueByUnit } from "@maple/ui/lib/format"
 import { resolveSeriesColors } from "@maple/ui/lib/semantic-series-colors"
 import { cn } from "@maple/ui/lib/utils"

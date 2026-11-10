@@ -1,6 +1,6 @@
 import { cn } from "@maple/ui/lib/utils"
-import { collapsiblePanelStyles } from "@maple/ui/styles/ui/collapsible"
-import { eyebrowVariants } from "@maple/ui/styles/ui/eyebrow"
+import { collapsiblePanelStyles } from "../collapsible.styles"
+import { eyebrowVariants } from "../eyebrow.styles"
 import { Option, Array as Arr, String as Str } from "effect"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { button } from "../button"

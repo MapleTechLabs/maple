@@ -1,4 +1,4 @@
-import { createSequentialColorScale } from "@maple/ui/components/plot/color-scale"
+import { createSequentialColorScale } from "@maple/views/charts/plot/color-scale"
 import { formatNumber } from "@maple/ui/lib/format"
 import { cell, type ChartPoint, type ChartValue, defineChart } from "@tanstack/charts"
 import { colorGradientLegend } from "@tanstack/charts/legend"

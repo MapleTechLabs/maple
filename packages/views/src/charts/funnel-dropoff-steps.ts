@@ -1,4 +1,4 @@
-import { asFiniteNumber, cellText, toBreakdownRows } from "@maple/ui/components/charts/_shared/breakdown-rows"
+import { asFiniteNumber, cellText, toBreakdownRows } from "./series/breakdown-rows"
 import { EMPTY_VALUE } from "@maple/ui/lib/format"
 import { resolveSeriesColors } from "@maple/ui/lib/semantic-series-colors"
 import { Array as Arr, String as Str } from "effect"

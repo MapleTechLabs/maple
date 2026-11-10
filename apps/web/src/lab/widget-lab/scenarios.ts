@@ -1,5 +1,5 @@
 import type { WidgetDisplayConfigSchema } from "@maple/domain/http"
-import { funnelDropoffSampleData, pathsSampleData } from "@maple/ui/components/charts/_shared/sample-data"
+import { funnelDropoffSampleData, pathsSampleData } from "@maple/views/charts/series/sample-data"
 import { HEATMAP_COLOR_SCALES } from "@maple/domain/http"
 import { CHART_GALLERY, sampleDataOf } from "../../page/dashboards/kit/chart-registry"
 import { Array as Arr, String as Str } from "effect"

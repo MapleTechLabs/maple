@@ -1,9 +1,4 @@
-import {
-	DB_NODE_PREFIX,
-	NS_LABEL_HEIGHT,
-	NS_PADDING_X,
-	NS_PADDING_Y,
-} from "@maple/ui/components/service-map/service-map-utils"
+import { DB_NODE_PREFIX, NS_LABEL_HEIGHT, NS_PADDING_X, NS_PADDING_Y } from "../graph/service-map-utils"
 import { getValueHue } from "@maple/ui/lib/colors"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { icon } from "../../ui/icon"

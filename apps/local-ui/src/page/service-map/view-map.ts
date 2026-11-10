@@ -1,4 +1,4 @@
-import { DB_NODE_PREFIX, parseDbNodeId } from "@maple/ui/components/service-map/service-map-utils"
+import { DB_NODE_PREFIX, parseDbNodeId } from "@maple/views/service-map/graph/service-map-utils"
 import * as ServiceMap from "@maple/views/service-map/map/service-map"
 import { view as mapView } from "@maple/views/service-map/map/view"
 import { serviceMapLoading } from "@maple/views/service-map/map/loading"

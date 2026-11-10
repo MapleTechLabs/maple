@@ -10,7 +10,7 @@ import {
 	pageScrollAreaStyles,
 	pageStickyAreaScrolledStyles,
 	pageStickyAreaStyles,
-} from "@maple/ui/styles/ui/page-layout"
+} from "@maple/views/ui/page-layout.styles"
 import type { Attribute, Html, HtmlBuilder } from "foldkit/html"
 import {
 	pageDescription,

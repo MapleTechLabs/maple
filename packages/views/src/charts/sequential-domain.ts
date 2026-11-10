@@ -1,4 +1,4 @@
-// `resolveSequentialDomain` (packages/ui/src/components/plot/color-scale.ts), copied so the view can
+// `resolveSequentialDomain` (./plot/color-scale.ts), copied so the view can
 // label a ramp without importing that module's d3-scale.
 
 export type SequentialScaleType = "linear" | "log"

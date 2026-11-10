@@ -16,8 +16,8 @@ import {
 	tableSortIdleIconStyles,
 	tableStyles,
 	truncatedCellStyles,
-} from "@maple/ui/styles/ui/table"
-import { rowSelectedClass } from "@maple/ui/styles/ui/list-row"
+} from "./table.styles"
+import { rowSelectedClass } from "./list-row.styles"
 import type { Attribute, Html, HtmlBuilder } from "foldkit/html"
 import { withHint } from "./eyebrow"
 import { icon } from "./icon"

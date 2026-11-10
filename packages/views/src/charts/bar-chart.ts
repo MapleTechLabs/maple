@@ -5,11 +5,7 @@ import type { Attribute, Html } from "foldkit/html"
 import type { Message, Model } from "./chart"
 import { MeasureChartContainer } from "./chart-mounts"
 import { timeseriesLegend } from "./timeseries-legend"
-import {
-	bucketTimeseries,
-	MAX_BAR_SERIES,
-	OTHER_LABEL,
-} from "@maple/ui/components/charts/_shared/bucket-series"
+import { bucketTimeseries, MAX_BAR_SERIES, OTHER_LABEL } from "./series/bucket-series"
 import { ChartSpec, ChartTooltip, specCache, type TimeseriesAxisSpec } from "./chart-spec"
 import { bucketTooltipBody } from "./bucket-tooltip"
 import { plotFrame } from "./plot-frame"

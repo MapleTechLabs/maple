@@ -5,19 +5,10 @@ import {
 	computeCollapseOneLevel,
 	computeDefaultExpandedSpanIds,
 	computeExpandOneLevel,
-} from "@maple/ui/components/traces/auto-collapse"
-import { clampViewport, viewportBounds } from "@maple/ui/components/traces/clamp-viewport"
-import {
-	colorByFieldId,
-	colorByFromId,
-	DEFAULT_COLOR_BY,
-	type ColorByField,
-} from "@maple/ui/components/traces/color-by"
-import {
-	SIDEBAR_WIDTH_DEFAULT,
-	SIDEBAR_WIDTH_MAX,
-	SIDEBAR_WIDTH_MIN,
-} from "@maple/ui/components/traces/trace-timeline-types"
+} from "../auto-collapse"
+import { clampViewport, viewportBounds } from "../clamp-viewport"
+import { colorByFieldId, colorByFromId, DEFAULT_COLOR_BY, type ColorByField } from "../color-by"
+import { SIDEBAR_WIDTH_DEFAULT, SIDEBAR_WIDTH_MAX, SIDEBAR_WIDTH_MIN } from "../trace-timeline-types"
 import { summarizeClockSkew } from "@maple/ui/lib/span-tree"
 import { Command } from "foldkit"
 import {

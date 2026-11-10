@@ -1,4 +1,4 @@
-import { heatmapSampleData } from "@maple/ui/components/charts/_shared/sample-data"
+import { heatmapSampleData } from "@maple/views/charts/series/sample-data"
 import { Array as Arr } from "effect"
 
 // `HeatmapSpike`'s model: empty rows and columns

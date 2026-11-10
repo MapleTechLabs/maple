@@ -5,7 +5,7 @@ import type {
 	ChartTooltipPosition,
 	ChartValue,
 } from "@tanstack/charts"
-import { findNearestSeriesKey } from "@maple/ui/components/charts/_shared/nearest-series"
+import { findNearestSeriesKey } from "../series/nearest-series"
 import { tooltip } from "@tanstack/charts/tooltip"
 import { Array as Arr, Record as Rec } from "effect"
 

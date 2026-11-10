@@ -7,7 +7,7 @@ import {
 	popoverTitleStyles,
 	popoverViewportScrollStyles,
 	popoverViewportStyles,
-} from "@maple/ui/styles/ui/popover"
+} from "./popover.styles"
 import { Duration, Effect, Option, Schema, Stream } from "effect"
 import { Command, Mount, Submodel, type Update } from "foldkit"
 import { type ChildAttribute, childAttributes, type Html, type HtmlBuilder } from "foldkit/html"

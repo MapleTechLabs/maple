@@ -4,7 +4,7 @@ import {
 	computeCollapseOneLevel,
 	computeDefaultExpandedSpanIds,
 	computeExpandOneLevel,
-} from "@maple/ui/components/traces/auto-collapse"
+} from "../auto-collapse"
 import type { Command } from "foldkit"
 import { type TraceData, toSpanNode } from "@maple/views/traces/trace-data"
 import { Message, type Model, OutMessage } from "./model"

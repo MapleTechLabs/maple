@@ -1,5 +1,5 @@
 import { cn } from "@maple/ui/lib/utils"
-import { eyebrowVariants } from "@maple/ui/styles/ui/eyebrow"
+import { eyebrowVariants } from "@maple/views/ui/eyebrow.styles"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { button } from "@maple/views/ui/button"
 import { badge } from "@maple/views/ui/display"
