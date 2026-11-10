@@ -1,12 +1,13 @@
-import { Effect, Stream } from "effect"
+import { Effect, Schema, Stream } from "effect"
 import { Dom, Subscription } from "foldkit"
+import * as TooltipHost from "@maple/views/ui/tooltip-host"
 import type { Resources } from "../../platform/resources"
 import * as Shell from "../../shell"
 import { labShellSubscriptions } from "../app-shell"
 import { defineLabWithFlags } from "../define"
-import { Flags, init, Message, Model, toShell, update, view } from "../shell-states-lab"
+import { Flags, init, Message, Model, toShell, toTooltip, update, view } from "../shell-states-lab"
 
-// `/lab/shell`: sidebar group folding, the on-call pill's states and the URL-held right sheet.
+// `/lab/shell`: sidebar group folding, the on-call pill's states and the URL-held side panel.
 
 const urlTarget: Dom.TypedEventTarget<{ popstate: PopStateEvent; "foldkit:urlchange": Event }> = window
 
@@ -32,6 +33,25 @@ export const lab = defineLabWithFlags("Shell states", {
 		labShellSubscriptions<Model, Message>(toShell),
 		Subscription.make<Model, Message, Resources>()((entry) => ({
 			url: entry({}, { modelToDependencies: () => ({}), dependenciesToStream: () => urlChanges }),
+			// The app's tooltip, which the open sidebar's on-call row uses.
+			tooltipTriggers: entry(
+				{},
+				{
+					modelToDependencies: () => ({}),
+					dependenciesToStream: () => Stream.map(TooltipHost.triggerEvents, toTooltip),
+				},
+			),
+			tooltipWhileEngaged: entry(
+				{ isEngaged: Schema.Boolean },
+				{
+					modelToDependencies: (model) => ({ isEngaged: TooltipHost.isEngaged(model.tooltip) }),
+					dependenciesToStream: ({ isEngaged }) =>
+						Stream.when(
+							Stream.map(TooltipHost.whileEngaged, toTooltip),
+							Effect.sync(() => isEngaged),
+						),
+				},
+			),
 		})),
 	),
 })

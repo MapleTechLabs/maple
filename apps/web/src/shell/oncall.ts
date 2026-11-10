@@ -29,13 +29,23 @@ export type OnCallStatus =
 			scheduleName: string
 			/** Other schedules the user also holds now. */
 			otherSchedules: number
-			until: string
+			/** The handoff as the pill's row says it, and what that leaves for the tooltip. */
+			until: OnCallUntil | null
 	  }>
+
+/**
+ * A handoff on the viewer's clock. `short` is "Mon 09:00", or "23 Nov, 09:00" once it is more than
+ * six days out (a weekday alone would be ambiguous); `rest` is what `short` leaves out: the zone,
+ * and the date when `short` has none.
+ */
+export type OnCallUntil = Readonly<{ short: string; rest: string }>
 
 const untilFormatters = new Map<string, Intl.DateTimeFormat>()
 
-/** "Mon 16 Nov, 09:00 CET" on the viewer's clock, naming the zone; built from parts, as ICU builds differ in the joiner. */
-export const formatUntil = (ms: number, timeZone: string): string => {
+const SIX_DAYS_MS = 6 * 24 * 60 * 60_000
+
+/** Built from parts, as ICU builds differ in how they join a date and a time. */
+export const formatUntil = (ms: number, timeZone: string, nowMs: number): OnCallUntil => {
 	const cached = untilFormatters.get(timeZone)
 	const formatter =
 		cached ??
@@ -56,7 +66,11 @@ export const formatUntil = (ms: number, timeZone: string): string => {
 			Arr.findFirst(parts, (candidate) => candidate.type === type),
 			{ onNone: () => "", onSome: (found) => found.value },
 		)
-	return `${part("weekday")} ${part("day")} ${part("month")}, ${part("hour")}:${part("minute")} ${part("timeZoneName")}`
+	const time = `${part("hour")}:${part("minute")}`
+	const date = `${part("day")} ${part("month")}`
+	return ms - nowMs > SIX_DAYS_MS
+		? { short: `${date}, ${time}`, rest: part("timeZoneName") }
+		: { short: `${part("weekday")} ${time}`, rest: `${part("timeZoneName")}, ${date}` }
 }
 
 const byEnd = Order.mapInput(Order.Number, (shift: OnCallShift) => shift.endsAtMs ?? Number.POSITIVE_INFINITY)
@@ -82,9 +96,7 @@ export const onCallStatusOf = (snapshot: OnCallSnapshot, nowMs: number): OnCallS
 			scheduleName: shift.scheduleName,
 			otherSchedules: live.length - 1,
 			until:
-				shift.endsAtMs === null
-					? "further notice"
-					: formatUntil(shift.endsAtMs, snapshot.viewerTimeZone),
+				shift.endsAtMs === null ? null : formatUntil(shift.endsAtMs, snapshot.viewerTimeZone, nowMs),
 		}),
 	})
 }
@@ -145,22 +157,33 @@ export const isNoSchedulesFresh = (checkedAtMs: number | undefined, nowMs: numbe
 
 // COPY
 
-/** The pill's schedule line: "Checkout primary", "Checkout primary +1". */
+/** The schedules the user holds: "Checkout primary", "Checkout primary +1 more". */
 export const scheduleLabel = (status: Extract<OnCallStatus, { _tag: "OnCall" }>): string =>
-	status.otherSchedules === 0 ? status.scheduleName : `${status.scheduleName} +${status.otherSchedules}`
+	status.otherSchedules === 0
+		? status.scheduleName
+		: `${status.scheduleName} +${status.otherSchedules} more`
 
-/** The pill's full sentence: the collapsed rail's tooltip and accessible name. */
-export const onCallSentence = (status: OnCallStatus): string => {
+/** The pill's one row: "On call until Mon 09:00", "Not on call". */
+export const onCallLabel = (status: OnCallStatus): string => {
 	switch (status._tag) {
 		case "OnCall":
-			return `You're on call until ${status.until} (${scheduleLabel(status)})`
+			return status.until === null ? "On call" : `On call until ${status.until.short}`
 		case "NotOnCall":
-			return "You're not on call"
+			return "Not on call"
 		case "NoSchedules":
 		case "Unknown":
 			return ""
 	}
 }
+
+/**
+ * The pill's tooltip and accessible name: the row's words first (a spoken "click On call until
+ * Mon 09:00" still finds it), then the zone, the date and the schedules.
+ */
+export const onCallDetail = (status: OnCallStatus): string =>
+	status._tag === "OnCall"
+		? `${onCallLabel(status)}${status.until === null ? "" : ` ${status.until.rest}`} · ${scheduleLabel(status)}`
+		: onCallLabel(status)
 
 /** The pill shows for these. */
 export const isPillShown = (status: OnCallStatus): boolean =>

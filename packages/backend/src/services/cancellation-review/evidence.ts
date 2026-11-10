@@ -12,7 +12,7 @@ import type {
 import { DateTime, Effect, Schema, Array as Arr, String as Str } from "effect"
 import { reviewedSubscriptionOf } from "./evidence-billing"
 import { holdsName, memberNameWords } from "./evidence-company"
-import { OTHER_ORGS_SHOWN } from "./slack-message"
+import { OTHER_ORGS_SHOWN } from "./report"
 import { daysBeforeCancel, redactText } from "./evidence-input"
 
 const PROBLEM_CHARS = 200

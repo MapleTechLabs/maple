@@ -79,35 +79,51 @@ const view = (() => {
 })()
 
 const measured = Mount.resolve(MeasureSidebarOverflow, Message.MeasuredSidebarOverflow())
-const footer = selector('[data-slot="sidebar-footer"]')
 
 describe("on-call pill", () => {
-	test("on call: until the handoff on the viewer's clock with its zone, the schedule, a link to schedules", () => {
+	test("on call: one row with the weekday and time, the rest in its tooltip and name", () => {
+		const pill = role("link", { name: "On call until Mon 09:00 CET, 16 Nov · Checkout primary" })
 		scene(
 			{ update, view },
 			given(withOnCall([shift()])),
 			measured,
-			expect(footer).toContainText("You're on call"),
-			expect(footer).toContainText("until Mon 16 Nov, 09:00 CET"),
-			expect(footer).toContainText("Checkout primary"),
-			expect(role("link", { name: /You're on call/ })).toHaveAttr("href", "/alerts/on-call"),
+			expect(pill).toHaveText("On call until Mon 09:00"),
+			expect(pill).toHaveAttr("href", "/alerts/on-call"),
+			expect(pill).toHaveAttr("data-tooltip", "On call until Mon 09:00 CET, 16 Nov · Checkout primary"),
 		)
 	})
 
-	test("not on call: says so with a way to the schedules", () => {
+	test("a handoff more than six days out reads by its date, and other schedules are counted", () => {
+		const week = 7 * 24 * 60 * 60_000
+		const pill = role("link", { name: "On call until 23 Nov, 09:00 CET · Checkout primary +1 more" })
+		scene(
+			{ update, view },
+			given(
+				withOnCall([
+					shift({ endsAtMs: HANDOFF + week }),
+					shift({ scheduleName: "Payments", endsAtMs: HANDOFF + 2 * week }),
+				]),
+			),
+			measured,
+			expect(pill).toHaveText("On call until 23 Nov, 09:00"),
+		)
+	})
+
+	test("not on call: says so, linking to the schedules", () => {
+		const pill = role("link", { name: "Not on call" })
 		scene(
 			{ update, view },
 			given(withOnCall([shift({ userId: "user_someone" })])),
 			measured,
-			expect(role("link", { name: /You're not on call/ })).toHaveAttr("href", "/alerts/on-call"),
-			expect(footer).toContainText("My schedules"),
+			expect(pill).toHaveAttr("href", "/alerts/on-call"),
+			expect(pill).not.toHaveAttr("data-tooltip"),
 		)
 	})
 
 	test("an org without schedules, a first read that failed, or a shift that ended show no pill", () => {
 		const absent = [
-			expect(text("My schedules")).toBeAbsent(),
-			expect(text("You're on call")).toBeAbsent(),
+			expect(text("Not on call")).toBeAbsent(),
+			expect(text("On call until Mon 09:00")).toBeAbsent(),
 		]
 		scene({ update, view }, given(withOnCall([])), measured, ...absent)
 		scene(
@@ -124,13 +140,14 @@ describe("on-call pill", () => {
 		)
 	})
 
-	test("on the collapsed rail the pill is a dot named by the sentence, which its tooltip shows", () => {
-		const pill = role("link", { name: "You're on call until Mon 16 Nov, 09:00 CET (Checkout primary)" })
+	test("on the collapsed rail the pill is a badged glyph named by the detail, which its tooltip shows", () => {
+		const pill = role("link", { name: "On call until Mon 09:00 CET, 16 Nov · Checkout primary" })
 		scene(
 			{ update, view },
 			given(withOnCall([shift()], { isSidebarOpen: false })),
 			measured,
-			expect(pill).toExist(),
+			expect(pill).toHaveText(""),
+			expect(selector('[data-slot="sidebar-footer"] [data-slot="status-dot"]')).toExist(),
 			hover(pill),
 			Command.resolve(Tooltip.WaitOpenDelay, Tooltip.Message.ElapsedOpenDelay({ generation: 1 })),
 			Mount.resolve(Tooltip.MountTooltip, Tooltip.Message.CompletedMountTooltip()),
@@ -143,7 +160,7 @@ describe("on-call pill", () => {
 				Animation.Message.EndedAnimation({ generation: 1 }),
 			),
 			expect(selector('[data-slot="tooltip-popup"]')).toHaveText(
-				"You're on call until Mon 16 Nov, 09:00 CET (Checkout primary)",
+				"On call until Mon 09:00 CET, 16 Nov · Checkout primary",
 			),
 		)
 	})
@@ -236,7 +253,7 @@ describe("onCallStatusOf", () => {
 			_tag: "OnCall",
 			scheduleName: "Checkout primary",
 			otherSchedules: 1,
-			until: "Mon 16 Nov, 09:00 CET",
+			until: { short: "Mon 09:00", rest: "CET, 16 Nov" },
 		})
 	})
 

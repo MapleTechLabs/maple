@@ -36,7 +36,7 @@ const DURATIONS: ReadonlyArray<{ value: SilenceDuration; label: string }> = [
 	{ value: "1h", label: "1 hour" },
 	{ value: "4h", label: "4 hours" },
 	{ value: "morning", label: "Until 09:00" },
-	{ value: "custom", label: "Pick time" },
+	{ value: "custom", label: "Custom" },
 ]
 
 /** "Silence for 1 hour", or the end it will stop at: "Silence until Nov 7, 18:30". */
@@ -164,6 +164,7 @@ export const view = Submodel.defineView<Model, Message, { id: string; suggestion
 	(model, inputs, h) =>
 		sidePanelSheet(h, {
 			sheet: model.dialog,
+			size: "compact",
 			toParentMessage: (message) => Message.GotDialogMessage({ message }),
 			title: "Silence notifications",
 			description:

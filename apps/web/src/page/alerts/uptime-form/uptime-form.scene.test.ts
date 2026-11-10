@@ -104,6 +104,19 @@ describe("uptime monitor form", () => {
 		)
 	})
 
+	test("a heartbeat's header says Maple records pings, not that it checks from Ashburn", () => {
+		scene(
+			{ update: pageUpdate, view },
+			given(fresh()),
+			expectView(text(/from Ashburn, US and records every check/u)).toExist(),
+			click(role("button", { name: /Heartbeat/u })),
+			expectView(
+				text("Maple records every ping and alerts when one is late or reports a failure."),
+			).toExist(),
+			expectView(text(/from Ashburn, US and records every check/u)).not.toExist(),
+		)
+	})
+
 	test("Run test sends the draft and shows the status, each passing check and the body", () => {
 		const testing = pageUpdate(withUrl("https://api.acme.dev/health"), Message.ClickedTest())
 		expect(names(testing.commands)).toEqual(["TestUptimeDraft"])

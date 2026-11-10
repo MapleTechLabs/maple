@@ -20,6 +20,7 @@ import {
 	init,
 	Message,
 	type Model,
+	COMPACT_SHEET_ID,
 	DismissSheetUrl,
 	PushSheetUrl,
 	SHEET_ID,
@@ -91,6 +92,27 @@ describe("URL-held right sheet", () => {
 			Subscription.emit(Message.ChangedUrl({ href: "/lab/shell" })),
 			...leave(2),
 			Command.expectNone(),
+		)
+	})
+
+	test("the compact panel has its own ?sheet= id and content", () => {
+		const snooze = role("dialog", { name: "Snooze rule" })
+		scene(
+			{ update, view },
+			given(at("/lab/shell")),
+			measured,
+			click(role("button", { name: "Snooze rule" })),
+			Command.expectExact(PushSheetUrl({ href: "/lab/shell", id: COMPACT_SHEET_ID })),
+			Command.resolve(PushSheetUrl, Message.CompletedNavigate()),
+			Subscription.emit(Message.ChangedUrl({ href: `/lab/shell?sheet=${COMPACT_SHEET_ID}` })),
+			...enter(1),
+			expect(snooze).toContainText("Hours"),
+			keydown(portal, "Escape"),
+			Command.expectHas(
+				DismissSheetUrl({ href: `/lab/shell?sheet=${COMPACT_SHEET_ID}`, id: COMPACT_SHEET_ID }),
+			),
+			Command.resolve(DismissSheetUrl, Message.CompletedNavigate()),
+			...leave(2),
 		)
 	})
 
