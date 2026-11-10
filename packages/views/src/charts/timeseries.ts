@@ -24,6 +24,7 @@ import {
 	type TimeseriesAxisContext,
 	type TimeseriesRow,
 } from "./timeseries-rows"
+import { rowsCache } from "./chart-spec"
 import { resolveColor, type ThemeColors } from "./theme-colors"
 import { Array as Arr, Record as Rec } from "effect"
 
@@ -40,7 +41,7 @@ export interface SeriesDefinition {
 }
 
 /** `normaliseTimeseriesRows`'s series discovery: first-seen order across all rows, `s1..sN` keys. */
-export const seriesDefinitionsOf = (data: ReadonlyArray<Readonly<Record<string, unknown>>>) => {
+export const seriesDefinitionsOf = rowsCache((data: ReadonlyArray<Readonly<Record<string, unknown>>>) => {
 	const rawKeys = [
 		...new Set(
 			Arr.flatMap(data, (row) =>
@@ -55,7 +56,7 @@ export const seriesDefinitionsOf = (data: ReadonlyArray<Readonly<Record<string, 
 		})),
 		totalSeriesCount: rawKeys.length,
 	}
-}
+})
 
 /** The rows of `normaliseTimeseriesRows`, values keyed by chart key; unparseable buckets dropped. */
 export const normaliseRows = (
