@@ -50,7 +50,7 @@ import {
 	deleteSourcesOf,
 	createIntegrationSource,
 	integrationSourceName,
-} from "@maple/backend/services/org/integration-sources"
+} from "@maple/backend/services/integrations/integration-sources"
 
 /**
  * First-class PlanetScale integration: one OAuth-backed connection per org.

@@ -96,7 +96,7 @@ import {
 	type PollOutcome as SourcePollOutcome,
 	reportPoll,
 	stampedSourceId,
-} from "@maple/backend/services/org/integration-sources"
+} from "@maple/backend/services/integrations/integration-sources"
 import {
 	mapDnsGroups,
 	mapDurableObjectsGroups,

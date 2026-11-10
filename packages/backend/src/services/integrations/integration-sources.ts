@@ -12,7 +12,7 @@ import {
 	VcsInstallations,
 } from "@maple/db/tables"
 import { AWS_METRICS_OFF, AWS_NO_DELIVERY, awsStreamState } from "@maple/domain/aws"
-import { scrapeStaleAfterMs } from "../integrations/integration-inventory"
+import { scrapeStaleAfterMs } from "./integration-inventory"
 import type { SourceResourceCount } from "@maple/domain/source-health"
 import { SourcePublicId } from "@maple/domain/http/v2"
 import type { OrgId, PullSourcePlatform, SourceId } from "@maple/primitives"
@@ -24,7 +24,7 @@ import {
 	type PullSourceRef,
 	pullSourceRow,
 	type SourceHealthOverrides,
-} from "./source-rows"
+} from "@maple/backend/services/org/source-rows"
 
 const encodeSourceId = Schema.encodeSync(SourcePublicId)
 

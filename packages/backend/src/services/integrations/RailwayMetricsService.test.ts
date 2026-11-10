@@ -19,7 +19,7 @@ import { encryptAes256Gcm } from "@maple/backend/platform/Crypto"
 import { Env } from "@maple/backend/platform/Env"
 import { cleanupTestDbs, createTestDb, queryFirstRow, type TestDb } from "@maple/backend/testing/test-pglite"
 import { OrgIngestKeysService } from "@maple/backend/services/org/OrgIngestKeysService"
-import { publicSourceId } from "@maple/backend/services/org/integration-sources"
+import { publicSourceId } from "@maple/backend/services/integrations/integration-sources"
 import { SourceId } from "@maple/primitives"
 import { nextWindow, RailwayMetricsService } from "./RailwayMetricsService"
 

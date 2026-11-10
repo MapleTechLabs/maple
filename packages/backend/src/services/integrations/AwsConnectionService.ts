@@ -46,7 +46,7 @@ import {
 	integrationSourceName,
 	type PollOutcome,
 	reportPoll,
-} from "@maple/backend/services/org/integration-sources"
+} from "@maple/backend/services/integrations/integration-sources"
 import { AwsApiError, checkRole } from "./aws/api"
 import { type AwsOidcSigner, makeAwsOidcSigner } from "./aws/oidc"
 import { renderAwsCleanupScript, renderAwsSetup } from "./aws/setup"

@@ -17,7 +17,7 @@ import {
 	type WorkflowEventSinkApi,
 } from "@maple/backend/services/integrations/vcs/WorkflowEventSink"
 import { OrgIngestKeysService } from "@maple/backend/services/org/OrgIngestKeysService"
-import { isSourcePaused, stampedSourceId } from "@maple/backend/services/org/integration-sources"
+import { isSourcePaused, stampedSourceId } from "@maple/backend/services/integrations/integration-sources"
 import { makeExpiringStore } from "@maple/backend/platform/expiring-store"
 import {
 	type IngestSendError,

@@ -24,7 +24,10 @@ import type { EncryptedValue } from "@maple/backend/platform/Crypto"
 import { openSecret, sealSecret, secretKeyringFromEnv } from "@maple/backend/platform/SecretBox"
 import { oauthAccessTokenSlot, oauthRefreshTokenSlot } from "@maple/backend/platform/secret-slots"
 import type { DatabaseApi } from "@maple/backend/platform/DatabaseLive"
-import { deleteSourcesOf, createIntegrationSource } from "@maple/backend/services/org/integration-sources"
+import {
+	deleteSourcesOf,
+	createIntegrationSource,
+} from "@maple/backend/services/integrations/integration-sources"
 import { makeDbExecute, makePersistenceErrorMapper } from "@maple/backend/platform/db-execute"
 import type { EnvApi } from "@maple/backend/platform/Env"
 import { makeOAuthStateStore, type OAuthFlowInitiator } from "./oauth-state"

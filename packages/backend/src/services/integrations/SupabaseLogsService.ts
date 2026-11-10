@@ -40,7 +40,7 @@ import {
 	type PollOutcome,
 	reportPoll,
 	stampedSourceId,
-} from "@maple/backend/services/org/integration-sources"
+} from "@maple/backend/services/integrations/integration-sources"
 import {
 	acceptedWatermark,
 	advanceWatermark,

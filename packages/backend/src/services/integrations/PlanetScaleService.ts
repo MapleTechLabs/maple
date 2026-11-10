@@ -54,7 +54,7 @@ import { makePlanetScalePollState } from "./planetscale/poll-state"
 import { insertPlanetScaleEvent } from "./planetscale/webhook-events"
 import { isolatePollFailure, pollFleet } from "./poll-fleet"
 import { timestampMs } from "@maple/backend/platform/time"
-import { type PollOutcome, reportPoll } from "@maple/backend/services/org/integration-sources"
+import { type PollOutcome, reportPoll } from "@maple/backend/services/integrations/integration-sources"
 
 /**
  * PlanetScale management-API poller: keeps the org's database/branch inventory

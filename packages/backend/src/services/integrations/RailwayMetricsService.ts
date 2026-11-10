@@ -55,7 +55,7 @@ import {
 	type PollOutcome,
 	reportPoll,
 	stampedSourceId,
-} from "@maple/backend/services/org/integration-sources"
+} from "@maple/backend/services/integrations/integration-sources"
 import { metricRowsToOtlp } from "./cloudflare-analytics/otlp"
 import { discover, fetchEnvironmentMetrics, RailwayApiError, type RailwayDiscovery } from "./railway/api"
 import { mapRailwayMetrics } from "./railway/mapping"

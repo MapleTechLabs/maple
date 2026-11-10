@@ -7,7 +7,7 @@ import { CurrentMcpTenant } from "../tenant"
 import * as P from "../lib/params"
 import { doc } from "../lib/tool-doc"
 import { SourcesService } from "@maple/backend/services/org/SourcesService"
-import { publicSourceId } from "@maple/backend/services/org/integration-sources"
+import { publicSourceId } from "@maple/backend/services/integrations/integration-sources"
 
 const TOOL = "list_ingest_sources"
 

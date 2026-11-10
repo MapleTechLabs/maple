@@ -66,7 +66,7 @@ import {
 	type PollOutcome,
 	reportPoll,
 	upsertWithSource,
-} from "@maple/backend/services/org/integration-sources"
+} from "@maple/backend/services/integrations/integration-sources"
 import {
 	createLogDrain,
 	DRAINS_PLAN_MESSAGE,

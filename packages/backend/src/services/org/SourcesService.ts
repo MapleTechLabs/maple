@@ -30,7 +30,7 @@ import type { SourceHealthResult } from "@maple/domain/source-health"
 import { Database, type DatabaseError } from "@maple/backend/platform/DatabaseLive"
 import { makeDbExecute } from "@maple/backend/platform/db-execute"
 import { Env } from "@maple/backend/platform/Env"
-import { readSourceOwners } from "./integration-sources"
+import { readSourceOwners } from "@maple/backend/services/integrations/integration-sources"
 import {
 	defaultSourceRow,
 	newSourceId,

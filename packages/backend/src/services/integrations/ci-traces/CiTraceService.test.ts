@@ -26,7 +26,7 @@ import {
 	queryFirstRow,
 	type TestDb,
 } from "@maple/backend/testing/test-pglite"
-import { publicSourceId } from "@maple/backend/services/org/integration-sources"
+import { publicSourceId } from "@maple/backend/services/integrations/integration-sources"
 import { SourceId } from "@maple/primitives"
 import { WorkflowEventSink } from "@maple/backend/services/integrations/vcs/WorkflowEventSink"
 import { OrgIngestKeysService } from "@maple/backend/services/org/OrgIngestKeysService"

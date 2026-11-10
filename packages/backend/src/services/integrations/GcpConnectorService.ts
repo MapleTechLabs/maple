@@ -38,7 +38,7 @@ import {
 	createIntegrationSource,
 	integrationSourceName,
 	reportPoll,
-} from "@maple/backend/services/org/integration-sources"
+} from "@maple/backend/services/integrations/integration-sources"
 
 export interface GcpConnector {
 	readonly id: GcpConnectorId

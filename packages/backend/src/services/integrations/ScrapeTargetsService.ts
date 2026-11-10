@@ -80,7 +80,7 @@ import {
 	type PollOutcome,
 	pollReportDue,
 	reportPoll,
-} from "@maple/backend/services/org/integration-sources"
+} from "@maple/backend/services/integrations/integration-sources"
 import type { MapleDb } from "@maple/db/client"
 import { scrapeResource } from "./integration-inventory"
 import type { SourceId } from "@maple/primitives"

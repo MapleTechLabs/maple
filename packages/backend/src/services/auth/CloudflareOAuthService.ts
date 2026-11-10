@@ -12,7 +12,7 @@ import { CloudflareLogpushConnectors } from "@maple/db/tables"
 import { Array as Arr, Clock, Context, Effect, Layer, Option, Redacted, Schema } from "effect"
 import { FetchHttpClient } from "effect/http"
 import { listAccounts } from "@maple/backend/services/integrations/CloudflareApi"
-import { integrationSourceName } from "@maple/backend/services/org/integration-sources"
+import { integrationSourceName } from "@maple/backend/services/integrations/integration-sources"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { Env, type EnvConfig } from "@maple/backend/platform/Env"
 import {

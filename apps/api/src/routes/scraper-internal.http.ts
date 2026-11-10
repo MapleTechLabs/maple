@@ -12,7 +12,7 @@ import type { SourceId } from "@maple/primitives"
 import { Env } from "@maple/backend/platform/Env"
 import { isValidInternalBearer } from "@maple/backend/services/auth/internal-auth"
 import { OrgIngestKeysService } from "@maple/backend/services/org/OrgIngestKeysService"
-import { publicSourceId } from "@maple/backend/services/org/integration-sources"
+import { publicSourceId } from "@maple/backend/services/integrations/integration-sources"
 import {
 	PlanetScaleDiscoveryService,
 	type PlanetScaleSubTarget,
