@@ -1,6 +1,6 @@
 import { describe, expect, it } from "@effect/vitest"
 import { Effect } from "effect"
-import { listMcpTools } from "./tool-catalog"
+import { listMcpTools } from "./tool-descriptors-render"
 import { MCP_TOOL_DESCRIPTORS } from "./tool-descriptors.generated"
 
 describe("MCP_TOOL_DESCRIPTORS", () => {

@@ -1,5 +1,4 @@
-import type { McpToolDescriptor } from "@maple/domain/mcp-tool-contract"
-import { Effect, Array as Arr } from "effect"
+import { Effect } from "effect"
 
 /**
  * The tool catalog, loaded on the first call that needs it rather than with this module.
@@ -9,34 +8,3 @@ import { Effect, Array as Arr } from "effect"
  * registry -> tool -> chat/tools -> dispatcher cycle, so no module can observe a half-built catalog.
  */
 export const loadRegistry = Effect.promise(() => import("./tools/registry"))
-
-const toolDescriptors = ({
-	inputSchemaOf,
-	mapleToolCatalogFor,
-	toOutputSchema,
-}: typeof import("./tools/registry")): ReadonlyArray<McpToolDescriptor> =>
-	Arr.map(mapleToolCatalogFor("mcp"), (definition) => ({
-		name: definition.name,
-		// Current spec reads the top-level `title`; Claude's directory and older clients read `annotations.title`.
-		title: definition.title,
-		description: definition.description,
-		inputSchema: inputSchemaOf(definition),
-		...(definition.outputSchema === undefined
-			? undefined
-			: { outputSchema: toOutputSchema(definition.outputSchema) }),
-		...(definition.hints === undefined
-			? undefined
-			: {
-					annotations: {
-						title: definition.title,
-						readOnlyHint: definition.hints.readOnly,
-						// The protocol defaults both of these to true; every Maple tool states them.
-						destructiveHint: !definition.hints.readOnly && definition.hints.destructive === true,
-						idempotentHint: definition.hints.readOnly || definition.hints.idempotent === true,
-						openWorldHint: definition.hints.openWorld === true,
-					},
-				}),
-	}))
-
-/** The public transport's `tools/list`: the catalog minus every `internal` tool. Callers cache it. */
-export const listMcpTools = Effect.map(loadRegistry, toolDescriptors)

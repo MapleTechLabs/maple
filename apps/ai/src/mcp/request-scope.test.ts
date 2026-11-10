@@ -20,7 +20,7 @@ import { ApiKeysService } from "@maple/backend/services/org/ApiKeysService"
 import { buildIsolateHandler } from "../worker/http"
 import { McpToolExecutorLoader } from "./executor-loader"
 import { McpLive } from "./app"
-import { listMcpTools } from "./tool-catalog"
+import { listMcpTools } from "./tool-descriptors-render"
 
 const createdDbs: TestDb[] = []
 afterEach(() => cleanupTestDbs(createdDbs))

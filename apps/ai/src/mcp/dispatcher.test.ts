@@ -3,7 +3,7 @@ import { Context, Effect, Layer, Option, Schema, Tracer, Array as Arr, String as
 import type { McpToolNotFoundError } from "@maple/domain/mcp-tool-contract"
 import { ActorId } from "@maple/domain/primitives"
 import { McpToolExecutor } from "./dispatcher"
-import { listMcpTools } from "./tool-catalog"
+import { listMcpTools } from "./tool-descriptors-render"
 import { MCP_ANTICIPATED_ERROR_IDENTIFIERS, recordExpectedMcpFailure } from "./expected-failures"
 import { mapleToolCatalog, mapleToolCatalogFor, toInputSchema, toOutputSchema } from "./tools/registry"
 import type { McpToolRuntimeRequirements } from "./tools/runtime-requirements"
