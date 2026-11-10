@@ -21,6 +21,7 @@ import { McpInvalidInputError } from "../tools/types"
 import { toMcpHttpError } from "./map-http-error"
 import * as P from "./params"
 import { doc } from "./tool-doc"
+import { orFallback } from "./fallback"
 
 type ChainRow = typeof EscalationChainRow.Type
 type DestinationRef = Pick<AlertDestinationDocument, "id" | "name" | "type">
@@ -107,14 +108,14 @@ export const targetDirectory = (orgId: OrgId) =>
 			[
 				alerts.listDestinations(orgId).pipe(
 					Effect.map((response): ReadonlyArray<DestinationRef> => response.destinations),
-					Effect.orElseSucceed((): ReadonlyArray<DestinationRef> => []),
+					orFallback("alert destinations", (): ReadonlyArray<DestinationRef> => []),
 				),
 				schedules.memberNames(orgId),
 				schedules.list(orgId).pipe(
 					Effect.map((response) =>
 						Arr.map(response.schedules, (s) => ({ id: s.id, name: s.name })),
 					),
-					Effect.orElseSucceed(() => []),
+					orFallback("on-call schedules", () => []),
 				),
 			],
 			{ concurrency: "unbounded" },

@@ -15,6 +15,7 @@ import {
 import * as P from "../lib/params"
 import { onlySloIncidents, sloIncidentNext } from "../lib/slos"
 import { doc, type DocBlock } from "../lib/tool-doc"
+import { orFallback } from "../lib/fallback"
 
 const MAX_LIMIT = 200
 /** Severity and group key filter in memory, so a filtered call reads this many rows first. */
@@ -70,12 +71,7 @@ const silenceReasons = Effect.fn("McpTool.getIncidentTimeline.silenceReasons")(f
 			silences.get(orgId, id).pipe(
 				Effect.map((silence) => [[silence.id, silence.reason] as const]),
 				// The line falls back to the bare id, but a failed lookup is still recorded.
-				Effect.tapError((error) =>
-					Effect.logWarning("Alert silence reason lookup failed").pipe(
-						Effect.annotateLogs({ silenceId: id, errorTag: error._tag }),
-					),
-				),
-				Effect.orElseSucceed(() => []),
+				orFallback(`alert silence ${id} reason`, () => []),
 			),
 		{ concurrency: 4 },
 	)

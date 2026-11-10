@@ -14,6 +14,7 @@ import { formatNumber, truncate } from "../lib/format"
 import * as P from "../lib/params"
 import { doc } from "../lib/tool-doc"
 import { emptyResultHints } from "../lib/empty-result-hints"
+import { orFallback } from "../lib/fallback"
 
 const WINDOW = P.timeWindow({ defaultHours: 6 })
 
@@ -113,7 +114,7 @@ export function registerFindErrorsTool(server: McpToolRegistrar) {
 				timeRange: input.timeRange,
 			}).pipe(
 				provideWarehouseExecutorFromTenant(tenant),
-				Effect.orElseSucceed(() => new Map<string, string>()),
+				orFallback("exceptionless error labels", () => new Map<string, string>()),
 			)
 
 			const identity: typeof FindErrorsOutput.Type.identity = params.identity ?? "all"

@@ -12,6 +12,7 @@ import { kindTable } from "../lib/infra-render"
 import { warehouseErrorText } from "../lib/map-warehouse-error"
 import { servicePlatform } from "../lib/service-platform"
 import { IntegrationInventoryService } from "@maple/backend/services/integrations/IntegrationInventoryService"
+import { orFallback } from "../lib/fallback"
 
 const WINDOW = P.timeWindow({ defaultHours: 6 })
 
@@ -54,7 +55,7 @@ export function registerDiagnoseServiceTool(server: McpToolRegistrar) {
 				Effect.map(
 					(inventory) => new Set<string>(Arr.map(inventory.integrations, (i) => i.provider)),
 				),
-				Effect.orElseSucceed(() => new Set<string>()),
+				orFallback("connected integrations", () => new Set<string>()),
 			)
 
 			const [result, infrastructure, platform] = yield* Effect.all(

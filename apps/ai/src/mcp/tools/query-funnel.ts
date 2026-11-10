@@ -17,6 +17,7 @@ import { formatNumber, formatPercent, truncate } from "../lib/format"
 import { stringifyJson } from "../lib/json"
 import * as P from "../lib/params"
 import { doc } from "../lib/tool-doc"
+import { orFallback } from "../lib/fallback"
 
 const TOOL = "query_funnel"
 const WINDOW = P.timeWindow({ defaultHours: 7 * 24, maxHours: MCP_DISCOVERY_MAX_HOURS })
@@ -191,7 +192,7 @@ export function registerQueryFunnelTool(server: McpToolRegistrar) {
 							productEventsFunnel({ ...definition, keyBy: "session" }),
 						).pipe(
 							Effect.map((rows) => rows.find((row) => row.step === 1)?.count ?? 0),
-							Effect.orElseSucceed(() => undefined),
+							orFallback("per-session funnel step 1", () => undefined),
 						)
 			const identityNote =
 				sessionFirst !== undefined && sessionFirst > Math.max(first, 1)

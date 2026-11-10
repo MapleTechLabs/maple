@@ -26,6 +26,7 @@ import {
 	summaryLine,
 	windowText,
 } from "../lib/infra-render"
+import { orFallback } from "../lib/fallback"
 
 const TOOL = "list_infra"
 const WINDOW = P.timeWindow({ defaultHours: 1, maxHours: MCP_DISCOVERY_MAX_HOURS })
@@ -85,10 +86,7 @@ const connectedProviderKinds = (orgId: Parameters<IntegrationInventoryService["S
 				(result) =>
 					new Set<string>(Arr.map(result.integrations, (integration) => integration.provider)),
 			),
-			Effect.tapError((error) =>
-				Effect.logWarning("list_infra could not read integrations", error.message),
-			),
-			Effect.orElseSucceed(() => new Set<string>()),
+			orFallback("connected integrations", () => new Set<string>()),
 		)
 		return Arr.filter(PROVIDER_KINDS, (kind) => connected.has(PROVIDER_OF[kind]))
 	})

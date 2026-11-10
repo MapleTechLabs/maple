@@ -14,6 +14,7 @@ import { IssueKind, IssueListCursor, IssueSeverity, WorkflowState } from "@maple
 import { formatWarehouseDateTime, parseWarehouseDateTime } from "@maple/query-engine"
 import { isUnlabelledError, labelExceptionlessFingerprints } from "@maple/query-engine/observability"
 import { provideWarehouseExecutorFromTenant } from "@maple/backend/services/warehouse/WarehouseQueryService"
+import { orFallback } from "../lib/fallback"
 
 type Output = typeof ListErrorIssuesOutput.Type
 type AnyRow = Output["issues"][number]
@@ -130,7 +131,7 @@ const spanLabelsFor = (
 		timeRange: { startTime: formatWarehouseDateTime(startMs), endTime: formatWarehouseDateTime(endMs) },
 	}).pipe(
 		provideWarehouseExecutorFromTenant(tenant),
-		Effect.orElseSucceed(() => new Map<string, string>()),
+		orFallback("exceptionless error labels", () => new Map<string, string>()),
 	)
 }
 
