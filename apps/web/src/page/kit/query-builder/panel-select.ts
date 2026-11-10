@@ -17,6 +17,8 @@ export const panelSelect = (
 		size?: "sm" | "default"
 		className?: string
 		ariaLabel?: string
+		/** `false`: the list opens below the trigger instead of over it. */
+		alignItemWithTrigger?: boolean
 		/** Places the trigger and its siblings (hidden input, portal) in the caller's layout. */
 		toView: (parts: ReadonlyArray<Html>) => Html
 	}>,
@@ -33,6 +35,7 @@ export const panelSelect = (
 			size: inputs.size,
 			className: inputs.className,
 			ariaLabel: inputs.ariaLabel,
+			alignItemWithTrigger: inputs.alignItemWithTrigger,
 			toView: inputs.toView,
 		},
 	})

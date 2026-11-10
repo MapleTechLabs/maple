@@ -12,9 +12,11 @@ import { whereEditor } from "./where-editor"
 import { button } from "@maple/views/ui/button"
 import { icon } from "@maple/views/ui/icon"
 import { segmentedSelect } from "@maple/views/ui/segmented-select"
-import { hstack, vstack } from "@maple/views/ui/stack"
+import { cn } from "@maple/ui/lib/utils"
+import { hstack } from "@maple/views/ui/stack"
 import { typography } from "@maple/views/ui/typography"
 import { conditionBuilder } from "./condition-builder-view"
+import { type UnshowableReason, unshowableReasonOf } from "./condition-rows"
 import { conditionRowsOf, whereModeOf } from "./conditions"
 import type { WhereMode } from "./panel-message"
 import { whereSpecOf, whereTextareaId } from "./where"
@@ -49,6 +51,7 @@ const whereTextEditor = (
 	query: QueryDraft,
 	values: WhereClauseAutocompleteValues,
 	placeholder: string | undefined,
+	className: string,
 ): Html =>
 	whereEditor(h, {
 		id: whereTextareaId(query.id),
@@ -56,7 +59,7 @@ const whereTextEditor = (
 		ariaLabel: `Where clause for query ${query.name}`,
 		placeholder: placeholder ?? WHERE_PLACEHOLDER[query.dataSource],
 		rows: 1,
-		className: "w-full",
+		className,
 		textareaClassName: WHERE_TEXTAREA_CLASS,
 		onInput: (value) => Message.ChangedText({ queryId: query.id, field: "whereClause", value }),
 		autocomplete: {
@@ -68,18 +71,27 @@ const whereTextEditor = (
 		},
 	})
 
-const UNPARSEABLE_NOTE = "This filter uses syntax the builder can't show, edit as text"
+/** Why the clause stays in the text editor, in one line. */
+const UNSHOWABLE_NOTE = {
+	mixedFields: "This filter mixes fields in an OR, so it stays in Text.",
+	orOperators: "This filter uses an OR the builder can't show, so it stays in Text.",
+	syntax: "This filter uses syntax the builder can't show, so it stays in Text.",
+} satisfies Record<UnshowableReason, string>
+
+// What sits beside the floated controls takes this much room, or drops under them.
+const BESIDE_CONTROLS = "flow-root min-w-52"
 
 /**
  * `WhereClauseEditor`: condition rows when the clause reads as rows (the default), else the text
- * editor, under a Builder/Text switch. Both edit the same where-clause string.
+ * editor. The Builder/Text switch and `trailing` (the span select) float top right, level with
+ * the first row; a narrow editor puts them on their own line. Both edit the same string.
  */
 export const whereClauseEditor = (
 	h: H,
 	model: Model,
 	query: QueryDraft,
 	values: WhereClauseAutocompleteValues,
-	options: Readonly<{ placeholder?: string; className?: string }> = {},
+	options: Readonly<{ placeholder?: string; className?: string; trailing?: ReadonlyArray<Html> }> = {},
 ): Html => {
 	const rows = conditionRowsOf(model, query)
 	const isBuilder = whereModeOf(model, query) === "builder" && Option.isSome(rows)
@@ -90,36 +102,68 @@ export const whereClauseEditor = (
 		],
 		value: isBuilder ? "builder" : "text",
 		onChange: (mode: WhereMode) => Message.ChangedWhereMode({ queryId: query.id, mode }),
-		size: "xs",
+		size: "sm",
 		ariaLabel: `Where clause editor for query ${query.name}`,
-		className: "ml-auto shrink-0",
+		className: "shrink-0",
 	})
-	const note = Option.isNone(rows) ? [typography(h, { size: "xs", tone: "muted" }, [UNPARSEABLE_NOTE])] : []
-	const addCondition = button(
-		h,
-		{
-			variant: "ghost",
-			size: "xs",
-			className: "self-start text-muted-foreground",
-			attributes: [h.OnClick(Message.ClickedAddCondition({ queryId: query.id }))],
-		},
-		[icon(h, "PlusIcon"), "Add condition"],
-	)
-	return vstack(h, { gap: "1.5", className: options.className ?? "flex-1 min-w-0" }, [
-		hstack(h, { gap: "2" }, [...note, toggle]),
-		...(isBuilder
-			? [
-					...conditionBuilder(
-						h,
-						model,
-						query,
-						Option.getOrElse(rows, () => []),
-						values,
-					),
-					addCondition,
-				]
-			: [whereTextEditor(h, model, query, values, options.placeholder)]),
+	const controls = hstack(h, { gap: "2", className: "float-right mb-1 ml-2" }, [
+		toggle,
+		...(options.trailing ?? []),
 	])
+	const note = Option.match(unshowableReasonOf(query.whereClause), {
+		onNone: () => [],
+		onSome: (reason) => [
+			// One line beside the controls where the editor is wide, else its own lines under them.
+			hstack(h, { className: cn(BESIDE_CONTROLS, "min-h-7 @xl/where:min-w-100") }, [
+				typography(h, { size: "xs", tone: "muted" }, [UNSHOWABLE_NOTE[reason]]),
+			]),
+		],
+	})
+	const conditions = isBuilder
+		? conditionBuilder(
+				h,
+				model,
+				query,
+				Option.getOrElse(rows, () => []),
+				values,
+			)
+		: []
+	const addCondition = hstack(
+		h,
+		{ className: cn(BESIDE_CONTROLS, "min-h-7", conditions.length > 0 && "mt-1") },
+		[
+			button(
+				h,
+				{
+					variant: "ghost",
+					size: "xs",
+					className: "text-muted-foreground",
+					attributes: [h.OnClick(Message.ClickedAddCondition({ queryId: query.id }))],
+				},
+				[icon(h, "PlusIcon"), "Add condition"],
+			),
+		],
+	)
+	return h.div(
+		[h.Class(cn("@container/where flow-root", options.className ?? "min-w-0 flex-1"))],
+		[
+			controls,
+			...note,
+			...(isBuilder
+				? [...conditions, addCondition]
+				: [
+						whereTextEditor(
+							h,
+							model,
+							query,
+							values,
+							options.placeholder,
+							// Under the note when there is one, else beside the controls.
+							cn(BESIDE_CONTROLS, note.length > 0 && "clear-both"),
+						),
+					]),
+		],
+	)
 }
 
 /** A controlled `<Input>` that reports each keystroke. */

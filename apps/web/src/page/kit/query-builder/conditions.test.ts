@@ -1,7 +1,9 @@
 import { createQueryDraft, resetQueryForDataSource } from "@maple/query-engine/query-builder"
 import { describe, expect, test } from "vitest"
 import type { QueryDraft } from "./draft"
+import { fieldPickerItems, fieldsOf } from "./condition-fields"
 import { init, Message, type Model, operatorSelectId, type PanelInputs, update } from "./panel"
+import { Array as Arr } from "effect"
 
 // The builder's operator and value steps, as the where-clause edit they emit.
 
@@ -177,5 +179,65 @@ describe("refusals", () => {
 				values("c0", { _tag: "ClickedItem", value: "login" }),
 			),
 		).toBe('event.name != "login"')
+	})
+})
+
+describe("field picker highlight", () => {
+	const vocabulary = { attributeKeys: ["http.route", "db.system"], resourceAttributeKeys: ["host.name"] }
+	const query = traces('attr.db.system = "postgres"')
+	const inputs: PanelInputs = { ...inputsFor(query), baseValuesOf: () => vocabulary }
+	const fields = fieldsOf("traces", vocabulary)
+	const valuesOf = (drill: "all" | "resource" | "attribute", search = "") =>
+		Arr.map(fieldPickerItems(fields, drill, search), (item) => item.value)
+	const field = (message: Parameters<typeof Message.GotConditionField>[0]["message"]) =>
+		Message.GotConditionField({ queryId: "q", rowId: "c0", message })
+	/** The model after the messages, and the value its field list highlights. */
+	const after = (messages: ReadonlyArray<Message>) => {
+		const model = Arr.reduce(
+			messages,
+			init("test"),
+			(current, message) => update(current, message, inputs).model,
+		)
+		return { model, highlighted: model.conditionPickers["cond-q-c0-field"]?.highlighted ?? null }
+	}
+	const opened = field({ _tag: "ClickedTriggerOf", items: valuesOf("all") })
+	const drilled = (group: "resource" | "attribute") =>
+		field({ _tag: "ClickedItem", value: `@group:${group}` })
+
+	test("opening highlights the first field when the picked one is inside a group", () => {
+		expect(after([opened]).highlighted).toBe(0)
+	})
+
+	test("drilling into the picked field's group highlights it, not the back row", () => {
+		const { highlighted } = after([opened, drilled("attribute")])
+		expect(valuesOf("attribute")[highlighted ?? -1]).toBe("attr.db.system")
+	})
+
+	test("drilling into another group highlights its first field", () => {
+		const { highlighted } = after([opened, drilled("resource")])
+		expect(valuesOf("resource")[highlighted ?? -1]).toBe("resource.host.name")
+	})
+
+	test("going back highlights the group that was open", () => {
+		const { highlighted } = after([
+			opened,
+			drilled("resource"),
+			field({ _tag: "ClickedItem", value: "@back" }),
+		])
+		expect(valuesOf("all")[highlighted ?? -1]).toBe("@group:resource")
+	})
+
+	test("Enter after a search picks the first match", () => {
+		const { model } = after([
+			opened,
+			field({ _tag: "ChangedInput", value: "http.ro" }),
+			field({
+				_tag: "PressedInputKey",
+				key: "Enter",
+				items: valuesOf("all", "http.ro"),
+				isUnfiltered: true,
+			}),
+		])
+		expect(model.conditions["q"]?.[0]?.key).toBe("attr.http.route")
 	})
 })

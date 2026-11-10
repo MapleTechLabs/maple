@@ -18,6 +18,7 @@ import {
 	isOwnedElsewhere,
 	OPERATOR_LABEL,
 	operatorsOf,
+	sharesLabel,
 	valueSuggestionsOf,
 } from "./condition-fields"
 import { type ConditionRow, isUnspellable, isValueless } from "./condition-rows"
@@ -34,13 +35,16 @@ type H = HtmlBuilder<Message>
 
 const GROUP_SHORT = { common: "", resource: "resource", attribute: "attr" }
 
-const fieldTrigger = (h: H, field: ConditionField): ReadonlyArray<Html | string> =>
-	field.group === "common"
-		? [field.label]
-		: [
-				typography(h, { tone: "subtle", as: "span", mono: true }, [`${GROUP_SHORT[field.group]}.`]),
+/** The pick as the list shows it: no `attr.` / `resource.` prefix, the group named only to tell two fields apart. */
+const fieldTrigger = (h: H, field: ConditionField, isLabelShared: boolean): ReadonlyArray<Html | string> =>
+	isLabelShared && field.group !== "common"
+		? [
 				field.label,
+				typography(h, { size: "2xs", tone: "subtle", as: "span", className: "ml-1.5" }, [
+					GROUP_SHORT[field.group],
+				]),
 			]
+		: [field.label]
 
 const fieldItem = (
 	h: HtmlBuilder<Combobox.Message>,
@@ -98,12 +102,15 @@ const fieldPicker = (
 	row: ConditionRow,
 	index: number,
 	values: WhereClauseAutocompleteValues,
+	rowFields: ReadonlyArray<ConditionField>,
 ): Html => {
 	const id = conditionPickerId(query.id, row.id, "field")
 	const picker = model.conditionPickers[id] ?? Combobox.init(id, "single")
 	const current = { ...picker, selected: row.key === "" ? [] : [row.key] }
 	const search = Combobox.queryOf(current)
-	const items = fieldPickerItems(fieldsOf(query.dataSource, values), model.fieldDrills[id] ?? "all", search)
+	const fields = fieldsOf(query.dataSource, values)
+	const field = fieldOf(row.key, query.dataSource)
+	const items = fieldPickerItems(fields, model.fieldDrills[id] ?? "all", search)
 	const byValue = new Map(Arr.map(items, (item) => [item.value, item]))
 	const firstGroup = Option.getOrNull(Arr.findFirst(items, (item) => item._tag === "Group"))
 	return h.submodel({
@@ -121,9 +128,13 @@ const fieldPicker = (
 					: `Field for condition ${index + 1}: ${row.key}`,
 			searchPlaceholder: "Search fields…",
 			emptyText: "No fields match",
-			trigger: row.key === "" ? ["Choose field"] : fieldTrigger(h, fieldOf(row.key, query.dataSource)),
+			trigger:
+				row.key === ""
+					? ["Choose field"]
+					: fieldTrigger(h, field, sharesLabel(field, [...fields, ...rowFields])),
 			isPlaceholder: row.key === "",
-			triggerClassName: "w-full",
+			...(row.key === "" ? undefined : { tooltip: row.key }),
+			triggerClassName: "w-full max-w-80",
 			renderItem: (itemH, value) => {
 				const item = byValue.get(value)
 				return item === undefined
@@ -134,7 +145,7 @@ const fieldPicker = (
 				firstGroup !== null && value === firstGroup.value
 					? "mt-1 border-t border-border-subtle pt-1"
 					: undefined,
-			toView: (parts) => h.div([h.Class("col-start-2 row-start-1 min-w-0")], parts),
+			toView: (parts) => h.div([h.Class(FIELD_CELL)], parts),
 		},
 	})
 }
@@ -194,7 +205,7 @@ const valuePicker = (
 						ariaLabel,
 						placeholder: row.values.length === 0 ? "Value" : "",
 						emptyText: "Type a value and press Enter",
-						className: "text-xs",
+						size: "sm",
 						renderItem: (_, value) => renderItem(value),
 						toView: (parts) => h.div([h.Class("min-w-0")], parts),
 					},
@@ -210,9 +221,7 @@ const valuePicker = (
 						placeholder: "Value",
 						emptyText: "Type a value and press Enter",
 						size: "sm",
-						showTrigger: false,
 						highlightsSelected: true,
-						className: "text-xs",
 						renderItem,
 						toView: ({ field: input, rest }) => h.div([h.Class("min-w-0")], [input, ...rest]),
 					},
@@ -220,13 +229,17 @@ const valuePicker = (
 	return [field, ...note]
 }
 
-// Wide: one line of [connector] [field] [operator] [values] [remove]. Narrow: the values cell
-// wraps under the field and operator, the rest stays on the first line.
+// Wide (the where area, `@container/where`): one line of [lead] [field] [operator] [values]
+// [remove], the field and operator as wide as their text. Narrow: the lead, field and remove on
+// one line, then the operator and values under the field. `min-w` is what a row needs beside the
+// editor's floated controls; with less it drops under them.
 const ROW_GRID =
-	"grid grid-cols-[2.5rem_minmax(0,1fr)_7rem_auto] items-center gap-1.5 @lg:grid-cols-[2.5rem_minmax(0,14rem)_9rem_minmax(10rem,1fr)_auto]"
+	"grid min-w-52 grid-cols-[2.5rem_max-content_minmax(0,1fr)_auto] items-center gap-1.5 @xl/where:min-w-108 @xl/where:grid-cols-[2.5rem_minmax(8rem,max-content)_max-content_minmax(10rem,1fr)_auto]"
+const FIELD_CELL = "col-span-2 col-start-2 row-start-1 min-w-32 @xl/where:col-span-1"
+const OPERATOR_CELL = "col-start-2 row-start-2 @xl/where:col-start-3 @xl/where:row-start-1"
 const VALUES_CELL =
-	"col-start-2 col-span-2 row-start-2 min-w-0 @lg:col-start-4 @lg:col-span-1 @lg:row-start-1"
-const REMOVE_CELL = "col-start-4 row-start-1 @lg:col-start-5"
+	"col-span-2 col-start-3 row-start-2 min-w-0 @xl/where:col-span-1 @xl/where:col-start-4 @xl/where:row-start-1"
+const REMOVE_CELL = "col-start-4 row-start-1 @xl/where:col-start-5"
 
 const conditionRow = (
 	h: H,
@@ -235,6 +248,7 @@ const conditionRow = (
 	row: ConditionRow,
 	index: number,
 	values: WhereClauseAutocompleteValues,
+	rowFields: ReadonlyArray<ConditionField>,
 ): Html => {
 	const connector = typography(h, { size: "xs", tone: "muted", className: "col-start-1 row-start-1" }, [
 		index === 0 ? "Where" : "and",
@@ -250,7 +264,7 @@ const conditionRow = (
 		},
 		[icon(h, "XmarkIcon")],
 	)
-	const field = fieldPicker(h, model, query, row, index, values)
+	const field = fieldPicker(h, model, query, row, index, values, rowFields)
 	const layout = (parts: ReadonlyArray<Html>) =>
 		h.div(
 			[h.Class(ROW_GRID), h.DataAttribute("slot", "condition-row")],
@@ -272,8 +286,10 @@ const conditionRow = (
 		),
 		{
 			size: "sm",
-			className: "col-start-3 row-start-1 w-full",
+			// As wide as the operator's words, not the select's default 9rem.
+			className: cn(OPERATOR_CELL, "min-w-16"),
 			ariaLabel: `Operator for ${fieldLabel}`,
+			alignItemWithTrigger: false,
 			toView: (parts) =>
 				layout([
 					...parts,
@@ -301,17 +317,23 @@ export const conditionBuilder = (
 	values: WhereClauseAutocompleteValues,
 ): ReadonlyArray<Html> => {
 	const shown = Arr.filter(rows, (row) => !isOwnedElsewhere(row.key, query.dataSource))
+	const rowFields = Arr.map(
+		Arr.filter(shown, (row) => row.key !== ""),
+		(row) => fieldOf(row.key, query.dataSource),
+	)
+	// A plain block, not a stack: each row lays out against the editor's floated controls itself.
 	return shown.length === 0
 		? []
 		: [
-				vstack(
-					h,
-					{
-						gap: "1.5",
-						className: "@container",
-						attributes: [h.AriaLabel(`Conditions for query ${query.name}`), h.Role("group")],
-					},
-					Arr.map(shown, (row, index) => conditionRow(h, model, query, row, index, values)),
+				h.div(
+					[
+						h.AriaLabel(`Conditions for query ${query.name}`),
+						h.Class("space-y-1.5"),
+						h.Role("group"),
+					],
+					Arr.map(shown, (row, index) =>
+						conditionRow(h, model, query, row, index, values, rowFields),
+					),
 				),
 			]
 }

@@ -8,6 +8,7 @@ import {
 	printConditionRows,
 	printConditionRowsOver,
 	sameConditions,
+	unshowableReasonOf,
 } from "./condition-rows"
 import { Array as Arr, Option } from "effect"
 
@@ -187,5 +188,19 @@ describe("sameConditions", () => {
 describe("isUnspellable", () => {
 	test("only a value with both quote kinds", () => {
 		expect(Arr.map([`it's`, `say "hi"`, `it's "on"`], isUnspellable)).toEqual([false, false, true])
+	})
+})
+
+describe("unshowableReasonOf", () => {
+	test.each([
+		['service.name = "a" AND attr.b exists', Option.none()],
+		['(attr.a = "1" OR attr.a = "2")', Option.none()],
+		['(service.name = "a" OR span.name = "b")', Option.some("mixedFields")],
+		['(service.name = "a" OR service.name contains "b")', Option.some("orOperators")],
+		['(service.name != "a" OR service.name != "b")', Option.some("orOperators")],
+		["service.name ~ checkout", Option.some("syntax")],
+		['service.name = "a" AND (service.name = "b" AND span.name = "c")', Option.some("syntax")],
+	])("%s", (whereClause, expected) => {
+		expect(unshowableReasonOf(whereClause)).toEqual(expected)
 	})
 })

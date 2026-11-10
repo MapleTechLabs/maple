@@ -149,11 +149,12 @@ const body = (h: H, model: Model, inputs: QueryPanelInputs): ReadonlyArray<Html>
 			intervalPlaceholder,
 			autocompleteValues: inputs.autocompleteValues ?? {},
 		})
+	// The span select rides with the editor's Builder/Text switch, top right of the where area.
 	const whereRow = (parts: ReadonlyArray<Html>) =>
-		h.div(
-			[h.Class("flex items-start gap-2")],
-			[whereClauseEditor(h, model, query, inputs.autocompleteValues ?? {}), ...parts],
-		)
+		whereClauseEditor(h, model, query, inputs.autocompleteValues ?? {}, {
+			className: "min-w-0",
+			trailing: parts,
+		})
 	return [
 		query.dataSource === "traces"
 			? panelSelect(
@@ -190,6 +191,16 @@ const body = (h: H, model: Model, inputs: QueryPanelInputs): ReadonlyArray<Html>
 	]
 }
 
+// The engine names the dropped group in full; the panel shows it right above, so it says only that.
+const OR_GROUP_DROPPED = /OR group ignored: only attribute filters can be OR-ed/
+const OR_GROUP_DROPPED_COPY = "This OR group is not applied: only attribute filters can be OR-ed."
+
+/** The engine's warnings in the panel's words, each once. */
+export const panelWarningsOf = (warnings: ReadonlyArray<string>): ReadonlyArray<string> =>
+	Arr.dedupe(
+		Arr.map(warnings, (warning) => (OR_GROUP_DROPPED.test(warning) ? OR_GROUP_DROPPED_COPY : warning)),
+	)
+
 /** `WarningList`: clauses the builder could not apply as written. */
 const warningList = (h: H, warnings: ReadonlyArray<string>): ReadonlyArray<Html> =>
 	warnings.length === 0
@@ -216,7 +227,7 @@ export const queryPanelView = Submodel.defineView<Model, Message, QueryPanelInpu
 	const content = () => [
 		...body(h, model, inputs),
 		// TODO(query-builder): the product-events setup hint (`SignalEmptyState`).
-		...warningList(h, buildTimeseriesQuerySpec(query).warnings),
+		...warningList(h, panelWarningsOf(buildTimeseriesQuerySpec(query).warnings)),
 		// A metrics query groups from its "across" row; a Group by toggle would only hide that choice.
 		addOnToggles(
 			h,

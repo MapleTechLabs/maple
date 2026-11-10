@@ -4,7 +4,15 @@ import * as Combobox from "@maple/views/ui/combobox"
 import * as Select from "@maple/views/ui/select"
 import type { Resources } from "../../../platform/resources"
 import { QueryChange } from "./change"
-import { canMatchAnyOf, fieldOf, fieldPickerItems, fieldsOf, operatorsOf } from "./condition-fields"
+import {
+	canMatchAnyOf,
+	type FieldDrill,
+	fieldOf,
+	fieldPickerItems,
+	type FieldPickerItem,
+	fieldsOf,
+	operatorsOf,
+} from "./condition-fields"
 import {
 	type ConditionRow,
 	isAnyOf,
@@ -158,7 +166,7 @@ export const addedCondition = (model: Model, queryId: string, inputs: PanelInput
 			...current,
 			conditionPickers: {
 				...current.conditionPickers,
-				[pickerId]: Combobox.init(pickerId, "single", { isOpen: true }),
+				[pickerId]: { ...Combobox.init(pickerId, "single", { isOpen: true }), highlighted: 0 },
 			},
 		}
 		return emitted(opened, query, rows, [...rows, { id, key: "", operator: "=", values: [] }])
@@ -195,7 +203,32 @@ const pickedValue = (current: Combobox.Model, message: Combobox.Message): string
 	return null
 }
 
-/** The field picker: a group or "All fields" drills without closing; a field sets the row's key. */
+/** The option an open field list highlights: the picked field when listed, else the first that is not "All fields". */
+const fieldHighlightOf = (
+	items: ReadonlyArray<FieldPickerItem>,
+	key: string,
+	from?: FieldDrill,
+): number | null =>
+	Option.getOrNull(
+		Option.orElse(
+			Arr.findFirstIndex(items, (item) => item.value === key),
+			() =>
+				Option.orElse(
+					// Back out of a group: its own row, where the highlight was before drilling in.
+					Arr.findFirstIndex(items, (item) => item._tag === "Group" && item.group === from),
+					() =>
+						Option.orElse(
+							Arr.findFirstIndex(items, (item) => item._tag !== "Back"),
+							() => (items.length === 0 ? Option.none() : Option.some(0)),
+						),
+				),
+		),
+	)
+
+/**
+ * The field picker: a group or "All fields" drills without closing; a field sets the row's key.
+ * An open list always has a highlight, so Enter picks without an arrow key first.
+ */
 export const fieldStep = (
 	model: Model,
 	queryId: string,
@@ -226,16 +259,36 @@ export const fieldStep = (
 					...base,
 					conditionPickers: {
 						...base.conditionPickers,
-						[id]: { ...current, inputValue: "", highlighted: 0 },
+						[id]: {
+							...current,
+							inputValue: "",
+							highlighted: fieldHighlightOf(
+								fieldPickerItems(fields, navigated.value, ""),
+								row.key,
+								drill,
+							),
+						},
 					},
 					fieldDrills: { ...base.fieldDrills, [id]: navigated.value },
 				},
 			}
 		const next = Combobox.update(current, message)
+		// Opening, and typing a search, start from the default highlight.
+		const needsHighlight =
+			next.model.isOpen && (next.model.highlighted === null || message._tag === "ChangedInput")
+		const picker = needsHighlight
+			? {
+					...next.model,
+					highlighted: fieldHighlightOf(
+						fieldPickerItems(fields, drill, Combobox.queryOf(next.model)),
+						row.key,
+					),
+				}
+			: next.model
 		const lifted: Model = {
 			...base,
-			conditionPickers: { ...base.conditionPickers, [id]: next.model },
-			fieldDrills: next.model.isOpen ? base.fieldDrills : Rec.remove(base.fieldDrills, id),
+			conditionPickers: { ...base.conditionPickers, [id]: picker },
+			fieldDrills: picker.isOpen ? base.fieldDrills : Rec.remove(base.fieldDrills, id),
 		}
 		const commands = Command.mapMessages(next.commands ?? [], (inner) =>
 			Message.GotConditionField({ queryId, rowId, message: inner }),
