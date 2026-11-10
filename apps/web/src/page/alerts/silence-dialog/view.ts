@@ -50,7 +50,8 @@ const submitLabel = (model: Model): string =>
 			: Option.match(silenceEndMs(model.duration, model.until, model.nowMs, model.timeZone), {
 					onNone: () => "Silence",
 					onSome: (endMs) =>
-						`Silence until ${formatSilenceTime(endMs, model.nowMs, model.timeZone)}`,
+						// 24h, as the "Until 09:00" choice and the end's time picker read.
+						`Silence until ${formatSilenceTime(endMs, model.nowMs, model.timeZone, "h23")}`,
 				})
 
 /** A field's error once a save was tried. */

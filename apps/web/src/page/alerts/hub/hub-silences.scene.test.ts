@@ -359,6 +359,33 @@ describe("alerts hub, silence side panel", () => {
 		)
 	})
 
+	test("the save button names its end on the 24h clock the duration choice and the picker use", () => {
+		const until = (duration: SilenceDialog.SilenceDuration, value: string) =>
+			Arr.reduce(
+				[
+					silenceMessage(SilenceDialog.Message.ChangedDuration({ duration })),
+					silenceMessage(SilenceDialog.Message.ChangedUntil({ value })),
+				],
+				withPanel().model,
+				(model, message) => pageUpdate(model, message).model,
+			)
+		const saveButton = role("button", { name: /^Silence until / })
+		scene(
+			{ update: pageUpdate, view },
+			given(until("morning", "")),
+			Mount.resolve(MountDialog, Dialog.Message.CompletedMountDialog()),
+			expectView(text("Until 09:00")).toExist(),
+			expectView(saveButton).toHaveText(/ 09:00$/u),
+		)
+		// NOW is noon on 1 October, so 15:30 that day is still ahead.
+		scene(
+			{ update: pageUpdate, view },
+			given(until("custom", "2026-10-01T15:30")),
+			Mount.resolve(MountDialog, Dialog.Message.CompletedMountDialog()),
+			expectView(saveButton).toHaveText(/ 15:30$/u),
+		)
+	})
+
 	test("a link straight to the panel waits for the clock and the viewer's grants, and a member never gets it", () => {
 		const entered = init(hubAt({ tab: "silences", sheet: "silence" }), context).model
 		expect(entered.silenceDialog.dialog.isOpen).toBe(false)
