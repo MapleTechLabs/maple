@@ -14,7 +14,11 @@ import {
 import { TestClock } from "effect/testing"
 import { FetchHttpClient } from "effect/http"
 import { type RecordedRequest, stubFetch, syncConfigLayer } from "../test-support"
-import { SUBSCRIPTION_NAMES, type SubscriptionName, subscriptionScopeColumn } from "../shapes/registry"
+import {
+	SUBSCRIPTION_NAMES,
+	type SubscriptionName,
+	subscriptionScopeColumn,
+} from "@maple/domain/electric-shapes"
 import type { SyncRequest } from "../shapes/request"
 import {
 	buildUpstreamSyncUrl,

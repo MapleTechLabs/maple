@@ -35,6 +35,7 @@
 		"./api-keys": "./src/api-keys.ts",
 		"./cancellation-review": "./src/cancellation-review.ts",
 		"./dashboard-shares": "./src/dashboard-shares.ts",
+		"./electric-shapes": "./src/electric-shapes.ts",
 		"./error-issues": "./src/error-issues.ts",
 		"./escalation-chains": "./src/escalation-chains.ts",
 		"./fix-verification": "./src/fix-verification.ts",

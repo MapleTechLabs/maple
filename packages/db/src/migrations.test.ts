@@ -4,6 +4,7 @@ import { PGlite } from "@electric-sql/pglite"
 import * as Migrate from "@maple-dev/effect-orm/migrate"
 import { Effect, Layer, Option, Array as Arr, String as Str } from "effect"
 import { describe, expect, it } from "vitest"
+import { PUBLISHED_TABLES } from "@maple/domain/electric-shapes"
 import { bundledMigrations, listBundledMigrations, migrateBundled, readBundledMigrationsSql } from "./migrate"
 
 /** The folder for a migration by its name (the part after the kit's timestamp prefix). */
@@ -164,19 +165,8 @@ describe("migrations", () => {
 // WASM engine + replaying every migration is ~5s on CI runners (well over
 // vitest's 5s default), so the whole `it` is bounded at 30s.
 describe("bundled migrations", () => {
-	const SYNCED_TABLES = [
-		"dashboards",
-		"alert_rules",
-		"alert_rule_states",
-		"alert_incidents",
-		// Wave 1 (`electric_publication_wave1`)
-		"alert_destinations",
-		// API-key live reads (`electric_publication_api_keys`)
-		"api_keys",
-		// Investigation detail page (`electric_publication_investigations`);
-		// its lane table was dropped again by `drop_investigation_lanes`.
-		"investigations",
-	]
+	// Every table the electric-sync whitelist reads, and nothing else.
+	const SYNCED_TABLES = PUBLISHED_TABLES
 
 	// Published by the first two waves, then pruned by `electric_publication_prune` once
 	// their client collections were removed. Asserted explicitly so re-adding a table to the publication without a

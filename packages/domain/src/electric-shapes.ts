@@ -1,11 +1,11 @@
 // BOUNDARY-FILE: This module owns unparsed external values and narrows them before domain use.
-import { Schema, Record as Rec } from "effect"
+import { Schema, Array as Arr, Record as Rec } from "effect"
 
 /**
  * The server-pinned shape whitelist and the predicates over it.
  *
- * This module is the *policy* half of the proxy: what a client is allowed to ask
- * for. It is pure data plus total functions, so every rule here is unit-testable
+ * This module is the *policy* half of the electric-sync proxy: what a client is allowed
+ * to ask for. The dashboard names its shapes and the db tests derive the publication from it. It is pure data plus total functions, so every rule here is unit-testable
  * without a runtime — which is the point, since these definitions are the tenant
  * and secret-column boundary.
  */
@@ -142,6 +142,11 @@ const SUBSCRIPTION_DEFS: Record<SubscriptionName, SubscriptionDefinition> = SUBS
 
 /** Every whitelisted shape, so tests can assert invariants across the whole set. */
 export const SUBSCRIPTION_NAMES = Rec.keys(SUBSCRIPTIONS) as ReadonlyArray<SubscriptionName>
+
+/** The tables `electric_publication_default` must publish: exactly those some shape reads. */
+export const PUBLISHED_TABLES: ReadonlyArray<string> = Arr.dedupe(
+	Arr.map(SUBSCRIPTION_NAMES, (subscription) => SUBSCRIPTION_DEFS[subscription].table),
+)
 
 /**
  * The shape selector as a schema, so the whitelist is a literal union rather than

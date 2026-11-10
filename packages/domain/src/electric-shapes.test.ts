@@ -5,7 +5,7 @@ import {
 	lookupSubscription,
 	SUBSCRIPTION_NAMES,
 	subscriptionScopeColumn,
-} from "./registry"
+} from "./electric-shapes"
 import { String as Str } from "effect"
 
 describe("isShapeName", () => {

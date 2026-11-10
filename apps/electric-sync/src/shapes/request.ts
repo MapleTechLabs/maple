@@ -5,7 +5,7 @@ import {
 	type SubscriptionName,
 	SubscriptionNameSchema,
 	subscriptionScopeColumn,
-} from "./registry"
+} from "@maple/domain/electric-shapes"
 
 /**
  * A WHERE predicate and the value it binds, as one thing.
