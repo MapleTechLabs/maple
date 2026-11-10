@@ -185,10 +185,9 @@ import { LinearIssueTracker } from "./LinearIssueTracker"
 import { MobilePushService, type ResolvedAfterHold } from "@maple/backend/services/push/MobilePushService"
 import { AlertRuntime } from "./AlertRuntime"
 import { firstMatchingSilence, selectActiveSilences, type MatchedSilence } from "./alert-silence-store"
-import { AlertDestinationsService, type AlertDestinationsServiceApi } from "./AlertDestinationsService"
 import { makeAlertDestinationDelivery, parseAlertDestinationEncryptionKey } from "./AlertDestinationDelivery"
-import { AlertReadModelsService, type AlertReadModelsServiceApi } from "./AlertReadModelsService"
-import { AlertRulesService, makeAlertRulePersistence, type AlertRulesServiceApi } from "./AlertRulesService"
+import { AlertReadModelsService } from "./AlertReadModelsService"
+import { makeAlertRulePersistence } from "./AlertRulesService"
 import { UptimeAlertSource } from "@maple/backend/services/uptime/UptimeAlertSource"
 import { SloAlertSource } from "@maple/backend/services/slos/SloAlertSource"
 import { AnomalyAlertSource, type AnomalyAlertObservation } from "./anomaly/AnomalyAlertSource"
@@ -553,8 +552,8 @@ const parseDeliveryPayload = (
 
 // Formatting helpers imported from AlertDeliveryDispatch
 
-export interface AlertsServiceApi
-	extends AlertDestinationsServiceApi, AlertReadModelsServiceApi, AlertRulesServiceApi {
+/** The alert operations that span rules, destinations and evaluation; the rest live on the narrow services. */
+export interface AlertsServiceApi {
 	readonly updateRule: (
 		orgId: OrgId,
 		userId: UserId,
@@ -636,9 +635,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 		make: Effect.gen(function* () {
 			const database = yield* Database
 			const env = yield* Env
-			const destinations = yield* AlertDestinationsService
 			const readModels = yield* AlertReadModelsService
-			const rules = yield* AlertRulesService
 			const queryEngine = yield* QueryEngineService
 			const warehouse = yield* WarehouseQueryService
 			const runtime = yield* AlertRuntime
@@ -6288,27 +6285,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 
 			// `AlertsService.of(...)` can't be used here — referencing the class inside
 			// its own `make` is a TS2506 circular base-expression error.
-			return {
-				listDestinations: destinations.listDestinations,
-				createDestination: destinations.createDestination,
-				updateDestination: destinations.updateDestination,
-				deleteDestination: destinations.deleteDestination,
-				listTelegramChats: destinations.listTelegramChats,
-				testDestination: destinations.testDestination,
-				listRules: rules.listRules,
-				createRule: rules.createRule,
-				updateRule,
-				deleteRule: rules.deleteRule,
-				testRule,
-				previewRule,
-				listIncidents: readModels.listIncidents,
-				getIncident: readModels.getIncident,
-				listIncidentEscalations: readModels.listIncidentEscalations,
-				listRuleChecks: readModels.listRuleChecks,
-				summarizeRuleChecks: readModels.summarizeRuleChecks,
-				listDeliveryEvents: readModels.listDeliveryEvents,
-				runSchedulerTick,
-			} satisfies AlertsServiceApi
+			return { updateRule, testRule, previewRule, runSchedulerTick } satisfies AlertsServiceApi
 		}),
 	},
 ) {
@@ -6324,9 +6301,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 				WarehouseQueryService.layer,
 				EmailService.layer,
 				QueryEngineService.layer,
-				AlertDestinationsService.layer,
 				AlertReadModelsService.layer,
-				AlertRulesService.layer,
 				UptimeAlertSource.layer,
 				SloAlertSource.layer,
 				AnomalyAlertSource.layer,

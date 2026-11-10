@@ -30,7 +30,7 @@ import {
 } from "@maple/domain/primitives"
 import { EmailService } from "@maple/backend/platform/EmailService"
 import { OrgMembersService, type OrgMember } from "@maple/backend/services/org/OrgMembersService"
-import { AlertsService, type AlertsServiceApi } from "./AlertsService"
+import { type AlertsServiceApi } from "./AlertsService"
 import { AlertIncidentPagesService } from "./AlertIncidentPagesService"
 import { ChatAlertPoster } from "./ChatAlertPoster"
 import { EscalationChainsService } from "./EscalationChainsService"
@@ -47,6 +47,7 @@ import {
 	stubEmailService,
 	stubOrgMembersService,
 	tracesRow,
+	alertServices,
 } from "./alerts-service-test-support"
 
 const trackedDbs: TestDb[] = []
@@ -380,7 +381,7 @@ const setup = (
 	} = {},
 ) =>
 	Effect.gen(function* () {
-		const alerts = yield* AlertsService
+		const alerts = yield* alertServices
 		const chains = yield* EscalationChainsService
 		const orgId = asOrgId(orgName)
 		const team = yield* alerts.createDestination(

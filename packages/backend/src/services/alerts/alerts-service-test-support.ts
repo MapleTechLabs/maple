@@ -31,11 +31,11 @@ import {
 import type { WarehouseQueryServiceApi } from "@maple/backend/services/warehouse/WarehouseQueryService"
 import { WarehouseQueryService } from "@maple/backend/services/warehouse/WarehouseQueryService"
 import { AlertRuntime, type AlertRuntimeApi, AlertsService, type AlertsServiceApi } from "./AlertsService"
-import { AlertDestinationsService } from "./AlertDestinationsService"
-import { AlertReadModelsService } from "./AlertReadModelsService"
+import { AlertDestinationsService, type AlertDestinationsServiceApi } from "./AlertDestinationsService"
+import { AlertReadModelsService, type AlertReadModelsServiceApi } from "./AlertReadModelsService"
 import { AlertSilencesService } from "./AlertSilencesService"
 import { AlertMaintenanceWindowsService } from "./AlertMaintenanceWindowsService"
-import { AlertRulesService } from "./AlertRulesService"
+import { AlertRulesService, type AlertRulesServiceApi } from "./AlertRulesService"
 import { SloAlertSource } from "@maple/backend/services/slos/SloAlertSource"
 import { UptimeAlertSource } from "@maple/backend/services/uptime/UptimeAlertSource"
 import { AnomalyAlertSource } from "@maple/backend/services/alerts/anomaly/AnomalyAlertSource"
@@ -348,9 +348,7 @@ export const makeLayer = (
 		Layer.provide(orgMembersLive),
 		Layer.provide(orgChSettingsLive),
 		Layer.provide(investigationsLive),
-		Layer.provide(alertDestinationsLive),
 		Layer.provide(alertReadModelsLive),
-		Layer.provide(alertRulesLive),
 		Layer.provide(
 			Layer.mergeAll(UptimeAlertSource.layer, AnomalyAlertSource.layer).pipe(
 				Layer.provide(databaseLive),
@@ -379,6 +377,22 @@ export const makeLayer = (
 	).pipe(Layer.provideMerge(Layer.succeed(FetchHttpClient.Fetch, fetchImpl)))
 }
 
+/** The alert services a suite drives, read off one value so a test need not yield four. */
+export type AlertServices = AlertsServiceApi &
+	AlertDestinationsServiceApi &
+	AlertRulesServiceApi &
+	AlertReadModelsServiceApi
+
+export const alertServices = Effect.gen(function* () {
+	const services: AlertServices = {
+		...(yield* AlertDestinationsService),
+		...(yield* AlertRulesService),
+		...(yield* AlertReadModelsService),
+		...(yield* AlertsService),
+	}
+	return services
+})
+
 export const asOrgId = Schema.decodeUnknownSync(OrgId)
 export const asUserId = Schema.decodeUnknownSync(UserId)
 export const asRoleName = Schema.decodeUnknownSync(RoleName)
@@ -387,7 +401,7 @@ export const adminRoles = [asRoleName("root")]
 export const memberRoles = [asRoleName("org:member")]
 
 export const createWebhookDestination = (
-	alerts: AlertsServiceApi,
+	alerts: AlertServices,
 	orgId: ReturnType<typeof asOrgId>,
 	userId: ReturnType<typeof asUserId>,
 ) =>
@@ -405,7 +419,7 @@ export const createWebhookDestination = (
 	)
 
 export const createErrorRateRule = (
-	alerts: AlertsServiceApi,
+	alerts: AlertServices,
 	orgId: ReturnType<typeof asOrgId>,
 	userId: ReturnType<typeof asUserId>,
 	destinationId: AlertDestinationId,

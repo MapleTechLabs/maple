@@ -687,15 +687,12 @@ const alertRuleStubs = {
 /** Inert rule capability for harnesses that never touch alert-rule CRUD. */
 export const AlertRulesServiceStubLayer = Layer.succeed(AlertRulesService, alertRuleStubs)
 
-/** Inert AlertsService facade for harnesses that never touch the alert groups. */
+/** Inert alert services for harnesses that never touch the alert groups. */
 export const AlertsServiceStubLayer = Layer.mergeAll(
 	AlertDestinationsServiceStubLayer,
 	AlertReadModelsServiceStubLayer,
 	AlertRulesServiceStubLayer,
 	Layer.succeed(AlertsService, {
-		...alertDestinationStubs,
-		...alertReadModelStubs,
-		...alertRuleStubs,
 		updateRule: die,
 		testRule: die,
 		previewRule: die,

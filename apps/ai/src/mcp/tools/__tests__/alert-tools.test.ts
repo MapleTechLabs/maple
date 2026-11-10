@@ -37,6 +37,7 @@ import {
 } from "@maple/domain/mcp-outputs"
 import { AlertRulesService } from "@maple/backend/services/alerts/AlertRulesService"
 import { AlertsService } from "@maple/backend/services/alerts/AlertsService"
+import { AlertDestinationsService } from "@maple/backend/services/alerts/AlertDestinationsService"
 import { AlertReadModelsService } from "@maple/backend/services/alerts/AlertReadModelsService"
 import { AlertIncidentPagesService } from "@maple/backend/services/alerts/AlertIncidentPagesService"
 import { EscalationChainsService } from "@maple/backend/services/alerts/EscalationChainsService"
@@ -282,6 +283,8 @@ const layer = (seen: Seen) =>
 							}),
 				)
 			},
+		} as never),
+		Layer.succeed(AlertDestinationsService, {
 			listDestinations: () =>
 				Effect.succeed(
 					Schema.decodeSync(AlertDestinationsListResponse)({

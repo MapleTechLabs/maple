@@ -1,6 +1,7 @@
 import type { AuditLogService } from "@maple/backend/services/audit/AuditLogService"
 import type { AgentFeedbackService } from "@maple/backend/services/feedback/AgentFeedbackService"
 import type { AlertsService } from "@maple/backend/services/alerts/AlertsService"
+import type { AlertDestinationsService } from "@maple/backend/services/alerts/AlertDestinationsService"
 import type { AlertReadModelsService } from "@maple/backend/services/alerts/AlertReadModelsService"
 import type { AlertIncidentAckService } from "@maple/backend/services/alerts/AlertIncidentAckService"
 import type { AlertIncidentPagesService } from "@maple/backend/services/alerts/AlertIncidentPagesService"
@@ -52,6 +53,7 @@ import type { CurrentMcpTenant } from "../lib/query-warehouse"
 export type McpToolRuntimeRequirements =
 	| AgentFeedbackService
 	| AlertsService
+	| AlertDestinationsService
 	| AuditLogService
 	| DependencyScanReader
 	| AlertReadModelsService

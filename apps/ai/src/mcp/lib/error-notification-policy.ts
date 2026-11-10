@@ -6,7 +6,7 @@ import { Effect, Option, Array as Arr } from "effect"
 import type { ErrorNotificationPolicyDocument, OrgId } from "@maple/domain/http"
 import { encodePublicId, PublicIdPrefixes } from "@maple/domain/http/v2"
 import type { ErrorNotificationPolicyOutput } from "@maple/domain/mcp-outputs"
-import { AlertsService } from "@maple/backend/services/alerts/AlertsService"
+import { AlertDestinationsService } from "@maple/backend/services/alerts/AlertDestinationsService"
 import {
 	EarlyPromotionsPerDay,
 	PROMOTION_MIN_OCCURRENCES,
@@ -20,7 +20,7 @@ export const policyOutput = Effect.fn("McpTool.errorNotificationPolicyOutput")(f
 	policy: ErrorNotificationPolicyDocument,
 	tool: string,
 ) {
-	const alerts = yield* AlertsService
+	const alerts = yield* AlertDestinationsService
 	// Names are a convenience: a failed lookup must not turn an already saved write into a failure.
 	const lookup = yield* alerts.listDestinations(orgId).pipe(
 		Effect.map((result) => result.destinations),

@@ -12,7 +12,7 @@ import { Array as Arr, Clock, Duration, Effect, Layer, Schema } from "effect"
 import { TestClock } from "effect/testing"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/platform/test-pglite"
-import { AlertsService, type AlertsServiceApi } from "./AlertsService"
+import { type AlertsServiceApi } from "./AlertsService"
 import { AlertSilencesService } from "./AlertSilencesService"
 import { AnomalyAlertSource } from "./anomaly/AnomalyAlertSource"
 import {
@@ -23,6 +23,7 @@ import {
 	createWebhookDestination,
 	makeLayer,
 	makeWarehouseStub,
+	alertServices,
 } from "./alerts-service-test-support"
 
 const trackedDbs: TestDb[] = []
@@ -155,7 +156,7 @@ describe("alert silences on anomaly rules", () => {
 		const { sent, layer } = harness()
 		return Effect.gen(function* () {
 			yield* TestClock.setTime(DEFAULT_CLOCK_EPOCH_MS)
-			const alerts = yield* AlertsService
+			const alerts = yield* alertServices
 			yield* createUnscopedAnomalyRule(alerts)
 			yield* insertCheckoutAnomaly
 			const created = yield* silence({ services: ["checkout"] })
@@ -179,7 +180,7 @@ describe("alert silences on anomaly rules", () => {
 		const { sent, layer } = harness()
 		return Effect.gen(function* () {
 			yield* TestClock.setTime(DEFAULT_CLOCK_EPOCH_MS)
-			const alerts = yield* AlertsService
+			const alerts = yield* alertServices
 			yield* createUnscopedAnomalyRule(alerts)
 			yield* insertCheckoutAnomaly
 			yield* silence({ services: ["payments"] })
@@ -197,7 +198,7 @@ describe("alert silences on anomaly rules", () => {
 		const { sent, layer } = harness()
 		return Effect.gen(function* () {
 			yield* TestClock.setTime(DEFAULT_CLOCK_EPOCH_MS)
-			const alerts = yield* AlertsService
+			const alerts = yield* alertServices
 			const silences = yield* AlertSilencesService
 			yield* createUnscopedAnomalyRule(alerts)
 			yield* insertCheckoutAnomaly

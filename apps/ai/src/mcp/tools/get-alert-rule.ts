@@ -4,7 +4,7 @@ import { Effect, Option, Schema, Array as Arr } from "effect"
 import { GetAlertRuleOutput } from "@maple/domain/mcp-outputs"
 import { CurrentMcpTenant } from "../lib/query-warehouse"
 import { AlertRulesService } from "@maple/backend/services/alerts/AlertRulesService"
-import { AlertsService } from "@maple/backend/services/alerts/AlertsService"
+import { AlertDestinationsService } from "@maple/backend/services/alerts/AlertDestinationsService"
 import { EscalationChainsService } from "@maple/backend/services/alerts/EscalationChainsService"
 import {
 	formatEscalationChains,
@@ -55,7 +55,7 @@ export function registerGetAlertRuleTool(server: McpToolRegistrar) {
 			if (!rule) return yield* ruleNotFound(params.rule_id)
 
 			// Names only decorate the ids, so a failed destination read still returns the rule.
-			const known = yield* (yield* AlertsService).listDestinations(tenant.orgId).pipe(
+			const known = yield* (yield* AlertDestinationsService).listDestinations(tenant.orgId).pipe(
 				Effect.map((r) => r.destinations),
 				Effect.orElseSucceed(() => undefined),
 			)

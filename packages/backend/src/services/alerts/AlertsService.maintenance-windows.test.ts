@@ -3,7 +3,7 @@ import { Array as Arr, Duration, Effect } from "effect"
 import { TestClock } from "effect/testing"
 import { AlertMaintenanceWindowCreateRequest, AlertMaintenanceWindowUpdateRequest } from "@maple/domain/http"
 import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/platform/test-pglite"
-import { AlertsService, type AlertsServiceApi } from "./AlertsService"
+import { type AlertsServiceApi } from "./AlertsService"
 import { AlertMaintenanceWindowsService } from "./AlertMaintenanceWindowsService"
 import { AlertSilencesService } from "./AlertSilencesService"
 import {
@@ -16,6 +16,7 @@ import {
 	makeLayer,
 	makeWarehouseStub,
 	tracesRow,
+	alertServices,
 } from "./alerts-service-test-support"
 
 const trackedDbs: TestDb[] = []
@@ -71,7 +72,7 @@ describe("maintenance windows hold back alerts", () => {
 		return Effect.gen(function* () {
 			// Tuesday 22:13:20 UTC: the 22:00 occurrence runs until 22:30.
 			yield* TestClock.setTime(DEFAULT_CLOCK_EPOCH_MS)
-			const alerts = yield* AlertsService
+			const alerts = yield* alertServices
 			const windows = yield* AlertMaintenanceWindowsService
 			const destination = yield* createWebhookDestination(alerts, orgId, userId)
 			yield* createErrorRateRule(alerts, orgId, userId, destination.id)
@@ -118,7 +119,7 @@ describe("maintenance windows hold back alerts", () => {
 		const { sent, layer } = setup()
 		return Effect.gen(function* () {
 			yield* TestClock.setTime(DEFAULT_CLOCK_EPOCH_MS)
-			const alerts = yield* AlertsService
+			const alerts = yield* alertServices
 			const windows = yield* AlertMaintenanceWindowsService
 			const destination = yield* createWebhookDestination(alerts, orgId, userId)
 			yield* createErrorRateRule(alerts, orgId, userId, destination.id)

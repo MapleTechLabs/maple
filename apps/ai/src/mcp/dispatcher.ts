@@ -8,6 +8,7 @@ import type { SandboxError } from "@maple/backend/sandbox/contract"
 import { RepoSandboxService, type RepositoryTarget } from "@maple/backend/services/sandbox/RepoSandboxService"
 
 import { AlertsService } from "@maple/backend/services/alerts/AlertsService"
+import { AlertDestinationsService } from "@maple/backend/services/alerts/AlertDestinationsService"
 
 import { AlertReadModelsService } from "@maple/backend/services/alerts/AlertReadModelsService"
 import { AlertIncidentAckService } from "@maple/backend/services/alerts/AlertIncidentAckService"
@@ -298,6 +299,7 @@ const MAX_PREPARED_REPOSITORIES = 3
  */
 const McpRuntimeServicesLive = Layer.mergeAll(
 	AgentFeedbackService.layer,
+	AlertDestinationsService.layer,
 	AlertReadModelsService.layer,
 	AlertIncidentAckService.layer,
 	AlertIncidentPagesService.layer,

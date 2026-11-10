@@ -66,7 +66,7 @@ export const makeAlertDestinationDelivery = (options: {
 	readonly postChatAlert: ChatAlertPosterApi["post"]
 	readonly linear: LinearDeliveryPort
 }) => {
-	const hydrateDestination = Effect.fn("AlertsService.hydrateDestination")(function* (
+	const hydrateDestination = Effect.fn("AlertDestinationDelivery.hydrateDestination")(function* (
 		row: DeliverableDestination,
 	) {
 		const { publicConfig, secretConfig } = yield* hydrateDestinationRow(row, options.encryptionKey, {
@@ -217,29 +217,33 @@ export const makeAlertDestinationDelivery = (options: {
 			),
 		)
 
-	const sendImmediateNotification = Effect.fn("AlertsService.sendImmediateNotification")(function* (
-		destinationRow: DeliverableDestination,
-		context: Omit<AlertDispatchContext, "destination" | "publicConfig" | "secretConfig">,
-	) {
-		const hydrated = yield* hydrateDestination(destinationRow)
-		const fullContext: AlertDispatchContext = {
-			destination: hydrated.row,
-			publicConfig: hydrated.publicConfig,
-			secretConfig: hydrated.secretConfig,
-			...context,
-		}
-		const payload = yield* buildPayload(fullContext, destinationRow.orgId)
-		const payloadJson = yield* Schema.encodeEffect(Schema.fromJsonString(Schema.Unknown))(payload).pipe(
-			Effect.mapError(
-				(cause) =>
-					new AlertDeliveryError({
-						message: `Unable to encode the delivery payload for rule ${context.ruleId}`,
-						cause,
-					}),
-			),
-		)
-		return yield* dispatchDelivery(fullContext, payloadJson)
-	})
+	const sendImmediateNotification = Effect.fn("AlertDestinationDelivery.sendImmediateNotification")(
+		function* (
+			destinationRow: DeliverableDestination,
+			context: Omit<AlertDispatchContext, "destination" | "publicConfig" | "secretConfig">,
+		) {
+			const hydrated = yield* hydrateDestination(destinationRow)
+			const fullContext: AlertDispatchContext = {
+				destination: hydrated.row,
+				publicConfig: hydrated.publicConfig,
+				secretConfig: hydrated.secretConfig,
+				...context,
+			}
+			const payload = yield* buildPayload(fullContext, destinationRow.orgId)
+			const payloadJson = yield* Schema.encodeEffect(Schema.fromJsonString(Schema.Unknown))(
+				payload,
+			).pipe(
+				Effect.mapError(
+					(cause) =>
+						new AlertDeliveryError({
+							message: `Unable to encode the delivery payload for rule ${context.ruleId}`,
+							cause,
+						}),
+				),
+			)
+			return yield* dispatchDelivery(fullContext, payloadJson)
+		},
+	)
 
 	return {
 		hydrateDestination,
