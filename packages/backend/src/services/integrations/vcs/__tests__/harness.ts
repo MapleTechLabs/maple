@@ -75,7 +75,6 @@ const testConfig = (extra?: Record<string, unknown>) =>
 
 export const testEnv = (extra?: Record<string, unknown>) => Env.layer.pipe(Layer.provide(testConfig(extra)))
 
-// VcsRepository over an in-memory PGlite TestDb + Env.
 export const testRepoLayer = (testDb: TestDb, extra?: Record<string, unknown>) =>
 	VcsRepository.layer.pipe(Layer.provide(testDb.layer), Layer.provide(testEnv(extra)))
 

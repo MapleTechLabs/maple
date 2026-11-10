@@ -80,7 +80,7 @@ const PushAuthor = Schema.Struct({
 })
 
 const PushCommit = Schema.Struct({
-	id: GitCommitSha, // validated at decode — the 40-hex shape lives in the brand
+	id: GitCommitSha,
 	message: Schema.String,
 	timestamp: Schema.optionalKey(Schema.String),
 	url: Schema.String,

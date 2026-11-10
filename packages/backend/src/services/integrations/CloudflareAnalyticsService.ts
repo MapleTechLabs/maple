@@ -262,8 +262,6 @@ const toWarehouseDateTime64 = (ms: number) => {
 	return `${d.getUTCFullYear()}-${pad(d.getUTCMonth() + 1)}-${pad(d.getUTCDate())} ${pad(d.getUTCHours())}:${pad(d.getUTCMinutes())}:${pad(d.getUTCSeconds())}.${pad(d.getUTCMilliseconds(), 3)}`
 }
 
-// Dataset registry — everything dataset-specific lives here; the poll pipeline is generic.
-
 interface PollWindow {
 	readonly start: number
 	readonly end: number
@@ -577,8 +575,6 @@ const DATASET_BY_ID = new Map(Arr.map(DATASETS, (dataset) => [dataset.id, datase
 const ZONE_DATASETS = Arr.filter(DATASETS, (dataset) => dataset.scope === "zone")
 const ACCOUNT_DATASETS = Arr.filter(DATASETS, (dataset) => dataset.scope === "account")
 
-// GraphQL error classification
-
 /** Classify GraphQL-level errors (HTTP 200 + errors[]) into the poller's reaction. */
 type GraphqlErrorKind = "authz" | "disabled" | "quantiles-unavailable" | "rate-limited" | "other"
 
@@ -698,8 +694,6 @@ const graphqlErrorMessage = (errors: ReadonlyArray<CloudflareGraphqlError>): str
 		),
 	)
 
-// Window math
-
 interface ParsedSettings {
 	readonly notOlderThanMs: number | null
 	readonly maxDurationMs: number | null
@@ -787,8 +781,6 @@ const backfillWindow = (row: CloudflareAnalyticsStateRow, now: number): PollWind
 	if (end <= start) return null
 	return { start, end }
 }
-
-// Round planning
 
 /** One dataset's slice of a batched GraphQL document. */
 interface WorkPart {
@@ -2130,8 +2122,6 @@ export class CloudflareAnalyticsService extends Context.Service<
 			yield* Effect.annotateCurrentSpan(chunkOutcomeAttributes(results))
 			return results
 		})
-
-		// Hyperdrive config inventory (discovery-cadence, service-map consumer)
 
 		/**
 		 * Upsert the org's Hyperdrive configs by `(orgId, configId)` and soft-delete rows whose

@@ -84,12 +84,7 @@ const mapCloudflareError = (error: unknown): CloudflareApiError => {
 	})
 }
 
-/**
- * Provide the credentials + HTTP layers to a distilled operation and run it. Errors are left untouched
- * so callers that need to branch on a specific tag (e.g. `JobNotFound` for delete idempotency) can do
- * so; most callers pipe the result through {@link runMapped}. Kept internal until a second consumer
- * (Phase 2 Workers provisioning) needs it exported.
- */
+/** Provide the credentials + HTTP layers to a distilled operation and run it, errors untouched. */
 const runWithToken = <A, E>(
 	accessToken: string,
 	effect: Effect.Effect<A, E, CloudflareRequirements>,

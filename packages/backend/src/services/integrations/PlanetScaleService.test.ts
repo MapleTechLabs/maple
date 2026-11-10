@@ -1159,8 +1159,8 @@ describe("deployRequestTimelineRows", () => {
 
 describe("PlanetScaleService pagination truncation", () => {
 	/**
-	 * Serve `total` synthetic items 100 per page so `fetchAllPages` sees ten
-	 * FULL pages and stops at its ceiling with no short page — a truncated
+	 * Serve `total` synthetic items 100 per page so `collectPages` sees ten
+	 * FULL pages and stops at its ceiling with no short page: a truncated
 	 * listing. Everything else behaves like `stubApi`.
 	 */
 	const stubTruncated = (options: {

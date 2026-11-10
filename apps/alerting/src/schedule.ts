@@ -68,6 +68,5 @@ export const ALERTING_CRONS: ReadonlyArray<AlertingCron> = Arr.filter(
 export const scheduleFor = (cron: string): CronSchedule | undefined =>
 	isAlertingCron(cron) ? ALERTING_SCHEDULE[cron] : undefined
 
-/** Whether `lane` is one of `cron`'s lanes. */
 export const isLaneOf = (cron: string, lane: string): lane is TickLane =>
 	scheduleFor(cron)?.lanes.includes(lane) ?? false

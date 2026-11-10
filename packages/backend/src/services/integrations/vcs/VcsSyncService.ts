@@ -62,7 +62,7 @@ import { summarizeCause } from "@maple/backend/platform/describe-cause"
 // The historical window every branch commit-sync walks — each tracked branch is
 // backfilled over the same span. Exported because the dashboard's "track a branch"
 // flow (GithubConnectService) enqueues the same jobs.
-export const BACKFILL_WINDOW_MS = 90 * 86_400_000 // 90 days
+export const BACKFILL_WINDOW_MS = 90 * 86_400_000
 // How many consecutive continuations may fetch zero commits (rate-limited before
 // any progress) before we give up. Bounds a permanently throttled installation:
 // a transient limit clears long before this, but a wedged one stops requeuing.
@@ -1129,8 +1129,6 @@ export class VcsSyncService extends Context.Service<VcsSyncService, VcsSyncServi
 					yield* Effect.annotateCurrentSpan({ "vcs.webhook.delivery_id": job.deliveryId })
 				}
 
-				// Resolve the installation once (external id → entity); every handler uses
-				// `installation.id` from here on.
 				const installationOpt = yield* repo.resolveInstallation(
 					job.provider,
 					job.externalInstallationId,

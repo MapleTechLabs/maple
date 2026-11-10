@@ -266,7 +266,6 @@ export class GcpConnectorService extends Context.Service<GcpConnectorService, Gc
 							.orderBy(["createdAt", "asc"], ["id", "asc"]),
 					),
 				)
-				// No connectors, nothing to count.
 				const counts =
 					rows.length === 0
 						? new Map<GcpConnectorId, number>()

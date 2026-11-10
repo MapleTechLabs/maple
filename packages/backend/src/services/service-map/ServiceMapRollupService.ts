@@ -36,7 +36,6 @@ const LOOKBACK_HOURS = CH.SERVICE_MAP_ROLLUP_LOOKBACK_HOURS
  */
 const ACTIVE_DISCOVERY_HOURS = LOOKBACK_HOURS + 2
 
-/** Concurrency for per-org rollup processing. */
 const ORG_CONCURRENCY = 4
 
 interface ServiceMapRollupResult {

@@ -1080,7 +1080,6 @@ export class PlanetScaleService extends Context.Service<PlanetScaleService, Plan
 						PG.from(PlanetscaleEvents)
 							.select()
 							.where(($) => [
-								// OrgId first, always.
 								$.orgId.eq(orgId),
 								$.occurredAt.gte(options.startTime),
 								$.occurredAt.lte(options.endTime),

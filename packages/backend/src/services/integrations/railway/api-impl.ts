@@ -67,7 +67,6 @@ const isTransient = (error: SdkError): boolean => {
 	)
 }
 
-/** Run one SDK query with the given token over the caller's HttpClient. */
 const run = <A>(
 	httpClient: HttpClient.HttpClient,
 	token: string,
@@ -92,10 +91,6 @@ const run = <A>(
 		Effect.provideService(HttpClient.HttpClient, httpClient),
 		Effect.annotateSpans("peer.service", "railway"),
 	)
-
-// ---------------------------------------------------------------------------
-// Discovery
-// ---------------------------------------------------------------------------
 
 const tokenWorkspaces = Query.fn(() =>
 	Railway.apiToken().workspaces.pipe(
@@ -192,10 +187,6 @@ export const discover = Effect.fn("RailwayApi.discover")(function* (
 		truncatedProjectIds,
 	} satisfies RailwayDiscovery
 })
-
-// ---------------------------------------------------------------------------
-// Metrics
-// ---------------------------------------------------------------------------
 
 export const RAILWAY_MEASUREMENTS = [
 	"CPU_USAGE",

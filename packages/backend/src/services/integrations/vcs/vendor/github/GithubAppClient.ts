@@ -251,7 +251,7 @@ const GithubApiCommitUser = Schema.Struct({
 })
 
 const GithubApiCommitSchema = Schema.Struct({
-	sha: GitCommitSha, // validated at decode — the 40-hex shape lives in the brand
+	sha: GitCommitSha,
 	html_url: Schema.String,
 	commit: Schema.Struct({
 		message: Schema.String,
@@ -281,7 +281,7 @@ const GithubApiCommitList = Schema.Array(GithubApiCommitSchema)
 
 const GithubApiBranchSchema = Schema.Struct({
 	name: Schema.String,
-	commit: Schema.Struct({ sha: GitCommitSha }), // 40-hex validated by the brand
+	commit: Schema.Struct({ sha: GitCommitSha }),
 })
 const GithubApiBranchList = Schema.Array(GithubApiBranchSchema)
 
@@ -1315,7 +1315,6 @@ export class GithubAppClient extends Context.Service<GithubAppClient>()(
 				}
 				const send = (init: GithubRequestInit) =>
 					rateLimitedFetch(tracedFetch(url, init, `${context} failed`))
-				// A DELETE sends no body, which `JSON.stringify(undefined)` used to express.
 				if (body === undefined) return send({ method, headers })
 				return encodeJsonBody(body, context).pipe(
 					Effect.flatMap((encoded) => send({ method, headers, body: encoded })),
@@ -2516,7 +2515,6 @@ export class GithubAppClient extends Context.Service<GithubAppClient>()(
 
 			// The two calls below prove the user owns the installation they're connecting.
 
-			// Trade the callback `code` for a short-lived user token.
 			const exchangeUserOAuthCode = Effect.fn("GithubAppClient.exchangeUserOAuthCode")(function* (
 				code: string,
 			) {

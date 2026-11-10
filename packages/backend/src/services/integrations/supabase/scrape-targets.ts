@@ -37,7 +37,6 @@ export const managedBySupabase = (connectionId: SupabaseConnectionId) => `supaba
 export const supabaseMetricsUrl = (apiBaseUrl: string, projectRef: string) =>
 	`${apiBaseUrl}/v1/projects/${projectRef}/analytics/endpoints/metrics`
 
-/** Whether a project's metrics should be scraped right now. */
 export const shouldScrape = (project: Pick<SupabaseProjectRow, "metricsEnabled" | "status" | "removedAt">) =>
 	project.removedAt === null && project.metricsEnabled && !NOT_RUNNING_STATUSES.has(project.status)
 
@@ -70,7 +69,6 @@ const sameLabels = (stored: ScrapeTargetRow["labelsJson"], desired: DesiredTarge
 	Rec.keys(stored).length === Rec.keys(desired).length &&
 	Arr.every(Rec.toEntries(desired), ([key, value]) => stored[key] === value)
 
-/** Whether a stored target already matches what its project wants. */
 const isCurrent = (target: ScrapeTargetRow, desired: DesiredTarget) =>
 	target.sourceId === desired.sourceId &&
 	target.name === desired.name &&

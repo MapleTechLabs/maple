@@ -143,8 +143,6 @@ const ok = () => new Response("", { status: 200 })
 const dispatch = (context: DispatchContext, fetchFn: typeof fetch, payloadJson = "{}") =>
 	dispatchDelivery(context, payloadJson, fetchFn, 5_000, LINK, CHAT, noDeps)
 
-/* -------------------------------------------------------------------------- */
-
 describe("dispatchDelivery: pagerduty", () => {
 	const context = contextFor({ type: "pagerduty", integrationKey: "R0UT1NGK3Y" })
 
