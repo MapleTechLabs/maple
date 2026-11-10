@@ -47,9 +47,7 @@ export function writeClipboardFallback(text: string): boolean {
 
 /**
  * Write `text` through `navigator.clipboard`, falling back to the hidden
- * textarea when the API is missing or rejects. React callers should prefer
- * `useCopy`, which routes through the platform `ClipboardAPI` first so a
- * `ClipboardProvider` override still applies.
+ * textarea when the API is missing or rejects.
  */
 export async function writeClipboardText(text: string): Promise<boolean> {
 	if (!text) return false

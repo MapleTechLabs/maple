@@ -1,9 +1,5 @@
 import { Array as Arr, Option, String as Str } from "effect"
 import { codeUnitAt } from "@maple/strings"
-/**
- * Chart color Tailwind classes for depth-based coloring in visualizations.
- * Maps to Tailwind classes: bg-chart-1 through bg-chart-5
- */
 /** Neutral color for the aggregated "Other" bucket of a chart. */
 export const OTHER_COLOR = "var(--muted-foreground)"
 
@@ -15,10 +11,6 @@ export const CHART_BG_CLASSES = [
 	"bg-chart-5",
 ] as const
 
-/**
- * Get a chart background color class based on depth level.
- * Cycles through chart-1 to chart-5 based on depth % 5.
- */
 export function getDepthColorClass(depth: number): string {
 	return cyclic(CHART_BG_CLASSES, depth)
 }
@@ -27,9 +19,6 @@ export function getDepthColorClass(depth: number): string {
 const cyclic = <A>(items: Arr.NonEmptyReadonlyArray<A>, index: number): A =>
 	items[((index % items.length) + items.length) % items.length] ?? Arr.headNonEmpty(items)
 
-/**
- * Simple hash function for strings
- */
 function hashString(str: string): number {
 	let hash = 0
 	for (let i = 0; i < str.length; i++) {
@@ -65,7 +54,6 @@ const SERVICE_HUES: Arr.NonEmptyReadonlyArray<number> = [
  * Extract class name from span name pattern "Class.FunctionName" or "Class::FunctionName"
  */
 export function extractClassName(spanName: string): string | null {
-	// Match patterns like "Class.Method", "Namespace.Class.Method", "Class::Method"
 	return Option.getOrNull(
 		Option.map(
 			Option.orElse(Str.match(/^(.+?)\.[\w]+$/)(spanName), () => Str.match(/^(.+?)::[\w]+$/)(spanName)),
@@ -192,7 +180,6 @@ export function calculateSelfTime(
 		Arr.map(children, (child) => {
 			const childStartMs = new Date(child.startTime).getTime() + (child.clockSkewMs ?? 0)
 			const childEndMs = childStartMs + child.durationMs
-			// Clamp to parent span boundaries
 			return {
 				start: Math.max(childStartMs, spanStartMs),
 				end: Math.min(childEndMs, spanEndMs),
@@ -203,7 +190,6 @@ export function calculateSelfTime(
 
 	if (childIntervals.length === 0) return span.durationMs
 
-	// Merge overlapping intervals
 	childIntervals.sort((a, b) => a.start - b.start)
 	const merged: Array<{ start: number; end: number }> = []
 

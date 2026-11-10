@@ -232,8 +232,7 @@ export function formatBucketLabel(
 
 	const includeDate = context.rangeMs >= 24 * 60 * 60 * 1000 || (context.bucketSeconds ?? 0) >= 24 * 60 * 60
 	const includeSeconds = context.rangeMs <= 30 * 60 * 1000 && !includeDate
-	// The viewer's selected zone when the chart sits under a `PlotTimeZoneProvider`;
-	// the browser's otherwise.
+	// The viewer's selected zone when the caller passes one; the browser's otherwise.
 	const timeZone = context.timeZone
 	// The browser's locale unless the caller read one (Foldkit views stay pure).
 	const locale = context.locale
