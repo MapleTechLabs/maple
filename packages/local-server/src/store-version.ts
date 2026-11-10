@@ -7,7 +7,7 @@
 // activated.
 
 import { createHash, randomUUID } from "node:crypto"
-import { existsSync, readFileSync, statSync, unlinkSync } from "node:fs"
+import { existsSync, readFileSync, unlinkSync } from "node:fs"
 import { basename, dirname, join, resolve } from "node:path"
 import { Effect, Schema, SchemaGetter, Array as Arr, String as Str } from "effect"
 import { CHDB_VERSION } from "./version"
@@ -173,14 +173,6 @@ export const newerStoreSchemaVersion = (dataDir: string, currentVersion: number)
 		? marker.schemaVersion
 		: undefined
 }
-
-/** Modification time of a file in ms, or undefined when it is missing. */
-export const fileModifiedAtMs = (path: string): number | undefined =>
-	Effect.runSync(
-		Effect.try({ try: () => statSync(path).mtimeMs, catch: syscallError }).pipe(
-			Effect.orElseSucceed(() => undefined),
-		),
-	)
 
 // Clean-shutdown sentinel. Present from the moment chDB opens successfully until
 // it closes cleanly. It is deliberately separate from the migration journal:
