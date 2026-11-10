@@ -1,4 +1,4 @@
-import type { WhereClauseAutocompleteValues } from "../../../lib/query-builder/where-clause-autocomplete"
+import type { WhereClauseAutocompleteValues } from "../../kit/query-builder/where-clause-autocomplete"
 import { Option, Array as Arr } from "effect"
 import type { PageContext } from "../../contract"
 import type { QueryDraft } from "../../kit/query-builder/draft"

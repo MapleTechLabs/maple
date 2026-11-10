@@ -1,5 +1,5 @@
 import type { ErrorIssueDetailResponse } from "@maple/domain/http"
-import { errorIssueDetailFromV2 } from "../../../lib/services/error-issues"
+import { errorIssueDetailFromV2 } from "../../../data/error-issues"
 import { Option, Array as Arr } from "effect"
 import { AsyncData, Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"

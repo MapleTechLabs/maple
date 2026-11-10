@@ -1,5 +1,5 @@
 import { OrgId as OrgIdSchema, type OrgId } from "@maple/domain"
-import { isClerkAuthEnabled } from "./lib/services/common/auth-mode"
+import { isClerkAuthEnabled } from "./platform/auth-mode"
 import { validateInternalRedirect } from "@maple/ui/lib/sanitizers"
 import { Option, Schema, Struct, Array as Arr } from "effect"
 import { AsyncData, Command, Update } from "foldkit"

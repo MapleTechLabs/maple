@@ -4,7 +4,7 @@ import {
 	getLapsedPlan,
 	getPastDueSubscription,
 	getQuotaStatus,
-} from "../lib/billing/plan-gating"
+} from "../page/kit/billing/plan-gating"
 import { Effect, Option } from "effect"
 import { Command } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"

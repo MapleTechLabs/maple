@@ -19,7 +19,8 @@ import { pageHeroParts } from "../../../infra/kit/page-parts"
 import { pageTime } from "../../../kit/page-time"
 import { listToolbar, toolbarStat } from "../../../kit/list-toolbar"
 import type { DatabaseList, DatabaseStat, PlanetscaleStatus } from "../data"
-import { formatLag, formatStoragePercent, lagTone, utilizationTone } from "../metrics"
+import { lagTone, utilizationTone } from "../metrics"
+import { formatLag, formatStoragePercent } from "@maple/views/charts/planetscale-metric-series"
 import {
 	inventoryIsStale,
 	inventoryNotice,

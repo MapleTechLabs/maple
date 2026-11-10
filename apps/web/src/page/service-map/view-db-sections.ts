@@ -14,12 +14,8 @@ import { cn } from "@maple/ui/lib/utils"
 import { Option, Array as Arr, String as Str } from "effect"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import {
-	formatLag,
-	formatStoragePercent,
-	lagClass,
-	utilizationClass,
-} from "../infra-integrations/planetscale/metrics"
+import { lagClass, utilizationClass } from "../infra-integrations/planetscale/metrics"
+import { formatLag, formatStoragePercent } from "@maple/views/charts/planetscale-metric-series"
 import type { LoadFailure } from "@maple/views/data/load-failure"
 import { AppRoute, hrefOf } from "../../route"
 import { alert, alertDescription, alertTitle } from "@maple/views/ui/alert"

@@ -1,6 +1,5 @@
 import { reloadSpin } from "@maple/views/data/timing"
 import { RequestMode } from "@maple/views/data/keyed"
-import { readLocalStorage, writeLocalStorage } from "@maple/ui/lib/local-storage"
 import { formatWarehouseDateTime, snapRangeForCache } from "@maple/query-engine"
 import {
 	getPlanetScaleBranchStats,
@@ -9,25 +8,24 @@ import {
 	getServiceMapCloudflare,
 	getServiceMapPlanetScale,
 } from "@maple/web-data/warehouse/service-map"
-import { Clock, Effect, Option, Schema, Array as Arr } from "effect"
+import { Clock, Effect, Schema, Array as Arr } from "effect"
 import { Command } from "foldkit"
 import { loadServicesFacets } from "../../data/services-facets-probe"
 import { settleTo } from "@maple/views/data/load-failure"
 import { resolveWindow, TimeWindow } from "../../data/time-range"
 import { MapleApiV2Client, MapleInternalApiClient } from "../../platform/api-clients"
-import { Snapshot, ViewPrefs } from "@maple/views/service-map/map/state"
+import {
+	readStored,
+	saveStoredLayout,
+	saveStoredPrefs,
+	Stored,
+	type StoredKeys,
+} from "@maple/views/service-map/map/state"
 import { loadSignalPresences } from "../kit/signal-presence"
 import { ApplyWorldOpsRequest, WorldOp } from "@maple/domain/http"
 import { Applied, type BatchOutcome, Conflicted, Rejected } from "./factory/edits"
 import { Message } from "./message"
-import {
-	BranchStats,
-	CloudflareStats,
-	DbSummary,
-	MapBundle,
-	PlanetScaleStats,
-	Stored as StoredSchema,
-} from "./model"
+import { BranchStats, CloudflareStats, DbSummary, MapBundle, PlanetScaleStats } from "./model"
 
 const FACETS_RANGE_MS = 24 * 60 * 60 * 1000
 
@@ -59,45 +57,26 @@ export const ResolveWindow = Command.define("ResolveServiceMapWindow", {
 		),
 })
 
-const layoutKey = (orgId: string) => `maple.service-map.layout.${orgId}`
-const prefsKey = (orgId: string) => `maple.service-map.view-prefs.${orgId}`
-
-const LayoutJson = Schema.fromJsonString(Schema.Struct({ snapshots: Schema.Array(Snapshot) }))
-const PrefsJson = Schema.fromJsonString(ViewPrefs)
-
-const readJson = <A>(key: string, schema: Schema.Decoder<A>): Option.Option<A> =>
-	Option.flatMap(readLocalStorage(key), (raw) => Schema.decodeOption(schema)(raw))
+const storedKeys = (orgId: string): StoredKeys => ({
+	layout: `maple.service-map.layout.${orgId}`,
+	prefs: `maple.service-map.view-prefs.${orgId}`,
+})
 
 export const ReadStored = Command.define("ReadServiceMapStored", {
 	args: { orgId: Schema.String },
 	messages: [Message.CompletedReadStored],
 	execute: ({ orgId }) =>
-		Effect.sync(() =>
-			Message.CompletedReadStored({
-				stored: {
-					prefs: Option.getOrElse(readJson(prefsKey(orgId), PrefsJson), () => ({
-						minTrafficPct: 0,
-						collapsedNamespaces: [],
-					})),
-					snapshots: Option.match(readJson(layoutKey(orgId), LayoutJson), {
-						onNone: () => [],
-						onSome: (layout) => layout.snapshots,
-					}),
-				},
-			}),
-		),
+		Effect.sync(() => Message.CompletedReadStored({ stored: readStored(storedKeys(orgId)) })),
 })
 
 export const SaveStored = Command.define("SaveServiceMapStored", {
-	args: { orgId: Schema.String, stored: StoredSchema },
+	args: { orgId: Schema.String, stored: Stored },
 	messages: [Message.CompletedSaveStored],
 	execute: ({ orgId, stored }) =>
-		Effect.gen(function* () {
-			const prefs = yield* Schema.encodeEffect(PrefsJson)(stored.prefs)
-			const layout = yield* Schema.encodeEffect(LayoutJson)({ snapshots: stored.snapshots })
-			writeLocalStorage(prefsKey(orgId), prefs)
-			writeLocalStorage(layoutKey(orgId), layout)
-		}).pipe(Effect.ignore, Effect.as(Message.CompletedSaveStored())),
+		Effect.all([
+			saveStoredPrefs(storedKeys(orgId), stored.prefs),
+			saveStoredLayout(storedKeys(orgId), stored.snapshots),
+		]).pipe(Effect.as(Message.CompletedSaveStored())),
 })
 
 // Each fetch carries its request key back so `update` drops a superseded answer.

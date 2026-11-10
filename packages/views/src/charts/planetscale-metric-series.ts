@@ -13,8 +13,11 @@ export const METRIC_LABELS = {
 	replicaLagMaxSeconds: "Replica lag (max)",
 } as const satisfies Record<PlanetScaleMetric, string>
 
-const formatLag = (seconds: number) => formatDuration(seconds * 1000)
-const formatStoragePercent = (percent: number) =>
+/** Replica lag reads in seconds once it is a real problem, milliseconds while it isn't. */
+export const formatLag = (seconds: number): string => formatDuration(seconds * 1000)
+
+/** Storage used as a whole percentage: the number people quote about a full disk. */
+export const formatStoragePercent = (percent: number) =>
 	`${percent >= 99.5 || percent < 10 ? percent.toFixed(1) : percent.toFixed(0)}%`
 
 export const formatMetricValue = (value: number, metric: PlanetScaleMetric): string => {

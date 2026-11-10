@@ -1,4 +1,4 @@
-import { deriveHostStatus, severityLevel } from "../../../../components/infra/format"
+import { deriveHostStatus, severityLevel } from "../../kit/format"
 import type { HostScope } from "./message"
 import type { HostRow } from "./model"
 import { Array as Arr, String as Str } from "effect"

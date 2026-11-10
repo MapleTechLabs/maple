@@ -1,4 +1,4 @@
-import type { WhereClauseAutocompleteValues } from "../../../lib/query-builder/where-clause-autocomplete"
+import type { WhereClauseAutocompleteValues } from "./where-clause-autocomplete"
 import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import * as Combobox from "@maple/views/ui/combobox"

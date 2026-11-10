@@ -17,8 +17,8 @@ import {
 } from "@maple/domain/billing"
 import { formatCurrency } from "@maple/domain/format"
 import { spendLimitFor } from "./controls"
-import { sentenceCasePlanName } from "./plans"
-import { formatQuoteUnits, quoteUnits } from "./usage"
+import { sentenceCasePlanName } from "../../kit/billing/plans"
+import { formatQuoteUnits, quoteUnits } from "../../kit/billing/usage"
 import { Array as Arr, Option, Record as Rec, String as Str } from "effect"
 
 /**

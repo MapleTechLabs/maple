@@ -1,19 +1,15 @@
-import { REPLAY_BLOCK_CLASS } from "../../components/common/replay-privacy"
-import {
-	agentSetupPrompt,
-	ONBOARD_SKILL_COMMAND,
-	onboardSkillPrompt,
-} from "../../components/ingest/onboard-skill"
+import { REPLAY_BLOCK_CLASS } from "./replay-privacy"
+import { agentSetupPrompt, ONBOARD_SKILL_COMMAND, onboardSkillPrompt } from "./onboard-skill"
 import {
 	type FrameworkId,
 	fillSnippet,
 	type SdkSnippet,
 	type SnippetBlock,
 	sdkSnippets,
-} from "../../components/quick-start/sdk-snippets"
-import { type DocsPage, docsUrl } from "../../lib/docs"
+} from "./sdk-snippets"
+import { type DocsPage, docsUrl } from "./docs"
 import type { Lang } from "@maple/views/lib/highlight"
-import { ingestUrl } from "../../lib/services/common/ingest-url"
+import { ingestUrl } from "../../platform/ingest-url"
 import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { button } from "@maple/views/ui/button"

@@ -1,4 +1,4 @@
-import { writeClipboardFallback } from "@maple/ui/lib/clipboard"
+import { writeClipboard } from "@maple/ui/lib/clipboard"
 import { cn } from "@maple/ui/lib/utils"
 import {
 	copyButtonStatusStyles,
@@ -31,7 +31,12 @@ import { icon, type IconName } from "./icon"
 export const CopyStatus = Schema.Literals(["idle", "copied", "error"])
 export type CopyStatus = typeof CopyStatus.Type
 
-const COPY_TIMEOUT = Duration.millis(2000)
+/** How long a finished copy holds its `copied`/`error` status before it reads idle again. */
+export const COPY_STATUS_HOLD = Duration.millis(2000)
+
+/** `message` once a finished copy's status hold is over: every copy's reset command answers it. */
+export const afterCopyStatusHold = <A>(message: A): Effect.Effect<A> =>
+	Effect.as(Effect.sleep(COPY_STATUS_HOLD), message)
 
 export const Model = Schema.Struct({ status: CopyStatus, generation: Schema.Finite })
 export type Model = typeof Model.Type
@@ -46,33 +51,6 @@ export const Message = defineMessageUnion({
 })
 export type Message = typeof Message.Type
 
-export class ClipboardWriteError extends Schema.TaggedError<ClipboardWriteError>()(
-	"@maple/web/ClipboardWriteError",
-	{ message: Schema.String, cause: Schema.Defect() },
-) {}
-
-/** `navigator.clipboard.writeText` as an Effect, failing with `ClipboardWriteError`. */
-export const writeClipboardApi = (text: string): Effect.Effect<void, ClipboardWriteError> =>
-	Effect.tryPromise({
-		try: () => navigator.clipboard.writeText(text),
-		catch: (cause) => new ClipboardWriteError({ message: "The clipboard API refused the write", cause }),
-	})
-
-/** Whether the text reached the clipboard. */
-export const writeClipboard = (text: string): Effect.Effect<boolean> =>
-	writeClipboardApi(text).pipe(
-		Effect.as(true),
-		// A rejected clipboard API falls back to the `execCommand` textarea write.
-		Effect.catch(() =>
-			Effect.try({
-				try: () => writeClipboardFallback(text),
-				catch: (cause) =>
-					new ClipboardWriteError({ message: "The fallback clipboard write failed", cause }),
-			}),
-		),
-		Effect.orElseSucceed(() => false),
-	)
-
 export const WriteClipboard = Command.define("WriteClipboard", {
 	args: { text: Schema.String, generation: Schema.Finite },
 	messages: [Message.SucceededCopy, Message.FailedCopy],
@@ -85,8 +63,7 @@ export const WriteClipboard = Command.define("WriteClipboard", {
 export const WaitCopyStatus = Command.define("WaitCopyStatus", {
 	args: { generation: Schema.Finite },
 	messages: [Message.ElapsedCopyStatus],
-	execute: ({ generation }) =>
-		Effect.sleep(COPY_TIMEOUT).pipe(Effect.as(Message.ElapsedCopyStatus({ generation }))),
+	execute: ({ generation }) => afterCopyStatusHold(Message.ElapsedCopyStatus({ generation })),
 })
 
 const settled = (model: Model, generation: number, status: CopyStatus): Update.Return<Model, Message> =>

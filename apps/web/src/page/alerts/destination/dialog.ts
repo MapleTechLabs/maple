@@ -26,7 +26,7 @@ import { Effect, Option, Result, Schema, Stream, Array as Arr, String as Str } f
 import { Command, type Update } from "foldkit"
 import { defineMessageUnion } from "foldkit/message"
 import type { ChatWorkspaceId } from "@maple/primitives"
-import { isClerkAuthEnabled } from "../../../lib/services/common/auth-mode"
+import { isClerkAuthEnabled } from "../../../platform/auth-mode"
 import { toLoadFailure } from "@maple/views/data/load-failure"
 import { MapleApiV2Client } from "../../../platform/api-clients"
 import type { Resources } from "../../../platform/resources"

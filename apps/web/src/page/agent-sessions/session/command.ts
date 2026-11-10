@@ -1,12 +1,13 @@
 import { AiSessionSpanCursor } from "@maple/domain/http"
 import { getAiSessionSpans, getAiSessionSummary } from "@maple/web-data/warehouse/ai-sessions"
 import { snapTimestamp } from "@maple/web-data/lib/time-range"
-import { Clock, Duration, Effect, Schema } from "effect"
+import { Clock, Effect, Schema } from "effect"
 import { Command } from "foldkit"
 import { settleTo } from "@maple/views/data/load-failure"
 import { TimeWindow } from "../../../data/time-range"
 import { detectModels } from "../kit/detected-models"
-import { writeClipboard } from "../../kit/clipboard"
+import { writeClipboard } from "@maple/ui/lib/clipboard"
+import { afterCopyStatusHold } from "@maple/views/ui/copy-button"
 import { readLocale } from "@maple/views/lib/locale"
 import { Message, SpanScope } from "./message"
 import { parseMarkdownTexts } from "../../kit/message-response"
@@ -128,8 +129,7 @@ export const RunCodeAction = Command.define("RunAgentSessionCodeAction", {
 export const WaitCodeCopied = Command.define("WaitAgentSessionCodeCopied", {
 	args: { generation: Schema.Number },
 	messages: [Message.ElapsedCodeCopied],
-	execute: ({ generation }) =>
-		Effect.sleep(Duration.millis(2000)).pipe(Effect.as(Message.ElapsedCodeCopied({ generation }))),
+	execute: ({ generation }) => afterCopyStatusHold(Message.ElapsedCodeCopied({ generation })),
 })
 
 /** "Check the Tools section": brings the Overview's ledger into view. */

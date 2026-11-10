@@ -10,15 +10,10 @@ import {
 	LinkBillingOrgRequest,
 } from "@maple/domain/http"
 import { OrgId } from "@maple/domain"
-import { buildCheckoutSuccessUrl } from "../../../lib/billing/checkout-return"
-import { hasSelectedPlan } from "../../../lib/billing/plan-gating"
-import {
-	parseCapInput,
-	spendLimitFor,
-	uncappedFeatures,
-	updateFeatureControls,
-} from "../../../lib/billing/controls"
-import { buildSpendModel, SPEND_FEATURES, type SpendModel } from "../../../lib/billing/spend"
+import { buildCheckoutSuccessUrl } from "../../kit/billing/checkout-return"
+import { hasSelectedPlan } from "../../kit/billing/plan-gating"
+import { parseCapInput, spendLimitFor, uncappedFeatures, updateFeatureControls } from "./controls"
+import { buildSpendModel, SPEND_FEATURES, type SpendModel } from "./spend"
 import { NetworkErrorBody } from "@maple/web-data/lib/error-messages"
 import {
 	Cause,

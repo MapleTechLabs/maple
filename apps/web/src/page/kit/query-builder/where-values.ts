@@ -1,5 +1,5 @@
 import { QUERY_BUILDER_METRIC_TYPES } from "@maple/query-model"
-import type { WhereClauseAutocompleteValues } from "../../../lib/query-builder/where-clause-autocomplete"
+import type { WhereClauseAutocompleteValues } from "./where-clause-autocomplete"
 import type { Keyed } from "@maple/views/data/keyed"
 import type { LoadFailure } from "@maple/views/data/load-failure"
 import { Option } from "effect"

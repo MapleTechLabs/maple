@@ -1,7 +1,7 @@
 import { Array as Arr } from "effect"
 import { DATA_SOURCE_KINDS, type DataSourceKind } from "@maple/domain/data-sources"
 import type { IconName } from "@maple/views/ui/icon"
-import { docsUrl } from "../../lib/docs"
+import { docsUrl } from "./docs"
 import type { IntegrationBrand } from "./integration-empty"
 
 // The integration providers: each one's name, mark, accent, docs and infra page, read by the

@@ -1,6 +1,6 @@
 import { encodeJson, requestKey } from "@maple/views/data/request-key"
 import { Array as Arr, String as Str } from "effect"
-import { podKey } from "../../../../components/infra/pod-restarts"
+import { podKey } from "../pod-restarts"
 import { AsyncData, Command } from "foldkit"
 import * as Keyed from "@maple/views/data/keyed"
 import type { TimeWindow } from "../../../../data/time-range"

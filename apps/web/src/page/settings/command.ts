@@ -4,7 +4,7 @@ import {
 	organizationFeatureFlagsFrom,
 } from "@maple/domain/organization-feature-flags"
 import * as Policy from "@maple/domain/policy"
-import { isClerkAuthEnabled } from "../../lib/services/common/auth-mode"
+import { isClerkAuthEnabled } from "../../platform/auth-mode"
 import { NetworkErrorBody } from "@maple/web-data/lib/error-messages"
 import { Duration, Effect, Schema } from "effect"
 import { Command } from "foldkit"

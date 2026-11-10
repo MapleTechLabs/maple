@@ -1,6 +1,6 @@
 import { decodeLogAttributeFilter, logAttributeQueryFilters } from "@maple/views/lib/log-attribute-filters"
 import type { AttributeFilter } from "@maple/domain"
-import { attributeChipText, toQueryAttributeFilter } from "../../../lib/query-builder/where-clause-filters"
+import { attributeChipText, toQueryAttributeFilter } from "../../kit/where-clause-filters"
 import { clauseParams } from "./advanced-filter-sync"
 import { SEVERITY_ORDER } from "@maple/ui/lib/severity"
 import type { CustomChartTimeSeriesInput } from "@maple/web-data/warehouse/custom-charts"

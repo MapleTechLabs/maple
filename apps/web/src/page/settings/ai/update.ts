@@ -1,6 +1,6 @@
 import { OPENROUTER_BYOK_ADDON_ID } from "@maple/domain/billing"
 import { AiTriageSettingsUpdateRequest, AttachRequest, OpenRouterKeyUpdateRequest } from "@maple/domain/http"
-import { buildCheckoutSuccessUrl } from "../../../lib/billing/checkout-return"
+import { buildCheckoutSuccessUrl } from "../../kit/billing/checkout-return"
 import { limitsUpdate } from "../kit/ai-triage-limits"
 import { Effect, Option, Result, Schema, String as Str } from "effect"
 import { AsyncData, Command } from "foldkit"

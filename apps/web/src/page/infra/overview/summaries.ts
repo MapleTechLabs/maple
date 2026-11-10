@@ -23,18 +23,14 @@ import {
 	gcpWorkloadName,
 	gcpWorkloadTone,
 	type GcpFleetService,
-} from "../../../page/infra-integrations/gcp/tabs"
-import type { ContainerScopeCounts } from "../container-scopes"
-import { HOST_LIST_LIMIT, countHostScopes, hostPeak } from "../host-scopes"
+} from "../../infra-integrations/gcp/tabs"
+import type { ContainerScopeCounts } from "../kit/container-scopes"
+import { HOST_LIST_LIMIT, countHostScopes, hostPeak } from "../kit/host-scopes"
 import type { ListHostsResponse } from "@maple/domain/http"
-import {
-	formatLag,
-	formatStoragePercent,
-	lagTone,
-	utilizationTone,
-} from "../../../page/infra-integrations/planetscale/metrics"
-import { railwayInScope } from "../../../page/infra-integrations/railway/railway-scope"
-import type { Tone } from "../severity-tokens"
+import { lagTone, utilizationTone } from "../../infra-integrations/planetscale/metrics"
+import { formatLag, formatStoragePercent } from "@maple/views/charts/planetscale-metric-series"
+import { railwayInScope } from "../../infra-integrations/railway/railway-scope"
+import type { Tone } from "../../kit/severity-tokens"
 import { replaceWith } from "@maple/strings"
 
 type HostRow = ListHostsResponse["data"][number]

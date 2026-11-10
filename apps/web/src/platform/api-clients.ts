@@ -1,12 +1,9 @@
 import { MapleAiApi, MapleApi, MapleInternalApi } from "@maple/domain/http"
 import { MapleApiV2 } from "@maple/domain/http/v2"
-import {
-	isResignedOnUnauthorized,
-	transformMapleApiClient,
-} from "../lib/services/common/api-client-transform"
-import { apiBaseUrl } from "../lib/services/common/api-base-url"
-import { withRequestTimeout } from "../lib/services/common/http-client"
-import { withUnauthorizedResign } from "../lib/services/common/retry-policy"
+import { isResignedOnUnauthorized, transformMapleApiClient } from "./api-client-transform"
+import { apiBaseUrl } from "./api-base-url"
+import { withRequestTimeout } from "./http-client"
+import { withUnauthorizedResign } from "./retry-policy"
 import { Context, Effect, Layer, Option, String as Str } from "effect"
 import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/http"
 import { HttpApiClient } from "effect/http-api"

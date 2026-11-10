@@ -1,5 +1,5 @@
-import { ingestUrl } from "../../lib/services/common/ingest-url"
-import { getOnboardingSetupHint } from "../../lib/onboarding-intent"
+import { ingestUrl } from "../../platform/ingest-url"
+import { getOnboardingSetupHint } from "../onboarding/onboarding-intent"
 import { AsyncData, Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import type { LoadFailure } from "@maple/views/data/load-failure"

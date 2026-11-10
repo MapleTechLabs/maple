@@ -11,7 +11,7 @@ import {
 	pluralize,
 } from "@maple/ui/lib/format"
 import type { Tone } from "@maple/ui/lib/tone"
-import { formatUtilizationPercent } from "../../../../components/infra/format"
+import { formatUtilizationPercent } from "../../../infra/kit/format"
 import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { AppRoute, hrefOf } from "../../../../route"

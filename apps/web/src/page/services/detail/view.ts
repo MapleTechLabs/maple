@@ -14,7 +14,8 @@ import { serviceDot } from "@maple/views/ui/values"
 import type { PageViewInputs } from "../../contract"
 import { dashboardPage } from "../../kit/dashboard-page"
 import { environmentEntries, environmentSwitcher } from "../../kit/environment-switcher"
-import { presetLabel, timeControls } from "../../kit/time-controls"
+import { timeControls } from "../../kit/time-controls"
+import { presetLabel } from "@maple/ui/lib/time-preset"
 import * as TimeRangePicker from "../../kit/time-range-picker"
 import {
 	ALL_ENVIRONMENTS,

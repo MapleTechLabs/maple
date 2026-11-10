@@ -8,15 +8,9 @@ import { skeleton } from "@maple/views/ui/skeleton"
 import { columnHead, dataTable, dataTableEmpty, skeletonRows, ROW_LINK_CLASS } from "../../../kit/data-table"
 import { type Sort, sortRowsByField } from "../../../kit/table-sort"
 import type { DatabaseStat } from "../data"
-import {
-	abnormalState,
-	formatLag,
-	formatStoragePercent,
-	lagClass,
-	MISSING,
-	utilizationClass,
-} from "../metrics"
-import { formatWholePercent } from "../../../../components/infra/format"
+import { abnormalState, lagClass, MISSING, utilizationClass } from "../metrics"
+import { formatLag, formatStoragePercent } from "@maple/views/charts/planetscale-metric-series"
+import { formatWholePercent } from "../../../infra/kit/format"
 import { Message, type SortKey } from "./model"
 import { typography } from "@maple/views/ui/typography"
 import { column, columnClass } from "@maple/views/ui/column"

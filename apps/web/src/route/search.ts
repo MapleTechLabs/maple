@@ -20,7 +20,7 @@ import {
 import { PushSourcePlatform } from "@maple/primitives"
 import { QUERY_BUILDER_METRIC_TYPES } from "@maple/query-model"
 import { TOOL_METRICS, TOOL_PERCENTILES } from "@maple/web-data/lib/tool-analytics"
-import { VARIABLE_PARAM_PREFIX } from "../lib/dashboard-controls/search-params"
+import { VARIABLE_PARAM_PREFIX } from "./dashboard-controls"
 import { HUB_SORTS, HUB_VIEWS, LEGACY_HUB_VIEWS, SEVERITY_FILTERS } from "../page/errors/hub/hub-params"
 
 /**

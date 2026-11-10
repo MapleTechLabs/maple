@@ -1,5 +1,5 @@
 import { retrieveIngestKeys } from "../data/ingest-keys"
-import { isOwnService } from "../lib/own-services"
+import { isOwnService } from "../page/kit/own-services"
 import { getServiceOverview } from "@maple/web-data/warehouse/services"
 import { Effect, Schema, Array as Arr } from "effect"
 import { Command, type Update } from "foldkit"

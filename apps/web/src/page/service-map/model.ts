@@ -13,7 +13,7 @@ import { LoadFailure } from "@maple/views/data/load-failure"
 import { TimeWindow } from "../../data/time-range"
 import { ServiceMapSearch } from "../../route/search"
 import * as ServiceMap from "@maple/views/service-map/map/service-map"
-import { Snapshot, ViewPrefs } from "@maple/views/service-map/map/state"
+import { Stored } from "@maple/views/service-map/map/state"
 import * as Select from "@maple/views/ui/select"
 import * as Tabs from "@maple/views/ui/tabs"
 import { SignalPresenceData } from "@maple/views/data/signal-presence"
@@ -61,10 +61,6 @@ export const HyperdriveConfig = Schema.Struct({
 	originUser: Schema.NullOr(Schema.String),
 })
 export type HyperdriveConfig = typeof HyperdriveConfig.Type
-
-/** What the page keeps in localStorage per org: declutter prefs and the layout snapshots. */
-export const Stored = Schema.Struct({ prefs: ViewPrefs, snapshots: Schema.Array(Snapshot) })
-export type Stored = typeof Stored.Type
 
 export const MapBundleSchema = Schema.instanceOf(MapBundle)
 export const CloudflareStatsSchema = Schema.instanceOf(CloudflareStats)

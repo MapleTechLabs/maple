@@ -3,7 +3,7 @@ import {
 	pickDashboardControlParams,
 	timeRangeParams,
 	variableValuesFromSearch,
-} from "../../../lib/dashboard-controls/search-params"
+} from "../../../route/dashboard-controls"
 import { behindToast } from "../kit/store"
 import { type DashboardDocument, DashboardRefreshIntervalSeconds } from "@maple/domain/http"
 import { Option, Result, Schema, Array as Arr, Record as Rec, String as Str } from "effect"

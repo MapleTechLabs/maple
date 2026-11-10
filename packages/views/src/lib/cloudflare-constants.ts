@@ -3,13 +3,7 @@ import { Array as Arr, Record as Rec } from "effect"
 // fixed color mappings for HTTP status classes and cache statuses, so the same
 // status never renders in two hues on one page.
 
-/**
- * The pooled tail of a high-cardinality breakdown. Both the poller (its per-window top-N tail) and
- * the API (every key outside the chart's top-N) write this same key, so the stack still totals to
- * the zone's attributed traffic and the legend carries exactly one "everything else" series.
- * Mirrors `CLOUDFLARE_BREAKDOWN_OTHER_KEY` in the query engine.
- */
-export const BREAKDOWN_OTHER_KEY = "other"
+/** Legend label for `CLOUDFLARE_BREAKDOWN_OTHER_KEY`, the pooled tail of a breakdown. */
 export const BREAKDOWN_OTHER_LABEL = "Other"
 
 // Status classes carry severity; cache statuses shade from "answered at the

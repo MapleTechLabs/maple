@@ -1,8 +1,8 @@
 import { formatCurrency } from "@maple/domain/format"
 import type { DailySpendResponse } from "@maple/domain/http"
 import { TONE_TEXT } from "@maple/ui/lib/tone"
-import type { TrialStatus } from "../../../lib/billing/plan-gating"
-import { sentenceCasePlanName } from "../../../lib/billing/plans"
+import type { TrialStatus } from "../../kit/billing/plan-gating"
+import { sentenceCasePlanName } from "../../kit/billing/plans"
 import {
 	buildCumulativeSeries,
 	costBreakdown,
@@ -10,7 +10,7 @@ import {
 	FEATURE_LABELS,
 	SPEND_FEATURES,
 	type SpendModel,
-} from "../../../lib/billing/spend"
+} from "./spend"
 import { formatDateInTimezone } from "@maple/ui/lib/timezone-format"
 import { Option, Array as Arr, Record as Rec } from "effect"
 import { AsyncData, Submodel } from "foldkit"

@@ -11,6 +11,7 @@
 
 import * as CH from "@maple-dev/effect-orm/expr"
 import { from, param, unionAll, type CHUnionQuery } from "@maple-dev/effect-orm/clickhouse"
+import { CLOUDFLARE_BREAKDOWN_OTHER_KEY } from "@maple/domain/cloud-platform"
 import * as Datasources from "@maple/domain/tinybird/datasources"
 import { orgIdParam } from "@maple/query-engine/ch/tables"
 import { ISO_Z_FORMAT, isoBucket } from "@maple/query-engine/ch/format"
@@ -99,16 +100,6 @@ export const CLOUDFLARE_BREAKDOWN_DIMENSIONS = Rec.keys(
  * chart's job is "which handful carries the traffic, and how did that shift" — six answers that.
  */
 export const CLOUDFLARE_BREAKDOWN_SERIES_LIMIT = 6
-
-/**
- * Bucket key the tail folds into once {@link CLOUDFLARE_BREAKDOWN_SERIES_LIMIT} is exceeded. Folded,
- * not dropped, so the stack still totals to the zone's attributed traffic.
- *
- * Deliberately the same literal the poller already writes for its own per-window tail
- * (`mapping.ts`): both mean "everything not listed individually", and giving them separate keys put
- * two indistinguishable `other` series next to each other in the legend.
- */
-export const CLOUDFLARE_BREAKDOWN_OTHER_KEY = "other"
 
 /** Metric families a breakdown reads — the handler feeds these to `cloudflareIgnoredFiltersFor`. */
 export const cloudflareBreakdownMetrics = (

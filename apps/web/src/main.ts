@@ -1,4 +1,4 @@
-import { isClerkAuthEnabled } from "./lib/services/common/auth-mode"
+import { isClerkAuthEnabled } from "./platform/auth-mode"
 import { Effect, Option, Schema } from "effect"
 import type { Runtime } from "foldkit"
 import type { Url } from "foldkit/url"

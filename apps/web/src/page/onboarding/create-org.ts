@@ -4,7 +4,7 @@ import { Cause, Effect, Option, Schema, String as Str } from "effect"
 import { Command, Mount, type Update } from "foldkit"
 import { defineMessageUnion } from "foldkit/message"
 import { suggestOrganizationName } from "./onboarding-org-name"
-import { currentRegion } from "../../lib/region"
+import { currentRegion } from "../../platform/region"
 import {
 	acceptUserInvitation,
 	type ClerkUser,

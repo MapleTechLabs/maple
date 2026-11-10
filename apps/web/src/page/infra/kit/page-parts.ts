@@ -1,4 +1,4 @@
-import type { DocsPage } from "../../../lib/docs"
+import type { DocsPage } from "../../kit/docs"
 import { countLabel as nounCount } from "@maple/ui/lib/format"
 import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"

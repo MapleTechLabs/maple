@@ -46,7 +46,7 @@ import {
 	RollSourceToken,
 	SaveSource,
 } from "./command"
-import { isClerkAuthEnabled } from "../../../lib/services/common/auth-mode"
+import { isClerkAuthEnabled } from "../../../platform/auth-mode"
 import { Message } from "./message"
 import { canManage, type Model, type SettingsForm } from "./model"
 

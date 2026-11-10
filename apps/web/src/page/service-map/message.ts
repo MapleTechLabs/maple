@@ -21,8 +21,8 @@ import {
 	MapBundleSchema,
 	PlanetScaleDatabase,
 	PlanetScaleStatsSchema,
-	Stored,
 } from "./model"
+import { Stored } from "@maple/views/service-map/map/state"
 
 const result = <A extends Schema.Top>(schema: A) => ({
 	key: Schema.String,

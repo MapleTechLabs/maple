@@ -1,6 +1,6 @@
 import type { RailwayServiceRow } from "@maple/web-data/warehouse/railway-infra"
 
-import { severityLevel } from "../../../components/infra/format"
+import { severityLevel } from "../../infra/kit/format"
 import { Array as Arr } from "effect"
 
 export type RailwayScope = "saturated" | "elevated" | "unbounded"

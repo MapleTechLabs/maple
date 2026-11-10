@@ -1,4 +1,4 @@
-import { severityLevel } from "../../../../components/infra/format"
+import { severityLevel } from "../../kit/format"
 import { formatPercent } from "@maple/ui/lib/format"
 import { AsyncData, Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"

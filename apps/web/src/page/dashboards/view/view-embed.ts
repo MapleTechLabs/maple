@@ -1,5 +1,5 @@
 import { ALL_VALUE, type ResolvedVariable } from "@maple/query-engine"
-import { REFRESH_INTERVAL_OPTIONS } from "../../../lib/dashboard-controls/search-params"
+import { REFRESH_INTERVAL_OPTIONS } from "../../../route/dashboard-controls"
 import { TONE_TEXT } from "@maple/ui/lib/tone"
 import { cn } from "@maple/ui/lib/utils"
 import { AsyncData } from "foldkit"

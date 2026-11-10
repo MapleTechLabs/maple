@@ -20,7 +20,7 @@ import {
 	formatProductEventsFilterClause,
 	hasProductEventsFilters,
 	parseProductEventsFilterClause,
-} from "../../../lib/query-builder/funnel-filters"
+} from "./funnel-filters"
 import {
 	dataSourceEndpoint,
 	dataSourceRouteParams,

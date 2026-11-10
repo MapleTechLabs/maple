@@ -1,4 +1,4 @@
-import { docsUrl } from "../../../lib/docs"
+import { docsUrl } from "../../kit/docs"
 import { AsyncData, Submodel } from "foldkit"
 import type { ChildAttribute, Html, HtmlBuilder } from "foldkit/html"
 import { button, linkButton } from "@maple/views/ui/button"

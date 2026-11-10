@@ -4,7 +4,7 @@ import {
 	type WhereClauseAutocompleteResult,
 	type WhereClauseAutocompleteScope,
 	type WhereClauseAutocompleteValues,
-} from "../../lib/query-builder/where-clause-autocomplete"
+} from "./query-builder/where-clause-autocomplete"
 import { Option, Array as Arr } from "effect"
 import { AsyncData, type Command } from "foldkit"
 import * as Keyed from "@maple/views/data/keyed"

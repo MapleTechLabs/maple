@@ -4,7 +4,7 @@ import type {
 	CloudflareWorkerOutcomeBucket,
 } from "@maple/web-data/warehouse/cloudflare-infra"
 import { shortId } from "@maple/ui/lib/ids"
-import type { ChartEventMarker } from "../../../components/infra/primitives/chart-event-marker"
+import type { ChartEventMarker } from "./chart-event-marker"
 import { Array as Arr, Order, Record as Rec, String as Str } from "effect"
 
 type StripRow = { bucket: string; attributeValue: string; value: number }

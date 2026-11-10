@@ -1,5 +1,5 @@
 import { gcpFleet } from "../../infra-integrations/gcp/tabs"
-import { HOST_LIST_LIMIT } from "../../../components/infra/host-scopes"
+import { HOST_LIST_LIMIT } from "../kit/host-scopes"
 import {
 	summarizeCloudflare,
 	summarizeContainers,
@@ -9,7 +9,7 @@ import {
 	summarizePods,
 	summarizeRailway,
 	summarizeSupabase,
-} from "../../../components/infra/overview/summaries"
+} from "./summaries"
 import { getCloudflareZones } from "@maple/web-data/warehouse/cloudflare-infra"
 import { getAwsInfraFleet } from "@maple/web-data/warehouse/aws-infra"
 import { getGcpInfraFleet } from "@maple/web-data/warehouse/gcp-infra"

@@ -1,12 +1,7 @@
 import { containerKeyOf, type DashboardDocument, ROOT_CONTAINER_KEY } from "@maple/domain/http"
 import { type GridGeometry, type Layout, normalizeLayout } from "@maple/grid-engine"
 import { groupWidgetsByContainer } from "@maple/widgets/dashboard"
-import {
-	GRID_ROW_HEIGHT,
-	type GridTier,
-	projectLayout,
-	tierForWidth,
-} from "../../../components/dashboard-builder/canvas/grid-breakpoints"
+import { GRID_ROW_HEIGHT, type GridTier, projectLayout, tierForWidth } from "../kit/grid-breakpoints"
 import type { Model } from "./model"
 import { Array as Arr, Option } from "effect"
 

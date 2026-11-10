@@ -1,5 +1,5 @@
 import { buildTimeseriesQuerySpec, createQueryDraft } from "@maple/query-engine/query-builder"
-import { getListPerformanceHints } from "../../../lib/query-builder/performance-hints"
+import { getListPerformanceHints } from "./performance-hints"
 import { AsyncData } from "foldkit"
 import { Option, Array as Arr } from "effect"
 import type { Html, HtmlBuilder } from "foldkit/html"

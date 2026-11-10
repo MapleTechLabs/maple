@@ -6,7 +6,7 @@ import {
 	REFRESH_INTERVAL_OPTIONS,
 	resolveRefreshIntervalSeconds,
 	variableValuesFromSearch,
-} from "../../lib/dashboard-controls/search-params"
+} from "../../route/dashboard-controls"
 import { Option, Schema, Array as Arr, Record as Rec } from "effect"
 import { Command } from "foldkit"
 import * as Chart from "@maple/views/charts/chart"
@@ -15,8 +15,8 @@ import { AppRoute, hrefOf } from "../../route"
 import { validTimeZone } from "../../platform/time-zone"
 import * as Menu from "@maple/views/ui/menu"
 import { type PageReturn, PageOutMessage } from "../contract"
-import { presetLabel } from "../kit/time-controls"
-import { withActiveTab, withSectionCollapsed } from "../../lib/dashboards/section-view-state"
+import { presetLabel } from "@maple/ui/lib/time-preset"
+import { withActiveTab, withSectionCollapsed } from "../dashboards/kit/section-view-state"
 import {
 	DATA_UNAVAILABLE_MESSAGE,
 	FetchBatch,

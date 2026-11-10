@@ -1,5 +1,5 @@
 import { createEffectCollection } from "@maple/effect-db/electric"
-import { electricSyncBaseUrl, electricSyncEnabled } from "../../lib/services/common/electric-sync-url"
+import { electricSyncBaseUrl, electricSyncEnabled } from "../../platform/electric-sync-url"
 import {
 	Context,
 	Duration,

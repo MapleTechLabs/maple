@@ -1,4 +1,4 @@
-import type { ErrorSignal } from "../../../lib/models/error-signal"
+import type { ErrorSignal } from "../kit/error-signal"
 import { Option, Array as Arr } from "effect"
 import { createKeyedLazy, type Html, type HtmlBuilder } from "foldkit/html"
 import { toLoadFailure } from "@maple/views/data/load-failure"

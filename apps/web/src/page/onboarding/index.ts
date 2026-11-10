@@ -1,5 +1,5 @@
 import { validateInternalRedirect } from "@maple/ui/lib/sanitizers"
-import { isClerkAuthEnabled } from "../../lib/services/common/auth-mode"
+import { isClerkAuthEnabled } from "../../platform/auth-mode"
 import { Effect, Option, Schema, String as Str, Array as Arr } from "effect"
 import { Command } from "foldkit"
 import { defineMessageUnion } from "foldkit/message"

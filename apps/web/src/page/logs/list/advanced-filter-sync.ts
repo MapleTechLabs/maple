@@ -3,7 +3,7 @@ import {
 	type AttributeFilterEntry,
 	type AttributeMaps,
 	parseFilterClauses,
-} from "../../../lib/query-builder/where-clause-filters"
+} from "../../kit/where-clause-filters"
 
 // The `/logs` advanced filter: a where clause mapped onto the logs URL params (the traces
 // counterpart is page/traces/advanced-filter-sync.ts).

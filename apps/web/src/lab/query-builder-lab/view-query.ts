@@ -3,7 +3,7 @@ import {
 	getPerformanceHints,
 	hasSlowHints,
 	slowHintsSummary,
-} from "../../lib/query-builder/performance-hints"
+} from "../../page/dashboards/widget/performance-hints"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { AsyncData } from "foldkit"
 import { Option, Array as Arr } from "effect"

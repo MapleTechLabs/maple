@@ -1,7 +1,8 @@
-import { Duration, Effect, Schema, Array as Arr } from "effect"
+import { Effect, Schema, Array as Arr } from "effect"
 import { Command, type Update } from "foldkit"
 import * as AttributesPanel from "@maple/views/ui/attributes/attributes-panel"
-import { type CopyStatus, writeClipboard } from "@maple/views/ui/copy-button"
+import { afterCopyStatusHold, type CopyStatus } from "@maple/views/ui/copy-button"
+import { writeClipboard } from "@maple/ui/lib/clipboard"
 import * as Dialog from "@maple/views/ui/dialog"
 import type { LogRecord } from "@maple/views/ui/logs/log-row-view"
 import * as Keyed from "@maple/views/data/keyed"
@@ -14,8 +15,6 @@ import { Message, type Model, OutMessage } from "./model"
 import { requestPanels } from "./panels"
 
 export type Return = Update.ReturnWithOutMessage<Model, Message, OutMessage, LogSource>
-
-const COPY_TIMEOUT = Duration.millis(2000)
 
 /** Each `CopyButton`'s `label`; the `CopyableValue`s pass none. */
 const COPY_LABELS = new Map([
@@ -53,8 +52,7 @@ export const WritePermalinkClipboard = Command.define("WritePermalinkClipboard",
 export const WaitDetailCopyStatus = Command.define("WaitDetailCopyStatus", {
 	args: { generation: Schema.Number },
 	messages: [Message.ElapsedCopyStatus],
-	execute: ({ generation }) =>
-		Effect.sleep(COPY_TIMEOUT).pipe(Effect.as(Message.ElapsedCopyStatus({ generation }))),
+	execute: ({ generation }) => afterCopyStatusHold(Message.ElapsedCopyStatus({ generation })),
 })
 
 const TABS_ID_BASE = 900

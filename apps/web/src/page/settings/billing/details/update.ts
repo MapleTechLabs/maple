@@ -5,8 +5,8 @@ import {
 	type BillingProfile,
 	UpdateBillingProfileRequest,
 } from "@maple/domain/http"
-import { fieldOrNull } from "../../../../lib/billing/billing-profile"
-import { countryName, sortedCountryCodes } from "../../../../lib/billing/countries"
+import { fieldOrNull } from "../billing-profile"
+import { countryName, sortedCountryCodes } from "../countries"
 import { Effect, Option, Result, Array as Arr, Record as Rec, String as Str, Predicate } from "effect"
 import { Command } from "foldkit"
 import { settleTo } from "@maple/views/data/load-failure"

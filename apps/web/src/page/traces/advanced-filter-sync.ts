@@ -4,12 +4,9 @@ import {
 	type AttributeFilterEntry,
 	type AttributeMaps,
 	parseFilterClauses,
-} from "../../lib/query-builder/where-clause-filters"
+} from "../kit/where-clause-filters"
 
-export {
-	type AttributeFilterEntry,
-	formatAttributeClause,
-} from "../../lib/query-builder/where-clause-filters"
+export { type AttributeFilterEntry, formatAttributeClause } from "../kit/where-clause-filters"
 
 export interface TracesSearchLike {
 	services?: string[]

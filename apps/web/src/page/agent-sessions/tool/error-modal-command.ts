@@ -3,7 +3,7 @@ import { getAiToolErrorDetail, getAiToolErrorSamples } from "@maple/web-data/war
 import { Effect, Option, Schema, Stream } from "effect"
 import { Command, Dom } from "foldkit"
 import { settleTo } from "@maple/views/data/load-failure"
-import { writeClipboard } from "../../kit/clipboard"
+import { writeClipboard } from "@maple/ui/lib/clipboard"
 import { Selection, toInput } from "../../kit/tools/reads"
 import { Message, type ModalKey } from "./error-modal-model"
 

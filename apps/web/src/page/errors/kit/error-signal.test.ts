@@ -6,7 +6,7 @@ import type { V2Investigation } from "@maple/domain/http/v2"
 
 import { ErrorIssueDocument } from "@maple/domain/http"
 
-import { buildErrorsLabFixture } from "../../lab/errors-fixture"
+import { buildErrorsLabFixture } from "../../../lab/errors-fixture"
 import {
 	buildErrorSignals,
 	densifySpark,

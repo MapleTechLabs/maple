@@ -7,7 +7,7 @@ import {
 	organizationRegionOpen,
 	organizationServedIn,
 } from "@maple/domain/organization-regions"
-import { currentRegion } from "../lib/region"
+import { currentRegion } from "./region"
 import { bootedClerk, type ClerkLoadError } from "./clerk-boot"
 import { Clock, Duration, Effect, Option, Predicate, Queue, Schema, Stream, Array as Arr } from "effect"
 

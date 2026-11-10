@@ -9,7 +9,7 @@ import { Command } from "foldkit"
 import * as Keyed from "@maple/views/data/keyed"
 import { toLoadFailure, settleTo } from "@maple/views/data/load-failure"
 import { MapleApiV2Client } from "../../../../platform/api-clients"
-import * as CopyButton from "@maple/views/ui/copy-button"
+import { writeClipboard } from "@maple/ui/lib/clipboard"
 import * as Dialog from "@maple/views/ui/dialog"
 import * as Field from "@maple/views/ui/field"
 import * as Select from "@maple/views/ui/select"
@@ -148,7 +148,5 @@ export const CopyPrompt = Command.define("CopyGcpPrompt", {
 	args: { text: Schema.String },
 	messages: [Message.CompletedGcpPromptCopy],
 	execute: ({ text }) =>
-		Effect.map(CopyButton.writeClipboard(text), (isCopied) =>
-			Message.CompletedGcpPromptCopy({ isCopied }),
-		),
+		Effect.map(writeClipboard(text), (isCopied) => Message.CompletedGcpPromptCopy({ isCopied })),
 })

@@ -1,4 +1,4 @@
-import type { InfraCorrelation } from "../../../components/infra/infra-correlations"
+import type { InfraCorrelation } from "./correlations"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import * as Chart from "@maple/views/charts/chart"

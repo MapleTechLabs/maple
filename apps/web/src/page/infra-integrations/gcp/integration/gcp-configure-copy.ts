@@ -1,6 +1,6 @@
 import type { GcpScopeType } from "@maple/primitives"
 import type { GcpCollectLock, GcpDraftEffect } from "../connector-state"
-import { docsUrl } from "../../../../lib/docs"
+import { docsUrl } from "../../../kit/docs"
 import type { Capability } from "./gcp-configure-schema"
 
 export const DOCS = docsUrl("gcp")

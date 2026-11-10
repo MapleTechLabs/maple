@@ -1,11 +1,16 @@
-import { isClerkAuthEnabled } from "../lib/services/common/auth-mode"
+import { isClerkAuthEnabled } from "../platform/auth-mode"
 import { Array, Equal, Option, Record, Struct } from "effect"
 import { AsyncData, Command, type Update } from "foldkit"
 import { modifyFields } from "foldkit/struct"
 import * as Dialog from "@maple/views/ui/dialog"
 import * as Tooltip from "@maple/views/ui/tooltip"
 import type { Resources } from "../platform/resources"
-import { integrationsAnswered, PENDING_INTEGRATIONS, settledSurfaces } from "../data/infra-surfaces"
+import {
+	integrationsAnswered,
+	NO_INTEGRATIONS_CONNECTED,
+	PENDING_INTEGRATIONS,
+	settledSurfaces,
+} from "../data/infra-surfaces"
 import {
 	FocusElement,
 	FocusSiblingMenuItem,
@@ -212,9 +217,6 @@ const toggleNavGroup = (model: Model, groupId: string): UpdateReturn => {
 		commands: [SaveCollapsedNavGroups({ groups })],
 	}
 }
-
-/** Every integration settled as not connected, as when the combined read failed. */
-const NOT_CONNECTED = Record.map(PENDING_INTEGRATIONS, () => false)
 
 /** `useInfraSurfaces`: the last hour's presence probe and every integration status, once. */
 const requestInfraSurfaces = (model: Model): UpdateReturn =>
@@ -547,7 +549,7 @@ const foldMessage = (model: Model, message: Message): UpdateReturn =>
 			surfacesAnswered(model, orgId, (current) =>
 				modifyFields(current, {
 					infraPresence: () => InfraPresenceData.Failure({ error: "Failed" }),
-					integrations: () => NOT_CONNECTED,
+					integrations: () => NO_INTEGRATIONS_CONNECTED,
 				}),
 			),
 		SucceededLoadSources: ({ orgId, sources }) =>

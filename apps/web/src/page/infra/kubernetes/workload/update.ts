@@ -1,5 +1,5 @@
 import { chartEnvHandlers } from "@maple/views/charts/chart-env"
-import { bucketSecondsForRange } from "../../../../components/infra/constants"
+import { bucketSecondsForRange } from "../../kit/constants"
 import * as Chart from "@maple/views/charts/chart"
 import { LoadChartRuntime } from "@maple/views/charts/chart-runtime"
 import * as Keyed from "@maple/views/data/keyed"

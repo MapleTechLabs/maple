@@ -1,5 +1,5 @@
 import type { AnomalyIncidentDocument, ErrorIssueDocument } from "@maple/domain/http"
-import { errorIssueFromV2 } from "../../../lib/services/error-issues"
+import { errorIssueFromV2 } from "../../../data/error-issues"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import * as Combobox from "@maple/views/ui/combobox"

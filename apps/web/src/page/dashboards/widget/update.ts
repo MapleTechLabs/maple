@@ -1,9 +1,6 @@
 import { encodeJson, requestKey } from "@maple/views/data/request-key"
 import { initWhereFields } from "../../kit/where-field"
-import {
-	pickDashboardControlParams,
-	variableValuesFromSearch,
-} from "../../../lib/dashboard-controls/search-params"
+import { pickDashboardControlParams, variableValuesFromSearch } from "../../../route/dashboard-controls"
 import {
 	computeBucketSecondsForWidthRange,
 	formatBucketSecondsShort,

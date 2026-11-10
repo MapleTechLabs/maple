@@ -1,4 +1,4 @@
-import { restartTone } from "../../../../components/infra/pod-restarts"
+import { restartTone } from "../pod-restarts"
 import { TONE_TEXT, type Tone } from "@maple/ui/lib/tone"
 import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"

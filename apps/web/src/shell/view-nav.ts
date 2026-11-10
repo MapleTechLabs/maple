@@ -1,4 +1,4 @@
-import { isClerkAuthEnabled } from "../lib/services/common/auth-mode"
+import { isClerkAuthEnabled } from "../platform/auth-mode"
 import { cn } from "@maple/ui/lib/utils"
 import { Option, Array as Arr, String as Str } from "effect"
 import type { InfraSurfaceLiteral } from "@maple/domain/http"

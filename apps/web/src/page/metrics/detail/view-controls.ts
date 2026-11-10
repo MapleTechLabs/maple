@@ -1,9 +1,6 @@
 import { getMetricsAggregations, type QueryBuilderMetricType } from "@maple/query-engine/query-builder"
 import { cn } from "@maple/ui/lib/utils"
-import {
-	tokenizeWhereClause,
-	WHERE_CLAUSE_TOKEN_COLOR,
-} from "../../../lib/query-builder/where-clause-highlight"
+import { tokenizeWhereClause, WHERE_CLAUSE_TOKEN_COLOR } from "../../kit/query-builder/where-clause-highlight"
 import { Option, Array as Arr } from "effect"
 import { AsyncData as FoldkitAsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"

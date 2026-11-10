@@ -12,7 +12,7 @@ import {
 } from "@maple/domain/gcp-infra"
 import type { GcpCloudSqlSettings, GcpResource } from "@maple/domain/http"
 
-import { appendWhereFilter } from "../../../components/metrics/where-filter"
+import { appendWhereFilter } from "./where-filter"
 import { encodeLogAttributeFilter } from "@maple/views/lib/log-attribute-filters"
 
 import { gcpWorkloadLocation, gcpWorkloadProject } from "./tabs"

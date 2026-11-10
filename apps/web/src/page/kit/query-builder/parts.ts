@@ -1,5 +1,5 @@
 import { GROUP_BY_OPTIONS } from "@maple/query-engine/query-builder"
-import type { WhereClauseAutocompleteValues } from "../../../lib/query-builder/where-clause-autocomplete"
+import type { WhereClauseAutocompleteValues } from "./where-clause-autocomplete"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import * as Combobox from "@maple/views/ui/combobox"
 import { chipsView } from "@maple/views/ui/combobox-view"

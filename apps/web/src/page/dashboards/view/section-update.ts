@@ -1,9 +1,5 @@
-import { pickDashboardControlParams } from "../../../lib/dashboard-controls/search-params"
-import {
-	type SectionViewSearch,
-	withActiveTab,
-	withSectionCollapsed,
-} from "../../../lib/dashboards/section-view-state"
+import { pickDashboardControlParams } from "../../../route/dashboard-controls"
+import { type SectionViewSearch, withActiveTab, withSectionCollapsed } from "../kit/section-view-state"
 import { Command } from "foldkit"
 import { AppRoute, hrefOf } from "../../../route"
 import * as Dialog from "@maple/views/ui/dialog"

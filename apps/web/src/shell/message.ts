@@ -13,6 +13,7 @@ import * as SupportChannel from "./support-channel"
 import { PinnedDashboardRow } from "./dashboards-shape"
 import * as Palette from "./palette/model"
 import { OnCallSnapshot } from "./oncall"
+import { INTEGRATION_IDS } from "../data/infra-surfaces"
 
 /** The shell's dropdown menus; a collapsed-rail section menu is keyed by its section title. */
 export const Menu = defineTaggedUnion({
@@ -23,7 +24,7 @@ export const Menu = defineTaggedUnion({
 })
 export type Menu = typeof Menu.Type
 
-export const Integration = Schema.Literals(["cloudflare", "railway", "planetscale", "gcp", "supabase", "aws"])
+export const Integration = Schema.Literals(INTEGRATION_IDS)
 export type Integration = typeof Integration.Type
 
 export const Theme = Schema.Literals(["light", "dark"])

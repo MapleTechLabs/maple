@@ -1,5 +1,5 @@
 import { readClock } from "@maple/views/data/timing"
-import { isClerkAuthEnabled } from "../../../lib/services/common/auth-mode"
+import { isClerkAuthEnabled } from "../../../platform/auth-mode"
 import { Command } from "foldkit"
 import { REVERIFICATION_CANCELLED } from "../../../platform/clerk"
 import { AppRoute, hrefOf } from "../../../route"

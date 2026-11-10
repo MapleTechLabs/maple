@@ -1,6 +1,6 @@
 import type { IssueSeverity } from "@maple/domain/http"
 import { formatNumber } from "@maple/ui/lib/format"
-import { densifySpark, surgeRatio } from "../../../lib/models/error-signal"
+import { densifySpark, surgeRatio } from "../kit/error-signal"
 import { Option, Array as Arr, Record as Rec } from "effect"
 import { Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"

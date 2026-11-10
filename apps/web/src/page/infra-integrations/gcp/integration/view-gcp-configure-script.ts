@@ -1,6 +1,6 @@
 import { countLabel } from "@maple/ui/lib/format"
 import { cn } from "@maple/ui/lib/utils"
-import { REPLAY_BLOCK_CLASS } from "../../../../components/common/replay-privacy"
+import { REPLAY_BLOCK_CLASS } from "../../../kit/replay-privacy"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { button } from "@maple/views/ui/button"
 import * as CopyButton from "@maple/views/ui/copy-button"

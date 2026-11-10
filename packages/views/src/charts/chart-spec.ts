@@ -199,7 +199,7 @@ export const ChartSpec = defineTaggedUnion({
 		color: Schema.String,
 		logScaleY: Schema.Boolean,
 	},
-	/** `InfraMetricChart` (apps/web/src/components/infra/primitives): the host and Kubernetes detail charts. */
+	/** `InfraMetricChart`: the host and Kubernetes detail charts. */
 	InfraMetric: {
 		rows: Schema.Array(
 			Schema.Struct({ bucket: Schema.String, attributeValue: Schema.String, value: Schema.Number }),

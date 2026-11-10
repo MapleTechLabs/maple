@@ -10,7 +10,7 @@ import { countTooltipBody } from "@maple/views/charts/histogram-chart"
 import { formatInterval } from "@maple/views/charts/histogram-format"
 import { plotFrame } from "@maple/views/charts/plot-frame"
 import { statsLegend } from "@maple/views/charts/plot-legend"
-import { muteColor } from "@maple/views/charts/sequential-colors"
+import { muteColor } from "@maple/views/charts/oklch"
 import { resolveColor, type ThemeColors } from "@maple/views/charts/theme-colors"
 
 // The pie and histogram spikes, canvas arm.

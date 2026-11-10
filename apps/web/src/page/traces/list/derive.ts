@@ -1,6 +1,6 @@
 import { encodeJson } from "@maple/views/data/request-key"
 import { Array as Arr, String as Str, Option } from "effect"
-import { attributeChipText } from "../../../lib/query-builder/where-clause-filters"
+import { attributeChipText } from "../../kit/where-clause-filters"
 import type { TracesSearch } from "../../../route/search"
 import type { Facet } from "./message"
 import { facetChipsOf } from "../../kit/facets"

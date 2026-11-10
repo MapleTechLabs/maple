@@ -1,5 +1,5 @@
-import { ONBOARDING_INTENT_IDS, type OnboardingIntent } from "../../lib/onboarding-intent"
-import { ONBOARDING_ROLE_IDS } from "../../lib/onboarding-role"
+import { ONBOARDING_INTENT_IDS, type OnboardingIntent } from "./onboarding-intent"
+import { ONBOARDING_ROLE_IDS } from "./onboarding-role"
 import {
 	frameworkOf,
 	intentsOf,

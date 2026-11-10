@@ -12,7 +12,7 @@ import { sourceRetrieveKey, sourcesListKey } from "../kit/data"
 import { defaultSourceName } from "../kit/platforms"
 import * as Rules from "../kit/rules"
 import * as Setup from "../kit/setup"
-import { isClerkAuthEnabled } from "../../../lib/services/common/auth-mode"
+import { isClerkAuthEnabled } from "../../../platform/auth-mode"
 import {
 	CreateSource,
 	FetchCreatedSource,

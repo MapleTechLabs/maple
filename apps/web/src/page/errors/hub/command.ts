@@ -16,7 +16,7 @@ import { MapleApiV2Client } from "../../../platform/api-clients"
 import { loadSignalPresences } from "../../kit/signal-presence"
 import { Message } from "./message"
 import { HubWrite, runHubWrite } from "./writes"
-import { writeClipboard } from "../../kit/clipboard"
+import { writeClipboard } from "@maple/ui/lib/clipboard"
 
 /** The warehouse side's filters: the trend window plus the sidebar's service and environment. */
 export const WarehouseFilters = Schema.Struct({
