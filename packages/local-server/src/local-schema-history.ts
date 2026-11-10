@@ -193,17 +193,21 @@ const historyEntry = (version: number): LocalSchemaHistoryEntry => {
 export const localSchemaHistory = (): ReadonlyArray<LocalSchemaHistoryEntry> =>
 	Arr.makeBy(LOCAL_SCHEMA_HISTORY_TIP + 1, historyEntry)
 
+const identities = new Map<number, LocalSchemaIdentity>()
+
 /**
  * The frozen identity of `version`. Historical migration edges must never point
  * at CURRENT_LOCAL_SCHEMA: when v10 ships, v0 -> v1 must still construct and
  * verify v1 rather than silently changing its destination.
  */
 export const localSchemaIdentity = (version: number): LocalSchemaIdentity => {
+	const cached = identities.get(version)
+	if (cached !== undefined) return cached
 	if (!Number.isInteger(version) || version < 0 || version > LOCAL_SCHEMA_HISTORY_TIP)
 		throw new Error(`local schema history has no entry for version ${version}`)
 	const entry = historyEntry(version)
 	// Key order is what journals serialize; keep it.
-	return Object.freeze({
+	const identity = Object.freeze({
 		version: entry.version,
 		fingerprint: entry.fingerprint,
 		digest: entry.digest,
@@ -211,6 +215,8 @@ export const localSchemaIdentity = (version: number): LocalSchemaIdentity => {
 		chdb: CHDB_VERSION,
 		projectRevision: entry.projectRevision,
 	})
+	identities.set(version, identity)
+	return identity
 }
 
 /** Immutable SQLite control DDL identities, checked by clickhouse:schema:check. */

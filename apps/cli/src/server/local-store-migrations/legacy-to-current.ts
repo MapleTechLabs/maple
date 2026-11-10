@@ -979,7 +979,10 @@ export const legacyToCurrentModule: LocalStoreMigrationModule<LegacyModuleState,
 	moduleVersion: 1,
 	description: "Rebuild the v1 local store from the known fingerprint-only legacy store",
 	from: LEGACY_LOCAL_SCHEMA,
-	to: localSchemaIdentity(1),
+	// Read on use: building it hashes the v1 snapshot, which no CLI command should pay at import.
+	get to() {
+		return localSchemaIdentity(1)
+	},
 	operations,
 	dispositions: knownDispositions,
 	decodeState: decodeLegacyState,

@@ -75,12 +75,12 @@ const LOCAL_SCHEMA_V1 = localSchemaIdentity(1)
 
 // Steps are table rows now; the decoding tests below exercise their compiled modules.
 const [v7ToV8AppleCrashFramesModule] = Arr.filter(
-	localStoreMigrations,
+	localStoreMigrations(),
 	(migration) => migration.id === "local-0007-to-0008-apple-crash-frames",
 )
 ok(v7ToV8AppleCrashFramesModule !== undefined)
 const [v10ToV11ProductEventsModule] = Arr.filter(
-	localStoreMigrations,
+	localStoreMigrations(),
 	(migration) => migration.id === "local-0010-to-0011-product-events",
 )
 ok(v10ToV11ProductEventsModule !== undefined)
@@ -666,13 +666,15 @@ describe("local migration registry", () => {
 			const match = /^local-(\d{4})-to-(\d{4})-[a-z0-9]+(-[a-z0-9]+)*$/.exec(id)
 			return { from: Number(match?.[1]), to: Number(match?.[2]) }
 		}
-		const ids = Arr.map(localStoreMigrations, (migration) => migration.id)
+		const ids = Arr.map(localStoreMigrations(), (migration) => migration.id)
 		expect(ids.slice(0, shipped.length)).toEqual(shipped)
 		expect(ids).toHaveLength(CURRENT_LOCAL_SCHEMA.version)
 		expect(Arr.map(LOCAL_STORE_STEPS, (step) => step.id)).toEqual(ids.slice(1))
-		expect(resolveMigrationChain(LEGACY_LOCAL_SCHEMA, CURRENT_LOCAL_SCHEMA)).toEqual(localStoreMigrations)
+		expect(resolveMigrationChain(LEGACY_LOCAL_SCHEMA, CURRENT_LOCAL_SCHEMA)).toEqual(
+			localStoreMigrations(),
+		)
 		for (const [index, step] of LOCAL_STORE_STEPS.entries()) {
-			const migration = localStoreMigrations[index + 1]
+			const migration = localStoreMigrations()[index + 1]
 			expect({ id: step.id, from: step.from, to: step.to }).toEqual({
 				id: step.id,
 				...versions(step.id),
@@ -1712,7 +1714,7 @@ describe("v10 -> v11 product events module", () => {
 		])
 		// The chain must reach v11 through this module and only this module.
 		const chain = resolveMigrationChain(localSchemaIdentity(10), CURRENT_LOCAL_SCHEMA)
-		expect(chain).toEqual(localStoreMigrations.slice(10))
+		expect(chain).toEqual(localStoreMigrations().slice(10))
 		expect(chain[0]?.to).toEqual(localSchemaIdentity(11))
 		// The dropped table is declared, and the backfilled ones say what they
 		// are rebuilt from.
