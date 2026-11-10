@@ -4,9 +4,12 @@ import {
 	baselineWarehouseCapabilities,
 	deriveWarehouseCapabilities,
 	hasWarehouseTable,
+	isMissingWarehouseTable,
 	logBodySearchMode,
 } from "./capabilities"
 import { Array as Arr } from "effect"
+import * as Datasources from "@maple/domain/tinybird/datasources"
+import { WarehouseConfigError, WarehouseQueryError } from "@maple/domain/http"
 
 const logsTextIndexes = [
 	{ table: "logs", name: "idx_lower_body_text", type: "text", expression: "lower(Body)" },
@@ -24,23 +27,48 @@ const logsTextColumns = [
 describe("warehouse capabilities", () => {
 	it("marks an optional rollup absent only when the columns probe saw traces", () => {
 		const probe = (columns: ReadonlyArray<{ table: string; name: string }>) =>
-			deriveWarehouseCapabilities({ indexes: [], columns, optionalTables: ["trace_facets_hourly"] })
+			deriveWarehouseCapabilities({
+				indexes: [],
+				columns,
+				optionalTables: [Datasources.traceFacetsHourly.name],
+			})
 
-		expect(hasWarehouseTable(probe([{ table: "traces", name: "TraceId" }]), "trace_facets_hourly")).toBe(
-			false,
-		)
+		expect(
+			hasWarehouseTable(probe([{ table: "traces", name: "TraceId" }]), Datasources.traceFacetsHourly),
+		).toBe(false)
 		expect(
 			hasWarehouseTable(
 				probe([
 					{ table: "traces", name: "TraceId" },
 					{ table: "trace_facets_hourly", name: "TraceCount" },
 				]),
-				"trace_facets_hourly",
+				Datasources.traceFacetsHourly,
 			),
 		).toBe(true)
 		// A denied or failed probe returns no rows and proves nothing.
-		expect(hasWarehouseTable(probe([]), "trace_facets_hourly")).toBe(true)
-		expect(hasWarehouseTable(baselineWarehouseCapabilities(), "trace_facets_hourly")).toBe(true)
+		expect(hasWarehouseTable(probe([]), Datasources.traceFacetsHourly)).toBe(true)
+		expect(hasWarehouseTable(baselineWarehouseCapabilities(), Datasources.traceFacetsHourly)).toBe(true)
+	})
+
+	it("treats a query-time missing-table error as missing only when it names the table", () => {
+		const isMissingMinutely = isMissingWarehouseTable(Datasources.serviceOverviewMinutely)
+		const missing = (table: string) =>
+			new WarehouseConfigError({
+				message: `Table default.${table} does not exist`,
+				pipeName: "tracesTimeseries",
+				clickhouseType: "UNKNOWN_TABLE",
+			})
+		expect(isMissingMinutely(missing("service_overview_minutely"))).toBe(true)
+		// Another missing table would fail the fallback read too: it surfaces.
+		expect(isMissingMinutely(missing("service_overview_hourly"))).toBe(false)
+		expect(
+			isMissingMinutely(
+				new WarehouseQueryError({
+					message: "Timeout exceeded reading service_overview_minutely",
+					pipeName: "tracesTimeseries",
+				}),
+			),
+		).toBe(false)
 	})
 
 	it("uses the conservative scan baseline when metadata is unavailable", () => {

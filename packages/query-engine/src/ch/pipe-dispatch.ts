@@ -12,6 +12,7 @@
 // consumed by `QueryEngineService` — same output opts, different input formats,
 // so the two adapters are not duplicates.
 
+import * as Datasources from "@maple/domain/tinybird/datasources"
 import type { TracesMetric, AttributeFilter, MetricType } from "@maple/domain/query-engine"
 import { DEFAULT_ERROR_NAMESPACE_PREFIX, UNEXPECTED_IDENTITY_MARKERS } from "./queries/errors"
 import type { OrgId } from "@maple/domain"
@@ -835,8 +836,8 @@ export function compilePipeQuery(
 				return isRollupTopOperationsMetric(metric) &&
 					serviceName !== "" &&
 					str("raw_only") !== "1" &&
-					hasWarehouseTable(capabilities, "service_operations_minutely") &&
-					hasWarehouseTable(capabilities, "service_operations_hourly")
+					hasWarehouseTable(capabilities, Datasources.serviceOperationsMinutely) &&
+					hasWarehouseTable(capabilities, Datasources.serviceOperationsHourly)
 					? eraseType(
 							compile(topOperationsRollupQuery({ metric, serviceName, limit, environment }), {
 								orgId,

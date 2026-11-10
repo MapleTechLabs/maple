@@ -8,6 +8,7 @@
 // ("QueryEngineService.*") so existing traces and dashboards keep matching.
 
 import * as CH from "../ch"
+import * as Datasources from "@maple/domain/tinybird/datasources"
 import {
 	QueryEngineExecuteResponse,
 	type QueryEngineAlertObservation,
@@ -67,6 +68,7 @@ import { rawBreakdownSpanVerdict, spanBudgetApplies } from "./breakdown-span-bud
 import {
 	attributeIndexMode,
 	hasWarehouseTable,
+	isMissingWarehouseTable,
 	logBodySearchMode,
 	type WarehouseCapabilities,
 } from "../capabilities"
@@ -1318,36 +1320,6 @@ export interface QueryEngineExecuteOptions {
 }
 
 /**
- * A ClickHouse cluster that has not applied migration 0015 answers any read of
- * `service_overview_minutely` with `UNKNOWN_TABLE`, and the table name is always
- * in the message. Matching the name rather than the error tag keeps this working
- * across every layer the warehouse error is re-wrapped by on its way here.
- */
-const isMissingServiceOverviewMinutely = (error: unknown): boolean => {
-	if (typeof error !== "object" || error === null) return false
-	const candidate = error as { readonly clickhouseType?: unknown; readonly message?: unknown }
-	if (typeof candidate.message === "string" && /service_overview_minutely/i.test(candidate.message)) {
-		return true
-	}
-	return candidate.clickhouseType === "UNKNOWN_TABLE"
-}
-
-/**
- * The missing-table config error naming the rollup. A timeout or memory error
- * on the rollup read also names it, and must surface rather than retry against
- * the heavier raw table.
- */
-const isMissingTraceFacetsRollup = (error: unknown): boolean => {
-	if (typeof error !== "object" || error === null) return false
-	const candidate = error as { readonly _tag?: unknown; readonly message?: unknown }
-	return (
-		candidate._tag === "@maple/http/errors/WarehouseConfigError" &&
-		typeof candidate.message === "string" &&
-		/trace_facets_hourly/i.test(candidate.message)
-	)
-}
-
-/**
  * `trace_facets_hourly` ships in a `requiredForIngest: false` migration (0034),
  * so a BYO cluster may not have it yet; the sidebar then reads `trace_list_mv`.
  * The capability probe skips it up front; this retry covers an unprobed cluster.
@@ -1359,7 +1331,7 @@ const withTraceFacetsFallback = <A, E, R>(
 ): Effect.Effect<A, E, R> =>
 	usesRollup
 		? run(false).pipe(
-				Effect.catchIf(isMissingTraceFacetsRollup, () =>
+				Effect.catchIf(isMissingWarehouseTable(Datasources.traceFacetsHourly), () =>
 					Effect.gen(function* () {
 						yield* Effect.logWarning(
 							"trace_facets_hourly is absent on this cluster; reading trace_list_mv. Apply ClickHouse schema to restore the fast path.",
@@ -1462,7 +1434,8 @@ export const makeQueryEngineExecute = <T extends QueryTenant>(warehouse: QueryEn
 				const rows = yield* runAllMetrics(options?.overviewTiers).pipe(
 					Effect.catchIf(
 						(error) =>
-							options?.overviewTiers !== "hour" && isMissingServiceOverviewMinutely(error),
+							options?.overviewTiers !== "hour" &&
+							isMissingWarehouseTable(Datasources.serviceOverviewMinutely)(error),
 						() =>
 							Effect.gen(function* () {
 								yield* Effect.logWarning(
@@ -2062,7 +2035,8 @@ export const makeQueryEngineExecute = <T extends QueryTenant>(warehouse: QueryEn
 									...opts,
 									facet,
 									rawOnly:
-										rawOnly || !hasWarehouseTable(capabilities, "trace_facets_hourly"),
+										rawOnly ||
+										!hasWarehouseTable(capabilities, Datasources.traceFacetsHourly),
 								}),
 							baseParams,
 							facet ? `tracesFacets:${facet}` : "tracesFacets",
@@ -2197,7 +2171,9 @@ export const makeQueryEngineExecute = <T extends QueryTenant>(warehouse: QueryEn
 						(capabilities) =>
 							CH.tracesDurationStatsQuery({
 								...opts,
-								rawOnly: rawOnly || !hasWarehouseTable(capabilities, "trace_facets_hourly"),
+								rawOnly:
+									rawOnly ||
+									!hasWarehouseTable(capabilities, Datasources.traceFacetsHourly),
 							}),
 						{ orgId: tenant.orgId, startTime: request.startTime, endTime: request.endTime },
 						"tracesDurationStats",
