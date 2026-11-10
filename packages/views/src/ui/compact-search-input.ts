@@ -1,4 +1,5 @@
 import { cn } from "@maple/ui/lib/utils"
+import { Option } from "effect"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { icon } from "./icon"
 
@@ -11,6 +12,8 @@ export type CompactSearchInputOptions<M> = Readonly<{
 	ariaLabel: string
 	onInput: (value: string) => M
 	onClear: M
+	/** Enter in the field: for a field that applies its value rather than filtering as you type. */
+	onEnter?: M
 	clearLabel?: string
 	className?: string
 }>
@@ -31,6 +34,15 @@ export const compactSearchInput = <M>(h: HtmlBuilder<M>, options: CompactSearchI
 				h.Type("search"),
 				h.Value(options.value),
 				h.OnInput(options.onInput),
+				...(options.onEnter === undefined
+					? []
+					: [
+							h.OnKeyDownPreventDefault((key) =>
+								key === "Enter" && options.onEnter !== undefined
+									? Option.some(options.onEnter)
+									: Option.none(),
+							),
+						]),
 				...(options.placeholder === undefined ? [] : [h.Placeholder(options.placeholder)]),
 				h.AriaLabel(options.ariaLabel),
 				h.Class(
