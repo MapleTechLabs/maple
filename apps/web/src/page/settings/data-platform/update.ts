@@ -137,18 +137,6 @@ export const draftOf = (model: Model): ConnectionDraft =>
 		database: "default",
 	}))
 
-export const isConnectionDirty = (model: Model): boolean =>
-	model.password !== "" ||
-	(model.draft !== null &&
-		model.committedOver === null &&
-		AsyncData.getOrElse(
-			AsyncData.map(
-				model.settings,
-				(settings) => !sameDraft(savedDraftOf(settings), model.draft ?? savedDraftOf(settings)),
-			),
-			() => false,
-		))
-
 const isRunActive = (model: Model) =>
 	AsyncData.getOrElse(
 		AsyncData.map(

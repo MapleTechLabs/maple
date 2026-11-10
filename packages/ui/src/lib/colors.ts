@@ -1,24 +1,5 @@
 import { Array as Arr, Option, String as Str } from "effect"
 import { codeUnitAt } from "@maple/strings"
-/**
- * Chart color Tailwind classes for depth-based coloring in visualizations.
- * Maps to Tailwind classes: bg-chart-1 through bg-chart-5
- */
-export const CHART_BG_CLASSES = [
-	"bg-chart-1",
-	"bg-chart-2",
-	"bg-chart-3",
-	"bg-chart-4",
-	"bg-chart-5",
-] as const
-
-/**
- * Get a chart background color class based on depth level.
- * Cycles through chart-1 to chart-5 based on depth % 5.
- */
-export function getDepthColorClass(depth: number): string {
-	return cyclic(CHART_BG_CLASSES, depth)
-}
 
 /** The element at `index` modulo the list length, wrapping negatives. */
 const cyclic = <A>(items: Arr.NonEmptyReadonlyArray<A>, index: number): A =>

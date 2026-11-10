@@ -7,9 +7,6 @@ import {
 	ErrorIssueEnvironment,
 	ErrorIssueTimeseriesPoint,
 	IsoDateTimeString,
-	type IssueKind,
-	type IssueSeverity,
-	type WorkflowState,
 } from "@maple/domain/http"
 import {
 	V2ErrorIssueListQuery,
@@ -24,23 +21,6 @@ const asIso = Schema.decodeUnknownSync(IsoDateTimeString)
 const asIsoOrNull = (value: string | null) => (value === null ? null : asIso(value))
 
 export type ErrorIssueListQuery = typeof V2ErrorIssueListQuery.Type
-
-export const buildErrorIssueListQuery = (filters: {
-	readonly workflowState?: WorkflowState | "all"
-	readonly severity?: IssueSeverity | "unset" | "all"
-	readonly kind?: IssueKind | "all"
-}): ErrorIssueListQuery => ({
-	limit: 100,
-	...(!(filters.workflowState === undefined || filters.workflowState === "all")
-		? {
-				workflow_state: filters.workflowState,
-			}
-		: undefined),
-	...(!(filters.severity === undefined || filters.severity === "all")
-		? { severity: filters.severity }
-		: undefined),
-	...(!(filters.kind === undefined || filters.kind === "all") ? { kind: filters.kind } : undefined),
-})
 
 export interface ServiceOpenIssuesScope {
 	/**
@@ -73,16 +53,6 @@ export const buildServiceOpenIssuesQuery = (
 			}
 		: undefined),
 })
-
-/** Append a fetched page while keeping the first occurrence of each issue ID. */
-export const appendUniqueErrorIssues = (
-	current: ReadonlyArray<ErrorIssueDocument>,
-	incoming: ReadonlyArray<ErrorIssueDocument>,
-): ReadonlyArray<ErrorIssueDocument> => {
-	const byId = new Map(Arr.map(current, (issue) => [issue.id, issue]))
-	for (const issue of incoming) if (!byId.has(issue.id)) byId.set(issue.id, issue)
-	return [...byId.values()]
-}
 
 const actorFromV2 = (actor: V2ErrorIssueActor): ActorDocument =>
 	new ActorDocument({

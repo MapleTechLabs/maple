@@ -18,7 +18,6 @@ import {
 	hasSelectedPlan,
 	isLegacyPlan,
 	isUsableCustomer,
-	isUsageBasedPlan,
 	resolvePlanAccess,
 } from "./plan-gating"
 
@@ -267,33 +266,8 @@ describe("malformed / error-shaped customer payloads", () => {
 		expect(() => hasLapsedPlan(errorPayload)).not.toThrow()
 		expect(hasLapsedPlan(errorPayload)).toBe(false)
 		expect(hasBringYourOwnCloudAddOn(errorPayload)).toBe(false)
-		expect(isUsageBasedPlan(errorPayload)).toBe(false)
 		expect(getQuotaStatus(errorPayload)).toBe("ok")
 		expect(getFeatureQuotas(errorPayload)).toEqual([])
-	})
-})
-
-describe("isUsageBasedPlan", () => {
-	it("returns false when customer or balances are missing", () => {
-		expect(isUsageBasedPlan(null)).toBe(false)
-		expect(isUsageBasedPlan(buildCustomer([]))).toBe(false)
-	})
-
-	it("returns false for a base plan (no overage allowed)", () => {
-		const customer = buildCustomer([buildSubscription()], {
-			balances: { logs: buildBalance("logs"), traces: buildBalance("traces") },
-		})
-		expect(isUsageBasedPlan(customer)).toBe(false)
-	})
-
-	it("returns true when any metered feature allows overage", () => {
-		const customer = buildCustomer([buildSubscription()], {
-			balances: {
-				logs: buildBalance("logs", { overageAllowed: true }),
-				traces: buildBalance("traces"),
-			},
-		})
-		expect(isUsageBasedPlan(customer)).toBe(true)
 	})
 })
 

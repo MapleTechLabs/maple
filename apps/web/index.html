@@ -38,7 +38,8 @@
 		<link rel="preconnect" href="https://favicon.maple.dev" />
 
 		<!-- Apply the saved theme before first paint to avoid a flash of the wrong theme.
-		     Must stay in sync with the theme store in @maple/ui/hooks/use-theme
+		     Must stay in sync with the shell (`THEME_STORAGE_KEY` in src/shell/command.ts, `readTheme` in
+		     src/shell/flags.ts)
 		     (storage key "maple-theme", `light`/`dark` class on <html>, default "dark"). -->
 		<script>
 			;(() => {

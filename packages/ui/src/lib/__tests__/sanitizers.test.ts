@@ -1,22 +1,10 @@
 import { describe, expect, it } from "vitest"
 import {
 	escapeJsonInHtml,
-	sanitizeCssIdentifier,
 	validateCssColor,
 	validateInternalRedirect,
 	validateUrlScheme,
 } from "../sanitizers"
-
-describe("sanitizeCssIdentifier", () => {
-	it("escapes CSS terminators", () => {
-		const escaped = sanitizeCssIdentifier("</style><script>")
-		expect(escaped).not.toContain("<")
-		expect(escaped).not.toContain(">")
-	})
-	it("preserves safe identifiers (passes through CSS.escape)", () => {
-		expect(sanitizeCssIdentifier("series-1")).toBe("series-1")
-	})
-})
 
 describe("validateCssColor", () => {
 	it.each([

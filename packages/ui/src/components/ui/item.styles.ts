@@ -47,8 +47,6 @@ export const itemMediaVariants = cva(
 export const itemGroupStyles =
 	"gap-4 has-[[data-size=sm]]:gap-2.5 has-[[data-size=xs]]:gap-2 group/item-group flex w-full flex-col"
 
-export const itemSeparatorStyles = "my-2"
-
 export const itemContentStyles =
 	"gap-1 group-data-[size=xs]/item:gap-0 group-data-[size=lg]/item:gap-0.5 flex min-w-0 flex-[1_1_12rem] flex-col [&+[data-slot=item-content]]:flex-none"
 
@@ -59,6 +57,3 @@ export const itemDescriptionStyles =
 	"text-muted-foreground text-left text-xs/relaxed group-data-[size=xs]/item:text-xs/relaxed [&>a:hover]:text-primary line-clamp-2 font-normal [&>a]:underline [&>a]:underline-offset-4"
 
 export const itemActionsStyles = "gap-2 flex items-center"
-
-export const itemHeaderStyles = "gap-2 flex basis-full items-center justify-between"
-export const itemFooterStyles = "gap-2 flex basis-full items-center justify-between"
