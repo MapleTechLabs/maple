@@ -81,10 +81,13 @@ test.describe("alert rules", () => {
 
 				try {
 					await app.open(editUrl)
+					// A saved rule opens as closed cards: each field sits behind its card's summary.
+					await browser.locator("#sentence-card-condition-summary").tap()
 					await expect(browser.locator("#rule-threshold")).toHaveValue("0.7")
 					await expect(screen.getByLabel("Critical threshold")).toHaveValue("3")
 					await expect(screen.getByLabel("Out of the last")).toHaveValue("4")
 
+					await browser.locator("#sentence-card-name-summary").tap()
 					await screen.getByLabel("Rule name").fill(`e2e tiers renamed ${tag}`)
 					await screen.getByRole("button", "Save changes").tap()
 					await expect(browser).toHaveURL(/\/alerts\/rules$/)
@@ -94,6 +97,7 @@ test.describe("alert rules", () => {
 					expect(renamed.body.breaches_out_of).toBe(4)
 
 					await app.open(editUrl)
+					await browser.locator("#sentence-card-condition-summary").tap()
 					await screen.getByLabel("Critical threshold").fill("4")
 					await screen.getByRole("button", "Save changes").tap()
 					await expect(browser).toHaveURL(/\/alerts\/rules$/)
@@ -117,10 +121,12 @@ test.describe("alert rules", () => {
 		// The template picker opens first; Cancel closes it on the default rule.
 		await screen.getByRole("button", "Cancel").tap()
 		await screen.getByLabel("Rule name").fill(`e2e range ${runTag()}`)
-		await screen.getByRole("combobox", "Alert when the value").tap()
+		await screen.getByRole("combobox", "Condition").tap()
 		await screen.getByRole("option", "is between").tap()
 
-		await expect(screen.getByText(/^Fix before saving:/)).toContainText("Upper threshold")
+		// The action bar lists what blocks the save, each a link to its field.
+		await expect(screen.getByText("Fix before saving:")).toBeVisible()
+		await expect(screen.getByRole("button", "Upper threshold")).toBeVisible()
 	})
 
 	test("previews a SQL rule", { session: "reviewer" }, async ({ app, screen }) => {

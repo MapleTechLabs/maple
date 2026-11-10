@@ -212,6 +212,17 @@ describe("unshowableReasonOf", () => {
 		['(service.name = "checkout" OR service.name = "worker")', Option.some("orNotApplied")],
 		["attr.b exists AND (has_error = true OR has_error = false)", Option.some("orNotApplied")],
 		["service.name ~ checkout", Option.some("syntax")],
+		// A missing value or a doubled operator: the grammar reads the stray `=` as the value.
+		["service.name =", Option.some("syntax")],
+		["service.name ==", Option.some("syntax")],
+		["service.name >=", Option.some("syntax")],
+		["service.name ==checkout", Option.some("syntax")],
+		['service.name = "a" AND attr.b !==', Option.some("syntax")],
+		['(attr.a = "1" OR attr.a ==)', Option.some("syntax")],
+		// Quoted, the same characters are a value the user meant.
+		['attr.a = "="', Option.none()],
+		["attr.a = '=x'", Option.none()],
+		["attr.duration >= 5", Option.none()],
 		['service.name = "a" AND (service.name = "b" AND span.name = "c")', Option.some("syntax")],
 	])("%s", (whereClause, expected) => {
 		expect(unshowableReasonOf(whereClause, "traces")).toEqual(expected)

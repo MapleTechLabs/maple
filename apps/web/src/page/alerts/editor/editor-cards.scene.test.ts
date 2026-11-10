@@ -19,13 +19,15 @@ import {
 	withViewInputs,
 } from "foldkit/scene"
 import { describe, expect, test } from "vitest"
+import * as Chart from "@maple/views/charts/chart"
+import { MountChart } from "@maple/views/charts/chart-mounts"
 import { ResolveThemeColors, ThemeMessage } from "@maple/views/charts/theme-colors"
 import * as Dialog from "@maple/views/ui/dialog"
 import type { PageContext } from "../../contract"
 import { scopedAnomalyRuleRow } from "../shared/anomaly-test-fixtures"
 import { destinationRow, NOW, ORG, ruleId, ruleRow } from "../shared/test-rows"
 import * as Select from "@maple/views/ui/select"
-import { FocusRuleCard } from "./command"
+import { FetchEditorPreview, FocusRuleCard } from "./command"
 import { BREACH_MODE_SELECT_ID } from "./form-steps"
 import { init } from "./init"
 import { Message } from "./message"
@@ -74,6 +76,41 @@ const slowPreview = () =>
 			limitMs: 5_000,
 			fitsIntervalMinutes: [5, 10, 15, 30, 60],
 		},
+	})
+
+/** A preview with one point over the threshold: a chart, its threshold line and a would-fire band. */
+const breachingPreview = () =>
+	Schema.decodeSync(AlertRulePreviewResponse)({
+		bucketSeconds: 300,
+		windowMinutes: 5,
+		threshold: 800,
+		thresholdUpper: null,
+		thresholds: [
+			{ severity: "critical", value: 800, upper: null, recoveryValue: null, destinationIds: [] },
+		],
+		comparator: "gt",
+		truncatedToStart: null,
+		series: [
+			{
+				groupKey: "__ungrouped__",
+				points: [
+					{
+						bucket: "2026-10-01T11:00:00.000Z",
+						value: 1800,
+						sampleCount: 40,
+						status: "breached",
+					},
+				],
+			},
+		],
+		wouldFire: [
+			{
+				groupKey: "__ungrouped__",
+				start: "2026-10-01T11:00:00.000Z",
+				end: "2026-10-01T11:10:00.000Z",
+				severity: "critical",
+			},
+		],
 	})
 
 const summary = (lead: string, rest: string) => role("button", { name: `${lead}: ${rest}. Edit` })
@@ -135,17 +172,86 @@ describe("alert rule editor, sentence cards", () => {
 		)
 	})
 
-	test("with a threshold that is not a number, the empty chart asks for one, not for a signal", () => {
+	// Blank counts as missing: `Number("")` is 0, which once drew a threshold line at zero.
+	test.each([["-"], [""], ["   "]])(
+		"with the threshold %j, the empty chart asks for a number, not for a signal",
+		(value) => {
+			scene(
+				{ update: pageUpdate, view },
+				given(
+					run(opened({ template: "slow_p95" }), [
+						Message.ChangedField({ field: "threshold", value }),
+					]),
+				),
+				themeResolved(),
+				expectView(
+					text(/^Enter a number for the threshold to preview it against the last/u),
+				).toExist(),
+				expectView(text(/^Pick a signal/u)).not.toExist(),
+			)
+		},
+	)
+
+	test("clearing the threshold drops the chart and its threshold line, and asks for no new preview", () => {
+		const loading = opened({ template: "slow_p95" })
+		const draft = run(loading, [
+			Message.CompletedFetchPreview({
+				key: loading.preview.key ?? "",
+				isSaved: false,
+				result: Result.succeed(breachingPreview()),
+			}),
+		])
 		scene(
 			{ update: pageUpdate, view },
-			given(
-				run(opened({ template: "slow_p95" }), [
-					Message.ChangedField({ field: "threshold", value: "-" }),
-				]),
-			),
+			given(draft),
 			themeResolved(),
+			Mount.resolve(MountChart, Chart.Message.CompletedMountChart()),
+			expectView(text(/^Breach above/u)).toExist(),
+			expectView(text("Would have fired")).toExist(),
+			// A preview at threshold 0 would be a command left unanswered here.
+			type(selector("#rule-threshold"), ""),
+			Mount.expectEnded(MountChart),
 			expectView(text(/^Enter a number for the threshold to preview it against the last/u)).toExist(),
-			expectView(text(/^Pick a signal/u)).not.toExist(),
+			expectView(text(/^Breach above/u)).not.toExist(),
+			expectView(text("Would have fired")).not.toExist(),
+		)
+	})
+
+	test("opening an empty add-on section on a saved builder rule is not an unsaved change", () => {
+		const builderRule = ruleRow(2, {
+			signal_type: "builder_query",
+			query_builder_draft_json: {
+				id: "q1",
+				name: "A",
+				dataSource: "traces",
+				aggregation: "count",
+				whereClause: 'service.name = "checkout"',
+				addOns: { groupBy: false, having: false, orderBy: false, limit: false, legend: false },
+				groupBy: [],
+			},
+		})
+		const saved = opened({ ruleId: ruleId(2) }, [builderRule])
+		const groupBy = role("button", { name: "Group by" })
+		scene(
+			{ update: pageUpdate, view },
+			given(saved),
+			themeResolved(),
+			expectView(text("No changes")).toExist(),
+			click(role("button", { name: /^When: .* Edit$/u })),
+			Command.resolve(FocusRuleCard, Message.CompletedFocusCard()),
+			click(groupBy),
+			// The draft's JSON did change, so its preview is asked for again; the answer is not needed here.
+			Command.resolve(
+				FetchEditorPreview,
+				Message.CompletedFetchPreview({
+					key: "unanswered",
+					isSaved: false,
+					result: Result.succeed(slowPreview()),
+				}),
+			),
+			expectView(groupBy).toHaveAttr("aria-pressed", "true"),
+			expectView(text("No changes")).toExist(),
+			expectView(text(/unsaved change/u)).not.toExist(),
 		)
 	})
 
@@ -233,6 +339,8 @@ describe("alert rule editor, sentence cards", () => {
 			expectView(text("Missing: Who gets notified")).toExist(),
 			expectView(text("Missing: Rule name")).toExist(),
 			expectAll(all.selector('[aria-invalid="true"]')).toHaveCount(0),
+			expectAll(all.selector("[aria-describedby='rule-name-error']")).toHaveCount(0),
+			expectView(selector("#rule-name-error")).not.toExist(),
 			expectView(routeError).not.toExist(),
 		)
 		scene(
@@ -241,6 +349,12 @@ describe("alert rule editor, sentence cards", () => {
 			given(run(pristine, [Message.BlurredField({ id: "rule-name" })])),
 			themeResolved(),
 			expectView(role("textbox", { name: "Rule name" })).toHaveAttr("aria-invalid", "true"),
+			// The error the input is described by is on the page, under the field.
+			expectView(role("textbox", { name: "Rule name" })).toHaveAttr(
+				"aria-describedby",
+				"rule-name-error",
+			),
+			expectView(selector("#rule-name-error")).toHaveText("Give the rule a name."),
 			expectView(routeError).not.toExist(),
 			// Pressing save shows the rest, and lands on the first thing to fix.
 			click(role("button", { name: "Create rule" })),

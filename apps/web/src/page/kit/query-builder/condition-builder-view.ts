@@ -169,7 +169,8 @@ const rowSummary = (row: ConditionRow, dataSource: QueryDraft["dataSource"]): st
 				" ",
 			)
 
-const UNSPELLABLE_NOTE = `A value can't hold both ' and "`
+const UNSPELLABLE_NOTE = `A value can't contain both ' and "`
+const VALUE_HINT = "Type a value and press Enter"
 
 const valuePicker = (
 	h: H,
@@ -186,7 +187,10 @@ const valuePicker = (
 	// What is typed is offered first when it is not already a suggestion, so a click adds it too.
 	const isTypedNew =
 		typed !== "" && !isUnspellableTyped && !suggestions.includes(typed) && !row.values.includes(typed)
-	const items = isTypedNew ? [typed, ...suggestions] : suggestions
+	// A value the clause can't spell offers nothing: the open list says why, where the note under
+	// the field is covered by it.
+	const items = isUnspellableTyped ? [] : isTypedNew ? [typed, ...suggestions] : suggestions
+	const emptyText = isUnspellableTyped ? UNSPELLABLE_NOTE : VALUE_HINT
 	const ariaLabel = `Value for ${rowFieldLabel(row, query.dataSource)}`
 	const toMessage = (message: Combobox.Message) =>
 		Message.GotConditionValues({ queryId: query.id, rowId: row.id, message })
@@ -206,7 +210,7 @@ const valuePicker = (
 						items,
 						ariaLabel,
 						placeholder: row.values.length === 0 ? "Value" : "",
-						emptyText: "Type a value and press Enter",
+						emptyText,
 						size: "sm",
 						renderItem: (_, value) => renderItem(value),
 						toView: (parts) => h.div([h.Class("min-w-0")], parts),
@@ -221,7 +225,7 @@ const valuePicker = (
 						items,
 						ariaLabel,
 						placeholder: "Value",
-						emptyText: "Type a value and press Enter",
+						emptyText,
 						size: "sm",
 						highlightsSelected: true,
 						renderItem,
