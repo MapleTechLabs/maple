@@ -114,6 +114,34 @@ describe("condition builder", () => {
 		)
 	})
 
+	test("a value with both quote kinds is refused in the open list, and Enter keeps the clause", () => {
+		const value = role("combobox", { name: "Value for http.route" })
+		scene(
+			{ update, view },
+			given(hosted('attr.http.route = "/cart"')),
+			typeInto(value, `it's "x"`),
+			...pickerOpened(1),
+			expectView(role("status")).toHaveText(`A value can't contain both ' and "`),
+			expectView(role("option", { name: /^Use/ })).not.toExist(),
+			keydown(value, "Enter"),
+			expectView(role("status")).toHaveText(`A value can't contain both ' and "`),
+			expectView(text('attr.http.route = "/cart"')).toExist(),
+		)
+	})
+
+	test("either quote alone is offered as a value", () => {
+		const value = role("combobox", { name: "Value for http.route" })
+		scene(
+			{ update, view },
+			given(hosted('attr.http.route = "/cart"')),
+			typeInto(value, `it's`),
+			...pickerOpened(1),
+			expectView(role("option", { name: `Use "it's"` })).toExist(),
+			keydown(value, "Enter"),
+			expectView(text(`(attr.http.route = "/cart" OR attr.http.route = "it's")`)).toExist(),
+		)
+	})
+
 	test("removing a row keeps the other clauses as the user wrote them", () => {
 		scene(
 			{ update, view },
