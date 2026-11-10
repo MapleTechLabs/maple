@@ -73,6 +73,11 @@ describe("query panel where editor", () => {
 			inputsFor(query),
 		)
 		expect(Arr.map(active.commands ?? [], (command) => command.name)).toEqual(["FetchWhereFieldValues"])
-		expect(typed(query, false).whereFields.values).toEqual({})
+		const inactive = update(
+			init("test"),
+			field(WhereFieldMessage.GotCaret({ fieldId: query.id, message: focus })),
+			inputsFor(query, false),
+		)
+		expect(inactive.commands ?? []).toEqual([])
 	})
 })

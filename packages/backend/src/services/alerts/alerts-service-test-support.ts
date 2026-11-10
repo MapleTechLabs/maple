@@ -31,11 +31,11 @@ import {
 import type { WarehouseQueryServiceApi } from "@maple/backend/services/warehouse/WarehouseQueryService"
 import { WarehouseQueryService } from "@maple/backend/services/warehouse/WarehouseQueryService"
 import { AlertRuntime, type AlertRuntimeApi, AlertsService, type AlertsServiceApi } from "./AlertsService"
-import { AlertDestinationsService } from "./AlertDestinationsService"
-import { AlertReadModelsService } from "./AlertReadModelsService"
+import { AlertDestinationsService, type AlertDestinationsServiceApi } from "./AlertDestinationsService"
+import { AlertReadModelsService, type AlertReadModelsServiceApi } from "./AlertReadModelsService"
 import { AlertSilencesService } from "./AlertSilencesService"
 import { AlertMaintenanceWindowsService } from "./AlertMaintenanceWindowsService"
-import { AlertRulesService } from "./AlertRulesService"
+import { AlertRulesService, type AlertRulesServiceApi } from "./AlertRulesService"
 import { SloAlertSource } from "@maple/backend/services/slos/SloAlertSource"
 import { UptimeAlertSource } from "@maple/backend/services/uptime/UptimeAlertSource"
 import { AnomalyAlertSource } from "@maple/backend/services/alerts/anomaly/AnomalyAlertSource"
@@ -51,7 +51,7 @@ import { OrgClickHouseSettingsService } from "@maple/backend/services/org/OrgCli
 import { OrgMembersService, type OrgMember } from "@maple/backend/services/org/OrgMembersService"
 import { AlertMemberNotifier } from "./AlertMemberNotifier"
 import { QueryEngineService } from "@maple/backend/services/warehouse/QueryEngineService"
-import { executeSql, type TestDb } from "@maple/backend/platform/test-pglite"
+import { executeSql, type TestDb } from "@maple/backend/testing/test-pglite"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { InvestigationService } from "@maple/backend/services/errors/InvestigationService"
 import {
@@ -61,6 +61,8 @@ import {
 } from "@maple/query-engine/execution"
 import { makeWarehouseServiceStub } from "@maple/backend/testing/warehouse-test-support"
 import { ChatSessions, type ChatSessionsApi } from "@maple/backend/platform/bindings"
+import { InvestigationStarter } from "@maple/backend/services/errors/InvestigationStarter"
+import { SloReadService } from "@maple/backend/services/slos/SloReadService"
 
 export const getError = <A, E>(exit: Exit.Exit<A, E>): unknown => {
 	if (!Exit.isFailure(exit)) return undefined
@@ -202,8 +204,6 @@ export interface TestOverrides extends Partial<AlertRuntimeApi> {
 	readonly pushes?: Array<IncidentPushEvent>
 }
 
-// The fixed epoch scheduler tests start TestClock at, mirroring the previous
-// manual clock's default start time.
 export const DEFAULT_CLOCK_EPOCH_MS = 1_700_000_000_000
 
 export const stubEmailService = (
@@ -334,6 +334,7 @@ export const makeLayer = (
 		Layer.provide(Layer.mergeAll(envLive, databaseLive, runtimeLive, emailLive, orgMembersLive)),
 	)
 	const alertsLive = Layer.effect(AlertsService, AlertsService.make).pipe(
+		Layer.provide(InvestigationStarter.layer),
 		Layer.provide(memberNotifierLive),
 		Layer.provide(FetchHttpClient.layer),
 		Layer.provide(chatAlertPoster),
@@ -348,9 +349,7 @@ export const makeLayer = (
 		Layer.provide(orgMembersLive),
 		Layer.provide(orgChSettingsLive),
 		Layer.provide(investigationsLive),
-		Layer.provide(alertDestinationsLive),
 		Layer.provide(alertReadModelsLive),
-		Layer.provide(alertRulesLive),
 		Layer.provide(
 			Layer.mergeAll(UptimeAlertSource.layer, AnomalyAlertSource.layer).pipe(
 				Layer.provide(databaseLive),
@@ -358,6 +357,7 @@ export const makeLayer = (
 		),
 		Layer.provide(
 			Layer.effect(SloAlertSource, SloAlertSource.make).pipe(
+				Layer.provide(Layer.effect(SloReadService, SloReadService.make)),
 				Layer.provide(Layer.mergeAll(databaseLive, warehouseLive)),
 			),
 		),
@@ -379,6 +379,22 @@ export const makeLayer = (
 	).pipe(Layer.provideMerge(Layer.succeed(FetchHttpClient.Fetch, fetchImpl)))
 }
 
+/** The alert services a suite drives, read off one value so a test need not yield four. */
+export type AlertServices = AlertsServiceApi &
+	AlertDestinationsServiceApi &
+	AlertRulesServiceApi &
+	AlertReadModelsServiceApi
+
+export const alertServices = Effect.gen(function* () {
+	const services: AlertServices = {
+		...(yield* AlertDestinationsService),
+		...(yield* AlertRulesService),
+		...(yield* AlertReadModelsService),
+		...(yield* AlertsService),
+	}
+	return services
+})
+
 export const asOrgId = Schema.decodeUnknownSync(OrgId)
 export const asUserId = Schema.decodeUnknownSync(UserId)
 export const asRoleName = Schema.decodeUnknownSync(RoleName)
@@ -387,7 +403,7 @@ export const adminRoles = [asRoleName("root")]
 export const memberRoles = [asRoleName("org:member")]
 
 export const createWebhookDestination = (
-	alerts: AlertsServiceApi,
+	alerts: AlertServices,
 	orgId: ReturnType<typeof asOrgId>,
 	userId: ReturnType<typeof asUserId>,
 ) =>
@@ -405,7 +421,7 @@ export const createWebhookDestination = (
 	)
 
 export const createErrorRateRule = (
-	alerts: AlertsServiceApi,
+	alerts: AlertServices,
 	orgId: ReturnType<typeof asOrgId>,
 	userId: ReturnType<typeof asUserId>,
 	destinationId: AlertDestinationId,

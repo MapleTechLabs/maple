@@ -512,7 +512,7 @@ const step = (model: Model, message: Message, context: PageContext): Return =>
 			)
 			return { model: { ...model, flowCanvas: Canvas.update(model.flowCanvas, inner, positions) } }
 		},
-		// Streamdown writes nothing while its check is showing.
+		// Nothing is written while the check is showing.
 		ClickedCodeAction: ({ action, code, language }) =>
 			action === "copy" && model.codeCopy.code === code
 				? { model }

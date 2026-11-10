@@ -1,3 +1,4 @@
+import { RequestMode } from "@maple/views/data/keyed"
 import { V2ErrorIssueServiceCount, V2Investigation } from "@maple/domain/http/v2"
 import { Schema } from "effect"
 import { defineMessageUnion } from "foldkit/message"
@@ -12,10 +13,6 @@ import * as Tabs from "@maple/views/ui/tabs"
 import { SignalPresences } from "@maple/views/data/signal-presence"
 import { HubWrite, WriteOutcome } from "./writes"
 import { ErrorsSummary, IssuePage, SparkSeries, VolumeRow } from "./model"
-
-/** `Load` on entry or a search change; `Refresh` from Reload (no cache snap, revalidate every slot). */
-export const RequestMode = Schema.Literals(["Load", "Refresh"])
-export type RequestMode = typeof RequestMode.Type
 
 /** The sidebar's single-select params. */
 export const FilterParam = Schema.Literals(["service", "env", "kind", "regressed"])

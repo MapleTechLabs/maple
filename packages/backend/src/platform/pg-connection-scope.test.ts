@@ -446,7 +446,7 @@ describe("connection failures through the real driver", () => {
 })
 
 describe("executeOnFreshPgClient", () => {
-	it.effect("runs the callback and releases its connection", () =>
+	it.effect("runs the callback on its own connection and returns its value", () =>
 		Effect.gen(function* () {
 			// No seam: this builds a real pool, which connects lazily. Nothing here
 			// issues a statement, so the unroutable port is never dialed.
@@ -456,13 +456,14 @@ describe("executeOnFreshPgClient", () => {
 		}),
 	)
 
-	it.effect("releases its connection when the callback fails, and preserves the error", () =>
+	it.effect("passes the callback's own failure through untouched", () =>
 		Effect.gen(function* () {
-			const exit = yield* Effect.exit(
+			const error = yield* Effect.flip(
 				executeOnFreshPgClient("postgres://maple:maple@127.0.0.1:1/never", boom),
 			)
 
-			assert.isTrue(Exit.isFailure(exit))
+			assert.instanceOf(error, CallbackFailure)
+			assert.strictEqual(error.message, "boom")
 		}),
 	)
 })

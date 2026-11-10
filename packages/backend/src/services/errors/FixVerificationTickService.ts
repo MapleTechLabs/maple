@@ -2,15 +2,13 @@ import {
 	type ErrorPersistenceError,
 	MAX_VERIFICATION_ATTEMPTS,
 	type VerificationVerdict,
-	type OrgId,
 } from "@maple/domain/http"
-import { RoleName, UserId } from "@maple/domain/primitives"
+import { UserId } from "@maple/primitives"
 import * as PG from "@maple-dev/effect-orm/postgres"
 import { ErrorIssuePullRequests, ErrorIssues, type ErrorIssueVerificationRow } from "@maple/db/tables"
 import { CH } from "@maple/query-engine"
 import { Cause, Clock, Context, DateTime, Effect, Layer, Option, Schema, Array as Arr } from "effect"
-import type { TenantContext } from "@maple/backend/services/auth/AuthService"
-import { ChatSessions } from "@maple/backend/platform/bindings"
+import { InvestigationStarter } from "@maple/backend/services/errors/InvestigationStarter"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { summarizeCause } from "@maple/backend/platform/describe-cause"
 import { WarehouseQueryService } from "@maple/backend/services/warehouse/WarehouseQueryService"
@@ -18,9 +16,10 @@ import { enqueueFixVerification } from "@maple/backend/services/errors/fix-verif
 import { IssueFixVerificationService } from "./IssueFixVerificationService"
 import { issueFingerprintHashes } from "./issue-fingerprints"
 import { makeErrorDatabaseExecute } from "./error-persistence"
+import { systemTenant } from "@maple/backend/services/auth/system-tenant"
 
 const decodeUserIdSync = Schema.decodeUnknownSync(UserId)
-const decodeRoleNameSync = Schema.decodeUnknownSync(RoleName)
+const SYSTEM_USER_ID = decodeUserIdSync("system-errors")
 
 /**
  * Verifications examined per tick. The tick runs every minute and each row costs
@@ -128,24 +127,14 @@ export interface FixVerificationTickServiceApi {
 const make: Effect.Effect<
 	FixVerificationTickServiceApi,
 	never,
-	Database | WarehouseQueryService | IssueFixVerificationService
+	Database | WarehouseQueryService | IssueFixVerificationService | InvestigationStarter
 > = Effect.gen(function* () {
 	const database = yield* Database
 	const warehouse = yield* WarehouseQueryService
 	const verification = yield* IssueFixVerificationService
 	const dbExecute = makeErrorDatabaseExecute(database, "FixVerificationTickService")
 
-	// Present only inside a Worker isolate; absent in tests and local runs, where
-	// the enqueue records `no_binding` rather than silently degrading.
-	const chatSessionsOption = yield* Effect.serviceOption(ChatSessions)
-	const chatSessions = Option.getOrUndefined(chatSessionsOption)
-
-	const systemTenant = (orgId: OrgId): TenantContext => ({
-		orgId,
-		userId: decodeUserIdSync("system-errors"),
-		roles: [decodeRoleNameSync("root")],
-		authMode: "self_hosted",
-	})
+	const starter = yield* InvestigationStarter
 
 	/**
 	 * Split occurrences since the merge into "from a build that postdates the fix"
@@ -172,7 +161,7 @@ const make: Effect.Effect<
 				endTime: DateTime.makeUnsafe(nowMs),
 			},
 		)
-		const rows = yield* warehouse.compiledQuery(systemTenant(row.orgId), compiled, {
+		const rows = yield* warehouse.compiledQuery(systemTenant(row.orgId, SYSTEM_USER_ID), compiled, {
 			profile: "aggregation",
 			context: "errorIssueVersionsSince",
 		})
@@ -362,9 +351,9 @@ const make: Effect.Effect<
 					pullRequestUrl: subject.url,
 					postMergeOccurrences: split.value.postMerge,
 					staleClientOccurrences: split.value.staleClients,
-					chatSessions,
 				}).pipe(
 					Effect.provideService(Database, database),
+					Effect.provideService(InvestigationStarter, starter),
 					// An interrupt here must never become `{ enqueued: false }`: the fallback
 					// below reads that as "no agent available" and can write a terminal
 					// `verified` verdict, auto-closing the issue on an isolate teardown.
@@ -472,6 +461,12 @@ export class FixVerificationTickService extends Context.Service<
 	FixVerificationTickServiceApi
 >()("@maple/backend/services/errors/FixVerificationTickService", { make }) {
 	static readonly layer = Layer.effect(this, this.make).pipe(
-		Layer.provide(Layer.mergeAll(WarehouseQueryService.layer, IssueFixVerificationService.layer)),
+		Layer.provide(
+			Layer.mergeAll(
+				WarehouseQueryService.layer,
+				IssueFixVerificationService.layer,
+				InvestigationStarter.layer,
+			),
+		),
 	)
 }

@@ -1,4 +1,3 @@
-import * as Policy from "@maple/domain/policy"
 import { StatusPagePreviewParams, V2StatusPage, V2UptimeMonitor } from "@maple/domain/http/v2"
 import {
 	StatusPageSnapshot,
@@ -7,23 +6,22 @@ import {
 } from "@maple/domain/status-page"
 import { Schema } from "effect"
 import { defineMessageUnion } from "foldkit/message"
-import { LoadFailure } from "@maple/views/data/load-failure"
 import { PickerMessage } from "../shared/picker"
 import { PreviewScheme } from "../shared/preview"
 import { SubmitMode } from "./model"
-
-const outcome = <S extends Schema.Top>(success: S) => Schema.Result(success, LoadFailure)
+import { LoadOutcome } from "../../kit/load-schemas"
+import { SessionGrants } from "../../kit/session-grants"
 
 export const Message = defineMessageUnion({
 	ReadClock: { nowMs: Schema.Number },
-	CompletedFetchSession: { orgId: Schema.String, grants: Schema.Array(Policy.PermissionName) },
-	CompletedFetchMonitors: { key: Schema.String, result: outcome(Schema.Array(V2UptimeMonitor)) },
+	CompletedFetchSession: SessionGrants,
+	CompletedFetchMonitors: { key: Schema.String, result: LoadOutcome(Schema.Array(V2UptimeMonitor)) },
 	ClickedRetry: {},
 	ChangedName: { value: Schema.String },
 	BlurredName: {},
 	ChangedSlug: { value: Schema.String },
 	GotPickerMessage: { message: PickerMessage },
-	CompletedCreateMonitor: { result: outcome(V2UptimeMonitor) },
+	CompletedCreateMonitor: { result: LoadOutcome(V2UptimeMonitor) },
 	CompletedFocus: {},
 	PickedPreset: { preset: StatusPageThemePreset },
 	PickedAppearance: { appearance: StatusPageThemeAppearance },
@@ -32,9 +30,9 @@ export const Message = defineMessageUnion({
 	CompletedFetchPreview: {
 		generation: Schema.Number,
 		draft: StatusPagePreviewParams,
-		result: outcome(StatusPageSnapshot),
+		result: LoadOutcome(StatusPageSnapshot),
 	},
 	ClickedSubmit: { mode: SubmitMode },
-	CompletedCreate: { mode: SubmitMode, result: outcome(V2StatusPage) },
+	CompletedCreate: { mode: SubmitMode, result: LoadOutcome(V2StatusPage) },
 })
 export type Message = typeof Message.Type

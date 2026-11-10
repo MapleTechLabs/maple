@@ -1,16 +1,9 @@
 // Declarative shape of the coordinator-owned migration journal.
 //
 // The journal is untrusted JSON: it was written by some build of this CLI, not
-// necessarily this one. Everything below used to be a hand-rolled parser in
-// `local-store-migrations.ts` — `typeof` chains, `Number.isInteger` guards, and
-// an `as string` on every field read. The shape is now declared once and the
-// casts are gone; what remains imperative in that file are the cross-field
-// invariants (phase x currentStepIndex x per-step status), which are a state
-// machine rather than a struct.
-//
-// Decoding is synchronous and throwing to match the coordinator, which is plain
-// TypeScript throw/catch code. `Schema.decodeUnknownEffect` is a one-line swap
-// if that ever moves into Effect.
+// necessarily this one. Cross-field invariants (phase x currentStepIndex x
+// per-step status) are asserted in `local-store-migration-journal.ts`. Decoding
+// throws, to match the coordinator's synchronous code.
 import { Effect, Schema, SchemaGetter } from "effect"
 import { resolve } from "node:path"
 

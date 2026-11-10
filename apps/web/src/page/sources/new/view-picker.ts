@@ -1,12 +1,11 @@
-import type { PushSourcePlatform } from "@maple/domain/primitives"
+import type { PushSourcePlatform } from "@maple/primitives"
 import { cardButton } from "@maple/views/ui/card-button"
 import { revealIcon } from "@maple/views/ui/reveal-icon"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { eyebrow } from "@maple/views/ui/eyebrow"
 import { icon } from "@maple/views/ui/icon"
 import { statusDot } from "@maple/views/ui/status-dot"
-import { DATA_INTEGRATIONS, type DataIntegration } from "../../integrations/embed"
-import { HEALTH_TONE, overviewOf } from "../../integrations/derive"
+import { DATA_INTEGRATIONS, type DataIntegration, HEALTH_TONE, overviewOf } from "../../integrations/embed"
 import { PLATFORMS, platformTile, PUSH_PLATFORMS, type PlatformMeta } from "../kit/platforms"
 import { Message } from "./message"
 import type { Model } from "./model"
@@ -14,7 +13,7 @@ import { typography } from "@maple/views/ui/typography"
 import { hstack, vstack } from "@maple/views/ui/stack"
 import { Array as Arr } from "effect"
 
-// `PlatformPicker`: the Source step.
+// The Source step.
 
 type H = HtmlBuilder<Message>
 

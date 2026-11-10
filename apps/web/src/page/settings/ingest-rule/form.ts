@@ -68,7 +68,7 @@ export const emptyDraft: Draft = {
 	method: "mask",
 }
 
-// FIELDS AND OPS (which op a field allows comes from `@maple/domain/ingest-rules`)
+// Which op a field allows comes from `@maple/domain/ingest-rules`.
 
 export const FIELD_LABELS = {
 	service_name: "service",
@@ -115,8 +115,6 @@ export const defaultCondition = (id: number, field: IngestRuleField): ConditionD
 	value: field === "severity" ? "info" : "",
 	values: "",
 })
-
-// DRAFT TO SPEC
 
 /** Comma-separated and trimmed; `\,` is a literal comma and `\\` a backslash, so values round-trip. */
 export const splitList = (text: string): ReadonlyArray<string> =>

@@ -1,13 +1,14 @@
+import { encodeJson } from "@maple/views/data/request-key"
 import type { DashboardDocument, TimeRange } from "@maple/domain/http"
 import { resolveTimeRangeWindow } from "@maple/query-engine"
-import { Option, Schema, Array as Arr, Record as Rec } from "effect"
+import { Option, Array as Arr, Record as Rec } from "effect"
 import * as Chart from "@maple/views/charts/chart"
 import * as Keyed from "@maple/views/data/keyed"
 import type { PageContext } from "../../contract"
 import { DEFAULT_WIDGET_WIDTH_PX, maxDataPointsForWidth, toPanelType } from "../kit/chart-registry"
 import { planWidget, type WidgetGate } from "../kit/widget-data"
 import { FetchVariableOptions, FetchWidget } from "./command"
-import { timeRangeFromSearch, variableValuesFromSearch } from "../../../lib/dashboard-controls/search-params"
+import { timeRangeFromSearch, variableValuesFromSearch } from "../../../route/dashboard-controls"
 import { AsyncData } from "foldkit"
 import {
 	optionsByNameOf as optionsByNameFor,
@@ -18,10 +19,6 @@ import {
 import { isEditing } from "./mode"
 import type { Model, WidgetSlot } from "./model"
 import type { ShareLinkRange } from "./share"
-
-const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
-
-// Which tiles fetch what: the window every tile shares, and each revealed tile's request.
 
 type Widget = DashboardDocument["widgets"][number]
 
@@ -46,7 +43,7 @@ export const isSameTimeRange = (a: TimeRange | null, b: TimeRange | null): boole
 			? b.type === "relative" && a.value === b.value
 			: b.type === "absolute" && a.startTime === b.startTime && a.endTime === b.endTime
 
-/** `resolveTimeRange`: snapped on entry, unsnapped after a reload; a bad preset falls back to 1h. */
+/** Snapped on entry, unsnapped after a reload; a bad preset falls back to 1h. */
 export const windowOf = (model: Model, context: PageContext) => {
 	const timeRange = timeRangeOf(model)
 	if (timeRange === null || model.nowMs === null) return null
@@ -87,7 +84,7 @@ export const withCharts = (model: Model, widgets: ReadonlyArray<Widget>): Model[
 
 type FetchCommand = ReturnType<typeof FetchWidget> | ReturnType<typeof FetchVariableOptions>
 
-/** `optionsByName`: inline lists, fetched lists, and the loading state of the rest. */
+/** Inline lists, fetched lists, and the loading state of the rest. */
 export const optionsByNameOf = (model: Model, context: PageContext): Record<string, OptionsState> =>
 	optionsByNameFor(
 		context.orgId,

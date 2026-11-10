@@ -5,8 +5,8 @@ import {
 	summarizeCrawls,
 	summarizeReferrals,
 	totalReferrals,
-} from "../../components/analytics/ai/ai-traffic-model"
-import { DEFAULT_TRAFFIC, hasActiveFilters } from "../../components/analytics/filters"
+} from "./ai-traffic-model"
+import { DEFAULT_TRAFFIC, hasActiveFilters } from "./filters"
 import { EMPTY_VALUE, formatNumber, formatPercent, pluralize } from "@maple/ui/lib/format"
 import { Option, Array as Arr } from "effect"
 import { AsyncData } from "foldkit"
@@ -45,8 +45,6 @@ import {
 } from "./view-ai-parts"
 import { favicon } from "./view-icons"
 import { hstack } from "@maple/views/ui/stack"
-
-// `AnalyticsAiTab`: the AI traffic tab.
 
 type H = HtmlBuilder<Message>
 

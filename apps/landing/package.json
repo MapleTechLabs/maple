@@ -26,6 +26,7 @@
 		"@maple-dev/browser": "workspace:*",
 		"@maple/domain": "workspace:*",
 		"@maple/infra": "workspace:*",
+		"@maple/primitives": "workspace:*",
 		"@maple/ui": "workspace:*",
 		"@maple/views": "workspace:*",
 		"@shikijs/themes": "^4.6.0",

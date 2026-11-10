@@ -1,10 +1,10 @@
 /**
- * The slice of JOSE device credentials need: base64url, RFC 7638 thumbprints for EC P-256
- * keys, and ES256 compact JWS parse/verify over WebCrypto (the one crypto API every runtime
- * Maple deploys to has).
+ * The slice of JOSE device credentials need: RFC 7638 thumbprints for EC P-256 keys, and ES256
+ * compact JWS parse/verify over WebCrypto. Encoding and signing live in `platform/jwt`.
  */
 import { createHash } from "node:crypto"
 import { Effect, Option, Schema, Array as Arr, String as Str } from "effect"
+import { base64url, ES256, ES256_SIGN, fromBase64url, signJwt } from "@maple/backend/platform/jwt"
 
 /** Internal: a JOSE object did not parse or verify. Callers map it to their public error. */
 export class JoseError extends Schema.TaggedError<JoseError>()("@maple/backend/auth/device/JoseError", {
@@ -20,26 +20,17 @@ export const EcPublicJwk = Schema.Struct({
 })
 export type EcPublicJwk = Schema.Schema.Type<typeof EcPublicJwk>
 
-const ES256 = { name: "ECDSA", namedCurve: "P-256" } as const
-const ES256_SIGN = { name: "ECDSA", hash: "SHA-256" } as const
 const COORDINATE = /^[A-Za-z0-9_-]{43}$/u
 const SEGMENT = /^[A-Za-z0-9_-]*$/u
 
-const JsonString = Schema.fromJsonString(Schema.Unknown)
-const encodeJsonSync = Schema.encodeSync(JsonString)
-const encodeJson = Schema.encodeEffect(JsonString)
+const encodeJsonSync = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
 
 /** Unpadded base64url that re-encodes to itself: no stray bits, so one value has one spelling. */
 const isCanonicalBase64url = (value: string): boolean =>
 	SEGMENT.test(value) && Buffer.from(value, "base64url").toString("base64url") === value
 
-export const base64url = (bytes: Uint8Array | string): string =>
-	(typeof bytes === "string" ? Buffer.from(bytes, "utf8") : Buffer.from(bytes)).toString("base64url")
-
 /** A copy backed by a plain `ArrayBuffer`, which is what WebCrypto's `BufferSource` accepts. */
 export const arrayBufferView = (bytes: Uint8Array): Uint8Array<ArrayBuffer> => new Uint8Array(bytes)
-
-export const fromBase64url = (value: string): Uint8Array => new Uint8Array(Buffer.from(value, "base64url"))
 
 export const sha256 = (...parts: ReadonlyArray<Uint8Array | string>): Uint8Array => {
 	const hash = createHash("sha256")
@@ -136,22 +127,15 @@ export const verifyEs256 = (key: CryptoKey, jws: CompactJws) =>
 			})
 
 export const signEs256 = (key: CryptoKey, header: unknown, payload: unknown) =>
-	Effect.gen(function* () {
-		const [headerJson, payloadJson] = yield* Effect.all([encodeJson(header), encodeJson(payload)]).pipe(
-			Effect.mapError(
-				() =>
-					new JoseError({
-						message: "The JWS header or payload is not JSON-encodable.",
-						reason: "sign",
-					}),
-			),
-		)
-		const signingInput = `${base64url(headerJson)}.${base64url(payloadJson)}`
-		const signature = yield* Effect.tryPromise({
-			try: () => crypto.subtle.sign(ES256_SIGN, key, new TextEncoder().encode(signingInput)),
-			catch: () => new JoseError({ message: "Signing failed.", reason: "sign" }),
-		})
-		return `${signingInput}.${base64url(new Uint8Array(signature))}`
-	})
-
-export const ES256_IMPORT = ES256
+	signJwt(key, ES256_SIGN, header, payload).pipe(
+		Effect.mapError(
+			(error) =>
+				new JoseError({
+					message:
+						error.reason === "encode"
+							? "The JWS header or payload is not JSON-encodable."
+							: "Signing failed.",
+					reason: "sign",
+				}),
+		),
+	)

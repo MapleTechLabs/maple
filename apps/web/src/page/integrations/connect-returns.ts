@@ -1,6 +1,6 @@
 import { GithubInstallationSelection } from "@maple/domain/http"
 import { Effect, Option, Queue, Schema, Stream } from "effect"
-import { apiOrigins } from "../../lib/services/common/api-base-url"
+import { apiOrigins } from "../../platform/api-base-url"
 import { type ConnectProvider, IntegrationCallbackEvents } from "./connect"
 import { RELAY_CHANNEL, relayOf } from "./oauth-return"
 
@@ -65,7 +65,9 @@ export const relayedReturns: Stream.Stream<ConnectReturn> = Stream.callback<Conn
 					onSome: ({ provider, status, message, github }) => {
 						Queue.offerUnsafe(
 							queue,
-							github === undefined ? { provider, status, message } : { provider, status, message, github },
+							github === undefined
+								? { provider, status, message }
+								: { provider, status, message, github },
 						)
 					},
 				})

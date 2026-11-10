@@ -1,4 +1,4 @@
-import { writeClipboardFallback } from "@maple/ui/lib/clipboard"
+import { writeClipboard } from "@maple/ui/lib/clipboard"
 import { cn } from "@maple/ui/lib/utils"
 import {
 	copyButtonStatusStyles,
@@ -13,7 +13,7 @@ import {
 	copyLabelActiveStyles,
 	copyLabelLayerStyles,
 	copyLabelStyles,
-} from "@maple/ui/styles/ui/copy-button"
+} from "./copy-button.styles"
 import { Duration, Effect, Schema, Array as Arr } from "effect"
 import { Command, type Update } from "foldkit"
 import type { Attribute, ChildAttribute, Html, HtmlBuilder } from "foldkit/html"
@@ -23,7 +23,7 @@ import { button } from "./button"
 import { icon, type IconName } from "./icon"
 
 /**
- * `useCopy` + `<CopyButton>`: copy writes the clipboard, holds `copied`/`error` for the timeout,
+ * Copy writes the clipboard, holds `copied`/`error` for the timeout,
  * then falls back to `idle`. A newer copy bumps `generation` so an older reset is dropped.
  * TODO(toast): also toast on copy.
  */
@@ -31,16 +31,17 @@ import { icon, type IconName } from "./icon"
 export const CopyStatus = Schema.Literals(["idle", "copied", "error"])
 export type CopyStatus = typeof CopyStatus.Type
 
-const COPY_TIMEOUT = Duration.millis(2000)
+/** How long a finished copy holds its `copied`/`error` status before it reads idle again. */
+export const COPY_STATUS_HOLD = Duration.millis(2000)
 
-// MODEL
+/** `message` once a finished copy's status hold is over: every copy's reset command answers it. */
+export const afterCopyStatusHold = <A>(message: A): Effect.Effect<A> =>
+	Effect.as(Effect.sleep(COPY_STATUS_HOLD), message)
 
 export const Model = Schema.Struct({ status: CopyStatus, generation: Schema.Finite })
 export type Model = typeof Model.Type
 
 export const init = (): Model => ({ status: "idle", generation: 0 })
-
-// MESSAGE
 
 export const Message = defineMessageUnion({
 	ClickedCopy: { text: Schema.String },
@@ -49,35 +50,6 @@ export const Message = defineMessageUnion({
 	ElapsedCopyStatus: { generation: Schema.Finite },
 })
 export type Message = typeof Message.Type
-
-// COMMAND
-
-export class ClipboardWriteError extends Schema.TaggedError<ClipboardWriteError>()(
-	"@maple/web/ClipboardWriteError",
-	{ message: Schema.String, cause: Schema.Defect() },
-) {}
-
-/** `navigator.clipboard.writeText` as an Effect, failing with `ClipboardWriteError`. */
-export const writeClipboardApi = (text: string): Effect.Effect<void, ClipboardWriteError> =>
-	Effect.tryPromise({
-		try: () => navigator.clipboard.writeText(text),
-		catch: (cause) => new ClipboardWriteError({ message: "The clipboard API refused the write", cause }),
-	})
-
-/** `useCopy`'s write: whether the text reached the clipboard. */
-export const writeClipboard = (text: string): Effect.Effect<boolean> =>
-	writeClipboardApi(text).pipe(
-		Effect.as(true),
-		// A rejected clipboard API falls back to the `execCommand` textarea write.
-		Effect.catch(() =>
-			Effect.try({
-				try: () => writeClipboardFallback(text),
-				catch: (cause) =>
-					new ClipboardWriteError({ message: "The fallback clipboard write failed", cause }),
-			}),
-		),
-		Effect.orElseSucceed(() => false),
-	)
 
 export const WriteClipboard = Command.define("WriteClipboard", {
 	args: { text: Schema.String, generation: Schema.Finite },
@@ -91,11 +63,8 @@ export const WriteClipboard = Command.define("WriteClipboard", {
 export const WaitCopyStatus = Command.define("WaitCopyStatus", {
 	args: { generation: Schema.Finite },
 	messages: [Message.ElapsedCopyStatus],
-	execute: ({ generation }) =>
-		Effect.sleep(COPY_TIMEOUT).pipe(Effect.as(Message.ElapsedCopyStatus({ generation }))),
+	execute: ({ generation }) => afterCopyStatusHold(Message.ElapsedCopyStatus({ generation })),
 })
-
-// UPDATE
 
 const settled = (model: Model, generation: number, status: CopyStatus): Update.Return<Model, Message> =>
 	generation === model.generation
@@ -120,8 +89,6 @@ export const update = (model: Model, message: Message): Update.Return<Model, Mes
 				? { model: modifyFields(model, { status: () => "idle" }) }
 				: { model },
 	})
-
-// VIEW
 
 const CHECK_PATH = "M4.5 12.5L9.5 17.5L19.5 6.5"
 
@@ -148,7 +115,7 @@ const strokePath = <M>(h: HtmlBuilder<M>, d: string, extra: ReadonlyArray<Attrib
 		h.Attribute("stroke-linecap", "square"),
 	])
 
-/** `<CopyIndicator>`: idle glyph, a self-drawing check and an X, stacked in one grid cell. */
+/** Idle glyph, a self-drawing check and an X, stacked in one grid cell. */
 export const copyIndicator = <M>(
 	h: HtmlBuilder<M>,
 	options: Readonly<{ status: CopyStatus; iconSize?: number; className?: string; idleIcon?: IconName }>,
@@ -225,7 +192,7 @@ export type CopyButtonOptions<M> = Readonly<{
 	attributes?: ReadonlyArray<Attribute<M> | ChildAttribute>
 }>
 
-/** `<CopyButton>` from @maple/ui (no tooltip), for a parent that owns the copy status. */
+/** A copy button without a tooltip, for a parent that owns the copy status. */
 export const copyButton = <M>(h: HtmlBuilder<M>, options: CopyButtonOptions<M>): Html => {
 	const { status } = options
 	const copiedLabel = options.copiedLabel ?? "Copied"
@@ -290,7 +257,7 @@ export type CopyButtonViewConfig<ParentMessage> = Omit<
 		value: string
 	}>
 
-/** `<CopyButton>` as a Submodel view: the click copies `value` and the Model holds the status. */
+/** The copy button as a Submodel view: the click copies `value` and the Model holds the status. */
 export const view = <ParentMessage>(
 	h: HtmlBuilder<ParentMessage>,
 	config: CopyButtonViewConfig<ParentMessage>,

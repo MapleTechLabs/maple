@@ -1,31 +1,10 @@
 import { Array as Arr, Option } from "effect"
 /**
- * Fixtures for the line, area and stacked-bar arms of `/lab/charts`.
- *
- * Two anchors, one predicate. Every series is generated from its bucket INDEX —
- * sine sums, no `Math.random()` — so the shape is byte-identical run to run and
- * the perf numbers stay comparable. What differs between the plain and the
- * trailing-partial fixtures is only where the last bucket sits on the clock:
- *
- * - plain fixtures end at a FIXED instant a month in the past, so nothing is ever
- *   in flight and both arms draw one unbroken solid line;
- * - partial fixtures are anchored to WALL-CLOCK now, because the production
- *   charts have to infer partiality themselves.
- *
- * That second anchor is not a lapse in the determinism rule, it is forced.
- * `QueryBuilderLineChart` rebuilds its rows as `{bucket, s1..sN}` before calling
- * `useIncompleteSegments` (query-builder-line-chart.tsx:85-95), so a `partial`
- * flag we set never reaches `markIncompleteSegments` — it is dropped one step
- * earlier, and passing it through would instead register `partial` as a fourth
- * SERIES. The production arm therefore falls back to the spacing + wall-clock
- * heuristic (`incomplete-buckets.ts:38-56`), and a fixed 2026 timestamp exercises
- * nothing at all. `widget-lab/scenarios.ts:546-596` anchors to `now` for exactly
- * this reason.
- *
- * `isPartial` below is that heuristic's predicate, evaluated against the same
- * captured `NOW_MS`. Both arms therefore classify the same buckets, so the dashed
- * tail starts at the same bucket in Recharts and in TanStack — which is the whole
- * point of putting them side by side.
+ * Fixtures for the line, area and stacked-bar charts in `/lab/charts`, generated from the bucket
+ * index so every run draws the same shape. Plain fixtures end a month in the past, so no bucket is
+ * in flight. Partial fixtures end at wall-clock now, because the chart infers its in-flight tail
+ * from bucket spacing and the clock (`packages/views/src/charts/plot/partial-buckets.ts`); `isPartial`
+ * below is that predicate, so the lab marks the same buckets the chart does.
  */
 
 /** 5 minutes. Wide enough that a render crossing a bucket boundary is rare. */
@@ -249,7 +228,7 @@ export function stackedBarAxisContext(rows: readonly StackedBarSpikeRow[]): {
 	return { rangeMs: (buckets.size - 1) * BUCKET_MS, bucketSeconds: BUCKET_MS / 1000 }
 }
 
-/** Long form pivoted to wide form for `QueryBuilderBarChart`. */
+/** Long form pivoted to wide form for the query-builder bar chart. */
 export function toStackedBarProductionRows(rows: readonly StackedBarSpikeRow[]): Record<string, unknown>[] {
 	const byBucket = new Map<string, Record<string, unknown>>()
 	for (const row of rows) {

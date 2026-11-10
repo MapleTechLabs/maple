@@ -1,7 +1,7 @@
 import { readLocalStorage } from "@maple/ui/lib/local-storage"
 import { Option, Schema } from "effect"
 
-/** `dashboardFavoritesAtom`: an effect-atom KVS entry, JSON-encoded. */
+/** An effect-atom KVS entry, JSON-encoded. */
 export const DASHBOARD_FAVORITES_KEY = "maple.dashboards.favorites"
 
 /**

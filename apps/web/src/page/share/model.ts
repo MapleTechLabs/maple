@@ -13,9 +13,7 @@ import { ShareSearch } from "../../route/search"
 import * as Menu from "@maple/views/ui/menu"
 import { TableSort } from "../dashboards/kit/tiles"
 
-// `/share/$token`.
-
-/** `ShareWidgetSchema`: a redacted widget, no stored query. */
+/** A redacted widget, no stored query. */
 export const ShareWidget = Schema.Struct({
 	id: Schema.String,
 	visualization: Schema.String,
@@ -37,14 +35,13 @@ export const SharedDashboard = Schema.Struct({
 		name: Schema.String,
 		timeRange: Schema.Unknown,
 		widgets: Schema.Array(ShareWidget),
-		/** Decoded on their own (`decodeShare`): a shape this build can't read costs the grouping only. */
+		/** Decoded on their own: a shape this build can't read costs the grouping only. */
 		sections: Schema.Array(DashboardSectionSchema),
 		refreshIntervalSeconds: Schema.optionalKey(Schema.Number),
 	}),
 })
 export type SharedDashboard = typeof SharedDashboard.Type
 
-/** `ShareResolveError`. */
 export const ShareError = Schema.Union([
 	Schema.TaggedStruct("NotFound", {}),
 	Schema.TaggedStruct("SignInRequired", {}),
@@ -61,13 +58,11 @@ export const Resolve = Schema.Union([
 ])
 export type Resolve = typeof Resolve.Type
 
-/** `ReadyData`: rows, or one value. */
 const ReadyDataSchema = Schema.Union([
 	Schema.TaggedStruct("Rows", { rows: Schema.Array(Schema.Record(Schema.String, Schema.Unknown)) }),
 	Schema.TaggedStruct("Value", { value: Schema.Unknown }),
 ])
 
-/** One widget's data as `useShareWidgetData` holds it. */
 export const WidgetState = Schema.Union([
 	Schema.TaggedStruct("Loading", {}),
 	Schema.TaggedStruct("Ready", { data: ReadyDataSchema }),
@@ -104,12 +99,12 @@ export const Model = Schema.Struct({
 	token: Schema.String,
 	search: ShareSearch,
 	resolve: Resolve,
-	/** `refreshTick`: Reloads and auto-refresh ticks so far (non-zero stops snapping). */
+	/** Reloads and auto-refresh ticks so far (non-zero stops snapping). */
 	refreshTick: Schema.Number,
 	window: Schema.NullOr(ShareWindow),
 	/** Each mounted tile's measured `maxDataPoints`. */
 	options: Schema.Record(Schema.String, Schema.Number),
-	/** The request key each widget was last fetched under (`requested`). */
+	/** The request key each widget was last fetched under. */
 	requested: Schema.Record(Schema.String, Schema.String),
 	isFlushScheduled: Schema.Boolean,
 	/** Batches after the one in flight; each is awaited before the next is sent. */
@@ -124,11 +119,11 @@ export const Model = Schema.Struct({
 	chartRuntime: ChartRuntime,
 	refreshMenu: Menu.Model,
 	nowMs: Schema.Number,
-	/** `isFramed()`: inside an iframe (a cross-origin parent counts), read once on entry. */
+	/** Inside an iframe (a cross-origin parent counts), read once on entry. */
 	isFramed: Schema.Boolean,
-	/** The variables the last answered batch resolved (`useShareWidgetData`'s `variables`). */
+	/** The variables the last answered batch resolved. */
 	variables: Schema.Record(Schema.String, Schema.String),
-	/** `ReadOnlyDashboardView`'s local section state: collapse overrides and active tabs. */
+	/** Local section state: collapse overrides and active tabs. */
 	sectionView: Schema.Struct({
 		collapsed: Schema.optionalKey(Schema.String),
 		expanded: Schema.optionalKey(Schema.String),

@@ -5,7 +5,7 @@ import { ReadCache } from "../../data/read-cache"
 import { requestKey } from "@maple/views/data/request-key"
 import { Message } from "./model"
 
-/** `getTracesFacetValuesResultAtom`'s `staleTime`, counted from the palette closing (its unmount). */
+/** How long the services read stays fresh, counted from the palette closing. */
 const SERVICES_IDLE_TTL_MS = 30_000
 const SERVICES_OPERATION = "getTracesFacetValues"
 const SERVICES_INPUT = { data: { facet: "service" as const } }

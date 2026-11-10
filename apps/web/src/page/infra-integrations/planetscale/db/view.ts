@@ -1,7 +1,4 @@
-import {
-	derivePlanetScaleSetup,
-	metricsCollectionFailing,
-} from "../../../../components/integrations/planetscale-setup-steps"
+import { derivePlanetScaleSetup, metricsCollectionFailing } from "../setup-steps"
 import { countLabel } from "@maple/ui/lib/format"
 import { AsyncData, Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
@@ -24,7 +21,7 @@ import type { PageViewInputs } from "../../../contract"
 import { dashboardPage } from "../../../kit/dashboard-page"
 import { heroChip } from "../../../infra/kit/hero-chip"
 import { pageHeroParts } from "../../../infra/kit/page-parts"
-import { pageTime } from "../../kit/page-time"
+import { pageTime } from "../../../kit/page-time"
 import { activeFilterChips, applyBranchFilters } from "../filters"
 import {
 	BRANCH_ABSENCE_COPY,
@@ -57,15 +54,14 @@ import {
 import { activitySection, topQueries } from "./view-sections"
 import { sectionHeading } from "../../../kit/section-heading"
 import { planetscaleSidebar } from "./view-sidebar"
-import { absenceReason } from "../../../../components/infra/planetscale/branch-selection"
+import { absenceReason } from "../branch-selection"
 import { removableChip } from "@maple/views/ui/removable-chip"
 import { typography } from "@maple/views/ui/typography"
 import { hstack } from "@maple/views/ui/stack"
 import { Array as Arr, String as Str, Option } from "effect"
 
-// `PlanetScaleDatabasePage`.
 // TODO(alert-menu): "Alert on this" renders its trigger; the suggestion menu and its prefilled
-// `/alerts/create` navigation (`encodeAlertChartToSearchParam`, `makeQueryDataSource`) are not ported.
+// `/alerts/create` navigation are not ported.
 
 type H = HtmlBuilder<Message>
 type Clock = Readonly<{ nowMs: number; timeZone: string }>
@@ -355,7 +351,6 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 				viewInputs: {
 					triggerIds: tooltipIds,
 					toContent: tooltipContent,
-					// `ScopeChip`'s `TooltipContent className="max-w-[32ch]"`.
 					className:
 						Str.startsWith("ps-chart-")(model.tooltip.triggerId) ||
 						Str.startsWith("ps-insights-")(model.tooltip.triggerId)

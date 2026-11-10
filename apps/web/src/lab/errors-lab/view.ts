@@ -14,12 +14,11 @@ import { labSignals } from "./hub-step"
 import { LAB_STATES, LAB_WIDTHS, type LabState, Message, type Model } from "./model"
 import { Array as Arr } from "effect"
 
-// `LabControls`, `LabStatStrip` and `ErrorsHubView` over the fixture.
+// The lab controls, stat strip and errors hub view over the fixture.
 // Shell-free (the entry wraps it), so scene tests can render it.
 
 type Option<T> = Readonly<{ value: T; label: string }>
 
-/** `LabToggleGroup`. */
 const toggleGroup = <M, T>(
 	h: HtmlBuilder<M>,
 	label: string,
@@ -79,7 +78,7 @@ const labStatStrip = <M>(h: HtmlBuilder<M>, summary: { totalErrors: number; erro
 
 type HubInputs = Readonly<{ state: LabState; timeZone: string }>
 
-/** `ErrorsHubView`: the stat strip and toolbar over the skeleton, retry card, rows or empty state. */
+/** The stat strip and toolbar over the skeleton, retry card, rows or empty state. */
 const hubView = Submodel.defineView<HubModel, HubMessage, HubInputs>((hub, inputs, h) => {
 	const fixture = buildErrorsLabFixture(hub.nowMs)
 	const signals = labSignals(hub, inputs.state)

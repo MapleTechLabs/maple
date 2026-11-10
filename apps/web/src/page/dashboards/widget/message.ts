@@ -1,8 +1,8 @@
+import { ChartEnvMessages } from "@maple/views/charts/chart-env"
 import { DashboardDocument, HEATMAP_SCALE_TYPES } from "@maple/domain/http"
 import { Schema } from "effect"
 import { defineMessageUnion } from "foldkit/message"
 import * as Chart from "@maple/views/charts/chart"
-import { ThemeColors } from "@maple/views/charts/theme-colors"
 import * as Combobox from "@maple/views/ui/combobox"
 import * as Dialog from "@maple/views/ui/dialog"
 import * as Select from "@maple/views/ui/select"
@@ -37,9 +37,7 @@ export const Message = defineMessageUnion({
 		key: Schema.String,
 		result: Schema.Result(Schema.Array(Schema.String), WidgetFailure),
 	},
-	ResolvedThemeColors: { colors: ThemeColors },
-	CompletedLoadChartRuntime: {},
-	FailedLoadChartRuntime: { reason: Schema.String },
+	...ChartEnvMessages,
 	GotChartMessage: { message: Chart.Message },
 	GotSparklineChartMessage: { message: Chart.Message },
 	ClickedSortColumn: { field: Schema.String, isText: Schema.Boolean },
@@ -50,7 +48,7 @@ export const Message = defineMessageUnion({
 	GotQueryPanelMessage: { message: QueryPanel.Message },
 	ClickedAddQuery: {},
 	ClickedAddFormula: {},
-	/** A fresh id for what was asked (`crypto.randomUUID()`). */
+	/** A fresh id for what was asked. */
 	GeneratedId: {
 		purpose: GeneratedIdPurpose,
 		source: Schema.String,
@@ -96,14 +94,14 @@ export const Message = defineMessageUnion({
 	FocusedQueryEditor: {},
 	/** An edit of the list, funnel or paths panel. */
 	ChangedProduct: { edit: ProductEdit },
-	/** A step's suggesting input (`SuggestingInput`), by combobox id. */
+	/** A step's suggesting input, by combobox id. */
 	GotStepComboMessage: { id: Schema.String, message: Combobox.Message },
 	FocusedListField: { index: Schema.Number },
-	/** The list, population and step filters' suggestions (`WhereFields`). */
+	/** The list, population and step filters' suggestions. */
 	GotWhereFieldMessage: { message: WhereFieldMessage },
 	ToggledProductPanel: {},
 	BlurredListField: {},
-	/** The key typed under `BreakdownPicker`'s "Attribute…" mode. */
+	/** The key typed under the breakdown picker's "Attribute…" mode. */
 	ChangedBreakdownAttribute: { value: Schema.String },
 	CompletedFetchSuggestions: {
 		key: Schema.String,

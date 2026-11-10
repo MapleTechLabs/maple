@@ -1,12 +1,10 @@
 import type { AlertDestinationId, AlertIncidentId, AlertRuleId } from "@maple/domain/http"
-import type { V2AlertDestinationUpdateParams, V2AlertIncident } from "@maple/domain/http/v2"
+import type { V2AlertDestinationUpdateParams, V2AlertIncident, V2ChatConnector } from "@maple/domain/http/v2"
 import type { AlertIncidentRow } from "@maple/web-data/collections/alerts"
 import { v2DeliveryToDocument } from "@maple/web-data/alerts/form-utils"
 import { Effect, Array as Arr } from "effect"
 import { toLoadFailure } from "@maple/views/data/load-failure"
 import { MapleApiV2Client } from "../../../platform/api-clients"
-
-// The alert reads and writes the hub, rule and incident pages share, as Effects their Commands wrap.
 
 /** `alertDeliveries.list({ limit: 100 })` (optionally one incident's), as documents. */
 export const listDeliveriesRaw = (incidentId?: AlertIncidentId) =>
@@ -21,7 +19,6 @@ export const listDeliveriesRaw = (incidentId?: AlertIncidentId) =>
 export const listDeliveries = (incidentId?: AlertIncidentId) =>
 	listDeliveriesRaw(incidentId).pipe(Effect.mapError(toLoadFailure))
 
-/** `toggleRuleHandler`: PATCH the rule's `enabled`. */
 export const setRuleEnabled = (ruleId: AlertRuleId, isEnabled: boolean) =>
 	Effect.gen(function* () {
 		const client = yield* MapleApiV2Client
@@ -110,3 +107,10 @@ export const withAcknowledgement = <R extends AlertIncidentRow>(
 				}
 			: row,
 	)
+
+/** The org's chat connectors, Slack first; none when the read fails. */
+export const listChatConnectors = Effect.gen(function* () {
+	const client = yield* MapleApiV2Client
+	const response = yield* client.chatIntegration.connectors()
+	return [...response.data].sort((a, b) => Number(b.id === "slack") - Number(a.id === "slack"))
+}).pipe(Effect.orElseSucceed((): ReadonlyArray<V2ChatConnector> => []))

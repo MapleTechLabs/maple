@@ -14,7 +14,7 @@ import {
 	type StatusPageComponentId,
 	type StatusPageId,
 	StatusPageSubscriberId,
-} from "@maple/domain/primitives"
+} from "@maple/primitives"
 import { sha256Base64Url } from "@maple/domain/status-page"
 import { renderStatusPageConfirmEmail } from "@maple/email/status-page-subscription"
 import { Clock, Context, Effect, Layer, Option, Redacted, Array as Arr, String as Str } from "effect"

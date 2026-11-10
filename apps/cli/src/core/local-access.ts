@@ -1,7 +1,6 @@
 import { networkInterfaces } from "node:os"
 import {
 	Cause,
-	Config,
 	Duration,
 	Effect,
 	Layer,
@@ -15,7 +14,12 @@ import {
 import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/http"
 import * as ChildProcess from "effect/process/ChildProcess"
 import { ChildProcessSpawner } from "effect/process/ChildProcessSpawner"
-import { defaultLocalUrl, isLoopbackHostname, isRemoteHttps } from "@maple/local-server/local-address"
+import {
+	configuredLocalUrl,
+	isLoopbackHostname,
+	isRemoteHttps,
+	optionalEnvString,
+} from "@maple/local-server/local-address"
 import { ACCESS_TOKEN_ENV } from "@maple/local-server/remote-auth"
 
 const bare = (hostname: string): string => Str.toLowerCase(Str.replace(/^\[(.*)\]$/, "$1")(hostname))
@@ -217,23 +221,13 @@ export const localAccessClient =
 			)
 		})
 
-/** An unset env var reads as `undefined`; never fails. */
-const optionalEnvString = (key: string): Effect.Effect<string | undefined> =>
-	Config.String(key).pipe(
-		Config.option,
-		Effect.map(Option.getOrUndefined),
-		Effect.orElseSucceed(() => undefined),
-	)
-
 /** The CLI's HttpClient, configured from `MAPLE_LOCAL_URL`, `MAPLE_LOCAL_ACCESS_TOKEN` and `MAPLE_LOCAL_HEADERS`. */
 export const LocalAccessHttpClient = Layer.effect(
 	HttpClient.HttpClient,
 	Effect.gen(function* () {
 		const client = yield* HttpClient.HttpClient
 		const spawner = yield* ChildProcessSpawner
-		const configuredUrl = yield* optionalEnvString("MAPLE_LOCAL_URL")
-		const bindHost = yield* optionalEnvString("MAPLE_LOCAL_BIND_HOST")
-		const localUrl = configuredUrl ?? defaultLocalUrl(bindHost)
+		const localUrl = yield* configuredLocalUrl
 		const accessToken = yield* optionalEnvString(ACCESS_TOKEN_ENV)
 		const headers = yield* optionalEnvString(LOCAL_HEADERS_ENV)
 		return yield* localAccessClient({

@@ -4,9 +4,7 @@ import { KeyedSchema } from "@maple/views/data/keyed"
 import { LoadFailure } from "@maple/views/data/load-failure"
 import * as CopyButton from "@maple/views/ui/copy-button"
 
-// `/recommendations/$recommendationKey`.
-
-/** `BusyAction`: the one write in flight. */
+/** The one write in flight. */
 export const BusyAction = Schema.NullOr(Schema.Literals(["apply", "dismiss", "reopen"]))
 export type BusyAction = typeof BusyAction.Type
 
@@ -14,9 +12,9 @@ export const Model = Schema.Struct({
 	recommendationKey: Schema.String,
 	/** `Date.now()` at render, read once on entry for the rail's relative time. */
 	nowMs: Schema.NullOr(Schema.Number),
-	/** `recommendationIssuesListAtom`: every page of the org's recommendations. */
+	/** Every page of the org's recommendations. */
 	list: KeyedSchema(Schema.Array(V2Recommendation), LoadFailure),
-	/** `ingestAttributeMappingsListAtom`: the org's attribute mappings, read with the list. */
+	/** The org's attribute mappings, read with the list. */
 	mappings: KeyedSchema(Schema.Array(V2AttributeMapping), LoadFailure),
 	busy: BusyAction,
 	copy: CopyButton.Model,

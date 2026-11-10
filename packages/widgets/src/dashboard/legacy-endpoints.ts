@@ -11,23 +11,19 @@ import { Array as Arr, Record as Rec } from "effect"
  * schema.
  *
  * They do not stop existing. Requests are still keyed by them: `toWidgetRequest`
- * lowers a v3 source to an endpoint, and the web app's server-function registry
- * (`data-source-registry.ts`) uses that string as its atom family key, retention
- * namespace and `LIST_ENDPOINTS` test. The public v2 API speaks v3 (`kind`), and
- * `access.ts` still reads a v2 `{ endpoint, params }` bag wherever one survives.
- *
- * They live in their own file, away from the schema modules, so that this
- * distinction survives contact with the next refactor: these are wire
- * vocabularies that happen to be strings, not a resultKind anything is stored in.
+ * lowers a v3 source to an endpoint, which `widgetServerFunctions`
+ * (`@maple/web-data`) and `LIST_ENDPOINTS` (`@maple/query-engine`) key on. The
+ * public v2 API speaks v3 (`kind`), and `access.ts` still reads a v2
+ * `{ endpoint, params }` bag wherever one survives.
  */
 
 /**
  * The endpoints that carried a user-authored query set, keyed by the result
- * resultKind that is their v3 identity.
+ * kind that is their v3 identity.
  *
  * Canonical in this direction because request lowering writes it and the MCP
- * inspector reports it; the endpoint -> resultKind lookup is derived below, so the
- * two cannot drift.
+ * inspector reports it; the endpoint -> result kind lookup is derived below, so
+ * the two cannot drift.
  */
 export const QUERY_RESULT_ENDPOINTS = {
 	timeseries: "custom_query_builder_timeseries",

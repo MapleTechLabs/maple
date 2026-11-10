@@ -8,9 +8,9 @@ import * as Tabs from "@maple/views/ui/tabs"
 import { ProductEvent } from "./model"
 import * as SpanPanel from "@maple/views/traces/span-panel"
 import * as InfraCorrelation from "../../kit/infra-correlation"
-import * as Timeline from "./timeline"
+import * as Timeline from "@maple/views/traces/timeline"
 import { SpanEvents, TraceData } from "@maple/views/traces/trace-data"
-import * as Waterfall from "./waterfall"
+import * as Waterfall from "@maple/views/traces/waterfall"
 
 export const TraceView = Schema.Literals(["waterfall", "timeline", "flow"])
 export type TraceView = typeof TraceView.Type
@@ -23,9 +23,9 @@ const result = <A extends Schema.Top>(schema: A) => ({
 export const Message = defineMessageUnion({
 	CompletedReadClock: { nowMs: Schema.Number },
 	CompletedReadListQuery: { listQuery: Schema.String },
-	/** `useAppHotkey("list.clear")`: Escape on the page closes the span panel. */
+	/** Escape on the page closes the span panel. */
 	PressedPageEscape: {},
-	/** The mobile span sheet (`Sheet side="bottom"`); it is open exactly while a span is selected. */
+	/** The mobile span sheet; it is open exactly while a span is selected. */
 	GotSpanSheetMessage: { message: Dialog.Message },
 	CompletedFetchHierarchy: result(TraceData),
 	ClickedRetryHierarchy: {},

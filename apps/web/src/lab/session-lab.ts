@@ -113,12 +113,12 @@ export const enterSession = (
 
 type SessionInputs = Readonly<{ timeZone: string }>
 
-/** `SessionHeader` over the session in hand. */
+/** The session header over the session in hand. */
 export const sessionTitle = Submodel.defineView<SessionModel, SessionMessage, SessionInputs>(
 	(session, inputs, h) => sessionHeader(h, session, sessionData(session).summary, inputs.timeZone),
 )
 
-/** `SessionViews` over the session in hand. */
+/** The session views over the session in hand. */
 export const sessionViews = Submodel.defineView<SessionModel, SessionMessage, SessionInputs>(
 	(session, inputs, h) => views(h, session, sessionData(session), inputs.timeZone),
 )

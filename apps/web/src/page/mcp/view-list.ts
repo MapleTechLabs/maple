@@ -13,7 +13,7 @@ import {
 	toolTableBody,
 	toolTableFooter,
 	toolTableHead,
-} from "../agent-sessions/tools-kit/table"
+} from "../kit/tools/table"
 import type { McpServerRow } from "./data"
 import {
 	attr,
@@ -146,7 +146,6 @@ const addServerStrip = <M>(h: HtmlBuilder<M>, onInstrument: M): Html =>
 		],
 	)
 
-/** `McpServersBody`: the servers table. */
 export const listBody = <M>(
 	h: HtmlBuilder<M>,
 	rows: ReadonlyArray<McpServerRow>,

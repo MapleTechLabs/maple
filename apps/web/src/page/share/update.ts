@@ -1,10 +1,12 @@
+import { chartEnvHandlers } from "@maple/views/charts/chart-env"
+import { encodeJson } from "@maple/views/data/request-key"
 import { TimeRangeSchema } from "@maple/domain/http"
 import { resolveTimeRangeWindow } from "@maple/query-engine"
 import {
 	REFRESH_INTERVAL_OPTIONS,
 	resolveRefreshIntervalSeconds,
 	variableValuesFromSearch,
-} from "../../lib/dashboard-controls/search-params"
+} from "../../route/dashboard-controls"
 import { Option, Schema, Array as Arr, Record as Rec } from "effect"
 import { Command } from "foldkit"
 import * as Chart from "@maple/views/charts/chart"
@@ -13,8 +15,8 @@ import { AppRoute, hrefOf } from "../../route"
 import { validTimeZone } from "../../platform/time-zone"
 import * as Menu from "@maple/views/ui/menu"
 import { type PageReturn, PageOutMessage } from "../contract"
-import { presetLabel } from "../kit/time-controls"
-import { withActiveTab, withSectionCollapsed } from "../../lib/dashboards/section-view-state"
+import { presetLabel } from "@maple/ui/lib/time-preset"
+import { withActiveTab, withSectionCollapsed } from "../dashboards/kit/section-view-state"
 import {
 	DATA_UNAVAILABLE_MESSAGE,
 	FetchBatch,
@@ -28,8 +30,6 @@ import {
 import { Message } from "./message"
 import type { Model, QueuedBatch, SharedDashboard, ShareWindow, WidgetState } from "./model"
 
-const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
-
 type Return = PageReturn<Model, Message>
 type Route = { readonly token: string; readonly search: Model["search"] }
 
@@ -41,7 +41,7 @@ const decodeTimeRange = Schema.decodeUnknownOption(TimeRangeSchema)
 export const shareTimeZoneOf = (search: Model["search"], pageTimeZone: string): string =>
 	search.tz === undefined ? pageTimeZone : Option.getOrElse(validTimeZone(search.tz), () => pageTimeZone)
 
-/** `resolveShareWindow`: `?from`/`?to`, then `?range`, then the board's own range. */
+/** `?from`/`?to`, then `?range`, then the board's own range. */
 export const resolveShareWindow = (
 	model: Model,
 	share: SharedDashboard,
@@ -89,7 +89,6 @@ const variableValuesOf = (model: Model): Record<string, string> => ({
 	...variableValuesFromSearch(model.search),
 })
 
-/** Queued batches cut down to the widgets still requested under the same key; empty ones drop. */
 const liveBatches = (
 	batches: ReadonlyArray<QueuedBatch>,
 	requested: Model["requested"],
@@ -99,7 +98,7 @@ const liveBatches = (
 		return requests.length === 0 ? [] : [{ ...batch, requests }]
 	})
 
-/** `useShareWidgetData`'s effect: every reported widget whose request key moved, in batches of four. */
+/** Every reported widget whose request key moved, in batches of four. */
 const flush = (model: Model): Return => {
 	const share = shareOf(model)
 	const window = model.window
@@ -162,8 +161,6 @@ const reload = (model: Model, pageTimeZone: string): Return => {
 	return flush(next)
 }
 
-// ENTRY POINTS
-
 export const init = (route: Route): Return => ({
 	model: {
 		token: route.token,
@@ -188,16 +185,7 @@ export const init = (route: Route): Return => ({
 		variables: {},
 		sectionView: {},
 	},
-	commands: [
-		ReadFrame(),
-		ResolveClock(),
-		ResolveShare({ token: route.token }),
-		Command.mapMessage(LoadChartRuntime(), (message) =>
-			message._tag === "CompletedLoadChartRuntime"
-				? Message.CompletedLoadChartRuntime()
-				: Message.FailedLoadChartRuntime({ reason: message.reason }),
-		),
-	],
+	commands: [ReadFrame(), ResolveClock(), ResolveShare({ token: route.token }), LoadChartRuntime()],
 })
 
 /** A new search (`?refresh=`, `?range=`): the window re-resolves and changed keys refetch. */
@@ -265,11 +253,7 @@ export const update = (model: Model, message: Message, pageTimeZone: string): Re
 		ClickedReload: () => ({ model, commands: [ResolveReloadClock()] }),
 		TickedAutoRefresh: () => ({ model, commands: [ResolveReloadClock()] }),
 		CompletedResolveReloadClock: ({ nowMs }) => reload({ ...model, nowMs }, pageTimeZone),
-		ResolvedThemeColors: ({ colors }) => ({ model: { ...model, themeColors: colors } }),
-		CompletedLoadChartRuntime: () => ({ model: { ...model, chartRuntime: { _tag: "Ready" } } }),
-		FailedLoadChartRuntime: ({ reason }) => ({
-			model: { ...model, chartRuntime: { _tag: "Failed", reason } },
-		}),
+		...chartEnvHandlers(model),
 		GotChartMessage: ({ widgetId, message: inner }) => {
 			const next = Chart.update(model.charts[widgetId] ?? Chart.init(), inner)
 			return {

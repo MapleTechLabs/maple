@@ -60,7 +60,7 @@ const threadedUrl = (webhookUrl: string): string =>
 		}),
 	)
 
-export const buildGoogleChatMessage = (input: RenderInput<Config>) => {
+const buildGoogleChatMessage = (input: RenderInput<Config>) => {
 	const { context, templated, linkUrl, chatUrl } = input
 	const accent = alertAccentColor(context.eventType, context.severity)
 	const group = displayGroup(context)

@@ -5,8 +5,8 @@
  *
  *   bun run scripts/eval-runtime-check.ts
  *
- * Exits non-zero on failure. Keep it as a dev utility — the LLM path
- * (execution.eval.ts) only adds tool *selection* on top of what this exercises.
+ * Exits non-zero on failure. Keep it as a dev utility: the LLM path
+ * (`src/evals/tools/tools.eval.ts`) only adds tool *selection* on top of what this exercises.
  */
 import { installFakeWarehouse, restoreWarehouse } from "@/mcp/__evals__/fake-warehouse"
 import { makeEvalRuntime, runToolDirect } from "@/mcp/__evals__/eval-runtime"

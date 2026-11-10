@@ -1,14 +1,13 @@
 import { McpQueryError, type McpToolRegistrar } from "./types"
 import { truncate } from "../lib/format"
 import { Clock, DateTime, Effect, Schema, Array as Arr } from "effect"
-import { ListSourcesOutput } from "@maple/domain/mcp-outputs"
-import { SourcePlatform } from "@maple/domain/primitives"
+import { SourcePlatform } from "@maple/primitives"
 import { SOURCE_HEALTH_STATUSES } from "@maple/domain/source-health"
-import { CurrentMcpTenant } from "../lib/query-warehouse"
+import { CurrentMcpTenant } from "../tenant"
 import * as P from "../lib/params"
 import { doc } from "../lib/tool-doc"
 import { SourcesService } from "@maple/backend/services/org/SourcesService"
-import { publicSourceId } from "@maple/backend/services/org/integration-sources"
+import { publicSourceId } from "@maple/backend/services/integrations/integration-sources"
 
 const TOOL = "list_ingest_sources"
 
@@ -29,7 +28,6 @@ export function registerListSourcesTool(server: McpToolRegistrar) {
 		parameters: Schema.Struct({
 			platform: P.optionalOneOf(SourcePlatform.literals, "Only sources of this platform"),
 		}),
-		output: ListSourcesOutput,
 		hints: { readOnly: true },
 		phrases: ["Checking ingest sources", "Listing ingest sources"],
 		handler: Effect.fn("McpTool.listIngestSources")(function* ({ platform }) {

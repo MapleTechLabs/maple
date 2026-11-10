@@ -11,8 +11,9 @@ import { typography, typographyClass } from "@maple/views/ui/typography"
 import { dashboardPage } from "./dashboard-page"
 
 /**
- * `FormSection`: one row of a form card, what it sets on the left (a title and an optional hint)
- * and its controls on the right; the two stack on phones. Rows sit in a `divide-y` card.
+ * One row of a form card, what it sets on the left (a title and an optional hint)
+ * and its controls on the right; the two stack in a card under 36rem wide (a phone, or a form
+ * beside a preview). Rows sit in a `divide-y` `formCard`, whose width they read.
  */
 export const formSection = <M>(
 	h: HtmlBuilder<M>,
@@ -29,12 +30,24 @@ export const formSection = <M>(
 		[
 			h.AriaLabel(options.title),
 			h.Class(
-				cn("grid gap-x-8 gap-y-2 px-4 py-4 sm:grid-cols-[136px_minmax(0,1fr)]", options.className),
+				cn(
+					"grid gap-x-8 gap-y-2 px-4 py-4 @min-[36rem]/form:grid-cols-[136px_minmax(0,1fr)]",
+					options.className,
+				),
 			),
 		],
 		[
 			h.div(
-				[h.Class(cn("flex flex-col gap-0.5", options.isCompact === true ? "sm:pt-1.5" : "sm:pt-2"))],
+				[
+					h.Class(
+						cn(
+							"flex flex-col gap-0.5",
+							options.isCompact === true
+								? "@min-[36rem]/form:pt-1.5"
+								: "@min-[36rem]/form:pt-2",
+						),
+					),
+				],
 				[
 					heading(h, { level: 3, variant: "subsection" }, [options.title]),
 					...(options.hint === undefined
@@ -46,21 +59,28 @@ export const formSection = <M>(
 		],
 	)
 
-/** `FormScrollArea`: a form page's scroller above its action bar, the page's own scroll area. */
-export const formScrollArea = <M>(h: HtmlBuilder<M>, children: ReadonlyArray<Html>): Html =>
+/** A form page's scroller above its action bar, the page's own scroll area. */
+export const formScrollArea = <M>(
+	h: HtmlBuilder<M>,
+	children: ReadonlyArray<Html>,
+	className?: string,
+): Html =>
 	h.div(
-		[h.DataAttribute("slot", "page-scroll-area"), h.Class("min-h-0 flex-1 overflow-auto p-4")],
+		[
+			h.DataAttribute("slot", "page-scroll-area"),
+			h.Class(cn("min-h-0 flex-1 overflow-auto p-4", className)),
+		],
 		children,
 	)
 
-/** `FormCard`: the bordered card a form's sections sit in, ruled between them. */
+/** The bordered card a form's sections sit in, ruled between them. */
 export const formCard = <M>(h: HtmlBuilder<M>, children: ReadonlyArray<Html>, className?: string): Html =>
-	dividedList(h, { as: "div", className: cn("bg-card", className) }, children)
+	dividedList(h, { as: "div", className: cn("@container/form bg-card", className) }, children)
 
 /**
- * `FormActionBar`: pinned under a form's scroller, outside it, so it never floats over the form:
- * "Ready to save" or what still blocks saving, then the actions, with an optional notice above.
- * The reason wraps rather than truncates; on phones it takes its own line under the actions.
+ * Pinned under a form's scroller, outside it, so it never floats over the form: "Ready to save" or
+ * what still blocks saving, then the actions, with an optional notice above. The reason wraps
+ * rather than truncates; on phones it takes its own line under the actions.
  */
 export const formActionBar = <M>(
 	h: HtmlBuilder<M>,
@@ -137,8 +157,8 @@ export const formActionBar = <M>(
 	)
 
 /**
- * `ManagersOnlyPage`: what a form shows a member who may not save it, a note naming who can and
- * a way back to where they came from.
+ * What a form shows a member who may not save it: a note naming who can and a way back to where
+ * they came from.
  */
 export const managersOnlyPage = <M>(
 	h: HtmlBuilder<M>,

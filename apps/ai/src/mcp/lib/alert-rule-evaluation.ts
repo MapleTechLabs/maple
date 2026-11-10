@@ -8,7 +8,7 @@ import {
 } from "@maple/domain/http"
 import type { AlertRuleFirstEvaluation } from "@maple/domain/mcp-outputs"
 import { AlertsService } from "@maple/backend/services/alerts/AlertsService"
-import { CurrentMcpTenant } from "./query-warehouse"
+import { CurrentMcpTenant } from "../tenant"
 
 /** The alerting worker evaluates every enabled rule on a one-minute cron. */
 export const SCHEDULER_TICK_MS = 60_000

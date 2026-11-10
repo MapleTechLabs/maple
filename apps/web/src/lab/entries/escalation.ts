@@ -1,7 +1,7 @@
 import { defineShellLab } from "../shell-lab"
 import { breadcrumbs, Flags, flags, init, Message, Model, update, view } from "../escalation-lab"
 
-// `/lab/escalation`: escalation chains, their dialog, the rule tier picker and the incident rail (`?state=`).
+// `/lab/escalation`: escalation chains, the rule tier picker and the incident rail (`?state=`).
 
 export const lab = defineShellLab("Escalation chains", {
 	Model,

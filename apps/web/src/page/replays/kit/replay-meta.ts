@@ -1,4 +1,4 @@
-import { videoSegmentPayload } from "../../../components/replays/engine/video-engine"
+import { videoSegmentPayload } from "../engine/video-engine"
 import { Schema, Array as Arr, Order } from "effect"
 
 // A replay's derived meta, why it cannot play, and the marker maps. rrweb's enum values are
@@ -210,7 +210,7 @@ const scan = (
 /** Epoch ms of the stream's first event, or 0 for an empty stream. */
 export const firstEventMs = (events: ReadonlyArray<unknown>): number => timestampOf(events[0]) ?? 0
 
-/** `deriveMeta`: recorded viewport, action markers and idle gaps from the rrweb stream. */
+/** Recorded viewport, action markers and idle gaps from the rrweb stream. */
 export const deriveMeta = (events: ReadonlyArray<unknown>): ReplayMeta => {
 	const startTime = firstEventMs(events)
 	return scan(events, startTime, startTime).meta
@@ -291,7 +291,7 @@ export const combineRangeMetas = (originMs: number, ranges: ReadonlyArray<RangeM
 	}
 }
 
-/** `classifyUnplayable`: a recording still arriving (`empty`) or never made (`unrecorded`). */
+/** A recording still arriving (`empty`) or never made (`unrecorded`). */
 export const classifyUnplayable = (input: {
 	readonly recorded: boolean | undefined
 	readonly chunkCount: number

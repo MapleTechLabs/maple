@@ -2,9 +2,9 @@ import { formatCurrency } from "@maple/domain/format"
 import type { BillingInvoice, CatalogPlan } from "@maple/domain/http"
 import { EMPTY_VALUE } from "@maple/ui/lib/format"
 import { cn } from "@maple/ui/lib/utils"
-import { formatAddressLines } from "../../../lib/billing/billing-profile"
-import { planDisplayName } from "../../../lib/billing/plans"
-import { formatDateInTimezone } from "@maple/web-data/lib/timezone-format"
+import { formatAddressLines } from "./billing-profile"
+import { planDisplayName } from "../../kit/billing/plans"
+import { formatDateInTimezone } from "@maple/ui/lib/timezone-format"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { alert, alertAction, alertDescription, alertTitle } from "@maple/views/ui/alert"
@@ -17,7 +17,7 @@ import { panel } from "@maple/views/ui/panel"
 import { skeleton, skeletonList } from "@maple/views/ui/skeleton"
 import { table, tableBody, tableCell, tableHead, tableHeader, tableRow } from "@maple/views/ui/table"
 import { errorState } from "@maple/views/ui/error-state"
-import { INLINE_LINK_CLASS, settingsSection } from "../kit/section"
+import { INLINE_LINK_CLASS, settingsSection } from "../../kit/settings-section"
 import { taxIdValue, view as detailsDialogView } from "./details/view"
 import { canManage, Message, type Model } from "./model"
 import { typography, typographyClass } from "@maple/views/ui/typography"
@@ -27,8 +27,6 @@ import { Array as Arr, String as Str, Order } from "effect"
 import { textLink } from "@maple/views/ui/text-link"
 
 type H = HtmlBuilder<Message>
-
-// `InvoicesSection` and `BillingDetailsSection` (apps/web/src/components/settings/).
 
 /** The compact list's length for admins; the rest live behind "View all" (the portal). */
 const RECENT_INVOICES = 4

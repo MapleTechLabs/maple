@@ -138,12 +138,11 @@ bounded 300 "maple schema migrate" \
 }
 grep -q "local store migrated" "$ROOT/migrate.out" || fail "native migration did not report promotion"
 [[ -f "$ROOT/maple-store-version.json" ]] || fail "active marker disappeared after native promotion"
-# Pinned to the CURRENT head identity on purpose — this is the gate that proves
-# the native migration promotes all the way to head, not merely that it ran. It
-# must be bumped in lockstep with LOCAL_SCHEMA_VERSION and the matching
-# LOCAL_SCHEMA_V<n>.fingerprint in packages/local-server/src/schema-identity.ts;
-# leaving it on the previous version is what makes this step fail after a bump.
-jq -e '.formatVersion == 2 and .activation == "active" and .schemaVersion == 53 and .schema == "5657aa0197e694d6"' \
+# The checkout's head identity: proves the native migration promotes all the way
+# to head, not merely that it ran.
+read -r HEAD_VERSION HEAD_FINGERPRINT < <(bun -e "import { CURRENT_LOCAL_SCHEMA as head } from '$REPO_ROOT/packages/local-server/src/schema-identity'; console.log(head.version, head.fingerprint)")
+jq -e --argjson version "$HEAD_VERSION" --arg fingerprint "$HEAD_FINGERPRINT" \
+	'.formatVersion == 2 and .activation == "active" and .schemaVersion == $version and .schema == $fingerprint' \
 	"$ROOT/maple-store-version.json" >/dev/null || fail "native migration wrote the wrong active identity"
 
 step "reopening promoted store in a fresh server"

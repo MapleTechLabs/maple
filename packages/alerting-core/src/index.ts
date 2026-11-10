@@ -158,7 +158,6 @@ export interface AlertLifecyclePolicy {
 	readonly breachWindow: number
 	readonly consecutiveHealthyRequired: number
 	readonly renotifyIntervalMinutes: number
-	/** The rule's tier severities. */
 	readonly severities: ReadonlyArray<AlertSeverity>
 }
 
@@ -170,7 +169,6 @@ export interface AlertLifecycleState {
 }
 
 export interface AlertLifecycleIncident {
-	/** The incident's current severity. */
 	readonly severity: AlertSeverity
 	readonly firstTriggeredAtMs: number
 	readonly lastNotifiedAtMs: number | null

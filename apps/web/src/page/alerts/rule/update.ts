@@ -1,3 +1,6 @@
+import { pickerStep } from "../../kit/page-time"
+import { chartEnvHandlers } from "@maple/views/charts/chart-env"
+import type { RequestMode } from "@maple/views/data/keyed"
 import type { AlertIncidentDocument, AlertRuleDocument } from "@maple/domain/http"
 import { IsoDateTimeString } from "@maple/domain/http"
 import type { V2InvestigationCreateParams } from "@maple/domain/http/v2"
@@ -14,7 +17,7 @@ import * as Menu from "@maple/views/ui/menu"
 import { type PageContext, PageOutMessage, type PageReturn } from "../../contract"
 import { routeWindowStep, snapModeOf } from "../../kit/route-window"
 import * as TimeRangePicker from "../../kit/time-range-picker"
-import { alertsHref } from "../shared/links"
+import { alertsHref } from "../../kit/alert-links"
 import {
 	CompleteRuleReloadSpin,
 	FetchBucketChecks,
@@ -38,7 +41,7 @@ import {
 	ruleOf,
 	timelineRangeOf,
 } from "./derive"
-import { Message, type RequestMode } from "./message"
+import { Message } from "./message"
 import type { Model } from "./model"
 import * as SilenceDialog from "../silence-dialog/dialog"
 import { matchersForRule } from "../shared/silences"
@@ -126,7 +129,7 @@ const keyed = <A, E>(
 	write: (next: Keyed.Keyed<A, E>) => Partial<Model>,
 	fetch: (key: string) => Command.Command<Message, never, Resources>,
 ): ReadonlyArray<Step> =>
-	// An atom never refetches a failed read on its own: a same-key `Load` leaves the slot alone.
+	// A same-key `Load` leaves the slot alone, so a failed read is not refetched on its own.
 	mode === "Load" && slot.key === key
 		? []
 		: Option.match(Keyed.request(slot, key, mode), {
@@ -228,11 +231,7 @@ export const init = (route: RuleRoute, context: PageContext): Return => {
 			resolveCommand(model, context, "Load"),
 			ReadDiagnosisClock(),
 			...(followed.commands ?? []),
-			Command.mapMessage(LoadChartRuntime(), (message) =>
-				message._tag === "CompletedLoadChartRuntime"
-					? Message.CompletedLoadChartRuntime()
-					: Message.FailedLoadChartRuntime({ reason: message.reason }),
-			),
+			LoadChartRuntime(),
 		],
 	}
 }
@@ -260,7 +259,7 @@ const navigate = (model: Model, search: Model["search"]): Return => ({
 const errorToast = (title: string, message: string) =>
 	PageOutMessage.RequestedToast({ type: "error", title, description: message })
 
-/** `openInvestigation(incident)`: the incident's investigation, seeded with the rule. */
+/** The incident's investigation, seeded with the rule. */
 const investigationPayload = (
 	rule: AlertRuleDocument,
 	incident: AlertIncidentDocument,
@@ -322,7 +321,7 @@ const updateMenu = (model: Model, menuId: string, message: Menu.Message): Return
 			model: next,
 			commands,
 			outMessage: PageOutMessage.RequestedNavigation({
-				url: alertsHref({ tab: "overview" }),
+				url: alertsHref({}),
 				isReplace: false,
 			}),
 		}
@@ -393,7 +392,7 @@ const withRows = (model: Model, context: PageContext, orgId: string, patch: Part
 	return { ...followed, commands: [...(followed.commands ?? []), ReadDiagnosisClock()] }
 }
 
-/** The ChecksPanel is keyed by window and status filter: either change starts it over. */
+/** The checks panel is keyed by window and status filter: either change starts it over. */
 const resetChecksPanel = (model: Model): Model => ({
 	...model,
 	extraChecks: [],
@@ -535,36 +534,27 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 				timePreset: DEFAULT_PRESET,
 			}),
 		GotTimePickerMessage: ({ message: inner }) => {
-			const next = TimeRangePicker.update(model.timePicker, inner)
-			const lifted: Return = {
-				model: { ...model, timePicker: next.model },
-				commands: Command.mapMessages(next.commands, (picker) =>
-					Message.GotTimePickerMessage({ message: picker }),
-				),
-			}
-			return next.outMessage === undefined || next.outMessage._tag === "RejectedRange"
-				? TimeRangePicker.unpicked(lifted, next.outMessage)
-				: {
-						...lifted,
-						outMessage: PageOutMessage.RequestedNavigation({
-							url: hrefOf(
-								AppRoute.AlertRule({
-									ruleId: model.ruleId,
-									search: {
-										...model.search,
-										...TimeRangePicker.searchPatchOf(next.outMessage),
-									},
-								}),
-							),
-							isReplace: false,
-						}),
-					}
+			return pickerStep(
+				model,
+				inner,
+				(picker) => Message.GotTimePickerMessage({ message: picker }),
+				(patch) =>
+					PageOutMessage.RequestedNavigation({
+						url: hrefOf(
+							AppRoute.AlertRule({
+								ruleId: model.ruleId,
+								search: {
+									...model.search,
+									...patch,
+								},
+							}),
+						),
+						isReplace: false,
+					}),
+				{ toastRejected: true },
+			)
 		},
-		CompletedLoadChartRuntime: () => ({ model: { ...model, chartRuntime: { _tag: "Ready" } } }),
-		FailedLoadChartRuntime: ({ reason }) => ({
-			model: { ...model, chartRuntime: { _tag: "Failed", reason } },
-		}),
-		ResolvedThemeColors: ({ colors }) => ({ model: { ...model, themeColors: colors } }),
+		...chartEnvHandlers(model),
 		CompletedFetchSilences: ({ key, result }) => ({
 			model: { ...model, silences: Keyed.accept(model.silences, key, result) },
 		}),

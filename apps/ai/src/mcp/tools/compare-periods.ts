@@ -88,7 +88,6 @@ export function registerComparePeriodsTool(server: McpToolRegistrar) {
 			environment: P.environment(),
 		}),
 		aliases: P.SERVICE_ALIASES,
-		output: ComparePeriodsOutput,
 		hints: { readOnly: true },
 		phrases: ["Comparing time periods", "Comparing against an earlier period"],
 		handler: Effect.fn("McpTool.comparePeriods")(function* (params) {

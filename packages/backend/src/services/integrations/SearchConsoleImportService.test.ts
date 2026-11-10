@@ -14,7 +14,7 @@ import {
 import { TestClock } from "effect/testing"
 import { FetchHttpClient } from "effect/http"
 import { OrgId, UserId, WarehouseUpstreamError } from "@maple/domain/http"
-import { SearchConsoleSiteUrl } from "@maple/domain/primitives"
+import { SearchConsoleSiteUrl } from "@maple/primitives"
 import { Env } from "@maple/backend/platform/Env"
 import {
 	cleanupTestDbs,
@@ -22,7 +22,7 @@ import {
 	executeSql,
 	queryFirstRow,
 	type TestDb,
-} from "@maple/backend/platform/test-pglite"
+} from "@maple/backend/testing/test-pglite"
 import { makeWarehouseServiceStub } from "@maple/backend/testing/warehouse-test-support"
 import { GoogleOAuthService } from "@maple/backend/services/auth/GoogleOAuthService"
 import { WarehouseQueryService } from "@maple/backend/services/warehouse/WarehouseQueryService"

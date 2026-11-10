@@ -1,5 +1,5 @@
 import { describe, expect, it } from "@effect/vitest"
-import { OrgId } from "@maple/domain/primitives"
+import { OrgId } from "@maple/primitives"
 import type { AuditLogRow } from "@maple/domain/tinybird"
 import { WarehouseUpstreamError } from "@maple/domain/http"
 import { Effect, Layer, Schema, Array as Arr } from "effect"
@@ -24,6 +24,9 @@ const event = (id: string, orgId: OrgId = ORG) =>
 			occurredAtMs: 1_700_000_000_000,
 		}),
 	)
+
+/** The consumer's `maxRetries`: the attempt past it is the last. */
+const MAX_RETRIES = 5
 
 /** One queue message, recording which terminal call the consumer made on it. */
 const message = (body: unknown, attempts: number) => {
@@ -87,7 +90,9 @@ describe("processAuditEventsBatch", () => {
 			const first = message(event("11111111-1111-4111-8111-111111111111"), 1)
 			const second = message(event("22222222-2222-4222-8222-222222222222"), 1)
 			const other = message(event("33333333-3333-4333-8333-333333333333", OTHER_ORG), 1)
-			yield* processAuditEventsBatch(batchOf(first, second, other)).pipe(Effect.provide(store.layer))
+			yield* processAuditEventsBatch(batchOf(first, second, other), MAX_RETRIES).pipe(
+				Effect.provide(store.layer),
+			)
 
 			expect(first.calls).toEqual(["ack"])
 			expect(second.calls).toEqual(["ack"])
@@ -110,8 +115,10 @@ describe("processAuditEventsBatch", () => {
 	// instead, which is exactly the silent drop this branch exists to prevent.
 	it.effect("retries a failed write on the final attempt so the message reaches the DLQ", () =>
 		Effect.gen(function* () {
-			const exhausted = message(event("44444444-4444-4444-8444-444444444444"), 6)
-			yield* processAuditEventsBatch(batchOf(exhausted)).pipe(Effect.provide(warehouse(true).layer))
+			const exhausted = message(event("44444444-4444-4444-8444-444444444444"), MAX_RETRIES + 1)
+			yield* processAuditEventsBatch(batchOf(exhausted), MAX_RETRIES).pipe(
+				Effect.provide(warehouse(true).layer),
+			)
 			expect(exhausted.calls).toEqual(["retry"])
 		}),
 	)
@@ -120,7 +127,9 @@ describe("processAuditEventsBatch", () => {
 		Effect.gen(function* () {
 			const a = message(event("55555555-5555-4555-8555-555555555555"), 2)
 			const b = message(event("66666666-6666-4666-8666-666666666666"), 2)
-			yield* processAuditEventsBatch(batchOf(a, b)).pipe(Effect.provide(warehouse(true).layer))
+			yield* processAuditEventsBatch(batchOf(a, b), MAX_RETRIES).pipe(
+				Effect.provide(warehouse(true).layer),
+			)
 			expect(a.calls).toEqual(["retry"])
 			expect(b.calls).toEqual(["retry"])
 		}),
@@ -133,7 +142,7 @@ describe("processAuditEventsBatch", () => {
 	it.effect("retries when the write dies instead of failing", () =>
 		Effect.gen(function* () {
 			const defect = message(event("77777777-7777-4777-8777-777777777777"), 2)
-			yield* processAuditEventsBatch(batchOf(defect)).pipe(Effect.provide(dyingWarehouse))
+			yield* processAuditEventsBatch(batchOf(defect), MAX_RETRIES).pipe(Effect.provide(dyingWarehouse))
 			expect(defect.calls).toEqual(["retry"])
 		}),
 	)
@@ -144,7 +153,7 @@ describe("processAuditEventsBatch", () => {
 	it.effect("does not count an interrupted batch as an attempt", () =>
 		Effect.gen(function* () {
 			const torn = message(event("88888888-8888-4888-8888-888888888888"), 2)
-			const exit = yield* processAuditEventsBatch(batchOf(torn)).pipe(
+			const exit = yield* processAuditEventsBatch(batchOf(torn), MAX_RETRIES).pipe(
 				Effect.provide(interruptedWarehouse),
 				Effect.exit,
 			)
@@ -160,7 +169,9 @@ describe("processAuditEventsBatch", () => {
 			const store = warehouse()
 			const malformed = message({ not: "an audit event" }, 1)
 			const fine = message(event("77777777-7777-4777-8777-777777777777"), 1)
-			yield* processAuditEventsBatch(batchOf(malformed, fine)).pipe(Effect.provide(store.layer))
+			yield* processAuditEventsBatch(batchOf(malformed, fine), MAX_RETRIES).pipe(
+				Effect.provide(store.layer),
+			)
 
 			expect(malformed.calls).toEqual(["ack"])
 			expect(fine.calls).toEqual(["ack"])

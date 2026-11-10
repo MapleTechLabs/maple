@@ -1,3 +1,4 @@
+import { RequestMode } from "@maple/views/data/keyed"
 import { Schema } from "effect"
 import { defineMessageUnion } from "foldkit/message"
 import { LoadFailure } from "@maple/views/data/load-failure"
@@ -9,10 +10,6 @@ import { SignalPresences } from "@maple/views/data/signal-presence"
 import { Message as DetailMessage } from "../detail/message"
 import * as TimeRangePicker from "../../kit/time-range-picker"
 import { TracesFacets, TracesPage, VirtualRow } from "./model"
-
-/** `Load` on entry or a search change; `Refresh` from Reload (unsnapped window, revalidate). */
-export const RequestMode = Schema.Literals(["Load", "Refresh"])
-export type RequestMode = typeof RequestMode.Type
 
 /** The sidebar's facets, by their include param. */
 export const Facet = Schema.Literals([
@@ -76,9 +73,9 @@ export const Message = defineMessageUnion({
 	ClickedPeekRow: { index: Schema.Number },
 	ClickedPeekStep: { step: Schema.Literals([1, -1]) },
 	ClickedOpenTrace: {},
-	/** `isMobile`: below `md` the peek is off (`peekEnabled = !isMobile`), read when pressed. */
+	/** `isMobile`: below `md` the peek is off, read when pressed. */
 	PressedListKey: { key: Schema.String, isMobile: Schema.Boolean },
-	/** Enter on a row below `md`: the trace page itself (`navigate(traceLink(trace))`). */
+	/** Enter on a row below `md`: the trace page itself. */
 	PressedOpenRow: { index: Schema.Number },
 	GotPeekMessage: { message: DetailMessage },
 	GotPeekDialogMessage: { message: Dialog.Message },

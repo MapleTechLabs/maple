@@ -5,7 +5,7 @@ import { subscriptions } from "./subscription"
 import { init, routeChanged, update } from "./update"
 import { view } from "./view"
 
-/** `/dashboards`: the org's dashboards. One instance per org; search changes arrive as `routeChanged`. */
+/** One instance per org; search changes arrive as `routeChanged`. */
 export const page = definePage(
 	"DashboardsList",
 	{ Model, Message },

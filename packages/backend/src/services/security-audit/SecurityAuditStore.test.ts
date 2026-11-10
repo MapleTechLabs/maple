@@ -1,6 +1,6 @@
 import { afterEach, assert, describe, it } from "@effect/vitest"
 import { aiCreditsUsd } from "@maple/domain/billing"
-import { OrgId, UserId } from "@maple/domain/primitives"
+import { OrgId, UserId } from "@maple/primitives"
 import { VcsRepositoryId } from "@maple/domain/http/vcs"
 import type { SecurityAuditRunId, SecurityAuditTargetId } from "@maple/domain/security-audit"
 import type {
@@ -14,7 +14,7 @@ import type {
 import { Effect, Layer, Option, Order, Schema, Array as Arr, Record as Rec } from "effect"
 import * as SecureRandom from "effect/crypto/SecureRandom"
 import { TestClock } from "effect/testing"
-import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/platform/test-pglite"
+import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/testing/test-pglite"
 import { SecurityAuditStore, type SecurityAuditStoreApi } from "./SecurityAuditStore"
 
 const trackedDbs: TestDb[] = []
@@ -769,13 +769,10 @@ describe("SecurityAuditStore replays", () => {
 				// Events in one millisecond order by id; these are sequential in time.
 				yield* TestClock.adjust("1 millis")
 				yield* scoped.recordEvent(runId, note)
-				// Events in one millisecond order by id; these are sequential in time.
 				yield* TestClock.adjust("1 millis")
 				yield* scoped.recordEvent(runId, agent("ok"))
-				// Events in one millisecond order by id; these are sequential in time.
 				yield* TestClock.adjust("1 millis")
 				yield* scoped.recordEvent(runId, note)
-				// Events in one millisecond order by id; these are sequential in time.
 				yield* TestClock.adjust("1 millis")
 				yield* scoped.recordEvent(runId, agent("failed"))
 				const events = yield* scoped.listEvents(runId)

@@ -14,8 +14,7 @@ import { listAlignSelectId, listUnitSelectId } from "./product-selects"
 import { pageSelect } from "./view-select"
 import { hstack } from "@maple/views/ui/stack"
 
-// `DraggableColumnRow`: grip, field (with its suggestions while focused),
-// header, unit, alignment and remove. The grip drags (`MountListColumnDrag`) or moves by arrow key.
+// The grip drags or moves by arrow key.
 
 type H = HtmlBuilder<Message>
 

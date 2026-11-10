@@ -38,16 +38,15 @@ export const linearEntityId = (...parts: ReadonlyArray<string>): string => {
 	return `${Str.slice(0, 8)(hex)}-${Str.slice(8, 12)(hex)}-4${Str.slice(13, 16)(hex)}-${variant}${Str.slice(17, 20)(hex)}-${Str.slice(20, 32)(hex)}`
 }
 
-export const linearThreadKey = (input: Input): string =>
-	`${input.context.ruleId}:${input.context.groupKey ?? ""}`
+const linearThreadKey = (input: Input): string => `${input.context.ruleId}:${input.context.groupKey ?? ""}`
 
 /** Linear priorities: 1 urgent, 2 high, 3 medium. */
 const priorityOf = (input: Input) => (input.context.severity === "critical" ? 1 : 2)
 
-export const linearIssueTitle = (input: Input): string =>
+const linearIssueTitle = (input: Input): string =>
 	truncate(input.templated?.title ?? formatAlertHeadline(input.context), MAX_TITLE_CHARS)
 
-export const linearIssueDescription = (input: Input): string => {
+const linearIssueDescription = (input: Input): string => {
 	const { context } = input
 	const group = displayGroup(context)
 	const lines = [
@@ -63,7 +62,7 @@ export const linearIssueDescription = (input: Input): string => {
 }
 
 /** What a comment on an existing issue says about this event. */
-export const linearCommentBody = (input: Input, thread: LinearThread | null): string => {
+const linearCommentBody = (input: Input, thread: LinearThread | null): string => {
 	const { context } = input
 	const summary = buildSummaryLine(context, (value) => `**${value}**`)
 	const sameIncident =

@@ -37,11 +37,9 @@ const LAGGED_AI_SPAN_ID = "e2e2e2e2e2e2e2e2"
 const NON_HEX_TRACE_ID = "trace-2026-08-19-checkout"
 const NON_HEX_AI_SPAN_ID = "d1d1d1d1d1d1d1d1"
 
-// Deterministic full-execution regression guards for the Part-1 work. These run
-// the REAL tool handlers + renderer against a fake warehouse (no LLM — tool
-// SELECTION is covered by the prediction evals; here we lock in the rendered
-// OUTPUT). They run in the normal `test` suite, so they're always-on and need no
-// API key. Fixtures route by the trace/span id literal baked into the compiled
+// Deterministic full-execution regression guards. These run the REAL tool handlers + renderer
+// against a fake warehouse (no LLM: tool SELECTION is covered by the prediction evals; here we lock
+// in the rendered OUTPUT). Fixtures route by the trace/span id literal baked into the compiled
 // SQL (see fake-warehouse.ts), so one rule set serves every scenario.
 
 /** How often the trace-bounds lookup ran — see the `traces` rule below. */
@@ -178,7 +176,6 @@ describe("inspect_trace bounded-overview rendering", () => {
 	it("caps a large trace and keeps the error span + omitted marker", async () => {
 		const result = await runToolDirect(rt, "inspect_trace", { trace_id: FIXTURES.traceId })
 		const text = markdown(result)
-		// Bounded overview note.
 		expect(text).toContain(`of ${LARGE_TRACE_SPAN_COUNT} spans (errors and longest first)`)
 		// The single error span survives selection even though it's low-duration.
 		expect(text).toContain("[Error]")

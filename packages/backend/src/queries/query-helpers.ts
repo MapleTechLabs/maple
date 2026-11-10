@@ -12,7 +12,7 @@ import { Array as Arr, Effect, Result } from "effect"
 
 /**
  * Helpers shared between the query-engine handlers and the app-side query
- * registry (`./queries`).
+ * registry (`./registry`).
  *
  * They live here rather than in either caller because both need them: the
  * registry's `compile` needs the metric name, while the handler needs the unit

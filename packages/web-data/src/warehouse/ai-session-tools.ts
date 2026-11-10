@@ -2,7 +2,7 @@
 // the only place in the web app that sees their wire shape.
 //
 // One `map*` function per endpoint, deliberately: everything downstream speaks
-// the view model in `lib/agent-sessions/tool-analytics.ts` (epoch-ms buckets,
+// the view model in `lib/tool-analytics.ts` (epoch-ms buckets,
 // `ToolMeasures`), so a contract change lands in one function rather than in
 // every table that reads a column.
 //
@@ -94,10 +94,6 @@ const selectionFields = (input: AiToolsSelection) => ({
 	...(input.failingOnly !== undefined && { failingOnly: input.failingOnly }),
 })
 
-/* -------------------------------------------------------------------------------------------------
- * Mappers
- * -----------------------------------------------------------------------------------------------*/
-
 const measuresOf = (row: AiToolsAggregate): ToolTotals => ({
 	calls: row.calls,
 	sessions: row.sessions,
@@ -135,10 +131,6 @@ export function mapToolBreakdown(rows: ReadonlyArray<AiToolsBreakdownItem>): Rea
 		firstSeen: toEpochMs(row.firstSeen),
 	}))
 }
-
-/* -------------------------------------------------------------------------------------------------
- * The reads
- * -----------------------------------------------------------------------------------------------*/
 
 /**
  * The chart's series. What they are keyed by is the server's decision, derived
@@ -244,10 +236,6 @@ export const getAiToolBreakdowns = Effect.fn("AiSessionTools.breakdowns")(functi
 	)
 	return { tools: mapToolBreakdown(result.tools) }
 })
-
-/* -------------------------------------------------------------------------------------------------
- * Tool detail — failures
- * -----------------------------------------------------------------------------------------------*/
 
 /**
  * The bounds here MIRROR the domain request's, deliberately.

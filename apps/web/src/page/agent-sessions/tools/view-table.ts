@@ -14,21 +14,19 @@ import { emptyMessage } from "@maple/views/ui/empty"
 import { errorState } from "@maple/views/ui/error-state"
 import { icon } from "@maple/views/ui/icon"
 import { skeletonList } from "@maple/views/ui/skeleton"
-import type { ToolBreakdownRow, ToolPercentile, ToolSearch } from "../tools-kit/model"
-import { volumeSparkCell } from "../tools-kit/spark"
-import { toolDetailLinkSearch } from "../tools-kit/model"
+import type { ToolBreakdownRow, ToolPercentile, ToolSearch } from "../../kit/tools/model"
+import { volumeSparkCell } from "../../kit/tools/spark"
+import { toolDetailLinkSearch } from "../../kit/tools/model"
 import {
 	errorTone,
 	shareCell,
-	type SortState,
-	sortRows,
 	th,
 	toolTableRow,
 	toolTable,
 	toolTableBody,
 	toolTableFooter,
 	toolTableHead,
-} from "../tools-kit/table"
+} from "../../kit/tools/table"
 import { relativeTime } from "../../kit/relative-time"
 import { Message } from "./message"
 import { typography, typographyClass } from "@maple/views/ui/typography"
@@ -36,6 +34,7 @@ import { hstack } from "@maple/views/ui/stack"
 import { columnClass } from "@maple/views/ui/column"
 import { swatch } from "@maple/views/ui/swatch"
 import { Array as Arr } from "effect"
+import { type SortState, sortRows } from "../../kit/table-sort"
 
 type H = HtmlBuilder<Message>
 

@@ -19,7 +19,7 @@ import type { PageViewInputs } from "../contract"
 import { dashboardPage } from "../kit/dashboard-page"
 import type { BreadcrumbEntry } from "../../shell"
 import { navShell } from "../kit/nav-shell"
-import { INLINE_LINK_CLASS } from "./kit/section"
+import { INLINE_LINK_CLASS } from "../kit/settings-section"
 import * as IngestionView from "./ingestion/view"
 import * as KeysView from "./keys/view"
 import * as McpView from "./mcp/view"
@@ -200,9 +200,6 @@ const tabContent = (h: H, model: Model, inputs: PageViewInputs): ReadonlyArray<H
 					},
 				}),
 			]
-		case "Unported":
-			// TODO(settings): every remaining tab is ported tab by tab; until then it renders empty.
-			return []
 	}
 }
 

@@ -1,8 +1,8 @@
 import { cn } from "@maple/ui/lib/utils"
-import { markerContentStyles, markerIconStyles, markerVariants } from "@maple/ui/styles/ui/marker"
+import { markerContentStyles, markerIconStyles, markerVariants } from "./marker.styles"
 import type { Html, HtmlBuilder } from "foldkit/html"
 
-// Port of packages/ui/src/components/ui/marker.tsx: an inline event marker in a timeline or thread.
+// An inline event marker in a timeline or thread.
 
 export type MarkerVariant = "default" | "separator" | "border"
 type Children = ReadonlyArray<Html | string>

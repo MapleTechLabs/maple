@@ -222,6 +222,8 @@
 	--on-fill: oklch(1 0 0);
 	/* The dim behind a dialog, sheet or command palette. */
 	--scrim: oklch(0 0 0 / 32%);
+	/* The dim beside a side panel: light enough to keep reading the page the panel belongs to. */
+	--scrim-panel: oklch(0 0 0 / 12%);
 	/* Media frames (the replay player): dark in both themes, the stage, fullscreen and its play scrim. */
 	--media: oklch(0.205 0 0);
 	--media-backdrop: oklch(0 0 0);
@@ -370,6 +372,8 @@
 	--warning-foreground: var(--color-amber-400);
 	--control-highlight: 0 -1px oklch(1 0 0 / 6%);
 	--surface-recessed: oklch(0 0 0 / 25%);
+	/* A dark page needs more black to read as set back; still far lighter than the dialog's. */
+	--scrim-panel: oklch(0 0 0 / 24%);
 	--border-raised: oklch(1 0 0 / 10%);
 }
 
@@ -572,6 +576,7 @@
 	--color-media-scrim: var(--media-scrim);
 	--color-on-fill: var(--on-fill);
 	--color-scrim: var(--scrim);
+	--color-scrim-panel: var(--scrim-panel);
 	--color-surface-recessed: var(--surface-recessed);
 	--color-border-raised: var(--border-raised);
 	/* Service-map namespace boxes: one hue per namespace, set on the box as `--namespace-hue`.
@@ -824,4 +829,13 @@
 
 @utility loading-delay {
 	animation: loading-delay 0s 300ms both;
+}
+
+/* A hatch for something missing (an on-call gap): the error tone's lines over no fill. */
+@utility hatch-error {
+	background-image: repeating-linear-gradient(
+		135deg,
+		color-mix(in oklab, var(--severity-error) 32%, transparent) 0 1px,
+		transparent 1px 6px
+	);
 }

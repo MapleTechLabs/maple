@@ -1,3 +1,4 @@
+import { chartEnvHandlers } from "@maple/views/charts/chart-env"
 import { Option, Result } from "effect"
 import { AsyncData, Command as FoldkitCommand } from "foldkit"
 import * as Chart from "@maple/views/charts/chart"
@@ -19,6 +20,7 @@ import {
 } from "./command"
 import { Message } from "./message"
 import type { Model } from "./model"
+import { acceptGrants } from "../../kit/session-grants"
 
 type Return = PageReturn<Model, Message>
 type SloRoute = Extract<AppRoute, { readonly _tag: "AlertsSlo" }>
@@ -96,11 +98,7 @@ export const init = (route: SloRoute, context: PageContext): Return => {
 		model: reads.model,
 		commands: [
 			ReadSloClock(),
-			FoldkitCommand.mapMessage(LoadChartRuntime(), (message) =>
-				message._tag === "CompletedLoadChartRuntime"
-					? Message.CompletedLoadChartRuntime()
-					: Message.FailedLoadChartRuntime({ reason: message.reason }),
-			),
+			LoadChartRuntime(),
 			FetchSloSession({ orgId: context.orgId }),
 			...(reads.commands ?? []),
 		],
@@ -174,13 +172,12 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			orgId === context.orgId && model.incidents === null
 				? { model: { ...model, isIncidentsLoadFailed: true } }
 				: { model },
-		// `retryOrgCollections`: a stopped shape syncs again only on fresh collections.
+		// A stopped shape syncs again only on fresh collections.
 		ClickedRetryIncidents: () => ({
 			model: { ...model, isIncidentsLoadFailed: false },
 			outMessage: PageOutMessage.RequestedReconnectOrgCollections(),
 		}),
-		CompletedFetchSession: ({ orgId, grants }) =>
-			orgId === context.orgId ? { model: { ...model, grants } } : { model },
+		CompletedFetchSession: (answer) => ({ model: acceptGrants(model, context.orgId, answer) }),
 		ClickedToggleAlerting: () => toggleAlerting(model),
 		CompletedToggleAlerting: ({ result }) => {
 			const settled = { ...model, isTogglingAlerting: false }
@@ -220,11 +217,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 					outMessage: toast("error", "Couldn't delete the SLO", failure.message),
 				}),
 			}),
-		CompletedLoadChartRuntime: () => ({ model: { ...model, chartRuntime: { _tag: "Ready" } } }),
-		FailedLoadChartRuntime: ({ reason }) => ({
-			model: { ...model, chartRuntime: { _tag: "Failed", reason } },
-		}),
-		ResolvedThemeColors: ({ colors }) => ({ model: { ...model, themeColors: colors } }),
+		...chartEnvHandlers(model),
 		GotBudgetChartMessage: ({ message: child }) => {
 			const next = updateChart(model.budgetChart, child, (message) =>
 				Message.GotBudgetChartMessage({ message }),

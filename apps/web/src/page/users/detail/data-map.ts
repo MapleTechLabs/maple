@@ -24,14 +24,12 @@ export const mcpSessionHref = (service: string, sessionId: string, search: Searc
 export const groupUsersHref = (groupId: string, search: Search): string =>
 	hrefOf(AppRoute.Users({ search: { ...windowSearch(search), groups: [groupId] } }))
 
-/** One replay's page. */
 export const replayHref = (sessionId: string): string => hrefOf(AppRoute.Replay({ sessionId, search: {} }))
 
 /** One issue's page over the user page's window, so its hits match the row that links it. */
 export const issueHref = (issueId: string, search: Search): string =>
 	hrefOf(AppRoute.ErrorIssue({ issueId: decodeIssueId(issueId), search: windowSearch(search) }))
 
-/** One trace's page. */
 export const traceHref = (traceId: string): string => hrefOf(AppRoute.Trace({ traceId, search: {} }))
 
 const decodeIssueId = Schema.decodeSync(ErrorIssueId)

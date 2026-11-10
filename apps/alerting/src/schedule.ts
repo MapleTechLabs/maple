@@ -15,8 +15,8 @@ interface CronSchedule {
 }
 
 /**
- * A fire holds one outbound connection per lane while its hops run, so keep a
- * cron under the Workers limit of six simultaneous connections per invocation.
+ * A fire holds one outbound connection per lane while its hops run, so a cron
+ * keeps within the Workers limit of six per invocation (`scheduled.test.ts` checks).
  */
 export const ALERTING_SCHEDULE = {
 	// `error` also runs fix verification, chained after it (see `./scheduled.ts`).
@@ -47,8 +47,9 @@ export const ALERTING_SCHEDULE = {
 		lanes: ["digest", "supabase_insights", "maintenance_windows", "search_console"],
 		deadline: "10 minutes",
 	},
+	// `secret_reseal` moves stored credentials onto the current key (docs/secret-encryption.md).
 	"0 * * * *": {
-		lanes: ["service_map_rollup", "supabase_discovery", "aws_connections"],
+		lanes: ["service_map_rollup", "supabase_discovery", "aws_connections", "secret_reseal"],
 		deadline: "15 minutes",
 	},
 } as const satisfies Record<string, CronSchedule>
@@ -68,6 +69,5 @@ export const ALERTING_CRONS: ReadonlyArray<AlertingCron> = Arr.filter(
 export const scheduleFor = (cron: string): CronSchedule | undefined =>
 	isAlertingCron(cron) ? ALERTING_SCHEDULE[cron] : undefined
 
-/** Whether `lane` is one of `cron`'s lanes. */
 export const isLaneOf = (cron: string, lane: string): lane is TickLane =>
 	scheduleFor(cron)?.lanes.includes(lane) ?? false

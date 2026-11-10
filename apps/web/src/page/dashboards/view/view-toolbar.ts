@@ -1,11 +1,11 @@
-import { resolveRefreshIntervalSeconds } from "../../../lib/dashboard-controls/search-params"
+import { resolveRefreshIntervalSeconds } from "../../../route/dashboard-controls"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { button } from "@maple/views/ui/button"
 import { icon } from "@maple/views/ui/icon"
 import type * as MenuView from "@maple/views/ui/menu-view"
 import { rowActionsMenu } from "@maple/views/ui/row-actions-menu"
 import { refreshControls as sharedRefreshControls } from "../../kit/refresh-controls"
-import { presetLabel } from "../../kit/time-controls"
+import { presetLabel } from "@maple/ui/lib/time-preset"
 import type { TimeRange } from "@maple/domain/http"
 import { timeRangeDisplay } from "../kit/time-range-label"
 import { timeRangeOf } from "./plan"
@@ -17,8 +17,6 @@ import { isWriteBlocked } from "./mode"
 import { variableSelects } from "./view-variables"
 import type { PageContext } from "../../contract"
 import { hstack } from "@maple/views/ui/stack"
-
-// The dashboard toolbar and `RefreshControls`.
 
 type H = HtmlBuilder<Message>
 
@@ -83,7 +81,6 @@ const moreEntries = (isEdit: boolean): ReadonlyArray<MenuView.MenuEntry> => [
 	},
 ]
 
-/** `RowActionsMenu label="More dashboard actions"`. */
 const moreMenu = (h: H, model: Model): Html =>
 	rowActionsMenu(h, {
 		slotId: model.moreMenu.id,

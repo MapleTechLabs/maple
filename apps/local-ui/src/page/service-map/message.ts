@@ -5,7 +5,7 @@ import { defineMessageUnion } from "foldkit/message"
 import { CachedOf } from "../../data/cached"
 import { LoadFailure } from "@maple/views/data/load-failure"
 import { LocalServiceMapData } from "./data"
-import { Stored } from "./model"
+import { Stored } from "@maple/views/service-map/map/state"
 
 export const Message = defineMessageUnion({
 	CompletedReadClock: { nowMs: Schema.Number },

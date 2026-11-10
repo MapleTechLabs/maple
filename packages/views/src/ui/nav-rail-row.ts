@@ -1,5 +1,5 @@
 import { cn } from "@maple/ui/lib/utils"
-import { ROW_LANE } from "@maple/ui/styles/ui/list-row"
+import { ROW_LANE } from "./list-row.styles"
 import type { Attribute, Html, HtmlBuilder } from "foldkit/html"
 
 // `NavRailRow`: a page's own nav rail row (settings, security, alerts), with the app sidebar row's height,

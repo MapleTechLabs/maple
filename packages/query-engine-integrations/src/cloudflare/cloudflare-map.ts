@@ -16,7 +16,8 @@
 
 import * as CH from "@maple-dev/effect-orm/expr"
 import { from, param } from "@maple-dev/effect-orm/clickhouse"
-import { MetricsGauge, MetricsSum, orgIdParam } from "@maple/query-engine/ch/tables"
+import * as Datasources from "@maple/domain/tinybird/datasources"
+import { orgIdParam } from "@maple/query-engine/ch/tables"
 import { avgWhere } from "@maple/query-engine/ch/format"
 
 /** Counter metrics the poller emits for Workers (all in `metrics_sum`). */
@@ -37,13 +38,12 @@ export interface CloudflareServiceLatencyOutput {
 	readonly serviceName: string
 	/** Wall-time duration p99. */
 	readonly latencyP99Ms: number
-	/** CPU time p99. */
 	readonly cpuP99Ms: number
 }
 
 /** Counter rollup over `metrics_sum`, one row per Worker pseudo-service. */
 export function cloudflareServiceCountersSQL() {
-	return from(MetricsSum)
+	return from(Datasources.metricsSum)
 		.select(($) => ({
 			serviceName: $.ServiceName,
 			requests: CH.sumIf($.Value, $.MetricName.eq("cloudflare.worker.requests")),
@@ -68,10 +68,7 @@ export function cloudflareServiceCountersSQL() {
  * template's own treatment and is fine for a node-level KPI.
  */
 export function cloudflareServiceLatencySQL() {
-	// `avgIf` over a metric with no matching rows is NaN, which serializes to
-	// JSON `null` and would break row decoding — so guard each with
-	// `if(countIf > 0, avgIf, 0)`.
-	return from(MetricsGauge)
+	return from(Datasources.metricsGauge)
 		.select(($) => ({
 			serviceName: $.ServiceName,
 			latencyP99Ms: avgWhere(

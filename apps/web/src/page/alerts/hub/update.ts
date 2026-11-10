@@ -23,13 +23,12 @@ import type { AppRoute } from "../../../route"
 import * as Dialog from "@maple/views/ui/dialog"
 import * as Menu from "@maple/views/ui/menu"
 import * as DestinationDialog from "../destination/dialog"
-import * as ChainDialog from "../escalation-dialog/dialog"
 import * as WindowDialog from "../maintenance-dialog/dialog"
 import * as SilenceDialog from "../silence-dialog/dialog"
 import { isCancelledSilence } from "../shared/silences"
 import { type PageContext, PageOutMessage, type PageReturn } from "../../contract"
-import { alertsHref, createHref, ruleHref } from "../shared/links"
-import { CHAIN_IN_USE_CODE, CHAIN_LIST_LIMIT } from "../shared/escalation-chains"
+import { alertsHref, createHref, ruleHref } from "../../kit/alert-links"
+import { CHAIN_IN_USE_CODE, CHAIN_LIST_LIMIT, chainHref } from "../shared/escalation-chains"
 import {
 	editScheduleHref,
 	handoffMs,
@@ -38,7 +37,7 @@ import {
 } from "../shared/oncall-schedules"
 import { WINDOW_LIST_LIMIT, windowIdOfParam } from "../shared/maintenance-windows"
 import { newSloHref, SLO_LIST_LIMIT } from "../shared/slo-commands"
-import { editMonitorHref, newMonitorHref, UPTIME_LIST_LIMIT } from "../shared/uptime-commands"
+import { editMonitorHref, newMonitorHref, UPTIME_LIST_LIMIT } from "../../kit/uptime/commands"
 import {
 	DeleteSchedule,
 	FetchHubMembers,
@@ -62,30 +61,38 @@ import {
 	EndHubSilence,
 	FetchHubSilences,
 	DeleteWindow,
+	DismissHubSheet,
 	FetchHubWindows,
+	PushHubSheet,
 	ToggleWindow,
 } from "./command"
 import { withAcknowledgement } from "../shared/commands"
 import { testSendFailureMessage } from "../shared/delivery-failure"
-import { resolveStatus, resolveTab } from "./derive"
+import { resolveStatus } from "./derive"
 import { Message, type RuleBucket } from "./message"
 import type { Model } from "./model"
+import { acceptGrants, canManageAlerts } from "../../kit/session-grants"
 
 type Return = PageReturn<Model, Message>
 type Commands = ReadonlyArray<Command.Command<Message, never, Resources>>
 type Requested = Readonly<{ model: Model; commands: Commands }>
-type HubRoute = Extract<AppRoute, { readonly _tag: "Alerts" }>
+export type HubRoute = Extract<AppRoute, { readonly _tag: "Alerts" | "AlertsSection" }>
+
+/** The section and filters a hub route names; a legacy `tab` on `/alerts` is left out. */
+const fromRoute = (route: HubRoute): Pick<Model, "tab" | "search"> => {
+	if (route._tag === "AlertsSection") return { tab: route.section, search: route.search }
+	const { tab: _legacyTab, ...search } = route.search
+	return { tab: "inbox", search }
+}
 
 const DELETE_DIALOG_ID = "alerts-delete-destination"
 const DELETE_MONITOR_DIALOG_ID = "alerts-delete-monitor"
 const DELETE_CHAIN_DIALOG_ID = "alerts-delete-chain"
 export const DELETE_SCHEDULE_DIALOG_ID = "alerts-delete-schedule"
-export const CHAIN_DIALOG_ID = "alerts-escalation-chain"
 export const NEW_RULE_MENU_ID = "alerts-new-rule-menu"
 export const WINDOW_DIALOG_ID = "alerts-maintenance-window"
 const DELETE_WINDOW_DIALOG_ID = "alerts-delete-window"
 
-/** Runs the delete dialog's update; `Closed` (Escape, Cancel, success) forgets the target. */
 const updateDeleteDialog = (model: Model, step: ReturnType<typeof Dialog.update>): Return => ({
 	model: {
 		...model,
@@ -100,7 +107,6 @@ const updateDeleteDialog = (model: Model, step: ReturnType<typeof Dialog.update>
 const deliveriesKey = (context: PageContext) =>
 	requestKey(context.orgId, "alertDeliveries.list", { query: { limit: 100 } })
 
-/** One `Keyed.request` on the deliveries slot; `Refresh` is the `alertDeliveryEvents` invalidation. */
 const requestDeliveries = (model: Model, context: PageContext, mode: Keyed.RequestMode): Requested => {
 	const key = deliveriesKey(context)
 	return Option.match(Keyed.request(model.deliveries, key, mode), {
@@ -115,7 +121,7 @@ const requestDeliveries = (model: Model, context: PageContext, mode: Keyed.Reque
 /** The Routing tab mounts its own deliveries read; the overview's stays mounted with the tab counts. */
 const requestRoutingDeliveries = (model: Model, context: PageContext, mode: Keyed.RequestMode): Requested => {
 	const key = deliveriesKey(context)
-	return resolveTab(model.search.tab) !== "routing"
+	return model.tab !== "routing"
 		? { model, commands: [] }
 		: Option.match(Keyed.request(model.routingDeliveries, key, mode), {
 				onNone: () => ({ model, commands: [] }),
@@ -135,7 +141,7 @@ const silencesKey = (context: PageContext, windowId: AlertMaintenanceWindowId | 
 
 /** The Silences tab reads the org's silences, or one window's, only while it is open. */
 const requestSilences = (model: Model, context: PageContext, mode: Keyed.ReadMode): Requested => {
-	if (resolveTab(model.search.tab) !== "silences") return { model, commands: [] }
+	if (model.tab !== "silences") return { model, commands: [] }
 	const windowId = Option.getOrNull(windowIdOfParam(model.search.window))
 	return Option.match(Keyed.requestFor(model.silences, silencesKey(context, windowId), mode), {
 		onNone: () => ({ model, commands: [] }),
@@ -156,7 +162,7 @@ const windowsKey = (context: PageContext) =>
 
 /** The Maintenance tab lists the windows; the Silences tab names the windows its silences belong to. */
 const requestWindows = (model: Model, context: PageContext, mode: Keyed.ReadMode): Requested => {
-	const tab = resolveTab(model.search.tab)
+	const tab = model.tab
 	if (tab !== "maintenance" && tab !== "silences") return { model, commands: [] }
 	return Option.match(Keyed.requestFor(model.windows, windowsKey(context), mode), {
 		onNone: () => ({ model, commands: [] }),
@@ -174,7 +180,7 @@ const requestWindows = (model: Model, context: PageContext, mode: Keyed.ReadMode
 const refreshWindows = (model: Model, context: PageContext): Return => {
 	const windows = requestWindows(model, context, "Supersede")
 	const silences: Requested =
-		resolveTab(windows.model.search.tab) === "silences"
+		windows.model.tab === "silences"
 			? requestSilences(windows.model, context, "Supersede")
 			: { model: { ...windows.model, silences: Keyed.idle() }, commands: [] }
 	return { model: silences.model, commands: [...windows.commands, ...silences.commands] }
@@ -198,7 +204,7 @@ const requestServiceNamespaces = (model: Model, context: PageContext): Requested
 
 /** The Uptime tab reads the monitors, and the namespaces they group by, only while it is open. */
 const requestMonitors = (model: Model, context: PageContext, mode: Keyed.ReadMode): Requested => {
-	if (resolveTab(model.search.tab) !== "uptime") return { model, commands: [] }
+	if (model.tab !== "uptime") return { model, commands: [] }
 	const namespaces = requestServiceNamespaces(model, context)
 	return Option.match(Keyed.requestFor(namespaces.model.monitors, monitorsKey(context), mode), {
 		onNone: () => namespaces,
@@ -214,7 +220,7 @@ const slosKey = (context: PageContext) =>
 
 /** The SLOs tab reads the SLOs and their statuses only while it is open. */
 const requestSlos = (model: Model, context: PageContext, mode: Keyed.ReadMode): Requested => {
-	if (resolveTab(model.search.tab) !== "slos") return { model, commands: [] }
+	if (model.tab !== "slos") return { model, commands: [] }
 	return Option.match(Keyed.requestFor(model.slos, slosKey(context), mode), {
 		onNone: () => ({ model, commands: [] }),
 		onSome: (slos) => ({ model: { ...model, slos }, commands: [FetchHubSlos({ key: slos.key })] }),
@@ -226,8 +232,8 @@ const chainsKey = (context: PageContext) =>
 
 /** The Routing tab reads the escalation chains, and the On-call tab to name the ones paging a schedule. */
 const requestChains = (model: Model, context: PageContext, mode: Keyed.ReadMode): Requested => {
-	const tab = resolveTab(model.search.tab)
-	if (tab !== "routing" && tab !== "oncall") return { model, commands: [] }
+	const tab = model.tab
+	if (tab !== "routing" && tab !== "on-call") return { model, commands: [] }
 	return Option.match(Keyed.requestFor(model.chains, chainsKey(context), mode), {
 		onNone: () => ({ model, commands: [] }),
 		onSome: (chains) => ({
@@ -271,13 +277,12 @@ const isSchedulesStale = (model: Model, nowMs: number): boolean => {
 
 /** The clock ticked: the overview's derivation moves, and stale schedules are read again. */
 const clockRead = (model: Model, context: PageContext, nowMs: number): Return => {
-	const next = { ...model, nowMs }
-	if (!isSchedulesStale(next, nowMs)) return { model: next }
-	const step = requestSchedules({ ...next, schedulesAskedAtMs: nowMs }, context, "Refresh")
-	return { model: step.model, commands: step.commands }
+	const sheet = followSilenceSheet({ ...model, nowMs }, context)
+	if (!isSchedulesStale(sheet.model, nowMs)) return sheet
+	const step = requestSchedules({ ...sheet.model, schedulesAskedAtMs: nowMs }, context, "Refresh")
+	return { model: step.model, commands: [...sheet.commands, ...step.commands] }
 }
 
-/** `reactivityKeys: ["alertDeliveryEvents"]`: both reads revalidate. */
 const refreshDeliveries = (model: Model, context: PageContext) => {
 	const overview = requestDeliveries(model, context, "Refresh")
 	const routing = requestRoutingDeliveries(overview.model, context, "Refresh")
@@ -286,15 +291,15 @@ const refreshDeliveries = (model: Model, context: PageContext) => {
 
 /** Members are read once, on the first tab that names people: the inbox strip, On-call, Routing. */
 const requestMembers = (model: Model): Requested => {
-	const tab = resolveTab(model.search.tab)
-	return model.isMembersRequested || (tab !== "inbox" && tab !== "oncall" && tab !== "routing")
+	const tab = model.tab
+	return model.isMembersRequested || (tab !== "inbox" && tab !== "on-call" && tab !== "routing")
 		? { model, commands: [] }
 		: { model: { ...model, isMembersRequested: true }, commands: [FetchHubMembers()] }
 }
 
 export const init = (route: HubRoute, context: PageContext): Return => {
 	const model: Model = {
-		search: route.search,
+		...fromRoute(route),
 		nowMs: null,
 		rules: null,
 		states: null,
@@ -328,7 +333,6 @@ export const init = (route: HubRoute, context: PageContext): Return => {
 		deleteMonitorDialog: Dialog.init(DELETE_MONITOR_DIALOG_ID, "alert-dialog"),
 		slos: Keyed.idle(),
 		chains: Keyed.idle(),
-		chainDialog: ChainDialog.init(CHAIN_DIALOG_ID),
 		confirmDeleteChainId: null,
 		deletingChainId: null,
 		deleteChainError: null,
@@ -380,7 +384,8 @@ export const init = (route: HubRoute, context: PageContext): Return => {
 }
 
 export const routeChanged = (model: Model, route: HubRoute, context: PageContext): Return => {
-	const routing = requestRoutingDeliveries({ ...model, search: route.search }, context, "Load")
+	const sheet = followSilenceSheet({ ...model, ...fromRoute(route) }, context)
+	const routing = requestRoutingDeliveries(sheet.model, context, "Load")
 	const monitors = requestMonitors(routing.model, context, "Load")
 	const silences = requestSilences(monitors.model, context, "Load")
 	const windows = requestWindows(silences.model, context, "Load")
@@ -399,13 +404,14 @@ export const routeChanged = (model: Model, route: HubRoute, context: PageContext
 			...chains.commands,
 			...schedules.commands,
 			...members.commands,
+			...sheet.commands,
 			ReadHubClock(),
 		],
 	}
 }
 
-const navigate = (search: Model["search"]): PageOutMessage =>
-	PageOutMessage.RequestedNavigation({ url: alertsHref(search), isReplace: false })
+const navigate = (search: Model["search"], tab: Model["tab"]): PageOutMessage =>
+	PageOutMessage.RequestedNavigation({ url: alertsHref(search, tab), isReplace: false })
 
 const toast = (type: "success" | "error", title: string, description = ""): PageOutMessage =>
 	PageOutMessage.RequestedToast({ type, title, description })
@@ -423,7 +429,6 @@ const destinationById = (model: Model, id: AlertDestinationId) =>
 	)
 
 const toggleRule = (model: Model, ruleId: AlertRuleId, isEnabled: boolean): Return =>
-	// `Mutation.make` serializes the write on one permit: a second toggle waits for the first.
 	model.togglingRuleId !== null
 		? { model }
 		: { model: { ...model, togglingRuleId: ruleId }, commands: [ToggleRule({ ruleId, isEnabled })] }
@@ -463,8 +468,6 @@ const confirmDelete = (model: Model): Return => {
 			}
 }
 
-// DESTINATION DIALOG
-
 /** The dialog's outcome as the page reports it: toasts, and "Destination created" for a new one. */
 const liftDestinationDialog = (model: Model, step: ReturnType<typeof DestinationDialog.update>): Return => ({
 	model: { ...model, destinationDialog: step.model },
@@ -480,8 +483,6 @@ const liftDestinationDialog = (model: Model, step: ReturnType<typeof Destination
 				}),
 })
 
-// ESCALATION CHAINS
-
 const chainsOf = (model: Model): ReadonlyArray<V2EscalationChain> =>
 	Option.getOrElse(AsyncData.getData(model.chains.data), () => [])
 
@@ -490,28 +491,6 @@ const refreshChains = (model: Model, context: PageContext): Return => {
 	const chains = requestChains(model, context, "Supersede")
 	const schedules = requestSchedules(chains.model, context, "Supersede")
 	return { model: schedules.model, commands: [...chains.commands, ...schedules.commands] }
-}
-
-/** The chain dialog's outcome: a toast, and the list read again. */
-const liftChainDialog = (
-	model: Model,
-	context: PageContext,
-	step: ReturnType<typeof ChainDialog.update>,
-): Return => {
-	const lifted: Model = { ...model, chainDialog: step.model }
-	const commands = FoldkitCommand.mapMessages(step.commands ?? [], (message) =>
-		Message.GotChainDialogMessage({ message }),
-	)
-	if (step.outMessage === undefined) return { model: lifted, commands }
-	const refreshed = refreshChains(lifted, context)
-	return {
-		model: refreshed.model,
-		commands: [...commands, ...(refreshed.commands ?? [])],
-		outMessage: toast(
-			"success",
-			step.outMessage.isNew ? "Escalation chain created" : "Escalation chain saved",
-		),
-	}
 }
 
 /** The names of the rules that start `chain` that this tab has loaded; the rest are counted, not named. */
@@ -547,7 +526,6 @@ const inUseMessage = (model: Model, chainId: EscalationChainId): string => {
 	return `Still used by ${listed}. Remove it from ${tiers} first.`
 }
 
-/** Runs the chain delete dialog's update; `Closed` forgets the target and its error. */
 const updateDeleteChainDialog = (model: Model, step: ReturnType<typeof Dialog.update>): Return => {
 	const isClosed = step.outMessage?._tag === "Closed"
 	return {
@@ -564,7 +542,7 @@ const updateDeleteChainDialog = (model: Model, step: ReturnType<typeof Dialog.up
 	}
 }
 
-const pickedChainAction = (model: Model, context: PageContext, rawId: string, value: string): Return =>
+const pickedChainAction = (model: Model, rawId: string, value: string): Return =>
 	Option.match(
 		Array.findFirst(chainsOf(model), (chain) => chain.id === rawId),
 		{
@@ -580,7 +558,13 @@ const pickedChainAction = (model: Model, context: PageContext, rawId: string, va
 							},
 							Dialog.open(model.deleteChainDialog),
 						)
-					: liftChainDialog(model, context, ChainDialog.openEdit(model.chainDialog, chain)),
+					: {
+							model,
+							outMessage: PageOutMessage.RequestedNavigation({
+								url: chainHref(chain.id),
+								isReplace: false,
+							}),
+						},
 		},
 	)
 
@@ -627,9 +611,6 @@ const deletedChain = (
 	})
 }
 
-// ON-CALL SCHEDULES
-
-/** A write changed the schedules: read them again under a new generation. */
 const refreshSchedules = (model: Model, context: PageContext): Return => {
 	const step = requestSchedules(model, context, "Supersede")
 	return { model: step.model, commands: step.commands }
@@ -656,7 +637,6 @@ const scheduleInUseMessage = (model: Model, scheduleId: OnCallScheduleId): strin
 		: `Still paged by ${Array.join(names, ", ")}. Remove it from those chains first.`
 }
 
-/** Runs the schedule delete dialog's update; `Closed` forgets the target and its error. */
 const updateDeleteScheduleDialog = (model: Model, step: ReturnType<typeof Dialog.update>): Return => {
 	const isClosed = step.outMessage?._tag === "Closed"
 	return {
@@ -732,17 +712,72 @@ const deletedSchedule = (
 	})
 }
 
-// SILENCES
+/** `?sheet=silence`: the new-silence side panel. */
+export const SILENCE_SHEET = "silence"
+
+const hubHref = (model: Model): string => alertsHref(model.search, model.tab)
+
+const silenceCommands = (step: ReturnType<typeof SilenceDialog.update>): Commands =>
+	FoldkitCommand.mapMessages(step.commands ?? [], (message) => Message.GotSilenceDialogMessage({ message }))
+
+/**
+ * Opens or closes the silence panel to match `?sheet=` (a link, Back, or "New silence"). It opens on
+ * the Silences section once the clock is read, as the form checks its end against it, and only for
+ * a viewer who may save.
+ */
+const followSilenceSheet = (model: Model, context: PageContext): Requested => {
+	const sheet = model.search.sheet
+	const isInUrl = sheet === SILENCE_SHEET && model.tab === "silences"
+	// A `?sheet=` nothing here opens (another section's panel, a made-up id) is replaced away.
+	if (sheet !== undefined && !isInUrl) {
+		const dropped = followSilenceSheet(
+			{ ...model, search: { ...model.search, sheet: undefined } },
+			context,
+		)
+		return {
+			model: dropped.model,
+			commands: [...dropped.commands, DismissHubSheet({ href: hubHref(model), id: sheet })],
+		}
+	}
+	const isOpen = model.silenceDialog.dialog.isOpen
+	if (isInUrl && !isOpen && model.nowMs !== null && canManageAlerts(model)) {
+		const step = SilenceDialog.openNew(model.silenceDialog, context.timeZone, model.nowMs)
+		return { model: { ...model, silenceDialog: step.model }, commands: silenceCommands(step) }
+	}
+	if (!isInUrl && isOpen) {
+		const step = SilenceDialog.close(model.silenceDialog)
+		return { model: { ...model, silenceDialog: step.model }, commands: silenceCommands(step) }
+	}
+	return { model, commands: [] }
+}
+
+/** The grants are in: a viewer who can't silence loses a linked panel's `?sheet=`, replaced away. */
+const grantsLoaded = (model: Model, context: PageContext): Requested =>
+	model.search.sheet === SILENCE_SHEET && !canManageAlerts(model)
+		? {
+				model: { ...model, search: { ...model.search, sheet: undefined } },
+				commands: [DismissHubSheet({ href: hubHref(model), id: SILENCE_SHEET })],
+			}
+		: followSilenceSheet(model, context)
 
 const liftSilenceDialog = (
 	model: Model,
 	context: PageContext,
 	step: ReturnType<typeof SilenceDialog.update>,
 ): Return => {
-	const next = { ...model, silenceDialog: step.model }
-	const commands = FoldkitCommand.mapMessages(step.commands ?? [], (message) =>
-		Message.GotSilenceDialogMessage({ message }),
-	)
+	// The panel closed itself (Cancel, Escape, a save): its `?sheet=` goes now, in the model too, so a
+	// clock tick before the URL change lands can't reopen it.
+	const hasClosed =
+		model.silenceDialog.dialog.isOpen && !step.model.dialog.isOpen && model.search.sheet === SILENCE_SHEET
+	const next = {
+		...model,
+		silenceDialog: step.model,
+		search: hasClosed ? { ...model.search, sheet: undefined } : model.search,
+	}
+	const commands = [
+		...silenceCommands(step),
+		...(hasClosed ? [DismissHubSheet({ href: hubHref(model), id: SILENCE_SHEET })] : []),
+	]
 	if (step.outMessage === undefined) return { model: next, commands }
 	return SilenceDialog.OutMessage.match(step.outMessage, {
 		RequestedToast: ({ type, title, description }) => ({
@@ -768,8 +803,6 @@ const endSilence = (model: Model, silenceId: AlertSilenceId): Return =>
 				model: { ...model, endingSilenceIds: [...model.endingSilenceIds, silenceId] },
 				commands: [EndHubSilence({ silenceId })],
 			}
-
-// MAINTENANCE WINDOWS
 
 const windowsOf = (model: Model): ReadonlyArray<V2AlertMaintenanceWindow> =>
 	Option.getOrElse(AsyncData.getData(model.windows.data), () => [])
@@ -810,7 +843,6 @@ const toggleWindow = (model: Model, windowId: AlertMaintenanceWindowId): Return 
 		},
 	)
 
-/** Runs the window delete dialog's update; `Closed` forgets the target. */
 const updateDeleteWindowDialog = (model: Model, step: ReturnType<typeof Dialog.update>): Return => ({
 	model: {
 		...model,
@@ -876,10 +908,7 @@ const deletedWindow = (
 	})
 }
 
-// ROW MENUS
-
 /**
-
  * Row menu ids carry what they act on: `rule:<id>@<tag group>` (a rule is listed under each of
  * its tags) or `destination:<id>`.
  */
@@ -900,7 +929,6 @@ const toggleMonitor = (model: Model, monitorId: UptimeMonitorId, enabled: boolea
 				commands: [ToggleMonitor({ monitorId, enabled })],
 			}
 
-/** Runs the monitor delete dialog's update; `Closed` forgets the target. */
 const updateDeleteMonitorDialog = (model: Model, step: ReturnType<typeof Dialog.update>): Return => ({
 	model: {
 		...model,
@@ -946,7 +974,6 @@ const confirmDeleteMonitor = (model: Model): Return => {
 		: { model: { ...model, deletingMonitorId: id }, commands: [DeleteMonitor({ monitorId: id })] }
 }
 
-/** A write changed the list: read it again under a new generation. */
 const refreshMonitors = (model: Model, context: PageContext): Return => {
 	const step = requestMonitors(model, context, "Supersede")
 	return { model: step.model, commands: step.commands }
@@ -980,7 +1007,7 @@ const pickedFromMenu = (model: Model, context: PageContext, menuId: string, valu
 	const [kind, ...rest] = Str.split(":")(menuId)
 	const target = Array.join(rest, ":")
 	if (kind === "monitor") return pickedMonitorAction(model, target, value)
-	if (kind === "chain") return pickedChainAction(model, context, target, value)
+	if (kind === "chain") return pickedChainAction(model, target, value)
 	if (kind === "schedule") return pickedScheduleAction(model, target, value)
 	if (kind === "window") return pickedWindowAction(model, context, target, value)
 	if (kind === "rule") {
@@ -1044,10 +1071,10 @@ const updateMenu = (model: Model, context: PageContext, menuId: string, message:
 
 const statusToggled = (model: Model, bucket: RuleBucket): Return => ({
 	model,
-	outMessage: navigate({
-		...model.search,
-		status: resolveStatus(model.search.status) === bucket ? undefined : bucket,
-	}),
+	outMessage: navigate(
+		{ ...model.search, status: resolveStatus(model.search.status) === bucket ? undefined : bucket },
+		model.tab,
+	),
 })
 
 export const update = (model: Model, message: Message, context: PageContext): Return =>
@@ -1063,7 +1090,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			orgId === context.orgId && (model.rules === null || model.incidents === null)
 				? { model: { ...model, isLoadFailed: true } }
 				: { model },
-		// `retryOrgCollections`: a stopped shape syncs again only on fresh collections.
+		// A stopped shape syncs again only on fresh collections.
 		ClickedRetryLoad: () => ({
 			model: { ...model, isLoadFailed: false },
 			outMessage: PageOutMessage.RequestedReconnectOrgCollections(),
@@ -1076,30 +1103,42 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		CompletedFetchRoutingDeliveries: ({ key, result }) => ({
 			model: { ...model, routingDeliveries: Keyed.accept(model.routingDeliveries, key, result) },
 		}),
-		CompletedFetchSession: ({ orgId, grants }) =>
-			orgId === context.orgId ? { model: { ...model, grants } } : { model },
+		CompletedFetchSession: (answer) =>
+			answer.orgId === context.orgId
+				? grantsLoaded(acceptGrants(model, context.orgId, answer), context)
+				: { model },
 		ChangedRulesQuery: ({ value }) => ({ model: { ...model, rulesQuery: value } }),
 		ClickedStatusFilter: ({ bucket }) => statusToggled(model, bucket),
 		ClickedClearRuleFilters: () => ({
 			model: { ...model, rulesQuery: "" },
-			outMessage: navigate({ ...model.search, status: undefined }),
+			outMessage: navigate({ ...model.search, status: undefined }, model.tab),
 		}),
 		ClickedInboxSignal: ({ signal }) => ({
 			model,
 			// The status and service belong to the signal view: plain Inbox drops them.
-			outMessage: navigate(
+			outMessage:
 				signal === null
-					? { ...model.search, signal: undefined, anomalyStatus: undefined, serviceName: undefined }
-					: { ...model.search, tab: "inbox", signal, anomalyStatus: undefined },
-			),
+					? navigate(
+							{
+								...model.search,
+								signal: undefined,
+								anomalyStatus: undefined,
+								serviceName: undefined,
+							},
+							model.tab,
+						)
+					: navigate({ ...model.search, signal, anomalyStatus: undefined }, "inbox"),
 		}),
 		ClickedIncidentStatus: ({ status }) => ({
 			model,
-			outMessage: navigate({ ...model.search, anomalyStatus: status === "open" ? undefined : status }),
+			outMessage: navigate(
+				{ ...model.search, anomalyStatus: status === "open" ? undefined : status },
+				model.tab,
+			),
 		}),
 		ClickedClearInboxService: () => ({
 			model,
-			outMessage: navigate({ ...model.search, serviceName: undefined }),
+			outMessage: navigate({ ...model.search, serviceName: undefined }, model.tab),
 		}),
 		ClickedShowAllRules: () => ({ model: { ...model, isShowingAllRules: true } }),
 		ClickedToggleRule: ({ ruleId, isEnabled }) => toggleRule(model, ruleId, isEnabled),
@@ -1157,7 +1196,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 				...model,
 				testingDestinationIds: withoutId(model.testingDestinationIds, destinationId),
 			}
-			// The test lands in the delivery log: `reactivityKeys: ["alertDeliveryEvents"]`.
+			// The test lands in the delivery log.
 			const refreshed = refreshDeliveries(settled, context)
 			return {
 				model: refreshed.model,
@@ -1171,7 +1210,6 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		},
 		ClickedConfirmDeleteDestination: () => confirmDelete(model),
 		GotDeleteDialogMessage: ({ message: child }) =>
-			// `ConfirmDialog` ignores dismissal while the delete is pending.
 			model.confirmDeleteId !== null && model.deletingDestinationIds.includes(model.confirmDeleteId)
 				? { model }
 				: updateDeleteDialog(model, Dialog.update(model.deleteDialog, child)),
@@ -1229,9 +1267,6 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			}
 		},
 		ClickedRetryChains: () => refreshChains(model, context),
-		ClickedNewChain: () => liftChainDialog(model, context, ChainDialog.openNew(model.chainDialog)),
-		GotChainDialogMessage: ({ message: child }) =>
-			liftChainDialog(model, context, ChainDialog.update(model.chainDialog, child)),
 		ClickedConfirmDeleteChain: () => confirmDeleteChain(model),
 		CompletedDeleteChain: ({ chainId, result }) => deletedChain(model, context, chainId, result),
 		GotDeleteChainDialogMessage: ({ message: child }) =>
@@ -1284,11 +1319,9 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		}),
 		ClickedRetrySilences: () => refreshSilences(model, context),
 		ClickedNewSilence: () =>
-			liftSilenceDialog(
-				model,
-				context,
-				SilenceDialog.openNew(model.silenceDialog, context.timeZone, model.nowMs ?? 0),
-			),
+			model.search.sheet === SILENCE_SHEET
+				? { model }
+				: { model, commands: [PushHubSheet({ href: hubHref(model), id: SILENCE_SHEET })] },
 		GotSilenceDialogMessage: ({ message: child }) =>
 			liftSilenceDialog(model, context, SilenceDialog.update(model.silenceDialog, child)),
 		ClickedEndSilence: ({ silenceId }) => endSilence(model, silenceId),
@@ -1353,7 +1386,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 				: updateDeleteWindowDialog(model, Dialog.update(model.deleteWindowDialog, child)),
 		ClickedClearWindowFilter: () => ({
 			model,
-			outMessage: navigate({ ...model.search, window: undefined }),
+			outMessage: navigate({ ...model.search, window: undefined }, model.tab),
 		}),
 		ClickedConfirmDeleteMonitor: () => confirmDeleteMonitor(model),
 		GotDeleteMonitorDialogMessage: ({ message: child }) =>

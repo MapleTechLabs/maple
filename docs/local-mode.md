@@ -237,7 +237,7 @@ port. `maple start -d` checks the port before spawning and reports ready only
 when `/local/status` answers with the child's pid (120s budget).
 
 **Under a supervisor.** A start refusal that retrying cannot fix (an unloadable
-libchdb, a dirty or incompatible store; the list is `DETERMINISTIC_START_TAGS` in
+libchdb, a dirty or incompatible store; the list is `isDeterministicStartFailure` in
 `apps/cli/src/commands/start-failures.ts`) exits with status **78**, and so does
 a `maple start -d` whose child exited 78. Tell the supervisor not to restart on
 it: systemd `RestartPreventExitStatus=78`, launchd `KeepAlive` =
@@ -436,10 +436,11 @@ progress. Target-only abandonment validates the coordinator-owned journal
 structure and filesystem proofs without requiring the historical executable
 module or its state decoder to remain available.
 
-Migration edges are statically registered. v0 -> v1 is a typed module
-(`local-store-migrations/legacy-to-current.ts`); every later edge is one row of
-the append-only table in `local-store-migrations/steps.ts`, run by the single
-executor in `step-executor.ts`. A row names its id and versions, the typed
+Migration edges are statically registered in `packages/local-server/src`. v0 -> v1
+is a typed module (`local-store-migrations/legacy-to-current.ts`); every later edge
+is one row of the append-only table in `local-store-migrations/steps.ts`, run by
+the single executor in `step-executor.ts`. A row's position fixes its versions and,
+with its slug, its id (the journal key). A row names the typed
 operations to run on the cloned target before and after the target snapshot is
 bootstrapped (add columns or an index, drop views, tables or columns, backfill
 statements), any extra row counts to record and re-check, and its plan lines
@@ -452,23 +453,19 @@ operations must be safe for this shared in-place topology. The coordinator test
 seam exercises a two-edge chain, a resumed verified edge, and one final
 promotion.
 
-Structural identities live in the append-only history at
-`packages/local-server/src/local-schema-history.ts`. The schema gate checks the
-current identity against the history tip, preserves the base branch's prior
-entries in CI, and requires every historical identity to reach the current one
-through registered migration edges. Changing a schema digest or manifest
-therefore requires a new versioned entry and an executable edge together.
+Structural identities are derived from the frozen per-version DDL snapshots in
+`packages/local-server/src/schema/history/`, listed in
+`packages/local-server/src/local-schema-history.ts`. The schema gate checks that
+the current schema is the newest snapshot, holds every snapshot the base branch
+shipped byte-identical in CI, and requires every historical identity to reach the
+current one through registered migration edges. Changing a schema digest or
+manifest therefore requires a new snapshot and an executable edge together.
 
-Everything that pairing demands except the DDL is derived from the new version
-number, so `bun run local-schema:bump <slug>` writes it: the retained snapshot
-(kept with the migrations in `apps/cli/src/server/schema/`), the version
-constant, the `schema-snapshots.ts` and `schema-identity.ts` edit sites, the history entry's
-hashes, a new row in `steps.ts`, and the ids and identities pinned in
-`apps/cli/test/local-store-migrations.test.ts` and the native probe. It leaves
-the row's operations, plan line and dispositions to be written.
-When the gate fails because the schema moved without a bump, it names that
-command; when a hand-bump left the history behind, it prints the entry to
-append.
+`bun run local-schema:bump <slug>` writes everything except the DDL work: the
+new snapshot, its entry in the history list, the version constant, and a new row
+in `steps.ts`. It leaves the row's operations, plan line and dispositions to be
+written. When the gate fails because the schema moved without a bump, it names
+that command.
 
 The Linux native probe `apps/cli/test/native-local-store-migration.sh` uses a
 native chDB setup helper to create a stopped historical raw-table fixture,

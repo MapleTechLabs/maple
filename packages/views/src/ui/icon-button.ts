@@ -16,7 +16,7 @@ export type IconButtonOptions<Message> = Readonly<{
 	attributes?: ReadonlyArray<Attribute<Message> | ChildAttribute>
 }>
 
-/** `<IconButton>`: an icon-only Button that always carries a name and, by default, a tooltip. */
+/** An icon-only Button that always carries a name and, by default, a tooltip. */
 export const iconButton = <Message>(
 	h: HtmlBuilder<Message>,
 	options: IconButtonOptions<Message>,

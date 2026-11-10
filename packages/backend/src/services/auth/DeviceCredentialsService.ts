@@ -14,7 +14,7 @@ import {
 	type RoleName,
 	type UserId,
 } from "@maple/domain/http"
-import { DeviceCredentialId } from "@maple/domain/primitives"
+import { DeviceCredentialId } from "@maple/primitives"
 import { Clock, Context, Effect, Layer, Option, Schema, Array as Arr, String as Str } from "effect"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { makeDbExecute, makePersistenceErrorMapper } from "@maple/backend/platform/db-execute"
@@ -35,7 +35,8 @@ import {
 	type VerifiedDpopProof,
 	verifyDpopProof,
 } from "./device/dpop-proof"
-import { base64url, EcPublicJwk, importEcPublicJwk, jwkThumbprint, sha256 } from "./device/jose"
+import { base64url } from "@maple/backend/platform/jwt"
+import { EcPublicJwk, importEcPublicJwk, jwkThumbprint, sha256 } from "./device/jose"
 
 /** Every ceiling is the server's: a registering client names a key and nothing else. */
 export const DEVICE_CREDENTIAL_SCOPES = ["widget_summary:read"] as const
@@ -604,8 +605,8 @@ export class DeviceCredentialsService extends Context.Service<DeviceCredentialsS
 				).pipe(Effect.ignore)
 			}
 
-			/** `POST /v2/device_tokens`: a proof signed by a registered key earns a bound token. */
 			/**
+			 * `POST /v2/device_tokens`: a proof signed by a registered key earns a bound token.
 			 * `admit` runs once the key is known to belong to a live credential and before any
 			 * write or signing, so the caller's rate limit bounds the expensive half of issuance.
 			 */

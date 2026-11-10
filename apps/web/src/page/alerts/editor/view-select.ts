@@ -19,6 +19,8 @@ export const formSelect = (
 		labelledBy?: string
 		/** The error text the trigger is described by, and marked invalid with. */
 		errorId?: string
+		/** The trigger's text for the value, when it is shorter than the list's label. */
+		renderValue?: (value: string) => ReadonlyArray<Html | string>
 		toView: (parts: ReadonlyArray<Html>) => Html
 	}>,
 ): Html => {
@@ -35,6 +37,7 @@ export const formSelect = (
 			ariaLabel: inputs.ariaLabel,
 			labelledBy: inputs.labelledBy,
 			...(inputs.errorId === undefined ? undefined : { describedBy: inputs.errorId, isInvalid: true }),
+			...(inputs.renderValue === undefined ? undefined : { renderValue: inputs.renderValue }),
 			toView: inputs.toView,
 		},
 	})

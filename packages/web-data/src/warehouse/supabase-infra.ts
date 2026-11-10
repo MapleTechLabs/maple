@@ -1,6 +1,6 @@
 import { Clock, Effect, Schema, Array as Arr } from "effect"
 import { SupabaseInfraProjectsRequest, SupabaseInfraProjectTimeseriesRequest } from "@maple/domain/http"
-import { SupabaseProjectRef } from "@maple/domain/primitives"
+import { SupabaseProjectRef } from "@maple/primitives"
 import { MapleInternalHttp } from "./warehouse-services"
 import {
 	InfraWindowInput,

@@ -2,7 +2,7 @@ import { Schema } from "effect"
 import { defineMessageUnion } from "foldkit/message"
 import { LoadFailure } from "@maple/views/data/load-failure"
 import * as FilterSections from "@maple/views/ui/filters/filter-sections"
-import * as Frame from "../../kit/frame"
+import * as Frame from "../../../kit/time-frame"
 import * as InstallModal from "../../kit/install-modal"
 import * as Peek from "../peek/message"
 import { PodsPage, RestartRows } from "../pod-data"
@@ -11,7 +11,14 @@ import { PodCounts, PodFacets } from "./model"
 export const PodScope = Schema.Literals(["saturated", "elevated", "unbounded", "ended"])
 export type PodScope = typeof PodScope.Type
 
-export const PodSortKey = Schema.Literals(["saturation", "cpuUsage", "cpuLimitPct", "memoryLimitPct", "podName", "lastSeen"])
+export const PodSortKey = Schema.Literals([
+	"saturation",
+	"cpuUsage",
+	"cpuLimitPct",
+	"memoryLimitPct",
+	"podName",
+	"lastSeen",
+])
 
 export const Facet = Schema.Literals([
 	"namespaces",

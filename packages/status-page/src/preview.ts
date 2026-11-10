@@ -3,7 +3,7 @@ import type {
 	StatusPageComponentStatus,
 	StatusPageId,
 	UptimeMonitorStatus,
-} from "@maple/domain/primitives"
+} from "@maple/primitives"
 import {
 	deriveComponentStatus,
 	incidentComponentStatus,

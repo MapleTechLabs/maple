@@ -12,7 +12,7 @@ import {
 	emptyTitle,
 } from "@maple/views/ui/empty"
 import { icon, type IconName } from "@maple/views/ui/icon"
-import { severityBadge } from "../../errors/kit/severity"
+import { severityBadge } from "../../kit/issue-severity"
 import { type Gate, issueSeverityOf, runLabelOf, runToneOf, SECURITY_SEVERITY_LABEL } from "./format"
 import { String as Str, Option } from "effect"
 import { hstack, vstack } from "@maple/views/ui/stack"

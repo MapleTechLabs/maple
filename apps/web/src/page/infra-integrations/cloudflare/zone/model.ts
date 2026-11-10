@@ -1,12 +1,12 @@
+import { ChartEnvMessages, ChartEnvFields } from "@maple/views/charts/chart-env"
+import { RequestMode } from "@maple/views/data/keyed"
 import { Schema } from "effect"
 import { defineMessageUnion } from "foldkit/message"
 import * as Chart from "@maple/views/charts/chart"
-import { ChartRuntime } from "@maple/views/charts/chart-runtime"
-import { ThemeColors } from "@maple/views/charts/theme-colors"
 import { KeyedSchema } from "@maple/views/data/keyed"
 import { LoadFailure } from "@maple/views/data/load-failure"
 import { TimeWindow } from "../../../../data/time-range"
-import { InfraCloudflareZoneSearch } from "../../../../route/search"
+import { InfraCloudflareZoneSearch, ZONE_TABS } from "../../../../route/search"
 import * as CopyButton from "@maple/views/ui/copy-button"
 import * as FilterSections from "@maple/views/ui/filters/filter-sections"
 import * as Popover from "@maple/views/ui/popover"
@@ -26,9 +26,7 @@ import {
 	ZoneSecurity,
 } from "../data"
 
-// `/infra/cloudflare/$zoneName`.
-
-export const ZoneTab = Schema.Literals(["traffic", "dns", "security"])
+export const ZoneTab = Schema.Literals(ZONE_TABS)
 export type ZoneTab = typeof ZoneTab.Type
 
 export const FilterKey = Schema.Literals([
@@ -60,7 +58,7 @@ export const Model = Schema.Struct({
 	facets: KeyedSchema(ZoneFacets, LoadFailure),
 	/** The list rollup's rows, for this zone's bytes, visits and latency. */
 	zones: KeyedSchema(Schema.Array(ZoneRow), LoadFailure),
-	/** `CloudflareBreakdownPanel`'s own state: the dimension, the toolbar filter, the live lookup. */
+	/** The breakdown panel's own state: the dimension, the toolbar filter, the live lookup. */
 	dimension: BreakdownDimension,
 	breakdown: KeyedSchema(ZoneBreakdown, LoadFailure),
 	breakdownSearch: Schema.String,
@@ -74,16 +72,12 @@ export const Model = Schema.Struct({
 	tooltip: Tooltip.Model,
 	copyService: CopyButton.Model,
 	charts: Schema.Record(Schema.String, Chart.Model),
-	chartRuntime: ChartRuntime,
-	themeColors: Schema.NullOr(ThemeColors),
+	...ChartEnvFields,
 	timePicker: TimeRangePicker.Model,
 	refreshVersion: Schema.Number,
 	isReloading: Schema.Boolean,
 })
 export type Model = typeof Model.Type
-
-export const RequestMode = Schema.Literals(["Load", "Refresh"])
-export type RequestMode = typeof RequestMode.Type
 
 const result = <A extends Schema.Top>(schema: A) => ({
 	key: Schema.String,
@@ -101,9 +95,7 @@ export const Message = defineMessageUnion({
 	CompletedFetchZones: result(Schema.Array(ZoneRow)),
 	CompletedFetchBreakdown: result(ZoneBreakdown),
 	CompletedFetchLiveTraffic: result(TopTraffic),
-	CompletedLoadChartRuntime: {},
-	FailedLoadChartRuntime: { reason: Schema.String },
-	ResolvedThemeColors: { colors: ThemeColors },
+	...ChartEnvMessages,
 	AttachedLinkedCursor: {},
 	/** The poll reads the clock so the phase can advance to "stalled". */
 	TickedIngestPoll: { nowMs: Schema.Number },

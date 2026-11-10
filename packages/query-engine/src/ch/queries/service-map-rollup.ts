@@ -13,20 +13,15 @@
 // into `ingest` with no reshaping.
 
 import { Schema, Effect, Array as Arr } from "effect"
-import type { CompiledQuery, CompiledQueryRowSchema } from "@maple-dev/effect-orm/clickhouse"
+import type { CompiledQuery } from "@maple-dev/effect-orm/clickhouse"
 import { compile } from "@maple-dev/effect-orm/clickhouse"
 import { utcAsWireString } from "./utc-bridge"
 import * as CH from "@maple-dev/effect-orm/expr"
 import { param } from "@maple-dev/effect-orm/clickhouse"
 import { from, fromQuery } from "@maple-dev/effect-orm/clickhouse"
 import { OrgId } from "@maple/domain"
-import {
-	ServiceAddressResolutionsHourly,
-	ServiceMapEdgesHourly,
-	Traces,
-	orgIdParam,
-	utcSecondsParam,
-} from "../tables"
+import * as Datasources from "@maple/domain/tinybird/datasources"
+import { orgIdParam, utcSecondsParam } from "../tables"
 import { deploymentEnvExpr } from "@maple/domain/tinybird/semconv-renames"
 import { serviceMapEdgeJoinQuery } from "./service-map"
 import { CHNumber } from "../schema"
@@ -85,24 +80,7 @@ export const serviceMapRollupWindowParams = (orgId: OrgId, oldestHourMs: number,
 	endTime: formatWarehouseDateTime(currentHourMs),
 })
 
-/** One pre-aggregated service-to-service edge bucket — mirrors the columns of
- * the `service_map_edges_hourly` ClickHouse table. */
-export interface ServiceMapEdgesHourlyOutput {
-	readonly OrgId: OrgId
-	readonly Hour: string
-	readonly SourceService: string
-	readonly TargetService: string
-	readonly DeploymentEnv: string
-	readonly CallCount: number
-	readonly ErrorCount: number
-	readonly DurationSumMs: number
-	readonly MaxDurationMs: number
-	readonly SampledSpanCount: number
-	readonly UnsampledSpanCount: number
-	readonly SampleRateSum: number
-}
-
-const ServiceMapEdgesHourlyOutputSchema: CompiledQueryRowSchema<ServiceMapEdgesHourlyOutput> = Schema.Struct({
+const ServiceMapEdgesHourlyOutputSchema = Schema.Struct({
 	// The tables' OrgId column is branded, so the derived output is too — a
 	// declared schema may only narrow, so it has to say the brand as well.
 	OrgId,
@@ -118,6 +96,10 @@ const ServiceMapEdgesHourlyOutputSchema: CompiledQueryRowSchema<ServiceMapEdgesH
 	UnsampledSpanCount: CHNumber,
 	SampleRateSum: CHNumber,
 })
+
+/** One pre-aggregated service-to-service edge bucket — mirrors the columns of
+ * the `service_map_edges_hourly` ClickHouse table. */
+export type ServiceMapEdgesHourlyOutput = typeof ServiceMapEdgesHourlyOutputSchema.Type
 
 export interface ServiceMapEdgesRollupParams {
 	readonly orgId: OrgId
@@ -146,7 +128,7 @@ export function serviceMapEdgesExistingHoursSQL(params: {
 	// `GROUP BY hourTs` collapses identical hour values across edge rows — the
 	// rollup only cares about which hour starts have been sealed, not which
 	// edges live in them. Same semantics as SELECT DISTINCT, with the DSL.
-	const query = from(ServiceMapEdgesHourly)
+	const query = from(Datasources.serviceMapEdgesHourly)
 		.select(($) => ({ hourTs: CH.toUnixTimestamp($.Hour) }))
 		.where(($) => [
 			$.OrgId.eq(orgIdParam),
@@ -184,7 +166,7 @@ export function serviceMapResolutionsExistingHoursSQL(params: {
 	startTime: string
 	endTime: string
 }): Effect.Effect<CompiledQuery<ServiceMapEdgesExistingHour>, QueryBuilderError> {
-	const query = from(ServiceAddressResolutionsHourly)
+	const query = from(Datasources.serviceAddressResolutionsHourly)
 		.select(($) => ({ hourTs: CH.toUnixTimestamp($.Hour) }))
 		.where(($) => [
 			$.OrgId.eq(orgIdParam),
@@ -231,8 +213,6 @@ export function serviceMapEdgesRollupSQL(
 	)
 }
 
-// Resolutions rollup (companion of the edges rollup)
-//
 // Emits one row per resolved `(SourceService, parent.server.address) →
 // child.ServiceName` triple per hour. Used by `serviceExternalEdgesSQL`'s
 // LEFT ANTI JOIN to suppress internal-service HTTP overlap from the
@@ -260,7 +240,7 @@ export function serviceMapResolutionsRollupSQL(
 	// SELECT needs. The map lookups (`server.address`, `deployment.environment`)
 	// happen here so the outer query reads them as plain columns instead of
 	// re-evaluating the map per output row.
-	const parents = from(Traces)
+	const parents = from(Datasources.traces)
 		.select(($) => ({
 			OrgId: $.OrgId,
 			Timestamp: $.Timestamp,
@@ -280,7 +260,7 @@ export function serviceMapResolutionsRollupSQL(
 
 	// Child side: Server/Consumer spans. Only the columns needed to JOIN on
 	// (TraceId, ParentSpanId) and to project the resolved target ServiceName.
-	const children = from(Traces)
+	const children = from(Datasources.traces)
 		.select(($) => ({
 			TraceId: $.TraceId,
 			ParentSpanId: $.ParentSpanId,

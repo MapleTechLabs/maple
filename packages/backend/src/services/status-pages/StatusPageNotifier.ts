@@ -13,7 +13,7 @@ import {
 	type StatusPageSubscriberRow,
 	type StatusPageUpdateNotificationRow,
 } from "@maple/db/tables"
-import { StatusPageIncidentUpdateId, type StatusPageIncidentStatus } from "@maple/domain/primitives"
+import { StatusPageIncidentUpdateId, type StatusPageIncidentStatus } from "@maple/primitives"
 import { renderStatusPageUpdateEmail } from "@maple/email/status-page-subscription"
 import { Context, Effect, Layer, Option, Redacted, Schema, Array as Arr, String as Str } from "effect"
 import { Database } from "@maple/backend/platform/DatabaseLive"

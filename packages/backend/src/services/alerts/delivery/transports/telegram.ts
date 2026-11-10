@@ -219,10 +219,6 @@ export const verifyTelegramCredentials = (
 		Effect.orElseSucceed(() => ({ status: "unknown" as const })),
 	)
 
-/* -------------------------------------------------------------------------- */
-/*  Chat discovery                                                            */
-/* -------------------------------------------------------------------------- */
-
 export interface TelegramChat {
 	readonly id: string
 	readonly title: string

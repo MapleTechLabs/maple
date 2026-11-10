@@ -20,7 +20,13 @@ import type { RangeUnit } from "@maple/views/ui/filters/range-format"
 import type { RangeBucket } from "@maple/views/ui/filters/range-histogram"
 import { label } from "@maple/views/ui/label"
 import { detectLookup } from "../kit/detected-models"
-import { modelVendorColor, modelVendorIcon, vendorColor, vendorIcon, vendorLabel } from "../kit/vendor"
+import {
+	modelVendorColor,
+	modelVendorIcon,
+	vendorColor,
+	vendorIcon,
+	vendorLabel,
+} from "@maple/views/lib/ai-vendor"
 import { hasFilters, RANGE_PARAMS } from "./derive"
 import { MountFilterRail } from "./command"
 import { type ListFacet, Message } from "./message"
@@ -159,7 +165,6 @@ const facetSection = (
 		...extra,
 	})
 
-/** `SingleCheckboxFilter`. */
 const singleCheckbox = (
 	h: H,
 	title: string,
@@ -279,7 +284,7 @@ const loadedRail = (h: H, model: Model, facets: Facets): Html => {
 	])
 }
 
-/** `AgentSessionsFilterSidebar`; its Mount starts the rail's model detection. */
+/** The filter rail; its Mount starts the rail's model detection. */
 export const filtersRail = (h: H, model: Model): Html =>
 	h.div(
 		[h.Class("contents"), h.OnMount(MountFilterRail())],

@@ -1,9 +1,5 @@
 import type { V2PlanetScaleIntegration } from "@maple/domain/http/v2"
-import {
-	type LiveCheck,
-	metricsAuthOf,
-	metricsLastError,
-} from "../../../components/integrations/planetscale-setup-steps"
+import { type LiveCheck, metricsAuthOf, metricsLastError } from "./setup-steps"
 import { toEpochMs } from "@maple/ui/lib/time-format"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { AppRoute, hrefOf } from "../../../route"
@@ -18,13 +14,11 @@ import {
 	integrationEmptyFooter,
 	integrationEmptyHint,
 	integrationEmptyMedia,
-} from "../kit/integration-empty"
+} from "../../kit/integration-empty"
 import { liveChecklist } from "../../kit/connect-flow"
 import { relativeTime } from "../../kit/relative-time"
+import { providerBrand } from "../../kit/providers"
 
-// PlanetScale absence notices and the setup state.
-
-export const PLANETSCALE_COLOR = "oklch(0.62 0.02 270)"
 export const BRANCH_ABSENCE_COPY = {
 	excluded: "Excluded from metrics collection by this connection's branch filters.",
 	"no-data": "No metrics for this branch in this window",
@@ -32,7 +26,7 @@ export const BRANCH_ABSENCE_COPY = {
 
 const INTEGRATION_HREF = hrefOf(AppRoute.SourcesNew({ search: { integration: "planetscale" } }))
 
-/** `PlanetScaleMetricsNotice`: metrics arrived before and have stopped. */
+/** Metrics arrived before and have stopped. */
 export const metricsNotice = <M>(h: HtmlBuilder<M>, status: V2PlanetScaleIntegration): Html => {
 	const error = metricsLastError(status)
 	const source = metricsAuthOf(status) === "api" ? "poll" : "scrape"
@@ -97,9 +91,9 @@ const INVENTORY_STALE_MS = 90 * 60 * 1000
 export const inventoryIsStale = (lastInventoryAt: string | null, nowMs: number): boolean =>
 	lastInventoryAt !== null && nowMs - toEpochMs(lastInventoryAt) > INVENTORY_STALE_MS
 
-const BRAND = { icon: "PlanetScaleIcon", accent: PLANETSCALE_COLOR } as const
+const BRAND = providerBrand("planetscale")
 
-/** `PlanetScaleSetupState`: metrics have never arrived for this connection. */
+/** Metrics have never arrived for this connection. */
 export const setupState = <M>(h: HtmlBuilder<M>, checks: ReadonlyArray<LiveCheck>): Html =>
 	integrationEmpty(h, [
 		integrationEmptyFeatures(h, [

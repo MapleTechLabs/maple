@@ -3,7 +3,7 @@ import { shortId } from "@maple/ui/lib/ids"
 import { formatSessionDuration } from "@maple/ui/lib/replay-format"
 import { parseAttributes } from "@maple/ui/lib/span-tree"
 import { cn } from "@maple/ui/lib/utils"
-import { countryFlag, countryName } from "../../../components/analytics/labels"
+import { countryFlag, countryName } from "../../analytics/labels"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { AppRoute, hrefOf } from "../../../route"
 import * as CopyButton from "@maple/views/ui/copy-button"
@@ -52,7 +52,6 @@ const value = (h: H, text: string, options: Readonly<{ isMono?: boolean; classNa
 		[text],
 	)
 
-/** `CopyButton iconSize={12} className="ml-1 size-5 shrink-0" toast={false}`. */
 export const copy = (
 	h: H,
 	model: Pick<Model, "copies">,

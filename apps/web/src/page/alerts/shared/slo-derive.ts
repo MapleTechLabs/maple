@@ -10,9 +10,6 @@ import {
 import type { Tone } from "@maple/ui/lib/tone"
 import { Array as Arr, Option } from "effect"
 
-// What the SLO pages say about an SLO and its status: the SLI and target in words, the
-// budget and burn figures, and which burn-rate tier would fire.
-
 export type Slo = V2Slo
 export type SloStatus = V2SloStatus
 export type SloTier = SloBurnTier
@@ -41,7 +38,6 @@ export const formatWindow = (days: number): string => `${days} days`
 /** The SLI as a share, or a dash before any event. */
 export const formatSli = (sli: number | null): string => (sli === null ? "–" : formatPercent(sli * 100))
 
-/** Budget left as a whole percent; overspent reads negative. */
 export const formatBudget = (budget: number): string => `${Math.round(budget * 100)}%`
 
 /** "2.3x", the rate at which the window spends the budget. */
@@ -61,14 +57,12 @@ export const formatEventCount = (count: number): string => {
 	return `${shown} ${shown === "1" ? "event" : "events"}`
 }
 
-/** A spent budget: none left, or overspent. */
 export const isBudgetSpent = (budget: number): boolean => budget <= 0
 
 /** How far past the budget a spent SLO is: "fully spent" at exactly 0, else the overspend. */
 export const overspentText = (budget: number): string =>
 	budget < 0 ? `${formatBudget(-budget)} over budget` : "fully spent"
 
-/** Spent is red, under a quarter left amber, anything else neutral. */
 export const budgetTone = (budget: number): Tone =>
 	isBudgetSpent(budget) ? "crit" : budget < 0.25 ? "warn" : "ok"
 
@@ -118,11 +112,9 @@ export const holdingTier = (status: SloStatus): Option.Option<SloTier> =>
 export const holdingLine = (tier: SloTier): string =>
 	`Holding: no events in ${windowLabel(tier.shortWindowMinutes)}, an open incident stays open`
 
-/** The fastest of the four windows' burn rates, 0 without windows. */
 export const fastestBurn = (status: SloStatus): number =>
 	Arr.reduce(status.burn_windows, 0, (fastest, window) => Math.max(fastest, window.burn_rate))
 
-/** A burn window's rate, 0 when the status does not carry it. */
 export const burnOf = (status: SloStatus, minutes: number): number =>
 	Option.match(
 		Arr.findFirst(status.burn_windows, (window) => window.window_minutes === minutes),
@@ -136,7 +128,6 @@ export const sloIncidents = (
 ): ReadonlyArray<AlertIncidentRow> =>
 	slo.alert_rule_id === null ? [] : Arr.filter(incidents, (row) => row.rule_id === slo.alert_rule_id)
 
-/** The open incident on the SLO's rule, if any. */
 export const openIncident = (
 	slo: Pick<Slo, "alert_rule_id">,
 	incidents: ReadonlyArray<AlertIncidentRow>,

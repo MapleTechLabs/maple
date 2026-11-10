@@ -6,8 +6,8 @@ import { vstack, vstackClass } from "@maple/views/ui/stack"
 import { Array as Arr } from "effect"
 import { typography } from "@maple/views/ui/typography"
 
-// `NavShell`: a page's own nav rail of titled sections (settings, security, alerts). Tabs are buttons,
-// links go to sibling pages or search-param sections.
+// A page's own nav rail of titled sections (settings, security, alerts). Tabs are buttons, links go
+// to sibling pages or search-param sections.
 
 /** A row's trailing count; `error` for one that needs attention (open incidents). */
 export type NavShellCount = Readonly<{ value: number; tone?: "muted" | "error" }>

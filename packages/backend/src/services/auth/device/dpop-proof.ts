@@ -3,8 +3,8 @@
  * the returned `jti` (see `DeviceCredentialsService`). Pure apart from WebCrypto.
  */
 import { Effect, Option, Schema, String as Str } from "effect"
+import { base64url } from "@maple/backend/platform/jwt"
 import {
-	base64url,
 	EcPublicJwk,
 	importEcPublicJwk,
 	JoseError,

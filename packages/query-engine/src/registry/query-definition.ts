@@ -56,6 +56,12 @@ export const defineQuery = <Payload, Row>(
 	definition: QueryDefinitionInput<Payload, Row>,
 ): QueryDefinition<Payload, Row> => ({ revision: 1, ...definition })
 
+/** The tenant + time-window params nearly every compile binds. */
+export const windowParams = (
+	payload: { readonly startTime: string; readonly endTime: string },
+	orgId: OrgId,
+) => ({ orgId, startTime: payload.startTime, endTime: payload.endTime })
+
 export const makeTimeBucketQueryCachePolicy = <Payload>(options: {
 	readonly identity: (payload: Payload) => unknown
 	readonly fallback?: DirectRouteCachePolicyInput

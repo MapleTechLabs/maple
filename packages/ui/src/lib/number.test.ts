@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest"
 
-import { nonZeroOr } from "./number"
+import { medianOf, nonZeroOr } from "./number"
 
 describe("nonZeroOr", () => {
 	it("keeps any non-zero number, negatives included", () => {
@@ -12,5 +12,11 @@ describe("nonZeroOr", () => {
 		expect(nonZeroOr(0, 1)).toBe(1)
 		expect(nonZeroOr(-0, 1)).toBe(1)
 		expect(nonZeroOr(Number.parseFloat("auto"), 10)).toBe(10)
+	})
+})
+
+describe("medianOf", () => {
+	it("takes the middle value, the mean of the middle two, or null with none", () => {
+		expect([medianOf([5, 1, 3]), medianOf([4, 1, 3, 2]), medianOf([])]).toEqual([3, 2.5, null])
 	})
 })

@@ -121,9 +121,9 @@ const snakeCasedWire = <S extends Schema.Top>(schema: S) =>
 // v2 spec.
 //
 // The cost of a clone is drift, so it is guarded rather than trusted:
-// `dashboard-widget-parity.test.ts` asserts the two are assignable and that every
-// stored field reaches the wire under its mechanical snake_case name. Add a field
-// to the stored display and that test fails until it is mirrored here.
+// `dashboard-widget-parity.test.ts` asserts that every stored field reaches the
+// wire under its mechanical snake_case name and every stored data-source kind has
+// an arm. Add a field to the stored display and that test fails until it is mirrored here.
 const V2WidgetTransform = Schema.Struct({
 	fieldMap: optional(StringRecord),
 	hideSeries: optional(

@@ -19,8 +19,10 @@ import { AGGREGATIONS_BY_SOURCE } from "@maple/query-engine/query-builder"
 import type { ChartUnit } from "@maple/widgets/chart/static-chart"
 import { Array as Arr, String as Str } from "effect"
 
-/** `burn`: an SLO burn rate, a multiple of the sustainable rate shown as `14.4x`. */
-/** `severity` is an anomaly rule's code: 0 normal, 1 warning, 2 critical. */
+/**
+ * `burn`: an SLO burn rate, a multiple of the sustainable rate shown as `14.4x`.
+ * `severity`: an anomaly rule's code, 0 normal, 1 warning, 2 critical.
+ */
 export type SignalUnit = "ratio" | "ms" | "rpm" | "apdex" | "count" | "plain" | "burn" | "severity"
 
 export interface SignalDisplay {

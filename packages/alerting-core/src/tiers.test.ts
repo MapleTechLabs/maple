@@ -2,6 +2,7 @@ import { Effect, Array as Arr } from "effect"
 import { describe, expect, it } from "vitest"
 import { foldObservation, type HysteresisRow } from "./hysteresis"
 import {
+	breachSideFor,
 	evaluateAlertObservation,
 	planAlertLifecycle,
 	type AlertEvaluation,
@@ -349,5 +350,25 @@ describe("acknowledged incidents", () => {
 			transition: "resolved",
 			eventType: "resolve",
 		})
+	})
+})
+
+describe("breachSideFor", () => {
+	it("maps the half-plane comparators to a side", () => {
+		expect(Arr.map(["gt", "gte", "lt", "lte"] as const, breachSideFor)).toEqual([
+			"above",
+			"above",
+			"below",
+			"below",
+		])
+	})
+
+	it("shades nothing for the comparators with no single bad side", () => {
+		expect(Arr.map(["between", "not_between", "eq", "neq"] as const, breachSideFor)).toEqual([
+			"none",
+			"none",
+			"none",
+			"none",
+		])
 	})
 })

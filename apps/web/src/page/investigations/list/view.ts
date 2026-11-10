@@ -9,7 +9,7 @@ import {
 	investigationScope,
 	investigationSeverity,
 } from "@maple/web-data/investigations/display"
-import { formatTimestampInTimezone } from "@maple/web-data/lib/timezone-format"
+import { formatTimestampInTimezone } from "@maple/ui/lib/timezone-format"
 import { AsyncData, Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { timestamp } from "@maple/views/ui/timestamp"
@@ -37,7 +37,7 @@ import { listRelativeTime } from "../../kit/relative-time"
 import { docsLink } from "../../kit/signal-empty-state"
 import { filteredEmpty } from "@maple/views/ui/signal-empty-state"
 import { presenceOf } from "@maple/views/data/signal-presence"
-import { severityBadge } from "../../errors/kit/severity"
+import { severityBadge } from "../../kit/issue-severity"
 import { confidenceMeter, investigateBar, kindMarker, statusBadge } from "../kit"
 import { ROW_ATTRIBUTE } from "../clicks"
 import { MountInvestigationRows } from "./command"
@@ -61,8 +61,6 @@ import { hstack, hstackClass, vstack } from "@maple/views/ui/stack"
 import { spaced } from "@maple/views/ui/spaced"
 import { Array as Arr, String as Str, Option } from "effect"
 import { textLink } from "@maple/views/ui/text-link"
-
-// `InvestigationsHub` and `InvestigationTable`: the investigations list page.
 
 type H = HtmlBuilder<Message>
 
@@ -301,7 +299,7 @@ const row = (h: H, investigation: V2Investigation, nowMs: number, timeZone: stri
 	)
 }
 
-/** `InvestigationTableSkeleton`: ghosts the row rhythm. */
+/** Ghosts the row rhythm. */
 const tableSkeleton = (h: H): Html =>
 	skeletonList(h, {
 		rows: 5,
@@ -359,7 +357,7 @@ const HERO_SUGGESTIONS = [
 
 const HUB_TITLE = "Ask, and Maple goes and finds out."
 
-/** `HubHero`: the first-run page. */
+/** The first-run page. */
 const hubHero = (h: H, model: Model): Html => {
 	const presence = presenceOf(model.presence, "traces")
 	return vstack(
@@ -463,7 +461,6 @@ const hubHero = (h: H, model: Model): Html => {
 	)
 }
 
-/** `BudgetExhaustedNotice`. */
 const budgetNotice = (h: H, model: Model, timeZone: string): Html | null => {
 	const budget = AsyncData.getOrElse(model.budget.data, () => null)
 	if (budget === null || !budget.enabled || !budget.ordinaryPaused) return null

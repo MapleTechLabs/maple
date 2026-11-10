@@ -18,14 +18,12 @@ import * as Dialog from "@maple/views/ui/dialog"
 import * as FilterSections from "@maple/views/ui/filters/filter-sections"
 import { SignalPresenceData } from "@maple/views/data/signal-presence"
 import * as TimeRangePicker from "../kit/time-range-picker"
-
-// `/analytics`.
+import { SortDir } from "../kit/table-sort"
 
 export type Search = typeof AnalyticsSearch.Type
 
 const FacetRow = Schema.Struct({ name: Schema.String, count: Schema.Number })
 
-/** `WebAnalyticsBreakdowns`. */
 export const Breakdowns = Schema.Struct({
 	referrerHosts: Schema.Array(FacetRow),
 	countries: Schema.Array(FacetRow),
@@ -139,7 +137,7 @@ export const TraceSample = Schema.Struct({
 
 export const SearchSortKey = Schema.Literals(["name", "clicks", "impressions", "ctr", "position"])
 export type SearchSortKey = typeof SearchSortKey.Type
-export const SearchSort = Schema.Struct({ key: SearchSortKey, dir: Schema.Literals(["asc", "desc"]) })
+export const SearchSort = Schema.Struct({ key: SearchSortKey, dir: SortDir })
 export type SearchSort = typeof SearchSort.Type
 export const SearchTable = Schema.Literals(["queries", "pages", "landing"])
 export type SearchTable = typeof SearchTable.Type
@@ -149,7 +147,7 @@ export const PanelState = Schema.Struct({
 	pickedTab: Schema.NullOr(Schema.Number),
 	query: Schema.String,
 	sortKey: Schema.NullOr(Schema.Literals(["name", "count", "views"])),
-	sortDir: Schema.Literals(["asc", "desc"]),
+	sortDir: SortDir,
 })
 export type PanelState = typeof PanelState.Type
 
@@ -191,7 +189,7 @@ export const Model = Schema.Struct({
 	/** The breakdown card whose table is open in the dialog. */
 	expandedPanel: Schema.NullOr(Schema.String),
 	expandDialog: Dialog.Model,
-	/** Favicon hosts whose image failed (`Favicon`'s `failed`). */
+	/** Favicon hosts whose image failed. */
 	failedFavicons: Schema.Array(Schema.String),
 	filterSections: FilterSections.Model,
 	timePicker: TimeRangePicker.Model,

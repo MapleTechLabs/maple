@@ -1,7 +1,7 @@
 import { formatBucketLabel, formatValueByUnit } from "@maple/ui/lib/format"
-import { findFirstPartialIndex, trimEmptyTrailingBuckets } from "@maple/ui/components/plot/partial-buckets"
-import { bucketTimeScale, minBarLength } from "@maple/ui/components/plot/plot-scales"
-import { timeseriesXAxis } from "@maple/ui/components/plot/timeseries-axis"
+import { findFirstPartialIndex, trimEmptyTrailingBuckets } from "../plot/partial-buckets"
+import { bucketTimeScale, minBarLength } from "../plot/plot-scales"
+import { timeseriesXAxis } from "../plot/timeseries-axis"
 import { barY, type ChartValue, defineChart, group } from "@tanstack/charts"
 import { Option, Array as Arr } from "effect"
 import { thresholdMarks } from "./threshold-marks"
@@ -18,11 +18,9 @@ import { asFiniteNumber, type TimeseriesAxisContext, type TimeseriesRow } from "
 import type { BuiltChart } from "./built-chart"
 import { cursorTooltip, UNBOUNDED_FOCUS_DISTANCE } from "./plot-constants"
 
-// Port of `QueryBuilderBarChart` (packages/ui/src/components/charts/bar/query-builder-bar-chart.tsx),
-// definition half: bars centred on their bucket on a time scale padded by half a bucket, closed and
-// in-flight lanes, the hovered column kept bright.
-// TODO(bar-thresholds): thresholds, log scale, soft bounds and the "Other" bucketing past
-// `MAX_BAR_SERIES` are not ported.
+// The query-builder bar chart's definition: bars centred on their bucket on a time scale padded by
+// half a bucket, closed and in-flight lanes, the hovered column kept bright. TODO(bar-thresholds):
+// thresholds, log scale, soft bounds and the "Other" bucketing past `MAX_BAR_SERIES` are not ported.
 
 type BarSpec = Extract<ChartSpec, { readonly _tag: "QueryBuilderBar" }>
 
@@ -44,7 +42,7 @@ interface BarCell {
 	readonly partial: boolean
 }
 
-// copied: `bucketBandDomain` and `timeseriesBandXAxis` (plot/timeseries.tsx, a React module).
+// `bucketBandDomain` and `timeseriesBandXAxis`.
 const bucketBandDomain = (
 	rows: ReadonlyArray<TimeseriesRow>,
 	bucketSeconds: number | undefined,

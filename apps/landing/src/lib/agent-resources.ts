@@ -3,7 +3,7 @@
  * twin, the docs pages, and the worker's 404 note all quote these, so a moved
  * endpoint is a one-line change.
  *
- * Plain constants, no `astro:*` imports: `worker.ts` (bundled for the edge) and
+ * Plain constants, no `astro:*` imports: `handler.ts` (bundled for the edge) and
  * the unit tests both read this.
  */
 

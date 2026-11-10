@@ -9,7 +9,6 @@
  * Self-hosted builds have no Clerk to read and get every rollout on, as the web app does. A
  * managed build that cannot reach Clerk fails closed: every rollout off for that call.
  */
-import { createClerkClient } from "@clerk/backend"
 import {
 	DISABLED_ORGANIZATION_FEATURE_FLAGS,
 	ENABLED_ORGANIZATION_FEATURE_FLAGS,
@@ -17,9 +16,10 @@ import {
 	organizationFeatureFlagsFrom,
 } from "@maple/domain/organization-feature-flags"
 import type { OrgId } from "@maple/domain/http"
-import { Clock, Context, Effect, Layer, Option, Redacted, String as Str } from "effect"
+import { Clock, Context, Effect, Layer, String as Str } from "effect"
 import { Env } from "@maple/backend/platform/Env"
 import { clerkRequest } from "@maple/backend/services/auth/clerk-request"
+import { clerkClientFor } from "@maple/auth"
 
 /**
  * How long one organization's flags are reused within an isolate. Short enough that withdrawing a
@@ -39,10 +39,7 @@ export class OrganizationFeatureFlagsService extends Context.Service<
 	make: Effect.gen(function* () {
 		const env = yield* Env
 		const clerkMode = Str.toLowerCase(env.MAPLE_AUTH_MODE) === "clerk"
-		const clerk = Option.match(env.CLERK_SECRET_KEY, {
-			onNone: () => undefined,
-			onSome: (secretKey) => createClerkClient({ secretKey: Redacted.value(secretKey) }),
-		})
+		const clerk = clerkClientFor(env)
 
 		const cache = new Map<OrgId, { readonly flags: OrganizationFeatureFlags; readonly atMs: number }>()
 

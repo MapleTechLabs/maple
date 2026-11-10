@@ -8,28 +8,19 @@
  * whole identity, and nothing of the org's is read or written on this path.
  */
 import { IncidentTriageModelError, IncidentTriageUnauthorizedError, MapleAiApi } from "@maple/domain/http"
-import { Effect, Option, Redacted } from "effect"
+import { Effect } from "effect"
 import { HttpApiBuilder } from "effect/http-api"
-import { Env } from "@maple/backend/platform/Env"
 import { loadLlmSettings, resolveDecisionModel } from "../../platform/Llm"
+import { requireInternalServiceBearer } from "../../platform/internal-service-token"
 import { classifyIncident } from "../../triage/incident-classifier"
-import { isValidServiceBearer } from "./service-bearer"
 
 export const HttpTriageLive = HttpApiBuilder.group(MapleAiApi, "triage", (handlers) =>
 	handlers.handle("classify", ({ headers, payload }) =>
 		Effect.gen(function* () {
-			const config = yield* Env
-			const expected = Option.map(config.INTERNAL_SERVICE_TOKEN, Redacted.value)
-			if (Option.isNone(expected)) {
-				return yield* new IncidentTriageUnauthorizedError({
-					message: "INTERNAL_SERVICE_TOKEN is not configured on maple-ai",
-				})
-			}
-			if (!isValidServiceBearer(headers.authorization, expected.value)) {
-				return yield* new IncidentTriageUnauthorizedError({
-					message: "internal service token rejected",
-				})
-			}
+			yield* requireInternalServiceBearer(
+				headers.authorization,
+				(message) => new IncidentTriageUnauthorizedError({ message }),
+			)
 
 			const llmSettings = yield* loadLlmSettings
 			const model = resolveDecisionModel(llmSettings)

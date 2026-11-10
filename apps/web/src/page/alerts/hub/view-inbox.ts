@@ -1,7 +1,7 @@
 import type { AlertIncidentDocument, AlertIncidentId, AlertRuleDocument } from "@maple/domain/http"
 import { acknowledgedLine } from "@maple/web-data/alerts/incident-timeline"
-import { countLabel, EMPTY_VALUE } from "@maple/ui/lib/format"
-import { formatRelativeShortFrom } from "@maple/ui/lib/time-format"
+import { countLabel } from "@maple/ui/lib/format"
+import { formatRelativeShortFrom, toEpochMs } from "@maple/ui/lib/time-format"
 import { cn } from "@maple/ui/lib/utils"
 import {
 	displaySignalType,
@@ -17,6 +17,7 @@ import {
 	blindSpots as deriveBlindSpots,
 	type FireLane,
 	fireLanes,
+	headroomTone,
 	incidentSubline,
 	incidentTitle,
 	incidentValues,
@@ -30,9 +31,10 @@ import { eyebrow } from "@maple/views/ui/eyebrow"
 import { icon } from "@maple/views/ui/icon"
 import { ROW_LINK_LIFT, rowLink } from "@maple/views/ui/table"
 import { severityBadge } from "../shared/badges"
-import { incidentHref, ruleHref } from "../shared/links"
+import { HEADROOM_FILL, HEADROOM_TEXT } from "../shared/headroom-tone"
+import { incidentHref, ruleHref } from "../../kit/alert-links"
 import { sortIncidents } from "../shared/sort"
-import { isoMs, msIso } from "../shared/time"
+import { msIso } from "../../kit/alert-time"
 import { gridListRow } from "../../kit/grid-list-row"
 import { typography, typographyClass } from "@maple/views/ui/typography"
 import { dividedList, stripClass } from "@maple/views/ui/rule"
@@ -42,10 +44,8 @@ import { barFillClass } from "@maple/views/ui/meter"
 import { borderedBox } from "@maple/views/ui/bordered-box"
 import { Array as Arr } from "effect"
 
-// `InboxTab` and `HeadroomList`: the hub's Inbox tab.
-
 const HOUR_MS = 60 * 60 * 1000
-const INCIDENT_GRID = "grid grid-cols-[minmax(0,1fr)_150px_90px_120px] items-center gap-4"
+const INCIDENT_GRID = "grid grid-cols-[minmax(0,1fr)_150px_90px_140px] items-center gap-4"
 const MAX_LANES = 8
 const MAX_HEADROOM_ROWS = 8
 // Below `sm` the bar has no room: the row keeps the name, the value and when it was checked.
@@ -62,10 +62,6 @@ export type InboxAcknowledge<M> = Readonly<{
 }>
 
 const isAcknowledged = (incident: AlertIncidentDocument) => incident.acknowledgedAt !== null
-
-/** The inbox tab's badge: open incidents nobody has acknowledged yet. */
-export const unacknowledgedCount = (incidents: ReadonlyArray<AlertIncidentDocument>): number =>
-	Arr.filter(incidents, (incident) => !isAcknowledged(incident)).length
 
 export const inboxTab = <M>(
 	h: HtmlBuilder<M>,
@@ -166,8 +162,6 @@ const quietStreak = <M>(
 	])
 }
 
-// OPEN INCIDENTS
-
 const openIncidentsList = <M>(
 	h: HtmlBuilder<M>,
 	incidents: ReadonlyArray<AlertIncidentDocument>,
@@ -264,8 +258,9 @@ const openIncidentRow = <M>(
 			button(
 				h,
 				{
-					variant: acked === null ? "outline" : "ghost",
-					size: "xs",
+					// Both states are the same small outline button: one row never reads as bare text.
+					variant: "outline",
+					size: "sm",
 					isLoading: acknowledge.pendingIds.includes(incident.id),
 					attributes: [
 						h.OnClick(acknowledge.onAcknowledge(incident.id, acked === null)),
@@ -280,8 +275,6 @@ const openIncidentRow = <M>(
 	])
 }
 
-// LAST 24 HOURS
-
 const fireStrip = <M>(
 	h: HtmlBuilder<M>,
 	lanes: ReadonlyArray<FireLane>,
@@ -289,17 +282,18 @@ const fireStrip = <M>(
 	range: Range,
 	enabledRuleIds: ReadonlyArray<string>,
 ): Html => {
-	const inWindow = Arr.filter(incidents, (i) => isoMs(i.firstTriggeredAt) >= range.min)
+	const inWindow = Arr.filter(incidents, (i) => toEpochMs(i.firstTriggeredAt) >= range.min)
 	const resolved = Arr.filter(inWindow, (i) => i.resolvedAt !== null)
 	const mttr =
 		resolved.length === 0
-			? EMPTY_VALUE
+			? "n/a"
 			: formatResolutionDuration(
 					Arr.reduce(
 						resolved,
 						0,
 						(sum, i) =>
-							sum + (isoMs(i.resolvedAt ?? i.firstTriggeredAt) - isoMs(i.firstTriggeredAt)),
+							sum +
+							(toEpochMs(i.resolvedAt ?? i.firstTriggeredAt) - toEpochMs(i.firstTriggeredAt)),
 					) / resolved.length,
 				)
 	const shown = lanes.slice(0, MAX_LANES)
@@ -324,13 +318,7 @@ const fireStrip = <M>(
 			hstack(h, { gap: "4", align: "baseline", justify: "between" }, [
 				eyebrow(h, { as: "h3" }, ["Last 24 hours"]),
 				typography(h, { size: "xs", tone: "muted", mono: true }, [
-					countLabel(inWindow.length, "incident"),
-					" · MTTR ",
-					mttr,
-					" ·",
-					" ",
-					countLabel(lanes.length, "rule"),
-					" fired",
+					`${countLabel(inWindow.length, "incident")} · MTTR ${mttr} · ${countLabel(lanes.length, "rule")} fired`,
 				]),
 			]),
 			shown.length === 0
@@ -398,8 +386,6 @@ const fireLaneRow = <M>(h: HtmlBuilder<M>, lane: FireLane): Html =>
 			),
 		],
 	)
-
-// BLIND SPOTS
 
 const BLIND_SPOT_META = new Map<BlindSpotKind, { label: string; action: string; className: string }>([
 	["error", { label: "Error", action: "Fix", className: "text-severity-error" }],
@@ -477,8 +463,6 @@ const blindSpotRow = <M>(h: HtmlBuilder<M>, spot: BlindSpot): Html => {
 	)
 }
 
-// HEADROOM
-
 const ruleValue = (rule: AlertRuleDocument, value: number): string => {
 	const draft = rule.queryBuilderDraft
 	return formatSignalValue(
@@ -528,7 +512,8 @@ const headroomList = <M>(h: HtmlBuilder<M>, rows: ReadonlyArray<RuleHeadroom>, n
 
 const headroomRow = <M>(h: HtmlBuilder<M>, row: RuleHeadroom, now: number): Html => {
 	const { rule, closeness } = row
-	const { isNear } = row
+	const tone = headroomTone(row)
+	const valueTone = HEADROOM_TEXT[tone]
 	const isFloor = rule.comparator === "lt" || rule.comparator === "lte"
 	return h.li(
 		[
@@ -560,33 +545,30 @@ const headroomRow = <M>(h: HtmlBuilder<M>, row: RuleHeadroom, now: number): Html
 				],
 			),
 			h.div(
-				[h.Class("relative hidden h-2 rounded-xs bg-surface-strong sm:block"), h.AriaHidden(true)],
+				[
+					h.Class("relative hidden h-1.5 rounded-full bg-surface-strong sm:block"),
+					h.AriaHidden(true),
+				],
 				[
 					...(closeness !== null
 						? [
 								h.span([
-									h.Class(
-										barFillClass(isNear ? "bg-severity-warn" : "bg-foreground-faint"),
-									),
+									h.Class(barFillClass(HEADROOM_FILL[tone])),
 									h.Style({ width: `${Math.max(closeness * 100, 1.5)}%` }),
 								]),
 							]
 						: []),
+					// The threshold, at the bar's end: a neutral tick, as in the rules table.
 					h.span([
 						h.AriaHidden(true),
-						h.Class(
-							cn(
-								"absolute -inset-y-1 right-0 w-0.5 rounded-full",
-								rule.severity === "critical" ? "bg-severity-error" : "bg-severity-warn",
-							),
-						),
+						h.Class("absolute -inset-y-0.5 right-0 w-px bg-foreground/70"),
 					]),
 				],
 			),
 			h.span(
 				[h.Class("truncate text-right font-mono text-xs tabular-nums")],
 				[
-					h.span(isNear ? [h.Class("text-severity-warn")] : [], [ruleValue(rule, row.value)]),
+					h.span(valueTone === undefined ? [] : [h.Class(valueTone)], [ruleValue(rule, row.value)]),
 					typography(h, { tone: "muted" }, [
 						isFloor ? " / min " : " / ",
 						ruleValue(rule, rule.threshold),

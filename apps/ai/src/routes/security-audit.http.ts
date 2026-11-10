@@ -7,8 +7,6 @@ import {
 	SECURITY_AUDIT_EVENTS_DEFAULT_LIMIT,
 	SecurityAuditRepositoryTooLargeError,
 	SecurityAuditDisabledError,
-	type SecurityAuditEvent,
-	type SecurityAuditFinding,
 	SecurityAuditFindingNotFoundError,
 	SecurityAuditForbiddenError,
 	SecurityAuditNotInPlanError,
@@ -19,36 +17,22 @@ import {
 	SecurityAuditSameModelsError,
 	type SecurityAuditSettings,
 	SecurityAuditSpendLimitReachedError,
-	type SecurityAuditUnit,
 	SecurityAuditTargetDisabledError,
 	SecurityAuditTargetExistsError,
-	type SecurityAuditRun,
 	SecurityAuditRunNotFoundError,
 	SecurityAuditStartError,
-	type SecurityAuditTarget,
 	SecurityAuditTargetNotFoundError,
 } from "@maple/domain/http"
-import { aiCreditsUsd } from "@maple/domain/billing"
-import { IsoDateTimeString } from "@maple/domain/primitives"
+import { IsoDateTimeString } from "@maple/primitives"
 import {
 	SecurityAuditRunId,
 	securityAuditSpendWindow,
 	type SecurityAuditTargetId,
 	type SecurityAuditWorkflowPayload,
 } from "@maple/domain/security-audit"
-import type { SecurityAuditFindingRow, SecurityAuditRunRow, SecurityAuditTargetRow } from "@maple/db/tables"
+import type { SecurityAuditRunRow, SecurityAuditTargetRow } from "@maple/db/tables"
 import { AuditStoreError } from "@maple/security-audit"
-import {
-	Clock,
-	DateTime,
-	Effect,
-	Layer,
-	Option,
-	Schema,
-	Array as Arr,
-	Record as Rec,
-	String as Str,
-} from "effect"
+import { Clock, DateTime, Effect, Layer, Option, Schema, Array as Arr, Record as Rec } from "effect"
 import { recordHttpAudit } from "@maple/backend/services/audit/AuditLogService"
 import { SecurityAuditWorkflowStarter } from "@maple/backend/platform/bindings"
 import * as Policy from "@maple/domain/policy"
@@ -59,108 +43,14 @@ import { SecurityAuditRepositorySize } from "@maple/backend/services/security-au
 import { hostedSizeViolations, refusalReason } from "../security-audit/repo-size"
 import { loadLlmSettings, securityAuditModelIds } from "../platform/Llm"
 import {
-	type SecurityAuditEventRecord,
+	securityAuditEventView,
+	securityAuditFindingView,
 	type SecurityAuditOrgStore,
+	securityAuditRunView,
 	SecurityAuditStore,
-	type SecurityAuditUnitSummary,
+	securityAuditTargetView,
+	securityAuditUnitView,
 } from "@maple/backend/services/security-audit/SecurityAuditStore"
-
-const toTarget = (row: SecurityAuditTargetRow): SecurityAuditTarget => ({
-	id: row.id,
-	repository: row.repository,
-	branch: row.branch,
-	enabled: row.enabled,
-	profile: row.profile,
-	scopePaths: row.scopePaths,
-	discoveryModel: row.discoveryModel,
-	validationModel: row.validationModel,
-	createdBy: row.createdBy,
-	createdAt: row.createdAt,
-	updatedAt: row.updatedAt,
-})
-
-const toRun = (row: SecurityAuditRunRow): SecurityAuditRun => ({
-	id: row.id,
-	targetId: row.targetId,
-	kind: row.kind,
-	status: row.status,
-	sourceRef: row.sourceRef,
-	profile: row.profile,
-	scopePaths: row.scopePaths,
-	budget: row.budget,
-	invocationsSpent: row.invocationsSpent,
-	inputTokens: row.inputTokens,
-	outputTokens: row.outputTokens,
-	costUsd: row.costUsd === null ? null : aiCreditsUsd(row.costUsd),
-	sandboxUsd: row.sandboxUsd,
-	discoveryModel: row.discoveryModel,
-	validationModel: row.validationModel,
-	incompleteReason: row.incompleteReason,
-	error: row.error,
-	startedAt: row.startedAt,
-	finishedAt: row.finishedAt,
-})
-
-const toEvent = (row: SecurityAuditEventRecord): SecurityAuditEvent => ({
-	id: row.id,
-	at: row.at,
-	kind: row.kind,
-	role: row.role,
-	agentId: row.agentId,
-	outcome: row.outcome,
-	message: row.detail?.message ?? null,
-	phase: row.detail?.phase ?? null,
-	detail: row.detail?.detail ?? null,
-	costUsd: row.detail?.costUsd == null ? null : aiCreditsUsd(row.detail.costUsd),
-	inputTokens: row.inputTokens,
-	outputTokens: row.outputTokens,
-})
-
-const toFinding = (row: Omit<SecurityAuditFindingRow, "id">): SecurityAuditFinding => ({
-	fingerprint: row.fingerprint,
-	targetId: row.targetId,
-	verdict: row.verdict,
-	overallSeverity: row.overallSeverity,
-	// The column is only ever set on needs_validation rows; the guard keeps the contract if one is not.
-	estimatedSeverity: row.verdict === "needs_validation" ? row.estimatedSeverity : null,
-	status: row.status,
-	statusReason: row.statusReason,
-	statusChangedBy: row.statusChangedBy,
-	statusChangedAt: row.statusChangedAt,
-	record: row.record,
-	firstSeenRunId: row.firstSeenRunId,
-	lastSeenRunId: row.lastSeenRunId,
-	firstSeenRef: row.firstSeenRef,
-	lastSeenRef: row.lastSeenRef,
-	fixedRunId: row.fixedRunId,
-	createdAt: row.createdAt,
-	updatedAt: row.updatedAt,
-})
-
-/** Each unresolved note trimmed, and only the first few: the list stays lean for large ledgers. */
-const MAX_UNRESOLVED = 3
-const MAX_UNRESOLVED_CHARS = 300
-const MAX_RESULT_FINGERPRINTS = 20
-
-const toUnit = (row: SecurityAuditUnitSummary): SecurityAuditUnit => ({
-	coverageId: row.coverageId,
-	status: row.status,
-	wave: row.wave,
-	agentId: row.agentId,
-	stale: row.fields === null,
-	subsystem: row.fields?.subsystem ?? null,
-	surface: row.fields?.surface ?? null,
-	boundary: row.fields?.boundary ?? null,
-	attackClass: row.fields?.attack_class ?? null,
-	priorStatus: row.fields?.prior_status ?? null,
-	priority: row.fields?.priority ?? null,
-	failedAttempts: row.fields?.failed_attempts ?? null,
-	resultFingerprints: (row.fields?.result_fingerprints ?? []).slice(0, MAX_RESULT_FINGERPRINTS),
-	carriedFingerprint: row.fields?.carried_fingerprint ?? null,
-	unresolved: Arr.map((row.fields?.unresolved ?? []).slice(0, MAX_UNRESOLVED), (note) =>
-		Str.slice(0, MAX_UNRESOLVED_CHARS)(note),
-	),
-})
 
 /** A store failure is the database's, never the caller's: a 503 that names the operation. */
 const orUnavailable = <A, E, R>(effect: Effect.Effect<A, E | AuditStoreError, R>) =>
@@ -362,7 +252,7 @@ export const HttpSecurityAuditLive = HttpApiBuilder.group(MapleAiApi, "securityA
 							),
 						),
 					)
-					return toTarget(row)
+					return securityAuditTargetView(row)
 				}).pipe(Effect.withSpan("HttpSecurityAudit.createTarget")),
 			)
 			.handle("getSettings", () =>
@@ -384,7 +274,7 @@ export const HttpSecurityAuditLive = HttpApiBuilder.group(MapleAiApi, "securityA
 				Effect.gen(function* () {
 					const { store } = yield* orgAccess
 					const rows = yield* orUnavailable(store.listTargets)
-					return { targets: Arr.map(rows, toTarget) }
+					return { targets: Arr.map(rows, securityAuditTargetView) }
 				}).pipe(Effect.withSpan("HttpSecurityAudit.listTargets")),
 			)
 			.handle("startRun", ({ params, payload }) =>
@@ -479,7 +369,7 @@ export const HttpSecurityAuditLive = HttpApiBuilder.group(MapleAiApi, "securityA
 					yield* workflow
 						.create(workflowPayload)
 						.pipe(Effect.catch((error) => failUnstarted(store, run.id, error.message)))
-					return toRun(run)
+					return securityAuditRunView(run)
 				}).pipe(Effect.withSpan("HttpSecurityAudit.startRun")),
 			)
 			.handle("listRuns", ({ query }) =>
@@ -488,7 +378,7 @@ export const HttpSecurityAuditLive = HttpApiBuilder.group(MapleAiApi, "securityA
 					const rows = yield* orUnavailable(
 						store.listRuns(query.targetId === undefined ? {} : { targetId: query.targetId }),
 					)
-					const runs = Arr.map(rows, toRun)
+					const runs = Arr.map(rows, securityAuditRunView)
 					// Members may list runs but not read findings, so only engineers and admins see what each reported.
 					if (!Policy.can(tenant.roles, "security:manage")) return { runs }
 					const findingCounts = yield* orUnavailable(
@@ -503,7 +393,7 @@ export const HttpSecurityAuditLive = HttpApiBuilder.group(MapleAiApi, "securityA
 					const run = yield* requireRun(store, params.runId)
 					const unitCounts = yield* orUnavailable(store.countUnits(run.id))
 					return {
-						...toRun(run),
+						...securityAuditRunView(run),
 						reports: run.reports,
 						architectureMd: run.architectureMd,
 						executionProfile: run.executionProfile,
@@ -539,7 +429,7 @@ export const HttpSecurityAuditLive = HttpApiBuilder.group(MapleAiApi, "securityA
 					yield* recordHttpAudit("security_audit_run.cancelled", {
 						metadata: { targetId: run.targetId, runId: run.id },
 					})
-					return toRun(cancelled.value)
+					return securityAuditRunView(cancelled.value)
 				}).pipe(Effect.withSpan("HttpSecurityAudit.cancelRun")),
 			)
 			.handle("listRunUnits", ({ params }) =>
@@ -547,7 +437,7 @@ export const HttpSecurityAuditLive = HttpApiBuilder.group(MapleAiApi, "securityA
 					const { store } = yield* findingsAccess
 					const run = yield* requireRun(store, params.runId)
 					const rows = yield* orUnavailable(store.listUnitSummaries(run.id))
-					return { units: Arr.map(rows, toUnit) }
+					return { units: Arr.map(rows, securityAuditUnitView) }
 				}).pipe(Effect.withSpan("HttpSecurityAudit.listRunUnits")),
 			)
 			.handle("listRunEvents", ({ params, query }) =>
@@ -561,7 +451,7 @@ export const HttpSecurityAuditLive = HttpApiBuilder.group(MapleAiApi, "securityA
 							beforeId: query.beforeId,
 						}),
 					)
-					return { events: Arr.map(rows, toEvent) }
+					return { events: Arr.map(rows, securityAuditEventView) }
 				}).pipe(Effect.withSpan("HttpSecurityAudit.listRunEvents")),
 			)
 			.handle("listRunFindings", ({ params }) =>
@@ -569,7 +459,7 @@ export const HttpSecurityAuditLive = HttpApiBuilder.group(MapleAiApi, "securityA
 					const { store } = yield* findingsAccess
 					const run = yield* requireRun(store, params.runId)
 					const rows = yield* orUnavailable(store.listRunFindingViews(run.id))
-					return { findings: Arr.map(rows, toFinding) }
+					return { findings: Arr.map(rows, securityAuditFindingView) }
 				}).pipe(Effect.withSpan("HttpSecurityAudit.listRunFindings")),
 			)
 			.handle("listFindings", ({ params, query }) =>
@@ -581,7 +471,7 @@ export const HttpSecurityAuditLive = HttpApiBuilder.group(MapleAiApi, "securityA
 					return {
 						findings: Arr.map(
 							Arr.filter(rows, (row) => includeRejected || row.verdict !== "rejected"),
-							toFinding,
+							securityAuditFindingView,
 						),
 					}
 				}).pipe(Effect.withSpan("HttpSecurityAudit.listFindings")),

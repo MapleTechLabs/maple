@@ -1,4 +1,4 @@
-import type { StatusPageComponentStatus } from "@maple/domain/primitives"
+import type { StatusPageComponentStatus } from "@maple/primitives"
 
 /** The glyph drawn on the status disc: check, dash, bang, cross, or a clock hand for maintenance. */
 const GLYPH = {

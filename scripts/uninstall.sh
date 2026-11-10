@@ -1,5 +1,5 @@
 #!/bin/sh
-# Maple local-binary uninstaller — the inverse of scripts/install.sh.
+# Maple local-binary uninstaller, the inverse of scripts/install.sh.
 #
 #   curl -fsSL https://maple.dev/cli/uninstall | sh
 #

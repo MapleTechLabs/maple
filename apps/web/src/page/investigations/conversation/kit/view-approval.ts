@@ -11,8 +11,8 @@ import { typography, typographyClass } from "@maple/views/ui/typography"
 import { hstack } from "@maple/views/ui/stack"
 import { Array as Arr, Record as Rec } from "effect"
 
-// The dashboard tools' approval summaries.
-// Icons and labels follow the widget-type registry (`widgetTypeFor`): `chart` and unknown kinds read as a line.
+// The dashboard tools' approval summaries. Icons and labels follow the widget-type registry:
+// `chart` and unknown kinds read as a line.
 
 const ICONS = new Map<string, IconName>([
 	["line", "ChartLineIcon"],
@@ -144,7 +144,7 @@ const heading = <M>(
 				]),
 	])
 
-/** `deriveWidgetsFromCreate`: the widgets of a `dashboard_json`, else of a `widgets` list. */
+/** The widgets of a `dashboard_json`, else of a `widgets` list. */
 const widgetsOf = (input: Readonly<Record<string, unknown>>): ReadonlyArray<Widget> => {
 	const dashboard = safeParseJson(input.dashboard_json)
 	if (dashboard.ok) return Arr.flatMap(asArray(asRecord(dashboard.value)?.widgets) ?? [], normalizeWidget)
@@ -430,7 +430,7 @@ const SUMMARIES = new Map<string, <M>(h: HtmlBuilder<M>, obj: Input) => Html>([
 	["reorder_dashboard_widgets", reorderWidgets],
 ])
 
-/** `ApprovalSummary`'s registered renderers; `null` for a tool that falls back to the key-value list. */
+/** The registered approval summaries; `null` for a tool that falls back to the key-value list. */
 export const dashboardSummary = <M>(h: HtmlBuilder<M>, toolName: string, input: unknown): Html | null => {
 	const summary = SUMMARIES.get(toolName)
 	return summary === undefined ? null : summary(h, asRecord(input) ?? {})

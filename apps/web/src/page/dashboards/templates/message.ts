@@ -1,8 +1,8 @@
+import { ChartEnvMessages } from "@maple/views/charts/chart-env"
 import { V2DashboardTemplate, V2DashboardTemplatePreview } from "@maple/domain/http/v2"
 import { Schema } from "effect"
 import { defineMessageUnion } from "foldkit/message"
 import * as Chart from "@maple/views/charts/chart"
-import { ThemeColors } from "@maple/views/charts/theme-colors"
 import { LoadFailure } from "@maple/views/data/load-failure"
 import * as Dialog from "@maple/views/ui/dialog"
 import { WidgetFailure } from "../kit/widget-data"
@@ -22,9 +22,7 @@ export const Message = defineMessageUnion({
 	CompletedFetchPreview: result(V2DashboardTemplatePreview),
 	CompletedFetchWidget: { key: Schema.String, result: Schema.Result(Schema.Unknown, WidgetFailure) },
 	MeasuredPreview: { width: Schema.Number },
-	ResolvedThemeColors: { colors: ThemeColors },
-	CompletedLoadChartRuntime: {},
-	FailedLoadChartRuntime: { reason: Schema.String },
+	...ChartEnvMessages,
 	GotChartMessage: { widgetId: Schema.String, message: Chart.Message },
 	ClickedSortColumn: { widgetId: Schema.String, field: Schema.String, isText: Schema.Boolean },
 	ChangedSearchDraft: { value: Schema.String },

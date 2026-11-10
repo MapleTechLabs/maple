@@ -21,7 +21,7 @@ import {
 	type ChatEventInput,
 } from "@maple/domain/chat-session"
 import { type ChatSessionStub, chatSessionClientFromStub } from "@maple/domain/chat-session-stub"
-import { OrgId } from "@maple/domain/primitives"
+import { OrgId } from "@maple/primitives"
 import {
 	Context,
 	Deferred,

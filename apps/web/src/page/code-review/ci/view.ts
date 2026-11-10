@@ -1,5 +1,5 @@
 import type { CodeReviewCiAnalytics } from "@maple/domain/http"
-import { CI_RESULT_LABELS } from "../../../components/code-review/ci/ci-format"
+import { CI_RESULT_LABELS } from "../kit/ci-format"
 import { Option, Array as Arr, Record as Rec, Order } from "effect"
 import { AsyncData, Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
@@ -22,14 +22,12 @@ import { codeReviewLayout } from "../kit/layout"
 import { sectionHeading } from "../../kit/section-heading"
 import { Message, type Model } from "./model"
 import { DEFAULT_PRESET } from "./update"
-import { presetSpanLabel } from "../../kit/time-controls"
+import { presetSpanLabel } from "@maple/ui/lib/time-preset"
 import { runsList } from "./view-runs"
 import { ciSkeleton } from "../kit/skeletons"
-import { chartsRow, headlineStrip, RESULT_SERIES } from "./view-stats"
+import { CI_HEADLINE_LABELS, chartsRow, headlineStrip, RESULT_SERIES } from "./view-stats"
 import { jobsTable, workflowsTable } from "./view-tables"
 import { hstack, vstack } from "@maple/views/ui/stack"
-
-// `CodeReviewCiPage` and `CiAnalyticsView`.
 
 type H = HtmlBuilder<Message>
 
@@ -110,7 +108,8 @@ const analyticsView = (h: H, model: Model, analytics: CodeReviewCiAnalytics, tim
 			: presetSpanLabel(model.search.timePreset ?? DEFAULT_PRESET)
 	const theme = model.themeColors
 	const time = { nowMs: model.frame.nowMs, timeZone }
-	if (theme === null || !isChartRuntimeReady(model.chartRuntime)) return ciSkeleton(h)
+	if (theme === null || !isChartRuntimeReady(model.chartRuntime))
+		return ciSkeleton(h, Rec.values(CI_HEADLINE_LABELS))
 	return vstack(h, { gap: "6" }, [
 		vstack(h, { gap: "6" }, [
 			headlineStrip(h, analytics.current, analytics.previous, windowLabel),
@@ -136,7 +135,7 @@ const ciTracesOn = (model: Model) =>
 
 const content = (h: H, model: Model, timeZone: string): Html =>
 	AsyncData.matchData(model.analytics.data, {
-		onEmpty: () => ciSkeleton(h),
+		onEmpty: () => ciSkeleton(h, Rec.values(CI_HEADLINE_LABELS)),
 		onFailure: (failure) =>
 			errorState(h, {
 				failure,

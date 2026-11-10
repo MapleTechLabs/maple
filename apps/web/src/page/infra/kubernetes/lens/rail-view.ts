@@ -1,5 +1,5 @@
-import { severityLevel } from "../../../../components/infra/format"
-import { BAR_VALUE_TONE } from "../../../../components/infra/severity-tokens"
+import { severityLevel } from "../../kit/format"
+import { BAR_VALUE_TONE } from "../../../kit/severity-tokens"
 import { EMPTY_VALUE, formatPercent } from "@maple/ui/lib/format"
 import { refreshingClass } from "@maple/ui/lib/refreshing"
 import { cn } from "@maple/ui/lib/utils"
@@ -10,12 +10,10 @@ import { laneLink } from "@maple/views/ui/lane-link"
 import { eyebrow } from "@maple/views/ui/eyebrow"
 import { skeletonList } from "@maple/views/ui/skeleton"
 import { serviceDot } from "@maple/views/ui/values"
-import type { TimeSearch } from "../../kit/view-tabs"
+import type { TimeSearch } from "../../../kit/view-tabs"
 import type { Model } from "./rail"
 import { typography, typographyClass } from "@maple/views/ui/typography"
 import { Array as Arr, String as Str } from "effect"
-
-// `ServiceLensRail` and the rail rows `useServiceLensRail` folds out of the join.
 
 export type RailService = Readonly<{
 	serviceName: string
@@ -74,7 +72,6 @@ export const railState = (model: Model) => {
 	}
 }
 
-/** `ServiceLensRail`. */
 export const lensRail = <M>(
 	h: HtmlBuilder<M>,
 	model: Model,

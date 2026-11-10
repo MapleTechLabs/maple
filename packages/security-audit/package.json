@@ -6,7 +6,8 @@
 	"exports": {
 		".": "./src/index.ts",
 		"./schema": "./src/schema.ts",
-		"./ecosystems": "./src/ecosystems.ts"
+		"./ecosystems": "./src/ecosystems.ts",
+		"./scope-path": "./src/scope-path.ts"
 	},
 	"scripts": {
 		"test": "bun scripts/vendor-skill.ts --check && node --test skill/validate-findings.test.cjs skill/validate-coverage-ledger.test.cjs && vitest run",

@@ -19,7 +19,7 @@ import {
 	WarehouseQueryError,
 } from "@maple/domain/http"
 import type { WarehouseQueryServiceApi } from "@maple/backend/services/warehouse/WarehouseQueryService"
-import { AlertsService, type AlertsServiceApi } from "./AlertsService"
+import { type AlertsServiceApi } from "./AlertsService"
 import { baselineWarehouseCapabilities } from "@maple/query-engine"
 import {
 	cleanupTestDbs,
@@ -27,7 +27,7 @@ import {
 	executeSql,
 	queryFirstRow,
 	type TestDb,
-} from "@maple/backend/platform/test-pglite"
+} from "@maple/backend/testing/test-pglite"
 import { compiledQueryOf } from "@maple/query-engine/execution"
 import {
 	emptyWarehouseRows,
@@ -42,6 +42,7 @@ import {
 	createErrorRateRule,
 	okFetch,
 	insertDeliveryEventRow,
+	alertServices,
 } from "./alerts-service-test-support"
 
 /** Fetch bodies arrive as a string or, from the Effect HTTP client, as bytes. */
@@ -80,7 +81,7 @@ describe("AlertsService delivery lease freshness", () => {
 
 		return Effect.gen(function* () {
 			yield* TestClock.setTime(fixedTime)
-			const alerts = yield* AlertsService
+			const alerts = yield* alertServices
 			const orgId = asOrgId("org_lease_fresh")
 			const userId = asUserId("user_lease_fresh")
 			const destination = yield* createWebhookDestination(alerts, orgId, userId)
@@ -153,7 +154,7 @@ describe("AlertsService delivery drain across destinations", () => {
 
 		return Effect.gen(function* () {
 			yield* TestClock.setTime(fixedTime)
-			const alerts = yield* AlertsService
+			const alerts = yield* alertServices
 			const orgId = asOrgId("org_drain_fairness")
 			const userId = asUserId("user_drain_fairness")
 			const slow = yield* createWebhookDestination(alerts, orgId, userId)
@@ -274,7 +275,7 @@ describe("AlertsService tick isolation", () => {
 
 		return Effect.gen(function* () {
 			yield* TestClock.setTime(DEFAULT_CLOCK_EPOCH_MS)
-			const alerts = yield* AlertsService
+			const alerts = yield* alertServices
 			const healthyOrg = asOrgId("org_crash_neighbour")
 			const userId = asUserId("user_crash")
 			// Created first, so the crashing rule is evaluated first.
@@ -315,7 +316,7 @@ describe("AlertsService tick isolation", () => {
 
 		return Effect.gen(function* () {
 			yield* TestClock.setTime(fixedTime)
-			const alerts = yield* AlertsService
+			const alerts = yield* alertServices
 			const orgId = asOrgId("org_poison_delivery")
 			const userId = asUserId("user_poison_delivery")
 			const destination = yield* createWebhookDestination(alerts, orgId, userId)
@@ -396,7 +397,7 @@ describe("AlertsService delivery drain", () => {
 
 		return Effect.gen(function* () {
 			yield* TestClock.setTime(fixedTime)
-			const alerts = yield* AlertsService
+			const alerts = yield* alertServices
 			const orgId = asOrgId("org_drain_burst")
 			const userId = asUserId("user_drain_burst")
 			const destination = yield* createWebhookDestination(alerts, orgId, userId)
@@ -481,7 +482,7 @@ describe("AlertsService chat digests", () => {
 		})
 		return Effect.gen(function* () {
 			yield* TestClock.setTime(fixedTime)
-			const alerts = yield* AlertsService
+			const alerts = yield* alertServices
 			const orgId = asOrgId("org_chat_digest")
 			const userId = asUserId("user_chat_digest")
 			const destination = yield* alerts.createDestination(
@@ -834,7 +835,7 @@ describe("AlertsService held incidents", () => {
 		return Effect.gen(function* () {
 			yield* TestClock.setTime(DEFAULT_CLOCK_EPOCH_MS)
 			state.liveness.nowMs = DEFAULT_CLOCK_EPOCH_MS
-			const alerts = yield* AlertsService
+			const alerts = yield* alertServices
 			const orgId = asOrgId("org_hold_ceiling")
 			const userId = asUserId("user_hold_ceiling")
 			const destination = yield* createWebhookDestination(alerts, orgId, userId)
@@ -909,7 +910,7 @@ describe("AlertsService held incidents", () => {
 		return Effect.gen(function* () {
 			yield* TestClock.setTime(DEFAULT_CLOCK_EPOCH_MS)
 			state.liveness.nowMs = DEFAULT_CLOCK_EPOCH_MS
-			const alerts = yield* AlertsService
+			const alerts = yield* alertServices
 			const orgId = asOrgId("org_hold_return")
 			const userId = asUserId("user_hold_return")
 			const destination = yield* createWebhookDestination(alerts, orgId, userId)
@@ -943,7 +944,7 @@ describe("AlertsService held incidents", () => {
 		return Effect.gen(function* () {
 			yield* TestClock.setTime(DEFAULT_CLOCK_EPOCH_MS + DAY_MS)
 			state.liveness.nowMs = DEFAULT_CLOCK_EPOCH_MS + DAY_MS
-			const alerts = yield* AlertsService
+			const alerts = yield* alertServices
 			const orgId = asOrgId("org_hold_prior_day")
 			const userId = asUserId("user_hold_prior_day")
 			const destination = yield* createWebhookDestination(alerts, orgId, userId)
@@ -968,7 +969,7 @@ describe("AlertsService held incidents", () => {
 		return Effect.gen(function* () {
 			yield* TestClock.setTime(DEFAULT_CLOCK_EPOCH_MS + DAY_MS)
 			state.liveness.nowMs = DEFAULT_CLOCK_EPOCH_MS + DAY_MS
-			const alerts = yield* AlertsService
+			const alerts = yield* alertServices
 			const orgId = asOrgId("org_orphan_flap")
 			const userId = asUserId("user_orphan_flap")
 			const destination = yield* createWebhookDestination(alerts, orgId, userId)
@@ -1009,7 +1010,7 @@ describe("AlertsService held incidents", () => {
 		return Effect.gen(function* () {
 			yield* TestClock.setTime(DEFAULT_CLOCK_EPOCH_MS)
 			state.liveness.nowMs = DEFAULT_CLOCK_EPOCH_MS
-			const alerts = yield* AlertsService
+			const alerts = yield* alertServices
 			const orgId = asOrgId("org_hold_rebreach")
 			const userId = asUserId("user_hold_rebreach")
 			const destination = yield* createWebhookDestination(alerts, orgId, userId)
@@ -1069,7 +1070,7 @@ describe("AlertsService held incidents", () => {
 		return Effect.gen(function* () {
 			yield* TestClock.setTime(DEFAULT_CLOCK_EPOCH_MS)
 			state.liveness.nowMs = DEFAULT_CLOCK_EPOCH_MS
-			const alerts = yield* AlertsService
+			const alerts = yield* alertServices
 			const orgId = asOrgId("org_hold_multi_service")
 			const userId = asUserId("user_hold_multi_service")
 			const destination = yield* createWebhookDestination(alerts, orgId, userId)
@@ -1108,7 +1109,7 @@ describe("AlertsService held incidents", () => {
 		return Effect.gen(function* () {
 			yield* TestClock.setTime(DEFAULT_CLOCK_EPOCH_MS)
 			state.liveness.nowMs = DEFAULT_CLOCK_EPOCH_MS
-			const alerts = yield* AlertsService
+			const alerts = yield* alertServices
 			const orgId = asOrgId("org_hold_probe_failed")
 			const userId = asUserId("user_hold_probe_failed")
 			const destination = yield* createWebhookDestination(alerts, orgId, userId)
@@ -1144,7 +1145,7 @@ describe("AlertsService PagerDuty acknowledgements", () => {
 		}) as typeof fetch
 		return Effect.gen(function* () {
 			yield* TestClock.setTime(fixedTime)
-			const alerts = yield* AlertsService
+			const alerts = yield* alertServices
 			const orgId = asOrgId("org_pd_ack")
 			const userId = asUserId("user_pd_ack")
 			const destination = yield* alerts.createDestination(

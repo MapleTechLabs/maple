@@ -6,6 +6,18 @@ import { describeFailure, formatFailure } from "../lib/failure"
 import { encodeJsonEffect } from "@maple/local-server/json"
 import { dim } from "../lib/style"
 import { dataDirSidecarPath } from "@maple/local-server/store-version"
+import { ChdbError } from "@maple/local-server/chdb"
+import { ServerBindError } from "@maple/local-server/serve"
+import {
+	LocalStoreDirtyError,
+	LocalStoreFromNewerMapleError,
+	LocalStoreIncompatibleError,
+	LocalStoreMigrationError,
+	LocalStoreSchemaStaleError,
+	ServerStateError,
+} from "@maple/local-server/store-errors"
+import { ProjectorModuleError } from "../server/eventing/projector-modules"
+import { BackgroundServerExitedError } from "./server-errors"
 
 /**
  * Deterministic `maple start` refusals under a supervisor (launchd KeepAlive,
@@ -15,35 +27,33 @@ import { dataDirSidecarPath } from "@maple/local-server/store-version"
  */
 
 /** Failures that fail the same way on every retry until a human acts. */
-const DETERMINISTIC_START_TAGS: ReadonlySet<string> = new Set([
-	"@maple/cli/ChdbError",
+const isDeterministicStartFailure = Predicate.some([
+	Schema.is(ChdbError),
 	// The store refusals: each names a command a person has to run first.
-	"@maple/cli/LocalStoreDirtyError",
-	"@maple/cli/LocalStoreIncompatibleError",
-	"@maple/cli/LocalStoreSchemaStaleError",
-	"@maple/cli/LocalStoreFromNewerMapleError",
-	"@maple/cli/LocalStoreMigrationError",
-	"@maple/cli/ServerStateError",
+	Schema.is(LocalStoreDirtyError),
+	Schema.is(LocalStoreIncompatibleError),
+	Schema.is(LocalStoreSchemaStaleError),
+	Schema.is(LocalStoreFromNewerMapleError),
+	Schema.is(LocalStoreMigrationError),
+	Schema.is(ServerStateError),
 	// A module that fails to load or register fails identically until it is replaced.
-	"@maple/cli/ProjectorModuleError",
+	Schema.is(ProjectorModuleError),
 ])
 
 /** Deduped and backed off like the rest, but a supervisor should keep retrying:
  *  a port held by a server that is still stopping frees itself. */
-const TRANSIENT_START_TAGS: ReadonlySet<string> = new Set(["@maple/cli/ServerBindError"])
+const isTransientStartFailure = Schema.is(ServerBindError)
 
 /** A `start -d` child that exited with the refusal status already decided it is final. */
 const isRefusedChildExit = (error: unknown): boolean =>
-	describeFailure(error).tag === "@maple/cli/BackgroundServerExitedError" &&
-	Predicate.hasProperty(error, "exitCode") &&
-	error.exitCode === EXIT_START_REFUSED
+	Schema.is(BackgroundServerExitedError)(error) && error.exitCode === EXIT_START_REFUSED
 
 /** Exits 78, so a supervisor configured for it stops restarting. */
 export const isNonRestartableStartFailure = (error: unknown): boolean =>
-	DETERMINISTIC_START_TAGS.has(describeFailure(error).tag) || isRefusedChildExit(error)
+	isDeterministicStartFailure(error) || isRefusedChildExit(error)
 
 export const isGuardedStartFailure = (error: unknown): boolean =>
-	isNonRestartableStartFailure(error) || TRANSIENT_START_TAGS.has(describeFailure(error).tag)
+	isNonRestartableStartFailure(error) || isTransientStartFailure(error)
 
 const StartFailureRecord = Schema.Struct({
 	fingerprint: Schema.String,

@@ -6,8 +6,8 @@ import type { Resources } from "../../../platform/resources"
 import * as Combobox from "@maple/views/ui/combobox"
 import type { DestinationForm } from "./form"
 
-// `EmailMemberPicker`: workspace members from Clerk's
-// memberships. The server re-resolves the picked ids to emails on save, so this is a convenience.
+// Workspace members from Clerk's memberships. The server re-resolves the picked ids to emails on
+// save, so this is a convenience.
 // TODO(destination-dialog): the popup's "Load more" past the first 100 members, and avatar images.
 
 /** Past Clerk's default of 10, so the typeahead searches the whole workspace in one page. */
@@ -91,7 +91,7 @@ export const reset = (model: Model, form: DestinationForm): Return => {
 	return AsyncData.isIdle(model.members) ? fetchMembers(next) : { model: next, commands: [] }
 }
 
-/** `itemToStringLabel`: the typeahead matches the label, never the id. */
+/** The typeahead matches the label, never the id. */
 export const visibleIds = (
 	options: ReadonlyArray<MemberOption>,
 	inputValue: string,

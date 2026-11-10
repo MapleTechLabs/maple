@@ -13,7 +13,7 @@ import {
 	SEVERITY_LABELS,
 	SEVERITY_TONE,
 	SKIP_LABELS,
-} from "../../../components/code-review/code-review-format"
+} from "./code-review-format"
 import { EMPTY_VALUE, formatNumber } from "@maple/ui/lib/format"
 import { relativeTime } from "../../kit/relative-time"
 import { TONE_TEXT } from "@maple/ui/lib/tone"
@@ -24,7 +24,7 @@ import { badge } from "@maple/views/ui/display"
 import { icon } from "@maple/views/ui/icon"
 import { panel } from "@maple/views/ui/panel"
 import { statRail, statRailItem } from "../../kit/stat-rail"
-import { messageResponse } from "./markdown"
+import { messageResponse } from "../../kit/message-response"
 import { bulletList, section } from "./parts"
 import type { ReviewSheet, SheetMessage } from "./review-sheet"
 import { ciRunsSection, historySection, postMergeSection, productionSection } from "./review-sheet-more"
@@ -32,8 +32,6 @@ import { emptyMessage } from "@maple/views/ui/empty"
 import { typography, typographyClass } from "@maple/views/ui/typography"
 import { hstack, vstack } from "@maple/views/ui/stack"
 import { Array as Arr, Option } from "effect"
-
-// `ReviewDetailContent`'s body.
 
 type H = HtmlBuilder<SheetMessage>
 
@@ -125,7 +123,7 @@ const findingCard = (h: H, finding: PrReviewFinding, tracked: CodeReviewFinding 
 						? [`-${finding.endLine}`]
 						: []),
 				]),
-				messageResponse(h, finding.body, typographyClass({ size: "sm", tone: "muted" })),
+				messageResponse(h, null, finding.body, typographyClass({ size: "sm", tone: "muted" })),
 			]),
 		],
 	)
@@ -175,7 +173,7 @@ const reportSections = (
 	const lifecycle = new Map(Arr.map(detail.findings, (finding) => [finding.handle, finding]))
 	return [
 		section(h, "Summary", [
-			messageResponse(h, report.summary, "text-sm"),
+			messageResponse(h, null, report.summary, "text-sm"),
 			...(report.confidenceReason
 				? [typography(h, { size: "xs", tone: "muted", as: "p" }, [report.confidenceReason])]
 				: []),

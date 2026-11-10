@@ -1,3 +1,4 @@
+import { chartEnvHandlers } from "@maple/views/charts/chart-env"
 import * as Policy from "@maple/domain/policy"
 import { OrgId } from "@maple/domain"
 import { Clock, Effect, Schema, Array as Arr } from "effect"
@@ -48,11 +49,7 @@ export const init = (flags: AlertsLabFlags & LabShellFlags): Return => {
 				shell.commands ?? [],
 				Command.mapMessage((message) => Message.GotShellMessage({ message })),
 			),
-			Command.mapMessage(LoadChartRuntime(), (message) =>
-				message._tag === "CompletedLoadChartRuntime"
-					? Message.CompletedLoadChartRuntime()
-					: Message.FailedLoadChartRuntime({ reason: message.reason }),
-			),
+			LoadChartRuntime(),
 		],
 	}
 }
@@ -92,10 +89,6 @@ export const update = (model: Model, message: Message): Return =>
 				),
 			}
 		},
-		ResolvedThemeColors: ({ colors }) => ({ model: { ...model, themeColors: colors } }),
-		CompletedLoadChartRuntime: () => ({ model: { ...model, chartRuntime: { _tag: "Ready" } } }),
-		FailedLoadChartRuntime: ({ reason }) => ({
-			model: { ...model, chartRuntime: { _tag: "Failed", reason } },
-		}),
+		...chartEnvHandlers(model),
 		GotShellMessage: ({ message: inner }) => foldShell(model, inner),
 	})

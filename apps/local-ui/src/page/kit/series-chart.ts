@@ -8,7 +8,7 @@ import { chartSkeleton } from "@maple/views/ui/chart-skeleton"
 import type { Html, HtmlBuilder } from "foldkit/html"
 
 // The series chart: the pivot, gap handling and the
-// loading / not-enough-data states the detail pages share, over `QueryBuilderLineChart`.
+// loading / not-enough-data states the detail pages share, drawn as a line chart.
 
 /** The tokens the line chart resolves; a page reads them with `ResolveThemeColors`. */
 export const SERIES_CHART_TOKENS = AreaChart.AREA_CHART_TOKENS
@@ -40,7 +40,10 @@ export const seriesChart = <M>(h: HtmlBuilder<M>, options: SeriesChartOptions<M>
 		return h.div(
 			[
 				h.Class(
-					cn("flex items-center justify-center rounded-md border text-sm text-muted-foreground", heightClassName),
+					cn(
+						"flex items-center justify-center rounded-md border text-sm text-muted-foreground",
+						heightClassName,
+					),
 				),
 			],
 			["No datapoints in this window yet"],
@@ -66,7 +69,15 @@ export const seriesChart = <M>(h: HtmlBuilder<M>, options: SeriesChartOptions<M>
 					curveType: "monotone",
 					...(options.fitYAxisToData === undefined
 						? undefined
-						: { axis: { thresholds: [], logScale: false, softMin: null, softMax: null, fitYAxisToData: options.fitYAxisToData } }),
+						: {
+								axis: {
+									thresholds: [],
+									logScale: false,
+									softMin: null,
+									softMax: null,
+									fitYAxisToData: options.fitYAxisToData,
+								},
+							}),
 				},
 			}),
 		],

@@ -58,7 +58,10 @@ describe("isLikelyBot", () => {
 		fc.assert(
 			fc.property(
 				fc.constantFrom(...PEOPLE),
-				fc.stringMatching(/^( [A-Za-z]{2,12}\/[0-9.]{1,6})?$/),
+				// A product named `…bot` or `…crawler` is a crawler token, not a browser's extra one.
+				fc
+					.stringMatching(/^( [A-Za-z]{2,12}\/[0-9.]{1,6})?$/)
+					.filter((extra) => !/bot\/|crawler|spider|headless/i.test(extra)),
 				(ua, extra) => {
 					expect(isLikelyBot(`${ua}${extra}`)).toBe(false)
 				},

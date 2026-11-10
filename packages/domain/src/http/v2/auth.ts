@@ -19,7 +19,7 @@ import { publicError } from "./public-error"
 /**
  * v2 bearer authorization. Same credential resolution as v1 (`maple_ak_…` API
  * key, else Clerk/self-hosted session token) but errors use the v2 envelope
- * and API keys are subject to scope enforcement (see docs/api-v2.md#scopes).
+ * and API keys are subject to scope enforcement (see docs/api-v2.md#authentication-and-scopes).
  *
  * Note: the error option must stay a *list* of schemas (not `Schema.Union`) so
  * each error keeps its own `httpApiStatus` when responses are encoded.
@@ -70,7 +70,6 @@ export class V2SchemaErrors extends HttpApiMiddleware.Service<V2SchemaErrors>()(
 	error: [V2InvalidRequest.schema, V2ResponseSchemaFailure.schema],
 }) {}
 
-/** Scope string grammar: `<family>:read`, `<family>:write`, or `*`. */
 export const V2Scope = Schema.String.check(
 	Schema.isPattern(/^([a-z][a-z0-9_]*:(read|write)|\*)$/u, {
 		description: 'scope like "dashboards:read", "alerts:write", or "*"',
@@ -183,10 +182,7 @@ export const scopeAllows = (
 /** The telemetry a share link or a raw-SQL widget serves; a scoped key must read all of it. */
 export const TELEMETRY_READ_FAMILIES = ["traces", "logs", "metrics"] as const
 
-/**
- * What an investigation's agent reads with its read-only toolset: telemetry, services, errors,
- * replays, alerts, dashboards, ingest sources, setup audits, and source code via integrations.
- */
+/** What an investigation's agent reads with its read-only toolset. */
 export const INVESTIGATION_READ_FAMILIES = [
 	...TELEMETRY_READ_FAMILIES,
 	"services",

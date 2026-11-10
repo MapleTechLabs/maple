@@ -12,7 +12,7 @@ import {
 	String as Str,
 } from "effect"
 import { IngestKeyEncryptionError, IngestKeyPersistenceError, OrgId, UserId } from "@maple/domain/http"
-import { hashIngestKey } from "@maple/db"
+import { hashIngestKey } from "../../platform/credential-tokens"
 import { Database, DatabaseError } from "@maple/backend/platform/DatabaseLive"
 import { Env } from "@maple/backend/platform/Env"
 import type { OrgIngestKeyRow } from "@maple/db/tables"
@@ -25,7 +25,7 @@ import {
 	makeStatementRecorder,
 	queryFirstRow,
 	type TestDb,
-} from "@maple/backend/platform/test-pglite"
+} from "@maple/backend/testing/test-pglite"
 
 // A Database layer that builds successfully (so migrations are never attempted)
 // but fails every query, exercising the service's `mapError(toPersistenceError)`
@@ -307,6 +307,10 @@ describe("OrgIngestKeysService", () => {
 			)
 
 			assert.isTrue(Exit.isFailure(exit))
+			assert.include(
+				Cause.pretty(Exit.isFailure(exit) ? exit.cause : Cause.empty),
+				"MAPLE_INGEST_KEY_ENCRYPTION_KEY",
+			)
 		}),
 	)
 

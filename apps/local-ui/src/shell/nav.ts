@@ -3,7 +3,15 @@ import { AppRoute } from "../route"
 
 // The sidebar nav: grouped and iconed like apps/web's sidebar.
 
-export type Section = "traces" | "logs" | "metrics" | "services" | "service-map" | "errors" | "sessions" | "query"
+export type Section =
+	| "traces"
+	| "logs"
+	| "metrics"
+	| "services"
+	| "service-map"
+	| "errors"
+	| "sessions"
+	| "query"
 
 export interface NavItem {
 	readonly section: Section
@@ -32,7 +40,7 @@ export const NAV_GROUPS: ReadonlyArray<Readonly<{ label: string; items: Readonly
 	{ label: "Triage", items: [{ section: "errors", label: "Errors", icon: "CircleWarningIcon" }] },
 ]
 
-/** `activeSection`: a detail page lights its list's row. */
+/** A detail page lights its list's row. */
 export const activeSection = (route: AppRoute): Section =>
 	AppRoute.match<Section>(route, {
 		Traces: () => "traces",

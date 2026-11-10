@@ -24,8 +24,6 @@ import { scrollRegion } from "@maple/views/ui/scroll-region"
 import { Array as Arr, String as Str } from "effect"
 import { stripClass } from "@maple/views/ui/rule"
 
-// `DashboardHistoryPanel`, `VersionListItem` and `PreviewBanner`: the version history panel.
-
 type H = HtmlBuilder<Message>
 type Clock = Readonly<{ nowMs: number; timeZone: string }>
 
@@ -223,7 +221,7 @@ export const historyPanel = (h: H, model: Model, clock: Clock): Html => {
 
 const RESTORE_BLOCKED_ID = "dashboard-restore-blocked"
 
-/** `PreviewBanner` and its restore confirmation; restore is a write, so it is off when writes are. */
+/** Restore is a write, so it is off when writes are. */
 export const previewBanner = (h: H, model: Model, version: VersionRow, clock: Clock): ReadonlyArray<Html> => {
 	const isRestoreBlocked = isWriteBlocked(model)
 	return [

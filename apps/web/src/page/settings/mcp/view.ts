@@ -1,13 +1,8 @@
 import * as Policy from "@maple/domain/policy"
 import { cn } from "@maple/ui/lib/utils"
-import { mcpUrl } from "../../../lib/services/common/mcp-url"
-import {
-	claudeCodeCommand,
-	isMcpClient,
-	type McpClient,
-	mcpClientConfig,
-} from "../../../components/settings/mcp-client-config"
-import { REPLAY_BLOCK_CLASS } from "../../../components/common/replay-privacy"
+import { mcpUrl } from "../../../platform/mcp-url"
+import { claudeCodeCommand, isMcpClient, type McpClient, mcpClientConfig } from "../../kit/mcp-client-config"
+import { REPLAY_BLOCK_CLASS } from "../../kit/replay-privacy"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { Submodel } from "foldkit"
 import { button } from "@maple/views/ui/button"
@@ -17,8 +12,8 @@ import { inlineCode } from "@maple/views/ui/inline-code"
 import { label } from "@maple/views/ui/label"
 import * as TabsView from "@maple/views/ui/tabs-view"
 import * as CreateKeyView from "../keys/create-dialog-view"
-import { codeBlock } from "../kit/code-block"
-import { INLINE_LINK_CLASS, settingsSection, settingsSections } from "../kit/section"
+import { codeBlock } from "../../kit/code-block"
+import { INLINE_LINK_CLASS, settingsSection, settingsSections } from "../../kit/settings-section"
 import { Message } from "./message"
 import { CLIENT_LABELS, type Model } from "./model"
 import { connectedClientsSection } from "./view-clients"

@@ -4,7 +4,7 @@ import {
 	SecurityAuditRunInProgressError,
 	SecurityAuditSpendLimitReachedError,
 } from "@maple/domain/http"
-import { IsoDateTimeString } from "@maple/domain/primitives"
+import { IsoDateTimeString } from "@maple/primitives"
 import { SecurityAuditTargetId } from "@maple/domain/security-audit"
 import { Schema } from "effect"
 import { describe, expect, it } from "vitest"

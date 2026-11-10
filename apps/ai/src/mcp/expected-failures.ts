@@ -37,7 +37,15 @@ const expectedStatusByTag = new Map<string, number>(Rec.toEntries(MCP_EXPECTED_F
 /** Spread into `anticipatedErrorIdentifiers` next to `ANTICIPATED_ERROR_IDENTIFIERS`. */
 export const MCP_ANTICIPATED_ERROR_IDENTIFIERS: ReadonlyArray<string> = [...expectedStatusByTag.keys()]
 
-const MAX_SPAN_MESSAGE_CHARS = 500
+/**
+ * Longest failure message a span or a transcript keeps. A ClickHouse syntax error arrives with the
+ * whole offending query inlined, and on a retry loop it would land once per attempt.
+ */
+export const MAX_FAILURE_MESSAGE_CHARS = 500
+
+/** A failure message cut to {@link MAX_FAILURE_MESSAGE_CHARS}, for a span attribute. */
+export const spanFailureMessage = (message: string): string =>
+	Str.slice(0, MAX_FAILURE_MESSAGE_CHARS)(message)
 
 /**
  * Record an expected MCP 4xx on the current span and log it at Warn.
@@ -57,7 +65,7 @@ export const recordExpectedMcpFailure = (
 		"error.type": error._tag,
 		"http.response.status_code": status,
 		// On the span too, so a tool's failure reasons are one query rather than a join to logs.
-		"maple.mcp.error.message": Str.slice(0, MAX_SPAN_MESSAGE_CHARS)(error.message),
+		"maple.mcp.error.message": spanFailureMessage(error.message),
 	}).pipe(
 		Effect.andThen(
 			Effect.logWarning(logMessage).pipe(

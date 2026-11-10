@@ -3,7 +3,8 @@ import { getMetricAttributeValues } from "@maple/web-data/warehouse/metrics"
 import { getResourceAttributeValues, getSpanAttributeValues } from "@maple/web-data/warehouse/traces"
 import { Effect, Schema, Stream, Array as Arr } from "effect"
 import { Command, Mount } from "foldkit"
-import { toLoadFailure } from "@maple/views/data/load-failure"
+import { settleTo } from "@maple/views/data/load-failure"
+import { portalToBody } from "@maple/views/ui/overlay/portal"
 import { caretEvents, listboxEvents, placeCaret } from "./where-autocomplete"
 import { WhereFieldMessage } from "./where-field"
 
@@ -32,7 +33,7 @@ export const WhereValuesRequest = Schema.Union([
 ])
 export type WhereValuesRequest = typeof WhereValuesRequest.Type
 
-/** `getSpanAttributeValuesResultAtom` and friends, for the key the caret is in. */
+/** The values read for the key the caret is in. */
 export const lookupWhereValues = (request: WhereValuesRequest) => {
 	switch (request._tag) {
 		case "Span":
@@ -49,9 +50,7 @@ export const FetchWhereFieldValues = Command.define("FetchWhereFieldValues", {
 	messages: [WhereFieldMessage.CompletedFetchValues],
 	execute: ({ slot, key, request }) =>
 		lookupWhereValues(request).pipe(
-			Effect.mapError(toLoadFailure),
-			Effect.result,
-			Effect.map((result) => WhereFieldMessage.CompletedFetchValues({ slot, key, result })),
+			settleTo((result) => WhereFieldMessage.CompletedFetchValues({ slot, key, result })),
 		),
 })
 
@@ -63,14 +62,19 @@ export const MountWhereFieldCaret = Mount.defineStream("MountWhereFieldCaret", {
 		Stream.map(caretEvents(element), (message) => WhereFieldMessage.GotCaret({ fieldId, message })),
 })
 
-/** The open list: the textarea keeps focus while a row is pressed, and the list follows it. */
+/**
+ * The open list: the textarea keeps focus while a row is pressed, and the list follows it.
+ * `isPortaled` moves it to `<body>`, out of a dialog popup whose transform would offset it.
+ */
 export const MountWhereFieldListbox = Mount.defineStream("MountWhereFieldListbox", {
-	args: { fieldId: Schema.String, textareaId: Schema.String },
+	args: { fieldId: Schema.String, textareaId: Schema.String, isPortaled: Schema.Boolean },
 	messages: [WhereFieldMessage.GotCaret],
-	execute: ({ element, fieldId, textareaId }) =>
-		Stream.map(listboxEvents(element, textareaId), (message) =>
+	execute: ({ element, fieldId, textareaId, isPortaled }) => {
+		const events = Stream.map(listboxEvents(element, textareaId), (message) =>
 			WhereFieldMessage.GotCaret({ fieldId, message }),
-		),
+		)
+		return isPortaled ? Stream.unwrap(Effect.as(portalToBody(element), events)) : events
+	},
 })
 
 export const PlaceWhereFieldCaret = Command.define("PlaceWhereFieldCaret", {

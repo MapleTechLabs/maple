@@ -1,8 +1,7 @@
 import { formatDuration } from "@maple/ui/lib/format"
 import { Array as Arr, String as Str } from "effect"
 
-// copied: the parsing and formatting half of packages/ui/src/components/filters/range-filter-section.tsx
-// (the React module also holds the component).
+// Parsing and formatting of a range filter's bounds.
 
 export type RangeUnit = "ms" | "s" | "count" | "usd"
 

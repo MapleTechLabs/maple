@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest"
 import { chainSummary, formatWait, runView } from "./escalation-chains"
 import { chainDestinations, chainOf, runOf } from "./escalation-test-fixtures"
 import { memberId, mixedTargetChain } from "./oncall-test-fixtures"
-import { NOW } from "./test-rows"
+import { NOW } from "../../kit/alert-test-rows"
 
 const nameOf = (id: string) =>
 	Option.getOrElse(

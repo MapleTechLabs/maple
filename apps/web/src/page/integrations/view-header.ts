@@ -4,7 +4,7 @@ import { icon } from "@maple/views/ui/icon"
 import { iconButton } from "@maple/views/ui/icon-button"
 import { pageTitle } from "@maple/views/ui/page-layout"
 import { statusDot } from "@maple/views/ui/status-dot"
-import { catalogEntry, type IntegrationId } from "./catalog"
+import type { CatalogEntry } from "./catalog"
 import { cardStatusOf, HEALTH_TONE, lastSyncText, overviewOf } from "./derive"
 import { relativeTime } from "../kit/relative-time"
 import { Message } from "./message"
@@ -14,29 +14,26 @@ import { typography, typographyClass } from "@maple/views/ui/typography"
 import { hstack, hstackClass, vstack } from "@maple/views/ui/stack"
 import { Array as Arr } from "effect"
 
-// `IntegrationHeader`.
-
 type H = HtmlBuilder<Message>
 
 export type HeaderSlots = Readonly<{
-	/** `GcpHeaderStatus`, replacing the status line while Google Cloud is connected. */
+	/** Google Cloud's status line, replacing the default one while it is connected. */
 	statusLine?: Html
-	/** Controls before the Connect button (`CloudflareHeaderActions`). */
+	/** Controls before the Connect button (Cloudflare's). */
 	actions?: ReadonlyArray<Html>
-	/** `useIntegrationConnect()`'s header button, shown while the integration is available. */
+	/** The Connect button, shown while the integration is available. */
 	connect?: Html
 }>
 
 export const integrationHeader = (
 	h: H,
 	model: Model,
-	integration: IntegrationId,
+	entry: CatalogEntry,
 	slots: HeaderSlots,
 	timeZone: string,
 ): Html => {
-	const entry = catalogEntry(integration)
-	const status = cardStatusOf(model.statuses, integration, model.nowMs)
-	const overview = overviewOf(model.statuses, model.nowMs, integration)
+	const status = cardStatusOf(model.statuses, entry.id, model.nowMs)
+	const overview = overviewOf(model.statuses, model.nowMs, entry.id)
 	const connected = overview?.kind === "connected" ? overview : null
 	const statusParts =
 		connected === null

@@ -3,7 +3,7 @@ import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { Array as Arr } from "effect"
 
-// `RegionFlag`: both flags on one 3:2 box.
+// Each region's flag, drawn on one 3:2 box.
 
 const W = 60
 const H = 40

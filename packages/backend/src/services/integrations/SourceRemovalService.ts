@@ -1,5 +1,5 @@
 import { type OrgId, type Source, SourcePersistenceError } from "@maple/domain/http"
-import type { SourceId } from "@maple/domain/primitives"
+import type { SourceId } from "@maple/primitives"
 import { AwsConnections, GcpConnectors, ScrapeTargets, Sources, VcsInstallations } from "@maple/db/tables"
 import * as PG from "@maple-dev/effect-orm/postgres"
 import { Array as Arr, Context, Effect, Layer, Option } from "effect"

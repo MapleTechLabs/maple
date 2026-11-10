@@ -4,7 +4,7 @@ import {
 	type GcpConnectionPeak,
 	type GcpStatement,
 	type GcpTracedStatement,
-} from "../../../../components/infra/gcp/cloud-sql-signals"
+} from "../cloud-sql-signals"
 import { EMPTY_VALUE, formatLatency, formatNumber, formatPercent } from "@maple/ui/lib/format"
 import { latencyToneClass } from "@maple/ui/lib/latency-tone"
 import { TONE_TEXT } from "@maple/ui/lib/tone"
@@ -21,7 +21,7 @@ import { meter } from "@maple/views/ui/meter"
 import { skeletonList } from "@maple/views/ui/skeleton"
 import { pressable } from "@maple/views/ui/pressable"
 import { textLink, textLinkClass } from "@maple/views/ui/text-link"
-import { columnHead, dataTable, NUMERIC_CELL } from "../../../infra/kit/data-table"
+import { columnHead, dataTable, NUMERIC_CELL } from "../../../kit/data-table"
 import { sectionHeading } from "../../../kit/section-heading"
 import type { Statement } from "../data"
 import { Message } from "./model"
@@ -29,8 +29,6 @@ import { typography, typographyClass } from "@maple/views/ui/typography"
 import { columnClass } from "@maple/views/ui/column"
 import { Array as Arr } from "effect"
 import { hstack, vstack } from "@maple/views/ui/stack"
-
-// `GcpCloudSqlTopQueries` and the workload page's `GcpAppWaitCallout`.
 
 type H = HtmlBuilder<Message>
 type TimeSearch = Readonly<{ startTime?: string; endTime?: string; timePreset?: string }>
@@ -110,7 +108,15 @@ const statementRow = (
 			),
 			h.div([h.Class(cn("w-16 text-foreground-soft", NUMERIC_CELL))], [formatNumber(row.calls)]),
 			h.div(
-				[h.Class(cn("w-20", NUMERIC_CELL, db === null ? "text-muted-foreground" : latencyToneClass(db)))],
+				[
+					h.Class(
+						cn(
+							"w-20",
+							NUMERIC_CELL,
+							db === null ? "text-muted-foreground" : latencyToneClass(db),
+						),
+					),
+				],
 				[db === null ? EMPTY_VALUE : formatLatency(db)],
 			),
 			h.div(
@@ -129,7 +135,10 @@ const statementRow = (
 				],
 				[rowsPerCall === undefined ? EMPTY_VALUE : formatNumber(Math.round(rowsPerCall))],
 			),
-			h.div([h.Class(cn("w-[56px]", NUMERIC_CELL, lockTone(row.lockShare)))], [formatPercent(row.lockShare)]),
+			h.div(
+				[h.Class(cn("w-[56px]", NUMERIC_CELL, lockTone(row.lockShare)))],
+				[formatPercent(row.lockShare)],
+			),
 			h.div(
 				[h.Class("hidden w-28 items-center gap-2 md:flex")],
 				[
@@ -258,7 +267,7 @@ export const figure = (h: H, value: string, caption: string, className?: string)
 		typography(h, { size: "3xs", tone: "muted", mono: true }, [caption]),
 	])
 
-/** `GcpAppWaitCallout`: a statement's app-side p95 far over its database-side p95. */
+/** A statement's app-side p95 far over its database-side p95. */
 export const appWaitCallout = (
 	h: H,
 	wait: GcpAppWait,

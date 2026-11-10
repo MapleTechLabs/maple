@@ -16,7 +16,7 @@ export {
 export {
 	SUPABASE_LOG_PROJECT_REF_ATTRIBUTE,
 	SUPABASE_LOG_SOURCE_ATTRIBUTE,
-	SUPABASE_LOGS_SERVICE_NAME,
+	SUPABASE_SERVICE_NAME,
 	supabaseApiTopPathsSQL,
 	supabaseApiTrafficSeriesSQL,
 	supabaseApiTrafficTotalsSQL,

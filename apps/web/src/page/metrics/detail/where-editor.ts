@@ -1,7 +1,7 @@
 import {
 	getWhereClauseAutocomplete,
 	type WhereClauseAutocompleteResult,
-} from "../../../lib/query-builder/where-clause-autocomplete"
+} from "../../kit/query-builder/where-clause-autocomplete"
 import { QUERY_BUILDER_METRIC_TYPES } from "@maple/query-model"
 import { Option, Schema } from "effect"
 import { AsyncData } from "foldkit"
@@ -20,7 +20,6 @@ export {
 	placeCaret,
 } from "../../kit/where-autocomplete"
 
-/** The where textarea's id (`WhereClauseEditor` in `MetricQueryControls`). */
 export const WHERE_TEXTAREA_ID = "metric-where-clause"
 
 export const WhereEditor = Schema.Struct({
@@ -28,9 +27,9 @@ export const WhereEditor = Schema.Struct({
 	isFocused: Schema.Boolean,
 	isDismissed: Schema.Boolean,
 	activeIndex: Schema.Number,
-	/** `onActiveAttributeKey`: the `attr.*` key whose value the caret is in. */
+	/** The `attr.*` key whose value the caret is in. */
 	activeAttributeKey: Schema.NullOr(Schema.String),
-	/** `getMetricAttributeValuesResultAtom` for that key. */
+	/** The attribute values for that key. */
 	attributeValues: KeyedSchema(Schema.Array(Schema.String), LoadFailure),
 	anchor: Schema.NullOr(AnchorRect),
 })
@@ -46,7 +45,7 @@ export const initWhereEditor = (expression: string): WhereEditor => ({
 	anchor: null,
 })
 
-/** `useMetricScopedAutocomplete` over the provider's `metrics` values. */
+/** The autocomplete over the lookups' `metrics` values. */
 export const autocompleteOf = (
 	editor: WhereEditor,
 	expression: string,
@@ -66,6 +65,6 @@ export const autocompleteOf = (
 		},
 	})
 
-/** `notifyActiveKeys`: the `attr.*` key the caret is in a value of. */
+/** The `attr.*` key the caret is in a value of. */
 export const activeKeyAt = (expression: string, cursor: number): string | null =>
 	activeKeysAt(expression, cursor, "metrics").attribute

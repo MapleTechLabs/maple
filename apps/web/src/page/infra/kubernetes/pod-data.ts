@@ -8,10 +8,10 @@ import {
 	type PodRestartsInput,
 } from "@maple/web-data/warehouse/infra"
 import { Effect, Schema } from "effect"
-import { toLoadFailure } from "@maple/views/data/load-failure"
+import { settled } from "@maple/views/data/load-failure"
 
-// The pod list and its restarts as every Kubernetes page reads them (`listPodsResultAtom`,
-// `podRestartsResultAtom`). Pages wrap these Effects in their own Commands.
+// The pod list and its restarts as every Kubernetes page reads them. Pages wrap these Effects in
+// their own Commands.
 
 export const PodsPage = Schema.Struct(ListPodsResponse.fields)
 export type PodsPage = typeof PodsPage.Type
@@ -62,11 +62,8 @@ export type PodsInput = typeof PodsInput.Type
 
 export const fetchPods = (input: PodsInput) =>
 	listPods({ data: input satisfies ListPodsInput }).pipe(
-		Effect.mapBoth({
-			onSuccess: ({ data, totalCount }) => ({ data, totalCount }),
-			onFailure: toLoadFailure,
-		}),
-		Effect.result,
+		Effect.map(({ data, totalCount }) => ({ data, totalCount })),
+		settled,
 	)
 
 export const RestartsInput = Schema.Struct({
@@ -80,8 +77,8 @@ export type RestartsInput = typeof RestartsInput.Type
 
 export const fetchRestarts = (input: RestartsInput) =>
 	podRestarts({ data: input satisfies PodRestartsInput }).pipe(
-		Effect.mapBoth({ onSuccess: (response) => response.data, onFailure: toLoadFailure }),
-		Effect.result,
+		Effect.map((response) => response.data),
+		settled,
 	)
 
 export const PodSummary = PodDetailSummaryResponse.fields.data
@@ -97,8 +94,8 @@ export type PodSummaryInput = typeof PodSummaryInput.Type
 
 export const fetchPodSummary = (input: PodSummaryInput) =>
 	podDetailSummary({ data: input }).pipe(
-		Effect.mapBoth({ onSuccess: (response) => response.data, onFailure: toLoadFailure }),
-		Effect.result,
+		Effect.map((response) => response.data),
+		settled,
 	)
 
 export const PodMetric = Schema.Literals([
@@ -122,14 +119,10 @@ export type PodSeriesInput = typeof PodSeriesInput.Type
 
 export const fetchPodSeries = (input: PodSeriesInput) =>
 	podInfraTimeseries({ data: input }).pipe(
-		Effect.mapBoth({
-			onSuccess: (response) => ({ rows: response.data, unit: response.unit }),
-			onFailure: toLoadFailure,
-		}),
-		Effect.result,
+		Effect.map((response) => ({ rows: response.data, unit: response.unit })),
+		settled,
 	)
 
-/** `POD_METRIC_LABELS`. */
 export const POD_METRIC_LABELS = new Map<PodMetric, string>([
 	["cpu_usage", "CPU usage"],
 	["cpu_limit", "CPU / limit"],

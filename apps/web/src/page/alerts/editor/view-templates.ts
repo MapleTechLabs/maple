@@ -12,8 +12,6 @@ import { typographyClass } from "@maple/views/ui/typography"
 import { hstack } from "@maple/views/ui/stack"
 import { Array as Arr } from "effect"
 
-// `RuleTemplatesOverlay`: the first-touch picker.
-
 type H = HtmlBuilder<Message>
 
 const TILE_LAYOUT = "flex h-full flex-col gap-3 p-4"

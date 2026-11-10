@@ -51,7 +51,7 @@ import {
 	integrationSourceName,
 	type PollOutcome,
 	reportPoll,
-} from "@maple/backend/services/org/integration-sources"
+} from "@maple/backend/services/integrations/integration-sources"
 
 // Postgres caps bind parameters at 65535. Chunk unbounded `in_(...)` filters
 // and bulk inserts so a large installation (every repo/commit at once) stays well

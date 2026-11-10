@@ -10,19 +10,10 @@ import {
 	LinkBillingOrgRequest,
 } from "@maple/domain/http"
 import { OrgId } from "@maple/domain"
-import {
-	buildCheckoutSuccessUrl,
-	CHECKOUT_CONFIRM_POLL_MS,
-	CHECKOUT_CONFIRM_TIMEOUT_MS,
-} from "../../../lib/billing/checkout-return"
-import { hasSelectedPlan } from "../../../lib/billing/plan-gating"
-import {
-	parseCapInput,
-	spendLimitFor,
-	uncappedFeatures,
-	updateFeatureControls,
-} from "../../../lib/billing/controls"
-import { buildSpendModel, SPEND_FEATURES, type SpendModel } from "../../../lib/billing/spend"
+import { buildCheckoutSuccessUrl } from "../../kit/billing/checkout-return"
+import { hasSelectedPlan } from "../../kit/billing/plan-gating"
+import { parseCapInput, spendLimitFor, uncappedFeatures, updateFeatureControls } from "./controls"
+import { buildSpendModel, SPEND_FEATURES, type SpendModel } from "./spend"
 import { NetworkErrorBody } from "@maple/web-data/lib/error-messages"
 import {
 	Cause,
@@ -45,13 +36,14 @@ import { currentClerkUser } from "../../../platform/clerk"
 import * as Dialog from "@maple/views/ui/dialog"
 import { PageOutMessage, type PageReturn } from "../../contract"
 import { revisitData } from "../kit/revisit"
+import * as CheckoutReturn from "../../kit/checkout-return"
 import * as Details from "./details/update"
 import { canManage, CAP_INPUT_ID, Message, type Model, type OrgChoice, SpendFeatureId } from "./model"
 
 type Return = PageReturn<Model, Message>
 
 /**
- * A step plus whether the settings page's customer must be read again (`BILLING_CUSTOMER_KEY`),
+ * A step plus whether the settings page's customer must be read again,
  * and where a checkout return stands: a poll re-reads only the page's copy, a confirmed plan
  * refreshes the app's customer once, and a settled return drops `checkout=complete` (replace).
  */
@@ -60,8 +52,6 @@ export type Step = Readonly<{
 	isCustomerStale: boolean
 	checkout?: "Polled" | "Confirmed" | "TimedOut"
 }>
-
-// READS
 
 // A defect settles the slot as a failure too; otherwise the message never arrives and it shimmers forever.
 const loaded =
@@ -110,8 +100,8 @@ const FetchAiUsage = Command.define("FetchBillingAiCreditUsage", {
 })
 
 /**
- * `SpendChartError` renders `dailySpendResult.cause` as the unexpected body (a retry button), so
- * the slot keeps that body too.
+ * Every failure settles as a defect: the spend chart shows a failed read as the unexpected body
+ * (a retry button).
  */
 const FetchDaily = Command.define("FetchBillingDailySpend", {
 	messages: [Message.CompletedFetchDaily],
@@ -213,13 +203,13 @@ const FetchOrgChoices = Command.define("FetchBillingOrgChoices", {
 
 const isLinkRejected = Schema.is(BillingLinkRejectedError)
 
-/** A refusal keeps the server's sentence for the person who asked; anything else is a plain failure. */
 /** Above the server's 10s budget for cancelling the org's own plans, plus a wait on the link lock. */
 const LINK_TIMEOUT = Duration.seconds(30)
 
 const withinLinkDeadline = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
 	Effect.timeoutOrElse(effect, { duration: LINK_TIMEOUT, orElse: () => Effect.fail(NetworkErrorBody) })
 
+/** A refusal keeps the server's sentence for the person who asked; anything else is a plain failure. */
 const toLinkFailure = (error: unknown) => ({
 	rejection: isLinkRejected(error) ? error.message : null,
 	failure: toLoadFailure(error),
@@ -255,9 +245,6 @@ const Unlink = Command.define("UnlinkBillingOrg", {
 		),
 })
 
-// WRITES
-
-/** `openCustomerPortal({ returnUrl: window.location.href })`. */
 const OpenPortal = Command.define("OpenBillingPortal", {
 	messages: [Message.CompletedOpenPortal],
 	execute: Effect.flatMap(MapleInternalApiClient, (client) =>
@@ -303,26 +290,9 @@ const Attach = Command.define("AttachBillingPlan", {
 		).pipe(loaded((result) => Message.CompletedAttach({ planId, result }))),
 })
 
-/** `CHECKOUT_CONFIRM_POLL_MS`: the customer is re-read this often while confirming. */
-const WaitCheckoutPoll = Command.define("WaitBillingCheckoutPoll", {
-	messages: [Message.ElapsedCheckoutPoll],
-	execute: Effect.sleep(Duration.millis(CHECKOUT_CONFIRM_POLL_MS)).pipe(
-		Effect.as(Message.ElapsedCheckoutPoll()),
-	),
-})
-
-/** `CHECKOUT_CONFIRM_TIMEOUT_MS`: then the wait gives up with the timed-out notice. */
-const WaitCheckoutTimeout = Command.define("WaitBillingCheckoutTimeout", {
-	messages: [Message.ElapsedCheckoutTimeout],
-	execute: Effect.sleep(Duration.millis(CHECKOUT_CONFIRM_TIMEOUT_MS)).pipe(
-		Effect.as(Message.ElapsedCheckoutTimeout()),
-	),
-})
-
-/** `plan_checkout_started` and `plan_checkout_returned` (apps/web/src/lib/analytics.ts). */
 const TrackCheckout = Command.define("TrackBillingCheckout", {
 	args: {
-		event: Schema.Literals(["plan_checkout_started", "plan_checkout_returned"]),
+		event: Schema.Literal("plan_checkout_started"),
 		props: Schema.Record(Schema.String, Schema.Union([Schema.String, Schema.Boolean])),
 	},
 	messages: [Message.CompletedTrackProduct],
@@ -330,7 +300,6 @@ const TrackCheckout = Command.define("TrackBillingCheckout", {
 		trackProduct(event, props).pipe(Effect.as(Message.CompletedTrackProduct())),
 })
 
-/** `usageRef.current?.scrollIntoView({ behavior: "smooth", block: "start" })`. */
 const ScrollToUsage = Command.define("ScrollToBillingUsage", {
 	messages: [Message.CompletedScrollToUsage],
 	execute: Effect.sync(() => {
@@ -344,13 +313,10 @@ const ScrollToUsage = Command.define("ScrollToBillingUsage", {
 
 export const USAGE_HEADING_ID = "settings-billing-usage"
 
-/** The cap editor's input takes focus as it opens (`autoFocus`). */
 const FocusCap = Command.define("FocusBillingCapInput", {
 	messages: [Message.CompletedFocusCap],
 	execute: Dom.focus(`#${CAP_INPUT_ID}`).pipe(Effect.ignore, Effect.as(Message.CompletedFocusCap())),
 })
-
-// DERIVED
 
 /** One spend model feeds every figure, so no two numbers on the tab can disagree. */
 export const spendModelOf = (
@@ -370,8 +336,6 @@ export const spendModelOf = (
 
 export const profileOf = (model: Model): Option.Option<BillingProfile> => AsyncData.getData(model.profile)
 
-// UPDATE
-
 /**
  * `isReturning`: the tab opened with `?checkout=complete`, so it waits on the Stripe to Autumn sync.
  * Invoices and details wait for the account: a member org's billing lives on its billing org.
@@ -384,7 +348,7 @@ export const init = (
 	model: {
 		grants,
 		isClerk,
-		checkoutReturn: isReturning ? "Confirming" : "Idle",
+		checkoutReturn: CheckoutReturn.init(isReturning).model,
 		plans: AsyncData.Loading(),
 		usage: AsyncData.Loading(),
 		daily: AsyncData.Loading(),
@@ -419,7 +383,7 @@ export const init = (
 		FetchDaily(),
 		FetchAiUsage(),
 		FetchAccount(),
-		...(isReturning ? [WaitCheckoutPoll(), WaitCheckoutTimeout()] : []),
+		...checkoutReturnCommands(CheckoutReturn.init(isReturning)),
 	],
 })
 
@@ -427,6 +391,16 @@ const toast = (type: "success" | "error", title: string, description = "") =>
 	PageOutMessage.RequestedToast({ type, title, description })
 
 const same = (step: Return): Step => ({ step, isCustomerStale: false })
+
+const checkoutReturnCommands = (wait: CheckoutReturn.Step) =>
+	Command.mapMessages(wait.commands, (message) => Message.GotCheckoutReturnMessage({ message }))
+
+/** A poll re-reads the page's customer; the outcome tells the settings page what else to do. */
+const checkoutReturnStep = (model: Model, wait: CheckoutReturn.Step): Step => ({
+	step: { model: { ...model, checkoutReturn: wait.model }, commands: checkoutReturnCommands(wait) },
+	isCustomerStale: wait.outcome === "Polled",
+	checkout: wait.outcome ?? undefined,
+})
 const staleCustomer = (step: Return): Step => ({ step, isCustomerStale: true })
 
 const revalidate = <A, E>(data: AsyncData.AsyncData<A, E>) =>
@@ -439,7 +413,7 @@ const liftCompare = (model: Model, step: ReturnType<typeof Dialog.update>): Retu
 	),
 })
 
-/** `CapEditor`'s draft starts from the cap on file. */
+/** The cap editor's draft starts from the cap on file. */
 const openCap = (model: Model, featureId: SpendFeatureId, customer: BillingCustomer | null): Model => {
 	const existing = spendLimitFor(customer ?? undefined, featureId)?.overageLimit
 	return { ...model, editingCap: featureId, capDraft: existing === undefined ? "" : String(existing) }
@@ -462,7 +436,7 @@ const saveCap = (model: Model, customer: BillingCustomer | null, nowMs: number):
 	}
 }
 
-/** `revisitData` for a read the account gates: one never asked for stays unasked. */
+/** A revisit for a read the account gates: one never asked for stays unasked. */
 const revisitIfRead = <A, E, C>(data: AsyncData.AsyncData<A, E>, read: () => C) =>
 	AsyncData.isIdle(data) ? { data, commands: [] } : revisitData(data, read)
 
@@ -759,30 +733,8 @@ export const update = (
 						outMessage: toast("error", "Couldn't update your plan", error.message),
 					}),
 			}),
-		ElapsedCheckoutPoll: () =>
-			model.checkoutReturn === "Confirming"
-				? {
-						step: { model, commands: [WaitCheckoutPoll()] },
-						isCustomerStale: true,
-						checkout: "Polled",
-					}
-				: same({ model }),
-		ElapsedCheckoutTimeout: () =>
-			model.checkoutReturn === "Confirming"
-				? {
-						step: {
-							model: { ...model, checkoutReturn: "TimedOut" },
-							commands: [
-								TrackCheckout({
-									event: "plan_checkout_returned",
-									props: { confirmed: false },
-								}),
-							],
-						},
-						isCustomerStale: false,
-						checkout: "TimedOut",
-					}
-				: same({ model }),
+		GotCheckoutReturnMessage: ({ message: child }) =>
+			checkoutReturnStep(model, CheckoutReturn.update(model.checkoutReturn, child)),
 		CompletedTrackProduct: () => same({ model }),
 		ClickedEditDetails: () => same(openDetails(model)),
 		GotDetailsMessage: ({ message: child }) => {
@@ -969,19 +921,10 @@ export const requestRuleStats = (
 }
 
 /** The customer settled: once it carries a plan, the wait is over (`confirmed`). */
-export const customerChanged = (model: Model, customer: BillingCustomer): Step | null =>
-	model.checkoutReturn === "Confirming" && hasSelectedPlan(customer)
-		? {
-				step: {
-					model: { ...model, checkoutReturn: "Idle" },
-					commands: [
-						TrackCheckout({ event: "plan_checkout_returned", props: { confirmed: true } }),
-					],
-				},
-				isCustomerStale: false,
-				checkout: "Confirmed",
-			}
-		: null
+export const customerChanged = (model: Model, customer: BillingCustomer): Step | null => {
+	const wait = hasSelectedPlan(customer) ? CheckoutReturn.confirmed(model.checkoutReturn) : null
+	return wait === null ? null : checkoutReturnStep(model, wait)
+}
 
 /** "Edit" on the billing details: the dialog opens on the profile on file. */
 export const openDetails = (model: Model): Return =>

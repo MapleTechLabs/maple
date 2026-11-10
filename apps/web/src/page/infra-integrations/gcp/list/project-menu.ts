@@ -4,8 +4,8 @@ import * as Menu from "@maple/views/ui/menu"
 import { Message } from "./model"
 import { ALL_PROJECTS, MANAGE_CONNECTIONS } from "./view-project-menu"
 
-// The project menu's update, shared by the page and the lab: a radio pick closes the menu
-// (`closeOnClick`) and names the project; "Manage connections" leaves for the integration.
+// Shared by the page and the lab: a radio pick closes the menu and names the project; "Manage
+// connections" leaves for the integration.
 
 export type ProjectPick =
 	| Readonly<{ _tag: "Project"; project: string | undefined }>

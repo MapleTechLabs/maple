@@ -4,36 +4,43 @@ import type { Html, HtmlBuilder } from "foldkit/html"
 import type { PageViewInputs } from "../contract"
 import { dashboardPage } from "../kit/dashboard-page"
 import { button } from "@maple/views/ui/button"
-import { catalogEntry, chatConnectorOf, integrationOfSearch, type IntegrationId } from "./catalog"
+import {
+	type CatalogEntry,
+	catalogEntry,
+	chatConnectorOf,
+	entryOfSearch,
+	type IntegrationId,
+} from "./catalog"
 import { ConnectProvider } from "./connect"
 import { Message } from "./message"
 import { canManage, type Model } from "./model"
 import { navShell } from "../kit/nav-shell"
-import { isClerkAuthEnabled } from "../../lib/services/common/auth-mode"
+import { isClerkAuthEnabled } from "../../platform/auth-mode"
 import { visibleSections } from "../settings/nav"
 import { settingsNavVisibility } from "./derive"
 import { entryGlyph } from "./view-entry"
 import { chatCard } from "./view-chat-card"
-import { cloudflareCard, cloudflareHeaderActions } from "./view-cloudflare"
-import { gcpCard, gcpHeaderStatus } from "./view-gcp"
+import {
+	cloudflareCard,
+	cloudflareHeaderActions,
+} from "../infra-integrations/cloudflare/integration/view-cloudflare"
+import { gcpCard, gcpHeaderStatus } from "../infra-integrations/gcp/integration/view-gcp"
 import { githubCard } from "./view-github"
 import { linearCard } from "./view-linear"
 import { searchConsoleCard } from "./view-search-console"
-import { planetscaleCard } from "./view-planetscale"
-import { railwayCard } from "./view-railway"
-import { awsCard } from "./view-aws"
-import { supabaseCard } from "./view-supabase"
+import { planetscaleCard } from "../infra-integrations/planetscale/integration/view-planetscale"
+import { railwayCard } from "../infra-integrations/railway/integration/view-railway"
+import { awsCard } from "../infra-integrations/aws/integration/view-aws"
+import { supabaseCard } from "../infra-integrations/supabase/integration/view-supabase"
 import { scrapeIntro, scrapeTargetsSection } from "./view-prometheus"
 import { integrationHeader } from "./view-header"
 import { hubTitle, integrationCatalog, integrationsSummary } from "./view-hub"
-
-// `IntegrationsPage`.
 
 type H = HtmlBuilder<Message>
 
 const selectIntegration = (id: IntegrationId) => Message.ClickedIntegration({ integration: id })
 
-/** The header's Connect button for an OAuth integration (`useIntegrationConnect()`). */
+/** The header's Connect button for an OAuth integration. */
 export const connectButton = (h: H, model: Model, integration: IntegrationId): Html | undefined => {
 	if (!Schema.is(ConnectProvider)(integration)) return undefined
 	const entry = catalogEntry(integration)
@@ -93,8 +100,9 @@ export const cardView = (
 	}
 }
 
-const detailView = (h: H, model: Model, integration: IntegrationId, timeZone: string): Html =>
-	dashboardPage(
+const detailView = (h: H, model: Model, entry: CatalogEntry, timeZone: string): Html => {
+	const integration = entry.id
+	return dashboardPage(
 		h,
 		{
 			filtersLabel: "Settings",
@@ -102,7 +110,7 @@ const detailView = (h: H, model: Model, integration: IntegrationId, timeZone: st
 			titleContent: integrationHeader(
 				h,
 				model,
-				integration,
+				entry,
 				{
 					connect: connectButton(h, model, integration),
 					actions: integration === "cloudflare" ? cloudflareHeaderActions(h, model) : undefined,
@@ -115,6 +123,7 @@ const detailView = (h: H, model: Model, integration: IntegrationId, timeZone: st
 		},
 		cardView(h, model, integration, timeZone),
 	)
+}
 
 /** The settings rail with "Integrations" the active link, gated like `/settings`. */
 const settingsNav = (h: HtmlBuilder<Message>, model: Model): Html =>
@@ -123,8 +132,8 @@ const settingsNav = (h: HtmlBuilder<Message>, model: Model): Html =>
 	)
 
 export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, inputs, h) => {
-	const integration = integrationOfSearch(model.search.integration)
-	return integration === null
+	const entry = entryOfSearch(model.search.integration)
+	return entry === null
 		? dashboardPage(
 				h,
 				{
@@ -136,5 +145,5 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 				},
 				[integrationCatalog(h, model, selectIntegration)],
 			)
-		: detailView(h, model, integration, inputs.context.timeZone)
+		: detailView(h, model, entry, inputs.context.timeZone)
 })

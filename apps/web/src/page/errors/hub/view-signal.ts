@@ -1,13 +1,12 @@
-import { warehouseDateTimeToIso } from "@maple/query-engine"
 import { zonedDateParts } from "@maple/query-engine/datetime"
 import { countLabel } from "@maple/ui/lib/format"
-import { formatRelativeShortFrom } from "@maple/ui/lib/time-format"
+import { formatRelativeShortFrom, toEpochMs } from "@maple/ui/lib/time-format"
 import { cn } from "@maple/ui/lib/utils"
-import { type ErrorSignal, densifySpark, surgeRatio } from "../../../lib/models/error-signal"
+import { type ErrorSignal, densifySpark, surgeRatio } from "../kit/error-signal"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { icon } from "@maple/views/ui/icon"
 import { miniBars } from "@maple/views/ui/mini-bars"
-import { SEVERITY_TEXT } from "../kit/severity"
+import { SEVERITY_TEXT } from "../../kit/issue-severity"
 import { investigationChip } from "../kit/state-chip"
 import { Message } from "./message"
 import { hstack } from "@maple/views/ui/stack"
@@ -24,11 +23,9 @@ export const GENERIC_TYPES = new Set(["Error", "Exception", "TypeError", "Runtim
 
 export type SparkWindow = Readonly<{ startMs: number; endMs: number; bucketMs: number }>
 
-export const epochOf = (iso: string): number => new Date(warehouseDateTimeToIso(iso)).getTime()
-
 /** `formatLastSeen`: relative inside a week, a date beyond it; clock skew reads as "now". */
 export const formatLastSeen = (iso: string, timeZone: string, nowMs: number): string => {
-	const ms = epochOf(iso)
+	const ms = toEpochMs(iso)
 	if (Number.isNaN(ms)) return iso
 	if (ms > nowMs) return "now"
 	if (nowMs - ms < WEEK_MS) return formatRelativeShortFrom(ms, nowMs)

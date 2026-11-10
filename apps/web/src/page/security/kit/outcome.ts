@@ -1,12 +1,14 @@
 import type { SecurityAuditEvent, SecurityAuditUnit } from "@maple/domain/http"
-import { ORG_NO_AI_CREDITS, ORG_SPEND_LIMIT_REACHED } from "@maple/domain/security-audit"
+import {
+	ORG_BUDGET_UNAVAILABLE,
+	ORG_NO_AI_CREDITS,
+	ORG_SPEND_LIMIT_REACHED,
+} from "@maple/domain/security-audit"
 import { incompleteReasonLabel } from "./format"
 import { Array as Arr, String as Str, Option } from "effect"
 
 // What a run found and why it stopped, in the words a person reads: stop reasons, leads, unit
 // names and event sentences.
-
-// STOP REASONS
 
 /** `broken`: something failed under the run. `choice`: a limit or rule the run followed. */
 export type StopKind = "broken" | "choice"
@@ -100,7 +102,7 @@ const REASON_COPY = new Map<string, (detail: string) => ReasonCopy>([
 		}),
 	],
 	[
-		"org_budget_unavailable",
+		ORG_BUDGET_UNAVAILABLE,
 		() => ({
 			kind: "broken",
 			title: "Billing could not be reached",
@@ -247,8 +249,6 @@ export const stopSummaryOf = (incompleteReason: string | null): string => {
 	return reasons.length > 1 ? `${first} · +${reasons.length - 1} more` : first
 }
 
-// LEADS
-
 /** `2 confirmed · 6 to validate`, `6 to validate`, or `none open`. */
 export const leadsLine = (confirmed: number, toValidate: number): string =>
 	confirmed === 0 && toValidate === 0
@@ -258,8 +258,6 @@ export const leadsLine = (confirmed: number, toValidate: number): string =>
 			: toValidate === 0
 				? `${confirmed} confirmed`
 				: `${confirmed} confirmed · ${toValidate} to validate`
-
-// UNITS
 
 /** `ATTACK-CLASSES.md#Broken-Access-Control` reads as `Broken Access Control`; `src/a.ts#POST x` as `POST x`. */
 export const plainName = (text: string): string => {
@@ -293,8 +291,6 @@ export const unitContext = (unit: SecurityAuditUnit): string =>
 		),
 		" · ",
 	)
-
-// EVENTS
 
 const ROLE_NAME = new Map([
 	["recon", "Recon agent"],

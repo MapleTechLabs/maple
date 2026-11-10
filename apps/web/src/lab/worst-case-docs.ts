@@ -8,7 +8,7 @@ import { Schema, Array as Arr, String as Str } from "effect"
 
 import type { DerivedRuleStatus } from "@maple/web-data/alerts/rule-status"
 import type { AlertRuleStateRow } from "@maple/web-data/collections/alerts"
-import type { ErrorSignal } from "../lib/models/error-signal"
+import type { ErrorSignal } from "../page/errors/kit/error-signal"
 import { VERDICT_LAB_CASES } from "./verdict-fixture"
 import { LONG_SERVICE, LONG_URL, type WorstCaseMode } from "./worst-case-fixture"
 

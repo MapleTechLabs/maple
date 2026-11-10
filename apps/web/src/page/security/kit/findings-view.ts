@@ -8,7 +8,7 @@ import { pressable } from "@maple/views/ui/pressable"
 import { statusDot } from "@maple/views/ui/status-dot"
 import { segmentedSelect } from "@maple/views/ui/segmented-select"
 import { hstack, vstack } from "@maple/views/ui/stack"
-import { SEVERITY_FILL, severityIcon } from "../../errors/kit/severity"
+import { SEVERITY_FILL, severityIcon } from "../../kit/issue-severity"
 import { locationOf } from "./format"
 import {
 	BUCKET_LABEL,
@@ -311,6 +311,5 @@ export const findingGroups = <M>(h: HtmlBuilder<M>, options: FindingGroupsOption
 		}),
 	)
 
-/** Muted text for a trailing slot. */
 export const trailingText = <M>(h: HtmlBuilder<M>, text: string, className?: string): Html =>
 	h.span([h.Class(cn(typographyClass({ size: "xs", tone: "muted" }), className))], [text])

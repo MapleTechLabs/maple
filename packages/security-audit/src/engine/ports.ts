@@ -6,7 +6,7 @@
  */
 import { Context, type Effect, Schema } from "effect"
 import type { ExecutionPolicy } from "../prompts"
-import type { CoverageUnit, EstimatedSeverity, Finding } from "../schema"
+import type { CoverageUnit, EstimatedSeverity, Finding, Profile } from "../schema"
 
 export const AuditRole = Schema.Literals([
 	"recon",
@@ -84,7 +84,7 @@ export interface RunMetadata {
 	readonly repo: string
 	readonly target: string
 	readonly source_ref: string
-	readonly profile: "quick" | "standard" | "deep"
+	readonly profile: Profile
 	readonly scope_paths: ReadonlyArray<string>
 	readonly budget: number | null
 	readonly execution_policy: "sandboxed-source-and-local-only"

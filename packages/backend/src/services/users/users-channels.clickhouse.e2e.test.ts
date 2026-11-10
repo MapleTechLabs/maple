@@ -11,7 +11,7 @@ import {
 	clickhouseE2eEnabled,
 	clickhouseExec,
 	uniqueDatabase,
-} from "../warehouse/clickhouse-e2e-support"
+} from "../../testing/clickhouse-e2e-support"
 import { channelsOf } from "./users-reads"
 
 const database = uniqueDatabase("maple_users_channels_e2e")

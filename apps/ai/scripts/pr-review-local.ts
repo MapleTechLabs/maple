@@ -43,6 +43,7 @@ import {
 	PullRequestFileStatus,
 	type SubmitPrReviewRequest,
 	UserId,
+	type TenantContext,
 } from "@maple/domain/http"
 import {
 	buildPublication,
@@ -56,7 +57,6 @@ import {
 	type NameVerdict,
 } from "@maple/backend/services/pr-review/merge-checklist"
 import { privacyFindings, withoutReviewerOverlap } from "@maple/backend/services/pr-review/telemetry/privacy"
-import type { TenantContext } from "@maple/backend/services/auth/tenant-context"
 import {
 	ConfigProvider,
 	Effect,
@@ -67,17 +67,18 @@ import {
 	Record as Rec,
 	String as Str,
 } from "effect"
-import { AGENTS } from "../src/chat/agents"
+import { AGENTS, type AgentDefinition } from "../src/chat/agents"
+import { makeAutonomousOutcome } from "../src/chat/autonomous-outcome"
+import { type PhaseTurn, runAutonomousPhases } from "../src/chat/autonomous-phases"
 import type { ChatTurnEvent } from "../src/chat/events"
-import { withToolTranscript } from "../src/chat/close-out"
 import { PR_REVIEW_RULESET, PR_REVIEW_TOOLS } from "../src/chat/permissions"
 import { normalizeArguments, argumentWarnings } from "../src/mcp/lib/decode-issues"
-import { PR_REVIEW_CLOSE_OUT_PROMPT } from "../src/chat/prompts"
-import { makeChildFindings } from "../src/chat/review-child-findings"
-import { makeReviewCoverage } from "../src/chat/review-coverage"
-import { makeReviewLedger } from "../src/chat/review-ledger"
+import { makeChildFindings } from "../src/chat/review/child-findings"
+import { makeReviewCoverage } from "../src/chat/review/coverage"
+import { makeReviewLedger } from "../src/chat/review/ledger"
 import { runChatTurn, type SettledChild } from "../src/chat/run"
-import { makeRunUsage, savedFindingsRequest } from "../src/chat/tools"
+import { fileSavedFindings, reviewCompletion, withPartialReason } from "../src/chat/review/completion"
+import { makeRunUsage } from "../src/chat/usage"
 import type { McpToolExecutorApi } from "../src/mcp/dispatcher"
 import { inProcessCodeExecutorLayer } from "@yielded/agent-testing/code-executor-substitute"
 import {
@@ -90,8 +91,6 @@ import type { McpToolResult } from "../src/mcp/tools/types"
 import { layerLlm, loadLlmSettings, resolveReviewModel, type ResolvedModel } from "../src/platform/Llm"
 
 const SCRIPT_DIR = dirname(fileURLToPath(import.meta.url))
-
-// Arguments
 
 interface Args {
 	readonly owner: string
@@ -167,8 +166,6 @@ const parseArgs = (argv: ReadonlyArray<string>): Args => {
 		codeOnly: flags.has("code-only"),
 	}
 }
-
-// Processes
 
 /**
  * The rule files at the base, as production's kickoff states them. A file absent from the base is
@@ -440,8 +437,6 @@ const ensureCommits = (dir: string, remote: string, number: number, shas: Readon
 	if (missing.length > 0) must(["git", "fetch", "--quiet", remote, ...missing], dir)
 }
 
-// The local tool executor
-
 const text = (lines: ReadonlyArray<string>): McpToolResult => ({
 	content: [{ type: "text", text: Arr.join(lines, "\n") }],
 })
@@ -542,7 +537,6 @@ const unsafeGitArg = (arg: string): boolean =>
 /** The same answer `pr_context` gives in production, read with the caller's own `gh` login. */
 const fetchPullRequestContext = (args: Args, headSha: string): PullRequestContext => {
 	const slug = `repos/${args.owner}/${args.repo}`
-	// Decoded at the boundary, one schema per read.
 	const read = <A>(schema: Schema.Decoder<A>, path: string): A =>
 		Schema.decodeSync(Schema.fromJsonString(schema))(must(["gh", "api", path]))
 	const commits = read(GhContextCommits, `${slug}/pulls/${args.number}/commits?per_page=100`)
@@ -819,8 +813,6 @@ export const makeExecutor = (input: {
 	return { executor, cleanup }
 }
 
-// Posting, as the caller
-
 const GhComment = Schema.Struct({
 	id: Schema.Number,
 	html_url: Schema.String,
@@ -869,8 +861,6 @@ const postSummaryComment = (
 	return orExit(decodeCommentJson(written), "comment").html_url
 }
 
-// Reporting
-
 interface ToolRecord {
 	readonly id: string
 	readonly name: string
@@ -899,10 +889,6 @@ const newSideLines = (file: PullRequestFile | undefined): Map<number, string> =>
 	return lines
 }
 
-/**
- * One local review. `injected.model` replaces the resolved model, which is how the wiring is
- * exercised with a scripted model when no provider key is at hand.
- */
 /** A child reviewer's tool calls in order, each with its result and whether it failed. */
 const childCalls = (child: SettledChild) => {
 	const messages = child.history?.content ?? []
@@ -969,6 +955,10 @@ const childTranscript = (child: SettledChild, index: number): ReadonlyArray<stri
 	]
 }
 
+/**
+ * One local review. `injected.model` replaces the resolved model, which is how the wiring is
+ * exercised with a scripted model when no provider key is at hand.
+ */
 export const reviewLocally = async (
 	argv: ReadonlyArray<string>,
 	injected: { readonly model?: ResolvedModel } = {},
@@ -1039,6 +1029,8 @@ export const reviewLocally = async (
 	let prose = ""
 	let submitted: SubmitPrReviewRequest | undefined
 	let endReason = "unknown"
+	let closedOut = false
+	const outcome = makeAutonomousOutcome()
 	const usage = makeRunUsage()
 	const started = Date.now()
 
@@ -1066,23 +1058,40 @@ export const reviewLocally = async (
 			}
 			case "turn-end":
 				endReason = event.error === undefined ? event.reason : `${event.reason}: ${event.error}`
+				// As in production: a phase's ending is held, and the phases decide what comes next.
+				if (event.reason !== "aborted") outcome.hold(event.reason)
 				return
 			default:
 				return
 		}
 	}
 
-	// Shared by the pass and its close-out, as in production.
+	// Shared by every phase of the turn, as in production.
 	const reviewState = {
 		coverage: makeReviewCoverage(kickoff),
 		ledger: makeReviewLedger(),
 		childFindings: makeChildFindings(),
 	}
-	const pass = (turn: {
-		readonly text: string
-		readonly history: ReadonlyArray<ChatMessage>
-		readonly closeOut?: boolean
-	}) =>
+	const agent: AgentDefinition = {
+		...AGENTS["pr-review"],
+		...(promptOverride === undefined ? undefined : { prompt: promptOverride }),
+		// A replay refuses every command, so the tool is not offered: a model that keeps
+		// trying it spends its consecutive-failure allowance on nothing.
+		...(args.historical === true
+			? {
+					autonomousPermission: [
+						...PR_REVIEW_RULESET,
+						new PermissionRule({ tool: "sandbox_exec", action: "deny" }),
+					],
+				}
+			: undefined),
+	}
+	const completion = reviewCompletion({ kind: "autonomous" }, reviewState, (request) =>
+		Effect.sync(() => {
+			submitted = withPartialReason(request, outcome.failure())
+		}),
+	)
+	const run = (turn: PhaseTurn) =>
 		runChatTurn({
 			sessionId,
 			messageId,
@@ -1090,33 +1099,10 @@ export const reviewLocally = async (
 			origin: { kind: "autonomous" },
 			toolExecutor: executor,
 			model,
-			// A `pr-` session is never offered `submit_diagnosis`, so this is never called.
-			submitDiagnosis: () => Effect.void,
-			submitReview: (_orgId, _reviewId, request) =>
-				Effect.sync(() => {
-					submitted = request
-				}),
+			...(completion === undefined ? undefined : { completion }),
 			...(turn.closeOut === true ? { closeOut: true } : undefined),
-			review: reviewState,
 			pullRequest: { repository, number: args.number },
-			...(promptOverride === undefined && args.historical !== true
-				? undefined
-				: {
-						agent: {
-							...AGENTS["pr-review"],
-							...(promptOverride === undefined ? undefined : { prompt: promptOverride }),
-							// A replay refuses every command, so the tool is not offered: a model that keeps
-							// trying it spends its consecutive-failure allowance on nothing.
-							...(args.historical === true
-								? {
-										autonomousPermission: [
-											...PR_REVIEW_RULESET,
-											new PermissionRule({ tool: "sandbox_exec", action: "deny" }),
-										],
-									}
-								: undefined),
-						},
-					}),
+			agent: turn.agent ?? agent,
 			...(args.codeMode
 				? { codeExecutor: inProcessCodeExecutorLayer, codeOnly: args.codeOnly }
 				: undefined),
@@ -1127,11 +1113,17 @@ export const reviewLocally = async (
 			append,
 			onChildSettled: (child) => children.push(child),
 		}).pipe(
+			Effect.tap(() =>
+				Effect.sync(() => {
+					if (turn.closeOut === true) closedOut = true
+				}),
+			),
 			// oxlint-disable-next-line effecttsgo/strict-effect-provide -- script entry point: the local run composes its own LLM layer
 			Effect.provide(layerLlm(settings)),
 			// The engine logs every tool execution at info; the progress lines above are the readable view.
 			Effect.provideService(References.MinimumLogLevel, "Warn"),
-			Effect.catchCause((cause) =>
+			// Recorded here and handled by the phases, which close the pass out as production does.
+			Effect.tapCause((cause) =>
 				Effect.sync(() => {
 					const detail = String(cause)
 					endReason = Str.includes("requires more credits")(detail)
@@ -1140,71 +1132,73 @@ export const reviewLocally = async (
 				}),
 			),
 		)
+	// The transcript the session would hold: the kickoff, then everything the phases said and called.
+	const sessionTranscript = () => {
+		const now = Date.now()
+		return [
+			new ChatMessage({
+				id: "kickoff",
+				role: "user",
+				text: kickoff,
+				toolCalls: [],
+				createdAt: now,
+				startSeq: 1,
+			}),
+			new ChatMessage({
+				id: "pass",
+				role: "assistant",
+				text: prose,
+				toolCalls: Arr.map(
+					tools,
+					(tool) =>
+						new ChatToolCall({
+							id: tool.id,
+							name: tool.name,
+							input: tool.input,
+							...(tool.output === undefined ? undefined : { output: tool.output }),
+							...(tool.isError === undefined ? undefined : { isError: tool.isError }),
+						}),
+				),
+				createdAt: now,
+				startSeq: 2,
+			}),
+		]
+	}
 
 	console.log(
-		`Reviewing with ${model.name} (budget: ${AGENTS["pr-review"].budget.maxToolCalls} calls, tools: ${PR_REVIEW_TOOLS.length})\n`,
+		`Reviewing with ${model.name} (budget: ${agent.budget.maxToolCalls} calls, tools: ${PR_REVIEW_TOOLS.length})\n`,
 	)
-	await Effect.runPromise(pass({ text: kickoff, history: [] }))
-
-	let closedOut = false
-	// As production does: a pass that failed still gets its close-out, unless the provider itself
-	// is what failed, where another call would fail the same way.
-	const providerFailed = /out of credits|overloaded|Rate limit|InsufficientPermissions|\b40[123]\b/i.test(
-		endReason,
+	await Effect.runPromise(
+		runAutonomousPhases({
+			agent,
+			completion: AGENTS["pr-review"].completion,
+			text: kickoff,
+			prior: [],
+			outcome,
+			holdsTurn: () => true,
+			transcript: sessionTranscript,
+			run,
+			ownKey: false,
+		}).pipe(
+			// As production does: findings the pass saved, and its children's warnings, are filed as a
+			// partial when no report landed.
+			Effect.andThen(
+				fileSavedFindings({
+					outcome,
+					review: reviewState,
+					modelName: model.name,
+					usage,
+					submit: (request) =>
+						Effect.sync(() => {
+							submitted = request
+						}),
+				}),
+			),
+		),
 	)
-	if (submitted === undefined && !providerFailed) {
-		closedOut = true
-		console.log("\n\nNo review submitted; running the close-out pass…")
-		const now = Date.now()
-		await Effect.runPromise(
-			pass({
-				text: PR_REVIEW_CLOSE_OUT_PROMPT,
-				closeOut: true,
-				history: withToolTranscript([
-					new ChatMessage({
-						id: "kickoff",
-						role: "user",
-						text: kickoff,
-						toolCalls: [],
-						createdAt: now,
-						startSeq: 1,
-					}),
-					new ChatMessage({
-						id: "pass",
-						role: "assistant",
-						text: prose,
-						toolCalls: Arr.map(
-							tools,
-							(tool) =>
-								new ChatToolCall({
-									id: tool.id,
-									name: tool.name,
-									input: tool.input,
-									...(tool.output === undefined ? undefined : { output: tool.output }),
-									...(tool.isError === undefined ? undefined : { isError: tool.isError }),
-								}),
-						),
-						createdAt: now,
-						startSeq: 2,
-					}),
-				]),
-			}),
-		)
-	}
-
-	// As production does: findings the pass saved are filed as a partial when no report landed.
-	if (submitted === undefined && reviewState.ledger.findings().length > 0) {
-		submitted = savedFindingsRequest({
-			findings: reviewState.ledger.findings(),
-			unreviewed: reviewState.coverage.unread(),
-			modelName: model.name,
-			usage,
-		})
-	}
 
 	removeWorktrees()
 
-	// Output
 	const durationMs = Date.now() - started
 	const stamp = Str.replace(/[:.]/g, "-")(new Date(started).toISOString())
 	const dir = join(args.out, `${args.owner}__${args.repo}__${args.number}__${stamp}`)

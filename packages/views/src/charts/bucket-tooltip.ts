@@ -4,12 +4,12 @@ import { hstack, hstackClass } from "../ui/stack"
 import { typography } from "../ui/typography"
 import { Array as Arr } from "effect"
 
-// `PlotTooltipBody` for a time-bucketed chart (fixed metrics, query-builder areas): the bucket
+// The tooltip body of a time-bucketed chart (fixed metrics, query-builder areas): the bucket
 // heading, then one swatch, label and value per series; a dashed swatch for a partial series.
 
 export type BucketTooltip = Extract<ChartTooltip, { readonly _tag: "Bucket" }>
 
-/** `PlotTooltipBody`: the bucket heading, then one swatch, label and value per series. */
+/** The bucket heading, then one swatch, label and value per series. */
 export const bucketTooltipBody = <Message>(
 	h: HtmlBuilder<Message>,
 	tooltip: BucketTooltip,

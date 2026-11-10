@@ -1,3 +1,4 @@
+import { encodeJson } from "@maple/views/data/request-key"
 import {
 	type AdvisorySummary,
 	advisoryKey,
@@ -14,10 +15,8 @@ import {
 } from "@maple/domain/runtime-posture"
 import { PROBE_CATEGORIES, type ProbeCategoryInfo, probeCategoryOf } from "@maple/domain/security-telemetry"
 import { toEpochMs } from "@maple/ui/lib/time-format"
-import { Schema, Array as Arr, String as Str, Option } from "effect"
+import { Array as Arr, String as Str, Option } from "effect"
 import type { Exposure, Runtimes } from "./model"
-
-const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
 
 // Pure readings of the two responses: the Exposure tab's totals and categories, the Runtimes
 // tab's postures in the order the table shows them.
@@ -26,8 +25,6 @@ const sum = (values: ReadonlyArray<number>): number => Arr.reduce(values, 0, (to
 const distinct = (values: ReadonlyArray<string>): number => new Set(values).size
 
 type SignatureRow = Exposure["signatures"][number]
-
-// EXPOSURE
 
 /** The sources query returns the most active addresses only, so past this the count is a floor. */
 export const SOURCES_SHOWN = 20
@@ -220,8 +217,6 @@ export const timelineValues = (
 		(_, index) => byBucket.get(last - (count - 1 - index) * bucketMs) ?? 0,
 	)
 }
-
-// RUNTIMES
 
 export type RuntimeStatus = RuntimePosture["status"]
 

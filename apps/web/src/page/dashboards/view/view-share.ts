@@ -20,8 +20,6 @@ import { hstack } from "@maple/views/ui/stack"
 import { spaced } from "@maple/views/ui/spaced"
 import { Array as Arr } from "effect"
 
-// `ShareDashboardDialog` and `ShareLinkRow`: the share dialog and one link's row.
-
 type H = HtmlBuilder<Message>
 
 const wrap = (message: ShareMessage) => Message.GotShareMessage({ message })
@@ -47,7 +45,7 @@ const ACCESS: ReadonlyArray<Readonly<{ value: Access; icon: IconName; title: str
 	},
 ]
 
-/** `NoticeRow`: a muted (or error) line with the warning glyph. */
+/** A muted (or error) line with the warning glyph. */
 export const noticeRow = (h: H, tone: "muted" | "error", children: ReadonlyArray<Html | string>): Html =>
 	h.div(
 		[
@@ -64,7 +62,7 @@ export const noticeRow = (h: H, tone: "muted" | "error", children: ReadonlyArray
 		],
 	)
 
-/** `ShareLinkRow`: the copyable link, and Replace behind a confirmation. */
+/** The copyable link, and Replace behind a confirmation. */
 export const shareLinkRow = (
 	h: H,
 	model: Model,
@@ -121,8 +119,7 @@ const accessOption = (
 		[
 			icon(h, option.icon, {
 				size: 16,
-				className:
-					"mt-0.5 shrink-0 text-muted-foreground group-has-[[data-checked]]:text-primary",
+				className: "mt-0.5 shrink-0 text-muted-foreground group-has-[[data-checked]]:text-primary",
 			}),
 			spaced(h, { space: "0.5", fill: true }, [
 				typography(h, { size: "sm", weight: "medium", as: "div", className: "leading-5" }, [

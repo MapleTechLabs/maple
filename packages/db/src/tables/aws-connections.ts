@@ -1,6 +1,6 @@
 import * as PG from "@maple-dev/effect-orm/postgres"
 import { AwsMetricStream } from "@maple/domain/aws"
-import { AwsAccountId, AwsConnectionId, AwsModule, OrgId, SourceId } from "@maple/domain/primitives"
+import { AwsAccountId, AwsConnectionId, AwsModule, OrgId, SourceId } from "@maple/primitives"
 import { Schema } from "effect"
 import { Sources } from "./sources"
 

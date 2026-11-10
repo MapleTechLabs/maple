@@ -3,7 +3,7 @@ import { Array as Arr, Option, String as Str } from "effect"
  * Chart rendering with no DOM, no React and no chart library — for images that
  * are rasterised server-side and pasted into Slack, Discord or an email.
  *
- * Two things make this different from the interactive charts in `@maple/ui`:
+ * Two things make this different from the interactive charts in `@maple/views`:
  *
  *   - **It emits an SVG string, not elements.** The consumers are Workers, not
  *     browsers. `apps/web` rasterises the string with the takumi wasm it
@@ -20,10 +20,10 @@ import { Array as Arr, Option, String as Str } from "effect"
  * is dark. Colors are the `.dark` values from `styles/tokens.css`, converted
  * oklch → hex because usvg has no oklch parser.
  *
- * It lives in `@maple/widgets` rather than `@maple/ui` because both consumers
- * are Workers: `apps/api` needs {@link sparkline} for message text and
- * `apps/web` needs {@link renderChartSvg} for the image. `@maple/ui` peer-depends
- * on react, react-dom and tailwind, and no Worker in this repo imports it.
+ * It lives in `@maple/widgets` rather than `@maple/views` because both consumers
+ * are Workers: `packages/backend` needs {@link sparkline} for message text and
+ * `apps/web` needs {@link renderChartSvg} for the image. `@maple/views` is the
+ * browser Foldkit kit.
  */
 
 export type ChartKind = "line" | "area" | "bar"
@@ -168,8 +168,6 @@ export const PLOT_HEIGHT = 280
 // keeps them off the card's stroke.
 export const PLOT_PAD = 12
 
-// ── formatting ──────────────────────────────────────────────────────────────
-
 /** Decimals a label may grow to before the number stops being the point of it. */
 const MAX_DIGITS = 6
 
@@ -231,8 +229,6 @@ export function formatTimestamp(ms: number, rangeMs: number): string {
 	if (rangeMs <= 36 * 3_600_000) return hhmm
 	return `${d.getUTCMonth() + 1}/${d.getUTCDate()} ${hhmm}`
 }
-
-// ── scales ──────────────────────────────────────────────────────────────────
 
 /** "Nice" tick values covering [0|min, max] — the grid, and the y domain. */
 export function niceTicks(min: number, max: number, count = 4): number[] {
@@ -368,8 +364,6 @@ export function downsample(
 	return kept
 }
 
-// ── rendering ───────────────────────────────────────────────────────────────
-
 /** Where a value and a time land in the plot box, and the ticks the grid draws. */
 interface PlotScales {
 	readonly x: (t: number) => number
@@ -406,8 +400,8 @@ const SVG_OPEN = [
 ] as const
 
 /**
- * Web charts fill areas with a vertical series gradient (VerticalGradient in
- * packages/ui, 0.8 → 0.1), not a flat tint.
+ * Web charts fill areas with a vertical series gradient (`verticalGradient` in
+ * packages/views/src/charts/definitions/fixed-metric-axes.ts), not a flat tint.
  */
 const areaGradient = (id: string, color: string, top = 0.8, bottom = 0.1): string =>
 	`<linearGradient id="${id}" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stop-color="${color}" stop-opacity="${top}"/><stop offset="95%" stop-color="${color}" stop-opacity="${bottom}"/></linearGradient>`
@@ -553,8 +547,8 @@ export function renderChartSvg(spec: ChartSpec): ChartRender {
 
 	const parts: string[] = [...SVG_OPEN]
 	if (spec.kind === "area") {
-		// Faint where several areas overlap: one series at the web's 0.8 top stop
-		// paints over every series drawn under it.
+		// Faint where several areas overlap: one series at the 0.8 top stop paints
+		// over every series drawn under it.
 		const [top, bottom] = drawn.length === 1 ? [0.8, 0.1] : [0.3, 0.04]
 		parts.push(
 			`<defs>${Arr.join(
@@ -636,8 +630,6 @@ export function renderChartSvg(spec: ChartSpec): ChartRender {
 		xAxis: timeAxis(tMin, tMax, tRange),
 	}
 }
-
-// ── text-only fallback ──────────────────────────────────────────────────────
 
 const SPARK_LEVELS = ["▁", "▂", "▃", "▄", "▅", "▆", "▇", "█"] as const
 

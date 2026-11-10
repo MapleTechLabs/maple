@@ -1,5 +1,5 @@
 import type { CodeReviewCiRun } from "@maple/domain/http"
-import { ciResultLabel, ciResultTone } from "../../../components/code-review/ci/ci-format"
+import { ciResultLabel, ciResultTone } from "./ci-format"
 import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { AppRoute, hrefOf } from "../../../route"
@@ -10,10 +10,6 @@ import { typography } from "@maple/views/ui/typography"
 import { hstackClass, vstack } from "@maple/views/ui/stack"
 import { Array as Arr } from "effect"
 
-// Small pieces the Code Review tabs share: the sheet `Section`, `BulletList`, `CiResultBadge` and
-// `TraceLink`.
-
-/** The sheet's `Section`. */
 export const section = <M>(h: HtmlBuilder<M>, title: string, children: ReadonlyArray<Html>): Html =>
 	vstack(h, { gap: "2.5", as: "section" }, [sectionHeading(h, { title, as: "h3" }), ...children])
 
@@ -29,7 +25,12 @@ export const bulletList = <M>(h: HtmlBuilder<M>, items: ReadonlyArray<string>): 
 	)
 
 /** A run's result; a rerun says which attempt it was. */
-export const ciResultBadge = <M>(h: HtmlBuilder<M>, result: string, attempt = 1, className?: string): Html => {
+export const ciResultBadge = <M>(
+	h: HtmlBuilder<M>,
+	result: string,
+	attempt = 1,
+	className?: string,
+): Html => {
 	const tone = ciResultTone(result)
 	return h.span(
 		[h.Class(cn(hstackClass({ gap: "1.5", inline: true }), className))],

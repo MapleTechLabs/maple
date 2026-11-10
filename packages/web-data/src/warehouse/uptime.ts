@@ -1,4 +1,4 @@
-import { QueryEngineExecuteRequest, type QueryEngineExecuteResponse } from "@maple/query-engine"
+import { QueryEngineExecuteRequest, type QueryEngineExecuteResponse } from "@maple/domain/query-engine"
 import type { TracesFilters } from "@maple/domain/query-engine"
 import { UPTIME_MONITOR_ID_ATTRIBUTE, UPTIME_SERVICE_NAME } from "@maple/domain/uptime"
 import { Clock, Effect, Schema, Array as Arr } from "effect"

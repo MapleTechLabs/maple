@@ -2,8 +2,7 @@ import { type DashboardDocument, PortableDashboardDocument } from "@maple/domain
 import type { V2DashboardCreateParams } from "@maple/domain/http/v2"
 import { Effect, Schema, Array as Arr, String as Str } from "effect"
 
-// The portable dashboard format and `importDashboard`'s payload. Stored widgets always carry a
-// valid layout, so normalisation is a copy.
+// Stored widgets always carry a valid layout, so normalisation is a copy.
 
 type Widget = DashboardDocument["widgets"][number]
 
@@ -18,7 +17,7 @@ export type PortableDashboard = Readonly<{
 	refreshIntervalSeconds?: DashboardDocument["refreshIntervalSeconds"]
 }>
 
-/** `toPortableDashboard`: what Export writes and Duplicate re-imports. */
+/** What Export writes and Duplicate re-imports. */
 export const toPortable = (document: DashboardDocument): PortableDashboard => ({
 	name: document.name,
 	...(document.description === undefined ? undefined : { description: document.description }),
@@ -32,7 +31,7 @@ export const toPortable = (document: DashboardDocument): PortableDashboard => ({
 		: { refreshIntervalSeconds: document.refreshIntervalSeconds }),
 })
 
-/** `importDashboard`'s create body: name, description, tags, range, widgets, variables. */
+/** The import's create body: name, description, tags, range, widgets, variables. */
 export const createPayload = (portable: PortableDashboard): V2DashboardCreateParams => ({
 	name: portable.name,
 	...(portable.description === undefined ? undefined : { description: portable.description }),
@@ -50,7 +49,7 @@ export class PortableDashboardParseError extends Schema.TaggedError<PortableDash
 
 const decodePortable = Schema.decodeUnknownEffect(PortableDashboardDocument)
 
-/** `stripWidgetTimeParams`: a route arm's params lose any baked absolute window. */
+/** A route arm's params lose any baked absolute window. */
 const stripWidgetTimeParams = (widget: Widget): Widget => {
 	const dataSource = widget.dataSource
 	if (dataSource.kind !== "route") return widget
@@ -60,7 +59,7 @@ const stripWidgetTimeParams = (widget: Widget): Widget => {
 	return { ...widget, dataSource: { ...dataSource, params: rest } }
 }
 
-/** `parsePortableDashboardJson` over an already-parsed value. */
+/** Parses an already-parsed JSON value. */
 export const parsePortable = (parsed: unknown) =>
 	Effect.mapBoth(decodePortable(parsed), {
 		onFailure: (error) => new PortableDashboardParseError({ message: error.message }),
@@ -78,7 +77,6 @@ export const parsePortable = (parsed: unknown) =>
 		}),
 	})
 
-/** `isPersesDashboardJson`. */
 export const isPersesDashboardJson = (value: unknown): value is Record<string, unknown> =>
 	typeof value === "object" &&
 	value !== null &&
@@ -96,7 +94,7 @@ const sanitizeFilenameSegment = (value: string): string => {
 
 const encodePrettyJson = Schema.encodeEffect(Schema.fromJsonString(Schema.Unknown, { space: 2 }))
 
-/** `downloadPortableDashboard`: the JSON file through a temporary anchor. */
+/** The JSON file through a temporary anchor. */
 export const downloadPortable = (document: DashboardDocument) =>
 	Effect.flatMap(encodePrettyJson(toPortable(document)), (json) =>
 		Effect.sync(() => {

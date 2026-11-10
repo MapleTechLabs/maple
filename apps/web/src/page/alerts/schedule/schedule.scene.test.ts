@@ -2,9 +2,9 @@ import * as Policy from "@maple/domain/policy"
 import { OrgId } from "@maple/domain"
 import { OnCallOverrideId } from "@maple/domain/http"
 import { zonedDayStart } from "@maple/views/ui/shift-timeline"
-import { Option, Result, Schema, Array as Arr } from "effect"
+import { Option, Result, Schema, Array as Arr, String as Str } from "effect"
 import { AsyncData } from "foldkit"
-import { isoMs, msIso } from "../shared/time"
+import { msIso } from "../../kit/alert-time"
 import { memberName } from "../shared/org-members"
 import { formatShiftEdge } from "../shared/oncall-schedules"
 import { expect as expectView, given, Mount, role, scene, text, withViewInputs } from "foldkit/scene"
@@ -23,11 +23,12 @@ import {
 	overrideUuid,
 	schedulePublicId,
 } from "../shared/oncall-test-fixtures"
-import { ORG } from "../shared/test-rows"
+import { ORG } from "../../kit/alert-test-rows"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { init, overrideIssue, rangeOf, readRangeOf, update } from "./update"
 import { view as pageView } from "./view"
+import { toEpochMs } from "@maple/ui/lib/time-format"
 
 const orgId = Schema.decodeSync(OrgId)(ORG)
 const context: PageContext = { orgId, pinnedNamespace: null, timeZone: "UTC" }
@@ -92,9 +93,7 @@ describe("on-call schedule page", () => {
 			given(loaded(ONCALL_NOW)),
 			expectView(text("Checkout primary")).toExist(),
 			expectView(
-				text(
-					"Times in Europe/Berlin. Yours is UTC. Pick a shift in the final row to cover it with an override.",
-				),
+				text("Your time zone is UTC. Pick a shift in the final row to cover it with an override."),
 			).toExist(),
 			expectView(role("rowheader", { name: /Final schedule/u })).toExist(),
 			expectView(role("rowheader", { name: /Weeknights/u })).toExist(),
@@ -104,13 +103,35 @@ describe("on-call schedule page", () => {
 		)
 	})
 
+	test("the calendar's heading carries the whole schedule name as its title, for a name too long to show", () => {
+		const entered = init({ _tag: "AlertsSchedule", scheduleId: schedulePublicId(1), search: {} }, context)
+		const name = `checkout-primary-${Str.repeat(120)("x")}`
+		const long = run(entered.model, [
+			Message.CompletedFetchSession({ orgId: ORG, grants: ENGINEER }),
+			Message.ReadClock({ nowMs: ONCALL_NOW }),
+			Message.CompletedFetchSchedule({
+				key: entered.model.schedule.key ?? "",
+				readAtMs: ONCALL_NOW,
+				result: Result.succeed({ ...checkoutSchedule(ONCALL_NOW), name }),
+			}),
+		])
+		scene(
+			{ update: pageUpdate, view },
+			given(long),
+			expectView(role("heading", { name: `Shifts for ${name}` })).toHaveAttr(
+				"title",
+				`Shifts for ${name}`,
+			),
+		)
+	})
+
 	test("the DST week runs Thursday to Wednesday on the Berlin clock, through the fall-back Sunday", () => {
 		const model = loaded(DST_NOW)
 		scene(
 			{ update: pageUpdate, view },
 			given(model),
 			expectView(text("Sun 25")).toExist(),
-			expectView(text("22 Oct to 28 Oct")).toExist(),
+			expectView(text("22 Oct to 4 Nov")).toExist(),
 		)
 	})
 
@@ -122,7 +143,7 @@ describe("on-call schedule page", () => {
 		scene(
 			{ update: pageUpdate, view },
 			given(next.model),
-			expectView(text("17 Nov to 23 Nov")).toExist(),
+			expectView(text("17 Nov to 30 Nov")).toExist(),
 			expectView(role("rowheader", { name: /Final schedule/u })).not.toExist(),
 		)
 		scene(
@@ -142,15 +163,15 @@ describe("on-call schedule page", () => {
 		const shifts = Option.getOrElse(AsyncData.getData(model.shifts.data), () => checkoutShifts(0, 0, 1))
 		const crossing = Arr.findFirst(
 			shifts.final,
-			(shift) => isoMs(shift.starts_at) < weekEnd && isoMs(shift.ends_at) > weekEnd,
+			(shift) => toEpochMs(shift.starts_at) < weekEnd && toEpochMs(shift.ends_at) > weekEnd,
 		)
 		expect(Option.isSome(crossing)).toBe(true)
 		const shift = Option.getOrElse(crossing, () => shifts.final[0])
 		const created = pageUpdate(
 			run(model, [
 				Message.ClickedShift({
-					startMs: isoMs(shift?.starts_at ?? ""),
-					endMs: isoMs(shift?.ends_at ?? ""),
+					startMs: toEpochMs(shift?.starts_at ?? ""),
+					endMs: toEpochMs(shift?.ends_at ?? ""),
 				}),
 				Message.ChangedOverrideUser({ value: memberId(7) }),
 			]),
@@ -196,7 +217,7 @@ describe("on-call schedule page", () => {
 		const model = loaded(ONCALL_NOW)
 		const handoff = Option.getOrElse(
 			Option.flatMap(AsyncData.getData(model.schedule.data), (schedule) =>
-				Option.map(Option.fromNullishOr(schedule.on_call_now), (now) => isoMs(now.ends_at)),
+				Option.map(Option.fromNullishOr(schedule.on_call_now), (now) => toEpochMs(now.ends_at)),
 			),
 			() => 0,
 		)
@@ -224,7 +245,7 @@ describe("on-call schedule page", () => {
 		const model = loaded(ONCALL_NOW)
 		const handoff = Option.getOrElse(
 			Option.flatMap(AsyncData.getData(model.schedule.data), (schedule) =>
-				Option.map(Option.fromNullishOr(schedule.on_call_now), (now) => isoMs(now.ends_at)),
+				Option.map(Option.fromNullishOr(schedule.on_call_now), (now) => toEpochMs(now.ends_at)),
 			),
 			() => 0,
 		)
@@ -394,7 +415,7 @@ describe("on-call schedule page", () => {
 			given(loaded(ONCALL_NOW, MEMBER)),
 			expectView(role("button", { name: "Add override" })).not.toExist(),
 			expectView(role("button", { name: /^Delete Dana Kim's override, /u })).not.toExist(),
-			expectView(text("Times in Europe/Berlin. Yours is UTC.")).toExist(),
+			expectView(text("Your time zone is UTC.")).toExist(),
 		)
 	})
 
@@ -408,16 +429,16 @@ describe("on-call schedule page", () => {
 		const ended = Option.getOrThrow(
 			Arr.findFirst(
 				shifts.final,
-				(shift) => isoMs(shift.starts_at) >= weekStart && isoMs(shift.ends_at) <= ONCALL_NOW,
+				(shift) => toEpochMs(shift.starts_at) >= weekStart && toEpochMs(shift.ends_at) <= ONCALL_NOW,
 			),
 		)
 		const running = Option.getOrThrow(
 			Arr.findFirst(
 				shifts.final,
-				(shift) => isoMs(shift.starts_at) <= ONCALL_NOW && ONCALL_NOW < isoMs(shift.ends_at),
+				(shift) => toEpochMs(shift.starts_at) <= ONCALL_NOW && ONCALL_NOW < toEpochMs(shift.ends_at),
 			),
 		)
-		const endedName = `${memberName(oncallMembers, ended.user_id)}, ${formatShiftEdge(isoMs(ended.starts_at), BERLIN)} to ${formatShiftEdge(isoMs(ended.ends_at), BERLIN)}`
+		const endedName = `${memberName(oncallMembers, ended.user_id)}, ${formatShiftEdge(toEpochMs(ended.starts_at), BERLIN)} to ${formatShiftEdge(toEpochMs(ended.ends_at), BERLIN)}`
 		scene(
 			{ update: pageUpdate, view },
 			given(model),
@@ -426,11 +447,14 @@ describe("on-call schedule page", () => {
 		)
 		const ignored = pageUpdate(
 			model,
-			Message.ClickedShift({ startMs: isoMs(ended.starts_at), endMs: isoMs(ended.ends_at) }),
+			Message.ClickedShift({ startMs: toEpochMs(ended.starts_at), endMs: toEpochMs(ended.ends_at) }),
 		)
 		expect(ignored.model.overrideOpenCount).toBe(model.overrideOpenCount)
 		const opened = run(model, [
-			Message.ClickedShift({ startMs: isoMs(running.starts_at), endMs: isoMs(running.ends_at) }),
+			Message.ClickedShift({
+				startMs: toEpochMs(running.starts_at),
+				endMs: toEpochMs(running.ends_at),
+			}),
 			Message.ChangedOverrideUser({ value: memberId(7) }),
 		])
 		expect(overrideIssue(opened.overrideDraft, BERLIN, ONCALL_NOW)).toEqual(Option.none())
@@ -455,5 +479,57 @@ describe("on-call schedule page", () => {
 			Mount.resolve(MountDialog, Dialog.Message.CompletedMountDialog()),
 			expectView(text("Couldn't load members, try reloading the page")).toExist(),
 		)
+	})
+
+	test("the calendar summarises coverage like the editor, with a range switch that reads the new range", () => {
+		const model = loaded(ONCALL_NOW)
+		scene(
+			{ update: pageUpdate, view },
+			given(model),
+			expectView(text("Covered in this period")).toExist(),
+			expectView(role("group", { name: "Range" })).toExist(),
+		)
+		const month = pageUpdate(model, Message.PickedRange({ days: "28" }))
+		expect(names(month.commands)).toEqual(["FetchOnCallShifts"])
+		expect(Option.map(rangeOf(month.model), (r) => Math.round((r.toMs - r.fromMs) / 86_400_000))).toEqual(
+			Option.some(28),
+		)
+		scene(
+			{ update: pageUpdate, view },
+			given(withShifts(month.model, ONCALL_NOW)),
+			expectView(text("10 Nov to 7 Dec")).toExist(),
+		)
+	})
+
+	test("a wider range draws a skeleton, not the old shifts as one long gap, until its shifts land", () => {
+		const model = loaded(ONCALL_NOW)
+		const month = pageUpdate(model, Message.PickedRange({ days: "28" }))
+		scene(
+			{ update: pageUpdate, view },
+			given(month.model),
+			expectView(text("10 Nov to 7 Dec")).toExist(),
+			expectView(role("rowheader", { name: /Final schedule/u })).not.toExist(),
+			expectView(text(/gap/u)).not.toExist(),
+			expectView(text(/^Covered/u)).not.toExist(),
+		)
+	})
+
+	test("a range that has wholly passed says its gaps are not checked, not that it was covered", () => {
+		const before = pageUpdate(
+			pageUpdate(loaded(ONCALL_NOW), Message.ClickedPreviousWeek()).model,
+			Message.ClickedPreviousWeek(),
+		)
+		scene(
+			{ update: pageUpdate, view },
+			given(withShifts(before.model, ONCALL_NOW)),
+			expectView(text("27 Oct to 9 Nov")).toExist(),
+			expectView(text("Past shifts. Gaps are only checked from now.")).toExist(),
+			expectView(text(/^Covered/u)).not.toExist(),
+		)
+	})
+
+	test("a gap in the summary focuses its bar on the calendar", () => {
+		const focus = pageUpdate(loaded(ONCALL_NOW), Message.ClickedGap({ index: 0 }))
+		expect(names(focus.commands)).toEqual(["FocusCoverageGap"])
 	})
 })

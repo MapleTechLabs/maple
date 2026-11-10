@@ -1,13 +1,12 @@
 import { afterEach, describe, expect, it } from "@effect/vitest"
 import { Array as Arr, Context, Effect, Layer, Result, Schema } from "effect"
-import { OrgId, RoleName, UserId } from "@maple/domain/http"
+import { OrgId, RoleName, UserId, type TenantContext } from "@maple/domain/http"
 import { ListMapleFeedbackOutput } from "@maple/domain/mcp-outputs"
-import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/platform/test-pglite"
-import type { TenantContext } from "@maple/backend/services/auth/tenant-context"
+import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/testing/test-pglite"
 import { AgentFeedbackService } from "@maple/backend/services/feedback/AgentFeedbackService"
 import { type AuditActorInfo, CurrentAuditActor } from "@maple/backend/services/auth/audit-actor"
 import { testEnv } from "@maple/backend/services/integrations/vcs/__tests__/harness"
-import { CurrentMcpTenant } from "../../lib/query-warehouse"
+import { CurrentMcpTenant } from "../../tenant"
 import { executeRegisteredMcpToolUnscoped } from "../registry"
 
 const createdDbs: TestDb[] = []

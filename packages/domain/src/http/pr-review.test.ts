@@ -5,6 +5,7 @@
  * incident that made it so), which moves every guarantee a reader relies on into this function.
  */
 import { assert, describe, it } from "vitest"
+import { prReviewFailureReason, PrReviewCoverageUnit, PrReviewReport } from "./pr-review"
 import {
 	confidencePrReview,
 	mentionsReviewer,
@@ -12,11 +13,8 @@ import {
 	normalizePrReviewSubmission,
 	parseReplyCommand,
 	reviewerMention,
-	prReviewFailureReason,
-	PrReviewCoverageUnit,
-	PrReviewReport,
 	scorePrReview,
-} from "./pr-review"
+} from "./pr-review-rules"
 import { Array as Arr } from "effect"
 
 describe("normalizePrReviewSubmission", () => {

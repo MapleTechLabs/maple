@@ -1,5 +1,5 @@
 import type { AnomalyIncidentDocument, ErrorIssueDocument } from "@maple/domain/http"
-import { errorIssueFromV2 } from "../../../lib/services/error-issues"
+import { errorIssueFromV2 } from "../../../data/error-issues"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import * as Combobox from "@maple/views/ui/combobox"
@@ -16,16 +16,13 @@ import { view as dialogView } from "@maple/views/ui/dialog-view"
 import { scrollArea } from "@maple/views/ui/scroll-area"
 import { spinner } from "@maple/views/ui/spinner"
 import { relativeTime } from "../../kit/relative-time"
-import { workflowRingIcon } from "../../errors/kit/workflow"
-import { shortIssueId } from "../kit/row"
+import { workflowRingIcon } from "../../kit/issue-workflow"
+import { shortIssueId } from "@maple/ui/lib/ids"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { typography, typographyClass } from "@maple/views/ui/typography"
 import { Array as Arr, String as Str } from "effect"
 import { hstack } from "@maple/views/ui/stack"
-
-// `AnomalyLinkIssueDialog`: a command
-// dialog over the service's issues, filtered here (`filter={null}`), the linked one left out.
 
 type H = HtmlBuilder<Message>
 
@@ -150,7 +147,6 @@ export const linkIssueDialog = (
 		view: dialogView,
 		viewInputs: {
 			hasTrigger: false,
-			// The dialog has no trigger: closing leaves focus on the body.
 			isReturningFocus: false,
 			toView: ({ portal }) => portal,
 			toContent: () =>

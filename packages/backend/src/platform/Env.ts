@@ -5,8 +5,11 @@ import {
 	type ConnectorConfig,
 } from "@maple/chat-platform"
 import { optionalRedacted, optionalString, stringWithDefault } from "@maple/infra/config-helpers"
-import { Config, Context, Effect, Layer, Option, Redacted, Schema, String as Str } from "effect"
+import { Config, Context, Effect, Layer, Option, Redacted, Result, Schema, String as Str } from "effect"
 import { type MapleRegion, parseMapleRegion } from "@maple/domain/organization-regions"
+import { type SecretKeyring, secretKeyringFrom } from "./SecretBox"
+import { DEFAULT_AUTUMN_API_URL } from "@maple/backend/services/billing/autumn-api"
+import { ingestKeyLookupHmacKeyFrom } from "./credential-tokens"
 
 /** Fatal misconfiguration discovered at startup: fails the layer build, so the worker refuses to boot. */
 class EnvValidationError extends Schema.TaggedError<EnvValidationError>()(
@@ -266,7 +269,7 @@ const envConfig = Config.all({
 		"false",
 	).pipe(Config.map((value) => value === "1" || value === "true")),
 	AUTUMN_SECRET_KEY: optionalRedacted("AUTUMN_SECRET_KEY"),
-	AUTUMN_API_URL: stringWithDefault("AUTUMN_API_URL", "https://api.useautumn.com"),
+	AUTUMN_API_URL: stringWithDefault("AUTUMN_API_URL", DEFAULT_AUTUMN_API_URL),
 	AUTUMN_WEBHOOK_SECRET: optionalRedacted("AUTUMN_WEBHOOK_SECRET"),
 	STRIPE_SECRET_KEY: optionalRedacted("STRIPE_SECRET_KEY"),
 	STRIPE_API_URL: stringWithDefault("STRIPE_API_URL", "https://api.stripe.com"),
@@ -458,9 +461,26 @@ const makeEnv = Effect.gen(function* () {
 		return yield* new EnvValidationError({ message: "MAPLE_ROOT_PASSWORD cannot be empty" })
 	}
 
-	return Env.of(env)
+	return Env.of({
+		...env,
+		secretKeyring: secretKeyringFrom({
+			primary: Redacted.value(env.MAPLE_INGEST_KEY_ENCRYPTION_KEY),
+			decryptOnly: Option.map(env.MAPLE_INGEST_KEY_DECRYPTION_KEYS, Redacted.value),
+		}),
+		ingestKeyLookupHmacKey: ingestKeyLookupHmacKeyFrom(
+			Redacted.value(env.MAPLE_INGEST_KEY_LOOKUP_HMAC_KEY),
+		),
+	})
 })
 
-export class Env extends Context.Service<Env, EnvConfig>()("@maple/backend/lib/Env") {
+/** The config, plus the keys every service that encrypts or hashes would otherwise parse itself. */
+export interface EnvApi extends EnvConfig {
+	/** The keys stored secrets are sealed and opened with; read through `secretKeyringFromEnv`. */
+	readonly secretKeyring: Result.Result<SecretKeyring, string>
+	/** `MAPLE_INGEST_KEY_LOOKUP_HMAC_KEY`, trimmed; read through `ingestKeyLookupHmacKey`. */
+	readonly ingestKeyLookupHmacKey: Result.Result<string, string>
+}
+
+export class Env extends Context.Service<Env, EnvApi>()("@maple/backend/lib/Env") {
 	static readonly layer = Layer.effect(this, makeEnv)
 }

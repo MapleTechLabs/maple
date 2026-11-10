@@ -10,7 +10,7 @@ import {
 	TransitionErrorIssueOutput,
 	TransitionErrorIssuesOutput,
 } from "@maple/domain/mcp-outputs"
-import { executeSql } from "@maple/backend/platform/test-pglite"
+import { executeSql } from "@maple/backend/testing/test-pglite"
 import { makeEvalRuntime, runToolDirect, markdown, type EvalRuntime } from "./eval-runtime"
 import { installFakeWarehouse, restoreWarehouse } from "./fake-warehouse"
 import { FIXTURES } from "./utils"

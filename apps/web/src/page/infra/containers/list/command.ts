@@ -1,3 +1,4 @@
+import { SEARCH_DEBOUNCE } from "@maple/views/data/timing"
 import {
 	containersSummary,
 	getContainerFacets,
@@ -5,13 +6,12 @@ import {
 	type ContainersSummaryInput,
 	type ListContainersInput,
 } from "@maple/web-data/warehouse/infra"
-import { Duration, Effect, Schema } from "effect"
+import { Effect, Schema } from "effect"
 import { Command } from "foldkit"
-import { toLoadFailure } from "@maple/views/data/load-failure"
+import { settleTo } from "@maple/views/data/load-failure"
 import { TimeWindow } from "../../../../data/time-range"
 import { Message } from "./message"
 
-/** `PAGE_SIZE`. */
 export const PAGE_SIZE = 50
 
 const StringList = Schema.optional(Schema.Array(Schema.String))
@@ -48,12 +48,8 @@ export const FetchContainers = Command.define("FetchInfraContainers", {
 	messages: [Message.CompletedFetchContainers],
 	execute: ({ key, input }) =>
 		listContainers({ data: input satisfies ListContainersInput }).pipe(
-			Effect.mapBoth({
-				onSuccess: ({ data, totalCount }) => ({ data, totalCount }),
-				onFailure: toLoadFailure,
-			}),
-			Effect.result,
-			Effect.map((result) => Message.CompletedFetchContainers({ key, result })),
+			Effect.map(({ data, totalCount }) => ({ data, totalCount })),
+			settleTo((result) => Message.CompletedFetchContainers({ key, result })),
 		),
 })
 
@@ -69,17 +65,13 @@ export const FetchSummary = Command.define("FetchInfraContainersSummary", {
 	messages: [Message.CompletedFetchSummary],
 	execute: ({ key, input }) =>
 		containersSummary({ data: input satisfies ContainersSummaryInput }).pipe(
-			Effect.mapBoth({
-				onSuccess: (counts) => ({
-					totalContainers: counts.totalContainers,
-					saturatedContainers: counts.saturatedContainers,
-					elevatedContainers: counts.elevatedContainers,
-					staleContainers: counts.staleContainers,
-				}),
-				onFailure: toLoadFailure,
-			}),
-			Effect.result,
-			Effect.map((result) => Message.CompletedFetchSummary({ key, result })),
+			Effect.map((counts) => ({
+				totalContainers: counts.totalContainers,
+				saturatedContainers: counts.saturatedContainers,
+				elevatedContainers: counts.elevatedContainers,
+				staleContainers: counts.staleContainers,
+			})),
+			settleTo((result) => Message.CompletedFetchSummary({ key, result })),
 		),
 })
 
@@ -88,16 +80,15 @@ export const FetchFacets = Command.define("FetchInfraContainerFacets", {
 	messages: [Message.CompletedFetchFacets],
 	execute: ({ key, window }) =>
 		getContainerFacets({ data: window }).pipe(
-			Effect.mapBoth({ onSuccess: (response) => response.data, onFailure: toLoadFailure }),
-			Effect.result,
-			Effect.map((result) => Message.CompletedFetchFacets({ key, result })),
+			Effect.map((response) => response.data),
+			settleTo((result) => Message.CompletedFetchFacets({ key, result })),
 		),
 })
 
-/** `useDebouncedValue(searchText, 300)`: the query lands after 300 ms of quiet. */
+/** The query lands after 300 ms of quiet. */
 export const DebounceSearch = Command.define("DebounceInfraContainersSearch", {
 	args: { query: Schema.String },
 	messages: [Message.ElapsedSearchDebounce],
 	execute: ({ query }) =>
-		Effect.as(Effect.sleep(Duration.millis(300)), Message.ElapsedSearchDebounce({ query })),
+		Effect.as(Effect.sleep(SEARCH_DEBOUNCE), Message.ElapsedSearchDebounce({ query })),
 })

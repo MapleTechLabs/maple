@@ -7,10 +7,11 @@
  * belongs to, so a triple copied onto another row, column or org does not open. `keyId` names
  * the master key that sealed it, which is what makes rotation possible (docs/secret-encryption.md).
  *
- * A ciphertext with no prefix is the pre-v2 format: master key, no row binding.
+ * A ciphertext without that prefix is not opened: an unbound value from before v2 could
+ * otherwise be replayed onto another row.
  */
 import { createHmac } from "node:crypto"
-import { Array as Arr, Effect, Option, Redacted, String as Str } from "effect"
+import { Array as Arr, Effect, Option, Result, String as Str } from "effect"
 import { decryptAes256Gcm, encryptAes256Gcm, type EncryptedValue } from "./Crypto"
 
 const ENVELOPE_PREFIX = "v2"
@@ -38,8 +39,6 @@ export interface SecretKeyring {
 export interface SecretSlot<Ref> {
 	readonly name: string
 	readonly binding: (ref: Ref) => ReadonlyArray<string>
-	/** The AAD the pre-v2 envelope used, for the columns that already had one. */
-	readonly legacyAad?: (ref: Ref) => Buffer
 }
 
 /** HKDF-SHA256 (RFC 5869) with an empty salt: the first 32-byte output block. */
@@ -80,77 +79,79 @@ export const DECRYPTION_KEYS_ENV = "MAPLE_INGEST_KEY_DECRYPTION_KEYS"
  * Builds the keyring from the raw settings: one primary key, plus an optional comma-separated
  * list of keys kept only for opening values sealed before a rotation.
  */
+export const secretKeyringFrom = (raw: {
+	readonly primary: string
+	readonly decryptOnly: Option.Option<string>
+}): Result.Result<SecretKeyring, string> => {
+	if (Str.trim(raw.primary).length === 0) return Result.fail(`${PRIMARY_KEY_ENV} is required`)
+	const primary = parseKey(raw.primary)
+	if (Option.isNone(primary)) {
+		return Result.fail(`${PRIMARY_KEY_ENV} must be base64 for exactly 32 bytes`)
+	}
+	const extraRaw = Arr.filter(
+		Arr.map(
+			Str.split(
+				Option.getOrElse(raw.decryptOnly, () => ""),
+				",",
+			),
+			Str.trim,
+		),
+		Str.isNonEmpty,
+	)
+	const extra = Arr.map(extraRaw, parseKey)
+	if (Arr.some(extra, Option.isNone)) {
+		return Result.fail(`${DECRYPTION_KEYS_ENV} must be comma-separated base64 keys of exactly 32 bytes`)
+	}
+	const primaryKey = makeSecretKey(primary.value)
+	const extraKeys = Arr.filter(
+		Arr.dedupeWith(
+			Arr.map(Arr.getSomes(extra), makeSecretKey),
+			(a: SecretKey, b: SecretKey) => a.id === b.id,
+		),
+		(key) => key.id !== primaryKey.id,
+	)
+	return Result.succeed({ primary: primaryKey, keys: [primaryKey, ...extraKeys] })
+}
+
+const keyringOrFail = <E>(
+	keyring: Result.Result<SecretKeyring, string>,
+	onError: (message: string) => E,
+): Effect.Effect<SecretKeyring, E> =>
+	Result.match(keyring, {
+		onSuccess: Effect.succeed,
+		onFailure: (message) => Effect.fail(onError(message)),
+	})
+
 export const parseSecretKeyring = <E>(
 	raw: { readonly primary: string; readonly decryptOnly: Option.Option<string> },
 	onError: (message: string) => E,
-): Effect.Effect<SecretKeyring, E> =>
-	Effect.suspend((): Effect.Effect<SecretKeyring, E> => {
-		if (Str.trim(raw.primary).length === 0) {
-			return Effect.fail(onError(`${PRIMARY_KEY_ENV} is required`))
-		}
-		const primary = parseKey(raw.primary)
-		if (Option.isNone(primary)) {
-			return Effect.fail(onError(`${PRIMARY_KEY_ENV} must be base64 for exactly 32 bytes`))
-		}
-		const extraRaw = Arr.filter(
-			Arr.map(
-				Str.split(
-					Option.getOrElse(raw.decryptOnly, () => ""),
-					",",
-				),
-				Str.trim,
-			),
-			Str.isNonEmpty,
-		)
-		const extra = Arr.map(extraRaw, parseKey)
-		if (Arr.some(extra, Option.isNone)) {
-			return Effect.fail(
-				onError(`${DECRYPTION_KEYS_ENV} must be comma-separated base64 keys of exactly 32 bytes`),
-			)
-		}
-		const primaryKey = makeSecretKey(primary.value)
-		const extraKeys = Arr.filter(
-			Arr.dedupeWith(
-				Arr.map(Arr.getSomes(extra), makeSecretKey),
-				(a: SecretKey, b: SecretKey) => a.id === b.id,
-			),
-			(key) => key.id !== primaryKey.id,
-		)
-		return Effect.succeed({ primary: primaryKey, keys: [primaryKey, ...extraKeys] })
-	})
+): Effect.Effect<SecretKeyring, E> => Effect.suspend(() => keyringOrFail(secretKeyringFrom(raw), onError))
 
-export interface SecretKeyringEnv {
-	readonly MAPLE_INGEST_KEY_ENCRYPTION_KEY: Redacted.Redacted
-	readonly MAPLE_INGEST_KEY_DECRYPTION_KEYS: Option.Option<Redacted.Redacted>
+/** The keyring `Env` parsed once at startup; `onError` names a bad key in the caller's terms. */
+export const secretKeyringFromEnv = <E>(
+	env: { readonly secretKeyring: Result.Result<SecretKeyring, string> },
+	onError: (message: string) => E,
+): Effect.Effect<SecretKeyring, E> => keyringOrFail(env.secretKeyring, onError)
+
+interface Envelope {
+	readonly keyId: string
+	readonly ciphertext: string
 }
 
-export const secretKeyringFromEnv = <E>(
-	env: SecretKeyringEnv,
-	onError: (message: string) => E,
-): Effect.Effect<SecretKeyring, E> =>
-	parseSecretKeyring(
-		{
-			primary: Redacted.value(env.MAPLE_INGEST_KEY_ENCRYPTION_KEY),
-			decryptOnly: Option.map(env.MAPLE_INGEST_KEY_DECRYPTION_KEYS, Redacted.value),
-		},
-		onError,
-	)
-
-type Envelope =
-	| { readonly _tag: "legacy" }
-	| { readonly _tag: "v2"; readonly keyId: string; readonly ciphertext: string }
-
-/** Base64 never contains a dot, so a v2 prefix cannot be mistaken for a legacy ciphertext. */
-const parseEnvelope = (stored: string): Envelope => {
+const parseEnvelope = (stored: string): Option.Option<Envelope> => {
 	const parts = Str.split(stored, ".")
 	const [prefix, keyId, ciphertext] = parts
 	return parts.length === 3 && prefix === ENVELOPE_PREFIX && keyId !== undefined && ciphertext !== undefined
-		? { _tag: "v2", keyId, ciphertext }
-		: { _tag: "legacy" }
+		? Option.some({ keyId, ciphertext })
+		: Option.none()
 }
 
-/** Seals in the v2 envelope: slot subkey, row-bound, key id recorded. */
-export const sealSecretV2 = <Ref, E>(
+/** What every ciphertext sealed by the primary key starts with. */
+export const currentEnvelopePrefix = (keyring: SecretKeyring): string =>
+	`${ENVELOPE_PREFIX}.${keyring.primary.id}.`
+
+/** Seals a value for `slot` on the row `ref` names: slot subkey, row-bound, key id recorded. */
+export const sealSecret = <Ref, E>(
 	keyring: SecretKeyring,
 	slot: SecretSlot<Ref>,
 	ref: Ref,
@@ -165,22 +166,9 @@ export const sealSecretV2 = <Ref, E>(
 	).pipe(
 		Effect.map((sealed) => ({
 			...sealed,
-			ciphertext: `${ENVELOPE_PREFIX}.${keyring.primary.id}.${sealed.ciphertext}`,
+			ciphertext: `${currentEnvelopePrefix(keyring)}${sealed.ciphertext}`,
 		})),
 	)
-
-/**
- * Seals a value for `slot` on the row `ref` names. Still writes the pre-v2 envelope: readers in
- * every deployable have to understand v2 before any writer emits it.
- */
-export const sealSecret = <Ref, E>(
-	keyring: SecretKeyring,
-	slot: SecretSlot<Ref>,
-	ref: Ref,
-	plaintext: string,
-	onError: (message: string) => E,
-): Effect.Effect<EncryptedValue, E> =>
-	encryptAes256Gcm(plaintext, keyring.primary.master, onError, slot.legacyAad?.(ref))
 
 /** Opens a stored value. Fails when the key, the slot or the row no longer match. */
 export const openSecret = <Ref, E>(
@@ -189,25 +177,21 @@ export const openSecret = <Ref, E>(
 	ref: Ref,
 	stored: EncryptedValue,
 	onError: (message: string) => E,
-): Effect.Effect<string, E> => {
-	const envelope = parseEnvelope(stored.ciphertext)
-	if (envelope._tag === "legacy") {
-		const legacyAad = slot.legacyAad?.(ref)
-		return Effect.firstSuccessOf(
-			Arr.map(keyring.keys, (key) => decryptAes256Gcm(stored, key.master, onError, legacyAad)),
-		)
-	}
-	return Option.match(
-		Arr.findFirst(keyring.keys, (key) => key.id === envelope.keyId),
-		{
-			onNone: () => Effect.fail(onError("Sealed with a key this deployment does not hold")),
-			onSome: (key) =>
-				decryptAes256Gcm(
-					{ ciphertext: envelope.ciphertext, iv: stored.iv, tag: stored.tag },
-					subkeyFor(key, slot.name),
-					onError,
-					secretAad(slot.name, slot.binding(ref)),
-				),
-		},
-	)
-}
+): Effect.Effect<string, E> =>
+	Option.match(parseEnvelope(stored.ciphertext), {
+		onNone: () => Effect.fail(onError("Stored value is not in the v2 envelope")),
+		onSome: (envelope) =>
+			Option.match(
+				Arr.findFirst(keyring.keys, (key) => key.id === envelope.keyId),
+				{
+					onNone: () => Effect.fail(onError("Sealed with a key this deployment does not hold")),
+					onSome: (key) =>
+						decryptAes256Gcm(
+							{ ciphertext: envelope.ciphertext, iv: stored.iv, tag: stored.tag },
+							subkeyFor(key, slot.name),
+							onError,
+							secretAad(slot.name, slot.binding(ref)),
+						),
+				},
+			),
+	})

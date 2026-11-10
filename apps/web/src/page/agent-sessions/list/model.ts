@@ -14,8 +14,6 @@ import { SignalPresenceData } from "@maple/views/data/signal-presence"
 import { Detections } from "../kit/detected-models"
 import { VirtualWindow } from "../kit/virtualize"
 
-// `/agent-sessions`: the list, toolbar and rail.
-
 export type SessionRow = typeof AiSessionListItem.Type
 
 /** One `listAiSessions` page: its rows and how many sessions the server ranked for it. */
@@ -84,7 +82,7 @@ export const Model = Schema.Struct({
 	histogramHover: Schema.Record(Schema.String, Schema.Number),
 	/** The bar a held press on a histogram went down on, by range: the drag preview's anchor. */
 	histogramDrag: Schema.Record(Schema.String, Schema.Number),
-	/** `ToolbarSearch`: what is typed, the debounce run that may commit it, the last value sent. */
+	/** The toolbar search: what is typed, the debounce run that may commit it, the last value sent. */
 	searchInput: Schema.String,
 	searchVersion: Schema.Number,
 	lastSentQuery: Schema.String,

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "@effect/vitest"
-import { OrgId } from "@maple/domain/primitives"
+import { OrgId } from "@maple/primitives"
 import { Effect, Schema, Array as Arr } from "effect"
 import { makeIncidentPushBudget, type IncidentPushClaim } from "./alert-push-budget"
 

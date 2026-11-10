@@ -8,7 +8,7 @@ import { copyButton, type CopyStatus } from "@maple/views/ui/copy-button"
 import { icon } from "@maple/views/ui/icon"
 import { timestamp } from "@maple/views/ui/timestamp"
 import type { LogRecord } from "@maple/views/ui/logs/log-row-view"
-import { formatTimestampInTimezone } from "@maple/web-data/lib/timezone-format"
+import { formatTimestampInTimezone } from "@maple/ui/lib/timezone-format"
 import { buildLogJsonPayload } from "./derive"
 import { Message, type Model } from "./model"
 import { copyStatusOf } from "./update"
@@ -40,7 +40,7 @@ export const triggerIdOf = (model: Model, trigger: keyof typeof TRIGGERS): strin
 export const triggerIdsOf = (model: Model): ReadonlyArray<string> =>
 	Arr.map(["json", "link", "page", "prompt"] as const, (trigger) => triggerIdOf(model, trigger))
 
-/** `copyTooltipText`: the tooltip follows the copy status. */
+/** The tooltip follows the copy status. */
 const copyTooltipText = (status: CopyStatus, label: string, copiedLabel = "Copied"): string =>
 	status === "copied" ? copiedLabel : status === "error" ? "Couldn't copy" : `Copy ${label}`
 

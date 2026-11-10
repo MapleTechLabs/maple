@@ -19,22 +19,20 @@ import { pressable } from "@maple/views/ui/pressable"
 import { waitingFor } from "../shared/chat-connect"
 import { destinationTarget } from "./derive"
 import { Message, type Tier } from "./message"
-import { canManage, type Model } from "./model"
+import { type Model } from "./model"
 import { typography, typographyClass } from "@maple/views/ui/typography"
 import { Array as Arr, Option } from "effect"
 import { hstack } from "@maple/views/ui/stack"
-
-// `DestinationList` and `AddDestinationMenu`: a tier's destinations and the menu that adds one.
+import { canManageAlerts } from "../../kit/session-grants"
 
 type H = HtmlBuilder<Message>
 
-/** What a tier's list and its Add destination menu read off the Model. */
 export type NotifyView = Pick<
 	Model,
 	"grants" | "connectors" | "menus" | "chatConnect" | "chatConnectMenuId" | "brokenLogos"
 >
 
-/** `ProviderLogo size={30} bare`: a destination's mark, the monogram once its image failed. */
+/** A destination's mark, the monogram once its image failed. */
 export const logo = <M>(
 	h: HtmlBuilder<M>,
 	model: NotifyView,
@@ -133,7 +131,7 @@ const menuEntries = (
 						}),
 					},
 				]
-	if (!canManage(model)) return existing
+	if (!canManageAlerts(model)) return existing
 	const chat = Arr.flatMap(connectors, (connector): ReadonlyArray<MenuView.MenuItemEntry> => {
 		const mark = logo(h, model, "chat", connector.id, "flex shrink-0")
 		if (connector.workspaces.length > 0)
@@ -218,7 +216,7 @@ const addMenu = (
 							{
 								className: cn(
 									"flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-muted-foreground hover:bg-surface-sunken active:bg-surface-sunken hover:text-foreground active:text-foreground",
-									// Open, Base UI's guards follow the trigger, so the panel's divider lands on it.
+									// Open, the menu's focus guards follow the trigger, so the panel's divider lands on it.
 									menu.isOpen && "border-b border-border-subtle",
 								),
 								attributes: [h.DataAttribute("slot", "dropdown-menu-trigger"), ...trigger],
@@ -257,19 +255,21 @@ const addMenu = (
 	})
 }
 
-/** `DestinationList`: one tier's destinations, plus the menu that adds an existing or new one. */
+/** One tier's destinations, plus the menu that adds an existing or new one. */
 export const destinationList = (
 	h: H,
 	model: NotifyView,
 	tier: Tier,
 	ids: ReadonlyArray<AlertDestinationId>,
 	destinations: ReadonlyArray<AlertDestinationDocument>,
+	/** What the empty list says: who the tier still reaches (a chain, the warning destinations). */
+	emptyText: string,
 ): Html => {
 	const selected = Arr.filter(destinations, (d) => ids.includes(d.id))
 	const available = Arr.filter(destinations, (d) => !ids.includes(d.id))
 	const unresolved = Arr.filter(ids, (id) => !Arr.some(destinations, (d) => d.id === id))
-	const canAdd = available.length > 0 || canManage(model)
-	return panel(h, { className: "mt-3 divide-y divide-border-subtle border-border-subtle" }, [
+	const canAdd = available.length > 0 || canManageAlerts(model)
+	return panel(h, { className: "divide-y divide-border-subtle border-border-subtle" }, [
 		...Arr.map(selected, (destination) => selectedRow(h, model, tier, destination)),
 		...Arr.map(unresolved, (id) => unresolvedRow(h, tier, id)),
 		...(selected.length === 0 && unresolved.length === 0
@@ -278,7 +278,7 @@ export const destinationList = (
 						[h.Class("px-3 py-2.5 text-sm text-muted-foreground")],
 						[
 							canAdd
-								? "No one is notified yet."
+								? emptyText
 								: "No destinations exist yet, and only an org admin can add one.",
 						],
 					),

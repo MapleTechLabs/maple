@@ -1,3 +1,4 @@
+import { chartEnvHandlers } from "@maple/views/charts/chart-env"
 import type { Resources } from "../../platform/resources"
 import { snapToMinute, WIDEST_RANGE } from "../../lib/time"
 import * as Chart from "@maple/views/charts/chart"
@@ -36,14 +37,7 @@ export const init = (
 		themeColors: null,
 		charts: {},
 	},
-	commands: [
-		ReadClock(),
-		Command.mapMessage(LoadChartRuntime(), (message) =>
-			message._tag === "CompletedLoadChartRuntime"
-				? Message.CompletedLoadChartRuntime()
-				: Message.FailedLoadChartRuntime({ reason: message.reason }),
-		),
-	],
+	commands: [ReadClock(), LoadChartRuntime()],
 })
 
 /** A search change (the range) re-keys every query on the new window. */
@@ -195,11 +189,7 @@ export const update = (model: Model, message: Message, context: PageContext): Up
 		ClickedBack: () => back(model, context),
 		ChangedRange: ({ range }) => setRange(model, context, range),
 		ClickedWidenRange: () => setRange(model, context, WIDEST_RANGE),
-		CompletedLoadChartRuntime: () => ({ model: { ...model, chartRuntime: { _tag: "Ready" } } }),
-		FailedLoadChartRuntime: ({ reason }) => ({
-			model: { ...model, chartRuntime: { _tag: "Failed", reason } },
-		}),
-		ResolvedThemeColors: ({ colors }) => ({ model: { ...model, themeColors: colors } }),
+		...chartEnvHandlers(model),
 		GotChartMessage: ({ chartId, message: child }) => {
 			const current = Option.getOrElse(Record.get(model.charts, chartId), Chart.init)
 			const next = Chart.update(current, child)

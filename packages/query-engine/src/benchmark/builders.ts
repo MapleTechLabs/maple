@@ -5,8 +5,8 @@
 //
 // Each fixture calls the REAL exported builder with parameters shaped like its
 // production call site (file:line noted per fixture), so the catalog sweeps the
-// SQL the app actually emits. `benchmark/catalog.test.ts`'s `uncoveredBuilders`
-// anti-rot test enforces that every module export is either fixtured here or
+// SQL the app actually emits. `benchmark/catalog.test.ts`'s "covers or exempts every
+// exported builder" test enforces that every module export is either fixtured here or
 // explicitly exempted there — adding a builder without either breaks the build.
 //
 // Only builders swept through a pipe, or composed into a fixtured builder, are
@@ -14,10 +14,34 @@
 
 import type { CompiledQuery } from "@maple-dev/effect-orm/clickhouse"
 import * as CH from "../ch"
+import { baselineWarehouseCapabilities } from "../capabilities"
+import type { QueryDefinition } from "../registry/query-definition"
+import * as Queries from "../registry/queries"
+import {
+	HostDetailSummaryRequest,
+	ListHostsRequest,
+	ListPodsRequest,
+	ListWorkloadsRequest,
+	PodDetailSummaryRequest,
+	ServiceHealthBaselineRequest,
+	ServiceHealthSnapshotRequest,
+	ServiceOperationsRequest,
+	ServicePlatformsRequest,
+	ServiceRuntimesRequest,
+	ServiceUsageRequest,
+	ServiceWorkloadsRequest,
+	WorkloadDetailSummaryRequest,
+} from "@maple/domain/http"
 import { utcSecondsParam } from "../ch/tables"
-import { DateTime, Effect, Result } from "effect"
+import { DateTime, Effect, Result, Schema } from "effect"
 import type { QueryBuilderError } from "@maple-dev/effect-orm/clickhouse"
-import { OrgId } from "@maple/domain"
+import {
+	type BuilderFixture,
+	FIXTURE_END_TIME as END_TIME,
+	FIXTURE_ORG_ID as ORG_ID,
+	FIXTURE_START_TIME as START_TIME,
+	FIXTURE_WINDOW as window,
+} from "./fixture"
 
 /**
  * Run a compile that is now Effect-returning, throwing on failure.
@@ -28,36 +52,6 @@ import { OrgId } from "@maple/domain"
  */
 const runCompile = <A>(compiled: Effect.Effect<A, QueryBuilderError>): A => Effect.runSync(compiled)
 
-export interface BuilderFixture {
-	/** Module basename under `src/ch/queries/`, e.g. `"session-replays"`. */
-	readonly module: string
-	/** The exported builder this fixture covers — must match the export name. */
-	readonly name: string
-	/** Distinguishes fixtures for one builder; appears in failure output. */
-	readonly label: string
-	readonly compile: () => CompiledQuery<unknown>
-	/**
-	 * Sample values for output columns whose row schema narrows what the ClickHouse
-	 * column type allows.
-	 *
-	 * The E2E sweep decodes a synthetic row to prove the schema accepts both 64-bit
-	 * wire shapes, and it builds that row from the DESCRIBEd column *types* alone —
-	 * so every `String` column gets `""`. A schema that legitimately narrows a
-	 * String (a literal union over a column the SQL itself guarantees, like
-	 * `serviceExternalEdges.targetType`) rejects `""` and fails a check that is
-	 * about integer quoting, with a message telling the author to reach for
-	 * `CH.CHNumber` on a string field.
-	 *
-	 * The narrowing is worth keeping — `service-map.test.ts` asserts an unexpected
-	 * `targetType` is rejected — so the fixture names the value instead. Keyed by
-	 * output column name.
-	 */
-	readonly sampleValues?: Readonly<Record<string, unknown>>
-}
-
-const ORG_ID = OrgId.make("org_sql_catalog")
-const START_TIME = "2026-01-01 10:30:00"
-const END_TIME = "2026-01-03 14:15:00"
 /** The same window for builders whose bounds are `DateTime.Utc`. */
 const START_UTC = DateTime.makeUnsafe("2026-01-01T10:30:00Z")
 const END_UTC = DateTime.makeUnsafe("2026-01-03T14:15:00Z")
@@ -66,7 +60,6 @@ const TRACE_ID = "0af7651916cd43dd8448eb211c80319c"
 const SPAN_ID = "b7ad6b7169203331"
 const FINGERPRINT = "11640393269246331608"
 
-const window = { orgId: ORG_ID, startTime: START_TIME, endTime: END_TIME }
 const USERS_SCOPE = {
 	namespaces: [],
 	services: [],
@@ -820,22 +813,46 @@ const alertingFixtures: ReadonlyArray<BuilderFixture> = [
 	},
 ]
 
+/**
+ * Compile a registry definition from a sample request, so the sweep covers the
+ * definition's payload mapping as well as the builder it calls.
+ */
+/** A sample request, decoded as the HTTP boundary decodes one. */
+const sample = <A, I>(schema: Schema.Codec<A, I>, raw: I): A => Schema.decodeSync(schema)(raw)
+
+const viaRegistry = <Payload, Row>(definition: QueryDefinition<Payload, Row>, payload: Payload) =>
+	runCompile(definition.compile(payload, ORG_ID, baselineWarehouseCapabilities()))
+
+/** The request window every registry payload carries. */
+const span = { startTime: START_TIME, endTime: END_TIME }
+const serviceOperationsRequest = sample(ServiceOperationsRequest, {
+	...span,
+	serviceName: "api",
+	environments: ["production"],
+	limit: 50,
+})
+
 // Infra pages and the service-map / service-infra compiles.
 const infraFixtures: ReadonlyArray<BuilderFixture> = [
 	{
-		// registry `listHosts`.
 		module: "infra",
 		name: "listHostsQuery",
 		label: "searchPaged",
 		compile: () =>
-			CH.compileUnsafe(CH.listHostsQuery({ search: "ip-10", limit: 50, offset: 50 }), window),
+			viaRegistry(
+				Queries.listHosts,
+				sample(ListHostsRequest, { ...span, search: "ip-10", limit: 50, offset: 50 }),
+			),
 	},
 	{
-		// registry `hostDetailSummary`.
 		module: "infra",
 		name: "hostDetailSummaryQuery",
 		label: "default",
-		compile: () => CH.compileUnsafe(CH.hostDetailSummaryQuery({ hostName: "ip-10-0-1-42" }), window),
+		compile: () =>
+			viaRegistry(
+				Queries.hostDetailSummary,
+				sample(HostDetailSummaryRequest, { ...span, hostName: "ip-10-0-1-42" }),
+			),
 	},
 	{
 		// apps/api route `hostInfraTimeseries` network metric.
@@ -849,11 +866,11 @@ const infraFixtures: ReadonlyArray<BuilderFixture> = [
 			}),
 	},
 	{
-		// registry `listPods`, default sort.
+		// Default sort.
 		module: "infra",
 		name: "listPodsQuery",
 		label: "default",
-		compile: () => CH.compileUnsafe(CH.listPodsQuery({ limit: 50 }), window),
+		compile: () => viaRegistry(Queries.listPods, sample(ListPodsRequest, { ...span, limit: 50 })),
 	},
 	{
 		// Same call site with a fleet scope, which wraps the list in a scoped subquery.
@@ -875,64 +892,75 @@ const infraFixtures: ReadonlyArray<BuilderFixture> = [
 			),
 	},
 	{
-		// registry `listPodsCount`.
 		module: "infra",
 		name: "listPodsSummaryQuery",
 		label: "filtered",
 		compile: () =>
-			CH.compileUnsafe(CH.listPodsSummaryQuery({ namespaces: ["prod"], clusters: ["eu-1"] }), window),
+			viaRegistry(
+				Queries.listPodsCount,
+				sample(ListPodsRequest, { ...span, namespaces: ["prod"], clusters: ["eu-1"] }),
+			),
 	},
 	{
-		// registry `podDetailSummary`.
 		module: "infra",
 		name: "podDetailSummaryQuery",
 		label: "default",
 		compile: () =>
-			CH.compileUnsafe(
-				CH.podDetailSummaryQuery({ podName: "checkout-7d9f", namespace: "prod" }),
-				window,
+			viaRegistry(
+				Queries.podDetailSummary,
+				sample(PodDetailSummaryRequest, { ...span, podName: "checkout-7d9f", namespace: "prod" }),
 			),
 	},
 	{
-		// registry `listWorkloads`.
 		module: "infra",
 		name: "listWorkloadsQuery",
 		label: "deployments",
 		compile: () =>
-			CH.compileUnsafe(
-				CH.listWorkloadsQuery({ kind: "deployment", namespaces: ["prod"], limit: 50 }),
-				window,
+			viaRegistry(
+				Queries.listWorkloads,
+				sample(ListWorkloadsRequest, {
+					...span,
+					kind: "deployment",
+					namespaces: ["prod"],
+					limit: 50,
+				}),
 			),
 	},
 	{
-		// registry `workloadDetailSummary`.
 		module: "infra",
 		name: "workloadDetailSummaryQuery",
 		label: "default",
 		compile: () =>
-			CH.compileUnsafe(
-				CH.workloadDetailSummaryQuery({
+			viaRegistry(
+				Queries.workloadDetailSummary,
+				sample(WorkloadDetailSummaryRequest, {
+					...span,
 					kind: "deployment",
 					workloadName: "checkout",
 					namespace: "prod",
 				}),
-				window,
 			),
 	},
 	{
-		// registry `serviceWorkloads`.
 		module: "service-infra",
 		name: "serviceWorkloadsSQL",
 		label: "default",
-		compile: () => runCompile(CH.serviceWorkloadsSQL({ services: ["api", "checkout"] }, window)),
+		compile: () =>
+			viaRegistry(
+				Queries.serviceWorkloads,
+				sample(ServiceWorkloadsRequest, { ...span, services: ["api", "checkout"] }),
+			),
 		sampleValues: { workloadKind: "deployment" },
 	},
 	{
-		// registry `serviceRuntimes`.
 		module: "service-infra",
 		name: "serviceRuntimesSQL",
 		label: "default",
-		compile: () => runCompile(CH.serviceRuntimesSQL({ services: ["api", "checkout"] }, window)),
+		compile: () =>
+			viaRegistry(
+				Queries.serviceRuntimes,
+				sample(ServiceRuntimesRequest, { ...span, services: ["api", "checkout"] }),
+			),
 	},
 	{
 		// backend ServiceMapRollupService, the hourly resolutions rollup.
@@ -950,11 +978,14 @@ const infraFixtures: ReadonlyArray<BuilderFixture> = [
 		sampleValues: { OrgId: ORG_ID },
 	},
 	{
-		// registry `servicePlatforms`.
 		module: "service-map",
 		name: "servicePlatformsSQL",
 		label: "envFiltered",
-		compile: () => runCompile(CH.servicePlatformsSQL({ deploymentEnv: "production" }, window)),
+		compile: () =>
+			viaRegistry(
+				Queries.servicePlatforms,
+				sample(ServicePlatformsRequest, { ...span, deploymentEnv: "production" }),
+			),
 	},
 ]
 
@@ -986,69 +1017,52 @@ const remainderFixtures: ReadonlyArray<BuilderFixture> = [
 			}),
 	},
 	{
-		// registry `serviceEndpointsSummaryRaw`, the pre-0008 fallback.
+		// The pre-0008 fallback.
 		module: "service-endpoints",
 		name: "serviceEndpointsSummaryRawQuery",
 		label: "envFiltered",
-		compile: () =>
-			CH.compileUnsafe(
-				CH.serviceEndpointsSummaryRawQuery({
-					serviceName: "api",
-					environments: ["production"],
-					limit: 50,
-				}),
-				window,
-				{ rowSchema: CH.serviceEndpointsSummaryRowSchema },
-			),
+		compile: () => viaRegistry(Queries.serviceEndpointsSummaryRaw, serviceOperationsRequest),
 	},
 	{
-		// registry `serviceOperationsSummaryRaw`.
 		module: "service-operations",
 		name: "serviceOperationsSummaryRawQuery",
 		label: "envFiltered",
-		compile: () =>
-			CH.compileUnsafe(
-				CH.serviceOperationsSummaryRawQuery({
-					serviceName: "api",
-					environments: ["production"],
-					limit: 50,
-				}),
-				window,
-				{ rowSchema: CH.serviceOperationsSummaryRowSchema },
-			),
+		compile: () => viaRegistry(Queries.serviceOperationsSummaryRaw, serviceOperationsRequest),
 	},
 	{
-		// registry `serviceOperationsTimeseriesRaw`.
 		module: "service-operations",
 		name: "serviceOperationsTimeseriesRawQuery",
 		label: "default",
 		compile: () =>
-			CH.compileUnsafe(
-				CH.serviceOperationsTimeseriesRawQuery({
-					serviceName: "api",
-					spanNames: ["GET /v2/services", "POST /v2/alerts"],
-					bucketSeconds: 300,
-				}),
-				{ ...window, bucketSeconds: 300 },
-			),
+			viaRegistry(Queries.serviceOperationsTimeseriesRaw, {
+				...sample(ServiceOperationsRequest, { ...span, serviceName: "api" }),
+				spanNames: ["GET /v2/services", "POST /v2/alerts"],
+				bucketSeconds: 300,
+			}),
 	},
 	{
-		// registry `serviceHealthSnapshot`.
 		module: "services",
 		name: "serviceHealthSnapshotQuery",
 		label: "envFiltered",
 		compile: () =>
-			CH.compileUnsafe(CH.serviceHealthSnapshotQuery({ environments: ["production"] }), window),
+			viaRegistry(
+				Queries.serviceHealthSnapshot,
+				sample(ServiceHealthSnapshotRequest, { ...span, environments: ["production"] }),
+			),
 	},
 	{
-		// registry `serviceHealthBaseline` and TelemetryReadService.
+		// Also TelemetryReadService.
 		module: "services",
 		name: "serviceHealthBaselineQuery",
 		label: "filtered",
 		compile: () =>
-			CH.compileUnsafe(
-				CH.serviceHealthBaselineQuery({ environments: ["production"], namespaces: ["backend"] }),
-				window,
+			viaRegistry(
+				Queries.serviceHealthBaseline,
+				sample(ServiceHealthBaselineRequest, {
+					...span,
+					environments: ["production"],
+					namespaces: ["backend"],
+				}),
 			),
 	},
 	{
@@ -1059,23 +1073,26 @@ const remainderFixtures: ReadonlyArray<BuilderFixture> = [
 		compile: () => CH.compileUnsafe(CH.serviceEnvironmentsQuery(), window),
 	},
 	{
-		// registry `serviceEnvironments` for one service.
 		module: "services",
 		name: "serviceEnvironmentsQuery",
 		label: "oneService",
-		compile: () => CH.compileUnsafe(CH.serviceEnvironmentsQuery({ serviceName: "api" }), window),
+		compile: () => viaRegistry(Queries.serviceEnvironments, { ...span, serviceName: "api" }),
 	},
 	{
-		// registry `serviceUsage` with a comparison period.
+		// With a comparison period.
 		module: "services",
 		name: "serviceUsageWithPreviousQuery",
 		label: "default",
 		compile: () =>
-			CH.compileUnsafe(CH.serviceUsageWithPreviousQuery({ serviceName: "api" }), {
-				...window,
-				previousStartTime: "2025-12-30 06:45:00",
-				previousEndTime: START_TIME,
-			}),
+			viaRegistry(
+				Queries.serviceUsage,
+				sample(ServiceUsageRequest, {
+					...span,
+					service: "api",
+					previousStartTime: "2025-12-30 06:45:00",
+					previousEndTime: START_TIME,
+				}),
+			),
 	},
 	{
 		// runtime span estimate before a raw traces breakdown.
@@ -1136,22 +1153,18 @@ const remainderFixtures: ReadonlyArray<BuilderFixture> = [
 			),
 	},
 	{
-		// registry `spanHierarchyProbe`, the unbounded fallback.
+		// The unbounded fallback.
 		module: "errors",
 		name: "traceTimeProbeQuery",
 		label: "default",
-		compile: () => CH.compileUnsafe(CH.traceTimeProbeQuery({ traceId: TRACE_ID }), { orgId: ORG_ID }),
+		compile: () => viaRegistry(Queries.spanHierarchyProbe, { traceId: TRACE_ID }),
 	},
 	{
-		// registry `spanHierarchyProbeRecent`.
 		module: "errors",
 		name: "recentTraceTimeProbeQuery",
 		label: "openEnded",
 		compile: () =>
-			CH.compileUnsafe(CH.recentTraceTimeProbeQuery({ traceId: TRACE_ID }), {
-				orgId: ORG_ID,
-				startTime: START_TIME,
-			}),
+			viaRegistry(Queries.spanHierarchyProbeRecent, { traceId: TRACE_ID, startTime: START_TIME }),
 	},
 	{
 		// inspect-trace, the bounded probe tier.
@@ -1232,7 +1245,7 @@ export const builderFixtures: ReadonlyArray<BuilderFixture> = [
 	...productEventsFixtures,
 	...productEventsExploreFixtures,
 	// Signal presence — the org-wide "have you ever sent this?" probe behind every
-	// empty state (apps/api/src/services/org/SignalPresenceService.ts). One fixture
+	// empty state (packages/backend/src/services/org/SignalPresenceService.ts). One fixture
 	// suffices: the builder takes no options, so there is only one SQL shape.
 	{
 		module: "signal-presence",
@@ -1323,7 +1336,7 @@ export const builderFixtures: ReadonlyArray<BuilderFixture> = [
 				window,
 			),
 	},
-	// Audit log listing (apps/api/src/services/audit/AuditLogService.ts `list`).
+	// Audit log listing (packages/backend/src/services/audit/AuditLogService.ts `list`).
 	{
 		module: "audit-log",
 		name: "auditLogEntriesQuery",
@@ -1852,7 +1865,7 @@ export const builderFixtures: ReadonlyArray<BuilderFixture> = [
 
 	// Service-operation splice across raw, minutely, and hourly sources.
 	{
-		// routes/v2/services.http.ts — service detail "Operations" tab.
+		// registry/queries.ts: service detail "Operations" tab.
 		module: "service-operations",
 		name: "serviceOperationsSummaryQuery",
 		label: "default",
@@ -2739,7 +2752,7 @@ export const builderFixtures: ReadonlyArray<BuilderFixture> = [
 
 	// Service-catalog hourly-rollup splice.
 	{
-		// routes/v2/services.http.ts — the services list.
+		// TelemetryReadService (packages/backend): the services list.
 		module: "services",
 		name: "serviceCatalogQuery",
 		label: "default",
@@ -3257,7 +3270,7 @@ export const builderFixtures: ReadonlyArray<BuilderFixture> = [
 		compile: () => runCompile(CH.serviceDbTopQueriesSQL({ ...window, dbSystem: "postgresql" })),
 	},
 	{
-		// apps/api/src/routes/queries.ts gcpCloudSqlStatementSpans.
+		// packages/backend/src/queries/registry.ts gcpCloudSqlStatementSpans.
 		module: "service-map",
 		name: "serviceDbQuerySpansQuery",
 		label: "default",

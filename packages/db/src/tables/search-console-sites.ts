@@ -1,5 +1,5 @@
 import * as PG from "@maple-dev/effect-orm/postgres"
-import { OrgId, SearchConsoleSiteId, SearchConsoleSiteUrl } from "@maple/domain/primitives"
+import { OrgId, SearchConsoleSiteId, SearchConsoleSiteUrl } from "@maple/primitives"
 import { OAuthConnections } from "./oauth-connections"
 
 // One row per Google Search Console property an org picked, under its Google OAuth grant
@@ -51,4 +51,3 @@ export const SearchConsoleSites = PG.table("search_console_sites", {
 })
 
 export type SearchConsoleSiteRow = PG.SelectRowOf<typeof SearchConsoleSites>
-export type SearchConsoleSiteInsert = PG.InsertRowOf<typeof SearchConsoleSites>

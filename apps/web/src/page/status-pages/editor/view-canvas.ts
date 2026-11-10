@@ -126,8 +126,6 @@ export const canvasDocument = (model: Model, page: V2StatusPage): string => {
 	})
 }
 
-// ON THIS PAGE
-
 const statusDot = (h: H, status: StatusPageComponentStatus): Html =>
 	h.span(
 		[

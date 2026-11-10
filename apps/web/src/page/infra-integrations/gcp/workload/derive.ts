@@ -1,35 +1,28 @@
 import type { GcpInfraServiceId } from "@maple/domain/gcp-infra"
 import type { GcpResource } from "@maple/domain/http"
 import { windowDurationSeconds } from "@maple/query-engine"
-import { type GcpBucketPoint, gcpWindowPoints } from "../../../../components/infra/gcp/charts"
+import { type GcpBucketPoint, gcpWindowPoints } from "../charts"
 import {
 	gcpCloudSqlView,
 	gcpQueryInsightsUnavailable,
 	gcpStatements,
 	type GcpStatement,
-} from "../../../../components/infra/gcp/cloud-sql-signals"
+} from "../cloud-sql-signals"
 import {
 	type GcpCloudSqlInstance,
 	gcpCloudSqlInstances,
 	gcpMatchResource,
 	gcpWorkloadTelemetry,
-} from "../../../../components/infra/gcp/inventory"
-import {
-	gcpDatabaseRows,
-	type GcpReplica,
-	gcpSqlEngineOf,
-	NO_GCP_SPARKS,
-} from "../../../../components/infra/gcp/list-model"
-import { gcpWorkload, gcpWorkloadTone } from "../../../../components/infra/gcp/tabs"
-import { gcpRailFacts, gcpTraceGap, gcpTracedErrors } from "../../../../components/infra/gcp/workload-signals"
+} from "../inventory"
+import { gcpDatabaseRows, type GcpReplica, gcpSqlEngineOf, NO_GCP_SPARKS } from "../list-model"
+import { gcpWorkload, gcpWorkloadTone } from "../tabs"
+import { gcpRailFacts, gcpTraceGap, gcpTracedErrors } from "../workload-signals"
 import { chartBucketSeconds } from "@maple/views/charts/infra-metric-series"
 import type { TraceSide } from "../data"
-import { successOf } from "../list/derive"
 import type { Model } from "./model"
 import { keysOf } from "./update"
 import { Array as Arr, Option } from "effect"
-
-// The workload page's derivations (`GcpWorkloadPage`, `GcpCloudSqlPage`).
+import { successOf } from "../../kit/success-of"
 
 const NO_STATEMENTS: ReadonlyArray<GcpStatement> = []
 
@@ -90,7 +83,7 @@ export const pageOf = (model: Model) => {
 	})
 }
 
-/** What `GcpWorkloadPage` is handed, read off the slots by the route and off fixtures by the lab. */
+/** Read off the slots by the route and off fixtures by the lab. */
 export type WorkloadInputs = Readonly<{
 	service: GcpInfraServiceId
 	keys: ReadonlyArray<string>

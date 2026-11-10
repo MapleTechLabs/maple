@@ -1,28 +1,13 @@
-import { Clock, Duration, Effect, Schema } from "effect"
+import { resolveWindowCommand } from "../../../kit/time-frame"
+import { reloadSpin } from "@maple/views/data/timing"
+import { Effect, Schema } from "effect"
 import { Command } from "foldkit"
-import { resolveWindow, TimeWindow } from "../../../../data/time-range"
+import { TimeWindow } from "../../../../data/time-range"
 import { loadTraced } from "../../kit/traced"
 import { loadTimeseries, TimeseriesInput } from "../data"
-import { Message, RequestMode } from "./message"
+import { Message } from "./message"
 
-export const ResolveWindow = Command.define("ResolveAwsResourceWindow", {
-	args: {
-		mode: RequestMode,
-		startTime: Schema.optional(Schema.String),
-		endTime: Schema.optional(Schema.String),
-		preset: Schema.String,
-		timeZone: Schema.String,
-	},
-	messages: [Message.CompletedResolveWindow],
-	execute: ({ mode, startTime, endTime, preset, timeZone }) =>
-		Effect.map(Clock.currentTimeMillis, (nowMs) =>
-			Message.CompletedResolveWindow({
-				window: resolveWindow({ startTime, endTime, preset, snap: mode === "Load", timeZone }, nowMs),
-				nowMs,
-				mode,
-			}),
-		),
-})
+export const ResolveWindow = resolveWindowCommand("ResolveAwsResourceWindow", Message.CompletedResolveWindow)
 
 export const FetchTimeseries = Command.define("FetchAwsResourceTimeseries", {
 	args: { key: Schema.String, input: TimeseriesInput },
@@ -38,9 +23,4 @@ export const FetchTraced = Command.define("FetchAwsResourceTraced", {
 		Effect.map(loadTraced(window), (result) => Message.CompletedFetchTraced({ key, result })),
 })
 
-export const CompleteReloadSpin = Command.define("CompleteAwsResourceReloadSpin", {
-	args: { version: Schema.Number },
-	messages: [Message.CompletedReloadSpin],
-	execute: ({ version }) =>
-		Effect.as(Effect.sleep(Duration.millis(600)), Message.CompletedReloadSpin({ version })),
-})
+export const CompleteReloadSpin = reloadSpin("CompleteAwsResourceReloadSpin", Message.CompletedReloadSpin)

@@ -31,6 +31,7 @@ import type {
 import { FINGERPRINT_VERSION } from "@maple/domain/tinybird/fingerprint"
 import { foldIssues } from "./issue-fold"
 import { MAX_TRACKED_VERSIONS, mergeVersions } from "./issue-versions"
+import { regressedColumns } from "./issue-reopen"
 import { Array as Arr, Context, Effect, Order, Schema } from "effect"
 
 export interface ErrorTickScanRow {
@@ -92,12 +93,6 @@ export interface PersistErrorTickWindowResult {
 }
 
 /**
- * Carried in the thrown message because the driver and `Database.execute`
- * rewrap the error on its way out of the transaction, leaving the message as
- * the only field that survives intact. `isErrorTickClaimLost` is the only
- * supported way to test for it.
- */
-/**
  * Occurrences a brand-new fingerprint must accumulate before it becomes an
  * Issue once the org's early-promotion budget is spent. Below this it waits in
  * `error_fingerprint_candidates`.
@@ -147,7 +142,6 @@ const BULK_CHUNK_ROWS = 500
 
 const chunks = <A>(items: ReadonlyArray<A>) => Arr.chunksOf(items, BULK_CHUNK_ROWS)
 
-/** Run a row-returning statement once per chunk and concatenate what came back. */
 const inChunks = <A, B, E>(
 	items: ReadonlyArray<A>,
 	run: (chunk: Array<A>) => Effect.Effect<ReadonlyArray<B>, E>,
@@ -670,16 +664,7 @@ export const applyRegressions = (
 		const reopened = yield* inChunks(issueIds, (chunk) =>
 			tx.run(
 				PG.update(ErrorIssues)
-					.set(($) => ({
-						workflowState: "regressed",
-						resolvedAt: null,
-						resolvedByActorId: null,
-						lastRegressedAt: input.windowEndMs,
-						regressionCount: $.regressionCount.add(1),
-						// A regression on an issue retention already archived must be seen.
-						archivedAt: null,
-						updatedAt: input.windowEndMs,
-					}))
+					.set(($) => regressedColumns($.regressionCount.add(1), input.windowEndMs))
 					.where(($) => [$.orgId.eq(input.orgId), $.id.in_(...chunk), $.workflowState.eq("done")])
 					.returning("id"),
 			),

@@ -1,19 +1,23 @@
 import type { ErrorIssueDocument, IssueKind, WorkflowState } from "@maple/domain/http"
 import { ERROR_ISSUE_SEARCH_MAX_LENGTH } from "@maple/domain/http/v2"
-import { hubViewOf, type HubSort, type HubView, type SeverityFilter } from "../../../lib/errors/hub-params"
 import {
-	buildErrorSignals,
-	type ErrorSignal,
-	indexInvestigationsByIssue,
-} from "../../../lib/models/error-signal"
-import { errorIssueFromV2 } from "../../../lib/services/error-issues"
-import { DateTime, Option, Array as Arr, String as Str, Order } from "effect"
+	DEFAULT_HUB_SORT,
+	DEFAULT_SEVERITY_FILTER,
+	hubViewOf,
+	type HubSort,
+	type HubView,
+	type SeverityFilter,
+} from "./hub-params"
+import { buildErrorSignals, type ErrorSignal, indexInvestigationsByIssue } from "../kit/error-signal"
+import { errorIssueFromV2 } from "../../../data/error-issues"
+import { Option, Array as Arr, String as Str, Order } from "effect"
 import { AsyncData } from "foldkit"
 import type { TimeWindow } from "../../../data/time-range"
 import type { ErrorsSearch } from "../../../route/search"
-import { severityRank } from "../kit/severity"
+import { severityRank } from "../../kit/issue-severity"
 import type { ListQuery, WarehouseFilters } from "./command"
 import type { Model } from "./model"
+import { toEpochMs } from "@maple/ui/lib/time-format"
 
 export type Search = typeof ErrorsSearch.Type
 
@@ -26,8 +30,8 @@ export const VOLUME_RANK_LIMIT = 100
 export const INVESTIGATIONS_LIMIT = 100
 
 export const viewOf = (search: Search): HubView => hubViewOf(search.view)
-export const sortOf = (search: Search): HubSort => search.sort ?? "last_seen"
-export const severityOf = (search: Search): SeverityFilter => search.severity ?? "all"
+export const sortOf = (search: Search): HubSort => search.sort ?? DEFAULT_HUB_SORT
+export const severityOf = (search: Search): SeverityFilter => search.severity ?? DEFAULT_SEVERITY_FILTER
 
 /** The sidebar's service and environment narrow the warehouse side too. */
 export const warehouseFiltersOf = (search: Search, window: TimeWindow): WarehouseFilters => ({
@@ -37,7 +41,7 @@ export const warehouseFiltersOf = (search: Search, window: TimeWindow): Warehous
 	deploymentEnvs: search.env ? [search.env] : undefined,
 })
 
-/** `listQuery` (`ErrorsHub`): every param a filter the issues API applies itself. */
+/** Every param a filter the issues API applies itself. */
 export const listQueryOf = (search: Search, rankedHashes: ReadonlyArray<string> | null): ListQuery => {
 	const view = viewOf(search)
 	const sort = sortOf(search)
@@ -60,7 +64,6 @@ export const listQueryOf = (search: Search, rankedHashes: ReadonlyArray<string> 
 	}
 }
 
-// The states each hub view covers, and the signal sort.
 const VIEW_STATES = {
 	open: ["triage", "regressed", "todo", "in_progress", "in_review"],
 	closed: ["verifying", "done", "cancelled", "wontfix"],
@@ -102,8 +105,6 @@ export const uniqueIssues = (
 	return Arr.filter([...byId.values()], (issue) => viewCovers(view, issue.workflowState))
 }
 
-// copied: `KIND_LABEL`, `errorFilterChips` and `hasErrorFilters` (lib/errors/error-filter-chips.ts
-// types its input from the route module).
 export const KIND_LABEL = {
 	error: "Exceptions",
 	alert: "Alert rules",
@@ -128,8 +129,10 @@ export const errorFilterChips = (search: Search): ReadonlyArray<FilterChip> => [
 export const hasErrorFilters = (search: Search): boolean => errorFilterChips(search).length > 0
 
 /** Warehouse `YYYY-MM-DD HH:mm:ss` (UTC) to epoch ms; `null` when it does not parse. */
-const warehouseMs = (value: string): number | null =>
-	Option.getOrNull(Option.map(DateTime.make(Str.replace(" ", "T")(value) + "Z"), DateTime.toEpochMillis))
+const warehouseMs = (value: string): number | null => {
+	const ms = toEpochMs(value)
+	return Number.isNaN(ms) ? null : ms
+}
 
 /** The spark's bucket width: the window over `SPARK_BUCKETS`, at least a minute. */
 export const bucketSecondsOf = (window: TimeWindow): number => {
@@ -148,7 +151,6 @@ export const sparkWindowOf = (window: TimeWindow) => ({
 const dataOr = <A, E>(data: AsyncData.AsyncData<A, E>, fallback: A): A =>
 	Option.getOrElse(AsyncData.getData(data), () => fallback)
 
-/** The issues on screen: every loaded page, in order. */
 export const issuesOf = (model: Model): ReadonlyArray<ErrorIssueDocument> =>
 	uniqueIssues(
 		Arr.map(model.pages, (slot) =>

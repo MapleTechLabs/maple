@@ -10,8 +10,7 @@ import type { Model } from "./model"
 import { peekPosition, traceHrefFrom } from "./peek"
 import { hstack } from "@maple/views/ui/stack"
 
-// The trace peek sheet's frame: the sheet, the trace page's
-// peek body, and the footer that walks the list and opens the page.
+// The trace peek sheet's frame: the sheet, the trace page's peek body, and the footer that walks the list and opens the page.
 
 type H = HtmlBuilder<Message>
 

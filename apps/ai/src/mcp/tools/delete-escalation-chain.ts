@@ -1,8 +1,7 @@
 import type { McpToolRegistrar } from "./types"
 import { Effect, Schema } from "effect"
-import { DeleteEscalationChainOutput } from "@maple/domain/mcp-outputs"
 import { EscalationChainsService } from "@maple/backend/services/alerts/EscalationChainsService"
-import { CurrentMcpTenant } from "../lib/query-warehouse"
+import { CurrentMcpTenant } from "../tenant"
 import { deleteChainErrors, updateChainErrors } from "../lib/escalation-chains"
 import * as P from "../lib/params"
 import { doc } from "../lib/tool-doc"
@@ -17,7 +16,6 @@ export function registerDeleteEscalationChainTool(server: McpToolRegistrar) {
 		parameters: Schema.Struct({
 			chain_id: P.resourceId("escalationChain", "Escalation chain to delete"),
 		}),
-		output: DeleteEscalationChainOutput,
 		hints: { readOnly: false, destructive: true, idempotent: false },
 		phrases: ["Deleting an escalation chain"],
 		handler: Effect.fn("McpTool.deleteEscalationChain")(function* (params) {

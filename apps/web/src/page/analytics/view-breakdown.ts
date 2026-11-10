@@ -8,7 +8,7 @@ import { panel } from "@maple/views/ui/panel"
 import { pressable } from "@maple/views/ui/pressable"
 import { searchInput } from "@maple/views/ui/search-input"
 import { controlledView as controlledToggleGroup } from "@maple/views/ui/toggle-group"
-import { columnHead, dataTable, dataTableEmpty } from "../infra/kit/data-table"
+import { columnHead, dataTable, dataTableEmpty } from "../kit/data-table"
 import { sortRowsByField } from "../kit/table-sort"
 import { type FilterKey, Message } from "./message"
 import type { Model, PanelState } from "./model"
@@ -18,8 +18,6 @@ import { typography, typographyClass } from "@maple/views/ui/typography"
 import { hstack } from "@maple/views/ui/stack"
 import { columnClass } from "@maple/views/ui/column"
 import { Array as Arr, String as Str, Option } from "effect"
-
-// `AnalyticsBreakdownPanel`: one breakdown card.
 
 type H = HtmlBuilder<Message>
 type SortKey = "name" | "count" | "views"
@@ -43,7 +41,7 @@ export type BreakdownCard = Readonly<{ id: string; dimensions: ReadonlyArray<Bre
 
 type ShareRow = BreakdownRow & Readonly<{ share: number }>
 
-/** `shareBar` (infra/primitives/share-bar.ts): the row's background filled to its share. */
+/** The row's background filled to its share. */
 const shareBarStyle = (share: number): Readonly<Record<string, string>> => {
 	const pct = Math.min(100, share * 100)
 	if (!Number.isFinite(pct) || pct < 0.5) return {}
@@ -83,7 +81,6 @@ export const panelView = (state: PanelState, dimensions: ReadonlyArray<Breakdown
 
 type PanelView = NonNullable<ReturnType<typeof panelView>>
 
-/** `DimensionTabs`. */
 export const dimensionTabs = (
 	h: H,
 	cardId: string,
@@ -103,7 +100,6 @@ export const dimensionTabs = (
 		})),
 	})
 
-/** `FilterInput`. */
 export const panelFilterInput = (
 	h: H,
 	cardId: string,
@@ -130,7 +126,7 @@ const sortHead = (cardId: string, view: PanelView, key: SortKey) => ({
 	onSort: Message.ClickedPanelSort({ panel: cardId, key, current: view.sort }),
 })
 
-/** `BreakdownTable`: the card's capped table, or the dialog's ranked one. */
+/** The card's capped table, or the dialog's ranked one. */
 export const breakdownTable = (
 	h: H,
 	model: Model,

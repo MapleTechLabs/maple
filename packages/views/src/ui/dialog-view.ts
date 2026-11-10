@@ -1,8 +1,8 @@
 import { cn } from "@maple/ui/lib/utils"
-import * as AlertDialogStyles from "@maple/ui/styles/ui/alert-dialog"
-import * as CommandStyles from "@maple/ui/styles/ui/command"
-import * as DialogStyles from "@maple/ui/styles/ui/dialog"
-import * as SheetStyles from "@maple/ui/styles/ui/sheet"
+import * as AlertDialogStyles from "./alert-dialog.styles"
+import * as CommandStyles from "./command.styles"
+import * as DialogStyles from "./dialog.styles"
+import * as SheetStyles from "./sheet.styles"
 import { Option } from "effect"
 import { Submodel } from "foldkit"
 import {
@@ -30,6 +30,9 @@ import { focusGuard, isMounted, stateAttributes } from "./overlay/transition"
 
 export type SheetSide = "right" | "left" | "top" | "bottom"
 
+/** A sheet's dim: `dialog` blurs and darkens the page, `panel` only dims it lightly. */
+export type SheetScrim = "dialog" | "panel"
+
 type Parts = Readonly<{
 	backdrop: string
 	viewport: string
@@ -44,13 +47,14 @@ type Parts = Readonly<{
 const proseControls =
 	"[&_[data-slot=button]]:font-prose [&_[data-slot$='-close']]:font-prose [&_[data-slot$='-cancel']]:font-prose [&_[data-slot=label]]:font-prose [&_[data-slot=field-label]]:font-prose"
 
-// dialog.tsx `DialogPopup`, alert-dialog.tsx `AlertDialogPopup`, sheet.tsx `SheetPopup`, command.tsx
+// The popup, backdrop and viewport classes of each dialog kind.
 const partsOf = (
 	kind: Kind,
 	side: SheetSide,
 	className: string | undefined,
 	isBottomStick = true,
 	size: SheetStyles.SheetSize = "default",
+	scrim: SheetScrim = "dialog",
 ): Parts => {
 	switch (kind) {
 		case "dialog":
@@ -89,7 +93,11 @@ const partsOf = (
 			}
 		case "sheet":
 			return {
-				backdrop: cn(SheetStyles.sheetBackdropStyles),
+				backdrop: cn(
+					scrim === "panel"
+						? SheetStyles.sheetBackdropPanelStyles
+						: SheetStyles.sheetBackdropStyles,
+				),
 				viewport: cn(
 					SheetStyles.sheetViewportStyles,
 					side === "bottom" && SheetStyles.sheetViewportBottomStyles,
@@ -137,7 +145,9 @@ export type ViewInputs = Readonly<{
 	/** A left or right sheet's width (`SheetSize`): pick by content, never a `max-w-*` class. */
 	size?: SheetStyles.SheetSize
 	hasTrigger?: boolean
-	/** `showCloseButton={false}`: the content renders its own close. */
+	/** A sheet's dim (`dialog` by default); see `SheetScrim`. */
+	scrim?: SheetScrim
+	/** `false`: the content renders its own close. */
 	showCloseButton?: boolean
 	/** `closeProps={{ className }}`: classes merged onto the close button's own. */
 	closeClassName?: string
@@ -166,6 +176,7 @@ export const view = Submodel.defineView<Model, Message, ViewInputs>((model, inpu
 		inputs.className,
 		inputs.isBottomStickOnMobile,
 		inputs.size,
+		inputs.scrim,
 	)
 	const slot = slotPrefix(model.kind)
 	const isVisible = isMounted(model.isOpen, model.animation)

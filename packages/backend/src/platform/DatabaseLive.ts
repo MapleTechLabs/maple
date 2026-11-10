@@ -253,7 +253,7 @@ export const executeWithSpan = Effect.fn(
 	yield* annotate
 	if (Arr.isArray(result)) {
 		// `db.response.returned_rows` is what the span-detail database panel reads
-		// (packages/ui/src/lib/cloud-platforms/database.ts); `result.rowCount` is
+		// (packages/views/src/traces/span-panel/platform.ts); `result.rowCount` is
 		// Maple's own key, also emitted by the warehouse executor. Keep both.
 		yield* Effect.annotateCurrentSpan({
 			"result.rowCount": result.length,

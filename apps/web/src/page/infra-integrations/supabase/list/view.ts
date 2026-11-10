@@ -12,7 +12,7 @@ import { dashboardPage } from "../../../kit/dashboard-page"
 import { listToolbar, toolbarCount, toolbarStat } from "../../../kit/list-toolbar"
 import { pageHeroParts } from "../../../infra/kit/page-parts"
 import { integrationNotConnected } from "../../kit/empty-states"
-import { pageTime } from "../../kit/page-time"
+import { pageTime } from "../../../kit/page-time"
 import { supabaseConnectCta } from "../connect"
 import { ERROR_RATE_LIMIT } from "../health"
 import type { SupabaseProjectRow, SupabaseStatus } from "../model"
@@ -26,8 +26,6 @@ import { supabaseTable, supabaseTableLoading } from "./view-table"
 import { hstack } from "@maple/views/ui/stack"
 import { grid } from "@maple/views/ui/grid"
 import { Array as Arr } from "effect"
-
-// `/infra/supabase`: the organization's projects, their health and what needs a look.
 
 type H = HtmlBuilder<Message>
 

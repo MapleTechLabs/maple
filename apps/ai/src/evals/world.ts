@@ -10,7 +10,7 @@
  * Rows are routed by the shape of the compiled SQL, the same way `fake-warehouse.ts` routes the
  * trace fixtures. Anything not modeled here gets no rows.
  */
-import { executeSql } from "@maple/backend/platform/test-pglite"
+import { executeSql } from "@maple/backend/testing/test-pglite"
 import type { EvalRuntime } from "../mcp/__evals__/eval-runtime"
 import type { FixtureRule } from "../mcp/__evals__/fake-warehouse"
 import { FIXTURES } from "../mcp/__evals__/utils"

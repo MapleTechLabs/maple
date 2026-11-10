@@ -51,7 +51,7 @@ import {
 	type StatusPageUpdateSource,
 	type UptimeMonitorId,
 	type UserId,
-} from "@maple/domain/primitives"
+} from "@maple/primitives"
 import {
 	DEFAULT_STATUS_PAGE_THEME,
 	STATUS_PAGE_BREAK_GLASS_PREFIX,

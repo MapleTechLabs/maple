@@ -7,7 +7,7 @@ import {
 	SearchConsolePagesOutput,
 	SearchConsoleQueriesOutput,
 } from "@maple/domain/mcp-outputs"
-import { executeSql } from "@maple/backend/platform/test-pglite"
+import { executeSql } from "@maple/backend/testing/test-pglite"
 import { addDays, pacificToday } from "@maple/domain/search-console"
 import type { McpToolResult } from "../types"
 import { installFakeWarehouse, restoreWarehouse, type FixtureRule } from "../../__evals__/fake-warehouse"

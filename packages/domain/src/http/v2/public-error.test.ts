@@ -1,6 +1,6 @@
 import { describe, expect, it } from "@effect/vitest"
 import { Schema } from "effect"
-import { ApiKeyId } from "../../primitives"
+import { ApiKeyId } from "@maple/primitives"
 import { publicHttpErrorPolicy } from "../error-policy"
 import { AlertDeliveryError, AlertDeliveryRejectedError } from "../alerts"
 import { ApiKeyNotFoundError, ApiKeyPersistenceError } from "../api-keys"

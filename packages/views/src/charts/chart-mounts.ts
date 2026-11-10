@@ -49,8 +49,8 @@ export const registerChartHost = (name: ChartHostName, load: () => Promise<Chart
 }
 
 /**
- * `PlotFrame` + `CanvasChart`/`Chart` on the plot box: measures the box's height
- * (`useMeasuredHeight`), mounts `@tanstack/charts` into `.ts-chart-surface`, keeps the plot anchor
+ * The chart on the plot box: measures the box's height, mounts `@tanstack/charts` into
+ * `.ts-chart-surface`, keeps the plot anchor
  * on the scene's plot rect, and follows the box's `data-chart-spec` (a MutationObserver picks up
  * each new definition). Focus and tooltip changes become Messages.
  */

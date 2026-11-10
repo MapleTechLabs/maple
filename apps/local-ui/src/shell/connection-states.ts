@@ -122,7 +122,7 @@ const docsLink = (h: HtmlBuilder<Message>, href: string, label: string) =>
 		[label],
 	)
 
-/** `InstallCommands`: Homebrew or the install script, for a machine without the CLI. */
+/** Homebrew or the install script, for a machine without the CLI. */
 const installCommands = (h: HtmlBuilder<Message>, model: Model): Html =>
 	h.submodel({
 		slotId: "install-tabs",

@@ -1,6 +1,9 @@
 import {
+	AlertDeliveryAuthError,
 	AlertDeliveryError,
 	type AlertDeliveryFailure,
+	AlertDeliveryRejectedError,
+	AlertDeliveryTargetMissingError,
 	AlertDestinationDecryptionError,
 	AlertDestinationStoredConfigInvalidError,
 	AlertValidationError,
@@ -11,11 +14,8 @@ import {
 import { projectAlertLifecycleEvent } from "@maple/alerting-core"
 import { Effect, Result, Schema } from "effect"
 import { HttpClient } from "effect/http"
-import {
-	secretKeyringFromEnv,
-	type SecretKeyring,
-	type SecretKeyringEnv,
-} from "@maple/backend/platform/SecretBox"
+import type { EnvApi } from "@maple/backend/platform/Env"
+import { secretKeyringFromEnv, type SecretKeyring } from "@maple/backend/platform/SecretBox"
 import type { EmailServiceApi } from "@maple/backend/platform/EmailService"
 import type { ChatAlertPosterApi } from "./ChatAlertPoster"
 import { buildAlertRuleUrl, type DispatchContext as DeliveryDispatchContext } from "./AlertDeliveryDispatch"
@@ -45,9 +45,26 @@ export type AlertDeliveryPayloadContext = Omit<
 >
 
 export const alertDestinationKeyringFromEnv = (
-	env: SecretKeyringEnv,
+	env: EnvApi,
 ): Effect.Effect<SecretKeyring, AlertValidationError> =>
 	secretKeyringFromEnv(env, (message) => new AlertValidationError({ message, details: [] }))
+
+/** The destination's provider refused the delivery, as opposed to Maple failing to send it. */
+export const isAlertDeliveryFailure = (error: unknown): error is AlertDeliveryFailure =>
+	Schema.is(AlertDeliveryError)(error) ||
+	Schema.is(AlertDeliveryAuthError)(error) ||
+	Schema.is(AlertDeliveryTargetMissingError)(error) ||
+	Schema.is(AlertDeliveryRejectedError)(error)
+
+/** An email destination's send; a provider failure becomes the delivery error the queue retries. */
+export const emailDeliverySender = (email: EmailServiceApi) => (to: string, subject: string, html: string) =>
+	email
+		.send(to, subject, html)
+		.pipe(
+			Effect.mapError(
+				(error) => new AlertDeliveryError({ message: error.message, destinationType: "email" }),
+			),
+		)
 
 export const makeAlertDestinationDelivery = (options: {
 	readonly keyring: SecretKeyring
@@ -58,7 +75,7 @@ export const makeAlertDestinationDelivery = (options: {
 	readonly postChatAlert: ChatAlertPosterApi["post"]
 	readonly linear: LinearDeliveryPort
 }) => {
-	const hydrateDestination = Effect.fn("AlertsService.hydrateDestination")(function* (
+	const hydrateDestination = Effect.fn("AlertDestinationDelivery.hydrateDestination")(function* (
 		row: DeliverableDestination,
 	) {
 		const { publicConfig, secretConfig } = yield* hydrateDestinationRow(row, options.keyring, {
@@ -96,14 +113,7 @@ export const makeAlertDestinationDelivery = (options: {
 	const composeRuleUrl = (context: Pick<AlertDispatchContext, "ruleId" | "eventType">): string =>
 		buildAlertRuleUrl(options.appBaseUrl, context)
 
-	const sendEmail = (to: string, subject: string, html: string) =>
-		options.email
-			.send(to, subject, html)
-			.pipe(
-				Effect.mapError(
-					(error) => new AlertDeliveryError({ message: error.message, destinationType: "email" }),
-				),
-			)
+	const sendEmail = emailDeliverySender(options.email)
 
 	const dispatchDelivery = (
 		context: AlertDispatchContext,
@@ -209,29 +219,33 @@ export const makeAlertDestinationDelivery = (options: {
 			),
 		)
 
-	const sendImmediateNotification = Effect.fn("AlertsService.sendImmediateNotification")(function* (
-		destinationRow: DeliverableDestination,
-		context: Omit<AlertDispatchContext, "destination" | "publicConfig" | "secretConfig">,
-	) {
-		const hydrated = yield* hydrateDestination(destinationRow)
-		const fullContext: AlertDispatchContext = {
-			destination: hydrated.row,
-			publicConfig: hydrated.publicConfig,
-			secretConfig: hydrated.secretConfig,
-			...context,
-		}
-		const payload = yield* buildPayload(fullContext, destinationRow.orgId)
-		const payloadJson = yield* Schema.encodeEffect(Schema.fromJsonString(Schema.Unknown))(payload).pipe(
-			Effect.mapError(
-				(cause) =>
-					new AlertDeliveryError({
-						message: `Unable to encode the delivery payload for rule ${context.ruleId}`,
-						cause,
-					}),
-			),
-		)
-		return yield* dispatchDelivery(fullContext, payloadJson)
-	})
+	const sendImmediateNotification = Effect.fn("AlertDestinationDelivery.sendImmediateNotification")(
+		function* (
+			destinationRow: DeliverableDestination,
+			context: Omit<AlertDispatchContext, "destination" | "publicConfig" | "secretConfig">,
+		) {
+			const hydrated = yield* hydrateDestination(destinationRow)
+			const fullContext: AlertDispatchContext = {
+				destination: hydrated.row,
+				publicConfig: hydrated.publicConfig,
+				secretConfig: hydrated.secretConfig,
+				...context,
+			}
+			const payload = yield* buildPayload(fullContext, destinationRow.orgId)
+			const payloadJson = yield* Schema.encodeEffect(Schema.fromJsonString(Schema.Unknown))(
+				payload,
+			).pipe(
+				Effect.mapError(
+					(cause) =>
+						new AlertDeliveryError({
+							message: `Unable to encode the delivery payload for rule ${context.ruleId}`,
+							cause,
+						}),
+				),
+			)
+			return yield* dispatchDelivery(fullContext, payloadJson)
+		},
+	)
 
 	return {
 		hydrateDestination,

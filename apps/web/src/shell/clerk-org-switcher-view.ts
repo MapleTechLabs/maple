@@ -1,7 +1,7 @@
 import { MAPLE_REGION_LABELS, MapleRegion } from "@maple/domain/organization-regions"
 import { initialsFrom } from "@maple/ui/lib/initials"
 import { cn } from "@maple/ui/lib/utils"
-import { currentRegion, hasMultipleRegions } from "../lib/region"
+import { currentRegion, hasMultipleRegions } from "../platform/region"
 import { Option, Array as Arr, String as Str } from "effect"
 import { Submodel } from "foldkit"
 import type { ChildAttribute, Html, HtmlBuilder } from "foldkit/html"
@@ -32,7 +32,7 @@ import { hasNamespaceSearch, namespaceRows, namespaceSearchRow, noNamespacesMatc
 import { typography } from "@maple/views/ui/typography"
 import { hstack } from "@maple/views/ui/stack"
 
-/** The namespace submenu's data (`NamespaceScopeList`), sidebar switcher only. */
+/** The namespace submenu's data, sidebar switcher only. */
 export type NamespaceScope = Readonly<{
 	pinned: Option.Option<string>
 	observed: ReadonlyArray<string>
@@ -55,7 +55,7 @@ export type ViewInputs = Readonly<{
 
 type H = HtmlBuilder<Message>
 
-/** `OrgAvatar`: the org's logo over its initials on a warm tile keyed by the name. */
+/** The org's logo over its initials on a warm tile keyed by the name. */
 export const orgAvatar = <M>(h: HtmlBuilder<M>, name: string, className?: string, imageUrl?: string): Html =>
 	avatarFallback(
 		h,
@@ -69,7 +69,6 @@ export const orgAvatar = <M>(h: HtmlBuilder<M>, name: string, className?: string
 		initialsFrom(name),
 	)
 
-/** `RegionBadge`. */
 const regionBadge = (h: H, region: MapleRegion, className?: string): Html => {
 	const label = MAPLE_REGION_LABELS[region]
 	return badge(
@@ -112,7 +111,7 @@ const namespaceItem = (h: H, value: string, label: string, isPinned: boolean): M
 	content: [typography(h, { truncate: true }, [label]), ...(isPinned ? [checkIcon(h)] : [])],
 })
 
-/** `NamespaceScopeSubmenu`: the pin on the trigger, the observed namespaces inside. */
+/** The pin on the trigger, the observed namespaces inside. */
 const namespaceSubmenu = (h: H, model: Model, scope: NamespaceScope): MenuView.MenuSubmenuEntry => {
 	const { pinned, observed } = scope
 	const rows = namespaceRows(observed, pinned, model.namespaceQuery)
@@ -203,7 +202,7 @@ const entriesOf = (h: H, model: Model, inputs: ViewInputs): ReadonlyArray<MenuVi
 		: [{ _tag: "Separator" } as const, namespaceSubmenu(h, model, inputs.namespaceScope)]),
 ]
 
-/** `CreateOrganizationDialog`: a `FormDialog` with the name field and, with several regions, the region. */
+/** A `FormDialog` with the name field and, with several regions, the region. */
 const createDialog = (h: H, model: Model): Html => {
 	const id = model.createDialog.id
 	const isBlank = Str.trim(model.name) === ""
@@ -339,7 +338,7 @@ const regionField = (h: H, model: Model): Html => {
 	])
 }
 
-/** `<DropdownMenuContent side align sideOffset={4} className="min-w-56">` around the entries. */
+/** The menu popup around the entries. */
 export const view = Submodel.defineView<Model, Message, ViewInputs>((model, inputs, h) => {
 	const dialog = createDialog(h, model)
 	return h.submodel({

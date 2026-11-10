@@ -1,5 +1,5 @@
 import { Array as Arr, Effect, pipe, Record } from "effect"
-import type { ServiceOverviewOutput } from "@maple/domain/tinybird"
+import type { ServiceOverviewRow } from "../ch/pipe-rows"
 import { WarehouseExecutor } from "./WarehouseExecutor"
 import type { ListServicesInput, ServiceSummary } from "./types"
 import { aggregateServiceRows, weightedAvg } from "./aggregation"
@@ -9,7 +9,7 @@ export const listServices = Effect.fn("Observability.listServices")(function* (i
 
 	yield* Effect.annotateCurrentSpan("maple.query.environment", input.environment ?? "all")
 
-	const result = yield* executor.query<ServiceOverviewOutput>(
+	const result = yield* executor.query<ServiceOverviewRow>(
 		"service_overview",
 		{
 			start_time: input.timeRange.startTime,

@@ -29,8 +29,8 @@ import { toLoadFailure } from "@maple/views/data/load-failure"
 import { PageOutMessage, type PageContext } from "../../contract"
 import { statusPagesHref } from "../shared/commands"
 import { selectionOf } from "../shared/preview"
-import { ORG } from "../../alerts/shared/test-rows"
-import { downMonitor, httpMonitor } from "../../alerts/shared/uptime-test-monitors"
+import { ORG } from "../../kit/alert-test-rows"
+import { downMonitor, httpMonitor } from "../../kit/uptime/test-monitors"
 import {
 	component,
 	componentId,
@@ -1779,7 +1779,11 @@ describe("json view", () => {
 		).model
 		// Cancel before the re-read lands, then start a fresh draft on v7.
 		const reopened = Arr.reduce(
-			[Message.ClickedCancelJson(), Message.ClickedEditJson()],
+			[
+				Message.ClickedCancelJson(),
+				Message.ClickedEditJson(),
+				Message.ChangedJson({ value: JSON.stringify(documentOf([1])) }),
+			],
 			refused,
 			(model, message) => pageUpdate(model, message).model,
 		)
@@ -1790,7 +1794,9 @@ describe("json view", () => {
 				result: Result.succeed({ ...base, version: "v8" }),
 			}),
 		).model
-		expect(reread.jsonEdit?.base.version).toBe("v7")
+		expect(pageUpdate(reread, Message.ClickedApplyJson()).commands).toMatchObject([
+			{ name: "ApplyStatusPageConfig", args: { ifVersion: "v7" } },
+		])
 	})
 
 	test("a config read superseded by the conflict re-read does not rebase the draft", () => {
@@ -1819,8 +1825,16 @@ describe("json view", () => {
 				result: Result.succeed({ ...base, version: "v6" }),
 			}),
 		).model
-		expect(stale.jsonEdit?.isRebasing).toBe(true)
-		expect(stale.jsonEdit?.base.version).toBe("v7")
+		const reread = pageUpdate(
+			stale,
+			Message.CompletedFetchConfig({
+				key: refused.config.key ?? "",
+				result: Result.succeed({ ...base, version: "v8" }),
+			}),
+		).model
+		expect(pageUpdate(reread, Message.ClickedApplyJson()).commands).toMatchObject([
+			{ name: "ApplyStatusPageConfig", args: { ifVersion: "v8" } },
+		])
 	})
 
 	test("a failed re-read after a conflict leaves the rebase pending for the next good read", () => {
@@ -1847,8 +1861,17 @@ describe("json view", () => {
 				result: Result.fail(toLoadFailure(new Error("unreachable"))),
 			}),
 		).model
-		expect(failed.jsonEdit?.isRebasing).toBe(true)
-		expect(failed.jsonEdit?.base.version).toBe("v7")
+		const retried = pageUpdate(failed, Message.ClickedRetry()).model
+		const reread = pageUpdate(
+			retried,
+			Message.CompletedFetchConfig({
+				key: retried.config.key ?? "",
+				result: Result.succeed({ ...base, version: "v8" }),
+			}),
+		).model
+		expect(pageUpdate(reread, Message.ClickedApplyJson()).commands).toMatchObject([
+			{ name: "ApplyStatusPageConfig", args: { ifVersion: "v8" } },
+		])
 	})
 
 	test("unsaved Settings edits block Apply until they are saved or discarded", () => {

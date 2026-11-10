@@ -9,8 +9,7 @@ import {
 import { Context, Effect, Result, Schema, Stream } from "effect"
 import { toLoadFailure } from "@maple/views/data/load-failure"
 import { MapleApiV2Client, MapleInternalApiClient } from "../../platform/api-clients"
-
-// `IntegrationConnectProvider` and `useOAuthPopupFlow`.
+import { PROVIDERS as REGISTRY } from "../kit/providers"
 
 export const ConnectProvider = Schema.Literals([
 	"cloudflare",
@@ -47,7 +46,7 @@ export const ConnectModel = Schema.Struct({
 	active: Schema.NullOr(ConnectAttempt),
 	/** The start mutation is in flight (`busy`). */
 	isStarting: Schema.Boolean,
-	/** The popup closed; the provider's grace runs until `active` clears (`popupActive` = `active !== null`). */
+	/** The popup closed; the provider's grace runs until `active` clears. */
 	isClosed: Schema.Boolean,
 })
 export type ConnectModel = typeof ConnectModel.Type
@@ -59,66 +58,37 @@ export const initConnect = (): ConnectModel => ({
 	isClosed: false,
 })
 
-interface ProviderSpec {
-	readonly label: string
-	readonly windowName: string
+interface PopupSpec {
 	readonly windowFeatures: string
-	readonly startErrorTitle: string
 	/** `closeGraceMs`: polling continues this long after the popup closes. */
 	readonly closeGraceMs: number
-	/** Whether the status is re-read every 3 s while the popup is out (`onPoll`). */
+	/** Whether the status is re-read every 3 s while the popup is out. */
 	readonly polls: boolean
 }
 
+interface ProviderSpec extends PopupSpec {
+	readonly label: string
+	readonly windowName: string
+	readonly startErrorTitle: string
+}
+
+const POPUP = { windowFeatures: "popup,width=520,height=680", closeGraceMs: 0, polls: false } as const
+
+/** The provider's popup, with its label, window name and error title from its registry name. */
+const spec = (provider: ConnectProvider, popup: PopupSpec): ProviderSpec => ({
+	...popup,
+	label: REGISTRY[provider].name,
+	windowName: `maple-${provider}-connect`,
+	startErrorTitle: `Couldn't start ${REGISTRY[provider].name} connect flow`,
+})
+
 export const PROVIDERS = {
-	cloudflare: {
-		label: "Cloudflare",
-		windowName: "maple-cloudflare-connect",
-		windowFeatures: "popup,width=520,height=680",
-		startErrorTitle: "Couldn't start Cloudflare connect flow",
-		closeGraceMs: 15_000,
-		polls: true,
-	},
-	linear: {
-		label: "Linear",
-		windowName: "maple-linear-connect",
-		windowFeatures: "popup,width=520,height=680",
-		startErrorTitle: "Couldn't start Linear connect flow",
-		closeGraceMs: 0,
-		polls: false,
-	},
-	github: {
-		label: "GitHub",
-		windowName: "maple-github-connect",
-		windowFeatures: "popup,width=600,height=720",
-		startErrorTitle: "Couldn't start GitHub connect flow",
-		closeGraceMs: 10_000,
-		polls: false,
-	},
-	planetscale: {
-		label: "PlanetScale",
-		windowName: "maple-planetscale-connect",
-		windowFeatures: "popup,width=520,height=680",
-		startErrorTitle: "Couldn't start PlanetScale connect flow",
-		closeGraceMs: 0,
-		polls: false,
-	},
-	supabase: {
-		label: "Supabase",
-		windowName: "maple-supabase-connect",
-		windowFeatures: "popup,width=560,height=720",
-		startErrorTitle: "Couldn't start Supabase connect flow",
-		closeGraceMs: 0,
-		polls: false,
-	},
-	"google-search-console": {
-		label: "Google Search Console",
-		windowName: "maple-google-search-console-connect",
-		windowFeatures: "popup,width=520,height=680",
-		startErrorTitle: "Couldn't start Google Search Console connect flow",
-		closeGraceMs: 0,
-		polls: false,
-	},
+	cloudflare: spec("cloudflare", { ...POPUP, closeGraceMs: 15_000, polls: true }),
+	linear: spec("linear", POPUP),
+	github: spec("github", { ...POPUP, windowFeatures: "popup,width=600,height=720", closeGraceMs: 10_000 }),
+	planetscale: spec("planetscale", POPUP),
+	supabase: spec("supabase", { ...POPUP, windowFeatures: "popup,width=560,height=720" }),
+	"google-search-console": spec("google-search-console", POPUP),
 } satisfies { readonly [K in ConnectProvider]: ProviderSpec }
 
 const decodeReturnPath = Schema.decodeUnknownResult(IntegrationReturnPath)

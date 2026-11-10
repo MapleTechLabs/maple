@@ -1,4 +1,4 @@
-import { SpanId, TraceId } from "@maple/domain/primitives"
+import { SpanId, TraceId } from "@maple/primitives"
 import type { SpanNode } from "@maple/ui/lib/types"
 import { Schema } from "effect"
 

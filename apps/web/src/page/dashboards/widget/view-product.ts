@@ -6,8 +6,8 @@ import {
 	FUNNEL_KEY_BY_OPTIONS,
 	FUNNEL_SESSION_DIMENSIONS,
 	FUNNEL_WINDOW_OPTIONS,
-} from "../../../components/funnels/definition"
-import { parseProductEventsFilterClause } from "../../../lib/query-builder/funnel-filters"
+} from "../kit/funnel-definition"
+import { parseProductEventsFilterClause } from "./funnel-filters"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { button } from "@maple/views/ui/button"
 import { badge } from "@maple/views/ui/display"
@@ -35,9 +35,6 @@ import { queryPanelBar } from "../../kit/query-panel-bar"
 import { Array as Arr, String as Str, Option } from "effect"
 import { stripClass } from "@maple/views/ui/rule"
 
-// `QueryPanelShell` and `AddOnToggleBar`, and the rows the funnel and
-// paths panels share: the population filter, Count by, the window, the breakdown.
-
 type H = HtmlBuilder<Message>
 
 export const product = (edit: ProductEdit): Message => Message.ChangedProduct({ edit })
@@ -49,7 +46,7 @@ const SOURCE_LABEL = {
 	product_events: "Product events",
 } as const
 
-/** `QueryPanelShell` for query A on Product events; `sourceId` is its source select. */
+/** The shell of query A on Product events; `sourceId` is its source select. */
 export const panelShell = (
 	h: H,
 	model: Model,
@@ -108,7 +105,6 @@ export const panelShell = (
 
 export const FUNNEL_SOURCES = QUERY_BUILDER_DATA_SOURCES
 
-/** `AddOnToggleBar`. */
 export const addOnBar = <K extends string>(
 	h: H,
 	items: ReadonlyArray<{ key: K; label: string }>,
@@ -227,7 +223,7 @@ export const windowRow = (
 	})
 }
 
-/** `BreakdownPicker`: none, a session dimension, or `attribute:<key>` typed by hand. */
+/** None, a session dimension, or `attribute:<key>` typed by hand. */
 export const breakdownRow = (h: H, model: Model, breakdownBy: string | undefined): Html => {
 	const fromValue = breakdownBy !== undefined && Str.startsWith("attribute:")(breakdownBy)
 	const isAttribute = fromValue || (model.breakdownAttribute.isActive && breakdownBy === undefined)

@@ -7,7 +7,7 @@ import { emptyMessage } from "@maple/views/ui/empty"
 import { skeleton } from "@maple/views/ui/skeleton"
 import { statusDot } from "@maple/views/ui/status-dot"
 import { sectionHeading } from "../../kit/section-heading"
-import type { TimeSearch } from "../kit/view-tabs"
+import type { TimeSearch } from "../../kit/view-tabs"
 import { findingHref } from "./links"
 import type { Finding, SourceId } from "./model"
 import { sourceMark, SOURCE_TITLE } from "./source-mark"
@@ -19,8 +19,6 @@ import { Array as Arr, String as Str, Order } from "effect"
 /** The muted caption beside an overview section's title, set in the sans prose face. */
 export const sectionCaption = <M>(h: HtmlBuilder<M>, text: string): Html =>
 	typography(h, { size: "xs", tone: "muted", className: "font-prose" }, [text])
-
-// `NeedsAttention` and its rows.
 
 // A stale source is an outline, not a status fill.
 const STALE_DOT = "border-[1.5px] border-muted-foreground bg-transparent"

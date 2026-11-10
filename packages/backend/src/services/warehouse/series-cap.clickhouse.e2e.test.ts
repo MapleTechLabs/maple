@@ -5,7 +5,7 @@ import { compileUnsafe, from, param, table } from "@maple-dev/effect-orm/clickho
 import * as T from "@maple-dev/effect-orm/clickhouse"
 import { finalizeTimeseries } from "../../../../query-engine/src/ch/queries/series-cap"
 import { normalizeSqlForClickHouseClient } from "@maple/query-engine/execution"
-import { clickhouseE2eEnabled, clickhouseExec, uniqueDatabase } from "./clickhouse-e2e-support"
+import { clickhouseE2eEnabled, clickhouseExec, uniqueDatabase } from "../../testing/clickhouse-e2e-support"
 
 const database = uniqueDatabase("maple_series_cap_e2e")
 const outputColumns = { bucket: T.string, groupName: T.string, value: T.nullable(T.float64), flag: T.bool }

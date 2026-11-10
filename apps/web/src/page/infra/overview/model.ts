@@ -5,10 +5,8 @@ import { Schema } from "effect"
 import { KeyedSchema } from "@maple/views/data/keyed"
 import { LoadFailure } from "@maple/views/data/load-failure"
 import { InfraSearch } from "../../../route/search"
-import * as Frame from "../kit/frame"
+import * as Frame from "../../kit/time-frame"
 import * as InstallModal from "../kit/install-modal"
-
-// `/infra`: the overview, one summary per source.
 
 export const SOURCE_IDS = [
 	"hosts",
@@ -27,7 +25,6 @@ export type SourceId = typeof SourceId.Type
 const FleetScope = Schema.Literals(["saturated", "elevated", "stale"])
 const GcpService = Schema.Literals(GCP_INFRA_SERVICE_IDS)
 
-/** `FindingTarget`. */
 export const FindingTarget = Schema.Union([
 	Schema.Struct({ kind: Schema.Literal("hosts"), scope: FleetScope }),
 	Schema.Struct({ kind: Schema.Literal("host"), hostName: Schema.String }),
@@ -94,7 +91,7 @@ export const SourceSlot = KeyedSchema(SourceReading, LoadFailure)
 export const Model = Schema.Struct({
 	search: InfraSearch,
 	frame: Frame.Model,
-	/** `useInfraSurfaces(window)`: the presence probe over the page's window. */
+	/** The presence probe over the page's window. */
 	presence: KeyedSchema(Schema.Array(InfraSurfaceLiteral), LoadFailure),
 	sources: Schema.Struct({
 		hosts: SourceSlot,

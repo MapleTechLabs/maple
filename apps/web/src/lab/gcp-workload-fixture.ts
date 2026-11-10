@@ -4,14 +4,14 @@
 import { Schema, Array as Arr, String as Str } from "effect"
 
 import type { GcpInfraServiceId } from "@maple/domain/gcp-infra"
-import { GcpProjectId } from "@maple/domain/primitives"
+import { GcpProjectId } from "@maple/primitives"
 import type { GcpResource } from "@maple/domain/http"
 
-import type { GcpBucketPoint } from "../components/infra/gcp/charts"
-import type { GcpStatement, GcpTracedQuery } from "../components/infra/gcp/cloud-sql-signals"
+import type { GcpBucketPoint } from "../page/infra-integrations/gcp/charts"
+import type { GcpStatement, GcpTracedQuery } from "../page/infra-integrations/gcp/cloud-sql-signals"
 import type { StatementSpan } from "../page/infra-integrations/gcp/data"
-import type { GcpCloudSqlInstance } from "../components/infra/gcp/inventory"
-import { GCP_IDLE_IN_TRANSACTION, type GcpReplica } from "../components/infra/gcp/list-model"
+import type { GcpCloudSqlInstance } from "../page/infra-integrations/gcp/inventory"
+import { GCP_IDLE_IN_TRANSACTION, type GcpReplica } from "../page/infra-integrations/gcp/list-model"
 
 /** Six hours of five-minute buckets, as `chartBucketSeconds` picks them for that window. */
 export const BUCKET_SECONDS = 300

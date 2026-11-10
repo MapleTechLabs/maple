@@ -26,7 +26,7 @@ import {
 	ChatSendRequest,
 	ChatSendResponse,
 	encodeChatTurnTenant,
-	investigationIdFromChatSessionId,
+	chatSessionKind,
 	orgIdFromChatSessionId,
 	originForTenant,
 	type ChatTurnTenantEncoded,
@@ -37,9 +37,9 @@ import { Context, Effect, Layer, Option, Result, Schema, Stream, String as Str }
 import { HttpRouter, HttpServerRequest, HttpServerResponse } from "effect/http"
 import * as SecureRandom from "effect/crypto/SecureRandom"
 import { AuthService } from "@maple/backend/services/auth/AuthService"
-import type { TenantContext } from "@maple/backend/services/auth/tenant-context"
 import { Env } from "@maple/backend/platform/Env"
 import { resolveChatSessionTenantContext } from "../mcp/lib/resolve-tenant"
+import type { TenantContext } from "@maple/domain/http"
 
 const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
 
@@ -143,7 +143,7 @@ const resolveSession = Effect.fn("ChatSessionsRouter.resolveSession")(function* 
 	}
 
 	// The dashboard's only conversation is an investigation's; bot threads and reviews have their own drivers.
-	if (investigationIdFromChatSessionId(sessionId) === undefined) {
+	if (chatSessionKind(sessionId).mode !== "investigate") {
 		return { ok: false, failure: problem("Chat session not found", 404) } as const
 	}
 
@@ -194,9 +194,8 @@ export const ChatSessionsRouter = HttpRouter.use((router) =>
 				}
 
 				const messageId = yield* random.uuidV4()
-				// Not `{ kind: "app" }` outright: this route also authenticates Maple's own service
-				// token, and the only thing distinguishing that caller is the user id the auth layer
-				// stamps on it. `originForTenant` owns that read, so it stays in one place.
+				// Every caller here is a signed-in session, so this is `app`; `originForTenant` still
+				// owns the read so an `internal-service` tenant could never be stamped attended.
 				const turnTenant = toChatTurnTenant(tenant)
 				// `beginTurn` claims the slot, records the user message AND starts the turn, all
 				// inside the Durable Object. This request answers in milliseconds and deliberately

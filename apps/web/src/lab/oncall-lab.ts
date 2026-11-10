@@ -40,10 +40,10 @@ import {
 	populatedSchedules,
 	schedulePublicId,
 } from "../page/alerts/shared/oncall-test-fixtures"
-import { incidentRow, INCIDENT_ID, ORG, ruleRow } from "../page/alerts/shared/test-rows"
+import { hubAt, incidentRow, INCIDENT_ID, ORG, ruleRow } from "../page/kit/alert-test-rows"
 import type { PageContext } from "../page/contract"
 import type { Resources } from "../platform/resources"
-import { isoMs } from "../page/alerts/shared/time"
+import { toEpochMs } from "@maple/ui/lib/time-format"
 
 // `/lab/oncall`: on-call schedules in the hub (the On-call tab and the inbox's "On call now"
 // strip), the schedule form, the calendar with overrides and a DST week, the chain dialog with
@@ -54,6 +54,10 @@ export const LabState = Schema.Literals([
 	"schedules",
 	"strip",
 	"editor-new",
+	"editor-covered",
+	"editor-gaps",
+	"editor-early",
+	"editor-override",
 	"editor-edit",
 	"editor-invalid",
 	"editor-error",
@@ -122,14 +126,12 @@ const failure = (message: string): LoadFailure => ({
 	recovery: "fix_request",
 })
 
-// HUB
-
 const hubStep = (model: HubModel.Model, message: HubMessage.Message) =>
 	HubUpdate.update(model, message, CONTEXT)
 
 const hubFor = (state: LabState): Step<HubModel.Model, HubMessage.Message> => {
-	const tab = state === "strip" ? "inbox" : state === "chain-dialog" ? "routing" : "oncall"
-	const entered = HubUpdate.init({ _tag: "Alerts", search: { tab } }, CONTEXT).model
+	const tab = state === "strip" ? "inbox" : state === "chain-dialog" ? "routing" : "on-call"
+	const entered = HubUpdate.init(hubAt({ tab }), CONTEXT).model
 	const schedules = state === "schedules-empty" ? [] : populatedSchedules(ONCALL_NOW)
 	const chains = [mixedTargetChain(chainDestinations[0]?.id ?? "")]
 	return fold(
@@ -181,13 +183,17 @@ const hubFor = (state: LabState): Step<HubModel.Model, HubMessage.Message> => {
 	)
 }
 
-// FORM
-
 const formStep = (model: FormModel.Model, message: FormMessage.Message) =>
 	FormUpdate.update(model, message, CONTEXT)
 
+const addPerson = (index: number) =>
+	FormMessage.Message.GotParticipantMenuMessage({
+		key: "l0",
+		message: { _tag: "ClickedItem", index, item: { kind: "Item", value: memberId(index) } },
+	})
+
 const formFor = (state: LabState): Step<FormModel.Model, FormMessage.Message> => {
-	const isEdit = state === "editor-edit" || state === "editor-error"
+	const isEdit = state === "editor-edit" || state === "editor-error" || state === "editor-override"
 	const start = FormUpdate.init(
 		{ _tag: "AlertsScheduleNew", search: isEdit ? { scheduleId: schedulePublicId(1) } : {} },
 		CONTEXT,
@@ -205,6 +211,10 @@ const formFor = (state: LabState): Step<FormModel.Model, FormMessage.Message> =>
 					FormMessage.Message.CompletedFetchExisting({
 						key: start.model.existing.key ?? "",
 						result: Result.succeed(checkoutSchedule(ONCALL_NOW)),
+					}),
+					FormMessage.Message.CompletedFetchOverrides({
+						key: start.model.overrides.key ?? "",
+						result: Result.succeed(checkoutOverrides(ONCALL_NOW)),
 					}),
 				]
 			: []),
@@ -252,11 +262,40 @@ const formFor = (state: LabState): Step<FormModel.Model, FormMessage.Message> =>
 					]
 				: state === "editor-new"
 					? [FormMessage.Message.ChangedName({ value: "Checkout primary" })]
-					: []
+					: state === "editor-covered" || state === "editor-gaps" || state === "editor-early"
+						? [
+								FormMessage.Message.ChangedName({ value: "Checkout primary" }),
+								addPerson(0),
+								addPerson(1),
+								// Weeknights only: the days and weekends show as gaps.
+								...(state === "editor-gaps"
+									? [FormMessage.Message.ClickedAddRestriction({ key: "l0" })]
+									: []),
+								// A start two days back: the rotation is already under way.
+								...(state === "editor-early"
+									? [
+											FormMessage.Message.PickedRotation({
+												key: "l0",
+												rotation: "daily",
+											}),
+											FormMessage.Message.ChangedLayerText({
+												key: "l0",
+												field: "startsAt",
+												value: "2026-11-08T09:00",
+											}),
+										]
+									: []),
+							]
+						: state === "editor-override"
+							? [
+									// One weeknights layer, so the saved overrides sit over real gaps.
+									FormMessage.Message.ClickedRemoveLayer({ key: "l2" }),
+									FormMessage.Message.ClickedRemoveLayer({ key: "l1" }),
+									FormMessage.Message.ClickedAddRestriction({ key: "l0" }),
+								]
+							: []
 	return fold(start, [...base, ...extra], formStep)
 }
-
-// SCHEDULE PAGE
 
 const scheduleStep = (model: ScheduleModel.Model, message: ScheduleMessage.Message) =>
 	ScheduleUpdate.update(model, message, CONTEXT)
@@ -323,8 +362,6 @@ const scheduleFor = (state: LabState): Step<ScheduleModel.Model, ScheduleMessage
 			: withShifts
 }
 
-// INCIDENT
-
 const incidentStep = (model: IncidentModel.Model, message: IncidentMessage.Message) =>
 	IncidentUpdate.update(model, message, CONTEXT)
 
@@ -334,7 +371,7 @@ const incidentFor = (): Step<IncidentModel.Model, IncidentMessage.Message> => {
 	const synced = fold(
 		start,
 		[
-			IncidentMessage.Message.ReadClock({ nowMs: isoMs(row.first_triggered_at) + 20 * 60_000 }),
+			IncidentMessage.Message.ReadClock({ nowMs: toEpochMs(row.first_triggered_at) + 20 * 60_000 }),
 			IncidentMessage.Message.UpdatedIncidents({ orgId: ORG, rows: [row] }),
 			IncidentMessage.Message.UpdatedRules({
 				orgId: ORG,
@@ -349,7 +386,7 @@ const incidentFor = (): Step<IncidentModel.Model, IncidentMessage.Message> => {
 		[
 			IncidentMessage.Message.CompletedFetchActivity({
 				key: synced.model.activity.key ?? "",
-				result: Result.succeed(pagedEvents(INCIDENT_ID, isoMs(row.first_triggered_at))),
+				result: Result.succeed(pagedEvents(INCIDENT_ID, toEpochMs(row.first_triggered_at))),
 			}),
 			IncidentMessage.Message.CompletedFetchEscalation({
 				key: synced.model.escalation.key ?? "",

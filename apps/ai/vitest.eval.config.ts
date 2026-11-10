@@ -7,7 +7,6 @@ import { configDefaults, defineConfig } from "vitest/config"
 export default defineConfig({
 	resolve: {
 		alias: {
-			// Longest prefix first, and `@` is apps/api's — see vitest.config.ts.
 			"@": fileURLToPath(new URL("./src", import.meta.url)),
 		},
 	},

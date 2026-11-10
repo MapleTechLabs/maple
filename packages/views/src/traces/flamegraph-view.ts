@@ -25,7 +25,7 @@ import { hstack } from "../ui/stack"
 import { typography } from "../ui/typography"
 import { stripClass } from "../ui/rule"
 
-// The view of `Flamegraph` and `FlamegraphMinimap` (packages/ui `traces/flamegraph*.tsx`).
+// The view of the flamegraph and its minimap.
 
 const ROW_HEIGHT = 32
 const ROW_GAP = 2
@@ -317,7 +317,7 @@ const body = <M>(
 	)
 }
 
-/** `<Flamegraph>`: header, minimap while zoomed, the bars with their tooltips, the legend. */
+/** Header, minimap while zoomed, the bars with their tooltips, the legend. */
 export const view = <M>(
 	h: HtmlBuilder<M>,
 	model: Model,

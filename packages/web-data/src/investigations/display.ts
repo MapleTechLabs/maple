@@ -25,7 +25,7 @@ export type InvestigationKindKey = "alert" | "error" | "anomaly" | "question" | 
 
 /**
  * The exact title the API writes when the seed context carried no name of its
- * own — `snapshotFor` (apps/api/src/lib/ai-triage-enqueue.ts) and
+ * own: `snapshotFor` (packages/backend/src/services/errors/ai-triage-enqueue.ts) and
  * `fallbackSnapshot` (InvestigationService) both emit this string, and nothing
  * else does. Matching it precisely is what lets the list promote the
  * informative field into the slot the placeholder was occupying.
@@ -191,10 +191,6 @@ export function sortInvestigations(
 	})
 }
 
-/* -------------------------------------------------------------------------------------------------
- * Durations
- * -----------------------------------------------------------------------------------------------*/
-
 export interface Elapsed {
 	value: string
 	unit: string
@@ -217,7 +213,7 @@ const pad = (n: number) => Str.padStart(2, "0")(String(n))
  * component import the other for it built an import cycle that threw at runtime.
  */
 export const splitDuration = (ms: number): Elapsed => {
-	// A pass that died before it started is a real case (`workflow_binding_unavailable`
+	// A pass that died before it started is a real case (an unreachable workflow binding
 	// fails in microseconds), and "0 µs" reads as a broken clock rather than an
 	// instant failure. Sub-second resolution buys nothing at this display size.
 	if (ms < 1000) return { value: "<1", unit: "s" }

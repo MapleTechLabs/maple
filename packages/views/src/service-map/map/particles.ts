@@ -12,7 +12,7 @@ import {
 } from "./particle-tracks"
 import { nonZeroOr } from "@maple/ui/lib/number"
 
-// `ServiceMapParticleCanvas`: one canvas, one rAF loop, a global particle budget. The edges
+// The particle canvas: one canvas, one rAF loop, a global particle budget. The edges
 // it animates arrive as `data-tracks` (the view's serialized geometry); the camera is read
 // from the renderer the canvas sits beside.
 

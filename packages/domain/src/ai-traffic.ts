@@ -7,8 +7,6 @@ import { Array as Arr } from "effect"
 /** Why a crawler fetched a page: model training, a search index, or a live user question. */
 export type AiCrawlPurpose = "training" | "search" | "answers"
 
-export const AI_CRAWL_PURPOSES: ReadonlyArray<AiCrawlPurpose> = ["training", "search", "answers"]
-
 export interface AiProduct {
 	/** Stable id. It is a query result value and a URL filter value. */
 	readonly id: string

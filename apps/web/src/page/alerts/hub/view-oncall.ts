@@ -24,13 +24,11 @@ import { sectionHeading } from "../../kit/section-heading"
 import { formatShiftEdge, formatUntil, newScheduleHref, scheduleHref } from "../shared/oncall-schedules"
 import { memberName, memberOf } from "../shared/org-members"
 import { Message } from "./message"
-import { canManage, type Model } from "./model"
+import { type Model } from "./model"
 import { DELETE_SCHEDULE_DIALOG_ID, scheduleMenuId } from "./update"
-import { isoMs } from "../shared/time"
 import { dividedList } from "@maple/views/ui/rule"
-
-// The hub's On-call tab (each schedule with who is on call and the next handoff), the inbox's
-// "On call now" strip, and the schedule delete confirmation.
+import { canManageAlerts } from "../../kit/session-grants"
+import { toEpochMs } from "@maple/ui/lib/time-format"
 
 type H = HtmlBuilder<Message>
 
@@ -53,14 +51,13 @@ const onCallPerson = (h: H, model: Model, schedule: V2OnCallSchedule, withZone: 
 				imageUrl: Option.getOrUndefined(
 					Option.map(memberOf(model.members, now.user_id), (member) => member.imageUrl),
 				),
-				detail: `until ${formatShiftEdge(isoMs(now.ends_at), schedule.time_zone)}${withZone ? ` ${schedule.time_zone}` : ""}`,
+				detail: `until ${formatShiftEdge(toEpochMs(now.ends_at), schedule.time_zone)}${withZone ? ` ${schedule.time_zone}` : ""}`,
 			}),
 	})
 
 const layerCount = (schedule: V2OnCallSchedule) =>
 	`${schedule.layers.length} ${pluralize(schedule.layers.length, "layer")}`
 
-/** `ScheduleRow`: name and zone, who is on call until when, the next handoff, and its actions. */
 const scheduleRow = (h: H, model: Model, schedule: V2OnCallSchedule, nowMs: number): Html => {
 	const menuId = scheduleMenuId(schedule.id)
 	const entries: ReadonlyArray<MenuEntry> = [
@@ -77,7 +74,7 @@ const scheduleRow = (h: H, model: Model, schedule: V2OnCallSchedule, nowMs: numb
 	]
 	const handoff = Option.match(Option.fromNullishOr(schedule.on_call_now), {
 		onNone: () => "No one scheduled",
-		onSome: (now) => `Hands off ${formatUntil(nowMs, isoMs(now.ends_at))}`,
+		onSome: (now) => `Hands off ${formatUntil(nowMs, toEpochMs(now.ends_at))}`,
 	})
 	return h.li(
 		[h.Key(schedule.id), h.Class("px-4 py-3")],
@@ -119,7 +116,7 @@ const scheduleRow = (h: H, model: Model, schedule: V2OnCallSchedule, nowMs: numb
 						},
 						[handoff],
 					),
-					...(canManage(model)
+					...(canManageAlerts(model)
 						? [
 								rowActionsMenu(h, {
 									slotId: menuId,
@@ -146,10 +143,10 @@ const schedulesEmpty = (h: H, model: Model): Html =>
 				emptyTitle(h, ["No on-call schedules yet"]),
 				emptyDescription(h, [
 					"A schedule says who is on call when: people take turns in layers that hand off daily, weekly or every few hours, and overrides cover swaps. Escalation chains page whoever is on call.",
-					...(canManage(model) ? [] : [" Ask an org admin to create one."]),
+					...(canManageAlerts(model) ? [] : [" Ask an org admin to create one."]),
 				]),
 			]),
-			...(canManage(model)
+			...(canManageAlerts(model)
 				? [
 						emptyActions(h, [
 							linkButton(h, { size: "sm", href: newScheduleHref() }, [
@@ -267,7 +264,8 @@ export const deleteScheduleDialog = (h: H, model: Model): Html => {
 		slotId: DELETE_SCHEDULE_DIALOG_ID,
 		model: model.deleteScheduleDialog,
 		toParentMessage: (message) => Message.GotDeleteScheduleDialogMessage({ message }),
-		title: `Delete ${name}?`,
+		// A long unbroken name wraps inside the dialog instead of running out of it.
+		title: [typography(h, { className: "wrap-anywhere" }, [`Delete ${name}?`])],
 		description: "Its overrides go with it. This cannot be undone.",
 		children:
 			model.deleteScheduleError === null
@@ -284,10 +282,3 @@ export const deleteScheduleDialog = (h: H, model: Model): Html => {
 		onConfirm: Message.ClickedConfirmDeleteSchedule(),
 	})
 }
-
-/** The tab header's "New schedule", once one exists. */
-export const newScheduleButton = (h: H): Html =>
-	linkButton(h, { size: "sm", variant: "outline", href: newScheduleHref() }, [
-		icon(h, "PlusIcon"),
-		"New schedule",
-	])

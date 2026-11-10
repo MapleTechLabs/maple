@@ -1,8 +1,6 @@
+import { encodeJson, requestKey } from "@maple/views/data/request-key"
 import { initWhereFields } from "../../kit/where-field"
-import {
-	pickDashboardControlParams,
-	variableValuesFromSearch,
-} from "../../../lib/dashboard-controls/search-params"
+import { pickDashboardControlParams, variableValuesFromSearch } from "../../../route/dashboard-controls"
 import {
 	computeBucketSecondsForWidthRange,
 	formatBucketSecondsShort,
@@ -13,7 +11,6 @@ import { Command } from "foldkit"
 import * as Chart from "@maple/views/charts/chart"
 import { LoadChartRuntime } from "@maple/views/charts/chart-runtime"
 import * as Keyed from "@maple/views/data/keyed"
-import { requestKey } from "@maple/views/data/request-key"
 import { AUTOCOMPLETE_LOOKUPS } from "../../kit/autocomplete-lookups"
 import { AppRoute, hrefOf } from "../../../route"
 import type { DashboardWidgetSearch } from "../../../route/search"
@@ -45,7 +42,6 @@ import { Message } from "./message"
 import type { Model } from "./model"
 import { codeUnitAt } from "@maple/strings"
 
-const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
 /** `JSON.stringify` equality: an absent value reads as `null`, never as a thrown encode. */
 const encodeJsonOption = Schema.encodeOption(Schema.fromJsonString(Schema.Unknown))
 const jsonKeyOf = (value: unknown): string | null => Option.getOrNull(encodeJsonOption(value))
@@ -104,14 +100,7 @@ export const init = (route: Route, _context: PageContext): Return => ({
 		leaveDialog: Dialog.init("widget-editor-leave-dialog", "alert-dialog"),
 		pendingLeaveUrl: null,
 	},
-	commands: [
-		ReadClock(),
-		Command.mapMessage(LoadChartRuntime(), (message) =>
-			message._tag === "CompletedLoadChartRuntime"
-				? Message.CompletedLoadChartRuntime()
-				: Message.FailedLoadChartRuntime({ reason: message.reason }),
-		),
-	],
+	commands: [ReadClock(), LoadChartRuntime()],
 })
 
 export const routeChanged = (model: Model, route: Route): Return => ({
@@ -121,7 +110,7 @@ export const routeChanged = (model: Model, route: Route): Return => ({
 export const widgetOf = (model: Model): Widget | null =>
 	Option.getOrNull(Arr.findFirst(model.document?.widgets ?? [], (widget) => widget.id === model.widgetId))
 
-/** `navigateBack`: the dashboard in edit mode, with the controls the editor carried. */
+/** The dashboard in edit mode, with the controls the editor carried. */
 export const backHref = (model: Model): string =>
 	hrefOf(
 		AppRoute.Dashboard({
@@ -148,7 +137,7 @@ const stagedFieldsOf = (staged: EditorState) => ({
 	paths: staged.paths,
 })
 
-/** `previewWidget`: the staged query fields under the live display, so presentation edits apply without Run preview. */
+/** The staged query fields under the live display, so presentation edits apply without Run preview. */
 export const previewWidgetOf = (model: Model): Widget | null => {
 	const widget = widgetOf(model)
 	if (widget === null || model.state === null || model.staged === null) return null
@@ -255,7 +244,7 @@ const planWidgetGates = (
 		variables,
 	})
 	const asked = ask({ model: { ...model, gate }, commands: [] }, gate)
-	// `StatSparklineLoader`: the trend is asked for beside the stat; it does not read the stat's value.
+	// The trend is asked for beside the stat; it does not read the stat's value.
 	const sparkline = widget.display.sparkline
 	const sparkGate =
 		panel === "stat" && sparkline?.enabled === true && sparkline.dataSource !== undefined
@@ -338,7 +327,7 @@ export const receiveDocument = (
 		},
 	})
 
-/** `showSourceToggle`: lists, notes and paths have no SQL rendering. */
+/** Lists, notes and paths have no SQL rendering. */
 export const showsSourceToggle = (state: EditorState): boolean => {
 	const panel = toPanelType(state.visualization, state.chartId)
 	return panel !== "list" && panel !== "markdown" && panel !== "paths"
@@ -370,7 +359,7 @@ export const editState = (
 		? { model }
 		: planPreview({ ...model, state: trackStoredSource(model.initial, edit(model.state)) }, context)
 
-/** `isDirty`: the source tab moved, or the state (or, in Raw SQL, the SQL) differs from what was opened. */
+/** The source tab moved, or the state (or, in Raw SQL, the SQL) differs from what was opened. */
 export const isDirty = (model: Model): boolean =>
 	model.sourceMode !== model.initialSourceMode ||
 	encodeJson(model.state) !== encodeJson(model.initial) ||
@@ -381,10 +370,9 @@ export const navigate = (model: Model, url: string): Return => ({
 	outMessage: PageOutMessage.RequestedNavigation({ url, isReplace: false }),
 })
 
-/** `shouldBlockFn: !isSaving && isDirty()`. */
 export const isBlockingNavigation = (model: Model): boolean => !model.isSaving && isDirty(model)
 
-/** `useBlocker`: leaving with unsaved edits asks first; Discard then goes where the user was going. */
+/** Leaving with unsaved edits asks first; Discard then goes where the user was going. */
 export const leave = (model: Model, url: string): Return => {
 	if (!isBlockingNavigation(model)) return navigate(model, url)
 	return askToLeave(model, url)

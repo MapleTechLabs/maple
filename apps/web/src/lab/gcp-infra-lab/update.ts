@@ -5,7 +5,7 @@ import { LoadChartRuntime } from "@maple/views/charts/chart-runtime"
 import { CompleteReloadSpin } from "../../page/infra-integrations/gcp/list/command"
 import * as GcpList from "../../page/infra-integrations/gcp/list/model"
 import { stepProjectMenu } from "../../page/infra-integrations/gcp/list/project-menu"
-import { stepTimePicker } from "../../page/infra-integrations/kit/page-time"
+import { stepTimePicker } from "../../page/kit/page-time"
 import * as TimeRangePicker from "../../page/kit/time-range-picker"
 import type { Resources } from "../../platform/resources"
 import { AppRoute, hrefOf } from "../../route"
@@ -48,7 +48,7 @@ const patch = (model: Model, next: Partial<ListState>): Return => ({
 	model: { ...model, state: { ...model.state, ...next } },
 })
 
-/** `GcpListPage`'s `onStateChange` and the page's own Mounts, minus every read the route sends. */
+/** The list page's state changes and its own Mounts, minus every read the route sends. */
 const stepList = (model: Model, message: GcpList.Message): Return => {
 	switch (message._tag) {
 		case "CompletedLoadChartRuntime":

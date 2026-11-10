@@ -5,35 +5,27 @@
 import {
 	assetWorkerObservability,
 	MapleStack,
-	resolveWorkerName,
-	resolveWorkerPlacement,
+	mapleSiteProps,
+	WORKER_COMPATIBILITY_DATE,
 	WorkersObservabilityDestinations,
 } from "@maple/infra/cloudflare"
 import { optionalPlain, optionalSecret, plainFrom } from "@maple/infra/env"
+import { siteBuildMemo } from "@maple/infra/worker-build"
 import * as Cloudflare from "@alchemy.run/cloudflare"
 import { Effect } from "effect"
 
 const props = Effect.gen(function* () {
-	const { stage, region, domains, urls } = yield* MapleStack
+	const stack = yield* MapleStack
+	const { domains, urls } = stack
 	const destinations = yield* WorkersObservabilityDestinations
 	return {
-		name: resolveWorkerName("landing", stage, region),
+		...mapleSiteProps("landing", stack),
 		command: "bun run build",
 		cwd: new URL("..", import.meta.url).pathname,
 		outdir: "dist",
 		main: new URL("./worker-entry.ts", import.meta.url).href,
-		// Also hash the `@maple/*` sources and install scripts the build reads.
-		// `lockfile` is restated because providing `include` drops it.
-		memo: {
-			include: [
-				"**/*",
-				"../../packages/*/src/**",
-				"../../lib/*/src/**",
-				"../../scripts/install.sh",
-				"../../scripts/uninstall.sh",
-			],
-			lockfile: true,
-		},
+		// Also the install scripts the build reads.
+		memo: siteBuildMemo("../../scripts/install.sh", "../../scripts/uninstall.sh"),
 		// Build inputs (folded into the memo hash); the Worker itself never reads them.
 		env: {
 			// Same ingest key as the web app, so marketing and product sessions share one org.
@@ -50,8 +42,7 @@ const props = Effect.gen(function* () {
 			// a `.md` twin) must hit the Worker first for `Accept: text/markdown` to work.
 			runWorkerFirst: ["/*", "!/_astro/*", "!/*.*"],
 		},
-		compatibility: { date: "2026-10-01" },
-		placement: resolveWorkerPlacement(region),
+		compatibility: { date: WORKER_COMPATIBILITY_DATE },
 		observability: assetWorkerObservability(destinations),
 		workersDev: true,
 		domain: domains.landing,

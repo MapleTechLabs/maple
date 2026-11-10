@@ -59,6 +59,7 @@ import {
 	type RepositoryListingError,
 } from "./GithubAppClient"
 import { timestampMs } from "@maple/backend/platform/time"
+import { secretsEqual } from "@maple/backend/services/auth/secret-equal"
 
 const PROVIDER: VcsProviderId = "github"
 
@@ -79,7 +80,7 @@ const PushAuthor = Schema.Struct({
 })
 
 const PushCommit = Schema.Struct({
-	id: GitCommitSha, // validated at decode — the 40-hex shape lives in the brand
+	id: GitCommitSha,
 	message: Schema.String,
 	timestamp: Schema.optionalKey(Schema.String),
 	url: Schema.String,
@@ -414,15 +415,6 @@ const installationReason = (action: string): VcsInstallationSyncReason | null =>
 
 const WEBHOOK_SIGNATURE_HEADER = "x-hub-signature-256"
 
-const timingSafeEqual = (a: string, b: string): boolean => {
-	const ba = Buffer.from(a)
-	const bb = Buffer.from(b)
-	if (ba.length !== bb.length) return false
-	let mismatch = 0
-	for (const [i, byte] of ba.entries()) mismatch |= byte ^ (bb[i] ?? 0)
-	return mismatch === 0
-}
-
 const normalizeFetchedCommit = (commit: GithubApiCommit, now: number): CommitUpsertInput => {
 	const authoredAt = commit.commit.author?.date
 		? finiteOrNull(timestampMs(commit.commit.author.date))
@@ -554,7 +546,7 @@ export class GithubProvider extends Context.Service<GithubProvider, VcsProviderC
 						),
 					)
 					const expected = `sha256=${Buffer.from(mac).toString("hex")}`
-					if (!timingSafeEqual(expected, signatureHeader)) {
+					if (!secretsEqual(signatureHeader, expected)) {
 						return yield* signatureRejected("mismatch", "Webhook signature mismatch")
 					}
 					yield* Effect.annotateCurrentSpan({ "vcs.webhook.signature_result": "ok" })

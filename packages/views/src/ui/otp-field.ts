@@ -1,5 +1,5 @@
 import { cn } from "@maple/ui/lib/utils"
-import { otpFieldInputStyles, otpFieldSeparatorStyles, otpFieldStyles } from "@maple/ui/styles/ui/otp-field"
+import { otpFieldInputStyles, otpFieldSeparatorStyles, otpFieldStyles } from "./otp-field.styles"
 import { Effect, Option, Schema, Array as Arr, String as Str } from "effect"
 import { Command, Dom, type Update } from "foldkit"
 import type { Attribute, Html, HtmlBuilder } from "foldkit/html"
@@ -12,8 +12,6 @@ import { separator } from "./display"
  * Base UI `OTPField`: one digit per slot. Typing fills from the slot and moves focus on,
  * Backspace on an empty slot clears the previous one. The hidden input carries the joined code.
  */
-
-// MODEL
 
 /** Base UI's `validationType`: which characters a slot accepts. */
 export const Validation = Schema.Literals(["numeric", "alphanumeric"])
@@ -55,16 +53,12 @@ const normalize = (model: Model, text: string): string => {
 
 export const valueOf = (model: Model): string => Arr.join(model.slots, "")
 
-// MESSAGE
-
 export const Message = defineMessageUnion({
 	EnteredText: { index: Schema.Finite, text: Schema.String },
 	PressedBackspace: { index: Schema.Finite },
 	CompletedFocusSlot: {},
 })
 export type Message = typeof Message.Type
-
-// COMMAND
 
 /** Base UI ids: the first slot is the field id, the rest `<id>-<n>`. */
 export const slotId = (id: string, index: number): string => (index === 0 ? id : `${id}-${index + 1}`)
@@ -75,8 +69,6 @@ export const FocusSlot = Command.define("FocusOtpSlot", {
 	execute: ({ id }) =>
 		Dom.focus(`#${CSS.escape(id)}`).pipe(Effect.ignore, Effect.as(Message.CompletedFocusSlot())),
 })
-
-// UPDATE
 
 const focusSlot = (model: Model, index: number) =>
 	FocusSlot({ id: slotId(model.id, Math.max(0, Math.min(index, model.slots.length - 1))) })
@@ -118,8 +110,6 @@ export const update = (model: Model, message: Message): Update.Return<Model, Mes
 		},
 		CompletedFocusSlot: () => ({ model }),
 	})
-
-// VIEW
 
 export type OtpFieldViewConfig<ParentMessage> = Readonly<{
 	model: Model
@@ -186,7 +176,7 @@ export const otpField = <ParentMessage>(
 	]
 }
 
-/** `<OTPFieldInput>` for slot `index`. */
+/** The input for slot `index`. */
 export const otpFieldInput = <ParentMessage>(
 	h: HtmlBuilder<ParentMessage>,
 	config: OtpFieldViewConfig<ParentMessage>,

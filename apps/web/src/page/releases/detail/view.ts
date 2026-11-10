@@ -1,6 +1,6 @@
 import type { ErrorIssueDocument } from "@maple/domain/http"
-import { attributeIssues, previousSha, shortReleaseLabel } from "../../../components/releases/release-model"
-import { errorIssueFromV2 } from "../../../lib/services/error-issues"
+import { attributeIssues, previousSha, shortReleaseLabel } from "../release-model"
+import { errorIssueFromV2 } from "../../../data/error-issues"
 import { Option, Array as Arr } from "effect"
 import { AsyncData, Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
@@ -14,7 +14,6 @@ import type { PageViewInputs } from "../../contract"
 import { dashboardPage } from "../../kit/dashboard-page"
 import { timeControls } from "../../kit/time-controls"
 import * as TimeRangePicker from "../../kit/time-range-picker"
-import { commitAvatar, firstLine, isResolvableSha } from "../kit"
 import { DEFAULT_PRESET, deriveOf } from "../list/derive"
 import { groupOf } from "./derive"
 import { Message } from "./message"
@@ -24,6 +23,7 @@ import { type Clock, deploySummary, deployServices, issueList, releaseChangeset 
 import { typography } from "@maple/views/ui/typography"
 import { hstack, hstackClass, vstack } from "@maple/views/ui/stack"
 import { grid } from "@maple/views/ui/grid"
+import { commitAvatar, firstLine, isResolvableSha } from "../../kit/commit-card"
 
 // The release detail page: the deploy overview, or with `?service=` the service body
 // (view-service.ts).
@@ -33,7 +33,7 @@ type H = HtmlBuilder<Message>
 const plainSha = (h: H, sha: string, label: string): Html =>
 	typography(h, { mono: true, truncate: true, attributes: [h.Title(sha)] }, [label])
 
-/** `ReleaseTitle`: the commit message once the sha resolves, the short sha until then. */
+/** The commit message once the sha resolves, the short sha until then. */
 const releaseTitle = (h: H, model: Model): Html => {
 	if (!isResolvableSha(model.commitSha)) return plainSha(h, model.commitSha, model.commitSha)
 	return Option.match(AsyncData.getData(model.commit.data), {

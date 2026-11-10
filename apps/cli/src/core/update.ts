@@ -42,7 +42,6 @@ const MAX_RELEASE_PAGES = 5
 const releasesPageUrl = (page: number) =>
 	`https://api.github.com/repos/${REPO}/releases?per_page=${RELEASES_PER_PAGE}&page=${page}`
 const CLI_RELEASE_TAG = /^v\d+\.\d+\.\d+$/
-/** Throttle window for the startup check — hit GitHub at most once per day. */
 export const CHECK_TTL_MS = 24 * 60 * 60 * 1000
 const CHECKSUM_TIMEOUT = Duration.seconds(30)
 const DOWNLOAD_TIMEOUT = Duration.minutes(2)
@@ -343,8 +342,7 @@ const clearQuarantine = (paths: ReadonlyArray<string>): Effect.Effect<void, neve
 			}),
 		)
 	}).pipe(
-		// Quarantine clearing failing must never fail the update. Unlike the
-		// previous bare `catch`, the cause is logged rather than discarded.
+		// Quarantine clearing failing must never fail the update.
 		Effect.tapCause((cause) => Effect.logDebug("could not clear macOS quarantine flag", cause)),
 		Effect.ignore,
 	)

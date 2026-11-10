@@ -1,5 +1,5 @@
 import * as PG from "@maple-dev/effect-orm/postgres"
-import { DashboardId, DashboardVersionId, OrgId, UserId } from "@maple/domain/primitives"
+import { DashboardId, DashboardVersionId, OrgId, UserId } from "@maple/primitives"
 
 export const Dashboards = PG.table("dashboards", {
 	columns: {
@@ -25,7 +25,6 @@ export const Dashboards = PG.table("dashboards", {
 })
 
 export type DashboardRow = PG.SelectRowOf<typeof Dashboards>
-export type DashboardInsert = PG.InsertRowOf<typeof Dashboards>
 
 /**
  * Append-only history of dashboard snapshots. One row per save, with
@@ -63,4 +62,3 @@ export const DashboardVersions = PG.table("dashboard_versions", {
 })
 
 export type DashboardVersionRow = PG.SelectRowOf<typeof DashboardVersions>
-export type DashboardVersionInsert = PG.InsertRowOf<typeof DashboardVersions>

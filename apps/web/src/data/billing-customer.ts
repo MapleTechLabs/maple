@@ -40,8 +40,8 @@ export const orgLoader = <A, E>(load: Effect.Effect<A, E>) =>
 	})
 
 /**
- * `billingCustomerAtom`: one `GET /internal/billing/customer` per org, shared by the root's plan
- * gate, `/settings` and `/integrations`. `refresh` is the atom's reactivity key: a plan change, a
+ * One `GET /internal/billing/customer` per org, shared by the root's plan
+ * gate, `/settings` and `/integrations`. `refresh` is the reactivity key: a plan change, a
  * cap save or Retry reads it again.
  */
 export class BillingCustomerCache extends Context.Service<

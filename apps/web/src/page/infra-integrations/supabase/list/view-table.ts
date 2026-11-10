@@ -4,15 +4,13 @@ import type { Html, HtmlBuilder } from "foldkit/html"
 import { AppRoute, hrefOf } from "../../../../route"
 import { meter } from "@maple/views/ui/meter"
 import { skeleton } from "@maple/views/ui/skeleton"
-import { columnHead, dataTable, NUMERIC_CELL, ROW_LINK_CLASS, skeletonRows } from "../../../infra/kit/data-table"
+import { columnHead, dataTable, NUMERIC_CELL, ROW_LINK_CLASS, skeletonRows } from "../../../kit/data-table"
 import { collectingLabel, healthPill, SATURATION } from "../health"
 import type { ProjectView } from "./derive"
 import type { Message } from "./message"
 import { typography, typographyClass } from "@maple/views/ui/typography"
 import { Array as Arr } from "effect"
 import { hstack, vstack } from "@maple/views/ui/stack"
-
-// The project table and its loading state.
 
 type H = HtmlBuilder<Message>
 

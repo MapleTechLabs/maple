@@ -1,4 +1,4 @@
-import { StatusPageId } from "@maple/domain/primitives"
+import { StatusPageId } from "@maple/primitives"
 import { Schema } from "effect"
 
 /** The page was deleted (or never existed) by the time the publisher read it. */

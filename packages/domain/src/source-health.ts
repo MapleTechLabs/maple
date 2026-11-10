@@ -4,7 +4,7 @@
 
 import { Array as Arr, Option } from "effect"
 import { AWS_STREAM_STALE_MS } from "./aws"
-import type { SourcePlatform } from "./primitives"
+import type { SourcePlatform } from "@maple/primitives"
 
 /** Worst first. */
 export const SOURCE_HEALTH_STATUSES = [

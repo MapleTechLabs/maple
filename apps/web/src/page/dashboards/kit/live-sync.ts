@@ -7,14 +7,14 @@ import { hstack } from "@maple/views/ui/stack"
 // The dashboards pages' live-sync fallback: the bounded wait on the shape stream, and the banner
 // shown while an HTTP snapshot stands in for it.
 
-/** `COLLECTION_LOAD_TIMEOUT_MS`: how long a live read may load before the HTTP snapshot stands in. */
+/** How long a live read may load before the HTTP snapshot stands in. */
 export const COLLECTION_LOAD_TIMEOUT_MS = 10_000
 
-/** `useCollectionLoadFailed`: one message once the live read has loaded past the timeout. */
+/** One message once the live read has loaded past the timeout. */
 export const loadTimeout = <M>(message: M): Stream.Stream<M> =>
 	Stream.fromEffect(Effect.as(Effect.sleep(Duration.millis(COLLECTION_LOAD_TIMEOUT_MS)), message))
 
-/** `SyncDegradedBanner`: what is shown is a frozen HTTP snapshot and writes are off. */
+/** What is shown is a frozen HTTP snapshot and writes are off. */
 export const snapshotBanner = <M>(h: HtmlBuilder<M>, subject: string, onRetry: M): Html =>
 	hstack(
 		h,

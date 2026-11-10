@@ -14,7 +14,7 @@ import { colorInput } from "@maple/views/ui/color-input"
 import { segmentedSelect } from "@maple/views/ui/segmented-select"
 import { skeleton } from "@maple/views/ui/skeleton"
 import { heading } from "@maple/views/ui/heading"
-import { settingsSection } from "../../settings/kit/section"
+import { settingsSection } from "../../kit/settings-section"
 import { selectField, textField } from "../shared/fields"
 import {
 	type SettingsForm,
@@ -28,7 +28,6 @@ import {
 import { Message } from "./message"
 import { publicUrl } from "../shared/commands"
 import { canManage, type Model } from "./model"
-import { isoMs } from "../../alerts/shared/time"
 import { monitorStatusOf } from "../shared/derive"
 import { APPEARANCES, presetCards } from "../shared/look"
 import {
@@ -45,6 +44,7 @@ import {
 import { componentsOf, incidentsOf, monitorsOf, statusReadsReady } from "./reads"
 import { typography } from "@maple/views/ui/typography"
 import { hstack, vstack } from "@maple/views/ui/stack"
+import { toEpochMs } from "@maple/ui/lib/time-format"
 
 // The Settings view's Appearance section and the live preview of the public page.
 
@@ -211,13 +211,11 @@ export const appearanceSection = (h: H, model: Model, form: SettingsForm): Html 
 	)
 }
 
-// PREVIEW
-
 const orNull = (value: string): string | null => (Str.trim(value) === "" ? null : Str.trim(value))
 
 /** The public page as the draft would render it, from the loaded components and incidents. */
 export const settingsDocument = (model: Model, page: V2StatusPage, form: SettingsForm): string => {
-	const nowMs = model.nowMs ?? isoMs(page.updated_at)
+	const nowMs = model.nowMs ?? toEpochMs(page.updated_at)
 	const monitors = monitorsOf(model)
 	const shown = simulatePreview(model.previewState, {
 		components: Arr.map(componentsOf(model), (component) => ({

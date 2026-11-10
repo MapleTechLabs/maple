@@ -10,7 +10,7 @@ import {
 	VIEW_LABEL,
 	VIEWS,
 } from "../gcp-infra-fixture"
-import { gcpRequestedView, gcpSparks, gcpWindowSeconds } from "../../components/infra/gcp/list-model"
+import { gcpRequestedView, gcpSparks, gcpWindowSeconds } from "../../page/infra-integrations/gcp/list-model"
 import { Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { ResolveThemeColors } from "@maple/views/charts/theme-colors"

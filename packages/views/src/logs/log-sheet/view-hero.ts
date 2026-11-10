@@ -56,7 +56,7 @@ export const copyable = (
 	)
 }
 
-/** `LogTextButton`: the tiny muted text action. */
+/** The tiny muted text action. */
 export const logTextButton = (
 	h: H,
 	className: string | undefined,
@@ -85,7 +85,7 @@ export const heroHeader = (
 	h: H,
 	model: Model,
 	log: LogRecord,
-	/** `null`: `showClose={false}` on `/logs/$logId`. */
+	/** `null` on `/logs/$logId`, which shows no close. */
 	close: ReadonlyArray<ChildAttribute> | null,
 ): Html => {
 	const message = logMessageOf(log.body ?? "")

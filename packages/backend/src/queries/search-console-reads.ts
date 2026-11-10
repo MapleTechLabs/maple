@@ -8,10 +8,10 @@ import {
 	type SearchConsoleTimeseriesRequest,
 	type SearchConsoleTopPagesRequest,
 	type SearchConsoleTopQueriesRequest,
+	type TenantContext,
 } from "@maple/domain/http"
 import { Queries } from "@maple/query-engine/registry"
 import { DateTime, Effect, Array as Arr } from "effect"
-import type { TenantContext } from "@maple/backend/services/auth/AuthService"
 import { makeQueryRunners, type QueryRunnerDeps } from "@maple/backend/queries/query-runner"
 import {
 	entryPathsFor,

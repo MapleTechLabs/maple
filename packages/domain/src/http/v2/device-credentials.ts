@@ -11,7 +11,7 @@ import {
 	DeviceTokensUnavailableError,
 	DpopProofInvalidError,
 } from "../device-credentials"
-import { OrgId } from "../../primitives"
+import { OrgId } from "@maple/primitives"
 import { AuthorizationV2 } from "./auth"
 import { wireExample, Timestamp } from "./envelopes"
 import { V2RateLimited } from "./errors"

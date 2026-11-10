@@ -7,7 +7,7 @@
  */
 import { driveChatTurn } from "@maple/chat-platform"
 import { ChatSessionId } from "@maple/domain/chat-session"
-import { ChatConnectorId } from "@maple/domain/primitives"
+import { ChatConnectorId } from "@maple/primitives"
 import { Clock, Effect, Option, Schema, Stream, Array as Arr } from "effect"
 import { summarizeCause } from "@maple/backend/platform/describe-cause"
 import { sessionUnreachable } from "./events.ts"

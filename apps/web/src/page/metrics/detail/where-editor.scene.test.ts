@@ -15,9 +15,17 @@ const pageUpdate = (model: Model, message: Message) => update(model, message, co
 /** The editor focused with `text` typed and the caret at its end. */
 const typed = (text: string): Model => {
 	const base = init({ metricName: "http.server.request.duration", search: {} }, context).model
-	const focused = pageUpdate(base, Message.GotCaretMessage({ message: CaretMessage.FocusedEditor({ cursor: 0, anchor }) }))
+	const focused = pageUpdate(
+		base,
+		Message.GotCaretMessage({ message: CaretMessage.FocusedEditor({ cursor: 0, anchor }) }),
+	)
 	const changed = pageUpdate(focused, Message.ChangedWhereInput({ value: text }))
-	return pageUpdate(changed, Message.GotCaretMessage({ message: CaretMessage.MovedCaret({ cursor: text.length, anchor, keyUp: null }) }))
+	return pageUpdate(
+		changed,
+		Message.GotCaretMessage({
+			message: CaretMessage.MovedCaret({ cursor: text.length, anchor, keyUp: null }),
+		}),
+	)
 }
 
 describe("where editor suggestions", () => {
@@ -28,10 +36,11 @@ describe("where editor suggestions", () => {
 		expect(applied.whereEditor.cursor).toBeGreaterThan("metric".length)
 	})
 
-	test("Tab moves the caret like accepting, but leaves the text (legacy's hook-level accept)", () => {
+	test("Tab moves the caret like accepting, but leaves the text", () => {
 		const open = typed("metric")
 		const tabbed = pageUpdate(open, Message.PressedWhereTab())
 		expect(tabbed.whereInput).toBe("metric")
+		expect(tabbed.whereEditor.cursor).toBeGreaterThan("metric".length)
 	})
 
 	test("Escape dismisses the list until the caret moves again", () => {
@@ -39,7 +48,9 @@ describe("where editor suggestions", () => {
 		expect(dismissed.whereEditor.isDismissed).toBe(true)
 		const moved = pageUpdate(
 			dismissed,
-			Message.GotCaretMessage({ message: CaretMessage.MovedCaret({ cursor: 2, anchor, keyUp: "Escape" }) }),
+			Message.GotCaretMessage({
+				message: CaretMessage.MovedCaret({ cursor: 2, anchor, keyUp: "Escape" }),
+			}),
 		)
 		expect(moved.whereEditor.isDismissed).toBe(false)
 	})

@@ -3,16 +3,9 @@
  * (`MAPLE_DEVICE_TOKEN_SIGNING_KEY`, PKCS#8 PEM), ES256, `kid` = RFC 7638 thumbprint. Built like
  * the AWS OIDC signer, but a sibling key: different audience, and no customer trusts it.
  */
-import { Effect, Option, Redacted, Schema, String as Str } from "effect"
-import {
-	ES256_IMPORT,
-	EcPublicJwk,
-	JoseError,
-	jwkThumbprint,
-	parseCompactJws,
-	signEs256,
-	verifyEs256,
-} from "./jose"
+import { Effect, Option, Redacted, Schema } from "effect"
+import { ES256, pemToPkcs8 } from "@maple/backend/platform/jwt"
+import { EcPublicJwk, JoseError, jwkThumbprint, parseCompactJws, signEs256, verifyEs256 } from "./jose"
 
 export const DEVICE_TOKEN_AUDIENCE = "maple-api-device"
 export const DEVICE_TOKEN_TYPE = "at+jwt"
@@ -58,12 +51,6 @@ export interface DeviceTokenSigner {
 	) => Effect.Effect<unknown, JoseError>
 }
 
-const pemBody = (pem: string) =>
-	Buffer.from(
-		Str.replace(/\s+/gu, "")(Str.replace(/-----(BEGIN|END) PRIVATE KEY-----/gu, "")(pem)),
-		"base64",
-	)
-
 export const makeDeviceTokenSigner = Effect.fn("makeDeviceTokenSigner")(function* (
 	issuer: string,
 	privateKeyPem: Redacted.Redacted,
@@ -71,7 +58,7 @@ export const makeDeviceTokenSigner = Effect.fn("makeDeviceTokenSigner")(function
 	const failed = (message: string) => () => new DeviceTokenKeyError({ message })
 	const privateKey = yield* Effect.tryPromise({
 		try: () =>
-			crypto.subtle.importKey("pkcs8", pemBody(Redacted.value(privateKeyPem)), ES256_IMPORT, true, [
+			crypto.subtle.importKey("pkcs8", pemToPkcs8(Redacted.value(privateKeyPem)), ES256, true, [
 				"sign",
 			]),
 		catch: failed("The device token signing key is not a PKCS#8 P-256 key"),
@@ -90,7 +77,7 @@ export const makeDeviceTokenSigner = Effect.fn("makeDeviceTokenSigner")(function
 		return yield* new DeviceTokenKeyError({ message: "The device token signing key is not P-256" })
 	}
 	const publicKey = yield* Effect.tryPromise({
-		try: () => crypto.subtle.importKey("jwk", publicJwk.value, ES256_IMPORT, false, ["verify"]),
+		try: () => crypto.subtle.importKey("jwk", publicJwk.value, ES256, false, ["verify"]),
 		catch: failed("The device token signing key has no usable public half"),
 	})
 	const kid = jwkThumbprint(publicJwk.value)

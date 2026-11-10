@@ -3,7 +3,7 @@ import { Option, Array as Arr, String as Str } from "effect"
 import { AsyncData } from "foldkit"
 import type { Catalog, Model, ServiceCatalogEntry } from "./model"
 
-// The derived parts of `useLocalServiceCatalog` and `ServicesListView`.
+// The derived parts of the services list.
 
 export interface ServicesFilters {
 	readonly env: string | undefined

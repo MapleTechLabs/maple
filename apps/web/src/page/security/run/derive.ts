@@ -46,8 +46,6 @@ export const mergeEvents = (
 	return [...log, ...Arr.filter(page, (event) => !ids.has(event.id))].sort(byNewest)
 }
 
-// UNITS
-
 export const UNIT_LABEL = {
 	covered: "Covered",
 	candidate: "Candidate",
@@ -103,8 +101,6 @@ export const gapUnits = (units: ReadonlyArray<SecurityAuditUnit>): ReadonlyArray
 /** Distinct subsystems the ledger planned: the areas of the repository it reached. */
 export const areasOf = (units: ReadonlyArray<SecurityAuditUnit>): number =>
 	new Set(Arr.flatMap(units, (unit) => (unit.subsystem === null ? [] : [unit.subsystem]))).size
-
-// PHASES
 
 export type PhaseState = "done" | "active" | "warn" | "stopped" | "pending" | "skipped"
 
@@ -198,8 +194,6 @@ export const phasesOf = (
 		},
 	]
 }
-
-// RESULTS
 
 /** What this run reported, from its own snapshot. */
 export const resultsOf = (model: Model): ReadonlyArray<SecurityAuditFinding> =>

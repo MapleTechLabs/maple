@@ -19,13 +19,13 @@ import {
 import { baselineWarehouseCapabilities } from "@maple/query-engine"
 import { makeQueryEngineExecute } from "@maple/query-engine/runtime"
 import { compiledQueryOf, normalizeSqlForClickHouseClient } from "@maple/query-engine/execution"
-import type { TenantContext } from "@maple/backend/services/auth/AuthService"
 import {
 	applyRealMigrations,
 	clickhouseE2eEnabled,
 	clickhouseExec,
 	uniqueDatabase,
-} from "./clickhouse-e2e-support"
+} from "../../testing/clickhouse-e2e-support"
+import type { TenantContext } from "@maple/domain/http"
 
 const database = uniqueDatabase("maple_metrics_fuzz_e2e")
 const SEED = Number(process.env.METRICS_FUZZ_SEED || Date.now() % 2 ** 31)
@@ -48,8 +48,6 @@ const WINDOW_MS = 90 * MINUTE_MS
 
 const chDateTime = (ms: number): string => Str.slice(0, 19)(Str.replace("T", " ")(new Date(ms).toISOString()))
 const quote = (value: string): string => `'${Str.replace(/[\\']/g, "\\$&")(value)}'`
-
-// World
 
 interface Point {
 	readonly ms: number
@@ -120,8 +118,6 @@ const buildWorld = (seed: number, kind: "gauge" | "counter"): ReadonlyArray<Seri
 }
 
 const identityOf = (s: Series): string => JSON.stringify([s.service, s.attributes, s.resource])
-
-// Reference semantics
 
 const total = (values: ReadonlyArray<number>): number => Arr.reduce(values, 0, (a, b) => a + b)
 
@@ -320,8 +316,6 @@ const breakdownOf = (q: FuzzQuery) => {
 		},
 	} as const
 }
-
-// Engine under test
 
 const decodeJsonRows = Schema.decodeUnknownSync(
 	Schema.fromJsonString(

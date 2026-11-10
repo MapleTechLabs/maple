@@ -10,11 +10,11 @@ import {
 	toastTitleStyles,
 	toastViewportAnchoredStyles,
 	toastViewportStyles,
-} from "@maple/ui/styles/ui/toast"
+} from "./toast.styles"
 import { Array, Option } from "effect"
 import { Submodel } from "foldkit"
 import type { Attribute, Html, HtmlBuilder } from "foldkit/html"
-import { buttonVariants } from "@maple/ui/styles/ui/button"
+import { buttonVariants } from "./button.styles"
 import { icon, type IconName } from "./icon"
 import {
 	descriptionId,
@@ -29,7 +29,7 @@ import {
 	type ToastType,
 } from "./toast"
 
-// packages/ui/src/components/ui/toast.tsx `Toasts` and `AnchoredToasts`, position "bottom-right".
+// The toast regions, free and anchored, at the bottom right.
 const POSITION = "bottom-right"
 
 const ICONS = {
@@ -217,8 +217,8 @@ export const region = Submodel.defineView<Model, Message>((model, h) => {
 	)
 })
 
-/** `AnchoredToasts`: the region for toasts pinned to an element (none are anchored yet). */
-export const anchoredRegion = Submodel.defineView<Model, Message>((model, h) =>
+/** The region for toasts pinned to an element (none are anchored yet). */
+const anchoredRegion = Submodel.defineView<Model, Message>((model, h) =>
 	h.div(
 		[
 			h.DataAttribute("base-ui-portal", ""),

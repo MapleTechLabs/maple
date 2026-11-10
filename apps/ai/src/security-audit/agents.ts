@@ -112,12 +112,12 @@ const reportedCost: RunCostEstimator = (request) => {
 	)
 }
 
+const secureRandom = SecureRandom.make(SecureRandom.randomBytesUnsafe)
+
 /**
  * The `AuditAgents` implementation. The LLM clients are acquired here, at construction, so a run's
  * `run` has no requirements of its own.
  */
-const secureRandom = SecureRandom.make(SecureRandom.randomBytesUnsafe)
-
 export const makeAuditAgents = (
 	models: AuditModels,
 	source: SourceReaderApi,

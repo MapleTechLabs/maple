@@ -2,7 +2,7 @@ import { countLabel, formatDuration } from "@maple/ui/lib/format"
 import { formatClock } from "@maple/ui/lib/replay-format"
 import { parseAttributes } from "@maple/ui/lib/span-tree"
 import { cn } from "@maple/ui/lib/utils"
-import { parseChTimestampMs, spanRange } from "../../../components/replays/replay-timeline"
+import { parseChTimestampMs, spanRange } from "../kit/replay-timeline"
 import { Option, Array as Arr } from "effect"
 import { AsyncData } from "foldkit"
 import { createLazy, type Html, type HtmlBuilder } from "foldkit/html"
@@ -37,7 +37,6 @@ const KINDS = ["click", "input", "scroll", "nav"] as const
 const pct = (ms: number, totalMs: number): number =>
 	totalMs <= 0 ? 0 : Math.min(100, Math.max(0, (ms / totalMs) * 100))
 
-/** `MarkerLegend`. */
 export const markerLegend = (h: H): Html =>
 	hstack(
 		h,
@@ -450,9 +449,7 @@ const tracesTrack = (h: H, view: TracesView, traceIds: ReadonlyArray<string>): H
 			onData: (summaries) => [
 				tracesHeader(h, summaries.length),
 				summaries.length === 0
-					? emptyMessage(h, {}, [
-							"Linked traces aren't available yet, they may still be ingesting",
-						])
+					? emptyMessage(h, {}, ["Linked traces aren't available yet, they may still be ingesting"])
 					: h.ul(
 							[h.Class("max-h-72 overflow-y-auto")],
 							Arr.map(summaries, (summary) => traceRow(h, view, summary)),

@@ -6,8 +6,8 @@ import { transcriptRows } from "./transcript-rows"
 import { waterfallRowsOf } from "./waterfall-rows"
 import { Array as Arr, Option } from "effect"
 
-// The waterfall's `useListNavigation` span cursor and the `?span=` landing of the waterfall and
-// the transcript: both lists are virtualized, so a scroll is a request their Mount carries out.
+// The waterfall's keyboard span cursor and the `?span=` landing of the waterfall and the transcript: both
+// lists are virtualized, so a scroll is a request their Mount carries out.
 
 export type SpanKey = "Next" | "Previous" | "Open" | "Escape"
 
@@ -76,7 +76,7 @@ export const land = (model: Model): Model => {
 	return model
 }
 
-/** j/k and the arrows walk the visible span rows, as `useListNavigation`'s `move` does. */
+/** j/k and the arrows walk the visible span rows. */
 export const moveCursor = (model: Model, delta: 1 | -1): Model => {
 	const rows = spanRows(model)
 	if (rows.length === 0) return model

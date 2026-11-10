@@ -1,7 +1,5 @@
-import { vendorLabel } from "./vendor"
+import { vendorLabel } from "@maple/views/lib/ai-vendor"
 import { Option, Array as Arr } from "effect"
-
-// A session's identity and heading.
 
 /** The name instrumentation writes when nothing named the agent. */
 const PLACEHOLDER_AGENT_NAME = "default"

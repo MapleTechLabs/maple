@@ -18,12 +18,10 @@ import {
 	isOpenOf,
 } from "./where-editor"
 
-// `useWhereClauseAutocomplete`'s state transitions for the metric's where editor.
-
 type Return = PageReturn<Model, Message>
 type Cmd = Command.Command<Message, never, Resources>
 
-/** The scoped attribute keys the editor suggests (`useMetricScopedAutocomplete`). */
+/** The scoped attribute keys the editor suggests. */
 export const scopedKeysOf = (model: Model): ReadonlyArray<string> =>
 	Option.match(AsyncData.getData(model.attributeKeys.data), {
 		onNone: () => [],
@@ -35,7 +33,7 @@ export const whereAutocompleteOf = (model: Model) =>
 
 export const isWhereOpen = (model: Model): boolean => isOpenOf(model.whereEditor, whereAutocompleteOf(model))
 
-/** `onActiveAttributeKey`: a new key asks for its values; none clears them. */
+/** A new key asks for its values; none clears them. */
 const withActiveKey = (
 	model: Model,
 	key: string | null,
@@ -62,7 +60,7 @@ const withActiveKey = (
 	})
 }
 
-/** `syncCursor`: the caret moved; the list reopens on its first row. */
+/** The caret moved; the list reopens on its first row. */
 const synced = (
 	model: Model,
 	cursor: number,
@@ -101,7 +99,7 @@ export const caretMessage = (
 		case "MeasuredAnchor":
 			return { model: { ...model, whereEditor: { ...editor, anchor: message.anchor } } }
 		case "MovedCaret": {
-			// `onKeyUp`: arrows that moved through an open list leave the caret alone.
+			// Arrows that moved through an open list leave the caret alone.
 			const isArrow = message.keyUp === "ArrowDown" || message.keyUp === "ArrowUp"
 			return isArrow && isOpenOf(editor, whereAutocompleteOf(model))
 				? { model }
@@ -121,7 +119,7 @@ export const dismissedSuggestions = (model: Model): Return => ({
 	model: { ...model, whereEditor: { ...model.whereEditor, isDismissed: true } },
 })
 
-/** `handleApplySuggestion`: the text changes (and commits like typing), the caret lands after it. */
+/** The text changes (and commits like typing), the caret lands after it. */
 export const appliedSuggestion = (
 	model: Model,
 	index: number,
@@ -163,8 +161,8 @@ export const completedAttributeValues = (
 })
 
 /**
- * `onKeyIntent("accept")`: the hook's `applySuggestion`, not the editor's. The caret and active key
- * follow the suggestion, the text does not change; Tab's keyup then re-syncs the real caret.
+ * Tab accepts the suggestion: the caret and active key follow it, the text does not change; Tab's
+ * keyup then re-syncs the real caret.
  */
 export const pressedTab = (
 	model: Model,

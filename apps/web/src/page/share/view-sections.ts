@@ -10,8 +10,8 @@ import { hstack, hstackClass } from "@maple/views/ui/stack"
 import { Array as Arr } from "effect"
 import { typography } from "@maple/views/ui/typography"
 
-// `DashboardSectionView` with `readOnly`: the chevron, the title and the tabs, no editing; the classes are
-// the editable header's.
+// A read-only section header: the chevron, the title and the tabs, no editing. Its classes match
+// the dashboard page's editable header.
 
 type H = HtmlBuilder<Message>
 

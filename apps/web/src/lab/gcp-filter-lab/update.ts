@@ -1,6 +1,6 @@
 import { Command, type Update } from "foldkit"
 import { Message as IntegrationsMessage } from "../../page/integrations/message"
-import { runtimeToggled } from "../../page/integrations/update-gcp-configure"
+import { runtimeToggled } from "../../page/infra-integrations/gcp/integration/update-gcp-configure"
 import type { Resources } from "../../platform/resources"
 import * as Select from "@maple/views/ui/select"
 import { Message, type Model, SCENARIOS, type ScenarioState } from "./model"

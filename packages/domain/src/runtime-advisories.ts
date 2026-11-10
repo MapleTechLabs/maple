@@ -187,7 +187,8 @@ export function fixedVersionFor(
 	return spans.fixes[0] ?? null
 }
 
-const SEVERITY_RANK = { critical: 0, high: 1, medium: 2, low: 3, unknown: 4 } satisfies Record<
+/** Worst first: the sort rank of each advisory severity. */
+export const SEVERITY_RANK = { critical: 0, high: 1, medium: 2, low: 3, unknown: 4 } satisfies Record<
 	AdvisorySeverity,
 	number
 >

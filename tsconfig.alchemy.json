@@ -36,7 +36,6 @@
 		// them let the rest resolve through node_modules instead, so the root
 		// typecheck and turbo's disagreed about which sources they were checking.
 		"paths": {
-			"@maple/infra": ["./packages/infra/src/index.ts"],
 			"@maple/infra/acm": ["./packages/infra/src/aws/acm-dns-validation.ts"],
 			"@maple/infra/aws": ["./packages/infra/src/aws/index.ts"],
 			"@maple/infra/cached-recoverable": ["./packages/infra/src/cloudflare/cached-recoverable.ts"],
@@ -44,6 +43,7 @@
 			"@maple/infra/config-helpers": ["./packages/infra/src/config-helpers.ts"],
 			"@maple/infra/dev-urls": ["./packages/infra/src/dev-urls.ts"],
 			"@maple/infra/env": ["./packages/infra/src/env.ts"],
+			"@maple/infra/profile": ["./packages/infra/src/profile.ts"],
 			"@maple/infra/r2-credentials": ["./packages/infra/src/cloudflare/r2-credentials.ts"],
 			"@maple/infra/security-baseline": ["./packages/infra/src/aws/security-baseline.ts"],
 			"@maple/infra/worker-build": ["./packages/infra/src/cloudflare/worker-build.ts"],

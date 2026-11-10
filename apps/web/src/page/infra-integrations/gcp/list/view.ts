@@ -14,15 +14,15 @@ import {
 	type GcpProjectHealth,
 	type GcpSparks,
 	type RowRules,
-} from "../../../../components/infra/gcp/list-model"
-import type { GcpCloudSqlInstance } from "../../../../components/infra/gcp/inventory"
+} from "../list-model"
+import type { GcpCloudSqlInstance } from "../inventory"
 import {
 	GCP_RESOURCES_TAB,
 	GCP_VIEW_SERVICES,
 	gcpResourcesError,
 	type GcpServiceView,
 	type GcpView,
-} from "../../../../components/infra/gcp/tabs"
+} from "../tabs"
 import { formatPercentColumn, pluralize } from "@maple/ui/lib/format"
 import { refreshingClass } from "@maple/ui/lib/refreshing"
 import { TONE_TEXT } from "@maple/ui/lib/tone"
@@ -41,14 +41,13 @@ import { statusDot } from "@maple/views/ui/status-dot"
 import type { PageViewInputs } from "../../../contract"
 import { dashboardPage } from "../../../kit/dashboard-page"
 import { integrationNotConnected } from "../../kit/empty-states"
-import { integrationConnectCta } from "../../kit/integration-empty"
+import { integrationConnectCta } from "../../../kit/integration-empty"
 import { AppRoute, hrefOf } from "../../../../route"
-import { GCP_ACCENT } from "../../../integrations/catalog"
 import { heroFieldChip } from "../../../infra/kit/hero-chip"
-import { viewTabStrip } from "../../../infra/kit/view-tabs"
+import { viewTabStrip } from "../../../kit/view-tabs"
 import { pageHeroParts, searchToolbar, headerActions } from "../../../infra/kit/page-parts"
 import type * as TimeRangePicker from "../../../kit/time-range-picker"
-import { pageTime } from "../../kit/page-time"
+import { pageTime } from "../../../kit/page-time"
 import {
 	cloudSqlInstancesOf,
 	metricsConnectors,
@@ -84,8 +83,9 @@ import {
 import { removableChip } from "@maple/views/ui/removable-chip"
 import { typography } from "@maple/views/ui/typography"
 import { hstack } from "@maple/views/ui/stack"
+import { providerBrand } from "../../../kit/providers"
 
-// `GcpPage`, `GcpInfra` and `GcpListPage`. `gcpListPageParts` and `titleRow` are what the lab reuses.
+// `gcpListPageParts` and `titleRow` are what the lab reuses.
 
 const VIEW_LABEL = {
 	services: "Services",
@@ -154,7 +154,7 @@ export type PageParts = Readonly<{
 	isFailed?: boolean
 }>
 
-/** `ListBody`: one view's band, search and table; the band counts every row, the table what is left. */
+/** One view's band, search and table; the band counts every row, the table what is left. */
 const listBody = <R extends { readonly keys: ReadonlyArray<string> }, S extends string>(
 	h: H,
 	state: ListState,
@@ -212,7 +212,6 @@ const listBody = <R extends { readonly keys: ReadonlyArray<string> }, S extends 
 	]
 }
 
-/** `FilterChipRail` with the one region chip. */
 const regionChip = (h: H, region: string): Html => {
 	const label = `region ${region}`
 	return hstack(h, { gap: "1.5", wrap: true, attributes: [h.AriaLabel("Active filters")] }, [
@@ -249,7 +248,7 @@ const SHARE_UNIT = {
 	loadBalancing: "of load balancers",
 } as const satisfies Record<GcpServiceView, string>
 
-/** `GcpProjectsStrip`: one cell per project, the biggest share first; a cell scopes to it. */
+/** One cell per project, the biggest share first; a cell scopes to it. */
 const projectsStrip = (
 	h: H,
 	projects: ReadonlyArray<string>,
@@ -393,7 +392,7 @@ const infraView = (h: H, model: Model, connectors: ReturnType<typeof metricsConn
 	})
 }
 
-/** `GcpListState`: the route's search, or the lab's state. */
+/** The route's search, or the lab's state. */
 export type ListState = Readonly<{
 	view?: GcpView | undefined
 	q?: string | undefined
@@ -463,7 +462,6 @@ export const titleRow = (
 })
 
 /** The header, then the projects strip and the current view's band, search and table. */
-/** `GcpListPage`: the header, view tabs, then the projects strip and the current view. */
 export const gcpListPageParts = (h: H, input: ListPageInput): PageParts => {
 	const { fleet, state, isWaiting } = input
 	const allRows =
@@ -645,7 +643,7 @@ const content = (h: H, model: Model): PageParts =>
 /** Nothing connected: what this page will show, and the way to the connect flow. */
 const gcpConnectCta = (h: H): Html =>
 	integrationConnectCta(h, {
-		brand: { icon: "GoogleCloudIcon", backerIcon: "GoogleCloudMonoIcon", accent: GCP_ACCENT },
+		brand: providerBrand("gcp"),
 		features: [
 			{
 				label: "Metrics",

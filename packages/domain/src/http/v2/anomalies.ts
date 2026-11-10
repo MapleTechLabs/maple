@@ -1,6 +1,6 @@
 import { HttpApiEndpoint, HttpApiGroup, OpenApi } from "effect/http-api"
 import { Schema } from "effect"
-import { UserId } from "../../primitives"
+import { UserId } from "@maple/primitives"
 import {
 	AnomalyForbiddenError,
 	AnomalyIncidentNotFoundError,
@@ -30,8 +30,6 @@ const signalTypeField = AnomalySignalType.annotate({
 	description: "The monitored signal that triggered the anomaly.",
 	examples: ["error_rate"],
 })
-
-// Resources
 
 /** One fingerprint sharing a consolidated error-spike incident. */
 const V2AnomalyIncidentFingerprint = Schema.Struct({
@@ -266,8 +264,6 @@ export const V2AnomalyServiceCountsQuery = Schema.Struct({
 	description: "Optional status filter for the per-service anomaly aggregate.",
 })
 export type V2AnomalyServiceCountsQuery = Schema.Schema.Type<typeof V2AnomalyServiceCountsQuery>
-
-// Requests / queries
 
 export const V2AnomalyLinkIssueParams = Schema.Struct({
 	issue_id: Schema.NullOr(ErrorIssuePublicId).annotate({

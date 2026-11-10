@@ -16,6 +16,7 @@ import { Message as DetailsMessage } from "./details/model"
 import { customerChanged, init, requestRuleStats, revisit, spendModelOf, update } from "./update"
 import { usageTable } from "./view-usage"
 import { toLoadFailure } from "@maple/views/data/load-failure"
+import * as CheckoutReturn from "../../kit/checkout-return"
 
 const ADMIN = Policy.grantsOf(["org:admin"])
 
@@ -244,29 +245,45 @@ describe("billing tab", () => {
 		const returning = init(ADMIN, true, true)
 		expect(returning.model.checkoutReturn).toBe("Confirming")
 		expect(names(returning.commands)).toEqual(
-			expect.arrayContaining(["WaitBillingCheckoutPoll", "WaitBillingCheckoutTimeout"]),
+			expect.arrayContaining(["WaitCheckoutPoll", "WaitCheckoutTimeout"]),
 		)
-		const polled = update(returning.model, Message.ElapsedCheckoutPoll(), null, 0)
+		const polled = update(
+			returning.model,
+			Message.GotCheckoutReturnMessage({ message: CheckoutReturn.Message.ElapsedPoll() }),
+			null,
+			0,
+		)
 		expect(polled.isCustomerStale).toBe(true)
-		expect(names(polled.step.commands)).toEqual(["WaitBillingCheckoutPoll"])
+		expect(names(polled.step.commands)).toEqual(["WaitCheckoutPoll"])
 		const planless = new BillingCustomer({ id: "org_acme", subscriptions: [] })
 		expect(customerChanged(returning.model, planless)).toBeNull()
 		const confirmed = customerChanged(returning.model, customer)
 		expect(confirmed?.checkout).toBe("Confirmed")
 		expect(confirmed?.step.model.checkoutReturn).toBe("Idle")
 		expect(confirmed?.step.commands?.[0]).toMatchObject({
-			args: { event: "plan_checkout_returned", props: { confirmed: true } },
+			name: "TrackCheckoutReturned",
+			args: { confirmed: true },
 		})
 	})
 
 	test("the wait gives up after the timeout with the notice, and an idle tab never polls", () => {
-		const timedOut = update(init(ADMIN, true, true).model, Message.ElapsedCheckoutTimeout(), null, 0)
+		const timedOut = update(
+			init(ADMIN, true, true).model,
+			Message.GotCheckoutReturnMessage({ message: CheckoutReturn.Message.ElapsedTimeout() }),
+			null,
+			0,
+		)
 		expect(timedOut.step.model.checkoutReturn).toBe("TimedOut")
 		expect(timedOut.checkout).toBe("TimedOut")
-		expect(update(timedOut.step.model, Message.ElapsedCheckoutPoll(), null, 0).isCustomerStale).toBe(
-			false,
-		)
-		expect(names(init(ADMIN, false, true).commands)).not.toContain("WaitBillingCheckoutPoll")
+		expect(
+			update(
+				timedOut.step.model,
+				Message.GotCheckoutReturnMessage({ message: CheckoutReturn.Message.ElapsedPoll() }),
+				null,
+				0,
+			).isCustomerStale,
+		).toBe(false)
+		expect(names(init(ADMIN, false, true).commands)).not.toContain("WaitCheckoutPoll")
 	})
 
 	test("a checkout link records plan_checkout_started before the redirect", () => {

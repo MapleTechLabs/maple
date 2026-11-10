@@ -6,7 +6,8 @@ import { finiteOrZero } from "@maple/query-engine/ch/format"
 import { metricDeltaExpr } from "@maple/query-engine/ch"
 import * as CH from "@maple-dev/effect-orm/expr"
 import { from, fromQuery, param, type ColumnAccessor } from "@maple-dev/effect-orm/clickhouse"
-import { MetricsGauge, MetricsSum, orgIdParam, utcSecondsParam } from "@maple/query-engine/ch/tables"
+import * as Datasources from "@maple/domain/tinybird/datasources"
+import { orgIdParam, utcSecondsParam } from "@maple/query-engine/ch/tables"
 
 export const SUPABASE_PROJECT_REF_ATTRIBUTE = "supabase_project_ref"
 
@@ -73,7 +74,7 @@ const COUNTER_METRIC_NAMES = [
 	SUPABASE_DISK_WRITTEN,
 ] as const
 
-type GaugeColumns = ColumnAccessor<typeof MetricsGauge.columns>
+type GaugeColumns = ColumnAccessor<typeof Datasources.metricsGauge.columns>
 
 const isDataVolume = ($: GaugeColumns, metricName: string) =>
 	$.MetricName.eq(metricName).and($.Attributes.get("mountpoint").eq(SUPABASE_DATA_MOUNTPOINT))
@@ -83,7 +84,7 @@ const isDataVolume = ($: GaugeColumns, metricName: string) =>
  * from a row reads 0: each family carries its sample count and aggregates skip rows without one.
  */
 const gaugePoints = () =>
-	from(MetricsGauge).select(($) => {
+	from(Datasources.metricsGauge).select(($) => {
 		const isDbSize = $.MetricName.eq(SUPABASE_DB_SIZE).and(
 			CH.notInList($.Attributes.get("datname"), TEMPLATE_DATABASES),
 		)
@@ -125,7 +126,7 @@ const gaugePoints = () =>
  * labels and resource); the lookback lets the first in-window sample difference against one before it.
  */
 const counterDeltas = () =>
-	from(MetricsSum).select(($) => {
+	from(Datasources.metricsSum).select(($) => {
 		const previous = CH.windowSpec({
 			partitionBy: [
 				$.MetricName,
@@ -162,8 +163,6 @@ const counterDeltas = () =>
 const usedShare = (available: CH.Expr<number>, total: CH.Expr<number>) => CH.lit(1).sub(available.div(total))
 
 const counterWindowStart = () => CH.intervalSub(param.dateTime("startTime"), COUNTER_LOOKBACK_SECONDS)
-
-// PROJECTS
 
 export interface SupabaseProjectGaugesOutput {
 	readonly projectRef: string
@@ -267,8 +266,6 @@ export function supabaseProjectCpuSQL() {
 		.limit(1000)
 		.format("JSON")
 }
-
-// ONE PROJECT
 
 export interface SupabaseProjectGaugeSeriesOutput {
 	readonly bucket: DateTime.Utc

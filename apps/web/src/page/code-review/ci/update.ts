@@ -1,3 +1,4 @@
+import { chartEnvHandlers } from "@maple/views/charts/chart-env"
 import { CiRunResult, type CodeReviewCiRunsResponse } from "@maple/domain/http"
 import { type Result, Schema } from "effect"
 import type { LoadFailure } from "@maple/views/data/load-failure"
@@ -17,6 +18,7 @@ import {
 	initFrame,
 	noCarry,
 	updateFrame,
+	frameStep,
 } from "../kit/frame-update"
 import type { Retained } from "../kit/retained"
 import { remember } from "../kit/page-steps"
@@ -27,7 +29,7 @@ import type { PresetValue } from "../../kit/time-controls"
 export type Search = typeof CodeReviewCiSearch.Type
 type Return = PageReturn<Model, Message>
 
-/** `CODE_REVIEW_CI_DEFAULT_PRESET`: a week, since CI runs many times a day. */
+/** A week, since CI runs many times a day. */
 export const DEFAULT_PRESET: PresetValue = "1w"
 const FRAME_ID = "code-review-ci"
 const isRunResult = Schema.is(CiRunResult)
@@ -57,12 +59,13 @@ const applyOut = (model: Model, out: FrameOut, context: PageContext): Return => 
 	}
 }
 
-const liftFrame = (model: Model, result: FrameReturn, context: PageContext): Return => {
-	const next: Model = { ...model, frame: result.frame }
-	const commands = Command.mapMessages(result.commands, (message) => Message.GotFrameMessage({ message }))
-	const out = result.out === null ? { model: next } : applyOut(next, result.out, context)
-	return { ...out, commands: [...commands, ...(out.commands ?? [])] }
-}
+const liftFrame = (model: Model, result: FrameReturn, context: PageContext): Return =>
+	frameStep(
+		model,
+		result,
+		(message) => Message.GotFrameMessage({ message }),
+		(next, out) => applyOut(next, out, context),
+	)
 
 export const init = (
 	route: { readonly search: Search },
@@ -93,14 +96,7 @@ export const init = (
 	const lifted = liftFrame(model, frame, context)
 	return {
 		...lifted,
-		commands: [
-			...(lifted.commands ?? []),
-			Command.mapMessage(LoadChartRuntime(), (message) =>
-				message._tag === "CompletedLoadChartRuntime"
-					? Message.CompletedLoadChartRuntime()
-					: Message.FailedLoadChartRuntime({ reason: message.reason }),
-			),
-		],
+		commands: [...(lifted.commands ?? []), LoadChartRuntime()],
 	}
 }
 
@@ -117,7 +113,14 @@ export const routeChanged = (
 					search: route.search,
 					resultSelect: { ...model.resultSelect, value: route.search.result ?? ALL },
 				},
-				frameRouteChanged(model.frame, model.search, route.search, route.search.pipeline, DEFAULT_PRESET, context),
+				frameRouteChanged(
+					model.frame,
+					model.search,
+					route.search,
+					route.search.pipeline,
+					DEFAULT_PRESET,
+					context,
+				),
 				context,
 			)
 
@@ -172,7 +175,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		ClickedClearFilters: () => navigate(model, { repo: undefined, pipeline: undefined }),
 		ClickedClearRunFilters: () => navigate(model, { branch: undefined, result: undefined }),
 		ClickedClearBranch: () => navigate(model, { branch: undefined }),
-		// `onSelectPipeline(name === pipeline ? undefined : name)`: a second click clears it.
+		// A second click on the selected workflow clears it.
 		ClickedWorkflow: ({ pipeline }) =>
 			navigate(model, { pipeline: pipeline === model.search.pipeline ? undefined : pipeline }),
 		ClickedBranch: ({ branch }) => navigate(model, { branch }),
@@ -208,11 +211,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 				),
 			}
 		},
-		CompletedLoadChartRuntime: () => ({ model: { ...model, chartRuntime: { _tag: "Ready" } } }),
-		FailedLoadChartRuntime: ({ reason }) => ({
-			model: { ...model, chartRuntime: { _tag: "Failed", reason } },
-		}),
-		ResolvedThemeColors: ({ colors }) => ({ model: { ...model, themeColors: colors } }),
+		...chartEnvHandlers(model),
 	})
 
 /** What this tab hands the next one. */

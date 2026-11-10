@@ -1,16 +1,15 @@
 import * as PG from "@maple-dev/effect-orm/postgres"
+import { AiTriageIncidentKind, AiTriageResult } from "@maple/domain/ai-triage"
+import { IssueSeverity } from "@maple/domain/error-issues"
 import {
-	AiTriageIncidentKind,
-	AiTriageResult,
 	InvestigationConfidence,
 	InvestigationProgress,
 	InvestigationSeededBy,
 	InvestigationStatus,
 	InvestigationSubject,
 	InvestigationSubjectSnapshot,
-	IssueSeverity,
-} from "@maple/domain/http"
-import { ErrorIssueId, InvestigationId, OrgId, UserId } from "@maple/domain/primitives"
+} from "@maple/domain/investigations"
+import { ErrorIssueId, InvestigationId, OrgId, UserId } from "@maple/primitives"
 
 /**
  * A durable investigation "war-room". One row per investigation; it both backs
@@ -77,4 +76,3 @@ export const Investigations = PG.table("investigations", {
 })
 
 export type InvestigationRow = PG.SelectRowOf<typeof Investigations>
-export type InvestigationInsert = PG.InsertRowOf<typeof Investigations>

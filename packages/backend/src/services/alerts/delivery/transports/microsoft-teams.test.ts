@@ -1,6 +1,6 @@
 import type { AlertDestinationRow } from "@maple/db/tables"
 import { AlertDestinationId, parseTeamsWorkflowWebhookUrl, teamsWebhookUrlProblem } from "@maple/domain/http"
-import { OrgId } from "@maple/domain/primitives"
+import { OrgId } from "@maple/primitives"
 import { assert, describe, it } from "@effect/vitest"
 import { Option, Schema, String as Str } from "effect"
 import type { DispatchContext } from "../context"

@@ -18,7 +18,7 @@ export type CacheEntry = Readonly<{ key: QueryKey; data: CacheValue; updatedAtMs
 /** By `hashKey(key)`. */
 export type CacheEntries = ReadonlyMap<string, CacheEntry>
 
-/** One per server port, as legacy keys it. */
+/** One per server port, keyed as earlier builds wrote it. */
 export const storageKeyFor = (port: string): string => `maple-local:query-cache:${port}`
 
 /** Saved results older than this are dropped on load. */
@@ -87,7 +87,7 @@ const SavedCache = Schema.Struct({
 })
 const decodeSaved = Schema.decodeUnknownOption(Schema.fromJsonString(SavedCache))
 
-/** `restoreQueryCache`: the saved results younger than a day; an entry the codec cannot rebuild is skipped. */
+/** The saved results younger than a day; an entry the codec cannot rebuild is skipped. */
 export const parseSaved = (text: string, nowMs: number): CacheEntries =>
 	new Map(
 		Option.match(decodeSaved(text), {
@@ -113,7 +113,7 @@ export const parseSaved = (text: string, nowMs: number): CacheEntries =>
 export const asCacheValue = <A>(data: A): Option.Option<CacheValue> =>
 	Option.map(encodeCacheValue(data), decodeCacheValue)
 
-/** `serializeQueryCache`: the newest results that fit the budget, in legacy's saved form. */
+/** The newest results that fit the budget, in the saved form earlier builds wrote. */
 export const serialize = (entries: CacheEntries): string => {
 	const encoded = Array.getSomes(
 		Array.map(Array.sort(Array.fromIterable(entries.values()), byNewest), (entry) =>

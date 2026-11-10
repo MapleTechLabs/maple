@@ -16,14 +16,15 @@ import { settingRow } from "@maple/views/ui/setting-row"
 import { skeleton, skeletonBlock, skeletonList, skeletonSlowNote } from "@maple/views/ui/skeleton"
 import { switchControl } from "@maple/views/ui/switch"
 import { providerLogo, providerOf } from "../../alerts/shared/providers"
-import { SEVERITY_LABEL, SEVERITY_ORDER, severityBadge, severityDot } from "../../errors/kit/severity"
+import { SEVERITY_LABEL, SEVERITY_ORDER, severityBadge, severityDot } from "../../kit/issue-severity"
 import { relativeTime } from "../../kit/relative-time"
 import { docsLink } from "../../kit/signal-empty-state"
-import { adminOnlyNote, settingsSection, settingsSections } from "../kit/section"
+import { adminOnlyNote, settingsSection, settingsSections } from "../../kit/settings-section"
 import { canManage, Message, type Model, type PolicyDraft } from "./model"
 import { typography, typographyClass } from "@maple/views/ui/typography"
 import { hstack } from "@maple/views/ui/stack"
 import { Array as Arr, String as Str, Option } from "effect"
+import { routingTabHref } from "../../alerts/shared/escalation-chains"
 
 type H = HtmlBuilder<Message>
 type Inputs = Readonly<{ nowMs: number; timeZone: string; isKnownMember: boolean }>
@@ -90,7 +91,6 @@ const severityRule = (
 									})),
 									size: "sm",
 									className: "w-24",
-									// `<SelectValue />` without a renderer prints the raw value.
 									renderValue: (value) => [value],
 									toView: (parts) => h.div([h.Class("contents")], parts),
 								},
@@ -124,7 +124,7 @@ const destinationsBlock = (h: H, model: Model, draft: PolicyDraft): Html => {
 					"Escalation sends triaged issues to a destination. Add a Slack, email or webhook destination first.",
 				]),
 				hstack(h, { wrap: true, className: "gap-x-4 gap-y-2" }, [
-					linkButton(h, { size: "sm", variant: "outline", href: "/alerts?tab=routing" }, [
+					linkButton(h, { size: "sm", variant: "outline", href: routingTabHref() }, [
 						"Add a destination",
 					]),
 					docsLink(h, "destinations"),

@@ -1,5 +1,5 @@
 import { OrgId as OrgIdSchema, type OrgId } from "@maple/domain"
-import { isClerkAuthEnabled } from "./lib/services/common/auth-mode"
+import { isClerkAuthEnabled } from "./platform/auth-mode"
 import { validateInternalRedirect } from "@maple/ui/lib/sanitizers"
 import { Option, Schema, Struct, Array as Arr } from "effect"
 import { AsyncData, Command, Update } from "foldkit"
@@ -82,8 +82,6 @@ const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
 
 type UpdateReturn = Update.Return<Model, Message, Resources>
 type Step = Update.Step<Model, Message, Resources>
-
-// CHILDREN
 
 const foldSignInOutMessage = SignIn.OutMessage.match<Step>({
 	SucceededSignIn:
@@ -200,8 +198,6 @@ const foldTooltip = Update.foldChild({
 	toParentMessage: (message: TooltipHost.Message) => Message.GotTooltipMessage({ message }),
 })
 
-// PAGES
-
 /** The org a bare public page (a share link) is keyed under when nobody is signed in. */
 const PUBLIC_ORG = Schema.decodeOption(OrgIdSchema)("public")
 
@@ -240,7 +236,7 @@ export const pageContextOf: (model: Model) => Option.Option<PageContext> = lastB
 		SignedIn: ({ maybeOrgId }) =>
 			isBarePageRoute(model.route)
 				? publicContextOf(model, maybeOrgId)
-				: // `WrongRegionScreen` replaces the page, so it reads nothing this region would refuse.
+				: // The wrong-region screen replaces the page, so it reads nothing this region would refuse.
 					Option.filter(maybeOrgId, () => rendersShell(model.route) && !isWrongRegion(model)).pipe(
 						Option.map((orgId) => ({
 							orgId,
@@ -469,8 +465,6 @@ const loadPage: Step = (model) =>
 		},
 	)
 
-// ONBOARDING
-
 /** The session as the onboarding screens read it. */
 export const onboardingInputsOf = (model: Model): Option.Option<Onboarding.Inputs> => {
 	const snapshot = Option.fromNullishOr(model.clerkSnapshot)
@@ -621,8 +615,6 @@ const updateOnboarding = (model: Model, message: Onboarding.Message): UpdateRetu
 	})
 }
 
-// ROUTING
-
 /** Where sign-in lands: a same-origin `redirect_url`, else `/`. */
 const targetAfterSignIn = (route: AppRoute): string =>
 	AppRoute.matchOrElse(
@@ -658,7 +650,7 @@ const clerkReverseRedirect = (route: AppRoute, maybeOrgId: Option.Option<unknown
 
 const toHome: Redirect = { url: "/", isReplace: true }
 
-/** Self-hosted has no Clerk: its sign-up and org pages `<Navigate to="/" replace />`. */
+/** Self-hosted has no Clerk: its sign-up and org pages redirect to `/`. */
 const selfHostedRedirect = (route: AppRoute): Option.Option<Redirect> =>
 	route._tag === "SignUp" || route._tag === "OrgRequired" ? Option.some(toHome) : Option.none()
 
@@ -777,7 +769,7 @@ const loadRoute: Step = (model) =>
 		Resolving: () => ({ model }),
 		SignedOut: () => ({ model }),
 		SignedIn: ({ maybeOrgId }) =>
-			// `WrongRegionScreen` replaces the whole frame: no shell, nothing it reads.
+			// The wrong-region screen replaces the whole frame: no shell, nothing it reads.
 			Option.isNone(maybeOrgId) ||
 			isPublicRoute(model.route) ||
 			isWrongRegion(model) ||
@@ -787,7 +779,7 @@ const loadRoute: Step = (model) =>
 	})
 
 /**
- * `useMapleCustomer` in `ClerkReverseRedirects`: once Clerk has an org that this region serves,
+ * Once Clerk has an org that this region serves,
  * its customer is read once (the atom is shared app-wide).
  */
 const loadCustomer: Step = (model) => {
@@ -846,8 +838,6 @@ const settledCustomer = (model: Model, orgId: string, data: CustomerSlot["data"]
 		: settled
 }
 
-// SESSION TIME RANGE
-
 /** The signed-in org, on a shell route. */
 const shellOrgOf = (model: Model): Option.Option<string> =>
 	Session.match(model.session, {
@@ -856,7 +846,7 @@ const shellOrgOf = (model: Model): Option.Option<string> =>
 		SignedIn: ({ maybeOrgId }) => maybeOrgId,
 	})
 
-/** `persistSessionTimeRange` after a navigation settles; the org's memory is read once first. */
+/** Saves the session time range after a navigation settles; the org's memory is read once first. */
 const syncSessionTimeRange: Step = (model) =>
 	Option.match(shellOrgOf(model), {
 		onNone: () => ({ model }),
@@ -900,8 +890,8 @@ const sessionRangeUrl = (model: Model, url: Url): Option.Option<string> => {
 }
 
 /**
- * `navigate()`/`<Link>`: TanStack runs the search middleware in `buildLocation`, so the remembered
- * window joins the URL a navigation builds; Back/Forward (`ChangedUrl` alone) are left as they are.
+ * An in-app navigation: the remembered window joins the URL it builds; Back/Forward (`ChangedUrl`
+ * alone) are left as they are.
  */
 const navigateTo = (model: Model, url: string, isReplace: boolean) => {
 	const target = Option.getOrElse(
@@ -922,8 +912,6 @@ export const settle: Step = Update.combine([
 	loadOnboarding,
 	syncSessionTimeRange,
 ])
-
-// SESSION
 
 const signedIn =
 	(maybeOrgId: Option.Option<OrgId>): Step =>
@@ -968,8 +956,6 @@ const appliedClerkSnapshot =
 		}
 		return isPublicRoute(model.route) ? signedOut(model) : { model, commands: [WaitForAuthSettle()] }
 	}
-
-// PRELOAD
 
 const withPreload = (model: Model, preload: Preload.Model) => modifyFields(model, { preload: () => preload })
 
@@ -1028,15 +1014,13 @@ const rootToastCommand = (action: RootToastAction | undefined) =>
 		? RestoreDashboardWidgets(action)
 		: ReconnectOrgCollections()
 
-/** `useBlocker`: the open page holds a navigation that would leave it, and asks instead. */
+/** The open page holds a navigation that would leave it, and asks instead. */
 const heldNavigation = (model: Model, url: Url): Option.Option<UpdateReturn> =>
 	Option.flatMap(pageContextOf(model), (context) =>
 		Option.map(blockNavigation(model.page, urlToAppRoute(url), urlToString(url), context), (transition) =>
 			applyPage(transition)(model),
 		),
 	)
-
-// UPDATE
 
 const foldMessage = (model: Model, message: Message) =>
 	Message.match<UpdateReturn>(message, {
@@ -1143,7 +1127,7 @@ const foldMessage = (model: Model, message: Message) =>
 						}),
 					)
 				: { model },
-		// Every reader of `effectiveTimezone` re-renders: the open page re-resolves under the new zone.
+		// Every reader of the effective zone re-renders: the open page re-resolves under the new zone.
 		ChangedTimeZonePreference: ({ timeZone }) => {
 			if (timeZone === model.timeZone) return { model }
 			const zoned = modifyFields(model, { timeZone: () => timeZone })

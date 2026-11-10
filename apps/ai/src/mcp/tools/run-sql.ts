@@ -1,8 +1,9 @@
 import { McpInvalidInputError, McpQueryBudgetError, McpQueryError, type McpToolRegistrar } from "./types"
 import { Effect, Schema, Array as Arr, Record as Rec, String as Str } from "effect"
-import { RunSqlOutput } from "@maple/domain/mcp-outputs"
-import { CurrentMcpTenant } from "../lib/query-warehouse"
-import { autoBucketSeconds, runRawSql } from "../lib/run-raw-sql"
+import { RawSqlValidationError } from "@maple/domain/http"
+import { WarehouseInvalidSqlError } from "@maple/domain/http/warehouse-errors"
+import { CurrentMcpTenant } from "../tenant"
+import { runRawSql } from "../lib/run-raw-sql"
 import { truncate } from "../lib/format"
 import { toMcpQueryError } from "../lib/map-warehouse-error"
 import { stringifyJson } from "../lib/json"
@@ -31,6 +32,11 @@ const managedOnlyTablesOf = (sql: string): { readonly managedOnlyTables: Array<s
 	const pinned = Arr.filter(referencedTableNames(sql), (name) => Arr.contains(INGEST_PINNED_TABLES, name))
 	return pinned.length === 0 ? undefined : { managedOnlyTables: pinned }
 }
+
+const isQueryError = Schema.is(McpQueryError)
+const isBudgetError = Schema.is(McpQueryBudgetError)
+const isInvalidSql = Schema.is(WarehouseInvalidSqlError)
+const isRawSqlRefusal = Schema.is(RawSqlValidationError)
 
 // Rows returned to the model are capped so a wide/long result doesn't blow the
 // context. The full count is always reported via meta.rowCount.
@@ -76,7 +82,7 @@ export const withTableListOnUnknownTable = (
 	error: McpQueryError | McpQueryBudgetError,
 	sql = "",
 ): McpQueryError | McpQueryBudgetError => {
-	if (error._tag !== "@maple/mcp/errors/McpQueryError" || !UNKNOWN_TABLE.test(error.message)) return error
+	if (!isQueryError(error) || !UNKNOWN_TABLE.test(error.message)) return error
 	const names = Arr.join(
 		Arr.map(listWarehouseTables(), (t) => t.name),
 		", ",
@@ -129,8 +135,7 @@ const MAX_DESCRIBED_TABLES = 3
 export const withColumnListOnUnknownColumn =
 	(sql: string) =>
 	(error: McpQueryError | McpQueryBudgetError): McpQueryError | McpQueryBudgetError => {
-		if (error._tag !== "@maple/mcp/errors/McpQueryError" || !UNKNOWN_COLUMN.test(error.message))
-			return error
+		if (!isQueryError(error) || !UNKNOWN_COLUMN.test(error.message)) return error
 
 		const written = unknownIdentifierName(error.message)
 		const column = written?.split(".").at(-1)
@@ -282,7 +287,7 @@ const BUDGET_ROLLUP_HINT =
 export const withRollupHintOnBudget = (
 	error: McpQueryError | McpQueryBudgetError,
 ): McpQueryError | McpQueryBudgetError =>
-	error._tag === "@maple/mcp/errors/McpQueryBudgetError" && error.setting !== "max_threads"
+	isBudgetError(error) && error.setting !== "max_threads"
 		? new McpQueryBudgetError({
 				message: `${error.message} ${BUDGET_ROLLUP_HINT}`,
 				pipeName: error.pipeName,
@@ -295,11 +300,10 @@ export const withRollupHintOnBudget = (
  * caller's to fix: an expected 400, not a query failure that opens an error issue.
  */
 export const callerSqlAsInvalidInput = (
-	cause: { readonly _tag: string },
+	cause: unknown,
 	error: McpQueryError | McpQueryBudgetError,
 ): McpQueryError | McpQueryBudgetError | McpInvalidInputError =>
-	cause._tag === "@maple/http/errors/WarehouseInvalidSqlError" &&
-	error._tag === "@maple/mcp/errors/McpQueryError"
+	isInvalidSql(cause) && isQueryError(error)
 		? new McpInvalidInputError({ message: error.message, parameter: "sql" })
 		: error
 
@@ -325,7 +329,7 @@ const withRewriteNote = (message: string, rewrites: ReadonlyArray<IdentifierRewr
 const withCallerErrorText =
 	(rewrites: ReadonlyArray<IdentifierRewrite>) =>
 	(error: McpQueryError | McpQueryBudgetError): McpQueryError | McpQueryBudgetError =>
-		error._tag === "@maple/mcp/errors/McpQueryError"
+		isQueryError(error)
 			? new McpQueryError({
 					message: withRewriteNote(rawSqlErrorText(error.message), rewrites),
 					pipeName: error.pipeName,
@@ -358,7 +362,6 @@ export function registerRunSqlTool(server: McpToolRegistrar) {
 		title: "Run SQL",
 		description: runSqlDescription,
 		parameters: runSqlSchema,
-		output: RunSqlOutput,
 		hints: { readOnly: true },
 		phrases: ["Running a query", "Running SQL", "Querying the warehouse"],
 		handler: Effect.fn("McpTool.runSql")(function* (params) {
@@ -366,7 +369,6 @@ export function registerRunSqlTool(server: McpToolRegistrar) {
 			yield* Effect.annotateCurrentSpan("maple.mcp.run_sql.has_reason", params.reason !== undefined)
 			const tenant = yield* CurrentMcpTenant
 			const { st, et } = yield* WINDOW.resolve(params, "run_sql")
-			const granularitySeconds = params.granularity_seconds ?? autoBucketSeconds(st, et)
 
 			const execute = (sql: string) =>
 				runRawSql({
@@ -374,7 +376,7 @@ export function registerRunSqlTool(server: McpToolRegistrar) {
 					sql,
 					startTime: st,
 					endTime: et,
-					granularitySeconds,
+					granularitySeconds: params.granularity_seconds,
 					truncateAtCap: true,
 				})
 
@@ -396,7 +398,7 @@ export function registerRunSqlTool(server: McpToolRegistrar) {
 						const fix =
 							passes >= MAX_IDENTIFIER_FIXES
 								? undefined
-								: error._tag === "@maple/http/errors/RawSqlValidationError"
+								: isRawSqlRefusal(error)
 									? error.code === "InvalidMacro" && ORG_FILTER_OR.test(error.message)
 										? fixOrgFilterOr(sql)
 										: undefined
@@ -435,8 +437,7 @@ export function registerRunSqlTool(server: McpToolRegistrar) {
 					? runFixing(sql, initial)
 					: runFixing(seeked, initial).pipe(
 							Effect.catchIf(
-								(failure) =>
-									failure.error._tag === "@maple/http/errors/WarehouseInvalidSqlError",
+								(failure) => isInvalidSql(failure.error),
 								() => runFixing(sql, initial),
 							),
 						)
@@ -444,7 +445,7 @@ export function registerRunSqlTool(server: McpToolRegistrar) {
 			const { rows, columns, rowCount, expandedSql, rewrites } = yield* run.pipe(
 				Effect.mapError(({ error, sql, rewrites }) =>
 					// Macro/safety failures (a missing `$__orgFilter` above all) are caller-fixable.
-					error._tag === "@maple/http/errors/RawSqlValidationError"
+					isRawSqlRefusal(error)
 						? new McpInvalidInputError({
 								message: withRewriteNote(
 									`SQL rejected (${error.code}): ${error.message}`,

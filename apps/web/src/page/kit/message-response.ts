@@ -4,11 +4,9 @@ import { Option, Array as Arr, String as Str } from "effect"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { iconButton } from "@maple/views/ui/icon-button"
 
-// Lightweight markdown over Streamdown:
-// laid out with Streamdown's element classes. The parser loads on first use, never at startup.
-// TODO(markdown-table): Maple's `MarkdownTable` primitives are drawn with Streamdown's own table classes.
-
-// The parse is the shared one (`page/kit/markdown`), re-exported for the pages that import it here.
+// Lightweight markdown laid out with Streamdown's element classes. The parser loads on first use,
+// never at startup.
+// TODO(markdown-table): tables are drawn with Streamdown's own table classes, not Maple's table kit.
 export { ParsedMarkdown, parseMarkdownTexts } from "./markdown"
 
 const streamdown =
@@ -334,7 +332,16 @@ const ROOT_CLASS = cn(
 	"[&_h1]:mt-4 [&_h2]:mt-4 [&_h3]:mt-4 [&_h4]:mt-4 [&_h1]:mb-1 [&_h2]:mb-1 [&_h3]:mb-1 [&_h4]:mb-1",
 )
 
-/** The laid-out body; before the parse lands (or for a rejected text) its paragraphs as plain text. */
+/** Paragraphs are separated by a blank line; single newlines fold into the paragraph. */
+const paragraphs = (text: string): ReadonlyArray<string> =>
+	Arr.filter(
+		Arr.map(Str.split(/\n\s*\n/u)(text), (paragraph) =>
+			Str.trim(Str.replace(/\s*\n\s*/gu, " ")(paragraph)),
+		),
+		(paragraph) => paragraph.length > 0,
+	)
+
+/** The laid-out body; before the parse lands (or for a rejected or unparsed text) its paragraphs as plain text. */
 export const messageResponse = <M>(
 	h: HtmlBuilder<M>,
 	document: Markdown.MarkdownDocument | null,
@@ -346,9 +353,6 @@ export const messageResponse = <M>(
 	h.div(
 		[h.Class(cn(ROOT_CLASS, className))],
 		document === null
-			? Arr.map(
-					Arr.filter(Str.split(/\n{2,}/)(text), (part) => Str.trim(part) !== ""),
-					(part) => h.p([], [part]),
-				)
+			? Arr.map(paragraphs(text), (paragraph) => h.p([], [paragraph]))
 			: Markdown.viewBlocks(document, { views: viewsFor(h, actions, overrides) }),
 	)

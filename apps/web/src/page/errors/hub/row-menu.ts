@@ -1,20 +1,18 @@
 import { allowedTransitionsForAll, type ErrorIssueDocument, type WorkflowState } from "@maple/domain/http"
-import { agentPromptFromIssue } from "../../../components/errors/agent-debug-prompt"
+import { agentPromptFromIssue } from "../kit/agent-debug-prompt"
 import { Command, type Update } from "foldkit"
 import type { HtmlBuilder } from "foldkit/html"
 import * as ContextMenu from "@maple/views/ui/context-menu"
 import type * as ContextMenuView from "@maple/views/ui/context-menu-view"
 import { icon } from "@maple/views/ui/icon"
 import type { PageReturn } from "../../contract"
-import { WORKFLOW_LABEL, workflowRingIcon } from "../kit/workflow"
+import { WORKFLOW_LABEL, workflowRingIcon } from "../../kit/issue-workflow"
 import { CopyRowText, OpenInNewTab } from "./command"
 import { signalsOf } from "./derive"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { startHubWrite } from "./selection"
 import { Array as Arr, Option } from "effect"
-
-// The issue context menu: a row's right-click menu.
 
 type Return = PageReturn<Model, Message>
 

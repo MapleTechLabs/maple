@@ -7,7 +7,7 @@ import { update } from "../update"
 import * as Palette from "./model"
 import { displayAlternates, SHORTCUTS } from "./shortcuts"
 
-// `GlobalShortcuts` in the shell: Mod+K, the palette's actions, the shortcuts dialog.
+// The global shortcuts in the shell: Mod+K, the palette's actions, the shortcuts dialog.
 
 const signedIn = (): Model => ({
 	...init({ isMobile: false, theme: "dark", pinnedNamespaces: {}, dashboardFavorites: [] }),

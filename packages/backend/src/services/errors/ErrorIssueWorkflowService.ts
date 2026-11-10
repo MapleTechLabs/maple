@@ -34,19 +34,18 @@ import {
 	type ErrorIssueEventInsert,
 	type ErrorIssueEventRow,
 	type ErrorIssueRow,
-	IssueEscalations,
 } from "@maple/db/tables"
 import { Clock, Context, Effect, Layer, Option, Schema, Array as Arr } from "effect"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { AuditLogService } from "@maple/backend/services/audit/AuditLogService"
 import { CurrentAuditActor } from "@maple/backend/services/auth/audit-actor"
-import { SYSTEM_ERRORS_AGENT_NAME } from "@maple/backend/services/auth/system-actors"
+import { SYSTEM_ERRORS_AGENT_NAME } from "@maple/domain/system-agents"
 import { currentTxid, readTxid } from "@maple/backend/platform/electric-txid"
 import { transitionRow } from "@maple/backend/platform/transition-row"
 import { ErrorActorsService } from "./ErrorActorsService"
 import { makeErrorDatabaseExecute } from "./error-persistence"
 import { issueFingerprintHashes } from "./issue-fingerprints"
-import { escalationDedupeKey, escalationReasonFor } from "./issue-severity"
+import { writeIssueSeverity } from "./issue-severity"
 
 const StoredJsonRecord = Schema.Record(Schema.String, Schema.Unknown)
 type StoredJsonRecord = typeof StoredJsonRecord.Type
@@ -857,34 +856,6 @@ const make: Effect.Effect<
 		return txid === undefined ? doc : new ErrorIssueDocument({ ...doc, txid })
 	})
 
-	/** The outbox row a severity change owes, or none when the change does not escalate. */
-	const severityEscalationInsert = (
-		orgId: OrgId,
-		issueId: ErrorIssueId,
-		from: IssueSeverity | null,
-		to: IssueSeverity,
-		source: "ai" | "manual",
-		timestamp: number,
-	): Option.Option<PG.InsertRowOf<typeof IssueEscalations>> =>
-		Option.map(Option.fromNullOr(escalationReasonFor(from, to)), (reason) => ({
-			id: newIssueEscalationId(),
-			orgId,
-			issueId,
-			severity: to,
-			source,
-			reason,
-			runId: null,
-			investigationId: null,
-			payloadJson: {},
-			deliveryResultsJson: [],
-			status: "queued",
-			attempts: 0,
-			dedupeKey: escalationDedupeKey(orgId, issueId, to),
-			error: null,
-			createdAt: timestamp,
-			processedAt: null,
-		}))
-
 	const setSeverity: ErrorIssueWorkflowServiceApi["setSeverity"] = Effect.fn(
 		"ErrorIssueWorkflowService.setSeverity",
 	)(function* (orgId, actorId, issueId, severity, opts) {
@@ -905,47 +876,34 @@ const make: Effect.Effect<
 		const changed = current.severity !== severity || current.severitySource !== nextSource
 		if (!changed) return yield* hydrateIssue(orgId, current)
 
-		const payload: StoredJsonRecord = opts?.note
+		const eventPayload: StoredJsonRecord = opts?.note
 			? { from: current.severity, to: severity, source, note: opts.note }
 			: { from: current.severity, to: severity, source }
-		const eventInsert =
-			current.severity !== severity
-				? Option.some(
-						buildEventInsert(orgId, issueId, actorId, "severity_change", timestamp, {
-							payload,
-						}),
-					)
-				: Option.none()
-		// Clearing the severity (null) never escalates; a set severity may.
-		const escalationInsert = Option.flatMap(Option.fromNullOr(severity), (next) =>
-			severityEscalationInsert(orgId, issueId, current.severity, next, source, timestamp),
-		)
 		// One transaction: a severity that committed without its escalation row
-		// could never page anyone — a retry sees the severity already stored and
+		// could never page anyone; a retry sees the severity already stored and
 		// returns before reaching the outbox insert.
 		const severityRows = yield* dbExecute((db) =>
 			db.transaction(
-				Effect.gen(function* () {
-					const rows = yield* db.run(
-						PG.update(ErrorIssues)
-							.set({ severity, severitySource: nextSource, updatedAt: timestamp })
-							.where(($) => [$.orgId.eq(orgId), $.id.eq(issueId)])
-							.returning(() => ({ txid: currentTxid })),
-					)
-					if (Option.isSome(eventInsert))
-						yield* db.run(PG.insertInto(ErrorIssueEvents).values(eventInsert.value))
-					if (Option.isSome(escalationInsert)) {
-						yield* db.run(
-							PG.insertInto(IssueEscalations)
-								.values(escalationInsert.value)
-								.onConflictDoNothing(),
-						)
-					}
-					return rows
+				writeIssueSeverity(db, {
+					orgId,
+					issueId,
+					actorId,
+					from: current.severity,
+					severity,
+					source,
+					timestamp,
+					eventId: newEventId(),
+					eventPayload,
+					escalation: {
+						id: newIssueEscalationId(),
+						runId: null,
+						investigationId: null,
+						payload: {},
+					},
 				}),
 			),
 		)
-		if (Option.isSome(eventInsert)) {
+		if (current.severity !== severity && severityRows.length > 0) {
 			yield* recordEventAudit(orgId, issueId, actorId, "severity_change", {})
 		}
 		yield* actorsService.touchActor(orgId, actorId, timestamp)

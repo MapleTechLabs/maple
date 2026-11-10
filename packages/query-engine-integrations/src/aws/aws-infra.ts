@@ -16,17 +16,14 @@ import {
 	type AwsInfraKindId,
 	type AwsInfraMetric,
 } from "@maple/domain/aws-infra"
-import {
-	MetricCatalog,
-	MetricsGauge,
-	MetricsSum,
-	orgIdParam,
-	utcSecondsParam,
-} from "@maple/query-engine/ch/tables"
+import * as Datasources from "@maple/domain/tinybird/datasources"
+import { orgIdParam, utcSecondsParam } from "@maple/query-engine/ch/tables"
 import { Array as Arr, String as Str } from "effect"
 
 /** Both metrics tables declare the columns read here alike. */
-type MetricsAccessor = ColumnAccessor<typeof MetricsSum.columns> | ColumnAccessor<typeof MetricsGauge.columns>
+type MetricsAccessor =
+	| ColumnAccessor<typeof Datasources.metricsSum.columns>
+	| ColumnAccessor<typeof Datasources.metricsGauge.columns>
 
 /** A row's identity values, then its region and account: `AWS_INFRA_RESOURCE_KEYS`. */
 const resourceKeys = ($: MetricsAccessor, kind: AwsInfraKindId) =>
@@ -79,10 +76,10 @@ export function awsInfraMetricsSQL(kind: AwsInfraKindId) {
 	})
 	return fromUnion(
 		unionAll(
-			from(MetricsSum)
+			from(Datasources.metricsSum)
 				.select(point)
 				.where(($) => kindPoints($, kind, "sum", metrics)),
-			from(MetricsGauge)
+			from(Datasources.metricsGauge)
 				.select(point)
 				.where(($) => kindPoints($, kind, "gauge", metrics)),
 		),
@@ -126,10 +123,10 @@ export function awsInfraSparklinesSQL(kind: AwsInfraKindId, buckets: number) {
 	})
 	return fromUnion(
 		unionAll(
-			from(MetricsSum)
+			from(Datasources.metricsSum)
 				.select(point)
 				.where(($) => kindPoints($, kind, "sum", metrics)),
-			from(MetricsGauge)
+			from(Datasources.metricsGauge)
 				.select(point)
 				.where(($) => kindPoints($, kind, "gauge", metrics)),
 		),
@@ -168,10 +165,10 @@ export function awsInfraTimeseriesSQL(kind: AwsInfraKindId, keys: ReadonlyArray<
 		] as const
 	return fromUnion(
 		unionAll(
-			from(MetricsSum)
+			from(Datasources.metricsSum)
 				.select(point)
 				.where(($) => ofResource($, "sum")),
-			from(MetricsGauge)
+			from(Datasources.metricsGauge)
 				.select(point)
 				.where(($) => ofResource($, "gauge")),
 		),
@@ -191,7 +188,7 @@ export function awsInfraTimeseriesSQL(kind: AwsInfraKindId, keys: ReadonlyArray<
 
 /** Which of the page's metrics reported in the window, from the hourly `metric_catalog` rollup. */
 export function awsInfraPresenceSQL() {
-	return from(MetricCatalog)
+	return from(Datasources.metricCatalog)
 		.select(($) => ({ metric: $.MetricName }))
 		.where(($) => [
 			$.OrgId.eq(orgIdParam),

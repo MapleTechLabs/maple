@@ -1,11 +1,10 @@
 import { McpInvalidInputError, type McpToolRegistrar } from "./types"
 import { toMcpHttpError } from "../lib/map-http-error"
 import { Effect, Schema } from "effect"
-import { AcknowledgeAlertIncidentOutput } from "@maple/domain/mcp-outputs"
 import { AlertIncidentAckService } from "@maple/backend/services/alerts/AlertIncidentAckService"
 import { auditAttribution } from "@maple/backend/services/audit/audit-access"
 import { CurrentAuditActor } from "@maple/backend/services/auth/audit-actor"
-import { CurrentMcpTenant } from "../lib/query-warehouse"
+import { CurrentMcpTenant } from "../tenant"
 import { ackLabel } from "../lib/alert-rules"
 import * as P from "../lib/params"
 import { doc } from "../lib/tool-doc"
@@ -22,7 +21,6 @@ export function registerAcknowledgeAlertIncidentTool(server: McpToolRegistrar) {
 			incident_id: P.resourceId("alertIncident", "Alert incident ID"),
 			acknowledged: P.optionalFlag("false to unacknowledge. Default true."),
 		}),
-		output: AcknowledgeAlertIncidentOutput,
 		hints: { readOnly: false, destructive: false, idempotent: true },
 		phrases: ["Acknowledging an alert incident"],
 		handler: Effect.fn("McpTool.acknowledgeAlertIncident")(function* (params) {

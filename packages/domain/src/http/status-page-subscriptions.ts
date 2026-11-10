@@ -1,6 +1,6 @@
 import { HttpApiEndpoint, HttpApiGroup } from "effect/http-api"
 import { Schema } from "effect"
-import { StatusPageComponentId, StatusPageId } from "../primitives"
+import { StatusPageComponentId, StatusPageId } from "@maple/primitives"
 import { HttpTaggedError } from "./error-policy"
 
 /** The page is gone, unpublished, or its org is out of the status pages rollout. */

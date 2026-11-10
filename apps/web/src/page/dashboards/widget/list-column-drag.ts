@@ -5,14 +5,12 @@ import { ProductEdit } from "./product-edit"
 
 type Moved = ReturnType<typeof Message.ChangedProduct>
 
-// Column reordering: a pointer drag that
-// starts on a row's grip lifts the row and follows the pointer; each sibling centre it crosses is
-// a `MovedListColumn`, sent live.
+// A pointer drag that starts on a row's grip lifts the row and follows the pointer; each sibling
+// centre it crosses is a `MovedListColumn`, sent live.
 
 export const ROW_ATTRIBUTE = "list-column-row"
 export const GRIP_ATTRIBUTE = "list-column-grip"
 
-/** `whileDrag`: the lifted row's look. */
 const LIFTED = { transform: "scale(1.02)", boxShadow: "0 4px 14px rgba(0,0,0,0.12)", zIndex: "50" }
 const RESTING = { transform: "", boxShadow: "", zIndex: "", position: "" }
 
@@ -44,7 +42,7 @@ const startDrag = (container: Element, event: PointerEvent, emit: (message: Move
 	const startY = event.clientY
 	const drag = { at: from }
 	Object.assign(row.style, LIFTED, { position: "relative" })
-	// Like `onReorder`, every slot crossed is its own move; the lifted look follows the column.
+	// Every slot crossed is its own move; the lifted look follows the column.
 	const onMove = (move: PointerEvent) => {
 		const centre = (centres[from] ?? 0) + move.clientY - startY
 		const target = targetIndex(centres, from, centre)

@@ -4,7 +4,7 @@ import { AiCreditSource } from "../billing"
 import { TAX_ID_TYPE_VALUES } from "../billing-tax-ids"
 import { SessionAuthorization } from "./current-tenant"
 import { HttpTaggedError } from "./error-policy"
-import { OrgId } from "../primitives"
+import { OrgId } from "@maple/primitives"
 import {
 	BillingAccount,
 	BillingAccountPersistenceError,
@@ -375,14 +375,12 @@ export class CustomerPortalResult extends Schema.Class<CustomerPortalResult>("Cu
 	url: Schema.String,
 }) {}
 
-// ---------------------------------------------------------------------------
 // Billing details (company name, address, tax IDs).
 //
 // Autumn has no tax-ID or address concept; these live on the Stripe customer
 // Autumn links (`stripe_id`), and the API reads/writes them through Stripe
 // directly. Nothing here is persisted by Maple — Stripe is the source of truth
 // and is what prints them on the invoice PDF.
-// ---------------------------------------------------------------------------
 
 /** Stripe tax-ID `type` values (see `@maple/domain/billing-tax-ids`). */
 export const BillingTaxIdType = Schema.Literals(TAX_ID_TYPE_VALUES)
@@ -450,7 +448,7 @@ export class AddBillingTaxIdRequest extends Schema.Class<AddBillingTaxIdRequest>
  * vocabulary and can add to it at any time, and an exhaustive union here would
  * turn a new upstream code into a decode failure — trading a legible 4xx for an
  * opaque 500. The transport parses it out at `errorResponse`
- * (`apps/api/src/services/billing/autumn-http.ts`), defaulting to
+ * (`packages/backend/src/services/billing/autumn-http.ts`), defaulting to
  * `"autumn_api_error"` when the body carries none.
  *
  * Note this is the UPSTREAM code, distinct from the public `code` each error
@@ -658,7 +656,6 @@ const billingRequestErrors = [
 	...billingTransportErrors,
 ] as const
 
-// Authed billing operations: customer/usage reads, native controls, and checkout/portal.
 export class BillingApiGroup extends HttpApiGroup.make("billing")
 	.add(
 		HttpApiEndpoint.get("getCustomer", "/customer", {

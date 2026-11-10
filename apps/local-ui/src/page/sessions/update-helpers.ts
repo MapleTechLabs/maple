@@ -11,7 +11,11 @@ import type { Model, SessionRow } from "./model"
 
 export type UpdateReturn = Update.ReturnWithOutMessage<Model, Message, PageOutMessage, Resources>
 
-export const navigate = (model: Model, context: PageContext, updates: Record<string, string | null>): UpdateReturn => ({
+export const navigate = (
+	model: Model,
+	context: PageContext,
+	updates: Record<string, string | null>,
+): UpdateReturn => ({
 	model,
 	outMessage: replaceParams(context.location, updates),
 })
@@ -31,13 +35,21 @@ export const settleRefresh = (model: Model): Model => {
 		: model
 }
 
-/** `fetchNextPage`: the cursor after the last loaded page. */
+/** The next page, from the cursor after the last loaded page. */
 export const loadMore = (model: Model, context: PageContext): UpdateReturn => {
 	const maybeNext = Option.flatMap(AsyncData.getData(model.sessions.data), (data) =>
-		Option.fromNullishOr(data.hasNextPage ? nextCursor(data.pages[data.pages.length - 1] ?? []) : undefined),
+		Option.fromNullishOr(
+			data.hasNextPage ? nextCursor(data.pages[data.pages.length - 1] ?? []) : undefined,
+		),
 	)
 	const maybeBounds = boundsOf(model, context)
-	if (model.isFetchingNextPage || !canExtend(model.sessions) || model.sessions.key === null || Option.isNone(maybeNext) || Option.isNone(maybeBounds))
+	if (
+		model.isFetchingNextPage ||
+		!canExtend(model.sessions) ||
+		model.sessions.key === null ||
+		Option.isNone(maybeNext) ||
+		Option.isNone(maybeBounds)
+	)
 		return { model }
 	return {
 		model: { ...model, isFetchingNextPage: true },
@@ -50,13 +62,16 @@ export const loadMore = (model: Model, context: PageContext): UpdateReturn => {
 				apiBase: context.env.apiBase,
 				cursorStartTime: maybeNext.value.startTime,
 				cursorSessionId: maybeNext.value.sessionId,
-				pages: Option.match(AsyncData.getData(model.sessions.data), { onNone: () => [], onSome: (data) => data.pages }),
+				pages: Option.match(AsyncData.getData(model.sessions.data), {
+					onNone: () => [],
+					onSome: (data) => data.pages,
+				}),
 			}),
 		],
 	}
 }
 
-/** `fetchNextPage` landed: the page joins the list if it is still the same query. */
+/** A next page landed: it joins the list if it is still the same query. */
 export const appendPage = (model: Model, key: string, page: ReadonlyArray<SessionRow>): Model => {
 	if (model.sessions.key !== key) return model
 	return Option.match(AsyncData.getData(model.sessions.data), {
@@ -67,7 +82,9 @@ export const appendPage = (model: Model, key: string, page: ReadonlyArray<Sessio
 			sessions: {
 				...model.sessions,
 				key,
-				data: AsyncData.Success({ data: { pages: [...current.pages, page], hasNextPage: nextCursor(page) !== undefined } }),
+				data: AsyncData.Success({
+					data: { pages: [...current.pages, page], hasNextPage: nextCursor(page) !== undefined },
+				}),
 			},
 		}),
 	})

@@ -5,7 +5,7 @@ import type { SequentialScaleType } from "./sequential-domain"
 import { Array as Arr } from "effect"
 import { hstack } from "../ui/stack"
 
-// `HeatmapLegend`: five stepped swatches with values read back through the ramp, a marker at the
+// The heatmap legend: five stepped swatches with values read back through the ramp, a marker at the
 // hovered value, and insets that line the bar up with the plot's columns.
 
 const LEGEND_STEPS = 5

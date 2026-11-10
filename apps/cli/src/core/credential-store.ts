@@ -12,13 +12,9 @@ interface HelperResult {
 const notRun: HelperResult = { ok: false, stdout: "" }
 
 /**
- * Run a native credential helper and collect its exit status and stdout.
- *
- * A missing, non-executable, or signal-killed helper means "this machine has no
- * usable native credential store", which every caller already handles by
- * falling back to file storage. That still degrades to `ok: false` — but the
- * cause is logged rather than discarded, so a broken keychain is no longer
- * indistinguishable from a machine that simply has none.
+ * Run a native credential helper and collect its exit status and stdout. A missing or
+ * signal-killed helper degrades to `ok: false` (callers fall back to file storage), with the
+ * cause logged so a broken keychain is distinguishable from a machine that has none.
  */
 const run = (
 	cmd: readonly [string, ...ReadonlyArray<string>],

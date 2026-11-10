@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto"
-import { createReadStream } from "node:fs"
+import { createReadStream, readFileSync } from "node:fs"
 import type { Readable } from "node:stream"
 
 // Node types a stream's iterator as `any`; a file stream without an encoding yields Buffers.
@@ -11,3 +11,7 @@ export const sha256File = async (path: string, highWaterMark = 64 * 1024): Promi
 	for await (const chunk of bufferChunks(createReadStream(path, { highWaterMark }))) hash.update(chunk)
 	return hash.digest("hex")
 }
+
+/** Hash a whole file synchronously; for bounded files such as archive manifests and shards. */
+export const sha256FileSync = (path: string): string =>
+	createHash("sha256").update(readFileSync(path)).digest("hex")

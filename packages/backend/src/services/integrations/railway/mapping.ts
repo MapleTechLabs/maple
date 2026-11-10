@@ -8,16 +8,17 @@ import {
 	type MetricGaugeRow,
 } from "@maple/backend/services/warehouse/metric-rows"
 import type { RailwayMeasurement, RailwayMetricsResult } from "./api"
+import {
+	RAILWAY_CPU_LIMIT,
+	RAILWAY_CPU_USAGE,
+	RAILWAY_DISK_USAGE,
+	RAILWAY_MEMORY_LIMIT,
+	RAILWAY_MEMORY_USAGE,
+	RAILWAY_NETWORK_IO,
+} from "@maple/query-engine-integrations"
 import { Record as Rec } from "effect"
 
 export const RAILWAY_SCOPE_NAME = "maple.railway"
-
-export const METRIC_CPU_USAGE = "railway.cpu.usage"
-export const METRIC_CPU_LIMIT = "railway.cpu.limit"
-export const METRIC_MEMORY_USAGE = "railway.memory.usage"
-export const METRIC_MEMORY_LIMIT = "railway.memory.limit"
-export const METRIC_NETWORK_IO = "railway.network.io"
-export const METRIC_DISK_USAGE = "railway.disk.usage"
 
 /** Railway reports "GB" as binary gigabytes (its CLI multiplies by 1024 to show MB). */
 const GIB = 1024 ** 3
@@ -32,56 +33,56 @@ interface MeasurementDef {
 
 const MEASUREMENTS = {
 	CPU_USAGE: {
-		name: METRIC_CPU_USAGE,
+		name: RAILWAY_CPU_USAGE,
 		unit: "{cpu}",
 		description: "vCPU in use, averaged over the sample interval",
 		scale: 1,
 		attributes: {},
 	},
 	CPU_LIMIT: {
-		name: METRIC_CPU_LIMIT,
+		name: RAILWAY_CPU_LIMIT,
 		unit: "{cpu}",
 		description: "vCPU limit of the replica",
 		scale: 1,
 		attributes: {},
 	},
 	MEMORY_USAGE_GB: {
-		name: METRIC_MEMORY_USAGE,
+		name: RAILWAY_MEMORY_USAGE,
 		unit: "By",
 		description: "Memory in use",
 		scale: GIB,
 		attributes: {},
 	},
 	MEMORY_LIMIT_GB: {
-		name: METRIC_MEMORY_LIMIT,
+		name: RAILWAY_MEMORY_LIMIT,
 		unit: "By",
 		description: "Memory limit of the replica",
 		scale: GIB,
 		attributes: {},
 	},
 	NETWORK_RX_GB: {
-		name: METRIC_NETWORK_IO,
+		name: RAILWAY_NETWORK_IO,
 		unit: "By",
 		description: "Network traffic as reported by Railway",
 		scale: GIB,
 		attributes: { "network.io.direction": "receive" },
 	},
 	NETWORK_TX_GB: {
-		name: METRIC_NETWORK_IO,
+		name: RAILWAY_NETWORK_IO,
 		unit: "By",
 		description: "Network traffic as reported by Railway",
 		scale: GIB,
 		attributes: { "network.io.direction": "transmit" },
 	},
 	DISK_USAGE_GB: {
-		name: METRIC_DISK_USAGE,
+		name: RAILWAY_DISK_USAGE,
 		unit: "By",
 		description: "Disk in use",
 		scale: GIB,
 		attributes: { "railway.disk.kind": "volume" },
 	},
 	EPHEMERAL_DISK_USAGE_GB: {
-		name: METRIC_DISK_USAGE,
+		name: RAILWAY_DISK_USAGE,
 		unit: "By",
 		description: "Disk in use",
 		scale: GIB,

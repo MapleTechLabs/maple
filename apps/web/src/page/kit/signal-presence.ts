@@ -1,12 +1,12 @@
 import { Clock, DateTime, Effect, Option, Array as Arr, Record as Rec } from "effect"
 import { IdleTtl } from "../../data/idle-ttl"
-import { toLoadFailure } from "@maple/views/data/load-failure"
+import { settled } from "@maple/views/data/load-failure"
 import { readThrough } from "../../data/read-cache"
 import { requestKey } from "@maple/views/data/request-key"
 import { type SignalPresence, SignalPresences, UNKNOWN_PRESENCE } from "@maple/views/data/signal-presence"
 import { MapleApiV2Client } from "../../platform/api-clients"
 
-// Signal presence over `telemetrySignalsAtom`.
+// Signal presence: which telemetry signals the org has sent.
 
 /** `GET /v2/telemetry_signals`, by signal kind. */
 const fetchSignalPresences = Effect.gen(function* () {
@@ -49,4 +49,4 @@ export const loadSignalPresences = (orgId: string) =>
 			},
 			fetchSignalPresences,
 		),
-	).pipe(Effect.mapError(toLoadFailure), Effect.result)
+	).pipe(settled)

@@ -7,7 +7,7 @@ import type {
 	VcsInstallation,
 	VcsRepo,
 } from "@maple/domain/http"
-import type { OrgId } from "@maple/domain/primitives"
+import type { OrgId } from "@maple/primitives"
 import { Context, Effect, Layer } from "effect"
 import { summarizeCause } from "@maple/backend/platform/describe-cause"
 

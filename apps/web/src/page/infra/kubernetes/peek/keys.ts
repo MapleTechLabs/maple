@@ -5,7 +5,7 @@ import { Message } from "./message"
 
 type PressedStepKey = ReturnType<typeof Message.PressedStepKey>
 
-// `PodPeekSheet`'s key handling: ↓/J step forward, ↑/K back, wherever focus is (the popup's capture
+// The pod peek's key handling: ↓/J step forward, ↑/K back, wherever focus is (the popup's capture
 // handler and the document hotkeys), except in a text field or with a modifier held.
 
 /** Mounted with the sheet's content, so it listens only while a pod is peeked. */

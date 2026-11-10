@@ -10,11 +10,9 @@ import { Message } from "./message"
 import type { Model } from "./model"
 import { typographyClass } from "@maple/views/ui/typography"
 
-// The chat card's parts; the card is view-chat-card.ts.
-
 type H = HtmlBuilder<Message>
 
-/** `ChatIdentityRow`: the viewer's own chat account. */
+/** The viewer's own chat account. */
 export const identityRow = (
 	h: H,
 	model: Model,
@@ -69,6 +67,6 @@ export const chatCardLoading = (h: H): Html =>
 		],
 	)
 
-/** The mark in `currentColor` (`monoIcon`), for the filled button and the dim backers. */
+/** The mark in `currentColor`, for the filled button and the dim backers. */
 export const monoGlyph = (h: H, manifest: ChatConnectorManifest, size = 24): Html =>
 	manifestGlyph(h, manifest.icon, size, { monochrome: true })

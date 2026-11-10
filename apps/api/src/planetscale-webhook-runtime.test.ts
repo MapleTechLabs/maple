@@ -4,7 +4,7 @@ import { afterEach, assert, describe, it } from "@effect/vitest"
 import { OrgId } from "@maple/domain/http"
 import { Effect, Layer, Schema } from "effect"
 import { Database, DatabaseError } from "@maple/backend/platform/DatabaseLive"
-import { cleanupTestDbs, createTestDb, queryFirstRow, type TestDb } from "@maple/backend/platform/test-pglite"
+import { cleanupTestDbs, createTestDb, queryFirstRow, type TestDb } from "@maple/backend/testing/test-pglite"
 import { processPlanetScaleWebhookBatch } from "./planetscale-webhook-runtime"
 import {
 	projectPlanetScaleWebhookEvent as projectPlanetScaleWebhookEventResult,

@@ -5,9 +5,8 @@ import { Schema } from "effect"
 import { KeyedSchema } from "@maple/views/data/keyed"
 import { LoadFailure } from "@maple/views/data/load-failure"
 import * as Dialog from "@maple/views/ui/dialog"
+import { RangeDays } from "../shared/coverage-preview"
 import { OrgMember } from "../shared/org-members"
-
-// `/alerts/schedules/$scheduleId`: who is on call, the calendar of shifts, and the overrides.
 
 /** The override form as typed: who, and from when to when on the schedule zone's wall clock. */
 export const OverrideDraft = Schema.Struct({
@@ -30,6 +29,8 @@ export const Model = Schema.Struct({
 	scheduleAskedAtMs: Schema.NullOr(Schema.Number),
 	/** Weeks from this one the calendar shows: 0 is the week starting today. */
 	weekOffset: Schema.Number,
+	/** How many days the calendar shows from its week's first day. */
+	rangeDays: RangeDays,
 	shifts: KeyedSchema(V2OnCallShifts, LoadFailure),
 	overrides: KeyedSchema(Schema.Array(V2OnCallOverride), LoadFailure),
 	/** `null` until Clerk answers, and after a failed read: names then read neutrally. */
@@ -45,11 +46,7 @@ export const Model = Schema.Struct({
 	/** Bumped on every open: a create's result only settles the dialog it was sent from. */
 	overrideOpenCount: Schema.Number,
 	deletingOverrideId: Schema.NullOr(OnCallOverrideId),
-	/** The override awaiting delete confirmation. */
 	confirmDeleteOverrideId: Schema.NullOr(OnCallOverrideId),
 	deleteOverrideDialog: Dialog.Model,
 })
 export type Model = typeof Model.Type
-
-/** The viewer may change schedules and overrides (`alerts:manage`). */
-export const canManage = (model: Pick<Model, "grants">): boolean => Policy.has(model.grants, "alerts:manage")

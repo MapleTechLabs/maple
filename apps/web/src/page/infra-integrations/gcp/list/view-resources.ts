@@ -1,6 +1,6 @@
 import { GCP_PROJECT_ASSET_TYPE } from "@maple/domain/gcp-metrics"
-import { gcpResourceWorkload } from "../../../../components/infra/gcp/inventory"
-import { gcpAssetTypeLabel, gcpResourceName, gcpStateLabel } from "../../../../components/infra/gcp/tabs"
+import { gcpResourceWorkload } from "../inventory"
+import { gcpAssetTypeLabel, gcpResourceName, gcpStateLabel } from "../tabs"
 import { countLabel, EMPTY_VALUE } from "@maple/ui/lib/format"
 import { AsyncData } from "foldkit"
 import type { Html } from "foldkit/html"
@@ -10,13 +10,7 @@ import { icon } from "@maple/views/ui/icon"
 import type * as Select from "@maple/views/ui/select"
 import { type SelectEntry, view as selectView } from "@maple/views/ui/select-view"
 import { skeleton } from "@maple/views/ui/skeleton"
-import {
-	columnHead,
-	dataTable,
-	dataTableEmpty,
-	skeletonRows,
-	ROW_LINK_CLASS,
-} from "../../../infra/kit/data-table"
+import { columnHead, dataTable, dataTableEmpty, skeletonRows, ROW_LINK_CLASS } from "../../../kit/data-table"
 import { listToolbar, toolbarCount } from "../../../kit/list-toolbar"
 import { filteredEmpty } from "@maple/views/ui/signal-empty-state"
 import type { Resources } from "../data"
@@ -30,8 +24,7 @@ import { stripClass } from "@maple/views/ui/rule"
 import { columnClass } from "@maple/views/ui/column"
 import { Array as Arr, Record as Rec, Option } from "effect"
 
-// `GcpResources`: the inventory filtered by type and project.
-// TODO(select-align): these Selects should open below the trigger (`alignItemWithTrigger={false}`).
+// TODO(select-align): these Selects should open below the trigger, not over it.
 
 const ALL = "all"
 const CELL = "truncate font-mono text-xs text-foreground-soft"

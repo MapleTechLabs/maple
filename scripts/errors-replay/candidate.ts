@@ -34,7 +34,6 @@ export function currentKey(event: ReplayEvent): string {
 	return key(event, computeFingerprintInputs(event))
 }
 
-/** The proposed grouping key. */
 export function candidateKey(event: ReplayEvent): string {
 	return key(event, candidateInputs(event))
 }

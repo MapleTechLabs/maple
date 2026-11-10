@@ -12,11 +12,10 @@ import type { Message, Model } from "@maple/views/charts/chart"
 import type { ChartSpec } from "@maple/views/charts/chart-spec"
 import { plotFrame } from "@maple/views/charts/plot-frame"
 import { resolveColor, type ThemeColors } from "@maple/views/charts/theme-colors"
-import { CHART_HEIGHT, chartCard, chartCardMessage } from "../infra-integrations/kit/chart-card"
+import { CHART_HEIGHT, chartCard, chartCardMessage } from "../kit/chart-card"
 import { seriesLegend } from "../kit/series-legend"
 
-// `AnalyticsTrafficChart`: the card, its legend
-// when paired, and the plot. The definition is `charts/definitions/analytics-traffic.ts`.
+// The definition is `packages/views/src/charts/definitions/analytics-traffic.ts`.
 
 export const TRAFFIC_TOKENS = ["--border", "--background", "--primary", "--chart-2"]
 
@@ -36,7 +35,7 @@ export type TrafficInputs = Readonly<{
 	source: AnalyticsMetricSource
 	theme: ThemeColors
 	timeZone: string
-	/** `useMediaQuery("max-sm")`: the y axis takes a narrower margin. */
+	/** Below `sm` the y axis takes a narrower margin. */
 	isNarrow: boolean
 }>
 

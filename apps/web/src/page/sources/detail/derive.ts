@@ -1,8 +1,6 @@
 import type { V2SourceUsage } from "@maple/domain/http/v2"
 import { DateTime, Option, Array as Arr } from "effect"
 
-// `usageRows` and `usageTotals`.
-
 const HOUR_MS = 3_600_000
 
 /** The API's ISO timestamps always parse; `NaN` mirrors `new Date(bad).getTime()` otherwise. */

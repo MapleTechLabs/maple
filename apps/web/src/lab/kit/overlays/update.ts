@@ -32,7 +32,7 @@ const toastFold = {
 	toParentMessage: (message: Toast.Message) => Message.GotToastMessage({ message }),
 }
 
-/** `KitToast`: one toast of the item's type with no timeout. */
+/** One toast of the item's type with no timeout. */
 const addKitToast = (type: Toast.ToastType) =>
 	Update.foldChildStep({
 		...toastFold,
@@ -42,7 +42,7 @@ const addKitToast = (type: Toast.ToastType) =>
 const toastItemType = (item: Option.Option<OverlayItem>): Option.Option<Toast.ToastType> =>
 	Option.flatMap(item, toastTypeOf)
 
-/** `defaultOpen`: the overlay named by `?item=` starts open. */
+/** The overlay named by `?item=` starts open. */
 export const init = (flags: Flags): Update.Return<Model, Message> => {
 	const item = decodeItem(flags.item)
 	const model: Model = {

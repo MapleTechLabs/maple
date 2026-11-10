@@ -1,9 +1,9 @@
-import { bucketDate, makeBucketAxis } from "@maple/ui/components/plot/bucket-axis"
-import { focusCrosshair, focusDot } from "@maple/ui/components/plot/plot-focus"
-import { DASHED_Y_GRID } from "@maple/ui/components/plot/plot-grid"
+import { bucketDate, makeBucketAxis } from "../plot/bucket-axis"
+import { focusCrosshair, focusDot } from "../plot/plot-focus"
+import { DASHED_Y_GRID } from "../plot/plot-grid"
 import { toEpochMs } from "@maple/ui/lib/time-format"
 import { formatSignalValue } from "@maple/web-data/anomalies/format"
-import { areaY, type ChartValue, d3Curve, defineChart, lineY, rect, ruleY, text } from "@tanstack/charts"
+import { areaY, type ChartValue, d3Curve, defineChart, lineY, rect } from "@tanstack/charts"
 import { decorative } from "@tanstack/charts/mark/decorative"
 import { scaleLinear } from "@tanstack/charts-scales/linear"
 import { curveMonotoneX } from "d3-shape"
@@ -12,49 +12,13 @@ import { ChartTooltip, type ChartSpec } from "../chart-spec"
 import type { BuiltChart } from "./built-chart"
 import { SERIES_STROKE_WIDTH, verticalGradient } from "./fixed-metric-axes"
 import { cursorTooltip, tooltipFocusCapture } from "./plot-constants"
+import { thresholdMarks } from "./threshold-marks"
 import { gradientId, gradientUrl } from "./gradient-id"
 
-// The anomaly timeseries chart's definition. `thresholdRules` is copied below because
-// threshold-rules.ts reads the theme through a React module; colours arrive resolved.
+// The anomaly timeseries chart's definition; colours arrive resolved.
 
 type AnomalySignalSpec = Extract<ChartSpec, { readonly _tag: "AnomalySignal" }>
 type SignalPoint = Readonly<{ bucket: string; value: number }>
-type Threshold = Readonly<{ value: number; color: string; label: string }>
-
-// copied: threshold-rules.ts constants.
-const THRESHOLD_STROKE_WIDTH = 1.5
-const THRESHOLD_LABEL_FONT_SIZE = 10
-const THRESHOLD_LABEL_DX = -4
-const THRESHOLD_LABEL_DY = -6
-
-/** `thresholdRules` with resolved colours: one dashed `ruleY`, labels anchored at `labelX`. */
-const thresholdRules = (thresholds: ReadonlyArray<Threshold>, labelX: Date | undefined) => {
-	const valid = Arr.filter(thresholds, (threshold) => Number.isFinite(threshold.value))
-	if (valid.length === 0) return []
-	const rules = ruleY(valid, {
-		y: (threshold: Threshold) => threshold.value,
-		stroke: (threshold: Threshold) => threshold.color,
-		strokeOpacity: 1,
-		strokeWidth: THRESHOLD_STROKE_WIDTH,
-		strokeDasharray: "4 4",
-	})
-	if (labelX === undefined) return [rules]
-	return [
-		rules,
-		decorative(
-			text(valid, {
-				x: () => labelX,
-				y: (threshold: Threshold) => threshold.value,
-				text: (threshold: Threshold) => threshold.label,
-				fill: (threshold: Threshold) => threshold.color,
-				anchor: "end",
-				dx: THRESHOLD_LABEL_DX,
-				dy: THRESHOLD_LABEL_DY,
-				fontSize: THRESHOLD_LABEL_FONT_SIZE,
-			}),
-		),
-	]
-}
 
 /** The points that parse, oldest first: what the chart draws (empty means the empty message). */
 export const sortedSignal = (points: ReadonlyArray<SignalPoint>): ReadonlyArray<SignalPoint> =>
@@ -123,7 +87,7 @@ export const buildAnomalySignal = (spec: AnomalySignalSpec): BuiltChart<SignalPo
 							),
 						]
 					: []),
-				...thresholdRules(
+				...thresholdMarks(
 					[
 						{ value: spec.baselineMedian, color: color("muted"), label: "Baseline" },
 						{ value: spec.thresholdValue, color: color("threshold"), label: "Threshold" },

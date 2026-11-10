@@ -110,7 +110,7 @@ export const composer = <M>(h: HtmlBuilder<M>, options: ComposerOptions<M>): Htm
 		],
 	)
 
-/** `ChatFailureNotice`: what failed, and one way to try again. */
+/** What failed, and one way to try again. */
 export const failureNotice = <M>(
 	h: HtmlBuilder<M>,
 	options: Readonly<{

@@ -4,7 +4,8 @@ import { Effect, Option, Schema } from "effect"
 import { readFileSync, unlinkSync } from "node:fs"
 import { durableWrite } from "./durable-files"
 import { encodeJsonPretty } from "./json"
-import { ignoreFailure, isProcessAlive } from "./store-claim"
+import { isProcessAlive } from "./process-liveness"
+import { ignoreFailure } from "./store-claim"
 import { stateFileError } from "./store-errors"
 
 export const ServerDiscovery = Schema.Struct({

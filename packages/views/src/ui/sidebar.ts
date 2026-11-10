@@ -33,9 +33,9 @@ import {
 	sidebarTriggerLabelStyles,
 	sidebarTriggerStyles,
 	sidebarWrapperStyles,
-} from "@maple/ui/styles/ui/sidebar"
-import { ROW_LANE } from "@maple/ui/styles/ui/list-row"
-import { separatorStyles } from "@maple/ui/styles/ui/separator"
+} from "./sidebar.styles"
+import { ROW_LANE } from "./list-row.styles"
+import { separatorStyles } from "./separator.styles"
 import type { Attribute, ChildAttribute, Html, HtmlBuilder } from "foldkit/html"
 import { button } from "./button"
 import { icon } from "./icon"
@@ -43,7 +43,7 @@ import { scrollArea } from "./scroll-area"
 import { leftSheet } from "./sheet"
 import { String as Str } from "effect"
 
-// The Foldkit side of packages/ui/src/components/ui/sidebar.tsx: same markup, same class composition.
+// The app sidebar: desktop and mobile frames, header, footer, groups and menu parts.
 
 export type SidebarState = "expanded" | "collapsed"
 
@@ -87,7 +87,7 @@ export const sidebarDesktop = <Message>(
 	h: HtmlBuilder<Message>,
 	state: SidebarState,
 	children: Children,
-	/** `<Sidebar className>`: lands on the fixed container. */
+	/** Lands on the fixed container. */
 	className?: string,
 	/** Snap to `state` without the width transition (keyboard toggles). */
 	isInstant = false,
@@ -151,7 +151,6 @@ export const sidebarMobile = <Message>(
 		},
 		[h.div([h.Class(sidebarMobileInnerStyles)], children)],
 	)
-// SIDEBAR PARTS
 
 export const sidebarHeader = <Message>(
 	h: HtmlBuilder<Message>,
@@ -206,14 +205,60 @@ export const sidebarGroupLabel = <Message>(
 		children,
 	)
 
-export const sidebarGroupContent = <Message>(h: HtmlBuilder<Message>, children: Children): Html =>
+export const sidebarGroupContent = <Message>(
+	h: HtmlBuilder<Message>,
+	children: Children,
+	attributes: Attributes<Message> = [],
+): Html =>
 	h.div(
 		[
 			h.Class(cn(sidebarGroupContentStyles)),
 			h.DataAttribute("sidebar", "group-content"),
 			h.DataAttribute("slot", "sidebar-group-content"),
+			...attributes,
 		],
 		children,
+	)
+
+export type SidebarGroupToggleOptions<Message> = Readonly<{
+	label: string
+	isExpanded: boolean
+	/** The `sidebarGroupContent` id it shows and hides. */
+	controlsId: string
+	onToggle: Message
+}>
+
+/** A group label that collapses its rows: a 28px button with `aria-expanded` and a faint chevron. */
+export const sidebarGroupToggle = <Message>(
+	h: HtmlBuilder<Message>,
+	options: SidebarGroupToggleOptions<Message>,
+): Html =>
+	h.button(
+		[
+			h.Type("button"),
+			h.Class(
+				cn(
+					...sidebarGroupLabelStyles,
+					"group/toggle h-7 w-full cursor-pointer gap-1 text-left text-muted-foreground hover:text-sidebar-foreground active:text-sidebar-foreground",
+				),
+			),
+			h.DataAttribute("sidebar", "group-label"),
+			h.DataAttribute("slot", "sidebar-group-toggle"),
+			h.AriaExpanded(options.isExpanded),
+			h.AriaControls(options.controlsId),
+			h.OnClick(options.onToggle),
+		],
+		[
+			h.span([h.Class("flex-1 truncate")], [options.label]),
+			icon(h, "ChevronDownIcon", {
+				size: 12,
+				// Faint at rest so folding is discoverable, full tone on hover and focus.
+				className: cn(
+					"text-foreground-faint transition-[rotate] duration-150 group-hover/toggle:text-sidebar-foreground group-focus-visible/toggle:text-sidebar-foreground motion-reduce:transition-none",
+					options.isExpanded ? "" : "-rotate-90",
+				),
+			}),
+		],
 	)
 
 /** `<SidebarGroupAction aria-label>`: the icon button in a group label's corner. */
@@ -268,10 +313,15 @@ export const sidebarMenuItem = <Message>(
 		children,
 	)
 
-export const sidebarMenuBadge = <Message>(h: HtmlBuilder<Message>, children: Children): Html =>
+/** `<SidebarMenuBadge>`; `className` places it beside a sub-item, which the peer offsets don't cover. */
+export const sidebarMenuBadge = <Message>(
+	h: HtmlBuilder<Message>,
+	children: Children,
+	className?: string,
+): Html =>
 	h.div(
 		[
-			h.Class(cn(...sidebarMenuBadgeStyles)),
+			h.Class(cn(...sidebarMenuBadgeStyles, className)),
 			h.DataAttribute("sidebar", "menu-badge"),
 			h.DataAttribute("slot", "sidebar-menu-badge"),
 		],
@@ -305,7 +355,6 @@ export const sidebarMenuSubItem = <Message>(
 		],
 		children,
 	)
-// SIDEBAR BUTTONS
 
 /** TanStack `<Link>`'s active test (`resolveIsActive`, default options): the path or a descendant. */
 export const isLinkActive = (currentPath: string, href: string): boolean =>
@@ -319,6 +368,11 @@ export type SidebarMenuButtonOptions<Message> = Readonly<{
 	size?: "default" | "lg" | "sm"
 	className?: string
 	isActive?: boolean
+	/**
+	 * A sub-item of this row is the current page: the row keeps its medium weight and leaves the
+	 * tint and `aria-current="page"` to that sub-item (`data-active="child"`).
+	 */
+	hasActiveChild?: boolean
 	/** Rendered as a router link instead of a button. */
 	link?: LinkTarget
 	/** `render={<a href />}`: a plain anchor, no router active state (apps/local-ui's hash links). */
@@ -355,7 +409,10 @@ export const sidebarMenuButton = <Message>(
 	)
 	const attributes: Array<Attribute<Message> | ChildAttribute> = [
 		h.Class(linkActive ? `${className} active` : className),
-		h.DataAttribute("active", String(options.isActive ?? false)),
+		h.DataAttribute(
+			"active",
+			options.hasActiveChild === true ? "child" : String(options.isActive ?? false),
+		),
 		...(options.hasTooltip === true ? [h.DataAttribute("base-ui-tooltip-trigger", "")] : []),
 		h.DataAttribute("sidebar", "menu-button"),
 		h.DataAttribute("size", size),
@@ -367,22 +424,24 @@ export const sidebarMenuButton = <Message>(
 	return h.a(
 		[
 			h.Href(options.link.href),
-			...(linkActive ? [h.AriaCurrent("page"), h.DataAttribute("status", "active")] : []),
+			// One link is the current page: a section row leaves that to its current sub-item.
+			...(linkActive && options.hasActiveChild !== true ? [h.AriaCurrent("page")] : []),
+			...(linkActive ? [h.DataAttribute("status", "active")] : []),
 			...attributes,
 		],
 		children,
 	)
 }
-// SIDEBAR SUB BUTTONS
 
-/** `<SidebarMenuSubButton size="md" render={<Link />}>`. */
+/** A sub-item of a sidebar menu, as a router link or a plain anchor. */
 export const sidebarMenuSubButton = <Message>(
 	h: HtmlBuilder<Message>,
 	/** `link` is a router link (active by path); `href` a plain anchor (`<SidebarMenuSubButton href>`). */
 	options: Readonly<{ className?: string; isActive: boolean; link?: LinkTarget; href?: string }>,
 	children: Children,
 ): Html => {
-	const linkActive = options.link !== undefined && isLinkActive(options.link.currentPath, options.link.href)
+	// The caller picks the most specific sibling, so an index row (`/alerts`) doesn't claim its siblings' pages.
+	const linkActive = options.link !== undefined && options.isActive
 	const className = cn(
 		...sidebarMenuSubButtonStyles,
 		sidebarMenuSubButtonMdStyles,

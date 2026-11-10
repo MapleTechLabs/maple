@@ -1,4 +1,4 @@
-import { CLIENT_ERROR_NOTABLE } from "../../../../components/infra/cloudflare/list-model"
+import { CLIENT_ERROR_NOTABLE } from "../list-model"
 import {
 	cacheHitRows,
 	errorShareRows,
@@ -6,7 +6,7 @@ import {
 	requestRows,
 	type ZoneSignalTotals,
 	zoneSignalTotals,
-} from "../../../../components/infra/cloudflare/zone-signals"
+} from "../zone-signals"
 import { errorRateClass } from "@maple/ui/lib/error-rate"
 import {
 	EMPTY_VALUE,
@@ -27,8 +27,6 @@ import { MountLinkedCursor } from "./command"
 import { Message, type Model } from "./model"
 import { typographyClass } from "@maple/views/ui/typography"
 import { Array as Arr, Order } from "effect"
-
-// `CloudflareZoneSignals`.
 
 type H = HtmlBuilder<Message>
 

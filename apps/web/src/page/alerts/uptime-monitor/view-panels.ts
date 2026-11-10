@@ -1,5 +1,5 @@
 import { MAPLE_SERVICES_NAMESPACE } from "@maple/domain/uptime"
-import { bucketTimeScale } from "@maple/ui/components/plot/plot-scales"
+import { bucketTimeScale } from "@maple/views/charts/plot/plot-scales"
 import { countLabel, formatBucketLabel, formatNumber } from "@maple/ui/lib/format"
 import { TONE_COLOR, TONE_TEXT } from "@maple/ui/lib/tone"
 import { cn } from "@maple/ui/lib/utils"
@@ -23,42 +23,39 @@ import { errorState } from "@maple/views/ui/error-state"
 import { segmentedSelect } from "@maple/views/ui/segmented-select"
 import { relativeTime } from "../../kit/relative-time"
 import { statRail, statRailItem } from "../../kit/stat-rail"
-import { isoMs } from "../shared/time"
+import { formatSpan } from "../../kit/alert-time"
 import * as CopyButton from "@maple/views/ui/copy-button"
 import { copyableField } from "@maple/views/ui/copyable-field"
 import { eyebrow } from "@maple/views/ui/eyebrow"
 import { panel, panelHeader } from "@maple/views/ui/panel"
-import { traceHref, uptimeTracesHref, UPTIME_SERVICE } from "../shared/uptime-commands"
+import { traceHref, uptimeTracesHref, UPTIME_SERVICE } from "../../kit/uptime/commands"
 import {
 	displayStatus,
 	formatEvery,
 	formatMs,
 	formatShare,
-	formatSpan,
 	checkHealth,
 	latencyPercentiles,
-	medianOf,
 	STATUS_TONE,
 	type UptimeMonitor,
 	uptimeShare,
-} from "../shared/uptime-derive"
+} from "../../kit/uptime/derive"
 import { Message } from "./message"
 import type { CheckPoint, CheckSample, CheckStats, Model, PhasePoint, UptimeWindow } from "./model"
-import { CHECK_HEALTH_FILL, uptimePanelBody } from "../shared/uptime-view"
+import { CHECK_HEALTH_FILL, uptimePanelBody } from "../../kit/uptime/view"
 import { typography, typographyClass } from "@maple/views/ui/typography"
 import { hstack, vstack, vstackClass } from "@maple/views/ui/stack"
 import { chartFrameClass } from "@maple/views/ui/chart-frame"
 import { dividedList } from "@maple/views/ui/rule"
 import { textLink } from "@maple/views/ui/text-link"
 import { selectableRow } from "@maple/views/ui/selectable-row"
-
-// The monitor page's panels: response time, the checks list and the side panels.
+import { medianOf } from "@maple/ui/lib/number"
+import { toEpochMs } from "@maple/ui/lib/time-format"
 
 type H = HtmlBuilder<Message>
 
 const CHECK_ROWS = 15
 
-/** A key/value row in a side panel. */
 const fact = (h: H, label: string, value: Html | string, valueClass?: string): Html =>
 	hstack(h, { gap: "3", align: "baseline", justify: "between", className: "px-4 py-2.5 text-sm" }, [
 		typography(h, { tone: "muted", className: "shrink-0 whitespace-nowrap" }, [label]),
@@ -110,7 +107,7 @@ const timeLabel = (window: UptimeWindow, iso: string, timeZone: string): string 
 
 /** `3m ago`, the absolute time on hover. */
 const ago = (h: H, nowMs: number, timeZone: string, iso: string): Html =>
-	relativeTime(h, { value: isoMs(iso), nowMs, timeZone })
+	relativeTime(h, { value: toEpochMs(iso), nowMs, timeZone })
 
 /** The figures over the page: status, the last check, uptime and the window's percentiles. */
 export const kpiRail = (
@@ -132,7 +129,7 @@ export const kpiRail = (
 		subline:
 			changed === null || status === "paused" || status === "pending"
 				? `Every ${formatEvery(monitor.interval_seconds)}`
-				: `for ${formatSpan(nowMs - isoMs(changed))}`,
+				: `for ${formatSpan(nowMs - toEpochMs(changed))}`,
 	})
 	const lastItem = isHeartbeat
 		? statRailItem(h, {
@@ -236,12 +233,6 @@ export const kpiRail = (
 	)
 }
 
-/**
- * The latency rows: buckets that ran a check, with a null row where checks stopped for longer than
- * two check intervals, so the line breaks there instead of drawing latency nobody measured. A shorter
- * empty bucket (a check every 5 minutes on 1-minute buckets) stays joined: a null there would leave
- * each check a lone point the line never draws.
- */
 /** The monitor's check interval, 0 until it loads (the bucket width then sets the gap). */
 const checkIntervalMs = (model: Model): number =>
 	(Option.getOrNull(AsyncData.getData(model.monitor.data))?.interval_seconds ?? 0) * 1000
@@ -252,6 +243,12 @@ const breakBuckets = (stats: CheckStats, intervalMs: number): ReadonlyArray<stri
 		row.p50LatencyMs === null && typeof row.bucket === "string" ? [row.bucket] : [],
 	)
 
+/**
+ * The latency rows: buckets that ran a check, with a null row where checks stopped for longer than
+ * two check intervals, so the line breaks there instead of drawing latency nobody measured. A shorter
+ * empty bucket (a check every 5 minutes on 1-minute buckets) stays joined: a null there would leave
+ * each check a lone point the line never draws.
+ */
 export const chartRows = (stats: CheckStats, intervalMs: number) => {
 	const stepMs = bucketStepMs(stats.points, stats.windowEndMs)
 	const gapAfterMs = 2 * Math.max(intervalMs, stepMs)
@@ -262,7 +259,7 @@ export const chartRows = (stats: CheckStats, intervalMs: number) => {
 			emptySinceMs: number | null
 		}
 	>(stats.points, { rows: [], emptySinceMs: null }, (acc, point) => {
-		const atMs = isoMs(point.bucket)
+		const atMs = toEpochMs(point.bucket)
 		if (point.totalCount === 0) return { rows: acc.rows, emptySinceMs: acc.emptySinceMs ?? atMs }
 		const broken =
 			acc.rows.length > 0 && acc.emptySinceMs !== null && atMs - acc.emptySinceMs > gapAfterMs
@@ -367,7 +364,7 @@ const latencyChart = (h: H, model: Model, stats: CheckStats, context: ChartConte
 
 /** The bucket width: the smallest gap between buckets, else the span from the only one to the window's end. */
 const bucketStepMs = (points: ReadonlyArray<CheckPoint>, endMs: number): number => {
-	const starts = Arr.map(points, (point) => isoMs(point.bucket))
+	const starts = Arr.map(points, (point) => toEpochMs(point.bucket))
 	const gaps = Arr.flatMap(starts.slice(1), (start, index) => {
 		const gap = start - (starts[index] ?? start)
 		return gap > 0 ? [gap] : []
@@ -392,7 +389,7 @@ const availabilityStrip = (h: H, stats: CheckStats, window: UptimeWindow, timeZo
 			h.div(
 				[h.Class("relative h-full")],
 				Arr.map(stats.points, (point) => {
-					const startMs = isoMs(point.bucket)
+					const startMs = toEpochMs(point.bucket)
 					const left = Math.max(0, xShare(startMs, domain))
 					const right = Math.min(1, xShare(startMs + stepMs, domain))
 					const failed = Math.round(point.errorRate * point.totalCount)
@@ -559,7 +556,7 @@ const checkBars = (
 					h.Key(`${sample.traceId}-${index}`),
 					h.Attribute("tabindex", "-1"),
 					h.OnMouseEnter(Message.HoveredCheck({ index })),
-					h.Style({ left: `${xShare(isoMs(sample.at), domain) * 100}%`, width }),
+					h.Style({ left: `${xShare(toEpochMs(sample.at), domain) * 100}%`, width }),
 				],
 			},
 			[
@@ -627,7 +624,7 @@ const cardRow = (h: H, key: string, color: string, label: string, value: string)
 
 /** The hovered check's card: when, what it returned, and where its time went. */
 const hoverCard = (h: H, sample: CheckSample, domain: Domain, timeZone: string): Html => {
-	const left = xShare(isoMs(sample.at), domain) * 100
+	const left = xShare(toEpochMs(sample.at), domain) * 100
 	const result = sample.statusCode === null ? (sample.ok ? "Passed" : "Failed") : String(sample.statusCode)
 	return h.div(
 		[
@@ -746,7 +743,7 @@ export const checksScatterPanel = (h: H, model: Model, timeZone: string): Html |
 			// Past the list's limit the axis starts at the oldest check shown, not the window's start.
 			const oldest = stats.samples[0]
 			const startMs =
-				stats.samplesTruncated && oldest !== undefined ? isoMs(oldest.at) : stats.windowStartMs
+				stats.samplesTruncated && oldest !== undefined ? toEpochMs(oldest.at) : stats.windowStartMs
 			const domain: Domain = { startMs, endMs: stats.windowEndMs }
 			const hovered = model.hoveredCheck === null ? undefined : stats.samples[model.hoveredCheck]
 			const yTicks = [0, 0.5, 1]

@@ -2,10 +2,10 @@ import { UptimeMonitorId } from "@maple/domain"
 import { Effect, Schema } from "effect"
 import { Command } from "foldkit"
 import { readSupportedTimeZones } from "../../../platform/time-zone"
-import { readGrants } from "../../../data/session-tenant"
 import { recentServiceNames } from "../shared/services"
-import { retrieveMonitor, saveMonitor, testMonitorConfig } from "../shared/uptime-commands"
+import { retrieveMonitor, saveMonitor, testMonitorConfig } from "../../kit/uptime/commands"
 import { Message } from "./message"
+import { fetchSessionGrants } from "../../kit/session-grants"
 
 export const FetchExistingMonitor = Command.define("FetchUptimeFormMonitor", {
 	args: { key: Schema.String, monitorId: UptimeMonitorId },
@@ -28,12 +28,7 @@ export const ReadFormTimeZones = Command.define("ReadUptimeFormTimeZones", {
 	execute: Effect.map(readSupportedTimeZones, (zones) => Message.CompletedReadTimeZones({ zones })),
 })
 
-export const FetchFormSession = Command.define("FetchUptimeFormSession", {
-	args: { orgId: Schema.String },
-	messages: [Message.CompletedFetchSession],
-	execute: ({ orgId }) =>
-		Effect.map(readGrants, (grants) => Message.CompletedFetchSession({ orgId, grants })),
-})
+export const FetchFormSession = fetchSessionGrants("FetchUptimeFormSession", Message.CompletedFetchSession)
 
 /** The test endpoint with the draft's config; validation failures come back as the failure. */
 export const TestDraft = Command.define("TestUptimeDraft", {

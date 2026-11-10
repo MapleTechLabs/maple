@@ -4,6 +4,7 @@ import { Model } from "./model"
 import { contextChanged, init, routeChanged, update } from "./update"
 import { titleOf, view } from "./view"
 import { platformSource } from "../../../../shell/source-link"
+import { PROVIDERS } from "../../../kit/providers"
 
 /** `/infra/railway/$serviceId`: one service's usage; a new service id is a new instance. */
 export const page = definePage(
@@ -20,7 +21,7 @@ export const page = definePage(
 		source: () => platformSource("railway"),
 		breadcrumbs: (model) => [
 			{ label: "Infrastructure", href: "/infra" },
-			{ label: "Railway", href: "/infra/railway" },
+			{ label: PROVIDERS.railway.name, href: PROVIDERS.railway.infraHref },
 			{ label: titleOf(model) },
 		],
 	},

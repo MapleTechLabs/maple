@@ -16,7 +16,7 @@ import {
 import { Array as Arr, Clock, Duration, Effect, Layer, Result, Schema } from "effect"
 import { TestClock } from "effect/testing"
 import { Database } from "@maple/backend/platform/DatabaseLive"
-import { fakeChatSessions } from "@maple/backend/platform/chat-sessions-fake"
+import { fakeChatSessions } from "@maple/backend/testing/chat-sessions-fake"
 import type { IncidentPushEvent } from "@maple/backend/services/push/MobilePushService"
 import {
 	cleanupTestDbs,
@@ -24,8 +24,7 @@ import {
 	executeSql,
 	queryFirstRow,
 	type TestDb,
-} from "@maple/backend/platform/test-pglite"
-import { AlertsService } from "./AlertsService"
+} from "@maple/backend/testing/test-pglite"
 import { AnomalyAlertSource } from "./anomaly/AnomalyAlertSource"
 import {
 	DEFAULT_CLOCK_EPOCH_MS,
@@ -36,6 +35,7 @@ import {
 	makeLayer,
 	makeWarehouseStub,
 	stubOrgMembersService,
+	alertServices,
 } from "./alerts-service-test-support"
 import { EscalationChainsService } from "./EscalationChainsService"
 import { OrgMembersService } from "@maple/backend/services/org/OrgMembersService"
@@ -191,7 +191,7 @@ const stateKeys = (testDb: TestDb) =>
 
 const nextTick = Effect.gen(function* () {
 	yield* TestClock.adjust(Duration.minutes(1))
-	const alerts = yield* AlertsService
+	const alerts = yield* alertServices
 	yield* alerts.runSchedulerTick()
 })
 
@@ -210,7 +210,7 @@ describe("AlertsService anomaly rules", () => {
 		const { testDb, turns, layer } = harness()
 		return Effect.gen(function* () {
 			yield* TestClock.setTime(DEFAULT_CLOCK_EPOCH_MS)
-			const alerts = yield* AlertsService
+			const alerts = yield* alertServices
 			yield* enableTriage(testDb)
 			yield* insertAnomaly(errorRateSpike)
 			const created = yield* AnomalyAlertSource.use((source) => source.backfillDefaultRules)
@@ -240,7 +240,7 @@ describe("AlertsService anomaly rules", () => {
 		const { pushes, layer } = harness()
 		return Effect.gen(function* () {
 			yield* TestClock.setTime(DEFAULT_CLOCK_EPOCH_MS)
-			const alerts = yield* AlertsService
+			const alerts = yield* alertServices
 			yield* insertAnomaly({ ...errorRateSpike, severity: "critical" })
 			yield* AnomalyAlertSource.use((source) => source.backfillDefaultRules)
 
@@ -256,7 +256,7 @@ describe("AlertsService anomaly rules", () => {
 		const { bodies, pushes, layer } = harness()
 		return Effect.gen(function* () {
 			yield* TestClock.setTime(DEFAULT_CLOCK_EPOCH_MS)
-			const alerts = yield* AlertsService
+			const alerts = yield* alertServices
 			const destination = yield* createWebhookDestination(alerts, orgId, userId)
 			yield* alerts.createRule(
 				orgId,
@@ -305,7 +305,7 @@ describe("AlertsService anomaly rules", () => {
 		const { testDb, pushes, layer } = harness()
 		return Effect.gen(function* () {
 			yield* TestClock.setTime(DEFAULT_CLOCK_EPOCH_MS)
-			const alerts = yield* AlertsService
+			const alerts = yield* alertServices
 			const destination = yield* createWebhookDestination(alerts, orgId, userId)
 			const chain = yield* EscalationChainsService.use((chains) =>
 				chains.create(
@@ -356,7 +356,7 @@ describe("AlertsService anomaly rules", () => {
 		const { testDb, pushes, layer } = harness()
 		return Effect.gen(function* () {
 			yield* TestClock.setTime(DEFAULT_CLOCK_EPOCH_MS)
-			const alerts = yield* AlertsService
+			const alerts = yield* alertServices
 			const destination = yield* createWebhookDestination(alerts, orgId, userId)
 			yield* alerts.createRule(
 				orgId,
@@ -409,7 +409,7 @@ describe("AlertsService anomaly rules", () => {
 			const { testDb, layer } = harness()
 			return Effect.gen(function* () {
 				yield* TestClock.setTime(DEFAULT_CLOCK_EPOCH_MS)
-				const alerts = yield* AlertsService
+				const alerts = yield* alertServices
 				const destination = yield* createWebhookDestination(alerts, orgId, userId)
 				yield* insertAnomaly(errorRateSpike)
 				yield* AnomalyAlertSource.use((source) => source.backfillDefaultRules)
@@ -454,7 +454,7 @@ describe("AlertsService anomaly rules", () => {
 		const { bodies, layer } = harness()
 		return Effect.gen(function* () {
 			yield* TestClock.setTime(DEFAULT_CLOCK_EPOCH_MS)
-			const alerts = yield* AlertsService
+			const alerts = yield* alertServices
 			const destination = yield* createWebhookDestination(alerts, orgId, userId)
 			yield* insertAnomaly(errorRateSpike)
 			yield* AnomalyAlertSource.use((source) => source.backfillDefaultRules)
@@ -511,7 +511,7 @@ describe("AlertsService anomaly rules", () => {
 		const { testDb, layer } = harness()
 		return Effect.gen(function* () {
 			yield* TestClock.setTime(DEFAULT_CLOCK_EPOCH_MS)
-			const alerts = yield* AlertsService
+			const alerts = yield* alertServices
 			const { errorIssueId: _issue, ...withoutIssue } = errorRateSpike
 			yield* insertAnomaly(withoutIssue)
 			yield* AnomalyAlertSource.use((source) => source.backfillDefaultRules)
@@ -537,7 +537,7 @@ describe("AlertsService anomaly rules", () => {
 		const { layer } = harness()
 		return Effect.gen(function* () {
 			yield* TestClock.setTime(DEFAULT_CLOCK_EPOCH_MS)
-			const alerts = yield* AlertsService
+			const alerts = yield* alertServices
 			const destination = yield* createWebhookDestination(alerts, orgId, userId)
 			yield* insertAnomaly({ ...errorRateSpike, severity: "critical" })
 			yield* insertAnomaly({
@@ -585,7 +585,7 @@ describe("AlertsService anomaly rules", () => {
 		const { testDb, layer } = harness()
 		return Effect.gen(function* () {
 			yield* TestClock.setTime(DEFAULT_CLOCK_EPOCH_MS)
-			const alerts = yield* AlertsService
+			const alerts = yield* alertServices
 			yield* insertAnomaly(errorRateSpike)
 			yield* AnomalyAlertSource.use((source) => source.backfillDefaultRules)
 
@@ -614,7 +614,7 @@ describe("AlertsService anomaly rules", () => {
 		const { layer } = harness()
 		return Effect.gen(function* () {
 			yield* TestClock.setTime(DEFAULT_CLOCK_EPOCH_MS)
-			const alerts = yield* AlertsService
+			const alerts = yield* alertServices
 			const destination = yield* createWebhookDestination(alerts, orgId, userId)
 			yield* insertAnomaly({ ...errorRateSpike, severity: "critical" })
 			const testScope = (serviceNames: ReadonlyArray<string>) =>
@@ -648,7 +648,7 @@ describe("AlertsService anomaly rules", () => {
 		const { testDb, layer } = harness()
 		return Effect.gen(function* () {
 			yield* TestClock.setTime(DEFAULT_CLOCK_EPOCH_MS)
-			const alerts = yield* AlertsService
+			const alerts = yield* alertServices
 			const destination = yield* createWebhookDestination(alerts, orgId, userId)
 			const rule = yield* alerts.createRule(
 				orgId,
@@ -685,7 +685,7 @@ describe("AlertsService anomaly rules", () => {
 			const { testDb, layer } = harness()
 			return Effect.gen(function* () {
 				yield* TestClock.setTime(DEFAULT_CLOCK_EPOCH_MS)
-				const alerts = yield* AlertsService
+				const alerts = yield* alertServices
 				yield* insertAnomaly(errorRateSpike)
 				yield* AnomalyAlertSource.use((source) => source.backfillDefaultRules)
 				yield* alerts.runSchedulerTick()
@@ -706,7 +706,7 @@ describe("AlertsService anomaly rules", () => {
 		const { testDb, layer } = harness()
 		return Effect.gen(function* () {
 			yield* TestClock.setTime(DEFAULT_CLOCK_EPOCH_MS)
-			const alerts = yield* AlertsService
+			const alerts = yield* alertServices
 			const destination = yield* createWebhookDestination(alerts, orgId, userId)
 			yield* alerts.createRule(
 				orgId,

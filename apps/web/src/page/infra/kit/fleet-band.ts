@@ -12,8 +12,6 @@ import { borderedBoxClass } from "@maple/views/ui/bordered-box"
 import { Array as Arr, String as Str } from "effect"
 import { vstack } from "@maple/views/ui/stack"
 
-// `FleetBand` and `FleetBandLoading`.
-
 /** A band standing alone on a page body rather than flush under a shell's header. */
 export const FLEET_BAND_BOXED = borderedBoxClass({ overflow: "hidden" })
 

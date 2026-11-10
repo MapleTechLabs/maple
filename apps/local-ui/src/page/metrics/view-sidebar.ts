@@ -1,5 +1,5 @@
 import { getServiceColor } from "@maple/ui/lib/colors"
-import { METRIC_TYPE_COLORS } from "@maple/web/page/metrics/shared"
+import { METRIC_TYPE_COLORS, metricTypeLabel } from "@maple/views/ui/metric-type"
 import { filterSection } from "@maple/views/ui/filters/filter-section"
 import type * as FilterSections from "@maple/views/ui/filters/filter-sections"
 import { filterSidebarBody, filterSidebarHeader } from "@maple/views/ui/filters/filter-sidebar"
@@ -13,15 +13,6 @@ import { filterRailFrame } from "../kit/filter-rail"
 // The Metrics page's filter rail.
 
 const toSections = (message: FilterSections.Message) => Message.GotFilterSectionsMessage({ message })
-
-/** copied: `metricTypeLabel` (packages/ui/src/components/metrics/metric-type-badge.tsx). */
-const TYPE_LABELS = new Map([
-	["sum", "Sum"],
-	["gauge", "Gauge"],
-	["histogram", "Histogram"],
-])
-export const metricTypeLabel = (type: string): string =>
-	type === "exponential_histogram" ? "Exp histogram" : (TYPE_LABELS.get(type) ?? type)
 
 export const sidebar = (
 	h: HtmlBuilder<Message>,

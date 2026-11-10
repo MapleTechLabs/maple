@@ -1,5 +1,5 @@
 import { BUCKET_SECONDS, PAGE_LABEL, PAGES } from "../gcp-workload-fixture"
-import { gcpWorkloadName } from "../../components/infra/gcp/tabs"
+import { gcpWorkloadName } from "../../page/infra-integrations/gcp/tabs"
 import { Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { type PageData, workloadData } from "../../page/infra-integrations/gcp/workload/derive"
@@ -11,7 +11,7 @@ import { type LabPage, Message, type Model, SPAN_STATES } from "./model"
 import { workloadOf } from "./update"
 import { Array as Arr } from "effect"
 
-/** `WorkloadPage`'s props, read off the fixture. */
+/** The workload page's data, read off the fixture. */
 const dataOf = (page: LabPage): PageData => {
 	const workload = workloadOf(page)
 	const sql = workload.cloudSql

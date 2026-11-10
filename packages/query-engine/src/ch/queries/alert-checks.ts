@@ -7,7 +7,8 @@ import type { DateTime } from "effect"
 import * as CH from "@maple-dev/effect-orm/expr"
 import { param } from "@maple-dev/effect-orm/clickhouse"
 import { from } from "@maple-dev/effect-orm/clickhouse"
-import { AlertChecks, orgIdParam } from "../tables"
+import * as Datasources from "@maple/domain/tinybird/datasources"
+import { orgIdParam } from "../tables"
 import * as T from "@maple-dev/effect-orm/clickhouse"
 
 export interface ListRuleChecksOpts {
@@ -49,7 +50,7 @@ export interface ListRuleChecksOutput {
 
 export function listRuleChecksQuery(opts: ListRuleChecksOpts) {
 	return (
-		from(AlertChecks)
+		from(Datasources.alertChecks)
 			.select(($) => ({
 				timestamp: $.Timestamp,
 				groupKey: $.GroupKey,
@@ -111,7 +112,7 @@ export interface AlertCheckGroupTotalsOutput {
 }
 
 export function alertCheckGroupTotalsQuery(opts: AlertCheckGroupTotalsOpts) {
-	return from(AlertChecks)
+	return from(Datasources.alertChecks)
 		.select(($) => ({
 			groupKey: $.GroupKey,
 			totalCount: CH.count(),
@@ -147,7 +148,7 @@ export interface AlertChecksSummaryOutput {
 }
 
 export function alertChecksSummaryQuery(opts: AlertChecksSummaryOpts) {
-	return from(AlertChecks)
+	return from(Datasources.alertChecks)
 		.select(($) => ({
 			bucket: CH.toStartOfInterval($.Timestamp, param.int("bucketSeconds")),
 			groupKey:

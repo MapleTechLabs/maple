@@ -229,7 +229,7 @@ describe("destination dialog", () => {
 		const chat = (message: ChatConnect.Message) => (model: typeof unlinked) =>
 			update(model, Message.GotChatConnectMessage({ message })).model
 		const started = chat(ChatConnect.Message.SucceededStart({ attempt }))(connecting)
-		// The install's reactivity keys re-read the connectors.
+		// A finished install re-reads the connectors.
 		const startStep = update(
 			connecting,
 			Message.GotChatConnectMessage({ message: ChatConnect.Message.SucceededStart({ attempt }) }),
@@ -432,6 +432,8 @@ describe("incident.io destination form", () => {
 		const fresh = { ...editing(STORED, "tok"), incidentIoStoredAlertSourceId: "" }
 		expect(isFormReady(fresh, false)).toBe(true)
 		expect(isFormReady({ ...fresh, incidentIoToken: "" }, false)).toBe(false)
-		expect(isFormReady({ ...fresh, incidentIoAlertSourceId: "https://api.incident.io/x" }, false)).toBe(false)
+		expect(isFormReady({ ...fresh, incidentIoAlertSourceId: "https://api.incident.io/x" }, false)).toBe(
+			false,
+		)
 	})
 })

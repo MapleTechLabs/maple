@@ -2,8 +2,8 @@ import type { Attribute, Html, HtmlBuilder } from "foldkit/html"
 import { icon } from "./icon"
 import { inputGroup, inputGroupAddon, inputGroupButton, inputGroupInput } from "./input-group"
 
-// Port of packages/ui/src/components/ui/search-input.tsx: magnifier, input and a clear button
-// while there is a value. Not debounced: the caller turns each `onInput` into its Message.
+// Magnifier, input and a clear button while there is a value. Not debounced: the caller turns
+// each `onInput` into its Message.
 
 export type SearchInputOptions<M> = Readonly<{
 	id: string

@@ -5,11 +5,11 @@ import {
 	type BillingProfile,
 	UpdateBillingProfileRequest,
 } from "@maple/domain/http"
-import { fieldOrNull } from "../../../../lib/billing/billing-profile"
-import { countryName, sortedCountryCodes } from "../../../../lib/billing/countries"
+import { fieldOrNull } from "../billing-profile"
+import { countryName, sortedCountryCodes } from "../countries"
 import { Effect, Option, Result, Array as Arr, Record as Rec, String as Str, Predicate } from "effect"
 import { Command } from "foldkit"
-import { toLoadFailure } from "@maple/views/data/load-failure"
+import { settleTo } from "@maple/views/data/load-failure"
 import { MapleInternalApiClient } from "../../../../platform/api-clients"
 import * as Combobox from "@maple/views/ui/combobox"
 import * as Dialog from "@maple/views/ui/dialog"
@@ -19,7 +19,7 @@ import { Message, type Model, TaxIdRef } from "./model"
 
 type Return = PageReturn<Model, Message>
 
-/** A step plus whether the profile changed (the tab reads it again: `BILLING_PROFILE_KEY`). */
+/** A step plus whether the profile changed (the tab then reads it again). */
 export type Step = Readonly<{ step: Return; isProfileStale: boolean }>
 
 // Type picker order: the handful most customers want, then the rest by label.
@@ -56,11 +56,7 @@ const SaveDetails = Command.define("UpdateBillingProfile", {
 	execute: ({ payload }) =>
 		Effect.flatMap(MapleInternalApiClient, (client) =>
 			client.billing.updateBillingProfile({ payload }),
-		).pipe(
-			Effect.mapError(toLoadFailure),
-			Effect.result,
-			Effect.map((result) => Message.CompletedSave({ result })),
-		),
+		).pipe(settleTo((result) => Message.CompletedSave({ result }))),
 })
 
 const AddTaxId = Command.define("AddBillingTaxId", {
@@ -68,9 +64,7 @@ const AddTaxId = Command.define("AddBillingTaxId", {
 	messages: [Message.CompletedAddTax],
 	execute: ({ payload }) =>
 		Effect.flatMap(MapleInternalApiClient, (client) => client.billing.addBillingTaxId({ payload })).pipe(
-			Effect.mapError(toLoadFailure),
-			Effect.result,
-			Effect.map((result) => Message.CompletedAddTax({ result })),
+			settleTo((result) => Message.CompletedAddTax({ result })),
 		),
 })
 
@@ -80,11 +74,7 @@ const RemoveTaxId = Command.define("RemoveBillingTaxId", {
 	execute: ({ taxId }) =>
 		Effect.flatMap(MapleInternalApiClient, (client) =>
 			client.billing.removeBillingTaxId({ params: { taxIdId: taxId.id } }),
-		).pipe(
-			Effect.mapError(toLoadFailure),
-			Effect.result,
-			Effect.map((result) => Message.CompletedRemoveTax({ taxId, result })),
-		),
+		).pipe(settleTo((result) => Message.CompletedRemoveTax({ taxId, result }))),
 })
 
 const taxTypeSelect = (type: string): Select.Model =>

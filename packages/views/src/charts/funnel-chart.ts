@@ -13,9 +13,9 @@ import { chartNoData } from "../ui/chart-frame"
 import { barFillClass } from "../ui/meter"
 import { hstack, vstack } from "../ui/stack"
 
-// Port of `FunnelBarsChart` (packages/ui/src/components/charts/funnel/query-builder-funnel-chart.tsx).
-// The hovered stage is `activeKey` (its index), the hovered breakdown group `activeGroup`.
-// TODO(funnel-legend): the legend's "+N" chip for chips that wrapped out of its one line.
+// The funnel bars chart. The hovered stage is `activeKey` (its index), the hovered breakdown group
+// `activeGroup`. TODO(funnel-legend): the legend's "+N" chip for chips that wrapped out of its one
+// line.
 
 export interface FunnelChartInputs {
 	readonly data: ReadonlyArray<Record<string, unknown>>

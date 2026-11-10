@@ -5,8 +5,8 @@ import type { ChildAttribute, Html, HtmlBuilder } from "foldkit/html"
 import { badge } from "@maple/views/ui/display"
 import * as HoverCard from "@maple/views/ui/hover-card"
 import * as Tooltip from "@maple/views/ui/tooltip"
-import { commitDetailBody } from "../../kit/commit-card"
-import { deployInfo, isResolvableSha } from "./derive"
+import { commitDetailBody, isResolvableSha } from "../../kit/commit-card"
+import { deployInfo } from "./derive"
 import { Message, type RowTooltip } from "./message"
 import type { Model, ServiceRow } from "./model"
 import { overlayTriggerId } from "./update-overlays"
@@ -14,7 +14,7 @@ import { typography, typographyClass } from "@maple/views/ui/typography"
 import { hstack, vstack } from "@maple/views/ui/stack"
 import { Array as Arr, String as Str, Option } from "effect"
 
-// The row tooltips (rollout split, sampling estimate, `UnnamedServiceHint`) and `CommitShaHoverCard`.
+// The row tooltips (rollout split, sampling estimate, unnamed service) and the commit hover card.
 
 type H = HtmlBuilder<Message>
 
@@ -87,7 +87,7 @@ const rolloutContent = (h: H, service: ServiceRow): ReadonlyArray<Html> => [
 	),
 ]
 
-// JSX text runs are kept apart: a run boundary changes how the line is shaped.
+// Text runs are kept apart: a run boundary changes how the line is shaped.
 const samplingContent = (h: H, service: ServiceRow): ReadonlyArray<Html> => [
 	h.p(
 		[],
@@ -112,7 +112,7 @@ const UNNAMED_CONTENT = (h: H): ReadonlyArray<Html | string> => [
 	" in your SDK config) and the service will appear under its real name.",
 ]
 
-/** `UnnamedServiceHint`: the warn badge that triggers the tooltip. */
+/** The unnamed-service warn badge that triggers the tooltip. */
 export const unnamedServiceHint = (h: H, trigger: ReadonlyArray<ChildAttribute>): Html =>
 	badge(h, { variant: "warn", size: "sm", className: "shrink-0 font-normal", attributes: trigger }, [
 		"no service.name",

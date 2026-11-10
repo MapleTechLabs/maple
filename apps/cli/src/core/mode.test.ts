@@ -78,7 +78,8 @@ describe("server discovery file", () => {
 	it("uses the advertised URL while the server's pid is alive", async () => {
 		const url = await withFile(
 			JSON.stringify({
-				pid: process.pid,
+				// The test runner's parent: a live process that is not this one.
+				pid: process.ppid,
 				url: "http://127.0.0.1:4393",
 				dataDir: "/x",
 				startedAt: "now",
@@ -112,8 +113,9 @@ describe("server discovery scan", () => {
 			rmSync(dir, { recursive: true, force: true })
 		}
 	}
-	const alive = (url: string) => ({ pid: process.pid, url })
-	const dead = (url: string) => ({ pid: 2 ** 30, url })
+	const record = (pid: number, url: string) => ({ pid, url, dataDir: "/x", startedAt: "now" })
+	const alive = (url: string) => record(process.ppid, url)
+	const dead = (url: string) => record(2 ** 30, url)
 
 	it("prefers the default store, then the only other live one", async () => {
 		const both = await scan({

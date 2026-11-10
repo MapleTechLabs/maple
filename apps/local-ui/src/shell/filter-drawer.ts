@@ -1,4 +1,4 @@
-import { type LiftedRail, splitPageRails } from "@maple/web/shell/page-rails"
+import { type LiftedRail, splitPageRails } from "@maple/views/ui/page-rails"
 import * as Dialog from "@maple/views/ui/dialog"
 import * as DialogView from "@maple/views/ui/dialog-view"
 import { Option, Array as Arr } from "effect"

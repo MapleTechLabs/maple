@@ -1,10 +1,11 @@
+import { canWidenTimeRange } from "../../../kit/time-controls"
 import { AsyncData, Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { ResolveThemeColors } from "@maple/views/charts/theme-colors"
 import { errorState } from "@maple/views/ui/error-state"
 import type { PageViewInputs } from "../../../contract"
 import { dashboardPage } from "../../../kit/dashboard-page"
-import * as Frame from "../../kit/frame"
+import * as Frame from "../../../kit/time-frame"
 import { pageHeroParts, headerActions } from "../../kit/page-parts"
 import { INFRA_CHART_TOKENS } from "@maple/views/charts/infra-metric-series"
 import { resourceAttributesCardSkeleton } from "../../kit/resource-attributes"
@@ -14,8 +15,6 @@ import { DEFAULT_PRESET } from "./update"
 import { type HostHeaderParts, hostDetailHeader, hostDetailHeaderLoading } from "./view-header"
 import { hostMetadataPanel, metricsPanel } from "./view-panels"
 import { typography } from "@maple/views/ui/typography"
-
-// `HostDetailPage`.
 
 type H = HtmlBuilder<Message>
 
@@ -40,7 +39,7 @@ const header = (h: H, model: Model, inputs: PageViewInputs): HostHeaderParts =>
 				hostName: model.hostName,
 				nowMs: model.frame.nowMs,
 				timeZone: inputs.context.timeZone,
-				canWiden: Frame.canWidenTimeRange(model.search, DEFAULT_PRESET),
+				canWiden: canWidenTimeRange(model.search, DEFAULT_PRESET),
 			}),
 	})
 

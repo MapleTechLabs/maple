@@ -19,8 +19,7 @@ import { resourceNotFound } from "../../kit/resource-not-found"
 import { underlineTabClass, underlineTabStrip } from "../../kit/underline-tabs"
 import { platformMeta, platformTile } from "../kit/platforms"
 import { effectiveTab, hasToken, integrationPlatformOf, focusIdOf, sourceHref } from "../kit/shared"
-import { actionsEmbed, cardEmbed } from "../../integrations/embed"
-import { canManage as canManageIntegrations } from "../../integrations/model"
+import { actionsEmbed, cardEmbed, canManage as canManageIntegrations } from "../../integrations/embed"
 import { sourceStatusBadge } from "../kit/status"
 import { Message } from "./message"
 import { canManage, type Model } from "./model"
@@ -51,7 +50,7 @@ const notFound = (h: H): Html =>
 const loading = (h: H): Html =>
 	vstack(h, { gap: "3" }, [skeleton(h, "h-10 w-72"), skeleton(h, "h-40 w-full")])
 
-/** `SourceTabs`: links, so the open tab is in the URL; the overview drops `tab`. */
+/** Links, so the open tab is in the URL; the overview drops `tab`. */
 const tabs = (h: H, shown: ReadonlyArray<SourceTab>, source: V2Source, active: SourceTab): Html =>
 	underlineTabStrip(
 		h,
@@ -72,7 +71,7 @@ const tabs = (h: H, shown: ReadonlyArray<SourceTab>, source: V2Source, active: S
 		}),
 	)
 
-/** `RolledTokenBanner`: the one-time token after a roll, above whichever tab is open. */
+/** The one-time token after a roll, above whichever tab is open. */
 const rolledBanner = (h: H, model: Model, secret: string): Html =>
 	panel(h, { padded: true, className: "gap-3" }, [
 		alert(h, { variant: "ok" }, [

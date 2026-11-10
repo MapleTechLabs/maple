@@ -13,7 +13,7 @@ import { Effect, Schema, String as Str } from "effect"
 import { Investigations } from "@maple/db/tables"
 import { InvestigationFreeformSubject, InvestigationId, OrgId } from "@maple/domain/http"
 import { Database } from "@maple/backend/platform/DatabaseLive"
-import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/platform/test-pglite"
+import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/testing/test-pglite"
 import {
 	isInvestigationStale,
 	PROGRESS_HEARTBEAT_STALE_MS,

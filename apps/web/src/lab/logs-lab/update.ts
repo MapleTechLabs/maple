@@ -13,7 +13,8 @@ import { logTimeFormat, toLogRowView } from "@maple/views/ui/logs/log-row-view"
 import * as LogsStream from "@maple/views/ui/logs/logs-stream"
 import * as Menu from "@maple/views/ui/menu"
 import type { Resources } from "../../platform/resources"
-import { listFooterText, type ViewerFlags } from "@maple/views/ui/logs/viewer"
+import { listFooterText } from "@maple/views/ui/logs/viewer"
+import type { ViewerFlags } from "../viewer-flags"
 import { foldLabShell, initLabShell, type LabShellFlags } from "../app-shell"
 import { foldLabToasts, initLabToasts } from "../toasts"
 import { Message, type Model, type Toggle } from "./model"
@@ -23,13 +24,11 @@ const ALL_LOGS = buildLogsLabFixture(ANCHOR_MS)
 /** Newest fixture rows held back at load; each reload reveals the next ones at the top. */
 const LIVE_BACKLOG = 60
 const ROWS_PER_TICK = 2
-/** `PageRefreshProvider` keeps the reload button busy this long. */
+/** How long the reload button stays busy. */
 const RELOAD_SPIN = Duration.millis(600)
 
 type Return = Update.Return<Model, Message, Resources>
 type Step = Update.Step<Model, Message, Resources>
-
-// DERIVED
 
 const visibleLogs = (model: Model) => {
 	const hidden = Math.max(0, LIVE_BACKLOG - model.refreshVersion * ROWS_PER_TICK)
@@ -51,8 +50,6 @@ const footerOf = (model: Model, shown: number) => {
 	const scope = Option.match(model.search, { onNone: () => "", onSome: (text) => ` matching “${text}”` })
 	return listFooterText(model.locale, { shown, noun: `logs${scope}`, capped: false, hasMore: false })
 }
-
-// INIT
 
 export const init = (flags: ViewerFlags & LabShellFlags): Return => {
 	const shell = initLabShell(flags)
@@ -89,16 +86,12 @@ export const init = (flags: ViewerFlags & LabShellFlags): Return => {
 	}
 }
 
-// COMMAND
-
 export const WaitReloadSpin = Command.define("WaitReloadSpin", {
 	args: { version: Schema.Number },
 	messages: [Message.ElapsedReloadSpin],
 	execute: ({ version }) =>
 		Effect.sleep(RELOAD_SPIN).pipe(Effect.as(Message.ElapsedReloadSpin({ version }))),
 })
-
-// STREAM
 
 const unchanged: Step = (model) => ({ model })
 
@@ -133,8 +126,6 @@ const foldStream = Update.foldChild({ ...streamSlot, update: LogsStream.update }
 const foldSetRows = Update.foldChild({ ...streamSlot, update: LogsStream.setRows })
 const foldReplaceRows = Update.foldChild({ ...streamSlot, update: LogsStream.replaceRows })
 const jumpToLatest = Update.foldChildStep({ ...streamSlot, update: LogsStream.jumpToLatest })
-
-// UPDATE
 
 /** Pins or search changed: the same logs, derived again. */
 const rederive = (model: Model): Return => {

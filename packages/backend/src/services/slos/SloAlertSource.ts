@@ -1,15 +1,14 @@
 import * as PG from "@maple-dev/effect-orm/postgres"
 import { Slos } from "@maple/db/tables"
 import { SloPersistenceError, type WarehouseReadError } from "@maple/domain/http"
-import type { AlertRuleId, OrgId } from "@maple/domain/primitives"
+import type { AlertRuleId, OrgId } from "@maple/primitives"
 import type { SloBurnWindow } from "@maple/domain/slo"
 import { Context, Effect, Layer, Option } from "effect"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { makeDbExecute } from "@maple/backend/platform/db-execute"
 import { makeSloPersistenceError } from "./slo-persistence"
-import { systemTenant } from "@maple/backend/services/alerts/system-tenant"
-import { WarehouseQueryService } from "@maple/backend/services/warehouse/WarehouseQueryService"
-import { readBurnWindows } from "./slo-reads"
+import { ALERTING_SYSTEM_USER_ID, systemTenant } from "@maple/backend/services/auth/system-tenant"
+import { SloReadService } from "./SloReadService"
 
 export interface SloAlertSourceApi {
 	/** The burn windows ending at `endMs` of the SLO that owns `ruleId`; `None` when none does. */
@@ -30,7 +29,7 @@ export class SloAlertSource extends Context.Service<SloAlertSource, SloAlertSour
 		make: Effect.gen(function* () {
 			const database = yield* Database
 			const dbExecute = makeDbExecute(database, "SloAlertSource", makeSloPersistenceError)
-			const warehouse = yield* WarehouseQueryService
+			const reads = yield* SloReadService
 
 			const observe = Effect.fn("SloAlertSource.observe")(function* (
 				orgId: OrgId,
@@ -56,8 +55,8 @@ export class SloAlertSource extends Context.Service<SloAlertSource, SloAlertSour
 				const slo = rows[0]
 				if (slo === undefined) return Option.none<ReadonlyArray<SloBurnWindow>>()
 				yield* Effect.annotateCurrentSpan({ "maple.slo.id": slo.id })
-				const windows = yield* readBurnWindows(
-					systemTenant(orgId),
+				const windows = yield* reads.burnWindows(
+					systemTenant(orgId, ALERTING_SYSTEM_USER_ID),
 					{
 						orgId,
 						serviceName: slo.serviceName,
@@ -67,7 +66,7 @@ export class SloAlertSource extends Context.Service<SloAlertSource, SloAlertSour
 						windowDays: slo.windowDays,
 					},
 					endMs,
-				).pipe(Effect.provideService(WarehouseQueryService, warehouse))
+				)
 				return Option.some(windows)
 			})
 
@@ -75,5 +74,5 @@ export class SloAlertSource extends Context.Service<SloAlertSource, SloAlertSour
 		}),
 	},
 ) {
-	static readonly layer = Layer.effect(this, this.make).pipe(Layer.provide(WarehouseQueryService.layer))
+	static readonly layer = Layer.effect(this, this.make).pipe(Layer.provide(SloReadService.layer))
 }

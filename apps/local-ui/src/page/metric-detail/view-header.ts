@@ -1,5 +1,5 @@
 import { humanizeUnit } from "../../lib/units"
-import { metricTypeBadge } from "@maple/web/page/metrics/shared"
+import { metricTypeBadge } from "@maple/views/ui/metric-type"
 import { button } from "@maple/views/ui/button"
 import { badge } from "@maple/views/ui/display"
 import { icon } from "@maple/views/ui/icon"

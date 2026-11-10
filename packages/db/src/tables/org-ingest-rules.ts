@@ -1,6 +1,6 @@
 import * as PG from "@maple-dev/effect-orm/postgres"
 import { IngestRuleSpec } from "@maple/domain/ingest-rules"
-import { IngestRuleId, OrgId } from "@maple/domain/primitives"
+import { IngestRuleId, OrgId } from "@maple/primitives"
 
 /**
  * Customer drop/redact rules. The ingest gateway reads the enabled rows per org

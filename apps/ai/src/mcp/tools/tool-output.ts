@@ -77,7 +77,6 @@ const sliceToLines = (text: string, maxLines: number): string => {
 	let cut = -1
 	for (let i = 0; i < maxLines; i++) {
 		const next = text.indexOf("\n", cut + 1)
-		// Fewer lines than the cap — nothing to cut.
 		if (next === -1) return text
 		cut = next
 	}

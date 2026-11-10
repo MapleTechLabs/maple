@@ -1,11 +1,12 @@
+import { encodeJson } from "@maple/views/data/request-key"
 import { Option, Schema, Stream } from "effect"
 import { Subscription } from "foldkit"
 import { returns } from "../../../data/poll"
 import type { Resources } from "../../../platform/resources"
 import { definePage, type PageSubscriptionInput } from "../../contract"
-import { documentStream } from "../../dashboards/kit/document-stream"
-import { destinationRows, incidentRows, ruleRows, ruleStateRows } from "../shared/collections"
-import { collectionLoadFailed } from "../shared/collection-load"
+import { documentStream } from "../../../data/collections/document-stream"
+import { destinationRows, incidentRows, ruleRows, ruleStateRows } from "../../kit/alert-collections"
+import { collectionLoadFailed } from "../../kit/collection-load"
 import * as ChatConnectStream from "../shared/chat-connect-stream"
 import * as DestinationDialog from "../destination/dialog"
 import { decodeChartParam } from "./draft"
@@ -14,8 +15,6 @@ import { Message } from "./message"
 import { Model } from "./model"
 import { update } from "./update"
 import { breadcrumbsOf, view } from "./view"
-
-const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
 
 const byOrg = { orgId: Schema.String }
 const watching = { orgId: Schema.String, isWatching: Schema.Boolean }
@@ -27,7 +26,6 @@ const lookupDashboardId = (model: Model): string | null => {
 	return chart !== undefined && Option.isSome(decodeChartParam(chart)) ? null : dashboardId
 }
 
-/** `useAlertRulesList`, `useAlertIncidentsList` and `useAlertDestinationsList`. */
 const subscriptions = Subscription.make<PageSubscriptionInput<Model>, Message, Resources>()((entry) => ({
 	rules: entry(byOrg, {
 		modelToDependencies: ({ context }) => ({ orgId: context.orgId }),
@@ -48,7 +46,7 @@ const subscriptions = Subscription.make<PageSubscriptionInput<Model>, Message, R
 		dependenciesToStream: ({ orgId }) =>
 			destinationRows(orgId, (rows) => Message.UpdatedDestinations({ orgId, rows })),
 	}),
-	/** The Add destination menu's `useChatWorkspaceConnect`, outside the menu so closing it keeps watching. */
+	/** The Add destination menu's workspace connect, outside the menu so closing it keeps watching. */
 	menuChatConnect: entry(ChatConnectStream.Dependencies.fields, {
 		modelToDependencies: ({ model }) => ChatConnectStream.dependenciesOf(model.chatConnect),
 		dependenciesToStream: (dependencies) =>
@@ -73,7 +71,7 @@ const subscriptions = Subscription.make<PageSubscriptionInput<Model>, Message, R
 				Message.GotDestinationDialogMessage({ message }),
 			),
 	}),
-	/** `useCollectionLoadFailed(rulesCollection.id, pending)` while an edit waits on the rules. */
+	/** The rules sync failing while an edit waits on it. */
 	rulesLoad: entry(watching, {
 		modelToDependencies: ({ model, context }) => ({
 			orgId: context.orgId,
@@ -92,7 +90,7 @@ const subscriptions = Subscription.make<PageSubscriptionInput<Model>, Message, R
 			dependenciesToStream: () => Stream.map(returns(), () => Message.ReturnedToTab()),
 		},
 	),
-	/** `useDashboardsRead`, only for the id-lookup fallback (a widget link without its snapshot). */
+	/** The dashboards read, only for the id-lookup fallback (a widget link without its snapshot). */
 	sourceDashboard: entry(
 		{ orgId: Schema.String, dashboardId: Schema.NullOr(Schema.String) },
 		{
@@ -129,7 +127,7 @@ export const page = definePage(
 	{ Model, Message },
 	{
 		routes: ["AlertsCreate"],
-		// A different rule or prefill source is a different draft (`RuleDraft.key` remounts the surface).
+		// A different rule or prefill source is a different draft, which remounts the surface.
 		key: (route) => encodeJson(route.search),
 		init,
 		update,

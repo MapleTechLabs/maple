@@ -6,8 +6,9 @@ import {
 	IntegrationsUpstreamError,
 	IntegrationsValidationError,
 	type OrgId,
+	SearchConsoleSiteChoice,
 } from "@maple/domain/http"
-import { SearchConsoleSiteId, type SearchConsoleSiteUrl } from "@maple/domain/primitives"
+import { SearchConsoleSiteId, type SearchConsoleSiteUrl } from "@maple/primitives"
 import * as PG from "@maple-dev/effect-orm/postgres"
 import { OAuthConnections, SearchConsoleSites, type SearchConsoleSiteRow } from "@maple/db/tables"
 import { Clock, Context, Effect, Layer, Option, Schema, String as Str, Array as Arr, Order } from "effect"
@@ -31,15 +32,6 @@ const decodeSiteId = Schema.decodeUnknownSync(SearchConsoleSiteId)
 
 /** Google lists unverified properties too, but answers 403 for their data. */
 const UNVERIFIED_PERMISSION = "siteUnverifiedUser"
-
-/** One property the connected Google account can see, merged with the org's saved choice. */
-export interface SearchConsoleSiteChoice {
-	readonly siteUrl: string
-	readonly permissionLevel: string
-	/** False for unverified properties, which have no data to read. */
-	readonly selectable: boolean
-	readonly enabled: boolean
-}
 
 export interface SearchConsoleStatus {
 	/** False when this deployment has no Google OAuth client. */
@@ -129,14 +121,21 @@ export class SearchConsoleService extends Context.Service<SearchConsoleService, 
 				const entries = yield* fetchGoogleSites(orgId)
 				const saved = yield* loadSites(orgId)
 				return Arr.sort(
-					Arr.map(entries, (entry) => ({
-						siteUrl: entry.siteUrl,
-						permissionLevel: entry.permissionLevel,
-						selectable: entry.permissionLevel !== UNVERIFIED_PERMISSION,
-						enabled: Arr.some(saved, (row) => row.siteUrl === entry.siteUrl && row.enabled),
-					})),
+					Arr.map(
+						entries,
+						(entry) =>
+							new SearchConsoleSiteChoice({
+								siteUrl: entry.siteUrl,
+								permissionLevel: entry.permissionLevel,
+								selectable: entry.permissionLevel !== UNVERIFIED_PERMISSION,
+								enabled: Arr.some(
+									saved,
+									(row) => row.siteUrl === entry.siteUrl && row.enabled,
+								),
+							}),
+					),
 					bySiteUrl,
-				) satisfies ReadonlyArray<SearchConsoleSiteChoice>
+				)
 			})
 
 			const saveSites = Effect.fn("SearchConsoleService.saveSites")(function* (

@@ -25,8 +25,6 @@ import { Array as Arr, String as Str, Option } from "effect"
 import { dividedList } from "@maple/views/ui/rule"
 import { textLink } from "@maple/views/ui/text-link"
 
-// `ConnectedView`'s repository panels, `RepoRow` and `BranchSelector`.
-
 type H = HtmlBuilder<Message>
 
 export const SYNC_PRESENTATION = {

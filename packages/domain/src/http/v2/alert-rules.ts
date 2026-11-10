@@ -1,7 +1,7 @@
 import { HttpApiEndpoint, HttpApiGroup, OpenApi } from "effect/http-api"
 import { Array as Arr, Effect, Schema } from "effect"
 import { QueryEngineAlertReducer, QueryEngineNoDataBehavior } from "../../query-engine"
-import { PostgresTransactionId, UserId } from "../../primitives"
+import { PostgresTransactionId, UserId } from "@maple/primitives"
 import {
 	AlertCheckStatus,
 	AlertSkipReason,
@@ -20,6 +20,7 @@ import {
 	AlertRuleDestinationNotFoundError,
 	AlertRuleNotFoundError,
 	AlertRuleStoredConfigInvalidError,
+	AlertSeriesFailure,
 	AlertSeverity,
 	AlertSignalType,
 	AlertValidationError,
@@ -27,6 +28,7 @@ import {
 	AlertBreachWindow,
 	AlertEvaluationIntervalMinutes,
 	AlertEvaluationErrorKind,
+	AlertRuleTags,
 	type AlertThreshold,
 } from "../alerts"
 import { AnomalySignalType } from "../anomalies"
@@ -112,9 +114,6 @@ export const toV2Threshold = (tier: AlertThreshold): V2AlertThreshold => ({
 	destination_ids: tier.destinationIds,
 	escalation_chain_id: tier.escalationChainId ?? null,
 })
-
-/** Mirrors the v1 caps (alerts.ts): 32-char tags, at most 20 per rule. */
-const RuleTags = Schema.Array(Schema.String.check(Schema.isMaxLength(32))).check(Schema.isMaxLength(20))
 
 /**
  * The dashboard query-builder draft backing `builder_query` rules, passed
@@ -427,7 +426,7 @@ const createParamsFields = {
 			examples: [["error_rate"]],
 		}),
 	),
-	tags: Schema.optionalKey(RuleTags),
+	tags: Schema.optionalKey(AlertRuleTags),
 	group_by: Schema.optionalKey(Schema.NullOr(GroupBy)),
 	signal_type: AlertSignalType.annotate({
 		description: "What the rule measures.",
@@ -698,9 +697,7 @@ export const V2AlertRulePreviewResult = Schema.Struct({
 	query_timing: Schema.optionalKey(V2AlertQueryTiming).annotate({
 		description: "Raw SQL rules only: one check timed against the time limit of the rule's interval.",
 	}),
-	series_failure: Schema.optionalKey(
-		Schema.Literals(["query_too_slow", "query_too_much_memory", "not_time_grouped"]),
-	).annotate({
+	series_failure: Schema.optionalKey(AlertSeriesFailure).annotate({
 		description:
 			"Raw SQL rules only: `series` is empty. `query_too_slow` / `query_too_much_memory`: the range was too heavy to chart within the longest limit (`query_timing` still says whether one check fits; preview a shorter range). `not_time_grouped`: the SQL returns no `bucket` column, so it has one value for the whole range and no per-window series; select `$__timeGroup(<time column>) AS bucket` to chart it.",
 	}),

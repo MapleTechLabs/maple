@@ -29,7 +29,6 @@ export interface CancellationEvidenceInput {
  */
 export const EVIDENCE_GRACE_MS = 60 * 60 * 1000
 
-/** Whether `ms` falls before the evidence ends. */
 export const knownAtCancel = (atMs: number, ms: number): boolean => ms <= atMs + EVIDENCE_GRACE_MS
 
 /**

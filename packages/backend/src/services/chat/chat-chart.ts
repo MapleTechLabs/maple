@@ -20,7 +20,7 @@ import {
 	type ChartSpec,
 	type TimeseriesSpec,
 } from "@maple/domain/chat-chart-spec"
-import { chatChartId, type VerifiedChatChartClaims } from "@maple/db"
+import { chatChartId, type VerifiedChatChartClaims } from "../../platform/signed-ids"
 import { orgIdFromChatSessionId, type ChatMessage } from "@maple/domain/chat-session"
 import type { OrgId, ShareChartResponse } from "@maple/domain/http"
 import { ChartRanked, ChartTimeseries } from "@maple/domain/http"

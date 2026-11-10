@@ -1,8 +1,8 @@
 import {
 	resolveDbNodeStyle,
 	resolvePlanetScaleDbStyle,
-} from "@maple/ui/components/service-map/service-map-db-style"
-import type { PlanetScaleNodeMetrics } from "@maple/ui/components/service-map/service-map-utils"
+} from "@maple/views/service-map/graph/service-map-db-style"
+import type { PlanetScaleNodeMetrics } from "@maple/views/service-map/graph/service-map-utils"
 import { errorRateClass } from "@maple/ui/lib/error-rate"
 import { EMPTY_VALUE, formatErrorRate, formatLatency, formatNumber, formatRate } from "@maple/ui/lib/format"
 import { latencyToneClass } from "@maple/ui/lib/latency-tone"
@@ -39,8 +39,7 @@ import { hstack } from "@maple/views/ui/stack"
 import { sidePanelFrame } from "@maple/views/ui/side-panel"
 import { grid } from "@maple/views/ui/grid"
 
-// The database detail panel.
-// TODO(gcp): `GcpCloudSqlSection` renders only while a GCP connection collects metrics; not ported.
+// TODO(gcp): the Cloud SQL section that shows while a GCP connection collects metrics is not ported.
 
 type H = HtmlBuilder<Message>
 

@@ -7,9 +7,10 @@
 import { Schema } from "effect"
 import * as CH from "@maple-dev/effect-orm/expr"
 import * as T from "@maple-dev/effect-orm/clickhouse"
-import { from, param, type CompiledQueryRowSchema } from "@maple-dev/effect-orm/clickhouse"
+import { from, param } from "@maple-dev/effect-orm/clickhouse"
 import { CHNumber } from "../schema"
-import { MetricsSum, orgIdParam } from "../tables"
+import * as Datasources from "@maple/domain/tinybird/datasources"
+import { orgIdParam } from "../tables"
 
 /** The instrumentation scope the gateway stamps on metric stream data. */
 export const AWS_METRIC_STREAM_SCOPE = "aws.cloudwatch.metric_stream"
@@ -17,35 +18,27 @@ export const AWS_METRIC_STREAM_SCOPE = "aws.cloudwatch.metric_stream"
 /** Resources listed per namespace and region; the count covers the rest. */
 export const AWS_INGEST_RESOURCE_SAMPLE = 8
 
-export interface AwsIngestOutput {
-	/** The CloudWatch namespace, `AWS/ECS`. */
-	readonly namespace: string
-	/** The stream's region; empty when the stream did not say. */
-	readonly region: string
-	/** Distinct CloudWatch metric names. */
-	readonly metrics: number
-	/** CloudWatch data points received. */
-	readonly dataPoints: number
-	/** Distinct `service.name`s: the most specific dimension, else `aws/<namespace>`. */
-	readonly resources: number
-	readonly sampleResources: ReadonlyArray<string>
-	/** ClickHouse DateTime64 literal of the newest point. */
-	readonly lastPointAt: string
-}
-
 export const awsIngestRowSchema = Schema.Struct({
+	/** The CloudWatch namespace, `AWS/ECS`. */
 	namespace: Schema.String,
+	/** The stream's region; empty when the stream did not say. */
 	region: Schema.String,
+	/** Distinct CloudWatch metric names. */
 	metrics: CHNumber,
+	/** CloudWatch data points received. */
 	dataPoints: CHNumber,
+	/** Distinct `service.name`s: the most specific dimension, else `aws/<namespace>`. */
 	resources: CHNumber,
 	sampleResources: Schema.Array(Schema.String),
+	/** ClickHouse DateTime64 literal of the newest point. */
 	lastPointAt: Schema.String,
-}) satisfies CompiledQueryRowSchema<AwsIngestOutput>
+})
+
+export type AwsIngestOutput = typeof awsIngestRowSchema.Type
 
 /** One connection's stored points per namespace and region. Params: orgId, connectionId, startTime, endTime. */
 export function awsIngestQuery() {
-	return from(MetricsSum)
+	return from(Datasources.metricsSum)
 		.select(($) => ({
 			namespace: $.Attributes.get("aws.namespace"),
 			region: $.ResourceAttributes.get("cloud.region"),

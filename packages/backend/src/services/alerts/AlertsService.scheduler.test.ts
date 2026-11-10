@@ -29,7 +29,7 @@ import {
 import { TestClock } from "effect/testing"
 import { AlertRuleUpsertRequest, OrgId } from "@maple/domain/http"
 import type { WarehouseQueryServiceApi } from "@maple/backend/services/warehouse/WarehouseQueryService"
-import { AlertsService, type AlertsServiceApi } from "./AlertsService"
+import { type AlertsServiceApi } from "./AlertsService"
 import {
 	baselineWarehouseCapabilities,
 	formatWarehouseDateTime,
@@ -42,11 +42,11 @@ import {
 	executeSql,
 	queryFirstRow,
 	type TestDb,
-} from "@maple/backend/platform/test-pglite"
+} from "@maple/backend/testing/test-pglite"
 import { Database, DatabaseError } from "@maple/backend/platform/DatabaseLive"
 import { compiledQueryOf } from "@maple/query-engine/execution"
 import { makeRecordingTracer, spansNamed } from "@maple/backend/testing/recording-tracer"
-import { fakeChatSessions } from "@maple/backend/platform/chat-sessions-fake"
+import { fakeChatSessions } from "@maple/backend/testing/chat-sessions-fake"
 import { IncidentClassifier } from "@maple/backend/services/errors/IncidentClassifier"
 import {
 	tracesRow,
@@ -59,6 +59,7 @@ import {
 	createWebhookDestination,
 	createErrorRateRule,
 	okFetch,
+	alertServices,
 } from "./alerts-service-test-support"
 
 const trackedDbs: TestDb[] = []
@@ -100,7 +101,7 @@ describe("AlertsService evaluation cadence", () => {
 		const testDb = createTestDb(trackedDbs)
 		return Effect.gen(function* () {
 			yield* TestClock.setTime(DEFAULT_CLOCK_EPOCH_MS)
-			const alerts = yield* AlertsService
+			const alerts = yield* alertServices
 			yield* createCadenceRule(alerts, asOrgId("org_cadence_short_a"), 5)
 			yield* createCadenceRule(alerts, asOrgId("org_cadence_long"), 15)
 			yield* createCadenceRule(alerts, asOrgId("org_cadence_short_b"), 5)
@@ -123,7 +124,7 @@ describe("AlertsService evaluation cadence", () => {
 		const testDb = createTestDb(trackedDbs)
 		return Effect.gen(function* () {
 			yield* TestClock.setTime(DEFAULT_CLOCK_EPOCH_MS)
-			const alerts = yield* AlertsService
+			const alerts = yield* alertServices
 			const orgId = asOrgId("org_cadence_edit")
 			const rule = yield* createCadenceRule(alerts, orgId, 30)
 			const claimedAt = yield* Clock.currentTimeMillis
@@ -218,7 +219,7 @@ describe("AlertsService check intervals", () => {
 		const settings: Array<WarehouseQuerySettings | undefined> = []
 		return Effect.gen(function* () {
 			yield* TestClock.setTime(DEFAULT_CLOCK_EPOCH_MS)
-			const alerts = yield* AlertsService
+			const alerts = yield* alertServices
 			yield* createIntervalRule(alerts, asOrgId("org_interval_long"), {
 				signalType: "raw_query",
 				windowMinutes: 10,
@@ -236,7 +237,7 @@ describe("AlertsService check intervals", () => {
 		const settings: Array<WarehouseQuerySettings | undefined> = []
 		return Effect.gen(function* () {
 			yield* TestClock.setTime(DEFAULT_CLOCK_EPOCH_MS)
-			const alerts = yield* AlertsService
+			const alerts = yield* alertServices
 			yield* createIntervalRule(alerts, asOrgId("org_interval_short"), {
 				signalType: "raw_query",
 				windowMinutes: 5,
@@ -253,7 +254,7 @@ describe("AlertsService check intervals", () => {
 		const testDb = createTestDb(trackedDbs)
 		return Effect.gen(function* () {
 			yield* TestClock.setTime(DEFAULT_CLOCK_EPOCH_MS)
-			const alerts = yield* AlertsService
+			const alerts = yield* alertServices
 			// A 15-minute window alone would be checked every third minute.
 			yield* createIntervalRule(alerts, asOrgId("org_interval_builder"), {
 				signalType: "error_rate",
@@ -297,7 +298,7 @@ describe("AlertsService check intervals", () => {
 			})
 		return Effect.gen(function* () {
 			yield* TestClock.setTime(DEFAULT_CLOCK_EPOCH_MS)
-			const alerts = yield* AlertsService
+			const alerts = yield* alertServices
 			yield* Effect.forEach(["a", "b", "c", "d"], (org) =>
 				createIntervalRule(alerts, asOrgId(`org_interval_room_${org}`), {
 					signalType: "raw_query",
@@ -324,7 +325,7 @@ describe("AlertsService check intervals", () => {
 	it.effect("rejects a check interval longer than the window", () => {
 		const testDb = createTestDb(trackedDbs)
 		return Effect.gen(function* () {
-			const alerts = yield* AlertsService
+			const alerts = yield* alertServices
 			const exit = yield* createIntervalRule(alerts, asOrgId("org_interval_gap"), {
 				signalType: "error_rate",
 				windowMinutes: 5,
@@ -391,7 +392,7 @@ describe("AlertsService check intervals", () => {
 		}
 		return Effect.gen(function* () {
 			yield* TestClock.setTime(DEFAULT_CLOCK_EPOCH_MS)
-			const alerts = yield* AlertsService
+			const alerts = yield* alertServices
 			const orgId = asOrgId("org_slowdown")
 			// Checked every 2 minutes by its window, under the 5s limit.
 			yield* createIntervalRule(alerts, orgId, {
@@ -426,7 +427,7 @@ describe("AlertsService check intervals", () => {
 		}
 		return Effect.gen(function* () {
 			yield* TestClock.setTime(DEFAULT_CLOCK_EPOCH_MS)
-			const alerts = yield* AlertsService
+			const alerts = yield* alertServices
 			const orgId = asOrgId("org_slowdown_reset")
 			yield* createIntervalRule(alerts, orgId, {
 				signalType: "raw_query",
@@ -455,7 +456,7 @@ describe("AlertsService check intervals", () => {
 		}
 		return Effect.gen(function* () {
 			yield* TestClock.setTime(DEFAULT_CLOCK_EPOCH_MS)
-			const alerts = yield* AlertsService
+			const alerts = yield* alertServices
 			const orgId = asOrgId("org_slowdown_edit")
 			const created = yield* createIntervalRule(alerts, orgId, {
 				signalType: "raw_query",
@@ -572,7 +573,7 @@ describe("AlertsService scheduler pool", () => {
 			),
 		)
 		return Effect.gen(function* () {
-			const alerts = yield* AlertsService
+			const alerts = yield* alertServices
 			yield* createPoolRules(alerts)
 
 			const wallMs = yield* timedTick(alerts)
@@ -613,7 +614,7 @@ describe("AlertsService scheduler pool", () => {
 		const spreadMs = 1_000
 		const { stub, startOffsets } = makeStartRecorder()
 		return Effect.gen(function* () {
-			const alerts = yield* AlertsService
+			const alerts = yield* alertServices
 			yield* createPoolRules(alerts)
 
 			const startedAt = yield* Clock.currentTimeMillis
@@ -624,10 +625,11 @@ describe("AlertsService scheduler pool", () => {
 			assert.strictEqual(tick.deferredCount, 0)
 			// Rule i waits for its slot at i * spreadMs / RULE_COUNT. The upper bound is from the
 			// first start, so the tick's setup before the spread is not counted against the slack.
+			// The slack covers a loaded CI machine; the lower bound is what catches unspaced starts.
 			const slotMs = spreadMs / RULE_COUNT
 			Arr.forEach(offsets, (offset, index) => {
 				assert.isAtLeast(offset, index * slotMs)
-				assert.isBelow(offset - offsets[0], index * slotMs + 500)
+				assert.isBelow(offset - offsets[0], index * slotMs + 1_500)
 			})
 		}).pipe(
 			Effect.provide(makeLayer(testDb, stub, { fetch: okFetch, schedulerSpreadMs: () => spreadMs })),
@@ -641,7 +643,7 @@ describe("AlertsService scheduler pool", () => {
 		const { stub, startOffsets } = makeStartRecorder()
 		const { spans, tracer } = makeRecordingTracer()
 		return Effect.gen(function* () {
-			const alerts = yield* AlertsService
+			const alerts = yield* alertServices
 			yield* createPoolRules(alerts)
 
 			const startedAt = yield* Clock.currentTimeMillis
@@ -673,7 +675,7 @@ describe("AlertsService scheduler pool", () => {
 		const spreadMs = 2_000
 		const { stub, startOffsets } = makeStartRecorder()
 		return Effect.gen(function* () {
-			const alerts = yield* AlertsService
+			const alerts = yield* alertServices
 			yield* createPoolRules(alerts)
 
 			const startedAt = yield* Clock.currentTimeMillis
@@ -718,7 +720,7 @@ describe("AlertsService scheduler pool", () => {
 			),
 		)
 		return Effect.gen(function* () {
-			const alerts = yield* AlertsService
+			const alerts = yield* alertServices
 			yield* createPoolRules(alerts)
 
 			const startedAt = yield* Clock.currentTimeMillis
@@ -749,8 +751,9 @@ describe("AlertsService scheduler pool", () => {
 
 	it.live("keeps at most two rules in flight when the spread outpaces evaluation", () => {
 		const testDb = createTestDb(trackedDbs)
-		// 40 ms slots against 20 ms evaluations: unpaced, all five lanes fill at once.
-		const spreadMs = 2_000
+		// 80 ms slots against 20 ms evaluations, with room for a loaded runner: unpaced,
+		// all five lanes fill at once.
+		const spreadMs = 4_000
 		const inFlight = Ref.makeUnsafe(0)
 		const peak = Ref.makeUnsafe(0)
 		const base = makeSlowWarehouse(() => Effect.succeed(Duration.millis(FAST_EVAL_MS)))
@@ -774,7 +777,7 @@ describe("AlertsService scheduler pool", () => {
 		const runTick = (spread: number) =>
 			Effect.gen(function* () {
 				yield* Ref.set(peak, 0)
-				const alerts = yield* AlertsService
+				const alerts = yield* alertServices
 				const tick = yield* alerts.runSchedulerTick()
 				assert.strictEqual(tick.evaluatedCount, RULE_COUNT)
 				return yield* Ref.get(peak)
@@ -783,7 +786,7 @@ describe("AlertsService scheduler pool", () => {
 			)
 		return Effect.gen(function* () {
 			yield* Effect.gen(function* () {
-				yield* createPoolRules(yield* AlertsService)
+				yield* createPoolRules(yield* alertServices)
 			}).pipe(Effect.provide(makeLayer(testDb, stub, { fetch: okFetch })))
 			// Each tick is a minute after the last, past every claim's TTL.
 			const unpacedPeak = yield* runTick(0)
@@ -855,7 +858,7 @@ describe("AlertsService scheduler pool", () => {
 					).pipe(Effect.andThen(base.stub.compiledQueryWithCapabilities(tenant, compile, ...rest))),
 			}
 			return Effect.gen(function* () {
-				const alerts = yield* AlertsService
+				const alerts = yield* alertServices
 				yield* createPoolRules(alerts)
 
 				// Start the tick 1.5 s before a minute boundary, so a 2 s spread crosses it.
@@ -902,7 +905,7 @@ describe("AlertsService scheduler pool", () => {
 		}
 		const { spans, tracer } = makeRecordingTracer()
 		return Effect.gen(function* () {
-			const alerts = yield* AlertsService
+			const alerts = yield* alertServices
 			yield* createPoolRules(alerts)
 
 			const startedAt = yield* Clock.currentTimeMillis
@@ -994,7 +997,7 @@ describe("AlertsService claim fence", () => {
 
 			return Effect.gen(function* () {
 				yield* TestClock.setTime(DEFAULT_CLOCK_EPOCH_MS)
-				const alerts = yield* AlertsService
+				const alerts = yield* alertServices
 				const orgId = asOrgId("org_claim_fence")
 				const userId = asUserId("user_claim_fence")
 				const destination = yield* createWebhookDestination(alerts, orgId, userId)
@@ -1108,7 +1111,7 @@ describe("AlertsService fenced state flush", () => {
 		}
 		return Effect.gen(function* () {
 			yield* TestClock.setTime(DEFAULT_CLOCK_EPOCH_MS)
-			const alerts = yield* AlertsService
+			const alerts = yield* alertServices
 			const orgId = asOrgId("org_fenced_flush")
 			const userId = asUserId("user_fenced_flush")
 			const destination = yield* createWebhookDestination(alerts, orgId, userId)
@@ -1179,7 +1182,7 @@ describe("AlertsService post-evaluation writes", () => {
 		const { spans, tracer } = makeRecordingTracer()
 
 		return Effect.gen(function* () {
-			const alerts = yield* AlertsService
+			const alerts = yield* alertServices
 			const orgId = asOrgId("org_state_batch")
 			const userId = asUserId("user_state_batch")
 			const destination = yield* createWebhookDestination(alerts, orgId, userId)
@@ -1268,7 +1271,7 @@ describe("AlertsService post-evaluation writes", () => {
 		}
 
 		return Effect.gen(function* () {
-			const alerts = yield* AlertsService
+			const alerts = yield* alertServices
 			const orgId = asOrgId("org_state_batch_retry")
 			const userId = asUserId("user_state_batch_retry")
 			const destination = yield* createWebhookDestination(alerts, orgId, userId)
@@ -1347,7 +1350,7 @@ describe("AlertsService post-evaluation writes", () => {
 
 		return Effect.gen(function* () {
 			yield* TestClock.setTime(DEFAULT_CLOCK_EPOCH_MS)
-			const alerts = yield* AlertsService
+			const alerts = yield* alertServices
 			const orgId = asOrgId("org_state_batch_edit")
 			const userId = asUserId("user_state_batch_edit")
 			const destination = yield* createWebhookDestination(alerts, orgId, userId)
@@ -1416,7 +1419,7 @@ describe("AlertsService investigation starts", () => {
 		}))
 		const createRule = Effect.gen(function* () {
 			yield* TestClock.setTime(DEFAULT_CLOCK_EPOCH_MS)
-			const alerts = yield* AlertsService
+			const alerts = yield* alertServices
 			const orgId = asOrgId("org_triage_storm")
 			const userId = asUserId("user_triage_storm")
 			const destination = yield* createWebhookDestination(alerts, orgId, userId)

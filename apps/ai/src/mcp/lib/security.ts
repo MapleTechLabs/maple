@@ -5,7 +5,7 @@
  */
 import { DateTime, Effect, Option, Order, Array as Arr, String as Str } from "effect"
 import type { SecurityAuditFindingRow, SecurityAuditRunRow, SecurityAuditTargetRow } from "@maple/db/tables"
-import type { DependencyFindingView, DependencyScanRepository } from "@maple/domain/http"
+import type { DependencyFindingView, DependencyScanRepository, TenantContext } from "@maple/domain/http"
 import type { DependencyFindingId } from "@maple/domain/dependency-scan"
 import type {
 	SecurityArea,
@@ -32,7 +32,6 @@ import { PROBE_CATEGORIES, probeCategoryOf } from "@maple/domain/security-teleme
 import { CH } from "@maple/query-engine"
 import { truncate } from "./format"
 import { WarehouseQueryService } from "@maple/backend/services/warehouse/WarehouseQueryService"
-import type { TenantContext } from "@maple/backend/services/auth/tenant-context"
 import * as Policy from "@maple/domain/policy"
 import { OrganizationFeatureFlagsService } from "@maple/backend/services/org/OrganizationFeatureFlagsService"
 import {
@@ -70,9 +69,6 @@ export const SEVERITY_RANK = {
 	informational: 4,
 	unknown: 5,
 } satisfies Record<SecuritySeverity, number>
-
-// ---------------------------------------------------------------------------------------------
-// Code audit
 
 export interface CodeTarget {
 	readonly target: SecurityAuditTargetRow
@@ -282,9 +278,6 @@ export const codeRows = (
 		})),
 	)
 
-// ---------------------------------------------------------------------------------------------
-// Dependencies
-
 export type DependencyRead =
 	| {
 			readonly _tag: "read"
@@ -414,9 +407,6 @@ export const displayAdvisory = (finding: Pick<DependencyFindingView, "advisoryId
 		{ onNone: () => finding.advisoryId, onSome: (cve) => `${cve} (${finding.advisoryId})` },
 	)
 }
-
-// ---------------------------------------------------------------------------------------------
-// Exposure
 
 type SignatureRow = CH.ScannerSignaturesOutput
 type ExposedRow = CH.ScannerExposedOutput
@@ -587,9 +577,6 @@ export const exposureCategories = (read: ExposureRead, service?: string): Readon
 		: [...categories, summarize("Named scanners on ordinary paths", scanners, false)]
 }
 
-// ---------------------------------------------------------------------------------------------
-// Runtimes
-
 type RuntimeRow = CH.RuntimeVersionsOutput
 
 export interface RuntimeEntry {
@@ -739,9 +726,6 @@ export const runtimeRows = (entries: ReadonlyArray<RuntimeEntry>): ReadonlyArray
 		]
 	})
 
-// ---------------------------------------------------------------------------------------------
-// Ranking and filters
-
 export const SEVERITY_FLOORS = ["critical", "high", "medium", "low"] as const
 export type SeverityFloor = (typeof SEVERITY_FLOORS)[number]
 
@@ -795,9 +779,6 @@ export const countBySeverity = (rows: ReadonlyArray<SecurityFindingRow>) => ({
 	low: Arr.filter(rows, (row) => row.severity === "low").length,
 	other: Arr.filter(rows, (row) => row.severity === "informational" || row.severity === "unknown").length,
 })
-
-// ---------------------------------------------------------------------------------------------
-// Areas: one summary line, the area's rows and the facts worth a note
 
 export interface AreaResult {
 	readonly area: SecurityArea
@@ -997,9 +978,6 @@ export const runtimeArea = (read: RuntimesRead | AreaGate): AreaResult => {
 				: [`Not checked for CVEs this time: ${Arr.join(read.skipped, ", ")}.`],
 	}
 }
-
-// ---------------------------------------------------------------------------------------------
-// Repositories: what audits and scans each one, and whether a filtered one was ever read
 
 /** Every audited or connected repository with its latest audit run and dependency scan. */
 export const repositoryCoverage = (

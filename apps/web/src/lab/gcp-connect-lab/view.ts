@@ -2,7 +2,7 @@ import { Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import type { Message as IntegrationsMessage } from "../../page/integrations/message"
 import type { Model as IntegrationsModel } from "../../page/integrations/model"
-import { gcpConfigure } from "../../page/integrations/view-gcp-configure"
+import { gcpConfigure } from "../../page/infra-integrations/gcp/integration/view-gcp-configure"
 import { button } from "@maple/views/ui/button"
 import * as ToggleGroup from "@maple/views/ui/toggle-group"
 import { LAB_STATES, STATES } from "./fixture"
@@ -11,7 +11,7 @@ import { Array as Arr } from "effect"
 
 type H = HtmlBuilder<Message>
 
-/** `GcpConfigure` / `GcpConfigureFrame`: the page's dialog, open while the wizard is. */
+/** The page's dialog, open while the wizard is. */
 const dialogView = Submodel.defineView<
 	IntegrationsModel,
 	IntegrationsMessage,

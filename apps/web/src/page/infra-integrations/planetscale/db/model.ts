@@ -1,8 +1,8 @@
+import { ChartEnvMessages, ChartEnvFields } from "@maple/views/charts/chart-env"
+import { RequestMode } from "@maple/views/data/keyed"
 import { Schema } from "effect"
 import { defineMessageUnion } from "foldkit/message"
 import * as Chart from "@maple/views/charts/chart"
-import { ChartRuntime } from "@maple/views/charts/chart-runtime"
-import { ThemeColors } from "@maple/views/charts/theme-colors"
 import { KeyedSchema } from "@maple/views/data/keyed"
 import { LoadFailure } from "@maple/views/data/load-failure"
 import { TimeWindow } from "../../../../data/time-range"
@@ -20,8 +20,6 @@ import {
 	QueryInsights,
 	TimeseriesRow,
 } from "../data"
-
-// `/infra/planetscale/$dbName`.
 
 export const Measure = Schema.Literals(["connections", "cpu", "memory", "storage", "lag"])
 export type Measure = typeof Measure.Type
@@ -53,16 +51,12 @@ export const Model = Schema.Struct({
 	branchSelect: Select.Model,
 	filterSections: FilterSections.Model,
 	tooltip: Tooltip.Model,
-	chartRuntime: ChartRuntime,
-	themeColors: Schema.NullOr(ThemeColors),
+	...ChartEnvFields,
 	timePicker: TimeRangePicker.Model,
 	refreshVersion: Schema.Number,
 	isReloading: Schema.Boolean,
 })
 export type Model = typeof Model.Type
-
-export const RequestMode = Schema.Literals(["Load", "Refresh"])
-export type RequestMode = typeof RequestMode.Type
 
 const result = <A extends Schema.Top>(schema: A) => ({
 	key: Schema.String,
@@ -82,9 +76,7 @@ export const Message = defineMessageUnion({
 	CompletedFetchTimeseries: result(Schema.Array(TimeseriesRow)),
 	CompletedFetchEvents: result(Schema.Array(EventEntry)),
 	CompletedFetchInsights: result(QueryInsights),
-	CompletedLoadChartRuntime: {},
-	FailedLoadChartRuntime: { reason: Schema.String },
-	ResolvedThemeColors: { colors: ThemeColors },
+	...ChartEnvMessages,
 	ClickedRetryTimeseries: {},
 	ClickedRetryBranchStats: {},
 	ClickedMeasure: { measure: Measure },

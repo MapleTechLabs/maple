@@ -18,8 +18,6 @@ import {
 } from "./search-console"
 import { chain, requestStatus } from "./update-status"
 
-// The Google Search Console card's state changes: the property list and the saved selection.
-
 type Return = PageReturn<Model, Message>
 
 const withCard = (model: Model, card: Partial<SearchConsoleCardModel>): Model => ({

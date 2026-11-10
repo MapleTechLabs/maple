@@ -4,8 +4,8 @@ import { expect as expectView, given, Mount, role, scene, text, withViewInputs }
 import { LinkedCursorMessage, MountLinkedCursor } from "@maple/views/charts/linked-cursor"
 import { ResolveThemeColors, ThemeMessage } from "@maple/views/charts/theme-colors"
 import { describe, test } from "vitest"
-import type { UptimeMonitor } from "../../alerts/shared/uptime-derive"
-import { downMonitor, httpMonitor } from "../../alerts/shared/uptime-test-monitors"
+import type { UptimeMonitor } from "../../kit/uptime/derive"
+import { downMonitor, httpMonitor } from "../../kit/uptime/test-monitors"
 import type { PageContext } from "../../contract"
 import { Message } from "./message"
 import type { Model } from "./model"
@@ -73,7 +73,7 @@ describe("service detail, Uptime card", () => {
 				"href",
 				"/alerts/uptime/new?serviceName=checkout-api",
 			),
-			expectView(role("link", { name: "Open in Alerts" })).toHaveAttr("href", "/alerts?tab=uptime"),
+			expectView(role("link", { name: "Open in Alerts" })).toHaveAttr("href", "/alerts/uptime"),
 		)
 	})
 })

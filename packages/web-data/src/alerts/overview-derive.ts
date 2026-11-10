@@ -1,4 +1,5 @@
 import type { AlertIncidentDocument, AlertRuleDocument } from "@maple/domain/http"
+import { compareAlertThreshold } from "@maple/alerting-core/tiers"
 import { sloNameFromRuleName } from "@maple/domain/slo"
 
 import {
@@ -52,10 +53,6 @@ type IncidentLine = Pick<
 	"signalType" | "ruleName" | "groupKey" | "groupLabel" | "status" | "lastObservedValue" | "threshold"
 >
 
-/** The group as people read it: the stored label, else the key; an anomaly's key is never shown. */
-const shownGroup = (incident: IncidentLine): string | null =>
-	incident.groupLabel ?? (incident.signalType === "anomaly" ? null : incident.groupKey)
-
 /** Uptime incidents name the monitor ("checkout-api is down"), not a signal and a value. */
 const isUptime = (incident: Pick<AlertIncidentDocument, "signalType">) => incident.signalType === "uptime"
 
@@ -77,18 +74,18 @@ export function incidentTitle(incident: IncidentLine): string {
 		return `${sloNameOf(incident.ruleName)} ${incident.status === "resolved" ? "stopped burning its error budget" : "is burning its error budget"}`
 	if (isQueryIncident(incident)) return incident.ruleName
 	if (incident.signalType === "anomaly") {
-		const group = shownGroup(incident)
+		const group = incidentGroup(incident)
 		return group === null ? "Anomaly" : `Anomaly on ${group}`
 	}
 	const value = formatSignalValue(incident.signalType, incident.lastObservedValue)
 	const base = `${signalLabels[incident.signalType]} ${value}`
-	const group = shownGroup(incident)
+	const group = incidentGroup(incident)
 	return group === null ? base : `${base} on ${group}`
 }
 
-/** The group shown next to the rule name: an uptime or SLO incident's only when it is a real one. */
+/** The group shown next to the rule name: none for an ungrouped incident, never an anomaly's incident-id key. */
 export function incidentScope(incident: IncidentLine): string | null {
-	return isUptime(incident) || isSlo(incident) ? incidentGroup(incident) : shownGroup(incident)
+	return incidentGroup(incident)
 }
 
 /** The line under the title: the rule and group, or a query rule's kind and group (its name is the title). */
@@ -122,34 +119,21 @@ export interface Headroom {
 	readonly breached: boolean
 	/** Fraction of the threshold left before breaching; null for range/equality comparators. */
 	readonly headroom: number | null
-	/** Past the threshold, or within `NEAR_HEADROOM` of it: what the hub draws in warning colour. */
+	/** Past the threshold, or within `NEAR_HEADROOM` of it: what `headroomTone` reads. */
 	readonly isNear: boolean
 }
 
-/** Under a fifth of the threshold left counts as near firing, on every surface that says so. */
-export const NEAR_HEADROOM = 0.2
+/** Under a tenth of the threshold left counts as near firing, on every surface that says so. */
+export const NEAR_HEADROOM = 0.1
 
-const breaches = (rule: AlertRuleDocument, value: number): boolean => {
-	const upper = rule.thresholdUpper ?? rule.threshold
-	switch (rule.comparator) {
-		case "gt":
-			return value > rule.threshold
-		case "gte":
-			return value >= rule.threshold
-		case "lt":
-			return value < rule.threshold
-		case "lte":
-			return value <= rule.threshold
-		case "eq":
-			return value === rule.threshold
-		case "neq":
-			return value !== rule.threshold
-		case "between":
-			return value >= rule.threshold && value <= upper
-		case "not_between":
-			return value < rule.threshold || value > upper
-	}
-}
+export type HeadroomTone = "neutral" | "warning" | "error"
+
+/**
+ * How a reading against its threshold is drawn, in the rules table and the Inbox alike: neutral
+ * unless under `NEAR_HEADROOM` is left (warning) or the threshold is passed (error).
+ */
+export const headroomTone = (reading: Pick<Headroom, "breached" | "isNear">): HeadroomTone =>
+	reading.breached ? "error" : reading.isNear ? "warning" : "neutral"
 
 /** Current value against the threshold on a shared 0..max scale. */
 export function ruleHeadroom(rule: AlertRuleDocument, value: number): Headroom {
@@ -165,7 +149,7 @@ export function ruleHeadroom(rule: AlertRuleDocument, value: number): Headroom {
 				: below
 					? (value - rule.threshold) / rule.threshold
 					: null
-	const breached = breaches(rule, value)
+	const breached = compareAlertThreshold(value, rule.comparator, rule.threshold, rule.thresholdUpper)
 	return {
 		fill: Math.min(1, Math.max(0, value / max)),
 		ticks: Arr.map(thresholds, (t) => Math.min(1, Math.max(0, t / max))),

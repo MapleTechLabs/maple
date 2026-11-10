@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest"
 import { Schema, Array as Arr } from "effect"
-import { StatusPageComponentId } from "../../primitives"
+import { StatusPageComponentId } from "@maple/primitives"
 import { DEFAULT_STATUS_PAGE_THEME } from "../../status-page"
 import { diffStatusPageConfig, StatusPageConfig, statusPageConfigVersion } from "./status-pages"
 

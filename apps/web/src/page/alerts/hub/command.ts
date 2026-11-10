@@ -1,3 +1,4 @@
+import { readClock } from "@maple/views/data/timing"
 import { UptimeMonitorId } from "@maple/domain"
 import {
 	AlertDestinationId,
@@ -14,9 +15,9 @@ import { getServiceOverview } from "@maple/web-data/warehouse/services"
 import { Cause, Clock, Effect, Schema } from "effect"
 import { IdleTtl } from "../../../data/idle-ttl"
 import { readThrough } from "../../../data/read-cache"
-import { readGrants } from "../../../data/session-tenant"
-import { toLoadFailure } from "@maple/views/data/load-failure"
+import { toLoadFailure, settleTo } from "@maple/views/data/load-failure"
 import { Command } from "foldkit"
+import { dismissSheetUrl, pushSheetUrl } from "../../kit/sheet-param"
 import {
 	deleteDestination,
 	listDeliveries,
@@ -30,7 +31,7 @@ import { deleteEscalationChain, listEscalationChains } from "../shared/escalatio
 import { deleteOnCallSchedule, listOnCallSchedules } from "../shared/oncall-schedules"
 import { listOrgMembers } from "../shared/org-members"
 import { listSloRows } from "../shared/slo-commands"
-import { deleteMonitor, listMonitors, setMonitorEnabled } from "../shared/uptime-commands"
+import { deleteMonitor, listMonitors, setMonitorEnabled } from "../../kit/uptime/commands"
 import { endSilence, listSilences } from "../shared/silences"
 import {
 	deleteMaintenanceWindow,
@@ -40,11 +41,32 @@ import {
 } from "../shared/maintenance-windows"
 import { Message } from "./message"
 import { ServiceNamespaces, serviceNamespaces } from "./uptime-groups"
+import { fetchSessionGrants } from "../../kit/session-grants"
 
-export const ReadHubClock = Command.define("ReadAlertsHubClock", {
+const sheetArgs = { href: Schema.String, id: Schema.String }
+
+/** A command must answer with a message: a sheet change answers with the clock, as a route change reads it. */
+const thenReadClock = (effect: Effect.Effect<void>) =>
+	effect.pipe(
+		Effect.andThen(Clock.currentTimeMillis),
+		Effect.map((nowMs) => Message.ReadClock({ nowMs })),
+	)
+
+/** Opens a side panel: a history entry carrying `?sheet=`, marked as this tab's. */
+export const PushHubSheet = Command.define("PushAlertsHubSheet", {
+	args: sheetArgs,
 	messages: [Message.ReadClock],
-	execute: Effect.map(Clock.currentTimeMillis, (nowMs) => Message.ReadClock({ nowMs })),
+	execute: ({ href, id }) => thenReadClock(pushSheetUrl(href, id)),
 })
+
+/** Closes it: Back over the entry this tab pushed, else `?sheet=` replaced away. */
+export const DismissHubSheet = Command.define("DismissAlertsHubSheet", {
+	args: sheetArgs,
+	messages: [Message.ReadClock],
+	execute: ({ href, id }) => thenReadClock(dismissSheetUrl(href, id)),
+})
+
+export const ReadHubClock = readClock("ReadAlertsHubClock", Message.ReadClock)
 
 export const FetchHubDeliveries = Command.define("FetchAlertsHubDeliveries", {
 	args: { key: Schema.String },
@@ -57,7 +79,7 @@ export const FetchHubDeliveries = Command.define("FetchAlertsHubDeliveries", {
 })
 
 /**
- * The Routing tab renders `deliveryEventsResult.cause`, which can carry no typed failure
+ * The Routing tab renders the read's failure, which can carry no typed one
  * (observed: "An unexpected error occurred" for a 500), so the slot keeps the unexpected body too.
  */
 export const FetchRoutingDeliveries = Command.define("FetchAlertsRoutingDeliveries", {
@@ -71,12 +93,7 @@ export const FetchRoutingDeliveries = Command.define("FetchAlertsRoutingDeliveri
 		),
 })
 
-export const FetchHubSession = Command.define("FetchAlertsHubSession", {
-	args: { orgId: Schema.String },
-	messages: [Message.CompletedFetchSession],
-	execute: ({ orgId }) =>
-		Effect.map(readGrants, (grants) => Message.CompletedFetchSession({ orgId, grants })),
-})
+export const FetchHubSession = fetchSessionGrants("FetchAlertsHubSession", Message.CompletedFetchSession)
 
 export const ToggleRule = Command.define("ToggleAlertRule", {
 	args: { ruleId: AlertRuleId, isEnabled: Schema.Boolean },
@@ -88,7 +105,6 @@ export const ToggleRule = Command.define("ToggleAlertRule", {
 		),
 })
 
-/** The inbox row's acknowledge button. */
 export const AcknowledgeIncident = Command.define("AcknowledgeAlertIncident", {
 	args: { incidentId: AlertIncidentId, acknowledged: Schema.Boolean },
 	messages: [Message.CompletedAcknowledgeIncident],
@@ -101,7 +117,7 @@ export const AcknowledgeIncident = Command.define("AcknowledgeAlertIncident", {
 		),
 })
 
-/** `DestinationManager.toggle` and the dialog's save: PATCH the destination. */
+/** The row's toggle and the dialog's save: PATCH the destination. */
 export const UpdateDestination = Command.define("UpdateAlertDestination", {
 	args: { destinationId: AlertDestinationId, payload: V2AlertDestinationUpdateParams },
 	messages: [Message.CompletedUpdateDestination],
@@ -159,11 +175,7 @@ export const FetchServiceNamespaces = Command.define("FetchAlertsHubServiceNames
 					serviceNamespaces(response.data),
 				),
 			)
-		}).pipe(
-			Effect.mapError(toLoadFailure),
-			Effect.result,
-			Effect.map((result) => Message.CompletedFetchServiceNamespaces({ key, result })),
-		),
+		}).pipe(settleTo((result) => Message.CompletedFetchServiceNamespaces({ key, result }))),
 })
 
 export const ToggleMonitor = Command.define("ToggleUptimeMonitor", {
@@ -186,7 +198,6 @@ export const DeleteMonitor = Command.define("DeleteUptimeMonitor", {
 		),
 })
 
-/** The SLOs tab's list, each row with its status. */
 export const FetchHubSlos = Command.define("FetchAlertsHubSlos", {
 	args: { key: Schema.String },
 	messages: [Message.CompletedFetchSlos],
@@ -197,7 +208,6 @@ export const FetchHubSlos = Command.define("FetchAlertsHubSlos", {
 		),
 })
 
-/** The Routing tab's escalation chains. */
 export const FetchHubChains = Command.define("FetchAlertsHubChains", {
 	args: { key: Schema.String },
 	messages: [Message.CompletedFetchChains],

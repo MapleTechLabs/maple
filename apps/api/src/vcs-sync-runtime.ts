@@ -12,10 +12,10 @@ import {
 import { VcsSyncService } from "@maple/backend/services/integrations/vcs/VcsSyncService"
 
 import { IssueFixVerificationService } from "@maple/backend/services/errors/IssueFixVerificationService"
-import { PullRequestLookup } from "@maple/backend/services/errors/PullRequestLookup"
 import { fixVerificationPullRequestHandler } from "@maple/backend/services/errors/pull-request-sink-live"
 import { pullRequestEventSinkFanout } from "@maple/backend/services/integrations/vcs/PullRequestEventSink"
 import { PrReviewService } from "@maple/backend/services/pr-review/PrReviewService"
+import { FindingEmbedder } from "@maple/backend/services/pr-review/FindingEmbedder"
 import { prReviewPullRequestHandler } from "@maple/backend/services/pr-review/pull-request-review-handler"
 import {
 	PullRequestChecklistSinkLive,
@@ -55,11 +55,7 @@ const PrReviewLive = PrReviewService.layer.pipe(Layer.provide(VcsSyncQueue.layer
 const PullRequestEventSinkLive = pullRequestEventSinkFanout<IssueFixVerificationService | PrReviewService>([
 	{ name: "fix-verification", handler: fixVerificationPullRequestHandler },
 	{ name: "pr-review", handler: prReviewPullRequestHandler },
-]).pipe(
-	Layer.provide(IssueFixVerificationService.layer),
-	Layer.provide(PrReviewLive),
-	Layer.provide(PullRequestLookup.none),
-)
+]).pipe(Layer.provide(IssueFixVerificationService.layer), Layer.provide(PrReviewLive))
 
 export const VcsSyncLive = VcsSyncService.layer.pipe(
 	Layer.provide(PullRequestEventSinkLive),
@@ -73,7 +69,8 @@ export const VcsSyncLive = VcsSyncService.layer.pipe(
 	Layer.provide(CiTraceSinkLive),
 	// Lockfile scans for known vulnerable dependencies, on pushes and installation syncs.
 	Layer.provide(DependencyScanSinkLive),
-	Layer.provide(Layer.mergeAll(EventBaseLive, EdgeCacheServiceLive)),
+	// No embedder here: the review's feedback filter runs where the review agent does.
+	Layer.provide(Layer.mergeAll(EventBaseLive, EdgeCacheServiceLive, FindingEmbedder.none)),
 )
 
 export const VcsScheduledLive = VcsScheduledSyncService.layer.pipe(Layer.provide(EventBaseLive))

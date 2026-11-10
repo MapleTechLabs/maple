@@ -9,13 +9,14 @@
 import { randomUUID } from "node:crypto"
 import { Effect, Option, Schema, Array as Arr, String as Str } from "effect"
 import type { ChatTurnOrigin } from "@maple/domain/chat-session"
-import type { TenantContext } from "@maple/backend/services/auth/tenant-context"
 import type { ChatTurnEvent } from "../chat/events"
 import { runChatTurn } from "../chat/run"
-import { makeRunUsage, type RunUsage, type SubmitDiagnosis } from "../chat/tools"
+import type { MakeCompletion } from "../chat/completion"
+import { makeRunUsage, type RunUsage } from "../chat/usage"
 import type { McpToolExecutorApi } from "../mcp/dispatcher"
 import { evalModel } from "./model"
 import { observeCall, type ObservedCall } from "./targets"
+import type { TenantContext } from "@maple/domain/http"
 
 export interface TranscriptCall extends ObservedCall {
 	/** What the model was shown, truncated for the artifact. */
@@ -44,7 +45,8 @@ export interface ChatTurnInput {
 	readonly origin?: ChatTurnOrigin
 	/** Stop the turn once this many tool results have come back. */
 	readonly maxToolCalls: number
-	readonly submitDiagnosis?: SubmitDiagnosis
+	/** The tool the turn answers through, for a session whose row the eval stands in for. */
+	readonly completion?: MakeCompletion
 }
 
 const OUTPUT_CHARS = 4_000
@@ -114,7 +116,7 @@ export const solveChatTurn = (input: ChatTurnInput): Effect.Effect<Transcript> =
 		origin: input.origin ?? { kind: "app" },
 		toolExecutor: input.executor,
 		model,
-		submitDiagnosis: input.submitDiagnosis ?? (() => Effect.void),
+		...(input.completion === undefined ? undefined : { completion: input.completion }),
 		text: input.text,
 		history: [],
 		usage,

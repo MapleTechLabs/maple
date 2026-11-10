@@ -25,7 +25,7 @@ import { hstack } from "@maple/views/ui/stack"
 import { typographyClass } from "@maple/views/ui/typography"
 import { nonZeroOr } from "@maple/ui/lib/number"
 
-// The "Top operations" section of `ServiceDetailView`.
+// The service detail page's "Top operations" section.
 
 const HEADERS = ["Spans", "Errors", "Error rate", "Avg", "p50", "p95"]
 

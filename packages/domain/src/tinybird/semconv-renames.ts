@@ -8,12 +8,12 @@
 // the materialized view that pre-extracts the value at write time, and the
 // query-engine builder that reads it off the raw table.
 //
-// Renames whose keys are only ever surfaced (never keyed on) live in the
-// recommendation dictionary in `../recommendations.ts` instead.
+// The key pairs come from the shared rename table in `../semconv`.
 
 import type { Expr } from "@maple-dev/effect-orm/expr"
 import * as CH from "@maple-dev/effect-orm/expr"
 import { compile } from "@maple-dev/effect-orm/sql"
+import { currentThenDeprecated, deprecatedThenCurrent } from "../semconv"
 
 /**
  * The shape every caller shares: a query builder's `$.ResourceAttributes` /
@@ -27,6 +27,21 @@ interface MapColumnLike {
 const mapColumn = (name: string): MapColumnLike => {
 	const column = CH.dynamicColumn<Record<string, string>>(name)
 	return { get: (key) => CH.mapGet(column, key) }
+}
+
+/** The current key, else the deprecated one. A map lookup is `''` when the key is absent. */
+const currentFirst = (
+	attributes: MapColumnLike,
+	[current, deprecated]: readonly [string, string],
+): Expr<string> => CH.coalesce(CH.nullIf(attributes.get(current), ""), attributes.get(deprecated))
+
+/** The deprecated key when set, else the current one. */
+const legacyFirst = (
+	attributes: MapColumnLike,
+	[deprecated, current]: readonly [string, string],
+): Expr<string> => {
+	const legacy = attributes.get(deprecated)
+	return CH.if_(legacy.neq(""), legacy, attributes.get(current))
 }
 
 /**
@@ -47,10 +62,7 @@ const mapColumn = (name: string): MapColumnLike => {
  * whole expression stays `String` — it can feed a non-Nullable MV column.
  */
 export function deploymentEnvExpr(resourceAttributes: MapColumnLike): Expr<string> {
-	return CH.coalesce(
-		CH.nullIf(resourceAttributes.get("deployment.environment.name"), ""),
-		resourceAttributes.get("deployment.environment"),
-	)
+	return currentFirst(resourceAttributes, currentThenDeprecated("deployment.environment"))
 }
 
 /**
@@ -73,10 +85,7 @@ export const DEPLOYMENT_ENV_SQL = compile(deploymentEnvExpr(mapColumn("ResourceA
  * gap was visible on our own service map.
  */
 export function messagingDestinationExpr(spanAttributes: MapColumnLike): Expr<string> {
-	return CH.coalesce(
-		CH.nullIf(spanAttributes.get("messaging.destination.name"), ""),
-		spanAttributes.get("messaging.destination"),
-	)
+	return currentFirst(spanAttributes, currentThenDeprecated("messaging.destination"))
 }
 
 /** SQL text for {@link messagingDestinationExpr} over the raw `SpanAttributes` column. */
@@ -99,10 +108,7 @@ export const MESSAGING_DESTINATION_SQL = compile(
  * consumers.
  */
 export function containerRuntimeExpr(resourceAttributes: MapColumnLike): Expr<string> {
-	return CH.coalesce(
-		CH.nullIf(resourceAttributes.get("container.runtime.name"), ""),
-		resourceAttributes.get("container.runtime"),
-	)
+	return currentFirst(resourceAttributes, currentThenDeprecated("container.runtime"))
 }
 
 /**
@@ -116,8 +122,7 @@ export function containerRuntimeExpr(resourceAttributes: MapColumnLike): Expr<st
  * span that carries both keys with different values.
  */
 export function httpRequestMethodExpr(spanAttributes: MapColumnLike): Expr<string> {
-	const legacy = spanAttributes.get("http.method")
-	return CH.if_(legacy.neq(""), legacy, spanAttributes.get("http.request.method"))
+	return legacyFirst(spanAttributes, deprecatedThenCurrent("http.method"))
 }
 
 /**
@@ -126,6 +131,5 @@ export function httpRequestMethodExpr(spanAttributes: MapColumnLike): Expr<strin
  * pre-extracted `HttpStatusCode`.
  */
 export function httpResponseStatusCodeExpr(spanAttributes: MapColumnLike): Expr<string> {
-	const legacy = spanAttributes.get("http.status_code")
-	return CH.if_(legacy.neq(""), legacy, spanAttributes.get("http.response.status_code"))
+	return legacyFirst(spanAttributes, deprecatedThenCurrent("http.status_code"))
 }

@@ -1,8 +1,7 @@
 import type { McpToolRegistrar } from "./types"
 import { Array as Arr, Effect, Schema } from "effect"
-import { ListMaintenanceWindowsOutput } from "@maple/domain/mcp-outputs"
 import { AlertMaintenanceWindowsService } from "@maple/backend/services/alerts/AlertMaintenanceWindowsService"
-import { CurrentMcpTenant } from "../lib/query-warehouse"
+import { CurrentMcpTenant } from "../tenant"
 import { toMcpHttpError } from "../lib/map-http-error"
 import { maintenanceWindowTableRow, toMaintenanceWindowRow } from "../lib/maintenance-windows"
 import * as P from "../lib/params"
@@ -21,7 +20,6 @@ export function registerListMaintenanceWindowsTool(server: McpToolRegistrar) {
 			limit: P.limit({ default: 50, max: MAX_LIMIT, noun: "windows" }),
 			offset: P.offset({ max: 1_000 }),
 		}),
-		output: ListMaintenanceWindowsOutput,
 		hints: { readOnly: true },
 		phrases: ["Listing maintenance windows", "Checking maintenance windows"],
 		handler: Effect.fn("McpTool.listMaintenanceWindows")(function* (params) {

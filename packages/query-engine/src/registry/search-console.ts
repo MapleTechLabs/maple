@@ -10,8 +10,8 @@ import {
 import type { OrgId } from "@maple/domain"
 import { formatWarehouseDateTime, parseWarehouseDateTime } from "../datetime"
 import * as CH from "../ch"
-import { timeRangeCache } from "../runtime/query-engine"
-import { defineQuery } from "./query-definition"
+import { timeRangeCache } from "../runtime/cache-policy"
+import { defineQuery, windowParams } from "./query-definition"
 
 // Search Console reads. Google reports whole days, so the page's window is floored to the
 // midnight-UTC `Date` rows it covers, both ends inclusive, and ends at the last complete day.
@@ -152,6 +152,6 @@ export const searchConsoleEntryPages = defineQuery({
 				// Search clicks are people; crawler sessions would inflate the denominator.
 				traffic: "humans",
 			}),
-			{ orgId, startTime: payload.startTime, endTime: payload.endTime },
+			windowParams(payload, orgId),
 		),
 })

@@ -8,7 +8,8 @@ import type { DateTime } from "effect"
 import { finiteOrZero } from "@maple/query-engine/ch/format"
 import * as CH from "@maple-dev/effect-orm/expr"
 import { from, fromQuery, param } from "@maple-dev/effect-orm/clickhouse"
-import { MetricsGauge, orgIdParam } from "@maple/query-engine/ch/tables"
+import * as Datasources from "@maple/domain/tinybird/datasources"
+import { orgIdParam } from "@maple/query-engine/ch/tables"
 
 export const RAILWAY_CPU_USAGE = "railway.cpu.usage"
 export const RAILWAY_CPU_LIMIT = "railway.cpu.limit"
@@ -44,7 +45,7 @@ export interface RailwayServicesOutput {
 
 /** One row per (environment, service) over the window: usage against limits, replica count. */
 export function railwayServicesSQL() {
-	const points = from(MetricsGauge)
+	const points = from(Datasources.metricsGauge)
 		.select(($) => ({
 			environmentId: $.ResourceAttributes.get("railway.environment.id"),
 			serviceId: $.ResourceAttributes.get("railway.service.id"),
@@ -108,7 +109,7 @@ export interface RailwayServiceTimeseriesOutput {
 
 /** Bucketed resource timeseries for one Railway service in one environment. */
 export function railwayServiceTimeseriesSQL() {
-	const points = from(MetricsGauge)
+	const points = from(Datasources.metricsGauge)
 		.select(($) => ({
 			t: $.TimeUnix,
 			cpu: CH.sumIf($.Value, $.MetricName.eq(RAILWAY_CPU_USAGE)),

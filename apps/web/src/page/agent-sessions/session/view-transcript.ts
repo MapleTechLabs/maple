@@ -23,8 +23,6 @@ import { continuedKeys, transcriptRows } from "./transcript-rows"
 import { COLUMN } from "./transcript-shell"
 import { emptyTurnRow, turnChapter } from "./transcript-turns"
 
-// The session transcript: the session as a conversation.
-
 type H = HtmlBuilder<Message>
 
 /** Starting guesses only: every mounted row is measured. */
@@ -46,7 +44,7 @@ const ROW_ESTIMATE = {
 	divider: 60,
 } satisfies Record<TranscriptRow["kind"], number>
 
-/** `useVirtualizer` with `directDomUpdates`: rows measured, placed and the list sized off-render. */
+/** The virtualizer with direct DOM updates: rows measured, placed and the list sized off-render. */
 const VirtualizeTranscript = Mount.defineStream("VirtualizeAgentSessionTranscript", {
 	messages: [Message.ChangedTranscriptWindow],
 	execute: ({ element, viewStateChanges }) =>

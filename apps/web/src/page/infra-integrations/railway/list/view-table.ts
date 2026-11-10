@@ -3,7 +3,7 @@ import { formatBytes, pluralize } from "@maple/ui/lib/format"
 import type { ChildAttribute, Html, HtmlBuilder } from "foldkit/html"
 import { AppRoute, hrefOf } from "../../../../route"
 import { skeleton } from "@maple/views/ui/skeleton"
-import { columnHead, dataTable, skeletonRows, ROW_LINK_CLASS } from "../../../infra/kit/data-table"
+import { columnHead, dataTable, skeletonRows, ROW_LINK_CLASS } from "../../../kit/data-table"
 import { meterRows } from "../../../infra/kit/meter-rows"
 import { avgPeak } from "../../../infra/kit/avg-peak"
 import { relativeTime } from "../../../kit/relative-time"
@@ -15,8 +15,6 @@ import type { SortKey } from "./model"
 import { typography, typographyClass } from "@maple/views/ui/typography"
 import { Array as Arr } from "effect"
 import { hstack } from "@maple/views/ui/stack"
-
-// `RailwayServiceTable` and `RailwayServiceTableLoading`.
 
 type H = HtmlBuilder<Message>
 type Trigger = (id: string) => ReadonlyArray<ChildAttribute>

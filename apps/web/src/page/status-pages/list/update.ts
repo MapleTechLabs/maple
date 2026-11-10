@@ -6,6 +6,7 @@ import type { PageContext, PageReturn } from "../../contract"
 import { FetchListSession, FetchStatusPages, ReadListClock } from "./command"
 import { Message } from "./message"
 import type { Model } from "./model"
+import { acceptGrants } from "../../kit/session-grants"
 
 export type Return = PageReturn<Model, Message>
 
@@ -30,8 +31,7 @@ export const init = (_route: ListRoute, context: PageContext): Return => {
 export const update = (model: Model, message: Message, context: PageContext): Return =>
 	Message.match<Return>(message, {
 		ReadClock: ({ nowMs }) => ({ model: { ...model, nowMs } }),
-		CompletedFetchSession: ({ orgId, grants }) =>
-			orgId === context.orgId ? { model: { ...model, grants } } : { model },
+		CompletedFetchSession: (answer) => ({ model: acceptGrants(model, context.orgId, answer) }),
 		CompletedFetchPages: ({ key, result }) => ({
 			model: { ...model, pages: Keyed.accept(model.pages, key, result) },
 			commands: [ReadListClock()],

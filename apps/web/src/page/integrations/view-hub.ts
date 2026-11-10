@@ -13,14 +13,8 @@ import { panel } from "@maple/views/ui/panel"
 import { skeleton } from "@maple/views/ui/skeleton"
 import { statusDot } from "@maple/views/ui/status-dot"
 import { AppRoute, hrefOf } from "../../route"
-import {
-	CAPABILITY_LABEL,
-	type CatalogEntry,
-	type DataSourceKindEntry,
-	DATA_SOURCE_KIND_ENTRY,
-	type HubFilter,
-	type IntegrationId,
-} from "./catalog"
+import { CAPABILITY_LABEL, type CatalogEntry, type HubFilter, type IntegrationId } from "./catalog"
+import { DATA_SOURCE_KIND_ENTRY, type DataSourceKindEntry } from "../kit/providers"
 import {
 	activeFilter,
 	type ConnectedRow,
@@ -29,7 +23,7 @@ import {
 	matchesFilter,
 	offeredFilters,
 } from "./hub-rows"
-import { integrationIconPlate } from "../infra-integrations/kit/integration-empty"
+import { integrationIconPlate } from "../kit/integration-empty"
 import { filterChip } from "@maple/views/ui/filter-chip"
 import { type AvailableOverview, HEALTH_TONE, lastSyncText } from "./derive"
 import { Message } from "./message"
@@ -39,8 +33,6 @@ import { entryPlate } from "./view-entry"
 import { typography, typographyClass } from "@maple/views/ui/typography"
 import { hstack, hstackClass, vstack } from "@maple/views/ui/stack"
 import { Array as Arr } from "effect"
-
-// `IntegrationsSummary` and `IntegrationCatalog`.
 
 type H = HtmlBuilder<Message>
 type Select = (id: IntegrationId) => Message

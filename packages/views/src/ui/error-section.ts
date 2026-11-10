@@ -8,8 +8,8 @@ import { icon } from "./icon"
 import { truncationNote } from "./logs/log-message"
 import { Array as Arr, String as Str } from "effect"
 
-// Port of `ErrorSection` (packages/ui/src/components/error-section.tsx): the error banner, its
-// highlighted body that copies itself, the "Copy as prompt" control and the Show more toggle.
+// `ErrorSection`: the error banner, its highlighted body that copies itself, the "Copy as
+// prompt" control and the Show more toggle.
 
 const COLLAPSED_LINES = 3
 const LINE_HEIGHT = 1.625

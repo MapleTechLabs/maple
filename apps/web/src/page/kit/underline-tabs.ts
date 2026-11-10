@@ -3,7 +3,7 @@ import type { Html, HtmlBuilder } from "foldkit/html"
 import { icon, type IconName } from "@maple/views/ui/icon"
 import { Array as Arr } from "effect"
 
-// `UnderlineTabStrip` and `underlineTabClass`: a row of tabs with an underlined active tab.
+// A row of tabs with an underlined active tab.
 
 export type UnderlineTabStripOptions = Readonly<{
 	label: string

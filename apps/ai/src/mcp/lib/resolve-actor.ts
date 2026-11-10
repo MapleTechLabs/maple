@@ -1,8 +1,8 @@
 import { Effect, Option, String as Str } from "effect"
 import { isReservedAgentName } from "@maple/domain/system-agents"
-import type { TenantContext } from "@maple/backend/services/auth/tenant-context"
 import { ErrorActorsService } from "@maple/backend/services/errors/ErrorActorsService"
 import { McpQueryError } from "../tools/types"
+import type { TenantContext } from "@maple/domain/http"
 
 /**
  * Agent-actor name derived from an MCP client's `initialize` clientInfo.name.
@@ -60,6 +60,5 @@ export const resolveActor = Effect.fn("McpActor.resolveActor")(function* (tenant
 	return { actorId: actor.id, isAgent: false }
 })
 
-/** Convenience for tools that only need the id. */
 export const resolveActorId = (tenant: TenantContext) =>
 	Effect.map(resolveActor(tenant), (resolved) => resolved.actorId)

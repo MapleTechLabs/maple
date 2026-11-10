@@ -1,6 +1,6 @@
 import { PublicHttpErrorBodySchema } from "@maple/domain/http"
 import { displayError } from "@maple/web-data/lib/error-messages"
-import { String as Str } from "effect"
+import { Effect, type Result, String as Str } from "effect"
 
 /**
  * A failed load as the Model keeps it: the public error body `displayError` derives from the
@@ -37,6 +37,18 @@ export const toLoadFailure = (error: unknown): LoadFailure => {
 	const failure = displayError(error)
 	return { ...failure, message: failureMessage(failure) }
 }
+
+/** A load's outcome, never failing: its value, or its failure as a `LoadFailure`. */
+export const settled = <A, E, R>(
+	effect: Effect.Effect<A, E, R>,
+): Effect.Effect<Result.Result<A, LoadFailure>, never, R> =>
+	effect.pipe(Effect.mapError(toLoadFailure), Effect.result)
+
+/** `settled`, then the outcome as a Message (`Completed*({ result })`). Pipeable. */
+export const settleTo =
+	<A, B>(toMessage: (result: Result.Result<A, LoadFailure>) => B) =>
+	<E, R>(effect: Effect.Effect<A, E, R>): Effect.Effect<B, never, R> =>
+		Effect.map(settled(effect), toMessage)
 
 /** What a reader sees of a failure: two failures with one key read as the same message. */
 export const failureKey = (failure: LoadFailure): string => `${failure.title}\n${failureMessage(failure)}`

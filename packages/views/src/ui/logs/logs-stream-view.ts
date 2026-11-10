@@ -22,7 +22,7 @@ export interface ViewInputs {
 	/** The zone the times are in, named on the Time column. */
 	readonly timeZone: string
 	readonly isWaiting: boolean
-	/** `ListFooter`'s count line, formatted by the parent (it is locale-dependent). */
+	/** The list footer's count line, formatted by the parent (it is locale-dependent). */
 	readonly footerText: string
 	/** Adds "Filter in" / "Filter out" to the attribute card. */
 	readonly canFilter: boolean
@@ -31,7 +31,7 @@ export interface ViewInputs {
 	 * /logs); the stream's own root is then `display: contents`.
 	 */
 	readonly isBare?: boolean
-	/** The row the detail sheet shows (`rowSelectedClass`). */
+	/** The row the detail sheet shows. */
 	readonly selectedIndex?: number
 }
 

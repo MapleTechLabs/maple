@@ -5,31 +5,17 @@ import type { Html, HtmlBuilder } from "foldkit/html"
 import { AppRoute, hrefOf } from "../../../../route"
 import { badge } from "@maple/views/ui/display"
 import { skeleton } from "@maple/views/ui/skeleton"
-import {
-	columnHead,
-	dataTable,
-	dataTableEmpty,
-	skeletonRows,
-	ROW_LINK_CLASS,
-} from "../../../infra/kit/data-table"
+import { columnHead, dataTable, dataTableEmpty, skeletonRows, ROW_LINK_CLASS } from "../../../kit/data-table"
 import { type Sort, sortRowsByField } from "../../../kit/table-sort"
 import type { DatabaseStat } from "../data"
-import {
-	abnormalState,
-	formatLag,
-	formatStoragePercent,
-	lagClass,
-	MISSING,
-	utilizationClass,
-} from "../../../../components/infra/planetscale/metrics"
-import { formatWholePercent } from "../../../../components/infra/format"
+import { abnormalState, lagClass, MISSING, utilizationClass } from "../metrics"
+import { formatLag, formatStoragePercent } from "@maple/views/charts/planetscale-metric-series"
+import { formatWholePercent } from "../../../infra/kit/format"
 import { Message, type SortKey } from "./model"
 import { typography } from "@maple/views/ui/typography"
 import { column, columnClass } from "@maple/views/ui/column"
 import { Array as Arr, String as Str } from "effect"
 import { hstack } from "@maple/views/ui/stack"
-
-// `PlanetScaleDatabaseTable` and its loading state.
 
 type H = HtmlBuilder<Message>
 
@@ -73,7 +59,7 @@ const COLUMNS: ReadonlyArray<{
 	{ label: "Replica lag", key: "replicaLagMaxSeconds", width: "w-24", align: "right", metric: true },
 ]
 
-/** `headerCells`: sortable heads only when a sort is given; `metricsPaused` drops the metric columns. */
+/** Sortable heads only when a sort is given; `metricsPaused` drops the metric columns. */
 const headerCells = (h: H, sort: Sort<SortKey> | undefined, metricsPaused: boolean): ReadonlyArray<Html> =>
 	Arr.map(
 		Arr.filter(COLUMNS, (column) => !metricsPaused || column.metric !== true),

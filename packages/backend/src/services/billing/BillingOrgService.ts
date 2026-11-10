@@ -247,9 +247,9 @@ export class BillingOrgService extends Context.Service<BillingOrgService, Billin
 
 			/**
 			 * `uptime_monitors` is continuous use: monitors that exist count against whoever pays now.
-			 * Their count moves with the org, keyed by the link so a retry moves them once.
+			 * Their count moves with the org, keyed by the link so a retry moves them once. Counted under
+			 * the exclusive link lock, so no monitor create (which holds it shared) runs alongside.
 			 */
-			/** Under the exclusive link lock, so no monitor create (which holds it shared) runs alongside. */
 			const countMonitors = (db: DatabaseClient, orgId: OrgId) =>
 				db
 					.run(

@@ -4,6 +4,7 @@
 
 import { createHash, createHmac, timingSafeEqual } from "node:crypto"
 import { Option, pipe, Result, Schema, Array as Arr, String as Str } from "effect"
+import { MAINTENANCE_TOKEN_HEADER } from "./maintenance-auth"
 
 export const INGEST_KEY_ENV = "MAPLE_LOCAL_INGEST_KEY"
 export const ACCESS_TOKEN_ENV = "MAPLE_LOCAL_ACCESS_TOKEN"
@@ -177,7 +178,7 @@ export const accessDenied = (
 	if (
 		hasValidSession(auth, req, nowMs) ||
 		(Str.startsWith("/local/")(url.pathname) &&
-			secretMatches(credentials.maintenanceToken, req.headers.get("x-maple-maintenance-token"))) ||
+			secretMatches(credentials.maintenanceToken, req.headers.get(MAINTENANCE_TOKEN_HEADER))) ||
 		(CONSUMER_PATHS.has(url.pathname) &&
 			secretMatches(credentials.consumerToken, req.headers.get("x-maple-event-consumer-token")))
 	)

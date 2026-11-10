@@ -12,8 +12,8 @@ import type { SpanNodeData, TraceData } from "@maple/views/traces/trace-data"
 import { init, routeChanged, update } from "./update"
 import * as Tabs from "@maple/views/ui/tabs"
 import { MeasureSplit } from "./split"
-import { MeasureTimelineBody, MountAltToggle } from "./timeline/command"
-import { Message as TimelineMessage } from "./timeline/message"
+import { MeasureTimelineBody, MountAltToggle } from "@maple/views/traces/timeline/command"
+import { Message as TimelineMessage } from "@maple/views/traces/timeline/message"
 import { breadcrumbs, view as pageView } from "./view"
 
 const orgId = Schema.decodeSync(OrgId)("org_acme")

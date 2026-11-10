@@ -6,10 +6,9 @@
  * `ChatSessions` port, never off `env`.
  */
 import { chatSessionClient, type ChatSessionRpc } from "@maple/domain/chat-session-stub"
-import { parseMapleDeploymentEffect, resolveWorkerName } from "@maple/infra/cloudflare"
+import { resolveWorkerName, stageDeployment } from "@maple/infra/cloudflare"
 import { workerEnvLayer } from "@maple/infra/worker-runtime"
 import * as Cloudflare from "@alchemy.run/cloudflare"
-import { Stage } from "alchemy/Stage"
 import { Config, Context, Effect, Layer, Option } from "effect"
 import { ChatSessions } from "./bindings"
 
@@ -47,11 +46,9 @@ export interface ChatSessionNamespace {
  */
 const aiScriptName = Effect.gen(function* () {
 	if (globalThis.__ALCHEMY_RUNTIME__) return ""
-	const rawStage = yield* Stage
-	const { stage, region } = yield* parseMapleDeploymentEffect(rawStage)
+	const { stage, region } = yield* stageDeployment
 	return resolveWorkerName("ai", stage, region)
-	// The root stack parses the same stage first and fails typed there.
-}).pipe(Effect.orDie)
+})
 
 /** Bind maple-ai's `ChatSession` from a Worker's init. */
 export const bindChatSessions = Effect.flatMap(aiScriptName, (scriptName) =>

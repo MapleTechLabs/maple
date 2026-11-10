@@ -5,7 +5,7 @@ import {
 	AwsMetricNamespace,
 	AwsModule,
 	AwsRegion,
-} from "./primitives"
+} from "@maple/primitives"
 
 const isAwsModule = Schema.is(AwsModule)
 

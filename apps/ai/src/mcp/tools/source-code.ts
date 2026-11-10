@@ -1,10 +1,5 @@
 import { Array as Arr, Effect, Schema, String as Str } from "effect"
-import {
-	ListSourceRepositoriesOutput,
-	ReadSourceFileOutput,
-	SearchSourceCodeOutput,
-} from "@maple/domain/mcp-outputs"
-import { CurrentMcpTenant } from "../lib/query-warehouse"
+import { CurrentMcpTenant } from "../tenant"
 import { VcsSourceService } from "@maple/backend/services/integrations/vcs/VcsSourceService"
 import { McpInvalidInputError, type McpToolRegistrar } from "./types"
 import { fromVcsLookupError } from "../lib/source-errors"
@@ -63,7 +58,6 @@ export function registerSourceCodeTools(server: McpToolRegistrar) {
 		description:
 			"List source repositories connected to this Maple organization. Use before source investigation when telemetry does not identify an exact vcs.repository.url.full. Returns only repositories the organization's GitHub App installation can access.",
 		parameters: Schema.Struct({}),
-		output: ListSourceRepositoriesOutput,
 		hints: HINTS,
 		audience: AGENT,
 		phrases: ["Listing repositories"],
@@ -127,7 +121,6 @@ export function registerSourceCodeTools(server: McpToolRegistrar) {
 			path: P.optionalText("Directory prefix or file path to restrict the search to"),
 			limit: P.limit({ default: 10, max: 20, noun: "matches" }),
 		}),
-		output: SearchSourceCodeOutput,
 		hints: HINTS,
 		audience: AGENT,
 		phrases: ["Searching the code", "Searching source code"],
@@ -254,7 +247,6 @@ export function registerSourceCodeTools(server: McpToolRegistrar) {
 			start_line: P.optionalNumber("First line to return, 1-based"),
 			end_line: P.optionalNumber(`Last line to return; at most ${MAX_FILE_LINES} lines per call`),
 		}),
-		output: ReadSourceFileOutput,
 		hints: HINTS,
 		audience: AGENT,
 		phrases: ["Reading a source file", "Reading the code"],

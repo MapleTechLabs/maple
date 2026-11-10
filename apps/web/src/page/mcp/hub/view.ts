@@ -14,15 +14,16 @@ import { pageDescription, pageTitle } from "@maple/views/ui/page-layout"
 import { skeleton } from "@maple/views/ui/skeleton"
 import * as ToggleGroup from "@maple/views/ui/toggle-group"
 import { serviceDot } from "@maple/views/ui/values"
-import { ToolPercentile } from "../../agent-sessions/tools-kit/model"
-import { facetSelect, toolFilterToolbar } from "../../agent-sessions/tools-kit/toolbar"
+import { ToolPercentile } from "../../kit/tools/model"
+import { facetSelect, toolFilterToolbar } from "../../kit/tools/toolbar"
 import type { PageViewInputs } from "../../contract"
 import { dashboardPage } from "../../kit/dashboard-page"
-import { presetLabel, timeControls } from "../../kit/time-controls"
+import { timeControls } from "../../kit/time-controls"
+import { presetLabel } from "@maple/ui/lib/time-preset"
 import * as TimeRangePicker from "../../kit/time-range-picker"
 import { linkTabStrip } from "../../kit/underline-tabs"
 import type { McpFilters, McpWindow } from "../view-kit"
-import { formatClock, MCP_CHART_TOKENS, scopeText } from "../view-kit"
+import { MCP_CHART_TOKENS, scopeText } from "../view-kit"
 import { listBody } from "../view-list"
 import { serverBody } from "../view-server"
 import { sessionBody, sessionCalls, sessionsBody } from "../view-sessions"
@@ -36,7 +37,7 @@ import {
 	sessionsLoading,
 } from "../view-states"
 import { toolBody } from "../view-tool"
-import { overviewOf, serverRows, sessionsScreen, toolOf } from "./data-map"
+import { overviewOf, sessionsScreen, toolOf } from "./data-map"
 import { Message } from "./message"
 import { DEFAULT_MCP_PRESET, type Model } from "./model"
 import {
@@ -49,6 +50,7 @@ import {
 	widerPreset,
 } from "./update"
 import { hstack, vstack } from "@maple/views/ui/stack"
+import { formatClock } from "../../kit/timezone-zones"
 
 type H = HtmlBuilder<Message>
 
@@ -275,7 +277,7 @@ const serversView = (h: H, model: Model, timeZone: string): Html =>
 					data.servers.length === 0
 						? noServersState(h, { onInstrument: openInstrumentDocs })
 						: chartsReady(h, model, (theme) =>
-								listBody(h, serverRows(data), {
+								listBody(h, data.servers, {
 									onOpenServer: (service) => Message.ClickedOpenServer({ service }),
 									onInstrument: openInstrumentDocs,
 									nowMs: model.nowMs,

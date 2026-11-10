@@ -1,5 +1,5 @@
 import type { AlertDestinationRow } from "@maple/db/tables"
-import { OrgId } from "@maple/domain/primitives"
+import { OrgId } from "@maple/primitives"
 import { AlertDestinationId } from "@maple/domain/http"
 import { assert, describe, it } from "@effect/vitest"
 import { Effect, Result, Schema, Array as Arr, String as Str } from "effect"

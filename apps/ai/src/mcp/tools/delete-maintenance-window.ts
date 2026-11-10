@@ -1,8 +1,7 @@
 import { McpInvalidInputError, type McpToolRegistrar } from "./types"
 import { Effect, Schema } from "effect"
-import { DeleteMaintenanceWindowOutput } from "@maple/domain/mcp-outputs"
 import { AlertMaintenanceWindowsService } from "@maple/backend/services/alerts/AlertMaintenanceWindowsService"
-import { CurrentMcpTenant } from "../lib/query-warehouse"
+import { CurrentMcpTenant } from "../tenant"
 import { deleteWindowErrors } from "../lib/maintenance-windows"
 import * as P from "../lib/params"
 import { doc } from "../lib/tool-doc"
@@ -18,7 +17,6 @@ export function registerDeleteMaintenanceWindowTool(server: McpToolRegistrar) {
 			maintenance_window_id: P.resourceId("alertMaintenanceWindow", "Maintenance window to delete"),
 			confirm: P.flag("Must be true. There is no undo."),
 		}),
-		output: DeleteMaintenanceWindowOutput,
 		hints: { readOnly: false, destructive: true, idempotent: false },
 		phrases: ["Deleting a maintenance window"],
 		handler: Effect.fn("McpTool.deleteMaintenanceWindow")(function* (params) {

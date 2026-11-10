@@ -1,27 +1,15 @@
-import { V2AnomalyServiceCount } from "@maple/domain/http/v2"
+import { ChartEnvMessages } from "@maple/views/charts/chart-env"
 import { Schema } from "effect"
 import { defineMessageUnion } from "foldkit/message"
 import * as Chart from "@maple/views/charts/chart"
 import { FixedMetricRow } from "@maple/views/charts/chart-spec"
-import { ThemeColors } from "@maple/views/charts/theme-colors"
 import { LoadFailure } from "@maple/views/data/load-failure"
 import * as Select from "@maple/views/ui/select"
 import { SignalPresences } from "@maple/views/data/signal-presence"
 import * as TimeRangePicker from "../kit/time-range-picker"
 import * as SetupChecklist from "./setup-checklist"
-import {
-	FacetsHint,
-	HealthSnapshot,
-	Incident,
-	OverviewFacets,
-	OverviewPoint,
-	RefinementPoint,
-	Usage,
-} from "./model"
-
-/** `Load` on entry or a search change; `Refresh` from Reload (no cache snap, revalidate every slot). */
-export const RequestMode = Schema.Literals(["Load", "Refresh"])
-export type RequestMode = typeof RequestMode.Type
+import { HealthMessages } from "../kit/service-health"
+import { FacetsHint, HealthSnapshot, OverviewFacets, OverviewPoint, RefinementPoint, Usage } from "./model"
 
 /** The cards whose query can be retried from their error state. */
 export const RetryTarget = Schema.Literals(["Facets", "Overview", "LogVolume", "Refinement"])
@@ -38,21 +26,17 @@ export const Message = defineMessageUnion({
 	CompletedResolveClock: { nowMs: Schema.Number },
 	CompletedFetchFacets: result(OverviewFacets),
 	CompletedFetchSnapshot: result(Schema.Array(HealthSnapshot)),
-	CompletedFetchAnomalies: result(Schema.Array(V2AnomalyServiceCount)),
 	CompletedFetchUsage: result(Usage),
 	CompletedFetchOverviewSeries: result(Schema.Array(OverviewPoint)),
 	CompletedFetchLogSeries: result(Schema.Array(FixedMetricRow)),
 	CompletedFetchRefinement: result(Schema.Array(RefinementPoint)),
 	CompletedSaveFacetsHint: {},
-	UpdatedIncidents: { orgId: Schema.String, incidents: Schema.Array(Incident) },
-	FailedLoadIncidents: { orgId: Schema.String },
+	...HealthMessages,
 	FailedLoadRules: { orgId: Schema.String },
 	UpdatedRules: { orgId: Schema.String, enabled: Schema.Array(Schema.Boolean) },
 	UpdatedRuleStates: { orgId: Schema.String },
 	CompletedLoadSignalPresence: { result: Schema.Result(SignalPresences, LoadFailure) },
-	CompletedLoadChartRuntime: {},
-	FailedLoadChartRuntime: { reason: Schema.String },
-	ResolvedThemeColors: { colors: ThemeColors },
+	...ChartEnvMessages,
 	ClickedReload: {},
 	CompletedReloadSpin: { version: Schema.Number },
 	ClickedRetry: { target: RetryTarget },

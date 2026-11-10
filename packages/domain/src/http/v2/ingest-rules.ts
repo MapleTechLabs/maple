@@ -9,7 +9,7 @@ import {
 	IngestRuleSignal,
 	type IngestRuleAction,
 } from "../../ingest-rules"
-import { IngestRuleId } from "../../primitives"
+import { IngestRuleId } from "@maple/primitives"
 import {
 	IngestRuleForbiddenError,
 	IngestRuleNotFoundError,

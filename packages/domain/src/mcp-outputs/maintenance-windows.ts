@@ -1,4 +1,3 @@
-/** Output schemas for the maintenance window MCP tools. */
 import { Schema } from "effect"
 
 const MatcherValues = Schema.optionalKey(Schema.Array(Schema.String))

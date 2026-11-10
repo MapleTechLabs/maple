@@ -1,5 +1,5 @@
 import * as PG from "@maple-dev/effect-orm/postgres"
-import { OrgId } from "@maple/domain/primitives"
+import { OrgId } from "@maple/primitives"
 
 export const OrgIngestKeys = PG.table("org_ingest_keys", {
 	columns: {
@@ -27,4 +27,3 @@ export const OrgIngestKeys = PG.table("org_ingest_keys", {
 })
 
 export type OrgIngestKeyRow = PG.SelectRowOf<typeof OrgIngestKeys>
-export type OrgIngestKeyInsert = PG.InsertRowOf<typeof OrgIngestKeys>

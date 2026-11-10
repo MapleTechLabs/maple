@@ -8,8 +8,8 @@ import {
 	SupabaseProjectId,
 	SupabaseProjectRef,
 	UserId,
-} from "@maple/domain/primitives"
-import { SupabaseAdvisorLint, SupabaseLogDrainSummary, SupabaseTopQuery } from "@maple/domain/http"
+} from "@maple/primitives"
+import { SupabaseAdvisorLint, SupabaseLogDrainSummary, SupabaseTopQuery } from "@maple/domain/supabase"
 import { Sources } from "./sources"
 
 /**
@@ -51,7 +51,6 @@ export const SupabaseConnections = PG.table("supabase_connections", {
 })
 
 export type SupabaseConnectionRow = PG.SelectRowOf<typeof SupabaseConnections>
-export type SupabaseConnectionInsert = PG.InsertRowOf<typeof SupabaseConnections>
 
 /**
  * A project discovered under the connected Supabase organization. Discovery stamps `removedAt`
@@ -128,7 +127,6 @@ export const SupabaseProjects = PG.table("supabase_projects", {
 })
 
 export type SupabaseProjectRow = PG.SelectRowOf<typeof SupabaseProjects>
-export type SupabaseProjectInsert = PG.InsertRowOf<typeof SupabaseProjects>
 
 /**
  * A project's polled advisors and slowest statements. One row per project, created by the first

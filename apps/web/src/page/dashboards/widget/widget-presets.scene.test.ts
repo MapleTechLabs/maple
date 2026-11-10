@@ -15,9 +15,6 @@ import { describe, expect, test } from "vitest"
 import type { PageContext } from "../../contract"
 import * as QueryPanel from "../../kit/query-builder/panel"
 import * as Combobox from "@maple/views/ui/combobox"
-import { CaretMessage } from "../../kit/where-autocomplete"
-import { WhereFieldMessage } from "../../kit/where-field"
-import { MountWhereFieldCaret } from "../../kit/where-field-command"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { update } from "./page-update"
@@ -222,17 +219,6 @@ describe("preset widgets in the editor", () => {
 					rect: { left: 0, right: 225, top: 4, bottom: 5, width: 112, height: 32 },
 				}),
 			),
-			// Resolved with the query panel's message: the page's submodel wraps it.
-			Mount.resolve<string, QueryPanel.Message>(
-				MountWhereFieldCaret,
-				QueryPanel.Message.GotWhereField({
-					message: WhereFieldMessage.GotCaret({
-						fieldId:
-							builder.state?.queries[0]?.id ?? expect.unreachable("the Builder has query A"),
-						message: CaretMessage.BlurredEditor(),
-					}),
-				}),
-			),
 			expectView(text("+ Formula")).toExist(),
 			expectView(text("This preset's query can't be edited")).not.toExist(),
 		)
@@ -277,15 +263,6 @@ describe("preset widgets in the editor", () => {
 		scene(
 			{ update: (model: Model, message: Message) => update(model, message, context), view },
 			...mounted(pie),
-			Mount.resolve<string, QueryPanel.Message>(
-				MountWhereFieldCaret,
-				QueryPanel.Message.GotWhereField({
-					message: WhereFieldMessage.GotCaret({
-						fieldId: pie.state?.queries[0]?.id ?? expect.unreachable("the pie has query A"),
-						message: CaretMessage.BlurredEditor(),
-					}),
-				}),
-			),
 			expectView(
 				text("This visualization groups data into categories. Add a group-by field"),
 			).toExist(),

@@ -1,8 +1,8 @@
 import { parseClickHouseDateTime, type WarehouseTime } from "../../lib/time"
 import { Array as Arr, Option, Schema, String as Str } from "effect"
 
-// lib/time.ts `formatLocalDateTime` / `formatLocalTimestamp` over a locale and zone read once in
-// Flags, so the views never read the browser's locale or zone themselves.
+// Local timestamps over a locale and zone read once in Flags, so the views never read the
+// browser's locale or zone themselves.
 
 /** The browser's default locale and time zone (`Intl.DateTimeFormat().resolvedOptions()`). */
 export const TimeFormat = Schema.Struct({ locale: Schema.String, timeZone: Schema.String })

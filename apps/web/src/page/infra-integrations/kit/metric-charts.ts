@@ -4,7 +4,7 @@ import * as InfraMetricChart from "@maple/views/charts/infra-metric-chart"
 import type { ChartUnit, LongRow } from "@maple/views/charts/infra-metric-series"
 import type { ThemeColors } from "@maple/views/charts/theme-colors"
 import { chartLoading } from "@maple/views/ui/chart-state"
-import { chartCard } from "./chart-card"
+import { chartCard } from "../../kit/chart-card"
 import { gridClass } from "@maple/views/ui/grid"
 import { Array as Arr } from "effect"
 

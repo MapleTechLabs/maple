@@ -1,6 +1,6 @@
 import { HttpApiEndpoint, HttpApiGroup, OpenApi } from "effect/http-api"
 import { Schema } from "effect"
-import { ApiKeyId, PostgresTransactionId, UserId } from "../../primitives"
+import { ApiKeyId, PostgresTransactionId, UserId } from "@maple/primitives"
 import { ApiKeyKind, ApiKeyNotFoundError, ApiKeyPersistenceError } from "../api-keys"
 import { AuthorizationV2, V2Scope } from "./auth"
 import { wireExample, ListOf, ListQuery, Timestamp } from "./envelopes"
@@ -11,7 +11,6 @@ import { publicError } from "./public-error"
 /** `key_…` public ID ⇄ internal `ApiKeyId` (raw UUID). */
 export const ApiKeyPublicId = PublicId(PublicIdPrefixes.apiKey, ApiKeyId)
 
-/** Realistic wire example reused for `ApiKey` and (with `secret`) `ApiKeyWithSecret`. */
 const apiKeyExample = {
 	id: "key_aXwpxqBkqtYwtBtmsGbR41",
 	object: "api_key",
@@ -193,7 +192,6 @@ export type V2ApiKeyCreateParams = Schema.Schema.Type<typeof V2ApiKeyCreateParam
 const apiKeyNotFound = publicError(ApiKeyNotFoundError)
 const apiKeyPersistence = publicError(ApiKeyPersistenceError)
 
-/** List response: a named, cursor-paginated page of API keys. */
 const ApiKeyList = ListOf(V2ApiKey).annotate({
 	identifier: "ApiKeyList",
 	title: "API key list",

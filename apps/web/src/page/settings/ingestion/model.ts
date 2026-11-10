@@ -10,10 +10,10 @@ import * as Tabs from "@maple/views/ui/tabs"
 import * as IngestRules from "./ingest-rules"
 import * as MappingDialog from "./mapping-dialog"
 
-// `IngestionSection`: the ingest-health strip, the OTLP endpoint and ingest keys, install steps,
+// The ingestion tab: the ingest-health strip, the OTLP endpoint and ingest keys, install steps,
 // recommendations and attribute mappings.
 
-/** `ServiceOverview` reduced to what `useIngestConnection` reads. */
+/** `ServiceOverview` reduced to what the connection check reads. */
 export const OverviewRow = Schema.Struct({ serviceName: Schema.String, spanCount: Schema.Number })
 export type OverviewRow = typeof OverviewRow.Type
 

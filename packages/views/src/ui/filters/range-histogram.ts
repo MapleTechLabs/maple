@@ -6,9 +6,9 @@ import type { Html, HtmlBuilder } from "foldkit/html"
 import { defineMessageUnion } from "foldkit/message"
 import { formatValue, type RangeUnit } from "./range-format"
 
-// `RangeHistogram` (packages/ui/src/components/filters/range-filter-section.tsx): the distribution
-// above a range's inputs. A press on one bar sets "at least this"; a drag across bars sets both
-// bounds; hover names the bucket, and a drag in progress tints the range it would select.
+// `RangeHistogram`: the distribution above a range's inputs. A press on one bar sets "at least
+// this"; a drag across bars sets both bounds; hover names the bucket, and a drag in progress tints
+// the range it would select.
 
 export type RangeBucket = Readonly<{ from: number; to: number; count: number; unbounded?: boolean }>
 

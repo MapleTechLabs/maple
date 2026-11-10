@@ -23,8 +23,6 @@ const UTC_WINDOW = {
 	endTime: DateTime.makeUnsafe("2026-06-25T06:00:00Z"),
 }
 
-// sessionTraceSummariesQuery
-//
 // One bar per correlated trace on the session replay timeline. The root span's
 // kind + attributes ride along so the UI can render the canonical HTTP label
 // (`POST /api/foo`) instead of the raw span name (e.g. `HTTP POST`).
@@ -151,8 +149,6 @@ describe("sessionsForTraceQuery", () => {
 	})
 })
 
-// UserId filter (exact match) — list + facets
-//
 // UserId is high-cardinality identity data, so it's an exact-match filter, not a
 // facet branch. On the list it narrows to one user's sessions; on the facets it
 // narrows every dimension's counts (no facet branch is excluded for it).
@@ -324,8 +320,6 @@ describe("getSessionReplayQuery", () => {
 	})
 })
 
-// Session-time filters — duration (stored) + active time (session_events gaps)
-//
 // Guardrail: the default list and the duration-only filter must never touch
 // session_events. Active-time filtering joins the per-session activity aggregate
 // (the only path that scans the events table).
@@ -401,8 +395,6 @@ describe("sessionReplaysListQuery session-time filters", () => {
 	})
 })
 
-// Event refinement — INNER JOIN the distilled session_events match subquery
-//
 // Powers the search_sessions MCP tool's "by what happened inside" filtering.
 // Only an event predicate triggers the join; metadata-only filters (including
 // the web listReplays path) must never read session_events.
@@ -461,8 +453,6 @@ describe("sessionReplaysListQuery event refinement", () => {
 	})
 })
 
-// Session-length distribution + percentiles (facets union)
-//
 // Drives the sidebar's histogram and its "> p50" / "> p95" preset chips. These
 // ride the facets union's existing {name, count, facetType} shape rather than a
 // separate query, so they inherit its filters and its single round-trip.
@@ -529,8 +519,6 @@ describe("sessionReplaysFacetsQuery duration distribution", () => {
 	})
 })
 
-// Live-ness, keyset paging and visitor scoping
-//
 // The read side used to trust `Status` on its own. It cannot: the SDK writes
 // `"ended"` from an unload handler, so a tab that is killed, crashes or is put
 // to sleep leaves the row saying `"active"` for the rest of its retention.
@@ -666,8 +654,6 @@ describe("page visited filter", () => {
 	})
 })
 
-// Session tags
-//
 // Rule-based tags decided over each session's finalized row (see session-tags.ts).
 // Filtering is a SessionId semi-join, so it rides every list branch unchanged.
 

@@ -1,4 +1,4 @@
-import { groupReleases, type ReleaseGroup } from "../../../components/releases/release-model"
+import { groupReleases, type ReleaseGroup } from "../release-model"
 import { Option, Array as Arr } from "effect"
 import { AsyncData } from "foldkit"
 import { deriveOf } from "../list/derive"

@@ -5,7 +5,7 @@ import type { IconName } from "@maple/views/ui/icon"
 import { Message, type Model } from "./model"
 import { Array as Arr } from "effect"
 
-// `CopyScenarios`: every shape `CopyButton` is asked to take, side by side.
+// Every shape a copy button is asked to take, side by side.
 
 type H = HtmlBuilder<Message>
 

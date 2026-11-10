@@ -11,14 +11,14 @@ import { panel } from "@maple/views/ui/panel"
 import { hstack, vstack } from "@maple/views/ui/stack"
 import { textarea } from "@maple/views/ui/textarea"
 import { typography } from "@maple/views/ui/typography"
-import { settingsSection } from "../kit/section"
-import { switchRow } from "../kit/switch-row"
+import { settingsSection } from "../../kit/settings-section"
+import { switchRow } from "../../kit/switch-row"
 import { draftErrors } from "./draft"
 import { type DraftField, Message, type Model } from "./model"
 import { sourceById } from "./state"
 import { connectionFields } from "./view-form-connection"
 import { describedByOf, ids, stateOf, textField } from "./view-field"
-import { ENVIRONMENT_LABEL, KIND_LABEL } from "./view-parts"
+import { ENVIRONMENT_LABEL, kindLabel } from "./view-parts"
 
 type H = HtmlBuilder<Message>
 
@@ -107,7 +107,7 @@ export const formView = (h: H, model: Model, kind: DataSourceKind, editing: stri
 				onNone: () => "Edit data source",
 				onSome: (source) => `Edit ${source.name}`,
 			})
-		: `Connect ${KIND_LABEL[kind]}`
+		: `Connect ${kindLabel(kind)}`
 	return settingsSection(h, { id: "data-source-form", title, framed: false }, [
 		panel(h, { padded: true }, [
 			vstack(h, { gap: "5" }, [

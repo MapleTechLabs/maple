@@ -19,7 +19,7 @@ import {
 	type StatusPageId,
 	StatusPageIncidentId,
 	StatusPageIncidentUpdateId,
-} from "@maple/domain/primitives"
+} from "@maple/primitives"
 import * as Orm from "@maple-dev/effect-orm/database"
 import { msToSqlTimestamp } from "@maple/backend/platform/time"
 import { Effect, Schema, Array as Arr } from "effect"

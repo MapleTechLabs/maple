@@ -1,4 +1,7 @@
-import { toggleFilterValue, toggleTraffic } from "../../components/analytics/filters"
+import { pickerStep } from "../kit/page-time"
+import { chartEnvHandlers } from "@maple/views/charts/chart-env"
+import type { RequestMode } from "@maple/views/data/keyed"
+import { toggleFilterValue, toggleTraffic } from "./filters"
 import {
 	SearchConsoleIntegrationStatus,
 	SearchConsoleLandingPage,
@@ -24,7 +27,7 @@ import { routeWindowStep, snapModeOf } from "../kit/route-window"
 import * as TimeRangePicker from "../kit/time-range-picker"
 import type { PresetValue } from "../kit/time-controls"
 import { CompleteReloadSpin, LoadSignalPresence, ResolveWindow } from "./command"
-import { type FilterKey, Message, type RequestMode, type SlotName } from "./message"
+import { type FilterKey, Message, type SlotName } from "./message"
 import {
 	AiCrawlers,
 	AiReferralPoint,
@@ -110,7 +113,7 @@ const navigate = (model: Model, search: Search, isReplace = false): Return => ({
 	}),
 })
 
-/** `onFilterChange`: an empty value drops out of the URL. */
+/** An empty value drops out of the URL. */
 const withFilter = (search: Search, key: FilterKey, value: string | undefined): Search => ({
 	...search,
 	[key]: value === "" ? undefined : value,
@@ -149,8 +152,8 @@ const hasRows = <A>(slot: Keyed.Keyed<ReadonlyArray<A>, LoadFailure>): boolean =
 	Option.match(AsyncData.getData(slot.data), { onNone: () => false, onSome: (rows) => rows.length > 0 })
 
 /**
- * `useTableSort`'s `initialKey` is read once, when the card mounts with the breakdowns: Pages and
- * Events sort by their second column only if those rows were already in by then.
+ * A card's initial sort is read once, when it mounts with the breakdowns: Pages and Events sort by
+ * their second column only if those rows were already in by then.
  */
 const seedPanels = (model: Model): Model => {
 	if (tabOf(model.search) !== "overview" || !showsOverviewContent(model)) return model
@@ -182,8 +185,6 @@ const delivered = (model: Model, key: string, result: Result.Result<unknown, Loa
 		? next
 		: seedPanels(settleSlots({ ...next, heldEvents: null }, held.key, held.result))
 }
-
-// ENTRY POINTS
 
 export const init = (route: { readonly search: Search }, context: PageContext): Return => {
 	const model: Model = {
@@ -234,11 +235,7 @@ export const init = (route: { readonly search: Search }, context: PageContext): 
 			Command.mapMessage(FilterSections.ReadRemembered(), (message) =>
 				Message.GotFilterSectionsMessage({ message }),
 			),
-			Command.mapMessage(LoadChartRuntime(), (message) =>
-				message._tag === "CompletedLoadChartRuntime"
-					? Message.CompletedLoadChartRuntime()
-					: Message.FailedLoadChartRuntime({ reason: message.reason }),
-			),
+			LoadChartRuntime(),
 		],
 	}
 }
@@ -280,7 +277,7 @@ const refreshOnly = (model: Model, context: PageContext, slots: ReadonlyArray<Sl
 const retryFailed = (model: Model, context: PageContext, slots: ReadonlyArray<SlotName>): Return =>
 	model.window === null ? { model } : requestSlots(model, context, model.window, "Load", slots)
 
-/** `onClearFilters`: the window and the tab stay; the filters go. */
+/** The window and the tab stay; the filters go. */
 const clearedFilters = (search: Search): Search => ({
 	startTime: search.startTime,
 	endTime: search.endTime,
@@ -407,19 +404,16 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			})
 		},
 		GotTimePickerMessage: ({ message: inner }) => {
-			const next = TimeRangePicker.update(model.timePicker, inner)
-			const lifted = lift(model, next.commands, (m) => Message.GotTimePickerMessage({ message: m }), {
-				timePicker: next.model,
-			})
-			return next.outMessage === undefined || next.outMessage._tag === "RejectedRange"
-				? lifted
-				: {
-						...lifted,
-						outMessage: navigate(model, {
-							...model.search,
-							...TimeRangePicker.searchPatchOf(next.outMessage),
-						}).outMessage,
-					}
+			return pickerStep(
+				model,
+				inner,
+				(picker) => Message.GotTimePickerMessage({ message: picker }),
+				(patch) =>
+					navigate(model, {
+						...model.search,
+						...patch,
+					}).outMessage,
+			)
 		},
 		GotChartMessage: ({ message: inner }) => {
 			const next = Chart.update(model.chart, inner)
@@ -427,9 +421,5 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 				chart: next.model,
 			})
 		},
-		ResolvedThemeColors: ({ colors }) => ({ model: { ...model, themeColors: colors } }),
-		CompletedLoadChartRuntime: () => ({ model: { ...model, chartRuntime: { _tag: "Ready" } } }),
-		FailedLoadChartRuntime: ({ reason }) => ({
-			model: { ...model, chartRuntime: { _tag: "Failed", reason } },
-		}),
+		...chartEnvHandlers(model),
 	})

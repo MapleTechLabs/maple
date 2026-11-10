@@ -1,5 +1,5 @@
 import { Option, Schema, String as Str } from "effect"
-import { ChatConnectorId } from "../primitives"
+import { ChatConnectorId } from "@maple/primitives"
 import { VcsAccountType, VcsRepoSelection } from "./vcs"
 
 /**

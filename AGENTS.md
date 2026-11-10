@@ -72,7 +72,7 @@ const rows = yield* warehouse.compiledQuery(tenant, CH.compile(CH.myQuery({ limi
 - Request fields that reach `param.*` or column comparisons are validated at the HTTP boundary
   (`TinybirdDateTime`, `BucketSeconds`, `WarehouseDateTime`) so bad input is a 400, not a 500.
 - The query-engine root barrel stays driver-free (web/cli import it).
-- `packages/domain/src/tinybird/endpoints.ts` is type-only.
+- Pipe rows are typed by the query that fills them (`PipeRow`, `ch/pipe-rows.ts`); no hand-written row interfaces in domain.
 - Read `docs/warehouse-rollups.md` before adding a materialized view. Query perf work uses
   `bun run bench:queries` (see `docs/query-benchmarking.md`); empty-table timings prove nothing.
 

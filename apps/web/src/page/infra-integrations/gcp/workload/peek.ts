@@ -1,15 +1,11 @@
-import {
-	gcpStatementTextPrefix,
-	type GcpStatement,
-	type GcpTracedStatement,
-} from "../../../../components/infra/gcp/cloud-sql-signals"
+import { gcpStatementTextPrefix, type GcpStatement, type GcpTracedStatement } from "../cloud-sql-signals"
 import type { TimeWindow } from "../../../../data/time-range"
 import { AppRoute, hrefOf } from "../../../../route"
 import type { StatementSpansInput } from "../data"
 import { Option, Array as Arr } from "effect"
 
-// `GcpQueryPeekSheet`'s subject: the statement `search.peek` names, where it sits in the table and
-// what the traces know of it.
+// The query peek's subject: the statement `search.peek` names, where it sits in the table and what
+// the traces know of it.
 
 export type QueryPeek = Readonly<{
 	statement: GcpStatement

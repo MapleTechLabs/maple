@@ -1,19 +1,15 @@
-import { REPLAY_BLOCK_CLASS } from "../../components/common/replay-privacy"
-import {
-	agentSetupPrompt,
-	ONBOARD_SKILL_COMMAND,
-	onboardSkillPrompt,
-} from "../../components/ingest/onboard-skill"
+import { REPLAY_BLOCK_CLASS } from "./replay-privacy"
+import { agentSetupPrompt, ONBOARD_SKILL_COMMAND, onboardSkillPrompt } from "./onboard-skill"
 import {
 	type FrameworkId,
 	fillSnippet,
 	type SdkSnippet,
 	type SnippetBlock,
 	sdkSnippets,
-} from "../../components/quick-start/sdk-snippets"
-import { type DocsPage, docsUrl } from "../../lib/docs"
+} from "./sdk-snippets"
+import { type DocsPage, docsUrl } from "./docs"
 import type { Lang } from "@maple/views/lib/highlight"
-import { ingestUrl } from "../../lib/services/common/ingest-url"
+import { ingestUrl } from "../../platform/ingest-url"
 import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { button } from "@maple/views/ui/button"
@@ -24,10 +20,11 @@ import { inlineCode } from "@maple/views/ui/inline-code"
 import { panel } from "@maple/views/ui/panel"
 import type * as Tabs from "@maple/views/ui/tabs"
 import * as TabsView from "@maple/views/ui/tabs-view"
-import { codeBlock } from "../settings/kit/code-block"
+import { codeBlock } from "./code-block"
 import { Array as Arr, Option } from "effect"
 
-// `FrameworkIconStrip`, `FrameworkPicker` and `ConnectInstructions`, with `PackageManagerCodeBlock`.
+// The SDK setup guide: the stack picker, then the Install / Instrument / coding-agent tabs filled in
+// with the org's ingest keys.
 
 const FRAMEWORK_ICONS = {
 	nodejs: "FrameworkNodejsIcon",
@@ -136,7 +133,7 @@ export const frameworkIconStrip = <M>(h: HtmlBuilder<M>): Html =>
 		),
 	)
 
-/** `FrameworkPicker`: pill chips (`compact`) or labelled cards under "Pick your stack". */
+/** Pill chips (`compact`) or labelled cards under "Pick your stack". */
 export const frameworkPicker = <M>(
 	h: HtmlBuilder<M>,
 	options: Readonly<{ selected: string; compact: boolean; onSelect: (framework: FrameworkId) => M }>,
@@ -277,7 +274,7 @@ export const agentPromptButton = <M>(
 		],
 	)
 
-/** The parent's state for `ConnectInstructions`: its tabs, snippet copy states and Messages. */
+/** The parent's state for the setup instructions: its tabs, snippet copy states and Messages. */
 export type InstructionsParts<M> = Readonly<{
 	/** Slot id prefix, unique per page (`ingestion`, `overview-setup`). */
 	slot: string
@@ -347,7 +344,7 @@ const packageManagerBlock = <M>(
 		},
 	})
 
-/** `ConnectInstructions` without credentials: Install / Instrument / Claude Code tabs. */
+/** The setup instructions without credentials: Install / Instrument / Claude Code tabs. */
 export const connectInstructions = <M>(h: HtmlBuilder<M>, parts: InstructionsParts<M>): Html => {
 	const found = Arr.findFirst(sdkSnippets, (entry) => entry.language === parts.framework)
 	if (Option.isNone(found)) return h.empty

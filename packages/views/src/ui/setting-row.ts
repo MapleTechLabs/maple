@@ -10,13 +10,13 @@ import {
 	settingRowLeadStyles,
 	settingRowStyles,
 	settingRowTextStyles,
-} from "@maple/ui/styles/ui/setting-row"
+} from "./setting-row.styles"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { Array as Arr } from "effect"
 
-// Port of packages/ui/src/components/ui/setting-row.tsx. The React row is a Base UI `Field`: its
-// label points at the control's input, and the field state (`data-filled`, `data-disabled`) is
-// mirrored onto the root, label and description. Ids are the caller's (the control uses them too).
+// A settings row: label, description and a control. It is a Base UI `Field`: its label points at the control's input, and the field
+// state (`data-filled`, `data-disabled`) is mirrored onto the root, label and description. Ids are
+// the caller's (the control uses them too).
 
 export interface SettingRowIds {
 	/** The control's form input, the label's `for`. */

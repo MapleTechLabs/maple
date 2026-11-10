@@ -132,7 +132,6 @@ describe("error fingerprint normalization", () => {
 		// Header line is skipped; Python prints the raise site last, so it is read first.
 		expect(result.topFrame).toBe('  File "/app/db.py", , in query')
 		expect(result.fpFrames).toContain("/app/main.py")
-		// Line numbers are stripped; identifiers remain.
 		expect(result.topFrame).not.toMatch(/line 42/)
 	})
 
@@ -178,7 +177,6 @@ describe("error fingerprint normalization", () => {
 		// Header ("RuntimeError: ...") contains no :NUMBER and is skipped.
 		expect(result.topFrame).toContain("main.go")
 		expect(result.topFrame).not.toContain("RuntimeError")
-		// Hex pointers are stripped.
 		expect(result.fpFrames).not.toMatch(/0x[0-9a-fA-F]+/)
 	})
 

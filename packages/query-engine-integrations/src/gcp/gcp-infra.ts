@@ -24,17 +24,14 @@ import {
 } from "@maple/domain/gcp-infra"
 import { gcpMetricLabelAttribute, gcpMetricPointAttributes } from "@maple/domain/gcp-metrics"
 import { finiteOrZero } from "@maple/query-engine/ch/format"
-import {
-	MetricCatalog,
-	MetricsGauge,
-	MetricsSum,
-	orgIdParam,
-	utcSecondsParam,
-} from "@maple/query-engine/ch/tables"
+import * as Datasources from "@maple/domain/tinybird/datasources"
+import { orgIdParam, utcSecondsParam } from "@maple/query-engine/ch/tables"
 import { Array as Arr } from "effect"
 
 /** Both metrics tables declare the columns read here alike. */
-type MetricsAccessor = ColumnAccessor<typeof MetricsSum.columns> | ColumnAccessor<typeof MetricsGauge.columns>
+type MetricsAccessor =
+	| ColumnAccessor<typeof Datasources.metricsSum.columns>
+	| ColumnAccessor<typeof Datasources.metricsGauge.columns>
 
 /**
  * Kept on the PostgreSQL connections so the page can name an instance's databases
@@ -115,10 +112,10 @@ export function gcpInfraMetricsSQL(service: GcpInfraServiceId) {
 	})
 	return fromUnion(
 		unionAll(
-			from(MetricsSum)
+			from(Datasources.metricsSum)
 				.select(point)
 				.where(($) => inWindow($, true)),
-			from(MetricsGauge)
+			from(Datasources.metricsGauge)
 				.select(point)
 				.where(($) => inWindow($, false)),
 		),
@@ -155,10 +152,10 @@ export function gcpInfraTimeseriesSQL(source: GcpInfraSourceId, keys: ReadonlyAr
 		[...inWindow($, sums), ...workloadIs($, source, keys)] as const
 	return fromUnion(
 		unionAll(
-			from(MetricsSum)
+			from(Datasources.metricsSum)
 				.select(point)
 				.where(($) => ofWorkload($, true)),
-			from(MetricsGauge)
+			from(Datasources.metricsGauge)
 				.select(point)
 				.where(($) => ofWorkload($, false)),
 		),
@@ -212,10 +209,10 @@ export function gcpInfraSparklinesSQL(service: GcpInfraServiceId) {
 	})
 	return fromUnion(
 		unionAll(
-			from(MetricsSum)
+			from(Datasources.metricsSum)
 				.select(point)
 				.where(($) => inWindow($, true)),
-			from(MetricsGauge)
+			from(Datasources.metricsGauge)
 				.select(point)
 				.where(($) => inWindow($, false)),
 		),
@@ -236,7 +233,7 @@ export function gcpInfraSparklinesSQL(service: GcpInfraServiceId) {
 
 /** Which of the page's metrics reported in the window, from the hourly `metric_catalog` rollup. */
 export function gcpInfraPresenceSQL() {
-	return from(MetricCatalog)
+	return from(Datasources.metricCatalog)
 		.select(($) => ({ metric: $.MetricName }))
 		.where(($) => [
 			$.OrgId.eq(orgIdParam),
@@ -295,10 +292,10 @@ export function gcpCloudSqlTopQueriesSQL(keys: ReadonlyArray<string>) {
 	// One row per statement and poll.
 	const polls = fromUnion(
 		unionAll(
-			from(MetricsSum)
+			from(Datasources.metricsSum)
 				.select(point)
 				.where(($) => ofInstance($, [CALLS, EXECUTION, LOCK, IO, ROWS])),
-			from(MetricsGauge)
+			from(Datasources.metricsGauge)
 				.select(point)
 				.where(($) => ofInstance($, [DURATION])),
 		),
@@ -340,7 +337,7 @@ export function gcpCloudSqlTopQueriesSQL(keys: ReadonlyArray<string>) {
  * connections per database. `keys` as in `gcpCloudSqlTopQueriesSQL`.
  */
 export function gcpCloudSqlDatabasesSQL(keys: ReadonlyArray<string>) {
-	return from(MetricsGauge)
+	return from(Datasources.metricsGauge)
 		.select(($) => ({ database: $.Attributes.get(DATABASE) }))
 		.where(($) => [
 			$.OrgId.eq(orgIdParam),

@@ -1,13 +1,7 @@
 // BOUNDARY: This module intentionally carries opaque values; callers decode them before domain use.
 import { Clock, Effect, Schema, Array as Arr } from "effect"
-import {
-	LogsFacetDimension,
-	QueryEngineExecuteRequest,
-	coerceLogRow,
-	coerceLogRows,
-	formatWarehouseDateTime,
-	type LogRow,
-} from "@maple/query-engine"
+import { coerceLogRow, coerceLogRows, formatWarehouseDateTime, type LogRow } from "@maple/query-engine"
+import { LogsFacetDimension, QueryEngineExecuteRequest } from "@maple/domain/query-engine"
 import { AttributeFilter, TraceId } from "@maple/domain"
 import {
 	DeploymentEnvironment,

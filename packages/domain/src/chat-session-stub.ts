@@ -16,13 +16,6 @@ import type {
 	ChatTurnTenantEncoded,
 } from "./chat-session"
 
-/**
- * The `ChatSession` Durable Object's RPC surface, and how to reach it off a Worker env.
- *
- * This lives in the domain rather than beside the object because both Workers need it: the one
- * that hosts the class, and `apps/api`, which holds a cross-script reference to it. Keeping the
- * shape in one place is what makes that reference structurally safe.
- */
 /** Why a turn was aborted: recorded on its `chat.turn` span as `maple.chat.abort_reason`. */
 export const CHAT_ABORT_REASONS = ["user", "superseded", "stale", "evicted"] as const
 export type ChatAbortReason = (typeof CHAT_ABORT_REASONS)[number]

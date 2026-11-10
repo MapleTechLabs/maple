@@ -20,17 +20,17 @@ import {
 	sourceTokenPrefix,
 	type SourceResourceAttribute,
 	type SourceSignal,
-} from "@maple/domain/primitives"
-import { hashIngestKey, parseIngestKeyLookupHmacKey } from "@maple/db"
+} from "@maple/primitives"
+import { hashIngestKey } from "../../platform/credential-tokens"
 import * as Orm from "@maple-dev/effect-orm/database"
 import * as PG from "@maple-dev/effect-orm/postgres"
 import { Sources, type SourceRow } from "@maple/db/tables"
-import { Array as Arr, Clock, Context, Effect, Layer, Order, Redacted, Schema, String as Str } from "effect"
+import { Array as Arr, Clock, Context, Effect, Layer, Order, Schema, String as Str } from "effect"
 import type { SourceHealthResult } from "@maple/domain/source-health"
 import { Database, type DatabaseError } from "@maple/backend/platform/DatabaseLive"
 import { makeDbExecute } from "@maple/backend/platform/db-execute"
 import { Env } from "@maple/backend/platform/Env"
-import { readSourceOwners } from "./integration-sources"
+import { readSourceOwners } from "@maple/backend/services/integrations/integration-sources"
 import {
 	defaultSourceRow,
 	newSourceId,
@@ -38,6 +38,7 @@ import {
 	sourceRowHealth,
 	statusOf,
 } from "./source-rows"
+import { ingestKeyLookupHmacKey } from "@maple/backend/platform/Crypto"
 
 const {
 	maxSourcesPerOrg: MAX_SOURCES_PER_ORG,
@@ -213,8 +214,8 @@ export class SourcesService extends Context.Service<SourcesService>()(
 			const database = yield* Database
 			const dbExecute = makeDbExecute(database, "SourcesService", toPersistenceError)
 			const env = yield* Env
-			const lookupHmacKey = yield* parseIngestKeyLookupHmacKey(
-				Redacted.value(env.MAPLE_INGEST_KEY_LOOKUP_HMAC_KEY),
+			const lookupHmacKey = yield* ingestKeyLookupHmacKey(
+				env,
 				(message) => new IngestKeyEncryptionError({ message }),
 			)
 
@@ -272,7 +273,6 @@ export class SourcesService extends Context.Service<SourcesService>()(
 					),
 				)
 
-			// The default source first, then newest first as selected.
 			const ownerOf = (
 				owners: Effect.Success<ReturnType<typeof readSourceOwners>>,
 				id: SourceId,
@@ -281,6 +281,7 @@ export class SourcesService extends Context.Service<SourcesService>()(
 				overrides: owners.overrides.get(id),
 			})
 
+			// The default source first, then newest first as selected.
 			const toSources = (
 				rows: ReadonlyArray<SourceRow>,
 				owners: Effect.Success<ReturnType<typeof readSourceOwners>>,

@@ -1,10 +1,10 @@
 import { isPricingCardFeature } from "@maple/domain/billing"
 import type { CatalogPlan } from "@maple/domain/http"
 import { cn } from "@maple/ui/lib/utils"
-import { getTrialStatus } from "../../../lib/billing/plan-gating"
-import { getPlanFeatures, sentenceCasePlanName, TRIAL_DURATION_DAYS } from "../../../lib/billing/plans"
-import { featureUnit, type SpendModel } from "../../../lib/billing/spend"
-import { formatCount } from "../../../lib/billing/usage"
+import { getTrialStatus } from "../../kit/billing/plan-gating"
+import { getPlanFeatures, sentenceCasePlanName, TRIAL_DURATION_DAYS } from "../../kit/billing/plans"
+import { featureUnit, type SpendModel } from "./spend"
+import { formatCount } from "../../kit/billing/usage"
 import type { BillingCustomer } from "@maple/domain/http"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
@@ -16,7 +16,7 @@ import { eyebrow } from "@maple/views/ui/eyebrow"
 import { icon } from "@maple/views/ui/icon"
 import { panel } from "@maple/views/ui/panel"
 import { skeleton, skeletonBlock } from "@maple/views/ui/skeleton"
-import { settingsSection } from "../kit/section"
+import { settingsSection } from "../../kit/settings-section"
 import { compliance } from "../../kit/compliance-line"
 import { Message, type Model } from "./model"
 import { typography, typographyClass } from "@maple/views/ui/typography"
@@ -25,8 +25,6 @@ import { Array as Arr, String as Str, Option } from "effect"
 import { textLink } from "@maple/views/ui/text-link"
 
 type H = HtmlBuilder<Message>
-
-// `BillingPlanSection` and `PlanOffer` (apps/web/src/components/settings/).
 
 const ENTERPRISE_CALL_URL = "https://cal.com/david-granzin/30min?overlayCalendar=true"
 const CURRENT_PLAN_CAPTION = "Change or cancel it in Manage billing"

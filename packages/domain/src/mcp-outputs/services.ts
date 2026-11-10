@@ -1,9 +1,6 @@
-/** Output schemas for the services, metrics and query MCP tools. */
 import { Schema } from "effect"
 import { BoundaryDeploy, OutputPagination, OutputTimeRange } from "./shared"
 import { InfraEntityRow, InfraKindSection } from "./infra"
-
-// list_services
 
 export const ListServicesOutput = Schema.Struct({
 	timeRange: OutputTimeRange,
@@ -18,8 +15,6 @@ export const ListServicesOutput = Schema.Struct({
 	),
 	environment: Schema.optionalKey(Schema.String),
 })
-
-// diagnose_service
 
 export const DiagnoseServiceTraceRow = Schema.Struct({
 	traceId: Schema.String,
@@ -89,8 +84,6 @@ export const DiagnoseServiceOutput = Schema.Struct({
 	platformError: Schema.optionalKey(Schema.String),
 })
 
-// get_service_top_operations
-
 export const GetServiceTopOperationsOutput = Schema.Struct({
 	timeRange: OutputTimeRange,
 	serviceName: Schema.String,
@@ -99,8 +92,6 @@ export const GetServiceTopOperationsOutput = Schema.Struct({
 	total: Schema.Number,
 	operations: Schema.Array(Schema.Struct({ name: Schema.String, value: Schema.Number })),
 })
-
-// service_map
 
 export const ServiceMapEdgeRow = Schema.Struct({
 	sourceService: Schema.String,
@@ -119,8 +110,6 @@ export const ServiceMapOutput = Schema.Struct({
 	service: Schema.optionalKey(Schema.String),
 	environment: Schema.optionalKey(Schema.String),
 })
-
-// list_metrics
 
 export const ListMetricsMetricRow = Schema.Struct({
 	metricName: Schema.String,
@@ -152,8 +141,6 @@ export const ListMetricsOutput = Schema.Struct({
 	),
 })
 
-// explore_attributes
-
 const CountedName = Schema.Struct({ name: Schema.String, count: Schema.Number })
 
 export const ExploreAttributesOutput = Schema.Struct({
@@ -171,8 +158,6 @@ export const ExploreAttributesOutput = Schema.Struct({
 	metricName: Schema.optionalKey(Schema.String),
 	metricType: Schema.optionalKey(Schema.String),
 })
-
-// compare_periods
 
 const PeriodServiceStats = Schema.Struct({
 	throughput: Schema.Number,
@@ -204,8 +189,6 @@ export const ComparePeriodsOutput = Schema.Struct({
 	service: Schema.optionalKey(Schema.String),
 	environment: Schema.optionalKey(Schema.String),
 })
-
-// compare_operations
 
 const OperationWindowStats = Schema.Struct({
 	/** Sampling-weighted span count. */
@@ -251,8 +234,6 @@ export const CompareOperationsOutput = Schema.Struct({
 	/** Operations in either window with no significant change. */
 	unchanged: Schema.Number,
 })
-
-// query_data
 
 export const QueryDataUnitSchema = Schema.Literals([
 	"duration_ms",
@@ -320,8 +301,6 @@ export const QueryDataOutput = Schema.Struct({
 	emptyHints: Schema.optionalKey(Schema.Array(Schema.String)),
 })
 
-// run_sql
-
 /** A column name the warehouse rejected and the one `run_sql` reran with. */
 export const RunSqlRewrite = Schema.Struct({
 	from: Schema.String,
@@ -351,8 +330,6 @@ export const RunSqlOutput = Schema.Struct({
 	/** Tables read that live only in Maple's managed warehouse; set on an empty result. */
 	managedOnlyTables: Schema.optionalKey(Schema.Array(Schema.String)),
 })
-
-// describe_warehouse_tables
 
 export const DescribeWarehouseTablesOutput = Schema.Struct({
 	/** Every table, when none was asked for by name. */

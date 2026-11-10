@@ -1,5 +1,5 @@
 import { createHmac, randomBytes, timingSafeEqual } from "node:crypto"
-import { StatusPageSubscriberId } from "@maple/domain/primitives"
+import { StatusPageSubscriberId } from "@maple/primitives"
 import { Option, Schema, String as Str } from "effect"
 
 /** A confirmation token: emailed once, only its SHA-256 is stored. */

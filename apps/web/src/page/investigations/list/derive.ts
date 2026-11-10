@@ -63,7 +63,7 @@ export const visibleOf = (model: Model, all: ReadonlyArray<V2Investigation>) => 
 
 const DAY_MS = 24 * 60 * 60 * 1000
 
-/** `TriageStrip`'s three numbers, from the fetched page. */
+/** The triage strip's three numbers, from the fetched page. */
 export const triageStatsOf = (all: ReadonlyArray<V2Investigation>, nowMs: number) => {
 	const running = Arr.filter(all, (entry) => entry.status === "investigating")
 	const review = Arr.filter(all, (entry) => entry.status === "diagnosed")

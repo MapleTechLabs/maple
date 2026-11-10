@@ -19,7 +19,6 @@ import {
 	type IssueKind,
 	type IssueSeverity,
 	type OrgId,
-	RoleName,
 	UserId as UserIdSchema,
 	type WorkflowState,
 	type WarehouseReadError,
@@ -27,25 +26,15 @@ import {
 import * as PG from "@maple-dev/effect-orm/postgres"
 import { ErrorIncidents, type ErrorIncidentRow, ErrorIssueFingerprints, ErrorIssues } from "@maple/db/tables"
 import { CH, formatWarehouseDateTime, parseWarehouseDateTime } from "@maple/query-engine"
-import {
-	Clock,
-	Context,
-	DateTime,
-	Effect,
-	Layer,
-	Match,
-	Option,
-	Schema,
-	Array as Arr,
-	String as Str,
-} from "effect"
+import { Clock, Context, DateTime, Effect, Layer, Option, Schema, Array as Arr, String as Str } from "effect"
 import { Database } from "@maple/backend/platform/DatabaseLive"
-import type { TenantContext } from "@maple/backend/services/auth/AuthService"
 import { WarehouseQueryService } from "@maple/backend/services/warehouse/WarehouseQueryService"
 import { isMissingErrorEventsUserId } from "@maple/backend/services/warehouse/missing-table"
 import { ErrorIssueWorkflowService } from "./ErrorIssueWorkflowService"
 import { makeErrorDatabaseExecute } from "./error-persistence"
 import { issueFingerprintHashes } from "./issue-fingerprints"
+import { severityRank } from "./issue-severity"
+import { systemTenant } from "@maple/backend/services/auth/system-tenant"
 
 const decodeErrorIssueIdSync = Schema.decodeUnknownSync(ErrorIssueDocument.fields.id)
 const encodeIssueListCursor = Schema.encodeSync(IssueListCursor)
@@ -53,8 +42,8 @@ const encodeIssueSeverityListCursorRaw = Schema.encodeSync(IssueSeverityListCurs
 const encodeIssueSeverityListCursor = (fields: IssueSeverityListCursorFields): string =>
 	`sev_${encodeIssueSeverityListCursorRaw(fields)}`
 const decodeIsoDateTimeStringSync = Schema.decodeUnknownSync(ErrorIssueDocument.fields.firstSeenAt)
-const decodeRoleNameSync = Schema.decodeUnknownSync(RoleName)
 const decodeUserIdSync = Schema.decodeUnknownSync(UserIdSchema)
+const SYSTEM_USER_ID = decodeUserIdSync("system-errors")
 
 const DEFAULT_DETAIL_WINDOW_MS = 24 * 60 * 60 * 1000
 /** Fallback fingerprint-scan window for the issue list's env filter when the
@@ -96,26 +85,19 @@ const ownsAnyHash = ($: IssueColumns, orgId: OrgId, hashes: ReadonlyArray<string
 				),
 			)
 
-/** Shared SQL ordering expression for the UI's critical-first issue ordering. */
+/** The UI's critical-first issue order: 0 for critical through 3 for low, 4 for unset. */
+const severitySortRank = (severity: IssueSeverity | null): number => 4 - severityRank(severity)
+
+const SEVERITIES_BY_RANK: ReadonlyArray<IssueSeverity> = ["critical", "high", "medium", "low"]
+
+/** `severitySortRank` as SQL, for the cursor and the ORDER BY. */
 const issueSeverityOrder = ($: IssueColumns) =>
 	PG.caseWhen(
-		[
-			[$.severity.eq("critical"), PG.lit(0)],
-			[$.severity.eq("high"), PG.lit(1)],
-			[$.severity.eq("medium"), PG.lit(2)],
-			[$.severity.eq("low"), PG.lit(3)],
-		],
-		PG.lit(4),
-	)
-
-const severitySortRank = (severity: IssueSeverity | null): number =>
-	Match.value(severity).pipe(
-		Match.when("critical", () => 0),
-		Match.when("high", () => 1),
-		Match.when("medium", () => 2),
-		Match.when("low", () => 3),
-		Match.when(null, () => 4),
-		Match.exhaustive,
+		Arr.map(
+			SEVERITIES_BY_RANK,
+			(severity) => [$.severity.eq(severity), PG.lit(severitySortRank(severity))] as const,
+		),
+		PG.lit(severitySortRank(null)),
 	)
 
 export interface IssueListFilters {
@@ -255,13 +237,6 @@ const make: Effect.Effect<
 	const workflow = yield* ErrorIssueWorkflowService
 	const dbExecute = makeErrorDatabaseExecute(database, "ErrorIssueReadModelsService")
 
-	const systemTenant = (orgId: OrgId): TenantContext => ({
-		orgId,
-		userId: decodeUserIdSync("system-errors"),
-		roles: [decodeRoleNameSync("root")],
-		authMode: "self_hosted",
-	})
-
 	const rowToIncident = (row: ErrorIncidentRow) =>
 		new ErrorIncidentDocument({
 			id: row.id,
@@ -298,10 +273,14 @@ const make: Effect.Effect<
 					endTime: formatWarehouseDateTime(scanEndMs),
 				},
 			)
-			const fingerprintRows = yield* warehouse.compiledQuery(systemTenant(orgId), compiled, {
-				profile: "aggregation",
-				context: "errorIssueEnvFingerprints",
-			})
+			const fingerprintRows = yield* warehouse.compiledQuery(
+				systemTenant(orgId, SYSTEM_USER_ID),
+				compiled,
+				{
+					profile: "aggregation",
+					context: "errorIssueEnvFingerprints",
+				},
+			)
 			return Arr.filter(
 				Arr.map(fingerprintRows, (row) => row.fingerprintHash),
 				(hash) => hash.length > 0,
@@ -491,7 +470,7 @@ const make: Effect.Effect<
 			: endMs - DEFAULT_DETAIL_WINDOW_MS
 		const bucketSeconds = opts.bucketSeconds ?? 3600
 		const sampleLimit = opts.sampleLimit ?? 25
-		const tenant = systemTenant(orgId)
+		const tenant = systemTenant(orgId, SYSTEM_USER_ID)
 		const isErrorKind = issueRow.kind === "error"
 		const fingerprintHashes = (yield* dbExecute((db) =>
 			issueFingerprintHashes(db, orgId, [issueRow]),
@@ -597,7 +576,7 @@ const make: Effect.Effect<
 		const fingerprintHashes = (yield* dbExecute((db) =>
 			issueFingerprintHashes(db, orgId, [issueRow]),
 		)).get(issueRow.id) ?? [issueRow.fingerprintHash]
-		const tenant = systemTenant(orgId)
+		const tenant = systemTenant(orgId, SYSTEM_USER_ID)
 		const params = { orgId, startTime: opts.startTime, endTime: opts.endTime }
 		const [count, users] = yield* Effect.all(
 			[

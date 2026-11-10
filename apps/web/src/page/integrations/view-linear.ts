@@ -16,19 +16,17 @@ import {
 	integrationEmptyHint,
 	integrationEmptyMedia,
 	integrationIconPlate,
-} from "../infra-integrations/kit/integration-empty"
-import { LINEAR_ACCENT } from "./catalog"
+} from "../kit/integration-empty"
 import { Message } from "./message"
 import { canManage, type Model } from "./model"
 import { disconnectDialog } from "./view-disconnect"
 import { typography } from "@maple/views/ui/typography"
 import { hstack } from "@maple/views/ui/stack"
-
-// The Linear card: connect, the connected workspace, and a revoked grant that needs a reconnect.
+import { providerBrand } from "../kit/providers"
 
 type H = HtmlBuilder<Message>
 
-const BRAND = { icon: "LinearIcon", accent: LINEAR_ACCENT } as const
+const BRAND = providerBrand("linear")
 
 const ADMIN_ONLY = "Only org admins and engineers can change the Linear connection."
 

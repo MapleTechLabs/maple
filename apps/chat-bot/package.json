@@ -12,6 +12,7 @@
 		"@maple/chat-platform": "workspace:*",
 		"@maple/domain": "workspace:*",
 		"@maple/infra": "workspace:*",
+		"@maple/primitives": "workspace:*",
 		"alchemy": "catalog:alchemy",
 		"effect": "catalog:effect"
 	},

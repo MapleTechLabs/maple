@@ -2,14 +2,14 @@ import { legend, releaseImpact } from "../worst-case-fixture"
 import { verdict } from "../worst-case-docs"
 import type { Html } from "foldkit/html"
 import { verdictCard } from "../../page/investigations/detail/view-verdict"
-import { queryBuilderLegend } from "../../page/kit/query-builder-legend"
+import { queryBuilderLegend } from "../query-builder-legend"
 import { releaseComparison } from "../../page/releases/detail/view-comparison"
 import { Message, type Model } from "./model"
 import * as TraceBox from "./trace-box"
 import * as TraceBoxView from "./trace-box-view"
 import { type H, narrow, wcSection } from "./view-parts"
 
-// `TraceSection`, `LegendSection` and `VerdictSection`.
+// The trace, legend and verdict sections.
 
 const traceBox = (
 	h: H,

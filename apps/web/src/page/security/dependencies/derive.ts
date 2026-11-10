@@ -1,4 +1,5 @@
 import type { AdvisorySeverity } from "@maple/domain/package-advisories"
+import { SEVERITY_RANK } from "@maple/domain/runtime-advisories"
 import type { DependencyRelation } from "@maple/domain/dependency-scan"
 import {
 	DEPENDENCY_FINDING_REASON_MAX_LENGTH,
@@ -200,14 +201,6 @@ export const reasonErrorOf = (reason: string): string | null =>
 
 /** A commit as its first seven characters, as GitHub abbreviates it. */
 export const shortSha = (sha: string): string => Str.slice(0, 7)(sha)
-
-const SEVERITY_RANK = {
-	critical: 0,
-	high: 1,
-	medium: 2,
-	low: 3,
-	unknown: 4,
-} satisfies Record<AdvisorySeverity, number>
 
 /** How directly the code leans on a package: a direct one is the bump a person makes. */
 const RELATION_RANK = {

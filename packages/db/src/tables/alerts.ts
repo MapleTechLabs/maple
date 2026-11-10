@@ -11,8 +11,10 @@ import {
 	ErrorIssueId,
 	OrgId,
 	UserId,
-} from "@maple/domain/primitives"
-import { AlertIncidentLabels, AnomalySignalType, StoredAlertMaintenanceSchedule } from "@maple/domain/http"
+} from "@maple/primitives"
+import { StoredAlertMaintenanceSchedule } from "@maple/domain/alert-maintenance-windows"
+import { AlertIncidentLabels } from "@maple/domain/alerts"
+import { AnomalySignalType } from "@maple/domain/anomalies"
 import { Schema } from "effect"
 
 const StringArray = Schema.Array(Schema.String)
@@ -147,7 +149,7 @@ export const AlertRules = PG.table("alert_rules", {
  *
  * Holding the lock in its own narrow, unpublished table keeps the per-minute write out
  * of the replication stream entirely. Electric runs with
- * ELECTRIC_MANUAL_TABLE_PUBLISHING=true (see 0009_electric_publication.sql), so a new
+ * ELECTRIC_MANUAL_TABLE_PUBLISHING=true (see drizzle/20260704212005_electric_publication), so a new
  * table is unpublished unless a migration explicitly adds it; do not add this one.
  */
 export const AlertRuleClaims = PG.table("alert_rule_claims", {
@@ -470,7 +472,5 @@ export type AlertRuleRow = PG.SelectRowOf<typeof AlertRules>
 export type AlertRuleStateRow = PG.SelectRowOf<typeof AlertRuleStates>
 export type AlertIncidentRow = PG.SelectRowOf<typeof AlertIncidents>
 export type AlertDeliveryEventRow = PG.SelectRowOf<typeof AlertDeliveryEvents>
-export type AlertIncidentEventRow = PG.SelectRowOf<typeof AlertIncidentEvents>
-export type AlertLinearIssueRow = PG.SelectRowOf<typeof AlertLinearIssues>
 export type AlertSilenceRow = PG.SelectRowOf<typeof AlertSilences>
 export type AlertMaintenanceWindowRow = PG.SelectRowOf<typeof AlertMaintenanceWindows>

@@ -3,8 +3,8 @@ import { UnauthorizedError } from "@maple/domain/http"
 import { Cause, Effect, Option, Schema, String as Str } from "effect"
 import { Command, Mount, type Update } from "foldkit"
 import { defineMessageUnion } from "foldkit/message"
-import { suggestOrganizationName } from "../../lib/onboarding-org-name"
-import { currentRegion } from "../../lib/region"
+import { suggestOrganizationName } from "./onboarding-org-name"
+import { currentRegion } from "../../platform/region"
 import {
 	acceptUserInvitation,
 	type ClerkUser,
@@ -63,8 +63,6 @@ export const Message = defineMessageUnion({
 	CompletedMountDitherField: {},
 })
 export type Message = typeof Message.Type
-
-// COMMANDS
 
 export const LoadInvitations = Command.define("LoadUserInvitations", {
 	messages: [Message.LoadedInvitations, Message.FailedLoadInvitations],
@@ -133,8 +131,6 @@ export const MountDitherField = Mount.define("MountOnboardingDitherField", {
 			(stop) => Effect.sync(stop),
 		).pipe(Effect.as(Message.CompletedMountDitherField())),
 })
-
-// INIT AND UPDATE
 
 type Result = Update.Return<Model, Message, Resources>
 

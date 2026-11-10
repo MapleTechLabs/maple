@@ -6,7 +6,8 @@ import { OrgId } from "@maple/domain"
 import { errorDetailTracesQuery, spanDetailQuery, spanHierarchyQuery, traceTimeProbeQuery } from "./errors"
 import { getLogByKeyQuery, logsListQuery, logsTimeseriesQuery } from "./logs"
 import { sessionTraceSummariesQuery } from "./session-replays"
-import { Traces, orgIdParam } from "../tables"
+import * as Datasources from "@maple/domain/tinybird/datasources"
+import { orgIdParam } from "../tables"
 import {
 	slowTracesQuery,
 	spanSearchQuery,
@@ -139,7 +140,7 @@ describe("trace and log rows decode timestamps to DateTime.Utc", () => {
 	it.effect("decodes span event timestamps inside the array column", () =>
 		Effect.gen(function* () {
 			const compiled = yield* compile(
-				from(Traces)
+				from(Datasources.traces)
 					.select(($) => ({ events: $.EventsTimestamp }))
 					.where(($) => [$.OrgId.eq(orgIdParam)]),
 				params,

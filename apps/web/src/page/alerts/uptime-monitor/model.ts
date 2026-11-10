@@ -1,18 +1,15 @@
+import { ChartEnvFields } from "@maple/views/charts/chart-env"
 import * as Policy from "@maple/domain/policy"
 import { UptimeMonitorId } from "@maple/domain"
 import { V2UptimeMonitor } from "@maple/domain/http/v2"
 import { AlertDestinationRowSchema, AlertIncidentRowSchema } from "@maple/web-data/collections/alerts"
 import { Schema } from "effect"
 import * as Chart from "@maple/views/charts/chart"
-import { ChartRuntime } from "@maple/views/charts/chart-runtime"
-import { ThemeColors } from "@maple/views/charts/theme-colors"
 import { KeyedSchema } from "@maple/views/data/keyed"
 import { LoadFailure } from "@maple/views/data/load-failure"
 import * as CopyButton from "@maple/views/ui/copy-button"
+import { LiveRows } from "../../kit/load-schemas"
 
-// `/alerts/uptime/$monitorId`: one monitor, its recent checks and setup.
-
-/** The response-time chart's window. */
 export const UptimeWindow = Schema.Literals(["1h", "24h", "7d"])
 export type UptimeWindow = typeof UptimeWindow.Type
 
@@ -28,7 +25,6 @@ export const CheckPoint = Schema.Struct({
 })
 export type CheckPoint = typeof CheckPoint.Type
 
-/** `UptimeCheckSample`: one check, from its span. */
 /** An HTTP check's phases in ms; null on a check that recorded none (TCP, DNS, older checks). */
 export const CheckPhases = Schema.Struct({
 	dnsMs: Schema.Number,
@@ -39,6 +35,7 @@ export const CheckPhases = Schema.Struct({
 })
 export type CheckPhases = typeof CheckPhases.Type
 
+/** `UptimeCheckSample`: one check, from its span. */
 export const CheckSample = Schema.Struct({
 	at: Schema.String,
 	durationMs: Schema.Number,
@@ -80,8 +77,6 @@ export const CheckStats = Schema.Struct({
 })
 export type CheckStats = typeof CheckStats.Type
 
-const Rows = <S extends Schema.Top>(row: S) => Schema.NullOr(Schema.Array(row))
-
 export const Model = Schema.Struct({
 	/** The URL segment as written; `monitorId` is `null` when it is not a monitor id. */
 	rawMonitorId: Schema.String,
@@ -89,8 +84,8 @@ export const Model = Schema.Struct({
 	nowMs: Schema.NullOr(Schema.Number),
 	monitor: KeyedSchema(V2UptimeMonitor, LoadFailure),
 	/** Synced destinations (the Setup panel's names) and incidents (the open one, by rule name). */
-	destinations: Rows(AlertDestinationRowSchema),
-	incidents: Rows(AlertIncidentRowSchema),
+	destinations: LiveRows(AlertDestinationRowSchema),
+	incidents: LiveRows(AlertIncidentRowSchema),
 	grants: Schema.Array(Policy.PermissionName),
 	isToggling: Schema.Boolean,
 	isChecking: Schema.Boolean,
@@ -102,8 +97,7 @@ export const Model = Schema.Struct({
 	hoveredCheck: Schema.NullOr(Schema.Number),
 	chart: Chart.Model,
 	phaseChart: Chart.Model,
-	chartRuntime: ChartRuntime,
-	themeColors: Schema.NullOr(ThemeColors),
+	...ChartEnvFields,
 })
 export type Model = typeof Model.Type
 

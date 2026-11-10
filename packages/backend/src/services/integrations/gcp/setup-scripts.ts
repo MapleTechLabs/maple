@@ -11,7 +11,7 @@ import {
 	type GcpProjectId,
 	type GcpResourceNumber,
 	type GcpScopeType,
-} from "@maple/domain/primitives"
+} from "@maple/primitives"
 import { forPaste } from "../paste-script"
 import { Array as Arr, String as Str } from "effect"
 

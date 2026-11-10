@@ -1,4 +1,6 @@
-import { Clock, Duration, Effect, Schema } from "effect"
+import { reloadSpin } from "@maple/views/data/timing"
+import { RequestMode } from "@maple/views/data/keyed"
+import { Clock, Effect, Schema } from "effect"
 import { Command } from "foldkit"
 import { resolveWindow, TimeWindow } from "../../../../data/time-range"
 import {
@@ -11,7 +13,7 @@ import {
 	loadTimeseries,
 	TimeseriesInput,
 } from "../data"
-import { Message, RequestMode } from "./model"
+import { Message } from "./model"
 
 /** The window plus its bounds read as browser-local time, for the events read. */
 const withLocal = (window: TimeWindow) => ({
@@ -31,7 +33,9 @@ export const ResolveWindow = Command.define("ResolvePlanetscaleDatabaseWindow", 
 	execute: ({ mode, startTime, endTime, preset, timeZone }) =>
 		Effect.map(Clock.currentTimeMillis, (nowMs) =>
 			Message.CompletedResolveWindow({
-				...withLocal(resolveWindow({ startTime, endTime, preset, snap: mode === "Load", timeZone }, nowMs)),
+				...withLocal(
+					resolveWindow({ startTime, endTime, preset, snap: mode === "Load", timeZone }, nowMs),
+				),
 				nowMs,
 				mode,
 			}),
@@ -82,9 +86,7 @@ export const FetchInsights = Command.define("FetchPlanetscaleQueryInsights", {
 		Effect.map(loadInsights(input), (result) => Message.CompletedFetchInsights({ key, result })),
 })
 
-export const CompleteReloadSpin = Command.define("CompletePlanetscaleDatabaseReloadSpin", {
-	args: { version: Schema.Number },
-	messages: [Message.CompletedReloadSpin],
-	execute: ({ version }) =>
-		Effect.as(Effect.sleep(Duration.millis(600)), Message.CompletedReloadSpin({ version })),
-})
+export const CompleteReloadSpin = reloadSpin(
+	"CompletePlanetscaleDatabaseReloadSpin",
+	Message.CompletedReloadSpin,
+)

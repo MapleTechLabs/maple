@@ -223,10 +223,6 @@ export async function getOffer(): Promise<Offer> {
 	}
 }
 
-// ── Formatting ───────────────────────────────────────────────────────────────
-// Every number on the pricing surface is money or volume, so it all runs
-// through one of these three.
-
 const round2 = (n: number) => Math.round(n * 100) / 100
 
 export const money = (n: number) => {

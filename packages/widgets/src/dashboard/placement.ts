@@ -10,7 +10,6 @@ import { Array as Arr } from "effect"
  * policy — so the width is a parameter and the algorithm is here.
  */
 
-/** The canvas is a 12-column grid. */
 export const DASHBOARD_GRID_COLS = 12
 
 /**

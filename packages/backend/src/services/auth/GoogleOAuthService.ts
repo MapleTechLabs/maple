@@ -1,4 +1,3 @@
-import { randomBytes } from "node:crypto"
 import {
 	IntegrationsConfigurationError,
 	IntegrationsNotConnectedError,
@@ -10,7 +9,7 @@ import {
 	type UserId,
 } from "@maple/domain/http"
 import * as PG from "@maple-dev/effect-orm/postgres"
-import { OAuthAuthStates, SearchConsoleSites } from "@maple/db/tables"
+import { SearchConsoleSites } from "@maple/db/tables"
 import { Clock, Context, Effect, Layer, Option, Schema, String as Str, Array as Arr } from "effect"
 import { FetchHttpClient } from "effect/http"
 import { Env, type EnvConfig } from "@maple/backend/platform/Env"
@@ -21,11 +20,11 @@ import {
 } from "@maple/backend/services/integrations/google-search-console/client"
 import {
 	makeOAuthConnectionHelpers,
-	OAUTH_STATE_TTL_MS,
 	type OAuthTokenEndpointConfig,
 	toUpstreamError,
 } from "./oauth/connection-helpers"
 import type { OAuthFlowInitiator } from "./oauth/oauth-state"
+import { newOAuthState } from "./oauth/oauth-state"
 
 export const GOOGLE_PROVIDER = "google"
 /** Where Google redirects after consent; registered as an authorized redirect URI on the client. */
@@ -77,7 +76,6 @@ const resolveConfig = Effect.fn("GoogleOAuthService.resolveConfig")(function* (e
 	return { tokenUrl: TOKEN_URL, clientId, clientSecret } satisfies OAuthTokenEndpointConfig
 })
 
-/** Exact failures involved in resolving a usable Google access token. */
 export type GoogleAccessTokenError =
 	| IntegrationsNotConnectedError
 	| IntegrationsRevokedError
@@ -161,23 +159,11 @@ export class GoogleOAuthService extends Context.Service<GoogleOAuthService, Goog
 			) {
 				yield* Effect.annotateCurrentSpan({ orgId })
 				const config = yield* resolveConfig(env)
-				const state = randomBytes(24).toString("base64url")
-				const currentTime = yield* Clock.currentTimeMillis
-
-				yield* oauth.purgeExpiredStates(currentTime)
-				yield* oauth.dbExecute((db) =>
-					db.run(
-						PG.insertInto(OAuthAuthStates).values({
-							state,
-							orgId,
-							provider: GOOGLE_PROVIDER,
-							initiatedByUserId: userId,
-							redirectUri: options.callbackUrl,
-							returnTo: options.returnTo ?? null,
-							createdAt: currentTime,
-							expiresAt: currentTime + OAUTH_STATE_TTL_MS,
-						}),
-					),
+				const state = yield* newOAuthState
+				yield* oauth.saveState(
+					state,
+					{ orgId, userId },
+					{ redirectUri: options.callbackUrl, returnTo: options.returnTo ?? null },
 				)
 
 				const params = new URLSearchParams({
@@ -306,7 +292,6 @@ export class GoogleOAuthService extends Context.Service<GoogleOAuthService, Goog
 	static readonly layer = Layer.effect(this, this.make).pipe(Layer.provide(FetchHttpClient.layer))
 }
 
-/** Whether Google is configured for this deployment (both client id and secret set). */
 export const isGoogleOAuthConfigured = (env: EnvConfig): boolean =>
 	Option.isSome(env.GOOGLE_SEARCH_CONSOLE_CLIENT_ID) &&
 	Option.isSome(env.GOOGLE_SEARCH_CONSOLE_CLIENT_SECRET)

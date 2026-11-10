@@ -1,3 +1,6 @@
+import { pickerStep } from "../../../kit/page-time"
+import { chartEnvHandlers } from "@maple/views/charts/chart-env"
+import type { RequestMode } from "@maple/views/data/keyed"
 import { Option, Array as Arr, Record as Rec } from "effect"
 import { Command } from "foldkit"
 import * as Chart from "@maple/views/charts/chart"
@@ -18,7 +21,7 @@ import {
 	ResolveWindow,
 	type TimeseriesInput,
 } from "./command"
-import { Message, type RequestMode } from "./message"
+import { Message } from "./message"
 import type { Model } from "./model"
 
 type Return = PageReturn<Model, Message>
@@ -96,14 +99,7 @@ export const init = (route: Route, context: PageContext): Return => {
 	}
 	return {
 		model,
-		commands: [
-			resolveCommand(model, context, "Load"),
-			Command.mapMessage(LoadChartRuntime(), (message) =>
-				message._tag === "CompletedLoadChartRuntime"
-					? Message.CompletedLoadChartRuntime()
-					: Message.FailedLoadChartRuntime({ reason: message.reason }),
-			),
-		],
+		commands: [resolveCommand(model, context, "Load"), LoadChartRuntime()],
 	}
 }
 
@@ -139,11 +135,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		CompletedFetchTimeseries: ({ key, result }) => ({
 			model: { ...model, timeseries: Keyed.accept(model.timeseries, key, result) },
 		}),
-		CompletedLoadChartRuntime: () => ({ model: { ...model, chartRuntime: { _tag: "Ready" } } }),
-		FailedLoadChartRuntime: ({ reason }) => ({
-			model: { ...model, chartRuntime: { _tag: "Failed", reason } },
-		}),
-		ResolvedThemeColors: ({ colors }) => ({ model: { ...model, themeColors: colors } }),
+		...chartEnvHandlers(model),
 		ClickedRetryTimeseries: () =>
 			model.window === null ? { model } : requestAll(model, context, model.window, "Refresh"),
 		ClickedReload: () => {
@@ -166,22 +158,16 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		CompletedReloadSpin: ({ version }) =>
 			version === model.refreshVersion ? { model: { ...model, isReloading: false } } : { model },
 		GotTimePickerMessage: ({ message: inner }) => {
-			const next = TimeRangePicker.update(model.timePicker, inner)
-			const lifted: Return = {
-				model: { ...model, timePicker: next.model },
-				commands: Command.mapMessages(next.commands, (picker) =>
-					Message.GotTimePickerMessage({ message: picker }),
-				),
-			}
-			return next.outMessage === undefined || next.outMessage._tag === "RejectedRange"
-				? lifted
-				: {
-						...lifted,
-						outMessage: navigate(model, {
-							...model.search,
-							...TimeRangePicker.searchPatchOf(next.outMessage),
-						}).outMessage,
-					}
+			return pickerStep(
+				model,
+				inner,
+				(picker) => Message.GotTimePickerMessage({ message: picker }),
+				(patch) =>
+					navigate(model, {
+						...model.search,
+						...patch,
+					}).outMessage,
+			)
 		},
 		GotChartMessage: ({ chartId, message: inner }) => {
 			const next = Chart.update(model.charts[chartId] ?? Chart.init(), inner)

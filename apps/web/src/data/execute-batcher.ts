@@ -4,18 +4,18 @@ import {
 	type QueryEngineBatchOutcome,
 	type QueryEngineExecuteRequest,
 	QueryEngineExecuteResponse,
-} from "@maple/query-engine"
-import { EXECUTE_BATCH_WINDOW_MS } from "@maple/web-data/warehouse/execute-batcher"
+} from "@maple/domain/query-engine"
 import { MissingBatchResultError } from "@maple/web-data/warehouse/warehouse-services"
 import { Cause, Deferred, Duration, Effect, Option, Ref, type Scope, Array as Arr } from "effect"
 
 /**
- * `@maple/web-data`'s promise `makeExecuteBatcher` as an Effect: queries enqueued from separate
- * Command fibers within one timer window go out as one `/execute-batch` request, at most
- * `QUERY_ENGINE_BATCH_MAX` per request, and each caller is settled from its own positional
- * outcome. It fails with what the promise batcher rejects with (the per-item public body, or the
- * whole request's error), so `executeQueryEngine` normalizes both apps' failures alike.
+ * Coalesces query executions from separate Command fibers within one timer window into one
+ * `/execute-batch` request, at most `QUERY_ENGINE_BATCH_MAX` per request; each caller is settled
+ * from its own positional outcome (the per-item public body, or the whole request's error).
  */
+
+/** How long to hold a query waiting for siblings. */
+export const EXECUTE_BATCH_WINDOW_MS = 15
 
 /** Sends one batch; fails only when the whole request fails. */
 export type SendExecuteBatch<E> = (

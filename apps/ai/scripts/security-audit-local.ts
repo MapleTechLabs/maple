@@ -42,7 +42,7 @@ import {
 	String as Str,
 } from "effect"
 import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/http"
-import { type ExecutorTransport, SandboxClientError } from "@maple/backend/sandbox/client"
+import { type ExecutorTransport, SandboxClientError } from "@maple/backend/services/sandbox/client"
 import { makeExecutor } from "@maple/backend/services/sandbox/ExecutorService"
 import {
 	EXECUTOR_DESTROY_PATH,
@@ -480,7 +480,6 @@ const main = async () => {
 			concurrency: args.concurrency,
 		}
 		return yield* runAudit(input).pipe(
-			// The script composes the engine with its host here, at its entry point.
 			Effect.provide([Layer.succeed(AuditAgents, agents), Layer.succeed(AuditStore, fileStore(out))]),
 			Effect.ensuring(executor === undefined ? Effect.void : executor.destroy(executorRun)),
 		)

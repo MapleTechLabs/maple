@@ -5,8 +5,6 @@ import { hstackClass } from "@maple/views/ui/stack"
 import { Array as Arr, String as Str } from "effect"
 import { typography } from "@maple/views/ui/typography"
 
-// `MetaLine` and `PlatformLabel`.
-
 /** An item: plain text (capped and titled) or a node. Absent items are dropped. */
 export type MetaItem = Html | string | null | undefined | false
 

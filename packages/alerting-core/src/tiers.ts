@@ -3,6 +3,7 @@ import {
 	alertSeverityOrder,
 	type AlertComparator,
 	type AlertSeverity,
+	type ChartBreachSide,
 } from "@maple/domain/http"
 import { Array as Arr, Option } from "effect"
 
@@ -197,3 +198,20 @@ export const highestBreachedLevel = (levels: ReadonlyArray<AlertTierLevel>): Ale
 		null,
 		(highest, level) => maxSeverity(highest, level.severity),
 	)
+
+/**
+ * Which side of the threshold is the bad side. `between`/`not_between`/`eq`/`neq` have no single
+ * bad half-plane, so they shade nothing rather than point the eye at the wrong half of a chart.
+ */
+export const breachSideFor = (comparator: AlertComparator): ChartBreachSide => {
+	switch (comparator) {
+		case "gt":
+		case "gte":
+			return "above"
+		case "lt":
+		case "lte":
+			return "below"
+		default:
+			return "none"
+	}
+}

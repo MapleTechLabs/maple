@@ -3,8 +3,8 @@ import { Effect, Exit, Layer, Option, Array as Arr, String as Str } from "effect
 import * as SecureRandom from "effect/crypto/SecureRandom"
 import { TestClock } from "effect/testing"
 import { decodeStatusPageSnapshotJson, StatusPageKeys, utcDay } from "@maple/domain/status-page"
-import { StatusPageId } from "@maple/domain/primitives"
-import { cleanupTestDbs, createTestDb, executeSql, type TestDb } from "@maple/backend/platform/test-pglite"
+import { StatusPageId } from "@maple/primitives"
+import { cleanupTestDbs, createTestDb, executeSql, type TestDb } from "@maple/backend/testing/test-pglite"
 import { STATUS_PAGE_SWEEP_BATCH, StatusPagePublisher } from "./StatusPagePublisher"
 import { StatusPageStore, type InMemoryStatusPageStore, type StatusPageStoreApi } from "./StatusPageStore"
 import {

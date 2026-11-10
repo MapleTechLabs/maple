@@ -4,30 +4,15 @@
  * `preview` bind from props via `mapleDbEnv`.
  */
 import * as Cloudflare from "@alchemy.run/cloudflare"
-import { Stage } from "alchemy/Stage"
 import * as Effect from "effect/Effect"
-import type * as Option from "effect/Option"
 import * as Redacted from "effect/Redacted"
 import * as Schema from "effect/Schema"
 import { requiredPlain } from "../env.ts"
 import { resolveMapleProfile } from "../profile.ts"
-import type { MapleDbResources } from "./stack.ts"
-import {
-	type MapleDbConsumer,
-	parseMapleDeploymentEffect,
-	resolveHyperdriveRefId,
-	resolveWorkerName,
-} from "./stage.ts"
+import { type MapleDbResources, stageDeployment } from "./stack.ts"
+import { type MapleDbConsumer, resolveHyperdriveRefId, resolveWorkerName } from "./stage.ts"
+import { MAPLE_DB_BINDING } from "./worker-runtime.ts"
 import { String as Str } from "effect"
-
-/** The binding's name — also the managed Connection's logical id, so both flavors bind under it. */
-export const MAPLE_DB_BINDING = "MAPLE_DB"
-
-/** This deploy's stage; the root stack already failed typed on a bad one, so here it is a defect. */
-const stageDeployment = Effect.gen(function* () {
-	const stage = yield* Stage
-	return yield* parseMapleDeploymentEffect(stage)
-}).pipe(Effect.orDie)
 
 /** `MAPLE_PG_URL` is not a URL. Carries no raw value: the URL holds the password. */
 export class MaplePgUrlError extends Schema.TaggedError<MaplePgUrlError>()("@maple/infra/MaplePgUrlError", {
@@ -118,16 +103,3 @@ export const MapleDb = (consumer: MapleDbConsumer) =>
 				return
 		}
 	})
-
-/** What a Worker reads off the `MAPLE_DB` binding: the runtime `Hyperdrive` object's connection facts. */
-const MapleDbBinding = Schema.Struct({
-	connectionString: Schema.String.check(Schema.isNonEmpty()),
-	host: Schema.String,
-	port: Schema.Number,
-	database: Schema.String,
-})
-export type MapleDbBinding = typeof MapleDbBinding.Type
-
-/** The `MAPLE_DB` binding off a Worker env, or `None` when absent or not a Hyperdrive object. */
-export const readMapleDbBinding = (env: Record<string, unknown>): Option.Option<MapleDbBinding> =>
-	Schema.decodeUnknownOption(MapleDbBinding)(env[MAPLE_DB_BINDING])

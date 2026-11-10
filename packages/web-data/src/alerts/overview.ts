@@ -60,9 +60,8 @@ const groupByRuleId = <T extends { readonly ruleId: string }>(items: ReadonlyArr
 }
 
 /**
- * The whole overview derivation as one pure function over domain documents —
- * unit-testable without React or a registry. Replaces the useMemo chain the
- * overview tab used to run per render.
+ * The whole overview derivation as one pure function over domain documents,
+ * unit-testable without a registry.
  */
 export const deriveOverview = (inputs: OverviewInputs): AlertsOverviewReady => {
 	const { now } = inputs

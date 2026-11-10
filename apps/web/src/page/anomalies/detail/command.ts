@@ -1,17 +1,13 @@
+import { readClock } from "@maple/views/data/timing"
 import { AnomalyIncidentId, ErrorIssueId } from "@maple/domain/http"
 import { V2InvestigationCreateParams } from "@maple/domain/http/v2"
-import { Clock, Effect, Schema } from "effect"
+import { Effect, Schema } from "effect"
 import { Command } from "foldkit"
-import { toLoadFailure } from "@maple/views/data/load-failure"
+import { settled } from "@maple/views/data/load-failure"
 import { MapleApiV2Client } from "../../../platform/api-clients"
 import { Message } from "./message"
 
-const v2 = <A, E, R>(effect: Effect.Effect<A, E, R>) => effect.pipe(Effect.mapError(toLoadFailure), Effect.result)
-
-export const ReadAnomalyClock = Command.define("ReadAnomalyClock", {
-	messages: [Message.ReadClock],
-	execute: Effect.map(Clock.currentTimeMillis, (nowMs) => Message.ReadClock({ nowMs })),
-})
+export const ReadAnomalyClock = readClock("ReadAnomalyClock", Message.ReadClock)
 
 export const FetchIncident = Command.define("FetchAnomalyIncident", {
 	args: { key: Schema.String, id: AnomalyIncidentId },
@@ -19,7 +15,7 @@ export const FetchIncident = Command.define("FetchAnomalyIncident", {
 	execute: ({ key, id }) =>
 		Effect.gen(function* () {
 			const client = yield* MapleApiV2Client
-			const result = yield* v2(client.anomalies.getIncident({ params: { id } }))
+			const result = yield* settled(client.anomalies.getIncident({ params: { id } }))
 			return Message.CompletedFetchIncident({ key, result })
 		}),
 })
@@ -30,7 +26,9 @@ export const FetchTimeseries = Command.define("FetchAnomalyTimeseries", {
 	execute: ({ key, id }) =>
 		Effect.gen(function* () {
 			const client = yield* MapleApiV2Client
-			const result = yield* v2(client.anomalies.getIncidentTimeseries({ params: { id }, query: {} }))
+			const result = yield* settled(
+				client.anomalies.getIncidentTimeseries({ params: { id }, query: {} }),
+			)
 			return Message.CompletedFetchTimeseries({ key, result })
 		}),
 })
@@ -41,7 +39,7 @@ export const FetchLinkedIssue = Command.define("FetchAnomalyLinkedIssue", {
 	execute: ({ key, id }) =>
 		Effect.gen(function* () {
 			const client = yield* MapleApiV2Client
-			const result = yield* v2(client.errorIssues.retrieve({ params: { id }, query: {} }))
+			const result = yield* settled(client.errorIssues.retrieve({ params: { id }, query: {} }))
 			return Message.CompletedFetchLinkedIssue({ key, result })
 		}),
 })
@@ -53,7 +51,7 @@ export const FetchLinkIssues = Command.define("FetchAnomalyLinkIssues", {
 		Effect.gen(function* () {
 			const client = yield* MapleApiV2Client
 			const query = serviceName === null ? { limit: 100 } : { service_name: serviceName, limit: 100 }
-			const result = yield* v2(Effect.map(client.errorIssues.list({ query }), (page) => page.data))
+			const result = yield* settled(Effect.map(client.errorIssues.list({ query }), (page) => page.data))
 			return Message.CompletedFetchLinkIssues({ key, result })
 		}),
 })
@@ -64,8 +62,10 @@ export const CreateInvestigation = Command.define("CreateAnomalyInvestigation", 
 	execute: ({ payload }) =>
 		Effect.gen(function* () {
 			const client = yield* MapleApiV2Client
-			const result = yield* v2(
-				Effect.map(client.investigations.create({ payload }), (investigation) => String(investigation.id)),
+			const result = yield* settled(
+				Effect.map(client.investigations.create({ payload }), (investigation) =>
+					String(investigation.id),
+				),
 			)
 			return Message.CompletedInvestigate({ result })
 		}),
@@ -77,7 +77,7 @@ export const ResolveIncident = Command.define("ResolveAnomalyIncident", {
 	execute: ({ id }) =>
 		Effect.gen(function* () {
 			const client = yield* MapleApiV2Client
-			const result = yield* v2(client.anomalies.resolveIncident({ params: { id } }))
+			const result = yield* settled(client.anomalies.resolveIncident({ params: { id } }))
 			return Message.CompletedResolve({ result })
 		}),
 })
@@ -88,7 +88,9 @@ export const SetIncidentIssue = Command.define("SetAnomalyIncidentIssue", {
 	execute: ({ id, issueId }) =>
 		Effect.gen(function* () {
 			const client = yield* MapleApiV2Client
-			const result = yield* v2(client.anomalies.setIncidentIssue({ params: { id }, payload: { issue_id: issueId } }))
+			const result = yield* settled(
+				client.anomalies.setIncidentIssue({ params: { id }, payload: { issue_id: issueId } }),
+			)
 			return Message.CompletedSetIssue({ issueId, result })
 		}),
 })

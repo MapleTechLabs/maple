@@ -8,6 +8,7 @@ import { SignalPresenceData } from "@maple/views/data/signal-presence"
 import * as TimeRangePicker from "../../kit/time-range-picker"
 import { SessionRow } from "../kit/session-row"
 import { VirtualWindow } from "../kit/virtualize"
+import { laterPagesFields } from "../../kit/infinite-pages"
 
 // The `/replays` list.
 
@@ -41,14 +42,11 @@ export const ReplaysFacets = Schema.Struct({
 })
 export type ReplaysFacets = typeof ReplaysFacets.Type
 
-/** `useInfiniteReplays`' pages after the first, for the current first-page key. */
+/** The pages after the first, for the current first-page key. */
 export const Pagination = Schema.Struct({
 	key: Schema.NullOr(Schema.String),
-	/** Bumped by every fresh set of pages (a new key or a Reload): an older page is dropped. */
-	generation: Schema.Number,
-	pages: Schema.Array(ReplaysPage),
-	isFetching: Schema.Boolean,
-	isStopped: Schema.Boolean,
+	/** `generation` is also bumped by a Reload. */
+	...laterPagesFields(ReplaysPage),
 })
 export type Pagination = typeof Pagination.Type
 
@@ -66,7 +64,7 @@ export const Model = Schema.Struct({
 	/** The virtualizer's window over the rows, as the list Mount reports it. */
 	virtualWindow: VirtualWindow,
 	presence: SignalPresenceData.schema,
-	/** `ToolbarSearch`: what is typed, and the debounce run that may still commit it. */
+	/** The toolbar search: what is typed, and the debounce run that may still commit it. */
 	query: Schema.String,
 	queryGeneration: Schema.Number,
 	/** The sidebar's identity inputs; each commits on Enter. */
@@ -74,7 +72,7 @@ export const Model = Schema.Struct({
 	userIdText: Schema.String,
 	durationDraft: Draft,
 	activeDraft: Draft,
-	/** The hovered histogram bar per range (`RangeHistogram`'s readout). */
+	/** The hovered histogram bar per range, for its readout. */
 	histogramHover: Schema.Record(Schema.String, Schema.Number),
 	draftVersion: Schema.Number,
 	filterSections: FilterSections.Model,

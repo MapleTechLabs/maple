@@ -1,5 +1,5 @@
 import { DEFAULT_MAPLE_REGION } from "./region.ts"
-import type { MapleDeployment } from "./cloudflare/stage.ts"
+import type { MapleDeployment, MapleDomains } from "./cloudflare/stage.ts"
 
 /**
  * How a deployment reaches the app database: `ref` (dashboard Hyperdrive by id, US prd),
@@ -42,7 +42,7 @@ export interface MapleProfile {
 		readonly sharedApps: boolean
 		/** The OTLP gateway on AWS. Dev runs it through docker-compose. */
 		readonly ingest: boolean
-		/** The OTel collector beside the gateway (`MAPLE_DEPLOY_AWS_COLLECTOR=1` forces it for one deploy). */
+		/** The OTel collector beside the gateway (`forceCollector` turns it on for one deploy). */
 		readonly collector: boolean
 		/** Self-hosted Electric. Needs a declared database to replicate from, so not on dev. */
 		readonly electric: boolean
@@ -71,6 +71,15 @@ export interface MapleProfile {
 	}
 	readonly scraper: {
 		readonly taskSize: TaskSize
+	}
+	/** Cloudflare container tiers; named tiers are the only dial alongside an instance type. */
+	readonly sandbox: {
+		/** Full clones exhaust the smaller tiers' disk. */
+		readonly instanceType: "standard-1" | "standard-2"
+		/** One container per repository per org: the cap on concurrent repositories. */
+		readonly maxInstances: number
+		/** The cap on concurrent audit runs that execute code. */
+		readonly executorMaxInstances: number
 	}
 	readonly electric: {
 		readonly taskSize: TaskSize
@@ -113,6 +122,7 @@ const US_PRD: MapleProfile = {
 	},
 	electric: { taskSize: { cpu: 512, memory: 1024 }, dbPoolSize: undefined },
 	scraper: { taskSize: { cpu: 512, memory: 1024 } },
+	sandbox: { instanceType: "standard-2", maxInstances: 40, executorMaxInstances: 10 },
 }
 
 /**
@@ -162,6 +172,7 @@ const PR: MapleProfile = {
 	ingest: SMALL_INGEST,
 	electric: { taskSize: { cpu: 256, memory: 512 }, dbPoolSize: undefined },
 	scraper: { taskSize: { cpu: 256, memory: 512 } },
+	sandbox: { instanceType: "standard-1", maxInstances: 5, executorMaxInstances: 2 },
 }
 
 /** `preview:web` PRs: the Workers on their own Neon and Tinybird branches; on AWS, only an IAM user. */
@@ -181,13 +192,11 @@ const DEV: MapleProfile = {
 export interface MapleProfileOptions {
 	/** A PR stage deployed from the `preview:web` label (`MAPLE_PREVIEW_WEB_ONLY=1`). */
 	readonly webOnlyPreview?: boolean
+	/** The collector for one deploy wherever the gateway runs (`MAPLE_DEPLOY_AWS_COLLECTOR=1`). */
+	readonly forceCollector?: boolean
 }
 
-/** The profile for one deployment. PR previews are `us` only (`parseMapleDeployment`). */
-export function resolveMapleProfile(
-	{ stage, region }: MapleDeployment,
-	{ webOnlyPreview = false }: MapleProfileOptions = {},
-): MapleProfile {
+const baseProfile = ({ stage, region }: MapleDeployment, webOnlyPreview: boolean): MapleProfile => {
 	const shared = region === DEFAULT_MAPLE_REGION
 	switch (stage.kind) {
 		case "prd":
@@ -195,12 +204,29 @@ export function resolveMapleProfile(
 		case "pr":
 			return webOnlyPreview ? PR_WEB : PR
 		case "dev":
-			return shared
-				? DEV
-				: {
-						...DEV,
-						deploys: { ...DEV.deploys, sharedApps: false },
-						electric: { ...DEV.electric, dbPoolSize: 4 },
-					}
+			return shared ? DEV : { ...DEV, deploys: { ...DEV.deploys, sharedApps: false } }
+	}
+}
+
+/** The profile for one deployment. PR previews are `us` only (`parseMapleDeployment`). */
+export function resolveMapleProfile(
+	deployment: MapleDeployment,
+	{ webOnlyPreview = false, forceCollector = false }: MapleProfileOptions = {},
+): MapleProfile {
+	const profile = baseProfile(deployment, webOnlyPreview)
+	return forceCollector && profile.deploys.ingest && !profile.deploys.collector
+		? { ...profile, deploys: { ...profile.deploys, collector: true } }
+		: profile
+}
+
+/** The hostnames of what this profile deploys; one for a service it skips would resolve nowhere. */
+export const deployedDomains = (domains: MapleDomains, { deploys }: MapleProfile): MapleDomains => {
+	const { ingest, electric, landing, local, ...rest } = domains
+	return {
+		...rest,
+		...(deploys.ingest && ingest !== undefined && { ingest }),
+		...(deploys.electric && electric !== undefined && { electric }),
+		...(deploys.sharedApps && landing !== undefined && { landing }),
+		...(deploys.sharedApps && local !== undefined && { local }),
 	}
 }

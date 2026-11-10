@@ -129,8 +129,6 @@ export const StartFirstRun = Command.define("SecurityApiStartFirstRun", {
 		Effect.map(startRun(targetId), (result) => Message.CompletedStartFirstRun({ attempt, result })),
 })
 
-// VALIDATION
-
 const isRepository = Schema.is(SecurityAuditRepository)
 const isBranch = Schema.is(SecurityAuditBranch)
 
@@ -246,8 +244,6 @@ export const fieldFailure = (
 			: null
 	return field === null ? null : { field, message: failure.message }
 }
-
-// UPDATE
 
 type Return = Update.ReturnWithOutMessage<Model, Message, OutMessage, Resources>
 

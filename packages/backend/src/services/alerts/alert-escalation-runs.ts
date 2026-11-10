@@ -22,7 +22,7 @@ import type {
 	OnCallScheduleId,
 	OrgId,
 } from "@maple/domain/http"
-import type { AlertEscalationRunId, ChatConnectorId, ChatIdentityId, UserId } from "@maple/domain/primitives"
+import type { AlertEscalationRunId, ChatConnectorId, ChatIdentityId, UserId } from "@maple/primitives"
 import * as PG from "@maple-dev/effect-orm/postgres"
 import {
 	AlertDeliveryEvents,
@@ -291,7 +291,6 @@ export type MemberRecipient =
 			readonly externalUserId: string
 	  }
 
-/** A step's destination targets. */
 export const stepDestinationIds = (step: EscalationStep): ReadonlyArray<AlertDestinationId> =>
 	Arr.dedupe(
 		Arr.flatMap(step.targets, (target) => (target.type === "destination" ? [target.destinationId] : [])),

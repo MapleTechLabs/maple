@@ -21,6 +21,5 @@ export const hazelManifest: ChatConnectorManifest = {
 		],
 	},
 	accent: "#F46F0F",
-	// Nothing to configure per workspace.
 	settingsFields: [],
 }

@@ -18,7 +18,7 @@ import {
 } from "@maple/domain/http"
 import { InspectUserOutput, ListUsersOutput } from "@maple/domain/mcp-outputs"
 import { UsersReadService } from "@maple/backend/services/users/UsersReadService"
-import { CurrentMcpTenant } from "../../lib/query-warehouse"
+import { CurrentMcpTenant } from "../../tenant"
 import { executeRegisteredMcpToolUnscoped } from "../registry"
 import type { McpToolResult } from "../types"
 

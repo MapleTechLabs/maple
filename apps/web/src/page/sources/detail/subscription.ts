@@ -1,7 +1,7 @@
 import { Option } from "effect"
 import { Subscription } from "foldkit"
 import type { PageSubscriptionInput } from "../../contract"
-import { subscriptions as integrationSubscriptions } from "../../integrations/subscription"
+import { subscriptions as integrationSubscriptions } from "../../integrations/embed"
 import { Message } from "./message"
 import type { Model } from "./model"
 

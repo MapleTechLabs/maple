@@ -1,10 +1,11 @@
-import { Match, Option, pipe, Array as Arr, String as Str } from "effect"
+import { Option, Array as Arr, Record as Rec, String as Str } from "effect"
 
 import { toEpochMs } from "./time-format"
 
 // Imported, not re-exported straight through: the formatters below CALL these,
 // and a bare `export … from` binds nothing in this module's scope.
 import { formatDuration, formatNumber } from "@maple/domain/format"
+import type { WIDGET_UNITS } from "@maple/domain/http"
 
 export { formatDuration, formatNumber }
 
@@ -231,8 +232,7 @@ export function formatBucketLabel(
 
 	const includeDate = context.rangeMs >= 24 * 60 * 60 * 1000 || (context.bucketSeconds ?? 0) >= 24 * 60 * 60
 	const includeSeconds = context.rangeMs <= 30 * 60 * 1000 && !includeDate
-	// The viewer's selected zone when the chart sits under a `PlotTimeZoneProvider`;
-	// the browser's otherwise.
+	// The viewer's selected zone when the caller passes one; the browser's otherwise.
 	const timeZone = context.timeZone
 	// The browser's locale unless the caller read one (Foldkit views stay pure).
 	const locale = context.locale
@@ -351,29 +351,36 @@ const percentText = (pct: number): string => {
 	return pct < 0 ? `>-${PERCENT_SMALLEST}%` : `<${PERCENT_SMALLEST}%`
 }
 
+/** One formatter per catalogued widget unit (`WIDGET_UNITS`); a new token fails to compile here. */
+const UNIT_FORMATS = {
+	none: formatNumber,
+	number: formatNumber,
+	short: formatNumber,
+	percent: (num: number) => percentText(num * 100),
+	// For sources that already report 0–100 (PlanetScale's `*_util_percentages`, NATS varz
+	// `cpu`, most Prometheus exporters). Without this they had to borrow `percent` and render
+	// 100× high, or drop the `%` entirely by falling back to `number`.
+	percent_100: (num: number) => percentText(num),
+	duration_ms: (num: number) => formatDuration(num),
+	duration_us: (num: number) => formatDuration(num / 1000),
+	duration_s: (num: number) => formatDuration(num * 1000),
+	duration_ns: (num: number) => formatDuration(num / 1_000_000),
+	requests_per_sec: (num: number) => `${formatNumber(num)}/s`,
+	// Decimal, deliberately: widgets with a `bytes` unit live in saved user
+	// dashboards, and switching them to a 1024 base would silently rewrite
+	// every one of those readouts (1_000_000 → "976.6 KB" instead of "1.0 MB").
+	bytes: (num: number) => formatStorageBytes(num),
+} satisfies Record<(typeof WIDGET_UNITS)[number]["token"], (num: number) => string>
+
+const isUnitToken = (unit: string): unit is keyof typeof UNIT_FORMATS =>
+	Rec.has<string, (num: number) => string>(UNIT_FORMATS, unit)
+
 /**
- * Format a numeric value according to a unit type.
- * Used by chart Y-axis ticks, tooltips, and stat widgets.
+ * Format a numeric value according to a unit type. Used by chart Y-axis ticks, tooltips,
+ * and stat widgets; an uncatalogued unit (a stored `"GB"`) renders as a plain number.
  */
-export const formatValueByUnit: (num: number, unit?: string) => string = (num, unit) =>
-	pipe(
-		Match.value(unit),
-		Match.when("percent", () => percentText(num * 100)),
-		// For sources that already report 0–100 (PlanetScale's `*_util_percentages`, NATS varz
-		// `cpu`, most Prometheus exporters). Without this they had to borrow `percent` and render
-		// 100× high, or drop the `%` entirely by falling back to `number`.
-		Match.when("percent_100", () => percentText(num)),
-		Match.when("duration_ms", () => formatDuration(num)),
-		Match.when("duration_us", () => formatDuration(num / 1000)),
-		Match.when("duration_s", () => formatDuration(num * 1000)),
-		Match.when("duration_ns", () => formatDuration(num / 1_000_000)),
-		Match.when("requests_per_sec", () => `${formatNumber(num)}/s`),
-		// Decimal, deliberately: widgets with a `bytes` unit live in saved user
-		// dashboards, and switching them to a 1024 base would silently rewrite
-		// every one of those readouts (1_000_000 → "976.6 KB" instead of "1.0 MB").
-		Match.when("bytes", () => formatStorageBytes(num)),
-		Match.orElse(() => formatNumber(num)),
-	)
+export const formatValueByUnit = (num: number, unit?: string): string =>
+	unit !== undefined && isUnitToken(unit) ? UNIT_FORMATS[unit](num) : formatNumber(num)
 
 const DURATION_TO_MS = new Map([
 	["duration_ms", 1],

@@ -13,6 +13,7 @@ import {
 } from "./quick-start-state"
 import { ConnectMessage } from "./quick-start-connect"
 import { LoadTeam, loadingTeam, TeamMessage, updateTeam } from "./quick-start-team"
+import * as CheckoutReturn from "../kit/checkout-return"
 
 /** An org that holds a plan, as most of these steps run for. */
 const update = (model: Model, message: Message) => updateWith(model, message, true)
@@ -381,14 +382,27 @@ describe("pricing cards", () => {
 		expect(Arr.map(returning.commands, (command) => command.name)).toEqual(
 			expect.arrayContaining(["WaitCheckoutPoll", "WaitCheckoutTimeout"]),
 		)
-		const polled = PricingCards.update(returning.model, PricingCards.Message.ElapsedCheckoutPoll())
+		const polled = PricingCards.update(
+			returning.model,
+			PricingCards.Message.GotCheckoutReturnMessage({ message: CheckoutReturn.Message.ElapsedPoll() }),
+		)
 		expect(polled.outMessage).toEqual(PricingCards.OutMessage.RequestedCustomerRefresh())
 		expect(names(polled)).toEqual(["WaitCheckoutPoll"])
-		const timedOut = PricingCards.update(returning.model, PricingCards.Message.ElapsedCheckoutTimeout())
+		const timedOut = PricingCards.update(
+			returning.model,
+			PricingCards.Message.GotCheckoutReturnMessage({
+				message: CheckoutReturn.Message.ElapsedTimeout(),
+			}),
+		)
 		expect(timedOut.model.checkoutReturn).toBe("TimedOut")
 		expect(timedOut.outMessage).toEqual(PricingCards.OutMessage.RequestedClearCheckoutMarker())
 		expect(
-			PricingCards.update(timedOut.model, PricingCards.Message.ElapsedCheckoutPoll()).outMessage,
+			PricingCards.update(
+				timedOut.model,
+				PricingCards.Message.GotCheckoutReturnMessage({
+					message: CheckoutReturn.Message.ElapsedPoll(),
+				}),
+			).outMessage,
 		).toBeUndefined()
 	})
 

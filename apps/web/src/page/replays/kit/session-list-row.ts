@@ -8,7 +8,7 @@ import {
 	SESSION_TAG_LABELS,
 	SESSION_TAG_ORDER,
 	SESSION_TAG_STYLES,
-} from "../../../components/replays/session-tags"
+} from "./session-tags"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { badge } from "@maple/views/ui/display"
 import { icon } from "@maple/views/ui/icon"
@@ -19,13 +19,7 @@ import { truncatedText } from "@maple/views/ui/truncated-text"
 import { errorCountPill } from "@maple/views/ui/error-count-pill"
 import { relativeTime } from "../../kit/relative-time"
 import type { SessionRow } from "./session-row"
-import {
-	browserIconFor,
-	COLUMNS,
-	deviceIconFor,
-	livePill,
-	type SessionsListOptions,
-} from "./sessions-parts"
+import { browserIconFor, COLUMNS, deviceIconFor, livePill, type SessionsListOptions } from "./sessions-parts"
 import { typography, typographyClass } from "@maple/views/ui/typography"
 import { hstack } from "@maple/views/ui/stack"
 import { selectableRow } from "@maple/views/ui/selectable-row"

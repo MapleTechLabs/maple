@@ -8,7 +8,7 @@ import {
 	payloadLinesBytes,
 	unwrapToolErrorText,
 	whatsWrong,
-} from "../../../lib/agent-sessions/tool-error-display"
+} from "../../kit/tools/tool-error-display"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { button } from "@maple/views/ui/button"
 import { eyebrow } from "@maple/views/ui/eyebrow"
@@ -19,9 +19,6 @@ import { badge } from "@maple/views/ui/display"
 import { hstack, vstack } from "@maple/views/ui/stack"
 
 const encodePrettyJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown, { space: 2 }))
-
-// `SampleBody` of `ToolErrorModal`: what the call was handed and what it gave back, and where the
-// arguments confirm a schema failure, what is wrong with them.
 
 type H = HtmlBuilder<Message>
 
@@ -88,9 +85,7 @@ const payloadLineView = (h: H, line: PayloadLine): Html =>
 					),
 			...(line.folded === undefined
 				? []
-				: [
-						badge(h, { variant: "muted", size: "xs", className: "ml-2" }, [line.folded]),
-					]),
+				: [badge(h, { variant: "muted", size: "xs", className: "ml-2" }, [line.folded])]),
 			...(line.note === undefined
 				? []
 				: [
@@ -269,7 +264,10 @@ export const sampleBody = (h: H, model: Model, row: ToolErrorOccurrenceRow): Htm
 							className: "rounded-md border border-border bg-sidebar p-3 font-mono",
 						},
 						[
-							statusDot(h, { tone: "custom", className: "mt-[calc(--spacing(1)+1px)] bg-muted-foreground" }),
+							statusDot(h, {
+								tone: "custom",
+								className: "mt-[calc(--spacing(1)+1px)] bg-muted-foreground",
+							}),
 							vstack(h, { gap: "1", as: "span" }, [
 								typography(h, { size: "xs", tone: "foreground", className: "leading-4" }, [
 									"The tool reported no error detail",

@@ -1,5 +1,6 @@
+import { SEARCH_DEBOUNCE } from "@maple/views/data/timing"
 import { readLocalStorage, writeLocalStorage } from "@maple/ui/lib/local-storage"
-import { Clock, Duration, Effect, Option, Result, Schema, Array as Arr } from "effect"
+import { Clock, Effect, Option, Result, Schema, Array as Arr } from "effect"
 import { Command, Dom } from "foldkit"
 import { File as FoldkitFile } from "foldkit/file"
 import { trackProduct } from "../../../data/analytics"
@@ -32,7 +33,7 @@ import { documentOf } from "../view/command-history"
 import { toListDashboard } from "./derive"
 import { Message, type WriteFailure } from "./message"
 
-/** `dashboardSortAtom`'s key: the default sort for a URL without `?sort`. */
+/** The localStorage key of the default sort for a URL without `?sort`. */
 const SORT_KEY = "maple.dashboards.sort"
 const decodeStoredSort = Schema.decodeUnknownOption(Schema.fromJsonString(Schema.String))
 const encodeStoredSort = Schema.encodeSync(Schema.fromJsonString(Schema.String))
@@ -60,7 +61,7 @@ export const FocusTagSearch = Command.define("FocusDashboardsTagSearch", {
 		Dom.focus(`#${CSS.escape(id)}`).pipe(Effect.ignore, Effect.as(Message.CompletedFocusTagSearch())),
 })
 
-/** `useDashboardPreferences`' first read of both localStorage entries. */
+/** The first read of both localStorage entries. */
 export const LoadPreferences = Command.define("LoadDashboardsPreferences", {
 	messages: [Message.CompletedLoadPreferences],
 	execute: Effect.sync(() =>
@@ -74,7 +75,7 @@ export const LoadPreferences = Command.define("LoadDashboardsPreferences", {
 	),
 })
 
-/** The atoms' writes; the favorites event lets the shell's Pinned group follow. */
+/** The preference writes; the favorites event lets the shell's Pinned group follow. */
 export const SavePreferences = Command.define("SaveDashboardsPreferences", {
 	args: { favorites: Schema.NullOr(Schema.Array(Schema.String)), sort: Schema.NullOr(Schema.String) },
 	messages: [Message.CompletedSavePreferences],
@@ -89,7 +90,7 @@ export const SavePreferences = Command.define("SaveDashboardsPreferences", {
 		}),
 })
 
-/** `importInputRef.current?.click()`: opens the browser's file chooser. */
+/** Opens the browser's file chooser. */
 export const OpenImportPicker = Command.define("OpenDashboardImportPicker", {
 	messages: [Message.CompletedOpenImportPicker],
 	execute: Effect.sync(() => {
@@ -102,10 +103,10 @@ export const WaitSearchDebounce = Command.define("WaitDashboardsSearchDebounce",
 	args: { generation: Schema.Number },
 	messages: [Message.ElapsedSearchDebounce],
 	execute: ({ generation }) =>
-		Effect.as(Effect.sleep(Duration.millis(300)), Message.ElapsedSearchDebounce({ generation })),
+		Effect.as(Effect.sleep(SEARCH_DEBOUNCE), Message.ElapsedSearchDebounce({ generation })),
 })
 
-/** `importDashboard`: create, then wait for the txid on the shape stream; the new id. */
+/** Create, then wait for the txid on the shape stream; the new id. */
 const createFromPortable = (orgId: string, portable: PortableDashboard) =>
 	Effect.gen(function* () {
 		const client = yield* MapleApiV2Client
@@ -156,7 +157,6 @@ const toWriteResult = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
 		})),
 	)
 
-/** `createDashboard("Untitled Dashboard")`. */
 export const CreateDashboard = Command.define("CreateDashboard", {
 	args: { orgId: Schema.String },
 	messages: [Message.CompletedCreateDashboard],
@@ -174,7 +174,7 @@ export const CreateDashboard = Command.define("CreateDashboard", {
 		),
 })
 
-/** `handleDuplicate`: the dashboard's portable form re-imported as "<name> copy". */
+/** The dashboard's portable form re-imported as "<name> copy". */
 export const DuplicateDashboard = Command.define("DuplicateDashboard", {
 	args: { orgId: Schema.String, id: Schema.String },
 	messages: [Message.CompletedDuplicateDashboard],
@@ -202,7 +202,7 @@ export const ExportDashboard = Command.define("ExportDashboard", {
 		),
 })
 
-/** `handleImport`: a Perses dashboard goes to `importPerses`, anything else must be portable. */
+/** A Perses dashboard goes to `importPerses`, anything else must be portable. */
 export const ImportDashboard = Command.define("ImportDashboard", {
 	args: { orgId: Schema.String, file: FoldkitFile },
 	messages: [Message.CompletedImportDashboard],
@@ -249,7 +249,6 @@ export const DeleteDashboard = Command.define("DeleteDashboard", {
 		),
 })
 
-/** `onSaveTags` → `updateDashboard(id, { tags })`. */
 export const SaveTags = Command.define("SaveDashboardTags", {
 	args: { orgId: Schema.String, id: Schema.String, tags: Schema.Array(Schema.String) },
 	messages: [Message.CompletedSaveTags],
@@ -262,7 +261,7 @@ export const SaveTags = Command.define("SaveDashboardTags", {
 		),
 })
 
-/** `fetchDashboardsOverHttp`'s page size and ceiling (`LIST_LIMIT_MAX`, 20 pages). */
+/** The HTTP fallback's page size and ceiling (`LIST_LIMIT_MAX`, 20 pages). */
 const FALLBACK_PAGE_SIZE = 100
 const FALLBACK_MAX_PAGES = 20
 
@@ -290,7 +289,7 @@ const listPages = (
 
 const FALLBACK_TIMEOUT = "10 seconds"
 
-/** `useDashboardsFallback`: the list over plain HTTP while the shape stream is down. */
+/** The list over plain HTTP while the shape stream is down. */
 export const FetchDashboardsFallback = Command.define("FetchDashboardsFallback", {
 	args: { orgId: Schema.String },
 	messages: [Message.CompletedFetchFallback],

@@ -21,15 +21,18 @@ import {
 	WarehouseConfigError,
 	WarehouseQuotaExceededError,
 	WarehouseUpstreamError,
+	type TenantContext,
 } from "@maple/domain/http"
 import {
 	baselineWarehouseCapabilities,
 	deriveWarehouseCapabilities,
 	type WarehouseCapabilities,
+} from "@maple/query-engine"
+import {
 	QueryEngineExecuteRequest,
 	type QueryEngineResult,
 	type TimeseriesPoint,
-} from "@maple/query-engine"
+} from "@maple/domain/query-engine"
 import {
 	type AlertEvaluateRequest,
 	makeQueryEngineEvaluate,
@@ -40,7 +43,6 @@ import { buildBreakdownQuerySpec, buildTimeseriesQuerySpec } from "@maple/query-
 import { QuerySpec } from "@maple/domain/query-engine"
 import type { SqlQueryOptions } from "@maple/query-engine/profiles"
 import type { CompiledQuery } from "@maple/query-engine/ch"
-import type { TenantContext } from "@maple/backend/services/auth/AuthService"
 import { compiledQueryOf } from "@maple/query-engine/execution"
 
 const assert: typeof nodeAssert & {

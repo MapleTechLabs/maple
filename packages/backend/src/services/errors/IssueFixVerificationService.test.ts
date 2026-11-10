@@ -14,14 +14,14 @@ import {
 	Clock,
 } from "effect"
 import { OrgId, type PullRequestSummary, type WorkflowState } from "@maple/domain/http"
-import { ErrorIssueId } from "@maple/domain/primitives"
+import { ErrorIssueId } from "@maple/primitives"
 import * as Orm from "@maple-dev/effect-orm/database"
 import * as PG from "@maple-dev/effect-orm/postgres"
 import type { MapleDb } from "@maple/db/client"
 import { ErrorIssueEvents, ErrorIssues, ErrorIssueVerifications } from "@maple/db/tables"
 import { Database, type DatabaseApi } from "@maple/backend/platform/DatabaseLive"
 import { Env } from "@maple/backend/platform/Env"
-import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/platform/test-pglite"
+import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/testing/test-pglite"
 import { AuditLogService } from "@maple/backend/services/audit/AuditLogService"
 import { ErrorActorsService } from "./ErrorActorsService"
 import { ErrorIssueWorkflowService } from "./ErrorIssueWorkflowService"
@@ -437,7 +437,7 @@ describe("linkPullRequest hydration", () => {
 				const second = yield* service.linkPullRequest(ORG, null, issueId, PR_URL, "user")
 				expect(second.id).toBe(first.id)
 				expect(second.state).toBe("merged")
-				expect(yield* readVerification(issueId)).toBeDefined()
+				expect((yield* readVerification(issueId))?.status).toBe("waiting")
 			}).pipe(Effect.provide(layer))
 		}),
 	)

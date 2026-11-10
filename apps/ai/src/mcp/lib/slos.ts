@@ -7,7 +7,7 @@ import {
 	SloLatencyThresholdMs,
 	SloWindowDays,
 	type OrgId,
-} from "@maple/domain/primitives"
+} from "@maple/primitives"
 import {
 	SLO_BURN_TIERS,
 	sloNameFromRuleName,

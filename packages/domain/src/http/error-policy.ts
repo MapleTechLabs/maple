@@ -307,7 +307,6 @@ export const publicHttpErrorPolicy = <Error extends SelfDescribingHttpError>(
 ): PublicHttpErrorPolicy<Error, PublicHttpErrorStatusOf<Error>> =>
 	publicHttpErrorDefinitionFor<Error>(error.constructor).policy
 
-/** Read the tag and public policy owned by an error class. */
 export function publicHttpErrorDefinitionFor<Error extends SelfDescribingHttpError>(
 	errorClass: Function,
 ): PublicHttpErrorClassDefinition<Error, Error["_tag"], PublicHttpErrorStatusOf<Error>>
@@ -329,12 +328,6 @@ export function publicHttpErrorDefinitionFor<Error extends PublicTaggedError>(
 	if (definition === undefined) throw new Error(`No public HTTP policy registered for ${errorClass.name}`)
 	return definition
 }
-
-/** Read the public policy owned by an error class, including for wire-shaped presenters. */
-export const publicHttpErrorPolicyFor = <Error extends PublicTaggedError>(
-	errorClass: Function,
-): PublicHttpErrorPolicy<Error, PublicHttpErrorStatus> =>
-	publicHttpErrorDefinitionFor<Error>(errorClass).policy
 
 const resolve = <Error, Value>(value: Value | ((error: Error) => Value), error: Error): Value =>
 	typeof value === "function" ? (value as (error: Error) => Value)(error) : value

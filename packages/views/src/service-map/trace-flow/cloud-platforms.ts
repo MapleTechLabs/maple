@@ -3,8 +3,7 @@ import { detectCloudflareWorker } from "@maple/domain/cloud-platform"
 import type { FlowIconName } from "../../ui/flow-icons"
 import { Array as Arr, Option, Predicate, Record as Rec, String as Str } from "effect"
 
-// copied: packages/ui/src/lib/cloud-platforms/{database,index}.ts, the fields the flow card
-// reads, with `Icon` as an icon name (the adapters import React icon components). Workers
+// The cloud platform fields the flow card reads, with `Icon` as an icon name. Workers
 // detection is shared with the adapters through `@maple/domain/cloud-platform`.
 
 export interface CloudPlatformInfo {

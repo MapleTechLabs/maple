@@ -1,8 +1,7 @@
-import { findFirstPartialIndex, trimEmptyTrailingBuckets } from "@maple/ui/components/plot/partial-buckets"
+import { findFirstPartialIndex, trimEmptyTrailingBuckets } from "./plot/partial-buckets"
 import { bucketIntervalLabel, inferBucketSeconds, inferRangeMs, parseBucketMs } from "@maple/ui/lib/format"
 
-// copied: the React-free halves of `useFixedMetricModel` (packages/ui/src/components/plot/fixed-metrics.tsx)
-// No `@tanstack/charts` import: views read this too.
+// The series model of the fixed metric charts. No `@tanstack/charts` import: views read this too.
 
 import { rowsDomainMs, type TimeseriesAxisContext, type TimeseriesRow } from "./timeseries-rows"
 import { Array as Arr } from "effect"
@@ -31,7 +30,7 @@ export interface FixedMetricModel {
 	readonly axisContext: TimeseriesAxisContext
 }
 
-/** `useFixedMetricModel` without the hooks; `nowMs` stands in for the render-time `Date.now()`. */
+/** A fixed-metric chart's rows and series; `nowMs` is the render-time clock. */
 export const fixedMetricModel = (
 	data: ReadonlyArray<Record<string, unknown>>,
 	timeZone: string | null,
@@ -66,7 +65,6 @@ export interface FixedMetricSeries {
 	readonly dashed?: boolean
 }
 
-// copied: `ThroughputAreaChart`'s keys and `deriveRows` (throughput-area-chart.tsx).
 export const THROUGHPUT_KEY = "throughput"
 export const ERROR_KEY = "errorThroughput"
 export const TRACED_KEY = "tracedThroughput"
@@ -97,7 +95,7 @@ export interface ThroughputPlot {
 	readonly hasErrors: boolean
 }
 
-/** What `ThroughputAreaChart` derives before it builds marks: the rate rows and which series exist. */
+/** What the throughput chart derives before it builds marks: the rate rows and which series exist. */
 export const throughputPlot = (model: FixedMetricModel, perSecond: boolean): ThroughputPlot => {
 	const rows = deriveThroughputRows(
 		model.plotRows,
@@ -141,7 +139,7 @@ export const throughputLegend = (
 	]
 }
 
-// copied: `LATENCY_TOKENS` / `LATENCY_LABELS` (latency-line-chart.tsx), paint order p99 first.
+// Paint order p99 first.
 export const LATENCY_SERIES = [
 	{ key: "p99LatencyMs", label: "P99", token: "--chart-p99" },
 	{ key: "p95LatencyMs", label: "P95", token: "--chart-p95" },

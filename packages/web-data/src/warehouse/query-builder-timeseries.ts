@@ -80,7 +80,7 @@ function resolveStrategy(input: QueryBuilderTimeseriesInput): EmptyRangeFallback
  * `WarehouseInvalidInputError` marked the span `Error` and billed an exception
  * event per tile per refresh (24 in 20 minutes from one user paging a quiet
  * dashboard). Every caller already renders zero rows as its own empty state —
- * chart tiles via `WidgetEmptyState`, the metric chart and the lab inline — so
+ * chart tiles via `widgetEmptyState`, the metric chart and the lab inline, so
  * the empty shape is all they need.
  *
  * The diagnostics describe exactly that: the requested window, the comparison
@@ -165,8 +165,3 @@ const getQueryBuilderTimeseriesEffect = Effect.fn("QueryEngine.getQueryBuilderTi
 		diagnostics: outcome.diagnostics,
 	} satisfies QueryBuilderTimeseriesResponse
 })
-
-export const __testables = {
-	resolveStrategy,
-	emptyTimeseriesResponse,
-}

@@ -1,4 +1,3 @@
-/** Output schemas for the list_security_findings and inspect_security_finding MCP tools. */
 import { Schema } from "effect"
 
 /** The Security Center's four sources of findings. */
@@ -169,9 +168,6 @@ export const ListSecurityFindingsOutput = Schema.Struct({
 	),
 })
 
-// ---------------------------------------------------------------------------------------------
-// inspect_security_finding
-
 const Location = Schema.Struct({ file: Schema.String, line: Schema.Number, description: Schema.String })
 
 export const CodeFindingDetail = Schema.Struct({
@@ -316,9 +312,6 @@ export const InspectSecurityFindingOutput = Schema.Struct({
 	/** For an advisory id: what was checked and found clean, and what could not be judged. */
 	coverage: Schema.Array(Schema.String),
 })
-
-// ---------------------------------------------------------------------------------------------
-// list_security_audit_runs / inspect_security_audit_run
 
 /** What one audit run reported per severity (leads by their estimate) and how many claims it rejected. */
 export const SecurityAuditRunFindingTotals = Schema.Struct({

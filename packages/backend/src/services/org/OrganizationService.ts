@@ -1,5 +1,4 @@
 import * as Policy from "@maple/domain/policy"
-import { createClerkClient } from "@clerk/backend"
 import { FetchHttpClient, HttpClient } from "effect/http"
 import { UPTIME_MONITORS_FEATURE_ID } from "@maple/domain/billing"
 import { trackFeatureUsage } from "@maple/backend/services/billing/autumn-tracker"
@@ -26,105 +25,9 @@ import {
 } from "@maple/domain/organization-regions"
 import * as Orm from "@maple-dev/effect-orm/database"
 import * as PG from "@maple-dev/effect-orm/postgres"
-import {
-	Actors,
-	AgentFeedback,
-	AlertDeliveryEvents,
-	AlertEscalationRuns,
-	AlertMemberNotifications,
-	AlertIncidentEvents,
-	AlertDestinations,
-	AlertIncidents,
-	AlertLinearIssues,
-	AlertRuleStates,
-	AlertRules,
-	AlertSilences,
-	AlertMaintenanceWindows,
-	ApiKeys,
-	CancellationReviews,
-	EscalationChains,
-	OnCallOverrides,
-	OnCallSchedules,
-	ChatIdentities,
-	ChatWorkspaces,
-	CliDeviceAuthorizations,
-	CloudflareLogpushConnectors,
-	AwsConnections,
-	GcpConnectors,
-	GcpResources,
-	Dashboards,
-	DashboardShares,
-	DashboardVersions,
-	DeviceCredentials,
-	DigestSubscriptions,
-	ErrorIncidents,
-	ErrorIssueEvents,
-	ErrorIssueFingerprints,
-	ErrorIssueStates,
-	ErrorIssueVerifications,
-	ErrorIssues,
-	ErrorNotificationPolicies,
-	LiveActivities,
-	OrgSupportChannels,
-	McpOAuthAuthorizations,
-	McpOAuthRefreshTokens,
-	MobileDevices,
-	OAuthAuthStates,
-	OAuthConnections,
-	OrgClickHouseSettings,
-	OrgIngestKeys,
-	OrgBillingLinks,
-	OrgOpenRouterKeys,
-	OrgIngestRules,
-	OrgIngestRuleSettings,
-	OrgIngestRuleStats,
-	PlanetscaleConnections,
-	PlanetscaleIssueReceipts,
-	RailwayConnections,
-	RailwayEnvironments,
-	ExternalDataSourceCatalogEntries,
-	ExternalDataSources,
-	ScrapeTargets,
-	SearchConsoleSites,
-	Sources,
-	SupabaseConnections,
-	StatusPageComponents,
-	StatusPageIncidentComponents,
-	StatusPageIncidentUpdates,
-	StatusPageIncidents,
-	StatusPages,
-	StatusPageSubscribers,
-	StatusPageUpdateNotifications,
-	UptimeMonitorDaily,
-	UptimeMonitorStates,
-	Slos,
-	UptimeMonitors,
-	SupabaseProjectInsights,
-	SupabaseProjects,
-	VcsCommits,
-	PrReviews,
-	PrReviewSettings,
-	PrReviewFindings,
-	PrReviewFindingEmbeddings,
-	PrReviewMergeSteps,
-	PrReviewReplies,
-	PrReviewEdits,
-	SecurityAuditEvents,
-	SecurityAuditOrgReservations,
-	SecurityAuditOrgSettings,
-	SecurityAuditFindings,
-	SecurityAuditRunFindings,
-	DependencyFindings,
-	DependencyScanMatches,
-	DependencyScans,
-	SecurityAuditRuns,
-	SecurityAuditTargets,
-	SecurityAuditUnits,
-	ServiceMapWorldEntities,
-	VcsInstallations,
-	VcsRepositories,
-} from "@maple/db/tables"
-import { Clock, Context, Effect, Layer, Option, Redacted, Schema, String as Str } from "effect"
+import * as Tables from "@maple/db/tables"
+import type { ColumnDefs, PgSchemaTable } from "@maple-dev/effect-orm/postgres"
+import { Clock, Context, Effect, Layer, Option, Order, Schema, Array as Arr, Record as Rec } from "effect"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { makeDbExecute } from "@maple/backend/platform/db-execute"
 import { Env } from "@maple/backend/platform/Env"
@@ -132,6 +35,7 @@ import { clerkRequest } from "@maple/backend/services/auth/clerk-request"
 import { AutumnClient } from "@maple/backend/services/billing/autumn-http"
 import { responseHasPlanHistory } from "@maple/backend/services/billing/autumn-client"
 import { OrganizationRegionService } from "@maple/backend/services/org/OrganizationRegionService"
+import { clerkModeClient } from "@maple/auth"
 
 const toPersistenceError = (error: unknown) =>
 	new OrganizationPersistenceError({
@@ -143,175 +47,167 @@ const toProviderError = (error: unknown) =>
 		message: error instanceof Error ? error.message : "Organization provider call failed",
 	})
 
-// A table with more columns satisfies these, so the lists hold the real tables.
-type OrgScopedTable = PG.Table<string, { readonly orgId: (typeof ApiKeys)["columns"]["orgId"] }>
-type ApprovedOrgScopedTable = PG.Table<
-	string,
-	{ readonly approvedOrgId: (typeof CliDeviceAuthorizations)["columns"]["approvedOrgId"] }
->
+type AnyTable = PgSchemaTable<string, ColumnDefs>
+type TableName = keyof typeof Tables
 
-const ORG_SCOPED_TABLES: ReadonlyArray<OrgScopedTable> = [
-	AgentFeedback,
-	DashboardVersions,
-	Dashboards,
-	AlertDeliveryEvents,
+/**
+ * The order `delete` purges tables in; a row another org-scoped row references goes after it.
+ * Org-scoped tables not named here are purged after these, so a new one is never left behind.
+ */
+const PURGE_ORDER: ReadonlyArray<TableName> = [
+	"AgentFeedback",
+	"DashboardVersions",
+	"Dashboards",
+	"AlertDeliveryEvents",
 	// Before its incident: an event row references it.
-	AlertIncidentEvents,
-	AlertEscalationRuns,
-	AlertMemberNotifications,
-	AlertIncidents,
-	EscalationChains,
+	"AlertIncidentEvents",
+	"AlertEscalationRuns",
+	"AlertMemberNotifications",
+	"AlertIncidents",
+	"EscalationChains",
 	// Before its schedule: an override row references it.
-	OnCallOverrides,
-	OnCallSchedules,
-	AlertRuleStates,
-	AlertRules,
-	AlertSilences,
-	AlertMaintenanceWindows,
+	"OnCallOverrides",
+	"OnCallSchedules",
+	"AlertRuleStates",
+	"AlertRules",
+	"AlertSilences",
+	"AlertMaintenanceWindows",
 	// Before its destination: a thread row references it.
-	AlertLinearIssues,
-	AlertDestinations,
-	ApiKeys,
-	CancellationReviews,
-	OrgIngestKeys,
-	Sources,
+	"AlertLinearIssues",
+	"AlertDestinations",
+	"ApiKeys",
+	"CancellationReviews",
+	"OrgIngestKeys",
+	"Sources",
 	// Before its source: a catalog entry references it.
-	ExternalDataSourceCatalogEntries,
-	ExternalDataSources,
-	OrgClickHouseSettings,
-	ScrapeTargets,
+	"ExternalDataSourceCatalogEntries",
+	"ExternalDataSources",
+	"OrgClickHouseSettings",
+	"ScrapeTargets",
 	// Status pages first: their components point at monitors. The edge copy of a page outlives
 	// these rows until the publisher's sweep removes pages it no longer finds.
-	StatusPageUpdateNotifications,
+	"StatusPageUpdateNotifications",
 	// Subscriber addresses are personal data; they go with the org, not later.
-	StatusPageSubscribers,
-	StatusPageIncidentComponents,
-	StatusPageIncidentUpdates,
-	StatusPageIncidents,
-	StatusPageComponents,
-	StatusPages,
+	"StatusPageSubscribers",
+	"StatusPageIncidentComponents",
+	"StatusPageIncidentUpdates",
+	"StatusPageIncidents",
+	"StatusPageComponents",
+	"StatusPages",
 	// A surviving monitor keeps Maple probing the org's endpoints, and its heartbeat token
 	// keeps accepting pings. The state rows also go with the monitor by foreign key.
-	UptimeMonitorDaily,
-	UptimeMonitorStates,
-	UptimeMonitors,
+	"UptimeMonitorDaily",
+	"UptimeMonitorStates",
+	"UptimeMonitors",
 	// An SLO points at its burn-rate rule, which goes with the org's alert rules.
-	Slos,
+	"Slos",
 	// Picked Search Console properties; a surviving row would keep importing the org's search data.
-	SearchConsoleSites,
-	OAuthConnections,
-	OAuthAuthStates,
+	"SearchConsoleSites",
+	"OAuthConnections",
+	"OAuthAuthStates",
 	// The binding that makes a chat workspace's members act as the org. Deleting
 	// the org must stop the bot answering there, and nothing else would.
-	ChatWorkspaces,
+	"ChatWorkspaces",
 	// Each row lets one chat account approve changes as one Maple user. Deleting the org must
 	// end that standing authority, not leave it pointed at an org that is gone.
-	ChatIdentities,
-	DigestSubscriptions,
-	CloudflareLogpushConnectors,
+	"ChatIdentities",
+	"DigestSubscriptions",
+	"CloudflareLogpushConnectors",
 	// A surviving push secret would keep the ingest gateway accepting logs for a deleted org.
-	GcpConnectors,
+	"GcpConnectors",
 	// Also removed with its connector, by the foreign key.
-	GcpResources,
+	"GcpResources",
 	// A surviving row would keep Maple signing tokens for, and assuming, the customer's role.
-	AwsConnections,
-	ErrorIssueEvents,
-	ErrorIssueStates,
-	ErrorIncidents,
+	"AwsConnections",
+	"ErrorIssueEvents",
+	"ErrorIssueStates",
+	"ErrorIncidents",
 	// The aliases go with the issues they point at.
-	ErrorIssueFingerprints,
+	"ErrorIssueFingerprints",
 	// A `waiting` row left behind is due work: the verification tick scans every org's and
 	// would pick it up on each run, for an issue that is purged below.
-	ErrorIssueVerifications,
-	ErrorIssues,
-	ErrorNotificationPolicies,
-	Actors,
-	VcsInstallations,
-	VcsRepositories,
-	VcsCommits,
-	PrReviews,
-	PrReviewSettings,
-	PrReviewFindings,
-	PrReviewFindingEmbeddings,
-	PrReviewMergeSteps,
-	PrReviewReplies,
-	PrReviewEdits,
+	"ErrorIssueVerifications",
+	"ErrorIssues",
+	"ErrorNotificationPolicies",
+	"Actors",
+	"VcsInstallations",
+	"VcsRepositories",
+	"VcsCommits",
+	"PrReviews",
+	"PrReviewSettings",
+	"PrReviewFindings",
+	"PrReviewFindingEmbeddings",
+	"PrReviewMergeSteps",
+	"PrReviewReplies",
+	"PrReviewEdits",
 	// Credentials that outlive the org unless they are purged here. `api_keys`
 	// alone was not enough: an MCP grant's refresh family re-mints its key
 	// hourly, so a deleted org's MCP client kept working for up to 30 days.
-	McpOAuthRefreshTokens,
-	MobileDevices,
+	"McpOAuthRefreshTokens",
+	"MobileDevices",
 	// Device-held widget keys: their tokens re-read the row, so deleting it ends them.
-	DeviceCredentials,
+	"DeviceCredentials",
 	// A share link is a public bearer credential: `resolveByToken` matches the
 	// token hash and `revoked_at is null` and nothing else, then queries the
 	// warehouse as the org. It only went dead on deletion by accident of a
 	// downstream `dashboards` lookup, which is not a guarantee.
-	DashboardShares,
+	"DashboardShares",
 	// Holds the encrypted per-connection webhook HMAC secret — standing
 	// authority to have inbound writes attributed to an org that is gone.
-	PlanetscaleConnections,
+	"PlanetscaleConnections",
 	// Dedupe receipts for the org's error issues, which are purged above; with the
 	// connection gone no redelivery can arrive for them to catch.
-	PlanetscaleIssueReceipts,
+	"PlanetscaleIssueReceipts",
 	// The encrypted Railway token would keep the poller reading an account for a deleted org.
-	RailwayConnections,
-	RailwayEnvironments,
+	"RailwayConnections",
+	"RailwayEnvironments",
 	// The Supabase grant itself is in oauth_connections; these hold the org binding and projects.
-	SupabaseProjectInsights,
-	SupabaseProjects,
-	SupabaseConnections,
+	"SupabaseProjectInsights",
+	"SupabaseProjects",
+	"SupabaseConnections",
 	// The org's own OpenRouter key: a recreated org with the same id must not inherit it.
-	OrgOpenRouterKeys,
+	"OrgOpenRouterKeys",
 	// A deleted member org stops being billed to anyone. A billing org with members is refused.
-	OrgBillingLinks,
+	"OrgBillingLinks",
 	// Drop rules and the hash salt: a recreated org must not silently lose data to old rules.
-	OrgIngestRules,
-	OrgIngestRuleSettings,
-	OrgIngestRuleStats,
+	"OrgIngestRules",
+	"OrgIngestRuleSettings",
+	"OrgIngestRuleStats",
 	// APNs update tokens for running Live Activities. `mobile_devices` is purged
 	// here already; leaving these behind keeps a live push channel open.
-	LiveActivities,
+	"LiveActivities",
 	// Nothing secret, but the channel belongs to the org; a recreated org starts fresh.
-	OrgSupportChannels,
+	"OrgSupportChannels",
 	// Security audit evidence about the org's source code: exploit traces must not outlive the org.
-	SecurityAuditEvents,
-	SecurityAuditOrgReservations,
-	SecurityAuditOrgSettings,
-	SecurityAuditRunFindings,
-	SecurityAuditFindings,
-	SecurityAuditUnits,
-	SecurityAuditRuns,
-	SecurityAuditTargets,
+	"SecurityAuditEvents",
+	"SecurityAuditOrgReservations",
+	"SecurityAuditOrgSettings",
+	"SecurityAuditRunFindings",
+	"SecurityAuditFindings",
+	"SecurityAuditUnits",
+	"SecurityAuditRuns",
+	"SecurityAuditTargets",
 	// The team's hand-built service map world: a recreated org starts from an empty map.
-	ServiceMapWorldEntities,
+	"ServiceMapWorldEntities",
 	// Which of the org's dependencies are vulnerable, per repository and commit.
-	DependencyScans,
-	DependencyScanMatches,
-	DependencyFindings,
+	"DependencyScans",
+	"DependencyScanMatches",
+	"DependencyFindings",
+	// Same purge, different column: these record an *approval* rather than ownership.
+	"McpOAuthAuthorizations",
+	"CliDeviceAuthorizations",
 ]
 
 /**
- * Same purge, different column: these two record an *approval* rather than
- * ownership, so the org they belong to is `approved_org_id`.
- */
-const APPROVED_ORG_SCOPED_TABLES: ReadonlyArray<ApprovedOrgScopedTable> = [
-	McpOAuthAuthorizations,
-	CliDeviceAuthorizations,
-]
-
-/**
- * Org-scoped tables deliberately left behind by `delete`. Every table with an
- * `org_id` must appear in exactly one of these three lists — the registry test
- * in `OrganizationService.org-scoped-tables.test.ts` fails on a new one that
- * appears in none, so "we forgot to register it" cannot happen silently again.
+ * Org-scoped tables deliberately left behind by `delete`; every other table with an `org_id` or
+ * `approved_org_id` is purged.
  *
  * Every name below has been read against its schema: none holds a token, hash,
  * ciphertext or other secret, and none is resolved by anything to grant access.
- * They are analytics, settings and history — retained data, which is a
+ * They are analytics, settings and history: retained data, which is a
  * retention question and a defensible follow-up, not a live-credential gap.
  * The three that failed that read (`dashboardShares`, `planetscaleConnections`,
- * `liveActivities`) were moved into the purge above rather than excused here.
+ * `liveActivities`) are purged rather than excused here.
  */
 export const UNPURGED_ORG_SCOPED_TABLES = [
 	"AiTriageSettings",
@@ -341,12 +237,43 @@ export const UNPURGED_ORG_SCOPED_TABLES = [
 	// Edge cleanups queued by the delete itself; the publisher removes each row once done.
 	"StatusPageCleanups",
 	"VcsRepositoryBranches",
-] as const
+] as const satisfies ReadonlyArray<TableName>
+
+const hasColumn = (table: AnyTable, name: string) =>
+	Arr.some(table.ddl.columns, (column) => column.name === name)
+
+/** Every exported table with the column that ties it to an org, in purge order, minus the kept ones. */
+const purgedTables = (column: "org_id" | "approved_org_id"): ReadonlyArray<AnyTable> => {
+	const unpurged: ReadonlySet<string> = new Set(UNPURGED_ORG_SCOPED_TABLES)
+	const position = (name: string) =>
+		Option.getOrElse(
+			Arr.findFirstIndex(PURGE_ORDER, (ordered) => ordered === name),
+			() => PURGE_ORDER.length,
+		)
+	const scoped = Arr.flatMap(Rec.toEntries(Tables), ([name, value]) =>
+		Option.match(
+			Arr.findFirst(Tables.allTables, (table) => table === value),
+			{
+				onNone: () => [],
+				onSome: (table) =>
+					hasColumn(table, column) && !unpurged.has(name) ? [[name, table] as const] : [],
+			},
+		),
+	)
+	return Arr.map(
+		Arr.sort(
+			scoped,
+			Order.mapInput(Order.Number, ([name]: (typeof scoped)[number]) => position(name)),
+		),
+		([, table]) => table,
+	)
+}
 
 export const ORG_DELETE_REGISTRY = {
-	orgScoped: ORG_SCOPED_TABLES,
-	approvedOrgScoped: APPROVED_ORG_SCOPED_TABLES,
+	orgScoped: purgedTables("org_id"),
+	approvedOrgScoped: purgedTables("approved_org_id"),
 	unpurged: UNPURGED_ORG_SCOPED_TABLES,
+	purgeOrder: PURGE_ORDER,
 } as const
 
 /** Read model for the org identity — sourced from Clerk when available. */
@@ -423,29 +350,23 @@ export class OrganizationService extends Context.Service<OrganizationService, Or
 			) {
 				// Public pages live on at the edge until the publisher drains these.
 				yield* dbExecute((db) => queueOrgPageRemovals(db, orgId))
-				yield* Effect.forEach(
-					ORG_SCOPED_TABLES,
-					(table) =>
-						dbExecute((db) => db.run(PG.deleteFrom(table).where(($) => [$.orgId.eq(orgId)]))),
-					{ discard: true },
-				)
-				yield* Effect.forEach(
-					APPROVED_ORG_SCOPED_TABLES,
-					(table) =>
-						dbExecute((db) =>
-							db.run(PG.deleteFrom(table).where(($) => [$.approvedOrgId.eq(orgId)])),
-						),
-					{ discard: true },
-				)
+				const purge = (column: "org_id" | "approved_org_id", tables: ReadonlyArray<AnyTable>) =>
+					Effect.forEach(
+						tables,
+						(table) =>
+							dbExecute((db) =>
+								db.run(
+									PG.deleteFrom(table).where(() => [PG.dynamicColumn(column).eq(orgId)]),
+								),
+							),
+						{ discard: true },
+					)
+				yield* purge("org_id", ORG_DELETE_REGISTRY.orgScoped)
+				yield* purge("approved_org_id", ORG_DELETE_REGISTRY.approvedOrgScoped)
 			})
 
 			/** The Clerk backend client, or `None` when not running in Clerk auth mode. */
-			const clerkClient = () =>
-				Str.toLowerCase(env.MAPLE_AUTH_MODE) === "clerk" && Option.isSome(env.CLERK_SECRET_KEY)
-					? Option.some(
-							createClerkClient({ secretKey: Redacted.value(env.CLERK_SECRET_KEY.value) }),
-						)
-					: Option.none()
+			const clerkClient = () => Option.fromUndefinedOr(clerkModeClient(env))
 
 			const deleteClerkOrganization = Effect.fn("OrganizationService.deleteClerkOrganization")(
 				function* (orgId: OrgId) {
@@ -611,7 +532,7 @@ export class OrganizationService extends Context.Service<OrganizationService, Or
 							)
 							// Its members would be left billed to a customer nobody can reach.
 							const members = yield* db.run(
-								PG.from(OrgBillingLinks)
+								PG.from(Tables.OrgBillingLinks)
 									.select(($) => ({ orgId: $.orgId }))
 									.where(($) => [$.billingOrgId.eq(orgId)])
 									.limit(1),
@@ -624,18 +545,20 @@ export class OrganizationService extends Context.Service<OrganizationService, Or
 							}
 							// A member's monitors count against its billing org; purging them must give the count back.
 							const [current] = yield* db.run(
-								PG.from(OrgBillingLinks)
+								PG.from(Tables.OrgBillingLinks)
 									.select(($) => ({ billingOrgId: $.billingOrgId }))
 									.where(($) => [$.orgId.eq(orgId)])
 									.limit(1),
 							)
 							if (current === undefined) return { link: current, monitorCount: 0 }
 							const [counted] = yield* db.run(
-								PG.from(UptimeMonitors)
+								PG.from(Tables.UptimeMonitors)
 									.select(() => ({ count: PG.count() }))
 									.where(($) => [$.orgId.eq(orgId)]),
 							)
-							yield* db.run(PG.deleteFrom(OrgBillingLinks).where(($) => [$.orgId.eq(orgId)]))
+							yield* db.run(
+								PG.deleteFrom(Tables.OrgBillingLinks).where(($) => [$.orgId.eq(orgId)]),
+							)
 							return { link: current, monitorCount: Number(counted?.count ?? 0) }
 						}),
 					),

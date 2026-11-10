@@ -1,3 +1,4 @@
+import { RequestMode } from "@maple/views/data/keyed"
 import { VcsCommitDetailResponse, VcsCommitRangeResponse } from "@maple/domain/http"
 import { Schema } from "effect"
 import { defineMessageUnion } from "foldkit/message"
@@ -9,15 +10,14 @@ import { SignalPresences } from "@maple/views/data/signal-presence"
 import * as TimeRangePicker from "../../kit/time-range-picker"
 import { IssuePage, ReleasesData } from "./model"
 
-/** `Load` on entry or a search change; `Refresh` from Reload. */
-export const RequestMode = Schema.Literals(["Load", "Refresh"])
-export type RequestMode = typeof RequestMode.Type
-
 /** A chip's URL param. */
 export const FilterParam = Schema.Literals(["environments", "excludedEnvironments", "services", "impact"])
 export type FilterParam = typeof FilterParam.Type
 
-const result = <A extends Schema.Top>(schema: A) => ({ key: Schema.String, result: Schema.Result(schema, LoadFailure) })
+const result = <A extends Schema.Top>(schema: A) => ({
+	key: Schema.String,
+	result: Schema.Result(schema, LoadFailure),
+})
 
 export const Message = defineMessageUnion({
 	CompletedResolveWindow: { window: TimeWindow, nowMs: Schema.Number, mode: RequestMode },

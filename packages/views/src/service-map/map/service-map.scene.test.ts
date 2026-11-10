@@ -1,7 +1,4 @@
-import {
-	computeNodePositions,
-	DEFAULT_LAYOUT_CONFIG,
-} from "@maple/ui/components/service-map/service-map-utils"
+import { computeNodePositions, DEFAULT_LAYOUT_CONFIG } from "../graph/service-map-utils"
 import {
 	BENCH_CLOUDFLARE_SERVICES,
 	DEFAULT_BENCH_PARAMS,

@@ -1,5 +1,5 @@
 import * as PG from "@maple-dev/effect-orm/postgres"
-import { OrgId } from "@maple/domain/primitives"
+import { OrgId } from "@maple/primitives"
 
 export const OrgIngestAttributeMappings = PG.table("org_ingest_attribute_mappings", {
 	columns: {
@@ -20,4 +20,3 @@ export const OrgIngestAttributeMappings = PG.table("org_ingest_attribute_mapping
 })
 
 export type OrgIngestAttributeMappingRow = PG.SelectRowOf<typeof OrgIngestAttributeMappings>
-export type OrgIngestAttributeMappingInsert = PG.InsertRowOf<typeof OrgIngestAttributeMappings>

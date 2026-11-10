@@ -53,7 +53,6 @@ export const FunnelBreakdownBy = Schema.Union([
 ])
 export type FunnelBreakdownBy = typeof FunnelBreakdownBy.Type
 
-/** The most steps a funnel takes; mirrors `FUNNEL_MAX_STEPS` in the query engine. */
 export const FUNNEL_MAX_STEPS = 10
 
 /** Sentence-case labels for the session dimensions, shared by every surface that names a step. */
@@ -206,8 +205,6 @@ export const funnelWidgetBreakdownRows = (
 	)
 }
 
-// Funnel drop-off details
-//
 // A funnel widget drawn as its drop-off variant also asks the route for the
 // time between steps and where the leavers went. Both ride on the same
 // `{ name, value }` rows the plain funnel returns, as optional fields per
@@ -260,8 +257,6 @@ export const funnelWidgetRowsWithDetails = (
 ): ReadonlyArray<FunnelWidgetRow> =>
 	Arr.map(funnelWidgetRows(steps, rows), (row, index) => ({ ...row, ...details.get(index + 1) }))
 
-// Paths
-//
 // What people do in the hops after (or before) one anchor event. The
 // definition mirrors `productEventsPathsQuery`'s options; the wire rows are the
 // query's own `{ hop, fromNode, toNode, count }`, with two sentinels the chart
