@@ -7,9 +7,11 @@ const ROOT = path.resolve(import.meta.dir, "../..")
 
 // Vitest seconds/file at two workers, measured on CI run 35725366619. Unknown suites
 // get the default, fitted to the slowest cold small-suite lanes of 2026-10.
+// Backend was 1.6 then; by run 42756486011 its four shards took 185-239s against the
+// 240s lane budget, about 2.0s/file once setup is taken out.
 const SECONDS_PER_FILE = new Map([
 	["@maple/api", 2.3],
-	["@maple/backend", 1.6],
+	["@maple/backend", 2.0],
 	["@maple/ai", 1.1],
 	["@maple/query-engine", 0.45],
 	["@maple/ui", 0.45],
