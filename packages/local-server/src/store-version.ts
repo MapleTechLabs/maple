@@ -7,14 +7,15 @@
 // activated.
 
 import { createHash, randomUUID } from "node:crypto"
-import { existsSync, readFileSync, statSync, unlinkSync } from "node:fs"
+import { existsSync, readFileSync, unlinkSync } from "node:fs"
 import { basename, dirname, join, resolve } from "node:path"
 import { Effect, Schema, SchemaGetter, Array as Arr, String as Str } from "effect"
 import { CHDB_VERSION } from "./version"
 import { Digest64, Fingerprint16, IsoOrUnknown } from "./identity-schema"
 import { durableRemove, durableRenameSync, durableWrite, durableWriteFileSync } from "./durable-files"
 import { decodeJsonSync, encodeJson, encodeJsonPretty } from "./json"
-import { errnoCode, syscallError } from "./store-errors"
+import { syscallError } from "./store-errors"
+import { livePidInFile } from "./process-liveness"
 
 export const STORE_MARKER_FORMAT_VERSION = 2 as const
 
@@ -117,20 +118,6 @@ export const storeMarkerPath = (dataDir: string): string => dataDirSidecarPath(d
 export const storeHasData = (dataDir: string): boolean =>
 	existsSync(join(dataDir, "store")) || existsSync(join(dataDir, "metadata"))
 
-const pidFileNamesLiveProcess = (path: string): boolean =>
-	Effect.runSync(
-		Effect.try({
-			try: () => {
-				const pid = Number.parseInt(Str.trim(readFileSync(path, "utf8")), 10)
-				if (!Number.isInteger(pid) || pid <= 0 || pid === process.pid) return false
-				process.kill(pid, 0)
-				return true
-			},
-			// EPERM still means the PID exists; only a vanished file or ESRCH is "not live".
-			catch: syscallError,
-		}).pipe(Effect.catch((error) => Effect.succeed(errnoCode(error.cause) === "EPERM"))),
-	)
-
 /**
  * Move this store's identity files from their pre-{@link dataDirSidecarPath}
  * location, so upgrading never strands a custom `--data-dir` store as
@@ -142,7 +129,7 @@ const pidFileNamesLiveProcess = (path: string): boolean =>
 export const adoptLegacySidecars = (dataDir: string): ReadonlyArray<string> => {
 	if (!ownsLegacySidecars(dataDir) || !storeHasData(dataDir)) return []
 	if (existsSync(storeMarkerPath(dataDir))) return []
-	if (pidFileNamesLiveProcess(legacySidecarPath(dataDir, SERVER_PID_NAME))) return []
+	if (livePidInFile(legacySidecarPath(dataDir, SERVER_PID_NAME)) !== undefined) return []
 	const adopted: Array<string> = []
 	for (const name of [STORE_MARKER_NAME, STORE_OPEN_MARKER_NAME, MIGRATION_JOURNAL_NAME]) {
 		const from = legacySidecarPath(dataDir, name)
@@ -173,14 +160,6 @@ export const newerStoreSchemaVersion = (dataDir: string, currentVersion: number)
 		? marker.schemaVersion
 		: undefined
 }
-
-/** Modification time of a file in ms, or undefined when it is missing. */
-export const fileModifiedAtMs = (path: string): number | undefined =>
-	Effect.runSync(
-		Effect.try({ try: () => statSync(path).mtimeMs, catch: syscallError }).pipe(
-			Effect.orElseSucceed(() => undefined),
-		),
-	)
 
 // Clean-shutdown sentinel. Present from the moment chDB opens successfully until
 // it closes cleanly. It is deliberately separate from the migration journal:

@@ -15,7 +15,7 @@ import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/http"
 import * as ChildProcess from "effect/process/ChildProcess"
 import { ChildProcessSpawner } from "effect/process/ChildProcessSpawner"
 import {
-	defaultLocalUrl,
+	configuredLocalUrl,
 	isLoopbackHostname,
 	isRemoteHttps,
 	optionalEnvString,
@@ -227,9 +227,7 @@ export const LocalAccessHttpClient = Layer.effect(
 	Effect.gen(function* () {
 		const client = yield* HttpClient.HttpClient
 		const spawner = yield* ChildProcessSpawner
-		const configuredUrl = yield* optionalEnvString("MAPLE_LOCAL_URL")
-		const bindHost = yield* optionalEnvString("MAPLE_LOCAL_BIND_HOST")
-		const localUrl = configuredUrl ?? defaultLocalUrl(bindHost)
+		const localUrl = yield* configuredLocalUrl
 		const accessToken = yield* optionalEnvString(ACCESS_TOKEN_ENV)
 		const headers = yield* optionalEnvString(LOCAL_HEADERS_ENV)
 		return yield* localAccessClient({

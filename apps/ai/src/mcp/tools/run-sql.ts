@@ -3,7 +3,7 @@ import { Effect, Schema, Array as Arr, Record as Rec, String as Str } from "effe
 import { RawSqlValidationError } from "@maple/domain/http"
 import { WarehouseInvalidSqlError } from "@maple/domain/http/warehouse-errors"
 import { CurrentMcpTenant } from "../tenant"
-import { autoBucketSeconds, runRawSql } from "../lib/run-raw-sql"
+import { runRawSql } from "../lib/run-raw-sql"
 import { truncate } from "../lib/format"
 import { toMcpQueryError } from "../lib/map-warehouse-error"
 import { stringifyJson } from "../lib/json"
@@ -369,7 +369,6 @@ export function registerRunSqlTool(server: McpToolRegistrar) {
 			yield* Effect.annotateCurrentSpan("maple.mcp.run_sql.has_reason", params.reason !== undefined)
 			const tenant = yield* CurrentMcpTenant
 			const { st, et } = yield* WINDOW.resolve(params, "run_sql")
-			const granularitySeconds = params.granularity_seconds ?? autoBucketSeconds(st, et)
 
 			const execute = (sql: string) =>
 				runRawSql({
@@ -377,7 +376,7 @@ export function registerRunSqlTool(server: McpToolRegistrar) {
 					sql,
 					startTime: st,
 					endTime: et,
-					granularitySeconds,
+					granularitySeconds: params.granularity_seconds,
 					truncateAtCap: true,
 				})
 

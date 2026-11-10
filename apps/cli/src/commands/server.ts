@@ -1,4 +1,4 @@
-import { Clock, DateTime, Duration, Effect, Option, Schema, Array as Arr, String as Str } from "effect"
+import { Clock, DateTime, Duration, Effect, Option, Array as Arr, String as Str } from "effect"
 import { FileSystem } from "effect/FileSystem"
 import * as Command from "effect/cli/Command"
 import * as Flag from "effect/cli/Flag"
@@ -35,7 +35,6 @@ import {
 	adoptLegacyStoreFiles,
 	claimPidFileExclusive,
 	ignoreFailure,
-	isProcessAlive,
 	locatePidFile,
 	pidOwner,
 	readPidSnapshot,
@@ -44,6 +43,7 @@ import {
 	sameSnapshot,
 	STALE_PID,
 } from "@maple/local-server/store-claim"
+import { isProcessAlive } from "@maple/local-server/process-liveness"
 import { readDiscovery, removeDiscoveryFor, removeStaleDiscovery } from "@maple/local-server/server-discovery"
 import {
 	describeError,
@@ -63,6 +63,7 @@ import {
 	checkpointRefreshBackoff,
 	createCheckpoint,
 	formatCheckpointRefreshBackoff,
+	maintenanceInProgress,
 	parseCheckpointId,
 	reconcileCheckpointRecovery,
 	resetLiveStorePreservingCheckpoints,
@@ -108,15 +109,16 @@ import {
 	PID_HANDOVER_ENV,
 	prettyPath,
 	resolveAdvertiseHost,
-	resolveBindHost,
 	ServerDiscovery,
 	serverProbeUrl,
 	serverUrl,
 	validateHost,
 } from "./server-args"
 import {
+	configuredBindHost,
 	configuredLocalUiUrl,
 	DEFAULT_LOCAL_PORT,
+	defaultBindHost,
 	isLoopbackHostname,
 	optionalEnvString,
 } from "@maple/local-server/local-address"
@@ -276,7 +278,7 @@ const host = Flag.String("host").pipe(
 	Flag.withDescription(
 		`Local server host (env: MAPLE_LOCAL_BIND_HOST; off loopback, set ${INGEST_KEY_ENV} and ${ACCESS_TOKEN_ENV})`,
 	),
-	Flag.withDefault(resolveBindHost(process.env.MAPLE_LOCAL_BIND_HOST)),
+	Flag.withDefault(defaultBindHost()),
 )
 
 const checkpointPort = Flag.optional(
@@ -291,7 +293,7 @@ const checkpointHost = Flag.String("host").pipe(
 	Flag.withDescription(
 		"Host of the running `maple start` server to checkpoint (env: MAPLE_LOCAL_BIND_HOST)",
 	),
-	Flag.withDefault(resolveBindHost(process.env.MAPLE_LOCAL_BIND_HOST)),
+	Flag.withDefault(defaultBindHost()),
 )
 
 const advertiseHostFlag = Flag.optional(
@@ -1348,29 +1350,6 @@ const STOP_POLL_MS = 100
  *  shutdown waits for its child, so stop keeps waiting while one runs. */
 const STOP_CHECKPOINT_TIMEOUT_MS = 15 * 60_000
 
-const MaintenanceOwner = Schema.Struct({ pid: Schema.Int })
-const decodeMaintenanceOwner = Schema.decodeUnknownOption(Schema.fromJsonString(MaintenanceOwner))
-
-/**
- * Is a checkpoint/restore/archive operation running against this store? Read
- * from the maintenance lock's on-disk contract (`<dataDir>.maple-maintenance-lock`,
- * owned by `server/checkpoints.ts`), since the server itself may be too busy
- * in `BACKUP` to answer.
- */
-const maintenanceInProgress = (dataDir: string): boolean =>
-	Effect.runSync(
-		Effect.try({
-			try: () => readFileSync(`${resolve(dataDir)}.maple-maintenance-lock/owner.json`, "utf8"),
-			catch: stateFileError(`${resolve(dataDir)}.maple-maintenance-lock/owner.json`, "read"),
-		}).pipe(
-			Effect.map((raw) => {
-				const owner = decodeMaintenanceOwner(raw)
-				return Option.isSome(owner) && isProcessAlive(owner.value.pid)
-			}),
-			Effect.orElseSucceed(() => false),
-		),
-	)
-
 /** Does a server that answers for this store report `pid`? The positive
  *  identity check, preferred over the process start-time heuristic. */
 const statusConfirmsPid = (
@@ -1380,9 +1359,7 @@ const statusConfirmsPid = (
 ): Effect.Effect<boolean, never, HttpClient.HttpClient> =>
 	Effect.gen(function* () {
 		const discovery = yield* readDiscovery(serverDiscoveryPath(dataDir))
-		const probeHost =
-			scope.host ??
-			(yield* optionalEnvString("MAPLE_LOCAL_BIND_HOST").pipe(Effect.map(resolveBindHost)))
+		const probeHost = scope.host ?? (yield* configuredBindHost)
 		const urls = [
 			...(Option.isSome(discovery) && discovery.value.pid === pid ? [discovery.value.url] : []),
 			serverProbeUrl(probeHost, scope.port ?? DEFAULT_LOCAL_PORT),

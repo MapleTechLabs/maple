@@ -6,10 +6,10 @@
 // and recovery live in statically registered, typed migration modules.
 
 import { randomUUID } from "node:crypto"
-import { existsSync, readFileSync, statfsSync } from "node:fs"
+import { existsSync, statfsSync } from "node:fs"
 import { lstat, readdir, stat } from "node:fs/promises"
 import { dirname, join, resolve } from "node:path"
-import { Effect, Option, Schema, Array as Arr, String as Str } from "effect"
+import { Option, Schema, Array as Arr } from "effect"
 import { Chdb } from "./chdb"
 import { decodeJsonEachRow } from "./chdb-rows"
 import {
@@ -39,6 +39,7 @@ import {
 } from "./store-version"
 import { durableJson, durableRename, ensurePrivateDirectory, syncTree } from "./durable-files"
 import { errnoCode } from "./store-errors"
+import { livePidInFile } from "./process-liveness"
 import { MAPLE_VERSION } from "./version"
 import {
 	assertJournalPaths,
@@ -355,37 +356,14 @@ export const abandonLocalStoreMigration = async (dataDir: string): Promise<strin
 	return abandonedPath
 }
 
-class LocalServerPidProbeError extends Schema.TaggedError<LocalServerPidProbeError>()(
-	"@maple/cli/LocalServerPidProbeError",
-	{ message: Schema.String, cause: Schema.Defect() },
-) {}
-
-/** The PID a file names if that process still exists; a failed probe counts as not live.
- *  Our own PID is stale: in a container every `maple` run is PID 1, so a dead
- *  server's file names whichever process reads it. */
-const livePidIn = (path: string): number | null => {
-	if (!existsSync(path)) return null
-	const pid = Number.parseInt(Str.trim(readFileSync(path, "utf8")), 10)
-	if (!Number.isInteger(pid) || pid <= 0 || pid === process.pid) return null
-	return Effect.runSync(
-		Effect.try({
-			try: () => process.kill(pid, 0),
-			catch: (cause) => new LocalServerPidProbeError({ message: `cannot signal pid ${pid}`, cause }),
-		}).pipe(
-			Effect.as(pid),
-			Effect.orElseSucceed(() => null),
-		),
-	)
-}
-
 const assertNoLiveServer = (dataDir: string): void => {
 	const pidPaths = [
 		serverPidPath(dataDir),
 		...(ownsLegacySidecars(dataDir) ? [legacySidecarPath(dataDir, SERVER_PID_NAME)] : []),
 	]
 	for (const path of pidPaths) {
-		const pid = livePidIn(path)
-		if (pid !== null) throw new Error(`maple is running (PID ${pid}); stop it before migrating`)
+		const pid = livePidInFile(path)
+		if (pid !== undefined) throw new Error(`maple is running (PID ${pid}); stop it before migrating`)
 	}
 }
 

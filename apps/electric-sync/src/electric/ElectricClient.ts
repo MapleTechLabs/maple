@@ -13,7 +13,7 @@ import {
 import { HttpClient } from "effect/http"
 import { SyncConfig } from "../config"
 import { ElectricNotConfigured, ElectricUpstreamError, ElectricUpstreamUnreachable } from "../errors"
-import { lookupSubscription } from "../shapes/registry"
+import { lookupSubscription } from "@maple/domain/electric-shapes"
 import type { ScopeBinding, SyncRequest } from "../shapes/request"
 
 // The client controls only Electric's cursor and cache-buster parameters; table,

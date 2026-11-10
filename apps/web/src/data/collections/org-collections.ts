@@ -25,6 +25,7 @@ import {
 import { InvestigationRowSchema } from "@maple/web-data/collections/investigations"
 import { ApiKeyRowSchema } from "@maple/web-data/collections/api-keys"
 import { timestamptzParser } from "@maple/web-data/collections/shape-parsers"
+import type { SubscriptionName } from "@maple/domain/electric-shapes"
 
 /** A 30 s fallback: a superseded set is cleaned up even if a reader lingers. */
 const CLEANUP_FALLBACK = Duration.seconds(30)
@@ -36,6 +37,10 @@ export class CollectionCleanupError extends Schema.TaggedError<CollectionCleanup
 
 /** `syncProxyUrl` (`shape-fetch.ts`): the authenticating shape proxy, never Electric itself. */
 const syncProxyUrl = `${electricSyncBaseUrl}/api/sync/shape`
+
+/** The proxy's query for a whitelisted shape, so a misspelt name fails to compile, not to sync. */
+const syncParams = (subscription: SubscriptionName, org: string, scope?: string) =>
+	scope === undefined ? { shape: subscription, org } : { shape: subscription, org, scope }
 
 /**
  * Electric's `fetchClient` contract is a `fetch`, so this is one; it adds the session bearer like
@@ -78,7 +83,7 @@ const makeSet = (
 		getKey: (row) => row.id,
 		shapeOptions: {
 			url: syncProxyUrl,
-			params: { shape: "api_keys", org: orgId },
+			params: syncParams("api_keys", orgId),
 			fetchClient,
 			parser: timestamptzParser,
 		},
@@ -91,7 +96,7 @@ const makeSet = (
 		getKey: (row) => row.id,
 		shapeOptions: {
 			url: syncProxyUrl,
-			params: { shape: "alert_rules", org: orgId },
+			params: syncParams("alert_rules", orgId),
 			fetchClient,
 			parser: timestamptzParser,
 		},
@@ -104,7 +109,7 @@ const makeSet = (
 		getKey: (row) => `${row.rule_id}:${row.group_key}`,
 		shapeOptions: {
 			url: syncProxyUrl,
-			params: { shape: "alert_rule_states", org: orgId },
+			params: syncParams("alert_rule_states", orgId),
 			fetchClient,
 			parser: timestamptzParser,
 		},
@@ -116,7 +121,7 @@ const makeSet = (
 		getKey: (row) => row.id,
 		shapeOptions: {
 			url: syncProxyUrl,
-			params: { shape: "alert_incidents", org: orgId },
+			params: syncParams("alert_incidents", orgId),
 			fetchClient,
 			parser: timestamptzParser,
 		},
@@ -128,7 +133,7 @@ const makeSet = (
 		getKey: (row) => row.id,
 		shapeOptions: {
 			url: syncProxyUrl,
-			params: { shape: "alert_destinations_v2", org: orgId },
+			params: syncParams("alert_destinations_v2", orgId),
 			fetchClient,
 			parser: timestamptzParser,
 		},
@@ -154,7 +159,7 @@ const makeInvestigationCollection = (
 		getKey: (row) => row.id,
 		shapeOptions: {
 			url: syncProxyUrl,
-			params: { shape: "investigation_v2", org: orgId, scope: investigationId },
+			params: syncParams("investigation_v2", orgId, investigationId),
 			fetchClient,
 			parser: timestamptzParser,
 		},

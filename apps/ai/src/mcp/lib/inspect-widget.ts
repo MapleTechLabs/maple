@@ -41,7 +41,7 @@ import {
 } from "./chart-statistics"
 import { resolveDashboardTimeRange } from "./resolve-dashboard-time-range"
 import { resolveTimeRange } from "./time"
-import { autoBucketSeconds, runRawSql } from "./run-raw-sql"
+import { runRawSql } from "./run-raw-sql"
 import type { DashboardDocument, DashboardWidgetSchema } from "@maple/domain/http"
 import type {
 	InspectChartDataData,
@@ -422,16 +422,13 @@ const inspectRawSqlWidget = Effect.fn("McpInspectWidget.inspectRawSqlWidget")(fu
 		} satisfies InspectionOutcome
 	}
 
-	const granularitySeconds =
-		rawSql.granularitySeconds ?? autoBucketSeconds(timeRange.startTime, timeRange.endTime)
-
 	const startedAt = yield* Clock.currentTimeMillis
 	const result = yield* runRawSql({
 		tenant,
 		sql,
 		startTime: timeRange.startTime,
 		endTime: timeRange.endTime,
-		granularitySeconds,
+		granularitySeconds: rawSql.granularitySeconds,
 	}).pipe(
 		Effect.map((value) => ({ ok: true as const, value })),
 		Effect.catchTag("@maple/http/errors/RawSqlValidationError", (error) =>

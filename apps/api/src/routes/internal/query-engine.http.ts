@@ -6,7 +6,6 @@ import {
 	CurrentTenant,
 	MapleInternalApi,
 	RawSqlExecuteResponse,
-	type RawSqlValidationError,
 	SpanHierarchyResponse,
 	SpanDetailResponse,
 	TraceSpanEventsResponse,
@@ -137,13 +136,12 @@ import {
 	isMissingServiceEndpointDetails,
 	isMissingServiceMapDbEdgesMinutely,
 } from "@maple/backend/services/warehouse/missing-table"
-import { makeExecuteRawSql, type QueryEngineDirectError } from "@maple/query-engine/runtime"
-import { describeFailure, recordRawSqlAudit } from "@maple/backend/services/audit/audit-access"
+import type { QueryEngineDirectError } from "@maple/query-engine/runtime"
+import { makeRunAuditedRawSql } from "@maple/backend/services/warehouse/audited-raw-sql"
 import { WarehouseQueryService } from "@maple/backend/services/warehouse/WarehouseQueryService"
 import {
 	alignServiceApiBucketSeconds,
 	CH,
-	computeBucketSecondsForRange,
 	formatWarehouseDateTime,
 	parseSpanEvents,
 } from "@maple/query-engine"
@@ -175,7 +173,6 @@ import { RuntimeAdvisoryCatalog } from "@maple/backend/services/security/Runtime
 import { RuntimeReleaseCatalog } from "@maple/backend/services/security/RuntimeReleaseCatalog"
 import { advisoryTargetOf } from "@maple/domain/runtime-advisories"
 import { type RuntimeProduct, runtimeProductOf } from "@maple/domain/runtime-posture"
-import type { ExecutionTenant, WarehouseExecutionError } from "@maple/query-engine/execution"
 import * as Integrations from "@maple/query-engine-integrations"
 import { CLOUDFLARE_BREAKDOWN_OTHER_KEY } from "@maple/domain/cloud-platform"
 import { decodeTraceId, decodeSpanId, decodeServiceName } from "../warehouse-ids"
@@ -360,10 +357,7 @@ export const HttpQueryEngineLive = HttpApiBuilder.group(MapleInternalApi, "query
 				layer: "serviceDbEdges",
 			})
 
-		const executeRawSql = makeExecuteRawSql<
-			ExecutionTenant,
-			WarehouseExecutionError | RawSqlValidationError
-		>(warehouse)
+		const runAuditedRawSql = makeRunAuditedRawSql(warehouse)
 
 		return (
 			handlers
@@ -2400,41 +2394,15 @@ export const HttpQueryEngineLive = HttpApiBuilder.group(MapleInternalApi, "query
 				.handle("executeRawSql", ({ payload }) =>
 					Effect.gen(function* () {
 						const tenant = yield* CurrentTenant.Context
-
-						const autoBucketSeconds = computeAutoBucketSeconds(payload.startTime, payload.endTime)
-						const granularitySeconds = payload.granularitySeconds ?? autoBucketSeconds
-
-						const audit = (result: Parameters<typeof recordRawSqlAudit>[0]["result"]) =>
-							recordRawSqlAudit({
+						const result = yield* mapExecError(
+							runAuditedRawSql({
 								tenant,
 								sql: payload.sql,
-								context: "rawSql",
 								startTime: payload.startTime,
 								endTime: payload.endTime,
-								result,
-							})
-						const result = yield* mapExecError(
-							executeRawSql(tenant, {
-								sql: payload.sql,
-								orgId: tenant.orgId,
-								startTime: payload.startTime,
-								endTime: payload.endTime,
-								granularitySeconds,
-								workload: "interactive",
+								granularitySeconds: payload.granularitySeconds,
 								context: "rawSql",
-							}).pipe(
-								// Every statement is audited, however it ended: a refused one as `denied`.
-								Effect.tap((executed) =>
-									audit({ _tag: "rows", rowCount: executed.rowCount }),
-								),
-								Effect.tapError((error) =>
-									audit(
-										error._tag === "@maple/http/errors/RawSqlValidationError"
-											? { _tag: "rejected", reason: error.message }
-											: { _tag: "failed", error: describeFailure(error) },
-									),
-								),
-							),
+							}),
 							"rawSql query failed",
 						)
 
@@ -2451,16 +2419,3 @@ export const HttpQueryEngineLive = HttpApiBuilder.group(MapleInternalApi, "query
 		)
 	}),
 )
-
-/**
- * Auto-bucket for raw-SQL `$__interval_s` when the caller didn't supply
- * `granularitySeconds`.
- *
- * Was a private ladder duplicating `computeBucketSeconds`, then a private copy of
- * the string-parse-and-fall-back rule. Both now live in `BUCKET_POLICIES.rawSql`,
- * whose 300s floor is load-bearing: a sub-5-minute `$__interval_s` produces
- * exactly the scan the granularity was chosen to avoid.
- */
-function computeAutoBucketSeconds(startTime: string, endTime: string): number {
-	return computeBucketSecondsForRange(startTime, endTime, "rawSql")
-}

@@ -2,6 +2,7 @@ import { execFileSync, spawnSync } from "node:child_process"
 import { createRequire } from "module"
 import { realpathSync, mkdirSync, writeFileSync, rmSync } from "fs"
 import { dirname, resolve } from "path"
+import { WORKER_COMPATIBILITY_DATE } from "@maple/infra/worker-build"
 const alch = realpathSync(process.cwd() + "/node_modules/alchemy")
 const cloudflare = realpathSync(process.cwd() + "/node_modules/@alchemy.run/cloudflare")
 const req = createRequire(alch + "/package.json")
@@ -80,10 +81,7 @@ const sourceOverride = {
 const build = await rolldown({
 	input,
 	external: ["lightningcss", "fsevents"],
-	plugins: [
-		sourceOverride,
-		cloudflareRolldown({ compatibilityDate: "2026-10-01" }),
-	],
+	plugins: [sourceOverride, cloudflareRolldown({ compatibilityDate: WORKER_COMPATIBILITY_DATE })],
 	checks: { unresolvedImport: false, ineffectiveDynamicImport: false },
 })
 await build.write({
