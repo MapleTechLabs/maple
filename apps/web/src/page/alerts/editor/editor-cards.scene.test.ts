@@ -19,6 +19,8 @@ import {
 	withViewInputs,
 } from "foldkit/scene"
 import { describe, expect, test } from "vitest"
+import * as Chart from "@maple/views/charts/chart"
+import { MountChart } from "@maple/views/charts/chart-mounts"
 import { ResolveThemeColors, ThemeMessage } from "@maple/views/charts/theme-colors"
 import * as Dialog from "@maple/views/ui/dialog"
 import type { PageContext } from "../../contract"
@@ -74,6 +76,41 @@ const slowPreview = () =>
 			limitMs: 5_000,
 			fitsIntervalMinutes: [5, 10, 15, 30, 60],
 		},
+	})
+
+/** A preview with one point over the threshold: a chart, its threshold line and a would-fire band. */
+const breachingPreview = () =>
+	Schema.decodeSync(AlertRulePreviewResponse)({
+		bucketSeconds: 300,
+		windowMinutes: 5,
+		threshold: 800,
+		thresholdUpper: null,
+		thresholds: [
+			{ severity: "critical", value: 800, upper: null, recoveryValue: null, destinationIds: [] },
+		],
+		comparator: "gt",
+		truncatedToStart: null,
+		series: [
+			{
+				groupKey: "__ungrouped__",
+				points: [
+					{
+						bucket: "2026-10-01T11:00:00.000Z",
+						value: 1800,
+						sampleCount: 40,
+						status: "breached",
+					},
+				],
+			},
+		],
+		wouldFire: [
+			{
+				groupKey: "__ungrouped__",
+				start: "2026-10-01T11:00:00.000Z",
+				end: "2026-10-01T11:10:00.000Z",
+				severity: "critical",
+			},
+		],
 	})
 
 const summary = (lead: string, rest: string) => role("button", { name: `${lead}: ${rest}. Edit` })
@@ -135,17 +172,48 @@ describe("alert rule editor, sentence cards", () => {
 		)
 	})
 
-	test("with a threshold that is not a number, the empty chart asks for one, not for a signal", () => {
+	// Blank counts as missing: `Number("")` is 0, which once drew a threshold line at zero.
+	test.each([["-"], [""], ["   "]])(
+		"with the threshold %j, the empty chart asks for a number, not for a signal",
+		(value) => {
+			scene(
+				{ update: pageUpdate, view },
+				given(
+					run(opened({ template: "slow_p95" }), [
+						Message.ChangedField({ field: "threshold", value }),
+					]),
+				),
+				themeResolved(),
+				expectView(
+					text(/^Enter a number for the threshold to preview it against the last/u),
+				).toExist(),
+				expectView(text(/^Pick a signal/u)).not.toExist(),
+			)
+		},
+	)
+
+	test("clearing the threshold drops the chart and its threshold line, and asks for no new preview", () => {
+		const loading = opened({ template: "slow_p95" })
+		const draft = run(loading, [
+			Message.CompletedFetchPreview({
+				key: loading.preview.key ?? "",
+				isSaved: false,
+				result: Result.succeed(breachingPreview()),
+			}),
+		])
 		scene(
 			{ update: pageUpdate, view },
-			given(
-				run(opened({ template: "slow_p95" }), [
-					Message.ChangedField({ field: "threshold", value: "-" }),
-				]),
-			),
+			given(draft),
 			themeResolved(),
+			Mount.resolve(MountChart, Chart.Message.CompletedMountChart()),
+			expectView(text(/^Breach above/u)).toExist(),
+			expectView(text("Would have fired")).toExist(),
+			// A preview at threshold 0 would be a command left unanswered here.
+			type(selector("#rule-threshold"), ""),
+			Mount.expectEnded(MountChart),
 			expectView(text(/^Enter a number for the threshold to preview it against the last/u)).toExist(),
-			expectView(text(/^Pick a signal/u)).not.toExist(),
+			expectView(text(/^Breach above/u)).not.toExist(),
+			expectView(text("Would have fired")).not.toExist(),
 		)
 	})
 

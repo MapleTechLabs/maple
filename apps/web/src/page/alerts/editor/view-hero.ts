@@ -3,7 +3,12 @@ import {
 	type BreachStats,
 	formatBreachDuration,
 } from "@maple/web-data/alerts/breach-stats"
-import { displaySignalType, formatSignalValue } from "@maple/web-data/alerts/form-utils"
+import {
+	displaySignalType,
+	formatSignalValue,
+	isFilledNumber,
+	isRangeComparator,
+} from "@maple/web-data/alerts/form-utils"
 import {
 	countSkippedWindows,
 	draftThresholds,
@@ -155,6 +160,11 @@ const header = (h: H, model: HeaderView, form: RuleForm, timeZone: string): Html
 	)
 }
 
+/** The threshold (both bounds of a range) is a number; blank is missing, where `Number("")` is 0. */
+const hasThreshold = (form: RuleForm): boolean =>
+	isFilledNumber(form.threshold) &&
+	(!isRangeComparator(form.comparator) || isFilledNumber(form.thresholdUpper))
+
 /** The chart with the threshold and would-fire bands, and the notes under it. */
 type ChartView = Pick<
 	Model,
@@ -191,7 +201,7 @@ const chartBody = (h: H, model: ChartView, form: RuleForm, timeZone: string): Ht
 				loadingText: `Loading the ${range}…`,
 				emptyText: isIdle
 					? {
-							title: Number.isFinite(Number(form.threshold))
+							title: hasThreshold(form)
 								? `Pick a signal to preview it against the ${range}`
 								: `Enter a number for the threshold to preview it against the ${range}`,
 						}
