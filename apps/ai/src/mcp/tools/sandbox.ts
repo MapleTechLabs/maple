@@ -5,7 +5,7 @@ import {
 	SandboxListFilesOutput,
 	SandboxReadFileOutput,
 } from "@maple/domain/mcp-outputs"
-import { CurrentMcpTenant } from "../lib/query-warehouse"
+import { CurrentMcpTenant } from "../tenant"
 import {
 	RepoSandboxService,
 	SANDBOX_DEFAULT_TIMEOUT_SECONDS,

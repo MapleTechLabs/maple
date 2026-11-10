@@ -33,7 +33,7 @@ import {
 	selectionRequest,
 } from "../lib/agent-tool-analytics"
 import { paddedWindowArgs } from "../lib/agent-sessions"
-import { CurrentMcpTenant } from "../lib/query-warehouse"
+import { CurrentMcpTenant } from "../tenant"
 import { formatNumber, tableCell } from "../lib/format"
 import { warehouseReadToMcpHandlers } from "../lib/map-warehouse-error"
 import { stringifyJson } from "../lib/json"

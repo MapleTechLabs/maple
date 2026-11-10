@@ -17,7 +17,7 @@ import {
 	inspectWidgetsAfterMutation,
 	validationDoc,
 } from "../lib/inspect-widget"
-import { CurrentMcpTenant } from "../lib/query-warehouse"
+import { CurrentMcpTenant } from "../tenant"
 import { validateWidgetRenderability } from "../lib/validate-widget-renderability"
 import { resolvePanelType } from "../lib/panel-type"
 import { withScalarReduction } from "../lib/raw-sql-widget"

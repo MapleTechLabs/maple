@@ -4,7 +4,7 @@ import { SearchConsolePagesOutput, SearchConsoleToolSort } from "@maple/domain/m
 import type { McpToolRegistrar } from "./types"
 import { formatNumber, formatPercent, truncate } from "../lib/format"
 import * as P from "../lib/params"
-import { CurrentMcpTenant } from "../lib/query-warehouse"
+import { CurrentMcpTenant } from "../tenant"
 import {
 	historyCoverage,
 	historyNotice,

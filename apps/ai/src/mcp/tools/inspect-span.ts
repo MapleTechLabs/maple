@@ -1,6 +1,7 @@
 import type { McpToolRegistrar } from "./types"
 import { warehouseReadHandlers, warehouseToMcpHandlers } from "../lib/map-warehouse-error"
-import { CurrentMcpTenant, withTenantExecutor } from "../lib/query-warehouse"
+import { withTenantExecutor } from "../lib/query-warehouse"
+import { CurrentMcpTenant } from "../tenant"
 import { formatDurationFromMs, toSecondTimestamp, truncate } from "../lib/format"
 import * as P from "../lib/params"
 import { doc, type DocBlock } from "../lib/tool-doc"

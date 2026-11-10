@@ -1,6 +1,6 @@
 import type { McpToolRegistrar } from "./types"
 import { toMcpQueryError } from "../lib/map-warehouse-error"
-import { CurrentMcpTenant } from "../lib/query-warehouse"
+import { CurrentMcpTenant } from "../tenant"
 import { MCP_SEARCH_MAX_HOURS } from "../lib/time"
 import { truncate, formatNumber, toSecondTimestamp } from "../lib/format"
 import * as P from "../lib/params"

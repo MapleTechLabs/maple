@@ -9,7 +9,7 @@ import {
 import { provideWarehouseExecutorFromTenant } from "@maple/backend/services/warehouse/WarehouseQueryService"
 import type { McpToolRegistrar } from "./types"
 import { toMcpQueryError } from "../lib/map-warehouse-error"
-import { CurrentMcpTenant } from "../lib/query-warehouse"
+import { CurrentMcpTenant } from "../tenant"
 import { formatNumber, truncate } from "../lib/format"
 import * as P from "../lib/params"
 import { doc } from "../lib/tool-doc"

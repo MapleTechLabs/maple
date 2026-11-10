@@ -4,7 +4,7 @@ import { parseWarehouseDateTime, WarehouseTimeInput } from "@maple/query-engine"
 import { OnCallOverrideCreateRequest } from "@maple/domain/http"
 import { OnCallOverrideMutationOutput } from "@maple/domain/mcp-outputs"
 import { OnCallSchedulesService } from "@maple/backend/services/alerts/OnCallSchedulesService"
-import { CurrentMcpTenant } from "../lib/query-warehouse"
+import { CurrentMcpTenant } from "../tenant"
 import {
 	createOverrideErrors,
 	deleteScheduleErrors,

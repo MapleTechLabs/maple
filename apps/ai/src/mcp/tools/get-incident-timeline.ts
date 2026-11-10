@@ -1,7 +1,7 @@
 import { McpInvalidInputError, McpQueryError, type McpToolRegistrar } from "./types"
 import { DateTime, Effect, Option, Schema, Array as Arr, String as Str } from "effect"
 import { GetIncidentTimelineOutput } from "@maple/domain/mcp-outputs"
-import { CurrentMcpTenant } from "../lib/query-warehouse"
+import { CurrentMcpTenant } from "../tenant"
 import { AlertReadModelsService } from "@maple/backend/services/alerts/AlertReadModelsService"
 import { AlertIncidentPagesService } from "@maple/backend/services/alerts/AlertIncidentPagesService"
 import { AlertSilencesService } from "@maple/backend/services/alerts/AlertSilencesService"

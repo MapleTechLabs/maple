@@ -43,7 +43,7 @@ import { OrganizationFeatureFlagsService } from "@maple/backend/services/org/Org
 import { StatusPagesService } from "@maple/backend/services/status-pages/StatusPagesService"
 import { StatusPageSnapshotBuilder } from "@maple/backend/services/status-pages/StatusPageSnapshotBuilder"
 import { McpInvalidInputError, McpQueryError, McpUnavailableError, type McpToolRegistrar } from "./types"
-import { CurrentMcpTenant } from "../lib/query-warehouse"
+import { CurrentMcpTenant } from "../tenant"
 import * as P from "../lib/params"
 import { doc } from "../lib/tool-doc"
 
@@ -352,10 +352,7 @@ const renderPageList = (pages: ReadonlyArray<typeof StatusPageRow.Type>) => ({
 	),
 })
 
-const renderPageDetail = (
-	page: typeof StatusPageDetail.Type,
-	config: StatusPageConfig | undefined,
-) => ({
+const renderPageDetail = (page: typeof StatusPageDetail.Type, config: StatusPageConfig | undefined) => ({
 	title: `Status page: ${page.name}`,
 	notices: [
 		// No suggested call: every follow-up needs a public message only the user can word.

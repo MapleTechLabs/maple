@@ -3,7 +3,7 @@ import { Effect, Option, Schema, Array as Arr, String as Str } from "effect"
 import { AuditSetupOutput } from "@maple/domain/mcp-outputs"
 import { PublicIdPrefixes, encodePublicId, type PublicIdPrefix } from "@maple/domain/http/v2"
 import { INTEGRATION_PROVIDERS } from "@maple/domain/integration-inventory"
-import { CurrentMcpTenant } from "../lib/query-warehouse"
+import { CurrentMcpTenant } from "../tenant"
 import * as P from "../lib/params"
 import { doc, type NextCall } from "../lib/tool-doc"
 import {

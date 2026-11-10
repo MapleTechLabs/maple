@@ -1,7 +1,7 @@
 import { McpInvalidInputError, type McpToolRegistrar } from "./types"
 import { Clock, DateTime, Effect, Schema, String as Str } from "effect"
 import { UpdateDashboardOutput } from "@maple/domain/mcp-outputs"
-import { CurrentMcpTenant } from "../lib/query-warehouse"
+import { CurrentMcpTenant } from "../tenant"
 import { DashboardPersistenceService } from "@maple/backend/services/dashboards/DashboardPersistenceService"
 import {
 	DashboardId,

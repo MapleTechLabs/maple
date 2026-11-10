@@ -1,7 +1,7 @@
 import type { McpToolRegistrar } from "./types"
 import { Effect, Schema, Array as Arr } from "effect"
 import { TransitionErrorIssueOutput } from "@maple/domain/mcp-outputs"
-import { CurrentMcpTenant } from "../lib/query-warehouse"
+import { CurrentMcpTenant } from "../tenant"
 import { resolveActorId } from "../lib/resolve-actor"
 import * as P from "../lib/params"
 import { doc } from "../lib/tool-doc"

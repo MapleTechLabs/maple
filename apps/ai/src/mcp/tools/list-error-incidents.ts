@@ -1,7 +1,7 @@
 import { McpInvalidInputError, type McpToolRegistrar } from "./types"
 import { Effect, Schema, Array as Arr, String as Str } from "effect"
 import { ListErrorIncidentsOutput } from "@maple/domain/mcp-outputs"
-import { CurrentMcpTenant } from "../lib/query-warehouse"
+import { CurrentMcpTenant } from "../tenant"
 import * as P from "../lib/params"
 import { doc } from "../lib/tool-doc"
 import { issueIdParam, issueNotFound, persistenceFailed } from "./error-issue-shared"

@@ -1,7 +1,7 @@
 import type { McpToolRegistrar } from "./types"
 import { Effect, Schema, Array as Arr, String as Str } from "effect"
 import { ListDashboardsOutput } from "@maple/domain/mcp-outputs"
-import { CurrentMcpTenant } from "../lib/query-warehouse"
+import { CurrentMcpTenant } from "../tenant"
 import { DashboardPersistenceService } from "@maple/backend/services/dashboards/DashboardPersistenceService"
 import { DASHBOARD_TEMPLATES } from "@maple/backend/dashboard-templates"
 import { toMcpDashboardError, toDashboardRow } from "../lib/dashboard-mutations"

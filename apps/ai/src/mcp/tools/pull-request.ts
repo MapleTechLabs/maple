@@ -12,7 +12,7 @@
 import { Effect, Schema, Array as Arr, String as Str } from "effect"
 import type { PullRequestContext, PullRequestFile } from "@maple/domain/http"
 import { PrChangedFilesOutput, PrContextOutput, PrFileDiffOutput } from "@maple/domain/mcp-outputs"
-import { CurrentMcpTenant } from "../lib/query-warehouse"
+import { CurrentMcpTenant } from "../tenant"
 import { VcsSourceService } from "@maple/backend/services/integrations/vcs/VcsSourceService"
 import { fromVcsLookupError, type VcsLookupError } from "../lib/source-errors"
 import * as P from "../lib/params"

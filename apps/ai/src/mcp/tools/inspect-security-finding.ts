@@ -1,7 +1,7 @@
 import { DateTime, Effect, Option, Schema } from "effect"
 import { DependencyFindingId } from "@maple/domain/dependency-scan"
 import { InspectSecurityFindingOutput } from "@maple/domain/mcp-outputs"
-import { CurrentMcpTenant } from "../lib/query-warehouse"
+import { CurrentMcpTenant } from "../tenant"
 import * as P from "../lib/params"
 import { truncate } from "../lib/format"
 import { doc } from "../lib/tool-doc"

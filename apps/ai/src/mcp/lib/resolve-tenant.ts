@@ -1,4 +1,5 @@
 import { Array as Arr, Effect, Option, Redacted, Schema, String as Str } from "effect"
+import { HttpServerRequest } from "effect/http"
 import type { TenantContext as McpTenantContext } from "@maple/backend/services/auth/tenant-context"
 import { AuthService } from "@maple/backend/services/auth/AuthService"
 import { secretsEqual } from "@maple/backend/services/auth/secret-equal"
@@ -356,3 +357,12 @@ export const resolveMcpTenantContext = Effect.fn("McpTenant.resolveMcpTenantCont
 	(effect) =>
 		Effect.tapError(effect, (error) => recordExpectedMcpFailure(error, "MCP authentication failed")),
 )
+
+/** Resolve the tenant of the HTTP request being served. */
+export const resolveHttpMcpTenant = Effect.gen(function* () {
+	const req = yield* HttpServerRequest.HttpServerRequest
+	const nativeReq = yield* HttpServerRequest.toWeb(req).pipe(
+		Effect.mapError((e) => new McpAuthMissingError({ message: `Failed to read request: ${e.message}` })),
+	)
+	return yield* resolveMcpTenantContext(nativeReq)
+})

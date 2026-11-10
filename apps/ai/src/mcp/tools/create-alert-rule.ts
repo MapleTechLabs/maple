@@ -3,7 +3,7 @@ import { Effect, Schema, String as Str } from "effect"
 import { CreateAlertRuleOutput } from "@maple/domain/mcp-outputs"
 import { MAX_RAW_SQL_ALERT_GROUPS } from "@maple/domain/raw-sql"
 import { toMcpHttpError } from "../lib/map-http-error"
-import { CurrentMcpTenant } from "../lib/query-warehouse"
+import { CurrentMcpTenant } from "../tenant"
 import { AlertRulesService } from "@maple/backend/services/alerts/AlertRulesService"
 import {
 	ALERT_EVALUATION_INTERVALS,

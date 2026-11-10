@@ -8,7 +8,7 @@ import {
 import type { McpToolRegistrar } from "./types"
 import { formatDelta, formatNumber, formatPercent, formatPointsDelta, truncate } from "../lib/format"
 import * as P from "../lib/params"
-import { CurrentMcpTenant } from "../lib/query-warehouse"
+import { CurrentMcpTenant } from "../tenant"
 import {
 	daysPastDataThrough,
 	historyCoverage,

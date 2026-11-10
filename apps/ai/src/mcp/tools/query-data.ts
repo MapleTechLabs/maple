@@ -1,7 +1,7 @@
 import { McpInvalidInputError, McpQueryBudgetError, McpQueryError, type McpToolRegistrar } from "./types"
 import { describeInvalidQuerySpec, resolveTokenAliases, tokensFor } from "../lib/query-spec-tokens"
 import { Effect, Schema, Array as Arr, Record as Rec, String as Str } from "effect"
-import { CurrentMcpTenant } from "../lib/query-warehouse"
+import { CurrentMcpTenant } from "../tenant"
 import { QueryEngineService } from "@maple/backend/services/warehouse/QueryEngineService"
 import {
 	MAX_BREAKDOWN_RANGE_SECONDS,

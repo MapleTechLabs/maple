@@ -15,7 +15,7 @@ import {
 import type { AiSessionSpan } from "@maple/domain/http"
 import { AgentTranscriptRow, GetAgentSessionTranscriptOutput } from "@maple/domain/mcp-outputs"
 import { McpInvalidInputError, type McpToolRegistrar } from "./types"
-import { CurrentMcpTenant } from "../lib/query-warehouse"
+import { CurrentMcpTenant } from "../tenant"
 import { formatDurationFromMs, tableCell, truncate } from "../lib/format"
 import {
 	clipPayload,

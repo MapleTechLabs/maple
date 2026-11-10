@@ -23,7 +23,7 @@ import { ListEscalationChainsOutput } from "@maple/domain/mcp-outputs"
 import { AlertsService } from "@maple/backend/services/alerts/AlertsService"
 import { EscalationChainsService } from "@maple/backend/services/alerts/EscalationChainsService"
 import { OnCallSchedulesService } from "@maple/backend/services/alerts/OnCallSchedulesService"
-import { CurrentMcpTenant } from "../../lib/query-warehouse"
+import { CurrentMcpTenant } from "../../tenant"
 import { executeRegisteredMcpToolUnscoped } from "../registry"
 import type { McpToolResult } from "../types"
 

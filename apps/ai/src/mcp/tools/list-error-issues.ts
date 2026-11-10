@@ -2,7 +2,7 @@ import { McpInvalidInputError, McpQueryError, type McpToolRegistrar } from "./ty
 import { formatNumber, truncate } from "../lib/format"
 import { Effect, Schema, Array as Arr, String as Str } from "effect"
 import { ListErrorIssuesOutput } from "@maple/domain/mcp-outputs"
-import { CurrentMcpTenant } from "../lib/query-warehouse"
+import { CurrentMcpTenant } from "../tenant"
 import { warehouseReadToMcpHandlers } from "../lib/map-warehouse-error"
 import * as P from "../lib/params"
 import { doc, type NextCall } from "../lib/tool-doc"

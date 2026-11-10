@@ -2,7 +2,7 @@ import { McpInvalidInputError, McpQueryError, type McpToolRegistrar } from "./ty
 import { Effect, Option, Schema, Array as Arr, String as Str } from "effect"
 import { InspectChartDataOutput } from "@maple/domain/mcp-outputs"
 import { dataSourceEndpoint } from "@maple/widgets/dashboard"
-import { CurrentMcpTenant } from "../lib/query-warehouse"
+import { CurrentMcpTenant } from "../tenant"
 import { inspectWidget, type InspectWidgetTimeRange } from "../lib/inspect-widget"
 import { truncate } from "../lib/format"
 import { resolveDashboardTimeRange } from "../lib/resolve-dashboard-time-range"

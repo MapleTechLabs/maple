@@ -1,5 +1,6 @@
 import type { McpToolRegistrar } from "./types"
-import { queryWarehouse, CurrentMcpTenant } from "../lib/query-warehouse"
+import { queryWarehouse } from "../lib/query-warehouse"
+import { CurrentMcpTenant } from "../tenant"
 import { MCP_DISCOVERY_MAX_HOURS } from "../lib/time"
 import { formatNumber, truncate } from "../lib/format"
 import * as P from "../lib/params"

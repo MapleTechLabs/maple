@@ -29,7 +29,7 @@ import {
 	selectionRequest,
 	TREND_BUCKETS,
 } from "../lib/agent-tool-analytics"
-import { CurrentMcpTenant } from "../lib/query-warehouse"
+import { CurrentMcpTenant } from "../tenant"
 import { formatDelta, formatNumber, formatPointsDelta, percentOf, tableCell, truncate } from "../lib/format"
 import { warehouseReadToMcpHandlers } from "../lib/map-warehouse-error"
 import { doc, type DocBlock, type NextCall } from "../lib/tool-doc"

@@ -2,7 +2,7 @@ import { McpInvalidInputError, McpQueryError, type McpToolRegistrar } from "./ty
 import { Effect, Schema, Array as Arr, String as Str } from "effect"
 import { CreateDashboardOutput } from "@maple/domain/mcp-outputs"
 import { quoteWhereValue } from "@maple/domain/where-clause"
-import { CurrentMcpTenant } from "../lib/query-warehouse"
+import { CurrentMcpTenant } from "../tenant"
 import { DashboardPersistenceService } from "@maple/backend/services/dashboards/DashboardPersistenceService"
 import {
 	DashboardTemplateParameterKey,

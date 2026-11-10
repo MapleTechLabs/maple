@@ -3,7 +3,7 @@ import { Effect, Schema, String as Str } from "effect"
 import { EscalationChainUpdateRequest } from "@maple/domain/http"
 import { EscalationChainMutationOutput } from "@maple/domain/mcp-outputs"
 import { EscalationChainsService } from "@maple/backend/services/alerts/EscalationChainsService"
-import { CurrentMcpTenant } from "../lib/query-warehouse"
+import { CurrentMcpTenant } from "../tenant"
 import {
 	chainBlocks,
 	invalidChainRequest,

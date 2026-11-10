@@ -1,6 +1,6 @@
 import { McpInvalidInputError, type McpToolRegistrar } from "./types"
 import { toMcpQueryError } from "../lib/map-warehouse-error"
-import { CurrentMcpTenant } from "../lib/query-warehouse"
+import { CurrentMcpTenant } from "../tenant"
 import { MCP_LOG_PATTERN_MAX_HOURS } from "../lib/time"
 import {
 	checkComparisonWindows,

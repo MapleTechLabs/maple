@@ -4,7 +4,7 @@ import { OrganizationFeatureFlagsService } from "@maple/backend/services/org/Org
 import type { ExternalDataSourceDocument, QueryLanguage, QueryPlanSummary } from "@maple/domain/data-sources"
 import { McpInvalidInputError, McpQueryBudgetError, McpQueryError, McpUnavailableError } from "../tools/types"
 import { truncate } from "./format"
-import { CurrentMcpTenant } from "./query-warehouse"
+import { CurrentMcpTenant } from "../tenant"
 import { stringifyJson } from "./json"
 
 /** The data source tools read through the agent audience: hidden sources and PII stay out. */

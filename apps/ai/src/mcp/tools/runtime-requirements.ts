@@ -42,7 +42,7 @@ import type { SecurityAuditStore } from "@maple/backend/services/security-audit/
 import type { DependencyScanReader } from "@maple/backend/services/dependency-scan/DependencyScanService"
 import type { RuntimeReleaseCatalog } from "@maple/backend/services/security/RuntimeReleaseCatalog"
 import type { RuntimeAdvisoryCatalog } from "@maple/backend/services/security/RuntimeAdvisoryCatalog"
-import type { CurrentMcpTenant } from "../lib/query-warehouse"
+import type { CurrentMcpTenant } from "../tenant"
 
 /**
  * Application services an MCP tool handler may use after its request tenant has

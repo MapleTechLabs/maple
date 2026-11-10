@@ -1,7 +1,7 @@
 import { McpInvalidInputError, McpUnavailableError, type McpToolRegistrar } from "./types"
 import { Effect, Schema, Array as Arr } from "effect"
 import { UpdateErrorNotificationPolicyOutput } from "@maple/domain/mcp-outputs"
-import { CurrentMcpTenant } from "../lib/query-warehouse"
+import { CurrentMcpTenant } from "../tenant"
 import * as P from "../lib/params"
 import { policyOutput, renderPolicy } from "../lib/error-notification-policy"
 import { persistenceFailed } from "./error-issue-shared"

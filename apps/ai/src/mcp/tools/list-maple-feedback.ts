@@ -6,7 +6,7 @@ import { parseWarehouseDateTime } from "@maple/query-engine"
 import { AgentFeedbackService } from "@maple/backend/services/feedback/AgentFeedbackService"
 import { CurrentAuditActor } from "@maple/backend/services/auth/audit-actor"
 import { McpAuthInvalidError, McpInvalidInputError, McpNotReadyError, type McpToolRegistrar } from "./types"
-import { CurrentMcpTenant } from "../lib/query-warehouse"
+import { CurrentMcpTenant } from "../tenant"
 import * as P from "../lib/params"
 import { doc } from "../lib/tool-doc"
 

@@ -4,7 +4,7 @@ import { AlertMaintenanceWindowCreateRequest, MAINTENANCE_WEEKDAYS } from "@mapl
 import { MaintenanceWindowMutationOutput } from "@maple/domain/mcp-outputs"
 import { AlertMaintenanceWindowsService } from "@maple/backend/services/alerts/AlertMaintenanceWindowsService"
 import { parseWarehouseDateTime } from "@maple/query-engine"
-import { CurrentMcpTenant } from "../lib/query-warehouse"
+import { CurrentMcpTenant } from "../tenant"
 import {
 	createWindowErrors,
 	maintenanceWindowFields,

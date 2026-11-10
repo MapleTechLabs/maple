@@ -13,7 +13,7 @@ import { EdgeCacheServiceLive } from "@maple/backend/platform/CacheBackendLive"
 import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/platform/test-pglite"
 import { AlertMaintenanceWindowsService } from "@maple/backend/services/alerts/AlertMaintenanceWindowsService"
 import { AlertSilencesService } from "@maple/backend/services/alerts/AlertSilencesService"
-import { CurrentMcpTenant } from "../../lib/query-warehouse"
+import { CurrentMcpTenant } from "../../tenant"
 import { executeRegisteredMcpToolUnscoped } from "../registry"
 import { unimplementedMcpToolServices } from "../../../../test/mcp/unimplemented-tool-services"
 

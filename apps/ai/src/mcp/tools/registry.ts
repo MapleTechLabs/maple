@@ -122,7 +122,7 @@ import { registerServiceMapTool } from "./service-map"
 import { registerSourceCodeTools } from "./source-code"
 import { registerSandboxTools } from "./sandbox"
 import { registerPullRequestTools } from "./pull-request"
-import { CurrentMcpTenant } from "../lib/query-warehouse"
+import { CurrentMcpTenant } from "../tenant"
 import {
 	audienceAdmits,
 	McpAuthInvalidError,

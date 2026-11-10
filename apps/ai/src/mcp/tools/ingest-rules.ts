@@ -44,7 +44,7 @@ import {
 	type RuleRecord,
 } from "@maple/ingest-rules"
 import { McpInvalidInputError, McpUnavailableError, type McpToolRegistrar } from "./types"
-import { CurrentMcpTenant } from "../lib/query-warehouse"
+import { CurrentMcpTenant } from "../tenant"
 import { toMcpHttpError } from "../lib/map-http-error"
 import { toMcpQueryError } from "../lib/map-warehouse-error"
 import { truncate } from "../lib/format"

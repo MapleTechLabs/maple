@@ -3,7 +3,7 @@ import { Effect, Schema } from "effect"
 import { OnCallScheduleCreateRequest } from "@maple/domain/http"
 import { OnCallScheduleMutationOutput } from "@maple/domain/mcp-outputs"
 import { OnCallSchedulesService } from "@maple/backend/services/alerts/OnCallSchedulesService"
-import { CurrentMcpTenant } from "../lib/query-warehouse"
+import { CurrentMcpTenant } from "../tenant"
 import {
 	createScheduleErrors,
 	LayersInput,

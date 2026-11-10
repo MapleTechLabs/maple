@@ -1,40 +1,11 @@
-import { HttpServerRequest } from "effect/http"
 import type { WarehouseQueryName } from "@maple/domain"
 import { WarehouseQueryRequest } from "@maple/domain/http"
-import { Context, Effect } from "effect"
-import { resolveMcpTenantContext } from "./resolve-tenant"
-import type { TenantContext } from "@maple/backend/services/auth/tenant-context"
+import { Effect } from "effect"
 import { toMcpQueryError } from "./map-warehouse-error"
-import { McpAuthMissingError } from "../tools/types"
 import { WarehouseQueryService } from "@maple/backend/services/warehouse/WarehouseQueryService"
-import { WarehouseExecutor } from "@maple/query-engine/observability"
+import type { WarehouseExecutor } from "@maple/query-engine/observability"
 import { provideWarehouseExecutorFromTenant } from "@maple/backend/services/warehouse/WarehouseQueryService"
-
-export class CurrentMcpTenant extends Context.Service<CurrentMcpTenant, TenantContext>()(
-	"@maple/ai/mcp/CurrentMcpTenant",
-) {}
-
-/**
- * Adapter-local copy of the authenticated HTTP tenant.
- *
- * Effect's low-level MCP `addTool` contract only permits `McpServerClient` in a
- * handler's requirements, so it cannot express the `CurrentMcpTenant` service
- * installed by the outer HTTP middleware. A reference has a typed default and
- * therefore adds no requirement; the middleware overrides it for the request,
- * and the public MCP adapter passes the value to the closed executor explicitly.
- */
-export class CurrentMcpRequestTenant extends Context.Reference<TenantContext | undefined>(
-	"@maple/ai/mcp/CurrentMcpRequestTenant",
-	{ defaultValue: () => undefined },
-) {}
-
-export const resolveHttpMcpTenant = Effect.gen(function* () {
-	const req = yield* HttpServerRequest.HttpServerRequest
-	const nativeReq = yield* HttpServerRequest.toWeb(req).pipe(
-		Effect.mapError((e) => new McpAuthMissingError({ message: `Failed to read request: ${e.message}` })),
-	)
-	return yield* resolveMcpTenantContext(nativeReq)
-})
+import { CurrentMcpTenant } from "../tenant"
 
 /** Infrastructure binding: resolves the tenant and installs its WarehouseExecutor facade. */
 export const withTenantExecutor = Effect.fn("McpWarehouse.withTenantExecutor")(function* <A, E>(
@@ -59,3 +30,6 @@ export const queryWarehouse = Effect.fn("McpWarehouse.queryWarehouse")(function*
 
 	return { data: response.data as T[] }
 })
+
+// TODO(untangle): drop once get-alert-rule.ts and list-alert-destinations.ts import "../tenant".
+export { CurrentMcpTenant } from "../tenant"

@@ -31,7 +31,7 @@ import {
 } from "@maple/domain/http"
 import type { DashboardRow } from "@maple/domain/mcp-outputs"
 import { WIDGET_DATA_SOURCE_KINDS } from "@maple/widgets/dashboard"
-import { CurrentMcpTenant } from "./query-warehouse"
+import { CurrentMcpTenant } from "../tenant"
 import { stringifyJson } from "./json"
 import { DashboardPersistenceService } from "@maple/backend/services/dashboards/DashboardPersistenceService"
 import { McpInvalidInputError, McpQueryError } from "../tools/types"

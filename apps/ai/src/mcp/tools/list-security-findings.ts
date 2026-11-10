@@ -1,6 +1,6 @@
 import { Clock, DateTime, Effect, Schema, Array as Arr, String as Str } from "effect"
 import { ListSecurityFindingsOutput, SECURITY_AREAS, type SecurityArea } from "@maple/domain/mcp-outputs"
-import { CurrentMcpTenant } from "../lib/query-warehouse"
+import { CurrentMcpTenant } from "../tenant"
 import * as P from "../lib/params"
 import { truncate } from "../lib/format"
 import { doc, type NextCall } from "../lib/tool-doc"

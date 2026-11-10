@@ -17,7 +17,7 @@ import {
 	inspectWidgetsAfterMutation,
 	validationDoc,
 } from "../lib/inspect-widget"
-import { CurrentMcpTenant } from "../lib/query-warehouse"
+import { CurrentMcpTenant } from "../tenant"
 import * as P from "../lib/params"
 import { doc } from "../lib/tool-doc"
 

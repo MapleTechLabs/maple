@@ -6,7 +6,7 @@ import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/platfo
 import type { TenantContext } from "@maple/backend/services/auth/tenant-context"
 import { AlertsService } from "@maple/backend/services/alerts/AlertsService"
 import { ErrorPolicyService } from "@maple/backend/services/errors/ErrorPolicyService"
-import { CurrentMcpTenant } from "../../lib/query-warehouse"
+import { CurrentMcpTenant } from "../../tenant"
 import { executeRegisteredMcpToolUnscoped } from "../registry"
 
 const createdDbs: TestDb[] = []

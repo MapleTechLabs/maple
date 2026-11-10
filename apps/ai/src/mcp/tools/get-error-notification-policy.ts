@@ -2,7 +2,7 @@ import type { McpToolRegistrar } from "./types"
 import { Effect, Schema } from "effect"
 import { GetErrorNotificationPolicyOutput } from "@maple/domain/mcp-outputs"
 import { ErrorPolicyService } from "@maple/backend/services/errors/ErrorPolicyService"
-import { CurrentMcpTenant } from "../lib/query-warehouse"
+import { CurrentMcpTenant } from "../tenant"
 import { policyOutput, renderPolicy } from "../lib/error-notification-policy"
 import { persistenceFailed } from "./error-issue-shared"
 

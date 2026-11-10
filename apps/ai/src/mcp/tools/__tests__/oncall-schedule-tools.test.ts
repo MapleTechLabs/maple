@@ -27,7 +27,7 @@ import {
 import { encodePublicId } from "@maple/domain/http/v2"
 import { ListOnCallSchedulesOutput, WhoIsOnCallOutput } from "@maple/domain/mcp-outputs"
 import { OnCallSchedulesService } from "@maple/backend/services/alerts/OnCallSchedulesService"
-import { CurrentMcpTenant } from "../../lib/query-warehouse"
+import { CurrentMcpTenant } from "../../tenant"
 import { executeRegisteredMcpToolUnscoped } from "../registry"
 import type { McpToolResult } from "../types"
 

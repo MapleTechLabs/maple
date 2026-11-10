@@ -4,7 +4,7 @@ import {
 	ReadSourceFileOutput,
 	SearchSourceCodeOutput,
 } from "@maple/domain/mcp-outputs"
-import { CurrentMcpTenant } from "../lib/query-warehouse"
+import { CurrentMcpTenant } from "../tenant"
 import { VcsSourceService } from "@maple/backend/services/integrations/vcs/VcsSourceService"
 import { McpInvalidInputError, type McpToolRegistrar } from "./types"
 import { fromVcsLookupError } from "../lib/source-errors"

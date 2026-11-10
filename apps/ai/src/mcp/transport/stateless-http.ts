@@ -56,7 +56,7 @@ import {
 	type McpToolsUnavailableError,
 } from "../executor-loader"
 import { McpQueryBudgetError } from "../tools/types"
-import { CurrentMcpRequestTenant } from "../lib/query-warehouse"
+import { CurrentMcpRequestTenant } from "../tenant"
 import { INTERNAL_SERVICE_USER_ID } from "../lib/resolve-tenant"
 import { MCP_TOOLS_BUILT_HEADER } from "@maple/infra/isolate-age"
 import { mcpCaller, mcpMessageTracer, withMetaTraceContext } from "./span-conventions"

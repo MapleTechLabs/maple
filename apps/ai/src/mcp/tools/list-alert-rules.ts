@@ -2,7 +2,7 @@ import type { McpToolRegistrar } from "./types"
 import { toMcpHttpError } from "../lib/map-http-error"
 import { Effect, Schema, Array as Arr } from "effect"
 import { ListAlertRulesOutput } from "@maple/domain/mcp-outputs"
-import { CurrentMcpTenant } from "../lib/query-warehouse"
+import { CurrentMcpTenant } from "../tenant"
 import { AlertRulesService } from "@maple/backend/services/alerts/AlertRulesService"
 import {
 	ALERT_SEVERITIES,

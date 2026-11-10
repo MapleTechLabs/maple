@@ -18,7 +18,7 @@ import {
 	VcsSourceRepositoryNotFoundError,
 } from "@maple/backend/services/integrations/vcs/VcsSourceService"
 import { Effect, Layer, Schema, Array as Arr } from "effect"
-import { CurrentMcpTenant } from "../lib/query-warehouse"
+import { CurrentMcpTenant } from "../tenant"
 import { renderToolDoc } from "../lib/tool-doc"
 import {
 	RepoSandboxService,

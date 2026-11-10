@@ -10,7 +10,7 @@ import { Database } from "@maple/backend/platform/DatabaseLive"
 import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/platform/test-pglite"
 import { AlertsService } from "@maple/backend/services/alerts/AlertsService"
 import { ErrorPolicyService } from "@maple/backend/services/errors/ErrorPolicyService"
-import { CurrentMcpTenant } from "../../lib/query-warehouse"
+import { CurrentMcpTenant } from "../../tenant"
 import { executeRegisteredMcpToolUnscoped } from "../registry"
 
 const ORG = Schema.decodeSync(OrgId)("org_policy_tools")

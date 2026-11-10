@@ -22,7 +22,7 @@ import { UptimeDnsRecordType, UptimeHttpMethod } from "@maple/domain/uptime"
 import * as Policy from "@maple/domain/policy"
 import { UptimeMonitorsService } from "@maple/backend/services/uptime/UptimeMonitorsService"
 import { McpInvalidInputError, McpUnavailableError, type McpToolRegistrar } from "./types"
-import { CurrentMcpTenant } from "../lib/query-warehouse"
+import { CurrentMcpTenant } from "../tenant"
 import * as P from "../lib/params"
 import { doc, type NextCall } from "../lib/tool-doc"
 import {
