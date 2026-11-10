@@ -1,4 +1,4 @@
-import { Context, Effect, Scope, Tracer } from "effect"
+import { Context, Scope, Tracer } from "effect"
 import { HttpServerRequest } from "effect/http"
 import { DrainRunOnInterrupt, PgConnectionScope } from "./pg-connection-scope"
 
@@ -17,6 +17,3 @@ export const withoutInvocationContext = <R>(context: Context.Context<R>) =>
 		Tracer.ParentSpan,
 		HttpServerRequest.HttpServerRequest,
 	)(context)
-
-/** `Effect.context`, safe to keep and provide on later invocations. */
-export const captureReusableContext = <R>() => Effect.map(Effect.context<R>(), withoutInvocationContext)
