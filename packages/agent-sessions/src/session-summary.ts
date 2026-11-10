@@ -305,10 +305,6 @@ export function buildSessionSummary({
 	}
 }
 
-/* -------------------------------------------------------------------------- */
-/* Time                                                                       */
-/* -------------------------------------------------------------------------- */
-
 interface Interval {
 	readonly startMs: number
 	readonly endMs: number
@@ -423,10 +419,6 @@ export function computeAgentTime(spans: readonly AiSessionSpan[]): SessionAgentT
 	}
 }
 
-/* -------------------------------------------------------------------------- */
-/* Tokens, models, cost                                                       */
-/* -------------------------------------------------------------------------- */
-
 const EMPTY_TOKENS: SessionTokenTotals = {
 	input: 0,
 	cacheRead: 0,
@@ -466,7 +458,6 @@ export function spanTokenBuckets(span: AiSessionSpan): SessionTokenTotals | unde
 	})
 }
 
-/** The five disjoint buckets plus their sum. */
 function tokenTotals(buckets: Omit<SessionTokenTotals, "total">): SessionTokenTotals {
 	return {
 		...buckets,
@@ -875,10 +866,6 @@ function toolUsage(
 	)
 }
 
-/* -------------------------------------------------------------------------- */
-/* Work and failures                                                          */
-/* -------------------------------------------------------------------------- */
-
 function errorSignal(span: AiSessionSpan): string {
 	return Arr.join(
 		Arr.filter(
@@ -1232,10 +1219,6 @@ export function groupFailures(events: readonly SessionFailureEvent[]): readonly 
 	)
 }
 
-/* -------------------------------------------------------------------------- */
-/* How one call reads                                                         */
-/* -------------------------------------------------------------------------- */
-
 /** A $0.0004 session printed "$0.00" reads as "measured, and it was free".
  *  Shared by the overview's rails, the span expansion's meta strip and the
  *  transcript, so a call and the rail it rolls up into can never disagree. */
@@ -1284,10 +1267,6 @@ export function callMetaParts(span: AiSessionSpan, options?: CallMetaOptions): r
 export function callMetaLine(span: AiSessionSpan, options?: CallMetaOptions): string {
 	return Arr.join(callMetaParts(span, options), " · ")
 }
-
-/* -------------------------------------------------------------------------- */
-/* Small collection helpers                                                   */
-/* -------------------------------------------------------------------------- */
 
 function distinctInOrder(values: readonly (string | undefined)[]): readonly string[] {
 	const seen: string[] = []

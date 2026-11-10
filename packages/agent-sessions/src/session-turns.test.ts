@@ -727,8 +727,8 @@ describe("turn labels", () => {
 })
 
 /**
- * Maple's investigation fan-out: a planner pass, N hypothesis lanes launched
- * together, then a validator pass. Every pass stamps its own
+ * A planner/lanes/validator fan-out (the shape Maple's investigations once
+ * emitted): a planner pass, N hypothesis lanes launched together, then a validator pass. Every pass stamps its own
  * `maple_ai.turn.id`, which the maple vendor integration lifts into
  * `gen_ai.conversation.id`, so the lanes are concurrent CONVERSATION ids.
  *
