@@ -148,16 +148,21 @@ const navRow = (
 ): Html => {
 	const isActive = isNavItemActive(currentPath, item)
 	const isCollapsed = !model.isSidebarOpen && !model.isMobile
-	const subItems =
+	const allSubItems =
 		item.subItems === undefined
 			? undefined
 			: partitionSubItems(item.subItems, surfacesOf(model), currentPath).shown
-	if (isCollapsed && subItems !== undefined && subItems.length > 0)
+	if (isCollapsed && allSubItems !== undefined && allSubItems.length > 0)
 		return collapsedSectionRow(h, model, item, isActive)
-	const isOpen = subItems !== undefined && subItems.length > 0 && isActive && !isGroupFolded
+	// A folded group keeps where you are: the section row and, under it, the current sub-item alone.
+	const subItems =
+		isGroupFolded && allSubItems !== undefined
+			? Arr.filter(allSubItems, (sub) => sub.href === activeSubHrefOf(allSubItems, currentPath))
+			: allSubItems
+	const isOpen = subItems !== undefined && subItems.length > 0 && isActive
 	// The tint belongs to the sub-item that is the current page, when one is.
 	const hasActiveChild = isOpen && activeSubHrefOf(subItems, currentPath) !== undefined
-	const preview = isOpen || subItems === undefined ? undefined : navPreview(item, subItems)
+	const preview = isOpen || allSubItems === undefined ? undefined : navPreview(item, allSubItems)
 	return sidebarMenuItem(h, undefined, [
 		sidebarMenuButton(
 			h,
@@ -206,7 +211,9 @@ const navRow = (
 			],
 		),
 		...(item.badge === undefined ? [] : [navBadge(h, item.badge)]),
-		...(subItems !== undefined && isActive && !isGroupFolded ? [subList(h, subItems, currentPath)] : []),
+		...(subItems !== undefined && isActive && (subItems.length > 0 || !isGroupFolded)
+			? [subList(h, subItems, currentPath)]
+			: []),
 	])
 }
 
