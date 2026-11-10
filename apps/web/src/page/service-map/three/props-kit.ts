@@ -34,6 +34,23 @@ export type MapleFinish = MachineFinish & {
 	soil: string
 	water: string
 	moss: string
+	/** Dark paper: lit lamps throw a pool of light on the ground. */
+	night: boolean
+	/** Seconds of wind so far: one clock for the whole map, standing still while it is paused. */
+	wind: () => number
+}
+
+/** Sways something on the map's wind. A rebuilt machine picks its swing up where it was, and
+ * one that is not running holds its pose. */
+export function breeze(
+	scope: Scope,
+	{ running, wind }: Pick<MapleFinish, "running" | "wind">,
+	apply: (seconds: number) => void,
+) {
+	apply(wind())
+	scope.frames.push(() => {
+		if (running()) apply(wind())
+	})
 }
 
 /** FNV-1a over a node id: the same service always draws the same homestead. */
