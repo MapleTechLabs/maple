@@ -71,7 +71,7 @@ import { msToSqlTimestamp } from "@maple/backend/platform/time"
 import { Env } from "@maple/backend/platform/Env"
 import { secretKeyringFromEnv } from "@maple/backend/platform/SecretBox"
 import { ensureWithinLimit, UptimeMonitorAllowance } from "./UptimeMonitorAllowance"
-import { openConfigHeaders, type StoredUptimeHeaders } from "./uptime-headers"
+import { openConfigHeaders, sealConfigHeaders, type StoredUptimeHeaders } from "./uptime-headers"
 import { countCheck, countOne, upsertDailyCounts, type UptimeDailyCount } from "./uptime-daily"
 import { bumpPagesForMonitors } from "@maple/backend/services/status-pages/outbox"
 import { uptimeRuleFields } from "@maple/backend/services/alerts/AlertRuleModel"
@@ -532,6 +532,17 @@ export class UptimeMonitorsService extends Context.Service<UptimeMonitorsService
 				env,
 				(message) => new UptimeMonitorPersistenceError({ message }),
 			)
+			const sealHeaders = (orgId: OrgId, id: UptimeMonitorId, config: UptimeMonitorConfig) =>
+				sealConfigHeaders(
+					keyring,
+					{ orgId, id },
+					config,
+					(reason) =>
+						new UptimeMonitorPersistenceError({
+							message: `Headers of uptime monitor ${id} could not be sealed: ${reason}`,
+						}),
+				)
+
 			const openHeaders = (
 				row: { readonly orgId: OrgId; readonly id: UptimeMonitorId } & StoredUptimeHeaders,
 				config: UptimeMonitorConfig,
@@ -723,6 +734,7 @@ export class UptimeMonitorsService extends Context.Service<UptimeMonitorsService
 
 				const now = yield* Clock.currentTimeMillis
 				const id = UptimeMonitorId.make(randomUUID())
+				const stored = yield* sealHeaders(orgId, id, config)
 				const ruleId = AlertRuleId.make(randomUUID())
 				const enabled = input.enabled !== false
 				const serviceName = input.serviceName ?? null
@@ -758,7 +770,7 @@ export class UptimeMonitorsService extends Context.Service<UptimeMonitorsService
 									orgId,
 									name,
 									kind: config._tag,
-									configJson: config,
+									...stored,
 									intervalSeconds: input.intervalSeconds ?? DEFAULT_INTERVAL_SECONDS,
 									failuresToDown,
 									serviceName,
@@ -821,6 +833,7 @@ export class UptimeMonitorsService extends Context.Service<UptimeMonitorsService
 						: yield* keepRedactedHeaders(current.config, input.config)
 				const config =
 					keptConfig === undefined ? undefined : yield* validateConfig(current.kind, keptConfig)
+				const stored = config === undefined ? undefined : yield* sealHeaders(orgId, monitorId, config)
 				const name = input.name === undefined ? undefined : yield* validateName(input.name)
 				const failuresToDown =
 					input.failuresToDown === undefined
@@ -912,16 +925,7 @@ export class UptimeMonitorsService extends Context.Service<UptimeMonitorsService
 											? { alertRuleId: ruleId }
 											: undefined),
 										...(name === undefined ? undefined : { name }),
-										// This config carries its headers itself: sealed ones left behind
-										// would come back once the config's are removed.
-										...(config === undefined
-											? undefined
-											: {
-													configJson: config,
-													headersCiphertext: null,
-													headersIv: null,
-													headersTag: null,
-												}),
+										...stored,
 										...(input.intervalSeconds === undefined
 											? undefined
 											: { intervalSeconds: input.intervalSeconds }),

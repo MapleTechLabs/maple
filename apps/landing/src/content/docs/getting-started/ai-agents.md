@@ -181,7 +181,6 @@ The [`maple` CLI](/docs/reference/cli) outputs JSON by default, so an agent with
 
 - **`401 Unauthorized`.** The key was revoked, or the endpoint is in the wrong region. EU organizations use `api.eu.maple.dev`.
 - **Empty results.** Check the time window and the service name. Ask the agent to run `list_services` first to see what Maple has.
-- **Source code tools return nothing.** They need the [GitHub App](/docs/integrations/github) installed with access to that repository.
 - **The agent guesses instead of querying.** Tell it to use Maple: _"Use the maple MCP tools to check."_
 
 ## Next steps

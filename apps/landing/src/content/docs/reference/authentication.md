@@ -69,7 +69,7 @@ The key is shown once, when it is created. Store it then; Maple keeps only a has
 
 A restricted key carries scopes of the form `<family>:read` or `<family>:write`, where the family is the first path segment under `/v2` (`dashboards`, `alerts`, `traces`, …). `write` implies `read`. The full list of families is in the [API reference](/docs/reference/api#resources). A request outside a key's scopes fails with `403` and `code: "insufficient_scope"`.
 
-`maple auth login` also creates an API key: a full-access key that expires after 90 days, described as "Created by maple auth login". See [Using the CLI with hosted Maple](/docs/reference/cli#using-the-cli-with-hosted-maple).
+`maple auth login` also creates an API key, described as "Created by maple auth login". It is not limited to scopes, but it acts with the role of the member who approved the login, and expires after 90 days. See [Using the CLI with hosted Maple](/docs/reference/cli#using-the-cli-with-hosted-maple).
 
 API requests are limited to 600 per 60 seconds per key. See [Limits](/docs/reference/limits).
 
