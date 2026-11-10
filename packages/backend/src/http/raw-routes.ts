@@ -1,15 +1,14 @@
 import type { Layer } from "effect"
 import type { HttpRouter } from "effect/http"
-import type { AiPortsLayer } from "../worker/bindings"
 
 /**
- * Services a raw router's handlers still expect from the request context, beyond the Worker's
- * ports, which every request carries. Each is a runtime "Service not found".
+ * Services a raw router's handlers still expect from the request context, beyond `Provided` (the
+ * Worker's ports, which every request carries). Each is a runtime "Service not found".
  */
-type LeakedRequestServices<Routes extends Layer.Any> =
+type LeakedRequestServices<Routes extends Layer.Any, Provided> =
 	Layer.Services<Routes> extends infer Marker
 		? Marker extends HttpRouter.Request<"Requires", infer Service>
-			? Exclude<Service, Layer.Success<AiPortsLayer>>
+			? Exclude<Service, Provided>
 			: never
 		: never
 
@@ -21,12 +20,14 @@ type LeakedRequestServices<Routes extends Layer.Any> =
  * request with "Service not found", which is what took the chat routes down on 2026-09-08. This
  * turns that into a build failure naming the leaked service.
  *
- * Carried over from apps/api verbatim. It is worth more here, not less: this Worker is almost
- * entirely raw routers.
+ * `Provided` is what every request of the Worker carries: `Layer.Success` of its ports layer.
  */
-export const rawRoutes = <Routes extends Layer.Any>(
-	routes: Routes &
-		([LeakedRequestServices<Routes>] extends [never]
-			? unknown
-			: { readonly leakedRequestServices: LeakedRequestServices<Routes> }),
-) => routes
+export const rawRoutes =
+	<Provided>() =>
+	<Routes extends Layer.Any>(
+		routes: Routes &
+			([LeakedRequestServices<Routes, Provided>] extends [never]
+				? unknown
+				: { readonly leakedRequestServices: LeakedRequestServices<Routes, Provided> }),
+	) =>
+		routes
