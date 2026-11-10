@@ -320,11 +320,15 @@ interface FetchInputLike {
 	toString(): string
 }
 
+/** True for a `Request` from any realm; `instanceof` misses one made in another frame. */
+const isRequest = (input: FetchInputLike): boolean =>
+	Object.prototype.toString.call(input) === "[object Request]"
+
 function requestUrl(input: string | FetchInputLike): string {
 	if (typeof input === "string") return input
-	// Only a `Request` has a `url`. Reading it from anything else gave `undefined`, which threw
-	// in the URL filter after the response had arrived and rejected the app's fetch.
-	return input.url ?? input.toString()
+	// Only a `Request` carries its URL in `url`. Anything else is read by `toString`, as `fetch`
+	// reads it: a `Location` has no `url`, and one added to a `URL` is not the request's.
+	return isRequest(input) ? (input.url ?? input.toString()) : input.toString()
 }
 
 function requestMethod(input: RequestInfo | URL, init?: RequestInit): string {
