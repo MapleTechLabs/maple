@@ -415,7 +415,6 @@ const isAuditAction = (action: string): action is AuditAction =>
 const isAuditResourceType = (type: string): type is AuditResourceType =>
 	Rec.has<string, string>(AuditResourceLabels, type)
 
-/** Label for an action string read off a row; null for one this build does not know. */
 /**
  * Actions that record access rather than a change: reads, tool calls, SQL runs
  * and API requests. A heavy agent user writes hundreds of these a day. The
@@ -427,6 +426,7 @@ export const AUDIT_ACCESS_ACTION_SUFFIXES = [".read", ".called", ".sql_executed"
 export const isAuditAccessAction = (action: string): boolean =>
 	Arr.some(AUDIT_ACCESS_ACTION_SUFFIXES, (suffix) => Str.endsWith(suffix)(action))
 
+/** Label for an action string read off a row; null for one this build does not know. */
 export const auditActionLabel = (action: string): string | null =>
 	isAuditAction(action) ? AuditActionLabels[action] : null
 
