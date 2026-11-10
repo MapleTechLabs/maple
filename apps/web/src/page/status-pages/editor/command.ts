@@ -11,7 +11,6 @@ import {
 } from "@maple/domain/http/v2"
 import { Duration, Effect, Schema } from "effect"
 import { Command, Dom, Mount } from "foldkit"
-import { readGrants } from "../../../data/session-tenant"
 import {
 	applyPageConfig,
 	createIncident,
@@ -34,15 +33,11 @@ import {
 import { listMonitors, saveMonitor } from "../../kit/uptime/commands"
 import { monitorPayloadFor } from "../shared/picker"
 import { Message } from "./message"
+import { fetchSessionGrants } from "../../kit/session-grants"
 
 export const ReadEditorClock = readClock("ReadStatusPageClock", Message.ReadClock)
 
-export const FetchEditorSession = Command.define("FetchStatusPageSession", {
-	args: { orgId: Schema.String },
-	messages: [Message.CompletedFetchSession],
-	execute: ({ orgId }) =>
-		Effect.map(readGrants, (grants) => Message.CompletedFetchSession({ orgId, grants })),
-})
+export const FetchEditorSession = fetchSessionGrants("FetchStatusPageSession", Message.CompletedFetchSession)
 
 export const FetchPage = Command.define("FetchStatusPage", {
 	args: { key: Schema.String, pageId: StatusPageId },

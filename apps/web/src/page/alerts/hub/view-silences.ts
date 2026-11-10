@@ -25,7 +25,8 @@ import {
 	startsAtMs,
 } from "../shared/silences"
 import { Message } from "./message"
-import { canManage, type Model } from "./model"
+import { type Model } from "./model"
+import { canManageAlerts } from "../../kit/session-grants"
 
 // The Silences tab: what is silenced now, what is scheduled, and what ended recently.
 
@@ -117,7 +118,7 @@ const silenceRow = (
 							],
 						),
 					]
-				: status !== "ended" && canManage(model)
+				: status !== "ended" && canManageAlerts(model)
 					? [
 							button(
 								h,

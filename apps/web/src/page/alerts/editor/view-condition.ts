@@ -33,6 +33,7 @@ import { formSelect } from "./view-select"
 import { typography } from "@maple/views/ui/typography"
 import { hstack } from "@maple/views/ui/stack"
 import { Array as Arr, String as Str, Option } from "effect"
+import { ALERT_SEVERITY_LABEL } from "../shared/badges"
 
 // `RuleConditionFields`: the rule's condition row.
 
@@ -59,13 +60,13 @@ const SEVERITY_OPTIONS: ReadonlyArray<{
 }> = [
 	{
 		value: "warning",
-		label: "Warning",
+		label: ALERT_SEVERITY_LABEL.warning,
 		selected: "border-severity-warn/60 bg-severity-warn-a2 text-severity-warn",
 		dot: "bg-severity-warn",
 	},
 	{
 		value: "critical",
-		label: "Critical",
+		label: ALERT_SEVERITY_LABEL.critical,
 		selected: "border-severity-error-a4 bg-severity-error-a2 text-severity-error",
 		dot: "bg-severity-error",
 	},

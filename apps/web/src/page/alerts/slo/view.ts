@@ -39,7 +39,7 @@ import {
 	overspentText,
 } from "../shared/slo-derive"
 import { Message } from "./message"
-import { canManage, type Model } from "./model"
+import { type Model } from "./model"
 import { sloOf } from "./update"
 import {
 	alertingPanel,
@@ -52,6 +52,7 @@ import {
 	sliPanel,
 } from "./view-panels"
 import { textLink } from "@maple/views/ui/text-link"
+import { canManageAlerts } from "../../kit/session-grants"
 
 // `/alerts/slos/$sloId`: the header, a callout while the budget burns or is spent, then the panels.
 
@@ -60,7 +61,7 @@ type H = HtmlBuilder<Message>
 const headerActions = (h: H, model: Model, slo: Slo): Html =>
 	detailActions(
 		h,
-		canManage(model)
+		canManageAlerts(model)
 			? [
 					linkButton(h, { size: "sm", variant: "outline", href: editSloHref(slo.id) }, [
 						icon(h, "PencilIcon"),

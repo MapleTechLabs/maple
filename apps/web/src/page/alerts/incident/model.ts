@@ -23,18 +23,17 @@ import { LoadFailure } from "@maple/views/data/load-failure"
 import { CheckSummary } from "../shared/check-summary"
 import { PreviewSlot } from "../shared/preview"
 import * as SilenceDialog from "../silence-dialog/dialog"
+import { LiveRows } from "../../kit/load-schemas"
 
 // `/alerts/incidents/$incidentId`.
-
-const Rows = <S extends Schema.Top>(row: S) => Schema.NullOr(Schema.Array(row))
 
 export const Model = Schema.Struct({
 	incidentId: Schema.String,
 	/** `clockAtSync`: the wall clock to the minute, read when the incident first arrives. */
 	nowMs: Schema.NullOr(Schema.Number),
-	incidents: Rows(AlertIncidentRowSchema),
-	rules: Rows(AlertRuleRowSchema),
-	states: Rows(AlertRuleStateRowSchema),
+	incidents: LiveRows(AlertIncidentRowSchema),
+	rules: LiveRows(AlertRuleRowSchema),
+	states: LiveRows(AlertRuleStateRowSchema),
 	preview: PreviewSlot,
 	/** What the evaluator recorded over the range: the chart's line when the query cannot be replayed. */
 	checks: KeyedSchema(CheckSummary, LoadFailure),

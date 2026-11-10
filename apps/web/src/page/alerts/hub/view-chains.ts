@@ -24,9 +24,10 @@ import { sectionHeading } from "../../kit/section-heading"
 import { chainSummary } from "../shared/escalation-chains"
 import { memberName } from "../shared/org-members"
 import { Message } from "./message"
-import { canManage, type Model } from "./model"
+import { type Model } from "./model"
 import { chainMenuId, chainRuleNames } from "./update"
 import { dividedList } from "@maple/views/ui/rule"
+import { canManageAlerts } from "../../kit/session-grants"
 
 // The Routing tab's "Escalation chains" section and its delete confirmation.
 
@@ -117,7 +118,7 @@ export const chainRow = (
 						},
 						[usage],
 					),
-					...(canManage(model)
+					...(canManageAlerts(model)
 						? [
 								rowActionsMenu(h, {
 									slotId: menuId,
@@ -144,10 +145,10 @@ const chainsEmpty = (h: H, model: Model): Html =>
 				emptyTitle(h, ["No escalation chains yet"]),
 				emptyDescription(h, [
 					"A chain pages one set of destinations, waits for someone to acknowledge, then pages the next. A rule's severity tier can start one on top of its own destinations.",
-					...(canManage(model) ? [] : [" Ask an org admin to create one."]),
+					...(canManageAlerts(model) ? [] : [" Ask an org admin to create one."]),
 				]),
 			]),
-			...(canManage(model)
+			...(canManageAlerts(model)
 				? [
 						emptyActions(h, [
 							button(h, { size: "sm", attributes: [h.OnClick(Message.ClickedNewChain())] }, [
@@ -210,7 +211,7 @@ export const chainsSection = (h: H, model: Model): Html =>
 					sectionHeading(h, {
 						title: "Escalation chains",
 						actions:
-							canManage(model) && hasChains(model)
+							canManageAlerts(model) && hasChains(model)
 								? button(
 										h,
 										{

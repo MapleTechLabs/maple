@@ -33,6 +33,7 @@ import {
 } from "../../kit/uptime/form"
 import { Message } from "./message"
 import { canManage, type Model } from "./model"
+import { acceptGrants } from "../../kit/session-grants"
 
 type Return = PageReturn<Model, Message>
 type FormRoute = Extract<AppRoute, { readonly _tag: "AlertsUptimeNew" }>
@@ -171,8 +172,9 @@ const updateForm = (model: Model, message: Message, context: PageContext): Retur
 			orgId === context.orgId ? { model: { ...model, destinations: rows } } : { model },
 		CompletedFetchServices: ({ services }) => ({ model: { ...model, services } }),
 		CompletedReadTimeZones: ({ zones }) => ({ model: { ...model, timeZones: zones } }),
-		CompletedFetchSession: ({ orgId, grants }) =>
-			orgId === context.orgId ? { model: { ...model, grants, isSessionLoaded: true } } : { model },
+		CompletedFetchSession: (answer) => ({
+			model: acceptGrants(model, context.orgId, answer, { isSessionLoaded: true }),
+		}),
 		PickedKind: ({ kind }) =>
 			model.editingId !== null
 				? { model }

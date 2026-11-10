@@ -27,7 +27,7 @@ import { sectionHeading } from "../../kit/section-heading"
 import { editScheduleHref, formatShiftEdge, oncallTabHref } from "../shared/oncall-schedules"
 import { memberName, memberOf, type OrgMember } from "../shared/org-members"
 import { Message } from "./message"
-import { canManage, type Model } from "./model"
+import { type Model } from "./model"
 import {
 	DELETE_OVERRIDE_DIALOG_ID,
 	OVERRIDE_DIALOG_ID,
@@ -39,6 +39,7 @@ import {
 } from "./update"
 import { isoMs } from "../../kit/alert-time"
 import { dividedList } from "@maple/views/ui/rule"
+import { canManageAlerts } from "../../kit/session-grants"
 
 // `/alerts/schedules/$scheduleId`: who is on call now, the week's calendar (each layer and the
 // final row with its overrides), the upcoming overrides, and the dialog that adds one.
@@ -79,7 +80,7 @@ const barOf = (
 		tone: isOverride ? "info" : isFinal ? "primary" : "neutral",
 	}
 	// Only a final shift that has not ended opens an override, and only for someone who may add one.
-	return isFinal && canManage(model) && endMs > (model.nowMs ?? 0)
+	return isFinal && canManageAlerts(model) && endMs > (model.nowMs ?? 0)
 		? { ...bar, onClick: Message.ClickedShift({ startMs, endMs }) }
 		: bar
 }
@@ -192,7 +193,9 @@ const calendarSection = (h: H, model: Model, schedule: V2OnCallSchedule, viewerZ
 			}),
 			typography(h, { size: "xs", tone: "muted", as: "p" }, [
 				zoneNote,
-				...(canManage(model) ? [" Pick a shift in the final row to cover it with an override."] : []),
+				...(canManageAlerts(model)
+					? [" Pick a shift in the final row to cover it with an override."]
+					: []),
 			]),
 			body,
 		],
@@ -210,7 +213,7 @@ const overrideRow = (h: H, model: Model, schedule: V2OnCallSchedule, override: V
 					imageUrl: imageOf(model.members, override.user_id),
 					detail: rangeText(isoMs(override.starts_at), isoMs(override.ends_at), schedule.time_zone),
 				}),
-				...(canManage(model)
+				...(canManageAlerts(model)
 					? [
 							iconButton(
 								h,
@@ -434,7 +437,7 @@ const page = (h: H, model: Model, viewerZone: string): Html => {
 									}),
 								],
 							}),
-							actions: canManage(model)
+							actions: canManageAlerts(model)
 								? detailActions(h, [
 										linkButton(
 											h,

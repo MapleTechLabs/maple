@@ -29,7 +29,7 @@ import { emptyActions } from "@maple/views/ui/signal-empty-state"
 import { destinationProvider, providerLogo } from "../shared/providers"
 import { createHref } from "../../kit/alert-links"
 import { Message } from "./message"
-import { canManage, type Model } from "./model"
+import { type Model } from "./model"
 import { destinationMenuId } from "./update"
 import { chainsSection } from "./view-chains"
 import { relativeTime } from "../../kit/relative-time"
@@ -40,6 +40,7 @@ import { hstack, hstackClass } from "@maple/views/ui/stack"
 import { borderedBox } from "@maple/views/ui/bordered-box"
 import { tooltipTrigger } from "@maple/views/ui/tooltip-host"
 import { Array as Arr, Option } from "effect"
+import { canManageAlerts } from "../../kit/session-grants"
 
 // `AlertsRoutingTab` and `DestinationRow`: the hub's Routing tab.
 
@@ -117,11 +118,11 @@ const destinationsSection = (
 					emptyTitle(h, ["No destinations yet"]),
 					emptyDescription(h, [
 						"Add Slack, PagerDuty, or webhook destinations before creating alert rules.",
-						...(canManage(model) ? [] : [" Ask an org admin to add one."]),
+						...(canManageAlerts(model) ? [] : [" Ask an org admin to add one."]),
 					]),
 				]),
 				emptyActions(h, [
-					...(canManage(model)
+					...(canManageAlerts(model)
 						? [
 								button(
 									h,
@@ -282,7 +283,7 @@ export const destinationRow = (h: H, model: Model, inputs: RoutingInputs, row: R
 							id: `destination-switch-${destination.id}`,
 							inputId: `destination-switch-input-${destination.id}`,
 							isChecked: destination.enabled,
-							isDisabled: !canManage(model),
+							isDisabled: !canManageAlerts(model),
 							ariaLabel: destination.enabled ? "Disable destination" : "Enable destination",
 							onToggle: Message.ClickedToggleDestination({ destinationId: destination.id }),
 						}),
@@ -291,7 +292,7 @@ export const destinationRow = (h: H, model: Model, inputs: RoutingInputs, row: R
 							{
 								size: "sm",
 								variant: "outline",
-								isDisabled: !canManage(model),
+								isDisabled: !canManageAlerts(model),
 								isLoading: model.testingDestinationIds.includes(destination.id),
 								attributes: [
 									h.OnClick(
@@ -301,7 +302,7 @@ export const destinationRow = (h: H, model: Model, inputs: RoutingInputs, row: R
 							},
 							[icon(h, "CheckIcon"), "Test"],
 						),
-						...(canManage(model)
+						...(canManageAlerts(model)
 							? [
 									rowActionsMenu(h, {
 										slotId: menuId,
@@ -404,7 +405,7 @@ const logTable = (
 					]),
 				]),
 				emptyActions(h, [
-					...(canManage(model)
+					...(canManageAlerts(model)
 						? [
 								linkButton(h, { variant: "outline", size: "sm", href: createHref({}) }, [
 									"Create an alert rule",

@@ -44,6 +44,3 @@ export const zoneItems = (model: Pick<Model, "zones" | "form">): ReadonlyArray<s
 		Arr.dedupe(Arr.filter([...model.zones, "UTC", model.form.timeZone], Str.isNonEmpty)),
 		Order.String,
 	)
-
-/** The viewer may change schedules (`alerts:manage`); the API refuses anyone else. */
-export const canManage = (model: Pick<Model, "grants">): boolean => Policy.has(model.grants, "alerts:manage")

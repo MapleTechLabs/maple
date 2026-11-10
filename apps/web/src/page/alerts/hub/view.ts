@@ -32,7 +32,7 @@ import {
 	resolveTab,
 } from "./derive"
 import { Message } from "./message"
-import { canManage, type Model } from "./model"
+import { type Model } from "./model"
 import { alertsEmptyState } from "./view-empty"
 import { anomalyInbox, inboxFilters } from "./view-anomalies"
 import { inboxTab, unacknowledgedCount } from "./view-inbox"
@@ -57,6 +57,7 @@ import {
 } from "./view-oncall"
 import { hstack, vstack } from "@maple/views/ui/stack"
 import { typography } from "@maple/views/ui/typography"
+import { canManageAlerts } from "../../kit/session-grants"
 
 // `AlertsPage` and `AlertsHub`: the `/alerts` page and the rail of its sections.
 
@@ -201,9 +202,9 @@ const newRuleButton = (h: H, model: Model, tab: AlertsTab): Html => {
 	const serviceName = model.search.serviceName
 	// Uptime checks and SLOs are admin-only to create; members keep the telemetry rule.
 	const lead =
-		canManage(model) && tab === "uptime"
+		canManageAlerts(model) && tab === "uptime"
 			? { href: newMonitorHref({ serviceName }), label: "New check" }
-			: canManage(model) && tab === "slos"
+			: canManageAlerts(model) && tab === "slos"
 				? { href: newSloHref({ serviceName }), label: "New SLO" }
 				: { href: createHref({ serviceName }), label: "New rule" }
 	return hstack(h, { align: "center" }, [
@@ -237,7 +238,7 @@ const newRuleButton = (h: H, model: Model, tab: AlertsTab): Html => {
 						"Route what Maple's anomaly detector finds for some services, environments or signals.",
 					),
 					// Uptime monitors are admin-only to create; the API refuses members too.
-					...(canManage(model)
+					...(canManageAlerts(model)
 						? [
 								newRuleItem(
 									h,
@@ -282,7 +283,7 @@ const newRuleButton = (h: H, model: Model, tab: AlertsTab): Html => {
 // Destinations are a Routing concern, so "New destination" only shows on that tab.
 const headerActions = (h: H, model: Model, tab: AlertsTab): Html =>
 	hstack(h, { gap: "2" }, [
-		...(canManage(model) && tab === "silences"
+		...(canManageAlerts(model) && tab === "silences"
 			? [
 					button(
 						h,
@@ -295,7 +296,7 @@ const headerActions = (h: H, model: Model, tab: AlertsTab): Html =>
 					),
 				]
 			: []),
-		...(canManage(model) && tab === "maintenance" && hasWindows(model)
+		...(canManageAlerts(model) && tab === "maintenance" && hasWindows(model)
 			? [
 					button(
 						h,
@@ -309,8 +310,8 @@ const headerActions = (h: H, model: Model, tab: AlertsTab): Html =>
 					),
 				]
 			: []),
-		...(canManage(model) && tab === "oncall" && hasSchedules(model) ? [newScheduleButton(h)] : []),
-		...(canManage(model) && tab === "routing"
+		...(canManageAlerts(model) && tab === "oncall" && hasSchedules(model) ? [newScheduleButton(h)] : []),
+		...(canManageAlerts(model) && tab === "routing"
 			? [
 					button(
 						h,
@@ -362,10 +363,10 @@ const hubBody = (
 		onSome: (data) => {
 			const destinations = destinationsOf(model)
 			const emptyState = alertsEmptyState(h, {
-				canEdit: canManage(model),
+				canEdit: canManageAlerts(model),
 				hasDestinations: destinations.length > 0,
 				serviceName: model.search.serviceName,
-				onAddDestination: canManage(model) ? Message.ClickedNewDestination() : undefined,
+				onAddDestination: canManageAlerts(model) ? Message.ClickedNewDestination() : undefined,
 			})
 			// An org with only monitors or SLOs has no visible rules but may have open incidents to show.
 			const hasManagedIncidents = Arr.some(data.openIncidents, (incident) =>

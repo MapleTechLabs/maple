@@ -99,6 +99,7 @@ import {
 	rebaseJsonDraft,
 	updateJsonCopy,
 } from "./update-json"
+import { acceptGrants } from "../../kit/session-grants"
 
 type EditorRoute = Extract<AppRoute, { readonly _tag: "StatusPage" }>
 
@@ -298,8 +299,9 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		CompletedFetchMonitors: ({ key, result }) => ({
 			model: { ...model, monitors: Keyed.accept(model.monitors, key, result) },
 		}),
-		CompletedFetchSession: ({ orgId, grants }) =>
-			orgId === context.orgId ? { model: { ...model, grants, isSessionLoaded: true } } : { model },
+		CompletedFetchSession: (answer) => ({
+			model: acceptGrants(model, context.orgId, answer, { isSessionLoaded: true }),
+		}),
 		ClickedRetry: () =>
 			chain(
 				model,

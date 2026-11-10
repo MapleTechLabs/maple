@@ -8,10 +8,9 @@ import * as Chart from "@maple/views/charts/chart"
 import { KeyedSchema } from "@maple/views/data/keyed"
 import { LoadFailure } from "@maple/views/data/load-failure"
 import * as Dialog from "@maple/views/ui/dialog"
+import { LiveRows } from "../../kit/load-schemas"
 
 // `/alerts/slos/$sloId`: one SLO, its error budget, burn rates and incidents.
-
-const Rows = <S extends Schema.Top>(row: S) => Schema.NullOr(Schema.Array(row))
 
 export const Model = Schema.Struct({
 	/** The URL segment as written; `sloId` is `null` when it is not an SLO id. */
@@ -22,8 +21,8 @@ export const Model = Schema.Struct({
 	status: KeyedSchema(V2SloStatus, LoadFailure),
 	history: KeyedSchema(V2SloHistory, LoadFailure),
 	/** Synced destinations (the alerting panel's names) and incidents (those of the SLO's rule). */
-	destinations: Rows(AlertDestinationRowSchema),
-	incidents: Rows(AlertIncidentRowSchema),
+	destinations: LiveRows(AlertDestinationRowSchema),
+	incidents: LiveRows(AlertIncidentRowSchema),
 	/** The incidents stream stopped or stalled before its first answer (`collectionLoadFailed`). */
 	isIncidentsLoadFailed: Schema.Boolean,
 	grants: Schema.Array(Policy.PermissionName),
@@ -35,6 +34,3 @@ export const Model = Schema.Struct({
 	...ChartEnvFields,
 })
 export type Model = typeof Model.Type
-
-/** The viewer may change SLOs (`alerts:manage`); the API refuses anyone else. */
-export const canManage = (model: Pick<Model, "grants">): boolean => Policy.has(model.grants, "alerts:manage")

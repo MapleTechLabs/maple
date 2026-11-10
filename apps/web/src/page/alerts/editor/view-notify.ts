@@ -19,10 +19,11 @@ import { pressable } from "@maple/views/ui/pressable"
 import { waitingFor } from "../shared/chat-connect"
 import { destinationTarget } from "./derive"
 import { Message, type Tier } from "./message"
-import { canManage, type Model } from "./model"
+import { type Model } from "./model"
 import { typography, typographyClass } from "@maple/views/ui/typography"
 import { Array as Arr, Option } from "effect"
 import { hstack } from "@maple/views/ui/stack"
+import { canManageAlerts } from "../../kit/session-grants"
 
 // `DestinationList` and `AddDestinationMenu`: a tier's destinations and the menu that adds one.
 
@@ -133,7 +134,7 @@ const menuEntries = (
 						}),
 					},
 				]
-	if (!canManage(model)) return existing
+	if (!canManageAlerts(model)) return existing
 	const chat = Arr.flatMap(connectors, (connector): ReadonlyArray<MenuView.MenuItemEntry> => {
 		const mark = logo(h, model, "chat", connector.id, "flex shrink-0")
 		if (connector.workspaces.length > 0)
@@ -268,7 +269,7 @@ export const destinationList = (
 	const selected = Arr.filter(destinations, (d) => ids.includes(d.id))
 	const available = Arr.filter(destinations, (d) => !ids.includes(d.id))
 	const unresolved = Arr.filter(ids, (id) => !Arr.some(destinations, (d) => d.id === id))
-	const canAdd = available.length > 0 || canManage(model)
+	const canAdd = available.length > 0 || canManageAlerts(model)
 	return panel(h, { className: "mt-3 divide-y divide-border-subtle border-border-subtle" }, [
 		...Arr.map(selected, (destination) => selectedRow(h, model, tier, destination)),
 		...Arr.map(unresolved, (id) => unresolvedRow(h, tier, id)),

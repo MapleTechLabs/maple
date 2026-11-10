@@ -20,6 +20,7 @@ import {
 } from "./command"
 import { Message } from "./message"
 import type { Model } from "./model"
+import { acceptGrants } from "../../kit/session-grants"
 
 type Return = PageReturn<Model, Message>
 type SloRoute = Extract<AppRoute, { readonly _tag: "AlertsSlo" }>
@@ -176,8 +177,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			model: { ...model, isIncidentsLoadFailed: false },
 			outMessage: PageOutMessage.RequestedReconnectOrgCollections(),
 		}),
-		CompletedFetchSession: ({ orgId, grants }) =>
-			orgId === context.orgId ? { model: { ...model, grants } } : { model },
+		CompletedFetchSession: (answer) => ({ model: acceptGrants(model, context.orgId, answer) }),
 		ClickedToggleAlerting: () => toggleAlerting(model),
 		CompletedToggleAlerting: ({ result }) => {
 			const settled = { ...model, isTogglingAlerting: false }

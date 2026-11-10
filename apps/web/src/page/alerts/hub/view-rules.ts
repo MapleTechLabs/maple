@@ -29,7 +29,7 @@ import { filteredEmpty } from "@maple/views/ui/signal-empty-state"
 import { ruleHref } from "../../kit/alert-links"
 import { isoMs } from "../../kit/alert-time"
 import { Message, type RuleBucket } from "./message"
-import { canManage, type Model } from "./model"
+import { type Model } from "./model"
 import { ruleMenuId } from "./update"
 import { searchInput } from "@maple/views/ui/search-input"
 import { gridListRow } from "../../kit/grid-list-row"
@@ -38,6 +38,7 @@ import { stripClass, dividedList } from "@maple/views/ui/rule"
 import { hstack } from "@maple/views/ui/stack"
 import { borderedBox } from "@maple/views/ui/bordered-box"
 import { Array as Arr, String as Str } from "effect"
+import { canManageAlerts } from "../../kit/session-grants"
 
 // `RulesTab`: the hub's Rules tab.
 
@@ -360,7 +361,7 @@ const ruleRow = (h: H, model: Model, row: RowInputs): Html => {
 		),
 		h.span(
 			[h.Class(ROW_LINK_LIFT)],
-			canManage(model)
+			canManageAlerts(model)
 				? [
 						rowActionsMenu(h, {
 							slotId: menuId,

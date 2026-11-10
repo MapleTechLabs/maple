@@ -28,11 +28,10 @@ import * as DestinationDialog from "../destination/dialog"
 import * as ChatConnect from "../shared/chat-connect"
 import { PreviewSlot } from "../shared/preview"
 import { RuleForm, Tier } from "./form"
+import { LiveRows } from "../../kit/load-schemas"
 
 // `/alerts/create`: `AlertCreatePageContent` and the
 // `AlertCreateFormSurface` it mounts once the draft is known.
-
-const Rows = <S extends Schema.Top>(row: S) => Schema.NullOr(Schema.Array(row))
 
 export const Notice = Schema.Struct({
 	severity: Schema.Literals(["warning", "error"]),
@@ -79,10 +78,10 @@ export const Model = Schema.Struct({
 	notices: Schema.Array(Notice),
 	/** `crypto.randomUUID()` for a fresh query draft, read once on entry. */
 	draftId: Schema.NullOr(Schema.String),
-	rules: Rows(AlertRuleRowSchema),
-	states: Rows(AlertRuleStateRowSchema),
-	incidents: Rows(AlertIncidentRowSchema),
-	destinations: Rows(AlertDestinationRowSchema),
+	rules: LiveRows(AlertRuleRowSchema),
+	states: LiveRows(AlertRuleStateRowSchema),
+	incidents: LiveRows(AlertIncidentRowSchema),
+	destinations: LiveRows(AlertDestinationRowSchema),
 	/** `useCollectionLoadFailed` on `alert_rules` while an edit waits on it. */
 	isRulesLoadFailed: Schema.Boolean,
 	/** The widget's dashboard when no `chart` snapshot came along (`useDashboardsRead`). */
@@ -148,6 +147,3 @@ export const Model = Schema.Struct({
 	...ChartEnvFields,
 })
 export type Model = typeof Model.Type
-
-/** The viewer may change what this page edits (`alerts:manage`). */
-export const canManage = (model: Pick<Model, "grants">): boolean => Policy.has(model.grants, "alerts:manage")

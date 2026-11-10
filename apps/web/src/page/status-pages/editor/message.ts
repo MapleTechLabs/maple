@@ -1,4 +1,3 @@
-import * as Policy from "@maple/domain/policy"
 import { StatusPageComponentId, StatusPageIncidentId, StatusPageIncidentKind } from "@maple/domain"
 import {
 	StatusPageConfig,
@@ -19,25 +18,27 @@ import {
 } from "@maple/domain/status-page"
 import { Schema } from "effect"
 import { defineMessageUnion } from "foldkit/message"
-import { LoadFailure } from "@maple/views/data/load-failure"
 import * as CopyButton from "@maple/views/ui/copy-button"
 import * as Dialog from "@maple/views/ui/dialog"
 import * as Menu from "@maple/views/ui/menu"
 import { ComponentTextField, IncidentTextField, SettingsTextField, ThemeColorField } from "../shared/form"
 import { PickerMessage } from "../shared/picker"
 import { PreviewScheme, PreviewSelection } from "../shared/preview"
-
-const outcome = <S extends Schema.Top>(success: S) => Schema.Result(success, LoadFailure)
+import { LoadOutcome } from "../../kit/load-schemas"
+import { SessionGrants } from "../../kit/session-grants"
 
 export const UpdateTextField = Schema.Literals(["status", "body"])
 
 export const Message = defineMessageUnion({
 	ReadClock: { nowMs: Schema.Number },
-	CompletedFetchPage: { key: Schema.String, result: outcome(V2StatusPage) },
-	CompletedFetchComponents: { key: Schema.String, result: outcome(Schema.Array(V2StatusPageComponent)) },
-	CompletedFetchIncidents: { key: Schema.String, result: outcome(Schema.Array(V2StatusPageIncident)) },
-	CompletedFetchMonitors: { key: Schema.String, result: outcome(Schema.Array(V2UptimeMonitor)) },
-	CompletedFetchSession: { orgId: Schema.String, grants: Schema.Array(Policy.PermissionName) },
+	CompletedFetchPage: { key: Schema.String, result: LoadOutcome(V2StatusPage) },
+	CompletedFetchComponents: {
+		key: Schema.String,
+		result: LoadOutcome(Schema.Array(V2StatusPageComponent)),
+	},
+	CompletedFetchIncidents: { key: Schema.String, result: LoadOutcome(Schema.Array(V2StatusPageIncident)) },
+	CompletedFetchMonitors: { key: Schema.String, result: LoadOutcome(Schema.Array(V2UptimeMonitor)) },
+	CompletedFetchSession: SessionGrants,
 	ClickedRetry: {},
 	GotPageMenuMessage: { message: Menu.Message },
 	CompletedFocus: {},
@@ -47,7 +48,7 @@ export const Message = defineMessageUnion({
 	CompletedFetchPreview: {
 		generation: Schema.Number,
 		draft: StatusPagePreviewParams,
-		result: outcome(StatusPageSnapshot),
+		result: LoadOutcome(StatusPageSnapshot),
 	},
 	ReceivedPreviewSelection: { kind: PreviewSelection.fields.kind, id: Schema.String },
 	ClickedComponent: { componentId: StatusPageComponentId },
@@ -59,18 +60,21 @@ export const Message = defineMessageUnion({
 	CommittedComponent: {},
 	PickedComponentField: { field: ComponentTextField, value: Schema.String },
 	ToggledComponentUptime: {},
-	CompletedSaveComponent: { result: outcome(V2StatusPageComponent) },
+	CompletedSaveComponent: { result: LoadOutcome(V2StatusPageComponent) },
 	ClickedMoveComponent: { componentId: StatusPageComponentId, offset: Schema.Number },
-	CompletedReorder: { result: outcome(Schema.Array(V2StatusPageComponent)) },
+	CompletedReorder: { result: LoadOutcome(Schema.Array(V2StatusPageComponent)) },
 	ClickedDeleteComponent: { componentId: StatusPageComponentId },
 	ClickedConfirmDeleteComponent: {},
-	CompletedDeleteComponent: { result: outcome(Schema.Void) },
+	CompletedDeleteComponent: { result: LoadOutcome(Schema.Void) },
 	GotDeleteComponentDialogMessage: { message: Dialog.Message },
 	ClickedAddComponent: {},
 	GotAddPickerMessage: { message: PickerMessage },
-	CompletedCreateMonitor: { session: Schema.Number, result: outcome(V2UptimeMonitor) },
+	CompletedCreateMonitor: { session: Schema.Number, result: LoadOutcome(V2UptimeMonitor) },
 	ClickedSubmitAdd: {},
-	CompletedAddComponents: { session: Schema.Number, result: outcome(Schema.Array(V2StatusPageComponent)) },
+	CompletedAddComponents: {
+		session: Schema.Number,
+		result: LoadOutcome(Schema.Array(V2StatusPageComponent)),
+	},
 	// Incidents
 	ClickedNewIncident: { kind: StatusPageIncidentKind },
 	ChangedIncidentKind: { kind: StatusPageIncidentKind },
@@ -78,15 +82,15 @@ export const Message = defineMessageUnion({
 	ToggledIncidentComponent: { componentId: StatusPageComponentId },
 	PickedIncidentPublished: { isPublished: Schema.Boolean },
 	SubmittedIncident: {},
-	CompletedCreateIncident: { result: outcome(V2StatusPageIncident) },
+	CompletedCreateIncident: { result: LoadOutcome(V2StatusPageIncident) },
 	ClickedPostUpdate: { incidentId: StatusPageIncidentId, isResolving: Schema.Boolean },
 	ChangedUpdateField: { field: UpdateTextField, value: Schema.String },
 	SubmittedUpdate: {},
 	ClickedCancelUpdate: {},
 	/** `generation`: which post answered; the form may have moved on to another one. */
-	CompletedPostUpdate: { generation: Schema.Number, result: outcome(V2StatusPageIncident) },
+	CompletedPostUpdate: { generation: Schema.Number, result: LoadOutcome(V2StatusPageIncident) },
 	ClickedPublishIncident: { incidentId: StatusPageIncidentId },
-	CompletedPublishIncident: { incidentId: StatusPageIncidentId, result: outcome(V2StatusPageIncident) },
+	CompletedPublishIncident: { incidentId: StatusPageIncidentId, result: LoadOutcome(V2StatusPageIncident) },
 	// Live
 	GotUrlCopyMessage: { message: CopyButton.Message },
 	// Settings
@@ -100,30 +104,30 @@ export const Message = defineMessageUnion({
 	PickedPreviewScheme: { scheme: PreviewScheme },
 	ClickedDiscardSettings: {},
 	ClickedSaveSettings: {},
-	CompletedSaveSettings: { result: outcome(V2StatusPage) },
+	CompletedSaveSettings: { result: LoadOutcome(V2StatusPage) },
 	ClickedPublish: {},
-	CompletedPublish: { result: outcome(V2StatusPagePublishResult) },
+	CompletedPublish: { result: LoadOutcome(V2StatusPagePublishResult) },
 	ClickedRotateToken: {},
 	ClickedRevokeToken: {},
 	ClickedConfirmBreakGlass: {},
-	CompletedRotateToken: { result: outcome(V2StatusPageBreakGlassToken) },
-	CompletedRevokeToken: { result: outcome(V2StatusPage) },
+	CompletedRotateToken: { result: LoadOutcome(V2StatusPageBreakGlassToken) },
+	CompletedRevokeToken: { result: LoadOutcome(V2StatusPage) },
 	GotBreakGlassDialogMessage: { message: Dialog.Message },
 	GotTokenCopyMessage: { message: CopyButton.Message },
 	ClickedDismissToken: {},
 	// Page
 	ClickedDeletePage: {},
 	ClickedConfirmDeletePage: {},
-	CompletedDeletePage: { result: outcome(Schema.Void) },
+	CompletedDeletePage: { result: LoadOutcome(Schema.Void) },
 	GotDeletePageDialogMessage: { message: Dialog.Message },
 	// JSON
-	CompletedFetchConfig: { key: Schema.String, result: outcome(StatusPageConfig) },
+	CompletedFetchConfig: { key: Schema.String, result: LoadOutcome(StatusPageConfig) },
 	ClickedEditJson: {},
 	ChangedJson: { value: Schema.String },
 	ClickedResetJson: {},
 	ClickedCancelJson: {},
 	ClickedApplyJson: {},
-	CompletedApplyJson: { result: outcome(StatusPageConfig) },
+	CompletedApplyJson: { result: LoadOutcome(StatusPageConfig) },
 	GotJsonCopyMessage: { message: CopyButton.Message },
 })
 export type Message = typeof Message.Type

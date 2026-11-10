@@ -22,7 +22,7 @@ import { switchControl } from "@maple/views/ui/switch"
 import { typography } from "@maple/views/ui/typography"
 import { relativeTime } from "../../kit/relative-time"
 import { statRail, statRailItem, statRailLoading } from "../../kit/stat-rail"
-import { severityBadge } from "../shared/badges"
+import { severityBadge, ALERT_SEVERITY_LABEL } from "../shared/badges"
 import { incidentHref } from "../../kit/alert-links"
 import {
 	burnOf,
@@ -48,7 +48,8 @@ import {
 import { toneText } from "../shared/slo-view"
 import { isoMs } from "../../kit/alert-time"
 import { Message } from "./message"
-import { canManage, type Model } from "./model"
+import { type Model } from "./model"
+import { canManageAlerts } from "../../kit/session-grants"
 
 // The SLO page's panels: the figures, the two charts, the burn windows, alerting and incidents.
 
@@ -257,10 +258,6 @@ export const sliPanel = (h: H, model: Model, slo: Slo, context: ChartContext | n
 
 // BURN RATES
 
-const SEVERITY_LABEL = { critical: "Critical", warning: "Warning" } as const satisfies Record<
-	AlertSeverity,
-	string
->
 const TIER_ROLE = { critical: "pages", warning: "opens a ticket" } as const satisfies Record<
 	AlertSeverity,
 	string
@@ -337,7 +334,7 @@ const tierRow = (h: H, status: SloStatus, reading: TierReading): Html => {
 				typography(h, { size: "xs", tone: "muted", mono: true, numeric: true, as: "p" }, [
 					state === "hold"
 						? `${holdingLine(tier)}.`
-						: `${windowLabel(tier.longWindowMinutes)} at ${formatBurn(long)}, ${windowLabel(tier.shortWindowMinutes)} at ${formatBurn(short)}. ${SEVERITY_LABEL[tier.severity]} ${TIER_ROLE[tier.severity]} when both reach ${tier.factor}x.`,
+						: `${windowLabel(tier.longWindowMinutes)} at ${formatBurn(long)}, ${windowLabel(tier.shortWindowMinutes)} at ${formatBurn(short)}. ${ALERT_SEVERITY_LABEL[tier.severity]} ${TIER_ROLE[tier.severity]} when both reach ${tier.factor}x.`,
 				]),
 			]),
 		],
@@ -405,7 +402,7 @@ export const alertingPanel = (h: H, model: Model, slo: Slo): Html =>
 					id: "slo-alerting",
 					inputId: "slo-alerting-input",
 					isChecked: slo.alerting.enabled,
-					isDisabled: !canManage(model) || model.isTogglingAlerting,
+					isDisabled: !canManageAlerts(model) || model.isTogglingAlerting,
 					ariaLabel: "Burn-rate alerting",
 					onToggle: Message.ClickedToggleAlerting(),
 				}),

@@ -31,6 +31,3 @@ export const Model = Schema.Struct({
 	isSessionLoaded: Schema.Boolean,
 })
 export type Model = typeof Model.Type
-
-/** The viewer may change SLOs (`alerts:manage`); the API refuses anyone else. */
-export const canManage = (model: Pick<Model, "grants">): boolean => Policy.has(model.grants, "alerts:manage")

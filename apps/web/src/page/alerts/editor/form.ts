@@ -65,5 +65,4 @@ export const asFormState = (form: RuleForm): RuleFormState => form
 export const fromFormState = (form: RuleFormState): RuleForm => form
 
 /** The warning tier's destinations, or the critical tier's. */
-export const Tier = Schema.Literals(["warning", "critical"])
-export type Tier = typeof Tier.Type
+export { AlertSeverity as Tier } from "@maple/domain/http"

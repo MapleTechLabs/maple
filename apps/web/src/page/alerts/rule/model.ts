@@ -19,10 +19,9 @@ import * as Menu from "@maple/views/ui/menu"
 import * as TimeRangePicker from "../../kit/time-range-picker"
 import { CheckSummary } from "../shared/check-summary"
 import { PreviewSlot } from "../shared/preview"
+import { LiveRows } from "../../kit/load-schemas"
 
 // `/alerts/$ruleId`.
-
-const Rows = <S extends Schema.Top>(row: S) => Schema.NullOr(Schema.Array(row))
 
 /** `AlertRuleChecksResponse` (`useAlertRuleChecks`): the newest checks page plus the summary. */
 export const ChecksResponse = Schema.Struct({
@@ -52,10 +51,10 @@ export const Model = Schema.Struct({
 	window: Schema.NullOr(TimeWindow),
 	/** `diagnosisNow`: the wall clock the diagnosis labels read, refreshed with its inputs. */
 	nowMs: Schema.Number,
-	rules: Rows(AlertRuleRowSchema),
-	incidents: Rows(AlertIncidentRowSchema),
-	states: Rows(AlertRuleStateRowSchema),
-	destinations: Rows(AlertDestinationRowSchema),
+	rules: LiveRows(AlertRuleRowSchema),
+	incidents: LiveRows(AlertIncidentRowSchema),
+	states: LiveRows(AlertRuleStateRowSchema),
+	destinations: LiveRows(AlertDestinationRowSchema),
 	deliveries: KeyedSchema(Schema.Array(AlertDeliveryEventDocument), LoadFailure),
 	checks: KeyedSchema(ChecksResponse, LoadFailure),
 	preview: PreviewSlot,

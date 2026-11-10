@@ -14,7 +14,7 @@ import { hstack } from "@maple/views/ui/stack"
 import { rowLink } from "@maple/views/ui/table"
 import { typography } from "@maple/views/ui/typography"
 import { sectionHeading } from "../../kit/section-heading"
-import { alertStatusBadge, severityBadge } from "../shared/badges"
+import { alertStatusBadge, severityBadge, ALERT_SEVERITY_LABEL } from "../shared/badges"
 import { incidentHref } from "../../kit/alert-links"
 import { isoMs } from "../../kit/alert-time"
 
@@ -171,8 +171,12 @@ export const anomalyConfiguration = <M>(
 										"all",
 									),
 								]),
-								row(h, "Warning", [tierDestinations(h, tier("warning"), destinations)]),
-								row(h, "Critical", [tierDestinations(h, tier("critical"), destinations)]),
+								row(h, ALERT_SEVERITY_LABEL.warning, [
+									tierDestinations(h, tier("warning"), destinations),
+								]),
+								row(h, ALERT_SEVERITY_LABEL.critical, [
+									tierDestinations(h, tier("critical"), destinations),
+								]),
 								row(h, "Checked", [typography(h, { weight: "medium" }, ["every 1m"])]),
 								row(h, "Status", [
 									hstack(h, { gap: "2", justify: "end" }, [

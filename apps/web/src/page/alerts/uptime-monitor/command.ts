@@ -6,19 +6,17 @@ import { getUptimeCheckStats } from "@maple/web-data/warehouse/uptime"
 import { Clock, Effect, Schema } from "effect"
 import { Command } from "foldkit"
 import { settleTo } from "@maple/views/data/load-failure"
-import { readGrants } from "../../../data/session-tenant"
 import { retrieveMonitor, setMonitorEnabled, testMonitorConfig } from "../../kit/uptime/commands"
 import { Message } from "./message"
 import { UptimeWindow } from "./model"
+import { fetchSessionGrants } from "../../kit/session-grants"
 
 export const ReadMonitorClock = readClock("ReadUptimeMonitorClock", Message.ReadClock)
 
-export const FetchMonitorSession = Command.define("FetchUptimeMonitorSession", {
-	args: { orgId: Schema.String },
-	messages: [Message.CompletedFetchSession],
-	execute: ({ orgId }) =>
-		Effect.map(readGrants, (grants) => Message.CompletedFetchSession({ orgId, grants })),
-})
+export const FetchMonitorSession = fetchSessionGrants(
+	"FetchUptimeMonitorSession",
+	Message.CompletedFetchSession,
+)
 
 export const FetchMonitor = Command.define("FetchUptimeMonitor", {
 	args: { key: Schema.String, monitorId: UptimeMonitorId },
