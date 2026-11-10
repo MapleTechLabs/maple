@@ -209,7 +209,7 @@ export async function pendingMigrations(
 ): Promise<ReadonlyArray<{ version: number; description: string }>> {
 	const applied = await readAppliedVersions(config).catch((err: unknown) => {
 		// If the bookkeeping table doesn't exist, NO migrations have been
-		// applied yet — every bundled one is pending.
+		// applied yet: every bundled one is pending.
 		if (err instanceof Error && /UNKNOWN_TABLE|doesn't exist/i.test(err.message)) {
 			return new Set<number>()
 		}
@@ -293,7 +293,6 @@ export async function dryRun(
 	return out
 }
 
-/** Read the bookkeeping table directly. */
 export async function listApplied(config: ClickHouseConfig): Promise<ReadonlyArray<AppliedRow>> {
 	await ensureMigrationsTable(config)
 	const text = await exec(config, selectAppliedMigrationsSql)

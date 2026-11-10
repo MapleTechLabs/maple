@@ -1,27 +1,4 @@
 #!/usr/bin/env bun
-/**
- * @maple/clickhouse-cli — apply Maple's ClickHouse schema standalone.
- *
- * Usage:
- *   bunx @maple/clickhouse-cli@latest <command> [flags]
- *
- * Commands:
- *   apply       Apply unapplied migrations against the target ClickHouse.
- *   status      Print applied migrations + count of pending ones.
- *   dry-run     Print the DDL that would run, no execution.
- *   version     Print bundled migration count + revision hash.
- *   help        Show this help.
- *
- * Connection flags:
- *   --url       Required. e.g. https://my-ch.example.com
- *   --user      Default: default
- *   --password  Required if the user has a password set.
- *   --database  Default: default
- *
- * Env-var fallbacks (handy in CI):
- *   MAPLE_CH_URL, MAPLE_CH_USER, MAPLE_CH_PASSWORD, MAPLE_CH_DATABASE
- */
-
 import {
 	applyMigrations,
 	bundledMigrations,
