@@ -313,17 +313,12 @@ export class MobileDevicesService extends Context.Service<MobileDevicesService, 
 			) {
 				if (ids.length === 0) return
 				const now = yield* Clock.currentTimeMillis
-				yield* Effect.forEach(
-					ids,
-					(id) =>
-						dbExecute((db) =>
-							db.run(
-								PG.update(MobileDevices)
-									.set({ lastPushedAt: now })
-									.where(($) => [$.orgId.eq(orgId), $.id.eq(id)]),
-							),
-						),
-					{ discard: true },
+				yield* dbExecute((db) =>
+					db.run(
+						PG.update(MobileDevices)
+							.set({ lastPushedAt: now })
+							.where(($) => [$.orgId.eq(orgId), PG.inList($.id, ids)]),
+					),
 				)
 			})
 
