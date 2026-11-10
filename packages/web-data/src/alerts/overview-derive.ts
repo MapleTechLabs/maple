@@ -118,7 +118,7 @@ export interface Headroom {
 	readonly breached: boolean
 	/** Fraction of the threshold left before breaching; null for range/equality comparators. */
 	readonly headroom: number | null
-	/** Past the threshold, or within `NEAR_HEADROOM` of it: what the hub draws in warning colour. */
+	/** Past the threshold, or within `NEAR_HEADROOM` of it: what `headroomTone` reads. */
 	readonly isNear: boolean
 }
 
@@ -131,12 +131,8 @@ export type HeadroomTone = "neutral" | "warning" | "error"
  * How a reading against its threshold is drawn, in the rules table and the Inbox alike: neutral
  * unless under `NEAR_HEADROOM` is left (warning) or the threshold is passed (error).
  */
-export const headroomTone = (reading: Pick<Headroom, "breached" | "headroom">): HeadroomTone =>
-	reading.breached
-		? "error"
-		: reading.headroom !== null && reading.headroom < NEAR_HEADROOM
-			? "warning"
-			: "neutral"
+export const headroomTone = (reading: Pick<Headroom, "breached" | "isNear">): HeadroomTone =>
+	reading.breached ? "error" : reading.isNear ? "warning" : "neutral"
 
 const breaches = (rule: AlertRuleDocument, value: number): boolean => {
 	const upper = rule.thresholdUpper ?? rule.threshold

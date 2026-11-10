@@ -303,7 +303,7 @@ describe("ruleHeadroom near firing", () => {
 		expect(headroomTone(ruleHeadroom(floor, 0.054))).toBe("warning")
 		expect(headroomTone(ruleHeadroom(floor, 0.04))).toBe("error")
 		// A range has no single direction: neutral until it is breached.
-		expect(headroomTone({ breached: false, headroom: null })).toBe("neutral")
+		expect(headroomTone({ breached: false, isNear: false })).toBe("neutral")
 	})
 })
 
