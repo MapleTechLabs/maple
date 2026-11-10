@@ -3,6 +3,7 @@ import { ChatConnectorId } from "@maple/domain/primitives"
 import { docsUrl } from "../../lib/docs"
 import { Option, Schema, String as Str, Array as Arr } from "effect"
 import type { IconName } from "@maple/views/ui/icon"
+import { DATA_SOURCE_KINDS, type DataSourceKind } from "@maple/domain/data-sources"
 import { PLANETSCALE_COLOR } from "../infra-integrations/planetscale/notices"
 import { SUPABASE_ACCENT } from "../infra-integrations/supabase/connect"
 
@@ -39,6 +40,24 @@ export type EntryIcon =
 
 export type IntegrationCategory = "infrastructure" | "code" | "analytics" | "notifications"
 
+/** What a connection does for Maple: the hub's row chips and filters. */
+export const CAPABILITIES = ["telemetry", "query", "alerts", "analytics"] as const
+export type Capability = (typeof CAPABILITIES)[number]
+
+export const HubFilter = Schema.Literals(["all", ...CAPABILITIES, "attention"])
+export type HubFilter = typeof HubFilter.Type
+
+/** The row chip's word, then the filter chip's. */
+export const CAPABILITY_LABEL = {
+	telemetry: { chip: "Telemetry", filter: "Telemetry" },
+	query: { chip: "Query", filter: "Query" },
+	alerts: { chip: "Alerts", filter: "Alerts & chat" },
+	analytics: { chip: "Analytics", filter: "Analytics" },
+} as const satisfies Record<Capability, { readonly chip: string; readonly filter: string }>
+
+export const capabilityOf = (category: IntegrationCategory): Capability =>
+	category === "notifications" ? "alerts" : category === "analytics" ? "analytics" : "telemetry"
+
 export interface CatalogEntry {
 	readonly id: IntegrationId
 	readonly name: string
@@ -57,9 +76,40 @@ export const INTEGRATION_CATEGORIES: ReadonlyArray<{
 }> = [
 	{ id: "infrastructure", label: "Infrastructure" },
 	{ id: "code", label: "Code & deploys" },
-	{ id: "analytics", label: "Web analytics" },
 	{ id: "notifications", label: "Chat & alerts" },
+	{ id: "analytics", label: "Web analytics" },
 ]
+
+/** A data source kind's card on the hub's "Query in place" shelf. */
+export interface DataSourceKindEntry {
+	readonly kind: DataSourceKind
+	readonly name: string
+	readonly description: string
+	readonly icon: IconName
+	readonly accent: string
+}
+
+export const DATA_SOURCE_KIND_ENTRY = {
+	clickhouse: {
+		kind: "clickhouse",
+		name: "ClickHouse",
+		description: "Query your own cluster in place from dashboards, alerts and agents.",
+		icon: "ClickhouseIcon",
+		accent: "#FAFF69",
+	},
+	clerk: {
+		kind: "clerk",
+		name: "Clerk",
+		description: "Read users, organizations and sessions from your Clerk instance.",
+		icon: "ClerkIcon",
+		accent: "#6C47FF",
+	},
+} as const satisfies { readonly [K in DataSourceKind]: DataSourceKindEntry & { readonly kind: K } }
+
+export const DATA_SOURCE_KIND_ENTRIES: ReadonlyArray<DataSourceKindEntry> = Arr.map(
+	DATA_SOURCE_KINDS,
+	(kind) => DATA_SOURCE_KIND_ENTRY[kind],
+)
 
 const named = (name: IconName): EntryIcon => ({ _tag: "Named", name })
 
@@ -208,12 +258,6 @@ export const CATALOG: ReadonlyArray<CatalogEntry> = [
 	},
 	...CHAT_ENTRIES,
 ]
-
-/** What `/integrations` lists: chat, alert and web analytics connectors. Telemetry sources live under Sources. */
-export const HUB_CATALOG: ReadonlyArray<CatalogEntry> = Arr.filter(
-	CATALOG,
-	(entry) => entry.category === "notifications" || entry.category === "analytics",
-)
 
 export const catalogEntry = (id: IntegrationId): CatalogEntry =>
 	Option.getOrElse(

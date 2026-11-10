@@ -1,7 +1,13 @@
 import * as Policy from "@maple/domain/policy"
 import { OrgId } from "@maple/domain"
 import { LinearIntegrationStatus } from "@maple/domain/http"
-import { V2ChatConnectorList } from "@maple/domain/http/v2"
+import {
+	encodePublicId,
+	PublicIdPrefixes,
+	V2ChatConnectorList,
+	V2DataSource,
+	V2ScrapeTarget,
+} from "@maple/domain/http/v2"
 import { Option, Result, Schema, Array as Arr } from "effect"
 import { AsyncData } from "foldkit"
 import { all, expect as expectView, expectAll, given, role, scene, text, withViewInputs } from "foldkit/scene"
@@ -13,6 +19,7 @@ import { Message } from "./message"
 import type { Model } from "./model"
 import { init, routeChanged, update } from "./update"
 import { view as pageView } from "./view"
+import { toLoadFailure } from "@maple/views/data/load-failure"
 
 const MEMBER = Policy.grantsOf(["org:member"])
 
@@ -315,5 +322,184 @@ describe("linear card", () => {
 			PageOutMessage.RequestedToast({ type: "success", title: "Linear disconnected", description: "" }),
 		)
 		expect(names(done.commands)).toContain("LoadIntegrationsLinearStatus")
+	})
+})
+
+describe("telemetry and data sources", () => {
+	const SOURCE_UUID = "6f1c2a4e-8d3b-4c7a-9e21-3b5d7f9a1c2e"
+	const dataSource = (status: "ok" | "error") =>
+		Schema.decodeSync(V2DataSource)({
+			id: encodePublicId(PublicIdPrefixes.dataSource, SOURCE_UUID),
+			object: "data_source",
+			name: "shop-prod",
+			kind: "clickhouse",
+			query_language: "sql:clickhouse",
+			description: "Storefront",
+			environment: "production",
+			tags: [],
+			agent_access: true,
+			agent_pii: false,
+			connection: {
+				type: "clickhouse",
+				url: "https://ch.example.com:8443",
+				user: "reader",
+				database: "shop",
+			},
+			has_secret: true,
+			secret_hint: null,
+			status,
+			last_checked_at: "2026-11-08T12:00:00.000Z",
+			last_error: status === "error" ? "connection refused" : null,
+			catalog_refreshed_at: null,
+			catalog_error: null,
+			catalog_entry_count: 14,
+			created_at: "2026-11-08T12:00:00.000Z",
+			updated_at: "2026-11-08T12:00:00.000Z",
+		})
+	const prometheusTarget = Schema.decodeSync(V2ScrapeTarget)({
+		id: "scrp_YoxMqYdzUJ1tH4BqCWxPH3",
+		object: "scrape_target",
+		name: "redis.internal:9121",
+		service_name: null,
+		url: "https://redis.internal:9121/metrics",
+		target_type: "prometheus",
+		organization: null,
+		include_branches: [],
+		exclude_branches: [],
+		scrape_interval_seconds: 15,
+		labels_json: null,
+		auth_type: "none",
+		has_credentials: false,
+		managed_by: null,
+		enabled: true,
+		last_scrape_at: null,
+		last_scrape_error: null,
+		created_at: "2026-10-01T11:00:00.000Z",
+		updated_at: "2026-10-01T11:00:00.000Z",
+	})
+
+	/** The hub with the data sources flag on, one Prometheus target, Linear and a ClickHouse source. */
+	const hub = (status: "ok" | "error" = "ok"): Model => {
+		const model = withLinear("connected", {})
+		const flagged = pageUpdate(
+			model,
+			Message.CompletedLoadSession({ grants: Policy.allPermissions, hasDataSources: true }),
+		).model
+		return steps(flagged, [
+			Message.CompletedLoadScrapeTargets({
+				key: flagged.statuses.scrapeTargets.key ?? "",
+				result: Result.succeed([prometheusTarget]),
+			}),
+			Message.CompletedLoadDataSources({
+				key: flagged.statuses.dataSources.key ?? "",
+				result: Result.succeed([dataSource(status)]),
+			}),
+		])
+	}
+
+	test("the data sources read waits on the flag", () => {
+		expect(names(init({ search: {} }, context).commands)).toContain("LoadIntegrationsDataSources")
+		const off = pageUpdate(
+			entered(),
+			Message.CompletedLoadSession({ grants: Policy.allPermissions, hasDataSources: false }),
+		)
+		expect(names(off.commands)).not.toContain("LoadIntegrationsDataSources")
+	})
+
+	test("telemetry integrations, data sources and destinations share the Connected list", () => {
+		scene(
+			{ update: pageUpdate, view },
+			given(hub()),
+			expectView(text("Prometheus")).toExist(),
+			expectView(text("shop-prod")).toExist(),
+			expectView(text("ClickHouse · Production")).toExist(),
+			expectView(text("14 tables")).toExist(),
+			expectView(text("Acme Eng")).toExist(),
+			expectView(text("Query in place")).toExist(),
+			expectView(text("Infrastructure")).toExist(),
+		)
+	})
+
+	test("a capability filter narrows the list and the shelves", () => {
+		scene(
+			{ update: pageUpdate, view },
+			given(pageUpdate(hub(), Message.SelectedFilter({ filter: "query" })).model),
+			expectView(text("shop-prod")).toExist(),
+			expectView(text("Acme Eng")).not.toExist(),
+			expectView(text("Infrastructure")).not.toExist(),
+			expectView(text("Query in place")).toExist(),
+		)
+	})
+
+	test("a failing data source counts as needing attention", () => {
+		scene(
+			{ update: pageUpdate, view },
+			given(pageUpdate(hub("error"), Message.SelectedFilter({ filter: "attention" })).model),
+			expectView(text("Needs attention")).toExist(),
+			expectView(text("Connection error")).toExist(),
+			expectView(text("Acme Eng")).not.toExist(),
+		)
+	})
+
+	test("a filter whose chip is gone falls back to everything", () => {
+		scene(
+			{ update: pageUpdate, view },
+			given(pageUpdate(hub("ok"), Message.SelectedFilter({ filter: "attention" })).model),
+			expectView(text("shop-prod")).toExist(),
+			expectView(text("Acme Eng")).toExist(),
+			expectView(text("Infrastructure")).toExist(),
+		)
+	})
+
+	test("members get no connect cards for data sources, which only admins can save", () => {
+		const member = pageUpdate(
+			hub(),
+			Message.CompletedLoadSession({ grants: MEMBER, hasDataSources: true }),
+		).model
+		scene(
+			{ update: pageUpdate, view },
+			given(member),
+			expectView(text("shop-prod")).toExist(),
+			expectView(text("Query in place")).not.toExist(),
+		)
+	})
+
+	test("a failed data sources read says so instead of listing nothing", () => {
+		const model = pageUpdate(
+			entered(),
+			Message.CompletedLoadSession({ grants: Policy.allPermissions, hasDataSources: true }),
+		).model
+		scene(
+			{ update: pageUpdate, view },
+			given(
+				pageUpdate(
+					model,
+					Message.CompletedLoadDataSources({
+						key: model.statuses.dataSources.key ?? "",
+						result: Result.fail(toLoadFailure("boom")),
+					}),
+				).model,
+			),
+			expectView(text("Couldn't check integration status")).toExist(),
+		)
+	})
+
+	test("a data source row opens its page and a kind card its connect form in Settings", () => {
+		expect(
+			pageUpdate(hub(), Message.ClickedDataSource({ source: SOURCE_UUID, connect: null })).outMessage,
+		).toEqual(
+			PageOutMessage.RequestedNavigation({
+				url: `/settings?tab=data-sources&source=${SOURCE_UUID}`,
+				isReplace: false,
+			}),
+		)
+		expect(
+			pageUpdate(hub(), Message.ClickedDataSource({ source: null, connect: "clerk" })).outMessage,
+		).toEqual(
+			PageOutMessage.RequestedNavigation({
+				url: "/settings?tab=data-sources&connect=clerk",
+				isReplace: false,
+			}),
+		)
 	})
 })

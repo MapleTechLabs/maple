@@ -12,6 +12,7 @@ import { readGrants } from "../../data/session-tenant"
 import { organizationFeatureFlagsFrom } from "@maple/domain/organization-feature-flags"
 import { isClerkAuthEnabled } from "../../lib/services/common/auth-mode"
 import { trackProduct } from "../../data/analytics"
+import { readAllPages } from "../../platform/read-all-pages"
 
 const settle = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
 	effect.pipe(Effect.mapError(toLoadFailure), Effect.result)
@@ -232,6 +233,19 @@ export const TrackConnected = Command.define("TrackIntegrationConnected", {
 	execute: ({ provider }) =>
 		trackProduct("integration_connected", { provider }).pipe(
 			Effect.as(Message.CompletedTrackConnected()),
+		),
+})
+
+/** The org's data sources (`dataSources` flag), every page, for the hub's rows. */
+export const LoadDataSources = Command.define("LoadIntegrationsDataSources", {
+	args: Args,
+	messages: [Message.CompletedLoadDataSources],
+	execute: ({ key }) =>
+		Effect.flatMap(MapleApiV2Client, (client) =>
+			readAllPages((cursor) => client.dataSources.list({ query: { limit: 100, cursor } })),
+		).pipe(
+			settle,
+			Effect.map((result) => Message.CompletedLoadDataSources({ key, result })),
 		),
 })
 

@@ -35,5 +35,20 @@ describe("setup health", () => {
 			label: "Open ingestion",
 			href: "/settings?tab=ingestion",
 		})
+		expect(setupHealthAction({ id: "TRC-04", affected: [] })).toMatchObject({
+			kind: "docs",
+			label: "Read upstream context guide",
+		})
+	})
+
+	test("a leaked credential opens a new ingest rule; a duplicate resource key opens the version guide", () => {
+		expect(setupHealthAction({ id: "PII-01", affected: [] })).toEqual({
+			kind: "link",
+			label: "Add an ingest rule",
+			href: "/settings/ingestion/rules/new",
+		})
+		expect(setupHealthAction({ id: "RES-06", affected: [] })).toEqual(
+			setupHealthAction({ id: "RES-02", affected: [] }),
+		)
 	})
 })

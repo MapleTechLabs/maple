@@ -17,7 +17,7 @@ import {
 	metricsLastError,
 } from "../../components/integrations/planetscale-setup-steps"
 import type { Keyed } from "@maple/views/data/keyed"
-import { chatIntegrationId, HUB_CATALOG, type IntegrationId } from "./catalog"
+import { chatIntegrationId, type IntegrationId } from "./catalog"
 import { hasBringYourOwnCloudAddOn } from "../../lib/billing/plan-gating"
 import { scopeLabel, signalsLabel, vercelHealth, vercelIssues } from "../../components/integrations/vercel-model"
 import type { Visibility } from "../settings/nav"
@@ -787,21 +787,6 @@ export const overviewOf = (statuses: Statuses, nowMs: number, id: IntegrationId)
 			return searchConsoleOverview(statuses)
 		default:
 			return chatOverview(statuses, id)
-	}
-}
-
-/** `IntegrationsSummary`: quiet until every overview resolved, and while nothing is connected. */
-export const summaryOf = (
-	statuses: Statuses,
-	nowMs: number,
-): { readonly connected: number; readonly attention: number } | null => {
-	const values = Arr.map(HUB_CATALOG, (entry) => overviewOf(statuses, nowMs, entry.id))
-	if (Arr.some(values, (value) => value === null)) return null
-	const connected = Arr.filter(values, (value): value is ConnectedOverview => value?.kind === "connected")
-	if (connected.length === 0) return null
-	return {
-		connected: connected.length,
-		attention: Arr.filter(connected, (value) => value.health === "attention").length,
 	}
 }
 

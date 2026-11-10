@@ -1130,7 +1130,91 @@ export const integrationFixtures: ReadonlyArray<IntegrationFixture> = [
 		module: "setup-audit",
 		name: "auditLogCorrelationQuery",
 		label: "default",
-		compile: () => compileUnsafe(CH.auditLogCorrelationQuery(), window),
+		compile: () =>
+			compileUnsafe(
+				CH.auditLogCorrelationQuery({ excludeServiceNames: ["maple-uptime", "github-actions"] }),
+				window,
+			),
+	},
+	{
+		module: "setup-audit",
+		name: "auditServiceIdentityQuery",
+		label: "default",
+		compile: () => compileUnsafe(CH.auditServiceIdentityQuery({ limit: 25 }), window),
+	},
+	{
+		module: "setup-audit",
+		name: "auditServiceSdkQuery",
+		label: "default",
+		compile: () => compileUnsafe(CH.auditServiceSdkQuery({ limit: 25 }), window),
+	},
+	{
+		module: "setup-audit",
+		name: "auditResourceValueSamplesQuery",
+		label: "default",
+		compile: () =>
+			compileUnsafe(CH.auditResourceValueSamplesQuery(["deployment.commit_sha", "env"]), window),
+	},
+	{
+		module: "setup-audit",
+		name: "auditResourceKeyServicesQuery",
+		label: "default",
+		compile: () =>
+			compileUnsafe(
+				CH.auditResourceKeyServicesQuery(["deployment.commit_sha", "env"], {
+					duplicatePairs: [["deployment.commit_sha", "service.version"]],
+				}),
+				window,
+			),
+	},
+	{
+		module: "setup-audit",
+		name: "auditSensitiveKeyEmittersQuery",
+		label: "default",
+		compile: () =>
+			compileUnsafe(CH.auditSensitiveKeyEmittersQuery(["http.request.header.authorization"]), window),
+	},
+	{
+		module: "setup-audit",
+		name: "auditMetricLabelByMetricQuery",
+		label: "default",
+		compile: () =>
+			compileUnsafe(
+				CH.auditMetricLabelByMetricQuery(["url.path"], { collapseServicePrefixes: ["cloudflare/"] }),
+				window,
+			),
+	},
+	{
+		module: "setup-audit",
+		name: "auditServiceResourceKeysQuery",
+		label: "default",
+		compile: () =>
+			compileUnsafe(
+				CH.auditServiceResourceKeysQuery(["service.version", "vcs.repository.url.full"]),
+				window,
+			),
+	},
+	{
+		module: "setup-audit",
+		name: "auditSpanNameTemplatesQuery",
+		label: "default",
+		compile: () => compileUnsafe(CH.auditSpanNameTemplatesQuery(), window),
+	},
+	{
+		module: "setup-audit",
+		name: "auditUncorrelatedLogMessagesQuery",
+		label: "default",
+		compile: () => compileUnsafe(CH.auditUncorrelatedLogMessagesQuery(["maple-api"]), window),
+	},
+	{
+		module: "setup-audit",
+		name: "auditInboundRoutesQuery",
+		label: "default",
+		compile: () =>
+			compileUnsafe(
+				CH.auditInboundRoutesQuery(["maple-api"], ["0af7651916cd43dd8448eb211c80319c"]),
+				traceWindow,
+			),
 	},
 	{
 		module: "setup-audit",

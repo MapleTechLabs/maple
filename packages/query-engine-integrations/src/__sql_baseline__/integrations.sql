@@ -4674,16 +4674,39 @@ SELECT
 SELECT
           service_map_db_edges_hourly.ServiceName AS serviceName,
           service_map_db_edges_hourly.DbSystem AS dbSystem,
-          sum(service_map_db_edges_hourly.CallCount) AS callCount,
-          sumIf(service_map_db_edges_hourly.CallCount, service_map_db_edges_hourly.DbNamespace = '') AS unknownNamespaceCallCount
+          service_map_db_edges_hourly.DbNamespace AS dbNamespace,
+          sum(service_map_db_edges_hourly.CallCount) AS callCount
         FROM service_map_db_edges_hourly
         WHERE service_map_db_edges_hourly.OrgId = 'org_sql_catalog'
           AND service_map_db_edges_hourly.Hour >= toStartOfHour(toDateTime('2026-01-01 10:30:00'))
           AND service_map_db_edges_hourly.Hour <= toStartOfHour(toDateTime('2026-01-03 14:15:00'))
           AND service_map_db_edges_hourly.DbSystem != ''
-        GROUP BY serviceName, dbSystem
+        GROUP BY serviceName, dbSystem, dbNamespace
         ORDER BY callCount DESC
         LIMIT 25
+        FORMAT JSON
+
+-- builder:setup-audit:auditInboundRoutesQuery:default
+SELECT
+          f.serviceName AS serviceName,
+          f.route AS route,
+          count() AS traceCount
+        FROM (SELECT
+          traces.TraceId AS TraceId,
+          argMin(traces.ServiceName, traces.Timestamp) AS serviceName,
+          argMin(if(SpanAttributes['http.route'] != '', SpanAttributes['http.route'], replaceRegexpAll(arrayStringConcat(arrayMap(tok -> multiIf(match(tok, '^[A-Za-z]+_[A-Za-z0-9]{12,}$') AND match(tok, '[0-9]'), '{id}', match(tok, '^[0-9a-fA-F]{8,}$') AND match(tok, '[0-9]'), '{hex}', tok), extractAll(replaceRegexpAll(replaceRegexpOne(if(SpanAttributes['url.path'] != '', SpanAttributes['url.path'], SpanAttributes['http.target']), '[?#].*$', ''), '[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}', '{uuid}'), '[A-Za-z0-9_]+|[^A-Za-z0-9_]+'))), '[0-9]+', '{n}')), traces.Timestamp) AS route
+        FROM traces
+        WHERE traces.OrgId = 'org_sql_catalog'
+          AND traces.ServiceName IN ('maple-api')
+          AND traces.Timestamp >= '2026-01-01 08:30:00'
+          AND traces.Timestamp < '2026-01-03 14:15:00'
+          AND traces.SpanKind IN ('Server', 'Consumer')
+          AND traces.ParentSpanId != ''
+          AND traces.TraceId IN ('0af7651916cd43dd8448eb211c80319c')
+        GROUP BY TraceId) AS f
+        GROUP BY serviceName, route
+        ORDER BY traceCount DESC
+        LIMIT 50
         FORMAT JSON
 
 -- builder:setup-audit:auditLogCorrelationQuery:default
@@ -4692,13 +4715,16 @@ SELECT
           count() AS logCount,
           countIf(logs.TraceId = '') AS uncorrelatedCount,
           countIf(upper(SeverityText) IN ('ERROR', 'FATAL')) AS errorLogCount,
-          countIf((logs.TraceId = '' AND upper(SeverityText) IN ('ERROR', 'FATAL'))) AS uncorrelatedErrorCount
+          countIf((logs.TraceId = '' AND upper(SeverityText) IN ('ERROR', 'FATAL'))) AS uncorrelatedErrorCount,
+          groupUniqArrayIf(10)(SeverityText, SeverityText != '' AND replaceRegexpOne(upper(trim(SeverityText)), '[0-9]+$', '') NOT IN ('TRACE', 'DEBUG', 'INFO', 'WARN', 'WARNING', 'ERROR', 'FATAL') AND SeverityNumber BETWEEN 1 AND 24) AS numberedOddSeverities,
+          groupUniqArrayIf(10)(SeverityText, SeverityText != '' AND replaceRegexpOne(upper(trim(SeverityText)), '[0-9]+$', '') NOT IN ('TRACE', 'DEBUG', 'INFO', 'WARN', 'WARNING', 'ERROR', 'FATAL') AND NOT (SeverityNumber BETWEEN 1 AND 24)) AS unnumberedOddSeverities
         FROM logs
         WHERE logs.OrgId = 'org_sql_catalog'
           AND logs.TimestampTime >= '2026-01-01 10:30:00'
           AND logs.TimestampTime <= '2026-01-03 14:15:00'
           AND logs.Timestamp >= '2026-01-01 10:30:00'
           AND logs.Timestamp <= '2026-01-03 14:15:00'
+          AND logs.ServiceName NOT IN ('maple-uptime', 'github-actions')
         GROUP BY serviceName
         ORDER BY logCount DESC
         LIMIT 500
@@ -4716,6 +4742,21 @@ SELECT
         GROUP BY serviceName, severityText
         ORDER BY logCount DESC
         LIMIT 25
+        FORMAT JSON
+
+-- builder:setup-audit:auditMetricLabelByMetricQuery:default
+SELECT
+          multiIf(metrics_sum.ServiceName LIKE 'cloudflare/%', 'cloudflare/', metrics_sum.ServiceName) AS serviceName,
+          metrics_sum.MetricName AS metricName,
+          [uniqIf(metrics_sum.Attributes['url.path'], mapContains(metrics_sum.Attributes, 'url.path'))] AS valueCardinalities
+        FROM metrics_sum
+        WHERE metrics_sum.OrgId = 'org_sql_catalog'
+          AND metrics_sum.TimeUnix >= '2026-01-01 10:30:00'
+          AND metrics_sum.TimeUnix <= '2026-01-03 14:15:00'
+          AND mapContains(metrics_sum.Attributes, 'url.path')
+        GROUP BY serviceName, metricName
+        ORDER BY arrayMax(valueCardinalities) DESC
+        LIMIT 200
         FORMAT JSON
 
 -- builder:setup-audit:auditMetricLabelCardinalityQuery:default
@@ -4739,7 +4780,8 @@ SELECT
           count() AS childCount,
           countIf(p.SpanId = '') AS orphanCount,
           countIf((p.SpanId = '' AND match(c.TraceState, 'th:[0-9a-f]+'))) AS sampledOrphanCount,
-          groupUniqArrayIf(3)(c.TraceId, p.SpanId = '') AS sampleTraceIds
+          countIf(((p.SpanId = '' AND NOT (match(c.TraceState, 'th:[0-9a-f]+'))) AND r.TraceId = '')) AS externalParentCount,
+          groupUniqArrayIf(3)(c.TraceId, (p.SpanId = '' AND r.TraceId != '')) AS sampleTraceIds
         FROM (SELECT
           service_map_children.TraceId AS TraceId,
           service_map_children.ParentSpanId AS ParentSpanId,
@@ -4757,6 +4799,13 @@ SELECT
         WHERE service_map_spans.OrgId = 'org_sql_catalog'
           AND service_map_spans.Timestamp >= '2026-01-01 08:30:00'
           AND service_map_spans.Timestamp < '2026-01-03 14:15:00') AS p ON (c.TraceId = p.TraceId AND c.ParentSpanId = p.SpanId)
+        LEFT JOIN (SELECT
+          trace_list_mv.TraceId AS TraceId
+        FROM trace_list_mv
+        WHERE trace_list_mv.OrgId = 'org_sql_catalog'
+          AND trace_list_mv.Timestamp >= '2026-01-01 08:30:00'
+          AND trace_list_mv.Timestamp < '2026-01-03 14:15:00'
+        GROUP BY TraceId) AS r ON c.TraceId = r.TraceId
         GROUP BY serviceName
         ORDER BY orphanCount DESC
         LIMIT 200
@@ -4779,20 +4828,55 @@ SELECT
         LIMIT 25
         FORMAT JSON
 
+-- builder:setup-audit:auditResourceKeyServicesQuery:default
+SELECT
+          traces.ServiceName AS serviceName,
+          [countIf(mapContains(traces.ResourceAttributes, 'deployment.commit_sha')), countIf(mapContains(traces.ResourceAttributes, 'env'))] AS keyCounts,
+          [countIf((((traces.ResourceAttributes['deployment.commit_sha'] != '' AND traces.ResourceAttributes['service.version'] != '') AND (traces.ResourceAttributes['deployment.commit_sha'] = traces.ResourceAttributes['service.version'] OR ((traces.ResourceAttributes['service.version'] LIKE (replace(replace(replace(traces.ResourceAttributes['deployment.commit_sha'], '\\', '\\\\'), '%', '\\%'), '_', '\\_') || '%') AND match(traces.ResourceAttributes['deployment.commit_sha'], '^.{7,}')) OR (traces.ResourceAttributes['deployment.commit_sha'] LIKE (replace(replace(replace(traces.ResourceAttributes['service.version'], '\\', '\\\\'), '%', '\\%'), '_', '\\_') || '%') AND match(traces.ResourceAttributes['service.version'], '^.{7,}'))))) AND NOT (match(traces.ResourceAttributes['deployment.commit_sha'], '^[0-9a-fA-F]{7,40}$'))))] AS duplicateCounts
+        FROM traces
+        WHERE traces.OrgId = 'org_sql_catalog'
+          AND traces.Timestamp >= '2026-01-01 10:30:00'
+          AND traces.Timestamp <= '2026-01-03 14:15:00'
+          AND (mapContains(traces.ResourceAttributes, 'deployment.commit_sha') OR mapContains(traces.ResourceAttributes, 'env'))
+        GROUP BY serviceName
+        ORDER BY arraySum(keyCounts) DESC, serviceName ASC
+        LIMIT 20
+        FORMAT JSON
+
+-- builder:setup-audit:auditResourceValueSamplesQuery:default
+SELECT
+          attribute_values_hourly.AttributeKey AS attributeKey,
+          attribute_values_hourly.AttributeValue AS attributeValue,
+          sum(attribute_values_hourly.UsageCount) AS usageCount
+        FROM attribute_values_hourly
+        WHERE attribute_values_hourly.OrgId = 'org_sql_catalog'
+          AND attribute_values_hourly.AttributeScope = 'resource'
+          AND attribute_values_hourly.AttributeKey IN ('deployment.commit_sha', 'env')
+          AND attribute_values_hourly.Hour >= '2026-01-01 10:30:00'
+          AND attribute_values_hourly.Hour <= '2026-01-03 14:15:00'
+        GROUP BY attributeKey, attributeValue
+        ORDER BY usageCount DESC
+        LIMIT 50
+        FORMAT JSON
+
 -- builder:setup-audit:auditRootlessTracesSQL:default
 SELECT
           t.entryService AS entryService,
           count() AS traceCount,
           countIf(r.TraceId = '') AS rootlessCount,
           countIf((r.TraceId = '' AND (t.thresholdSampled = 1 OR t.unkeptSpans = 0))) AS sampledRootlessCount,
+          countIf(((r.TraceId = '' AND NOT ((t.thresholdSampled = 1 OR t.unkeptSpans = 0))) AND t.externalParent = 1)) AS externalParentCount,
+          groupUniqArrayIf(10)(t.TraceId, ((r.TraceId = '' AND NOT ((t.thresholdSampled = 1 OR t.unkeptSpans = 0))) AND t.externalParent = 1)) AS externalTraceIds,
           sum(count()) OVER (ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING) AS orgTraceCount,
           sum(countIf(r.TraceId = '')) OVER (ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING) AS orgRootlessCount,
-          sum(countIf((r.TraceId = '' AND (t.thresholdSampled = 1 OR t.unkeptSpans = 0)))) OVER (ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING) AS orgSampledRootlessCount
+          sum(countIf((r.TraceId = '' AND (t.thresholdSampled = 1 OR t.unkeptSpans = 0)))) OVER (ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING) AS orgSampledRootlessCount,
+          sum(countIf(((r.TraceId = '' AND NOT ((t.thresholdSampled = 1 OR t.unkeptSpans = 0))) AND t.externalParent = 1))) OVER (ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING) AS orgExternalParentCount
         FROM (SELECT
           traces.TraceId AS TraceId,
           argMin(traces.ServiceName, traces.Timestamp) AS entryService,
           max(match(traces.TraceState, 'th:[0-9a-f]+')) AS thresholdSampled,
-          countIf(NOT ((traces.StatusCode = 'Error' OR traces.Duration >= 2000000000))) AS unkeptSpans
+          countIf(NOT ((traces.StatusCode = 'Error' OR traces.Duration >= 2000000000))) AS unkeptSpans,
+          argMin(toUInt8(SpanKind IN ('Server', 'Consumer') AND ParentSpanId != ''), (Timestamp, SpanKind NOT IN ('Server', 'Consumer'))) AS externalParent
         FROM traces
         WHERE traces.OrgId = 'org_sql_catalog'
           AND traces.Timestamp >= '2026-01-01 08:30:00'
@@ -4826,6 +4910,88 @@ SELECT
         LIMIT 25
         FORMAT JSON
 
+-- builder:setup-audit:auditSensitiveKeyEmittersQuery:default
+SELECT
+          traces.ServiceName AS serviceName,
+          traces.SpanName AS spanName,
+          [countIf(mapContains(traces.SpanAttributes, 'http.request.header.authorization'))] AS keyCounts
+        FROM traces
+        WHERE traces.OrgId = 'org_sql_catalog'
+          AND traces.Timestamp >= '2026-01-01 10:30:00'
+          AND traces.Timestamp <= '2026-01-03 14:15:00'
+          AND mapContains(traces.SpanAttributes, 'http.request.header.authorization')
+        GROUP BY serviceName, spanName
+        ORDER BY arraySum(keyCounts) DESC, serviceName ASC, spanName ASC
+        LIMIT 20
+        FORMAT JSON
+
+-- builder:setup-audit:auditServiceIdentityQuery:default
+SELECT
+          service_overview_hourly.ServiceName AS serviceName,
+          groupUniqArrayIf(5)(service_overview_hourly.ServiceNamespace, service_overview_hourly.ServiceNamespace != '') AS namespaces,
+          groupUniqArrayIf(10)(service_overview_hourly.DeploymentEnv, service_overview_hourly.DeploymentEnv != '') AS environments
+        FROM service_overview_hourly
+        WHERE service_overview_hourly.OrgId = 'org_sql_catalog'
+          AND service_overview_hourly.Hour >= toStartOfHour(toDateTime('2026-01-01 10:30:00'))
+          AND service_overview_hourly.Hour <= toStartOfHour(toDateTime('2026-01-03 14:15:00'))
+        GROUP BY serviceName
+        LIMIT 25
+        FORMAT JSON
+
+-- builder:setup-audit:auditServiceResourceKeysQuery:default
+SELECT
+          traces.ServiceName AS serviceName,
+          count() AS spanCount,
+          [countIf(mapContains(traces.ResourceAttributes, 'service.version')), countIf(mapContains(traces.ResourceAttributes, 'vcs.repository.url.full'))] AS keyCounts
+        FROM traces
+        WHERE traces.OrgId = 'org_sql_catalog'
+          AND traces.Timestamp >= '2026-01-01 10:30:00'
+          AND traces.Timestamp <= '2026-01-03 14:15:00'
+          AND traces.IsEntryPoint = 1
+        GROUP BY serviceName
+        ORDER BY spanCount DESC
+        LIMIT 500
+        FORMAT JSON
+
+-- builder:setup-audit:auditServiceSdkQuery:default
+SELECT
+          service_runtimes_hourly.ServiceName AS serviceName,
+          groupUniqArrayIf(5)(service_runtimes_hourly.SdkLanguage, service_runtimes_hourly.SdkLanguage != '') AS sdkLanguages
+        FROM service_runtimes_hourly
+        WHERE service_runtimes_hourly.OrgId = 'org_sql_catalog'
+          AND service_runtimes_hourly.Hour >= toStartOfHour(toDateTime('2026-01-01 10:30:00'))
+          AND service_runtimes_hourly.Hour <= toStartOfHour(toDateTime('2026-01-03 14:15:00'))
+        GROUP BY serviceName
+        LIMIT 25
+        FORMAT JSON
+
+-- builder:setup-audit:auditSpanNameTemplatesQuery:default
+SELECT
+          t.serviceName AS serviceName,
+          sum(t.names) AS rawNameCount,
+          count() AS templateCount,
+          max(t.names) AS topTemplateNameCount,
+          argMax(t.examples, t.names) AS exampleNames
+        FROM (SELECT
+          n.serviceName AS serviceName,
+          replaceRegexpAll(arrayStringConcat(arrayMap(tok -> multiIf(match(tok, '^[A-Za-z]+_[A-Za-z0-9]{12,}$') AND match(tok, '[0-9]'), '{id}', match(tok, '^[0-9a-fA-F]{8,}$') AND match(tok, '[0-9]'), '{hex}', tok), extractAll(replaceRegexpAll(spanName, '[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}', '{uuid}'), '[A-Za-z0-9_]+|[^A-Za-z0-9_]+'))), '[0-9]+', '{n}') AS template,
+          count() AS names,
+          groupArray(3)(spanName) AS examples
+        FROM (SELECT
+          traces_aggregates_hourly.ServiceName AS serviceName,
+          traces_aggregates_hourly.SpanName AS spanName
+        FROM traces_aggregates_hourly
+        WHERE traces_aggregates_hourly.OrgId = 'org_sql_catalog'
+          AND traces_aggregates_hourly.Hour >= toStartOfHour(toDateTime('2026-01-01 10:30:00'))
+          AND traces_aggregates_hourly.Hour <= toStartOfHour(toDateTime('2026-01-03 14:15:00'))
+        GROUP BY serviceName, spanName) AS n
+        GROUP BY serviceName, template) AS t
+        GROUP BY serviceName
+        HAVING sum(t.names) > 100
+        ORDER BY rawNameCount DESC
+        LIMIT 200
+        FORMAT JSON
+
 -- builder:setup-audit:auditSpanProfileByServiceQuery:default
 SELECT
           traces_aggregates_hourly.ServiceName AS serviceName,
@@ -4838,7 +5004,9 @@ SELECT
           sumIf(traces_aggregates_hourly.WeightedCount, traces_aggregates_hourly.DeploymentEnv = '') AS noEnvCount,
           uniq(traces_aggregates_hourly.SpanName) AS spanNameCount,
           groupUniqArrayIf(5)(StatusCode, StatusCode NOT IN ('Ok', 'Error', 'Unset', '')) AS badStatusCodes,
-          groupUniqArrayIf(5)(SpanKind, SpanKind NOT IN ('Server', 'Client', 'Producer', 'Consumer', 'Internal', '')) AS badSpanKinds
+          groupUniqArrayIf(5)(SpanKind, SpanKind NOT IN ('Server', 'Client', 'Producer', 'Consumer', 'Internal', '')) AS badSpanKinds,
+          arrayMap(p -> p.1, topKWeightedIf(1)((SpanName, SpanKind), toUInt64(WeightedCount), IsEntryPoint = 1 AND SpanKind NOT IN ('Server', 'Consumer'))) AS rootSpanNames,
+          arrayMap(p -> p.2, topKWeightedIf(1)((SpanName, SpanKind), toUInt64(WeightedCount), IsEntryPoint = 1 AND SpanKind NOT IN ('Server', 'Consumer'))) AS rootSpanKinds
         FROM traces_aggregates_hourly
         WHERE traces_aggregates_hourly.OrgId = 'org_sql_catalog'
           AND traces_aggregates_hourly.Hour >= toStartOfHour(toDateTime('2026-01-01 10:30:00'))
@@ -4846,6 +5014,22 @@ SELECT
         GROUP BY serviceName
         ORDER BY weightedSpanCount DESC
         LIMIT 25
+        FORMAT JSON
+
+-- builder:setup-audit:auditUncorrelatedLogMessagesQuery:default
+SELECT
+          logs.ServiceName AS serviceName,
+          topK(1)(leftUTF8(Body, 120)) AS topMessages
+        FROM logs
+        WHERE logs.OrgId = 'org_sql_catalog'
+          AND logs.ServiceName IN ('maple-api')
+          AND logs.TimestampTime >= '2026-01-01 10:30:00'
+          AND logs.TimestampTime <= '2026-01-03 14:15:00'
+          AND logs.Timestamp >= '2026-01-01 10:30:00'
+          AND logs.Timestamp <= '2026-01-03 14:15:00'
+          AND logs.TraceId = ''
+        GROUP BY serviceName
+        LIMIT 50
         FORMAT JSON
 
 -- builder:supabase-infra:supabaseProjectCpuSQL:default

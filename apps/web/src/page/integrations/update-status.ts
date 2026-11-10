@@ -7,6 +7,7 @@ import type { PageContext, PageReturn } from "../contract"
 import {
 	LoadAws,
 	LoadChat,
+	LoadDataSources,
 	LoadCloudflare,
 	LoadGcp,
 	LoadGithub,
@@ -41,6 +42,7 @@ const OPERATIONS = {
 	searchConsole: "integrations.searchConsoleStatus",
 	chat: "chatIntegration.connectors",
 	scrapeTargets: "scrapeTargets.list",
+	dataSources: "dataSources.list",
 } satisfies { readonly [K in keyof Statuses]: string }
 
 export const statusKey = (context: PageContext, name: keyof Statuses) =>
@@ -156,6 +158,12 @@ export const requestStatus = (
 				(all, scrapeTargets) => ({ ...all, scrapeTargets }),
 				(slotKey) => LoadScrapeTargets({ key: slotKey }),
 			)
+		case "dataSources":
+			return go(
+				s.dataSources,
+				(all, dataSources) => ({ ...all, dataSources }),
+				(slotKey) => LoadDataSources({ key: slotKey }),
+			)
 	}
 }
 
@@ -170,6 +178,11 @@ export const chain = (model: Model, steps: ReadonlyArray<(model: Model) => Retur
 		}
 	})
 
+/** The reads the page makes for this viewer: data sources only behind their flag. */
+export const statusNamesOf = (model: Pick<Model, "hasDataSources">): ReadonlyArray<keyof Statuses> =>
+	model.hasDataSources ? [...STATUS_NAMES, "dataSources"] : STATUS_NAMES
+
+/** Every always-on status read; `dataSources` waits on its flag (`statusNamesOf`). */
 export const STATUS_NAMES: ReadonlyArray<keyof Statuses> = [
 	"cloudflare",
 	"railway",
