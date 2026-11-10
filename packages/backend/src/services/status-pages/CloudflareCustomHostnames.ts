@@ -148,9 +148,8 @@ const toState = (result: typeof HostnameResult.Type): CustomHostnameState => {
 	}
 }
 
-/** Cloudflare's "duplicate custom hostname" and "route already exists" codes. */
+/** Cloudflare's "duplicate custom hostname" codes. */
 const DUPLICATE_HOSTNAME_CODES: ReadonlySet<number> = new Set([1406, 1407])
-const DUPLICATE_ROUTE_CODE = 10020
 
 interface Configured {
 	readonly zoneId: string
@@ -286,23 +285,18 @@ export class CloudflareCustomHostnames extends Context.Service<
 					script: config.workerName,
 				})
 				if (created.decoded.success && created.decoded.result) return created.decoded.result.id
-				const duplicate = Arr.some(
-					created.decoded.errors ?? [],
-					(error) => error.code === DUPLICATE_ROUTE_CODE,
-				)
-				if (!duplicate)
-					return yield* created.failed(
-						new Error(firstMessage(created.decoded.errors)),
-						created.status,
-					)
-				// An earlier attempt created it without recording the id: take it over for our Worker.
+				// Most likely the pattern already has a route (an earlier attempt created it without
+				// recording the id): take it over for our Worker. Anything else fails as created.
 				const listed = yield* call("listRoutes", "GET", (c) => routesPath(c), RoutesEnvelope)
 				const existing = Arr.findFirst(
 					listed.decoded.result ?? [],
 					(route) => route.pattern === pattern,
 				)
 				if (Option.isNone(existing))
-					return yield* listed.failed(new Error(`No route found for ${pattern}`), listed.status)
+					return yield* created.failed(
+						new Error(firstMessage(created.decoded.errors)),
+						created.status,
+					)
 				const updated = yield* call(
 					"updateRoute",
 					"PUT",
