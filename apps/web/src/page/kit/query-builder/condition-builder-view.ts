@@ -154,14 +154,16 @@ const fieldPicker = (
 const rowFieldLabel = (row: ConditionRow, dataSource: QueryDraft["dataSource"]): string =>
 	row.key === "" ? "new condition" : fieldOf(row.key, dataSource).label
 
-/** "Service is checkout, api": what a row's remove button removes. */
+/** "Service is checkout, api", or just "Service" before a value is picked: what a row's remove button removes. */
 const rowSummary = (row: ConditionRow, dataSource: QueryDraft["dataSource"]): string =>
 	row.key === ""
 		? "new condition"
 		: Arr.join(
 				[
 					rowFieldLabel(row, dataSource),
-					OPERATOR_LABEL[row.operator],
+					...(isValueless(row.operator) || row.values.length > 0
+						? [OPERATOR_LABEL[row.operator]]
+						: []),
 					...(row.values.length === 0 ? [] : [Arr.join(row.values, ", ")]),
 				],
 				" ",
@@ -288,7 +290,8 @@ const conditionRow = (
 			size: "sm",
 			// As wide as the operator's words, not the select's default 9rem.
 			className: cn(OPERATOR_CELL, "min-w-16"),
-			ariaLabel: `Operator for ${fieldLabel}`,
+			// The label replaces the trigger's text for screen readers, so it carries the pick.
+			ariaLabel: `Operator for ${fieldLabel}: ${OPERATOR_LABEL[row.operator]}`,
 			alignItemWithTrigger: false,
 			toView: (parts) =>
 				layout([

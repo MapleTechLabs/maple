@@ -129,6 +129,23 @@ describe("mode", () => {
 		expect(next.outMessage).toBeUndefined()
 		expect(next.model.whereModes).toEqual({ q: "text" })
 	})
+
+	test("a row in progress is still there after a look at Text and back", () => {
+		const inputs = inputsFor(traces('service.name = "checkout"'))
+		// A new row has no field yet, so the clause does not carry it: only the panel holds it.
+		const added = update(init("test"), Message.ClickedAddCondition({ queryId: "q" }), inputs).model
+		const rowCount = added.conditions["q"]?.length
+		const back = Arr.reduce(
+			[
+				Message.ChangedWhereMode({ queryId: "q", mode: "text" }),
+				Message.ChangedWhereMode({ queryId: "q", mode: "builder" }),
+			],
+			added,
+			(model, message) => update(model, message, inputs).model,
+		)
+		expect(rowCount).toBe(2)
+		expect(back.conditions["q"]?.length).toBe(2)
+	})
 })
 
 describe("rewrites", () => {
