@@ -7,11 +7,11 @@ import { FetchHttpClient, HttpClient, HttpClientError } from "effect/http"
 
 import { PEER_OUTAGE_GRACE_MS } from "@maple/web-data/lib/peer-reachability"
 import {
-	MapleInternalHttp,
 	runWarehouseQuery,
 	WarehouseQueryError,
 	WarehouseUnreachableError,
 } from "@maple/web-data/warehouse/effect-utils"
+import { MapleInternalHttp } from "@maple/web-data/warehouse/warehouse-services"
 import { ApiReachabilityLive } from "../../../data/warehouse"
 import { apiBaseUrl } from "./api-base-url"
 import { withRequestTimeout } from "./http-client"
