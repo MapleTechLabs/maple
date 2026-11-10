@@ -7,6 +7,7 @@ import DocsPrevNext from "../components/docs/DocsPrevNext.astro";
 import DocsMobileNav from "../components/docs/DocsMobileNav.astro";
 import DocsSectionNav from "../components/docs/DocsSectionNav.astro";
 import { DocsSearch } from "../components/docs/DocsSearch";
+import MediaLightbox from "../components/MediaLightbox.astro";
 import { getGitHubStars } from "../lib/github-stars";
 import GithubStarButton from "../components/GithubStarButton.astro";
 import Icon from "../components/Icon.astro";
@@ -149,6 +150,8 @@ const metaDescription = description.replaceAll("`", "");
                 </aside>
             )}
         </div>
+
+        <MediaLightbox />
 
         <script>
             import { bindCopyButtons } from "../lib/copy-to-clipboard";
