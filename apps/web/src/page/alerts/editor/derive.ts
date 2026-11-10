@@ -1,4 +1,5 @@
 import { encodeJson } from "@maple/views/data/request-key"
+import { breachSideFor } from "@maple/alerting-core/tiers"
 import { Array as Arr, String as Str } from "effect"
 import type { AlertComparator, AlertDestinationDocument, AlertQueryTiming } from "@maple/domain/http"
 import {
@@ -88,14 +89,14 @@ export const describeRuleCondition = (form: RuleForm, isDefault = false): string
 
 /** What crossing back looks like for a comparator, as the recovery field's label. */
 export const recoveryLabel = (comparator: AlertComparator): string =>
-	comparator === "gt" || comparator === "gte" ? "Recovers below" : "Recovers above"
+	breachSideFor(comparator) === "above" ? "Recovers below" : "Recovers above"
 
 /** A starting critical value one step worse than the warning one, so the new row is never blank. */
 export const suggestCriticalThreshold = (form: RuleForm): string => {
 	const warning = Number(form.threshold)
 	if (Str.trim(form.threshold).length === 0 || !Number.isFinite(warning)) return ""
 	const step = nonZeroOr(Math.abs(warning), 1)
-	const worse = form.comparator === "gt" || form.comparator === "gte" ? warning + step : warning - step
+	const worse = breachSideFor(form.comparator) === "above" ? warning + step : warning - step
 	return String(Number(worse.toPrecision(12)))
 }
 

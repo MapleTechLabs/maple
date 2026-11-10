@@ -4,7 +4,6 @@ import { TestClock } from "effect/testing"
 import type { OrgId, TenantContext } from "@maple/domain/http"
 import {
 	AlertChartSeriesUnavailableError,
-	breachSideFor,
 	chartWindow,
 	loadChartSeries,
 	readChartSeries,
@@ -44,23 +43,6 @@ const warehouseHanging = (): ChartSeriesWarehouse => ({
 const checkRow = (minutesAgo: number, observedValue: number | null) => ({
 	timestamp: DateTime.makeUnsafe(Date.UTC(2026, 7, 18, 14, 0) - minutesAgo * 60_000),
 	observedValue,
-})
-
-describe("breachSideFor", () => {
-	it("maps the half-plane comparators to a side", () => {
-		assert.strictEqual(breachSideFor("gt"), "above")
-		assert.strictEqual(breachSideFor("gte"), "above")
-		assert.strictEqual(breachSideFor("lt"), "below")
-		assert.strictEqual(breachSideFor("lte"), "below")
-	})
-
-	it("shades nothing for the comparators with no single bad side", () => {
-		// Pointing the reader's eye at half a chart is worse than not shading it.
-		assert.strictEqual(breachSideFor("between"), "none")
-		assert.strictEqual(breachSideFor("not_between"), "none")
-		assert.strictEqual(breachSideFor("eq"), "none")
-		assert.strictEqual(breachSideFor("neq"), "none")
-	})
 })
 
 describe("chartWindow", () => {

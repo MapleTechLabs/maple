@@ -28,6 +28,7 @@ import * as CH from "@maple/query-engine/ch"
 import { CHNumber } from "@maple/query-engine/ch"
 import type { AlertComparator, AlertRuleId, OrgId, TenantContext } from "@maple/domain/http"
 import { alertChartId } from "../../platform/signed-ids"
+import { breachSideFor } from "@maple/alerting-core/tiers"
 import {
 	downsample,
 	sparkline,
@@ -70,26 +71,6 @@ export interface AlertChartSeries {
 	readonly sparkline: string
 	readonly threshold: number | null
 	readonly breachSide: BreachSide
-}
-
-/**
- * Which side of the threshold is the bad side.
- *
- * `between`/`not_between`/`eq`/`neq` have no single bad half-plane, so they
- * shade nothing — the rule still draws, and inventing a side would point the
- * reader's eye at the wrong half of the chart.
- */
-export const breachSideFor = (comparator: AlertComparator): BreachSide => {
-	switch (comparator) {
-		case "gt":
-		case "gte":
-			return "above"
-		case "lt":
-		case "lte":
-			return "below"
-		default:
-			return "none"
-	}
 }
 
 /**

@@ -1,4 +1,5 @@
 import type { AlertRuleDocument } from "@maple/domain/http"
+import { breachSideFor } from "@maple/alerting-core/tiers"
 import { formatSql } from "../shared/sql-format"
 import { tokenizeSql } from "@maple/views/lib/sql-highlight"
 import { cn } from "@maple/ui/lib/utils"
@@ -59,7 +60,7 @@ const SIGNAL_SOURCE_DESCRIPTION = new Map<SignalSource, string>([
 const tierCondition = (rule: AlertRuleDocument, tier: AlertRuleDocument["thresholds"][number]): string => {
 	const value = (n: number) => formatSignalValue(rule.signalType, n)
 	const bound = tier.upper === null ? value(tier.value) : `${value(tier.value)} – ${value(tier.upper)}`
-	const healthy = rule.comparator === "gt" || rule.comparator === "gte" ? "<" : ">"
+	const healthy = breachSideFor(rule.comparator) === "above" ? "<" : ">"
 	const recovery = tier.recoveryValue === null ? "" : ` (recovers ${healthy} ${value(tier.recoveryValue)})`
 	return `${comparatorLabels[rule.comparator]} ${bound}${recovery}`
 }
