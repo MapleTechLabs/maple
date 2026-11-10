@@ -30,16 +30,18 @@ import {
 	Result,
 	Schema,
 } from "effect"
-import {
-	decryptAes256Gcm,
-	encryptAes256Gcm,
-	parseIngestKeyEncryptionKey,
-	type EncryptedValue,
-} from "@maple/backend/platform/Crypto"
+import type { EncryptedValue } from "@maple/backend/platform/Crypto"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { makeDbExecute } from "@maple/backend/platform/db-execute"
 import { Env } from "@maple/backend/platform/Env"
 import { makeExpiringStore } from "@maple/backend/platform/expiring-store"
+import {
+	openSecret,
+	sealSecret,
+	secretKeyringFromEnv,
+	type SecretKeyring,
+} from "@maple/backend/platform/SecretBox"
+import { ingestPrivateKeySlot } from "@maple/backend/platform/secret-slots"
 import { SharedIngestKeysMemo } from "./shared-ingest-keys-memo"
 
 const toPersistenceError = (error: unknown) =>
@@ -69,19 +71,24 @@ const parseLookupHmacKey = (raw: string): Effect.Effect<string, IngestKeyEncrypt
 	parseIngestKeyLookupHmacKey(raw, toEncryptionError)
 
 const encryptPrivateKey = (
+	keyring: SecretKeyring,
+	orgId: OrgId,
 	plaintext: string,
-	encryptionKey: Buffer,
 ): Effect.Effect<EncryptedValue, IngestKeyEncryptionError> =>
-	encryptAes256Gcm(plaintext, encryptionKey, () =>
+	sealSecret(keyring, ingestPrivateKeySlot, { orgId }, plaintext, () =>
 		toEncryptionError("Failed to encrypt private ingest key"),
 	)
 
 const decryptPrivateKey = (
-	encrypted: EncryptedValue,
-	encryptionKey: Buffer,
+	keyring: SecretKeyring,
+	row: OrgIngestKeyRow,
 ): Effect.Effect<string, IngestKeyEncryptionError> =>
-	decryptAes256Gcm(encrypted, encryptionKey, () =>
-		toEncryptionError("Failed to decrypt private ingest key"),
+	openSecret(
+		keyring,
+		ingestPrivateKeySlot,
+		{ orgId: row.orgId },
+		{ ciphertext: row.privateKeyCiphertext, iv: row.privateKeyIv, tag: row.privateKeyTag },
+		() => toEncryptionError("Failed to decrypt private ingest key"),
 	)
 
 const generatePublicKey = () => `maple_pk_${randomBytes(24).toString("base64url")}`
@@ -97,10 +104,7 @@ export class OrgIngestKeysService extends Context.Service<OrgIngestKeysService>(
 			const ingestKeysMemo =
 				(yield* SharedIngestKeysMemo) ?? (yield* makeExpiringStore<OrgIngestKeyRow>())
 			const env = yield* Env
-			const encryptionKey = yield* parseIngestKeyEncryptionKey(
-				Redacted.value(env.MAPLE_INGEST_KEY_ENCRYPTION_KEY),
-				toEncryptionError,
-			)
+			const keyring = yield* secretKeyringFromEnv(env, toEncryptionError)
 			const lookupHmacKey = yield* parseLookupHmacKey(
 				Redacted.value(env.MAPLE_INGEST_KEY_LOOKUP_HMAC_KEY),
 			)
@@ -131,14 +135,7 @@ export class OrgIngestKeysService extends Context.Service<OrgIngestKeysService>(
 
 			// Untraced: synchronous AES-GCM decrypt, ~0ms — never worth a span.
 			const toResponse = Effect.fnUntraced(function* (row: OrgIngestKeyRow) {
-				const privateKey = yield* decryptPrivateKey(
-					{
-						ciphertext: row.privateKeyCiphertext,
-						iv: row.privateKeyIv,
-						tag: row.privateKeyTag,
-					},
-					encryptionKey,
-				)
+				const privateKey = yield* decryptPrivateKey(keyring, row)
 
 				return new IngestKeysResponse({
 					publicKey: row.publicKey,
@@ -173,7 +170,7 @@ export class OrgIngestKeysService extends Context.Service<OrgIngestKeysService>(
 				const privateKey = generatePrivateKey()
 				const publicKeyHash = hashIngestKey(publicKey, lookupHmacKey)
 				const privateKeyHash = hashIngestKey(privateKey, lookupHmacKey)
-				const encryptedPrivate = yield* encryptPrivateKey(privateKey, encryptionKey)
+				const encryptedPrivate = yield* encryptPrivateKey(keyring, orgId, privateKey)
 
 				yield* dbExecute((db) =>
 					db
@@ -328,7 +325,7 @@ export class OrgIngestKeysService extends Context.Service<OrgIngestKeysService>(
 				const now = yield* Clock.currentTimeMillis
 				const privateKey = generatePrivateKey()
 				const privateKeyHash = hashIngestKey(privateKey, lookupHmacKey)
-				const encryptedPrivate = yield* encryptPrivateKey(privateKey, encryptionKey)
+				const encryptedPrivate = yield* encryptPrivateKey(keyring, orgId, privateKey)
 
 				yield* dbExecute((db) =>
 					db.run(

@@ -23,8 +23,9 @@ import { ApiKeys, CliDeviceAuthorizations, type CliDeviceAuthorizationRow } from
 import { DateTime, Clock, Context, Effect, Layer, Option, Redacted, Schema, String as Str } from "effect"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { makeDbExecute } from "@maple/backend/platform/db-execute"
-import { decryptAes256Gcm, encryptAes256Gcm, parseBase64Aes256GcmKey } from "@maple/backend/platform/Crypto"
 import { Env } from "@maple/backend/platform/Env"
+import { openSecret, sealSecret, secretKeyringFromEnv } from "@maple/backend/platform/SecretBox"
+import { cliDeviceTokenSlot } from "@maple/backend/platform/secret-slots"
 import { CliAuthRateLimit } from "@maple/backend/platform/bindings"
 
 const DEVICE_TTL_SECONDS = 15 * 60
@@ -123,8 +124,8 @@ export class CliDeviceAuthService extends Context.Service<
 			Redacted.value(env.MAPLE_INGEST_KEY_LOOKUP_HMAC_KEY),
 			(message) => new CliDevicePersistenceError({ message }),
 		)
-		const encryptionKey = yield* parseBase64Aes256GcmKey(
-			Redacted.value(env.MAPLE_INGEST_KEY_ENCRYPTION_KEY),
+		const keyring = yield* secretKeyringFromEnv(
+			env,
 			(message) => new CliDevicePersistenceError({ message }),
 		)
 
@@ -313,9 +314,11 @@ export class CliDeviceAuthService extends Context.Service<
 				return new CliDevicePendingResponse({ status: "pending", interval: POLL_INTERVAL_SECONDS })
 			}
 			if (row.tokenCiphertext && row.tokenIv && row.tokenTag) {
-				const token = yield* decryptAes256Gcm(
+				const token = yield* openSecret(
+					keyring,
+					cliDeviceTokenSlot,
+					{ deviceCodeHash: row.deviceCodeHash },
 					{ ciphertext: row.tokenCiphertext, iv: row.tokenIv, tag: row.tokenTag },
-					encryptionKey,
 					(message) => new CliDevicePersistenceError({ message }),
 				)
 				return new CliDeviceCompleteResponse({
@@ -328,9 +331,12 @@ export class CliDeviceAuthService extends Context.Service<
 
 			const apiKeyId = decodeApiKeyId(randomUUID())
 			const rawToken = generateApiKey()
-			const encrypted = yield* encryptAes256Gcm(
+			// Sealed for the row the claiming UPDATE below targets.
+			const encrypted = yield* sealSecret(
+				keyring,
+				cliDeviceTokenSlot,
+				{ deviceCodeHash: row.deviceCodeHash },
 				rawToken,
-				encryptionKey,
 				(message) => new CliDevicePersistenceError({ message }),
 			)
 			const now = yield* Clock.currentTimeMillis
@@ -382,13 +388,15 @@ export class CliDeviceAuthService extends Context.Service<
 					winner.value.tokenIv &&
 					winner.value.tokenTag
 				) {
-					const token = yield* decryptAes256Gcm(
+					const token = yield* openSecret(
+						keyring,
+						cliDeviceTokenSlot,
+						{ deviceCodeHash: winner.value.deviceCodeHash },
 						{
 							ciphertext: winner.value.tokenCiphertext,
 							iv: winner.value.tokenIv,
 							tag: winner.value.tokenTag,
 						},
-						encryptionKey,
 						(message) => new CliDevicePersistenceError({ message }),
 					)
 					return new CliDeviceCompleteResponse({

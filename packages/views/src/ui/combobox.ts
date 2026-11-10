@@ -1,9 +1,9 @@
 import * as Animation from "@foldkit/ui/animation"
-import { Array, Effect, Option, Schema, Stream, String as Str } from "effect"
+import { Array, Effect, Option, Queue, Schema, Stream, String as Str } from "effect"
 import { Mount, type Update } from "foldkit"
 import { defineMessageUnion } from "foldkit/message"
 import { anchoredPopup } from "./overlay/anchored"
-import { containEscape } from "./overlay/portal"
+import { containEscape, keepFocusOnPress } from "./overlay/portal"
 import { initPopup, makeTransition, PopupState } from "./overlay/popup-state"
 import { Align, positionDefaults, Side } from "./overlay/position"
 import { isRovingKey, nextIndex } from "./overlay/roving"
@@ -243,26 +243,43 @@ export const MountCombobox = Mount.defineStream("MountCombobox", {
 				}
 			}),
 			Stream.merge(escapeContained(anchorSelector)),
-			// A popup with its own search input: a pressed option leaves focus (and the keys) there,
-			// and Escape there is stopped at the portal, which the anchor does not enclose.
-			Stream.merge(returnFocusId === undefined ? Stream.empty : optionPressesKeepFocus(element)),
-			Stream.merge(returnFocusId === undefined ? Stream.empty : escapeContainedIn(element)),
+			// A press on the list leaves focus in the input that takes the keys: the field's own, or
+			// the popup's search input. Left on the listbox, Escape and Enter reached nothing.
+			Stream.merge(pressesKeepFocus(element)),
+			// A popup with its own search input: Escape there is stopped at the portal, which the
+			// anchor does not enclose. A field's list instead closes once focus leaves the field.
+			Stream.merge(
+				returnFocusId === undefined
+					? focusLeaves(element, anchorSelector)
+					: escapeContainedIn(element),
+			),
 		),
 })
 
-/** Base UI keeps focus in the input while an option is pressed, so typing and Enter go on working. */
-const optionPressesKeepFocus = (root: Element): Stream.Stream<never> =>
-	Stream.callback<never>(() =>
+type PressedOutside = Extract<Message, { _tag: "PressedOutside" }>
+
+/** Base UI keeps focus in the input while the list is pressed, so typing, Enter and Escape go on working. */
+const pressesKeepFocus = (root: Element): Stream.Stream<never> =>
+	Stream.callback<never>(() => keepFocusOnPress(root).pipe(Effect.andThen(Effect.never)))
+
+/** Focus moved (Tab) to something outside the field and its list: the list closes, as on a press outside. */
+export const focusLeaves = (
+	root: Pick<Element, "contains">,
+	anchorSelector: string,
+): Stream.Stream<PressedOutside> =>
+	Stream.callback<PressedOutside>((queue) =>
 		Effect.acquireRelease(
 			Effect.sync(() => {
-				const onMouseDown = (event: Event) => {
-					if (event.target instanceof Element && event.target.closest('[role="option"]') !== null)
-						event.preventDefault()
+				const onFocusIn = (event: Event) => {
+					const target = event.target
+					if (!(target instanceof Element)) return
+					if (root.contains(target) || target.closest(anchorSelector) !== null) return
+					Queue.offerUnsafe(queue, Message.PressedOutside())
 				}
-				root.addEventListener("mousedown", onMouseDown)
-				return onMouseDown
+				document.addEventListener("focusin", onFocusIn)
+				return onFocusIn
 			}),
-			(onMouseDown) => Effect.sync(() => root.removeEventListener("mousedown", onMouseDown)),
+			(onFocusIn) => Effect.sync(() => document.removeEventListener("focusin", onFocusIn)),
 		).pipe(Effect.andThen(Effect.never)),
 	)
 
