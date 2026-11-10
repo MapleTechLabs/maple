@@ -4,7 +4,7 @@
 import { Option, Schema, Array as Arr, String as Str } from "effect"
 import { applyRawTelemetryRetentionFloor, type Chdb } from "@maple/local-server/chdb"
 import { decodeJsonEachRow, decodeRowCounts } from "@maple/local-server/chdb-rows"
-import { localSchemaSnapshot } from "../schema-snapshots"
+import { localSchemaSnapshot } from "@maple/local-server/local-schema-history"
 import { customStep, LocalMigrationStepError } from "./step-executor"
 import { UnsignedDecimal } from "./journal-codecs"
 

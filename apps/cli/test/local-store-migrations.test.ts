@@ -3,16 +3,12 @@ import { describe, expect, it } from "vitest"
 import {
 	CURRENT_LOCAL_SCHEMA,
 	CURRENT_SCHEMA_PROJECT_REVISION,
-	ISSUE_297_TARGET_SCHEMA_PROJECT_REVISION,
 	LEGACY_LOCAL_SCHEMA,
 	LEGACY_SCHEMA_FINGERPRINT,
 	LOCAL_SCHEMA_MANIFEST,
-	LOCAL_SCHEMA_V1,
-	localSchemaIdentity,
 	SCHEMA_DIGEST,
 	SCHEMA_FINGERPRINT,
 } from "@maple/local-server/schema-identity"
-import { localSchemaSnapshot } from "../src/server/schema-snapshots"
 import {
 	abandonLocalStoreMigration,
 	abandonLocalStoreMigrationPreservingSource,
@@ -62,13 +58,19 @@ import {
 	type CopyProgress,
 	type RawReplayProgress,
 } from "../src/server/local-store-migrations/legacy-to-current"
-import { LOCAL_SCHEMA_HISTORY } from "@maple/local-server/local-schema-history"
+import {
+	localSchemaHistory,
+	localSchemaIdentity,
+	localSchemaSnapshot,
+} from "@maple/local-server/local-schema-history"
 import { LOCAL_STORE_STEPS } from "../src/server/local-store-migrations/steps"
 import { stepStatements } from "../src/server/local-store-migrations/step-executor"
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { Option, Array as Arr, Record as Rec, String as Str } from "effect"
+
+const LOCAL_SCHEMA_V1 = localSchemaIdentity(1)
 
 // Steps are table rows now; the decoding tests below exercise their compiled modules.
 const [v7ToV8AppleCrashFramesModule] = Arr.filter(
@@ -88,10 +90,6 @@ describe("current local schema identity", () => {
 		expect(SCHEMA_FINGERPRINT).toBe("5657aa0197e694d6")
 		// oxlint-disable-next-line test-slop/no-constant-pin -- rewritten by local-schema:bump; catches an unbumped schema edit
 		expect(SCHEMA_DIGEST).toBe("5657aa0197e694d67d53b24ec656d46f66d4e68da06bb4aab08aa9d07ea45cb4")
-		// oxlint-disable-next-line test-slop/no-constant-pin -- frozen identity that stores already on disk carry
-		expect(ISSUE_297_TARGET_SCHEMA_PROJECT_REVISION).toBe(
-			"506bc745f7a7eca202ec905a6403a6815e86413faf0cd3cbbf73881023edce91",
-		)
 		expect(CURRENT_SCHEMA_PROJECT_REVISION).toMatch(/^[0-9a-f]{64}$/)
 		expect(LOCAL_SCHEMA_MANIFEST.objects.length).toBeGreaterThan(60)
 		// oxlint-disable-next-line test-slop/no-constant-pin -- anchor that local-schema:bump rewrites on every bump
@@ -686,7 +684,7 @@ describe("local migration registry", () => {
 				[migration?.from, step.from],
 				[migration?.to, step.to],
 			] as const) {
-				const entry = LOCAL_SCHEMA_HISTORY[version]
+				const entry = localSchemaHistory()[version]
 				expect(identity).toMatchObject({
 					version,
 					fingerprint: entry?.fingerprint,

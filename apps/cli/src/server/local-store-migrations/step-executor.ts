@@ -10,8 +10,7 @@ import type {
 	MigrationOperation,
 	StateDispositionEntry,
 } from "../local-store-migration-module"
-import { localSchemaIdentity } from "@maple/local-server/schema-identity"
-import { localSchemaSnapshot } from "../schema-snapshots"
+import { localSchemaIdentity, localSchemaSnapshot } from "@maple/local-server/local-schema-history"
 import { assertPhysicalSchema } from "@maple/local-server/schema-physical"
 import {
 	cloneStoreForStaging,

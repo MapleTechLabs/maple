@@ -6,7 +6,7 @@ import { Schema, Array as Arr, String as Str } from "effect"
 import { Chdb, configureRawTelemetryRetentionDays } from "@maple/local-server/chdb"
 import { decodeJsonEachRow } from "@maple/local-server/chdb-rows"
 import type { MigrationModuleContext } from "../src/server/local-store-migration-module"
-import { localSchemaSnapshot } from "../src/server/schema-snapshots"
+import { localSchemaSnapshot } from "@maple/local-server/local-schema-history"
 import { describeWithChdb } from "./libchdb-test-support"
 import { migrationStep, openStore } from "./local-store-step-test-support"
 

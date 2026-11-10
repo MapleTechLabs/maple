@@ -1,19 +1,21 @@
 import { Schema, Array as Arr, String as Str } from "effect"
 import { createHash } from "node:crypto"
-import { readFileSync } from "node:fs"
-import { LOCAL_CONTROL_SCHEMA_HISTORY } from "../packages/local-server/src/local-schema-history"
+import { existsSync, readFileSync } from "node:fs"
+import {
+	LOCAL_CONTROL_SCHEMA_HISTORY,
+	LOCAL_SCHEMA_HISTORY_TIP,
+	localSchemaHistory,
+	localSchemaIdentity,
+} from "../packages/local-server/src/local-schema-history"
 import { LOCAL_CONTROL_SCHEMA_VERSION } from "../packages/local-server/src/local-schema-version"
 import { execFileSync } from "node:child_process"
 import {
 	CURRENT_LOCAL_SCHEMA,
-	LOCAL_SCHEMA_HISTORY,
 	LOCAL_SCHEMA_MANIFEST,
 	LOCAL_SCHEMA_MANIFEST_DIGEST,
 	LOCAL_SCHEMA_VERSION,
 } from "../packages/local-server/src/schema-identity"
-import { LOCAL_SCHEMA_SNAPSHOTS } from "../apps/cli/src/server/schema-snapshots"
 import { resolveMigrationChain } from "../apps/cli/src/server/local-store-migrations"
-import { schemaDigest, schemaFingerprint } from "../packages/local-server/src/store-version"
 
 const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
 
@@ -23,94 +25,30 @@ const fail = (message: string): never => {
 	throw new Error(message)
 }
 
-const sameIdentity = (
-	a: Pick<
-		(typeof LOCAL_SCHEMA_HISTORY)[number],
-		"version" | "fingerprint" | "digest" | "manifestDigest" | "projectRevision"
-	>,
-	b: Pick<
-		typeof CURRENT_LOCAL_SCHEMA,
-		"version" | "fingerprint" | "digest" | "manifestDigest" | "projectRevision"
-	>,
-): boolean =>
-	a.version === b.version &&
-	a.fingerprint === b.fingerprint &&
-	a.digest === b.digest &&
-	a.manifestDigest === b.manifestDigest &&
-	a.projectRevision === b.projectRevision
-
-if (LOCAL_SCHEMA_HISTORY.length === 0) fail("local schema identity history is empty")
-for (let index = 1; index < LOCAL_SCHEMA_HISTORY.length; index += 1) {
-	if (LOCAL_SCHEMA_HISTORY[index].version <= LOCAL_SCHEMA_HISTORY[index - 1].version)
-		fail("local schema identity history must be strictly increasing by schema version")
-}
-
-// The gate already holds every value a new history entry needs, so a mismatch
-// prints the entry rather than only naming two of its four hashes. Reading a
-// digest out of a failure string and hand-assembling the literal was its own
-// source of typos.
-const historyEntrySource = (identity: typeof CURRENT_LOCAL_SCHEMA): string =>
-	Arr.join(
-		[
-			"\tObject.freeze({",
-			`\t\tversion: ${identity.version},`,
-			`\t\tfingerprint: "${identity.fingerprint}",`,
-			`\t\tdigest: "${identity.digest}",`,
-			`\t\tmanifestDigest: "${identity.manifestDigest}",`,
-			`\t\tprojectRevision: "${identity.projectRevision}",`,
-			"\t}),",
-		],
-		"\n",
-	)
-
-const latest = LOCAL_SCHEMA_HISTORY[LOCAL_SCHEMA_HISTORY.length - 1]
-if (!sameIdentity(latest, CURRENT_LOCAL_SCHEMA)) {
+// The history is derived from the frozen snapshots, so its tip is the newest
+// snapshot, and the current schema must be exactly that snapshot.
+const tip = localSchemaIdentity(LOCAL_SCHEMA_HISTORY_TIP)
+if (
+	tip.version !== CURRENT_LOCAL_SCHEMA.version ||
+	tip.digest !== CURRENT_LOCAL_SCHEMA.digest ||
+	tip.manifestDigest !== CURRENT_LOCAL_SCHEMA.manifestDigest ||
+	tip.projectRevision !== CURRENT_LOCAL_SCHEMA.projectRevision
+) {
 	console.error(
-		`current local schema identity is not the append-only history tip (current v${LOCAL_SCHEMA_VERSION} ${LOCAL_SCHEMA_MANIFEST_DIGEST}; history tip v${latest.version} ${latest.manifestDigest}).`,
+		`current local schema v${LOCAL_SCHEMA_VERSION} (${LOCAL_SCHEMA_MANIFEST_DIGEST}) is not the newest snapshot v${tip.version} (${tip.manifestDigest}).`,
 	)
-	if (CURRENT_LOCAL_SCHEMA.version === latest.version)
+	if (CURRENT_LOCAL_SCHEMA.version === tip.version)
 		console.error(
-			`\nThe schema changed without a version bump. Run \`bun run local-schema:bump <slug>\` to append v${latest.version + 1} and scaffold its migration edge.`,
+			`\nThe schema changed without a version bump. Run \`bun run local-schema:bump <slug>\` to snapshot v${tip.version + 1} and scaffold its migration edge.`,
 		)
-	else
-		console.error(
-			`\nAppend this entry to LOCAL_SCHEMA_HISTORY in packages/local-server/src/local-schema-history.ts,\nthen register a migration edge reaching v${CURRENT_LOCAL_SCHEMA.version}:\n\n${historyEntrySource(CURRENT_LOCAL_SCHEMA)}\n`,
-		)
-	fail("append a new versioned identity and migration edge before changing the schema")
-}
-
-// A loop is only a gate while it has something to iterate. The history carries
-// one entry per schema version plus v0, which has no DDL of its own.
-const snapshotCount = Arr.filter(LOCAL_SCHEMA_SNAPSHOTS, Boolean).length
-if (snapshotCount !== LOCAL_SCHEMA_HISTORY.length - 1) {
-	fail(
-		`local schema snapshots (${snapshotCount}) do not cover every versioned history entry (${LOCAL_SCHEMA_HISTORY.length - 1})`,
-	)
-}
-
-// Every frozen snapshot must still hash to the identity the history recorded
-// for it. A snapshot that drifts silently retargets a historical migration
-// edge, which is the failure this gate exists to make impossible.
-for (const snapshot of LOCAL_SCHEMA_SNAPSHOTS) {
-	if (!snapshot) continue
-	const entry = LOCAL_SCHEMA_HISTORY.find((candidate) => candidate.version === snapshot.version)
-	if (
-		!entry ||
-		snapshot.manifestDigest !== entry.manifestDigest ||
-		schemaFingerprint(snapshot.sql) !== entry.fingerprint ||
-		schemaDigest(snapshot.sql) !== entry.digest
-	) {
-		fail(
-			`the immutable local schema v${snapshot.version} snapshot no longer matches its historical identity`,
-		)
-	}
+	fail("snapshot a new versioned schema and register its migration edge before changing the schema")
 }
 
 const names = Arr.map(LOCAL_SCHEMA_MANIFEST.objects, (object) => object.name)
 if (new Set(names).size !== names.length)
 	fail("local structural schema manifest contains duplicate object names")
 
-for (const entry of LOCAL_SCHEMA_HISTORY) {
+for (const entry of localSchemaHistory()) {
 	try {
 		resolveMigrationChain(
 			{
@@ -129,21 +67,9 @@ for (const entry of LOCAL_SCHEMA_HISTORY) {
 }
 
 const historyPath = "packages/local-server/src/local-schema-history.ts"
-const parseHistorySource = (source: string) => {
-	const entries: Array<Record<string, string | number>> = []
-	const pattern =
-		/version:\s*(\d+),\s*fingerprint:\s*"([^"]*)",\s*digest:\s*"([^"]*)",\s*manifestDigest:\s*"([^"]*)",\s*projectRevision:\s*"([^"]*)"/g
-	for (const match of source.matchAll(pattern)) {
-		entries.push({
-			version: Number(match[1]),
-			fingerprint: match[2],
-			digest: match[3],
-			manifestDigest: match[4],
-			projectRevision: match[5],
-		})
-	}
-	return entries
-}
+const SNAPSHOT_DIR = "packages/local-server/src/schema/history"
+// Where the snapshots lived before they moved next to the history they define.
+const LEGACY_SNAPSHOT_DIR = "apps/cli/src/server/schema"
 
 const baseRef = process.env.GITHUB_BASE_REF ? `origin/${process.env.GITHUB_BASE_REF}` : "origin/main"
 const baseRefExists = ((): boolean => {
@@ -158,7 +84,7 @@ const baseRefExists = ((): boolean => {
 })()
 // `git show <missing-ref>:<path>` and `git show <ref>:<missing-path>` both exit
 // 128, so without this the append-only comparison would silently no-op whenever
-// the base ref was never fetched — the exact case the gate exists to catch. On a
+// the base ref was never fetched, the exact case the gate exists to catch. On a
 // PR the workflow fetches it explicitly, so its absence there is a real failure;
 // a push build or a local run has no base to compare against and only warns.
 if (!baseRefExists) {
@@ -167,12 +93,33 @@ if (!baseRefExists) {
 	console.warn(`skipping the append-only history comparison: ${baseRef} is not available`)
 }
 
+const gitShow = (path: string): string =>
+	execFileSync("git", ["show", `${baseRef}:${path}`], {
+		encoding: "utf8",
+		stdio: ["ignore", "pipe", "ignore"],
+	})
+
 if (baseRefExists) {
+	// Every snapshot the base branch shipped must stay byte-identical: each one
+	// defines a historical identity that stores and journals already carry.
+	const baseSnapshots = execFileSync(
+		"git",
+		["ls-tree", "--name-only", baseRef, "--", `${SNAPSHOT_DIR}/`, `${LEGACY_SNAPSHOT_DIR}/`],
+		{ encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] },
+	)
+	const shipped = Arr.filter(Str.split("\n")(Str.trim(baseSnapshots)), (path) =>
+		/\/local-schema-v\d+\.sql$/.test(path),
+	)
+	for (const path of shipped) {
+		const current = `${SNAPSHOT_DIR}/${path.slice(path.lastIndexOf("/") + 1)}`
+		if (!existsSync(current) || readFileSync(current, "utf8") !== gitShow(path))
+			fail(
+				`the shipped local schema snapshot ${path} changed or disappeared; snapshots are append-only`,
+			)
+	}
+
 	try {
-		const baseSource = execFileSync("git", ["show", `${baseRef}:${historyPath}`], {
-			encoding: "utf8",
-			stdio: ["ignore", "pipe", "ignore"],
-		})
+		const baseSource = gitShow(historyPath)
 		const controlSection =
 			/LOCAL_CONTROL_SCHEMA_HISTORY = Object\.freeze\(\[([\s\S]*?)\] as const\)/.exec(
 				baseSource,
@@ -185,17 +132,6 @@ if (baseRefExists) {
 		)
 		if (encodeJson(LOCAL_CONTROL_SCHEMA_HISTORY.slice(0, baseControl.length)) !== encodeJson(baseControl))
 			fail("control schema history is not append-only")
-		const baseHistory = parseHistorySource(baseSource)
-		if (Str.includes("LOCAL_SCHEMA_HISTORY")(baseSource) && baseHistory.length === 0)
-			fail("could not parse the base branch's local schema identity history")
-		const currentHistory = Arr.map(LOCAL_SCHEMA_HISTORY, (entry) => ({ ...entry }))
-		if (
-			baseHistory.length > currentHistory.length ||
-			encodeJson(currentHistory.slice(0, baseHistory.length)) !== encodeJson(baseHistory)
-		)
-			fail(
-				"local schema identity history is not append-only; existing base identities must remain unchanged",
-			)
 	} catch (error) {
 		// The base ref exists, so a 128 here means the first commit that introduces the
 		// history has no base file. A later run takes the strict prefix path above.
@@ -226,5 +162,5 @@ for (const [index, entry] of LOCAL_CONTROL_SCHEMA_HISTORY.entries()) {
 }
 
 console.log(
-	`local structural schema manifest is up to date (schema v${LOCAL_SCHEMA_VERSION}, ${LOCAL_SCHEMA_MANIFEST.objects.length} objects, ${LOCAL_SCHEMA_MANIFEST_DIGEST}; ${LOCAL_SCHEMA_HISTORY.length} historical identities)`,
+	`local structural schema manifest is up to date (schema v${LOCAL_SCHEMA_VERSION}, ${LOCAL_SCHEMA_MANIFEST.objects.length} objects, ${LOCAL_SCHEMA_MANIFEST_DIGEST}; ${LOCAL_SCHEMA_HISTORY_TIP + 1} historical identities)`,
 )

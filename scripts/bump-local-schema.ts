@@ -2,12 +2,11 @@
  * Scaffold a local-store schema version bump.
  *
  * Everything the append-only gate demands except the DDL itself is a pure
- * function of one integer: the snapshot copy, the version constant, two edit
- * sites in the CLI's `schema-snapshots.ts`, one in `schema-identity.ts`, the
- * history entry's four hashes, a new row in the step table, and the pinned
- * literals in both the bun test and the native
- * probe. This script writes all of them, then leaves the row's operations to a
- * human, which is the only part that was ever real work.
+ * function of one integer: the snapshot copy (the history derives its identity
+ * from it), the version constant, two edit sites in `local-schema-history.ts`,
+ * a new row in the step table, and the pinned literals in both the bun test and
+ * the native probe. This script writes all of them, then leaves the row's
+ * operations to a human, which is the only part that was ever real work.
  *
  * Run it AFTER `bun run clickhouse:schema` has regenerated the local DDL, so
  * `schema/local-schema.sql` already holds the schema being bumped to.
@@ -18,16 +17,14 @@
 import { Schema, String as Str } from "effect"
 import { execFileSync } from "node:child_process"
 import { existsSync, readFileSync, writeFileSync } from "node:fs"
-import { buildLocalSchemaManifest } from "../packages/local-server/src/schema-manifest"
 import { schemaDigest, schemaFingerprint } from "../packages/local-server/src/store-version"
 
-// The current schema and its identity live in @maple/local-server; the frozen
-// snapshots and the migration steps that read them stay in the CLI.
+// The schema, its frozen snapshots and the history derived from them live in
+// @maple/local-server; the migration steps that read them stay in the CLI.
 const SERVER_DIR = "packages/local-server/src"
-const CLI_SERVER_DIR = "apps/cli/src/server"
-const STEPS_FILE = `${CLI_SERVER_DIR}/local-store-migrations/steps.ts`
+const STEPS_FILE = "apps/cli/src/server/local-store-migrations/steps.ts"
 const SCHEMA_DIR = `${SERVER_DIR}/schema`
-const SNAPSHOT_DIR = `${CLI_SERVER_DIR}/schema`
+const SNAPSHOT_DIR = `${SCHEMA_DIR}/history`
 const TEST_FILE = "apps/cli/test/local-store-migrations.test.ts"
 const NATIVE_PROBE = "apps/cli/test/native-local-store-migration.sh"
 
@@ -112,26 +109,14 @@ const snapshotPath = `${SNAPSHOT_DIR}/local-schema-v${to}.sql`
 if (existsSync(snapshotPath)) fail(`${snapshotPath} already exists; v${to} looks already bumped`)
 
 // The identity is computed from the generated DDL directly rather than through
-// `schema-snapshots.ts`, which cannot even be imported until the v{to} snapshot
-// it statically imports exists.
+// `local-schema-history.ts`, which cannot even be imported until the v{to}
+// snapshot it statically imports exists.
 const currentSql = read(`${SCHEMA_DIR}/local-schema.sql`)
-const identity = {
-	version: to,
-	fingerprint: schemaFingerprint(currentSql),
-	digest: schemaDigest(currentSql),
-	manifestDigest: buildLocalSchemaManifest(currentSql).digest,
-	projectRevision: (() => {
-		const source = read(`${SERVER_DIR}/schema-identity.ts`)
-		const match = /export const CURRENT_SCHEMA_PROJECT_REVISION =\s*"([0-9a-f]{64})"/.exec(source)
-		if (!match) fail("could not read CURRENT_SCHEMA_PROJECT_REVISION")
-		return match[1]
-	})(),
-}
+const identity = { version: to, fingerprint: schemaFingerprint(currentSql), digest: schemaDigest(currentSql) }
 
-const historySource = read(`${SERVER_DIR}/local-schema-history.ts`)
-if (Str.includes(`fingerprint: "${identity.fingerprint}"`)(historySource))
+if (schemaDigest(currentSql) === schemaDigest(read(`${SNAPSHOT_DIR}/local-schema-v${from}.sql`)))
 	fail(
-		`the generated schema still hashes to an identity already in the history (${identity.fingerprint}).\nEdit the schema and run \`bun run clickhouse:schema\` before bumping.`,
+		`the generated schema still hashes to the v${from} snapshot (${identity.fingerprint}).\nEdit the schema and run \`bun run clickhouse:schema\` before bumping.`,
 	)
 
 // ---------------------------------------------------------------------------
@@ -175,34 +160,12 @@ const plannedVersion: PlannedWrite = plan(`${SERVER_DIR}/local-schema-version.ts
 	],
 ])
 
-const plannedSnapshots: PlannedWrite = plan(`${CLI_SERVER_DIR}/schema-snapshots.ts`, [
+const plannedSnapshots: PlannedWrite = plan(`${SERVER_DIR}/local-schema-history.ts`, [
 	[
-		`import schemaV${from}Sql from "./schema/local-schema-v${from}.sql" with { type: "text" }`,
-		`import schemaV${from}Sql from "./schema/local-schema-v${from}.sql" with { type: "text" }\nimport schemaV${to}Sql from "./schema/local-schema-v${to}.sql" with { type: "text" }`,
+		`import schemaV${from}Sql from "./schema/history/local-schema-v${from}.sql" with { type: "text" }`,
+		`import schemaV${from}Sql from "./schema/history/local-schema-v${from}.sql" with { type: "text" }\nimport schemaV${to}Sql from "./schema/history/local-schema-v${to}.sql" with { type: "text" }`,
 	],
 	[`\tschemaV${from}Sql,\n]`, `\tschemaV${from}Sql,\n\tschemaV${to}Sql,\n]`],
-])
-
-// The control-schema history below it closes the same way, so the anchor includes its heading.
-const HISTORY_ANCHOR = "] as const)\n\n/** Immutable SQLite control DDL identities"
-const plannedHistory: PlannedWrite = plan(`${SERVER_DIR}/local-schema-history.ts`, [
-	[
-		HISTORY_ANCHOR,
-		`\tObject.freeze({
-		// TODO(v${to}): what changed, whether any part is rewritten or any row
-		// moves, and what this edge does NOT backfill.
-		//
-		// projectRevision is carried forward deliberately: it is a hardcoded
-		// constant that no longer tracks the generator's header, and the identity
-		// this gate compares is the fingerprint/digest pair.
-		version: ${identity.version},
-		fingerprint: "${identity.fingerprint}",
-		digest: "${identity.digest}",
-		manifestDigest: "${identity.manifestDigest}",
-		projectRevision: "${identity.projectRevision}",
-	}),
-${HISTORY_ANCHOR}`,
-	],
 ])
 
 const plannedSteps: PlannedWrite = plan(STEPS_FILE, [[STEPS_ANCHOR, `${newRow}${STEPS_ANCHOR}`]])
@@ -244,7 +207,6 @@ const writes: ReadonlyArray<PlannedWrite> = [
 	{ path: snapshotPath, content: currentSql },
 	plannedVersion,
 	plannedSnapshots,
-	plannedHistory,
 	plannedSteps,
 	plannedTest,
 	plannedProbe,
@@ -262,7 +224,7 @@ console.log(`bumped local schema v${from} -> v${to} (${identity.fingerprint})
   ${snapshotPath}
   ${STEPS_FILE}  <- fill in the ${moduleId} row
 
-edited: local-schema-version.ts, schema-snapshots.ts, local-schema-history.ts,
+edited: local-schema-version.ts, local-schema-history.ts,
         ${TEST_FILE}, ${NATIVE_PROBE}
 
 next:

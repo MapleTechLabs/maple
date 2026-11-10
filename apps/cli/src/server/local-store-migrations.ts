@@ -15,11 +15,11 @@ import { decodeJsonEachRow } from "@maple/local-server/chdb-rows"
 import {
 	CURRENT_LOCAL_SCHEMA,
 	LEGACY_LOCAL_SCHEMA,
-	LOCAL_SCHEMA_V1,
 	LOCAL_SCHEMA_SQL,
 	identityLabel,
 	type LocalSchemaIdentity,
 } from "@maple/local-server/schema-identity"
+import { localSchemaIdentity } from "@maple/local-server/local-schema-history"
 import {
 	checkStoreCompatible,
 	ensureStoreMarkerDurable,
@@ -175,7 +175,8 @@ export const identityFromMarker = (marker: StoreMarker): LocalSchemaIdentity | n
 	}
 	if (marker.schema === LEGACY_LOCAL_SCHEMA.fingerprint)
 		return { ...LEGACY_LOCAL_SCHEMA, chdb: marker.chdb }
-	if (marker.schema === LOCAL_SCHEMA_V1.fingerprint) return { ...LOCAL_SCHEMA_V1, chdb: marker.chdb }
+	const v1 = localSchemaIdentity(1)
+	if (marker.schema === v1.fingerprint) return { ...v1, chdb: marker.chdb }
 	return null
 }
 
