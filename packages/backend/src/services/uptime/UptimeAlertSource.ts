@@ -1,7 +1,6 @@
 import { randomUUID } from "node:crypto"
-import { bumpPagesForMonitors } from "@maple/backend/services/status-pages/outbox"
-import { countOne, upsertDailyCounts } from "./uptime-daily"
-import * as Orm from "@maple-dev/effect-orm/database"
+import { heartbeatCheckState, recordHeartbeatCheck, toUptimePersistenceError } from "./uptime-state"
+import { lockOrgAlertRules } from "@maple/backend/services/alerts/alert-persistence"
 import * as PG from "@maple-dev/effect-orm/postgres"
 import { AlertRules, UptimeMonitorStates, UptimeMonitors } from "@maple/db/tables"
 import { UNGROUPED_GROUP_KEY, UptimeMonitorPersistenceError } from "@maple/domain/http"
@@ -12,12 +11,7 @@ import {
 	type UptimeMonitorStatus,
 	type UserId,
 } from "@maple/domain/primitives"
-import {
-	appendRecentCheck,
-	describeMissedHeartbeat,
-	heartbeatDeadline,
-	type UptimeMonitorConfig,
-} from "@maple/domain/uptime"
+import { describeMissedHeartbeat, heartbeatDeadline, type UptimeMonitorConfig } from "@maple/domain/uptime"
 import { Clock, Context, Effect, Layer, Option, Ref, Array as Arr } from "effect"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { makeDbExecute } from "@maple/backend/platform/db-execute"
@@ -84,12 +78,6 @@ interface MonitorWithoutRule {
 	readonly createdBy: UserId
 }
 
-const toPersistenceError = (error: unknown) =>
-	new UptimeMonitorPersistenceError({
-		message: error instanceof Error ? error.message : "Uptime monitor persistence failed",
-		cause: error,
-	})
-
 /**
  * The alert evaluator's view of uptime monitors. Its own service, with only the database,
  * so the alerting worker does not take on the monitor service's billing and HTTP dependencies.
@@ -99,7 +87,7 @@ export class UptimeAlertSource extends Context.Service<UptimeAlertSource, Uptime
 	{
 		make: Effect.gen(function* () {
 			const database = yield* Database
-			const dbExecute = makeDbExecute(database, "UptimeAlertSource", toPersistenceError)
+			const dbExecute = makeDbExecute(database, "UptimeAlertSource", toUptimePersistenceError)
 
 			const readMonitor = (orgId: OrgId, ruleId: AlertRuleId) =>
 				dbExecute((db) =>
@@ -116,6 +104,7 @@ export class UptimeAlertSource extends Context.Service<UptimeAlertSource, Uptime
 								createdAt: $.createdAt,
 								status: $.s.status,
 								consecutiveFailures: $.s.consecutiveFailures,
+								consecutiveSuccesses: $.s.consecutiveSuccesses,
 								statusChangedAt: $.s.statusChangedAt,
 								lastCheckJson: $.s.lastCheckJson,
 								recentJson: $.s.recentJson,
@@ -159,26 +148,7 @@ export class UptimeAlertSource extends Context.Service<UptimeAlertSource, Uptime
 						Effect.gen(function* () {
 							const rows = yield* db.run(
 								PG.update(UptimeMonitorStates)
-									.set({
-										status: "down",
-										consecutiveFailures: row.consecutiveFailures + 1,
-										consecutiveSuccesses: 0,
-										statusChangedAt: nowMs,
-										lastCheckJson: {
-											at: nowMs,
-											ok: false,
-											durationMs: null,
-											statusCode: null,
-											error,
-											traceId: null,
-										},
-										recentJson: appendRecentCheck(row.recentJson, {
-											at: nowMs,
-											ok: false,
-											durationMs: null,
-										}),
-										updatedAt: nowMs,
-									})
+									.set(heartbeatCheckState(row, nowMs, false, error))
 									.where(($) => [
 										$.orgId.eq(orgId),
 										$.monitorId.eq(row.id),
@@ -189,14 +159,10 @@ export class UptimeAlertSource extends Context.Service<UptimeAlertSource, Uptime
 							)
 							if (rows.length === 0) return rows
 							// The miss counts as a down check, so the day's bar shows it, and pages showing it republish.
-							yield* upsertDailyCounts(db, [
-								{
-									monitorId: row.id,
-									orgId,
-									count: countOne({ at: nowMs, ok: false, down: true }),
-								},
-							])
-							yield* bumpPagesForMonitors(db, orgId, [row.id])
+							yield* recordHeartbeatCheck(db, orgId, row.id, row.status, {
+								at: nowMs,
+								ok: false,
+							})
 							return rows
 						}),
 					),
@@ -220,9 +186,7 @@ export class UptimeAlertSource extends Context.Service<UptimeAlertSource, Uptime
 					db.transaction(
 						Effect.gen(function* () {
 							// The org lock rule writes take; the re-read makes a repeat a no-op.
-							yield* db.execute(
-								Orm.sql`select pg_advisory_xact_lock(hashtext(${monitor.orgId}))`,
-							)
+							yield* lockOrgAlertRules(db, monitor.orgId)
 							const still = yield* db.run(
 								PG.from(UptimeMonitors)
 									.select("id")
