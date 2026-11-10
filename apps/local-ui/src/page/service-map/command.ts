@@ -1,7 +1,13 @@
 import { readClock } from "@maple/views/data/timing"
-import { readLocalStorage, writeLocalStorage } from "@maple/ui/lib/local-storage"
-import { Snapshot, ViewPrefs } from "@maple/views/service-map/map/state"
-import { Effect, Option, Schema } from "effect"
+import {
+	readStored,
+	saveStoredLayout,
+	saveStoredPrefs,
+	Snapshot,
+	type StoredKeys,
+	ViewPrefs,
+} from "@maple/views/service-map/map/state"
+import { Effect, Schema } from "effect"
 import { Command } from "foldkit"
 import { withCache } from "../../data/cached"
 import { mapFromCached } from "./data"
@@ -10,12 +16,10 @@ import { Message } from "./message"
 
 // The map query, the clock reads and the map's per-browser storage.
 
-const LAYOUT_KEY = "maple-local:service-map.layout"
-const VIEW_PREFS_KEY = "maple-local:service-map.view-prefs"
-
-const LayoutJson = Schema.fromJsonString(Schema.Struct({ snapshots: Schema.Array(Snapshot) }))
-const PrefsJson = Schema.fromJsonString(ViewPrefs)
-const encodeJson = Schema.encodeEffect(Schema.fromJsonString(Schema.Unknown))
+const STORED_KEYS: StoredKeys = {
+	layout: "maple-local:service-map.layout",
+	prefs: "maple-local:service-map.view-prefs",
+}
 
 export const ReadClock = readClock("ReadServiceMapClock", Message.CompletedReadClock)
 
@@ -24,42 +28,20 @@ export const ReadRefreshClock = readClock("ReadServiceMapRefreshClock", Message.
 /** Undecodable entries fall back to the defaults. */
 export const ReadStored = Command.define("ReadLocalServiceMapStored", {
 	messages: [Message.CompletedReadStored],
-	execute: Effect.sync(() =>
-		Message.CompletedReadStored({
-			stored: {
-				prefs: Option.getOrElse(
-					Option.flatMap(readLocalStorage(VIEW_PREFS_KEY), Schema.decodeUnknownOption(PrefsJson)),
-					() => ({ minTrafficPct: 0, collapsedNamespaces: [] }),
-				),
-				snapshots: Option.match(
-					Option.flatMap(readLocalStorage(LAYOUT_KEY), Schema.decodeUnknownOption(LayoutJson)),
-					{ onNone: () => [], onSome: (layout) => layout.snapshots },
-				),
-			},
-		}),
-	),
+	execute: Effect.sync(() => Message.CompletedReadStored({ stored: readStored(STORED_KEYS) })),
 })
 
 export const SaveLayout = Command.define("SaveLocalServiceMapLayout", {
 	args: { snapshots: Schema.Array(Snapshot) },
 	messages: [Message.CompletedSaveLayout],
 	execute: ({ snapshots }) =>
-		encodeJson({ snapshots }).pipe(
-			Effect.flatMap((text) => Effect.sync(() => writeLocalStorage(LAYOUT_KEY, text))),
-			Effect.ignore,
-			Effect.as(Message.CompletedSaveLayout()),
-		),
+		Effect.as(saveStoredLayout(STORED_KEYS, snapshots), Message.CompletedSaveLayout()),
 })
 
 export const SaveViewPrefs = Command.define("SaveLocalServiceMapViewPrefs", {
 	args: { prefs: ViewPrefs },
 	messages: [Message.CompletedSaveViewPrefs],
-	execute: ({ prefs }) =>
-		encodeJson(prefs).pipe(
-			Effect.flatMap((text) => Effect.sync(() => writeLocalStorage(VIEW_PREFS_KEY, text))),
-			Effect.ignore,
-			Effect.as(Message.CompletedSaveViewPrefs()),
-		),
+	execute: ({ prefs }) => Effect.as(saveStoredPrefs(STORED_KEYS, prefs), Message.CompletedSaveViewPrefs()),
 })
 
 /** The map query, cached under `["local", "service-map", durationSeconds, boundsKey(bounds)]`. */
