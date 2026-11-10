@@ -1,6 +1,6 @@
-// String operations effect/String lacks: function replacers and position-aware reads.
-// Each wraps the one native call it needs, so callers stay on pipeable, typed helpers.
-import { Array as Arr } from "effect"
+// String operations effect/String lacks: function replacers, position-aware reads, HTML escaping
+// and truncation. The wrappers each own the one native call they need.
+import { Array as Arr, String as Str } from "effect"
 import { dual } from "effect/Function"
 
 /** Receives the full match and each capture group; an unmatched optional group is `undefined`. */
@@ -65,3 +65,19 @@ export const matchAllIndexed: {
 	// @effect-diagnostics-next-line preferEffectString:off -- the native call this helper wraps
 	Arr.fromIterable(self.matchAll(pattern)),
 )
+
+/** Escapes text for HTML element content and quoted attributes alike. */
+export const escapeHtml = (value: string): string =>
+	Str.replaceAll(
+		"'",
+		"&#39;",
+	)(
+		Str.replaceAll(
+			'"',
+			"&quot;",
+		)(Str.replaceAll(">", "&gt;")(Str.replaceAll("<", "&lt;")(Str.replaceAll("&", "&amp;")(value)))),
+	)
+
+/** `text` cut to at most `max` characters, the last one an ellipsis when anything was cut. */
+export const truncate = (text: string, max: number): string =>
+	text.length <= max ? text : `${Str.slice(0, max - 1)(text)}…`

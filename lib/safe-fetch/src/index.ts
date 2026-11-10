@@ -238,7 +238,8 @@ export interface GuardOptions {
 	/**
 	 * For requests whose headers all come from user config: a cross-origin hop drops every
 	 * header, 301/302/303 continue as a body-less GET, and 307/308 keep method and body only
-	 * within one origin. Without it, only credential headers are dropped cross-origin.
+	 * within one origin. Without it, only credential headers are dropped cross-origin and
+	 * method and body follow the fetch standard (see `fetchRedirectRequest`).
 	 */
 	readonly strictRedirects?: boolean
 	/** With `strictRedirects`: headers the caller sets itself (not user config), kept across origins. */
@@ -247,6 +248,14 @@ export interface GuardOptions {
 
 const SEE_OTHER_STATUSES: ReadonlySet<number> = new Set([301, 302, 303])
 
+/** Headers describing a body. `setBody` already clears `content-type` and `content-length`. */
+const BODY_HEADERS = ["content-encoding", "content-language", "content-location"] as const
+
+const withoutBody = (request: HttpClientRequest.HttpClientRequest) =>
+	Arr.reduce(BODY_HEADERS, HttpClientRequest.setBody(request, HttpBody.empty), (next, name) =>
+		HttpClientRequest.removeHeader(next, name),
+	)
+
 /** The request a strict redirect sends: HEAD stays HEAD, anything else replays as a plain GET. */
 const strictRedirectRequest = (
 	request: HttpClientRequest.HttpClientRequest,
@@ -254,8 +263,20 @@ const strictRedirectRequest = (
 	crossOrigin: boolean,
 ) => {
 	if (!SEE_OTHER_STATUSES.has(status) && !crossOrigin) return request
-	const bodyless = HttpClientRequest.setBody(request, HttpBody.empty)
+	const bodyless = withoutBody(request)
 	return request.method === "HEAD" ? bodyless : HttpClientRequest.setMethod(bodyless, "GET")
+}
+
+/**
+ * The fetch standard's rewrite: a 303 turns anything but GET or HEAD into a GET, a 301 or 302
+ * turns a POST into a GET, both without the body. 307 and 308 replay the request as it was.
+ */
+const fetchRedirectRequest = (request: HttpClientRequest.HttpClientRequest, status: number) => {
+	const becomesGet =
+		status === 303
+			? request.method !== "GET" && request.method !== "HEAD"
+			: (status === 301 || status === 302) && request.method === "POST"
+	return becomesGet ? HttpClientRequest.setMethod(withoutBody(request), "GET") : request
 }
 
 /** The full URL a request targets, query params and hash included. */
@@ -388,7 +409,7 @@ const guardWith = <E, R, E2>(
 			const next = HttpClientRequest.setUrl(
 				strict
 					? strictRedirectRequest(outgoing, response.status, target.origin !== validated.origin)
-					: outgoing,
+					: fetchRedirectRequest(outgoing, response.status),
 				target,
 			)
 			return yield* hop(next, redirects + 1, validated.origin)
