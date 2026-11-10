@@ -10,7 +10,6 @@ import {
 	resolveMapleDomains,
 	resolvePlanetscaleDatabase,
 	resolveRegionAppUrls,
-	resolveStorageJurisdiction,
 	resolveWorkerName,
 	resolveWorkerPlacement,
 } from "./stage.ts"
@@ -144,11 +143,6 @@ describe("region-bound Cloudflare settings", () => {
 	it("places an unregioned stack with us and keeps eu apart", () => {
 		expect(resolveWorkerPlacement()).toEqual(resolveWorkerPlacement("us"))
 		expect(resolveWorkerPlacement("eu")).not.toEqual(resolveWorkerPlacement("us"))
-	})
-
-	it("pins EU storage to the eu jurisdiction and leaves us non-jurisdictional", () => {
-		expect(resolveStorageJurisdiction("eu")).toBe("eu")
-		expect(resolveStorageJurisdiction("us")).toBeUndefined()
 	})
 })
 

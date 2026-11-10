@@ -6,7 +6,7 @@ import {
 	assetWorkerObservability,
 	MapleStack,
 	mapleWorkerProps,
-	resolveStorageJurisdiction,
+	REGION_INFRA,
 	resolveWorkerName,
 	WorkersObservabilityDestinations,
 } from "@maple/infra/cloudflare"
@@ -31,7 +31,7 @@ const SANDBOX_IMAGE_CONTEXT = `${import.meta.dirname}/image`
 const mirrorBackups = Effect.gen(function* () {
 	const { stage, region } = yield* MapleStack
 	const bucketName = resolveWorkerName("sandbox-mirrors", stage, region)
-	const jurisdiction = resolveStorageJurisdiction(region)
+	const jurisdiction = REGION_INFRA[region].storageJurisdiction
 	const bucket = yield* Cloudflare.R2.Bucket("sandbox-mirrors", {
 		name: bucketName,
 		jurisdiction,

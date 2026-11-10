@@ -5,7 +5,9 @@ import {
 	DEFAULT_MAPLE_REGION,
 	isMapleRegion,
 	MAPLE_REGIONS,
+	type AwsRegionName,
 	type MapleRegion,
+	REGION_INFRA,
 	regionSuffix,
 } from "../region.ts"
 import { Option, Array as Arr, Record as Rec, String as Str } from "effect"
@@ -55,26 +57,11 @@ export interface MapleDomains {
 
 /**
  * Best-effort Worker placement beside the instance's database and Tinybird workspace. Not a
- * residency guarantee; storage jurisdiction is ({@link resolveStorageJurisdiction}).
+ * residency guarantee; the storage jurisdiction in `REGION_INFRA` is.
  */
-export function resolveWorkerPlacement(region: MapleRegion = DEFAULT_MAPLE_REGION): {
-	readonly region: "aws:us-east-1" | "aws:eu-central-1"
-} {
-	switch (region) {
-		case "us":
-			return { region: "aws:us-east-1" }
-		case "eu":
-			return { region: "aws:eu-central-1" }
-	}
-}
-
-/**
- * The R2 / Durable Object jurisdiction (a hard guarantee), or `undefined` for the default.
- * Fixed at creation: an existing bucket cannot move.
- */
-export function resolveStorageJurisdiction(region: MapleRegion): "eu" | undefined {
-	return region === "eu" ? "eu" : undefined
-}
+export const resolveWorkerPlacement = (
+	region: MapleRegion = DEFAULT_MAPLE_REGION,
+): { readonly region: `aws:${AwsRegionName}` } => ({ region: `aws:${REGION_INFRA[region].awsRegion}` })
 
 const PRD_DOMAINS: MapleDomains = {
 	web: "app.maple.dev",
@@ -264,7 +251,10 @@ export function resolveHyperdriveRefId(stage: MapleStage, consumer: MapleDbConsu
 	}
 }
 
-/** Physical Worker/bucket/Hyperdrive name, e.g. `maple-api-eu-dev-makisuo`; mirrors `resolveAwsResourceName`. */
+/**
+ * Physical name of a per-stage resource on either cloud (Worker, bucket, Hyperdrive, ALB, ECS),
+ * e.g. `maple-api-eu-dev-makisuo`. AWS callers keep their base short: ALB names cap at 32 chars.
+ */
 export function resolveWorkerName(
 	base: string,
 	stage: MapleStage,

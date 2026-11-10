@@ -1,9 +1,9 @@
 import * as AWS from "@alchemy.run/aws"
 import type * as Output from "alchemy/Output"
 import * as Effect from "effect/Effect"
-import { ecsSecrets, pgUrlRequireSsl, resolveAwsRegion, resolveAwsResourceName } from "@maple/infra/aws"
+import { ecsSecrets, pgUrlRequireSsl, resolveAwsRegion } from "@maple/infra/aws"
 import { issueRegionalCertificate, publishProxiedCname } from "@maple/infra/acm"
-import type { MapleDbLogin, MapleStackContext } from "@maple/infra/cloudflare"
+import { type MapleDbLogin, type MapleStackContext, resolveWorkerName } from "@maple/infra/cloudflare"
 import { requiredPlain } from "@maple/infra/env"
 
 /** Port Electric's HTTP API binds (`ELECTRIC_PORT`, whose own default is 3000). */
@@ -44,7 +44,7 @@ export const createMapleElectric = ({
 }: CreateMapleElectricOptions) =>
 	Effect.gen(function* () {
 		const { taskSize, dbPoolSize } = profile.electric
-		const name = (base: string) => resolveAwsResourceName(base, stage, region)
+		const name = (base: string) => resolveWorkerName(base, stage, region)
 		const tags = { Service: "maple-electric", Region: region }
 
 		// Alchemy keys state by logical id: renaming these ids replaces live groups, and a

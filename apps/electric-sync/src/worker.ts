@@ -3,13 +3,13 @@
  * authenticates the session bearer, pins each shape's org scope and forwards.
  */
 import {
-	cachedRecoverable,
 	type MapleDomains,
 	type MapleRegion,
 	MapleStack,
 	type MapleStage,
 	mapleWorkerProps,
 } from "@maple/infra/cloudflare"
+import { cachedRecoverable } from "@maple/infra/cached-recoverable"
 import {
 	authEnv,
 	derived,

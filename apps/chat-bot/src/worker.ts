@@ -7,7 +7,6 @@
 import { BoundChatSessions } from "@maple/backend/platform/chat-sessions"
 import { connectors } from "@maple/chat-platform/connectors"
 import {
-	cachedRecoverable,
 	MapleDb,
 	mapleDbEnv,
 	type MapleDomains,
@@ -16,6 +15,7 @@ import {
 	type MapleStage,
 	mapleWorkerProps,
 } from "@maple/infra/cloudflare"
+import { cachedRecoverable } from "@maple/infra/cached-recoverable"
 import { merge, optionalSecret, plainWithDefault, selfObservabilityEnv } from "@maple/infra/env"
 import { workerEnvLayer } from "@maple/infra/worker-runtime"
 import { WorkerTelemetry } from "@maple/infra/worker-telemetry"

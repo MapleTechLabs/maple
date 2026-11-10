@@ -28,16 +28,15 @@ import {
 	type MapleDbLogin,
 	type MapleDbResources,
 	type MapleDeployment,
-	type MapleProfile,
 	MapleStack,
 	type MapleStackContext,
 	parseMapleDeploymentEffect,
 	resolveMapleDomains,
-	resolveMapleProfile,
 	resolvePlanetscaleDatabase,
 	resolveWorkerName,
 } from "@maple/infra/cloudflare"
 import { DB_ACCESS_ROLES } from "@maple/db/roles"
+import { type MapleProfile, resolveMapleProfile } from "@maple/infra/profile"
 import * as Acm from "@maple/infra/acm"
 import { createAwsSecurityBaseline } from "@maple/infra/security-baseline"
 import { optionalPlain, plainWithDefault, requiredPlain } from "@maple/infra/env"

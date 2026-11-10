@@ -21,8 +21,8 @@ import {
 	type MapleStackContext,
 	parseMapleDeploymentEffect,
 	resolveMapleDomains,
-	resolveMapleProfile,
 } from "@maple/infra/cloudflare"
+import { resolveMapleProfile } from "@maple/infra/profile"
 import MapleAiLive, { MapleAi } from "../../apps/ai/src/worker.ts"
 import MapleApi from "../../apps/api/src/worker.ts"
 

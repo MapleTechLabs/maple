@@ -1,8 +1,12 @@
 import { resolve } from "node:path"
 import * as AWS from "@alchemy.run/aws"
 import * as Effect from "effect/Effect"
-import { ecsSecrets, resolveAwsResourceName } from "@maple/infra/aws"
-import { resolveDeploymentEnvironment, type MapleStackContext } from "@maple/infra/cloudflare"
+import { ecsSecrets } from "@maple/infra/aws"
+import {
+	resolveDeploymentEnvironment,
+	resolveWorkerName,
+	type MapleStackContext,
+} from "@maple/infra/cloudflare"
 import { optionalPlain, plainWithDefault, requiredPlain } from "@maple/infra/env"
 
 /**
@@ -38,7 +42,7 @@ export const createMapleScraper = ({
 	ingestUrl,
 }: CreateMapleScraperOptions) =>
 	Effect.gen(function* () {
-		const name = (base: string) => resolveAwsResourceName(base, stage, region)
+		const name = (base: string) => resolveWorkerName(base, stage, region)
 		const tags = { Service: "maple-scraper", Region: region }
 
 		// No ingress: the scraper only calls out. `/health` is probed from inside the task.

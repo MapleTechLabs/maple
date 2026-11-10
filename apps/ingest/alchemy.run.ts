@@ -15,9 +15,7 @@ import {
 	ecsSecrets,
 	pgUrlRequireSsl,
 	resolveAwsRegion,
-	resolveAwsResourceName,
 	resolveCollectorEndpoint,
-	resolveIngestCidrBlock,
 	resolveIngestNamespaceName,
 } from "@maple/infra/aws"
 import { ReplayBlobs } from "../api/src/resources/replay-blobs.ts"
@@ -25,9 +23,9 @@ import { cloudflareIpv4Ranges, issueRegionalCertificate, publishProxiedCname } f
 import type { MapleDbLogin, MapleRegion, MapleStackContext, MapleStage } from "@maple/infra/cloudflare"
 import {
 	MAPLE_REGIONS,
+	REGION_INFRA,
 	resolveDeploymentEnvironment,
 	resolveMapleDomains,
-	resolveStorageJurisdiction,
 	resolveWorkerName,
 } from "@maple/infra/cloudflare"
 import { r2BucketCredentials } from "@maple/infra/r2-credentials"
@@ -129,7 +127,7 @@ const replayBlobWriterCredentials = (stage: MapleStage, region: MapleRegion, ena
 			id: "replay-blobs-writer",
 			tokenName: `${bucket}-writer`,
 			bucketName: bucket,
-			jurisdiction: resolveStorageJurisdiction(region),
+			jurisdiction: REGION_INFRA[region].storageJurisdiction,
 			permissions: ["Workers R2 Storage Bucket Item Write"],
 		})
 		return { ...credentials, bucket }
@@ -208,13 +206,13 @@ export const createMapleIngest = ({ stage, region, domains, profile, dbLogin }: 
 		const replayBlobs = yield* replayBlobWriterCredentials(stage, region, profile.deploys.replayBlobs)
 		const { desiredCount, scaling, instanceType, taskSize, collectorTaskSize, selfTraceSampleRatio } =
 			profile.ingest
-		const name = (base: string) => resolveAwsResourceName(base, stage, region)
+		const name = (base: string) => resolveWorkerName(base, stage, region)
 		const tags = { Service: "maple-ingest", Region: region }
 
 		// Public subnets and NO NAT gateway: NAT's per-GB processing fee would
 		// outweigh compute and egress combined for a service that pushes telemetry out.
 		const network = yield* AWS.EC2.Network("ingest-network", {
-			cidrBlock: resolveIngestCidrBlock(region),
+			cidrBlock: REGION_INFRA[region].ingestCidrBlock,
 			availabilityZones: 2,
 			nat: "none",
 			gatewayEndpoints: ["s3"],

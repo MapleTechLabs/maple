@@ -5,13 +5,13 @@
  * Heavy graphs stay behind dynamic imports (startup CPU limit, error 10021).
  */
 import {
-	cachedRecoverable,
 	mapleDbEnv,
 	MapleStack,
 	type MapleStackContext,
 	mapleWorkerProps,
 	SandboxWorker,
 } from "@maple/infra/cloudflare"
+import { cachedRecoverable } from "@maple/infra/cached-recoverable"
 import {
 	appUrlsEnv,
 	authEnv,

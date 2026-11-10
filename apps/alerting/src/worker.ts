@@ -5,7 +5,6 @@
  */
 import {
 	AiWorker,
-	cachedRecoverable,
 	MapleDb,
 	mapleDbEnv,
 	type MapleDomains,
@@ -16,6 +15,7 @@ import {
 	StatusSnapshotsBucket,
 	StatusSnapshotsKv,
 } from "@maple/infra/cloudflare"
+import { cachedRecoverable } from "@maple/infra/cached-recoverable"
 import {
 	apnsEnv,
 	appUrlsEnv,
