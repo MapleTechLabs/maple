@@ -46,7 +46,7 @@ const clippedArguments = (rendered: string): string =>
 // A 12h window, whose trend bucket is the window over 23 — one short of the
 // grid, so an unaligned window still fits it (see `compactTrend`).
 const WINDOW = { start_time: "2026-09-12 00:00:00", end_time: "2026-09-12 12:00:00" }
-const TREND_BUCKET_SECONDS = Math.ceil((12 * 60 * 60) / (TREND_BUCKETS - 1))
+const TREND_BUCKET_SECONDS = 1879
 
 /** The window before it, which the totals read compares against: equal length,
  *  ending where this one begins. */
@@ -368,7 +368,6 @@ describe("get_agent_tools_overview failure groups", () => {
 		expect(rendered).toContain("### Failure groups of search_docs (1)")
 		// The bucket is derived from the window, not from a parameter — and it is
 		// the one that reaches `toStartOfInterval`.
-		expect(TREND_BUCKET_SECONDS).toBe(1879)
 		expect(rendered).toContain(`per ${TREND_BUCKET_SECONDS}s bucket`)
 		expect(
 			Arr.some(executedSql, (sql) => Str.includes(`INTERVAL ${TREND_BUCKET_SECONDS} SECOND`)(sql)),

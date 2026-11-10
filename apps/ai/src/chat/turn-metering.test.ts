@@ -170,6 +170,8 @@ describe("meterTurn", () => {
 		assert.deepEqual(charged, [])
 	})
 
+	// Exactly one charge per feature: a second meter keyed `chat` on the same turn would not
+	// deduplicate against this `triage` key, and every investigation turn would bill twice.
 	it("charges input and output under a key that carries the turn", async () => {
 		await meter(`${ORG}:inv-${INVESTIGATION}`, "msg-1", 1200, 340)
 
@@ -264,16 +266,6 @@ describe("meterTurn", () => {
 		await meter(`${ORG}:default`, "msg-1", 1000, 100, CONNECTOR_ORIGIN)
 
 		assert.deepEqual(keysFor("ai_input_tokens"), [`${ORG}:default:msg-1:bot:input`])
-	})
-
-	it("bills an investigation turn once, not once per source", async () => {
-		// The merge hazard this guards: two meters on the same tail, one keyed `triage` and one
-		// `chat`. The source segment makes those keys disjoint, so nothing would deduplicate them
-		// and every investigation turn would bill twice.
-		await meter(`${ORG}:inv-${INVESTIGATION}`, "msg-1", 1000, 100)
-
-		assert.deepEqual(keysFor("ai_input_tokens"), [`${INVESTIGATION}:turn-msg-1:triage:input`])
-		assert.deepEqual(keysFor("ai_output_tokens"), [`${INVESTIGATION}:turn-msg-1:triage:output`])
 	})
 
 	it("skips tracking when the secret key is set but blank", async () => {

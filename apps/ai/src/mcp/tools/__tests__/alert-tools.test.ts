@@ -495,7 +495,9 @@ describe("alert tools", () => {
 
 	it("list_alert_rules rejects an unknown severity against the parameter", async () => {
 		const result = await run("list_alert_rules", { severity: "sev1" })
-		expect(result._tag).toBe("Failure")
+		expect(result._tag === "Failure" ? result.failure.message : "").toContain(
+			'`severity`: Expected "warning" | "critical"',
+		)
 	})
 
 	it("list_alert_destinations renders destinations with their IDs", async () => {
