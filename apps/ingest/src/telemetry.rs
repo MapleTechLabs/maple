@@ -3478,6 +3478,7 @@ impl ExportWorker {
             let response = request.send().instrument(span).await;
 
             let last_status: String;
+            let throttled: bool;
             match response {
                 Ok(response) if response.status().is_success() => {
                     span_handle.record("http.response.status_code", response.status().as_u16());
@@ -3515,11 +3516,12 @@ impl ExportWorker {
                 Ok(response) => {
                     let status = response.status().as_u16();
                     last_status = status.to_string();
+                    throttled = status == 408 || status == 429;
                     span_handle.record("http.response.status_code", status);
                     span_handle.record("maple.ingest.outcome", "retry");
                     span_handle.record(
                         "error.type",
-                        if status == 408 || status == 429 {
+                        if throttled {
                             "upstream_throttled"
                         } else {
                             "upstream_5xx"
@@ -3533,6 +3535,7 @@ impl ExportWorker {
                 }
                 Err(error) => {
                     last_status = "transport".to_owned();
+                    throttled = false;
                     span_handle.record("maple.ingest.outcome", "retry");
                     span_handle.record("error.type", "transport");
                     span_handle.record("otel.status_description", error.to_string().as_str());
@@ -3542,7 +3545,7 @@ impl ExportWorker {
             }
 
             attempt = attempt.saturating_add(1);
-            if attempt >= max_attempts {
+            if attempt >= tinybird_attempt_budget(max_attempts, throttled) {
                 span_handle.record("maple.ingest.outcome", "dropped");
                 record_stage_error(
                     &span_handle,
@@ -4005,6 +4008,20 @@ fn status_bucket(status: u16) -> &'static str {
 
 fn is_retryable_clickhouse_status(status: u16) -> bool {
     status == 408 || status == 429 || status >= 500
+}
+
+/// Attempts a throttled (408/429) Tinybird batch gets, about 7 seconds of
+/// backoff. Tinybird can throttle one datasource, and a lane exports one batch
+/// at a time, so a full retry budget here would hold every other datasource on
+/// the lane behind it until their frames aged out.
+const TINYBIRD_THROTTLE_MAX_ATTEMPTS: u32 = 5;
+
+fn tinybird_attempt_budget(max_attempts: u32, throttled: bool) -> u32 {
+    if throttled {
+        max_attempts.min(TINYBIRD_THROTTLE_MAX_ATTEMPTS)
+    } else {
+        max_attempts
+    }
 }
 
 async fn backoff(attempt: u32) {
@@ -6496,6 +6513,18 @@ mod tests {
         assert_eq!(attempts, cfg.export_max_attempts);
 
         assert!(cfg.tinybird_target(ExportDestination::ClickHouse).is_none());
+    }
+
+    #[test]
+    fn a_throttled_batch_gets_a_short_retry_budget_so_its_lane_keeps_moving() {
+        assert_eq!(
+            tinybird_attempt_budget(20, true),
+            TINYBIRD_THROTTLE_MAX_ATTEMPTS
+        );
+        // Never more than the operator allowed.
+        assert_eq!(tinybird_attempt_budget(3, true), 3);
+        // An outage keeps the whole budget: every datasource is waiting on it anyway.
+        assert_eq!(tinybird_attempt_budget(20, false), 20);
     }
 
     /// Answers 429 to the first import and 200 to every later one.
