@@ -18,6 +18,7 @@ import {
 	initFrame,
 	noCarry,
 	updateFrame,
+	frameStep,
 } from "../kit/frame-update"
 import type { Retained } from "../kit/retained"
 import { remember } from "../kit/page-steps"
@@ -58,12 +59,13 @@ const applyOut = (model: Model, out: FrameOut, context: PageContext): Return => 
 	}
 }
 
-const liftFrame = (model: Model, result: FrameReturn, context: PageContext): Return => {
-	const next: Model = { ...model, frame: result.frame }
-	const commands = Command.mapMessages(result.commands, (message) => Message.GotFrameMessage({ message }))
-	const out = result.out === null ? { model: next } : applyOut(next, result.out, context)
-	return { ...out, commands: [...commands, ...(out.commands ?? [])] }
-}
+const liftFrame = (model: Model, result: FrameReturn, context: PageContext): Return =>
+	frameStep(
+		model,
+		result,
+		(message) => Message.GotFrameMessage({ message }),
+		(next, out) => applyOut(next, out, context),
+	)
 
 export const init = (
 	route: { readonly search: Search },

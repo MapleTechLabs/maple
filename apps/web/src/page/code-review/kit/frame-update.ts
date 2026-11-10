@@ -7,7 +7,7 @@ import * as Keyed from "@maple/views/data/keyed"
 import { emptyRetained, type Retained, retainedStatus } from "./retained"
 import { requestKey } from "@maple/views/data/request-key"
 import * as Select from "@maple/views/ui/select"
-import type { PageContext } from "../../contract"
+import type { PageContext, PageReturn } from "../../contract"
 import { routeWindowStep, snapModeOf } from "../../kit/route-window"
 import * as TimeRangePicker from "../../kit/time-range-picker"
 import {
@@ -17,12 +17,26 @@ import {
 	type Frame,
 	type FrameCommand,
 	FrameMessage,
+	type FrameOut,
 	type FrameReturn,
 	ResolveWindow,
 	type WindowSearch,
 } from "./frame"
 
 // The frame's `init`, `routeChanged` and `update`; the page maps its Commands and acts on its out.
+
+/** A tab's `GotFrameMessage`: the frame's next state and Commands, then the tab acting on its out. */
+export const frameStep = <Model extends Readonly<{ frame: Frame }>, Message>(
+	model: Model,
+	result: FrameReturn,
+	wrap: (message: FrameMessage) => Message,
+	onOut: (model: Model, out: FrameOut) => PageReturn<Model, Message>,
+): PageReturn<Model, Message> => {
+	const next: Model = { ...model, frame: result.frame }
+	const commands = Command.mapMessages(result.commands, wrap)
+	const out = result.out === null ? { model: next } : onOut(next, result.out)
+	return { ...out, commands: [...commands, ...(out.commands ?? [])] }
+}
 
 /** What the shared page instance carries into a tab: retained answers and the last clock read. */
 export type Carried = Readonly<{ retained: Retained; nowMs: number }>

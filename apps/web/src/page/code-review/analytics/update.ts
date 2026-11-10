@@ -11,7 +11,7 @@ import type { CodeReviewSearch } from "../../../route/search"
 import * as Select from "@maple/views/ui/select"
 import { type PageContext, PageOutMessage, type PageReturn } from "../../contract"
 import { epochWindow } from "../kit/api"
-import { type FrameMessage, type FrameOut, type FrameReturn } from "../kit/frame"
+import { type FrameOut, type FrameReturn } from "../kit/frame"
 import {
 	type Carried,
 	frameRetained,
@@ -19,6 +19,7 @@ import {
 	initFrame,
 	noCarry,
 	updateFrame,
+	frameStep,
 } from "../kit/frame-update"
 import type { Retained } from "../kit/retained"
 import { cachedStep, mergeSteps, remember } from "../kit/page-steps"
@@ -68,14 +69,13 @@ const request = (model: Model, context: PageContext, window: TimeWindow, mode: R
 	return { model: { ...model, ...step.patch }, commands: step.commands }
 }
 
-const liftFrame = (model: Model, result: FrameReturn, context: PageContext): Return => {
-	const next: Model = { ...model, frame: result.frame }
-	const commands = Command.mapMessages(result.commands, (message: FrameMessage) =>
-		Message.GotFrameMessage({ message }),
+const liftFrame = (model: Model, result: FrameReturn, context: PageContext): Return =>
+	frameStep(
+		model,
+		result,
+		(message) => Message.GotFrameMessage({ message }),
+		(next, out) => applyOut(next, out, context),
 	)
-	const out = result.out === null ? { model: next } : applyOut(next, result.out, context)
-	return { ...out, commands: [...commands, ...(out.commands ?? [])] }
-}
 
 const applyOut = (model: Model, out: FrameOut, context: PageContext): Return => {
 	switch (out._tag) {
