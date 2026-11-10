@@ -40,7 +40,6 @@ export const merge = (...parts: ReadonlyArray<Config.Config<Partial<WorkerEnv>>>
 export const requiredPlain = (key: string): Config.Config<string> =>
 	Config.schema(Schema.Trim.check(Schema.isNonEmpty()), key)
 
-/** Required secret, wrapped in `Redacted`. */
 export const requiredSecret = (key: string): Config.Config<Redacted.Redacted> =>
 	requiredPlain(key).pipe(Config.map(Redacted.make))
 
@@ -98,8 +97,6 @@ export const commitShaEnv = (...preferred: ReadonlyArray<string>): Config.Config
 
 /** The one sender address notification emails use; the `send_email` binding allows only it. */
 export const NOTIFICATIONS_SENDER_ADDRESS = "notifications@noreply.maple.dev"
-
-// ── Shared groups ───────────────────────────────────────────────────────────
 
 /**
  * Dev only: on a deploy a pin would point every session at one tenant. The local stack's pin names
