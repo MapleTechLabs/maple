@@ -2,7 +2,7 @@ import { Context, Duration, Effect, Layer, Option, Schema } from "effect"
 import { EmailSender } from "./bindings"
 import { Env } from "./Env"
 
-class EmailDeliveryError extends Schema.TaggedError<EmailDeliveryError>()(
+export class EmailDeliveryError extends Schema.TaggedError<EmailDeliveryError>()(
 	"@maple/backend/platform/EmailDeliveryError",
 	{ message: Schema.String },
 ) {}

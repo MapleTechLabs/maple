@@ -273,6 +273,14 @@ export class StatusPageNotifier extends Context.Service<StatusPageNotifier, Stat
 					(subscriber) => sendOne(subscriber, message),
 					{ concurrency: SEND_CONCURRENCY },
 				)
+				const sent = Arr.filter(outcomes, Boolean).length
+				// Every send failing reads as an email outage: keep the cursor so the next sweep retries the
+				// batch, until the update is no longer news. A partial failure is a bad address; move on.
+				const outage =
+					outcomes.length > 0 &&
+					sent === 0 &&
+					notification.createdAt >= nowMs - STATUS_PAGE_NOTIFY_LOOKBACK_MS
+				if (outage) return { sent, failed: outcomes.length, done: false }
 				const done = subscribers.length < limit
 				const last = subscribers.at(-1)
 				yield* dbExecute((db) =>
@@ -285,7 +293,6 @@ export class StatusPageNotifier extends Context.Service<StatusPageNotifier, Stat
 							.where(($) => [$.updateId.eq(notification.updateId)]),
 					),
 				)
-				const sent = Arr.filter(outcomes, Boolean).length
 				return { sent, failed: outcomes.length - sent, done }
 			})
 

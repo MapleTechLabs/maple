@@ -4,7 +4,7 @@ import { TestClock } from "effect/testing"
 import { UserId } from "@maple/domain/http"
 import { ENABLED_ORGANIZATION_FEATURE_FLAGS } from "@maple/domain/organization-feature-flags"
 import type { StatusPageComponentId, StatusPageId } from "@maple/domain/primitives"
-import { EmailService } from "@maple/backend/platform/EmailService"
+import { EmailDeliveryError, EmailService } from "@maple/backend/platform/EmailService"
 import { cleanupTestDbs, createTestDb, executeSql, type TestDb } from "@maple/backend/platform/test-pglite"
 import { testEnv } from "@maple/backend/services/integrations/vcs/__tests__/harness"
 import { OrganizationFeatureFlagsService } from "@maple/backend/services/org/OrganizationFeatureFlagsService"
@@ -28,10 +28,15 @@ interface SentEmail {
 const makeHarness = (options: { readonly rollout?: boolean } = {}) => {
 	const testDb = createTestDb(trackedDbs)
 	const sent: SentEmail[] = []
+	const email = { down: false }
 	const emailStub = Layer.succeed(EmailService, {
 		isConfigured: true,
 		send: (to, subject, html, sendOptions) =>
-			Effect.sync(() => void sent.push({ to, subject, html, headers: sendOptions?.headers ?? {} })),
+			email.down
+				? Effect.fail(new EmailDeliveryError({ message: "provider unavailable" }))
+				: Effect.sync(
+						() => void sent.push({ to, subject, html, headers: sendOptions?.headers ?? {} }),
+					),
 	})
 	const flagsStub = Layer.succeed(OrganizationFeatureFlagsService, {
 		flags: () =>
@@ -45,7 +50,7 @@ const makeHarness = (options: { readonly rollout?: boolean } = {}) => {
 	).pipe(
 		Layer.provideMerge(Layer.mergeAll(testDb.layer, testEnv({ MAPLE_STATUS_PAGE_BASE_URL: BASE_URL }))),
 	)
-	return { testDb, sent, layer }
+	return { testDb, sent, email, layer }
 }
 
 const createPage = Effect.gen(function* () {
@@ -275,6 +280,36 @@ describe("StatusPageNotifier", () => {
 			assert.strictEqual(first.sent + second.sent, 70)
 			assert.strictEqual(new Set(Arr.map(sent, (email) => email.to)).size, 70)
 			assert.strictEqual(sent.length, 70)
+		}).pipe(Effect.provide(layer))
+	})
+
+	it.effect("retries a batch after an email outage, sending each address once", () => {
+		const { testDb, sent, email, layer } = makeHarness()
+		return Effect.gen(function* () {
+			const { pageId } = yield* createPage
+			yield* seedSubscriber(testDb, pageId, "ana@example.com")
+			yield* seedSubscriber(testDb, pageId, "bo@example.com")
+			const pages = yield* StatusPagesService
+			yield* pages.createIncident(ORG, pageId, {
+				kind: "incident",
+				title: "Outage",
+				impact: "critical",
+				status: "investigating",
+				body: "Down.",
+				componentIds: [],
+				source: "dashboard",
+			})
+			email.down = true
+			yield* TestClock.adjust("1 minute")
+			const failed = yield* sweepNow
+			email.down = false
+			yield* TestClock.adjust("1 minute")
+			yield* sweepNow
+			yield* TestClock.adjust("1 minute")
+			yield* sweepNow
+
+			assert.strictEqual(failed.failed, 2)
+			assert.deepStrictEqual(recipients(sent), ["ana@example.com", "bo@example.com"])
 		}).pipe(Effect.provide(layer))
 	})
 

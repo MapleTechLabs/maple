@@ -186,6 +186,22 @@ describe("StatusPageSubscriptionsService", () => {
 		}).pipe(Effect.provide(layer))
 	})
 
+	it.effect("counts resends to pending addresses against the hourly cap", () => {
+		const { sent, layer } = makeHarness()
+		return Effect.gen(function* () {
+			const { pageId } = yield* createPage("acme")
+			const subscriptions = yield* StatusPageSubscriptionsService
+			yield* Effect.forEach(
+				Arr.range(1, STATUS_PAGE_CONFIRMATIONS_PER_HOUR),
+				(n) => subscriptions.subscribe(pageId, { email: `visitor${n}@example.com` }),
+				{ discard: true },
+			)
+			yield* TestClock.adjust("21 minutes")
+			yield* subscriptions.subscribe(pageId, { email: "visitor1@example.com" })
+			assert.strictEqual(sent.length, STATUS_PAGE_CONFIRMATIONS_PER_HOUR)
+		}).pipe(Effect.provide(layer))
+	})
+
 	it.effect("rejects a bad address, an empty pick and a component from another page", () => {
 		const { sent, layer } = makeHarness()
 		return Effect.gen(function* () {

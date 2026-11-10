@@ -192,6 +192,21 @@ export class StatusPageSubscriptionsService extends Context.Service<
 								now - existing.confirmationSentAt < STATUS_PAGE_CONFIRM_RESEND_MS
 							)
 								return Option.none<ReadonlyArray<string>>()
+						}
+						// Resends count too, so pending rows can't be cycled to mail strangers past the cap.
+						const [recent] = yield* db.run(
+							PG.from(StatusPageSubscribers)
+								.select(() => ({ count: PG.count() }))
+								.where(($) => [
+									$.pageId.eq(page.id),
+									$.confirmationSentAt.gt(now - 60 * 60_000),
+								]),
+						)
+						if (Number(recent?.count ?? 0) >= STATUS_PAGE_CONFIRMATIONS_PER_HOUR) {
+							yield* Effect.logWarning("Status page confirmation cap reached")
+							return Option.none<ReadonlyArray<string>>()
+						}
+						if (existing !== undefined) {
 							yield* db.run(
 								PG.update(StatusPageSubscribers)
 									.set({
@@ -204,18 +219,6 @@ export class StatusPageSubscriptionsService extends Context.Service<
 									.where(($) => [$.id.eq(existing.id)]),
 							)
 							return Option.some(names)
-						}
-						const [recent] = yield* db.run(
-							PG.from(StatusPageSubscribers)
-								.select(() => ({ count: PG.count() }))
-								.where(($) => [
-									$.pageId.eq(page.id),
-									$.confirmationSentAt.gt(now - 60 * 60_000),
-								]),
-						)
-						if (Number(recent?.count ?? 0) >= STATUS_PAGE_CONFIRMATIONS_PER_HOUR) {
-							yield* Effect.logWarning("Status page confirmation cap reached")
-							return Option.none<ReadonlyArray<string>>()
 						}
 						// A concurrent subscribe for the same address loses the race and sends nothing.
 						const inserted = yield* db.run(
