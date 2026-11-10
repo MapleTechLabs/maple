@@ -159,8 +159,8 @@ export interface ChatAlertBlock {
 }
 
 /**
- * A self-contained HTML page, for a platform that shows one inside a message (Hazel's HTML
- * renders). Every other platform posts `fallback`: standard markdown that says the same.
+ * A self-contained HTML page, for a platform that renders one inside a message. Every other
+ * platform posts `fallback`: standard markdown that says the same.
  */
 export interface ChatPageBlock {
 	readonly kind: "page"
