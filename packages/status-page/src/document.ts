@@ -10,6 +10,8 @@ export interface RenderOptions {
 	readonly nonce?: string
 	/** Prefix of the page's own links: `""` on its own host, `/s/<slug>` on a shared one. */
 	readonly basePath?: string
+	/** The serving origin, for text that must carry an absolute URL (the Slack command). */
+	readonly origin?: string
 	/** The dashboard's editor preview: components and incidents carry ids it can select by. Never public. */
 	readonly preview?: boolean
 }
@@ -24,8 +26,8 @@ export const previewIdAttr = (options: RenderOptions, kind: "component" | "incid
 export const pageHref = (options: RenderOptions, path: string): string =>
 	escapeHtml(`${options.basePath ?? ""}${path}`)
 
-/** Logo (or name) linking home, and the customer's website when set. */
-export const renderHeader = (snapshot: StatusPageSnapshot, options: RenderOptions): string => {
+/** Logo (or name) linking home, the customer's website when set, then any `extra` links. */
+export const renderHeader = (snapshot: StatusPageSnapshot, options: RenderOptions, extra = ""): string => {
 	const name = escapeHtml(snapshot.page.name)
 	const logo = safeUrl(snapshot.page.logoUrl, ["https:"])
 	const website = safeUrl(snapshot.page.websiteUrl, ["https:", "http:"])
@@ -44,7 +46,7 @@ export const renderHeader = (snapshot: StatusPageSnapshot, options: RenderOption
 		website === null
 			? ""
 			: `<a class="site" href="${escapeHtml(website)}" rel="noopener">Visit website</a>`
-	return `<header class="top"><a class="brand" href="${pageHref(options, "/")}">${mark}</a>${site}</header>`
+	return `<header class="top"><a class="brand" href="${pageHref(options, "/")}">${mark}</a>${site}${extra}</header>`
 }
 
 export const renderDocument = (input: {

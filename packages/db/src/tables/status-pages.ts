@@ -11,11 +11,13 @@ import {
 	StatusPageIncidentKind,
 	StatusPageIncidentStatus,
 	StatusPageIncidentUpdateId,
+	StatusPageSubscriberId,
 	StatusPageUpdateSource,
 	UptimeMonitorId,
 	UserId,
 } from "@maple/domain/primitives"
 import { DEFAULT_STATUS_PAGE_THEME, StatusPageTheme } from "@maple/domain/status-page"
+import { Schema } from "effect"
 import { UptimeMonitors } from "./uptime"
 
 /**
@@ -237,3 +239,80 @@ export const StatusPageCleanups = PG.table("status_page_cleanups", {
 })
 
 export type StatusPageCleanupRow = PG.SelectRowOf<typeof StatusPageCleanups>
+
+/**
+ * An email address that asked for a page's incident and maintenance updates. Pending until the
+ * address follows the confirmation link; only confirmed rows are ever sent an update.
+ */
+export const StatusPageSubscribers = PG.table("status_page_subscribers", {
+	columns: {
+		id: PG.brand(PG.text, StatusPageSubscriberId),
+		orgId: PG.column(PG.brand(PG.text, OrgId), { name: "org_id" }),
+		pageId: PG.column(PG.brand(PG.text, StatusPageId), { name: "page_id" }),
+		/** Trimmed and lower-cased, so one address is one row per page. */
+		email: PG.text,
+		/** The components whose updates reach this address; null is all of them, ones added later too. */
+		componentIds: PG.column(PG.nullable(PG.jsonb(Schema.Array(StatusPageComponentId))), {
+			name: "component_ids",
+		}),
+		confirmedAt: PG.column(PG.nullable(PG.timestamptzMillis), { name: "confirmed_at" }),
+		/** SHA-256 (base64url) of the emailed confirmation token; null once confirmed. */
+		confirmTokenSha256: PG.column(PG.nullable(PG.text), { name: "confirm_token_sha256" }),
+		confirmExpiresAt: PG.column(PG.nullable(PG.timestamptzMillis), { name: "confirm_expires_at" }),
+		/** The last confirmation email, so a repeated subscribe cannot flood the address. */
+		confirmationSentAt: PG.column(PG.nullable(PG.timestamptzMillis), { name: "confirmation_sent_at" }),
+		createdAt: PG.column(PG.timestamptzMillis, { name: "created_at" }),
+		updatedAt: PG.column(PG.timestamptzMillis, { name: "updated_at" }),
+	},
+	primaryKey: ["id"],
+	indexes: [
+		PG.uniqueIndex("status_page_subscribers_page_email_unq", ["pageId", "email"]),
+		PG.uniqueIndex("status_page_subscribers_confirm_token_unq", ["confirmTokenSha256"]),
+	],
+	foreignKeys: [
+		PG.foreignKey({
+			columns: ["pageId"],
+			references: StatusPages,
+			foreignColumns: ["id"],
+			onDelete: "cascade",
+		}),
+	],
+	tenantColumn: "orgId",
+})
+
+export type StatusPageSubscriberRow = PG.SelectRowOf<typeof StatusPageSubscribers>
+
+/**
+ * One incident update being emailed to the page's subscribers. The row is the dedupe: an update
+ * is queued at most once, and `last_subscriber_id` lets a sweep that stopped mid-way resume.
+ */
+export const StatusPageUpdateNotifications = PG.table("status_page_update_notifications", {
+	columns: {
+		updateId: PG.column(PG.brand(PG.text, StatusPageIncidentUpdateId), { name: "update_id" }),
+		orgId: PG.column(PG.brand(PG.text, OrgId), { name: "org_id" }),
+		pageId: PG.column(PG.brand(PG.text, StatusPageId), { name: "page_id" }),
+		/** Subscribers are sent in id order; this is the last one done. */
+		lastSubscriberId: PG.column(PG.nullable(PG.brand(PG.text, StatusPageSubscriberId)), {
+			name: "last_subscriber_id",
+		}),
+		completedAt: PG.column(PG.nullable(PG.timestamptzMillis), { name: "completed_at" }),
+		createdAt: PG.column(PG.timestamptzMillis, { name: "created_at" }),
+	},
+	primaryKey: ["updateId"],
+	indexes: [
+		PG.index("status_page_update_notifications_pending_idx", ["createdAt"], {
+			where: "completed_at IS NULL",
+		}),
+	],
+	foreignKeys: [
+		PG.foreignKey({
+			columns: ["updateId"],
+			references: StatusPageIncidentUpdates,
+			foreignColumns: ["id"],
+			onDelete: "cascade",
+		}),
+	],
+	tenantColumn: "orgId",
+})
+
+export type StatusPageUpdateNotificationRow = PG.SelectRowOf<typeof StatusPageUpdateNotifications>

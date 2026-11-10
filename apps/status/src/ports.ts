@@ -33,9 +33,28 @@ export interface StatusStorage {
 	readonly rateLimit: (key: string) => Effect.Effect<boolean, StatusStorageError>
 }
 
+/** What Maple answered a subscription request with; `rejected` carries a message for the visitor. */
+export type SubscriptionOutcome =
+	| { readonly _tag: "ok" }
+	| { readonly _tag: "rejected"; readonly message: string }
+	| { readonly _tag: "not-found" }
+	| { readonly _tag: "unavailable" }
+
+/** Maple's subscription endpoints. Never fails: an unreachable Maple is `unavailable`. */
+export interface StatusSubscriptions {
+	/** `componentIds` null: every component. */
+	readonly subscribe: (
+		pageId: string,
+		input: { readonly email: string; readonly componentIds: ReadonlyArray<string> | null },
+	) => Effect.Effect<SubscriptionOutcome>
+	readonly confirm: (pageId: string, token: string) => Effect.Effect<SubscriptionOutcome>
+	readonly unsubscribe: (pageId: string, token: string) => Effect.Effect<SubscriptionOutcome>
+}
+
 /** Per-request inputs: storage, the clock and a random source, so handling is deterministic in tests. */
 export interface StatusEnv {
 	readonly storage: StatusStorage
+	readonly subscriptions: StatusSubscriptions
 	readonly nowMs: number
 	readonly randomId: () => string
 }

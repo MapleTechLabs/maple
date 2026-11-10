@@ -4,6 +4,7 @@ import {
 	renderBadgeSvg,
 	renderManagePage,
 	renderPage,
+	renderRssFeed,
 	renderStatusJson,
 } from "@maple/status-page"
 import { Effect, Option, Schema } from "effect"
@@ -11,6 +12,7 @@ import { parseForm, postBreakGlassUpdate } from "./break-glass"
 import type { StatusEnv } from "./ports"
 import { asset, html, notFound, PUBLIC_CACHE_CONTROL, plain, redirect } from "./responses"
 import { type Lookup, loadView, type PageView, pageIdForHost, pageIdForSlug } from "./snapshot"
+import { isSubscriptionPath, serveSubscription } from "./subscribe"
 
 const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
 
@@ -104,6 +106,7 @@ const servePage = (env: StatusEnv, request: Request, url: URL, view: PageView, t
 		if (request.method === "POST") return postManage(env, request, view, target)
 		return Effect.succeed(plain("Method not allowed", 405))
 	}
+	if (isSubscriptionPath(target.path)) return serveSubscription(env, request, url, view.snapshot, target)
 	if (!isRead) return Effect.succeed(plain("Method not allowed", 405))
 	switch (target.path) {
 		case "/": {
@@ -111,6 +114,7 @@ const servePage = (env: StatusEnv, request: Request, url: URL, view: PageView, t
 			const body = renderPage(view.snapshot, view.freshness, env.nowMs, {
 				nonce,
 				basePath: target.basePath,
+				origin: url.origin,
 			})
 			return Effect.succeed(html(body, { cacheControl: PUBLIC_CACHE_CONTROL, nonce }))
 		}
@@ -133,6 +137,13 @@ const servePage = (env: StatusEnv, request: Request, url: URL, view: PageView, t
 				asset(
 					renderAtomFeed(view.snapshot, `${url.origin}${target.basePath}`),
 					"application/atom+xml; charset=utf-8",
+				),
+			)
+		case "/feed.rss":
+			return Effect.succeed(
+				asset(
+					renderRssFeed(view.snapshot, `${url.origin}${target.basePath}`),
+					"application/rss+xml; charset=utf-8",
 				),
 			)
 		default:

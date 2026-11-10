@@ -140,6 +140,10 @@ export const appUrlsEnv = (domains: MapleDomains = {}): Config.Config<WorkerEnv>
 			? derived("MAPLE_API_BASE_URL", `https://${domains.api}`)
 			: plainWithDefault("MAPLE_API_BASE_URL", "https://api.maple.dev"),
 		plainWithDefault("EMAIL_FROM", "Maple <notifications@noreply.maple.dev>"),
+		// Status page subscriber emails link here; unset (prd until it has a status domain) refuses them.
+		domains.status
+			? derived("MAPLE_STATUS_PAGE_BASE_URL", `https://${domains.status}`)
+			: optionalPlain("MAPLE_STATUS_PAGE_BASE_URL"),
 	)
 
 /**

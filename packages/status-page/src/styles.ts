@@ -18,7 +18,7 @@ a{color:var(--link)}
 [hidden]{display:none!important}
 .wrap{max-width:712px;margin:0 auto;padding:40px 20px 56px}
 .top{display:flex;align-items:center;justify-content:space-between;gap:16px;margin-bottom:32px;flex-wrap:wrap}
-.brand{display:flex;align-items:center;gap:10px;font-weight:600;font-size:18px;color:var(--fg);text-decoration:none;letter-spacing:-.01em}
+.brand{display:flex;align-items:center;gap:10px;font-weight:600;font-size:18px;color:var(--fg);text-decoration:none;letter-spacing:-.01em;margin-right:auto}
 .mono-mark{display:inline-grid;place-items:center;width:32px;height:32px;border-radius:var(--radius);background:var(--primary);color:var(--primary-fg);font-size:15px;font-weight:700;letter-spacing:0}
 .brand img{max-height:36px;max-width:200px;display:block}
 .site{font-size:14px;color:var(--secondary)}
@@ -111,6 +111,25 @@ button.day[aria-expanded=true]{background:var(--tint)}
 .cal-panel .title{font-weight:500;color:var(--fg);overflow-wrap:anywhere}
 .cal-panel .meta{font-size:13px}
 .cal-panel .s-notice{--c:var(--muted)}
+.tabs{display:flex;flex-wrap:wrap;gap:4px;padding:12px 16px 16px}
+.tabs>label{font-size:14px;font-weight:500;padding:6px 12px;border-radius:calc(var(--radius)*.75);color:var(--muted);cursor:pointer}
+.tabs>input:checked+label{background:color-mix(in srgb,var(--primary) 12%,transparent);color:var(--fg)}
+.tabs>input:focus-visible+label{outline:2px solid var(--link);outline-offset:2px}
+.pane{display:none;flex-basis:100%;padding-top:8px;font-size:14px}
+.pane p{margin:0 0 8px}
+#sub-email:checked~.pane-email,#sub-rss:checked~.pane-rss,#sub-slack:checked~.pane-slack{display:block}
+.subscribe form{display:grid;gap:12px}
+.subscribe label{display:grid;gap:6px;font-weight:500}
+.subscribe input[type=email]{font:inherit;color:inherit;background:var(--bg);border:1px solid var(--line);border-radius:calc(var(--radius)*.75);padding:8px 10px;width:100%}
+.subscribe fieldset{border:1px solid var(--line);border-radius:var(--radius);padding:10px 14px;margin:0;display:grid;gap:6px}
+.subscribe legend{font-weight:500;padding:0 4px}
+.subscribe .check{display:flex;gap:8px;align-items:center;font-weight:400}
+.sub-components{display:grid;gap:4px;padding-left:24px}
+.subscribe fieldset:has(input[value=all]:checked) .sub-components{display:none}
+.subscribe button{font:inherit;font-weight:500;padding:8px 14px;border-radius:calc(var(--radius)*.75);border:1px solid var(--fg);background:var(--fg);color:var(--bg);cursor:pointer;justify-self:start}
+.copy{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:8px}
+.copy code{font:13px/1.4 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;padding:6px 8px;border:1px solid var(--line);border-radius:calc(var(--radius)/2);background:var(--bg);overflow-wrap:anywhere}
+.copy button{padding:5px 10px;font-size:13px}
 @media (max-width:560px){.bars{gap:1px;height:22px}.cal td{height:36px}.panel-head{padding:12px}.component{padding:12px}.legend{padding:10px 12px}}
 `
 

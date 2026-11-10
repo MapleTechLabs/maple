@@ -31,6 +31,7 @@ import { SupabaseConnectionService } from "@maple/backend/services/integrations/
 import { SupabaseInsightsService } from "@maple/backend/services/integrations/SupabaseInsightsService"
 import { SupabaseLogsService } from "@maple/backend/services/integrations/SupabaseLogsService"
 import { ServiceMapRollupService } from "@maple/backend/services/dashboards/ServiceMapRollupService"
+import { StatusPageNotifier } from "@maple/backend/services/status-pages/StatusPageNotifier"
 import { StatusPagePublisher } from "@maple/backend/services/status-pages/StatusPagePublisher"
 import { StatusPageReconciler } from "@maple/backend/services/status-pages/StatusPageReconciler"
 import {
@@ -96,6 +97,7 @@ export const layerTick = (
 		// Read by `maybeEnqueueTriage` when present; its absence means every
 		// incident opened here is investigated unclassified.
 		IncidentClassifier.layer,
+		StatusPageNotifier.layer,
 		statusPagesLayerIfBound(statusPages),
 	).pipe(
 		Layer.provide(PullRequestLookupLive),
@@ -472,7 +474,8 @@ const prReviewPostMergeTick = makeTick(
 
 /**
  * Imports break-glass updates, repairs auto incidents, then sweeps: edge cleanups, lagging pages
- * and the heartbeat (written by the sweep only once it reached the database). Each step isolated.
+ * and the heartbeat (written by the sweep only once it reached the database), then emails new
+ * incident updates to subscribers. Each step isolated.
  */
 const statusPagesTick = Effect.gen(function* () {
 	const publisher = yield* Effect.serviceOption(StatusPagePublisher)
@@ -504,6 +507,18 @@ const statusPagesTick = Effect.gen(function* () {
 					statusPageCleanupFailures: result.cleanupsFailed,
 				}
 			: undefined,
+	)
+	yield* makeTick(
+		StatusPageNotifier.use((notifier) => notifier.sweep(nowMs)),
+		"status_page_notify",
+		(result) =>
+			result.queued + result.sent + result.failed > 0
+				? {
+						statusPageUpdatesQueued: result.queued,
+						statusPageEmailsSent: result.sent,
+						statusPageEmailsFailed: result.failed,
+					}
+				: undefined,
 	)
 })
 
@@ -612,6 +627,7 @@ type ScheduledServices =
 	| RailwayMetricsService
 	| SearchConsoleImportService
 	| ServiceMapRollupService
+	| StatusPageNotifier
 	| SupabaseConnectionService
 	| SupabaseLogsService
 	| SupabaseInsightsService

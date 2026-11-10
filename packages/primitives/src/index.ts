@@ -399,6 +399,13 @@ export const StatusPageIncidentUpdateId = MapleUuidId(
 )
 export type StatusPageIncidentUpdateId = Schema.Schema.Type<typeof StatusPageIncidentUpdateId>
 
+/** One email address subscribed to one page's updates. */
+export const StatusPageSubscriberId = MapleUuidId(
+	"@maple/StatusPageSubscriberId",
+	"Status Page Subscriber ID",
+)
+export type StatusPageSubscriberId = Schema.Schema.Type<typeof StatusPageSubscriberId>
+
 /** What a visitor sees per component, worst last. */
 export const StatusPageComponentStatus = Schema.Literals([
 	"operational",

@@ -95,6 +95,8 @@ import {
 	StatusPageIncidentUpdates,
 	StatusPageIncidents,
 	StatusPages,
+	StatusPageSubscribers,
+	StatusPageUpdateNotifications,
 } from "./status-pages"
 import { UptimeMonitorDaily, UptimeMonitorStates, UptimeMonitors } from "./uptime"
 import { Slos } from "./slos"
@@ -281,6 +283,8 @@ export const allTables: ReadonlyArray<PgSchemaTable<string, ColumnDefs>> = [
 	StatusPageIncidentUpdates,
 	StatusPageIncidentComponents,
 	StatusPageCleanups,
+	StatusPageSubscribers,
+	StatusPageUpdateNotifications,
 	VcsInstallations,
 	VcsRepositories,
 	VcsCommits,

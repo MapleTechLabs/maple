@@ -1,10 +1,12 @@
 /**
  * The status Worker: serves customer status pages from edge storage alone (KV, R2, the colo
  * cache), so a page keeps its last known state while every other part of Maple is down.
- * No service bindings or Hyperdrive: serving never calls Maple. Traces export to Maple's ingest after
- * the response, best effort, so an outage loses them without touching the page.
+ * No Hyperdrive, and serving never calls Maple: the one service binding, `API`, carries only the
+ * subscribe, confirm and unsubscribe forms. Traces export to Maple's ingest after the response,
+ * best effort, so an outage loses them without touching the page.
  */
 import {
+	ApiWorker,
 	MapleStack,
 	mapleWorkerProps,
 	StatusSnapshotsBucket,
@@ -14,11 +16,20 @@ import { selfObservabilityEnv } from "@maple/infra/env"
 import { WorkerTelemetry } from "@maple/infra/worker-telemetry"
 import * as Cloudflare from "@alchemy.run/cloudflare"
 import { RuntimeContext } from "alchemy/RuntimeContext"
-import { Clock, Effect } from "effect"
+import * as AlchemyTelemetry from "alchemy/Telemetry"
+import { Clock, Effect, Layer, Option } from "effect"
 import * as SecureRandom from "effect/crypto/SecureRandom"
-import { HttpServerRequest, HttpServerResponse } from "effect/http"
+import { HttpMiddleware, HttpServerRequest, HttpServerResponse } from "effect/http"
 import { handleRequest } from "./handler"
 import { nativeStorage } from "./storage"
+import { apiSubscriptions } from "./subscribe"
+
+const isFetcher = (value: unknown): value is Fetcher =>
+	typeof value === "object" && value !== null && "fetch" in value && typeof value.fetch === "function"
+
+// The auto server span stamps `url.full` verbatim, and these links carry a confirmation or
+// unsubscribe token in the query; the handler's own `status.request` span records no URL.
+const TOKEN_LINK_PATH = /\/(?:subscribe\/confirm|unsubscribe)(?:\?|$)/u
 
 /** `__ALCHEMY_RUNTIME__` folds to `true` in the bundle, so the stack-side branch is tree-shaken. */
 const props = Effect.gen(function* () {
@@ -28,7 +39,7 @@ const props = Effect.gen(function* () {
 	return {
 		main: import.meta.url,
 		...mapleWorkerProps("status", stack),
-		env,
+		env: { ...env, API: yield* ApiWorker },
 		// Pages are served at `/s/<slug>`; previews get a domain, prd stays on workers.dev until it has one.
 		domain: stack.domains.status,
 		workersDev: true,
@@ -66,8 +77,10 @@ export default class StatusWorker extends Cloudflare.Worker<StatusWorker>()(
 					cache: caches.open("status-snapshots"),
 				})
 				const nowMs = yield* Clock.currentTimeMillis
+				const workerEnv = yield* Cloudflare.WorkerEnvironment
 				const response = yield* handleRequest(web, {
 					storage,
+					subscriptions: apiSubscriptions(Option.liftPredicate(workerEnv.API, isFetcher)),
 					nowMs,
 					randomId: () => SecureRandom.uuidV4Unsafe(),
 				})
@@ -81,6 +94,11 @@ export default class StatusWorker extends Cloudflare.Worker<StatusWorker>()(
 			Cloudflare.R2.ReadBucketBinding,
 			Cloudflare.Workers.RateLimitBinding,
 			WorkerTelemetry({ serviceName: "status" }),
+			AlchemyTelemetry.layer(
+				Layer.succeed(HttpMiddleware.TracerDisabledWhen, (request: { url: string }) =>
+					TOKEN_LINK_PATH.test(request.url),
+				),
+			),
 		]),
 	),
 ) {}

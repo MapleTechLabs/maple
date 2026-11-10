@@ -93,6 +93,8 @@ import {
 	StatusPageIncidentUpdates,
 	StatusPageIncidents,
 	StatusPages,
+	StatusPageSubscribers,
+	StatusPageUpdateNotifications,
 	UptimeMonitorDaily,
 	UptimeMonitorStates,
 	Slos,
@@ -180,6 +182,9 @@ const ORG_SCOPED_TABLES: ReadonlyArray<OrgScopedTable> = [
 	ScrapeTargets,
 	// Status pages first: their components point at monitors. The edge copy of a page outlives
 	// these rows until the publisher's sweep removes pages it no longer finds.
+	StatusPageUpdateNotifications,
+	// Subscriber addresses are personal data; they go with the org, not later.
+	StatusPageSubscribers,
 	StatusPageIncidentComponents,
 	StatusPageIncidentUpdates,
 	StatusPageIncidents,

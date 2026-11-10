@@ -373,8 +373,9 @@ export default Alchemy.Stack(
 		const electricSync = yield* ElectricSync
 		yield* serveWorker("electric-sync", electricSync)
 
-		// Public status pages, served from edge storage alone so they outlive a Maple outage.
-		const statusWorker = yield* StatusWorker
+		// Public status pages, served from edge storage alone so they outlive a Maple outage. Binds api
+		// as `API` for the subscribe forms only.
+		const statusWorker = yield* Effect.provideService(StatusWorker, ApiWorker, api)
 		yield* serveWorker("status", statusWorker)
 
 		// A vite-source Worker: alchemy owns its build and dev server. Binds api as `API`.
