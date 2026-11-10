@@ -27,7 +27,7 @@ import type { PageContext } from "../../contract"
 import { scopedAnomalyRuleRow } from "../shared/anomaly-test-fixtures"
 import { destinationRow, NOW, ORG, ruleId, ruleRow } from "../shared/test-rows"
 import * as Select from "@maple/views/ui/select"
-import { FocusRuleCard } from "./command"
+import { FetchEditorPreview, FocusRuleCard } from "./command"
 import { BREACH_MODE_SELECT_ID } from "./form-steps"
 import { init } from "./init"
 import { Message } from "./message"
@@ -214,6 +214,44 @@ describe("alert rule editor, sentence cards", () => {
 			expectView(text(/^Enter a number for the threshold to preview it against the last/u)).toExist(),
 			expectView(text(/^Breach above/u)).not.toExist(),
 			expectView(text("Would have fired")).not.toExist(),
+		)
+	})
+
+	test("opening an empty add-on section on a saved builder rule is not an unsaved change", () => {
+		const builderRule = ruleRow(2, {
+			signal_type: "builder_query",
+			query_builder_draft_json: {
+				id: "q1",
+				name: "A",
+				dataSource: "traces",
+				aggregation: "count",
+				whereClause: 'service.name = "checkout"',
+				addOns: { groupBy: false, having: false, orderBy: false, limit: false, legend: false },
+				groupBy: [],
+			},
+		})
+		const saved = opened({ ruleId: ruleId(2) }, [builderRule])
+		const groupBy = role("button", { name: "Group by" })
+		scene(
+			{ update: pageUpdate, view },
+			given(saved),
+			themeResolved(),
+			expectView(text("No changes")).toExist(),
+			click(role("button", { name: /^When: .* Edit$/u })),
+			Command.resolve(FocusRuleCard, Message.CompletedFocusCard()),
+			click(groupBy),
+			// The draft's JSON did change, so its preview is asked for again; the answer is not needed here.
+			Command.resolve(
+				FetchEditorPreview,
+				Message.CompletedFetchPreview({
+					key: "unanswered",
+					isSaved: false,
+					result: Result.succeed(slowPreview()),
+				}),
+			),
+			expectView(groupBy).toHaveAttr("aria-pressed", "true"),
+			expectView(text("No changes")).toExist(),
+			expectView(text(/unsaved change/u)).not.toExist(),
 		)
 	})
 
