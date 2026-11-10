@@ -18,7 +18,7 @@ import { toLoadFailure } from "@maple/views/data/load-failure"
 import * as Menu from "@maple/views/ui/menu"
 import { MountMenu } from "@maple/views/ui/menu"
 import { PageOutMessage, type PageContext } from "../../contract"
-import { incidentRow, NOW, ORG } from "../shared/test-rows"
+import { incidentRow, NOW, ORG, hubAt } from "../shared/test-rows"
 import { monitorHref } from "../shared/uptime-commands"
 import type { UptimeMonitor } from "../shared/uptime-derive"
 import { downMonitor, httpMonitor, monitorId, pausedMonitor } from "../shared/uptime-test-monitors"
@@ -38,7 +38,7 @@ const names = (commands: ReadonlyArray<{ readonly name: string }> | undefined) =
 	Arr.map(commands ?? [], ({ name }) => name)
 
 const onUptime = (): Model => {
-	const entered = init({ _tag: "Alerts", search: { tab: "uptime" } }, context).model
+	const entered = init(hubAt({ tab: "uptime" }), context).model
 	return Arr.reduce(
 		[Message.ReadClock({ nowMs: NOW }), Message.CompletedFetchSession({ orgId: ORG, grants: ENGINEER })],
 		entered,
@@ -74,7 +74,7 @@ const NAMESPACES = { "checkout-api": "shop", "payments-api": "billing" }
 
 describe("alerts hub inbox, uptime incidents", () => {
 	test("an uptime incident reads as its monitor being down, without the ungrouped key", () => {
-		const entered = init({ _tag: "Alerts", search: {} }, context).model
+		const entered = init(hubAt(), context).model
 		const model = Arr.reduce(
 			[
 				Message.ReadClock({ nowMs: NOW }),
@@ -123,16 +123,12 @@ describe("alerts hub, Uptime tab", () => {
 	})
 
 	test("the monitors are read only when the Uptime tab is open", () => {
-		expect(names(init({ _tag: "Alerts", search: {} }, context).commands)).not.toContain(
-			"FetchAlertsHubMonitors",
-		)
-		expect(names(init({ _tag: "Alerts", search: { tab: "uptime" } }, context).commands)).toContain(
-			"FetchAlertsHubMonitors",
-		)
+		expect(names(init(hubAt(), context).commands)).not.toContain("FetchAlertsHubMonitors")
+		expect(names(init(hubAt({ tab: "uptime" }), context).commands)).toContain("FetchAlertsHubMonitors")
 	})
 
 	test("opening the tab also reads which namespace each service reports under", () => {
-		expect(names(init({ _tag: "Alerts", search: { tab: "uptime" } }, context).commands)).toContain(
+		expect(names(init(hubAt({ tab: "uptime" }), context).commands)).toContain(
 			"FetchAlertsHubServiceNamespaces",
 		)
 	})
@@ -324,20 +320,28 @@ describe("alerts hub, Uptime tab", () => {
 		expect(done.model.deletingMonitorId).toBeNull()
 	})
 
-	test("the header's main create button makes an uptime check here, for admins only", () => {
+	test("the header's one primary action is New monitor here, for admins only", () => {
 		scene(
 			{ update: pageUpdate, view },
 			given(withMonitors(THREE)),
-			expectView(role("link", { name: "New check" })).toHaveAttr("href", "/alerts/uptime/new"),
+			expectView(role("link", { name: "New monitor" })).toHaveAttr("href", "/alerts/uptime/new"),
 			expectView(role("link", { name: "New rule" })).not.toExist(),
+			expectView(role("button", { name: "More rule types" })).not.toExist(),
 		)
 		scene(
 			{ update: pageUpdate, view },
-			given({ ...withMonitors(THREE), search: { tab: "uptime", serviceName: "checkout-api" } }),
-			expectView(role("link", { name: "New check" })).toHaveAttr(
+			given({ ...withMonitors(THREE), search: { serviceName: "checkout-api" } }),
+			expectView(role("link", { name: "New monitor" })).toHaveAttr(
 				"href",
 				"/alerts/uptime/new?serviceName=checkout-api",
 			),
+		)
+		// The empty state offers the first check itself, so the header stays empty.
+		scene(
+			{ update: pageUpdate, view },
+			given(withMonitors([])),
+			expectView(role("link", { name: "New monitor" })).not.toExist(),
+			expectView(role("link", { name: "New uptime check" })).toExist(),
 		)
 		const asMember = pageUpdate(
 			withMonitors(THREE),
@@ -346,15 +350,16 @@ describe("alerts hub, Uptime tab", () => {
 		scene(
 			{ update: pageUpdate, view },
 			given(asMember),
-			expectView(role("link", { name: "New check" })).not.toExist(),
-			expectView(role("link", { name: "New rule" })).toHaveAttr("href", "/alerts/create"),
+			expectView(role("link", { name: "New monitor" })).not.toExist(),
+			expectView(role("link", { name: "New rule" })).not.toExist(),
 		)
 	})
 
-	test("the New rule chevron opens both kinds, and Uptime check goes to the uptime form", () => {
+	test("on the Inbox the New rule chevron opens every kind, and Uptime check goes to the uptime form", () => {
 		scene(
 			{ update: pageUpdate, view },
-			given(withMonitors(THREE)),
+			given({ ...withMonitors(THREE), tab: "inbox" as const }),
+			expectView(role("link", { name: "New rule" })).toHaveAttr("href", "/alerts/create"),
 			click(role("button", { name: "More rule types" })),
 			Command.resolve(
 				Animation.WaitForPaint,

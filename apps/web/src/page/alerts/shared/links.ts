@@ -1,7 +1,7 @@
 import { AlertRuleId } from "@maple/domain/http"
 import { Option, Schema } from "effect"
-import { AppRoute, hrefOf } from "../../../route"
-import type { AlertRuleSearch, AlertsCreateSearch, AlertsSearch } from "../../../route/search"
+import { alertsSectionRoute, AppRoute, hrefOf } from "../../../route"
+import type { AlertRuleSearch, AlertsCreateSearch, AlertsHubSearch, AlertsTab } from "../../../route/search"
 
 const decodeRuleId = Schema.decodeUnknownOption(AlertRuleId)
 
@@ -15,7 +15,9 @@ export const ruleHref = (rawRuleId: string, search: typeof AlertRuleSearch.Type 
 export const incidentHref = (incidentId: string): string =>
 	hrefOf(AppRoute.AlertIncident({ incidentId, search: {} }))
 
-export const alertsHref = (search: typeof AlertsSearch.Type): string => hrefOf(AppRoute.Alerts({ search }))
+/** A hub section's URL with the hub's filters; the Inbox by default. */
+export const alertsHref = (search: typeof AlertsHubSearch.Type, tab: AlertsTab = "inbox"): string =>
+	hrefOf(alertsSectionRoute(tab, search))
 
 export const createHref = (search: typeof AlertsCreateSearch.Type): string =>
 	hrefOf(AppRoute.AlertsCreate({ search }))

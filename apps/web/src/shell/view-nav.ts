@@ -1,4 +1,5 @@
 import { isClerkAuthEnabled } from "../lib/services/common/auth-mode"
+import { cn } from "@maple/ui/lib/utils"
 import { Option, Array as Arr, String as Str } from "effect"
 import type { InfraSurfaceLiteral } from "@maple/domain/http"
 import { AsyncData } from "foldkit"
@@ -10,6 +11,7 @@ import {
 	sidebarGroupLabel,
 	sidebarGroupToggle,
 	sidebarMenu,
+	sidebarMenuBadge,
 	sidebarMenuButton,
 	sidebarMenuItem,
 	sidebarMenuSub,
@@ -96,17 +98,32 @@ const collapsedSectionRow = (h: HtmlBuilder<Message>, model: Model, item: NavIte
 		),
 	])
 
-const subList = (h: HtmlBuilder<Message>, subItems: ReadonlyArray<NavSubItem>, currentPath: string): Html => {
+/** The live count a sub-item shows, when it has one and it is above zero (an org change clears it). */
+const subCountOf = (model: Model, sub: NavSubItem): number | undefined =>
+	sub.count === "alertsInbox" && model.alertsInboxCount !== null && model.alertsInboxCount > 0
+		? model.alertsInboxCount
+		: undefined
+
+const subList = (
+	h: HtmlBuilder<Message>,
+	model: Model,
+	subItems: ReadonlyArray<NavSubItem>,
+	currentPath: string,
+): Html => {
 	const activeSubHref = activeSubHrefOf(subItems, currentPath)
 	return sidebarMenuSub(
 		h,
 		"mx-0 ms-4 translate-x-0 gap-0 border-l-0 px-0 py-0",
-		Arr.map(subItems, (sub) =>
-			sidebarMenuSubItem(
+		Arr.map(subItems, (sub, index) => {
+			const count = subCountOf(model, sub)
+			return sidebarMenuSubItem(
 				h,
-				sub.href === activeSubHref
-					? "border-sidebar-primary border-l-2 ps-2.5"
-					: "border-sidebar-border border-l-2 ps-2.5",
+				cn(
+					"border-l-2 ps-2.5",
+					sub.href === activeSubHref ? "border-sidebar-primary" : "border-sidebar-border",
+					// A 4px gap, not a rule, sets a group of rows apart.
+					sub.startsGroup === true && index > 0 && "mt-1",
+				),
 				[
 					sidebarMenuSubButton(
 						h,
@@ -128,9 +145,24 @@ const subList = (h: HtmlBuilder<Message>, subItems: ReadonlyArray<NavSubItem>, c
 							h.span([], [sub.title]),
 						],
 					),
+					...(count === undefined
+						? []
+						: [
+								sidebarMenuBadge(
+									h,
+									[
+										typography(
+											h,
+											{ size: "xs", mono: true, numeric: true, tone: "error" },
+											[String(count)],
+										),
+									],
+									"top-1/2 -translate-y-1/2",
+								),
+							]),
 				],
-			),
-		),
+			)
+		}),
 	)
 }
 
@@ -212,7 +244,7 @@ const navRow = (
 		),
 		...(item.badge === undefined ? [] : [navBadge(h, item.badge)]),
 		...(subItems !== undefined && isActive && (subItems.length > 0 || !isGroupFolded)
-			? [subList(h, subItems, currentPath)]
+			? [subList(h, model, subItems, currentPath)]
 			: []),
 	])
 }

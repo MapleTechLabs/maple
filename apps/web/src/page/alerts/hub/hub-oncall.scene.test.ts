@@ -1,4 +1,5 @@
 import * as Policy from "@maple/domain/policy"
+import type { AlertsTab } from "../../../route/search"
 import { OrgId } from "@maple/domain"
 import { EscalationChainId, OnCallScheduleId } from "@maple/domain/http"
 import type { V2OnCallSchedule } from "@maple/domain/http/v2"
@@ -16,7 +17,7 @@ import {
 	populatedSchedules,
 	scheduleUuid,
 } from "../shared/oncall-test-fixtures"
-import { incidentRow, ORG, ruleRow } from "../shared/test-rows"
+import { incidentRow, ORG, ruleRow, hubAt } from "../shared/test-rows"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { init, routeChanged, scheduleMenuId, update } from "./update"
@@ -34,11 +35,11 @@ const MEMBER = Policy.grantsOf(["org:member"])
 const SCHEDULES = populatedSchedules(ONCALL_NOW)
 
 const onTab = (
-	tab: string,
+	tab: AlertsTab,
 	grants: ReturnType<typeof Policy.grantsOf>,
 	schedules: ReadonlyArray<V2OnCallSchedule> | null,
 ) => {
-	const entered = init({ _tag: "Alerts", search: { tab } }, context)
+	const entered = init(hubAt({ tab }), context)
 	expect(names(entered.commands)).toContain("FetchAlertsHubSchedules")
 	return Arr.reduce(
 		[
@@ -72,7 +73,7 @@ describe("alerts hub, on-call schedules", () => {
 	test("an org without schedules learns what one is and can create the first", () => {
 		scene(
 			{ update: pageUpdate, view },
-			given(onTab("oncall", ENGINEER, [])),
+			given(onTab("on-call", ENGINEER, [])),
 			expectView(text("No on-call schedules yet")).toExist(),
 			expectView(text(/people take turns in layers/u)).toExist(),
 			expectView(role("link", { name: "Create schedule" })).toExist(),
@@ -82,7 +83,7 @@ describe("alerts hub, on-call schedules", () => {
 	test("each schedule names its zone, who is on call until when, and the next handoff", () => {
 		scene(
 			{ update: pageUpdate, view },
-			given(onTab("oncall", ENGINEER, SCHEDULES)),
+			given(onTab("on-call", ENGINEER, SCHEDULES)),
 			expectView(text("Checkout primary")).toExist(),
 			expectView(text("Europe/Berlin · 3 layers")).toExist(),
 			expectView(text("Sofia Alvarez")).toExist(),
@@ -97,7 +98,7 @@ describe("alerts hub, on-call schedules", () => {
 	test("a member sees the schedules but cannot create, edit or delete one", () => {
 		scene(
 			{ update: pageUpdate, view },
-			given(onTab("oncall", MEMBER, SCHEDULES)),
+			given(onTab("on-call", MEMBER, SCHEDULES)),
 			expectView(text("Checkout primary")).toExist(),
 			expectView(role("link", { name: "New schedule" })).not.toExist(),
 			expectView(role("button", { name: "Actions for Checkout primary" })).not.toExist(),
@@ -122,7 +123,7 @@ describe("alerts hub, on-call schedules", () => {
 	})
 
 	test("the clock reads the schedules again once a shown shift has handed off, not before", () => {
-		const model = onTab("oncall", ENGINEER, SCHEDULES)
+		const model = onTab("on-call", ENGINEER, SCHEDULES)
 		expect(
 			names(pageUpdate(model, Message.ReadClock({ nowMs: ONCALL_NOW + 60_000 })).commands),
 		).not.toContain("FetchAlertsHubSchedules")
@@ -169,7 +170,7 @@ describe("alerts hub, on-call schedules", () => {
 	})
 
 	test("an org with schedules but no rules sees who is on call above the empty inbox", () => {
-		const entered = init({ _tag: "Alerts", search: { tab: "inbox" } }, context)
+		const entered = init(hubAt({ tab: "inbox" }), context)
 		const model = Arr.reduce(
 			[
 				Message.ReadClock({ nowMs: ONCALL_NOW }),
@@ -196,15 +197,15 @@ describe("alerts hub, on-call schedules", () => {
 	})
 
 	test("a failed members read is asked again on the next route change", () => {
-		const entered = init({ _tag: "Alerts", search: { tab: "inbox" } }, context)
+		const entered = init(hubAt({ tab: "inbox" }), context)
 		expect(names(entered.commands)).toContain("FetchAlertsHubMembers")
 		const failed = pageUpdate(
 			entered.model,
 			Message.CompletedFetchMembers({ result: Result.fail("Clerk is down") }),
 		).model
-		expect(
-			names(routeChanged(failed, { _tag: "Alerts", search: { tab: "oncall" } }, context).commands),
-		).toContain("FetchAlertsHubMembers")
+		expect(names(routeChanged(failed, hubAt({ tab: "on-call" }), context).commands)).toContain(
+			"FetchAlertsHubMembers",
+		)
 	})
 
 	test("a chain's summary names the people and schedules it pages", () => {
@@ -220,7 +221,7 @@ describe("alerts hub, on-call schedules", () => {
 	})
 
 	test("a refused delete names the chains that still page the schedule", () => {
-		const model = onTab("oncall", ENGINEER, SCHEDULES)
+		const model = onTab("on-call", ENGINEER, SCHEDULES)
 		const scheduleId = Schema.decodeSync(OnCallScheduleId)(scheduleUuid(1))
 		const asked = pageUpdate(
 			pageUpdate(
@@ -263,11 +264,11 @@ describe("alerts hub, on-call schedules", () => {
 	})
 
 	test("members are read only by the tabs that name people, once", () => {
-		const rules = init({ _tag: "Alerts", search: { tab: "rules" } }, context)
+		const rules = init(hubAt({ tab: "rules" }), context)
 		expect(names(rules.commands)).not.toContain("FetchAlertsHubMembers")
-		const oncall = routeChanged(rules.model, { _tag: "Alerts", search: { tab: "oncall" } }, context)
+		const oncall = routeChanged(rules.model, hubAt({ tab: "on-call" }), context)
 		expect(names(oncall.commands)).toContain("FetchAlertsHubMembers")
-		const routing = routeChanged(oncall.model, { _tag: "Alerts", search: { tab: "routing" } }, context)
+		const routing = routeChanged(oncall.model, hubAt({ tab: "routing" }), context)
 		expect(names(routing.commands)).not.toContain("FetchAlertsHubMembers")
 	})
 

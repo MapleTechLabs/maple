@@ -314,10 +314,15 @@ export const sidebarMenuItem = <Message>(
 		children,
 	)
 
-export const sidebarMenuBadge = <Message>(h: HtmlBuilder<Message>, children: Children): Html =>
+/** `<SidebarMenuBadge>`; `className` places it beside a sub-item, which the peer offsets don't cover. */
+export const sidebarMenuBadge = <Message>(
+	h: HtmlBuilder<Message>,
+	children: Children,
+	className?: string,
+): Html =>
 	h.div(
 		[
-			h.Class(cn(...sidebarMenuBadgeStyles)),
+			h.Class(cn(...sidebarMenuBadgeStyles, className)),
 			h.DataAttribute("sidebar", "menu-badge"),
 			h.DataAttribute("slot", "sidebar-menu-badge"),
 		],
@@ -438,7 +443,8 @@ export const sidebarMenuSubButton = <Message>(
 	options: Readonly<{ className?: string; isActive: boolean; link?: LinkTarget; href?: string }>,
 	children: Children,
 ): Html => {
-	const linkActive = options.link !== undefined && isLinkActive(options.link.currentPath, options.link.href)
+	// The caller picks the most specific sibling, so an index row (`/alerts`) doesn't claim its siblings' pages.
+	const linkActive = options.link !== undefined && options.isActive
 	const className = cn(
 		...sidebarMenuSubButtonStyles,
 		sidebarMenuSubButtonMdStyles,

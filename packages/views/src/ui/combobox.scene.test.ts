@@ -131,6 +131,38 @@ describe("combobox scene (chips)", () => {
 		)
 	})
 
+	test("without an Empty line the list opens only once it has an item to show", () => {
+		const quiet = {
+			update,
+			view: withViewInputs(chipsView, {
+				items: ["checkout-svc"],
+				ariaLabel: "Services",
+				placeholder: "Add a service",
+				toView: (parts) => ih.main([], parts),
+			})(),
+		}
+		scene(
+			quiet,
+			given(init("services", "multiple")),
+			type(input("Services"), "zzz"),
+			Command.resolve(
+				Animation.WaitForPaint,
+				Animation.Message.CompletedWaitForPaint({ generation: 1 }),
+			),
+			Command.resolve(
+				Animation.WaitForAnimationSettled,
+				Animation.Message.EndedAnimation({ generation: 1 }),
+			),
+			expect(role("listbox")).toBeAbsent(),
+			expect(role("status")).toBeAbsent(),
+			expect(input("Services")).toHaveAttr("aria-expanded", "false"),
+			type(input("Services"), "che"),
+			Mount.resolve(MountCombobox, Message.CompletedMountCombobox()),
+			expect(option("checkout-svc")).toExist(),
+			expect(input("Services")).toHaveAttr("aria-expanded", "true"),
+		)
+	})
+
 	test("no match shows the empty status; Escape closes", () => {
 		scene(
 			chips,
