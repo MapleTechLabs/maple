@@ -472,9 +472,8 @@ name fails the test until the cases it touches are re-snapshotted.
 ### Learning from feedback
 
 - Every stored finding's `category: title` and body are embedded (`FindingEmbedder`, wired in
-  `apps/ai/src/platform/Llm.ts`, OpenRouter `/embeddings`, `openai/text-embedding-3-small` unless
-  `MAPLE_EMBEDDING_MODEL` says otherwise) into `pr_review_finding_embeddings`, keyed by finding and
-  stamped with the model. Vectors from different models are never compared.
+  `apps/ai/src/platform/Llm.ts`, OpenRouter `/embeddings`, `openai/text-embedding-3-small`) into
+  `pr_review_finding_embeddings`, keyed by finding and stamped with the model. Vectors from different models are never compared.
 - A stored finding is negative when dismissed or when 👎 outnumber 👍; positive when 👍 outnumber
   👎 or a later head fixed it; otherwise it does not vote.
 - In `submit_review`, after ignored paths, lenses and repeats, each new finding is compared with the
