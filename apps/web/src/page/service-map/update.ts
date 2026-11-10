@@ -24,7 +24,16 @@ import {
 	SaveStored,
 	SaveWorld,
 } from "./command"
-import { DEFAULT_PRESET, focusOf, scopedRows, type Search, sourceGraphOf, withFocus } from "./derive"
+import { stepEnvironmentSelect } from "../kit/environment-switcher"
+import {
+	ALL_ENVIRONMENTS,
+	DEFAULT_PRESET,
+	focusOf,
+	scopedRows,
+	type Search,
+	sourceGraphOf,
+	withFocus,
+} from "./derive"
 import { Message } from "./message"
 import type { Model } from "./model"
 import {
@@ -240,21 +249,20 @@ export const contextChanged = (model: Model, context: PageContext): Return => {
 }
 
 const withEnvironmentSelect = (model: Model, message: Select.Message): Return => {
-	const next = Select.update(model.environmentSelect, message)
-	const lifted = {
-		model: { ...model, environmentSelect: next.model },
-		commands: Command.mapMessages(next.commands ?? [], (inner) =>
-			Message.GotEnvironmentSelectMessage({ message: inner }),
-		),
-	}
-	// `handleEnvironmentChange`: "All environments" stays in the URL as `__all__`, so it sticks.
-	return next.outMessage === undefined
-		? lifted
-		: {
-				...lifted,
-				outMessage: navigate(model, { ...model.search, environment: next.outMessage.value })
-					.outMessage,
-			}
+	// "All environments" stays in the URL as `__all__`, so it sticks.
+	const step = stepEnvironmentSelect(model.environmentSelect, message, {
+		toMessage: (inner) => Message.GotEnvironmentSelectMessage({ message: inner }),
+		allValue: ALL_ENVIRONMENTS,
+		keepAllInUrl: true,
+	})
+	const lifted = { model: { ...model, environmentSelect: step.select }, commands: step.commands }
+	return Option.match(step.picked, {
+		onNone: () => lifted,
+		onSome: (environment) => ({
+			...lifted,
+			outMessage: navigate(model, { ...model.search, environment }).outMessage,
+		}),
+	})
 }
 
 /** The 3D view's step; a pick becomes the map's `onSelect`. */

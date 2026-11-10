@@ -45,6 +45,7 @@ import {
 	timePresetOf,
 } from "./derive"
 import { Message, type RetryTarget } from "./message"
+import { stepEnvironmentSelect } from "../kit/environment-switcher"
 import { type Model, RulesData } from "./model"
 import { anomaliesKey, failedIncidents, IncidentsData, receivedIncidents } from "../kit/service-health"
 import { isClerkAuthEnabled } from "../../lib/services/common/auth-mode"
@@ -467,24 +468,19 @@ const withPicker = (model: Model, message: TimeRangePicker.Message): Return => {
 }
 
 const withEnvironmentSelect = (model: Model, message: Select.Message): Return => {
-	const next = Select.update(model.environmentSelect, message)
-	const lifted = {
-		model: { ...model, environmentSelect: next.model },
-		commands: Command.mapMessages(next.commands, (inner) =>
-			Message.GotEnvironmentSelectMessage({ message: inner }),
-		),
-	}
-	// `handleEnvironmentChange`: "All environments" leaves the URL.
-	return next.outMessage === undefined
-		? lifted
-		: {
-				...lifted,
-				outMessage: navigate(model, {
-					...model.search,
-					environment:
-						next.outMessage.value === ALL_ENVIRONMENTS ? undefined : next.outMessage.value,
-				}).outMessage,
-			}
+	const step = stepEnvironmentSelect(model.environmentSelect, message, {
+		toMessage: (inner) => Message.GotEnvironmentSelectMessage({ message: inner }),
+		allValue: ALL_ENVIRONMENTS,
+		keepAllInUrl: false,
+	})
+	const lifted = { model: { ...model, environmentSelect: step.select }, commands: step.commands }
+	return Option.match(step.picked, {
+		onNone: () => lifted,
+		onSome: (environment) => ({
+			...lifted,
+			outMessage: navigate(model, { ...model.search, environment }).outMessage,
+		}),
+	})
 }
 
 const withChart = (model: Model, chartId: string, message: Chart.Message): Return => {

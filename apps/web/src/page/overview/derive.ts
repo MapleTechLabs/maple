@@ -7,6 +7,8 @@ import {
 } from "../../components/dashboard/service-health"
 import { Option, Array as Arr, String as Str } from "effect"
 import { AsyncData } from "foldkit"
+import type { SelectEntry } from "@maple/views/ui/select-view"
+import { environmentEntries } from "../kit/environment-switcher"
 import { isPresetValue, type PresetValue } from "../kit/time-controls"
 import { type HealthIncident, serviceHealthCauses } from "../kit/service-health"
 import type { FacetsHint, HealthSnapshot, Model } from "./model"
@@ -62,10 +64,8 @@ export const ALL_ENVIRONMENTS = "__all__"
 export const selectedEnvironment = (model: Model): string =>
 	model.search.environment ?? (hasProduction(model) ? "production" : ALL_ENVIRONMENTS)
 
-export const environmentItems = (model: Model): ReadonlyArray<{ value: string; label: string }> => [
-	{ value: ALL_ENVIRONMENTS, label: "All environments" },
-	...Arr.map(environmentsOf(model), (name) => ({ value: name, label: name })),
-]
+export const environmentItems = (model: Model): ReadonlyArray<SelectEntry> =>
+	environmentEntries(ALL_ENVIRONMENTS, environmentsOf(model))
 
 /** The hint `FacetsHintPersister` writes once facets are ready. */
 export const derivedHint = (model: Model): FacetsHint => ({

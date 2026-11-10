@@ -5,6 +5,8 @@ import type { TimeWindow } from "../../data/time-range"
 import { buildSourceGraph, type SourceGraph } from "@maple/views/service-map/map/graph"
 import type { Focus } from "@maple/views/service-map/map/state"
 import { SERVICE_RUNTIME_KINDS } from "@maple/domain/service-runtimes"
+import type { SelectEntry } from "@maple/views/ui/select-view"
+import { environmentEntries } from "../kit/environment-switcher"
 import type { Model } from "./model"
 
 // The pure halves of the service map page and its view.
@@ -33,10 +35,8 @@ export const deploymentEnvOf = (model: Model): string | undefined => {
 	return environment === ALL_ENVIRONMENTS ? undefined : environment
 }
 
-export const environmentItems = (model: Model): ReadonlyArray<{ value: string; label: string }> => [
-	{ value: ALL_ENVIRONMENTS, label: "All environments" },
-	...Arr.map(environmentsOf(model), (name) => ({ value: name, label: name })),
-]
+export const environmentItems = (model: Model): ReadonlyArray<SelectEntry> =>
+	environmentEntries(ALL_ENVIRONMENTS, environmentsOf(model))
 
 /** The URL's focus (`focusService`, `focusHops`, `focusMode`). */
 export const focusOf = (search: Search): Option.Option<Focus> =>

@@ -13,6 +13,7 @@ import * as SelectView from "@maple/views/ui/select-view"
 import { serviceDot } from "@maple/views/ui/values"
 import type { PageViewInputs } from "../../contract"
 import { dashboardPage } from "../../kit/dashboard-page"
+import { environmentEntries, environmentSwitcher } from "../../kit/environment-switcher"
 import { presetLabel, timeControls } from "../../kit/time-controls"
 import * as TimeRangePicker from "../../kit/time-range-picker"
 import {
@@ -56,13 +57,7 @@ const environmentItems = (model: Model): ReadonlyArray<SelectView.SelectEntry> =
 		[...new Set([...loaded, ...(current === undefined ? [] : [current])])],
 		(a: string, b: string) => Str.localeCompare(b)(a),
 	)
-	return [
-		{ _tag: "Item", item: { value: ALL_ENVIRONMENTS, label: "All environments" } },
-		...Arr.map(options, (env): SelectView.SelectEntry => ({
-			_tag: "Item",
-			item: { value: env, label: env },
-		})),
-	]
+	return environmentEntries(ALL_ENVIRONMENTS, options)
 }
 
 const createAlert = (h: H, model: Model): Html =>
@@ -135,24 +130,20 @@ const headerActions = (h: H, model: Model): Html => {
 				},
 			}),
 	})
-	return h.submodel({
-		slotId: "environment-select",
-		model: { ...model.environmentSelect, value: environmentsOf(model.search)?.[0] ?? ALL_ENVIRONMENTS },
-		view: SelectView.view,
-		toParentMessage: toSelect,
-		viewInputs: {
-			entries: environmentItems(model),
-			size: "sm",
-			ariaLabel: "Environment",
-			className: "w-full sm:w-auto",
-			toView: (parts) =>
-				hstack(h, { gap: "2", wrap: true }, [
-					...parts,
-					runsOn(h, model),
-					createAlert(h, model),
-					controls,
-				]),
-		},
+	return environmentSwitcher(h, {
+		select: model.environmentSelect,
+		value: environmentsOf(model.search)?.[0] ?? ALL_ENVIRONMENTS,
+		entries: environmentItems(model),
+		toMessage: toSelect,
+		ariaLabel: "Environment",
+		className: "w-full sm:w-auto",
+		toView: (parts) =>
+			hstack(h, { gap: "2", wrap: true }, [
+				...parts,
+				runsOn(h, model),
+				createAlert(h, model),
+				controls,
+			]),
 	})
 }
 
