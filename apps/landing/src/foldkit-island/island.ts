@@ -1,5 +1,5 @@
 import { Predicate, type Schema } from "effect"
-import type { Update } from "foldkit"
+import type { Runtime, Update } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 
 /**
@@ -13,13 +13,19 @@ export type IslandConfig<Model, Message extends { readonly _tag: string }, Props
 	init: (props: Props) => Update.Return<Model, Message>
 	update: (model: Model, message: Message) => Update.Return<Model, Message>
 	view: (model: Model, h: HtmlBuilder<Message>) => Html
+	/** Renders the browser should animate between (`document.startViewTransition`). */
+	viewTransition?: Runtime.ViewTransitionConfig<Model, Message>
 }>
 
 /** What the renderer holds: a program whose types it only needs to keep consistent. */
 export type Island = Readonly<{
 	kind: typeof ISLAND_KIND
 	name: string
-	use: <R>(f: <Model, Message extends { readonly _tag: string }, Props>(config: IslandConfig<Model, Message, Props>) => R) => R
+	use: <R>(
+		f: <Model, Message extends { readonly _tag: string }, Props>(
+			config: IslandConfig<Model, Message, Props>,
+		) => R,
+	) => R
 }>
 
 const ISLAND_KIND = "maple.foldkit-island"

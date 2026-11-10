@@ -561,7 +561,7 @@ export class EdgeCacheService extends Context.Service<EdgeCacheService, EdgeCach
 	"@maple/cache/EdgeCacheService",
 ) {
 	/**
-	 * Backed by the injected `CacheBackend` (Workers KV in prod, in-memory in
+	 * Backed by the injected `CacheBackend` (the Workers Cache API in prod, in-memory in
 	 * tests/dev — supplied by the host app). The runtime binding never enters
 	 * this package, keeping `globalThis.caches` out of the web/cli bundles.
 	 */

@@ -52,9 +52,9 @@ export const canExceedRowCap = (target: RetentionTarget): boolean => {
 /**
  * Apply retention to the given targets.
  *
- * Every statement runs inside ONE `execute`: under `DatabasePgLive` each call
- * dials and tears down its own postgres.js client, so the handshake count is
- * what costs, not the statement count.
+ * Every statement runs inside ONE `execute`, so the prune is one span. The
+ * invocation's pool is reused across executes (`DatabasePgLive`); only an entry
+ * point with no connection scope still dials per execute.
  */
 export const pruneChecksForTargets = Effect.fn("ScrapeCheckRetention.pruneForTargets")(function* (
 	targets: ReadonlyArray<RetentionTarget>,

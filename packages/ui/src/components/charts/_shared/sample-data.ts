@@ -130,33 +130,6 @@ export const heatmapSampleData = [
 	{ x: "18:00", y: "300ms+", value: 8 },
 ]
 
-export const defaultBarData = [
-	{ name: "Jan", value: 186 },
-	{ name: "Feb", value: 305 },
-	{ name: "Mar", value: 237 },
-	{ name: "Apr", value: 173 },
-	{ name: "May", value: 209 },
-	{ name: "Jun", value: 214 },
-]
-
-export const areaTimeSeriesData = [
-	{ month: "Jan", desktop: 186, mobile: 80 },
-	{ month: "Feb", desktop: 305, mobile: 200 },
-	{ month: "Mar", desktop: 237, mobile: 120 },
-	{ month: "Apr", desktop: 73, mobile: 190 },
-	{ month: "May", desktop: 209, mobile: 130 },
-	{ month: "Jun", desktop: 214, mobile: 140 },
-]
-
-export const lineTimeSeriesData = [
-	{ date: "Jan", value: 186 },
-	{ date: "Feb", value: 305 },
-	{ date: "Mar", value: 237 },
-	{ date: "Apr", value: 73 },
-	{ date: "May", value: 209 },
-	{ date: "Jun", value: 214 },
-]
-
 export const latencyTimeSeriesData = [
 	{ bucket: "2024-01-01T00:00:00Z", p50LatencyMs: 12, p95LatencyMs: 45, p99LatencyMs: 120 },
 	{ bucket: "2024-01-01T01:00:00Z", p50LatencyMs: 15, p95LatencyMs: 52, p99LatencyMs: 135 },

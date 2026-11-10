@@ -211,8 +211,16 @@ tar -xzf "$tmp/bundle.tar.gz" -C "$tmp"
 [ -d "$tmp/$name" ] || die "unexpected archive layout (no $name/ directory)"
 
 mkdir -p "$INSTALL_DIR"
-cp "$tmp/$name/maple" "$tmp/$name/libchdb.so" "$INSTALL_DIR/"
-chmod +x "$INSTALL_DIR/maple"
+# Stage beside the targets, then rename: `cp` over a running `maple` fails with
+# "Text file busy" on Linux, while a rename only swaps the directory entry.
+staged_maple="$INSTALL_DIR/.maple.new.$$"
+staged_lib="$INSTALL_DIR/.libchdb.so.new.$$"
+trap 'rm -rf "$tmp" "$staged_maple" "$staged_lib"' EXIT INT TERM
+cp "$tmp/$name/maple" "$staged_maple"
+cp "$tmp/$name/libchdb.so" "$staged_lib"
+chmod +x "$staged_maple"
+mv -f "$staged_maple" "$INSTALL_DIR/maple"
+mv -f "$staged_lib" "$INSTALL_DIR/libchdb.so"
 
 # macOS: clear the Gatekeeper quarantine flag set on downloaded files.
 if [ "$os" = "Darwin" ] && command -v xattr >/dev/null 2>&1; then

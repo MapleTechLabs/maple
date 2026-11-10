@@ -19,7 +19,7 @@
 # The compile MUST happen against bookworm's glibc (2.36) — building on the
 # ubuntu-24.04 runner (2.39) instead produces a binary that dies at startup with
 # `version 'GLIBC_2.39' not found`. The workflow enforces this by compiling
-# inside rust:1.88-bookworm rather than on the host.
+# inside rust:1.94-bookworm rather than on the host.
 #
 # `Dockerfile` (the self-contained source build) stays the default and is what a
 # local `alchemy deploy` uses; alchemy.run.ts picks this one only when

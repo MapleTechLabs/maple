@@ -10,6 +10,7 @@ import { runAfterResponse } from "@maple/backend/platform/after-response"
 import { AuditEventsQueueProducer } from "@maple/backend/platform/bindings"
 import { systemTenant } from "@maple/backend/services/alerts/system-tenant"
 import { CurrentAuditActor } from "@maple/backend/services/auth/audit-actor"
+import { AUDIT_ACCESS_ACTION_SUFFIXES, isAuditAccessAction } from "@maple/domain/audit-actions"
 import { WarehouseQueryService } from "@maple/backend/services/warehouse/WarehouseQueryService"
 import { type AuditAction, auditResourceFields, type AuditResourceIdOption } from "./audit-actions"
 import {
@@ -93,15 +94,16 @@ export interface AuditLogListFilters {
 	readonly untilMs?: number
 	/** Leave out actions ending in any of these, before the limit; see {@link AUDIT_ACCESS_ACTION_SUFFIXES}. */
 	readonly excludeActionSuffixes?: ReadonlyArray<string>
+	/**
+	 * `changes`: no data access (see {@link AUDIT_ACCESS_ACTION_SUFFIXES}) unless it was denied.
+	 * `access`: only data access.
+	 */
+	readonly actionKind?: "changes" | "access"
 	readonly limit: number
 	readonly offset: number
 }
 
-/**
- * Actions that record access rather than a change: reads, tool calls, SQL runs
- * and API requests. A heavy agent user writes hundreds of these a day.
- */
-export const AUDIT_ACCESS_ACTION_SUFFIXES = [".read", ".called", ".sql_executed", ".request"] as const
+export { AUDIT_ACCESS_ACTION_SUFFIXES }
 
 export interface AuditLogServiceApi {
 	/**
@@ -175,6 +177,26 @@ const neverFail =
 			),
 		)
 
+/** The suffix exclusion a listing applies: the caller's own, or the one `actionKind` implies. */
+const actionSuffixOpts = (filters: AuditLogListFilters) => {
+	if (filters.actionKind === "changes")
+		return {
+			excludeActionSuffixes: [
+				...(filters.excludeActionSuffixes ?? []),
+				...AUDIT_ACCESS_ACTION_SUFFIXES,
+			],
+			keepDeniedExcluded: true,
+		}
+	return {
+		...(filters.excludeActionSuffixes !== undefined
+			? { excludeActionSuffixes: filters.excludeActionSuffixes }
+			: undefined),
+		...(filters.actionKind === "access"
+			? { onlyActionSuffixes: AUDIT_ACCESS_ACTION_SUFFIXES }
+			: undefined),
+	}
+}
+
 /** Which optional filters bind, and the parameter values behind them. */
 const listQueryInputs = (orgId: OrgId, filters: AuditLogListFilters) => {
 	const since = filters.sinceMs === undefined ? undefined : DateTime.makeUnsafe(filters.sinceMs)
@@ -193,9 +215,7 @@ const listQueryInputs = (orgId: OrgId, filters: AuditLogListFilters) => {
 		requestId: filters.requestId !== undefined,
 		since: since !== undefined,
 		until: until !== undefined,
-		...(filters.excludeActionSuffixes !== undefined
-			? { excludeActionSuffixes: filters.excludeActionSuffixes }
-			: undefined),
+		...actionSuffixOpts(filters),
 		limit: filters.limit,
 		offset: filters.offset,
 	}
@@ -376,7 +396,11 @@ export function makeMemoryAuditLog(): AuditLogServiceApi {
 					(filters.untilMs === undefined || entry.occurredAt.getTime() <= filters.untilMs) &&
 					!Arr.some(filters.excludeActionSuffixes ?? [], (suffix) =>
 						Str.endsWith(suffix)(entry.action),
-					),
+					) &&
+					(filters.actionKind !== "changes" ||
+						!isAuditAccessAction(entry.action) ||
+						entry.outcome === "denied") &&
+					(filters.actionKind !== "access" || isAuditAccessAction(entry.action)),
 			)
 				.sort((a, b) => {
 					const byTime = b.occurredAt.getTime() - a.occurredAt.getTime()

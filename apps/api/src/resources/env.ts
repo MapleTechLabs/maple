@@ -9,6 +9,7 @@ import {
 	apnsEnv,
 	appUrlsEnv,
 	authEnv,
+	clickhouseEnv,
 	cloudflareOAuthEnv,
 	githubAppSourceEnv,
 	ingestKeyCryptoEnv,
@@ -28,11 +29,7 @@ export const apiConfiguredEnv = (stage: MapleStage, region: MapleRegion, domains
 	merge(
 		tinybirdEnv,
 		// ClickHouse (BYO warehouse); `tinybird` unless an org config overrides it.
-		optionalPlain("CLICKHOUSE_URL"),
-		plainWithDefault("CLICKHOUSE_PROVIDER", "tinybird"),
-		optionalPlain("CLICKHOUSE_USER"),
-		optionalPlain("CLICKHOUSE_DATABASE"),
-		optionalSecret("CLICKHOUSE_PASSWORD"),
+		clickhouseEnv,
 		// Dev-only; the runtime ignores it outside MAPLE_ENVIRONMENT=development.
 		optionalPlain("MAPLE_IGNORE_ORG_CLICKHOUSE"),
 		// Dev only: on a deploy a pin would point the whole API at one tenant. The local stack's

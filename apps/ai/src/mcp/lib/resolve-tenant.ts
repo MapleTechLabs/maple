@@ -191,21 +191,49 @@ const resolveInternalServiceTenant = Effect.fn("McpTenant.resolveInternalService
 	})
 })
 
+/** A request with neither an `Authorization` header nor a cookie sent nothing a session reads. */
+const carriesCredential = (headers: Headers): boolean => headers.has("authorization") || headers.has("cookie")
+
+/**
+ * The session resolver's failures as the MCP ones. A provider outage is retryable (503), and a
+ * request that sent no credential is challenged without `invalid_token`: there was no token.
+ * Only on a refusal, because self-hosted auth can admit a request that carries nothing.
+ */
+const sessionAuthFailure =
+	(request: Request) =>
+	<A, R>(
+		resolved: Effect.Effect<A, Effect.Error<ReturnType<typeof AuthService.Service.resolveTenant>>, R>,
+	) =>
+		resolved.pipe(
+			Effect.catchTags({
+				"@maple/http/errors/AuthorizationUnavailableError": (error) =>
+					Effect.fail(new McpAuthUnavailableError({ message: error.message })),
+				"@maple/http/errors/UnauthorizedError": (error) =>
+					Effect.fail(
+						carriesCredential(request.headers)
+							? new McpAuthInvalidError({
+									message: error.message || "Authentication failed (no details available)",
+									reason: "session_auth_fallback",
+								})
+							: new McpAuthMissingError({ message: "No credential was sent with the request" }),
+					),
+				// The credential is good, the org is not theirs: signing in again is the way to pick another.
+				"@maple/http/errors/OrganizationAccessDeniedError": (error) =>
+					Effect.fail(
+						new McpAuthInvalidError({ message: error.message, reason: "session_auth_fallback" }),
+					),
+			}),
+		)
+
 /**
  * A signed-in person's session, never an API key or MCP OAuth token: `resolveTenant` accepts
  * session tokens only, unlike `resolveMcpTenant`.
  */
 const resolveSessionTenant = Effect.fn("McpTenant.resolveSessionTenant")(function* (request: Request) {
 	const auth = yield* AuthService
-	const tenant = yield* auth.resolveTenant(toHeaderRecord(request.headers)).pipe(
-		Effect.mapError(
-			(error) =>
-				new McpAuthInvalidError({
-					message: error.message || "Authentication failed (no details available)",
-					reason: "session_auth_fallback",
-				}),
-		),
-	)
+	const tenant = yield* auth
+		.resolveTenant(toHeaderRecord(request.headers))
+		.pipe(sessionAuthFailure(request))
 	return {
 		orgId: tenant.orgId,
 		userId: tenant.userId,
@@ -330,15 +358,9 @@ export const resolveMcpTenantContext = Effect.fn("McpTenant.resolveMcpTenantCont
 
 		// Fall back to existing Clerk / self-hosted session auth
 		const auth = yield* AuthService
-		const tenant = yield* auth.resolveMcpTenant(toHeaderRecord(request.headers)).pipe(
-			Effect.mapError(
-				(error) =>
-					new McpAuthInvalidError({
-						message: error.message || "Authentication failed (no details available)",
-						reason: "session_auth_fallback",
-					}),
-			),
-		)
+		const tenant = yield* auth
+			.resolveMcpTenant(toHeaderRecord(request.headers))
+			.pipe(sessionAuthFailure(request))
 
 		return {
 			orgId: tenant.orgId,

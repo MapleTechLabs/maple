@@ -10,7 +10,7 @@ import { Effect, Record as Rec, String as Str } from "effect"
  * HTTP: the SDK's tracer exports a span whose failure is caused *entirely* by an
  * anticipated identifier as OTLP `Ok` with no `exception` event. That set is
  * derived by reflection over the domain HTTP exports and cannot see these
- * classes — they live in `apps/api/src/mcp` — so they are listed here and spread
+ * classes (they live in `apps/ai/src/mcp`), so they are listed here and spread
  * into the runtime telemetry configs alongside it.
  *
  * `McpAuthUnavailableError` (503) and `McpQueryError` are deliberately absent:

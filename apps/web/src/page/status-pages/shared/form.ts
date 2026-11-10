@@ -12,7 +12,9 @@ import type {
 	V2StatusPage,
 	V2StatusPageComponent,
 	V2StatusPageComponentCreateParams,
+	V2StatusPageIncident,
 	V2StatusPageIncidentCreateParams,
+	V2StatusPageIncidentUpdateParams,
 	V2StatusPageUpdateParams,
 } from "@maple/domain/http/v2"
 import {
@@ -184,6 +186,35 @@ export const incidentPayload = (
 			onSome: ([start, end]) => ({ ...base, scheduled_start: start, scheduled_end: end }),
 		},
 	)
+}
+
+// INCIDENT DETAILS
+
+export const IncidentEditField = Schema.Literals(["title", "impact"])
+export type IncidentEditField = typeof IncidentEditField.Type
+
+/** An incident's title, impact and components, edited without posting an update. */
+export const IncidentEditForm = Schema.Struct({
+	incidentId: StatusPageIncidentId,
+	kind: StatusPageIncidentKind,
+	title: Schema.String,
+	impact: StatusPageIncidentImpact,
+	componentIds: Schema.Array(StatusPageComponentId),
+})
+export type IncidentEditForm = typeof IncidentEditForm.Type
+
+export const incidentEditFormOf = (incident: V2StatusPageIncident): IncidentEditForm => ({
+	incidentId: incident.id,
+	kind: incident.kind,
+	title: incident.title,
+	impact: incident.impact,
+	componentIds: incident.component_ids,
+})
+
+/** Maintenance has no impact to pick, so only an incident sends one. */
+export const incidentEditPayload = (form: IncidentEditForm): V2StatusPageIncidentUpdateParams => {
+	const base = { title: Str.trim(form.title), component_ids: form.componentIds }
+	return form.kind === "incident" ? { ...base, impact: form.impact } : base
 }
 
 // UPDATES

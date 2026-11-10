@@ -58,8 +58,14 @@ section.list{margin-top:32px}
 .list h2{font-size:13px;font-weight:600;text-transform:uppercase;letter-spacing:.04em;color:var(--muted);margin:0 0 12px}
 .incident h3{font-size:15px;margin:0 0 2px;display:flex;gap:8px;align-items:center;overflow-wrap:anywhere}
 .updates{list-style:none;margin:12px 0 0;padding:0}
-.updates li{padding:10px 0 0;margin-top:10px;border-top:1px solid var(--line)}
-.body{white-space:pre-wrap;overflow-wrap:anywhere;margin:2px 0}
+.updates>li{padding:10px 0 0;margin-top:10px;border-top:1px solid var(--line)}
+.body{overflow-wrap:anywhere;margin:2px 0}
+.body>*{margin:0}
+.body>*+*{margin-top:8px}
+.body ul,.body ol{padding-left:20px;display:grid;gap:2px}
+.body ul{list-style:disc}
+.body a{text-underline-offset:2px}
+.body code{font:13px/1.4 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;padding:1px 4px;border-radius:calc(var(--radius)/4);background:color-mix(in srgb,var(--fg) 8%,transparent)}
 .panel{margin-top:24px;border:1px solid var(--line);border-radius:var(--radius);background:var(--card);overflow:hidden;box-shadow:var(--shadow,none)}
 .panel-head{display:flex;align-items:center;gap:12px;flex-wrap:wrap;padding:14px 16px;border-bottom:1px solid var(--line)}
 .panel-head h2{font-size:16px;font-weight:500;margin:0;color:var(--fg);text-transform:none;letter-spacing:0}
@@ -81,8 +87,12 @@ button:focus-visible,a:focus-visible{outline:2px solid var(--link);outline-offse
 .uptime{font-size:13px;color:var(--muted);white-space:nowrap;font-variant-numeric:tabular-nums}
 .desc{font-size:13px;color:var(--muted);margin:2px 0 0 24px}
 .bars{display:flex;gap:2px;height:24px;margin:10px 0 0;padding:0;list-style:none}
-.bars li{flex:1;min-width:0;border-radius:calc(var(--radius)/4);background:var(--none)}
-.bars .d-ok{background:var(--ok)}.bars .d-degraded{background:var(--degraded)}.bars .d-down{background:var(--major)}
+.bars li{flex:1;min-width:0;border-radius:calc(var(--radius)/4)}
+.d-ok{background:var(--ok)}.d-degraded{background:var(--degraded)}.d-down{background:var(--major)}.d-none{background:var(--none)}
+.legend{display:flex;flex-wrap:wrap;gap:6px 16px;margin:0;padding:10px 16px;list-style:none;border-top:1px solid var(--line);font-size:12px;color:var(--muted)}
+.legend li{display:flex;align-items:center;gap:6px}
+.key{width:8px;height:8px;border-radius:2px;flex:none}
+.tip{position:fixed;z-index:10;pointer-events:none;max-width:260px;padding:6px 8px;border:1px solid var(--line);border-radius:calc(var(--radius)/2);background:var(--card);color:var(--fg);font-size:12px;line-height:1.35;box-shadow:var(--shadow,none)}
 .cal{width:100%;border-collapse:collapse;table-layout:fixed;font-size:13px}
 .cal th{font-weight:400;color:var(--muted);padding:10px 0;border-bottom:1px solid var(--line)}
 .cal td{height:40px;text-align:center;border-top:1px solid var(--line);border-left:1px solid var(--line);padding:0}
@@ -101,7 +111,7 @@ button.day[aria-expanded=true]{background:var(--tint)}
 .cal-panel .title{font-weight:500;color:var(--fg);overflow-wrap:anywhere}
 .cal-panel .meta{font-size:13px}
 .cal-panel .s-notice{--c:var(--muted)}
-@media (max-width:560px){.bars{gap:1px;height:22px}.cal td{height:36px}.panel-head{padding:12px}.component{padding:12px}}
+@media (max-width:560px){.bars{gap:1px;height:22px}.cal td{height:36px}.panel-head{padding:12px}.component{padding:12px}.legend{padding:10px 12px}}
 `
 
 export const manageStyles = `

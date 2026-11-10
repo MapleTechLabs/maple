@@ -114,25 +114,9 @@
 				"$TURBO_ROOT$/packages/domain/src/http/v2/integrations-chat.ts"
 			]
 		},
+		// No `dev` task: `bun dev` is one `alchemy dev` stack (scripts/dev.ts).
 		"eval": {
 			"dependsOn": ["^build"],
-			"cache": false
-		},
-		// No `dev` task: `bun dev` is one `alchemy dev` stack (scripts/dev.ts).
-		"tinybird:dev": {
-			"cache": false
-		},
-		"tinybird:build": {
-			"cache": false
-		},
-		"tinybird:deploy": {
-			"cache": false
-		},
-		"deploy:stack": {
-			"dependsOn": ["^build"],
-			"cache": false
-		},
-		"destroy:stack": {
 			"cache": false
 		}
 	}

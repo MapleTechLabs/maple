@@ -54,10 +54,6 @@ export const formatAddressLines = (address: BillingAddress | null | undefined): 
 	return lines
 }
 
-/** Does the address carry anything at all? */
-export const hasAddress = (address: BillingAddress | null | undefined): boolean =>
-	formatAddressLines(address).length > 0
-
 /** Trim an input field; an empty field becomes `null` so Stripe clears it. */
 export const fieldOrNull = (value: string): string | null => {
 	const trimmed = Str.trim(value)
