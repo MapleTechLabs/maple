@@ -7,7 +7,7 @@ import {
 	type SpanToolCall,
 	spanTtftMs,
 } from "@maple/agent-sessions"
-import { formatTimestampInTimezone } from "@maple/web-data/lib/timezone-format"
+import { formatTimestampInTimezone } from "@maple/ui/lib/timezone-format"
 import { formatDuration, formatNumber } from "@maple/ui/lib/format"
 import { shortId } from "@maple/ui/lib/ids"
 import { Option, Array as Arr, String as Str } from "effect"
@@ -100,8 +100,7 @@ const failureBanner = <M>(b: HtmlBuilder<M>, span: AiSessionSpan): Html => {
 	const errorType = span.genAi.errorType
 	const responseStatus = span.genAi.responseStatus
 	const hasErrorType = errorType !== undefined && errorType !== ""
-	const pill = (text: string) =>
-		badge(b, { pill: true, size: "xs", mono: true, variant: "crit" }, [text])
+	const pill = (text: string) => badge(b, { pill: true, size: "xs", mono: true, variant: "crit" }, [text])
 	return b.div(
 		[
 			b.Class(

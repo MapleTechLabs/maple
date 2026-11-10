@@ -13,7 +13,7 @@ import type {
 	V2AlertSilenceMatchers,
 } from "@maple/domain/http/v2"
 import { Effect, Option, Order, Array as Arr } from "effect"
-import { formatDateInTimezone, formatTimeInTimezone } from "@maple/web-data/lib/timezone-format"
+import { formatDateInTimezone, formatTimeInTimezone } from "@maple/ui/lib/timezone-format"
 import { toLoadFailure } from "@maple/views/data/load-failure"
 import { MapleApiV2Client } from "../../../platform/api-clients"
 import { isoMs } from "./time"

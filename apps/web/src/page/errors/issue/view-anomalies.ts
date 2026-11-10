@@ -1,6 +1,6 @@
 import type { AnomalyIncidentDocument } from "@maple/domain/http"
 import { countLabel } from "@maple/ui/lib/format"
-import { SEVERITY_TONE } from "@maple/web-data/anomalies/format"
+import { SEVERITY_TONE } from "@maple/views/lib/anomaly-display"
 import { anomalyIncidentFromV2 } from "../../../lib/services/anomalies"
 import { Option, Array as Arr, String as Str } from "effect"
 import { AsyncData } from "foldkit"

@@ -9,7 +9,7 @@ import {
 	type ReleaseHealth,
 	type ReleaseServiceImpact,
 } from "../../../components/releases/release-model"
-import { formatDateInTimezone, formatTimestampInTimezone } from "@maple/web-data/lib/timezone-format"
+import { formatDateInTimezone, formatTimestampInTimezone } from "@maple/ui/lib/timezone-format"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { linkButton } from "@maple/views/ui/button"
 import { eyebrow } from "@maple/views/ui/eyebrow"

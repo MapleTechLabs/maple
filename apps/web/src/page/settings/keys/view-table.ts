@@ -8,7 +8,7 @@ import {
 	type KeyRow,
 	type KeyType,
 } from "../../../components/settings/keys-table"
-import { formatDateInTimezone } from "@maple/web-data/lib/timezone-format"
+import { formatDateInTimezone } from "@maple/ui/lib/timezone-format"
 import { DateTime, Option, Array as Arr, String as Str } from "effect"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { badge } from "@maple/views/ui/display"
@@ -48,8 +48,7 @@ const COL = {
 	menu: "w-7 shrink-0",
 }
 
-const ROW_CLASS =
-	"flex items-center gap-4 border-b border-border-subtle px-4 py-3 last:border-0"
+const ROW_CLASS = "flex items-center gap-4 border-b border-border-subtle px-4 py-3 last:border-0"
 
 const typeBadge = (h: H, type: KeyType): Html =>
 	badge(h, { variant: TYPE_BADGE[type], size: "sm", mono: true }, [KEY_TYPE_LABELS[type]])

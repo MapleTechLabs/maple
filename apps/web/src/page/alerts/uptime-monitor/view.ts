@@ -1,4 +1,4 @@
-import { formatTimeInTimezone } from "@maple/web-data/lib/timezone-format"
+import { formatTimeInTimezone } from "@maple/ui/lib/timezone-format"
 import { Option, Array as Arr } from "effect"
 import { AsyncData, Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"

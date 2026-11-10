@@ -1,4 +1,6 @@
-import { String as Str } from "effect"
+import { Option, String as Str } from "effect"
+import { trySync } from "./try-sync"
+
 const DEFAULT_TIMEZONE = "UTC"
 
 // Whether a zone name is one the runtime knows never changes, and asking is
@@ -13,26 +15,14 @@ export function isValidIanaTimeZone(value: string): boolean {
 
 	const known = knownZones.get(value)
 	if (known !== undefined) return known
-	let valid: boolean
-	try {
-		new Intl.DateTimeFormat("en-US", { timeZone: value }).format(new Date())
-		valid = true
-	} catch {
-		valid = false
-	}
+	const valid = Option.isSome(
+		trySync(() => new Intl.DateTimeFormat("en-US", { timeZone: value }).format(new Date())),
+	)
 	knownZones.set(value, valid)
 	return valid
 }
 
 export function getBrowserTimeZone(): string {
-	try {
-		const zone = Intl.DateTimeFormat().resolvedOptions().timeZone
-		if (zone && isValidIanaTimeZone(zone)) {
-			return zone
-		}
-	} catch {
-		// fall through to UTC
-	}
-
-	return DEFAULT_TIMEZONE
+	const zone = Option.getOrUndefined(trySync(() => Intl.DateTimeFormat().resolvedOptions().timeZone))
+	return zone && isValidIanaTimeZone(zone) ? zone : DEFAULT_TIMEZONE
 }

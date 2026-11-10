@@ -1,6 +1,6 @@
 import { StatusPageIncidentImpact } from "@maple/domain"
 import type { V2StatusPageComponent, V2StatusPageIncident } from "@maple/domain/http/v2"
-import { formatTimestampInTimezone } from "@maple/web-data/lib/timezone-format"
+import { formatTimestampInTimezone } from "@maple/ui/lib/timezone-format"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { failureMessage, type LoadFailure } from "@maple/views/data/load-failure"
 import { alert, alertDescription, alertTitle } from "@maple/views/ui/alert"

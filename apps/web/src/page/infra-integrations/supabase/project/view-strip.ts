@@ -1,5 +1,5 @@
 import { EMPTY_VALUE, formatBytes, formatPercent } from "@maple/ui/lib/format"
-import { formatClockInTimezone } from "@maple/web-data/lib/timezone-format"
+import { formatClockInTimezone } from "@maple/ui/lib/timezone-format"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { timestamp } from "@maple/views/ui/timestamp"
 import { VALUE_TONE } from "../../../../components/infra/severity-tokens"

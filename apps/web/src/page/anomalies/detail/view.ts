@@ -1,10 +1,6 @@
 import type { AnomalyIncidentDocument } from "@maple/domain/http"
-import {
-	isStaleOpenIncident,
-	RESOLVE_REASON_LABEL,
-	SEVERITY_TONE,
-	severityToneFor,
-} from "@maple/web-data/anomalies/format"
+import { isStaleOpenIncident, RESOLVE_REASON_LABEL } from "@maple/web-data/anomalies/format"
+import { SEVERITY_TONE, severityToneFor } from "@maple/views/lib/anomaly-display"
 import { Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { ResolveThemeColors } from "@maple/views/charts/theme-colors"

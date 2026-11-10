@@ -3,7 +3,7 @@ import { EMPTY_VALUE, formatLatency, formatNumber, formatPercent } from "@maple/
 import { LATENCY_BAR_TONE, latencyLevel, latencyToneClass } from "@maple/ui/lib/latency-tone"
 import { refreshingClass } from "@maple/ui/lib/refreshing"
 import { cn } from "@maple/ui/lib/utils"
-import { formatClockInTimezone } from "@maple/web-data/lib/timezone-format"
+import { formatClockInTimezone } from "@maple/ui/lib/timezone-format"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { heading } from "@maple/views/ui/heading"

@@ -13,7 +13,7 @@ import {
 	type SourceSignal,
 } from "@maple/domain/primitives"
 import { Option, Schema, Array as Arr, Order } from "effect"
-import { formatTimestampInTimezone } from "@maple/web-data/lib/timezone-format"
+import { formatTimestampInTimezone } from "@maple/ui/lib/timezone-format"
 import { timestamp } from "@maple/views/ui/timestamp"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { AppRoute, hrefOf } from "../../../route"

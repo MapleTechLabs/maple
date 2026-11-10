@@ -6,7 +6,7 @@ import type {
 	ErrorTextToken,
 	FailureStatus,
 } from "../../../lib/agent-sessions/tool-error-display"
-import { formatDateInTimezone, formatTimestampInTimezone } from "@maple/web-data/lib/timezone-format"
+import { formatDateInTimezone, formatTimestampInTimezone } from "@maple/ui/lib/timezone-format"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { heading } from "@maple/views/ui/heading"
 import { inlineCodeClassName } from "@maple/views/ui/inline-code"

@@ -2,7 +2,7 @@ import type { AlertDestinationDocument, AlertIncidentDocument, AlertRuleDocument
 import { ANOMALY_SIGNAL_LABELS } from "@maple/web-data/alerts/anomaly-rule"
 import { formatAlertDuration } from "@maple/web-data/alerts/form-utils"
 import { incidentTitle } from "@maple/web-data/alerts/overview-derive"
-import { formatDateInTimezone, formatTimeInTimezone } from "@maple/web-data/lib/timezone-format"
+import { formatDateInTimezone, formatTimeInTimezone } from "@maple/ui/lib/timezone-format"
 import { Array as Arr, Order } from "effect"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { card, cardPanel } from "@maple/views/ui/card"

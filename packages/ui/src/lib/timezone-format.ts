@@ -1,5 +1,5 @@
 import { warehouseDateTimeToIso } from "@maple/query-engine"
-import { EMPTY_VALUE } from "@maple/ui/lib/format"
+import { EMPTY_VALUE } from "./format"
 import { getBrowserTimeZone, isValidIanaTimeZone } from "./timezone"
 
 type TimezoneFormatInput = string | number | Date

@@ -3,7 +3,7 @@ import { formatBytes, formatNumber, pluralize } from "@maple/ui/lib/format"
 import { cn } from "@maple/ui/lib/utils"
 import type { VariantDifference } from "../../../lib/agent-sessions/tool-error-display"
 import { formatDurationNs } from "@maple/web-data/lib/tool-analytics"
-import { formatTimestampInTimezone } from "@maple/web-data/lib/timezone-format"
+import { formatTimestampInTimezone } from "@maple/ui/lib/timezone-format"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { AppRoute, hrefOf } from "../../../route"
@@ -237,10 +237,15 @@ const sampleRow = (
 					...(options.variant === undefined || options.variant === ""
 						? []
 						: [
-								badge(h, { variant: "meta", size: "xs", className: "hidden px-1.5 md:inline-flex" }, [
-									"variant ",
-									typography(h, { tone: "soft" }, [options.variant]),
-								]),
+								badge(
+									h,
+									{
+										variant: "meta",
+										size: "xs",
+										className: "hidden px-1.5 md:inline-flex",
+									},
+									["variant ", typography(h, { tone: "soft" }, [options.variant])],
+								),
 							]),
 					h.span([h.Class("grow")], []),
 					...(options.isOpen || row.argumentsBytes === 0

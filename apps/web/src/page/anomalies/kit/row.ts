@@ -5,13 +5,15 @@ import {
 	deviation,
 	formatSignalValue,
 	isStaleOpenIncident,
+	SIGNAL_LABEL,
+} from "@maple/web-data/anomalies/format"
+import {
 	META_CHIP_CLASS,
 	SEVERITY_TONE,
 	severityToneFor,
 	SIGNAL_ICON_NAME,
-	SIGNAL_LABEL,
 	TRIAGE_STATUS_CHIP,
-} from "@maple/web-data/anomalies/format"
+} from "@maple/views/lib/anomaly-display"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { AppRoute, hrefOf } from "../../../route"
 import { badge } from "@maple/views/ui/display"

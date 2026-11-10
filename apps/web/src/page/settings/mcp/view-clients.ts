@@ -1,6 +1,6 @@
 import * as Policy from "@maple/domain/policy"
 import type { V2McpConnection } from "@maple/domain/http/v2"
-import { formatDateInTimezone } from "@maple/web-data/lib/timezone-format"
+import { formatDateInTimezone } from "@maple/ui/lib/timezone-format"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { button } from "@maple/views/ui/button"

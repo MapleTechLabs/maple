@@ -1,12 +1,8 @@
 import type { AnomalyIncidentDocument } from "@maple/domain/http"
 import type { V2AnomalyIncidentTimeseries } from "@maple/domain/http/v2"
 import { cn } from "@maple/ui/lib/utils"
-import {
-	deviation,
-	formatSignalValue,
-	isStaleOpenIncident,
-	severityToneFor,
-} from "@maple/web-data/anomalies/format"
+import { deviation, formatSignalValue, isStaleOpenIncident } from "@maple/web-data/anomalies/format"
+import { severityToneFor } from "@maple/views/lib/anomaly-display"
 import { Option, Array as Arr } from "effect"
 import { AsyncData, Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"

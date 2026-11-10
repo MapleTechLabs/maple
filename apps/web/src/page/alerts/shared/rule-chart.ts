@@ -23,7 +23,7 @@ import {
 	type SignalSource,
 } from "@maple/web-data/alerts/chart-series"
 import { formatSignalValue } from "@maple/web-data/alerts/form-utils"
-import { normalizeTimestampInput } from "@maple/web-data/lib/timezone-format"
+import { normalizeTimestampInput } from "@maple/ui/lib/timezone-format"
 import { Option, Array as Arr, Record as Rec, String as Str } from "effect"
 import { Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"

@@ -1,5 +1,5 @@
 import { resolveRelativeRangeToWarehouse } from "@maple/query-engine"
-import { normalizeTimestampInput } from "@maple/web-data/lib/timezone-format"
+import { normalizeTimestampInput } from "@maple/ui/lib/timezone-format"
 import { DateTime, Option, Predicate, Schema, Array as Arr, String as Str } from "effect"
 import type { AppRoute, RouteTag } from "./app-route"
 

@@ -18,7 +18,7 @@ import type { AlertRuleStateRow } from "../collections/alerts"
 import { comparatorLabels, formatSignalValue } from "./form-utils"
 import { isDefaultAnomalyRule } from "./anomaly-rule"
 import { isRuleRouted, staleThresholdMs } from "./rule-status"
-import { formatTimestampInTimezone } from "../lib/timezone-format"
+import { formatTimestampInTimezone } from "@maple/ui/lib/timezone-format"
 
 const evaluationCadence = (rule: AlertRuleDocument): string => {
 	const minutes = alertRuleIntervalMinutes(rule)

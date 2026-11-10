@@ -14,7 +14,7 @@ import {
 	rowsToAlertIncidentDocuments,
 	rowToAlertRuleDocument,
 } from "@maple/web-data/collections/alerts"
-import { normalizeTimestampInput } from "@maple/web-data/lib/timezone-format"
+import { normalizeTimestampInput } from "@maple/ui/lib/timezone-format"
 import { Option, Array as Arr } from "effect"
 import { AsyncData } from "foldkit"
 import { lastBy } from "../../kit/last-by"

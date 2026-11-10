@@ -1,7 +1,7 @@
 import type { MarkdownDocument } from "@foldkit/markdown"
 import type { AnnotationSegment } from "@maple/domain/chat-annotations"
 import { stripChatContext } from "@maple/domain/chat-preamble"
-import { formatTimestampInTimezone } from "@maple/web-data/lib/timezone-format"
+import { formatTimestampInTimezone } from "@maple/ui/lib/timezone-format"
 import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { messageResponse, type ViewOverrides } from "../../../kit/message-response"

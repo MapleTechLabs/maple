@@ -39,7 +39,7 @@ import { correlationStrips, type StripSeries } from "../../../infra/kit/correlat
 import { heroChip } from "../../../infra/kit/hero-chip"
 import { pageHeroParts } from "../../../infra/kit/page-parts"
 import { pageTime } from "../../kit/page-time"
-import { formatTimeInTimezone } from "@maple/web-data/lib/timezone-format"
+import { formatTimeInTimezone } from "@maple/ui/lib/timezone-format"
 import { timestamp } from "@maple/views/ui/timestamp"
 import type { WorkerDetail } from "../data"
 import { MountLinkedCursor } from "./command"

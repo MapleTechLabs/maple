@@ -7,7 +7,7 @@ import {
 	rowsToAlertIncidentDocuments,
 	rowsToAlertRuleDocuments,
 } from "@maple/web-data/collections/alerts"
-import { normalizeTimestampInput } from "@maple/web-data/lib/timezone-format"
+import { normalizeTimestampInput } from "@maple/ui/lib/timezone-format"
 import { AsyncData } from "foldkit"
 import { lookupField } from "../../kit/autocomplete-lookups"
 import { previewIssue, previewPayload, previewStateOf, type PreviewState } from "../shared/preview"

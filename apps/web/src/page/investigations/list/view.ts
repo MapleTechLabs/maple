@@ -9,7 +9,7 @@ import {
 	investigationScope,
 	investigationSeverity,
 } from "@maple/web-data/investigations/display"
-import { formatTimestampInTimezone } from "@maple/web-data/lib/timezone-format"
+import { formatTimestampInTimezone } from "@maple/ui/lib/timezone-format"
 import { AsyncData, Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { timestamp } from "@maple/views/ui/timestamp"

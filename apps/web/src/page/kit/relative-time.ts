@@ -1,6 +1,6 @@
 import type { TimeInput } from "@maple/ui/lib/time-format"
 import { timestamp, type TimestampFormat } from "@maple/views/ui/timestamp"
-import { formatTimestampInTimezone } from "@maple/web-data/lib/timezone-format"
+import { formatTimestampInTimezone } from "@maple/ui/lib/timezone-format"
 import type { ChildAttribute, Html, HtmlBuilder } from "foldkit/html"
 
 // `RelativeTime`: `timestamp` with relative text. `nowMs` is the page's resolved clock.

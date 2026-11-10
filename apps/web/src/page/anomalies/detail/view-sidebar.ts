@@ -5,12 +5,10 @@ import {
 	deviation,
 	formatSignalValue,
 	isStaleOpenIncident,
-	META_CHIP_CLASS,
 	RESOLVE_REASON_LABEL,
 	SIGNAL_LABEL,
-	severityToneFor,
-	TRIAGE_STATUS_CHIP,
 } from "@maple/web-data/anomalies/format"
+import { META_CHIP_CLASS, severityToneFor, TRIAGE_STATUS_CHIP } from "@maple/views/lib/anomaly-display"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { button } from "@maple/views/ui/button"
 import { detailRailGroup, detailRailRow } from "@maple/views/ui/detail-rail"

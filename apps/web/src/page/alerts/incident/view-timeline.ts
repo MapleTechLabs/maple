@@ -1,7 +1,7 @@
 import { TONE_BORDER } from "@maple/ui/lib/tone"
 import { cn } from "@maple/ui/lib/utils"
 import type { IncidentTimelineEntry } from "@maple/web-data/alerts/incident-timeline"
-import { formatDateInTimezone, formatTimeInTimezone } from "@maple/web-data/lib/timezone-format"
+import { formatDateInTimezone, formatTimeInTimezone } from "@maple/ui/lib/timezone-format"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { AppRoute, hrefOf } from "../../../route"
 import { eyebrow } from "@maple/views/ui/eyebrow"

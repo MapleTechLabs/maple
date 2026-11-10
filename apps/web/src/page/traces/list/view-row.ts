@@ -1,7 +1,7 @@
 import { warehouseDateTimeToIso } from "@maple/query-engine"
 import { formatDuration, formatNumber, pluralize } from "@maple/ui/lib/format"
 import { shortId } from "@maple/ui/lib/ids"
-import { formatTimestampInTimezone } from "@maple/web-data/lib/timezone-format"
+import { formatTimestampInTimezone } from "@maple/ui/lib/timezone-format"
 import { cn } from "@maple/ui/lib/utils"
 import { Option, String as Str } from "effect"
 import { traceHrefFrom } from "./peek"
