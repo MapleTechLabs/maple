@@ -17,7 +17,7 @@ import { BillingCustomer, OrgId, UserId } from "@maple/domain/http"
 import { AlertDestinationId, UptimeIntervalSeconds, UptimeMonitorId } from "@maple/domain/primitives"
 import { UPTIME_USER_AGENT, UptimeCheckReport, type UptimeMonitorConfig } from "@maple/domain/uptime"
 import { Env } from "@maple/backend/platform/Env"
-import { parseSecretKeyring, sealSecretV2 } from "@maple/backend/platform/SecretBox"
+import { parseSecretKeyring, sealSecret } from "@maple/backend/platform/SecretBox"
 import { uptimeMonitorHeadersSlot } from "@maple/backend/platform/secret-slots"
 import {
 	cleanupTestDbs,
@@ -1200,7 +1200,7 @@ describe("UptimeMonitorsService backing alert rule", () => {
 					{ primary: Buffer.alloc(32, 9).toString("base64"), decryptOnly: Option.none() },
 					(message) => message,
 				)
-				const sealed = yield* sealSecretV2(
+				const sealed = yield* sealSecret(
 					keyring,
 					uptimeMonitorHeadersSlot,
 					{ orgId, id },
