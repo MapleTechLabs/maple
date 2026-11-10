@@ -46,6 +46,7 @@ import {
 } from "@maple/domain/http"
 import * as CH from "@maple/query-engine/ch"
 import * as PG from "@maple-dev/effect-orm/postgres"
+import { leaseClaimable, leaseStillOurs } from "./lease"
 import {
 	CloudflareAnalyticsState,
 	CloudflareHyperdriveConfigs,
@@ -1547,15 +1548,8 @@ export class CloudflareAnalyticsService extends Context.Service<
 							$.accountId.eq(accountId),
 							$.dataset.eq(WORKERS_DATASET),
 							$.zoneId.eq(""),
-							PG.or(
-								$.leaseUntil.isNull(),
-								$.leaseUntil.lt(now),
-								// Corrupt-lease escape hatch: a live lease is always bounded by now+LEASE_MS,
-								// so anything beyond 2x that is impossible under normal operation (e.g. a
-								// clock jump or a crashed writer that left a bogus far-future value) and is
-								// safe to reclaim rather than let it wedge the org forever.
-								$.leaseUntil.gt(now + 2 * LEASE_MS),
-							),
+							// A live lease never exceeds now + LEASE_MS; one past 2x is corrupt and reclaimed.
+							leaseClaimable($.leaseUntil, now, 2 * LEASE_MS),
 							PG.or($.backoffUntil.isNull(), $.backoffUntil.lte(now)),
 						])
 						.returning(),
@@ -1589,7 +1583,7 @@ export class CloudflareAnalyticsService extends Context.Service<
 							$.accountId.eq(accountId),
 							$.dataset.eq(WORKERS_DATASET),
 							$.zoneId.eq(""),
-							claimedUntil == null ? $.leaseUntil.isNull() : $.leaseUntil.eq(claimedUntil),
+							leaseStillOurs($.leaseUntil, claimedUntil),
 						]),
 				),
 			)

@@ -6,6 +6,7 @@
 import { randomUUID } from "node:crypto"
 import { IntegrationsPersistenceError, type OrgId } from "@maple/domain/http"
 import * as PG from "@maple-dev/effect-orm/postgres"
+import { leaseClaimable } from "../lease"
 import { PlanetscalePollState } from "@maple/db/tables"
 import { Clock, Duration, Effect, Array as Arr } from "effect"
 import type { DatabaseApi } from "@maple/backend/platform/DatabaseLive"
@@ -75,7 +76,7 @@ export const makePlanetScalePollState = (database: DatabaseApi, service: string)
 			db.run(
 				PG.update(PlanetscalePollState)
 					.set({ leaseUntil: now + LEASE_MS, updatedAt: now })
-					.where(($) => [$.id.eq(existing.id), PG.or($.leaseUntil.isNull(), $.leaseUntil.lt(now))])
+					.where(($) => [$.id.eq(existing.id), leaseClaimable($.leaseUntil, now)])
 					.returning("id"),
 			),
 		)

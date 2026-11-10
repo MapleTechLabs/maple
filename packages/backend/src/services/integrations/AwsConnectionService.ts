@@ -1,5 +1,6 @@
 import { randomBytes, randomUUID } from "node:crypto"
 import * as PG from "@maple-dev/effect-orm/postgres"
+import { leaseClaimable } from "./lease"
 import { hashIngestKey, parseIngestKeyLookupHmacKey } from "@maple/db"
 import { AwsConnections, type AwsConnectionRow, Sources } from "@maple/db/tables"
 import {
@@ -665,7 +666,7 @@ export class AwsConnectionService extends Context.Service<AwsConnectionService, 
 							.select(($) => ({ id: $.id, lastCheckedAt: $.lastCheckedAt }))
 							.where(($) => [
 								PG.or($.lastCheckedAt.isNull(), $.lastCheckedAt.lt(now - CHECK_INTERVAL_MS)),
-								PG.or($.checkLeaseUntil.isNull(), $.checkLeaseUntil.lt(now)),
+								leaseClaimable($.checkLeaseUntil, now),
 								PG.or(
 									$.s.pausedAt.isNull(),
 									PG.and($.s.pausedUntil.isNotNull(), $.s.pausedUntil.lte(now)),
@@ -693,7 +694,7 @@ export class AwsConnectionService extends Context.Service<AwsConnectionService, 
 												$.id,
 												Arr.map(due, (row) => row.id),
 											),
-											PG.or($.checkLeaseUntil.isNull(), $.checkLeaseUntil.lt(now)),
+											leaseClaimable($.checkLeaseUntil, now),
 										])
 										.returning(),
 								),

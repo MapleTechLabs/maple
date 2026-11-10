@@ -5,6 +5,7 @@ import { IntegrationsPersistenceError, OrgId } from "@maple/domain/http"
 import { SearchConsoleSiteId } from "@maple/domain/primitives"
 import type { SearchConsoleDailyRow } from "@maple/domain/tinybird"
 import * as PG from "@maple-dev/effect-orm/postgres"
+import { leaseClaimable, leaseStillOurs } from "./lease"
 import { OAuthConnections, SearchConsoleSites, type SearchConsoleSiteRow } from "@maple/db/tables"
 import { Clock, Context, Effect, Layer, Ref, Result, Schedule, Schema, Array as Arr } from "effect"
 import { FetchHttpClient, HttpClient } from "effect/http"
@@ -132,12 +133,8 @@ export class SearchConsoleImportService extends Context.Service<
 		)
 
 		const leaseFree = ($: PG.ColumnAccessor<typeof SearchConsoleSites.columns>, now: number) =>
-			PG.or(
-				$.leaseUntil.isNull(),
-				$.leaseUntil.lt(now),
-				// A live lease never reaches past now + LEASE_MS; anything further is a corrupt value.
-				$.leaseUntil.gt(now + 2 * LEASE_MS),
-			)
+			// A live lease never reaches past now + LEASE_MS; anything further is a corrupt value.
+			leaseClaimable($.leaseUntil, now, 2 * LEASE_MS)
 
 		/**
 		 * Enabled properties under a live grant with work to do and no backoff, healthy ones first.
@@ -229,12 +226,7 @@ export class SearchConsoleImportService extends Context.Service<
 				db.run(
 					PG.update(SearchConsoleSites)
 						.set({ updatedAt: now, ...set })
-						.where(($) => [
-							$.id.eq(site.id),
-							site.leaseUntil === null
-								? $.leaseUntil.isNull()
-								: $.leaseUntil.eq(site.leaseUntil),
-						]),
+						.where(($) => [$.id.eq(site.id), leaseStillOurs($.leaseUntil, site.leaseUntil)]),
 				),
 			)
 

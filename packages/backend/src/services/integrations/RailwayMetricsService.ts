@@ -19,6 +19,7 @@ import {
 } from "@maple/domain/http"
 import { pollStatus } from "@maple/domain/integration-inventory"
 import * as PG from "@maple-dev/effect-orm/postgres"
+import { leaseClaimable, leaseStillOurs } from "./lease"
 import {
 	RailwayConnections,
 	RailwayEnvironments,
@@ -494,12 +495,8 @@ export class RailwayMetricsService extends Context.Service<RailwayMetricsService
 							.set({ leaseUntil: now + LEASE_MS, updatedAt: now })
 							.where(($) => [
 								$.id.eq(connectionId),
-								PG.or(
-									$.leaseUntil.isNull(),
-									$.leaseUntil.lt(now),
-									// A bogus far-future lease (clock jump, crashed writer) must not wedge the org.
-									$.leaseUntil.gt(now + 2 * BILLING_HOLD_MS),
-								),
+								// A bogus far-future lease (clock jump, crashed writer) must not wedge the org.
+								leaseClaimable($.leaseUntil, now, 2 * BILLING_HOLD_MS),
 							])
 							.returning(),
 					),
@@ -518,7 +515,7 @@ export class RailwayMetricsService extends Context.Service<RailwayMetricsService
 							.set({ leaseUntil: holdUntilMs, updatedAt: now })
 							.where(($) => [
 								$.id.eq(connectionId),
-								claimedUntil === null ? $.leaseUntil.isNull() : $.leaseUntil.eq(claimedUntil),
+								leaseStillOurs($.leaseUntil, claimedUntil),
 							]),
 					),
 				)

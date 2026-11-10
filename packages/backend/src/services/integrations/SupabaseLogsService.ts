@@ -16,6 +16,7 @@ import {
 } from "@maple/domain/http"
 import type { SupabaseProjectRef } from "@maple/domain/primitives"
 import * as PG from "@maple-dev/effect-orm/postgres"
+import { leaseClaimable, leaseStillOurs } from "./lease"
 import {
 	SupabaseConnections,
 	SupabaseProjects,
@@ -236,13 +237,9 @@ export class SupabaseLogsService extends Context.Service<SupabaseLogsService, Su
 							.where(($) => [
 								$.id.eq(project.id),
 								$.logsEnabled.eq(true),
-								PG.or(
-									$.logsLeaseUntil.isNull(),
-									$.logsLeaseUntil.lt(now),
-									// A bogus far-future lease (clock jump, crashed writer) must not wedge the project;
-									// the bound sits above the longest intentional hold so refusal holds survive.
-									$.logsLeaseUntil.gt(now + REFUSED_HOLD_MS + LEASE_MS),
-								),
+								// A bogus far-future lease (clock jump, crashed writer) must not wedge the project;
+								// the bound sits above the longest intentional hold so refusal holds survive.
+								leaseClaimable($.logsLeaseUntil, now, REFUSED_HOLD_MS + LEASE_MS),
 							])
 							.returning(),
 					),
@@ -256,9 +253,7 @@ export class SupabaseLogsService extends Context.Service<SupabaseLogsService, Su
 							.set({ logsLeaseUntil: holdUntil })
 							.where(($) => [
 								$.id.eq(claimed.id),
-								claimed.logsLeaseUntil === null
-									? $.logsLeaseUntil.isNull()
-									: $.logsLeaseUntil.eq(claimed.logsLeaseUntil),
+								leaseStillOurs($.logsLeaseUntil, claimed.logsLeaseUntil),
 							]),
 					),
 				)
@@ -275,9 +270,7 @@ export class SupabaseLogsService extends Context.Service<SupabaseLogsService, Su
 							.where(($) => [
 								$.id.eq(claimed.id),
 								$.logsEnabled.eq(true),
-								claimed.logsLeaseUntil === null
-									? $.logsLeaseUntil.isNull()
-									: $.logsLeaseUntil.eq(claimed.logsLeaseUntil),
+								leaseStillOurs($.logsLeaseUntil, claimed.logsLeaseUntil),
 							]),
 					),
 				)

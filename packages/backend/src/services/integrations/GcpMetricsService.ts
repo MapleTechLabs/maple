@@ -15,6 +15,7 @@ import { GCP_METRIC_GROUPS, type GcpMetric, type GcpMetricGroup } from "@maple/d
 import { IntegrationsPersistenceError, UserId } from "@maple/domain/http"
 import type { OrgId } from "@maple/domain/primitives"
 import * as PG from "@maple-dev/effect-orm/postgres"
+import { leaseClaimable } from "./lease"
 import { GcpConnectors, GcpResources, type GcpConnectorRow } from "@maple/db/tables"
 import {
 	Clock,
@@ -787,7 +788,7 @@ export class GcpMetricsService extends Context.Service<GcpMetricsService, GcpMet
 				const now = yield* Clock.currentTimeMillis
 				const isDue = ($: PG.ColumnAccessor<typeof GcpConnectors.columns>) => [
 					$.metricsEnabled.eq(true),
-					PG.or($.metricsLeaseUntil.isNull(), $.metricsLeaseUntil.lt(now)),
+					leaseClaimable($.metricsLeaseUntil, now),
 				]
 				const due = yield* dbExecute((db) =>
 					db.run(

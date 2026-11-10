@@ -16,6 +16,7 @@ import {
 } from "@maple/domain/http"
 import type { SupabaseProjectRef } from "@maple/domain/primitives"
 import * as PG from "@maple-dev/effect-orm/postgres"
+import { leaseClaimable, leaseStillOurs } from "./lease"
 import {
 	SupabaseConnections,
 	SupabaseProjectInsights as SupabaseProjectInsightsTable,
@@ -205,12 +206,8 @@ export class SupabaseInsightsService extends Context.Service<
 						.set({ leaseUntil: now + LEASE_MS })
 						.where(($) => [
 							$.projectId.eq(project.id),
-							PG.or(
-								$.leaseUntil.isNull(),
-								$.leaseUntil.lt(now),
-								// A bogus far-future lease (clock jump, crashed writer) must not wedge the project.
-								$.leaseUntil.gt(now + 2 * LEASE_MS),
-							),
+							// A bogus far-future lease (clock jump, crashed writer) must not wedge the project.
+							leaseClaimable($.leaseUntil, now, 2 * LEASE_MS),
 						])
 						.returning(),
 				),
@@ -227,9 +224,7 @@ export class SupabaseInsightsService extends Context.Service<
 						.set(set)
 						.where(($) => [
 							$.projectId.eq(claimed.projectId),
-							claimed.leaseUntil === null
-								? $.leaseUntil.isNull()
-								: $.leaseUntil.eq(claimed.leaseUntil),
+							leaseStillOurs($.leaseUntil, claimed.leaseUntil),
 						]),
 				),
 			)
