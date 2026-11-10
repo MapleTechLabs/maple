@@ -205,6 +205,20 @@ describe("condition builder", () => {
 		)
 	})
 
+	test("a doubled operator stays in Text with its reason instead of a row whose value is =", () => {
+		scene(
+			{ update, view },
+			given(hosted("service.name ==")),
+			caretMounted(),
+			expectView(
+				text("This filter uses syntax the builder can't show, so it stays in Text."),
+			).toExist(),
+			expectView(label("Where clause for query A")).toHaveValue("service.name =="),
+			expectView(role("group", { name: "Conditions for query A" })).not.toExist(),
+			expectView(role("button", { name: "Builder" })).toBeDisabled(),
+		)
+	})
+
 	test("an OR group the query drops also says which group is not applied", () => {
 		scene(
 			{ update, view },

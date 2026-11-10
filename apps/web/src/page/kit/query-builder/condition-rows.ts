@@ -53,12 +53,23 @@ export type UnshowableReason = "mixedFields" | "orOperators" | "orNotApplied" | 
 type Part = Result.Result<Draft, UnshowableReason>
 
 /**
+ * A bare value that is the rest of a mistyped operator: `key ==` reads as `key = "="` and
+ * `key >=` as `key > "="`. Quoted (`key = "="`), the same value is one the user meant.
+ */
+const isStrayOperator = (clause: ParsedClause, part: string): boolean =>
+	/^=|^[=!<>]+$/.test(clause.value) &&
+	!Str.includes(`"${clause.value}"`)(part) &&
+	!Str.includes(`'${clause.value}'`)(part)
+
+/**
  * One AND-ed part: a single clause, or an OR group whose members share key and an any-of
  * operator, on a key the source ORs (the engine's `whereKeyMatchesAnyOf`).
  */
 const readPart = (part: string, dataSource: QueryBuilderDataSource): Part => {
 	const parsed = parseWhereClause(part, { orGroups: true })
 	if (parsed.warnings.length > 0) return Result.fail("syntax")
+	const clauses = [...parsed.clauses, ...Arr.flatten(parsed.groups)]
+	if (Arr.some(clauses, (each) => isStrayOperator(each, part))) return Result.fail("syntax")
 	const [clause] = parsed.clauses
 	if (parsed.groups.length === 0 && parsed.clauses.length === 1 && clause !== undefined)
 		return Result.succeed(draftOf(clause))
