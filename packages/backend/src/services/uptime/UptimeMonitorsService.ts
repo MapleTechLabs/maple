@@ -69,7 +69,9 @@ import { Database } from "@maple/backend/platform/DatabaseLive"
 import { makeDbExecute } from "@maple/backend/platform/db-execute"
 import { msToSqlTimestamp } from "@maple/backend/platform/time"
 import { Env } from "@maple/backend/platform/Env"
+import { secretKeyringFromEnv } from "@maple/backend/platform/SecretBox"
 import { ensureWithinLimit, UptimeMonitorAllowance } from "./UptimeMonitorAllowance"
+import { openConfigHeaders, type StoredUptimeHeaders } from "./uptime-headers"
 import { countCheck, countOne, upsertDailyCounts, type UptimeDailyCount } from "./uptime-daily"
 import { bumpPagesForMonitors } from "@maple/backend/services/status-pages/outbox"
 import { uptimeRuleFields } from "@maple/backend/services/alerts/AlertRuleModel"
@@ -347,6 +349,9 @@ type MonitorWithStateRow = Pick<
 	| "name"
 	| "kind"
 	| "configJson"
+	| "headersCiphertext"
+	| "headersIv"
+	| "headersTag"
 	| "intervalSeconds"
 	| "failuresToDown"
 	| "serviceName"
@@ -377,6 +382,9 @@ const selectMonitors = () =>
 			name: $.name,
 			kind: $.kind,
 			configJson: $.configJson,
+			headersCiphertext: $.headersCiphertext,
+			headersIv: $.headersIv,
+			headersTag: $.headersTag,
 			intervalSeconds: $.intervalSeconds,
 			failuresToDown: $.failuresToDown,
 			serviceName: $.serviceName,
@@ -520,45 +528,63 @@ export class UptimeMonitorsService extends Context.Service<UptimeMonitorsService
 				ownHeaders: ["user-agent"],
 			})
 			const apiBaseUrl = Str.replace(/\/+$/u, "")(env.MAPLE_API_BASE_URL)
+			const keyring = yield* secretKeyringFromEnv(
+				env,
+				(message) => new UptimeMonitorPersistenceError({ message }),
+			)
+			const openHeaders = (
+				row: { readonly orgId: OrgId; readonly id: UptimeMonitorId } & StoredUptimeHeaders,
+				config: UptimeMonitorConfig,
+			) =>
+				openConfigHeaders(
+					keyring,
+					row,
+					config,
+					(reason) =>
+						new UptimeMonitorPersistenceError({
+							message: `Stored headers of uptime monitor ${row.id} could not be opened: ${reason}`,
+						}),
+				)
 
 			const toRecord = (row: MonitorWithStateRow) =>
 				Effect.all({
 					intervalSeconds: decodeInterval(row.intervalSeconds),
 					destinationIds: decodeDestinationIds(row.destinationIdsJson ?? []),
 				}).pipe(
-					Effect.mapBoth({
-						onFailure: (error) =>
+					Effect.mapError(
+						(error) =>
 							new UptimeMonitorPersistenceError({
 								message: `Stored interval or destinations of uptime monitor ${row.id} are invalid`,
 								cause: error,
 							}),
-						onSuccess: ({ intervalSeconds, destinationIds }): UptimeMonitorRecord => ({
-							id: row.id,
-							orgId: row.orgId,
-							name: row.name,
-							kind: row.kind,
-							config: row.configJson,
-							intervalSeconds,
-							failuresToDown: row.failuresToDown,
-							serviceName: row.serviceName,
-							enabled: row.enabled,
-							destinationIds,
-							alertRuleId: row.alertRuleId,
-							heartbeatUrl:
-								row.heartbeatToken === null ? null : `${apiBaseUrl}/hb/${row.heartbeatToken}`,
-							state: {
-								status: row.status,
-								consecutiveFailures: row.consecutiveFailures,
-								consecutiveSuccesses: row.consecutiveSuccesses,
-								statusChangedAt: row.statusChangedAt,
-								lastCheck: row.lastCheckJson,
-								recent: row.recentJson,
-								lastPingAt: row.lastPingAt,
-							},
-							createdAt: row.createdAt,
-							updatedAt: row.updatedAt,
-						}),
-					}),
+					),
+					Effect.zip(openHeaders(row, row.configJson)),
+					Effect.map(([{ intervalSeconds, destinationIds }, config]): UptimeMonitorRecord => ({
+						id: row.id,
+						orgId: row.orgId,
+						name: row.name,
+						kind: row.kind,
+						config,
+						intervalSeconds,
+						failuresToDown: row.failuresToDown,
+						serviceName: row.serviceName,
+						enabled: row.enabled,
+						destinationIds,
+						alertRuleId: row.alertRuleId,
+						heartbeatUrl:
+							row.heartbeatToken === null ? null : `${apiBaseUrl}/hb/${row.heartbeatToken}`,
+						state: {
+							status: row.status,
+							consecutiveFailures: row.consecutiveFailures,
+							consecutiveSuccesses: row.consecutiveSuccesses,
+							statusChangedAt: row.statusChangedAt,
+							lastCheck: row.lastCheckJson,
+							recent: row.recentJson,
+							lastPingAt: row.lastPingAt,
+						},
+						createdAt: row.createdAt,
+						updatedAt: row.updatedAt,
+					})),
 				)
 
 			const requireMonitor = Effect.fn("UptimeMonitorsService.requireMonitor")(function* (
@@ -886,7 +912,16 @@ export class UptimeMonitorsService extends Context.Service<UptimeMonitorsService
 											? { alertRuleId: ruleId }
 											: undefined),
 										...(name === undefined ? undefined : { name }),
-										...(config === undefined ? undefined : { configJson: config }),
+										// This config carries its headers itself: sealed ones left behind
+										// would come back once the config's are removed.
+										...(config === undefined
+											? undefined
+											: {
+													configJson: config,
+													headersCiphertext: null,
+													headersIv: null,
+													headersTag: null,
+												}),
 										...(input.intervalSeconds === undefined
 											? undefined
 											: { intervalSeconds: input.intervalSeconds }),
@@ -983,13 +1018,18 @@ export class UptimeMonitorsService extends Context.Service<UptimeMonitorsService
 								serviceName: $.serviceName,
 								intervalSeconds: $.intervalSeconds,
 								configJson: PG.undecoded($.configJson),
+								headersCiphertext: $.headersCiphertext,
+								headersIv: $.headersIv,
+								headersTag: $.headersTag,
 							}))
 							.where(($) => [$.enabled.eq(true), $.kind.in_("http", "tcp", "dns")]),
 					),
 				)
-				// A config that no longer decodes skips its monitor, never the scraper's whole list.
+				// A config that no longer decodes, or headers that no longer open, skip their monitor,
+				// never the scraper's whole list.
 				const targets = yield* Effect.forEach(rows, (row) =>
 					decodeConfig(row.configJson).pipe(
+						Effect.flatMap((config) => openHeaders(row, config)),
 						Effect.map((config): ReadonlyArray<UptimeProbeTargetRow> =>
 							config._tag === "heartbeat"
 								? []
@@ -1004,8 +1044,10 @@ export class UptimeMonitorsService extends Context.Service<UptimeMonitorsService
 										},
 									],
 						),
-						Effect.catchTag("SchemaError", (error) =>
-							Effect.logWarning("Skipping uptime monitor with an undecodable config").pipe(
+						Effect.catch((error) =>
+							Effect.logWarning(
+								"Skipping uptime monitor whose config or headers cannot be read",
+							).pipe(
 								Effect.annotateLogs({
 									monitorId: row.id,
 									orgId: row.orgId,

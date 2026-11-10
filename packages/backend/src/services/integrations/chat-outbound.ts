@@ -7,7 +7,6 @@
  * business. The workspace is always read by id AND org: an id is what a client sends, and the org
  * is what makes it theirs.
  */
-import type { Buffer } from "node:buffer"
 import * as PG from "@maple-dev/effect-orm/postgres"
 import { ChatWorkspaces } from "@maple/db/tables"
 import {
@@ -22,6 +21,7 @@ import { ChatWorkspaceId, type OrgId } from "@maple/domain/http"
 import { Array as Arr, Context, Effect, Option, Schema } from "effect"
 import { HttpClient } from "effect/http"
 import type { DatabaseApi } from "@maple/backend/platform/DatabaseLive"
+import type { SecretKeyring } from "@maple/backend/platform/SecretBox"
 import {
 	openChatWorkspaceCredentials,
 	storedCredentials,
@@ -67,7 +67,7 @@ export const loadOwnedChatWorkspace = Effect.fn("ChatOutbound.loadOwnedChatWorks
 	registry: ReadonlyArray<RegisteredChatConnector>,
 	orgId: OrgId,
 	workspaceId: ChatWorkspaceId,
-	encryptionKey: Buffer,
+	keyring: SecretKeyring,
 ) {
 	const rows = yield* database.execute((db) =>
 		db.run(
@@ -88,7 +88,7 @@ export const loadOwnedChatWorkspace = Effect.fn("ChatOutbound.loadOwnedChatWorks
 			? undefined
 			: yield* openChatWorkspaceCredentials(
 					sealed,
-					encryptionKey,
+					keyring,
 					{ orgId, connector: connector.value.id, externalWorkspaceId: row.externalWorkspaceId },
 					// The message never carries the cause: everything below it is key material.
 					(message) =>

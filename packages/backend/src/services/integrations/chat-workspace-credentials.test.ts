@@ -6,7 +6,9 @@
  * ciphertext onto a row it was not written for.
  */
 import { assert, describe, it } from "@effect/vitest"
-import { Effect } from "effect"
+import { Array as Arr, Effect, Option } from "effect"
+import { encryptAes256Gcm } from "@maple/backend/platform/Crypto"
+import { parseSecretKeyring } from "@maple/backend/platform/SecretBox"
 import {
 	openChatWorkspaceCredentials,
 	sealChatWorkspaceCredentials,
@@ -22,13 +24,32 @@ const SECRET = '{"token":"a-workspaces-own-token"}'
 
 const fail = (message: string) => new Error(message)
 
-const seal = (ref = REF, key = KEY) => sealChatWorkspaceCredentials(SECRET, key, ref, fail)
+const keyringOf = (primary: Buffer, decryptOnly: ReadonlyArray<Buffer> = []) =>
+	parseSecretKeyring(
+		{
+			primary: primary.toString("base64"),
+			decryptOnly: Option.some(
+				Arr.join(
+					Arr.map(decryptOnly, (key) => key.toString("base64")),
+					",",
+				),
+			),
+		},
+		fail,
+	)
+
+const seal = (ref = REF, key = KEY) =>
+	Effect.flatMap(keyringOf(key), (keyring) => sealChatWorkspaceCredentials(SECRET, keyring, ref, fail))
 
 const open = (
 	sealed: { readonly ciphertext: string; readonly iv: string; readonly tag: string },
 	ref = REF,
 	key = KEY,
-) => openChatWorkspaceCredentials(sealed, key, ref, fail)
+	decryptOnly: ReadonlyArray<Buffer> = [],
+) =>
+	Effect.flatMap(keyringOf(key, decryptOnly), (keyring) =>
+		openChatWorkspaceCredentials(sealed, keyring, ref, fail),
+	)
 
 describe("chat workspace credentials", () => {
 	it.effect("round-trips a connector's own secret", () =>
@@ -65,6 +86,26 @@ describe("chat workspace credentials", () => {
 		Effect.gen(function* () {
 			const sealed = yield* seal()
 			assert.isTrue(yield* Effect.isFailure(open(sealed, REF, OTHER_KEY)))
+		}),
+	)
+
+	it.effect("still opens it after a rotation, while the old key is kept for opening", () =>
+		Effect.gen(function* () {
+			const sealed = yield* seal(REF, OTHER_KEY)
+			assert.strictEqual(yield* open(sealed, REF, KEY, [OTHER_KEY]), SECRET)
+		}),
+	)
+
+	it.effect("opens a row written before the keyring, bound to the same org, connector and workspace", () =>
+		Effect.gen(function* () {
+			const stored = yield* encryptAes256Gcm(
+				SECRET,
+				KEY,
+				fail,
+				Buffer.from("chat_workspaces:v1:org_1:testchat:workspace-1", "utf8"),
+			)
+			assert.strictEqual(yield* open(stored), SECRET)
+			assert.isTrue(yield* Effect.isFailure(open(stored, { ...REF, orgId: "org_2" })))
 		}),
 	)
 

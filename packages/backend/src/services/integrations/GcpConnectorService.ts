@@ -22,7 +22,8 @@ import {
 	type UserId,
 } from "@maple/domain/primitives"
 import { Clock, Context, Effect, Layer, Option, Redacted, Array as Arr, String as Str } from "effect"
-import { decryptAes256Gcm, encryptAes256Gcm, parseBase64Aes256GcmKey } from "@maple/backend/platform/Crypto"
+import { openSecret, sealSecret, secretKeyringFromEnv } from "@maple/backend/platform/SecretBox"
+import { gcpConnectorSecretSlot } from "@maple/backend/platform/secret-slots"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { makeDbExecute, makePersistenceErrorMapper } from "@maple/backend/platform/db-execute"
 import { Env } from "@maple/backend/platform/Env"
@@ -160,9 +161,6 @@ const toPersistenceError = makePersistenceErrorMapper(
 	"Google Cloud connector database error",
 )
 
-// Binds the ciphertext to its row, so a stored secret cannot be moved onto another connector.
-const secretAad = (connectorId: string) => Buffer.from(`gcp_connectors:v1:${connectorId}`, "utf8")
-
 const toConnector = (row: GcpConnectorRow, discoveredProjectCount = 0): GcpConnector => ({
 	id: row.id,
 	scopeType: row.scopeType,
@@ -190,8 +188,8 @@ export class GcpConnectorService extends Context.Service<GcpConnectorService, Gc
 		make: Effect.gen(function* () {
 			const database = yield* Database
 			const env = yield* Env
-			const encryptionKey = yield* parseBase64Aes256GcmKey(
-				Redacted.value(env.MAPLE_INGEST_KEY_ENCRYPTION_KEY),
+			const keyring = yield* secretKeyringFromEnv(
+				env,
 				(message) => new IntegrationsPersistenceError({ message }),
 			)
 			// The ingest gateway hashes a pushed secret with this key and looks the row up by it.
@@ -388,11 +386,12 @@ export class GcpConnectorService extends Context.Service<GcpConnectorService, Gc
 				if (invalid !== undefined) return yield* invalid
 				const id = GcpConnectorId.make(randomUUID())
 				const secret = `maple_gcp_${randomBytes(24).toString("base64url")}`
-				const encrypted = yield* encryptAes256Gcm(
+				const encrypted = yield* sealSecret(
+					keyring,
+					gcpConnectorSecretSlot,
+					{ orgId, id },
 					secret,
-					encryptionKey,
 					(message) => new IntegrationsPersistenceError({ message }),
-					secretAad(id),
 				)
 				const now = yield* Clock.currentTimeMillis
 				// The connector and the source it sends as land together.
@@ -521,14 +520,15 @@ export class GcpConnectorService extends Context.Service<GcpConnectorService, Gc
 			) {
 				yield* Effect.annotateCurrentSpan({ orgId, "maple.gcp.connector_id": connectorId })
 				const row = yield* selectRow(orgId, connectorId)
-				const secret = yield* decryptAes256Gcm(
+				const secret = yield* openSecret(
+					keyring,
+					gcpConnectorSecretSlot,
+					{ orgId: row.orgId, id: row.id },
 					{ ciphertext: row.secretCiphertext, iv: row.secretIv, tag: row.secretTag },
-					encryptionKey,
 					() =>
 						new IntegrationsPersistenceError({
 							message: "Failed to decrypt the Google Cloud connector secret",
 						}),
-					secretAad(row.id),
 				)
 				const pushEndpoint = `${ingestBaseUrl}/v1/logpush/gcp/${connectorId}`
 				const target = {
