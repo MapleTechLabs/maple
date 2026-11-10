@@ -36,9 +36,13 @@ export class EmailService extends Context.Service<EmailService, EmailServiceApi>
 			const senderOption = yield* Effect.serviceOption(EmailSender)
 			const sender = Option.flatten(senderOption)
 
-			// Real sends are production-only: non-prod stages share real user data, so a
-			// binding there would send duplicates. `bindEmailSender` is the one gate.
-			const isConfigured = Option.isSome(sender)
+			// Real sends are production-only: non-prod stages share real user data
+			// (branched DBs, Clerk members), so a live binding there would deliver
+			// duplicate copies of every cron-driven email. The alchemy configs no
+			// longer attach EMAIL outside prd; this guard covers any binding that
+			// still reaches a non-prod worker (`alchemy dev`, manual deploys).
+			const emailAllowed = env.MAPLE_ENVIRONMENT === "production"
+			const isConfigured = Option.isSome(sender) && emailAllowed
 
 			const send = Effect.fn("EmailService.send")(function* (
 				to: string,
@@ -53,6 +57,12 @@ export class EmailService extends Context.Service<EmailService, EmailServiceApi>
 				if (Option.isNone(sender)) {
 					return yield* new EmailDeliveryError({
 						message: "Email not configured: EMAIL binding is missing",
+					})
+				}
+
+				if (!emailAllowed) {
+					return yield* new EmailDeliveryError({
+						message: `Email suppressed: sends are disabled in ${env.MAPLE_ENVIRONMENT}`,
 					})
 				}
 

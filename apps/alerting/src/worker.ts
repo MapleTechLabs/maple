@@ -62,7 +62,8 @@ const configuredEnv = (stage: MapleStage, region: MapleRegion, domains: MapleDom
 		authEnv,
 		ingestKeyCryptoEnv,
 		appUrlsEnv(domains),
-		// MAPLE_ENVIRONMENT must stay stage-derived, not overridable: it gates the non-prod cron skip.
+		// MAPLE_ENVIRONMENT must stay stage-derived, not overridable: it gates both the
+		// non-prod cron skip and `EmailService.emailAllowed`.
 		selfObservabilityEnv(stage, region),
 		// "1" runs crons on a non-prod stage (which otherwise skips them).
 		optionalPlain("MAPLE_ALERTING_ALLOW_NONPROD"),
