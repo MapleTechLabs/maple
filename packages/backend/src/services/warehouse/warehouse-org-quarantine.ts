@@ -1,6 +1,7 @@
 import type { EdgeCacheServiceApi } from "@maple/cache"
 import { WarehouseAuthError, WarehouseConfigError } from "@maple/domain/http"
 import { Cause, Effect, Option, Predicate, Schema, Array as Arr } from "effect"
+import { summarizeCause } from "@maple/backend/platform/describe-cause"
 
 /**
  * Per-org quarantine for the cross-org alerting ticks (errors / anomalies /
@@ -68,3 +69,60 @@ export const quarantineOnConfigClassCause = <E>(
 	causeHasWarehouseConfigClassError(cause)
 		? quarantineOrgWarehouse(edgeCache, orgId, nowMs).pipe(Effect.as(true))
 		: Effect.succeed(false)
+
+export interface WarehouseOrgTurn<A> {
+	/** The org's result when it is parked and skipped. */
+	readonly skipped: A
+	/** The org's result after a failure, once the failure is logged or the org parked. */
+	readonly failed: Effect.Effect<A>
+	/** Error-level line for a failure that is not config-class. */
+	readonly failureMessage: string
+	/** Info-level line for a skipped org; omitted, the skip is silent. */
+	readonly skipMessage?: string
+	/** Whether parking the org logs at Info. Defaults to true. */
+	readonly logQuarantine?: boolean
+}
+
+/**
+ * One org's turn in a cross-org tick: a parked org is skipped, and a failure parks the org when it
+ * is config-class or is logged at Error otherwise, so one bad org cannot fail the tick. Interrupts
+ * (isolate teardown) still propagate, so the tick cancels instead of marching on.
+ */
+export const runWarehouseOrgTurn = <A, E, R>(
+	edgeCache: EdgeCache,
+	orgId: string,
+	nowMs: number,
+	body: Effect.Effect<A, E, R>,
+	turn: WarehouseOrgTurn<A>,
+): Effect.Effect<A, never, R> =>
+	Effect.gen(function* () {
+		if (yield* isOrgWarehouseQuarantined(edgeCache, orgId)) {
+			if (turn.skipMessage !== undefined)
+				yield* Effect.logInfo(turn.skipMessage).pipe(Effect.annotateLogs({ orgId }))
+			return turn.skipped
+		}
+		return yield* body
+	}).pipe(
+		Effect.catchCause((cause) =>
+			Cause.hasInterruptsOnly(cause)
+				? Effect.interrupt
+				: Effect.gen(function* () {
+						const quarantined = yield* quarantineOnConfigClassCause(
+							edgeCache,
+							orgId,
+							cause,
+							nowMs,
+						)
+						if (!quarantined) {
+							yield* Effect.logError(turn.failureMessage).pipe(
+								Effect.annotateLogs({ orgId, error: summarizeCause(cause) }),
+							)
+						} else if (turn.logQuarantine !== false) {
+							yield* Effect.logInfo(
+								"Org warehouse rejected queries with a config-class error; quarantined",
+							).pipe(Effect.annotateLogs({ orgId, error: summarizeCause(cause) }))
+						}
+						return yield* turn.failed
+					}),
+		),
+	)

@@ -47,10 +47,7 @@ import { Env } from "@maple/backend/platform/Env"
 import { WarehouseQueryService } from "@maple/backend/services/warehouse/WarehouseQueryService"
 import { EdgeCacheService } from "@maple/cache"
 import { clerkRequest } from "@maple/backend/services/auth/clerk-request"
-import {
-	isOrgWarehouseQuarantined,
-	quarantineOnConfigClassCause,
-} from "@maple/backend/services/warehouse/warehouse-org-quarantine"
+import { runWarehouseOrgTurn } from "@maple/backend/services/warehouse/warehouse-org-quarantine"
 
 import { formatWarehouseDateTime } from "@maple/query-engine"
 import * as CH from "@maple/query-engine/ch"
@@ -1089,19 +1086,10 @@ export class DigestService extends Context.Service<DigestService>()("@maple/back
 						namespaces: parseScopeColumn(head.namespacesJson),
 					}
 
-					return Effect.gen(function* () {
+					// A parked org is skipped before the claim, so it isn't marked attempted for the window.
+					const sendForScope = Effect.gen(function* () {
 						const orgId = OrgId.make(rawOrgId)
 						const orgSubIds = Arr.map(orgSubs, (s) => s.id)
-
-						// Orgs whose warehouse rejected queries with an auth/config-class
-						// error are parked (see warehouse-org-quarantine.ts). Checked before
-						// the claim so a parked org isn't marked attempted for the window.
-						if (yield* isOrgWarehouseQuarantined(edgeCache, rawOrgId)) {
-							yield* Effect.logInfo("Skipping digest for org with quarantined warehouse").pipe(
-								Effect.annotateLogs({ orgId: rawOrgId }),
-							)
-							return []
-						}
 
 						const claim = yield* dbExecute((db) =>
 							db.run(
@@ -1205,38 +1193,14 @@ export class DigestService extends Context.Service<DigestService>()("@maple/back
 						)
 
 						return sendResults
-					}).pipe(
-						Effect.catchCause((cause) =>
-							Cause.hasInterruptsOnly(cause)
-								? Effect.interrupt
-								: Effect.gen(function* () {
-										const quarantined = yield* quarantineOnConfigClassCause(
-											edgeCache,
-											rawOrgId,
-											cause,
-											now,
-										)
-										if (quarantined) {
-											yield* Effect.logInfo(
-												"Org warehouse rejected queries with a config-class error; quarantined",
-											).pipe(
-												Effect.annotateLogs({
-													orgId: rawOrgId,
-													error: summarizeCause(cause),
-												}),
-											)
-										} else {
-											yield* Effect.logError("Digest failed for org").pipe(
-												Effect.annotateLogs({
-													orgId: rawOrgId,
-													error: summarizeCause(cause),
-												}),
-											)
-										}
-										return Arr.map(orgSubs, () => ({ sent: false }))
-									}),
-						),
-					)
+					})
+
+					return runWarehouseOrgTurn(edgeCache, rawOrgId, now, sendForScope, {
+						skipped: [],
+						skipMessage: "Skipping digest for org with quarantined warehouse",
+						failureMessage: "Digest failed for org",
+						failed: Effect.sync(() => Arr.map(orgSubs, () => ({ sent: false }))),
+					})
 				},
 				{ concurrency: 1 },
 			)

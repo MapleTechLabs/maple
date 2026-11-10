@@ -75,7 +75,7 @@ import { OrgClickHouseSettingsService } from "@maple/backend/services/org/OrgCli
 import { EdgeCacheService } from "@maple/cache"
 import {
 	isOrgWarehouseQuarantined,
-	quarantineOnConfigClassCause,
+	runWarehouseOrgTurn,
 } from "@maple/backend/services/warehouse/warehouse-org-quarantine"
 import { actorRowToDocument, ErrorActorsService } from "./ErrorActorsService"
 import { ErrorIssueWorkflowService } from "./ErrorIssueWorkflowService"
@@ -1952,51 +1952,12 @@ const make: Effect.Effect<
 		const results = yield* Effect.forEach(
 			scanOrgs,
 			(org) =>
-				Effect.gen(function* () {
-					// Orgs whose warehouse rejected queries with an auth/config-class error
-					// are parked (see warehouse-org-quarantine.ts) — retrying every tick
-					// fails identically until an operator repairs the org's config.
-					if (yield* isOrgWarehouseQuarantined(edgeCache, org)) {
-						yield* Effect.logInfo("Skipping org with quarantined warehouse").pipe(
-							Effect.annotateLogs({ orgId: org }),
-						)
-						return emptyResult
-					}
-					return yield* processOrg(org, cutoffMs, nowMs, retentionRan)
-				}).pipe(
-					// Isolate genuine per-org failures/defects so one bad org can't fail the
-					// whole tick. Interrupts (isolate teardown) are NOT per-org failures —
-					// re-raise them so the tick cancels promptly instead of logging a
-					// phantom failure and marching through the remaining orgs.
-					Effect.catchCause((cause) =>
-						Cause.hasInterruptsOnly(cause)
-							? Effect.interrupt
-							: Effect.gen(function* () {
-									const quarantined = yield* quarantineOnConfigClassCause(
-										edgeCache,
-										org,
-										cause,
-										nowMs,
-									)
-									if (quarantined) {
-										yield* Effect.logInfo(
-											"Org warehouse rejected queries with a config-class error; quarantined",
-										).pipe(
-											Effect.annotateLogs({ orgId: org, error: summarizeCause(cause) }),
-										)
-									} else {
-										yield* Effect.logError("Error tick failed for org").pipe(
-											Effect.annotateLogs({
-												orgId: org,
-												error: summarizeCause(cause),
-											}),
-										)
-									}
-									yield* Ref.update(orgFailures, (n) => n + 1)
-									return emptyResult
-								}),
-					),
-				),
+				runWarehouseOrgTurn(edgeCache, org, nowMs, processOrg(org, cutoffMs, nowMs, retentionRan), {
+					skipped: emptyResult,
+					skipMessage: "Skipping org with quarantined warehouse",
+					failureMessage: "Error tick failed for org",
+					failed: Ref.update(orgFailures, (n) => n + 1).pipe(Effect.as(emptyResult)),
+				}),
 			{ concurrency: 4 },
 		)
 
