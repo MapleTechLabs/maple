@@ -9,13 +9,15 @@ import { segmentedSelect } from "@maple/views/ui/segmented-select"
 import { sidePanelSheet } from "@maple/views/ui/sheet"
 import { vstack } from "@maple/views/ui/stack"
 import { typography } from "@maple/views/ui/typography"
+import { fieldErrorText } from "@maple/views/ui/field"
 import type { V2AlertSilenceMatchers } from "@maple/domain/http/v2"
 import {
 	endZoneLabel,
-	isFormReady,
 	Message,
 	type Model,
+	reasonError,
 	type Scope,
+	scopeError,
 	type ScopeField,
 	type ScopeSuggestions,
 	type SilenceDuration,
@@ -48,8 +50,13 @@ const submitLabel = (model: Model): string =>
 			: Option.match(silenceEndMs(model.duration, model.until, model.nowMs, model.timeZone), {
 					onNone: () => "Silence",
 					onSome: (endMs) =>
-						`Silence until ${formatSilenceTime(endMs, model.nowMs, model.timeZone)}`,
+						// 24h, as the "Until 09:00" choice and the end's time picker read.
+						`Silence until ${formatSilenceTime(endMs, model.nowMs, model.timeZone, "h23")}`,
 				})
+
+/** A field's error once a save was tried. */
+const shown = (model: Model, error: Option.Option<string>): Option.Option<string> =>
+	model.isShowingErrors ? error : Option.none()
 
 const textField = (h: H, options: Omit<DialogTextFieldOptions<Message>, "idPrefix">): Html =>
 	dialogTextField(h, { ...options, idPrefix: "silence" })
@@ -69,6 +76,8 @@ const SCOPE_FIELDS: ReadonlyArray<{ field: ScopeField; label: string; placeholde
 ]
 
 const SCOPE_HELP_ID = "silence-scope-help"
+const SCOPE_ENTRY_HELP_ID = "silence-scope-entry-help"
+const SCOPE_ERROR_ID = "silence-scope-error"
 
 const NO_SUGGESTIONS: ScopeSuggestions = { services: [], environments: [], tags: [] }
 
@@ -98,9 +107,8 @@ const chipsField = (
 			viewInputs: {
 				items: itemsOf(suggestions[field], combo.inputValue),
 				ariaLabelledBy: labelId,
-				ariaDescribedBy: SCOPE_HELP_ID,
+				ariaDescribedBy: `${SCOPE_ENTRY_HELP_ID} ${SCOPE_HELP_ID}`,
 				placeholder,
-				emptyText: "Type a name, then press Enter",
 				isDisabled: model.isSaving,
 				toView: (parts) => h.div([], parts),
 			},
@@ -122,11 +130,28 @@ const scopeSection = (h: H, model: Model, suggestions: ScopeSuggestions): Readon
 			]
 		: [
 				...Arr.map(SCOPE_FIELDS, (entry) => chipsField(h, model, scope, suggestions, entry)),
-				dialogHelp(
-					h,
-					SCOPE_HELP_ID,
-					"Fill in at least one. A rule is silenced only if it matches every field you fill in.",
-				),
+				vstack(h, { gap: "1.5" }, [
+					// In the flow, not in the list's popup: there it sat over the next field's label.
+					dialogHelp(
+						h,
+						SCOPE_ENTRY_HELP_ID,
+						"Type a name and press Enter to add it. Commas separate several.",
+					),
+					dialogHelp(
+						h,
+						SCOPE_HELP_ID,
+						"Fill in at least one. A rule is silenced only if it matches every field you fill in.",
+					),
+					...Option.toArray(
+						Option.map(shown(model, scopeError(scope)), (message) =>
+							fieldErrorText(
+								h,
+								{ attributes: [h.Id(SCOPE_ERROR_ID), h.Role("alert")] },
+								message,
+							),
+						),
+					),
+				]),
 			]
 }
 
@@ -179,6 +204,7 @@ export const view = Submodel.defineView<Model, Message, { id: string; suggestion
 						value: model.reason,
 						placeholder: "Deploying checkout v2.3",
 						onInput: (value) => Message.ChangedReason({ value }),
+						error: shown(model, reasonError(model.reason)),
 					}),
 				]),
 			],
@@ -198,7 +224,8 @@ export const view = Submodel.defineView<Model, Message, { id: string; suggestion
 					{
 						type: "submit",
 						isLoading: model.isSaving,
-						isDisabled: model.isSaving || !isFormReady(model),
+						// Never disabled for a missing field: pressing it says what is missing.
+						isDisabled: model.isSaving,
 					},
 					[submitLabel(model)],
 				),

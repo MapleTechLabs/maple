@@ -3,8 +3,10 @@ import { afterEach, assert, describe, it } from "@effect/vitest"
 import * as PG from "@maple-dev/effect-orm/postgres"
 import { AlertDestinations } from "@maple/db/tables"
 import { AlertDestinationId, ChatWorkspaceId, OrgId } from "@maple/domain/http"
-import { Effect, Schema } from "effect"
-import { encryptAes256Gcm } from "@maple/backend/platform/Crypto"
+import { Effect, Option, Schema } from "effect"
+import type { EncryptedValue } from "@maple/backend/platform/Crypto"
+import { parseSecretKeyring, sealSecret, sealSecretV2 } from "@maple/backend/platform/SecretBox"
+import { alertDestinationSecretSlot } from "@maple/backend/platform/secret-slots"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/platform/test-pglite"
 import { hydrateDestinationRow, type DestinationSecretConfig } from "./AlertDestinationHydration"
@@ -22,7 +24,12 @@ const createdDbs: TestDb[] = []
 
 afterEach(() => cleanupTestDbs(createdDbs))
 
-const ENCRYPTION_KEY = Buffer.alloc(32, 1)
+const sealError = (message: string) => new AlertValidationError({ message, details: [] })
+
+const makeKeyring = parseSecretKeyring(
+	{ primary: Buffer.alloc(32, 1).toString("base64"), decryptOnly: Option.none() },
+	sealError,
+)
 
 const asOrgId = Schema.decodeUnknownSync(OrgId)
 const asDestinationId = Schema.decodeUnknownSync(AlertDestinationId)
@@ -39,21 +46,28 @@ const seedDestination = (options: {
 	readonly type: string
 	readonly publicConfig: Record<string, unknown>
 	readonly secretConfig: DestinationSecretConfig
+	/** A triple sealed elsewhere, stored as-is instead of sealing for this row. */
+	readonly storedSecret?: EncryptedValue
 }) =>
 	Effect.gen(function* () {
 		const database = yield* Database
-		const encrypted = yield* encryptAes256Gcm(
-			JSON.stringify(options.secretConfig),
-			ENCRYPTION_KEY,
-			(message) => new AlertValidationError({ message, details: [] }),
-		)
+		const keyring = yield* makeKeyring
+		const encrypted =
+			options.storedSecret ??
+			(yield* sealSecret(
+				keyring,
+				alertDestinationSecretSlot,
+				{ orgId: ORG, id: options.id },
+				JSON.stringify(options.secretConfig),
+				sealError,
+			))
 		const now = 0
 		yield* database.execute((db) =>
 			db.run(
 				PG.insertInto(AlertDestinations).values({
 					id: options.id,
 					orgId: ORG,
-					name: `destination-${options.type}`,
+					name: `destination-${options.type}-${options.id}`,
 					type: options.type,
 					enabled: true,
 					// Stored as an object, exactly as AlertsService writes it.
@@ -106,7 +120,7 @@ describe("hydrateDestinationRow", () => {
 			// The defect this test exists for: jsonb comes back parsed.
 			assert.notTypeOf(row.configJson, "string")
 
-			const hydrated = yield* hydrateDestinationRow(row, ENCRYPTION_KEY, hydrationErrors)
+			const hydrated = yield* hydrateDestinationRow(row, yield* makeKeyring, hydrationErrors)
 			assert.deepStrictEqual(hydrated.publicConfig, {
 				summary: "POST hooks.example.com",
 				channelLabel: null,
@@ -136,7 +150,7 @@ describe("hydrateDestinationRow", () => {
 			// exist only inside the encrypted blob.
 			assert.notInclude(JSON.stringify(row.configJson), "AAHqwerty")
 
-			const hydrated = yield* hydrateDestinationRow(row, ENCRYPTION_KEY, hydrationErrors)
+			const hydrated = yield* hydrateDestinationRow(row, yield* makeKeyring, hydrationErrors)
 			assert.deepStrictEqual(hydrated.secretConfig, secretConfig)
 			assert.strictEqual(hydrated.publicConfig.channelLabel, "-1001234567890")
 		}).pipe(Effect.provide(testDb.layer))
@@ -166,7 +180,7 @@ describe("hydrateDestinationRow", () => {
 			})
 			const row = yield* loadDestination(id)
 
-			const hydrated = yield* hydrateDestinationRow(row, ENCRYPTION_KEY, hydrationErrors)
+			const hydrated = yield* hydrateDestinationRow(row, yield* makeKeyring, hydrationErrors)
 			assert.deepStrictEqual(hydrated.publicConfig, {
 				summary: "Acme",
 				channelLabel: "#alerts",
@@ -194,8 +208,43 @@ describe("hydrateDestinationRow", () => {
 			})
 			const row = yield* loadDestination(id)
 
-			const error = yield* Effect.flip(hydrateDestinationRow(row, ENCRYPTION_KEY, hydrationErrors))
+			const error = yield* Effect.flip(hydrateDestinationRow(row, yield* makeKeyring, hydrationErrors))
 			assert.strictEqual(error, "public_config_invalid")
+		}).pipe(Effect.provide(testDb.layer))
+	})
+
+	it.effect("opens a row-bound secret on its own row and refuses it on another row", () => {
+		const testDb = createTestDb(createdDbs)
+		const ownId = asDestinationId("00000000-0000-4000-8000-000000000004")
+		const otherId = asDestinationId("00000000-0000-4000-8000-000000000005")
+		const secretConfig: DestinationSecretConfig = {
+			type: "discord",
+			webhookUrl: "https://discord.example.com/api/webhooks/1/abc",
+		}
+		const publicConfig = { summary: "Discord", channelLabel: null }
+		return Effect.gen(function* () {
+			const keyring = yield* makeKeyring
+			const storedSecret = yield* sealSecretV2(
+				keyring,
+				alertDestinationSecretSlot,
+				{ orgId: ORG, id: ownId },
+				JSON.stringify(secretConfig),
+				sealError,
+			)
+			yield* seedDestination({ id: ownId, type: "discord", publicConfig, secretConfig, storedSecret })
+			yield* seedDestination({ id: otherId, type: "discord", publicConfig, secretConfig, storedSecret })
+
+			const hydrated = yield* hydrateDestinationRow(
+				yield* loadDestination(ownId),
+				keyring,
+				hydrationErrors,
+			)
+			assert.deepStrictEqual(hydrated.secretConfig, secretConfig)
+
+			const error = yield* Effect.flip(
+				hydrateDestinationRow(yield* loadDestination(otherId), keyring, hydrationErrors),
+			)
+			assert.strictEqual(error, "decrypt_failure")
 		}).pipe(Effect.provide(testDb.layer))
 	})
 })

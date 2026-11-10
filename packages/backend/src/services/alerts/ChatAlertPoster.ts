@@ -11,11 +11,11 @@ import {
 	type ChatWorkspaceId,
 	type OrgId,
 } from "@maple/domain/http"
-import { Context, Duration, Effect, Layer, Option, Redacted, Ref, Array as Arr } from "effect"
+import { Context, Duration, Effect, Layer, Option, Ref, Array as Arr } from "effect"
 import { FetchHttpClient, HttpClient } from "effect/http"
-import { parseBase64Aes256GcmKey } from "@maple/backend/platform/Crypto"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { Env } from "@maple/backend/platform/Env"
+import { secretKeyringFromEnv } from "@maple/backend/platform/SecretBox"
 import {
 	ChatConnectorRegistry,
 	chatOutboundTransport,
@@ -122,10 +122,7 @@ const make: Effect.Effect<ChatAlertPosterApi, never, Database | Env | HttpClient
 
 		// Held as an Option rather than failing the layer: the services this sits beside already
 		// refuse to boot on a bad key, so this is never the first to notice.
-		const encryptionKey = yield* parseBase64Aes256GcmKey(
-			Redacted.value(env.MAPLE_INGEST_KEY_ENCRYPTION_KEY),
-			(message) => message,
-		).pipe(Effect.option)
+		const keyring = yield* secretKeyringFromEnv(env, (message) => message).pipe(Effect.option)
 
 		const deliveryError = (message: string, cause?: unknown) =>
 			new AlertDeliveryError({
@@ -150,15 +147,15 @@ const make: Effect.Effect<ChatAlertPosterApi, never, Database | Env | HttpClient
 				orgId: request.orgId,
 				"maple.delivery.destination_type": "chat",
 			})
-			if (Option.isNone(encryptionKey)) {
-				return yield* deliveryError("MAPLE_INGEST_KEY_ENCRYPTION_KEY is unusable on this deployment")
+			if (Option.isNone(keyring)) {
+				return yield* deliveryError("The credential encryption keys are unusable on this deployment")
 			}
 			const workspace = yield* loadOwnedChatWorkspace(
 				database,
 				registry,
 				request.orgId,
 				request.workspaceId,
-				encryptionKey.value,
+				keyring.value,
 			).pipe(
 				Effect.catchTags({
 					// A failed LOOKUP is not a missing workspace: keep it retryable.
@@ -269,7 +266,7 @@ const make: Effect.Effect<ChatAlertPosterApi, never, Database | Env | HttpClient
 
 		const findChannel: ChatAlertPosterApi["findChannel"] = Effect.fn("ChatAlertPoster.findChannel")(
 			function* (orgId, workspaceId, channelId) {
-				if (Option.isNone(encryptionKey)) {
+				if (Option.isNone(keyring)) {
 					return yield* validation("Chat workspaces cannot be read on this deployment")
 				}
 				const workspace = yield* loadOwnedChatWorkspace(
@@ -277,7 +274,7 @@ const make: Effect.Effect<ChatAlertPosterApi, never, Database | Env | HttpClient
 					registry,
 					orgId,
 					workspaceId,
-					encryptionKey.value,
+					keyring.value,
 				).pipe(
 					Effect.catchTags({
 						"@maple/backend/lib/DatabaseError": (cause) =>

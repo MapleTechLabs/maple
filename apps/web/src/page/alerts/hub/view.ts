@@ -180,11 +180,34 @@ const primaryButton = (h: H, onClick: Message, label: string, isDisabled = false
 	button(h, { size: "sm", isDisabled, attributes: [h.OnClick(onClick)] }, [icon(h, "PlusIcon"), label])
 
 /**
+ * The first-run empty state fills the section: no rules yet, and on the Inbox nothing else to list
+ * (an org with only monitors or SLOs has no visible rules but may have incidents to show).
+ */
+const isFirstRun = (model: Model, data: AlertsOverviewReady, tab: "inbox" | "rules"): boolean => {
+	if (data.rules.length > 0) return false
+	if (tab === "rules") return true
+	return (
+		resolveSignal(model.search.signal) === null &&
+		!Arr.some(data.openIncidents, (incident) => isManagedSignalType(incident.signalType)) &&
+		!Arr.some(data.incidents, (incident) => incident.signalType === "anomaly")
+	)
+}
+
+/**
  * The header's one primary action: what the open section lists. A section whose empty state
  * already offers it shows none until it has rows, and a viewer who can't create it sees none.
  */
-const headerActions = (h: H, model: Model, tab: AlertsTab): Html | undefined => {
-	if (tab === "inbox" || tab === "rules") return newRuleButton(h, model)
+const headerActions = (
+	h: H,
+	model: Model,
+	tab: AlertsTab,
+	overview: Option.Option<AlertsOverviewReady>,
+): Html | undefined => {
+	if (tab === "inbox" || tab === "rules")
+		// The first-run empty state offers the templates and "Start from scratch" to who can create.
+		return canManage(model) && Option.exists(overview, (data) => isFirstRun(model, data, tab))
+			? undefined
+			: newRuleButton(h, model)
 	if (!canManage(model)) return undefined
 	const serviceName = model.search.serviceName
 	switch (tab) {
@@ -252,10 +275,6 @@ const hubBody = (
 				serviceName: model.search.serviceName,
 				onAddDestination: canManage(model) ? Message.ClickedNewDestination() : undefined,
 			})
-			// An org with only monitors or SLOs has no visible rules but may have open incidents to show.
-			const hasManagedIncidents = Arr.some(data.openIncidents, (incident) =>
-				isManagedSignalType(incident.signalType),
-			)
 			const acknowledge = {
 				onAcknowledge: (incidentId: AlertIncidentId, acknowledged: boolean) =>
 					Message.ClickedAcknowledgeIncident({ incidentId, acknowledged }),
@@ -263,9 +282,8 @@ const hubBody = (
 			}
 			if (tab === "inbox") {
 				const signal = resolveSignal(model.search.signal)
-				const hasAnomalies = Arr.some(data.incidents, (incident) => incident.signalType === "anomaly")
 				// A team can set up on-call before its first rule, so the strip shows on the empty inbox too.
-				if (data.rules.length === 0 && !hasManagedIncidents && !hasAnomalies && signal === null)
+				if (isFirstRun(model, data, "inbox"))
 					return h.div([h.Class("space-y-6")], [...whoIsOnCallStrip(h, model), emptyState])
 				const filters = inboxFilters(h, {
 					signal,
@@ -335,7 +353,7 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 				h,
 				{
 					title: TAB_LABEL[tab],
-					actions: headerActions(h, model, tab),
+					actions: headerActions(h, model, tab, overview),
 				},
 				[
 					tab === "routing"

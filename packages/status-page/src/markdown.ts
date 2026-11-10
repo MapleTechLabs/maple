@@ -1,5 +1,5 @@
-import { Array as Arr, String as Str } from "effect"
 import { escapeHtml } from "@maple/strings"
+import { Array as Arr, String as Str } from "effect"
 import { safeUrl } from "./escape"
 
 // Incident update text: paragraphs, bullet and numbered lists, **bold**, *italic*, `code`,

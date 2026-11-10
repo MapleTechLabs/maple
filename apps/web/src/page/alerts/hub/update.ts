@@ -740,7 +740,19 @@ const silenceCommands = (step: ReturnType<typeof SilenceDialog.update>): Command
  * a viewer who may save.
  */
 const followSilenceSheet = (model: Model, context: PageContext): Requested => {
-	const isInUrl = model.search.sheet === SILENCE_SHEET && model.tab === "silences"
+	const sheet = model.search.sheet
+	const isInUrl = sheet === SILENCE_SHEET && model.tab === "silences"
+	// A `?sheet=` nothing here opens (another section's panel, a made-up id) is replaced away.
+	if (sheet !== undefined && !isInUrl) {
+		const dropped = followSilenceSheet(
+			{ ...model, search: { ...model.search, sheet: undefined } },
+			context,
+		)
+		return {
+			model: dropped.model,
+			commands: [...dropped.commands, DismissHubSheet({ href: hubHref(model), id: sheet })],
+		}
+	}
 	const isOpen = model.silenceDialog.dialog.isOpen
 	if (isInUrl && !isOpen && model.nowMs !== null && canManage(model)) {
 		const step = SilenceDialog.openNew(model.silenceDialog, context.timeZone, model.nowMs)

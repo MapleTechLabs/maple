@@ -70,9 +70,17 @@ export const endsAtMs = (silence: V2AlertSilence): number => isoMs(silence.ends_
 export const isCancelledSilence = (silence: V2AlertSilence): boolean =>
 	startsAtMs(silence) === endsAtMs(silence)
 
-/** "15:00" today, "Nov 7, 09:00" on another day, in the viewer's zone. */
-export const formatSilenceTime = (ms: number, nowMs: number, timeZone: string): string => {
-	const time = formatTimeInTimezone(ms, { timeZone, withSeconds: false })
+/**
+ * "03:00 PM" today, "Nov 7, 09:00 AM" on another day, in the viewer's zone. `h23` reads "15:00",
+ * for a label beside the form's 24h time picker.
+ */
+export const formatSilenceTime = (
+	ms: number,
+	nowMs: number,
+	timeZone: string,
+	hourCycle?: "h12" | "h23",
+): string => {
+	const time = formatTimeInTimezone(ms, { timeZone, withSeconds: false, hourCycle })
 	return formatDateInTimezone(ms, { timeZone }) === formatDateInTimezone(nowMs, { timeZone })
 		? time
 		: `${formatDateInTimezone(ms, { timeZone, withYear: false })}, ${time}`
