@@ -2,14 +2,8 @@ import type { MetricType } from "@maple/domain/query-engine"
 import * as CH from "@maple-dev/effect-orm/expr"
 import { param } from "@maple-dev/effect-orm/clickhouse"
 import { from, fromQuery, type ColumnAccessor } from "@maple-dev/effect-orm/clickhouse"
-import {
-	AttributeKeysHourly,
-	AttributeValuesHourly,
-	MetricsSum,
-	Traces,
-	orgIdParam,
-	utcSecondsParam,
-} from "../tables"
+import * as Datasources from "@maple/domain/tinybird/datasources"
+import { orgIdParam, utcSecondsParam } from "../tables"
 import { resolveMetricTable } from "./query-helpers"
 
 export interface AttributeKeysQueryOpts {
@@ -25,7 +19,7 @@ export interface AttributeKeysOutput {
 }
 
 export function attributeKeysQuery(opts: AttributeKeysQueryOpts) {
-	return from(AttributeKeysHourly)
+	return from(Datasources.attributeKeysHourly)
 		.select(($) => ({
 			attributeKey: $.AttributeKey,
 			usageCount: CH.sum($.UsageCount),
@@ -56,7 +50,7 @@ export interface AttributeValuesOutput {
 }
 
 export function spanAttributeValuesQuery(opts: AttributeValuesOpts) {
-	return from(AttributeValuesHourly)
+	return from(Datasources.attributeValuesHourly)
 		.select(($) => ({
 			attributeValue: $.AttributeValue,
 			usageCount: CH.sum($.UsageCount),
@@ -75,7 +69,7 @@ export function spanAttributeValuesQuery(opts: AttributeValuesOpts) {
 }
 
 export function resourceAttributeValuesQuery(opts: AttributeValuesOpts) {
-	return from(AttributeValuesHourly)
+	return from(Datasources.attributeValuesHourly)
 		.select(($) => ({
 			attributeValue: $.AttributeValue,
 			usageCount: CH.sum($.UsageCount),
@@ -94,7 +88,7 @@ export function resourceAttributeValuesQuery(opts: AttributeValuesOpts) {
 }
 
 export function logAttributeValuesQuery(opts: AttributeValuesOpts) {
-	return from(AttributeValuesHourly)
+	return from(Datasources.attributeValuesHourly)
 		.select(($) => ({
 			attributeValue: $.AttributeValue,
 			usageCount: CH.sum($.UsageCount),
@@ -127,7 +121,7 @@ export interface MetricScopedAttributeKeysOpts {
 
 export function metricScopedAttributeKeysQuery(opts: MetricScopedAttributeKeysOpts) {
 	const { tbl } = resolveMetricTable(opts.metricType)
-	return from(tbl as typeof MetricsSum)
+	return from(tbl as typeof Datasources.metricsSum)
 		.select(($) => ({
 			attributeKey: CH.arrayJoin(
 				CH.mapKeys(opts.scope === "resource" ? $.ResourceAttributes : $.Attributes),
@@ -160,11 +154,11 @@ export interface MetricScopedAttributeValuesOpts {
 
 export function metricScopedAttributeValuesQuery(opts: MetricScopedAttributeValuesOpts) {
 	const { tbl } = resolveMetricTable(opts.metricType)
-	const attributeValue = ($: ColumnAccessor<typeof MetricsSum.columns>) =>
+	const attributeValue = ($: ColumnAccessor<typeof Datasources.metricsSum.columns>) =>
 		opts.scope === "resource"
 			? $.ResourceAttributes.get(opts.attributeKey)
 			: $.Attributes.get(opts.attributeKey)
-	return from(tbl as typeof MetricsSum)
+	return from(tbl as typeof Datasources.metricsSum)
 		.select(($) => ({
 			attributeValue: attributeValue($),
 			usageCount: CH.count(),
@@ -186,7 +180,7 @@ export function metricScopedAttributeValuesQuery(opts: MetricScopedAttributeValu
 }
 
 export function metricAttributeValuesQuery(opts: AttributeValuesOpts) {
-	return from(AttributeValuesHourly)
+	return from(Datasources.attributeValuesHourly)
 		.select(($) => ({
 			attributeValue: $.AttributeValue,
 			usageCount: CH.sum($.UsageCount),
@@ -216,7 +210,7 @@ export interface ServiceScopedAttributeOpts {
 }
 
 const serviceSpanSample = (scope: "span" | "resource") =>
-	from(Traces)
+	from(Datasources.traces)
 		.select(($) => ({
 			attrs: scope === "resource" ? $.ResourceAttributes : $.SpanAttributes,
 		}))

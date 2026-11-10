@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it } from "@effect/vitest"
 import { ConfigProvider, Context, Effect, Layer, ManagedRuntime, Schema } from "effect"
 import { FetchHttpClient, HttpRouter } from "effect/http"
-import { HttpApiBuilder } from "effect/http-api"
+import { HttpApi, HttpApiBuilder } from "effect/http-api"
 import { OrgId, ScrapeTargetId, UserId } from "@maple/domain/http"
 import { decodePublicId, MapleApiV2 } from "@maple/domain/http/v2"
 import { cleanupTestDbs, createTestDb, executeSql, type TestDb } from "@maple/backend/testing/test-pglite"
@@ -23,17 +23,18 @@ import { RecommendationIssueService } from "@maple/backend/services/errors/Recom
 import { ScrapeTargetsService } from "@maple/backend/services/integrations/ScrapeTargetsService"
 import { V2TransportErrorBoundaryLive } from "./error-envelope"
 import {
-	AlertsServiceStubLayer,
-	AllV2GroupLayersLive,
 	ApiV2RateLimiterAllowAllLayer,
 	makeWarehouseServiceStub,
 	Phase1ResourceStubsLayer,
-	PlanetScaleServiceStubsLayer,
-	SetupAuditServiceStubLayer,
-	SignalPresenceServiceStubLayer,
-	TelemetryServiceStubsLayer,
-	SourcesServiceStubsLayer,
 } from "./v2-test-support"
+import { IngestRuleService } from "@maple/backend/services/org/IngestRuleService"
+import { OrganizationFeatureFlagsService } from "@maple/backend/services/org/OrganizationFeatureFlagsService"
+import { HttpV2AttributeMappingsLive } from "./attribute-mappings.http"
+import { HttpV2IngestKeysLive } from "./ingest-keys.http"
+import { HttpV2InstrumentationRecommendationsLive } from "./recommendations.http"
+import { HttpV2OrganizationLive } from "./organization.http"
+import { HttpV2ScrapeTargetsLive } from "./scrape-targets.http"
+import { HttpV2IngestRulesLive } from "./ingest-rules.http"
 import { compiledQueryOf } from "@maple/query-engine/execution"
 
 /**
@@ -116,24 +117,40 @@ const makeHarness = () => {
 		SharedDashboardService.layer,
 		IngestAttributeMappingService.layer,
 		OrgIngestKeysService.layer,
-		SourcesServiceStubsLayer,
 		Layer.effect(RecommendationIssueService, RecommendationIssueService.make).pipe(
 			Layer.provide(warehouseLive),
 		),
 		scrapeTargetsLive,
 	).pipe(Layer.provideMerge(Layer.mergeAll(envLive, testDb.layer)))
 
-	const routes = HttpApiBuilder.layer(MapleApiV2).pipe(
-		Layer.provide(AllV2GroupLayersLive),
+	const routes = HttpApiBuilder.layer(
+		HttpApi.make("MapleApiV2").add(
+			MapleApiV2.groups.attributeMappings,
+			MapleApiV2.groups.ingestKeys,
+			MapleApiV2.groups.ingestRules,
+			MapleApiV2.groups.instrumentationRecommendations,
+			MapleApiV2.groups.organization,
+			MapleApiV2.groups.scrapeTargets,
+		),
+	).pipe(
+		Layer.provide(
+			Layer.mergeAll(
+				HttpV2AttributeMappingsLive,
+				HttpV2IngestKeysLive,
+				HttpV2InstrumentationRecommendationsLive,
+				HttpV2OrganizationLive,
+				HttpV2ScrapeTargetsLive,
+				HttpV2IngestRulesLive.pipe(
+					Layer.provide(
+						Layer.effect(IngestRuleService, IngestRuleService.make).pipe(
+							Layer.provide(OrganizationFeatureFlagsService.allEnabled),
+						),
+					),
+				),
+			),
+		),
 		Layer.provide(V2TransportErrorBoundaryLive),
-		Layer.provide(PlanetScaleServiceStubsLayer),
-		Layer.provide(AlertsServiceStubLayer),
 		Layer.provide(Phase1ResourceStubsLayer),
-		Layer.provide(SetupAuditServiceStubLayer),
-		Layer.provide(SignalPresenceServiceStubLayer),
-		Layer.provide(TelemetryServiceStubsLayer),
-		// session_replays (in AllV2GroupLayersLive) needs the warehouse at the routes level.
-		Layer.provide(warehouseLive),
 		Layer.provideMerge(ApiAuthorizationV2Live),
 		Layer.provideMerge(AuditLogService.layerMemory),
 		Layer.provideMerge(ApiV2RateLimiterAllowAllLayer),

@@ -8,7 +8,8 @@
 import { DateTime, Array as Arr, Option } from "effect"
 import * as CH from "@maple-dev/effect-orm/expr"
 import { from, param, type ColumnAccessor } from "@maple-dev/effect-orm/clickhouse"
-import { CiJobs, CiRuns, orgIdParam, utcSecondsParam } from "../tables"
+import * as Datasources from "@maple/domain/tinybird/datasources"
+import { orgIdParam, utcSecondsParam } from "../tables"
 import { timeseriesBucket } from "./query-helpers"
 
 /** `cicd.pipeline.result` values that mean the run broke, as opposed to being cancelled or skipped. */
@@ -36,7 +37,7 @@ export interface CiRunsOpts {
 
 /** Workflow runs, newest first. `pullRequest` is 0 for a run without one. */
 export function ciRunsQuery(opts: CiRunsOpts) {
-	return from(CiRuns)
+	return from(Datasources.ciRuns)
 		.select(($) => ({
 			traceId: $.TraceId,
 			pipeline: $.Pipeline,
@@ -85,7 +86,7 @@ export interface CiFailedJobsOpts {
 
 /** Failed jobs of the given runs, with the failure reason their annotations gave. */
 export function ciFailedJobsQuery(opts: CiFailedJobsOpts) {
-	return from(CiJobs)
+	return from(Datasources.ciJobs)
 		.select(($) => ({
 			traceId: $.TraceId,
 			job: $.Job,
@@ -169,8 +170,8 @@ export interface CiScopeOpts {
 	readonly pipeline?: string
 }
 
-type RunColumns = ColumnAccessor<typeof CiRuns.columns>
-type JobColumns = ColumnAccessor<typeof CiJobs.columns>
+type RunColumns = ColumnAccessor<typeof Datasources.ciRuns.columns>
+type JobColumns = ColumnAccessor<typeof Datasources.ciJobs.columns>
 
 const ciScope = ($: RunColumns | JobColumns, opts: CiScopeOpts) => [
 	$.OrgId.eq(orgIdParam),
@@ -203,7 +204,7 @@ const runAggregates = ($: RunColumns) => ({
 
 /** Run counts and durations over the whole window. */
 export function ciRunTotalsQuery(opts: CiScopeOpts) {
-	return from(CiRuns)
+	return from(Datasources.ciRuns)
 		.select(($) => runAggregates($))
 		.where(($) => ranRuns($, opts))
 		.format("JSON")
@@ -211,7 +212,7 @@ export function ciRunTotalsQuery(opts: CiScopeOpts) {
 
 /** Run counts and durations per `bucketSeconds` bucket; empty buckets are absent. */
 export function ciRunSeriesQuery(opts: CiScopeOpts) {
-	return from(CiRuns)
+	return from(Datasources.ciRuns)
 		.select(($) => ({ bucket: timeseriesBucket($.Timestamp, false), ...runAggregates($) }))
 		.where(($) => ranRuns($, opts))
 		.groupBy("bucket")
@@ -221,7 +222,7 @@ export function ciRunSeriesQuery(opts: CiScopeOpts) {
 
 /** Per repository and workflow: run counts, durations and the latest run's result. */
 export function ciPipelineStatsQuery(opts: CiScopeOpts & { readonly limit?: number }) {
-	return from(CiRuns)
+	return from(Datasources.ciRuns)
 		.select(($) => ({
 			owner: $.Owner,
 			repository: $.Repository,
@@ -242,7 +243,7 @@ export function ciPipelineStatsQuery(opts: CiScopeOpts & { readonly limit?: numb
  * runner, so the durations include the queue that `p50QueueMs` and `p95QueueMs` break out.
  */
 export function ciJobStatsQuery(opts: CiScopeOpts & { readonly limit?: number }) {
-	return from(CiJobs)
+	return from(Datasources.ciJobs)
 		.select(($) => ({
 			owner: $.Owner,
 			repository: $.Repository,
@@ -267,7 +268,7 @@ export function ciJobStatsQuery(opts: CiScopeOpts & { readonly limit?: number })
 
 /** How long jobs waited for a runner over the whole window. */
 export function ciQueueTotalsQuery(opts: CiScopeOpts) {
-	return from(CiJobs)
+	return from(Datasources.ciJobs)
 		.select(($) => ({
 			jobs: CH.count(),
 			p50QueueMs: CH.quantile(0.5)($.QueueMs),
@@ -293,7 +294,7 @@ export interface CiActorStatsOpts extends CiScopeOpts {
  * job's span covers its wait for a runner, so the queue is taken off its runner time.
  */
 export function ciActorStatsQuery(opts: CiActorStatsOpts) {
-	const ranJobsPerRun = from(CiJobs)
+	const ranJobsPerRun = from(Datasources.ciJobs)
 		.select(($) => ({
 			TraceId: $.TraceId,
 			runnerMs: CH.sum($.Duration).div(1000000).sub(CH.sum($.QueueMs)),
@@ -301,7 +302,7 @@ export function ciActorStatsQuery(opts: CiActorStatsOpts) {
 		.where(($) => ranJobs($, opts))
 		.groupBy("TraceId")
 	return (
-		from(CiRuns)
+		from(Datasources.ciRuns)
 			.innerJoinQuery(ranJobsPerRun, "jobs", (run, jobs) => run.TraceId.eq(jobs.TraceId))
 			.select(($) => {
 				// 0 when the span carried no attempt: that is a first run, not a rerun.

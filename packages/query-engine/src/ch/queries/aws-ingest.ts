@@ -9,7 +9,8 @@ import * as CH from "@maple-dev/effect-orm/expr"
 import * as T from "@maple-dev/effect-orm/clickhouse"
 import { from, param, type CompiledQueryRowSchema } from "@maple-dev/effect-orm/clickhouse"
 import { CHNumber } from "../schema"
-import { MetricsSum, orgIdParam } from "../tables"
+import * as Datasources from "@maple/domain/tinybird/datasources"
+import { orgIdParam } from "../tables"
 
 /** The instrumentation scope the gateway stamps on metric stream data. */
 export const AWS_METRIC_STREAM_SCOPE = "aws.cloudwatch.metric_stream"
@@ -45,7 +46,7 @@ export const awsIngestRowSchema = Schema.Struct({
 
 /** One connection's stored points per namespace and region. Params: orgId, connectionId, startTime, endTime. */
 export function awsIngestQuery() {
-	return from(MetricsSum)
+	return from(Datasources.metricsSum)
 		.select(($) => ({
 			namespace: $.Attributes.get("aws.namespace"),
 			region: $.ResourceAttributes.get("cloud.region"),

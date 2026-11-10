@@ -15,7 +15,7 @@
 
 import * as CH from "@maple-dev/effect-orm/expr"
 import { type ColumnAccessor } from "@maple-dev/effect-orm/clickhouse"
-import type { MetricsGauge, MetricsSum } from "@maple/query-engine/ch/tables"
+import type * as Datasources from "@maple/domain/tinybird/datasources"
 import { Array as Arr, Record as Rec } from "effect"
 
 /** Filter key → the metric attribute it lives on. */
@@ -139,8 +139,8 @@ const isRequested = (opts: CloudflareFilterOpts, key: CfFilterKey): boolean =>
  * `metrics_sum` and `metrics_gauge` alike.
  */
 export type CloudflareMetricsAccessor =
-	| ColumnAccessor<typeof MetricsSum.columns>
-	| ColumnAccessor<typeof MetricsGauge.columns>
+	| ColumnAccessor<typeof Datasources.metricsSum.columns>
+	| ColumnAccessor<typeof Datasources.metricsGauge.columns>
 
 /**
  * Transitional host accessor: the poller emitted `http.host` before 2026-07-24 (commit 46ee9b129)

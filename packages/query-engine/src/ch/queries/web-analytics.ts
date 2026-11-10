@@ -12,7 +12,8 @@ import type { DateTime } from "effect"
 import * as CH from "@maple-dev/effect-orm/expr"
 import { param, from, inSubquery, unionAll, compileFnCall } from "@maple-dev/effect-orm/clickhouse"
 import type { ColumnAccessor, CHQuery, ColumnDefs, CHUnionQuery } from "@maple-dev/effect-orm/clickhouse"
-import { SessionReplays, SessionEvents, ProductEvents, orgIdParam, utcSecondsParam } from "../tables"
+import * as Datasources from "@maple/domain/tinybird/datasources"
+import { orgIdParam, utcSecondsParam } from "../tables"
 import { isBotCond } from "../user-agent"
 import type { FacetOutput } from "./query-helpers"
 import { SESSION_LIVE_WINDOW_SECONDS, WEB_ANALYTICS_UNSET } from "@maple/domain/query-engine"
@@ -129,9 +130,9 @@ export type WebAnalyticsFacetKey =
 	| "host"
 	| "eventName"
 
-type ReplaysAccessor = ColumnAccessor<typeof SessionReplays.columns>
-type EventsAccessor = ColumnAccessor<typeof SessionEvents.columns>
-type ProductEventsAccessor = ColumnAccessor<typeof ProductEvents.columns>
+type ReplaysAccessor = ColumnAccessor<typeof Datasources.sessionReplays.columns>
+type EventsAccessor = ColumnAccessor<typeof Datasources.sessionEvents.columns>
+type ProductEventsAccessor = ColumnAccessor<typeof Datasources.productEvents.columns>
 
 /**
  * The page-view predicate over raw `session_events`.
@@ -233,11 +234,11 @@ function navigationSessionsSubquery(
 	only?: "host" | "pagePath",
 ): CHQuery<ColumnDefs, { readonly sessionId: string }> {
 	return filters.useProductEvents
-		? from(ProductEvents)
+		? from(Datasources.productEvents)
 				.select(($) => ({ sessionId: $.SessionId }))
 				.where(($) => navigationConditionsRollup($, filters, only))
 				.groupBy("sessionId")
-		: from(SessionEvents)
+		: from(Datasources.sessionEvents)
 				.select(($) => ({ sessionId: $.SessionId }))
 				.where(($) => navigationConditionsRaw($, filters, only))
 				.groupBy("sessionId")
@@ -258,11 +259,11 @@ function eventSessionsSubquery(
 	eventName: string,
 ): CHQuery<ColumnDefs, { readonly sessionId: string }> {
 	return filters.useProductEvents
-		? from(ProductEvents)
+		? from(Datasources.productEvents)
 				.select(($) => ({ sessionId: $.SessionId }))
 				.where(($) => [...eventConditionsRollup($, {}, CUSTOM), $.EventName.eq(eventName)])
 				.groupBy("sessionId")
-		: from(SessionEvents)
+		: from(Datasources.sessionEvents)
 				.select(($) => ({ sessionId: $.SessionId }))
 				.where(($) => [...eventConditionsRaw($, {}, CUSTOM), $.Message.eq(eventName)])
 				.groupBy("sessionId")
@@ -403,7 +404,7 @@ export function needsSessionSemiJoin(filters: WebAnalyticsFilters): boolean {
  * nest the same semi-join twice.
  */
 function matchingSessionsSubquery(filters: WebAnalyticsFilters) {
-	return from(SessionReplays)
+	return from(Datasources.sessionReplays)
 		.select(($) => ({ sessionId: $.SessionId }))
 		.where(($) =>
 			replaysWhere($, { ...filters, host: undefined, pagePath: undefined, eventName: undefined }),
@@ -509,7 +510,7 @@ export interface WebAnalyticsSummaryOutput {
 export function webAnalyticsSummaryQuery(
 	filters: WebAnalyticsFilters = {},
 ): CHQuery<ColumnDefs, WebAnalyticsSummaryOutput> {
-	return from(SessionReplays)
+	return from(Datasources.sessionReplays)
 		.select(($) => ({
 			visitors: CH.uniqIf($.VisitorId, $.VisitorId.neq("")),
 			sessions: CH.uniq($.SessionId),
@@ -563,7 +564,7 @@ export function webAnalyticsLiveQuery(
 	opts: WebAnalyticsLiveOpts = {},
 ): CHQuery<ColumnDefs, WebAnalyticsLiveOutput> {
 	const windowSeconds = opts.windowSeconds ?? SESSION_LIVE_WINDOW_SECONDS
-	return from(SessionReplays)
+	return from(Datasources.sessionReplays)
 		.select(($) => ({
 			visitors: CH.uniqIf($.VisitorId, $.VisitorId.neq("")),
 			sessions: CH.uniq($.SessionId),
@@ -619,7 +620,7 @@ export function webAnalyticsTimeseriesQuery(
 	opts: WebAnalyticsTimeseriesOpts = {},
 ): CHQuery<ColumnDefs, WebAnalyticsTimeseriesOutput> {
 	const bucketSeconds = opts.bucketSeconds ?? 3600
-	return from(SessionReplays)
+	return from(Datasources.sessionReplays)
 		.select(($) => ({
 			bucket: CH.toStartOfInterval($.StartTime, bucketSeconds),
 			visitors: CH.uniqIf($.VisitorId, $.VisitorId.neq("")),
@@ -666,7 +667,7 @@ export function webAnalyticsPageviewsTimeseriesQuery(
 ): CHQuery<ColumnDefs, WebAnalyticsPageviewsTimeseriesOutput> {
 	const bucketSeconds = opts.bucketSeconds ?? 3600
 	return opts.useProductEvents
-		? from(ProductEvents)
+		? from(Datasources.productEvents)
 				.select(($) => ({
 					bucket: CH.toStartOfInterval($.Timestamp, bucketSeconds),
 					pageViews: CH.count(),
@@ -676,7 +677,7 @@ export function webAnalyticsPageviewsTimeseriesQuery(
 				.groupBy("bucket")
 				.orderBy(["bucket", "asc"])
 				.format("JSON")
-		: from(SessionEvents)
+		: from(Datasources.sessionEvents)
 				.select(($) => ({
 					bucket: CH.toStartOfInterval($.Timestamp, bucketSeconds),
 					pageViews: CH.count(),
@@ -718,7 +719,7 @@ export function webAnalyticsPagesQuery(
 ): CHQuery<ColumnDefs, WebAnalyticsPagesOutput> {
 	const limit = opts.limit ?? 100
 	return opts.useProductEvents
-		? from(ProductEvents)
+		? from(Datasources.productEvents)
 				.select(($) => ({
 					host: $.Host,
 					pagePath: $.PagePath,
@@ -730,7 +731,7 @@ export function webAnalyticsPagesQuery(
 				.orderBy(["pageViews", "desc"])
 				.limit(limit)
 				.format("JSON")
-		: from(SessionEvents)
+		: from(Datasources.sessionEvents)
 				.select(($) => ({
 					host: CH.domain_($.Url),
 					pagePath: CH.path_($.Url),
@@ -768,7 +769,7 @@ export interface WebAnalyticsEntryPagesOutput {
 export function webAnalyticsEntryPagesQuery(
 	opts: WebAnalyticsEntryPagesOpts = {},
 ): CHQuery<ColumnDefs, WebAnalyticsEntryPagesOutput> {
-	return from(SessionReplays)
+	return from(Datasources.sessionReplays)
 		.select(($) => ({
 			host: $.Host,
 			entryPath: $.EntryPath,
@@ -820,7 +821,7 @@ export function webAnalyticsEventsQuery(
 ): CHQuery<ColumnDefs, WebAnalyticsEventsOutput> {
 	const limit = opts.limit ?? 100
 	return opts.useProductEvents
-		? from(ProductEvents)
+		? from(Datasources.productEvents)
 				.select(($) => ({
 					name: $.EventName,
 					events: CH.count(),
@@ -835,7 +836,7 @@ export function webAnalyticsEventsQuery(
 				.orderBy(["events", "desc"])
 				.limit(limit)
 				.format("JSON")
-		: from(SessionEvents)
+		: from(Datasources.sessionEvents)
 				.select(($) => ({
 					name: $.Message,
 					events: CH.count(),
@@ -891,7 +892,7 @@ export function webAnalyticsBreakdownsQuery(
 		column: ($: ReplaysAccessor) => CH.Expr<string>,
 		empty: "drop" | "keep" = "drop",
 	) =>
-		from(SessionReplays)
+		from(Datasources.sessionReplays)
 			.select(($) => ({
 				name:
 					empty === "keep"

@@ -1,5 +1,5 @@
 import { Effect, Array as Arr } from "effect"
-import type { ListLogsOutput } from "@maple/domain/tinybird"
+import type { ListLogsRow } from "../ch/pipe-rows"
 import { WarehouseExecutor } from "./WarehouseExecutor"
 import type { MineLogPatternsInput, LogPattern } from "./types"
 import { TemplateMiner, TemplateMinerConfig } from "../drain"
@@ -114,7 +114,7 @@ export const mineLogPatterns = Effect.fn("Observability.mineLogPatterns")(functi
 		...(input.traceId && { trace_id: input.traceId }),
 	} satisfies Record<string, unknown>
 
-	const result = yield* executor.query<ListLogsOutput>(
+	const result = yield* executor.query<ListLogsRow>(
 		"list_logs",
 		{
 			start_time: input.timeRange.startTime,

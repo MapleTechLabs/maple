@@ -26,7 +26,8 @@ import {
 import { httpDisplaySpanName } from "../../traces-shared"
 import { CHNumber } from "../schema"
 import { DateTimeUtcFromWarehouse } from "../../datetime"
-import { ServiceOperationsHourly, ServiceOperationsMinutely, Traces, orgIdParam } from "../tables"
+import * as Datasources from "@maple/domain/tinybird/datasources"
+import { orgIdParam } from "../tables"
 import { tracesBaseWhereConditions } from "./query-helpers"
 import { edgeCondition, hourGrain, utcInteriorConditions, minuteGrain } from "./rollup-splice"
 import * as T from "@maple-dev/effect-orm/clickhouse"
@@ -73,7 +74,7 @@ export const serviceOperationsSummaryRowSchema = Schema.Struct({
 	p99DurationMs: CHNumber,
 })
 
-export const displaySpanName = ($: ColumnAccessor<typeof Traces.columns>) =>
+export const displaySpanName = ($: ColumnAccessor<typeof Datasources.traces.columns>) =>
 	httpDisplaySpanName($.SpanName, $.SpanAttributes.get("http.route"), $.SpanAttributes.get("url.path"))
 
 // p50/p95/p99 off states that `service_operations_minutely/_hourly` wrote with
@@ -127,7 +128,7 @@ export const ROLLUP_DURATION_STATE = "quantilesTDigestMergeState(0.5, 0.95, 0.99
 export const DURATION_STATE = T.aggregateState("quantilesTDigest(0.5, 0.95, 0.99)", "UInt64")
 
 function rollupEnvironmentCondition(
-	$: ColumnAccessor<typeof ServiceOperationsMinutely.columns>,
+	$: ColumnAccessor<typeof Datasources.serviceOperationsMinutely.columns>,
 	environments: readonly string[] | undefined,
 ) {
 	return environments !== undefined && environments.length > 0
@@ -136,7 +137,7 @@ function rollupEnvironmentCondition(
 }
 
 function hourlyEnvironmentCondition(
-	$: ColumnAccessor<typeof ServiceOperationsHourly.columns>,
+	$: ColumnAccessor<typeof Datasources.serviceOperationsHourly.columns>,
 	environments: readonly string[] | undefined,
 ) {
 	return environments !== undefined && environments.length > 0
@@ -155,7 +156,7 @@ export const mergedDurationQuantile = (index: 1 | 2 | 3) =>
  * path until managed and BYO rollup parity/latency have been observed.
  */
 export function serviceOperationsSummaryRawQuery(opts: ServiceOperationsSummaryOpts) {
-	return from(Traces)
+	return from(Datasources.traces)
 		.select(($) => {
 			const weight = CH.sum($.SampleRate)
 			const errorWeight = CH.sumIf($.SampleRate, $.StatusCode.eq("Error"))
@@ -192,7 +193,7 @@ export function serviceOperationsSummaryRawQuery(opts: ServiceOperationsSummaryO
  * for the interior. Callers aggregate across the union.
  */
 export function serviceOperationWindows(opts: Omit<ServiceOperationsSummaryOpts, "limit">) {
-	const rawEdges = from(Traces)
+	const rawEdges = from(Datasources.traces)
 		.select(($) => ({
 			bSpanName: displaySpanName($),
 			bSpanCount: CH.count(),
@@ -212,7 +213,7 @@ export function serviceOperationWindows(opts: Omit<ServiceOperationsSummaryOpts,
 		])
 		.groupBy("bSpanName")
 
-	const minutelyEdges = from(ServiceOperationsMinutely)
+	const minutelyEdges = from(Datasources.serviceOperationsMinutely)
 		.select(($) => ({
 			bSpanName: $.SpanName,
 			bSpanCount: CH.sum($.SpanCount),
@@ -232,7 +233,7 @@ export function serviceOperationWindows(opts: Omit<ServiceOperationsSummaryOpts,
 		])
 		.groupBy("bSpanName")
 
-	const hourlyInterior = from(ServiceOperationsHourly)
+	const hourlyInterior = from(Datasources.serviceOperationsHourly)
 		.select(($) => ({
 			bSpanName: $.SpanName,
 			bSpanCount: CH.sum($.SpanCount),
@@ -308,7 +309,7 @@ export const serviceOperationsTimeseriesRowSchema = Schema.Struct({
 
 /** All-raw sparkline rollback companion to {@link serviceOperationsSummaryRawQuery}. */
 export function serviceOperationsTimeseriesRawQuery(opts: ServiceOperationsTimeseriesOpts) {
-	return from(Traces)
+	return from(Datasources.traces)
 		.select(($) => ({
 			bucket: CH.toStartOfInterval($.Timestamp, param.int("bucketSeconds")),
 			spanName: displaySpanName($),
@@ -334,7 +335,7 @@ export function serviceOperationsTimeseriesRawQuery(opts: ServiceOperationsTimes
  * raw edge fragments compute the display name at read time.
  */
 export function serviceOperationsTimeseriesQuery(opts: ServiceOperationsTimeseriesOpts) {
-	const rawEdges = from(Traces)
+	const rawEdges = from(Datasources.traces)
 		.select(($) => ({
 			bucket: CH.toStartOfInterval($.Timestamp, param.int("bucketSeconds")),
 			spanName: displaySpanName($),
@@ -350,7 +351,7 @@ export function serviceOperationsTimeseriesQuery(opts: ServiceOperationsTimeseri
 		])
 		.groupBy("bucket", "spanName")
 
-	const minutelyInterior = from(ServiceOperationsMinutely)
+	const minutelyInterior = from(Datasources.serviceOperationsMinutely)
 		.select(($) => ({
 			bucket: CH.toStartOfInterval($.Minute, param.int("bucketSeconds")),
 			spanName: $.SpanName,
@@ -368,7 +369,7 @@ export function serviceOperationsTimeseriesQuery(opts: ServiceOperationsTimeseri
 		])
 		.groupBy("bucket", "spanName")
 
-	const hourlyInterior = from(ServiceOperationsHourly)
+	const hourlyInterior = from(Datasources.serviceOperationsHourly)
 		.select(($) => ({
 			bucket: CH.toStartOfInterval($.Hour, param.int("bucketSeconds")),
 			spanName: $.SpanName,
@@ -442,7 +443,7 @@ const searchCondition = (name: CH.Expr<string>, search: string | undefined) =>
 	search ? CH.positionCaseInsensitive(name, CH.lit(search)).gt(0) : undefined
 
 export function routeUsageQuery(opts: RouteUsageOpts) {
-	const rawEdges = from(Traces)
+	const rawEdges = from(Datasources.traces)
 		.select(($) => ({
 			bServiceName: $.ServiceName,
 			bSpanName: displaySpanName($),
@@ -463,7 +464,7 @@ export function routeUsageQuery(opts: RouteUsageOpts) {
 		])
 		.groupBy("bServiceName", "bSpanName")
 
-	const minutelyEdges = from(ServiceOperationsMinutely)
+	const minutelyEdges = from(Datasources.serviceOperationsMinutely)
 		.select(($) => ({
 			bServiceName: $.ServiceName,
 			bSpanName: $.SpanName,
@@ -484,7 +485,7 @@ export function routeUsageQuery(opts: RouteUsageOpts) {
 		])
 		.groupBy("bServiceName", "bSpanName")
 
-	const hourlyInterior = from(ServiceOperationsHourly)
+	const hourlyInterior = from(Datasources.serviceOperationsHourly)
 		.select(($) => ({
 			bServiceName: $.ServiceName,
 			bSpanName: $.SpanName,

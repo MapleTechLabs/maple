@@ -1,5 +1,5 @@
 import { Array as Arr, pipe } from "effect"
-import type { ServiceOverviewOutput } from "@maple/domain/tinybird"
+import type { ServiceOverviewRow } from "../ch/pipe-rows"
 
 export interface AggregatedService {
 	readonly throughput: number
@@ -25,7 +25,7 @@ export interface AggregatedService {
  * pass.
  */
 export const aggregateServiceRows = (
-	rows: ReadonlyArray<ServiceOverviewOutput>,
+	rows: ReadonlyArray<ServiceOverviewRow>,
 	serviceName?: string,
 ): AggregatedService => {
 	const filtered = serviceName

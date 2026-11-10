@@ -13,7 +13,8 @@ import {
 	type CompiledQueryRowSchema,
 } from "@maple-dev/effect-orm/clickhouse"
 import { CHNumber } from "../schema"
-import { SourceUsageHourly, orgIdParam, utcSecondsParam } from "../tables"
+import * as Datasources from "@maple/domain/tinybird/datasources"
+import { orgIdParam, utcSecondsParam } from "../tables"
 
 export interface SourceUsageHourlyOutput {
 	/** ClickHouse datetime literal of the hour bucket start. */
@@ -49,7 +50,7 @@ export const sourceUsageTotalsRowSchema = Schema.Struct({
 	bytes: CHNumber,
 }) satisfies CompiledQueryRowSchema<SourceUsageTotalsOutput>
 
-type Columns = ColumnAccessor<typeof SourceUsageHourly.columns>
+type Columns = ColumnAccessor<typeof Datasources.sourceUsageHourly.columns>
 
 /** Bytes are the stored-size estimates of every signal, summed. */
 const volume = ($: Columns) => ({
@@ -68,7 +69,7 @@ const inWindow = ($: Columns) => [
 
 /** Hourly volume for one source. Params: orgId, sourceId, startTime, endTime. */
 export function sourceUsageHourlyQuery() {
-	return from(SourceUsageHourly)
+	return from(Datasources.sourceUsageHourly)
 		.select(($) => ({ hour: CH.toString_($.Hour), ...volume($) }))
 		.where(($) => [...inWindow($), $.SourceId.eq(param.string("sourceId"))])
 		.groupBy("hour")
@@ -78,7 +79,7 @@ export function sourceUsageHourlyQuery() {
 
 /** Window totals for every source of an org. Params: orgId, startTime, endTime. */
 export function sourceUsageTotalsQuery() {
-	return from(SourceUsageHourly)
+	return from(Datasources.sourceUsageHourly)
 		.select(($) => ({ sourceId: $.SourceId, ...volume($) }))
 		.where(inWindow)
 		.groupBy("sourceId")

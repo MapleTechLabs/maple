@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it } from "@effect/vitest"
 import { ConfigProvider, Context, Effect, Layer, ManagedRuntime, Option, Schema, Array as Arr } from "effect"
 import { HttpRouter } from "effect/http"
-import { HttpApiBuilder } from "effect/http-api"
+import { HttpApi, HttpApiBuilder } from "effect/http-api"
 import { OrgId, UserId } from "@maple/domain/http"
 import { MapleApiV2 } from "@maple/domain/http/v2"
 import { API_CORS_OPTIONS } from "@maple/backend/http/api-cors"
@@ -15,13 +15,9 @@ import { ApiAuthorizationV2Live } from "@maple/backend/services/auth/ApiAuthoriz
 import { AuditLogService, makeMemoryAuditLog } from "@maple/backend/services/audit/AuditLogService"
 import { ApiV2RateLimiter, type RateLimiterApi } from "@maple/backend/services/auth/ApiV2RateLimiter"
 import { V2TransportErrorBoundaryLive } from "./error-envelope"
-import {
-	AlertsServiceStubLayer,
-	allV2GroupLayersWithAudit,
-	ConfigResourceServiceStubsLayer,
-	PlanetScaleServiceStubsLayer,
-	TelemetryServiceStubsLayer,
-} from "./v2-test-support"
+import { HttpV2ApiKeysLive } from "./api-keys.http"
+import { HttpV2OrganizationLive } from "./organization.http"
+import { Phase1ResourceStubsLayer } from "./v2-test-support"
 
 /**
  * End-to-end HTTP tests for the v2 pilot: a real router (auth middleware, v2
@@ -61,13 +57,17 @@ const makeHarness = (checkRateLimit: RateLimiterApi["check"] = () => Effect.succ
 		SharedDashboardService.layer,
 	).pipe(Layer.provideMerge(Layer.mergeAll(envLive, testDb.layer)))
 
-	const routes = HttpApiBuilder.layer(MapleApiV2).pipe(
-		Layer.provide(allV2GroupLayersWithAudit(auditLive)),
+	const routes = HttpApiBuilder.layer(
+		HttpApi.make("MapleApiV2").add(MapleApiV2.groups.apiKeys, MapleApiV2.groups.organization),
+	).pipe(
+		Layer.provide(
+			Layer.mergeAll(
+				HttpV2ApiKeysLive,
+				// Inert, so a 429 proves the limiter answered before the handler ran.
+				HttpV2OrganizationLive.pipe(Layer.provide(Phase1ResourceStubsLayer)),
+			),
+		),
 		Layer.provide(V2TransportErrorBoundaryLive),
-		Layer.provide(PlanetScaleServiceStubsLayer),
-		Layer.provide(AlertsServiceStubLayer),
-		Layer.provide(ConfigResourceServiceStubsLayer),
-		Layer.provide(TelemetryServiceStubsLayer),
 		Layer.provideMerge(ApiAuthorizationV2Live),
 		Layer.provideMerge(auditLive),
 		Layer.provideMerge(Layer.succeed(ApiV2RateLimiter, { check: checkRateLimit })),

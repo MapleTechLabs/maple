@@ -15,7 +15,8 @@ import { if_ } from "@maple-dev/effect-orm/clickhouse"
 import { round } from "@maple-dev/effect-orm/clickhouse"
 import { param } from "@maple-dev/effect-orm/clickhouse"
 import { from } from "@maple-dev/effect-orm/clickhouse"
-import { Traces, orgIdParam } from "../tables"
+import * as Datasources from "@maple/domain/tinybird/datasources"
+import { orgIdParam } from "../tables"
 import { deploymentEnvExpr } from "@maple/domain/tinybird/semconv-renames"
 import * as T from "@maple-dev/effect-orm/clickhouse"
 import { displaySpanName, mergedDurationQuantile, serviceOperationWindows } from "./service-operations"
@@ -124,7 +125,7 @@ export function topOperationsRollupQuery(
 export function topOperationsQuery(opts: TopOperationsOpts) {
 	const limit = opts.limit ?? 20
 
-	return from(Traces)
+	return from(Datasources.traces)
 		.select(($) => ({
 			name: displaySpanName($),
 			value: finiteOrZero(metricExpr(opts.metric, $)),

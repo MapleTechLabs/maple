@@ -22,7 +22,8 @@ import { param, from, fromQuery, inSubquery, table } from "@maple-dev/effect-orm
 import type { CHQuery, ColumnDefs } from "@maple-dev/effect-orm/clickhouse"
 import * as T from "@maple-dev/effect-orm/clickhouse"
 import { Result, Schema, Array as Arr, String as Str } from "effect"
-import { ProductEvents, orgIdParam } from "../tables"
+import * as Datasources from "@maple/domain/tinybird/datasources"
+import { orgIdParam } from "../tables"
 import { CHNumber } from "../schema"
 import {
 	LINK_ALIAS,
@@ -137,17 +138,20 @@ function pathEventsBranch(opts: ProductEventsPathsOpts, filters: ProductEventsFi
 	const forward = opts.direction === "after"
 	const windowMs = opts.windowSeconds * 1000
 
-	const withIdentity = (): OpenJoinQuery<typeof ProductEvents.columns> => {
-		const base: OpenJoinQuery<typeof ProductEvents.columns> = from(ProductEvents, "e")
+	const withIdentity = (): OpenJoinQuery<typeof Datasources.productEvents.columns> => {
+		const base: OpenJoinQuery<typeof Datasources.productEvents.columns> = from(
+			Datasources.productEvents,
+			"e",
+		)
 		return keyBy === "person"
 			? base.leftJoinQuery(identityLinksByVisitor(), LINK_ALIAS, (e, link) =>
 					e.VisitorId.eq(link.VisitorId),
 				)
 			: base
 	}
-	const keyOf = ($: OpenJoinAccessor<typeof ProductEvents.columns>) =>
+	const keyOf = ($: OpenJoinAccessor<typeof Datasources.productEvents.columns>) =>
 		personKey(keyBy, $, keyBy === "person" ? $[LINK_ALIAS] : undefined)
-	const inRange = ($: OpenJoinAccessor<typeof ProductEvents.columns>) => [
+	const inRange = ($: OpenJoinAccessor<typeof Datasources.productEvents.columns>) => [
 		$.OrgId.eq(orgIdParam),
 		$.Timestamp.gte(param.dateTime("startTime")),
 		$.Timestamp.lte(param.dateTime("endTime")),

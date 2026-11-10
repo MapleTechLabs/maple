@@ -122,11 +122,8 @@ import {
 	SearchConsoleTopQueriesResponse,
 	CommitSha,
 	FingerprintHash,
-	ServiceName,
 	SpanName,
 	StatusCode,
-	TraceId,
-	SpanId,
 	type TenantContext,
 } from "@maple/domain/http"
 import { AWS_INFRA_KIND_IDS, AWS_INFRA_KINDS } from "@maple/domain/aws-infra"
@@ -162,7 +159,7 @@ import {
 	validatePathsDefinition,
 	workloadMetricSpec,
 } from "@maple/backend/queries/query-helpers"
-import { Queries } from "@/routes/queries"
+import { Queries } from "@maple/backend/queries/registry"
 import { isMapleService } from "@maple/domain/uptime"
 import { productEventsFunnelOpts, productEventsPathsOpts } from "@maple/query-engine/registry"
 import {
@@ -180,6 +177,7 @@ import { advisoryTargetOf } from "@maple/domain/runtime-advisories"
 import { type RuntimeProduct, runtimeProductOf } from "@maple/domain/runtime-posture"
 import type { ExecutionTenant, WarehouseExecutionError } from "@maple/query-engine/execution"
 import * as Integrations from "@maple/query-engine-integrations"
+import { decodeTraceId, decodeSpanId, decodeServiceName } from "../warehouse-ids"
 
 /**
  * Payload → query-engine filter opts. Every Cloudflare zone endpoint carries the same optional
@@ -244,9 +242,6 @@ const toServiceApiBucket = (row: CH.ServiceApiTimeseriesOutput) => ({
 	p99DurationMs: row.p99DurationMs,
 })
 
-const decodeTraceId = Schema.decodeSync(TraceId)
-const decodeSpanId = Schema.decodeSync(SpanId)
-const decodeServiceName = Schema.decodeUnknownSync(ServiceName)
 const decodeSpanName = Schema.decodeUnknownSync(SpanName)
 const decodeFingerprintHash = Schema.decodeUnknownSync(FingerprintHash)
 const decodeCommitSha = Schema.decodeUnknownSync(CommitSha)

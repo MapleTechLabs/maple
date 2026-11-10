@@ -16,7 +16,8 @@ import {
 	type CompiledQueryRowSchema,
 } from "@maple-dev/effect-orm/clickhouse"
 import type { ColumnDefs } from "@maple-dev/effect-orm/clickhouse"
-import { ErrorEventsByTime, ServiceOverviewSpans, orgIdParam, utcSecondsParam } from "../tables"
+import * as Datasources from "@maple/domain/tinybird/datasources"
+import { orgIdParam, utcSecondsParam } from "../tables"
 import { CHNumber } from "../schema"
 import { DateTimeUtcFromWarehouse } from "../../datetime"
 import { serviceOverviewWhereConditions } from "./query-helpers"
@@ -199,7 +200,7 @@ const RELEASES_TIMELINE_CAP = 5000
 
 /** Sub-minute buckets: no rollup tier can place a row inside a minute. */
 function releasesTimelineRawQuery(opts: ReleasesTimelineOpts): CHQuery<ColumnDefs, ReleasesTimelineOutput> {
-	return from(ServiceOverviewSpans)
+	return from(Datasources.serviceOverviewSpans)
 		.select(($) => ({
 			bucket: CH.toStartOfInterval($.Timestamp, param.int("bucketSeconds")),
 			serviceName: $.ServiceName,
@@ -278,7 +279,7 @@ export interface ReleaseErrorFingerprintsOutput {
 }
 
 export function releaseErrorFingerprintsQuery(opts: ReleaseErrorFingerprintsOpts) {
-	return from(ErrorEventsByTime)
+	return from(Datasources.errorEventsByTime)
 		.select(($) => ({
 			fingerprintHash: CH.toString_($.FingerprintHash),
 			count: CH.count(),

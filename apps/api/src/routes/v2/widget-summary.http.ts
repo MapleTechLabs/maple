@@ -11,8 +11,7 @@ import {
 	WIDGET_SUMMARY_SERVICE_LIMIT,
 	WIDGET_SUMMARY_THROUGHPUT_WINDOW_SECONDS,
 } from "@maple/domain/http/v2"
-import { formatWarehouseDateTime, QueryEngineExecuteRequest } from "@maple/query-engine"
-import { computeBucketSeconds } from "@maple/query-engine/runtime"
+import { computeBucketSeconds, formatWarehouseDateTime, QueryEngineExecuteRequest } from "@maple/query-engine"
 import { Clock, DateTime, Effect, Schema, Array as Arr, Record as Rec } from "effect"
 import { ErrorIssueReadModelsService } from "@maple/backend/services/errors/ErrorIssueReadModelsService"
 import { QueryEngineService } from "@maple/backend/services/warehouse/QueryEngineService"

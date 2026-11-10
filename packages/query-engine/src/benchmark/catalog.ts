@@ -30,7 +30,6 @@ import type { CompiledQuery } from "@maple-dev/effect-orm/clickhouse"
 import {
 	DeploymentEnvironment,
 	MetricName,
-	OrgId,
 	QueryEngineExecuteRequest,
 	ServiceName,
 	warehouseQueries,
@@ -40,6 +39,7 @@ import {
 import { baselineWarehouseCapabilities, type WarehouseCapabilities } from "../capabilities"
 import * as CH from "../ch"
 import { builderFixtures } from "./builders"
+import { builderCatalogEntries, FIXTURE_END_TIME, FIXTURE_ORG_ID, FIXTURE_START_TIME } from "./fixture"
 import { compilePipeQuery } from "../ch/pipe-dispatch"
 import { compiledQueryOf } from "../execution/compiled-input"
 import { fingerprintSql } from "../execution/fingerprint"
@@ -48,11 +48,9 @@ import { BenchmarkError, validateSuite, type Suite } from "@maple-dev/effect-orm
 
 // Fixture inputs
 
-const ORG_ID = "org_sql_catalog"
-/** A window that spans whole hours plus partial edges on both sides, so the
- *  edge-hour + rollup-interior union shapes both produce non-degenerate SQL. */
-const START_TIME = "2026-01-01 10:30:00"
-const END_TIME = "2026-01-03 14:15:00"
+const ORG_ID = FIXTURE_ORG_ID
+const START_TIME = FIXTURE_START_TIME
+const END_TIME = FIXTURE_END_TIME
 /** Narrow window for fine-grained buckets — the lowering rejects a timeseries
  *  whose bucket count is unreasonable, so a 60s fixture needs hours, not days. */
 const SHORT_START_TIME = "2026-01-03 10:30:00"
@@ -1057,7 +1055,7 @@ function makeCapturingWarehouse(capabilities: WarehouseCapabilities): {
  */
 export function collectQuerySpecCatalog(): ReadonlyArray<CatalogEntry> {
 	const entries: Array<CatalogEntry> = []
-	const tenant: QueryTenant = { orgId: OrgId.make(ORG_ID) }
+	const tenant: QueryTenant = { orgId: ORG_ID }
 
 	for (const fixture of querySpecFixtures) {
 		const variants = fixture.allCapabilities ? capabilityVariants : capabilityVariants.slice(0, 1)
@@ -1110,33 +1108,8 @@ export function collectQuerySpecCatalog(): ReadonlyArray<CatalogEntry> {
 // with production-shaped params; the e2e sweep picks these entries up with
 // zero test changes because it iterates the catalog.
 
-export function collectBuilderCatalog(): ReadonlyArray<CatalogEntry> {
-	const entries: Array<CatalogEntry> = []
-	for (const fixture of builderFixtures) {
-		const compiled = fixture.compile()
-		// The executor dies on unresolved placeholders at runtime; a fixture with a
-		// missing compile param must fail HERE, in the unit test, not in the sweep.
-		if (Str.includes("__PARAM_")(compiled.sql)) {
-			throw new Error(
-				`SQL catalog: builder fixture ${fixture.module}/${fixture.name} (${fixture.label}) ` +
-					`left an unresolved __PARAM_ placeholder — a compile param is missing.`,
-			)
-		}
-		entries.push({
-			id: `builder:${fixture.module}:${fixture.name}:${fixture.label}`,
-			source: "builder",
-			name: fixture.name,
-			label: fixture.label,
-			capabilityLabel: "baseline",
-			route: undefined,
-			sql: compiled.sql,
-			fingerprint: fingerprintSql(compiled.sql),
-			compiled,
-			...(fixture.sampleValues ? { sampleValues: fixture.sampleValues } : undefined),
-		})
-	}
-	return entries
-}
+export const collectBuilderCatalog = (): ReadonlyArray<CatalogEntry> =>
+	builderCatalogEntries("SQL catalog builder fixture", builderFixtures)
 
 /** The benchmark and analyzer consume these same compiled cases. Compilation
  * failures stay typed at CLI boundaries instead of dropping fixtures. */

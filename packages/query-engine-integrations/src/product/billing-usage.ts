@@ -21,13 +21,8 @@
 import { type DateTime, Schema } from "effect"
 import * as CH from "@maple-dev/effect-orm/expr"
 import { dateTime64, from, type CompiledQueryRowSchema } from "@maple-dev/effect-orm/clickhouse"
-import {
-	ProductEvents,
-	ServiceUsage,
-	SessionReplays,
-	orgIdParam,
-	utcSecondsParam,
-} from "@maple/query-engine/ch/tables"
+import * as Datasources from "@maple/domain/tinybird/datasources"
+import { orgIdParam, utcSecondsParam } from "@maple/query-engine/ch/tables"
 import { CHNumber } from "@maple/query-engine/ch/schema"
 import { utcHourFloor } from "@maple/query-engine/ch/query-helpers"
 
@@ -53,7 +48,7 @@ export interface DailySignalVolumeOutput {
  * the customer is never billed for separately.
  */
 export function dailySignalVolumeQuery() {
-	return from(ServiceUsage)
+	return from(Datasources.serviceUsage)
 		.select(($) => ({
 			day: CH.toStartOfInterval($.Hour, DAY_SECONDS),
 			logBytes: CH.sum($.LogSizeBytes),
@@ -90,7 +85,7 @@ export interface DailySessionCountOutput {
  * subdomains inside one billed visit.
  */
 export function dailySessionCountQuery() {
-	return from(SessionReplays)
+	return from(Datasources.sessionReplays)
 		.select(($) => ({
 			day: CH.toStartOfInterval($.StartTime, DAY_SECONDS),
 			sessions: CH.uniqExact($.SessionId),
@@ -127,7 +122,7 @@ export const dailyProductEventCountRowSchema: CompiledQueryRowSchema<DailyProduc
  * second in the sorting key, so the window predicate is a primary-index range.
  */
 export function dailyProductEventCountQuery() {
-	return from(ProductEvents)
+	return from(Datasources.productEvents)
 		.select(($) => ({
 			day: CH.toStartOfInterval($.Timestamp, DAY_SECONDS),
 			events: CH.count(),

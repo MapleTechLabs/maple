@@ -1,7 +1,8 @@
 import type { DateTime } from "effect"
 import * as CH from "@maple-dev/effect-orm/expr"
 import { defineCondFn, from, param, paramPlaceholder } from "@maple-dev/effect-orm/clickhouse"
-import { AuditLog, orgIdParam } from "../tables"
+import * as Datasources from "@maple/domain/tinybird/datasources"
+import { orgIdParam } from "../tables"
 import { Array as Arr } from "effect"
 
 /**
@@ -47,7 +48,7 @@ const endsWithAny = (action: CH.Expr<string>, suffixes: ReadonlyArray<string>) =
  * appear twice here; the service collapses it by id.
  */
 export function auditLogEntriesQuery(opts: AuditLogEntriesOpts) {
-	return from(AuditLog)
+	return from(Datasources.auditLog)
 		.select(($) => ({
 			id: $.Id,
 			occurredAt: $.OccurredAt,

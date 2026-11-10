@@ -1,4 +1,7 @@
-import type { SpanHierarchyOutput, ListLogsOutput } from "@maple/domain/tinybird"
+import type {
+	SpanHierarchyRow as SpanHierarchyOutput,
+	ListLogsRow as ListLogsOutput,
+} from "@maple/query-engine/ch"
 import { FIXTURES } from "./utils"
 import { String as Str } from "effect"
 

@@ -61,7 +61,7 @@ import { formatWarehouseDateTime, parseWarehouseDateTime } from "../datetime"
 import { attributeIndexMode, logBodySearchMode } from "../capabilities"
 import * as CH from "../ch"
 import { LOGS_BODY_SEARCH_SETTINGS } from "../profiles"
-import { makeTimeRangeCachePolicy, timeRangeCache } from "../runtime/query-engine"
+import { makeTimeRangeCachePolicy, timeRangeCache } from "../runtime/cache-policy"
 import { defineQuery } from "./query-definition"
 
 export { logsCount, logsTimeseries } from "./logs"

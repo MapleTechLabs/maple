@@ -3,9 +3,6 @@
  * `@maple-dev/effect-orm/tinybird`. A datasource is also the query table.
  */
 
-// Export all endpoints and their types
-export * from "./endpoints"
-
 // Export all datasources and their types
 export * from "./datasources"
 

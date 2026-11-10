@@ -11,7 +11,8 @@ import {
 	UNKNOWN_MCP_CLIENT,
 	type McpClientKind,
 } from "@maple/domain/mcp-clients"
-import { ServiceOperationsHourly, Traces, orgIdParam, utcSecondsParam } from "../tables"
+import * as Datasources from "@maple/domain/tinybird/datasources"
+import { orgIdParam, utcSecondsParam } from "../tables"
 import { finiteOrZero, isoBucket } from "./format"
 import { Array as Arr, String as Str } from "effect"
 
@@ -29,7 +30,7 @@ export interface McpCallFilter {
 
 const likeLiteral = (value: string): string => Str.replace(/[\\%_]/g, "\\$&")(value)
 
-type TracesRow = ColumnAccessor<typeof Traces.columns>
+type TracesRow = ColumnAccessor<typeof Datasources.traces.columns>
 
 export const method = ($: TracesRow) => $.SpanAttributes.get("mcp.method.name")
 const toolName = ($: TracesRow) => $.SpanAttributes.get("gen_ai.tool.name")
@@ -147,7 +148,7 @@ const percentiles = ($: { readonly Duration: CH.Expr<number> }) => ({
 
 /** Services answering `tools/call` as a server in the window, from the hourly operations rollup. */
 export function mcpServicesQuery() {
-	return from(ServiceOperationsHourly)
+	return from(Datasources.serviceOperationsHourly)
 		.select(($) => ({
 			service: $.ServiceName,
 			serverSpans: CH.sum($.ServerSpanCount),
@@ -167,7 +168,7 @@ export function mcpServicesQuery() {
 
 /** The hour of one service's first MCP tool call on record, from the hourly operations rollup. */
 export function mcpFirstSeenQuery() {
-	return from(ServiceOperationsHourly)
+	return from(Datasources.serviceOperationsHourly)
 		.select(($) => ({ firstHour: CH.min_($.Hour) }))
 		.where(($) => [
 			$.OrgId.eq(orgIdParam),
@@ -180,7 +181,7 @@ export function mcpFirstSeenQuery() {
 
 /** One row per server across the listed services: its calls, failures and the latest call. */
 export function mcpServerStatsQuery(services: ReadonlyArray<string>) {
-	return from(Traces)
+	return from(Datasources.traces)
 		.select(($) => ({
 			service: $.ServiceName,
 			protocolVersion: nonEmpty($.SpanAttributes.get("mcp.protocol.version")),
@@ -197,7 +198,7 @@ export function mcpServerStatsQuery(services: ReadonlyArray<string>) {
 
 /** Calls per (service, bucket), for the list's sparks. */
 export function mcpServerSparkQuery(services: ReadonlyArray<string>) {
-	return from(Traces)
+	return from(Datasources.traces)
 		.select(($) => ({ service: $.ServiceName, bucket: isoBucket($.Timestamp), calls: CH.count() }))
 		.where(($) => serverCalls($, services))
 		.groupBy("service", "bucket")
@@ -206,7 +207,7 @@ export function mcpServerSparkQuery(services: ReadonlyArray<string>) {
 
 /** Calls per (service, client family), for the list's top client. */
 export function mcpServerClientsQuery(services: ReadonlyArray<string>) {
-	return from(Traces)
+	return from(Datasources.traces)
 		.select(($) => ({ service: $.ServiceName, client: mcpClientName($), calls: CH.count() }))
 		.where(($) => serverCalls($, services))
 		.groupBy("service", "client")
@@ -215,7 +216,7 @@ export function mcpServerClientsQuery(services: ReadonlyArray<string>) {
 
 /** Per client family under the selection: its kind, calls and failures. */
 export function mcpClientsQuery(filter: McpCallFilter = {}) {
-	return from(Traces)
+	return from(Datasources.traces)
 		.select(($) => ({
 			client: mcpClientName($),
 			kind: CH.any_(mcpClientKind($)),
@@ -234,7 +235,7 @@ export function mcpClientsQuery(filter: McpCallFilter = {}) {
  * distinct `client.address` values and last request. Finds the clients that connect and never call.
  */
 export function mcpClientReachQuery(filter: Pick<McpCallFilter, "client" | "kind"> = {}) {
-	return from(Traces)
+	return from(Datasources.traces)
 		.select(($) => ({
 			client: mcpClientName($),
 			kind: CH.any_(mcpClientKind($)),
@@ -257,7 +258,7 @@ export function mcpClientReachQuery(filter: Pick<McpCallFilter, "client" | "kind
 
 /** One service's server spans per (method, error type): failures and the coverage checklist's counts. */
 export function mcpSpanSummaryQuery() {
-	return from(Traces)
+	return from(Datasources.traces)
 		.select(($) => ({
 			method: method($),
 			errorType: errorType($),
@@ -283,7 +284,7 @@ export function mcpSpanSummaryQuery() {
 
 /** Requests per `clientInfo.name`: `initialize` sends it, a stateless request sends it in `_meta`. */
 export function mcpClientInfoQuery() {
-	return from(Traces)
+	return from(Datasources.traces)
 		.select(($) => ({
 			name: $.SpanAttributes.get("maple.mcp.client.name"),
 			count: CH.count(),
@@ -298,7 +299,7 @@ export function mcpClientInfoQuery() {
 
 /** Per method: span count and latency, unfiltered. */
 export function mcpMethodsQuery() {
-	return from(Traces)
+	return from(Datasources.traces)
 		.select(($) => ({ method: method($), calls: CH.count(), ...percentiles($) }))
 		.where(serverSpans)
 		.groupBy("method")
@@ -309,7 +310,7 @@ export function mcpMethodsQuery() {
 
 /** The selection's totals: calls, failures, status errors, percentiles and first/last call. */
 export function mcpCallTotalsQuery(filter: McpCallFilter = {}) {
-	return from(Traces)
+	return from(Datasources.traces)
 		.select(($) => ({
 			calls: CH.count(),
 			errors: CH.countIf(failed($)),
@@ -325,7 +326,7 @@ export function mcpCallTotalsQuery(filter: McpCallFilter = {}) {
 
 /** The selection's merged series: calls, failures and percentiles per bucket. */
 export function mcpCallSeriesQuery(filter: McpCallFilter = {}) {
-	return from(Traces)
+	return from(Datasources.traces)
 		.select(($) => ({
 			bucket: isoBucket($.Timestamp),
 			calls: CH.count(),
@@ -340,7 +341,7 @@ export function mcpCallSeriesQuery(filter: McpCallFilter = {}) {
 
 /** Calls and failures per (bucket, key): `tool` for the tools table's sparks, `client` for clients. */
 export function mcpCallSplitSeriesQuery(split: "tool" | "client", filter: McpCallFilter = {}) {
-	return from(Traces)
+	return from(Datasources.traces)
 		.select(($) => ({
 			bucket: isoBucket($.Timestamp),
 			key: split === "tool" ? toolName($) : mcpClientName($),
@@ -354,7 +355,7 @@ export function mcpCallSplitSeriesQuery(split: "tool" | "client", filter: McpCal
 
 /** The tools table: per named tool, calls, failures, percentiles and last call. */
 export function mcpToolStatsQuery(filter: McpCallFilter = {}) {
-	return from(Traces)
+	return from(Datasources.traces)
 		.select(($) => ({
 			tool: toolName($),
 			calls: CH.count(),
@@ -371,7 +372,7 @@ export function mcpToolStatsQuery(filter: McpCallFilter = {}) {
 
 /** Failed calls per (tool, error type) under the selection: each tool's top error and the failure kinds. */
 export function mcpToolErrorsQuery(filter: McpCallFilter = {}) {
-	return from(Traces)
+	return from(Datasources.traces)
 		.select(($) => ({ tool: toolName($), errorType: errorType($), count: CH.count() }))
 		.where(($) => [...calls($, filter), failed($)])
 		.groupBy("tool", "errorType")
@@ -382,7 +383,7 @@ export function mcpToolErrorsQuery(filter: McpCallFilter = {}) {
 
 /** One tool's failures grouped by error type and status message, with each group's reach. */
 export function mcpErrorGroupsQuery(filter: McpCallFilter) {
-	return from(Traces)
+	return from(Datasources.traces)
 		.select(($) => ({
 			errorType: errorType($),
 			message: errorMessage($),
@@ -399,7 +400,7 @@ export function mcpErrorGroupsQuery(filter: McpCallFilter) {
 
 /** Failures per (bucket, error type, message) for the listed groups' trends. */
 export function mcpErrorTrendQuery(filter: McpCallFilter, messages: ReadonlyArray<string>) {
-	return from(Traces)
+	return from(Datasources.traces)
 		.select(($) => ({
 			bucket: isoBucket($.Timestamp),
 			errorType: errorType($),
@@ -415,7 +416,7 @@ export type McpCallOrder = "slowest" | "failed" | "recent"
 
 /** A page of single calls: the slowest, the latest failures, or the latest. */
 export function mcpCallListQuery(order: McpCallOrder, filter: McpCallFilter, limit = 20) {
-	return from(Traces)
+	return from(Datasources.traces)
 		.select(($) => ({
 			timestamp: $.Timestamp,
 			client: mcpClientName($),
@@ -497,7 +498,7 @@ const issuedSessionColumns = ($: TracesRow) => ({
 
 /** One row per issued session under the selection, the latest first. */
 export function mcpSessionListQuery(filter: McpSessionFilter = {}, limit = 200) {
-	return from(Traces)
+	return from(Datasources.traces)
 		.select(issuedSessionColumns)
 		.where(($) => sessionRequests($, filter))
 		.groupBy("sessionId")
@@ -514,7 +515,7 @@ export function mcpSessionListQuery(filter: McpSessionFilter = {}, limit = 200) 
  * users and the tool calls. User sessions are counted by the backend once it has split them.
  */
 export function mcpSessionTotalsQuery(filter: McpSessionFilter = {}) {
-	return from(Traces)
+	return from(Datasources.traces)
 		.select(($) => ({
 			sessions: CH.uniqExact(CH.nullIf(sessionId($), "")),
 			failingSessions: CH.uniqExact(CH.nullIf(CH.if_(failedCall($), sessionId($), CH.lit("")), "")),
@@ -545,7 +546,7 @@ const userMinuteColumns = ($: TracesRow) => ({
  * oldest: the backend sorts them and splits each user and client's minutes into sessions at an idle gap.
  */
 export function mcpUserActivityQuery(filter: McpSessionFilter = {}, limit = 50_000) {
-	return from(Traces)
+	return from(Datasources.traces)
 		.select(userMinuteColumns)
 		.where(($) => userRequests($, filter))
 		.groupBy("user", "client", "minute")
@@ -567,7 +568,7 @@ export function mcpServersSessionListQuery(
 	filter: McpSessionFilter = {},
 	limit = 200,
 ) {
-	return from(Traces)
+	return from(Datasources.traces)
 		.select(($) => ({ service: $.ServiceName, ...issuedSessionColumns($) }))
 		.where(($) => [...serversSpans($, services), sessionId($).neq(""), ...selected($, filter)])
 		.groupBy("service", "sessionId")
@@ -584,7 +585,7 @@ export function mcpServersUserActivityQuery(
 	limitPerService = 5_000,
 	limitTotal = 20_000,
 ) {
-	const ranked = from(Traces)
+	const ranked = from(Datasources.traces)
 		.select(($) => ({
 			service: $.ServiceName,
 			...userMinuteColumns($),
@@ -626,7 +627,7 @@ export function mcpServersUserActivityQuery(
 
 /** Sessions and users active per bucket; a user's stateless requests count once per client. */
 export function mcpSessionActivityQuery(filter: McpSessionFilter = {}) {
-	return from(Traces)
+	return from(Datasources.traces)
 		.select(($) => ({
 			bucket: isoBucket($.Timestamp),
 			sessions: CH.uniqExact(
@@ -664,7 +665,7 @@ const requestColumns = ($: TracesRow) => ({
  * span's own trace; the first link is the HTTP request's span, or the caller's on a server that only links.
  */
 export function mcpSessionRequestsQuery(limit = 1_000) {
-	return from(Traces)
+	return from(Datasources.traces)
 		.select(requestColumns)
 		.where(($) => [...serverSpans($), sessionId($).eq(param.string("sessionId"))])
 		.orderBy(["timestamp", "asc"])
@@ -674,7 +675,7 @@ export function mcpSessionRequestsQuery(limit = 1_000) {
 
 /** One user's stateless requests from one client in order; the session's own bounds are the window. */
 export function mcpUserSessionRequestsQuery(limit = 1_000) {
-	return from(Traces)
+	return from(Datasources.traces)
 		.select(requestColumns)
 		.where(($) => [
 			...serverSpans($),

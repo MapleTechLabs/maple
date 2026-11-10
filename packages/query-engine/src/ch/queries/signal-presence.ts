@@ -24,7 +24,8 @@
 
 import * as CH from "@maple-dev/effect-orm/expr"
 import { from, param, unionAll, type CHUnionQuery } from "@maple-dev/effect-orm/clickhouse"
-import { ProductEvents, ServiceUsage, SessionReplays, orgIdParam } from "../tables"
+import * as Datasources from "@maple/domain/tinybird/datasources"
+import { orgIdParam } from "../tables"
 import { utcHourFloor } from "./query-helpers"
 
 /** The signals an empty state can be missing. Stable — the UI keys copy on these. */
@@ -52,7 +53,7 @@ export interface SignalPresenceOutput {
  * branch that matches nothing still returns one row reading `count: 0`.
  */
 export function signalPresenceQuery(): CHUnionQuery<SignalPresenceOutput> {
-	const traces = from(ServiceUsage)
+	const traces = from(Datasources.serviceUsage)
 		.select(($) => ({
 			signal: CH.lit("traces"),
 			count: CH.sum($.TraceCount),
@@ -66,7 +67,7 @@ export function signalPresenceQuery(): CHUnionQuery<SignalPresenceOutput> {
 			$.TraceCount.gt(0),
 		])
 
-	const logs = from(ServiceUsage)
+	const logs = from(Datasources.serviceUsage)
 		.select(($) => ({
 			signal: CH.lit("logs"),
 			count: CH.sum($.LogCount),
@@ -83,7 +84,7 @@ export function signalPresenceQuery(): CHUnionQuery<SignalPresenceOutput> {
 	// All four metric shapes count as "metrics are wired" — a service that only
 	// exports counters is as instrumented as one exporting histograms, and the
 	// empty state's advice ("add a metric reader") is identical either way.
-	const metrics = from(ServiceUsage)
+	const metrics = from(Datasources.serviceUsage)
 		.select(($) => ({
 			signal: CH.lit("metrics"),
 			count: CH.sum($.SumMetricCount)
@@ -103,7 +104,7 @@ export function signalPresenceQuery(): CHUnionQuery<SignalPresenceOutput> {
 				.gt(0),
 		])
 
-	const sessions = from(SessionReplays)
+	const sessions = from(Datasources.sessionReplays)
 		.select(($) => ({
 			signal: CH.lit("sessions"),
 			count: CH.count(),
@@ -116,7 +117,7 @@ export function signalPresenceQuery(): CHUnionQuery<SignalPresenceOutput> {
 			$.StartTime.lte(param.dateTime("endTime")),
 		])
 
-	const productEvents = from(ProductEvents)
+	const productEvents = from(Datasources.productEvents)
 		.select(($) => ({
 			signal: CH.lit("product_events"),
 			count: CH.count(),

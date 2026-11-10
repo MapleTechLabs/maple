@@ -13,7 +13,8 @@ import {
 } from "@maple/domain/uptime"
 import { DateTimeUtcFromWarehouse } from "../../datetime"
 import { CHNumber } from "../schema"
-import { orgIdParam, Traces } from "../tables"
+import * as Datasources from "@maple/domain/tinybird/datasources"
+import { orgIdParam } from "../tables"
 import { avgWhere } from "./format"
 
 export interface UptimePhaseTimingsOutput {
@@ -43,7 +44,7 @@ export const uptimePhaseTimingsRowSchema = Schema.Struct({
  * (TLS on http://, no body read). Checks from before phases were recorded never match.
  */
 export function uptimePhaseTimingsQuery() {
-	return from(Traces)
+	return from(Datasources.traces)
 		.select(($) => {
 			const answered = $.SpanAttributes.get(UPTIME_TIMING_ATTRIBUTES.ttfbMs).neq("")
 			const phase = (key: string) => avgWhere(CH.toFloat64OrZero($.SpanAttributes.get(key)), answered)
@@ -108,7 +109,7 @@ export const uptimeChecksRowSchema = Schema.Struct({
 
 /** One monitor's checks in the window, newest first, each with its outcome and phases (0 when absent). */
 export function uptimeChecksQuery(opts: UptimeChecksOpts) {
-	return from(Traces)
+	return from(Datasources.traces)
 		.select(($) => {
 			const phase = (key: string) => CH.toFloat64OrZero($.SpanAttributes.get(key))
 			return {

@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it } from "@effect/vitest"
 import { ConfigProvider, Context, Effect, Layer, ManagedRuntime, Schema } from "effect"
 import { HttpRouter } from "effect/http"
-import { HttpApiBuilder } from "effect/http-api"
+import { HttpApi, HttpApiBuilder } from "effect/http-api"
 import { OrgId, UserId } from "@maple/domain/http"
 import { MapleApiV2 } from "@maple/domain/http/v2"
 import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/testing/test-pglite"
@@ -22,15 +22,12 @@ import { LiveActivitiesService } from "@maple/backend/services/push/LiveActiviti
 import { MobileDevicesService } from "@maple/backend/services/push/MobileDevicesService"
 import { V2TransportErrorBoundaryLive } from "./error-envelope"
 import {
-	AlertsServiceStubLayer,
-	AllV2GroupLayersLive,
 	ApiV2RateLimiterAllowAllLayer,
-	ConfigResourceServiceStubsLayer,
-	Phase1ResourceStubsLayer,
 	makeWarehouseServiceStub,
-	PlanetScaleServiceStubsLayer,
-	TelemetryServiceStubsLayer,
+	OrgMembersServiceStubLayer,
 } from "./v2-test-support"
+import { HttpV2SourcesLive } from "./sources.http"
+import { HttpV2AuditLogLive } from "./audit-log.http"
 
 /** `/v2/sources` over an embedded PGlite with the real service. */
 
@@ -76,7 +73,6 @@ const makeHarness = () => {
 		MobileDevicesService.layer,
 		LiveActivitiesService.layer,
 	).pipe(Layer.provideMerge(Layer.mergeAll(envLive, testDb.layer)))
-	// Provided first so it shadows the inert stub in ConfigResourceServiceStubsLayer.
 	const realSources = SourcesService.layer.pipe(Layer.provide(Layer.mergeAll(envLive, testDb.layer)))
 	const sourcesLive = Layer.mergeAll(
 		realSources,
@@ -110,15 +106,17 @@ const makeHarness = () => {
 		),
 	)
 
-	const routes = HttpApiBuilder.layer(MapleApiV2).pipe(
-		Layer.provide(AllV2GroupLayersLive),
+	const routes = HttpApiBuilder.layer(
+		HttpApi.make("MapleApiV2").add(MapleApiV2.groups.sources, MapleApiV2.groups.auditLog),
+	).pipe(
+		Layer.provide(
+			Layer.mergeAll(
+				HttpV2SourcesLive,
+				HttpV2AuditLogLive.pipe(Layer.provide(OrgMembersServiceStubLayer)),
+			),
+		),
 		Layer.provide(sourcesLive),
 		Layer.provide(V2TransportErrorBoundaryLive),
-		Layer.provide(AlertsServiceStubLayer),
-		Layer.provide(ConfigResourceServiceStubsLayer),
-		Layer.provide(Phase1ResourceStubsLayer),
-		Layer.provide(PlanetScaleServiceStubsLayer),
-		Layer.provide(TelemetryServiceStubsLayer),
 		Layer.provideMerge(ApiAuthorizationV2Live),
 		Layer.provideMerge(AuditLogService.layerMemory),
 		Layer.provideMerge(ApiV2RateLimiterAllowAllLayer),

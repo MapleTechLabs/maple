@@ -13,7 +13,8 @@ import {
 	type ColumnAccessor,
 } from "@maple-dev/effect-orm/clickhouse"
 import { finiteOrZero, isoBucket, leftUTF8 } from "@maple/query-engine/ch/format"
-import { Logs, Traces, orgIdParam, utcSecondsParam } from "@maple/query-engine/ch/tables"
+import * as Datasources from "@maple/domain/tinybird/datasources"
+import { orgIdParam, utcSecondsParam } from "@maple/query-engine/ch/tables"
 import type { DateTime } from "effect"
 
 /** The `service.name` the logs poller stamps on every Supabase log record. */
@@ -36,8 +37,8 @@ const replaceRegexpAll = defineFn<[CH.Expr<string>, CH.Expr<string>, CH.Expr<str
 	T.string,
 )
 
-type LogColumns = ColumnAccessor<typeof Logs.columns>
-type TraceColumns = ColumnAccessor<typeof Traces.columns>
+type LogColumns = ColumnAccessor<typeof Datasources.logs.columns>
+type TraceColumns = ColumnAccessor<typeof Datasources.traces.columns>
 
 /** Seconds in the requested window, at least one, for per-minute rates. */
 const windowSeconds = () =>
@@ -87,7 +88,7 @@ export interface SupabaseApiTrafficSeriesOutput {
 
 /** Edge requests per bucket by status class, for one project. */
 export function supabaseApiTrafficSeriesSQL() {
-	return from(Logs)
+	return from(Datasources.logs)
 		.select(($) => ({
 			bucket: isoBucket($.TimestampTime),
 			status2xx: CH.countIf(statusIn($, 200)),
@@ -110,7 +111,7 @@ export interface SupabaseApiTrafficTotalsOutput {
 
 /** One row: edge requests, 5xx responses and the p95 upstream time over the window. */
 export function supabaseApiTrafficTotalsSQL() {
-	return from(Logs)
+	return from(Datasources.logs)
 		.select(($) => ({
 			requests: CH.count(),
 			errors5xx: CH.countIf(statusIn($, 500)),
@@ -130,7 +131,7 @@ export interface SupabaseApiTopPathsOutput {
 
 /** The ten busiest (method, path) pairs of one project's edge requests. */
 export function supabaseApiTopPathsSQL() {
-	return from(Logs)
+	return from(Datasources.logs)
 		.select(($) => ({
 			method: $.LogAttributes.get("request.method"),
 			path: edgePathOf($),
@@ -167,7 +168,7 @@ export interface SupabaseLogIssuesOutput {
  * digit runs collapse to `0` so ids and timings do not split a group.
  */
 export function supabaseLogIssuesSQL(opts: SupabaseLogIssuesOpts) {
-	const records = from(Logs)
+	const records = from(Datasources.logs)
 		.select(($) => {
 			const authMsg = $.LogAttributes.get("msg")
 			const raw = CH.multiIf(
@@ -232,7 +233,7 @@ export interface SupabaseLogsProjectSummaryOutput {
 
 /** One row per project with logs in the window: edge requests, 5xx and WARN+ record counts. */
 export function supabaseLogsProjectsSummarySQL() {
-	return from(Logs)
+	return from(Datasources.logs)
 		.select(($) => ({
 			projectRef: projectRefOf($),
 			requests: CH.countIf(isEdge($)),
@@ -313,7 +314,7 @@ export interface SupabaseProjectCallersOutput {
 
 /** The org's services that call one project, by span count, with the product mix of their calls. */
 export function supabaseProjectCallersSQL() {
-	const spans = from(Traces)
+	const spans = from(Datasources.traces)
 		.select(($) => ({
 			serviceName: $.ServiceName,
 			duration: $.Duration,
@@ -355,7 +356,7 @@ export function supabaseProjectCallersSQL() {
 /** The services `supabaseProjectCallersSQL` returns: same spans, ranking and limit. */
 const topCallers = () =>
 	fromQuery(
-		from(Traces)
+		from(Datasources.traces)
 			.select(($) => ({ serviceName: $.ServiceName, calls: CH.count() }))
 			.where(projectClientSpans)
 			.groupBy("serviceName")
@@ -372,7 +373,7 @@ export interface SupabaseProjectCallerSeriesOutput {
 
 /** Calls per (service, bucket) for exactly the callers table's services, for its sparklines. */
 export function supabaseProjectCallerSeriesSQL() {
-	return from(Traces)
+	return from(Datasources.traces)
 		.select(($) => ({
 			serviceName: $.ServiceName,
 			bucket: isoBucket($.Timestamp),

@@ -11,7 +11,8 @@
 
 import * as CH from "@maple-dev/effect-orm/expr"
 import { from, param, unionAll, type CHUnionQuery } from "@maple-dev/effect-orm/clickhouse"
-import { MetricsSum, orgIdParam } from "@maple/query-engine/ch/tables"
+import * as Datasources from "@maple/domain/tinybird/datasources"
+import { orgIdParam } from "@maple/query-engine/ch/tables"
 import { ISO_Z_FORMAT, isoBucket } from "@maple/query-engine/ch/format"
 import {
 	CF_ATTR,
@@ -179,7 +180,7 @@ export function cloudflareZoneBreakdownTotalsSQL(
 	limit = 100,
 ) {
 	const spec = BREAKDOWNS[dimension]
-	return from(MetricsSum)
+	return from(Datasources.metricsSum)
 		.select(($) => ({ key: keyExpr($, dimension), ...measures($, spec) }))
 		.where(($) => [
 			$.OrgId.eq(orgIdParam),
@@ -215,7 +216,7 @@ export function cloudflareZoneBreakdownTimeseriesSQL(
 		if (topKeys.length === 0) return key
 		return CH.if_(key.in_(...topKeys), key, CH.lit(CLOUDFLARE_BREAKDOWN_OTHER_KEY))
 	}
-	return from(MetricsSum)
+	return from(Datasources.metricsSum)
 		.select(($) => ({
 			bucket: isoBucket($.TimeUnix),
 			key: seriesKey($),
@@ -241,7 +242,7 @@ export function cloudflareZoneBreakdownTimeseriesSQL(
  */
 export function cloudflareZoneBreakdownCoverageSQL(dimension: CloudflareBreakdownDimension) {
 	const spec = BREAKDOWNS[dimension]
-	return from(MetricsSum)
+	return from(Datasources.metricsSum)
 		.select(($) => ({
 			coverageStart: CH.formatDateTime(CH.min_($.TimeUnix), ISO_Z_FORMAT),
 			attributedRequests: CH.sum($.Value),
@@ -285,7 +286,7 @@ const makeCfFacet = (
 	facetType: string,
 	perFacetLimit: number,
 ) =>
-	from(MetricsSum)
+	from(Datasources.metricsSum)
 		.select(($) => ({
 			name: key === "host" ? cloudflareHostAttr($) : $.Attributes.get(CF_ATTR[key]),
 			count: CH.sum($.Value),

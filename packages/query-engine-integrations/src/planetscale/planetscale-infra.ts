@@ -15,7 +15,8 @@ import type { DateTime } from "effect"
 import { finiteOrZero } from "@maple/query-engine/ch/format"
 import * as CH from "@maple-dev/effect-orm/expr"
 import { from, fromQuery, param } from "@maple-dev/effect-orm/clickhouse"
-import { MetricsGauge, orgIdParam } from "@maple/query-engine/ch/tables"
+import * as Datasources from "@maple/domain/tinybird/datasources"
+import { orgIdParam } from "@maple/query-engine/ch/tables"
 import {
 	CONNECTION_METRIC_NAMES,
 	CPU_METRIC_NAMES,
@@ -55,7 +56,7 @@ export interface PlanetScaleInfraTimeseriesOutput {
  * would paint every such bucket as a full disk.
  */
 const timeseriesInner = () =>
-	from(MetricsGauge).select(($) => ({
+	from(Datasources.metricsGauge).select(($) => ({
 		t: $.TimeUnix,
 		totalConnections: CH.sumIf($.Value, $.MetricName.in_(...CONNECTION_METRIC_NAMES)),
 		cpuMax: CH.maxIf($.Value, $.MetricName.in_(...CPU_METRIC_NAMES)),

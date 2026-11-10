@@ -35,14 +35,8 @@ import {
 	type CompiledQueryRowSchema,
 } from "@maple-dev/effect-orm/clickhouse"
 import { CHNumber } from "../schema"
-import {
-	Logs,
-	MetricCatalog,
-	ServiceOperationsMinutely,
-	ServiceOverviewSpans,
-	orgIdParam,
-	utcSecondsParam,
-} from "../tables"
+import * as Datasources from "@maple/domain/tinybird/datasources"
+import { orgIdParam, utcSecondsParam } from "../tables"
 import { utcHourFloor } from "./query-helpers"
 
 export interface ServiceLivenessOutput {
@@ -66,7 +60,7 @@ export interface ServiceLivenessOpts {
  * groupBy, so this is a single row and a near-empty scan.
  */
 export function serviceLivenessQuery(opts: ServiceLivenessOpts = {}) {
-	return from(ServiceOperationsMinutely)
+	return from(Datasources.serviceOperationsMinutely)
 		.select(($) => ({
 			minutesWithData: CH.uniq($.Minute),
 			spanCount: CH.sum($.SpanCount),
@@ -110,7 +104,7 @@ export interface TelemetryPulseOutput {
  * nothing.
  */
 export function orgTelemetryPulseQuery(): CHUnionQuery<TelemetryPulseOutput> {
-	const spans = from(ServiceOverviewSpans)
+	const spans = from(Datasources.serviceOverviewSpans)
 		.select(($) => ({
 			signal: CH.lit("spans"),
 			count: CH.count(),
@@ -122,7 +116,7 @@ export function orgTelemetryPulseQuery(): CHUnionQuery<TelemetryPulseOutput> {
 			$.Timestamp.lte(utcSecondsParam("endTime")),
 		])
 
-	const logs = from(Logs)
+	const logs = from(Datasources.logs)
 		.select(($) => ({
 			signal: CH.lit("logs"),
 			count: CH.count(),
@@ -147,7 +141,7 @@ export function orgTelemetryPulseQuery(): CHUnionQuery<TelemetryPulseOutput> {
  * probed by `logsFreshnessQuery` so no union mixes tiers.
  */
 export function ingestFreshnessQuery(): CHUnionQuery<TelemetryPulseOutput> {
-	const traces = from(ServiceOperationsMinutely)
+	const traces = from(Datasources.serviceOperationsMinutely)
 		.select(($) => ({
 			signal: CH.lit("traces"),
 			count: CH.sum($.SpanCount),
@@ -159,7 +153,7 @@ export function ingestFreshnessQuery(): CHUnionQuery<TelemetryPulseOutput> {
 			$.Minute.lte(utcSecondsParam("endTime")),
 		])
 
-	const metrics = from(MetricCatalog)
+	const metrics = from(Datasources.metricCatalog)
 		.select(($) => ({
 			signal: CH.lit("metrics"),
 			count: CH.sum($.DataPointCount),
@@ -188,7 +182,7 @@ export function ingestFreshnessQuery(): CHUnionQuery<TelemetryPulseOutput> {
 
 /** Exact newest log timestamp for one org; one group-less row. */
 export function logsFreshnessQuery() {
-	return from(Logs)
+	return from(Datasources.logs)
 		.select(($) => ({
 			signal: CH.lit("logs"),
 			count: CH.count(),

@@ -13,7 +13,8 @@
 
 import * as CH from "@maple-dev/effect-orm/expr"
 import { from, param, type ColumnAccessor } from "@maple-dev/effect-orm/clickhouse"
-import { MetricsGauge, MetricsSum, orgIdParam } from "@maple/query-engine/ch/tables"
+import * as Datasources from "@maple/domain/tinybird/datasources"
+import { orgIdParam } from "@maple/query-engine/ch/tables"
 import { avgWhere, isoBucket } from "@maple/query-engine/ch/format"
 import {
 	CF_FILTERABLE,
@@ -44,7 +45,7 @@ export interface CloudflareZoneFirewallTopOutput {
 
 /** Bucketed security-event counts by action for one zone pseudo-service. */
 export function cloudflareZoneFirewallTimeseriesSQL(opts: CloudflareFilterOpts = {}) {
-	return from(MetricsSum)
+	return from(Datasources.metricsSum)
 		.select(($) => ({
 			bucket: isoBucket($.TimeUnix),
 			action: $.Attributes.get("firewall.action"),
@@ -65,7 +66,7 @@ export function cloudflareZoneFirewallTimeseriesSQL(opts: CloudflareFilterOpts =
 
 /** Heaviest (source, action, rule, host) combinations for one zone pseudo-service. */
 export function cloudflareZoneFirewallTopSQL(opts: CloudflareFilterOpts = {}) {
-	return from(MetricsSum)
+	return from(Datasources.metricsSum)
 		.select(($) => ({
 			source: $.Attributes.get("firewall.source"),
 			action: $.Attributes.get("firewall.action"),
@@ -105,7 +106,7 @@ export interface CloudflareZoneDnsBreakdownOutput {
 
 /** Bucketed DNS query counts by response code for one zone pseudo-service. */
 export function cloudflareZoneDnsTimeseriesSQL(opts: CloudflareFilterOpts = {}) {
-	return from(MetricsSum)
+	return from(Datasources.metricsSum)
 		.select(($) => ({
 			bucket: isoBucket($.TimeUnix),
 			responseCode: $.Attributes.get("dns.response_code"),
@@ -126,7 +127,7 @@ export function cloudflareZoneDnsTimeseriesSQL(opts: CloudflareFilterOpts = {}) 
 
 /** Heaviest query names for one zone pseudo-service, with their NXDOMAIN share. */
 export function cloudflareZoneDnsBreakdownSQL(opts: CloudflareFilterOpts = {}) {
-	return from(MetricsSum)
+	return from(Datasources.metricsSum)
 		.select(($) => ({
 			queryName: $.Attributes.get("dns.query_name"),
 			queries: CH.sum($.Value),
@@ -176,12 +177,12 @@ const QUEUE_GAUGE_METRIC_NAMES = [
 	"cloudflare.queue.consumer.concurrency",
 ] as const
 
-const backlogMessagesCond = ($: ColumnAccessor<typeof MetricsGauge.columns>) =>
+const backlogMessagesCond = ($: ColumnAccessor<typeof Datasources.metricsGauge.columns>) =>
 	$.MetricName.eq("cloudflare.queue.backlog.messages")
 
 /** Queue backlog/concurrency rollup over `metrics_gauge`, one row per queue pseudo-service. */
 export function cloudflareQueueGaugesSQL() {
-	return from(MetricsGauge)
+	return from(Datasources.metricsGauge)
 		.select(($) => ({
 			serviceName: $.ServiceName,
 			accountId: $.ResourceAttributes.get("cloudflare.account.id"),
@@ -204,7 +205,7 @@ export function cloudflareQueueGaugesSQL() {
 
 /** Durable Object counter rollup over `metrics_sum`, one row per implementing Worker service. */
 export function cloudflareDurableObjectCountersSQL() {
-	return from(MetricsSum)
+	return from(Datasources.metricsSum)
 		.select(($) => ({
 			serviceName: $.ServiceName,
 			accountId: $.ResourceAttributes.get("cloudflare.account.id"),

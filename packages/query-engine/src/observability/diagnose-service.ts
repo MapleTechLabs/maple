@@ -1,11 +1,11 @@
 import { Array as Arr, Effect, pipe } from "effect"
 import type {
-	ServiceOverviewOutput,
-	ErrorsByTypeOutput,
-	ListLogsOutput,
-	ListTracesOutput,
-	ServiceApdexTimeSeriesOutput,
-} from "@maple/domain/tinybird"
+	ServiceOverviewRow,
+	ErrorsByTypeRow,
+	ListLogsRow,
+	ListTracesRow,
+	ServiceApdexTimeSeriesRow,
+} from "../ch/pipe-rows"
 import { WarehouseExecutor } from "./WarehouseExecutor"
 import type { TimeRange } from "./types"
 import { toLogEntry } from "./row-mappers"
@@ -21,7 +21,7 @@ export const diagnoseService = Effect.fn("Observability.diagnoseService")(functi
 
 	const [overviewResult, errorsResult, logsResult, tracesResult, apdexResult] = yield* Effect.all(
 		[
-			executor.query<ServiceOverviewOutput>(
+			executor.query<ServiceOverviewRow>(
 				"service_overview",
 				{
 					start_time: input.timeRange.startTime,
@@ -30,7 +30,7 @@ export const diagnoseService = Effect.fn("Observability.diagnoseService")(functi
 				},
 				{ profile: "aggregation" },
 			),
-			executor.query<ErrorsByTypeOutput>(
+			executor.query<ErrorsByTypeRow>(
 				"errors_by_type",
 				{
 					start_time: input.timeRange.startTime,
@@ -41,7 +41,7 @@ export const diagnoseService = Effect.fn("Observability.diagnoseService")(functi
 				},
 				{ profile: "aggregation" },
 			),
-			executor.query<ListLogsOutput>(
+			executor.query<ListLogsRow>(
 				"list_logs",
 				{
 					start_time: input.timeRange.startTime,
@@ -52,7 +52,7 @@ export const diagnoseService = Effect.fn("Observability.diagnoseService")(functi
 				},
 				{ profile: "list" },
 			),
-			executor.query<ListTracesOutput>(
+			executor.query<ListTracesRow>(
 				"list_traces",
 				{
 					start_time: input.timeRange.startTime,
@@ -63,7 +63,7 @@ export const diagnoseService = Effect.fn("Observability.diagnoseService")(functi
 				},
 				{ profile: "list" },
 			),
-			executor.query<ServiceApdexTimeSeriesOutput>(
+			executor.query<ServiceApdexTimeSeriesRow>(
 				"service_apdex_time_series",
 				{
 					service_name: input.serviceName,

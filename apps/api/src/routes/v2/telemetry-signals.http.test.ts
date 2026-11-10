@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it } from "@effect/vitest"
 import { ConfigProvider, Context, Effect, Layer, ManagedRuntime, Schema } from "effect"
-import { FetchHttpClient, HttpRouter } from "effect/http"
-import { HttpApiBuilder } from "effect/http-api"
+import { HttpRouter } from "effect/http"
+import { HttpApi, HttpApiBuilder } from "effect/http-api"
 import { OrgId, UserId } from "@maple/domain/http"
 import { MapleApiV2 } from "@maple/domain/http/v2"
 import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/testing/test-pglite"
@@ -13,30 +13,11 @@ import { AuditLogService } from "@maple/backend/services/audit/AuditLogService"
 import { ApiKeysService } from "@maple/backend/services/org/ApiKeysService"
 import { AuthService } from "@maple/backend/services/auth/AuthService"
 import { DashboardPersistenceService } from "@maple/backend/services/dashboards/DashboardPersistenceService"
-import { IngestAttributeMappingService } from "@maple/backend/services/org/IngestAttributeMappingService"
-import { OrgIngestKeysService } from "@maple/backend/services/org/OrgIngestKeysService"
-import { RecommendationIssueService } from "@maple/backend/services/errors/RecommendationIssueService"
-import { ScrapeTargetsService } from "@maple/backend/services/integrations/ScrapeTargetsService"
-import { OnboardingService } from "@maple/backend/services/org/OnboardingService"
-import { OrganizationService } from "@maple/backend/services/org/OrganizationService"
-import { SetupAuditService } from "@maple/backend/services/org/SetupAuditService"
-import { IntegrationInventoryService } from "@maple/backend/services/integrations/IntegrationInventoryService"
-import { PlanetScaleDiscoveryService } from "@maple/backend/services/integrations/PlanetScaleDiscoveryService"
-import { PlanetScaleOAuthService } from "@maple/backend/services/auth/PlanetScaleOAuthService"
-import { SupabaseOAuthService } from "@maple/backend/services/auth/SupabaseOAuthService"
 import { SharedDashboardService } from "@maple/backend/services/dashboards/SharedDashboardService"
 import { SignalPresenceService } from "@maple/backend/services/org/SignalPresenceService"
 import { V2TransportErrorBoundaryLive } from "./error-envelope"
-import {
-	AlertsServiceStubLayer,
-	AllV2GroupLayersLive,
-	ApiV2RateLimiterAllowAllLayer,
-	makeWarehouseServiceStub,
-	Phase1ResourceStubsLayer,
-	PlanetScaleServiceStubsLayer,
-	TelemetryServiceStubsLayer,
-	SourcesServiceStubsLayer,
-} from "./v2-test-support"
+import { ApiV2RateLimiterAllowAllLayer, makeWarehouseServiceStub } from "./v2-test-support"
+import { HttpV2TelemetrySignalsLive } from "./telemetry-signals.http"
 import { compiledQueryOf } from "@maple/query-engine/execution"
 
 /**
@@ -83,86 +64,24 @@ const unavailableWarehouse: WarehouseQueryServiceApi = makeWarehouseServiceStub(
 	warmRoute: () => Effect.void,
 })
 
-const die = () => Effect.die(new Error("not available in this test harness"))
-
-/** `ScrapeTargetsService` reaches these for `planetscale` targets; nothing here does. */
-const planetScaleStubs = Layer.mergeAll(
-	Layer.succeed(PlanetScaleDiscoveryService, {
-		discover: die,
-		lastError: () => Effect.succeed(null),
-		invalidate: () => Effect.void,
-	}),
-	Layer.succeed(PlanetScaleOAuthService, {
-		startConnect: die,
-		completeConnect: die,
-		getValidAccessToken: die,
-		withAccessToken: die,
-		listOrganizations: die,
-		hasConnection: die,
-		connectedByUserId: die,
-		disconnect: die,
-	}),
-	Layer.succeed(SupabaseOAuthService, {
-		isConfigured: false,
-		apiBaseUrl: "https://api.supabase.com",
-		startConnect: die,
-		completeConnect: die,
-		getValidAccessToken: die,
-		withAccessToken: die,
-		isGrantUsable: die,
-		disconnect: die,
-	}),
-)
-
 const makeHarness = (warehouse: WarehouseQueryServiceApi) => {
 	const testDb = createTestDb(createdDbs)
 	const envLive = Env.layer.pipe(Layer.provide(testConfig()))
 	const warehouseLive = Layer.succeed(WarehouseQueryService, warehouse)
 
-	// Real config-resource services rather than `ConfigResourceServiceStubsLayer`:
-	// that bundle carries an inert SignalPresenceService, which would shadow the
-	// one under test. Same trap the setup-audit harness documents.
 	const servicesLive = Layer.mergeAll(
 		ApiKeysService.layer,
 		AuthService.layer,
 		DashboardPersistenceService.layer,
 		SharedDashboardService.layer,
-		IngestAttributeMappingService.layer,
-		OrgIngestKeysService.layer,
-		SourcesServiceStubsLayer,
-		Layer.effect(RecommendationIssueService, RecommendationIssueService.make).pipe(
-			Layer.provide(warehouseLive),
-		),
-		Layer.effect(ScrapeTargetsService, ScrapeTargetsService.make).pipe(
-			Layer.provide(FetchHttpClient.layer),
-			Layer.provide(planetScaleStubs),
-		),
-		Layer.effect(SetupAuditService, SetupAuditService.make).pipe(
-			Layer.provide(
-				Layer.mergeAll(
-					warehouseLive,
-					IntegrationInventoryService.layer,
-					OnboardingService.layer,
-					// An undatable org: the audit may stamp an existing row but never creates one.
-					Layer.succeed(OrganizationService, {
-						retrieve: () => Effect.die("org lookup not exercised"),
-					}),
-					Layer.effect(SignalPresenceService, SignalPresenceService.make).pipe(
-						Layer.provide(warehouseLive),
-					),
-				),
-			),
-		),
 		Layer.effect(SignalPresenceService, SignalPresenceService.make).pipe(Layer.provide(warehouseLive)),
 	).pipe(Layer.provideMerge(Layer.mergeAll(envLive, testDb.layer)))
 
-	const routes = HttpApiBuilder.layer(MapleApiV2).pipe(
-		Layer.provide(AllV2GroupLayersLive),
+	const routes = HttpApiBuilder.layer(
+		HttpApi.make("MapleApiV2").add(MapleApiV2.groups.telemetrySignals),
+	).pipe(
+		Layer.provide(HttpV2TelemetrySignalsLive),
 		Layer.provide(V2TransportErrorBoundaryLive),
-		Layer.provide(AlertsServiceStubLayer),
-		Layer.provide(Phase1ResourceStubsLayer),
-		Layer.provide(PlanetScaleServiceStubsLayer),
-		Layer.provide(TelemetryServiceStubsLayer),
 		Layer.provide(warehouseLive),
 		Layer.provideMerge(ApiAuthorizationV2Live),
 		Layer.provideMerge(AuditLogService.layerMemory),
