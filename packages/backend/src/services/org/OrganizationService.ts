@@ -1,5 +1,4 @@
 import * as Policy from "@maple/domain/policy"
-import { createClerkClient } from "@clerk/backend"
 import { FetchHttpClient, HttpClient } from "effect/http"
 import { UPTIME_MONITORS_FEATURE_ID } from "@maple/domain/billing"
 import { trackFeatureUsage } from "@maple/backend/services/billing/autumn-tracker"
@@ -28,19 +27,7 @@ import * as Orm from "@maple-dev/effect-orm/database"
 import * as PG from "@maple-dev/effect-orm/postgres"
 import * as Tables from "@maple/db/tables"
 import type { ColumnDefs, PgSchemaTable } from "@maple-dev/effect-orm/postgres"
-import {
-	Clock,
-	Context,
-	Effect,
-	Layer,
-	Option,
-	Order,
-	Redacted,
-	Schema,
-	Array as Arr,
-	Record as Rec,
-	String as Str,
-} from "effect"
+import { Clock, Context, Effect, Layer, Option, Order, Schema, Array as Arr, Record as Rec } from "effect"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { makeDbExecute } from "@maple/backend/platform/db-execute"
 import { Env } from "@maple/backend/platform/Env"
@@ -48,6 +35,7 @@ import { clerkRequest } from "@maple/backend/services/auth/clerk-request"
 import { AutumnClient } from "@maple/backend/services/billing/autumn-http"
 import { responseHasPlanHistory } from "@maple/backend/services/billing/autumn-client"
 import { OrganizationRegionService } from "@maple/backend/services/org/OrganizationRegionService"
+import { clerkModeClient } from "@maple/auth"
 
 const toPersistenceError = (error: unknown) =>
 	new OrganizationPersistenceError({
@@ -373,12 +361,7 @@ export class OrganizationService extends Context.Service<OrganizationService, Or
 			})
 
 			/** The Clerk backend client, or `None` when not running in Clerk auth mode. */
-			const clerkClient = () =>
-				Str.toLowerCase(env.MAPLE_AUTH_MODE) === "clerk" && Option.isSome(env.CLERK_SECRET_KEY)
-					? Option.some(
-							createClerkClient({ secretKey: Redacted.value(env.CLERK_SECRET_KEY.value) }),
-						)
-					: Option.none()
+			const clerkClient = () => Option.fromUndefinedOr(clerkModeClient(env))
 
 			const deleteClerkOrganization = Effect.fn("OrganizationService.deleteClerkOrganization")(
 				function* (orgId: OrgId) {

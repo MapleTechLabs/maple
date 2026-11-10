@@ -15,7 +15,7 @@ import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/http"
 import { BillingNotConfiguredError, BillingUpstreamError } from "@maple/domain/http"
 import type { BillingCustomerId, BillingLimitType, UpdateBillingUsageAlert } from "@maple/domain/http"
 import { Env } from "@maple/backend/platform/Env"
-import { AUTUMN_API_VERSION } from "./autumn-api"
+import { autumnPost } from "./autumn-api"
 import { replaceWith } from "@maple/strings"
 
 /**
@@ -225,18 +225,9 @@ const callAutumn = (
 			Effect.fail(new BillingNotConfiguredError({ message: "Billing is not configured" }))
 		: Effect.gen(function* () {
 				const request = yield* HttpClientRequest.bodyJson(
-					HttpClientRequest.post(`${apiUrl}${ROUTE_PATHS[route]}`, {
-						// The SDK put `x-api-version` on every one of these routes: its
-						// env schema DEFAULTED `AUTUMN_X_API_VERSION` to "2.3.0"
-						// (`z._default(z.string(), "2.3.0")`), so an unset variable still
-						// pinned the version. Production has been sending 2.3.0 all along
-						// — dropping the header would be the untested change, not keeping it.
-						headers: {
-							Authorization: `Bearer ${secretKey}`,
-							"x-api-version": AUTUMN_API_VERSION,
-						},
-						acceptJson: true,
-					}),
+					// The SDK pinned `x-api-version` 2.3.0 on every one of these routes, so
+					// production has always sent it; `autumnPost` keeps it.
+					HttpClientRequest.acceptJson(autumnPost(apiUrl, secretKey, ROUTE_PATHS[route])),
 					body,
 				).pipe(Effect.mapError(toBillingUpstreamError))
 				const response = yield* client.execute(request).pipe(Effect.mapError(toBillingUpstreamError))
@@ -401,12 +392,7 @@ const callUpdateBillingControls = (
 			Effect.fail(new BillingNotConfiguredError({ message: "Billing is not configured" }))
 		: Effect.gen(function* () {
 				const request = yield* HttpClientRequest.bodyJson(
-					HttpClientRequest.post(`${apiUrl}/v1/customers.update`, {
-						headers: {
-							Authorization: `Bearer ${secretKey}`,
-							"x-api-version": AUTUMN_API_VERSION,
-						},
-					}),
+					autumnPost(apiUrl, secretKey, ROUTE_PATHS.updateCustomer),
 					{
 						customer_id: customerId,
 						billing_controls: {

@@ -1,4 +1,4 @@
-import { type ClerkClient, createClerkClient, type OrganizationMembership } from "@clerk/backend"
+import type { ClerkClient, OrganizationMembership } from "@clerk/backend"
 import {
 	AlertMemberDirectoryNotConfiguredError,
 	AlertMemberDirectoryUnavailableError,
@@ -6,9 +6,10 @@ import {
 	type OrgId,
 	type UserId,
 } from "@maple/domain/http"
-import { Array as Arr, Context, Effect, Layer, Option, Redacted, Stream, String as Str } from "effect"
+import { Array as Arr, Context, Effect, Layer, Option, Stream } from "effect"
 import { Env } from "@maple/backend/platform/Env"
 import { clerkRequest } from "@maple/backend/services/auth/clerk-request"
+import { clerkModeClient } from "@maple/auth"
 
 export interface OrgMember {
 	readonly userId: string
@@ -81,10 +82,7 @@ export interface OrgMembersServiceApi {
 const make = Effect.gen(function* () {
 	const env = yield* Env
 
-	const clerk =
-		Str.toLowerCase(env.MAPLE_AUTH_MODE) === "clerk" && Option.isSome(env.CLERK_SECRET_KEY)
-			? createClerkClient({ secretKey: Redacted.value(env.CLERK_SECRET_KEY.value) })
-			: null
+	const clerk = clerkModeClient(env) ?? null
 
 	const notConfigured = new AlertMemberDirectoryNotConfiguredError({
 		message: "Workspace member lookup requires Clerk authentication",

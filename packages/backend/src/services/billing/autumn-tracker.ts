@@ -15,12 +15,11 @@ import { HttpClient, HttpClientRequest } from "effect/http"
 import { AI_CREDITS_FEATURE_ID, type AiCreditSource } from "@maple/domain/billing"
 import type { BillingCustomerId } from "@maple/domain/http"
 import {
-	AUTUMN_API_VERSION,
 	AUTUMN_TRACK_PATH,
 	AUTUMN_TRACK_TOKENS_PATH,
+	autumnPost,
+	DEFAULT_AUTUMN_API_URL,
 } from "@maple/backend/services/billing/autumn-api"
-
-const DEFAULT_AUTUMN_API_URL = "https://api.useautumn.com"
 
 /**
  * Ceiling on one track call.
@@ -111,9 +110,7 @@ const postUsage = (
 ) =>
 	client
 		.execute(
-			HttpClientRequest.post(`${tracker.apiUrl}${request.path}`).pipe(
-				HttpClientRequest.bearerToken(Redacted.value(tracker.secretKey)),
-				HttpClientRequest.setHeader("x-api-version", AUTUMN_API_VERSION),
+			autumnPost(tracker.apiUrl, Redacted.value(tracker.secretKey), request.path).pipe(
 				request.idempotencyKey === undefined
 					? (req) => req
 					: HttpClientRequest.setHeader("Idempotency-Key", request.idempotencyKey),

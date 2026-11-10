@@ -13,7 +13,7 @@ import {
 	OrgId,
 	UserId,
 } from "@maple/domain/http"
-import { createClerkClient } from "@clerk/backend"
+import type { ClerkClient } from "@clerk/backend"
 import {
 	Clock,
 	Array as Arr,
@@ -55,6 +55,7 @@ import { verifyUnsubscribeToken } from "./unsubscribe-token"
 import { summarizeCause } from "@maple/backend/platform/describe-cause"
 import { systemTenant } from "@maple/backend/services/auth/system-tenant"
 import { runWeeklyDigestTick } from "./weekly-digest-tick"
+import { clerkClientFor } from "@maple/auth"
 const SYSTEM_DIGEST_USER = UserId.make("system-digest")
 
 const toPersistenceError = (error: unknown) =>
@@ -893,7 +894,7 @@ export class DigestService extends Context.Service<DigestService>()("@maple/back
 			).pipe(Stream.runCollect)
 
 		const fetchAllClerkMemberships = Effect.fn("DigestService.fetchAllClerkMemberships")(function* (
-			clerk: ReturnType<typeof createClerkClient>,
+			clerk: ClerkClient,
 		) {
 			const orgs = yield* paginateClerk(
 				"Clerk.organizations.getOrganizationList",
@@ -1017,9 +1018,8 @@ export class DigestService extends Context.Service<DigestService>()("@maple/back
 			const now = yield* Clock.currentTimeMillis
 			if (now % 86_400_000 >= SYNC_WINDOW_MS) return
 
-			const clerk = createClerkClient({
-				secretKey: Redacted.value(env.CLERK_SECRET_KEY.value),
-			})
+			const clerk = clerkClientFor(env)
+			if (clerk === undefined) return
 
 			const memberships = yield* fetchAllClerkMemberships(clerk)
 			yield* reconcileSubscriptions(memberships)

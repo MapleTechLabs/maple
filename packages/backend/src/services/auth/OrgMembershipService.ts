@@ -1,21 +1,10 @@
-import { createClerkClient } from "@clerk/backend"
 import { EdgeCacheService } from "@maple/cache"
 import type { VerifiedOrgMembership } from "@maple/auth"
 import { AuthorizationUnavailableError, OrgId, RoleName, type UserId } from "@maple/domain/http"
-import {
-	Array as Arr,
-	Clock,
-	Context,
-	Effect,
-	Layer,
-	Option,
-	Redacted,
-	Schema,
-	Stream,
-	String as Str,
-} from "effect"
+import { Array as Arr, Clock, Context, Effect, Layer, Option, Schema, Stream } from "effect"
 import { Env } from "@maple/backend/platform/Env"
 import { clerkRequest } from "@maple/backend/services/auth/clerk-request"
+import { clerkModeClient } from "@maple/auth"
 
 export interface OrgMembershipServiceApi {
 	/**
@@ -165,10 +154,7 @@ const make = Effect.gen(function* () {
 	const env = yield* Env
 	const edgeCache = yield* EdgeCacheService
 
-	const clerk =
-		Str.toLowerCase(env.MAPLE_AUTH_MODE) === "clerk" && Option.isSome(env.CLERK_SECRET_KEY)
-			? createClerkClient({ secretKey: Redacted.value(env.CLERK_SECRET_KEY.value) })
-			: null
+	const clerk = clerkModeClient(env) ?? null
 
 	const listFromClerk = (userId: UserId) =>
 		collectMemberships((offset) => {

@@ -7,7 +7,7 @@
 // is the one genuinely cross-service concern, so it lives in this lean package
 // (effect + @maple/domain + @clerk/backend) rather than an app.
 import { createHmac, timingSafeEqual } from "node:crypto"
-import { createClerkClient } from "@clerk/backend"
+import { type ClerkClient, createClerkClient } from "@clerk/backend"
 import {
 	AuthMode,
 	AuthorizationUnavailableError,
@@ -415,18 +415,31 @@ const requireSecret = (option: Option.Option<Redacted.Redacted>, label: string):
 		onSome: (value) => Effect.succeed(Redacted.value(value)),
 	})
 
-const makeClerkAuthenticateRequest = (
-	env: Pick<AuthEnv, "CLERK_SECRET_KEY" | "CLERK_PUBLISHABLE_KEY" | "CLERK_JWT_KEY">,
-): ClerkAuthenticateRequest | undefined => {
-	if (Option.isNone(env.CLERK_SECRET_KEY)) {
-		return undefined
-	}
+export type ClerkEnv = Pick<AuthEnv, "CLERK_SECRET_KEY" | "CLERK_PUBLISHABLE_KEY" | "CLERK_JWT_KEY">
 
-	const clerkClient = createClerkClient({
+const clerkClients = new WeakMap<ClerkEnv, ClerkClient>()
+
+/** The deployment's Clerk backend client, built once per env; `undefined` without a secret key. */
+export const clerkClientFor = (env: ClerkEnv): ClerkClient | undefined => {
+	if (Option.isNone(env.CLERK_SECRET_KEY)) return undefined
+	const cached = clerkClients.get(env)
+	if (cached !== undefined) return cached
+	const client = createClerkClient({
 		secretKey: Redacted.value(env.CLERK_SECRET_KEY.value),
 		publishableKey: getOptionalString(env.CLERK_PUBLISHABLE_KEY),
 		jwtKey: getOptionalSecret(env.CLERK_JWT_KEY),
 	})
+	clerkClients.set(env, client)
+	return client
+}
+
+/** {@link clerkClientFor}, only in Clerk auth mode. */
+export const clerkModeClient = (env: ClerkEnv & Pick<AuthEnv, "MAPLE_AUTH_MODE">): ClerkClient | undefined =>
+	getAuthMode(env.MAPLE_AUTH_MODE) === "clerk" ? clerkClientFor(env) : undefined
+
+const makeClerkAuthenticateRequest = (env: ClerkEnv): ClerkAuthenticateRequest | undefined => {
+	const clerkClient = clerkClientFor(env)
+	if (clerkClient === undefined) return undefined
 
 	return (request, options) =>
 		clerkClient.authenticateRequest(request, {
@@ -912,18 +925,7 @@ export const extractVerifiedPrimaryEmail = (u: {
 	)
 }
 
-const makeClerkClient = (
-	env: Pick<AuthEnv, "MAPLE_AUTH_MODE" | "CLERK_SECRET_KEY" | "CLERK_PUBLISHABLE_KEY" | "CLERK_JWT_KEY">,
-) => {
-	if (getAuthMode(env.MAPLE_AUTH_MODE) !== "clerk" || Option.isNone(env.CLERK_SECRET_KEY)) {
-		return null
-	}
-	return createClerkClient({
-		secretKey: Redacted.value(env.CLERK_SECRET_KEY.value),
-		publishableKey: getOptionalString(env.CLERK_PUBLISHABLE_KEY),
-		jwtKey: getOptionalSecret(env.CLERK_JWT_KEY),
-	})
-}
+const makeClerkClient = (env: ClerkEnv & Pick<AuthEnv, "MAPLE_AUTH_MODE">) => clerkModeClient(env) ?? null
 
 /** One Clerk user lookup per call; null outside Clerk mode or on a failed lookup. */
 const makeUserEmailLookup =

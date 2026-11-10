@@ -8,6 +8,7 @@ import { optionalRedacted, optionalString, stringWithDefault } from "@maple/infr
 import { Config, Context, Effect, Layer, Option, Redacted, Result, Schema, String as Str } from "effect"
 import { type MapleRegion, parseMapleRegion } from "@maple/domain/organization-regions"
 import { aes256GcmKeyFromBase64 } from "./Crypto"
+import { DEFAULT_AUTUMN_API_URL } from "@maple/backend/services/billing/autumn-api"
 import { ingestKeyLookupHmacKeyFrom } from "./credential-tokens"
 
 /** Fatal misconfiguration discovered at startup: fails the layer build, so the worker refuses to boot. */
@@ -266,7 +267,7 @@ const envConfig = Config.all({
 		"false",
 	).pipe(Config.map((value) => value === "1" || value === "true")),
 	AUTUMN_SECRET_KEY: optionalRedacted("AUTUMN_SECRET_KEY"),
-	AUTUMN_API_URL: stringWithDefault("AUTUMN_API_URL", "https://api.useautumn.com"),
+	AUTUMN_API_URL: stringWithDefault("AUTUMN_API_URL", DEFAULT_AUTUMN_API_URL),
 	AUTUMN_WEBHOOK_SECRET: optionalRedacted("AUTUMN_WEBHOOK_SECRET"),
 	STRIPE_SECRET_KEY: optionalRedacted("STRIPE_SECRET_KEY"),
 	STRIPE_API_URL: stringWithDefault("STRIPE_API_URL", "https://api.stripe.com"),
