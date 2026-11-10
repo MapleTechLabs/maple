@@ -99,9 +99,11 @@ export const AutumnWebhookRouter = HttpRouter.use((router) =>
 						return webhookText("Could not read the billing link", 503)
 					}
 					const billedThroughAnother = linked.value
-					// A review ends in a Slack post; without a channel there is nothing to do.
+					// A review ends in a Slack or Hazel post; without a channel there is nothing to do.
 					const cancellations =
-						Option.isSome(env.MAPLE_CANCELLATION_SLACK_CHANNEL_ID) && !billedThroughAnother
+						(Option.isSome(env.MAPLE_CANCELLATION_SLACK_CHANNEL_ID) ||
+							Option.isSome(env.MAPLE_CANCELLATION_HAZEL_CHANNEL_ID)) &&
+						!billedThroughAnother
 							? cancellationsFromBillingUpdated(data.value)
 							: []
 					const events = billedThroughAnother

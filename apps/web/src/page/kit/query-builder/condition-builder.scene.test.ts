@@ -138,14 +138,54 @@ describe("condition builder", () => {
 		)
 	})
 
-	test("a clause the rows can't show stays in the text editor and says so", () => {
+	test("typing in the field search and pressing Enter picks the highlighted field", () => {
+		const search = role("combobox", { name: "Search Field for condition 1" })
+		scene(
+			{ update, view },
+			given(hosted("")),
+			click(role("button", { name: "Add condition" })),
+			comboMounted(),
+			typeInto(search, "http.ro"),
+			keydown(search, "Enter"),
+			...pickerClosed("cond-q-c0-field", 1),
+			expectView(role("combobox", { name: "Field for condition 1: attr.http.route" })).toExist(),
+		)
+	})
+
+	test("Enter on a freshly opened field list picks its first field", () => {
+		scene(
+			{ update, view },
+			given(hosted("")),
+			click(role("button", { name: "Add condition" })),
+			comboMounted(),
+			keydown(role("combobox", { name: "Search Field for condition 1" }), "Enter"),
+			...pickerClosed("cond-q-c0-field", 1),
+			expectView(role("combobox", { name: "Field for condition 1: service.name" })).toExist(),
+		)
+	})
+
+	test("a clause the rows can't show stays in the text editor and says why, once", () => {
+		scene(
+			{ update, view },
+			given(hosted('(attr.http.route = "/cart" OR attr.rpc.method = "Checkout")')),
+			caretMounted(),
+			expectView(text("This filter mixes fields in an OR, so it stays in Text.")).toExist(),
+			// The query applies an OR of attribute filters, so nothing warns.
+			expectView(
+				text("This OR group is not applied: only attribute filters can be OR-ed."),
+			).not.toExist(),
+			expectView(label("Where clause for query A")).toExist(),
+			expectView(role("button", { name: "Builder" })).toBeDisabled(),
+		)
+	})
+
+	test("an OR group the query drops also says it is not applied", () => {
 		scene(
 			{ update, view },
 			given(hosted('(service.name = "a" OR span.name = "b")')),
 			caretMounted(),
-			expectView(text("This filter uses syntax the builder can't show, edit as text")).toExist(),
-			expectView(label("Where clause for query A")).toExist(),
-			expectView(role("button", { name: "Builder" })).toBeDisabled(),
+			expectView(text("This filter mixes fields in an OR, so it stays in Text.")).toExist(),
+			expectView(text("This OR group is not applied: only attribute filters can be OR-ed.")).toExist(),
 		)
 	})
 

@@ -6,7 +6,7 @@ import {
 	quoteWhereValue,
 	splitWhereClause,
 } from "@maple/domain/where-clause"
-import { Array as Arr, Option, Schema, String as Str } from "effect"
+import { Array as Arr, Option, Result, Schema, String as Str } from "effect"
 
 // The condition builder's rows and their two-way mapping to the where-clause string
 // (`@maple/domain/where-clause`): rows are AND-ed; a row's values are OR-ed for `=`/`contains`
@@ -43,26 +43,35 @@ const draftOf = (clause: ParsedClause): Draft => ({
 	values: isValueless(clause.operator) ? [] : [clause.value],
 })
 
+/** Why a clause has no rows: an OR across fields, an OR a row's operators can't hold, or other syntax. */
+export type UnshowableReason = "mixedFields" | "orOperators" | "syntax"
+
+type Part = Result.Result<Draft, UnshowableReason>
+
 /** One AND-ed part: a single clause, or an OR group whose members share key and an any-of operator. */
-const partOf = (part: string): Option.Option<Draft> => {
+const readPart = (part: string): Part => {
 	const parsed = parseWhereClause(part, { orGroups: true })
-	if (parsed.warnings.length > 0) return Option.none()
+	if (parsed.warnings.length > 0) return Result.fail("syntax")
 	const [clause] = parsed.clauses
 	if (parsed.groups.length === 0 && parsed.clauses.length === 1 && clause !== undefined)
-		return Option.some(draftOf(clause))
+		return Result.succeed(draftOf(clause))
 	const [group] = parsed.groups
-	if (parsed.clauses.length > 0 || parsed.groups.length !== 1 || group === undefined) return Option.none()
+	if (parsed.clauses.length > 0 || parsed.groups.length !== 1 || group === undefined)
+		return Result.fail("syntax")
 	const drafts = Arr.map(group, draftOf)
 	const [first] = drafts
-	if (first === undefined || !isAnyOf(first.operator)) return Option.none()
-	const isShared = Arr.every(
-		drafts,
-		(draft) => draft.key === first.key && draft.operator === first.operator,
-	)
-	return isShared
-		? Option.some({ ...first, values: Arr.flatMap(drafts, (draft) => draft.values) })
-		: Option.none()
+	if (first === undefined) return Result.fail("syntax")
+	if (!Arr.every(drafts, (draft) => draft.key === first.key)) return Result.fail("mixedFields")
+	if (!isAnyOf(first.operator) || !Arr.every(drafts, (draft) => draft.operator === first.operator))
+		return Result.fail("orOperators")
+	return Result.succeed({ ...first, values: Arr.flatMap(drafts, (draft) => draft.values) })
 }
+
+const partOf = (part: string): Option.Option<Draft> => Result.getSuccess(readPart(part))
+
+/** Why the builder can't show a clause, or none when it reads as rows. */
+export const unshowableReasonOf = (whereClause: string): Option.Option<UnshowableReason> =>
+	Arr.findFirst(splitWhereClause(Str.trim(whereClause)), (part) => Result.getFailure(readPart(part)))
 
 /** A row with the clause text it was read from, so an untouched row keeps the user's spelling. */
 type Spelled = Readonly<{ draft: Draft; text: string }>

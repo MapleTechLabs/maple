@@ -14,7 +14,7 @@ import * as QueryPanel from "../page/kit/query-builder/panel"
 import { queryPanelView } from "../page/kit/query-builder/view"
 
 // `/lab/condition-builder`: the query panel's where clause as condition rows, over fixture
-// vocabulary: empty, populated, a clause the rows can't show, and the text editor.
+// vocabulary: empty, populated, clauses the rows can't show, and the text editor.
 
 export const LAB_VALUES: WhereClauseAutocompleteValues = {
 	services: ["checkout", "api", "payments", "frontend"],
@@ -28,8 +28,10 @@ export const LAB_VALUES: WhereClauseAutocompleteValues = {
 		"http.response.status_code",
 		"db.system",
 		"messaging.destination.partition.id",
+		"service.version",
 	],
-	resourceAttributeKeys: ["host.name", "k8s.pod.name", "cloud.region"],
+	// `service.version` is in both groups: its trigger names the group.
+	resourceAttributeKeys: ["host.name", "k8s.pod.name", "cloud.region", "service.version"],
 }
 
 type Scenario = Readonly<{ title: string; hint: string; query: QueryDraft }>
@@ -48,7 +50,7 @@ export const SCENARIOS: ReadonlyArray<Scenario> = [
 			"populated",
 			"B",
 			"traces",
-			'service.name = "checkout" AND (attr.http.request.method = "GET" OR attr.http.request.method = "POST") AND resource.k8s.pod.name exists AND attr.messaging.destination.partition.id = "12"',
+			'service.name = "checkout" AND (attr.http.request.method = "GET" OR attr.http.request.method = "POST") AND resource.service.version exists AND attr.messaging.destination.partition.id = "12"',
 		),
 	},
 	{
@@ -58,8 +60,13 @@ export const SCENARIOS: ReadonlyArray<Scenario> = [
 			"unparseable",
 			"C",
 			"traces",
-			'(service.name = "checkout" OR span.name = "GET /health")',
+			'(attr.http.route = "/cart" OR attr.rpc.method = "Checkout")',
 		),
+	},
+	{
+		title: "OR group the query drops",
+		hint: "Named fields can't be OR-ed: the warning says the group is not applied.",
+		query: draft("dropped", "E", "traces", '(service.name = "checkout" OR span.name = "GET /health")'),
 	},
 	{
 		title: "Text mode",
@@ -108,7 +115,8 @@ export const update = (model: Model, message: Message): Update.Return<Model, Mes
 }
 
 export const view = (model: Model, h: HtmlBuilder<Message>): Html =>
-	vstack(h, { gap: "8", className: "mx-auto w-full max-w-3xl p-6" }, [
+	// As wide as the alert editor gives the panel, so rows lay out as they do there.
+	vstack(h, { gap: "8", className: "mx-auto w-full max-w-5xl p-4 sm:p-6" }, [
 		vstack(h, { gap: "1" }, [
 			sectionHeading(h, { title: "Condition builder" }),
 			typography(h, { size: "sm", tone: "muted", as: "p" }, [

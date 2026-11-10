@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest"
-import { canMatchAnyOf, fieldOf, fieldsOf, operatorsOf } from "./condition-fields"
+import { canMatchAnyOf, fieldOf, fieldsOf, operatorsOf, sharesLabel } from "./condition-fields"
 import { Array as Arr } from "effect"
 
 // The builder offers what the source's clause handler applies (the engine's key rules).
@@ -56,5 +56,19 @@ describe("fieldsOf", () => {
 		)
 		expect(keys).not.toContain("root_only")
 		expect(fieldOf("root_only", "traces")).toMatchObject({ group: "common", kind: "boolean" })
+	})
+})
+
+describe("sharesLabel", () => {
+	const fields = fieldsOf("traces", {
+		attributeKeys: ["service.version", "http.route"],
+		resourceAttributeKeys: ["service.version", "host.name"],
+	})
+
+	test("only a key that two groups hold needs its group named", () => {
+		expect(sharesLabel(fieldOf("resource.service.version", "traces"), fields)).toBe(true)
+		expect(sharesLabel(fieldOf("attr.service.version", "traces"), fields)).toBe(true)
+		expect(sharesLabel(fieldOf("attr.http.route", "traces"), fields)).toBe(false)
+		expect(sharesLabel(fieldOf("service.name", "traces"), fields)).toBe(false)
 	})
 })

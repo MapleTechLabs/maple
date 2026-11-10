@@ -54,6 +54,14 @@ export const LAB_ENTRIES: ReadonlyArray<LabEntry> = [
 		session: "none",
 	},
 	{
+		path: "/lab/heartbeat",
+		title: "Heartbeat monitor",
+		description:
+			"The new-monitor form filled in for a nightly cron heartbeat, and the heartbeat's page with its Ping URL panel (`?state=`).",
+		kind: "lab",
+		session: "none",
+	},
+	{
 		path: "/lab/alerts-hub",
 		title: "Alerts hub",
 		description:

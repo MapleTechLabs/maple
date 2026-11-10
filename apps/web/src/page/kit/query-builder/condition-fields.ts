@@ -106,6 +106,10 @@ export const fieldsOf = (
 		(a, b) => a.key === b.key,
 	)
 
+/** Whether another known field reads the same in a trigger, so this one needs its group named. */
+export const sharesLabel = (field: ConditionField, known: ReadonlyArray<ConditionField>): boolean =>
+	Arr.some(known, (other) => other.key !== field.key && other.label === field.label)
+
 // The field picker's list: a drill-down over the groups, flat while searching.
 
 export const FieldDrill = Schema.Literals(["all", "resource", "attribute"])
