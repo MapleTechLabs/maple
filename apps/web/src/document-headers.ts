@@ -25,7 +25,7 @@ const SHARE_PATH = "/share"
 export const isShareDocument = (pathname: string): boolean =>
 	pathname === SHARE_PATH || Str.startsWith(`${SHARE_PATH}/`)(pathname)
 
-/** Every document: no plugins, no `<base>` retargeting relative URLs. Keep in step with nginx.conf. */
+/** Every document: no plugins, no `<base>` retargeting relative URLs. */
 const BASE_CSP = "object-src 'none'; base-uri 'self'"
 
 export const APP_DOCUMENT_HEADERS: HeaderEntries = [
