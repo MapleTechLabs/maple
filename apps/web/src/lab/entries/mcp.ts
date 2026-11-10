@@ -16,7 +16,7 @@ import { underlineTabClass, underlineTabStrip } from "../../page/kit/underline-t
 import { listBody } from "../../page/mcp/view-list"
 import { formatClock, MCP_CHART_TOKENS, scopeText } from "../../page/mcp/view-kit"
 import { McpMetric, serverBody } from "../../page/mcp/view-server"
-import { serviceMcpTab } from "../../page/mcp/view-service-tab"
+import { serviceMcpTab } from "../mcp-service-tab"
 import { noServersState, quietWindow, serverError, serverLoading } from "../../page/mcp/view-states"
 import { toolBody } from "../../page/mcp/view-tool"
 import { button } from "@maple/views/ui/button"

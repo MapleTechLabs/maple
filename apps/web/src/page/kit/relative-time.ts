@@ -1,6 +1,5 @@
 import type { TimeInput } from "@maple/ui/lib/time-format"
 import { timestamp, type TimestampFormat } from "@maple/views/ui/timestamp"
-import { formatTimestampInTimezone } from "@maple/ui/lib/timezone-format"
 import type { ChildAttribute, Html, HtmlBuilder } from "foldkit/html"
 
 // `RelativeTime`: `timestamp` with relative text. `nowMs` is the page's resolved clock.
@@ -16,10 +15,6 @@ export type RelativeTimeOptions = Readonly<{
 	trigger?: ReadonlyArray<ChildAttribute>
 	className?: string
 }>
-
-/** The absolute time a page's own tooltip shows: `formatTimestampInTimezone(epochMs, { withYear: true })`. */
-export const formatAbsolute = (epochMs: number, timeZone: string): string =>
-	formatTimestampInTimezone(epochMs, { timeZone, withYear: true })
 
 const FORMAT = {
 	long: "relative",

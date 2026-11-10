@@ -237,10 +237,9 @@ existing copies onto it (see `apps/web/CLAUDE.md`).
 - `apps/web/src/page/kit/query-builder/view.ts` `queryPanelView`: `QueryPanel` and `QueryPanelShell`: one query's builder panel and its frame.
 - `apps/web/src/page/kit/query-builder/where-editor.ts` `whereEditor`, `highlightOverlay`: The suggestions of a field kept in the owner's `WhereFields` (`page/kit/where-field.ts`).
 - `apps/web/src/page/kit/query-builder/where.ts` `whereTextareaId`, `whereSpecOf`, `whereStep`: `WhereClauseEditor` inside a `QueryPanel`: one `WhereFields` field per query, keyed by query id.
-- `apps/web/src/page/kit/query-builder-legend.ts` `queryBuilderLegend`: `QueryBuilderLegend`, bottom layout, for hosts outside a chart.
 - `apps/web/src/page/kit/query-panel-bar.ts` `queryPanelBar`: A query panel's header bar on the sunken wash: its collapse toggle, query badge, source and actions.
 - `apps/web/src/page/kit/refresh-controls.ts` `formatRefreshInterval`, `refreshControls`: `RefreshControls`: Reload joined to the auto-refresh cadence menu.
-- `apps/web/src/page/kit/relative-time.ts` `formatAbsolute`, `relativeTime`, `listRelativeTime`: `RelativeTime`: `timestamp` with relative text.
+- `apps/web/src/page/kit/relative-time.ts` `relativeTime`, `listRelativeTime`: `RelativeTime`: `timestamp` with relative text.
 - `apps/web/src/page/kit/requests.ts` `keyed`, `seriesSteps`, `applySteps`: The S8 request step (`Keyed.request` writes the slot and yields its fetch), shared by every infra page so each `update` lists its slots and nothing else.
 - `apps/web/src/page/kit/resource-not-found.ts` `resourceNotFound`
 - `apps/web/src/page/kit/route-window.ts` `isWindowChange`, `snapModeOf`, `routeWindowStep`: `useEffectiveTimeRange` + `useRefreshableAtomValue` for a page's `routeChanged`: the window is re-resolved only when its own fields moved, and only Reload revalidates unchanged...

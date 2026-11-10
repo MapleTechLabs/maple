@@ -144,7 +144,6 @@
 		"apps/web/src/page/mcp/view-kit.ts": 4,
 		"apps/web/src/page/mcp/view-list.ts": 1,
 		"apps/web/src/page/mcp/view-server.ts": 6,
-		"apps/web/src/page/mcp/view-service-tab.ts": 1,
 		"apps/web/src/page/mcp/view-sessions.ts": 1,
 		"apps/web/src/page/mcp/view-states.ts": 1,
 		"apps/web/src/page/mcp/view-tool.ts": 1,
