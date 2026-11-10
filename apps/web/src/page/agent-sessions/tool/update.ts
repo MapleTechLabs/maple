@@ -18,7 +18,7 @@ import { type PageContext, PageOutMessage, type PageReturn } from "../../contrac
 import * as TimeRangePicker from "../../kit/time-range-picker"
 import { DEFAULT_TOOL_PRESET, toolSelection, toolWindowArgs } from "../../kit/tools/model"
 import type { Selection } from "../../kit/tools/reads"
-import { nextSort } from "../../kit/tools/table"
+import { nextSort } from "../../kit/table-sort"
 import { ALL, type FacetKey, facetSelectStep, initFacetSelect } from "../../kit/tools/toolbar"
 import {
 	CompleteReloadSpin,
@@ -322,7 +322,7 @@ const step = (model: Model, message: Message, context: PageContext): Return =>
 		ClickedErrorRow: ({ fingerprint }) =>
 			navigate(model, { ...model.search, error: fingerprint, session: undefined, variant: undefined }),
 		ClickedErrorsSort: ({ key }) => ({
-			model: { ...model, errorsSort: nextSort(model.errorsSort, key, []) },
+			model: { ...model, errorsSort: nextSort(model.errorsSort, key) },
 		}),
 		ToggledErrorsExpanded: () => ({ model: { ...model, isErrorsExpanded: !model.isErrorsExpanded } }),
 		GotFacetSelectMessage: ({ facet, message: inner }) => facetPicked(model, facet, inner),

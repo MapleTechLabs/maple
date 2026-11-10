@@ -7,50 +7,12 @@ import { meter } from "@maple/views/ui/meter"
 import { pressable } from "@maple/views/ui/pressable"
 import { selectableRow } from "@maple/views/ui/selectable-row"
 import { sortButton } from "@maple/views/ui/table"
-import { String as Str, Array as Arr, Ordering } from "effect"
 import { hstack } from "@maple/views/ui/stack"
 import { typography } from "@maple/views/ui/typography"
+import type { SortState } from "../table-sort"
 
 // The table chrome the tools pages share: open,
 // mono, uppercase heads and 38px rows, with client-side column sorting.
-
-export type SortDir = "asc" | "desc"
-export type SortState = Readonly<{ key: string | null; dir: SortDir }>
-
-/** `useSortState`'s `handleSort`: the active column flips, another starts desc (asc for text keys). */
-export const nextSort = (current: SortState, key: string, stringKeys: ReadonlyArray<string>): SortState =>
-	key === current.key
-		? { key, dir: current.dir === "asc" ? "desc" : "asc" }
-		: { key, dir: stringKeys.includes(key) ? "asc" : "desc" }
-
-export type SortValue = string | number | undefined
-
-const isNumericString = (value: SortValue): value is string =>
-	typeof value === "string" && Str.trim(value) !== "" && Number.isFinite(Number(value))
-
-/** `compareValues`: numeric when both sides are numbers (or numeric strings), else text. */
-const compareValues = (av: SortValue, bv: SortValue, dir: SortDir): Ordering.Ordering => {
-	const numeric =
-		(typeof av === "number" && typeof bv === "number") || (isNumericString(av) && isNumericString(bv))
-	if (numeric) {
-		const cmp = Number(av) < Number(bv) ? -1 : Number(av) > Number(bv) ? 1 : 0
-		return dir === "asc" ? cmp : Ordering.reverse(cmp)
-	}
-	return dir === "asc"
-		? Str.localeCompare(String(bv))(String(av))
-		: Str.localeCompare(String(av))(String(bv))
-}
-
-export const sortRows = <Row>(
-	rows: ReadonlyArray<Row>,
-	sort: SortState,
-	read: (row: Row, key: string) => SortValue,
-): ReadonlyArray<Row> => {
-	const { key } = sort
-	return key === null
-		? rows
-		: Arr.sort(rows, (a: Row, b: Row) => compareValues(read(a, key), read(b, key), sort.dir))
-}
 
 /** `ToolTable`: scrolls sideways once the fixed lanes outgrow the panel. */
 export const toolTable = <M>(h: HtmlBuilder<M>, children: ReadonlyArray<Html>, className?: string): Html =>

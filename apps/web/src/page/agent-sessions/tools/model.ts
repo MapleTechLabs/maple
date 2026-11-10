@@ -12,6 +12,7 @@ import { SignalPresenceData } from "@maple/views/data/signal-presence"
 import * as TimeRangePicker from "../../kit/time-range-picker"
 import { Facets } from "../list/model"
 import { ToolBreakdownRow, ToolSeries, TotalsResult } from "../../kit/tools/model"
+import { SortState } from "../../kit/table-sort"
 
 // `/agent-sessions/tools`.
 
@@ -36,7 +37,7 @@ export const Model = Schema.Struct({
 	percentileToggle: ToggleGroup.Model,
 	timePicker: TimeRangePicker.Model,
 	/** The Tools table's client-side sort (`useTableSort`, calls descending). */
-	tableSort: Schema.Struct({ key: Schema.NullOr(Schema.String), dir: Schema.Literals(["asc", "desc"]) }),
+	tableSort: SortState,
 	searchInput: Schema.String,
 	searchVersion: Schema.Number,
 	lastSentQuery: Schema.String,

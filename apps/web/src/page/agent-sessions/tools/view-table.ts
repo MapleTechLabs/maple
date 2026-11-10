@@ -20,8 +20,6 @@ import { toolDetailLinkSearch } from "../../kit/tools/model"
 import {
 	errorTone,
 	shareCell,
-	type SortState,
-	sortRows,
 	th,
 	toolTableRow,
 	toolTable,
@@ -36,6 +34,7 @@ import { hstack } from "@maple/views/ui/stack"
 import { columnClass } from "@maple/views/ui/column"
 import { swatch } from "@maple/views/ui/swatch"
 import { Array as Arr } from "effect"
+import { type SortState, sortRows } from "../../kit/table-sort"
 
 type H = HtmlBuilder<Message>
 

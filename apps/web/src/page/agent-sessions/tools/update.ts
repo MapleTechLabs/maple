@@ -26,7 +26,7 @@ import {
 	type TotalsResult,
 } from "../../kit/tools/model"
 import { ALL, type FacetKey, facetSelectStep, initFacetSelect } from "../../kit/tools/toolbar"
-import { nextSort } from "../../kit/tools/table"
+import { nextSort } from "../../kit/table-sort"
 import {
 	CompleteReloadSpin,
 	DebounceSearch,
@@ -317,7 +317,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		RemovedScopeChip: ({ kind }) => navigate(model, { ...model.search, [kind]: undefined }),
 		ClickedClearScope: () => navigate(model, { ...model.search, tool: undefined, model: undefined }),
 		ClickedTableSort: ({ key }) => ({
-			model: { ...model, tableSort: nextSort(model.tableSort, key, ["key"]) },
+			model: { ...model, tableSort: nextSort(model.tableSort, key, { stringKeys: ["key"] }) },
 		}),
 		GotFacetSelectMessage: ({ facet, message: inner }) => facetPicked(model, facet, inner),
 		GotPercentileMessage: ({ message: inner }) => {

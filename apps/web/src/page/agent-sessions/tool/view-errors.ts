@@ -24,22 +24,14 @@ import { statusDot } from "@maple/views/ui/status-dot"
 import { truncatedText } from "@maple/views/ui/truncated-text"
 import { errorTextLine, failureStatusLine, maskChip, windowRangeLabel } from "../../kit/tools/error-parts"
 import type { ToolErrorRow } from "../../kit/tools/model"
-import {
-	shareCell,
-	type SortState,
-	sortRows,
-	th,
-	toolTableRow,
-	toolTable,
-	toolTableBody,
-	toolTableHead,
-} from "../../kit/tools/table"
+import { shareCell, th, toolTableRow, toolTable, toolTableBody, toolTableHead } from "../../kit/tools/table"
 import { relativeTime } from "../../kit/relative-time"
 import { Message } from "./message"
 import { typography, typographyClass } from "@maple/views/ui/typography"
 import { hstack, vstack } from "@maple/views/ui/stack"
 import { columnClass } from "@maple/views/ui/column"
 import { Array as Arr, String as Str } from "effect"
+import { type SortState, sortRows } from "../../kit/table-sort"
 
 type H = HtmlBuilder<Message>
 

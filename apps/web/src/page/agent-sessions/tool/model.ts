@@ -12,12 +12,11 @@ import * as TimeRangePicker from "../../kit/time-range-picker"
 import { Facets } from "../list/model"
 import { ToolErrorRow, ToolSeries, TotalsResult } from "../../kit/tools/model"
 import * as ErrorModal from "./error-modal-model"
+import { SortState } from "../../kit/table-sort"
 
 // `/agent-sessions/tools/$toolName`.
 
 export const SessionRows = Schema.Struct({ data: Schema.Array(AiSessionListItem) })
-
-const Sort = Schema.Struct({ key: Schema.NullOr(Schema.String), dir: Schema.Literals(["asc", "desc"]) })
 
 export const Model = Schema.Struct({
 	toolName: Schema.String,
@@ -34,7 +33,7 @@ export const Model = Schema.Struct({
 	envSelect: Select.Model,
 	timePicker: TimeRangePicker.Model,
 	/** The Errors table's client-side sort and its "Show N more" fold. */
-	errorsSort: Sort,
+	errorsSort: SortState,
 	isErrorsExpanded: Schema.Boolean,
 	/** Each grid chart's focus and tooltip, by chart id. */
 	charts: Schema.Record(Schema.String, Chart.Model),

@@ -7,6 +7,7 @@ import { AsyncData } from "foldkit"
 import type { TimeWindow } from "../../../data/time-range"
 import type { AgentSessionsSearch } from "../../../route/search"
 import type { Model, RangeKey, SessionRow } from "./model"
+import { urlSortPatch } from "../../kit/table-sort"
 
 // The list's filter inputs and paging arithmetic.
 
@@ -63,16 +64,8 @@ export const sortOf = (search: Search): Sort => ({
 })
 
 /** The sorted column flips; any other starts descending; the default order clears both params. */
-export const sortPatch = (
-	search: Search,
-	key: AiSessionSortKey,
-): { sortBy: AiSessionSortKey | undefined; sortDir: AiSessionSortDir | undefined } => {
-	const current = sortOf(search)
-	const sortDir: AiSessionSortDir = key === current.sortBy && current.sortDir === "desc" ? "asc" : "desc"
-	return isDefaultSort({ sortBy: key, sortDir })
-		? { sortBy: undefined, sortDir: undefined }
-		: { sortBy: key, sortDir }
-}
+export const sortPatch = (search: Search, key: AiSessionSortKey) =>
+	urlSortPatch(sortOf(search), key, DEFAULT_SORT)
 
 export const hasFilters = (search: Search): boolean =>
 	Arr.some(FILTER_KEYS, (key) => {
