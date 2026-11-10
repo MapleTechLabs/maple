@@ -29,7 +29,7 @@ import { view as pageView } from "../sources/new/view"
 import { Message as IntegrationMessage } from "./message"
 import { subscriptions } from "./subscription"
 import { SelectGithubInstallation } from "./github"
-import { LoadGithub, TrackConnected } from "./command"
+import { STATUS_READS, TrackConnected } from "./command"
 
 const context: PageContext = {
 	orgId: Schema.decodeSync(OrgId)("org_acme"),
@@ -536,14 +536,14 @@ describe("github connect flow", () => {
 					failure: null,
 				}),
 			),
-			Command.expectHas(LoadGithub),
+			Command.expectHas(STATUS_READS.github),
 			expectView(role("button", { name: "Connect acme" })).not.toExist(),
 			Command.resolve(TrackConnected, IntegrationMessage.CompletedTrackConnected()),
 			(simulation: SceneSimulation<Model, Message, PageOutMessage>) =>
 				Command.resolve(
-					LoadGithub,
+					STATUS_READS.github,
 					IntegrationMessage.CompletedLoadGithub({
-						key: requestKeyOf(simulation.commands, LoadGithub.name),
+						key: requestKeyOf(simulation.commands, STATUS_READS.github.name),
 						result: Result.succeed(
 							status({
 								repositories: [],

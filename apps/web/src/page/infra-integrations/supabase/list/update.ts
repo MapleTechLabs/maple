@@ -3,6 +3,7 @@ import { Option, Result, Array as Arr } from "effect"
 import { AsyncData } from "foldkit"
 import * as Keyed from "@maple/views/data/keyed"
 import { requestKey } from "@maple/views/data/request-key"
+import { integrationStatusKey } from "../../../kit/integration-status-keys"
 import type { TimeWindow } from "../../../../data/time-range"
 import { AppRoute, hrefOf } from "../../../../route"
 import { type PageContext, PageOutMessage, type PageReturn } from "../../../contract"
@@ -37,7 +38,7 @@ const resolveCommand = (model: Model, context: PageContext, mode: RequestMode) =
 		timeZone: context.timeZone,
 	})
 
-const statusKey = (context: PageContext) => requestKey(context.orgId, "integrations.supabaseStatus", {})
+const statusKey = (context: PageContext) => integrationStatusKey(context.orgId, "supabase")
 
 const connectedStatus = (model: Model): SupabaseStatus | null =>
 	Option.match(AsyncData.getData(model.status.data), {

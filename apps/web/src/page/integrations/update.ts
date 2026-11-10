@@ -445,15 +445,15 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		CompletedReadSupabaseClock: ({ nowMs }) => Supabase.completedReadClock(model, context, nowMs),
 		ClickedSupabaseSync: () => Supabase.clickedSync(model),
 		CompletedSupabaseSync: ({ failure }) => Supabase.completedSync(model, context, failure),
-		ToggledSupabaseMetrics: ({ ref, enabled }) => Supabase.toggledMetrics(model, ref, enabled),
+		ToggledSupabaseMetrics: ({ ref, enabled }) => Supabase.toggledSwitch(model, ref, "metrics", enabled),
 		CompletedSupabaseMetrics: ({ ref, enabled, failure }) =>
-			Supabase.completedMetrics(model, context, ref, enabled, failure),
-		ToggledSupabaseLogs: ({ ref, enabled }) => Supabase.toggledLogs(model, ref, enabled),
+			Supabase.completedSwitch(model, context, ref, "metrics", enabled, failure),
+		ToggledSupabaseLogs: ({ ref, enabled }) => Supabase.toggledSwitch(model, ref, "logs", enabled),
 		CompletedSupabaseLogs: ({ ref, enabled, failure }) =>
-			Supabase.completedLogs(model, context, ref, enabled, failure),
-		ToggledSupabaseLogDrain: ({ ref, enabled }) => Supabase.toggledLogDrain(model, ref, enabled),
+			Supabase.completedSwitch(model, context, ref, "logs", enabled, failure),
+		ToggledSupabaseLogDrain: ({ ref, enabled }) => Supabase.toggledSwitch(model, ref, "drain", enabled),
 		CompletedSupabaseLogDrain: ({ ref, enabled, failure }) =>
-			Supabase.completedLogDrain(model, context, ref, enabled, failure),
+			Supabase.completedSwitch(model, context, ref, "drain", enabled, failure),
 		CompletedFetchOrganizations: ({ key, result }) =>
 			Planetscale.updateCard(model, {
 				organizations: Keyed.accept(model.planetscaleCard.organizations, key, result),

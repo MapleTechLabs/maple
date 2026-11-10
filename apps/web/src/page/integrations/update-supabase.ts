@@ -13,9 +13,7 @@ import type { Model } from "./model"
 import {
 	LoadSupabaseMetrics,
 	ReadSupabaseClock,
-	SetSupabaseLogDrain,
-	SetSupabaseLogs,
-	SetSupabaseMetrics,
+	SetSupabaseSwitch,
 	type SupabaseCardModel,
 	type SupabaseSwitchKind,
 	SyncSupabase,
@@ -82,12 +80,11 @@ export const completedSync = (model: Model, context: PageContext, failure: LoadF
 }
 
 /** One write per project at a time; a second flip while one saves is ignored. */
-const toggled = (
+export const toggledSwitch = (
 	model: Model,
 	ref: SupabaseProjectRef,
 	kind: SupabaseSwitchKind,
 	enabled: boolean,
-	command: ReturnType<typeof SetSupabaseMetrics | typeof SetSupabaseLogs | typeof SetSupabaseLogDrain>,
 ): Return =>
 	Arr.some(model.supabaseCard.pending, (entry) => entry.ref === ref)
 		? { model }
@@ -95,17 +92,26 @@ const toggled = (
 				model: withCard(model, {
 					pending: [...model.supabaseCard.pending, { ref, kind, enabled, isSaved: false }],
 				}),
-				commands: [command],
+				commands: [SetSupabaseSwitch[kind]({ ref, enabled })],
 			}
 
-const completed = (
+/** The toast title when a switch's write fails, by whether it turned the switch on. */
+const FAILED_TITLE = {
+	metrics: { on: "Couldn't start collecting metrics", off: "Couldn't stop collecting metrics" },
+	logs: { on: "Couldn't start collecting logs", off: "Couldn't stop collecting logs" },
+	drain: { on: "Couldn't create the log drain", off: "Couldn't remove the log drain" },
+} as const satisfies Record<SupabaseSwitchKind, { readonly on: string; readonly off: string }>
+
+export const completedSwitch = (
 	model: Model,
 	context: PageContext,
 	ref: SupabaseProjectRef,
+	kind: SupabaseSwitchKind,
+	enabled: boolean,
 	failure: LoadFailure | null,
-	failedTitle: string,
 ): Return => {
 	if (failure !== null) {
+		const failedTitle = enabled ? FAILED_TITLE[kind].on : FAILED_TITLE[kind].off
 		// The switch reverts to the server's value.
 		const reverted = withCard(model, {
 			pending: Arr.filter(model.supabaseCard.pending, (entry) => entry.ref !== ref),
@@ -129,57 +135,3 @@ export const settledStatus = (model: Model): Model =>
 /** A superseding rows read: the window may equal the last one, and that read predates the write. */
 export const completedReadClock = (model: Model, context: PageContext, nowMs: number): Return =>
 	requestMetricsRows({ ...model, nowMs }, context, "Supersede")
-
-export const toggledMetrics = (model: Model, ref: SupabaseProjectRef, enabled: boolean): Return =>
-	toggled(model, ref, "metrics", enabled, SetSupabaseMetrics({ ref, enabled }))
-
-export const completedMetrics = (
-	model: Model,
-	context: PageContext,
-	ref: SupabaseProjectRef,
-	enabled: boolean,
-	failure: LoadFailure | null,
-): Return =>
-	completed(
-		model,
-		context,
-		ref,
-		failure,
-		enabled ? "Couldn't start collecting metrics" : "Couldn't stop collecting metrics",
-	)
-
-export const toggledLogs = (model: Model, ref: SupabaseProjectRef, enabled: boolean): Return =>
-	toggled(model, ref, "logs", enabled, SetSupabaseLogs({ ref, enabled }))
-
-export const completedLogs = (
-	model: Model,
-	context: PageContext,
-	ref: SupabaseProjectRef,
-	enabled: boolean,
-	failure: LoadFailure | null,
-): Return =>
-	completed(
-		model,
-		context,
-		ref,
-		failure,
-		enabled ? "Couldn't start collecting logs" : "Couldn't stop collecting logs",
-	)
-
-export const toggledLogDrain = (model: Model, ref: SupabaseProjectRef, enabled: boolean): Return =>
-	toggled(model, ref, "drain", enabled, SetSupabaseLogDrain({ ref, enabled }))
-
-export const completedLogDrain = (
-	model: Model,
-	context: PageContext,
-	ref: SupabaseProjectRef,
-	enabled: boolean,
-	failure: LoadFailure | null,
-): Return =>
-	completed(
-		model,
-		context,
-		ref,
-		failure,
-		enabled ? "Couldn't create the log drain" : "Couldn't remove the log drain",
-	)

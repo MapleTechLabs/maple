@@ -15,7 +15,7 @@ import {
 } from "foldkit/scene"
 import { describe, expect, test } from "vitest"
 import { toLoadFailure } from "@maple/views/data/load-failure"
-import { LoadCloudflare } from "./command"
+import { STATUS_READS } from "./command"
 import * as Dialog from "@maple/views/ui/dialog"
 import type { PageContext } from "../contract"
 import { SaveCloudflareZones } from "./cloudflare"
@@ -138,7 +138,7 @@ describe("cloudflare zone selection", () => {
 			),
 			// The status is re-read in case an earlier account landed; the draft survives it.
 			Command.resolve(
-				LoadCloudflare,
+				STATUS_READS.cloudflare,
 				Message.CompletedLoadCloudflare({
 					key: connected().statuses.cloudflare.key ?? "",
 					result: Result.succeed(status),

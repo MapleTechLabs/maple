@@ -7,6 +7,7 @@ import { LoadChartRuntime } from "@maple/views/charts/chart-runtime"
 import * as Keyed from "@maple/views/data/keyed"
 import { requestSlot } from "../../kit/slot"
 import { requestKey } from "@maple/views/data/request-key"
+import { integrationStatusKey } from "../../../kit/integration-status-keys"
 import type { Resources } from "../../../../platform/resources"
 import { AppRoute, hrefOf } from "../../../../route"
 import * as Menu from "@maple/views/ui/menu"
@@ -126,7 +127,7 @@ const sync = (model: Model, context: PageContext, mode: Keyed.RequestMode): Retu
 	}
 }
 
-const statusKey = (context: PageContext) => requestKey(context.orgId, "gcpIntegration.status", {})
+const statusKey = (context: PageContext) => integrationStatusKey(context.orgId, "gcp")
 
 export const init = (route: { readonly search: Search }, context: PageContext): Return => {
 	const key = statusKey(context)

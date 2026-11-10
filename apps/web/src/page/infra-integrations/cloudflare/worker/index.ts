@@ -1,6 +1,6 @@
 import { definePage } from "../../../contract"
 import { Message, Model } from "./model"
-import { subscriptions } from "./subscription"
+import { ingestPollSubscriptions } from "../ingest-poll"
 import { contextChanged, init, routeChanged, update } from "./update"
 import { view } from "./view"
 import { platformSource } from "../../../../shell/source-link"
@@ -17,7 +17,9 @@ export const page = definePage(
 		routeChanged,
 		contextChanged,
 		view,
-		subscriptions,
+		subscriptions: ingestPollSubscriptions<Model, Message>((nowMs) =>
+			Message.TickedIngestPoll({ nowMs }),
+		),
 		source: () => platformSource("cloudflare"),
 		breadcrumbs: (model) => [
 			{ label: "Infrastructure", href: "/infra" },

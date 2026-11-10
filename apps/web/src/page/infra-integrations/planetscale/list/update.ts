@@ -4,6 +4,7 @@ import { Option, Array as Arr } from "effect"
 import { AsyncData } from "foldkit"
 import * as Keyed from "@maple/views/data/keyed"
 import { requestKey } from "@maple/views/data/request-key"
+import { integrationStatusKey } from "../../../kit/integration-status-keys"
 import type { TimeWindow } from "../../../../data/time-range"
 import { AppRoute, hrefOf } from "../../../../route"
 import { type PageContext, PageOutMessage, type PageReturn } from "../../../contract"
@@ -55,7 +56,7 @@ const merge = (steps: ReadonlyArray<(model: Model) => Step>, model: Model): Retu
 const databasesStep =
 	(context: PageContext, mode: Keyed.RequestMode) =>
 	(model: Model): Step => {
-		const key = requestKey(context.orgId, "planetscaleIntegration.databases", {})
+		const key = integrationStatusKey(context.orgId, "planetscaleDatabases")
 		return Option.match(Keyed.request(model.databases, key, mode), {
 			onNone: () => ({ model, commands: [] }),
 			onSome: (databases) => ({ model: { ...model, databases }, commands: [FetchDatabases({ key })] }),
@@ -79,7 +80,7 @@ const requestData = (model: Model, context: PageContext, mode: Keyed.RequestMode
 	isConnected(model) ? merge([databasesStep(context, "Load"), statsStep(context, mode)], model) : { model }
 
 export const init = (route: { readonly search: Search }, context: PageContext): Return => {
-	const key = requestKey(context.orgId, "planetscaleIntegration.status", {})
+	const key = integrationStatusKey(context.orgId, "planetscale")
 	const model: Model = {
 		search: route.search,
 		window: null,

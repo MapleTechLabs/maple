@@ -66,59 +66,40 @@ export const SyncSupabase = Command.define("SyncSupabase", {
 	),
 })
 
-export const SetSupabaseMetrics = Command.define("SetSupabaseProjectMetrics", {
-	args: { ref: SupabaseProjectRef, enabled: Schema.Boolean },
-	messages: [Message.CompletedSupabaseMetrics],
-	execute: ({ ref, enabled }) =>
-		Effect.gen(function* () {
-			const client = yield* MapleInternalApiClient
-			yield* client.integrations.supabaseUpdateProject({
-				params: { ref },
-				payload: new SupabaseProjectUpdateRequest({ metricsEnabled: enabled }),
-			})
-		}).pipe(
-			Effect.match({
-				onFailure: (error) =>
-					Message.CompletedSupabaseMetrics({ ref, enabled, failure: toLoadFailure(error) }),
-				onSuccess: () => Message.CompletedSupabaseMetrics({ ref, enabled, failure: null }),
-			}),
-		),
-})
+type SwitchDone = Schema.Top &
+	((fields: {
+		readonly ref: SupabaseProjectRef
+		readonly enabled: boolean
+		readonly failure: LoadFailure | null
+	}) => Message)
 
-export const SetSupabaseLogs = Command.define("SetSupabaseProjectLogs", {
-	args: { ref: SupabaseProjectRef, enabled: Schema.Boolean },
-	messages: [Message.CompletedSupabaseLogs],
-	execute: ({ ref, enabled }) =>
-		Effect.gen(function* () {
-			const client = yield* MapleInternalApiClient
-			yield* client.integrations.supabaseUpdateProject({
-				params: { ref },
-				payload: new SupabaseProjectUpdateRequest({ logsEnabled: enabled }),
-			})
-		}).pipe(
-			Effect.match({
-				onFailure: (error) =>
-					Message.CompletedSupabaseLogs({ ref, enabled, failure: toLoadFailure(error) }),
-				onSuccess: () => Message.CompletedSupabaseLogs({ ref, enabled, failure: null }),
-			}),
-		),
-})
+/** A project switch's write: one field of the project update, answered by its own Message. */
+const setSwitch = <const Name extends string>(
+	name: Name,
+	field: "metricsEnabled" | "logsEnabled" | "logDrainEnabled",
+	done: SwitchDone,
+) =>
+	Command.define(name, {
+		args: { ref: SupabaseProjectRef, enabled: Schema.Boolean },
+		messages: [done],
+		execute: ({ ref, enabled }) =>
+			Effect.gen(function* () {
+				const client = yield* MapleInternalApiClient
+				yield* client.integrations.supabaseUpdateProject({
+					params: { ref },
+					payload: new SupabaseProjectUpdateRequest({ [field]: enabled }),
+				})
+			}).pipe(
+				Effect.match({
+					onFailure: (error) => done({ ref, enabled, failure: toLoadFailure(error) }),
+					onSuccess: () => done({ ref, enabled, failure: null }),
+				}),
+			),
+	})
 
-export const SetSupabaseLogDrain = Command.define("SetSupabaseProjectLogDrain", {
-	args: { ref: SupabaseProjectRef, enabled: Schema.Boolean },
-	messages: [Message.CompletedSupabaseLogDrain],
-	execute: ({ ref, enabled }) =>
-		Effect.gen(function* () {
-			const client = yield* MapleInternalApiClient
-			yield* client.integrations.supabaseUpdateProject({
-				params: { ref },
-				payload: new SupabaseProjectUpdateRequest({ logDrainEnabled: enabled }),
-			})
-		}).pipe(
-			Effect.match({
-				onFailure: (error) =>
-					Message.CompletedSupabaseLogDrain({ ref, enabled, failure: toLoadFailure(error) }),
-				onSuccess: () => Message.CompletedSupabaseLogDrain({ ref, enabled, failure: null }),
-			}),
-		),
-})
+/** Each project switch's write. */
+export const SetSupabaseSwitch = {
+	metrics: setSwitch("SetSupabaseProjectMetrics", "metricsEnabled", Message.CompletedSupabaseMetrics),
+	logs: setSwitch("SetSupabaseProjectLogs", "logsEnabled", Message.CompletedSupabaseLogs),
+	drain: setSwitch("SetSupabaseProjectLogDrain", "logDrainEnabled", Message.CompletedSupabaseLogDrain),
+} satisfies { readonly [K in SupabaseSwitchKind]: unknown }

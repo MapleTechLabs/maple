@@ -5,6 +5,7 @@ import { LoadChartRuntime } from "@maple/views/charts/chart-runtime"
 import { chartBucketSeconds } from "@maple/views/charts/infra-metric-series"
 import * as Keyed from "@maple/views/data/keyed"
 import { requestKey } from "@maple/views/data/request-key"
+import { integrationStatusKey } from "../../../kit/integration-status-keys"
 import type { Resources } from "../../../../platform/resources"
 import { AppRoute, hrefOf } from "../../../../route"
 import * as Menu from "@maple/views/ui/menu"
@@ -104,7 +105,7 @@ const sync = (model: Model, context: PageContext, mode: Keyed.RequestMode): Retu
 	}
 }
 
-const statusKey = (context: PageContext) => requestKey(context.orgId, "integrations.cloudflareStatus", {})
+const statusKey = (context: PageContext) => integrationStatusKey(context.orgId, "cloudflare")
 const usageKey = (context: PageContext) => requestKey(context.orgId, "integrations.cloudflareUsage", {})
 
 /** The ingest poll: both reads again, the status past its shared cache. */

@@ -1,163 +1,44 @@
 import { Option, Array as Arr } from "effect"
-import type { Command } from "foldkit"
 import * as Keyed from "@maple/views/data/keyed"
-import { requestKey } from "@maple/views/data/request-key"
-import type { Resources } from "../../platform/resources"
+import type { LoadFailure } from "@maple/views/data/load-failure"
 import type { PageContext, PageReturn } from "../contract"
-import {
-	LoadAws,
-	LoadChat,
-	LoadDataSources,
-	LoadCloudflare,
-	LoadGcp,
-	LoadGithub,
-	LoadLinear,
-	LoadPlanetscale,
-	LoadPlanetscaleDatabases,
-	LoadRailway,
-	LoadScrapeTargets,
-	LoadSearchConsole,
-	LoadSupabase,
-} from "./command"
+import { integrationStatusKey } from "../kit/integration-status-keys"
+import { STATUS_READS } from "./command"
 import type { Message } from "./message"
 import type { Model, Statuses } from "./model"
 
 // The shared status reads: keys, requests, and step chaining.
 
 type Return = PageReturn<Model, Message>
-type AnyCommand = Command.Command<Message, never, Resources>
-
-const OPERATIONS = {
-	cloudflare: "integrations.cloudflareStatus",
-	railway: "integrations.railwayStatus",
-	planetscale: "planetscaleIntegration.status",
-	planetscaleDatabases: "planetscaleIntegration.databases",
-	gcp: "gcpIntegration.status",
-	aws: "awsIntegration.status",
-	supabase: "integrations.supabaseStatus",
-	linear: "integrations.linearStatus",
-	github: "integrations.githubStatus",
-	searchConsole: "integrations.searchConsoleStatus",
-	chat: "chatIntegration.connectors",
-	scrapeTargets: "scrapeTargets.list",
-	dataSources: "dataSources.list",
-} satisfies { readonly [K in keyof Statuses]: string }
 
 export const statusKey = (context: PageContext, name: keyof Statuses) =>
-	requestKey(context.orgId, OPERATIONS[name], {})
+	integrationStatusKey(context.orgId, name)
 
-const step = <A, E>(
-	model: Model,
-	slot: Keyed.Keyed<A, E>,
+/** `Keyed.requestFor`, keeping the slot's own type: the slot to store and the key to fetch with. */
+const requestSlot = <S extends Keyed.Keyed<unknown, LoadFailure>>(
+	slot: S,
 	key: string,
 	mode: Keyed.ReadMode,
-	set: (statuses: Statuses, next: Keyed.Keyed<A, E>) => Statuses,
-	command: (slotKey: string) => AnyCommand,
-): Return =>
-	Option.match(Keyed.requestFor(slot, key, mode), {
-		onNone: () => ({ model }),
-		onSome: (requested) => ({
-			model: { ...model, statuses: set(model.statuses, requested) },
-			commands: [command(requested.key)],
-		}),
-	})
+): Option.Option<Readonly<{ slot: S; key: string }>> =>
+	Option.map(Keyed.requestFor<unknown, LoadFailure>(slot, key, mode), (requested) => ({
+		slot: { ...slot, ...requested },
+		key: requested.key,
+	}))
 
 /** Requests one status read; a write's `reactivityKeys` re-read it with `Supersede`, a timer with `Refresh`. */
-export const requestStatus = (
+export const requestStatus = <K extends keyof Statuses>(
 	model: Model,
 	context: PageContext,
-	name: keyof Statuses,
+	name: K,
 	mode: Keyed.ReadMode,
-): Return => {
-	const key = statusKey(context, name)
-	const refresh = mode !== "Load"
-	const s = model.statuses
-	const go = <A, E>(
-		slot: Keyed.Keyed<A, E>,
-		set: (all: Statuses, next: Keyed.Keyed<A, E>) => Statuses,
-		command: (slotKey: string) => AnyCommand,
-	) => step(model, slot, key, mode, set, command)
-	switch (name) {
-		case "cloudflare":
-			return go(
-				s.cloudflare,
-				(all, cloudflare) => ({ ...all, cloudflare }),
-				(slotKey) => LoadCloudflare({ key: slotKey, refresh }),
-			)
-		case "railway":
-			return go(
-				s.railway,
-				(all, railway) => ({ ...all, railway }),
-				(slotKey) => LoadRailway({ key: slotKey, refresh }),
-			)
-		case "planetscale":
-			return go(
-				s.planetscale,
-				(all, planetscale) => ({ ...all, planetscale }),
-				(slotKey) => LoadPlanetscale({ key: slotKey, refresh }),
-			)
-		case "planetscaleDatabases":
-			return go(
-				s.planetscaleDatabases,
-				(all, planetscaleDatabases) => ({ ...all, planetscaleDatabases }),
-				(slotKey) => LoadPlanetscaleDatabases({ key: slotKey }),
-			)
-		case "gcp":
-			return go(
-				s.gcp,
-				(all, gcp) => ({ ...all, gcp }),
-				(slotKey) => LoadGcp({ key: slotKey, refresh }),
-			)
-		case "aws":
-			return go(
-				s.aws,
-				(all, aws) => ({ ...all, aws }),
-				(slotKey) => LoadAws({ key: slotKey }),
-			)
-		case "supabase":
-			return go(
-				s.supabase,
-				(all, supabase) => ({ ...all, supabase }),
-				(slotKey) => LoadSupabase({ key: slotKey, refresh }),
-			)
-		case "linear":
-			return go(
-				s.linear,
-				(all, linear) => ({ ...all, linear }),
-				(slotKey) => LoadLinear({ key: slotKey }),
-			)
-		case "github":
-			return go(
-				s.github,
-				(all, github) => ({ ...all, github }),
-				(slotKey) => LoadGithub({ key: slotKey }),
-			)
-		case "searchConsole":
-			return go(
-				s.searchConsole,
-				(all, searchConsole) => ({ ...all, searchConsole }),
-				(slotKey) => LoadSearchConsole({ key: slotKey }),
-			)
-		case "chat":
-			return go(
-				s.chat,
-				(all, chat) => ({ ...all, chat }),
-				(slotKey) => LoadChat({ key: slotKey }),
-			)
-		case "scrapeTargets":
-			return go(
-				s.scrapeTargets,
-				(all, scrapeTargets) => ({ ...all, scrapeTargets }),
-				(slotKey) => LoadScrapeTargets({ key: slotKey }),
-			)
-		case "dataSources":
-			return go(
-				s.dataSources,
-				(all, dataSources) => ({ ...all, dataSources }),
-				(slotKey) => LoadDataSources({ key: slotKey }),
-			)
-	}
-}
+): Return =>
+	Option.match(requestSlot(model.statuses[name], statusKey(context, name), mode), {
+		onNone: () => ({ model }),
+		onSome: (requested) => ({
+			model: { ...model, statuses: { ...model.statuses, [name]: requested.slot } },
+			commands: [STATUS_READS[name]({ key: requested.key, refresh: mode !== "Load" })],
+		}),
+	})
 
 /** Runs steps in order, threading the Model and collecting their Commands and last OutMessage. */
 export const chain = (model: Model, steps: ReadonlyArray<(model: Model) => Return>): Return =>
