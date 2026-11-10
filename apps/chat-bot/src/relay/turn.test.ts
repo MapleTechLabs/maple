@@ -83,8 +83,6 @@ const mention: InboundMessage = {
 	mentionsBot: true,
 }
 
-// ── The platform ─────────────────────────────────────────────────────────────
-
 interface Chat {
 	readonly outbound: ChatOutbound
 	/** Every post, edit and private reply, in order. */
@@ -174,8 +172,6 @@ const chat = (
 		},
 	}
 }
-
-// ── The chat session ─────────────────────────────────────────────────────────
 
 /** Through the real codec, so the frames on the wire are the ones the session would write. */
 const event = (seq: number, input: ChatEventInput): ChatEvent =>
@@ -269,8 +265,6 @@ const session = (
 		},
 	}
 }
-
-// ── The host ─────────────────────────────────────────────────────────────────
 
 interface Host {
 	readonly ports: RelayPorts
@@ -978,8 +972,6 @@ describe("relaying a message that mentioned nobody", () => {
 		}),
 	)
 })
-
-// ── Approvals ────────────────────────────────────────────────────────────────
 
 const ADA = Schema.decodeSync(UserId)("user_ada")
 const CALL_ID = "call_9"
