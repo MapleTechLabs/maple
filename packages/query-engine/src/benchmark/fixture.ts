@@ -9,7 +9,7 @@ import { fingerprintSql } from "../execution/fingerprint"
 export interface BuilderFixture {
 	/** Module basename of the builder, e.g. `"session-replays"`. */
 	readonly module: string
-	/** The exported builder this fixture covers — must match the export name. */
+	/** The exported builder this fixture covers; it must match the export name. */
 	readonly name: string
 	/** Distinguishes fixtures for one builder; appears in failure output. */
 	readonly label: string
@@ -19,15 +19,15 @@ export interface BuilderFixture {
 	 * column type allows.
 	 *
 	 * The E2E sweep decodes a synthetic row to prove the schema accepts both 64-bit
-	 * wire shapes, and it builds that row from the DESCRIBEd column *types* alone —
+	 * wire shapes, and it builds that row from the DESCRIBEd column *types* alone,
 	 * so every `String` column gets `""`. A schema that legitimately narrows a
 	 * String (a literal union over a column the SQL itself guarantees, like
 	 * `serviceExternalEdges.targetType`) rejects `""` and fails a check that is
 	 * about integer quoting, with a message telling the author to reach for
 	 * `CH.CHNumber` on a string field.
 	 *
-	 * The narrowing is worth keeping — `service-map.test.ts` asserts an unexpected
-	 * `targetType` is rejected — so the fixture names the value instead. Keyed by
+	 * The narrowing is worth keeping (`service-map.test.ts` asserts an unexpected
+	 * `targetType` is rejected), so the fixture names the value instead. Keyed by
 	 * output column name.
 	 */
 	readonly sampleValues?: Readonly<Record<string, unknown>>
@@ -71,7 +71,7 @@ export const builderCatalogEntries = (
 		if (Str.includes("__PARAM_")(compiled.sql)) {
 			throw new Error(
 				`${catalog}: ${fixture.module}/${fixture.name} (${fixture.label}) ` +
-					`left an unresolved __PARAM_ placeholder — a compile param is missing.`,
+					`left an unresolved __PARAM_ placeholder: a compile param is missing.`,
 			)
 		}
 		return {
