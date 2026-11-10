@@ -14,7 +14,7 @@ import {
 	String as Str,
 } from "effect"
 import { HttpRouter } from "effect/http"
-import { HttpApiBuilder } from "effect/http-api"
+import { HttpApi, HttpApiBuilder } from "effect/http-api"
 import { Env } from "@maple/backend/platform/Env"
 import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/platform/test-pglite"
 import {
@@ -34,14 +34,19 @@ import {
 	type QueryEngineServiceApi,
 } from "@maple/backend/services/warehouse/QueryEngineService"
 import { V2TransportErrorBoundaryLive } from "./error-envelope"
+import { ApiV2RateLimiterAllowAllLayer, makeWarehouseServiceStub } from "./v2-test-support"
+import { TelemetryReadService } from "@maple/backend/services/warehouse/TelemetryReadService"
+import { SessionReplayReadService } from "@maple/backend/services/session-replays/SessionReplayReadService"
+import { ReplayBlobStore } from "@maple/backend/platform/ReplayBlobStore"
 import {
-	AlertsServiceStubLayer,
-	AllV2GroupLayersLive,
-	ApiV2RateLimiterAllowAllLayer,
-	ConfigResourceServiceStubsLayer,
-	makeWarehouseServiceStub,
-	PlanetScaleServiceStubsLayer,
-} from "./v2-test-support"
+	HttpV2EnvironmentsLive,
+	HttpV2LogsLive,
+	HttpV2MetricsLive,
+	HttpV2ServiceMapLive,
+	HttpV2ServicesLive,
+	HttpV2TracesLive,
+} from "./telemetry.http"
+import { HttpV2SessionReplaysLive } from "./session-replays.http"
 import { compiledQueryOf } from "@maple/query-engine/execution"
 
 const TRACE_ID = "7f3a4b5c6d7e8f901234567890abcdef"
@@ -332,13 +337,38 @@ const makeHarness = (
 		Layer.succeed(WarehouseQueryService, warehouseService),
 		Layer.succeed(QueryEngineService, queryEngineService),
 	)
-	const routes = HttpApiBuilder.layer(MapleApiV2).pipe(
-		Layer.provide(AllV2GroupLayersLive),
+	const routes = HttpApiBuilder.layer(
+		HttpApi.make("MapleApiV2").add(
+			MapleApiV2.groups.traces,
+			MapleApiV2.groups.logs,
+			MapleApiV2.groups.metrics,
+			MapleApiV2.groups.services,
+			MapleApiV2.groups.serviceMap,
+			MapleApiV2.groups.environments,
+			MapleApiV2.groups.sessionReplays,
+		),
+	).pipe(
+		Layer.provide(
+			Layer.mergeAll(
+				Layer.mergeAll(
+					HttpV2TracesLive,
+					HttpV2LogsLive,
+					HttpV2MetricsLive,
+					HttpV2ServicesLive,
+					HttpV2ServiceMapLive,
+					HttpV2EnvironmentsLive,
+				).pipe(Layer.provide(Layer.effect(TelemetryReadService, TelemetryReadService.make))),
+				HttpV2SessionReplaysLive.pipe(
+					Layer.provide(
+						Layer.effect(SessionReplayReadService, SessionReplayReadService.make).pipe(
+							Layer.provide(ReplayBlobStore.layer),
+						),
+					),
+				),
+			),
+		),
 		Layer.provide(telemetryLive),
 		Layer.provide(V2TransportErrorBoundaryLive),
-		Layer.provide(PlanetScaleServiceStubsLayer),
-		Layer.provide(AlertsServiceStubLayer),
-		Layer.provide(ConfigResourceServiceStubsLayer),
 		Layer.provideMerge(ApiAuthorizationV2Live),
 		Layer.provideMerge(AuditLogService.layerMemory),
 		Layer.provideMerge(ApiV2RateLimiterAllowAllLayer),

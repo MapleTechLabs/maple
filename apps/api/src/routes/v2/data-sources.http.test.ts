@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it } from "vitest"
 import { ConfigProvider, Context, Effect, Layer, ManagedRuntime, Schema } from "effect"
 import { HttpRouter } from "effect/http"
-import { HttpApiBuilder } from "effect/http-api"
+import { HttpApi, HttpApiBuilder } from "effect/http-api"
 import type { CatalogEntry, ClickHouseDataSourceConfig } from "@maple/domain/data-sources"
 import {
 	DataSourceConnectionError,
@@ -15,7 +15,10 @@ import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/platfo
 import { ApiAuthorizationV2Live } from "@maple/backend/services/auth/ApiAuthorizationV2Live"
 import { AuthService } from "@maple/backend/services/auth/AuthService"
 import { AuditLogService, makeMemoryAuditLog } from "@maple/backend/services/audit/AuditLogService"
-import { DataSourceDrivers } from "@maple/backend/services/data-sources/DataSourceDrivers"
+import {
+	DataSourceCallBudget,
+	DataSourceDrivers,
+} from "@maple/backend/services/data-sources/DataSourceDrivers"
 import { OrganizationFeatureFlagsService } from "@maple/backend/services/org/OrganizationFeatureFlagsService"
 import {
 	DISABLED_ORGANIZATION_FEATURE_FLAGS,
@@ -25,14 +28,9 @@ import { DashboardPersistenceService } from "@maple/backend/services/dashboards/
 import { SharedDashboardService } from "@maple/backend/services/dashboards/SharedDashboardService"
 import { ApiKeysService } from "@maple/backend/services/org/ApiKeysService"
 import { V2TransportErrorBoundaryLive } from "./error-envelope"
-import {
-	AlertsServiceStubLayer,
-	allV2GroupLayersWithDataSources,
-	ApiV2RateLimiterAllowAllLayer,
-	ConfigResourceServiceStubsLayer,
-	PlanetScaleServiceStubsLayer,
-	TelemetryServiceStubsLayer,
-} from "./v2-test-support"
+import { ApiV2RateLimiterAllowAllLayer } from "./v2-test-support"
+import { HttpV2DataSourcesLive } from "./data-sources.http"
+import { ExternalDataSourceService } from "@maple/backend/services/data-sources/ExternalDataSourceService"
 
 // `/v2/data_sources` over PGlite with the real service and a fake ClickHouse driver.
 
@@ -133,19 +131,23 @@ const makeHarness = (
 	).pipe(Layer.provideMerge(Layer.mergeAll(Env.layer.pipe(Layer.provide(testConfig)), testDb.layer)))
 
 	// Only ClickHouse is served, so Clerk sources take the path a driver-less deploy has.
-	const routes = HttpApiBuilder.layer(MapleApiV2).pipe(
+	const routes = HttpApiBuilder.layer(HttpApi.make("MapleApiV2").add(MapleApiV2.groups.dataSources)).pipe(
 		Layer.provide(
-			allV2GroupLayersWithDataSources(
-				DataSourceDrivers.fromList([fakeClickHouse(source)]),
-				auditLive,
-				OrganizationFeatureFlagsService.fixed(flags),
+			HttpV2DataSourcesLive.pipe(
+				Layer.provide(
+					ExternalDataSourceService.layer.pipe(
+						Layer.provide(
+							Layer.merge(
+								DataSourceDrivers.fromList([fakeClickHouse(source)]),
+								DataSourceCallBudget.unlimited,
+							),
+						),
+					),
+				),
+				Layer.provide(OrganizationFeatureFlagsService.fixed(flags)),
 			),
 		),
 		Layer.provide(V2TransportErrorBoundaryLive),
-		Layer.provide(AlertsServiceStubLayer),
-		Layer.provide(ConfigResourceServiceStubsLayer),
-		Layer.provide(PlanetScaleServiceStubsLayer),
-		Layer.provide(TelemetryServiceStubsLayer),
 		Layer.provideMerge(ApiAuthorizationV2Live),
 		Layer.provideMerge(auditLive),
 		Layer.provideMerge(ApiV2RateLimiterAllowAllLayer),

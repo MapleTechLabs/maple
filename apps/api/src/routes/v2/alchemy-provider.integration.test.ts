@@ -14,7 +14,7 @@ import { ChatAlertPoster } from "@maple/backend/services/alerts/ChatAlertPoster"
 import { afterEach, describe, expect, it } from "@effect/vitest"
 import { Clock, ConfigProvider, Context, Effect, Layer, ManagedRuntime, Redacted, Schema } from "effect"
 import { FetchHttpClient, HttpRouter } from "effect/http"
-import { HttpApiBuilder } from "effect/http-api"
+import { HttpApi, HttpApiBuilder } from "effect/http-api"
 import { OrgId, UserId } from "@maple/domain/http"
 import { MapleApiV2 } from "@maple/domain/http/v2"
 import { BucketCacheService } from "@maple/query-engine/caching"
@@ -57,13 +57,16 @@ import { OrgMembersService } from "@maple/backend/services/org/OrgMembersService
 import { QueryEngineService } from "@maple/backend/services/warehouse/QueryEngineService"
 import { V2TransportErrorBoundaryLive } from "./error-envelope"
 import {
-	AllV2GroupLayersLive,
 	ApiV2RateLimiterAllowAllLayer,
-	ConfigResourceServiceStubsLayer,
 	makeWarehouseServiceStub,
-	PlanetScaleServiceStubsLayer,
 	TelemetryServiceStubsLayer,
+	WarehouseServiceStubLayer,
 } from "./v2-test-support"
+import { DashboardWidgetDataService } from "@maple/backend/services/dashboards/DashboardWidgetDataService"
+import { HttpV2DashboardsLive } from "./dashboards.http"
+import { HttpV2AlertDestinationsLive } from "./alert-destinations.http"
+import { HttpV2AlertRulesLive } from "./alert-rules.http"
+import { HttpV2ApiKeysLive } from "./api-keys.http"
 import { InvestigationService } from "@maple/backend/services/errors/InvestigationService"
 import { compiledQueryOf } from "@maple/query-engine/execution"
 
@@ -213,12 +216,27 @@ const makeHarness = () => {
 		alertsLive,
 	).pipe(Layer.provideMerge(Layer.mergeAll(envLive, testDb.layer)))
 
-	const routes = HttpApiBuilder.layer(MapleApiV2).pipe(
-		Layer.provide(AllV2GroupLayersLive),
-		Layer.provide(ConfigResourceServiceStubsLayer),
+	const routes = HttpApiBuilder.layer(
+		HttpApi.make("MapleApiV2").add(
+			MapleApiV2.groups.dashboards,
+			MapleApiV2.groups.alertDestinations,
+			MapleApiV2.groups.alertRules,
+			MapleApiV2.groups.apiKeys,
+		),
+	).pipe(
+		Layer.provide(
+			Layer.mergeAll(
+				HttpV2DashboardsLive.pipe(
+					Layer.provide(Layer.effect(DashboardWidgetDataService, DashboardWidgetDataService.make)),
+				),
+				HttpV2AlertDestinationsLive,
+				HttpV2AlertRulesLive,
+				HttpV2ApiKeysLive,
+			),
+		),
+		Layer.provide(WarehouseServiceStubLayer),
 		Layer.provide(TelemetryServiceStubsLayer),
 		Layer.provide(V2TransportErrorBoundaryLive),
-		Layer.provide(PlanetScaleServiceStubsLayer),
 		Layer.provideMerge(ApiAuthorizationV2Live),
 		Layer.provideMerge(AuditLogService.layerMemory),
 		Layer.provideMerge(ApiV2RateLimiterAllowAllLayer),
