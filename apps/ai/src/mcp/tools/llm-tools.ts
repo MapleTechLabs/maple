@@ -28,6 +28,7 @@ import type { McpToolExecutorApi } from "../dispatcher"
 import type { McpToolSurface } from "@maple/domain/mcp-manifest"
 import { mapleToolCatalogFor, toInputSchema } from "./registry"
 import { truncateToolOutput } from "./tool-output"
+import { MAX_FAILURE_MESSAGE_CHARS } from "../expected-failures"
 import { toolHandlersWithContent } from "../../platform/genai-spans"
 import type { TenantContext } from "@maple/backend/services/auth/tenant-context"
 
@@ -75,13 +76,7 @@ export const splitToolResult = (
 	return { text, ui }
 }
 
-/**
- * Capped, because "one line" is a convention the error's author never agreed to: a ClickHouse syntax
- * error arrives with the whole offending query inlined, and on a retry loop that lands in the
- * transcript once per attempt.
- */
-const MAX_FAILURE_MESSAGE_CHARS = 500
-
+/** Capped: "one line" is a convention the error's author never agreed to. */
 const cap = (message: string): string =>
 	message.length <= MAX_FAILURE_MESSAGE_CHARS
 		? message

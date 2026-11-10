@@ -59,12 +59,12 @@ import * as Cloudflare from "@alchemy.run/cloudflare"
 // BOUNDARY: This module owns unparsed external values and narrows them before domain use.
 import type { McpToolNotFoundError } from "@maple/domain/mcp-tool-contract"
 import type { McpToolSurface } from "@maple/domain/mcp-manifest"
-import { Context, Effect, Layer, Array as Arr, String as Str } from "effect"
+import { Context, Effect, Layer, Array as Arr } from "effect"
 import { FetchHttpClient } from "effect/http"
 import type { McpToolResult } from "./tools/types"
 import type { McpToolRuntimeRequirements } from "./tools/runtime-requirements"
 import { CurrentMcpRequestTenant, CurrentMcpTenant } from "./lib/query-warehouse"
-import { recordExpectedMcpFailure } from "./expected-failures"
+import { recordExpectedMcpFailure, spanFailureMessage } from "./expected-failures"
 import { loadRegistry } from "./tool-catalog"
 import type { TenantContext } from "@maple/backend/services/auth/tenant-context"
 import { recordMcpToolAudit } from "@maple/backend/services/audit/audit-access"
@@ -89,20 +89,6 @@ export const withFeedbackHint = (text: string, name: string, surface: McpToolSur
 	surface === "mcp" && name !== "send_maple_feedback"
 		? `${text}\nIf this looks like a bug in Maple rather than in your call, report it now with \`send_maple_feedback\` (kind "bug", related_to "${name}", what you called and what came back, no user data), then tell the user in one line that you did.`
 		: text
-
-/**
- * Real failures leave the dispatcher span through the error channel so it exports as Error; the
- * caller converts them into in-band results outside it. Expected 4xx stay Ok inside the span.
- */
-const REAL_FAILURE_CATEGORY = new Map<string, string>([
-	["@maple/mcp/errors/McpQueryError", "query"],
-	["@maple/mcp/errors/McpTenantError", "tenant"],
-	["@maple/mcp/errors/McpAuthUnavailableError", "auth"],
-	["@maple/mcp/errors/McpInvalidTenantError", "tenant"],
-])
-
-/** Matches `expected-failures.ts`, so both kinds of failure carry the same message bound. */
-const MAX_SPAN_MESSAGE_CHARS = 500
 
 const dispatchInSpan = Effect.fn("McpToolDispatcher.call")(function* (
 	name: string,
@@ -162,14 +148,8 @@ const dispatchInSpan = Effect.fn("McpToolDispatcher.call")(function* (
 					}),
 					Effect.as(failureResult(`Query too expensive: ${error.message}`, "query_budget")),
 				),
-			// Missing/invalid credentials are expected 401s, not failures: they are
-			// recorded on the span as attributes + a Warn log (see
-			// `expected-failures.ts`), never as an Error status or exception event.
-			"@maple/mcp/errors/McpAuthMissingError": (error) =>
-				recordExpectedMcpFailure(error, "MCP authentication failed").pipe(
-					Effect.as(failureResult(`Authentication required: ${error.message}`, "auth")),
-				),
-			// A credential that is valid but may not do this is a permission answer, not a bug.
+			// A credential that is valid but may not do this is a permission answer, not a bug. An
+			// expected 401: span attributes and a Warn log, never an Error status.
 			"@maple/mcp/errors/McpAuthInvalidError": (error) =>
 				recordExpectedMcpFailure(error, "MCP authentication failed").pipe(
 					Effect.as(
@@ -197,17 +177,16 @@ const dispatchInSpan = Effect.fn("McpToolDispatcher.call")(function* (
 					: { "maple.mcp.error.category": result.failureCategory }),
 			}),
 		),
-		Effect.tapError((error) => {
-			const category = REAL_FAILURE_CATEGORY.get(error._tag)
-			return category === undefined
-				? Effect.void
-				: Effect.annotateCurrentSpan({
-						"result.isError": true,
-						"maple.mcp.error.category": category,
-						// As expected failures record it: a tool's failure reasons are one query, not a log join.
-						"maple.mcp.error.message": Str.slice(0, MAX_SPAN_MESSAGE_CHARS)(error.message),
-					})
-		}),
+		// A real failure leaves the span through the error channel so it exports as Error; the caller
+		// converts it into an in-band result outside the span. Expected 4xx stay Ok inside it.
+		Effect.tapErrorTag("@maple/mcp/errors/McpQueryError", (error) =>
+			Effect.annotateCurrentSpan({
+				"result.isError": true,
+				"maple.mcp.error.category": "query",
+				// As expected failures record it: a tool's failure reasons are one query, not a log join.
+				"maple.mcp.error.message": spanFailureMessage(error.message),
+			}),
+		),
 		Effect.annotateLogs({ "maple.mcp.tool": name }),
 	)
 })
@@ -215,46 +194,18 @@ const dispatchInSpan = Effect.fn("McpToolDispatcher.call")(function* (
 /** Raw dispatcher. Executable handlers stay private so callers cannot omit the request tenant. */
 const callMcpToolUnscoped = (name: string, input: unknown, surface: McpToolSurface) =>
 	dispatchInSpan(name, input, surface).pipe(
-		Effect.catchTags({
-			"@maple/mcp/errors/McpQueryError": (error) =>
-				Effect.logError("MCP tool execution failed").pipe(
-					Effect.annotateLogs({
-						"error.message": error.message,
-						"error.type": error._tag,
-						"maple.mcp.pipe": error.pipeName,
-					}),
-					Effect.as(
-						failureResult(
-							withFeedbackHint(`Query failed: ${error.message}`, name, surface),
-							"query",
-						),
-					),
+		Effect.catchTag("@maple/mcp/errors/McpQueryError", (error) =>
+			Effect.logError("MCP tool execution failed").pipe(
+				Effect.annotateLogs({
+					"error.message": error.message,
+					"error.type": error._tag,
+					"maple.mcp.pipe": error.pipeName,
+				}),
+				Effect.as(
+					failureResult(withFeedbackHint(`Query failed: ${error.message}`, name, surface), "query"),
 				),
-			"@maple/mcp/errors/McpTenantError": (error) =>
-				Effect.logError("MCP tool execution failed").pipe(
-					Effect.annotateLogs({ "error.message": error.message, "error.type": error._tag }),
-					Effect.as(
-						failureResult(
-							withFeedbackHint(`Tenant error: ${error.message}`, name, surface),
-							"tenant",
-						),
-					),
-				),
-			"@maple/mcp/errors/McpAuthUnavailableError": (error) =>
-				Effect.logError("MCP authentication dependency failed").pipe(
-					Effect.annotateLogs({ "error.message": error.message, "error.type": error._tag }),
-					Effect.as(failureResult("Authentication is temporarily unavailable.", "auth")),
-				),
-			"@maple/mcp/errors/McpInvalidTenantError": (error) =>
-				Effect.logError("MCP tenant validation failed").pipe(
-					Effect.annotateLogs({
-						"error.message": error.message,
-						"error.type": error._tag,
-						"maple.mcp.field": error.field,
-					}),
-					Effect.as(failureResult(`Tenant error (${error.field}): ${error.message}`, "tenant")),
-				),
-		}),
+			),
+		),
 		Effect.annotateLogs({ "maple.mcp.tool": name }),
 	)
 

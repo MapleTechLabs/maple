@@ -4,10 +4,6 @@ import type { McpToolSurface } from "@maple/domain/mcp-manifest"
 import type { McpToolRequirements } from "./runtime-requirements"
 import type { ToolDoc } from "../lib/tool-doc"
 
-class McpTenantError extends Schema.TaggedError<McpTenantError>()("@maple/mcp/errors/McpTenantError", {
-	message: Schema.String,
-}) {}
-
 export class McpAuthMissingError extends Schema.TaggedError<McpAuthMissingError>()(
 	"@maple/mcp/errors/McpAuthMissingError",
 	{ message: Schema.String, header: Schema.optionalKey(Schema.String) },
@@ -77,12 +73,12 @@ export class McpQueryBudgetError extends Schema.TaggedError<McpQueryBudgetError>
 	{ message: Schema.String, pipeName: Schema.String, setting: Schema.String },
 ) {}
 
+/**
+ * What a tool handler may fail with. Credential and tenant failures (`McpAuthMissingError`,
+ * `McpAuthUnavailableError`, `McpInvalidTenantError`) happen at the transport, before any tool runs.
+ */
 export type McpToolError =
-	| McpTenantError
-	| McpAuthMissingError
 	| McpAuthInvalidError
-	| McpAuthUnavailableError
-	| McpInvalidTenantError
 	| McpQueryError
 	| McpInvalidInputError
 	| McpNotReadyError
