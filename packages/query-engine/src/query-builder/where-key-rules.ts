@@ -111,8 +111,10 @@ const dimensionsOf = (
 /** The rule for a key as written (aliases resolve), on one source. */
 export const whereKeyRule = (dataSource: QueryBuilderDataSource, key: string): WhereKeyRule => {
 	const canonical = normalizeKey(key)
-	if (Str.startsWith("attr.")(canonical) || Str.startsWith("resource.")(canonical))
-		return { _tag: "Attribute" }
+	if (Str.startsWith("attr.")(canonical)) return { _tag: "Attribute" }
+	// Product events have no resource attributes: their handler would read the key as a prop of that literal name.
+	if (Str.startsWith("resource.")(canonical))
+		return dataSource === "product_events" ? { _tag: "Unsupported" } : { _tag: "Attribute" }
 	return Option.match(Rec.get(dimensionsOf(dataSource), canonical), {
 		onSome: (operators): WhereKeyRule => ({ _tag: "Dimension", operators }),
 		// Traces read a bare key as a span attribute and product events as a `track()` prop.

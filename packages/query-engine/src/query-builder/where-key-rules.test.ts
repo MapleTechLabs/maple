@@ -88,6 +88,20 @@ describe("where key rules", () => {
 		expect(warningsOf(dataSource, clauseOf("attr.http.route", operator))).toEqual([])
 	})
 
+	const resourceSources: ReadonlyArray<QueryBuilderDataSource> = ["traces", "logs", "metrics"]
+	const resourceCases = Arr.flatMap(resourceSources, (dataSource) =>
+		Arr.map(WHERE_OPERATORS, (operator) => ({ dataSource, operator })),
+	)
+
+	it.each(resourceCases)("$dataSource resource.* takes $operator", ({ dataSource, operator }) => {
+		expect(whereOperatorsOf(dataSource, "resource.host.name")).toContain(operator)
+		expect(warningsOf(dataSource, clauseOf("resource.host.name", operator))).toEqual([])
+	})
+
+	it("product events offer no operator on resource.*, which they would read as a prop of that name", () => {
+		expect(whereOperatorsOf("product_events", "resource.host.name")).toEqual([])
+	})
+
 	it("a bare unknown key is an attribute on traces and dropped on logs and metrics", () => {
 		expect(whereOperatorsOf("traces", "db.system")).toEqual(WHERE_OPERATORS)
 		expect(whereOperatorsOf("logs", "db.system")).toEqual([])
