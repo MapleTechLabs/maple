@@ -42,6 +42,7 @@ import { refreshButton } from "@maple/views/ui/refresh-button"
 import { segmentedSelect } from "@maple/views/ui/segmented-select"
 import * as SelectView from "@maple/views/ui/select-view"
 import { skeletonList } from "@maple/views/ui/skeleton"
+import { tooltipTrigger } from "@maple/views/ui/tooltip-host"
 import { truncatedText } from "@maple/views/ui/truncated-text"
 import { relativeTime } from "../../kit/relative-time"
 import { filteredEmpty } from "@maple/views/ui/signal-empty-state"
@@ -77,7 +78,7 @@ const ACTOR_FILTERS = [
 const KIND_OPTIONS = [
 	{ value: "changes", label: "Changes", icon: "PencilIcon" },
 	{ value: "access", label: "Data access", icon: "EyeIcon" },
-	{ value: "all", label: "All", icon: "LayersIcon" },
+	{ value: "all", label: "All" },
 ] as const satisfies ReadonlyArray<FilterOption<string>>
 const OUTCOME_FILTERS = [
 	{ value: "all", label: "All" },
@@ -117,11 +118,11 @@ const ACTOR_BADGES = {
 
 const COL = {
 	time: "flex w-22 shrink-0 items-center gap-2",
-	actor: "min-w-0 flex-1 @md:w-38 @md:flex-none @3xl:w-42",
+	actor: "min-w-0 flex-1 @md:w-38 @md:flex-none",
 	action: "min-w-0 basis-full pl-5 @md:basis-0 @md:flex-1 @md:pl-0",
 	// Shares the row's spare width with the action, so neither starves the other when it appears.
 	resource: "hidden min-w-0 @3xl:block @3xl:basis-0 @3xl:flex-1",
-	source: "hidden w-20 shrink-0 @2xl:block",
+	source: "hidden w-24 shrink-0 @2xl:block",
 	outcome: "hidden w-16 shrink-0 @md:block",
 }
 
@@ -160,6 +161,9 @@ const rangeLabel = (range: AuditDateRange, timeZone: string): string => {
 
 // TOOLBAR
 
+// On a phone the four filters share each row evenly instead of ending wherever their label does.
+const FILTER_FIT = "max-w-none grow basis-36 @md:max-w-64 @md:grow-0 @md:basis-auto"
+
 const RANGE_OPTION_CLASS =
 	"flex h-7 items-center px-3 text-left text-xs hover:bg-surface-sunken active:bg-surface-sunken"
 
@@ -191,11 +195,18 @@ const dateRange = (h: H, model: Model, range: AuditDateRange, timeZone: string):
 							{
 								variant: "outline",
 								size: "sm",
-								className: "gap-1.5",
+								className: cn("justify-start gap-1.5 @md:justify-center", FILTER_FIT),
 								slot: "popover-trigger",
 								attributes: [h.AriaLabel(`Date range: ${label}`), ...trigger],
 							},
-							[icon(h, "ClockIcon"), h.span([], [label])],
+							[
+								icon(h, "ClockIcon", { className: "text-muted-foreground" }),
+								typography(
+									h,
+									{ weight: "normal", tone: range.kind === "all" ? "muted" : "foreground" },
+									[label],
+								),
+							],
 						),
 					),
 				),
@@ -268,7 +279,7 @@ const filterSelect = (
 			],
 			ariaLabel: options.ariaLabel,
 			size: "sm",
-			className: "w-auto min-w-36 max-w-64",
+			className: cn("w-auto min-w-36 max-w-64", FILTER_FIT),
 			leading: filterGlyph(h, options.icon),
 			renderValue: () => [
 				typography(
@@ -341,9 +352,13 @@ const personFilter = (
 			entries,
 			ariaLabel: "Person",
 			size: "sm",
-			className: "w-auto min-w-40 max-w-64",
+			className: cn("w-auto min-w-36 max-w-64", FILTER_FIT),
 			leading: filterGlyph(h, ACTOR_ICONS.user),
-			renderValue: () => [typography(h, { truncate: true }, [label])],
+			renderValue: () => [
+				typography(h, { truncate: true, tone: actorId === undefined ? "muted" : "foreground" }, [
+					label,
+				]),
+			],
 			toView: (parts) => h.div([h.Class("contents")], parts),
 		},
 	})
@@ -357,15 +372,18 @@ const actorCell = (h: H, model: Model, entry: V2AuditLogEntry): Html => {
 	return h.div(
 		[h.Class(cn(COL.actor, hstackClass({ gap: "1.5" })))],
 		[
+			// One marker slot, so every name starts on the same line down the column.
 			entry.actor_type === "user"
 				? avatarFallback(
 						h,
 						{ className: "size-4 shrink-0" },
 						typography(h, { size: "4xs" }, [initialsOf(name ?? "")]),
 					)
-				: actorBadge(h, entry.actor_type),
+				: actorMark(h, entry.actor_type),
 			...(name === null
-				? []
+				? entry.actor_type === "user"
+					? []
+					: [typography(h, { size: "xs", truncate: true }, [ACTOR_BADGES[entry.actor_type].label])]
 				: [
 						truncatedText(
 							h,
@@ -409,6 +427,23 @@ export const deniedBadge = (h: H): Html =>
 		icon(h, OUTCOME_ICONS.denied),
 		"Denied",
 	])
+
+/** A non-person actor in a row: its glyph alone, the size of a person's avatar, named on hover. */
+const actorMark = (h: H, actorType: AuditActorType): Html =>
+	badge(
+		h,
+		{
+			variant: ACTOR_BADGES[actorType].variant,
+			size: "sm",
+			className: "shrink-0",
+			attributes: [
+				h.Role("img"),
+				h.AriaLabel(ACTOR_BADGES[actorType].label),
+				...tooltipTrigger(h, ACTOR_BADGES[actorType].label),
+			],
+		},
+		[icon(h, ACTOR_ICONS[actorType])],
+	)
 
 /** What kind of actor made an entry: its glyph and its name. */
 export const actorBadge = (h: H, actorType: AuditActorType): Html =>
@@ -529,12 +564,18 @@ const auditRow = (h: H, model: Model, entry: V2AuditLogEntry, inputs: ViewInputs
 						],
 					),
 					h.div([h.Class(COL.resource)], [resourceCell(h, model, entry)]),
+					// Quiet: most rows share one source, and a box on each would outweigh the action.
 					h.span(
 						[h.Class(COL.source)],
 						[
-							badge(h, { variant: "outline", size: "sm" }, [
-								icon(h, SOURCE_ICONS[entry.source]),
-								SOURCE_LABELS[entry.source],
+							hstack(h, { gap: "1.5", align: "center" }, [
+								icon(h, SOURCE_ICONS[entry.source], {
+									size: 12,
+									className: "text-foreground-subtle shrink-0",
+								}),
+								typography(h, { size: "xs", tone: "muted", truncate: true }, [
+									SOURCE_LABELS[entry.source],
+								]),
 							]),
 						],
 					),
@@ -626,7 +667,8 @@ const withDayHeadings = (
 								h.AriaLevel(3),
 							],
 							[
-								eyebrow(h, { variant: "mono", icon: "CalendarIcon" }, [
+								// The gap the time column has, so the day sits above the times.
+								eyebrow(h, { variant: "mono", icon: "CalendarIcon", className: "gap-2" }, [
 									dayLabel(atMs(entry), clock),
 								]),
 							],
@@ -699,7 +741,7 @@ const lookupField = (h: H, model: Model): ReadonlyArray<Html> => [
 
 const KIND_DESCRIPTIONS = {
 	changes: "Changes and refused attempts. Data reads are under Data access.",
-	access: "Reads of telemetry and replays, MCP tool calls, SQL statements and API requests.",
+	access: "Telemetry and replay reads, MCP tool calls, SQL and API requests.",
 	all: "Every entry, changes and data access together.",
 } as const
 
@@ -732,7 +774,7 @@ export const view = Submodel.defineView<Model, Message, ViewInputs>((model, inpu
 							onChange: (value) => Message.ClickedKind({ value }),
 							options: withGlyphs(h, KIND_OPTIONS),
 						}),
-						typography(h, { size: "xs", tone: "muted", className: "hidden @2xl:block" }, [
+						typography(h, { size: "xs", tone: "muted", className: "hidden @4xl:block" }, [
 							KIND_DESCRIPTIONS[kind],
 						]),
 					]),

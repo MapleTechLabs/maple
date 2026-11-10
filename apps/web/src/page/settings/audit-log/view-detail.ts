@@ -24,7 +24,7 @@ import { typography } from "@maple/views/ui/typography"
 import { hstack } from "@maple/views/ui/stack"
 import { timestamp } from "@maple/views/ui/timestamp"
 import { textLink } from "@maple/views/ui/text-link"
-import { attributeFilterAction } from "@maple/views/ui/attributes/attribute-row"
+import { iconButton } from "@maple/views/ui/icon-button"
 
 // `AuditLogDetail` and its parts.
 
@@ -82,28 +82,35 @@ const changeValue = (h: H, value: unknown): Html => {
 		return typography(h, { tone: "subtle", className: "italic" }, [Str.slice(1, -1)(value)])
 	if (value === undefined || value === null || value === "")
 		return typography(h, { tone: "subtle" }, [EMPTY_VALUE])
-	return h.span([h.Class("break-all")], [formatScalar(value)])
+	return h.span([h.Class("wrap-anywhere")], [formatScalar(value)])
 }
 
-const identifier = (h: H, model: Model, value: string, label: string): Html => {
+/** An id with its actions (copy, and "Filter" when given) as one group that wraps together. */
+const identifier = (h: H, model: Model, value: string, label: string, action?: Html): Html => {
 	const key = `${label}:${value}`
-	return hstack(h, { gap: "0.5", align: "center", inline: true, as: "span", className: "max-w-full" }, [
+	return hstack(h, { gap: "1", align: "center", inline: true, as: "span", className: "max-w-full" }, [
 		inlineCode(h, { variant: "plain", size: "2xs", tone: "foreground", className: "truncate" }, [value]),
 		CopyButton.view(h, {
 			model: model.copies[key] ?? CopyButton.init(),
 			toParentMessage: (message) => Message.GotCopyMessage({ key, message }),
 			value,
 			label,
+			// As tall as the line of text, so a value with actions keeps its label's baseline.
+			size: "icon-2xs",
 			iconSize: 12,
-			className: "size-5",
 		}),
+		...(action === undefined ? [] : [action]),
 	])
 }
 
 const changesTable = (h: H, changes: V2AuditChanges): Html =>
 	table(h, { size: "sm", className: "font-mono" }, [
 		tableHeader(h, [
-			tableRow(h, [tableHead(h, ["Field"], "w-40"), tableHead(h, ["Before"]), tableHead(h, ["After"])]),
+			tableRow(h, [
+				tableHead(h, ["Field"]),
+				tableHead(h, ["Before"], "w-1/2"),
+				tableHead(h, ["After"], "w-1/2"),
+			]),
 		]),
 		tableBody(
 			h,
@@ -131,17 +138,17 @@ const metadataList = (h: H, metadata: Readonly<Record<string, unknown>>): Readon
 			{ layout: "grid" },
 			Arr.map(keys, (key) => {
 				const block = metadataBlock(metadata[key])
-				return keyValue(h, { wrap: true, label: metadataLabel(key) }, [
+				return field(h, { label: metadataLabel(key) }, [
 					block !== null
 						? h.pre(
 								[
 									h.Class(
-										"bg-surface-well max-h-64 overflow-auto rounded-md border px-2.5 py-2 font-mono text-2xs leading-relaxed whitespace-pre-wrap break-all",
+										"bg-surface-well max-h-64 overflow-auto rounded-md border px-2.5 py-2 font-mono text-2xs leading-relaxed whitespace-pre-wrap wrap-anywhere",
 									),
 								],
 								[block],
 							)
-						: typography(h, { size: "2xs", mono: true, className: "break-all" }, [
+						: typography(h, { size: "2xs", mono: true, className: "wrap-anywhere" }, [
 								changeValue(h, metadata[key]),
 							]),
 				])
@@ -149,6 +156,10 @@ const metadataList = (h: H, metadata: Readonly<Record<string, unknown>>): Readon
 		),
 	]
 }
+
+/** A labelled value that may wrap, starting on its label's line however tall its neighbour is. */
+const field = (h: H, options: Readonly<{ label: string }>, children: ReadonlyArray<Html | string>): Html =>
+	keyValue(h, { wrap: true, label: options.label, valueClassName: "items-start" }, children)
 
 /** A member's name for a `user_…` id, from the org's memberships; null for anyone else. */
 export const memberName = (model: Model, userId: string | null): string | null =>
@@ -161,14 +172,17 @@ export const memberName = (model: Model, userId: string | null): string | null =
 				),
 			)
 
-/** "Filter" beside a value: lists every entry with that value instead. */
+/** The filter glyph beside a value: lists every entry with that value instead. */
 const pivot = (h: H, key: string, value: string, what: string): Html =>
-	attributeFilterAction(h, {
-		label: `Show every entry with this ${what}`,
-		text: "Filter",
-		icon: "FilterIcon",
-		onClick: Message.ClickedPivot({ key, value }),
-	})
+	iconButton(
+		h,
+		{
+			label: `Show every entry with this ${what}`,
+			size: "icon-2xs",
+			attributes: [h.OnClick(Message.ClickedPivot({ key, value }))],
+		},
+		[icon(h, "FilterIcon")],
+	)
 
 const regionNames = new Intl.DisplayNames(["en"], { type: "region" })
 
@@ -246,7 +260,7 @@ const originSection = (h: H, model: Model, entry: V2AuditLogEntry): ReadonlyArra
 			[
 				eyebrow(h, { variant: "mono", as: "h4", icon: "GlobeIcon" }, ["Origin"]),
 				keyValueList(h, { layout: "grid", className: DETAIL_GRID }, [
-					keyValue(h, { wrap: true, label: "Surface" }, [
+					field(h, { label: "Surface" }, [
 						valueRow(h, [
 							icon(h, SOURCE_ICONS[entry.source], {
 								size: 13,
@@ -258,28 +272,27 @@ const originSection = (h: H, model: Model, entry: V2AuditLogEntry): ReadonlyArra
 					...(entry.origin_ip === null
 						? []
 						: [
-								keyValue(h, { wrap: true, label: "IP address" }, [
+								field(h, { label: "IP address" }, [
 									identifier(h, model, entry.origin_ip, "IP address"),
 								]),
 							]),
 					...(entry.origin_country === null
 						? []
 						: [
-								keyValue(h, { wrap: true, label: "Country" }, [
+								field(h, { label: "Country" }, [
 									h.span([], [countryText(entry.origin_country)]),
 								]),
 							]),
 					...(entry.request_id === null
 						? []
 						: [
-								keyValue(h, { wrap: true, label: "Request" }, [
-									hstack(
+								field(h, { label: "Request" }, [
+									identifier(
 										h,
-										{ gap: "1.5", align: "center", wrap: true, shrink: true, as: "span" },
-										[
-											identifier(h, model, entry.request_id, "Request id"),
-											pivot(h, "requestId", entry.request_id, "request"),
-										],
+										model,
+										entry.request_id,
+										"Request id",
+										pivot(h, "requestId", entry.request_id, "request"),
 									),
 								]),
 							]),
@@ -313,41 +326,37 @@ export const auditDetail = (
 		[h.Class("border-border-subtle space-y-4 border-t px-4 py-3 @md:pl-11")],
 		[
 			keyValueList(h, { layout: "grid", className: DETAIL_GRID }, [
-				keyValue(h, { wrap: true, label: "Occurred" }, [full(entry.occurred_at)]),
-				keyValue(h, { wrap: true, label: "Recorded" }, [full(entry.recorded_at)]),
-				keyValue(h, { wrap: true, label: "Actor" }, [
+				field(h, { label: "Occurred" }, [full(entry.occurred_at)]),
+				field(h, { label: "Recorded" }, [full(entry.recorded_at)]),
+				field(h, { label: "Actor" }, [
 					valueRow(h, [
 						actorBadge(h, entry.actor_type),
 						...(actorName === null ? [] : [h.span([], [actorName])]),
 						...(entry.actor_id === null
 							? []
 							: [
-									identifier(h, model, entry.actor_id, "Actor id"),
-									pivot(h, "actorId", entry.actor_id, "actor"),
+									identifier(
+										h,
+										model,
+										entry.actor_id,
+										"Actor id",
+										pivot(h, "actorId", entry.actor_id, "actor"),
+									),
 								]),
 					]),
 				]),
-				keyValue(h, { wrap: true, label: "Action" }, [
+				field(h, { label: "Action" }, [
 					valueRow(h, [
 						...(actionText === null ? [] : [h.span([], [actionText])]),
-						inlineCode(h, { variant: "plain", size: "2xs", tone: "foreground" }, [entry.action]),
-						entry.outcome === "denied"
-							? deniedBadge(h)
-							: badge(h, { variant: "ok", size: "sm" }, [
-									icon(h, OUTCOME_ICONS.allowed),
-									"Allowed",
-								]),
-						...(actionText === null ? [] : [pivot(h, "action", entry.action, "action")]),
-					]),
-					...(entry.denial_reason === null
-						? []
-						: [
-								typography(h, { tone: "muted", as: "p", className: "mt-0.5" }, [
-									entry.denial_reason,
-								]),
+						hstack(h, { gap: "1", align: "center", inline: true, as: "span" }, [
+							inlineCode(h, { variant: "plain", size: "2xs", tone: "foreground" }, [
+								entry.action,
 							]),
+							...(actionText === null ? [] : [pivot(h, "action", entry.action, "action")]),
+						]),
+					]),
 				]),
-				keyValue(h, { wrap: true, label: "Resource" }, [
+				field(h, { label: "Resource" }, [
 					entry.resource_type === null && entry.resource_id === null
 						? typography(h, { tone: "subtle" }, [EMPTY_VALUE])
 						: valueRow(h, [
@@ -365,23 +374,47 @@ export const auditDetail = (
 								...(entry.resource_id === null
 									? []
 									: [
-											identifier(h, model, entry.resource_id, "Resource id"),
-											pivot(h, "resourceId", entry.resource_id, "resource"),
+											identifier(
+												h,
+												model,
+												entry.resource_id,
+												"Resource id",
+												pivot(h, "resourceId", entry.resource_id, "resource"),
+											),
 										]),
 							]),
+				]),
+				// Its own row, as in the list: whether it went through, and why not when it did not.
+				field(h, { label: "Outcome" }, [
+					valueRow(h, [
+						entry.outcome === "denied"
+							? deniedBadge(h)
+							: badge(h, { variant: "ok", size: "sm" }, [
+									icon(h, OUTCOME_ICONS.allowed),
+									"Allowed",
+								]),
+						...(entry.denial_reason === null
+							? []
+							: [typography(h, { tone: "muted" }, [entry.denial_reason])]),
+					]),
 				]),
 				...(entry.affected_user === null
 					? []
 					: [
-							keyValue(h, { wrap: true, label: "Affected user" }, [
+							field(h, { label: "Affected user" }, [
 								valueRow(h, [
 									...(affectedName === null ? [] : [h.span([], [affectedName])]),
-									identifier(h, model, entry.affected_user, "Affected user id"),
-									pivot(h, "affectedUserId", entry.affected_user, "affected user"),
+									identifier(
+										h,
+										model,
+										entry.affected_user,
+										"Affected user id",
+										pivot(h, "affectedUserId", entry.affected_user, "affected user"),
+									),
 								]),
 							]),
 						]),
-				keyValue(h, { wrap: true, label: "Entry" }, [
+				field(h, { label: "Entry" }, [
 					valueRow(h, [
 						identifier(
 							h,
@@ -389,7 +422,7 @@ export const auditDetail = (
 							encodePublicId(PublicIdPrefixes.auditLogEntry, entry.id),
 							"Entry id",
 						),
-						textLink(h, { href: entryHref(entry) }, [
+						textLink(h, { href: entryHref(entry), tone: "muted" }, [
 							icon(h, "LinkIcon", { size: 12 }),
 							typography(h, { size: "2xs" }, ["Link to entry"]),
 						]),
