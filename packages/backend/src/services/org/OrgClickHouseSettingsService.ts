@@ -1700,6 +1700,36 @@ export class OrgClickHouseSettingsService extends Context.Service<
 			},
 		)
 
+		/** Ciphertexts that did not open straight from Postgres, so a broken row is not re-read per call. */
+		const unopenablePasswords = new Map<OrgId, string | null>()
+
+		/**
+		 * The cached settings with their password opened. The cache outlives a reseal and a key
+		 * rotation, so a triple that will not open is dropped and the row read again, once: `null`
+		 * when the row is gone by then.
+		 */
+		const openCachedPassword = (orgId: OrgId, cached: CachedChSettings) =>
+			decryptStoredPassword(orgId, cached).pipe(
+				Effect.map((password) => ({ settings: cached, password })),
+				Effect.catchTag("@maple/http/errors/OrgClickHouseSettingsEncryptionError", (error) =>
+					unopenablePasswords.get(orgId) === cached.chPasswordCiphertext
+						? Effect.fail(error)
+						: Effect.gen(function* () {
+								yield* invalidateRuntimeConfigCache(orgId)
+								const fresh = yield* resolveCachedSettings(orgId)
+								if (fresh === null) return null
+								const password = yield* decryptStoredPassword(orgId, fresh).pipe(
+									Effect.tapError(() =>
+										Effect.sync(() =>
+											unopenablePasswords.set(orgId, fresh.chPasswordCiphertext),
+										),
+									),
+								)
+								return { settings: fresh, password }
+							}),
+				),
+			)
+
 		const resolveRuntimeConfig = Effect.fn("OrgClickHouseSettingsService.resolveRuntimeConfig")(
 			function* (orgId: OrgId) {
 				if (ignoreOrgClickHouse) {
@@ -1722,8 +1752,12 @@ export class OrgClickHouseSettingsService extends Context.Service<
 					"maple.clickhouse.schema_drift",
 					cached.schemaVersion !== clickHouseSchemaVersion,
 				)
-				const password = yield* decryptStoredPassword(orgId, cached)
-				yield* validateClickHouseCredentialTransport(cached.chUrl, password).pipe(
+				const opened = yield* openCachedPassword(orgId, cached)
+				if (opened === null) {
+					return Option.none<RuntimeBackendConfig>()
+				}
+				const { settings, password } = opened
+				yield* validateClickHouseCredentialTransport(settings.chUrl, password).pipe(
 					Effect.mapError(
 						(cause) =>
 							new OrgClickHouseSettingsStoredConfigInvalidError({
@@ -1734,10 +1768,10 @@ export class OrgClickHouseSettingsService extends Context.Service<
 				)
 				return Option.some<RuntimeBackendConfig>({
 					backend: "clickhouse",
-					url: cached.chUrl,
-					user: cached.chUser,
+					url: settings.chUrl,
+					user: settings.chUser,
 					password,
-					database: cached.chDatabase,
+					database: settings.chDatabase,
 				})
 			},
 		)

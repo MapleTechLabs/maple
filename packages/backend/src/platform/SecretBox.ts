@@ -7,7 +7,8 @@
  * belongs to, so a triple copied onto another row, column or org does not open. `keyId` names
  * the master key that sealed it, which is what makes rotation possible (docs/secret-encryption.md).
  *
- * A ciphertext with no prefix is the pre-v2 format: master key, no row binding.
+ * A ciphertext with no prefix is the pre-v2 format (master key, at most a per-column AAD). It is
+ * still opened, never written: `SecretResealService` rewrites what is left of it.
  */
 import { createHmac } from "node:crypto"
 import { Array as Arr, Effect, Option, Redacted, String as Str } from "effect"
@@ -149,8 +150,12 @@ const parseEnvelope = (stored: string): Envelope => {
 		: { _tag: "legacy" }
 }
 
-/** Seals in the v2 envelope: slot subkey, row-bound, key id recorded. */
-export const sealSecretV2 = <Ref, E>(
+/** What every ciphertext sealed by the primary key starts with. */
+export const currentEnvelopePrefix = (keyring: SecretKeyring): string =>
+	`${ENVELOPE_PREFIX}.${keyring.primary.id}.`
+
+/** Seals a value for `slot` on the row `ref` names: slot subkey, row-bound, key id recorded. */
+export const sealSecret = <Ref, E>(
 	keyring: SecretKeyring,
 	slot: SecretSlot<Ref>,
 	ref: Ref,
@@ -165,22 +170,9 @@ export const sealSecretV2 = <Ref, E>(
 	).pipe(
 		Effect.map((sealed) => ({
 			...sealed,
-			ciphertext: `${ENVELOPE_PREFIX}.${keyring.primary.id}.${sealed.ciphertext}`,
+			ciphertext: `${currentEnvelopePrefix(keyring)}${sealed.ciphertext}`,
 		})),
 	)
-
-/**
- * Seals a value for `slot` on the row `ref` names. Still writes the pre-v2 envelope: readers in
- * every deployable have to understand v2 before any writer emits it.
- */
-export const sealSecret = <Ref, E>(
-	keyring: SecretKeyring,
-	slot: SecretSlot<Ref>,
-	ref: Ref,
-	plaintext: string,
-	onError: (message: string) => E,
-): Effect.Effect<EncryptedValue, E> =>
-	encryptAes256Gcm(plaintext, keyring.primary.master, onError, slot.legacyAad?.(ref))
 
 /** Opens a stored value. Fails when the key, the slot or the row no longer match. */
 export const openSecret = <Ref, E>(

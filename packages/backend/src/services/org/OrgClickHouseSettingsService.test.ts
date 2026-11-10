@@ -34,6 +34,8 @@ import { FetchHttpClient } from "effect/http"
 import type { TableDiffEntry } from "@maple/domain/clickhouse"
 import { Env } from "@maple/backend/platform/Env"
 import { encryptAes256Gcm } from "@maple/backend/platform/Crypto"
+import { parseSecretKeyring, sealSecret } from "@maple/backend/platform/SecretBox"
+import { clickHousePasswordSlot } from "@maple/backend/platform/secret-slots"
 import { SchemaApplyWorkflow, WorkflowStartError } from "@maple/backend/platform/bindings"
 import {
 	cleanupTestDbs,
@@ -766,6 +768,80 @@ describe("resolveRuntimeConfig caching", () => {
 			expect(stats.puts).toBe(2)
 			expect(stats.hits).toBe(2)
 		}).pipe(Effect.provide(layer))
+	})
+
+	it.effect("re-reads the row when the cached password was sealed by a key that is gone", () => {
+		const testDb = createTestDb(cacheTrackedDbs)
+		const orgId = "org_ch_rotated"
+		const { backend } = makeJsonRoundTripBackend()
+		const keyOf = (byte: number) => Buffer.alloc(32, byte).toString("base64")
+		const sealedBy = (byte: number) =>
+			parseSecretKeyring({ primary: keyOf(byte), decryptOnly: Option.none() }, String).pipe(
+				Effect.flatMap((keyring) =>
+					sealSecret(keyring, clickHousePasswordSlot, { orgId }, "ch-pass", String),
+				),
+			)
+		/** A deployment whose only key is `byte`, sharing the edge cache with the others. */
+		const deployment = (byte: number) =>
+			OrgClickHouseSettingsService.layer.pipe(
+				Layer.provide(
+					Layer.mergeAll(
+						Env.layer.pipe(
+							Layer.provide(
+								ConfigProvider.layer(
+									ConfigProvider.fromUnknown({
+										PORT: "3472",
+										TINYBIRD_HOST: "https://maple-managed.tinybird.co",
+										TINYBIRD_TOKEN: "managed-token",
+										MAPLE_AUTH_MODE: "self_hosted",
+										MAPLE_ROOT_PASSWORD: "test-root-password",
+										MAPLE_DEFAULT_ORG_ID: "default",
+										MAPLE_INGEST_KEY_ENCRYPTION_KEY: keyOf(byte),
+										MAPLE_INGEST_KEY_LOOKUP_HMAC_KEY: "lookup-key",
+									}),
+								),
+							),
+						),
+						testDb.layer,
+						Layer.succeed(EdgeCacheService)(makeEdgeCacheService(backend)),
+					),
+				),
+			)
+		const resolve = (byte: number) =>
+			OrgClickHouseSettingsService.use((service) => service.resolveRuntimeConfig(asOrgId(orgId))).pipe(
+				Effect.provide(deployment(byte)),
+			)
+		return Effect.gen(function* () {
+			const old = yield* sealedBy(1)
+			yield* Effect.promise(() =>
+				executeSql(
+					testDb,
+					`INSERT INTO org_clickhouse_settings
+						(org_id, ch_url, ch_user, ch_database, ch_password_ciphertext, ch_password_iv,
+						 ch_password_tag, sync_status, created_at, updated_at, created_by, updated_by)
+					 VALUES ($1, 'https://rotated.example', 'default', 'maple', $2, $3, $4, 'connected',
+						NOW(), NOW(), 'u', 'u')`,
+					[orgId, old.ciphertext, old.iv, old.tag],
+				),
+			)
+			expect(expectSome(yield* resolve(1)).password).toBe("ch-pass")
+
+			// The reseal pass moves the row to the new key, then the old key is retired. The
+			// shared cache still holds the triple the old key sealed.
+			const resealed = yield* sealedBy(2)
+			yield* Effect.promise(() =>
+				executeSql(
+					testDb,
+					`UPDATE org_clickhouse_settings
+					 SET ch_password_ciphertext = $2, ch_password_iv = $3, ch_password_tag = $4
+					 WHERE org_id = $1`,
+					[orgId, resealed.ciphertext, resealed.iv, resealed.tag],
+				),
+			)
+			invalidateOrgRuntimeConfigMemo(orgId)
+
+			expect(expectSome(yield* resolve(2)).password).toBe("ch-pass")
+		})
 	})
 
 	// The memo's soft TTL (5min) and hard ceiling (6h), mirrored from the
