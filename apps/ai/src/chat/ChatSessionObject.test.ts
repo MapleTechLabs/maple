@@ -1,7 +1,7 @@
 import { assert, describe, it } from "@effect/vitest"
 import { encodeChatTurnTenant, type ChatTurnTenant } from "@maple/domain/chat-session"
 import * as Cloudflare from "@alchemy.run/cloudflare"
-import { Effect, Layer, Option, Array as Arr } from "effect"
+import { Context, Effect, Layer, Option, Array as Arr } from "effect"
 import { applyChatSessionMigrations, makeFakeDurableObjectState } from "../../test/chat/fake-do-state"
 import {
 	AuditEventsQueueProducer,
@@ -13,6 +13,26 @@ import { BoundAiClients } from "../worker/bindings"
 import { makeChatSessionActivation, type ProposalApplier, type TurnRunner } from "./ChatSession"
 import type { ApplyChatProposalInput } from "./apply-proposal"
 import type { RunChatSessionTurnInput } from "./turn-runner"
+import { provideSessionPorts } from "./session-ports"
+
+/** Reads the ports the way the budget and audit services do: as they are built, and only if they are there. */
+class OptionalPorts extends Context.Service<
+	OptionalPorts,
+	{
+		readonly production: Option.Option<typeof DataSourceProductionCallLimit.Service>
+		readonly development: Option.Option<typeof DataSourceDevelopmentCallLimit.Service>
+		readonly auditQueue: Option.Option<typeof AuditEventsQueueProducer.Service>
+	}
+>()("@maple/ai/test/OptionalPorts") {
+	static readonly layer = Layer.effect(
+		this,
+		Effect.all({
+			production: Effect.serviceOption(DataSourceProductionCallLimit),
+			development: Effect.serviceOption(DataSourceDevelopmentCallLimit),
+			auditQueue: Effect.serviceOption(AuditEventsQueueProducer),
+		}),
+	)
+}
 
 const TENANT = encodeChatTurnTenant({
 	orgId: "org_test" as ChatTurnTenant["orgId"],
@@ -184,7 +204,7 @@ describe("the ChatSession Durable Object on alchemy's form", () => {
 			}
 		}
 
-		it.effect("a turn spends the data-source call budget on the bound limiters", () =>
+		it.effect("a turn's runtime is handed the bound data-source limiters", () =>
 			Effect.gen(function* () {
 				const clients = makeBoundClients()
 				const recorded = recordingPorts()
@@ -204,17 +224,18 @@ describe("the ChatSession Durable Object on alchemy's form", () => {
 				const bindingPorts = recorded.runs[0]?.bindingPorts
 				assert.isDefined(bindingPorts)
 				if (bindingPorts === undefined) return
+				// Read as the runtime reads them: by a layer built above the ports, optionally.
 				const outcomes = yield* Effect.gen(function* () {
-					const production = yield* DataSourceProductionCallLimit
-					const development = yield* DataSourceDevelopmentCallLimit
-					return [yield* production.limit("src_1"), yield* development.limit("src_2")]
-				}).pipe(Effect.provide(bindingPorts))
+					const { production, development } = yield* OptionalPorts
+					if (Option.isNone(production) || Option.isNone(development)) return []
+					return [yield* production.value.limit("src_1"), yield* development.value.limit("src_2")]
+				}).pipe(Effect.provide(OptionalPorts.layer.pipe(provideSessionPorts(bindingPorts))))
 				assert.deepStrictEqual(outcomes, [{ success: false }, { success: false }])
 				assert.deepStrictEqual(clients.limited, ["production:src_1", "development:src_2"])
 			}),
 		)
 
-		it.effect("an approved change queues its audit entry on the bound queue", () =>
+		it.effect("an approval's runtime is handed the bound audit queue", () =>
 			Effect.gen(function* () {
 				const clients = makeBoundClients()
 				const recorded = recordingPorts()
@@ -244,10 +265,23 @@ describe("the ChatSession Durable Object on alchemy's form", () => {
 				assert.isDefined(bindingPorts)
 				if (bindingPorts === undefined) return
 				yield* Effect.gen(function* () {
-					const queue = yield* AuditEventsQueueProducer
-					yield* queue.sendBatch([{ body: { action: "alert_rule.create" } }])
-				}).pipe(Effect.provide(bindingPorts))
+					const { auditQueue } = yield* OptionalPorts
+					if (Option.isSome(auditQueue))
+						yield* auditQueue.value.sendBatch([{ body: { action: "alert_rule.create" } }])
+				}).pipe(Effect.provide(OptionalPorts.layer.pipe(provideSessionPorts(bindingPorts))))
 				assert.deepStrictEqual(clients.queued, [{ action: "alert_rule.create" }])
+			}),
+		)
+
+		it.effect("a runtime built without ports gets none of them instead of failing", () =>
+			Effect.gen(function* () {
+				const { production, development, auditQueue } = yield* OptionalPorts.pipe(
+					Effect.provide(OptionalPorts.layer.pipe(provideSessionPorts(undefined))),
+				)
+				assert.deepStrictEqual(
+					[Option.isNone(production), Option.isNone(development), Option.isNone(auditQueue)],
+					[true, true, true],
+				)
 			}),
 		)
 	})
