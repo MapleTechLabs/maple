@@ -1,9 +1,14 @@
+import { getServiceColor } from "@maple/ui/lib/colors"
+import { formatDuration, formatPercent } from "@maple/ui/lib/format"
 import { spanStartMs } from "@maple/ui/lib/span-tree"
-import type { SpanNodeData } from "@maple/views/traces/trace-data"
 import { Array as Arr, Order } from "effect"
+import type { Html, HtmlBuilder } from "foldkit/html"
+import { hstack } from "../ui/stack"
+import { tooltipTrigger } from "../ui/tooltip-host"
+import type { SpanNodeData } from "./trace-data"
 
-// `computeServiceShares`. Wall-clock time per service: each instant goes to the innermost spans
-// running.
+// Wall-clock time per service (each instant goes to the innermost spans running), and the
+// spectrum bar that draws it.
 
 export interface ServiceShare {
 	readonly serviceName: string
@@ -109,3 +114,31 @@ export const computeServiceShares = (rootSpans: ReadonlyArray<SpanNodeData>): Re
 		Order.flip(Order.mapInput(Order.Number, (share: ServiceShare) => share.durationMs)),
 	)
 }
+
+/** One segment per service, as wide as its share, each naming its service, time and share on hover. */
+export const serviceSpectrumBar = <M>(h: HtmlBuilder<M>, shares: ReadonlyArray<ServiceShare>): Html | null =>
+	shares.length === 0
+		? null
+		: hstack(
+				h,
+				{ align: "stretch", className: "h-1.5 w-full gap-px overflow-hidden rounded-full" },
+				Arr.map(shares, (share) =>
+					h.span(
+						[
+							h.Class("h-full"),
+							h.DataAttribute("base-ui-tooltip-trigger", ""),
+							h.DataAttribute("slot", "tooltip-trigger"),
+							...tooltipTrigger(
+								h,
+								`${share.serviceName} · ${formatDuration(share.durationMs)} · ${formatPercent(share.percent / 100)}`,
+							),
+							h.Style({
+								width: `${share.percent}%`,
+								"min-width": "4px",
+								"background-color": getServiceColor(share.serviceName),
+							}),
+						],
+						[],
+					),
+				),
+			)

@@ -1,6 +1,17 @@
 import { describe, expect, it } from "vitest"
 
-import { modelVendorColor, vendorColor } from "./vendor-color"
+import { modelVendorColor, vendorColor, vendorIcon, vendorLabel } from "./ai-vendor"
+
+describe("vendorLabel and vendorIcon", () => {
+	it("reads a listed vendor's casing and mark, and title-cases the rest", () => {
+		expect(vendorLabel("openai_agents_sdk")).toBe("OpenAI Agents SDK")
+		expect(vendorIcon("openai_agents_sdk")).toBe("OpenAiIcon")
+		expect(vendorLabel("semantic_kernel")).toBe("Semantic Kernel")
+		expect(vendorLabel("unknown:genai")).toBe("Unidentified")
+		expect(vendorLabel("constructor")).toBe("Constructor")
+		expect(vendorIcon("constructor")).toBe("ChatBubbleSparkleIcon")
+	})
+})
 
 describe("vendorColor", () => {
 	it("gives a framework its publisher's brand, shared with that publisher's models", () => {

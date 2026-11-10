@@ -31,7 +31,7 @@ import { tooltipTrigger } from "@maple/views/ui/tooltip-host"
 import { modelLabel } from "../kit/model-label"
 import { type VirtualWindow, virtualAttributes } from "../kit/virtualize"
 import { sessionHeading } from "../kit/session-name"
-import { vendorColor, vendorIcon, vendorLabel } from "../kit/vendor"
+import { vendorColor, vendorIcon, vendorLabel } from "@maple/views/lib/ai-vendor"
 import type { DisplayRow, Sort } from "./derive"
 import { Message } from "./message"
 import { errorChip as sharedErrorChip } from "../kit/error-chip"
@@ -454,7 +454,13 @@ const tokenBar = (h: H, row: DisplayRow): Html | null => {
 
 const errorChip = (
 	h: H,
-	options: Readonly<{ iconName?: IconName; count: number; noun: string; hint: string; tone: "crit" | "warn" }>,
+	options: Readonly<{
+		iconName?: IconName
+		count: number
+		noun: string
+		hint: string
+		tone: "crit" | "warn"
+	}>,
 ): Html => sharedErrorChip(h, { ...options, attributes: triggerAttributes(h, options.hint) })
 
 /** Tool failures apart from turn failures; an unclassified failure only when it is all there is. */

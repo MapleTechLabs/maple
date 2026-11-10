@@ -19,8 +19,7 @@
 		"paths": {
 			"@/*": ["./src/*"],
 			"@maple/ui/styles/ui/*": ["../../packages/ui/src/components/ui/*.styles.ts"],
-			"@maple/ui/*": ["../../packages/ui/src/*"],
-			"@maple/web/*": ["../web/src/*"]
+			"@maple/ui/*": ["../../packages/ui/src/*"]
 		},
 		"plugins": [
 			{

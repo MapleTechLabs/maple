@@ -10,7 +10,8 @@ import { badge } from "@maple/views/ui/display"
 import { listFooter } from "@maple/views/ui/list-footer"
 import { skeletonList } from "@maple/views/ui/skeleton"
 import { truncatedText } from "@maple/views/ui/truncated-text"
-import { METRIC_TYPE_COLORS, metricTypeBadge, SPARKLINE_METRIC_TYPES } from "../shared"
+import { METRIC_TYPE_COLORS, metricTypeBadge } from "@maple/views/ui/metric-type"
+import { SPARKLINE_METRIC_TYPES } from "../shared"
 import {
 	entryKey,
 	gridPages,

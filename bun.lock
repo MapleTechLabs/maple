@@ -240,7 +240,6 @@
         "@maple/query-engine": "workspace:*",
         "@maple/ui": "workspace:*",
         "@maple/views": "workspace:*",
-        "@maple/web": "workspace:*",
         "effect": "catalog:effect",
         "foldkit": "0.170.0",
       },

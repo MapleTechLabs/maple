@@ -3,8 +3,15 @@ import { spanStartMs } from "@maple/ui/lib/span-tree"
 import type { SpanNode } from "@maple/ui/lib/types"
 import { Array as Arr } from "effect"
 
+/** What the error checks read off a span, tree node or flat row. */
+type SpanProbe = Readonly<{
+	isMissing?: boolean | undefined
+	statusCode: string
+	spanAttributes: Readonly<Record<string, string>>
+}>
+
 /** The span's HTTP response status, read off the attribute: `getHttpInfo` gives up on names with no method. */
-export function spanHttpStatus(span: SpanNode): number | undefined {
+export function spanHttpStatus(span: Pick<SpanProbe, "spanAttributes">): number | undefined {
 	const raw =
 		span.spanAttributes?.["http.response.status_code"] || span.spanAttributes?.["http.status_code"]
 	const code = raw === undefined ? Number.NaN : Number.parseInt(raw, 10)
@@ -12,7 +19,7 @@ export function spanHttpStatus(span: SpanNode): number | undefined {
 }
 
 /** A span failed when its status says so or it answered with a 5xx. */
-export function isErrorSpan(span: SpanNode): boolean {
+export function isErrorSpan(span: SpanProbe): boolean {
 	if (span.isMissing) return false
 	if (span.statusCode === "Error") return true
 	return httpStatusTone(spanHttpStatus(span)) === "crit"

@@ -1,10 +1,10 @@
 import { Option } from "effect"
 import { Command, type Update } from "foldkit"
 import * as SpanPanel from "@maple/views/traces/span-panel"
-import { findSpan } from "../../page/traces/detail/select"
-import * as Timeline from "../../page/traces/detail/timeline"
+import { findSpanById } from "@maple/views/service-map/trace-flow/flow-graph"
+import * as Timeline from "@maple/views/traces/timeline"
 import type { TraceData } from "@maple/views/traces/trace-data"
-import * as Waterfall from "../../page/traces/detail/waterfall"
+import * as Waterfall from "@maple/views/traces/waterfall"
 import * as TraceFlow from "@maple/views/service-map/trace-flow/trace-flow"
 import * as Tabs from "@maple/views/ui/tabs"
 import type { Resources } from "../../platform/resources"
@@ -69,7 +69,9 @@ export const init = (): Return => {
 /** `setSelected`: the open tab re-renders with the span, and its events list starts closed. */
 const selectSpan = (model: Model, spanId: string): Return => {
 	if (model.selectedSpanId === spanId) return { model }
-	const span = Option.flatMap(LAB_TRACE, (trace) => Option.fromNullishOr(findSpan(trace.rootSpans, spanId)))
+	const span = Option.flatMap(LAB_TRACE, (trace) =>
+		Option.fromNullishOr(findSpanById(trace.rootSpans, spanId)),
+	)
 	const panel = Option.match(Option.all([LAB_TRACE, span]), {
 		onNone: () => null,
 		// The panel's own reads (detail, logs) are not sent: the lab has no backend.

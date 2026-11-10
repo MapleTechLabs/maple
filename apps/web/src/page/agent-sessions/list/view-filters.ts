@@ -20,7 +20,13 @@ import type { RangeUnit } from "@maple/views/ui/filters/range-format"
 import type { RangeBucket } from "@maple/views/ui/filters/range-histogram"
 import { label } from "@maple/views/ui/label"
 import { detectLookup } from "../kit/detected-models"
-import { modelVendorColor, modelVendorIcon, vendorColor, vendorIcon, vendorLabel } from "../kit/vendor"
+import {
+	modelVendorColor,
+	modelVendorIcon,
+	vendorColor,
+	vendorIcon,
+	vendorLabel,
+} from "@maple/views/lib/ai-vendor"
 import { hasFilters, RANGE_PARAMS } from "./derive"
 import { MountFilterRail } from "./command"
 import { type ListFacet, Message } from "./message"

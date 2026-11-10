@@ -1,9 +1,7 @@
 import { warehouseDateTimeToIso } from "@maple/query-engine"
-import { getServiceColor } from "@maple/ui/lib/colors"
 import { countLabel, formatDuration, formatPercent } from "@maple/ui/lib/format"
-import { getHttpInfo, httpStatusTone } from "@maple/ui/lib/http"
+import { getHttpInfo, httpStatusTextClass } from "@maple/ui/lib/http"
 import { shortId } from "@maple/ui/lib/ids"
-import { TONE_TEXT } from "@maple/ui/lib/tone"
 import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { pressable } from "@maple/views/ui/pressable"
@@ -11,10 +9,9 @@ import { traceIdBadge } from "@maple/views/ui/trace-badges"
 import { statFigure } from "@maple/views/ui/stat-figure"
 import { statusDot } from "@maple/views/ui/status-dot"
 import { timestamp } from "@maple/views/ui/timestamp"
-import { tooltipTrigger } from "@maple/views/ui/tooltip-host"
 import { serviceDot } from "@maple/views/ui/values"
 import { relativeTime } from "../../kit/relative-time"
-import { computeServiceShares, type ServiceShare } from "./derive"
+import { computeServiceShares, serviceSpectrumBar } from "@maple/views/traces/service-shares"
 import { Message } from "./message"
 import type { LoadedTrace } from "./select"
 import { typography, typographyClass } from "@maple/views/ui/typography"
@@ -23,12 +20,6 @@ import { hstack } from "@maple/views/ui/stack"
 
 // The trace anatomy strip, over the @maple/ui strip.
 // TODO(tooltip): the commit hover card (interactive, so a hover card, not a tooltip).
-
-const httpStatusColor = (code: number): string => {
-	const tone = httpStatusTone(code)
-	if (tone !== "neutral") return TONE_TEXT[tone]
-	return code >= 300 ? "text-chart-p50" : TONE_TEXT.info
-}
 
 /** `TraceStartedAt`: the absolute start in the viewer's zone, with its age. */
 const startedAt = (
@@ -51,33 +42,6 @@ const startedAt = (
 		relativeTime(h, { value: epochMs, nowMs, timeZone }),
 	])
 }
-
-const spectrumBar = (h: HtmlBuilder<Message>, shares: ReadonlyArray<ServiceShare>): Html | null =>
-	shares.length === 0
-		? null
-		: hstack(
-				h,
-				{ align: "stretch", className: "h-1.5 w-full gap-px overflow-hidden rounded-full" },
-				Arr.map(shares, (share) =>
-					h.span(
-						[
-							h.Class("h-full"),
-							h.DataAttribute("base-ui-tooltip-trigger", ""),
-							h.DataAttribute("slot", "tooltip-trigger"),
-							...tooltipTrigger(
-								h,
-								`${share.serviceName} · ${formatDuration(share.durationMs)} · ${formatPercent(share.percent / 100)}`,
-							),
-							h.Style({
-								width: `${share.percent}%`,
-								"min-width": "4px",
-								"background-color": getServiceColor(share.serviceName),
-							}),
-						],
-						[],
-					),
-				),
-			)
 
 export type AnatomyInput = Readonly<{
 	trace: LoadedTrace
@@ -141,7 +105,7 @@ export const anatomyStrip = (h: HtmlBuilder<Message>, input: AnatomyInput): Html
 										h.Class(
 											cn(
 												typographyClass({ weight: "medium", mono: true }),
-												httpStatusColor(httpStatusCode),
+												httpStatusTextClass(httpStatusCode),
 											),
 										),
 									],
@@ -178,7 +142,7 @@ export const anatomyStrip = (h: HtmlBuilder<Message>, input: AnatomyInput): Html
 					],
 				),
 			]),
-			spectrumBar(h, shares),
+			serviceSpectrumBar(h, shares),
 			hstack(
 				h,
 				{ align: "center", wrap: true, className: "gap-x-4 gap-y-1" },

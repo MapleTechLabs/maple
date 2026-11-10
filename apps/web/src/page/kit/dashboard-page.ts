@@ -21,7 +21,7 @@ import {
 
 // The dashboard page below the shell's top bar:
 // `PageLayout.Body` with its filter rail, content column, sticky header and scroll area.
-// Below `lg` the shell lifts both rails out of the body into sheets (`shell/page-rails.ts`).
+// Below `lg` the shell lifts both rails out of the body into sheets (`@maple/views/ui/page-rails`).
 
 export type DashboardPageOptions = Readonly<{
 	/** `DashboardLayout.Filters`'s children. */

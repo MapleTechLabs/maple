@@ -108,6 +108,7 @@ existing copies onto it (see `apps/web/CLAUDE.md`).
 - `packages/views/src/ui/message-scroller.ts` `messageScroller`, `messageScrollerViewport`, `messageScrollerContent`, `messageScrollerItem`, `messageScrollerButton`: `MessageScroller`: a chat thread's scroll frame (root, viewport, content, keyed items) and its "Scroll to end" button; the host's Mount owns the autoscroll and shows the button.
 - `packages/views/src/ui/message.ts` `messageGroup`, `message`, `messageAvatar`, `messageContent`, `messageFooter`, `messageHeader`: One chat message (avatar, header, bubbles).
 - `packages/views/src/ui/meter.ts` `meter`, `segmentedBar`, `backdropBar`, `barFillClass`: Meter, SegmentedBar and BackdropBar.
+- `packages/views/src/ui/metric-type.ts` `metricTypeLabel`, `metricTypeBadge`: A metric type's label, badge and colour, wherever a metric is listed.
 - `packages/views/src/ui/middle-truncate.ts` `middleTruncate`: Keeps the last `tail` characters visible and ellipsizes the middle.
 - `packages/views/src/ui/mini-bars.ts` `miniBars`: A static bar sparkline in one <svg>.
 - `packages/views/src/ui/native-select.ts` `nativeOption`, `nativeOptGroup`, `nativeSelect`: `<NativeSelect>`: a styled native `<select>` with the chevron overlay; uncontrolled (`defaultValue`).
@@ -123,6 +124,7 @@ existing copies onto it (see `apps/web/CLAUDE.md`).
 - `packages/views/src/ui/overlay/select-align.ts` `alignItemWithTrigger`: Base UI Select's `alignItemWithTrigger` (select/popup/SelectPopup.mjs, @base-ui/react 1.8): the popup opens over the trigger so the selected item's text sits on the trigger's va...
 - `packages/views/src/ui/overlay/transition.ts` `isLeaving`, `isMounted`, `stateAttributes`, `focusGuard`: Base UI's transition status on a Foldkit Animation: `data-starting-style` on the first frame of an open, `data-ending-style` while it closes, and `data-open` / `data-closed` thr...
 - `packages/views/src/ui/page-layout.ts` `pageLayoutRoot`, `pageTitle`, `pageDescription`, `pageHeader`, `pageHeaderActions`: A page's root and header: title, description and header actions.
+- `packages/views/src/ui/page-rails.ts` `splitPageRails`: The filter and right sidebars below `lg`: each renders as a sheet, not an inline rail, and puts a trigger in the top bar while one is mounted.
 - `packages/views/src/ui/panel.ts` `panel`, `panelTitle`, `panelHeader`, `panelBody`, `panelChartBody`: The flat bordered section frame.
 - `packages/views/src/ui/person-avatar.ts` `personAvatar`, `personLabel`: `PersonAvatar` and `PersonLabel`: a member of the org as a warm initials tile (or their own image), alone or beside their name.
 - `packages/views/src/ui/popover.ts` `titleId`, `descriptionId`, `open`, `close`, `view`, `popoverTitle`, `popoverDescription` (stateful: Model, init, update): Base UI `Popover` (`@maple/ui/popover`, non-modal): the trigger toggles it, Escape and a press outside close it, and it is placed under the trigger with `sideOffset` 4 and colli...

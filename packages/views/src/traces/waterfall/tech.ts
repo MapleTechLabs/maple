@@ -4,7 +4,7 @@ import { humanizeDbSystem, pickAttr } from "@maple/views/service-map/trace-flow/
 import { DB_ICON } from "@maple/views/service-map/map/node-card"
 import { resolveRuntimeGlyph } from "@maple/views/service-map/map/runtime"
 import type { IconName } from "@maple/views/ui/icon"
-import { modelVendorIcon } from "../../../agent-sessions/kit/vendor"
+import { modelVendorIcon } from "../../lib/ai-vendor"
 import { Array as Arr, String as Str, Option } from "effect"
 
 // The marks a waterfall row carries: what the span called (gen_ai, then db, messaging, rpc,

@@ -226,14 +226,8 @@
 		"apps/web/src/page/sources/detail/view-actions.ts": 1,
 		"apps/web/src/page/sources/kit/rules-view.ts": 1,
 		"apps/web/src/page/status-pages/editor/view-live.ts": 1,
-		"apps/web/src/page/traces/detail/depth-controls.ts": 4,
-		"apps/web/src/page/traces/detail/timeline/view-footer.ts": 3,
-		"apps/web/src/page/traces/detail/timeline/view-row.ts": 3,
-		"apps/web/src/page/traces/detail/timeline/view.ts": 1,
 		"apps/web/src/page/traces/detail/view-findings.ts": 1,
 		"apps/web/src/page/traces/detail/view.ts": 1,
-		"apps/web/src/page/traces/detail/waterfall/row.ts": 5,
-		"apps/web/src/page/traces/detail/waterfall/view.ts": 2,
 		"apps/web/src/page/traces/list/view-advanced.ts": 1,
 		"apps/web/src/page/traces/list/view-row.ts": 1,
 		"apps/web/src/page/users/view-detail.ts": 3,
@@ -245,8 +239,14 @@
 		"apps/web/src/shell/view.ts": 2,
 		"packages/views/src/logs/log-sheet/view-hero.ts": 1,
 		"packages/views/src/logs/log-sheet/view-meta.ts": 9,
+		"packages/views/src/traces/depth-controls.ts": 4,
 		"packages/views/src/traces/span-panel/error-section.ts": 3,
-		"packages/views/src/traces/span-panel/view.ts": 3
+		"packages/views/src/traces/span-panel/view.ts": 3,
+		"packages/views/src/traces/timeline/view-footer.ts": 3,
+		"packages/views/src/traces/timeline/view-row.ts": 3,
+		"packages/views/src/traces/timeline/view.ts": 1,
+		"packages/views/src/traces/waterfall/row.ts": 5,
+		"packages/views/src/traces/waterfall/view.ts": 2
 	},
 	"no-arbitrary-spacing": {},
 	"no-arbitrary-text-size": {},
@@ -262,13 +262,13 @@
 		"apps/web/src/page/replays/detail/view-timeline.ts": 1,
 		"apps/web/src/page/services/detail/view-markers.ts": 1,
 		"apps/web/src/page/sources/new/view-picker.ts": 1,
-		"apps/web/src/page/traces/detail/timeline/view-footer.ts": 1,
-		"apps/web/src/page/traces/detail/waterfall/row.ts": 1,
 		"apps/web/src/page/users/view-detail.ts": 1,
 		"packages/views/src/service-map/map/namespace-group.ts": 1,
 		"packages/views/src/service-map/trace-flow/node-card.ts": 1,
 		"packages/views/src/traces/flamegraph-view.ts": 1,
-		"packages/views/src/traces/span-panel/attributes.ts": 2
+		"packages/views/src/traces/span-panel/attributes.ts": 2,
+		"packages/views/src/traces/timeline/view-footer.ts": 1,
+		"packages/views/src/traces/waterfall/row.ts": 1
 	},
 	"no-kit-styles-in-pages": {},
 	"no-raw-color": {},
@@ -286,10 +286,10 @@
 		"apps/web/src/page/dashboards/view/view.ts": 1,
 		"apps/web/src/page/investigations/conversation/kit/view-code.ts": 2,
 		"apps/web/src/page/kit/message-response.ts": 2,
-		"apps/web/src/page/traces/detail/depth-controls.ts": 1,
-		"apps/web/src/page/traces/detail/timeline/view-chrome.ts": 2,
 		"packages/views/src/service-map/trace-flow/node-card.ts": 1,
-		"packages/views/src/traces/flamegraph-view.ts": 1
+		"packages/views/src/traces/depth-controls.ts": 1,
+		"packages/views/src/traces/flamegraph-view.ts": 1,
+		"packages/views/src/traces/timeline/view-chrome.ts": 2
 	},
 	"ui-copy": {}
 }

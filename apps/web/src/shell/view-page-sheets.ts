@@ -6,7 +6,7 @@ import { button } from "@maple/views/ui/button"
 import { icon } from "@maple/views/ui/icon"
 import { Message } from "./message"
 import type { Model } from "./model"
-import type { LiftedRail } from "./page-rails"
+import type { LiftedRail } from "@maple/views/ui/page-rails"
 
 // `PageLayout.FilterSidebar` and `RightSidebar` below `lg`: a sheet each, opened from the top bar.
 
