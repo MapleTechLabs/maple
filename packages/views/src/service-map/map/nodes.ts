@@ -1,7 +1,8 @@
 import { resolveDbNodeStyle, resolvePlanetScaleDbStyle, withAlpha } from "../graph/service-map-db-style"
 import { getServiceMapNodeColor, type ServiceNodeData } from "../graph/service-map-utils"
 import { errorRateLevel } from "@maple/ui/lib/error-rate"
-import { EMPTY_VALUE, formatDuration, formatRate } from "@maple/ui/lib/format"
+import { EMPTY_VALUE, formatRate } from "@maple/ui/lib/format"
+import { formatLag } from "../../charts/planetscale-metric-series"
 import { latencyToneClass } from "@maple/ui/lib/latency-tone"
 import { formatLatency } from "@maple/ui/lib/format"
 import { utilizationLevel } from "@maple/ui/lib/utilization"
@@ -146,8 +147,6 @@ const serviceNode = <M>(h: HtmlBuilder<M>, id: string, data: ServiceNodeData): R
 		),
 	]
 }
-
-const formatLag = (seconds: number): string => formatDuration(seconds * 1000)
 
 const planetscaleRow = <M>(
 	h: HtmlBuilder<M>,

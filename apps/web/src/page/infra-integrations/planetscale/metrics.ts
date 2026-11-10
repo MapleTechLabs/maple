@@ -3,7 +3,6 @@
 // percentages; utilization divides them onto the shared 0-1 thresholds (`@maple/ui/lib/utilization`)
 // so an 85% reads the same colour here as on every other infra gauge.
 
-import { formatDuration } from "@maple/ui/lib/format"
 import { type Tone, VALUE_TONE } from "../../../components/infra/severity-tokens"
 import { utilizationLevel } from "@maple/ui/lib/utilization"
 import { String as Str } from "effect"
@@ -34,13 +33,6 @@ export const lagClass = (seconds: number): string | undefined => {
 	const tone = lagTone(seconds)
 	return tone === "neutral" ? undefined : VALUE_TONE[tone]
 }
-
-/** Replica lag reads in seconds once it is a real problem, milliseconds while it isn't. */
-export const formatLag = (seconds: number): string => formatDuration(seconds * 1000)
-
-/** Storage used as a whole percentage: the number people quote about a full disk. */
-export const formatStoragePercent = (percent: number) =>
-	`${percent >= 99.5 || percent < 10 ? percent.toFixed(1) : percent.toFixed(0)}%`
 
 /** A branch state worth showing: anything but ready/active, lowercased. */
 export const abnormalState = (state: string | null): string | null => {

@@ -27,12 +27,8 @@ import {
 import type { ContainerScopeCounts } from "../container-scopes"
 import { HOST_LIST_LIMIT, countHostScopes, hostPeak } from "../host-scopes"
 import type { ListHostsResponse } from "@maple/domain/http"
-import {
-	formatLag,
-	formatStoragePercent,
-	lagTone,
-	utilizationTone,
-} from "../../../page/infra-integrations/planetscale/metrics"
+import { lagTone, utilizationTone } from "../../../page/infra-integrations/planetscale/metrics"
+import { formatLag, formatStoragePercent } from "@maple/views/charts/planetscale-metric-series"
 import { railwayInScope } from "../../../page/infra-integrations/railway/railway-scope"
 import type { Tone } from "../severity-tokens"
 import { replaceWith } from "@maple/strings"
