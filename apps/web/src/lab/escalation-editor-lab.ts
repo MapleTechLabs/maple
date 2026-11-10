@@ -6,6 +6,7 @@ import { Effect, Option, Result, Schema, Array as Arr, String as Str } from "eff
 import { Command, type Update } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { defineMessageUnion } from "foldkit/message"
+import { FocusChainElement } from "../page/alerts/escalation-chain/command"
 import * as ChainMessage from "../page/alerts/escalation-chain/message"
 import * as ChainModel from "../page/alerts/escalation-chain/model"
 import { init as chainInit, update as chainUpdate } from "../page/alerts/escalation-chain/update"
@@ -113,10 +114,16 @@ const LONG = populatedChains([])[2]
 
 const NO_COMMANDS: PageCommands = []
 
+/** The page's local Commands: the kit's, and its own focus moves, which only touch the DOM. */
+const kept = (commands: PageCommands | undefined): PageCommands => [
+	...keepLocal(commands),
+	...Arr.filter(commands ?? [], (command) => command.name === FocusChainElement.name),
+]
+
 const run = (model: ChainModel.Model, messages: ReadonlyArray<ChainMessage.Message>) =>
 	Arr.reduce(messages, { model, commands: NO_COMMANDS }, (current, message) => {
 		const next = chainUpdate(current.model, message, CONTEXT)
-		return { model: next.model, commands: [...current.commands, ...keepLocal(next.commands)] }
+		return { model: next.model, commands: [...current.commands, ...kept(next.commands)] }
 	})
 
 const pageFor = (state: LabState) => {
@@ -172,7 +179,7 @@ export const update = (model: Model, message: Message): Return =>
 			const next = chainUpdate(model.page, child, CONTEXT)
 			return {
 				model: { ...model, page: next.model },
-				commands: Command.mapMessages(keepLocal(next.commands), (inner) =>
+				commands: Command.mapMessages(kept(next.commands), (inner) =>
 					Message.GotPageMessage({ message: inner }),
 				),
 			}
