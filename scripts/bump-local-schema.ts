@@ -18,10 +18,10 @@ import { execFileSync } from "node:child_process"
 import { existsSync, readFileSync, writeFileSync } from "node:fs"
 import { schemaDigest, schemaFingerprint } from "../packages/local-server/src/store-version"
 
-// The schema, its frozen snapshots and the history derived from them live in
-// @maple/local-server; the migration steps that read them stay in the CLI.
+// The schema, its frozen snapshots, the history derived from them and the
+// migration steps all live in @maple/local-server.
 const SERVER_DIR = "packages/local-server/src"
-const STEPS_FILE = "apps/cli/src/server/local-store-migrations/steps.ts"
+const STEPS_FILE = `${SERVER_DIR}/local-store-migrations/steps.ts`
 const SCHEMA_DIR = `${SERVER_DIR}/schema`
 const SNAPSHOT_DIR = `${SCHEMA_DIR}/history`
 

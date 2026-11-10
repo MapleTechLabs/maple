@@ -26,7 +26,7 @@ import {
 	validateMigrationRegistry,
 	type LocalStoreMigration,
 	type MigrationModuleContext,
-} from "../src/server/local-store-migrations"
+} from "@maple/local-server/local-store-migrations"
 import {
 	type MigrationJournal,
 	migrationHistoryPath,
@@ -34,7 +34,7 @@ import {
 	migrationRootPath,
 	readMigrationJournalStructure,
 } from "@maple/local-server/local-store-migration-journal"
-import type { MigrationDb } from "../src/server/local-store-migration-module"
+import type { MigrationDb } from "@maple/local-server/local-store-migration-module"
 import {
 	comparePhysicalSchema,
 	type LocalSchemaManifest,
@@ -57,15 +57,15 @@ import {
 	nextFetchRowLimit,
 	type CopyProgress,
 	type RawReplayProgress,
-} from "../src/server/local-store-migrations/legacy-to-current"
+} from "@maple/local-server/local-store-migrations/legacy-to-current"
 import {
 	LOCAL_SCHEMA_HISTORY_TIP,
 	localSchemaHistory,
 	localSchemaIdentity,
 	localSchemaSnapshot,
 } from "@maple/local-server/local-schema-history"
-import { LOCAL_STORE_STEPS } from "../src/server/local-store-migrations/steps"
-import { stepStatements } from "../src/server/local-store-migrations/step-executor"
+import { LOCAL_STORE_STEPS } from "@maple/local-server/local-store-migrations/steps"
+import { stepStatements } from "@maple/local-server/local-store-migrations/step-executor"
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
@@ -1903,7 +1903,7 @@ describe("clone-based staging excludes the checkpoint registry", () => {
 				JSON.stringify({ schemaFingerprint: "stale" }),
 			)
 			const { cloneStoreForStaging } =
-				await import("../src/server/local-store-migrations/journal-codecs")
+				await import("@maple/local-server/local-store-migrations/journal-codecs")
 			await cloneStoreForStaging(source, target)
 			const { existsSync } = await import("node:fs")
 			expect(existsSync(join(target, "store", "parts", "part.bin"))).toBe(true)

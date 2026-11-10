@@ -1,19 +1,19 @@
 // SAFETY-FILE: JSON rows here come from fixed internal formats and are validated before domain use.
 import { createHash } from "node:crypto"
 import { Option, Schema, Array as Arr, Record as Rec, String as Str } from "effect"
-import { decodeJsonEachRow, decodeJsonObjectRows } from "@maple/local-server/chdb-rows"
-import { LEGACY_LOCAL_SCHEMA } from "@maple/local-server/schema-identity"
-import { localSchemaIdentity, localSchemaSnapshot } from "@maple/local-server/local-schema-history"
-import { assertPhysicalSchema } from "@maple/local-server/schema-physical"
+import { decodeJsonEachRow, decodeJsonObjectRows } from "../chdb-rows"
+import { LEGACY_LOCAL_SCHEMA } from "../schema-identity"
+import { localSchemaIdentity, localSchemaSnapshot } from "../local-schema-history"
+import { assertPhysicalSchema } from "../schema-physical"
 import { strictDecoder, UnsignedDecimal } from "./journal-codecs"
-import type { LocalSchemaColumn } from "@maple/local-server/schema-manifest"
+import type { LocalSchemaColumn } from "../schema-manifest"
 import type {
 	LocalStoreMigrationModule,
 	MigrationModuleContext,
 	MigrationOperation,
 	StateDispositionEntry,
 } from "../local-store-migration-module"
-import { encodeJson } from "@maple/local-server/json"
+import { encodeJson } from "../json"
 
 // Batch bounds keep memory bounded and the journal resumable. Consecutive
 // same-side queries share one cached connection, but each batch still

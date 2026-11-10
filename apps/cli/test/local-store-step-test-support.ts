@@ -1,7 +1,10 @@
 import { Option, Array as Arr } from "effect"
 import { Chdb } from "@maple/local-server/chdb"
-import type { MigrationDbOptions, MigrationModuleContext } from "../src/server/local-store-migration-module"
-import { localStoreMigrations } from "../src/server/local-store-migrations"
+import type {
+	MigrationDbOptions,
+	MigrationModuleContext,
+} from "@maple/local-server/local-store-migration-module"
+import { localStoreMigrations } from "@maple/local-server/local-store-migrations"
 
 /** Opens a store with no bootstrap unless asked, closing it after `fn`. */
 export const openStore = async <A>(

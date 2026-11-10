@@ -329,6 +329,7 @@
 				"packages/local-server/src/eventing/control-store.ts",
 				"packages/local-server/src/local-address.ts",
 				"packages/local-server/src/local-store-migration-journal.ts",
+				"packages/local-server/src/local-store-migrations.ts",
 				"packages/local-server/src/otlp/encode.ts",
 				"packages/local-server/src/schema-physical.ts",
 				"packages/local-server/src/serve.ts",
@@ -347,6 +348,7 @@
 				"packages/local-server/src/checkpoints.ts",
 				"packages/local-server/src/insert-batcher.ts",
 				"packages/local-server/src/local-store-migration-journal.ts",
+				"packages/local-server/src/local-store-migrations.ts",
 				"packages/local-server/src/otlp/encode.ts",
 				"packages/local-server/src/schema-manifest.ts",
 				"packages/local-server/src/schema-physical.ts",
@@ -363,6 +365,7 @@
 				"packages/local-server/src/checkpoints.ts",
 				"packages/local-server/src/eventing/control-store.ts",
 				"packages/local-server/src/identity-schema.ts",
+				"packages/local-server/src/local-store-migrations/legacy-to-current.ts",
 				"packages/local-server/src/service-map-rollup.ts",
 				"packages/local-server/src/store-version.ts"
 			],

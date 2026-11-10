@@ -10,16 +10,16 @@ import { existsSync, readFileSync, statfsSync } from "node:fs"
 import { lstat, readdir, stat } from "node:fs/promises"
 import { dirname, join, resolve } from "node:path"
 import { Effect, Option, Schema, Array as Arr, String as Str } from "effect"
-import { Chdb } from "@maple/local-server/chdb"
-import { decodeJsonEachRow } from "@maple/local-server/chdb-rows"
+import { Chdb } from "./chdb"
+import { decodeJsonEachRow } from "./chdb-rows"
 import {
 	CURRENT_LOCAL_SCHEMA,
 	LEGACY_LOCAL_SCHEMA,
 	LOCAL_SCHEMA_SQL,
 	identityLabel,
 	type LocalSchemaIdentity,
-} from "@maple/local-server/schema-identity"
-import { localSchemaIdentity } from "@maple/local-server/local-schema-history"
+} from "./schema-identity"
+import { localSchemaIdentity } from "./local-schema-history"
 import {
 	checkStoreCompatible,
 	ensureStoreMarkerDurable,
@@ -36,15 +36,10 @@ import {
 	storeOpenMarkerPath,
 	type StoreMarker,
 	type StoreMarkerV2,
-} from "@maple/local-server/store-version"
-import {
-	durableJson,
-	durableRename,
-	ensurePrivateDirectory,
-	syncTree,
-} from "@maple/local-server/durable-files"
-import { errnoCode } from "@maple/local-server/store-errors"
-import { MAPLE_VERSION } from "@maple/local-server/version"
+} from "./store-version"
+import { durableJson, durableRename, ensurePrivateDirectory, syncTree } from "./durable-files"
+import { errnoCode } from "./store-errors"
+import { MAPLE_VERSION } from "./version"
 import {
 	assertJournalPaths,
 	isMigrationIncomplete,
@@ -54,7 +49,8 @@ import {
 	migrationRootPath,
 	readMigrationJournalStructure,
 	safeMigrationPath,
-} from "@maple/local-server/local-store-migration-journal"
+	sameSchemaIdentity,
+} from "./local-store-migration-journal"
 import { legacyToCurrentModule } from "./local-store-migrations/legacy-to-current"
 import { stepModule } from "./local-store-migrations/step-executor"
 import { LOCAL_STORE_STEPS } from "./local-store-migrations/steps"
@@ -1097,7 +1093,7 @@ const withMigrationMaintenanceLock = async <A>(
 	fn: () => Promise<A>,
 ): Promise<A> => {
 	const { resetTransactionPath, restoreTransactionPath, withMaintenanceLock } =
-		await import("@maple/local-server/checkpoints")
+		await import("./checkpoints")
 	return withMaintenanceLock(dataDir, operationId, async () => {
 		if (existsSync(restoreTransactionPath(dataDir)) || existsSync(resetTransactionPath(dataDir)))
 			throw new Error(
@@ -1174,9 +1170,6 @@ const migrationPlanFromJournal = (journal: MigrationJournal): MigrationPlan => {
 	}
 }
 
-const sameIdentity = (a: LocalSchemaIdentity, b: LocalSchemaIdentity): boolean =>
-	a.version === b.version && a.fingerprint === b.fingerprint && a.digest === b.digest && a.chdb === b.chdb
-
 const migrationResult = (journal: MigrationJournal, dataDir: string): MigrationResult => ({
 	migrationId: journal.migrationId,
 	phase: journal.phase,
@@ -1233,7 +1226,8 @@ export const runLocalStoreMigration = async (
 			throw new Error("completed migration journal does not match the active store; refusing to guess")
 		if (options.dryRun) return planMigration(completedTarget)
 		await archiveCompletedMigration(dataDir, journal)
-		if (sameIdentity(completedTarget, CURRENT_LOCAL_SCHEMA)) return migrationResult(journal, dataDir)
+		if (sameSchemaIdentity(completedTarget, CURRENT_LOCAL_SCHEMA))
+			return migrationResult(journal, dataDir)
 		markerState = readMarker(dataDir)
 		journal = null
 	}

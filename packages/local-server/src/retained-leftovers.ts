@@ -16,13 +16,13 @@ import {
 	withMaintenanceLock,
 	type CheckpointId,
 	type CheckpointValidation,
-} from "@maple/local-server/checkpoints"
-import { syncDirectory } from "@maple/local-server/durable-files"
+} from "./checkpoints"
+import { syncDirectory } from "./durable-files"
 import {
 	migrationJournalPath,
 	migrationRootPath,
 	readMigrationJournalStructure,
-} from "@maple/local-server/local-store-migration-journal"
+} from "./local-store-migration-journal"
 
 export type RetainedLeftoverKind =
 	| "restore-replaced-store"

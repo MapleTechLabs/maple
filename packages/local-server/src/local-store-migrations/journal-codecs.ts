@@ -3,13 +3,13 @@
 import { Option, Schema, Array as Arr, Record as Rec, String as Str } from "effect"
 import { cp, mkdir, rm } from "node:fs/promises"
 import { dirname, join, sep } from "node:path"
-import { RAW_TELEMETRY_TTL_COLUMNS, type Chdb } from "@maple/local-server/chdb"
-import { decodeRowCounts, decodeTableRowCounts } from "@maple/local-server/chdb-rows"
+import { RAW_TELEMETRY_TTL_COLUMNS, type Chdb } from "../chdb"
+import { decodeRowCounts, decodeTableRowCounts } from "../chdb-rows"
 import {
 	ttlDaysFromDefinition,
 	withRawTelemetryRetentionFloor,
 	type LocalSchemaManifest,
-} from "@maple/local-server/schema-manifest"
+} from "../schema-manifest"
 
 const RAW_TABLES_INTERNAL = Arr.map(RAW_TELEMETRY_TTL_COLUMNS, ([table]) => table)
 

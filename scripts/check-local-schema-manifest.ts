@@ -15,7 +15,7 @@ import {
 	LOCAL_SCHEMA_MANIFEST_DIGEST,
 	LOCAL_SCHEMA_VERSION,
 } from "../packages/local-server/src/schema-identity"
-import { resolveMigrationChain } from "../apps/cli/src/server/local-store-migrations"
+import { resolveMigrationChain } from "../packages/local-server/src/local-store-migrations"
 
 const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
 

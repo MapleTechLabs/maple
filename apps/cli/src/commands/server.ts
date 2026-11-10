@@ -27,7 +27,10 @@ import {
 	UNVERSIONED_STORE,
 } from "@maple/local-server/store-version"
 import { durableWrite } from "@maple/local-server/durable-files"
-import { abandonLocalStoreMigration, localMigrationIsIncomplete } from "../server/local-store-migrations"
+import {
+	abandonLocalStoreMigration,
+	localMigrationIsIncomplete,
+} from "@maple/local-server/local-store-migrations"
 import {
 	adoptLegacyStoreFiles,
 	claimPidFileExclusive,

@@ -2,9 +2,9 @@
 // Backfill SQL and the custom steps that `steps.ts` references. Each projection
 // is frozen byte-for-byte to the view body its snapshot installs, so backfilled and live rows agree.
 import { Option, Schema, Array as Arr, String as Str } from "effect"
-import { applyRawTelemetryRetentionFloor, type Chdb } from "@maple/local-server/chdb"
-import { decodeJsonEachRow, decodeRowCounts } from "@maple/local-server/chdb-rows"
-import { localSchemaSnapshot } from "@maple/local-server/local-schema-history"
+import { applyRawTelemetryRetentionFloor, type Chdb } from "../chdb"
+import { decodeJsonEachRow, decodeRowCounts } from "../chdb-rows"
+import { localSchemaSnapshot } from "../local-schema-history"
 import { customStep, LocalMigrationStepError } from "./step-executor"
 import { UnsignedDecimal } from "./journal-codecs"
 
