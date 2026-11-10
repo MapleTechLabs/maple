@@ -912,7 +912,16 @@ export class UptimeMonitorsService extends Context.Service<UptimeMonitorsService
 											? { alertRuleId: ruleId }
 											: undefined),
 										...(name === undefined ? undefined : { name }),
-										...(config === undefined ? undefined : { configJson: config }),
+										// This config carries its headers itself: sealed ones left behind
+										// would come back once the config's are removed.
+										...(config === undefined
+											? undefined
+											: {
+													configJson: config,
+													headersCiphertext: null,
+													headersIv: null,
+													headersTag: null,
+												}),
 										...(input.intervalSeconds === undefined
 											? undefined
 											: { intervalSeconds: input.intervalSeconds }),
