@@ -88,8 +88,6 @@ export const toSnapshotIncident = (incident: V2StatusPageIncident): StatusPageSn
 	})).sort((a, b) => b.at - a.at),
 })
 
-// SELECTION
-
 /** What a click in the preview selects. */
 export const PreviewSelection = Schema.Struct({
 	kind: Schema.Literals(["component", "incident"]),

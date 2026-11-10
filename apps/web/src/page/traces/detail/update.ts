@@ -40,7 +40,6 @@ type Return = PageReturn<Model, Message>
 type Cmd = Command.Command<Message, never, Resources>
 type Route = { readonly traceId: string; readonly search: Model["search"] }
 
-/** `DEFAULT_COLOR_BY` (@maple/views/traces/color-by). */
 const DEFAULT_COLOR_BY = "service"
 
 export const viewOf = (model: Model): TraceView => model.search.view ?? "timeline"
@@ -62,21 +61,21 @@ const navigate = (model: Model, search: Model["search"]): Return => ({
 	}),
 })
 
-/** The mobile span sheet's state, derived from the selection (`open={selectedSpan != null}`). */
+/** The mobile span sheet's state, derived from the selection. */
 export const spanSheetOf = (model: Model): Dialog.Model =>
 	Dialog.init("trace-span-sheet", "sheet", { isOpen: model.spanPanel !== null })
 
-/** `handleCloseSpanDetails`: `spanId` leaves the URL, replacing history. */
+/** `spanId` leaves the URL, replacing history. */
 const closeSpanPanel = (model: Model): Return =>
 	model.search.spanId === undefined ? { model } : navigate(model, { ...model.search, spanId: undefined })
 
-/** `handleSelectSpan`: re-selecting the selected span is a no-op. */
+/** Re-selecting the selected span is a no-op. */
 const selectSpan = (model: Model, spanId: string): Return =>
 	model.search.spanId === spanId ? { model } : navigate(model, { ...model.search, spanId })
 
 const spanEventsData = (model: Model) => Option.getOrNull(AsyncData.getData(model.spanEvents.data))
 
-/** Base UI mounts only the active tab's panel: build its Submodel, drop the others. */
+/** Only the active tab's panel is mounted: build its Submodel, drop the others. */
 const enterTab = (model: Model, trace: LoadedTrace, view: TraceView): Return => {
 	const selectedSpanId = selectedSpanOf(model)?.spanId ?? null
 	const cleared: Model = { ...model, timeline: null, waterfall: null, flow: null }
@@ -135,7 +134,7 @@ const syncPanel = (model: Model, context: PageContext, trace: LoadedTrace): Retu
 	}
 }
 
-/** `TraceAttributeFilterProvider`: a fresh list query carrying only this attribute. */
+/** A fresh list query carrying only this attribute. */
 const attributeFilterUrl = (scope: "span" | "resource", key: string, value: string, isExclude: boolean) => {
 	const entry = isExclude ? { key, value, negated: true } : { key, value }
 	return hrefOf(
@@ -146,7 +145,7 @@ const attributeFilterUrl = (scope: "span" | "resource", key: string, value: stri
 	)
 }
 
-/** A panel joining or leaving the group lays it out from the panels' `defaultSize`s again. */
+/** A panel joining or leaving the group lays it out from the default sizes again. */
 const withLayout = (split: Resizable.Model, layout: ReadonlyArray<number>): Resizable.Model =>
 	split.layout.length === layout.length ? split : { ...split, layout }
 
@@ -180,7 +179,7 @@ const followTrace = (model: Model, context: PageContext, trace: LoadedTrace): Re
 	const windowed = Option.match(window, {
 		onNone: (): ReadonlyArray<Step> => [],
 		onSome: ({ startTime, endTime }) => {
-			// The atom decodes its 15 s-snapped key back into the request (S6).
+			// The key is 15 s-snapped and decodes back into the request (S6).
 			const input = { traceId, startTime: snapTimestamp(startTime), endTime: snapTimestamp(endTime) }
 			const logsKey = requestKey(org, "getLogsCount", { data: input })
 			const listKey = requestKey(org, "productEventsForTrace", { data: input })
@@ -268,8 +267,6 @@ const onLoaded = (model: Model, context: PageContext): Return =>
 						(next) => syncPanel(next, context, trace),
 					),
 	})
-
-// ENTRY POINTS
 
 export const init = (route: Route, context: PageContext, isPeek = false): Return => {
 	const model: Model = {

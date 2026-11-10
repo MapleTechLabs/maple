@@ -1,8 +1,6 @@
 import { formatCompact } from "@maple/views/ui/filters/range-format"
 import type { Search } from "./derive"
 
-// The search edits the list's controls make (`onFilterChange`, `toggleOption`, `applyWhereClause`).
-
 /** `applyWhereClause(search, "")`: the clause and every param a clause can set leave the URL. */
 export const clearedWhereClause = (search: Search): Search => ({
 	...search,
@@ -31,7 +29,7 @@ export const clearedWhereClause = (search: Search): Search => ({
 	excludedHttpStatusCodes: undefined,
 })
 
-/** `RangeFilterSection.emit`: a reversed pair is swapped rather than committed. */
+/** A reversed pair is swapped rather than committed. */
 export const withDuration = (search: Search, min: number | undefined, max: number | undefined): Search => {
 	const [low, high] = min !== undefined && max !== undefined && min > max ? [max, min] : [min, max]
 	return { ...search, minDurationMs: low, maxDurationMs: high }

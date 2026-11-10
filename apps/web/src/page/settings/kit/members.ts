@@ -3,8 +3,6 @@ import { alert, alertDescription } from "@maple/views/ui/alert"
 import { icon } from "@maple/views/ui/icon"
 import { Array as Arr, Option, Predicate } from "effect"
 
-// `memberDisplayName` and `AdminOnlyNotice`.
-
 interface MemberName {
 	readonly firstName?: string | null
 	readonly lastName?: string | null

@@ -97,8 +97,6 @@ const failureAlert = (h: H, title: string, failure: LoadFailure | null): Readonl
 				]),
 			]
 
-// COMPONENT
-
 const SAVE_LABEL = { idle: "", saving: "Saving", saved: "Saved", failed: "Not saved" } as const
 
 const saveIndicator = (h: H, model: Model): Html =>
@@ -243,8 +241,6 @@ export const componentPanel = (h: H, model: Model, component: V2StatusPageCompon
 		],
 	)
 }
-
-// INCIDENT
 
 const IMPACT_TONE = {
 	none: "muted",
@@ -474,8 +470,6 @@ export const incidentPanel = (h: H, model: Model, incident: V2StatusPageIncident
 	)
 }
 
-// COMPOSER
-
 const componentChecklist = (h: H, model: Model): Html => {
 	const components = componentsOf(model)
 	return h.fieldset(
@@ -636,8 +630,6 @@ export const composerPanel = (h: H, model: Model, timeZone: string): Html => {
 		),
 	])
 }
-
-// ADD
 
 export const addPanel = (h: H, model: Model): Html => {
 	const count = checkedRows(model.addPicker).length

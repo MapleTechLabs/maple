@@ -1,30 +1,10 @@
-// Endpoint path grouping
-//
-// The API tab groups endpoints by their shared path stem so the stem is printed
-// once as a header and rows carry only their leaf. That exists because the route
-// is the row's identity and the only variable-width element in it: in a flat
-// table the numeric columns hold their width and the route absorbs every pixel
-// of the squeeze, so `/v2/organizations/{orgId}/dashboards/{id}/widgets` is the
-// thing that gets truncated. Grouping removes the long half of the path from the
-// row entirely rather than shrinking the font or clipping.
-//
-// Two rules keep it from making things worse:
-//
-//   1. A stem must cover at least TWO endpoints to become a header. A group of
-//      one is strictly worse than no group — it costs a header row and saves
-//      nothing.
-//   2. The stem is the LONGEST common prefix, found by descending until the path
-//      actually branches. `/v2/organizations` would be a legal stem for the
-//      subscriptions endpoints and a useless one; the reader wants
-//      `/v2/organizations/{orgId}/subscriptions`.
-//
-// A service whose routes share no stem (`/healthz`, `/graphql`, `/metrics`)
-// therefore produces no headers at all and degrades into a plain sorted list.
+// The API tab prints an endpoint's shared path stem once as a header, so the route (the only
+// variable-width cell) is not what a narrow table truncates. A stem needs at least two
+// endpoints, and it is the longest common prefix: `/v2/organizations/{orgId}/subscriptions`, not `/v2`.
 
 import type { ServiceEndpoint } from "@maple/web-data/warehouse/service-endpoints"
 import { Array as Arr, Option, String as Str } from "effect"
 
-// The table sort direction.
 type SortDir = "asc" | "desc"
 
 export type EndpointGroupKind = "stem" | "ungrouped" | "unrouted" | "probes"
@@ -50,7 +30,7 @@ export interface EndpointGroup<E extends GroupableEndpoint = ServiceEndpoint> {
 	totals: {
 		estimatedSpanCount: number
 		errorRate: number
-		/** Worst percentiles in the group — percentiles do not average. */
+		/** Worst percentiles in the group: percentiles do not average. */
 		p50DurationMs: number
 		p95DurationMs: number
 		p99DurationMs: number
@@ -62,20 +42,12 @@ export type EndpointSort = "traffic" | "path" | "errorRate" | "p50" | "p95" | "p
 const segments = (route: string): string[] => Arr.filter(Str.split("/")(route), (part) => part.length > 0)
 
 /**
- * Whether a route looks like a raw URL path rather than a route template.
- *
- * We cannot know this for certain from the rollup: it stores the already
- * normalized name, which prefers `http.route` and silently falls back to
- * `url.path`, and both arrive here as the same string. So this is a read of the
- * text, not a fact from the data — a segment that looks like an identifier means
- * the span almost certainly had no `http.route`, and its siblings are 1,200 more
- * rows of the same shape. Grouping them under one collapsed "unrouted" row is
- * the difference between a usable list and an unusable one; being occasionally
- * wrong about one route is cheap by comparison.
+ * Whether a route looks like a raw URL path rather than a route template. A guess from the text:
+ * the rollup stores `http.route` falling back to `url.path`, and both arrive as the same string.
  */
 export function looksUnrouted(route: string): boolean {
 	return Arr.some(segments(route), (segment) => {
-		// Template segments are proof of the opposite — a real route.
+		// Template segments are proof of a real route.
 		if (Str.startsWith("{")(segment) || Str.startsWith(":")(segment)) return false
 		if (/^\d+$/.test(segment)) return true
 		if (/^[0-9a-fA-F]{8,}$/.test(segment)) return true
@@ -87,16 +59,9 @@ export function looksUnrouted(route: string): boolean {
 }
 
 /**
- * Bait paths that only ever appear when something is scanning you: CMS admin
- * panels on a service that is not a CMS, credential and config files, path
- * traversal, and proxy probes. A request for these never matched a route, so the
- * span carried `url.path` and became an "endpoint" indistinguishable from a real
- * one.
- *
- * Deliberately NOT here: `.well-known` (ACME, security.txt), `actuator` (Spring
- * Boot), `.json`, `.xml` — all legitimately served by real APIs. A false positive
- * hides a real endpoint, which is far worse than letting one probe through, so
- * the list stays narrow and everything it catches is still one click from view.
+ * Bait paths only scanners ask for (CMS admin, credential files, traversal, proxy probes). Not
+ * here: `.well-known`, `actuator`, `.json`, `.xml`, which real APIs serve; hiding a real
+ * endpoint is worse than letting a probe through.
  */
 const PROBE_EXTENSIONS =
 	/\.(php\d?|phtml|asp|aspx|jsp|cgi|pl|sh|bak|old|swp|sql|env|ini|conf|cfg|pem|key|zip|tar|gz|tgz|rar|7z)$/i
@@ -130,12 +95,8 @@ const PROBE_FRAGMENTS = [
 ]
 
 /**
- * Whether a route reads as scanner traffic rather than an endpoint this service
- * actually serves.
- *
- * Like {@link looksUnrouted} this is a read of the text, not a fact from the
- * data — see the note there. The real discriminator is whether the span carried
- * `http.route` at all, and the rollup does not keep it.
+ * Whether a route reads as scanner traffic. Like {@link looksUnrouted}, a guess from the text:
+ * the rollup does not keep whether the span carried `http.route`.
  */
 export function looksLikeProbe(route: string): boolean {
 	const lower = Str.toLowerCase(route)
@@ -214,8 +175,7 @@ function collect<E extends GroupableEndpoint>(
 		})
 	}
 
-	// Too small to earn a header — a group of one costs a row and saves nothing.
-	// It still becomes a group below, just a headerless one.
+	// A group of one costs a header row and saves nothing; it stays a headerless group below.
 	if (node.count < 2) {
 		loose.push(...subtreeEndpoints(node))
 		return
@@ -246,7 +206,7 @@ function collect<E extends GroupableEndpoint>(
 		}
 		return
 	}
-	// A branch whose children are all singletons — this node is the stem.
+	// Every child is a singleton, so this node is the stem.
 	emit()
 }
 
@@ -277,7 +237,7 @@ const byPath = (a: GroupableEndpoint, b: GroupableEndpoint) => {
  * Groups take their place from their leading endpoint, not from a total: after
  * the leaves are sorted, a group ranks where its first row would rank on its
  * own. Read top to bottom, the first row of every block is then monotone under
- * the active column — sorting by traffic never puts five small endpoints above
+ * the active column: sorting by traffic never puts five small endpoints above
  * one busy one because their sum happens to be larger, and sorting by errors
  * puts the worst endpoint on the page first whether or not it has siblings.
  * The collapsed buckets stay pinned to the end whatever the sort; they are not
@@ -356,7 +316,7 @@ export function groupEndpoints<E extends GroupableEndpoint>(
 export interface LeafLabel {
 	/** Everything between the stem and the final segment, dimmed. */
 	head: string
-	/** The final segment — the part that identifies this endpoint. */
+	/** The final segment, the part that identifies this endpoint. */
 	tail: string
 }
 

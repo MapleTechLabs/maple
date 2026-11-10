@@ -342,7 +342,7 @@ const calls = <M>(h: HtmlBuilder<M>, data: McpToolDetail, options: ToolBodyOptio
 	)
 }
 
-/** `McpToolBody`: everything under the tool page's header. */
+/** Everything under the tool page's header. */
 export const toolBody = <M>(h: HtmlBuilder<M>, data: McpToolDetail, options: ToolBodyOptions<M>): Html =>
 	vstack(h, {}, [
 		options.toolbar,

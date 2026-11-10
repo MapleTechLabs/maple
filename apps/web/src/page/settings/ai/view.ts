@@ -58,8 +58,6 @@ const fieldIds = (name: string): FieldIds => ({
 	description: `${name}-description`,
 })
 
-// MODEL PROVIDER
-
 const RADIO_ITEMS = [
 	{ value: "managed", id: "ai-provider-managed", inputId: "ai-provider-managed-input" },
 	{ value: "openrouter", id: "ai-provider-openrouter", inputId: "ai-provider-openrouter-input" },
@@ -182,7 +180,7 @@ const keyForm = (h: H, model: Model, isReplacing: boolean): Html => {
 	)
 }
 
-/** `AddOnUpsell`: a lapsed key's notice, the add-on's price and "Add to plan" behind a confirm. */
+/** A lapsed key's notice, the add-on's price and "Add to plan" behind a confirm. */
 const addOnUpsell = (h: H, model: Model, current: OpenRouterKeyDocument): Html =>
 	vstack(h, { gap: "3" }, [
 		...(current.configured
@@ -351,8 +349,6 @@ const providerSection = (h: H, model: Model): Html =>
 		}),
 	)
 
-// AUTO-TRIAGE
-
 const limitRow = (
 	h: H,
 	options: Readonly<{
@@ -380,7 +376,7 @@ const limitRow = (
 				state,
 				attributes: [
 					h.Attribute("inputmode", "numeric"),
-					// `aria-invalid={error !== null}` renders "false" too, which the input chrome keys on.
+					// A valid input carries `aria-invalid="false"` too, which the input chrome keys on.
 					...(options.error === null ? [h.AriaInvalid(false)] : []),
 					h.Value(options.value),
 					...(options.isDisabled ? [h.Disabled(true)] : []),
@@ -443,7 +439,7 @@ const triageForm = (h: H, model: Model, current: AiTriageSettingsDocument): Read
 	const draft = limitsDraftOf(model)
 	const runs = parseDailyLimit(draft.maxRunsPerDay, RUNS_PER_DAY_LIMITS)
 	const passes = parseDailyLimit(draft.maxPassesPerDay, PASSES_PER_DAY_LIMITS)
-	// `Collapsible defaultOpen={!passesError.ok}`: an invalid ceiling keeps the section open.
+	// An invalid ceiling keeps the section open.
 	const isAdvancedOpen = model.isAdvancedOpen || !passes.ok
 	return [
 		panel(h, { className: "divide-y" }, [

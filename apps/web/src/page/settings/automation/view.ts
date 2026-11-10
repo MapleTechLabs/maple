@@ -90,7 +90,6 @@ const severityRule = (
 									})),
 									size: "sm",
 									className: "w-24",
-									// `<SelectValue />` without a renderer prints the raw value.
 									renderValue: (value) => [value],
 									toView: (parts) => h.div([h.Class("contents")], parts),
 								},

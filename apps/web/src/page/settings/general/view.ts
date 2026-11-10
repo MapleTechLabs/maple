@@ -59,7 +59,7 @@ const deletionFacts = (h: H): Html =>
 		),
 	)
 
-/** `OrgAvatar fit="contain"`: the logo preview (the initials until images are rendered). */
+/** The logo preview: the initials until images are rendered. */
 const orgAvatar = (h: H, name: string): Html =>
 	avatarFallback(
 		h,

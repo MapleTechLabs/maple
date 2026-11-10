@@ -37,8 +37,6 @@ import { Array as Arr } from "effect"
 import { textLink } from "@maple/views/ui/text-link"
 import { RECOMMENDATION_KIND_LABEL, RECOMMENDATION_STATUS_LABEL } from "../../kit/recommendations"
 
-// `RecommendedMappingsSection` and `AttributeMappingsSection`.
-
 type H = HtmlBuilder<Message>
 
 const KIND_TAG = {
@@ -238,8 +236,6 @@ export const recommendationsSection = (h: H, model: Model): ReadonlyArray<Html> 
 		),
 	]
 }
-
-// MAPPINGS
 
 const OPERATION_BADGE = { copy: "info", move: "warn" } as const
 const OPERATION_LABELS = { copy: "Copy", move: "Move" } as const

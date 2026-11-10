@@ -31,8 +31,6 @@ import { slugIssue } from "./slug"
 
 // The editor's drafts: each form as its inputs hold it, and the payloads built from them.
 
-// COMPONENTS
-
 export const ComponentTextField = Schema.Literals([
 	"name",
 	"description",
@@ -89,8 +87,6 @@ export const componentPayload = (form: ComponentForm): V2StatusPageComponentCrea
 	manual_status: Option.getOrNull(decodeComponentStatus(form.manualStatus)),
 	show_uptime: form.showUptime,
 })
-
-// INCIDENTS
 
 export const IncidentTextField = Schema.Literals([
 	"title",
@@ -186,8 +182,6 @@ export const incidentPayload = (
 	)
 }
 
-// UPDATES
-
 export const UpdateForm = Schema.Struct({
 	incidentId: StatusPageIncidentId,
 	kind: StatusPageIncidentKind,
@@ -219,8 +213,6 @@ export const updateFormFor = (
 			: "",
 	}
 }
-
-// SETTINGS
 
 export const SettingsTextField = Schema.Literals([
 	"name",

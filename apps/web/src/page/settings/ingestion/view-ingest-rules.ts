@@ -29,8 +29,6 @@ import { typography } from "@maple/views/ui/typography"
 import { Array as Arr, Option } from "effect"
 import { hstack, vstack } from "@maple/views/ui/stack"
 
-// `IngestRulesSection`: above the attribute mappings on the ingestion tab.
-
 const lift = (message: RulesMessage): Message => Message.GotIngestRulesMessage({ message })
 
 type H = HtmlBuilder<Message>

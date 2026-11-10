@@ -4,10 +4,7 @@ import type { ReplayEngine, ReplayEngineCreateInput, ReplayEngineFactory } from 
 import { String as Str } from "effect"
 import { nonZeroOr } from "@maple/ui/lib/number"
 
-// The rrweb engine — browser recordings.
-//
-// This is the behaviour the player has always had, moved behind the engine
-// interface unchanged. Every quirk documented here was a shipped bug once.
+// The rrweb engine, for browser recordings. Every quirk documented here was a shipped bug once.
 
 class RrwebEngine implements ReplayEngine {
 	private readonly replayer: Replayer
@@ -21,8 +18,8 @@ class RrwebEngine implements ReplayEngine {
 		this.replayer = new Replayer(input.events as never, {
 			root: input.mount,
 			speed: 1,
-			// We skip idle ourselves by jumping (see the provider's rAF loop) —
-			// rrweb's own skipInactive only fast-forwards, which is slow. Keep it off.
+			// We skip idle ourselves by jumping; rrweb's own skipInactive only
+			// fast-forwards, which is slow. Keep it off.
 			skipInactive: false,
 			mouseTail: { duration: 600, lineCap: "round", lineWidth: 3, strokeStyle: accent },
 			showWarning: false,
@@ -47,8 +44,8 @@ class RrwebEngine implements ReplayEngine {
 	 * Read the playhead, treating "not started yet" as 0.
 	 *
 	 * rrweb builds its player context with `baselineTime: 0`, and
-	 * `getCurrentTime()` is `timer.timeOffset + (baselineTime - events[0].timestamp)`
-	 * — so until the engine has been driven by a `play()` / `pause(offset)` (the only
+	 * `getCurrentTime()` is `timer.timeOffset + (baselineTime - events[0].timestamp)`,
+	 * so until the engine has been driven by a `play()` / `pause(offset)` (the only
 	 * things that assign `baselineTime`), it reports `-events[0].timestamp`: a
 	 * negative epoch, ~55 years. Feeding that back into `play()` re-bases the whole
 	 * stream decades into the future and nothing ever casts, which is what left the
@@ -81,7 +78,7 @@ class RrwebEngine implements ReplayEngine {
 	 * flex), so the player height never jumps between recordings.
 	 *
 	 * Scale against the iframe rrweb actually built, not the statically-derived
-	 * fallback — a session can carry several Meta events (viewport resizes), and
+	 * fallback: a session can carry several Meta events (viewport resizes), and
 	 * `deriveMeta` keeps the last one, which may not match the current frame. The
 	 * iframe's width/height *attributes* always reflect the current viewport, and
 	 * the `Resize` listener re-runs this when they change mid-playback.

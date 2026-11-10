@@ -4,7 +4,7 @@ import { AsyncData } from "foldkit"
 import type { Model } from "./model"
 import type { SpanNodeData, TraceData } from "@maple/views/traces/trace-data"
 
-// What the page shows for a loaded hierarchy (`ResultPage`'s `select`) and its span lookup.
+// What the page shows for a loaded hierarchy, and its span lookup.
 
 export interface LoadedTrace {
 	readonly data: TraceData

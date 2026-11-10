@@ -10,8 +10,6 @@ import { ingestUrl } from "../../../lib/services/common/ingest-url"
 import { dockerCommand, HOST_CONFIG, helmCommand, hostCommand } from "../../infra/kit/install-snippets"
 import { Array as Arr, String as Str, Option } from "effect"
 
-// `sourceSnippets`, `maskedToken`.
-
 export interface SourceSnippet {
 	readonly id: string
 	readonly label: string

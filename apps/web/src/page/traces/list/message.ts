@@ -73,9 +73,9 @@ export const Message = defineMessageUnion({
 	ClickedPeekRow: { index: Schema.Number },
 	ClickedPeekStep: { step: Schema.Literals([1, -1]) },
 	ClickedOpenTrace: {},
-	/** `isMobile`: below `md` the peek is off (`peekEnabled = !isMobile`), read when pressed. */
+	/** `isMobile`: below `md` the peek is off, read when pressed. */
 	PressedListKey: { key: Schema.String, isMobile: Schema.Boolean },
-	/** Enter on a row below `md`: the trace page itself (`navigate(traceLink(trace))`). */
+	/** Enter on a row below `md`: the trace page itself. */
 	PressedOpenRow: { index: Schema.Number },
 	GotPeekMessage: { message: DetailMessage },
 	GotPeekDialogMessage: { message: Dialog.Message },

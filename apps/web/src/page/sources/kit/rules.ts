@@ -57,7 +57,6 @@ export const Message = defineMessageUnion({
 })
 export type Message = typeof Message.Type
 
-/** `useRulesDraft(existing)`. */
 export const init = (existing: V2Source | null): Model => ({
 	existing,
 	signals: existing?.allowed_signals ?? Arr.map(SIGNALS, (signal) => signal.value),
@@ -209,7 +208,7 @@ export interface RulesOutcome {
 	readonly payload: V2SourceUpdateParams
 }
 
-/** `rulesOutcome`: validation and the wire payload derived from the draft. */
+/** Validation and the wire payload derived from the draft. */
 export const rulesOutcome = (model: Model): RulesOutcome => {
 	const trimmedRate = Str.trim(model.rateLimitText)
 	const rateLimit = trimmedRate.length === 0 ? null : Number(trimmedRate)

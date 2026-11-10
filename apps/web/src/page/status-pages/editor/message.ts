@@ -43,7 +43,6 @@ export const Message = defineMessageUnion({
 	GotPageMenuMessage: { message: Menu.Message },
 	CompletedFocus: {},
 	OpenedPublicPage: {},
-	// Preview and selection
 	ElapsedPreviewDebounce: { generation: Schema.Number },
 	CompletedFetchPreview: {
 		generation: Schema.Number,
@@ -55,7 +54,6 @@ export const Message = defineMessageUnion({
 	ClickedIncident: { incidentId: StatusPageIncidentId },
 	ClickedClosePanel: {},
 	PressedEscape: {},
-	// Components
 	ChangedComponentField: { field: ComponentTextField, value: Schema.String },
 	CommittedComponent: {},
 	PickedComponentField: { field: ComponentTextField, value: Schema.String },
@@ -75,7 +73,6 @@ export const Message = defineMessageUnion({
 		session: Schema.Number,
 		result: LoadOutcome(Schema.Array(V2StatusPageComponent)),
 	},
-	// Incidents
 	ClickedNewIncident: { kind: StatusPageIncidentKind },
 	ChangedIncidentKind: { kind: StatusPageIncidentKind },
 	ChangedIncidentField: { field: IncidentTextField, value: Schema.String },
@@ -91,9 +88,7 @@ export const Message = defineMessageUnion({
 	CompletedPostUpdate: { generation: Schema.Number, result: LoadOutcome(V2StatusPageIncident) },
 	ClickedPublishIncident: { incidentId: StatusPageIncidentId },
 	CompletedPublishIncident: { incidentId: StatusPageIncidentId, result: LoadOutcome(V2StatusPageIncident) },
-	// Live
 	GotUrlCopyMessage: { message: CopyButton.Message },
-	// Settings
 	ChangedSetting: { field: SettingsTextField, value: Schema.String },
 	ToggledPoweredBy: {},
 	PickedThemePreset: { preset: StatusPageThemePreset },
@@ -115,12 +110,10 @@ export const Message = defineMessageUnion({
 	GotBreakGlassDialogMessage: { message: Dialog.Message },
 	GotTokenCopyMessage: { message: CopyButton.Message },
 	ClickedDismissToken: {},
-	// Page
 	ClickedDeletePage: {},
 	ClickedConfirmDeletePage: {},
 	CompletedDeletePage: { result: LoadOutcome(Schema.Void) },
 	GotDeletePageDialogMessage: { message: Dialog.Message },
-	// JSON
 	CompletedFetchConfig: { key: Schema.String, result: LoadOutcome(StatusPageConfig) },
 	ClickedEditJson: {},
 	ChangedJson: { value: Schema.String },

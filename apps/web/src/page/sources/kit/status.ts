@@ -7,8 +7,6 @@ import { statusDot } from "@maple/views/ui/status-dot"
 import { Array as Arr } from "effect"
 import { typography } from "@maple/views/ui/typography"
 
-// `SourceStatusBadge`.
-
 export type SourceStatus = V2Source["health"]["status"]
 
 const TONE = {

@@ -12,8 +12,6 @@ import { DigestDraft, Message, type Model, type ScheduleField } from "./model"
 
 type Return = PageReturn<Model, Message>
 
-// Digest preferences: days, hours, defaults and the set-like draft comparison.
-
 /** Monday first, as people read a week; values are `Date#getDay` numbers (0 = Sunday). */
 export const DIGEST_DAYS = [
 	{ value: 1, label: "Monday" },
@@ -61,8 +59,6 @@ export const digestTimeZoneOptions = (
 	if (browserZone !== null && browserZone !== "") zones.add(browserZone)
 	return [...zones].sort((a, b) => (a === "UTC" ? -1 : b === "UTC" ? 1 : Str.localeCompare(b)(a)))
 }
-
-// COMMANDS
 
 const ReadEntry = Command.define("ReadEmailPreferencesEntry", {
 	messages: [Message.CompletedReadEntry],
@@ -210,8 +206,6 @@ const OpenPreview = Command.define("OpenDigestPreview", {
 		}),
 })
 
-// DERIVED
-
 const savedOf = (model: Model): DigestSubscriptionResponse | null =>
 	Option.getOrNull(Option.flatMap(AsyncData.getData(model.subscription), Option.fromNullishOr))
 
@@ -240,8 +234,6 @@ export const isBusy = (model: Model): boolean => model.isTogglingOps || model.is
 /** The first write records the prefilled zone, so a toggle alone does not leave the row on UTC. */
 const firstWrite = (model: Model): UpsertFields =>
 	savedOf(model) === null ? { timezone: baselineOf(model).timezone } : {}
-
-// UPDATE
 
 export const init = (): Return => ({
 	model: {

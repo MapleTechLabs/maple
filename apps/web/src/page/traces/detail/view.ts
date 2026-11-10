@@ -33,9 +33,7 @@ import { spanPanelSubmodel } from "./view-span-panel"
 import * as Waterfall from "@maple/views/traces/waterfall"
 import { vstack, vstackClass } from "@maple/views/ui/stack"
 
-// The trace detail page on `ResultPage`.
-
-/** `ResultPage`'s crumb: the short id once loaded or failed, else the state it is in. */
+/** The crumb: the short id once loaded or failed, else the state it is in. */
 export const breadcrumbs = (model: Model): ReadonlyArray<BreadcrumbEntry> => {
 	const crumb = Option.isNone(decodeTraceId(model.traceId))
 		? "Not found"

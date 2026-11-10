@@ -35,11 +35,11 @@ import { textLink } from "@maple/views/ui/text-link"
 import { typography } from "@maple/views/ui/typography"
 import { hstack, vstack } from "@maple/views/ui/stack"
 
-// The replay detail page on `ResultPage`, with the replay studio.
+// The replay detail page, with the replay studio.
 
 type H = HtmlBuilder<Message>
 
-/** `ResultPage`'s crumb: the short id once loaded, else the state it is in. */
+/** The crumb: the short id once loaded, else the state it is in. */
 export const breadcrumbs = (model: Model): ReadonlyArray<BreadcrumbEntry> => [
 	{ label: "Replays", href: "/replays" },
 	{
@@ -52,7 +52,7 @@ export const breadcrumbs = (model: Model): ReadonlyArray<BreadcrumbEntry> => [
 	},
 ]
 
-/** `Reveal`: the one-shot entrance (frozen at its end state when motion is reduced). */
+/** The one-shot entrance (frozen at its end state when motion is reduced). */
 const reveal = (h: H, delay: number, child: Html): Html =>
 	h.div(
 		[
@@ -160,7 +160,7 @@ const identityBar = (h: H, model: IdentityView, session: ReplayDetail, timeZone:
 	])
 }
 
-/** `ReplayStudio`: the stage column (identity, player, timeline) and the rail. */
+/** The stage column (identity, player, timeline) and the rail. */
 const studio = (h: H, model: Model, session: ReplayDetail, timeZone: string): Html => {
 	const { status, failure } = playerStatus(model, session)
 	const transport = replayTransport(h, model, status)
@@ -184,7 +184,6 @@ const studio = (h: H, model: Model, session: ReplayDetail, timeZone: string): Ht
 	)
 }
 
-/** `ReplayDetailSkeleton`. */
 const detailSkeleton = (h: H): Html =>
 	h.div(
 		[h.Class("flex flex-col gap-3.5 lg:flex-row")],

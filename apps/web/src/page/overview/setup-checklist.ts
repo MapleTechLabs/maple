@@ -7,8 +7,7 @@ import * as CopyButton from "@maple/views/ui/copy-button"
 import * as Tabs from "@maple/views/ui/tabs"
 import { QuickStartState } from "../onboarding/quick-start-state"
 
-// The setup checklist: Clerk mode's
-// "Connect your app" card over `useQuickStart` and `useIngestConnection`.
+// The setup checklist: Clerk mode's "Connect your app" card.
 
 /** Both keys for an engineer and up, the public one alone for a member (`retrieveSetupKeys`). */
 export const Keys = Schema.Union([
@@ -30,14 +29,14 @@ export const CopyField = Schema.Literals(["endpoint", "privateKey"])
 export type CopyField = typeof CopyField.Type
 
 export const Model = Schema.Struct({
-	/** `maple-onboarding-v6-<org>`, the quick-start atom's storage key. */
+	/** `maple-onboarding-v6-<org>`, the quick-start state's storage key. */
 	storageKey: Schema.String,
 	/** `null` until the stored state was read; nothing renders before. */
 	state: Schema.NullOr(QuickStartState),
 	keys: Keys,
 	/** The last hour's overview; data already found is kept when a later poll fails. */
 	services: ServicesData.schema,
-	/** `useEffectiveTimeRange(.., "1h")`: snapped on entry, unsnapped after a Reload. */
+	/** The last hour: snapped on entry, unsnapped after a Reload. */
 	window: Schema.NullOr(TimeWindow),
 	/** An overview read is out: a poll waits for it, so a slow answer still matches `window`. */
 	isOverviewInFlight: Schema.Boolean,
@@ -60,7 +59,7 @@ export const Message = defineMessageUnion({
 	FailedLoadKeys: {},
 	SucceededLoadOverview: { window: TimeWindow, services: Schema.Array(ServiceRow) },
 	FailedLoadOverview: { window: TimeWindow, failure: LoadFailure },
-	/** `useIntervalRefresh(refresh, { intervalMs: 15000 })` while the card is mounted. */
+	/** A poll tick while the card is mounted. */
 	TickedPoll: {},
 	/** A poll read the clock: the last hour up to now. */
 	ResolvedPollWindow: { window: TimeWindow },

@@ -45,7 +45,7 @@ const RemoveOpenRouterKey = Command.define("RemoveOpenRouterKey", {
 	),
 })
 
-/** `attach({ planId: OPENROUTER_BYOK_ADDON_ID, successUrl })`: Stripe returns to this tab. */
+/** Stripe's checkout returns to this tab. */
 const AttachAddOn = Command.define("AttachOpenRouterAddOn", {
 	messages: [Message.CompletedAttachAddOn],
 	execute: Effect.gen(function* () {
@@ -57,7 +57,6 @@ const AttachAddOn = Command.define("AttachOpenRouterAddOn", {
 	}).pipe(settleTo((result) => Message.CompletedAttachAddOn({ result }))),
 })
 
-/** `plan_checkout_started`, then the tab leaves for Stripe (`useBillingActions().attach`). */
 const OpenAddOnCheckout = Command.define("OpenOpenRouterAddOnCheckout", {
 	args: { url: Schema.String },
 	messages: [Message.CompletedOpenAddOnCheckout],
@@ -122,7 +121,7 @@ export const init = (isTriageAvailable: boolean): Return => ({
 const toast = (type: "success" | "error", title: string, description = "") =>
 	PageOutMessage.RequestedToast({ type, title, description })
 
-/** `reactivityKeys`: a write refetches the document behind it, keeping it on screen. */
+/** A write refetches the document behind it, keeping it on screen. */
 const refresh = <A, E>(data: AsyncData.AsyncData<A, E>) =>
 	Option.getOrElse(AsyncData.revalidate(data), () => data)
 
@@ -218,7 +217,7 @@ export const update = (model: Model, message: Message): Return =>
 				})),
 				() => null,
 			)
-			// `isSaveSettled`: the committed edits go once the saved value moved off its base or reached them.
+			// The committed edits go once the saved value moved off its base or reached them.
 			const isSettled =
 				model.committedOver !== null &&
 				fetched !== null &&

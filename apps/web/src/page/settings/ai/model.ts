@@ -6,7 +6,7 @@ import { LoadFailure } from "@maple/views/data/load-failure"
 import * as Dialog from "@maple/views/ui/dialog"
 import * as Field from "@maple/views/ui/field"
 
-// The AI tab: `ModelProviderSection`, `AutoTriageSection` and `AiEscalationCard`.
+// The AI tab: the model provider, auto-triage and AI escalation.
 
 export const Provider = Schema.Literals(["managed", "openrouter"])
 export type Provider = typeof Provider.Type
@@ -32,7 +32,7 @@ export const Model = Schema.Struct({
 	/** The one key write in flight: a save and a remove never overlap. */
 	keyWrite: KeyWrite,
 	removeDialog: Dialog.Model,
-	/** `AddOnUpsell`: the confirm before attaching the OpenRouter add-on, and the attach in flight. */
+	/** The confirm before attaching the OpenRouter add-on, and the attach in flight. */
 	addOnDialog: Dialog.Model,
 	isAttachingAddOn: Schema.Boolean,
 	triage: TriageData.schema,

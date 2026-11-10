@@ -19,7 +19,7 @@ import { Message, type Model, TaxIdRef } from "./model"
 
 type Return = PageReturn<Model, Message>
 
-/** A step plus whether the profile changed (the tab reads it again: `BILLING_PROFILE_KEY`). */
+/** A step plus whether the profile changed (the tab then reads it again). */
 export type Step = Readonly<{ step: Return; isProfileStale: boolean }>
 
 // Type picker order: the handful most customers want, then the rest by label.

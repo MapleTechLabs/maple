@@ -4,8 +4,6 @@ import type { Html, HtmlBuilder } from "foldkit/html"
 import { icon, type IconName } from "@maple/views/ui/icon"
 import { type ProviderId, PROVIDERS } from "../../kit/providers"
 
-// `PLATFORMS`, `PlatformTile`.
-
 export interface PlatformMeta {
 	readonly label: string
 	readonly description: string

@@ -41,7 +41,6 @@ export const occupy = (occupancy: Occupancy, owner: string, cells: ReadonlyArray
 	return next
 }
 
-/** True when every cell is free or already `owner`'s. */
 export const cellsFree = (occupancy: Occupancy, owner: string, cells: ReadonlyArray<WorldCell>) =>
 	Arr.every(cells, (cell) => {
 		const holder = occupancy.get(cellKey(cell))

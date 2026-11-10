@@ -78,9 +78,9 @@ export const DependenciesInput = Schema.Struct({
 })
 export type DependenciesInput = typeof DependenciesInput.Type
 
-// Fetches carry their request key back so `update` drops a superseded answer (S6).
+// Fetches carry their request key back so `update` drops a superseded answer.
 
-/** `getServiceDetailOverviewResultAtom`: the charts, releases and environments in one request. */
+/** The charts, releases and environments in one request. */
 export const FetchOverview = Command.define("FetchServiceDetailOverview", {
 	args: { key: Schema.String, input: DetailInput },
 	messages: [Message.CompletedFetchOverview],
@@ -95,7 +95,7 @@ export const FetchOverview = Command.define("FetchServiceDetailOverview", {
 		),
 })
 
-/** `getServiceDetailThroughputRefinementResultAtom`: exact pre-sampling volume while sampling is on. */
+/** Exact pre-sampling volume while sampling is on. */
 export const FetchRefinement = Command.define("FetchServiceDetailRefinement", {
 	args: { key: Schema.String, input: RefinementInput },
 	messages: [Message.CompletedFetchRefinement],
@@ -108,7 +108,7 @@ export const FetchRefinement = Command.define("FetchServiceDetailRefinement", {
 		),
 })
 
-/** `getServiceOperationsResultAtom`, shared by the Overview panel and the Operations tab. */
+/** Shared by the Overview panel and the Operations tab. */
 export const FetchOperations = Command.define("FetchServiceOperations", {
 	args: { key: Schema.String, input: OperationsInput },
 	messages: [Message.CompletedFetchOperations],
@@ -122,7 +122,7 @@ export const FetchOperations = Command.define("FetchServiceOperations", {
 export const EndpointsInput = Schema.Struct({ ...DetailInput.fields, limit: Schema.Number })
 export type EndpointsInput = typeof EndpointsInput.Type
 
-/** `getServiceEndpointsResultAtom`: the API tab's endpoints, the busiest `ENDPOINTS_LIMIT`. */
+/** The API tab's endpoints, the busiest `ENDPOINTS_LIMIT`. */
 export const FetchEndpoints = Command.define("FetchServiceEndpoints", {
 	args: { key: Schema.String, input: EndpointsInput },
 	messages: [Message.CompletedFetchEndpoints],
@@ -175,7 +175,7 @@ export const FetchRuntimes = Command.define("FetchServiceRuntimes", {
 		),
 })
 
-/** `getServiceDependenciesBundleResultAtom`, shared by the strip and the Dependencies tab. */
+/** Shared by the dependency strip and the Dependencies tab. */
 export const FetchDependencies = Command.define("FetchServiceDependenciesBundle", {
 	args: { key: Schema.String, input: DependenciesInput },
 	messages: [Message.CompletedFetchDependencies],
@@ -185,7 +185,7 @@ export const FetchDependencies = Command.define("FetchServiceDependenciesBundle"
 		),
 })
 
-/** `retainedQueryV2("errorIssues", "list", { query: buildServiceOpenIssuesQuery(...) })`. */
+/** The service's open issues. */
 export const FetchIssues = Command.define("FetchServiceOpenIssues", {
 	args: { key: Schema.String, query: V2ErrorIssueListQuery },
 	messages: [Message.CompletedFetchIssues],
@@ -207,7 +207,7 @@ export const FetchIssues = Command.define("FetchServiceOpenIssues", {
 const errorTag = (error: unknown): string =>
 	Predicate.hasProperty(error, "_tag") && typeof error._tag === "string" ? error._tag : ""
 
-/** `commitQueryAtom(sha)`: one commit, its failure kept by tag (not-connected gets a CTA). */
+/** One commit, its failure kept by tag (not-connected gets a CTA). */
 export const FetchCommit = Command.define("FetchServiceDeployCommit", {
 	args: { key: Schema.String, sha: Schema.String },
 	messages: [Message.CompletedFetchCommit],

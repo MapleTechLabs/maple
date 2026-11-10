@@ -114,7 +114,7 @@ const initTab = (model: Model, tab: AccountTab, _context: PageContext): Return =
 	}
 }
 
-/** Self-hosted has nothing to manage here: `<Navigate to="/settings" replace />`. */
+/** Self-hosted has nothing to manage here, so it is sent on to `/settings`. */
 const enter = (model: Model, context: PageContext): Return => {
 	if (!isClerkAuthEnabled)
 		return {
@@ -136,7 +136,7 @@ export const init = (route: AccountRoute, context: PageContext): Return => {
 export const routeChanged = (model: Model, route: AccountRoute, context: PageContext): Return =>
 	enter({ ...model, search: route.search }, context)
 
-/** `toastAccountError`: dismissing Clerk's re-verification challenge is a no-op, not an error. */
+/** Dismissing Clerk's re-verification challenge is a no-op, not an error. */
 const withoutCancelledToast = (step: Return): Return =>
 	step.outMessage !== undefined &&
 	step.outMessage._tag === "RequestedToast" &&

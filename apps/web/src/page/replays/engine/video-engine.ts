@@ -2,7 +2,7 @@ import type { ReplayEngine, ReplayEngineCreateInput, ReplayEngineFactory } from 
 import { Array as Arr } from "effect"
 import { codeUnitAt } from "@maple/strings"
 
-// The video engine — mobile recordings.
+// The video engine, for mobile recordings.
 //
 // The iOS SDK captures masked screenshots, encodes them to H.264, and wraps each
 // segment in rrweb-*shaped* events so the existing chunk pipeline carries them
@@ -18,7 +18,7 @@ import { codeUnitAt } from "@maple/strings"
 /** One H.264 segment, positioned on the session clock. */
 export interface VideoSegment {
 	readonly segmentId: string
-	/** Offset from session start, ms — the same clock `getCurrentTimeMs` reports. */
+	/** Offset from session start, ms: the same clock `getCurrentTimeMs` reports. */
 	readonly startMs: number
 	readonly durationMs: number
 	/** The MP4, base64-encoded. Decoded to a Blob URL lazily. */
@@ -70,12 +70,8 @@ function segmentIdOf(raw: unknown, timestamp: number): string {
 }
 
 /**
- * Pull the ordered segment list out of a raw event stream.
- *
- * `startTime` is the stream's first event timestamp — the playhead's time-zero,
- * matching `DerivedMeta.startTime`. Segments without a usable payload are
- * skipped rather than failing the whole recording, the same way `decodeRange`
- * skips a malformed chunk.
+ * `startTime` is the stream's first event timestamp, the playhead's time-zero (as in `deriveMeta`).
+ * Segments without a usable payload are skipped rather than failing the whole recording.
  */
 export function extractVideoSegments(events: ReadonlyArray<unknown>, startTime: number): VideoSegment[] {
 	const segments: VideoSegment[] = []
@@ -99,7 +95,6 @@ export function extractVideoSegments(events: ReadonlyArray<unknown>, startTime: 
 	return segments
 }
 
-/** End of the last segment — the recording's length on the session clock. */
 export function segmentsTotalMs(segments: ReadonlyArray<VideoSegment>): number {
 	let end = 0
 	for (const segment of segments) end = Math.max(end, segment.startMs + segment.durationMs)
@@ -111,7 +106,7 @@ export function segmentsTotalMs(segments: ReadonlyArray<VideoSegment>): number {
  *
  * The recorder pauses when the app is backgrounded, so segments are not
  * necessarily contiguous. An offset landing in a gap snaps *forward* to the next
- * segment — the same thing the provider's skip-idle jump does, and the only
+ * segment: the same thing the provider's skip-idle jump does, and the only
  * choice that keeps playback moving instead of stalling on dead air.
  */
 export function resolveSegment(
@@ -125,14 +120,13 @@ export function resolveSegment(
 			return { index, offsetSec: (offsetMs - segment.startMs) / 1000 }
 		}
 	}
-	// Past the end of the recording — hold at the tail of the last segment so the
+	// Past the end of the recording, hold at the tail of the last segment so the
 	// engine reports "finished" rather than silently restarting.
 	const index = segments.length - 1
 	const last = segments[index]
 	return last === undefined ? undefined : { index, offsetSec: last.durationMs / 1000 }
 }
 
-/** Decode base64 to an MP4 object URL. Mirrors the idiom in `lib/log-key.ts`. */
 function toObjectUrl(base64: string): string {
 	const binary = atob(base64)
 	const bytes = Uint8Array.from(binary, (char) => codeUnitAt(char, 0))
@@ -210,7 +204,7 @@ class VideoEngine implements ReplayEngine {
 		const segment = this.segments[index]
 		if (segment === undefined) return
 		if (index === this.index) {
-			// Same media — seek directly; no metadata round-trip needed.
+			// Same media: seek directly, no metadata round-trip needed.
 			if (this.video.readyState >= 1) this.video.currentTime = offsetSec
 			else this.pendingSeekSec = offsetSec
 			return
@@ -317,7 +311,7 @@ class VideoEngine implements ReplayEngine {
 	}
 }
 
-/** First event timestamp — the playhead's time-zero, matching `deriveMeta`. */
+/** The playhead's time-zero, matching `deriveMeta`. */
 function streamStartMs(events: ReadonlyArray<unknown>): number {
 	const first = asRecord(events[0])
 	return numberOr(first?.timestamp, 0)

@@ -76,12 +76,10 @@ export const Model = Schema.Struct({
 	isSessionLoaded: Schema.Boolean,
 	pageMenu: Menu.Model,
 	panel: Schema.NullOr(Panel),
-	// Preview
 	previewScheme: PreviewScheme,
 	previewGeneration: Schema.Number,
 	previewShown: Schema.Number,
 	previewHistory: PreviewHistory,
-	// Components
 	/** The selected component as its inputs hold it; each commit saves what differs. */
 	componentForm: ComponentForm,
 	componentSave: SaveState,
@@ -94,7 +92,6 @@ export const Model = Schema.Struct({
 	isAddingComponents: Schema.Boolean,
 	/** The last Add session opened; each opening takes the next number. */
 	addSession: Schema.Number,
-	// Incidents
 	incidentForm: IncidentForm,
 	isCreatingIncident: Schema.Boolean,
 	incidentFailure: Schema.NullOr(LoadFailure),
@@ -102,11 +99,9 @@ export const Model = Schema.Struct({
 	/** The generation the next update post takes. */
 	nextUpdatePost: Schema.Number,
 	publishingIncidentIds: Schema.Array(StatusPageIncidentId),
-	// Live
 	/** The status Worker's origin; empty hides the public links (no status domain yet). */
 	publicBaseUrl: Schema.String,
 	urlCopy: CopyButton.Model,
-	// Settings
 	/** Edits over the saved page; `null` while the form shows the page as saved. */
 	settingsEdits: Schema.NullOr(SettingsForm),
 	isSavingSettings: Schema.Boolean,
@@ -119,7 +114,6 @@ export const Model = Schema.Struct({
 	tokenCopy: CopyButton.Model,
 	deletePageDialog: Dialog.Model,
 	isDeletingPage: Schema.Boolean,
-	// JSON
 	/** The page as `GET …/config` returns it: every component, and the revision to apply against. */
 	config: KeyedSchema(StatusPageConfig, LoadFailure),
 	/** The open JSON edit; `null` while the tab shows the page as saved. */

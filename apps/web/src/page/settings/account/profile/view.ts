@@ -21,7 +21,7 @@ type H = HtmlBuilder<Message>
 const DANGER_DESCRIPTION =
 	"Permanently delete your Maple account. You are removed from every organization you belong to. Organizations you own, and the telemetry in them, are not deleted: hand them over or delete them first."
 
-/** `UserAvatar` in the dropzone (the initials until images are rendered). */
+/** The initials in the dropzone, until avatar images are rendered. */
 const userAvatar = (h: H, name: string): Html =>
 	avatarFallback(
 		h,

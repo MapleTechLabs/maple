@@ -81,7 +81,7 @@ const ApplySchema = Command.define("ApplyOrgClickHouseSchema", {
 	).pipe(settleTo((result) => Message.CompletedApply({ result }))),
 })
 
-/** The button stays busy until the status poll reports the run (`setTimeout(…, 1500)`). */
+/** The button stays busy until the status poll reports the run. */
 const WaitStartingHandoff = Command.define("WaitSchemaApplyHandoff", {
 	messages: [Message.ElapsedStartingHandoff],
 	execute: Effect.as(Effect.sleep(Duration.millis(1500)), Message.ElapsedStartingHandoff()),
@@ -170,7 +170,6 @@ const fetchApplyStatus = (model: Model): Return => {
 	return { model: { ...model, applyStatusSent: sequence }, commands: [FetchApplyStatus({ sequence })] }
 }
 
-/** `onChanged`: the connection and the diff are read again. */
 const refreshConnection = (model: Model): Return => ({
 	model: { ...model, settings: refresh(model.settings), diff: refresh(model.diff) },
 	commands: [FetchSettings(), FetchDiff()],
@@ -205,7 +204,7 @@ export const update = (model: Model, message: Message): Return =>
 		CompletedFetchSettings: ({ result }) => {
 			const settings = AsyncData.settle(model.settings, result)
 			const fetched = Option.getOrNull(Option.map(AsyncData.getData(settings), savedDraftOf))
-			// `isSaveSettled`: committed edits go once the saved value moves off its base or reaches them.
+			// Committed edits go once the saved value moves off its base or reaches them.
 			const isSettled =
 				model.committedOver !== null &&
 				fetched !== null &&
@@ -218,7 +217,7 @@ export const update = (model: Model, message: Message): Return =>
 				AsyncData.map(settings, (doc) => doc.configured),
 				() => false,
 			)
-			// `SchemaSection` mounts with the first configured answer and reads the apply status.
+			// The first configured answer starts the apply status read.
 			return isConfigured && AsyncData.isIdle(model.applyStatus)
 				? fetchApplyStatus({ ...next, applyStatus: AsyncData.Loading() })
 				: { model: next }

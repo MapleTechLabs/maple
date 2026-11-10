@@ -22,7 +22,6 @@ export const ResolveReleaseWindow = resolveWindowCommand(
 	Message.CompletedResolveWindow,
 )
 
-/** `commitQueryAtom(sha)`. */
 export const FetchReleaseCommit = Command.define("FetchReleaseCommit", {
 	args: { key: Schema.String, sha: Schema.String },
 	messages: [Message.CompletedFetchCommit],
@@ -30,7 +29,7 @@ export const FetchReleaseCommit = Command.define("FetchReleaseCommit", {
 		finish(readCommitDetail(key, sha), (result) => Message.CompletedFetchCommit({ key, result })),
 })
 
-/** `getReleasesResultAtom({ startTime, endTime, environments })` with the pin: the list's unfiltered read. */
+/** The window's releases with the pin: the list's unfiltered read. */
 export const FetchDeployReleases = Command.define("FetchDeployReleases", {
 	args: {
 		key: Schema.String,
@@ -58,7 +57,7 @@ export const FetchDeployReleases = Command.define("FetchDeployReleases", {
 		),
 })
 
-/** `ReleaseChangesetLoaded`: one `base..head` range, up to 100 commits listed. */
+/** One `base..head` range, up to 100 commits listed. */
 export const FetchChangeset = Command.define("FetchReleaseChangeset", {
 	args: { key: Schema.String, ranges: Schema.String },
 	messages: [Message.CompletedFetchChangeset],
@@ -73,7 +72,7 @@ export const FetchChangeset = Command.define("FetchReleaseChangeset", {
 		),
 })
 
-/** `DeployIssues`: issues introduced since five minutes before the deploy. */
+/** Issues introduced since five minutes before the deploy. */
 export const FetchDeployIssues = Command.define("FetchDeployIssues", {
 	args: { key: Schema.String, introducedAfter: Schema.String },
 	messages: [Message.CompletedFetchIssues],
@@ -90,7 +89,7 @@ export const FetchDeployIssues = Command.define("FetchDeployIssues", {
 		),
 })
 
-/** `getReleaseDetailResultAtom`: this version on one service, and the version it replaced. */
+/** This version on one service, and the version it replaced. */
 export const FetchReleaseDetail = Command.define("FetchReleaseDetail", {
 	args: {
 		key: Schema.String,
@@ -118,7 +117,7 @@ export const FetchReleaseDetail = Command.define("FetchReleaseDetail", {
 		),
 })
 
-/** `ReleaseIssuesLoaded`: the v2 issues of the fingerprints this version carried, on its service. */
+/** The v2 issues of the fingerprints this version carried, on its service. */
 export const FetchServiceIssues = Command.define("FetchReleaseServiceIssues", {
 	args: {
 		key: Schema.String,
@@ -140,7 +139,7 @@ export const FetchServiceIssues = Command.define("FetchReleaseServiceIssues", {
 		),
 })
 
-/** `commitQueryAtom(sha)` for a commit marker's label. */
+/** The commit behind a marker's label. */
 export const FetchMarkerCommit = Command.define("FetchReleaseMarkerCommit", {
 	args: { key: Schema.String, sha: Schema.String },
 	messages: [Message.CompletedFetchMarkerCommit],

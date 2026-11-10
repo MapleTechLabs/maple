@@ -23,9 +23,6 @@ import { typographyClass } from "@maple/views/ui/typography"
 import { hstack } from "@maple/views/ui/stack"
 import { Array as Arr, String as Str } from "effect"
 
-/**
- * `AdvancedFilterDialog`'s trigger.
- */
 const advancedFilterButton = (h: HtmlBuilder<Message>, model: Model): Html => {
 	const isActive = Str.trim(model.search.whereClause ?? "").length > 0
 	return button(
@@ -132,7 +129,7 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 				onClearAll: Message.ClickedClearAllChips(),
 			}),
 			tracesTable(h, model, inputs.context.timeZone, inputs.isMobile === true),
-			// `peekEnabled = !isMobile`: a phone opens the trace page, so `?peek=` shows no sheet.
+			// A phone opens the trace page, so `?peek=` shows no sheet.
 			inputs.isMobile === true ? null : peekSheet(h, model, inputs.context.timeZone),
 			advancedFilterDialog(h, model),
 			...suggestionList(h, model),

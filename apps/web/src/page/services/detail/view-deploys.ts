@@ -27,8 +27,6 @@ import { typography } from "@maple/views/ui/typography"
 import { hstack, vstack } from "@maple/views/ui/stack"
 import { commitAvatar, firstLine, isResolvableSha } from "../../kit/commit-card"
 
-// `ServiceErrorsPanel` + `IssueLine`, and `ServiceRecentDeploys`.
-
 type H = HtmlBuilder<Message>
 
 export type Clock = Readonly<{ nowMs: number; timeZone: string }>
@@ -80,7 +78,7 @@ const issuesFrame = (h: H, isLimited: boolean, children: ReadonlyArray<Html>): H
 		children,
 	)
 
-/** `ServiceErrorsPanel`: skeleton, the "Couldn't load" line, or up to five issue rows. */
+/** Skeleton, the "Couldn't load" line, or up to five issue rows. */
 export const issuesPanel = (h: H, model: Model, clock: Clock, isLimited: boolean): Html =>
 	AsyncData.match(model.issues.data, {
 		onIdle: () => issuesFrame(h, false, [skeletonList(h, { rows: 4, className: "p-2" })]),
@@ -101,7 +99,7 @@ const issuesReady = (h: H, issues: ReadonlyArray<Issue>, clock: Clock, isLimited
 				),
 	])
 
-/** `ErrorRateChip`: the version's window-wide error rate, shown even at ~0%. */
+/** The version's window-wide error rate, shown even at ~0%. */
 const errorRateChip = (h: H, deploy: DeployEntry): Html => {
 	if (deploy.spanCount <= 0) return null
 	const ratio = deploy.errorCount / deploy.spanCount
@@ -125,7 +123,7 @@ const errorRateChip = (h: H, deploy: DeployEntry): Html => {
 	)
 }
 
-/** `RowFrame`: avatar · [line1 + chip / line2]. */
+/** Avatar · [line1 + chip / line2]. */
 const rowFrame = (h: H, avatar: Html, line1: Html, chip: Html, line2: ReadonlyArray<Html>): Html =>
 	hstack(h, { gap: "2.5", align: "start", className: "rounded-sm px-2 py-1.5" }, [
 		h.div([h.Class("mt-0.5 shrink-0")], [avatar]),
@@ -166,7 +164,7 @@ const deploysEmpty = (h: H): Html =>
 		h.span([h.Class("mt-1")], [docsLink(h, "github")]),
 	])
 
-/** `ConnectRepoFooter`: one CTA when the first resolvable sha failed as "not connected". */
+/** One CTA when the first resolvable sha failed as "not connected". */
 const connectRepoFooter = (h: H, model: Model, deploys: ReadonlyArray<DeployEntry>): ReadonlyArray<Html> => {
 	const commit = Option.match(
 		Arr.findFirst(deploys, (deploy) => isResolvableSha(deploy.sha)),
@@ -191,7 +189,7 @@ const connectRepoFooter = (h: H, model: Model, deploys: ReadonlyArray<DeployEntr
 		: []
 }
 
-/** `ServiceRecentDeploys`: newest first, eight rows until expanded (fifty at most). */
+/** Newest first, eight rows until expanded (fifty at most). */
 export const deploysPanel = (h: H, model: Model, clock: Clock, isLoading: boolean): Html => {
 	if (isLoading) {
 		return sectionCard(h, { title: "Recent deploys" }, [
@@ -275,7 +273,7 @@ export const deploysPanel = (h: H, model: Model, clock: Clock, isLoading: boolea
 /** `shortReleaseLabel`: a full sha shortened, any other reference verbatim. */
 const shortReleaseLabel = (sha: string): string => (isResolvableSha(sha) ? shortId(sha, "sha") : sha)
 
-/** `CommitShaHoverCard`'s trigger. TODO(commit-hover-card): the card itself is not ported. */
+/** The commit hover card's trigger. TODO(commit-hover-card): the card itself is not ported. */
 const commitTrigger = (h: H, className: string, label: string): Html =>
 	h.span([h.Class(cn("cursor-default", className)), h.DataAttribute("slot", "hover-card-trigger")], [label])
 

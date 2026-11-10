@@ -28,8 +28,6 @@ import { MountKeepWhereFocus, MountWhereCaret } from "./command"
 import { typography } from "@maple/views/ui/typography"
 import { hstack } from "@maple/views/ui/stack"
 
-// `MetricGraduationActions` and `MetricQueryControls` (components/metrics/).
-
 type H = HtmlBuilder<Message>
 
 const label = (h: H, text: string): Html =>
@@ -71,7 +69,7 @@ export const graduationActions = (h: H, model: Model): Html =>
 const toAggregation = (message: Select.Message) => Message.GotAggregationSelectMessage({ message })
 const toGroupBy = (message: Combobox.Message) => Message.GotGroupByComboboxMessage({ message })
 
-/** `WhereClauseEditor`: the textarea with its syntax-highlight overlay. */
+/** The where editor: the textarea with its syntax-highlight overlay. */
 const whereKey = (isOpen: boolean) =>
 	whereKeyHandler<Message>(isOpen, {
 		enter: Message.PressedWhereEnterOnList(),
@@ -149,7 +147,7 @@ const whereEditor = (h: H, model: Model): Html => {
 	)
 }
 
-/** `useMetricScopedAutocomplete`'s group-by keys: the metric's own attribute keys. */
+/** The group-by keys: the metric's own attribute keys. */
 const scopedKeys = (model: Model): ReadonlyArray<string> =>
 	Option.match(FoldkitAsyncData.getData(model.attributeKeys.data), {
 		onNone: () => [],

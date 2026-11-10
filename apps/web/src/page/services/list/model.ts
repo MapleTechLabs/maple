@@ -70,31 +70,28 @@ export const Model = Schema.Struct({
 	nowMs: Schema.Number,
 	overview: KeyedSchema(Schema.Array(ServiceRow), LoadFailure),
 	sparklines: KeyedSchema(Sparklines, LoadFailure),
-	/**
-	 * Bumped whenever a memoised `ServiceRow` would re-render (new rows, series, baseline, health or
-	 * search): its `PlotFrame` calls `adapter.update` on every render, so the sparklines redraw then.
-	 */
+	/** Bumped when a row's data moves (rows, series, baseline, health or search); the sparklines redraw on it. */
 	rowRevision: Schema.Number,
 	facets: KeyedSchema(ServicesFacets, LoadFailure),
 	baseline: KeyedSchema(Schema.Array(LatencyBaseline), LoadFailure),
 	anomalies: KeyedSchema(Schema.Array(V2AnomalyServiceCount), LoadFailure),
-	/** `useAlertIncidentsList()`: the org's synced incidents. */
+	/** The org's synced incidents. */
 	incidents: IncidentsData.schema,
 	/** The loaded table has painted; the commit message lookup starts with it. */
 	hasPaintedTable: Schema.Boolean,
-	/** First lines of the deploy commits on screen, by sha (`commitsQueryAtom`). */
+	/** First lines of the deploy commits on screen, by sha. */
 	commitMessages: KeyedSchema(Schema.Record(Schema.String, Schema.String), LoadFailure),
 	presence: SignalPresenceData.schema,
-	/** The row tooltips: rollout split (left), sampling estimate and `UnnamedServiceHint` (below). */
+	/** The row tooltips: rollout split (left), sampling estimate and the unnamed-service hint (below). */
 	rolloutTooltip: Tooltip.Model,
 	samplingTooltip: Tooltip.Model,
 	unnamedTooltip: Tooltip.Model,
-	/** `CommitShaHoverCard` over the deploy cells, and the commits it looked up (`commitQueryAtom`). */
+	/** The commit hover card over the deploy cells, and the commits it looked up. */
 	...CommitCardState.fields,
 	filterSections: FilterSections.Model,
 	timePicker: TimeRangePicker.Model,
 	...ChartEnvFields,
-	/** `PageRefreshProvider`: Reloads so far (non-zero stops snapping) and the 600 ms spinner. */
+	/** Reloads so far (non-zero stops snapping) and the 600 ms spinner. */
 	refreshVersion: Schema.Number,
 	isReloading: Schema.Boolean,
 })

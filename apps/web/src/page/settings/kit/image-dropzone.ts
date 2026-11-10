@@ -11,8 +11,7 @@ import { typography } from "@maple/views/ui/typography"
 import { hstack } from "@maple/views/ui/stack"
 import { spaced } from "@maple/views/ui/spaced"
 
-// `ImageDropzone` and `TypeToConfirmField`. The parent owns `isDragging` and checks the picked
-// file with `checkImage`.
+// The parent owns `isDragging` and checks the picked file with `checkImage`.
 
 const MAX_BYTES = 10 * 1024 * 1024
 const ACCEPT = "image/png,image/jpeg,image/webp,image/gif"
@@ -26,7 +25,7 @@ export const checkImage = (file: File.File): Option.Option<string> =>
 			? Option.some(`Image must be ${Math.round(MAX_BYTES / (1024 * 1024))} MB or smaller`)
 			: Option.none()
 
-/** `fileInputRef.current?.click()`: opens the hidden input's picker. */
+/** Opens the hidden input's picker. */
 export const clickFileInput = (inputId: string) =>
 	Effect.sync(() => {
 		document.getElementById(inputId)?.click()
@@ -155,7 +154,7 @@ export const imageDropzone = <M>(h: HtmlBuilder<M>, options: ImageDropzoneOption
 	])
 }
 
-/** `TypeToConfirmField`: "Type X to confirm." over its input. */
+/** "Type X to confirm." over its input. */
 export const typeToConfirmField = <M>(
 	h: HtmlBuilder<M>,
 	options: Readonly<{ id: string; expected: string; value: string; onInput: (value: string) => M }>,

@@ -110,7 +110,7 @@ const toolRow = (h: H, tool: Tool): Html =>
 		),
 	])
 
-/** `StepTeam`: the tools Maple plugs into, then teammates. Every part is optional. */
+/** The tools Maple plugs into, then teammates. Every part is optional. */
 export const teamStep = (h: H, team: Team, orgName: string): Html => {
 	const isBusy = team.pending !== null
 	return h.div(
@@ -224,7 +224,7 @@ const SURFACES: ReadonlyArray<Surface> = [
 	},
 ]
 
-/** `TeamPreview`: where Maple shows up, as examples. */
+/** Where Maple shows up, as examples. */
 export const teamPreview = (h: H): Html =>
 	vstack(h, { className: "gap-3.5" }, [
 		vstack(h, { gap: "1", className: "mb-1" }, [
@@ -245,7 +245,7 @@ export const teamPreview = (h: H): Html =>
 		typography(h, { size: "2xs", tone: "muted" }, ["Examples of what each one looks like."]),
 	])
 
-/** `PricingSkeleton`: while the customer is still loading. */
+/** Drawn while the customer is still loading. */
 const pricingSkeleton = (h: H): Html =>
 	h.div(
 		[
@@ -271,7 +271,7 @@ const pricingSkeleton = (h: H): Html =>
 		),
 	)
 
-/** `StepPlan` / `StepPlanLayout`: the trial pitch over the pricing cards; it is the first step, so no Back. */
+/** The trial pitch over the pricing cards; it is the first step, so no Back. */
 export const planStep = (h: H, isCustomerLoading: boolean, pricing: Html): Html =>
 	vstack(h, { align: "center", grow: true, className: "px-6 pb-12 pt-4 sm:px-12 lg:px-16" }, [
 		h.div(

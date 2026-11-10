@@ -22,8 +22,6 @@ import { typography, typographyClass } from "@maple/views/ui/typography"
 import { hstack, vstack } from "@maple/views/ui/stack"
 import { String as Str } from "effect"
 
-// `SourceSetupTab` and `SourceSettings`.
-
 type H = HtmlBuilder<Message>
 
 const LINK_CLASS = typographyClass({ tone: "foreground", className: "underline underline-offset-2" })

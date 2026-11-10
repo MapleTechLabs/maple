@@ -62,7 +62,6 @@ export const columnHeader = <M>(h: HtmlBuilder<M>): Html =>
 		],
 	)
 
-/** `LivePill`. */
 export const livePill = <M>(h: HtmlBuilder<M>, isCompact: boolean): Html =>
 	badge(
 		h,

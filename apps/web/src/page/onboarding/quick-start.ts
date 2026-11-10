@@ -51,7 +51,7 @@ import {
 
 export const Step = Schema.Literals(STEP_IDS)
 
-/** `StepRegion`: the picked card, the save in flight, and the API's refusal. */
+/** The region step: the picked card, the save in flight, and the API's refusal. */
 export const RegionChoice = Schema.Struct({
 	selected: MapleRegion,
 	isSaving: Schema.Boolean,
@@ -287,7 +287,7 @@ const openedDrawer = (model: Model, platform: StackPlatform, context: PageContex
 
 /**
  * A step's data is read when it mounts: the Clerk team (its name and pending invitations) on the
- * team step, the plan catalog on the plan step (cached after the first read, like the atom).
+ * team step, the plan catalog on the plan step (cached after the first read).
  */
 const entered = (previous: Model, result: UpdateReturn, hasPlan: boolean): UpdateReturn => {
 	if (result.model.state === null || isQuickStartFinished(result.model.state)) return result
@@ -345,7 +345,6 @@ const presentCount = (connect: Connect): number =>
 		(presence) => presence.status === "present",
 	).length
 
-/** Every change is written through, as the atom's `setState` is. */
 const saved = (model: Model, next: (state: QuickStartState) => QuickStartState): UpdateReturn => {
 	if (model.state === null) return { model }
 	const state = next(model.state)

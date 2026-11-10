@@ -28,10 +28,10 @@ export const Model = Schema.Struct({
 	isAdvancedOpen: Schema.Boolean,
 	rules: Rules.Model,
 	isSaving: Schema.Boolean,
-	/** `useAtomRefresh(sourcesListAtom)` in the form mounts the list, so step 2 reads it. */
+	/** The sources list, which step 2's form reads. */
 	list: KeyedSchema(SourceList, LoadFailure),
 	created: Schema.NullOr(Created),
-	/** `FirstDataStatus`'s retained `sources.retrieve`, polled every 5 s until data arrives. */
+	/** The created source's `sources.retrieve`, polled every 5 s until data arrives. */
 	firstData: KeyedSchema(V2Source, LoadFailure),
 	setup: Setup.Model,
 	tokenCopy: CopyButton.Model,

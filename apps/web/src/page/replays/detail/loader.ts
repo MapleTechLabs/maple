@@ -19,7 +19,7 @@ import {
 import type { LoadFailure } from "@maple/views/data/load-failure"
 import type { Loader, LoadedRange, Manifest, Model, RangeRows } from "./model"
 
-// `useReplayChunkLoader` as pure functions of the Model: plan once per session, load ranges one at a
+// The chunk loader as pure functions of the Model: plan once per session, load ranges one at a
 // time, commit each into `loaded`, and cut the seed when the opening queue drains.
 
 export const emptyLoader = (): Loader => ({
@@ -56,7 +56,7 @@ export const planOf = (model: Model): ReadonlyArray<ReplayRange> => {
 	)
 }
 
-/** `subscribedRange`: the active range, else the last loaded, else the plan's first, else 0–0. */
+/** The active range, else the last loaded, else the plan's first, else 0–0. */
 export const subscribedRange = (model: Model): ReplayRange =>
 	model.loader.queue[0] ??
 	model.loader.loaded.at(-1)?.range ??
@@ -297,7 +297,7 @@ const rebuildAt = (model: Model, offsetMs: number, anchorSeq: number, resume: bo
 })
 
 /**
- * `reportProgress`: track the playhead. Past the cap, the playhead reaching the end of the playable
+ * Track the playhead. Past the cap, the playhead reaching the end of the playable
  * window rebuilds the player from the latest checkpoint before it, and playback carries on.
  */
 export const reportProgress = (model: Model, offsetMs: number, isStarved = false): Model => {
@@ -316,7 +316,7 @@ export const reportProgress = (model: Model, offsetMs: number, isStarved = false
 	return rebuildAt(next, offsetMs, anchor.chunk_seq, true)
 }
 
-/** `requestSeek`: a rebuilt loader when the target is outside the loaded span. */
+/** A rebuilt loader when the target is outside the loaded span. */
 export const requestSeek = (model: Model, offsetMs: number, resume: boolean): Option.Option<Model> => {
 	const chunks = chunksOf(model)
 	const loader = { ...model.loader, playheadMs: offsetMs }
@@ -376,7 +376,7 @@ export const retryAt = (model: Model, offsetMs: number): Model => {
 	return anchor === undefined ? cleared : rebuildAt(cleared, offsetMs, anchor.chunk_seq, false)
 }
 
-/** `bufferState === "buffering"`: the playhead reached the loaded end while more is coming. */
+/** The playhead reached the loaded end while more is coming. */
 export const isBuffering = (model: Model): boolean =>
 	model.loader.seek?.isLoading !== true &&
 	model.loader.queue.length > 0 &&

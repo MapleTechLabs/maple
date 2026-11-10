@@ -62,7 +62,7 @@ const unsubscribeView = Submodel.defineView<Unsubscribe.Model, Unsubscribe.Messa
 
 type SwitcherToView = OrgSwitcherView.ViewInputs["toView"]
 
-/** `ClerkOrgSwitcherMenu` around the screen's own trigger. */
+/** The Clerk org switcher menu around the screen's own trigger. */
 const switcher = (
 	h: HtmlBuilder<Message>,
 	model: Model,
@@ -78,7 +78,7 @@ const switcher = (
 		toParentMessage: toSwitcher,
 	})
 
-/** `ClerkWorkspaceChoice`: the active org's name and the "Switch" menu, aligned to the card's end. */
+/** The active org's name and the "Switch" menu, aligned to the card's end. */
 const clerkWorkspace = (h: HtmlBuilder<Message>, model: Model, inputs: Inputs): Html =>
 	switcher(h, model, inputs, "end", ({ trigger, withTrigger }) =>
 		workspaceCard(
@@ -91,7 +91,7 @@ const clerkWorkspace = (h: HtmlBuilder<Message>, model: Model, inputs: Inputs): 
 		),
 	)
 
-/** `OnboardingOrgSwitcher` and `OnboardingUserMenu`: the header's account actions. */
+/** The header's account actions: the org switcher and the user menu. */
 const accountCluster = (h: HtmlBuilder<Message>, model: Model, inputs: Inputs, label: Html): Html => {
 	const orgName = Option.match(inputs.maybeOrganization, {
 		onNone: () => "Select organization",
@@ -143,7 +143,7 @@ const accountCluster = (h: HtmlBuilder<Message>, model: Model, inputs: Inputs, l
 	)
 }
 
-/** `QuickStartPage`: the splash until the progress and the plan are known, then the step. */
+/** The splash until the progress and the plan are known, then the step. */
 const quickStartView = Submodel.defineView<
 	QuickStart.Model,
 	QuickStart.Message,
@@ -176,7 +176,7 @@ const quickStartView = Submodel.defineView<
 			}),
 )
 
-/** `SelectPlanPageInner`: the splash until the customer is known. */
+/** The splash until the customer is known. */
 const selectPlanView = Submodel.defineView<SelectPlan.Model, SelectPlan.Message, ScreenInputs>(
 	(model, inputs, h) =>
 		accessOf(inputs.customer) === "loading"
@@ -195,7 +195,7 @@ const createOrgView = Submodel.defineView<CreateOrg.Model, CreateOrg.Message, Sc
 		),
 )
 
-/** `WrongRegionScreen`: this region has nothing to show for an org another region serves. */
+/** This region has nothing to show for an org another region serves. */
 const wrongRegionView = (
 	h: HtmlBuilder<Message>,
 	model: Model,

@@ -13,7 +13,7 @@ import { hstack, vstack } from "@maple/views/ui/stack"
 import { statusDot } from "@maple/views/ui/status-dot"
 import { typographyClass } from "@maple/views/ui/typography"
 
-// `StepRegion`: the first step for an org created without a region. This region continues here; the other
+// The region step, first for an org created without a region. This region continues here; the other
 // moves onboarding there.
 
 type H = HtmlBuilder<Message>
@@ -75,7 +75,6 @@ const regionCard = (h: H, choice: RegionChoice, region: Region): Html => {
 	})
 }
 
-/** `StepRegion`. */
 export const regionStep = (h: H, choice: RegionChoice): Html =>
 	vstack(h, { align: "center", justify: "center", grow: true, className: "px-6 pb-12 pt-4 sm:px-12" }, [
 		vstack(h, { gap: "8", className: "w-full max-w-3xl" }, [

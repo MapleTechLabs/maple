@@ -111,8 +111,6 @@ export const dayLabel = (atMs: number, clock: Clock): string => {
 	return timeFormat(clock.timeZone, { weekday: "short", day: "numeric", month: "short" }).format(atMs)
 }
 
-// --- header -------------------------------------------------------------------------------------
-
 /** The page title block: avatar, name, then the ids and when they were last active. */
 export const userTitle = <M>(h: HtmlBuilder<M>, profile: UserProfile, clock: Clock): Html =>
 	hstack(h, { gap: "3", align: "start" }, [
@@ -156,8 +154,6 @@ export const userTitle = <M>(h: HtmlBuilder<M>, profile: UserProfile, clock: Clo
 			),
 		]),
 	])
-
-// --- tabs ---------------------------------------------------------------------------------------
 
 const TAB_LABEL = {
 	activity: "Activity",
@@ -220,8 +216,6 @@ export const userTabs = <M>(h: HtmlBuilder<M>, detail: UserDetail, options: User
 			}
 		}),
 	)
-
-// --- stats --------------------------------------------------------------------------------------
 
 /** A request figure the org's warehouse cannot answer: a dash, never a fake zero. */
 const UNKNOWN = EMPTY_VALUE
@@ -291,8 +285,6 @@ const userStats = <M>(h: HtmlBuilder<M>, profile: UserProfile): Html =>
 			compact: true,
 		}),
 	])
-
-// --- rail ---------------------------------------------------------------------------------------
 
 const railValue = <M>(h: HtmlBuilder<M>, value: string, mono = true): Html =>
 	typography(h, { size: "xs", mono, tone: "soft", truncate: true, as: "span" }, [value])
@@ -485,8 +477,6 @@ export const userRail = <M>(
 		],
 	)
 
-// --- namespaces ---------------------------------------------------------------------------------
-
 /** The rail's Namespaces group: where this user's activity lives; a row scopes the page to it. */
 const namespacesGroup = <M>(h: HtmlBuilder<M>, profile: UserProfile, scope: UserNamespaceScope<M>): Html => {
 	const namespaces = namespacesOf(profile)
@@ -583,8 +573,6 @@ const namespaceScopeBar = <M>(
 	)
 }
 
-// --- activity -----------------------------------------------------------------------------------
-
 const KIND_ICON = {
 	error: "CircleWarningIcon",
 	request: "LayersIcon",
@@ -674,8 +662,6 @@ const activityBody = <M>(h: HtmlBuilder<M>, items: ReadonlyArray<ActivityItem>, 
 		}),
 	)
 }
-
-// --- tables -------------------------------------------------------------------------------------
 
 /** A tab with no rows in the window. */
 const noRows = <M>(h: HtmlBuilder<M>, text: string): Html => emptyMessage(h, { dashed: true }, [text])

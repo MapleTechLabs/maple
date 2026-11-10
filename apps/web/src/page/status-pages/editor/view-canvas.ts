@@ -111,8 +111,6 @@ export const canvasDocument = (model: Model, page: V2StatusPage): string => {
 	return previewDocument({ snapshot, nowMs, isSelectable: true, selectedIds: selectedIds(model) })
 }
 
-// ON THIS PAGE
-
 const statusDot = (h: H, status: StatusPageComponentStatus): Html =>
 	h.span(
 		[

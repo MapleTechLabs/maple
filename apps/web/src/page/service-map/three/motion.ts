@@ -67,7 +67,7 @@ export interface FactoryMotion {
 	}
 }
 
-/** `useFactoryMotion`: the route texture, the cargo phases and the shader patch. */
+/** The route texture, the cargo phases and the shader patch. */
 export function factoryMotion(
 	scope: Scope,
 	link: FactoryLink,

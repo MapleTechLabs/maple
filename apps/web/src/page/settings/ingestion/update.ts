@@ -30,7 +30,7 @@ type Return = PageReturn<Model, Message>
 
 export type InitOptions = Readonly<{
 	grants: ReadonlyArray<Policy.Permission>
-	/** `useAuth().orgId` in Clerk mode, `"default"` self-hosted: the quick-start storage key. */
+	/** The org id in Clerk mode, `"default"` self-hosted: the quick-start storage key. */
 	orgKey: string
 	timeZone: string
 	pinnedNamespace: string | null
@@ -92,7 +92,7 @@ const ingestRulesFetches = () => [
 	),
 ]
 
-/** A refetch keeps the rows on screen (`useAtomRefresh`'s `waiting`). */
+/** A refetch keeps the rows on screen. */
 const refresh = <A, E>(data: AsyncData.AsyncData<A, E>) =>
 	Option.getOrElse(AsyncData.revalidate(data), () => data)
 

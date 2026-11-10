@@ -29,7 +29,7 @@ export type HealthSummary = Readonly<{
 	counts: Readonly<Record<ServiceHealth, number>>
 }>
 
-/** `useServiceHealthSummary`: alert incidents by service name, open anomalies by service and environment. */
+/** Alert incidents by service name, open anomalies by service and environment. */
 export const healthSummary = (
 	overview: ReadonlyArray<ServiceRow>,
 	incidents: ReadonlyArray<HealthIncident>,
@@ -141,8 +141,6 @@ export const groupServices = (services: ReadonlyArray<ServiceRow>, mode: GroupBy
 			)
 		: [[NO_NAMESPACE, groupByEnvironment(services)]]
 
-// DEPLOY CELL
-
 const MIN_DEPLOY_COMPARE_SPANS = 50
 const ROLLOUT_MIN_SHARE_PCT = 5
 
@@ -155,7 +153,7 @@ export type DeployInfo = Readonly<{
 	errorsSince: boolean
 }>
 
-/** `deriveDeployInfo`: the newest commit, a mid-rollout split, and errors up since the deploy. */
+/** The newest commit, a mid-rollout split, and errors up since the deploy. */
 export const deployInfo = (commits: ReadonlyArray<Commit>): DeployInfo | undefined => {
 	const real = Arr.filter(
 		commits,
@@ -214,8 +212,6 @@ export const commitsKey = (services: ReadonlyArray<ServiceRow>): string =>
 		),
 		",",
 	)
-
-// LATENCY BASELINE
 
 const MIN_BASELINE_SPANS = 100
 

@@ -10,7 +10,7 @@ import { Array as Arr } from "effect"
 
 // A mobile recording is a sequence of independent MP4s, each opening on an IDR
 // keyframe. The segment math below is what turns a playhead offset into
-// (which file, how far into it) — the whole reason seeking is exact here.
+// (which file, how far into it): the whole reason seeking is exact here.
 //
 // The DOM side (<video>, Blob URLs) is deliberately not tested: jsdom implements
 // neither URL.createObjectURL nor HTMLMediaElement.play/pause, so a test of it
@@ -90,7 +90,7 @@ describe("videoSegmentPayload", () => {
 
 describe("extractVideoSegments", () => {
 	it("positions segments against the stream's first event, not the epoch", () => {
-		// The meta event opens the chunk, so time-zero is it — the first video
+		// The meta event opens the chunk, so time-zero is it: the first video
 		// segment lands 5ms later, not 1.7 trillion ms later.
 		const events = [metaEvent(0), videoEvent(5, 30_000), touchEvent(1_200), videoEvent(30_005, 30_000)]
 		const segments = extractVideoSegments(events, T0)
@@ -105,8 +105,7 @@ describe("extractVideoSegments", () => {
 	})
 
 	it("skips unusable segments rather than failing the recording", () => {
-		// A chunk missing its payload must not take the surrounding footage down
-		// with it — same posture as `decodeRange` skipping a malformed chunk.
+		// A chunk missing its payload must not take the surrounding footage down with it.
 		const events = [
 			videoEvent(0, 30_000),
 			videoEvent(30_000, 30_000, { base64: "" }),
@@ -132,7 +131,7 @@ describe("segmentsTotalMs", () => {
 })
 
 describe("resolveSegment", () => {
-	// Two 30s segments with a 10s hole between them — the recorder stopped while
+	// Two 30s segments with a 10s hole between them: the recorder stopped while
 	// the app was backgrounded.
 	const segments: ReadonlyArray<VideoSegment> = extractVideoSegments(
 		[videoEvent(0, 30_000), videoEvent(40_000, 30_000)],
@@ -142,7 +141,7 @@ describe("resolveSegment", () => {
 	it("maps an offset inside a segment to that segment's own clock", () => {
 		expect(resolveSegment(segments, 0)).toEqual({ index: 0, offsetSec: 0 })
 		expect(resolveSegment(segments, 12_500)).toEqual({ index: 0, offsetSec: 12.5 })
-		// Second segment starts at 40s, so 45s is 5s into its own media clock —
+		// Second segment starts at 40s, so 45s is 5s into its own media clock,
 		// not 45s, which is what a naive global-timeline seek would use.
 		expect(resolveSegment(segments, 45_000)).toEqual({ index: 1, offsetSec: 5 })
 	})

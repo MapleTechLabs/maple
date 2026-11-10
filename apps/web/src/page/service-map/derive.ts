@@ -14,7 +14,6 @@ import type { Model } from "./model"
 /** The "All environments" option, kept in the URL so the explicit choice sticks. */
 export const ALL_ENVIRONMENTS = "__all__"
 
-/** The map's default window. */
 export const DEFAULT_PRESET = "12h"
 
 export type Search = Model["search"]
@@ -48,7 +47,7 @@ export const focusOf = (search: Search): Option.Option<Focus> =>
 				mode: search.focusMode ?? "dim",
 			})
 
-/** `handleFocusChange`: defaults stay out of the URL. */
+/** Defaults stay out of the URL. */
 export const withFocus = (search: Search, focus: Option.Option<Focus>): Search =>
 	Option.match(focus, {
 		onNone: () => ({ ...search, focusService: undefined, focusHops: undefined, focusMode: undefined }),

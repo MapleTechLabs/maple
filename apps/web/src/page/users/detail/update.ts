@@ -59,10 +59,6 @@ const resolveCommand = (model: Model, context: PageContext, mode: RequestMode): 
 		timeZone: context.timeZone,
 	})
 
-/**
- * The overview (profile, activity and issues) always; the Traces and Logs tabs' reads only while
- * their tab is open, so a page view never scans rows it does not show.
- */
 /** The group the loaded profile names, so a reload can refresh its card beside the overview. */
 const loadedGroupId = (model: Model): string | null =>
 	Option.match(AsyncData.getData(model.profile.data), {
@@ -77,6 +73,10 @@ const requestAll = (model: Model, context: PageContext, window: TimeWindow, mode
 	return { model: group.model, commands: [...(step.commands ?? []), ...(group.commands ?? [])] }
 }
 
+/**
+ * The overview (profile, activity and issues) always; the Traces and Logs tabs' reads only while
+ * their tab is open, so a page view never scans rows it does not show.
+ */
 const requestReads = (model: Model, context: PageContext, window: TimeWindow, mode: RequestMode): Return => {
 	const inputs = detailInputs(model.userId, model.search, window, context.pinnedNamespace)
 	const tab = tabOf(model.search)
@@ -144,8 +144,6 @@ const navigate = (model: Model, search: Search): Return => ({
 		isReplace: false,
 	}),
 })
-
-// ENTRY POINTS
 
 export const init = (route: Route, context: PageContext): Return => {
 	const model: Model = {

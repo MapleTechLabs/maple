@@ -10,7 +10,7 @@ import { listAttributeMappings, listRecommendations } from "../../kit/recommenda
 import { Message } from "./message"
 import { IngestKeyKind } from "./model"
 
-/** `useIngestConnection`: the last hour's service overview, snapped like `useEffectiveTimeRange`. */
+/** The last hour's service overview, snapped like every page's time range. */
 export const FetchIngestOverview = Command.define("FetchIngestOverview", {
 	args: { timeZone: Schema.String, pinnedNamespace: Schema.NullOr(Schema.String) },
 	messages: [Message.CompletedFetchOverview],
@@ -18,7 +18,7 @@ export const FetchIngestOverview = Command.define("FetchIngestOverview", {
 		Effect.gen(function* () {
 			const now = yield* Clock.currentTimeMillis
 			const window = resolveWindow({ preset: "1h", snap: true, timeZone }, now)
-			// `applyGlobalNamespace(input, "top")`: a pinned namespace narrows the overview.
+			// A pinned namespace narrows the overview.
 			const range = { startTime: window.startTime, endTime: window.endTime }
 			const response = yield* getServiceOverview({
 				data: pinnedNamespace === null ? range : { ...range, namespaces: [pinnedNamespace] },
@@ -50,7 +50,7 @@ export const RollIngestKey = Command.define("RollIngestKey", {
 		),
 })
 
-/** `recommendationIssuesListAtom`: every page. */
+/** Every page of recommendations. */
 export const FetchRecommendations = Command.define("FetchRecommendations", {
 	messages: [Message.CompletedFetchRecommendations],
 	execute: listRecommendations.pipe(
@@ -58,13 +58,13 @@ export const FetchRecommendations = Command.define("FetchRecommendations", {
 	),
 })
 
-/** `ingestAttributeMappingsListAtom`: every page. */
+/** Every page of attribute mappings. */
 export const FetchMappings = Command.define("FetchAttributeMappings", {
 	messages: [Message.CompletedFetchMappings],
 	execute: listAttributeMappings.pipe(settleTo((result) => Message.CompletedFetchMappings({ result }))),
 })
 
-// QUICK-START FRAMEWORK (`quickStartAtomFamily`, an `Atom.kvs` JSON entry)
+// The quick-start framework: a field of the onboarding's stored JSON entry, shared with `/onboarding`.
 
 const quickStartKey = (orgKey: string) => `maple-onboarding-v6-${orgKey}`
 const QuickStart = Schema.fromJsonString(Schema.Record(Schema.String, Schema.Unknown))
@@ -109,8 +109,6 @@ export const SaveFramework = Command.define("SaveQuickStartFramework", {
 			)
 		}).pipe(Effect.ignore, Effect.as(Message.CompletedSaveFramework())),
 })
-
-// WRITES
 
 export const ApplyRecommendation = Command.define("ApplyRecommendation", {
 	args: { id: RecommendationPublicId, sourceKey: Schema.String, canonicalKey: Schema.String },

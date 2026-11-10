@@ -60,7 +60,6 @@ export const BUILDINGS = {
 	},
 } satisfies Catalog<BuildingType, BuildingSpec>
 
-/** Every building type, in catalog order. */
 export const BUILDING_TYPES: ReadonlyArray<BuildingType> = BuildingType.literals
 
 /** Building types for a node kind: the ones that suit it first, then the rest. */

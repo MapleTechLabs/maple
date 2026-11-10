@@ -44,10 +44,10 @@ const toWarehouseInput = (input: OverviewInput): GetServiceOverviewInput => ({
 	excludedCommitShas: input.excludedCommitShas,
 })
 
-/** `useEffectiveTimeRange`: snapped on entry, re-resolved against the real clock on Reload. */
+/** Snapped on entry, re-resolved against the real clock on Reload. */
 export const ResolveWindow = resolveWindowCommand("ResolveServicesWindow", Message.CompletedResolveWindow)
 
-// Fetches carry their request key back so `update` drops a superseded answer (S6).
+// Fetches carry their request key back so `update` drops a superseded answer.
 
 export const FetchOverview = Command.define("FetchServiceOverview", {
 	args: { key: Schema.String, refresh: Schema.Boolean, input: OverviewInput },
@@ -82,7 +82,7 @@ export const FetchSparklines = Command.define("FetchServiceSparklines", {
 		).pipe(settleTo((result) => Message.CompletedFetchSparklines({ key, result }))),
 })
 
-/** `getServicesFacetsResultAtom`: shared with the Overview through the facets probe. */
+/** Shared with the Overview through the facets probe. */
 export const FetchFacets = Command.define("FetchServicesFacets", {
 	args: { key: Schema.String, window: TimeWindow, refresh: Schema.Boolean },
 	messages: [Message.CompletedFetchFacets],
@@ -121,13 +121,12 @@ export const FetchBaseline = Command.define("FetchServiceHealthBaseline", {
 		),
 })
 
-/** `openAnomalyServiceCountsAtom`. */
 export const FetchAnomalies = fetchAnomaliesCommand(
 	"FetchOpenAnomalyServiceCounts",
 	Message.CompletedFetchAnomalies,
 )
 
-/** `commitsQueryAtom(shasKey)`: every deploy sha on screen in one request, first lines by sha. */
+/** Every deploy sha on screen in one request, first lines by sha. */
 export const FetchCommitMessages = Command.define("FetchCommitMessages", {
 	args: { key: Schema.String, shas: Schema.String },
 	messages: [Message.CompletedFetchCommitMessages],
@@ -140,7 +139,7 @@ export const FetchCommitMessages = Command.define("FetchCommitMessages", {
 		}).pipe(settleTo((result) => Message.CompletedFetchCommitMessages({ key, result }))),
 })
 
-/** `CommitShaHoverCard`'s arm timer and `commitQueryAtom(sha)`. */
+/** The commit hover card's arm timer and its commit lookup. */
 export const CommitCard = commitCardCommands(
 	{ arm: "ArmServicesCommitLookup", fetch: "FetchServicesCommitDetail" },
 	{ elapsed: Message.ElapsedCommitArm, completed: Message.CompletedFetchCommitDetail },
@@ -195,7 +194,7 @@ export const LoadSignalPresence = Command.define("LoadSignalPresence", {
 		Effect.map(loadSignalPresences(orgId), (result) => Message.CompletedLoadSignalPresence({ result })),
 })
 
-/** `CopyableBadge`'s write for the commit SHA; the row navigation waits on it. */
+/** The commit SHA copy; the row navigation waits on it. */
 export const CopyCommitSha = Command.define("CopyServicesCommitSha", {
 	args: { sha: Schema.String, rowUrl: Schema.String },
 	messages: [Message.CompletedCopyCommitSha],

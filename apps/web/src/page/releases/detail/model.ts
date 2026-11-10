@@ -37,27 +37,27 @@ export const Model = Schema.Struct({
 	nowMs: Schema.Number,
 	refreshVersion: Schema.Number,
 	isReloading: Schema.Boolean,
-	/** `commitQueryAtom(sha)`: the title's commit message and author. */
+	/** The title's commit message and author. */
 	commit: KeyedSchema(VcsCommitDetailResponse, LoadFailure),
 	releases: KeyedSchema(ReleasesData, LoadFailure),
-	/** `ReleaseChangeset`: the commits since the version it replaced. */
+	/** The commits since the version it replaced. */
 	changeset: KeyedSchema(Schema.Array(VcsCommitRangeResponse), LoadFailure),
-	/** `DeployIssues`: issues introduced since the deploy. */
+	/** Issues introduced since the deploy. */
 	issues: KeyedSchema(Schema.Array(V2ErrorIssue), LoadFailure),
 	timePicker: TimeRangePicker.Model,
 	/** The health pills' tooltip and the commit hover card. */
 	overlays: Overlays.Model,
-	/** `ReleaseBody` (`?service=`): this version on one service, against the one it replaced. */
+	/** `?service=`: this version on one service, against the one it replaced. */
 	detail: KeyedSchema(ReleaseDetail, LoadFailure),
 	series: Schema.Literals(["version", "others"]),
-	/** `ReleaseIssuesPanel`: the issue documents of the fingerprints this version carried. */
+	/** The issue documents of the fingerprints this version carried. */
 	serviceIssues: KeyedSchema(Schema.Array(V2ErrorIssue), LoadFailure),
 	/** The metrics grid: each card's focus and plot, by chart id; its theme and plotting runtime. */
 	charts: Schema.Record(Schema.String, Chart.Model),
 	themeColors: Schema.NullOr(ThemeColors),
 	/** `null` until a service body asks for it. */
 	chartRuntime: Schema.NullOr(ChartRuntime),
-	/** The commit markers' subjects (`commitQueryAtom` per marker sha other than this release's). */
+	/** The commit markers' subjects (one read per marker sha other than this release's). */
 	markerCommits: Schema.Record(Schema.String, CommitData.schema),
 })
 export type Model = typeof Model.Type

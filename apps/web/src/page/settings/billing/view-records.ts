@@ -28,8 +28,6 @@ import { textLink } from "@maple/views/ui/text-link"
 
 type H = HtmlBuilder<Message>
 
-// `InvoicesSection` and `BillingDetailsSection` (apps/web/src/components/settings/).
-
 /** The compact list's length for admins; the rest live behind "View all" (the portal). */
 const RECENT_INVOICES = 4
 

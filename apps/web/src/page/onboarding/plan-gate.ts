@@ -9,8 +9,8 @@ import { AsyncData } from "foldkit"
 import type { ClerkOrganization } from "../../platform/clerk"
 import { AppRoute, hrefOf, type Redirect } from "../../route"
 
-// The plan and region gates of `ClerkReverseRedirects`, and the Autumn customer (`billingCustomerAtom`) they
-// share with onboarding and the billing banners.
+// The root's plan and region gates, and the Autumn customer they share with onboarding and the
+// billing banners.
 
 export const CustomerData = AsyncData.Schema(BillingCustomer, Schema.Literal("Failed"))
 export type CustomerData = typeof CustomerData.schema.Type
@@ -21,7 +21,6 @@ export type CustomerSlot = typeof CustomerSlot.Type
 
 export const initCustomer = (): CustomerSlot => ({ orgId: null, data: CustomerData.Idle() })
 
-/** `useMapleCustomer().data`. */
 export const customerOf = (slot: CustomerSlot): BillingCustomer | undefined =>
 	AsyncData.getOrElse(slot.data, (): BillingCustomer | undefined => undefined)
 
@@ -42,7 +41,7 @@ export const hasPlanOf = (slot: CustomerSlot): boolean => {
 export const planOf = (slot: CustomerSlot): boolean | null =>
 	accessOf(slot) === "loading" ? null : hasPlanOf(slot)
 
-/** `selectedPlanKnownAtomFor(orgId)`: `maple.billing.selected-plan.<orgId>`. */
+/** The per-org localStorage key: `maple.billing.selected-plan.<orgId>`. */
 export const SELECTED_PLAN_KEY_PREFIX = "maple.billing.selected-plan."
 
 /** localStorage threw while listing the remembered flags. */
@@ -74,12 +73,10 @@ export const readKnownToRenderApp: Effect.Effect<Record<string, boolean>> = Effe
 export const saveSelectedPlanKnown = (orgId: string, mayRenderApp: boolean): Effect.Effect<void> =>
 	Effect.sync(() => writeLocalStorage(`${SELECTED_PLAN_KEY_PREFIX}${orgId}`, String(mayRenderApp)))
 
-// GATE
-
 /** Routes that render their own onboarding or billing UI: never sent away for want of a plan. */
 const isAllowedWithoutPlan = AppRoute.isAnyOf(["SelectPlan", "QuickStart", "CliLogin", "McpAuthorize"])
 
-/** Public paths that never read org data (`isOrgIndependentPath`). */
+/** Public paths that never read org data. */
 const isOrgIndependent = AppRoute.isAnyOf(["Unsubscribe"])
 
 export type GateInput = Readonly<{
@@ -90,7 +87,7 @@ export type GateInput = Readonly<{
 	isKnownToRenderApp: boolean
 }>
 
-/** `wrongRegion`: the org lives in another region and its choice is closed (`WrongRegionScreen`). */
+/** `wrongRegion`: the org lives in another region and its choice is closed. */
 export type Gate = Readonly<{
 	redirect: Option.Option<Redirect>
 	isSplash: boolean
@@ -105,7 +102,7 @@ const redirectTo = (url: string): Gate => ({
 	wrongRegion: null,
 })
 
-/** The region of an org another region serves, once it can no longer choose (`WrongRegionScreen`). */
+/** The region of an org another region serves, once it can no longer choose. */
 export const wrongRegionOf = (organization: Option.Option<ClerkOrganization>): Option.Option<MapleRegion> =>
 	Option.flatMap(organization, (org) =>
 		org.isServedHere || org.isRegionOpen ? Option.none() : Option.some(org.homeRegion),
@@ -123,14 +120,14 @@ export const leaveTargetOf = (
 	return url === undefined || hasOrgHere ? null : `${url}${href}`
 }
 
-/** `ClerkReverseRedirects` renders a splash or redirects instead of the route: nothing mounts yet. */
+/** The gate renders a splash or redirects instead of the route: nothing mounts yet. */
 export const isRouteHeld = (gate: Gate): boolean => gate.isSplash || Option.isSome(gate.redirect)
 
 /** `/quick-start` asks for the region first (`needsRegion`): a new org another region would serve. */
 export const needsRegion = (organization: Option.Option<ClerkOrganization>): boolean =>
 	Option.exists(organization, (org) => org.isRegionOpen && (hasMultipleRegions || !org.isServedHere))
 
-/** The signed-in, org-holding branch of `ClerkReverseRedirects`, plus `/quick-start`'s bail-out. */
+/** The gate for a signed-in user holding an org, plus `/quick-start`'s bail-out. */
 export const planGate = ({ route, organization, customer, isKnownToRenderApp }: GateInput): Gate => {
 	if (isOrgIndependent(route)) return app
 	const quickStart = () => hrefOf(AppRoute.QuickStart({ search: { redirect_url: hrefOf(route) } }))

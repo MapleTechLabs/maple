@@ -22,10 +22,7 @@ import type { TraceRow } from "./model"
 import { typography, typographyClass } from "@maple/views/ui/typography"
 import { vstack } from "@maple/views/ui/stack"
 
-// One row of the traces table.
-
-/** `traceLink`: the trace page, with the row's own span pre-selected when it is not the root. */
-/** `traceLink`: the trace page, keeping the list's search (`{ ...prev, t, spanId }`). */
+/** The trace page, keeping the list's search, with the row's own span pre-selected when it is not the root. */
 export const traceHref = (search: Search, row: TraceRow): string =>
 	traceHrefFrom(search, row.traceId, row.startTime, row.isRootSpan ? undefined : row.spanId)
 

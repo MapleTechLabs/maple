@@ -7,7 +7,7 @@ import { docsLink } from "../../kit/signal-empty-state"
 import type { Message } from "./message"
 import { hstack, vstack } from "@maple/views/ui/stack"
 
-// `TraceDetailLoading` and `TraceNotFound` (`ResourceNotFound` with the trace id badge).
+// The trace page's loading and not-found states (the not-found one with the trace id badge).
 
 const loadingRow = (h: HtmlBuilder<Message>): Html =>
 	hstack(h, { gap: "2", align: "center", className: "border-b p-3" }, [

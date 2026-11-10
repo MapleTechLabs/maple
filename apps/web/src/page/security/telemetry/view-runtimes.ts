@@ -398,8 +398,6 @@ const footnote = (h: H): Html =>
 		" and, for Bun and Deno, their GitHub security advisories.",
 	])
 
-// CRITICAL UPGRADES
-
 const ADVISORIES_SHOWN = 3
 
 const UPGRADES_COPY =

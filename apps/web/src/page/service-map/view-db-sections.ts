@@ -102,7 +102,7 @@ const hyperdriveOrigin = (h: H, config: HyperdriveNodeInfo): Html => {
 	)
 }
 
-/** `HyperdriveSection`: the org's configs with the origin each one fronts. */
+/** The org's Hyperdrive configs with the origin each one fronts. */
 export const hyperdriveSection = (h: H, configs: ReadonlyArray<HyperdriveNodeInfo>): Html =>
 	h.div(
 		[h.Class("space-y-3")],
@@ -262,8 +262,8 @@ const branchRows = (h: H, model: Model, planetscale: PlanetScaleNodeMetrics): Re
 }
 
 /**
- * `PlanetScaleSection`: scraped health and the per-branch breakdown.
- * TODO(planetscale-insights): `PlanetScaleTopQueries` (Insights) is not ported; its heading shows alone.
+ * Scraped health and the per-branch breakdown.
+ * TODO(planetscale-insights): the Insights top queries (`topQueries` on the PlanetScale database page) are not ported; their heading shows alone.
  */
 export const planetscaleSection = (h: H, model: Model, planetscale: PlanetScaleNodeMetrics): Html =>
 	h.div(
@@ -295,7 +295,7 @@ export const planetscaleSection = (h: H, model: Model, planetscale: PlanetScaleN
 
 type SummaryResponse = DbSummary["value"]
 
-/** `DbQueryActivityChart`: a skeleton while the first answer loads, the empty note, or the two plots. */
+/** A skeleton while the first answer loads, the empty note, or the two plots. */
 export const queryActivity = (
 	h: H,
 	model: Model,
@@ -321,7 +321,7 @@ export const queryActivity = (
 	return queryActivityCharts(h, model, response, timeZone)
 }
 
-/** `formatQueryLabel`: whitespace collapsed, long statements cut in the middle. */
+/** Whitespace collapsed, long statements cut in the middle. */
 const formatQueryLabel = (value: string): string => {
 	const collapsed = Str.trim(Str.replace(/\s+/g, " ")(value))
 	if (collapsed.length <= 96) return collapsed || "unknown query"

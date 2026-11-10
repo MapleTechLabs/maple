@@ -9,8 +9,6 @@ import { SignalPresenceData } from "@maple/views/data/signal-presence"
 import * as TimeRangePicker from "../../kit/time-range-picker"
 import { MetricRow } from "../shared"
 
-// `/metrics`.
-
 export const SparklinePoint = Schema.Struct({
 	bucket: Schema.String,
 	avgValue: Schema.Number,
@@ -39,18 +37,18 @@ export const Model = Schema.Struct({
 	search: MetricsSearch,
 	window: Schema.NullOr(TimeWindow),
 	nowMs: Schema.Number,
-	/** `MetricPreviewGrid`'s catalog (limit 500), unique metrics paged client-side. */
+	/** The grid's catalog (limit 500), unique metrics paged client-side. */
 	catalog: KeyedSchema(Catalog, LoadFailure),
-	/** `GridPage`s mounted so far (`visiblePages`). */
+	/** Grid pages mounted so far. */
 	visiblePages: Schema.Number,
 	/** `getMetricSparklines` answers by request key (one query per grid page and metric type). */
 	sparklines: Schema.Record(Schema.String, SparklineSlot),
-	/** `MetricsTable`'s list and its `limit` (Load more adds a page). */
+	/** The table's list and its `limit` (Load more adds a page). */
 	table: KeyedSchema(Catalog, LoadFailure),
 	tableLimit: Schema.Number,
-	/** `MetricsTypeFilter`'s counts. */
+	/** The type filter's counts. */
 	summary: KeyedSchema(Schema.Array(SummaryRow), LoadFailure),
-	/** `ToolbarSearch`: what is typed, and the debounce run that may still commit it. */
+	/** The toolbar search: what is typed, and the debounce run that may still commit it. */
 	searchInput: Schema.String,
 	searchGeneration: Schema.Number,
 	/** The trimmed query this input last committed, to tell its own echo from an outside change. */

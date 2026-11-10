@@ -24,8 +24,6 @@ import { typography, typographyClass } from "@maple/views/ui/typography"
 import { hstack } from "@maple/views/ui/stack"
 import { Array as Arr, String as Str, Option, Order } from "effect"
 
-// `ReleasesLiveNow` and `ReleasesTimeline`.
-
 type H = HtmlBuilder<Message>
 export type TimeSearch = Readonly<{ startTime?: string; endTime?: string; timePreset?: string }>
 
@@ -111,7 +109,6 @@ export const liveNow = (
 	])
 }
 
-// The releases timeline's layout constants.
 const MAX_LANES = 12
 const MERGE_PX = 18
 const FALLBACK_MERGE_RATIO = 0.016
@@ -157,7 +154,7 @@ const worstHealth = (members: ReadonlyArray<ReleaseServiceImpact>): ReleaseHealt
 		(): ReleaseHealth => "healthy",
 	)
 
-/** `clusterMarkers`: greedy left-to-right, a dot joins the open marker within `mergeRatio`. */
+/** Greedy left-to-right, a dot joins the open marker within `mergeRatio`. */
 const clusterMarkers = (
 	dots: ReadonlyArray<ReleaseServiceImpact>,
 	startMs: number,
@@ -231,7 +228,7 @@ export type TimelineInput = Readonly<{
 	timeZone: string
 }>
 
-/** `ReleasesTimeline`: one lane per service, one marker per deploy (close ones merged). */
+/** One lane per service, one marker per deploy (close ones merged). */
 export const releasesTimeline = (h: H, input: TimelineInput): Html => {
 	const startMs = toEpochMs(input.startTime)
 	const endMs = toEpochMs(input.endTime)

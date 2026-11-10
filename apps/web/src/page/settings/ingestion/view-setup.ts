@@ -3,8 +3,6 @@ import * as GuidedSetup from "../../kit/guided-setup"
 import { Message } from "./message"
 import type { Model } from "./model"
 
-// `FrameworkPicker compact` and `ConnectInstructions variant="flush"` (`page/kit/guided-setup.ts`).
-
 type H = HtmlBuilder<Message>
 
 export const frameworkIconStrip = (h: H): Html => GuidedSetup.frameworkIconStrip(h)

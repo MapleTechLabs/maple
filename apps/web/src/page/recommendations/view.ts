@@ -57,7 +57,7 @@ const MODE = {
 	},
 } as const
 
-/** `recSentence`: the recommendation as a sentence with mono-styled keys. */
+/** The recommendation as a sentence with mono-styled keys. */
 const recSentence = (h: H, issue: V2Recommendation): ReadonlyArray<Html | string> =>
 	issue.kind === "double-emission"
 		? [

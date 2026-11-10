@@ -36,8 +36,6 @@ import { hstack, hstackClass } from "@maple/views/ui/stack"
 import { timestamp } from "@maple/views/ui/timestamp"
 import { chartFrameClass } from "@maple/views/ui/chart-frame"
 
-// `MetricChart`, `MetricBreakdown` and `MetricMetadataPanel` (components/metrics/).
-
 type H = HtmlBuilder<Message>
 
 const toChart = (message: Chart.Message) => Message.GotChartMessage({ message })
@@ -88,7 +86,6 @@ const isCapped = (model: Model, draft: MetricsQueryDraft): boolean =>
 		),
 	).size >= GROUP_BY_SERIES_LIMIT
 
-/** `MetricChart` in its `ChartCard`. */
 export const metricChart = (
 	h: H,
 	model: Model,
@@ -171,7 +168,7 @@ const attributeKeyNames = (model: Model): ReadonlyArray<string> =>
 		onSome: (rows) => Arr.map(rows, (row) => row.attributeKey),
 	})
 
-/** `MetricBreakdown`: top values of one attribute; each bar narrows the where clause. */
+/** Top values of one attribute; each bar narrows the where clause. */
 export const metricBreakdown = (h: H, model: Model, draft: MetricsQueryDraft): Html => {
 	const filterKey = breakdownGroupBy(breakdownKeyOf(model.search))
 	return panel(h, {}, [
@@ -234,7 +231,6 @@ const attributesList = (h: H, model: Model): Html =>
 					),
 	})
 
-/** `MetricMetadataPanel`. */
 export const metadataPanel = (h: H, model: Model, summary: CatalogSummary, timeZone: string): Html =>
 	panel(h, { className: "gap-4 p-3" }, [
 		h.div(

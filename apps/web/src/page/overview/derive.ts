@@ -13,13 +13,10 @@ import { isPresetValue, type PresetValue } from "../kit/time-controls"
 import { type HealthIncident, serviceHealthCauses } from "../kit/service-health"
 import type { FacetsHint, HealthSnapshot, Model } from "./model"
 
-// Pure derivations of the home page (`defaultPreset`, `environmentFilter`) and its service health
-// section (`enrichServices`, `countByHealth`).
-
 export type { ServiceHealth, ServiceHealthCause }
 
-/** `defaultPreset`: the hint's preset until facets resolve (when it is still a rail preset); 6h for
- * all-demo orgs, else 24h. */
+/** The hint's preset until facets resolve (when it is still a rail preset); 6h for all-demo orgs,
+ * else 24h. */
 export const defaultPreset = (model: Model): PresetValue =>
 	Option.match(AsyncData.getData(model.facets.data), {
 		onNone: () => (isPresetValue(model.hint.preset) ? model.hint.preset : "24h"),
@@ -33,7 +30,7 @@ export const defaultPreset = (model: Model): PresetValue =>
 
 export const timePresetOf = (model: Model): string => model.search.timePreset ?? defaultPreset(model)
 
-/** `facetsReady`: facets settled, success or failure (`!Result.isInitial`). */
+/** Facets settled, success or failure. */
 export const facetsReady = (model: Model): boolean =>
 	AsyncData.isSuccess(model.facets.data) || AsyncData.isFailure(model.facets.data)
 
@@ -45,18 +42,18 @@ const environmentsOf = (model: Model): ReadonlyArray<string> =>
 
 const hasProduction = (model: Model) => environmentsOf(model).includes("production")
 
-/** `derivedDefaultEnvironment`: "production" when facets list it, else all (`null`). */
+/** "production" when facets list it, else all (`null`). */
 export const derivedDefaultEnvironment = (model: Model): string | null =>
 	facetsReady(model) && hasProduction(model) ? "production" : null
 
-/** `environmentFilter`: the URL wins; then the facets default; before facets, the stored hint. */
+/** The URL wins; then the facets default; before facets, the stored hint. */
 export const environmentFilter = (model: Model): ReadonlyArray<string> | undefined => {
 	if (model.search.environment) return [model.search.environment]
 	const fallback = facetsReady(model) ? derivedDefaultEnvironment(model) : model.hint.environment
 	return fallback === null ? undefined : [fallback]
 }
 
-/** `canFetch`: facets settled, or a prior load left a hint. */
+/** Facets settled, or a prior load left a hint. */
 export const canFetch = (model: Model): boolean => facetsReady(model) || model.hint.seen
 
 export const ALL_ENVIRONMENTS = "__all__"
@@ -67,7 +64,7 @@ export const selectedEnvironment = (model: Model): string =>
 export const environmentItems = (model: Model): ReadonlyArray<SelectEntry> =>
 	environmentEntries(ALL_ENVIRONMENTS, environmentsOf(model))
 
-/** The hint `FacetsHintPersister` writes once facets are ready. */
+/** The hint the page stores once facets are ready. */
 export const derivedHint = (model: Model): FacetsHint => ({
 	environment: derivedDefaultEnvironment(model),
 	preset: defaultPreset(model),
@@ -80,7 +77,7 @@ export interface EnrichedService {
 	readonly causes: ReadonlyArray<ServiceHealthCause>
 }
 
-/** `enrichServices`: alert and anomaly causes per row, worst health first, then error rate. */
+/** Alert and anomaly causes per row, worst health first, then error rate. */
 export const enrichServices = (
 	services: ReadonlyArray<HealthSnapshot>,
 	incidents: ReadonlyArray<HealthIncident>,

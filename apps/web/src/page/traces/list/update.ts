@@ -45,13 +45,11 @@ type Return = PageReturn<Model, Message>
 type Cmd = Command.Command<Message, never, Resources>
 
 export const DEFAULT_PRESET = "12h"
-/** `useInfiniteTraces`: rows kept across pages, and rows from the end that ask for the next page. */
+/** Rows kept across pages, and rows from the end that ask for the next page. */
 export const MAX_RETAINED_TRACES = 2_000
 const FETCH_THRESHOLD = 20
 
-// ROWS
-
-/** `allData`: the first page then every later one, capped. */
+/** The first page then every later one, capped. */
 export const allRows = (model: Model): ReadonlyArray<TraceRow> => {
 	const first = AsyncData.getData(model.firstPage.data)
 	return Option.isNone(first)
@@ -80,8 +78,6 @@ export const hasNextPage = (model: Model): boolean => {
 	)
 }
 
-// REQUESTS
-
 const resolveCommand = (model: Model, context: PageContext, mode: RequestMode): Cmd =>
 	ResolveWindow({
 		mode,
@@ -104,7 +100,7 @@ const freshPagination = (key: string | null, generation: number): Pagination => 
 const requestAll = (model: Model, context: PageContext, window: TimeWindow, mode: RequestMode): Return => {
 	const facetsKey = requestKey(context.orgId, "getTracesFacets", { data: window })
 	const listKey = firstPageKey(model, context, window)
-	// Reload refreshes the table (`useTableRefreshTimeRange`); the facet atom is not refreshed.
+	// Reload refreshes the table; the facets are not refreshed.
 	const facets = Keyed.request(model.facets, facetsKey, "Load")
 	const cached =
 		mode === "Load" && model.firstPage.key !== listKey ? model.firstPageCache[listKey] : undefined
@@ -145,7 +141,7 @@ const requestAll = (model: Model, context: PageContext, window: TimeWindow, mode
 
 const nextOffset = (pagination: Pagination): number => (pagination.pages.length + 1) * PAGE_SIZE
 
-/** `useVirtualReachEnd`: the rendered window nears the end of the loaded rows. */
+/** The rendered window nears the end of the loaded rows. */
 const reachEnd = (model: Model, context: PageContext): Return => {
 	const lastIndex = Option.getOrElse(
 		Option.map(Arr.last(model.virtualRows), (row) => row.index),
@@ -181,8 +177,6 @@ const navigate = (model: Model, search: Search, isReplace = false): Return => ({
 	model,
 	outMessage: PageOutMessage.RequestedNavigation({ url: hrefOf(AppRoute.Traces({ search })), isReplace }),
 })
-
-// ENTRY POINTS
 
 export const init = (route: { readonly search: Search }, context: PageContext): Return => {
 	const model: Model = {
@@ -233,7 +227,7 @@ const listSearchOf = (search: Search): Search => ({
 
 const searchHref = (search: Search) => hrefOf(AppRoute.Traces({ search }))
 
-/** The route loader warms only the facet sidebar (`getTracesFacetsResultAtom`) for the snapped window. */
+/** The route loader warms only the facet sidebar for the snapped window. */
 export const preload = (route: { readonly search: Search }, context: PageContext, nowMs: number) => {
 	const { model } = init(route, context)
 	const window = resolveWindow(
@@ -297,10 +291,10 @@ const lift = <A>(
 	commands: Command.mapMessages(commands ?? [], wrap),
 })
 
-/** A settled first page or later page, then the reach-end check `useVirtualReachEnd` re-runs. */
+/** A settled first page or later page, then the reach-end check again. */
 const settled = (model: Model, context: PageContext): Return => reachEnd(model, context)
 
-/** `onTraceClick` below `md`: the row's trace page, keeping the list's search. */
+/** Below `md`: the row's trace page, keeping the list's search. */
 const openRow = (model: Model, index: number): Return => {
 	const row = allRows(model)[index]
 	return row === undefined
@@ -319,7 +313,7 @@ const openRow = (model: Model, index: number): Return => {
 			}
 }
 
-/** `useListNavigation` over the rows, and the peek's own keys while it is open. */
+/** List navigation over the rows, and the peek's own keys while it is open. */
 const pressedListKey = (model: Model, key: string, isMobile: boolean, context: PageContext): Return => {
 	const isDown = key === "j" || key === "J" || key === "ArrowDown"
 	const isUp = key === "k" || key === "K" || key === "ArrowUp"
@@ -363,7 +357,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 				onFailure: () => model.firstPageCache,
 			})
 			const done = settled({ ...model, firstPage, firstPageCache }, context)
-			// A peek whose row just loaded gains the row's time (`resolvePeek`).
+			// A peek whose row just loaded gains the row's time.
 			const peeked = syncPeek(done.model, context)
 			return { ...peeked, commands: [...(done.commands ?? []), ...(peeked.commands ?? [])] }
 		},

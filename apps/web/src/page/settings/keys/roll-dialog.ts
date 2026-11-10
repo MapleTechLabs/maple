@@ -13,8 +13,6 @@ import * as DialogView from "@maple/views/ui/dialog-view"
 import { secretReveal } from "./secret-reveal"
 import { typography } from "@maple/views/ui/typography"
 
-// `RollApiKeyDialog`.
-
 export const Model = Schema.Struct({
 	dialog: Dialog.Model,
 	apiKey: Schema.NullOr(V2ApiKey),

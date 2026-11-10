@@ -29,9 +29,7 @@ import { hstack, vstack } from "@maple/views/ui/stack"
 
 type H = HtmlBuilder<Message>
 
-// `BillingUsageTable`.
-
-/** `formatFeatureUsage`: bytes for GB features, a count otherwise. */
+/** Bytes for GB features, a count otherwise. */
 const featureUsage = (featureId: string, value: number): string =>
 	featureUnit(featureId) === "GB" ? formatUsage(value) : formatCount(value)
 

@@ -12,18 +12,15 @@ import type { NavSurface } from "../shell/nav"
 import type { PageSourceRef } from "../shell/source-link"
 import { ToastType } from "@maple/views/ui/toast"
 
-/** The page contract: every routed page is a Submodel registered once in `registry.ts`. See s8-pages.md. */
-
-// CONTEXT
+/** The page contract: every routed page is a Submodel registered once in `registry.ts`. See docs/foldkit-decisions/s8-pages.md. */
 
 /** Root-owned state every page reads; never copied into a page Model. */
 export interface PageContext {
 	readonly orgId: OrgId
-	/** `useGlobalNamespace()`: the org-global namespace pin, applied to queries before keying. */
+	/** The org-global namespace pin, applied to queries before keying. */
 	readonly pinnedNamespace: string | null
-	/** `useTimezonePreference().effectiveTimezone`. */
 	readonly timeZone: string
-	/** `useInfraSurfaces()` as the shell reads it; absent off the shell (a public page). */
+	/** The infra surfaces as the shell reads them; absent off the shell (a public page). */
 	readonly infra?: ShellInfraSurfaces
 }
 
@@ -39,11 +36,11 @@ export interface ShellInfraSurfaces {
 
 export interface PageViewInputs {
 	readonly context: PageContext
-	/** `useIsMobile()` (below `md`), for the few layouts that branch on it in JSX (the trace detail split). */
+	/** Below `md`, for the few layouts that branch on it (the trace detail split). */
 	readonly isMobile?: boolean
-	/** `useMediaQuery("max-sm")`, likewise (the analytics chart's narrow margin). */
+	/** Below `sm`, likewise (the analytics chart's narrow margin). */
 	readonly isBelowSm?: boolean
-	/** `useMediaQuery("max-lg")`, likewise (the templates panel becomes a sheet). */
+	/** Below `lg`, likewise (the templates panel becomes a sheet). */
 	readonly isBelowLg?: boolean
 }
 
@@ -86,11 +83,11 @@ const NavigationToast = Schema.Struct({
 
 /** Facts a page reports to the root; the root owns the URL. */
 export const PageOutMessage = defineMessageUnion({
-	/** `navigate({ search })` / `<Link>`: the root pushes (or replaces) the URL, which re-enters the route. */
+	/** The root pushes (or replaces) the URL, which re-enters the route. */
 	RequestedNavigation: {
 		url: Schema.String,
 		isReplace: Schema.Boolean,
-		/** A toast raised with the navigation (`navigate(...)` then `toastManager.add(...)`). */
+		/** A toast raised with the navigation. */
 		toast: Schema.optionalKey(NavigationToast),
 		/** A second toast after the first (a Perses import's "Imported with N warnings"). */
 		followUpToast: Schema.optionalKey(NavigationToast),
@@ -100,17 +97,17 @@ export const PageOutMessage = defineMessageUnion({
 	/** The org-global namespace pin (the shell's org menu owns it): set, or cleared with `None`. */
 	RequestedNamespacePin: { maybeNamespace: Schema.Option(Schema.String) },
 	/**
-	 * `useInfraSurfaces()` in the page: the sidebar's presence probe and integration statuses. The
-	 * shell owns those reads; below `md` its sidebar is unmounted, so the page is what asks for them.
+	 * The sidebar's presence probe and integration statuses. The shell owns those reads; below `md`
+	 * its sidebar is unmounted, so the page is what asks for them.
 	 */
 	RequestedInfraSurfaces: {},
-	/** `retryOrgCollections` / `handleCollectionStuck`: recreate the org's synced collections. */
+	/** Recreate the org's synced collections. */
 	RequestedReconnectOrgCollections: {},
 	/** A billing change in a page: the root re-reads the app's customer (plan gate, quota banners). */
 	RequestedCustomerRefresh: { toast: Schema.optionalKey(NavigationToast) },
 	/**
-	 * `toastManager.add`: the root shows it. `action` is the page's own Message for the action
-	 * button (`actionProps`); the root sends it back to the page that is open when it is clicked.
+	 * The root shows it. `action` is the page's own Message for the action button; the root sends
+	 * it back to the page that is open when it is clicked.
 	 */
 	RequestedToast: {
 		...NavigationToast.fields,
@@ -138,10 +135,7 @@ export const pickCommands = <Model, Message>(
 
 type RouteOf<Tags extends RouteTag> = Extract<AppRoute, { readonly _tag: Tags }>
 
-// SPEC (what a page module provides)
-
 export interface PageSpec<Tags extends RouteTag, Model, Message> {
-	/** The routes this page renders. */
 	readonly routes: ReadonlyArray<Tags>
 	/** The instance survives a navigation while this stays equal (default: the route tag). */
 	readonly key?: (route: RouteOf<Tags>) => string
@@ -173,17 +167,16 @@ export interface PageSpec<Tags extends RouteTag, Model, Message> {
 	readonly infraSurfacesSettled?: (model: Model, context: PageContext) => PageReturn<Model, Message>
 	readonly view: Submodel.View<Model, Message, PageViewInputs>
 	readonly subscriptions?: Subscription.Subscriptions<PageSubscriptionInput<Model>, Message, Resources>
-	/** `DashboardPage`'s `breadcrumbs`. */
 	readonly breadcrumbs: (model: Model) => ReadonlyArray<BreadcrumbEntry>
 	/**
 	 * Where the page's data comes from: the top bar links to that source. `null` until the page
 	 * knows (a host's `src_` id arrives with its summary).
 	 */
 	readonly source?: (model: Model) => PageSourceRef | null
-	/** `DashboardPage`'s `topbarActions`: the page's own controls after the shell's top-bar buttons. */
+	/** The page's own controls after the shell's top-bar buttons. */
 	readonly topbarActions?: Submodel.View<Model, Message, PageViewInputs>
 	/**
-	 * `useBlocker`: while this holds, a link or Back that leaves the page asks first. The root
+	 * While this holds, a link or Back that leaves the page asks first. The root
 	 * keeps the page and hands it `blockedNavigation` with where the user was going.
 	 */
 	readonly isBlockingNavigation?: (model: Model) => boolean
@@ -193,8 +186,6 @@ export interface PageSpec<Tags extends RouteTag, Model, Message> {
 		context: PageContext,
 	) => PageReturn<Model, Message>
 }
-
-// ERASED PAGE (what the registry and root consume)
 
 /** Preload Commands' Messages are stamped for no instance: the root drops them (their answer is cached). */
 export const PRELOAD_INSTANCE = -1

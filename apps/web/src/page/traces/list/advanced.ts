@@ -20,7 +20,7 @@ import { Message } from "./message"
 import type { Model } from "./model"
 import { clearedWhereClause } from "./search-edits"
 
-// `AdvancedFilterDialog`: open, edit with `useWhereClauseAutocomplete`, apply or clear.
+// The advanced filter dialog: open, edit with autocomplete, apply or clear.
 
 type Return = PageReturn<Model, Message>
 type Search = Model["search"]
@@ -35,7 +35,7 @@ const lookupNames = (model: Model, name: AutocompleteLookup): Array<string> => [
 	),
 ]
 
-/** The `traces` values the provider hands the editor. */
+/** The `traces` lookup values the editor suggests. */
 const valuesOf = (model: Model) => {
 	const facets = Option.getOrNull(AsyncData.getData(model.facets.data))
 	const names = (rows: ReadonlyArray<{ readonly name: string }> | undefined) =>
@@ -81,7 +81,7 @@ const liftDialog = (
 	),
 })
 
-/** `activate()`: the provider's lookups, once per window. */
+/** The autocomplete lookups, once per window. */
 const activate = (
 	model: Model,
 	context: PageContext,
@@ -182,7 +182,7 @@ const withClause = (search: Search, clause: string): Search => {
 	}
 }
 
-/** `onApply`: the clause (and the params it sets) into the URL; the dialog closes. */
+/** The clause (and the params it sets) into the URL; the dialog closes. */
 const applied = (model: Model, clause: string): Return => {
 	const closed = liftDialog(model, Dialog.close(model.advanced.dialog))
 	return { ...navigate(closed.model, withClause(model.search, clause)), commands: closed.commands }

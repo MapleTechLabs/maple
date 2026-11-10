@@ -27,7 +27,7 @@ describe("normalizeEvents", () => {
 
 	it("collapses a corrupted span back to its real range", () => {
 		// A scrambled stream where late chunks (t=12_465_000 ≈ 207min) interleave
-		// with early ones — the bug that inflated rrweb's totalTime. After
+		// with early ones: the bug that inflated rrweb's totalTime. After
 		// normalization the first/last timestamps frame the true ordered span.
 		const events = [
 			ev(12_465_000, "stale"),

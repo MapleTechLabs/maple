@@ -13,12 +13,12 @@ import { typography } from "@maple/views/ui/typography"
 import { identityLabel } from "@maple/views/ui/identity-label"
 import { hstack } from "@maple/views/ui/stack"
 
-// `OnboardingOrgSwitcher` and `OnboardingUserMenu`: the account actions in the onboarding header.
+// The account actions in the onboarding header: the org switcher and the user menu.
 
 const AVATAR_CLASS = "size-5 rounded-md text-3xs"
 export const LOG_OUT = "log-out"
 
-/** `UserAvatar`: initials on the name's warm tile (no image in a stubbed or fresh account). */
+/** Initials on the name's warm tile (no image in a stubbed or fresh account). */
 const userAvatar = <M>(h: HtmlBuilder<M>, name: string): Html =>
 	avatarFallback(
 		h,
@@ -47,7 +47,7 @@ export const userTriggerChildren = (
 	h.span([h.Class("sr-only")], ["Account menu"]),
 ]
 
-/** `ClerkUserMenu`'s label and Log out; self-hosted has Log out only. */
+/** The user menu's label and Log out; self-hosted has Log out only. */
 export const userMenuEntries = (
 	h: HtmlBuilder<Message>,
 	user: Option.Option<ClerkUser>,

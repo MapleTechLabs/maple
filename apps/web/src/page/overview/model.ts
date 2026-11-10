@@ -14,9 +14,7 @@ import * as TimeRangePicker from "../kit/time-range-picker"
 import * as SetupChecklist from "./setup-checklist"
 import { IncidentsData } from "../kit/service-health"
 
-// The Overview home page.
-
-/** `DashboardFacetsHint` (atoms/dashboard-facets-hint-atoms.ts), persisted per org. */
+/** The facets hint, persisted per org. */
 export const FacetsHint = Schema.Struct({
 	environment: Schema.NullOr(Schema.String),
 	preset: Schema.String,
@@ -31,7 +29,7 @@ export const OverviewFacets = Schema.Struct({
 })
 export type OverviewFacets = typeof OverviewFacets.Type
 
-/** `ServiceHealthSnapshot` (@maple/web-data/warehouse/services). */
+/** One service's row of `getServiceHealthSnapshot`. */
 export const HealthSnapshot = Schema.Struct({
 	serviceName: Schema.String,
 	environment: Schema.String,
@@ -48,12 +46,11 @@ const UsageTotals = Schema.Struct({
 })
 export type UsageTotals = typeof UsageTotals.Type
 
-/** `ServiceUsageCards`: the summed totals and the previous window's, when the response carried them. */
+/** The usage cards' summed totals and the previous window's, when the response carried them. */
 export const Usage = Schema.Struct({ totals: UsageTotals, previous: Schema.NullOr(UsageTotals) })
 export type Usage = typeof Usage.Type
 
-/** `useAlertRulesList()`, reduced to each rule's `enabled`. */
-/** `Failure`: the live rules sync failed or stalled; the banner stays out. */
+/** Each alert rule's `enabled`; `Unavailable` when the live rules sync failed or stalled (no banner). */
 export const RulesData = AsyncData.Schema(Schema.Array(Schema.Boolean), Schema.Literal("Unavailable"))
 
 /** `ServiceDetailTimeSeriesPoint` (@maple/web-data/warehouse/services): one overview bucket. */
@@ -81,7 +78,7 @@ export const Model = Schema.Struct({
 	nowMs: Schema.NullOr(Schema.Number),
 	/** The stored hint, read with the clock on entry. */
 	hint: FacetsHint,
-	/** The fixed 24 h facets range, snapped once per mount (`facetsRange`'s `useMemo`). */
+	/** The fixed 24 h facets range, snapped once per mount. */
 	facetsWindow: Schema.NullOr(TimeWindow),
 	/** The effective window for `search` and the default preset. */
 	window: Schema.NullOr(TimeWindow),
@@ -94,14 +91,14 @@ export const Model = Schema.Struct({
 	refinement: KeyedSchema(Schema.Array(RefinementPoint), LoadFailure),
 	incidents: IncidentsData.schema,
 	rules: RulesData.schema,
-	/** `useSignalPresence` for the services empty state, sent once it painted. */
+	/** Signal presence for the services empty state, sent once it painted. */
 	presence: SignalPresenceData.schema,
 	environmentSelect: Select.Model,
 	timePicker: TimeRangePicker.Model,
 	/** One chart Submodel per card (hover, tooltip), by card id. */
 	charts: Schema.Record(Schema.String, Chart.Model),
 	...ChartEnvFields,
-	/** `PageRefreshProvider`: Reloads so far (non-zero stops snapping) and the 600 ms spinner. */
+	/** Reloads so far (non-zero stops snapping) and the 600 ms spinner. */
 	refreshVersion: Schema.Number,
 	isReloading: Schema.Boolean,
 	/** `SetupChecklist`, Clerk mode only (`null` self-hosted). */

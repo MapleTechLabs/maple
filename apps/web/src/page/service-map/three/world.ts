@@ -44,13 +44,13 @@ export interface WorldInput {
 	readonly view: SpatialView
 	readonly selectedId: string | null
 	readonly palette: InkPalette
-	/** `flowing`: traffic on and motion allowed, read every frame. */
+	/** Traffic on and motion allowed, read every frame. */
 	readonly flowing: () => boolean
 	/** Customized building types by node id; a missing id keeps the kind's default. */
 	readonly buildings?: ReadonlyMap<string, MachineKind>
 }
 
-/** `<Scenery key={view}>` and the forest's own geometry key: rebuilt only when either changes. */
+/** The scenery rebuilds only when the view, the palette, the districts or the route geometry change. */
 export const sceneryKey = ({ view, layout, palette }: Pick<WorldInput, "view" | "layout" | "palette">) =>
 	encodeJson([
 		view,
@@ -175,16 +175,16 @@ export const machineSpecs = (
 	})
 }
 
-/** MapScene after `Scenery`: zones, paths or steps, belts, then machines, each kept by key. */
+/** What stands on the scenery: zones, paths or steps, belts, then machines, each kept by key. */
 export interface World {
 	readonly root: THREE.Group
 	/** The pickable machines; each child carries `userData.pickId`. */
 	readonly machines: THREE.Group
 	readonly sync: (input: WorldInput) => void
 	readonly machine: (id: string) => THREE.Object3D | undefined
-	/** Moves a built machine without a rebuild; `null` puts it back on its layout position. */
 	/** Machines moved by `previewMachine`, where they stand now. */
 	readonly previews: () => ReadonlyMap<string, Vec3>
+	/** Moves a built machine without a rebuild; `null` puts it back on its layout position. */
 	readonly previewMachine: (id: string, position: Vec3 | null) => void
 	readonly frame: FrameCallback
 	readonly dispose: () => void

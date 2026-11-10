@@ -32,8 +32,6 @@ import { typography, typographyClass } from "@maple/views/ui/typography"
 import { hstack, vstack, vstackClass } from "@maple/views/ui/stack"
 import { Array as Arr } from "effect"
 
-// `ServiceUsagePanel`, `ServiceWorkloadsPanel` and `ServiceDependencyStrip`.
-
 type H = HtmlBuilder<Message>
 
 const allEnvironments = (h: H): Html => typography(h, { size: "3xs", tone: "subtle" }, ["all environments"])
@@ -49,7 +47,7 @@ const USAGE_STATS: ReadonlyArray<{
 	{ key: "dataSize", label: "Stored", format: formatStorageBytes },
 ]
 
-/** `ServiceUsagePanel`: nothing while loading, on error or with no data. */
+/** Nothing while loading, on error or with no data. */
 export const usagePanel = (h: H, model: Model, envFilterActive: boolean): Html => {
 	const usage = AsyncData.getOrElse(model.usage.data, () => null)
 	if (usage === null) return null
@@ -268,7 +266,7 @@ const stripChip = (h: H, target: StripTarget, onClick: Message): Html =>
 				],
 			)
 
-/** `ServiceDependencyStrip`: the busiest downstream targets as one row of chips; quiet while empty. */
+/** The busiest downstream targets as one row of chips; quiet while empty. */
 export const dependencyStrip = (h: H, model: Model): Html => {
 	const targets = AsyncData.getOrElse(AsyncData.map(model.dependencies.data, stripTargets), () => [])
 	if (targets.length === 0) return null

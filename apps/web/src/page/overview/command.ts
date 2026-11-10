@@ -17,7 +17,7 @@ import { loadSignalPresences } from "../kit/signal-presence"
 import { Message } from "./message"
 import { FacetsHint } from "./model"
 
-/** `dashboardFacetsHintAtomFamily`'s default before any facets load. */
+/** The facets hint before any facets load. */
 export const DEFAULT_HINT: FacetsHint = { environment: null, preset: "24h", seen: false }
 
 const hintKey = (orgId: string) => `maple.dashboard.facets-hint.${orgId}`
@@ -25,7 +25,7 @@ const HintJson = Schema.fromJsonString(FacetsHint)
 const decodeHint = Schema.decodeUnknownOption(HintJson)
 const encodeHint = Schema.encodeSync(HintJson)
 
-/** Entry: the clock (`useEffectiveTimeRange`, `facetsRange`) and the stored facets hint. */
+/** Entry: the clock and the stored facets hint. */
 export const ReadEntry = Command.define("ReadOverviewEntry", {
 	args: { orgId: Schema.String },
 	messages: [Message.CompletedReadEntry],
@@ -44,7 +44,7 @@ export const ReadEntry = Command.define("ReadOverviewEntry", {
 /** Reload: the real clock, so the window re-resolves unsnapped. */
 export const ResolveClock = readClock("ResolveOverviewClock", Message.CompletedResolveClock)
 
-/** `FacetsHintPersister`: written once facets resolve, and again when the derived hint changes. */
+/** Written once facets resolve, and again when the derived hint changes. */
 export const SaveFacetsHint = Command.define("SaveOverviewFacetsHint", {
 	args: { orgId: Schema.String, hint: FacetsHint },
 	messages: [Message.CompletedSaveFacetsHint],
@@ -83,7 +83,7 @@ export type RefinementInput = typeof RefinementInput.Type
 
 // Fetches carry their request key back so `update` drops a superseded answer (S6).
 
-/** Through the shared probe: the shell's namespace list reads the same answer (`ServicesFacetsProbe`). */
+/** Through the shared probe: the shell's namespace list reads the same answer. */
 export const FetchFacets = Command.define("FetchOverviewFacets", {
 	args: { key: Schema.String, window: TimeWindow, refresh: Schema.Boolean },
 	messages: [Message.CompletedFetchFacets],
@@ -113,13 +113,12 @@ export const FetchSnapshot = Command.define("FetchServiceHealthSnapshot", {
 		),
 })
 
-/** `openAnomalyServiceCountsAtom`. */
 export const FetchAnomalies = fetchAnomaliesCommand(
 	"FetchOverviewAnomalyCounts",
 	Message.CompletedFetchAnomalies,
 )
 
-/** `ServiceUsageCards`: current and previous totals in one request, summed per signal (`sumTotals`). */
+/** The usage cards: current and previous totals in one request, summed per signal. */
 export const FetchUsage = Command.define("FetchOverviewServiceUsage", {
 	args: { key: Schema.String, input: UsageInput },
 	messages: [Message.CompletedFetchUsage],
@@ -137,7 +136,7 @@ export const FetchUsage = Command.define("FetchOverviewServiceUsage", {
 		),
 })
 
-/** `getOverviewTimeSeriesResultAtom`: the request volume, error rate and latency buckets. */
+/** The request volume, error rate and latency buckets. */
 export const FetchOverviewSeries = Command.define("FetchOverviewTimeSeries", {
 	args: { key: Schema.String, input: ScopedInput },
 	messages: [Message.CompletedFetchOverviewSeries],
@@ -154,7 +153,7 @@ export const FetchOverviewSeries = Command.define("FetchOverviewTimeSeries", {
 		),
 })
 
-/** The log volume card: one `count` series over logs, summed per bucket (`logPoints`). */
+/** The log volume card: one `count` series over logs, summed per bucket. */
 export const FetchLogSeries = Command.define("FetchOverviewLogVolume", {
 	args: { key: Schema.String, input: LogInput },
 	messages: [Message.CompletedFetchLogSeries],
@@ -187,7 +186,7 @@ export const FetchLogSeries = Command.define("FetchOverviewLogVolume", {
 		),
 })
 
-/** `getOverviewThroughputRefinementResultAtom`: exact pre-sampling volume, only while sampling is on. */
+/** Exact pre-sampling volume, only while sampling is on. */
 export const FetchRefinement = Command.define("FetchOverviewThroughputRefinement", {
 	args: { key: Schema.String, input: RefinementInput },
 	messages: [Message.CompletedFetchRefinement],

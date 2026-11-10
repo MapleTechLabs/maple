@@ -22,11 +22,8 @@ import { typography } from "@maple/views/ui/typography"
 import { hstack } from "@maple/views/ui/stack"
 import { timestamp } from "@maple/views/ui/timestamp"
 
-// `AuditLogDetail` and its parts.
-
 type H = HtmlBuilder<Message>
 
-/** `<Link {...display.link}>` as an href. */
 export const resourceHref = (link: AuditResourceLink): string => {
 	switch (link.to) {
 		case "/alerts/$ruleId":
@@ -58,7 +55,7 @@ const formatScalar = (value: unknown): string =>
 const parseJson = Schema.decodeUnknownOption(Schema.fromJsonString(Schema.Unknown))
 const encodePrettyJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown, { space: 2 }))
 
-/** Structured or long metadata renders as a block (`metadataBlock`). */
+/** Structured or long metadata renders as a block. */
 const metadataBlock = (value: unknown): string | null => {
 	if (typeof value === "string") {
 		const trimmed = Str.trim(value)

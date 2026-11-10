@@ -32,8 +32,8 @@ import {
 const FACETS_RANGE_MS = 24 * 60 * 60 * 1000
 
 /**
- * `useEffectiveTimeRange` (snapped on entry, against the real clock after a Reload) and the
- * environment dropdown's fixed 24 h `facetsRange`, snapped to the cache grid, at one clock read.
+ * The map's window (snapped on entry, against the real clock after a Reload) and the
+ * environment dropdown's fixed 24 h facets window, snapped to the cache grid, at one clock read.
  */
 export const ResolveWindow = Command.define("ResolveServiceMapWindow", {
 	args: {
@@ -59,15 +59,12 @@ export const ResolveWindow = Command.define("ResolveServiceMapWindow", {
 		),
 })
 
-// STORAGE (`serviceMapLayoutAtomFamily`, `serviceMapViewPrefsAtomFamily`: `Atom.kvs` JSON per org)
-
 const layoutKey = (orgId: string) => `maple.service-map.layout.${orgId}`
 const prefsKey = (orgId: string) => `maple.service-map.view-prefs.${orgId}`
 
 const LayoutJson = Schema.fromJsonString(Schema.Struct({ snapshots: Schema.Array(Snapshot) }))
 const PrefsJson = Schema.fromJsonString(ViewPrefs)
 
-/** Undecodable entries fall back to the defaults, as the atoms do. */
 const readJson = <A>(key: string, schema: Schema.Decoder<A>): Option.Option<A> =>
 	Option.flatMap(readLocalStorage(key), (raw) => Schema.decodeOption(schema)(raw))
 
@@ -103,7 +100,7 @@ export const SaveStored = Command.define("SaveServiceMapStored", {
 		}).pipe(Effect.ignore, Effect.as(Message.CompletedSaveStored())),
 })
 
-// FETCHES (each carries its request key back so `update` drops a superseded answer, S6)
+// Each fetch carries its request key back so `update` drops a superseded answer.
 
 /** `GetServiceMapInput`: the window, scoped to one environment unless "All environments". */
 export const MapInput = Schema.Struct({
@@ -114,7 +111,7 @@ export const MapInput = Schema.Struct({
 export type MapInput = typeof MapInput.Type
 
 export const FetchFacets = Command.define("FetchServiceMapFacets", {
-	/** `refresh`: Reload and Try again revalidate past the read cache (`useAtomRefresh`). */
+	/** Reload and Try again revalidate past the read cache. */
 	args: { key: Schema.String, window: TimeWindow, refresh: Schema.Boolean },
 	messages: [Message.CompletedFetchFacets],
 	execute: ({ key, window, refresh }) =>
@@ -154,7 +151,6 @@ export const FetchPlanetScaleStats = Command.define("FetchServiceMapPlanetScale"
 		),
 })
 
-/** `retainedQueryV2("planetscaleIntegration", "databases")`, keyed like the map does. */
 export const FetchPlanetScaleInventory = Command.define("FetchPlanetScaleInventory", {
 	args: { key: Schema.String },
 	messages: [Message.CompletedFetchPlanetScaleInventory],
@@ -175,7 +171,6 @@ export const FetchPlanetScaleInventory = Command.define("FetchPlanetScaleInvento
 		}).pipe(settleTo((result) => Message.CompletedFetchPlanetScaleInventory({ key, result }))),
 })
 
-/** `retainedInternalQuery("integrations", "cloudflareHyperdrives")`. */
 export const FetchHyperdrives = Command.define("FetchCloudflareHyperdrives", {
 	args: { key: Schema.String },
 	messages: [Message.CompletedFetchHyperdrives],

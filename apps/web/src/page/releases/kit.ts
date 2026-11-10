@@ -36,7 +36,7 @@ export const PILL_VARIANT = {
 	healthy: "ok",
 } as const satisfies Record<ReleaseHealth, "crit" | "warn" | "live" | "ok">
 
-/** `releaseHealthFigure`: "errors 4.1×" / "p95 +38%" / "42% rolling out". */
+/** "errors 4.1×" / "p95 +38%" / "42% rolling out". */
 export const releaseHealthFigure = (impact: {
 	readonly health: ReleaseHealth
 	readonly errorRatio: number | undefined
@@ -59,11 +59,11 @@ export const releaseHealthFigure = (impact: {
 	}
 }
 
-/** `commitsQueryKey`: the resolvable shas, deduped and sorted. */
+/** The resolvable shas, deduped and sorted. */
 export const commitsQueryKey = (shas: Iterable<string>): string =>
 	Arr.join(Arr.sort(Arr.filter([...new Set(shas)], isResolvableSha), Order.String), ",")
 
-/** `commitRangesKey`: resolvable `base..head` pairs, deduped and sorted. */
+/** Resolvable `base..head` pairs, deduped and sorted. */
 export const commitRangesKey = (ranges: Iterable<Readonly<{ base: string; head: string }>>): string =>
 	Arr.join(
 		Arr.sort(
@@ -84,8 +84,8 @@ export const commitRangesKey = (ranges: Iterable<Readonly<{ base: string; head: 
 	)
 
 /**
- * `<Link search={...}>` writes the query in the object's key order; `hrefOf` writes it in the
- * schema's. Reorders `href`'s query to `keys` (the rest after), keeping each value's encoding.
+ * `hrefOf` writes the query in the schema's key order. Reorders `href`'s query to `keys` (the rest
+ * after), keeping each value's encoding.
  */
 export const withQueryOrder = (href: string, keys: ReadonlyArray<string>): string => {
 	const [path, query] = Str.split("?")(href)
@@ -110,6 +110,6 @@ export const withQueryOrder = (href: string, keys: ReadonlyArray<string>): strin
 	)}`
 }
 
-/** `<Link to="/releases/$commitSha" search={search}>`: the query in `search`'s key order. */
+/** The release page, the query in `search`'s key order. */
 export const releaseHref = (commitSha: string, search: Readonly<Record<string, unknown>>): string =>
 	withQueryOrder(hrefOf(AppRoute.Release({ commitSha, search })), Rec.keys(search))

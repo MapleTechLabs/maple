@@ -49,8 +49,6 @@ type Return = PageReturn<Model, Message>
 export const DEFAULT_PRESET = "12h"
 export const CompleteReloadSpin = reloadSpin("CompleteServicesReloadSpin", Message.CompletedReloadSpin)
 
-// REQUESTS
-
 const resolveCommand = (model: Model, context: PageContext, mode: RequestMode) =>
 	ResolveWindow({
 		mode,
@@ -60,7 +58,7 @@ const resolveCommand = (model: Model, context: PageContext, mode: RequestMode) =
 		timeZone: context.timeZone,
 	})
 
-/** `applyGlobalNamespace(input, "top")`: the pin overrides the URL's namespace filters. */
+/** The pin overrides the URL's namespace filters. */
 const withPin = <
 	A extends {
 		readonly namespaces?: ReadonlyArray<string>
@@ -128,7 +126,7 @@ const requestAll = (model: Model, context: PageContext, window: TimeWindow, mode
 			(key) => FetchSparklines({ key, input, refresh: mode === "Refresh" }),
 		),
 		facetsStep(model, context, window, mode),
-		// Reload refreshes the overview, sparklines and facets only (`useRefreshableAtomValue`).
+		// Reload refreshes the overview, sparklines and facets only.
 		keyed(
 			model.baseline,
 			requestKey(org, "getServiceHealthBaseline", { data: baselineInput }),
@@ -146,7 +144,7 @@ const requestAll = (model: Model, context: PageContext, window: TimeWindow, mode
 	])
 }
 
-/** Requests that follow the loaded data: the commit messages of the deploys on screen (`CommitMessagesProvider`). */
+/** Requests that follow the loaded data: the commit messages of the deploys on screen. */
 const followData =
 	(context: PageContext) =>
 	(result: Return): Return => {
@@ -196,9 +194,7 @@ export const summaryOf = (model: Model) => {
 const bumped = <A, E>(model: Model, before: Keyed.Keyed<A, E>, after: Keyed.Keyed<A, E>): number =>
 	before === after ? model.rowRevision : model.rowRevision + 1
 
-// NAVIGATION
-
-/** The row's `goToDetail`: the service in its environment, the window carried. */
+/** A row click: the service in its environment, the window carried. */
 const serviceHref = (model: Model, serviceName: string, environment: string): string =>
 	hrefOf(
 		AppRoute.Service({
@@ -234,8 +230,6 @@ const windowOnly = (search: Search): Search => ({
 	endTime: search.endTime,
 	timePreset: search.timePreset,
 })
-
-// ENTRY POINTS
 
 const loadChartRuntime = () => LoadChartRuntime()
 
@@ -313,10 +307,7 @@ export const revive = (model: Model, route: { readonly search: Search }, context
 	}
 }
 
-/**
- * `servicesRouteAtoms(search)`, warmed on link intent: the facets, overview and sparklines for the
- * snapped window. The atoms pin overview and sparklines before keying ("top"), so the page reuses them.
- */
+/** Warmed on link intent: the facets, overview and sparklines for the snapped window, which the page reuses. */
 export const preload = (route: { readonly search: Search }, context: PageContext, nowMs: number) => {
 	const { model } = init(route, context)
 	const window = resolveWindow(
@@ -495,7 +486,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		}),
 		RemovedFilterChip: ({ param }) => navigate(model, { ...model.search, [param]: undefined }),
 		GotTimePickerMessage: ({ message: inner }) => {
-			// `applyTimeRangeSearch` with a preset: the absolute bounds leave the URL.
+			// Picking a preset drops the absolute bounds from the URL.
 			return pickerStep(
 				model,
 				inner,

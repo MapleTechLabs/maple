@@ -34,12 +34,9 @@ import { hstack, vstack } from "@maple/views/ui/stack"
 import { Array as Arr, String as Str, Option, Order } from "effect"
 import { commitAvatar, firstLine } from "../../kit/commit-card"
 
-// `ReleaseDeployOverview`'s sections, `ReleaseChangeset` and `IssueList` + `IssueLine`.
-
 export type Clock = Readonly<{ nowMs: number; timeZone: string }>
 type TimeSearch = Readonly<{ startTime?: string; endTime?: string; timePreset?: string }>
 
-/** `SectionCard`. */
 export const sectionCard = <M>(
 	h: HtmlBuilder<M>,
 	options: Readonly<{ title: string; action?: Html; className?: string }>,
@@ -281,7 +278,6 @@ export type ChangesetState =
 	| { readonly _tag: "Unavailable"; readonly base: string }
 	| { readonly _tag: "Loaded"; readonly base: string; readonly range: VcsCommitRangeResponse }
 
-/** `ReleaseChangeset`. */
 export const releaseChangeset = <M>(h: HtmlBuilder<M>, state: ChangesetState, clock: Clock): Html => {
 	if (state._tag === "NoBase")
 		return sectionCard(h, { title: "What shipped" }, [
@@ -456,7 +452,6 @@ const issueLine = <M>(
 	})
 }
 
-/** `IssueList`. */
 export const issueList = <M>(
 	h: HtmlBuilder<M>,
 	options: Readonly<{

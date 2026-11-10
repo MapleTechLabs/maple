@@ -257,7 +257,6 @@ export const sectionTitle = <M>(
 		...(right === undefined ? [] : [right]),
 	])
 
-/** A right-aligned mono number cell; the width and tone come from the caller. */
 export const numberCell = <M>(h: HtmlBuilder<M>, value: string, className: string): Html =>
 	h.span([h.Class(cn("shrink-0 text-right font-mono text-xs tabular-nums", className))], [value])
 
@@ -277,7 +276,6 @@ const TOOL_COLORS = ["var(--chart-2)", "var(--chart-1)", "var(--chart-3)", "var(
 export const toolColor = (index: number): string =>
 	TOOL_COLORS[index % TOOL_COLORS.length] ?? "var(--chart-2)"
 
-/** An attribute name, in the inline code style. */
 export const attr = <M>(h: HtmlBuilder<M>, name: string): Html =>
 	inlineCode(h, { variant: "chip", className: "rounded-sm text-2xs" }, [name])
 

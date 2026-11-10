@@ -20,7 +20,7 @@ import { usageTable, usageTableSkeleton } from "./view-usage"
 import { typography, typographyClass } from "@maple/views/ui/typography"
 
 export type ViewInputs = Readonly<{
-	/** The settings page's `billingCustomerAtom`. */
+	/** The settings page's billing customer. */
 	customer: AsyncData.AsyncData<BillingCustomer, LoadFailure>
 	adminName: string | null
 	/** The session says the viewer is a member; the admin-only notice shows only then. */
@@ -160,7 +160,7 @@ const accountFailureOf = (
 	return null
 }
 
-/** `CheckoutConfirmingPanel layout="row"` and `CheckoutTimedOutNotice` above the tab. */
+/** The checkout return above the tab: still confirming (as a row), or timed out. */
 const checkoutReturnPanel = (h: H, model: Model): ReadonlyArray<Html> => {
 	switch (model.checkoutReturn) {
 		case "Idle":

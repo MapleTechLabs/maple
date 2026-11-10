@@ -29,7 +29,6 @@ export const ScrollToTop = Command.define("ScrollSourcesNewToTop", {
 	}),
 })
 
-/** `FirstDataStatus`'s `POLL_MS`. */
 export const POLL_MS = 5_000
 
 export const FetchSourcesList = fetchSourcesList(Message.CompletedFetchList)
@@ -44,7 +43,7 @@ export const FetchCreatedSource = Command.define("FetchCreatedSource", {
 		),
 })
 
-/** `useIntervalRefresh(refresh, { intervalMs: POLL_MS })`: one tick. */
+/** One tick of the first-data poll. */
 export const WaitFirstDataPoll = Command.define("WaitFirstDataPoll", {
 	args: { key: Schema.String },
 	messages: [Message.ElapsedPoll],

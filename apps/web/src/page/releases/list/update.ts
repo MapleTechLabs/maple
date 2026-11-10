@@ -71,8 +71,7 @@ const requestReleases = (
 }
 
 /**
- * What the table reads once it mounts (`ReleasesTableWithIssues`): the issues introduced in the
- * window, then the commit ranges and the commit messages of the rows on screen.
+ * What the table reads once it mounts: the issues introduced in the window, then the commit ranges and the commit messages of the rows on screen.
  */
 const followTable = (model: Model, context: PageContext, mode: RequestMode): Return => {
 	const data = AsyncData.getOrElse(model.releases.data, () => null)

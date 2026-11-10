@@ -190,10 +190,8 @@ const whenJson =
 export const routeChanged = (model: Model, route: EditorRoute, context: PageContext): Return =>
 	whenJson(context, "Refresh")({ ...model, search: route.search, panel: null })
 
-/** The dialogs ignore dismissal while their write is in flight, as `ConfirmDialog` does. */
+/** The dialogs ignore dismissal while their write is in flight. */
 const whenIdle = (isBusy: boolean, model: Model, run: () => Return): Return => (isBusy ? { model } : run())
-
-// PREVIEW
 
 /** The saved page as the preview endpoint takes it: only the monitors' history comes back used. */
 export const previewDraftOf = (model: Model): Option.Option<StatusPagePreviewParams> =>
@@ -216,8 +214,6 @@ const schedulePreview = (model: Model): Return => {
 		commands: [WaitEditorPreview({ generation })],
 	}
 }
-
-// PANEL
 
 /** Closing hands focus back to the row that opened the panel, or the list. */
 const closePanel = (model: Model): Return => {
@@ -314,7 +310,6 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		GotPageMenuMessage: ({ message: child }) => updatePageMenu(model, child),
 		CompletedFocus: () => ({ model }),
 		OpenedPublicPage: () => ({ model }),
-		// Preview and selection
 		ElapsedPreviewDebounce: ({ generation }) =>
 			generation !== model.previewGeneration
 				? { model }
@@ -362,7 +357,6 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		// Escape skips the field's blur, so a component panel saves its typed edits before it closes.
 		PressedEscape: () =>
 			model.panel?._tag === "Component" ? chain(model, commitComponent, closePanel) : closePanel(model),
-		// Components
 		ChangedComponentField: ({ field, value }) => changeComponent(model, field, value),
 		CommittedComponent: () => commitComponent(model),
 		PickedComponentField: ({ field, value }) =>
@@ -387,7 +381,6 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		CompletedCreateMonitor: ({ session, result }) => addMonitorCreated(model, session, result),
 		ClickedSubmitAdd: () => submitAdd(model),
 		CompletedAddComponents: ({ session, result }) => addedComponents(model, session, result, context),
-		// Incidents
 		ClickedNewIncident: ({ kind }) => openComposer(model, kind),
 		ChangedIncidentKind: ({ kind }) => changeIncidentKind(model, kind),
 		ChangedIncidentField: ({ field, value }) => changeIncident(model, field, value),
@@ -405,7 +398,6 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		ClickedPublishIncident: ({ incidentId }) => publishIncident(model, incidentId),
 		CompletedPublishIncident: ({ incidentId, result }) =>
 			publishedIncident(model, incidentId, result, context),
-		// Live
 		GotUrlCopyMessage: ({ message: child }) => {
 			const step = CopyButton.update(model.urlCopy, child)
 			return {
@@ -415,7 +407,6 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 				),
 			}
 		},
-		// Settings
 		ChangedSetting: ({ field, value }) => changeSetting(model, field, value),
 		ToggledPoweredBy: () => togglePoweredBy(model),
 		PickedThemePreset: ({ preset }) =>
@@ -441,7 +432,6 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			),
 		GotTokenCopyMessage: ({ message: child }) => updateTokenCopy(model, child),
 		ClickedDismissToken: () => ({ model: { ...model, revealedToken: null } }),
-		// Page
 		ClickedDeletePage: () => deletePageDialog(model, Dialog.open(model.deletePageDialog)),
 		ClickedConfirmDeletePage: () => confirmDeletePage(model),
 		CompletedDeletePage: ({ result }) => deletedPage(model, result),
@@ -449,7 +439,6 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			whenIdle(model.isDeletingPage, model, () =>
 				deletePageDialog(model, Dialog.update(model.deletePageDialog, child)),
 			),
-		// JSON
 		ClickedEditJson: () => editJson(model),
 		ChangedJson: ({ value }) => changeJson(model, value),
 		ClickedResetJson: () => editJson(model),

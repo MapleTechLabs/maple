@@ -146,7 +146,6 @@ const addServerStrip = <M>(h: HtmlBuilder<M>, onInstrument: M): Html =>
 		],
 	)
 
-/** `McpServersBody`: the servers table. */
 export const listBody = <M>(
 	h: HtmlBuilder<M>,
 	rows: ReadonlyArray<McpServerRow>,

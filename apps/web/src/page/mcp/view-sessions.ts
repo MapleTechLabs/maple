@@ -77,11 +77,11 @@ const failedCell = <M>(h: HtmlBuilder<M>, errors: number): Html =>
 
 const USER_CELL = "hidden w-36 shrink-0 truncate font-mono text-xs @min-[950px]/panel:block"
 
-/** Who the session belongs to: their name, else their id, linked to their user page; else nobody named. */
 /** Who a session's row names: `user.name`/`user.email`, else the id, else `anonymous`. */
 export const sessionUserLabel = (user: string | null, userName: string | null): string =>
 	userName ?? user ?? "anonymous"
 
+/** Who the session belongs to: their name, else their id, linked to their user page; else nobody named. */
 const userCell = <M>(
 	h: HtmlBuilder<M>,
 	user: string | null,
@@ -179,7 +179,6 @@ const partialCoverage = <M>(h: HtmlBuilder<M>, data: McpSessionsResponse): Reado
 			]
 }
 
-/** The median of the listed sessions' lengths; `undefined` for none. */
 export const medianLengthMs = (sessions: ReadonlyArray<McpSessionItem>): number | undefined => {
 	const lengths = Arr.sort(
 		Arr.map(sessions, (row) => row.lastSeenMs - row.firstSeenMs),
@@ -244,7 +243,7 @@ const sessionsOverview = <M>(
 	]
 }
 
-/** `McpSessionsBody`: the sessions list under the server header. */
+/** The sessions list under the server header. */
 export const sessionsBody = <M>(
 	h: HtmlBuilder<M>,
 	data: McpSessionsResponse,
@@ -624,7 +623,7 @@ const sessionStats = <M>(h: HtmlBuilder<M>, data: McpSessionResponse): Html => {
 	])
 }
 
-/** `McpSessionBody`: one session under its header. */
+/** One session under its header. */
 export const sessionBody = <M>(
 	h: HtmlBuilder<M>,
 	data: McpSessionResponse,

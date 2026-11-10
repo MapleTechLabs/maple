@@ -3,7 +3,7 @@ import * as HoverCard from "@maple/views/ui/hover-card"
 import { commitTriggerId, init, Message, update } from "./overlays"
 import { Array as Arr } from "effect"
 
-// `CommitShaHoverCard`'s arm on the releases pages: 20 ms into a hover the lookup starts, once.
+// The commit hover card's arm on the releases pages: 20 ms into a hover the lookup starts, once.
 
 const SHA = "f8f3f66ef8f3f66ef8f3f66ef8f3f66ef8f3f66e"
 const triggerId = commitTriggerId("releases-list", SHA)

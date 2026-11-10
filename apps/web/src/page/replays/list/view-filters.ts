@@ -34,7 +34,7 @@ type FacetItem = ReplaysFacets["services"][number]
 
 const toSections = (message: FilterSections.Message) => Message.GotFilterSectionsMessage({ message })
 
-/** `withSelected`: a selected value missing from its own list stays checkable (count 0). */
+/** A selected value missing from its own list stays checkable (count 0). */
 const withSelected = (
 	options: ReadonlyArray<FacetItem>,
 	selected: string | undefined,
@@ -137,7 +137,7 @@ const rangeSection = (
 	})
 }
 
-/** `TextFilter`: identity is typed, committed on Enter; the × clears the applied filter. */
+/** Identity is typed, committed on Enter; the × clears the applied filter. */
 const textFilter = (
 	h: HtmlBuilder<Message>,
 	config: Readonly<{

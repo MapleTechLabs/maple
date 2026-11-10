@@ -14,8 +14,6 @@ import { hstack } from "@maple/views/ui/stack"
 import { spaced } from "@maple/views/ui/spaced"
 import { Array as Arr } from "effect"
 
-// `ApiReference` and `OAuthPointer`.
-
 type H = HtmlBuilder<Message>
 
 const SCOPE_FAMILY_ROWS = [

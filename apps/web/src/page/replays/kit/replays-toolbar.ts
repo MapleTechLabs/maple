@@ -12,7 +12,7 @@ import { tooltipTrigger } from "@maple/views/ui/tooltip-host"
 // The replays toolbar: the URL search and the triage chips.
 
 export type ReplaysToolbarOptions<M> = Readonly<{
-	/** What is typed; the caller debounces it into `q` like `ToolbarSearch`. */
+	/** What is typed; the caller debounces it into `q`. */
 	query: string
 	onInput: (value: string) => M
 	onClear: M

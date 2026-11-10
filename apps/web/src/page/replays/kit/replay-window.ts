@@ -14,7 +14,7 @@ const WINDOW_MARGIN_MS = 60 * 60 * 1000
 const epochOf = (warehouseTime: string): Option.Option<number> =>
 	Option.liftPredicate(parseWarehouseDateTime(warehouseTime), Number.isFinite)
 
-/** `replayPartitionWindow`: the session's span plus slack, from the `t` hint. */
+/** The session's span plus slack, from the `t` hint. */
 export const replayPartitionWindow = (
 	startHint: string | undefined,
 	endHint?: string,
@@ -52,7 +52,7 @@ const attributeOf = (resourceAttributes: string | null | undefined, key: string)
 				},
 			})
 
-/** `recordedMarker`: the SDK's `maple.session.recorded`, or undefined when unknown. */
+/** The SDK's `maple.session.recorded`, or undefined when unknown. */
 export const recordedMarker = (resourceAttributes: string | null | undefined): boolean | undefined => {
 	const marker = attributeOf(resourceAttributes, "maple.session.recorded")
 	return marker === "true" ? true : marker === "false" ? false : undefined
@@ -60,6 +60,6 @@ export const recordedMarker = (resourceAttributes: string | null | undefined): b
 
 export type ReplayFormat = "rrweb" | "video"
 
-/** `replayFormat`: which engine plays the session; unknown falls back to rrweb. */
+/** Which engine plays the session; unknown falls back to rrweb. */
 export const replayFormat = (resourceAttributes: string | null | undefined): ReplayFormat =>
 	attributeOf(resourceAttributes, "maple.session.replay_format") === "video" ? "video" : "rrweb"

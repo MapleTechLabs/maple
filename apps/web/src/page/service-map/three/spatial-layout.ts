@@ -152,7 +152,7 @@ export function spatialLayout(topology: SpatialTopology, view: SpatialView): Spa
 	return { positions, districts }
 }
 
-// Shared thresholds (lib/error-rate); the 3D scene keeps its own hex palette below.
+// Shared thresholds (`@maple/ui/lib/error-rate`); the 3D scene keeps its own hex palette.
 const HEALTH_BY_LEVEL = { crit: "degraded", warn: "elevated", neutral: "healthy" } as const
 export const health = (rate: number) => HEALTH_BY_LEVEL[errorRateLevel(rate)]
 export const HEALTH_COLOR = { healthy: "#2f8f83", elevated: "#d9a21b", degraded: "#c8553d" } as const

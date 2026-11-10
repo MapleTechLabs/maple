@@ -15,7 +15,7 @@ import { maskedToken, sourceSnippets } from "./snippets"
 import { typography } from "@maple/views/ui/typography"
 import { vstack } from "@maple/views/ui/stack"
 
-// `SourceSetup`: endpoint, header and the platform's setup snippets. The parent embeds it and passes the
+// Endpoint, header and the platform's setup snippets. The parent embeds it and passes the
 // token only right after a create or roll.
 
 export const Model = Schema.Struct({
@@ -34,7 +34,7 @@ export const Message = defineMessageUnion({
 })
 export type Message = typeof Message.Type
 
-/** The snippet tabs start on the first snippet, as `useState(snippets[0]?.id)`. */
+/** The snippet tabs start on the first snippet. */
 export const init = (platform: SourcePlatform, idBase = 60): Model => {
 	const values = Arr.map(sourceSnippets(platform, "", ""), (snippet) => snippet.id)
 	return {

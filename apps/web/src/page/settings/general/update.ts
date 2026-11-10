@@ -117,7 +117,7 @@ const DeleteOrganization = Command.define("DeleteOrganization", {
 	),
 })
 
-/** `switchAway`: another organization (or none) becomes active, then home. */
+/** Another organization (or none) becomes active, then home. */
 const SwitchAway = Command.define("SwitchAwayFromOrganization", {
 	args: { orgId: Schema.String },
 	messages: [Message.CompletedSwitchAway],
@@ -145,7 +145,6 @@ export const init = (grants: ReadonlyArray<Policy.Permission>): Return => ({
 const toast = (type: "success" | "error", title: string, description = "") =>
 	PageOutMessage.RequestedToast({ type, title, description })
 
-/** The active organization, once loaded. */
 export const orgOf = (model: Model): Option.Option<OrgInfo> =>
 	Option.flatMap(AsyncData.getData(model.org), Option.fromNullishOr)
 
@@ -160,7 +159,7 @@ export const isNameDirty = (model: Model): boolean => Draft.isDirty(model.name, 
 
 export type LeaveEligibility = "allowed" | "checking" | "last-admin"
 
-/** `leaveEligibility`: the last admin cannot leave; the count is unknown while it loads. */
+/** The last admin cannot leave; the count is unknown while it loads. */
 export const leaveEligibilityOf = (model: Model): LeaveEligibility => {
 	if (!canManage(model)) return "allowed"
 	return Option.match(AsyncData.getData(model.admins), {
@@ -187,7 +186,7 @@ const liftDelete = (model: Model, step: ReturnType<typeof Dialog.update>): Retur
 
 const isConfirmMatching = (model: Model): boolean => Str.trim(model.confirmText) === savedName(model)
 
-/** `handleDeleteDialogChange`: closing the dialog clears the typed name. */
+/** Closing the dialog clears the typed name. */
 const deleteDialogStep = (model: Model, step: ReturnType<typeof Dialog.update>): Return => {
 	const lifted = liftDelete(model, step)
 	return step.outMessage?._tag === "Closed"

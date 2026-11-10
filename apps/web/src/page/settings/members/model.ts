@@ -41,7 +41,7 @@ const PageOf = <S extends Schema.Top>(row: S) =>
 export const MembersPage = PageOf(MemberRow)
 export const InvitationsPage = PageOf(InvitationRow)
 
-/** `useOrganization({ memberships: { infinite: true } })`: the pages loaded so far, flattened. */
+/** The pages loaded so far, flattened. */
 const ListOf = <S extends Schema.Top>(row: S) =>
 	Schema.Struct({
 		rows: Schema.Array(row),

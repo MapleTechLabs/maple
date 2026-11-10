@@ -44,7 +44,6 @@ import type { Model } from "./model"
 type Return = PageReturn<Model, Message>
 type Search = typeof MetricsSearch.Type
 
-/** `DashboardPage`'s `defaultPreset` for `/metrics`. */
 export const DEFAULT_PRESET: PresetValue = "24h"
 export const TYPE_SELECT_ID = "metrics-type-filter"
 
@@ -129,16 +128,14 @@ const requestAll = (model: Model, context: PageContext, window: TimeWindow, mode
 	}
 }
 
-/** `MetricsBrowse`'s `key`: a new search, type or window remounts the grid or table. */
+/** A new search, type or window remounts the grid or table. */
 const remounted = (model: Model, isNewQuery: boolean): Model => {
 	const reset = { ...model, visiblePages: 1, tableLimit: TABLE_PAGE_SIZE }
-	// A new window keeps the previous rows on screen while it loads (`withRetention`).
+	// A new window keeps the previous rows on screen while it loads.
 	return isNewQuery ? { ...reset, catalog: Keyed.idle(), table: Keyed.idle() } : reset
 }
 
-// NAVIGATION
-
-/** `handlePatch`: filter and view changes replace the history entry. */
+/** Filter and view changes replace the history entry. */
 const patchSearch = (model: Model, search: Search): Return => ({
 	model,
 	outMessage: PageOutMessage.RequestedNavigation({
@@ -152,8 +149,6 @@ const searchHref = (search: Search) => hrefOf(AppRoute.Metrics({ search }))
 const isSameQuery = (a: Search, b: Search) => (a.q ?? "") === (b.q ?? "") && a.type === b.type
 
 const typeSelectValue = (search: Search) => search.type ?? "all"
-
-// ENTRY POINTS
 
 export const init = (route: { readonly search: Search }, context: PageContext): Return => {
 	const model: Model = {
@@ -198,7 +193,7 @@ export const routeChanged = (
 ): Return => {
 	if (searchHref(model.search) === searchHref(route.search)) return { model }
 	const query = route.search.q ?? ""
-	// `ToolbarSearch` resyncs its input on an outside change, never on its own echo.
+	// The search box resyncs its input on an outside change, never on its own echo.
 	const isOutsideQuery = query !== model.lastSentQuery
 	const base: Model = {
 		...remounted({ ...model, search: route.search }, !isSameQuery(model.search, route.search)),
@@ -233,7 +228,7 @@ const metricHref = (model: Model, metricName: string, metricType: string) =>
 		}),
 	)
 
-/** `MetricsTable`'s row link: the page's own time params plus the metric's type. */
+/** The table's row link: the page's own time params plus the metric's type. */
 export const metricLink = metricHref
 
 const liftTypeSelect = (model: Model, message: Select.Message): Return => {
@@ -250,7 +245,7 @@ const liftTypeSelect = (model: Model, message: Select.Message): Return => {
 }
 
 const liftTimePicker = (model: Model, message: TimeRangePicker.Message): Return => {
-	// `applyTimeRangeSearch` with a preset: the absolute bounds leave the URL (a push, not a replace).
+	// A preset: the absolute bounds leave the URL (a push, not a replace).
 	return pickerStep(
 		model,
 		message,

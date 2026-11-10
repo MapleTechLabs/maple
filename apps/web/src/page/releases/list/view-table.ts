@@ -153,7 +153,7 @@ const serviceChips = (h: H, services: ReadonlyArray<ReleaseServiceImpact>): Html
 	)
 }
 
-/** `CommitCount`: "12 commits", only when a deploy carried more than its head commit. */
+/** "12 commits", only when a deploy carried more than its head commit. */
 export const commitCount = (h: H, range: VcsCommitRangeResponse | undefined): Html | null =>
 	range === undefined || range.totalCount < 2
 		? null

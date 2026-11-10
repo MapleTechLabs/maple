@@ -30,7 +30,7 @@ import { COUNT_ATTRIBUTE, VirtualizeTraces } from "./virtualize"
 import { Array as Arr } from "effect"
 import { hstack, vstack } from "@maple/views/ui/stack"
 
-/** `TRACE_COLUMNS`: shared by the table, the skeleton and the header. */
+/** Shared by the table, the skeleton and the header. */
 const COLUMNS = [
 	{ id: "traceId", header: "Trace ID", width: 100, skeleton: "w-16" },
 	{ id: "rootSpan", header: "Root span", skeleton: "w-40" },
@@ -134,7 +134,7 @@ const spacer = (h: HtmlBuilder<Message>, key: string, height: number): Html =>
 		h.Style({ height: `${height}px` }),
 	])
 
-/** `VirtualTableBody`: spacers around the rendered window, then the loading row. */
+/** Spacers around the rendered window, then the loading row. */
 const body = (h: HtmlBuilder<Message>, model: Model, timeZone: string, isMobile: boolean): Html => {
 	const rows = allRows(model)
 	const activeIndex = isMobile ? null : (peekPosition(model)?.index ?? null)

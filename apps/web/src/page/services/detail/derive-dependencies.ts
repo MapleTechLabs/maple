@@ -107,7 +107,7 @@ export const dependencyRows = (bundle: DependencyBundle, seconds: number): Reado
 	),
 ]
 
-/** `mergeDependencyRows`: traffic sums, error rate and avg weighted, p95 the worst part. */
+/** Traffic sums, error rate and avg weighted, p95 the worst part. */
 const mergeRows = (first: DependencyRow, rest: ReadonlyArray<DependencyRow>): DependencyRow => {
 	const all = [first, ...rest]
 	const sum = (pick: (row: DependencyRow) => number) => Arr.reduce(all, 0, (acc, row) => acc + pick(row))
@@ -133,7 +133,7 @@ const mergeRows = (first: DependencyRow, rest: ReadonlyArray<DependencyRow>): De
 	}
 }
 
-/** `dedupedRows`: an HTTP host naming a known service (5+ chars) folds into that service's row. */
+/** An HTTP host naming a known service (5+ chars) folds into that service's row. */
 export const foldHostRows = (rows: ReadonlyArray<DependencyRow>): ReadonlyArray<DependencyRow> => {
 	const services = Arr.map(
 		Arr.filter(rows, (row) => row.kind === "service" && row.name.length >= 5),

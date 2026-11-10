@@ -50,7 +50,7 @@ const requestReleases = (
 	mode: RequestMode,
 ): Return => {
 	const environments = model.search.environments
-	// `globalNamespace: "top"`: the pin is part of the read and its key.
+	// The pin is part of the read and its key.
 	const namespaces = context.pinnedNamespace === null ? undefined : [context.pinnedNamespace]
 	const key = requestKey(context.orgId, "getReleases", {
 		data: { startTime: window.startTime, endTime: window.endTime, environments, namespaces },
@@ -259,7 +259,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		},
 		CompletedReloadSpin: ({ version }) =>
 			version === model.refreshVersion ? { model: { ...model, isReloading: false } } : { model },
-		// The service body's retry refreshes its detail bundle (`useAtomRefresh(atom)`), not the list.
+		// The service body's retry refreshes its detail bundle, not the list.
 		ClickedRetry: () =>
 			model.window === null
 				? { model }

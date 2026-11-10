@@ -63,8 +63,6 @@ const ids = (name: string, hasDescription = false): FieldIds => {
 const isHttpUrl = (value: string): boolean =>
 	URL.canParse(Str.trim(value)) && /^https?:/i.test(Str.trim(value))
 
-// CONNECTION
-
 const connectionStatus = (h: H, settings: OrgClickHouseSettingsResponse, inputs: Inputs): Html => {
 	if (!settings.configured)
 		return hstack(h, { gap: "2", align: "center", className: "border-b px-4 py-3 text-xs" }, [
@@ -228,8 +226,6 @@ const connectionPanel = (
 		}),
 	])
 }
-
-// SCHEMA
 
 const STATUS_COUNTS: ReadonlyArray<{ status: SchemaDiffStatus; label: string; tone: string }> = [
 	{ status: "up_to_date", label: "Up to date", tone: "text-foreground" },
@@ -671,8 +667,6 @@ const schemaSection = (h: H, model: Model, settings: OrgClickHouseSettingsRespon
 		],
 	)
 }
-
-// USAGE
 
 const STATS: ReadonlyArray<{
 	key: keyof Totals

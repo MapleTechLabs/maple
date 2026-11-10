@@ -32,7 +32,7 @@ export interface Derived {
 	readonly response: ReleasesData
 }
 
-/** The page's `derived` memo: impacts, groups and live versions of the loaded rows. */
+/** Impacts, groups and live versions of the loaded rows. */
 export const deriveOf = (data: ReleasesData): Derived => {
 	const releases = Arr.map(data.releases, (row) => ({ ...row }))
 	const timeline = Arr.map(data.timeline, (row) => ({ ...row }))
@@ -82,7 +82,7 @@ export const rangesOf = (model: Model): ReadonlyMap<string, VcsCommitRangeRespon
 		),
 	)
 
-/** `useReleaseIssueCounts`: undefined while loading or failed. */
+/** Issue counts per release; undefined while loading or failed. */
 export const issueCountsOf = (
 	impacts: ReadonlyArray<ReleaseServiceImpact>,
 	page: IssuePage | null,

@@ -18,7 +18,7 @@ export type Overlays<M> = Readonly<{
 	clock: Readonly<{ nowMs: number; timeZone: string }>
 }>
 
-/** `ReleaseHealthPill`: the badge is the tooltip trigger, the description its popup. */
+/** The health pill: the badge is the tooltip trigger, the description its popup. */
 export const releaseHealthPill = <M>(
 	h: HtmlBuilder<M>,
 	overlays: Overlays<M>,
@@ -59,7 +59,7 @@ export const releaseHealthPill = <M>(
 		},
 	})
 
-/** `CommitShaHoverCard`: a full sha opens the commit card on hover; any other is plain text. */
+/** A full sha opens the commit card on hover; any other is plain text. */
 export const commitTrigger = <M>(
 	h: HtmlBuilder<M>,
 	overlays: Overlays<M>,

@@ -54,14 +54,14 @@ type Return = PageReturn<Model, Message>
 type SourceRoute = Extract<AppRoute, { readonly _tag: "Source" }>
 
 export const PAUSE_MENU_ID = "source-pause-menu"
-/** `PAUSE_CHOICES`, keyed by the menu item value. */
+/** The pause menu's choices, keyed by the menu item value. */
 export const PAUSE_CHOICES = [
 	{ value: "1h", label: "For 1 hour", hours: 1 },
 	{ value: "24h", label: "For 24 hours", hours: 24 },
 	{ value: "resumed", label: "Until resumed", hours: null },
 ] as const
 
-/** `useSource`: the route's source from the shared list, once it has loaded. */
+/** The route's source from the shared list, once it has loaded. */
 export const sourceOf = (model: Model): Option.Option<V2Source> =>
 	Option.flatMap(AsyncData.getData(model.list.data), (rows) =>
 		Arr.findFirst(rows, (row) => row.id === model.sourceId),
@@ -78,7 +78,7 @@ const loadList = (model: Model, context: PageContext, mode: Keyed.ReadMode): Ret
 	})
 }
 
-/** `SourceOverview` reads the usage as it mounts: the overview tab over a found source. */
+/** The overview reads the usage as it mounts: the overview tab over a found source. */
 const loadUsage = (model: Model, context: PageContext): Return => {
 	const source = sourceOf(model)
 	if (model.tab !== "overview" || Option.isNone(source)) return { model }
@@ -279,7 +279,7 @@ const liftDialog = (
 	),
 })
 
-/** A write settled: refresh the list on success (`useAtomRefresh(sourcesListAtom)`), toast either way. */
+/** A write settled: refresh the list on success, toast either way. */
 const settled = <A>(
 	model: Model,
 	context: PageContext,
@@ -303,7 +303,7 @@ const withSource = (model: Model, run: (id: NonNullable<Model["sourceId"]>) => R
 const withSettings = (model: Model, write: (form: SettingsForm) => SettingsForm): Model =>
 	model.settings === null ? model : { ...model, settings: write(model.settings) }
 
-/** `SourceSettings`' save: basics for the default source and integrations, rules for token sources. */
+/** The settings form's save: basics for the default source and integrations, rules for token sources. */
 const save = (model: Model): Return => {
 	const source = sourceOf(model)
 	const form = model.settings
@@ -345,7 +345,6 @@ const leaveFor = (step: Return, url: string): Return => {
 	}
 }
 
-/**
 /** The AWS integration page keeps a removed connection's cleanup script. */
 const AWS_CLEANUP_HREF = hrefOf(AppRoute.SourcesNew({ search: { integration: "aws" } }))
 
@@ -497,7 +496,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 					commands: [...(closed.commands ?? []), PauseSource({ id, hours: null })],
 				}
 			}),
-		// A pending dialog ignores Escape and Cancel (`onOpenChange` while `pending`).
+		// A pending dialog ignores Escape and Cancel.
 		GotRollDialogMessage: ({ message: inner }) =>
 			model.busy === "roll"
 				? { model }
@@ -620,7 +619,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			),
 		GotTokenCopyMessage: ({ message: inner }) => {
 			const next = CopyButton.update(model.tokenCopy, inner)
-			// `CopyableField copyLabel="Source token"`: `useCopy`'s toast for the current copy.
+			// Only the current copy toasts.
 			const isCurrent = "generation" in inner && inner.generation === model.tokenCopy.generation
 			const isDone = isCurrent && (inner._tag === "SucceededCopy" || inner._tag === "FailedCopy")
 			const step: Return = {

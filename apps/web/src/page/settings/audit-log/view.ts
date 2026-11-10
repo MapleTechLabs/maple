@@ -131,8 +131,6 @@ const rangeLabel = (range: AuditDateRange, timeZone: string): string => {
 	return "All time"
 }
 
-// TOOLBAR
-
 const RANGE_OPTION_CLASS =
 	"flex h-7 items-center px-3 text-left text-xs hover:bg-surface-sunken active:bg-surface-sunken"
 
@@ -318,8 +316,6 @@ const personFilter = (
 		},
 	})
 }
-
-// ROWS
 
 const actorCell = (h: H, entry: V2AuditLogEntry): Html => {
 	const actor = ACTOR_BADGES[entry.actor_type]
