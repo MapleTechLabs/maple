@@ -289,7 +289,7 @@ const hubBody = (
 					signal,
 					status: resolveIncidentStatus(model.search.anomalyStatus),
 					serviceName: model.search.serviceName,
-					hasAnomalies,
+					hasAnomalies: Arr.some(data.incidents, (incident) => incident.signalType === "anomaly"),
 					// Counted under the same service filter the list applies.
 					openAnomalies: Arr.filter(
 						data.openIncidents,
