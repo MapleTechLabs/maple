@@ -331,8 +331,9 @@ What each kind of Worker keeps beside the module:
 
     A connector whose install mints a credential per workspace (rather than using one
     deployment-wide secret) has it sealed into `chat_workspaces.credentials_{ciphertext,iv,tag}`,
-    AAD-bound to `(org_id, connector, external_workspace_id)`. That is why chat-bot also
-    binds `MAPLE_INGEST_KEY_ENCRYPTION_KEY`, optionally. Without it such a workspace fails
+    AAD-bound to `(org_id, connector, external_workspace_id)` (see `secret-encryption.md`).
+    That is why chat-bot also binds `MAPLE_INGEST_KEY_ENCRYPTION_KEY` and
+    `MAPLE_INGEST_KEY_DECRYPTION_KEYS`, optionally. Without it such a workspace fails
     its lookup and the mention goes unanswered, while every other connector runs normally.
 
 - **The sandbox Worker** (`sandbox`): the one Worker in the fleet whose own module is its

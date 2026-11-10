@@ -11,7 +11,7 @@ import {
 	MobileDevices,
 } from "@maple/db/tables"
 import { RoleName, type OrgId, type UserId } from "@maple/domain/http"
-import { Clock, Context, Effect, Layer, Redacted, Schema, Array as Arr } from "effect"
+import { Clock, Context, Effect, Layer, Schema, Array as Arr } from "effect"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { Env } from "@maple/backend/platform/Env"
 import { makeDbExecute } from "@maple/backend/platform/db-execute"
@@ -19,7 +19,8 @@ import {
 	DestinationPublicConfigSchema,
 	SecretConfigFromJson,
 } from "@maple/backend/services/alerts/AlertDestinationHydration"
-import { decryptAes256Gcm, encryptAes256Gcm, parseBase64Aes256GcmKey } from "@maple/backend/platform/Crypto"
+import { openSecret, sealSecret, secretKeyringFromEnv } from "@maple/backend/platform/SecretBox"
+import { alertDestinationSecretSlot } from "@maple/backend/platform/secret-slots"
 import { ORG_MEMBERSHIP_CACHE_BUCKET, forgetMembershipMemo } from "./OrgMembershipService"
 import * as Policy from "@maple/domain/policy"
 import { revokeFamiliesForAccessKeys, revokeRefreshFamiliesForMember } from "./mcp-oauth-family"
@@ -122,10 +123,7 @@ const make = Effect.gen(function* () {
 	const edgeCache = yield* EdgeCacheService
 	const dbExecute = makeDbExecute(database, "MembershipRevocationService", toRevocationError)
 
-	const encryptionKey = yield* parseBase64Aes256GcmKey(
-		Redacted.value(env.MAPLE_INGEST_KEY_ENCRYPTION_KEY),
-		(message) => new MembershipRevocationError({ message }),
-	)
+	const keyring = yield* secretKeyringFromEnv(env, (message) => new MembershipRevocationError({ message }))
 
 	const invalidateMembership = Effect.fn("MembershipRevocationService.invalidateMembership")(function* (
 		userId: UserId,
@@ -155,9 +153,12 @@ const make = Effect.gen(function* () {
 			)
 			const outcomes = yield* Effect.forEach(rows, (row) =>
 				Effect.gen(function* () {
-					const secretJson = yield* decryptAes256Gcm(
+					const ref = { orgId: row.orgId, id: row.id }
+					const secretJson = yield* openSecret(
+						keyring,
+						alertDestinationSecretSlot,
+						ref,
 						{ ciphertext: row.secretCiphertext, iv: row.secretIv, tag: row.secretTag },
-						encryptionKey,
 						() =>
 							new MembershipRevocationError({
 								message: `Could not decrypt alert destination ${row.id}`,
@@ -179,9 +180,11 @@ const make = Effect.gen(function* () {
 								}),
 						),
 					)
-					const encrypted = yield* encryptAes256Gcm(
+					const encrypted = yield* sealSecret(
+						keyring,
+						alertDestinationSecretSlot,
+						ref,
 						nextSecretJson,
-						encryptionKey,
 						(message) =>
 							new MembershipRevocationError({
 								message,

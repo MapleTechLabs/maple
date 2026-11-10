@@ -89,8 +89,8 @@ const provideBase = (testDb: TestDb, fetch: ReturnType<typeof fetchLayer>) =>
 /** Seed an expired connection with a refresh token, so any token read must refresh. */
 const seedExpiredConnection = (helpers: Effect.Success<ReturnType<typeof makeHelpers>>) =>
 	Effect.gen(function* () {
-		const accessEnc = yield* helpers.encryptValue("stale-access-token")
-		const refreshEnc = yield* helpers.encryptValue("stored-refresh-token")
+		const accessEnc = yield* helpers.sealAccessToken(ORG, "stale-access-token")
+		const refreshEnc = yield* helpers.sealRefreshToken(ORG, "stored-refresh-token")
 		// Written in the past so any later write moves `updatedAt`.
 		yield* helpers.upsertConnection(ORG, (yield* Clock.currentTimeMillis) - 10_000, {
 			externalUserId: "ext-user-1",

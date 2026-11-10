@@ -110,10 +110,13 @@ const answer = (state: LabState, model: AuditModel.Model, commands: ReadonlyArra
 	).model
 }
 
-/** The kit's own commands and the custom range's clock read; every API read is answered above. */
+/** The kit's own commands and the custom range's clock read and focus; every API read is answered above. */
 const local = (commands: ReadonlyArray<AuditCommand> | undefined) => [
 	...keepLocal(commands),
-	...Arr.filter(commands ?? [], (command) => command.name === "ResolveAuditCustomToday"),
+	...Arr.filter(
+		commands ?? [],
+		(command) => command.name === "ResolveAuditCustomToday" || command.name === "FocusAuditDateRange",
+	),
 ]
 
 const lift = (commands: ReadonlyArray<AuditCommand>) =>

@@ -4,7 +4,7 @@ import { prettyJson, tryParseJson } from "../../lib/display-text"
 import { Option, String as Str } from "effect"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { copyButton } from "../copy-button"
-import { icon, type IconName } from "../icon"
+import { icon } from "../icon"
 import { cappedCode } from "../logs/log-message"
 import { type AttributeSource, copyStatusOf, isOpen, Message, type Model } from "./attributes-panel"
 
@@ -158,14 +158,7 @@ const commitShaValue = (h: H, id: string, value: string): Html =>
 /** The per-row hover verb (`AttributeFilterAction`): the `tag` badge as a button. */
 export const attributeFilterAction = <M>(
 	h: HtmlBuilder<M>,
-	options: Readonly<{
-		label: string
-		text: string
-		onClick: M
-		stopPropagation?: boolean
-		/** A glyph before the verb. */
-		icon?: IconName
-	}>,
+	options: Readonly<{ label: string; text: string; onClick: M; stopPropagation?: boolean }>,
 ): Html =>
 	h.button(
 		[
@@ -183,7 +176,7 @@ export const attributeFilterAction = <M>(
 			h.DataAttribute("slot", "badge"),
 			options.stopPropagation === true ? h.OnClick(options.onClick, stop) : h.OnClick(options.onClick),
 		],
-		[...(options.icon === undefined ? [] : [icon(h, options.icon)]), options.text],
+		[options.text],
 	)
 
 const filterAction = (h: H, label: string, onClick: Message, text: string): Html =>

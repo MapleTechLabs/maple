@@ -22,7 +22,7 @@ use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use aes_gcm::aead::{Aead, KeyInit};
+use aes_gcm::aead::{Aead, KeyInit, Payload};
 use aes_gcm::{Aes256Gcm, Nonce};
 use autumn::{AutumnEntitlements, AutumnTracker, BillingOrgLookup, BillingOrgResolver};
 use axum::body::Bytes;
@@ -194,7 +194,7 @@ struct AppConfig {
     request_timeout: Duration,
     require_tls: bool,
     key_store_backend: KeyStoreBackend,
-    clickhouse_encryption_key: Option<[u8; 32]>,
+    clickhouse_secret_keyring: Option<SecretKeyring>,
     lookup_hmac_key: String,
     autumn_secret_key: Option<String>,
     autumn_api_url: String,
@@ -550,13 +550,14 @@ impl AppConfig {
         }
 
         let key_store_backend = resolve_key_store_backend()?;
-        let clickhouse_encryption_key = match &key_store_backend {
+        let clickhouse_secret_keyring = match &key_store_backend {
             // The Postgres key store decrypts BYO-ClickHouse credentials from
-            // org_clickhouse_settings, so it needs the encryption key.
+            // org_clickhouse_settings, so it needs the encryption keys.
             KeyStoreBackend::Postgres { .. } => {
-                let raw = std::env::var("MAPLE_INGEST_KEY_ENCRYPTION_KEY")
+                let primary = std::env::var("MAPLE_INGEST_KEY_ENCRYPTION_KEY")
                     .map_err(|_| "MAPLE_INGEST_KEY_ENCRYPTION_KEY is required".to_owned())?;
-                Some(parse_base64_aes256_gcm_key(&raw)?)
+                let decrypt_only = std::env::var("MAPLE_INGEST_KEY_DECRYPTION_KEYS").ok();
+                Some(SecretKeyring::parse(&primary, decrypt_only.as_deref())?)
             }
             KeyStoreBackend::Static { .. } => None,
         };
@@ -778,7 +779,7 @@ impl AppConfig {
             request_timeout,
             require_tls,
             key_store_backend,
-            clickhouse_encryption_key,
+            clickhouse_secret_keyring,
             lookup_hmac_key,
             autumn_secret_key,
             autumn_api_url,
@@ -1030,7 +1031,7 @@ const VERCEL_PROJECT_NAMES_TTL: Duration = Duration::from_mins(5);
 
 struct ClickHouseTargetResolver {
     store: Arc<dyn KeyStore>,
-    encryption_key: Option<[u8; 32]>,
+    keyring: Option<SecretKeyring>,
     cache: Cache<String, ClickHouseTarget>,
     /// Orgs that resolved to "no ready target" — no row, or a row stamped with a
     /// schema revision this binary predates.
@@ -1056,10 +1057,10 @@ const CLICKHOUSE_TARGET_TTL: Duration = Duration::from_mins(1);
 const CLICKHOUSE_TARGET_NEGATIVE_TTL: Duration = Duration::from_secs(30);
 
 impl ClickHouseTargetResolver {
-    fn new(store: Arc<dyn KeyStore>, encryption_key: Option<[u8; 32]>, capacity: u64) -> Self {
+    fn new(store: Arc<dyn KeyStore>, keyring: Option<SecretKeyring>, capacity: u64) -> Self {
         Self {
             store,
-            encryption_key,
+            keyring,
             cache: Cache::builder()
                 .time_to_live(CLICKHOUSE_TARGET_TTL)
                 .max_capacity(capacity)
@@ -3014,7 +3015,7 @@ async fn main() {
         if direct_clickhouse_possible {
             Some(Arc::new(ClickHouseTargetResolver::new(
                 Arc::clone(&store),
-                config.clickhouse_encryption_key,
+                config.clickhouse_secret_keyring.clone(),
                 10_000,
             )) as Arc<dyn ClickHouseTargetProvider>)
         } else {
@@ -9266,10 +9267,10 @@ impl ClickHouseTargetProvider for ClickHouseTargetResolver {
             row.ch_password_tag.as_deref(),
         ) {
             (Some(ciphertext), Some(iv), Some(tag)) => {
-                let key = self.encryption_key.as_ref().ok_or_else(|| {
+                let keyring = self.keyring.as_ref().ok_or_else(|| {
                     "MAPLE_INGEST_KEY_ENCRYPTION_KEY is required to decrypt ClickHouse credentials".to_owned()
                 })?;
-                decrypt_aes256_gcm(ciphertext, iv, tag, key)?
+                keyring.open_clickhouse_password(org_id, ciphertext, iv, tag)?
             }
             (None, None, None) => String::new(),
             _ => {
@@ -10400,11 +10401,122 @@ fn parse_base64_aes256_gcm_key(raw: &str) -> Result<[u8; 32], String> {
     })
 }
 
+/// HKDF-SHA256 (RFC 5869) with an empty salt, first output block only.
+/// Mirrors `hkdfSha256` in `packages/backend/src/platform/SecretBox.ts`.
+fn hkdf_sha256_block(input_key: &[u8], info: &[u8]) -> Result<[u8; 32], String> {
+    let hmac_error = |error| format!("Invalid HKDF key: {error}");
+    let mut extract = <HmacSha256 as Mac>::new_from_slice(&[0_u8; 32]).map_err(hmac_error)?;
+    extract.update(input_key);
+    let pseudo_random_key = extract.finalize().into_bytes();
+    let mut expand = <HmacSha256 as Mac>::new_from_slice(&pseudo_random_key).map_err(hmac_error)?;
+    expand.update(info);
+    expand.update(&[1]);
+    Ok(expand.finalize().into_bytes().into())
+}
+
+/// Length-prefixed parts, the same bytes as `secretAad` in `SecretBox.ts`.
+fn secret_aad(parts: &[&str]) -> Vec<u8> {
+    let mut aad = Vec::new();
+    for part in parts {
+        aad.extend_from_slice(format!("{}:{part},", part.len()).as_bytes());
+    }
+    aad
+}
+
+/// The slot name of the BYO ClickHouse password: its subkey label and first AAD part.
+const CLICKHOUSE_PASSWORD_SLOT: &str = "org_clickhouse_settings.ch_password";
+
+#[derive(Clone)]
+struct SecretKey {
+    /// Fingerprint the v2 envelope names its sealing key by.
+    id: String,
+    master: [u8; 32],
+    clickhouse_password_subkey: [u8; 32],
+}
+
+/// The keys stored secrets may be sealed under: the primary first, then the
+/// decrypt-only ones kept across a rotation (docs/secret-encryption.md).
+#[derive(Clone)]
+struct SecretKeyring {
+    keys: Vec<SecretKey>,
+}
+
+impl SecretKeyring {
+    fn parse(primary: &str, decrypt_only: Option<&str>) -> Result<Self, String> {
+        let mut keys = vec![SecretKey::new(parse_base64_aes256_gcm_key(primary)?)?];
+        for raw in decrypt_only.unwrap_or_default().split(',') {
+            if raw.trim().is_empty() {
+                continue;
+            }
+            let master: [u8; 32] = STANDARD
+                .decode(raw.trim())
+                .ok()
+                .and_then(|decoded| decoded.try_into().ok())
+                .ok_or_else(|| {
+                    "MAPLE_INGEST_KEY_DECRYPTION_KEYS must be comma-separated base64 keys of exactly 32 bytes"
+                        .to_owned()
+                })?;
+            let key = SecretKey::new(master)?;
+            if keys.iter().all(|known| known.id != key.id) {
+                keys.push(key);
+            }
+        }
+        Ok(Self { keys })
+    }
+
+    /// Opens `org_clickhouse_settings.ch_password_*` for `org_id`. A `v2.<keyId>.<base64>`
+    /// ciphertext is bound to the org; one without the prefix is the older unbound format.
+    fn open_clickhouse_password(
+        &self,
+        org_id: &str,
+        ciphertext: &str,
+        iv: &str,
+        tag: &str,
+    ) -> Result<String, String> {
+        let parts: Vec<&str> = ciphertext.split('.').collect();
+        if let ["v2", key_id, sealed] = parts.as_slice() {
+            let key = self
+                .keys
+                .iter()
+                .find(|key| key.id == *key_id)
+                .ok_or_else(|| "Sealed with a key this deployment does not hold".to_owned())?;
+            return decrypt_aes256_gcm(
+                sealed,
+                iv,
+                tag,
+                &key.clickhouse_password_subkey,
+                &secret_aad(&[CLICKHOUSE_PASSWORD_SLOT, org_id]),
+            );
+        }
+        let mut outcome = Err("Decryption failed".to_owned());
+        for key in &self.keys {
+            outcome = decrypt_aes256_gcm(ciphertext, iv, tag, &key.master, &[]);
+            if outcome.is_ok() {
+                break;
+            }
+        }
+        outcome
+    }
+}
+
+impl SecretKey {
+    fn new(master: [u8; 32]) -> Result<Self, String> {
+        let id_block = hkdf_sha256_block(&master, b"maple/secret-box/v2/key-id")?;
+        let info = format!("maple/secret-box/v2/slot/{CLICKHOUSE_PASSWORD_SLOT}");
+        Ok(Self {
+            id: URL_SAFE_NO_PAD.encode(&id_block[..6]),
+            master,
+            clickhouse_password_subkey: hkdf_sha256_block(&master, info.as_bytes())?,
+        })
+    }
+}
+
 fn decrypt_aes256_gcm(
     ciphertext: &str,
     iv: &str,
     tag: &str,
     key: &[u8; 32],
+    aad: &[u8],
 ) -> Result<String, String> {
     let ciphertext = STANDARD
         .decode(ciphertext)
@@ -10433,7 +10545,13 @@ fn decrypt_aes256_gcm(
     let mut sealed = ciphertext;
     sealed.extend_from_slice(&tag);
     let plaintext = cipher
-        .decrypt(Nonce::from_slice(&iv), sealed.as_ref())
+        .decrypt(
+            Nonce::from_slice(&iv),
+            Payload {
+                msg: sealed.as_ref(),
+                aad,
+            },
+        )
         .map_err(|_| "Decryption failed".to_owned())?;
     String::from_utf8(plaintext).map_err(|_| "Decrypted password was not UTF-8".to_owned())
 }
@@ -12281,7 +12399,7 @@ mod tests {
                 key_store_backend: KeyStoreBackend::Static {
                     org_id: "org_test".to_owned(),
                 },
-                clickhouse_encryption_key: None,
+                clickhouse_secret_keyring: None,
                 lookup_hmac_key: "test-hmac-key".to_owned(),
                 autumn_secret_key: None,
                 autumn_api_url: "https://api.useautumn.com".to_owned(),
@@ -16040,9 +16158,60 @@ mod tests {
             "AQIDBAUGBwgJCgsM",
             "b7D1umrvI8557NFvR9nJ/A==",
             &key,
+            &[],
         )
         .expect("fixture decrypts");
         assert_eq!(plaintext, "ch-secret-123");
+    }
+
+    const FIXTURE_KEY: &str = "BQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQU=";
+    const OTHER_KEY: &str = "BgYGBgYGBgYGBgYGBgYGBgYGBgYGBgYGBgYGBgYGBgY=";
+    // A v2 envelope sealed by SecretBox.ts for org "org_fixture" under FIXTURE_KEY.
+    // The same triple is opened in packages/backend/src/platform/secret-slots.test.ts.
+    const V2_CIPHERTEXT: &str = "v2.IGjfnBNl.1HbzraIYWPNUxiGCnA==";
+    const V2_IV: &str = "3gBID0+h49Y9q+SD";
+    const V2_TAG: &str = "s2cyY7uChmyKqIcJzE8m7Q==";
+
+    #[test]
+    fn secret_keyring_opens_a_v2_password_sealed_by_the_api() {
+        let keyring = SecretKeyring::parse(FIXTURE_KEY, None).expect("keyring parses");
+        let plaintext = keyring
+            .open_clickhouse_password("org_fixture", V2_CIPHERTEXT, V2_IV, V2_TAG)
+            .expect("v2 fixture opens");
+        assert_eq!(plaintext, "ch-secret-123");
+    }
+
+    #[test]
+    fn secret_keyring_refuses_a_v2_password_moved_to_another_org() {
+        let keyring = SecretKeyring::parse(FIXTURE_KEY, None).expect("keyring parses");
+        let moved = keyring.open_clickhouse_password("org_other", V2_CIPHERTEXT, V2_IV, V2_TAG);
+        assert_eq!(moved, Err("Decryption failed".to_owned()));
+    }
+
+    #[test]
+    fn secret_keyring_opens_with_a_decrypt_only_key_after_rotation() {
+        let rotated = SecretKeyring::parse(OTHER_KEY, Some(&format!(" {FIXTURE_KEY} ,")))
+            .expect("keyring parses");
+        let v2 = rotated.open_clickhouse_password("org_fixture", V2_CIPHERTEXT, V2_IV, V2_TAG);
+        assert_eq!(v2, Ok("ch-secret-123".to_owned()));
+        let legacy = rotated.open_clickhouse_password(
+            "org_fixture",
+            "vDjK0A+Vv5bHlJ2a3A==",
+            "AQIDBAUGBwgJCgsM",
+            "b7D1umrvI8557NFvR9nJ/A==",
+        );
+        assert_eq!(legacy, Ok("ch-secret-123".to_owned()));
+    }
+
+    #[test]
+    fn secret_keyring_names_a_missing_key_and_rejects_a_malformed_one() {
+        let other = SecretKeyring::parse(OTHER_KEY, None).expect("keyring parses");
+        let missing = other.open_clickhouse_password("org_fixture", V2_CIPHERTEXT, V2_IV, V2_TAG);
+        assert_eq!(
+            missing,
+            Err("Sealed with a key this deployment does not hold".to_owned())
+        );
+        assert!(SecretKeyring::parse(FIXTURE_KEY, Some("not-a-key")).is_err());
     }
 
     #[test]
@@ -16119,8 +16288,7 @@ mod tests {
         let resolver = ClickHouseTargetResolver::new(
             store,
             Some(
-                parse_base64_aes256_gcm_key("BQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQU=")
-                    .unwrap(),
+                SecretKeyring::parse("BQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQU=", None).unwrap(),
             ),
             16,
         );
@@ -16155,8 +16323,7 @@ mod tests {
         let resolver = ClickHouseTargetResolver::new(
             store,
             Some(
-                parse_base64_aes256_gcm_key("BQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQU=")
-                    .unwrap(),
+                SecretKeyring::parse("BQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQU=", None).unwrap(),
             ),
             16,
         );

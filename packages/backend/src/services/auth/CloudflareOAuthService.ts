@@ -302,14 +302,14 @@ export class CloudflareOAuthService extends Context.Service<
 			}
 			const primaryAccount = Arr.headNonEmpty(accounts)
 
-			const accessEnc = yield* oauth.encryptValue(tokenResponse.access_token)
+			const orgId = decodeOrgId(stateRow.orgId)
+			const accessEnc = yield* oauth.sealAccessToken(orgId, tokenResponse.access_token)
 			const refreshEnc = tokenResponse.refresh_token
-				? yield* oauth.encryptValue(tokenResponse.refresh_token)
+				? yield* oauth.sealRefreshToken(orgId, tokenResponse.refresh_token)
 				: null
 			const currentTime = yield* Clock.currentTimeMillis
 			const expiresAt =
 				tokenResponse.expires_in != null ? currentTime + tokenResponse.expires_in * 1000 : null
-			const orgId = decodeOrgId(stateRow.orgId)
 			yield* Effect.annotateCurrentSpan({ orgId })
 
 			// A background poller must renew indefinitely; a connection with no refresh token silently
@@ -402,7 +402,7 @@ export class CloudflareOAuthService extends Context.Service<
 			if (row != null) {
 				const config = yield* resolveConfig(env).pipe(Effect.option)
 				const accessToken = yield* oauth
-					.decryptValue({
+					.openAccessToken(row.orgId, {
 						ciphertext: row.accessTokenCiphertext,
 						iv: row.accessTokenIv,
 						tag: row.accessTokenTag,
