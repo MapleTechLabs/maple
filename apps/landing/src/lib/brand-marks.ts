@@ -407,7 +407,7 @@ export const BRAND_MARKS = {
 			},
 		],
 	},
-	// The next three come from the dashboard's own icon set (apps/web icons.generated.ts),
+	// The next three come from the dashboard's own icon set (packages/views/src/ui/icons.generated.ts),
 	// so a card here and its connect flow in the app draw the same mark.
 	aws: {
 		name: "AWS",

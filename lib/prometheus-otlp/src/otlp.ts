@@ -15,7 +15,6 @@ import type { PromMetricFamily, PromSample } from "./parser"
 export interface ScrapeOtlpContext {
 	/** Resource attributes, emitted in insertion order. */
 	readonly resource: Readonly<Record<string, string>>
-	/** Instrumentation scope name. */
 	readonly scopeName: string
 	/** `job` data-point attribute. */
 	readonly job: string

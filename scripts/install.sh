@@ -4,7 +4,7 @@
 #   curl -fsSL https://maple.dev/cli/install | sh
 #
 # (maple.dev/cli/install is this same file, served by apps/landing. The raw
-#  GitHub URL — raw.githubusercontent.com/MapleTechLabs/maple/main/scripts/install.sh —
+#  GitHub URL, raw.githubusercontent.com/MapleTechLabs/maple/main/scripts/install.sh,
 #  works too.)
 #
 # Downloads the platform bundle from the latest GitHub release, verifies its
@@ -13,10 +13,10 @@
 # then puts `maple` on your PATH.
 #
 # Already installed? `maple update` upgrades in place (same artifact, atomic
-# swap) — re-running this installer is only needed for a first install.
+# swap); re-running this installer is only needed for a first install.
 #
 # The two files MUST stay in the same directory: `maple` (a single Bun-compiled
-# binary that does everything — CLI, OTLP-ingest/query server, and UI host)
+# binary that does everything: CLI, OTLP-ingest/query server, and UI host)
 # dlopens `libchdb.so` via bun:ffi, resolving it relative to its own executable
 # path. We install both into ~/.maple/bin and symlink only `maple` onto PATH;
 # the binary also falls back to ~/.maple/bin when resolving libchdb, so the
@@ -47,7 +47,7 @@ say() { printf '%s\n' "$*"; }
 die() { printf 'error: %s\n' "$*" >&2; exit 1; }
 need() { command -v "$1" >/dev/null 2>&1 || die "missing required command: $1"; }
 
-# download URL DEST MESSAGE — silent fetch with a TTY-aware spinner.
+# download URL DEST MESSAGE: silent fetch with a TTY-aware spinner.
 # On a terminal: animate a braille spinner that collapses to ✓ (or ✗ + the curl
 # error on failure). Otherwise: print one plain line and fetch quietly. Keeps the
 # noisy curl --progress-bar off the screen while still showing progress.
@@ -137,7 +137,6 @@ need curl
 need tar
 need uname
 
-# --- detect platform → release target ----------------------------------------
 os="$(uname -s)"
 arch="$(uname -m)"
 case "$os" in
@@ -158,11 +157,10 @@ case "$os" in
 	*) die "unsupported OS: $os (Maple ships macOS and Linux bundles)" ;;
 esac
 
-# --- resolve release tag ------------------------------------------------------
 tag="${MAPLE_VERSION:-}"
 if [ -z "$tag" ]; then
 	# Use -sS (not -f) so a 404 "no releases yet" doesn't print a confusing
-	# curl error — we give our own clear message below. Not /releases/latest:
+	# curl error; we give our own clear message below. Not /releases/latest:
 	# the npm packages publish releases too, so take the newest `v*` tag. Drafts
 	# are invisible to anonymous calls and CLI prereleases are not tagged `vX.Y.Z`.
 	# Pages on while a page holds only package releases.
@@ -182,12 +180,11 @@ say "Installing Maple ${tag} (${target})…"
 tmp="$(mktemp -d)"
 trap 'rm -rf "$tmp"' EXIT INT TERM
 
-# --- download + verify --------------------------------------------------------
 download "$url" "$tmp/bundle.tar.gz" "Downloading Maple ${tag} (${target})…" \
 	|| die "download failed: $url"
 
 # The release workflow always publishes a `.sha256` alongside each bundle, so a
-# missing one means a network/mirror problem or tampering — fail loudly rather
+# missing one means a network/mirror problem or tampering: fail loudly rather
 # than installing an unverified binary. `MAPLE_SKIP_CHECKSUM=1` is the escape
 # hatch for air-gapped mirrors that don't carry the checksum file.
 if [ "${MAPLE_SKIP_CHECKSUM:-0}" = "1" ]; then
@@ -206,7 +203,6 @@ else
 	say "Checksum verified."
 fi
 
-# --- install the 2-file bundle ------------------------------------------------
 tar -xzf "$tmp/bundle.tar.gz" -C "$tmp"
 [ -d "$tmp/$name" ] || die "unexpected archive layout (no $name/ directory)"
 
@@ -219,13 +215,11 @@ if [ "$os" = "Darwin" ] && command -v xattr >/dev/null 2>&1; then
 	xattr -dr com.apple.quarantine "$INSTALL_DIR/maple" "$INSTALL_DIR/libchdb.so" 2>/dev/null || true
 fi
 
-# --- put `maple` on PATH ------------------------------------------------------
 link_dir="${MAPLE_BIN_DIR:-}"
 if [ -z "$link_dir" ]; then
 	for d in /usr/local/bin "$HOME/.local/bin"; do
 		if [ -d "$d" ] && [ -w "$d" ]; then link_dir="$d"; break; fi
 	done
-	# Fall back to ~/.local/bin (create it) if nothing writable was found.
 	[ -n "$link_dir" ] || link_dir="$HOME/.local/bin"
 fi
 mkdir -p "$link_dir"

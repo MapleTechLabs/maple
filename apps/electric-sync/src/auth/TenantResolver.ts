@@ -18,23 +18,12 @@ export interface TenantResolverApi {
 }
 
 /**
- * Tenant resolution behind a service boundary.
+ * `makeResolveTenant` as a service, so router tests can pin a fixed tenant (a test cannot mint a
+ * Clerk session). No API-key path: this worker has no database and shape fetches send only the
+ * session bearer.
  *
- * `makeResolveTenant` is pure config → function, so this wrapper adds no logic —
- * what it adds is a seam. Built inline in the route, it made every authenticated
- * path untestable: a test cannot mint a Clerk session, so nothing past the 401
- * could be reached, and the proxy's actual job (that *this* org's id is the one
- * pinned into the upstream WHERE) went unasserted. As a service it can be replaced
- * with a fixed tenant, which is what the router tests do.
- *
- * Clerk and self-hosted are both covered by `makeResolveTenant`; there is no
- * API-key path here, because this worker has no database and the browser's
- * shape-fetch only ever sends the session bearer.
- *
- * No membership verifier is passed, and that is deliberate: this worker has no
- * membership directory, so `x-maple-org-id` is REJECTED here rather than
- * ignored. A silently ignored selection would serve the token's own rows under
- * another organization's name.
+ * No membership verifier either, so `x-maple-org-id` is REJECTED rather than ignored: an ignored
+ * selection would serve the token's own rows under another organization's name.
  */
 export class TenantResolver extends Context.Service<TenantResolver, TenantResolverApi>()(
 	"@maple/electric-sync/TenantResolver",

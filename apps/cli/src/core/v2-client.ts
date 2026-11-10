@@ -1,11 +1,5 @@
-// The CLI's remote backend: a typed client over Maple's public v2 API.
-//
-// Remote mode used to impersonate a warehouse: it POSTed a pipe name and
-// params to `/api/tinybird/query` and let the server compile the query. That
-// seam is gone. v2 is a resource API, so there is no generic
-// `query(pipeName, params)` to implement; each operation names the resource it
-// wants and maps the response into the shape the renderers already consume
-// (see `operations.ts`).
+// The CLI's remote backend: a typed client over Maple's public v2 API. Each operation names the
+// resource it wants and maps the response into the shape the renderers consume (see `operations.ts`).
 //
 // Auth is the token `maple auth login` already stores: a `maple_ak_…` API key
 // minted with `kind: "standard"` and no scope restriction, which

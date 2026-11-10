@@ -159,8 +159,6 @@ const redis = (operation: string, statement: string): Op => ({
 	latency: fixed(0.8, 0.4),
 })
 
-// ── failures ────────────────────────────────────────────────────────────────
-
 /**
  * Pool timeouts at a steady ~11% rather than independent coin flips, which at
  * ~60 payment requests per 5-minute bucket swing from 0% to 25%. Error diffusion
@@ -252,8 +250,6 @@ const smtpDisconnect: FailRule = (ctx) =>
 				].join("\n"),
 			}
 		: null
-
-// ── call trees ──────────────────────────────────────────────────────────────
 
 const authSession: Op = {
 	kind: "server",

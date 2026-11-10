@@ -12,22 +12,13 @@ import { MAPLE_VERSION } from "@maple/local-server/version"
 // new CLI release. An explicit `MAPLE_INGEST_KEY` still wins (see below).
 const DEFAULT_INGEST_KEY = "maple_pk_bwGJomBwDO4B15sopcuinQVqNFCDjhE2"
 
-/** Unset and empty both read as absent, matching the old truthiness checks. */
+/** Unset and empty both read as absent. */
 const nonEmptyString = (key: string) =>
 	Config.option(Config.String(key)).pipe(Config.map(Option.filter((value) => value.length > 0)))
 
 /**
- * Where this invocation is running.
- *
- * Without this the SDK falls back to `Config.withDefault("development")` — none
- * of `MAPLE_ENVIRONMENT` / `RAILWAY_ENVIRONMENT_NAME` / `DEPLOYMENT_ENV` exist
- * on a laptop — so *every* CLI install reported `development`, indistinguishable
- * from a Maple worker running locally and, worse, from our own CI. Triaging the
- * CLI's error stream meant reading paths out of error strings to guess whether a
- * failure came from a user or a GitHub Actions runner.
- *
- * `CI` is the de-facto standard variable, set by GitHub Actions, GitLab, CircleCI
- * and Buildkite alike. An explicit `MAPLE_ENVIRONMENT` still wins.
+ * Where this invocation is running. Without it every install reports the SDK default `development`,
+ * indistinguishable from our own CI. `CI` is the de-facto standard; `MAPLE_ENVIRONMENT` still wins.
  */
 const resolveEnvironment = Config.all({
 	environment: nonEmptyString("MAPLE_ENVIRONMENT"),

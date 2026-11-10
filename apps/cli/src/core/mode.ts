@@ -251,7 +251,6 @@ export class Mode extends Context.Service<Mode, ModeApi>()("@maple/cli/Mode", {
 			}
 			if (forceLocal) return yield* local
 
-			// Stored preference.
 			if (Option.contains(config.defaultMode, "remote") && remote !== undefined) return remote
 			if (Option.contains(config.defaultMode, "local")) return yield* local
 

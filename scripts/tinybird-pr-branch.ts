@@ -16,7 +16,7 @@
  * the branch's TINYBIRD_HOST / TINYBIRD_TOKEN / TINYBIRD_SIGNING_KEY /
  * TINYBIRD_WORKSPACE_ID to $GITHUB_ENV, so `alchemy:deploy:pr` binds the preview to it.
  *
- * `sweep` removes every `pr_<n>` branch whose PR is already closed. The
+ * `sweep` removes every `pr_<n>` branch whose PR is closed or unlabelled. The
  * close-event teardown is best-effort only (GitHub creates no `closed` run for
  * conflicted PRs; post-close redeploys recreate resources), so the scheduled
  * cleanup-preview-orphans workflow runs `sweep` as the safety net.
@@ -115,7 +115,7 @@ const runTb = (
 	}
 	const stdout = (proc.stdout ?? "").trim()
 	const stderr = (proc.stderr ?? "").trim()
-	// Log the subcommand only — never the auth flags/token.
+	// Log the subcommand only, never the auth flags/token.
 	console.log(`$ tb --cloud ${args.join(" ")}`)
 	// `secret` suppresses the captured output entirely, for anything that could
 	// print a token value.
@@ -209,7 +209,7 @@ const create = async (branchName: string, handoffFile: string): Promise<void> =>
 	// partition of every datasource, which put live customer telemetry in an
 	// environment anyone with the preview URL can read, kept only until a
 	// best-effort teardown removed it. A preview that needs rows seeds its own
-	// — see docs/tinybird-pr-branches.md § Getting data in.
+	// (see docs/tinybird-pr-branches.md § Getting data in).
 	// Listed first: at the workspace's branch cap Tinybird answers a create of an
 	// existing branch with "Max number of Branches" instead of "already exists".
 	const listed = runTb(parent, ["branch", "ls"])
@@ -225,14 +225,22 @@ const create = async (branchName: string, handoffFile: string): Promise<void> =>
 	console.log(`::add-mask::${token}`)
 	// The branch is reached on the same regional host as its parent: the
 	// branch-scoped token does the routing, so only the token changes.
-	const sealed = await sealHandoff(requireEnv("PREVIEW_HANDOFF_KEY"), branchName, { host: parent.host, id, token })
+	const sealed = await sealHandoff(requireEnv("PREVIEW_HANDOFF_KEY"), branchName, {
+		host: parent.host,
+		id,
+		token,
+	})
 	writeFileSync(handoffFile, sealed, { mode: 0o600 })
 	console.log(`✓ Tinybird branch ${branchName} ready; sealed its credentials for the deploy job.`)
 }
 
 /** PR side: deploy this PR's schema into the branch, then bind the rest of the job to it. */
 const deploy = async (branchName: string, handoffFile: string): Promise<void> => {
-	const handoff = await openHandoff(requireEnv("PREVIEW_HANDOFF_KEY"), branchName, readFileSync(handoffFile, "utf8"))
+	const handoff = await openHandoff(
+		requireEnv("PREVIEW_HANDOFF_KEY"),
+		branchName,
+		readFileSync(handoffFile, "utf8"),
+	)
 	if (!handoff) {
 		return fail(`The Tinybird handoff for ${branchName} did not open: wrong key, wrong PR or damaged.`)
 	}
@@ -274,14 +282,14 @@ const down = (branchName: string): void => {
 /**
  * Remove every `pr_<n>` branch whose PR is closed or lost its `preview` label. `tb branch ls` prints a
  * human-readable table (no JSON mode), so candidate names are extracted by the
- * exact `pr_<digits>` token shape — `main` and any other branch name are never
+ * exact `pr_<digits>` token shape: `main` and any other branch name are never
  * candidates. Branches whose PR state cannot be determined are skipped
  * (deleting on uncertainty risks tearing down a live preview).
  */
 const sweep = async (): Promise<void> => {
 	// The PR-state lookup is the sweep's only guard against deleting a LIVE
 	// preview; without a token every branch resolves to "unknown" and the run
-	// green-no-ops forever. Fail loudly instead — this is the safety net.
+	// green-no-ops forever. Fail loudly instead: this is the safety net.
 	if (!hasPrStateCredentials()) {
 		fail("sweep requires GITHUB_REPOSITORY and GITHUB_TOKEN (or GH_TOKEN) to check PR state")
 	}

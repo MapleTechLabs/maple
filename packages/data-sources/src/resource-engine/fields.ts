@@ -108,7 +108,6 @@ export const resolveFilter = (
 	return Effect.map(scalarFor(field, value), (scalar) => [{ field: field.name, op, value: scalar }])
 }
 
-/** True when the API applies this filter itself. */
 export const isServerFilter = (def: ResourceDefinition, filter: ResolvedFilter): boolean =>
 	Arr.findFirst(def.fields, (field) => field.name === filter.field).pipe(
 		(found) =>

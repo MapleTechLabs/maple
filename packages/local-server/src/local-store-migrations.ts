@@ -416,8 +416,7 @@ const SOURCE_DIRTY_RECOVERY =
  * single connection per process, so the session keeps at most one store open,
  * reusing it for consecutive same-dir queries and closing it before the other
  * side (or a bootstrap-requiring reopen) is served. Every open and close is
- * sentinel-managed exactly like the previous per-query connections: evidence
- * is durable before chDB connects and cleared only after a clean close, so an
+ * sentinel-managed: evidence is durable before chDB connects and cleared only after a clean close, so an
  * abrupt kill anywhere while a store is open leaves it dirty. A source
  * sentinel left behind is a hard stop; staged-target evidence can be
  * explicitly abandoned and rebuilt, but is never silently reopened. */

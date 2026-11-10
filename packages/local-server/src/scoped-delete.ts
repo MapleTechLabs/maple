@@ -171,10 +171,6 @@ type ScopedPlan = Extract<TableDeletePlan, { strategy: "scoped" }>
 
 const declares = (entry: ScopedPlan, dimension: Dimension): boolean => entry[dimension] !== null
 
-// ---------------------------------------------------------------------------
-// Request and SQL.
-// ---------------------------------------------------------------------------
-
 export const ScopedDeleteRequest = Schema.Struct({
 	service: Schema.optionalKey(Schema.NonEmptyString.check(Schema.isMaxLength(512))),
 	namespace: Schema.optionalKey(Schema.NonEmptyString.check(Schema.isMaxLength(512))),
@@ -235,10 +231,6 @@ const hourList = (hours: ReadonlyArray<number>) =>
 		Arr.map(hours, (hour) => `${hour}`),
 		", ",
 	)
-
-// ---------------------------------------------------------------------------
-// Schema graph and plan resolution.
-// ---------------------------------------------------------------------------
 
 interface ViewEdge {
 	readonly name: string
@@ -491,10 +483,6 @@ const columnProblems = (name: string, table: LocalSchemaObject, entry: ScopedPla
 	}
 	return problems
 }
-
-// ---------------------------------------------------------------------------
-// Execution.
-// ---------------------------------------------------------------------------
 
 export const ScopedDeleteTableReport = Schema.Struct({
 	table: Schema.String,
@@ -752,10 +740,7 @@ const applyFilters = (db: Db, filters: ResolvedPlan["filters"]) =>
 		{ discard: true },
 	)
 
-// ---------------------------------------------------------------------------
-// Journal: written before the first mutation, removed after the last.
-// ---------------------------------------------------------------------------
-
+// The journal is written before the first mutation and removed after the last.
 const PendingDelete = Schema.Struct({
 	formatVersion: Schema.Literal(1),
 	request: ScopedDeleteRequest,

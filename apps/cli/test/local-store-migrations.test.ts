@@ -1655,7 +1655,8 @@ describe("legacy raw replay progress decoding", () => {
 			expect(() => decode({ ...progress, copied: { logs: { ...copied, lastHash: bad } } })).toThrow()
 		}
 		// null is a legitimate "no cursor yet".
-		expect(decode({ ...progress, copied: { logs: { ...copied, lastHash: null } } })).toBeDefined()
+		const noCursor = { ...progress, copied: { logs: { ...copied, lastHash: null } } }
+		expect(decode(noCursor)).toEqual(noCursor)
 	})
 
 	it("rejects counters that are not non-negative safe integers", () => {

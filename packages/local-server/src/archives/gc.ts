@@ -226,7 +226,6 @@ export const planArchiveGc = (archiveDir: string, keep: number): GcPlan => {
 		for (const rangeStart of ranges) {
 			const gensRoot = generationsRoot(archiveDir, signal, rangeStart)
 			if (!existsSync(gensRoot)) continue
-			// Resolve the active generation for this range strictly.
 			let activeGenerationId: string | null
 			try {
 				activeGenerationId = readActiveGenerationIdStrict(archiveDir, signal, rangeStart)
@@ -320,7 +319,6 @@ export const planArchiveGc = (archiveDir: string, keep: number): GcPlan => {
 					reason: "active",
 				})
 			}
-			// Keep newest N superseded; delete the older ones.
 			const keepers = superseded.slice(0, keep)
 			const targets = superseded.slice(keep)
 			for (const g of keepers) {
@@ -548,8 +546,7 @@ const collectTargets = async (
 		// gc-collecting with a full cursor, NOT complete.
 		await persistGcProgress(archiveDir, operationId, i + 1, "gc-collecting")
 		// Awaited crash seam: fires after the durable progress write. For a
-		// nonfinal target (index < total-1) this is the window where the old code
-		// wrote a premature complete; a SIGKILL here must leave gc-collecting.
+		// nonfinal target (index < total-1) a SIGKILL here must leave gc-collecting.
 		await faults?.afterTargetProgress?.(i, targets.length)
 	}
 	return completed
@@ -605,18 +602,10 @@ const removeTombstone = async (tomb: string): Promise<void> => {
 	await syncDirectory(dirname(tomb))
 }
 
-/**
- * Reconcile an interrupted GC operation. Drives the FROZEN target set to
- * completion idempotently — NEVER re-expands the set. A pointer change or source
- * divergence at any stage stops collection and preserves remaining state.
- *
- * State machine (the core fix for the premature-complete defect):
- * - `gc-collecting` (any cursor, including a full cursor after the final
- *   deletion but before catalog repair): resume collection from the cursor,
- *   collect the remainder, then rebuild + assert affected catalogs.
- * - `complete`: prove all terminal invariants (verifyCompletedGcInvariants),
- *   then retire the journal. A phase label is NEVER proof — observe the reality.
- */
+// Reconciling an interrupted GC drives the FROZEN target set to completion
+// idempotently and never re-expands it. A pointer change or source divergence
+// at any stage stops collection and preserves remaining state.
+
 /**
  * Verify a complete GC operation's terminal invariants, then archive it.
  * NO repair — a phase label is never proof. Called directly by the
@@ -650,7 +639,6 @@ export const resumeFrozenTargetsAndCompleteGc = async (
 			"gc-collecting",
 		)
 	}
-	// Rebuild ALL affected catalogs + assert exact.
 	const affectedSignals = new Set(Arr.map(intent.targets, (t) => t.signal))
 	for (const signal of affectedSignals) {
 		const sigName = archiveSignal(signal).name
@@ -681,7 +669,6 @@ const revalidateTombstone = (
 	if (!info.isDirectory()) {
 		throw new Error(`archive gc tombstone is not a real directory: ${tomb}`)
 	}
-	// Verify the tombstone's manifest matches the frozen evidence.
 	const tombManifestPath = join(tomb, "manifest.json")
 	assertNoSymlinkSync(archiveDir, tombManifestPath, "archive gc tombstone manifest")
 	assertRealFileSync(tombManifestPath, "archive gc tombstone manifest")
@@ -689,7 +676,6 @@ const revalidateTombstone = (
 	if (actualManifestSha !== target.manifestSha256) {
 		throw new Error(`archive gc tombstone manifest evidence mismatch: ${tomb}`)
 	}
-	// Verify each shard matches the frozen evidence.
 	for (const shardEv of target.shards) {
 		const shardPath = join(tomb, "shards", shardEv.name)
 		assertNoSymlinkSync(archiveDir, shardPath, `archive gc tombstone shard ${shardEv.name}`)
@@ -795,14 +781,12 @@ export const verifyCompletedGcInvariants = async (
 		if (sourceTopology !== "absent") {
 			throw new Error(`archive gc complete but target source still exists: ${sourcePath}`)
 		}
-		// No operation tombstone may hold a generation dir.
 		const tomb = tombstonePath(archiveDir, intent.operationId, target)
 		const tombTopology = classifyArchivePathSync(archiveDir, tomb, "archive gc complete tombstone")
 		if (tombTopology !== "absent") {
 			throw new Error(`archive gc complete but tombstone still exists: ${tomb}`)
 		}
 	}
-	// Every affected active pointer must still equal its recorded identity.
 	for (const target of intent.targets) {
 		const current = readActiveGenerationIdStrict(archiveDir, target.signal, target.rangeStart)
 		if (current !== target.recordedActiveGenerationId) {
@@ -812,7 +796,6 @@ export const verifyCompletedGcInvariants = async (
 			)
 		}
 	}
-	// Every affected catalog must be exact.
 	const affectedSignals = new Set(Arr.map(intent.targets, (t) => t.signal))
 	for (const signal of affectedSignals) {
 		const sigName = archiveSignal(signal).name

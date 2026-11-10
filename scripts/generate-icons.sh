@@ -10,7 +10,7 @@
 # Two properties of the mark drive the whole file:
 #
 #   * It is ONE evenodd path. The eyes and the notch beside the trunk are
-#     knockouts, so the tile reads through them — every variant must keep
+#     knockouts, so the tile reads through them; every variant must keep
 #     fill-rule="evenodd" and a flat tile fill, or the eyes fill in solid.
 #   * It is drawn in its own 739-unit box and bottom-cropped: the trunk runs
 #     to the very bottom edge. Tiles therefore seat it on a baseline 2.5 units
@@ -19,14 +19,14 @@
 #     is no baseline to speak of once the corners are gone.
 #
 # Variants:
-#   rounded    rx=7/32, mark at its drawn size. The 32px .ico frame — drawn
+#   rounded    rx=7/32, mark at its drawn size. The 32px .ico frame: drawn
 #              small but unmasked by browsers, so the tile carries its own
 #              corner radius.
 #   small      same tile, mark 1.15x larger and re-seated. Used for the 16px
 #              .ico frame: at 16px the eyes are barely a pixel wide and
 #              antialias into a single blob, so small frames get a tighter crop.
 #   square     rx=0 and opaque. logo192/logo512 are the apple-touch-icon and
-#              the schema.org Organization logo — iOS applies its own corner
+#              the schema.org Organization logo; iOS applies its own corner
 #              mask, so transparent corners render as black notches, and
 #              Google wants a solid mark.
 #   bare       no tile, transparent. Android's adaptive foreground (the system
@@ -86,7 +86,7 @@ tile none "$SPLASH"  "$TMP/splash.svg"
 render() { rsvg-convert -w "$2" -h "$2" "$1" -o "$3"; }
 flatten() { magick "$1" -background "$TILE" -alpha remove -alpha off "$2"; }
 
-# --- .ico: 16px from the tighter crop, 32px from the standard tile ----------
+# .ico: 16px from the tighter crop, 32px from the standard tile.
 # `local TILE/MARK` shadows the globals for the tile() calls below it (bash
 # scopes dynamically), so a colorway applies to one .ico and restores itself.
 ico() { # ico <tile-fill> <mark-fill> <out>
@@ -102,14 +102,13 @@ for app in landing web; do
 	ico "$TILE" "$MARK" "apps/$app/public/favicon.ico"
 done
 
-# local mode inverts to the "Fired" colorway — amber tile, ink tree. Local and
+# local mode inverts to the "Fired" colorway: amber tile, ink tree. Local and
 # the hosted app are routinely open in adjacent tabs, and at 16px the only thing
 # that separates two favicons is overall value, not detail: Soot is a dark chip,
 # Fired an amber one. Keep this in step with apps/local-ui/public/favicon.svg,
 # which carries the same swap and the longer note.
 ico "$MARK" "$TILE" "apps/local-ui/public/favicon.ico"
 
-# --- PWA / apple-touch-icon / schema.org logo -------------------------------
 for size in 192 512; do
 	render "$TMP/square.svg" "$size" "$TMP/logo$size.png"
 	flatten "$TMP/logo$size.png" "$TMP/flat$size.png"

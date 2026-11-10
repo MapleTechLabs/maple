@@ -287,11 +287,7 @@ describe("buildUpstreamShapeUrl", () => {
 	})
 })
 
-/**
- * The upstream half, driven through a stubbed `fetch` — the repo idiom from
- * `apps/scraper/src/ApiClient.test.ts`. These are the paths that had no coverage
- * at all while the transport was welded into the route.
- */
+/** The upstream half, driven through a stubbed `fetch`. */
 describe("ElectricClient.fetchShape", () => {
 	const clientLayer = (config: Parameters<typeof syncConfigLayer>[0] = {}) =>
 		ElectricClient.layer.pipe(
@@ -400,8 +396,7 @@ describe("ElectricClient.fetchShape", () => {
 			)
 
 			assert.strictEqual(error._tag, "@maple/electric-sync/ElectricUpstreamUnreachable")
-			// The cause survives into the message — this is what the old mutable
-			// `upstreamFailure` closure variable existed to smuggle out.
+			// The cause survives into the message.
 			assert.include(error.message, "ECONNREFUSED")
 			assert.include(error.message, "dashboards")
 		}).pipe(Effect.provide(clientLayer())),
@@ -464,8 +459,6 @@ describe("ElectricClient.fetchShape", () => {
 			const error = yield* Fiber.join(fiber)
 			assert.strictEqual(error._tag, "@maple/electric-sync/ElectricUpstreamUnreachable")
 			// The span must be able to say a timeout is what happened, not `undefined`.
-			// effect rc.116's `TimeoutException` carries its own text, so the ceiling
-			// that fired is named too; it used to carry only a tag.
 			assert.include(error.message, "timed out")
 			assert.include(error.message, "30s")
 		}).pipe(Effect.provide(clientLayer())),

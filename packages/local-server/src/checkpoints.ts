@@ -259,19 +259,6 @@ export class CheckpointCreateError extends Schema.TaggedError<CheckpointCreateEr
 	{ ...checkpointErrorFields, checkpointId: CheckpointId },
 ) {}
 
-/**
- * A checkpoint the CLI *correctly refuses to take*: the running server's chDB
- * config carries no `<backups>` stanza, so `BACKUP DATABASE` cannot work.
- *
- * Its own tag, and never a `CheckpointCreateError`, because nothing failed —
- * this is the CLI reporting an unmet precondition with an actionable fix, the
- * same category as "maple is already running". It used to bill two error events
- * per occurrence (an `Error` span on `CheckpointService.create`, plus the
- * `ServerError` the command re-wrapped it into). `bin.ts` now recovers it via
- * `recoverExpected`, which annotates `maple.cli.outcome`, prints the message and
- * exits 1 with the root span `Ok`. The `expected` marker states that intent on
- * the error itself rather than only in the recovery list.
- */
 /** Kept verbatim — it is the whole remedy the user gets. */
 const MISSING_BACKUPS_CONFIG_MESSAGE =
 	"the running server's chDB config has no `<backups>` stanza, so it " +
@@ -280,6 +267,11 @@ const MISSING_BACKUPS_CONFIG_MESSAGE =
 	"`<backups><allowed_disk>default</allowed_disk>" +
 	"<allowed_path>backups</allowed_path></backups>` to your config."
 
+/**
+ * A checkpoint the CLI correctly refuses to take: the running server's chDB
+ * config carries no `<backups>` stanza. An unmet precondition, not a failure, so
+ * `expected` lets `bin.ts` exit 1 with the root span `Ok` (`recoverExpected`).
+ */
 export class CheckpointPreconditionError extends Schema.TaggedError<CheckpointPreconditionError>()(
 	"@maple/cli/CheckpointPreconditionError",
 	{ dataDir: Schema.String, message: Schema.String },
