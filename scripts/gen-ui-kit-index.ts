@@ -22,7 +22,6 @@ function* walk(dir: string): Generator<string> {
 	}
 }
 
-/** The first sentence of a comment block, flattened to one line. */
 const firstSentence = (comment: string) => {
 	const text = comment
 		.replace(/^\/\*\*?|\*\/$/g, "")

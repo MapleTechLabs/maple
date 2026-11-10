@@ -1,11 +1,11 @@
 #!/bin/sh
-# Maple local-binary uninstaller — the inverse of scripts/install.sh.
+# Maple local-binary uninstaller, the inverse of scripts/install.sh.
 #
 #   curl -fsSL https://maple.dev/cli/uninstall | sh
 #
 # Removes the `maple` PATH symlink and the `~/.maple/bin` bundle (maple +
 # libchdb.so). Your data dir (`~/.maple/data`) and config (`~/.maple/config.json`,
-# holding any remote token) are KEPT unless you opt in — the data dir prompts
+# holding any remote token) are KEPT unless you opt in: the data dir prompts
 # (or set MAPLE_REMOVE_DATA=1 for non-interactive removal).
 #
 # Honors the same overrides as the installer so a custom install can be undone:

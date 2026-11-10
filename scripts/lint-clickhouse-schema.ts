@@ -1,5 +1,5 @@
 /**
- * Schema lint — fast post-`generate-clickhouse-schema` sanity checks.
+ * Schema lint: fast post-`generate-clickhouse-schema` sanity checks.
  *
  * Catches the class of bugs we hit in production once already: a
  * `CREATE MATERIALIZED VIEW … TO <table>` whose target table isn't itself
@@ -7,8 +7,8 @@
  * CREATE time but every subsequent INSERT into the MV's source table fails
  * with `Code: 60. UNKNOWN_TABLE`, which can wedge an entire ingest pipeline.
  *
- * Wire this into `clickhouse:schema:check` so the next instance of that
- * bug fails CI instead of production.
+ * Runs in `clickhouse:schema:check`, so the next instance of that bug fails CI
+ * instead of production.
  */
 import { latestSnapshotStatements } from "../packages/domain/src/generated/clickhouse-schema"
 import { parseEmittedStatement } from "../packages/domain/src/clickhouse/ddl-emitter"
@@ -51,7 +51,7 @@ for (const mv of materializedViews) {
 
 // Rule: no ICU-gated functions. `lowerUTF8`/`upperUTF8` are only available in
 // ClickHouse builds with ICU (24.8+ gates them), and the libchdb embedded by
-// local mode is built without it — a schema using them bootstraps fine on
+// local mode is built without it: a schema using them bootstraps fine on
 // Tinybird but crashes every fresh `maple start` with UNKNOWN_FUNCTION.
 // For ASCII inputs `lower`/`upper` are byte-identical; for genuinely non-ASCII
 // needs, find an ICU-free formulation instead.

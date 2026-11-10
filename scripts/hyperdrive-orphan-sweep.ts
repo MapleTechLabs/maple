@@ -7,7 +7,7 @@
  * PR-preview stages get an alchemy-managed Hyperdrive config named
  * `maple-db-pr-<n>` (packages/infra/src/cloudflare/stage.ts,
  * `resolveWorkerName("db", stage)`). `alchemy destroy --stage pr-<n>` deletes it on PR
- * close — but the close-event teardown is best-effort (see
+ * close, but the close-event teardown is best-effort (see
  * cleanup-preview-orphans.yml), and worse than the other resources: close
  * runs execute the PR branch's OWN workflow/alchemy.run.ts version, and
  * branches predating the placeholder-MAPLE_PG_URL destroy fix fail with
@@ -17,14 +17,14 @@
  * PR preview with "This account has reached its limit for how many
  * Hyperdrives it can have (25)" (run 30077724144, PR #257).
  *
- * There is no up/down here — alchemy owns the config's lifecycle; this script
+ * There is no up/down here: alchemy owns the config's lifecycle; this script
  * exists only as the sweep safety net. Deletion is double-gated like the
  * sibling sweeps: the config name must match `maple-db-pr-<digits>` exactly
  * (prd `maple-prd` and dev `maple-db-dev-<name>` can
- * never match), AND the GitHub API must affirmatively report that PR closed —
- * unknown/open → keep. Deleting a config out from under a later alchemy
- * destroy of the same stage is fine: alchemy tolerates already-deleted
- * resources.
+ * never match), AND the GitHub API must affirmatively report the preview
+ * retired (PR closed or unlabelled); unknown/live → keep. Deleting a config
+ * out from under a later alchemy destroy of the same stage is fine: alchemy
+ * tolerates already-deleted resources.
  *
  * Auth: CLOUDFLARE_API_TOKEN + CLOUDFLARE_ACCOUNT_ID (the same credentials
  * the deploy workflow's alchemy steps use), GITHUB_REPOSITORY +
@@ -98,7 +98,7 @@ const main = async (): Promise<void> => {
 		fail(`Could not list Hyperdrive configs (HTTP ${listed.status}): ${showJson(listed.errors)}`)
 	}
 	// A success response whose `result` isn't an array means the API shape
-	// changed under us — fail loudly rather than green-no-op'ing the safety net.
+	// changed under us: fail loudly rather than green-no-op'ing the safety net.
 	if (!Arr.isArray(listed.result)) {
 		fail(`Unexpected Hyperdrive list response shape (result is ${typeof listed.result}, expected array)`)
 	}

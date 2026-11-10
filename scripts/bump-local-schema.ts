@@ -62,10 +62,6 @@ const plan = (path: string, edits: ReadonlyArray<readonly [string, string]>): Pl
 
 const pad = (version: number): string => Str.padStart(4, "0")(String(version))
 
-// ---------------------------------------------------------------------------
-// Arguments and current state
-// ---------------------------------------------------------------------------
-
 if (process.argv.includes("--control")) {
 	await import("./bump-local-control-schema")
 	process.exit(0)
@@ -107,10 +103,8 @@ if (schemaDigest(currentSql) === schemaDigest(read(`${SNAPSHOT_DIR}/local-schema
 		`the generated schema still hashes to the v${from} snapshot (${fingerprint}).\nEdit the schema and run \`bun run clickhouse:schema\` before bumping.`,
 	)
 
-// ---------------------------------------------------------------------------
 // The new row in the step table. Only the operations need a human: the clone,
 // the v{to} bootstrap and the raw-row verification are the executor's.
-// ---------------------------------------------------------------------------
 
 // A row's id and versions follow from its position, so the new row only names its slug.
 const moduleId = `local-${pad(from)}-to-${pad(to)}-${slug}`
@@ -128,10 +122,6 @@ const newRow = `\t{
 \t\tdispositions: [],
 \t},
 `
-
-// ---------------------------------------------------------------------------
-// The mechanical edits
-// ---------------------------------------------------------------------------
 
 const plannedVersion: PlannedWrite = plan(`${SERVER_DIR}/local-schema-version.ts`, [
 	[
