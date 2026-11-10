@@ -146,7 +146,7 @@ export function incidentsClearedByDraft(
  * The builder draft as the query reads it: an add-on section opened but left empty (Group by with
  * no keys) is the same query as with it closed, so opening one is not an edit.
  */
-const appliedQueryDraft = (form: RuleFormState): unknown => {
+const appliedQueryDraft = (form: RuleFormState): RuleFormState["queryBuilderDraft"] | null => {
 	if (form.signalType !== "builder_query") return null
 	const draft = form.queryBuilderDraft
 	const isFilled = (value: string) => Str.trim(value).length > 0
