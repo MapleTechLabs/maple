@@ -186,7 +186,7 @@ import { MobilePushService, type ResolvedAfterHold } from "@maple/backend/servic
 import { AlertRuntime } from "./AlertRuntime"
 import { firstMatchingSilence, selectActiveSilences, type MatchedSilence } from "./alert-silence-store"
 import { AlertDestinationsService, type AlertDestinationsServiceApi } from "./AlertDestinationsService"
-import { makeAlertDestinationDelivery, parseAlertDestinationEncryptionKey } from "./AlertDestinationDelivery"
+import { alertDestinationKeyringFromEnv, makeAlertDestinationDelivery } from "./AlertDestinationDelivery"
 import { AlertReadModelsService, type AlertReadModelsServiceApi } from "./AlertReadModelsService"
 import { AlertRulesService, makeAlertRulePersistence, type AlertRulesServiceApi } from "./AlertRulesService"
 import { UptimeAlertSource } from "@maple/backend/services/uptime/UptimeAlertSource"
@@ -659,11 +659,9 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 				),
 			)
 			const mobilePush = yield* MobilePushService
-			const encryptionKey = yield* parseAlertDestinationEncryptionKey(
-				Redacted.value(env.MAPLE_INGEST_KEY_ENCRYPTION_KEY),
-			)
+			const keyring = yield* alertDestinationKeyringFromEnv(env)
 			const destinationDelivery = makeAlertDestinationDelivery({
-				encryptionKey,
+				keyring,
 				appBaseUrl: env.MAPLE_APP_BASE_URL,
 				runtime,
 				httpClient,
