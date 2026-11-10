@@ -1,6 +1,13 @@
 import type { ErrorIssueDocument, IssueKind, WorkflowState } from "@maple/domain/http"
 import { ERROR_ISSUE_SEARCH_MAX_LENGTH } from "@maple/domain/http/v2"
-import { hubViewOf, type HubSort, type HubView, type SeverityFilter } from "./hub-params"
+import {
+	DEFAULT_HUB_SORT,
+	DEFAULT_SEVERITY_FILTER,
+	hubViewOf,
+	type HubSort,
+	type HubView,
+	type SeverityFilter,
+} from "./hub-params"
 import {
 	buildErrorSignals,
 	type ErrorSignal,
@@ -26,8 +33,8 @@ export const VOLUME_RANK_LIMIT = 100
 export const INVESTIGATIONS_LIMIT = 100
 
 export const viewOf = (search: Search): HubView => hubViewOf(search.view)
-export const sortOf = (search: Search): HubSort => search.sort ?? "last_seen"
-export const severityOf = (search: Search): SeverityFilter => search.severity ?? "all"
+export const sortOf = (search: Search): HubSort => search.sort ?? DEFAULT_HUB_SORT
+export const severityOf = (search: Search): SeverityFilter => search.severity ?? DEFAULT_SEVERITY_FILTER
 
 /** The sidebar's service and environment narrow the warehouse side too. */
 export const warehouseFiltersOf = (search: Search, window: TimeWindow): WarehouseFilters => ({

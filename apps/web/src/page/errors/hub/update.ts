@@ -1,7 +1,14 @@
 import { keyed, runSteps, type Step as KitStep } from "../../kit/keyed-step"
 import { encodeJson, requestKey } from "@maple/views/data/request-key"
 import type { RequestMode } from "@maple/views/data/keyed"
-import { HUB_SORTS, HUB_VIEWS, SEVERITY_FILTERS } from "./hub-params"
+import {
+	DEFAULT_HUB_SORT,
+	DEFAULT_HUB_VIEW,
+	DEFAULT_SEVERITY_FILTER,
+	HUB_SORTS,
+	HUB_VIEWS,
+	SEVERITY_FILTERS,
+} from "./hub-params"
 import type { IssueKind } from "@maple/domain/http"
 import { sparkFingerprintHashes } from "../../../lib/models/error-signal"
 import { Option, Array as Arr, String as Str } from "effect"
@@ -291,19 +298,20 @@ const asSeverity = (value: string) => Arr.findFirst(SEVERITY_FILTERS, (severity)
 export const navigateView = (model: Model, value: string): Return =>
 	Option.match(asView(value), {
 		onNone: () => ({ model }),
-		onSome: (view) => navigate(model, { view: view === "open" ? undefined : view }),
+		onSome: (view) => navigate(model, { view: view === DEFAULT_HUB_VIEW ? undefined : view }),
 	})
 
 export const navigateSort = (model: Model, value: string): Return =>
 	Option.match(asSort(value), {
 		onNone: () => ({ model }),
-		onSome: (sort) => navigate(model, { sort: sort === "last_seen" ? undefined : sort }),
+		onSome: (sort) => navigate(model, { sort: sort === DEFAULT_HUB_SORT ? undefined : sort }),
 	})
 
 export const navigateSeverity = (model: Model, value: string): Return =>
 	Option.match(asSeverity(value), {
 		onNone: () => ({ model }),
-		onSome: (severity) => navigate(model, { severity: severity === "all" ? undefined : severity }),
+		onSome: (severity) =>
+			navigate(model, { severity: severity === DEFAULT_SEVERITY_FILTER ? undefined : severity }),
 	})
 
 // ENTRY POINTS

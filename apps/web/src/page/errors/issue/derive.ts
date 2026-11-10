@@ -6,7 +6,7 @@ import type { V2InvestigationCreateParams } from "@maple/domain/http/v2"
 import { DateTime, Option, Schema, String as Str, Array as Arr } from "effect"
 import { AsyncData } from "foldkit"
 import type { TimeWindow } from "../../../data/time-range"
-import type { ErrorIssueSearch } from "../../../route/search"
+import type { ErrorIssueSearch, ISSUE_TABS } from "../../../route/search"
 import type { DetailQuery } from "./command"
 import type { Model } from "./model"
 
@@ -20,7 +20,7 @@ const MIN_BUCKET_SECONDS = 60
 const MAX_BUCKET_SECONDS = 86_400
 const SAMPLE_LIMIT = 50
 
-export type Tab = "overview" | "occurrences" | "activity"
+export type Tab = (typeof ISSUE_TABS)[number]
 export const tabOf = (search: Search): Tab => search.tab ?? "overview"
 
 const warehouseMs = (value: string): number | null =>

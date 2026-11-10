@@ -19,6 +19,8 @@ import {
 } from "@maple/domain/http"
 import { PushSourcePlatform } from "@maple/domain/primitives"
 import { QUERY_BUILDER_METRIC_TYPES } from "@maple/query-model"
+import { TOOL_METRICS, TOOL_PERCENTILES } from "@maple/web-data/lib/tool-analytics"
+import { HUB_SORTS, HUB_VIEWS, LEGACY_HUB_VIEWS, SEVERITY_FILTERS } from "../page/errors/hub/hub-params"
 
 // apps/web/src/lib/search-params.ts
 const StringArray = Schema.Array(Schema.String)
@@ -72,8 +74,6 @@ export const dashboardViewParamsSchema = {
 }
 
 // Agent tool analytics and search
-const TOOL_METRICS = ["calls", "sessions", "error_rate", "duration"] as const
-const TOOL_PERCENTILES = ["p50", "p90", "p95"] as const
 
 const ToolAnalyticsSearchFields = {
 	metric: Schema.optional(Schema.Literals(TOOL_METRICS)),
@@ -188,12 +188,6 @@ const planetscaleFilterSearchFields = {
 	branchContains: Schema.optional(Schema.String),
 }
 
-// apps/web/src/page/errors/hub/hub-params.ts
-const HUB_VIEWS = ["open", "closed", "all"] as const
-const LEGACY_HUB_VIEWS = ["triage", "active", "resolved"] as const
-const HUB_SORTS = ["last_seen", "volume", "severity"] as const
-const SEVERITY_FILTERS = ["all", "critical", "high", "medium", "low", "unset"] as const
-
 // Tab sets of the account, settings (plus retired settings tabs), issue and investigation navs
 export const accountTabValues = [
 	"profile",
@@ -232,8 +226,8 @@ export const legacySettingsTabValues = [
 	"developer",
 ] as const
 
-const ISSUE_TABS = ["overview", "occurrences", "activity"] as const
-const INVESTIGATION_TABS = ["overview", "evidence", "chat", "transcript"] as const
+export const ISSUE_TABS = ["overview", "occurrences", "activity"] as const
+export const INVESTIGATION_TABS = ["overview", "evidence", "chat", "transcript"] as const
 
 const SortDirParam = Schema.optional(Schema.Literals(["asc", "desc"]))
 const ContainsMatchMode = Schema.optional(Schema.Literals(["contains"]))
