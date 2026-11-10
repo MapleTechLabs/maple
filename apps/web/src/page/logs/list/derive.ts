@@ -9,6 +9,7 @@ import type { LogsSearch } from "../../../route/search"
 import type { TimeWindow } from "../../../data/time-range"
 import type { LogRowSchema, LogsPage, Model, Pagination, VolumeBucket } from "./model"
 import { Array as Arr, Record as Rec, String as Str } from "effect"
+import { facetChipsOf } from "../../kit/facets"
 
 export type Search = typeof LogsSearch.Type
 
@@ -118,13 +119,15 @@ export const logFilterChips = (search: Search): ReadonlyArray<LogFilterChip> => 
 		return filter ? [{ entry, filter }] : []
 	})
 	const facetChips = (isNegated: boolean): ReadonlyArray<LogFilterChip> =>
-		Arr.flatMap(FACETS, (facet) => {
-			const param = isNegated ? facet.exclude : facet.include
-			const values = search[param]
-			return values !== undefined && values.length > 0
-				? [{ param, label: facet.label, values, negated: isNegated }]
-				: []
-		})
+		Arr.map(
+			facetChipsOf(FACETS, (param) => search[param], isNegated),
+			({ param, label, values }) => ({
+				param,
+				label,
+				values,
+				negated: isNegated,
+			}),
+		)
 	const attrChips = (isNegated: boolean): ReadonlyArray<LogFilterChip> =>
 		Arr.map(
 			Arr.filter(attrs, (a) => a.filter.negated === isNegated),

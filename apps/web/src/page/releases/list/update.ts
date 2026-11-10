@@ -27,6 +27,7 @@ import {
 } from "./command"
 import { DEFAULT_PRESET, deriveOf, rangesKeyOf, type Search, shasKeyOf } from "./derive"
 import { Message } from "./message"
+import { editFacet, excludedValue, onlyValue, toggledValue } from "../../kit/facets"
 import type { Model } from "./model"
 import { Array as Arr } from "effect"
 
@@ -190,23 +191,7 @@ const navigate = (model: Model, search: Search): Return => ({
 	outMessage: PageOutMessage.RequestedNavigation({ url: searchHref(search), isReplace: false }),
 })
 
-const listOrUndefined = (values: ReadonlyArray<string>) => (values.length === 0 ? undefined : values)
-
-/** `FilterSection`'s tri-state toggle over a facet and its excluded twin. */
-const toggled = (
-	selected: ReadonlyArray<string> | undefined,
-	excluded: ReadonlyArray<string> | undefined,
-	name: string,
-) => ({
-	selected: listOrUndefined(
-		(selected ?? []).includes(name)
-			? Arr.filter(selected ?? [], (value) => value !== name)
-			: [...(selected ?? []), name],
-	),
-	excluded: (excluded ?? []).includes(name)
-		? listOrUndefined(Arr.filter(excluded ?? [], (value) => value !== name))
-		: excluded,
-})
+const ENVIRONMENT = { include: "environments", exclude: "excludedEnvironments" } as const
 
 export const update = (model: Model, message: Message, context: PageContext): Return =>
 	Message.match<Return>(message, {
@@ -268,28 +253,26 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 				...model.search,
 				impact: name !== model.search.impact && isReleaseHealth(name) ? name : undefined,
 			}),
-		ToggledEnvironment: ({ name }) => {
-			const next = toggled(model.search.environments, model.search.excludedEnvironments, name)
-			return navigate(model, {
-				...model.search,
-				environments: next.selected,
-				excludedEnvironments: next.excluded,
-			})
-		},
+		ToggledEnvironment: ({ name }) =>
+			navigate(
+				model,
+				editFacet(model.search, ENVIRONMENT, (lists) => toggledValue(lists, name)),
+			),
 		ClickedOnlyEnvironment: ({ name }) =>
-			navigate(model, { ...model.search, environments: [name], excludedEnvironments: undefined }),
-		ClickedExcludeEnvironment: ({ name }) => {
-			const next = toggled(model.search.excludedEnvironments, model.search.environments, name)
-			return navigate(model, {
-				...model.search,
-				excludedEnvironments: next.selected,
-				environments: next.excluded,
-			})
-		},
+			navigate(
+				model,
+				editFacet(model.search, ENVIRONMENT, () => onlyValue(name)),
+			),
+		ClickedExcludeEnvironment: ({ name }) =>
+			navigate(
+				model,
+				editFacet(model.search, ENVIRONMENT, (lists) => excludedValue(lists, name)),
+			),
 		ToggledService: ({ name }) =>
 			navigate(model, {
 				...model.search,
-				services: toggled(model.search.services, undefined, name).selected,
+				services: toggledValue({ selected: model.search.services, excluded: undefined }, name)
+					.selected,
 			}),
 		ClickedClearFilters: () =>
 			navigate(model, {

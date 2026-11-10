@@ -7,7 +7,7 @@ import { AppRoute, hrefOf } from "../../../../route"
 import * as FilterSections from "@maple/views/ui/filters/filter-sections"
 import { type PageContext, PageOutMessage, type PageReturn } from "../../../contract"
 import type { SortDir } from "../../../kit/table-sort"
-import { excludedValue, type FacetLists, onlyValue, toggledValue } from "../../kit/facets"
+import { editFacet, excludedValue, onlyValue, toggledValue } from "../../../kit/facets"
 import * as Frame from "../../../kit/time-frame"
 import { liftFrame, resolveFrame, routeFrame } from "../../../kit/time-frame-step"
 import * as InstallModal from "../../kit/install-modal"
@@ -147,17 +147,8 @@ const navigate = (model: Model, search: Search): Return => ({
 	}),
 })
 
-/** `onFilterChange` for one facet, both polarities. */
-const withFacet = (search: Search, facet: Facet, lists: FacetLists): Search => ({
-	...search,
-	[facet]: lists.selected,
-	[EXCLUDED_OF[facet]]: lists.excluded,
-})
-
-const listsOf = (search: Search, facet: Facet): FacetLists => ({
-	selected: search[facet],
-	excluded: search[EXCLUDED_OF[facet]],
-})
+/** A facet's include param and its excluded twin. */
+const paramsOf = (facet: Facet) => ({ include: facet, exclude: EXCLUDED_OF[facet] })
 
 const windowOnly = (search: Search): Search => ({
 	startTime: search.startTime,
@@ -249,13 +240,19 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 					})
 		},
 		ToggledFacetOption: ({ facet, name }) =>
-			navigate(model, withFacet(model.search, facet, toggledValue(listsOf(model.search, facet), name))),
+			navigate(
+				model,
+				editFacet(model.search, paramsOf(facet), (lists) => toggledValue(lists, name)),
+			),
 		ClickedOnlyFacetOption: ({ facet, name }) =>
-			navigate(model, withFacet(model.search, facet, onlyValue(name))),
+			navigate(
+				model,
+				editFacet(model.search, paramsOf(facet), () => onlyValue(name)),
+			),
 		ClickedExcludeFacetOption: ({ facet, name }) =>
 			navigate(
 				model,
-				withFacet(model.search, facet, excludedValue(listsOf(model.search, facet), name)),
+				editFacet(model.search, paramsOf(facet), (lists) => excludedValue(lists, name)),
 			),
 		ClickedClearFilters: () => navigate(model, windowOnly(model.search)),
 		RemovedFilterChip: ({ param }) => navigate(model, { ...model.search, [param]: undefined }),

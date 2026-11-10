@@ -62,6 +62,7 @@ import {
 } from "./derive"
 import { initSearchHelp } from "./view-search-help"
 import { type Facet, Message } from "./message"
+import { editFacet, excludedValue, onlyValue, toggledValue } from "../../kit/facets"
 import type { LogsPage, Model, Pagination } from "./model"
 import type { LoadFailure } from "@maple/views/data/load-failure"
 
@@ -294,8 +295,6 @@ const navigate = (model: Model, search: Search, isReplace = false): Return => ({
 
 const searchHref = (search: Search) => hrefOf(AppRoute.Logs({ search }))
 
-const listOrUndefined = (values: ReadonlyArray<string>) => (values.length === 0 ? undefined : values)
-
 const EXCLUDED_OF = {
 	severities: "excludedSeverities",
 	deploymentEnvs: "excludedDeploymentEnvs",
@@ -303,32 +302,8 @@ const EXCLUDED_OF = {
 	services: "excludedServices",
 } as const satisfies Record<Facet, string>
 
-/** `toggleOption`: include and exclude are exclusive per value. */
-const toggledFacet = (search: Search, facet: Facet, name: string): Search => {
-	const selected = search[facet] ?? []
-	const excluded = search[EXCLUDED_OF[facet]] ?? []
-	return {
-		...search,
-		[EXCLUDED_OF[facet]]: excluded.includes(name)
-			? listOrUndefined(Arr.filter(excluded, (v) => v !== name))
-			: search[EXCLUDED_OF[facet]],
-		[facet]: listOrUndefined(
-			selected.includes(name) ? Arr.filter(selected, (v) => v !== name) : [...selected, name],
-		),
-	}
-}
-
-const excludedFacet = (search: Search, facet: Facet, name: string): Search => {
-	const selected = search[facet] ?? []
-	const excluded = search[EXCLUDED_OF[facet]] ?? []
-	return {
-		...search,
-		[facet]: listOrUndefined(Arr.filter(selected, (v) => v !== name)),
-		[EXCLUDED_OF[facet]]: listOrUndefined(
-			excluded.includes(name) ? Arr.filter(excluded, (v) => v !== name) : [...excluded, name],
-		),
-	}
-}
+/** A facet's include param and its excluded twin. */
+const paramsOf = (facet: Facet) => ({ include: facet, exclude: EXCLUDED_OF[facet] })
 
 const windowOnly = (search: Search): Search => ({
 	startTime: search.startTime,
@@ -563,11 +538,21 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			model.window === null || model.facets.key === null
 				? { model }
 				: requestAll(model, context, model.window, "Load", "Refresh"),
-		ToggledFacetOption: ({ facet, name }) => navigate(model, toggledFacet(model.search, facet, name)),
+		ToggledFacetOption: ({ facet, name }) =>
+			navigate(
+				model,
+				editFacet(model.search, paramsOf(facet), (lists) => toggledValue(lists, name)),
+			),
 		ClickedOnlyFacetOption: ({ facet, name }) =>
-			navigate(model, { ...model.search, [facet]: [name], [EXCLUDED_OF[facet]]: undefined }),
+			navigate(
+				model,
+				editFacet(model.search, paramsOf(facet), () => onlyValue(name)),
+			),
 		ClickedExcludeFacetOption: ({ facet, name }) =>
-			navigate(model, excludedFacet(model.search, facet, name)),
+			navigate(
+				model,
+				editFacet(model.search, paramsOf(facet), (lists) => excludedValue(lists, name)),
+			),
 		ClickedClearAllFilters: () => navigate({ ...model, searchText: "" }, windowOnly(model.search)),
 		RemovedFilterChip: ({ chipId: id }) =>
 			navigate(
