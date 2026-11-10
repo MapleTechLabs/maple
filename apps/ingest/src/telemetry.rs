@@ -3482,13 +3482,18 @@ impl ExportWorker {
                     );
                     return Ok(());
                 }
-                Ok(response) if response.status().is_client_error() => {
+                // 408 and 429 are the upstream asking us to slow down, not bad data:
+                // they fall through to the retry arm, as on the ClickHouse path.
+                Ok(response)
+                    if response.status().is_client_error()
+                        && !is_retryable_clickhouse_status(response.status().as_u16()) =>
+                {
                     let status = response.status().as_u16();
                     let body = outbound::read_body_capped(response, MAX_ERROR_BODY_BYTES).await;
                     span_handle.record("http.response.status_code", status);
                     span_handle.record("maple.ingest.outcome", "dropped");
-                    // Terminal: these rows are gone. 4xx from Tinybird means we
-                    // sent bad data, so this one is genuinely ours.
+                    // Terminal: these rows are gone. Any other 4xx from Tinybird means
+                    // we sent bad data, so this one is genuinely ours.
                     record_stage_error(&span_handle, "non_retryable", &body, true);
                     metrics::tinybird_export_dropped(
                         destination,
@@ -3504,7 +3509,14 @@ impl ExportWorker {
                     last_status = status.to_string();
                     span_handle.record("http.response.status_code", status);
                     span_handle.record("maple.ingest.outcome", "retry");
-                    span_handle.record("error.type", "upstream_5xx");
+                    span_handle.record(
+                        "error.type",
+                        if status == 408 || status == 429 {
+                            "upstream_throttled"
+                        } else {
+                            "upstream_5xx"
+                        },
+                    );
                     metrics::tinybird_export_retry(destination, datasource, &last_status);
                     warn!(
                         datasource,

@@ -222,7 +222,6 @@ Runtime API URL behavior:
 ## Environment
 
 - Canonical env example: `.env.example`
-- API-only env example: `apps/api/.env.example`
 - Real `.env` values are local-only and should stay untracked.
 
 The web app expects `VITE_API_BASE_URL` to point to the API (defaults to `http://localhost:3472`).
@@ -255,7 +254,6 @@ Migration commands:
 bun db:up
 bun db:migrate:local
 bun run --cwd packages/db db:generate
-bun run --cwd packages/db db:studio
 ```
 
 CI migrates deployed PlanetScale branches over their direct port before Alchemy deploys the
@@ -293,8 +291,7 @@ Maple supports exactly two auth modes via `MAPLE_AUTH_MODE`:
 Start apps:
 
 ```bash
-bun --filter=@maple/api dev
-bun --filter=@maple/web dev
+bun dev api web
 ```
 
 Validate behavior:

@@ -20,6 +20,10 @@ interface AnyUrlOpen {
 	open(method: string, url: AnyUrl): void
 }
 const openAny = (xhr: AnyUrlOpen, url: AnyUrl): void => xhr.open("GET", url)
+interface AnyUrlFetch {
+	fetch(input: AnyUrl): Promise<Response>
+}
+const fetchAny = (target: AnyUrlFetch, input: AnyUrl): Promise<Response> => target.fetch(input)
 
 const request = (xhr: XMLHttpRequest): Promise<void> =>
 	new Promise((resolve) => {
@@ -249,6 +253,28 @@ describe("installNetworkCapture", () => {
 		openAny(nullXhr, null)
 		await request(nullXhr)
 		expect(events.map((event) => event.net?.url)).toEqual(["/?from-object", "null"])
+	})
+
+	it("resolves a fetch given an object that is neither a URL nor a Request, as the browser does", async () => {
+		const realFetch = window.fetch
+		// Under the capture, like the network would be.
+		window.fetch = async () => new Response("ok")
+		try {
+			const events: SessionEvent[] = []
+			uninstall = installNetworkCapture(
+				(event) => events.push(event),
+				// What the sink's own filter does with the URL: without one this throws.
+				(url) => url.startsWith("https://ingest.invalid/"),
+			)
+			// `fetch` stringifies a `Location`; it has no `url` of its own.
+			const response = await fetchAny(window, window.location)
+			expect(response.status).toBe(200)
+			expect(events.map((event) => event.net?.url)).toEqual([window.location.href])
+		} finally {
+			uninstall?.()
+			uninstall = undefined
+			window.fetch = realFetch
+		}
 	})
 })
 

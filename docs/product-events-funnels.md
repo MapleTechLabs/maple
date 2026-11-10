@@ -10,7 +10,7 @@ rather than by a separate `drop_web_events` migration.
 
 ## Rollout checklist (operator steps the code cannot do)
 
-1. **Tinybird**: `bun run --cwd apps/api tinybird:deploy` creates `product_events`,
+1. **Tinybird**: `bun run tinybird:deploy` creates `product_events`,
    `identity_links` and their MVs. Then populate both from their sources with an explicit `tb`
    step (the SDK has no populate option; same caveat as 0014). Until populated, page views
    read as zero on managed orgs. Old `web_events`/`web_events_mv` can be removed from the
@@ -390,7 +390,7 @@ lookup.
 
 ### Rollout
 
-1. **Managed**: `bun run --cwd apps/api tinybird:deploy` creates `product_events_traces_mv` and
+1. **Managed**: `bun run tinybird:deploy` creates `product_events_traces_mv` and
    adds the two columns, then an explicit `tb` populate from `traces` (bounded by its 30-day TTL).
    Blocked on the same manual step the rest of this document's checklist is (see the
    `project_product_events_tinybird_rollout_pending` note).

@@ -12,7 +12,8 @@ fi
 
 for name in MAPLE_LOCAL_INGEST_KEY MAPLE_LOCAL_ACCESS_TOKEN; do
 	eval "value=\${$name:-}"
-	if [ -z "$value" ]; then
+	# maple trims a secret and treats a blank one as unset, which would serve without auth.
+	if [ -z "$(printf '%s' "$value" | tr -d '[:space:]')" ]; then
 		echo "error: $name is required (generate one with: openssl rand -hex 32)" >&2
 		exit 64
 	fi

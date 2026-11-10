@@ -31,7 +31,7 @@ The reusable machinery lives in two workspace libraries:
 Browser (apps/web)
   TanStack DB collections, one set per active org
     read:  ShapeStream → GET {VITE_ELECTRIC_SYNC_URL}/api/sync/shape?shape=<name>&offset=…&handle=…
-           (mapleSyncFetch in lib/collections/shape-fetch.ts injects the Clerk / self-hosted bearer)
+           (MapleSyncHttpClient in apps/web/src/platform/api-clients.ts injects the Clerk / self-hosted bearer)
     write: typed HTTP endpoints on apps/api (dashboards use public `/v2`; Electric is read-path only)
 
 apps/electric-sync Worker: /api/sync/shape  (src/routes/shape.http.ts, a raw HttpRouter)

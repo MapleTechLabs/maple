@@ -314,10 +314,17 @@ interface XhrMeta extends XMLHttpRequest {
 /** The request with the fields capture keeps on it; all optional, so any request is one. */
 const xhrMeta = (xhr: XMLHttpRequest): XhrMeta => xhr
 
-function requestUrl(input: RequestInfo | URL): string {
+/** What `fetch` takes besides a string: a `Request`, or anything it stringifies (a `URL`, a `Location`). */
+interface FetchInputLike {
+	readonly url?: string
+	toString(): string
+}
+
+function requestUrl(input: string | FetchInputLike): string {
 	if (typeof input === "string") return input
-	if (input instanceof URL) return input.href
-	return input.url
+	// Only a `Request` has a `url`. Reading it from anything else gave `undefined`, which threw
+	// in the URL filter after the response had arrived and rejected the app's fetch.
+	return input.url ?? input.toString()
 }
 
 function requestMethod(input: RequestInfo | URL, init?: RequestInit): string {

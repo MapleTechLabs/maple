@@ -278,7 +278,7 @@ when `apps/api` is running **under `alchemy dev`** (`bun dev api`), because a pl
 `bun` process has neither the Durable Object namespace nor the `AI` binding.
 
 The `AI` binding needs a Cloudflare account with Workers AI, through an alchemy profile
-(`bunx alchemy login`). Confirm the default model id in `apps/api/src/lib/Llm.ts` is still in
+(`bunx alchemy login`). Confirm the default model id in `apps/ai/src/platform/Llm.ts` is still in
 the catalog — `cd apps/api && bunx wrangler ai models list`; a retired id returns `410`.
 Override it with `MAPLE_TRIAGE_MODEL`.
 

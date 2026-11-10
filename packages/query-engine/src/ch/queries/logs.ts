@@ -24,6 +24,7 @@ import {
 	severitySpellings,
 	soleValue,
 	timeseriesBucket,
+	utcHourFloor,
 	wholeRangeEnd,
 } from "./query-helpers"
 import { Array as Arr, String as Str } from "effect"
@@ -859,7 +860,9 @@ function logsFacetsQueryFromMv(
 		$: ColumnAccessor<typeof LogsAggregatesHourly.columns>,
 	): Array<CH.Condition | undefined> => [
 		$.OrgId.eq(orgIdParam),
-		$.Hour.gte(utcSecondsParam("startTime")),
+		// Floored: an unfloored bound skips the bucket the window starts in, so a
+		// window inside one clock hour matched no rows and every facet was empty.
+		$.Hour.gte(utcHourFloor("startTime")),
 		$.Hour.lte(utcSecondsParam("endTime")),
 		CH.when(opts.serviceName, (v: string) => $.ServiceName.eq(v)),
 		CH.when(opts.severity, (v: string) => inclusionCondition($.SeverityText, severitySpellings(v))),

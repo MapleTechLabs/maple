@@ -15964,7 +15964,7 @@ SELECT
           AND logs.Body ILIKE '%timeout%'
         FORMAT JSON
 
--- pipe:logs_facets:default:baseline  [0214fa9d]
+-- pipe:logs_facets:default:baseline  [c9735985]
 SELECT * FROM (
 SELECT
           logs_aggregates_hourly.SeverityText AS severityText,
@@ -15975,7 +15975,7 @@ SELECT
           'severity' AS facetType
         FROM logs_aggregates_hourly
         WHERE logs_aggregates_hourly.OrgId = 'org_sql_catalog'
-          AND logs_aggregates_hourly.Hour >= '2026-01-01 10:30:00'
+          AND logs_aggregates_hourly.Hour >= toStartOfHour(toDateTime('2026-01-01 10:30:00'))
           AND logs_aggregates_hourly.Hour <= '2026-01-03 14:15:00'
         GROUP BY severityText
 UNION ALL
@@ -15988,7 +15988,7 @@ SELECT
           'service' AS facetType
         FROM logs_aggregates_hourly
         WHERE logs_aggregates_hourly.OrgId = 'org_sql_catalog'
-          AND logs_aggregates_hourly.Hour >= '2026-01-01 10:30:00'
+          AND logs_aggregates_hourly.Hour >= toStartOfHour(toDateTime('2026-01-01 10:30:00'))
           AND logs_aggregates_hourly.Hour <= '2026-01-03 14:15:00'
         GROUP BY serviceName
 UNION ALL
@@ -16001,7 +16001,7 @@ SELECT
           'deploymentEnv' AS facetType
         FROM logs_aggregates_hourly
         WHERE logs_aggregates_hourly.OrgId = 'org_sql_catalog'
-          AND logs_aggregates_hourly.Hour >= '2026-01-01 10:30:00'
+          AND logs_aggregates_hourly.Hour >= toStartOfHour(toDateTime('2026-01-01 10:30:00'))
           AND logs_aggregates_hourly.Hour <= '2026-01-03 14:15:00'
           AND logs_aggregates_hourly.DeploymentEnv != ''
         GROUP BY deploymentEnv
@@ -16015,7 +16015,7 @@ SELECT
           'namespace' AS facetType
         FROM logs_aggregates_hourly
         WHERE logs_aggregates_hourly.OrgId = 'org_sql_catalog'
-          AND logs_aggregates_hourly.Hour >= '2026-01-01 10:30:00'
+          AND logs_aggregates_hourly.Hour >= toStartOfHour(toDateTime('2026-01-01 10:30:00'))
           AND logs_aggregates_hourly.Hour <= '2026-01-03 14:15:00'
           AND logs_aggregates_hourly.ServiceNamespace != ''
         GROUP BY namespace
@@ -16024,7 +16024,7 @@ ORDER BY count DESC
 LIMIT 500
 FORMAT JSON
 
--- pipe:logs_facets:default:bloom  [0214fa9d]
+-- pipe:logs_facets:default:bloom  [c9735985]
 SELECT * FROM (
 SELECT
           logs_aggregates_hourly.SeverityText AS severityText,
@@ -16035,7 +16035,7 @@ SELECT
           'severity' AS facetType
         FROM logs_aggregates_hourly
         WHERE logs_aggregates_hourly.OrgId = 'org_sql_catalog'
-          AND logs_aggregates_hourly.Hour >= '2026-01-01 10:30:00'
+          AND logs_aggregates_hourly.Hour >= toStartOfHour(toDateTime('2026-01-01 10:30:00'))
           AND logs_aggregates_hourly.Hour <= '2026-01-03 14:15:00'
         GROUP BY severityText
 UNION ALL
@@ -16048,7 +16048,7 @@ SELECT
           'service' AS facetType
         FROM logs_aggregates_hourly
         WHERE logs_aggregates_hourly.OrgId = 'org_sql_catalog'
-          AND logs_aggregates_hourly.Hour >= '2026-01-01 10:30:00'
+          AND logs_aggregates_hourly.Hour >= toStartOfHour(toDateTime('2026-01-01 10:30:00'))
           AND logs_aggregates_hourly.Hour <= '2026-01-03 14:15:00'
         GROUP BY serviceName
 UNION ALL
@@ -16061,7 +16061,7 @@ SELECT
           'deploymentEnv' AS facetType
         FROM logs_aggregates_hourly
         WHERE logs_aggregates_hourly.OrgId = 'org_sql_catalog'
-          AND logs_aggregates_hourly.Hour >= '2026-01-01 10:30:00'
+          AND logs_aggregates_hourly.Hour >= toStartOfHour(toDateTime('2026-01-01 10:30:00'))
           AND logs_aggregates_hourly.Hour <= '2026-01-03 14:15:00'
           AND logs_aggregates_hourly.DeploymentEnv != ''
         GROUP BY deploymentEnv
@@ -16075,7 +16075,7 @@ SELECT
           'namespace' AS facetType
         FROM logs_aggregates_hourly
         WHERE logs_aggregates_hourly.OrgId = 'org_sql_catalog'
-          AND logs_aggregates_hourly.Hour >= '2026-01-01 10:30:00'
+          AND logs_aggregates_hourly.Hour >= toStartOfHour(toDateTime('2026-01-01 10:30:00'))
           AND logs_aggregates_hourly.Hour <= '2026-01-03 14:15:00'
           AND logs_aggregates_hourly.ServiceNamespace != ''
         GROUP BY namespace
@@ -16084,7 +16084,7 @@ ORDER BY count DESC
 LIMIT 500
 FORMAT JSON
 
--- pipe:logs_facets:default:text  [0214fa9d]
+-- pipe:logs_facets:default:text  [c9735985]
 SELECT * FROM (
 SELECT
           logs_aggregates_hourly.SeverityText AS severityText,
@@ -16095,7 +16095,7 @@ SELECT
           'severity' AS facetType
         FROM logs_aggregates_hourly
         WHERE logs_aggregates_hourly.OrgId = 'org_sql_catalog'
-          AND logs_aggregates_hourly.Hour >= '2026-01-01 10:30:00'
+          AND logs_aggregates_hourly.Hour >= toStartOfHour(toDateTime('2026-01-01 10:30:00'))
           AND logs_aggregates_hourly.Hour <= '2026-01-03 14:15:00'
         GROUP BY severityText
 UNION ALL
@@ -16108,7 +16108,7 @@ SELECT
           'service' AS facetType
         FROM logs_aggregates_hourly
         WHERE logs_aggregates_hourly.OrgId = 'org_sql_catalog'
-          AND logs_aggregates_hourly.Hour >= '2026-01-01 10:30:00'
+          AND logs_aggregates_hourly.Hour >= toStartOfHour(toDateTime('2026-01-01 10:30:00'))
           AND logs_aggregates_hourly.Hour <= '2026-01-03 14:15:00'
         GROUP BY serviceName
 UNION ALL
@@ -16121,7 +16121,7 @@ SELECT
           'deploymentEnv' AS facetType
         FROM logs_aggregates_hourly
         WHERE logs_aggregates_hourly.OrgId = 'org_sql_catalog'
-          AND logs_aggregates_hourly.Hour >= '2026-01-01 10:30:00'
+          AND logs_aggregates_hourly.Hour >= toStartOfHour(toDateTime('2026-01-01 10:30:00'))
           AND logs_aggregates_hourly.Hour <= '2026-01-03 14:15:00'
           AND logs_aggregates_hourly.DeploymentEnv != ''
         GROUP BY deploymentEnv
@@ -16135,7 +16135,7 @@ SELECT
           'namespace' AS facetType
         FROM logs_aggregates_hourly
         WHERE logs_aggregates_hourly.OrgId = 'org_sql_catalog'
-          AND logs_aggregates_hourly.Hour >= '2026-01-01 10:30:00'
+          AND logs_aggregates_hourly.Hour >= toStartOfHour(toDateTime('2026-01-01 10:30:00'))
           AND logs_aggregates_hourly.Hour <= '2026-01-03 14:15:00'
           AND logs_aggregates_hourly.ServiceNamespace != ''
         GROUP BY namespace
@@ -16144,13 +16144,13 @@ ORDER BY count DESC
 LIMIT 500
 FORMAT JSON
 
--- pipe:metric_attribute_keys:default:baseline  [585437ff]
+-- pipe:metric_attribute_keys:default:baseline  [6cac4985]
 SELECT
           attribute_keys_hourly.AttributeKey AS attributeKey,
           sum(attribute_keys_hourly.UsageCount) AS usageCount
         FROM attribute_keys_hourly
         WHERE attribute_keys_hourly.OrgId = 'org_sql_catalog'
-          AND attribute_keys_hourly.Hour >= '2026-01-01 10:30:00'
+          AND attribute_keys_hourly.Hour >= toStartOfHour(toDateTime('2026-01-01 10:30:00'))
           AND attribute_keys_hourly.Hour <= '2026-01-03 14:15:00'
           AND attribute_keys_hourly.AttributeScope = 'metric'
         GROUP BY attributeKey
@@ -16172,13 +16172,13 @@ SELECT
         LIMIT 200
         FORMAT JSON
 
--- pipe:metric_attribute_values:default:baseline  [c6d7887c]
+-- pipe:metric_attribute_values:default:baseline  [b2d81d96]
 SELECT
           attribute_values_hourly.AttributeValue AS attributeValue,
           sum(attribute_values_hourly.UsageCount) AS usageCount
         FROM attribute_values_hourly
         WHERE attribute_values_hourly.OrgId = 'org_sql_catalog'
-          AND attribute_values_hourly.Hour >= '2026-01-01 10:30:00'
+          AND attribute_values_hourly.Hour >= toStartOfHour(toDateTime('2026-01-01 10:30:00'))
           AND attribute_values_hourly.Hour <= '2026-01-03 14:15:00'
           AND attribute_values_hourly.AttributeScope = 'metric'
           AND attribute_values_hourly.AttributeKey = 'http.route'
@@ -16214,13 +16214,13 @@ SELECT
         GROUP BY metricType
         FORMAT JSON
 
--- pipe:resource_attribute_keys:default:baseline  [585437ff]
+-- pipe:resource_attribute_keys:default:baseline  [6cac4985]
 SELECT
           attribute_keys_hourly.AttributeKey AS attributeKey,
           sum(attribute_keys_hourly.UsageCount) AS usageCount
         FROM attribute_keys_hourly
         WHERE attribute_keys_hourly.OrgId = 'org_sql_catalog'
-          AND attribute_keys_hourly.Hour >= '2026-01-01 10:30:00'
+          AND attribute_keys_hourly.Hour >= toStartOfHour(toDateTime('2026-01-01 10:30:00'))
           AND attribute_keys_hourly.Hour <= '2026-01-03 14:15:00'
           AND attribute_keys_hourly.AttributeScope = 'resource'
         GROUP BY attributeKey
@@ -16228,13 +16228,13 @@ SELECT
         LIMIT 200
         FORMAT JSON
 
--- pipe:resource_attribute_keys:default:bloom  [585437ff]
+-- pipe:resource_attribute_keys:default:bloom  [6cac4985]
 SELECT
           attribute_keys_hourly.AttributeKey AS attributeKey,
           sum(attribute_keys_hourly.UsageCount) AS usageCount
         FROM attribute_keys_hourly
         WHERE attribute_keys_hourly.OrgId = 'org_sql_catalog'
-          AND attribute_keys_hourly.Hour >= '2026-01-01 10:30:00'
+          AND attribute_keys_hourly.Hour >= toStartOfHour(toDateTime('2026-01-01 10:30:00'))
           AND attribute_keys_hourly.Hour <= '2026-01-03 14:15:00'
           AND attribute_keys_hourly.AttributeScope = 'resource'
         GROUP BY attributeKey
@@ -16242,13 +16242,13 @@ SELECT
         LIMIT 200
         FORMAT JSON
 
--- pipe:resource_attribute_keys:default:text  [585437ff]
+-- pipe:resource_attribute_keys:default:text  [6cac4985]
 SELECT
           attribute_keys_hourly.AttributeKey AS attributeKey,
           sum(attribute_keys_hourly.UsageCount) AS usageCount
         FROM attribute_keys_hourly
         WHERE attribute_keys_hourly.OrgId = 'org_sql_catalog'
-          AND attribute_keys_hourly.Hour >= '2026-01-01 10:30:00'
+          AND attribute_keys_hourly.Hour >= toStartOfHour(toDateTime('2026-01-01 10:30:00'))
           AND attribute_keys_hourly.Hour <= '2026-01-03 14:15:00'
           AND attribute_keys_hourly.AttributeScope = 'resource'
         GROUP BY attributeKey
@@ -16256,13 +16256,13 @@ SELECT
         LIMIT 200
         FORMAT JSON
 
--- pipe:resource_attribute_values:default:baseline  [c6d7887c]
+-- pipe:resource_attribute_values:default:baseline  [b2d81d96]
 SELECT
           attribute_values_hourly.AttributeValue AS attributeValue,
           sum(attribute_values_hourly.UsageCount) AS usageCount
         FROM attribute_values_hourly
         WHERE attribute_values_hourly.OrgId = 'org_sql_catalog'
-          AND attribute_values_hourly.Hour >= '2026-01-01 10:30:00'
+          AND attribute_values_hourly.Hour >= toStartOfHour(toDateTime('2026-01-01 10:30:00'))
           AND attribute_values_hourly.Hour <= '2026-01-03 14:15:00'
           AND attribute_values_hourly.AttributeScope = 'resource'
           AND attribute_values_hourly.AttributeKey = 'service.namespace'
@@ -16271,13 +16271,13 @@ SELECT
         LIMIT 50
         FORMAT JSON
 
--- pipe:resource_attribute_values:default:bloom  [c6d7887c]
+-- pipe:resource_attribute_values:default:bloom  [b2d81d96]
 SELECT
           attribute_values_hourly.AttributeValue AS attributeValue,
           sum(attribute_values_hourly.UsageCount) AS usageCount
         FROM attribute_values_hourly
         WHERE attribute_values_hourly.OrgId = 'org_sql_catalog'
-          AND attribute_values_hourly.Hour >= '2026-01-01 10:30:00'
+          AND attribute_values_hourly.Hour >= toStartOfHour(toDateTime('2026-01-01 10:30:00'))
           AND attribute_values_hourly.Hour <= '2026-01-03 14:15:00'
           AND attribute_values_hourly.AttributeScope = 'resource'
           AND attribute_values_hourly.AttributeKey = 'service.namespace'
@@ -16286,13 +16286,13 @@ SELECT
         LIMIT 50
         FORMAT JSON
 
--- pipe:resource_attribute_values:default:text  [c6d7887c]
+-- pipe:resource_attribute_values:default:text  [b2d81d96]
 SELECT
           attribute_values_hourly.AttributeValue AS attributeValue,
           sum(attribute_values_hourly.UsageCount) AS usageCount
         FROM attribute_values_hourly
         WHERE attribute_values_hourly.OrgId = 'org_sql_catalog'
-          AND attribute_values_hourly.Hour >= '2026-01-01 10:30:00'
+          AND attribute_values_hourly.Hour >= toStartOfHour(toDateTime('2026-01-01 10:30:00'))
           AND attribute_values_hourly.Hour <= '2026-01-03 14:15:00'
           AND attribute_values_hourly.AttributeScope = 'resource'
           AND attribute_values_hourly.AttributeKey = 'service.namespace'
@@ -17286,13 +17286,13 @@ SELECT
         LIMIT 10
         FORMAT JSON
 
--- pipe:span_attribute_keys:default:baseline  [585437ff]
+-- pipe:span_attribute_keys:default:baseline  [6cac4985]
 SELECT
           attribute_keys_hourly.AttributeKey AS attributeKey,
           sum(attribute_keys_hourly.UsageCount) AS usageCount
         FROM attribute_keys_hourly
         WHERE attribute_keys_hourly.OrgId = 'org_sql_catalog'
-          AND attribute_keys_hourly.Hour >= '2026-01-01 10:30:00'
+          AND attribute_keys_hourly.Hour >= toStartOfHour(toDateTime('2026-01-01 10:30:00'))
           AND attribute_keys_hourly.Hour <= '2026-01-03 14:15:00'
           AND attribute_keys_hourly.AttributeScope = 'span'
         GROUP BY attributeKey
@@ -17300,13 +17300,13 @@ SELECT
         LIMIT 200
         FORMAT JSON
 
--- pipe:span_attribute_keys:default:bloom  [585437ff]
+-- pipe:span_attribute_keys:default:bloom  [6cac4985]
 SELECT
           attribute_keys_hourly.AttributeKey AS attributeKey,
           sum(attribute_keys_hourly.UsageCount) AS usageCount
         FROM attribute_keys_hourly
         WHERE attribute_keys_hourly.OrgId = 'org_sql_catalog'
-          AND attribute_keys_hourly.Hour >= '2026-01-01 10:30:00'
+          AND attribute_keys_hourly.Hour >= toStartOfHour(toDateTime('2026-01-01 10:30:00'))
           AND attribute_keys_hourly.Hour <= '2026-01-03 14:15:00'
           AND attribute_keys_hourly.AttributeScope = 'span'
         GROUP BY attributeKey
@@ -17314,13 +17314,13 @@ SELECT
         LIMIT 200
         FORMAT JSON
 
--- pipe:span_attribute_keys:default:text  [585437ff]
+-- pipe:span_attribute_keys:default:text  [6cac4985]
 SELECT
           attribute_keys_hourly.AttributeKey AS attributeKey,
           sum(attribute_keys_hourly.UsageCount) AS usageCount
         FROM attribute_keys_hourly
         WHERE attribute_keys_hourly.OrgId = 'org_sql_catalog'
-          AND attribute_keys_hourly.Hour >= '2026-01-01 10:30:00'
+          AND attribute_keys_hourly.Hour >= toStartOfHour(toDateTime('2026-01-01 10:30:00'))
           AND attribute_keys_hourly.Hour <= '2026-01-03 14:15:00'
           AND attribute_keys_hourly.AttributeScope = 'span'
         GROUP BY attributeKey
@@ -17328,13 +17328,13 @@ SELECT
         LIMIT 200
         FORMAT JSON
 
--- pipe:span_attribute_values:default:baseline  [c6d7887c]
+-- pipe:span_attribute_values:default:baseline  [b2d81d96]
 SELECT
           attribute_values_hourly.AttributeValue AS attributeValue,
           sum(attribute_values_hourly.UsageCount) AS usageCount
         FROM attribute_values_hourly
         WHERE attribute_values_hourly.OrgId = 'org_sql_catalog'
-          AND attribute_values_hourly.Hour >= '2026-01-01 10:30:00'
+          AND attribute_values_hourly.Hour >= toStartOfHour(toDateTime('2026-01-01 10:30:00'))
           AND attribute_values_hourly.Hour <= '2026-01-03 14:15:00'
           AND attribute_values_hourly.AttributeScope = 'span'
           AND attribute_values_hourly.AttributeKey = 'http.method'
@@ -17343,13 +17343,13 @@ SELECT
         LIMIT 50
         FORMAT JSON
 
--- pipe:span_attribute_values:default:bloom  [c6d7887c]
+-- pipe:span_attribute_values:default:bloom  [b2d81d96]
 SELECT
           attribute_values_hourly.AttributeValue AS attributeValue,
           sum(attribute_values_hourly.UsageCount) AS usageCount
         FROM attribute_values_hourly
         WHERE attribute_values_hourly.OrgId = 'org_sql_catalog'
-          AND attribute_values_hourly.Hour >= '2026-01-01 10:30:00'
+          AND attribute_values_hourly.Hour >= toStartOfHour(toDateTime('2026-01-01 10:30:00'))
           AND attribute_values_hourly.Hour <= '2026-01-03 14:15:00'
           AND attribute_values_hourly.AttributeScope = 'span'
           AND attribute_values_hourly.AttributeKey = 'http.method'
@@ -17358,13 +17358,13 @@ SELECT
         LIMIT 50
         FORMAT JSON
 
--- pipe:span_attribute_values:default:text  [c6d7887c]
+-- pipe:span_attribute_values:default:text  [b2d81d96]
 SELECT
           attribute_values_hourly.AttributeValue AS attributeValue,
           sum(attribute_values_hourly.UsageCount) AS usageCount
         FROM attribute_values_hourly
         WHERE attribute_values_hourly.OrgId = 'org_sql_catalog'
-          AND attribute_values_hourly.Hour >= '2026-01-01 10:30:00'
+          AND attribute_values_hourly.Hour >= toStartOfHour(toDateTime('2026-01-01 10:30:00'))
           AND attribute_values_hourly.Hour <= '2026-01-03 14:15:00'
           AND attribute_values_hourly.AttributeScope = 'span'
           AND attribute_values_hourly.AttributeKey = 'http.method'
@@ -17521,10 +17521,10 @@ SELECT
         LIMIT 20
         FORMAT JSON
 
--- pipe:top_operations:apdex:baseline  [ec0f7d9c]
+-- pipe:top_operations:apdex:baseline  [3382eba2]
 SELECT
           if(((traces.SpanName LIKE 'http.server %' OR traces.SpanName IN ('GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS')) AND (traces.SpanAttributes['http.route'] != '' OR traces.SpanAttributes['url.path'] != '')), concat(if(traces.SpanName LIKE 'http.server %', replaceOne(traces.SpanName, 'http.server ', ''), traces.SpanName), ' ', if(traces.SpanAttributes['http.route'] != '', traces.SpanAttributes['http.route'], traces.SpanAttributes['url.path'])), traces.SpanName) AS name,
-          ifNull(ifNotFinite(if(count() > 0, round((countIf(traces.Duration / 1000000 < 500) + (countIf((traces.Duration / 1000000 >= 500 AND traces.Duration / 1000000 < 2000)) * 0.5)) / count(), 4), 0), 0), 0) AS value
+          ifNull(ifNotFinite(if(count() > 0, round(countIf((NOT (traces.StatusCode = 'Error') AND traces.Duration / 1000000 < 500)) / count() + (countIf((NOT (traces.StatusCode = 'Error') AND (traces.Duration / 1000000 >= 500 AND traces.Duration / 1000000 < 2000))) * 0.5 / count()), 4), 0), 0), 0) AS value
         FROM traces
         WHERE traces.OrgId = 'org_sql_catalog'
           AND traces.ServiceName = 'api'
@@ -18722,13 +18722,13 @@ SELECT
 ) AS errorCount_tiers
 FORMAT JSON
 
--- spec:attribute-keys-logs:baseline  [585437ff]
+-- spec:attribute-keys-logs:baseline  [6cac4985]
 SELECT
           attribute_keys_hourly.AttributeKey AS attributeKey,
           sum(attribute_keys_hourly.UsageCount) AS usageCount
         FROM attribute_keys_hourly
         WHERE attribute_keys_hourly.OrgId = 'org_sql_catalog'
-          AND attribute_keys_hourly.Hour >= '2026-01-01 10:30:00'
+          AND attribute_keys_hourly.Hour >= toStartOfHour(toDateTime('2026-01-01 10:30:00'))
           AND attribute_keys_hourly.Hour <= '2026-01-03 14:15:00'
           AND attribute_keys_hourly.AttributeScope = 'log'
         GROUP BY attributeKey
@@ -18750,13 +18750,13 @@ SELECT
         LIMIT 200
         FORMAT JSON
 
--- spec:attribute-keys-metrics:baseline  [585437ff]
+-- spec:attribute-keys-metrics:baseline  [6cac4985]
 SELECT
           attribute_keys_hourly.AttributeKey AS attributeKey,
           sum(attribute_keys_hourly.UsageCount) AS usageCount
         FROM attribute_keys_hourly
         WHERE attribute_keys_hourly.OrgId = 'org_sql_catalog'
-          AND attribute_keys_hourly.Hour >= '2026-01-01 10:30:00'
+          AND attribute_keys_hourly.Hour >= toStartOfHour(toDateTime('2026-01-01 10:30:00'))
           AND attribute_keys_hourly.Hour <= '2026-01-03 14:15:00'
           AND attribute_keys_hourly.AttributeScope = 'metric'
         GROUP BY attributeKey
@@ -18777,13 +18777,13 @@ SELECT
         LIMIT 200
         FORMAT JSON
 
--- spec:attribute-keys-resource:baseline  [585437ff]
+-- spec:attribute-keys-resource:baseline  [6cac4985]
 SELECT
           attribute_keys_hourly.AttributeKey AS attributeKey,
           sum(attribute_keys_hourly.UsageCount) AS usageCount
         FROM attribute_keys_hourly
         WHERE attribute_keys_hourly.OrgId = 'org_sql_catalog'
-          AND attribute_keys_hourly.Hour >= '2026-01-01 10:30:00'
+          AND attribute_keys_hourly.Hour >= toStartOfHour(toDateTime('2026-01-01 10:30:00'))
           AND attribute_keys_hourly.Hour <= '2026-01-03 14:15:00'
           AND attribute_keys_hourly.AttributeScope = 'resource'
         GROUP BY attributeKey
@@ -18791,13 +18791,13 @@ SELECT
         LIMIT 200
         FORMAT JSON
 
--- spec:attribute-keys-span:baseline  [585437ff]
+-- spec:attribute-keys-span:baseline  [6cac4985]
 SELECT
           attribute_keys_hourly.AttributeKey AS attributeKey,
           sum(attribute_keys_hourly.UsageCount) AS usageCount
         FROM attribute_keys_hourly
         WHERE attribute_keys_hourly.OrgId = 'org_sql_catalog'
-          AND attribute_keys_hourly.Hour >= '2026-01-01 10:30:00'
+          AND attribute_keys_hourly.Hour >= toStartOfHour(toDateTime('2026-01-01 10:30:00'))
           AND attribute_keys_hourly.Hour <= '2026-01-03 14:15:00'
           AND attribute_keys_hourly.AttributeScope = 'span'
         GROUP BY attributeKey
@@ -18805,13 +18805,13 @@ SELECT
         LIMIT 200
         FORMAT JSON
 
--- spec:attribute-keys-span:bloom  [585437ff]
+-- spec:attribute-keys-span:bloom  [6cac4985]
 SELECT
           attribute_keys_hourly.AttributeKey AS attributeKey,
           sum(attribute_keys_hourly.UsageCount) AS usageCount
         FROM attribute_keys_hourly
         WHERE attribute_keys_hourly.OrgId = 'org_sql_catalog'
-          AND attribute_keys_hourly.Hour >= '2026-01-01 10:30:00'
+          AND attribute_keys_hourly.Hour >= toStartOfHour(toDateTime('2026-01-01 10:30:00'))
           AND attribute_keys_hourly.Hour <= '2026-01-03 14:15:00'
           AND attribute_keys_hourly.AttributeScope = 'span'
         GROUP BY attributeKey
@@ -18819,13 +18819,13 @@ SELECT
         LIMIT 200
         FORMAT JSON
 
--- spec:attribute-keys-span:text  [585437ff]
+-- spec:attribute-keys-span:text  [6cac4985]
 SELECT
           attribute_keys_hourly.AttributeKey AS attributeKey,
           sum(attribute_keys_hourly.UsageCount) AS usageCount
         FROM attribute_keys_hourly
         WHERE attribute_keys_hourly.OrgId = 'org_sql_catalog'
-          AND attribute_keys_hourly.Hour >= '2026-01-01 10:30:00'
+          AND attribute_keys_hourly.Hour >= toStartOfHour(toDateTime('2026-01-01 10:30:00'))
           AND attribute_keys_hourly.Hour <= '2026-01-03 14:15:00'
           AND attribute_keys_hourly.AttributeScope = 'span'
         GROUP BY attributeKey
@@ -18833,13 +18833,13 @@ SELECT
         LIMIT 200
         FORMAT JSON
 
--- spec:attribute-values-log:baseline  [c6d7887c]
+-- spec:attribute-values-log:baseline  [b2d81d96]
 SELECT
           attribute_values_hourly.AttributeValue AS attributeValue,
           sum(attribute_values_hourly.UsageCount) AS usageCount
         FROM attribute_values_hourly
         WHERE attribute_values_hourly.OrgId = 'org_sql_catalog'
-          AND attribute_values_hourly.Hour >= '2026-01-01 10:30:00'
+          AND attribute_values_hourly.Hour >= toStartOfHour(toDateTime('2026-01-01 10:30:00'))
           AND attribute_values_hourly.Hour <= '2026-01-03 14:15:00'
           AND attribute_values_hourly.AttributeScope = 'log'
           AND attribute_values_hourly.AttributeKey = 'log.level'
@@ -18863,13 +18863,13 @@ SELECT
         LIMIT 50
         FORMAT JSON
 
--- spec:attribute-values-metrics:baseline  [c6d7887c]
+-- spec:attribute-values-metrics:baseline  [b2d81d96]
 SELECT
           attribute_values_hourly.AttributeValue AS attributeValue,
           sum(attribute_values_hourly.UsageCount) AS usageCount
         FROM attribute_values_hourly
         WHERE attribute_values_hourly.OrgId = 'org_sql_catalog'
-          AND attribute_values_hourly.Hour >= '2026-01-01 10:30:00'
+          AND attribute_values_hourly.Hour >= toStartOfHour(toDateTime('2026-01-01 10:30:00'))
           AND attribute_values_hourly.Hour <= '2026-01-03 14:15:00'
           AND attribute_values_hourly.AttributeScope = 'metric'
           AND attribute_values_hourly.AttributeKey = 'http.route'
@@ -18892,13 +18892,13 @@ SELECT
         LIMIT 50
         FORMAT JSON
 
--- spec:attribute-values-span:baseline  [c6d7887c]
+-- spec:attribute-values-span:baseline  [b2d81d96]
 SELECT
           attribute_values_hourly.AttributeValue AS attributeValue,
           sum(attribute_values_hourly.UsageCount) AS usageCount
         FROM attribute_values_hourly
         WHERE attribute_values_hourly.OrgId = 'org_sql_catalog'
-          AND attribute_values_hourly.Hour >= '2026-01-01 10:30:00'
+          AND attribute_values_hourly.Hour >= toStartOfHour(toDateTime('2026-01-01 10:30:00'))
           AND attribute_values_hourly.Hour <= '2026-01-03 14:15:00'
           AND attribute_values_hourly.AttributeScope = 'span'
           AND attribute_values_hourly.AttributeKey = 'http.method'
@@ -18907,13 +18907,13 @@ SELECT
         LIMIT 50
         FORMAT JSON
 
--- spec:attribute-values-span:bloom  [c6d7887c]
+-- spec:attribute-values-span:bloom  [b2d81d96]
 SELECT
           attribute_values_hourly.AttributeValue AS attributeValue,
           sum(attribute_values_hourly.UsageCount) AS usageCount
         FROM attribute_values_hourly
         WHERE attribute_values_hourly.OrgId = 'org_sql_catalog'
-          AND attribute_values_hourly.Hour >= '2026-01-01 10:30:00'
+          AND attribute_values_hourly.Hour >= toStartOfHour(toDateTime('2026-01-01 10:30:00'))
           AND attribute_values_hourly.Hour <= '2026-01-03 14:15:00'
           AND attribute_values_hourly.AttributeScope = 'span'
           AND attribute_values_hourly.AttributeKey = 'http.method'
@@ -18922,13 +18922,13 @@ SELECT
         LIMIT 50
         FORMAT JSON
 
--- spec:attribute-values-span:text  [c6d7887c]
+-- spec:attribute-values-span:text  [b2d81d96]
 SELECT
           attribute_values_hourly.AttributeValue AS attributeValue,
           sum(attribute_values_hourly.UsageCount) AS usageCount
         FROM attribute_values_hourly
         WHERE attribute_values_hourly.OrgId = 'org_sql_catalog'
-          AND attribute_values_hourly.Hour >= '2026-01-01 10:30:00'
+          AND attribute_values_hourly.Hour >= toStartOfHour(toDateTime('2026-01-01 10:30:00'))
           AND attribute_values_hourly.Hour <= '2026-01-03 14:15:00'
           AND attribute_values_hourly.AttributeScope = 'span'
           AND attribute_values_hourly.AttributeKey = 'http.method'
@@ -19113,7 +19113,7 @@ SELECT
 ) AS counts
         FORMAT JSON
 
--- spec:logs-facets-single-dimension:baseline  [a2c524c2]
+-- spec:logs-facets-single-dimension:baseline  [aa382b6a]
 SELECT * FROM (
 SELECT
           logs_aggregates_hourly.SeverityText AS severityText,
@@ -19124,7 +19124,7 @@ SELECT
           'severity' AS facetType
         FROM logs_aggregates_hourly
         WHERE logs_aggregates_hourly.OrgId = 'org_sql_catalog'
-          AND logs_aggregates_hourly.Hour >= '2026-01-01 10:30:00'
+          AND logs_aggregates_hourly.Hour >= toStartOfHour(toDateTime('2026-01-01 10:30:00'))
           AND logs_aggregates_hourly.Hour <= '2026-01-03 14:15:00'
         GROUP BY severityText
 )
@@ -19132,7 +19132,7 @@ ORDER BY count DESC
 LIMIT 500
 FORMAT JSON
 
--- spec:logs-facets:baseline  [637a8191]
+-- spec:logs-facets:baseline  [8d65d221]
 SELECT * FROM (
 SELECT
           logs_aggregates_hourly.SeverityText AS severityText,
@@ -19143,7 +19143,7 @@ SELECT
           'severity' AS facetType
         FROM logs_aggregates_hourly
         WHERE logs_aggregates_hourly.OrgId = 'org_sql_catalog'
-          AND logs_aggregates_hourly.Hour >= '2026-01-01 10:30:00'
+          AND logs_aggregates_hourly.Hour >= toStartOfHour(toDateTime('2026-01-01 10:30:00'))
           AND logs_aggregates_hourly.Hour <= '2026-01-03 14:15:00'
           AND logs_aggregates_hourly.ServiceName = 'api'
         GROUP BY severityText
@@ -19157,7 +19157,7 @@ SELECT
           'service' AS facetType
         FROM logs_aggregates_hourly
         WHERE logs_aggregates_hourly.OrgId = 'org_sql_catalog'
-          AND logs_aggregates_hourly.Hour >= '2026-01-01 10:30:00'
+          AND logs_aggregates_hourly.Hour >= toStartOfHour(toDateTime('2026-01-01 10:30:00'))
           AND logs_aggregates_hourly.Hour <= '2026-01-03 14:15:00'
           AND logs_aggregates_hourly.ServiceName = 'api'
         GROUP BY serviceName
@@ -19171,7 +19171,7 @@ SELECT
           'deploymentEnv' AS facetType
         FROM logs_aggregates_hourly
         WHERE logs_aggregates_hourly.OrgId = 'org_sql_catalog'
-          AND logs_aggregates_hourly.Hour >= '2026-01-01 10:30:00'
+          AND logs_aggregates_hourly.Hour >= toStartOfHour(toDateTime('2026-01-01 10:30:00'))
           AND logs_aggregates_hourly.Hour <= '2026-01-03 14:15:00'
           AND logs_aggregates_hourly.ServiceName = 'api'
           AND logs_aggregates_hourly.DeploymentEnv != ''
@@ -19186,7 +19186,7 @@ SELECT
           'namespace' AS facetType
         FROM logs_aggregates_hourly
         WHERE logs_aggregates_hourly.OrgId = 'org_sql_catalog'
-          AND logs_aggregates_hourly.Hour >= '2026-01-01 10:30:00'
+          AND logs_aggregates_hourly.Hour >= toStartOfHour(toDateTime('2026-01-01 10:30:00'))
           AND logs_aggregates_hourly.Hour <= '2026-01-03 14:15:00'
           AND logs_aggregates_hourly.ServiceName = 'api'
           AND logs_aggregates_hourly.ServiceNamespace != ''
