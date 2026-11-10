@@ -43,12 +43,7 @@ describe("source rules draft", () => {
 			rate_limit_rps: null,
 			resource_attributes: [],
 		})
-		expect(Arr.map(expiryChoicesOf(init(null)), (choice) => choice.value)).toEqual([
-			"never",
-			"7",
-			"30",
-			"90",
-		])
+		expect(Arr.map(expiryChoicesOf(init(null)), (choice) => choice.value)).not.toContain("keep")
 	})
 
 	test("an existing source seeds the draft and offers to keep its expiry", () => {

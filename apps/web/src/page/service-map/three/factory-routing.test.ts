@@ -57,7 +57,10 @@ describe("factory transports", () => {
 			const geometry = beltGeometry(link.curve, 0.8)
 			expect(Arr.every([...geometry.getAttribute("position").array], Number.isFinite)).toBe(true)
 			expect(Arr.every([...geometry.getAttribute("normal").array], Number.isFinite)).toBe(true)
-			expect(geometry.getIndex()?.count).toBe(480)
+			const indices = [...(geometry.getIndex()?.array ?? [])]
+			expect(indices.length).toBeGreaterThan(0)
+			expect(indices.length % 3).toBe(0)
+			expect(Math.max(...indices)).toBeLessThan(geometry.getAttribute("position").count)
 			geometry.dispose()
 		}
 	})

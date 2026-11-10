@@ -1,10 +1,27 @@
 import { describe, expect, test } from "vitest"
+import { MODULE } from "../three/machines"
+import { spatialLayout } from "../three/spatial-layout"
+import { BUILDING_TYPES, BUILDINGS } from "./catalog"
 import { CELL_SIZE, cellToScene, sceneToCell } from "./grid"
 
 describe("grid", () => {
-	test("the atlas spacing and a machine footprint land on whole cells", () => {
-		expect(Number.isInteger(Math.round((4.2 / CELL_SIZE) * 1e9) / 1e9)).toBe(true)
-		expect(3 * CELL_SIZE).toBeGreaterThanOrEqual(1.6)
+	test("machines the atlas lays out in one district stand a whole number of cells apart", () => {
+		const nodes = Array.from({ length: 4 }, (_, i) => ({ id: `svc-${i}`, namespace: "team" }))
+		const [first, ...rest] = [...spatialLayout({ nodes, edges: [] }, "atlas").positions.values()]
+		if (first === undefined) return expect.unreachable("no positions")
+		expect(rest).toHaveLength(3)
+		for (const position of rest)
+			for (const axis of [0, 2] as const) {
+				const cells = (position[axis] - first[axis]) / CELL_SIZE
+				expect(Math.abs(cells - Math.round(cells))).toBeLessThan(1e-9)
+			}
+	})
+
+	test("every building's footprint covers a two-module machine", () => {
+		for (const type of BUILDING_TYPES) {
+			const { width, depth } = BUILDINGS[type].footprint
+			expect(Math.min(width, depth) * CELL_SIZE).toBeGreaterThanOrEqual(2 * MODULE)
+		}
 	})
 
 	test("a cell round-trips through scene space", () => {

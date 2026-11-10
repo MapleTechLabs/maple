@@ -1,6 +1,5 @@
 import { describe, it, expect } from "vitest"
 import { normalizeEvents } from "./replay-events"
-import { Array as Arr } from "effect"
 
 const ev = (timestamp: number, tag: string) => ({ timestamp, tag })
 
@@ -25,18 +24,17 @@ describe("normalizeEvents", () => {
 		expect(normalizeEvents(events)).toEqual([ev(1000, "a"), ev(1000, "b")])
 	})
 
-	it("collapses a corrupted span back to its real range", () => {
-		// A scrambled stream where late chunks (t=12_465_000 ≈ 207min) interleave
-		// with early ones: the bug that inflated rrweb's totalTime. After
-		// normalization the first/last timestamps frame the true ordered span.
+	it("drops duplicates that only meet once a scrambled stream is sorted", () => {
 		const events = [
 			ev(12_465_000, "stale"),
 			ev(1000, "start"),
-			ev(12_465_000, "stale"), // duplicate
+			ev(12_465_000, "stale"),
 			ev(42_000, "end"),
 		]
-		const out = normalizeEvents(events) as Array<{ timestamp: number }>
-		expect(Arr.map(out, (e) => e.timestamp)).toEqual([1000, 42_000, 12_465_000])
-		expect(out.at(-1)!.timestamp - Arr.getUnsafe(out, 0).timestamp).toBe(12_464_000)
+		expect(normalizeEvents(events)).toEqual([
+			ev(1000, "start"),
+			ev(42_000, "end"),
+			ev(12_465_000, "stale"),
+		])
 	})
 })

@@ -64,7 +64,7 @@ describe("onboarding stack", () => {
 		expect(searchLanguages("Rails")).toEqual(["ruby"])
 		expect(searchLanguages("elixir")).toEqual(["otel"])
 		expect(searchLanguages("cobol")).toEqual([])
-		expect(searchLanguages("  ")).toHaveLength(15)
+		expect(searchLanguages("  ")).toEqual(STACK_LANGUAGE_IDS)
 	})
 
 	test("toggling adds a pick once and removes it again", () => {
