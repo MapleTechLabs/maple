@@ -6,7 +6,17 @@ import { Result, Schema, Array as Arr } from "effect"
 import * as Combobox from "@maple/views/ui/combobox"
 import * as Dialog from "@maple/views/ui/dialog"
 import { MountDialog } from "@maple/views/ui/dialog"
-import { expect as expectView, Mount, given, role, scene, text, withViewInputs } from "foldkit/scene"
+import {
+	expect as expectView,
+	Mount,
+	given,
+	role,
+	scene,
+	selector,
+	submit,
+	text,
+	withViewInputs,
+} from "foldkit/scene"
 import { describe, expect, test } from "vitest"
 import type { PageContext } from "../../contract"
 import { NOW, ORG, hubAt, ruleRow } from "../shared/test-rows"
@@ -212,7 +222,7 @@ describe("alerts hub, silence side panel", () => {
 		expect(step.model.silenceDialog.dialog.isOpen).toBe(false)
 	})
 
-	test("the URL opens it with a chips input per scope field, Cancel and a save that waits for a valid form", () => {
+	test("the URL opens it with a chips input per scope field, Cancel and a save", () => {
 		const opened = withPanel()
 		expect(opened.model.silenceDialog.dialog.isOpen).toBe(true)
 		scene(
@@ -227,7 +237,35 @@ describe("alerts hub, silence side panel", () => {
 				text("Fill in at least one. A rule is silenced only if it matches every field you fill in."),
 			).toExist(),
 			expectView(role("button", { name: "Cancel" })).toExist(),
-			expectView(role("button", { name: "Silence for 1 hour" })).toBeDisabled(),
+			expectView(role("button", { name: "Silence for 1 hour" })).not.toBeDisabled(),
+			expectView(role("alert")).not.toExist(),
+		)
+	})
+
+	test("saving an incomplete form sends nothing and says what is missing, field by field", () => {
+		scene(
+			{ update: pageUpdate, view },
+			given(withPanel().model),
+			Mount.resolve(MountDialog, Dialog.Message.CompletedMountDialog()),
+			submit(selector("form")),
+			expectView(text("Add at least one service, environment or tag")).toExist(),
+			expectView(text("Add a reason")).toExist(),
+			expectView(role("textbox", { name: "Reason" })).toHaveAttr("aria-invalid", "true"),
+			expectView(role("button", { name: "Silence for 1 hour" })).not.toBeDisabled(),
+		)
+		const tried = pageUpdate(withPanel().model, silenceMessage(SilenceDialog.Message.ClickedSave()))
+		expect(namesOf(tried.commands)).toEqual([])
+		// Each line goes as its field is filled in.
+		const reasoned = pageUpdate(
+			tried.model,
+			silenceMessage(SilenceDialog.Message.ChangedReason({ value: "Deploying checkout v2.3" })),
+		).model
+		scene(
+			{ update: pageUpdate, view },
+			given(reasoned),
+			Mount.resolve(MountDialog, Dialog.Message.CompletedMountDialog()),
+			expectView(text("Add a reason")).not.toExist(),
+			expectView(text("Add at least one service, environment or tag")).toExist(),
 		)
 	})
 

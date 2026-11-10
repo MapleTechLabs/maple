@@ -62,6 +62,8 @@ export const Model = Schema.Struct({
 	/** The wall clock when the dialog opened: a custom end is checked against it. */
 	nowMs: Schema.Number,
 	isSaving: Schema.Boolean,
+	/** A save was tried on an incomplete form: each field left out says so. */
+	isShowingErrors: Schema.Boolean,
 	/** Bumped on every open: a save's result only settles the form it was sent from. */
 	openCount: Schema.Number,
 })
@@ -77,6 +79,7 @@ export const init = (id: string): Model => ({
 	timeZone: "UTC",
 	nowMs: 0,
 	isSaving: false,
+	isShowingErrors: false,
 	openCount: 0,
 })
 
@@ -167,9 +170,10 @@ export const endZoneLabel = (model: Pick<Model, "until" | "timeZone" | "nowMs">)
 		Option.getOrElse(parseLocalDateTime(model.until, model.timeZone), () => model.nowMs),
 	)
 
-/** Why a typed custom end cannot be used, or none when it can (or nothing is typed yet). */
+/** Why a typed custom end cannot be used, or none when it can; an empty one waits for a tried save. */
 export const untilError = (model: Model): Option.Option<string> => {
-	if (model.duration !== "custom" || model.until === "") return Option.none()
+	if (model.duration !== "custom") return Option.none()
+	if (model.until === "") return model.isShowingErrors ? Option.some("Pick a date and time") : Option.none()
 	return Option.match(parseLocalDateTime(model.until, model.timeZone), {
 		onNone: () => Option.some("Pick a date and time"),
 		onSome: (endMs) =>
@@ -180,6 +184,15 @@ export const untilError = (model: Model): Option.Option<string> => {
 					: Option.none(),
 	})
 }
+
+/** A silence always says why: the reason shows on its row and on the pages it covers. */
+export const reasonError = (reason: string): Option.Option<string> =>
+	Str.isEmpty(Str.trim(reason)) ? Option.some("Add a reason") : Option.none()
+
+export const scopeError = (scope: Scope): Option.Option<string> =>
+	hasMatchers(matchersOf(scope))
+		? Option.none()
+		: Option.some("Add at least one service, environment or tag")
 
 /** Ready to save: a reason, something to match and an end that is ahead and within 30 days. */
 export const isFormReady = (model: Model): boolean =>
@@ -235,6 +248,7 @@ const open = (model: Model, scope: Scope, timeZone: string, nowMs: number): Retu
 			duration: "1h",
 			until: "",
 			isSaving: false,
+			isShowingErrors: false,
 			openCount: model.openCount + 1,
 		},
 		Dialog.open(model.dialog),
@@ -271,22 +285,24 @@ const scopeComboStep = (model: Model, field: ScopeField, message: Combobox.Messa
 /** Closes the panel, as Cancel does; a page whose URL holds it closes it on Back. */
 export const close = (model: Model): Return => liftDialog(model, Dialog.close(model.dialog))
 
-const save = (model: Model): Return =>
-	model.isSaving || !isFormReady(model)
-		? { model }
-		: {
-				model: { ...model, isSaving: true },
-				commands: [
-					SaveSilence({
-						openCount: model.openCount,
-						reason: Str.trim(model.reason),
-						matchers: matchersOf(model.scope),
-						duration: model.duration,
-						until: model.until,
-						timeZone: model.timeZone,
-					}),
-				],
-			}
+const save = (model: Model): Return => {
+	if (model.isSaving) return { model }
+	// An incomplete form stays open and names what is missing, as the other alert forms do.
+	if (!isFormReady(model)) return { model: { ...model, isShowingErrors: true } }
+	return {
+		model: { ...model, isSaving: true },
+		commands: [
+			SaveSilence({
+				openCount: model.openCount,
+				reason: Str.trim(model.reason),
+				matchers: matchersOf(model.scope),
+				duration: model.duration,
+				until: model.until,
+				timeZone: model.timeZone,
+			}),
+		],
+	}
+}
 
 export const update = (model: Model, message: Message): Return =>
 	Message.match<Return>(message, {

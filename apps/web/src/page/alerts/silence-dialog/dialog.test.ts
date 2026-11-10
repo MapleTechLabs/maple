@@ -14,6 +14,8 @@ import {
 	openNew,
 	OutMessage,
 	parseLocalDateTime,
+	reasonError,
+	scopeError,
 	type ScopeField,
 	silenceEndMs,
 	untilError,
@@ -184,6 +186,23 @@ describe("isFormReady", () => {
 		expect(untilError({ ...model, until: "2026-12-24T09:00" })).toEqual(
 			Option.some("A silence can last at most 30 days"),
 		)
+	})
+
+	it("a tried save on an incomplete form sends nothing and turns the errors on, an empty custom end included", () => {
+		const opened = openNew(init("silence"), BERLIN, NOW).model
+		const custom = update(opened, Message.ChangedDuration({ duration: "custom" })).model
+		expect(untilError(custom)).toEqual(Option.none())
+		const tried = update(custom, Message.ClickedSave())
+		expect(tried.commands ?? []).toEqual([])
+		expect(tried.model.isSaving).toBe(false)
+		expect(tried.model.isShowingErrors).toBe(true)
+		expect(untilError(tried.model)).toEqual(Option.some("Pick a date and time"))
+		expect(reasonError(tried.model.reason)).toEqual(Option.some("Add a reason"))
+		expect(scopeError(tried.model.scope)).toEqual(
+			Option.some("Add at least one service, environment or tag"),
+		)
+		// The next open starts quiet again.
+		expect(openNew(tried.model, BERLIN, NOW).model.isShowingErrors).toBe(false)
 	})
 })
 
