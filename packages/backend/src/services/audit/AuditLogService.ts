@@ -93,6 +93,11 @@ export interface AuditLogListFilters {
 	readonly untilMs?: number
 	/** Leave out actions ending in any of these, before the limit; see {@link AUDIT_ACCESS_ACTION_SUFFIXES}. */
 	readonly excludeActionSuffixes?: ReadonlyArray<string>
+	/**
+	 * `changes`: no data access (see {@link AUDIT_ACCESS_ACTION_SUFFIXES}) unless it was denied.
+	 * `access`: only data access.
+	 */
+	readonly actionKind?: "changes" | "access"
 	readonly limit: number
 	readonly offset: number
 }
@@ -175,6 +180,29 @@ const neverFail =
 			),
 		)
 
+const isAccessAction = (action: string) =>
+	Arr.some(AUDIT_ACCESS_ACTION_SUFFIXES, (suffix) => Str.endsWith(suffix)(action))
+
+/** The suffix exclusion a listing applies: the caller's own, or the one `actionKind` implies. */
+const actionSuffixOpts = (filters: AuditLogListFilters) => {
+	if (filters.actionKind === "changes")
+		return {
+			excludeActionSuffixes: [
+				...(filters.excludeActionSuffixes ?? []),
+				...AUDIT_ACCESS_ACTION_SUFFIXES,
+			],
+			keepDeniedExcluded: true,
+		}
+	return {
+		...(filters.excludeActionSuffixes !== undefined
+			? { excludeActionSuffixes: filters.excludeActionSuffixes }
+			: undefined),
+		...(filters.actionKind === "access"
+			? { onlyActionSuffixes: AUDIT_ACCESS_ACTION_SUFFIXES }
+			: undefined),
+	}
+}
+
 /** Which optional filters bind, and the parameter values behind them. */
 const listQueryInputs = (orgId: OrgId, filters: AuditLogListFilters) => {
 	const since = filters.sinceMs === undefined ? undefined : DateTime.makeUnsafe(filters.sinceMs)
@@ -193,9 +221,7 @@ const listQueryInputs = (orgId: OrgId, filters: AuditLogListFilters) => {
 		requestId: filters.requestId !== undefined,
 		since: since !== undefined,
 		until: until !== undefined,
-		...(filters.excludeActionSuffixes !== undefined
-			? { excludeActionSuffixes: filters.excludeActionSuffixes }
-			: undefined),
+		...actionSuffixOpts(filters),
 		limit: filters.limit,
 		offset: filters.offset,
 	}
@@ -376,7 +402,11 @@ export function makeMemoryAuditLog(): AuditLogServiceApi {
 					(filters.untilMs === undefined || entry.occurredAt.getTime() <= filters.untilMs) &&
 					!Arr.some(filters.excludeActionSuffixes ?? [], (suffix) =>
 						Str.endsWith(suffix)(entry.action),
-					),
+					) &&
+					(filters.actionKind !== "changes" ||
+						!isAccessAction(entry.action) ||
+						entry.outcome === "denied") &&
+					(filters.actionKind !== "access" || isAccessAction(entry.action)),
 			)
 				.sort((a, b) => {
 					const byTime = b.occurredAt.getTime() - a.occurredAt.getTime()
