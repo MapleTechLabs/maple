@@ -358,16 +358,6 @@ export function gcpDraftEffect(
 	return setUp ? (wanted ? "stops-now" : "removed-by-script") : null
 }
 
-/** One line of the apply step's recap: what the script does about a capability. */
-export const gcpApplyLine = (wanted: boolean, applied: boolean | null): string =>
-	wanted
-		? applied === true
-			? "On"
-			: "On after this run"
-		: applied === true
-			? "Off in Maple. This run removes it from Google Cloud."
-			: "Off"
-
 /**
  * A failure in the API's words, cut for display and not reworded: the first sentence, the
  * sentences that say what to do, and what Google answered, which closes the message in brackets.
@@ -504,17 +494,6 @@ export const gcpLogFilterChoice = (draft: GcpLogFilterDraft, sinkExists: boolean
 		forwardsOutput: draft.runtimes !== null,
 		applicationLogs: keep ? undefined : runtimes,
 	}
-}
-
-/** One line of the apply step's recap: whose application output the new filter forwards. */
-export const gcpApplicationLogsLine = (runtimes: ReadonlyArray<GcpLogRuntime>): string => {
-	const labels = Arr.map(
-		Arr.filter(GCP_LOG_RUNTIMES, ({ value }) => runtimes.includes(value)),
-		({ label }) => label,
-	)
-	return labels.length === 0
-		? "Platform logs only, no application output"
-		: `Platform logs and the output of ${Arr.join(labels, ", ")}`
 }
 
 const LOG_ROUTER_SCOPE = { project: "project", folder: "folder", organization: "organizationId" } as const

@@ -517,15 +517,14 @@ export const LAB_ENTRIES: ReadonlyArray<LabEntry> = [
 	{
 		path: "/lab/bench/service-detail",
 		title: "Service detail charts",
-		description:
-			"The service-detail MetricsGrid with synthetic rows; ?mode=recharts|cursor picks the sync strategy.",
+		description: "The service-detail MetricsGrid with synthetic rows.",
 		kind: "bench",
 		session: "none",
 	},
 	{
 		path: "/lab/bench/infra",
 		title: "Infra charts",
-		description: "Host and k8s detail ChartViews on one page with synthetic rows; ?mode=recharts|cursor.",
+		description: "Host and k8s detail ChartViews on one page with synthetic rows.",
 		kind: "bench",
 		session: "none",
 	},
@@ -563,16 +562,14 @@ export const LAB_ENTRIES: ReadonlyArray<LabEntry> = [
 	{
 		path: "/lab/charts",
 		title: "TanStack charts",
-		description:
-			"Production charts beside their TanStack counterparts over identical rows; ?renderer=tanstack-svg|tanstack-canvas.",
+		description: "Production charts beside their TanStack counterparts over identical rows.",
 		kind: "lab",
 		session: "none",
 	},
 	{
 		path: "/lab/bench/tanstack",
 		title: "TanStack Charts pilot",
-		description:
-			"The three overview charts off identical rows; ?renderer=recharts|tanstack-svg|tanstack-canvas.",
+		description: "The three overview charts off identical rows, on the canvas renderer.",
 		kind: "bench",
 		session: "none",
 	},

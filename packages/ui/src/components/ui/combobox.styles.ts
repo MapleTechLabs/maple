@@ -25,16 +25,9 @@ export const comboboxInputControlStyles = "has-disabled:opacity-100"
 export const comboboxTriggerStyles =
 	"absolute top-1/2 inline-flex size-8 shrink-0 -translate-y-1/2 cursor-pointer items-center justify-center rounded-md border border-transparent opacity-80 outline-none transition-opacity pointer-coarse:after:absolute pointer-coarse:after:min-h-11 pointer-coarse:after:min-w-11 hover:opacity-100 active:opacity-100 has-[+[data-slot=combobox-clear]]:hidden sm:size-7 [&_svg:not([class*='size-'])]:size-4 sm:[&_svg:not([class*='size-'])]:size-3.5 [&_svg]:pointer-events-none [&_svg]:shrink-0"
 
-export const comboboxClearStyles =
-	"absolute top-1/2 inline-flex size-8 shrink-0 -translate-y-1/2 cursor-pointer items-center justify-center rounded-md border border-transparent opacity-80 outline-none transition-opacity pointer-coarse:after:absolute pointer-coarse:after:min-h-11 pointer-coarse:after:min-w-11 hover:opacity-100 active:opacity-100 has-[+[data-slot=combobox-clear]]:hidden sm:size-7 [&_svg:not([class*='size-'])]:size-4 sm:[&_svg:not([class*='size-'])]:size-3.5 [&_svg]:pointer-events-none [&_svg]:shrink-0"
-
 export const comboboxTriggerSmStyles = "end-0"
 
-export const comboboxClearSmStyles = "end-0"
-
 export const comboboxTriggerDefaultStyles = "end-0.5"
-
-export const comboboxClearDefaultStyles = "end-0.5"
 
 export const comboboxPositionerStyles = "z-50 select-none"
 
@@ -51,24 +44,13 @@ export const comboboxItemIndicatorStyles = "col-start-1"
 
 export const comboboxItemTextStyles = "col-start-2"
 
-export const comboboxSeparatorStyles = "mx-2 my-1 h-px bg-border last:hidden"
-
-export const comboboxGroupStyles = "[[role=group]+&]:mt-1.5"
-
-export const comboboxGroupLabelStyles = "px-2 py-1.5 font-medium text-muted-foreground text-xs"
-
 export const comboboxEmptyStyles = "not-empty:p-2 text-center text-base text-muted-foreground sm:text-sm"
 
 export const comboboxListStyles =
 	"not-empty:scroll-py-1 not-empty:px-1 not-empty:py-1 in-data-has-overflow-y:pe-3"
 
-export const comboboxStatusStyles = "px-3 py-2 font-medium text-muted-foreground text-xs empty:m-0 empty:p-0"
-
 export const comboboxChipsStyles =
 	"relative inline-flex min-h-9 w-full flex-wrap gap-1 rounded-lg border border-input bg-background not-dark:bg-clip-padding p-[calc(--spacing(1)-1px)] text-base shadow-raised outline-none ring-ring/24 transition-shadow *:min-h-7 before:pointer-events-none before:absolute before:inset-0 before:rounded-lg-inset not-has-disabled:not-focus-within:not-aria-invalid:before:shadow-control focus-within:border-ring focus-within:ring-[3px] has-disabled:pointer-events-none has-data-[size=lg]:min-h-10 has-data-[size=sm]:min-h-8 has-aria-invalid:border-destructive-a4 has-autofill:bg-foreground/4 has-disabled:opacity-64 has-[:disabled,:focus-within,[aria-invalid]]:shadow-none focus-within:has-aria-invalid:border-destructive/64 focus-within:has-aria-invalid:ring-destructive-a2 has-data-[size=lg]:*:min-h-8 has-data-[size=sm]:*:min-h-6 sm:min-h-8 sm:text-sm sm:has-data-[size=lg]:min-h-9 sm:has-data-[size=sm]:min-h-7 sm:*:min-h-6 sm:has-data-[size=lg]:*:min-h-7 sm:has-data-[size=sm]:*:min-h-5 dark:not-has-disabled:bg-input/32 dark:has-autofill:bg-foreground/8 dark:has-aria-invalid:ring-destructive-a3"
-
-export const comboboxChipsStartAddonStyles =
-	"flex shrink-0 items-center ps-2 opacity-80 has-[~[data-size=sm]]:has-[+[data-slot=combobox-chip]]:pe-1.5 has-[~[data-size=sm]]:ps-1.5 has-[+[data-slot=combobox-chip]]:pe-2 [&_svg:not([class*='size-'])]:size-4 sm:[&_svg:not([class*='size-'])]:size-3.5 [&_svg]:pointer-events-none [&_svg]:-ms-0.5 [&_svg]:-me-1.5"
 
 // A translucent foreground tint rather than `bg-accent`: in this theme
 // --accent, --muted and --secondary are all the same value as the

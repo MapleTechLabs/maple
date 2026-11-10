@@ -1,6 +1,6 @@
 import { timeZoneOffsetMs, zonedPartsToEpochMs } from "@maple/query-engine/datetime"
 import { scaleLinear as niceableScaleLinear } from "@tanstack/charts-scales/linear"
-import { scaleLinear, scaleLog, scaleTime, scaleUtc, type ScaleTime } from "d3-scale"
+import { scaleLog, scaleTime, scaleUtc, type ScaleTime } from "d3-scale"
 
 /**
  * Scales, and the three rules about them that are easy to get wrong.
@@ -209,11 +209,6 @@ export function logYDomain(max: number): [number, number] {
 /** A log y scale with its domain PINNED — see `logYDomain`. */
 export function logYScale(max: number) {
 	return scaleLog().domain(logYDomain(max))
-}
-
-/** A linear y scale over an explicit domain. */
-export function linearYScale(domain: [number, number]) {
-	return scaleLinear().domain(domain)
 }
 
 type TimeScale = ScaleTime<number, number>

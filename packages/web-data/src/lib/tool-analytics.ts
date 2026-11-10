@@ -146,23 +146,6 @@ export interface ToolErrorOccurrenceRow {
 export const EMPTY_MEASURES: ToolMeasures = { calls: 0, sessions: 0, errors: 0, p50: 0, p90: 0, p95: 0 }
 
 /* -------------------------------------------------------------------------------------------------
- * Series mode
- * -----------------------------------------------------------------------------------------------*/
-
-/**
- * What the chart splits by, which is decided entirely by how far the scope has
- * been narrowed: no tool means the question is still "which tool", a tool with
- * no model means "which model runs it", and both means there is one line left.
- */
-export type ToolSeriesMode = "tools" | "models" | "single"
-
-export function toolSeriesMode(tool: string | undefined, model: string | undefined): ToolSeriesMode {
-	if (tool === undefined) return "tools"
-	if (model === undefined) return "models"
-	return "single"
-}
-
-/* -------------------------------------------------------------------------------------------------
  * Reading a metric off a row
  * -----------------------------------------------------------------------------------------------*/
 

@@ -5,7 +5,6 @@ import {
 	hasAuditLogFilters,
 	parseAuditLogSearch,
 	pickAuditLogSearch,
-	resolveAuditDateRange,
 } from "./audit-log-filters"
 
 describe("parseAuditLogSearch", () => {
@@ -90,24 +89,5 @@ describe("auditLogSearchFrom", () => {
 			outcome: "allowed",
 		}
 		expect(pickAuditLogSearch(search)).toEqual({ range: undefined, ...search })
-	})
-})
-
-describe("resolveAuditDateRange", () => {
-	const now = Date.parse("2026-10-17T12:00:00.000Z")
-
-	it("resolves a rolling preset against the given moment", () => {
-		expect(resolveAuditDateRange({ kind: "preset", preset: "24h" }, now)).toEqual({
-			since: "2026-10-16T12:00:00.000Z",
-			until: undefined,
-		})
-	})
-
-	it("passes a fixed range through and leaves all time unbounded", () => {
-		expect(resolveAuditDateRange({ kind: "custom", since: "2026-10-01T00:00:00.000Z" }, now)).toEqual({
-			since: "2026-10-01T00:00:00.000Z",
-			until: undefined,
-		})
-		expect(resolveAuditDateRange({ kind: "all" }, now)).toEqual({ since: undefined, until: undefined })
 	})
 })
