@@ -106,10 +106,12 @@ export const whereClauseEditor = (
 		ariaLabel: `Where clause editor for query ${query.name}`,
 		className: "shrink-0",
 	})
-	const controls = hstack(h, { gap: "2", className: "float-right mb-1 ml-2" }, [
-		toggle,
-		...(options.trailing ?? []),
-	])
+	// Capped at the editor's width and wrapping, so a narrow panel stacks the two instead of overflowing.
+	const controls = hstack(
+		h,
+		{ gap: "2", wrap: true, justify: "end", className: "float-right mb-1 ml-2 max-w-full" },
+		[toggle, ...(options.trailing ?? [])],
+	)
 	const note = Option.match(unshowableReasonOf(query.whereClause), {
 		onNone: () => [],
 		onSome: (reason) => [
