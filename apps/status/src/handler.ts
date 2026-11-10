@@ -114,7 +114,7 @@ const servePage = (env: StatusEnv, request: Request, url: URL, view: PageView, t
 			const body = renderPage(view.snapshot, view.freshness, env.nowMs, {
 				nonce,
 				basePath: target.basePath,
-				origin: url.origin,
+				publicUrl: `${url.origin}${target.basePath}`,
 			})
 			return Effect.succeed(html(body, { cacheControl: PUBLIC_CACHE_CONTROL, nonce }))
 		}

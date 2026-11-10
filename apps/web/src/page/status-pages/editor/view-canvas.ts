@@ -29,6 +29,7 @@ import {
 	toSnapshotIncident,
 } from "../shared/preview"
 import { Message } from "./message"
+import { publicUrl } from "../shared/commands"
 import { canManage, type Model } from "./model"
 import { componentsOf, incidentsOf, monitorsOf } from "./reads"
 import { addPanel, componentPanel, composerPanel, incidentPanel, type TimeInputs } from "./view-panel"
@@ -116,7 +117,13 @@ export const canvasDocument = (model: Model, page: V2StatusPage): string => {
 		incidents: shown.incidents,
 		nowMs,
 	})
-	return previewDocument({ snapshot, nowMs, isSelectable: true, selectedIds: selectedIds(model) })
+	return previewDocument({
+		snapshot,
+		nowMs,
+		isSelectable: true,
+		selectedIds: selectedIds(model),
+		publicUrl: publicUrl(model.publicBaseUrl, page.slug),
+	})
 }
 
 // ON THIS PAGE

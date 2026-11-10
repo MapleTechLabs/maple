@@ -111,6 +111,12 @@ button.day[aria-expanded=true]{background:var(--tint)}
 .cal-panel .title{font-weight:500;color:var(--fg);overflow-wrap:anywhere}
 .cal-panel .meta{font-size:13px}
 .cal-panel .s-notice{--c:var(--muted)}
+.subscribe{position:relative}
+.subscribe>summary{list-style:none;cursor:pointer;font-size:14px;font-weight:500;padding:6px 12px;border:1px solid var(--line);border-radius:calc(var(--radius)*.75);background:var(--card);color:var(--fg);user-select:none}
+.subscribe>summary::-webkit-details-marker{display:none}
+.subscribe>summary:focus-visible{outline:2px solid var(--link);outline-offset:2px}
+.subscribe[open]>summary{background:color-mix(in srgb,var(--primary) 12%,var(--card))}
+.subscribe-menu{position:absolute;right:0;top:calc(100% + 8px);z-index:20;width:360px;max-width:calc(100vw - 32px);max-height:min(70vh,560px);overflow:auto;border:1px solid var(--line);border-radius:var(--radius);background:var(--card);box-shadow:0 8px 24px rgba(0,0,0,.16)}
 .tabs{display:flex;flex-wrap:wrap;gap:4px;padding:12px 16px 16px}
 .tabs>label{font-size:14px;font-weight:500;padding:6px 12px;border-radius:calc(var(--radius)*.75);color:var(--muted);cursor:pointer}
 .tabs>input:checked+label{background:color-mix(in srgb,var(--primary) 12%,transparent);color:var(--fg)}
@@ -130,7 +136,7 @@ button.day[aria-expanded=true]{background:var(--tint)}
 .copy{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:8px}
 .copy code{font:13px/1.4 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;padding:6px 8px;border:1px solid var(--line);border-radius:calc(var(--radius)/2);background:var(--bg);overflow-wrap:anywhere}
 .copy button{padding:5px 10px;font-size:13px}
-@media (max-width:560px){.bars{gap:1px;height:22px}.cal td{height:36px}.panel-head{padding:12px}.component{padding:12px}.legend{padding:10px 12px}}
+@media (max-width:560px){.top{position:relative}.subscribe{position:static}.subscribe-menu{left:0;right:0;width:auto;max-width:none}.bars{gap:1px;height:22px}.cal td{height:36px}.panel-head{padding:12px}.component{padding:12px}.legend{padding:10px 12px}}
 `
 
 export const manageStyles = `

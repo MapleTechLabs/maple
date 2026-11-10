@@ -21,7 +21,7 @@ import type { PageViewInputs } from "../../contract"
 import { dashboardPage } from "../../kit/dashboard-page"
 import { resourceNotFound } from "../../kit/resource-not-found"
 import { settingsSection } from "../../settings/kit/section"
-import { publicAddress, statusPagesHref } from "../shared/commands"
+import { publicAddress, publicUrl, STATUS_PAGE_BASE_URL, statusPagesHref } from "../shared/commands"
 import { textField } from "../shared/fields"
 import { APPEARANCES, presetCards } from "../shared/look"
 import { monitorStatusOf } from "../shared/derive"
@@ -187,7 +187,13 @@ const draftDocument = (model: Model): string => {
 		incidents: [],
 		nowMs,
 	})
-	return previewDocument({ snapshot, nowMs, isSelectable: false, selectedIds: [] })
+	return previewDocument({
+		snapshot,
+		nowMs,
+		isSelectable: false,
+		selectedIds: [],
+		publicUrl: isSlug(model.slug) ? publicUrl(STATUS_PAGE_BASE_URL, model.slug) : null,
+	})
 }
 
 const previewPanel = (h: H, model: Model): Html =>
@@ -246,7 +252,9 @@ const footerBar = (h: H, model: Model): Html => {
 	const isReady = canSubmit(model)
 	return actionBar(h, {
 		label: "Publish",
-		leading: [typography(h, { size: "xs", tone: "muted", as: "p" }, ["Nothing is public until you publish."])],
+		leading: [
+			typography(h, { size: "xs", tone: "muted", as: "p" }, ["Nothing is public until you publish."]),
+		],
 		actions: [
 			button(
 				h,

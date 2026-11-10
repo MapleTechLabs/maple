@@ -291,6 +291,17 @@ describe("the page as the editor", () => {
 		expect(document).toContain(`data-component-id="${componentId(1)}"`)
 	})
 
+	test("the preview's subscribe menu carries the Slack command for the page's public address", () => {
+		const withDomain = { ...selected(2), publicBaseUrl: "https://status-pr-7.maple.dev" }
+		expect(canvasDocument(withDomain, statusPage())).toContain(
+			"<code>/feed subscribe https://status-pr-7.maple.dev/s/acme-status/feed.rss</code>",
+		)
+		// Slack fetches the feed itself: without a status domain there is no address to give it.
+		expect(canvasDocument({ ...withDomain, publicBaseUrl: "" }, statusPage())).not.toContain(
+			"/feed subscribe",
+		)
+	})
+
 	test("a field saves on blur with one PATCH of the whole component, and only when it changed", () => {
 		const editing = pageUpdate(
 			selected(2),

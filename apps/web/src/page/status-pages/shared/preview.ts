@@ -230,13 +230,19 @@ export type PreviewDocumentOptions = Readonly<{
 	/** The editor's preview: components and incidents can be clicked, and the selection drawn. */
 	isSelectable: boolean
 	selectedIds: ReadonlyArray<string>
+	/** Where visitors read the page, for its Slack command; `null` while no status domain is configured. */
+	publicUrl: string | null
 }>
 
 /** The public page as the renderer draws it, plus, when selectable, the selection script. */
 export const previewDocument = (options: PreviewDocumentOptions): string => {
-	const html = renderPage(options.snapshot, { _tag: "live", updatedAt: options.nowMs }, options.nowMs, {
-		preview: options.isSelectable,
-	})
+	const preview = options.isSelectable
+	const html = renderPage(
+		options.snapshot,
+		{ _tag: "live", updatedAt: options.nowMs },
+		options.nowMs,
+		options.publicUrl === null ? { preview } : { preview, publicUrl: options.publicUrl },
+	)
 	if (!options.isSelectable) return html
 	const extra = `<style>${selectionStyles(options.selectedIds)}</style><script>${SELECT_SCRIPT}</script>`
 	return Str.replace("</body>", `${extra}</body>`)(markFirst(html, options.selectedIds))
@@ -348,6 +354,8 @@ export const previewFrame = <M>(
 			...(options.isSelectable === true ? [h.Id(PREVIEW_FRAME_ID)] : []),
 			h.Title(options.title),
 			h.Sandbox("allow-scripts"),
+			// The Slack command's Copy button; without it the button selects the command instead.
+			h.Allow("clipboard-write"),
 			h.Srcdoc(options.document),
 			h.DataAttribute("width", options.width ?? "desktop"),
 			h.Class(

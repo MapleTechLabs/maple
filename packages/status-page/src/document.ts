@@ -10,8 +10,8 @@ export interface RenderOptions {
 	readonly nonce?: string
 	/** Prefix of the page's own links: `""` on its own host, `/s/<slug>` on a shared one. */
 	readonly basePath?: string
-	/** The serving origin, for text that must carry an absolute URL (the Slack command). */
-	readonly origin?: string
+	/** The page's absolute address (origin and base path), for text that must carry one: the Slack command. */
+	readonly publicUrl?: string
 	/** The dashboard's editor preview: components and incidents carry ids it can select by. Never public. */
 	readonly preview?: boolean
 }

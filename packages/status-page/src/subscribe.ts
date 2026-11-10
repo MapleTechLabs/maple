@@ -39,18 +39,19 @@ const emailPane = (snapshot: StatusPageSnapshot, options: RenderOptions): string
 	return `<form method="post" action="${pageHref(options, SUBSCRIBE_PATHS.subscribe)}"><label>Email address<input type="email" name="${f.email}" autocomplete="email" maxlength="254" required></label>${scope}<button type="submit">Subscribe</button><p class="meta">We email you a link to confirm. Every update carries an unsubscribe link.</p></form>`
 }
 
-/** Email, RSS and Slack, as tabs that work without script (radio inputs and CSS). */
-export const renderSubscribePanel = (snapshot: StatusPageSnapshot, options: RenderOptions): string => {
+/**
+ * The header's "Subscribe to updates" menu: a `<details>` that opens on click without script, holding
+ * Email, RSS and Slack as tabs that also work without script (radio inputs and CSS).
+ */
+export const renderSubscribeMenu = (snapshot: StatusPageSnapshot, options: RenderOptions): string => {
 	const rss = pageHref(options, "/feed.rss")
 	const atom = pageHref(options, "/feed.atom")
-	// Slack fetches the feed itself, so the command needs an absolute URL; the editor preview has none.
+	// Slack fetches the feed itself, so the command needs an absolute URL; without one there is no Slack tab.
 	const command =
-		options.origin === undefined
-			? undefined
-			: `/feed subscribe ${options.origin}${options.basePath ?? ""}/feed.rss`
+		options.publicUrl === undefined ? undefined : `/feed subscribe ${options.publicUrl}/feed.rss`
 	const tab = (id: string, label: string, checked = false) =>
 		`<input type="radio" name="sub-via" id="sub-${id}" class="sr"${checked ? " checked" : ""}><label for="sub-${id}">${label}</label>`
-	return `<section class="panel subscribe" id="subscribe" aria-labelledby="h-subscribe"><div class="panel-head"><h2 id="h-subscribe">Get updates</h2></div><div class="tabs">${tab("email", "Email", true)}${tab("rss", "RSS", false)}${command === undefined ? "" : tab("slack", "Slack", false)}<div class="pane pane-email">${emailPane(snapshot, options)}</div><div class="pane pane-rss"><p>Follow incidents and maintenance in any feed reader.</p><p><a href="${rss}">RSS feed</a> · <a href="${atom}">Atom feed</a></p></div>${command === undefined ? "" : `<div class="pane pane-slack"><p>Run this in the Slack channel that should get updates:</p><div class="copy"><code>${escapeHtml(command)}</code><button type="button" data-copy="${escapeHtml(command)}" hidden>Copy</button></div><p class="meta">Uses Slack's RSS app, which must be installed in your workspace.</p></div>`}</div></section>`
+	return `<details class="subscribe"><summary>Subscribe to updates</summary><div class="subscribe-menu" role="group" aria-label="Subscribe to updates"><div class="tabs">${tab("email", "Email", true)}${tab("rss", "RSS", false)}${command === undefined ? "" : tab("slack", "Slack", false)}<div class="pane pane-email">${emailPane(snapshot, options)}</div><div class="pane pane-rss"><p>Follow incidents and maintenance in any feed reader.</p><p><a href="${rss}">RSS feed</a> · <a href="${atom}">Atom feed</a></p></div>${command === undefined ? "" : `<div class="pane pane-slack"><p>Run this in the Slack channel that should get updates:</p><div class="copy"><code>${escapeHtml(command)}</code><button type="button" data-copy="${escapeHtml(command)}" hidden>Copy</button></div><p class="meta">Uses Slack's RSS app, which must be installed in your workspace.</p></div>`}</div></div></details>`
 }
 
 export interface SubscriptionView {

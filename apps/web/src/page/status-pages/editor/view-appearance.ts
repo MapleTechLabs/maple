@@ -26,6 +26,7 @@ import {
 	themeOf,
 } from "../shared/form"
 import { Message } from "./message"
+import { publicUrl } from "../shared/commands"
 import { canManage, type Model } from "./model"
 import { isoMs } from "../../alerts/shared/time"
 import { monitorStatusOf } from "../shared/derive"
@@ -253,7 +254,13 @@ export const settingsDocument = (model: Model, page: V2StatusPage, form: Setting
 		incidents: shown.incidents,
 		nowMs,
 	})
-	return previewDocument({ snapshot, nowMs, isSelectable: false, selectedIds: [] })
+	return previewDocument({
+		snapshot,
+		nowMs,
+		isSelectable: false,
+		selectedIds: [],
+		publicUrl: publicUrl(model.publicBaseUrl, page.slug),
+	})
 }
 
 export const previewPanel = (h: H, model: Model, page: V2StatusPage, form: SettingsForm): Html =>
