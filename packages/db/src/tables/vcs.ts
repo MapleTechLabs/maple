@@ -1,6 +1,5 @@
 import * as PG from "@maple-dev/effect-orm/postgres"
 import {
-	GitCommitSha,
 	PrReviewCategory,
 	PrReviewFindingStatus,
 	PrReviewId,
@@ -17,6 +16,9 @@ import {
 	PrReviewSkipReason,
 	PrReviewStatus,
 	PrReviewTelemetry,
+} from "@maple/domain/http"
+import {
+	GitCommitSha,
 	VcsAccountType,
 	VcsBranchId,
 	VcsCommitRowId,
@@ -28,7 +30,7 @@ import {
 	VcsRepoSyncStatus,
 	VcsRepositoryId,
 	VcsRepositoryDiscovery,
-} from "@maple/domain/http"
+} from "@maple/domain/vcs"
 import { OrgId, SourceId, UserId } from "@maple/domain/primitives"
 import { Schema } from "effect"
 import { Sources } from "./sources"

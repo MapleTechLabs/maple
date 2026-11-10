@@ -1,8 +1,7 @@
 import * as PG from "@maple-dev/effect-orm/postgres"
+import { AlertDeliveryStatus, AlertSeverity } from "@maple/domain/alerts"
 import {
 	ActorType,
-	AlertDeliveryStatus,
-	AlertSeverity,
 	ErrorIncidentReason,
 	ErrorIncidentStatus,
 	ErrorIssueEventType,
@@ -10,13 +9,15 @@ import {
 	IssueKind,
 	IssueSeverity,
 	IssueSeveritySource,
+	WorkflowState,
+} from "@maple/domain/error-issues"
+import {
 	PullRequestLinkSource,
 	PullRequestLinkState,
-	VcsProviderId,
 	VerificationStatus,
 	VerificationVerdict,
-	WorkflowState,
-} from "@maple/domain/http"
+} from "@maple/domain/fix-verification"
+import { VcsProviderId } from "@maple/domain/vcs"
 import {
 	ActorId,
 	AlertDestinationId,

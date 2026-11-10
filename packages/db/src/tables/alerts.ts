@@ -12,7 +12,9 @@ import {
 	OrgId,
 	UserId,
 } from "@maple/domain/primitives"
-import { AlertIncidentLabels, AnomalySignalType, StoredAlertMaintenanceSchedule } from "@maple/domain/http"
+import { StoredAlertMaintenanceSchedule } from "@maple/domain/alert-maintenance-windows"
+import { AlertIncidentLabels } from "@maple/domain/alerts"
+import { AnomalySignalType } from "@maple/domain/anomalies"
 import { Schema } from "effect"
 
 const StringArray = Schema.Array(Schema.String)

@@ -1,5 +1,9 @@
 import * as PG from "@maple-dev/effect-orm/postgres"
-import { CancellationModelRead, CancellationReason, CancellationSnapshot } from "@maple/domain/http"
+import {
+	CancellationModelRead,
+	CancellationReason,
+	CancellationSnapshot,
+} from "@maple/domain/cancellation-review"
 import { OrgId } from "@maple/domain/primitives"
 
 /**

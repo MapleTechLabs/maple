@@ -19,6 +19,8 @@ import { Schema } from "effect"
 import { DashboardId, DashboardShareId, IsoDateTimeString } from "@maple/primitives"
 import { HttpTaggedError } from "./error-policy"
 import { WireValue } from "../wire"
+import { DashboardShareMode } from "../dashboard-shares"
+export { DashboardShareMode } from "../dashboard-shares"
 
 /**
  * The single body every "no such share" answer carries.
@@ -32,10 +34,6 @@ export const SHARE_NOT_FOUND_MESSAGE = "This link is no longer available."
 /** What a share link exposes: a whole dashboard, or one widget on it. */
 export const DashboardShareScope = Schema.Literals(["dashboard", "widget"])
 export type DashboardShareScope = Schema.Schema.Type<typeof DashboardShareScope>
-
-/** How a share link resolves. */
-export const DashboardShareMode = Schema.Literals(["public", "org"])
-export type DashboardShareMode = Schema.Schema.Type<typeof DashboardShareMode>
 
 /**
  * The raw token, as it appears in a share URL.

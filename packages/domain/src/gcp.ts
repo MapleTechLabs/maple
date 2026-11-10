@@ -1,5 +1,5 @@
 import type { GcpConnectorId, GcpScopeType } from "./primitives"
-import { String as Str } from "effect"
+import { Schema, String as Str } from "effect"
 
 /** The read-only account's roles: on the scope, and on the host project its reads are billed to. */
 export const GCP_READER_SCOPE_ROLES = ["roles/monitoring.viewer", "roles/cloudasset.viewer"]
@@ -110,3 +110,28 @@ export const gcpSetupPlan = (input: GcpSetupPlanInput) => {
 		reader,
 	}
 }
+
+/** A Cloud SQL instance's settings, read off its Cloud Asset Inventory resource. */
+export const GcpCloudSqlSettings = Schema.Struct({
+	/** `POSTGRES_15`, `MYSQL_8_0`, `SQLSERVER_2022_STANDARD`, ... */
+	databaseVersion: Schema.NullOr(Schema.String),
+	/** `ENTERPRISE` or `ENTERPRISE_PLUS`. */
+	edition: Schema.NullOr(Schema.String),
+	tier: Schema.NullOr(Schema.String),
+	/** Read off the tier; null for a tier Maple does not know. */
+	cpus: Schema.NullOr(Schema.Finite),
+	memoryGb: Schema.NullOr(Schema.Finite),
+	/** `REGIONAL` is high availability, `ZONAL` is not. */
+	availabilityType: Schema.NullOr(Schema.String),
+	/** The primary of a read replica, as `<project>:<instance>`. */
+	primary: Schema.NullOr(Schema.String),
+	diskSizeGb: Schema.NullOr(Schema.Finite),
+	queryInsightsEnabled: Schema.Boolean,
+	/**
+	 * The `max_connections` flag, or PostgreSQL's default for the memory of the larger of the
+	 * instance and its primary. Null when neither is known.
+	 */
+	maxConnections: Schema.NullOr(Schema.Finite),
+	maxConnectionsSource: Schema.NullOr(Schema.Literals(["flag", "default"])),
+})
+export type GcpCloudSqlSettings = Schema.Schema.Type<typeof GcpCloudSqlSettings>

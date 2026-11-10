@@ -1,15 +1,14 @@
 import * as PG from "@maple-dev/effect-orm/postgres"
+import { AiTriageIncidentKind, AiTriageResult } from "@maple/domain/ai-triage"
+import { IssueSeverity } from "@maple/domain/error-issues"
 import {
-	AiTriageIncidentKind,
-	AiTriageResult,
 	InvestigationConfidence,
 	InvestigationProgress,
 	InvestigationSeededBy,
 	InvestigationStatus,
 	InvestigationSubject,
 	InvestigationSubjectSnapshot,
-	IssueSeverity,
-} from "@maple/domain/http"
+} from "@maple/domain/investigations"
 import { ErrorIssueId, InvestigationId, OrgId, UserId } from "@maple/domain/primitives"
 
 /**

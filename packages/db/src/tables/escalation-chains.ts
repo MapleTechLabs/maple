@@ -1,10 +1,6 @@
 import * as PG from "@maple-dev/effect-orm/postgres"
-import {
-	AlertEscalationRunStatus,
-	AlertIncidentPageStatus,
-	AlertSeverity,
-	EscalationSteps,
-} from "@maple/domain/http"
+import { AlertIncidentPageStatus, AlertSeverity } from "@maple/domain/alerts"
+import { AlertEscalationRunStatus, EscalationSteps } from "@maple/domain/escalation-chains"
 import {
 	AlertEscalationRunId,
 	AlertIncidentId,
