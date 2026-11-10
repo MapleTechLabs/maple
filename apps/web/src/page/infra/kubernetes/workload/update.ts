@@ -31,7 +31,7 @@ type RequestStep = (
 	model: Model,
 	context: PageContext,
 	window: TimeWindow,
-	mode: Frame.RequestMode,
+	mode: Keyed.RequestMode,
 ) => Step<Model, Message>
 
 const summaryStep: RequestStep = (model, context, window, mode) => {
@@ -96,7 +96,7 @@ const seriesStep: RequestStep = (model, context, window, mode) => {
 	return { patch: { series: series.slots }, commands: series.commands }
 }
 
-const requestAll = (model: Model, context: PageContext, mode: Frame.RequestMode): Return => {
+const requestAll = (model: Model, context: PageContext, mode: Keyed.RequestMode): Return => {
 	const window = model.frame.window
 	if (window === null) return { model }
 	return applySteps<Model, Message>(model, [

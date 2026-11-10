@@ -1,3 +1,4 @@
+import type { RequestMode } from "@maple/views/data/keyed"
 import { metricsNeverCollected } from "../../../../components/integrations/planetscale-setup-steps"
 import { Option, Array as Arr } from "effect"
 import { AsyncData } from "foldkit"
@@ -11,7 +12,7 @@ import * as TimeRangePicker from "../../../kit/time-range-picker"
 import { stepTimePicker, withPreset } from "../../../kit/page-time"
 import { nextSort, type Sort } from "../../../kit/table-sort"
 import { CompleteReloadSpin, FetchDatabases, FetchStats, LoadStatus, ResolveWindow } from "./command"
-import { Message, type Model, type RequestMode, type SortKey } from "./model"
+import { Message, type Model, type SortKey } from "./model"
 
 type Return = PageReturn<Model, Message>
 type Search = Model["search"]

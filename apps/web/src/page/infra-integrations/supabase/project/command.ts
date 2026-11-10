@@ -1,3 +1,4 @@
+import { RequestMode } from "@maple/views/data/keyed"
 import { Clock, Duration, Effect, Schema } from "effect"
 import { Command } from "foldkit"
 import { resolveWindow, TimeWindow } from "../../../../data/time-range"
@@ -11,7 +12,7 @@ import {
 	loadSupabaseStatus,
 	loadSupabaseTimeseries,
 } from "../data"
-import { Message, RequestMode } from "./message"
+import { Message } from "./message"
 
 export const ResolveWindow = Command.define("ResolveSupabaseProjectWindow", {
 	args: {

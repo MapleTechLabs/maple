@@ -1,3 +1,4 @@
+import type { RequestMode } from "@maple/views/data/keyed"
 import { toEpochMs } from "@maple/ui/lib/time-format"
 import { isReleaseHealth } from "../release-model"
 import { AsyncData, Command } from "foldkit"
@@ -24,7 +25,7 @@ import {
 	type ReleasesInput,
 } from "./command"
 import { DEFAULT_PRESET, deriveOf, rangesKeyOf, type Search, shasKeyOf } from "./derive"
-import { Message, type RequestMode } from "./message"
+import { Message } from "./message"
 import type { Model } from "./model"
 import { Array as Arr } from "effect"
 

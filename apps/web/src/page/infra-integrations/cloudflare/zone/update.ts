@@ -1,3 +1,4 @@
+import type { RequestMode } from "@maple/views/data/keyed"
 import { toggleFilterValue } from "../../../../components/infra/cloudflare/filters"
 import { AsyncData, Command } from "foldkit"
 import * as Chart from "@maple/views/charts/chart"
@@ -32,7 +33,7 @@ import {
 } from "./command"
 import type { TopTraffic } from "../data"
 import { dimensionOf, filtersOf, inputsOf, needsBreakdown } from "./derive"
-import { type FilterKey, Message, type Model, type RequestMode } from "./model"
+import { type FilterKey, Message, type Model } from "./model"
 import { String as Str } from "effect"
 
 type Return = PageReturn<Model, Message>

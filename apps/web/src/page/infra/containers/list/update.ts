@@ -95,7 +95,7 @@ type RequestStep = (
 	model: Model,
 	context: PageContext,
 	window: TimeWindow,
-	mode: Frame.RequestMode,
+	mode: Keyed.RequestMode,
 ) => Step<Model, Message>
 
 const containersStep: RequestStep = (model, context, window, mode) => {
@@ -119,7 +119,7 @@ const facetsStep: RequestStep = (model, context, window, mode) =>
 	)
 
 /** Every query the page reads, for the resolved window. */
-const requestAll = (model: Model, context: PageContext, mode: Frame.RequestMode): Return => {
+const requestAll = (model: Model, context: PageContext, mode: Keyed.RequestMode): Return => {
 	const window = model.frame.window
 	if (window === null) return { model }
 	const summaryInput = {

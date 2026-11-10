@@ -1,3 +1,4 @@
+import { RequestMode } from "@maple/views/data/keyed"
 import { Schema } from "effect"
 import { defineMessageUnion } from "foldkit/message"
 import * as Chart from "@maple/views/charts/chart"
@@ -9,9 +10,6 @@ import * as FilterSections from "@maple/views/ui/filters/filter-sections"
 import { SignalPresences } from "@maple/views/data/signal-presence"
 import * as TimeRangePicker from "../kit/time-range-picker"
 import { SearchSortKey, SearchTable } from "./model"
-
-export const RequestMode = Schema.Literals(["Load", "Refresh"])
-export type RequestMode = typeof RequestMode.Type
 
 /** Every Keyed slot of the page, by its Model field. */
 export const SlotName = Schema.Literals([

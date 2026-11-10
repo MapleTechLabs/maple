@@ -1,3 +1,4 @@
+import { RequestMode } from "@maple/views/data/keyed"
 import { Clock, Duration, Effect, Schema } from "effect"
 import { Command, Mount } from "foldkit"
 import { resolveWindow } from "../../../../data/time-range"
@@ -18,7 +19,7 @@ import {
 	ZoneFacetsInput,
 	ZonesInput,
 } from "../data"
-import { Message, RequestMode } from "./model"
+import { Message } from "./model"
 
 export const ResolveWindow = Command.define("ResolveCloudflareZoneWindow", {
 	args: {

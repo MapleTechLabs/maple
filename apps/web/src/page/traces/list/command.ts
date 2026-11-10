@@ -1,3 +1,4 @@
+import { RequestMode } from "@maple/views/data/keyed"
 import {
 	getTracesFacets,
 	listTraces,
@@ -15,7 +16,7 @@ import { portalToBody } from "@maple/views/ui/overlay/portal"
 import { autocompleteLookup, AutocompleteLookup } from "../../kit/autocomplete-lookups"
 import { loadSignalPresences } from "../../kit/signal-presence"
 import type { Search } from "./derive"
-import { Message, RequestMode } from "./message"
+import { Message } from "./message"
 import { type TraceRow, TracesFacets, type TracesPage } from "./model"
 
 /** `useInfiniteTraces`' page size; the first page is the atom, the rest direct fetches. */

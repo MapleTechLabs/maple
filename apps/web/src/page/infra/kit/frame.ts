@@ -1,3 +1,4 @@
+import { RequestMode } from "@maple/views/data/keyed"
 import { Clock, Duration, Effect, Schema } from "effect"
 import { Command, type Update } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
@@ -10,9 +11,6 @@ import * as TimeRangePicker from "../../kit/time-range-picker"
 // The time scope every infra page shares: `useEffectiveTimeRange`, `PageRefreshProvider` (Reload
 // re-resolves unsnapped and spins 600 ms) and `TimeRangeHeaderControls`. The page owns its search;
 // the frame reports a resolved window or a new time search as OutMessages.
-
-export const RequestMode = Schema.Literals(["Load", "Refresh"])
-export type RequestMode = typeof RequestMode.Type
 
 export const Model = Schema.Struct({
 	window: Schema.NullOr(TimeWindow),

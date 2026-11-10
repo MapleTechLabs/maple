@@ -1,3 +1,4 @@
+import type { RequestMode } from "@maple/views/data/keyed"
 import { shortId } from "@maple/ui/lib/ids"
 import { addLogAttributeFilter } from "@maple/views/lib/log-attribute-filters"
 import { parseLogSearch } from "./log-search-query"
@@ -57,7 +58,7 @@ import {
 	withoutChips,
 } from "./derive"
 import { initSearchHelp } from "./view-search-help"
-import { type Facet, Message, type RequestMode } from "./message"
+import { type Facet, Message } from "./message"
 import type { LogsPage, Model, Pagination } from "./model"
 import type { LoadFailure } from "@maple/views/data/load-failure"
 

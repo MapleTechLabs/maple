@@ -1,3 +1,4 @@
+import type { RequestMode } from "@maple/views/data/keyed"
 import { Command } from "foldkit"
 import * as Chart from "@maple/views/charts/chart"
 import { LoadChartRuntime } from "@maple/views/charts/chart-runtime"
@@ -26,7 +27,7 @@ import {
 	ResolveWindow,
 	type TimeseriesInput,
 } from "./command"
-import { Message, type RequestMode } from "./message"
+import { Message } from "./message"
 import type { Model, Section } from "./model"
 import { Array as Arr, Record as Rec } from "effect"
 

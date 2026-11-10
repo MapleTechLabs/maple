@@ -1,3 +1,4 @@
+import { RequestMode } from "@maple/views/data/keyed"
 import { getReleaseDetail, getReleases } from "@maple/web-data/warehouse/releases"
 import { Clock, Duration, Effect, Predicate, type Result, Schema } from "effect"
 import { Command } from "foldkit"
@@ -7,7 +8,6 @@ import { readThrough } from "../../../data/read-cache"
 import { resolveWindow } from "../../../data/time-range"
 import { readCommitDetail } from "../../kit/commit-card"
 import { MapleApiV2Client, MapleInternalApiClient } from "../../../platform/api-clients"
-import { RequestMode } from "../list/message"
 import { ReleasesData } from "../list/model"
 import { ReleaseDetail } from "./model"
 import { Message } from "./message"
@@ -47,7 +47,8 @@ export const FetchReleaseCommit = Command.define("FetchReleaseCommit", {
 /** `getReleasesResultAtom({ startTime, endTime, environments })` with the pin: the list's unfiltered read. */
 export const FetchDeployReleases = Command.define("FetchDeployReleases", {
 	args: {
-		key: Schema.String, refresh: Schema.Boolean,
+		key: Schema.String,
+		refresh: Schema.Boolean,
 		startTime: Schema.String,
 		endTime: Schema.String,
 		environments: Schema.optional(Schema.Array(Schema.String)),
@@ -106,7 +107,8 @@ export const FetchDeployIssues = Command.define("FetchDeployIssues", {
 /** `getReleaseDetailResultAtom`: this version on one service, and the version it replaced. */
 export const FetchReleaseDetail = Command.define("FetchReleaseDetail", {
 	args: {
-		key: Schema.String, refresh: Schema.Boolean,
+		key: Schema.String,
+		refresh: Schema.Boolean,
 		serviceName: Schema.String,
 		commitSha: Schema.String,
 		baselineCommitSha: Schema.UndefinedOr(Schema.String),

@@ -23,7 +23,7 @@ const scopeOf = (model: Model, context: PageContext): Frame.Scope => ({
 	timeZone: context.timeZone,
 })
 
-const requestAll = (model: Model, context: PageContext, mode: Frame.RequestMode): Return => {
+const requestAll = (model: Model, context: PageContext, mode: Keyed.RequestMode): Return => {
 	const window = model.frame.window
 	if (window === null) return { model }
 	const input = { startTime: window.startTime, endTime: window.endTime, limit: HOST_LIST_LIMIT }

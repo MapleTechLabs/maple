@@ -31,7 +31,7 @@ const scopeOf = (model: Model, context: PageContext): Frame.Scope => ({
 const requestSources = (
 	model: Model,
 	context: PageContext,
-	mode: Frame.RequestMode,
+	mode: Keyed.RequestMode,
 	onlyNew = false,
 ): Return => {
 	const window = model.frame.window
@@ -55,7 +55,7 @@ const requestSources = (
 }
 
 /** The window's presence probe (a new window keeps the last answer meanwhile), then its sources. */
-const requestAll = (model: Model, context: PageContext, mode: Frame.RequestMode): Return => {
+const requestAll = (model: Model, context: PageContext, mode: Keyed.RequestMode): Return => {
 	const window = model.frame.window
 	if (window === null) return { model }
 	const key = presenceKey(context.orgId, window)

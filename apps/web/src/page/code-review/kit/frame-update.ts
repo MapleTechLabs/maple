@@ -1,3 +1,4 @@
+import type { RequestMode } from "@maple/views/data/keyed"
 import { type GithubIntegrationStatus, VcsRepositoryId } from "@maple/domain/http"
 import type { LoadFailure } from "@maple/views/data/load-failure"
 import { Option, Schema, Array as Arr } from "effect"
@@ -17,7 +18,6 @@ import {
 	type FrameCommand,
 	FrameMessage,
 	type FrameReturn,
-	type RequestMode,
 	ResolveWindow,
 	type WindowSearch,
 } from "./frame"

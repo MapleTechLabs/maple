@@ -1,3 +1,4 @@
+import { RequestMode } from "@maple/views/data/keyed"
 import {
 	ErrorIssueAffectedUsersResponse,
 	ErrorIssueEventsResponse,
@@ -23,10 +24,6 @@ import * as Menu from "@maple/views/ui/menu"
 import * as Select from "@maple/views/ui/select"
 import * as TimeRangePicker from "../../kit/time-range-picker"
 import { DestinationName } from "./model"
-
-/** `Load` on entry or a window change; `Refresh` from Reload (no snap, revalidate every slot). */
-export const RequestMode = Schema.Literals(["Load", "Refresh"])
-export type RequestMode = typeof RequestMode.Type
 
 const result = <A extends Schema.Top>(schema: A) => ({
 	key: Schema.String,

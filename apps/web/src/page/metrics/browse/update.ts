@@ -1,3 +1,4 @@
+import type { RequestMode } from "@maple/views/data/keyed"
 import { toQueryBuilderMetricType } from "@maple/query-model"
 import { Option, Array as Arr, Record as Rec, String as Str } from "effect"
 import { AsyncData, Command } from "foldkit"
@@ -35,7 +36,7 @@ import {
 	TABLE_PAGE_SIZE,
 	toEntries,
 } from "./derive"
-import { Message, type RequestMode } from "./message"
+import { Message } from "./message"
 import type { Model } from "./model"
 
 type Return = PageReturn<Model, Message>

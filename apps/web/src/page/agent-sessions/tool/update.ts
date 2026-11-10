@@ -1,3 +1,4 @@
+import type { RequestMode } from "@maple/views/data/keyed"
 import { errorTrendBucket } from "../../kit/tools/tool-error-display"
 import { toEpochMs } from "@maple/ui/lib/time-format"
 import { Option, Record, Array as Arr } from "effect"
@@ -26,7 +27,7 @@ import {
 	FetchTotals,
 	ResolveWindow,
 } from "./command"
-import { type FacetKey, Message, type RequestMode } from "./message"
+import { type FacetKey, Message } from "./message"
 import type { Model } from "./model"
 import * as ErrorModal from "./error-modal-model"
 import * as ErrorModalUpdate from "./error-modal-update"

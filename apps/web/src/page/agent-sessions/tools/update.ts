@@ -1,3 +1,4 @@
+import type { RequestMode } from "@maple/views/data/keyed"
 import { toEpochMs } from "@maple/ui/lib/time-format"
 import { Option, String as Str } from "effect"
 import { AsyncData, Command } from "foldkit"
@@ -34,7 +35,7 @@ import {
 	LoadSignalPresence,
 	ResolveWindow,
 } from "./command"
-import { type FacetKey, Message, type RequestMode } from "./message"
+import { type FacetKey, Message } from "./message"
 import type { Breakdowns, Model } from "./model"
 import type { LoadFailure } from "@maple/views/data/load-failure"
 

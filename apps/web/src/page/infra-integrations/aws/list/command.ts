@@ -1,9 +1,10 @@
+import { RequestMode } from "@maple/views/data/keyed"
 import { Clock, Duration, Effect, Schema } from "effect"
 import { Command } from "foldkit"
 import { resolveWindow, TimeWindow } from "../../../../data/time-range"
 import { loadTraced } from "../../kit/traced"
 import { loadFleet, loadSparks, loadStatus, SparksInput } from "../data"
-import { Message, RequestMode } from "./message"
+import { Message } from "./message"
 
 export const ResolveWindow = Command.define("ResolveAwsWindow", {
 	args: {

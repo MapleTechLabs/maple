@@ -1,3 +1,4 @@
+import type { RequestMode } from "@maple/views/data/keyed"
 import { AsyncData, Command } from "foldkit"
 import { LoadChartRuntime } from "@maple/views/charts/chart-runtime"
 import { chartBucketSeconds } from "@maple/views/charts/infra-metric-series"
@@ -23,7 +24,7 @@ import {
 	ResolveWindow,
 } from "./command"
 import { statusOf } from "./derive"
-import { Message, type Model, type RequestMode } from "./model"
+import { Message, type Model } from "./model"
 
 type Return = PageReturn<Model, Message>
 type Search = Model["search"]

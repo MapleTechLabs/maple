@@ -1,3 +1,4 @@
+import type { RequestMode } from "@maple/views/data/keyed"
 import { AWS_INFRA_KIND_IDS, type AwsInfraKindId } from "@maple/domain/aws-infra"
 import { Command } from "foldkit"
 import * as Chart from "@maple/views/charts/chart"
@@ -14,7 +15,7 @@ import { requestSlot } from "../../kit/slot"
 import { keysOf } from "../derive"
 import { chartIds } from "./charts"
 import { CompleteReloadSpin, FetchTimeseries, FetchTraced, ResolveWindow } from "./command"
-import { Message, type RequestMode } from "./message"
+import { Message } from "./message"
 import type { Model } from "./model"
 import { Array as Arr, Record as Rec } from "effect"
 

@@ -1,3 +1,4 @@
+import { RequestMode } from "@maple/views/data/keyed"
 import { WorldDocument } from "@maple/domain/http"
 import { Schema } from "effect"
 import { defineMessageUnion } from "foldkit/message"
@@ -22,10 +23,6 @@ import {
 	PlanetScaleStatsSchema,
 	Stored,
 } from "./model"
-
-/** `Load` on entry or a search change; `Refresh` from Reload (no cache snap, revalidate every slot). */
-export const RequestMode = Schema.Literals(["Load", "Refresh"])
-export type RequestMode = typeof RequestMode.Type
 
 const result = <A extends Schema.Top>(schema: A) => ({
 	key: Schema.String,

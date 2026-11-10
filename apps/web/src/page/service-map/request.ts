@@ -1,3 +1,4 @@
+import type { RequestMode } from "@maple/views/data/keyed"
 import { DB_NODE_PREFIX, parseDbNodeId } from "@maple/views/service-map/graph/service-map-utils"
 import { Option, Array as Arr, String as Str } from "effect"
 import type { Command } from "foldkit"
@@ -21,7 +22,7 @@ import {
 	ResolveWindow,
 } from "./command"
 import { DEFAULT_PRESET, deploymentEnvOf, durationSecondsOf, type Search } from "./derive"
-import type { Message, RequestMode } from "./message"
+import type { Message } from "./message"
 import type { Model } from "./model"
 
 export type Return = PageReturn<Model, Message>

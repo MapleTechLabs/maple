@@ -1,3 +1,4 @@
+import { RequestMode } from "@maple/views/data/keyed"
 import { Density, readLogsViewPreferences, saveLogsViewPreferences } from "@maple/views/ui/logs/viewer"
 import { logAttributeQueryFilters } from "@maple/views/lib/log-attribute-filters"
 import { getCustomChartTimeSeries } from "@maple/web-data/warehouse/custom-charts"
@@ -9,7 +10,7 @@ import { resolveWindow, TimeWindow } from "../../../data/time-range"
 import { LogsSearch } from "../../../route/search"
 import { loadSignalPresences } from "../../kit/signal-presence"
 import { listInput, PAGE_SIZE, toVolumeBuckets, volumeInput } from "./derive"
-import { Message, RequestMode } from "./message"
+import { Message } from "./message"
 import type { LogRowSchema, LogsPage } from "./model"
 
 /** `useEffectiveTimeRange`: snapped on entry, re-resolved against the real clock on Reload. */

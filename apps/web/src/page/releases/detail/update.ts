@@ -1,3 +1,4 @@
+import type { RequestMode } from "@maple/views/data/keyed"
 import { toEpochMs } from "@maple/ui/lib/time-format"
 import { NEW_ISSUE_SLACK_MS, previousSha } from "../release-model"
 import { Option } from "effect"
@@ -16,7 +17,6 @@ import { routeWindowStep, snapModeOf } from "../../kit/route-window"
 import * as TimeRangePicker from "../../kit/time-range-picker"
 import { commitRangesKey, isResolvableSha } from "../kit"
 import { DEFAULT_PRESET } from "../list/derive"
-import type { RequestMode } from "../list/message"
 import {
 	CompleteReleaseReloadSpin,
 	FetchChangeset,

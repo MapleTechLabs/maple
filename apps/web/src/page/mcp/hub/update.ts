@@ -1,3 +1,4 @@
+import type { RequestMode } from "@maple/views/data/keyed"
 import { MCP_CLIENT_KINDS } from "@maple/domain/mcp-clients"
 import { toEpochMs } from "@maple/ui/lib/time-format"
 import { Option, Array as Arr, String as Str } from "effect"
@@ -27,7 +28,7 @@ import {
 	OpenMcpConventions,
 	ResolveWindow,
 } from "./command"
-import { type Facet, Message, type RequestMode } from "./message"
+import { type Facet, Message } from "./message"
 import { DEFAULT_MCP_PRESET, type McpView, type Model } from "./model"
 
 type Return = PageReturn<Model, Message>

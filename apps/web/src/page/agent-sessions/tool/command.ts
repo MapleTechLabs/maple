@@ -1,3 +1,4 @@
+import { RequestMode } from "@maple/views/data/keyed"
 import { AI_TOOL_ERRORS_MAX } from "@maple/domain/http"
 import { getAiSessionsFacets, listAiSessions } from "@maple/web-data/warehouse/ai-sessions"
 import { getAiToolErrors, getAiToolSeries } from "@maple/web-data/warehouse/ai-session-tools"
@@ -7,7 +8,7 @@ import { toLoadFailure } from "@maple/views/data/load-failure"
 import { resolveWindow, TimeWindow } from "../../../data/time-range"
 import { presentInputs } from "../list/derive"
 import { fetchTotals, Selection, toInput } from "../../kit/tools/reads"
-import { Message, RequestMode } from "./message"
+import { Message } from "./message"
 
 /** Sessions the page lists: the most recent, not the busiest. */
 export const SESSIONS_LIMIT = 50

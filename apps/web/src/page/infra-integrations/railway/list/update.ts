@@ -1,3 +1,4 @@
+import type { RequestMode } from "@maple/views/data/keyed"
 import { Option } from "effect"
 import { AsyncData, Command } from "foldkit"
 import * as Keyed from "@maple/views/data/keyed"
@@ -10,7 +11,7 @@ import { routeWindowStep, snapModeOf } from "../../../kit/route-window"
 import * as TimeRangePicker from "../../../kit/time-range-picker"
 import { nextSort } from "../../../kit/table-sort"
 import { CompleteReloadSpin, FetchServices, LoadStatus, ResolveWindow } from "./command"
-import { Message, type RequestMode } from "./message"
+import { Message } from "./message"
 import type { Model } from "./model"
 
 type Return = PageReturn<Model, Message>

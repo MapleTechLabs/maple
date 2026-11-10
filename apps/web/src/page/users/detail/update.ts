@@ -1,3 +1,4 @@
+import type { RequestMode } from "@maple/views/data/keyed"
 import { Option, Result } from "effect"
 import { AsyncData, Command } from "foldkit"
 import * as Keyed from "@maple/views/data/keyed"
@@ -20,7 +21,7 @@ import {
 	FetchTraces,
 	ResolveWindow,
 } from "./command"
-import { Message, type RequestMode } from "./message"
+import { Message } from "./message"
 import type { Model, Search } from "./model"
 
 type Return = PageReturn<Model, Message>

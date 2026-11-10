@@ -1,3 +1,4 @@
+import { RequestMode } from "@maple/views/data/keyed"
 import { ErrorIssueId, WorkflowState } from "@maple/domain/http"
 import { V2ErrorIssueListQuery } from "@maple/domain/http/v2"
 import {
@@ -12,7 +13,7 @@ import { toLoadFailure } from "@maple/views/data/load-failure"
 import { resolveWindow, TimeWindow } from "../../../data/time-range"
 import { MapleApiV2Client } from "../../../platform/api-clients"
 import { loadSignalPresences } from "../../kit/signal-presence"
-import { Message, RequestMode } from "./message"
+import { Message } from "./message"
 import { HubWrite, runHubWrite } from "./writes"
 import { writeClipboard } from "../../kit/clipboard"
 

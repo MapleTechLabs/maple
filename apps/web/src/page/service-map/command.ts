@@ -1,3 +1,4 @@
+import { RequestMode } from "@maple/views/data/keyed"
 import { readLocalStorage, writeLocalStorage } from "@maple/ui/lib/local-storage"
 import { formatWarehouseDateTime, snapRangeForCache } from "@maple/query-engine"
 import {
@@ -17,7 +18,7 @@ import { Snapshot, ViewPrefs } from "@maple/views/service-map/map/state"
 import { loadSignalPresences } from "../kit/signal-presence"
 import { ApplyWorldOpsRequest, WorldOp } from "@maple/domain/http"
 import { Applied, type BatchOutcome, Conflicted, Rejected } from "./factory/edits"
-import { Message, RequestMode } from "./message"
+import { Message } from "./message"
 import {
 	BranchStats,
 	CloudflareStats,

@@ -1,3 +1,4 @@
+import type { RequestMode } from "@maple/views/data/keyed"
 import { type ErrorIssueId, ErrorIssuePullRequestId, type IssueSeverity } from "@maple/domain/http"
 import { Option, Result, Schema, String as Str, Array as Arr } from "effect"
 import { AsyncData, Command } from "foldkit"
@@ -41,7 +42,7 @@ import {
 	pullRequestsOf,
 	type Search,
 } from "./derive"
-import { Message, type RequestMode } from "./message"
+import { Message } from "./message"
 import type { Model } from "./model"
 import { overflowStep } from "./overflow"
 import {

@@ -1,3 +1,4 @@
+import { RequestMode } from "@maple/views/data/keyed"
 import { getUserLogs, getUserOverview, getUserTraces, listUserGroups } from "@maple/web-data/warehouse/users"
 import { Array as Arr, Clock, Duration, Effect, Option, Schema } from "effect"
 import { Command } from "foldkit"
@@ -6,7 +7,7 @@ import { IdleTtl } from "../../../data/idle-ttl"
 import { readThrough } from "../../../data/read-cache"
 import { TimeWindow } from "../../../data/time-range"
 import { resolveUsersWindow } from "../window"
-import { Message, RequestMode } from "./message"
+import { Message } from "./message"
 import { GroupStatsData, LogsData, OverviewData, TracesData, type Search } from "./model"
 
 /** The namespace in effect: the org-global pin wins over one picked on this page. */

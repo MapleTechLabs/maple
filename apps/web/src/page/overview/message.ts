@@ -19,10 +19,6 @@ import {
 	Usage,
 } from "./model"
 
-/** `Load` on entry or a search change; `Refresh` from Reload (no cache snap, revalidate every slot). */
-export const RequestMode = Schema.Literals(["Load", "Refresh"])
-export type RequestMode = typeof RequestMode.Type
-
 /** The cards whose query can be retried from their error state. */
 export const RetryTarget = Schema.Literals(["Facets", "Overview", "LogVolume", "Refinement"])
 export type RetryTarget = typeof RetryTarget.Type

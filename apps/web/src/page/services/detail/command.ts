@@ -1,3 +1,4 @@
+import { RequestMode } from "@maple/views/data/keyed"
 import {
 	getServiceDetailOverview,
 	getServiceDetailThroughputRefinement,
@@ -20,7 +21,7 @@ import { readCommitDetail } from "../../kit/commit-card"
 import { MapleApiV2Client } from "../../../platform/api-clients"
 import { readGrants } from "../../../data/session-tenant"
 import { listMonitors } from "../../kit/uptime/commands"
-import { Message, RequestMode } from "./message"
+import { Message } from "./message"
 
 const Names = Schema.optional(Schema.Array(Schema.String))
 const mutable = <A>(values: ReadonlyArray<A> | undefined): Array<A> | undefined =>

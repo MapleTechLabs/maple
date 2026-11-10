@@ -1,3 +1,4 @@
+import { RequestMode } from "@maple/views/data/keyed"
 import {
 	AlertCheckDocument,
 	AlertDeliveryEventDocument,
@@ -23,9 +24,6 @@ import * as Menu from "@maple/views/ui/menu"
 import * as TimeRangePicker from "../../kit/time-range-picker"
 import { PreviewFailure } from "../shared/preview"
 import { CheckStatusFilter, ChecksResponse, SignalSource, StateFilter } from "./model"
-
-export const RequestMode = Schema.Literals(["Load", "Refresh"])
-export type RequestMode = typeof RequestMode.Type
 
 const rows = <S extends Schema.Top>(row: S) => ({ orgId: Schema.String, rows: Schema.Array(row) })
 

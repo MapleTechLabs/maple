@@ -1,3 +1,4 @@
+import { RequestMode } from "@maple/views/data/keyed"
 import { getReplaysFacets, listReplays, type ListReplaysInput } from "@maple/web-data/warehouse/replays"
 import { sessionTagsFromSearch } from "../kit/session-tags"
 import { Clock, Duration, Effect, Queue, Schema, Stream } from "effect"
@@ -9,7 +10,7 @@ import { resolveWindow, TimeWindow } from "../../../data/time-range"
 import { ReplaysSearch } from "../../../route/search"
 import { loadSignalPresences } from "../../kit/signal-presence"
 import { virtualizeSessions } from "../kit/virtualize"
-import { Message, RequestMode } from "./message"
+import { Message } from "./message"
 import { ReplaysFacets, ReplaysPage, type Search } from "./model"
 
 /** `REPLAYS_PAGE_SIZE`. */

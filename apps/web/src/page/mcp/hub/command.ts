@@ -1,3 +1,4 @@
+import { RequestMode } from "@maple/views/data/keyed"
 import { MCP_CLIENT_KINDS } from "@maple/domain/mcp-clients"
 import {
 	getMcpOverview,
@@ -11,7 +12,7 @@ import { Command } from "foldkit"
 import { toLoadFailure } from "@maple/views/data/load-failure"
 import { resolveWindow } from "../../../data/time-range"
 import { SEMCONV_MCP_URL } from "../view-kit"
-import { Message, RequestMode } from "./message"
+import { Message } from "./message"
 
 const Window = { startTime: Schema.String, endTime: Schema.String, bucketSeconds: Schema.Number }
 const Selection = {

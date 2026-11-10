@@ -1,3 +1,4 @@
+import type { RequestMode } from "@maple/views/data/keyed"
 import { Option, Result, Array as Arr, Record as Rec } from "effect"
 import { AsyncData, Command } from "foldkit"
 import * as Keyed from "@maple/views/data/keyed"
@@ -27,7 +28,7 @@ import {
 } from "./command"
 import { emptyWindow } from "../kit/virtualize"
 import { draftOf, nextCursor } from "./derive"
-import { Message, type Range, type RequestMode } from "./message"
+import { Message, type Range } from "./message"
 import type { Model, Pagination, ReplaysPage, Search } from "./model"
 import {
 	addedRowTag,

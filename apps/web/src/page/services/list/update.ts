@@ -1,3 +1,4 @@
+import type { RequestMode } from "@maple/views/data/keyed"
 import { Duration, Effect, Option, Schema, Array as Arr } from "effect"
 import { AsyncData, Command } from "foldkit"
 import { LoadChartRuntime } from "@maple/views/charts/chart-runtime"
@@ -25,7 +26,7 @@ import {
 	ResolveWindow,
 } from "./command"
 import { commitsKey, displayedServices, healthSummary, isServiceHealth, type Search } from "./derive"
-import { type Facet, Message, type RequestMode } from "./message"
+import { type Facet, Message } from "./message"
 import { IncidentsData, type Model } from "./model"
 import {
 	clickedCopySha,

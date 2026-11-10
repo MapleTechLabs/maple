@@ -1,3 +1,4 @@
+import type { RequestMode } from "@maple/views/data/keyed"
 import { GCP_CLOUD_SQL_INVENTORY_QUERY } from "../../../../components/infra/gcp/inventory"
 import { gcpSparklineServices } from "../../../../components/infra/gcp/list-model"
 import { AsyncData, Command } from "foldkit"
@@ -26,7 +27,7 @@ import {
 import { stepProjectMenu } from "./project-menu"
 import { fleetOf, listScopeOf, pageStateOf, sparksWindow, statusOf } from "./derive"
 import { INITIAL_LOCALE } from "@maple/views/lib/locale"
-import { Message, type Model, type RequestMode } from "./model"
+import { Message, type Model } from "./model"
 
 type Return = PageReturn<Model, Message>
 type Search = Model["search"]

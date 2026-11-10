@@ -1,3 +1,4 @@
+import { RequestMode } from "@maple/views/data/keyed"
 import { V2AnomalyServiceCount } from "@maple/domain/http/v2"
 import { Schema } from "effect"
 import { defineMessageUnion } from "foldkit/message"
@@ -12,10 +13,6 @@ import { CommitDetail, CommitFailure } from "../../kit/commit-card"
 import { SignalPresences } from "@maple/views/data/signal-presence"
 import * as TimeRangePicker from "../../kit/time-range-picker"
 import { IncidentCause, LatencyBaseline, ServiceRow, ServicesFacets, Sparklines } from "./model"
-
-/** `Load` on entry or a search change; `Refresh` from Reload (no cache snap, revalidate every slot). */
-export const RequestMode = Schema.Literals(["Load", "Refresh"])
-export type RequestMode = typeof RequestMode.Type
 
 /** The URL's facet filters, by their include param. */
 export const Facet = Schema.Literals(["environments", "namespaces", "commitShas"])

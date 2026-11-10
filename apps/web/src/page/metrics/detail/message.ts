@@ -1,3 +1,4 @@
+import { RequestMode } from "@maple/views/data/keyed"
 import { Schema } from "effect"
 import * as AddToDashboard from "./add-to-dashboard"
 import { CaretMessage } from "./where-editor"
@@ -13,10 +14,6 @@ import { MetricRow } from "../shared"
 import * as TimeRangePicker from "../../kit/time-range-picker"
 import { AttributeKeyRow, AutocompleteLookup, BreakdownRow, TimeseriesRows } from "./model"
 import { LookupNames } from "../../kit/autocomplete-lookups"
-
-/** `Load` on entry or a search change; `Refresh` from Reload (no cache snap, revalidate every slot). */
-export const RequestMode = Schema.Literals(["Load", "Refresh"])
-export type RequestMode = typeof RequestMode.Type
 
 const result = <A extends Schema.Top>(schema: A) => ({
 	key: Schema.String,

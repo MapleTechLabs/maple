@@ -1,3 +1,4 @@
+import { RequestMode } from "@maple/views/data/keyed"
 import { Clock, Duration, Effect, Schema } from "effect"
 import { Command } from "foldkit"
 import { resolveWindow, TimeWindow } from "../../../../data/time-range"
@@ -11,7 +12,7 @@ import {
 	loadTimeseries,
 	TimeseriesInput,
 } from "../data"
-import { Message, RequestMode } from "./model"
+import { Message } from "./model"
 
 /** The window plus its bounds read as browser-local time, for the events read. */
 const withLocal = (window: TimeWindow) => ({
@@ -31,7 +32,9 @@ export const ResolveWindow = Command.define("ResolvePlanetscaleDatabaseWindow", 
 	execute: ({ mode, startTime, endTime, preset, timeZone }) =>
 		Effect.map(Clock.currentTimeMillis, (nowMs) =>
 			Message.CompletedResolveWindow({
-				...withLocal(resolveWindow({ startTime, endTime, preset, snap: mode === "Load", timeZone }, nowMs)),
+				...withLocal(
+					resolveWindow({ startTime, endTime, preset, snap: mode === "Load", timeZone }, nowMs),
+				),
 				nowMs,
 				mode,
 			}),

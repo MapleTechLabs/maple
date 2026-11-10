@@ -1,3 +1,4 @@
+import { RequestMode } from "@maple/views/data/keyed"
 import {
 	getUsersFacets,
 	listUserGroups,
@@ -13,7 +14,7 @@ import { TimeWindow } from "../../../data/time-range"
 import { resolveUsersWindow } from "../window"
 import { UsersSearch } from "../../../route/search"
 import { loadSignalPresences } from "../../kit/signal-presence"
-import { Message, RequestMode } from "./message"
+import { Message } from "./message"
 import { UsersFacetsData, UsersGroupsPage, UsersPage, type Search } from "./model"
 
 /** Users the directory reads in one go. */

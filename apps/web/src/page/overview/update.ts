@@ -1,3 +1,4 @@
+import type { RequestMode } from "@maple/views/data/keyed"
 import { formatWarehouseDateTime, parseWarehouseDateTime, snapRangeForCache } from "@maple/query-engine"
 import { Option, Array as Arr, Record as Rec } from "effect"
 import { AsyncData, Command } from "foldkit"
@@ -40,7 +41,7 @@ import {
 	facetsReady,
 	timePresetOf,
 } from "./derive"
-import { Message, type RequestMode, type RetryTarget } from "./message"
+import { Message, type RetryTarget } from "./message"
 import { IncidentsData, type Model, RulesData } from "./model"
 import { isClerkAuthEnabled } from "../../lib/services/common/auth-mode"
 import { storageKeyOf } from "../onboarding/quick-start-state"

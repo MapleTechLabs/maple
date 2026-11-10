@@ -1,3 +1,4 @@
+import { RequestMode } from "@maple/views/data/keyed"
 import { AI_SESSION_DETAILS_MAX_SESSIONS } from "@maple/domain/http"
 import {
 	getAiSessionDetails,
@@ -15,7 +16,7 @@ import { loadSignalPresences } from "../../kit/signal-presence"
 import { detectModels } from "../kit/detected-models"
 import { virtualize } from "../kit/virtualize"
 import { countedFilters, filterInputs, PAGE_SIZE, presentInputs, rankedOf } from "./derive"
-import { Message, RequestMode } from "./message"
+import { Message } from "./message"
 import { RangeKey } from "./model"
 
 /** The list's window: no picker, the last week (`AGENT_SESSIONS_WINDOW`). */

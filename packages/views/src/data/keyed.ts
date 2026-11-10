@@ -74,7 +74,8 @@ const withRetained = <A, E>(
  * revalidates. New key: always requests, keeping the previous data on screen (`Refreshing`) unless
  * the org changed.
  */
-export type RequestMode = "Load" | "Refresh"
+export const RequestMode = Schema.Literals(["Load", "Refresh"])
+export type RequestMode = typeof RequestMode.Type
 
 /** `Some(next)`: put `next` in the Model and return the fetch Command. `None`: nothing to do. */
 export const request = <A, E>(

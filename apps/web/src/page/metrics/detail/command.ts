@@ -1,3 +1,4 @@
+import { RequestMode } from "@maple/views/data/keyed"
 import { MetricsQueryDraftSchema, QUERY_BUILDER_METRIC_TYPES } from "@maple/query-model"
 import {
 	getMetricAttributeKeys,
@@ -12,7 +13,7 @@ import { Command, Mount } from "foldkit"
 import { toLoadFailure } from "@maple/views/data/load-failure"
 import { resolveWindow, TimeWindow } from "../../../data/time-range"
 import { AppRoute, hrefOf } from "../../../route"
-import { Message, RequestMode } from "./message"
+import { Message } from "./message"
 import { AutocompleteLookup } from "./model"
 import { autocompleteLookup } from "../../kit/autocomplete-lookups"
 import { caretEvents, placeCaret, WHERE_TEXTAREA_ID } from "./where-editor"

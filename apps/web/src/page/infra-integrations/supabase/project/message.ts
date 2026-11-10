@@ -1,3 +1,4 @@
+import { RequestMode } from "@maple/views/data/keyed"
 import {
 	SupabaseApiTopPathsResponse,
 	SupabaseApiTrafficResponse,
@@ -14,9 +15,6 @@ import { TimeWindow } from "../../../../data/time-range"
 import * as TimeRangePicker from "../../../kit/time-range-picker"
 import { SupabaseProjectRow, SupabaseProjectTimeseriesRow, SupabaseStatus } from "../model"
 import { Section } from "./model"
-
-export const RequestMode = Schema.Literals(["Load", "Refresh"])
-export type RequestMode = typeof RequestMode.Type
 
 const completed = <A, AI>(schema: Schema.Codec<A, AI>) => ({
 	key: Schema.String,

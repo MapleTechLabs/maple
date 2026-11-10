@@ -1,3 +1,4 @@
+import type { RequestMode } from "@maple/views/data/keyed"
 import { Array as Arr, Option, Record as Rec, String as Str } from "effect"
 import { AsyncData, Command } from "foldkit"
 import * as Keyed from "@maple/views/data/keyed"
@@ -40,7 +41,7 @@ import {
 	type Search,
 	sortPatch,
 } from "./derive"
-import { type ListFacet, Message, type RequestMode } from "./message"
+import { type ListFacet, Message } from "./message"
 import type { Model, RangeKey } from "./model"
 
 type Return = PageReturn<Model, Message>

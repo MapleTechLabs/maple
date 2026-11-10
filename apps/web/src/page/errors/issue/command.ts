@@ -1,3 +1,4 @@
+import { RequestMode } from "@maple/views/data/keyed"
 import {
 	ErrorIssueClaimRequest,
 	ErrorIssueCommentRequest,
@@ -17,7 +18,7 @@ import { type LoadFailure, toLoadFailure } from "@maple/views/data/load-failure"
 import { resolveWindow } from "../../../data/time-range"
 import { MapleApiV2Client, MapleInternalApiClient } from "../../../platform/api-clients"
 import { writeClipboard } from "../../kit/clipboard"
-import { IssueWrite, Message, RequestMode } from "./message"
+import { IssueWrite, Message } from "./message"
 
 /** The fetch's outcome, its error already the `displayError` body. */
 const settle = <A, E, R>(

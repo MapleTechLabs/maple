@@ -35,7 +35,7 @@ type RequestStep = (
 	model: Model,
 	context: PageContext,
 	window: TimeWindow,
-	mode: Frame.RequestMode,
+	mode: Keyed.RequestMode,
 ) => Step<Model, Message>
 
 const overviewStep: RequestStep = (model, context, window, mode) => {
@@ -111,7 +111,7 @@ const follow =
 		}
 	}
 
-const requestAll = (model: Model, context: PageContext, mode: Frame.RequestMode): Return => {
+const requestAll = (model: Model, context: PageContext, mode: Keyed.RequestMode): Return => {
 	const window = model.frame.window
 	if (window === null) return { model }
 	const rail = Rail.request(model.rail, context, window, mode)

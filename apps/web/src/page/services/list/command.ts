@@ -1,3 +1,4 @@
+import { RequestMode } from "@maple/views/data/keyed"
 import { getCustomChartServiceSparklines } from "@maple/web-data/warehouse/custom-charts"
 import { isMapleService, MAPLE_SERVICES_NAMESPACE } from "@maple/domain/uptime"
 import {
@@ -27,7 +28,7 @@ import { ARM_DELAY_MS, loadCommitDetail, readCommitDetails } from "../../kit/com
 import { loadSignalPresences } from "../../kit/signal-presence"
 import { loadAnomalyServiceCounts } from "../../../data/anomaly-service-counts"
 import { loadServicesFacets } from "../../../data/services-facets-probe"
-import { Message, RequestMode } from "./message"
+import { Message } from "./message"
 import { ServiceRow, Sparklines } from "./model"
 
 /** The overview, sparklines and baseline input: the window plus the URL filters, pin applied. */

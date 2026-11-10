@@ -1,3 +1,4 @@
+import type { RequestMode } from "@maple/views/data/keyed"
 import { Command } from "foldkit"
 import type { PageReturn } from "../../contract"
 import { routeWindowStep } from "../../kit/route-window"
@@ -14,7 +15,7 @@ export const liftFrame = <Model extends FrameHost, Message>(
 	scope: Frame.Scope,
 	wrap: (message: Frame.Message) => Message,
 	handlers: Readonly<{
-		onResolved: (model: Model, mode: Frame.RequestMode) => PageReturn<Model, Message>
+		onResolved: (model: Model, mode: RequestMode) => PageReturn<Model, Message>
 		onTimeSearch: (model: Model, search: Frame.Scope["search"]) => PageReturn<Model, Message>
 	}>,
 ): PageReturn<Model, Message> => {
@@ -35,7 +36,7 @@ export const resolveFrame = <Message>(
 	frame: Frame.Model,
 	scope: Frame.Scope,
 	wrap: (message: Frame.Message) => Message,
-	mode?: Frame.RequestMode,
+	mode?: RequestMode,
 ) => Command.mapMessage(Frame.resolve(frame, scope, mode), wrap)
 
 /**
@@ -47,9 +48,12 @@ export const routeFrame = <Model extends FrameHost, Message>(
 	next: Model,
 	scope: Frame.Scope,
 	wrap: (message: Frame.Message) => Message,
-	requestAll: (model: Model, mode: Frame.RequestMode) => PageReturn<Model, Message>,
+	requestAll: (model: Model, mode: RequestMode) => PageReturn<Model, Message>,
 ): PageReturn<Model, Message> => {
-	const resolve = (): PageReturn<Model, Message> => ({ model: next, commands: [resolveFrame(next.frame, scope, wrap)] })
+	const resolve = (): PageReturn<Model, Message> => ({
+		model: next,
+		commands: [resolveFrame(next.frame, scope, wrap)],
+	})
 	return routeWindowStep(previous, scope.search, {
 		resolve,
 		requestAll: (mode) => (next.frame.window === null ? resolve() : requestAll(next, mode)),

@@ -1,3 +1,4 @@
+import { RequestMode } from "@maple/views/data/keyed"
 import { Schema } from "effect"
 import { defineMessageUnion } from "foldkit/message"
 import * as Chart from "@maple/views/charts/chart"
@@ -37,9 +38,6 @@ export const Model = Schema.Struct({
 	isReloading: Schema.Boolean,
 })
 export type Model = typeof Model.Type
-
-export const RequestMode = Schema.Literals(["Load", "Refresh"])
-export type RequestMode = typeof RequestMode.Type
 
 const result = <A extends Schema.Top>(schema: A) => ({
 	key: Schema.String,

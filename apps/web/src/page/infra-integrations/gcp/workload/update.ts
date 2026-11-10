@@ -1,3 +1,4 @@
+import type { RequestMode } from "@maple/views/data/keyed"
 import { GCP_INFRA_SERVICE_IDS, type GcpInfraServiceId } from "@maple/domain/gcp-infra"
 import { GCP_CLOUD_SQL_INVENTORY_QUERY, gcpResourceQuery } from "../../../../components/infra/gcp/inventory"
 import { gcpMatchStatements, gcpStatements } from "../../../../components/infra/gcp/cloud-sql-signals"
@@ -32,7 +33,7 @@ import {
 	FetchTraceSide,
 	ResolveWindow,
 } from "./command"
-import { Message, type Model, type RequestMode } from "./model"
+import { Message, type Model } from "./model"
 import { type QueryPeek, resolveQueryPeek, statementSpansInput } from "./peek"
 import { Option, Array as Arr } from "effect"
 

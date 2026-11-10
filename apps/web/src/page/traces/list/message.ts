@@ -1,3 +1,4 @@
+import { RequestMode } from "@maple/views/data/keyed"
 import { Schema } from "effect"
 import { defineMessageUnion } from "foldkit/message"
 import { LoadFailure } from "@maple/views/data/load-failure"
@@ -9,10 +10,6 @@ import { SignalPresences } from "@maple/views/data/signal-presence"
 import { Message as DetailMessage } from "../detail/message"
 import * as TimeRangePicker from "../../kit/time-range-picker"
 import { TracesFacets, TracesPage, VirtualRow } from "./model"
-
-/** `Load` on entry or a search change; `Refresh` from Reload (unsnapped window, revalidate). */
-export const RequestMode = Schema.Literals(["Load", "Refresh"])
-export type RequestMode = typeof RequestMode.Type
 
 /** The sidebar's facets, by their include param. */
 export const Facet = Schema.Literals([

@@ -1,3 +1,4 @@
+import { RequestMode } from "@maple/views/data/keyed"
 import * as Policy from "@maple/domain/policy"
 import { V2UptimeMonitor } from "@maple/domain/http/v2"
 import { Schema } from "effect"
@@ -21,10 +22,6 @@ import {
 	StatusRow,
 } from "./model-tabs"
 import { Commit, CommitFailure, Issue, OverviewData, RefinementPoint, Usage, Workload } from "./model"
-
-/** `Load` on entry or a search change; `Refresh` from Reload (no cache snap, revalidate every slot). */
-export const RequestMode = Schema.Literals(["Load", "Refresh"])
-export type RequestMode = typeof RequestMode.Type
 
 /** The reads that can be retried from their error state. */
 export const RetryTarget = Schema.Literals([

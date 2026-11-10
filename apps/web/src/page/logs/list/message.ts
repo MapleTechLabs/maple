@@ -1,3 +1,4 @@
+import { RequestMode } from "@maple/views/data/keyed"
 import { Schema } from "effect"
 import { defineMessageUnion } from "foldkit/message"
 import * as Chart from "@maple/views/charts/chart"
@@ -15,10 +16,6 @@ import { SignalPresences } from "@maple/views/data/signal-presence"
 import * as TimeRangePicker from "../../kit/time-range-picker"
 import { Density } from "@maple/views/ui/logs/viewer"
 import { AttributeKey, LogsFacets, LogsPage, VolumeBucket } from "./model"
-
-/** `Load` on entry or a search change; `Refresh` from Reload (no cache snap, revalidate every slot). */
-export const RequestMode = Schema.Literals(["Load", "Refresh"])
-export type RequestMode = typeof RequestMode.Type
 
 /** The sidebar's facets, by their include param. */
 export const Facet = Schema.Literals(["severities", "deploymentEnvs", "namespaces", "services"])

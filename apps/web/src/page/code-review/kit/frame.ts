@@ -1,3 +1,4 @@
+import { RequestMode } from "@maple/views/data/keyed"
 import { GithubIntegrationStatus, VcsRepositoryId } from "@maple/domain/http"
 import { Clock, Duration, Effect, Schema } from "effect"
 import { Command } from "foldkit"
@@ -15,9 +16,6 @@ import * as TimeRangePicker from "../../kit/time-range-picker"
 // workflow select, the window and Reload.
 
 export const ALL = "all"
-
-export const RequestMode = Schema.Literals(["Load", "Refresh"])
-export type RequestMode = typeof RequestMode.Type
 
 export const Frame = Schema.Struct({
 	repoSelect: Select.Model,

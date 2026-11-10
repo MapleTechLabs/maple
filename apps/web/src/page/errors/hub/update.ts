@@ -1,3 +1,4 @@
+import type { RequestMode } from "@maple/views/data/keyed"
 import { HUB_SORTS, HUB_VIEWS, SEVERITY_FILTERS } from "./hub-params"
 import type { IssueKind } from "@maple/domain/http"
 import { sparkFingerprintHashes } from "../../../lib/models/error-signal"
@@ -43,7 +44,7 @@ import {
 	VOLUME_RANK_LIMIT,
 	warehouseFiltersOf,
 } from "./derive"
-import { type FilterParam, Message, type RequestMode } from "./message"
+import { type FilterParam, Message } from "./message"
 import { pressedRowPointer, rowMenuStep } from "./row-menu"
 import { copyToast } from "../../kit/clipboard"
 import {

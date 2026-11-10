@@ -1,3 +1,4 @@
+import { RequestMode } from "@maple/views/data/keyed"
 import { getReleases } from "@maple/web-data/warehouse/releases"
 import { Clock, Duration, Effect, Queue, Schema, Stream } from "effect"
 import { Command, Mount } from "foldkit"
@@ -8,7 +9,7 @@ import { resolveWindow } from "../../../data/time-range"
 import { readCommitDetails } from "../../kit/commit-card"
 import { loadSignalPresences } from "../../kit/signal-presence"
 import { MapleApiV2Client, MapleInternalApiClient } from "../../../platform/api-clients"
-import { Message, RequestMode } from "./message"
+import { Message } from "./message"
 import { ReleasesData } from "./model"
 
 /** `releasesQueryInput`: the window plus the URL filters the warehouse reads. */

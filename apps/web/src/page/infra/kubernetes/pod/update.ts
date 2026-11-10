@@ -35,7 +35,7 @@ const summaryInputOf = (model: Model, window: { startTime: string; endTime: stri
 })
 
 /** The summary and the selected metric's series; other tabs load when picked. */
-const requestAll = (model: Model, context: PageContext, mode: Frame.RequestMode): Return => {
+const requestAll = (model: Model, context: PageContext, mode: Keyed.RequestMode): Return => {
 	const window = model.frame.window
 	if (window === null) return { model }
 	const summaryInput = summaryInputOf(model, window)

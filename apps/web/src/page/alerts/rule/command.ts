@@ -1,3 +1,4 @@
+import { RequestMode } from "@maple/views/data/keyed"
 import { AlertRuleId, IsoDateTimeString } from "@maple/domain/http"
 import { V2AlertRulePreviewParams, V2InvestigationCreateParams } from "@maple/domain/http/v2"
 import { v2CheckToDocument } from "@maple/web-data/alerts/form-utils"
@@ -12,7 +13,7 @@ import { readGrants } from "../../../data/session-tenant"
 import { fetchCheckSummary } from "../shared/check-summary"
 import { fetchPreview } from "../shared/preview"
 import { CheckStatusFilter } from "./model"
-import { Message, RequestMode } from "./message"
+import { Message } from "./message"
 
 const PAGE_LIMIT = 100
 const RELOAD_SPIN = Duration.millis(600)

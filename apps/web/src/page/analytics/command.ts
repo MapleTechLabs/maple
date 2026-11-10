@@ -1,3 +1,4 @@
+import { RequestMode } from "@maple/views/data/keyed"
 import { getProductEventTraceSamples } from "@maple/web-data/warehouse/product-events"
 import {
 	getWebAnalyticsAiCrawlers,
@@ -24,7 +25,7 @@ import { toLoadFailure } from "@maple/views/data/load-failure"
 import { resolveWindow } from "../../data/time-range"
 import { MapleInternalApiClient } from "../../platform/api-clients"
 import { loadSignalPresences } from "../kit/signal-presence"
-import { Message, RequestMode, SlotName } from "./message"
+import { Message, SlotName } from "./message"
 
 // The page's reads. Every fetch answers `CompletedFetch` with its slot and key (S6); the request
 // itself is the web-data function, with the input it was keyed on.

@@ -43,7 +43,7 @@ type RequestStep = (
 	model: Model,
 	context: PageContext,
 	window: TimeWindow,
-	mode: Frame.RequestMode,
+	mode: Keyed.RequestMode,
 ) => Step<Model, Message>
 
 const workloadsStep: RequestStep = (model, context, window, mode) => {
@@ -62,7 +62,7 @@ const workloadsStep: RequestStep = (model, context, window, mode) => {
 	)
 }
 
-const requestAll = (model: Model, context: PageContext, mode: Frame.RequestMode): Return => {
+const requestAll = (model: Model, context: PageContext, mode: Keyed.RequestMode): Return => {
 	const window = model.frame.window
 	if (window === null) return { model }
 	const facetsInput = { kind: kindOf(model.search), ...window }

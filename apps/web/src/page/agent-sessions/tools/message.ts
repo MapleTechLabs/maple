@@ -1,3 +1,4 @@
+import { RequestMode } from "@maple/views/data/keyed"
 import { Schema } from "effect"
 import { defineMessageUnion } from "foldkit/message"
 import * as Chart from "@maple/views/charts/chart"
@@ -11,9 +12,6 @@ import * as TimeRangePicker from "../../kit/time-range-picker"
 import { Facets } from "../list/model"
 import { ToolMetric, ToolSeries, TotalsResult } from "../../kit/tools/model"
 import { Breakdowns } from "./model"
-
-export const RequestMode = Schema.Literals(["Load", "Refresh"])
-export type RequestMode = typeof RequestMode.Type
 
 export const FacetKey = Schema.Literals(["service", "model", "env"])
 export type FacetKey = typeof FacetKey.Type

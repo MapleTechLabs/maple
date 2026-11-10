@@ -1,3 +1,4 @@
+import type { RequestMode } from "@maple/views/data/keyed"
 import type { AlertIncidentDocument, AlertRuleDocument } from "@maple/domain/http"
 import { IsoDateTimeString } from "@maple/domain/http"
 import type { V2InvestigationCreateParams } from "@maple/domain/http/v2"
@@ -38,7 +39,7 @@ import {
 	ruleOf,
 	timelineRangeOf,
 } from "./derive"
-import { Message, type RequestMode } from "./message"
+import { Message } from "./message"
 import type { Model } from "./model"
 import * as SilenceDialog from "../silence-dialog/dialog"
 import { matchersForRule } from "../shared/silences"

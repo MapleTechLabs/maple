@@ -1,3 +1,4 @@
+import type { RequestMode } from "@maple/views/data/keyed"
 import { Array as Arr, Option, Result } from "effect"
 import { AsyncData, Command } from "foldkit"
 import * as Keyed from "@maple/views/data/keyed"
@@ -34,7 +35,7 @@ import {
 	syncPeek,
 	traceHrefFrom,
 } from "./peek"
-import { Message, type RequestMode } from "./message"
+import { Message } from "./message"
 import type { Model, Pagination, TraceRow } from "./model"
 import { durationDraftOf } from "./search-edits"
 

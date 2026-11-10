@@ -1,3 +1,4 @@
+import { RequestMode } from "@maple/views/data/keyed"
 import { Schema } from "effect"
 import { defineMessageUnion } from "foldkit/message"
 import * as Chart from "@maple/views/charts/chart"
@@ -10,9 +11,6 @@ import { Facets } from "../list/model"
 import { ToolErrorRow, ToolSeries, TotalsResult } from "../../kit/tools/model"
 import * as ErrorModal from "./error-modal-model"
 import { SessionRows } from "./model"
-
-export const RequestMode = Schema.Literals(["Load", "Refresh"])
-export type RequestMode = typeof RequestMode.Type
 
 export const FacetKey = Schema.Literals(["service", "model", "env"])
 export type FacetKey = typeof FacetKey.Type

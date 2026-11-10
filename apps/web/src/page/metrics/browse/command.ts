@@ -1,3 +1,4 @@
+import { RequestMode } from "@maple/views/data/keyed"
 import { getMetricSparklines, getMetricsSummary, listMetrics } from "@maple/web-data/warehouse/metrics"
 import { QUERY_BUILDER_METRIC_TYPES } from "@maple/query-model"
 import { Clock, Duration, Effect, Schema } from "effect"
@@ -5,7 +6,7 @@ import { Command } from "foldkit"
 import { toLoadFailure } from "@maple/views/data/load-failure"
 import { resolveWindow, TimeWindow } from "../../../data/time-range"
 import { loadSignalPresences } from "../../kit/signal-presence"
-import { Message, RequestMode } from "./message"
+import { Message } from "./message"
 
 export const ResolveWindow = Command.define("ResolveMetricsWindow", {
 	args: {

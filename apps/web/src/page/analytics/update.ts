@@ -1,3 +1,4 @@
+import type { RequestMode } from "@maple/views/data/keyed"
 import { toggleFilterValue, toggleTraffic } from "./filters"
 import {
 	SearchConsoleIntegrationStatus,
@@ -24,7 +25,7 @@ import { routeWindowStep, snapModeOf } from "../kit/route-window"
 import * as TimeRangePicker from "../kit/time-range-picker"
 import type { PresetValue } from "../kit/time-controls"
 import { CompleteReloadSpin, LoadSignalPresence, ResolveWindow } from "./command"
-import { type FilterKey, Message, type RequestMode, type SlotName } from "./message"
+import { type FilterKey, Message, type SlotName } from "./message"
 import {
 	AiCrawlers,
 	AiReferralPoint,
