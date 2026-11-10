@@ -43,7 +43,8 @@ const encodeJson = Schema.encodeEffect(Schema.fromJsonString(Schema.Unknown))
 
 /**
  * The in-request retry covers an explicit refusal only: a timeout may follow a batch that landed.
- * The batch reporter redelivers every transient failure until it lands, so delivery is at-least-once.
+ * The batch reporter retries a transiently failed batch, so a batch can land twice. It can also
+ * be dropped: the reporter's buffer is bounded and its shutdown flush is timed.
  */
 const isRefusal = (status: number | null): boolean => status === 429 || status === 503
 
