@@ -108,34 +108,25 @@ export function createBackoffOnError(
 		const retryCount = state.retryCount + 1
 		state = { ...state, retryCount }
 
-		// A 401 can be a stale stream token, so let the app recreate the collection
-		// under its bounded retry budget instead of leaving a live-but-deaf instance.
+		// A 401 (stale stream token) or a schema mismatch (a pre-deploy shape) will not heal
+		// by retrying, so stop and report the failure for the app to recover by recreating.
 		const errorStatus = (error as { status?: number })?.status
 		if (errorStatus === 401) {
-			logVia(
-				runtime,
-				Effect.logWarning("Authentication error (401), stopping stream and requesting recovery"),
-				{
-					collectionId,
-					status: 401,
-				},
-			)
-			if (typeof window !== "undefined") {
-				window.dispatchEvent(new CustomEvent("collection:auth-error", { detail: { collectionId } }))
-			}
+			logVia(runtime, Effect.logWarning("Authentication error (401), stopping sync"), {
+				collectionId,
+				status: 401,
+			})
+			dispatchSyncFailed(collectionId)
 			return
 		}
 
-		// A schema mismatch usually means the client retained a pre-deploy shape.
 		const errorName = error?.name || (error as { _tag?: string })?._tag
 		if (errorName === "SchemaValidationError") {
-			logVia(runtime, Effect.logWarning("Schema validation error, dispatching recovery event"), {
+			logVia(runtime, Effect.logWarning("Schema validation error, stopping sync"), {
 				collectionId,
 				errorName,
 			})
-			if (typeof window !== "undefined") {
-				window.dispatchEvent(new CustomEvent("collection:schema-error"))
-			}
+			dispatchSyncFailed(collectionId)
 			return
 		}
 

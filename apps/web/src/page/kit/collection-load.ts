@@ -1,3 +1,4 @@
+import { COLLECTION_SYNC_FAILED_EVENT } from "@maple/effect-db/electric"
 import { Effect, Option, Queue, Schema, Stream } from "effect"
 
 // Whether a collection a page is still waiting on failed to load. TODO(collection-load): heal a
@@ -25,13 +26,13 @@ export const collectionLoadFailed = <M>(
 					const detail = event instanceof CustomEvent ? decodeDetail(event.detail) : Option.none()
 					if (Option.exists(detail, (value) => value.collectionId === collectionId)) fail()
 				}
-				window.addEventListener("collection:sync-failed", onSyncFailed)
+				window.addEventListener(COLLECTION_SYNC_FAILED_EVENT, onSyncFailed)
 				const timeout = window.setTimeout(fail, timeoutMs)
 				return { onSyncFailed, timeout }
 			}),
 			({ onSyncFailed, timeout }) =>
 				Effect.sync(() => {
-					window.removeEventListener("collection:sync-failed", onSyncFailed)
+					window.removeEventListener(COLLECTION_SYNC_FAILED_EVENT, onSyncFailed)
 					window.clearTimeout(timeout)
 				}),
 		).pipe(Effect.andThen(Effect.never)),
