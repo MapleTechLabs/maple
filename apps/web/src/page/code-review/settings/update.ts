@@ -17,6 +17,7 @@ import * as Keyed from "@maple/views/data/keyed"
 import type { LoadFailure } from "@maple/views/data/load-failure"
 import type { Resources } from "../../../platform/resources"
 import { requestKey } from "@maple/views/data/request-key"
+import { integrationStatusKey } from "../../kit/integration-status-keys"
 import * as Dialog from "@maple/views/ui/dialog"
 import * as Select from "@maple/views/ui/select"
 import { type PageContext, PageOutMessage, type PageReturn } from "../../contract"
@@ -62,7 +63,7 @@ const messageOf = (failure: LoadFailure, fallback: string) =>
 
 const settingsKey = (context: PageContext) =>
 	requestKey(context.orgId, "integrations.githubGetPrReviewSettings", {})
-const statusKey = (context: PageContext) => requestKey(context.orgId, "integrations.githubStatus", {})
+const statusKey = (context: PageContext) => integrationStatusKey(context.orgId, "github")
 const configKey = (context: PageContext, repositoryId: VcsRepositoryId) =>
 	requestKey(context.orgId, "integrations.githubGetPrReviewConfig", { params: { repositoryId } })
 

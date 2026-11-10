@@ -3,6 +3,7 @@ import type { RequestMode } from "@maple/views/data/keyed"
 import { DB_NODE_PREFIX, parseDbNodeId } from "@maple/views/service-map/graph/service-map-utils"
 import { Option, Array as Arr, String as Str } from "effect"
 import { requestKey } from "@maple/views/data/request-key"
+import { integrationStatusKey } from "../kit/integration-status-keys"
 import { AppRoute, hrefOf } from "../../route"
 import type { PageContext, PageReturn } from "../contract"
 import { PageOutMessage } from "../contract"
@@ -92,7 +93,7 @@ const overlaySteps = (model: Model, context: PageContext, mode: RequestMode): Re
 		),
 		keyed(
 			model.planetscaleInventory,
-			requestKey(org, "planetscaleIntegration.databases", {}),
+			integrationStatusKey(org, "planetscaleDatabases"),
 			// `useAtomValue`, not page-refreshable: Reload leaves the inventories alone.
 			"Load",
 			(planetscaleInventory) => ({ planetscaleInventory }),

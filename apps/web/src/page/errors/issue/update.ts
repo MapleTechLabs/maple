@@ -8,6 +8,7 @@ import * as Chart from "@maple/views/charts/chart"
 import { LoadChartRuntime } from "@maple/views/charts/chart-runtime"
 import * as Keyed from "@maple/views/data/keyed"
 import { requestKey } from "@maple/views/data/request-key"
+import { integrationStatusKey } from "../../kit/integration-status-keys"
 import type { TimeWindow } from "../../../data/time-range"
 import type { Resources } from "../../../platform/resources"
 import { AppRoute, hrefOf } from "../../../route"
@@ -152,7 +153,7 @@ const loadedReads =
 			? NO_STEP
 			: keyed(
 					model.githubStatus,
-					requestKey(context.orgId, "integrations.githubStatus", {}),
+					integrationStatusKey(context.orgId, "github"),
 					"Load",
 					(next) => ({ githubStatus: next }),
 					(k) => FetchGithubStatus({ key: k }),

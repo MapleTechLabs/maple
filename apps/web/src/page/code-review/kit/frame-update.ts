@@ -5,7 +5,7 @@ import { Option, Schema, Array as Arr } from "effect"
 import { AsyncData, Command } from "foldkit"
 import * as Keyed from "@maple/views/data/keyed"
 import { emptyRetained, type Retained, retainedStatus } from "./retained"
-import { requestKey } from "@maple/views/data/request-key"
+import { integrationStatusKey } from "../../kit/integration-status-keys"
 import * as Select from "@maple/views/ui/select"
 import type { PageContext, PageReturn } from "../../contract"
 import { routeWindowStep, snapModeOf } from "../../kit/route-window"
@@ -77,7 +77,7 @@ export const initFrame = (
 	context: PageContext,
 	carried: Carried = noCarry,
 ): FrameReturn => {
-	const key = requestKey(context.orgId, "integrations.githubStatus", {})
+	const key = integrationStatusKey(context.orgId, "github")
 	const retained = retainedStatus(carried.retained, key, carried.nowMs)
 	const githubStatus: Frame["githubStatus"] = Option.match(retained, {
 		onSome: (status) => ({ key, data: AsyncData.Success({ data: status }) }),

@@ -5,6 +5,7 @@ import { Result, Array as Arr, String as Str, Option } from "effect"
 import { Command } from "foldkit"
 import * as Keyed from "@maple/views/data/keyed"
 import { requestKey } from "@maple/views/data/request-key"
+import { integrationStatusKey } from "../../kit/integration-status-keys"
 import { isClerkAuthEnabled } from "../../../lib/services/common/auth-mode"
 import { AppRoute, hrefOf } from "../../../route"
 import type { SecurityFindingsSearch, SecurityRunsSearch } from "../../../route/search"
@@ -102,7 +103,7 @@ const readGithubStatus = (model: Model, context: PageContext): Return =>
 		model,
 		model.githubStatus,
 		(githubStatus) => ({ githubStatus }),
-		requestKey(context.orgId, "integrations.githubStatus", {}),
+		integrationStatusKey(context.orgId, "github"),
 		"Load",
 		(key) => FetchGithubStatus({ key }),
 	)
