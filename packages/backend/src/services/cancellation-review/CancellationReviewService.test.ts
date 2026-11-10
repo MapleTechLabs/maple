@@ -92,10 +92,10 @@ interface World {
 	/** The Hazel channel the deployment names; Maple's org (`OWN_ORG`) is set beside it. */
 	hazelChannel: string | null
 	/**
-	 * `refused`: Hazel answered no. `unreachable`: it did not answer. `page_rejected`: it refuses
-	 * an HTML page and takes markdown.
+	 * `refused`: Hazel answered no. `unreachable`: it did not answer. `page_rejected` and
+	 * `page_missing`: it refuses an HTML page (400, 404) and takes markdown.
 	 */
-	hazel: "ok" | "refused" | "unreachable" | "page_rejected"
+	hazel: "ok" | "refused" | "unreachable" | "page_rejected" | "page_missing"
 	hazelPosts: Array<{ target: ChatTarget; blocks: ReadonlyArray<ChatBlock> }>
 	/** What the region lookup answers. */
 	home: HomeAnswer
@@ -432,18 +432,23 @@ const fakeHazel = (world: World): RegisteredChatConnector => ({
 			post: (target, blocks) =>
 				Effect.suspend(() => {
 					const pageRefused =
-						world.hazel === "page_rejected" && Arr.some(blocks, (block) => block.kind === "page")
+						(world.hazel === "page_rejected" || world.hazel === "page_missing") &&
+						Arr.some(blocks, (block) => block.kind === "page")
 					if (pageRefused) {
 						return Effect.fail(
 							new ChatOutboundError({
 								message: "Hazel refused the HTML render",
 								connectorId: HAZEL,
 								operation: "post",
-								reason: "rejected",
+								reason: world.hazel === "page_missing" ? "not_found" : "rejected",
 							}),
 						)
 					}
-					if (world.hazel === "ok" || world.hazel === "page_rejected") {
+					if (
+						world.hazel === "ok" ||
+						world.hazel === "page_rejected" ||
+						world.hazel === "page_missing"
+					) {
 						world.hazelPosts.push({ target, blocks })
 						return Effect.succeed({ target, messageId: `message-${world.hazelPosts.length}` })
 					}
@@ -1075,22 +1080,29 @@ describe("CancellationReviewService", () => {
 		}),
 	)
 
-	it.effect("posts the markdown report to Hazel when Hazel refuses the page", () =>
-		Effect.gen(function* () {
-			const world = freshWorld()
-			world.channel = null
-			world.hazelChannel = "hazel-cancellations"
-			world.hazel = "page_rejected"
-			const testDb = createTestDb(trackedDbs)
-			yield* linkHazel(testDb)
+	it.effect("posts the markdown report to Hazel when Hazel refuses the page or has no HTML renders", () =>
+		Effect.forEach(
+			["page_rejected", "page_missing"] as const,
+			(refusal) =>
+				Effect.gen(function* () {
+					const world = freshWorld()
+					world.channel = null
+					world.hazelChannel = "hazel-cancellations"
+					world.hazel = refusal
+					const testDb = createTestDb(trackedDbs)
+					yield* linkHazel(testDb)
 
-			assert.strictEqual(yield* review(world, testDb), "posted")
-			assert.isFalse(
-				Arr.some(world.hazelPosts, (post) => Arr.some(post.blocks, (block) => block.kind === "page")),
-			)
-			assert.include(hazelText(world), "**Likely reason:** Stopped sending telemetry")
-			assert.isNotNull((yield* storedReview(testDb))?.posted_at)
-		}),
+					assert.strictEqual(yield* review(world, testDb), "posted")
+					assert.isFalse(
+						Arr.some(world.hazelPosts, (post) =>
+							Arr.some(post.blocks, (block) => block.kind === "page"),
+						),
+					)
+					assert.include(hazelText(world), "**Likely reason:** Stopped sending telemetry")
+					assert.isNotNull((yield* storedReview(testDb))?.posted_at)
+				}),
+			{ discard: true },
+		),
 	)
 
 	it.effect("reports to Hazel alone on a deployment with no Slack channel", () =>

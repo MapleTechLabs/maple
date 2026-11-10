@@ -773,7 +773,7 @@ export class CancellationReviewService extends Context.Service<
 			})
 
 		/**
-		 * The report as one HTML page. Should Hazel refuse the page, the markdown report goes out
+		 * The report as one HTML page. Should Hazel refuse or not know the page, the markdown report goes out
 		 * instead: one message, or one per section when it is longer than Hazel takes in one.
 		 */
 		const postToHazel = (hazel: HazelDestination) => (report: CancellationReport) =>
@@ -796,7 +796,8 @@ export class CancellationReviewService extends Context.Service<
 				yield* transport.post(target, [buildCancellationPageBlock(report)]).pipe(
 					Effect.asVoid,
 					Effect.catchIf(
-						(error) => error.reason === "rejected",
+						// A 404 too: a Hazel without HTML renders still takes markdown.
+						(error) => error.reason === "rejected" || error.reason === "not_found",
 						(error) =>
 							Effect.logWarning(
 								"Hazel refused the cancellation report's page; posting it as markdown",
