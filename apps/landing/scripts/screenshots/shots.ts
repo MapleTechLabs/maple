@@ -54,7 +54,6 @@ const openTrace = async (page: Page) => {
 }
 
 export const SHOTS: ReadonlyArray<Shot> = [
-	// Distributed tracing
 	{ id: "gallery-traces-list", route: "/traces", range: lastMinutes(60) },
 	{
 		id: "surface-traces-peek",
@@ -81,7 +80,6 @@ export const SHOTS: ReadonlyArray<Shot> = [
 		},
 	},
 
-	// Logs
 	{ id: "gallery-logs-errors", route: "/logs", search: { severities: ["ERROR"] }, range: lastMinutes(60) },
 	// Severity, not a service or text filter: with those set the facet rail reads empty.
 	{
@@ -91,7 +89,6 @@ export const SHOTS: ReadonlyArray<Shot> = [
 		range: lastMinutes(30),
 	},
 
-	// Metrics and dashboards
 	{ id: "gallery-metrics-list", route: "/metrics", range: lastMinutes(60) },
 	{
 		id: "gallery-metric-latency",
@@ -105,7 +102,6 @@ export const SHOTS: ReadonlyArray<Shot> = [
 	},
 	{ id: "gallery-dashboard-templates", route: "/dashboards/templates" },
 
-	// Service catalog
 	{
 		id: "gallery-service-operations",
 		route: "/services/payment-svc",
@@ -121,7 +117,6 @@ export const SHOTS: ReadonlyArray<Shot> = [
 		range: lastMinutes(60),
 	},
 
-	// Errors
 	{ id: "surface-errors", route: "/errors" },
 	{
 		id: "gallery-issue-detail",
@@ -132,7 +127,6 @@ export const SHOTS: ReadonlyArray<Shot> = [
 		},
 	},
 
-	// Alerts
 	{
 		id: "gallery-alert-create",
 		route: "/alerts/create",

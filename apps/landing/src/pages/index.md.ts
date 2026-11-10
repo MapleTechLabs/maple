@@ -1,6 +1,6 @@
 /**
- * `/index.md` — the agent-readable twin of the home page, and the target of
- * `Accept: text/markdown` on `/` (see `src/worker.ts`).
+ * `/index.md`: the agent-readable twin of the home page, and the target of
+ * `Accept: text/markdown` on `/` (see `src/handler.ts`).
  *
  * Same facts the homepage states for AI extraction (the FAQ, the three steps,
  * the feature sheet), reduced to headings, lists, and links. No marketing
