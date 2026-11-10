@@ -1,6 +1,7 @@
-import { Duration, Effect, Option, Result, Schema } from "effect"
+import { Effect, Option, Result, Schema } from "effect"
 import { Command } from "foldkit"
 import { writeClipboard } from "@maple/ui/lib/clipboard"
+import { afterCopyStatusHold } from "../../ui/copy-button"
 import { TraceSource } from "../trace-source"
 import { DetailFetch, LogsFetch, Message } from "./message"
 
@@ -74,6 +75,5 @@ export const WriteSpanClipboard = Command.define("WriteSpanClipboard", {
 export const WaitSpanCopyStatus = Command.define("WaitSpanCopyStatus", {
 	args: { id: Schema.String, generation: Schema.Number },
 	messages: [Message.ElapsedCopyStatus],
-	execute: ({ id, generation }) =>
-		Effect.sleep(Duration.millis(2000)).pipe(Effect.as(Message.ElapsedCopyStatus({ id, generation }))),
+	execute: ({ id, generation }) => afterCopyStatusHold(Message.ElapsedCopyStatus({ id, generation })),
 })

@@ -1,8 +1,8 @@
-import { Duration, Effect, Option, Record, Schema } from "effect"
+import { Effect, Option, Record, Schema } from "effect"
 import { Command, type Update } from "foldkit"
 import { defineMessageUnion } from "foldkit/message"
 import { modifyFields } from "foldkit/struct"
-import { CopyStatus } from "../copy-button"
+import { afterCopyStatusHold, CopyStatus } from "../copy-button"
 import { writeClipboard } from "@maple/ui/lib/clipboard"
 
 // The log attributes panel's state: the attribute
@@ -64,8 +64,6 @@ export const OutMessage = defineMessageUnion({
 })
 export type OutMessage = typeof OutMessage.Type
 
-const COPY_TIMEOUT = Duration.millis(2000)
-
 export const WriteAttributeClipboard = Command.define("WriteAttributeClipboard", {
 	args: { text: Schema.String, generation: Schema.Number },
 	messages: [Message.SucceededCopy, Message.FailedCopy],
@@ -78,8 +76,7 @@ export const WriteAttributeClipboard = Command.define("WriteAttributeClipboard",
 export const WaitAttributeCopyStatus = Command.define("WaitAttributeCopyStatus", {
 	args: { generation: Schema.Number },
 	messages: [Message.ElapsedCopyStatus],
-	execute: ({ generation }) =>
-		Effect.sleep(COPY_TIMEOUT).pipe(Effect.as(Message.ElapsedCopyStatus({ generation }))),
+	execute: ({ generation }) => afterCopyStatusHold(Message.ElapsedCopyStatus({ generation })),
 })
 
 type Return = Update.ReturnWithOutMessage<Model, Message, OutMessage>

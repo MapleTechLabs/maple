@@ -31,7 +31,12 @@ import { icon, type IconName } from "./icon"
 export const CopyStatus = Schema.Literals(["idle", "copied", "error"])
 export type CopyStatus = typeof CopyStatus.Type
 
-const COPY_TIMEOUT = Duration.millis(2000)
+/** How long a finished copy holds its `copied`/`error` status before it reads idle again. */
+export const COPY_STATUS_HOLD = Duration.millis(2000)
+
+/** `message` once a finished copy's status hold is over: every copy's reset command answers it. */
+export const afterCopyStatusHold = <A>(message: A): Effect.Effect<A> =>
+	Effect.as(Effect.sleep(COPY_STATUS_HOLD), message)
 
 export const Model = Schema.Struct({ status: CopyStatus, generation: Schema.Finite })
 export type Model = typeof Model.Type
@@ -58,8 +63,7 @@ export const WriteClipboard = Command.define("WriteClipboard", {
 export const WaitCopyStatus = Command.define("WaitCopyStatus", {
 	args: { generation: Schema.Finite },
 	messages: [Message.ElapsedCopyStatus],
-	execute: ({ generation }) =>
-		Effect.sleep(COPY_TIMEOUT).pipe(Effect.as(Message.ElapsedCopyStatus({ generation }))),
+	execute: ({ generation }) => afterCopyStatusHold(Message.ElapsedCopyStatus({ generation })),
 })
 
 const settled = (model: Model, generation: number, status: CopyStatus): Update.Return<Model, Message> =>

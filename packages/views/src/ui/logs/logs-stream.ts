@@ -4,6 +4,7 @@ import { defineMessageUnion } from "foldkit/message"
 import { modifyFields } from "foldkit/struct"
 import * as AttributesPanel from "../attributes/attributes-panel"
 import { writeClipboard } from "@maple/ui/lib/clipboard"
+import { afterCopyStatusHold } from "../copy-button"
 import { buildLogJsonPayload } from "./log-row-expanded"
 import { LogRowView } from "./log-row-view"
 import { Message, type NavigationKey, VirtualRow } from "./logs-stream-message"
@@ -101,8 +102,6 @@ export const WaitChipDelay = Command.define("WaitChipDelay", {
 		Effect.sleep(Duration.millis(millis)).pipe(Effect.as(Message.ElapsedChipDelay({ generation }))),
 })
 
-const COPY_TIMEOUT = Duration.millis(2000)
-
 export const WriteLogJson = Command.define("WriteLogJson", {
 	args: { text: Schema.String, generation: Schema.Number },
 	messages: [Message.SucceededCopyJson, Message.FailedCopyJson],
@@ -115,8 +114,7 @@ export const WriteLogJson = Command.define("WriteLogJson", {
 export const WaitLogJsonStatus = Command.define("WaitLogJsonStatus", {
 	args: { generation: Schema.Number },
 	messages: [Message.ElapsedCopyJsonStatus],
-	execute: ({ generation }) =>
-		Effect.sleep(COPY_TIMEOUT).pipe(Effect.as(Message.ElapsedCopyJsonStatus({ generation }))),
+	execute: ({ generation }) => afterCopyStatusHold(Message.ElapsedCopyJsonStatus({ generation })),
 })
 
 type UpdateReturn = Update.ReturnWithOutMessage<Model, Message, OutMessage>
