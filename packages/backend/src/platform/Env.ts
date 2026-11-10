@@ -27,7 +27,6 @@ export interface EnvConfig {
 	readonly CLICKHOUSE_USER: string
 	readonly CLICKHOUSE_PASSWORD: Option.Option<Redacted.Redacted>
 	readonly CLICKHOUSE_DATABASE: string
-	readonly MAPLE_DB_URL: string
 	readonly MAPLE_AUTH_MODE: string
 	readonly MAPLE_ROOT_PASSWORD: Option.Option<Redacted.Redacted>
 	readonly MAPLE_DEFAULT_ORG_ID: string
@@ -56,8 +55,6 @@ export interface EnvConfig {
 	readonly MAPLE_ENVIRONMENT: string
 	/** The regional instance this worker belongs to, derived by the stack from the stage (`prd-eu` → `eu`). */
 	readonly MAPLE_REGION: MapleRegion
-	/** Escape hatch: allow real email sends outside production (e.g. a deliberate test run on a dev stage). */
-	readonly MAPLE_EMAIL_ALLOW_NONPROD: boolean
 	/** Route every org to the managed warehouse; honoured only in development. */
 	readonly MAPLE_IGNORE_ORG_CLICKHOUSE: boolean
 	readonly CLERK_SECRET_KEY: Option.Option<Redacted.Redacted>
@@ -237,7 +234,6 @@ const envConfig = Config.all({
 	CLICKHOUSE_USER: stringWithDefault("CLICKHOUSE_USER", "default"),
 	CLICKHOUSE_PASSWORD: optionalRedacted("CLICKHOUSE_PASSWORD"),
 	CLICKHOUSE_DATABASE: stringWithDefault("CLICKHOUSE_DATABASE", "default"),
-	MAPLE_DB_URL: stringWithDefault("MAPLE_DB_URL", ""),
 	MAPLE_AUTH_MODE: stringWithDefault("MAPLE_AUTH_MODE", "self_hosted"),
 	MAPLE_ROOT_PASSWORD: optionalRedacted("MAPLE_ROOT_PASSWORD"),
 	MAPLE_DEFAULT_ORG_ID: stringWithDefault("MAPLE_DEFAULT_ORG_ID", "default"),
@@ -250,9 +246,6 @@ const envConfig = Config.all({
 	MAPLE_API_BASE_URL: stringWithDefault("MAPLE_API_BASE_URL", "http://127.0.0.1:3472"),
 	MAPLE_ENVIRONMENT: stringWithDefault("MAPLE_ENVIRONMENT", "development"),
 	MAPLE_REGION: stringWithDefault("MAPLE_REGION", "us").pipe(Config.map(parseMapleRegion)),
-	MAPLE_EMAIL_ALLOW_NONPROD: stringWithDefault("MAPLE_EMAIL_ALLOW_NONPROD", "false").pipe(
-		Config.map((value) => value === "true"),
-	),
 	MAPLE_IGNORE_ORG_CLICKHOUSE: stringWithDefault("MAPLE_IGNORE_ORG_CLICKHOUSE", "false").pipe(
 		Config.map((value) => value === "1" || value === "true"),
 	),

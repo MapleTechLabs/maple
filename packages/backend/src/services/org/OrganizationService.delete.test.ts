@@ -1,7 +1,12 @@
+import { randomUUID } from "node:crypto"
 import { afterEach, assert, describe, it } from "@effect/vitest"
 import { ConfigProvider, Effect, Exit, Layer, Option, Schema, Array as Arr, Record as Rec } from "effect"
 import { FetchHttpClient } from "effect/http"
+import * as PG from "@maple-dev/effect-orm/postgres"
+import { ErrorIssueVerifications } from "@maple/db/tables"
 import { OrganizationForbiddenError, OrgId, RoleName } from "@maple/domain/http"
+import { ErrorIssueId, ErrorIssuePullRequestId, ErrorIssueVerificationId } from "@maple/domain/primitives"
+import { Database } from "@maple/backend/platform/DatabaseLive"
 import { Env } from "@maple/backend/platform/Env"
 import { cleanupTestDbs, createTestDb, executeSql, type TestDb } from "@maple/backend/platform/test-pglite"
 import { countOrgRows, ORG_A, ORG_B, seedOrgRow } from "@maple/backend/platform/test-two-orgs"
@@ -123,5 +128,41 @@ describe("OrganizationService.delete", () => {
 			yield* organizations.delete(ORG_B, [role("org:admin")])
 			assert.strictEqual(yield* countOrgRows(testDb, "org_billing_links", "billing_org_id", ORG_A), 0)
 		}).pipe(Effect.provide(makeLayer(testDb)))
+	})
+
+	it.effect("leaves the verification tick nothing due for the deleted org", () => {
+		const testDb = createTestDb(trackedDbs)
+		const NOW_MS = Date.UTC(2026, 6, 6, 9, 0, 0)
+		const waiting = (orgId: OrgId) => ({
+			id: ErrorIssueVerificationId.make(randomUUID()),
+			orgId,
+			issueId: ErrorIssueId.make(randomUUID()),
+			pullRequestId: ErrorIssuePullRequestId.make(randomUUID()),
+			mergedAt: NOW_MS - 7_200_000,
+			verifyAfter: NOW_MS - 3_600_000,
+			createdAt: NOW_MS - 7_200_000,
+			updatedAt: NOW_MS - 7_200_000,
+		})
+		return Effect.gen(function* () {
+			const database = yield* Database
+			yield* database.execute((db) =>
+				db.run(PG.insertInto(ErrorIssueVerifications).values([waiting(ORG_A), waiting(ORG_B)])),
+			)
+			const organizations = yield* OrganizationService
+			yield* organizations.delete(ORG_A, [role("org:admin")])
+
+			// What the tick selects: every org's waiting rows whose window has closed.
+			const due = yield* database.execute((db) =>
+				db.run(
+					PG.from(ErrorIssueVerifications)
+						.select("orgId")
+						.where(($) => [$.status.eq("waiting"), $.verifyAfter.lte(NOW_MS)]),
+				),
+			)
+			assert.deepStrictEqual(
+				Arr.map(due, (row) => row.orgId),
+				[ORG_B],
+			)
+		}).pipe(Effect.provide(Layer.merge(makeLayer(testDb), testDb.layer)))
 	})
 })

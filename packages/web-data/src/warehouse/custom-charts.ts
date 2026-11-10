@@ -295,15 +295,6 @@ const CustomChartTimeSeriesInputSchema = Schema.Struct({
 export type CustomChartTimeSeriesInput = (typeof CustomChartTimeSeriesInputSchema)["Encoded"]
 type CustomChartTimeSeriesDecoded = (typeof CustomChartTimeSeriesInputSchema)["Type"]
 
-interface CustomChartTimeSeriesPoint {
-	bucket: string
-	series: Record<string, number>
-}
-
-export interface CustomChartTimeSeriesResponse {
-	data: CustomChartTimeSeriesPoint[]
-}
-
 const tracesMetrics = new Set<TracesMetric>([
 	"count",
 	"avg_duration",

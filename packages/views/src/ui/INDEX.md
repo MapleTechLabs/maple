@@ -221,7 +221,7 @@ existing copies onto it (see `apps/web/CLAUDE.md`).
 - `apps/web/src/page/kit/query-builder-legend.ts` `queryBuilderLegend`: `QueryBuilderLegend` (packages/ui/src/components/charts/_shared/query-builder-legend.tsx), bottom layout, for hosts outside a chart.
 - `apps/web/src/page/kit/query-panel-bar.ts` `queryPanelBar`: A query panel's header bar on the sunken wash: its collapse toggle, query badge, source and actions.
 - `apps/web/src/page/kit/refresh-controls.ts` `formatRefreshInterval`, `refreshControls`: `RefreshControls`: Reload joined to the auto-refresh cadence menu.
-- `apps/web/src/page/kit/relative-time.ts` `formatAbsolute`, `relativeTime`, `listRelativeTime`: `RelativeTime`: `timestamp` with relative text.
+- `apps/web/src/page/kit/relative-time.ts` `relativeTime`, `listRelativeTime`: `RelativeTime`: `timestamp` with relative text.
 - `apps/web/src/page/kit/resource-not-found.ts` `resourceNotFound`
 - `apps/web/src/page/kit/route-window.ts` `isWindowChange`, `snapModeOf`, `routeWindowStep`: `useEffectiveTimeRange` + `useRefreshableAtomValue` for a page's `routeChanged`: the window is re-resolved only when its own fields moved, and only Reload revalidates unchanged...
 - `apps/web/src/page/kit/section-heading.ts` `sectionHeading`: `SectionHeading`: the `title` row and the `eyebrow` overline.

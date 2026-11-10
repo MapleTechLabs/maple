@@ -1,10 +1,38 @@
 import { assert, describe, it } from "@effect/vitest"
 import { encodeChatTurnTenant, type ChatTurnTenant } from "@maple/domain/chat-session"
 import * as Cloudflare from "@alchemy.run/cloudflare"
-import { Effect, Layer, Option, Array as Arr } from "effect"
+import { Context, Effect, Layer, Option, Array as Arr } from "effect"
 import { applyChatSessionMigrations, makeFakeDurableObjectState } from "../../test/chat/fake-do-state"
+import {
+	AuditEventsQueueProducer,
+	DataSourceDevelopmentCallLimit,
+	DataSourceProductionCallLimit,
+} from "@maple/backend/platform/bindings"
 import { WorkersAiGateway } from "../platform/WorkersAiHttpClient"
-import { makeChatSessionActivation } from "./ChatSession"
+import { BoundAiClients } from "../worker/bindings"
+import { makeChatSessionActivation, type ProposalApplier, type TurnRunner } from "./ChatSession"
+import type { ApplyChatProposalInput } from "./apply-proposal"
+import type { RunChatSessionTurnInput } from "./turn-runner"
+import { provideSessionPorts } from "./session-ports"
+
+/** Reads the ports the way the budget and audit services do: as they are built, and only if they are there. */
+class OptionalPorts extends Context.Service<
+	OptionalPorts,
+	{
+		readonly production: Option.Option<typeof DataSourceProductionCallLimit.Service>
+		readonly development: Option.Option<typeof DataSourceDevelopmentCallLimit.Service>
+		readonly auditQueue: Option.Option<typeof AuditEventsQueueProducer.Service>
+	}
+>()("@maple/ai/test/OptionalPorts") {
+	static readonly layer = Layer.effect(
+		this,
+		Effect.all({
+			production: Effect.serviceOption(DataSourceProductionCallLimit),
+			development: Effect.serviceOption(DataSourceDevelopmentCallLimit),
+			auditQueue: Effect.serviceOption(AuditEventsQueueProducer),
+		}),
+	)
+}
 
 const TENANT = encodeChatTurnTenant({
 	orgId: "org_test" as ChatTurnTenant["orgId"],
@@ -13,25 +41,63 @@ const TENANT = encodeChatTurnTenant({
 	authMode: "self_hosted",
 })
 
+/** The clients the Worker bound, recording what reaches them: every limiter refuses, the queue accepts. */
+const makeBoundClients = () => {
+	const limited: Array<string> = []
+	const queued: Array<unknown> = []
+	const limiter = (name: string) => ({
+		limit: (options: { readonly key: string }) =>
+			Effect.sync(() => {
+				limited.push(`${name}:${options.key}`)
+				return { success: false }
+			}),
+	})
+	const clients = {
+		mcpToolsRateLimit: limiter("mcp"),
+		dataSourceProductionCallLimit: limiter("production"),
+		dataSourceDevelopmentCallLimit: limiter("development"),
+		auditEvents: {
+			raw: Effect.succeed({
+				sendBatch: (messages: ReadonlyArray<{ readonly body: unknown }>) => {
+					queued.push(...Arr.map(messages, (message) => message.body))
+					return Promise.resolve()
+				},
+			}),
+		},
+	}
+	// SAFETY: the ports read `limit` off a limiter and `raw.sendBatch` off the queue, and nothing else.
+	const layer = Layer.succeed(BoundAiClients, clients as unknown as typeof BoundAiClients.Service)
+	return { layer, limited, queued }
+}
+
 /** Alchemy's `SqlMigrations` captures the files at deploy; a test applies the same files directly. */
-const activateChatSession = Effect.flatMap(Cloudflare.DurableObjectState, (state) =>
-	makeChatSessionActivation(
-		Effect.succeed({
-			apply: () => Effect.sync(() => applyChatSessionMigrations(state.raw.storage.sql)),
-		}),
-	),
-)
+const activateChatSession = (ports?: { readonly apply: ProposalApplier; readonly run: TurnRunner }) =>
+	Effect.flatMap(Cloudflare.DurableObjectState, (state) =>
+		makeChatSessionActivation(
+			Effect.succeed({
+				apply: () => Effect.sync(() => applyChatSessionMigrations(state.raw.storage.sql)),
+			}),
+			ports,
+		),
+	)
 
 /** One activation the way alchemy's Durable Object bridge performs it: the outer phase under the state, then the inner. */
-const activateOn = (state: ReturnType<typeof makeFakeDurableObjectState>) =>
+const activateOn = (
+	state: ReturnType<typeof makeFakeDurableObjectState>,
+	options: {
+		readonly clients?: ReturnType<typeof makeBoundClients>
+		readonly ports?: { readonly apply: ProposalApplier; readonly run: TurnRunner }
+	} = {},
+) =>
 	Effect.gen(function* () {
 		// SAFETY: the fake carries the `storage.sql` and `waitUntil` the class reads, and nothing else.
 		const raw = state as unknown as import("@cloudflare/workers-types").DurableObjectState
-		const build = yield* activateChatSession.pipe(
+		const build = yield* activateChatSession(options.ports).pipe(
 			Effect.provide([
 				Layer.succeed(Cloudflare.DurableObjectState, Cloudflare.fromDurableObjectState(raw)),
 				Layer.succeed(Cloudflare.WorkerEnvironment, {}),
 				Layer.succeed(WorkersAiGateway, Option.none()),
+				(options.clients ?? makeBoundClients()).layer,
 			]),
 		)
 		return { rpc: yield* build, state }
@@ -46,11 +112,12 @@ describe("the ChatSession Durable Object on alchemy's form", () => {
 			// alchemy evaluates the outer Effect at plan time with `{ storage: {} }` as the state.
 			// SAFETY: that is alchemy's own mock, reproduced here.
 			const mock = { storage: {} } as unknown as import("@cloudflare/workers-types").DurableObjectState
-			const build = yield* activateChatSession.pipe(
+			const build = yield* activateChatSession().pipe(
 				Effect.provide([
 					Layer.succeed(Cloudflare.DurableObjectState, Cloudflare.fromDurableObjectState(mock)),
 					Layer.succeed(Cloudflare.WorkerEnvironment, {}),
 					Layer.succeed(WorkersAiGateway, Option.none()),
+					makeBoundClients().layer,
 				]),
 			)
 			assert.isTrue(Effect.isEffect(build))
@@ -115,4 +182,107 @@ describe("the ChatSession Durable Object on alchemy's form", () => {
 			])
 		}),
 	)
+
+	/** A turn or an approval builds its own runtime, so the Worker's limiters and queue are handed to it. */
+	describe("hands the Worker's bound clients to the runtimes it starts", () => {
+		const recordingPorts = () => {
+			const runs: Array<RunChatSessionTurnInput> = []
+			const applies: Array<ApplyChatProposalInput> = []
+			return {
+				runs,
+				applies,
+				ports: {
+					run: (input: RunChatSessionTurnInput) => {
+						runs.push(input)
+						return Promise.resolve()
+					},
+					apply: (input: ApplyChatProposalInput) => {
+						applies.push(input)
+						return Promise.resolve({ output: "Created alert rule ar_1.", isError: false })
+					},
+				},
+			}
+		}
+
+		it.effect("a turn's runtime is handed the bound data-source limiters", () =>
+			Effect.gen(function* () {
+				const clients = makeBoundClients()
+				const recorded = recordingPorts()
+				const { rpc, state } = yield* activateOn(makeFakeDurableObjectState({ migrated: false }), {
+					clients,
+					ports: recorded.ports,
+				})
+				yield* rpc.beginTurn({
+					sessionId: "org_test:tab",
+					messageId: "m1",
+					text: "how many users signed up today?",
+					tenant: TENANT,
+					origin: { kind: "app" },
+				})
+				yield* Effect.promise(() => Promise.all(state.pending))
+
+				const bindingPorts = recorded.runs[0]?.bindingPorts
+				assert.isDefined(bindingPorts)
+				if (bindingPorts === undefined) return
+				// Read as the runtime reads them: by a layer built above the ports, optionally.
+				const outcomes = yield* Effect.gen(function* () {
+					const { production, development } = yield* OptionalPorts
+					if (Option.isNone(production) || Option.isNone(development)) return []
+					return [yield* production.value.limit("src_1"), yield* development.value.limit("src_2")]
+				}).pipe(Effect.provide(OptionalPorts.layer.pipe(provideSessionPorts(bindingPorts))))
+				assert.deepStrictEqual(outcomes, [{ success: false }, { success: false }])
+				assert.deepStrictEqual(clients.limited, ["production:src_1", "development:src_2"])
+			}),
+		)
+
+		it.effect("an approval's runtime is handed the bound audit queue", () =>
+			Effect.gen(function* () {
+				const clients = makeBoundClients()
+				const recorded = recordingPorts()
+				const { rpc } = yield* activateOn(makeFakeDurableObjectState({ migrated: false }), {
+					clients,
+					ports: recorded.ports,
+				})
+				yield* rpc.append({ type: "turn-start", messageId: "a1" })
+				yield* rpc.append({
+					type: "tool-call",
+					messageId: "a1",
+					callId: "call_9",
+					name: "create_alert_rule",
+					input: { name: "checkout p95" },
+					proposed: true,
+				})
+				yield* rpc.append({ type: "turn-end", messageId: "a1", reason: "stop" })
+				yield* rpc.settleProposal({
+					sessionId: "org_test:tab",
+					toolCallId: "call_9",
+					decision: "approve",
+					approver: { kind: "app" },
+					tenant: TENANT,
+				})
+
+				const bindingPorts = recorded.applies[0]?.bindingPorts
+				assert.isDefined(bindingPorts)
+				if (bindingPorts === undefined) return
+				yield* Effect.gen(function* () {
+					const { auditQueue } = yield* OptionalPorts
+					if (Option.isSome(auditQueue))
+						yield* auditQueue.value.sendBatch([{ body: { action: "alert_rule.create" } }])
+				}).pipe(Effect.provide(OptionalPorts.layer.pipe(provideSessionPorts(bindingPorts))))
+				assert.deepStrictEqual(clients.queued, [{ action: "alert_rule.create" }])
+			}),
+		)
+
+		it.effect("a runtime built without ports gets none of them instead of failing", () =>
+			Effect.gen(function* () {
+				const { production, development, auditQueue } = yield* OptionalPorts.pipe(
+					Effect.provide(OptionalPorts.layer.pipe(provideSessionPorts(undefined))),
+				)
+				assert.deepStrictEqual(
+					[Option.isNone(production), Option.isNone(development), Option.isNone(auditQueue)],
+					[true, true, true],
+				)
+			}),
+		)
+	})
 })

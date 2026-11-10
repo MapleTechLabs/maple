@@ -10,7 +10,7 @@ vi.mock("../platform/transport", async (importOriginal) => ({
 	postSessionEvents: vi.fn(async () => "accepted" as const),
 }))
 
-const { resetSinkForTests, startEventSink } = await import("./events-sink")
+const { resetSinkForTests, setActiveTraceIdProvider, startEventSink } = await import("./events-sink")
 const { postSessionEvents } = await import("../platform/transport")
 const session = await import("../session/session")
 const { resetVisitorCacheForTests, setVisitorTracking } = await import("../identity/visitor")
@@ -416,6 +416,61 @@ describe("startEventSink activity", () => {
 			.mock.calls.flatMap((call) => call[1].map((row) => row.message))
 		expect(messages).not.toContain("poll while idle")
 		expect(messages).toContain("poll")
+		sink.stop()
+	})
+})
+
+// A row is built when it is sent, up to a minute after the event. It must still
+// say when and where the event happened.
+describe("startEventSink event stamping", () => {
+	const postedRows = () => vi.mocked(postSessionEvents).mock.calls.flatMap(([, rows]) => rows)
+	const path = (row: Record<string, unknown>): string => new URL(String(row.url)).pathname
+
+	beforeEach(() => {
+		resetSinkForTests()
+		vi.mocked(postSessionEvents).mockReset().mockResolvedValue("accepted")
+		history.replaceState(null, "", "/cart")
+	})
+
+	it("keeps the time and page of an event flushed after a navigation", async () => {
+		vi.useFakeTimers({ toFake: ["Date", "setInterval", "clearInterval"] })
+		vi.setSystemTime(new Date("2026-03-01T10:00:00.000Z"))
+		try {
+			const sink = startEventSink(CONFIG, "sess-stamp")
+			// The click that sends the app to the next page.
+			sink.emit({ type: "click", targetSelector: "button#checkout" })
+			vi.setSystemTime(new Date("2026-03-01T10:00:04.000Z"))
+			history.pushState(null, "", "/checkout")
+			vi.setSystemTime(new Date("2026-03-01T10:00:30.000Z"))
+			await sink.flush()
+
+			const click = postedRows().find((row) => row.type === "click")
+			expect(click?.timestamp).toBe("2026-03-01 10:00:00.000")
+			expect(click && path(click)).toBe("/cart")
+			const navigation = postedRows().find(
+				(row) => row.type === "navigation" && path(row) === "/checkout",
+			)
+			expect(navigation?.timestamp).toBe("2026-03-01 10:00:04.000")
+			sink.stop()
+		} finally {
+			vi.useRealTimers()
+		}
+	})
+
+	it("reads the active trace when the event happens, not when it is sent", async () => {
+		const sink = startEventSink(CONFIG, "sess-trace")
+		setActiveTraceIdProvider(() => "0af7651916cd43dd8448eb211c80319c")
+		try {
+			sink.emit({ type: "click", targetSelector: "button" })
+		} finally {
+			// The span has ended by the time the flush timer runs.
+			setActiveTraceIdProvider(() => undefined)
+		}
+		await sink.flush()
+
+		expect(postedRows().find((row) => row.type === "click")?.trace_id).toBe(
+			"0af7651916cd43dd8448eb211c80319c",
+		)
 		sink.stop()
 	})
 })

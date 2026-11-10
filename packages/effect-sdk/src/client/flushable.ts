@@ -17,6 +17,7 @@ import {
 	warnIfKeylessMapleIngest,
 } from "@maple/browser-session"
 import { isCommitSha } from "@maple/browser-session/commit-sha"
+import { claimPageSignal, markReported, notifyErrorRecorded, wasReported } from "@maple/sdk-core"
 import { SDK_VERSION } from "../version.js"
 import { Layer, Redacted, String as Str } from "effect"
 import {
@@ -247,10 +248,16 @@ export const make = (config: MapleClientFlushableConfig): FlushableTelemetry => 
 		metrics.setDisabled(!allowed)
 	}
 	setCaptureAllowed(hasConsent())
-	const stopConsentListener = config.privacy?.requireConsent ? onConsentChange(setCaptureAllowed) : () => {}
+	// Consent is page-wide: another SDK copy can turn the gate on after this one started.
+	const stopConsentListener = onConsentChange(setCaptureAllowed)
 	let stopWebVitals: (() => void) | undefined
 	let disposed = false
-	if (config.webVitals === true && browserDocument() !== undefined) {
+	// Leased page-wide: with `@maple-dev/browser` also on the page, one of the two reports them.
+	const releaseWebVitals =
+		config.webVitals === true && browserDocument() !== undefined
+			? claimPageSignal("webVitals")
+			: undefined
+	if (releaseWebVitals !== undefined) {
 		void (integration.loadWebVitals ?? (() => import("@maple/sdk-core/browser/web-vitals")))()
 			.then(({ startWebVitals }) => {
 				if (disposed) return
@@ -361,22 +368,24 @@ export const make = (config: MapleClientFlushableConfig): FlushableTelemetry => 
 	/**
 	 * One error reaching two paths must still be one issue. React rethrows a
 	 * boundary-caught error in development, so a boundary that reports it *and*
-	 * `window.onerror` would otherwise fingerprint the same crash twice.
+	 * `window.onerror` would otherwise fingerprint the same crash twice. The
+	 * claim is page-wide, so `@maple-dev/browser` on the same page skips it too.
 	 */
-	const reported = new WeakSet()
 	const captureException = (error: unknown, options: CaptureExceptionOptions = {}): void => {
-		if (typeof error === "object" && error !== null) {
-			if (reported.has(error)) return
-			reported.add(error)
-		}
+		if (wasReported(error)) return
 		const page = globalThis.location?.href
-		spans.captureException(error, {
+		const span = spans.captureException(error, {
 			...options,
 			attributes: {
 				...(page !== undefined ? { "url.full": scrubUrl(page) } : undefined),
 				...options.attributes,
 			},
 		})
+		// Claimed only once a span carries it: with capture off, the other SDK may still record it.
+		// The claim outlives the span if consent is withdrawn before the drain clears the buffer.
+		if (span === undefined) return
+		markReported(error)
+		notifyErrorRecorded({ ...span, traceFlags: 1 })
 	}
 
 	const onWindowError = (event: ErrorEvent): void => {
@@ -445,6 +454,7 @@ export const make = (config: MapleClientFlushableConfig): FlushableTelemetry => 
 	const finalize = async (): Promise<void> => {
 		disposed = true
 		stopWebVitals?.()
+		releaseWebVitals?.()
 		if (timer !== undefined) {
 			clearInterval(timer)
 			timer = undefined

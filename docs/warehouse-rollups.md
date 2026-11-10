@@ -1,6 +1,6 @@
 # Warehouse rollups and materialized views
 
-We have 44 materialized views across 42 datasources. They accreted one product feature at a
+We have 59 materialized views across 52 datasources. They accreted one product feature at a
 time, and for a long time nobody could answer "should this be an MV?" without re-deriving it
 from scratch. This is that answer.
 
@@ -159,7 +159,7 @@ that is two inequalities which must stay each other's exact complement, and when
 nothing errors. The counts come out wrong on a chart that looks fine.
 
 `packages/query-engine/src/ch/queries/rollup-splice.ts` owns that boundary:
-`interiorConditions(bucketColumn, grain)` for the rollup branch, `edgeCondition(tsColumn,
+`utcInteriorConditions(bucketColumn, grain)` for the rollup branch, `edgeCondition(tsColumn,
 grain)` for the raw branch, defined as its complement. Traces, logs, services,
 service-operations and the service map use them.
 

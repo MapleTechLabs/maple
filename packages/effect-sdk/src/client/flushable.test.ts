@@ -1,12 +1,14 @@
 // SAFETY-FILE: JSON in this test is emitted by the fixture or unit under test before its fields are asserted.
 import { assert, describe, it } from "@effect/vitest"
 import {
+	configurePrivacy,
 	OTLP_KEEPALIVE_BYTES,
 	OTLP_UNLOAD_TAIL_BYTES,
 	postToIngest,
 	resetConsentForTests,
 	setConsent,
 } from "@maple/browser-session"
+import { markReported, onErrorRecorded, resetPageForTests, type SpanLink, wasReported } from "@maple/sdk-core"
 import { Deferred, Effect, Fiber, Metric, Option, Array as Arr, Record as Rec, String as Str } from "effect"
 import * as FetchHttpClient from "effect/http/FetchHttpClient"
 import * as HttpClient from "effect/http/HttpClient"
@@ -166,6 +168,7 @@ describe("MapleFlush.make (client)", () => {
 		vi.restoreAllMocks()
 		setConsent(false)
 		resetConsentForTests()
+		resetPageForTests()
 		vi.useRealTimers()
 	})
 
@@ -268,6 +271,21 @@ describe("MapleFlush.make (client)", () => {
 		// post-re-grant snapshot would carry the revoked-era total. Spans and logs
 		// resume (their buffers are droppable); metrics stay off for the page.
 		expect(Arr.some(calls, (call) => Str.endsWith("/v1/metrics")(call.url))).toBe(false)
+		await telemetry.dispose()
+	})
+
+	it("drops what is captured after another Maple SDK on the page turns the consent gate on", async () => {
+		const { calls, restore: rf } = setupFetch()
+		restore = rf
+		const telemetry = make(baseConfig)
+
+		// `@maple-dev/browser`, initialized later with `privacy.requireConsent`.
+		configurePrivacy({ requireConsent: true })
+		telemetry.captureException(new Error("while denied"))
+		setConsent(true)
+		await telemetry.flush()
+
+		expect(spanNames(calls)).toEqual([])
 		await telemetry.dispose()
 	})
 
@@ -480,6 +498,63 @@ describe("MapleFlush.make (client)", () => {
 		await telemetry.flush()
 
 		expect(spanNames(calls)).toEqual(["browser.uncaught_error", "browser.unhandled_rejection"])
+		await telemetry.dispose()
+	})
+
+	it("skips an error another Maple SDK on the page already recorded", async () => {
+		const { calls, restore: rf } = setupFetch()
+		const dom = setupDom()
+		restore = () => {
+			rf()
+			dom.restore()
+		}
+		const telemetry = make(baseConfig)
+		const crash = new TypeError("app bug")
+		// What `@maple-dev/browser` does when its own handler records the error first.
+		markReported(crash)
+
+		dom.dispatch("error", { error: crash, filename: "https://app.test/assets/app.js" })
+		telemetry.captureException(crash)
+		await telemetry.flush()
+
+		expect(spanNames(calls)).toEqual([])
+		await telemetry.dispose()
+	})
+
+	it("claims an error it records page-wide and tells the page's error listeners", async () => {
+		const { calls, restore: rf } = setupFetch()
+		const dom = setupDom()
+		const links: Array<SpanLink> = []
+		const stopListening = onErrorRecorded((link) => links.push(link))
+		restore = () => {
+			rf()
+			dom.restore()
+			stopListening()
+		}
+		const telemetry = make(baseConfig)
+		const crash = new TypeError("app bug")
+
+		dom.dispatch("error", { error: crash, filename: "https://app.test/assets/app.js" })
+		await telemetry.flush()
+
+		expect(wasReported(crash)).toBe(true)
+		const body = Arr.getUnsafe(traceCalls(calls), 0).body as {
+			resourceSpans: Array<{ scopeSpans: Array<{ spans: Array<{ traceId: string; spanId: string }> }> }>
+		}
+		const span = Arr.getUnsafe(Arr.getUnsafe(Arr.getUnsafe(body.resourceSpans, 0).scopeSpans, 0).spans, 0)
+		expect(links).toEqual([{ traceId: span.traceId, spanId: span.spanId, traceFlags: 1 }])
+		await telemetry.dispose()
+	})
+
+	it("leaves an error unclaimed while capture is off, for the other SDK to record", async () => {
+		const { restore: rf } = setupFetch()
+		restore = rf
+		const telemetry = make({ ...baseConfig, privacy: { requireConsent: true } })
+		const crash = new TypeError("app bug")
+
+		telemetry.captureException(crash)
+
+		expect(wasReported(crash)).toBe(false)
 		await telemetry.dispose()
 	})
 

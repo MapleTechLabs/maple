@@ -1,6 +1,6 @@
 import { describe, expect, it } from "@effect/vitest"
 import { Context, Effect, Scope } from "effect"
-import { captureReusableContext } from "./invocation-context"
+import { withoutInvocationContext } from "./invocation-context"
 import { DrainRunOnInterrupt, PgConnectionScope, type PgConnectionScopeApi } from "./pg-connection-scope"
 
 class Greeting extends Context.Service<Greeting, { readonly text: string }>()("@maple/test/Greeting") {}
@@ -11,14 +11,15 @@ const scopeNamed = (name: string): PgConnectionScopeApi & { readonly name: strin
 	close: Effect.void,
 })
 
-describe("captureReusableContext", () => {
+describe("withoutInvocationContext", () => {
 	it.effect("keeps services but lets the later invocation's own scope, drain flag and Scope win", () =>
 		Effect.gen(function* () {
 			const constructionScope = scopeNamed("construction")
 			const requestScope = scopeNamed("request")
 			const constructionResource = yield* Scope.make()
 
-			const captured = yield* captureReusableContext<Greeting>().pipe(
+			const captured = yield* Effect.context<Greeting>().pipe(
+				Effect.map(withoutInvocationContext),
 				Effect.provideService(Greeting, { text: "hello" }),
 				Effect.provideService(PgConnectionScope, constructionScope),
 				Effect.provideService(DrainRunOnInterrupt, true),

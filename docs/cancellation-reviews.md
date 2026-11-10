@@ -52,6 +52,10 @@ posted or refused, and a Hazel failure is logged as an error (`maple.cancellatio
 false on the span) and never retried, so a retry never posts to Slack twice. The review counts as
 posted when either took it. With Hazel alone, Hazel takes Slack's place in all of the above.
 
+Hazel gets the report as one HTML page (`chat-page.ts`, published through Hazel's `html-renders`
+API and shown in the message's embed). Should Hazel refuse the page, the markdown report
+(`chat-message.ts`) is posted instead.
+
 ## What it reads
 
 Two 30-day windows ending at the cancellation, `recent` and `prior`. "Last telemetry" looks back
