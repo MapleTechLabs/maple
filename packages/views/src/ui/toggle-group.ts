@@ -19,8 +19,6 @@ import { segmentItemHeight, togglePrimitive } from "./toggle"
  * index). Arrow keys move the tab stop and focus, Space/Enter press through the native button.
  */
 
-// MODEL
-
 export const Model = Schema.Struct({
 	label: Schema.String,
 	isMultiple: Schema.Boolean,
@@ -40,16 +38,12 @@ export const init = (config: {
 	highlightedIndex: 0,
 })
 
-// MESSAGE
-
 export const Message = defineMessageUnion({
 	ClickedItem: { value: Schema.String, index: Schema.Finite },
 	PressedArrowKey: { index: Schema.Finite },
 	CompletedFocusItem: {},
 })
 export type Message = typeof Message.Type
-
-// COMMAND
 
 const itemSelector = (label: string, index: number) =>
 	`[data-slot="toggle-group"][aria-label="${label}"] > :nth-child(${index + 1})`
@@ -60,8 +54,6 @@ export const FocusItem = Command.define("FocusToggleGroupItem", {
 	execute: ({ selector }) =>
 		Dom.focus(selector).pipe(Effect.ignore, Effect.as(Message.CompletedFocusItem())),
 })
-
-// UPDATE
 
 const toggled = (model: Model, value: string): ReadonlyArray<string> => {
 	const isPressed = model.values.includes(value)
@@ -85,8 +77,6 @@ export const update = (model: Model, message: Message): Update.Return<Model, Mes
 		CompletedFocusItem: () => ({ model }),
 	})
 
-// VIEW
-
 /** `children` replaces the plain label (a dot and a count); `className` is the item's own. */
 export type ToggleGroupItem = Readonly<{
 	value: string
@@ -102,7 +92,7 @@ export type ToggleGroupViewConfig<ParentMessage> = Readonly<{
 	variant?: "default" | "outline"
 	size?: "xs" | "sm" | "default" | "lg"
 	isConnected?: boolean
-	/** Each `<ToggleGroupItem className>`. */
+	/** Classes on every item. */
 	itemClassName?: string
 	className?: string
 }>
@@ -115,7 +105,7 @@ const arrowTarget = (key: string, index: number, count: number): Option.Option<n
 	return Option.none()
 }
 
-/** `<ToggleGroup>` + `<ToggleGroupItem>`s from @maple/ui, horizontal. */
+/** The toggle group and its items, horizontal. */
 export const view = <ParentMessage>(
 	h: HtmlBuilder<ParentMessage>,
 	config: ToggleGroupViewConfig<ParentMessage>,
@@ -135,7 +125,7 @@ export const view = <ParentMessage>(
 	return h.div(
 		[
 			h.Role("group"),
-			// An empty label is a group with no accessible name, as a bare `<ToggleGroup>`.
+			// An empty label is a group with no accessible name.
 			...(model.label === "" ? [] : [h.AriaLabel(model.label)]),
 			h.Class(cn(toggleGroupStyles, toggleGroupHorizontalStyles, trackStyles, config.className)),
 			...(model.isMultiple ? [h.DataAttribute("multiple", "")] : []),

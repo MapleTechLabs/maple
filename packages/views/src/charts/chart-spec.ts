@@ -85,7 +85,6 @@ export const ChartSpec = defineTaggedUnion({
 		marginTop: Schema.Number,
 		timeZone: Schema.String,
 	},
-	/** `QueryBuilderPieChart`. */
 	Pie: {
 		rows: Schema.Array(PieSliceRow),
 		activeName: Nullable(Schema.String),
@@ -104,7 +103,6 @@ export const ChartSpec = defineTaggedUnion({
 		donut: Schema.Boolean,
 		activeName: Schema.optionalKey(Nullable(Schema.String)),
 	},
-	/** `NumericHistogram` in `QueryBuilderHistogramChart`. */
 	NumericHistogram: {
 		bins: Schema.Array(NumericBin),
 		color: Schema.String,
@@ -112,14 +110,13 @@ export const ChartSpec = defineTaggedUnion({
 		useLogY: Schema.Boolean,
 		showTooltip: Schema.Boolean,
 	},
-	/** `CategoricalHistogram` in `QueryBuilderHistogramChart`. */
 	CategoricalHistogram: {
 		bins: Schema.Array(CategoricalBin),
 		color: Schema.String,
 		useLogY: Schema.Boolean,
 		showTooltip: Schema.Boolean,
 	},
-	/** `PlotSparkline`: the services table's trend line. */
+	/** The services table's trend line. */
 	Sparkline: {
 		values: Schema.Array(Schema.Number),
 		color: Schema.String,
@@ -128,11 +125,11 @@ export const ChartSpec = defineTaggedUnion({
 		fillEnd: Schema.Number,
 		/** Bumped when the data arrives again: every new result rebuilds the definition. */
 		revision: Schema.Number,
-		/** `PlotSparkline`'s `curve`; absent is linear. */
+		/** Absent is linear. */
 		curve: Schema.optionalKey(Schema.Literals(["linear", "monotone"])),
 	},
 	/**
-	 * `QueryBuilderAreaChart` (unstacked, linear): the query's rows as returned, the resolved colour
+	 * The query-builder area chart (unstacked, linear): the query's rows as returned, the resolved colour
 	 * per series key (`s1..sN`), and the clock that decides the in-flight tail.
 	 */
 	QueryBuilderArea: {
@@ -154,14 +151,14 @@ export const ChartSpec = defineTaggedUnion({
 		mark: Schema.optionalKey(Schema.Literals(["area", "line"])),
 		/** `stacked`: bands on top of each other, flat fills, no closed-run edges. */
 		stacked: Schema.optionalKey(Schema.Boolean),
-		/** `curveType`; absent is linear. */
+		/** Absent is linear. */
 		curve: Schema.optionalKey(Schema.Literals(["linear", "monotone"])),
 		/** `showPoints`: every point, none, or (absent) only isolated ones unless they fit. */
 		showPoints: Schema.optionalKey(Schema.Boolean),
 		axis: Schema.optionalKey(TimeseriesAxisSpec),
 	},
 	/**
-	 * `QueryBuilderBarChart` (threshold-free, linear): the rows as returned, the resolved colour per
+	 * The query-builder bar chart (threshold-free, linear): the rows as returned, the resolved colour per
 	 * series key (`s1..sN`), stacked or grouped, and the clock that decides the in-flight tail.
 	 */
 	QueryBuilderBar: {
@@ -177,13 +174,13 @@ export const ChartSpec = defineTaggedUnion({
 		showTooltip: Schema.Boolean,
 		axis: Schema.optionalKey(TimeseriesAxisSpec),
 	},
-	/** `IssueOccurrenceChart`: bucketed counts as bars. */
+	/** An issue's occurrences: bucketed counts as bars. */
 	Occurrences: {
 		points: Schema.Array(Schema.Struct({ bucket: Schema.String, count: Schema.Number })),
 		color: Schema.String,
 		timeZone: Schema.String,
 	},
-	/** `LogsVolumePlot`: the /logs severity histogram, stacked per bucket, with its drag selection. */
+	/** The /logs severity histogram, stacked per bucket, with its drag selection. */
 	LogsVolume: {
 		buckets: Schema.Array(
 			Schema.Struct({ bucket: Schema.String, counts: Schema.Record(Schema.String, Schema.Number) }),
@@ -248,7 +245,7 @@ export const ChartSpec = defineTaggedUnion({
 		/** A fixed y-axis gutter, so charts stacked on one time axis start their plots at one x. */
 		marginLeft: Schema.optionalKey(Schema.Number),
 	},
-	/** `ThroughputAreaChart`, `ErrorRateAreaChart`, `ApdexAreaChart`, `LatencyLineChart` (charts/area, charts/line). */
+	/** The service throughput, error rate, apdex and latency charts. */
 	FixedMetric: {
 		chart: Schema.Literals(["Throughput", "ErrorRate", "Latency", "Apdex"]),
 		/** `yAxisWidth`: a left-margin lock that aligns plot rects across a grid. */
@@ -304,7 +301,7 @@ export const ChartSpec = defineTaggedUnion({
 			held: Schema.Array(Schema.Struct({ x1: Schema.Number, x2: Schema.Number })),
 			wouldFire: Schema.Array(Schema.Struct({ x1: Schema.Number, x2: Schema.Number })),
 		}),
-		/** The tooltip heading's per-bucket facts (`bucketMeta`). */
+		/** The tooltip heading's per-bucket facts. */
 		meta: Schema.Array(
 			Schema.Struct({
 				t: Schema.Number,
@@ -390,7 +387,7 @@ export const ChartSpec = defineTaggedUnion({
 		markerColors: MarkerColors,
 		timeZone: Schema.String,
 	},
-	/** `AnomalyTimeseriesChart` (components/anomalies/): observed signal, baseline and threshold rules. */
+	/** An anomaly's observed signal, baseline and threshold rules. */
 	AnomalySignal: {
 		points: Schema.Array(Schema.Struct({ bucket: Schema.String, value: Schema.Number })),
 		signalType: Schema.Literals(["error_rate", "latency_p95", "throughput", "error_spike", "log_volume"]),
@@ -427,7 +424,7 @@ export const ChartSpec = defineTaggedUnion({
 		yMax: Schema.Number,
 		currency: Schema.String,
 	},
-	/** `QueryBuilderHeatmapChart`: band cells and focusable holes over a sequential ramp. */
+	/** The query-builder heatmap: band cells and focusable holes over a sequential ramp. */
 	Heatmap: {
 		cells: Schema.Array(HeatmapSlotSchema),
 		holes: Schema.Array(HeatmapSlotSchema),
@@ -514,10 +511,10 @@ export const ChartTooltip = defineTaggedUnion({
 	NumericBin: { x1: Schema.Number, x2: Schema.Number, value: Schema.Number },
 	CategoricalBin: { name: Schema.String, value: Schema.Number },
 	HeatmapSlot: { x: Schema.String, y: Schema.String, value: Schema.NullOr(Schema.Number) },
-	/** `PlotTooltipBody` for a fixed-metric chart: the bucket heading and one formatted row per series. */
+	/** A fixed-metric chart's tooltip: the bucket heading and one formatted row per series. */
 	Bucket: {
 		heading: Schema.String,
-		/** The row `PlotTooltipBody` emphasises: the series nearest the cursor. */
+		/** The row the tooltip emphasises: the series nearest the cursor. */
 		highlighted: Schema.optionalKey(Schema.String),
 		rows: Schema.Array(
 			Schema.Struct({

@@ -21,7 +21,7 @@ export type TextareaOptions<Message> = Readonly<{
 	attributes?: ReadonlyArray<TextareaAttribute<Message>>
 }>
 
-/** `<Textarea>` from @maple/ui: the `textarea-control` span around Base UI's field control. */
+/** The `textarea-control` span around Base UI's field control. */
 export const textarea = <Message>(h: HtmlBuilder<Message>, options: TextareaOptions<Message>): Html => {
 	const size = options.size ?? "default"
 	const isDisabled = options.isDisabled ?? false

@@ -16,9 +16,9 @@ import { searchInput } from "../search-input"
 import { tooltipTrigger } from "../tooltip-host"
 import { Array as Arr, Order, String as Str } from "effect"
 
-// `FilterSection` / `SearchableFilterSection`. Alt+click on a label toggles the exclusion: `OnClick` carries
-// no modifiers, so the root's `altClickExclude` Subscription reads it and presses the row's Exclude action
-// (`data-alt-exclude`).
+// A filter rail section of checkbox values, searchable when long. Alt+click on a label toggles the
+// exclusion: `OnClick` carries no modifiers, so the root's `altClickExclude` Subscription reads it
+// and presses the row's Exclude action (`data-alt-exclude`).
 
 export type FilterOption = Readonly<{ name: string; count: number }>
 
@@ -89,7 +89,7 @@ export type FilterSectionConfig<M> = Readonly<{
 	onToggle: (name: string) => M
 	onOnly?: (name: string) => M
 	onExclude?: (name: string) => M
-	/** `colorMap`: a swatch before the label (`serviceColorMap` for services). */
+	/** A swatch before the label (the service colour for services). */
 	colorOf?: (name: string) => string | undefined
 	/** `getOptionIcon`: a mark before the label (browser, device, vendor), tinted by `getOptionIconColor`. */
 	getOptionIcon?: (name: string) => IconName | undefined
@@ -100,11 +100,11 @@ export type FilterSectionConfig<M> = Readonly<{
 	/** The label's `title` when it is more than the label. */
 	getOptionDescription?: (name: string) => string | undefined
 	showCounts?: boolean
-	/** `FilterDescription`: the info mark beside the title, this text in its tooltip. */
+	/** The info mark beside the title, this text in its tooltip. */
 	description?: string
 }>
 
-/** `FilterRowAction`: the `tag` badge as a button, transparent until the row is hovered. */
+/** The `tag` badge as a button, transparent until the row is hovered. */
 const rowAction = <M>(
 	h: HtmlBuilder<M>,
 	text: string,
@@ -152,7 +152,7 @@ const countText = <M>(h: HtmlBuilder<M>, option: FilterOption, isTriState: boole
 		[formatNumber(option.count)],
 	)
 
-/** `FilterDescription`: the info mark beside a filter's title, its description in a tooltip. */
+/** The info mark beside a filter's title, its description in a tooltip. */
 export const filterDescriptionMark = <M>(h: HtmlBuilder<M>, title: string, description: string): Html =>
 	h.span(
 		[
@@ -477,7 +477,7 @@ const sectionSearch = <M>(h: HtmlBuilder<M>, config: FilterSectionConfig<M>, sea
 		onClear: config.toSectionsMessage(SectionsMessage.ChangedSearch({ key: config.title, search: "" })),
 	})
 
-/** `SingleCheckboxFilter`: one checkbox with its label (and count). */
+/** One checkbox with its label (and count). */
 export const singleCheckboxFilter = <M>(
 	h: HtmlBuilder<M>,
 	config: Readonly<{ title: string; isChecked: boolean; onToggle: M; count?: number }>,

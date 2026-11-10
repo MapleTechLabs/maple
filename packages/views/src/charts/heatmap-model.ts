@@ -3,7 +3,7 @@ import { cellText } from "./series/breakdown-rows"
 import { formatNumber, formatValueByUnit } from "@maple/ui/lib/format"
 import { resolveSequentialDomain, type SequentialScaleType } from "./sequential-domain"
 
-// The model half of `QueryBuilderHeatmapChart`: points, the pruned grid, holes, ramp positions
+// The query-builder heatmap's model: points, the pruned grid, holes, ramp positions
 // and labels.
 
 export interface HeatmapPoint {
@@ -72,7 +72,7 @@ const EMPTY_MODEL: HeatmapModel = {
 	hiddenY: 0,
 }
 
-/** `buildModel`: all-zero axes pruned (and counted), y reversed, the cross-product split into cells and holes. */
+/** All-zero axes pruned (and counted), y reversed, the cross-product split into cells and holes. */
 export const buildHeatmapModel = (points: ReadonlyArray<HeatmapPoint>): HeatmapModel => {
 	if (points.length === 0) return EMPTY_MODEL
 	const xs = [...new Set(Arr.map(points, (p) => p.x))]
@@ -149,7 +149,7 @@ export const roundTick = (value: number, min: number, span: number): number => {
 
 export const ISO_RE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z?$/
 
-/** `clockLabel`: `HH:MM` of an ISO timestamp in `timeZone`. */
+/** `HH:MM` of an ISO timestamp in `timeZone`. */
 const clockLabel = (iso: string, timeZone: string | undefined): string =>
 	Option.match(DateTime.make(iso), {
 		onNone: () => iso,

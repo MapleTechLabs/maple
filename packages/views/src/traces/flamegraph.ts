@@ -11,8 +11,6 @@ import { type FlamegraphInput, spanAtMinimapPercent } from "./flamegraph-layout"
  * hover on a bar shows the span tooltip.
  */
 
-// MODEL
-
 export const Model = Schema.Struct({
 	id: Schema.String,
 	focusedSpanId: Schema.Option(Schema.String),
@@ -29,8 +27,6 @@ export const init = (id: string): Model => ({
 /** The id a bar's tooltip trigger carries. */
 export const barTriggerId = (flamegraphId: string, spanId: string): string => `${flamegraphId}-bar-${spanId}`
 
-// MESSAGE
-
 export const Message = defineMessageUnion({
 	ClickedBar: { spanId: Schema.String, isShift: Schema.Boolean },
 	ClickedReset: {},
@@ -43,8 +39,6 @@ export const OutMessage = defineMessageUnion({
 	SelectedSpan: { spanId: Schema.String },
 })
 export type OutMessage = typeof OutMessage.Type
-
-// UPDATE
 
 type Return = Update.ReturnWithOutMessage<Model, Message, OutMessage>
 
@@ -86,8 +80,6 @@ export const focusedSpan = (model: Model, input: FlamegraphInput) =>
 	Option.flatMap(model.focusedSpanId, (spanId) =>
 		Option.fromUndefinedOr(findSpanById(input.rootSpans, spanId)),
 	)
-
-// MOUNT
 
 const percentOf = (track: Element, clientX: number): number => {
 	const rect = track.getBoundingClientRect()

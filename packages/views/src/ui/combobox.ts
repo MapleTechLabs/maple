@@ -14,8 +14,6 @@ import { isRovingKey, nextIndex } from "./overlay/roving"
  * highlighted option is its `aria-activedescendant`. The views are in `combobox-view.ts`.
  */
 
-// MODEL
-
 export const Mode = Schema.Literals(["single", "multiple", "autocomplete"])
 export type Mode = typeof Mode.Type
 
@@ -63,8 +61,6 @@ export const queryOf = (model: Model): string =>
 export const visibleItems = (model: Model, items: ReadonlyArray<string>): ReadonlyArray<string> =>
 	filterItems(items, queryOf(model))
 
-// MESSAGE
-
 export const Message = defineMessageUnion({
 	ChangedInput: { value: Schema.String },
 	ClickedInput: {},
@@ -83,7 +79,7 @@ export const Message = defineMessageUnion({
 	},
 	ClickedItem: { value: Schema.String },
 	RemovedChip: { value: Schema.String },
-	/** `MultiSelectCombobox`'s clear button: `onValueChange([])`. */
+	/** The multi-select's clear button emptied the selection. */
 	ClearedSelection: {},
 	PressedEscape: {},
 	PressedOutside: {},
@@ -98,8 +94,6 @@ export const OutMessage = defineMessageUnion({
 	ChangedValue: { value: Schema.String },
 })
 export type OutMessage = typeof OutMessage.Type
-
-// UPDATE
 
 const transition = makeTransition<Model, Message>(
 	(message) => Message.GotAnimationMessage({ message }),
@@ -189,8 +183,6 @@ export const update = (model: Model, message: Message): UpdateReturn =>
 		GotAnimationMessage: ({ message: animationMessage }) =>
 			transition.foldAnimation(model, animationMessage),
 	})
-
-// MOUNT
 
 /** Portal, inert marker and placement under the anchor (the chips field or the input group). */
 export const MountCombobox = Mount.defineStream("MountCombobox", {

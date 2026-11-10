@@ -61,7 +61,6 @@ const PINNED_COL_WIDTH = "150px"
 /** Chips past this would only squeeze the ones before them; a "+N" mark counts the rest. */
 const ROW_CHIP_LIMIT = 2
 
-// Row and row action classes
 const ROW_CLASS =
 	"hover:bg-surface-sunken active:bg-surface-sunken data-[expanded]:bg-surface-sunken data-[focused]:bg-surface-strong data-[focused]:ring-1 data-[focused]:ring-ring data-[focused]:ring-inset focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring focus-visible:ring-inset"
 const EXPAND_BUTTON_CLASS =
@@ -81,7 +80,7 @@ const META_BADGE_CLASS = cn(badgeVariants({ mono: false, pill: false, size: "xs"
 
 const stop = { propagation: "Stop" } as const
 
-/** `<IconButton size="icon-xs">` without its Base UI tooltip (the tooltip is an open port item). */
+/** An icon-xs icon button, without a tooltip. */
 const iconButton = <Message>(h: HtmlBuilder<Message>, label: string, onClick: Message, icon: Html): Html =>
 	h.button(
 		[
@@ -94,7 +93,7 @@ const iconButton = <Message>(h: HtmlBuilder<Message>, label: string, onClick: Me
 		[icon],
 	)
 
-/** `<TruncatedText tooltip="title">` for a pinned attribute cell. */
+/** Truncated text with a native tooltip, for a pinned attribute cell. */
 const pinnedCell = <Message>(h: HtmlBuilder<Message>, cell: PinnedCell): Html =>
 	h.span(
 		[
@@ -115,7 +114,7 @@ const pinnedCell = <Message>(h: HtmlBuilder<Message>, cell: PinnedCell): Html =>
 		[cell.value],
 	)
 
-/** `LogAttributeChip`'s trigger button; the card renders apart, only while open (see chip-card.ts). */
+/** An attribute chip's trigger button; the card renders apart, only while open (see chip-card.ts). */
 const chipButton = <Message>(
 	h: HtmlBuilder<Message>,
 	events: RowEvents<Message>,

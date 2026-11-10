@@ -12,8 +12,6 @@ import { lockBodyScroll, manageFocus, markOutside, portalToBody, trapFocus } fro
  * focus. `dialog-view.ts` renders Dialog, AlertDialog, Sheet and the command palette's dialog.
  */
 
-// MODEL
-
 export const Kind = Schema.Literals(["dialog", "alert-dialog", "sheet", "command-dialog"])
 export type Kind = typeof Kind.Type
 
@@ -38,8 +36,6 @@ export const init = (id: string, kind: Kind, options: Readonly<{ isOpen?: boolea
 	animation: Animation.init({ id: popupId(id), isShowing: options.isOpen ?? false }),
 })
 
-// MESSAGE
-
 export const Message = defineMessageUnion({
 	ClickedTrigger: {},
 	ClickedClose: {},
@@ -52,8 +48,6 @@ export type Message = typeof Message.Type
 
 export const OutMessage = defineMessageUnion({ Opened: {}, Closed: {} })
 export type OutMessage = typeof OutMessage.Type
-
-// UPDATE
 
 /** The exit transition ends when the popup's CSS transitions settle (`useOpenChangeComplete`). */
 export const WaitForDialogTransition = Command.define("WaitForDialogTransition", {
@@ -115,8 +109,6 @@ export const update = (model: Model, message: Message): UpdateReturn =>
 		GotAnimationMessage: ({ message: animationMessage }) => foldAnimation(model, animationMessage),
 	})
 
-// MOUNT
-
 /** A popup opened from inside the dialog (a select, a menu): its portal is outside the popup but
  * pressing in it is not a press outside the dialog (Base UI's floating tree). */
 const nestedPopups = (portal: Element) =>
@@ -152,7 +144,9 @@ export const MountDialog = Mount.defineStream("MountDialog", {
 				return Stream.concat(
 					mounted,
 					Stream.merge(
-						outsidePresses(popup, [nestedPopups(element)]).pipe(Stream.map(() => Message.PressedOutside())),
+						outsidePresses(popup, [nestedPopups(element)]).pipe(
+							Stream.map(() => Message.PressedOutside()),
+						),
 						strayEscapes(element).pipe(Stream.map(() => Message.PressedEscape())),
 					),
 				)

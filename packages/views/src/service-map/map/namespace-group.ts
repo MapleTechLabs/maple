@@ -11,8 +11,7 @@ import { Array as Arr, String as Str } from "effect"
 import { hstack } from "../../ui/stack"
 import { typography } from "../../ui/typography"
 
-// The dotted namespace boxes `ServiceMapFlowCanvas` derives from node extents, and
-// `NamespaceGroupNode`.
+// The dotted namespace boxes the service map derives from node extents, and their node.
 
 const FALLBACK_NODE_WIDTH = 220
 const FALLBACK_NODE_HEIGHT = 70

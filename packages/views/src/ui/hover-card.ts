@@ -18,8 +18,6 @@ import { isMounted, stateAttributes } from "./overlay/transition"
  * card is a readout: the pointer passes through it to the triggers below, and it closes on leave.
  */
 
-// MODEL
-
 export const Model = Schema.Struct({
 	...PopupState.fields,
 	hoverGeneration: Schema.Number,
@@ -40,7 +38,7 @@ export const READOUT_CLOSE_DELAY = Duration.millis(80)
 
 export type InitOptions = Readonly<{
 	isOpen?: boolean
-	/** `HoverCardTrigger delay` */
+	/** How long the pointer rests on the trigger before the card opens. */
 	openDelayMs?: number
 	side?: Side
 	align?: Align
@@ -66,8 +64,6 @@ export const init = (id: string, options: InitOptions = {}): Model => {
 	}
 }
 
-// MESSAGE
-
 export const Message = defineMessageUnion({
 	EnteredTrigger: { triggerId: Schema.String },
 	LeftTrigger: {},
@@ -80,8 +76,6 @@ export const Message = defineMessageUnion({
 	GotAnimationMessage: { message: Animation.Message },
 })
 export type Message = typeof Message.Type
-
-// UPDATE
 
 /** The open or close delay; a newer pointer move bumps the generation and drops this one. */
 export const WaitHoverDelay = Command.define("WaitHoverDelay", {
@@ -143,8 +137,6 @@ export const update = (model: Model, message: Message): UpdateReturn =>
 			transition.foldAnimation(model, animationMessage),
 	})
 
-// MOUNT
-
 /** Portal and placement only: a preview card neither marks the page nor moves focus. */
 export const MountHoverCard = Mount.defineStream("MountHoverCard", {
 	args: {
@@ -181,8 +173,6 @@ export const MountHoverCard = Mount.defineStream("MountHoverCard", {
 			),
 		),
 })
-
-// VIEW
 
 export type RenderInfo = Readonly<{
 	/** The default trigger's attributes. */

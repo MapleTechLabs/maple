@@ -17,11 +17,8 @@ import { toneBoxClass } from "../../ui/tone-box"
 import { hstack, vstack } from "../../ui/stack"
 import { Array as Arr, String as Str } from "effect"
 
-// `FlowSpanNode`.
-
 const HANDLE_CLASSES = "!opacity-0 !w-0 !h-0 !min-w-0 !min-h-0"
 
-/** `<ServiceDot>`. */
 export const serviceDot = <M>(h: HtmlBuilder<M>, serviceName: string, className: string): Html =>
 	h.span([
 		h.AriaHidden(true),
@@ -93,7 +90,7 @@ const primaryText = (span: FlowNodeData["span"], desc: SpanDescription): string 
 	return span.spanName
 }
 
-/** `outcomeBadgeStyle` (packages/ui `lib/cloud-platforms/types.ts`). */
+/** An outcome badge's tone box: error when bad, else info. */
 const outcomeBadgeStyle = (bad: boolean): string => toneBoxClass(bad ? "error" : "info")
 
 const statusBadge = <M>(

@@ -8,26 +8,18 @@ import { hiddenInput, labelIdOf, toggleKey } from "./choice"
 
 /** Base UI `Switch`: on or off, with a thumb and a visually hidden checkbox. */
 
-// MODEL
-
 export const Model = Schema.Struct({ isChecked: Schema.Boolean })
 export type Model = typeof Model.Type
 
 export const init = (isChecked = false): Model => ({ isChecked })
 
-// MESSAGE
-
 export const Message = defineMessageUnion({ ToggledSwitch: {} })
 export type Message = typeof Message.Type
-
-// UPDATE
 
 export const update = (model: Model, message: Message): Update.Return<Model, Message> =>
 	Message.match<Update.Return<Model, Message>>(message, {
 		ToggledSwitch: () => ({ model: { isChecked: !model.isChecked } }),
 	})
-
-// VIEW
 
 export type SwitchControlOptions<Message> = Readonly<{
 	/** Base UI's `useId` for the root; the hidden input takes the next one. */

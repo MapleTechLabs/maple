@@ -87,7 +87,7 @@ export const sidebarDesktop = <Message>(
 	h: HtmlBuilder<Message>,
 	state: SidebarState,
 	children: Children,
-	/** `<Sidebar className>`: lands on the fixed container. */
+	/** Lands on the fixed container. */
 	className?: string,
 	/** Snap to `state` without the width transition (keyboard toggles). */
 	isInstant = false,
@@ -151,7 +151,6 @@ export const sidebarMobile = <Message>(
 		},
 		[h.div([h.Class(sidebarMobileInnerStyles)], children)],
 	)
-// SIDEBAR PARTS
 
 export const sidebarHeader = <Message>(
 	h: HtmlBuilder<Message>,
@@ -305,7 +304,6 @@ export const sidebarMenuSubItem = <Message>(
 		],
 		children,
 	)
-// SIDEBAR BUTTONS
 
 /** TanStack `<Link>`'s active test (`resolveIsActive`, default options): the path or a descendant. */
 export const isLinkActive = (currentPath: string, href: string): boolean =>
@@ -373,9 +371,8 @@ export const sidebarMenuButton = <Message>(
 		children,
 	)
 }
-// SIDEBAR SUB BUTTONS
 
-/** `<SidebarMenuSubButton size="md" render={<Link />}>`. */
+/** A sub-item of a sidebar menu, as a router link or a plain anchor. */
 export const sidebarMenuSubButton = <Message>(
 	h: HtmlBuilder<Message>,
 	/** `link` is a router link (active by path); `href` a plain anchor (`<SidebarMenuSubButton href>`). */

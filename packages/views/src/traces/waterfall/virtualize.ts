@@ -31,7 +31,7 @@ const rowsOf = (scroller: HTMLElement): ReadonlyArray<HTMLElement> =>
 type WindowMessage = typeof Message.ChangedVirtualWindow.Type
 
 /**
- * The scroll-to-selected effect of `SpanHierarchy`, verbatim: retry across frames, latch only once
+ * The waterfall's scroll-to-selected: retry across frames, latch only once
  * a later frame sees the row in view. It stops on estimated row heights when the rows were not
  * measured first (a known race).
  */
@@ -125,7 +125,7 @@ type VirtualizerState = {
 	handle: number
 }
 
-/** `useVirtualizer` keyed by span id, measuring every mounted row, plus the scroll effect. */
+/** The row virtualizer keyed by span id, measuring every mounted row, plus the scroll effect. */
 const virtualize = (scroller: HTMLElement): Stream.Stream<WindowMessage> =>
 	virtualizerStream<WindowMessage>((offer) => {
 		const state: VirtualizerState = {

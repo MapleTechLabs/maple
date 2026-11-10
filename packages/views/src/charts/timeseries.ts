@@ -27,8 +27,7 @@ import {
 import { resolveColor, type ThemeColors } from "./theme-colors"
 import { Array as Arr, Record as Rec } from "effect"
 
-// The React-free half of `Timeseries`: row normalisation, series keys and colour tokens, and
-// the shared x and y axes. Copied, as that module also holds the React model hook and frame.
+// Timeseries rows: row normalisation, series keys and colour tokens, and the shared x and y axes.
 
 export const HARD_SERIES_LIMIT = 60
 export const SERIES_FALLBACK_COLOR = DEFAULT_TOKEN_FALLBACK
@@ -38,7 +37,7 @@ export interface SeriesDefinition {
 	readonly chartKey: string
 }
 
-/** `normaliseTimeseriesRows`'s series discovery: first-seen order across all rows, `s1..sN` keys. */
+/** Series discovery: first-seen order across all rows, `s1..sN` keys. */
 export const seriesDefinitionsOf = (data: ReadonlyArray<Readonly<Record<string, unknown>>>) => {
 	const rawKeys = [
 		...new Set(
@@ -56,7 +55,7 @@ export const seriesDefinitionsOf = (data: ReadonlyArray<Readonly<Record<string, 
 	}
 }
 
-/** The rows of `normaliseTimeseriesRows`, values keyed by chart key; unparseable buckets dropped. */
+/** The rows, values keyed by chart key; unparseable buckets dropped. */
 export const normaliseRows = (
 	data: ReadonlyArray<Readonly<Record<string, unknown>>>,
 	definitions: ReadonlyArray<SeriesDefinition>,
@@ -73,7 +72,7 @@ export const normaliseRows = (
 		return [next]
 	})
 
-/** `scaleTimeseriesRates`: rates are stored per bucket and displayed per second. */
+/** Rates are stored per bucket and displayed per second. */
 export const scaleRates = (
 	rows: Array<TimeseriesRow>,
 	keys: ReadonlyArray<string>,
@@ -104,7 +103,7 @@ export const seriesColorTokens = (
 	)
 }
 
-/** What a hoisting `TimeseriesLegend` hands the tile header: every series, colour resolved. */
+/** What a hoisted legend hands the tile header: every series, colour resolved. */
 export const hoistedSeries = (
 	data: ReadonlyArray<Readonly<Record<string, unknown>>>,
 	theme: ThemeColors,

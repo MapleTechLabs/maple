@@ -18,7 +18,7 @@ import { asFiniteNumber, type TimeseriesAxisContext, type TimeseriesRow } from "
 import type { BuiltChart } from "./built-chart"
 import { cursorTooltip, UNBOUNDED_FOCUS_DISTANCE } from "./plot-constants"
 
-// `QueryBuilderBarChart`, definition half: bars centred on their bucket on a time scale padded by
+// The query-builder bar chart's definition: bars centred on their bucket on a time scale padded by
 // half a bucket, closed and in-flight lanes, the hovered column kept bright. TODO(bar-thresholds):
 // thresholds, log scale, soft bounds and the "Other" bucketing past `MAX_BAR_SERIES` are not ported.
 

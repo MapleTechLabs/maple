@@ -20,7 +20,6 @@ export type SpacedOptions<M> = Readonly<{
 	attributes?: ReadonlyArray<Attribute<M> | ChildAttribute>
 }>
 
-// `spaced`'s classes.
 const spacedClass = (options: Omit<SpacedOptions<never>, "attributes">): string =>
 	cn((options.fill ?? false) && "min-w-0 flex-1", SPACE[options.space], options.className)
 

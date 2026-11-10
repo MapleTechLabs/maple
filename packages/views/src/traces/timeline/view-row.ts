@@ -15,7 +15,7 @@ import { typographyClass } from "@maple/views/ui/typography"
 import { hstackClass } from "@maple/views/ui/stack"
 import { Array as Arr, Option } from "effect"
 
-// `TraceTimelineRow`. TODO(tooltip): the hover span tooltip (`spanTooltipContent`, rich and
+// A timeline row. TODO(tooltip): the hover span tooltip (`spanTooltipContent`, rich and
 // pointer-following) is not ported; it also needs the trace's total duration and start, which
 // RowState does not carry.
 
@@ -32,7 +32,7 @@ export type RowState = Readonly<{
 	isMatched: boolean
 	showService: boolean
 	events: ReadonlyArray<TimelineSpanEvent> | undefined
-	/** The decoration pass's output (`useRowDecorations`): clip chevrons and outside label side. */
+	/** The decoration pass's output: clip chevrons and outside label side. */
 	leftPct: number
 	rightPct: number
 	/** Base UI `useId`s for the event markers' tooltip triggers. */

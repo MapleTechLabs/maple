@@ -15,7 +15,7 @@ export const ThemeMessage = defineMessageUnion({
 })
 export type ThemeMessage = typeof ThemeMessage.Type
 
-/** The custom property a token names, or `undefined` for a literal colour (`resolvePlotColor`'s unwrap). */
+/** The custom property a token names, or `undefined` for a literal colour. */
 export const tokenProperty = (token: string): string | undefined => {
 	const inner =
 		Str.startsWith("var(")(token) && Str.endsWith(")")(token) ? Str.trim(Str.slice(4, -1)(token)) : token
@@ -23,7 +23,7 @@ export const tokenProperty = (token: string): string | undefined => {
 	return Str.startsWith("--")(name) ? name : undefined
 }
 
-/** `resolvePlotColor` (./plot/theme.ts) against a resolved snapshot. */
+/** A plot colour token against a resolved snapshot. */
 export const resolveColor = (
 	colors: ThemeColors,
 	token: string,

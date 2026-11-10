@@ -11,7 +11,7 @@ import { type AttributeSource, isOpen, Message, type Model } from "./attributes-
 import { searchInput } from "../search-input"
 import { Array as Arr, Record as Rec, String as Str } from "effect"
 
-// `AttributesTable`, `AttributesSection`, `ResourceAttributesSection` and the log attributes
+// The attributes table, the attribute and resource-attribute sections, and the log attributes
 // panel.
 
 type H = HtmlBuilder<Message>
@@ -127,7 +127,6 @@ type TableOptions = Readonly<{
 	isGrouped: boolean
 }>
 
-/** `AttributesTable`. */
 const attributesTable = (h: H, context: RowContext, options: TableOptions): Html => {
 	const { model } = context
 	const query = model.search
@@ -211,8 +210,8 @@ const attributesTable = (h: H, context: RowContext, options: TableOptions): Html
 }
 
 /**
- * `AttributesSection`: the raw table with `maple_*` keys lifted into a collapsed "Maple internal"
- * table. TODO(gen-ai): `GenAiSection` for `gen_ai.*` groups is not ported; those keys are dropped.
+ * The raw table with `maple_*` keys lifted into a collapsed "Maple internal" table.
+ * TODO(gen-ai): no grouped section for `gen_ai.*` keys yet; those keys are dropped.
  */
 export const attributesSection = (h: H, context: RowContext, options: TableOptions): Html => {
 	const { groups, rest } = splitGenAiAttributes({ ...options.attributes })
@@ -302,7 +301,7 @@ const sectionOf = (h: H, model: Model, inputs: PanelInputs, source: AttributeSou
 
 export type TableInputs = Readonly<{ attributes: Readonly<Record<string, string>>; title: string }>
 
-/** A bare `<AttributesTable attributes title />`: ungrouped, unsearched, copy only. */
+/** A bare attributes table: ungrouped, unsearched, copy only. */
 export const tableView = Submodel.defineView<Model, Message, TableInputs>((model, inputs, h) =>
 	attributesTable(
 		h,
@@ -311,7 +310,7 @@ export const tableView = Submodel.defineView<Model, Message, TableInputs>((model
 	),
 )
 
-/** `LogAttributesPanel`: the search box, then the log and resource attribute sections. */
+/** The log attributes panel: the search box, then the log and resource attribute sections. */
 export const view = Submodel.defineView<Model, Message, PanelInputs>((model, inputs, h) =>
 	h.div(
 		[h.Class(cn("space-y-3"))],

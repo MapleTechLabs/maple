@@ -37,8 +37,6 @@ export const sectionOf = (model: Model, key: string, defaultOpen = true): Sectio
 		search: "",
 	}))
 
-// MESSAGE
-
 export const Message = defineMessageUnion({
 	CompletedReadRemembered: { remembered: Remembered },
 	ToggledSection: { key: Schema.String, defaultOpen: Schema.Boolean },
@@ -47,8 +45,6 @@ export const Message = defineMessageUnion({
 	CompletedSaveRemembered: {},
 })
 export type Message = typeof Message.Type
-
-// COMMAND
 
 /** Read before the rail renders its sections, on page entry. */
 export const ReadRemembered = Command.define("ReadRememberedFilterSections", {
@@ -77,8 +73,6 @@ const SaveRemembered = Command.define("SaveRememberedFilterSections", {
 		}),
 })
 
-// UPDATE
-
 const write = (model: Model, key: string, next: SectionState): Model => ({
 	...model,
 	sections: Record.set(model.sections, key, next),
@@ -90,7 +84,7 @@ export const update = (model: Model, message: Message): Update.Return<Model, Mes
 		ToggledSection: ({ key, defaultOpen }) => {
 			const current = sectionOf(model, key, defaultOpen)
 			const isOpen = !current.isOpen
-			// Closing resets what it hid, like `handleOpenChange`.
+			// Closing resets what it hid.
 			const next = isOpen ? { ...current, isOpen } : { isOpen, isShowingAll: false, search: "" }
 			return {
 				model: { ...write(model, key, next), remembered: { ...model.remembered, [key]: isOpen } },

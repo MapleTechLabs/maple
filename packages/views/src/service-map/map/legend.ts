@@ -11,7 +11,7 @@ import { typography } from "../../ui/typography"
 import { hstack } from "../../ui/stack"
 import { Array as Arr } from "effect"
 
-// `ServiceMapLegend`, with the "+N more" popover listing every service.
+// The service map legend, with the "+N more" popover listing every service.
 
 const LEGEND_PLATFORMS = [
 	["kubernetes", "Kubernetes"],

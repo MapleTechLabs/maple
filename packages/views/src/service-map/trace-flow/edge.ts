@@ -7,8 +7,6 @@ import type { FlowEdgeData } from "./flow-graph"
 import { typography } from "../../ui/typography"
 import { hstack } from "../../ui/stack"
 
-// `TraceFlowEdge`.
-
 const LABEL_SHARE_THRESHOLD = 0.05
 
 const strokeWidthForShare = (share: number): number => Math.min(4, 1.5 + 2.5 * Math.sqrt(Math.max(0, share)))

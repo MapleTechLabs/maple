@@ -137,7 +137,7 @@ export type ViewInputs = Readonly<{
 	/** A left or right sheet's width (`SheetSize`): pick by content, never a `max-w-*` class. */
 	size?: SheetStyles.SheetSize
 	hasTrigger?: boolean
-	/** `showCloseButton={false}`: the content renders its own close. */
+	/** `false`: the content renders its own close. */
 	showCloseButton?: boolean
 	/** `closeProps={{ className }}`: classes merged onto the close button's own. */
 	closeClassName?: string

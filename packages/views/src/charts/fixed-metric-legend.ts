@@ -6,9 +6,7 @@ import { Array as Arr } from "effect"
 import { hstack } from "../ui/stack"
 import { typography } from "../ui/typography"
 
-// `FixedMetricLegend`.
-
-/** `FixedMetricLegend`: the always-on swatch strip; items match the widget header legend. */
+/** The always-on swatch strip; items match the widget header legend. */
 export const fixedMetricLegend = <M>(h: HtmlBuilder<M>, series: ReadonlyArray<FixedMetricSeries>): Html =>
 	hstack(
 		h,
@@ -32,7 +30,7 @@ export const fixedMetricLegend = <M>(h: HtmlBuilder<M>, series: ReadonlyArray<Fi
 		),
 	)
 
-/** The P99/P95/P50 series `LatencyLineChart` draws, coloured off the theme. */
+/** The P99/P95/P50 series the latency chart draws, coloured off the theme. */
 export const latencySeries = (theme: ThemeColors): ReadonlyArray<FixedMetricSeries> =>
 	Arr.map(LATENCY_SERIES, (entry) => ({
 		key: entry.key,

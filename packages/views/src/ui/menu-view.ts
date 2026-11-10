@@ -35,7 +35,7 @@ import { popupId, portalId, triggerId } from "./overlay/popup-state"
 import type { Align, Side } from "./overlay/position"
 import { focusGuard, isMounted, SR_ONLY_STYLE, stateAttributes } from "./overlay/transition"
 
-// ENTRIES
+// A dropdown menu's entries and its popup: items, checkable items, groups, labels and submenus.
 
 export type MenuItemEntry = Readonly<{
 	_tag: "Item"
@@ -69,7 +69,7 @@ export type MenuSubmenuEntry = Readonly<{
 	icon?: IconName
 	/** A separator drawn after this item's index (`<DropdownMenuSeparator />` between items). */
 	separatorAfter?: number
-	/** `<DropdownMenuSubContent className>`. */
+	/** Classes on the submenu popup. */
 	className?: string
 	/** A `div` with this class around the items (a scroller). */
 	itemsClassName?: string
@@ -142,7 +142,7 @@ export const itemRefs = (entries: ReadonlyArray<MenuEntry>): ReadonlyArray<ItemR
 
 export type ViewInputs = Readonly<{
 	entries: ReadonlyArray<MenuEntry>
-	/** `<DropdownMenuContent className side align sideOffset>`. */
+	/** Classes on the menu popup. */
 	className?: string
 	side?: Side
 	align?: Align

@@ -29,7 +29,7 @@ const ENDED_LABEL = "Nothing after"
 
 type Row = Readonly<Record<string, unknown>>
 
-/** `fmtSpan`: coarse, human durations. */
+/** Coarse, human durations. */
 export const fmtSpan = (ms: number): string => {
 	if (!Number.isFinite(ms) || ms <= 0) return EMPTY_VALUE
 	const s = Math.round(ms / 1000)
@@ -105,7 +105,7 @@ export type DropoffSteps = Readonly<{
 	legend: ReadonlyArray<{ readonly name: string; readonly color: string }>
 }>
 
-/** `toSteps`: grouped or plain. */
+/** Grouped or plain. */
 export const toSteps = (source: ReadonlyArray<Row>, valueField: string): DropoffSteps => {
 	const grouped = Arr.filter(source, (row) => typeof row.group === "string")
 	if (grouped.length > 0 && grouped.length === source.length) return groupedSteps(grouped, valueField)

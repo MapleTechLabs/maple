@@ -3,7 +3,7 @@ import type { Html, HtmlBuilder } from "foldkit/html"
 import { eyebrow } from "../../ui/eyebrow"
 import { hstack, hstackClass, vstack } from "../../ui/stack"
 
-// `ServiceMapLoading`: a fixed ghost topology, generated once since it carries no data.
+// The service map's loading state: a fixed ghost topology, generated once since it carries no data.
 
 export const serviceMapLoading = <Message>(h: HtmlBuilder<Message>): Html =>
 	vstack(

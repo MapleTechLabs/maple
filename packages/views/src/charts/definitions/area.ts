@@ -45,7 +45,7 @@ interface Series {
 	readonly color: string
 }
 
-/** `computeStackBases`: per row object, where each visible band starts. */
+/** Per row object, where each visible band starts. */
 const stackBases = (
 	rows: ReadonlyArray<TimeseriesRow>,
 	visible: ReadonlyArray<Series>,

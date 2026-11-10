@@ -34,7 +34,7 @@ export type FieldOptions<M = never> = Readonly<{
 	hasDismissButton?: boolean
 	/** `filter={null}`: `items` are already the list (the command palette's fuse ranking). */
 	isUnfiltered?: boolean
-	/** `startAddon`: the magnifier (default) or none. */
+	/** The magnifier (default) or none. */
 	hasStartAddon?: boolean
 	/** `showClear`: Base UI renders the clear button while the input holds a value. */
 	onClear?: M
@@ -144,7 +144,7 @@ export type ViewInputs = Readonly<{
 	placeholder: string
 	emptyText: string
 	hasStartAddon?: boolean
-	/** `showClear`: the clear button empties the input. */
+	/** A clear button that empties the input. */
 	hasClear?: boolean
 	/** Wraps the field (`<div className="w-64">`) and places it with the hidden input and portal. */
 	toView: (parts: Readonly<{ field: Html; rest: ReadonlyArray<Html> }>) => Html

@@ -6,8 +6,8 @@ import { skeleton } from "./skeleton"
 import { timestamp } from "./timestamp"
 import type { PresenceState, TelemetrySignalKind } from "../data/signal-presence"
 
-// `SignalEmptyState` and `FilteredEmpty`. Presence comes from the page's Model; what the
-// never-sent state offers (a setup link, an endpoint to copy) is the app's.
+// A signal page's empty states: no data yet, or nothing matching the filters. Presence comes from
+// the page's Model; what the never-sent state offers (a setup link, an endpoint to copy) is the app's.
 
 type Children = ReadonlyArray<Html | string>
 
@@ -39,7 +39,7 @@ const SIGNAL_COPY = {
 	},
 } satisfies Record<TelemetrySignalKind, Readonly<{ noun: string; icon: IconName; purpose: string }>>
 
-/** `EmptyActions`: an empty state's row of buttons and links. */
+/** An empty state's row of buttons and links. */
 export const emptyActions = <M>(h: HtmlBuilder<M>, children: ReadonlyArray<Html>): Html =>
 	h.div([h.Class("flex flex-wrap items-center justify-center gap-x-4 gap-y-2")], children)
 
@@ -49,7 +49,7 @@ const iconMedia = <M>(h: HtmlBuilder<M>, name: IconName): Html =>
 const detailOf = (detail: Html | null | undefined): ReadonlyArray<Html> =>
 	detail === undefined || detail === null ? [] : [detail]
 
-/** `FilteredEmpty`: the list is empty because the user's own filters excluded everything. */
+/** The list is empty because the user's own filters excluded everything. */
 export const filteredEmpty = <M>(
 	h: HtmlBuilder<M>,
 	options: Readonly<{
@@ -158,7 +158,7 @@ export type SignalEmptyStateOptions<M> = Readonly<{
 const contentOf = <M>(h: HtmlBuilder<M>, detail: ReadonlyArray<Html>, actions: ReadonlyArray<Html>) =>
 	detail.length === 0 && actions.length === 0 ? [] : [emptyContent(h, [...detail, ...actions])]
 
-/** `SignalEmptyStateView`: filtered, loading, absent (the on-ramp), present (quiet window), else unknown. */
+/** Filtered, loading, absent (the on-ramp), present (quiet window), else unknown. */
 export const signalEmptyState = <M>(h: HtmlBuilder<M>, options: SignalEmptyStateOptions<M>): Html => {
 	const copy = SIGNAL_COPY[options.signal]
 	const subject = options.noun ?? copy.noun

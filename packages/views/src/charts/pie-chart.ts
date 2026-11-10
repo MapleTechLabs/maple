@@ -22,7 +22,7 @@ import { typography } from "../ui/typography"
 import { chartNoData } from "../ui/chart-frame"
 import { hstack, vstack } from "../ui/stack"
 
-// `QueryBuilderPieChart`, view half. The definition half is `buildPie` in ./definitions/pie.ts.
+// The query-builder pie chart's view. The definition is `buildPie` in ./definitions/pie.ts.
 
 export interface PieChartInputs {
 	readonly chartId: string

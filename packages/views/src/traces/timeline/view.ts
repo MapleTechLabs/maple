@@ -13,7 +13,7 @@ import { footer, shortcutsOverlay } from "./view-footer"
 import { type RowState, timelineRow } from "./view-row"
 import { hstack, vstack } from "@maple/views/ui/stack"
 
-// `TraceTimeline`: what its tab panel holds. TODO(gestures): drag-zoom marquee, shift/middle-drag
+// The trace timeline: what its tab panel holds. TODO(gestures): drag-zoom marquee, shift/middle-drag
 // pan, ctrl+wheel zoom, minimap drags, the crosshair readout, the sidebar resize drag and the hover
 // tooltip are not ported yet.
 
@@ -24,7 +24,7 @@ export type ViewInputs = Readonly<{
 
 type H = HtmlBuilder<Message>
 
-/** `effectiveSidebarWidth`: never more than half a narrow pane. */
+/** Never more than half a narrow pane. */
 export const effectiveSidebarWidth = (model: Model): number =>
 	model.scrollerWidth > 0
 		? Math.max(

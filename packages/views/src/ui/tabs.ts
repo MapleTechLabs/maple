@@ -20,8 +20,6 @@ export const IndicatorRect = Schema.Struct({
 })
 export type IndicatorRect = typeof IndicatorRect.Type
 
-// MODEL
-
 export const Model = Schema.Struct({
 	/** The id seed of this Tabs, so element ids follow Base UI's format (`base-ui-_r_<n>_`). */
 	idBase: Schema.Number,
@@ -49,8 +47,6 @@ export const init = (config: {
 export const tabId = (model: Model, index: number): string => `base-ui-_r_${model.idBase + index}_`
 export const panelId = (model: Model): string => `base-ui-_r_${model.idBase + model.values.length}_`
 
-// MESSAGE
-
 export const TabKey = Schema.Literals(["ArrowLeft", "ArrowRight", "Home", "End"])
 export type TabKey = typeof TabKey.Type
 
@@ -62,16 +58,12 @@ export const Message = defineMessageUnion({
 })
 export type Message = typeof Message.Type
 
-// COMMAND
-
 export const FocusTab = Command.define("FocusTab", {
 	args: { id: Schema.String },
 	messages: [Message.CompletedFocusTab],
 	execute: ({ id }) =>
 		Dom.focus(`[id="${id}"]`).pipe(Effect.ignore, Effect.as(Message.CompletedFocusTab())),
 })
-
-// UPDATE
 
 type UpdateReturn = Update.Return<Model, Message>
 
@@ -128,8 +120,6 @@ export const update = (model: Model, message: Message): UpdateReturn =>
 				: { model: { ...model, maybeIndicator: Option.some(rect) } },
 		CompletedFocusTab: () => ({ model }),
 	})
-
-// MOUNT
 
 /** Base UI's `getCssDimensions`: the computed size unless it disagrees with the offset size. */
 const cssDimensions = (element: HTMLElement): { width: number; height: number } => {

@@ -11,16 +11,18 @@ import { icon } from "./icon"
 import { segmentItemHeight, togglePrimitive } from "./toggle"
 import { Array as Arr } from "effect"
 
+// Segmented selects: outline toggles in a row, one value or several.
+
 export type MultiSegmentedOption<T extends string> = Readonly<{
 	value: T
 	label: Html | string
-	/** The option's accessible name (`optionAriaLabel`: the value when the label is not text). */
+	/** The option's accessible name (the value when the label is not text). */
 	ariaLabel: string
 	icon?: Html
 	isDisabled?: boolean
 }>
 
-/** `MultiSegmentedSelect`: standalone outline toggles; a pressed one swaps its icon for a check. */
+/** Standalone outline toggles; a pressed one swaps its icon for a check. */
 export const multiSegmentedSelect = <T extends string, M>(
 	h: HtmlBuilder<M>,
 	config: Readonly<{

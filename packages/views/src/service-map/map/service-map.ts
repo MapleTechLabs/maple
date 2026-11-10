@@ -74,7 +74,7 @@ export const Model = Schema.Struct({
 	canvas: Canvas.Model,
 	/** `ServiceMapLayout`: drags and camera per layout signature, most recent first. */
 	snapshots: Schema.Array(Snapshot),
-	/** The first automatic fit snaps; every later one animates (`hasFittedOnce`). */
+	/** The first automatic fit snaps; every later one animates. */
 	hasFitted: Schema.Boolean,
 	/** The host frames its first reveal even with namespace boxes (apps/local-ui does). */
 	isFirstBoxedFitKept: Schema.Boolean,
@@ -207,8 +207,6 @@ export const WaitCameraWrite = Command.define("WaitServiceMapCameraWrite", {
 	execute: ({ version }) =>
 		Effect.sleep(Duration.millis(400)).pipe(Effect.as(Message.ElapsedCameraWrite({ version }))),
 })
-
-// DERIVED STATE
 
 type Prefs = Pick<Model, "minTrafficPct" | "focus" | "collapsedNamespaces">
 
@@ -392,7 +390,7 @@ export interface MapConfig {
 	readonly minTrafficPct: number
 	readonly focus: Option.Option<Focus>
 	readonly collapsedNamespaces?: ReadonlyArray<string>
-	/** Persisted drags and cameras (`serviceMapLayoutAtomFamily`). */
+	/** Persisted drags and cameras. */
 	readonly snapshots?: ReadonlyArray<Snapshot>
 	/** Fit the first reveal even with namespace boxes (see `hasNamespaceBoxes`); default false. */
 	readonly isFirstBoxedFitKept?: boolean
@@ -457,8 +455,6 @@ export const setFocus = (model: Model, focus: Option.Option<Focus>): Return =>
 
 /** New rows from a refresh or an overlay landing: same nodes refine in place, new topology relayouts. */
 export const setSource = (model: Model, source: SourceGraph): Return => redeclutter({ ...model, source })
-
-// UPDATE
 
 const toggleSelection = (model: Model, nodeId: string): Return =>
 	redeclutter(

@@ -19,7 +19,7 @@ export type FormDialogOptions<M> = Readonly<{
 	/** Rich copy (a provider logo before the text) as children. */
 	title: string | ReadonlyArray<Html | string>
 	titleClassName?: string
-	/** Rich copy (a `<Kbd>` inside) as children. */
+	/** Rich copy (a keyboard key inside) as children. */
 	description?: string | ReadonlyArray<Html | string>
 	onSubmit: M
 	submitLabel: string

@@ -210,7 +210,7 @@ export const CopyText = Command.define("CopyText", {
 	execute: ({ text }) => writeClipboard(text),
 })
 
-/** `logPermalink`: the row's own log page on this origin. */
+/** The row's own log page on this origin. */
 export const CopyLogLink = Command.define("CopyLogLink", {
 	args: { href: Schema.String },
 	messages: [Message.CompletedCopy],

@@ -6,7 +6,7 @@ import type { Rect } from "../xyflow/geometry"
 import { Array as Arr } from "effect"
 import { nonZeroOr } from "@maple/ui/lib/number"
 
-// `ServiceMapControls`, `ServiceMapMiniMap` and `ServiceMapBackground` (packages/ui `service-map/`).
+// The service map's controls, minimap and background.
 
 const controlButton = <M>(
 	h: HtmlBuilder<M>,

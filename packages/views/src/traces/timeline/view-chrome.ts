@@ -18,8 +18,8 @@ import { typography, typographyClass } from "@maple/views/ui/typography"
 import { layer } from "@maple/views/ui/layer"
 import { hstack } from "@maple/views/ui/stack"
 
-// The Timeline's chrome: `TraceTimelineSearch`, the toolbar with `TraceDepthControls`, the fit
-// button and `ColorByPicker`, `TraceTimelineMinimap` and `TraceTimelineTimeAxis`.
+// The Timeline's chrome: the search, the toolbar with the depth controls, the fit button and the
+// color-by picker, the minimap and the time axis.
 
 type H = HtmlBuilder<Message>
 
@@ -97,7 +97,7 @@ const countKeys = (
 		.slice(0, MAX_KEYS_PER_SOURCE)
 }
 
-/** `useTraceAttributeKeys`: the trace's commonest span and resource attribute keys, 20 of each. */
+/** The trace's commonest span and resource attribute keys, 20 of each. */
 export const attributeKeys = (rootSpans: ReadonlyArray<SpanNodeData>): ReadonlyArray<AttributeKey> => [
 	...Arr.map(
 		countKeys(rootSpans, (span) => span.spanAttributes),
@@ -119,7 +119,7 @@ export const attributeKeys = (rootSpans: ReadonlyArray<SpanNodeData>): ReadonlyA
 
 const PRESETS = ["preset:service", "preset:spanKind", "preset:statusCode"] as const
 
-/** `ColorByPicker`'s groups: presets, then the trace's span and resource attribute keys. */
+/** The color-by groups: presets, then the trace's span and resource attribute keys. */
 const colorByEntries = (rootSpans: ReadonlyArray<SpanNodeData>): ReadonlyArray<SelectView.SelectEntry> => {
 	const keys = attributeKeys(rootSpans)
 	const group = (label: string, kind: AttributeKey["kind"]): ReadonlyArray<SelectView.SelectEntry> => {
@@ -155,7 +155,7 @@ const colorByEntries = (rootSpans: ReadonlyArray<SpanNodeData>): ReadonlyArray<S
 	]
 }
 
-/** `ColorByPicker`: a small Select whose trigger reads "Color: Service". */
+/** A small Select whose trigger reads "Color: Service". */
 const colorByPicker = (h: H, model: Model): Html =>
 	h.submodel({
 		slotId: model.colorBySelect.id,
@@ -309,7 +309,7 @@ const silhouette = (
 	)
 }
 
-/** `TraceTimelineMinimap` at rest: the span silhouette, masks and the viewport rect. */
+/** The minimap at rest: the span silhouette, masks and the viewport rect. */
 export const minimap = (h: H, model: Model): Html => {
 	const { loMs: domainStartMs, durationMs: domainDuration } = viewportBounds(
 		model.traceStartMs,

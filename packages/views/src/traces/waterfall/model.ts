@@ -2,7 +2,7 @@ import { Schema } from "effect"
 import { defineMessageUnion } from "foldkit/message"
 import { SpanNodeData } from "@maple/views/traces/trace-data"
 
-// The Waterfall tab.
+// The Waterfall tab's state.
 
 /** One rendered row of the virtual window, by its index into the visible rows. */
 export const VirtualRow = Schema.Struct({ index: Schema.Number, start: Schema.Number })
@@ -13,7 +13,7 @@ export const Model = Schema.Struct({
 	totalDurationMs: Schema.Number,
 	traceStartTime: Schema.String,
 	totalSpanCount: Schema.Number,
-	/** Span ids whose children show (`expandedSpans`). */
+	/** Span ids whose children show. */
 	expanded: Schema.Array(Schema.String),
 	selectedSpanId: Schema.NullOr(Schema.String),
 	virtualRows: Schema.Array(VirtualRow),

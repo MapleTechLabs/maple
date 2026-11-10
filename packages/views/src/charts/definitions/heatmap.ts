@@ -6,7 +6,7 @@ import { Option } from "effect"
 import { ChartTooltip, type ChartSpec } from "../chart-spec"
 import type { BuiltChart } from "./built-chart"
 
-// The `definition` memo of `QueryBuilderHeatmapChart`: grout holes under the coloured cells, one
+// The query-builder heatmap's definition: grout holes under the coloured cells, one
 // hover cascade for both.
 
 type HeatmapSpec = Extract<ChartSpec, { readonly _tag: "Heatmap" }>

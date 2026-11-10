@@ -40,7 +40,7 @@ interface FocusCell {
 }
 
 /**
- * `createTooltipFocusStore`: the tooltip anchor records the pointer and the y scale on every
+ * The tooltip anchor records the pointer and the y scale on every
  * update, so the body can emphasise the series nearest the cursor. One per built definition.
  */
 export const tooltipFocusCapture = () => {
@@ -57,7 +57,7 @@ export const tooltipFocusCapture = () => {
 		return context.pointer
 	}
 	/**
-	 * `resolveTooltipHighlight`: the label nearest the cursor among `plotted` (label to where its
+	 * The label nearest the cursor among `plotted` (label to where its
 	 * mark sits in y-data space); single-series charts emphasise nothing.
 	 */
 	const highlight = (

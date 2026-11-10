@@ -4,7 +4,7 @@ import type { Html, HtmlBuilder } from "foldkit/html"
 import { chartSkeleton, type ChartSkeletonVariant } from "./chart-skeleton"
 import { Array as Arr, Record as Rec } from "effect"
 
-// `ChartLoading`, `ChartEmpty` and `ChartError`, standalone (no `ChartPlotArea`): an explicit
+// A chart's loading, empty and error states, standalone (no `chartPlotArea`): an explicit
 // height, else the parent owns it.
 
 const MESSAGE_BASE = "flex items-center justify-center px-3 text-center font-mono text-2xs"
@@ -25,7 +25,7 @@ const stateBox = <M>(
 const svgAttrs = <M>(h: HtmlBuilder<M>, entries: Readonly<Record<string, string>>) =>
 	Arr.map(Rec.toEntries(entries), ([name, value]) => h.Attribute(name, value))
 
-/** `EmptyAxes`: three gridlines and a dashed baseline, masked out behind the message. */
+/** Three gridlines and a dashed baseline, masked out behind the message. */
 const emptyAxes = <M>(h: HtmlBuilder<M>): Html =>
 	h.svg(
 		svgAttrs(h, {
@@ -65,7 +65,7 @@ const emptyAxes = <M>(h: HtmlBuilder<M>): Html =>
 		],
 	)
 
-/** `ChartEmpty`: an ordinary "nothing to draw" outcome, muted. */
+/** An ordinary "nothing to draw" outcome, muted. */
 export const chartEmpty = <M>(
 	h: HtmlBuilder<M>,
 	options: Readonly<{ hint?: string; height?: number; className?: string }>,
@@ -91,7 +91,7 @@ export const chartEmpty = <M>(
 		],
 	)
 
-/** `ChartError`: a chart whose query failed. */
+/** A chart whose query failed. */
 export const chartError = <M>(
 	h: HtmlBuilder<M>,
 	options: Readonly<{ height?: number; className?: string }>,
@@ -112,7 +112,7 @@ export const chartError = <M>(
 		children,
 	)
 
-/** `ChartLoading` outside a `ChartPlotArea`: an explicit height, else the parent owns it. */
+/** Loading outside a `chartPlotArea`: an explicit height, else the parent owns it. */
 export const chartLoading = <M>(
 	h: HtmlBuilder<M>,
 	options: Readonly<{ variant: ChartSkeletonVariant; height?: number; className?: string }>,
@@ -125,7 +125,7 @@ export const chartLoading = <M>(
 		[chartSkeleton(h, options.variant)],
 	)
 
-/** `ChartPlotArea`: reserves the plot box; the states inside fill it. */
+/** Reserves the plot box; the states inside fill it. */
 export const chartPlotArea = <M>(
 	h: HtmlBuilder<M>,
 	height: number,

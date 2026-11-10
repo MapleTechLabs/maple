@@ -5,11 +5,11 @@ import { eyebrow } from "./eyebrow"
 import { icon, type IconName } from "./icon"
 import { tooltipTrigger } from "./tooltip-host"
 
-// `DetailRail`: Group, Row and Field.
+// The detail page's right rail: eyebrow-titled groups of rows and fields.
 
 type Children = ReadonlyArray<Html | string>
 
-/** `DetailRail.Group`: an eyebrow-titled section of the right rail. */
+/** An eyebrow-titled section of the right rail. */
 export const detailRailGroup = <M>(
 	h: HtmlBuilder<M>,
 	label: string,

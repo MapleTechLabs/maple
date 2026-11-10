@@ -12,7 +12,7 @@ import {
 } from "./flow-graph"
 import { describeSpan, SPAN_CATEGORIES, type SpanCategory } from "./span-category"
 
-/** `TraceFlowView` as a Submodel over a fixed trace. */
+/** The trace flow as a Submodel over a fixed trace. */
 
 /** Past this many nodes the layout and render cost outweighs what the graph can still show. */
 export const MAX_FLOW_NODES = 1500

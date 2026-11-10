@@ -14,14 +14,14 @@ export const Model = Schema.Struct({
 	rootSpans: Schema.Array(SpanNodeData),
 	totalDurationMs: Schema.Number,
 	traceStartTime: Schema.String,
-	/** `[...new Set(spans.map(serviceName))]`, in span order. */
+	/** Each service once, in span order. */
 	services: Schema.Array(Schema.String),
 	totalSpanCount: Schema.Number,
 	skew: Schema.NullOr(SkewSummary),
 	traceStartMs: Schema.Number,
 	traceEndMs: Schema.Number,
 	viewport: Viewport,
-	/** `TimelineState`: expanded parents, keyboard focus, search. */
+	/** Expanded parents, keyboard focus, search. */
 	expandedSpanIds: Schema.Array(Schema.String),
 	focusedIndex: Schema.NullOr(Schema.Number),
 	searchQuery: Schema.String,
@@ -30,10 +30,10 @@ export const Model = Schema.Struct({
 	selectedSpanId: Schema.NullOr(Schema.String),
 	/** A `colorByFieldId` (`preset:service`). */
 	colorBy: Schema.String,
-	/** `ColorByPicker`'s Select, its value kept on `colorBy`. */
+	/** The color-by Select, its value kept on `colorBy`. */
 	colorBySelect: Select.Model,
 	spanEvents: Schema.NullOr(SpanEvents),
-	/** The stored label-column width (`traceTimelineSidebarWidth`). */
+	/** The stored label-column width. */
 	sidebarWidth: Schema.Number,
 	/** The body scroller's content box and scroll offset, as the measuring Mount reports them. */
 	scrollerWidth: Schema.Number,

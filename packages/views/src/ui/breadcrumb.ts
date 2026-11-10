@@ -13,6 +13,8 @@ import { icon } from "./icon"
 
 type Children = ReadonlyArray<Html | string>
 
+// A breadcrumb trail: list, items, links, the current page, separators and an ellipsis.
+
 export const breadcrumb = <Message>(
 	h: HtmlBuilder<Message>,
 	className: string | undefined,
@@ -48,7 +50,7 @@ export const breadcrumbItem = <Message>(
 		children,
 	)
 
-/** `<BreadcrumbLink render={<Link to />}>`. */
+/** A breadcrumb that links to an earlier page. */
 export const breadcrumbLink = <Message>(
 	h: HtmlBuilder<Message>,
 	options: Readonly<{ className?: string; href: string }>,

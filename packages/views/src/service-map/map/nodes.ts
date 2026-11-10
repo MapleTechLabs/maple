@@ -29,7 +29,7 @@ import { formatRuntime } from "./runtime"
 import { typography, typographyClass } from "../../ui/typography"
 import { hstack, vstack } from "../../ui/stack"
 
-// `ServiceNode`, `DatabaseNode`, `NamespaceAggregateNode` and the `ServiceMapNode` wrapper.
+// The service, database and namespace-aggregate node cards, and the wrapper that picks one.
 
 const handles = <M>(h: HtmlBuilder<M>, id: string): ReadonlyArray<Html> => [
 	flowHandle(h, id, "target", "left", HANDLE_CLASSES),
@@ -305,7 +305,7 @@ const namespaceAggregateNode = <M>(
 	]
 }
 
-/** `ServiceMapNode`: the card for the node's kind inside the focus-dim wrapper. */
+/** The card for the node's kind inside the focus-dim wrapper. */
 export const serviceMapNode = <M>(h: HtmlBuilder<M>, id: string, data: ServiceNodeData): Html =>
 	h.div(
 		[h.Class(cn("transition-opacity duration-200", data.dimmed && "opacity-25"))],

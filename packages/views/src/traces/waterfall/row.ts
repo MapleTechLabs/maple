@@ -26,7 +26,7 @@ import { typography, typographyClass } from "@maple/views/ui/typography"
 import { selectableRow } from "@maple/views/ui/selectable-row"
 import { hstack } from "@maple/views/ui/stack"
 
-// `SpanRow` and `PixelDurationBar`.
+// A waterfall row and its pixel duration bar.
 
 /** A bad outcome badge's look. */
 const BAD_OUTCOME_STYLE = typographyClass({
@@ -149,7 +149,7 @@ const toggle = (h: HtmlBuilder<Message>, span: SpanNodeData, isExpanded: boolean
 				),
 			])
 
-/** `PixelDurationBar`: fixed blocks, lit where the span covers them. */
+/** Fixed blocks, lit where the span covers them. */
 const pixelBar = (
 	h: HtmlBuilder<Message>,
 	leftPercent: number,
