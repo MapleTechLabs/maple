@@ -120,7 +120,10 @@ describe("detectAttributeRecommendations", () => {
 			[key("http.host"), key("net.peer.name"), key("server.address")],
 			[],
 		)
-		expect(Arr.every(withTarget, (r) => r.kind === "double-emission")).toBe(true)
+		expect(Arr.map(withTarget, (r) => `${r.kind} ${r.id}`).sort()).toEqual([
+			"double-emission dual:http.host",
+			"double-emission dual:net.peer.name",
+		])
 	})
 
 	it("never asks to rename SampleRate, which Maple reads as the sampling weight", () => {

@@ -437,7 +437,7 @@ describe("linkPullRequest hydration", () => {
 				const second = yield* service.linkPullRequest(ORG, null, issueId, PR_URL, "user")
 				expect(second.id).toBe(first.id)
 				expect(second.state).toBe("merged")
-				expect(yield* readVerification(issueId)).toBeDefined()
+				expect((yield* readVerification(issueId))?.status).toBe("waiting")
 			}).pipe(Effect.provide(layer))
 		}),
 	)
