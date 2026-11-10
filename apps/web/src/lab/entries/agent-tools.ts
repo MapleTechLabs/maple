@@ -27,7 +27,7 @@ import { DETAIL_TOOLS } from "../agent-tools-detail-fixture"
 import type { Resources } from "../../platform/resources"
 import { urlToAppRoute } from "../../route"
 import * as Toast from "@maple/views/ui/toast"
-import { ViewerFlags, viewerFlags } from "@maple/views/ui/logs/viewer"
+import { ViewerFlags, viewerFlags } from "../viewer-flags"
 import { defineLabWithFlags } from "../define"
 import { foldLabToasts, initLabToasts, labRoot } from "../toasts"
 
