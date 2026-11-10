@@ -4,10 +4,13 @@ import { formEvaluationInterval } from "@maple/web-data/alerts/form-utils"
 import type { RuleForm } from "./form"
 import { Array as Arr, String as Str, Option } from "effect"
 
-/** The radio value for "checks every fifth of the window". */
+/** The interval select's value for "checks every fifth of the window". */
 export const AUTO_INTERVAL = "auto"
 
-export const intervalRadioValue = (formValue: string): string =>
+/** The check interval select, inside the "How it is checked" sentence. */
+export const INTERVAL_SELECT_ID = "rule-interval"
+
+export const intervalSelectValue = (formValue: string): string =>
 	Str.trim(formValue).length === 0 ? AUTO_INTERVAL : formValue
 
 export interface IntervalOption {

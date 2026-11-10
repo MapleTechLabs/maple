@@ -3,15 +3,17 @@ import {
 	buildRuleTestParamsV2,
 	isRulePreviewReady,
 } from "@maple/web-data/alerts/form-utils"
-import { Result } from "effect"
+import { Array as Arr, Result } from "effect"
 import { PageOutMessage } from "../../contract"
 import { alertsHref } from "../../kit/alert-links"
-import { RunRuleTest, SaveRule, TrackRuleCreated } from "./command"
+import { sentenceCardHeadingId } from "../../kit/sentence-card"
+import { FocusRuleCard, RunRuleTest, SaveRule, TrackRuleCreated } from "./command"
 import { isProtectedDefault, previewIdentityKey, saveIssues } from "./derive"
 import { draftTimingOf } from "./derive-rows"
 import type { Message } from "./message"
 import type { Model } from "./model"
 import type { Return } from "./steps"
+import { cardOfIssue, issueFieldId } from "./summary"
 
 const errorToast = (title: string, description = ""): PageOutMessage =>
 	PageOutMessage.RequestedToast({ type: "error", title, description })
@@ -61,7 +63,20 @@ export const completeTest = (model: Model, message: Extract<Message, { _tag: "Co
 export const save = (model: Model): Return => {
 	const form = model.form
 	if (form === null || model.isSaving) return { model }
-	if (saveIssues(form, draftTimingOf(model, form), isProtectedDefault(model)).length > 0) return { model }
+	const issues = saveIssues(form, draftTimingOf(model, form), isProtectedDefault(model))
+	const first = issues[0]
+	// A blocked save shows every field's error and lands on the first thing to fix.
+	if (first !== undefined) {
+		const card = cardOfIssue(first)
+		return {
+			model: {
+				...model,
+				hasAttemptedSave: true,
+				expandedCards: Arr.union(model.expandedCards, [card]),
+			},
+			commands: [FocusRuleCard({ id: issueFieldId(first) ?? sentenceCardHeadingId(card) })],
+		}
+	}
 	return {
 		model: { ...model, isSaving: true },
 		commands: [SaveRule({ ruleId: model.editingRuleId, payload: buildRuleCreateParamsV2(form) })],

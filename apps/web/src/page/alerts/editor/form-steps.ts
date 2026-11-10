@@ -25,6 +25,23 @@ export const setEscalationField = (
 ): RuleForm =>
 	form.escalation === null ? form : { ...form, escalation: { ...form.escalation, [field]: value } }
 
+/** How breaches are counted, a select inside the "Fire after" sentence. */
+export const BREACH_MODE_SELECT_ID = "rule-breach-mode"
+
+/** Breaches counted in a row (no window), or out of the last N checks, starting two past the count. */
+export const setBreachMode = (form: RuleForm, mode: string): RuleForm => {
+	if (mode !== "window") return { ...form, breachesOutOf: "" }
+	if (Str.trim(form.breachesOutOf).length > 0) return form
+	const required = Number(Str.trim(form.consecutiveBreachesRequired))
+	return {
+		...form,
+		breachesOutOf: Number.isInteger(required) && required > 0 ? String(required + 2) : "5",
+	}
+}
+
+/** The mode switch as a select, below `sm` where the four segments do not fit. */
+export const KIND_SELECT_ID = "rule-kind"
+
 /** A tier's escalation chain select, and its "None" value. */
 export const chainSelectIdOf = (tier: Tier): string => `rule-chain-${tier}`
 export const NO_CHAIN = "none"

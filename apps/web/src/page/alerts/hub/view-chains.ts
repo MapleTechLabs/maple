@@ -6,7 +6,7 @@ import { Array as Arr, Option } from "effect"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { borderedBox } from "@maple/views/ui/bordered-box"
-import { button } from "@maple/views/ui/button"
+import { linkButton } from "@maple/views/ui/button"
 import { confirmDialog } from "@maple/views/ui/confirm-dialog"
 import { empty, emptyDescription, emptyHeader, emptyMedia, emptyTitle } from "@maple/views/ui/empty"
 import { errorState } from "@maple/views/ui/error-state"
@@ -18,10 +18,12 @@ import { emptyActions } from "@maple/views/ui/signal-empty-state"
 import { skeleton } from "@maple/views/ui/skeleton"
 import { hstack, vstack } from "@maple/views/ui/stack"
 import { tooltipTrigger } from "@maple/views/ui/tooltip-host"
+import { textLink } from "@maple/views/ui/text-link"
 import { typography } from "@maple/views/ui/typography"
 import { alert, alertDescription, alertTitle } from "@maple/views/ui/alert"
 import { sectionHeading } from "../../kit/section-heading"
-import { chainSummary } from "../shared/escalation-chains"
+import { chainDeleteConfirm } from "../shared/chain-delete-confirm"
+import { chainHref, chainSummary, newChainHref } from "../shared/escalation-chains"
 import { memberName } from "../shared/org-members"
 import { Message } from "./message"
 import { type Model } from "./model"
@@ -88,7 +90,14 @@ export const chainRow = (
 			hstack(h, { gap: "3", align: "start" }, [
 				rowIcon(h, "BellIcon"),
 				vstack(h, { gap: "0.5", shrink: true, grow: true }, [
-					typography(h, { size: "sm", weight: "medium", truncate: true, as: "p" }, [chain.name]),
+					typography(h, { size: "sm", weight: "medium", truncate: true, as: "p" }, [
+						// `block truncate`: an inline-flex link would be clipped without an ellipsis.
+						textLink(
+							h,
+							{ href: chainHref(chain.id), tone: "inherit", className: "block truncate" },
+							[chain.name],
+						),
+					]),
 					typography(
 						h,
 						{
@@ -149,7 +158,7 @@ const chainsEmpty = (h: H, model: Model): Html =>
 			...(canManageAlerts(model)
 				? [
 						emptyActions(h, [
-							button(h, { size: "sm", attributes: [h.OnClick(Message.ClickedNewChain())] }, [
+							linkButton(h, { size: "sm", href: newChainHref() }, [
 								icon(h, "PlusIcon"),
 								"Create chain",
 							]),
@@ -210,15 +219,10 @@ export const chainsSection = (h: H, model: Model): Html =>
 						title: "Escalation chains",
 						actions:
 							canManageAlerts(model) && hasChains(model)
-								? button(
-										h,
-										{
-											size: "sm",
-											variant: "outline",
-											attributes: [h.OnClick(Message.ClickedNewChain())],
-										},
-										[icon(h, "PlusIcon"), "New chain"],
-									)
+								? linkButton(h, { size: "sm", variant: "outline", href: newChainHref() }, [
+										icon(h, "PlusIcon"),
+										"New chain",
+									])
 								: undefined,
 					}),
 					typography(h, { size: "sm", tone: "muted", as: "p" }, [
@@ -230,7 +234,10 @@ export const chainsSection = (h: H, model: Model): Html =>
 		],
 	)
 
-/** "Delete {chain}?": the 409 that names the rules holding it stays in the dialog. */
+/**
+ * "Delete {chain}?": as on the chain's page, the rules that start it are listed and hold the
+ * delete. A 409 from a rule attached since the list was read stays in the dialog.
+ */
 export const deleteChainDialog = (h: H, model: Model): Html => {
 	const chain = Arr.findFirst(
 		Option.getOrElse(AsyncData.getData(model.chains.data), () => []),
@@ -240,24 +247,29 @@ export const deleteChainDialog = (h: H, model: Model): Html => {
 		Option.map(chain, (found) => found.name),
 		() => "escalation chain",
 	)
+	const confirm = chainDeleteConfirm(h, chain, model.rules)
+	const children = [
+		...confirm.ruleList,
+		...(model.deleteChainError === null
+			? []
+			: [
+					alert(h, { variant: "crit", size: "sm" }, [
+						icon(h, "CircleXmarkIcon"),
+						alertTitle(h, ["Couldn't delete chain"]),
+						alertDescription(h, [model.deleteChainError]),
+					]),
+				]),
+	]
 	return confirmDialog(h, {
 		slotId: "alerts-delete-chain",
 		model: model.deleteChainDialog,
 		toParentMessage: (message) => Message.GotDeleteChainDialogMessage({ message }),
 		title: `Delete ${name}?`,
-		description: "Escalations already running finish on their own copy. This cannot be undone.",
-		children:
-			model.deleteChainError === null
-				? undefined
-				: [
-						alert(h, { variant: "crit", size: "sm" }, [
-							icon(h, "CircleXmarkIcon"),
-							alertTitle(h, ["Couldn't delete chain"]),
-							alertDescription(h, [model.deleteChainError]),
-						]),
-					],
+		description: confirm.description,
+		children: children.length === 0 ? undefined : children,
 		confirmLabel: "Delete chain",
 		isPending: model.deletingChainId !== null,
+		isConfirmDisabled: confirm.isInUse,
 		onConfirm: Message.ClickedConfirmDeleteChain(),
 	})
 }

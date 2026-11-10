@@ -191,6 +191,7 @@ existing copies onto it (see `apps/web/CLAUDE.md`).
 - `apps/web/src/page/kit/anomaly-evidence.ts` `anomalySummary`, `anomalySignalChart`, `anomalyFingerprintRow`: The anomaly detector's evidence: the observed value against its baseline, the signal chart with its baseline and threshold, and the error fingerprints grouped into it.
 - `apps/web/src/page/kit/anomaly-row.ts` `anomalyHref`, `anomalyRow`: One anomaly as a list row.
 - `apps/web/src/page/kit/autocomplete-lookups.ts` `names`, `lookupField`, `autocompleteLookup`: The autocomplete lookups a query builder fetches once it is first focused, each reduced to the names it suggests.
+- `apps/web/src/page/kit/chain-connector.ts` `chainConnector`: The line between two cards of a vertical chain, with a + on it that adds a card there.
 - `apps/web/src/page/kit/chart-card.ts` `chartCard`, `chartCardMessage`: The card a chart sits in: an optional header (title, legend, scope) over the plot area.
 - `apps/web/src/page/kit/checkout-return.ts` `confirmed` (stateful: Model, init, update): Back from Stripe (`?checkout=complete`), a page waits on the Autumn sync.
 - `apps/web/src/page/kit/clipboard.ts` `writeClipboard`, `copyToast`: The clipboard API, then the `execCommand` fallback; `true` when the write landed.
@@ -234,6 +235,7 @@ existing copies onto it (see `apps/web/CLAUDE.md`).
 - `apps/web/src/page/kit/page-rail-sheet.ts` `pageRailSheet`: A page's filter or context rail below `lg`, in a side sheet with an sr-only header.
 - `apps/web/src/page/kit/page-time.ts` `stepTimePicker`, `pickerStep`, `withPreset`, `pageTime`: The header time cluster pages share, and the picker's update step.
 - `apps/web/src/page/kit/peek-keys.ts` `peekStepFor`: The list peeks' step keys: down/J forward, up/K back, except in a text field or with a modifier.
+- `apps/web/src/page/kit/pick-chips.ts` `pickChips`: `PickList` for a sentence, where the picks sit inline on the sentence's own line.
 - `apps/web/src/page/kit/pick-list.ts` `pickList`: What a form has picked (destinations, people, schedules), each removable and, in an ordered list, movable, then an "Add" menu of the rest.
 - `apps/web/src/page/kit/pinned-namespace-notice.ts` `pinnedNamespaceNotice`: Replaces a rail's Namespace section while the org-global pin is on.
 - `apps/web/src/page/kit/providers.ts` `providerBrand`: The integration providers: each one's name, mark, accent, docs and infra page, read by the integrations catalog, the sidebar, the infra overview, Sources and the provider pages.
@@ -261,6 +263,7 @@ existing copies onto it (see `apps/web/CLAUDE.md`).
 - `apps/web/src/page/kit/route-window.ts` `isWindowChange`, `snapModeOf`, `routeWindowStep`: A page's time window across `routeChanged`: re-resolved only when its own fields moved, and only Reload revalidates unchanged keys.
 - `apps/web/src/page/kit/save-bar.ts` `saveBar`: Pinned while a settings tab has unsaved edits.
 - `apps/web/src/page/kit/section-heading.ts` `sectionHeading`: A section's heading: a title row with hint, count and actions, or the uppercase eyebrow overline.
+- `apps/web/src/page/kit/sentence-card.ts` `sentenceCardHeadingId`, `sentenceCardSummaryId`, `sentenceCard`, `sentenceChain`, `sentenceRow`, `sentencePhrase`, `sentenceClause`, `sentenceSection`: Sentence cards: a form that reads top to bottom as one sentence ("When ...
 - `apps/web/src/page/kit/series-legend.ts` `seriesLegend`
 - `apps/web/src/page/kit/service-health.ts` `anomaliesKey`, `fetchAnomaliesCommand`, `incidentsStream`, `incidentsLoadFailedStream`, `receivedIncidents`, `failedIncidents`, `serviceHealthCauses`: Service health inputs the overview and the services list share: the synced alert incidents, the open anomaly counts, and the causes each service row reads from them.
 - `apps/web/src/page/kit/service-metrics/grid.ts` `metricsGridOf`: The four golden-signal cards in a grid: a service's Overview tab and a release's service section feed it.

@@ -60,30 +60,64 @@ const issuesDetails = (h: H, model: BarView, issues: ReadonlyArray<string>): Htm
 		},
 	})
 
-const validationSummary = (h: H, model: BarView, issues: ReadonlyArray<string>): Html => {
-	if (issues.length === 0)
-		return hstack(
-			h,
-			{
-				gap: "1.5",
-				as: "span",
-				className: typographyClass({ size: "xs", className: "text-severity-info" }),
-			},
-			[icon(h, "CheckIcon", { size: 14 }), "Ready to save"],
-		)
-	const visible = issues.slice(0, MAX_VISIBLE_ISSUES)
-	const hiddenCount = issues.length - visible.length
-	const summary = Arr.join(visible, ", ") + (hiddenCount > 0 ? ` +${hiddenCount} more` : "")
-	return h.span(
-		[h.Class(cn("flex min-w-0 items-center gap-1.5 truncate text-xs text-muted-foreground"))],
-		[
+/** A blocker as a jump link: it opens the blocker's card and focuses its field. */
+const issueLink = (h: H, issue: string): Html =>
+	button(
+		h,
+		{
+			variant: "link",
+			size: "xs",
+			className: "h-9 px-0 sm:h-7",
+			attributes: [h.Key(issue), h.OnClick(Message.ClickedIssue({ issue }))],
+		},
+		[issue],
+	)
+
+/**
+ * One state at a time. Nothing to save says so; a valid edit is ready; a blocked one lists what
+ * to fix, each item a jump to its field.
+ */
+const validationSummary = (h: H, model: BarView, issues: ReadonlyArray<string>, isClean: boolean): Html => {
+	if (issues.length > 0) {
+		const visible = issues.slice(0, MAX_VISIBLE_ISSUES)
+		const hiddenCount = issues.length - visible.length
+		return hstack(h, { align: "center", wrap: true, shrink: true, className: "gap-x-1.5 gap-y-0.5" }, [
 			icon(h, "CircleWarningIcon", { size: 14, className: "shrink-0 text-severity-warn" }),
-			typography(h, { truncate: true }, [
-				"Fix before saving: ",
-				typography(h, { tone: "foreground" }, [summary]),
+			typography(h, { size: "xs", tone: "muted" }, ["Fix before saving:"]),
+			...Arr.flatMap(visible, (issue, index) => [
+				issueLink(h, issue),
+				...(index < visible.length - 1
+					? [
+							typography(
+								h,
+								{
+									size: "xs",
+									tone: "muted",
+									className: "-ml-1.5",
+									attributes: [h.AriaHidden(true)],
+								},
+								[","],
+							),
+						]
+					: []),
 			]),
-			...(hiddenCount > 0 ? [issuesDetails(h, model, issues)] : []),
-		],
+			...(hiddenCount > 0
+				? [
+						typography(h, { size: "xs", tone: "muted" }, [`+${hiddenCount} more`]),
+						issuesDetails(h, model, issues),
+					]
+				: []),
+		])
+	}
+	if (isClean) return typography(h, { size: "xs", tone: "muted", as: "p" }, ["No changes"])
+	return hstack(
+		h,
+		{
+			gap: "1.5",
+			as: "span",
+			className: typographyClass({ size: "xs", className: "text-severity-info" }),
+		},
+		[icon(h, "CheckIcon", { size: 14 }), "Ready to save"],
 	)
 }
 
@@ -113,28 +147,27 @@ const bar = (h: H, model: BarView, form: RuleForm, timing: AlertQueryTiming | nu
 						),
 					]),
 			vstack(h, { gap: "0.5", shrink: true }, [
+				// A phone wraps the sentence onto a second line; from `sm` it is one line.
 				typography(
 					h,
 					{
 						size: "sm",
 						tone: "foreground",
-						truncate: true,
 						as: "p",
+						className: "line-clamp-2 sm:line-clamp-1",
 						attributes: [h.Title(summary)],
 					},
 					[summary],
 				),
-				validationSummary(h, model, issues),
+				validationSummary(h, model, issues, changeCount === 0),
 			]),
 		],
 		actions: [
-			...(changeCount === null
+			...(changeCount === null || changeCount === 0
 				? []
 				: [
 						typography(h, { size: "xs", tone: "muted", className: "hidden sm:inline" }, [
-							changeCount === 0
-								? "No changes"
-								: `${changeCount} unsaved ${pluralize(changeCount, "change")}`,
+							`${changeCount} unsaved ${pluralize(changeCount, "change")}`,
 						]),
 					]),
 			linkButton(h, { variant: "outline", size: "sm", href: alertsHref({}, "rules") }, ["Cancel"]),
@@ -142,7 +175,8 @@ const bar = (h: H, model: BarView, form: RuleForm, timing: AlertQueryTiming | nu
 				h,
 				{
 					size: "sm",
-					isDisabled: issues.length > 0 || changeCount === 0,
+					// With something missing the press is a save attempt: it shows what to fix.
+					isDisabled: changeCount === 0,
 					isLoading: model.isSaving,
 					attributes: [h.OnClick(Message.ClickedSave())],
 				},

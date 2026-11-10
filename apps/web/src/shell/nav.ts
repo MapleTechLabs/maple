@@ -170,7 +170,13 @@ const alertsItem: NavItem = {
 			alsoActive: ["/alerts/schedules"],
 			startsGroup: true,
 		},
-		{ title: "Routing", href: "/alerts/routing", icon: "BranchForkIcon", paletteTitle: "Alert routing" },
+		{
+			title: "Routing",
+			href: "/alerts/routing",
+			icon: "BranchForkIcon",
+			paletteTitle: "Alert routing",
+			alsoActive: ["/alerts/escalation-chains"],
+		},
 	],
 }
 

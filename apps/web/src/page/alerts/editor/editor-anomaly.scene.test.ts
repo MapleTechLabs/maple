@@ -3,6 +3,7 @@ import { AlertDestinationId } from "@maple/domain/http"
 import { Result, Schema, Array as Arr } from "effect"
 import {
 	click,
+	Command,
 	expect as expectView,
 	given,
 	Mount,
@@ -20,6 +21,7 @@ import { menuIdOf } from "./dest-steps"
 import type { PageContext } from "../../contract"
 import { defaultAnomalyRuleRow, scopedAnomalyRuleRow } from "../shared/anomaly-test-fixtures"
 import { DESTINATION_ID, destinationRow, NOW, ORG, ruleId, ruleRow } from "../../kit/alert-test-rows"
+import { FocusRuleCard } from "./command"
 import { init } from "./init"
 import { Message } from "./message"
 import type { Model } from "./model"
@@ -54,6 +56,9 @@ const pickExisting = (tier: "warning" | "critical", id: string) =>
 		message: Menu.Message.ClickedItem({ index: 0, item: { kind: "Item", value: `existing:${id}` } }),
 	})
 
+const savesOf = (model: Model) =>
+	Arr.map(pageUpdate(model, Message.ClickedSave()).commands ?? [], ({ name }) => name)
+
 const DESCRIPTION = /^Pages when Maple detects unusual error rate, latency, throughput/
 const DEFAULT_NOTE = /^This is the default anomaly rule/
 
@@ -64,10 +69,10 @@ describe("alert rule editor: anomaly rules", () => {
 			{ update: pageUpdate, view },
 			given(blank),
 			themeResolved(),
-			expectView(text("When to alert")).toExist(),
+			expectView(text("Alert when")).toExist(),
 			click(role("button", { name: "Anomaly" })),
 			expectView(text(DESCRIPTION)).toExist(),
-			expectView(text("When to alert")).not.toExist(),
+			expectView(text("Alert when")).not.toExist(),
 			expectView(role("button", { name: "Dry run" })).not.toExist(),
 			expectView(role("group", { name: "Anomaly signals" })).toExist(),
 			expectView(text("None picked: every signal pages.")).toExist(),
@@ -134,9 +139,9 @@ describe("alert rule editor: anomaly rules", () => {
 			{ update: pageUpdate, view },
 			given(unrouted),
 			themeResolved(),
-			expectView(text("Who gets notified")).toExist(),
-			expectView(role("button", { name: "Create rule" })).toBeDisabled(),
+			expectView(role("button", { name: "Who gets notified" })).toExist(),
 		)
+		expect(savesOf(unrouted)).not.toContain("SaveAlertRule")
 	})
 
 	test("editing a scoped anomaly rule opens on its scope and keeps the save unchanged", () => {
@@ -148,6 +153,8 @@ describe("alert rule editor: anomaly rules", () => {
 			{ update: pageUpdate, view },
 			given(scoped),
 			themeResolved(),
+			click(role("button", { name: /^When: / })),
+			Command.resolve(FocusRuleCard, Message.CompletedFocusCard()),
 			expectView(text("No changes")).toExist(),
 			expectView(text(DEFAULT_NOTE)).not.toExist(),
 			// Each chip's remove button names its chip.
@@ -162,6 +169,8 @@ describe("alert rule editor: anomaly rules", () => {
 			{ update: pageUpdate, view },
 			given(fallback),
 			themeResolved(),
+			click(role("button", { name: /^When: / })),
+			Command.resolve(FocusRuleCard, Message.CompletedFocusCard()),
 			expectView(text(DEFAULT_NOTE)).toExist(),
 			expectView(role("button", { name: "Error rate" })).toBeDisabled(),
 			expectView(role("button", { name: "Built-in" })).toBeDisabled(),
@@ -264,12 +273,12 @@ describe("alert rule editor: anomaly rules", () => {
 			given(unscoped),
 			themeResolved(),
 			expectView(text(/^Pick at least one service, environment or signal/)).toExist(),
-			expectView(role("button", { name: "Create rule" })).toBeDisabled(),
+			expectView(role("button", { name: "Scope" })).toExist(),
 			click(role("button", { name: "Throughput" })),
 			expectView(text(/^Pick at least one service, environment or signal/)).not.toExist(),
-			expectView(role("button", { name: "Create rule" })).not.toBeDisabled(),
+			expectView(text("Ready to save")).toExist(),
 		)
-		expect(pageUpdate(unscoped, Message.ClickedSave()).commands ?? []).toHaveLength(0)
+		expect(savesOf(unscoped)).not.toContain("SaveAlertRule")
 	})
 
 	test("an anomaly rule's name suggests what it covers", () => {

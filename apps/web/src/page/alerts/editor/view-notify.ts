@@ -262,12 +262,14 @@ export const destinationList = (
 	tier: Tier,
 	ids: ReadonlyArray<AlertDestinationId>,
 	destinations: ReadonlyArray<AlertDestinationDocument>,
+	/** What the empty list says: who the tier still reaches (a chain, the warning destinations). */
+	emptyText: string,
 ): Html => {
 	const selected = Arr.filter(destinations, (d) => ids.includes(d.id))
 	const available = Arr.filter(destinations, (d) => !ids.includes(d.id))
 	const unresolved = Arr.filter(ids, (id) => !Arr.some(destinations, (d) => d.id === id))
 	const canAdd = available.length > 0 || canManageAlerts(model)
-	return panel(h, { className: "mt-3 divide-y divide-border-subtle border-border-subtle" }, [
+	return panel(h, { className: "divide-y divide-border-subtle border-border-subtle" }, [
 		...Arr.map(selected, (destination) => selectedRow(h, model, tier, destination)),
 		...Arr.map(unresolved, (id) => unresolvedRow(h, tier, id)),
 		...(selected.length === 0 && unresolved.length === 0
@@ -276,7 +278,7 @@ export const destinationList = (
 						[h.Class("px-3 py-2.5 text-sm text-muted-foreground")],
 						[
 							canAdd
-								? "No one is notified yet."
+								? emptyText
 								: "No destinations exist yet, and only an org admin can add one.",
 						],
 					),

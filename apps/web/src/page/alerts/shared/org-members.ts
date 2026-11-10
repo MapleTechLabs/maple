@@ -70,7 +70,12 @@ export const listOrgMembers: Effect.Effect<ReadonlyArray<OrgMember>, string> = c
  * A member by id; someone who left the org reads as "A former member". Until the members load, after
  * a failed read, or in an org past `MAX_MEMBERS`, an unknown id reads neutrally as "Member".
  */
-export const memberName = (members: ReadonlyArray<OrgMember> | null, userId: string): string =>
+export const memberName = (
+	members: ReadonlyArray<OrgMember> | null,
+	userId: string,
+	/** What someone who left the org reads as, where the default does not fit. */
+	formerName = "A former member",
+): string =>
 	members === null || members.length >= MAX_MEMBERS
 		? Option.getOrElse(
 				Option.map(
@@ -84,7 +89,7 @@ export const memberName = (members: ReadonlyArray<OrgMember> | null, userId: str
 					Arr.findFirst(members, (member) => member.userId === userId),
 					(member) => member.name,
 				),
-				() => "A former member",
+				() => formerName,
 			)
 
 export const memberOf = (

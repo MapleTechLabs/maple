@@ -4,8 +4,7 @@ import { createLazy, type Html, type HtmlBuilder } from "foldkit/html"
 import { bareInput } from "@maple/views/ui/bare-input"
 import { badge } from "@maple/views/ui/display"
 import { button } from "@maple/views/ui/button"
-import { card } from "@maple/views/ui/card"
-import { field, fieldDescription, fieldLabel, input } from "@maple/views/ui/field"
+import { field, fieldDescription, fieldError, fieldLabel, input } from "@maple/views/ui/field"
 import { icon } from "@maple/views/ui/icon"
 import { iconButton } from "@maple/views/ui/icon-button"
 import { textarea } from "@maple/views/ui/textarea"
@@ -83,10 +82,10 @@ const tagInput = (h: H, model: DetailsView, form: RuleForm): Html => {
 	)
 }
 
-const nameField = (h: H, model: DetailsView, form: RuleForm): Html => {
+const nameField = (h: H, model: DetailsView, form: RuleForm, isNameInvalid: boolean): Html => {
 	const suggestion = suggestedName(form)
 	const isSuggesting = Str.trim(form.name).length === 0 && suggestion !== null && suggestion.length > 0
-	const state = fieldStateOf(form.name, model.mountedForm?.name)
+	const state = { ...fieldStateOf(form.name, model.mountedForm?.name), isInvalid: isNameInvalid }
 	const ids = idsOf("rule-name", false)
 	return field(h, { className: "items-stretch gap-1.5", state }, [
 		hstack(h, { gap: "2", justify: "between", className: "min-w-0" }, [
@@ -119,8 +118,11 @@ const nameField = (h: H, model: DetailsView, form: RuleForm): Html => {
 				),
 				h.Value(form.name),
 				h.OnInput((value) => Message.ChangedField({ field: "name", value })),
+				h.OnBlur(Message.BlurredField({ id: ids.control })),
 			],
 		}),
+		// The invalid input names this id in `aria-describedby`: the two render together.
+		...(isNameInvalid ? [fieldError(h, { ids, state }, "Give the rule a name.")] : []),
 	])
 }
 
@@ -157,30 +159,24 @@ const notes = (h: H, model: DetailsView, form: RuleForm): Html => {
 	])
 }
 
-const details = (h: H, model: DetailsView, form: RuleForm): Html => {
+const details = (h: H, model: DetailsView, form: RuleForm, isNameInvalid: boolean): Html => {
 	const tagIds = idsOf("rule-tags", true)
 	const tagState = fieldStateOf("", undefined)
-	return card(
-		h,
+	return h.div(
+		[h.Class("space-y-3")],
 		[
-			h.div(
-				[h.Class("space-y-3")],
-				[
-					nameField(h, model, form),
-					field(h, { className: "items-stretch gap-1.5", state: tagState }, [
-						fieldLabel(h, { ids: tagIds, state: tagState }, "Tags"),
-						tagInput(h, model, form),
-						fieldDescription(
-							h,
-							{ ids: tagIds, state: tagState },
-							"Group and filter rules in the alerts list. Press Enter to add.",
-						),
-					]),
-					notes(h, model, form),
-				],
-			),
+			nameField(h, model, form, isNameInvalid),
+			field(h, { className: "items-stretch gap-1.5", state: tagState }, [
+				fieldLabel(h, { ids: tagIds, state: tagState }, "Tags"),
+				tagInput(h, model, form),
+				fieldDescription(
+					h,
+					{ ids: tagIds, state: tagState },
+					"Group and filter rules in the alerts list. Press Enter to add.",
+				),
+			]),
+			notes(h, model, form),
 		],
-		"p-4",
 	)
 }
 
@@ -191,4 +187,10 @@ const viewOf = stableSlice((model: Model) =>
 
 /** The name with a one-click suggestion, tags, and notes behind a button. */
 export const detailsSection = (h: H, model: Model, form: RuleForm): Html =>
-	slot(details, [h, viewOf(model), form])
+	slot(details, [
+		h,
+		viewOf(model),
+		form,
+		Str.trim(form.name).length === 0 &&
+			(model.hasAttemptedSave || model.touchedFields.includes("rule-name")),
+	])

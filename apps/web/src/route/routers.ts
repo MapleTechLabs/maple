@@ -121,6 +121,17 @@ const routers = {
 		search(Search.AlertsScheduleSearch),
 		Route.mapTo(AppRoute.AlertsSchedule),
 	),
+	AlertsEscalationChainNew: pipe(
+		path("alerts", "escalation-chains", "new"),
+		search(Search.AlertsEscalationChainSearch),
+		Route.mapTo(AppRoute.AlertsEscalationChainNew),
+	),
+	AlertsEscalationChain: pipe(
+		path("alerts", "escalation-chains"),
+		slash(segment("chainId")),
+		search(Search.AlertsEscalationChainSearch),
+		Route.mapTo(AppRoute.AlertsEscalationChain),
+	),
 	IngestRuleNew: pipe(
 		path("settings", "ingestion", "rules", "new"),
 		search(Search.IngestRuleNewSearch),
@@ -542,6 +553,8 @@ export const urlToAppRoute = Route.parseUrlWithFallback(
 		routers.AlertsSlo,
 		routers.AlertsScheduleNew,
 		routers.AlertsSchedule,
+		routers.AlertsEscalationChainNew,
+		routers.AlertsEscalationChain,
 		routers.IngestRuleNew,
 		routers.IngestRule,
 		routers.AlertsStatusPage,
