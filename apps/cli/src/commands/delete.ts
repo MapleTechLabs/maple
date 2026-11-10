@@ -13,7 +13,7 @@ import { maintenanceTokenPath } from "@maple/local-server/archives/retention"
 import { hasSubject, ScopedDeleteReport, ScopedDeleteRequest } from "@maple/local-server/scoped-delete"
 import { jsonFormatRequested, writeJson } from "./json-output"
 import { serverDiscoveryPath } from "@maple/local-server/store-version"
-import { isProcessAlive } from "@maple/local-server/store-claim"
+import { isProcessAlive } from "@maple/local-server/process-liveness"
 import { LocalStatus, prettyPath, ServerDiscovery } from "./server-args"
 
 const LOCAL_ONLY = "maple delete removes data from a local store only"

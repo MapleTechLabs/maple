@@ -21,8 +21,8 @@ import {
 	serverUrl,
 	validateHost,
 } from "../src/commands/server-args"
+import { isProcessAlive } from "@maple/local-server/process-liveness"
 import {
-	isProcessAlive,
 	parseElapsedSeconds,
 	parseProcStartedAtMs,
 	startedBeforeWrite,
@@ -186,6 +186,12 @@ describe("isProcessAlive", () => {
 	it("still reports a real foreign process as alive", () => {
 		// The parent shell/runner is the one live process whose PID we can know.
 		strictEqual(isProcessAlive(process.ppid), true)
+	})
+
+	it("reports a process owned by another user as alive", () => {
+		// PID 1 is init/launchd: unless we are it, signalling it fails with EPERM
+		// (or succeeds as root), and either way it exists.
+		strictEqual(isProcessAlive(1), process.pid !== 1)
 	})
 })
 

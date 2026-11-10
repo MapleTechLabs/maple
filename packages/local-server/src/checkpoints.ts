@@ -20,6 +20,7 @@ import { HttpClient, HttpClientRequest } from "effect/http"
 import { CHDB_VERSION, MAPLE_VERSION } from "./version"
 import { serverUrl } from "./local-address"
 import { errnoCode } from "./store-errors"
+import { isProcessAlive } from "./process-liveness"
 import { Chdb, MERGE_TREE_CONFIG_XML, RAW_TELEMETRY_TTL_COLUMNS, writeIngestConfig } from "./chdb"
 import { ttlDaysFromDefinition } from "./schema-manifest"
 import { sha256File } from "./checkpoint-digest"
@@ -1308,15 +1309,6 @@ const preserveCompletedOperation = async (
 	await faults.afterCompletedOperationPreserved?.(preserved)
 }
 
-const processIsAlive = (pid: number): boolean => {
-	try {
-		process.kill(pid, 0)
-		return true
-	} catch (error) {
-		return (error as NodeJS.ErrnoException).code === "EPERM"
-	}
-}
-
 const PROCESS_INSTANCE_ID = randomUUID()
 const ORPHANED_LOCK_GRACE_MS = 60_000
 
@@ -1353,7 +1345,7 @@ const maintenanceOwnerIsLive = async (owner: LockHolder, lockPath: string): Prom
 	// Records without an instance id come from builds that never heartbeat, so
 	// only PID liveness can judge them (our PID is alive, so they are refused).
 	owner.pid !== process.pid || owner.instanceId === undefined
-		? processIsAlive(owner.pid)
+		? owner.pid === process.pid || isProcessAlive(owner.pid)
 		: owner.instanceId === PROCESS_INSTANCE_ID ||
 			!(await lockIsOlderThan(lockPath, ORPHANED_LOCK_GRACE_MS))
 

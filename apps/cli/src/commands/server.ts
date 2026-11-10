@@ -35,7 +35,6 @@ import {
 	adoptLegacyStoreFiles,
 	claimPidFileExclusive,
 	ignoreFailure,
-	isProcessAlive,
 	locatePidFile,
 	pidOwner,
 	readPidSnapshot,
@@ -44,6 +43,7 @@ import {
 	sameSnapshot,
 	STALE_PID,
 } from "@maple/local-server/store-claim"
+import { isProcessAlive } from "@maple/local-server/process-liveness"
 import { readDiscovery, removeDiscoveryFor, removeStaleDiscovery } from "@maple/local-server/server-discovery"
 import {
 	describeError,
