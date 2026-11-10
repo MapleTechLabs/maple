@@ -180,6 +180,43 @@ describe("alerts hub", () => {
 		)
 	})
 
+	test("an org without rules gets the create actions from the empty state alone, on the Inbox and on Rules", () => {
+		const newRule = role("link", { name: "New rule" })
+		const firstRun = (at: HubAt, grants = ENGINEER): Model =>
+			Arr.reduce(
+				[
+					Message.ReadClock({ nowMs: NOW }),
+					Message.UpdatedRules({ orgId: ORG, rows: [] }),
+					Message.UpdatedRuleStates({ orgId: ORG, rows: [] }),
+					Message.UpdatedIncidents({ orgId: ORG, rows: [] }),
+					Message.UpdatedDestinations({ orgId: ORG, rows: [] }),
+					Message.CompletedFetchSession({ orgId: ORG, grants }),
+				],
+				entered(at).model,
+				(model, message) => pageUpdate(model, message).model,
+			)
+		const tabs: ReadonlyArray<"inbox" | "rules"> = ["inbox", "rules"]
+		Arr.forEach(tabs, (tab) => {
+			scene(
+				{ update: pageUpdate, view },
+				given(firstRun({ tab })),
+				expectView(role("link", { name: "Start from scratch" })).toExist(),
+				expectView(role("button", { name: "Add destination" })).toExist(),
+				expectView(newRule).not.toExist(),
+				expectView(role("button", { name: "More rule types" })).not.toExist(),
+			)
+			// A member's empty state offers nothing to create, so the header keeps its action.
+			scene(
+				{ update: pageUpdate, view },
+				given(firstRun({ tab }, Policy.grantsOf(["org:member"]))),
+				expectView(role("link", { name: "Start from scratch" })).not.toExist(),
+				expectView(newRule).toExist(),
+			)
+		})
+		// Still loading: nothing says the org is empty yet.
+		scene({ update: pageUpdate, view }, given(entered().model), expectView(newRule).toExist())
+	})
+
 	test("moving between sections keeps what was read: the Inbox and Rules share it, a section reads its own once", () => {
 		const inbox = loaded()
 		expect(names(routeChanged(inbox, hubAt({ tab: "rules" }), context).commands)).toEqual([
