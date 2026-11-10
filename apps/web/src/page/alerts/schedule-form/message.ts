@@ -21,6 +21,7 @@ export type LayerField = typeof LayerField.Type
 
 export const Message = defineMessageUnion({
 	ReadDefaults: { timeZone: Schema.String, nowMs: Schema.Number, zones: Schema.Array(Schema.String) },
+	ReadClock: { nowMs: Schema.Number },
 	CompletedFetchExisting: { key: Schema.String, result: outcome(V2OnCallSchedule) },
 	ClickedRetryExisting: {},
 	CompletedFetchOverrides: { key: Schema.String, result: outcome(Schema.Array(V2OnCallOverride)) },

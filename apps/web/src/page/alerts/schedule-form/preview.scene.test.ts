@@ -69,3 +69,17 @@ test("typing the name keeps the drawn preview; a new range draws it again", () =
 	expect(drawn[1]).toBe(drawn[0])
 	expect(drawn[2]).not.toBe(drawn[0])
 })
+
+test("the clock moves the preview's now line while the editor stays open", () => {
+	scene(
+		{ update: pageUpdate, view },
+		given(staffed()),
+		expectView(text("Now, Tue 10 Nov, 11:30")).toExist(),
+	)
+	scene(
+		{ update: pageUpdate, view },
+		given(pageUpdate(staffed(), Message.ReadClock({ nowMs: ONCALL_NOW + 45 * 60_000 })).model),
+		expectView(text("Now, Tue 10 Nov, 12:15")).toExist(),
+		expectView(text("Now, Tue 10 Nov, 11:30")).toBeAbsent(),
+	)
+})

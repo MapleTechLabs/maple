@@ -225,6 +225,8 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 				? { model: ready }
 				: { model: syncZone({ ...ready, form: emptyForm(timeZone, nowMs) }) }
 		},
+		// The preview's now line and the gaps counted from it follow the clock while the editor is open.
+		ReadClock: ({ nowMs }) => ({ model: model.isReady ? { ...model, nowMs } : model }),
 		CompletedFetchExisting: ({ key, result }) => {
 			const existing = Keyed.accept(model.existing, key, result)
 			const loaded = Option.getOrNull(AsyncData.getData(existing.data))
