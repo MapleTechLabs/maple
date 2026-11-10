@@ -382,6 +382,7 @@ export const make = (config: MapleClientFlushableConfig): FlushableTelemetry => 
 			},
 		})
 		// Claimed only once a span carries it: with capture off, the other SDK may still record it.
+		// The claim outlives the span if consent is withdrawn before the drain clears the buffer.
 		if (span === undefined) return
 		markReported(error)
 		notifyErrorRecorded({ ...span, traceFlags: 1 })

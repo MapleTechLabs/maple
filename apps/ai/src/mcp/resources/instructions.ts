@@ -12,7 +12,7 @@ export const InstructionsResource = McpServer.resource({
 
 ## Time Format
 - Always use YYYY-MM-DD HH:mm:ss in UTC
-- Default window is 6 hours for most tools, query_data included; each tool's \`start_time\` description states its own default and cap
+- Default window is 6 hours for most tools, query_data included; each tool's \`start_time\` description states its own default. A tool that narrows the window (a query_data breakdown covers a bounded range) says so in its response, so check the window it reports
 - Specify explicit time ranges for targeted investigations
 
 ## Investigation Workflow
@@ -104,7 +104,7 @@ first occurrences ──> (candidate) ──> issue in \`triage\`
 ## Pagination
 - Most list and search tools page by \`offset\`: when more rows remain the response says so and gives the \`offset\` of the next page (\`nextOffset\`)
 - \`list_error_issues\` and \`list_users\` page by \`cursor\` instead: pass the response's \`nextCursor\` back as \`cursor\`; it is absent on the last page
-- A tool with neither parameter returns one capped page: narrow the filters or the window to see the rest
+- A tool with neither parameter returns one capped page: raise \`limit\` up to the tool's maximum, or narrow the filters or the window where it has them. Rows past the cap cannot be paged to
 
 ## Tool Selection Guide
 - Error investigation: find_errors -> error_detail -> inspect_trace
