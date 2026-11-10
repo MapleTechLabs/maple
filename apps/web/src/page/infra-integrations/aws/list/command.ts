@@ -1,5 +1,6 @@
+import { reloadSpin } from "@maple/views/data/timing"
 import { RequestMode } from "@maple/views/data/keyed"
-import { Clock, Duration, Effect, Schema } from "effect"
+import { Clock, Effect, Schema } from "effect"
 import { Command } from "foldkit"
 import { resolveWindow, TimeWindow } from "../../../../data/time-range"
 import { loadTraced } from "../../kit/traced"
@@ -52,9 +53,4 @@ export const FetchTraced = Command.define("FetchAwsTracedServices", {
 		Effect.map(loadTraced(window), (result) => Message.CompletedFetchTraced({ key, result })),
 })
 
-export const CompleteReloadSpin = Command.define("CompleteAwsReloadSpin", {
-	args: { version: Schema.Number },
-	messages: [Message.CompletedReloadSpin],
-	execute: ({ version }) =>
-		Effect.as(Effect.sleep(Duration.millis(600)), Message.CompletedReloadSpin({ version })),
-})
+export const CompleteReloadSpin = reloadSpin("CompleteAwsReloadSpin", Message.CompletedReloadSpin)

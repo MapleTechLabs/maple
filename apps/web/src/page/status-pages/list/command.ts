@@ -1,13 +1,11 @@
-import { Clock, Effect, Schema } from "effect"
+import { readClock } from "@maple/views/data/timing"
+import { Effect, Schema } from "effect"
 import { Command } from "foldkit"
 import { readGrants } from "../../../data/session-tenant"
 import { listPageSummaries } from "../shared/commands"
 import { Message } from "./message"
 
-export const ReadListClock = Command.define("ReadStatusPagesClock", {
-	messages: [Message.ReadClock],
-	execute: Effect.map(Clock.currentTimeMillis, (nowMs) => Message.ReadClock({ nowMs })),
-})
+export const ReadListClock = readClock("ReadStatusPagesClock", Message.ReadClock)
 
 export const FetchListSession = Command.define("FetchStatusPagesSession", {
 	args: { orgId: Schema.String },

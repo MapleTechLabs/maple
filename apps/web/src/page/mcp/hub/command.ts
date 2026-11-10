@@ -1,3 +1,4 @@
+import { reloadSpin, SEARCH_DEBOUNCE } from "@maple/views/data/timing"
 import { RequestMode } from "@maple/views/data/keyed"
 import { MCP_CLIENT_KINDS } from "@maple/domain/mcp-clients"
 import {
@@ -7,7 +8,7 @@ import {
 	getMcpSessions,
 	getMcpTool,
 } from "@maple/web-data/warehouse/mcp"
-import { Clock, Duration, Effect, Schema } from "effect"
+import { Clock, Effect, Schema } from "effect"
 import { Command } from "foldkit"
 import { toLoadFailure } from "@maple/views/data/load-failure"
 import { resolveWindow } from "../../../data/time-range"
@@ -122,15 +123,10 @@ export const DebounceSearch = Command.define("DebounceMcpSearch", {
 	args: { version: Schema.Number },
 	messages: [Message.ElapsedSearchDebounce],
 	execute: ({ version }) =>
-		Effect.as(Effect.sleep(Duration.millis(300)), Message.ElapsedSearchDebounce({ version })),
+		Effect.as(Effect.sleep(SEARCH_DEBOUNCE), Message.ElapsedSearchDebounce({ version })),
 })
 
-export const CompleteReloadSpin = Command.define("CompleteMcpReloadSpin", {
-	args: { version: Schema.Number },
-	messages: [Message.CompletedReloadSpin],
-	execute: ({ version }) =>
-		Effect.as(Effect.sleep(Duration.millis(600)), Message.CompletedReloadSpin({ version })),
-})
+export const CompleteReloadSpin = reloadSpin("CompleteMcpReloadSpin", Message.CompletedReloadSpin)
 
 /** The empty state's "Instrument an MCP server": the MCP conventions, in a new tab. */
 export const OpenMcpConventions = Command.define("OpenMcpConventions", {

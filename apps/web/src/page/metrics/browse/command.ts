@@ -1,7 +1,8 @@
+import { reloadSpin, SEARCH_DEBOUNCE } from "@maple/views/data/timing"
 import { RequestMode } from "@maple/views/data/keyed"
 import { getMetricSparklines, getMetricsSummary, listMetrics } from "@maple/web-data/warehouse/metrics"
 import { QUERY_BUILDER_METRIC_TYPES } from "@maple/query-model"
-import { Clock, Duration, Effect, Schema } from "effect"
+import { Clock, Effect, Schema } from "effect"
 import { Command } from "foldkit"
 import { toLoadFailure } from "@maple/views/data/load-failure"
 import { resolveWindow, TimeWindow } from "../../../data/time-range"
@@ -94,16 +95,10 @@ export const DebounceSearch = Command.define("DebounceMetricsSearch", {
 	args: { generation: Schema.Number },
 	messages: [Message.CompletedSearchDebounce],
 	execute: ({ generation }) =>
-		Effect.as(Effect.sleep(Duration.millis(300)), Message.CompletedSearchDebounce({ generation })),
+		Effect.as(Effect.sleep(SEARCH_DEBOUNCE), Message.CompletedSearchDebounce({ generation })),
 })
 
-/** `PageRefreshProvider`: how long Reload shows its pending spinner. */
-export const CompleteReloadSpin = Command.define("CompleteMetricsReloadSpin", {
-	args: { version: Schema.Number },
-	messages: [Message.CompletedReloadSpin],
-	execute: ({ version }) =>
-		Effect.as(Effect.sleep(Duration.millis(600)), Message.CompletedReloadSpin({ version })),
-})
+export const CompleteReloadSpin = reloadSpin("CompleteMetricsReloadSpin", Message.CompletedReloadSpin)
 
 export const LoadSignalPresence = Command.define("LoadMetricsSignalPresence", {
 	args: { orgId: Schema.String },

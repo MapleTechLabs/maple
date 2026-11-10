@@ -1,3 +1,4 @@
+import { reloadSpin, SEARCH_DEBOUNCE } from "@maple/views/data/timing"
 import { RequestMode } from "@maple/views/data/keyed"
 import { ErrorIssueId, WorkflowState } from "@maple/domain/http"
 import { V2ErrorIssueListQuery } from "@maple/domain/http/v2"
@@ -7,7 +8,7 @@ import {
 	getErrorsSpark,
 	getErrorsSummary,
 } from "@maple/web-data/warehouse/errors"
-import { Clock, Duration, Effect, Queue, Schema, Stream, Array as Arr } from "effect"
+import { Clock, Effect, Queue, Schema, Stream, Array as Arr } from "effect"
 import { Command, Mount } from "foldkit"
 import { toLoadFailure } from "@maple/views/data/load-failure"
 import { resolveWindow, TimeWindow } from "../../../data/time-range"
@@ -189,16 +190,10 @@ export const WaitSearchDebounce = Command.define("WaitErrorsSearchDebounce", {
 	args: { generation: Schema.Number },
 	messages: [Message.ElapsedSearchDebounce],
 	execute: ({ generation }) =>
-		Effect.as(Effect.sleep(Duration.millis(300)), Message.ElapsedSearchDebounce({ generation })),
+		Effect.as(Effect.sleep(SEARCH_DEBOUNCE), Message.ElapsedSearchDebounce({ generation })),
 })
 
-/** `PageRefreshProvider`: how long Reload shows its pending spinner. */
-export const CompleteReloadSpin = Command.define("CompleteErrorsReloadSpin", {
-	args: { version: Schema.Number },
-	messages: [Message.CompletedReloadSpin],
-	execute: ({ version }) =>
-		Effect.as(Effect.sleep(Duration.millis(600)), Message.CompletedReloadSpin({ version })),
-})
+export const CompleteReloadSpin = reloadSpin("CompleteErrorsReloadSpin", Message.CompletedReloadSpin)
 
 /** The filter rail is in the DOM; the sidebar reads as it renders, so no paint wait. */
 export const MountFilterRail = Mount.define("MountErrorsFilterRail", {

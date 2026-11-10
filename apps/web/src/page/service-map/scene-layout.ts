@@ -1,3 +1,4 @@
+import { encodeJson } from "@maple/views/data/request-key"
 import { errorRateLevel } from "@maple/ui/lib/error-rate"
 import {
 	type SpatialLayout,
@@ -26,8 +27,6 @@ const LayoutTopology = Schema.Struct({
 })
 export type LayoutTopology = typeof LayoutTopology.Type
 const decodeLayoutTopology = Schema.decodeUnknownSync(Schema.fromJsonString(LayoutTopology))
-const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
-
 /** Metrics can refresh without replacing the layout: it is keyed on ids, namespaces and kinds. */
 export const topologyKeyOf = (topology: Topology3D): string =>
 	encodeJson({

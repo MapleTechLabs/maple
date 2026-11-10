@@ -1,17 +1,8 @@
+import { readClock, SEARCH_DEBOUNCE } from "@maple/views/data/timing"
 import { DashboardTemplateId } from "@maple/domain/http"
 import { LIST_LIMIT_MAX } from "@maple/domain/http/v2"
 import { listMetrics } from "@maple/web-data/warehouse/metrics"
-import {
-	Clock,
-	Duration,
-	Effect,
-	Queue,
-	Schema,
-	Stream,
-	Array as Arr,
-	Record as Rec,
-	String as Str,
-} from "effect"
+import { Duration, Effect, Queue, Schema, Stream, Array as Arr, Record as Rec, String as Str } from "effect"
 import { Command, Mount } from "foldkit"
 import { toLoadFailure } from "@maple/views/data/load-failure"
 import { MapleApiV2Client } from "../../../platform/api-clients"
@@ -19,10 +10,7 @@ import { fetchWidgetData, toWidgetFailure } from "../kit/widget-data"
 import { awaitTxid } from "../kit/store"
 import { Message } from "./message"
 
-export const ReadClock = Command.define("ReadTemplatesClock", {
-	messages: [Message.CompletedReadClock],
-	execute: Effect.map(Clock.currentTimeMillis, (nowMs) => Message.CompletedReadClock({ nowMs })),
-})
+export const ReadClock = readClock("ReadTemplatesClock", Message.CompletedReadClock)
 
 /** `retainedQueryV2("dashboards", "listTemplates", { query: { limit: LIST_LIMIT_MAX } })`. */
 export const FetchTemplates = Command.define("FetchDashboardTemplates", {
@@ -80,7 +68,7 @@ export const WaitSearchDebounce = Command.define("WaitTemplatesSearchDebounce", 
 	args: { generation: Schema.Number },
 	messages: [Message.ElapsedSearchDebounce],
 	execute: ({ generation }) =>
-		Effect.as(Effect.sleep(Duration.millis(300)), Message.ElapsedSearchDebounce({ generation })),
+		Effect.as(Effect.sleep(SEARCH_DEBOUNCE), Message.ElapsedSearchDebounce({ generation })),
 })
 
 const decodeTemplateId = Schema.decodeUnknownEffect(DashboardTemplateId)

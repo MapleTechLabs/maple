@@ -1,3 +1,4 @@
+import { encodeJson } from "@maple/views/data/request-key"
 import { Option, Schema, Stream } from "effect"
 import { Subscription } from "foldkit"
 import { returns } from "../../../data/poll"
@@ -14,8 +15,6 @@ import { Message } from "./message"
 import { Model } from "./model"
 import { update } from "./update"
 import { breadcrumbsOf, view } from "./view"
-
-const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
 
 const byOrg = { orgId: Schema.String }
 const watching = { orgId: Schema.String, isWatching: Schema.Boolean }

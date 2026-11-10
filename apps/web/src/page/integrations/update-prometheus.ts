@@ -1,3 +1,4 @@
+import { encodeJson, requestKey } from "@maple/views/data/request-key"
 import type { ScrapeTargetId } from "@maple/domain/http"
 import { ScrapeIntervalSeconds } from "@maple/domain/http"
 import type { V2ScrapeTarget } from "@maple/domain/http/v2"
@@ -5,7 +6,6 @@ import { Option, Schema, Array as Arr, String as Str } from "effect"
 import { AsyncData, Command as FoldkitCommand } from "foldkit"
 import * as Keyed from "@maple/views/data/keyed"
 import type { LoadFailure } from "@maple/views/data/load-failure"
-import { requestKey } from "@maple/views/data/request-key"
 import * as Dialog from "@maple/views/ui/dialog"
 import * as Field from "@maple/views/ui/field"
 import * as Menu from "@maple/views/ui/menu"
@@ -26,8 +26,6 @@ import {
 import { Message } from "./message"
 import type { Model } from "./model"
 import { chain, requestStatus } from "./update-status"
-
-const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
 
 // `ScrapeTargetsSection`'s state changes.
 

@@ -1,3 +1,4 @@
+import { readClock } from "@maple/views/data/timing"
 import { UptimeMonitorId } from "@maple/domain"
 import { V2UptimeMonitorConfig } from "@maple/domain/http/v2"
 import { formatWarehouseDateTime } from "@maple/query-engine"
@@ -10,10 +11,7 @@ import { retrieveMonitor, setMonitorEnabled, testMonitorConfig } from "../../kit
 import { Message } from "./message"
 import { UptimeWindow } from "./model"
 
-export const ReadMonitorClock = Command.define("ReadUptimeMonitorClock", {
-	messages: [Message.ReadClock],
-	execute: Effect.map(Clock.currentTimeMillis, (nowMs) => Message.ReadClock({ nowMs })),
-})
+export const ReadMonitorClock = readClock("ReadUptimeMonitorClock", Message.ReadClock)
 
 export const FetchMonitorSession = Command.define("FetchUptimeMonitorSession", {
 	args: { orgId: Schema.String },

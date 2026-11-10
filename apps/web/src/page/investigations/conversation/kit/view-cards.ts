@@ -1,3 +1,4 @@
+import { encodeJson } from "@maple/views/data/request-key"
 import { humanize } from "../../humanize"
 import { EMPTY_VALUE } from "@maple/ui/lib/format"
 import { TONE_TEXT } from "@maple/ui/lib/tone"
@@ -15,7 +16,6 @@ import { timestamp } from "@maple/views/ui/timestamp"
 import { typography } from "@maple/views/ui/typography"
 import { hstack } from "@maple/views/ui/stack"
 
-const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
 const encodePrettyJsonOption = Schema.encodeOption(Schema.fromJsonString(Schema.Unknown, { space: 2 }))
 
 // `ApprovalCard` and `TaskCard`: a proposal waiting on the user, and

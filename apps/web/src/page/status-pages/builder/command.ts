@@ -1,5 +1,6 @@
+import { readClock } from "@maple/views/data/timing"
 import { StatusPagePreviewParams, V2StatusPageCreateParams } from "@maple/domain/http/v2"
-import { Clock, Duration, Effect, Schema } from "effect"
+import { Duration, Effect, Schema } from "effect"
 import { Command, Dom, Mount } from "foldkit"
 import { readGrants } from "../../../data/session-tenant"
 import { listMonitors, saveMonitor } from "../../kit/uptime/commands"
@@ -11,10 +12,7 @@ import { SubmitMode } from "./model"
 /** How long the builder waits after the last edit before it asks for a new preview. */
 export const PREVIEW_DEBOUNCE_MS = 400
 
-export const ReadBuilderClock = Command.define("ReadStatusPageBuilderClock", {
-	messages: [Message.ReadClock],
-	execute: Effect.map(Clock.currentTimeMillis, (nowMs) => Message.ReadClock({ nowMs })),
-})
+export const ReadBuilderClock = readClock("ReadStatusPageBuilderClock", Message.ReadClock)
 
 export const FetchBuilderSession = Command.define("FetchStatusPageBuilderSession", {
 	args: { orgId: Schema.String },

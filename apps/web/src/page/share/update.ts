@@ -1,3 +1,4 @@
+import { encodeJson } from "@maple/views/data/request-key"
 import { TimeRangeSchema } from "@maple/domain/http"
 import { resolveTimeRangeWindow } from "@maple/query-engine"
 import {
@@ -27,8 +28,6 @@ import {
 } from "./command"
 import { Message } from "./message"
 import type { Model, QueuedBatch, SharedDashboard, ShareWindow, WidgetState } from "./model"
-
-const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
 
 type Return = PageReturn<Model, Message>
 type Route = { readonly token: string; readonly search: Model["search"] }

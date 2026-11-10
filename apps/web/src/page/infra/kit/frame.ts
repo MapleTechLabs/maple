@@ -1,5 +1,6 @@
+import { reloadSpin } from "@maple/views/data/timing"
 import { RequestMode } from "@maple/views/data/keyed"
-import { Clock, Duration, Effect, Schema } from "effect"
+import { Clock, Effect, Schema } from "effect"
 import { Command, type Update } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { defineMessageUnion } from "foldkit/message"
@@ -83,13 +84,7 @@ export const ResolveWindow = Command.define("ResolveInfraWindow", {
 		),
 })
 
-const RELOAD_SPIN = Duration.millis(600)
-
-export const CompleteReloadSpin = Command.define("CompleteInfraReloadSpin", {
-	args: { version: Schema.Number },
-	messages: [Message.CompletedReloadSpin],
-	execute: ({ version }) => Effect.as(Effect.sleep(RELOAD_SPIN), Message.CompletedReloadSpin({ version })),
-})
+export const CompleteReloadSpin = reloadSpin("CompleteInfraReloadSpin", Message.CompletedReloadSpin)
 
 export type Return = Update.ReturnWithOutMessage<Model, Message, OutMessage>
 

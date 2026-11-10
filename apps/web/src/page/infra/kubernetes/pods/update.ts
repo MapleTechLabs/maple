@@ -1,8 +1,8 @@
-import { Schema, Array as Arr, String as Str } from "effect"
+import { encodeJson, requestKey } from "@maple/views/data/request-key"
+import { Array as Arr, String as Str } from "effect"
 import { podKey } from "../../../../components/infra/pod-restarts"
 import { AsyncData, Command } from "foldkit"
 import * as Keyed from "@maple/views/data/keyed"
-import { requestKey } from "@maple/views/data/request-key"
 import type { TimeWindow } from "../../../../data/time-range"
 import { AppRoute, hrefOf } from "../../../../route"
 import * as FilterSections from "@maple/views/ui/filters/filter-sections"
@@ -21,8 +21,6 @@ import type { PodSortKey } from "../pod-table"
 import { DebounceSearch, FetchFacets, FetchPods, FetchRestarts, FetchSummary, PAGE_SIZE } from "./command"
 import { type Facet, Message } from "./message"
 import type { Model } from "./model"
-
-const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
 
 type Return = PageReturn<Model, Message>
 export type Search = Model["search"]

@@ -1,6 +1,7 @@
+import { encodeJson } from "@maple/views/data/request-key"
 import type { DashboardDocument, TimeRange } from "@maple/domain/http"
 import { resolveTimeRangeWindow } from "@maple/query-engine"
-import { Option, Schema, Array as Arr, Record as Rec } from "effect"
+import { Option, Array as Arr, Record as Rec } from "effect"
 import * as Chart from "@maple/views/charts/chart"
 import * as Keyed from "@maple/views/data/keyed"
 import type { PageContext } from "../../contract"
@@ -18,8 +19,6 @@ import {
 import { isEditing } from "./mode"
 import type { Model, WidgetSlot } from "./model"
 import type { ShareLinkRange } from "./share"
-
-const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
 
 // Which tiles fetch what: the window every tile shares, and each revealed tile's request.
 

@@ -1,3 +1,4 @@
+import { reloadSpin } from "@maple/views/data/timing"
 import { RequestMode } from "@maple/views/data/keyed"
 import { getProductEventTraceSamples } from "@maple/web-data/warehouse/product-events"
 import {
@@ -19,7 +20,7 @@ import {
 	getSearchConsoleTopPages,
 	getSearchConsoleTopQueries,
 } from "@maple/web-data/warehouse/search-console"
-import { Clock, Duration, Effect, Schema } from "effect"
+import { Clock, Effect, Schema } from "effect"
 import { Command } from "foldkit"
 import { toLoadFailure } from "@maple/views/data/load-failure"
 import { resolveWindow } from "../../data/time-range"
@@ -161,9 +162,4 @@ export const LoadSignalPresence = Command.define("LoadAnalyticsSignalPresence", 
 		Effect.map(loadSignalPresences(orgId), (result) => Message.CompletedLoadSignalPresence({ result })),
 })
 
-export const CompleteReloadSpin = Command.define("CompleteAnalyticsReloadSpin", {
-	args: { version: Schema.Number },
-	messages: [Message.CompletedReloadSpin],
-	execute: ({ version }) =>
-		Effect.as(Effect.sleep(Duration.millis(600)), Message.CompletedReloadSpin({ version })),
-})
+export const CompleteReloadSpin = reloadSpin("CompleteAnalyticsReloadSpin", Message.CompletedReloadSpin)

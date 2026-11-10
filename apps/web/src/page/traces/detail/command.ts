@@ -1,10 +1,11 @@
+import { readClock } from "@maple/views/data/timing"
 import { TraceId } from "@maple/domain"
 import { formatWarehouseDateTime, parseWarehouseDateTime } from "@maple/query-engine"
 import { getLogsCount } from "@maple/web-data/warehouse/logs"
 import { getProductEventsForTrace } from "@maple/web-data/warehouse/product-events"
 import { getReplaysForTrace } from "@maple/web-data/warehouse/replays"
 import { getSpanHierarchy, getTraceSpanEvents } from "@maple/web-data/warehouse/traces"
-import { Clock, Effect, Option, Schema, Array as Arr, Record as Rec, String as Str } from "effect"
+import { Effect, Option, Schema, Array as Arr, Record as Rec, String as Str } from "effect"
 import { Command } from "foldkit"
 import { IdleTtl } from "../../../data/idle-ttl"
 import { toLoadFailure } from "@maple/views/data/load-failure"
@@ -36,10 +37,7 @@ export const correlationWindow = (
 			})
 }
 
-export const ReadClock = Command.define("ReadTraceDetailClock", {
-	messages: [Message.CompletedReadClock],
-	execute: Effect.map(Clock.currentTimeMillis, (nowMs) => Message.CompletedReadClock({ nowMs })),
-})
+export const ReadClock = readClock("ReadTraceDetailClock", Message.CompletedReadClock)
 
 /** The list filters on the page's URL, which its search schema does not decode. */
 export const ReadListQuery = Command.define("ReadTraceListQuery", {

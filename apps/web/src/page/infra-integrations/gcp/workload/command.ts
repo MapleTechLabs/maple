@@ -1,5 +1,6 @@
+import { reloadSpin } from "@maple/views/data/timing"
 import { RequestMode } from "@maple/views/data/keyed"
-import { Clock, Duration, Effect, Schema } from "effect"
+import { Clock, Effect, Schema } from "effect"
 import { Command, Mount } from "foldkit"
 import { resolveWindow, TimeWindow } from "../../../../data/time-range"
 import { linkedCursorStream } from "@maple/views/charts/linked-cursor"
@@ -103,12 +104,7 @@ export const FetchFleet = Command.define("FetchGcpWorkloadFleet", {
 		Effect.map(loadFleet(window), (result) => Message.CompletedFetchFleet({ key, result })),
 })
 
-export const CompleteReloadSpin = Command.define("CompleteGcpWorkloadReloadSpin", {
-	args: { version: Schema.Number },
-	messages: [Message.CompletedReloadSpin],
-	execute: ({ version }) =>
-		Effect.as(Effect.sleep(Duration.millis(600)), Message.CompletedReloadSpin({ version })),
-})
+export const CompleteReloadSpin = reloadSpin("CompleteGcpWorkloadReloadSpin", Message.CompletedReloadSpin)
 
 /** `useLinkedCursor` on a group of charts. */
 export const MountLinkedCursor = Mount.defineStream("MountGcpLinkedCursor", {

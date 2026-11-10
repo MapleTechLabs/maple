@@ -1,6 +1,7 @@
+import { readClock } from "@maple/views/data/timing"
 import type { V2ScrapeTarget } from "@maple/domain/http/v2"
 import { collectV2Pages } from "@maple/web-data/lib/v2-pagination"
-import { Clock, Effect, Schema } from "effect"
+import { Effect, Schema } from "effect"
 import { Command } from "foldkit"
 import { IntegrationStatuses } from "../../data/integration-statuses"
 import { toLoadFailure } from "@maple/views/data/load-failure"
@@ -32,10 +33,7 @@ export const StripChatParams = Command.define("StripIntegrationsChatParams", {
 	execute: Effect.succeed(Message.CompletedChatToast()),
 })
 
-export const ReadClock = Command.define("ReadIntegrationsClock", {
-	messages: [Message.CompletedReadClock],
-	execute: Effect.map(Clock.currentTimeMillis, (nowMs) => Message.CompletedReadClock({ nowMs })),
-})
+export const ReadClock = readClock("ReadIntegrationsClock", Message.CompletedReadClock)
 
 /** The four statuses the sidebar also reads: one request each, shared (`IntegrationStatuses`). */
 export const LoadCloudflare = Command.define("LoadIntegrationsCloudflareStatus", {

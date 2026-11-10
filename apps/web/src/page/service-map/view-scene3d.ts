@@ -1,3 +1,4 @@
+import { encodeJson } from "@maple/views/data/request-key"
 import { liveTopology } from "./three/live-topology"
 import { mapPalette, paperBackground } from "./three/palette"
 import {
@@ -10,7 +11,7 @@ import {
 } from "./three/spatial-layout"
 import type { Edge3D, Topology3D } from "./three/types"
 import type { WorldEntity } from "@maple/domain/http"
-import { Option, Schema, Array as Arr } from "effect"
+import { Option, Array as Arr } from "effect"
 import { Mount } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import type * as ServiceMap from "@maple/views/service-map/map/service-map"
@@ -39,8 +40,6 @@ import { hstack, vstack } from "@maple/views/ui/stack"
 import { layer } from "@maple/views/ui/layer"
 import { typography } from "@maple/views/ui/typography"
 import { stripClass } from "@maple/views/ui/rule"
-
-const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
 
 // The 3D viewport: the perspective bar, the
 // paper section with the canvas wrappers, the timber sign labels, the HUD, legend and camera

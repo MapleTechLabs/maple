@@ -1,4 +1,5 @@
-import { Clock, Effect, Option, Schema, Array as Arr, Record as Rec } from "effect"
+import { encodeJson } from "@maple/views/data/request-key"
+import { Clock, Effect, Option, Array as Arr, Record as Rec } from "effect"
 import { Mount } from "foldkit"
 import { defineMessageUnion } from "foldkit/message"
 import type { Html, HtmlBuilder } from "foldkit/html"
@@ -25,8 +26,6 @@ import { deriveToolStatus, type ToolStatus } from "./transcript-rows"
 import type { ToolPart } from "./ui-message"
 import { hstack } from "@maple/views/ui/stack"
 import { typography } from "@maple/views/ui/typography"
-
-const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
 
 // `Tool`, `ToolRow` and `ToolGroup`: a tool call's row and a run of them grouped.
 /** What a tool row needs from its host: whether a panel is open, and the Message that toggles it. */

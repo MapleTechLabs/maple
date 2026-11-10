@@ -1,4 +1,5 @@
-import { Clock, Duration, Effect, Schema } from "effect"
+import { readClock, SEARCH_DEBOUNCE } from "@maple/views/data/timing"
+import { Effect, Schema } from "effect"
 import { Command, Mount } from "foldkit"
 import { readGrants } from "../../../data/session-tenant"
 import { toLoadFailure } from "@maple/views/data/load-failure"
@@ -9,10 +10,7 @@ import { Message } from "./message"
 
 export const PAGE_SIZE = 100
 
-export const ReadInvestigationsClock = Command.define("ReadInvestigationsClock", {
-	messages: [Message.ReadClock],
-	execute: Effect.map(Clock.currentTimeMillis, (nowMs) => Message.ReadClock({ nowMs })),
-})
+export const ReadInvestigationsClock = readClock("ReadInvestigationsClock", Message.ReadClock)
 
 const fetchPage = (cursor: string | undefined) =>
 	Effect.gen(function* () {
@@ -93,7 +91,7 @@ export const WaitInvestigationsSearch = Command.define("WaitInvestigationsSearch
 	args: { generation: Schema.Number },
 	messages: [Message.ElapsedSearchDebounce],
 	execute: ({ generation }) =>
-		Effect.as(Effect.sleep(Duration.millis(300)), Message.ElapsedSearchDebounce({ generation })),
+		Effect.as(Effect.sleep(SEARCH_DEBOUNCE), Message.ElapsedSearchDebounce({ generation })),
 })
 
 export const LoadInvestigationsPresence = Command.define("LoadInvestigationsPresence", {

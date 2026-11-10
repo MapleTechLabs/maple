@@ -1,3 +1,4 @@
+import { readClock } from "@maple/views/data/timing"
 import { StatusPageComponentId, StatusPageId, StatusPageIncidentId } from "@maple/domain"
 import {
 	StatusPageConfig,
@@ -8,7 +9,7 @@ import {
 	V2StatusPageIncidentPostUpdateParams,
 	V2StatusPageUpdateParams,
 } from "@maple/domain/http/v2"
-import { Clock, Duration, Effect, Schema } from "effect"
+import { Duration, Effect, Schema } from "effect"
 import { Command, Dom, Mount } from "foldkit"
 import { readGrants } from "../../../data/session-tenant"
 import {
@@ -34,10 +35,7 @@ import { listMonitors, saveMonitor } from "../../kit/uptime/commands"
 import { monitorPayloadFor } from "../shared/picker"
 import { Message } from "./message"
 
-export const ReadEditorClock = Command.define("ReadStatusPageClock", {
-	messages: [Message.ReadClock],
-	execute: Effect.map(Clock.currentTimeMillis, (nowMs) => Message.ReadClock({ nowMs })),
-})
+export const ReadEditorClock = readClock("ReadStatusPageClock", Message.ReadClock)
 
 export const FetchEditorSession = Command.define("FetchStatusPageSession", {
 	args: { orgId: Schema.String },

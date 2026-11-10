@@ -1,6 +1,7 @@
+import { reloadSpin } from "@maple/views/data/timing"
 import { RequestMode } from "@maple/views/data/keyed"
 import { getReleases } from "@maple/web-data/warehouse/releases"
-import { Clock, Duration, Effect, Queue, Schema, Stream } from "effect"
+import { Clock, Effect, Queue, Schema, Stream } from "effect"
 import { Command, Mount } from "foldkit"
 import { IdleTtl } from "../../../data/idle-ttl"
 import { toLoadFailure } from "@maple/views/data/load-failure"
@@ -125,12 +126,10 @@ export const LoadReleasesSignalPresence = Command.define("LoadReleasesSignalPres
 		Effect.map(loadSignalPresences(orgId), (result) => Message.CompletedLoadSignalPresence({ result })),
 })
 
-export const CompleteReleasesReloadSpin = Command.define("CompleteReleasesReloadSpin", {
-	args: { version: Schema.Number },
-	messages: [Message.CompletedReloadSpin],
-	execute: ({ version }) =>
-		Effect.as(Effect.sleep(Duration.millis(600)), Message.CompletedReloadSpin({ version })),
-})
+export const CompleteReleasesReloadSpin = reloadSpin(
+	"CompleteReleasesReloadSpin",
+	Message.CompletedReloadSpin,
+)
 
 /** The table is on screen: what `ReleasesTable` reads once it mounts follows. */
 export const MountReleasesTable = Mount.define("MountReleasesTable", {

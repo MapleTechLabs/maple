@@ -1,11 +1,11 @@
+import { encodeJson, requestKey } from "@maple/views/data/request-key"
 import type { RequestMode } from "@maple/views/data/keyed"
 import { HUB_SORTS, HUB_VIEWS, SEVERITY_FILTERS } from "./hub-params"
 import type { IssueKind } from "@maple/domain/http"
 import { sparkFingerprintHashes } from "../../../lib/models/error-signal"
-import { Option, Schema, Array as Arr, String as Str } from "effect"
+import { Option, Array as Arr, String as Str } from "effect"
 import { AsyncData, Command } from "foldkit"
 import * as Keyed from "@maple/views/data/keyed"
-import { requestKey } from "@maple/views/data/request-key"
 import type { TimeWindow } from "../../../data/time-range"
 import type { Resources } from "../../../platform/resources"
 import { AppRoute, hrefOf } from "../../../route"
@@ -59,8 +59,6 @@ import {
 import { SOURCES } from "../kit/source"
 import type { IssuePage, Model, PageSlot } from "./model"
 import type { LoadFailure } from "@maple/views/data/load-failure"
-
-const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
 
 export type Return = PageReturn<Model, Message>
 type Cmd = Command.Command<Message, never, Resources>

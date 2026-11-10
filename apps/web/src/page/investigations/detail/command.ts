@@ -1,8 +1,9 @@
+import { readClock } from "@maple/views/data/timing"
 import { ErrorIssueId, InvestigationId } from "@maple/domain/http"
 import { getCustomChartTimeSeries } from "@maple/web-data/warehouse/custom-charts"
 import { getServiceOverview } from "@maple/web-data/warehouse/services"
 import { loadKnownServices } from "../conversation/kit/known-services"
-import { Clock, Effect, type Result, Schema, Array as Arr, Option } from "effect"
+import { Effect, type Result, Schema, Array as Arr, Option } from "effect"
 import { Command, Mount } from "foldkit"
 import { load } from "foldkit/navigation"
 import { readLocalStorage, writeLocalStorage } from "@maple/ui/lib/local-storage"
@@ -38,10 +39,7 @@ const finish = <A, E, R, M>(
 	toMessage: (result: Result.Result<A, LoadFailure>) => M,
 ) => effect.pipe(Effect.mapError(toLoadFailure), Effect.result, Effect.map(toMessage))
 
-export const ReadInvestigationClock = Command.define("ReadInvestigationClock", {
-	messages: [Message.ReadClock],
-	execute: Effect.map(Clock.currentTimeMillis, (nowMs) => Message.ReadClock({ nowMs })),
-})
+export const ReadInvestigationClock = readClock("ReadInvestigationClock", Message.ReadClock)
 
 export const SignalWindowSchema = Schema.Struct({
 	startTime: Schema.String,

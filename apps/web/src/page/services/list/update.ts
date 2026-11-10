@@ -1,5 +1,6 @@
+import { reloadSpin } from "@maple/views/data/timing"
 import type { RequestMode } from "@maple/views/data/keyed"
-import { Duration, Effect, Option, Schema, Array as Arr } from "effect"
+import { Option, Array as Arr } from "effect"
 import { AsyncData, Command } from "foldkit"
 import { LoadChartRuntime } from "@maple/views/charts/chart-runtime"
 import { emptyOnFailure } from "../../../data/enrichment"
@@ -42,14 +43,7 @@ type Return = PageReturn<Model, Message>
 
 /** The list's default window ("12h" lists, `DashboardPage`'s `defaultPreset`). */
 export const DEFAULT_PRESET = "12h"
-/** `PageRefreshProvider`: how long Reload shows its pending spinner. */
-const RELOAD_SPIN = Duration.millis(600)
-
-export const CompleteReloadSpin = Command.define("CompleteServicesReloadSpin", {
-	args: { version: Schema.Number },
-	messages: [Message.CompletedReloadSpin],
-	execute: ({ version }) => Effect.as(Effect.sleep(RELOAD_SPIN), Message.CompletedReloadSpin({ version })),
-})
+export const CompleteReloadSpin = reloadSpin("CompleteServicesReloadSpin", Message.CompletedReloadSpin)
 
 // REQUESTS
 

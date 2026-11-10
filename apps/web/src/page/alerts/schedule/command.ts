@@ -1,3 +1,4 @@
+import { readClock } from "@maple/views/data/timing"
 import { OnCallOverrideId, OnCallScheduleId } from "@maple/domain/http"
 import { V2OnCallOverrideCreateParams } from "@maple/domain/http/v2"
 import { Clock, Effect, Schema } from "effect"
@@ -13,10 +14,7 @@ import {
 import { listOrgMembers } from "../shared/org-members"
 import { Message } from "./message"
 
-export const ReadScheduleClock = Command.define("ReadScheduleClock", {
-	messages: [Message.ReadClock],
-	execute: Effect.map(Clock.currentTimeMillis, (nowMs) => Message.ReadClock({ nowMs })),
-})
+export const ReadScheduleClock = readClock("ReadScheduleClock", Message.ReadClock)
 
 export const FetchSchedule = Command.define("FetchOnCallSchedule", {
 	args: { key: Schema.String, scheduleId: OnCallScheduleId },

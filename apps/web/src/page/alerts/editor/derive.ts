@@ -1,4 +1,5 @@
-import { Schema, Array as Arr, String as Str } from "effect"
+import { encodeJson } from "@maple/views/data/request-key"
+import { Array as Arr, String as Str } from "effect"
 import type { AlertComparator, AlertDestinationDocument, AlertQueryTiming } from "@maple/domain/http"
 import {
 	buildRuleCreateParamsV2,
@@ -15,8 +16,6 @@ import { destinationProvider } from "../shared/providers"
 import type { RuleForm } from "./form"
 import { intervalWindowIssue, queryTimingIssue } from "./interval"
 import { nonZeroOr } from "@maple/ui/lib/number"
-
-const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
 
 // The rule editor's pure helpers: form surface, condition bar, live chart hero, notifications.
 

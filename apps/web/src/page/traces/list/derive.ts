@@ -1,9 +1,8 @@
-import { Schema, Array as Arr, String as Str, Option } from "effect"
+import { encodeJson } from "@maple/views/data/request-key"
+import { Array as Arr, String as Str, Option } from "effect"
 import { attributeFilterOperator, formatAttributeClause } from "../advanced-filter-sync"
 import type { TracesSearch } from "../../../route/search"
 import type { Facet } from "./message"
-
-const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
 
 export type Search = typeof TracesSearch.Type
 type AttributeParam = "attributeFilters" | "resourceAttributeFilters"

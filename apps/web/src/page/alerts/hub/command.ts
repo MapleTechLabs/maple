@@ -1,3 +1,4 @@
+import { readClock } from "@maple/views/data/timing"
 import { UptimeMonitorId } from "@maple/domain"
 import {
 	AlertDestinationId,
@@ -41,10 +42,7 @@ import {
 import { Message } from "./message"
 import { ServiceNamespaces, serviceNamespaces } from "./uptime-groups"
 
-export const ReadHubClock = Command.define("ReadAlertsHubClock", {
-	messages: [Message.ReadClock],
-	execute: Effect.map(Clock.currentTimeMillis, (nowMs) => Message.ReadClock({ nowMs })),
-})
+export const ReadHubClock = readClock("ReadAlertsHubClock", Message.ReadClock)
 
 export const FetchHubDeliveries = Command.define("FetchAlertsHubDeliveries", {
 	args: { key: Schema.String },

@@ -1,3 +1,4 @@
+import { encodeJson } from "@maple/views/data/request-key"
 import { Duration, Option, Schema, Stream } from "effect"
 import { AsyncData } from "foldkit"
 import { Subscription } from "foldkit"
@@ -7,8 +8,6 @@ import { Message } from "./message"
 import type { Model } from "./model"
 import { filtersOf, searchSiteOf, tabOf } from "./requests"
 import { pollTicks } from "../../data/poll"
-
-const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
 
 /** `AnalyticsLiveBadge`'s poll: twice inside the server's 15s cache TTL. */
 const POLL_SECONDS = 15

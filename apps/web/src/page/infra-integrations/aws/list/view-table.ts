@@ -1,4 +1,5 @@
-import { Schema, Array as Arr } from "effect"
+import { encodeJson } from "@maple/views/data/request-key"
+import { Array as Arr } from "effect"
 import { AWS_INFRA_KINDS, type AwsInfraKindId } from "@maple/domain/aws-infra"
 import {
 	EMPTY_VALUE,
@@ -38,8 +39,6 @@ import {
 import type { Message } from "./message"
 import { typography, typographyClass } from "@maple/views/ui/typography"
 import { hstack, vstack } from "@maple/views/ui/stack"
-
-const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
 
 // One kind's resource table and its loading state.
 

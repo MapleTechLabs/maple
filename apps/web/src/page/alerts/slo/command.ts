@@ -1,14 +1,12 @@
+import { readClock } from "@maple/views/data/timing"
 import { SloId } from "@maple/domain"
-import { Clock, Effect, Schema } from "effect"
+import { Effect, Schema } from "effect"
 import { Command } from "foldkit"
 import { readGrants } from "../../../data/session-tenant"
 import { deleteSlo, retrieveSlo, setSloAlerting, sloHistory, sloStatus } from "../shared/slo-commands"
 import { Message } from "./message"
 
-export const ReadSloClock = Command.define("ReadSloClock", {
-	messages: [Message.ReadClock],
-	execute: Effect.map(Clock.currentTimeMillis, (nowMs) => Message.ReadClock({ nowMs })),
-})
+export const ReadSloClock = readClock("ReadSloClock", Message.ReadClock)
 
 export const FetchSloSession = Command.define("FetchSloSession", {
 	args: { orgId: Schema.String },

@@ -1,3 +1,4 @@
+import { readClock } from "@maple/views/data/timing"
 import { TraceId } from "@maple/domain/http"
 import {
 	getReplay,
@@ -7,7 +8,7 @@ import {
 	getSessionTraceSummaries,
 } from "@maple/web-data/warehouse/replays"
 import { getSpanHierarchy } from "@maple/web-data/warehouse/traces"
-import { Clock, Effect, Option, Queue, Result, Schedule, Schema, Stream, Array as Arr } from "effect"
+import { Effect, Option, Queue, Result, Schedule, Schema, Stream, Array as Arr } from "effect"
 import { isDialogOpen, isEditableTarget } from "@maple/ui/lib/keyboard"
 import { Command, Mount } from "foldkit"
 import { IdleTtl } from "../../../data/idle-ttl"
@@ -24,10 +25,7 @@ const Window = {
 	windowEnd: Schema.optional(Schema.String),
 }
 
-export const ResolveClock = Command.define("ResolveReplayClock", {
-	messages: [Message.CompletedResolveClock],
-	execute: Effect.map(Clock.currentTimeMillis, (nowMs) => Message.CompletedResolveClock({ nowMs })),
-})
+export const ResolveClock = readClock("ResolveReplayClock", Message.CompletedResolveClock)
 
 export const FetchDetail = Command.define("FetchReplayDetail", {
 	args: { key: Schema.String, refresh: Schema.Boolean, sessionId: Schema.String, ...Window },

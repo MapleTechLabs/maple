@@ -1,6 +1,7 @@
+import { reloadSpin } from "@maple/views/data/timing"
 import { RequestMode } from "@maple/views/data/keyed"
 import { getUserLogs, getUserOverview, getUserTraces, listUserGroups } from "@maple/web-data/warehouse/users"
-import { Array as Arr, Clock, Duration, Effect, Option, Schema } from "effect"
+import { Array as Arr, Clock, Effect, Option, Schema } from "effect"
 import { Command } from "foldkit"
 import { toLoadFailure } from "@maple/views/data/load-failure"
 import { IdleTtl } from "../../../data/idle-ttl"
@@ -142,9 +143,4 @@ export const FetchLogs = Command.define("FetchUserLogs", {
 		),
 })
 
-export const CompleteReloadSpin = Command.define("CompleteUserReloadSpin", {
-	args: { version: Schema.Number },
-	messages: [Message.CompletedReloadSpin],
-	execute: ({ version }) =>
-		Effect.as(Effect.sleep(Duration.millis(600)), Message.CompletedReloadSpin({ version })),
-})
+export const CompleteReloadSpin = reloadSpin("CompleteUserReloadSpin", Message.CompletedReloadSpin)

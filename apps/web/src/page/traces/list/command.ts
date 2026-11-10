@@ -1,3 +1,4 @@
+import { reloadSpin } from "@maple/views/data/timing"
 import { RequestMode } from "@maple/views/data/keyed"
 import {
 	getTracesFacets,
@@ -172,12 +173,7 @@ export const WaitDurationDebounce = Command.define("WaitTracesDurationDebounce",
 		Effect.as(Effect.sleep(Duration.millis(400)), Message.ElapsedDurationDebounce({ version })),
 })
 
-export const CompleteReloadSpin = Command.define("CompleteTracesReloadSpin", {
-	args: { version: Schema.Number },
-	messages: [Message.CompletedReloadSpin],
-	execute: ({ version }) =>
-		Effect.as(Effect.sleep(Duration.millis(600)), Message.CompletedReloadSpin({ version })),
-})
+export const CompleteReloadSpin = reloadSpin("CompleteTracesReloadSpin", Message.CompletedReloadSpin)
 
 /** `useIsMobile`'s query (the shell's `MOBILE_QUERY`, which reads `window` as it loads). */
 export const MOBILE_QUERY = "(max-width: 767px)"

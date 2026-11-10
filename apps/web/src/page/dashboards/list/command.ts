@@ -1,5 +1,6 @@
+import { SEARCH_DEBOUNCE } from "@maple/views/data/timing"
 import { readLocalStorage, writeLocalStorage } from "@maple/ui/lib/local-storage"
-import { Clock, Duration, Effect, Option, Result, Schema, Array as Arr } from "effect"
+import { Clock, Effect, Option, Result, Schema, Array as Arr } from "effect"
 import { Command, Dom } from "foldkit"
 import { File as FoldkitFile } from "foldkit/file"
 import { trackProduct } from "../../../data/analytics"
@@ -102,7 +103,7 @@ export const WaitSearchDebounce = Command.define("WaitDashboardsSearchDebounce",
 	args: { generation: Schema.Number },
 	messages: [Message.ElapsedSearchDebounce],
 	execute: ({ generation }) =>
-		Effect.as(Effect.sleep(Duration.millis(300)), Message.ElapsedSearchDebounce({ generation })),
+		Effect.as(Effect.sleep(SEARCH_DEBOUNCE), Message.ElapsedSearchDebounce({ generation })),
 })
 
 /** `importDashboard`: create, then wait for the txid on the shape stream; the new id. */

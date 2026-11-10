@@ -1,6 +1,7 @@
+import { readClock } from "@maple/views/data/timing"
 import { DependencyFindingId, DependencyFindingTriageStatus } from "@maple/domain/dependency-scan"
 import { VcsRepositoryId } from "@maple/domain/http"
-import { Clock, Effect, Schema } from "effect"
+import { Effect, Schema } from "effect"
 import { Command } from "foldkit"
 import { toLoadFailure } from "@maple/views/data/load-failure"
 import { MapleInternalApiClient } from "../../../platform/api-clients"
@@ -18,10 +19,7 @@ const call = <A, E, R>(run: (api: Api) => Effect.Effect<A, E, R>) =>
 		return yield* run(api)
 	}).pipe(Effect.mapError(toLoadFailure), Effect.result)
 
-export const ReadDependenciesClock = Command.define("ReadSecurityDependenciesClock", {
-	messages: [Message.ReadClock],
-	execute: Effect.map(Clock.currentTimeMillis, (nowMs) => Message.ReadClock({ nowMs })),
-})
+export const ReadDependenciesClock = readClock("ReadSecurityDependenciesClock", Message.ReadClock)
 
 export const ReadDependenciesGrants = Command.define("ReadSecurityDependenciesGrants", {
 	messages: [Message.CompletedReadGrants],

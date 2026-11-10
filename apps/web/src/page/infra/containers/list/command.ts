@@ -1,3 +1,4 @@
+import { SEARCH_DEBOUNCE } from "@maple/views/data/timing"
 import {
 	containersSummary,
 	getContainerFacets,
@@ -5,7 +6,7 @@ import {
 	type ContainersSummaryInput,
 	type ListContainersInput,
 } from "@maple/web-data/warehouse/infra"
-import { Duration, Effect, Schema } from "effect"
+import { Effect, Schema } from "effect"
 import { Command } from "foldkit"
 import { toLoadFailure } from "@maple/views/data/load-failure"
 import { TimeWindow } from "../../../../data/time-range"
@@ -99,5 +100,5 @@ export const DebounceSearch = Command.define("DebounceInfraContainersSearch", {
 	args: { query: Schema.String },
 	messages: [Message.ElapsedSearchDebounce],
 	execute: ({ query }) =>
-		Effect.as(Effect.sleep(Duration.millis(300)), Message.ElapsedSearchDebounce({ query })),
+		Effect.as(Effect.sleep(SEARCH_DEBOUNCE), Message.ElapsedSearchDebounce({ query })),
 })

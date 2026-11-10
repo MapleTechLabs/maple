@@ -1,3 +1,4 @@
+import { reloadSpin } from "@maple/views/data/timing"
 import { RequestMode } from "@maple/views/data/keyed"
 import { readLocalStorage, writeLocalStorage } from "@maple/ui/lib/local-storage"
 import { formatWarehouseDateTime, snapRangeForCache } from "@maple/query-engine"
@@ -8,7 +9,7 @@ import {
 	getServiceMapCloudflare,
 	getServiceMapPlanetScale,
 } from "@maple/web-data/warehouse/service-map"
-import { Clock, Duration, Effect, Option, Schema, Array as Arr } from "effect"
+import { Clock, Effect, Option, Schema, Array as Arr } from "effect"
 import { Command } from "foldkit"
 import { loadServicesFacets } from "../../data/services-facets-probe"
 import { toLoadFailure } from "@maple/views/data/load-failure"
@@ -257,13 +258,7 @@ export const LoadSignalPresence = Command.define("LoadServiceMapSignalPresence",
 		Effect.map(loadSignalPresences(orgId), (result) => Message.CompletedLoadSignalPresence({ result })),
 })
 
-/** `PageRefreshProvider`: how long Reload shows its pending spinner. */
-export const CompleteReloadSpin = Command.define("CompleteServiceMapReloadSpin", {
-	args: { version: Schema.Number },
-	messages: [Message.CompletedReloadSpin],
-	execute: ({ version }) =>
-		Effect.as(Effect.sleep(Duration.millis(600)), Message.CompletedReloadSpin({ version })),
-})
+export const CompleteReloadSpin = reloadSpin("CompleteServiceMapReloadSpin", Message.CompletedReloadSpin)
 
 /** The org's shared factory world, for the 3D viewport. */
 export const LoadWorld = Command.define("LoadServiceMapWorld", {

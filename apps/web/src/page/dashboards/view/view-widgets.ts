@@ -1,3 +1,4 @@
+import { encodeJson } from "@maple/views/data/request-key"
 import type { DashboardDocument } from "@maple/domain/http"
 import { createLazy, type Html, type HtmlBuilder } from "foldkit/html"
 import * as Chart from "@maple/views/charts/chart"
@@ -20,8 +21,6 @@ import { isAlertable } from "./widget-actions"
 import { moveValue } from "./move-target"
 import { Schema, Array as Arr, Record as Rec } from "effect"
 import { DashboardWidgetSchema } from "@maple/widgets/dashboard"
-
-const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
 
 // The open dashboard's tiles: their actions menu and the context the shared tiles read.
 

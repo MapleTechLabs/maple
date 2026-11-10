@@ -1,9 +1,10 @@
+import { reloadSpin, SEARCH_DEBOUNCE } from "@maple/views/data/timing"
 import { RequestMode } from "@maple/views/data/keyed"
 import { Density, readLogsViewPreferences, saveLogsViewPreferences } from "@maple/views/ui/logs/viewer"
 import { logAttributeQueryFilters } from "@maple/views/lib/log-attribute-filters"
 import { getCustomChartTimeSeries } from "@maple/web-data/warehouse/custom-charts"
 import { getLogAttributeKeys, getLogsFacets, listLogs } from "@maple/web-data/warehouse/logs"
-import { Clock, Duration, Effect, Schema, Array as Arr } from "effect"
+import { Clock, Effect, Schema, Array as Arr } from "effect"
 import { Command, Mount } from "foldkit"
 import { toLoadFailure } from "@maple/views/data/load-failure"
 import { resolveWindow, TimeWindow } from "../../../data/time-range"
@@ -146,20 +147,14 @@ export const SavePreferences = Command.define("SaveLogsPreferences", {
 		Effect.as(saveLogsViewPreferences(preferences), Message.CompletedSavePreference()),
 })
 
-/** `PageRefreshProvider` keeps Reload busy this long. */
-export const CompleteReloadSpin = Command.define("CompleteLogsReloadSpin", {
-	args: { version: Schema.Number },
-	messages: [Message.CompletedReloadSpin],
-	execute: ({ version }) =>
-		Effect.as(Effect.sleep(Duration.millis(600)), Message.CompletedReloadSpin({ version })),
-})
+export const CompleteReloadSpin = reloadSpin("CompleteLogsReloadSpin", Message.CompletedReloadSpin)
 
 /** `useDebouncedCallback(..., 300)` on the search box. */
 export const WaitSearchDebounce = Command.define("WaitLogsSearchDebounce", {
 	args: { generation: Schema.Number },
 	messages: [Message.ElapsedSearchDebounce],
 	execute: ({ generation }) =>
-		Effect.as(Effect.sleep(Duration.millis(300)), Message.ElapsedSearchDebounce({ generation })),
+		Effect.as(Effect.sleep(SEARCH_DEBOUNCE), Message.ElapsedSearchDebounce({ generation })),
 })
 
 /** The filter rail is in the DOM (its facets read as it renders, so no paint wait). */

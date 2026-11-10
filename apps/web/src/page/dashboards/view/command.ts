@@ -1,3 +1,4 @@
+import { reloadSpin, readClock } from "@maple/views/data/timing"
 import {
 	DashboardDocument,
 	DashboardId,
@@ -6,7 +7,7 @@ import {
 	DashboardVariableSchema,
 	TimeRangeSchema,
 } from "@maple/domain/http"
-import { Clock, Duration, Effect, Queue, Random, Result, Schema, Stream, Array as Arr } from "effect"
+import { Clock, Effect, Queue, Random, Result, Schema, Stream, Array as Arr } from "effect"
 import { Command, Mount } from "foldkit"
 import { createQueryDraft } from "@maple/query-engine/query-builder"
 import { makeQueryDataSource } from "@maple/widgets/dashboard"
@@ -32,10 +33,7 @@ import { toLoadFailure } from "@maple/views/data/load-failure"
 import { presetById } from "./picker-catalog"
 import { applySectionEdit, SectionEdit } from "./section-edit"
 
-export const ReadClock = Command.define("ReadDashboardClock", {
-	messages: [Message.CompletedReadClock],
-	execute: Effect.map(Clock.currentTimeMillis, (nowMs) => Message.CompletedReadClock({ nowMs })),
-})
+export const ReadClock = readClock("ReadDashboardClock", Message.CompletedReadClock)
 
 /** The chart code failed to load: a fresh page load is the only way to fetch it again. */
 export const ReloadPage = Command.define("ReloadDashboardPage", {
@@ -116,13 +114,7 @@ export const FetchShares = Command.define("FetchDashboardShares", {
 		),
 })
 
-/** `PageRefreshProvider`: how long Reload shows its pending spinner. */
-export const CompleteReloadSpin = Command.define("CompleteDashboardReloadSpin", {
-	args: { version: Schema.Number },
-	messages: [Message.CompletedReloadSpin],
-	execute: ({ version }) =>
-		Effect.as(Effect.sleep(Duration.millis(600)), Message.CompletedReloadSpin({ version })),
-})
+export const CompleteReloadSpin = reloadSpin("CompleteDashboardReloadSpin", Message.CompletedReloadSpin)
 
 const toWriteMessage = <E, R>(effect: Effect.Effect<WriteSync, E, R>) =>
 	effect.pipe(

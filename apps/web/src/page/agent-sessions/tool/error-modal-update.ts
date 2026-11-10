@@ -1,8 +1,8 @@
+import { encodeJson, requestKey } from "@maple/views/data/request-key"
 import { AsyncData, Command } from "foldkit"
 import { defineMessageUnion } from "foldkit/message"
 import { Option, Schema, Array as Arr } from "effect"
 import * as Keyed from "@maple/views/data/keyed"
-import { requestKey } from "@maple/views/data/request-key"
 import type { Resources } from "../../../platform/resources"
 import * as Dialog from "@maple/views/ui/dialog"
 import type { Selection } from "../../kit/tools/reads"
@@ -14,8 +14,6 @@ import {
 	ScrollSampleIntoView,
 } from "./error-modal-command"
 import { init, Message, type Model, type SamplesPage } from "./error-modal-model"
-
-const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
 
 /** What the modal asks of the page: a new `?error=`, `?session=` or `?variant=`. */
 export const OutMessage = defineMessageUnion({

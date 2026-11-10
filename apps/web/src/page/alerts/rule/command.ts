@@ -1,8 +1,9 @@
+import { reloadSpin, readClock } from "@maple/views/data/timing"
 import { RequestMode } from "@maple/views/data/keyed"
 import { AlertRuleId, IsoDateTimeString } from "@maple/domain/http"
 import { V2AlertRulePreviewParams, V2InvestigationCreateParams } from "@maple/domain/http/v2"
 import { v2CheckToDocument } from "@maple/web-data/alerts/form-utils"
-import { Clock, Duration, Effect, Schema, Array as Arr } from "effect"
+import { Clock, Effect, Schema, Array as Arr } from "effect"
 import { Command } from "foldkit"
 import { toLoadFailure } from "@maple/views/data/load-failure"
 import { resolveWindow } from "../../../data/time-range"
@@ -16,8 +17,6 @@ import { CheckStatusFilter } from "./model"
 import { Message } from "./message"
 
 const PAGE_LIMIT = 100
-const RELOAD_SPIN = Duration.millis(600)
-
 /** `useEffectiveTimeRange(search…, "24h")`: snapped on entry, against the real clock on Reload. */
 export const ResolveRuleWindow = Command.define("ResolveAlertRuleWindow", {
 	args: {
@@ -38,16 +37,9 @@ export const ResolveRuleWindow = Command.define("ResolveAlertRuleWindow", {
 		),
 })
 
-export const ReadDiagnosisClock = Command.define("ReadAlertRuleDiagnosisClock", {
-	messages: [Message.ReadDiagnosisClock],
-	execute: Effect.map(Clock.currentTimeMillis, (nowMs) => Message.ReadDiagnosisClock({ nowMs })),
-})
+export const ReadDiagnosisClock = readClock("ReadAlertRuleDiagnosisClock", Message.ReadDiagnosisClock)
 
-export const CompleteRuleReloadSpin = Command.define("CompleteAlertRuleReloadSpin", {
-	args: { version: Schema.Number },
-	messages: [Message.CompletedReloadSpin],
-	execute: ({ version }) => Effect.as(Effect.sleep(RELOAD_SPIN), Message.CompletedReloadSpin({ version })),
-})
+export const CompleteRuleReloadSpin = reloadSpin("CompleteAlertRuleReloadSpin", Message.CompletedReloadSpin)
 
 export const FetchRuleDeliveries = Command.define("FetchAlertRuleDeliveries", {
 	args: { key: Schema.String },

@@ -1,3 +1,4 @@
+import { readClock } from "@maple/views/data/timing"
 import { AlertRuleId } from "@maple/domain/http"
 import { QUERY_BUILDER_METRIC_TYPES } from "@maple/query-model"
 import {
@@ -7,7 +8,7 @@ import {
 } from "@maple/domain/http/v2"
 import { getTracesFacets } from "@maple/web-data/warehouse/traces"
 import { displayError } from "@maple/web-data/lib/error-messages"
-import { Clock, Effect, Exit, Schema, Array as Arr, String as Str } from "effect"
+import { Effect, Exit, Schema, Array as Arr, String as Str } from "effect"
 import * as SecureRandom from "effect/crypto/SecureRandom"
 import { HttpClientError } from "effect/http"
 import { Command } from "foldkit"
@@ -30,10 +31,7 @@ export const GenerateDraftId = Command.define("GenerateAlertDraftId", {
 	),
 })
 
-export const ReadEditorClock = Command.define("ReadAlertEditorClock", {
-	messages: [Message.CompletedReadClock],
-	execute: Effect.map(Clock.currentTimeMillis, (nowMs) => Message.CompletedReadClock({ nowMs })),
-})
+export const ReadEditorClock = readClock("ReadAlertEditorClock", Message.CompletedReadClock)
 
 export const ReadEditorGrants = Command.define("ReadAlertEditorGrants", {
 	messages: [Message.CompletedReadGrants],

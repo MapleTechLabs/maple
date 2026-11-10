@@ -1,6 +1,7 @@
+import { readClock } from "@maple/views/data/timing"
 import { SupabaseProjectUpdateRequest } from "@maple/domain/http"
 import { SupabaseProjectRef } from "@maple/domain/primitives"
-import { Clock, Effect, Schema } from "effect"
+import { Effect, Schema } from "effect"
 import { Command } from "foldkit"
 import { idle, KeyedSchema } from "@maple/views/data/keyed"
 import { LoadFailure, toLoadFailure } from "@maple/views/data/load-failure"
@@ -50,10 +51,7 @@ export const LoadSupabaseMetrics = Command.define("LoadIntegrationsSupabaseMetri
 })
 
 /** After a switch settles, so the rows re-read resolves its window against now, not page mount. */
-export const ReadSupabaseClock = Command.define("ReadSupabaseClock", {
-	messages: [Message.CompletedReadSupabaseClock],
-	execute: Effect.map(Clock.currentTimeMillis, (nowMs) => Message.CompletedReadSupabaseClock({ nowMs })),
-})
+export const ReadSupabaseClock = readClock("ReadSupabaseClock", Message.CompletedReadSupabaseClock)
 
 export const SyncSupabase = Command.define("SyncSupabase", {
 	messages: [Message.CompletedSupabaseSync],

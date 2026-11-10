@@ -1,5 +1,6 @@
+import { readClock } from "@maple/views/data/timing"
 import { DashboardVariableSchema, DashboardWidgetSchema } from "@maple/domain/http"
-import { Clock, Effect, Queue, Schema, Stream, Array as Arr } from "effect"
+import { Effect, Queue, Schema, Stream, Array as Arr } from "effect"
 import * as SecureRandom from "effect/crypto/SecureRandom"
 import { Command, Mount } from "foldkit"
 import { toLoadFailure } from "@maple/views/data/load-failure"
@@ -23,10 +24,7 @@ export const FetchSuggestions = Command.define("FetchWidgetEditorSuggestions", {
 		),
 })
 
-export const ReadClock = Command.define("ReadWidgetEditorClock", {
-	messages: [Message.CompletedReadClock],
-	execute: Effect.map(Clock.currentTimeMillis, (nowMs) => Message.CompletedReadClock({ nowMs })),
-})
+export const ReadClock = readClock("ReadWidgetEditorClock", Message.CompletedReadClock)
 
 /** `useWidgetData` for the preview: one fetch per request key. */
 export const FetchWidget = Command.define("FetchWidgetPreview", {

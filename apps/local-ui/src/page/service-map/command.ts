@@ -1,6 +1,7 @@
+import { readClock } from "@maple/views/data/timing"
 import { readLocalStorage, writeLocalStorage } from "@maple/ui/lib/local-storage"
 import { Snapshot, ViewPrefs } from "@maple/views/service-map/map/state"
-import { Clock, Effect, Option, Schema } from "effect"
+import { Effect, Option, Schema } from "effect"
 import { Command } from "foldkit"
 import { withCache } from "../../data/cached"
 import { mapFromCached } from "./data"
@@ -16,15 +17,9 @@ const LayoutJson = Schema.fromJsonString(Schema.Struct({ snapshots: Schema.Array
 const PrefsJson = Schema.fromJsonString(ViewPrefs)
 const encodeJson = Schema.encodeEffect(Schema.fromJsonString(Schema.Unknown))
 
-export const ReadClock = Command.define("ReadServiceMapClock", {
-	messages: [Message.CompletedReadClock],
-	execute: Effect.map(Clock.currentTimeMillis, (nowMs) => Message.CompletedReadClock({ nowMs })),
-})
+export const ReadClock = readClock("ReadServiceMapClock", Message.CompletedReadClock)
 
-export const ReadRefreshClock = Command.define("ReadServiceMapRefreshClock", {
-	messages: [Message.CompletedReadRefreshClock],
-	execute: Effect.map(Clock.currentTimeMillis, (nowMs) => Message.CompletedReadRefreshClock({ nowMs })),
-})
+export const ReadRefreshClock = readClock("ReadServiceMapRefreshClock", Message.CompletedReadRefreshClock)
 
 /** Undecodable entries fall back to the defaults, as `storedValue` does. */
 export const ReadStored = Command.define("ReadLocalServiceMapStored", {
@@ -77,7 +72,11 @@ export const FetchServiceMap = Command.define("FetchLocalServiceMap", {
 		apiBase: Schema.String,
 		readsCache: Schema.Boolean,
 	},
-	messages: [Message.SucceededFetchServiceMap, Message.FailedFetchServiceMap, Message.FoundCachedServiceMap],
+	messages: [
+		Message.SucceededFetchServiceMap,
+		Message.FailedFetchServiceMap,
+		Message.FoundCachedServiceMap,
+	],
 	interrupt: { keyFields: ["key"], toKey: ({ key }) => key },
 	execute: ({ key, startTime, endTime, durationSeconds, apiBase, readsCache }) =>
 		withCache({

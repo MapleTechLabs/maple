@@ -1,8 +1,8 @@
+import { encodeJson, requestKey } from "@maple/views/data/request-key"
 import { AlertDestinationId } from "@maple/domain/http"
 import { Option, Result, Schema, Array as Arr } from "effect"
 import { AsyncData, Command as FoldkitCommand } from "foldkit"
 import * as Keyed from "@maple/views/data/keyed"
-import { requestKey } from "@maple/views/data/request-key"
 import type { AppRoute } from "../../../route"
 import * as Menu from "@maple/views/ui/menu"
 import { type PageContext, PageOutMessage, type PageReturn } from "../../contract"
@@ -33,8 +33,6 @@ import {
 } from "../../kit/uptime/form"
 import { Message } from "./message"
 import { canManage, type Model } from "./model"
-
-const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
 
 type Return = PageReturn<Model, Message>
 type FormRoute = Extract<AppRoute, { readonly _tag: "AlertsUptimeNew" }>

@@ -1,4 +1,5 @@
-import { Clock, Effect, Option, Queue, Schema, Stream, Array as Arr, Record as Rec } from "effect"
+import { readClock } from "@maple/views/data/timing"
+import { Effect, Option, Queue, Schema, Stream, Array as Arr, Record as Rec } from "effect"
 import { Command, Mount } from "foldkit"
 import { MapleApiV2Client } from "../../platform/api-clients"
 import { dataSourceTransform, toReadyData } from "../dashboards/kit/widget-data"
@@ -11,16 +12,10 @@ import { type Resolve, type ShareError, SharedDashboard, type WidgetState } from
 const SHARE_UNAVAILABLE_MESSAGE = "Couldn't load this dashboard. Try again later."
 export const DATA_UNAVAILABLE_MESSAGE = "Couldn't load this data."
 
-export const ResolveClock = Command.define("ResolveShareClock", {
-	messages: [Message.CompletedResolveClock],
-	execute: Effect.map(Clock.currentTimeMillis, (nowMs) => Message.CompletedResolveClock({ nowMs })),
-})
+export const ResolveClock = readClock("ResolveShareClock", Message.CompletedResolveClock)
 
 /** A Reload re-resolves a relative window at the current time. */
-export const ResolveReloadClock = Command.define("ResolveShareReloadClock", {
-	messages: [Message.CompletedResolveReloadClock],
-	execute: Effect.map(Clock.currentTimeMillis, (nowMs) => Message.CompletedResolveReloadClock({ nowMs })),
-})
+export const ResolveReloadClock = readClock("ResolveShareReloadClock", Message.CompletedResolveReloadClock)
 
 /** Reading `window.top` threw: a cross-origin parent. */
 export class FrameReadError extends Schema.TaggedError<FrameReadError>()("@maple/web/share/FrameReadError", {

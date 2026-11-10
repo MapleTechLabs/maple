@@ -1,10 +1,8 @@
-import { Schema } from "effect"
+import { encodeJson } from "@maple/views/data/request-key"
 import { Base64Url } from "effect/encoding"
 import type { DashboardDocument } from "@maple/domain/http"
 import { dataSourceRawSql, isQueryDataSource } from "@maple/widgets/dashboard"
 import type { AlertsCreateSearch } from "../../../route/search"
-
-const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
 
 // The widget actions: which actions a
 // tile's menu offers, and the alert prefill it hands /alerts/create.

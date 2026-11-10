@@ -1,6 +1,7 @@
+import { readClock } from "@maple/views/data/timing"
 import { AlertIncidentId, AlertRuleId, AnomalyIncidentId, IsoDateTimeString } from "@maple/domain/http"
 import { V2AlertRulePreviewParams, V2InvestigationCreateParams } from "@maple/domain/http/v2"
-import { Clock, Effect, Schema } from "effect"
+import { Effect, Schema } from "effect"
 import { Command } from "foldkit"
 import { toLoadFailure } from "@maple/views/data/load-failure"
 import { MapleApiV2Client } from "../../../platform/api-clients"
@@ -14,10 +15,7 @@ import { fetchCheckSummary } from "../shared/check-summary"
 import { fetchPreview } from "../shared/preview"
 import { Message } from "./message"
 
-export const ReadIncidentClock = Command.define("ReadAlertIncidentClock", {
-	messages: [Message.ReadClock],
-	execute: Effect.map(Clock.currentTimeMillis, (nowMs) => Message.ReadClock({ nowMs })),
-})
+export const ReadIncidentClock = readClock("ReadAlertIncidentClock", Message.ReadClock)
 
 export const FetchIncidentPreview = Command.define("FetchAlertIncidentPreview", {
 	args: { key: Schema.String, payload: V2AlertRulePreviewParams },

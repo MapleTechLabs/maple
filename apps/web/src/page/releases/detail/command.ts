@@ -1,6 +1,7 @@
+import { reloadSpin } from "@maple/views/data/timing"
 import { RequestMode } from "@maple/views/data/keyed"
 import { getReleaseDetail, getReleases } from "@maple/web-data/warehouse/releases"
-import { Clock, Duration, Effect, Predicate, type Result, Schema } from "effect"
+import { Clock, Effect, Predicate, type Result, Schema } from "effect"
 import { Command } from "foldkit"
 import { IdleTtl } from "../../../data/idle-ttl"
 import { type LoadFailure, toLoadFailure } from "@maple/views/data/load-failure"
@@ -178,9 +179,4 @@ export const FetchMarkerCommit = Command.define("FetchReleaseMarkerCommit", {
 		),
 })
 
-export const CompleteReleaseReloadSpin = Command.define("CompleteReleaseReloadSpin", {
-	args: { version: Schema.Number },
-	messages: [Message.CompletedReloadSpin],
-	execute: ({ version }) =>
-		Effect.as(Effect.sleep(Duration.millis(600)), Message.CompletedReloadSpin({ version })),
-})
+export const CompleteReleaseReloadSpin = reloadSpin("CompleteReleaseReloadSpin", Message.CompletedReloadSpin)

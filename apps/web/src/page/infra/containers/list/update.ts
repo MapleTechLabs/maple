@@ -1,7 +1,7 @@
-import { Schema, String as Str } from "effect"
+import { encodeJson, requestKey } from "@maple/views/data/request-key"
+import { String as Str } from "effect"
 import { Command } from "foldkit"
 import * as Keyed from "@maple/views/data/keyed"
-import { requestKey } from "@maple/views/data/request-key"
 import type { TimeWindow } from "../../../../data/time-range"
 import { AppRoute, hrefOf } from "../../../../route"
 import * as FilterSections from "@maple/views/ui/filters/filter-sections"
@@ -22,8 +22,6 @@ import {
 } from "./command"
 import { type ContainerSortKey, type Facet, Message } from "./message"
 import type { Model } from "./model"
-
-const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
 
 type Return = PageReturn<Model, Message>
 export type Search = Model["search"]

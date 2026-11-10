@@ -1,6 +1,7 @@
+import { reloadSpin } from "@maple/views/data/timing"
 import { RequestMode } from "@maple/views/data/keyed"
 import { GithubIntegrationStatus, VcsRepositoryId } from "@maple/domain/http"
-import { Clock, Duration, Effect, Schema } from "effect"
+import { Clock, Effect, Schema } from "effect"
 import { Command } from "foldkit"
 import { defineMessageUnion } from "foldkit/message"
 import * as Keyed from "@maple/views/data/keyed"
@@ -101,10 +102,4 @@ export const FetchGithubStatus = Command.define("FetchCodeReviewGithubStatus", {
 		),
 })
 
-/** `PageRefreshProvider`: how long Reload shows its pending spinner. */
-export const CompleteReloadSpin = Command.define("CompleteCodeReviewReloadSpin", {
-	args: { version: Schema.Number },
-	messages: [FrameMessage.CompletedReloadSpin],
-	execute: ({ version }) =>
-		Effect.as(Effect.sleep(Duration.millis(600)), FrameMessage.CompletedReloadSpin({ version })),
-})
+export const CompleteReloadSpin = reloadSpin("CompleteCodeReviewReloadSpin", FrameMessage.CompletedReloadSpin)

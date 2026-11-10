@@ -1,8 +1,22 @@
-import { byTypeFromCached, errorsKey, facetsFromCached, summaryFromCached, tracesFromCached, tracesKey } from "./cache"
+import { readClock } from "@maple/views/data/timing"
+import {
+	byTypeFromCached,
+	errorsKey,
+	facetsFromCached,
+	summaryFromCached,
+	tracesFromCached,
+	tracesKey,
+} from "./cache"
 import { withCache } from "../../data/cached"
-import { Clock, Effect, Schema } from "effect"
+import { Effect, Schema } from "effect"
 import { Command } from "foldkit"
-import { type ErrorsFilters, fetchErrorsByType, fetchErrorsFacets, fetchErrorsSummary, fetchErrorTraces } from "./fetch"
+import {
+	type ErrorsFilters,
+	fetchErrorsByType,
+	fetchErrorsFacets,
+	fetchErrorsSummary,
+	fetchErrorTraces,
+} from "./fetch"
 import { Message } from "./message"
 
 /** The view's filters from the hash query (`ErrorsView`). */
@@ -23,15 +37,9 @@ const RequestArgs = {
 
 const filtersOf = (search: string) => errorsFiltersOf(new URLSearchParams(search))
 
-export const ReadClock = Command.define("ReadErrorsClock", {
-	messages: [Message.CompletedReadClock],
-	execute: Effect.map(Clock.currentTimeMillis, (nowMs) => Message.CompletedReadClock({ nowMs })),
-})
+export const ReadClock = readClock("ReadErrorsClock", Message.CompletedReadClock)
 
-export const ReadRefreshClock = Command.define("ReadErrorsRefreshClock", {
-	messages: [Message.CompletedReadRefreshClock],
-	execute: Effect.map(Clock.currentTimeMillis, (nowMs) => Message.CompletedReadRefreshClock({ nowMs })),
-})
+export const ReadRefreshClock = readClock("ReadErrorsRefreshClock", Message.CompletedReadRefreshClock)
 
 const same = <A>(data: A) => data
 
@@ -95,6 +103,11 @@ export const FetchTraces = Command.define("FetchLocalErrorTraces", {
 			toCached: same,
 			fetch: fetchErrorTraces(fingerprintHash, filtersOf(search), { startTime, endTime }, apiBase),
 			found: (cached) => Message.FoundCachedTraces({ fingerprintHash, key, cached }),
-			succeeded: (traces, fetchedAtMs) => Message.SucceededFetchTraces({ fingerprintHash, key, traces, fetchedAtMs }),
-		}).pipe(Effect.catch((failure) => Effect.succeed(Message.FailedFetchTraces({ fingerprintHash, key, failure })))),
+			succeeded: (traces, fetchedAtMs) =>
+				Message.SucceededFetchTraces({ fingerprintHash, key, traces, fetchedAtMs }),
+		}).pipe(
+			Effect.catch((failure) =>
+				Effect.succeed(Message.FailedFetchTraces({ fingerprintHash, key, failure })),
+			),
+		),
 })

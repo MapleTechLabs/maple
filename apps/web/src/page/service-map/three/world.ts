@@ -1,4 +1,5 @@
-import { Schema, Array as Arr } from "effect"
+import { encodeJson } from "@maple/views/data/request-key"
+import { Array as Arr } from "effect"
 import { type InkPalette, type MachineKind, sceneryPalette } from "./appearance"
 import { decorateRoutes, type FactoryLink, factoryRoutes, type RoutingTopology } from "./factory-routing"
 import { connectedIds, type SpatialLayout, type SpatialView } from "./spatial-layout"
@@ -13,8 +14,6 @@ import { type EntitySpec, entityLayer } from "./entities"
 import { type Child, type FrameCallback, group, type Scope, type Vec3 } from "./kit"
 import { factoryMachine } from "./machines"
 import { factoryTransport } from "./transport"
-
-const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
 
 // The 3D viewport's derived layout, then the scene graph in draw order.
 

@@ -1,6 +1,7 @@
+import { encodeJson } from "@maple/views/data/request-key"
 import type { StatusPageComponentId } from "@maple/domain"
 import type { V2StatusPageComponent, V2UptimeMonitor } from "@maple/domain/http/v2"
-import { Option, Result, Schema, Array as Arr, String as Str } from "effect"
+import { Option, Result, Array as Arr, String as Str } from "effect"
 import { AsyncData } from "foldkit"
 import type { LoadFailure } from "@maple/views/data/load-failure"
 import * as Dialog from "@maple/views/ui/dialog"
@@ -41,8 +42,6 @@ import {
 	type Return,
 	toast,
 } from "./reads"
-
-const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
 
 // Components in the side panel: saved as you go, removed behind a confirm, moved in the list,
 // and added from the same checklist the builder uses.

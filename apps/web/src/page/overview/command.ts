@@ -1,3 +1,4 @@
+import { reloadSpin, readClock } from "@maple/views/data/timing"
 import { readLocalStorage, writeLocalStorage } from "@maple/ui/lib/local-storage"
 import {
 	getCustomChartTimeSeries,
@@ -6,7 +7,7 @@ import {
 } from "@maple/web-data/warehouse/custom-charts"
 import { getServiceUsage } from "@maple/web-data/warehouse/service-usage"
 import { getServiceHealthSnapshot } from "@maple/web-data/warehouse/services"
-import { Clock, Duration, Effect, Option, Schema, Array as Arr, Record as Rec } from "effect"
+import { Clock, Effect, Option, Schema, Array as Arr, Record as Rec } from "effect"
 import { Command } from "foldkit"
 import { toLoadFailure } from "@maple/views/data/load-failure"
 import { loadAnomalyServiceCounts } from "../../data/anomaly-service-counts"
@@ -41,10 +42,7 @@ export const ReadEntry = Command.define("ReadOverviewEntry", {
 })
 
 /** Reload: the real clock, so the window re-resolves unsnapped. */
-export const ResolveClock = Command.define("ResolveOverviewClock", {
-	messages: [Message.CompletedResolveClock],
-	execute: Effect.map(Clock.currentTimeMillis, (nowMs) => Message.CompletedResolveClock({ nowMs })),
-})
+export const ResolveClock = readClock("ResolveOverviewClock", Message.CompletedResolveClock)
 
 /** `FacetsHintPersister`: written once facets resolve, and again when the derived hint changes. */
 export const SaveFacetsHint = Command.define("SaveOverviewFacetsHint", {
@@ -57,13 +55,7 @@ export const SaveFacetsHint = Command.define("SaveOverviewFacetsHint", {
 		}),
 })
 
-/** `PageRefreshProvider`: how long Reload shows its pending spinner. */
-export const CompleteReloadSpin = Command.define("CompleteOverviewReloadSpin", {
-	args: { version: Schema.Number },
-	messages: [Message.CompletedReloadSpin],
-	execute: ({ version }) =>
-		Effect.as(Effect.sleep(Duration.millis(600)), Message.CompletedReloadSpin({ version })),
-})
+export const CompleteReloadSpin = reloadSpin("CompleteOverviewReloadSpin", Message.CompletedReloadSpin)
 
 const Names = Schema.optional(Schema.Array(Schema.String))
 const mutable = <A>(values: ReadonlyArray<A> | undefined): Array<A> | undefined =>

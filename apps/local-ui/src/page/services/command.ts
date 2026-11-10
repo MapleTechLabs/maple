@@ -1,20 +1,14 @@
+import { readClock, SEARCH_DEBOUNCE } from "@maple/views/data/timing"
 import { Clock, Effect, Option, Schema } from "effect"
 import { Command } from "foldkit"
-import { DEBOUNCE } from "../traces/command"
 import { cachedAs, readCached, recordCached } from "../../data/cached"
 import { fetchCatalog } from "./fetch"
 import { Catalog } from "./model"
 import { Message } from "./message"
 
-export const ReadClock = Command.define("ReadServicesClock", {
-	messages: [Message.CompletedReadClock],
-	execute: Effect.map(Clock.currentTimeMillis, (nowMs) => Message.CompletedReadClock({ nowMs })),
-})
+export const ReadClock = readClock("ReadServicesClock", Message.CompletedReadClock)
 
-export const ReadRefreshClock = Command.define("ReadServicesRefreshClock", {
-	messages: [Message.CompletedReadRefreshClock],
-	execute: Effect.map(Clock.currentTimeMillis, (nowMs) => Message.CompletedReadRefreshClock({ nowMs })),
-})
+export const ReadRefreshClock = readClock("ReadServicesRefreshClock", Message.CompletedReadRefreshClock)
 
 /** One `useCatalog`: an env/ns slice (absent = unfiltered) over the window. */
 export const FetchCatalog = Command.define("FetchLocalServiceCatalog", {
@@ -33,8 +27,14 @@ export const FetchCatalog = Command.define("FetchLocalServiceCatalog", {
 		Effect.gen(function* () {
 			const cacheKey = ["local", "services", "catalog", env, ns, `${startTime}/${endTime}`]
 			const maybeCached = readsCache ? yield* readCached(cacheKey, cachedAs(Catalog)) : Option.none()
-			if (Option.isSome(maybeCached)) return Message.FoundCachedCatalog({ key, cached: maybeCached.value })
-			const catalog = yield* fetchCatalog(env ?? undefined, ns ?? undefined, { startTime, endTime }, apiBase)
+			if (Option.isSome(maybeCached))
+				return Message.FoundCachedCatalog({ key, cached: maybeCached.value })
+			const catalog = yield* fetchCatalog(
+				env ?? undefined,
+				ns ?? undefined,
+				{ startTime, endTime },
+				apiBase,
+			)
 			const fetchedAtMs = yield* Clock.currentTimeMillis
 			yield* recordCached(cacheKey, catalog, fetchedAtMs)
 			return Message.SucceededFetchCatalog({ key, catalog, fetchedAtMs })
@@ -44,5 +44,6 @@ export const FetchCatalog = Command.define("FetchLocalServiceCatalog", {
 export const WaitSearchDebounce = Command.define("WaitServicesSearchDebounce", {
 	args: { version: Schema.Number },
 	messages: [Message.ElapsedSearchDebounce],
-	execute: ({ version }) => Effect.as(Effect.sleep(DEBOUNCE), Message.ElapsedSearchDebounce({ version })),
+	execute: ({ version }) =>
+		Effect.as(Effect.sleep(SEARCH_DEBOUNCE), Message.ElapsedSearchDebounce({ version })),
 })

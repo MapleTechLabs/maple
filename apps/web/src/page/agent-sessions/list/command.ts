@@ -1,3 +1,4 @@
+import { reloadSpin, SEARCH_DEBOUNCE } from "@maple/views/data/timing"
 import { RequestMode } from "@maple/views/data/keyed"
 import { AI_SESSION_DETAILS_MAX_SESSIONS } from "@maple/domain/http"
 import {
@@ -163,7 +164,7 @@ export const DebounceSearch = Command.define("DebounceAgentSessionsSearch", {
 	args: { version: Schema.Number },
 	messages: [Message.ElapsedSearchDebounce],
 	execute: ({ version }) =>
-		Effect.as(Effect.sleep(Duration.millis(300)), Message.ElapsedSearchDebounce({ version })),
+		Effect.as(Effect.sleep(SEARCH_DEBOUNCE), Message.ElapsedSearchDebounce({ version })),
 })
 
 export const DebounceRange = Command.define("DebounceAgentSessionsRange", {
@@ -173,12 +174,7 @@ export const DebounceRange = Command.define("DebounceAgentSessionsRange", {
 		Effect.as(Effect.sleep(Duration.millis(400)), Message.ElapsedRangeDebounce({ range, version })),
 })
 
-export const CompleteReloadSpin = Command.define("CompleteAgentSessionsReloadSpin", {
-	args: { version: Schema.Number },
-	messages: [Message.CompletedReloadSpin],
-	execute: ({ version }) =>
-		Effect.as(Effect.sleep(Duration.millis(600)), Message.CompletedReloadSpin({ version })),
-})
+export const CompleteReloadSpin = reloadSpin("CompleteAgentSessionsReloadSpin", Message.CompletedReloadSpin)
 
 const afterPaint = <A>(message: A) =>
 	Effect.callback<A>((resume) => {

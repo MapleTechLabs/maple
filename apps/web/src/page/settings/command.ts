@@ -1,3 +1,4 @@
+import { readClock } from "@maple/views/data/timing"
 import {
 	ENABLED_ORGANIZATION_FEATURE_FLAGS,
 	organizationFeatureFlagsFrom,
@@ -5,17 +6,14 @@ import {
 import * as Policy from "@maple/domain/policy"
 import { isClerkAuthEnabled } from "../../lib/services/common/auth-mode"
 import { NetworkErrorBody } from "@maple/web-data/lib/error-messages"
-import { Clock, Duration, Effect, Schema } from "effect"
+import { Duration, Effect, Schema } from "effect"
 import { Command } from "foldkit"
 import { toLoadFailure } from "@maple/views/data/load-failure"
 import { SessionTenant } from "../../data/session-tenant"
 import { Message } from "./message"
 import { BillingCustomerCache } from "../../data/billing-customer"
 
-export const ReadSettingsClock = Command.define("ReadSettingsClock", {
-	messages: [Message.ReadClock],
-	execute: Effect.map(Clock.currentTimeMillis, (nowMs) => Message.ReadClock({ nowMs })),
-})
+export const ReadSettingsClock = readClock("ReadSettingsClock", Message.ReadClock)
 
 /** `retainedQuery("auth", "session", {})`, shared with the shell through `SessionTenant`. */
 export const FetchSettingsSession = Command.define("FetchSettingsSession", {

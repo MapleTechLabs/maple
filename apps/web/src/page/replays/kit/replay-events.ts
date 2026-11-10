@@ -10,9 +10,8 @@
 //
 // `normalizeEvents` repairs the stream so those legacy sessions stay playable.
 
-import { Array as Arr, Order, Schema } from "effect"
-
-const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
+import { encodeJson } from "@maple/views/data/request-key"
+import { Array as Arr, Order } from "effect"
 
 /** True when `event` is an object carrying a numeric `timestamp` — narrows without a cast. */
 const hasTimestamp = (event: unknown): event is { timestamp: number } =>

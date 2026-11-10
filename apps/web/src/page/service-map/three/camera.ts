@@ -1,12 +1,11 @@
-import { Schema, Array as Arr, String as Str, Option, Order } from "effect"
+import { encodeJson } from "@maple/views/data/request-key"
+import { Array as Arr, String as Str, Option, Order } from "effect"
 import { connectedIds, type SpatialView } from "./spatial-layout"
 import type { Topology3D } from "./types"
 import * as THREE from "three"
 import type { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js"
 import type { Vec3 } from "./kit"
 import type { Layout } from "./world"
-
-const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
 
 // The camera rig. The camera and HTML labels share
 // one projection; labels are the `[data-scene-label]` elements under the scene root.

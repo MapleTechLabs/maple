@@ -1,5 +1,6 @@
+import { reloadSpin } from "@maple/views/data/timing"
 import { RequestMode } from "@maple/views/data/keyed"
-import { Clock, Duration, Effect, Schema } from "effect"
+import { Clock, Effect, Schema } from "effect"
 import { Command } from "foldkit"
 import { resolveWindow, TimeWindow } from "../../../../data/time-range"
 import { loadRailwayServices, loadRailwayStatus } from "../data"
@@ -40,10 +41,4 @@ export const FetchServices = Command.define("FetchRailwayServices", {
 		Effect.map(loadRailwayServices(window), (result) => Message.CompletedFetchServices({ key, result })),
 })
 
-const RELOAD_SPIN = Duration.millis(600)
-
-export const CompleteReloadSpin = Command.define("CompleteRailwayReloadSpin", {
-	args: { version: Schema.Number },
-	messages: [Message.CompletedReloadSpin],
-	execute: ({ version }) => Effect.as(Effect.sleep(RELOAD_SPIN), Message.CompletedReloadSpin({ version })),
-})
+export const CompleteReloadSpin = reloadSpin("CompleteRailwayReloadSpin", Message.CompletedReloadSpin)

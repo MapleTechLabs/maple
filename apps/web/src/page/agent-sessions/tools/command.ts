@@ -1,7 +1,8 @@
+import { reloadSpin, SEARCH_DEBOUNCE } from "@maple/views/data/timing"
 import { RequestMode } from "@maple/views/data/keyed"
 import { getAiSessionsFacets } from "@maple/web-data/warehouse/ai-sessions"
 import { getAiToolBreakdowns, getAiToolSeries } from "@maple/web-data/warehouse/ai-session-tools"
-import { Clock, Duration, Effect, Schema } from "effect"
+import { Clock, Effect, Schema } from "effect"
 import { Command } from "foldkit"
 import { toLoadFailure } from "@maple/views/data/load-failure"
 import { resolveWindow, TimeWindow } from "../../../data/time-range"
@@ -86,7 +87,7 @@ export const DebounceSearch = Command.define("DebounceAgentToolsSearch", {
 	args: { version: Schema.Number },
 	messages: [Message.ElapsedSearchDebounce],
 	execute: ({ version }) =>
-		Effect.as(Effect.sleep(Duration.millis(300)), Message.ElapsedSearchDebounce({ version })),
+		Effect.as(Effect.sleep(SEARCH_DEBOUNCE), Message.ElapsedSearchDebounce({ version })),
 })
 
 export const LoadSignalPresence = Command.define("LoadAgentToolsSignalPresence", {
@@ -96,9 +97,4 @@ export const LoadSignalPresence = Command.define("LoadAgentToolsSignalPresence",
 		Effect.map(loadSignalPresences(orgId), (result) => Message.CompletedLoadSignalPresence({ result })),
 })
 
-export const CompleteReloadSpin = Command.define("CompleteAgentToolsReloadSpin", {
-	args: { version: Schema.Number },
-	messages: [Message.CompletedReloadSpin],
-	execute: ({ version }) =>
-		Effect.as(Effect.sleep(Duration.millis(600)), Message.CompletedReloadSpin({ version })),
-})
+export const CompleteReloadSpin = reloadSpin("CompleteAgentToolsReloadSpin", Message.CompletedReloadSpin)

@@ -1,5 +1,6 @@
+import { reloadSpin } from "@maple/views/data/timing"
 import { RequestMode } from "@maple/views/data/keyed"
-import { Clock, Duration, Effect, Schema } from "effect"
+import { Clock, Effect, Schema } from "effect"
 import { Command, Mount } from "foldkit"
 import { resolveWindow } from "../../../../data/time-range"
 import { linkedCursorStream } from "@maple/views/charts/linked-cursor"
@@ -102,12 +103,7 @@ export const FetchLiveTraffic = Command.define("FetchCloudflareTopTraffic", {
 		Effect.map(loadTopTraffic(input), (result) => Message.CompletedFetchLiveTraffic({ key, result })),
 })
 
-export const CompleteReloadSpin = Command.define("CompleteCloudflareZoneReloadSpin", {
-	args: { version: Schema.Number },
-	messages: [Message.CompletedReloadSpin],
-	execute: ({ version }) =>
-		Effect.as(Effect.sleep(Duration.millis(600)), Message.CompletedReloadSpin({ version })),
-})
+export const CompleteReloadSpin = reloadSpin("CompleteCloudflareZoneReloadSpin", Message.CompletedReloadSpin)
 
 /** `useLinkedCursor` on the signal strips. */
 export const MountLinkedCursor = Mount.defineStream("MountCloudflareZoneLinkedCursor", {

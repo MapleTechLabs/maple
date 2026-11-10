@@ -1,3 +1,4 @@
+import { encodeJson } from "@maple/views/data/request-key"
 import { SOURCE_LIMITS } from "@maple/domain/http"
 import { V2Source, type V2SourceUpdateParams } from "@maple/domain/http/v2"
 import { SourceAttributeMode, SourceSignal } from "@maple/domain/primitives"
@@ -6,8 +7,6 @@ import { Command, type Update } from "foldkit"
 import { defineMessageUnion } from "foldkit/message"
 import * as ToggleGroup from "@maple/views/ui/toggle-group"
 import { SIGNALS } from "./shared"
-
-const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
 
 // The rules draft and its outcome.
 

@@ -1,7 +1,8 @@
+import { readClock } from "@maple/views/data/timing"
 import { RecommendationIssueId } from "@maple/domain/http"
 import { V2AttributeMappingCreateParams } from "@maple/domain/http/v2"
 import { collectV2Pages } from "@maple/web-data/lib/v2-pagination"
-import { Clock, Effect, Schema } from "effect"
+import { Effect, Schema } from "effect"
 import { Command } from "foldkit"
 import { toLoadFailure } from "@maple/views/data/load-failure"
 import { MapleApiV2Client } from "../../platform/api-clients"
@@ -12,10 +13,7 @@ const page = (cursor: string | undefined) => ({
 	query: { limit: PAGE_LIMIT, ...(cursor !== undefined ? { cursor } : undefined) },
 })
 
-export const ReadRecommendationClock = Command.define("ReadRecommendationClock", {
-	messages: [Message.ReadClock],
-	execute: Effect.map(Clock.currentTimeMillis, (nowMs) => Message.ReadClock({ nowMs })),
-})
+export const ReadRecommendationClock = readClock("ReadRecommendationClock", Message.ReadClock)
 
 export const FetchRecommendations = Command.define("FetchRecommendations", {
 	args: { key: Schema.String },

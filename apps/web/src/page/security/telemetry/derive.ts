@@ -1,3 +1,4 @@
+import { encodeJson } from "@maple/views/data/request-key"
 import {
 	type AdvisorySummary,
 	advisoryKey,
@@ -14,10 +15,8 @@ import {
 } from "@maple/domain/runtime-posture"
 import { PROBE_CATEGORIES, type ProbeCategoryInfo, probeCategoryOf } from "@maple/domain/security-telemetry"
 import { toEpochMs } from "@maple/ui/lib/time-format"
-import { Schema, Array as Arr, String as Str, Option } from "effect"
+import { Array as Arr, String as Str, Option } from "effect"
 import type { Exposure, Runtimes } from "./model"
-
-const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
 
 // Pure readings of the two responses: the Exposure tab's totals and categories, the Runtimes
 // tab's postures in the order the table shows them.

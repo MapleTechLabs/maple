@@ -1,7 +1,8 @@
+import { reloadSpin } from "@maple/views/data/timing"
 import { createFormulaDraft, createQueryDraft } from "@maple/query-engine/query-builder"
 import { listMetrics } from "@maple/web-data/warehouse/metrics"
 import { getQueryBuilderTimeseries } from "@maple/web-data/warehouse/query-builder-timeseries"
-import { Clock, Duration, Effect, Option, Queue, Schema, Stream, Array as Arr } from "effect"
+import { Clock, Effect, Option, Queue, Schema, Stream, Array as Arr } from "effect"
 import * as SecureRandom from "effect/crypto/SecureRandom"
 import { Command, Mount } from "foldkit"
 import { toLoadFailure } from "@maple/views/data/load-failure"
@@ -97,13 +98,7 @@ export const FetchTimeseries = Command.define("FetchQueryBuilderLabTimeseries", 
 		),
 })
 
-/** `PageRefreshProvider`'s Reload spin. */
-export const CompleteReloadSpin = Command.define("CompleteQueryBuilderLabReloadSpin", {
-	args: { version: Schema.Number },
-	messages: [Message.CompletedReloadSpin],
-	execute: ({ version }) =>
-		Effect.as(Effect.sleep(Duration.millis(600)), Message.CompletedReloadSpin({ version })),
-})
+export const CompleteReloadSpin = reloadSpin("CompleteQueryBuilderLabReloadSpin", Message.CompletedReloadSpin)
 
 /** `createQueryDraft` draws a random id, so it runs here. */
 export const CreateQuery = Command.define("CreateQueryBuilderLabQuery", {

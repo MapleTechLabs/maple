@@ -1,3 +1,4 @@
+import { reloadSpin } from "@maple/views/data/timing"
 import { RequestMode } from "@maple/views/data/keyed"
 import {
 	getServiceDetailOverview,
@@ -14,7 +15,7 @@ import { getServiceUsage } from "@maple/web-data/warehouse/service-usage"
 import { getServiceRuntimes, getServiceWorkloads } from "@maple/web-data/warehouse/service-infra"
 import { getServiceDependenciesBundle } from "@maple/web-data/warehouse/service-map"
 import { V2ErrorIssueListQuery } from "@maple/domain/http/v2"
-import { Clock, Duration, Effect, Predicate, Schema, Array as Arr } from "effect"
+import { Clock, Effect, Predicate, Schema, Array as Arr } from "effect"
 import { Command } from "foldkit"
 import { toLoadFailure } from "@maple/views/data/load-failure"
 import { readCommitDetail } from "../../kit/commit-card"
@@ -35,13 +36,7 @@ export const ResolveClock = Command.define("ResolveServiceDetailClock", {
 		Effect.map(Clock.currentTimeMillis, (nowMs) => Message.CompletedResolveClock({ nowMs, mode })),
 })
 
-/** `PageRefreshProvider`: how long Reload shows its pending spinner. */
-export const CompleteReloadSpin = Command.define("CompleteServiceDetailReloadSpin", {
-	args: { version: Schema.Number },
-	messages: [Message.CompletedReloadSpin],
-	execute: ({ version }) =>
-		Effect.as(Effect.sleep(Duration.millis(600)), Message.CompletedReloadSpin({ version })),
-})
+export const CompleteReloadSpin = reloadSpin("CompleteServiceDetailReloadSpin", Message.CompletedReloadSpin)
 
 /** The window, the service and the environment filter (`GetCustomChartServiceDetailInput`). */
 export const DetailInput = Schema.Struct({

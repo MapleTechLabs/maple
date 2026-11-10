@@ -1,3 +1,4 @@
+import { reloadSpin } from "@maple/views/data/timing"
 import { RequestMode } from "@maple/views/data/keyed"
 import {
 	ErrorIssueClaimRequest,
@@ -12,7 +13,7 @@ import {
 	IssueSeverity,
 } from "@maple/domain/http"
 import { V2InvestigationCreateParams } from "@maple/domain/http/v2"
-import { Clock, Duration, Effect, Result, Schema } from "effect"
+import { Clock, Effect, Result, Schema } from "effect"
 import { Command, Mount } from "foldkit"
 import { type LoadFailure, toLoadFailure } from "@maple/views/data/load-failure"
 import { resolveWindow } from "../../../data/time-range"
@@ -201,13 +202,7 @@ export const FetchVcsPullRequests = Command.define("FetchVcsPullRequests", {
 		),
 })
 
-/** `PageRefreshProvider`: how long Reload shows its pending spinner. */
-export const CompleteReloadSpin = Command.define("CompleteIssueReloadSpin", {
-	args: { version: Schema.Number },
-	messages: [Message.CompletedReloadSpin],
-	execute: ({ version }) =>
-		Effect.as(Effect.sleep(Duration.millis(600)), Message.CompletedReloadSpin({ version })),
-})
+export const CompleteReloadSpin = reloadSpin("CompleteIssueReloadSpin", Message.CompletedReloadSpin)
 
 const runWrite = (issueId: ErrorIssueId, write: IssueWrite) =>
 	Effect.gen(function* () {

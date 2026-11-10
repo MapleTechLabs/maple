@@ -1,3 +1,5 @@
+import { reloadSpin } from "@maple/views/data/timing"
+import { encodeJson } from "@maple/views/data/request-key"
 import { RequestMode } from "@maple/views/data/keyed"
 import { MetricsQueryDraftSchema, QUERY_BUILDER_METRIC_TYPES } from "@maple/query-model"
 import {
@@ -18,8 +20,6 @@ import { AutocompleteLookup } from "./model"
 import { autocompleteLookup } from "../../kit/autocomplete-lookups"
 import { caretEvents, placeCaret, WHERE_TEXTAREA_ID } from "./where-editor"
 import { listboxEvents } from "../../kit/where-autocomplete"
-
-const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
 
 export const ResolveWindow = Command.define("ResolveMetricWindow", {
 	args: {
@@ -200,12 +200,7 @@ export const ReadLocation = Command.define("ReadMetricLocation", {
 	execute: Effect.sync(() => Message.ReadLocationHref({ href: window.location.href })),
 })
 
-export const CompleteReloadSpin = Command.define("CompleteMetricReloadSpin", {
-	args: { version: Schema.Number },
-	messages: [Message.CompletedReloadSpin],
-	execute: ({ version }) =>
-		Effect.as(Effect.sleep(Duration.millis(600)), Message.CompletedReloadSpin({ version })),
-})
+export const CompleteReloadSpin = reloadSpin("CompleteMetricReloadSpin", Message.CompletedReloadSpin)
 
 /** The where textarea's caret, focus and blur, read off the native events. */
 export const MountWhereCaret = Mount.defineStream("MountMetricWhereCaret", {

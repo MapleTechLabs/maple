@@ -1,3 +1,4 @@
+import { reloadSpin, SEARCH_DEBOUNCE } from "@maple/views/data/timing"
 import { RequestMode } from "@maple/views/data/keyed"
 import { getReplaysFacets, listReplays, type ListReplaysInput } from "@maple/web-data/warehouse/replays"
 import { sessionTagsFromSearch } from "../kit/session-tags"
@@ -151,7 +152,7 @@ export const DebounceQuery = Command.define("DebounceReplaysQuery", {
 	args: { generation: Schema.Number },
 	messages: [Message.CompletedQueryDebounce],
 	execute: ({ generation }) =>
-		Effect.as(Effect.sleep(Duration.millis(300)), Message.CompletedQueryDebounce({ generation })),
+		Effect.as(Effect.sleep(SEARCH_DEBOUNCE), Message.CompletedQueryDebounce({ generation })),
 })
 
 /** `RangeFilterSection`'s 400 ms pause before typed values commit. */
@@ -162,9 +163,4 @@ export const DebounceDraft = Command.define("DebounceReplaysRangeDraft", {
 		Effect.as(Effect.sleep(Duration.millis(400)), Message.CompletedDraftDebounce({ version })),
 })
 
-export const CompleteReloadSpin = Command.define("CompleteReplaysReloadSpin", {
-	args: { version: Schema.Number },
-	messages: [Message.CompletedReloadSpin],
-	execute: ({ version }) =>
-		Effect.as(Effect.sleep(Duration.millis(600)), Message.CompletedReloadSpin({ version })),
-})
+export const CompleteReloadSpin = reloadSpin("CompleteReplaysReloadSpin", Message.CompletedReloadSpin)

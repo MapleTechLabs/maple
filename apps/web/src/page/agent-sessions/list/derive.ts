@@ -1,4 +1,5 @@
-import { Schema, Array as Arr, String as Str } from "effect"
+import { encodeJson } from "@maple/views/data/request-key"
+import { Array as Arr, String as Str } from "effect"
 import type { AiSessionSortDir, AiSessionSortKey } from "@maple/domain/http"
 import type { ListAiSessionsInput } from "@maple/web-data/warehouse/ai-sessions"
 import type { Types } from "effect"
@@ -6,8 +7,6 @@ import { AsyncData } from "foldkit"
 import type { TimeWindow } from "../../../data/time-range"
 import type { AgentSessionsSearch } from "../../../route/search"
 import type { Model, RangeKey, SessionRow } from "./model"
-
-const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
 
 // The list's filter inputs and paging arithmetic.
 

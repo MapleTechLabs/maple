@@ -1,3 +1,4 @@
+import { reloadSpin, SEARCH_DEBOUNCE } from "@maple/views/data/timing"
 import { RequestMode } from "@maple/views/data/keyed"
 import {
 	getUsersFacets,
@@ -5,7 +6,7 @@ import {
 	listUsers,
 	USERS_SEARCH_MAX_LENGTH,
 } from "@maple/web-data/warehouse/users"
-import { Array as Arr, Clock, Duration, Effect, Schema, String as Str } from "effect"
+import { Array as Arr, Clock, Effect, Schema, String as Str } from "effect"
 import { Command } from "foldkit"
 import { toLoadFailure } from "@maple/views/data/load-failure"
 import { IdleTtl } from "../../../data/idle-ttl"
@@ -189,12 +190,7 @@ export const DebounceQuery = Command.define("DebounceUsersQuery", {
 	args: { generation: Schema.Number },
 	messages: [Message.CompletedQueryDebounce],
 	execute: ({ generation }) =>
-		Effect.as(Effect.sleep(Duration.millis(300)), Message.CompletedQueryDebounce({ generation })),
+		Effect.as(Effect.sleep(SEARCH_DEBOUNCE), Message.CompletedQueryDebounce({ generation })),
 })
 
-export const CompleteReloadSpin = Command.define("CompleteUsersReloadSpin", {
-	args: { version: Schema.Number },
-	messages: [Message.CompletedReloadSpin],
-	execute: ({ version }) =>
-		Effect.as(Effect.sleep(Duration.millis(600)), Message.CompletedReloadSpin({ version })),
-})
+export const CompleteReloadSpin = reloadSpin("CompleteUsersReloadSpin", Message.CompletedReloadSpin)

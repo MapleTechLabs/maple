@@ -1,3 +1,4 @@
+import { encodeJson, requestKey } from "@maple/views/data/request-key"
 import { initWhereFields } from "../../kit/where-field"
 import {
 	pickDashboardControlParams,
@@ -13,7 +14,6 @@ import { Command } from "foldkit"
 import * as Chart from "@maple/views/charts/chart"
 import { LoadChartRuntime } from "@maple/views/charts/chart-runtime"
 import * as Keyed from "@maple/views/data/keyed"
-import { requestKey } from "@maple/views/data/request-key"
 import { AUTOCOMPLETE_LOOKUPS } from "../../kit/autocomplete-lookups"
 import { AppRoute, hrefOf } from "../../../route"
 import type { DashboardWidgetSearch } from "../../../route/search"
@@ -45,7 +45,6 @@ import { Message } from "./message"
 import type { Model } from "./model"
 import { codeUnitAt } from "@maple/strings"
 
-const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
 /** `JSON.stringify` equality: an absent value reads as `null`, never as a thrown encode. */
 const encodeJsonOption = Schema.encodeOption(Schema.fromJsonString(Schema.Unknown))
 const jsonKeyOf = (value: unknown): string | null => Option.getOrNull(encodeJsonOption(value))
