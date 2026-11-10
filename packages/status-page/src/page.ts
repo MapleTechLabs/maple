@@ -46,7 +46,7 @@ import { renderUpdateBody } from "./markdown"
 import { PAGE_SCRIPT } from "./script"
 import { activeIncidents, groupComponents, pastIncidents, upcomingMaintenance } from "./select"
 import { pageStyles } from "./styles"
-import { renderSubscribeMenu } from "./subscribe"
+import { renderSubscribeDialog, SUBSCRIBE_LINK } from "./subscribe"
 
 const timeTag = (ms: number): string =>
 	`<time datetime="${new Date(ms).toISOString()}">${formatDateTime(ms)}</time>`
@@ -329,7 +329,8 @@ export const renderPage = (
 
 	const body = Arr.join(
 		[
-			renderHeader(snapshot, options, renderSubscribeMenu(snapshot, options)),
+			renderHeader(snapshot, options, SUBSCRIBE_LINK),
+			renderSubscribeDialog(snapshot, options),
 			`<div class="notice" id="delayed" role="status"${delayed ? "" : " hidden"}>Live checks are delayed. Showing the last known state from ${timeTag(freshness.updatedAt)}.</div>`,
 			renderHero(
 				overall,

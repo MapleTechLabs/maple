@@ -14,53 +14,67 @@ const between = (text: string, open: string, close: string): string =>
 		onSome: (after) => Str.split(close)(after)[0] ?? "",
 	})
 
-/** The header's subscribe menu, up to its closing tag. */
-const panel = (html: string): string =>
-	between(between(html, "<header", "</header>"), "<details", "</details>")
+/** The subscribe dialog, from its opening tag to the delayed-data notice that follows it. */
+const dialog = (html: string): string => between(html, `id="subscribe"`, `id="delayed"`)
 
-describe("the subscribe menu", () => {
-	it("opens from the header and offers email with a pick of the page's components, the feeds, and a Slack command", () => {
-		const snapshot = makeSnapshot()
-		const html = renderPage(snapshot, live, FIXTURE_NOW, SHARED)
-		const section = panel(html)
+const componentIdsIn = (html: string) =>
+	Arr.map(
+		Arr.fromIterable(Str.matchAll(/name="componentIds" value="([^"]+)"/gu)(html)),
+		(match) => match[1],
+	)
 
-		expect(section).toContain("<summary>Subscribe to updates</summary>")
-		expect(section).toContain(`<form method="post" action="/s/acme/subscribe">`)
-		expect(section).toContain(`name="scope" value="all" checked`)
-		expect(
-			Arr.map(
-				Arr.fromIterable(Str.matchAll(/name="componentIds" value="([^"]+)"/gu)(section)),
-				(match) => match[1],
-			),
-		).toEqual(Arr.map(snapshot.components, (component) => component.id))
-		expect(section).toContain(`href="/s/acme/feed.rss"`)
-		expect(section).toContain(`href="/s/acme/feed.atom"`)
-		expect(section).toContain(
-			"<code>/feed subscribe https://status.maple.workers.dev/s/acme/feed.rss</code>",
-		)
-		expect(section).toContain(
-			`data-copy="/feed subscribe https://status.maple.workers.dev/s/acme/feed.rss"`,
-		)
+describe("the subscribe dialog", () => {
+	it("opens from the header's link, with or without script, as the target the Worker redirects to", () => {
+		const html = renderPage(makeSnapshot(), live, FIXTURE_NOW, SHARED)
+		expect(between(html, "<header", "</header>")).toContain(`href="#subscribe">Subscribe to updates</a>`)
+		expect(dialog(html)).toContain(`role="dialog"`)
 	})
 
-	it("is the page's only subscribe surface: no section of its own, no in-page link to one", () => {
+	it("offers email for all components or a pick of them, the feeds at the page's address, and a Slack command", () => {
+		const snapshot = makeSnapshot()
+		const section = dialog(renderPage(snapshot, live, FIXTURE_NOW, SHARED))
+
+		expect(section).toContain(`<form class="sub-form" method="post" action="/s/acme/subscribe">`)
+		expect(section).toContain(`name="scope" value="all" checked`)
+		expect(section).toContain(`name="scope" value="some"`)
+		expect(componentIdsIn(section)).toEqual(Arr.map(snapshot.components, (component) => component.id))
+		expect(section).toContain(`value="https://status.maple.workers.dev/s/acme/feed.rss"`)
+		expect(section).toContain(`value="https://status.maple.workers.dev/s/acme/feed.atom"`)
+		expect(section).toContain(`value="/feed subscribe https://status.maple.workers.dev/s/acme/feed.rss"`)
+	})
+
+	it("lists the components to pick under their groups", () => {
+		const section = dialog(renderPage(makeSnapshot(), live, FIXTURE_NOW, SHARED))
+		expect(componentIdsIn(between(section, `aria-label="Platform"`, "</div></div>"))).toEqual([
+			fixtureComponentId(0),
+			fixtureComponentId(1),
+		])
+	})
+
+	it("is the page's only subscribe form", () => {
 		const html = renderPage(makeSnapshot(), live, FIXTURE_NOW, SHARED)
-		expect(html).not.toContain("#subscribe")
-		expect(html).not.toContain("Get updates")
 		expect(Str.split(`name="email"`)(html)).toHaveLength(2)
 	})
 
-	it("leaves out the Slack command when the page's public address is unknown", () => {
-		const section = panel(renderPage(makeSnapshot(), live, FIXTURE_NOW, { basePath: "/s/acme" }))
+	it("leaves out the Slack command when the page's public address is unknown, and links the feeds under its base", () => {
+		const section = dialog(renderPage(makeSnapshot(), live, FIXTURE_NOW, { basePath: "/s/acme" }))
 		expect(section).not.toContain("/feed subscribe")
-		expect(section).toContain(`href="/s/acme/feed.rss"`)
+		expect(section).toContain(`value="/s/acme/feed.rss"`)
 	})
 
 	it("asks only for an address on a page without components", () => {
-		const section = panel(renderPage(makeSnapshot({ components: [] }), live, FIXTURE_NOW, SHARED))
+		const section = dialog(renderPage(makeSnapshot({ components: [] }), live, FIXTURE_NOW, SHARED))
 		expect(section).toContain(`name="email"`)
 		expect(section).not.toContain(`name="scope"`)
 		expect(section).not.toContain(fixtureComponentId(0))
+	})
+
+	it("links the page's terms and privacy policy where the visitor agrees to them", () => {
+		const page = { ...makeSnapshot().page, termsUrl: "https://acme.example/terms", privacyUrl: null }
+		const section = dialog(renderPage(makeSnapshot({ page }), live, FIXTURE_NOW, SHARED))
+		expect(section).toContain(
+			`By subscribing, you agree to our <a href="https://acme.example/terms" rel="noopener">Terms of service</a>.`,
+		)
 	})
 })
 
@@ -71,7 +85,7 @@ describe("renderSubscriptionPage", () => {
 			{
 				title: "Unsubscribe",
 				text: `Stop <b>emails</b>`,
-				tone: "ok",
+				icon: "bell-off",
 				action: { path: "/unsubscribe", token: `a"><script>`, label: "Unsubscribe" },
 			},
 			{ basePath: "/s/acme" },
@@ -80,5 +94,6 @@ describe("renderSubscriptionPage", () => {
 		expect(html).toContain(`value="a&quot;&gt;&lt;script&gt;"`)
 		expect(html).toContain("Stop &lt;b&gt;emails&lt;/b&gt;")
 		expect(html).toContain(`<meta name="robots" content="noindex">`)
+		expect(html).toContain(`href="/s/acme/">View status page</a>`)
 	})
 })

@@ -39,7 +39,87 @@ footer a{color:var(--secondary)}
 @media (max-width:560px){.wrap{padding:24px 16px 40px}}
 `
 
-export const pageStyles = `
+/** Line icons, and the buttons the subscribe dialog and the subscription pages share. */
+const controlStyles = `
+.i{flex:none;display:block;fill:none;stroke:currentColor;stroke-width:1.5;stroke-linecap:round;stroke-linejoin:round}
+.i circle{fill:currentColor;stroke:none}
+.i.alert path{fill:var(--major);stroke:var(--major)}
+.i.alert .glyph{fill:none;stroke:var(--card);stroke-width:1.6}
+.btn{display:inline-block;font:inherit;font-size:14px;font-weight:500;line-height:20px;padding:8px 12px;border-radius:calc(var(--radius)*.75);border:0;background:var(--primary);color:var(--primary-fg);text-decoration:none;cursor:pointer}
+.btn.quiet{background:color-mix(in srgb,var(--fg) 10%,var(--card));color:var(--fg)}
+.btn:disabled{opacity:.6;cursor:default}
+.btn:focus-visible{outline:2px solid var(--link);outline-offset:2px}
+`
+
+/**
+ * The subscribe dialog. It opens as the `#subscribe` target until the script marks the body `js`,
+ * then on the script's `open` class; its tabs are radios, so they switch without script too.
+ */
+const dialogStyles = `
+.sub-open{font-size:14px;font-weight:500;line-height:20px;padding:6px 12px;border:1px solid var(--line);border-radius:calc(var(--radius)*.75);background:var(--card);color:var(--fg);text-decoration:none}
+.sub-open:focus-visible{outline:2px solid var(--link);outline-offset:2px}
+.modal{display:none;position:fixed;inset:0;z-index:20;overflow-y:auto;padding:84px 16px 24px}
+body:not(.js) .modal:target,.modal.open{display:block}
+body:has(.modal.open),body:not(.js):has(.modal:target){overflow:hidden}
+.modal-shade{position:fixed;inset:0;background:color-mix(in srgb,var(--bg) 70%,transparent)}
+.modal-box{position:relative;max-width:624px;margin:0 auto;border:1px solid var(--line);border-radius:var(--radius);background:var(--card);box-shadow:0 10px 30px rgba(0,0,0,.18);font-size:14px;line-height:20px}
+.modal-box:focus{outline:none}
+.modal-head{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:16px;border-bottom:1px solid var(--line)}
+.modal-head h2{margin:0;font-size:18px;line-height:28px;font-weight:500;color:var(--fg);text-transform:none;letter-spacing:0}
+.modal-close{display:grid;place-items:center;width:24px;height:24px;border-radius:50%;color:var(--muted)}
+.modal-close:hover{color:var(--fg)}
+.modal-close .i{width:20px;height:20px}
+.tablist{display:flex;flex-wrap:wrap;margin:16px 16px 0;border-bottom:1px solid var(--line)}
+.tablist label{display:flex;align-items:center;gap:8px;padding:8px 12px 6px;font-weight:500;color:var(--muted);border-bottom:2px solid transparent;margin-bottom:-1px;cursor:pointer;user-select:none}
+.tablist label:hover{color:var(--fg)}
+#sub-email:checked~.tablist [for=sub-email],#sub-rss:checked~.tablist [for=sub-rss],#sub-slack:checked~.tablist [for=sub-slack]{color:var(--fg);border-bottom-color:var(--fg)}
+#sub-email:focus-visible~.tablist [for=sub-email],#sub-rss:focus-visible~.tablist [for=sub-rss],#sub-slack:focus-visible~.tablist [for=sub-slack]{outline:2px solid var(--link);outline-offset:-2px}
+.pane{display:none}
+#sub-email:checked~.pane-email,#sub-rss:checked~.pane-rss,#sub-slack:checked~.pane-slack{display:block}
+.sub-body{display:grid;gap:24px;padding:16px}
+.pane-rss .sub-body,.pane-slack .sub-body{gap:12px}
+.sub-body p{margin:0}
+.sub-done.sub-body{gap:8px}
+.field{display:grid;gap:12px;font-weight:500}
+.pane-rss .field{gap:8px}
+.field input[type=email]{font:inherit;font-weight:400;color:var(--fg);background:var(--card);border:1px solid var(--line);border-radius:var(--radius);padding:8px 12px;width:100%}
+.field input::placeholder{color:var(--muted);opacity:.7}
+.field input:focus,.copy:focus-within{outline:none;border-color:color-mix(in srgb,var(--fg) 40%,var(--line))}
+.field-error{margin:0;font-size:12px;font-weight:400;color:var(--major)}
+.scope{border:0;margin:0;padding:0;min-width:0;display:grid;gap:8px}
+.scope legend{padding:0;margin-bottom:8px;font-weight:500}
+.choice{display:block;border:1px solid var(--line);border-radius:var(--radius);padding:12px 16px;font-weight:500}
+.choice:has(>input:checked),.choice:has(>label>input:checked){border-color:var(--fg)}
+.choice>label,label.choice{display:flex;align-items:center;gap:8px;cursor:pointer}
+.choice input,.check input{margin:0;width:16px;height:16px;flex:none;accent-color:var(--fg);cursor:pointer}
+.picks{display:grid;gap:12px;padding:12px 0 0 24px}
+.choice-some:not(:has(input[value=some]:checked)) .picks{display:none}
+.picks-head{display:flex;justify-content:space-between;gap:8px;font-size:12px;line-height:16px;font-weight:400;color:var(--muted)}
+.picks-head>span:last-child{display:flex;gap:12px}
+.picks-head button{font:inherit;padding:0;border:0;background:none;color:inherit;text-decoration:underline;cursor:pointer}
+.picks-head button:hover{color:var(--fg)}
+.check{display:flex;align-items:center;gap:8px;cursor:pointer;min-width:0;overflow-wrap:anywhere}
+.pick-group{display:grid;gap:8px}
+.pick-group-items{display:grid;gap:12px;padding-left:12px;border-left:1px solid var(--line);margin-left:7px}
+.pick-group-name{font-weight:500;color:var(--muted)}
+.sub-note{display:flex;gap:12px;padding:12px;border-radius:var(--radius);background:color-mix(in srgb,var(--fg) 7%,var(--card));color:var(--fg)}
+.sub-note .i{margin-top:2px;color:var(--muted)}
+.sub-note p span{display:block}
+.fine{color:var(--muted)}
+.fine a{color:inherit}
+.sub-form:has(input[value=some]:checked) .for-all,.sub-form:not(:has(input[value=some]:checked)) .for-some{display:none}
+.sub-alert{padding:12px;border-radius:var(--radius);background:var(--major-tint);color:var(--fg)}
+.sub-foot{display:flex;justify-content:flex-end;padding:16px;border-top:1px solid var(--line)}
+.copy{display:flex;border:1px solid var(--line);border-radius:var(--radius);overflow:hidden}
+.copy input{flex:1;min-width:0;font:inherit;font-weight:400;color:var(--fg);background:none;border:0;padding:8px;outline:none;text-overflow:ellipsis}
+.copy-btn{display:grid;place-items:center;width:46px;flex:none;padding:0;border:0;border-left:1px solid var(--line);background:none;color:var(--muted);cursor:pointer}
+.copy-btn:hover{color:var(--fg)}
+.copy-btn .i+.i,.copy-btn[data-copied] .i:first-child{display:none}
+.copy-btn[data-copied] .i+.i{display:block;color:var(--ok)}
+@media (max-width:560px){.modal{padding:72px 0 0}}
+`
+
+export const pageStyles = `${controlStyles}
 .sr{position:absolute;width:1px;height:1px;margin:-1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
 .ico{flex:none;display:block}
 .ico circle{fill:var(--c)}
@@ -111,32 +191,25 @@ button.day[aria-expanded=true]{background:var(--tint)}
 .cal-panel .title{font-weight:500;color:var(--fg);overflow-wrap:anywhere}
 .cal-panel .meta{font-size:13px}
 .cal-panel .s-notice{--c:var(--muted)}
-.subscribe{position:relative}
-.subscribe>summary{list-style:none;cursor:pointer;font-size:14px;font-weight:500;padding:6px 12px;border:1px solid var(--line);border-radius:calc(var(--radius)*.75);background:var(--card);color:var(--fg);user-select:none}
-.subscribe>summary::-webkit-details-marker{display:none}
-.subscribe>summary:focus-visible{outline:2px solid var(--link);outline-offset:2px}
-.subscribe[open]>summary{background:color-mix(in srgb,var(--primary) 12%,var(--card))}
-.subscribe-menu{position:absolute;right:0;top:calc(100% + 8px);z-index:20;width:360px;max-width:calc(100vw - 32px);max-height:min(70vh,560px);overflow:auto;border:1px solid var(--line);border-radius:var(--radius);background:var(--card);box-shadow:0 8px 24px rgba(0,0,0,.16)}
-.tabs{display:flex;flex-wrap:wrap;gap:4px;padding:12px 16px 16px}
-.tabs>label{font-size:14px;font-weight:500;padding:6px 12px;border-radius:calc(var(--radius)*.75);color:var(--muted);cursor:pointer}
-.tabs>input:checked+label{background:color-mix(in srgb,var(--primary) 12%,transparent);color:var(--fg)}
-.tabs>input:focus-visible+label{outline:2px solid var(--link);outline-offset:2px}
-.pane{display:none;flex-basis:100%;padding-top:8px;font-size:14px}
-.pane p{margin:0 0 8px}
-#sub-email:checked~.pane-email,#sub-rss:checked~.pane-rss,#sub-slack:checked~.pane-slack{display:block}
-.subscribe form{display:grid;gap:12px}
-.subscribe label{display:grid;gap:6px;font-weight:500}
-.subscribe input[type=email]{font:inherit;color:inherit;background:var(--bg);border:1px solid var(--line);border-radius:calc(var(--radius)*.75);padding:8px 10px;width:100%}
-.subscribe fieldset{border:1px solid var(--line);border-radius:var(--radius);padding:10px 14px;margin:0;display:grid;gap:6px}
-.subscribe legend{font-weight:500;padding:0 4px}
-.subscribe .check{display:flex;gap:8px;align-items:center;font-weight:400}
-.sub-components{display:grid;gap:4px;padding-left:24px}
-.subscribe fieldset:has(input[value=all]:checked) .sub-components{display:none}
-.subscribe button{font:inherit;font-weight:500;padding:8px 14px;border-radius:calc(var(--radius)*.75);border:1px solid var(--fg);background:var(--fg);color:var(--bg);cursor:pointer;justify-self:start}
-.copy{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:8px}
-.copy code{font:13px/1.4 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;padding:6px 8px;border:1px solid var(--line);border-radius:calc(var(--radius)/2);background:var(--bg);overflow-wrap:anywhere}
-.copy button{padding:5px 10px;font-size:13px}
-@media (max-width:560px){.top{position:relative}.subscribe{position:static}.subscribe-menu{left:0;right:0;width:auto;max-width:none}.bars{gap:1px;height:22px}.cal td{height:36px}.panel-head{padding:12px}.component{padding:12px}.legend{padding:10px 12px}}
+${dialogStyles}
+@media (max-width:560px){.bars{gap:1px;height:22px}.cal td{height:36px}.panel-head{padding:12px}.component{padding:12px}.legend{padding:10px 12px}}
+`
+
+/** The subscription pages: the logo over one centred card. */
+export const subscriptionStyles = `${controlStyles}
+.solo{display:flex;justify-content:center;margin-bottom:32px}
+.solo .brand{margin:0}
+.result{margin:0 auto;max-width:624px;min-height:265px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;padding:36px 24px;text-align:center;border:1px solid var(--line);border-radius:var(--radius);background:var(--card);box-shadow:var(--shadow,none)}
+.result .ico,.result .i{width:24px;height:24px}
+.result .ico circle{fill:var(--c)}
+.result .ico path{fill:none;stroke:var(--card);stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+.result .i{color:var(--muted)}
+.result h1{margin:0;font-size:18px;line-height:28px;font-weight:500}
+.result p{margin:0;max-width:440px;font-size:14px;color:var(--muted)}
+.result form{margin-top:4px}
+.result .btn.quiet{margin-top:4px}
+.home{font-size:12px;color:var(--fg);text-decoration:none}
+.home:hover{text-decoration:underline}
 `
 
 export const manageStyles = `
