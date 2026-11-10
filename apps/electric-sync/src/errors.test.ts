@@ -9,11 +9,6 @@ import {
 	Unauthorized,
 } from "./errors"
 
-/**
- * The whole failure surface in one place. Every one of these was previously only
- * observable through a router test, which meant the mapping and the wiring failed
- * together and could not be told apart.
- */
 const cases: ReadonlyArray<{
 	readonly name: string
 	readonly error: SyncError
