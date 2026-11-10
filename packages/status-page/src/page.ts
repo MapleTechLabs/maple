@@ -14,7 +14,8 @@ import {
 	utcDay,
 } from "@maple/domain/status-page"
 import { pageHref, previewIdAttr, type RenderOptions, renderDocument, renderHeader } from "./document"
-import { escapeHtml, safeUrl } from "./escape"
+import { escapeHtml } from "@maple/strings"
+import { safeUrl } from "./escape"
 import {
 	COMPONENT_STATUS_LABEL,
 	dayTitle,

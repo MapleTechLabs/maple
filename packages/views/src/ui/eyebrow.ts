@@ -3,6 +3,7 @@ import { eyebrowVariants } from "@maple/ui/styles/ui/eyebrow"
 import type { VariantProps } from "class-variance-authority"
 import type { Attribute, Html, HtmlBuilder } from "foldkit/html"
 import { Array as Arr } from "effect"
+import { icon, type IconName } from "./icon"
 
 export { eyebrowVariants }
 
@@ -11,6 +12,8 @@ export interface EyebrowOptions<Message> {
 	readonly as?: "span" | "div" | "p" | "ul" | "h2" | "h3" | "h4" | "h5"
 	readonly className?: string
 	readonly attributes?: ReadonlyArray<Attribute<Message>>
+	/** A glyph before the label, for a group whose kind reads faster as a picture. */
+	readonly icon?: IconName
 }
 
 // A trailing "(hint)" often holds units or syntax (`5m`, `AND`); uppercasing would change its meaning.
@@ -33,9 +36,22 @@ export const eyebrow = <Message>(
 	options: EyebrowOptions<Message>,
 	rawChildren: ReadonlyArray<Html | string>,
 ): Html => {
-	const children = Arr.flatMap(rawChildren, (child) => withHint(h, child))
+	const label = Arr.flatMap(rawChildren, (child) => withHint(h, child))
+	// With an icon the label is one flex item, so a "(hint)" keeps its own spacing.
+	const children =
+		options.icon === undefined
+			? label
+			: [icon(h, options.icon, { size: 12, className: "shrink-0" }), h.span([], label)]
+	const isInline = options.as === undefined || options.as === "span"
 	const attributes = [
-		h.Class(cn(eyebrowVariants({ variant: options.variant }), options.className)),
+		h.Class(
+			cn(
+				eyebrowVariants({ variant: options.variant }),
+				options.icon !== undefined && (isInline ? "inline-flex" : "flex"),
+				options.icon !== undefined && "items-center gap-1.5",
+				options.className,
+			),
+		),
 		h.DataAttribute("slot", "eyebrow"),
 		...(options.attributes ?? []),
 	]

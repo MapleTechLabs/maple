@@ -55,19 +55,6 @@ export function roundedRoute(points: THREE.Vector3[], radius = 0.65) {
 	return path
 }
 
-export class CurveSection extends THREE.Curve<THREE.Vector3> {
-	constructor(
-		readonly curve: THREE.Curve<THREE.Vector3>,
-		readonly start: number,
-		readonly end: number,
-	) {
-		super()
-	}
-	getPoint(t: number, target = new THREE.Vector3()) {
-		return this.curve.getPointAt(this.start + (this.end - this.start) * t, target)
-	}
-}
-
 export function factoryRoutes(topology: RoutingTopology, layout: SpatialLayout): FactoryRoute[] {
 	const nodes = new Map(Arr.map(topology.nodes, (node) => [node.id, node]))
 	const edges = Arr.sort(
@@ -146,10 +133,6 @@ export function decorateRoutes(routes: FactoryRoute[], edges: ReadonlyArray<Edge
 			},
 		]
 	})
-}
-
-export function factoryLinks(topology: Topology3D, layout: SpatialLayout): FactoryLink[] {
-	return decorateRoutes(factoryRoutes(topology, layout), topology.edges)
 }
 
 /** A ribbon follows the belt's horizontal normal, remaining upright on ramps. */

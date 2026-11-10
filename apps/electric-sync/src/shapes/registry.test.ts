@@ -12,10 +12,11 @@ describe("isShapeName", () => {
 	it("accepts whitelisted shapes and rejects everything else", () => {
 		assert.isTrue(isSubscriptionName("dashboards"))
 		assert.isTrue(isSubscriptionName("alert_rules"))
-		assert.isTrue(isSubscriptionName("alert_destinations"))
 		assert.isTrue(isSubscriptionName("alert_destinations_v2"))
+		// Retired once every client moved to `_v2`.
+		assert.isFalse(isSubscriptionName("alert_destinations"))
 		assert.isTrue(isSubscriptionName("api_keys"))
-		// Pruned from both the whitelist and the publication (0022) once their
+		// Pruned from both the whitelist and the publication (electric_publication_prune) once their
 		// client collections were removed — they must not resolve as shapes.
 		assert.isFalse(isSubscriptionName("error_issues"))
 		assert.isFalse(isSubscriptionName("actors"))

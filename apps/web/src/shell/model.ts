@@ -128,6 +128,8 @@ export const initRightSheet = (): Dialog.Model => Dialog.init(RIGHT_SHEET_ID, "s
 
 /** Persisted shell state, read before the first render (see `main.ts` flags). */
 export type ShellFlags = Readonly<{
+	/** The `sidebar_state` cookie; absent is open. */
+	isSidebarOpen?: boolean
 	isMobile: boolean
 	isFilterCollapsed?: boolean
 	isBelowSm?: boolean
@@ -140,7 +142,7 @@ export type ShellFlags = Readonly<{
 }>
 
 export const init = (flags: ShellFlags): Model => ({
-	isSidebarOpen: true,
+	isSidebarOpen: flags.isSidebarOpen ?? true,
 	isSidebarToggleInstant: false,
 	isMobileNavOpen: false,
 	isMobile: flags.isMobile,

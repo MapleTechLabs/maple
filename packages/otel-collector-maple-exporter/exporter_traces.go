@@ -4,7 +4,6 @@ import (
 	"context"
 
 	"go.opentelemetry.io/collector/component"
-	"go.opentelemetry.io/collector/pdata/pcommon"
 	"go.opentelemetry.io/collector/pdata/ptrace"
 	"go.uber.org/zap"
 
@@ -181,6 +180,3 @@ func encodeTraceRow(
 		"LinksAttributes":    linksAttributes,
 	}
 }
-
-// silence unused import warning during incremental build
-var _ pcommon.Map

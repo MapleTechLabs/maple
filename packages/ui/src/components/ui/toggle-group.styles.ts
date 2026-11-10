@@ -13,10 +13,6 @@ export const toggleGroupStyles = "flex *:focus-visible:z-10"
 
 export const toggleGroupHorizontalStyles = "*:pointer-coarse:after:min-w-auto"
 
-export const toggleGroupVerticalStyles = "*:pointer-coarse:after:min-h-auto"
-
-export const toggleGroupVerticalFlexStyles = "flex-col"
-
 export const toggleGroupConnectedStyles = "w-fit gap-0.5"
 
 export const toggleGroupStandaloneStyles = "flex-wrap gap-2"

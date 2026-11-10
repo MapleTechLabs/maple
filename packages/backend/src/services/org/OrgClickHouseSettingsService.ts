@@ -57,7 +57,7 @@ import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/http"
 import {
 	decryptAes256Gcm,
 	encryptAes256Gcm,
-	parseBase64Aes256GcmKey,
+	parseIngestKeyEncryptionKey,
 	type EncryptedValue,
 } from "@maple/backend/platform/Crypto"
 import { SchemaApplyWorkflow } from "@maple/backend/platform/bindings"
@@ -417,17 +417,6 @@ const toPersistenceError = (error: unknown) =>
 const STALE_APPLY_RUN_MS = 30 * 60_000
 
 const toEncryptionError = (message: string) => new OrgClickHouseSettingsEncryptionError({ message })
-
-const parseEncryptionKey = (raw: string): Effect.Effect<Buffer, OrgClickHouseSettingsEncryptionError> =>
-	parseBase64Aes256GcmKey(raw, (message) =>
-		toEncryptionError(
-			message === "Expected a non-empty base64 encryption key"
-				? "MAPLE_INGEST_KEY_ENCRYPTION_KEY is required"
-				: message === "Expected base64 for exactly 32 bytes"
-					? "MAPLE_INGEST_KEY_ENCRYPTION_KEY must be base64 for exactly 32 bytes"
-					: message,
-		),
-	)
 
 const encryptToken = (
 	plaintext: string,
@@ -928,7 +917,10 @@ export class OrgClickHouseSettingsService extends Context.Service<
 		const dbExecute = makeDbExecute(database, "OrgClickHouseSettingsService", toPersistenceError)
 		const env = yield* Env
 		const httpClient = yield* HttpClient.HttpClient
-		const encryptionKey = yield* parseEncryptionKey(Redacted.value(env.MAPLE_INGEST_KEY_ENCRYPTION_KEY))
+		const encryptionKey = yield* parseIngestKeyEncryptionKey(
+			Redacted.value(env.MAPLE_INGEST_KEY_ENCRYPTION_KEY),
+			toEncryptionError,
+		)
 		// Dev-only way past a per-org BYO row; the environment gate keeps it off deploys.
 		const ignoreOrgClickHouse = env.MAPLE_ENVIRONMENT === "development" && env.MAPLE_IGNORE_ORG_CLICKHOUSE
 		// The background schema-apply Workflow, bound only by the api Worker that hosts it.

@@ -1,7 +1,7 @@
 /**
  * Base names of the mutating MCP tools that the AI chat gates behind approval.
  *
- * The in-process chat agent (`apps/api/src/chat/`) interrupts the turn on these
+ * The in-process chat agent (`apps/ai/src/chat/`) interrupts the turn on these
  * tools instead of executing them; an approval runs the real change through
  * `ChatSession.settleProposal`, whose applier only accepts tools in this set.
  */

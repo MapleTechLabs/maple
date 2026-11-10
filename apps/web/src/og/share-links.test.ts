@@ -31,6 +31,10 @@ describe("shareTokenFromPath", () => {
 		expect(shareTokenFromPath("/share/")).toBeUndefined()
 		expect(shareTokenFromPath("/")).toBeUndefined()
 	})
+
+	it("treats a token that will not decode as no token, not a thrown error", () => {
+		expect(shareTokenFromPath("/share/%")).toBeUndefined()
+	})
 })
 
 describe("ogIdFromPath", () => {

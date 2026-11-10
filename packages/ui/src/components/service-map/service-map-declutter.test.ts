@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest"
 import type { EdgeBase as Edge, NodeBase as Node } from "@xyflow/system"
-import { applyDeclutter, DECLUTTER_OFF, type DeclutterState } from "./service-map-declutter"
+import { applyDeclutter, type DeclutterState } from "./service-map-declutter"
 import {
 	edgeIdFor,
 	nsAggregateId,
@@ -50,8 +50,10 @@ const edge = (
 	},
 })
 
+const OFF: DeclutterState = { minTrafficPct: 0, focus: null, collapsedNamespaces: [] }
+
 const state = (overrides: Partial<DeclutterState>): DeclutterState => ({
-	...DECLUTTER_OFF,
+	...OFF,
 	...overrides,
 })
 
@@ -59,7 +61,7 @@ describe("applyDeclutter — identity", () => {
 	it("returns the graph unchanged when everything is off", () => {
 		const nodes = [node("a"), node("b")]
 		const edges = [edge("a", "b")]
-		const result = applyDeclutter(nodes, edges, DECLUTTER_OFF)
+		const result = applyDeclutter(nodes, edges, OFF)
 		expect(result.nodes).toBe(nodes)
 		expect(result.edges).toBe(edges)
 		expect(result.hiddenNodeCount).toBe(0)

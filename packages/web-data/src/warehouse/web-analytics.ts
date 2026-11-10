@@ -175,7 +175,7 @@ export interface WebAnalyticsEvent {
 	sessions: number
 }
 
-export interface WebAnalyticsFacetRow {
+interface WebAnalyticsFacetRow {
 	name: string
 	count: number
 }

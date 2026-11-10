@@ -8,7 +8,7 @@
  * - histogram `count`/`bucketCounts` are JSON numbers, not the spec's strings
  * - attribute values as `{ "stringValue": "…" }`
  *
- * `__fixtures__/otlp-export.json` pins that shape; consumers assert against it.
+ * `apps/scraper/src/__fixtures__/otlp-export.json` pins that shape; consumers assert against it.
  */
 import type { PromMetricFamily, PromSample } from "./parser"
 

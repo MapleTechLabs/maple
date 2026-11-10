@@ -4663,7 +4663,7 @@ SELECT
         FROM attribute_keys_hourly
         WHERE attribute_keys_hourly.OrgId = 'org_sql_catalog'
           AND attribute_keys_hourly.AttributeScope IN ('span', 'resource', 'log', 'metric')
-          AND attribute_keys_hourly.Hour >= '2026-01-01 10:30:00'
+          AND attribute_keys_hourly.Hour >= toStartOfHour(toDateTime('2026-01-01 10:30:00'))
           AND attribute_keys_hourly.Hour <= '2026-01-03 14:15:00'
         GROUP BY scope, attributeKey
         ORDER BY usageCount DESC
@@ -4767,7 +4767,7 @@ SELECT
         FROM attribute_values_hourly
         WHERE attribute_values_hourly.OrgId = 'org_sql_catalog'
           AND attribute_values_hourly.AttributeScope = 'metric'
-          AND attribute_values_hourly.Hour >= '2026-01-01 10:30:00'
+          AND attribute_values_hourly.Hour >= toStartOfHour(toDateTime('2026-01-01 10:30:00'))
           AND attribute_values_hourly.Hour <= '2026-01-03 14:15:00'
         GROUP BY attributeKey
         ORDER BY valueCardinality DESC
@@ -4820,7 +4820,7 @@ SELECT
         WHERE attribute_values_hourly.OrgId = 'org_sql_catalog'
           AND attribute_values_hourly.AttributeScope = 'span'
           AND attribute_values_hourly.AttributeKey IN ('service.peer.name', 'peer.service', 'db.system', 'db.system.name', 'messaging.system', 'rpc.system.name', 'rpc.system')
-          AND attribute_values_hourly.Hour >= '2026-01-01 10:30:00'
+          AND attribute_values_hourly.Hour >= toStartOfHour(toDateTime('2026-01-01 10:30:00'))
           AND attribute_values_hourly.Hour <= '2026-01-03 14:15:00'
           AND attribute_values_hourly.AttributeValue != ''
         GROUP BY attributeKey, attributeValue
@@ -4852,7 +4852,7 @@ SELECT
         WHERE attribute_values_hourly.OrgId = 'org_sql_catalog'
           AND attribute_values_hourly.AttributeScope = 'resource'
           AND attribute_values_hourly.AttributeKey IN ('deployment.commit_sha', 'env')
-          AND attribute_values_hourly.Hour >= '2026-01-01 10:30:00'
+          AND attribute_values_hourly.Hour >= toStartOfHour(toDateTime('2026-01-01 10:30:00'))
           AND attribute_values_hourly.Hour <= '2026-01-03 14:15:00'
         GROUP BY attributeKey, attributeValue
         ORDER BY usageCount DESC
