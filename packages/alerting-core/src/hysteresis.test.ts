@@ -1,6 +1,6 @@
 import { Effect } from "effect"
 import { describe, expect, it } from "vitest"
-import { foldObservation, type HysteresisConfig, type HysteresisRow } from "./incident-hysteresis"
+import { foldObservation, type HysteresisConfig, type HysteresisRow } from "./hysteresis"
 
 /**
  * Parity harness. The fold replaces two hand-rolled implementations, so the

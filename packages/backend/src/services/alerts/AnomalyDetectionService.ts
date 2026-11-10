@@ -91,7 +91,7 @@ import {
 } from "./anomaly/detector-state-batch"
 import { rollingCountBuckets } from "./anomaly/rolling-counts"
 import { hysteresisConfigFor } from "./anomaly/hysteresis-config"
-import { foldObservation } from "./incident-hysteresis"
+import { foldObservation } from "@maple/alerting-core/hysteresis"
 import {
 	attachKeyFor,
 	canAttach,
