@@ -58,6 +58,9 @@ const WAL_MAGIC: &[u8; 4] = b"MTW1";
 const WAL_V1_HEADER_LEN: usize = 20;
 const WAL_V2_HEADER_LEN: usize = 22;
 const WAL_V3_HEADER_LEN: usize = 23;
+/// Most a frame read reserves before any payload byte arrives. The declared
+/// length is unverified until the checksum, so a corrupt one must not size it.
+const WAL_PAYLOAD_PREALLOC_MAX: usize = 1024 * 1024;
 
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum ExportDestination {
@@ -628,7 +631,6 @@ pub struct TinybirdConfig {
     pub batch_max_rows: usize,
     pub batch_max_bytes: usize,
     pub batch_max_wait: Duration,
-    pub export_concurrency_per_shard: usize,
     pub export_max_attempts: u32,
     /// Per-attempt timeout for a direct ClickHouse export POST. Kept short and
     /// separate from `forward_timeout` so a hanging BYO-ClickHouse target fails
@@ -698,8 +700,9 @@ impl TinybirdConfig {
         if self.org_queue_max_bytes == 0 {
             return Err("INGEST_ORG_QUEUE_MAX_BYTES must be greater than 0".to_owned());
         }
-        if self.export_concurrency_per_shard == 0 {
-            return Err("INGEST_TINYBIRD_CONCURRENCY_PER_SHARD must be greater than 0".to_owned());
+        // `mpsc::channel(0)` panics, so a zero capacity is refused at boot instead.
+        if self.queue_channel_capacity == 0 {
+            return Err("INGEST_QUEUE_CHANNEL_CAPACITY must be greater than 0".to_owned());
         }
         if self.export_max_attempts == 0 {
             return Err("INGEST_EXPORT_MAX_ATTEMPTS must be greater than 0".to_owned());
@@ -1166,23 +1169,6 @@ impl TelemetryPipeline {
     /// the session-replay ingest path, whose rows are built directly by the
     /// gateway (not derived from OTLP). Routes by org so a session's metadata
     /// and chunk-index rows land on the same shard in order.
-    pub async fn accept_rows(
-        &self,
-        org_id: &str,
-        datasource: String,
-        rows: Vec<Vec<u8>>,
-        signal: TelemetrySignal,
-    ) -> Result<AcceptStats, PipelineError> {
-        self.accept_rows_to(
-            org_id,
-            datasource,
-            rows,
-            signal,
-            ExportDestination::Tinybird,
-        )
-        .await
-    }
-
     #[hotpath::measure]
     pub async fn accept_rows_to(
         &self,
@@ -1456,9 +1442,9 @@ struct WalLane {
     /// Bytes held by every segment on disk, the exported prefix included. Drives
     /// the lane cap and the `wal_shard_bytes` gauge.
     live_bytes: AtomicU64,
-    /// Cumulative bytes appended and marked exported since this lane was opened.
-    /// Their difference is the backlog, and it stays exact across rotation and
-    /// deletion — which nothing derived from file sizes does.
+    /// Cumulative bytes handed to export and marked exported since this lane
+    /// was opened. Their difference is the backlog, and it stays exact across
+    /// rotation and deletion, which nothing derived from file sizes does.
     committed_bytes: AtomicU64,
     exported_bytes: AtomicU64,
     append: Mutex<LaneAppend>,
@@ -1492,13 +1478,16 @@ impl Drop for WaitingCaller {
 }
 
 /// `deliver`, run only while the returned guard is alive. Skipped, the inner
-/// delivery is dropped, which releases its org reservation.
-fn while_caller_waits(deliver: Delivery) -> (WaitingCaller, Delivery) {
+/// delivery is dropped, which releases its org reservation, and the frame's
+/// bytes leave `lane`'s backlog: nothing in this process will export them.
+fn while_caller_waits(deliver: Delivery, lane: Arc<WalLane>) -> (WaitingCaller, Delivery) {
     let waiting = WaitingCaller(Arc::new(AtomicBool::new(true)));
     let still_waiting = Arc::clone(&waiting.0);
     let guarded: Delivery = Box::new(move |segment, start, end| {
         if still_waiting.load(Ordering::Acquire) {
             deliver(segment, start, end);
+        } else {
+            lane.forget_committed(end.saturating_sub(start));
         }
     });
     (waiting, guarded)
@@ -2041,6 +2030,12 @@ impl WalLane {
             .load(Ordering::Relaxed)
             .saturating_sub(self.exported_bytes.load(Ordering::Relaxed))
     }
+
+    /// Take a synced frame back out of the backlog. Its sync already counted
+    /// it, but it never reaches export, so it would never be marked exported.
+    fn forget_committed(&self, bytes: u64) {
+        self.committed_bytes.fetch_sub(bytes, Ordering::Relaxed);
+    }
 }
 
 /// What WAL orphan recovery did with one segment's source object.
@@ -2573,7 +2568,7 @@ impl ShardedWal {
         let lane_ref = self.lane(lane)?;
         // A caller dropped mid-append (a request timeout) has already answered
         // with a retryable error, so its frame must not reach export as well.
-        let (waiting, deliver) = while_caller_waits(deliver);
+        let (waiting, deliver) = while_caller_waits(deliver, Arc::clone(&lane_ref));
         let appended = tokio::task::spawn_blocking(move || {
             lane_ref.append_blocking(&encoded, enforce_cap, deliver)
         })
@@ -3022,9 +3017,17 @@ fn read_wal_frame(file: &mut impl Read, start: u64) -> Result<Option<DecodedWalF
     let mut datasource = vec![0u8; datasource_len];
     file.read_exact(&mut datasource)
         .map_err(|error| format!("read WAL datasource: {error}"))?;
-    let mut payload = vec![0u8; payload_len];
-    file.read_exact(&mut payload)
+    // The length is an unverified header field (up to 4 GiB), so the buffer
+    // grows with the bytes actually read instead of being allocated up front.
+    let mut payload = Vec::with_capacity(payload_len.min(WAL_PAYLOAD_PREALLOC_MAX));
+    let payload_read = file
+        .by_ref()
+        .take(payload_len as u64)
+        .read_to_end(&mut payload)
         .map_err(|error| format!("read WAL payload: {error}"))?;
+    if payload_read != payload_len {
+        return Err(format!("truncated WAL payload at offset {start}"));
+    }
 
     let mut crc = Crc32::new();
     crc.update(&[signal_tag(signal)]);
@@ -3241,9 +3244,9 @@ impl ExportWorker {
             }
             let span_handle = span.clone();
             if let Err(error) = self.export_and_mark(frames).instrument(span).await {
-                // Reaching here means the WAL cursor did not advance, so the
-                // batch will be replayed — distinct from a per-destination drop,
-                // which returns Ok and is recorded on the export span.
+                // The WAL cursor did not advance and the batch is gone from memory:
+                // it is exported again only if a restart replays the lane before a
+                // later batch moves the cursor past it. A destination drop is Ok.
                 record_stage_error(&span_handle, "export_batch", &error, true);
                 error!(shard = self.shard, error = %error, "Telemetry export worker failed batch");
             }
@@ -3376,12 +3379,17 @@ impl ExportWorker {
             .iter()
             .map(|frame| frame.end.saturating_sub(frame.start))
             .sum();
-        self.wal
+        let marked = self
+            .wal
             .mark_exported(self.lane, cursor, exported_bytes)
-            .await?;
+            .await;
+        // Released even when the cursor write failed: the frames leave memory
+        // here either way, and holding their bytes would throttle the org on a
+        // queue that no longer exists.
         for frame in &frames {
             release_org_queue_bytes(&self.org_queue_bytes, &frame.org_id, frame.queued_bytes);
         }
+        marked?;
         metrics::export_batch_completed(
             frames[0].shard,
             self.destination.as_str(),
@@ -5004,7 +5012,6 @@ mod tests {
             batch_max_bytes: 1024 * 1024,
             queue_max_age: Duration::ZERO,
             batch_max_wait: Duration::from_millis(10),
-            export_concurrency_per_shard: 1,
             export_max_attempts: 20,
             clickhouse_export_timeout: Duration::from_secs(5),
             clickhouse_breaker: ClickHouseBreakerConfig::default(),
@@ -5015,6 +5022,16 @@ mod tests {
             datasource_session_events: "session_events".to_owned(),
             datasource_product_events: "product_events".to_owned(),
         }
+    }
+
+    #[test]
+    fn a_zero_channel_capacity_is_refused_instead_of_panicking_at_boot() {
+        let mut cfg = test_cfg();
+        cfg.queue_channel_capacity = 0;
+        let error = cfg
+            .validate()
+            .expect_err("a lane channel needs at least one slot");
+        assert!(error.contains("INGEST_QUEUE_CHANNEL_CAPACITY"));
     }
 
     #[tokio::test]
@@ -5319,6 +5336,24 @@ mod tests {
         assert_eq!(decoded.payload, br#"{"a":1}"#);
         assert!(decoded.end > 0);
         drop(std::fs::remove_file(path));
+    }
+
+    #[test]
+    fn a_frame_header_claiming_more_payload_than_exists_is_corrupt() {
+        let mut encoded = encode_wal_frame(&wal_test_frame(64)).expect("encode");
+        let intact = encoded.clone();
+        // Bytes 11..15 of a v3 header are the payload length.
+        encoded[11..15].copy_from_slice(&u32::MAX.to_le_bytes());
+
+        let mut reader = std::io::Cursor::new(encoded.as_slice());
+        assert!(
+            read_wal_frame(&mut reader, 0).is_err(),
+            "a length the segment cannot back is a corrupt frame"
+        );
+        // The same reader over a good frame followed by the bad one keeps the good one.
+        let mut segment = intact;
+        segment.extend_from_slice(&encoded);
+        assert_eq!(decode_segment_frames(&segment).len(), 1);
     }
 
     #[test]
@@ -6590,6 +6625,60 @@ mod tests {
 
         let remaining = pipeline.drain_wal(Duration::from_secs(5)).await;
         assert_eq!(remaining, 0, "a delivered batch must leave no backlog");
+
+        drop(std::fs::remove_dir_all(queue_dir));
+    }
+
+    #[tokio::test]
+    async fn a_failed_cursor_write_still_releases_the_org_queue_bytes() {
+        let (primary_url, mut primary_rx) = spawn_fake_tinybird().await;
+
+        let queue_dir = unique_test_dir("cursor-write-fails");
+        let mut cfg = test_cfg();
+        cfg.endpoint = primary_url;
+        cfg.queue_dir = queue_dir.clone();
+        cfg.wal_shards = 1;
+        cfg.batch_max_wait = Duration::from_millis(1);
+
+        let pipeline = TelemetryPipeline::new(
+            cfg,
+            Client::builder()
+                .timeout(Duration::from_secs(5))
+                .build()
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+        // A directory where the cursor file belongs fails every cursor write.
+        std::fs::create_dir(lane_dir(&queue_dir).join("lane.cursor")).unwrap();
+
+        pipeline
+            .accept_logs("org_cursor", &populated_log_request())
+            .await
+            .unwrap();
+        tokio::time::timeout(Duration::from_secs(2), primary_rx.recv())
+            .await
+            .expect("the export worker should deliver the batch")
+            .unwrap();
+
+        let queued = || {
+            pipeline
+                .inner
+                .org_queue_bytes
+                .get("org_cursor")
+                .map_or(0, |entry| entry.value().load(Ordering::Relaxed))
+        };
+        for _ in 0..100 {
+            if queued() == 0 {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+        assert_eq!(
+            queued(),
+            0,
+            "the batch left memory, so it no longer counts against the org"
+        );
 
         drop(std::fs::remove_dir_all(queue_dir));
     }
@@ -8015,6 +8104,7 @@ mod tests {
     #[test]
     fn a_frame_whose_caller_gave_up_is_not_delivered() {
         let (lane, _probe, queue_dir) = slow_sync_lane("wal-caller-gone", Duration::ZERO);
+        let lane = Arc::new(lane);
         let ran = Arc::new(AtomicU64::new(0));
         let counting = || -> Delivery {
             let ran = Arc::clone(&ran);
@@ -8023,13 +8113,13 @@ mod tests {
             })
         };
 
-        let (gone, deliver) = while_caller_waits(counting());
+        let (gone, deliver) = while_caller_waits(counting(), Arc::clone(&lane));
         drop(gone);
         lane.append_blocking(&encoded_test_frame(64), true, deliver)
             .expect("the frame is still made durable");
         assert_eq!(ran.load(Ordering::SeqCst), 0, "but never reaches export");
 
-        let (waiting, deliver) = while_caller_waits(counting());
+        let (waiting, deliver) = while_caller_waits(counting(), Arc::clone(&lane));
         lane.append_blocking(&encoded_test_frame(64), true, deliver)
             .expect("append");
         drop(waiting);
@@ -8037,6 +8127,35 @@ mod tests {
             ran.load(Ordering::SeqCst),
             1,
             "a waiting caller's frame is delivered"
+        );
+        drop(std::fs::remove_dir_all(queue_dir));
+    }
+
+    #[test]
+    fn a_frame_whose_caller_gave_up_is_not_backlog() {
+        let (lane, _probe, queue_dir) = slow_sync_lane("wal-caller-gone-backlog", Duration::ZERO);
+        let lane = Arc::new(lane);
+        let nothing = || -> Delivery { Box::new(|_, _, _| {}) };
+
+        let (gone, deliver) = while_caller_waits(nothing(), Arc::clone(&lane));
+        drop(gone);
+        lane.append_blocking(&encoded_test_frame(64), true, deliver)
+            .expect("append");
+        assert_eq!(
+            lane.backlog_bytes(),
+            0,
+            "nothing will export a skipped frame, so it must not hold the drain open"
+        );
+
+        let delivered = encoded_test_frame(64);
+        let (waiting, deliver) = while_caller_waits(nothing(), Arc::clone(&lane));
+        lane.append_blocking(&delivered, true, deliver)
+            .expect("append");
+        drop(waiting);
+        assert_eq!(
+            lane.backlog_bytes(),
+            delivered.len() as u64,
+            "a delivered frame is backlog until it exports"
         );
         drop(std::fs::remove_dir_all(queue_dir));
     }
