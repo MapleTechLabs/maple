@@ -3,16 +3,15 @@
 // the clone, bootstrap the target snapshot over it, verify, and never touch the source.
 import { resolve } from "node:path"
 import { Schema, Array as Arr, Record as Rec, String as Str } from "effect"
-import { readRawTelemetryRetentionDays, type Chdb } from "@maple/local-server/chdb"
-import { decodeJsonObjectRows } from "@maple/local-server/chdb-rows"
+import { readRawTelemetryRetentionDays, type Chdb } from "../chdb"
+import { decodeJsonObjectRows } from "../chdb-rows"
 import type {
 	LocalStoreMigrationModule,
 	MigrationOperation,
 	StateDispositionEntry,
 } from "../local-store-migration-module"
-import { localSchemaIdentity } from "@maple/local-server/schema-identity"
-import { localSchemaSnapshot } from "../schema-snapshots"
-import { assertPhysicalSchema } from "@maple/local-server/schema-physical"
+import { localSchemaIdentity, localSchemaSnapshot } from "../local-schema-history"
+import { assertPhysicalSchema } from "../schema-physical"
 import {
 	cloneStoreForStaging,
 	expectedManifest,
@@ -189,6 +188,30 @@ export interface StepSpec {
 	readonly verifies: string
 	readonly dispositions: ReadonlyArray<StateDispositionEntry>
 }
+
+/** A row of the step table: its id and versions follow from its position. */
+export type StepRow = Omit<StepSpec, "id" | "from" | "to" | "verifies"> & {
+	/** The id's suffix; with the position it is the journal key, so it never changes once shipped. */
+	readonly slug: string
+	/** Defaults to the plain physical-schema and raw-count check. */
+	readonly verifies?: string
+}
+
+const padVersion = Str.padStart(4, "0")
+
+/** Row `i` migrates v(i+1) to v(i+2); v0 -> v1 is the hand-written legacy module. */
+export const stepSpecs = (rows: ReadonlyArray<StepRow>): ReadonlyArray<StepSpec> =>
+	Arr.map(rows, ({ slug, verifies, ...row }, index) => {
+		const from = index + 1
+		const to = from + 1
+		return {
+			...row,
+			id: `local-${padVersion(String(from))}-to-${padVersion(String(to))}-${slug}`,
+			from,
+			to,
+			verifies: verifies ?? `Verify the v${to} physical schema and the retained raw telemetry counts`,
+		}
+	})
 
 const isRecord = (value: unknown): value is Readonly<Record<string, unknown>> =>
 	typeof value === "object" && value !== null && !Arr.isArray(value)

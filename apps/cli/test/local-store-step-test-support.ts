@@ -1,7 +1,10 @@
 import { Option, Array as Arr } from "effect"
 import { Chdb } from "@maple/local-server/chdb"
-import type { MigrationDbOptions, MigrationModuleContext } from "../src/server/local-store-migration-module"
-import { localStoreMigrations } from "../src/server/local-store-migrations"
+import type {
+	MigrationDbOptions,
+	MigrationModuleContext,
+} from "@maple/local-server/local-store-migration-module"
+import { localStoreMigrations } from "@maple/local-server/local-store-migrations"
 
 /** Opens a store with no bootstrap unless asked, closing it after `fn`. */
 export const openStore = async <A>(
@@ -23,7 +26,7 @@ export const openStore = async <A>(
 
 /** The migration step `id` and a context that runs it from `sourceDataDir` into `targetDataDir`. */
 export const migrationStep = (id: string, sourceDataDir: string, targetDataDir: string, nowMs: number) => {
-	const found = Arr.findFirst(localStoreMigrations, (candidate) => candidate.id === id)
+	const found = Arr.findFirst(localStoreMigrations(), (candidate) => candidate.id === id)
 	if (Option.isNone(found)) throw new Error(`no local-store migration ${id}`)
 	const migration = found.value
 	const context: MigrationModuleContext = {

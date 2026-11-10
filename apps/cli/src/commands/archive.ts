@@ -14,6 +14,7 @@ import {
 } from "@maple/local-server/archives/listing"
 import { runArchiveGc } from "@maple/local-server/archives/gc"
 import { resolveArchiveTuning, tuningRecord } from "@maple/local-server/archives/config"
+import { DEFAULT_LOCAL_PORT } from "@maple/local-server/local-address"
 import {
 	ARCHIVE_SIGNALS,
 	isArchiveSignalName,
@@ -84,7 +85,7 @@ const applyFlag = Flag.Boolean("apply").pipe(
 
 const localPortFlag = Flag.Int("port").pipe(
 	Flag.withDescription("Private Maple local-query port"),
-	Flag.withDefault(4318),
+	Flag.withDefault(DEFAULT_LOCAL_PORT),
 )
 
 const sealingLagHoursFlag = Flag.Int("sealing-lag-hours").pipe(

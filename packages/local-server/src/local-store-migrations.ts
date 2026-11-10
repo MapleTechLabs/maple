@@ -10,16 +10,16 @@ import { existsSync, readFileSync, statfsSync } from "node:fs"
 import { lstat, readdir, stat } from "node:fs/promises"
 import { dirname, join, resolve } from "node:path"
 import { Effect, Option, Schema, Array as Arr, String as Str } from "effect"
-import { Chdb } from "@maple/local-server/chdb"
-import { decodeJsonEachRow } from "@maple/local-server/chdb-rows"
+import { Chdb } from "./chdb"
+import { decodeJsonEachRow } from "./chdb-rows"
 import {
 	CURRENT_LOCAL_SCHEMA,
 	LEGACY_LOCAL_SCHEMA,
-	LOCAL_SCHEMA_V1,
 	LOCAL_SCHEMA_SQL,
 	identityLabel,
 	type LocalSchemaIdentity,
-} from "@maple/local-server/schema-identity"
+} from "./schema-identity"
+import { localSchemaIdentity } from "./local-schema-history"
 import {
 	checkStoreCompatible,
 	ensureStoreMarkerDurable,
@@ -36,15 +36,10 @@ import {
 	storeOpenMarkerPath,
 	type StoreMarker,
 	type StoreMarkerV2,
-} from "@maple/local-server/store-version"
-import {
-	durableJson,
-	durableRename,
-	ensurePrivateDirectory,
-	syncTree,
-} from "@maple/local-server/durable-files"
-import { errnoCode } from "@maple/local-server/store-errors"
-import { MAPLE_VERSION } from "@maple/local-server/version"
+} from "./store-version"
+import { durableJson, durableRename, ensurePrivateDirectory, syncTree } from "./durable-files"
+import { errnoCode } from "./store-errors"
+import { MAPLE_VERSION } from "./version"
 import {
 	assertJournalPaths,
 	isMigrationIncomplete,
@@ -54,7 +49,8 @@ import {
 	migrationRootPath,
 	readMigrationJournalStructure,
 	safeMigrationPath,
-} from "@maple/local-server/local-store-migration-journal"
+	sameSchemaIdentity,
+} from "./local-store-migration-journal"
 import { legacyToCurrentModule } from "./local-store-migrations/legacy-to-current"
 import { stepModule } from "./local-store-migrations/step-executor"
 import { LOCAL_STORE_STEPS } from "./local-store-migrations/steps"
@@ -100,12 +96,6 @@ export interface MigrationResult {
 	readonly copiedRows: Readonly<Record<string, number>>
 }
 
-/** v0 -> v1 is a hand-written module; every later edge is a row of `steps.ts`. */
-export const localStoreMigrations: ReadonlyArray<AnyLocalStoreMigrationModule> = [
-	legacyToCurrentModule,
-	...Arr.map(LOCAL_STORE_STEPS, stepModule),
-]
-
 export const validateMigrationRegistry = (
 	registry: ReadonlyArray<AnyLocalStoreMigrationModule>,
 ): ReadonlyArray<AnyLocalStoreMigrationModule> => {
@@ -144,7 +134,17 @@ export const validateMigrationRegistry = (
 	return registry
 }
 
-validateMigrationRegistry(localStoreMigrations)
+let registry: ReadonlyArray<AnyLocalStoreMigrationModule> | undefined
+
+/**
+ * v0 -> v1 is a hand-written module; every later edge is a row of `steps.ts`.
+ * Built and validated on first use: each edge hashes its snapshots, which every
+ * CLI command would otherwise pay at import.
+ */
+export const localStoreMigrations = (): ReadonlyArray<AnyLocalStoreMigrationModule> => {
+	registry ??= validateMigrationRegistry([legacyToCurrentModule, ...Arr.map(LOCAL_STORE_STEPS, stepModule)])
+	return registry
+}
 
 export type MigrationResolutionErrorKind =
 	| "unknown-schema"
@@ -175,14 +175,15 @@ export const identityFromMarker = (marker: StoreMarker): LocalSchemaIdentity | n
 	}
 	if (marker.schema === LEGACY_LOCAL_SCHEMA.fingerprint)
 		return { ...LEGACY_LOCAL_SCHEMA, chdb: marker.chdb }
-	if (marker.schema === LOCAL_SCHEMA_V1.fingerprint) return { ...LOCAL_SCHEMA_V1, chdb: marker.chdb }
+	const v1 = localSchemaIdentity(1)
+	if (marker.schema === v1.fingerprint) return { ...v1, chdb: marker.chdb }
 	return null
 }
 
 export const resolveMigrationChain = (
 	source: LocalSchemaIdentity,
 	target: LocalSchemaIdentity = CURRENT_LOCAL_SCHEMA,
-	registry: ReadonlyArray<AnyLocalStoreMigrationModule> = localStoreMigrations,
+	registry: ReadonlyArray<AnyLocalStoreMigrationModule> = localStoreMigrations(),
 ): ReadonlyArray<AnyLocalStoreMigrationModule> => {
 	if (source.chdb !== target.chdb && source.chdb !== "dev" && target.chdb !== "dev") {
 		throw new MigrationResolutionError(
@@ -300,7 +301,7 @@ export const readMigrationJournal = async (dataDir: string): Promise<MigrationJo
 	const journal = await readMigrationJournalStructure(dataDir)
 	if (journal === null) return null
 	try {
-		validateJournalModuleState(journal, localStoreMigrations)
+		validateJournalModuleState(journal, localStoreMigrations())
 		return journal
 	} catch (error) {
 		throw new Error(
@@ -1092,7 +1093,7 @@ const withMigrationMaintenanceLock = async <A>(
 	fn: () => Promise<A>,
 ): Promise<A> => {
 	const { resetTransactionPath, restoreTransactionPath, withMaintenanceLock } =
-		await import("@maple/local-server/checkpoints")
+		await import("./checkpoints")
 	return withMaintenanceLock(dataDir, operationId, async () => {
 		if (existsSync(restoreTransactionPath(dataDir)) || existsSync(resetTransactionPath(dataDir)))
 			throw new Error(
@@ -1146,7 +1147,7 @@ const journalModules = (
 }
 
 const migrationPlanFromJournal = (journal: MigrationJournal): MigrationPlan => {
-	const chain = journalModules(journal, localStoreMigrations)
+	const chain = journalModules(journal, localStoreMigrations())
 	const source: LocalSchemaIdentity = {
 		version: journal.sourceVersion,
 		fingerprint: journal.sourceFingerprint,
@@ -1168,9 +1169,6 @@ const migrationPlanFromJournal = (journal: MigrationJournal): MigrationPlan => {
 			"Existing checkpoints remain with the retained source and are not claimed restorable by the current schema; create a new checkpoint after promotion.",
 	}
 }
-
-const sameIdentity = (a: LocalSchemaIdentity, b: LocalSchemaIdentity): boolean =>
-	a.version === b.version && a.fingerprint === b.fingerprint && a.digest === b.digest && a.chdb === b.chdb
 
 const migrationResult = (journal: MigrationJournal, dataDir: string): MigrationResult => ({
 	migrationId: journal.migrationId,
@@ -1228,7 +1226,8 @@ export const runLocalStoreMigration = async (
 			throw new Error("completed migration journal does not match the active store; refusing to guess")
 		if (options.dryRun) return planMigration(completedTarget)
 		await archiveCompletedMigration(dataDir, journal)
-		if (sameIdentity(completedTarget, CURRENT_LOCAL_SCHEMA)) return migrationResult(journal, dataDir)
+		if (sameSchemaIdentity(completedTarget, CURRENT_LOCAL_SCHEMA))
+			return migrationResult(journal, dataDir)
 		markerState = readMarker(dataDir)
 		journal = null
 	}
@@ -1262,7 +1261,7 @@ export const runLocalStoreMigration = async (
 	const plan = journal === null ? planMigration(sourceIdentity) : null
 	if (options.dryRun) {
 		if (plan !== null) return plan
-		const resumedChain = journalModules(journal!, localStoreMigrations)
+		const resumedChain = journalModules(journal!, localStoreMigrations())
 		return {
 			source: sourceIdentity,
 			target: Arr.lastNonEmpty(journal!.chain).to,
@@ -1316,12 +1315,12 @@ export const runLocalStoreMigration = async (
 			current = created
 		} else {
 			assertJournalPaths(dataDir, current)
-			journalModules(current, localStoreMigrations)
+			journalModules(current, localStoreMigrations())
 			if (markerState?.formatVersion === 2 && markerState.storeId !== current.sourceStoreId)
 				throw new Error("unfinished local migration source store id does not match the active marker")
 		}
 		try {
-			const modules = journalModules(current, localStoreMigrations)
+			const modules = journalModules(current, localStoreMigrations())
 			current = await executeMigrationChain(dataDir, current, modules, options.onProgress)
 			if (current.currentStepIndex !== current.chain.length)
 				throw new Error("migration chain did not reach its final verified step")

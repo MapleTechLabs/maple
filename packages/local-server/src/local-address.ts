@@ -1,5 +1,5 @@
 import { encodeJson } from "./json"
-import { String as Str } from "effect"
+import { Config, Effect, Option, String as Str } from "effect"
 
 export const DEFAULT_LOCAL_HOST = "127.0.0.1"
 export const DEFAULT_LOCAL_PORT = 4318
@@ -7,6 +7,20 @@ export const DEFAULT_LOCAL_PORT = 4318
 /** Public origin of the deployed local-mode dashboard SPA. Overridable
  *  (`MAPLE_LOCAL_UI_URL`) for testing against another build of it. */
 export const DEFAULT_REMOTE_UI_URL = "https://local.maple.dev"
+
+/** An unset or unreadable env var reads as `undefined`; never fails. */
+export const optionalEnvString = (key: string): Effect.Effect<string | undefined> =>
+	Config.String(key).pipe(
+		Config.option,
+		Effect.map(Option.getOrUndefined),
+		Effect.orElseSucceed(() => undefined),
+	)
+
+/** The dashboard origin `maple start` and the embedded runtime trust and advertise, not yet validated. */
+export const configuredLocalUiUrl: Effect.Effect<string> = Effect.map(
+	optionalEnvString("MAPLE_LOCAL_UI_URL"),
+	(raw) => (raw === undefined ? undefined : Str.trim(raw)) || DEFAULT_REMOTE_UI_URL,
+)
 
 /** Bun expects bare IPv6 listener addresses, while users commonly copy the
  * bracketed form used in URLs. Accept either form at the CLI boundary. */

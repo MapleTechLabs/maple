@@ -1,19 +1,19 @@
 // SAFETY-FILE: JSON rows here come from fixed internal formats and are validated before domain use.
 import { createHash } from "node:crypto"
 import { Option, Schema, Array as Arr, Record as Rec, String as Str } from "effect"
-import { decodeJsonEachRow, decodeJsonObjectRows } from "@maple/local-server/chdb-rows"
-import { LEGACY_LOCAL_SCHEMA, LOCAL_SCHEMA_V1 } from "@maple/local-server/schema-identity"
-import { LOCAL_SCHEMA_V1_MANIFEST, LOCAL_SCHEMA_V1_SQL } from "../schema-snapshots"
-import { assertPhysicalSchema } from "@maple/local-server/schema-physical"
+import { decodeJsonEachRow, decodeJsonObjectRows } from "../chdb-rows"
+import { LEGACY_LOCAL_SCHEMA } from "../schema-identity"
+import { localSchemaIdentity, localSchemaSnapshot } from "../local-schema-history"
+import { assertPhysicalSchema } from "../schema-physical"
 import { strictDecoder, UnsignedDecimal } from "./journal-codecs"
-import type { LocalSchemaColumn } from "@maple/local-server/schema-manifest"
+import type { LocalSchemaColumn } from "../schema-manifest"
 import type {
 	LocalStoreMigrationModule,
 	MigrationModuleContext,
 	MigrationOperation,
 	StateDispositionEntry,
 } from "../local-store-migration-module"
-import { encodeJson } from "@maple/local-server/json"
+import { encodeJson } from "../json"
 
 // Batch bounds keep memory bounded and the journal resumable. Consecutive
 // same-side queries share one cached connection, but each batch still
@@ -305,13 +305,22 @@ const retentionStartAt = (cutoffAt: string, retentionDays: number): string => {
 const numberString = (value: unknown): string => String(value)
 
 const querySource = (context: MigrationModuleContext, sql: string): Promise<string> =>
-	context.openSource((db) => db.query(sql), { schemaSql: LOCAL_SCHEMA_V1_SQL, bootstrapSchema: false })
+	context.openSource((db) => db.query(sql), {
+		schemaSql: localSchemaSnapshot(1).sql,
+		bootstrapSchema: false,
+	})
 
 const queryTarget = (context: MigrationModuleContext, sql: string): Promise<string> =>
-	context.openTarget((db) => db.query(sql), { schemaSql: LOCAL_SCHEMA_V1_SQL, bootstrapSchema: false })
+	context.openTarget((db) => db.query(sql), {
+		schemaSql: localSchemaSnapshot(1).sql,
+		bootstrapSchema: false,
+	})
 
 const executeTarget = (context: MigrationModuleContext, sql: string): Promise<void> =>
-	context.openTarget((db) => db.exec(sql), { schemaSql: LOCAL_SCHEMA_V1_SQL, bootstrapSchema: false })
+	context.openTarget((db) => db.exec(sql), {
+		schemaSql: localSchemaSnapshot(1).sql,
+		bootstrapSchema: false,
+	})
 
 const tableColumns = async (
 	context: MigrationModuleContext,
@@ -351,7 +360,7 @@ const tableExists = async (context: MigrationModuleContext, side: "source" | "ta
 }
 
 const assertKnownSourceObjects = async (context: MigrationModuleContext): Promise<void> => {
-	const known = new Set(Arr.map(LOCAL_SCHEMA_V1_MANIFEST.objects, (object) => object.name))
+	const known = new Set(Arr.map(localSchemaSnapshot(1).manifest.objects, (object) => object.name))
 	const rows = decodeNameRows(
 		await querySource(context, "SELECT name FROM system.tables WHERE database = 'default' ORDER BY name"),
 	)
@@ -785,7 +794,7 @@ const knownDispositions: ReadonlyArray<StateDispositionEntry> = [
 	})),
 	...Arr.map(
 		Arr.filter(
-			[...LOCAL_SCHEMA_V1_MANIFEST.objects],
+			[...localSchemaSnapshot(1).manifest.objects],
 			(object) =>
 				!RAW_TABLE_NAMES.has(object.name) &&
 				!OPERATIONAL_TABLE_NAMES.has(object.name) &&
@@ -794,7 +803,7 @@ const knownDispositions: ReadonlyArray<StateDispositionEntry> = [
 		(object) => derivedDisposition(object.name),
 	),
 	...Arr.map(
-		Arr.filter([...LOCAL_SCHEMA_V1_MANIFEST.objects], (object) => object.kind !== "table"),
+		Arr.filter([...localSchemaSnapshot(1).manifest.objects], (object) => object.kind !== "table"),
 		(object) => ({
 			name: object.name,
 			classification: "derived" as const,
@@ -901,8 +910,8 @@ const legacyPrepareTarget = async (
 	context: MigrationModuleContext,
 	state: LegacyModuleState,
 ): Promise<LegacyModuleState> => {
-	await context.openTarget((db) => assertPhysicalSchema(db, LOCAL_SCHEMA_V1_MANIFEST), {
-		schemaSql: LOCAL_SCHEMA_V1_SQL,
+	await context.openTarget((db) => assertPhysicalSchema(db, localSchemaSnapshot(1).manifest), {
+		schemaSql: localSchemaSnapshot(1).sql,
 		bootstrapSchema: true,
 	})
 	return state
@@ -950,8 +959,8 @@ const legacyVerify = async (
 		if ((await tableTotalRowCount(context, "target", table.name)) !== targetInventory.rowCount)
 			throw new Error(`target contains rows outside the migration interval for ${table.name}`)
 	}
-	await context.openTarget((db) => assertPhysicalSchema(db, LOCAL_SCHEMA_V1_MANIFEST), {
-		schemaSql: LOCAL_SCHEMA_V1_SQL,
+	await context.openTarget((db) => assertPhysicalSchema(db, localSchemaSnapshot(1).manifest), {
+		schemaSql: localSchemaSnapshot(1).sql,
 		bootstrapSchema: false,
 	})
 }
@@ -970,7 +979,10 @@ export const legacyToCurrentModule: LocalStoreMigrationModule<LegacyModuleState,
 	moduleVersion: 1,
 	description: "Rebuild the v1 local store from the known fingerprint-only legacy store",
 	from: LEGACY_LOCAL_SCHEMA,
-	to: LOCAL_SCHEMA_V1,
+	// Read on use: building it hashes the v1 snapshot, which no CLI command should pay at import.
+	get to() {
+		return localSchemaIdentity(1)
+	},
 	operations,
 	dispositions: knownDispositions,
 	decodeState: decodeLegacyState,

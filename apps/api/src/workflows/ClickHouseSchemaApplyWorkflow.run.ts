@@ -26,6 +26,13 @@ import {
 	parseEmittedStatement,
 	performanceOnlySearchColumns,
 	qualifyStatementForDatabase,
+	quoteClickHouseIdentifier,
+	recordFeatureSql,
+	recordMigrationSql,
+	selectAppliedVersionsSql,
+	selectFeatureRevisionsSql,
+	createSchemaFeaturesTableSql,
+	createSchemaMigrationsTableSql,
 	type ActualTable,
 	type ApplyStep,
 	type DesiredTable,
@@ -258,60 +265,36 @@ const parseSortingKeyRows = parseJsonEachRow(
 	Schema.Struct({ sorting_key: Schema.optionalKey(Schema.String) }),
 )
 
-// --- migration bookkeeping (mirrors the service + CLI) ----------------------
-
-const MIGRATIONS_TABLE = "_maple_schema_migrations"
-const FEATURES_TABLE = "_maple_schema_features"
-const quote = (name: string): string => `\`${Str.replace(/`/g, "``")(name)}\``
+// --- migration bookkeeping (shared with the CLI) -----------------------------
 
 const ensureMigrationsTable = (cfg: ChConfig) =>
-	execClickHouse(
-		cfg,
-		`CREATE TABLE IF NOT EXISTS ${quote(MIGRATIONS_TABLE)} (version UInt32, applied_at DateTime64(3) DEFAULT now64(3), description String) ENGINE = MergeTree ORDER BY version`,
-	).pipe(Effect.asVoid)
+	execClickHouse(cfg, createSchemaMigrationsTableSql).pipe(Effect.asVoid)
 
 const ensureFeaturesTable = (cfg: ChConfig) =>
-	execClickHouse(
-		cfg,
-		`CREATE TABLE IF NOT EXISTS ${quote(FEATURES_TABLE)} (
-  id String,
-  revision UInt32,
-  applied_at DateTime64(3) DEFAULT now64(3),
-  description String
-) ENGINE = ReplacingMergeTree(revision) ORDER BY id`,
-	).pipe(Effect.asVoid)
+	execClickHouse(cfg, createSchemaFeaturesTableSql).pipe(Effect.asVoid)
 
 const readAppliedVersions = (
 	cfg: ChConfig,
 ): Effect.Effect<ReadonlyArray<number>, ClickHouseExecError, HttpClient.HttpClient> =>
-	execClickHouse(cfg, `SELECT version FROM ${quote(MIGRATIONS_TABLE)} FORMAT JSONEachRow`).pipe(
+	execClickHouse(cfg, selectAppliedVersionsSql).pipe(
 		Effect.map((text) => [...new Set(Arr.map(parseVersionRows(text), (r) => r.version))]),
 	)
 
 const recordVersion = (cfg: ChConfig, version: number, description: string) =>
-	execClickHouse(
-		cfg,
-		`INSERT INTO ${quote(MIGRATIONS_TABLE)} (version, description) VALUES (${version}, '${Str.replace(/'/g, "''")(description)}')`,
-	).pipe(Effect.asVoid)
+	execClickHouse(cfg, recordMigrationSql(version, description)).pipe(Effect.asVoid)
 
 /** Entries rather than a Map: a step's value must survive Cloudflare's JSON persistence. */
 const readAppliedFeatureRevisions = (
 	cfg: ChConfig,
 ): Effect.Effect<ReadonlyArray<readonly [string, number]>, ClickHouseExecError, HttpClient.HttpClient> =>
-	execClickHouse(
-		cfg,
-		`SELECT id, max(revision) AS revision FROM ${quote(FEATURES_TABLE)} GROUP BY id FORMAT JSONEachRow`,
-	).pipe(
+	execClickHouse(cfg, selectFeatureRevisionsSql).pipe(
 		Effect.map((text) =>
 			Arr.map(parseFeatureRevisionRows(text), (row) => [row.id, row.revision] as const),
 		),
 	)
 
 const recordFeature = (cfg: ChConfig, id: string, revision: number, description: string) =>
-	execClickHouse(
-		cfg,
-		`INSERT INTO ${quote(FEATURES_TABLE)} (id, revision, description) VALUES ('${Str.replace(/'/g, "''")(id)}', ${revision}, '${Str.replace(/'/g, "''")(description)}')`,
-	).pipe(Effect.asVoid)
+	execClickHouse(cfg, recordFeatureSql(id, revision, description)).pipe(Effect.asVoid)
 
 const normalizeExpression = (value: string): string =>
 	Str.toLowerCase(Str.replace(/\s+/g, "")(Str.replace(/`/g, "")(value)))
@@ -573,7 +556,7 @@ const reconcileSchemaSnapshot = (
 				const colDef = extractColumnDefinition(table.createStatement, drift.column)
 				return colDef
 					? [
-							`ALTER TABLE ${quote(cfg.database)}.${quote(entry.name)} ADD COLUMN IF NOT EXISTS ${colDef}`,
+							`ALTER TABLE ${quoteClickHouseIdentifier(cfg.database)}.${quoteClickHouseIdentifier(entry.name)} ADD COLUMN IF NOT EXISTS ${colDef}`,
 						]
 					: []
 			})
