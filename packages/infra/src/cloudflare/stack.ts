@@ -6,6 +6,7 @@ import * as Effect from "effect/Effect"
 import * as Option from "effect/Option"
 import type { WorkerDev } from "@maple/alchemy-portless"
 import { type DevApp, isDevApp } from "../dev-urls.ts"
+import { WORKER_COMPATIBILITY_DATE } from "./worker-build.ts"
 import { Stage } from "alchemy/Stage"
 import type { MapleProfile } from "../profile.ts"
 import type { MapleRegion } from "../region.ts"
@@ -124,8 +125,7 @@ export const stageProps = <Props extends object>(
 /** {@link stageProps} for the common case: a resource whose only stage-derived prop is `name`. */
 export const stageNamed = (base: string) => stageProps(base, (name) => ({ name }))
 
-/** Workers runtime compatibility date for every Maple Worker. */
-export const WORKER_COMPATIBILITY_DATE = "2026-10-01"
+export { WORKER_COMPATIBILITY_DATE }
 
 /**
  * The physical name and placement every Maple Worker, Website ones included, shares. `app` is

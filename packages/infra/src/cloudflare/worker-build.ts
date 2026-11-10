@@ -1,3 +1,6 @@
+/** Workers runtime compatibility date for every Maple Worker (and the cold-path build scripts). */
+export const WORKER_COMPATIBILITY_DATE = "2026-10-01"
+
 /**
  * A Website Worker's build cache key: its own tree plus the `@maple/*` sources it bundles.
  * `lockfile` is restated because providing `include` drops it.
