@@ -75,8 +75,7 @@ export const decodeInvoices = (
  * subscriptions — there's still usage to show.
  *
  * Deliberately NOT clamped to now: the chart's job is to show where this cycle is
- * headed, so the axis has to reach the day the bill closes. Clamping belongs to
- * the warehouse read (DailySpendService), not to the window itself.
+ * headed, so the axis has to reach the day the bill closes.
  */
 export const resolveCycleWindow = (
 	customer: BillingCustomer,
