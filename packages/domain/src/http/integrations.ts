@@ -471,6 +471,13 @@ export class PlanetScaleApiMetricsStatus extends Schema.Class<PlanetScaleApiMetr
 	lastError: Schema.NullOr(Schema.String),
 }) {}
 
+export const PlanetScaleWebhookState = Schema.Literals([
+	"active",
+	"pending",
+	"failing",
+	"needs_reauthorization",
+])
+
 /** The webhooks Maple registers on the bound organization's databases. */
 export class PlanetScaleWebhookStatus extends Schema.Class<PlanetScaleWebhookStatus>(
 	"PlanetScaleWebhookStatus",
@@ -479,7 +486,7 @@ export class PlanetScaleWebhookStatus extends Schema.Class<PlanetScaleWebhookSta
 	 * `needs_reauthorization`: the grant predates the `write_databases` access webhooks need.
 	 * `pending`: not every database has one yet. `failing`: registering one failed.
 	 */
-	state: Schema.Literals(["active", "pending", "failing", "needs_reauthorization"]),
+	state: PlanetScaleWebhookState,
 	registeredDatabases: Schema.Number,
 	databases: Schema.Number,
 	/** The most recent registration failure, or null. */

@@ -1026,6 +1026,13 @@ export class AlertQueryTiming extends Schema.Class<AlertQueryTiming>("AlertQuery
  * buckets — the live scheduler slides every tick, so `wouldFire` spans are an
  * approximation between bucket boundaries).
  */
+/** Why a raw SQL preview has no series: too heavy to chart, or no time bucket. */
+export const AlertSeriesFailure = Schema.Literals([
+	"query_too_slow",
+	"query_too_much_memory",
+	"not_time_grouped",
+])
+
 export class AlertRulePreviewResponse extends Schema.Class<AlertRulePreviewResponse>(
 	"AlertRulePreviewResponse",
 )({
@@ -1042,9 +1049,7 @@ export class AlertRulePreviewResponse extends Schema.Class<AlertRulePreviewRespo
 	/** Raw SQL rules only: how long one check takes against each interval's limit. */
 	queryTiming: Schema.optionalKey(AlertQueryTiming),
 	/** Raw SQL rules only: the range was too heavy to chart, or the SQL has no time bucket, so `series` is empty. */
-	seriesFailure: Schema.optionalKey(
-		Schema.Literals(["query_too_slow", "query_too_much_memory", "not_time_grouped"]),
-	),
+	seriesFailure: Schema.optionalKey(AlertSeriesFailure),
 }) {}
 
 export class AlertIncidentDocument extends Schema.Class<AlertIncidentDocument>("AlertIncidentDocument")({

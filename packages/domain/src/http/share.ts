@@ -424,6 +424,9 @@ export type ShareWidgetDataPayload = Schema.Schema.Type<typeof ShareWidgetDataPa
  * share cannot serve must not blank its neighbours, and "this tile is
  * unavailable" is a state the page draws, not an error it reports.
  */
+/** `unsupported` draws a muted tile; `failed` draws a retryable error. */
+export const ShareWidgetFailureReason = Schema.Literals(["unsupported", "not_found", "failed"])
+
 export const ShareWidgetDataOutcome = Schema.Union([
 	Schema.Struct({
 		widgetId: Schema.String,
@@ -435,8 +438,7 @@ export const ShareWidgetDataOutcome = Schema.Union([
 	Schema.Struct({
 		widgetId: Schema.String,
 		ok: Schema.Literal(false),
-		/** `unsupported` draws a muted tile; `failed` draws a retryable error. */
-		reason: Schema.Literals(["unsupported", "not_found", "failed"]),
+		reason: ShareWidgetFailureReason,
 		message: Schema.String,
 	}),
 ]).annotate({ identifier: "ShareWidgetDataOutcome" })

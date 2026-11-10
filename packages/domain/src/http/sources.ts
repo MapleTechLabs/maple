@@ -1,4 +1,5 @@
 import { Schema } from "effect"
+import { SOURCE_HEALTH_STATUSES } from "../source-health"
 import {
 	IsoDateTimeString,
 	PushSourcePlatform,
@@ -24,15 +25,8 @@ export const SOURCE_LIMITS = {
 export const SourceTokenStatus = Schema.Literals(["active", "paused", "expired"])
 export type SourceTokenStatus = Schema.Schema.Type<typeof SourceTokenStatus>
 
-/** Worst first; mirrors `SOURCE_HEALTH_STATUSES` in `../source-health`. */
-export const SourceHealthStatus = Schema.Literals([
-	"disconnected",
-	"failing",
-	"stale",
-	"paused",
-	"pending",
-	"healthy",
-])
+/** Worst first. */
+export const SourceHealthStatus = Schema.Literals(SOURCE_HEALTH_STATUSES)
 export type SourceHealthStatus = Schema.Schema.Type<typeof SourceHealthStatus>
 
 export const SourceResourceCount = Schema.Struct({ total: Schema.Int, unhealthy: Schema.Int })
