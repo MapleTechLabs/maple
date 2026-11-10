@@ -442,9 +442,25 @@ const calm = async (browser: Browser) => {
 		reducedMotion: "reduce",
 	})
 	const page = await context.newPage()
+	// Counts the transitions the page starts: with reduced motion there must be none.
+	await page.addInitScript(() => {
+		const startViewTransition = document.startViewTransition.bind(document)
+		document.startViewTransition = (...args: Parameters<typeof startViewTransition>) => {
+			const root = document.documentElement
+			root.dataset["transitions"] = String(Number(root.dataset["transitions"] ?? "0") + 1)
+			return startViewTransition(...args)
+		}
+	})
 	await ready(page, DOC)
 	await open(page, 0)
-	check("reduced motion: opens without the morph", (await read(page)).isOpen)
+	const transitions = await page.evaluate(() =>
+		Number(document.documentElement.dataset["transitions"] ?? "0"),
+	)
+	check(
+		"reduced motion: opens without the morph",
+		(await read(page)).isOpen && transitions === 0,
+		transitions,
+	)
 	await page.keyboard.press("+")
 	await page.waitForTimeout(80)
 	check("reduced motion: zoom lands at once", (await read(page)).scale === 2, (await read(page)).scale)

@@ -266,13 +266,24 @@ describe("Lightbox island", () => {
 		document.removeEventListener("keydown", behind)
 	})
 
-	it("takes its listeners off the document when the island unmounts", async () => {
-		const element = await mount()
+	it("takes every listener it put on the document back off when the island unmounts", async () => {
+		const added = vi.spyOn(document, "addEventListener")
 		const removed = vi.spyOn(document, "removeEventListener")
+		const element = await mount()
+		plate("first").click()
+		await vi.waitFor(() => expect(counter()).toBe("1 / 3"))
+		// The same handler, not just the same event type: a leak keeps the original on the document.
+		const pressListeners = Arr.filter(
+			added.mock.calls,
+			([type]) => type === "click" || type === "keydown",
+		)
+		expect(Arr.map(pressListeners, ([type]) => type)).toEqual(
+			expect.arrayContaining(["click", "keydown", "keydown"]),
+		)
 		element.dispatchEvent(new Event("astro:unmount"))
 		await vi.waitFor(() =>
-			expect(Arr.map(removed.mock.calls, ([type]) => type)).toEqual(
-				expect.arrayContaining(["click", "keydown"]),
+			expect(Arr.map(removed.mock.calls, ([type, handler]) => [type, handler])).toEqual(
+				expect.arrayContaining(Arr.map(pressListeners, ([type, handler]) => [type, handler])),
 			),
 		)
 	})

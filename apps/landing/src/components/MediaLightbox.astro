@@ -22,9 +22,11 @@ import { Lightbox } from "./lightbox/Lightbox";
 	/* The morph. The plate holds the shared name until the viewer renders, then the
 	   open slide does; that render runs in a View Transition, so the browser
 	   carries the image between the two. */
-	html:not(:has([data-lightbox-content])) [data-lightbox-origin],
-	[data-lightbox-media][data-active] {
-		view-transition-name: lightbox-media;
+	@media (prefers-reduced-motion: no-preference) {
+		html:not(:has([data-lightbox-content])) [data-lightbox-origin],
+		[data-lightbox-media][data-active] {
+			view-transition-name: lightbox-media;
+		}
 	}
 
 	/* The plate is in the viewer while it is open; left in the page as well, it
