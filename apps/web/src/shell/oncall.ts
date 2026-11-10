@@ -117,8 +117,11 @@ const ONCALL_RETRY_CAP_MS = 15 * 60_000
 export const ONCALL_IDLE_READ_MS = 60 * 60_000
 /** Focus re-reads at most this often. */
 export const ONCALL_WAKE_MIN_MS = 60_000
-/** An org's "no schedules" answer is trusted this long before asking again. */
-export const NO_SCHEDULES_TTL_MS = 24 * 60 * 60_000
+/**
+ * An org's "no schedules" answer is trusted this long. Minutes, not a day: only a schedule written
+ * in this tab clears it, so a teammate's first schedule shows once it ages out.
+ */
+export const NO_SCHEDULES_TTL_MS = 5 * 60_000
 
 export type OnCallSchedule = Readonly<{ nextReadAtMs: number | null; backoffMs: number }>
 

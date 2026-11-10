@@ -52,6 +52,12 @@ describe("silence times", () => {
 		expect(formatSilenceTime(late, NOW, BERLIN)).toBe("Nov 7, 12:30 AM")
 	})
 
+	it("reads on a 24h clock when asked, midnight as 00", () => {
+		expect(formatSilenceTime(Date.UTC(2026, 10, 6, 14, 30), NOW, BERLIN, "h23")).toBe("15:30")
+		expect(formatSilenceTime(Date.UTC(2026, 10, 7, 8, 0), NOW, BERLIN, "h23")).toBe("Nov 7, 09:00")
+		expect(formatSilenceTime(Date.UTC(2026, 10, 6, 23, 30), NOW, BERLIN, "h23")).toBe("Nov 7, 00:30")
+	})
+
 	it("names the day of a window once when both ends share it", () => {
 		const start = Date.UTC(2026, 10, 7, 14, 0)
 		expect(formatSilenceRange(start, start + 60 * 60_000, NOW, BERLIN)).toBe(

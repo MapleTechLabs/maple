@@ -383,6 +383,13 @@ export const createMapleIngest = ({ stage, region, domains, profile, dbLogin }: 
 				)
 		const keyEncryptionKeyValue = yield* requiredPlain("MAPLE_INGEST_KEY_ENCRYPTION_KEY")
 		const keyEncryptionKey = yield* secret("ingest-key-encryption-key", keyEncryptionKeyValue)
+		// Only set while a key rotation is in flight (docs/secret-encryption.md).
+		const { MAPLE_INGEST_KEY_DECRYPTION_KEYS: decryptionKeysValue } = yield* optionalPlain(
+			"MAPLE_INGEST_KEY_DECRYPTION_KEYS",
+		)
+		const keyDecryptionKeys = decryptionKeysValue
+			? yield* secret("ingest-key-decryption-keys", decryptionKeysValue)
+			: undefined
 		const keyLookupHmacKeyValue = yield* requiredPlain("MAPLE_INGEST_KEY_LOOKUP_HMAC_KEY")
 		const keyLookupHmacKey = yield* secret("ingest-key-lookup-hmac-key", keyLookupHmacKeyValue)
 
@@ -623,6 +630,9 @@ export const createMapleIngest = ({ stage, region, domains, profile, dbLogin }: 
 				TINYBIRD_TOKEN: tinybirdToken.secretArn,
 				MAPLE_PG_URL: pgUrl.secretArn,
 				MAPLE_INGEST_KEY_ENCRYPTION_KEY: keyEncryptionKey.secretArn,
+				...(keyDecryptionKeys
+					? { MAPLE_INGEST_KEY_DECRYPTION_KEYS: keyDecryptionKeys.secretArn }
+					: undefined),
 				MAPLE_INGEST_KEY_LOOKUP_HMAC_KEY: keyLookupHmacKey.secretArn,
 				...(autumnSecret ? { AUTUMN_SECRET_KEY: autumnSecret.secretArn } : undefined),
 				...(replayR2Secret && replayR2AccessKeyId

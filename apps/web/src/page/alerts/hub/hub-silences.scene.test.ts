@@ -6,7 +6,17 @@ import { Result, Schema, Array as Arr } from "effect"
 import * as Combobox from "@maple/views/ui/combobox"
 import * as Dialog from "@maple/views/ui/dialog"
 import { MountDialog } from "@maple/views/ui/dialog"
-import { expect as expectView, Mount, given, role, scene, text, withViewInputs } from "foldkit/scene"
+import {
+	expect as expectView,
+	Mount,
+	given,
+	role,
+	scene,
+	selector,
+	submit,
+	text,
+	withViewInputs,
+} from "foldkit/scene"
 import { describe, expect, test } from "vitest"
 import type { PageContext } from "../../contract"
 import { NOW, ORG, hubAt, ruleRow } from "../shared/test-rows"
@@ -212,7 +222,7 @@ describe("alerts hub, silence side panel", () => {
 		expect(step.model.silenceDialog.dialog.isOpen).toBe(false)
 	})
 
-	test("the URL opens it with a chips input per scope field, Cancel and a save that waits for a valid form", () => {
+	test("the URL opens it with a chips input per scope field, Cancel and a save", () => {
 		const opened = withPanel()
 		expect(opened.model.silenceDialog.dialog.isOpen).toBe(true)
 		scene(
@@ -227,7 +237,62 @@ describe("alerts hub, silence side panel", () => {
 				text("Fill in at least one. A rule is silenced only if it matches every field you fill in."),
 			).toExist(),
 			expectView(role("button", { name: "Cancel" })).toExist(),
-			expectView(role("button", { name: "Silence for 1 hour" })).toBeDisabled(),
+			expectView(role("button", { name: "Silence for 1 hour" })).not.toBeDisabled(),
+			expectView(role("alert")).not.toExist(),
+		)
+	})
+
+	test("a chips input with nothing to suggest opens no list: how to add a name is said in the form", () => {
+		const focused = pageUpdate(
+			withPanel().model,
+			scopeCombo("services", Combobox.Message.ClickedInput()),
+		).model
+		scene(
+			{ update: pageUpdate, view },
+			given(focused),
+			Mount.resolve(MountDialog, Dialog.Message.CompletedMountDialog()),
+			expectView(text("Type a name and press Enter to add it. Commas separate several.")).toExist(),
+			expectView(role("listbox")).not.toExist(),
+			expectView(role("combobox", { name: "Services" })).toHaveAttr("aria-expanded", "false"),
+		)
+		// What is typed is listed, so Enter has something to pick.
+		const typed = pageUpdate(
+			focused,
+			scopeCombo("services", Combobox.Message.ChangedInput({ value: "demo-api" })),
+		).model
+		scene(
+			{ update: pageUpdate, view },
+			given(typed),
+			Mount.resolve(MountDialog, Dialog.Message.CompletedMountDialog()),
+			Mount.resolve(Combobox.MountCombobox, Combobox.Message.CompletedMountCombobox()),
+			expectView(role("option", { name: "demo-api" })).toExist(),
+		)
+	})
+
+	test("saving an incomplete form sends nothing and says what is missing, field by field", () => {
+		scene(
+			{ update: pageUpdate, view },
+			given(withPanel().model),
+			Mount.resolve(MountDialog, Dialog.Message.CompletedMountDialog()),
+			submit(selector("form")),
+			expectView(text("Add at least one service, environment or tag")).toExist(),
+			expectView(text("Add a reason")).toExist(),
+			expectView(role("textbox", { name: "Reason" })).toHaveAttr("aria-invalid", "true"),
+			expectView(role("button", { name: "Silence for 1 hour" })).not.toBeDisabled(),
+		)
+		const tried = pageUpdate(withPanel().model, silenceMessage(SilenceDialog.Message.ClickedSave()))
+		expect(namesOf(tried.commands)).toEqual([])
+		// Each line goes as its field is filled in.
+		const reasoned = pageUpdate(
+			tried.model,
+			silenceMessage(SilenceDialog.Message.ChangedReason({ value: "Deploying checkout v2.3" })),
+		).model
+		scene(
+			{ update: pageUpdate, view },
+			given(reasoned),
+			Mount.resolve(MountDialog, Dialog.Message.CompletedMountDialog()),
+			expectView(text("Add a reason")).not.toExist(),
+			expectView(text("Add at least one service, environment or tag")).toExist(),
 		)
 	})
 
@@ -294,6 +359,33 @@ describe("alerts hub, silence side panel", () => {
 		)
 	})
 
+	test("the save button names its end on the 24h clock the duration choice and the picker use", () => {
+		const until = (duration: SilenceDialog.SilenceDuration, value: string) =>
+			Arr.reduce(
+				[
+					silenceMessage(SilenceDialog.Message.ChangedDuration({ duration })),
+					silenceMessage(SilenceDialog.Message.ChangedUntil({ value })),
+				],
+				withPanel().model,
+				(model, message) => pageUpdate(model, message).model,
+			)
+		const saveButton = role("button", { name: /^Silence until / })
+		scene(
+			{ update: pageUpdate, view },
+			given(until("morning", "")),
+			Mount.resolve(MountDialog, Dialog.Message.CompletedMountDialog()),
+			expectView(text("Until 09:00")).toExist(),
+			expectView(saveButton).toHaveText(/ 09:00$/u),
+		)
+		// NOW is noon on 1 October, so 15:30 that day is still ahead.
+		scene(
+			{ update: pageUpdate, view },
+			given(until("custom", "2026-10-01T15:30")),
+			Mount.resolve(MountDialog, Dialog.Message.CompletedMountDialog()),
+			expectView(saveButton).toHaveText(/ 15:30$/u),
+		)
+	})
+
 	test("a link straight to the panel waits for the clock and the viewer's grants, and a member never gets it", () => {
 		const entered = init(hubAt({ tab: "silences", sheet: "silence" }), context).model
 		expect(entered.silenceDialog.dialog.isOpen).toBe(false)
@@ -329,6 +421,40 @@ describe("alerts hub, silence side panel", () => {
 		expect(
 			pageUpdate(onRules.model, Message.ReadClock({ nowMs: NOW })).model.silenceDialog.dialog.isOpen,
 		).toBe(false)
+	})
+
+	test("a `?sheet=` that opens nothing is replaced away: another section's panel, or a made-up one", () => {
+		const dismissals = (commands: Parameters<typeof callsOf>[0]) =>
+			Arr.filter(callsOf(commands), ([name]) => name === "DismissAlertsHubSheet")
+		const onRules = routeChanged(
+			onSilences(ENGINEER, []),
+			hubAt({ tab: "rules", sheet: "silence" }),
+			context,
+		)
+		expect(onRules.model.search.sheet).toBeUndefined()
+		expect(dismissals(onRules.commands)).toEqual([
+			["DismissAlertsHubSheet", { href: "/alerts/rules?sheet=silence", id: "silence" }],
+		])
+		const onInbox = routeChanged(onSilences(ENGINEER, []), hubAt({ sheet: "silence" }), context)
+		expect(dismissals(onInbox.commands)).toEqual([
+			["DismissAlertsHubSheet", { href: "/alerts?sheet=silence", id: "silence" }],
+		])
+		const bogus = routeChanged(
+			onSilences(ENGINEER, []),
+			hubAt({ tab: "silences", sheet: "bogus" }),
+			context,
+		)
+		expect(bogus.model.search.sheet).toBeUndefined()
+		expect(bogus.model.silenceDialog.dialog.isOpen).toBe(false)
+		expect(dismissals(bogus.commands)).toEqual([
+			["DismissAlertsHubSheet", { href: `${SILENCES_URL}?sheet=bogus`, id: "bogus" }],
+		])
+		// Asked once: the clock tick that follows finds nothing left to drop.
+		expect(dismissals(pageUpdate(bogus.model, Message.ReadClock({ nowMs: NOW })).commands)).toEqual([])
+		// The open panel leaving its section closes with the param.
+		const left = routeChanged(withPanel().model, hubAt({ tab: "rules", sheet: "silence" }), context)
+		expect(left.model.silenceDialog.dialog.isOpen).toBe(false)
+		expect(dismissals(left.commands)).toHaveLength(1)
 	})
 
 	test("a clock tick after Cancel, before the URL change lands, leaves it closed", () => {

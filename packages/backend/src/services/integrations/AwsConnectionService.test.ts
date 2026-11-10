@@ -4,6 +4,7 @@ import { TestClock } from "effect/testing"
 import { HttpClient } from "effect/http"
 import { hashIngestKey } from "@maple/db"
 import { AwsAccountId, AwsRegion, OrgId, UserId } from "@maple/domain/primitives"
+import { encryptAes256Gcm } from "@maple/backend/platform/Crypto"
 import { Env } from "@maple/backend/platform/Env"
 import {
 	cleanupTestDbs,
@@ -314,6 +315,36 @@ describe("AwsConnectionService", () => {
 				yield* streamSecretHash(created.id),
 				hashIngestKey(again, "maple-test-lookup-secret"),
 			)
+		}).pipe(Effect.provide(makeLayer(testDb, aws)))
+	})
+
+	it.effect("hands out a stream secret that was stored before secrets were sealed per slot", () => {
+		const testDb = createTestDb(trackedDbs)
+		const aws = makeFakeAws()
+		const region = Schema.decodeSync(AwsRegion)("us-east-1")
+		return Effect.gen(function* () {
+			const service = yield* AwsConnectionService
+			const created = yield* service.create(orgId, userId, {
+				accountId: account,
+				modules: [],
+				metricStream: { regions: [region], namespaces: ["AWS/Lambda"] },
+			})
+			const stored = yield* encryptAes256Gcm(
+				"maple_aws_stored_earlier",
+				Buffer.alloc(32, 9),
+				(message) => message,
+				Buffer.from(`aws_connections:stream:v1:${created.id}`, "utf8"),
+			)
+			yield* Effect.promise(() =>
+				executeSql(
+					testDb,
+					`UPDATE aws_connections SET stream_secret_ciphertext = $1, stream_secret_iv = $2,
+					 stream_secret_tag = $3 WHERE id = $4`,
+					[stored.ciphertext, stored.iv, stored.tag, created.id],
+				),
+			)
+			const setup = yield* service.setup(orgId, created.id)
+			assert.include(setup.setupScript, "AccessKey=maple_aws_stored_earlier")
 		}).pipe(Effect.provide(makeLayer(testDb, aws)))
 	})
 

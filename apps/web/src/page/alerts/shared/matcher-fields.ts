@@ -30,7 +30,8 @@ export const typedFromMatchers = (matchers: V2AlertSilenceMatchers): TypedMatche
 	environments: Arr.join(matchers.environments ?? [], ", "),
 })
 
-const splitList = (value: string): ReadonlyArray<string> =>
+/** A comma-separated list as its names: trimmed, the empty ones dropped, each once. */
+export const splitList = (value: string): ReadonlyArray<string> =>
 	Arr.dedupe(Arr.filter(Arr.map(Str.split(value, ","), Str.trim), Str.isNonEmpty))
 
 /** The matchers the fields describe; an empty field is left out. */

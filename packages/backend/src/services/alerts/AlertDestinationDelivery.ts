@@ -11,7 +11,11 @@ import {
 import { projectAlertLifecycleEvent } from "@maple/alerting-core"
 import { Effect, Result, Schema } from "effect"
 import { HttpClient } from "effect/http"
-import { parseBase64Aes256GcmKey } from "@maple/backend/platform/Crypto"
+import {
+	secretKeyringFromEnv,
+	type SecretKeyring,
+	type SecretKeyringEnv,
+} from "@maple/backend/platform/SecretBox"
 import type { EmailServiceApi } from "@maple/backend/platform/EmailService"
 import type { ChatAlertPosterApi } from "./ChatAlertPoster"
 import { buildAlertRuleUrl, type DispatchContext as DeliveryDispatchContext } from "./AlertDeliveryDispatch"
@@ -40,25 +44,13 @@ export type AlertDeliveryPayloadContext = Omit<
 	"deliveryKey" | "destination" | "publicConfig" | "secretConfig"
 >
 
-export const parseAlertDestinationEncryptionKey = (
-	raw: string,
-): Effect.Effect<Buffer, AlertValidationError> =>
-	parseBase64Aes256GcmKey(
-		raw,
-		(message) =>
-			new AlertValidationError({
-				message:
-					message === "Expected a non-empty base64 encryption key"
-						? "MAPLE_INGEST_KEY_ENCRYPTION_KEY is required"
-						: message === "Expected base64 for exactly 32 bytes"
-							? "MAPLE_INGEST_KEY_ENCRYPTION_KEY must be base64 for exactly 32 bytes"
-							: message,
-				details: [],
-			}),
-	)
+export const alertDestinationKeyringFromEnv = (
+	env: SecretKeyringEnv,
+): Effect.Effect<SecretKeyring, AlertValidationError> =>
+	secretKeyringFromEnv(env, (message) => new AlertValidationError({ message, details: [] }))
 
 export const makeAlertDestinationDelivery = (options: {
-	readonly encryptionKey: Buffer
+	readonly keyring: SecretKeyring
 	readonly appBaseUrl: string
 	readonly runtime: AlertRuntimeApi
 	readonly httpClient: HttpClient.HttpClient
@@ -69,7 +61,7 @@ export const makeAlertDestinationDelivery = (options: {
 	const hydrateDestination = Effect.fn("AlertsService.hydrateDestination")(function* (
 		row: DeliverableDestination,
 	) {
-		const { publicConfig, secretConfig } = yield* hydrateDestinationRow(row, options.encryptionKey, {
+		const { publicConfig, secretConfig } = yield* hydrateDestinationRow(row, options.keyring, {
 			onPublicConfigInvalid: (cause) =>
 				new AlertDestinationStoredConfigInvalidError({
 					message: "Stored destination config is invalid",

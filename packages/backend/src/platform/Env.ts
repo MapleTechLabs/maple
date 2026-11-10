@@ -31,6 +31,8 @@ export interface EnvConfig {
 	readonly MAPLE_ROOT_PASSWORD: Option.Option<Redacted.Redacted>
 	readonly MAPLE_DEFAULT_ORG_ID: string
 	readonly MAPLE_INGEST_KEY_ENCRYPTION_KEY: Redacted.Redacted
+	/** Comma-separated keys accepted for opening stored secrets only (docs/secret-encryption.md). */
+	readonly MAPLE_INGEST_KEY_DECRYPTION_KEYS: Option.Option<Redacted.Redacted>
 	readonly MAPLE_INGEST_KEY_LOOKUP_HMAC_KEY: Redacted.Redacted
 	/**
 	 * Keyed HMAC for dashboard share-link tokens. Optional here, and required by
@@ -236,6 +238,7 @@ const envConfig = Config.all({
 	MAPLE_ROOT_PASSWORD: optionalRedacted("MAPLE_ROOT_PASSWORD"),
 	MAPLE_DEFAULT_ORG_ID: stringWithDefault("MAPLE_DEFAULT_ORG_ID", "default"),
 	MAPLE_INGEST_KEY_ENCRYPTION_KEY: Config.Redacted("MAPLE_INGEST_KEY_ENCRYPTION_KEY"),
+	MAPLE_INGEST_KEY_DECRYPTION_KEYS: optionalRedacted("MAPLE_INGEST_KEY_DECRYPTION_KEYS"),
 	MAPLE_INGEST_KEY_LOOKUP_HMAC_KEY: Config.Redacted("MAPLE_INGEST_KEY_LOOKUP_HMAC_KEY"),
 	MAPLE_SHARE_TOKEN_HMAC_KEY: optionalRedacted("MAPLE_SHARE_TOKEN_HMAC_KEY"),
 	MAPLE_INGEST_PUBLIC_URL: stringWithDefault("MAPLE_INGEST_PUBLIC_URL", "http://127.0.0.1:3474"),

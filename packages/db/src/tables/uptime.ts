@@ -21,6 +21,13 @@ export const UptimeMonitors = PG.table("uptime_monitors", {
 		name: PG.text,
 		kind: PG.brand(PG.text, UptimeMonitorKind),
 		configJson: PG.column(PG.jsonb(UptimeMonitorConfig), { name: "config_json" }),
+		/**
+		 * HTTP checks only: the request headers as sealed JSON (docs/secret-encryption.md), since
+		 * they carry credentials. `config_json.headers` is then `{}`; null means no headers.
+		 */
+		headersCiphertext: PG.column(PG.nullable(PG.text), { name: "headers_ciphertext" }),
+		headersIv: PG.column(PG.nullable(PG.text), { name: "headers_iv" }),
+		headersTag: PG.column(PG.nullable(PG.text), { name: "headers_tag" }),
 		/** Probe cadence; ignored for heartbeats, whose schedule lives in the config. */
 		intervalSeconds: PG.column(PG.int4, { name: "interval_seconds", default: 60 }),
 		failuresToDown: PG.column(PG.int4, { name: "failures_to_down", default: 2 }),
