@@ -162,6 +162,7 @@ export const AUDIT_ENTRIES: ReadonlyArray<V2AuditLogEntry> = Arr.map(
 			action: "member.role_changed",
 			actor: "grace",
 			source: "dashboard",
+			resource: { type: "member" },
 			affected: LINUS,
 			changes: { fields: ["role"], before: { role: "org:member" }, after: { role: "org:admin" } },
 			ip: "192.0.2.44",
