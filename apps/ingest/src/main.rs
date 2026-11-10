@@ -276,6 +276,16 @@ fn uses_forward_path_for(write_mode: WriteMode, destination: ExportDestination) 
     write_mode.uses_forward() && destination != ExportDestination::ClickHouse
 }
 
+/// Whether a request left rows behind: the collector took it, or the native
+/// pipeline had already accepted it before the forward (dual mode).
+fn batch_was_stored(
+    forwarded_ok: bool,
+    write_mode: WriteMode,
+    destination: ExportDestination,
+) -> bool {
+    forwarded_ok || uses_native_pipeline_for(write_mode, destination)
+}
+
 #[derive(Clone)]
 enum KeyStoreBackend {
     // No-DB local backend: every well-formed ingest key resolves to a single
@@ -3864,8 +3874,16 @@ async fn accept_grpc_decoded(
     .await;
 
     match result {
-        // A collector refusal stored nothing, so it is neither key use nor billed.
-        Ok(response) if !response.status().is_success() => Ok(()),
+        // A collector refusal that left nothing stored is neither key use nor billed.
+        Ok(response)
+            if !batch_was_stored(
+                response.status().is_success(),
+                state.config.write_mode,
+                native_destination_for(resolved),
+            ) =>
+        {
+            Ok(())
+        }
         Ok(_) => {
             state.resolver.note_source_use(resolved, claims.kept_claim);
             state
@@ -5662,8 +5680,12 @@ async fn handle_signal_inner(
         let kind = error.error_kind();
         (error, if kind == INGEST_RULES_SCAN_BUDGET.error_kind { kind } else { "forward" })
     })?;
-    // A relayed collector refusal stored nothing: not key use, and 0 bytes to meter.
-    let stored = response.status().is_success();
+    // A collector refusal that left nothing stored is not key use, and 0 bytes to meter.
+    let stored = batch_was_stored(
+        response.status().is_success(),
+        state.config.write_mode,
+        native_destination_for(&resolved_key),
+    );
     if stored {
         state.resolver.note_source_use(&resolved_key, kept_claim);
         state
@@ -11214,6 +11236,26 @@ mod tests {
         assert!(!uses_forward_path_for(
             WriteMode::Dual,
             ExportDestination::ClickHouse
+        ));
+    }
+
+    #[test]
+    fn a_refused_relay_still_counts_when_the_native_pipeline_took_the_batch() {
+        let refused = false;
+        assert!(!batch_was_stored(
+            refused,
+            WriteMode::Forward,
+            ExportDestination::Tinybird
+        ));
+        assert!(batch_was_stored(
+            refused,
+            WriteMode::Dual,
+            ExportDestination::Tinybird
+        ));
+        assert!(batch_was_stored(
+            true,
+            WriteMode::Forward,
+            ExportDestination::Tinybird
         ));
     }
 
