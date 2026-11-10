@@ -24,6 +24,7 @@ pub(super) const SERVICE_NAME: &str = "ai-gateway";
 pub(super) const SERVICE_NAMESPACE: &str = "vercel";
 
 const COST_TOTAL: &str = "vercel.ai_gateway.cost.total";
+const COST_CURRENCY: &str = "vercel.ai_gateway.cost.currency";
 const COST: &str = "gen_ai.usage.cost";
 
 /// The request's own span; every other gateway span is a part of it.
@@ -31,20 +32,25 @@ pub(super) fn is_request(span: &Span) -> bool {
     span.kind == SpanKind::Server as i32
 }
 
-/// Restate the gateway's cost under the key the usage stamps read.
+/// Restate the gateway's cost under the key the usage stamps read. Usage cost
+/// is USD, so a cost in another currency (an absent one is USD) is left out.
 pub(super) fn normalize(span: &mut Span) {
     if span.attributes.iter().any(|attr| attr.key == COST) {
         return;
     }
-    let cost = span.attributes.iter().find_map(|attr| {
-        if attr.key != COST_TOTAL {
-            return None;
-        }
-        match attr.value.as_ref()?.value.as_ref()? {
-            any_value::Value::StringValue(text) if !text.is_empty() => Some(text.clone()),
-            _ => None,
-        }
-    });
+    let string = |key: &str| {
+        span.attributes.iter().find_map(|attr| {
+            if attr.key != key {
+                return None;
+            }
+            match attr.value.as_ref()?.value.as_ref()? {
+                any_value::Value::StringValue(text) if !text.is_empty() => Some(text.clone()),
+                _ => None,
+            }
+        })
+    };
+    let in_usd = string(COST_CURRENCY).is_none_or(|currency| currency == "USD");
+    let cost = string(COST_TOTAL).filter(|_| in_usd);
     if let Some(cost) = cost {
         span.attributes.push(KeyValue {
             key: COST.to_owned(),
@@ -250,6 +256,17 @@ mod tests {
             stamp(GATEWAY, "ai-gateway", trace)[0]["maple_ai.usage.cost"],
             "0.5"
         );
+    }
+
+    #[test]
+    fn a_cost_in_another_currency_is_not_usage_cost() {
+        let mut trace = failover_trace();
+        for attr in &mut trace[0].attributes {
+            if attr.key == "vercel.ai_gateway.cost.currency" {
+                *attr = text("vercel.ai_gateway.cost.currency", "EUR");
+            }
+        }
+        assert!(!stamp(GATEWAY, "ai-gateway", trace)[0].contains_key("maple_ai.usage.cost"));
     }
 
     #[test]
