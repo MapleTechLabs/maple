@@ -15,6 +15,7 @@ import { plainFrom, selfObservabilityEnv } from "@maple/infra/env"
 import * as Cloudflare from "@alchemy.run/cloudflare"
 import { Effect, Schema } from "effect"
 import { API_PROXY_PREFIX } from "./api-proxy.ts"
+import { ASSET_HEADER_RULES } from "./document-headers.ts"
 import { WORKER_FIRST_PATHS } from "./worker-first.ts"
 
 const encodeJson = Schema.encodeEffect(Schema.fromJsonString(Schema.Unknown))
@@ -34,9 +35,8 @@ const props = Effect.gen(function* () {
 			notFoundHandling: "single-page-application" as const,
 			// Or the SPA fallback answers the API proxy and the image routes with the shell.
 			runWorkerFirst: [...WORKER_FIRST_PATHS],
-			// Vite's content-hashed output never changes under a name. Served by the asset layer,
-			// not worker-first: the Worker is placed in one region, a hop that cost ~1s per cold load.
-			headers: "/assets/*\n  Cache-Control: public, max-age=31536000, immutable\n",
+			// App routes and hashed assets are served here, not worker-first, so their headers are too.
+			headers: ASSET_HEADER_RULES,
 		},
 		memo: { include: MEMO_INCLUDE, lockfile: true },
 		placement: resolveWorkerPlacement(region),

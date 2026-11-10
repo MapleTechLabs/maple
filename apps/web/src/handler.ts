@@ -5,33 +5,7 @@ import { OG_IMAGE_PREFIX, ogIdFromPath, shareTokenFromPath } from "./og/share-li
 import { CHART_KINDS, chartRequestFromPath, renderChartImage } from "./og/chart-image"
 import { fetchShareOgMeta, renderShareOgImage, shareOgMetaRewriter } from "./og/share-preview"
 import { apiTarget, type ApiTarget, type WebWorkerEnv } from "./worker-env"
-
-/**
- * Frame and referrer policy, applied to document responses.
- *
- * The app is a single-page bundle, so every route is the same index.html and
- * there is no per-route server render to hang a header on — the path is all
- * this layer knows. That is enough for the split that matters:
- *
- *   - Everything except `/share/` refuses framing outright. The authed app has
- *     no reason to be in anyone's iframe, and until now nothing said so.
- *   - `/share/` allows framing at the document level, because embedding a
- *     public chart is a feature. *Which* links may be framed is decided by the
- *     API (`embeddable` on the resolve response) and enforced by the page, which
- *     is the only layer that knows which token it is holding.
- *
- * `Referrer-Policy: no-referrer` is share-specific and load-bearing rather than
- * hygienic: the token is in the share URL, so without it every cross-origin
- * request the page makes hands the token to a third party in `Referer`. The API
- * deliberately keeps tokens out of its own URLs; this is the other half.
- */
-const SHARE_PATH_PREFIX = "/share/"
-
-const isShareDocument = (pathname: string): boolean =>
-	pathname === "/share" || Str.startsWith(SHARE_PATH_PREFIX)(pathname)
-
-/** Every document: no plugins, no `<base>` retargeting relative URLs. Keep in step with nginx.conf. */
-const BASE_CSP = "object-src 'none'; base-uri 'self'"
+import { APP_DOCUMENT_HEADERS, documentHeaders } from "./document-headers"
 
 /** HTML only. A script or stylesheet is not framed, and `frame-ancestors` on one means nothing. */
 const isHtmlResponse = (response: Response): boolean =>
@@ -46,15 +20,10 @@ const applyDocumentSecurityHeaders = (response: Response, pathname: string): Res
 	// would silently become a 200 with no headers at all.
 	const headers = new Headers(response.headers)
 
-	headers.set("X-Content-Type-Options", "nosniff")
-	if (isShareDocument(pathname)) {
-		headers.set("Referrer-Policy", "no-referrer")
-		headers.set("Content-Security-Policy", BASE_CSP)
-	} else {
-		headers.set("Referrer-Policy", "strict-origin-when-cross-origin")
-		headers.set("Content-Security-Policy", `${BASE_CSP}; frame-ancestors 'none'`)
-		headers.set("X-Frame-Options", "DENY")
-	}
+	// The asset this document came from may carry the app set (the shell fetched at "/"), so a
+	// header the path does not get is removed, not left: a share page must stay frameable.
+	Arr.forEach(APP_DOCUMENT_HEADERS, ([name]) => headers.delete(name))
+	Arr.forEach(documentHeaders(pathname), ([name, value]) => headers.set(name, value))
 
 	return new Response(response.body, {
 		status: response.status,

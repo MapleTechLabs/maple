@@ -136,6 +136,20 @@ describe("document security headers", () => {
 		})
 	})
 
+	it("a share document built from the app shell drops the shell's frame ban", async () => {
+		// The assets layer attaches the app set to the shell it serves at "/".
+		const shell = {
+			fetch: async () =>
+				new Response("<html></html>", {
+					headers: { "content-type": "text/html", "x-frame-options": "DENY" },
+				}),
+		}
+		const response = await handleRequest(new Request("https://app.maple.test/share/tok"), {
+			ASSETS: shell,
+		})
+		expect(response.headers.get("x-frame-options")).toBeNull()
+	})
+
 	it("share documents stay frameable and keep no-referrer", async () => {
 		expect(await headersFor("/share/tok")).toEqual({
 			csp: "object-src 'none'; base-uri 'self'",
@@ -191,10 +205,14 @@ describe("WORKER_FIRST_PATHS", () => {
 		expect(Arr.filter(paths, (path) => !routedToWorker(path))).toEqual([])
 	})
 
+	it("reaches the Worker for a share page, whose preview tags only it can inline", () => {
+		expect(routedToWorker("/share/tok_123")).toBe(true)
+	})
+
 	it("leaves app routes and hashed assets to the assets layer", () => {
 		expect(
 			Arr.filter(
-				["/", "/alerts", "/alerts/chart", "/share/tok_123", "/assets/index-abc.js", "/chat"],
+				["/", "/alerts", "/alerts/chart", "/share", "/assets/index-abc.js", "/chat"],
 				routedToWorker,
 			),
 		).toEqual([])
