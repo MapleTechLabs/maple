@@ -92,40 +92,56 @@ export const PROBE_SIGNATURES: ReadonlyArray<ProbeSignature> = [
 	{ token: "/wp-content/plugins/", category: "cms" },
 ]
 
+/** What a named scanning tool does, for its badge. */
+export type ScannerKind = "survey" | "vulnerability" | "fuzzer" | "agent"
+
+export const SCANNER_KIND_LABELS = {
+	survey: "Internet-wide survey scanner",
+	vulnerability: "Vulnerability scanner",
+	fuzzer: "Path fuzzer",
+	agent: "AI agent",
+} as const satisfies Record<ScannerKind, string>
+
 export interface ScannerAgent {
 	/** Matched case-insensitively anywhere in the user agent. */
 	readonly token: string
 	readonly name: string
+	readonly kind: ScannerKind
 	/** An autonomous attack agent: one request from it marks the source as an attack chain. */
 	readonly autonomous?: boolean
 }
 
 /** Scanning tools that name themselves. Generic clients (curl, python-requests) are left out. */
 export const SCANNER_AGENTS: ReadonlyArray<ScannerAgent> = [
-	{ token: "zgrab", name: "ZGrab" },
-	{ token: "masscan", name: "Masscan" },
-	{ token: "nuclei", name: "Nuclei" },
-	{ token: "sqlmap", name: "sqlmap" },
-	{ token: "nikto", name: "Nikto" },
-	{ token: "nmap", name: "Nmap" },
-	{ token: "gobuster", name: "Gobuster" },
-	{ token: "dirbuster", name: "DirBuster" },
-	{ token: "fuzz faster u fool", name: "ffuf" },
-	{ token: "wpscan", name: "WPScan" },
-	{ token: "whatweb", name: "WhatWeb" },
-	{ token: "acunetix", name: "Acunetix" },
-	{ token: "nessus", name: "Nessus" },
-	{ token: "censysinspect", name: "Censys" },
-	{ token: "palo alto networks", name: "Palo Alto Expanse" },
-	{ token: "l9explore", name: "LeakIX" },
-	{ token: "l9tcpid", name: "LeakIX" },
-	{ token: "modatscanner", name: "Modat" },
-	{ token: "internetmeasurement", name: "Driftnet" },
+	{ token: "zgrab", name: "ZGrab", kind: "survey" },
+	{ token: "masscan", name: "Masscan", kind: "survey" },
+	{ token: "nuclei", name: "Nuclei", kind: "vulnerability" },
+	{ token: "sqlmap", name: "sqlmap", kind: "vulnerability" },
+	{ token: "nikto", name: "Nikto", kind: "vulnerability" },
+	{ token: "nmap", name: "Nmap", kind: "survey" },
+	{ token: "gobuster", name: "Gobuster", kind: "fuzzer" },
+	{ token: "dirbuster", name: "DirBuster", kind: "fuzzer" },
+	{ token: "fuzz faster u fool", name: "ffuf", kind: "fuzzer" },
+	{ token: "wpscan", name: "WPScan", kind: "vulnerability" },
+	{ token: "whatweb", name: "WhatWeb", kind: "vulnerability" },
+	{ token: "acunetix", name: "Acunetix", kind: "vulnerability" },
+	{ token: "nessus", name: "Nessus", kind: "vulnerability" },
+	{ token: "censysinspect", name: "Censys", kind: "survey" },
+	{ token: "palo alto networks", name: "Palo Alto Expanse", kind: "survey" },
+	{ token: "l9explore", name: "LeakIX", kind: "survey" },
+	{ token: "l9tcpid", name: "LeakIX", kind: "survey" },
+	{ token: "modatscanner", name: "Modat", kind: "survey" },
+	{ token: "internetmeasurement", name: "Driftnet", kind: "survey" },
 	// ARTEX, an autonomous pentest agent. norma is the SDK behind its WebFetch tool, which benign
 	// LLM agents use too, so it names the client without marking a chain.
-	{ token: "artex-enrich", name: "ARTEX", autonomous: true },
-	{ token: "norma/", name: "norma agent SDK" },
+	{ token: "artex-enrich", name: "ARTEX", kind: "agent", autonomous: true },
+	{ token: "norma/", name: "norma agent SDK", kind: "agent" },
 ]
+
+const KIND_BY_NAME = new Map(Arr.map(SCANNER_AGENTS, (agent) => [agent.name, agent.kind]))
+
+/** The kind of a stored `Scanner` name, undefined for `''` or a name no longer in the catalog. */
+export const scannerKindOf = (name: string): ScannerKind | undefined => KIND_BY_NAME.get(name)
 
 const CATEGORY_BY_TOKEN = new Map(
 	Arr.map(PROBE_SIGNATURES, (signature) => [signature.token, signature.category]),

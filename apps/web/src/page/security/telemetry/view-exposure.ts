@@ -3,7 +3,7 @@ import { cn } from "@maple/ui/lib/utils"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { AppRoute, hrefOf } from "../../../route"
-import { badge } from "@maple/views/ui/display"
+import { type BadgeOptions, badge } from "@maple/views/ui/display"
 import {
 	empty,
 	emptyDescription,
@@ -13,7 +13,7 @@ import {
 	emptyTitle,
 } from "@maple/views/ui/empty"
 import { errorState } from "@maple/views/ui/error-state"
-import { icon } from "@maple/views/ui/icon"
+import { type IconName, icon } from "@maple/views/ui/icon"
 import { inlineCode } from "@maple/views/ui/inline-code"
 import { panel, panelHeader } from "@maple/views/ui/panel"
 import { statusDot } from "@maple/views/ui/status-dot"
@@ -42,7 +42,13 @@ import { dividedList } from "@maple/views/ui/rule"
 import { typography, typographyClass } from "@maple/views/ui/typography"
 import { hstack, vstack } from "@maple/views/ui/stack"
 import { Array as Arr } from "effect"
-import { ATTACK_STAGE_LABELS, attackChainReasons } from "@maple/domain/security-telemetry"
+import {
+	ATTACK_STAGE_LABELS,
+	SCANNER_KIND_LABELS,
+	type ScannerKind,
+	attackChainReasons,
+	scannerKindOf,
+} from "@maple/domain/security-telemetry"
 
 // The Exposure tab: probe paths a service answered, the week's totals, categories and sources.
 
@@ -345,6 +351,29 @@ const categoriesPanel = (h: H, rows: ReadonlyArray<CategoryRow>): Html =>
 		]),
 	])
 
+const SCANNER_KIND_LOOK = {
+	agent: { variant: "crit", icon: "FaceRobotIcon" },
+	vulnerability: { variant: "warn", icon: "CrosshairsIcon" },
+	fuzzer: { variant: "done", icon: "FolderSearchIcon" },
+	survey: { variant: "info", icon: "RadarIcon" },
+} as const satisfies Record<
+	ScannerKind,
+	{ readonly variant: NonNullable<BadgeOptions["variant"]>; readonly icon: IconName }
+>
+
+/** A named tool as a badge in its kind's tone and icon; an unnamed client as a quiet one. */
+const scannerBadge = (h: H, scanner: string): Html => {
+	const kind = scannerKindOf(scanner)
+	if (scanner === "" || kind === undefined) {
+		return badge(h, { variant: "meta" }, [scanner === "" ? "Unnamed" : scanner])
+	}
+	const look = SCANNER_KIND_LOOK[kind]
+	return badge(h, { variant: look.variant, attributes: [h.Title(SCANNER_KIND_LABELS[kind])] }, [
+		icon(h, look.icon),
+		scanner,
+	])
+}
+
 /** A red badge when the source ran an attack chain, over the stages or agent behind it, muted otherwise. */
 const behaviorCell = (h: H, source: Exposure["sources"][number]): Html => {
 	const reasons = attackChainReasons(source)
@@ -391,28 +420,18 @@ const sourcesPanel = (h: H, clock: Clock, sources: Exposure["sources"]): Html =>
 								h,
 								[
 									source.clientAddress,
-									// Phones drop the Tool column; its name rides here.
+									// Phones drop the Tool column; its badge rides here.
 									...(source.scanner === ""
 										? []
 										: [
-												typography(
-													h,
-													{
-														size: "xs",
-														tone: "muted",
-														className: "block sm:hidden",
-													},
-													[source.scanner],
-												),
+												hstack(h, { className: "pt-1 sm:hidden" }, [
+													scannerBadge(h, source.scanner),
+												]),
 											]),
 								],
 								typographyClass({ size: "xs", mono: true }),
 							),
-							tableCell(
-								h,
-								[source.scanner === "" ? "Unnamed" : source.scanner],
-								cn(source.scanner === "" ? "text-muted-foreground" : undefined, WIDE_COLUMN),
-							),
+							tableCell(h, [scannerBadge(h, source.scanner)], WIDE_COLUMN),
 							tableCell(h, [behaviorCell(h, source)]),
 							tableCell(
 								h,
