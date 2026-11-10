@@ -1,13 +1,18 @@
 import { describe, expect, it } from "@effect/vitest"
 import {
 	CurrentTenant,
+	type TenantContext,
 	ErrorDetailTracesResponse,
+	ErrorRateByServiceRequest,
+	ErrorRateByServiceResponse,
 	ErrorsByTypeResponse,
 	ErrorsSummaryResponse,
 	FingerprintHash,
 } from "@maple/domain/http"
+import { TinybirdDateTime } from "@maple/domain/query-engine"
 import { DateTime, Effect, Exit, Schema } from "effect"
-import { serveData } from "./serve-rows"
+import { Queries } from "@maple/backend/queries/registry"
+import { makeServeRows, serveData } from "./serve-rows"
 
 const TENANT = new CurrentTenant.TenantSchema({
 	orgId: "org_serve_rows" as CurrentTenant.TenantSchema["orgId"],
@@ -34,7 +39,8 @@ const run = <A, E>(effect: Effect.Effect<A, E, CurrentTenant.Context>) =>
 describe("serveData", () => {
 	it("answers with the rows as the response's data, timestamps as ISO strings", async () => {
 		const handler = serveData(
-			(_tenant, _payload: { readonly limit: number }) => Effect.succeed([errorRow("12345")]),
+			(_tenant: TenantContext, _payload: { readonly limit: number }) =>
+				Effect.succeed([errorRow("12345")]),
 			ErrorsByTypeResponse,
 		)
 		const exit = await run(handler({ payload: { limit: 1 } }))
@@ -43,8 +49,7 @@ describe("serveData", () => {
 				new ErrorsByTypeResponse({
 					data: [
 						{
-							fingerprintHash:
-								"12345" as ErrorsByTypeResponse["data"][number]["fingerprintHash"],
+							fingerprintHash: Schema.decodeSync(FingerprintHash)("12345"),
 							errorLabel: "TypeError",
 							sampleMessage: "boom",
 							count: 3,
@@ -60,7 +65,7 @@ describe("serveData", () => {
 
 	it("passes the tenant and payload to the read", async () => {
 		const seen: Array<string> = []
-		const handler = serveData((tenant, payload: { readonly id: string }) => {
+		const handler = serveData((tenant: TenantContext, payload: { readonly id: string }) => {
 			seen.push(`${tenant.orgId}:${payload.id}`)
 			return Effect.succeed(null)
 		}, ErrorsSummaryResponse)
@@ -88,5 +93,34 @@ describe("serveData", () => {
 		const handler = serveData(() => Effect.fail("warehouse down" as const), ErrorsByTypeResponse)
 		const exit = await run(handler({ payload: undefined }))
 		expect(exit).toStrictEqual(Exit.fail("warehouse down"))
+	})
+})
+
+describe("makeServeRows.checkedRows", () => {
+	const ran: Array<string> = []
+	const serve = makeServeRows(
+		(definition) => Effect.sync(() => ran.push(definition.id)).pipe(Effect.as([])),
+		() => Effect.succeed(null),
+	)
+	const handler = serve.checkedRows(
+		(payload) =>
+			payload.startTime < payload.endTime ? Effect.void : Effect.fail("empty window" as const),
+		Queries.errorRateByService,
+		ErrorRateByServiceResponse,
+	)
+	const window = (startTime: string, endTime: string) =>
+		new ErrorRateByServiceRequest({
+			startTime: Schema.decodeSync(TinybirdDateTime)(startTime),
+			endTime: Schema.decodeSync(TinybirdDateTime)(endTime),
+		})
+
+	it("does not read when the check refuses the payload", async () => {
+		ran.length = 0
+		const refused = await run(handler({ payload: window("2026-11-02 00:00:00", "2026-11-01 00:00:00") }))
+		expect(refused).toStrictEqual(Exit.fail("empty window"))
+		expect(ran).toStrictEqual([])
+		const served = await run(handler({ payload: window("2026-11-01 00:00:00", "2026-11-02 00:00:00") }))
+		expect(served).toStrictEqual(Exit.succeed(new ErrorRateByServiceResponse({ data: [] })))
+		expect(ran).toStrictEqual(["errorRateByService"])
 	})
 })

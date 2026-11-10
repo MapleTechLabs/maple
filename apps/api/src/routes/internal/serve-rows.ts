@@ -42,7 +42,7 @@ const encodeWire = Schema.encodeSync(WireValue)
  */
 export const serveData = <Payload, Data, S extends DataResponse, Err>(
 	read: (tenant: TenantContext, payload: Payload) => Effect.Effect<Data, Err>,
-	Response: Fits<WireOf<Data>, S> & S,
+	Response: NoInfer<Fits<WireOf<Data>, S>> & S,
 ) => {
 	const decode = Schema.decodeUnknownEffect<S>(Response)
 	return ({ payload }: { readonly payload: Payload }) =>
@@ -71,6 +71,16 @@ export const makeServeRows = <E, EF>(runQuery: Runner<E>, runQueryFirst: FirstRu
 	) =>
 		serveData<Payload, Row | null, S, EF>(
 			(tenant, payload) => runQueryFirst(definition, tenant, payload),
+			Response,
+		),
+	/** `rows`, after `check` accepts the payload; its failure is the response. */
+	checkedRows: <Payload, Row, S extends DataResponse, CE>(
+		check: (payload: Payload) => Effect.Effect<unknown, CE>,
+		definition: QueryDefinition<Payload, Row>,
+		Response: Fits<ReadonlyArray<WireOf<Row>>, S> & S,
+	) =>
+		serveData<Payload, ReadonlyArray<Row>, S, E | CE>(
+			(tenant, payload) => Effect.andThen(check(payload), runQuery(definition, tenant, payload)),
 			Response,
 		),
 })

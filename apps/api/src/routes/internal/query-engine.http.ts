@@ -317,16 +317,6 @@ const toReleaseTimelinePoint = (row: CH.ReleasesTimelineOutput) => ({
 	count: row.count,
 })
 
-const nodeCapacity = (row: CH.NodeCapacityOutput) => ({
-	cpuUsage: row.cpuUsage,
-	cpuAllocatable: row.cpuAllocatable,
-	cpuUtilization: row.cpuUtilization,
-	memoryUsage: row.memoryUsage,
-	memoryAllocatable: row.memoryAllocatable,
-	memoryUtilization: row.memoryUtilization,
-	uptime: row.uptime,
-})
-
 const toServiceWorkloadRow = (row: CH.ServiceWorkloadsOutput) => ({
 	serviceName: decodeServiceName(row.serviceName),
 	workloadKind: row.workloadKind,
@@ -499,21 +489,7 @@ export const HttpQueryEngineLive = HttpApiBuilder.group(MapleInternalApi, "query
 						})
 					}),
 				)
-				.handle("serviceApdex", ({ payload }) =>
-					Effect.gen(function* () {
-						const tenant = yield* CurrentTenant.Context
-						const rows = yield* runQuery(Queries.serviceApdex, tenant, payload)
-						return new ServiceApdexResponse({
-							data: Arr.map(rows, (row) => ({
-								bucket: DateTime.formatIso(row.bucket),
-								totalCount: row.totalCount,
-								satisfiedCount: row.satisfiedCount,
-								toleratingCount: row.toleratingCount,
-								apdexScore: row.apdexScore,
-							})),
-						})
-					}),
-				)
+				.handle("serviceApdex", serve.rows(Queries.serviceApdex, ServiceApdexResponse))
 				.handle("serviceCloudflareStats", ({ payload }) =>
 					Effect.gen(function* () {
 						const tenant = yield* CurrentTenant.Context
@@ -639,41 +615,17 @@ export const HttpQueryEngineLive = HttpApiBuilder.group(MapleInternalApi, "query
 						return new ServicePlanetScaleStatsResponse({ data })
 					}),
 				)
-				.handle("planetscaleInfraTimeseries", ({ payload }) =>
-					Effect.gen(function* () {
-						const tenant = yield* CurrentTenant.Context
-						const rows = yield* runQuery(Queries.planetscaleInfraTimeseries, tenant, payload)
-						return new PlanetScaleInfraTimeseriesResponse({
-							data: Arr.map(rows, (row) => ({
-								...row,
-								bucket: DateTime.formatIso(row.bucket),
-							})),
-						})
-					}),
+				.handle(
+					"planetscaleInfraTimeseries",
+					serve.rows(Queries.planetscaleInfraTimeseries, PlanetScaleInfraTimeseriesResponse),
 				)
-				.handle("railwayInfraServices", ({ payload }) =>
-					Effect.gen(function* () {
-						const tenant = yield* CurrentTenant.Context
-						const rows = yield* runQuery(Queries.railwayInfraServices, tenant, payload)
-						return new RailwayInfraRowsResponse({
-							data: Arr.map(rows, (row) => ({
-								...row,
-								lastSeen: DateTime.formatIso(row.lastSeen),
-							})),
-						})
-					}),
+				.handle(
+					"railwayInfraServices",
+					serve.rows(Queries.railwayInfraServices, RailwayInfraRowsResponse),
 				)
-				.handle("railwayInfraServiceTimeseries", ({ payload }) =>
-					Effect.gen(function* () {
-						const tenant = yield* CurrentTenant.Context
-						const rows = yield* runQuery(Queries.railwayInfraServiceTimeseries, tenant, payload)
-						return new RailwayInfraRowsResponse({
-							data: Arr.map(rows, (row) => ({
-								...row,
-								bucket: DateTime.formatIso(row.bucket),
-							})),
-						})
-					}),
+				.handle(
+					"railwayInfraServiceTimeseries",
+					serve.rows(Queries.railwayInfraServiceTimeseries, RailwayInfraRowsResponse),
 				)
 				// Gauges, CPU and the logs summary are three reads; a project with no CPU samples yet
 				// reads 0% CPU, one with logs but no metrics reads zero metrics.
@@ -778,41 +730,14 @@ export const HttpQueryEngineLive = HttpApiBuilder.group(MapleInternalApi, "query
 						})
 					}),
 				)
-				.handle("awsInfraMetrics", ({ payload }) =>
-					Effect.gen(function* () {
-						const tenant = yield* CurrentTenant.Context
-						const rows = yield* runQuery(Queries.awsInfraMetrics, tenant, payload)
-						return new AwsInfraMetricsResponse({
-							data: Arr.map(rows, (row) => ({
-								...row,
-								lastSeen: DateTime.formatIso(row.lastSeen),
-							})),
-						})
-					}),
+				.handle("awsInfraMetrics", serve.rows(Queries.awsInfraMetrics, AwsInfraMetricsResponse))
+				.handle(
+					"awsInfraSparklines",
+					serve.rows(Queries.awsInfraSparklines, AwsInfraSparklinesResponse),
 				)
-				.handle("awsInfraSparklines", ({ payload }) =>
-					Effect.gen(function* () {
-						const tenant = yield* CurrentTenant.Context
-						const rows = yield* runQuery(Queries.awsInfraSparklines, tenant, payload)
-						return new AwsInfraSparklinesResponse({
-							data: Arr.map(rows, (row) => ({
-								...row,
-								bucket: DateTime.formatIso(row.bucket),
-							})),
-						})
-					}),
-				)
-				.handle("awsInfraTimeseries", ({ payload }) =>
-					Effect.gen(function* () {
-						const tenant = yield* CurrentTenant.Context
-						const rows = yield* runQuery(Queries.awsInfraTimeseries, tenant, payload)
-						return new AwsInfraTimeseriesResponse({
-							data: Arr.map(rows, (row) => ({
-								...row,
-								bucket: DateTime.formatIso(row.bucket),
-							})),
-						})
-					}),
+				.handle(
+					"awsInfraTimeseries",
+					serve.rows(Queries.awsInfraTimeseries, AwsInfraTimeseriesResponse),
 				)
 				.handle("gcpInfraPresence", ({ payload }) =>
 					Effect.gen(function* () {
@@ -826,43 +751,18 @@ export const HttpQueryEngineLive = HttpApiBuilder.group(MapleInternalApi, "query
 						})
 					}),
 				)
-				.handle("gcpInfraMetrics", ({ payload }) =>
-					Effect.gen(function* () {
-						const tenant = yield* CurrentTenant.Context
-						const rows = yield* runQuery(Queries.gcpInfraMetrics, tenant, payload)
-						return new GcpInfraMetricsResponse({ data: rows })
-					}),
+				.handle("gcpInfraMetrics", serve.rows(Queries.gcpInfraMetrics, GcpInfraMetricsResponse))
+				.handle(
+					"gcpInfraTimeseries",
+					serve.rows(Queries.gcpInfraTimeseries, GcpInfraTimeseriesResponse),
 				)
-				.handle("gcpInfraTimeseries", ({ payload }) =>
-					Effect.gen(function* () {
-						const tenant = yield* CurrentTenant.Context
-						const rows = yield* runQuery(Queries.gcpInfraTimeseries, tenant, payload)
-						return new GcpInfraTimeseriesResponse({
-							data: Arr.map(rows, (row) => ({
-								...row,
-								bucket: DateTime.formatIso(row.bucket),
-							})),
-						})
-					}),
+				.handle(
+					"gcpInfraSparklines",
+					serve.rows(Queries.gcpInfraSparklines, GcpInfraSparklinesResponse),
 				)
-				.handle("gcpInfraSparklines", ({ payload }) =>
-					Effect.gen(function* () {
-						const tenant = yield* CurrentTenant.Context
-						const rows = yield* runQuery(Queries.gcpInfraSparklines, tenant, payload)
-						return new GcpInfraSparklinesResponse({
-							data: Arr.map(rows, (row) => ({
-								...row,
-								bucket: DateTime.formatIso(row.bucket),
-							})),
-						})
-					}),
-				)
-				.handle("gcpCloudSqlTopQueries", ({ payload }) =>
-					Effect.gen(function* () {
-						const tenant = yield* CurrentTenant.Context
-						const rows = yield* runQuery(Queries.gcpCloudSqlTopQueries, tenant, payload)
-						return new GcpCloudSqlTopQueriesResponse({ data: rows })
-					}),
+				.handle(
+					"gcpCloudSqlTopQueries",
+					serve.rows(Queries.gcpCloudSqlTopQueries, GcpCloudSqlTopQueriesResponse),
 				)
 				.handle("gcpCloudSqlDatabases", ({ payload }) =>
 					Effect.gen(function* () {
@@ -873,17 +773,9 @@ export const HttpQueryEngineLive = HttpApiBuilder.group(MapleInternalApi, "query
 						})
 					}),
 				)
-				.handle("gcpCloudSqlStatementSpans", ({ payload }) =>
-					Effect.gen(function* () {
-						const tenant = yield* CurrentTenant.Context
-						const rows = yield* runQuery(Queries.gcpCloudSqlStatementSpans, tenant, payload)
-						return new GcpCloudSqlStatementSpansResponse({
-							data: Arr.map(rows, (row) => ({
-								...row,
-								timestamp: DateTime.formatIso(row.timestamp),
-							})),
-						})
-					}),
+				.handle(
+					"gcpCloudSqlStatementSpans",
+					serve.rows(Queries.gcpCloudSqlStatementSpans, GcpCloudSqlStatementSpansResponse),
 				)
 				.handle("cloudflareInfraZones", ({ payload }) =>
 					Effect.gen(function* () {
@@ -1486,13 +1378,7 @@ export const HttpQueryEngineLive = HttpApiBuilder.group(MapleInternalApi, "query
 						})
 					}),
 				)
-				.handle("serviceUsage", ({ payload }) =>
-					Effect.gen(function* () {
-						const tenant = yield* CurrentTenant.Context
-						const rows = yield* runQuery(Queries.serviceUsage, tenant, payload)
-						return new ServiceUsageResponse({ data: rows })
-					}),
-				)
+				.handle("serviceUsage", serve.rows(Queries.serviceUsage, ServiceUsageResponse))
 				.handle("serviceOperations", ({ payload }) =>
 					Effect.gen(function* () {
 						const tenant = yield* CurrentTenant.Context
@@ -1669,40 +1555,10 @@ export const HttpQueryEngineLive = HttpApiBuilder.group(MapleInternalApi, "query
 						return new ServiceEndpointDetailResponse(data)
 					}),
 				)
-				.handle("listLogs", ({ payload }) =>
-					Effect.gen(function* () {
-						const tenant = yield* CurrentTenant.Context
-						const rows = yield* runQuery(Queries.listLogs, tenant, payload)
-						return new ListLogsResponse({ data: rows })
-					}),
-				)
-				.handle("getLog", ({ payload }) =>
-					Effect.gen(function* () {
-						const tenant = yield* CurrentTenant.Context
-						const rows = yield* runQuery(Queries.getLog, tenant, payload)
-						return new GetLogResponse({ data: rows })
-					}),
-				)
-				.handle("listMetrics", ({ payload }) =>
-					Effect.gen(function* () {
-						const tenant = yield* CurrentTenant.Context
-						const rows = yield* runQuery(Queries.listMetrics, tenant, payload)
-						return new ListMetricsResponse({ data: rows })
-					}),
-				)
-				.handle("metricsSummary", ({ payload }) =>
-					Effect.gen(function* () {
-						const tenant = yield* CurrentTenant.Context
-						const rows = yield* runQuery(Queries.metricsSummary, tenant, payload)
-						return new MetricsSummaryResponse({
-							data: Arr.map(rows, (row) => ({
-								metricType: row.metricType,
-								metricCount: row.metricCount,
-								dataPointCount: row.dataPointCount,
-							})),
-						})
-					}),
-				)
+				.handle("listLogs", serve.rows(Queries.listLogs, ListLogsResponse))
+				.handle("getLog", serve.rows(Queries.getLog, GetLogResponse))
+				.handle("listMetrics", serve.rows(Queries.listMetrics, ListMetricsResponse))
+				.handle("metricsSummary", serve.rows(Queries.metricsSummary, MetricsSummaryResponse))
 				.handle("infraPresence", ({ payload }) =>
 					Effect.gen(function* () {
 						const tenant = yield* CurrentTenant.Context
@@ -1716,48 +1572,10 @@ export const HttpQueryEngineLive = HttpApiBuilder.group(MapleInternalApi, "query
 						})
 					}),
 				)
-				.handle("listHosts", ({ payload }) =>
-					Effect.gen(function* () {
-						const tenant = yield* CurrentTenant.Context
-						const rows = yield* runQuery(Queries.listHosts, tenant, payload)
-						return new ListHostsResponse({
-							data: Arr.map(rows, (row) => ({
-								hostName: row.hostName,
-								osType: row.osType,
-								hostArch: row.hostArch,
-								cloudProvider: row.cloudProvider,
-								lastSeen: DateTime.formatIso(row.lastSeen),
-								cpuPct: row.cpuPct,
-								memoryPct: row.memoryPct,
-								diskPct: row.diskPct,
-								load15: row.load15,
-							})),
-						})
-					}),
-				)
-				.handle("hostDetailSummary", ({ payload }) =>
-					Effect.gen(function* () {
-						const tenant = yield* CurrentTenant.Context
-						const row = yield* runQueryFirst(Queries.hostDetailSummary, tenant, payload)
-						return new HostDetailSummaryResponse({
-							data: row
-								? {
-										hostName: row.hostName,
-										osType: row.osType,
-										hostArch: row.hostArch,
-										cloudProvider: row.cloudProvider,
-										cloudRegion: row.cloudRegion,
-										sourceId: row.sourceId,
-										firstSeen: DateTime.formatIso(row.firstSeen),
-										lastSeen: DateTime.formatIso(row.lastSeen),
-										cpuPct: row.cpuPct,
-										memoryPct: row.memoryPct,
-										diskPct: row.diskPct,
-										load15: row.load15,
-									}
-								: null,
-						})
-					}),
+				.handle("listHosts", serve.rows(Queries.listHosts, ListHostsResponse))
+				.handle(
+					"hostDetailSummary",
+					serve.first(Queries.hostDetailSummary, HostDetailSummaryResponse),
 				)
 				.handle("hostInfraTimeseries", ({ payload }) =>
 					Effect.gen(function* () {
@@ -1891,22 +1709,7 @@ export const HttpQueryEngineLive = HttpApiBuilder.group(MapleInternalApi, "query
 						})
 					}),
 				)
-				.handle("podRestarts", ({ payload }) =>
-					Effect.gen(function* () {
-						const tenant = yield* CurrentTenant.Context
-						const rows = yield* runQuery(Queries.podRestarts, tenant, payload)
-						return new PodRestartsResponse({
-							data: Arr.map(rows, (row) => ({
-								podName: row.podName,
-								namespace: row.namespace,
-								containerName: row.containerName,
-								restarts: row.restarts,
-								totalRestarts: row.totalRestarts,
-								lastTerminatedReason: row.lastTerminatedReason,
-							})),
-						})
-					}),
-				)
+				.handle("podRestarts", serve.rows(Queries.podRestarts, PodRestartsResponse))
 				.handle("podInfraTimeseries", ({ payload }) =>
 					Effect.gen(function* () {
 						const tenant = yield* CurrentTenant.Context
@@ -2084,42 +1887,10 @@ export const HttpQueryEngineLive = HttpApiBuilder.group(MapleInternalApi, "query
 						return new ContainerFacetsResponse({ data: buckets })
 					}),
 				)
-				.handle("listNodes", ({ payload }) =>
-					Effect.gen(function* () {
-						const tenant = yield* CurrentTenant.Context
-						const rows = yield* runQuery(Queries.listNodes, tenant, payload)
-						return new ListNodesResponse({
-							data: Arr.map(rows, (row) => ({
-								nodeName: row.nodeName,
-								nodeUid: row.nodeUid,
-								clusterName: row.clusterName,
-								environment: row.environment,
-								kubeletVersion: row.kubeletVersion,
-								lastSeen: DateTime.formatIso(row.lastSeen),
-								...nodeCapacity(row),
-							})),
-						})
-					}),
-				)
-				.handle("nodeDetailSummary", ({ payload }) =>
-					Effect.gen(function* () {
-						const tenant = yield* CurrentTenant.Context
-						const row = yield* runQueryFirst(Queries.nodeDetailSummary, tenant, payload)
-						return new NodeDetailSummaryResponse({
-							data: row
-								? {
-										nodeName: row.nodeName,
-										nodeUid: row.nodeUid,
-										kubeletVersion: row.kubeletVersion,
-										containerRuntime: row.containerRuntime,
-										sourceId: row.sourceId,
-										firstSeen: DateTime.formatIso(row.firstSeen),
-										lastSeen: DateTime.formatIso(row.lastSeen),
-										...nodeCapacity(row),
-									}
-								: null,
-						})
-					}),
+				.handle("listNodes", serve.rows(Queries.listNodes, ListNodesResponse))
+				.handle(
+					"nodeDetailSummary",
+					serve.first(Queries.nodeDetailSummary, NodeDetailSummaryResponse),
 				)
 				.handle("nodeInfraTimeseries", ({ payload }) =>
 					Effect.gen(function* () {
@@ -2679,133 +2450,62 @@ export const HttpQueryEngineLive = HttpApiBuilder.group(MapleInternalApi, "query
 				// Funnels have no raw-`session_events` fallback: server and mobile
 				// events exist only in `product_events`, so a cluster without the table
 				// surfaces the missing-table error instead of a silently smaller funnel.
-				.handle("productEventsFunnel", ({ payload }) =>
-					Effect.gen(function* () {
-						const tenant = yield* CurrentTenant.Context
-						yield* validateFunnelDefinition(productEventsFunnelOpts(payload))
-						const rows = yield* runQuery(Queries.productEventsFunnel, tenant, payload)
-						return new ProductEventsFunnelResponse({
-							data: Arr.map(rows, (row) => ({
-								step: row.step,
-								count: row.count,
-							})),
-						})
-					}),
+				.handle(
+					"productEventsFunnel",
+					serve.checkedRows(
+						(payload) => validateFunnelDefinition(productEventsFunnelOpts(payload)),
+						Queries.productEventsFunnel,
+						ProductEventsFunnelResponse,
+					),
 				)
-				.handle("productEventsFunnelBreakdown", ({ payload }) =>
-					Effect.gen(function* () {
-						const tenant = yield* CurrentTenant.Context
+				.handle(
+					"productEventsFunnelBreakdown",
+					serve.checkedRows(
 						// The breakdown builder, not the plain one: `limit` is validated
 						// only there, and an unvalidated one throws inside `compile`.
-						yield* validateFunnelDefinition({
-							...productEventsFunnelOpts(payload),
-							breakdownBy: payload.breakdownBy,
-							limit: payload.limit,
-						})
-						const rows = yield* runQuery(Queries.productEventsFunnelBreakdown, tenant, payload)
-						return new ProductEventsFunnelBreakdownResponse({
-							data: Arr.map(rows, (row) => ({
-								group: row.group,
-								step: row.step,
-								count: row.count,
-							})),
-						})
-					}),
+						(payload) =>
+							validateFunnelDefinition({
+								...productEventsFunnelOpts(payload),
+								breakdownBy: payload.breakdownBy,
+								limit: payload.limit,
+							}),
+						Queries.productEventsFunnelBreakdown,
+						ProductEventsFunnelBreakdownResponse,
+					),
 				)
-				.handle("productEventsFunnelTiming", ({ payload }) =>
-					Effect.gen(function* () {
-						const tenant = yield* CurrentTenant.Context
-						yield* validateFunnelDefinition(productEventsFunnelOpts(payload), "details")
-						const rows = yield* runQuery(Queries.productEventsFunnelTiming, tenant, payload)
-						return new ProductEventsFunnelTimingResponse({
-							data: Arr.map(rows, (row) => ({
-								step: row.step,
-								p50Ms: row.p50Ms,
-								p90Ms: row.p90Ms,
-							})),
-						})
-					}),
+				.handle(
+					"productEventsFunnelTiming",
+					serve.checkedRows(
+						(payload) => validateFunnelDefinition(productEventsFunnelOpts(payload), "details"),
+						Queries.productEventsFunnelTiming,
+						ProductEventsFunnelTimingResponse,
+					),
 				)
-				.handle("productEventsFunnelLeavers", ({ payload }) =>
-					Effect.gen(function* () {
-						const tenant = yield* CurrentTenant.Context
-						yield* validateFunnelDefinition(productEventsFunnelOpts(payload), "details")
-						const rows = yield* runQuery(Queries.productEventsFunnelLeavers, tenant, payload)
-						return new ProductEventsFunnelLeaversResponse({
-							data: Arr.map(rows, (row) => ({
-								step: row.step,
-								next: row.next,
-								count: row.count,
-							})),
-						})
-					}),
+				.handle(
+					"productEventsFunnelLeavers",
+					serve.checkedRows(
+						(payload) => validateFunnelDefinition(productEventsFunnelOpts(payload), "details"),
+						Queries.productEventsFunnelLeavers,
+						ProductEventsFunnelLeaversResponse,
+					),
 				)
-				.handle("productEventsPaths", ({ payload }) =>
-					Effect.gen(function* () {
-						const tenant = yield* CurrentTenant.Context
-						yield* validatePathsDefinition(productEventsPathsOpts(payload))
-						const rows = yield* runQuery(Queries.productEventsPaths, tenant, payload)
-						return new ProductEventsPathsResponse({
-							data: Arr.map(rows, (row) => ({
-								hop: row.hop,
-								fromNode: row.fromNode,
-								toNode: row.toNode,
-								count: row.count,
-							})),
-						})
-					}),
+				.handle(
+					"productEventsPaths",
+					serve.checkedRows(
+						(payload) => validatePathsDefinition(productEventsPathsOpts(payload)),
+						Queries.productEventsPaths,
+						ProductEventsPathsResponse,
+					),
 				)
-				.handle("productEventNames", ({ payload }) =>
-					Effect.gen(function* () {
-						const tenant = yield* CurrentTenant.Context
-						const rows = yield* runQuery(Queries.productEventNames, tenant, payload)
-						return new ProductEventNamesResponse({
-							data: Arr.map(rows, (row) => ({
-								eventName: row.eventName,
-								kind: row.kind,
-								count: row.count,
-								sessions: row.sessions,
-								persons: row.persons,
-							})),
-						})
-					}),
-				)
+				.handle("productEventNames", serve.rows(Queries.productEventNames, ProductEventNamesResponse))
 				// Both directions of the trace ↔ product-event link.
-				.handle("productEventsForTrace", ({ payload }) =>
-					Effect.gen(function* () {
-						const tenant = yield* CurrentTenant.Context
-						const rows = yield* runQuery(Queries.productEventsForTrace, tenant, payload)
-						return new ProductEventsForTraceResponse({
-							data: Arr.map(rows, (row) => ({
-								timestamp: DateTime.formatIso(row.timestamp),
-								eventName: row.eventName,
-								spanId: row.spanId,
-								serviceName: row.serviceName,
-								userId: row.userId,
-								groupId: row.groupId,
-								visitorId: row.visitorId,
-								sessionId: row.sessionId,
-								// Already decoded as Record<string, string> by the derived row schema.
-								attributes: row.attributes,
-							})),
-						})
-					}),
+				.handle(
+					"productEventsForTrace",
+					serve.rows(Queries.productEventsForTrace, ProductEventsForTraceResponse),
 				)
-				.handle("productEventTraceSamples", ({ payload }) =>
-					Effect.gen(function* () {
-						const tenant = yield* CurrentTenant.Context
-						const rows = yield* runQuery(Queries.productEventTraceSamples, tenant, payload)
-						return new ProductEventTraceSamplesResponse({
-							data: Arr.map(rows, (row) => ({
-								traceId: row.traceId,
-								spanId: row.spanId,
-								timestamp: DateTime.formatIso(row.timestamp),
-								serviceName: row.serviceName,
-								userId: row.userId,
-								visitorId: row.visitorId,
-							})),
-						})
-					}),
+				.handle(
+					"productEventTraceSamples",
+					serve.rows(Queries.productEventTraceSamples, ProductEventTraceSamplesResponse),
 				)
 				.handle("executeRawSql", ({ payload }) =>
 					Effect.gen(function* () {
