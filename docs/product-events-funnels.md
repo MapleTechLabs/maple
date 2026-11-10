@@ -391,7 +391,8 @@ lookup.
 
 ### Rollout
 
-1. **Managed**: `bun run tinybird:deploy start`, then `promote`, creates `product_events_traces_mv` and
+1. **Managed**: `bun run tinybird:deploy start`, then `promote` once `status` shows it ready,
+   creates `product_events_traces_mv` and
    adds the two columns, then an explicit `tb` populate from `traces` (bounded by its 30-day TTL).
    Blocked on the same manual step the rest of this document's checklist is (see the
    `project_product_events_tinybird_rollout_pending` note).
