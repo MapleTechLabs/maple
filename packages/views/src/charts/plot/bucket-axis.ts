@@ -92,8 +92,6 @@ export function makeBucketAxis(bucketIsos: ReadonlyArray<string>, timeZone?: str
 	}
 }
 
-export type BucketAxis = ReturnType<typeof makeBucketAxis>
-
 /**
  * A time x axis pinned to `[start, end]` epoch ms instead of the drawn buckets'
  * extent, for charts stacked over one window that must put an instant at one x.

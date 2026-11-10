@@ -37,18 +37,6 @@ export interface TimelineState {
 	expandedSpanIds: Set<string>
 }
 
-export type TimelineAction =
-	| { type: "RESET"; state: TimelineState }
-	| { type: "SET_FOCUSED_INDEX"; index: number | null }
-	| { type: "FOCUS_NEXT"; maxIndex: number }
-	| { type: "FOCUS_PREV" }
-	| { type: "SET_SEARCH"; query: string }
-	/** Toggle one span; with `descendantIds` the whole subtree follows the node's new state. */
-	| { type: "TOGGLE_COLLAPSE"; spanId: string; descendantIds?: readonly string[] }
-	| { type: "EXPAND_ALL"; spanIds: string[] }
-	| { type: "COLLAPSE_ALL" }
-	| { type: "SET_EXPANDED"; spanIds: Set<string> }
-
 export const ROW_HEIGHT = 28
 export const ROW_GAP = 1
 export const MINIMAP_HEIGHT = 36
@@ -59,8 +47,6 @@ export const OVERSCAN = 20
 export const MIN_VISIBLE_ABS_MS = 0.1
 /** Default view shows at most this much time; longer traces open zoomed to the start. */
 export const DEFAULT_MAX_WINDOW_MS = 10_000
-/** Movement (px) before a pointer-drag on the timeline is treated as a zoom marquee, not a click. */
-export const DRAG_ZOOM_THRESHOLD_PX = 4
 export const SIDEBAR_WIDTH_DEFAULT = 320
 export const SIDEBAR_WIDTH_MIN = 180
 export const SIDEBAR_WIDTH_MAX = 640
@@ -77,12 +63,3 @@ export const SIDEBAR_WIDTH_NARROW_MIN = 140
  * panel and never thin out to two on a wide one.
  */
 export const MIN_TICK_PX = 56
-
-/** Grab radius (px) on each edge of the minimap's viewport rect. */
-export const HANDLE_HIT_AREA = 8
-/**
- * Narrowest window the minimap will produce, as a fraction of the trace. Paired with the
- * chart's own `MIN_VISIBLE_ABS_MS` floor: a resize that undershoots this would be silently
- * widened by `clampViewport`, which reads as the handle fighting the cursor.
- */
-export const MIN_RANGE_FRAC = 0.002
