@@ -1,27 +1,38 @@
-import type { AlertEvaluationErrorKind } from "@maple/domain/http"
-import { Predicate } from "effect"
+import {
+	type AlertEvaluationErrorKind,
+	AlertRuleStoredConfigInvalidError,
+	AlertValidationError,
+	QueryEngineTimeoutError,
+	QueryEngineValidationError,
+	RawSqlValidationError,
+	WarehouseAuthError,
+	WarehouseQuotaExceededError,
+	WarehouseUpstreamError,
+} from "@maple/domain/http"
+import { Schema, Array as Arr } from "effect"
+
+export const isWarehouseQuotaExceeded = Schema.is(WarehouseQuotaExceededError)
+/** A failure that carries the warehouse's own HTTP status. */
+export const hasUpstreamStatus = (error: unknown): error is WarehouseUpstreamError | WarehouseAuthError =>
+	Schema.is(WarehouseUpstreamError)(error) || Schema.is(WarehouseAuthError)(error)
+export const isQueryEngineTimeout = Schema.is(QueryEngineTimeoutError)
 
 // Errors that mean the rule's query itself is wrong, so the author has to change it.
-const INVALID_QUERY_TAGS: ReadonlySet<string> = new Set([
-	"@maple/http/errors/AlertValidationError",
-	"@maple/http/errors/AlertRuleStoredConfigInvalidError",
-	"@maple/http/errors/QueryEngineValidationError",
-	"@maple/http/errors/RawSqlValidationError",
-])
+const INVALID_QUERY = [
+	Schema.is(AlertValidationError),
+	Schema.is(AlertRuleStoredConfigInvalidError),
+	Schema.is(QueryEngineValidationError),
+	Schema.is(RawSqlValidationError),
+]
 
 /** Why a check failed, from the error that failed it. */
 export const evaluationErrorKind = (error: unknown): AlertEvaluationErrorKind => {
 	// `max_threads` is fixed at every interval, so only time and memory count.
-	if (Predicate.isTagged(error, "@maple/http/errors/WarehouseQuotaExceededError")) {
-		const setting = Predicate.hasProperty(error, "setting") ? error.setting : undefined
-		if (setting === "max_execution_time") return "query_too_slow"
-		if (setting === "max_memory_usage") return "query_too_much_memory"
+	if (isWarehouseQuotaExceeded(error)) {
+		if (error.setting === "max_execution_time") return "query_too_slow"
+		if (error.setting === "max_memory_usage") return "query_too_much_memory"
 	}
-	return Predicate.hasProperty(error, "_tag") &&
-		typeof error._tag === "string" &&
-		INVALID_QUERY_TAGS.has(error._tag)
-		? "invalid_query"
-		: "other"
+	return Arr.some(INVALID_QUERY, (is) => is(error)) ? "invalid_query" : "other"
 }
 
 /** The query ran out of time or memory: a longer interval buys it a larger limit. */

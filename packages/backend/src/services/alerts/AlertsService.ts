@@ -137,7 +137,10 @@ import {
 import { simulateFiringSpans } from "./alert-firing-spans"
 import {
 	evaluationErrorKind,
+	hasUpstreamStatus,
+	isQueryEngineTimeout,
 	isQueryLimitFailure,
+	isWarehouseQuotaExceeded,
 	SLOWDOWN_AFTER_LIMIT_FAILURES,
 } from "./alert-evaluation-errors"
 import { InvestigationStarter } from "@maple/backend/services/errors/InvestigationStarter"
@@ -1988,7 +1991,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 							onNone: () => "other" as const,
 							// The engine's own 30s ceiling is a query that did not finish either.
 							onSome: (error) =>
-								error._tag === "@maple/http/errors/QueryEngineTimeoutError"
+								isQueryEngineTimeout(error)
 									? ("query_too_slow" as const)
 									: evaluationErrorKind(error),
 						})
@@ -5786,15 +5789,12 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 											"pipeName" in error
 												? {
 														pipe: error.pipeName,
-														...(error._tag ===
-														"@maple/http/errors/WarehouseQuotaExceededError"
+														...(isWarehouseQuotaExceeded(error)
 															? {
 																	quotaSetting: error.setting,
 																}
 															: undefined),
-														...(error._tag ===
-															"@maple/http/errors/WarehouseUpstreamError" ||
-														error._tag === "@maple/http/errors/WarehouseAuthError"
+														...(hasUpstreamStatus(error)
 															? {
 																	upstreamStatus: error.upstreamStatus,
 																}
