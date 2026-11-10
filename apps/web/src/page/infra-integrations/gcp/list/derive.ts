@@ -1,4 +1,4 @@
-import { gcpCloudSqlInstances } from "../../../../components/infra/gcp/inventory"
+import { gcpCloudSqlInstances } from "../inventory"
 import {
 	gcpListRows,
 	gcpListScope,
@@ -7,22 +7,16 @@ import {
 	gcpWindowSeconds,
 	gcpSparks,
 	NO_GCP_SPARKS,
-} from "../../../../components/infra/gcp/list-model"
-import { gcpInfraNotice, gcpInfraSetupPending, type GcpView } from "../../../../components/infra/gcp/tabs"
-import { gcpMetricsState } from "../../../../components/integrations/gcp-connector-state"
-import { Option, Array as Arr } from "effect"
-import { AsyncData } from "foldkit"
+} from "../list-model"
+import { gcpInfraNotice, gcpInfraSetupPending, type GcpView } from "../tabs"
+import { gcpMetricsState } from "../connector-state"
+import { Array as Arr } from "effect"
 import type { TimeWindow } from "../../../../data/time-range"
 import type { FleetRead, GcpStatus, Resources } from "../data"
 import type { Model } from "./model"
+import { successOf } from "../../kit/success-of"
 
 // The page's derivations over its reads (`GcpPage`, `GcpInfra` and `GcpListPage`).
-
-/** `Result.builder(...).onSuccess(...).orElse(...)`: a settled success, refreshing included. */
-export const successOf = <A, E>(data: AsyncData.AsyncData<A, E>): A | null =>
-	AsyncData.isSuccess(data) || AsyncData.isRefreshing(data)
-		? Option.getOrNull(AsyncData.getData(data))
-		: null
 
 export const statusOf = (model: Model): GcpStatus | null => successOf(model.status.data)
 

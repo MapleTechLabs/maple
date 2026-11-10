@@ -93,24 +93,24 @@ export const activeTabOf = (model: Model): SettingsTab =>
 
 // TABS
 
-const TAB_TAGS = new Map<SettingsTab, TabModel["_tag"]>([
-	["mcp", "Mcp"],
-	["keys", "Keys"],
-	["ingestion", "Ingestion"],
-	["setup-health", "SetupHealth"],
-	["ai", "Ai"],
-	["automation", "Automation"],
-	["audit-log", "AuditLog"],
-	["data-platform", "DataPlatform"],
-	["data-sources", "DataSources"],
-	["general", "General"],
-	["members", "Members"],
-	["billing", "Billing"],
-])
-const tabTag = (tab: SettingsTab): TabModel["_tag"] => TAB_TAGS.get(tab) ?? "Unported"
+const TAB_TAGS = {
+	mcp: "Mcp",
+	keys: "Keys",
+	ingestion: "Ingestion",
+	"setup-health": "SetupHealth",
+	ai: "Ai",
+	automation: "Automation",
+	"audit-log": "AuditLog",
+	"data-platform": "DataPlatform",
+	"data-sources": "DataSources",
+	general: "General",
+	members: "Members",
+	billing: "Billing",
+} as const satisfies Record<SettingsTab, TabModel["_tag"]>
+const tabTag = (tab: SettingsTab): TabModel["_tag"] => TAB_TAGS[tab]
 
 const isTabCurrent = (current: TabModel | null, tab: SettingsTab): boolean =>
-	current !== null && current._tag === tabTag(tab) && (current._tag !== "Unported" || current.tab === tab)
+	current !== null && current._tag === tabTag(tab)
 
 type TabOf<T extends TabModel["_tag"]> = Extract<TabModel, { readonly _tag: T }>
 
@@ -131,7 +131,7 @@ const putTab = (model: Model, tab: TabModel): Model =>
 
 /** Closes the open tab, keeping its state for a return. */
 const leaveTab = (model: Model): Model =>
-	model.tab === null || model.tab._tag === "Unported"
+	model.tab === null
 		? { ...model, tab: null }
 		: {
 				...model,
@@ -291,8 +291,6 @@ const initTab = (model: Model, tab: SettingsTab, context: PageContext): Return =
 				),
 			}
 		}
-		case "Unported":
-			return { model: { ...model, tab: { _tag: "Unported", tab } } }
 	}
 }
 
@@ -413,8 +411,6 @@ const revisitTab = (model: Model, kept: TabModel, context: PageContext): Return 
 				),
 			}
 		}
-		case "Unported":
-			return { model: { ...model, tab: kept } }
 	}
 }
 

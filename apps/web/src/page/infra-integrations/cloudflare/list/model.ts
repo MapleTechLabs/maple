@@ -1,17 +1,12 @@
 import { ChartEnvMessages, ChartEnvFields } from "@maple/views/charts/chart-env"
 import { RequestMode } from "@maple/views/data/keyed"
-import {
-	CLOUDFLARE_VIEWS,
-	WORKER_SCOPES,
-	ZONE_SCOPES,
-} from "../../../../components/infra/cloudflare/list-model"
+import { CLOUDFLARE_VIEWS, WORKER_SCOPES, ZONE_SCOPES, InfraCloudflareSearch } from "../../../../route/search"
 import { Schema } from "effect"
 import { defineMessageUnion } from "foldkit/message"
 import * as Chart from "@maple/views/charts/chart"
 import { KeyedSchema } from "@maple/views/data/keyed"
 import { LoadFailure } from "@maple/views/data/load-failure"
 import { TimeWindow } from "../../../../data/time-range"
-import { InfraCloudflareSearch } from "../../../../route/search"
 import * as Menu from "@maple/views/ui/menu"
 import * as TimeRangePicker from "../../../kit/time-range-picker"
 import { sortStateOf } from "../../../kit/table-sort"

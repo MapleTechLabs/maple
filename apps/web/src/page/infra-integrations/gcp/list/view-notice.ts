@@ -1,4 +1,4 @@
-import type { GcpInfraNotice } from "../../../../components/infra/gcp/tabs"
+import type { GcpInfraNotice } from "../tabs"
 import type { Html } from "foldkit/html"
 import { AppRoute, hrefOf } from "../../../../route"
 import { alert, alertAction, alertDescription, alertTitle } from "@maple/views/ui/alert"

@@ -57,9 +57,17 @@ import { ConnectProvider } from "./connect"
 import { OAuthReturnOutcome } from "./oauth-return"
 import { FleetRead } from "../infra-integrations/gcp/data"
 import { SupabaseProjectRow } from "../infra-integrations/supabase/model"
-import { Capability, GcpFlags, SetupMethod } from "./gcp-configure-schema"
-import { ConfigureTarget, LogVolume, RemovedConnector } from "./gcp-schema"
-import { AwsRemovedStack, AwsSetupMethod, AwsSetupPart } from "./aws-schema"
+import { Capability, GcpFlags, SetupMethod } from "../infra-integrations/gcp/integration/gcp-configure-schema"
+import {
+	ConfigureTarget,
+	LogVolume,
+	RemovedConnector,
+} from "../infra-integrations/gcp/integration/gcp-schema"
+import {
+	AwsRemovedStack,
+	AwsSetupMethod,
+	AwsSetupPart,
+} from "../infra-integrations/aws/integration/aws-schema"
 
 export const StatusName = Schema.Literals([
 	"cloudflare",

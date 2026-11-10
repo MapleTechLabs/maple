@@ -1,12 +1,13 @@
 import { chartEnvHandlers } from "@maple/views/charts/chart-env"
 import type { RequestMode } from "@maple/views/data/keyed"
-import { toggleFilterValue } from "../../../../components/infra/cloudflare/filters"
+import { toggleFilterValue } from "../filters"
 import { AsyncData, Command } from "foldkit"
 import * as Chart from "@maple/views/charts/chart"
 import { LoadChartRuntime } from "@maple/views/charts/chart-runtime"
 import * as Keyed from "@maple/views/data/keyed"
 import type { LoadFailure } from "@maple/views/data/load-failure"
 import { requestKey } from "@maple/views/data/request-key"
+import { integrationStatusKey } from "../../../kit/integration-status-keys"
 import type { Resources } from "../../../../platform/resources"
 import { AppRoute, hrefOf } from "../../../../route"
 import * as CopyButton from "@maple/views/ui/copy-button"
@@ -131,7 +132,7 @@ const sync = (model: Model, context: PageContext, mode: Keyed.RequestMode): Retu
 	return { model: { ...base, breakdown, liveTraffic }, commands }
 }
 
-const statusKey = (context: PageContext) => requestKey(context.orgId, "integrations.cloudflareStatus", {})
+const statusKey = (context: PageContext) => integrationStatusKey(context.orgId, "cloudflare")
 const usageKey = (context: PageContext) => requestKey(context.orgId, "integrations.cloudflareUsage", {})
 
 export const init = (route: Route, context: PageContext): Return => {

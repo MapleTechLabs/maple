@@ -1,4 +1,4 @@
-import { WORKER_HEALTH_TONE, workerHealth } from "../../../../components/infra/cloudflare/list-model"
+import { WORKER_HEALTH_TONE, workerHealth } from "../list-model"
 import {
 	DURABLE_OBJECT_COLORS,
 	durableObjectRows,
@@ -9,7 +9,7 @@ import {
 	percentileRows,
 	untracedExceptions,
 	workerOutcomeTotals,
-} from "../../../../components/infra/cloudflare/worker-signals"
+} from "../worker-signals"
 import {
 	EMPTY_VALUE,
 	formatErrorRate,

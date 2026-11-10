@@ -1,4 +1,4 @@
-import type { AccountTone, CloudflareAccount } from "../../../../components/infra/cloudflare/accounts"
+import type { AccountTone, CloudflareAccount } from "../accounts"
 import { formatPercentColumn } from "@maple/ui/lib/format"
 import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"

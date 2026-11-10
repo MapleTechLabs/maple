@@ -4,7 +4,7 @@ import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { icon, type IconName } from "@maple/views/ui/icon"
 import { manifestGlyph } from "@maple/views/ui/manifest-glyph"
-import { LINEAR_ACCENT } from "../../integrations/catalog"
+import { PROVIDERS as REGISTRY } from "../../kit/providers"
 import { Array as Arr, String as Str } from "effect"
 import { hstack } from "@maple/views/ui/stack"
 
@@ -69,7 +69,7 @@ export const PROVIDERS = new Map<AlertDestinationType, DestinationProvider>([
 			type: "linear",
 			label: "Linear",
 			description: "Open one Linear issue per alert rule in a team, and comment on it as it changes.",
-			accent: LINEAR_ACCENT,
+			accent: REGISTRY.linear.accent,
 			accentBg: "rgba(94,106,213,0.18)",
 			accentText: "light-dark(#4651B8, #A9B0F0)",
 			accentOn: INK_ON_DARK_ACCENT,

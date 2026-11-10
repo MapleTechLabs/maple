@@ -4,6 +4,7 @@ import { Option } from "effect"
 import { AsyncData, Command } from "foldkit"
 import * as Keyed from "@maple/views/data/keyed"
 import { requestKey } from "@maple/views/data/request-key"
+import { integrationStatusKey } from "../../../kit/integration-status-keys"
 import type { TimeWindow } from "../../../../data/time-range"
 import { AppRoute, hrefOf } from "../../../../route"
 import * as Tooltip from "@maple/views/ui/tooltip"
@@ -29,7 +30,7 @@ const resolveCommand = (model: Model, context: PageContext, mode: RequestMode) =
 		timeZone: context.timeZone,
 	})
 
-const statusKey = (context: PageContext) => requestKey(context.orgId, "integrations.railwayStatus", {})
+const statusKey = (context: PageContext) => integrationStatusKey(context.orgId, "railway")
 
 const isConnected = (model: Model): boolean =>
 	Option.match(AsyncData.getData(model.status.data), {

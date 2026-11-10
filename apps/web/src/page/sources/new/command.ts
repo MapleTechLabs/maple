@@ -6,7 +6,7 @@ import { baseKey } from "@maple/views/data/keyed"
 import { settleTo } from "@maple/views/data/load-failure"
 import { MapleApiV2Client } from "../../../platform/api-clients"
 import { readGrants } from "../../../data/session-tenant"
-import { loadSource, loadSources } from "../kit/data"
+import { fetchSourcesList, loadSource } from "../kit/data"
 import { ExpiryChoice, expiresAtOf } from "../kit/rules"
 import { Message } from "./message"
 
@@ -32,16 +32,7 @@ export const ScrollToTop = Command.define("ScrollSourcesNewToTop", {
 /** `FirstDataStatus`'s `POLL_MS`. */
 export const POLL_MS = 5_000
 
-/** `sourcesListAtom`, read through the cache; a superseded key re-reads. */
-export const FetchSourcesList = Command.define("FetchSourcesList", {
-	args: { key: Schema.String, refresh: Schema.Boolean },
-	messages: [Message.CompletedFetchList],
-	execute: ({ key, refresh }) =>
-		loadSources(baseKey(key), refresh).pipe(
-			Effect.result,
-			Effect.map((result) => Message.CompletedFetchList({ key, result })),
-		),
-})
+export const FetchSourcesList = fetchSourcesList(Message.CompletedFetchList)
 
 export const FetchCreatedSource = Command.define("FetchCreatedSource", {
 	args: { key: Schema.String, id: SourceId, refresh: Schema.Boolean },

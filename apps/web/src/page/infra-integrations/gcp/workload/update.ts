@@ -1,9 +1,9 @@
 import { chartEnvHandlers } from "@maple/views/charts/chart-env"
 import type { RequestMode } from "@maple/views/data/keyed"
 import { GCP_INFRA_SERVICE_IDS, type GcpInfraServiceId } from "@maple/domain/gcp-infra"
-import { GCP_CLOUD_SQL_INVENTORY_QUERY, gcpResourceQuery } from "../../../../components/infra/gcp/inventory"
-import { gcpMatchStatements, gcpStatements } from "../../../../components/infra/gcp/cloud-sql-signals"
-import { gcpWorkloadKeys } from "../../../../components/infra/gcp/tabs"
+import { GCP_CLOUD_SQL_INVENTORY_QUERY, gcpResourceQuery } from "../inventory"
+import { gcpMatchStatements, gcpStatements } from "../cloud-sql-signals"
+import { gcpWorkloadKeys } from "../tabs"
 import { Command } from "foldkit"
 import * as Chart from "@maple/views/charts/chart"
 import { LoadChartRuntime } from "@maple/views/charts/chart-runtime"
@@ -20,7 +20,6 @@ import * as TimeRangePicker from "../../../kit/time-range-picker"
 import { stepTimePicker, withPreset } from "../../../kit/page-time"
 import { requestSlot } from "../../kit/slot"
 import type { OverviewInput, ResourcesQuery, TimeseriesInput } from "../data"
-import { successOf } from "../list/derive"
 import {
 	CompleteReloadSpin,
 	FetchFleet,
@@ -37,6 +36,7 @@ import {
 import { Message, type Model } from "./model"
 import { type QueryPeek, resolveQueryPeek, statementSpansInput } from "./peek"
 import { Option, Array as Arr } from "effect"
+import { successOf } from "../../kit/success-of"
 
 type Return = PageReturn<Model, Message>
 type Search = Model["search"]

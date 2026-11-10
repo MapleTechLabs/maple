@@ -26,17 +26,17 @@ import {
 	integrationEmptyMedia,
 	integrationIconPlate,
 } from "../kit/integration-empty"
-import { GCP_ACCENT } from "./catalog"
 import { Message } from "./message"
 import { canManage, type Model } from "./model"
 import { isDirty, permissionLabel, selectionOf, unavailableSaved } from "./search-console"
 import { disconnectDialog } from "./view-disconnect"
+import { providerBrand } from "../kit/providers"
 
 // The Google Search Console card: connect, pick the properties to import, and a revoked grant.
 
 type H = HtmlBuilder<Message>
 
-const BRAND = { icon: "GoogleIcon", accent: GCP_ACCENT } as const
+const BRAND = providerBrand("google-search-console")
 
 const ADMIN_ONLY = "Only org admins and engineers can change the Google Search Console connection."
 

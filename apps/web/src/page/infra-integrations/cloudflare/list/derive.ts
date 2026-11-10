@@ -1,29 +1,18 @@
-import {
-	type CloudflareAccount,
-	cloudflareAccounts,
-	zoneAccountIds,
-} from "../../../../components/infra/cloudflare/accounts"
-import {
-	CLOUDFLARE_VIEWS,
-	type CloudflareView,
-	mergeWorkerRows,
-	type WorkerListRow,
-} from "../../../../components/infra/cloudflare/list-model"
+import { type CloudflareAccount, cloudflareAccounts, zoneAccountIds } from "../accounts"
+import { type CloudflareView, mergeWorkerRows, type WorkerListRow } from "../list-model"
+import { CLOUDFLARE_VIEWS } from "../../../../route/search"
 import { AsyncData } from "foldkit"
 import type { PlatformResources, QueueRow, Usage, ZoneBucket, ZoneRow } from "../data"
 import { ingestPhaseOf } from "../ingest"
 import type { Model } from "./model"
 import { Array as Arr, String as Str, Option } from "effect"
-
-/** A loaded value, refreshing included; a failure or an empty slot reads as not there yet. */
-export const dataOf = <A, E>(slot: AsyncData.AsyncData<A, E>): A | null =>
-	AsyncData.isSuccess(slot) || AsyncData.isRefreshing(slot) ? slot.data : null
+import { successOf } from "../../kit/success-of"
 
 export const isWaiting = <A, E>(slot: AsyncData.AsyncData<A, E>): boolean => AsyncData.isRefreshing(slot)
 
-export const statusOf = (model: Model) => dataOf(model.status.data)
+export const statusOf = (model: Model) => successOf(model.status.data)
 
-const usageOf = (model: Model): Usage | null => dataOf(model.usage.data)
+const usageOf = (model: Model): Usage | null => successOf(model.usage.data)
 
 export const phaseOf = (model: Model) => ingestPhaseOf(statusOf(model), usageOf(model), model.nowMs)
 
@@ -56,11 +45,11 @@ export type ListData = Readonly<{
 
 /** `CloudflareData`'s reads: null while loading (a failed read stays loading). */
 export const listDataOf = (model: Model): ListData => {
-	const timeseries = dataOf(model.timeseries.data)
-	const platform = dataOf(model.platform.data)
-	const workers = dataOf(model.workers.data)
+	const timeseries = successOf(model.timeseries.data)
+	const platform = successOf(model.platform.data)
+	const workers = successOf(model.workers.data)
 	return {
-		zones: dataOf(model.zones.data),
+		zones: successOf(model.zones.data),
 		sparks: timeseries === null ? undefined : requestSparks(timeseries),
 		platform,
 		workerRows: workers === null ? null : mergeWorkerRows(workers, platform?.durableObjects ?? []),

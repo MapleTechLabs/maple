@@ -4,7 +4,7 @@ import { cn } from "@maple/ui/lib/utils"
 import { Option, Array as Arr } from "effect"
 import { AsyncData, Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { AppRoute, hrefOf } from "../../route"
+import { ingestionHref } from "../settings/ingest-rule/hrefs"
 import type { BreadcrumbEntry } from "../../shell"
 import { button, linkButton } from "@maple/views/ui/button"
 import { detailRailGroup, detailRailRow } from "@maple/views/ui/detail-rail"
@@ -19,6 +19,7 @@ import { relativeTime } from "../kit/relative-time"
 import { resourceNotFound } from "../kit/resource-not-found"
 import { selectedOf } from "./update"
 import { body, code, isApplyable, isLive } from "./view-body"
+import { RECOMMENDATION_KIND_LABEL, RECOMMENDATION_STATUS_LABEL } from "../kit/recommendations"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { typography, typographyClass } from "@maple/views/ui/typography"
@@ -26,19 +27,19 @@ import { hstack, vstack } from "@maple/views/ui/stack"
 
 type H = HtmlBuilder<Message>
 
-const INGESTION_HREF = hrefOf(AppRoute.Settings({ search: { tab: "ingestion" } }))
+const INGESTION_HREF = ingestionHref()
 
 const KIND_BADGE = {
-	rename: { label: "Safe rename", variant: "ok" },
-	"double-emission": { label: "Both emitted", variant: "warn" },
-	naming: { label: "Naming", variant: "info" },
+	rename: { label: RECOMMENDATION_KIND_LABEL.rename, variant: "ok" },
+	"double-emission": { label: RECOMMENDATION_KIND_LABEL["double-emission"], variant: "warn" },
+	naming: { label: RECOMMENDATION_KIND_LABEL.naming, variant: "info" },
 } as const
 
 const STATUS_BADGE = {
-	open: { label: "Open", variant: "outline" },
-	dismissed: { label: "Dismissed", variant: "secondary" },
-	applied: { label: "Applied", variant: "ok" },
-	resolved: { label: "Resolved", variant: "done" },
+	open: { label: RECOMMENDATION_STATUS_LABEL.open, variant: "outline" },
+	dismissed: { label: RECOMMENDATION_STATUS_LABEL.dismissed, variant: "secondary" },
+	applied: { label: RECOMMENDATION_STATUS_LABEL.applied, variant: "ok" },
+	resolved: { label: RECOMMENDATION_STATUS_LABEL.resolved, variant: "done" },
 } as const
 
 const MODE = {

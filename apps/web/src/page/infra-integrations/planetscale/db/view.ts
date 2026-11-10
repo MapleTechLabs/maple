@@ -1,7 +1,4 @@
-import {
-	derivePlanetScaleSetup,
-	metricsCollectionFailing,
-} from "../../../../components/integrations/planetscale-setup-steps"
+import { derivePlanetScaleSetup, metricsCollectionFailing } from "../setup-steps"
 import { countLabel } from "@maple/ui/lib/format"
 import { AsyncData, Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
@@ -57,7 +54,7 @@ import {
 import { activitySection, topQueries } from "./view-sections"
 import { sectionHeading } from "../../../kit/section-heading"
 import { planetscaleSidebar } from "./view-sidebar"
-import { absenceReason } from "../../../../components/infra/planetscale/branch-selection"
+import { absenceReason } from "../branch-selection"
 import { removableChip } from "@maple/views/ui/removable-chip"
 import { typography } from "@maple/views/ui/typography"
 import { hstack } from "@maple/views/ui/stack"

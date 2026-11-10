@@ -1,7 +1,4 @@
-import {
-	derivePlanetScaleSetup,
-	metricsCollectionFailing,
-} from "../../../../components/integrations/planetscale-setup-steps"
+import { derivePlanetScaleSetup, metricsCollectionFailing } from "../setup-steps"
 import { EMPTY_VALUE, formatNumber, pluralize } from "@maple/ui/lib/format"
 import type { Tone } from "@maple/ui/lib/tone"
 import { Option, Array as Arr } from "effect"
@@ -22,12 +19,7 @@ import { pageHeroParts } from "../../../infra/kit/page-parts"
 import { pageTime } from "../../../kit/page-time"
 import { listToolbar, toolbarStat } from "../../../kit/list-toolbar"
 import type { DatabaseList, DatabaseStat, PlanetscaleStatus } from "../data"
-import {
-	formatLag,
-	formatStoragePercent,
-	lagTone,
-	utilizationTone,
-} from "../../../../components/infra/planetscale/metrics"
+import { formatLag, formatStoragePercent, lagTone, utilizationTone } from "../metrics"
 import {
 	inventoryIsStale,
 	inventoryNotice,

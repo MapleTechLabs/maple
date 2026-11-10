@@ -20,7 +20,7 @@ import { pageHeroParts } from "../../../infra/kit/page-parts"
 import { pageTime } from "../../../kit/page-time"
 import type { ZoneDetail } from "../data"
 import { ingestEmpty, ingestPhaseOf } from "../ingest"
-import { dataOf } from "../list/derive"
+import { successOf } from "../../kit/success-of"
 import {
 	dimensionOf,
 	dnsSummaryOf,
@@ -143,7 +143,11 @@ const traffic = (h: H, model: Model, ctx: Context, trigger: Trigger): Html => {
 	const loaded = (detail: ZoneDetail, isWaiting: boolean): Html => {
 		if (detail.statusBuckets.length === 0 && !isWaiting) {
 			// Before any data is collected, "this zone has no traffic" would be the wrong thing to say.
-			const phase = ingestPhaseOf(dataOf(model.status.data), dataOf(model.usage.data), model.nowMs)
+			const phase = ingestPhaseOf(
+				successOf(model.status.data),
+				successOf(model.usage.data),
+				model.nowMs,
+			)
 			if (phase !== null && phase.kind !== "live" && phase.kind !== "backfilling")
 				return ingestEmpty(h, phase)
 			return zoneEmpty(h)
@@ -187,13 +191,13 @@ const section = (h: H, model: Model, ctx: Context | null, trigger: Trigger): Htm
 	}
 	switch (sectionOf(model)) {
 		case "dns": {
-			const dns = dataOf(model.dns.data)
+			const dns = successOf(model.dns.data)
 			return dns === null
 				? null
 				: dnsSection(h, model, dns, AsyncData.isRefreshing(model.dns.data), sectionCtx)
 		}
 		case "security": {
-			const security = dataOf(model.security.data)
+			const security = successOf(model.security.data)
 			return security === null
 				? null
 				: securitySection(h, model, security, AsyncData.isRefreshing(model.security.data), sectionCtx)
@@ -207,12 +211,12 @@ const section = (h: H, model: Model, ctx: Context | null, trigger: Trigger): Htm
 const tooltipContent = (model: Model, id: string): ReadonlyArray<string> => {
 	if (id === SCOPE_IDS.dns)
 		return panelScopeExplanation({
-			ignoredFilters: dataOf(model.dns.data)?.ignoredFilters,
+			ignoredFilters: successOf(model.dns.data)?.ignoredFilters,
 			reason: DNS_REASON,
 		})
 	if (id === SCOPE_IDS.security)
 		return panelScopeExplanation({
-			ignoredFilters: dataOf(model.security.data)?.ignoredFilters,
+			ignoredFilters: successOf(model.security.data)?.ignoredFilters,
 			reason: SECURITY_REASON,
 		})
 	if (id === SCOPE_IDS.breakdown)

@@ -1,6 +1,6 @@
 import { ServiceRuntimeRow } from "@maple/domain/http"
 import { SERVICE_RUNTIME_KINDS } from "@maple/domain/service-runtimes"
-import { gcpWorkloadSearch } from "../../components/infra/gcp/tabs"
+import { gcpWorkloadSearch } from "../infra-integrations/gcp/tabs"
 import { AppRoute, hrefOf } from "../../route"
 import type { IconName } from "@maple/views/ui/icon"
 import { resourceSearch } from "../infra-integrations/aws/derive"

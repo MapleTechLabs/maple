@@ -14,15 +14,15 @@ import {
 	type GcpProjectHealth,
 	type GcpSparks,
 	type RowRules,
-} from "../../../../components/infra/gcp/list-model"
-import type { GcpCloudSqlInstance } from "../../../../components/infra/gcp/inventory"
+} from "../list-model"
+import type { GcpCloudSqlInstance } from "../inventory"
 import {
 	GCP_RESOURCES_TAB,
 	GCP_VIEW_SERVICES,
 	gcpResourcesError,
 	type GcpServiceView,
 	type GcpView,
-} from "../../../../components/infra/gcp/tabs"
+} from "../tabs"
 import { formatPercentColumn, pluralize } from "@maple/ui/lib/format"
 import { refreshingClass } from "@maple/ui/lib/refreshing"
 import { TONE_TEXT } from "@maple/ui/lib/tone"
@@ -43,7 +43,6 @@ import { dashboardPage } from "../../../kit/dashboard-page"
 import { integrationNotConnected } from "../../kit/empty-states"
 import { integrationConnectCta } from "../../../kit/integration-empty"
 import { AppRoute, hrefOf } from "../../../../route"
-import { GCP_ACCENT } from "../../../integrations/catalog"
 import { heroFieldChip } from "../../../infra/kit/hero-chip"
 import { viewTabStrip } from "../../../kit/view-tabs"
 import { pageHeroParts, searchToolbar, headerActions } from "../../../infra/kit/page-parts"
@@ -84,6 +83,7 @@ import {
 import { removableChip } from "@maple/views/ui/removable-chip"
 import { typography } from "@maple/views/ui/typography"
 import { hstack } from "@maple/views/ui/stack"
+import { providerBrand } from "../../../kit/providers"
 
 // `GcpPage`, `GcpInfra` and `GcpListPage`. `gcpListPageParts` and `titleRow` are what the lab reuses.
 
@@ -645,7 +645,7 @@ const content = (h: H, model: Model): PageParts =>
 /** Nothing connected: what this page will show, and the way to the connect flow. */
 const gcpConnectCta = (h: H): Html =>
 	integrationConnectCta(h, {
-		brand: { icon: "GoogleCloudIcon", backerIcon: "GoogleCloudMonoIcon", accent: GCP_ACCENT },
+		brand: providerBrand("gcp"),
 		features: [
 			{
 				label: "Metrics",

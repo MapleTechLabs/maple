@@ -25,8 +25,8 @@ import {
 	agentAccessShort,
 	environmentBadge,
 	type Inputs,
-	KIND_ICON,
-	KIND_LABEL,
+	kindIcon,
+	kindLabel,
 	kindLogo,
 	statusLine,
 } from "./view-parts"
@@ -139,8 +139,8 @@ export const pickKindView = (h: H): Html =>
 							[
 								vstack(h, { gap: "2", align: "start" }, [
 									hstack(h, { gap: "2" }, [
-										icon(h, KIND_ICON[kind]),
-										typography(h, { weight: "medium" }, [KIND_LABEL[kind]]),
+										icon(h, kindIcon(kind)),
+										typography(h, { weight: "medium" }, [kindLabel(kind)]),
 									]),
 									typography(h, { size: "xs", tone: "muted", className: "font-prose" }, [
 										KIND_HINT[kind],

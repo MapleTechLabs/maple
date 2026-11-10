@@ -1,6 +1,6 @@
 import { Duration, Effect, Option, Queue, Schema, Stream, Array as Arr } from "effect"
 import { AsyncData, Subscription } from "foldkit"
-import { gcpConnectionState } from "../../components/integrations/gcp-connector-state"
+import { gcpConnectionState } from "../infra-integrations/gcp/connector-state"
 import { ingestPhaseOf } from "../infra-integrations/cloudflare/ingest"
 import type { Resources } from "../../platform/resources"
 import type { PageSubscriptionInput } from "../contract"
@@ -9,13 +9,16 @@ import { ConnectAttempt, ConnectProvider, currentReturnPath, PROVIDERS, startCon
 import { Message } from "./message"
 import { openerReturns, relayedReturns } from "./connect-returns"
 import type { Model } from "./model"
-import { unsyncedEnvironments } from "./railway"
+import { unsyncedEnvironments } from "../infra-integrations/railway/integration/railway"
 import { githubStatusOf } from "./update-github"
-import { isAwaitingFirstMetrics, isWatchExpired } from "./planetscale"
-import { planetscaleStatusOf } from "./update-planetscale"
-import { CAPABILITIES, CAPABILITY_IDS } from "./gcp-configure-copy"
-import { runConfirmed } from "./gcp-configure-derive"
-import { configureConnector } from "./update-gcp-configure"
+import {
+	isAwaitingFirstMetrics,
+	isWatchExpired,
+} from "../infra-integrations/planetscale/integration/planetscale"
+import { planetscaleStatusOf } from "../infra-integrations/planetscale/integration/update-planetscale"
+import { CAPABILITIES, CAPABILITY_IDS } from "../infra-integrations/gcp/integration/gcp-configure-copy"
+import { runConfirmed } from "../infra-integrations/gcp/integration/gcp-configure-derive"
+import { configureConnector } from "../infra-integrations/gcp/integration/update-gcp-configure"
 import { backoffPollTicks, pollTicks, whenPresent } from "../../data/poll"
 
 /** The popup's document could not be written: it is already on the provider's cross-origin page. */

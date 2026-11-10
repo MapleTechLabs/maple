@@ -2,9 +2,10 @@ import { Clock, Duration, Effect, Schema, Stream } from "effect"
 import { AsyncData, Subscription } from "foldkit"
 import type { Resources } from "../../../../platform/resources"
 import type { PageSubscriptionInput } from "../../../contract"
-import { isSettling, metricsConnectors, noticeOf, pageStateOf, statusOf, successOf } from "./derive"
+import { isSettling, metricsConnectors, noticeOf, pageStateOf, statusOf } from "./derive"
 import { Message, type Model } from "./model"
 import { pollTicks } from "../../../../data/poll"
+import { successOf } from "../../kit/success-of"
 
 // The page's `useIntervalRefresh` calls: the status while connected (faster while a connection
 // settles), the fleet while waiting on a first read or quiet, the inventory while it is empty.

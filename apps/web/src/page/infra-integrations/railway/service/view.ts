@@ -1,5 +1,5 @@
 import { formatCores } from "../../../../components/infra/format"
-import { shareOfLimit } from "../../../../components/infra/railway/format"
+import { shareOfLimit } from "../format"
 import { formatBytes, formatPercent } from "@maple/ui/lib/format"
 import { Option, Array as Arr } from "effect"
 import { AsyncData, Submodel } from "foldkit"

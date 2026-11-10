@@ -5,7 +5,7 @@ import {
 	type GcpSubscriptionScope,
 	type GcpWorkloadScope,
 	type RowRules,
-} from "../../../../components/infra/gcp/list-model"
+} from "../list-model"
 import { TONE_FILL, type Tone } from "@maple/ui/lib/tone"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { FLEET_BAND_BOXED, fleetBand, fleetBandLoading } from "../../../infra/kit/fleet-band"

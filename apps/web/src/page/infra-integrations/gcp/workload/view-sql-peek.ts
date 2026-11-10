@@ -1,4 +1,4 @@
-import { gcpAppWait } from "../../../../components/infra/gcp/cloud-sql-signals"
+import { gcpAppWait } from "../cloud-sql-signals"
 import { EMPTY_VALUE, formatLatency, formatNumber, formatPercent } from "@maple/ui/lib/format"
 import { LATENCY_BAR_TONE, latencyLevel, latencyToneClass } from "@maple/ui/lib/latency-tone"
 import { refreshingClass } from "@maple/ui/lib/refreshing"

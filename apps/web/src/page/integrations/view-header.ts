@@ -4,7 +4,7 @@ import { icon } from "@maple/views/ui/icon"
 import { iconButton } from "@maple/views/ui/icon-button"
 import { pageTitle } from "@maple/views/ui/page-layout"
 import { statusDot } from "@maple/views/ui/status-dot"
-import { catalogEntry, type IntegrationId } from "./catalog"
+import type { CatalogEntry } from "./catalog"
 import { cardStatusOf, HEALTH_TONE, lastSyncText, overviewOf } from "./derive"
 import { relativeTime } from "../kit/relative-time"
 import { Message } from "./message"
@@ -30,13 +30,12 @@ export type HeaderSlots = Readonly<{
 export const integrationHeader = (
 	h: H,
 	model: Model,
-	integration: IntegrationId,
+	entry: CatalogEntry,
 	slots: HeaderSlots,
 	timeZone: string,
 ): Html => {
-	const entry = catalogEntry(integration)
-	const status = cardStatusOf(model.statuses, integration, model.nowMs)
-	const overview = overviewOf(model.statuses, model.nowMs, integration)
+	const status = cardStatusOf(model.statuses, entry.id, model.nowMs)
+	const overview = overviewOf(model.statuses, model.nowMs, entry.id)
 	const connected = overview?.kind === "connected" ? overview : null
 	const statusParts =
 		connected === null

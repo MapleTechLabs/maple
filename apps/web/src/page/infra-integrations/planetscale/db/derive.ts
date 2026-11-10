@@ -4,34 +4,27 @@ import {
 	mergeBranchCandidates,
 	orderBranches,
 	resolveSelectedBranch,
-} from "../../../../components/infra/planetscale/branch-selection"
-import { metricsNeverCollected } from "../../../../components/integrations/planetscale-setup-steps"
+} from "../branch-selection"
+import { metricsNeverCollected } from "../setup-steps"
 import { Option, Array as Arr, String as Str } from "effect"
-import { AsyncData } from "foldkit"
 import { chartBucketSeconds } from "@maple/views/charts/infra-metric-series"
 import type { ChartEventMarker, EventTone } from "@maple/views/charts/event-marker-spec"
 import type { TimeWindow } from "../../../../data/time-range"
 import type { EpochWindowInput, EventEntry, TimeseriesInput } from "../data"
 import { filtersFromSearch, type PlanetScaleFilters, soleSelectedBranch } from "../filters"
 import type { LocalWindow, Model } from "./model"
+import { successOf } from "../../kit/success-of"
 
 // The page's derivations: the branch universe, the resolved scope and the request inputs.
-
-const dataOf = <A, E>(slot: { readonly data: AsyncData.AsyncData<A, E> }): A | null =>
-	Option.getOrNull(AsyncData.getData(slot.data))
-
-/** `Result.builder(x).onSuccess(...).orElse(...)`: only a settled success counts. */
-const successOf = <A, E>(slot: { readonly data: AsyncData.AsyncData<A, E> }): A | null =>
-	AsyncData.isSuccess(slot.data) || AsyncData.isRefreshing(slot.data) ? dataOf(slot) : null
 
 export const filtersOf = (model: Model): PlanetScaleFilters => filtersFromSearch(model.search)
 
 export const databaseOf = (model: Model) =>
 	Option.getOrNull(
-		Arr.findFirst(successOf(model.databases)?.databases ?? [], (db) => db.name === model.dbName),
+		Arr.findFirst(successOf(model.databases.data)?.databases ?? [], (db) => db.name === model.dbName),
 	)
 
-export const statusOf = (model: Model) => successOf(model.status)
+export const statusOf = (model: Model) => successOf(model.status.data)
 
 export const neverCollectedOf = (model: Model): boolean => {
 	const status = statusOf(model)
@@ -43,7 +36,7 @@ export const candidatesOf = (model: Model): ReadonlyArray<BranchCandidate> => {
 	return orderBranches(
 		mergeBranchCandidates(
 			databaseOf(model)?.branches ?? [],
-			successOf(model.branchStats) ?? [],
+			successOf(model.branchStats.data) ?? [],
 			status?.scrape_target?.include_branches ?? [],
 			status?.scrape_target?.exclude_branches ?? [],
 		),

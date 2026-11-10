@@ -4,6 +4,7 @@ import { AsyncData } from "foldkit"
 import { chartBucketSeconds } from "@maple/views/charts/infra-metric-series"
 import * as Keyed from "@maple/views/data/keyed"
 import { requestKey } from "@maple/views/data/request-key"
+import { integrationStatusKey } from "../../../kit/integration-status-keys"
 import type { TimeWindow } from "../../../../data/time-range"
 import { AppRoute, hrefOf } from "../../../../route"
 import { type PageContext, PageOutMessage, type PageReturn } from "../../../contract"
@@ -37,7 +38,7 @@ const resolveCommand = (model: Model, context: PageContext, mode: RequestMode) =
 		timeZone: context.timeZone,
 	})
 
-const statusKey = (context: PageContext) => requestKey(context.orgId, "awsIntegration.status", {})
+const statusKey = (context: PageContext) => integrationStatusKey(context.orgId, "aws")
 
 /** The kinds that reported, in tab order; empty before the fleet read lands. */
 export const reportedKinds = (model: Model): ReadonlyArray<FleetRead["kind"]> =>

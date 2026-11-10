@@ -41,6 +41,7 @@ import { hstack, vstack } from "@maple/views/ui/stack"
 import { tooltipTrigger } from "@maple/views/ui/tooltip-host"
 import { textLink } from "@maple/views/ui/text-link"
 import { pressable } from "@maple/views/ui/pressable"
+import { providerBrand } from "../kit/providers"
 
 // `ScrapeTargetsSection` and `ScrapeTargetRow`, with the Prometheus and WarpStream intro alerts.
 
@@ -336,7 +337,7 @@ const emptyState = (h: H, integration: ScrapeIntegration): Html =>
 	integrationEmpty(h, [
 		integrationEmptyFeatures(h, COPY.features),
 		integrationEmptyCard(h, [
-			integrationEmptyMedia(h, { icon: "PrometheusIcon", accent: "#E6522C" }),
+			integrationEmptyMedia(h, providerBrand("prometheus")),
 			integrationEmptyHint(h, [COPY.emptyHint]),
 			addButton(h, integration),
 			docsLink(h, "prometheus"),

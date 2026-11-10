@@ -21,6 +21,7 @@ import * as Chart from "@maple/views/charts/chart"
 import { ThemeColors } from "@maple/views/charts/theme-colors"
 import { LoadFailure } from "@maple/views/data/load-failure"
 import * as Dialog from "@maple/views/ui/dialog"
+import * as CheckoutReturn from "../../kit/checkout-return"
 import * as Details from "./details/model"
 
 // The Billing tab: this cycle's spend, usage and caps, the plan, invoices and billing details. The customer
@@ -60,15 +61,12 @@ export const OrgChoicesData = AsyncData.Schema(Schema.Array(OrgChoice), LoadFail
 /** A failed link or unlink: `rejection` is the server's message when the rules refused it. */
 export const LinkFailure = Schema.Struct({ rejection: Schema.NullOr(Schema.String), failure: LoadFailure })
 
-/** `useCheckoutReturn`: back from Stripe (`?checkout=complete`), waiting on the Autumn sync. */
-export const CheckoutReturn = Schema.Literals(["Idle", "Confirming", "TimedOut"])
-export type CheckoutReturn = typeof CheckoutReturn.Type
-
 export const Model = Schema.Struct({
 	grants: Schema.Array(Policy.PermissionName),
 	/** Clerk mode: the viewer's other orgs are known, so this org can be billed through one. */
 	isClerk: Schema.Boolean,
-	checkoutReturn: CheckoutReturn,
+	/** `useCheckoutReturn`: back from Stripe (`?checkout=complete`), waiting on the Autumn sync. */
+	checkoutReturn: CheckoutReturn.Model,
 	plans: PlansData.schema,
 	usage: UsageData.schema,
 	daily: DailyData.schema,
@@ -142,8 +140,7 @@ export const Message = defineMessageUnion({
 	GotCompareDialogMessage: { message: Dialog.Message },
 	ClickedSubscribe: { planId: Schema.String },
 	CompletedAttach: { planId: Schema.String, ...result(AttachResult) },
-	ElapsedCheckoutPoll: {},
-	ElapsedCheckoutTimeout: {},
+	GotCheckoutReturnMessage: { message: CheckoutReturn.Message },
 	CompletedTrackProduct: {},
 	ClickedEditDetails: {},
 	GotDetailsMessage: { message: Details.Message },

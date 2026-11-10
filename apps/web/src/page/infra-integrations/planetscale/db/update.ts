@@ -6,6 +6,7 @@ import { LoadChartRuntime } from "@maple/views/charts/chart-runtime"
 import * as Keyed from "@maple/views/data/keyed"
 import { requestSlot } from "../../kit/slot"
 import { requestKey } from "@maple/views/data/request-key"
+import { integrationStatusKey } from "../../../kit/integration-status-keys"
 import type { Resources } from "../../../../platform/resources"
 import { AppRoute, hrefOf } from "../../../../route"
 import * as FilterSections from "@maple/views/ui/filters/filter-sections"
@@ -122,8 +123,8 @@ const requestWindowed = (model: Model, context: PageContext, mode: Keyed.Request
 const settled = (model: Model, context: PageContext): Return => requestScoped(model, context, "Load")
 
 export const init = (route: Route, context: PageContext): Return => {
-	const statusKey = requestKey(context.orgId, "planetscaleIntegration.status", {})
-	const databasesKey = requestKey(context.orgId, "planetscaleIntegration.databases", {})
+	const statusKey = integrationStatusKey(context.orgId, "planetscale")
+	const databasesKey = integrationStatusKey(context.orgId, "planetscaleDatabases")
 	const model: Model = {
 		dbName: route.dbName,
 		search: route.search,

@@ -13,25 +13,25 @@ import { Disconnect, DISCONNECTS } from "./disconnect"
 import { initGithubCard } from "./github"
 import * as Chat from "./update-chat"
 import * as Github from "./update-github"
-import * as CloudflareCard from "./update-cloudflare"
-import { initCloudflareCard } from "./cloudflare"
+import * as CloudflareCard from "../infra-integrations/cloudflare/integration/update-cloudflare"
+import { initCloudflareCard } from "../infra-integrations/cloudflare/integration/cloudflare"
 import { initPrometheusCard } from "./prometheus"
-import { initRailwayCard } from "./railway"
-import { initPlanetscaleCard } from "./planetscale"
-import { initGcpCard } from "./gcp"
-import { initAwsCard } from "./aws"
-import * as Aws from "./update-aws"
-import { initSupabaseCard } from "./supabase"
-import * as Supabase from "./update-supabase"
+import { initRailwayCard } from "../infra-integrations/railway/integration/railway"
+import { initPlanetscaleCard } from "../infra-integrations/planetscale/integration/planetscale"
+import { initGcpCard } from "../infra-integrations/gcp/integration/gcp"
+import { initAwsCard } from "../infra-integrations/aws/integration/aws"
+import * as Aws from "../infra-integrations/aws/integration/update-aws"
+import { initSupabaseCard } from "../infra-integrations/supabase/integration/supabase"
+import * as Supabase from "../infra-integrations/supabase/integration/update-supabase"
 import * as SearchConsole from "./update-search-console"
 import { initSearchConsoleCard } from "./search-console"
-import * as Gcp from "./update-gcp"
-import * as Configure from "./update-gcp-configure"
-import * as Planetscale from "./update-planetscale"
-import * as Railway from "./update-railway"
+import * as Gcp from "../infra-integrations/gcp/integration/update-gcp"
+import * as Configure from "../infra-integrations/gcp/integration/update-gcp-configure"
+import * as Planetscale from "../infra-integrations/planetscale/integration/update-planetscale"
+import * as Railway from "../infra-integrations/railway/integration/update-railway"
 import * as Prometheus from "./update-prometheus"
 import { ChartRuntime } from "@maple/views/charts/chart-runtime"
-import { isMultiAccount } from "./view-cloudflare"
+import { isMultiAccount } from "../infra-integrations/cloudflare/integration/view-cloudflare"
 import * as Connect from "./update-connect"
 import { isClerkAuthEnabled } from "../../lib/services/common/auth-mode"
 import { CompleteOAuthReturn, LoadCustomer, LoadSession, ReadClock, StripChatParams } from "./command"
@@ -445,15 +445,15 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		CompletedReadSupabaseClock: ({ nowMs }) => Supabase.completedReadClock(model, context, nowMs),
 		ClickedSupabaseSync: () => Supabase.clickedSync(model),
 		CompletedSupabaseSync: ({ failure }) => Supabase.completedSync(model, context, failure),
-		ToggledSupabaseMetrics: ({ ref, enabled }) => Supabase.toggledMetrics(model, ref, enabled),
+		ToggledSupabaseMetrics: ({ ref, enabled }) => Supabase.toggledSwitch(model, ref, "metrics", enabled),
 		CompletedSupabaseMetrics: ({ ref, enabled, failure }) =>
-			Supabase.completedMetrics(model, context, ref, enabled, failure),
-		ToggledSupabaseLogs: ({ ref, enabled }) => Supabase.toggledLogs(model, ref, enabled),
+			Supabase.completedSwitch(model, context, ref, "metrics", enabled, failure),
+		ToggledSupabaseLogs: ({ ref, enabled }) => Supabase.toggledSwitch(model, ref, "logs", enabled),
 		CompletedSupabaseLogs: ({ ref, enabled, failure }) =>
-			Supabase.completedLogs(model, context, ref, enabled, failure),
-		ToggledSupabaseLogDrain: ({ ref, enabled }) => Supabase.toggledLogDrain(model, ref, enabled),
+			Supabase.completedSwitch(model, context, ref, "logs", enabled, failure),
+		ToggledSupabaseLogDrain: ({ ref, enabled }) => Supabase.toggledSwitch(model, ref, "drain", enabled),
 		CompletedSupabaseLogDrain: ({ ref, enabled, failure }) =>
-			Supabase.completedLogDrain(model, context, ref, enabled, failure),
+			Supabase.completedSwitch(model, context, ref, "drain", enabled, failure),
 		CompletedFetchOrganizations: ({ key, result }) =>
 			Planetscale.updateCard(model, {
 				organizations: Keyed.accept(model.planetscaleCard.organizations, key, result),

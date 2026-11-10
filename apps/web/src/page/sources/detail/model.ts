@@ -13,7 +13,7 @@ import * as Menu from "@maple/views/ui/menu"
 import { SourceList } from "../kit/data"
 import * as Rules from "../kit/rules"
 import * as Setup from "../kit/setup"
-import { Model as IntegrationModel } from "../../integrations/model"
+import { Model as IntegrationModel } from "../../integrations/embed"
 
 // `/sources/$sourceId`.
 

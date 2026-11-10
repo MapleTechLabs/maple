@@ -4,6 +4,7 @@ import { Model } from "./model"
 import { contextChanged, init, routeChanged, update } from "./update"
 import { titleOf, view } from "./view"
 import { platformSource } from "../../../../shell/source-link"
+import { PROVIDERS } from "../../../kit/providers"
 
 /** `/infra/aws/$kind/$name`: one resource's charts; another resource is a new instance. */
 export const page = definePage(
@@ -21,7 +22,7 @@ export const page = definePage(
 		source: () => platformSource("aws"),
 		breadcrumbs: (model) => [
 			{ label: "Infrastructure", href: "/infra" },
-			{ label: "AWS", href: "/infra/aws" },
+			{ label: PROVIDERS.aws.name, href: PROVIDERS.aws.infraHref },
 			{ label: titleOf(model) },
 		],
 	},

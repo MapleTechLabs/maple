@@ -200,9 +200,6 @@ const tabContent = (h: H, model: Model, inputs: PageViewInputs): ReadonlyArray<H
 					},
 				}),
 			]
-		case "Unported":
-			// TODO(settings): every remaining tab is ported tab by tab; until then it renders empty.
-			return []
 	}
 }
 

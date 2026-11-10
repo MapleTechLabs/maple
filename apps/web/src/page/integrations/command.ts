@@ -1,12 +1,11 @@
 import { readClock } from "@maple/views/data/timing"
-import type { V2ScrapeTarget } from "@maple/domain/http/v2"
 import { collectV2Pages } from "@maple/web-data/lib/v2-pagination"
-import { Effect, Schema } from "effect"
+import { Effect, type Result, Schema } from "effect"
 import { Command } from "foldkit"
 import { IntegrationStatuses } from "../../data/integration-statuses"
-import { settled, settleTo } from "@maple/views/data/load-failure"
+import { type LoadFailure, settleTo } from "@maple/views/data/load-failure"
 import { MapleApiV2Client, MapleInternalApiClient } from "../../platform/api-clients"
-import { Message } from "./message"
+import { Message, type StatusName } from "./message"
 import { completeOAuthReturn } from "./oauth-return"
 import { BillingCustomerCache } from "../../data/billing-customer"
 import { readGrants } from "../../data/session-tenant"
@@ -15,7 +14,6 @@ import { isClerkAuthEnabled } from "../../lib/services/common/auth-mode"
 import { trackProduct } from "../../data/analytics"
 import { readAllPages } from "../../platform/read-all-pages"
 
-const Args = { key: Schema.String }
 const RefreshArgs = { key: Schema.String, refresh: Schema.Boolean }
 
 /** Finishes a provider return the URL fragment carries (`oauth-return.ts`); a no-op otherwise. */
@@ -32,159 +30,78 @@ export const StripChatParams = Command.define("StripIntegrationsChatParams", {
 
 export const ReadClock = readClock("ReadIntegrationsClock", Message.CompletedReadClock)
 
-/** The four statuses the sidebar also reads: one request each, shared (`IntegrationStatuses`). */
-export const LoadCloudflare = Command.define("LoadIntegrationsCloudflareStatus", {
-	args: RefreshArgs,
-	messages: [Message.CompletedLoadCloudflare],
-	execute: ({ key, refresh }) =>
-		Effect.map(
-			settled(
-				Effect.gen(function* () {
-					const statuses = yield* IntegrationStatuses
-					return yield* statuses.cloudflare({ refresh })
-				}),
-			),
-			(result) => Message.CompletedLoadCloudflare({ key, result }),
-		),
-})
+type StatusDone<A> = Schema.Top &
+	((fields: { readonly key: string; readonly result: Result.Result<A, LoadFailure> }) => Message)
 
-export const LoadRailway = Command.define("LoadIntegrationsRailwayStatus", {
-	args: RefreshArgs,
-	messages: [Message.CompletedLoadRailway],
-	execute: ({ key, refresh }) =>
-		Effect.map(
-			settled(
-				Effect.gen(function* () {
-					const statuses = yield* IntegrationStatuses
-					return yield* statuses.railway({ refresh })
-				}),
-			),
-			(result) => Message.CompletedLoadRailway({ key, result }),
-		),
-})
+/** One status read: `refresh` only matters to the reads the sidebar shares (`IntegrationStatuses`). */
+const statusRead = <const Name extends string, A, E, R>(
+	name: Name,
+	done: StatusDone<A>,
+	read: (refresh: boolean) => Effect.Effect<A, E, R>,
+) =>
+	Command.define(name, {
+		args: RefreshArgs,
+		messages: [done],
+		execute: ({ key, refresh }) => read(refresh).pipe(settleTo((result) => done({ key, result }))),
+	})
 
-export const LoadPlanetscale = Command.define("LoadIntegrationsPlanetscaleStatus", {
-	args: RefreshArgs,
-	messages: [Message.CompletedLoadPlanetscale],
-	execute: ({ key, refresh }) =>
-		Effect.map(
-			settled(
-				Effect.gen(function* () {
-					const statuses = yield* IntegrationStatuses
-					return yield* statuses.planetscale({ refresh })
-				}),
-			),
-			(result) => Message.CompletedLoadPlanetscale({ key, result }),
-		),
-})
-
-export const LoadGcp = Command.define("LoadIntegrationsGcpStatus", {
-	args: RefreshArgs,
-	messages: [Message.CompletedLoadGcp],
-	execute: ({ key, refresh }) =>
-		Effect.map(
-			settled(
-				Effect.gen(function* () {
-					const statuses = yield* IntegrationStatuses
-					return yield* statuses.gcp({ refresh })
-				}),
-			),
-			(result) => Message.CompletedLoadGcp({ key, result }),
-		),
-})
-
-export const LoadAws = Command.define("LoadIntegrationsAwsStatus", {
-	args: Args,
-	messages: [Message.CompletedLoadAws],
-	execute: ({ key }) =>
-		Effect.gen(function* () {
-			const client = yield* MapleApiV2Client
-			return yield* client.awsIntegration.status()
-		}).pipe(settleTo((result) => Message.CompletedLoadAws({ key, result }))),
-})
-
-/** Shared with the sidebar and /infra/supabase through `IntegrationStatuses`. */
-export const LoadSupabase = Command.define("LoadIntegrationsSupabaseStatus", {
-	args: RefreshArgs,
-	messages: [Message.CompletedLoadSupabase],
-	execute: ({ key, refresh }) =>
-		Effect.map(
-			settled(
-				Effect.gen(function* () {
-					const statuses = yield* IntegrationStatuses
-					return yield* statuses.supabase({ refresh })
-				}),
-			),
-			(result) => Message.CompletedLoadSupabase({ key, result }),
-		),
-})
-
-/** `retainedQueryV2("planetscaleIntegration", "databases")`: the poller's inventory. */
-export const LoadPlanetscaleDatabases = Command.define("LoadIntegrationsPlanetscaleDatabases", {
-	args: Args,
-	messages: [Message.CompletedLoadPlanetscaleDatabases],
-	execute: ({ key }) =>
-		Effect.gen(function* () {
-			const client = yield* MapleApiV2Client
-			return yield* client.planetscaleIntegration.databases()
-		}).pipe(settleTo((result) => Message.CompletedLoadPlanetscaleDatabases({ key, result }))),
-})
-
-export const LoadLinear = Command.define("LoadIntegrationsLinearStatus", {
-	args: Args,
-	messages: [Message.CompletedLoadLinear],
-	execute: ({ key }) =>
-		Effect.gen(function* () {
-			const client = yield* MapleInternalApiClient
-			return yield* client.integrations.linearStatus()
-		}).pipe(settleTo((result) => Message.CompletedLoadLinear({ key, result }))),
-})
-
-export const LoadSearchConsole = Command.define("LoadIntegrationsSearchConsoleStatus", {
-	args: Args,
-	messages: [Message.CompletedLoadSearchConsole],
-	execute: ({ key }) =>
-		Effect.gen(function* () {
-			const client = yield* MapleInternalApiClient
-			return yield* client.integrations.searchConsoleStatus()
-		}).pipe(settleTo((result) => Message.CompletedLoadSearchConsole({ key, result }))),
-})
-
-export const LoadGithub = Command.define("LoadIntegrationsGithubStatus", {
-	args: Args,
-	messages: [Message.CompletedLoadGithub],
-	execute: ({ key }) =>
-		Effect.gen(function* () {
-			const client = yield* MapleInternalApiClient
-			return yield* client.integrations.githubStatus()
-		}).pipe(settleTo((result) => Message.CompletedLoadGithub({ key, result }))),
-})
-
-export const LoadChat = Command.define("LoadIntegrationsChatConnectors", {
-	args: Args,
-	messages: [Message.CompletedLoadChat],
-	execute: ({ key }) =>
-		Effect.gen(function* () {
-			const client = yield* MapleApiV2Client
-			return yield* client.chatIntegration.connectors()
-		}).pipe(settleTo((result) => Message.CompletedLoadChat({ key, result }))),
-})
-
-/** `scrapeTargetsListAtom`: every page of 100. */
-export const LoadScrapeTargets = Command.define("LoadIntegrationsScrapeTargets", {
-	args: Args,
-	messages: [Message.CompletedLoadScrapeTargets],
-	execute: ({ key }) =>
-		Effect.gen(function* () {
-			const client = yield* MapleApiV2Client
-			const data: ReadonlyArray<V2ScrapeTarget> = yield* collectV2Pages((cursor) =>
+/** Every status read the page makes, by its slot in `Statuses`. */
+export const STATUS_READS = {
+	cloudflare: statusRead("LoadIntegrationsCloudflareStatus", Message.CompletedLoadCloudflare, (refresh) =>
+		Effect.flatMap(IntegrationStatuses, (statuses) => statuses.cloudflare({ refresh })),
+	),
+	railway: statusRead("LoadIntegrationsRailwayStatus", Message.CompletedLoadRailway, (refresh) =>
+		Effect.flatMap(IntegrationStatuses, (statuses) => statuses.railway({ refresh })),
+	),
+	planetscale: statusRead(
+		"LoadIntegrationsPlanetscaleStatus",
+		Message.CompletedLoadPlanetscale,
+		(refresh) => Effect.flatMap(IntegrationStatuses, (statuses) => statuses.planetscale({ refresh })),
+	),
+	gcp: statusRead("LoadIntegrationsGcpStatus", Message.CompletedLoadGcp, (refresh) =>
+		Effect.flatMap(IntegrationStatuses, (statuses) => statuses.gcp({ refresh })),
+	),
+	supabase: statusRead("LoadIntegrationsSupabaseStatus", Message.CompletedLoadSupabase, (refresh) =>
+		Effect.flatMap(IntegrationStatuses, (statuses) => statuses.supabase({ refresh })),
+	),
+	aws: statusRead("LoadIntegrationsAwsStatus", Message.CompletedLoadAws, () =>
+		Effect.flatMap(MapleApiV2Client, (client) => client.awsIntegration.status()),
+	),
+	/** `retainedQueryV2("planetscaleIntegration", "databases")`: the poller's inventory. */
+	planetscaleDatabases: statusRead(
+		"LoadIntegrationsPlanetscaleDatabases",
+		Message.CompletedLoadPlanetscaleDatabases,
+		() => Effect.flatMap(MapleApiV2Client, (client) => client.planetscaleIntegration.databases()),
+	),
+	linear: statusRead("LoadIntegrationsLinearStatus", Message.CompletedLoadLinear, () =>
+		Effect.flatMap(MapleInternalApiClient, (client) => client.integrations.linearStatus()),
+	),
+	searchConsole: statusRead("LoadIntegrationsSearchConsoleStatus", Message.CompletedLoadSearchConsole, () =>
+		Effect.flatMap(MapleInternalApiClient, (client) => client.integrations.searchConsoleStatus()),
+	),
+	github: statusRead("LoadIntegrationsGithubStatus", Message.CompletedLoadGithub, () =>
+		Effect.flatMap(MapleInternalApiClient, (client) => client.integrations.githubStatus()),
+	),
+	chat: statusRead("LoadIntegrationsChatConnectors", Message.CompletedLoadChat, () =>
+		Effect.flatMap(MapleApiV2Client, (client) => client.chatIntegration.connectors()),
+	),
+	/** `scrapeTargetsListAtom`: every page of 100. */
+	scrapeTargets: statusRead("LoadIntegrationsScrapeTargets", Message.CompletedLoadScrapeTargets, () =>
+		Effect.flatMap(MapleApiV2Client, (client) =>
+			collectV2Pages((cursor) =>
 				client.scrapeTargets.list({
 					query: { limit: 100, ...(cursor !== undefined ? { cursor } : undefined) },
 				}),
-			)
-			return data
-		}).pipe(settleTo((result) => Message.CompletedLoadScrapeTargets({ key, result }))),
-})
+			),
+		),
+	),
+	/** The org's data sources (`dataSources` flag), every page, for the hub's rows. */
+	dataSources: statusRead("LoadIntegrationsDataSources", Message.CompletedLoadDataSources, () =>
+		Effect.flatMap(MapleApiV2Client, (client) =>
+			readAllPages((cursor) => client.dataSources.list({ query: { limit: 100, cursor } })),
+		),
+	),
+} satisfies { readonly [K in StatusName]: unknown }
 
 /** `useIntegrationMessage`: a successful callback is the `integration_connected` product event. */
 export const TrackConnected = Command.define("TrackIntegrationConnected", {
@@ -194,16 +111,6 @@ export const TrackConnected = Command.define("TrackIntegrationConnected", {
 		trackProduct("integration_connected", { provider }).pipe(
 			Effect.as(Message.CompletedTrackConnected()),
 		),
-})
-
-/** The org's data sources (`dataSources` flag), every page, for the hub's rows. */
-export const LoadDataSources = Command.define("LoadIntegrationsDataSources", {
-	args: Args,
-	messages: [Message.CompletedLoadDataSources],
-	execute: ({ key }) =>
-		Effect.flatMap(MapleApiV2Client, (client) =>
-			readAllPages((cursor) => client.dataSources.list({ query: { limit: 100, cursor } })),
-		).pipe(settleTo((result) => Message.CompletedLoadDataSources({ key, result }))),
 })
 
 /** The session the shell already read (`SessionTenant`): the settings rail and connecting read its grants. */

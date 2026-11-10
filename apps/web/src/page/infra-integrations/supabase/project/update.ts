@@ -6,6 +6,7 @@ import { LoadChartRuntime } from "@maple/views/charts/chart-runtime"
 import { chartBucketSeconds } from "@maple/views/charts/infra-metric-series"
 import * as Keyed from "@maple/views/data/keyed"
 import { requestKey } from "@maple/views/data/request-key"
+import { integrationStatusKey } from "../../../kit/integration-status-keys"
 import type { TimeWindow } from "../../../../data/time-range"
 import { AppRoute, hrefOf } from "../../../../route"
 import { type PageContext, PageOutMessage, type PageReturn } from "../../../contract"
@@ -150,7 +151,7 @@ const navigate = (model: Model, search: Search): Return => ({
 })
 
 export const init = (route: Route, context: PageContext): Return => {
-	const statusKey = requestKey(context.orgId, "integrations.supabaseStatus", {})
+	const statusKey = integrationStatusKey(context.orgId, "supabase")
 	const model: Model = {
 		projectRef: route.projectRef,
 		search: route.search,

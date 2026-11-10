@@ -1,8 +1,4 @@
-import {
-	gcpStatementTextPrefix,
-	type GcpStatement,
-	type GcpTracedStatement,
-} from "../../../../components/infra/gcp/cloud-sql-signals"
+import { gcpStatementTextPrefix, type GcpStatement, type GcpTracedStatement } from "../cloud-sql-signals"
 import type { TimeWindow } from "../../../../data/time-range"
 import { AppRoute, hrefOf } from "../../../../route"
 import type { StatementSpansInput } from "../data"

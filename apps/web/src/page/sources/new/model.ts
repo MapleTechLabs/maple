@@ -8,9 +8,7 @@ import * as CopyButton from "@maple/views/ui/copy-button"
 import { SourceList } from "../kit/data"
 import * as Rules from "../kit/rules"
 import * as Setup from "../kit/setup"
-import { DataIntegration } from "../../integrations/embed"
-import { FlowStage } from "../../integrations/flow"
-import { Model as IntegrationModel } from "../../integrations/model"
+import { DataIntegration, FlowStage, Model as IntegrationModel } from "../../integrations/embed"
 
 // `/sources/new`: pick a platform, name it, copy the token. Onboarding's drawer runs the same flow.
 

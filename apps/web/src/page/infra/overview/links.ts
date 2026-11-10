@@ -1,4 +1,4 @@
-import { gcpWorkloadSearch } from "../../../components/infra/gcp/tabs"
+import { gcpWorkloadSearch } from "../../infra-integrations/gcp/tabs"
 import { resourceSearch } from "../../infra-integrations/aws/derive"
 import { AppRoute, hrefOf } from "../../../route"
 import type { TimeSearch } from "../../kit/view-tabs"

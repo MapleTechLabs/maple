@@ -22,20 +22,20 @@ const ReadAccountClock = readClock("ReadAccountClock", Message.ReadClock)
 
 export const activeTabOf = (model: Model): AccountTab => resolveActiveAccountTab(model.search.tab)
 
-const TAB_TAGS = new Map<AccountTab, TabModel["_tag"]>([
-	["profile", "Profile"],
-	["password", "Password"],
-	["emails", "Emails"],
-	["passkeys", "Passkeys"],
-	["connections", "Connections"],
-	["sessions", "Sessions"],
-	["two-factor", "TwoFactor"],
-	["email-preferences", "EmailPreferences"],
-])
-const tabTag = (tab: AccountTab): TabModel["_tag"] => TAB_TAGS.get(tab) ?? "Unported"
+const TAB_TAGS = {
+	profile: "Profile",
+	password: "Password",
+	emails: "Emails",
+	passkeys: "Passkeys",
+	connections: "Connections",
+	sessions: "Sessions",
+	"two-factor": "TwoFactor",
+	"email-preferences": "EmailPreferences",
+} as const satisfies Record<AccountTab, TabModel["_tag"]>
+const tabTag = (tab: AccountTab): TabModel["_tag"] => TAB_TAGS[tab]
 
 const isTabCurrent = (current: TabModel | null, tab: AccountTab): boolean =>
-	current !== null && current._tag === tabTag(tab) && (current._tag !== "Unported" || current.tab === tab)
+	current !== null && current._tag === tabTag(tab)
 
 const initTab = (model: Model, tab: AccountTab, _context: PageContext): Return => {
 	switch (tabTag(tab)) {
@@ -111,8 +111,6 @@ const initTab = (model: Model, tab: AccountTab, _context: PageContext): Return =
 				),
 			}
 		}
-		case "Unported":
-			return { model: { ...model, tab: { _tag: "Unported", tab } } }
 	}
 }
 

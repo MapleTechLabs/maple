@@ -8,10 +8,10 @@ import type { Message } from "./message"
 import { canManage, type Model, type Statuses } from "./model"
 import { chain, requestStatus } from "./update-status"
 import { TrackConnected } from "./command"
-import * as Cloudflare from "./update-cloudflare"
-import * as Planetscale from "./update-planetscale"
+import * as Cloudflare from "../infra-integrations/cloudflare/integration/update-cloudflare"
+import * as Planetscale from "../infra-integrations/planetscale/integration/update-planetscale"
 import * as SearchConsole from "./update-search-console"
-import * as Supabase from "./update-supabase"
+import * as Supabase from "../infra-integrations/supabase/integration/update-supabase"
 
 // The OAuth popup flow's state changes; the popup itself runs in `subscription.ts`.
 

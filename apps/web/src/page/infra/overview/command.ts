@@ -1,4 +1,4 @@
-import { gcpFleet } from "../../../components/infra/gcp/tabs"
+import { gcpFleet } from "../../infra-integrations/gcp/tabs"
 import { HOST_LIST_LIMIT } from "../../../components/infra/host-scopes"
 import {
 	summarizeCloudflare,
