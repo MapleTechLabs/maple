@@ -108,12 +108,20 @@ export const stageNamed = (base: string) => stageProps(base, (name) => ({ name }
 export const WORKER_COMPATIBILITY_DATE = "2026-10-01"
 
 /**
- * The props every Maple Worker shares: its physical name, compatibility date, placement and
- * `bun dev` block. `app` is also the name base, so it must match the Worker's existing name.
+ * The physical name and placement every Maple Worker, Website ones included, shares. `app` is
+ * also the name base, so it must match the Worker's existing name.
  */
-export const mapleWorkerProps = (app: string, { stage, region, workerDev }: MapleStackContext) => ({
+export const mapleSiteProps = (
+	app: string,
+	{ stage, region }: Pick<MapleStackContext, "stage" | "region">,
+) => ({
 	name: resolveWorkerName(app, stage, region),
-	compatibility: { date: WORKER_COMPATIBILITY_DATE },
 	placement: resolveWorkerPlacement(region),
-	...(isDevApp(app) && { dev: workerDev(app) }),
+})
+
+/** {@link mapleSiteProps} plus the compatibility date and the `bun dev` block of a Worker module. */
+export const mapleWorkerProps = (app: string, stack: MapleStackContext) => ({
+	...mapleSiteProps(app, stack),
+	compatibility: { date: WORKER_COMPATIBILITY_DATE },
+	...(isDevApp(app) && { dev: stack.workerDev(app) }),
 })

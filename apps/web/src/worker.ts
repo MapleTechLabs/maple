@@ -6,12 +6,12 @@
 import {
 	ApiWorker,
 	MapleStack,
+	mapleSiteProps,
 	prdOrigin,
 	resolveDeploymentEnvironment,
 	resolveRegionAppUrls,
-	resolveWorkerName,
-	resolveWorkerPlacement,
 } from "@maple/infra/cloudflare"
+import { siteBuildMemo } from "@maple/infra/worker-build"
 import { commitSha, plainFrom, selfObservabilityEnv } from "@maple/infra/env"
 import * as Cloudflare from "@alchemy.run/cloudflare"
 import { Effect, Schema } from "effect"
@@ -20,14 +20,12 @@ import { WORKER_FIRST_PATHS } from "./worker-first.ts"
 
 const encodeJson = Schema.encodeEffect(Schema.fromJsonString(Schema.Unknown))
 
-// `memo.include` also hashes the `@maple/*` sources; `lockfile` is restated because `include` drops it.
-const MEMO_INCLUDE = ["**/*", "../../packages/*/src/**", "../../lib/*/src/**"]
-
 const props = Effect.gen(function* () {
-	const { stage, region, domains, urls } = yield* MapleStack
+	const stack = yield* MapleStack
+	const { stage, region, domains, urls } = stack
 	const api = yield* ApiWorker
 	return {
-		name: resolveWorkerName("web", stage, region),
+		...mapleSiteProps("web", stack),
 		rootDir: new URL("..", import.meta.url).pathname,
 		main: "src/worker-entry.ts",
 		assets: {
@@ -39,8 +37,7 @@ const props = Effect.gen(function* () {
 			// not worker-first: the Worker is placed in one region, a hop that cost ~1s per cold load.
 			headers: "/assets/*\n  Cache-Control: public, max-age=31536000, immutable\n",
 		},
-		memo: { include: MEMO_INCLUDE, lockfile: true },
-		placement: resolveWorkerPlacement(region),
+		memo: siteBuildMemo(),
 		workersDev: true,
 		domain: domains.web,
 		env: {
