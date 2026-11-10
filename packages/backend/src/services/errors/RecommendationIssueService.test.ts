@@ -1,6 +1,6 @@
 import { afterEach, assert, describe, it } from "@effect/vitest"
 import { Effect, Layer, Schema } from "effect"
-import { OrgId, RecommendationIssueId, UserId } from "@maple/domain/http"
+import { OrgId, RecommendationIssueId, UserId, type TenantContext } from "@maple/domain/http"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import {
 	cleanupTestDbs,
@@ -8,8 +8,7 @@ import {
 	executeSql,
 	queryFirstRow,
 	type TestDb,
-} from "@maple/backend/platform/test-pglite"
-import type { TenantContext } from "@maple/backend/services/auth/AuthService"
+} from "@maple/backend/testing/test-pglite"
 import { WarehouseQueryService } from "@maple/backend/services/warehouse/WarehouseQueryService"
 import { makeWarehouseServiceStub } from "@maple/backend/testing/warehouse-test-support"
 import { RecommendationIssueService } from "./RecommendationIssueService"

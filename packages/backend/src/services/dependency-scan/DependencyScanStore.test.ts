@@ -4,7 +4,7 @@ import { GitCommitSha, VcsRepositoryId } from "@maple/domain/http/vcs"
 import { OrgId, UserId } from "@maple/domain/primitives"
 import { Effect, Layer, Option, Schema, Array as Arr, String as Str } from "effect"
 import { TestClock } from "effect/testing"
-import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/platform/test-pglite"
+import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/testing/test-pglite"
 import {
 	DependencyScanStore,
 	type DependencyScanMatchInput,

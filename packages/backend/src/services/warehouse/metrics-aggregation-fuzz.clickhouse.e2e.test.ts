@@ -19,13 +19,13 @@ import {
 import { baselineWarehouseCapabilities } from "@maple/query-engine"
 import { makeQueryEngineExecute } from "@maple/query-engine/runtime"
 import { compiledQueryOf, normalizeSqlForClickHouseClient } from "@maple/query-engine/execution"
-import type { TenantContext } from "@maple/backend/services/auth/AuthService"
 import {
 	applyRealMigrations,
 	clickhouseE2eEnabled,
 	clickhouseExec,
 	uniqueDatabase,
-} from "./clickhouse-e2e-support"
+} from "../../testing/clickhouse-e2e-support"
+import type { TenantContext } from "@maple/domain/http"
 
 const database = uniqueDatabase("maple_metrics_fuzz_e2e")
 const SEED = Number(process.env.METRICS_FUZZ_SEED || Date.now() % 2 ** 31)

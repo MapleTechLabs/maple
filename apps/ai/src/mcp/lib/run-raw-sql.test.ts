@@ -1,6 +1,6 @@
 import { assert, describe, it } from "@effect/vitest"
 import { Effect, Layer } from "effect"
-import { MAX_RAW_SQL_RESULT_ROWS } from "@maple/domain/http"
+import { MAX_RAW_SQL_RESULT_ROWS, type TenantContext } from "@maple/domain/http"
 import { computeBucketSecondsForRange } from "@maple/query-engine"
 import { runRawSql, autoBucketSeconds } from "./run-raw-sql"
 import {
@@ -9,7 +9,6 @@ import {
 } from "@maple/backend/services/warehouse/WarehouseQueryService"
 import { makeWarehouseServiceStub } from "@maple/backend/testing/warehouse-test-support"
 import { AuditLogService } from "@maple/backend/services/audit/AuditLogService"
-import type { TenantContext } from "@maple/backend/services/auth/tenant-context"
 
 const tenant = { orgId: "org_test" } as TenantContext
 

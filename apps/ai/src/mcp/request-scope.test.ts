@@ -11,7 +11,7 @@ import {
 	type PgConnectionScopeApi,
 	withPgConnectionScopeOf,
 } from "@maple/backend/platform/pg-connection-scope"
-import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/platform/test-pglite"
+import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/testing/test-pglite"
 import { AuthService } from "@maple/backend/services/auth/AuthService"
 import { McpToolRateLimiter } from "@maple/backend/services/auth/McpToolRateLimiter"
 import { DashboardPersistenceService } from "@maple/backend/services/dashboards/DashboardPersistenceService"

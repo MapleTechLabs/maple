@@ -32,7 +32,6 @@ import { ApprovalRequired, type ToolUiPayload } from "../mcp/tools/llm-tools"
 import { mapleToolPhrase } from "../mcp/tools/registry"
 import { agentSessionSpanAttributes, type ResolvedModel } from "../platform/Llm"
 import { withRunSessionAttributes } from "../platform/genai-spans"
-import type { TenantContext } from "@maple/backend/services/auth/tenant-context"
 import { summarizeCause } from "@maple/backend/platform/describe-cause"
 import { type AgentDefinition, agentForSession, chatAgent } from "./agents"
 import { profileForTurn } from "./profiles"
@@ -65,6 +64,7 @@ import {
 	type SubmitReply,
 	type SubmitReview,
 } from "./tools"
+import type { TenantContext } from "@maple/domain/http"
 
 /**
  * The transcript the model starts from.

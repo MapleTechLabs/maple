@@ -56,7 +56,7 @@ import { ShareRateLimiter } from "@maple/backend/services/auth/ShareRateLimiter"
 import { readChartSeries } from "@maple/backend/services/alerts/alert-chart-series"
 import { chatChartFrom, chatChartSession } from "@maple/backend/services/chat/chat-chart"
 import { summarizeCause } from "@maple/backend/platform/describe-cause"
-import { systemTenant } from "@maple/backend/services/alerts/system-tenant"
+import { ALERTING_SYSTEM_USER_ID, systemTenant } from "@maple/backend/services/auth/system-tenant"
 import { WarehouseQueryService } from "@maple/backend/services/warehouse/WarehouseQueryService"
 import { DashboardPersistenceService } from "@maple/backend/services/dashboards/DashboardPersistenceService"
 import { DashboardWidgetDataService } from "@maple/backend/services/dashboards/DashboardWidgetDataService"
@@ -446,17 +446,21 @@ export const HttpV2SharePublicLive = HttpApiBuilder.group(MapleApiV2, "sharePubl
 					// threshold, which side to shade — is pinned in the signed id, so a
 					// rule renamed or deleted after delivery cannot change what an
 					// already-sent alert's picture says.
-					const series = yield* readChartSeries(warehouse, systemTenant(orgId), {
-						orgId,
-						ruleId,
-						groupKey: claims.groupKey,
-						// The comparator is not carried; `breachSide` is the only thing
-						// derived from it that the renderer needs, and it is signed.
-						comparator: "gt",
-						threshold: claims.threshold ?? 0,
-						fromMs: claims.fromMs,
-						toMs: claims.toMs,
-					}).pipe(
+					const series = yield* readChartSeries(
+						warehouse,
+						systemTenant(orgId, ALERTING_SYSTEM_USER_ID),
+						{
+							orgId,
+							ruleId,
+							groupKey: claims.groupKey,
+							// The comparator is not carried; `breachSide` is the only thing
+							// derived from it that the renderer needs, and it is signed.
+							comparator: "gt",
+							threshold: claims.threshold ?? 0,
+							fromMs: claims.fromMs,
+							toMs: claims.toMs,
+						},
+					).pipe(
 						// A slow or failing warehouse is a retryable 503, not a missing chart.
 						Effect.catchTag("@maple/backend/alerts/AlertChartSeriesUnavailableError", (error) =>
 							Effect.fail(new SharePersistenceError({ message: error.message, cause: error })),

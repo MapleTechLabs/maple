@@ -43,6 +43,7 @@ import {
 	PullRequestFileStatus,
 	type SubmitPrReviewRequest,
 	UserId,
+	type TenantContext,
 } from "@maple/domain/http"
 import {
 	buildPublication,
@@ -56,7 +57,6 @@ import {
 	type NameVerdict,
 } from "@maple/backend/services/pr-review/merge-checklist"
 import { privacyFindings, withoutReviewerOverlap } from "@maple/backend/services/pr-review/telemetry/privacy"
-import type { TenantContext } from "@maple/backend/services/auth/tenant-context"
 import {
 	ConfigProvider,
 	Effect,

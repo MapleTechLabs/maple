@@ -2,15 +2,14 @@ import { afterAll, assert, beforeAll, describe, it } from "@effect/vitest"
 import { ConfigProvider, Effect, Layer, Schema, String as Str } from "effect"
 import { FetchHttpClient } from "effect/http"
 import { clickHouseVersionAtLeast } from "@maple/domain/clickhouse"
-import { OrgId, RawSqlValidationError, UserId } from "@maple/domain/http"
+import { OrgId, RawSqlValidationError, UserId, type TenantContext } from "@maple/domain/http"
 import { prepareRawSql } from "@maple/query-engine/runtime"
 import { parseStatement } from "@maple-dev/effect-orm/sql"
 import { EdgeCacheService, MemoryCacheBackendLive } from "@maple/cache"
 import { OrgClickHouseSettingsService } from "@maple/backend/services/org/OrgClickHouseSettingsService"
 import { TinybirdOrgTokenService } from "@maple/backend/services/integrations/TinybirdOrgTokenService"
-import type { TenantContext } from "@maple/backend/services/auth/AuthService"
 import { Env } from "@maple/backend/platform/Env"
-import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/platform/test-pglite"
+import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/testing/test-pglite"
 import { WarehouseQueryService, __testables } from "./WarehouseQueryService"
 import {
 	applyRealMigrations,
@@ -20,7 +19,7 @@ import {
 	clickhouseUrl,
 	clickhouseUser,
 	uniqueDatabase,
-} from "./clickhouse-e2e-support"
+} from "../../testing/clickhouse-e2e-support"
 
 const enabled = clickhouseE2eEnabled
 const database = uniqueDatabase("maple_raw_sql_e2e")

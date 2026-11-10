@@ -7,7 +7,7 @@ import { OAuthAuthStates } from "@maple/db/tables"
 import { OrgId, UserId } from "@maple/domain/http"
 import { Database, DatabaseError, type DatabaseApi } from "@maple/backend/platform/DatabaseLive"
 import { Env } from "@maple/backend/platform/Env"
-import { cleanupTestDbs, createTestDb, queryFirstRow, type TestDb } from "@maple/backend/platform/test-pglite"
+import { cleanupTestDbs, createTestDb, queryFirstRow, type TestDb } from "@maple/backend/testing/test-pglite"
 import {
 	makeOAuthConnectionHelpers,
 	OAuthTokenResponseSchema,

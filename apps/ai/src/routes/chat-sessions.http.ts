@@ -38,9 +38,9 @@ import { Context, Effect, Layer, Option, Schema, Stream, String as Str } from "e
 import { HttpRouter, HttpServerRequest, HttpServerResponse } from "effect/http"
 import * as SecureRandom from "effect/crypto/SecureRandom"
 import { AuthService } from "@maple/backend/services/auth/AuthService"
-import type { TenantContext } from "@maple/backend/services/auth/tenant-context"
 import { Env } from "@maple/backend/platform/Env"
 import { resolveChatSessionTenantContext } from "../mcp/lib/resolve-tenant"
+import type { TenantContext } from "@maple/domain/http"
 
 const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
 

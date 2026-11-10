@@ -5,7 +5,7 @@ import { ErrorIncidentId, ErrorIssueId, OrgId, UserId } from "@maple/domain/prim
 import { ErrorIncidents, ErrorIssueEvents, ErrorIssueFingerprints, ErrorIssues } from "@maple/db/tables"
 import * as PG from "@maple-dev/effect-orm/postgres"
 import { Database } from "@maple/backend/platform/DatabaseLive"
-import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/platform/test-pglite"
+import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/testing/test-pglite"
 import { AuditLogService } from "@maple/backend/services/audit/AuditLogService"
 import { ErrorActorsService } from "./ErrorActorsService"
 import { ErrorIssueMergeService } from "./ErrorIssueMergeService"

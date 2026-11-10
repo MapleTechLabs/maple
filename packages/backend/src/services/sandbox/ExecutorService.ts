@@ -29,7 +29,7 @@ import {
 	String as Str,
 } from "effect"
 import { summarizeCause } from "@maple/backend/platform/describe-cause"
-import { type ExecutorTransport, SandboxClient } from "@maple/backend/sandbox/client"
+import { type ExecutorTransport, SandboxClient } from "@maple/backend/services/sandbox/client"
 import { VcsSourceService } from "@maple/backend/services/integrations/vcs/VcsSourceService"
 
 export class ExecutorServiceError extends Schema.TaggedError<ExecutorServiceError>()(

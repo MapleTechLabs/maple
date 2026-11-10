@@ -11,7 +11,7 @@ import {
 	SandboxImplementation,
 	SandboxMount,
 	SandboxRuntime,
-} from "@maple/backend/sandbox/contract"
+} from "@maple/backend/services/sandbox/contract"
 import { Option, Schema, String as Str } from "effect"
 
 export const REPO_SANDBOX_RUNTIME = new SandboxRuntime({

@@ -5,7 +5,6 @@ import { OrgId, UserId } from "@maple/domain"
 import { baselineWarehouseCapabilities, QueryEngineExecuteRequest } from "@maple/query-engine"
 import type { CompiledQuery } from "@maple/query-engine/ch"
 import { QueryEngineService } from "./QueryEngineService"
-import type { TenantContext } from "@maple/backend/services/auth/AuthService"
 import { WarehouseQueryService, type WarehouseQueryServiceApi } from "./WarehouseQueryService"
 import { BucketCacheService } from "@maple/query-engine/caching"
 import {
@@ -15,6 +14,7 @@ import {
 	type EdgeCacheServiceApi,
 } from "@maple/cache"
 import { compiledQueryOf } from "@maple/query-engine/execution"
+import type { TenantContext } from "@maple/domain/http"
 
 /**
  * Which cache a dashboard request actually lands on, and what that costs.

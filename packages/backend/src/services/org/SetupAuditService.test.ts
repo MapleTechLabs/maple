@@ -1,6 +1,6 @@
 import { afterEach, assert, describe, it } from "@effect/vitest"
 import { Effect, Layer, Option, Schema, Array as Arr, String as Str } from "effect"
-import { OrgId, UserId } from "@maple/domain/http"
+import { OrgId, UserId, type TenantContext } from "@maple/domain/http"
 import { SETUP_AUDIT_CHECKS } from "./setup-audit"
 import { compiledQueryOf } from "@maple/query-engine/execution"
 import {
@@ -9,8 +9,7 @@ import {
 	executeSql,
 	queryFirstRow,
 	type TestDb,
-} from "@maple/backend/platform/test-pglite"
-import type { TenantContext } from "@maple/backend/services/auth/AuthService"
+} from "@maple/backend/testing/test-pglite"
 import { IntegrationInventoryService } from "@maple/backend/services/integrations/IntegrationInventoryService"
 import { OnboardingService } from "@maple/backend/services/org/OnboardingService"
 import { OrganizationService } from "@maple/backend/services/org/OrganizationService"

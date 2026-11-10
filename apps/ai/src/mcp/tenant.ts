@@ -1,5 +1,5 @@
 import { Context } from "effect"
-import type { TenantContext } from "@maple/backend/services/auth/tenant-context"
+import type { TenantContext } from "@maple/domain/http"
 
 /** The tenant every MCP tool call runs under, provided per call by the executor. */
 export class CurrentMcpTenant extends Context.Service<CurrentMcpTenant, TenantContext>()(

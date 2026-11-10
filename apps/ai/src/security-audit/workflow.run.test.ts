@@ -1,8 +1,8 @@
 import { afterEach, assert, describe, it } from "@effect/vitest"
 import { BillingCustomerResolver } from "@maple/backend/services/billing/BillingCustomerResolver"
-import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/platform/test-pglite"
+import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/testing/test-pglite"
 import { durableStep } from "@maple/backend/platform/durable-step"
-import { SandboxTimeoutError } from "@maple/backend/sandbox/contract"
+import { SandboxTimeoutError } from "@maple/backend/services/sandbox/contract"
 import { REPO_SANDBOX_IMPLEMENTATION } from "@maple/backend/services/sandbox/repo-mount"
 import {
 	RepoSandboxService,

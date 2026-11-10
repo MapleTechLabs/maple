@@ -30,7 +30,7 @@ import { inputSchemaOf, mapleToolCatalogFor } from "./registry"
 import { truncateToolOutput } from "./tool-output"
 import { MAX_FAILURE_MESSAGE_CHARS } from "../expected-failures"
 import { toolHandlersWithContent } from "../../platform/genai-spans"
-import type { TenantContext } from "@maple/backend/services/auth/tenant-context"
+import type { TenantContext } from "@maple/domain/http"
 import { TOOL_UI_MARKER } from "@maple/domain/mcp-outputs"
 
 /** A tool's typed output in the shape the chat UI's renderers take. */

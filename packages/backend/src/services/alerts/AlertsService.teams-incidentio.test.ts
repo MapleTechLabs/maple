@@ -5,7 +5,7 @@ import {
 } from "@maple/domain/http"
 import { afterEach, assert, describe, it } from "@effect/vitest"
 import { Array as Arr, Effect } from "effect"
-import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/platform/test-pglite"
+import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/testing/test-pglite"
 import {
 	adminRoles,
 	asOrgId,

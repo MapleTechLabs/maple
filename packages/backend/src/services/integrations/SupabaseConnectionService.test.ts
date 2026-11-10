@@ -11,7 +11,7 @@ import {
 	executeSql,
 	queryFirstRow,
 	type TestDb,
-} from "@maple/backend/platform/test-pglite"
+} from "@maple/backend/testing/test-pglite"
 import { SupabaseOAuthService } from "@maple/backend/services/auth/SupabaseOAuthService"
 import {
 	FAKE_CLIENT_ID,

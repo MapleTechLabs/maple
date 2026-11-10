@@ -6,7 +6,7 @@ import { ErrorIncidents, ErrorIssueFingerprints, ErrorIssues } from "@maple/db/t
 import { baselineWarehouseCapabilities } from "@maple/query-engine"
 import { Clock, Effect, Layer, Schema, Array as Arr, DateTime, Order, String as Str } from "effect"
 import { Database } from "@maple/backend/platform/DatabaseLive"
-import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/platform/test-pglite"
+import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/testing/test-pglite"
 import { AuditLogService } from "@maple/backend/services/audit/AuditLogService"
 import {
 	WarehouseQueryService,

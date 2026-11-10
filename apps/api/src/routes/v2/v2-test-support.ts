@@ -43,7 +43,7 @@ import { SetupAuditService } from "@maple/backend/services/org/SetupAuditService
 import { SignalPresenceService } from "@maple/backend/services/org/SignalPresenceService"
 import { TelemetryReadService } from "@maple/backend/services/warehouse/TelemetryReadService"
 import { SessionReplayReadService } from "@maple/backend/services/session-replays/SessionReplayReadService"
-import { ReplayBlobStore } from "@maple/backend/platform/ReplayBlobStore"
+import { ReplayBlobStore } from "@maple/backend/services/session-replays/ReplayBlobStore"
 import { ApiV2RateLimiter } from "@maple/backend/services/auth/ApiV2RateLimiter"
 import { ShareRateLimiter } from "@maple/backend/services/auth/ShareRateLimiter"
 import { WarehouseQueryService } from "@maple/backend/services/warehouse/WarehouseQueryService"

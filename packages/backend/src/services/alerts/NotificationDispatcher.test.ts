@@ -6,7 +6,7 @@ import { AlertDestinationId, OrgId } from "@maple/domain/http"
 import { Database, DatabaseError } from "@maple/backend/platform/DatabaseLive"
 import { EmailService } from "@maple/backend/platform/EmailService"
 import { Env } from "@maple/backend/platform/Env"
-import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/platform/test-pglite"
+import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/testing/test-pglite"
 import { LinearIssueTracker } from "./LinearIssueTracker"
 import { NotificationDispatcher, type NotificationRequest } from "./NotificationDispatcher"
 

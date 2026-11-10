@@ -41,7 +41,7 @@ export type EnqueueFixVerificationResult =
 	| { readonly enqueued: true; readonly investigationId: InvestigationId }
 	| {
 			readonly enqueued: false
-			readonly reason: "daily_cap" | "no_binding" | "error" | "disabled"
+			readonly reason: "daily_cap" | "no_binding" | "error"
 			readonly investigationId?: InvestigationId
 	  }
 

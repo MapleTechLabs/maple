@@ -6,7 +6,7 @@
  * sandbox calls. Per turn and per repository: once the sandbox is unavailable, or the checkout
  * missed two waits, further sandbox calls for that repository are refused at once.
  */
-import type { SandboxError } from "@maple/backend/sandbox/contract"
+import type { SandboxError } from "@maple/backend/services/sandbox/contract"
 import { Effect, Ref, String as Str } from "effect"
 import type { McpToolExecutorApi } from "../mcp/dispatcher"
 import { fromSandboxError } from "../mcp/lib/source-errors"

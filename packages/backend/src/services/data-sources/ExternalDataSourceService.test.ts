@@ -26,7 +26,7 @@ import {
 import { FetchHttpClient } from "effect/http"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { Env } from "@maple/backend/platform/Env"
-import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/platform/test-pglite"
+import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/testing/test-pglite"
 import { DataSourceCallBudget, DataSourceDrivers } from "./DataSourceDrivers"
 import { ExternalDataSourceService, MAX_CATALOG_ENTRIES } from "./ExternalDataSourceService"
 

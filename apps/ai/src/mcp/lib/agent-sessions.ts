@@ -9,6 +9,7 @@ import {
 	GetAiSessionSpansRequest,
 	type AiSessionSpan,
 	type AiSessionTooLargeError,
+	type TenantContext,
 } from "@maple/domain/http"
 import type { AiGenAiField, MutableAiGenAiValues } from "@maple/domain/gen-ai"
 import { classifyAiSpan, lastUserMessageText, padSessionWindow } from "@maple/agent-sessions"
@@ -18,7 +19,6 @@ import {
 	readAiSessionSpans,
 	resolveAiSessionWindow,
 } from "@maple/backend/services/ai-sessions/ai-session-reads"
-import type { TenantContext } from "@maple/backend/services/auth/tenant-context"
 import { McpInvalidInputError, McpQueryBudgetError } from "../tools/types"
 import { formatNumber } from "./format"
 

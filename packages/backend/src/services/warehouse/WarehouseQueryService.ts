@@ -1,7 +1,7 @@
 import * as ClickHouseHttp from "@maple-dev/effect-clickhouse-http"
 import { FetchHttpClient, HttpClient, HttpClientRequest, type HttpClientError } from "effect/http"
 import { Context, Effect, Layer, Option, Redacted, Schema, Stream, Array as Arr, String as Str } from "effect"
-import { WarehouseConfigError, WarehouseUpstreamError } from "@maple/domain/http"
+import { WarehouseConfigError, WarehouseUpstreamError, type TenantContext } from "@maple/domain/http"
 import {
 	BackendDialect,
 	makeWarehouseExecutor,
@@ -24,7 +24,6 @@ import {
 } from "@maple/query-engine/execution"
 import { WarehouseExecutor } from "@maple/query-engine/observability"
 import { Env } from "@maple/backend/platform/Env"
-import type { TenantContext } from "@maple/backend/services/auth/AuthService"
 import { OrgClickHouseSettingsService } from "@maple/backend/services/org/OrgClickHouseSettingsService"
 import { TinybirdOrgTokenService } from "@maple/backend/services/integrations/TinybirdOrgTokenService"
 

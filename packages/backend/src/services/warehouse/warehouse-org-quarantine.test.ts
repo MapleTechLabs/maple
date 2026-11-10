@@ -7,6 +7,7 @@ import {
 	isOrgWarehouseQuarantined,
 	quarantineOnConfigClassCause,
 	quarantineOrgWarehouse,
+	runWarehouseOrgTurn,
 } from "./warehouse-org-quarantine"
 
 const authError = new WarehouseAuthError({ message: "invalid authentication token", pipeName: "p" })
@@ -77,6 +78,29 @@ describe("org quarantine", () => {
 			)
 			assert.isTrue(config)
 			assert.isTrue(yield* isOrgWarehouseQuarantined(edgeCache, "org_a"))
+		}),
+	)
+})
+
+describe("runWarehouseOrgTurn", () => {
+	const turn = { skipped: "skipped", failed: Effect.succeed("failed"), failureMessage: "tick failed" }
+
+	it.effect("parks an org whose turn fails config-class, then skips it", () =>
+		Effect.gen(function* () {
+			const edgeCache = makeEdgeCacheService(makeMemoryBackend())
+			const first = yield* runWarehouseOrgTurn(edgeCache, "org_a", 1_000, Effect.fail(authError), turn)
+			const second = yield* runWarehouseOrgTurn(edgeCache, "org_a", 2_000, Effect.succeed("ran"), turn)
+			assert.deepStrictEqual([first, second], ["failed", "skipped"])
+		}),
+	)
+
+	it.effect("keeps running an org after a transient failure", () =>
+		Effect.gen(function* () {
+			const edgeCache = makeEdgeCacheService(makeMemoryBackend())
+			const upstream = new WarehouseUpstreamError({ message: "503", pipeName: "p" })
+			const first = yield* runWarehouseOrgTurn(edgeCache, "org_a", 1_000, Effect.fail(upstream), turn)
+			const second = yield* runWarehouseOrgTurn(edgeCache, "org_a", 2_000, Effect.succeed("ran"), turn)
+			assert.deepStrictEqual([first, second], ["failed", "ran"])
 		}),
 	)
 })

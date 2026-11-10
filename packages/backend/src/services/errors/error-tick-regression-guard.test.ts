@@ -4,7 +4,7 @@ import { Effect, Schema } from "effect"
 import { ErrorIssues } from "@maple/db/tables"
 import { ErrorIssueId, OrgId } from "@maple/domain/primitives"
 import { Database } from "@maple/backend/platform/DatabaseLive"
-import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/platform/test-pglite"
+import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/testing/test-pglite"
 import { applyRegressions } from "./error-tick-persistence"
 
 const createdDbs: TestDb[] = []

@@ -13,6 +13,7 @@ export * from "./incident-triage"
 export * from "./cancellation-review"
 export * from "./investigations"
 export * from "./pr-review"
+export * from "./pr-review-rules"
 export * from "./pr-review-telemetry"
 export * from "./code-review"
 export * from "./anomalies"
@@ -40,6 +41,7 @@ export {
 	AuthorizationUnavailableError,
 	OrganizationAccessDeniedError,
 	OrganizationWrongRegionError,
+	type TenantContext,
 } from "./current-tenant"
 export * from "./dashboard-sections"
 export * from "./dashboards"

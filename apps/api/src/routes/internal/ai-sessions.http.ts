@@ -1,5 +1,5 @@
 import { HttpApiBuilder } from "effect/http-api"
-import { CurrentTenant, MapleInternalApi } from "@maple/domain/http"
+import { CurrentTenant, MapleInternalApi, type TenantContext } from "@maple/domain/http"
 import { Effect } from "effect"
 import {
 	listAiSessions,
@@ -15,7 +15,6 @@ import {
 	readAiToolsSeries,
 	readAiToolsTotals,
 } from "@maple/backend/services/ai-sessions/ai-session-reads"
-import type { TenantContext } from "@maple/backend/services/auth/AuthService"
 
 /**
  * Dashboard-only AI agent session reads.

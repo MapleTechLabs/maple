@@ -8,7 +8,7 @@ import * as PG from "@maple-dev/effect-orm/postgres"
 import { AlertIncidents, ErrorIssueEvents, ErrorIssues } from "@maple/db/tables"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { Env } from "@maple/backend/platform/Env"
-import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/platform/test-pglite"
+import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/testing/test-pglite"
 import { alertIssueFingerprint, upsertAlertIssue } from "./issue-hub"
 
 const createdDbs: TestDb[] = []

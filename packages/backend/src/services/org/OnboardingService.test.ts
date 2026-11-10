@@ -8,7 +8,7 @@ import {
 	executeSql,
 	queryFirstRow,
 	type TestDb,
-} from "@maple/backend/platform/test-pglite"
+} from "@maple/backend/testing/test-pglite"
 import { OnboardingService } from "@maple/backend/services/org/OnboardingService"
 
 const trackedDbs: TestDb[] = []

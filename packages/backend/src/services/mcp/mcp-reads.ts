@@ -14,13 +14,13 @@ import {
 	type McpSessionRequestItem,
 	type McpSessionsRequest,
 	type McpToolRequest,
+	type TenantContext,
 } from "@maple/domain/http"
 import { MCP_CLIENT_KINDS, UNKNOWN_MCP_CLIENT } from "@maple/domain/mcp-clients"
 import { Array as Arr, DateTime, Effect, Option, Order, pipe, Record as Rec, String as Str } from "effect"
 import { CH, formatWarehouseDateTime, parseWarehouseDateTime } from "@maple/query-engine"
 import * as Integrations from "@maple/query-engine-integrations"
 import { timestampMs } from "@maple/backend/platform/time"
-import type { TenantContext } from "@maple/backend/services/auth/AuthService"
 import { WarehouseQueryService } from "@maple/backend/services/warehouse/WarehouseQueryService"
 
 // The MCP hub's reads: each page is one request fanning out, in parallel, to `ch/queries/mcp.ts`.

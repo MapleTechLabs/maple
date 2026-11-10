@@ -35,7 +35,7 @@ import {
 	type SandboxError,
 	type SandboxEvent,
 	type SandboxRequest,
-} from "@maple/backend/sandbox/contract"
+} from "@maple/backend/services/sandbox/contract"
 import {
 	Duration,
 	Effect,
@@ -47,7 +47,7 @@ import {
 	Array as Arr,
 	String as Str,
 } from "effect"
-import { SandboxClient } from "@maple/backend/sandbox/client"
+import { SandboxClient } from "@maple/backend/services/sandbox/client"
 import {
 	VcsSourceService,
 	type RepositoryCheckout,

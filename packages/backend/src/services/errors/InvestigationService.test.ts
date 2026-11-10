@@ -30,11 +30,11 @@ import {
 	Investigations,
 } from "@maple/db/tables"
 import type { ChatSessions } from "@maple/backend/platform/bindings"
-import { fakeChatSessionsLayer } from "@maple/backend/platform/chat-sessions-fake"
+import { fakeChatSessionsLayer } from "@maple/backend/testing/chat-sessions-fake"
 import { envPorts } from "@maple/backend/platform/env-ports"
 import { Env } from "@maple/backend/platform/Env"
 import { Database } from "@maple/backend/platform/DatabaseLive"
-import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/platform/test-pglite"
+import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/testing/test-pglite"
 import { InvestigationService } from "./InvestigationService"
 import { STALE_MS } from "./investigation-stale"
 

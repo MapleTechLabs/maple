@@ -7,6 +7,7 @@ import {
 	PrReviewPersistenceError,
 	type VcsRepositoryId,
 	type WarehouseReadError,
+	type TenantContext,
 } from "@maple/domain/http"
 import type { OrgId } from "@maple/domain/primitives"
 import * as PG from "@maple-dev/effect-orm/postgres"
@@ -15,7 +16,6 @@ import { CH, formatWarehouseDateTime } from "@maple/query-engine"
 import { Context, Effect, Layer, Order, Array as Arr, String as Str } from "effect"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { makeDbExecute } from "@maple/backend/platform/db-execute"
-import type { TenantContext } from "@maple/backend/services/auth/AuthService"
 import { WarehouseQueryService } from "@maple/backend/services/warehouse/WarehouseQueryService"
 import { ciWindow } from "./CiAnalyticsService"
 

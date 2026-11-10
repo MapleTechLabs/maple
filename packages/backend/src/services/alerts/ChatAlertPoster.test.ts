@@ -12,7 +12,7 @@ import {
 import { ChatWorkspaceId, OrgId } from "@maple/domain/http"
 import { ConfigProvider, Duration, Effect, Fiber, Layer, Schema, Array as Arr } from "effect"
 import { TestClock } from "effect/testing"
-import { cleanupTestDbs, createTestDb, executeSql, type TestDb } from "@maple/backend/platform/test-pglite"
+import { cleanupTestDbs, createTestDb, executeSql, type TestDb } from "@maple/backend/testing/test-pglite"
 import { Env } from "@maple/backend/platform/Env"
 import { Database, DatabaseError } from "@maple/backend/platform/DatabaseLive"
 import { sealChatWorkspaceCredentials } from "@maple/backend/services/integrations/chat-workspace-credentials"

@@ -13,7 +13,7 @@ import {
 	Option,
 	Schema,
 } from "effect"
-import type { TestDb } from "@maple/backend/platform/test-pglite"
+import type { TestDb } from "@maple/backend/testing/test-pglite"
 import { Env } from "@maple/backend/platform/Env"
 import { HttpClient, HttpClientResponse } from "effect/http"
 import { VcsRepository } from "@maple/backend/services/integrations/vcs/VcsRepository"

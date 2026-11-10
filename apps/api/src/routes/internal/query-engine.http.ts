@@ -127,6 +127,7 @@ import {
 	StatusCode,
 	TraceId,
 	SpanId,
+	type TenantContext,
 } from "@maple/domain/http"
 import { AWS_INFRA_KIND_IDS, AWS_INFRA_KINDS } from "@maple/domain/aws-infra"
 import { GCP_INFRA_SERVICE_IDS, gcpInfraMetrics } from "@maple/domain/gcp-infra"
@@ -178,7 +179,6 @@ import { RuntimeReleaseCatalog } from "@maple/backend/services/security/RuntimeR
 import { advisoryTargetOf } from "@maple/domain/runtime-advisories"
 import { type RuntimeProduct, runtimeProductOf } from "@maple/domain/runtime-posture"
 import type { ExecutionTenant, WarehouseExecutionError } from "@maple/query-engine/execution"
-import type { TenantContext } from "@maple/backend/services/auth/AuthService"
 import * as Integrations from "@maple/query-engine-integrations"
 
 /**

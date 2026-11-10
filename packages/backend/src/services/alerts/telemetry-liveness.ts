@@ -1,9 +1,9 @@
 import { Effect, Option, Array as Arr } from "effect"
 import * as CH from "@maple/query-engine/ch"
-import type { TenantContext } from "@maple/backend/services/auth/AuthService"
 import type { WarehouseQueryServiceApi } from "@maple/backend/services/warehouse/WarehouseQueryService"
 
 import { formatWarehouseDateTime } from "@maple/query-engine"
+import type { TenantContext } from "@maple/domain/http"
 /**
  * "Is this signal quiet because it recovered, or because we stopped receiving
  * data?"

@@ -18,7 +18,7 @@
  *   Python 3.12.7 (fine), cart on Bun posing as Node.js, edge-worker on Workers (untracked).
  */
 import { Array as Arr, Record as Rec, Schema, String as Str } from "effect"
-import { executeSql } from "@maple/backend/platform/test-pglite"
+import { executeSql } from "@maple/backend/testing/test-pglite"
 import type { EvalRuntime } from "./eval-runtime"
 import { type FixtureRule, readsTraceSpans } from "./fake-warehouse"
 import { CI_WORLD } from "./integration-world"

@@ -2,7 +2,7 @@
 import { Effect, Schema } from "effect"
 import * as SecureRandom from "effect/crypto/SecureRandom"
 import { OrgId, StatusPageId } from "@maple/domain/primitives"
-import { executeSql, queryFirstRow, type TestDb } from "@maple/backend/platform/test-pglite"
+import { executeSql, queryFirstRow, type TestDb } from "@maple/backend/testing/test-pglite"
 
 export const ORG = Schema.decodeSync(OrgId)("org_status_pages")
 export const USER = "user_status_pages"

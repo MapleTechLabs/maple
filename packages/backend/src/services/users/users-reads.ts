@@ -25,10 +25,10 @@ import {
 	type UsersGroupItem,
 	type UsersGroupsRequest,
 	type UsersListRequest,
+	type TenantContext,
 } from "@maple/domain/http"
 import { Array as Arr, Clock, DateTime, Effect, Option, Order, String as Str } from "effect"
 import { CH, formatWarehouseDateTime, parseWarehouseDateTime } from "@maple/query-engine"
-import type { TenantContext } from "@maple/backend/services/auth/AuthService"
 import { WarehouseQueryService } from "@maple/backend/services/warehouse/WarehouseQueryService"
 import {
 	isMissingUserActivityChannels,

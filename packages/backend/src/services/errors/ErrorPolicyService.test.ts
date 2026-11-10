@@ -14,7 +14,7 @@ import * as PG from "@maple-dev/effect-orm/postgres"
 import { AlertDestinations, IssueEscalations } from "@maple/db/tables"
 import { Clock, Effect, Layer, Schema, Array as Arr } from "effect"
 import { Database } from "@maple/backend/platform/DatabaseLive"
-import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/platform/test-pglite"
+import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/testing/test-pglite"
 import { ErrorPolicyService } from "./ErrorPolicyService"
 
 // Compile-time guard: broadening policy persistence to Env, notifications,

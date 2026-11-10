@@ -28,6 +28,7 @@ import {
 	WarehouseResultDecodeError,
 	WarehouseScopeError,
 	WarehouseUpstreamError,
+	type TenantContext,
 } from "@maple/domain/http"
 import { FetchHttpClient } from "effect/http"
 import { TestClock } from "effect/testing"
@@ -48,9 +49,8 @@ import {
 	type OrgClickHouseSettingsServiceApi,
 } from "@maple/backend/services/org/OrgClickHouseSettingsService"
 import { TinybirdOrgTokenService } from "@maple/backend/services/integrations/TinybirdOrgTokenService"
-import type { TenantContext } from "@maple/backend/services/auth/AuthService"
 import { Env } from "@maple/backend/platform/Env"
-import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/platform/test-pglite"
+import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/testing/test-pglite"
 
 const trackedDbs: TestDb[] = []
 

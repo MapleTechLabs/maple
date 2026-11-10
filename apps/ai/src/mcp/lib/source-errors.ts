@@ -10,7 +10,7 @@ import {
 	IntegrationsUpstreamError,
 } from "@maple/domain/http"
 import { SandboxRunCheckoutPending, SandboxRunUnavailable } from "@maple/domain/sandbox"
-import type { SandboxError } from "@maple/backend/sandbox/contract"
+import type { SandboxError } from "@maple/backend/services/sandbox/contract"
 import {
 	VcsSourceFileNotFoundError,
 	VcsSourceRefNotFoundError,

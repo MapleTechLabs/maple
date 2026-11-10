@@ -2,7 +2,7 @@ import { afterEach, assert, describe, it } from "@effect/vitest"
 import { AlertIncidentId, AlertRuleId, OrgId, UserId } from "@maple/domain/http"
 import { Duration, Effect, Layer, Schema, Array as Arr } from "effect"
 import { TestClock } from "effect/testing"
-import { cleanupTestDbs, createTestDb, executeSql, type TestDb } from "@maple/backend/platform/test-pglite"
+import { cleanupTestDbs, createTestDb, executeSql, type TestDb } from "@maple/backend/testing/test-pglite"
 import { AlertIncidentAckService, type AlertIncidentActor } from "./AlertIncidentAckService"
 
 const asOrgId = Schema.decodeUnknownSync(OrgId)

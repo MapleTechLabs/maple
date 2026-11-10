@@ -18,6 +18,7 @@ import {
 	AuthorizationUnavailableError,
 	ErrorPersistenceError,
 	RoleName,
+	type TenantContext,
 } from "@maple/domain/http"
 import {
 	CONNECTOR_TENANT_USER_ID,
@@ -28,7 +29,6 @@ import { ActorId, OrgId, UserId } from "@maple/domain/primitives"
 import { ErrorActorsService } from "@maple/backend/services/errors/ErrorActorsService"
 import { OrgMembershipService } from "@maple/backend/services/auth/OrgMembershipService"
 import { auditAttribution } from "@maple/backend/services/audit/audit-access"
-import type { TenantContext } from "@maple/backend/services/auth/tenant-context"
 import { resolveTenant } from "./apply-proposal"
 import { toTenantContext, turnTenant } from "./turn-actor"
 

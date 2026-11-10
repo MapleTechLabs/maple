@@ -91,6 +91,7 @@ import { summarizeCause } from "@maple/backend/platform/describe-cause"
 import type { PullRequestDelta } from "@maple/backend/services/integrations/vcs/VcsProviderClient"
 import { VcsProviderRegistry } from "@maple/backend/services/integrations/vcs/VcsProviderRegistry"
 import { VcsRepository } from "@maple/backend/services/integrations/vcs/VcsRepository"
+import { makeRepoUpstream } from "./repo-upstream"
 import { VcsSyncQueue } from "@maple/backend/services/integrations/vcs/VcsSyncQueue"
 import {
 	applyFeedback,
@@ -196,9 +197,6 @@ export const isTrustedAuthorAssociation = (association: string | undefined): boo
 
 /** Automatic reviews one outside author may get per UTC day across the organization. */
 const OUTSIDE_AUTHOR_DAILY_REVIEWS = 3
-
-/** Repository permissions that make a person a maintainer, whatever the webhook's association says. */
-export const PUSH_PERMISSIONS: ReadonlySet<string> = new Set(["admin", "maintain", "write"])
 
 export interface PrReviewTriggerOutcome {
 	readonly reviewId: PrReviewId | null
@@ -1323,39 +1321,7 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 				return { kept, vectors: keptVectors, suppressed }
 			})
 
-			/** The provider, installation and reference a repository's reads and posts go through. */
-			const providerFor = Effect.fn("PrReviewService.providerFor")(function* (
-				orgId: OrgId,
-				repo: VcsRepo,
-			) {
-				const installation = yield* repositories
-					.getInstallationById(orgId, repo.installationId)
-					.pipe(Effect.mapError(toPersistence))
-				if (Option.isNone(installation)) return Option.none()
-				const provider = yield* providers.resolve(repo.provider).pipe(Effect.option)
-				if (Option.isNone(provider)) return Option.none()
-				return Option.some({
-					provider: provider.value,
-					installation: installation.value,
-					ref: { externalRepoId: repo.externalRepoId, owner: repo.owner, name: repo.name },
-				})
-			})
-
-			/** Whether a person can push to the repository; an unreadable permission is no. */
-			const canPush = Effect.fn("PrReviewService.canPush")(function* (
-				orgId: OrgId,
-				repo: VcsRepo,
-				login: string | null,
-			) {
-				if (login === null) return false
-				const target = yield* providerFor(orgId, repo)
-				if (Option.isNone(target)) return false
-				const { provider, installation, ref } = target.value
-				const permission = yield* provider
-					.fetchCommenterPermission(installation, ref, login)
-					.pipe(Effect.orElseSucceed(() => "none"))
-				return PUSH_PERMISSIONS.has(permission)
-			})
+			const { upstreamFor, canPush } = yield* makeRepoUpstream("PrReviewService")
 
 			/**
 			 * The diff read against the organization's telemetry, for the kickoff and the report. Best
@@ -1364,7 +1330,7 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 			const telemetryFor = (orgId: OrgId, repo: VcsRepo, number: number, headSha: GitCommitSha) =>
 				Effect.gen(function* () {
 					if (telemetryReader === undefined) return undefined
-					const target = yield* providerFor(orgId, repo)
+					const target = yield* upstreamFor(orgId, repo)
 					if (Option.isNone(target)) return undefined
 					const { provider, installation, ref } = target.value
 					const files = yield* provider.fetchPullRequestFiles(installation, ref, number)
@@ -1430,7 +1396,7 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 			 */
 			const diffFactsFor = (orgId: OrgId, repo: VcsRepo, number: number) =>
 				Effect.gen(function* () {
-					const target = yield* providerFor(orgId, repo)
+					const target = yield* upstreamFor(orgId, repo)
 					if (Option.isNone(target)) return undefined
 					const { provider, installation, ref } = target.value
 					const files = yield* provider.fetchPullRequestFiles(installation, ref, number)
@@ -1468,7 +1434,7 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 			 */
 			const repositoryRules = (orgId: OrgId, repo: VcsRepo, ref: string) =>
 				Effect.gen(function* () {
-					const target = yield* providerFor(orgId, repo)
+					const target = yield* upstreamFor(orgId, repo)
 					if (Option.isNone(target)) return undefined
 					const { provider, installation, ref: repoRef } = target.value
 					const files = yield* Effect.forEach(
@@ -1517,7 +1483,7 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 				notice: PrReviewStatusNotice,
 			) =>
 				Effect.gen(function* () {
-					const target = yield* providerFor(orgId, repo)
+					const target = yield* upstreamFor(orgId, repo)
 					if (Option.isNone(target)) return
 					const { provider, installation, ref } = target.value
 					const attempt = yield* commentAttemptOf(orgId, reviewId)
@@ -1578,7 +1544,7 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 				outsideAuthor: boolean,
 			) =>
 				Effect.gen(function* () {
-					const target = yield* providerFor(orgId, repo)
+					const target = yield* upstreamFor(orgId, repo)
 					if (Option.isNone(target)) return
 					const { provider, installation, ref } = target.value
 					yield* provider.writePullRequestCheck(
@@ -1610,7 +1576,7 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 			) {
 				const open = Arr.filter(tracked, (finding) => finding.status === "open")
 				const commented = Arr.filter(tracked, (finding) => finding.commentId !== null)
-				const upstream = yield* providerFor(orgId, repo)
+				const upstream = yield* upstreamFor(orgId, repo)
 				if (commented.length === 0 || Option.isNone(upstream)) return open
 				const { provider, installation, ref } = upstream.value
 				const threads = yield* provider
@@ -1668,7 +1634,7 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 				)?.headSha
 				if (previousSha === undefined) return undefined
 				const tracked = yield* loadTracked(orgId, repo.id, number)
-				const upstream = yield* providerFor(orgId, repo)
+				const upstream = yield* upstreamFor(orgId, repo)
 				let changes: PullRequestDelta | undefined
 				if (Option.isSome(upstream)) {
 					const { provider, installation, ref } = upstream.value
@@ -2424,7 +2390,7 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 				})
 				if (candidates.length === 0 || Option.isNone(repository) || Option.isNone(installation))
 					return telemetry.value
-				const target = yield* providerFor(orgId, repository.value).pipe(
+				const target = yield* upstreamFor(orgId, repository.value).pipe(
 					Effect.option,
 					Effect.map(Option.flatten),
 				)
@@ -3175,7 +3141,7 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 						)
 						.pipe(Effect.mapError(toPersistence))
 					// Whether the reminder went out; the claim is released on any other end.
-					yield* providerFor(orgId, repo).pipe(
+					yield* upstreamFor(orgId, repo).pipe(
 						Effect.flatMap(
 							Option.match({
 								onNone: () => Effect.succeed(false),

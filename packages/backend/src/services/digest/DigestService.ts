@@ -12,9 +12,7 @@ import {
 	EmailUnsubscribeResponse,
 	OrgId,
 	UserId,
-	RoleName,
 } from "@maple/domain/http"
-import type { RoleName as RoleNameType } from "@maple/domain/http"
 import { createClerkClient } from "@clerk/backend"
 import {
 	Clock,
@@ -49,10 +47,7 @@ import { Env } from "@maple/backend/platform/Env"
 import { WarehouseQueryService } from "@maple/backend/services/warehouse/WarehouseQueryService"
 import { EdgeCacheService } from "@maple/cache"
 import { clerkRequest } from "@maple/backend/services/auth/clerk-request"
-import {
-	isOrgWarehouseQuarantined,
-	quarantineOnConfigClassCause,
-} from "@maple/backend/services/warehouse/warehouse-org-quarantine"
+import { runWarehouseOrgTurn } from "@maple/backend/services/warehouse/warehouse-org-quarantine"
 
 import { formatWarehouseDateTime } from "@maple/query-engine"
 import * as CH from "@maple/query-engine/ch"
@@ -60,8 +55,8 @@ import { digestResendCutoffMs, isDigestDue, lastDigestActivity } from "./digest-
 import { resolveOrgName } from "./resolve-org-name"
 import { unsubscribeLinks, verifyUnsubscribeToken } from "./unsubscribe-token"
 import { summarizeCause } from "@maple/backend/platform/describe-cause"
+import { systemTenant } from "@maple/backend/services/auth/system-tenant"
 const SYSTEM_DIGEST_USER = UserId.make("system-digest")
-const ROOT_ROLE = RoleName.make("root")
 
 const toPersistenceError = (error: unknown) =>
 	new DigestPersistenceError({
@@ -476,12 +471,7 @@ export class DigestService extends Context.Service<DigestService>()("@maple/back
 			const previousStart = formatWarehouseDateTime(previousStartMs)
 			const previousEnd = formatWarehouseDateTime(currentStartMs - 1000)
 
-			const systemTenant = {
-				orgId,
-				userId: SYSTEM_DIGEST_USER,
-				roles: [ROOT_ROLE] as ReadonlyArray<RoleNameType>,
-				authMode: "self_hosted" as const,
-			}
+			const tenant = systemTenant(orgId, SYSTEM_DIGEST_USER)
 
 			// Filter lists are omitted rather than sent empty: an empty list would be
 			// a filter that matches nothing, not the absence of a filter.
@@ -490,11 +480,11 @@ export class DigestService extends Context.Service<DigestService>()("@maple/back
 			const window = (startTime: string, endTime: string) => ({ orgId, startTime, endTime })
 			// A weekly background job over two 7-day windows: the aggregation budget.
 			const run = <T>(compiled: CH.CompiledQueryInput<T>, context: string) =>
-				warehouse.compiledQuery(systemTenant, compiled, { profile: "aggregation", context })
+				warehouse.compiledQuery(tenant, compiled, { profile: "aggregation", context })
 
 			// Warm the route once before the fan-out, so the org-config read isn't
 			// racing concurrent warehouse fetches for a connection slot.
-			yield* warehouse.warmRoute(systemTenant)
+			yield* warehouse.warmRoute(tenant)
 
 			const warehouseFailure = (error: unknown) =>
 				new DigestPersistenceError({
@@ -1096,19 +1086,10 @@ export class DigestService extends Context.Service<DigestService>()("@maple/back
 						namespaces: parseScopeColumn(head.namespacesJson),
 					}
 
-					return Effect.gen(function* () {
+					// A parked org is skipped before the claim, so it isn't marked attempted for the window.
+					const sendForScope = Effect.gen(function* () {
 						const orgId = OrgId.make(rawOrgId)
 						const orgSubIds = Arr.map(orgSubs, (s) => s.id)
-
-						// Orgs whose warehouse rejected queries with an auth/config-class
-						// error are parked (see warehouse-org-quarantine.ts). Checked before
-						// the claim so a parked org isn't marked attempted for the window.
-						if (yield* isOrgWarehouseQuarantined(edgeCache, rawOrgId)) {
-							yield* Effect.logInfo("Skipping digest for org with quarantined warehouse").pipe(
-								Effect.annotateLogs({ orgId: rawOrgId }),
-							)
-							return []
-						}
 
 						const claim = yield* dbExecute((db) =>
 							db.run(
@@ -1212,38 +1193,14 @@ export class DigestService extends Context.Service<DigestService>()("@maple/back
 						)
 
 						return sendResults
-					}).pipe(
-						Effect.catchCause((cause) =>
-							Cause.hasInterruptsOnly(cause)
-								? Effect.interrupt
-								: Effect.gen(function* () {
-										const quarantined = yield* quarantineOnConfigClassCause(
-											edgeCache,
-											rawOrgId,
-											cause,
-											now,
-										)
-										if (quarantined) {
-											yield* Effect.logInfo(
-												"Org warehouse rejected queries with a config-class error; quarantined",
-											).pipe(
-												Effect.annotateLogs({
-													orgId: rawOrgId,
-													error: summarizeCause(cause),
-												}),
-											)
-										} else {
-											yield* Effect.logError("Digest failed for org").pipe(
-												Effect.annotateLogs({
-													orgId: rawOrgId,
-													error: summarizeCause(cause),
-												}),
-											)
-										}
-										return Arr.map(orgSubs, () => ({ sent: false }))
-									}),
-						),
-					)
+					})
+
+					return runWarehouseOrgTurn(edgeCache, rawOrgId, now, sendForScope, {
+						skipped: [],
+						skipMessage: "Skipping digest for org with quarantined warehouse",
+						failureMessage: "Digest failed for org",
+						failed: Effect.sync(() => Arr.map(orgSubs, () => ({ sent: false }))),
+					})
 				},
 				{ concurrency: 1 },
 			)

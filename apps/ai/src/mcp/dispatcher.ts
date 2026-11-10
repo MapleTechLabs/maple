@@ -1,5 +1,5 @@
 import { VcsSourceService } from "@maple/backend/services/integrations/vcs/VcsSourceService"
-import type { SandboxError } from "@maple/backend/sandbox/contract"
+import type { SandboxError } from "@maple/backend/services/sandbox/contract"
 import { RepoSandboxService, type RepositoryTarget } from "@maple/backend/services/sandbox/RepoSandboxService"
 import { ExternalDataSourceService } from "@maple/backend/services/data-sources/ExternalDataSourceService"
 import { OrganizationFeatureFlagsService } from "@maple/backend/services/org/OrganizationFeatureFlagsService"
@@ -16,8 +16,8 @@ import { McpRuntimeServicesLive, type McpToolRuntimeRequirements } from "./tools
 import { CurrentMcpRequestTenant, CurrentMcpTenant } from "./tenant"
 import { recordExpectedMcpFailure, spanFailureMessage } from "./expected-failures"
 import { loadRegistry } from "./tool-catalog"
-import type { TenantContext } from "@maple/backend/services/auth/tenant-context"
 import { recordMcpToolAudit } from "@maple/backend/services/audit/audit-access"
+import type { TenantContext } from "@maple/domain/http"
 
 /**
  * How a failure reads to the model: one short lead naming the kind of failure, never an error tag.

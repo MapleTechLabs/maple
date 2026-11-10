@@ -6,7 +6,7 @@ import * as SecureRandom from "effect/crypto/SecureRandom"
 import { inject } from "vitest"
 
 import { FixtureMemoryFS, type PgliteFixture } from "../../test/pglite-fixture"
-import { Database } from "./DatabaseLive"
+import { Database } from "../platform/DatabaseLive"
 import { makeDatabaseFromInstance } from "./DatabasePgliteLive"
 
 declare module "vitest" {

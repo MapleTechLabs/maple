@@ -6,7 +6,7 @@ import {
 	SandboxImplementation,
 	SandboxSpawnError,
 	type SandboxError,
-} from "@maple/backend/sandbox/contract"
+} from "@maple/backend/services/sandbox/contract"
 import {
 	McpToolOutputs,
 	SandboxExecOutput,

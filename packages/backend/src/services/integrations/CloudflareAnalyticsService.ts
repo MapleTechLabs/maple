@@ -41,7 +41,6 @@ import {
 	IntegrationsUpstreamError,
 	IntegrationsValidationError,
 	OrgId,
-	RoleName,
 	UserId as UserIdSchema,
 } from "@maple/domain/http"
 import * as CH from "@maple/query-engine/ch"
@@ -72,7 +71,6 @@ import {
 	Record as Rec,
 } from "effect"
 import * as CloudflareAnalyticsMetrics from "@maple/backend/observability/CloudflareAnalyticsMetrics"
-import type { TenantContext } from "@maple/backend/services/auth/AuthService"
 import {
 	graphqlQuery,
 	listHyperdriveConfigs as listAccountHyperdriveConfigs,
@@ -159,6 +157,7 @@ import { summarizeCause } from "@maple/backend/platform/describe-cause"
 import { pollFleet } from "./poll-fleet"
 import { parseWarehouseDateTime } from "@maple/query-engine"
 import type { MapleDbError } from "@maple/db/client"
+import { systemTenant } from "@maple/backend/services/auth/system-tenant"
 
 /** The poller mirrors its writes onto the rows it loaded, so it holds them mutable. */
 type CloudflareAnalyticsStateRow = { -readonly [K in keyof StoredStateRow]: StoredStateRow[K] }
@@ -238,7 +237,6 @@ const GRANT_REVOKED_REASON = "The Cloudflare grant was revoked. Reconnect Cloudf
 const floorToBucket = (ms: number) => ms - (ms % BUCKET_MS)
 
 const decodeUserIdSync = Schema.decodeUnknownSync(UserIdSchema)
-const decodeRoleNameSync = Schema.decodeUnknownSync(RoleName)
 const decodeOrgId = Schema.decodeUnknownSync(OrgId)
 const encodeJsonSync = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
 
@@ -1367,13 +1365,6 @@ export class CloudflareAnalyticsService extends Context.Service<
 		const ingest = yield* makeIngestSender
 
 		const dbExecute = makeDbExecute(database, "CloudflareAnalyticsService", toPersistenceError)
-
-		const systemTenant = (orgId: OrgId): TenantContext => ({
-			orgId,
-			userId: SYSTEM_USER_ID,
-			roles: [decodeRoleNameSync("root")],
-			authMode: "self_hosted",
-		})
 
 		const loadStateRows = (orgId: OrgId, accountId?: string) =>
 			dbExecute((db): Effect.Effect<ReadonlyArray<CloudflareAnalyticsStateRow>, MapleDbError> =>
@@ -3289,12 +3280,12 @@ export class CloudflareAnalyticsService extends Context.Service<
 			const routeOptions = clickHouseReady ? {} : { route: "ingest" as const }
 			const [rows, statsRows] = yield* Effect.all(
 				[
-					warehouse.compiledQuery(systemTenant(orgId), compiled, {
+					warehouse.compiledQuery(systemTenant(orgId, SYSTEM_USER_ID), compiled, {
 						profile: "aggregation",
 						context: "cloudflareUsage",
 						...routeOptions,
 					}),
-					warehouse.compiledQuery(systemTenant(orgId), compiledStats, {
+					warehouse.compiledQuery(systemTenant(orgId, SYSTEM_USER_ID), compiledStats, {
 						profile: "aggregation",
 						context: "cloudflareUsageStats",
 						...routeOptions,

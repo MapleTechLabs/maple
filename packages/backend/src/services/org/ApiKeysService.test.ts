@@ -10,8 +10,8 @@ import {
 	executeSql,
 	queryFirstRow,
 	type TestDb,
-} from "@maple/backend/platform/test-pglite"
-import { ORG_A, ORG_B, USER_A, USER_B } from "@maple/backend/platform/test-two-orgs"
+} from "@maple/backend/testing/test-pglite"
+import { ORG_A, ORG_B, USER_A, USER_B } from "@maple/backend/testing/test-two-orgs"
 
 const trackedDbs: TestDb[] = []
 

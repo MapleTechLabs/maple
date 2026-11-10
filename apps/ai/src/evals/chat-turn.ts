@@ -9,13 +9,13 @@
 import { randomUUID } from "node:crypto"
 import { Effect, Option, Schema, Array as Arr, String as Str } from "effect"
 import type { ChatTurnOrigin } from "@maple/domain/chat-session"
-import type { TenantContext } from "@maple/backend/services/auth/tenant-context"
 import type { ChatTurnEvent } from "../chat/events"
 import { runChatTurn } from "../chat/run"
 import { makeRunUsage, type RunUsage, type SubmitDiagnosis } from "../chat/tools"
 import type { McpToolExecutorApi } from "../mcp/dispatcher"
 import { evalModel } from "./model"
 import { observeCall, type ObservedCall } from "./targets"
+import type { TenantContext } from "@maple/domain/http"
 
 export interface TranscriptCall extends ObservedCall {
 	/** What the model was shown, truncated for the artifact. */

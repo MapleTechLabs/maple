@@ -6,7 +6,7 @@ import { AlertDestinationId, ChatWorkspaceId, OrgId } from "@maple/domain/http"
 import { Effect, Schema } from "effect"
 import { encryptAes256Gcm } from "@maple/backend/platform/Crypto"
 import { Database } from "@maple/backend/platform/DatabaseLive"
-import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/platform/test-pglite"
+import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/testing/test-pglite"
 import { hydrateDestinationRow, type DestinationSecretConfig } from "./AlertDestinationHydration"
 
 /*

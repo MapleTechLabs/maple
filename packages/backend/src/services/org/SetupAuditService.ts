@@ -34,7 +34,6 @@ import {
 import { SetupAuditUnavailableError, type SetupAuditReport } from "@maple/domain/setup-audit"
 import { alertRuleIntervalMinutes, CH, formatWarehouseDateTime } from "@maple/query-engine"
 import { Cause, Clock, Context, Effect, Layer, Option, Result, Schema, Array as Arr } from "effect"
-import type { TenantContext } from "@maple/backend/services/auth/AuthService"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { makeDbExecute } from "@maple/backend/platform/db-execute"
 import { WarehouseQueryService } from "@maple/backend/services/warehouse/WarehouseQueryService"
@@ -44,6 +43,7 @@ import { OrganizationService } from "@maple/backend/services/org/OrganizationSer
 import { readOrgCreatedAt } from "@maple/backend/services/org/org-created-at"
 import { SignalPresenceService } from "@maple/backend/services/org/SignalPresenceService"
 import * as Integrations from "@maple/query-engine-integrations"
+import type { TenantContext } from "@maple/domain/http"
 
 /** Telemetry lookback for the warehouse-backed checks — matches the recommendations reconcile. */
 const LOOKBACK_HOURS = 24

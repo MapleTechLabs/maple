@@ -18,9 +18,9 @@ import {
 } from "@maple/db/tables"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import type { ChatSessionsApi } from "@maple/backend/platform/bindings"
-import { fakeChatSessions } from "@maple/backend/platform/chat-sessions-fake"
+import { fakeChatSessions } from "@maple/backend/testing/chat-sessions-fake"
 import { Env } from "@maple/backend/platform/Env"
-import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/platform/test-pglite"
+import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/testing/test-pglite"
 import { enqueueFixVerification } from "./fix-verification-enqueue"
 
 const ORG = Schema.decodeSync(OrgId)("org_fix_verification_enqueue")

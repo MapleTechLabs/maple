@@ -11,12 +11,12 @@ import { DateTime, Effect, Result, Schema, Scope, String as Str } from "effect"
 import { assert, describe, it } from "vitest"
 import type { McpToolExecutorApi } from "../dispatcher"
 import { noRepositoryWarmup } from "../../../test/chat/tool-executor"
-import type { TenantContext } from "@maple/backend/services/auth/tenant-context"
 import { makeRecordingTracer } from "@maple/backend/testing/recording-tracer"
 import { AgentSpawner } from "@yielded/agent/agent-runtime"
 import { AgentId, RunId, ThreadId } from "@yielded/agent/identifiers"
 import { agentForSession, agentPolicyFor } from "../../chat/agents"
 import { APPROVAL_NOTE, buildMapleToolkit, type ToolUiPayload } from "./llm-tools"
+import type { TenantContext } from "@maple/domain/http"
 
 const TENANT: TenantContext = {
 	orgId: Schema.decodeSync(OrgId)("org_test"),

@@ -19,7 +19,7 @@ import {
 import { afterEach, assert, describe, it } from "@effect/vitest"
 import { Duration, Effect, Layer, Option, Ref, Schema, Array as Arr } from "effect"
 import { TestClock } from "effect/testing"
-import { cleanupTestDbs, createTestDb, executeSql, type TestDb } from "@maple/backend/platform/test-pglite"
+import { cleanupTestDbs, createTestDb, executeSql, type TestDb } from "@maple/backend/testing/test-pglite"
 import {
 	ChatConnectorRegistry,
 	type RegisteredChatConnector,

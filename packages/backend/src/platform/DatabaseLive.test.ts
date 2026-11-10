@@ -6,8 +6,8 @@ import { OrgId } from "@maple/domain/primitives"
 import { Cause, Effect, Exit, Schema, Tracer, Array as Arr, String as Str, Clock, Option } from "effect"
 import { ConnectionError, SqlError, UniqueViolation } from "effect/sql/SqlError"
 import { Database, DatabaseError, executeWithSpan } from "./DatabaseLive"
-import { PGLITE_DB_NAMESPACE } from "./DatabasePgliteLive"
-import { cleanupTestDbs, createTestDb, type TestDb } from "./test-pglite"
+import { PGLITE_DB_NAMESPACE } from "../testing/DatabasePgliteLive"
+import { cleanupTestDbs, createTestDb, type TestDb } from "../testing/test-pglite"
 
 const trackedDbs: TestDb[] = []
 

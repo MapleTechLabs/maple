@@ -84,14 +84,11 @@ export const selectInvestigationUsage = (
 	Effect.map(
 		orm.run(
 			PG.from(Investigations)
-				.select(() => ({
-					runs: PG.count(),
-					// One agent turn per start.
-					passes: PG.count(),
-				}))
+				.select(() => ({ starts: PG.count() }))
 				.where(($) => [$.orgId.eq(orgId), $.startedAt.gte(startOfUtcDay(nowMs))]),
 		),
-		(rows) => ({ runs: rows[0]?.runs ?? 0, passes: rows[0]?.passes ?? 0 }),
+		// One agent turn per start, so a run is a pass.
+		(rows) => ({ runs: rows[0]?.starts ?? 0, passes: rows[0]?.starts ?? 0 }),
 	)
 
 export interface InvestigationQuotaLimits {
