@@ -15,6 +15,7 @@ import * as LogDetail from "@maple/views/logs/log-sheet"
 import * as InfraCorrelation from "../../kit/infra-correlation"
 import { SignalPresenceData } from "@maple/views/data/signal-presence"
 import * as TimeRangePicker from "../../kit/time-range-picker"
+import { AdvancedFilter } from "./advanced-model"
 
 // The `/logs` stream.
 
@@ -50,7 +51,6 @@ export type VolumeBucket = typeof VolumeBucket.Type
 
 export const AttributeKey = Schema.Struct({ name: Schema.String, count: Schema.Number })
 export type AttributeKey = typeof AttributeKey.Type
-
 
 /** `useInfiniteLogs`' later pages: owned by one first page (`generation`), reset with it. */
 export const Pagination = Schema.Struct({
@@ -116,5 +116,6 @@ export const Model = Schema.Struct({
 	/** `PageRefreshProvider`: Reloads so far (non-zero stops snapping) and the 600 ms spinner. */
 	refreshVersion: Schema.Number,
 	isReloading: Schema.Boolean,
+	advanced: AdvancedFilter,
 })
 export type Model = typeof Model.Type

@@ -160,7 +160,7 @@ export const LogOut = Command.define("LogOut", {
 
 /**
  * `focusSearch`: a page tags its primary search with `data-shortcut-focus="search"`. A field is
- * focused and selected; anything else (the traces Advanced Filter trigger) is clicked.
+ * focused and selected; anything else (an Advanced Filter trigger) is clicked.
  */
 export const FocusShortcutSearch = Command.define("FocusShortcutSearch", {
 	messages: [Message.CompletedFocusShortcutSearch],
