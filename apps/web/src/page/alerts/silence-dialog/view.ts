@@ -1,16 +1,33 @@
-import { Option, Array as Arr } from "effect"
+import { Option, Array as Arr, String as Str } from "effect"
 import { Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { eyebrow } from "@maple/views/ui/eyebrow"
 import { button } from "@maple/views/ui/button"
+import * as Combobox from "@maple/views/ui/combobox"
+import { chipsView } from "@maple/views/ui/combobox-view"
 import { panel } from "@maple/views/ui/panel"
 import { segmentedSelect } from "@maple/views/ui/segmented-select"
 import { sidePanelSheet } from "@maple/views/ui/sheet"
 import { vstack } from "@maple/views/ui/stack"
 import { typography } from "@maple/views/ui/typography"
 import type { V2AlertSilenceMatchers } from "@maple/domain/http/v2"
-import { isFormReady, Message, type Model, type SilenceDuration, silenceEndMs, untilError } from "./dialog"
-import { dialogTextField, type DialogTextFieldOptions, matcherFields } from "../shared/matcher-fields"
+import {
+	endZoneLabel,
+	isFormReady,
+	Message,
+	type Model,
+	type Scope,
+	type ScopeField,
+	type ScopeSuggestions,
+	type SilenceDuration,
+	silenceEndMs,
+	untilError,
+} from "./dialog"
+import {
+	dialogHelp,
+	dialogLabel,
+	dialogTextField,
+	type DialogTextFieldOptions,
+} from "../shared/matcher-fields"
 import { formatSilenceTime } from "../shared/silences"
 
 type H = HtmlBuilder<Message>
@@ -45,89 +62,145 @@ const fixedScopeLine = (matchers: V2AlertSilenceMatchers): string => {
 		: "Every notification of this rule"
 }
 
-const scopeSection = (h: H, model: Model): Html =>
-	vstack(h, { gap: "2" }, [
-		eyebrow(h, { variant: "label", as: "div" }, ["Covers"]),
-		model.scope._tag === "Fixed"
-			? panel(h, { padded: true, className: "gap-1" }, [
-					typography(h, { size: "sm", weight: "medium" }, [model.scope.label]),
-					typography(h, { size: "xs", tone: "muted" }, [fixedScopeLine(model.scope.matchers)]),
-				])
-			: panel(
-					h,
-					{ padded: true, className: "gap-3" },
-					matcherFields(h, {
-						idPrefix: "silence",
-						typed: model.scope,
-						onInput: (field, value) => Message.ChangedScopeField({ field, value }),
-					}),
-				),
-	])
+const SCOPE_FIELDS: ReadonlyArray<{ field: ScopeField; label: string; placeholder: string }> = [
+	{ field: "services", label: "Services", placeholder: "Add a service" },
+	{ field: "environments", label: "Environments", placeholder: "Add an environment" },
+	{ field: "tags", label: "Tags", placeholder: "Add a tag" },
+]
 
-const durationSection = (h: H, model: Model): Html =>
-	vstack(h, { gap: "2" }, [
-		eyebrow(h, { variant: "label", as: "div" }, ["For"]),
+const SCOPE_HELP_ID = "silence-scope-help"
+
+const NO_SUGGESTIONS: ScopeSuggestions = { services: [], environments: [], tags: [] }
+
+/** The suggestions, then what is typed when it is none of them: a name no rule lists can still be added. */
+const itemsOf = (suggested: ReadonlyArray<string>, typed: string): ReadonlyArray<string> => {
+	const draft = Str.trim(typed)
+	return draft === "" || suggested.includes(draft) ? suggested : [...suggested, draft]
+}
+
+/** One scope field: its label and the chips input, suggesting what the org's rules already name. */
+const chipsField = (
+	h: H,
+	model: Model,
+	scope: Extract<Scope, { readonly _tag: "Typed" }>,
+	suggestions: ScopeSuggestions,
+	{ field, label, placeholder }: (typeof SCOPE_FIELDS)[number],
+): Html => {
+	const combo = model.combos[field]
+	const labelId = `${combo.id}-label`
+	return vstack(h, { gap: "1.5" }, [
+		dialogLabel(h, { id: labelId, htmlFor: Combobox.inputId(combo.id) }, label),
+		h.submodel({
+			slotId: `${combo.id}-chips`,
+			model: { ...combo, selected: scope[field] },
+			view: chipsView,
+			toParentMessage: (message) => Message.GotScopeComboMessage({ field, message }),
+			viewInputs: {
+				items: itemsOf(suggestions[field], combo.inputValue),
+				ariaLabelledBy: labelId,
+				ariaDescribedBy: SCOPE_HELP_ID,
+				placeholder,
+				emptyText: "Type a name, then press Enter",
+				isDisabled: model.isSaving,
+				toView: (parts) => h.div([], parts),
+			},
+		}),
+	])
+}
+
+const scopeSection = (h: H, model: Model, suggestions: ScopeSuggestions): ReadonlyArray<Html> => {
+	const scope = model.scope
+	return scope._tag === "Fixed"
+		? [
+				vstack(h, { gap: "1.5" }, [
+					dialogLabel(h, { id: "silence-covers-label" }, "Covers"),
+					panel(h, { padded: true, className: "gap-1" }, [
+						typography(h, { size: "sm", weight: "medium" }, [scope.label]),
+						typography(h, { size: "xs", tone: "muted" }, [fixedScopeLine(scope.matchers)]),
+					]),
+				]),
+			]
+		: [
+				...Arr.map(SCOPE_FIELDS, (entry) => chipsField(h, model, scope, suggestions, entry)),
+				dialogHelp(
+					h,
+					SCOPE_HELP_ID,
+					"Fill in at least one. A rule is silenced only if it matches every field you fill in.",
+				),
+			]
+}
+
+const durationSection = (h: H, model: Model): ReadonlyArray<Html> => [
+	vstack(h, { gap: "1.5" }, [
+		dialogLabel(h, { id: "silence-duration-label" }, "Duration"),
 		segmentedSelect(h, {
 			ariaLabel: "Silence duration",
 			options: DURATIONS,
 			value: model.duration,
 			onChange: (duration) => Message.ChangedDuration({ duration }),
-			size: "sm",
+			size: "lg",
 			className: "w-fit flex-wrap",
 		}),
-		...(model.duration === "custom"
-			? [
-					textField(h, {
-						name: "until",
-						label: "Ends",
-						value: model.until,
-						placeholder: "",
-						type: "datetime-local",
-						onInput: (value) => Message.ChangedUntil({ value }),
-						description: `In ${model.timeZone}. At most 30 days from now.`,
-						error: untilError(model),
-					}),
-				]
-			: []),
-	])
+	]),
+	...(model.duration === "custom"
+		? [
+				textField(h, {
+					name: "until",
+					// The viewer's own clock, named: "Ends, CET".
+					label: `Ends, ${endZoneLabel(model)}`,
+					value: model.until,
+					placeholder: "",
+					type: "datetime-local",
+					onInput: (value) => Message.ChangedUntil({ value }),
+					description: "Your local time. At most 30 days from now.",
+					error: untilError(model),
+				}),
+			]
+		: []),
+]
 
 /** The "Silence notifications" side panel: what it covers, for how long, and why. */
-export const view = Submodel.defineView<Model, Message, { id: string }>((model, _inputs, h) =>
-	sidePanelSheet(h, {
-		sheet: model.dialog,
-		toParentMessage: (message) => Message.GotDialogMessage({ message }),
-		title: "Silence notifications",
-		description:
-			"Rules keep checking and incidents still open and resolve, but no one is paged. If an incident is still open when the silence ends, its page goes out then.",
-		body: [
-			vstack(h, { gap: "5" }, [
-				scopeSection(h, model),
-				durationSection(h, model),
-				textField(h, {
-					name: "reason",
-					label: "Reason",
-					value: model.reason,
-					placeholder: "Deploying checkout v2.3",
-					onInput: (value) => Message.ChangedReason({ value }),
-				}),
-			]),
-		],
-		onSubmit: Message.ClickedSave(),
-		footer: (close) => [
-			button(
-				h,
-				{ variant: "outline", isDisabled: model.isSaving, attributes: model.isSaving ? [] : close },
-				["Cancel"],
-			),
-			button(
-				h,
-				{
-					type: "submit",
-					isLoading: model.isSaving,
-					isDisabled: model.isSaving || !isFormReady(model),
-				},
-				[submitLabel(model)],
-			),
-		],
-	}),
+export const view = Submodel.defineView<Model, Message, { id: string; suggestions?: ScopeSuggestions }>(
+	(model, inputs, h) =>
+		sidePanelSheet(h, {
+			sheet: model.dialog,
+			toParentMessage: (message) => Message.GotDialogMessage({ message }),
+			title: "Silence notifications",
+			description:
+				"Rules keep checking and incidents still open and resolve, but no one is paged. If an incident is still open when the silence ends, its page goes out then.",
+			body: [
+				vstack(h, { gap: "5" }, [
+					...scopeSection(h, model, inputs.suggestions ?? NO_SUGGESTIONS),
+					...durationSection(h, model),
+					textField(h, {
+						name: "reason",
+						label: "Reason",
+						value: model.reason,
+						placeholder: "Deploying checkout v2.3",
+						onInput: (value) => Message.ChangedReason({ value }),
+					}),
+				]),
+			],
+			onSubmit: Message.ClickedSave(),
+			footer: (close) => [
+				button(
+					h,
+					{
+						variant: "outline",
+						isDisabled: model.isSaving,
+						attributes: model.isSaving ? [] : close,
+					},
+					["Cancel"],
+				),
+				button(
+					h,
+					{
+						type: "submit",
+						isLoading: model.isSaving,
+						isDisabled: model.isSaving || !isFormReady(model),
+					},
+					[submitLabel(model)],
+				),
+			],
+		}),
 )

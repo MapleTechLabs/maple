@@ -6,6 +6,8 @@ import { Effect, Option, Result, Schema, Array as Arr, String as Str } from "eff
 import { Command, type Update } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { defineMessageUnion } from "foldkit/message"
+import { zonedDateParts } from "@maple/query-engine/datetime"
+import * as Combobox from "@maple/views/ui/combobox"
 import * as HubMessage from "../page/alerts/hub/message"
 import * as HubModel from "../page/alerts/hub/model"
 import * as HubUpdate from "../page/alerts/hub/update"
@@ -15,11 +17,13 @@ import { alertsHref } from "../page/alerts/shared/links"
 import { destinationRow, NOW, ORG, ruleRow, stateRow, hubAt } from "../page/alerts/shared/test-rows"
 import type { PageContext } from "../page/contract"
 import type { Resources } from "../platform/resources"
+import { readEffectiveTimeZone } from "../platform/time-zone"
 
 // `/lab/alerts-hub`: the hub's Inbox, Rules and Silences sections and the silence side panel over
 // fixtures, including a rule skipped for too few samples and a cancelled silence. `?state=` picks
-// one: inbox, rules, loading, error, silences, silence-dialog, silence-dialog-custom. The shell
-// stands on the section's own path, and `?sheet=` is played here rather than pushed.
+// one: inbox, rules, loading, error, silences, silence-dialog, silence-dialog-custom,
+// silence-dialog-filled. The shell stands on the section's own path, `?sheet=` is played here
+// rather than pushed, and times read on the viewer's own clock, as in the app.
 
 export const LabState = Schema.Literals([
 	"inbox",
@@ -29,20 +33,22 @@ export const LabState = Schema.Literals([
 	"silences",
 	"silence-dialog",
 	"silence-dialog-custom",
+	"silence-dialog-filled",
 ])
 export type LabState = typeof LabState.Type
 
-export const Flags = Schema.Struct({ state: LabState })
+export const Flags = Schema.Struct({ state: LabState, timeZone: Schema.String })
 export type Flags = typeof Flags.Type
 
-export const flags: Effect.Effect<Flags> = Effect.sync(() => ({
+export const flags: Effect.Effect<Flags> = Effect.map(readEffectiveTimeZone, (timeZone) => ({
 	state: Option.getOrElse(
 		Schema.decodeUnknownOption(LabState)(new URLSearchParams(window.location.search).get("state")),
 		(): LabState => "inbox",
 	),
+	timeZone,
 }))
 
-export const Model = Schema.Struct({ state: LabState, hub: HubModel.Model })
+export const Model = Schema.Struct({ state: LabState, timeZone: Schema.String, hub: HubModel.Model })
 export type Model = typeof Model.Type
 
 export const Message = defineMessageUnion({ GotHubMessage: { message: HubMessage.Message } })
@@ -50,11 +56,8 @@ export type Message = typeof Message.Type
 
 type Return = Update.Return<Model, Message, Resources>
 
-const CONTEXT: PageContext = {
-	orgId: Schema.decodeSync(OrgId)(ORG),
-	pinnedNamespace: null,
-	timeZone: "UTC",
-}
+const LAB_ORG = Schema.decodeSync(OrgId)(ORG)
+const contextOf = (timeZone: string): PageContext => ({ orgId: LAB_ORG, pinnedNamespace: null, timeZone })
 const GRANTS = Policy.grantsOf(["org:engineer"])
 
 /** The hub's reads, writes and URL changes are dropped: the fixture is all the data there is. */
@@ -131,7 +134,10 @@ const SILENCES = [
 	silence("11111111-1111-4111-8111-111111111111", "Deploying checkout v2.3", -20, 40, {
 		services: ["checkout"],
 	}),
-	silence("22222222-2222-4222-8222-222222222222", "Database migration", 180, 240, { tags: ["db"] }),
+	// Tomorrow: its row names the day.
+	silence("22222222-2222-4222-8222-222222222222", "Database migration", 26 * 60, 27 * 60, {
+		tags: ["db"],
+	}),
 	// Cancelled before it started: the API collapses its window to one instant.
 	silence("33333333-3333-4333-8333-333333333333", "Load test on staging", -45, -45, {
 		environments: ["staging"],
@@ -148,23 +154,24 @@ const tabOf = (state: LabState) =>
 			? "inbox"
 			: "silences"
 
-const routeTo = (model: HubModel.Model, sheet: string | undefined) =>
-	HubUpdate.routeChanged(model, hubAt({ ...model.search, tab: model.tab, sheet }), CONTEXT)
+const routeTo = (model: HubModel.Model, sheet: string | undefined, context: PageContext) =>
+	HubUpdate.routeChanged(model, hubAt({ ...model.search, tab: model.tab, sheet }), context)
 
 /** The hub's update, with the `?sheet=` push and dismissal it asks for played back as route changes. */
-const step = (model: HubModel.Model, message: HubMessage.Message) => {
-	const next = HubUpdate.update(model, message, CONTEXT)
+const step = (model: HubModel.Model, message: HubMessage.Message, context: PageContext) => {
+	const next = HubUpdate.update(model, message, context)
 	const asked = Arr.findFirst(next.commands ?? [], (command) => Str.endsWith("HubSheet")(command.name))
 	if (asked._tag === "None") return next
 	const routed = routeTo(
 		next.model,
 		asked.value.name === "PushAlertsHubSheet" ? HubUpdate.SILENCE_SHEET : undefined,
+		context,
 	)
 	return { ...routed, commands: [...(next.commands ?? []), ...(routed.commands ?? [])] }
 }
 
-const hubFor = (state: LabState): HubModel.Model => {
-	const entered = HubUpdate.init(hubAt({ tab: tabOf(state) }), CONTEXT).model
+const hubFor = (state: LabState, context: PageContext): HubModel.Model => {
+	const entered = HubUpdate.init(hubAt({ tab: tabOf(state) }), context).model
 	const base = [
 		HubMessage.Message.ReadClock({ nowMs: NOW }),
 		HubMessage.Message.CompletedFetchSession({ orgId: ORG, grants: GRANTS }),
@@ -184,38 +191,71 @@ const hubFor = (state: LabState): HubModel.Model => {
 							result: Result.succeed(SILENCES),
 						}),
 					]
-	return Arr.reduce([...base, ...data], entered, (model, message) => step(model, message).model)
+	return Arr.reduce([...base, ...data], entered, (model, message) => step(model, message, context).model)
 }
+
+const pad = (value: number): string => Str.padStart(2, "0")(String(value))
+
+/** `ms` as a `datetime-local` value on the viewer's clock. */
+const localInput = (ms: number, timeZone: string): string => {
+	const parts = zonedDateParts(ms, timeZone)
+	return `${parts.year}-${pad(parts.month)}-${pad(parts.day)}T${pad(parts.hour)}:${pad(parts.minute)}`
+}
+
+const dialog = (message: SilenceDialog.Message) => HubMessage.Message.GotSilenceDialogMessage({ message })
+const chip = (field: SilenceDialog.ScopeField, value: string) =>
+	dialog(
+		SilenceDialog.Message.GotScopeComboMessage({
+			field,
+			message: Combobox.Message.ClickedItem({ value }),
+		}),
+	)
+
+/** What each silence-panel state does once the panel is open. */
+const panelSteps = (state: LabState, timeZone: string): ReadonlyArray<HubMessage.Message> =>
+	state === "silence-dialog-custom"
+		? [dialog(SilenceDialog.Message.ChangedDuration({ duration: "custom" }))]
+		: state === "silence-dialog-filled"
+			? [
+					chip("services", "checkout"),
+					chip("services", "payment-svc"),
+					chip("environments", "production"),
+					dialog(SilenceDialog.Message.ChangedDuration({ duration: "custom" })),
+					dialog(
+						SilenceDialog.Message.ChangedUntil({
+							value: localInput(NOW + 26 * 60 * MINUTE, timeZone),
+						}),
+					),
+					dialog(SilenceDialog.Message.ChangedReason({ value: "Deploying checkout v2.3" })),
+				]
+			: []
 
 const toLab = (
 	next: Readonly<{ commands?: ReadonlyArray<Command.Command<HubMessage.Message, never, Resources>> }>,
 ) => Command.mapMessages(keepLocal(next.commands), (message) => Message.GotHubMessage({ message }))
 
 export const init = (flags: Flags): Return => {
-	const hub = hubFor(flags.state)
-	if (flags.state !== "silence-dialog" && flags.state !== "silence-dialog-custom")
-		return { model: { state: flags.state, hub } }
+	const context = contextOf(flags.timeZone)
+	const hub = hubFor(flags.state, context)
+	const lab = { state: flags.state, timeZone: flags.timeZone }
+	if (!Str.startsWith("silence-dialog")(flags.state)) return { model: { ...lab, hub } }
 	// The dialog opens through its own commands, so they run here rather than in the fold.
-	const opened = step(hub, HubMessage.Message.ClickedNewSilence())
-	const picked =
-		flags.state === "silence-dialog-custom"
-			? step(
-					opened.model,
-					HubMessage.Message.GotSilenceDialogMessage({
-						message: SilenceDialog.Message.ChangedDuration({ duration: "custom" }),
-					}),
-				)
-			: { model: opened.model, commands: [] }
-	return {
-		model: { state: flags.state, hub: picked.model },
-		commands: [...toLab(opened), ...toLab(picked)],
-	}
+	const opened = step(hub, HubMessage.Message.ClickedNewSilence(), context)
+	const filled = Arr.reduce(
+		panelSteps(flags.state, flags.timeZone),
+		{ model: opened.model, commands: toLab(opened) },
+		(current, message) => {
+			const next = step(current.model, message, context)
+			return { model: next.model, commands: [...current.commands, ...toLab(next)] }
+		},
+	)
+	return { model: { ...lab, hub: filled.model }, commands: filled.commands }
 }
 
 export const update = (model: Model, message: Message): Return =>
 	Message.match<Return>(message, {
 		GotHubMessage: ({ message: child }) => {
-			const next = step(model.hub, child)
+			const next = step(model.hub, child, contextOf(model.timeZone))
 			return { model: { ...model, hub: next.model }, commands: toLab(next) }
 		},
 	})
@@ -230,6 +270,6 @@ export const view = (model: Model, h: HtmlBuilder<Message>): Html =>
 		slotId: "lab-alerts-hub",
 		model: model.hub,
 		view: hubView,
-		viewInputs: { context: CONTEXT },
+		viewInputs: { context: contextOf(model.timeZone) },
 		toParentMessage: (message: HubMessage.Message) => Message.GotHubMessage({ message }),
 	})

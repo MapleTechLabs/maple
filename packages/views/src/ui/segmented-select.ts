@@ -122,7 +122,8 @@ export type SegmentedSelectConfig<T extends string, M> = Readonly<{
 	options: ReadonlyArray<SegmentedOption<T>>
 	value: T
 	onChange: (value: T) => M
-	size?: "xs" | "sm" | "default"
+	/** `lg` keeps each segment at least as tall as a small button, for a choice in a form. */
+	size?: "xs" | "sm" | "default" | "lg"
 	ariaLabel?: string
 	className?: string
 }>

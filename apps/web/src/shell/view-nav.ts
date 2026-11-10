@@ -1,4 +1,5 @@
 import { isClerkAuthEnabled } from "../lib/services/common/auth-mode"
+import { cn } from "@maple/ui/lib/utils"
 import { Option, Array as Arr, String as Str } from "effect"
 import type { InfraSurfaceLiteral } from "@maple/domain/http"
 import { AsyncData } from "foldkit"
@@ -16,7 +17,6 @@ import {
 	sidebarMenuSub,
 	sidebarMenuSubButton,
 	sidebarMenuSubItem,
-	sidebarSeparator,
 } from "@maple/views/ui/sidebar"
 import type { PinnedDashboardRow } from "./dashboards-shape"
 import { Menu, Message } from "./message"
@@ -104,10 +104,6 @@ const subCountOf = (model: Model, sub: NavSubItem): number | undefined =>
 		? model.alertsInboxCount
 		: undefined
 
-// A rule between groups keeps the sub-list's lane line unbroken.
-const groupRule = (h: HtmlBuilder<Message>): Html =>
-	sidebarMenuSubItem(h, "border-sidebar-border border-l-2 py-1 ps-2.5", [sidebarSeparator(h)])
-
 const subList = (
 	h: HtmlBuilder<Message>,
 	model: Model,
@@ -118,54 +114,54 @@ const subList = (
 	return sidebarMenuSub(
 		h,
 		"mx-0 ms-4 translate-x-0 gap-0 border-l-0 px-0 py-0",
-		Arr.flatMap(subItems, (sub, index) => {
+		Arr.map(subItems, (sub, index) => {
 			const count = subCountOf(model, sub)
-			return [
-				...(sub.startsGroup === true && index > 0 ? [groupRule(h)] : []),
-				sidebarMenuSubItem(
-					h,
-					sub.href === activeSubHref
-						? "border-sidebar-primary border-l-2 ps-2.5"
-						: "border-sidebar-border border-l-2 ps-2.5",
-					[
-						sidebarMenuSubButton(
-							h,
-							{
-								className:
-									"h-7 translate-x-0 data-[active=true]:text-sidebar-primary sm:h-6 [&>svg]:text-current",
-								isActive: sub.href === activeSubHref,
-								link: { href: sub.href, currentPath },
-							},
-							[
-								...(sub.icon === undefined
-									? []
-									: [
-											icon(h, sub.icon, {
-												className: "size-3.5",
-												...iconColor(sub.iconColor),
-											}),
-										]),
-								h.span([], [sub.title]),
-							],
-						),
-						...(count === undefined
-							? []
-							: [
-									sidebarMenuBadge(
-										h,
-										[
-											typography(
-												h,
-												{ size: "xs", mono: true, numeric: true, tone: "error" },
-												[String(count)],
-											),
-										],
-										"top-1 sm:top-0.5",
-									),
-								]),
-					],
+			return sidebarMenuSubItem(
+				h,
+				cn(
+					"border-l-2 ps-2.5",
+					sub.href === activeSubHref ? "border-sidebar-primary" : "border-sidebar-border",
+					// A 4px gap, not a rule, sets a group of rows apart.
+					sub.startsGroup === true && index > 0 && "mt-1",
 				),
-			]
+				[
+					sidebarMenuSubButton(
+						h,
+						{
+							className:
+								"translate-x-0 data-[active=true]:text-sidebar-primary [&>svg]:text-current",
+							isActive: sub.href === activeSubHref,
+							link: { href: sub.href, currentPath },
+						},
+						[
+							...(sub.icon === undefined
+								? []
+								: [
+										icon(h, sub.icon, {
+											className: "size-3.5",
+											...iconColor(sub.iconColor),
+										}),
+									]),
+							h.span([], [sub.title]),
+						],
+					),
+					...(count === undefined
+						? []
+						: [
+								sidebarMenuBadge(
+									h,
+									[
+										typography(
+											h,
+											{ size: "xs", mono: true, numeric: true, tone: "error" },
+											[String(count)],
+										),
+									],
+									"top-1/2 -translate-y-1/2",
+								),
+							]),
+				],
+			)
 		}),
 	)
 }

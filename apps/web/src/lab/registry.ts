@@ -57,7 +57,7 @@ export const LAB_ENTRIES: ReadonlyArray<LabEntry> = [
 		path: "/lab/alerts-hub",
 		title: "Alerts hub",
 		description:
-			"The alerts Inbox, Rules and Silences tabs loading, failing and populated, with a rule skipped for too few samples and a cancelled silence, and the silence side panel (`?state=`).",
+			"The alerts Inbox, Rules and Silences tabs loading, failing and populated, with a rule skipped for too few samples and a cancelled silence, and the silence side panel empty, picking a time and filled in (`?state=`).",
 		kind: "lab",
 		session: "none",
 	},

@@ -18,6 +18,7 @@ import { dashboardPage } from "../../kit/dashboard-page"
 import type { BreadcrumbEntry } from "../../../shell"
 import type { AlertsTab } from "../../../route/search"
 import { alertsHref, createHref } from "../shared/links"
+import { newScheduleHref } from "../shared/oncall-schedules"
 import { newSloHref } from "../shared/slo-commands"
 import { newMonitorHref } from "../shared/uptime-commands"
 import {
@@ -28,6 +29,7 @@ import {
 	resolveIncidentStatus,
 	resolveSignal,
 	resolveStatus,
+	silenceSuggestionsOf,
 } from "./derive"
 import { Message } from "./message"
 import { canManage, type Model } from "./model"
@@ -46,13 +48,7 @@ import * as WindowDialogView from "../maintenance-dialog/view"
 import { rulesTab } from "./view-rules"
 import { deleteMonitorDialog, uptimeTab } from "./view-uptime"
 import { slosTab } from "./view-slos"
-import {
-	deleteScheduleDialog,
-	hasSchedules,
-	newScheduleButton,
-	oncallTab,
-	whoIsOnCallStrip,
-} from "./view-oncall"
+import { deleteScheduleDialog, hasSchedules, oncallTab, whoIsOnCallStrip } from "./view-oncall"
 import { hstack, vstack } from "@maple/views/ui/stack"
 import { typography } from "@maple/views/ui/typography"
 
@@ -99,26 +95,18 @@ const newRuleItem = (
 	],
 })
 
-/** The split create button: its main part makes the section's own kind (an uptime check on Uptime, an SLO
- * on SLOs, else a telemetry rule), the chevron offers every kind. */
-const newRuleButton = (h: H, model: Model, tab: AlertsTab): Html => {
+/** The Inbox's and Rules' split create button: a telemetry rule, and behind the chevron every kind. */
+const newRuleButton = (h: H, model: Model): Html => {
 	const serviceName = model.search.serviceName
-	// Uptime checks and SLOs are admin-only to create; members keep the telemetry rule.
-	const lead =
-		canManage(model) && tab === "uptime"
-			? { href: newMonitorHref({ serviceName }), label: "New check" }
-			: canManage(model) && tab === "slos"
-				? { href: newSloHref({ serviceName }), label: "New SLO" }
-				: { href: createHref({ serviceName }), label: "New rule" }
 	return hstack(h, { align: "center" }, [
 		linkButton(
 			h,
 			{
 				size: "sm",
-				href: lead.href,
+				href: createHref({ serviceName }),
 				className: splitButtonClass("lead"),
 			},
-			[icon(h, "PlusIcon"), lead.label],
+			[icon(h, "PlusIcon"), "New rule"],
 		),
 		h.submodel({
 			slotId: model.newRuleMenu.id,
@@ -183,52 +171,46 @@ const newRuleButton = (h: H, model: Model, tab: AlertsTab): Html => {
 	])
 }
 
-// Destinations are a Routing concern, so "New destination" only shows on that tab.
-const headerActions = (h: H, model: Model, tab: AlertsTab): Html =>
-	hstack(h, { gap: "2" }, [
-		...(canManage(model) && tab === "silences"
-			? [
-					button(
-						h,
-						{
-							size: "sm",
-							variant: "outline",
-							attributes: [h.OnClick(Message.ClickedNewSilence())],
-						},
-						[icon(h, "BellSlashIcon"), "New silence"],
-					),
-				]
-			: []),
-		...(canManage(model) && tab === "maintenance" && hasWindows(model)
-			? [
-					button(
-						h,
-						{
-							size: "sm",
-							variant: "outline",
-							isDisabled: model.nowMs === null,
-							attributes: [h.OnClick(Message.ClickedNewWindow())],
-						},
-						[icon(h, "CalendarIcon"), "New window"],
-					),
-				]
-			: []),
-		...(canManage(model) && tab === "on-call" && hasSchedules(model) ? [newScheduleButton(h)] : []),
-		...(canManage(model) && tab === "routing"
-			? [
-					button(
-						h,
-						{
-							size: "sm",
-							variant: "outline",
-							attributes: [h.OnClick(Message.ClickedNewDestination())],
-						},
-						[icon(h, "PlusIcon"), "New destination"],
-					),
-				]
-			: []),
-		newRuleButton(h, model, tab),
-	])
+const hasRows = <A>(rows: Option.Option<ReadonlyArray<A>>): boolean =>
+	Option.exists(rows, (list) => list.length > 0)
+
+const primaryLink = (h: H, href: string, label: string): Html =>
+	linkButton(h, { size: "sm", href }, [icon(h, "PlusIcon"), label])
+
+const primaryButton = (h: H, onClick: Message, label: string, isDisabled = false): Html =>
+	button(h, { size: "sm", isDisabled, attributes: [h.OnClick(onClick)] }, [icon(h, "PlusIcon"), label])
+
+/**
+ * The header's one primary action: what the open section lists. A section whose empty state
+ * already offers it shows none until it has rows, and a viewer who can't create it sees none.
+ */
+const headerActions = (h: H, model: Model, tab: AlertsTab): Html | undefined => {
+	if (tab === "inbox" || tab === "rules") return newRuleButton(h, model)
+	if (!canManage(model)) return undefined
+	const serviceName = model.search.serviceName
+	switch (tab) {
+		case "uptime":
+			return hasRows(AsyncData.getData(model.monitors.data))
+				? primaryLink(h, newMonitorHref({ serviceName }), "New monitor")
+				: undefined
+		case "slos":
+			return hasRows(AsyncData.getData(model.slos.data))
+				? primaryLink(h, newSloHref({ serviceName }), "New SLO")
+				: undefined
+		case "silences":
+			return primaryButton(h, Message.ClickedNewSilence(), "New silence")
+		case "maintenance":
+			return hasWindows(model)
+				? primaryButton(h, Message.ClickedNewWindow(), "New window", model.nowMs === null)
+				: undefined
+		case "on-call":
+			return hasSchedules(model) ? primaryLink(h, newScheduleHref(), "New schedule") : undefined
+		case "routing":
+			return destinationsOf(model).length > 0
+				? primaryButton(h, Message.ClickedNewDestination(), "Add destination")
+				: undefined
+	}
+}
 
 /** `SyncUnavailable`: the rules or incidents stream stopped before its first answer. */
 const SYNC_UNAVAILABLE = makeClientErrorBody({
@@ -404,7 +386,7 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 				slotId: "alerts-silence",
 				model: model.silenceDialog,
 				view: SilenceDialogView.view,
-				viewInputs: { id: "alerts-silence" },
+				viewInputs: { id: "alerts-silence", suggestions: silenceSuggestionsOf(model) },
 				toParentMessage: (message) => Message.GotSilenceDialogMessage({ message }),
 			}),
 			h.submodel({

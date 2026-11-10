@@ -26,6 +26,37 @@ const clockFormatter = Option.liftThrowable(
 		new Intl.DateTimeFormat("en-GB", { timeZone, hour: "2-digit", minute: "2-digit", hour12: false }),
 )
 
+const abbreviationFormatter = (locale: string) =>
+	Option.liftThrowable(
+		(timeZone: string) => new Intl.DateTimeFormat(locale, { timeZone, timeZoneName: "short" }),
+	)
+const ABBREVIATION_FORMATTERS = [abbreviationFormatter("en-GB"), abbreviationFormatter("en-US")]
+
+/**
+ * A zone's short name at `atMs`: its abbreviation where ICU has one (`CET`, `CEST`, `EST`), else
+ * its offset (`UTC+5:30`). An unknown zone reads `UTC`.
+ */
+export const shortZoneName = (timeZone: string, atMs: number): string =>
+	Option.getOrElse(
+		Arr.findFirst(
+			Arr.flatMap(ABBREVIATION_FORMATTERS, (formatterFor) =>
+				Option.toArray(
+					Option.flatMap(formatterFor(timeZone), (formatter) =>
+						Option.map(
+							Arr.findFirst(
+								formatter.formatToParts(atMs),
+								(entry) => entry.type === "timeZoneName",
+							),
+							(entry) => entry.value,
+						),
+					),
+				),
+			),
+			(name) => /^[A-Z]{2,5}$/.test(name),
+		),
+		() => formatUtcOffset(timeZone, atMs),
+	)
+
 /** `formatUtcOffset`: `UTC+2`, `UTC-5:30`, `UTC`, the offset a zone is on at `atMs`. */
 export const formatUtcOffset = (timeZone: string, atMs: number): string => {
 	const part = Option.match(offsetFormatter(timeZone), {

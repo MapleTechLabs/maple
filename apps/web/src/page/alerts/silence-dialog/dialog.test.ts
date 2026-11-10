@@ -2,13 +2,19 @@ import { describe, expect, it } from "vitest"
 import { AlertSilenceId } from "@maple/domain/http"
 import type { V2AlertSilence } from "@maple/domain/http/v2"
 import { Option, Result, Schema } from "effect"
+import * as Combobox from "@maple/views/ui/combobox"
 import {
+	endZoneLabel,
 	init,
 	isFormReady,
 	matchersOf,
 	Message,
+	type Model,
+	openFor,
 	openNew,
 	OutMessage,
+	parseLocalDateTime,
+	type ScopeField,
 	silenceEndMs,
 	untilError,
 	update,
@@ -36,6 +42,41 @@ describe("silenceEndMs", () => {
 		)
 	})
 
+	it("reads a custom end on the viewer's clock on either side of a DST change", () => {
+		// Berlin springs forward on 2026-03-29: 09:00 the day before is CET, 09:00 that day is CEST.
+		const before = Date.UTC(2026, 2, 28, 12, 0)
+		expect(parseLocalDateTime("2026-03-28T09:00", BERLIN)).toEqual(
+			Option.some(Date.UTC(2026, 2, 28, 8, 0)),
+		)
+		expect(parseLocalDateTime("2026-03-29T09:00", BERLIN)).toEqual(
+			Option.some(Date.UTC(2026, 2, 29, 7, 0)),
+		)
+		expect(silenceEndMs("custom", "2026-03-29T09:00", before, BERLIN)).toEqual(
+			Option.some(Date.UTC(2026, 2, 29, 7, 0)),
+		)
+		// New York falls back on 2026-11-01: 12:00 that day is EST, five hours behind UTC.
+		expect(parseLocalDateTime("2026-10-31T12:00", "America/New_York")).toEqual(
+			Option.some(Date.UTC(2026, 9, 31, 16, 0)),
+		)
+		expect(parseLocalDateTime("2026-11-01T12:00", "America/New_York")).toEqual(
+			Option.some(Date.UTC(2026, 10, 1, 17, 0)),
+		)
+		// The same wall clock read as UTC is a different instant: the form never assumes UTC.
+		expect(parseLocalDateTime("2026-03-29T09:00", "UTC")).toEqual(
+			Option.some(Date.UTC(2026, 2, 29, 9, 0)),
+		)
+	})
+
+	it("names the zone the custom end is in, as it is at that end", () => {
+		const model = { timeZone: BERLIN, nowMs: Date.UTC(2026, 2, 28, 12, 0) }
+		expect(endZoneLabel({ ...model, until: "" })).toBe("CET")
+		expect(endZoneLabel({ ...model, until: "2026-03-28T18:00" })).toBe("CET")
+		expect(endZoneLabel({ ...model, until: "2026-03-29T09:00" })).toBe("CEST")
+		expect(endZoneLabel({ ...model, timeZone: "UTC", until: "" })).toBe("UTC")
+		// A zone ICU has no abbreviation for reads as its offset.
+		expect(endZoneLabel({ ...model, timeZone: "Asia/Kolkata", until: "" })).toBe("UTC+5:30")
+	})
+
 	it("reads a custom end in the viewer's zone and refuses one in the past", () => {
 		expect(silenceEndMs("custom", "2026-11-06T18:30", NOW, BERLIN)).toEqual(
 			Option.some(Date.UTC(2026, 10, 6, 17, 30)),
@@ -46,20 +87,76 @@ describe("silenceEndMs", () => {
 })
 
 describe("matchersOf", () => {
-	it("splits typed lists and drops empty fields", () => {
+	it("takes the chips of each field and drops the empty ones", () => {
 		expect(
 			matchersOf({
 				_tag: "Typed",
-				services: " checkout, payments ,checkout",
-				tags: "",
-				environments: "production",
+				services: ["checkout", "payments"],
+				tags: [],
+				environments: ["production"],
 			}),
 		).toEqual({ services: ["checkout", "payments"], environments: ["production"] })
 	})
 })
 
+describe("scope chips", () => {
+	const pick = (model: Model, field: ScopeField, value: string) =>
+		update(
+			model,
+			Message.GotScopeComboMessage({ field, message: Combobox.Message.ClickedItem({ value }) }),
+		).model
+
+	it("picking a suggestion adds a chip, picking it again or removing it takes it off", () => {
+		const opened = openNew(init("silence"), BERLIN, NOW).model
+		const picked = pick(pick(opened, "services", "checkout"), "environments", "production")
+		expect(matchersOf(picked.scope)).toEqual({ services: ["checkout"], environments: ["production"] })
+		expect(matchersOf(pick(picked, "services", "checkout").scope)).toEqual({
+			environments: ["production"],
+		})
+		const removed = update(
+			picked,
+			Message.GotScopeComboMessage({
+				field: "environments",
+				message: Combobox.Message.RemovedChip({ value: "production" }),
+			}),
+		).model
+		expect(matchersOf(removed.scope)).toEqual({ services: ["checkout"] })
+	})
+
+	it("a typed name is picked with Enter, and the next open starts without chips", () => {
+		const opened = openNew(init("silence"), BERLIN, NOW).model
+		const combo = (message: Combobox.Message) => Message.GotScopeComboMessage({ field: "tags", message })
+		const enter = (model: Model, value: string) =>
+			update(
+				update(model, combo(Combobox.Message.ChangedInput({ value }))).model,
+				// The view lists the suggestions, then what is typed when it is none of them.
+				combo(Combobox.Message.PressedInputKey({ key: "Enter", items: ["database", value] })),
+			).model
+		// The first suggestion that matches wins; a name nothing suggests is added as typed.
+		const entered = enter(enter(opened, "dat"), "queue")
+		expect(matchersOf(entered.scope)).toEqual({ tags: ["database", "queue"] })
+		expect(entered.combos.tags.inputValue).toBe("")
+		expect(matchersOf(openNew(entered, BERLIN, NOW).model.scope)).toEqual({})
+	})
+
+	it("a scope fixed by a rule ignores the chips", () => {
+		const fixed = openFor(
+			init("silence"),
+			{ label: "Rule", matchers: { rule_ids: [] } },
+			BERLIN,
+			NOW,
+		).model
+		expect(pick(fixed, "services", "checkout").scope).toEqual(fixed.scope)
+	})
+})
+
 describe("isFormReady", () => {
-	const typed = (services: string) => ({ _tag: "Typed" as const, services, tags: "", environments: "" })
+	const typed = (service: string) => ({
+		_tag: "Typed" as const,
+		services: service === "" ? [] : [service],
+		tags: [],
+		environments: [],
+	})
 
 	it("needs a reason and something to match", () => {
 		const model = init("silence")
@@ -106,7 +203,7 @@ describe("saving", () => {
 	}
 	const saving = () => {
 		const opened = openNew(init("silence"), BERLIN, NOW).model
-		const typed = { ...opened, reason: "deploy", scope: { ...opened.scope, services: "checkout" } }
+		const typed = { ...opened, reason: "deploy", scope: { ...opened.scope, services: ["checkout"] } }
 		return update(typed, Message.ClickedSave()).model
 	}
 
