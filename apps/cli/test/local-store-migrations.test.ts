@@ -8,28 +8,11 @@ import {
 	LEGACY_SCHEMA_FINGERPRINT,
 	LOCAL_SCHEMA_MANIFEST,
 	LOCAL_SCHEMA_V1,
-	LOCAL_SCHEMA_V2,
-	LOCAL_SCHEMA_V3,
-	LOCAL_SCHEMA_V4,
-	LOCAL_SCHEMA_V5,
-	LOCAL_SCHEMA_V6,
-	LOCAL_SCHEMA_V10,
-	LOCAL_SCHEMA_V11,
-	LOCAL_SCHEMA_V53,
+	localSchemaIdentity,
 	SCHEMA_DIGEST,
 	SCHEMA_FINGERPRINT,
 } from "@maple/local-server/schema-identity"
-import {
-	LOCAL_SCHEMA_V2_MANIFEST,
-	LOCAL_SCHEMA_V3_MANIFEST,
-	LOCAL_SCHEMA_V4_MANIFEST,
-	LOCAL_SCHEMA_V5_MANIFEST,
-	LOCAL_SCHEMA_V7_MANIFEST,
-	LOCAL_SCHEMA_V10_MANIFEST,
-	LOCAL_SCHEMA_V11_MANIFEST,
-	LOCAL_SCHEMA_V12_MANIFEST,
-	LOCAL_SCHEMA_V13_MANIFEST,
-} from "../src/server/schema-snapshots"
+import { localSchemaSnapshot } from "../src/server/schema-snapshots"
 import {
 	abandonLocalStoreMigration,
 	abandonLocalStoreMigrationPreservingSource,
@@ -113,7 +96,7 @@ describe("current local schema identity", () => {
 		expect(LOCAL_SCHEMA_MANIFEST.objects.length).toBeGreaterThan(60)
 		// oxlint-disable-next-line test-slop/no-constant-pin -- anchor that local-schema:bump rewrites on every bump
 		expect(CURRENT_LOCAL_SCHEMA.version).toBe(53)
-		expect(CURRENT_LOCAL_SCHEMA).toEqual(LOCAL_SCHEMA_V53)
+		expect(CURRENT_LOCAL_SCHEMA).toEqual(localSchemaIdentity(53))
 		const logs = Option.getOrUndefined(
 			Arr.findFirst(LOCAL_SCHEMA_MANIFEST.objects, (object) => object.name === "logs"),
 		)
@@ -145,7 +128,7 @@ describe("current local schema identity", () => {
 		expect(timeOrderedErrors?.definition).not.toContain("FROM error_events")
 		const v2TimeOrderedErrors = Option.getOrUndefined(
 			Arr.findFirst(
-				LOCAL_SCHEMA_V2_MANIFEST.objects,
+				localSchemaSnapshot(2).manifest.objects,
 				(object) => object.name === "error_events_by_time_mv",
 			),
 		)
@@ -156,18 +139,21 @@ describe("current local schema identity", () => {
 		// change can't quietly ride along on this version. (v6 drops web_events
 		// again, so it is read from the frozen v4 manifest, not the current one.)
 		const webEvents = Option.getOrUndefined(
-			Arr.findFirst(LOCAL_SCHEMA_V4_MANIFEST.objects, (object) => object.name === "web_events"),
+			Arr.findFirst(localSchemaSnapshot(4).manifest.objects, (object) => object.name === "web_events"),
 		)
 		expect(webEvents?.engine).toBe("MergeTree")
 		expect(webEvents?.orderBy).toBe("(OrgId, Timestamp, SessionId, Seq)")
 		expect(webEvents?.indexes).toContain("idx_event_name")
 		const webEventsView = Option.getOrUndefined(
-			Arr.findFirst(LOCAL_SCHEMA_V4_MANIFEST.objects, (object) => object.name === "web_events_mv"),
+			Arr.findFirst(
+				localSchemaSnapshot(4).manifest.objects,
+				(object) => object.name === "web_events_mv",
+			),
 		)
 		expect(webEventsView?.definition).toContain("FROM session_events")
-		const v3Names = new Set(Arr.map(LOCAL_SCHEMA_V3_MANIFEST.objects, (object) => object.name))
+		const v3Names = new Set(Arr.map(localSchemaSnapshot(3).manifest.objects, (object) => object.name))
 		expect(v3Names.has("web_events")).toBe(false)
-		const v4Names = new Set(Arr.map(LOCAL_SCHEMA_V4_MANIFEST.objects, (object) => object.name))
+		const v4Names = new Set(Arr.map(localSchemaSnapshot(4).manifest.objects, (object) => object.name))
 		expect(Arr.filter([...v4Names], (name) => !v3Names.has(name))).toEqual([
 			"web_events",
 			"web_events_mv",
@@ -178,7 +164,7 @@ describe("current local schema identity", () => {
 		// structural change cannot quietly ride along on this version.
 		const minutely = Option.getOrUndefined(
 			Arr.findFirst(
-				LOCAL_SCHEMA_V5_MANIFEST.objects,
+				localSchemaSnapshot(5).manifest.objects,
 				(object) => object.name === "service_overview_minutely",
 			),
 		)
@@ -188,7 +174,7 @@ describe("current local schema identity", () => {
 		)
 		const minutelyView = Option.getOrUndefined(
 			Arr.findFirst(
-				LOCAL_SCHEMA_V5_MANIFEST.objects,
+				localSchemaSnapshot(5).manifest.objects,
 				(object) => object.name === "service_overview_minutely_mv",
 			),
 		)
@@ -196,7 +182,7 @@ describe("current local schema identity", () => {
 		// migration's backfill double-count into a table that cannot be rebuilt.
 		expect(minutelyView?.definition).toContain("FROM traces")
 		expect(minutelyView?.definition).not.toContain("FROM service_overview_minutely")
-		const v5Names = new Set(Arr.map(LOCAL_SCHEMA_V5_MANIFEST.objects, (object) => object.name))
+		const v5Names = new Set(Arr.map(localSchemaSnapshot(5).manifest.objects, (object) => object.name))
 		const currentNames = new Set(Arr.map(LOCAL_SCHEMA_MANIFEST.objects, (object) => object.name))
 		expect(Arr.filter([...v5Names], (name) => !v4Names.has(name))).toEqual([
 			"service_overview_minutely",
@@ -278,7 +264,10 @@ describe("current local schema identity", () => {
 			expect(view?.definition).toContain(":[0-9]+|line [0-9]+|0x[0-9a-fA-F]+|[0-9a-fA-F]{8,}|[0-9]{6,}")
 		}
 		const v5ErrorEventsView = Option.getOrUndefined(
-			Arr.findFirst(LOCAL_SCHEMA_V5_MANIFEST.objects, (object) => object.name === "error_events_mv"),
+			Arr.findFirst(
+				localSchemaSnapshot(5).manifest.objects,
+				(object) => object.name === "error_events_mv",
+			),
 		)
 		expect(v5ErrorEventsView?.definition).not.toContain("_httpStatus")
 
@@ -338,16 +327,16 @@ describe("current local schema identity", () => {
 				Arr.findFirst(manifest.objects, (object) => object.name === "session_events"),
 				{ onNone: () => [], onSome: (object) => Arr.map(object.columns, (column) => column.name) },
 			)
-		expect(sessionEventColumns(LOCAL_SCHEMA_V10_MANIFEST)).not.toContain("VisitorId")
+		expect(sessionEventColumns(localSchemaSnapshot(10).manifest)).not.toContain("VisitorId")
 		expect(sessionEventColumns(LOCAL_SCHEMA_MANIFEST).slice(-3)).toEqual([
 			"VisitorId",
 			"UserId",
 			"GroupId",
 		])
-		const v10Names = new Set(Arr.map(LOCAL_SCHEMA_V10_MANIFEST.objects, (object) => object.name))
+		const v10Names = new Set(Arr.map(localSchemaSnapshot(10).manifest.objects, (object) => object.name))
 		// The frozen v11 manifest, not the current one: v14 adds objects of its
 		// own, and this assertion pins what v11 itself introduced.
-		const v11Names = new Set(Arr.map(LOCAL_SCHEMA_V11_MANIFEST.objects, (object) => object.name))
+		const v11Names = new Set(Arr.map(localSchemaSnapshot(11).manifest.objects, (object) => object.name))
 		expect(Arr.filter([...v11Names], (name) => !v10Names.has(name))).toEqual([
 			"identity_links",
 			"identity_links_mv",
@@ -366,8 +355,8 @@ describe("current local schema identity", () => {
 		// `ci_runs`, `ci_jobs` and their views, filled forward; v39 adds
 		// `service_endpoint_details_hourly` and its view, backfilled; v41 adds
 		// `service_map_db_edges_minutely` and its view, filled forward.
-		const v12Names = new Set(Arr.map(LOCAL_SCHEMA_V12_MANIFEST.objects, (object) => object.name))
-		const v13Names = new Set(Arr.map(LOCAL_SCHEMA_V13_MANIFEST.objects, (object) => object.name))
+		const v12Names = new Set(Arr.map(localSchemaSnapshot(12).manifest.objects, (object) => object.name))
+		const v13Names = new Set(Arr.map(localSchemaSnapshot(13).manifest.objects, (object) => object.name))
 		const currentSchemaNames = new Set(Arr.map(LOCAL_SCHEMA_MANIFEST.objects, (object) => object.name))
 		expect(Arr.filter([...v12Names], (name) => !v11Names.has(name))).toEqual([])
 		expect(Arr.filter([...v13Names], (name) => !v12Names.has(name))).toEqual([])
@@ -438,7 +427,10 @@ describe("current local schema identity", () => {
 		// v7 matched no Apple frame at all, so every iOS crash fell through to the
 		// message hash and collapsed into one issue per exception type.
 		const v7View = Option.getOrUndefined(
-			Arr.findFirst(LOCAL_SCHEMA_V7_MANIFEST.objects, (object) => object.name === "error_events_mv"),
+			Arr.findFirst(
+				localSchemaSnapshot(7).manifest.objects,
+				(object) => object.name === "error_events_mv",
+			),
 		)
 		expect(v7View?.definition).not.toContain(applePattern)
 	})
@@ -449,11 +441,11 @@ describe("local migration registry", () => {
 		const chain = resolveMigrationChain(LEGACY_LOCAL_SCHEMA, CURRENT_LOCAL_SCHEMA)
 		expect(chain[0]?.from.fingerprint).toBe(LEGACY_SCHEMA_FINGERPRINT)
 		expect(chain[0]?.to).toEqual(LOCAL_SCHEMA_V1)
-		expect(chain[1]?.to).toEqual(LOCAL_SCHEMA_V2)
-		expect(chain[2]?.to).toEqual(LOCAL_SCHEMA_V3)
-		expect(chain[3]?.to).toEqual(LOCAL_SCHEMA_V4)
-		expect(chain[4]?.to).toEqual(LOCAL_SCHEMA_V5)
-		expect(chain[5]?.to).toEqual(LOCAL_SCHEMA_V6)
+		expect(chain[1]?.to).toEqual(localSchemaIdentity(2))
+		expect(chain[2]?.to).toEqual(localSchemaIdentity(3))
+		expect(chain[3]?.to).toEqual(localSchemaIdentity(4))
+		expect(chain[4]?.to).toEqual(localSchemaIdentity(5))
+		expect(chain[5]?.to).toEqual(localSchemaIdentity(6))
 		expect(typeof chain[0]?.apply).toBe("function")
 	})
 
@@ -1711,8 +1703,8 @@ describe("v10 -> v11 product events module", () => {
 	}
 
 	it("binds the frozen v10 and v11 identities and never the current constant", () => {
-		expect(v10ToV11ProductEventsModule.from).toEqual(LOCAL_SCHEMA_V10)
-		expect(v10ToV11ProductEventsModule.to).toEqual(LOCAL_SCHEMA_V11)
+		expect(v10ToV11ProductEventsModule.from).toEqual(localSchemaIdentity(10))
+		expect(v10ToV11ProductEventsModule.to).toEqual(localSchemaIdentity(11))
 		expect(v10ToV11ProductEventsModule.from).not.toBe(CURRENT_LOCAL_SCHEMA)
 		expect(Arr.map(v10ToV11ProductEventsModule.operations, (operation) => operation.id)).toEqual([
 			"clone-v10-store",
@@ -1721,7 +1713,7 @@ describe("v10 -> v11 product events module", () => {
 			"verify-v11-schema",
 		])
 		// The chain must reach v11 through this module and only this module.
-		const chain = resolveMigrationChain(LOCAL_SCHEMA_V10, CURRENT_LOCAL_SCHEMA)
+		const chain = resolveMigrationChain(localSchemaIdentity(10), CURRENT_LOCAL_SCHEMA)
 		expect(Arr.map(chain, (migration) => migration.id)).toEqual([
 			"local-0010-to-0011-product-events",
 			"local-0011-to-0012-service-map-edge-quantiles",
@@ -1767,7 +1759,7 @@ describe("v10 -> v11 product events module", () => {
 			"local-0051-to-0052-search-console-daily",
 			"local-0052-to-0053-error-events-blank-event-fingerprint",
 		])
-		expect(chain[0]?.to).toEqual(LOCAL_SCHEMA_V11)
+		expect(chain[0]?.to).toEqual(localSchemaIdentity(11))
 		// The dropped table is declared, and the backfilled ones say what they
 		// are rebuilt from.
 		const dispositions = new Map(

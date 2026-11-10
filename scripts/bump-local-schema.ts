@@ -183,14 +183,6 @@ const plannedSnapshots: PlannedWrite = plan(`${CLI_SERVER_DIR}/schema-snapshots.
 	[`\tschemaV${from}Sql,\n]`, `\tschemaV${from}Sql,\n\tschemaV${to}Sql,\n]`],
 ])
 
-const plannedIdentity: PlannedWrite = plan(`${SERVER_DIR}/schema-identity.ts`, [
-	// The test pins CURRENT_LOCAL_SCHEMA to this constant; steps look versions up by number.
-	[
-		`export const LOCAL_SCHEMA_V${from} = localSchemaIdentity(${from})`,
-		`export const LOCAL_SCHEMA_V${from} = localSchemaIdentity(${from})\nexport const LOCAL_SCHEMA_V${to} = localSchemaIdentity(${to})`,
-	],
-])
-
 // The control-schema history below it closes the same way, so the anchor includes its heading.
 const HISTORY_ANCHOR = "] as const)\n\n/** Immutable SQLite control DDL identities"
 const plannedHistory: PlannedWrite = plan(`${SERVER_DIR}/local-schema-history.ts`, [
@@ -216,7 +208,6 @@ ${HISTORY_ANCHOR}`,
 const plannedSteps: PlannedWrite = plan(STEPS_FILE, [[STEPS_ANCHOR, `${newRow}${STEPS_ANCHOR}`]])
 
 const plannedTest: PlannedWrite = plan(TEST_FILE, [
-	[`\tLOCAL_SCHEMA_V${from},\n`, `\tLOCAL_SCHEMA_V${from},\n\tLOCAL_SCHEMA_V${to},\n`],
 	[/matches the generated v\d+ revision/, `matches the generated v${to} revision`],
 	[
 		/expect\(SCHEMA_FINGERPRINT\)\.toBe\("[0-9a-f]+"\)/,
@@ -228,8 +219,8 @@ const plannedTest: PlannedWrite = plan(TEST_FILE, [
 		`expect(CURRENT_LOCAL_SCHEMA.version).toBe(${to})`,
 	],
 	[
-		`expect(CURRENT_LOCAL_SCHEMA).toEqual(LOCAL_SCHEMA_V${from})`,
-		`expect(CURRENT_LOCAL_SCHEMA).toEqual(LOCAL_SCHEMA_V${to})`,
+		`expect(CURRENT_LOCAL_SCHEMA).toEqual(localSchemaIdentity(${from}))`,
+		`expect(CURRENT_LOCAL_SCHEMA).toEqual(localSchemaIdentity(${to}))`,
 	],
 	// The future-store guard is pinned one past the tip on purpose.
 	[
@@ -253,7 +244,6 @@ const writes: ReadonlyArray<PlannedWrite> = [
 	{ path: snapshotPath, content: currentSql },
 	plannedVersion,
 	plannedSnapshots,
-	plannedIdentity,
 	plannedHistory,
 	plannedSteps,
 	plannedTest,
@@ -272,7 +262,7 @@ console.log(`bumped local schema v${from} -> v${to} (${identity.fingerprint})
   ${snapshotPath}
   ${STEPS_FILE}  <- fill in the ${moduleId} row
 
-edited: local-schema-version.ts, schema-snapshots.ts, schema-identity.ts, local-schema-history.ts,
+edited: local-schema-version.ts, schema-snapshots.ts, local-schema-history.ts,
         ${TEST_FILE}, ${NATIVE_PROBE}
 
 next:

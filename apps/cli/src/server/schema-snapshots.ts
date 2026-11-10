@@ -146,12 +146,3 @@ export const localSchemaSnapshot = (version: number): LocalSchemaSnapshot => {
 // table-driven steps look their versions up through localSchemaSnapshot and localSchemaIdentity.
 export const LOCAL_SCHEMA_V1_SQL = localSchemaSnapshot(1).sql
 export const LOCAL_SCHEMA_V1_MANIFEST = localSchemaSnapshot(1).manifest
-export const LOCAL_SCHEMA_V2_MANIFEST = localSchemaSnapshot(2).manifest
-export const LOCAL_SCHEMA_V3_MANIFEST = localSchemaSnapshot(3).manifest
-export const LOCAL_SCHEMA_V4_MANIFEST = localSchemaSnapshot(4).manifest
-export const LOCAL_SCHEMA_V5_MANIFEST = localSchemaSnapshot(5).manifest
-export const LOCAL_SCHEMA_V7_MANIFEST = localSchemaSnapshot(7).manifest
-export const LOCAL_SCHEMA_V10_MANIFEST = localSchemaSnapshot(10).manifest
-export const LOCAL_SCHEMA_V11_MANIFEST = localSchemaSnapshot(11).manifest
-export const LOCAL_SCHEMA_V12_MANIFEST = localSchemaSnapshot(12).manifest
-export const LOCAL_SCHEMA_V13_MANIFEST = localSchemaSnapshot(13).manifest
