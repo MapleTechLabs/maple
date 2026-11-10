@@ -819,6 +819,44 @@ export const integrationFixtures: ReadonlyArray<IntegrationFixture> = [
 	},
 	{
 		module: "vercel-infra",
+		name: "vercelEdgeLatencyTimeseriesSQL",
+		label: "default",
+		compile: () => compileUnsafe(CH.vercelEdgeLatencyTimeseriesSQL(), bucketed),
+	},
+	{
+		module: "vercel-infra",
+		name: "vercelEdgeLatencyTimeseriesSQL",
+		label: "project",
+		compile: () =>
+			compileUnsafe(CH.vercelEdgeLatencyTimeseriesSQL({ projectId: VERCEL_PROJECT_ID }), bucketed),
+	},
+	{
+		module: "vercel-infra",
+		name: "vercelProjectBreakdownSQL",
+		label: "path",
+		compile: () => compileUnsafe(CH.vercelProjectBreakdownSQL("path"), vercelProject),
+	},
+	{
+		module: "vercel-infra",
+		name: "vercelProjectBreakdownSQL",
+		label: "region-5xx",
+		compile: () => compileUnsafe(CH.vercelProjectBreakdownSQL("region", "5xx"), vercelProject),
+	},
+	{
+		module: "vercel-functions",
+		name: "vercelFunctionTimeseriesSQL",
+		label: "default",
+		compile: () => compileUnsafe(CH.vercelFunctionTimeseriesSQL(), bucketed),
+	},
+	{
+		module: "vercel-functions",
+		name: "vercelFunctionTimeseriesSQL",
+		label: "project",
+		compile: () =>
+			compileUnsafe(CH.vercelFunctionTimeseriesSQL({ projectId: VERCEL_PROJECT_ID }), bucketed),
+	},
+	{
+		module: "vercel-infra",
 		name: "vercelProjectTopPathsSQL",
 		label: "default",
 		compile: () => compileUnsafe(CH.vercelProjectTopPathsSQL(), vercelProject),

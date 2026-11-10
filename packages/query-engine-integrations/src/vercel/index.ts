@@ -7,9 +7,19 @@ export {
 	vercelProjectTopErrorsSQL,
 	vercelProjectTopPathsSQL,
 	vercelRequestTimeseriesSQL,
+	vercelProjectBreakdownSQL,
+	vercelEdgeLatencyTimeseriesSQL,
+	VERCEL_BREAKDOWN_ATTRIBUTES,
+	type VercelBreakdownDimension,
+	type VercelBreakdownStatus,
 	type VercelProjectScope,
 } from "./vercel-infra"
-export { vercelFunctionRoutesSQL, vercelProjectDependenciesSQL, vercelProjectFunctionsSQL } from "./vercel-functions"
+export {
+	vercelFunctionRoutesSQL,
+	vercelFunctionTimeseriesSQL,
+	vercelProjectDependenciesSQL,
+	vercelProjectFunctionsSQL,
+} from "./vercel-functions"
 export {
 	vercelAuditLogSQL,
 	vercelSpeedInsightsSQL,

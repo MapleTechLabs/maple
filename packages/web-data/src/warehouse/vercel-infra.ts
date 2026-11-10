@@ -1,5 +1,8 @@
 import { Clock, Effect, Schema } from "effect"
 import {
+	VercelInfraBreakdownDimension,
+	VercelInfraBreakdownRequest,
+	VercelInfraBreakdownStatus,
 	VercelInfraProjectDetailRequest,
 	VercelInfraProjectsRequest,
 	VercelInfraTimeseriesRequest,
@@ -32,6 +35,13 @@ const WindowInputSchema = Schema.Struct({
 	projectId: Schema.optional(Schema.String),
 })
 
+const BreakdownInputSchema = Schema.Struct({
+	...ProjectInputSchema.fields,
+	dimension: VercelInfraBreakdownDimension,
+	status: Schema.optional(VercelInfraBreakdownStatus),
+})
+
+export type VercelBreakdownInput = (typeof BreakdownInputSchema)["Encoded"]
 export type VercelTimeRangeInput = (typeof TimeRangeInputSchema)["Encoded"]
 export type VercelWindowInput = (typeof WindowInputSchema)["Encoded"]
 export type VercelTimeseriesInput = (typeof TimeseriesInputSchema)["Encoded"]
@@ -79,6 +89,47 @@ export const getVercelRequestTimeseries = Effect.fn("QueryEngine.getVercelReques
 		Effect.gen(function* () {
 			const client = yield* MapleInternalHttp
 			return yield* client.queryEngine.vercelInfraRequestTimeseries({ payload })
+		}),
+	)
+})
+
+/** Edge latency, invocations and cold starts per bucket, from the trace drain. */
+export const getVercelLatencyTimeseries = Effect.fn("QueryEngine.getVercelLatencyTimeseries")(function* ({
+	data,
+}: {
+	data: VercelTimeseriesInput
+}) {
+	const input = yield* decodeInput(TimeseriesInputSchema, data, "getVercelLatencyTimeseries")
+	const nowMillis = yield* Clock.currentTimeMillis
+	const payload = timeseriesRequest(input, nowMillis)
+	return yield* runWarehouseQuery("vercelInfraLatencyTimeseries", () =>
+		Effect.gen(function* () {
+			const client = yield* MapleInternalHttp
+			return yield* client.queryEngine.vercelInfraLatencyTimeseries({ payload })
+		}),
+	)
+})
+
+/** One project's requests grouped by one log attribute. */
+export const getVercelBreakdown = Effect.fn("QueryEngine.getVercelBreakdown")(function* ({
+	data,
+}: {
+	data: VercelBreakdownInput
+}) {
+	const input = yield* decodeInput(BreakdownInputSchema, data, "getVercelBreakdown")
+	const nowMillis = yield* Clock.currentTimeMillis
+	const range = resolveRange(input, nowMillis)
+	return yield* runWarehouseQuery("vercelInfraBreakdown", () =>
+		Effect.gen(function* () {
+			const client = yield* MapleInternalHttp
+			return yield* client.queryEngine.vercelInfraBreakdown({
+				payload: new VercelInfraBreakdownRequest({
+					...range,
+					projectId: input.projectId,
+					dimension: input.dimension,
+					...(input.status === undefined ? {} : { status: input.status }),
+				}),
+			})
 		}),
 	)
 })

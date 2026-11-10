@@ -90,11 +90,79 @@ export function vercelRequestTimeseriesSQL(scope: VercelProjectScope = {}) {
 			requests4xx: requestsInClass($, 400),
 			requests5xx: requestsInClass($, 500),
 			cacheHits: CH.countIf(isRequest($).and(servedFromCache($))),
+			cacheLookups: CH.countIf(isRequest($).and($.LogAttributes.get("vercel.cache").neq(""))),
 			errorLogs: CH.countIf($.SeverityNumber.gte(ERROR_SEVERITY)),
 		}))
 		.where(($) => [
 			...vercelLogsWhere($),
 			CH.when(scope.projectId, (id) => $.ResourceAttributes.get("vercel.project.id").eq(id)),
+		])
+		.groupBy("bucket")
+		.orderBy(["bucket", "asc"])
+		.limit(2000)
+		.format("JSON")
+}
+
+/** The log attribute each breakdown of a project's requests groups by. */
+export const VERCEL_BREAKDOWN_ATTRIBUTES = {
+	path: "url.path",
+	host: "server.address",
+	region: "vercel.proxy.region",
+	source: "vercel.source",
+	cache: "vercel.cache",
+	waf: "vercel.waf.action",
+	status: "http.response.status_code",
+} as const
+export type VercelBreakdownDimension = keyof typeof VERCEL_BREAKDOWN_ATTRIBUTES
+
+/** Narrows a breakdown to the failing requests. */
+export type VercelBreakdownStatus = "all" | "4xx" | "5xx"
+
+/**
+ * One project's requests grouped by one log attribute: volume, failures, cache and
+ * response bytes. Requests without the attribute group under the empty key.
+ */
+export function vercelProjectBreakdownSQL(dimension: VercelBreakdownDimension, status: VercelBreakdownStatus = "all") {
+	const attribute = VERCEL_BREAKDOWN_ATTRIBUTES[dimension]
+	return from(Logs)
+		.select(($) => ({
+			key: $.LogAttributes.get(attribute),
+			requests: CH.count(),
+			requests4xx: CH.countIf(statusCode($).between(400, 499)),
+			requests5xx: CH.countIf(statusCode($).between(500, 599)),
+			cacheHits: CH.countIf(servedFromCache($)),
+			cacheLookups: CH.countIf($.LogAttributes.get("vercel.cache").neq("")),
+			bytes: CH.sum(CH.toFloat64OrZero($.LogAttributes.get("http.response.body.size"))),
+		}))
+		.where(($) => [
+			...vercelLogsWhere($),
+			$.ResourceAttributes.get("vercel.project.id").eq(param.string("projectId")),
+			isRequest($),
+			status === "all" ? undefined : statusCode($).between(status === "4xx" ? 400 : 500, status === "4xx" ? 499 : 599),
+		])
+		.groupBy("key")
+		.orderBy(["requests", "desc"])
+		.limit(50)
+		.format("JSON")
+}
+
+/** Edge request latency per bucket, from the trace drain, for every project or one. */
+export function vercelEdgeLatencyTimeseriesSQL(scope: VercelProjectScope = {}) {
+	return from(Traces)
+		.select(($) => ({
+			bucket: isoBucket($.Timestamp),
+			p50DurationMs: CH.quantile(0.5)($.Duration).div(1_000_000),
+			p95DurationMs: CH.quantile(0.95)($.Duration).div(1_000_000),
+		}))
+		.where(($) => [
+			$.OrgId.eq(orgIdParam),
+			$.Timestamp.gte(param.dateTime("startTime")),
+			$.Timestamp.lte(param.dateTime("endTime")),
+			CH.mapContains($.ResourceAttributes, "vercel.projectId"),
+			scope.projectId === undefined
+				? $.ResourceAttributes.get("vercel.projectId").neq("")
+				: $.ResourceAttributes.get("vercel.projectId").eq(scope.projectId),
+			isEdgeRequest($),
 		])
 		.groupBy("bucket")
 		.orderBy(["bucket", "asc"])

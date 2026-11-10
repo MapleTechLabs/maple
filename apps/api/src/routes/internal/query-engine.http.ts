@@ -28,6 +28,8 @@ import {
 	VercelInfraProjectDetailResponse,
 	VercelInfraProjectsResponse,
 	VercelInfraRequestTimeseriesResponse,
+	VercelInfraLatencyTimeseriesResponse,
+	VercelInfraBreakdownResponse,
 	VercelSpeedInsightsResponse,
 	VercelWebAnalyticsResponse,
 	SupabaseInfraRowsResponse,
@@ -979,6 +981,45 @@ export const HttpQueryEngineLive = HttpApiBuilder.group(MapleInternalApi, "query
 						const tenant = yield* CurrentTenant.Context
 						const buckets = yield* runQuery(Queries.vercelInfraRequestTimeseries, tenant, payload)
 						return new VercelInfraRequestTimeseriesResponse({ buckets })
+					}),
+				)
+				.handle("vercelInfraLatencyTimeseries", ({ payload }) =>
+					Effect.gen(function* () {
+						const tenant = yield* CurrentTenant.Context
+						yield* warehouse.warmRoute(tenant)
+						const [edge, functions] = yield* Effect.all(
+							[
+								runQuery(Queries.vercelInfraEdgeLatencyTimeseries, tenant, payload),
+								runQuery(Queries.vercelInfraFunctionTimeseries, tenant, payload),
+							],
+							{ concurrency: 2 },
+						)
+						const edgeByBucket = new Map(Arr.map(edge, (row) => [row.bucket, row] as const))
+						const functionsByBucket = new Map(Arr.map(functions, (row) => [row.bucket, row] as const))
+						const buckets = Arr.sort([...new Set([...edgeByBucket.keys(), ...functionsByBucket.keys()])], Order.String)
+						return new VercelInfraLatencyTimeseriesResponse({
+							buckets: Arr.map(buckets, (bucket) => {
+								const e = edgeByBucket.get(bucket)
+								const f = functionsByBucket.get(bucket)
+								const invocations = f?.invocations ?? 0
+								return {
+									bucket,
+									edgeP50Ms: e?.p50DurationMs ?? null,
+									edgeP95Ms: e?.p95DurationMs ?? null,
+									invocations,
+									coldStarts: f?.coldStarts ?? 0,
+									invokeP50Ms: invocations > 0 ? (f?.invokeP50Ms ?? null) : null,
+									invokeP95Ms: invocations > 0 ? (f?.invokeP95Ms ?? null) : null,
+								}
+							}),
+						})
+					}),
+				)
+				.handle("vercelInfraBreakdown", ({ payload }) =>
+					Effect.gen(function* () {
+						const tenant = yield* CurrentTenant.Context
+						const rows = yield* runQuery(Queries.vercelInfraBreakdown, tenant, payload)
+						return new VercelInfraBreakdownResponse({ rows })
 					}),
 				)
 				.handle("vercelInfraProjectDetail", ({ payload }) =>

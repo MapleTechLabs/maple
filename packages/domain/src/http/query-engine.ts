@@ -791,6 +791,8 @@ export const VercelInfraRequestBucket = Schema.Struct({
 	requests4xx: Schema.Number,
 	requests5xx: Schema.Number,
 	cacheHits: Schema.Number,
+	/** Requests Vercel reported a cache status for: the hit-rate denominator. */
+	cacheLookups: Schema.Number,
 	errorLogs: Schema.Number,
 })
 export type VercelInfraRequestBucket = typeof VercelInfraRequestBucket.Type
@@ -799,6 +801,73 @@ export class VercelInfraRequestTimeseriesResponse extends Schema.Class<VercelInf
 	"VercelInfraRequestTimeseriesResponse",
 )({
 	buckets: Schema.Array(VercelInfraRequestBucket),
+}) {}
+
+/** Edge latency and function activity per bucket, from the trace drain. */
+export const VercelInfraLatencyBucket = Schema.Struct({
+	/** ISO-8601 bucket start. */
+	bucket: Schema.String,
+	/** Request latency at Vercel's edge; null in a bucket without edge spans. */
+	edgeP50Ms: Schema.NullOr(Schema.Number),
+	edgeP95Ms: Schema.NullOr(Schema.Number),
+	invocations: Schema.Number,
+	coldStarts: Schema.Number,
+	/** `Invoke Function` duration; null in a bucket without invocations. */
+	invokeP50Ms: Schema.NullOr(Schema.Number),
+	invokeP95Ms: Schema.NullOr(Schema.Number),
+})
+export type VercelInfraLatencyBucket = typeof VercelInfraLatencyBucket.Type
+
+export class VercelInfraLatencyTimeseriesResponse extends Schema.Class<VercelInfraLatencyTimeseriesResponse>(
+	"VercelInfraLatencyTimeseriesResponse",
+)({
+	buckets: Schema.Array(VercelInfraLatencyBucket),
+}) {}
+
+/** The log attribute a project's request breakdown groups by. */
+export const VercelInfraBreakdownDimension = Schema.Literals([
+	"path",
+	"host",
+	"region",
+	"source",
+	"cache",
+	"waf",
+	"status",
+])
+export type VercelInfraBreakdownDimension = typeof VercelInfraBreakdownDimension.Type
+
+/** Narrows a breakdown to failing requests. */
+export const VercelInfraBreakdownStatus = Schema.Literals(["all", "4xx", "5xx"])
+export type VercelInfraBreakdownStatus = typeof VercelInfraBreakdownStatus.Type
+
+export class VercelInfraBreakdownRequest extends Schema.Class<VercelInfraBreakdownRequest>(
+	"VercelInfraBreakdownRequest",
+)({
+	startTime: TinybirdDateTime,
+	endTime: TinybirdDateTime,
+	projectId: VercelProjectId,
+	dimension: VercelInfraBreakdownDimension,
+	/** Every request when absent. */
+	status: Schema.optionalKey(VercelInfraBreakdownStatus),
+}) {}
+
+export const VercelInfraBreakdownRow = Schema.Struct({
+	/** The attribute's value; empty when Vercel reported none. */
+	key: Schema.String,
+	requests: Schema.Number,
+	requests4xx: Schema.Number,
+	requests5xx: Schema.Number,
+	cacheHits: Schema.Number,
+	cacheLookups: Schema.Number,
+	/** Response body bytes. */
+	bytes: Schema.Number,
+})
+export type VercelInfraBreakdownRow = typeof VercelInfraBreakdownRow.Type
+
+export class VercelInfraBreakdownResponse extends Schema.Class<VercelInfraBreakdownResponse>(
+	"VercelInfraBreakdownResponse",
+)({
+	rows: Schema.Array(VercelInfraBreakdownRow),
 }) {}
 
 export class VercelInfraProjectDetailRequest extends Schema.Class<VercelInfraProjectDetailRequest>(
@@ -4000,6 +4069,20 @@ export class QueryEngineApiGroup extends HttpApiGroup.make("queryEngine")
 		HttpApiEndpoint.post("vercelInfraRequestTimeseries", "/vercel-infra-request-timeseries", {
 			payload: VercelInfraTimeseriesRequest,
 			success: VercelInfraRequestTimeseriesResponse,
+			error: queryEngineEndpointErrors,
+		}),
+	)
+	.add(
+		HttpApiEndpoint.post("vercelInfraLatencyTimeseries", "/vercel-infra-latency-timeseries", {
+			payload: VercelInfraTimeseriesRequest,
+			success: VercelInfraLatencyTimeseriesResponse,
+			error: queryEngineEndpointErrors,
+		}),
+	)
+	.add(
+		HttpApiEndpoint.post("vercelInfraBreakdown", "/vercel-infra-breakdown", {
+			payload: VercelInfraBreakdownRequest,
+			success: VercelInfraBreakdownResponse,
 			error: queryEngineEndpointErrors,
 		}),
 	)

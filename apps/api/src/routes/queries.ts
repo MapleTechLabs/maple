@@ -35,6 +35,7 @@ import type {
 	RailwayInfraServiceTimeseriesRequest,
 	ServiceCloudflareStatsRequest,
 	SpanDetailRequest,
+	VercelInfraBreakdownRequest,
 	VercelInfraProjectDetailRequest,
 	VercelInfraProjectsRequest,
 	VercelInfraTimeseriesRequest,
@@ -341,6 +342,39 @@ const vercelInfraRequestTimeseries = defineQuery({
 			Integrations.vercelRequestTimeseriesSQL({ projectId: payload.projectId }),
 			vercelBucketed(payload, orgId),
 		),
+})
+
+const vercelInfraEdgeLatencyTimeseries = defineQuery({
+	id: "vercelInfraEdgeLatencyTimeseries",
+	profile: "aggregation",
+	cache: 15,
+	compile: (payload: VercelInfraTimeseriesRequest, orgId: OrgId) =>
+		CH.compile(
+			Integrations.vercelEdgeLatencyTimeseriesSQL({ projectId: payload.projectId }),
+			vercelBucketed(payload, orgId),
+		),
+})
+
+const vercelInfraFunctionTimeseries = defineQuery({
+	id: "vercelInfraFunctionTimeseries",
+	profile: "aggregation",
+	cache: 15,
+	compile: (payload: VercelInfraTimeseriesRequest, orgId: OrgId) =>
+		CH.compile(
+			Integrations.vercelFunctionTimeseriesSQL({ projectId: payload.projectId }),
+			vercelBucketed(payload, orgId),
+		),
+})
+
+const vercelInfraBreakdown = defineQuery({
+	id: "vercelInfraBreakdown",
+	profile: "aggregation",
+	cache: 15,
+	compile: (payload: VercelInfraBreakdownRequest, orgId: OrgId) =>
+		CH.compile(Integrations.vercelProjectBreakdownSQL(payload.dimension, payload.status ?? "all"), {
+			...vercelWindow(payload, orgId),
+			projectId: payload.projectId,
+		}),
 })
 
 const vercelInfraTopPaths = defineQuery({
@@ -1311,6 +1345,9 @@ export const Queries = {
 	vercelInfraProjectRequests,
 	vercelInfraProjectLatency,
 	vercelInfraRequestTimeseries,
+	vercelInfraEdgeLatencyTimeseries,
+	vercelInfraFunctionTimeseries,
+	vercelInfraBreakdown,
 	vercelInfraTopPaths,
 	vercelInfraTopErrors,
 	vercelAiGatewaySummary,

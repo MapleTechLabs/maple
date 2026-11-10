@@ -5707,6 +5707,46 @@ SELECT
         LIMIT 50
         FORMAT JSON
 
+-- builder:vercel-functions:vercelFunctionTimeseriesSQL:default
+SELECT
+          formatDateTime(toStartOfInterval(traces.Timestamp, INTERVAL 300 SECOND), '%Y-%m-%dT%H:%i:%S.%fZ') AS bucket,
+          countIf(traces.SpanName = 'Invoke Function') AS invocations,
+          countIf(traces.SpanName = 'Start VM') AS coldStarts,
+          ifNull(ifNotFinite(quantile(0.5)(nullIf(if(traces.SpanName = 'Invoke Function', traces.Duration, 0), 0)) / 1000000, 0), 0) AS invokeP50Ms,
+          ifNull(ifNotFinite(quantile(0.95)(nullIf(if(traces.SpanName = 'Invoke Function', traces.Duration, 0), 0)) / 1000000, 0), 0) AS invokeP95Ms
+        FROM traces
+        WHERE traces.OrgId = 'org_sql_catalog'
+          AND traces.Timestamp >= '2026-01-01 10:30:00'
+          AND traces.Timestamp <= '2026-01-03 14:15:00'
+          AND (mapContains(traces.ResourceAttributes, 'maple_vercel.platform_service') AND traces.ResourceAttributes['maple_vercel.platform_service'] = 'vercel.serverless-runtime')
+          AND traces.SpanKind = 'Server'
+          AND traces.SpanName IN ('Invoke Function', 'Start VM')
+          AND traces.ResourceAttributes['vercel.projectId'] != ''
+        GROUP BY bucket
+        ORDER BY bucket ASC
+        LIMIT 2000
+        FORMAT JSON
+
+-- builder:vercel-functions:vercelFunctionTimeseriesSQL:project
+SELECT
+          formatDateTime(toStartOfInterval(traces.Timestamp, INTERVAL 300 SECOND), '%Y-%m-%dT%H:%i:%S.%fZ') AS bucket,
+          countIf(traces.SpanName = 'Invoke Function') AS invocations,
+          countIf(traces.SpanName = 'Start VM') AS coldStarts,
+          ifNull(ifNotFinite(quantile(0.5)(nullIf(if(traces.SpanName = 'Invoke Function', traces.Duration, 0), 0)) / 1000000, 0), 0) AS invokeP50Ms,
+          ifNull(ifNotFinite(quantile(0.95)(nullIf(if(traces.SpanName = 'Invoke Function', traces.Duration, 0), 0)) / 1000000, 0), 0) AS invokeP95Ms
+        FROM traces
+        WHERE traces.OrgId = 'org_sql_catalog'
+          AND traces.Timestamp >= '2026-01-01 10:30:00'
+          AND traces.Timestamp <= '2026-01-03 14:15:00'
+          AND (mapContains(traces.ResourceAttributes, 'maple_vercel.platform_service') AND traces.ResourceAttributes['maple_vercel.platform_service'] = 'vercel.serverless-runtime')
+          AND traces.SpanKind = 'Server'
+          AND traces.SpanName IN ('Invoke Function', 'Start VM')
+          AND traces.ResourceAttributes['vercel.projectId'] = 'prj_sql_catalog'
+        GROUP BY bucket
+        ORDER BY bucket ASC
+        LIMIT 2000
+        FORMAT JSON
+
 -- builder:vercel-functions:vercelProjectDependenciesSQL:default
 SELECT
           if(traces.SpanAttributes['server.address'] != '', traces.SpanAttributes['server.address'], traces.SpanAttributes['http.host']) AS host,
@@ -5744,6 +5784,87 @@ SELECT
           AND traces.ResourceAttributes['vercel.projectId'] != ''
         GROUP BY projectId
         LIMIT 1000
+        FORMAT JSON
+
+-- builder:vercel-infra:vercelEdgeLatencyTimeseriesSQL:default
+SELECT
+          formatDateTime(toStartOfInterval(traces.Timestamp, INTERVAL 300 SECOND), '%Y-%m-%dT%H:%i:%S.%fZ') AS bucket,
+          quantile(0.5)(traces.Duration) / 1000000 AS p50DurationMs,
+          quantile(0.95)(traces.Duration) / 1000000 AS p95DurationMs
+        FROM traces
+        WHERE traces.OrgId = 'org_sql_catalog'
+          AND traces.Timestamp >= '2026-01-01 10:30:00'
+          AND traces.Timestamp <= '2026-01-03 14:15:00'
+          AND mapContains(traces.ResourceAttributes, 'vercel.projectId')
+          AND traces.ResourceAttributes['vercel.projectId'] != ''
+          AND ((traces.ServiceName = 'vercel.edge-network' AND traces.SpanKind = 'Server') AND traces.SpanAttributes['http.response.status_code'] != '')
+        GROUP BY bucket
+        ORDER BY bucket ASC
+        LIMIT 2000
+        FORMAT JSON
+
+-- builder:vercel-infra:vercelEdgeLatencyTimeseriesSQL:project
+SELECT
+          formatDateTime(toStartOfInterval(traces.Timestamp, INTERVAL 300 SECOND), '%Y-%m-%dT%H:%i:%S.%fZ') AS bucket,
+          quantile(0.5)(traces.Duration) / 1000000 AS p50DurationMs,
+          quantile(0.95)(traces.Duration) / 1000000 AS p95DurationMs
+        FROM traces
+        WHERE traces.OrgId = 'org_sql_catalog'
+          AND traces.Timestamp >= '2026-01-01 10:30:00'
+          AND traces.Timestamp <= '2026-01-03 14:15:00'
+          AND mapContains(traces.ResourceAttributes, 'vercel.projectId')
+          AND traces.ResourceAttributes['vercel.projectId'] = 'prj_sql_catalog'
+          AND ((traces.ServiceName = 'vercel.edge-network' AND traces.SpanKind = 'Server') AND traces.SpanAttributes['http.response.status_code'] != '')
+        GROUP BY bucket
+        ORDER BY bucket ASC
+        LIMIT 2000
+        FORMAT JSON
+
+-- builder:vercel-infra:vercelProjectBreakdownSQL:path
+SELECT
+          logs.LogAttributes['url.path'] AS key,
+          count() AS requests,
+          countIf(toUInt16OrZero(logs.LogAttributes['http.response.status_code']) BETWEEN 400 AND 499) AS requests4xx,
+          countIf(toUInt16OrZero(logs.LogAttributes['http.response.status_code']) BETWEEN 500 AND 599) AS requests5xx,
+          countIf(logs.LogAttributes['vercel.cache'] IN ('HIT', 'STALE', 'PRERENDER')) AS cacheHits,
+          countIf(logs.LogAttributes['vercel.cache'] != '') AS cacheLookups,
+          sum(toFloat64OrZero(logs.LogAttributes['http.response.body.size'])) AS bytes
+        FROM logs
+        WHERE logs.OrgId = 'org_sql_catalog'
+          AND logs.TimestampTime >= '2026-01-01 10:30:00'
+          AND logs.TimestampTime <= '2026-01-03 14:15:00'
+          AND logs.Timestamp >= '2026-01-01 10:30:00'
+          AND logs.Timestamp <= '2026-01-03 14:15:00'
+          AND logs.ResourceAttributes['cloud.provider'] = 'vercel'
+          AND logs.ResourceAttributes['vercel.project.id'] = 'prj_sql_catalog'
+          AND logs.LogAttributes['http.request.method'] != ''
+        GROUP BY key
+        ORDER BY requests DESC
+        LIMIT 50
+        FORMAT JSON
+
+-- builder:vercel-infra:vercelProjectBreakdownSQL:region-5xx
+SELECT
+          logs.LogAttributes['vercel.proxy.region'] AS key,
+          count() AS requests,
+          countIf(toUInt16OrZero(logs.LogAttributes['http.response.status_code']) BETWEEN 400 AND 499) AS requests4xx,
+          countIf(toUInt16OrZero(logs.LogAttributes['http.response.status_code']) BETWEEN 500 AND 599) AS requests5xx,
+          countIf(logs.LogAttributes['vercel.cache'] IN ('HIT', 'STALE', 'PRERENDER')) AS cacheHits,
+          countIf(logs.LogAttributes['vercel.cache'] != '') AS cacheLookups,
+          sum(toFloat64OrZero(logs.LogAttributes['http.response.body.size'])) AS bytes
+        FROM logs
+        WHERE logs.OrgId = 'org_sql_catalog'
+          AND logs.TimestampTime >= '2026-01-01 10:30:00'
+          AND logs.TimestampTime <= '2026-01-03 14:15:00'
+          AND logs.Timestamp >= '2026-01-01 10:30:00'
+          AND logs.Timestamp <= '2026-01-03 14:15:00'
+          AND logs.ResourceAttributes['cloud.provider'] = 'vercel'
+          AND logs.ResourceAttributes['vercel.project.id'] = 'prj_sql_catalog'
+          AND logs.LogAttributes['http.request.method'] != ''
+          AND toUInt16OrZero(logs.LogAttributes['http.response.status_code']) BETWEEN 500 AND 599
+        GROUP BY key
+        ORDER BY requests DESC
+        LIMIT 50
         FORMAT JSON
 
 -- builder:vercel-infra:vercelProjectLatencySQL:default
@@ -5841,6 +5962,7 @@ SELECT
           countIf((logs.LogAttributes['http.request.method'] != '' AND toUInt16OrZero(logs.LogAttributes['http.response.status_code']) BETWEEN 400 AND 499)) AS requests4xx,
           countIf((logs.LogAttributes['http.request.method'] != '' AND toUInt16OrZero(logs.LogAttributes['http.response.status_code']) BETWEEN 500 AND 599)) AS requests5xx,
           countIf((logs.LogAttributes['http.request.method'] != '' AND logs.LogAttributes['vercel.cache'] IN ('HIT', 'STALE', 'PRERENDER'))) AS cacheHits,
+          countIf((logs.LogAttributes['http.request.method'] != '' AND logs.LogAttributes['vercel.cache'] != '')) AS cacheLookups,
           countIf(logs.SeverityNumber >= 17) AS errorLogs
         FROM logs
         WHERE logs.OrgId = 'org_sql_catalog'
@@ -5863,6 +5985,7 @@ SELECT
           countIf((logs.LogAttributes['http.request.method'] != '' AND toUInt16OrZero(logs.LogAttributes['http.response.status_code']) BETWEEN 400 AND 499)) AS requests4xx,
           countIf((logs.LogAttributes['http.request.method'] != '' AND toUInt16OrZero(logs.LogAttributes['http.response.status_code']) BETWEEN 500 AND 599)) AS requests5xx,
           countIf((logs.LogAttributes['http.request.method'] != '' AND logs.LogAttributes['vercel.cache'] IN ('HIT', 'STALE', 'PRERENDER'))) AS cacheHits,
+          countIf((logs.LogAttributes['http.request.method'] != '' AND logs.LogAttributes['vercel.cache'] != '')) AS cacheLookups,
           countIf(logs.SeverityNumber >= 17) AS errorLogs
         FROM logs
         WHERE logs.OrgId = 'org_sql_catalog'

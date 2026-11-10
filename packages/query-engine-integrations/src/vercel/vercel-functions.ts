@@ -12,8 +12,8 @@ import * as CH from "@maple-dev/effect-orm/expr"
 import * as T from "@maple-dev/effect-orm/clickhouse"
 import { defineFn, from, fromQuery, param, type ColumnAccessor } from "@maple-dev/effect-orm/clickhouse"
 import { Traces, orgIdParam } from "@maple/query-engine/ch/tables"
-import { finiteOrZero } from "@maple/query-engine/ch/format"
-import { VERCEL_EDGE_SERVICE, isEdgeRequest } from "./vercel-infra"
+import { finiteOrZero, isoBucket } from "@maple/query-engine/ch/format"
+import { VERCEL_EDGE_SERVICE, isEdgeRequest, type VercelProjectScope } from "./vercel-infra"
 
 type TraceColumns = ColumnAccessor<typeof Traces.columns>
 
@@ -61,6 +61,34 @@ export function vercelProjectFunctionsSQL() {
 		])
 		.groupBy("projectId")
 		.limit(1000)
+		.format("JSON")
+}
+
+/** Invocations, cold starts and invocation latency per bucket, for every project or one. */
+export function vercelFunctionTimeseriesSQL(scope: VercelProjectScope = {}) {
+	return from(Traces)
+		.select(($) => ({
+			bucket: isoBucket($.Timestamp),
+			invocations: CH.countIf($.SpanName.eq(INVOKE_FUNCTION)),
+			coldStarts: CH.countIf($.SpanName.eq(START_VM)),
+			// NULL outside invocations, so the quantiles read invocation spans only; 0 in a bucket without one.
+			invokeP50Ms: finiteOrZero(
+				CH.quantile(0.5)(CH.nullIf(CH.if_($.SpanName.eq(INVOKE_FUNCTION), $.Duration, CH.lit(0)), 0)).div(1_000_000),
+			),
+			invokeP95Ms: finiteOrZero(
+				CH.quantile(0.95)(CH.nullIf(CH.if_($.SpanName.eq(INVOKE_FUNCTION), $.Duration, CH.lit(0)), 0)).div(1_000_000),
+			),
+		}))
+		.where(($) => [
+			...tracesWindow($),
+			isRuntime($),
+			$.SpanKind.eq("Server"),
+			$.SpanName.in_(INVOKE_FUNCTION, START_VM),
+			scope.projectId === undefined ? projectId($).neq("") : projectId($).eq(scope.projectId),
+		])
+		.groupBy("bucket")
+		.orderBy(["bucket", "asc"])
+		.limit(2000)
 		.format("JSON")
 }
 
