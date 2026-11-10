@@ -261,6 +261,26 @@ const deleteComponentDialog = (h: H, model: Model, page: V2StatusPage): Html => 
 	})
 }
 
+const deleteIncidentDialog = (h: H, model: Model, page: V2StatusPage): Html => {
+	const incident = Option.getOrUndefined(
+		Arr.findFirst(incidentsOf(model), (row) => row.id === model.confirmDeleteIncidentId),
+	)
+	const isMaintenance = incident?.kind === "maintenance"
+	return confirmDialog(h, {
+		slotId: "status-page-delete-incident",
+		model: model.deleteIncidentDialog,
+		toParentMessage: (message) => Message.GotDeleteIncidentDialogMessage({ message }),
+		title: `Delete ${incident?.title ?? "this incident"}?`,
+		description:
+			page.draft || incident?.published === false
+				? "It and its updates are removed. This can't be undone."
+				: "It and its updates leave the public page and its history within a minute. This can't be undone.",
+		confirmLabel: isMaintenance ? "Delete maintenance" : "Delete incident",
+		isPending: model.isDeletingIncident,
+		onConfirm: Message.ClickedConfirmDeleteIncident(),
+	})
+}
+
 const loaded = (h: H, model: Model, page: V2StatusPage, inputs: PageViewInputs): Html => {
 	const timeZone = inputs.context.timeZone
 	const overall = overallOf(model)
@@ -296,6 +316,7 @@ const loaded = (h: H, model: Model, page: V2StatusPage, inputs: PageViewInputs):
 				[body(h, model, page, timeZone)],
 			),
 			deleteComponentDialog(h, model, page),
+			deleteIncidentDialog(h, model, page),
 			breakGlassDialog(h, model),
 			deletePageDialog(h, model, page),
 		],

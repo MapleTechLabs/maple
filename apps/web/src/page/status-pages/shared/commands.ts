@@ -196,6 +196,12 @@ export const updateIncident = (id: StatusPageIncidentId, payload: V2StatusPageIn
 		return yield* client.statusPageIncidents.update({ params: { id }, payload })
 	}).pipe(Effect.mapError(toLoadFailure))
 
+export const deleteIncident = (id: StatusPageIncidentId) =>
+	Effect.gen(function* () {
+		const client = yield* MapleApiV2Client
+		yield* client.statusPageIncidents.delete({ params: { id } })
+	}).pipe(Effect.mapError(toLoadFailure))
+
 export const postIncidentUpdate = (id: StatusPageIncidentId, payload: V2StatusPageIncidentPostUpdateParams) =>
 	Effect.gen(function* () {
 		const client = yield* MapleApiV2Client

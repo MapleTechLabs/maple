@@ -6,6 +6,7 @@ import type { Html, HtmlBuilder } from "foldkit/html"
 import { linkButton } from "@maple/views/ui/button"
 import { badge } from "@maple/views/ui/display"
 import { empty, emptyDescription, emptyHeader, emptyMedia, emptyTitle } from "@maple/views/ui/empty"
+import type { LoadFailure } from "@maple/views/data/load-failure"
 import { errorState } from "@maple/views/ui/error-state"
 import { eyebrow } from "@maple/views/ui/eyebrow"
 import { icon } from "@maple/views/ui/icon"
@@ -59,6 +60,25 @@ const emptyState = (h: H, canEdit: boolean): Html =>
 							"Ask an org admin to create one.",
 						]),
 					]),
+		],
+		"py-12",
+	)
+
+/** The API's answer for an org outside the rollout: a state of the org, not a failed load. */
+const isNotEnabled = (failure: LoadFailure): boolean => failure.code === "status_pages_disabled"
+
+/** Nothing here retries or creates: the org has to be added to the rollout first. */
+const notEnabledState = (h: H): Html =>
+	empty(
+		h,
+		[
+			emptyHeader(h, [
+				emptyMedia(h, { variant: "icon" }, [icon(h, "WindowChartLineIcon", { size: 18 })]),
+				emptyTitle(h, ["Status pages are not enabled"]),
+				emptyDescription(h, [
+					"Status pages are rolling out one organization at a time, and this one is not in yet. Contact Maple support to turn them on.",
+				]),
+			]),
 		],
 		"py-12",
 	)
@@ -175,6 +195,7 @@ const table = (h: H, pages: ReadonlyArray<StatusPageSummary>, inputs: ViewInputs
 
 const body = (h: H, model: Model, inputs: ViewInputs): Html => {
 	const data = model.pages.data
+	if (AsyncData.isFailure(data) && isNotEnabled(data.error)) return notEnabledState(h)
 	if (AsyncData.isFailure(data))
 		return errorState(h, {
 			failure: data.error,
