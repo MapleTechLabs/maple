@@ -1,5 +1,5 @@
 import { Effect, Schema, Array as Arr, Record as Rec, String as Str } from "effect"
-import type { ListLogsOutput, LogsCountOutput } from "@maple/domain/tinybird"
+import type { ListLogsRow, LogsCountRow } from "../ch/pipe-rows"
 import { LOGS_BODY_SEARCH_SETTINGS } from "../profiles"
 import { WarehouseExecutor } from "./WarehouseExecutor"
 import type { SearchLogsInput } from "./types"
@@ -47,14 +47,14 @@ export const searchLogs = Effect.fn("Observability.searchLogs")(function* (input
 	// not block-, bound (see WarehouseQuerySettings.maxBlockSize).
 	const searchSettings = input.search ? LOGS_BODY_SEARCH_SETTINGS : undefined
 
-	const logsQuery = executor.query<ListLogsOutput>("list_logs", params, {
+	const logsQuery = executor.query<ListLogsRow>("list_logs", params, {
 		profile: "list",
 		settings: searchSettings,
 	})
 	// The exact count scans every match while the page stops at `limit`, so on a body search
 	// it was the half that timed out. Losing it must not lose the page.
 	const countQuery = executor
-		.query<LogsCountOutput>(
+		.query<LogsCountRow>(
 			"logs_count",
 			{
 				start_time: input.timeRange.startTime,

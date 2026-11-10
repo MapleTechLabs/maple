@@ -11,7 +11,7 @@ import {
 	String as Str,
 } from "effect"
 import { TraceId, SpanId } from "@maple/domain"
-import type { SpanHierarchyOutput, ListLogsOutput } from "@maple/domain/tinybird"
+import type { SpanHierarchyRow, ListLogsRow } from "../ch/pipe-rows"
 import { WarehouseExecutor, type WarehouseExecutorApi } from "./WarehouseExecutor"
 import type { InspectTraceOutput, SpanNode, TimeRange } from "./types"
 import { toLogEntry } from "./row-mappers"
@@ -109,12 +109,12 @@ const queryRangeToScan = (range: QueryRange) => ({ startTime: range.start_time, 
 const readTrace = (executor: WarehouseExecutorApi, traceId: string, range: QueryRange) =>
 	Effect.all(
 		[
-			executor.query<SpanHierarchyOutput>(
+			executor.query<SpanHierarchyRow>(
 				"span_hierarchy",
 				{ trace_id: traceId, ...range },
 				{ profile: "list" },
 			),
-			executor.query<ListLogsOutput>(
+			executor.query<ListLogsRow>(
 				"list_logs",
 				{ trace_id: traceId, limit: 50, ...range },
 				{ profile: "list" },

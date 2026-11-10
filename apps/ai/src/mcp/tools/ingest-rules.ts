@@ -28,7 +28,7 @@ import {
 	type IngestRuleSpec,
 } from "@maple/domain/ingest-rules"
 import { IngestRuleValidationError, type SelfDescribingHttpError } from "@maple/domain/http"
-import type { ListLogsOutput } from "@maple/domain/tinybird"
+import type { ListLogsRow as ListLogsOutput } from "@maple/query-engine/ch"
 import type { OrgId } from "@maple/domain/primitives"
 import * as Policy from "@maple/domain/policy"
 import { IngestRuleService } from "@maple/backend/services/org/IngestRuleService"

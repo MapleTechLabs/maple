@@ -27,6 +27,9 @@ export * as tables from "./tables"
 // Shared row-schema codecs (ClickHouse `FORMAT JSON` 64-bit-int-as-string coercion).
 export { CHNumber } from "./schema"
 
+// Wire rows of the pipes, derived from the queries that fill them.
+export * from "./pipe-rows"
+
 // Pre-built query templates, one module per surface.
 export * from "./queries/traces"
 export * from "./queries/attribute-keys"

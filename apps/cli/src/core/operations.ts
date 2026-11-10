@@ -37,7 +37,7 @@ import {
 } from "@maple/query-engine/observability"
 import { MetricType } from "@maple/domain"
 import type { WarehouseQueryName } from "@maple/domain/warehouse-queries"
-import type { ListMetricsOutput } from "@maple/domain/tinybird"
+import type { ListMetricsRow as ListMetricsOutput } from "@maple/query-engine/ch"
 import { executeLocalQuery } from "@maple/query-engine/local"
 import {
 	fingerprintSql,
