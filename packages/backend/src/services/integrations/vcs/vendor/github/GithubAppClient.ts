@@ -22,6 +22,7 @@ import { readTextWithin } from "@maple/safe-fetch"
 import { Env } from "@maple/backend/platform/Env"
 import { githubWebBaseUrl } from "./github-hosts"
 import { timestampMs } from "@maple/backend/platform/time"
+import { parseRetryAfterSeconds } from "../../../vendor-retry"
 import { makeExpiringStore } from "@maple/backend/platform/expiring-store"
 import { type InstallationToken, SharedInstallationTokens } from "../../installation-tokens"
 
@@ -162,20 +163,10 @@ const isOk = (response: HttpClientResponse.HttpClientResponse): boolean =>
 // Seconds until the budget returns, per GitHub's guidance: prefer `retry-after`,
 // else wait until the rate-limit reset (epoch seconds), else a conservative minute.
 const rateLimitWaitSeconds = (response: HttpClientResponse.HttpClientResponse, nowMs: number): number => {
-	const retryAfter = response.headers["retry-after"]
-	if (retryAfter !== undefined) {
-		const secs = Number(retryAfter)
-		if (Number.isFinite(secs) && secs >= 0) return secs
-		// `retry-after` may be an HTTP-date instead of delta-seconds.
-		const dateMs = timestampMs(retryAfter)
-		if (Number.isFinite(dateMs)) return Math.max(0, Math.ceil((dateMs - nowMs) / 1000))
-	}
-	const reset = response.headers["x-ratelimit-reset"]
-	if (reset !== undefined) {
-		const resetSec = Number(reset)
-		if (Number.isFinite(resetSec)) return Math.max(0, Math.ceil(resetSec - nowMs / 1000))
-	}
-	return 60
+	const resetSec = Number(response.headers["x-ratelimit-reset"] ?? Number.NaN)
+	return Option.getOrElse(parseRetryAfterSeconds(response.headers["retry-after"], nowMs), () =>
+		Number.isFinite(resetSec) ? Math.max(0, Math.ceil(resetSec - nowMs / 1000)) : 60,
+	)
 }
 
 const GithubInstallationTokenResponse = Schema.Struct({

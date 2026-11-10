@@ -15,19 +15,10 @@ import {
 	type QueryError,
 	type RailwayGlobalError,
 } from "@distilled.cloud/railway"
-import {
-	Array as Arr,
-	Duration,
-	Effect,
-	Order,
-	Record as Rec,
-	Redacted,
-	Schedule,
-	Stream,
-	String as Str,
-} from "effect"
+import { Array as Arr, Duration, Effect, Order, Record as Rec, Redacted, Stream, String as Str } from "effect"
 import { HttpClient } from "effect/http"
 import { RailwayApiError } from "./errors"
+import { VENDOR_TRANSIENT_RETRY } from "../vendor-retry"
 
 const REQUEST_TIMEOUT = Duration.seconds(30)
 
@@ -76,11 +67,6 @@ const isTransient = (error: SdkError): boolean => {
 	)
 }
 
-const TRANSIENT_RETRY = Schedule.max([
-	Schedule.jittered(Schedule.exponential("500 millis")),
-	Schedule.recurs(2),
-])
-
 /** Run one SDK query with the given token over the caller's HttpClient. */
 const run = <A>(
 	httpClient: HttpClient.HttpClient,
@@ -88,7 +74,7 @@ const run = <A>(
 	effect: Effect.Effect<A, SdkError, GqlTransport>,
 ) =>
 	effect.pipe(
-		Effect.retry({ schedule: TRANSIENT_RETRY, while: isTransient }),
+		Effect.retry({ schedule: VENDOR_TRANSIENT_RETRY, while: isTransient }),
 		Effect.mapError(toApiError),
 		Effect.timeoutOrElse({
 			duration: REQUEST_TIMEOUT,
