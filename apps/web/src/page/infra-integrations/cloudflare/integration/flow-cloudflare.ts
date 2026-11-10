@@ -1,12 +1,12 @@
 import type { CloudflareIntegrationStatus, CloudflareUsageResponse } from "@maple/domain/http"
 import { countLabel } from "@maple/ui/lib/format"
-import { AsyncData } from "foldkit"
 import type { CloudflareIngestPhase } from "../ingest-phase"
 import { ingestPhaseOf } from "../ingest"
 import { accountErrorOf, connectedAccountsOf } from "./cloudflare-derive"
 import { fold } from "../../../integrations/derive"
 import type { FlowSpec, LiveHealth } from "../../../integrations/flow"
 import type { Model } from "../../../integrations/model"
+import { successOf } from "../../kit/success-of"
 
 // Cloudflare's place in the connect flow: one consent screen, then Go live. Accounts are picked on
 // Cloudflare's consent screen and zones are not selectable yet, so there is no Choose data step.
@@ -21,7 +21,7 @@ export const cloudflareStatusOf = (model: Model): CloudflareIntegrationStatus | 
 /** The warehouse usage read, or null while it loads or failed (the phase then reads the poller). */
 export const cloudflareUsageOf = (model: Model): CloudflareUsageResponse | null => {
 	const data = model.cloudflareCard.usage.data
-	return AsyncData.isSuccess(data) || AsyncData.isRefreshing(data) ? data.data : null
+	return successOf(data)
 }
 
 /** The accounts the grant reached: the one name, or how many. */

@@ -13,7 +13,7 @@ import type {
 	ZoneRow,
 	ZonesInput,
 } from "../data"
-import { dataOf } from "../list/derive"
+import { successOf } from "../../kit/success-of"
 import type { Model, ZoneTab } from "./model"
 import { Array as Arr, Option } from "effect"
 
@@ -110,7 +110,7 @@ export type ZoneRailDns = Readonly<{ queries: number; alwaysNxdomain: number }>
 
 /** Null while loading or when the zone has no DNS analytics. */
 export const dnsSummaryOf = (model: Model): ZoneRailDns | null => {
-	const dns = dataOf(model.dns.data)
+	const dns = successOf(model.dns.data)
 	if (dns === null || (dns.names.length === 0 && dns.buckets.length === 0)) return null
 	return {
 		queries: Arr.reduce(dns.buckets, 0, (acc, b) => acc + b.queries),
@@ -120,7 +120,7 @@ export const dnsSummaryOf = (model: Model): ZoneRailDns | null => {
 
 /** Null while loading; zero means the dataset is live but quiet. */
 export const firewallEventsOf = (model: Model): number | null => {
-	const security = dataOf(model.security.data)
+	const security = successOf(model.security.data)
 	return security === null ? null : Arr.reduce(security.buckets, 0, (acc, b) => acc + b.events)
 }
 
@@ -152,13 +152,13 @@ export const needsBreakdown = (model: Model): boolean => {
 
 export const zoneRowOf = (model: Model): ZoneRow | null =>
 	Option.getOrNull(
-		Arr.findFirst(dataOf(model.zones.data) ?? [], (zone) => zone.serviceName === serviceNameOf(model)),
+		Arr.findFirst(successOf(model.zones.data) ?? [], (zone) => zone.serviceName === serviceNameOf(model)),
 	)
 
 export type ZoneAccount = Readonly<{ id: string; name: string; multi: boolean; zoneError: string | null }>
 
 export const zoneAccountOf = (model: Model): ZoneAccount | null => {
-	const status = dataOf(model.status.data)
+	const status = successOf(model.status.data)
 	if (status === null) return null
 	const accounts = status.accounts ?? []
 	const found = Arr.findFirst(accounts, (a) => Arr.some(a.zones, (zone) => zone.name === model.zoneName))
@@ -177,7 +177,7 @@ export const zoneAccountOf = (model: Model): ZoneAccount | null => {
 
 /** The header dot's tone. */
 export const severityOf = (model: Model): Tone | null => {
-	const detail = dataOf(model.detail.data)
+	const detail = successOf(model.detail.data)
 	if (detail === null) return null
 	const totals = zoneSignalTotals(detail.statusBuckets, detail.cacheBuckets)
 	return ZONE_HEALTH_TONE[classifyZone(totals.requests, totals.serverErrorRate, totals.clientErrorRate)]

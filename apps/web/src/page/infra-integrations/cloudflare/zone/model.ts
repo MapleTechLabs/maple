@@ -6,7 +6,7 @@ import * as Chart from "@maple/views/charts/chart"
 import { KeyedSchema } from "@maple/views/data/keyed"
 import { LoadFailure } from "@maple/views/data/load-failure"
 import { TimeWindow } from "../../../../data/time-range"
-import { InfraCloudflareZoneSearch } from "../../../../route/search"
+import { InfraCloudflareZoneSearch, ZONE_TABS } from "../../../../route/search"
 import * as CopyButton from "@maple/views/ui/copy-button"
 import * as FilterSections from "@maple/views/ui/filters/filter-sections"
 import * as Popover from "@maple/views/ui/popover"
@@ -28,7 +28,7 @@ import {
 
 // `/infra/cloudflare/$zoneName`.
 
-export const ZoneTab = Schema.Literals(["traffic", "dns", "security"])
+export const ZoneTab = Schema.Literals(ZONE_TABS)
 export type ZoneTab = typeof ZoneTab.Type
 
 export const FilterKey = Schema.Literals([

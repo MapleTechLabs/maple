@@ -1,5 +1,5 @@
 import { Option, Array as Arr, String as Str } from "effect"
-import { AsyncData, Command } from "foldkit"
+import { Command } from "foldkit"
 import { LoadChartRuntime } from "@maple/views/charts/chart-runtime"
 import * as Dialog from "@maple/views/ui/dialog"
 import * as ToggleGroup from "@maple/views/ui/toggle-group"
@@ -19,6 +19,7 @@ import { changedZoneChoices, zoneChoicesOf } from "./cloudflare-derive"
 import { Message } from "../../../integrations/message"
 import type { Model } from "../../../integrations/model"
 import { chain, requestStatus } from "../../../integrations/update-status"
+import { successOf } from "../../kit/success-of"
 
 // The Cloudflare card's reads and the connect flow's prime (`CloudflareConnectBoundary`).
 
@@ -104,7 +105,8 @@ export const resetPrime = (model: Model): Model => withCard(model, { isPrimed: f
 
 const storedZoneChoices = (model: Model): ReadonlyArray<ZoneChoice> => {
 	const data = model.statuses.cloudflare.data
-	return AsyncData.isSuccess(data) || AsyncData.isRefreshing(data) ? zoneChoicesOf(data.data) : []
+	const value = successOf(data)
+	return value === null ? [] : zoneChoicesOf(value)
 }
 
 const zoneDialogStep = (model: Model, step: ReturnType<typeof Dialog.update>): Return => ({

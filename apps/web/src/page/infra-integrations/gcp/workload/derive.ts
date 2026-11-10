@@ -19,10 +19,10 @@ import { gcpWorkload, gcpWorkloadTone } from "../tabs"
 import { gcpRailFacts, gcpTraceGap, gcpTracedErrors } from "../workload-signals"
 import { chartBucketSeconds } from "@maple/views/charts/infra-metric-series"
 import type { TraceSide } from "../data"
-import { successOf } from "../list/derive"
 import type { Model } from "./model"
 import { keysOf } from "./update"
 import { Array as Arr, Option } from "effect"
+import { successOf } from "../../kit/success-of"
 
 // The workload page's derivations (`GcpWorkloadPage`, `GcpCloudSqlPage`).
 

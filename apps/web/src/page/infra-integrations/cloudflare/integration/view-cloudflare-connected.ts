@@ -33,6 +33,7 @@ import { Array as Arr } from "effect"
 import { textLink } from "@maple/views/ui/text-link"
 import { dividedList } from "@maple/views/ui/rule"
 import { PROVIDERS } from "../../../kit/providers"
+import { successOf } from "../../kit/success-of"
 
 // The connected `CloudflareAccountCard` and `CloudflareStatCards`.
 
@@ -209,7 +210,7 @@ export const cloudflareConnected = (
 	timeZone: string,
 ): Html => {
 	const usageData = model.cloudflareCard.usage.data
-	const usage = AsyncData.isSuccess(usageData) || AsyncData.isRefreshing(usageData) ? usageData.data : null
+	const usage = successOf(usageData)
 	const usageFailed = AsyncData.isFailure(usageData) || AsyncData.isStale(usageData)
 	const phase = ingestPhaseOf(status, usage, model.nowMs)
 	const banner = accountBanner(h, model, status)

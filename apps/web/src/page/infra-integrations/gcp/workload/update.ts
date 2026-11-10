@@ -20,7 +20,6 @@ import * as TimeRangePicker from "../../../kit/time-range-picker"
 import { stepTimePicker, withPreset } from "../../../kit/page-time"
 import { requestSlot } from "../../kit/slot"
 import type { OverviewInput, ResourcesQuery, TimeseriesInput } from "../data"
-import { successOf } from "../list/derive"
 import {
 	CompleteReloadSpin,
 	FetchFleet,
@@ -37,6 +36,7 @@ import {
 import { Message, type Model } from "./model"
 import { type QueryPeek, resolveQueryPeek, statementSpansInput } from "./peek"
 import { Option, Array as Arr } from "effect"
+import { successOf } from "../../kit/success-of"
 
 type Return = PageReturn<Model, Message>
 type Search = Model["search"]

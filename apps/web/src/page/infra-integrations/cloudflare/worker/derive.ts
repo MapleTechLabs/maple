@@ -4,7 +4,7 @@ import { toIsoBucket } from "@maple/web-data/warehouse/timeseries-utils"
 import { chartBucketSeconds } from "@maple/views/charts/infra-metric-series"
 import type { ChartEventMarker } from "@maple/views/charts/event-marker-spec"
 import type { Release } from "../data"
-import { dataOf } from "../list/derive"
+import { successOf } from "../../kit/success-of"
 import type { Model } from "./model"
 import { Array as Arr, String as Str, Option } from "effect"
 
@@ -20,8 +20,8 @@ export type PageData = Readonly<{
 
 /** `WorkerDetailPage`'s reads, combined as the route does. */
 export const pageOf = (model: Model): PageData => {
-	const workers = dataOf(model.workers.data)
-	const durableObjects = dataOf(model.platform.data)?.durableObjects ?? []
+	const workers = successOf(model.workers.data)
+	const durableObjects = successOf(model.platform.data)?.durableObjects ?? []
 	const row =
 		workers === null
 			? null
@@ -34,12 +34,12 @@ export const pageOf = (model: Model): PageData => {
 					),
 				)
 	// Releases carry no account, so for a name shared across accounts they would mix both Workers.
-	const loaded = dataOf(model.releases.data)
+	const loaded = successOf(model.releases.data)
 	const releases: ReadonlyArray<Release> | null =
 		loaded === null || row?.nameInOtherAccounts === true
 			? null
 			: Arr.filter(loaded, (release) => release.serviceName === model.scriptName)
-	const status = dataOf(model.status.data)
+	const status = successOf(model.status.data)
 	const accounts = status?.accounts ?? []
 	const accountId = row?.accountId ?? model.search.account
 	const accountName =

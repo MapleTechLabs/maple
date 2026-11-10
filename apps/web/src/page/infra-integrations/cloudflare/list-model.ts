@@ -7,9 +7,8 @@ import type {
 	CloudflareZoneRow,
 } from "@maple/web-data/warehouse/cloudflare-infra"
 import { Array as Arr, Order } from "effect"
+import type { CLOUDFLARE_VIEWS, WORKER_SCOPES, ZONE_SCOPES } from "../../../route/search"
 
-// Here, not beside the list views: the route's search schema needs it, and it loads at startup.
-export const CLOUDFLARE_VIEWS = ["zones", "workers", "queues"] as const
 export type CloudflareView = (typeof CLOUDFLARE_VIEWS)[number]
 
 /** Below this many requests a rate is noise: 1 failure in 11 requests is not a 9% error rate. */
@@ -19,10 +18,8 @@ export const CLIENT_ERROR_NOTABLE = 0.5
 export const SLOW_P99_MS = 1000
 export const CPU_HEAVY_P99_MS = 500
 
-export const ZONE_SCOPES = ["serving5xx", "mostly4xx", "lowVolume"] as const
 export type ZoneScope = (typeof ZONE_SCOPES)[number]
 
-export const WORKER_SCOPES = ["erroring", "slow", "cpuHeavy"] as const
 export type WorkerScope = (typeof WORKER_SCOPES)[number]
 
 export type ZoneHealth = "serving5xx" | "mostly4xx" | "ok" | "lowVolume"

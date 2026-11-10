@@ -162,7 +162,7 @@ const CodeReviewCiSearchFields = {
 	result: Schema.optional(CiRunResult),
 }
 
-// apps/web/src/components/infra/cloudflare/filters.ts + list-model.ts
+// The Cloudflare pages' search: `page/infra-integrations/cloudflare/filters.ts` reads the filters.
 const cloudflareFilterSearchFields = {
 	hosts: OptionalStringArrayParam,
 	cacheStatuses: OptionalStringArrayParam,
@@ -175,10 +175,10 @@ const cloudflareFilterSearchFields = {
 	deviceTypes: OptionalStringArrayParam,
 }
 
-const CLOUDFLARE_VIEWS = ["zones", "workers", "queues"] as const
-const ZONE_SCOPES = ["serving5xx", "mostly4xx", "lowVolume"] as const
-const WORKER_SCOPES = ["erroring", "slow", "cpuHeavy"] as const
-const ZONE_TABS = ["traffic", "dns", "security"] as const
+export const CLOUDFLARE_VIEWS = ["zones", "workers", "queues"] as const
+export const ZONE_SCOPES = ["serving5xx", "mostly4xx", "lowVolume"] as const
+export const WORKER_SCOPES = ["erroring", "slow", "cpuHeavy"] as const
+export const ZONE_TABS = ["traffic", "dns", "security"] as const
 
 // PlanetScale filters
 const planetscaleFilterSearchFields = {

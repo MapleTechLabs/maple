@@ -1,19 +1,17 @@
 import {
-	CLOUDFLARE_VIEWS,
 	type CloudflareView,
 	CPU_HEAVY_P99_MS,
 	MIN_RATED_REQUESTS,
 	sortWorkersByAttention,
-	WORKER_SCOPES,
 	type WorkerListRow,
 	type WorkerScope,
 	workerHealth,
 	workerInScope,
-	ZONE_SCOPES,
 	type ZoneScope,
 	zoneHealth,
 	zoneInScope,
 } from "../list-model"
+import { CLOUDFLARE_VIEWS, WORKER_SCOPES, ZONE_SCOPES } from "../../../../route/search"
 import type { CloudflareAccount } from "../accounts"
 import { refreshingClass } from "@maple/ui/lib/refreshing"
 import { TONE_FILL } from "@maple/ui/lib/tone"
