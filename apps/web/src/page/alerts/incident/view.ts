@@ -54,13 +54,13 @@ import type { Model } from "./model"
 import { type EscalationData, incidentRail } from "./view-rail"
 import { activeSilenceFor } from "../shared/silences"
 import { silenceBadge, silenceButton, silenceCheckFailed } from "../shared/silence-view"
-import * as Policy from "@maple/domain/policy"
 import * as SilenceDialogView from "../silence-dialog/view"
 import { incidentTimeline } from "./view-timeline"
 import { anomalyEvidence, type AnomalyEvidenceInputs } from "./view-anomaly"
 import { ANOMALY_CHART_TOKENS } from "../../kit/anomaly-evidence"
 import { timestamp } from "@maple/views/ui/timestamp"
 import { typography } from "@maple/views/ui/typography"
+import { canManageAlerts } from "../../kit/session-grants"
 
 type H = HtmlBuilder<Message>
 
@@ -506,7 +506,7 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 							isLoading: model.isUpdatingAcknowledgement,
 							onAcknowledge: (acknowledged) => Message.ClickedAcknowledge({ acknowledged }),
 						}),
-						...(Policy.has(model.grants, "alerts:manage") && isOpenIncident(model)
+						...(canManageAlerts(model) && isOpenIncident(model)
 							? [silenceButton(h, Message.ClickedSilence(), model.rules === null)]
 							: []),
 						investigateAction(

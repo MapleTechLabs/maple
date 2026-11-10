@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { checkHealth, formatMs, formatShare, medianOf } from "./derive"
+import { checkHealth, formatMs, formatShare } from "./derive"
 import { Array as Arr } from "effect"
 
 describe("checkHealth", () => {
@@ -25,12 +25,6 @@ describe("checkHealth", () => {
 			"fast",
 			"fast",
 		])
-	})
-})
-
-describe("medianOf", () => {
-	it("takes the middle value, the mean of the middle two, or null with none", () => {
-		expect([medianOf([5, 1, 3]), medianOf([4, 1, 3, 2]), medianOf([])]).toEqual([3, 2.5, null])
 	})
 })
 

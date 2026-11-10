@@ -18,7 +18,7 @@ import { rulesFormSkeleton } from "../rules-form/skeleton"
 import type * as RulesForm from "../rules-form/form"
 import * as RulesFormView from "../rules-form/view"
 import { canManage, Message, type Model } from "./model"
-import { repositoryList } from "./repositories"
+import { manageAccessLink, repositoryList } from "./repositories"
 import {
 	activeRepositories,
 	isRepoEnabled,
@@ -119,7 +119,7 @@ const notConnected = (h: H, isConnected: boolean): Html =>
 
 const repositoriesSection = (h: H, model: Model): Html =>
 	AsyncData.matchData(model.githubStatus.data, {
-		onEmpty: () => repositoryListSkeleton(h),
+		onEmpty: () => repositoryListSkeleton(h, manageAccessLink(h)),
 		onFailure: (failure) =>
 			errorState(h, {
 				failure,
@@ -258,7 +258,7 @@ const content = (h: H, model: Model): Html =>
 					),
 				],
 				defaults: [rulesFormSkeleton(h, "organization")],
-				repositories: [repositoryListSkeleton(h, true)],
+				repositories: [repositoryListSkeleton(h, manageAccessLink(h), true)],
 			}),
 		onFailure: (failure) =>
 			errorState(h, {

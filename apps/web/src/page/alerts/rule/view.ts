@@ -28,10 +28,10 @@ import { hstack } from "@maple/views/ui/stack"
 import { Option, Array as Arr } from "effect"
 import { activeSilenceFor } from "../shared/silences"
 import { silenceBadge, silenceButton, silenceCheckFailed } from "../shared/silence-view"
-import * as Policy from "@maple/domain/policy"
 import type { V2AlertSilence } from "@maple/domain/http/v2"
 import { incidentGroup } from "@maple/web-data/alerts/incident-timeline"
 import * as SilenceDialogView from "../silence-dialog/view"
+import { canManageAlerts } from "../../kit/session-grants"
 
 // The rule detail page through `ResultPage` and `DetailHeader`.
 
@@ -148,9 +148,7 @@ const header = (h: H, model: Model, rule: AlertRuleDocument, timeZone: string) =
 						},
 					}),
 			}),
-			...(Policy.has(model.grants, "alerts:manage")
-				? [silenceButton(h, Message.ClickedSilence())]
-				: []),
+			...(canManageAlerts(model) ? [silenceButton(h, Message.ClickedSilence())] : []),
 			linkButton(h, { variant: "outline", size: "sm", href: createHref({ ruleId: rule.id }) }, [
 				icon(h, "PencilIcon"),
 				"Edit rule",

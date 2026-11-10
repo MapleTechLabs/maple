@@ -1,5 +1,5 @@
 import type { AlertDestinationId, AlertIncidentId, AlertRuleId } from "@maple/domain/http"
-import type { V2AlertDestinationUpdateParams, V2AlertIncident } from "@maple/domain/http/v2"
+import type { V2AlertDestinationUpdateParams, V2AlertIncident, V2ChatConnector } from "@maple/domain/http/v2"
 import type { AlertIncidentRow } from "@maple/web-data/collections/alerts"
 import { v2DeliveryToDocument } from "@maple/web-data/alerts/form-utils"
 import { Effect, Array as Arr } from "effect"
@@ -110,3 +110,10 @@ export const withAcknowledgement = <R extends AlertIncidentRow>(
 				}
 			: row,
 	)
+
+/** `useChatConnectors`: the org's chat connectors, Slack first; none when the read fails. */
+export const listChatConnectors = Effect.gen(function* () {
+	const client = yield* MapleApiV2Client
+	const response = yield* client.chatIntegration.connectors()
+	return [...response.data].sort((a, b) => Number(b.id === "slack") - Number(a.id === "slack"))
+}).pipe(Effect.orElseSucceed((): ReadonlyArray<V2ChatConnector> => []))

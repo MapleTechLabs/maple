@@ -37,14 +37,13 @@ import { OrgMember } from "../shared/org-members"
 import * as WindowDialog from "../maintenance-dialog/dialog"
 import * as SilenceDialog from "../silence-dialog/dialog"
 import { ServiceNamespaces } from "./uptime-groups"
+import { LiveRows } from "../../kit/load-schemas"
+import { UptimeMonitorKind } from "@maple/domain/primitives"
 
 // The `/alerts` hub.
 
-/** `useAlertDestinationsList` / the overview collections: `null` until the first live snapshot. */
-const Rows = <S extends Schema.Top>(row: S) => Schema.NullOr(Schema.Array(row))
-
 export const UptimeStatusFilter = Schema.Literals(["all", "down", "degraded", "paused"])
-export const UptimeKindFilter = Schema.Literals(["all", "http", "tcp", "dns", "heartbeat"])
+export const UptimeKindFilter = Schema.Literals(["all", ...UptimeMonitorKind.literals])
 export type UptimeKindFilter = typeof UptimeKindFilter.Type
 
 /** An SLO beside its status (`listSloRows`); `status` is `null` when that read failed. */
@@ -57,10 +56,10 @@ export const Model = Schema.Struct({
 	search: AlertsSearch,
 	/** `Clock.currentTimeMillis` when the overview model was built; `null` until read. */
 	nowMs: Schema.NullOr(Schema.Number),
-	rules: Rows(AlertRuleRowSchema),
-	states: Rows(AlertRuleStateRowSchema),
-	incidents: Rows(AlertIncidentRowSchema),
-	destinations: Rows(AlertDestinationRowSchema),
+	rules: LiveRows(AlertRuleRowSchema),
+	states: LiveRows(AlertRuleStateRowSchema),
+	incidents: LiveRows(AlertIncidentRowSchema),
+	destinations: LiveRows(AlertDestinationRowSchema),
 	/** `alertDeliveries.list({ limit: 100 })`, newest first. */
 	deliveries: KeyedSchema(Schema.Array(AlertDeliveryEventDocument), LoadFailure),
 	/** The Routing tab's own `alertDeliveries.list` read, separate from `deliveries`. */
@@ -139,6 +138,3 @@ export const Model = Schema.Struct({
 	windowDialog: WindowDialog.Model,
 })
 export type Model = typeof Model.Type
-
-/** The viewer may change what this page edits (`alerts:manage`). */
-export const canManage = (model: Pick<Model, "grants">): boolean => Policy.has(model.grants, "alerts:manage")

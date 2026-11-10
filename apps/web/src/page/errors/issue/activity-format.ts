@@ -1,7 +1,8 @@
 import type { ErrorIssueEventDocument } from "@maple/domain/http"
 import { countLabel, formatRatePerHour } from "@maple/ui/lib/format"
 import { AGENT_ACCENT, TONE_FILL } from "@maple/ui/lib/tone"
-import { DateTime, Option, Schema, Array as Arr } from "effect"
+import { Option, Schema, Array as Arr } from "effect"
+import { toEpochMs } from "@maple/ui/lib/time-format"
 
 const encodeJsonOption = Schema.encodeOption(Schema.fromJsonString(Schema.Unknown))
 
@@ -110,9 +111,6 @@ export const formatSpokenDuration = (ms: number): string => {
 	if (hours < 48) return countLabel(hours, "hour")
 	return countLabel(Math.round(hours / 24), "day")
 }
-
-export const isoMs = (iso: string): number =>
-	Option.getOrElse(Option.map(DateTime.make(iso), DateTime.toEpochMillis), () => Number.NaN)
 
 type Payload = Readonly<Record<string, unknown>>
 
@@ -242,5 +240,5 @@ export const isContinuation = (
 	if (previous === null || !MESSAGE_TYPES.has(previous.type) || previous.type !== event.type) return false
 	const previousActor = previous.actor?.id ?? null
 	if (previousActor === null || previousActor !== (event.actor?.id ?? null)) return false
-	return isoMs(event.createdAt) - isoMs(previous.createdAt) < CONTINUATION_WINDOW_MS
+	return toEpochMs(event.createdAt) - toEpochMs(previous.createdAt) < CONTINUATION_WINDOW_MS
 }

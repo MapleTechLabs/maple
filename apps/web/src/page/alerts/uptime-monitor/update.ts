@@ -20,6 +20,7 @@ import {
 } from "./command"
 import { Message } from "./message"
 import type { Model, UptimeWindow } from "./model"
+import { acceptGrants } from "../../kit/session-grants"
 
 type Return = PageReturn<Model, Message>
 type MonitorRoute = Extract<AppRoute, { readonly _tag: "AlertsUptimeMonitor" }>
@@ -149,8 +150,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			orgId === context.orgId ? { model: { ...model, destinations: rows } } : { model },
 		UpdatedIncidents: ({ orgId, rows }) =>
 			orgId === context.orgId ? { model: { ...model, incidents: rows } } : { model },
-		CompletedFetchSession: ({ orgId, grants }) =>
-			orgId === context.orgId ? { model: { ...model, grants } } : { model },
+		CompletedFetchSession: (answer) => ({ model: acceptGrants(model, context.orgId, answer) }),
 		ClickedToggle: () => toggle(model),
 		CompletedToggle: ({ result }) => {
 			const settled = { ...model, isToggling: false }

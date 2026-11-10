@@ -18,6 +18,7 @@ import { funnelPanel, pathsPanel } from "./view-panels"
 import { autoIntervalLabel, isSqlSource, showsSourceToggle } from "./update"
 import { rawSqlEditor } from "./view-sql"
 import { Message } from "./message"
+import { metricKeysOf } from "../../kit/query-builder/where-values"
 import { baseValuesOf } from "./where-inputs"
 import type { Model } from "./model"
 import { typography } from "@maple/views/ui/typography"
@@ -51,10 +52,7 @@ const queryPanel = (
 			hasVisibilityToggle: true,
 			metricOptions: model.metricOptions?.options ?? [],
 			metricSearch: model.metricSearch,
-			metricBreakdownKeys:
-				query.dataSource === "metrics"
-					? model.metricKeys[`${query.metricName}::${query.metricType}`]
-					: undefined,
+			metricBreakdownKeys: metricKeysOf(model.metricKeys, query),
 			autocompleteValues: baseValuesOf(model, query),
 		},
 		toParentMessage: (message) => Message.GotQueryPanelMessage({ message }),

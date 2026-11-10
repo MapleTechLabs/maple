@@ -1,5 +1,6 @@
 import { Clock, Effect, Option, Schema, Array as Arr, String as Str } from "effect"
 import { browserZone, readSupportedTimeZones, SYSTEM_VALUE } from "../../platform/time-zone"
+import { EMPTY_VALUE } from "@maple/ui/lib/empty-value"
 
 // The zone list logic of the timezone select.
 
@@ -53,12 +54,14 @@ const offsetMinutes = (offset: string): number => {
 	return (sign === "-" ? -1 : 1) * (Number(hours) * 60 + Number(minutes ?? 0))
 }
 
-/** `formatClock`: `16:52`, what the clock reads in the zone at `atMs`. */
-const formatClock = (timeZone: string, atMs: number): string =>
-	Option.match(clockFormatter(timeZone), {
-		onNone: () => "--:--",
-		onSome: (formatter) => formatter.format(atMs),
-	})
+const clockFormatters = new Map<string, Option.Option<Intl.DateTimeFormat>>()
+
+/** `16:52`, what the clock reads in the zone at `atMs`; `invalid` for an unknown zone. */
+export const formatClock = (atMs: number, timeZone: string, invalid: string = EMPTY_VALUE): string => {
+	const formatter = clockFormatters.get(timeZone) ?? clockFormatter(timeZone)
+	clockFormatters.set(timeZone, formatter)
+	return Option.match(formatter, { onNone: () => invalid, onSome: (found) => found.format(atMs) })
+}
 
 /** `Europe/Berlin` → `Europe` + `Berlin`; `America/Argentina/San_Juan` → `America` + `Argentina / San Juan`. */
 const splitZone = (zone: string): { readonly region: string; readonly city: string } => {
@@ -94,7 +97,7 @@ const rowOf = (
 	value,
 	zone,
 	...splitZone(zone),
-	clock: formatClock(zone, atMs),
+	clock: formatClock(atMs, zone, "--:--"),
 	offset: formatUtcOffset(zone, atMs),
 	isPinned,
 	startsGroup,

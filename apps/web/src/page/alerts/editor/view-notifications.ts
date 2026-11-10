@@ -25,6 +25,7 @@ import { chainSummary, routingTabHref } from "../shared/escalation-chains"
 import { chainSelectIdOf, NO_CHAIN } from "./form-steps"
 import type { Tier } from "./message"
 import { formSelect } from "./view-select"
+import { ALERT_SEVERITY_LABEL } from "../shared/badges"
 
 // `NotificationsSection`: who gets notified, per tier,
 // and the optional message template.
@@ -190,7 +191,7 @@ const tierRouting = (
 			chainId,
 			destinationIds,
 			// Two tiers render two pickers, so each needs its own accessible name.
-			tiered ? `${tier === "warning" ? "Warning" : "Critical"} escalation chain` : "Escalation chain",
+			tiered ? `${ALERT_SEVERITY_LABEL[tier]} escalation chain` : "Escalation chain",
 			isRouteRequired,
 		),
 	])
@@ -334,7 +335,7 @@ const notifications = (h: H, model: NotificationsView, form: NotificationsForm):
 								h.div(
 									[h.Class("space-y-1.5")],
 									[
-										tierHeading(h, "warning", "Warning"),
+										tierHeading(h, "warning", ALERT_SEVERITY_LABEL.warning),
 										tierRouting(
 											h,
 											model,

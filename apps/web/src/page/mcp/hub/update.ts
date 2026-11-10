@@ -15,7 +15,6 @@ import { AppRoute, hrefOf } from "../../../route"
 import type { McpServersSearch } from "../../../route/search"
 import * as Select from "@maple/views/ui/select"
 import * as ToggleGroup from "@maple/views/ui/toggle-group"
-import { chartBucketSeconds } from "../../kit/tools/model"
 import { ALL, facetValue, initFacetSelect } from "../../kit/tools/toolbar"
 import { type PageContext, PageOutMessage, type PageReturn } from "../../contract"
 import * as TimeRangePicker from "../../kit/time-range-picker"
@@ -32,6 +31,8 @@ import {
 } from "./command"
 import { type Facet, Message } from "./message"
 import { DEFAULT_MCP_PRESET, type McpView, type Model } from "./model"
+import { chartBucketSecondsBetween } from "@maple/views/lib/infra-chart-units"
+import { TOOL_PERCENTILES } from "@maple/web-data/lib/tool-analytics"
 
 type Return = PageReturn<Model, Message>
 type Commands = ReadonlyArray<Command.Command<Message, never, Resources>>
@@ -99,7 +100,7 @@ export const tabSearch = (search: Search): Search => ({
 })
 
 export const bucketSecondsOf = (window: TimeWindow): number =>
-	chartBucketSeconds(toEpochMs(window.startTime), toEpochMs(window.endTime))
+	chartBucketSecondsBetween(toEpochMs(window.startTime), toEpochMs(window.endTime))
 
 const keyed = <A, E>(
 	slot: Keyed.Keyed<A, E>,
@@ -461,10 +462,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 					return Option.getOrUndefined(
 						Option.map(
 							Option.filter(
-								Arr.findFirst(
-									["p50", "p90", "p95"] as const,
-									(candidate) => candidate === value,
-								),
+								Arr.findFirst(TOOL_PERCENTILES, (candidate) => candidate === value),
 								(percentile) => percentile !== (model.search.percentile ?? "p90"),
 							),
 							(percentile) => ({

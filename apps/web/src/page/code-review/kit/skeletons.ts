@@ -9,9 +9,6 @@ import { skeleton, skeletonMeterClass, skeletonSlowNote } from "@maple/views/ui/
 import { table, tableBody, tableCell, tableHead, tableHeader, tableRow } from "@maple/views/ui/table"
 import { sectionHeading } from "../../kit/section-heading"
 import { statRail, statRailItem, type StatRailColumns } from "../../kit/stat-rail"
-import { manageAccessLink } from "../settings/repositories"
-import { HEADLINE_LABELS, SECONDARY_LABELS } from "../analytics/view-stats"
-import { CI_HEADLINE_LABELS } from "../ci/view-stats"
 import { analyticsPanel } from "./analytics-panel"
 import { section } from "./parts"
 import { SHEET_STAT_LABELS } from "./review-sheet-sections"
@@ -402,10 +399,13 @@ const authorsCardSkeleton = <M>(h: HtmlBuilder<M>): Html =>
 		]),
 	])
 
-/** The analytics tab before its first answer and while the charts load. */
-export const analyticsSkeleton = <M>(h: HtmlBuilder<M>): Html =>
+/** The analytics tab before its first answer and while the charts load, under the tab's own stat labels. */
+export const analyticsSkeleton = <M>(
+	h: HtmlBuilder<M>,
+	labels: Readonly<{ headline: ReadonlyArray<string>; secondary: ReadonlyArray<string> }>,
+): Html =>
 	busyPage(h, "Loading review analytics", [
-		headlineSkeleton(h, Rec.values(HEADLINE_LABELS)),
+		headlineSkeleton(h, labels.headline),
 		grid(h, { lg: 2, gap: "6" }, [
 			chartCard(h, "Pull requests reviewed", "bar", {
 				control: true,
@@ -433,7 +433,7 @@ export const analyticsSkeleton = <M>(h: HtmlBuilder<M>): Html =>
 			[h.Class("grid gap-6 lg:grid-cols-3")],
 			[barListCard(h, "Issues by category"), barListCard(h, "Review outcomes"), authorsCardSkeleton(h)],
 		),
-		headlineSkeleton(h, Rec.values(SECONDARY_LABELS), {
+		headlineSkeleton(h, labels.secondary, {
 			columns: 4,
 			className: "xl:grid-cols-7",
 			size: "secondary",
@@ -443,10 +443,10 @@ export const analyticsSkeleton = <M>(h: HtmlBuilder<M>): Html =>
 const tablePanel = <M>(h: HtmlBuilder<M>, title: string, columns: ReadonlyArray<SkeletonColumn>): Html =>
 	panel(h, {}, [panelHeader(h, { title }), tableSkeleton(h, columns, { count: 4 })])
 
-/** The CI tab before its first answer and while the charts load. */
-export const ciSkeleton = <M>(h: HtmlBuilder<M>): Html =>
+/** The CI tab before its first answer and while the charts load, under the tab's own stat labels. */
+export const ciSkeleton = <M>(h: HtmlBuilder<M>, headline: ReadonlyArray<string>): Html =>
 	busyPage(h, "Loading CI analytics", [
-		headlineSkeleton(h, Rec.values(CI_HEADLINE_LABELS), { columns: 3, className: "xl:grid-cols-6" }),
+		headlineSkeleton(h, headline, { columns: 3, className: "xl:grid-cols-6" }),
 		grid(h, { lg: 2, gap: "6" }, [
 			chartCard(h, "Runs by result", "bar"),
 			chartCard(h, "Run time", "line"),
@@ -463,12 +463,12 @@ export const ciSkeleton = <M>(h: HtmlBuilder<M>): Html =>
 	])
 
 /** `repositoryList`: the access line, then one row per repository with Configure and its switch. */
-/** Only the rows are busy: the header's access link works while they load. `isNested` drops the slow-load note. */
-export const repositoryListSkeleton = <M>(h: HtmlBuilder<M>, isNested = false): Html => {
+/** Only the rows are busy: the header's `access` link works while they load. `isNested` drops the slow-load note. */
+export const repositoryListSkeleton = <M>(h: HtmlBuilder<M>, access: Html, isNested = false): Html => {
 	const list = panel(h, {}, [
 		panelHeader(h, {
 			className: "px-5 py-3 text-xs text-muted-foreground",
-			action: manageAccessLink(h),
+			action: access,
 			children: [line(h, "h-4", "h-2.5 w-40")],
 		}),
 		dividedList(

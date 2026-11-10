@@ -10,7 +10,8 @@ import { UserId } from "@maple/domain/http"
 import { zonedDateParts, zonedPartsToEpochMs } from "@maple/query-engine/datetime"
 import { Array as Arr, Option, Order, Schema, String as Str } from "effect"
 import type { OrgMember } from "./org-members"
-import { isoMs, msIso } from "../../kit/alert-time"
+import { msIso } from "../../kit/alert-time"
+import { toEpochMs } from "@maple/ui/lib/time-format"
 
 // On-call schedules, members, shifts and overrides for the scene tests and `/lab/oncall`. The
 // shifts come from a small wall-clock generator, so a DST week reads the way the API renders it.
@@ -21,9 +22,9 @@ export const overrideUuid = (n: number) => `0199a010-0000-7000-8000-${pad(n)}`
 export const schedulePublicId = (n: number) => encodePublicId("onc", scheduleUuid(n))
 
 /** Tue 10 Nov 2026, 10:30 UTC: the lab's and the tests' clock. */
-export const ONCALL_NOW = isoMs("2026-11-10T10:30:00.000Z")
+export const ONCALL_NOW = toEpochMs("2026-11-10T10:30:00.000Z")
 /** Thu 22 Oct 2026, 10:00 UTC: a week whose Sunday (25 Oct) Berlin falls back an hour. */
-export const DST_NOW = isoMs("2026-10-22T10:00:00.000Z")
+export const DST_NOW = toEpochMs("2026-10-22T10:00:00.000Z")
 
 const NAMES = [
 	"Ben Brook",

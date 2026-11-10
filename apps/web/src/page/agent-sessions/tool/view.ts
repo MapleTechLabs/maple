@@ -15,12 +15,7 @@ import type { PageViewInputs } from "../../contract"
 import { dashboardPage } from "../../kit/dashboard-page"
 import { timeControls } from "../../kit/time-controls"
 import * as TimeRangePicker from "../../kit/time-range-picker"
-import {
-	chartBucketSeconds,
-	DEFAULT_TOOL_PRESET,
-	type ToolSeriesPoint,
-	type TotalsResult,
-} from "../../kit/tools/model"
+import { DEFAULT_TOOL_PRESET, type ToolSeriesPoint, type TotalsResult } from "../../kit/tools/model"
 import { scopeRow } from "../../kit/tools/scope-row"
 import { facetSelect, toolFilterToolbar } from "../../kit/tools/toolbar"
 import { SESSIONS_LIMIT } from "./command"
@@ -33,6 +28,7 @@ import * as ErrorModal from "./error-modal-model"
 import * as ErrorModalView from "./view-error-modal"
 import { sessionsPanel } from "./view-sessions"
 import { hstack, vstack } from "@maple/views/ui/stack"
+import { chartBucketSecondsBetween } from "@maple/views/lib/infra-chart-units"
 
 type H = HtmlBuilder<Message>
 
@@ -187,7 +183,7 @@ const loadedView = (h: H, model: Model, totals: TotalsResult, timeZone: string, 
 						value.data,
 						range.startMs,
 						range.endMs,
-						chartBucketSeconds(range.startMs, range.endMs),
+						chartBucketSecondsBetween(range.startMs, range.endMs),
 					)
 				: value.data,
 	})

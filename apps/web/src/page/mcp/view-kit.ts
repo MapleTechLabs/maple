@@ -1,5 +1,4 @@
 import { formatWarehouseDateTime } from "@maple/query-engine"
-import { EMPTY_VALUE } from "@maple/ui/lib/empty-value"
 import { cn } from "@maple/ui/lib/utils"
 import { errorRate, formatDurationNs } from "@maple/web-data/lib/tool-analytics"
 import { Option, Record, Array as Arr, String as Str, Order } from "effect"
@@ -16,7 +15,7 @@ import { panelHeader } from "@maple/views/ui/panel"
 import { relativeTime } from "../kit/relative-time"
 import { seriesLegend } from "../kit/series-legend"
 import { TOOL_CHIP } from "../kit/error-chip"
-import type { ToolPercentile, ToolSeriesPoint } from "../kit/tools/model"
+import type { ToolSeriesPoint } from "../kit/tools/model"
 import { type ToolPlotInputs, toolPlotView } from "../kit/tools/series-chart"
 import { volumeSparkCell } from "../kit/tools/spark"
 import type { McpClientKind } from "./data"
@@ -177,19 +176,6 @@ export const clientPlot = (
 		],
 	}
 }
-
-/** The three percentiles, the picked one in the primary (as Agent Tools' `seriesFor`). */
-export const durationSeries = (percentile: ToolPercentile): PlotSeries =>
-	Arr.map(["p50", "p90", "p95"] as const, (key) => ({
-		key,
-		label: Str.toUpperCase(key),
-		token:
-			key === percentile
-				? "--primary"
-				: key === "p95"
-					? "--color-severity-error"
-					: "--muted-foreground",
-	}))
 
 /** A chart cell: the title and legend, then the plot (or the empty note). */
 export const mcpPlot = <M>(
@@ -356,19 +342,6 @@ export const resultCell = <M>(h: HtmlBuilder<M>, errorType: string | null): Html
 				: errorTypeChip(h, errorType),
 		],
 	)
-
-/** An unknown zone throws in the constructor; the clock then reads as the empty value. */
-const clockFormatter = Option.liftThrowable(
-	(timeZone: string) => new Intl.DateTimeFormat("en-GB", { hour: "2-digit", minute: "2-digit", timeZone }),
-)
-const clockFormatters = new Map<string, Option.Option<Intl.DateTimeFormat>>()
-
-/** "13:26" in the page's zone; one formatter per zone. */
-export const formatClock = (epochMs: number, timeZone: string): string => {
-	const formatter = clockFormatters.get(timeZone) ?? clockFormatter(timeZone)
-	clockFormatters.set(timeZone, formatter)
-	return Option.match(formatter, { onNone: () => EMPTY_VALUE, onSome: (f) => f.format(epochMs) })
-}
 
 /** The scope row: what the page is narrowed to, and the window's totals. */
 export const mcpScopeRow = <M>(h: HtmlBuilder<M>, scope: string, count: string, rest: string): Html =>

@@ -8,6 +8,7 @@ import * as Chart from "@maple/views/charts/chart"
 import { KeyedSchema } from "@maple/views/data/keyed"
 import { LoadFailure } from "@maple/views/data/load-failure"
 import * as CopyButton from "@maple/views/ui/copy-button"
+import { LiveRows } from "../../kit/load-schemas"
 
 // `/alerts/uptime/$monitorId`: one monitor, its recent checks and setup.
 
@@ -79,8 +80,6 @@ export const CheckStats = Schema.Struct({
 })
 export type CheckStats = typeof CheckStats.Type
 
-const Rows = <S extends Schema.Top>(row: S) => Schema.NullOr(Schema.Array(row))
-
 export const Model = Schema.Struct({
 	/** The URL segment as written; `monitorId` is `null` when it is not a monitor id. */
 	rawMonitorId: Schema.String,
@@ -88,8 +87,8 @@ export const Model = Schema.Struct({
 	nowMs: Schema.NullOr(Schema.Number),
 	monitor: KeyedSchema(V2UptimeMonitor, LoadFailure),
 	/** Synced destinations (the Setup panel's names) and incidents (the open one, by rule name). */
-	destinations: Rows(AlertDestinationRowSchema),
-	incidents: Rows(AlertIncidentRowSchema),
+	destinations: LiveRows(AlertDestinationRowSchema),
+	incidents: LiveRows(AlertIncidentRowSchema),
 	grants: Schema.Array(Policy.PermissionName),
 	isToggling: Schema.Boolean,
 	isChecking: Schema.Boolean,

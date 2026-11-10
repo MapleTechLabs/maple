@@ -1,13 +1,12 @@
 import { AlertDestinationId } from "@maple/domain/http"
 import { Schema } from "effect"
+import { UptimeMonitorKind } from "@maple/domain/primitives"
+import { UptimeDnsRecordType, UptimeHttpMethod } from "@maple/domain/uptime"
 
 // The uptime form's draft: every field as the inputs hold it, strings until the payload is built.
 
-export const MonitorKind = Schema.Literals(["http", "tcp", "dns", "heartbeat"])
-export type MonitorKind = typeof MonitorKind.Type
-
-export const HttpMethod = Schema.Literals(["GET", "HEAD", "POST"])
-export const RecordType = Schema.Literals(["A", "AAAA", "CNAME", "MX", "TXT", "NS"])
+export { UptimeMonitorKind as MonitorKind } from "@maple/domain/primitives"
+export { UptimeHttpMethod as HttpMethod, UptimeDnsRecordType as RecordType } from "@maple/domain/uptime"
 export const ScheduleMode = Schema.Literals(["interval", "cron"])
 export const EveryUnit = Schema.Literals(["seconds", "minutes", "hours"])
 export const GraceUnit = Schema.Literals(["seconds", "minutes"])
@@ -45,11 +44,11 @@ export const TextField = Schema.Literals([
 export type TextField = typeof TextField.Type
 
 export const Form = Schema.Struct({
-	kind: MonitorKind,
+	kind: UptimeMonitorKind,
 	name: Schema.String,
 	/** The user typed a name; until then it follows the URL. */
 	isNameEdited: Schema.Boolean,
-	method: HttpMethod,
+	method: UptimeHttpMethod,
 	url: Schema.String,
 	/** `Name: value`, one header per line. */
 	headers: Schema.String,
@@ -62,7 +61,7 @@ export const Form = Schema.Struct({
 	host: Schema.String,
 	port: Schema.String,
 	hostname: Schema.String,
-	recordType: RecordType,
+	recordType: UptimeDnsRecordType,
 	expected: Schema.String,
 	scheduleMode: ScheduleMode,
 	everyValue: Schema.String,

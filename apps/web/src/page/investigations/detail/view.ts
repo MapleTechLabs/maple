@@ -1,11 +1,14 @@
 import {
 	type InvestigationStatus,
-	type IssueSeverity,
 	MANUAL_INVESTIGATION_TRANSITIONS,
 	RESTARTABLE_INVESTIGATION_STATUSES,
 } from "@maple/domain/http"
 import type { V2Investigation } from "@maple/domain/http/v2"
-import { investigationHeadline, investigationScope } from "@maple/web-data/investigations/display"
+import {
+	investigationHeadline,
+	investigationScope,
+	investigationSeverity,
+} from "@maple/web-data/investigations/display"
 import { Mount, Submodel } from "foldkit"
 import {
 	Message as ConversationMessageUnion,
@@ -55,13 +58,9 @@ import { Array as Arr } from "effect"
 
 type H = HtmlBuilder<Message>
 
-/** Only the four canonical severities render as a badge. */
-const asIssueSeverity = (value: string | null | undefined): IssueSeverity | null =>
-	value === "critical" || value === "high" || value === "medium" || value === "low" ? value : null
-
 const titleContent = (h: H, investigation: V2Investigation): Html => {
 	const scope = investigationScope(investigation)
-	const severity = asIssueSeverity(investigation.severity ?? investigation.snapshot.severity)
+	const severity = investigationSeverity(investigation)
 	return detailTitle(h, {
 		kind: ["Investigation", investigationKindLabel(investigation.subject)],
 		title: [investigationHeadline(investigation)],

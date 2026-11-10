@@ -15,11 +15,11 @@ import { createHref, incidentHref, ruleHref } from "../../kit/alert-links"
 import { routingTabHref, runView } from "../shared/escalation-chains"
 import { textLink } from "@maple/views/ui/text-link"
 import type { Tone } from "@maple/ui/lib/tone"
-import { isoMs } from "../../kit/alert-time"
 import { typography, typographyClass } from "@maple/views/ui/typography"
 import { hstack, vstack } from "@maple/views/ui/stack"
 import { Array as Arr, Option } from "effect"
 import { AsyncData } from "foldkit"
+import { toEpochMs } from "@maple/ui/lib/time-format"
 
 // `IncidentRail`: the incident detail's side rail.
 
@@ -225,9 +225,9 @@ const ruleSection = <M>(
 	ruleIncidents: ReadonlyArray<AlertIncidentDocument>,
 	now: number,
 ): Html => {
-	const recent = Arr.filter(ruleIncidents, (i) => now - isoMs(i.firstTriggeredAt) <= 30 * DAY_MS)
+	const recent = Arr.filter(ruleIncidents, (i) => now - toEpochMs(i.firstTriggeredAt) <= 30 * DAY_MS)
 	const durations = Arr.flatMap(recent, (i) =>
-		i.resolvedAt != null ? [isoMs(i.resolvedAt) - isoMs(i.firstTriggeredAt)] : [],
+		i.resolvedAt != null ? [toEpochMs(i.resolvedAt) - toEpochMs(i.firstTriggeredAt)] : [],
 	).sort((a, b) => a - b)
 	const median = durations.length > 0 ? durations[Math.floor(durations.length / 2)] : undefined
 	const scope = Arr.filter(

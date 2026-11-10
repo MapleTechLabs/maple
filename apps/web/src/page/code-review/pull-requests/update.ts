@@ -26,6 +26,7 @@ import { FetchReviewAuthors, FetchReviews, WaitSearchDebounce } from "./command"
 import { Message, type Model } from "./model"
 import type { PresetValue } from "../../kit/time-controls"
 import { Array as Arr, Record as Rec } from "effect"
+import { urlSortPatch } from "../../kit/table-sort"
 
 export type Search = typeof CodeReviewPullRequestsSearch.Type
 type Return = PageReturn<Model, Message>
@@ -62,13 +63,8 @@ export const sortOf = (search: Search): { sortBy: SortKey; sortDir: SortDir } =>
 })
 
 /** A header click: the active column flips, another starts descending; the default drops from the URL. */
-const sortPatch = (search: Search, key: SortKey): Partial<Search> => {
-	const current = sortOf(search)
-	const sortDir: SortDir = key === current.sortBy && current.sortDir === "desc" ? "asc" : "desc"
-	return key === "reviewed" && sortDir === "desc"
-		? { sortBy: undefined, sortDir: undefined }
-		: { sortBy: key, sortDir }
-}
+const sortPatch = (search: Search, key: SortKey): Partial<Search> =>
+	urlSortPatch(sortOf(search), key, { sortBy: "reviewed", sortDir: "desc" })
 
 const searchHref = (search: Search) => hrefOf(AppRoute.CodeReviewPullRequests({ search }))
 

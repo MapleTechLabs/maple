@@ -1,7 +1,12 @@
 import { formatWarehouseDateTime } from "@maple/query-engine"
 import { refreshingClass } from "@maple/ui/lib/refreshing"
 import { cn } from "@maple/ui/lib/utils"
-import { metricValue, toolChartTitle, toolMetricLabel } from "@maple/web-data/lib/tool-analytics"
+import {
+	metricValue,
+	TOOL_PERCENTILES,
+	toolChartTitle,
+	toolMetricLabel,
+} from "@maple/web-data/lib/tool-analytics"
 import { makeBucketAxis } from "@maple/views/charts/plot/bucket-axis"
 import { Option, Array as Arr, String as Str, Order } from "effect"
 import { Submodel } from "foldkit"
@@ -34,18 +39,22 @@ export const TOOL_CHART_TOKENS = [
 	"--background",
 ]
 
+/** The three percentiles, the picked one in the primary and p95 in the error tone. */
+export const durationSeries = (percentile: ToolPercentile): ToolPlotInputs["series"] =>
+	Arr.map(TOOL_PERCENTILES, (key) => ({
+		key,
+		label: Str.toUpperCase(key),
+		token:
+			key === percentile
+				? "--primary"
+				: key === "p95"
+					? "--color-severity-error"
+					: "--muted-foreground",
+	}))
+
 const seriesFor = (metric: ToolMetric, percentile: ToolPercentile) =>
 	metric === "duration"
-		? Arr.map(["p50", "p90", "p95"] as const, (key) => ({
-				key,
-				label: Str.toUpperCase(key),
-				token:
-					key === percentile
-						? "--primary"
-						: key === "p95"
-							? "--color-severity-error"
-							: "--muted-foreground",
-			}))
+		? durationSeries(percentile)
 		: [{ key: metric, label: toolMetricLabel(metric, percentile), token: "--primary" }]
 
 /** "1h" / "5m": the bucket width, as a chart note. */

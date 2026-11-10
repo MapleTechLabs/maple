@@ -15,7 +15,6 @@ import { getServiceOverview } from "@maple/web-data/warehouse/services"
 import { Cause, Clock, Effect, Schema } from "effect"
 import { IdleTtl } from "../../../data/idle-ttl"
 import { readThrough } from "../../../data/read-cache"
-import { readGrants } from "../../../data/session-tenant"
 import { toLoadFailure, settleTo } from "@maple/views/data/load-failure"
 import { Command } from "foldkit"
 import {
@@ -41,6 +40,7 @@ import {
 } from "../shared/maintenance-windows"
 import { Message } from "./message"
 import { ServiceNamespaces, serviceNamespaces } from "./uptime-groups"
+import { fetchSessionGrants } from "../../kit/session-grants"
 
 export const ReadHubClock = readClock("ReadAlertsHubClock", Message.ReadClock)
 
@@ -69,12 +69,7 @@ export const FetchRoutingDeliveries = Command.define("FetchAlertsRoutingDeliveri
 		),
 })
 
-export const FetchHubSession = Command.define("FetchAlertsHubSession", {
-	args: { orgId: Schema.String },
-	messages: [Message.CompletedFetchSession],
-	execute: ({ orgId }) =>
-		Effect.map(readGrants, (grants) => Message.CompletedFetchSession({ orgId, grants })),
-})
+export const FetchHubSession = fetchSessionGrants("FetchAlertsHubSession", Message.CompletedFetchSession)
 
 export const ToggleRule = Command.define("ToggleAlertRule", {
 	args: { ruleId: AlertRuleId, isEnabled: Schema.Boolean },

@@ -7,6 +7,8 @@
 
 export const HUB_VIEWS = ["open", "closed", "all"] as const
 export type HubView = (typeof HUB_VIEWS)[number]
+/** The view a URL without `view` shows; it leaves the URL when picked. */
+export const DEFAULT_HUB_VIEW: HubView = "open"
 
 /** Tabs the list used to have. Old links still decode and land on the tab that
  *  now holds the same issues. */
@@ -15,7 +17,7 @@ export type LegacyHubView = (typeof LEGACY_HUB_VIEWS)[number]
 
 export const hubViewOf = (view: HubView | LegacyHubView | undefined): HubView =>
 	view === undefined || view === "triage" || view === "active"
-		? "open"
+		? DEFAULT_HUB_VIEW
 		: view === "resolved"
 			? "closed"
 			: view
@@ -25,6 +27,8 @@ export const hubViewOf = (view: HubView | LegacyHubView | undefined): HubView =>
  *  answer, so it is the one scoped to the time range. */
 export const HUB_SORTS = ["last_seen", "volume", "severity"] as const
 export type HubSort = (typeof HUB_SORTS)[number]
+export const DEFAULT_HUB_SORT: HubSort = "last_seen"
 
 export const SEVERITY_FILTERS = ["all", "critical", "high", "medium", "low", "unset"] as const
 export type SeverityFilter = (typeof SEVERITY_FILTERS)[number]
+export const DEFAULT_SEVERITY_FILTER: SeverityFilter = "all"

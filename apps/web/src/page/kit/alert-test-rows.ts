@@ -4,12 +4,12 @@ import type {
 	AlertRuleRow,
 	AlertRuleStateRow,
 } from "@maple/web-data/collections/alerts"
-import { isoMs } from "./alert-time"
+import { toEpochMs } from "@maple/ui/lib/time-format"
 
 // Synced alert rows for the alerts pages' scene tests, the shape Electric delivers.
 
 export const ORG = "org_acme"
-export const NOW = isoMs("2026-10-01T12:00:00.000Z")
+export const NOW = toEpochMs("2026-10-01T12:00:00.000Z")
 const iso = (msBefore: number) => new Date(NOW - msBefore).toISOString()
 const MINUTE = 60_000
 

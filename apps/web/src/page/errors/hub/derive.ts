@@ -1,19 +1,27 @@
 import type { ErrorIssueDocument, IssueKind, WorkflowState } from "@maple/domain/http"
 import { ERROR_ISSUE_SEARCH_MAX_LENGTH } from "@maple/domain/http/v2"
-import { hubViewOf, type HubSort, type HubView, type SeverityFilter } from "./hub-params"
+import {
+	DEFAULT_HUB_SORT,
+	DEFAULT_SEVERITY_FILTER,
+	hubViewOf,
+	type HubSort,
+	type HubView,
+	type SeverityFilter,
+} from "./hub-params"
 import {
 	buildErrorSignals,
 	type ErrorSignal,
 	indexInvestigationsByIssue,
 } from "../../../lib/models/error-signal"
 import { errorIssueFromV2 } from "../../../lib/services/error-issues"
-import { DateTime, Option, Array as Arr, String as Str, Order } from "effect"
+import { Option, Array as Arr, String as Str, Order } from "effect"
 import { AsyncData } from "foldkit"
 import type { TimeWindow } from "../../../data/time-range"
 import type { ErrorsSearch } from "../../../route/search"
 import { severityRank } from "../../kit/issue-severity"
 import type { ListQuery, WarehouseFilters } from "./command"
 import type { Model } from "./model"
+import { toEpochMs } from "@maple/ui/lib/time-format"
 
 export type Search = typeof ErrorsSearch.Type
 
@@ -26,8 +34,8 @@ export const VOLUME_RANK_LIMIT = 100
 export const INVESTIGATIONS_LIMIT = 100
 
 export const viewOf = (search: Search): HubView => hubViewOf(search.view)
-export const sortOf = (search: Search): HubSort => search.sort ?? "last_seen"
-export const severityOf = (search: Search): SeverityFilter => search.severity ?? "all"
+export const sortOf = (search: Search): HubSort => search.sort ?? DEFAULT_HUB_SORT
+export const severityOf = (search: Search): SeverityFilter => search.severity ?? DEFAULT_SEVERITY_FILTER
 
 /** The sidebar's service and environment narrow the warehouse side too. */
 export const warehouseFiltersOf = (search: Search, window: TimeWindow): WarehouseFilters => ({
@@ -127,8 +135,10 @@ export const errorFilterChips = (search: Search): ReadonlyArray<FilterChip> => [
 export const hasErrorFilters = (search: Search): boolean => errorFilterChips(search).length > 0
 
 /** Warehouse `YYYY-MM-DD HH:mm:ss` (UTC) to epoch ms; `null` when it does not parse. */
-const warehouseMs = (value: string): number | null =>
-	Option.getOrNull(Option.map(DateTime.make(Str.replace(" ", "T")(value) + "Z"), DateTime.toEpochMillis))
+const warehouseMs = (value: string): number | null => {
+	const ms = toEpochMs(value)
+	return Number.isNaN(ms) ? null : ms
+}
 
 /** The spark's bucket width: the window over `SPARK_BUCKETS`, at least a minute. */
 export const bucketSecondsOf = (window: TimeWindow): number => {

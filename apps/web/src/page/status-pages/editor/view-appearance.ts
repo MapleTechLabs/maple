@@ -26,7 +26,6 @@ import {
 } from "../shared/form"
 import { Message } from "./message"
 import { canManage, type Model } from "./model"
-import { isoMs } from "../../kit/alert-time"
 import { monitorStatusOf } from "../shared/derive"
 import { APPEARANCES, presetCards } from "../shared/look"
 import {
@@ -40,6 +39,7 @@ import {
 import { componentsOf, incidentsOf, monitorsOf, statusReadsReady } from "./reads"
 import { typography } from "@maple/views/ui/typography"
 import { hstack, vstack } from "@maple/views/ui/stack"
+import { toEpochMs } from "@maple/ui/lib/time-format"
 
 // The Settings view's Appearance section and the live preview of the public page.
 
@@ -213,7 +213,7 @@ const orNull = (value: string): string | null => (Str.trim(value) === "" ? null 
 
 /** The public page as the draft would render it, from the loaded components and incidents. */
 export const settingsDocument = (model: Model, page: V2StatusPage, form: SettingsForm): string => {
-	const nowMs = model.nowMs ?? isoMs(page.updated_at)
+	const nowMs = model.nowMs ?? toEpochMs(page.updated_at)
 	const monitors = monitorsOf(model)
 	const snapshot = previewSnapshot({
 		pageId: page.id,

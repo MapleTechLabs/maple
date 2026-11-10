@@ -38,6 +38,7 @@ import * as ChatFields from "./chat-fields"
 import * as EmailFields from "./email-fields"
 import * as LinearFields from "./linear-fields"
 import { DestinationForm, TextField, toFormState } from "./form"
+import { listChatConnectors } from "../shared/commands"
 
 // The destination dialog and the state it is driven by, as one Submodel.
 
@@ -138,16 +139,7 @@ type Return = Update.ReturnWithOutMessage<Model, Message, OutMessage, Resources>
 
 const FetchChatConnectors = Command.define("FetchChatConnectors", {
 	messages: [Message.CompletedFetchConnectors],
-	execute: Effect.gen(function* () {
-		const client = yield* MapleApiV2Client
-		const response = yield* client.chatIntegration.connectors()
-		// Slack first, as `useChatConnectors`; every connector is on for a self-hosted org.
-		return Message.CompletedFetchConnectors({
-			connectors: [...response.data].sort(
-				(a, b) => Number(b.id === "slack") - Number(a.id === "slack"),
-			),
-		})
-	}).pipe(Effect.orElseSucceed(() => Message.CompletedFetchConnectors({ connectors: [] }))),
+	execute: Effect.map(listChatConnectors, (connectors) => Message.CompletedFetchConnectors({ connectors })),
 })
 
 export const DetectTelegramChats = Command.define("DetectTelegramChats", {

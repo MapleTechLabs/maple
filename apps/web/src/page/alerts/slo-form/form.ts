@@ -26,8 +26,7 @@ export const WINDOW_DAYS = SloWindowDays.literals
 
 export const THRESHOLDS = SLO_LATENCY_THRESHOLDS_MS
 
-export const Tier = Schema.Literals(["critical", "warning"])
-export type Tier = typeof Tier.Type
+export { AlertSeverity as Tier } from "@maple/domain/http"
 
 export const Form = Schema.Struct({
 	name: Schema.String,

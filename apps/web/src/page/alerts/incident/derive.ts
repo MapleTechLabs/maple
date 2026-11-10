@@ -20,8 +20,8 @@ import {
 import { Option, Array as Arr } from "effect"
 import { lastBy } from "../../kit/last-by"
 import { previewPayload } from "../shared/preview"
-import { isoMs } from "../../kit/alert-time"
 import type { Model } from "./model"
+import { toEpochMs } from "@maple/ui/lib/time-format"
 
 const MINUTE_MS = 60_000
 
@@ -91,9 +91,9 @@ const incidentView = (
 				),
 		},
 	)
-	const start = isoMs(incident.firstTriggeredAt)
+	const start = toEpochMs(incident.firstTriggeredAt)
 	const pad = Math.max(30, (rule?.windowMinutes ?? 5) * 4) * MINUTE_MS
-	const end = incident.resolvedAt != null ? Math.min(isoMs(incident.resolvedAt) + pad, now) : now
+	const end = incident.resolvedAt != null ? Math.min(toEpochMs(incident.resolvedAt) + pad, now) : now
 	const range = { start: start - pad, end: Math.max(end, start + MINUTE_MS) }
 	return Option.some({
 		incident,

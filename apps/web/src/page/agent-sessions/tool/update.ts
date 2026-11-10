@@ -16,10 +16,10 @@ import type { AgentSessionToolSearch } from "../../../route/search"
 import * as Select from "@maple/views/ui/select"
 import { type PageContext, PageOutMessage, type PageReturn } from "../../contract"
 import * as TimeRangePicker from "../../kit/time-range-picker"
-import { chartBucketSeconds, DEFAULT_TOOL_PRESET, toolSelection } from "../../kit/tools/model"
+import { DEFAULT_TOOL_PRESET, toolSelection, toolWindowArgs } from "../../kit/tools/model"
 import type { Selection } from "../../kit/tools/reads"
-import { nextSort } from "../../kit/tools/table"
-import { ALL, facetValue, initFacetSelect } from "../../kit/tools/toolbar"
+import { nextSort } from "../../kit/table-sort"
+import { ALL, type FacetKey, facetSelectStep, initFacetSelect } from "../../kit/tools/toolbar"
 import {
 	CompleteReloadSpin,
 	FetchErrors,
@@ -29,10 +29,11 @@ import {
 	FetchTotals,
 	ResolveWindow,
 } from "./command"
-import { type FacetKey, Message } from "./message"
+import { Message } from "./message"
 import type { Model } from "./model"
 import * as ErrorModal from "./error-modal-model"
 import * as ErrorModalUpdate from "./error-modal-update"
+import { chartBucketSecondsBetween } from "@maple/views/lib/infra-chart-units"
 
 type Return = PageReturn<Model, Message>
 type Commands = ReadonlyArray<Command.Command<Message, never, Resources>>
@@ -67,7 +68,7 @@ const requestAll = (model: Model, context: PageContext, mode: RequestMode): Retu
 	const org = context.orgId
 	const selection = selectionOf(model, window)
 	const range = rangeOf(window)
-	const bucketSeconds = chartBucketSeconds(range.startMs, range.endMs)
+	const bucketSeconds = chartBucketSecondsBetween(range.startMs, range.endMs)
 	const errorBucket = errorTrendBucket(range.startMs, range.endMs).seconds
 	const sessionsInput = {
 		startTime: window.startTime,
@@ -120,13 +121,7 @@ const requestAll = (model: Model, context: PageContext, mode: RequestMode): Retu
 }
 
 const resolveCommand = (search: Search, context: PageContext, mode: RequestMode) =>
-	ResolveWindow({
-		mode,
-		startTime: search.startTime,
-		endTime: search.endTime,
-		preset: search.timePreset ?? DEFAULT_TOOL_PRESET,
-		timeZone: context.timeZone,
-	})
+	ResolveWindow(toolWindowArgs(search, context.timeZone, mode))
 
 const hrefFor = (toolName: string, search: Search) => hrefOf(AppRoute.AgentSessionTool({ toolName, search }))
 
@@ -204,16 +199,17 @@ export const contextChanged = (model: Model, context: PageContext): Return => ({
 	commands: [resolveCommand(model.search, context, model.refreshVersion === 0 ? "Load" : "Refresh")],
 })
 
-const facetSelectStep = (model: Model, facet: FacetKey, message: Select.Message): Return => {
-	const slot = facet === "service" ? "serviceSelect" : facet === "model" ? "modelSelect" : "envSelect"
-	const next = Select.update(model[slot], message)
-	const updated: Model = { ...model, [slot]: next.model }
-	const commands = Command.mapMessages(next.commands ?? [], (inner) =>
+const facetPicked = (model: Model, facet: FacetKey, message: Select.Message): Return => {
+	const step = facetSelectStep(model, facet, message, (inner) =>
 		Message.GotFacetSelectMessage({ facet, message: inner }),
 	)
-	return next.outMessage === undefined
-		? { model: updated, commands }
-		: { ...navigate(updated, { ...model.search, [facet]: facetValue(next.outMessage.value) }), commands }
+	return Option.match(step.picked, {
+		onNone: () => ({ model: step.model, commands: step.commands }),
+		onSome: (value) => ({
+			...navigate(step.model, { ...model.search, [facet]: value }),
+			commands: step.commands,
+		}),
+	})
 }
 
 /** The groups of the Errors read in its own order: what the modal opens on and steps through. */
@@ -326,10 +322,10 @@ const step = (model: Model, message: Message, context: PageContext): Return =>
 		ClickedErrorRow: ({ fingerprint }) =>
 			navigate(model, { ...model.search, error: fingerprint, session: undefined, variant: undefined }),
 		ClickedErrorsSort: ({ key }) => ({
-			model: { ...model, errorsSort: nextSort(model.errorsSort, key, []) },
+			model: { ...model, errorsSort: nextSort(model.errorsSort, key) },
 		}),
 		ToggledErrorsExpanded: () => ({ model: { ...model, isErrorsExpanded: !model.isErrorsExpanded } }),
-		GotFacetSelectMessage: ({ facet, message: inner }) => facetSelectStep(model, facet, inner),
+		GotFacetSelectMessage: ({ facet, message: inner }) => facetPicked(model, facet, inner),
 		GotTimePickerMessage: ({ message: inner }) => {
 			return pickerStep(
 				model,

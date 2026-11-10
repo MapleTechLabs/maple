@@ -50,6 +50,3 @@ export const Model = Schema.Struct({
 	deleteOverrideDialog: Dialog.Model,
 })
 export type Model = typeof Model.Type
-
-/** The viewer may change schedules and overrides (`alerts:manage`). */
-export const canManage = (model: Pick<Model, "grants">): boolean => Policy.has(model.grants, "alerts:manage")

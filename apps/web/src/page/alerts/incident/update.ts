@@ -39,7 +39,6 @@ import {
 	SetIncidentAcknowledged,
 } from "./command"
 import { withAcknowledgement } from "../shared/commands"
-import { isoMs } from "../../kit/alert-time"
 import { SLO_LIST_LIMIT } from "../shared/slo-commands"
 import { UPTIME_LIST_LIMIT } from "../../kit/uptime/commands"
 import { incidentViewOf, minuteOf, ruleStatesOf } from "./derive"
@@ -47,6 +46,7 @@ import { Message } from "./message"
 import type { Model } from "./model"
 import * as SilenceDialog from "../silence-dialog/dialog"
 import { matchersForRule } from "../shared/silences"
+import { toEpochMs } from "@maple/ui/lib/time-format"
 
 type Return = PageReturn<Model, Message>
 type Commands = ReadonlyArray<Command.Command<Message, never, Resources>>
@@ -219,14 +219,14 @@ const followData = (model: Model, context: PageContext): Return =>
 				lastNotifiedAt: view.incident.lastNotifiedAt,
 				// Epoch ms: the synced row and the API spell the same instant differently.
 				acknowledgedAt:
-					view.incident.acknowledgedAt === null ? null : isoMs(view.incident.acknowledgedAt),
+					view.incident.acknowledgedAt === null ? null : toEpochMs(view.incident.acknowledgedAt),
 			})
 			// The anomaly's evidence is re-read whenever its alert incident moves (status, severity, a
 			// new breach): the synced row is the change signal, and the previous answer stays on screen.
 			const evidenceVersion = {
 				status: view.incident.status,
 				severity: view.incident.severity,
-				lastTriggeredAt: isoMs(view.incident.lastTriggeredAt),
+				lastTriggeredAt: toEpochMs(view.incident.lastTriggeredAt),
 			}
 			const steps: ReadonlyArray<{ patch: Partial<Model>; commands: Commands }> = [
 				...Option.toArray(
@@ -490,7 +490,7 @@ const refreshDueEscalation = (model: Model, nowMs: number): Return => {
 		run !== null &&
 		run.status === "active" &&
 		run.next_step_at !== null &&
-		isoMs(run.next_step_at) <= nowMs
+		toEpochMs(run.next_step_at) <= nowMs
 	const view = incidentViewOf(model)
 	if (!isDue || Option.isNone(view)) return { model }
 	const incidentId = view.value.incident.id

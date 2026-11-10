@@ -12,6 +12,7 @@ import { eyebrow } from "@maple/views/ui/eyebrow"
 import type { Message } from "./message"
 import { typography } from "@maple/views/ui/typography"
 import { hstack } from "@maple/views/ui/stack"
+import { everyMinutes } from "../../kit/alert-time"
 
 // A raw SQL rule's query time per check against its limit, so a slow query shows before it times out.
 
@@ -71,7 +72,7 @@ export const queryTimeCard = (
 			hstack(h, { gap: "2", align: "baseline", justify: "between", wrap: true }, [
 				eyebrow(h, { as: "h2", className: "mb-0" }, ["Query time per check"]),
 				typography(h, { size: "xs", tone: "muted", numeric: true }, [
-					`Slowest ${seconds(slowest)} · limit ${seconds(limitMs)} at every ${interval === 1 ? "minute" : `${interval} min`}${earlierLimitMs === null ? "" : `, ${seconds(earlierLimitMs)} before the slowdown`}`,
+					`Slowest ${seconds(slowest)} · limit ${seconds(limitMs)} at every ${everyMinutes(interval)}${earlierLimitMs === null ? "" : `, ${seconds(earlierLimitMs)} before the slowdown`}`,
 				]),
 			]),
 			hstack(

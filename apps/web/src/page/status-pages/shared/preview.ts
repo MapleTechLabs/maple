@@ -11,7 +11,7 @@ import { renderPage } from "@maple/status-page"
 import { cn } from "@maple/ui/lib/utils"
 import { Option, Schema, Stream, Array as Arr, String as Str } from "effect"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { isoMs } from "../../kit/alert-time"
+import { toEpochMs } from "@maple/ui/lib/time-format"
 
 // The live preview: the public renderer's page in a sandboxed frame, with the monitors' real
 // history, and in the editor a click on a component or incident posted back to select it.
@@ -51,7 +51,7 @@ export const previewTheme = (theme: StatusPageTheme, scheme: PreviewScheme): Sta
 		? { ...theme, appearance: scheme, background: null, text: null, card: null, border: null }
 		: theme
 
-const msOrNull = (value: string | null): number | null => (value === null ? null : isoMs(value))
+const msOrNull = (value: string | null): number | null => (value === null ? null : toEpochMs(value))
 
 /** Whether visitors see the incident now, by the publisher's own rule. */
 export const isListedIncident = (incident: V2StatusPageIncident, nowMs: number): boolean =>
@@ -72,7 +72,7 @@ export const toSnapshotIncident = (incident: V2StatusPageIncident): StatusPageSn
 	title: incident.title,
 	impact: incident.impact,
 	status: incident.status,
-	startedAt: isoMs(incident.started_at),
+	startedAt: toEpochMs(incident.started_at),
 	resolvedAt: msOrNull(incident.resolved_at),
 	scheduledStart: msOrNull(incident.scheduled_start),
 	scheduledEnd: msOrNull(incident.scheduled_end),
@@ -82,7 +82,7 @@ export const toSnapshotIncident = (incident: V2StatusPageIncident): StatusPageSn
 		id: update.id,
 		status: update.status,
 		body: update.body,
-		at: isoMs(update.created_at),
+		at: toEpochMs(update.created_at),
 		source: update.source,
 		overlayEntryId: null,
 	})).sort((a, b) => b.at - a.at),

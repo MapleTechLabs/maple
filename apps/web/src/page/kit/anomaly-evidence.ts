@@ -23,7 +23,7 @@ import { anomalyTimeseriesFromV2 } from "../../lib/services/anomalies"
 import { AppRoute, hrefOf } from "../../route/index"
 import { relativeTime } from "./relative-time"
 import { seriesLegend } from "./series-legend"
-import { shortIssueId } from "./anomaly-row"
+import { shortIssueId } from "@maple/ui/lib/ids"
 import { textLink } from "@maple/views/ui/text-link"
 
 // The anomaly detector's evidence: the observed value against its baseline, the signal chart with

@@ -1,9 +1,8 @@
 import type { ErrorIssueVerificationDocument, WorkflowState } from "@maple/domain/http"
 import { formatRatePerHour } from "@maple/ui/lib/format"
-import { formatRelativeShort } from "@maple/ui/lib/time-format"
+import { formatRelativeShort, toEpochMs } from "@maple/ui/lib/time-format"
 import { TONE_SOFT } from "@maple/ui/lib/tone"
 import { cn } from "@maple/ui/lib/utils"
-import { DateTime, Option } from "effect"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { AppRoute, hrefOf } from "../../../route"
 import { badge } from "@maple/views/ui/display"
@@ -36,9 +35,6 @@ const STATUS_LABEL = {
 	abandoned: "Stopped",
 } satisfies Record<Status, string>
 
-const isoMs = (iso: string): number =>
-	Option.getOrElse(Option.map(DateTime.make(iso), DateTime.toEpochMillis), () => Number.NaN)
-
 const headline = (verification: ErrorIssueVerificationDocument, nowMs: number): string => {
 	switch (verification.status) {
 		case "waiting": {
@@ -46,7 +42,7 @@ const headline = (verification: ErrorIssueVerificationDocument, nowMs: number): 
 				verification.baselineRatePerHour > 0
 					? ` It was firing about ${formatRatePerHour(verification.baselineRatePerHour)} before the merge.`
 					: " It fires too rarely to judge quickly, so this takes a while."
-			if (isoMs(verification.verifyAfter) <= nowMs)
+			if (toEpochMs(verification.verifyAfter) <= nowMs)
 				return `The verification window has closed; the next check records the result.${rate}`
 			return `Watching for another ${formatRelativeShort(verification.verifyAfter, nowMs)} to see whether this error comes back.${rate}`
 		}

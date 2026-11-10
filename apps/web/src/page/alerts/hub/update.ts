@@ -70,6 +70,7 @@ import { testSendFailureMessage } from "../shared/delivery-failure"
 import { resolveStatus, resolveTab } from "./derive"
 import { Message, type RuleBucket } from "./message"
 import type { Model } from "./model"
+import { acceptGrants } from "../../kit/session-grants"
 
 type Return = PageReturn<Model, Message>
 type Commands = ReadonlyArray<Command.Command<Message, never, Resources>>
@@ -1076,8 +1077,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		CompletedFetchRoutingDeliveries: ({ key, result }) => ({
 			model: { ...model, routingDeliveries: Keyed.accept(model.routingDeliveries, key, result) },
 		}),
-		CompletedFetchSession: ({ orgId, grants }) =>
-			orgId === context.orgId ? { model: { ...model, grants } } : { model },
+		CompletedFetchSession: (answer) => ({ model: acceptGrants(model, context.orgId, answer) }),
 		ChangedRulesQuery: ({ value }) => ({ model: { ...model, rulesQuery: value } }),
 		ClickedStatusFilter: ({ bucket }) => statusToggled(model, bucket),
 		ClickedClearRuleFilters: () => ({

@@ -24,7 +24,7 @@ import { keyValue, keyValueList } from "@maple/views/ui/key-value"
 import { panel } from "@maple/views/ui/panel"
 import { segmentedSelect } from "@maple/views/ui/segmented-select"
 import { skeleton } from "@maple/views/ui/skeleton"
-import { alertStatusBadge } from "../shared/badges"
+import { alertStatusBadge, ALERT_SEVERITY_LABEL } from "../shared/badges"
 import { previewIssue, previewStateOf } from "../shared/preview"
 import { ruleChart } from "../shared/rule-chart"
 import {
@@ -139,7 +139,7 @@ const configuration = (h: H, rule: AlertRuleDocument): Html =>
 										]
 									: []),
 								...Arr.map(rule.thresholds, (tier) =>
-									configRow(h, tier.severity === "critical" ? "Critical" : "Warning", [
+									configRow(h, ALERT_SEVERITY_LABEL[tier.severity], [
 										typography(h, { weight: "medium", mono: true }, [
 											tierCondition(rule, tier),
 											" / ",

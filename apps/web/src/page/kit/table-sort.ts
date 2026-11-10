@@ -14,8 +14,8 @@ export const sortStateOf = <K extends Schema.Top>(key: K) =>
 	Schema.Struct({ key: Schema.NullOr(key), dir: SortDir })
 export type Sort<K = string> = Readonly<{ key: K | null; dir: SortDir }>
 
-/** A sortable cell value. */
-export type SortValue = number | string
+/** A sortable cell value; a missing one sorts as text. */
+export type SortValue = number | string | undefined
 
 /** `handleSort`: same key flips the direction (desc, asc, then source order when resettable); a new key starts asc for names, desc otherwise. */
 export const nextSort = <K>(
@@ -30,7 +30,8 @@ export const nextSort = <K>(
 	return { key, dir: options.stringKeys?.includes(key) === true ? "asc" : "desc" }
 }
 
-const isNumericString = (value: unknown): value is string =>
+/** A string a number reads from, not blank. */
+export const isNumericString = (value: unknown): value is string =>
 	typeof value === "string" && Str.trim(value) !== "" && Number.isFinite(Number(value))
 
 /** `compareValues`: numeric when both sides are numbers (or numeric strings), else text. */
@@ -46,6 +47,18 @@ export const compareValues = (a: unknown, b: unknown, dir: SortDir): number => {
 	const as = String(a)
 	const bs = String(b)
 	return dir === "asc" ? Str.localeCompare(bs)(as) : Str.localeCompare(as)(bs)
+}
+
+/** A URL-held sort after a header click: the active column flips, another starts descending, and the default order leaves the URL. */
+export const urlSortPatch = <K extends string>(
+	current: Readonly<{ sortBy: K; sortDir: SortDir }>,
+	key: K,
+	defaults: Readonly<{ sortBy: K; sortDir: SortDir }>,
+): Readonly<{ sortBy: K | undefined; sortDir: SortDir | undefined }> => {
+	const sortDir: SortDir = key === current.sortBy && current.sortDir === "desc" ? "asc" : "desc"
+	return key === defaults.sortBy && sortDir === defaults.sortDir
+		? { sortBy: undefined, sortDir: undefined }
+		: { sortBy: key, sortDir }
 }
 
 /** `useTableSort`'s `sorted`: a stable sort by the active column, source order without one. */

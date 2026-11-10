@@ -18,9 +18,12 @@ import { DEFAULT_PRESET } from "./update"
 import { presetSpanLabel } from "../../kit/time-controls"
 import { issuesCard, SEVERITY_SERIES, volumeCard } from "./view-charts"
 import { authorsCard, categoriesCard, outcomesCard } from "./view-lists"
-import { headlineStrip, secondaryStats } from "./view-stats"
+import { HEADLINE_LABELS, headlineStrip, SECONDARY_LABELS, secondaryStats } from "./view-stats"
 import { vstack } from "@maple/views/ui/stack"
 import { grid } from "@maple/views/ui/grid"
+
+const skeleton = <M>(h: HtmlBuilder<M>): Html =>
+	analyticsSkeleton(h, { headline: Rec.values(HEADLINE_LABELS), secondary: Rec.values(SECONDARY_LABELS) })
 
 // `CodeReviewAnalyticsPage` and `CodeReviewAnalyticsView`.
 
@@ -32,7 +35,7 @@ const isFiltered = (model: Model) => model.search.repo !== undefined || model.se
 
 const content = (h: H, model: Model, timeZone: string): Html =>
 	AsyncData.matchData(model.analytics.data, {
-		onEmpty: () => analyticsSkeleton(h),
+		onEmpty: () => skeleton(h),
 		onFailure: (failure) =>
 			errorState(h, {
 				failure,
@@ -63,7 +66,7 @@ const content = (h: H, model: Model, timeZone: string): Html =>
 				)
 			}
 			const theme = model.themeColors
-			if (theme === null || !isChartRuntimeReady(model.chartRuntime)) return analyticsSkeleton(h)
+			if (theme === null || !isChartRuntimeReady(model.chartRuntime)) return skeleton(h)
 			const windowLabel =
 				model.search.startTime !== undefined
 					? "period"

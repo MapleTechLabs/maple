@@ -14,9 +14,9 @@ import { hstack } from "@maple/views/ui/stack"
 import { rowLink } from "@maple/views/ui/table"
 import { typography } from "@maple/views/ui/typography"
 import { sectionHeading } from "../../kit/section-heading"
-import { alertStatusBadge, severityBadge } from "../shared/badges"
+import { alertStatusBadge, severityBadge, ALERT_SEVERITY_LABEL } from "../shared/badges"
 import { incidentHref } from "../../kit/alert-links"
-import { isoMs } from "../../kit/alert-time"
+import { toEpochMs } from "@maple/ui/lib/time-format"
 
 // An anomaly rule's Overview: the anomalies it paged on in the window, and its scope and routing.
 // It has no query to replay and no threshold, window or sample count of its own.
@@ -25,12 +25,12 @@ const INCIDENT_LIMIT = 20
 
 /** The list shows when each anomaly opened, so the newest opening leads. */
 const newestFirst = Order.flip(
-	Order.mapInput(Order.Number, (incident: AlertIncidentDocument) => isoMs(incident.firstTriggeredAt)),
+	Order.mapInput(Order.Number, (incident: AlertIncidentDocument) => toEpochMs(incident.firstTriggeredAt)),
 )
 
 const overlaps = (incident: AlertIncidentDocument, range: Readonly<{ min: number; max: number }>): boolean =>
-	isoMs(incident.firstTriggeredAt) <= range.max &&
-	(incident.resolvedAt === null || isoMs(incident.resolvedAt) >= range.min)
+	toEpochMs(incident.firstTriggeredAt) <= range.max &&
+	(incident.resolvedAt === null || toEpochMs(incident.resolvedAt) >= range.min)
 
 /** The rule's anomaly incidents that were open at some point in the window, newest first. */
 export const anomalyIncidentsSection = <M>(
@@ -171,8 +171,12 @@ export const anomalyConfiguration = <M>(
 										"all",
 									),
 								]),
-								row(h, "Warning", [tierDestinations(h, tier("warning"), destinations)]),
-								row(h, "Critical", [tierDestinations(h, tier("critical"), destinations)]),
+								row(h, ALERT_SEVERITY_LABEL.warning, [
+									tierDestinations(h, tier("warning"), destinations),
+								]),
+								row(h, ALERT_SEVERITY_LABEL.critical, [
+									tierDestinations(h, tier("critical"), destinations),
+								]),
 								row(h, "Checked", [typography(h, { weight: "medium" }, ["every 1m"])]),
 								row(h, "Status", [
 									hstack(h, { gap: "2", justify: "end" }, [

@@ -18,6 +18,7 @@ import * as Dialog from "@maple/views/ui/dialog"
 import * as FilterSections from "@maple/views/ui/filters/filter-sections"
 import { SignalPresenceData } from "@maple/views/data/signal-presence"
 import * as TimeRangePicker from "../kit/time-range-picker"
+import { SortDir } from "../kit/table-sort"
 
 // `/analytics`.
 
@@ -139,7 +140,7 @@ export const TraceSample = Schema.Struct({
 
 export const SearchSortKey = Schema.Literals(["name", "clicks", "impressions", "ctr", "position"])
 export type SearchSortKey = typeof SearchSortKey.Type
-export const SearchSort = Schema.Struct({ key: SearchSortKey, dir: Schema.Literals(["asc", "desc"]) })
+export const SearchSort = Schema.Struct({ key: SearchSortKey, dir: SortDir })
 export type SearchSort = typeof SearchSort.Type
 export const SearchTable = Schema.Literals(["queries", "pages", "landing"])
 export type SearchTable = typeof SearchTable.Type
@@ -149,7 +150,7 @@ export const PanelState = Schema.Struct({
 	pickedTab: Schema.NullOr(Schema.Number),
 	query: Schema.String,
 	sortKey: Schema.NullOr(Schema.Literals(["name", "count", "views"])),
-	sortDir: Schema.Literals(["asc", "desc"]),
+	sortDir: SortDir,
 })
 export type PanelState = typeof PanelState.Type
 

@@ -1,5 +1,5 @@
 import type { AlertIncidentDocument } from "@maple/domain/http"
-import { isoMs } from "../../kit/alert-time"
+import { toEpochMs } from "@maple/ui/lib/time-format"
 
 const SEVERITY_RANK = new Map<string, number>([
 	["critical", 0],
@@ -13,7 +13,7 @@ export const sortIncidents = (
 	[...incidents].sort((a, b) => {
 		const bySeverity = (SEVERITY_RANK.get(a.severity) ?? 2) - (SEVERITY_RANK.get(b.severity) ?? 2)
 		if (bySeverity !== 0) return bySeverity
-		const ta = a.lastTriggeredAt !== "" ? isoMs(a.lastTriggeredAt) : 0
-		const tb = b.lastTriggeredAt !== "" ? isoMs(b.lastTriggeredAt) : 0
+		const ta = a.lastTriggeredAt !== "" ? toEpochMs(a.lastTriggeredAt) : 0
+		const tb = b.lastTriggeredAt !== "" ? toEpochMs(b.lastTriggeredAt) : 0
 		return tb - ta
 	})

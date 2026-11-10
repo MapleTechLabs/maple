@@ -23,6 +23,7 @@ import { fetchPreview } from "../shared/preview"
 import { testSendFailureMessage } from "../shared/delivery-failure"
 import { listEscalationChains } from "../shared/escalation-chains"
 import { Message } from "./message"
+import { listChatConnectors } from "../shared/commands"
 
 export const GenerateDraftId = Command.define("GenerateAlertDraftId", {
 	messages: [Message.GeneratedDraftId],
@@ -41,15 +42,7 @@ export const ReadEditorGrants = Command.define("ReadAlertEditorGrants", {
 /** `useChatConnectors`: Slack first, empty on failure. */
 export const FetchEditorConnectors = Command.define("FetchAlertEditorConnectors", {
 	messages: [Message.CompletedFetchConnectors],
-	execute: Effect.gen(function* () {
-		const client = yield* MapleApiV2Client
-		const response = yield* client.chatIntegration.connectors()
-		return Message.CompletedFetchConnectors({
-			connectors: [...response.data].sort(
-				(a, b) => Number(b.id === "slack") - Number(a.id === "slack"),
-			),
-		})
-	}).pipe(Effect.orElseSucceed(() => Message.CompletedFetchConnectors({ connectors: [] }))),
+	execute: Effect.map(listChatConnectors, (connectors) => Message.CompletedFetchConnectors({ connectors })),
 })
 
 /** The org's escalation chains for the tier pickers; `null` when the read failed. */

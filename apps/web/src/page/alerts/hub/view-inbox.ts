@@ -1,7 +1,7 @@
 import type { AlertIncidentDocument, AlertIncidentId, AlertRuleDocument } from "@maple/domain/http"
 import { acknowledgedLine } from "@maple/web-data/alerts/incident-timeline"
 import { countLabel, EMPTY_VALUE } from "@maple/ui/lib/format"
-import { formatRelativeShortFrom } from "@maple/ui/lib/time-format"
+import { formatRelativeShortFrom, toEpochMs } from "@maple/ui/lib/time-format"
 import { cn } from "@maple/ui/lib/utils"
 import {
 	displaySignalType,
@@ -32,7 +32,7 @@ import { ROW_LINK_LIFT, rowLink } from "@maple/views/ui/table"
 import { severityBadge } from "../shared/badges"
 import { incidentHref, ruleHref } from "../../kit/alert-links"
 import { sortIncidents } from "../shared/sort"
-import { isoMs, msIso } from "../../kit/alert-time"
+import { msIso } from "../../kit/alert-time"
 import { gridListRow } from "../../kit/grid-list-row"
 import { typography, typographyClass } from "@maple/views/ui/typography"
 import { dividedList, stripClass } from "@maple/views/ui/rule"
@@ -289,7 +289,7 @@ const fireStrip = <M>(
 	range: Range,
 	enabledRuleIds: ReadonlyArray<string>,
 ): Html => {
-	const inWindow = Arr.filter(incidents, (i) => isoMs(i.firstTriggeredAt) >= range.min)
+	const inWindow = Arr.filter(incidents, (i) => toEpochMs(i.firstTriggeredAt) >= range.min)
 	const resolved = Arr.filter(inWindow, (i) => i.resolvedAt !== null)
 	const mttr =
 		resolved.length === 0
@@ -299,7 +299,8 @@ const fireStrip = <M>(
 						resolved,
 						0,
 						(sum, i) =>
-							sum + (isoMs(i.resolvedAt ?? i.firstTriggeredAt) - isoMs(i.firstTriggeredAt)),
+							sum +
+							(toEpochMs(i.resolvedAt ?? i.firstTriggeredAt) - toEpochMs(i.firstTriggeredAt)),
 					) / resolved.length,
 				)
 	const shown = lanes.slice(0, MAX_LANES)

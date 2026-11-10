@@ -10,6 +10,7 @@ import * as FilterSections from "@maple/views/ui/filters/filter-sections"
 import { SignalPresences } from "@maple/views/data/signal-presence"
 import * as TimeRangePicker from "../kit/time-range-picker"
 import { SearchSortKey, SearchTable } from "./model"
+import { SortDir } from "../kit/table-sort"
 
 /** Every Keyed slot of the page, by its Model field. */
 export const SlotName = Schema.Literals([
@@ -97,7 +98,7 @@ export const Message = defineMessageUnion({
 		key: Schema.Literals(["name", "count", "views"]),
 		current: Schema.Struct({
 			key: Schema.Literals(["name", "count", "views"]),
-			dir: Schema.Literals(["asc", "desc"]),
+			dir: SortDir,
 		}),
 	},
 	ClickedExpandPanel: { panel: Schema.String },

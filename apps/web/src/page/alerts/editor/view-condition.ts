@@ -33,6 +33,8 @@ import { formSelect } from "./view-select"
 import { typography } from "@maple/views/ui/typography"
 import { hstack } from "@maple/views/ui/stack"
 import { Array as Arr, String as Str, Option } from "effect"
+import { ALERT_SEVERITY_LABEL } from "../shared/badges"
+import { everyMinutes } from "../../kit/alert-time"
 
 // `RuleConditionFields`: the rule's condition row.
 
@@ -59,13 +61,13 @@ const SEVERITY_OPTIONS: ReadonlyArray<{
 }> = [
 	{
 		value: "warning",
-		label: "Warning",
+		label: ALERT_SEVERITY_LABEL.warning,
 		selected: "border-severity-warn/60 bg-severity-warn-a2 text-severity-warn",
 		dot: "bg-severity-warn",
 	},
 	{
 		value: "critical",
-		label: "Critical",
+		label: ALERT_SEVERITY_LABEL.critical,
 		selected: "border-severity-error-a4 bg-severity-error-a2 text-severity-error",
 		dot: "bg-severity-error",
 	},
@@ -242,7 +244,7 @@ const windowDescription = (form: RuleForm): string => {
 	const minutes = Number(Str.trim(form.windowMinutes))
 	if (!Number.isFinite(minutes) || minutes <= 0) return "Each check looks at this much data."
 	const every = formIntervalMinutes(form)
-	return `Each check looks at this much data, checked every ${every === 1 ? "minute" : `${every} min`}.`
+	return `Each check looks at this much data, checked every ${everyMinutes(every)}.`
 }
 
 /** "Check every": the interval, and for raw SQL the query time each one allows. */

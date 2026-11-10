@@ -1,12 +1,8 @@
-import { TONE_TEXT } from "@maple/ui/lib/tone"
 import { cn } from "@maple/ui/lib/utils"
 import type { ChildAttribute, Html, HtmlBuilder } from "foldkit/html"
 import * as Tooltip from "@maple/views/ui/tooltip"
 import { button } from "@maple/views/ui/button"
-import { badge } from "@maple/views/ui/display"
 import { field, fieldErrorText, fieldLabel, type FieldState } from "@maple/views/ui/field"
-import { icon } from "@maple/views/ui/icon"
-import { iconButton } from "@maple/views/ui/icon-button"
 import { inlineCode } from "@maple/views/ui/inline-code"
 import { input } from "@maple/views/ui/input"
 import { sqlEditor } from "@maple/views/ui/sql-editor"
@@ -15,9 +11,9 @@ import type { Model } from "./model"
 import { isRunnableSql, type RawSqlState, rawSqlErrorOf, rawSqlIssueOf } from "./raw-sql"
 import { SQL_TEXTAREA_ID } from "./sql-step"
 import { widgetOf } from "./update"
-import { typography, typographyClass } from "@maple/views/ui/typography"
+import { typography } from "@maple/views/ui/typography"
 import { hstack } from "@maple/views/ui/stack"
-import { queryPanelBar } from "../../kit/query-panel-bar"
+import { SQL_MACRO_HINTS, sqlPanelHeader } from "../../kit/query-builder/sql-panel"
 import { Array as Arr, Option } from "effect"
 import { stripClass } from "@maple/views/ui/rule"
 
@@ -26,53 +22,17 @@ import { stripClass } from "@maple/views/ui/rule"
 
 type H = HtmlBuilder<Message>
 
-const MACRO_HINTS: ReadonlyArray<readonly [token: string, description: string]> = [
-	["$__orgFilter", "Required: expands to OrgId = '<your org>'"],
-	["$__timeFilter(Column)", "Required: Column >= <start> AND Column <= <end>"],
-	["$__startTime", "Range start as toDateTime('...')"],
-	["$__endTime", "Range end as toDateTime('...')"],
-	["$__interval_s", "Auto-computed bucket size in seconds"],
-]
-
 /** The tooltip trigger id of a chip, by position (variable names are free text). */
 const chipTriggerId = (index: number): string => `widget-sql-chip-${index}`
 
 const CHIP = "h-auto rounded-sm px-2 py-0.5 font-mono text-2xs sm:h-auto sm:text-2xs"
 
-const header = (h: H, rawSql: RawSqlState): Html => {
-	const issue = rawSqlIssueOf(rawSql)
-	return queryPanelBar(h, [
-		iconButton(
-			h,
-			{
-				size: "icon-xs",
-				label: rawSql.isCollapsed ? "Expand SQL" : "Collapse SQL",
-				hasTooltip: false,
-				className: typographyClass({ tone: "muted", hoverTone: "foreground" }),
-				attributes: [h.OnClick(Message.ToggledSqlCollapsed())],
-			},
-			[icon(h, rawSql.isCollapsed ? "ChevronRightIcon" : "ChevronDownIcon")],
-		),
-		badge(
-			h,
-			{
-				variant: "outline",
-				className: "font-mono text-2xs text-primary-foreground border-0 shrink-0 bg-primary/80",
-			},
-			["sql"],
-		),
-		typography(h, { size: "2xs", tone: "muted" }, ["ClickHouse"]),
-		h.div([h.Class("flex-1")], []),
-		...(issue !== null && !rawSql.isCollapsed
-			? [
-					h.span(
-						[h.Class(cn("text-2xs", TONE_TEXT.crit)), h.Title(issue.message)],
-						[issue.code === "MissingOrgFilter" ? "Missing $__orgFilter" : issue.message],
-					),
-				]
-			: []),
-	])
-}
+const header = (h: H, rawSql: RawSqlState): Html =>
+	sqlPanelHeader(h, {
+		isCollapsed: rawSql.isCollapsed,
+		issue: rawSqlIssueOf(rawSql),
+		toggled: Message.ToggledSqlCollapsed(),
+	})
 
 const editor = (h: H, sql: string): Html =>
 	sqlEditor(h, {
@@ -127,7 +87,7 @@ const chipRow = (
 			chip(
 				h,
 				token,
-				index < MACRO_HINTS.length
+				index < SQL_MACRO_HINTS.length
 					? "bg-surface-sunken text-muted-foreground hover:bg-surface-strong active:bg-surface-strong hover:text-foreground active:text-foreground"
 					: "bg-primary-a2 text-primary hover:bg-primary-a3 active:bg-primary-a3",
 				trigger(chipTriggerId(index)),
@@ -139,7 +99,7 @@ const chipRow = (
 const footer = (h: H, model: Model, rawSql: RawSqlState): Html => {
 	const variables = model.document?.variables ?? []
 	const chips = [
-		...MACRO_HINTS,
+		...SQL_MACRO_HINTS,
 		...Arr.map(
 			variables,
 			(variable) =>

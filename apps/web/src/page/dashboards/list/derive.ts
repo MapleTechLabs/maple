@@ -7,12 +7,12 @@ import type { DashboardDocument } from "@maple/domain/http"
 import {
 	dashboardDomains,
 	type DashboardSortOption,
-	epochOf,
 	isDashboardSortOption,
 	readsFromLabel,
 } from "../kit/summary"
 import type { Glyph, ListDashboard, Model, Scope } from "./model"
 import { Array as Arr, String as Str, Order } from "effect"
+import { toEpochMs } from "@maple/ui/lib/time-format"
 
 // The pure halves of `DashboardList` and `dashboard-summary.ts`.
 
@@ -52,11 +52,11 @@ export const sortDashboards = (
 			case "name-desc":
 				return Str.localeCompare(a.name)(b.name)
 			case "created":
-				return Order.Number(epochOf(b.createdAt), epochOf(a.createdAt))
+				return Order.Number(toEpochMs(b.createdAt), toEpochMs(a.createdAt))
 			case "widgets":
 				return Order.Number(b.widgetCount, a.widgetCount)
 			case "updated":
-				return Order.Number(epochOf(b.updatedAt), epochOf(a.updatedAt))
+				return Order.Number(toEpochMs(b.updatedAt), toEpochMs(a.updatedAt))
 		}
 	})
 
@@ -75,7 +75,7 @@ export const headerSummary = <M>(
 		countLabel(widgets, "widget", undefined, locale),
 	]
 	const latest = Arr.reduce<ListDashboard, string | null>(dashboards, null, (newest, dashboard) =>
-		newest === null || epochOf(dashboard.updatedAt) > epochOf(newest) ? dashboard.updatedAt : newest,
+		newest === null || toEpochMs(dashboard.updatedAt) > toEpochMs(newest) ? dashboard.updatedAt : newest,
 	)
 	if (latest !== null)
 		parts.push(

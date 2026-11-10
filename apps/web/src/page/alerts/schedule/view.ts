@@ -27,7 +27,7 @@ import { sectionHeading } from "../../kit/section-heading"
 import { editScheduleHref, formatShiftEdge, oncallTabHref } from "../shared/oncall-schedules"
 import { memberName, memberOf, type OrgMember } from "../shared/org-members"
 import { Message } from "./message"
-import { canManage, type Model } from "./model"
+import { type Model } from "./model"
 import {
 	DELETE_OVERRIDE_DIALOG_ID,
 	OVERRIDE_DIALOG_ID,
@@ -37,8 +37,9 @@ import {
 	readRangeOf,
 	scheduleOf,
 } from "./update"
-import { isoMs } from "../../kit/alert-time"
 import { dividedList } from "@maple/views/ui/rule"
+import { canManageAlerts } from "../../kit/session-grants"
+import { toEpochMs } from "@maple/ui/lib/time-format"
 
 // `/alerts/schedules/$scheduleId`: who is on call now, the week's calendar (each layer and the
 // final row with its overrides), the upcoming overrides, and the dialog that adds one.
@@ -55,7 +56,7 @@ const onCallLine = (model: Model, schedule: V2OnCallSchedule): string =>
 	Option.match(Option.fromNullishOr(schedule.on_call_now), {
 		onNone: () => "Nobody is on call right now",
 		onSome: (now) =>
-			`${memberName(model.members, now.user_id)} is on call until ${formatShiftEdge(isoMs(now.ends_at), schedule.time_zone)}`,
+			`${memberName(model.members, now.user_id)} is on call until ${formatShiftEdge(toEpochMs(now.ends_at), schedule.time_zone)}`,
 	})
 
 /** A shift as a bar: the person's name, and who and when in its tooltip. */
@@ -66,8 +67,8 @@ const barOf = (
 	key: string,
 	isFinal: boolean,
 ): TimelineBar<Message> => {
-	const startMs = isoMs(shift.starts_at)
-	const endMs = isoMs(shift.ends_at)
+	const startMs = toEpochMs(shift.starts_at)
+	const endMs = toEpochMs(shift.ends_at)
 	const name = memberName(model.members, shift.user_id)
 	const isOverride = shift.source.kind === "override"
 	const bar: TimelineBar<Message> = {
@@ -79,7 +80,7 @@ const barOf = (
 		tone: isOverride ? "info" : isFinal ? "primary" : "neutral",
 	}
 	// Only a final shift that has not ended opens an override, and only for someone who may add one.
-	return isFinal && canManage(model) && endMs > (model.nowMs ?? 0)
+	return isFinal && canManageAlerts(model) && endMs > (model.nowMs ?? 0)
 		? { ...bar, onClick: Message.ClickedShift({ startMs, endMs }) }
 		: bar
 }
@@ -122,7 +123,7 @@ const calendarSection = (h: H, model: Model, schedule: V2OnCallSchedule, viewerZ
 	const nowMs = model.nowMs ?? 0
 	// Shifts kept from another week (a week's read still in flight) draw as the skeleton, not blank rows.
 	const timeline = (fromMs: number, toMs: number, shifts: V2OnCallShifts): Html =>
-		!Option.exists(readRangeOf(model), (read) => isoMs(shifts.from) === read.fromMs)
+		!Option.exists(readRangeOf(model), (read) => toEpochMs(shifts.from) === read.fromMs)
 			? skeleton(h, "h-40 w-full")
 			: shiftTimeline(h, {
 					fromMs,
@@ -192,7 +193,9 @@ const calendarSection = (h: H, model: Model, schedule: V2OnCallSchedule, viewerZ
 			}),
 			typography(h, { size: "xs", tone: "muted", as: "p" }, [
 				zoneNote,
-				...(canManage(model) ? [" Pick a shift in the final row to cover it with an override."] : []),
+				...(canManageAlerts(model)
+					? [" Pick a shift in the final row to cover it with an override."]
+					: []),
 			]),
 			body,
 		],
@@ -208,14 +211,18 @@ const overrideRow = (h: H, model: Model, schedule: V2OnCallSchedule, override: V
 				personLabel(h, {
 					name,
 					imageUrl: imageOf(model.members, override.user_id),
-					detail: rangeText(isoMs(override.starts_at), isoMs(override.ends_at), schedule.time_zone),
+					detail: rangeText(
+						toEpochMs(override.starts_at),
+						toEpochMs(override.ends_at),
+						schedule.time_zone,
+					),
 				}),
-				...(canManage(model)
+				...(canManageAlerts(model)
 					? [
 							iconButton(
 								h,
 								{
-									label: `Delete ${name}'s override, ${rangeText(isoMs(override.starts_at), isoMs(override.ends_at), schedule.time_zone)}`,
+									label: `Delete ${name}'s override, ${rangeText(toEpochMs(override.starts_at), toEpochMs(override.ends_at), schedule.time_zone)}`,
 									isDisabled: model.deletingOverrideId === override.id,
 									className: "text-muted-foreground",
 									attributes: [
@@ -375,7 +382,7 @@ const deleteOverrideDialog = (h: H, model: Model, schedule: V2OnCallSchedule): H
 		description: Option.match(target, {
 			onNone: () => "The layers decide who is on call again.",
 			onSome: (override) =>
-				`The layers decide who is on call again from ${rangeText(isoMs(override.starts_at), isoMs(override.ends_at), schedule.time_zone)}.`,
+				`The layers decide who is on call again from ${rangeText(toEpochMs(override.starts_at), toEpochMs(override.ends_at), schedule.time_zone)}.`,
 		}),
 		confirmLabel: "Delete override",
 		isPending: model.deletingOverrideId !== null,
@@ -429,12 +436,12 @@ const page = (h: H, model: Model, viewerZone: string): Html => {
 											personLabel(h, {
 												name: memberName(model.members, now.user_id),
 												imageUrl: imageOf(model.members, now.user_id),
-												detail: `On call until ${formatShiftEdge(isoMs(now.ends_at), schedule.time_zone)}`,
+												detail: `On call until ${formatShiftEdge(toEpochMs(now.ends_at), schedule.time_zone)}`,
 											}),
 									}),
 								],
 							}),
-							actions: canManage(model)
+							actions: canManageAlerts(model)
 								? detailActions(h, [
 										linkButton(
 											h,
