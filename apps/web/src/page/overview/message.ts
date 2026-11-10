@@ -1,9 +1,9 @@
+import { ChartEnvMessages } from "@maple/views/charts/chart-env"
 import { V2AnomalyServiceCount } from "@maple/domain/http/v2"
 import { Schema } from "effect"
 import { defineMessageUnion } from "foldkit/message"
 import * as Chart from "@maple/views/charts/chart"
 import { FixedMetricRow } from "@maple/views/charts/chart-spec"
-import { ThemeColors } from "@maple/views/charts/theme-colors"
 import { LoadFailure } from "@maple/views/data/load-failure"
 import * as Select from "@maple/views/ui/select"
 import { SignalPresences } from "@maple/views/data/signal-presence"
@@ -46,9 +46,7 @@ export const Message = defineMessageUnion({
 	UpdatedRules: { orgId: Schema.String, enabled: Schema.Array(Schema.Boolean) },
 	UpdatedRuleStates: { orgId: Schema.String },
 	CompletedLoadSignalPresence: { result: Schema.Result(SignalPresences, LoadFailure) },
-	CompletedLoadChartRuntime: {},
-	FailedLoadChartRuntime: { reason: Schema.String },
-	ResolvedThemeColors: { colors: ThemeColors },
+	...ChartEnvMessages,
 	ClickedReload: {},
 	CompletedReloadSpin: { version: Schema.Number },
 	ClickedRetry: { target: RetryTarget },

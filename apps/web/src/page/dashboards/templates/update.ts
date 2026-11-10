@@ -1,3 +1,4 @@
+import { chartEnvHandlers } from "@maple/views/charts/chart-env"
 import { DashboardWidgetSchema } from "@maple/domain/http"
 import type { V2DashboardTemplate } from "@maple/domain/http/v2"
 import { resolveTimeRangeWindow } from "@maple/query-engine"
@@ -42,11 +43,7 @@ const decodeWidget = Schema.decodeUnknownOption(DashboardWidgetSchema)
 const templatesKey = (context: PageContext) => requestKey(context.orgId, "dashboards.listTemplates", {})
 const metricsKey = (context: PageContext) => requestKey(context.orgId, "listMetrics", { limit: 1000 })
 
-const loadChartRuntime = Command.mapMessage(LoadChartRuntime(), (message) =>
-	message._tag === "CompletedLoadChartRuntime"
-		? Message.CompletedLoadChartRuntime()
-		: Message.FailedLoadChartRuntime({ reason: message.reason }),
-)
+const loadChartRuntime = LoadChartRuntime()
 
 export const init = (route: Route, context: PageContext): Return => {
 	const templates = templatesKey(context)
@@ -256,11 +253,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 					}
 		},
 		MeasuredPreview: ({ width }) => ({ model: { ...model, previewWidth: width } }),
-		ResolvedThemeColors: ({ colors }) => ({ model: { ...model, themeColors: colors } }),
-		CompletedLoadChartRuntime: () => ({ model: { ...model, chartRuntime: { _tag: "Ready" } } }),
-		FailedLoadChartRuntime: ({ reason }) => ({
-			model: { ...model, chartRuntime: { _tag: "Failed", reason } },
-		}),
+		...chartEnvHandlers(model),
 		GotChartMessage: ({ widgetId, message: inner }) => {
 			const next = Chart.update(model.charts[widgetId] ?? Chart.init(), inner)
 			return {

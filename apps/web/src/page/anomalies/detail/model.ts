@@ -1,9 +1,8 @@
+import { ChartEnvFields } from "@maple/views/charts/chart-env"
 import { AnomalyIncidentId } from "@maple/domain/http"
 import { V2AnomalyIncident, V2AnomalyIncidentTimeseries, V2ErrorIssue } from "@maple/domain/http/v2"
 import { Schema } from "effect"
 import * as Chart from "@maple/views/charts/chart"
-import { ChartRuntime } from "@maple/views/charts/chart-runtime"
-import { ThemeColors } from "@maple/views/charts/theme-colors"
 import { KeyedSchema } from "@maple/views/data/keyed"
 import { LoadFailure } from "@maple/views/data/load-failure"
 import * as Combobox from "@maple/views/ui/combobox"
@@ -30,7 +29,6 @@ export const Model = Schema.Struct({
 	linkAllServices: Schema.Boolean,
 	linkIssues: KeyedSchema(Schema.Array(V2ErrorIssue), LoadFailure),
 	chart: Chart.Model,
-	chartRuntime: ChartRuntime,
-	themeColors: Schema.NullOr(ThemeColors),
+	...ChartEnvFields,
 })
 export type Model = typeof Model.Type

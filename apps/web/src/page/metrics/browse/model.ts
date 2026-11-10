@@ -1,6 +1,5 @@
+import { ChartEnvFields } from "@maple/views/charts/chart-env"
 import { Schema } from "effect"
-import { ChartRuntime } from "@maple/views/charts/chart-runtime"
-import { ThemeColors } from "@maple/views/charts/theme-colors"
 import { KeyedSchema } from "@maple/views/data/keyed"
 import { LoadFailure } from "@maple/views/data/load-failure"
 import { TimeWindow } from "../../../data/time-range"
@@ -59,8 +58,7 @@ export const Model = Schema.Struct({
 	typeSelect: Select.Model,
 	presence: SignalPresenceData.schema,
 	timePicker: TimeRangePicker.Model,
-	chartRuntime: ChartRuntime,
-	themeColors: Schema.NullOr(ThemeColors),
+	...ChartEnvFields,
 	refreshVersion: Schema.Number,
 	isReloading: Schema.Boolean,
 })

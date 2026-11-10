@@ -1,3 +1,4 @@
+import { ChartEnvMessages } from "@maple/views/charts/chart-env"
 import * as Policy from "@maple/domain/policy"
 import {
 	AlertDestinationId,
@@ -15,7 +16,6 @@ import {
 import { Schema } from "effect"
 import { defineMessageUnion } from "foldkit/message"
 import * as Chart from "@maple/views/charts/chart"
-import { ThemeColors } from "@maple/views/charts/theme-colors"
 import { LoadFailure } from "@maple/views/data/load-failure"
 import * as Combobox from "@maple/views/ui/combobox"
 import * as Dialog from "@maple/views/ui/dialog"
@@ -100,9 +100,7 @@ export const Message = defineMessageUnion({
 		isSaved: Schema.Boolean,
 		result: Schema.Result(AlertRulePreviewResponse, PreviewFailure),
 	},
-	ResolvedThemeColors: { colors: ThemeColors },
-	CompletedLoadChartRuntime: {},
-	FailedLoadChartRuntime: { reason: Schema.String },
+	...ChartEnvMessages,
 	GotChartMessage: { message: Chart.Message },
 	GotTimePickerMessage: { message: TimeRangePicker.Message },
 	ClickedSignalKind: { kind: SignalKind },

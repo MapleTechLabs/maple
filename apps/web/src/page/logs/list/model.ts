@@ -1,7 +1,6 @@
+import { ChartEnvFields } from "@maple/views/charts/chart-env"
 import { Schema } from "effect"
 import * as Chart from "@maple/views/charts/chart"
-import { ChartRuntime } from "@maple/views/charts/chart-runtime"
-import { ThemeColors } from "@maple/views/charts/theme-colors"
 import { KeyedSchema } from "@maple/views/data/keyed"
 import { LoadFailure } from "@maple/views/data/load-failure"
 import { TimeWindow } from "../../../data/time-range"
@@ -50,7 +49,6 @@ export type VolumeBucket = typeof VolumeBucket.Type
 
 export const AttributeKey = Schema.Struct({ name: Schema.String, count: Schema.Number })
 export type AttributeKey = typeof AttributeKey.Type
-
 
 /** `useInfiniteLogs`' later pages: owned by one first page (`generation`), reset with it. */
 export const Pagination = Schema.Struct({
@@ -111,8 +109,7 @@ export const Model = Schema.Struct({
 	/** The sheet's Infrastructure tab, rebuilt per log. */
 	detailInfra: InfraCorrelation.Model,
 	selectedIndex: Schema.NullOr(Schema.Number),
-	chartRuntime: ChartRuntime,
-	themeColors: Schema.NullOr(ThemeColors),
+	...ChartEnvFields,
 	/** `PageRefreshProvider`: Reloads so far (non-zero stops snapping) and the 600 ms spinner. */
 	refreshVersion: Schema.Number,
 	isReloading: Schema.Boolean,

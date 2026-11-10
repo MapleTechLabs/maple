@@ -1,9 +1,9 @@
+import { ChartEnvMessages } from "@maple/views/charts/chart-env"
 import { nodeDetailSummary, nodeInfraTimeseries } from "@maple/web-data/warehouse/infra"
 import { Effect, Schema } from "effect"
 import { Command } from "foldkit"
 import { defineMessageUnion } from "foldkit/message"
 import * as Chart from "@maple/views/charts/chart"
-import { ThemeColors } from "@maple/views/charts/theme-colors"
 import { LoadFailure, settleTo } from "@maple/views/data/load-failure"
 import * as Frame from "../../kit/frame"
 import { SeriesResult } from "../../../kit/series"
@@ -15,9 +15,7 @@ export const Message = defineMessageUnion({
 	CompletedFetchPods: { key: Schema.String, result: Schema.Result(PodsPage, LoadFailure) },
 	CompletedFetchSeries: { metric: NodeMetric, key: Schema.String, result: SeriesResult },
 	ClickedMetric: { metric: NodeMetric },
-	CompletedLoadChartRuntime: {},
-	FailedLoadChartRuntime: { reason: Schema.String },
-	ResolvedThemeColors: { colors: ThemeColors },
+	...ChartEnvMessages,
 	GotChartMessage: { metric: NodeMetric, message: Chart.Message },
 	GotFrameMessage: { message: Frame.Message },
 })

@@ -1,3 +1,4 @@
+import { ChartEnvFields } from "@maple/views/charts/chart-env"
 import type {
 	getPlanetScaleBranchStats,
 	getServiceDbQuerySummary,
@@ -7,8 +8,6 @@ import type {
 } from "@maple/web-data/warehouse/service-map"
 import { type Effect, Schema } from "effect"
 import * as Chart from "@maple/views/charts/chart"
-import { ChartRuntime } from "@maple/views/charts/chart-runtime"
-import { ThemeColors } from "@maple/views/charts/theme-colors"
 import { KeyedSchema } from "@maple/views/data/keyed"
 import { LoadFailure } from "@maple/views/data/load-failure"
 import { TimeWindow } from "../../data/time-range"
@@ -106,8 +105,7 @@ export const Model = Schema.Struct({
 	scene3d: Scene3d.Model,
 	/** `useSignalPresence("traces")` of the empty canvas, requested once it painted. */
 	presence: SignalPresenceData.schema,
-	chartRuntime: ChartRuntime,
-	themeColors: Schema.NullOr(ThemeColors),
+	...ChartEnvFields,
 	refreshVersion: Schema.Number,
 	isReloading: Schema.Boolean,
 })

@@ -1,3 +1,4 @@
+import { chartEnvHandlers } from "@maple/views/charts/chart-env"
 import { reloadSpin } from "@maple/views/data/timing"
 import type { RequestMode } from "@maple/views/data/keyed"
 import { Option, Array as Arr } from "effect"
@@ -283,12 +284,7 @@ const windowOnly = (search: Search): Search => ({
 
 // ENTRY POINTS
 
-const loadChartRuntime = () =>
-	Command.mapMessage(LoadChartRuntime(), (message) =>
-		message._tag === "CompletedLoadChartRuntime"
-			? Message.CompletedLoadChartRuntime()
-			: Message.FailedLoadChartRuntime({ reason: message.reason }),
-	)
+const loadChartRuntime = () => LoadChartRuntime()
 
 export const init = (route: { readonly search: Search }, context: PageContext): Return => {
 	const model: Model = {
@@ -457,11 +453,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 						model: { ...model, incidents: IncidentsData.Failure({ error: "Unavailable" }) },
 					})
 				: { model },
-		CompletedLoadChartRuntime: () => ({ model: { ...model, chartRuntime: { _tag: "Ready" } } }),
-		FailedLoadChartRuntime: ({ reason }) => ({
-			model: { ...model, chartRuntime: { _tag: "Failed", reason } },
-		}),
-		ResolvedThemeColors: ({ colors }) => ({ model: { ...model, themeColors: colors } }),
+		...chartEnvHandlers(model),
 		ClickedReload: () => {
 			const reloaded = { ...model, refreshVersion: model.refreshVersion + 1, isReloading: true }
 			return {

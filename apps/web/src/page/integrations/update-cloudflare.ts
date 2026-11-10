@@ -64,14 +64,7 @@ export const enterCloudflare = (model: Model, context: PageContext): Return => {
 	return loadsRuntime
 		? {
 				...usage,
-				commands: [
-					...(usage.commands ?? []),
-					Command.mapMessage(LoadChartRuntime(), (message) =>
-						message._tag === "CompletedLoadChartRuntime"
-							? Message.CompletedLoadChartRuntime()
-							: Message.FailedLoadChartRuntime({ reason: message.reason }),
-					),
-				],
+				commands: [...(usage.commands ?? []), LoadChartRuntime()],
 			}
 		: usage
 }

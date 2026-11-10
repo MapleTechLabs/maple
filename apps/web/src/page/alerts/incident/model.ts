@@ -1,3 +1,4 @@
+import { ChartEnvFields } from "@maple/views/charts/chart-env"
 import { AlertDeliveryEventDocument } from "@maple/domain/http"
 import {
 	V2AlertIncidentEscalation,
@@ -17,8 +18,6 @@ import {
 import { Schema } from "effect"
 import * as Policy from "@maple/domain/policy"
 import * as Chart from "@maple/views/charts/chart"
-import { ChartRuntime } from "@maple/views/charts/chart-runtime"
-import { ThemeColors } from "@maple/views/charts/theme-colors"
 import { KeyedSchema } from "@maple/views/data/keyed"
 import { LoadFailure } from "@maple/views/data/load-failure"
 import { CheckSummary } from "../shared/check-summary"
@@ -58,8 +57,7 @@ export const Model = Schema.Struct({
 	/** `useAsyncAction`: the create request is running, so repeat clicks cannot start duplicates. */
 	isStartingInvestigation: Schema.Boolean,
 	chart: Chart.Model,
-	chartRuntime: ChartRuntime,
-	themeColors: Schema.NullOr(ThemeColors),
+	...ChartEnvFields,
 	/** `alertSilences.list`: which silence, if any, holds back this incident's notifications. */
 	silences: KeyedSchema(Schema.Array(V2AlertSilence), LoadFailure),
 	silenceDialog: SilenceDialog.Model,

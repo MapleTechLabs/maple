@@ -1,3 +1,4 @@
+import { chartEnvHandlers } from "@maple/views/charts/chart-env"
 import type { RequestMode } from "@maple/views/data/keyed"
 import { formatWarehouseDateTime, parseWarehouseDateTime, snapRangeForCache } from "@maple/query-engine"
 import { Option, Array as Arr, Record as Rec } from "effect"
@@ -311,12 +312,7 @@ const navigate = (model: Model, search: Search): Return => ({
 
 // ENTRY POINTS
 
-const loadChartRuntime = () =>
-	Command.mapMessage(LoadChartRuntime(), (message) =>
-		message._tag === "CompletedLoadChartRuntime"
-			? Message.CompletedLoadChartRuntime()
-			: Message.FailedLoadChartRuntime({ reason: message.reason }),
-	)
+const loadChartRuntime = () => LoadChartRuntime()
 
 /** `init`, with the Clerk gate as an input (`{isClerkAuthEnabled && <SetupChecklist />}`). */
 export const initWith =
@@ -586,11 +582,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 				},
 			}
 		},
-		CompletedLoadChartRuntime: () => ({ model: { ...model, chartRuntime: { _tag: "Ready" } } }),
-		FailedLoadChartRuntime: ({ reason }) => ({
-			model: { ...model, chartRuntime: { _tag: "Failed", reason } },
-		}),
-		ResolvedThemeColors: ({ colors }) => ({ model: { ...model, themeColors: colors } }),
+		...chartEnvHandlers(model),
 		ClickedReload: () => {
 			const reloaded = { ...model, refreshVersion: model.refreshVersion + 1, isReloading: true }
 			return {

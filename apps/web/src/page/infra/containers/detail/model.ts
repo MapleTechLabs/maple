@@ -1,7 +1,6 @@
+import { ChartEnvFields } from "@maple/views/charts/chart-env"
 import { ContainerDetailSummaryResponse } from "@maple/domain/http"
 import { Schema } from "effect"
-import { ChartRuntime } from "@maple/views/charts/chart-runtime"
-import { ThemeColors } from "@maple/views/charts/theme-colors"
 import { KeyedSchema } from "@maple/views/data/keyed"
 import { LoadFailure } from "@maple/views/data/load-failure"
 import { InfraContainerSearch } from "../../../../route/search"
@@ -31,7 +30,6 @@ export const Model = Schema.Struct({
 	summary: KeyedSchema(ContainerSummary, LoadFailure),
 	series: SeriesSlots,
 	charts: ChartModels,
-	chartRuntime: ChartRuntime,
-	themeColors: Schema.NullOr(ThemeColors),
+	...ChartEnvFields,
 })
 export type Model = typeof Model.Type

@@ -1,8 +1,8 @@
+import { ChartEnvMessages } from "@maple/views/charts/chart-env"
 import { CodeReviewAnalytics } from "@maple/domain/http"
 import { Schema } from "effect"
 import { defineMessageUnion } from "foldkit/message"
 import * as Chart from "@maple/views/charts/chart"
-import { ThemeColors } from "@maple/views/charts/theme-colors"
 import { LoadFailure } from "@maple/views/data/load-failure"
 import * as Select from "@maple/views/ui/select"
 import { FrameMessage } from "../kit/frame"
@@ -15,8 +15,6 @@ export const Message = defineMessageUnion({
 	GotVolumeSelectMessage: { message: Select.Message },
 	GotSeveritySelectMessage: { message: Select.Message },
 	GotChartMessage: { chart: Schema.Literals(["volume", "issues"]), message: Chart.Message },
-	CompletedLoadChartRuntime: {},
-	FailedLoadChartRuntime: { reason: Schema.String },
-	ResolvedThemeColors: { colors: ThemeColors },
+	...ChartEnvMessages,
 })
 export type Message = typeof Message.Type

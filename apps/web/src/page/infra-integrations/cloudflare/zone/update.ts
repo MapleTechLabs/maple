@@ -1,3 +1,4 @@
+import { chartEnvHandlers } from "@maple/views/charts/chart-env"
 import type { RequestMode } from "@maple/views/data/keyed"
 import { toggleFilterValue } from "../../../../components/infra/cloudflare/filters"
 import { AsyncData, Command } from "foldkit"
@@ -176,11 +177,7 @@ export const init = (route: Route, context: PageContext): Return => {
 			Command.mapMessage(FilterSections.ReadRemembered(), (message) =>
 				Message.GotFilterSectionsMessage({ message }),
 			),
-			Command.mapMessage(LoadChartRuntime(), (message) =>
-				message._tag === "CompletedLoadChartRuntime"
-					? Message.CompletedLoadChartRuntime()
-					: Message.FailedLoadChartRuntime({ reason: message.reason }),
-			),
+			LoadChartRuntime(),
 		],
 	}
 }
@@ -247,11 +244,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		CompletedFetchLiveTraffic: ({ key, result }) => ({
 			model: { ...model, liveTraffic: Keyed.accept(model.liveTraffic, key, result) },
 		}),
-		CompletedLoadChartRuntime: () => ({ model: { ...model, chartRuntime: { _tag: "Ready" } } }),
-		FailedLoadChartRuntime: ({ reason }) => ({
-			model: { ...model, chartRuntime: { _tag: "Failed", reason } },
-		}),
-		ResolvedThemeColors: ({ colors }) => ({ model: { ...model, themeColors: colors } }),
+		...chartEnvHandlers(model),
 		AttachedLinkedCursor: () => ({ model }),
 		TickedIngestPoll: ({ nowMs }) => ({
 			model: { ...model, nowMs },

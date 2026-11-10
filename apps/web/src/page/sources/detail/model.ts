@@ -1,10 +1,9 @@
+import { ChartEnvFields } from "@maple/views/charts/chart-env"
 import { V2SourceUsage } from "@maple/domain/http/v2"
 import { SourceId } from "@maple/domain/primitives"
 import * as Policy from "@maple/domain/policy"
 import { Schema } from "effect"
 import * as Chart from "@maple/views/charts/chart"
-import { ChartRuntime } from "@maple/views/charts/chart-runtime"
-import { ThemeColors } from "@maple/views/charts/theme-colors"
 import { KeyedSchema } from "@maple/views/data/keyed"
 import { LoadFailure } from "@maple/views/data/load-failure"
 import { SOURCE_TABS } from "../../../route/search"
@@ -58,8 +57,7 @@ export const Model = Schema.Struct({
 	deleteDialog: Dialog.Model,
 	tokenCopy: CopyButton.Model,
 	chart: Chart.Model,
-	chartRuntime: ChartRuntime,
-	themeColors: Schema.NullOr(ThemeColors),
+	...ChartEnvFields,
 	/** The Setup tab's snippet tabs and copy buttons; `null` while another tab shows. */
 	setup: Schema.NullOr(Setup.Model),
 	settings: Schema.NullOr(SettingsForm),

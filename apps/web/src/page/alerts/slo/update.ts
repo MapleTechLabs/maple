@@ -1,3 +1,4 @@
+import { chartEnvHandlers } from "@maple/views/charts/chart-env"
 import { Option, Result } from "effect"
 import { AsyncData, Command as FoldkitCommand } from "foldkit"
 import * as Chart from "@maple/views/charts/chart"
@@ -96,11 +97,7 @@ export const init = (route: SloRoute, context: PageContext): Return => {
 		model: reads.model,
 		commands: [
 			ReadSloClock(),
-			FoldkitCommand.mapMessage(LoadChartRuntime(), (message) =>
-				message._tag === "CompletedLoadChartRuntime"
-					? Message.CompletedLoadChartRuntime()
-					: Message.FailedLoadChartRuntime({ reason: message.reason }),
-			),
+			LoadChartRuntime(),
 			FetchSloSession({ orgId: context.orgId }),
 			...(reads.commands ?? []),
 		],
@@ -220,11 +217,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 					outMessage: toast("error", "Couldn't delete the SLO", failure.message),
 				}),
 			}),
-		CompletedLoadChartRuntime: () => ({ model: { ...model, chartRuntime: { _tag: "Ready" } } }),
-		FailedLoadChartRuntime: ({ reason }) => ({
-			model: { ...model, chartRuntime: { _tag: "Failed", reason } },
-		}),
-		ResolvedThemeColors: ({ colors }) => ({ model: { ...model, themeColors: colors } }),
+		...chartEnvHandlers(model),
 		GotBudgetChartMessage: ({ message: child }) => {
 			const next = updateChart(model.budgetChart, child, (message) =>
 				Message.GotBudgetChartMessage({ message }),

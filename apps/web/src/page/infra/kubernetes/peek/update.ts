@@ -1,3 +1,4 @@
+import { chartEnvHandlers } from "@maple/views/charts/chart-env"
 import { bucketSecondsForRange } from "../../../../components/infra/constants"
 import { podKey } from "../../../../components/infra/pod-restarts"
 import type { Result } from "effect"
@@ -100,11 +101,7 @@ const request = (
 	}
 }
 
-const loadRuntime = Command.mapMessage(LoadChartRuntime(), (message) =>
-	message._tag === "CompletedLoadChartRuntime"
-		? Message.CompletedLoadChartRuntime()
-		: Message.FailedLoadChartRuntime({ reason: message.reason }),
-)
+const loadRuntime = LoadChartRuntime()
 
 const liftDialog = (model: Model, result: ReturnType<typeof Dialog.update>) => ({
 	model: { ...model, dialog: result.model },
@@ -161,11 +158,7 @@ export const update = (
 			peek === null || window === null
 				? { model }
 				: request(model, context, window, [peek.pod], "Refresh", true),
-		CompletedLoadChartRuntime: () => ({ model: { ...model, chartRuntime: { _tag: "Ready" } } }),
-		FailedLoadChartRuntime: ({ reason }) => ({
-			model: { ...model, chartRuntime: { _tag: "Failed", reason } },
-		}),
-		ResolvedThemeColors: ({ colors }) => ({ model: { ...model, themeColors: colors } }),
+		...chartEnvHandlers(model),
 		GotChartMessage: ({ id, message: inner }) => {
 			const chart = model.charts[id] ?? Chart.init()
 			return {

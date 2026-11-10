@@ -1,3 +1,4 @@
+import { ChartEnvMessages } from "@maple/views/charts/chart-env"
 import { RequestMode } from "@maple/views/data/keyed"
 import {
 	AlertCheckDocument,
@@ -15,7 +16,6 @@ import { Schema } from "effect"
 import * as Policy from "@maple/domain/policy"
 import { defineMessageUnion } from "foldkit/message"
 import * as Chart from "@maple/views/charts/chart"
-import { ThemeColors } from "@maple/views/charts/theme-colors"
 import { LoadFailure } from "@maple/views/data/load-failure"
 import { V2AlertSilence } from "@maple/domain/http/v2"
 import * as SilenceDialog from "../silence-dialog/dialog"
@@ -79,9 +79,7 @@ export const Message = defineMessageUnion({
 	CompletedReloadSpin: { version: Schema.Number },
 	ClickedResetTimeRange: {},
 	GotTimePickerMessage: { message: TimeRangePicker.Message },
-	CompletedLoadChartRuntime: {},
-	FailedLoadChartRuntime: { reason: Schema.String },
-	ResolvedThemeColors: { colors: ThemeColors },
+	...ChartEnvMessages,
 	GotChartMessage: { message: Chart.Message },
 	CompletedFetchSilences: {
 		key: Schema.String,

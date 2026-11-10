@@ -1,3 +1,4 @@
+import { chartEnvHandlers } from "@maple/views/charts/chart-env"
 import type { V2Source } from "@maple/domain/http/v2"
 import * as Policy from "@maple/domain/policy"
 import { Option, Result, String as Str, Array as Arr } from "effect"
@@ -213,11 +214,7 @@ export const init = (route: SourceRoute, context: PageContext): Return => {
 		settings: null,
 		connection: null,
 	}
-	const runtime = Command.mapMessage(LoadChartRuntime(), (message) =>
-		message._tag === "CompletedLoadChartRuntime"
-			? Message.CompletedLoadChartRuntime()
-			: Message.FailedLoadChartRuntime({ reason: message.reason }),
-	)
+	const runtime = LoadChartRuntime()
 	const loaded = loadList(model, context, "Load")
 	return {
 		model: loaded.model,
@@ -471,11 +468,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		CompletedFetchUsage: ({ key, result }) => ({
 			model: { ...model, usage: Keyed.accept(model.usage, key, result) },
 		}),
-		CompletedLoadChartRuntime: () => ({ model: { ...model, chartRuntime: { _tag: "Ready" } } }),
-		FailedLoadChartRuntime: ({ reason }) => ({
-			model: { ...model, chartRuntime: { _tag: "Failed", reason } },
-		}),
-		ResolvedThemeColors: ({ colors }) => ({ model: { ...model, themeColors: colors } }),
+		...chartEnvHandlers(model),
 		GotChartMessage: ({ message: inner }) => {
 			const next = Chart.update(model.chart, inner)
 			return {

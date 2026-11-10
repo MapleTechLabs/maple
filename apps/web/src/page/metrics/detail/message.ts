@@ -1,10 +1,10 @@
+import { ChartEnvMessages } from "@maple/views/charts/chart-env"
 import { RequestMode } from "@maple/views/data/keyed"
 import { Schema } from "effect"
 import * as AddToDashboard from "./add-to-dashboard"
 import { CaretMessage } from "./where-editor"
 import { defineMessageUnion } from "foldkit/message"
 import * as Chart from "@maple/views/charts/chart"
-import { ThemeColors } from "@maple/views/charts/theme-colors"
 import { LoadFailure } from "@maple/views/data/load-failure"
 import { TimeWindow } from "../../../data/time-range"
 import * as Combobox from "@maple/views/ui/combobox"
@@ -47,9 +47,7 @@ export const Message = defineMessageUnion({
 	GotAddToDashboardMessage: { message: AddToDashboard.Message },
 	ClickedCopyLink: {},
 	ReadLocationHref: { href: Schema.String },
-	CompletedLoadChartRuntime: {},
-	FailedLoadChartRuntime: { reason: Schema.String },
-	ResolvedThemeColors: { colors: ThemeColors },
+	...ChartEnvMessages,
 	ClickedReload: {},
 	/** The chart's failure card: asks again for the failed content reads only, no Reload spin. */
 	ClickedRetryChart: {},

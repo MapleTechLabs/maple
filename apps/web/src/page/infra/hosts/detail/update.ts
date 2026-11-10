@@ -1,5 +1,5 @@
+import { chartEnvHandlers } from "@maple/views/charts/chart-env"
 import { bucketSecondsForRange } from "../../../../components/infra/constants"
-import { Command } from "foldkit"
 import * as Chart from "@maple/views/charts/chart"
 import { LoadChartRuntime } from "@maple/views/charts/chart-runtime"
 import * as Keyed from "@maple/views/data/keyed"
@@ -81,14 +81,7 @@ export const init = (route: Route, context: PageContext): Return => {
 	}
 	return {
 		model,
-		commands: [
-			resolveFrame(model.frame, scopeOf(model, context), toFrame, "Load"),
-			Command.mapMessage(LoadChartRuntime(), (message) =>
-				message._tag === "CompletedLoadChartRuntime"
-					? Message.CompletedLoadChartRuntime()
-					: Message.FailedLoadChartRuntime({ reason: message.reason }),
-			),
-		],
+		commands: [resolveFrame(model.frame, scopeOf(model, context), toFrame, "Load"), LoadChartRuntime()],
 	}
 }
 
@@ -141,11 +134,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 				endTime: undefined,
 				timePreset: WIDEN_TIME_PRESET,
 			}),
-		CompletedLoadChartRuntime: () => ({ model: { ...model, chartRuntime: { _tag: "Ready" } } }),
-		FailedLoadChartRuntime: ({ reason }) => ({
-			model: { ...model, chartRuntime: { _tag: "Failed", reason } },
-		}),
-		ResolvedThemeColors: ({ colors }) => ({ model: { ...model, themeColors: colors } }),
+		...chartEnvHandlers(model),
 		CompletedMountLinkedCursor: () => ({ model }),
 		GotChartMessage: ({ metric, message: inner }) => {
 			const chart = model.charts[metric] ?? Chart.init()

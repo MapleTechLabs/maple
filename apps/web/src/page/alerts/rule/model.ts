@@ -1,3 +1,4 @@
+import { ChartEnvFields } from "@maple/views/charts/chart-env"
 import { AlertCheckDocument, AlertDeliveryEventDocument, AlertRuleId } from "@maple/domain/http"
 import {
 	AlertDestinationRowSchema,
@@ -8,8 +9,6 @@ import {
 import { Schema } from "effect"
 import * as Policy from "@maple/domain/policy"
 import * as Chart from "@maple/views/charts/chart"
-import { ChartRuntime } from "@maple/views/charts/chart-runtime"
-import { ThemeColors } from "@maple/views/charts/theme-colors"
 import { KeyedSchema } from "@maple/views/data/keyed"
 import { LoadFailure } from "@maple/views/data/load-failure"
 import { TimeWindow } from "../../../data/time-range"
@@ -89,8 +88,7 @@ export const Model = Schema.Struct({
 	refreshVersion: Schema.Number,
 	isReloading: Schema.Boolean,
 	chart: Chart.Model,
-	chartRuntime: ChartRuntime,
-	themeColors: Schema.NullOr(ThemeColors),
+	...ChartEnvFields,
 	/** `alertSilences.list`: which silence, if any, holds back this rule's notifications. */
 	silences: KeyedSchema(Schema.Array(V2AlertSilence), LoadFailure),
 	silenceDialog: SilenceDialog.Model,

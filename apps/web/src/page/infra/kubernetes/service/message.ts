@@ -1,10 +1,10 @@
+import { ChartEnvMessages } from "@maple/views/charts/chart-env"
 import { getServiceDetailOverview } from "@maple/web-data/warehouse/custom-charts"
 import { workloadInfraTimeseries } from "@maple/web-data/warehouse/infra"
 import { Effect, Schema, Array as Arr } from "effect"
 import { Command } from "foldkit"
 import { defineMessageUnion } from "foldkit/message"
 import * as Chart from "@maple/views/charts/chart"
-import { ThemeColors } from "@maple/views/charts/theme-colors"
 import { LoadFailure, settleTo } from "@maple/views/data/load-failure"
 import * as Frame from "../../kit/frame"
 import { SeriesRow } from "../../../kit/series"
@@ -22,9 +22,7 @@ export const Message = defineMessageUnion({
 	CompletedFetchPods: { key: Schema.String, result: Schema.Result(PodsPage, LoadFailure) },
 	ClickedRetryOverview: {},
 	ClickedRetryPods: {},
-	CompletedLoadChartRuntime: {},
-	FailedLoadChartRuntime: { reason: Schema.String },
-	ResolvedThemeColors: { colors: ThemeColors },
+	...ChartEnvMessages,
 	CompletedMountLinkedCursor: {},
 	GotChartMessage: { id: Schema.String, message: Chart.Message },
 	GotRailMessage: { message: Rail.Message },

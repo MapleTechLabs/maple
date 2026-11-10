@@ -1,3 +1,4 @@
+import { chartEnvHandlers } from "@maple/views/charts/chart-env"
 import { Option, Result } from "effect"
 import { AsyncData, Command as FoldkitCommand } from "foldkit"
 import * as Chart from "@maple/views/charts/chart"
@@ -90,11 +91,7 @@ export const init = (route: MonitorRoute, context: PageContext): Return => {
 		model: read.model,
 		commands: [
 			ReadMonitorClock(),
-			FoldkitCommand.mapMessage(LoadChartRuntime(), (message) =>
-				message._tag === "CompletedLoadChartRuntime"
-					? Message.CompletedLoadChartRuntime()
-					: Message.FailedLoadChartRuntime({ reason: message.reason }),
-			),
+			LoadChartRuntime(),
 			FetchMonitorSession({ orgId: context.orgId }),
 			...(read.commands ?? []),
 		],
@@ -198,11 +195,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		}),
 		HoveredCheck: ({ index }) =>
 			index === model.hoveredCheck ? { model } : { model: { ...model, hoveredCheck: index } },
-		CompletedLoadChartRuntime: () => ({ model: { ...model, chartRuntime: { _tag: "Ready" } } }),
-		FailedLoadChartRuntime: ({ reason }) => ({
-			model: { ...model, chartRuntime: { _tag: "Failed", reason } },
-		}),
-		ResolvedThemeColors: ({ colors }) => ({ model: { ...model, themeColors: colors } }),
+		...chartEnvHandlers(model),
 		GotChartMessage: ({ message: child }) => {
 			const next = Chart.update(model.chart, child)
 			return {

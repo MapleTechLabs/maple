@@ -1,9 +1,8 @@
+import { ChartEnvMessages, ChartEnvFields } from "@maple/views/charts/chart-env"
 import { RequestMode } from "@maple/views/data/keyed"
 import { Schema } from "effect"
 import { defineMessageUnion } from "foldkit/message"
 import * as Chart from "@maple/views/charts/chart"
-import { ChartRuntime } from "@maple/views/charts/chart-runtime"
-import { ThemeColors } from "@maple/views/charts/theme-colors"
 import { KeyedSchema } from "@maple/views/data/keyed"
 import { LoadFailure } from "@maple/views/data/load-failure"
 import { TimeWindow } from "../../../../data/time-range"
@@ -31,8 +30,7 @@ export const Model = Schema.Struct({
 	resourceTypeSelect: Select.Model,
 	resourceProjectSelect: Select.Model,
 	projectMenu: Menu.Model,
-	chartRuntime: ChartRuntime,
-	themeColors: Schema.NullOr(ThemeColors),
+	...ChartEnvFields,
 	timePicker: TimeRangePicker.Model,
 	refreshVersion: Schema.Number,
 	isReloading: Schema.Boolean,
@@ -56,9 +54,7 @@ export const Message = defineMessageUnion({
 	CompletedFetchSparks: result(Schema.Array(SparkRead)),
 	CompletedFetchCloudSqlInventory: result(Resources),
 	CompletedFetchResources: result(Resources),
-	CompletedLoadChartRuntime: {},
-	FailedLoadChartRuntime: { reason: Schema.String },
-	ResolvedThemeColors: { colors: ThemeColors },
+	...ChartEnvMessages,
 	/** `useIntervalRefresh`: the status while connected, the fleet while waiting, resources while empty. */
 	TickedStatusRefresh: {},
 	TickedFleetRefresh: {},

@@ -1,10 +1,9 @@
+import { ChartEnvFields } from "@maple/views/charts/chart-env"
 import { Schema } from "effect"
 import { LookupNames } from "../../kit/autocomplete-lookups"
 import * as AddToDashboard from "./add-to-dashboard"
 import { WhereEditor } from "./where-editor"
 import * as Chart from "@maple/views/charts/chart"
-import { ChartRuntime } from "@maple/views/charts/chart-runtime"
-import { ThemeColors } from "@maple/views/charts/theme-colors"
 import { KeyedSchema } from "@maple/views/data/keyed"
 import { LoadFailure } from "@maple/views/data/load-failure"
 import { TimeWindow } from "../../../data/time-range"
@@ -59,8 +58,7 @@ export const Model = Schema.Struct({
 	addToDashboard: AddToDashboard.Model,
 	chart: Chart.Model,
 	timePicker: TimeRangePicker.Model,
-	chartRuntime: ChartRuntime,
-	themeColors: Schema.NullOr(ThemeColors),
+	...ChartEnvFields,
 	refreshVersion: Schema.Number,
 	isReloading: Schema.Boolean,
 })

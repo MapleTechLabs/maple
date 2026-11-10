@@ -198,13 +198,7 @@ export const init = (_flags: Flags): Return => ({
 		chartRuntime: { _tag: "Loading" },
 		themeColors: null,
 	},
-	commands: [
-		Command.mapMessage(LoadChartRuntime(), (message) =>
-			message._tag === "CompletedLoadChartRuntime"
-				? Message.CompletedLoadChartRuntime()
-				: Message.FailedLoadChartRuntime({ reason: message.reason }),
-		),
-	],
+	commands: [LoadChartRuntime()],
 })
 
 export const update = (model: Model, message: Message): Return => {

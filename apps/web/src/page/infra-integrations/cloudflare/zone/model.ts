@@ -1,9 +1,8 @@
+import { ChartEnvMessages, ChartEnvFields } from "@maple/views/charts/chart-env"
 import { RequestMode } from "@maple/views/data/keyed"
 import { Schema } from "effect"
 import { defineMessageUnion } from "foldkit/message"
 import * as Chart from "@maple/views/charts/chart"
-import { ChartRuntime } from "@maple/views/charts/chart-runtime"
-import { ThemeColors } from "@maple/views/charts/theme-colors"
 import { KeyedSchema } from "@maple/views/data/keyed"
 import { LoadFailure } from "@maple/views/data/load-failure"
 import { TimeWindow } from "../../../../data/time-range"
@@ -75,8 +74,7 @@ export const Model = Schema.Struct({
 	tooltip: Tooltip.Model,
 	copyService: CopyButton.Model,
 	charts: Schema.Record(Schema.String, Chart.Model),
-	chartRuntime: ChartRuntime,
-	themeColors: Schema.NullOr(ThemeColors),
+	...ChartEnvFields,
 	timePicker: TimeRangePicker.Model,
 	refreshVersion: Schema.Number,
 	isReloading: Schema.Boolean,
@@ -99,9 +97,7 @@ export const Message = defineMessageUnion({
 	CompletedFetchZones: result(Schema.Array(ZoneRow)),
 	CompletedFetchBreakdown: result(ZoneBreakdown),
 	CompletedFetchLiveTraffic: result(TopTraffic),
-	CompletedLoadChartRuntime: {},
-	FailedLoadChartRuntime: { reason: Schema.String },
-	ResolvedThemeColors: { colors: ThemeColors },
+	...ChartEnvMessages,
 	AttachedLinkedCursor: {},
 	/** The poll reads the clock so the phase can advance to "stalled". */
 	TickedIngestPoll: { nowMs: Schema.Number },

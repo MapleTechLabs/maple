@@ -1,3 +1,4 @@
+import { chartEnvHandlers } from "@maple/views/charts/chart-env"
 import {
 	getActiveInfraCorrelations,
 	type InfraCorrelation,
@@ -79,11 +80,7 @@ export const requestsOf = (correlations: ReadonlyArray<InfraCorrelation>, window
 		},
 	)
 
-const loadRuntime = Command.mapMessage(LoadChartRuntime(), (message) =>
-	message._tag === "CompletedLoadChartRuntime"
-		? Message.CompletedLoadChartRuntime()
-		: Message.FailedLoadChartRuntime({ reason: message.reason }),
-)
+const loadRuntime = LoadChartRuntime()
 
 /** The panel on screen: every chart reads its series, and the chart library loads once. */
 const requested = (
@@ -130,10 +127,6 @@ export const update = (model: Model, message: Message): Return =>
 				model: { ...model, charts: { ...model.charts, [chartId]: Chart.update(chart, inner).model } },
 			}
 		},
-		CompletedLoadChartRuntime: () => ({ model: { ...model, chartRuntime: { _tag: "Ready" } } }),
-		FailedLoadChartRuntime: ({ reason }) => ({
-			model: { ...model, chartRuntime: { _tag: "Failed", reason } },
-		}),
-		ResolvedThemeColors: ({ colors }) => ({ model: { ...model, themeColors: colors } }),
+		...chartEnvHandlers(model),
 		CompletedMountLinkedCursor: () => ({ model }),
 	})

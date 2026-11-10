@@ -1,3 +1,4 @@
+import { chartEnvHandlers } from "@maple/views/charts/chart-env"
 import type { RequestMode } from "@maple/views/data/keyed"
 import * as Policy from "@maple/domain/policy"
 import { UPTIME_LIST_LIMIT } from "../../kit/uptime/commands"
@@ -596,14 +597,7 @@ export const init = (
 		refreshVersion: 0,
 		isReloading: false,
 	},
-	commands: [
-		ResolveClock({ mode: "Load" }),
-		Command.mapMessage(LoadChartRuntime(), (message) =>
-			message._tag === "CompletedLoadChartRuntime"
-				? Message.CompletedLoadChartRuntime()
-				: Message.FailedLoadChartRuntime({ reason: message.reason }),
-		),
-	],
+	commands: [ResolveClock({ mode: "Load" }), LoadChartRuntime()],
 })
 
 /** The search changed (tab, environment, window): re-resolve and re-request. */
@@ -849,11 +843,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		}),
 		CompletedFetchCommit: ({ sha, result }) => ({ model: settleCommit(model, sha, result) }),
 		CompletedMountLinkedCursor: () => ({ model }),
-		CompletedLoadChartRuntime: () => ({ model: { ...model, chartRuntime: { _tag: "Ready" } } }),
-		FailedLoadChartRuntime: ({ reason }) => ({
-			model: { ...model, chartRuntime: { _tag: "Failed", reason } },
-		}),
-		ResolvedThemeColors: ({ colors }) => ({ model: { ...model, themeColors: colors } }),
+		...chartEnvHandlers(model),
 		ClickedReload: () => {
 			const reloaded = { ...model, refreshVersion: model.refreshVersion + 1, isReloading: true }
 			return {

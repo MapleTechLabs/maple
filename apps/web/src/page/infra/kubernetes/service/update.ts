@@ -1,3 +1,4 @@
+import { chartEnvHandlers } from "@maple/views/charts/chart-env"
 import { Command } from "foldkit"
 import * as Chart from "@maple/views/charts/chart"
 import { LoadChartRuntime } from "@maple/views/charts/chart-runtime"
@@ -155,14 +156,7 @@ export const init = (route: Route, context: PageContext): Return => {
 	}
 	return {
 		model,
-		commands: [
-			resolveFrame(model.frame, scopeOf(model, context), toFrame, "Load"),
-			Command.mapMessage(LoadChartRuntime(), (message) =>
-				message._tag === "CompletedLoadChartRuntime"
-					? Message.CompletedLoadChartRuntime()
-					: Message.FailedLoadChartRuntime({ reason: message.reason }),
-			),
-		],
+		commands: [resolveFrame(model.frame, scopeOf(model, context), toFrame, "Load"), LoadChartRuntime()],
 	}
 }
 
@@ -211,11 +205,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		}),
 		ClickedRetryOverview: () => retry(model, context, overviewStep),
 		ClickedRetryPods: () => retry(model, context, podsStep),
-		CompletedLoadChartRuntime: () => ({ model: { ...model, chartRuntime: { _tag: "Ready" } } }),
-		FailedLoadChartRuntime: ({ reason }) => ({
-			model: { ...model, chartRuntime: { _tag: "Failed", reason } },
-		}),
-		ResolvedThemeColors: ({ colors }) => ({ model: { ...model, themeColors: colors } }),
+		...chartEnvHandlers(model),
 		CompletedMountLinkedCursor: () => ({ model }),
 		GotChartMessage: ({ id, message: inner }) => {
 			const chart = model.charts[id] ?? Chart.init()

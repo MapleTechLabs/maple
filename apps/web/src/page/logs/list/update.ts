@@ -1,3 +1,4 @@
+import { chartEnvHandlers } from "@maple/views/charts/chart-env"
 import type { RequestMode } from "@maple/views/data/keyed"
 import { shortId } from "@maple/ui/lib/ids"
 import { addLogAttributeFilter } from "@maple/views/lib/log-attribute-filters"
@@ -383,11 +384,7 @@ export const init = (route: { readonly search: Search }, context: PageContext): 
 			Command.mapMessage(FilterSections.ReadRemembered(), (message) =>
 				Message.GotFilterSectionsMessage({ message }),
 			),
-			Command.mapMessage(LoadChartRuntime(), (message) =>
-				message._tag === "CompletedLoadChartRuntime"
-					? Message.CompletedLoadChartRuntime()
-					: Message.FailedLoadChartRuntime({ reason: message.reason }),
-			),
+			LoadChartRuntime(),
 		],
 	}
 }
@@ -536,11 +533,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			model: { ...model, wrap, density, locale },
 		}),
 		CompletedSavePreference: () => ({ model }),
-		CompletedLoadChartRuntime: () => ({ model: { ...model, chartRuntime: { _tag: "Ready" } } }),
-		FailedLoadChartRuntime: ({ reason }) => ({
-			model: { ...model, chartRuntime: { _tag: "Failed", reason } },
-		}),
-		ResolvedThemeColors: ({ colors }) => ({ model: { ...model, themeColors: colors } }),
+		...chartEnvHandlers(model),
 		// `useSignalPresence` mounts with the empty state, so its "unknown" copy paints first.
 		MountedFilterRail: () => {
 			if (model.isFilterRailMounted) return { model }

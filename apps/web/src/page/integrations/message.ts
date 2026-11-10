@@ -1,3 +1,4 @@
+import { ChartRuntimeMessages } from "@maple/views/charts/chart-env"
 import * as Policy from "@maple/domain/policy"
 import { DataSourceKind } from "@maple/domain/data-sources"
 import { HubFilter } from "./catalog"
@@ -193,8 +194,7 @@ export const Message = defineMessageUnion({
 	ChangedManagedZoneSearch: { value: Schema.String },
 	SubmittedZoneSettings: {},
 	CompletedCloudflareZones: { failure: Schema.NullOr(LoadFailure) },
-	CompletedLoadChartRuntime: {},
-	FailedLoadChartRuntime: { reason: Schema.String },
+	...ChartRuntimeMessages,
 	GotSparklineMessage: { message: Chart.Message },
 	ClickedTarget: { id: ScrapeTargetId },
 	CompletedFetchChecks: {

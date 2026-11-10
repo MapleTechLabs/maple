@@ -203,13 +203,7 @@ export const followService = (model: Model, context: PageContext, mode: RequestM
 	if (!AsyncData.hasData(model.releases.data) && !AsyncData.isFailure(model.releases.data)) return { model }
 	const runtime: Return =
 		model.chartRuntime === null
-			? withCommands({ ...model, chartRuntime: ChartRuntime.Loading() }, [
-					Command.mapMessage(LoadChartRuntime(), (message) =>
-						message._tag === "CompletedLoadChartRuntime"
-							? Message.CompletedLoadChartRuntime()
-							: Message.FailedLoadChartRuntime({ reason: message.reason }),
-					),
-				])
+			? withCommands({ ...model, chartRuntime: ChartRuntime.Loading() }, [LoadChartRuntime()])
 			: { model }
 	const input = {
 		serviceName,

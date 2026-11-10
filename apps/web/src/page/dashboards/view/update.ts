@@ -1,3 +1,4 @@
+import { chartEnvHandlers } from "@maple/views/charts/chart-env"
 import {
 	pickDashboardControlParams,
 	timeRangeParams,
@@ -129,14 +130,7 @@ export const init = (route: Route, _context: PageContext): Return => ({
 		variableComboName: null,
 		variableDrafts: {},
 	},
-	commands: [
-		ReadClock(),
-		Command.mapMessage(LoadChartRuntime(), (message) =>
-			message._tag === "CompletedLoadChartRuntime"
-				? Message.CompletedLoadChartRuntime()
-				: Message.FailedLoadChartRuntime({ reason: message.reason }),
-		),
-	],
+	commands: [ReadClock(), LoadChartRuntime()],
 })
 
 const sameValues = (a: Readonly<Record<string, string>>, b: Readonly<Record<string, string>>): boolean =>
@@ -682,11 +676,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			return awaitsRefresh(model, key) ? withReplan(accepted, context, "Load") : { model: accepted }
 		},
 		GotShareMessage: ({ message: inner }) => shareStep(model, context, inner),
-		ResolvedThemeColors: ({ colors }) => ({ model: { ...model, themeColors: colors } }),
-		CompletedLoadChartRuntime: () => ({ model: { ...model, chartRuntime: { _tag: "Ready" } } }),
-		FailedLoadChartRuntime: ({ reason }) => ({
-			model: { ...model, chartRuntime: { _tag: "Failed", reason } },
-		}),
+		...chartEnvHandlers(model),
 		ClickedReloadPage: () => ({ model, commands: [ReloadPage()] }),
 		ReloadedPage: () => ({ model }),
 		GotChartMessage: ({ widgetId, message: inner }) => {

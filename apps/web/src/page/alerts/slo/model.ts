@@ -1,11 +1,10 @@
+import { ChartEnvFields } from "@maple/views/charts/chart-env"
 import * as Policy from "@maple/domain/policy"
 import { SloId } from "@maple/domain"
 import { V2Slo, V2SloHistory, V2SloStatus } from "@maple/domain/http/v2"
 import { AlertDestinationRowSchema, AlertIncidentRowSchema } from "@maple/web-data/collections/alerts"
 import { Schema } from "effect"
 import * as Chart from "@maple/views/charts/chart"
-import { ChartRuntime } from "@maple/views/charts/chart-runtime"
-import { ThemeColors } from "@maple/views/charts/theme-colors"
 import { KeyedSchema } from "@maple/views/data/keyed"
 import { LoadFailure } from "@maple/views/data/load-failure"
 import * as Dialog from "@maple/views/ui/dialog"
@@ -33,8 +32,7 @@ export const Model = Schema.Struct({
 	deleteDialog: Dialog.Model,
 	budgetChart: Chart.Model,
 	sliChart: Chart.Model,
-	chartRuntime: ChartRuntime,
-	themeColors: Schema.NullOr(ThemeColors),
+	...ChartEnvFields,
 })
 export type Model = typeof Model.Type
 

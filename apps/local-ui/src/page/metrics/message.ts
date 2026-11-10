@@ -1,5 +1,5 @@
+import { ChartEnvMessages } from "@maple/views/charts/chart-env"
 import * as Chart from "@maple/views/charts/chart"
-import { ThemeColors } from "@maple/views/charts/theme-colors"
 import * as CopyButton from "@maple/views/ui/copy-button"
 import * as FilterSections from "@maple/views/ui/filters/filter-sections"
 import { Schema } from "effect"
@@ -23,7 +23,11 @@ export const Message = defineMessageUnion({
 	SucceededFetchSummary: { key: Schema.String, rows: Schema.Array(SummaryRow), fetchedAtMs: Schema.Number },
 	FailedFetchSummary: { key: Schema.String, failure: LoadFailure },
 	FoundCachedSummary: { request: SummaryRequest, cached: CachedOf(Schema.Array(SummaryRow)) },
-	SucceededFetchSparklines: { key: Schema.String, sparklines: Schema.Array(MetricSparkline), fetchedAtMs: Schema.Number },
+	SucceededFetchSparklines: {
+		key: Schema.String,
+		sparklines: Schema.Array(MetricSparkline),
+		fetchedAtMs: Schema.Number,
+	},
 	FailedFetchSparklines: { key: Schema.String, failure: LoadFailure },
 	FoundCachedSparklines: { request: SparklinesRequest, cached: CachedOf(Schema.Array(MetricSparkline)) },
 	ClickedRefresh: {},
@@ -38,9 +42,7 @@ export const Message = defineMessageUnion({
 	ChangedRange: { range: Schema.String },
 	ClickedWidenRange: {},
 	MeasuredGrid: { viewport: GridViewport },
-	ResolvedThemeColors: { colors: ThemeColors },
-	CompletedLoadChartRuntime: {},
-	FailedLoadChartRuntime: { reason: Schema.String },
+	...ChartEnvMessages,
 	GotSparklineMessage: { message: Chart.Message },
 	GotFilterSectionsMessage: { message: FilterSections.Message },
 	GotCopyMessage: { id: Schema.String, message: CopyButton.Message },

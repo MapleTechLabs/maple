@@ -1,3 +1,4 @@
+import { chartEnvHandlers } from "@maple/views/charts/chart-env"
 import type { RequestMode } from "@maple/views/data/keyed"
 import type { AlertIncidentDocument, AlertRuleDocument } from "@maple/domain/http"
 import { IsoDateTimeString } from "@maple/domain/http"
@@ -229,11 +230,7 @@ export const init = (route: RuleRoute, context: PageContext): Return => {
 			resolveCommand(model, context, "Load"),
 			ReadDiagnosisClock(),
 			...(followed.commands ?? []),
-			Command.mapMessage(LoadChartRuntime(), (message) =>
-				message._tag === "CompletedLoadChartRuntime"
-					? Message.CompletedLoadChartRuntime()
-					: Message.FailedLoadChartRuntime({ reason: message.reason }),
-			),
+			LoadChartRuntime(),
 		],
 	}
 }
@@ -561,11 +558,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 						}),
 					}
 		},
-		CompletedLoadChartRuntime: () => ({ model: { ...model, chartRuntime: { _tag: "Ready" } } }),
-		FailedLoadChartRuntime: ({ reason }) => ({
-			model: { ...model, chartRuntime: { _tag: "Failed", reason } },
-		}),
-		ResolvedThemeColors: ({ colors }) => ({ model: { ...model, themeColors: colors } }),
+		...chartEnvHandlers(model),
 		CompletedFetchSilences: ({ key, result }) => ({
 			model: { ...model, silences: Keyed.accept(model.silences, key, result) },
 		}),

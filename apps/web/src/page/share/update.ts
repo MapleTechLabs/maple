@@ -1,3 +1,4 @@
+import { chartEnvHandlers } from "@maple/views/charts/chart-env"
 import { encodeJson } from "@maple/views/data/request-key"
 import { TimeRangeSchema } from "@maple/domain/http"
 import { resolveTimeRangeWindow } from "@maple/query-engine"
@@ -187,16 +188,7 @@ export const init = (route: Route): Return => ({
 		variables: {},
 		sectionView: {},
 	},
-	commands: [
-		ReadFrame(),
-		ResolveClock(),
-		ResolveShare({ token: route.token }),
-		Command.mapMessage(LoadChartRuntime(), (message) =>
-			message._tag === "CompletedLoadChartRuntime"
-				? Message.CompletedLoadChartRuntime()
-				: Message.FailedLoadChartRuntime({ reason: message.reason }),
-		),
-	],
+	commands: [ReadFrame(), ResolveClock(), ResolveShare({ token: route.token }), LoadChartRuntime()],
 })
 
 /** A new search (`?refresh=`, `?range=`): the window re-resolves and changed keys refetch. */
@@ -264,11 +256,7 @@ export const update = (model: Model, message: Message, pageTimeZone: string): Re
 		ClickedReload: () => ({ model, commands: [ResolveReloadClock()] }),
 		TickedAutoRefresh: () => ({ model, commands: [ResolveReloadClock()] }),
 		CompletedResolveReloadClock: ({ nowMs }) => reload({ ...model, nowMs }, pageTimeZone),
-		ResolvedThemeColors: ({ colors }) => ({ model: { ...model, themeColors: colors } }),
-		CompletedLoadChartRuntime: () => ({ model: { ...model, chartRuntime: { _tag: "Ready" } } }),
-		FailedLoadChartRuntime: ({ reason }) => ({
-			model: { ...model, chartRuntime: { _tag: "Failed", reason } },
-		}),
+		...chartEnvHandlers(model),
 		GotChartMessage: ({ widgetId, message: inner }) => {
 			const next = Chart.update(model.charts[widgetId] ?? Chart.init(), inner)
 			return {

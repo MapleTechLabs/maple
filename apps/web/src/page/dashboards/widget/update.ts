@@ -103,14 +103,7 @@ export const init = (route: Route, _context: PageContext): Return => ({
 		leaveDialog: Dialog.init("widget-editor-leave-dialog", "alert-dialog"),
 		pendingLeaveUrl: null,
 	},
-	commands: [
-		ReadClock(),
-		Command.mapMessage(LoadChartRuntime(), (message) =>
-			message._tag === "CompletedLoadChartRuntime"
-				? Message.CompletedLoadChartRuntime()
-				: Message.FailedLoadChartRuntime({ reason: message.reason }),
-		),
-	],
+	commands: [ReadClock(), LoadChartRuntime()],
 })
 
 export const routeChanged = (model: Model, route: Route): Return => ({

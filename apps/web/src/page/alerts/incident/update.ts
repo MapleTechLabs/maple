@@ -1,3 +1,4 @@
+import { chartEnvHandlers } from "@maple/views/charts/chart-env"
 import type { AlertIncidentDocument } from "@maple/domain/http"
 import type { V2InvestigationCreateParams } from "@maple/domain/http/v2"
 import { formatSignalValue, signalLabels } from "@maple/web-data/alerts/form-utils"
@@ -168,14 +169,7 @@ export const init = (route: IncidentRoute, context: PageContext): Return => {
 			grants: [],
 			clockMs: null,
 		},
-		commands: [
-			ReadIncidentClock(),
-			Command.mapMessage(LoadChartRuntime(), (message) =>
-				message._tag === "CompletedLoadChartRuntime"
-					? Message.CompletedLoadChartRuntime()
-					: Message.FailedLoadChartRuntime({ reason: message.reason }),
-			),
-		],
+		commands: [ReadIncidentClock(), LoadChartRuntime()],
 	}
 	const silences = requestSilences(initial.model, context, "Load")
 	return {
@@ -643,11 +637,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 					}),
 				}),
 			}),
-		CompletedLoadChartRuntime: () => ({ model: { ...model, chartRuntime: { _tag: "Ready" } } }),
-		FailedLoadChartRuntime: ({ reason }) => ({
-			model: { ...model, chartRuntime: { _tag: "Failed", reason } },
-		}),
-		ResolvedThemeColors: ({ colors }) => ({ model: { ...model, themeColors: colors } }),
+		...chartEnvHandlers(model),
 		CompletedFetchAnomaly: ({ key, result }) => ({
 			model: { ...model, anomaly: Keyed.accept(model.anomaly, key, result) },
 		}),

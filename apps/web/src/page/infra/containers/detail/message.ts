@@ -1,7 +1,7 @@
+import { ChartEnvMessages } from "@maple/views/charts/chart-env"
 import { Schema } from "effect"
 import { defineMessageUnion } from "foldkit/message"
 import * as Chart from "@maple/views/charts/chart"
-import { ThemeColors } from "@maple/views/charts/theme-colors"
 import { LoadFailure } from "@maple/views/data/load-failure"
 import * as Frame from "../../kit/frame"
 import { SeriesResult } from "../../../kit/series"
@@ -13,9 +13,7 @@ export const Message = defineMessageUnion({
 	ClickedMetric: { metric: ContainerMetric },
 	ClickedRetrySummary: {},
 	ClickedWidenRange: {},
-	CompletedLoadChartRuntime: {},
-	FailedLoadChartRuntime: { reason: Schema.String },
-	ResolvedThemeColors: { colors: ThemeColors },
+	...ChartEnvMessages,
 	GotChartMessage: { metric: ContainerMetric, message: Chart.Message },
 	GotFrameMessage: { message: Frame.Message },
 })

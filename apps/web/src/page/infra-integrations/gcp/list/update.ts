@@ -1,3 +1,4 @@
+import { chartEnvHandlers } from "@maple/views/charts/chart-env"
 import type { RequestMode } from "@maple/views/data/keyed"
 import { GCP_CLOUD_SQL_INVENTORY_QUERY } from "../../../../components/infra/gcp/inventory"
 import { gcpSparklineServices } from "../../../../components/infra/gcp/list-model"
@@ -153,11 +154,7 @@ export const init = (route: { readonly search: Search }, context: PageContext): 
 		commands: [
 			resolveCommand(model, context, "Load"),
 			LoadStatus({ key, refresh: false }),
-			Command.mapMessage(LoadChartRuntime(), (message) =>
-				message._tag === "CompletedLoadChartRuntime"
-					? Message.CompletedLoadChartRuntime()
-					: Message.FailedLoadChartRuntime({ reason: message.reason }),
-			),
+			LoadChartRuntime(),
 		],
 	}
 }
@@ -218,11 +215,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		CompletedFetchResources: ({ key, result }) => ({
 			model: { ...model, resources: Keyed.accept(model.resources, key, result) },
 		}),
-		CompletedLoadChartRuntime: () => ({ model: { ...model, chartRuntime: { _tag: "Ready" } } }),
-		FailedLoadChartRuntime: ({ reason }) => ({
-			model: { ...model, chartRuntime: { _tag: "Failed", reason } },
-		}),
-		ResolvedThemeColors: ({ colors }) => ({ model: { ...model, themeColors: colors } }),
+		...chartEnvHandlers(model),
 		TickedStatusRefresh: () => {
 			const key = statusKey(context)
 			const [status, commands] = slot(model.status, key, "Refresh", () =>

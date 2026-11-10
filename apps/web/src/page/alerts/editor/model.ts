@@ -1,3 +1,4 @@
+import { ChartEnvFields } from "@maple/views/charts/chart-env"
 import * as Policy from "@maple/domain/policy"
 import { AlertDestinationId, AlertRuleId, DashboardDocument } from "@maple/domain/http"
 import { V2ChatConnector, V2EscalationChain } from "@maple/domain/http/v2"
@@ -10,8 +11,6 @@ import {
 import { Schema } from "effect"
 import { LookupNames } from "../../kit/autocomplete-lookups"
 import * as Chart from "@maple/views/charts/chart"
-import { ChartRuntime } from "@maple/views/charts/chart-runtime"
-import { ThemeColors } from "@maple/views/charts/theme-colors"
 import { KeyedSchema } from "@maple/views/data/keyed"
 import { LoadFailure } from "@maple/views/data/load-failure"
 import { TimeWindow } from "../../../data/time-range"
@@ -146,8 +145,7 @@ export const Model = Schema.Struct({
 	brokenLogos: Schema.Array(Schema.String),
 	timePicker: TimeRangePicker.Model,
 	chart: Chart.Model,
-	chartRuntime: ChartRuntime,
-	themeColors: Schema.NullOr(ThemeColors),
+	...ChartEnvFields,
 })
 export type Model = typeof Model.Type
 

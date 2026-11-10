@@ -1,3 +1,4 @@
+import { chartEnvHandlers } from "@maple/views/charts/chart-env"
 import { chartFences } from "@maple/domain/chat-chart-spec"
 import type { ChatEvent } from "@maple/domain/chat-session"
 import { Result, Record as Rec, String as Str, Array as Arr } from "effect"
@@ -342,11 +343,7 @@ const step = (model: Model, message: Message): Return =>
 				),
 			}
 		},
-		CompletedLoadChartRuntime: () => ({ model: { ...model, chartRuntime: ChartRuntime.Ready() } }),
-		FailedLoadChartRuntime: ({ reason }) => ({
-			model: { ...model, chartRuntime: ChartRuntime.Failed({ reason }) },
-		}),
-		ResolvedThemeColors: ({ colors }) => ({ model: { ...model, themeColors: colors } }),
+		...chartEnvHandlers(model),
 		GotMinimapMessage: ({ message: child }) => ({
 			model: { ...model, minimap: updateMinimap(model.minimap, child) },
 		}),

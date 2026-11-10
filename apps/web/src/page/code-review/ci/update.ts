@@ -1,3 +1,4 @@
+import { chartEnvHandlers } from "@maple/views/charts/chart-env"
 import { CiRunResult, type CodeReviewCiRunsResponse } from "@maple/domain/http"
 import { type Result, Schema } from "effect"
 import type { LoadFailure } from "@maple/views/data/load-failure"
@@ -93,14 +94,7 @@ export const init = (
 	const lifted = liftFrame(model, frame, context)
 	return {
 		...lifted,
-		commands: [
-			...(lifted.commands ?? []),
-			Command.mapMessage(LoadChartRuntime(), (message) =>
-				message._tag === "CompletedLoadChartRuntime"
-					? Message.CompletedLoadChartRuntime()
-					: Message.FailedLoadChartRuntime({ reason: message.reason }),
-			),
-		],
+		commands: [...(lifted.commands ?? []), LoadChartRuntime()],
 	}
 }
 
@@ -117,7 +111,14 @@ export const routeChanged = (
 					search: route.search,
 					resultSelect: { ...model.resultSelect, value: route.search.result ?? ALL },
 				},
-				frameRouteChanged(model.frame, model.search, route.search, route.search.pipeline, DEFAULT_PRESET, context),
+				frameRouteChanged(
+					model.frame,
+					model.search,
+					route.search,
+					route.search.pipeline,
+					DEFAULT_PRESET,
+					context,
+				),
 				context,
 			)
 
@@ -208,11 +209,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 				),
 			}
 		},
-		CompletedLoadChartRuntime: () => ({ model: { ...model, chartRuntime: { _tag: "Ready" } } }),
-		FailedLoadChartRuntime: ({ reason }) => ({
-			model: { ...model, chartRuntime: { _tag: "Failed", reason } },
-		}),
-		ResolvedThemeColors: ({ colors }) => ({ model: { ...model, themeColors: colors } }),
+		...chartEnvHandlers(model),
 	})
 
 /** What this tab hands the next one. */

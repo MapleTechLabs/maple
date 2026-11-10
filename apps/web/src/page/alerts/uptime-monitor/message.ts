@@ -1,10 +1,10 @@
+import { ChartEnvMessages } from "@maple/views/charts/chart-env"
 import * as Policy from "@maple/domain/policy"
 import { V2UptimeMonitor, V2UptimeMonitorTestResult } from "@maple/domain/http/v2"
 import { AlertDestinationRowSchema, AlertIncidentRowSchema } from "@maple/web-data/collections/alerts"
 import { Schema } from "effect"
 import { defineMessageUnion } from "foldkit/message"
 import * as Chart from "@maple/views/charts/chart"
-import { ThemeColors } from "@maple/views/charts/theme-colors"
 import { LoadFailure } from "@maple/views/data/load-failure"
 import * as CopyButton from "@maple/views/ui/copy-button"
 import { CheckStats, UptimeWindow } from "./model"
@@ -26,9 +26,7 @@ export const Message = defineMessageUnion({
 	PickedWindow: { window: UptimeWindow },
 	HoveredCheck: { index: Schema.NullOr(Schema.Number) },
 	CompletedFetchStats: { key: Schema.String, result: outcome(CheckStats) },
-	CompletedLoadChartRuntime: {},
-	FailedLoadChartRuntime: { reason: Schema.String },
-	ResolvedThemeColors: { colors: ThemeColors },
+	...ChartEnvMessages,
 	GotChartMessage: { message: Chart.Message },
 	GotPhaseChartMessage: { message: Chart.Message },
 })

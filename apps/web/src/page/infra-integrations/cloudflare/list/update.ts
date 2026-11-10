@@ -1,3 +1,4 @@
+import { chartEnvHandlers } from "@maple/views/charts/chart-env"
 import type { RequestMode } from "@maple/views/data/keyed"
 import { AsyncData, Command } from "foldkit"
 import { LoadChartRuntime } from "@maple/views/charts/chart-runtime"
@@ -144,11 +145,7 @@ export const init = (route: { readonly search: Search }, context: PageContext): 
 			resolveCommand(model, context, "Load"),
 			LoadStatus({ key: status, refresh: false }),
 			LoadUsage({ key: usage }),
-			Command.mapMessage(LoadChartRuntime(), (message) =>
-				message._tag === "CompletedLoadChartRuntime"
-					? Message.CompletedLoadChartRuntime()
-					: Message.FailedLoadChartRuntime({ reason: message.reason }),
-			),
+			LoadChartRuntime(),
 		],
 	}
 }
@@ -193,11 +190,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		CompletedFetchPlatform: ({ key, result }) => ({
 			model: { ...model, platform: acceptSlot(model.platform, key, result) },
 		}),
-		CompletedLoadChartRuntime: () => ({ model: { ...model, chartRuntime: { _tag: "Ready" } } }),
-		FailedLoadChartRuntime: ({ reason }) => ({
-			model: { ...model, chartRuntime: { _tag: "Failed", reason } },
-		}),
-		ResolvedThemeColors: ({ colors }) => ({ model: { ...model, themeColors: colors } }),
+		...chartEnvHandlers(model),
 		TickedIngestPoll: () => refreshIngest(model, context),
 		TickedClock: ({ nowMs }) => ({ model: { ...model, nowMs } }),
 		ClickedView: ({ view }) => patch(model, withView(model.search, view)),

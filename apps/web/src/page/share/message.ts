@@ -1,7 +1,7 @@
+import { ChartEnvMessages } from "@maple/views/charts/chart-env"
 import { Schema } from "effect"
 import { defineMessageUnion } from "foldkit/message"
 import * as Chart from "@maple/views/charts/chart"
-import { ThemeColors } from "@maple/views/charts/theme-colors"
 import * as Menu from "@maple/views/ui/menu"
 import { Resolve, WidgetState } from "./model"
 
@@ -30,9 +30,7 @@ export const Message = defineMessageUnion({
 	TickedAutoRefresh: {},
 	/** The clock a Reload or an auto-refresh tick resolves its relative window at. */
 	CompletedResolveReloadClock: { nowMs: Schema.Number },
-	ResolvedThemeColors: { colors: ThemeColors },
-	CompletedLoadChartRuntime: {},
-	FailedLoadChartRuntime: { reason: Schema.String },
+	...ChartEnvMessages,
 	GotChartMessage: { widgetId: Schema.String, message: Chart.Message },
 	ClickedSortColumn: { widgetId: Schema.String, field: Schema.String, isText: Schema.Boolean },
 	GotRefreshMenuMessage: { message: Menu.Message },

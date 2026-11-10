@@ -1,8 +1,8 @@
+import { ChartEnvMessages } from "@maple/views/charts/chart-env"
 import { RequestMode } from "@maple/views/data/keyed"
 import { Schema } from "effect"
 import { defineMessageUnion } from "foldkit/message"
 import * as Chart from "@maple/views/charts/chart"
-import { ThemeColors } from "@maple/views/charts/theme-colors"
 import { LoadFailure } from "@maple/views/data/load-failure"
 import { TimeWindow } from "../../../data/time-range"
 import * as FilterSections from "@maple/views/ui/filters/filter-sections"
@@ -35,9 +35,7 @@ export const Message = defineMessageUnion({
 	CompletedFetchAttributeKeys: result(Schema.Array(AttributeKey)),
 	CompletedReadPreferences: { wrap: Schema.Boolean, density: Density, locale: Schema.String },
 	CompletedSavePreference: {},
-	CompletedLoadChartRuntime: {},
-	FailedLoadChartRuntime: { reason: Schema.String },
-	ResolvedThemeColors: { colors: ThemeColors },
+	...ChartEnvMessages,
 	/** `LogsFilterSidebar` mounted (inline, or in the sheet below `lg`): its facets read goes out. */
 	MountedFilterRail: {},
 	CompletedLoadSignalPresence: { result: Schema.Result(SignalPresences, LoadFailure) },

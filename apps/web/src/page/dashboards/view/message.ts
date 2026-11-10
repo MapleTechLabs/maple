@@ -1,8 +1,8 @@
+import { ChartEnvMessages } from "@maple/views/charts/chart-env"
 import { DashboardDocument } from "@maple/domain/http"
 import { Schema } from "effect"
 import { defineMessageUnion } from "foldkit/message"
 import * as Chart from "@maple/views/charts/chart"
-import { ThemeColors } from "@maple/views/charts/theme-colors"
 import * as Dialog from "@maple/views/ui/dialog"
 import * as Menu from "@maple/views/ui/menu"
 import * as Combobox from "@maple/views/ui/combobox"
@@ -44,9 +44,7 @@ export const Message = defineMessageUnion({
 		result: Schema.Result(Schema.Array(Schema.String), WidgetFailure),
 	},
 	GotShareMessage: { message: ShareMessage },
-	ResolvedThemeColors: { colors: ThemeColors },
-	CompletedLoadChartRuntime: {},
-	FailedLoadChartRuntime: { reason: Schema.String },
+	...ChartEnvMessages,
 	/** "Reload page" on a chart tile whose chart code failed to load. */
 	ClickedReloadPage: {},
 	ReloadedPage: {},
