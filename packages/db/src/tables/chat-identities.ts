@@ -13,8 +13,7 @@ import { ChatConnectorId, ChatIdentityId, OrgId, UserId } from "@maple/primitive
 // discarded. Maple never acts on the platform as the person, only as the bot.
 //
 // `org_id` and `user_id` carry no foreign key: orgs and users live in Clerk, not Postgres. Org
-// deletion is handled by the explicit `ORG_SCOPED_TABLES` purge list in
-// `packages/backend/src/services/org/OrganizationService.ts`; this table must be listed there.
+// deletion purges every table with an `org_id` (`OrganizationService.ts`), this one included.
 
 export const ChatIdentities = PG.table("chat_identities", {
 	columns: {
