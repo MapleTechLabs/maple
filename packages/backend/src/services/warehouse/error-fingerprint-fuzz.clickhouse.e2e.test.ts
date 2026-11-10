@@ -7,7 +7,11 @@
 // Replay a failure with FINGERPRINT_FUZZ_SEED=<seed from the failure message>.
 
 import { afterAll, assert, beforeAll, describe, it } from "@effect/vitest"
-import { computeFingerprintInputs, CUSTOM_FINGERPRINT_ATTRIBUTE } from "@maple/domain/tinybird/fingerprint"
+import {
+	computeFingerprintInputs,
+	CUSTOM_FINGERPRINT_ATTRIBUTE,
+	resolveCustomFingerprint,
+} from "@maple/domain/tinybird/fingerprint"
 import { Schema, Array as Arr, String as Str } from "effect"
 import fc from "fast-check"
 import { msToDate } from "../../platform/time"
@@ -287,9 +291,8 @@ const mirrorRow = (c: Case, spanId: string) => {
 		exceptionType: c.type,
 		exceptionStacktrace: c.stack,
 		statusMessage: c.message,
-		// The view reads the event's key first, then the span's; an empty value counts as unset.
-		customFingerprint:
-			!c.viaAttributes && c.eventKey !== undefined && c.eventKey !== "" ? c.eventKey : c.spanKey,
+		// The view reads the event's key first, then the span's; a blank value counts as unset.
+		customFingerprint: resolveCustomFingerprint(c.viaAttributes ? undefined : c.eventKey, c.spanKey),
 	})
 	return JSON.stringify({
 		SpanId: spanId,

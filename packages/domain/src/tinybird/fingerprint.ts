@@ -101,6 +101,18 @@ export const CUSTOM_FINGERPRINT_MAX_CHARS = 200
 export const CUSTOM_FINGERPRINT_REDACTIONS: Redactions = [["^[ \\t\\n\\r]+|[ \\t\\n\\r]+$", ""]]
 
 /**
+ * The raw key `computeFingerprintInputs` takes: the event's value unless it is blank after
+ * trimming, else the span's. Mirrors `_customFp` in the error-events views.
+ */
+export const resolveCustomFingerprint = (
+	eventValue: string | undefined,
+	spanValue: string | undefined,
+): string | undefined =>
+	eventValue !== undefined && applyRedactions(eventValue, CUSTOM_FINGERPRINT_REDACTIONS) !== ""
+		? eventValue
+		: spanValue
+
+/**
  * Matches frame lines by SHAPE — one alternative per runtime — rather than by
  * "contains a colon-digit". The old rule (`:\d+|line \d+`) accepted any line
  * with a colon-digit in it, which let two very common NON-frame lines through:
@@ -673,7 +685,7 @@ function messageSignature(statusMessage: string): string {
 
 /**
  * `statusMessage` is the MV's resolved `_msgText`, including attribute fallback.
- * `customFingerprint` is the raw `maple.fingerprint` value, the event's when set, else the span's.
+ * `customFingerprint` is the raw `maple.fingerprint` value from `resolveCustomFingerprint`.
  */
 export function computeFingerprintInputs(args: {
 	readonly exceptionType: string

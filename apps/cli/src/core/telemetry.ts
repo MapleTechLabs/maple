@@ -84,7 +84,9 @@ const DROPPED_KEYS = new Set([
 	"maple.query.attribute_key",
 	"maple.session.id",
 ])
-const DROPPED_KEY_PATTERN = /sql|^query\.filter\./i
+// Header attributes carry credentials the HTTP tracer does not know to redact (the local server's
+// `x-maple-maintenance-token`); no CLI dashboard reads them.
+const DROPPED_KEY_PATTERN = /sql|^query\.filter\.|^http\.(?:request|response)\.header\./i
 
 const attributeString = (attribute: OtlpResource.KeyValue): string | undefined =>
 	typeof attribute.value.stringValue === "string" ? attribute.value.stringValue : undefined

@@ -1,6 +1,7 @@
 // The search schema of every route. Shapes match the URLs already in use, so existing links decode.
 import { Schema, SchemaGetter } from "effect"
 import { MCP_CLIENT_KINDS } from "@maple/domain/mcp-clients"
+import { DATA_SOURCE_KINDS } from "@maple/domain/data-sources"
 import {
 	AiSessionSortDir,
 	AiSessionSortKey,
@@ -324,6 +325,9 @@ export const SettingsSearch = Schema.Struct({
 	affected: Schema.optional(Schema.String),
 	request: Schema.optional(Schema.String),
 	entry: Schema.optional(Schema.String),
+	// Data sources deep links from `/integrations`: one source, or the connect form of a kind.
+	source: Schema.optional(Schema.String),
+	connect: Schema.optional(Schema.Literals(DATA_SOURCE_KINDS)),
 })
 
 export const SignInSearch = Schema.Struct({
