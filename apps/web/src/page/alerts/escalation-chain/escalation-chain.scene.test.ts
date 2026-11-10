@@ -2,7 +2,7 @@ import * as Policy from "@maple/domain/policy"
 import { OrgId } from "@maple/domain"
 import { EscalationChainId } from "@maple/domain/http"
 import { EscalationChainPublicId } from "@maple/domain/http/v2"
-import { Option, Result, Schema, Array as Arr } from "effect"
+import { Option, Result, Schema, Array as Arr, String as Str } from "effect"
 import * as Dialog from "@maple/views/ui/dialog"
 import { MountDialog } from "@maple/views/ui/dialog"
 import type { LoadFailure } from "@maple/views/data/load-failure"
@@ -326,6 +326,37 @@ describe("escalation chain editor", () => {
 			expectView(text(/These rules would stop escalating/u)).toExist(),
 			expectView(text("Checkout p95")).toExist(),
 			expectView(within(role("alertdialog"), role("button", { name: "Delete chain" }))).toBeDisabled(),
+		)
+	})
+
+	test("a chain one rule starts is refused in the singular", () => {
+		const [first] = CHAINS
+		expect(first).toBeDefined()
+		if (first === undefined) return
+		const single = loaded(opening(1), { ...first, rule_ids: Arr.take(first.rule_ids, 1) })
+		scene(
+			{ update: pageUpdate, view },
+			given(pageUpdate(single, Message.ClickedDelete()).model),
+			Mount.resolve(MountDialog, Dialog.Message.CompletedMountDialog()),
+			expectView(text(/This rule would stop escalating/u)).toExist(),
+			expectView(within(role("alertdialog"), role("button", { name: "Delete chain" }))).toBeDisabled(),
+		)
+	})
+
+	test("notes are saved with the chain, and refused past 500 characters", () => {
+		const noted = run(editing(1), [Message.ChangedDescription({ value: "Rollback notes" })])
+		expect(Option.map(payloadOf(noted.form), (payload) => payload.description)).toEqual(
+			Option.some("Rollback notes"),
+		)
+		const tooLong = run(editing(1), [
+			Message.ChangedDescription({ value: Str.repeat(501)("x") }),
+			Message.ClickedSave(),
+		])
+		expect(payloadOf(tooLong.form)).toEqual(Option.none())
+		scene(
+			{ update: pageUpdate, view },
+			given(tooLong),
+			expectView(text("Keep the notes to 500 characters")).toExist(),
 		)
 	})
 

@@ -37,7 +37,10 @@ export const chainDeleteConfirm = <M>(
 		}
 	return {
 		isInUse: true,
-		description: "These rules would stop escalating. Remove the chain from their severity tiers first.",
+		description:
+			ruleIds.length === 1
+				? "This rule would stop escalating. Remove the chain from its severity tiers first."
+				: "These rules would stop escalating. Remove the chain from their severity tiers first.",
 		ruleList: [
 			h.ul(
 				[h.Class("list-disc space-y-1 pl-5")],

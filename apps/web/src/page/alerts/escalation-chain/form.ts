@@ -96,9 +96,7 @@ export const nameError = (name: string): Option.Option<string> =>
 			: Option.some("Keep the name to 120 characters")
 
 export const descriptionError = (description: string): Option.Option<string> =>
-	isDescription(Str.trim(description))
-		? Option.none()
-		: Option.some("Keep the description to 500 characters")
+	isDescription(Str.trim(description)) ? Option.none() : Option.some("Keep the notes to 500 characters")
 
 export const waitError = (raw: string): Option.Option<string> =>
 	isWait(numberOf(raw)) ? Option.none() : Option.some(`Wait 1 to ${MAX_ESCALATION_WAIT_MINUTES} minutes`)
