@@ -100,6 +100,7 @@ const METERING_TIMEOUT = "5 seconds"
 /** What the row records when the pass and its close-out both ended in prose or on an error. */
 const NO_DIAGNOSIS_ERROR = "no_diagnosis: the agent ended its pass without submitting a diagnosis; retry"
 const NO_REPLY_ERROR = "no_reply: the agent ended its pass without submitting an answer"
+const PULL_REQUEST_UNREADABLE = "The pull request this session is about could not be read."
 
 /**
  * Meter what this turn spent into the org's AI usage.
@@ -402,6 +403,14 @@ export const runChatSessionTurn = async (input: RunChatSessionTurnInput): Promis
 								onSome: ({ repository, number }) => ({ repository, number }),
 							},
 						)
+			// An unattended pass that cannot name its pull request has nothing it may read.
+			if (pullRequest === "unreadable" && autonomous) {
+				observability.outcome = "error"
+				yield* failUnfinished("start_failed", PULL_REQUEST_UNREADABLE)
+				observability.failureReason = "PullRequestUnreadable"
+				input.session.endTurn(input.messageId, { reason: "error", error: PULL_REQUEST_UNREADABLE })
+				return yield* annotateTurn()
+			}
 			// Clone the commit while the model reads the diff, rather than when its first source tool
 			// asks and waits on it. A child of the turn (no request Scope here, so `forkRequestScoped`
 			// parents it on this fiber): a clone still running when the turn ends carries on in the container.
