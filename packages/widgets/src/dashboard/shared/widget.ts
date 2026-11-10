@@ -10,8 +10,8 @@ import { TimeRangeSchema } from "./time-range"
  * Returns the display config alongside the widget rather than taking it as an
  * argument: `display.sparkline.dataSource` must always agree with the widget's
  * own data source, and deriving it here is what makes that unbreakable. Callers
- * that need the display schema on its own (the compatibility facade does) take
- * the one returned here instead of building a second.
+ * that need the display schema on its own (each version's `WidgetDisplayConfigV*`)
+ * take the one returned here instead of building a second.
  */
 export const makeDashboardWidgetSchemas = <
 	Visualization extends Schema.Top,
