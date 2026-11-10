@@ -43,7 +43,7 @@ import { withPgConnectionScope } from "@maple/backend/platform/pg-connection-sco
 import { EmailSender, type EmailSenderClient } from "@maple/backend/platform/bindings"
 import { type ChatSessionNamespace, chatSessionsLayerIfBound } from "@maple/backend/platform/chat-sessions"
 import { envPorts } from "@maple/backend/platform/env-ports"
-import { Cause, Clock, Effect, Layer, Match, Option, Array as Arr, Record as Rec } from "effect"
+import { Cause, Clock, Effect, Layer, Option, Array as Arr, Record as Rec } from "effect"
 import { FetchHttpClient } from "effect/http"
 import { isLaneOf, scheduleFor, type TickLane } from "./schedule.ts"
 import type { AlertingWorkerEnv } from "./worker.ts"
@@ -175,9 +175,6 @@ const schedulerTick = (lane: AlertSchedulerLane, spanKey: string) =>
 			alertChecksDroppedCount: result.alertChecksDroppedCount,
 		}),
 	)
-
-const alertTick = schedulerTick("standard", "scheduler")
-const alertLongQueryTick = schedulerTick("long_query", "scheduler_long_query")
 
 const errorTick = makeTick(
 	ErrorsService.use((errors) => errors.runTick),
@@ -507,59 +504,77 @@ const statusPagesTick = Effect.gen(function* () {
 	)
 })
 
-export interface ScheduledTickPrograms<R = never> {
-	readonly alert: Effect.Effect<void, never, R>
-	readonly alertLongQuery: Effect.Effect<void, never, R>
-	readonly anomaly: Effect.Effect<void, never, R>
-	readonly awsConnections: Effect.Effect<void, never, R>
-	readonly cloudflareAnalytics: Effect.Effect<void, never, R>
-	readonly digest: Effect.Effect<void, never, R>
-	readonly error: Effect.Effect<void, never, R>
-	readonly escalation: Effect.Effect<void, never, R>
-	readonly fixVerification: Effect.Effect<void, never, R>
-	readonly gcpMetrics: Effect.Effect<void, never, R>
-	readonly maintenanceWindows: Effect.Effect<void, never, R>
-	readonly planetScale: Effect.Effect<void, never, R>
-	readonly planetScaleMetrics: Effect.Effect<void, never, R>
-	readonly prReviewPostMerge: Effect.Effect<void, never, R>
-	readonly railwayMetrics: Effect.Effect<void, never, R>
-	readonly searchConsole: Effect.Effect<void, never, R>
-	readonly serviceMapRollup: Effect.Effect<void, never, R>
-	readonly statusPages: Effect.Effect<void, never, R>
-	readonly supabaseDiscovery: Effect.Effect<void, never, R>
-	readonly supabaseLogs: Effect.Effect<void, never, R>
-	readonly supabaseInsights: Effect.Effect<void, never, R>
+/** Every tick the alerting Worker runs, by name. */
+const scheduledTicks = {
+	alert: schedulerTick("standard", "scheduler"),
+	alertLongQuery: schedulerTick("long_query", "scheduler_long_query"),
+	anomaly: anomalyTick,
+	awsConnections: awsConnectionsTick,
+	cloudflareAnalytics: cloudflareAnalyticsTick,
+	digest: digestTick,
+	error: errorTick,
+	escalation: escalationTick,
+	fixVerification: fixVerificationTick,
+	gcpMetrics: gcpMetricsTick,
+	maintenanceWindows: maintenanceWindowsTick,
+	planetScale: planetScaleTick,
+	planetScaleMetrics: planetScaleMetricsTick,
+	prReviewPostMerge: prReviewPostMergeTick,
+	railwayMetrics: railwayMetricsTick,
+	searchConsole: searchConsoleTick,
+	serviceMapRollup: serviceMapRollupTick,
+	statusPages: statusPagesTick,
+	supabaseDiscovery: supabaseDiscoveryTick,
+	supabaseLogs: supabaseLogsTick,
+	supabaseInsights: supabaseInsightsTick,
 }
 
-/** The program each lane runs; every tick belongs to exactly one lane. */
+export type ScheduledTickName = keyof typeof scheduledTicks
+type ScheduledServices = {
+	readonly [Name in ScheduledTickName]: Effect.Services<(typeof scheduledTicks)[Name]>
+}[ScheduledTickName]
+
+export type ScheduledTickPrograms<R = never> = {
+	readonly [Name in ScheduledTickName]: Effect.Effect<void, never, R>
+}
+
+export const scheduledTickNames: ReadonlyArray<ScheduledTickName> = Rec.keys(scheduledTicks)
+
+/** A program per tick name, for driving the lanes with stand-in ticks. */
+export const tickProgramsFrom = <R>(
+	make: (name: ScheduledTickName) => Effect.Effect<void, never, R>,
+): ScheduledTickPrograms<R> => Rec.map(scheduledTicks, (_, name) => make(name))
+
+/** The ticks each lane runs, in order; every tick belongs to exactly one lane. */
+const LANE_TICKS = {
+	alert: ["alert"],
+	alert_long_query: ["alertLongQuery"],
+	// `fixVerification` is chained onto `error` rather than given its own lane: a window this
+	// minute's error tick just refuted must already be settled when the verification tick looks at it.
+	error: ["error", "fixVerification"],
+	// Status pages ride the escalation lane: the minute cron is one connection under its cap.
+	escalation: ["escalation", "statusPages"],
+	anomaly: ["anomaly"],
+	cloudflare_analytics: ["cloudflareAnalytics"],
+	gcp_metrics: ["gcpMetrics"],
+	// Metrics ride the inventory's lane: the 5-minute cron is at its six-connection cap, and
+	// they read the branch list the inventory just refreshed.
+	planetscale: ["planetScale", "planetScaleMetrics"],
+	railway_metrics: ["railwayMetrics"],
+	pr_review_post_merge: ["prReviewPostMerge"],
+	digest: ["digest"],
+	service_map_rollup: ["serviceMapRollup"],
+	aws_connections: ["awsConnections"],
+	supabase_discovery: ["supabaseDiscovery"],
+	supabase_logs: ["supabaseLogs"],
+	supabase_insights: ["supabaseInsights"],
+	maintenance_windows: ["maintenanceWindows"],
+	search_console: ["searchConsole"],
+} as const satisfies Record<TickLane, ReadonlyArray<ScheduledTickName>>
+
+/** The program a lane runs: its ticks one after another. */
 const laneProgram = <R>(lane: TickLane, ticks: ScheduledTickPrograms<R>): Effect.Effect<void, never, R> =>
-	Match.value(lane).pipe(
-		Match.when("alert", () => ticks.alert),
-		Match.when("alert_long_query", () => ticks.alertLongQuery),
-		// `fixVerification` is chained onto `error` rather than given its own lane:
-		// a window this minute's error tick just refuted must already be settled
-		// when the verification tick looks at it.
-		Match.when("error", () => Effect.andThen(ticks.error, ticks.fixVerification)),
-		// Status pages ride the escalation lane: the minute cron is one connection under its cap.
-		Match.when("escalation", () => Effect.andThen(ticks.escalation, ticks.statusPages)),
-		Match.when("anomaly", () => ticks.anomaly),
-		Match.when("cloudflare_analytics", () => ticks.cloudflareAnalytics),
-		Match.when("gcp_metrics", () => ticks.gcpMetrics),
-		// Metrics ride the inventory's lane: the 5-minute cron is at its six-connection cap, and
-		// they read the branch list the inventory just refreshed.
-		Match.when("planetscale", () => Effect.andThen(ticks.planetScale, ticks.planetScaleMetrics)),
-		Match.when("railway_metrics", () => ticks.railwayMetrics),
-		Match.when("pr_review_post_merge", () => ticks.prReviewPostMerge),
-		Match.when("digest", () => ticks.digest),
-		Match.when("service_map_rollup", () => ticks.serviceMapRollup),
-		Match.when("aws_connections", () => ticks.awsConnections),
-		Match.when("supabase_discovery", () => ticks.supabaseDiscovery),
-		Match.when("supabase_logs", () => ticks.supabaseLogs),
-		Match.when("supabase_insights", () => ticks.supabaseInsights),
-		Match.when("maintenance_windows", () => ticks.maintenanceWindows),
-		Match.when("search_console", () => ticks.searchConsole),
-		Match.exhaustive,
-	)
+	Effect.forEach(LANE_TICKS[lane], (name) => ticks[name], { discard: true })
 
 /**
  * One lane of `cron`, bounded by the cron's deadline. Kept apart from the
@@ -593,53 +608,6 @@ export const selectLaneProgram = <R>(
 	)
 }
 
-type ScheduledServices =
-	| AlertsService
-	| AlertMaintenanceWindowsService
-	| AnomalyDetectionService
-	| AnomalyAlertSource
-	| AwsConnectionService
-	| CloudflareAnalyticsService
-	| DigestService
-	| WebAnalyticsDigestService
-	| ErrorsService
-	| EscalationService
-	| FixVerificationTickService
-	| GcpMetricsService
-	| PlanetScaleService
-	| PlanetScaleMetricsService
-	| PrReviewPostMergeService
-	| RailwayMetricsService
-	| SearchConsoleImportService
-	| ServiceMapRollupService
-	| SupabaseConnectionService
-	| SupabaseLogsService
-	| SupabaseInsightsService
-
-const scheduledTicks: ScheduledTickPrograms<ScheduledServices> = {
-	alert: alertTick,
-	alertLongQuery: alertLongQueryTick,
-	anomaly: anomalyTick,
-	awsConnections: awsConnectionsTick,
-	cloudflareAnalytics: cloudflareAnalyticsTick,
-	digest: digestTick,
-	error: errorTick,
-	escalation: escalationTick,
-	fixVerification: fixVerificationTick,
-	gcpMetrics: gcpMetricsTick,
-	maintenanceWindows: maintenanceWindowsTick,
-	planetScale: planetScaleTick,
-	planetScaleMetrics: planetScaleMetricsTick,
-	prReviewPostMerge: prReviewPostMergeTick,
-	railwayMetrics: railwayMetricsTick,
-	searchConsole: searchConsoleTick,
-	serviceMapRollup: serviceMapRollupTick,
-	statusPages: statusPagesTick,
-	supabaseDiscovery: supabaseDiscoveryTick,
-	supabaseLogs: supabaseLogsTick,
-	supabaseInsights: supabaseInsightsTick,
-}
-
 /**
  * One lane of a cron fire, over the layer graph built from this invocation's
  * env and released when the lane completes. Each lane has its own Postgres
@@ -655,7 +623,7 @@ export const runScheduled = (
 	chatSessions: ChatSessionNamespace,
 	statusPages: Option.Option<StatusPageBindings>,
 ) =>
-	withPgConnectionScope(selectLaneProgram(cron, lane, scheduledTicks)).pipe(
+	withPgConnectionScope(selectLaneProgram<ScheduledServices>(cron, lane, scheduledTicks)).pipe(
 		// One lane is one application run: the layer is built here and released
 		// with it, as the async entry's ManagedRuntime was.
 		// oxlint-disable-next-line effecttsgo/strict-effect-provide

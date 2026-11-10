@@ -15,8 +15,8 @@ interface CronSchedule {
 }
 
 /**
- * A fire holds one outbound connection per lane while its hops run, so keep a
- * cron under the Workers limit of six simultaneous connections per invocation.
+ * A fire holds one outbound connection per lane while its hops run, so a cron
+ * keeps within the Workers limit of six per invocation (`scheduled.test.ts` checks).
  */
 export const ALERTING_SCHEDULE = {
 	// `error` also runs fix verification, chained after it (see `./scheduled.ts`).

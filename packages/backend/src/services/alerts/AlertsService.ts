@@ -6238,6 +6238,9 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 				lane: AlertSchedulerLane = "standard",
 			) {
 				const tickStart = yield* now
+				// The standard lane runs every minute, so it alone also advances escalations, drains
+				// deliveries (on its own 20s budget) and pages members; the long-query lane only evaluates.
+				const ownsQueues = lane === "standard"
 				const checkIngest = yield* Ref.make(Option.none<Fiber.Fiber<number>>())
 				const evaluation = yield* Effect.exit(evaluateScheduledRules(lane, checkIngest))
 				// The alert_checks ingest runs beside the drain and is joined even when the drain fails,
@@ -6245,14 +6248,13 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 				const joinCheckIngest = Effect.flatMap(Ref.get(checkIngest), (fiber) =>
 					Option.match(fiber, { onNone: () => Effect.succeed(0), onSome: Fiber.join }),
 				)
-				// The standard lane also advances escalation chains, after evaluation (which may have
-				// resolved an incident) and before the drain (which then sends the step this tick).
-				if (lane === "standard") {
+				// Escalations advance after evaluation (which may have resolved an incident) and before
+				// the drain (which then sends the step this tick).
+				if (ownsQueues) {
 					yield* advanceEscalations().pipe(isolate("Escalation advance failed", {}))
 				}
-				// One lane drains: the standard lane runs every minute, and its drain has its own 20s budget.
 				const delivery = yield* Effect.exit(
-					lane === "standard"
+					ownsQueues
 						? processQueuedDeliveries()
 						: Effect.succeed({ processedCount: 0, failureCount: 0 }),
 				)
@@ -6262,7 +6264,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 					alertChecksDroppedCount,
 				)
 				// People an escalation step paged, after the destinations the same step queued.
-				if (lane === "standard") {
+				if (ownsQueues) {
 					yield* memberNotifier.drain.pipe(isolate("Escalation member paging failed", {}))
 				}
 				const deliveryResult = yield* delivery
