@@ -12,7 +12,6 @@ import {
 import { VcsSyncService } from "@maple/backend/services/integrations/vcs/VcsSyncService"
 
 import { IssueFixVerificationService } from "@maple/backend/services/errors/IssueFixVerificationService"
-import { PullRequestLookup } from "@maple/backend/services/errors/PullRequestLookup"
 import { fixVerificationPullRequestHandler } from "@maple/backend/services/errors/pull-request-sink-live"
 import { pullRequestEventSinkFanout } from "@maple/backend/services/integrations/vcs/PullRequestEventSink"
 import { PrReviewService } from "@maple/backend/services/pr-review/PrReviewService"
@@ -55,11 +54,7 @@ const PrReviewLive = PrReviewService.layer.pipe(Layer.provide(VcsSyncQueue.layer
 const PullRequestEventSinkLive = pullRequestEventSinkFanout<IssueFixVerificationService | PrReviewService>([
 	{ name: "fix-verification", handler: fixVerificationPullRequestHandler },
 	{ name: "pr-review", handler: prReviewPullRequestHandler },
-]).pipe(
-	Layer.provide(IssueFixVerificationService.layer),
-	Layer.provide(PrReviewLive),
-	Layer.provide(PullRequestLookup.none),
-)
+]).pipe(Layer.provide(IssueFixVerificationService.layer), Layer.provide(PrReviewLive))
 
 export const VcsSyncLive = VcsSyncService.layer.pipe(
 	Layer.provide(PullRequestEventSinkLive),

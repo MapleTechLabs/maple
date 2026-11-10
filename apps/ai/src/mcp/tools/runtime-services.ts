@@ -23,7 +23,6 @@ import { ErrorsService } from "@maple/backend/services/errors/ErrorsService"
 import { InvestigationService } from "@maple/backend/services/errors/InvestigationService"
 import { IssueFixVerificationService } from "@maple/backend/services/errors/IssueFixVerificationService"
 import { RecommendationIssueService } from "@maple/backend/services/errors/RecommendationIssueService"
-import { PullRequestLookupLive } from "@maple/backend/services/errors/pull-request-lookup-live"
 import { SetupAuditService } from "@maple/backend/services/org/SetupAuditService"
 import { RailwayMetricsService } from "@maple/backend/services/integrations/RailwayMetricsService"
 import { ScrapeTargetsService } from "@maple/backend/services/integrations/ScrapeTargetsService"
@@ -104,7 +103,6 @@ export const McpRuntimeServicesLive = Layer.mergeAll(
 			Layer.provide(Layer.mergeAll(VcsSourceService.layer, SandboxClient.layer)),
 		),
 	),
-	Layer.provide(PullRequestLookupLive),
 	Layer.provide(FetchHttpClient.layer),
 )
 
