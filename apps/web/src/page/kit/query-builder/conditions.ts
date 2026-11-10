@@ -153,8 +153,9 @@ const withRow = (
 const replaced = (rows: ReadonlyArray<ConditionRow>, next: ConditionRow): ReadonlyArray<ConditionRow> =>
 	Arr.map(rows, (row) => (row.id === next.id ? next : row))
 
+/** Switching editors keeps the rows in progress: a half-filled row is still there on the way back. */
 export const changedWhereMode = (model: Model, queryId: string, mode: WhereMode): Return => ({
-	model: { ...withoutBuilderState(model, queryId), whereModes: { ...model.whereModes, [queryId]: mode } },
+	model: { ...model, whereModes: { ...model.whereModes, [queryId]: mode } },
 })
 
 /** A new row opens its field picker, as the first thing to choose; the clause is unchanged. */
