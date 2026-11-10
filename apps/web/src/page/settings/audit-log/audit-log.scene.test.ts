@@ -403,6 +403,31 @@ describe("audit log tab", () => {
 			scene(sceneOf(search), given(opened), expectView(text("Surface")).toExist())
 		})
 
+		test("an open entry offers a filter beside its actor, action and resource", () => {
+			const target = AUDIT_ENTRIES[2]
+			if (target === undefined) throw new Error("fixture")
+			const opened = update(
+				loadedWith(search).model,
+				Message.ToggledEntry({ id: target.id }),
+				search,
+			).model
+			scene(
+				sceneOf(search),
+				given(opened),
+				expectView(role("button", { name: "Show every entry with this actor" })).toExist(),
+				expectView(role("button", { name: "Show every entry with this action" })).toExist(),
+				expectView(role("button", { name: "Show every entry with this resource" })).toExist(),
+			)
+		})
+
+		test("a row names the kind of actor behind an API key", () => {
+			scene(
+				sceneOf(search),
+				given(loadedWith(search).model),
+				expectView(role("img", { name: "API key" })).toExist(),
+			)
+		})
+
 		test("the Origin section names the country an entry came from", () => {
 			const target = AUDIT_ENTRIES[4]
 			if (target === undefined) throw new Error("fixture")

@@ -88,19 +88,27 @@ const changeValue = (h: H, value: unknown): Html => {
 /** An id with its actions (copy, and "Filter" when given) as one group that wraps together. */
 const identifier = (h: H, model: Model, value: string, label: string, action?: Html): Html => {
 	const key = `${label}:${value}`
-	return hstack(h, { gap: "1", align: "center", inline: true, as: "span", className: "max-w-full" }, [
-		inlineCode(h, { variant: "plain", size: "2xs", tone: "foreground", className: "truncate" }, [value]),
-		CopyButton.view(h, {
-			model: model.copies[key] ?? CopyButton.init(),
-			toParentMessage: (message) => Message.GotCopyMessage({ key, message }),
-			value,
-			label,
-			// As tall as the line of text, so a value with actions keeps its label's baseline.
-			size: "icon-2xs",
-			iconSize: 12,
-		}),
-		...(action === undefined ? [] : [action]),
-	])
+	// On touch a button answers a 44px square around itself: the wider gap keeps the filter's
+	// square off the copy glyph.
+	return hstack(
+		h,
+		{ gap: "1", align: "center", inline: true, as: "span", className: "max-w-full pointer-coarse:gap-5" },
+		[
+			inlineCode(h, { variant: "plain", size: "2xs", tone: "foreground", className: "truncate" }, [
+				value,
+			]),
+			CopyButton.view(h, {
+				model: model.copies[key] ?? CopyButton.init(),
+				toParentMessage: (message) => Message.GotCopyMessage({ key, message }),
+				value,
+				label,
+				// As tall as the line of text, so a value with actions keeps its label's baseline.
+				size: "icon-2xs",
+				iconSize: 12,
+			}),
+			...(action === undefined ? [] : [action]),
+		],
+	)
 }
 
 const changesTable = (h: H, changes: V2AuditChanges): Html =>

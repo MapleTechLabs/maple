@@ -162,7 +162,8 @@ const rangeLabel = (range: AuditDateRange, timeZone: string): string => {
 // TOOLBAR
 
 // On a phone the four filters share each row evenly instead of ending wherever their label does.
-const FILTER_FIT = "max-w-none grow basis-36 @md:max-w-64 @md:grow-0 @md:basis-auto"
+const FILTER_GROW = "grow basis-36 @md:grow-0 @md:basis-auto"
+const SELECT_FIT = cn("w-auto max-w-none @md:max-w-64", FILTER_GROW)
 
 const RANGE_OPTION_CLASS =
 	"flex h-7 items-center px-3 text-left text-xs hover:bg-surface-sunken active:bg-surface-sunken"
@@ -195,7 +196,7 @@ const dateRange = (h: H, model: Model, range: AuditDateRange, timeZone: string):
 							{
 								variant: "outline",
 								size: "sm",
-								className: cn("justify-start gap-1.5 @md:justify-center", FILTER_FIT),
+								className: cn("justify-start gap-1.5 @md:justify-center", FILTER_GROW),
 								slot: "popover-trigger",
 								attributes: [h.AriaLabel(`Date range: ${label}`), ...trigger],
 							},
@@ -279,7 +280,7 @@ const filterSelect = (
 			],
 			ariaLabel: options.ariaLabel,
 			size: "sm",
-			className: cn("w-auto min-w-36 max-w-64", FILTER_FIT),
+			className: SELECT_FIT,
 			leading: filterGlyph(h, options.icon),
 			renderValue: () => [
 				typography(
@@ -352,7 +353,7 @@ const personFilter = (
 			entries,
 			ariaLabel: "Person",
 			size: "sm",
-			className: cn("w-auto min-w-36 max-w-64", FILTER_FIT),
+			className: SELECT_FIT,
 			leading: filterGlyph(h, ACTOR_ICONS.user),
 			renderValue: () => [
 				typography(h, { truncate: true, tone: actorId === undefined ? "muted" : "foreground" }, [
@@ -379,7 +380,7 @@ const actorCell = (h: H, model: Model, entry: V2AuditLogEntry): Html => {
 						{ className: "size-4 shrink-0" },
 						typography(h, { size: "4xs" }, [initialsOf(name ?? "")]),
 					)
-				: actorMark(h, entry.actor_type),
+				: actorMark(h, entry.actor_type, name === null),
 			...(name === null
 				? entry.actor_type === "user"
 					? []
@@ -428,19 +429,24 @@ export const deniedBadge = (h: H): Html =>
 		"Denied",
 	])
 
-/** A non-person actor in a row: its glyph alone, the size of a person's avatar, named on hover. */
-const actorMark = (h: H, actorType: AuditActorType): Html =>
+/**
+ * A non-person actor in a row: its glyph alone, the size of a person's avatar. It names the actor
+ * type (and says it on hover) unless the type is already the text beside it.
+ */
+const actorMark = (h: H, actorType: AuditActorType, isNamedBeside: boolean): Html =>
 	badge(
 		h,
 		{
 			variant: ACTOR_BADGES[actorType].variant,
 			size: "sm",
-			className: "shrink-0",
-			attributes: [
-				h.Role("img"),
-				h.AriaLabel(ACTOR_BADGES[actorType].label),
-				...tooltipTrigger(h, ACTOR_BADGES[actorType].label),
-			],
+			className: "size-4 min-w-4 shrink-0 px-0",
+			attributes: isNamedBeside
+				? [h.AriaHidden(true)]
+				: [
+						h.Role("img"),
+						h.AriaLabel(ACTOR_BADGES[actorType].label),
+						...tooltipTrigger(h, ACTOR_BADGES[actorType].label),
+					],
 		},
 		[icon(h, ACTOR_ICONS[actorType])],
 	)
@@ -568,7 +574,7 @@ const auditRow = (h: H, model: Model, entry: V2AuditLogEntry, inputs: ViewInputs
 					h.span(
 						[h.Class(COL.source)],
 						[
-							hstack(h, { gap: "1.5", align: "center" }, [
+							hstack(h, { gap: "1.5", align: "center", as: "span" }, [
 								icon(h, SOURCE_ICONS[entry.source], {
 									size: 12,
 									className: "text-foreground-subtle shrink-0",
@@ -766,18 +772,22 @@ export const view = Submodel.defineView<Model, Message, ViewInputs>((model, inpu
 		[
 			vstack(h, { gap: "3", className: "@container" }, [
 				hstack(h, { gap: "3", wrap: true, align: "center", justify: "between" }, [
-					hstack(h, { gap: "3", wrap: true, align: "center" }, [
-						segmentedSelect(h, {
-							size: "sm",
-							ariaLabel: "Show",
-							value: kind,
-							onChange: (value) => Message.ClickedKind({ value }),
-							options: withGlyphs(h, KIND_OPTIONS),
-						}),
-						typography(h, { size: "xs", tone: "muted", className: "hidden @4xl:block" }, [
-							KIND_DESCRIPTIONS[kind],
-						]),
-					]),
+					segmentedSelect(h, {
+						size: "sm",
+						ariaLabel: "Show",
+						value: kind,
+						onChange: (value) => Message.ClickedKind({ value }),
+						options: withGlyphs(h, KIND_OPTIONS),
+					}),
+					// Takes the width between the switch and Reload, and shortens before it moves either.
+					truncatedText(h, {
+						text: KIND_DESCRIPTIONS[kind],
+						tooltip: "overflow",
+						className: cn(
+							"hidden min-w-0 flex-1 @2xl:block",
+							typographyClass({ size: "xs", tone: "muted" }),
+						),
+					}),
 					// The labelled Reload every page header uses, beside the range it re-reads.
 					refreshButton(h, {
 						label: "Reload",
