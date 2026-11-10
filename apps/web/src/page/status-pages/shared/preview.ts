@@ -235,6 +235,12 @@ export type PreviewDocumentOptions = Readonly<{
 }>
 
 /** The public page as the renderer draws it, plus, when selectable, the selection script. */
+/**
+ * A srcdoc frame resolves links against the dashboard's URL, so following one loads the dashboard
+ * inside the frame. In-page links scroll instead; other links and form posts stay put.
+ */
+const STAY_IN_FRAME_SCRIPT = `(function(){document.addEventListener("click",function(e){if(e.defaultPrevented)return;var a=e.target&&e.target.closest?e.target.closest("a[href]"):null;if(!a)return;e.preventDefault();var h=a.getAttribute("href");if(h&&h.charAt(0)==="#"){var t=document.getElementById(decodeURIComponent(h.slice(1)));if(t)t.scrollIntoView({block:"start"})}});document.addEventListener("submit",function(e){e.preventDefault()})})();`
+
 export const previewDocument = (options: PreviewDocumentOptions): string => {
 	const preview = options.isSelectable
 	const html = renderPage(
@@ -243,8 +249,9 @@ export const previewDocument = (options: PreviewDocumentOptions): string => {
 		options.nowMs,
 		options.publicUrl === null ? { preview } : { preview, publicUrl: options.publicUrl },
 	)
-	if (!options.isSelectable) return html
-	const extra = `<style>${selectionStyles(options.selectedIds)}</style><script>${SELECT_SCRIPT}</script>`
+	const stay = `<script>${STAY_IN_FRAME_SCRIPT}</script>`
+	if (!options.isSelectable) return Str.replace("</body>", `${stay}</body>`)(html)
+	const extra = `<style>${selectionStyles(options.selectedIds)}</style><script>${SELECT_SCRIPT}</script>${stay}`
 	return Str.replace("</body>", `${extra}</body>`)(markFirst(html, options.selectedIds))
 }
 
