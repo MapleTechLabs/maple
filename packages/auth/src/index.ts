@@ -173,11 +173,15 @@ const getBearerToken = (headers: HeaderRecord): string | undefined => {
 	return token
 }
 
+/**
+ * The bearer and nothing else. A cookie the browser attaches on its own is never a credential
+ * here, so only a caller that can read the session token can act with it.
+ */
 const toHeaders = (headers: HeaderRecord): Headers => {
 	const requestHeaders = new Headers()
 
 	for (const [name, value] of Rec.toEntries(headers)) {
-		if (value !== undefined) {
+		if (value !== undefined && Str.toLowerCase(name) === "authorization") {
 			requestHeaders.set(name, value)
 		}
 	}

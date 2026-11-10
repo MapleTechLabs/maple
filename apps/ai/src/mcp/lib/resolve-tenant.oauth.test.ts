@@ -110,6 +110,16 @@ describe("an MCP OAuth token, resolved by the AI worker", () => {
 		}).pipe(Effect.provide(makeLayer(db)))
 	})
 
+	it.effect("treats a request with cookies and no bearer as carrying no credential", () => {
+		const db = createTestDb(createdDbs)
+		return Effect.gen(function* () {
+			const failure = yield* resolveMcpTenantContext(
+				new Request(resource, { headers: { cookie: "__session=anything" } }),
+			).pipe(Effect.flip)
+			expect(failure._tag).toBe("@maple/mcp/errors/McpAuthMissingError")
+		}).pipe(Effect.provide(makeLayer(db)))
+	})
+
 	it.effect("is refused for a resource it was not bound to", () => {
 		const db = createTestDb(createdDbs)
 		return Effect.gen(function* () {
