@@ -7,7 +7,7 @@ import {
 	type WorkerListRow,
 	workerRowKey,
 	WORKER_HEALTH_TONE,
-} from "../../../../components/infra/cloudflare/list-model"
+} from "../list-model"
 import { ERROR_RATE_WARN, errorRateClass } from "@maple/ui/lib/error-rate"
 import {
 	EMPTY_VALUE,

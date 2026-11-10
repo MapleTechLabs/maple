@@ -1,4 +1,4 @@
-import { gcpMatchStatements } from "../../components/infra/gcp/cloud-sql-signals"
+import { gcpMatchStatements } from "../../page/infra-integrations/gcp/cloud-sql-signals"
 import { labStatementSpans, type LabWorkload, PAGES, RANGE, WORKLOADS } from "../gcp-workload-fixture"
 import { Array as Arr, Effect, Option } from "effect"
 import { AsyncData, Command, type Update } from "foldkit"

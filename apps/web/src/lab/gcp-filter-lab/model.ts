@@ -1,6 +1,6 @@
 import { Schema } from "effect"
 import { defineMessageUnion } from "foldkit/message"
-import { LogFilterDraft } from "../../page/integrations/gcp-configure-schema"
+import { LogFilterDraft } from "../../page/infra-integrations/gcp/integration/gcp-configure-schema"
 import { Message as IntegrationsMessage } from "../../page/integrations/message"
 import * as Select from "@maple/views/ui/select"
 

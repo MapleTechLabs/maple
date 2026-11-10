@@ -8,14 +8,14 @@ import {
 	gcpConnectionState,
 	gcpScopeLabel,
 	gcpWorstState,
-} from "../../components/integrations/gcp-connector-state"
+} from "../infra-integrations/gcp/connector-state"
 import { DateTime, Option, Array as Arr } from "effect"
 import { AsyncData } from "foldkit"
 import {
 	metricsAuthOf,
 	metricsLastCollectedAt,
 	metricsLastError,
-} from "../../components/integrations/planetscale-setup-steps"
+} from "../infra-integrations/planetscale/setup-steps"
 import type { Keyed } from "@maple/views/data/keyed"
 import { chatIntegrationId, type IntegrationId } from "./catalog"
 import { hasBringYourOwnCloudAddOn } from "../../lib/billing/plan-gating"

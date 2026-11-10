@@ -23,12 +23,17 @@ import {
 	gcpWorkloadName,
 	gcpWorkloadTone,
 	type GcpFleetService,
-} from "../gcp/tabs"
+} from "../../../page/infra-integrations/gcp/tabs"
 import type { ContainerScopeCounts } from "../container-scopes"
 import { HOST_LIST_LIMIT, countHostScopes, hostPeak } from "../host-scopes"
 import type { ListHostsResponse } from "@maple/domain/http"
-import { formatLag, formatStoragePercent, lagTone, utilizationTone } from "../planetscale/metrics"
-import { railwayInScope } from "../railway/railway-scope"
+import {
+	formatLag,
+	formatStoragePercent,
+	lagTone,
+	utilizationTone,
+} from "../../../page/infra-integrations/planetscale/metrics"
+import { railwayInScope } from "../../../page/infra-integrations/railway/railway-scope"
 import type { Tone } from "../severity-tokens"
 import { replaceWith } from "@maple/strings"
 

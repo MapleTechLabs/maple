@@ -1,9 +1,9 @@
 import { Schema, Array as Arr } from "effect"
-import { gcpLogFilterChoice } from "../../components/integrations/gcp-connector-state"
+import { gcpLogFilterChoice } from "../../page/infra-integrations/gcp/connector-state"
 import { Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import type { Message as IntegrationsMessage } from "../../page/integrations/message"
-import { filterField } from "../../page/integrations/view-gcp-configure-filter"
+import { filterField } from "../../page/infra-integrations/gcp/integration/view-gcp-configure-filter"
 import { dashboardPage } from "../../page/kit/dashboard-page"
 import { Message, type Model, type Scenario, SCENARIOS, type ScenarioState } from "./model"
 

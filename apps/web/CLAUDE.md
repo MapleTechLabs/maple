@@ -19,6 +19,12 @@ live in `packages/views` too. The design rules are in `docs/design-rules.md`; th
    Show before and after screenshots of the pages you touched.
 5. Run `bun run ui:index` after adding or renaming a kit export (CI checks it is current).
 
+## Integration providers
+
+Each provider with `/infra` pages lives in `src/page/infra-integrations/<provider>/`: its data and models at the root,
+one folder per `/infra` page, and `integration/` for its part of `/integrations` and `/sources/new`. Names, marks,
+accents and routes come from `src/page/kit/providers.ts`.
+
 ## Text and layout
 
 Type and flex layout go through the kit too: `typography` (ui/typography: `size`, `tone`,

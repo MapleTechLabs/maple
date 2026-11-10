@@ -1,5 +1,5 @@
 import type { RequestMode } from "@maple/views/data/keyed"
-import { metricsNeverCollected } from "../../../../components/integrations/planetscale-setup-steps"
+import { metricsNeverCollected } from "../setup-steps"
 import { Option, Array as Arr } from "effect"
 import { AsyncData } from "foldkit"
 import * as Keyed from "@maple/views/data/keyed"

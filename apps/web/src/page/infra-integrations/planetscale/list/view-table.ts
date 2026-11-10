@@ -15,7 +15,7 @@ import {
 	lagClass,
 	MISSING,
 	utilizationClass,
-} from "../../../../components/infra/planetscale/metrics"
+} from "../metrics"
 import { formatWholePercent } from "../../../../components/infra/format"
 import { Message, type SortKey } from "./model"
 import { typography } from "@maple/views/ui/typography"

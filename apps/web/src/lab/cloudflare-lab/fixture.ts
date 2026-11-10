@@ -4,8 +4,8 @@ import {
 	CloudflareConnectedAccountStatus,
 	CloudflareIntegrationStatus,
 } from "@maple/domain/http"
-import { cloudflareAccounts } from "../../components/infra/cloudflare/accounts"
-import { mergeWorkerRows } from "../../components/infra/cloudflare/list-model"
+import { cloudflareAccounts } from "../../page/infra-integrations/cloudflare/accounts"
+import { mergeWorkerRows } from "../../page/infra-integrations/cloudflare/list-model"
 import {
 	DEMO_ACCOUNT_STATUSES,
 	DEMO_DURABLE_OBJECTS,

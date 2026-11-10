@@ -1,14 +1,5 @@
-import {
-	type CloudflareAccount,
-	cloudflareAccounts,
-	zoneAccountIds,
-} from "../../../../components/infra/cloudflare/accounts"
-import {
-	CLOUDFLARE_VIEWS,
-	type CloudflareView,
-	mergeWorkerRows,
-	type WorkerListRow,
-} from "../../../../components/infra/cloudflare/list-model"
+import { type CloudflareAccount, cloudflareAccounts, zoneAccountIds } from "../accounts"
+import { CLOUDFLARE_VIEWS, type CloudflareView, mergeWorkerRows, type WorkerListRow } from "../list-model"
 import { AsyncData } from "foldkit"
 import type { PlatformResources, QueueRow, Usage, ZoneBucket, ZoneRow } from "../data"
 import { ingestPhaseOf } from "../ingest"

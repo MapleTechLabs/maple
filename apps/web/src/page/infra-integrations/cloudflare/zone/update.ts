@@ -1,6 +1,6 @@
 import { chartEnvHandlers } from "@maple/views/charts/chart-env"
 import type { RequestMode } from "@maple/views/data/keyed"
-import { toggleFilterValue } from "../../../../components/infra/cloudflare/filters"
+import { toggleFilterValue } from "../filters"
 import { AsyncData, Command } from "foldkit"
 import * as Chart from "@maple/views/charts/chart"
 import { LoadChartRuntime } from "@maple/views/charts/chart-runtime"

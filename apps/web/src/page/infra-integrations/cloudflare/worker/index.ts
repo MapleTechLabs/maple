@@ -4,6 +4,7 @@ import { ingestPollSubscriptions } from "../ingest-poll"
 import { contextChanged, init, routeChanged, update } from "./update"
 import { view } from "./view"
 import { platformSource } from "../../../../shell/source-link"
+import { PROVIDERS } from "../../../kit/providers"
 
 /** `/infra/cloudflare/workers/$scriptName`: one Worker; another script is another instance. */
 export const page = definePage(
@@ -23,7 +24,7 @@ export const page = definePage(
 		source: () => platformSource("cloudflare"),
 		breadcrumbs: (model) => [
 			{ label: "Infrastructure", href: "/infra" },
-			{ label: "Cloudflare", href: "/infra/cloudflare?view=workers" },
+			{ label: PROVIDERS.cloudflare.name, href: `${PROVIDERS.cloudflare.infraHref}?view=workers` },
 			{ label: model.scriptName },
 		],
 	},

@@ -1,27 +1,22 @@
 import type { GcpInfraServiceId } from "@maple/domain/gcp-infra"
 import type { GcpResource } from "@maple/domain/http"
 import { windowDurationSeconds } from "@maple/query-engine"
-import { type GcpBucketPoint, gcpWindowPoints } from "../../../../components/infra/gcp/charts"
+import { type GcpBucketPoint, gcpWindowPoints } from "../charts"
 import {
 	gcpCloudSqlView,
 	gcpQueryInsightsUnavailable,
 	gcpStatements,
 	type GcpStatement,
-} from "../../../../components/infra/gcp/cloud-sql-signals"
+} from "../cloud-sql-signals"
 import {
 	type GcpCloudSqlInstance,
 	gcpCloudSqlInstances,
 	gcpMatchResource,
 	gcpWorkloadTelemetry,
-} from "../../../../components/infra/gcp/inventory"
-import {
-	gcpDatabaseRows,
-	type GcpReplica,
-	gcpSqlEngineOf,
-	NO_GCP_SPARKS,
-} from "../../../../components/infra/gcp/list-model"
-import { gcpWorkload, gcpWorkloadTone } from "../../../../components/infra/gcp/tabs"
-import { gcpRailFacts, gcpTraceGap, gcpTracedErrors } from "../../../../components/infra/gcp/workload-signals"
+} from "../inventory"
+import { gcpDatabaseRows, type GcpReplica, gcpSqlEngineOf, NO_GCP_SPARKS } from "../list-model"
+import { gcpWorkload, gcpWorkloadTone } from "../tabs"
+import { gcpRailFacts, gcpTraceGap, gcpTracedErrors } from "../workload-signals"
 import { chartBucketSeconds } from "@maple/views/charts/infra-metric-series"
 import type { TraceSide } from "../data"
 import { successOf } from "../list/derive"

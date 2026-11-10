@@ -1,5 +1,5 @@
-import { mergeWorkerRows, type WorkerListRow } from "../../../../components/infra/cloudflare/list-model"
-import { deployMarkers } from "../../../../components/infra/cloudflare/worker-signals"
+import { mergeWorkerRows, type WorkerListRow } from "../list-model"
+import { deployMarkers } from "../worker-signals"
 import { toIsoBucket } from "@maple/web-data/warehouse/timeseries-utils"
 import { chartBucketSeconds } from "@maple/views/charts/infra-metric-series"
 import type { ChartEventMarker } from "@maple/views/charts/event-marker-spec"

@@ -255,10 +255,10 @@
 		// implementation of `parseWarehouseDateTime` itself is the one permanent entry.
 		{
 			"files": [
-				"apps/web/src/components/infra/gcp/list-model.ts",
-				"apps/web/src/components/integrations/gcp-connector-state.ts",
-				"apps/web/src/components/integrations/gcp-usage.ts",
-				"apps/web/src/components/integrations/planetscale-setup-steps.ts",
+				"apps/web/src/page/infra-integrations/gcp/list-model.ts",
+				"apps/web/src/page/infra-integrations/gcp/connector-state.ts",
+				"apps/web/src/page/infra-integrations/gcp/usage.ts",
+				"apps/web/src/page/infra-integrations/planetscale/setup-steps.ts",
 				"apps/web/src/page/releases/release-model.ts",
 				"apps/web/src/page/replays/kit/replay-timeline.ts",
 				"apps/web/src/page/settings/kit/audit-log-filters.ts",

@@ -1,4 +1,4 @@
-import type { BranchCandidate } from "../../../components/infra/planetscale/branch-selection"
+import type { BranchCandidate } from "./branch-selection"
 import { Array as Arr, String as Str } from "effect"
 
 // PlanetScale list filters. The search fields themselves are in `route/search.ts`.

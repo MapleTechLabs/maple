@@ -1,10 +1,6 @@
-import { classifyZone, ZONE_HEALTH_TONE } from "../../../../components/infra/cloudflare/list-model"
-import {
-	type CloudflareFilterKey,
-	type CloudflareFilters,
-	filtersFromSearch,
-} from "../../../../components/infra/cloudflare/filters"
-import { zoneSignalTotals } from "../../../../components/infra/cloudflare/zone-signals"
+import { classifyZone, ZONE_HEALTH_TONE } from "../list-model"
+import { type CloudflareFilterKey, type CloudflareFilters, filtersFromSearch } from "../filters"
+import { zoneSignalTotals } from "../zone-signals"
 import type { Tone } from "@maple/ui/lib/tone"
 import { AsyncData } from "foldkit"
 import { chartBucketSeconds } from "@maple/views/charts/infra-metric-series"

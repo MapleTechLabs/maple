@@ -1,4 +1,4 @@
-import { gcpCloudSqlInstances } from "../../../../components/infra/gcp/inventory"
+import { gcpCloudSqlInstances } from "../inventory"
 import {
 	gcpListRows,
 	gcpListScope,
@@ -7,9 +7,9 @@ import {
 	gcpWindowSeconds,
 	gcpSparks,
 	NO_GCP_SPARKS,
-} from "../../../../components/infra/gcp/list-model"
-import { gcpInfraNotice, gcpInfraSetupPending, type GcpView } from "../../../../components/infra/gcp/tabs"
-import { gcpMetricsState } from "../../../../components/integrations/gcp-connector-state"
+} from "../list-model"
+import { gcpInfraNotice, gcpInfraSetupPending, type GcpView } from "../tabs"
+import { gcpMetricsState } from "../connector-state"
 import { Option, Array as Arr } from "effect"
 import { AsyncData } from "foldkit"
 import type { TimeWindow } from "../../../../data/time-range"

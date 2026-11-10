@@ -1,10 +1,6 @@
 import { ChartEnvMessages, ChartEnvFields } from "@maple/views/charts/chart-env"
 import { RequestMode } from "@maple/views/data/keyed"
-import {
-	CLOUDFLARE_VIEWS,
-	WORKER_SCOPES,
-	ZONE_SCOPES,
-} from "../../../../components/infra/cloudflare/list-model"
+import { CLOUDFLARE_VIEWS, WORKER_SCOPES, ZONE_SCOPES } from "../list-model"
 import { Schema } from "effect"
 import { defineMessageUnion } from "foldkit/message"
 import * as Chart from "@maple/views/charts/chart"

@@ -14,15 +14,15 @@ import {
 	type GcpProjectHealth,
 	type GcpSparks,
 	type RowRules,
-} from "../../../../components/infra/gcp/list-model"
-import type { GcpCloudSqlInstance } from "../../../../components/infra/gcp/inventory"
+} from "../list-model"
+import type { GcpCloudSqlInstance } from "../inventory"
 import {
 	GCP_RESOURCES_TAB,
 	GCP_VIEW_SERVICES,
 	gcpResourcesError,
 	type GcpServiceView,
 	type GcpView,
-} from "../../../../components/infra/gcp/tabs"
+} from "../tabs"
 import { formatPercentColumn, pluralize } from "@maple/ui/lib/format"
 import { refreshingClass } from "@maple/ui/lib/refreshing"
 import { TONE_TEXT } from "@maple/ui/lib/tone"

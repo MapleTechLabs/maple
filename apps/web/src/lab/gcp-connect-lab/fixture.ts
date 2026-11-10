@@ -3,7 +3,11 @@ import { AsyncData } from "foldkit"
 import type { Keyed } from "@maple/views/data/keyed"
 import { type LoadFailure, toLoadFailure } from "@maple/views/data/load-failure"
 import { GCP_SETUP_FIXTURES } from "../gcp-setup-fixtures"
-import type { ApplyOpened, LogFilterDraft, SetupMethod } from "../../page/integrations/gcp-configure-schema"
+import type {
+	ApplyOpened,
+	LogFilterDraft,
+	SetupMethod,
+} from "../../page/infra-integrations/gcp/integration/gcp-configure-schema"
 import { agoOf, connectorOf } from "../gcp-host"
 
 // The connect lab's fixtures: minutes old against the lab's clock.

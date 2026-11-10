@@ -1,4 +1,4 @@
-import type { BranchCandidate } from "../../../../components/infra/planetscale/branch-selection"
+import type { BranchCandidate } from "../branch-selection"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import * as FilterSections from "@maple/views/ui/filters/filter-sections"
 import { filterSection } from "@maple/views/ui/filters/filter-section"

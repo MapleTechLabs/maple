@@ -1,4 +1,4 @@
-import type { BranchCandidate } from "../../../../components/infra/planetscale/branch-selection"
+import type { BranchCandidate } from "../branch-selection"
 import { countLabel, EMPTY_VALUE, formatNumber } from "@maple/ui/lib/format"
 import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
@@ -9,13 +9,7 @@ import { skeleton, skeletonList } from "@maple/views/ui/skeleton"
 import { columnHead, dataTable, dataTableEmpty } from "../../../kit/data-table"
 import { type Sort, sortRowsByField } from "../../../kit/table-sort"
 import { BRANCH_STATE_LABEL, branchStateOf, type BranchState } from "../filters"
-import {
-	formatLag,
-	formatStoragePercent,
-	lagClass,
-	MISSING,
-	utilizationClass,
-} from "../../../../components/infra/planetscale/metrics"
+import { formatLag, formatStoragePercent, lagClass, MISSING, utilizationClass } from "../metrics"
 import { formatWholePercent } from "../../../../components/infra/format"
 import { type BreakdownSortKey, type Measure, Message } from "./model"
 import { typography, typographyClass } from "@maple/views/ui/typography"

@@ -19,7 +19,7 @@ import {
 	formatStoragePercent,
 	lagClass,
 	utilizationClass,
-} from "../../components/infra/planetscale/metrics"
+} from "../infra-integrations/planetscale/metrics"
 import type { LoadFailure } from "@maple/views/data/load-failure"
 import { AppRoute, hrefOf } from "../../route"
 import { alert, alertDescription, alertTitle } from "@maple/views/ui/alert"

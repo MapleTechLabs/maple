@@ -1,9 +1,5 @@
 import type { V2PlanetScaleIntegration } from "@maple/domain/http/v2"
-import {
-	type LiveCheck,
-	metricsAuthOf,
-	metricsLastError,
-} from "../../../components/integrations/planetscale-setup-steps"
+import { type LiveCheck, metricsAuthOf, metricsLastError } from "./setup-steps"
 import { toEpochMs } from "@maple/ui/lib/time-format"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { AppRoute, hrefOf } from "../../../route"

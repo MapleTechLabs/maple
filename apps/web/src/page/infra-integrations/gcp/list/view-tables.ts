@@ -1,9 +1,5 @@
 import { GCP_INFRA_SERVICES, type GcpInfraServiceId } from "@maple/domain/gcp-infra"
-import {
-	gcpQueryInsightsConsoleUrl,
-	gcpSqlEngine,
-	gcpSqlSize,
-} from "../../../../components/infra/gcp/cloud-sql-signals"
+import { gcpQueryInsightsConsoleUrl, gcpSqlEngine, gcpSqlSize } from "../cloud-sql-signals"
 import {
 	GCP_DATABASE_RULES,
 	GCP_FILLING_FRACTION,
@@ -24,8 +20,8 @@ import {
 	type GcpSubscriptionRow,
 	type GcpWorkloadRow,
 	type GcpWorkloadScope,
-} from "../../../../components/infra/gcp/list-model"
-import { formatGcpValue, GCP_INFRA_COLUMNS, type GcpColumn } from "../../../../components/infra/gcp/tabs"
+} from "../list-model"
+import { formatGcpValue, GCP_INFRA_COLUMNS, type GcpColumn } from "../tabs"
 import { BAR_VALUE_TONE } from "../../../../components/infra/severity-tokens"
 import { errorRateClass } from "@maple/ui/lib/error-rate"
 import {

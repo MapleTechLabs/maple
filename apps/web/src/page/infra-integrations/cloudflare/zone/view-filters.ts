@@ -1,9 +1,5 @@
 import { CACHE_STATUS_COLORS, STATUS_CLASS_COLORS } from "@maple/views/lib/cloudflare-constants"
-import {
-	activeFilterChips,
-	type CloudflareFilters,
-	hasActiveFilters,
-} from "../../../../components/infra/cloudflare/filters"
+import { activeFilterChips, type CloudflareFilters, hasActiveFilters } from "../filters"
 import { Option, Array as Arr, Record as Rec } from "effect"
 import { sectionOf } from "./derive"
 import { AsyncData } from "foldkit"

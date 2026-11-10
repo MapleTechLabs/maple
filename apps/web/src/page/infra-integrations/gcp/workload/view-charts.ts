@@ -5,12 +5,8 @@ import {
 	gcpLineRows,
 	type GcpChart,
 	type GcpChartWindow,
-} from "../../../../components/infra/gcp/charts"
-import {
-	gcpStripDomain,
-	gcpWorkloadStrips,
-	type GcpStripSummary,
-} from "../../../../components/infra/gcp/workload-signals"
+} from "../charts"
+import { gcpStripDomain, gcpWorkloadStrips, type GcpStripSummary } from "../workload-signals"
 import type { GcpInfraServiceId } from "@maple/domain/gcp-infra"
 import { resolveSeriesColors } from "@maple/ui/lib/semantic-series-colors"
 import { cn } from "@maple/ui/lib/utils"

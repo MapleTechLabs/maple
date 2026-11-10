@@ -1,4 +1,4 @@
-import type { GcpProjectHealth } from "../../../../components/infra/gcp/list-model"
+import type { GcpProjectHealth } from "../list-model"
 import { TONE_TEXT } from "@maple/ui/lib/tone"
 import { cn } from "@maple/ui/lib/utils"
 import type { Html } from "foldkit/html"
