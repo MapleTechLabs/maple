@@ -1,5 +1,5 @@
 import { HttpApiBuilder } from "effect/http-api"
-import { CurrentTenant, MapleInternalApi } from "@maple/domain/http"
+import { CurrentTenant, MapleInternalApi, type TenantContext } from "@maple/domain/http"
 import { Effect } from "effect"
 import {
 	readMcpOverview,
@@ -8,7 +8,6 @@ import {
 	readMcpSessions,
 	readMcpTool,
 } from "@maple/backend/services/mcp/mcp-reads"
-import type { TenantContext } from "@maple/backend/services/auth/AuthService"
 
 /** The MCP hub's reads (`/mcp-servers`), scoped by `CurrentTenant`; the reads and their spans live in `mcp-reads`. */
 const withTenant =

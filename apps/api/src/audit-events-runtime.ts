@@ -5,7 +5,7 @@ import { Cause, Clock, Effect, Layer, Array as Arr } from "effect"
 import { summarizeCause } from "@maple/backend/platform/describe-cause"
 import { EventBaseLive } from "@maple/backend/platform/DatabasePgLive"
 import type { QueueBatch } from "@maple/backend/platform/queue-batch"
-import { systemTenant } from "@maple/backend/services/alerts/system-tenant"
+import { ALERTING_SYSTEM_USER_ID, systemTenant } from "@maple/backend/services/auth/system-tenant"
 import { AUDIT_LOG_DATASOURCE } from "@maple/backend/services/audit/AuditLogService"
 import { WarehouseQueryService } from "@maple/backend/services/warehouse/WarehouseQueryService"
 import {
@@ -121,7 +121,7 @@ export const processAuditEventsBatch = Effect.fn("AuditEvents.processBatch")(fun
 		([orgId, group]) =>
 			warehouse
 				.ingest(
-					systemTenant(orgId),
+					systemTenant(orgId, ALERTING_SYSTEM_USER_ID),
 					AUDIT_LOG_DATASOURCE,
 					Arr.map(group, ({ event }) => auditEventToRow(event, now)),
 				)

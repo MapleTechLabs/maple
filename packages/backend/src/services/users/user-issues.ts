@@ -1,10 +1,16 @@
-import type { ErrorIssueId, OrgId, UserDetailRequest, UserIssueItem, WorkflowState } from "@maple/domain/http"
+import type {
+	ErrorIssueId,
+	OrgId,
+	UserDetailRequest,
+	UserIssueItem,
+	WorkflowState,
+	TenantContext,
+} from "@maple/domain/http"
 import * as PG from "@maple-dev/effect-orm/postgres"
 import { ErrorIssues } from "@maple/db/tables"
 import { Array as Arr, DateTime, Effect, Option, Order, Record as Rec } from "effect"
 import { CH } from "@maple/query-engine"
 import { Database } from "@maple/backend/platform/DatabaseLive"
-import type { TenantContext } from "@maple/backend/services/auth/AuthService"
 import { makeErrorDatabaseExecute } from "@maple/backend/services/errors/error-persistence"
 import { issuesOwningHashes } from "@maple/backend/services/errors/issue-fingerprints"
 import { WarehouseQueryService } from "@maple/backend/services/warehouse/WarehouseQueryService"

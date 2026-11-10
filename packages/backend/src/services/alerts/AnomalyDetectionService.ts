@@ -19,10 +19,10 @@ import {
 	ErrorIssueId as ErrorIssueIdSchema,
 	type OrgId,
 	OrgId as OrgIdSchema,
-	RoleName,
 	type UserId,
 	UserId as UserIdSchema,
 	type WarehouseReadError,
+	type TenantContext,
 } from "@maple/domain/http"
 import * as PG from "@maple-dev/effect-orm/postgres"
 import {
@@ -57,7 +57,6 @@ import {
 	Semaphore,
 	String as Str,
 } from "effect"
-import type { TenantContext } from "@maple/backend/services/auth/AuthService"
 import { isTriageSkipReason, maybeEnqueueTriage } from "@maple/backend/services/errors/ai-triage-enqueue"
 import { issuesOwningHashes } from "@maple/backend/services/errors/issue-fingerprints"
 import { ChatSessions } from "@maple/backend/platform/bindings"
@@ -104,6 +103,7 @@ import {
 	type IncidentFingerprintEntry,
 } from "./anomaly/consolidation"
 import { summarizeCause } from "@maple/backend/platform/describe-cause"
+import { systemTenant } from "@maple/backend/services/auth/system-tenant"
 
 const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
 
@@ -112,8 +112,8 @@ const decodeMutedSignalResult = Schema.decodeUnknownResult(AnomalySignalType)
 const decodeOrgIdSync = Schema.decodeUnknownSync(OrgIdSchema)
 const decodeIsoSync = Schema.decodeUnknownSync(AnomalyIncidentDocument.fields.firstTriggeredAt)
 const decodeUserIdSync = Schema.decodeUnknownSync(UserIdSchema)
+const SYSTEM_USER_ID = decodeUserIdSync("system-anomaly")
 const decodeIssueIdSync = Schema.decodeUnknownSync(ErrorIssueIdSchema)
-const decodeRoleNameSync = Schema.decodeUnknownSync(RoleName)
 
 const HOUR_MS = 60 * 60 * 1000
 const BASELINE_WINDOW_MS = 7 * 24 * HOUR_MS
@@ -402,13 +402,6 @@ const make: Effect.Effect<
 
 	const isoFromEpoch = (ms: number) => decodeIsoSync(new Date(ms).toISOString())
 
-	const systemTenant = (orgId: OrgId): TenantContext => ({
-		orgId,
-		userId: decodeUserIdSync("system-anomaly"),
-		roles: [decodeRoleNameSync("root")],
-		authMode: "self_hosted",
-	})
-
 	// The tick historically evaluated every org with an ingest key, scanning a
 	// 7-day window for each — overwhelmingly idle orgs, which dominated Tinybird
 	// CPU. Instead, run ONE cross-org scan of the recent hourly MVs (pinned to
@@ -438,7 +431,7 @@ const make: Effect.Effect<
 		}
 
 		const startTime = formatWarehouseDateTime(nowMs - ANOMALY_ACTIVE_DISCOVERY_WINDOW_MS)
-		const routingTenant = systemTenant(routingOrg)
+		const routingTenant = systemTenant(routingOrg, SYSTEM_USER_ID)
 		yield* warehouse.warmRoute(routingTenant)
 		return yield* Effect.all(
 			[
@@ -1346,7 +1339,7 @@ const make: Effect.Effect<
 
 		const muted = new Set(parseMutedSignals(settings.mutedSignalsJson))
 		const sensitivity = SENSITIVITY[settings.sensitivity] ?? SENSITIVITY.normal
-		const tenant = systemTenant(orgId)
+		const tenant = systemTenant(orgId, SYSTEM_USER_ID)
 		const currentHourStartMs = Math.floor(nowMs / HOUR_MS) * HOUR_MS
 		const elapsedMinutes = Math.floor((nowMs - currentHourStartMs) / 60_000)
 		const config = { sensitivity, elapsedMinutes }

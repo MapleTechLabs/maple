@@ -1,6 +1,7 @@
 import { HttpApiMiddleware, HttpApiSecurity } from "effect/http-api"
 import { Schema, Context as EffectContext } from "effect"
-import { AuthMode, OrgId, RoleName, UserId } from "../primitives"
+import { type ActorId, AuthMode, OrgId, RoleName, UserId } from "../primitives"
+import type { ChatTurnOrigin } from "../chat-session"
 import { MapleRegion } from "../organization-regions"
 import { HttpTaggedError } from "./error-policy"
 
@@ -88,6 +89,27 @@ export class OrganizationWrongRegionError extends HttpTaggedError<OrganizationWr
 		exposure: "public_message",
 	},
 ) {}
+
+/**
+ * Who a request, tool call or job acts as. `TenantSchema` is the form the HTTP middleware
+ * provides; the optional fields below it are set only by the MCP and chat surfaces.
+ */
+export interface TenantContext {
+	readonly orgId: OrgId
+	readonly userId: UserId
+	readonly roles: ReadonlyArray<RoleName>
+	readonly authMode: AuthMode
+	/** A scoped API key's scopes. Unset for unscoped keys, OAuth tokens and sessions. */
+	readonly scopes?: ReadonlyArray<string> | undefined
+	/** Set for a scoped API key that grants read access only: MCP tools that change data refuse it. */
+	readonly readOnly?: true
+	/** Pre-resolved actor for an API-key-backed agent, preferred over `ensureUserActor(userId)`. */
+	readonly actorId?: ActorId
+	/** The MCP client's `clientInfo.name`; issue writes attribute to that agent when no `actorId`. */
+	readonly mcpClientName?: string
+	/** Who drove the chat-engine turn this invocation belongs to; audit attribution keys on it. */
+	readonly turnOrigin?: ChatTurnOrigin
+}
 
 export class TenantSchema extends Schema.Class<TenantSchema>("TenantSchema")({
 	orgId: OrgId,

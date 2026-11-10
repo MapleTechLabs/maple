@@ -8,7 +8,7 @@ import * as CH from "@maple/query-engine/ch"
 import { Clock, Context, DateTime, Effect, Layer, Option, Schema, Array as Arr, String as Str } from "effect"
 import { runAfterResponse } from "@maple/backend/platform/after-response"
 import { AuditEventsQueueProducer } from "@maple/backend/platform/bindings"
-import { systemTenant } from "@maple/backend/services/alerts/system-tenant"
+import { ALERTING_SYSTEM_USER_ID, systemTenant } from "@maple/backend/services/auth/system-tenant"
 import { CurrentAuditActor } from "@maple/backend/services/auth/audit-actor"
 import { WarehouseQueryService } from "@maple/backend/services/warehouse/WarehouseQueryService"
 import { type AuditAction, auditResourceFields, type AuditResourceIdOption } from "./audit-actions"
@@ -263,7 +263,7 @@ export class AuditLogService extends Context.Service<AuditLogService, AuditLogSe
 				Effect.gen(function* () {
 					const now = yield* Clock.currentTimeMillis
 					yield* warehouse.ingest(
-						systemTenant(event.orgId),
+						systemTenant(event.orgId, ALERTING_SYSTEM_USER_ID),
 						AUDIT_LOG_DATASOURCE,
 						[auditEventToRow(event, now)],
 						{ bestEffort: true, retryTransient: true },
@@ -328,7 +328,7 @@ export class AuditLogService extends Context.Service<AuditLogService, AuditLogSe
 					const { opts, values } = listQueryInputs(orgId, filters)
 					const rows = yield* warehouse
 						.compiledQuery(
-							systemTenant(orgId),
+							systemTenant(orgId, ALERTING_SYSTEM_USER_ID),
 							CH.compile(CH.auditLogEntriesQuery(opts), values),
 							{ profile: "list", context: "auditLogEntries" },
 						)

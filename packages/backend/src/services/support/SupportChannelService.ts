@@ -1,6 +1,6 @@
 import * as PG from "@maple-dev/effect-orm/postgres"
 import { OrgSupportChannels, type OrgSupportChannelRow } from "@maple/db/tables"
-import type { OrgId, UserId } from "@maple/domain/http"
+import type { OrgId, UserId, TenantContext } from "@maple/domain/http"
 import {
 	SupportChannelBusyError,
 	SupportChannelNoEmailError,
@@ -23,7 +23,6 @@ import {
 import * as SecureRandom from "effect/crypto/SecureRandom"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { makeDbExecute } from "@maple/backend/platform/db-execute"
-import type { TenantContext } from "@maple/backend/services/auth/AuthService"
 import { OrgMembersService } from "@maple/backend/services/org/OrgMembersService"
 import { OrganizationService } from "@maple/backend/services/org/OrganizationService"
 import { SupportSlackClient } from "./SupportSlackClient"

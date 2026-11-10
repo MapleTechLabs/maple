@@ -7,7 +7,7 @@ import { Context, Effect, Layer, Option } from "effect"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { makeDbExecute } from "@maple/backend/platform/db-execute"
 import { makeSloPersistenceError } from "./slo-persistence"
-import { systemTenant } from "@maple/backend/services/alerts/system-tenant"
+import { ALERTING_SYSTEM_USER_ID, systemTenant } from "@maple/backend/services/auth/system-tenant"
 import { WarehouseQueryService } from "@maple/backend/services/warehouse/WarehouseQueryService"
 import { readBurnWindows } from "./slo-reads"
 
@@ -57,7 +57,7 @@ export class SloAlertSource extends Context.Service<SloAlertSource, SloAlertSour
 				if (slo === undefined) return Option.none<ReadonlyArray<SloBurnWindow>>()
 				yield* Effect.annotateCurrentSpan({ "maple.slo.id": slo.id })
 				const windows = yield* readBurnWindows(
-					systemTenant(orgId),
+					systemTenant(orgId, ALERTING_SYSTEM_USER_ID),
 					{
 						orgId,
 						serviceName: slo.serviceName,

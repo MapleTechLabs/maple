@@ -13,7 +13,6 @@ import {
 	ErrorPersistenceError,
 	ErrorValidationError,
 	type OrgId,
-	RoleName,
 	UserId as UserIdSchema,
 	type WorkflowState,
 	CLOSED_WORKFLOW_STATES,
@@ -54,7 +53,6 @@ import {
 	Ref,
 	Schema,
 } from "effect"
-import type { TenantContext } from "@maple/backend/services/auth/AuthService"
 import { maybeEnqueueTriage } from "@maple/backend/services/errors/ai-triage-enqueue"
 import { STALE_MS, sweepAbandonedInvestigations } from "@maple/backend/services/errors/investigation-stale"
 import {
@@ -64,7 +62,7 @@ import {
 } from "@maple/backend/services/errors/error-tick-persistence"
 import { ChatSessions } from "@maple/backend/platform/bindings"
 import { toPgText } from "@maple/backend/platform/pg-text"
-import { SYSTEM_ERRORS_AGENT_NAME } from "@maple/backend/services/auth/system-actors"
+import { SYSTEM_ERRORS_AGENT_NAME } from "@maple/domain/system-agents"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { selectDistinctOrgIds } from "@maple/backend/platform/distinct-org-ids"
 import { Env } from "@maple/backend/platform/Env"
@@ -85,13 +83,14 @@ import { IssueFixVerificationService } from "./IssueFixVerificationService"
 import { ErrorPolicyService } from "./ErrorPolicyService"
 import { makeErrorDatabaseExecute, makePersistenceError } from "./error-persistence"
 import { summarizeCause } from "@maple/backend/platform/describe-cause"
+import { systemTenant } from "@maple/backend/services/auth/system-tenant"
 
 const decodeErrorIssueIdSync = Schema.decodeUnknownSync(ErrorIssueDocument.fields.id)
 const decodeErrorIncidentIdSync = Schema.decodeUnknownSync(ErrorIncidentDocument.fields.id)
 const decodeEventIdSync = Schema.decodeUnknownSync(ErrorIssueEventIdSchema)
 const decodeIsoDateTimeStringSync = Schema.decodeUnknownSync(ErrorIssueDocument.fields.firstSeenAt)
-const decodeRoleNameSync = Schema.decodeUnknownSync(RoleName)
 const decodeUserIdSync = Schema.decodeUnknownSync(UserIdSchema)
+const SYSTEM_USER_ID = decodeUserIdSync("system-errors")
 
 // Lenient decoders for JSON stored in jsonb columns. Decode failures fall back
 // to an empty/null value at each call site — stored blobs are best-effort.
@@ -301,13 +300,6 @@ const make: Effect.Effect<
 
 	const isoFromMs = (ms: number) => decodeIsoDateTimeStringSync(new Date(ms).toISOString())
 
-	const systemTenant = (orgId: OrgId): TenantContext => ({
-		orgId,
-		userId: decodeUserIdSync("system-errors"),
-		roles: [decodeRoleNameSync("root")],
-		authMode: "self_hosted",
-	})
-
 	// The tick historically scanned the warehouse for every org that ever held
 	// an ingest key — overwhelmingly idle orgs with zero recent errors, which
 	// dominated Tinybird CPU. Instead, run ONE cross-org scan of recent error
@@ -351,7 +343,7 @@ const make: Effect.Effect<
 			startTime: DateTime.makeUnsafe(nowMs - ERROR_ACTIVE_DISCOVERY_WINDOW_MS),
 		})
 		return yield* warehouse
-			.crossOrgQuery(systemTenant(routingOrg), compiled, {
+			.crossOrgQuery(systemTenant(routingOrg, SYSTEM_USER_ID), compiled, {
 				// Bound the one cross-org scan (no OrgId predicate ⇒ can't prune the
 				// primary key): abort server-side at 5s instead of riding the ~30s
 				// client timeout when the warehouse is slow.
@@ -1243,7 +1235,7 @@ const make: Effect.Effect<
 		}
 		const { windowStartMs } = tickWindow
 		yield* Effect.annotateCurrentSpan({ windowStartMs, windowEndMs: tickWindow.windowEndMs })
-		const tenant = systemTenant(orgId)
+		const tenant = systemTenant(orgId, SYSTEM_USER_ID)
 		const preamble = yield* loadOrgTickPreamble(orgId, nowMs).pipe(
 			Effect.tapError(() => releaseTickClaim(orgId, tickWindow.claimToken, nowMs)),
 		)
@@ -1827,7 +1819,7 @@ const make: Effect.Effect<
 					const fromMs = Math.max(cursorMs, horizonMs)
 					const rows = yield* warehouse
 						.compiledQuery(
-							systemTenant(row.orgId),
+							systemTenant(row.orgId, SYSTEM_USER_ID),
 							CH.compile(CH.errorTickFirstErrorMinuteQuery(), {
 								orgId: row.orgId,
 								startTime: DateTime.makeUnsafe(fromMs),

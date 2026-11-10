@@ -15,8 +15,8 @@ import {
 } from "@maple/domain/slo"
 import type { OrgId } from "@maple/domain/primitives"
 import { Array as Arr, DateTime, Effect, Record as Rec } from "effect"
-import type { TenantContext } from "@maple/backend/services/auth/AuthService"
 import { WarehouseQueryService } from "@maple/backend/services/warehouse/WarehouseQueryService"
+import type { TenantContext } from "@maple/domain/http"
 
 const MINUTE_MS = 60_000
 const HOUR_MS = 60 * MINUTE_MS

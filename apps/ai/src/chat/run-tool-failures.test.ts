@@ -12,7 +12,6 @@ import { LanguageModel } from "effect/ai"
 import type { Prompt, Response } from "effect/ai"
 import * as AiModel from "effect/ai/Model"
 import { assert, describe, it } from "vitest"
-import type { TenantContext } from "@maple/backend/services/auth/tenant-context"
 import { makeRecordingTracer } from "@maple/backend/testing/recording-tracer"
 import type { McpToolExecutorApi } from "../mcp/dispatcher"
 import { noRepositoryWarmup } from "../../test/chat/tool-executor"
@@ -21,6 +20,7 @@ import type { ChatTurnEvent } from "./events"
 import { runChatTurn } from "./run"
 import { makeReviewLedger } from "./review-ledger"
 import { makeRunUsage } from "./tools"
+import type { TenantContext } from "@maple/domain/http"
 
 const TENANT: TenantContext = {
 	orgId: Schema.decodeSync(OrgId)("org_test"),

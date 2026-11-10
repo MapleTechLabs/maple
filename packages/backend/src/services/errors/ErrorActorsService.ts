@@ -14,7 +14,7 @@ import * as PG from "@maple-dev/effect-orm/postgres"
 import { Actors, type ActorInsert, type ActorRow } from "@maple/db/tables"
 import { Clock, Context, Effect, Layer, Option, Schema, Array as Arr, String as Str } from "effect"
 import { Database } from "@maple/backend/platform/DatabaseLive"
-import { isReservedAgentName, SYSTEM_ERRORS_AGENT_NAME } from "@maple/backend/services/auth/system-actors"
+import { isReservedAgentName, SYSTEM_ERRORS_AGENT_NAME } from "@maple/domain/system-agents"
 import { makeErrorDatabaseExecute } from "./error-persistence"
 import { summarizeCause } from "@maple/backend/platform/describe-cause"
 

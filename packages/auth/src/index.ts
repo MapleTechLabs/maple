@@ -17,6 +17,7 @@ import {
 	SelfHostedAuthDisabledError,
 	SelfHostedInvalidPasswordError,
 	SelfHostedLoginResponse,
+	type TenantContext,
 	UnauthorizedError,
 	UserId,
 } from "@maple/domain/http"
@@ -59,13 +60,6 @@ export const SELF_HOSTED_SESSION_MAX_LIFETIME_SECONDS = 7 * 24 * 60 * 60
 // mint ourselves; `nbf`/`exp` boundaries stay exact because they are
 // RFC-specified and, on a correctly signed token, attacker-chosen.
 const CLOCK_SKEW_LEEWAY_SECONDS = 60
-
-export interface TenantContext {
-	readonly orgId: OrgId
-	readonly userId: UserId
-	readonly roles: readonly RoleName[]
-	readonly authMode: AuthMode
-}
 
 type HeaderRecord = Record<string, string | undefined>
 
@@ -931,51 +925,41 @@ const makeClerkClient = (
 	})
 }
 
-export const makeGetUserEmail = (
-	env: Pick<AuthEnv, "MAPLE_AUTH_MODE" | "CLERK_SECRET_KEY" | "CLERK_PUBLISHABLE_KEY" | "CLERK_JWT_KEY">,
-) => {
-	const clerkClient = makeClerkClient(env)
-	if (!clerkClient) {
-		return Effect.fn("AuthService.getUserEmail")(function* (_userId: string) {
-			return null as string | null
+/** One Clerk user lookup per call; null outside Clerk mode or on a failed lookup. */
+const makeUserEmailLookup =
+	(spanName: string, extract: (user: ClerkUser) => string | null) =>
+	(
+		env: Pick<
+			AuthEnv,
+			"MAPLE_AUTH_MODE" | "CLERK_SECRET_KEY" | "CLERK_PUBLISHABLE_KEY" | "CLERK_JWT_KEY"
+		>,
+	) => {
+		const clerkClient = makeClerkClient(env)
+		if (!clerkClient) {
+			return Effect.fn(spanName)(function* (_userId: string) {
+				return null as string | null
+			})
+		}
+
+		return Effect.fn(spanName)(function* (userId: string) {
+			yield* Effect.annotateCurrentSpan("tenant.userId", userId)
+			const user = yield* clerkLookup("Clerk.users.getUser", { "tenant.userId": userId }, () =>
+				clerkClient.users.getUser(userId),
+			).pipe(Effect.option)
+
+			return Option.match(user, {
+				onNone: () => null as string | null,
+				onSome: extract,
+			})
 		})
 	}
 
-	return Effect.fn("AuthService.getUserEmail")(function* (userId: string) {
-		yield* Effect.annotateCurrentSpan("tenant.userId", userId)
-		const user = yield* clerkLookup("Clerk.users.getUser", { "tenant.userId": userId }, () =>
-			clerkClient.users.getUser(userId),
-		).pipe(Effect.option)
+export const makeGetUserEmail = makeUserEmailLookup("AuthService.getUserEmail", extractPrimaryEmail)
 
-		return Option.match(user, {
-			onNone: () => null as string | null,
-			onSome: extractPrimaryEmail,
-		})
-	})
-}
-
-export const makeGetVerifiedPrimaryEmail = (
-	env: Pick<AuthEnv, "MAPLE_AUTH_MODE" | "CLERK_SECRET_KEY" | "CLERK_PUBLISHABLE_KEY" | "CLERK_JWT_KEY">,
-) => {
-	const clerkClient = makeClerkClient(env)
-	if (!clerkClient) {
-		return Effect.fn("AuthService.getVerifiedPrimaryEmail")(function* (_userId: string) {
-			return null as string | null
-		})
-	}
-
-	return Effect.fn("AuthService.getVerifiedPrimaryEmail")(function* (userId: string) {
-		yield* Effect.annotateCurrentSpan("tenant.userId", userId)
-		const user = yield* clerkLookup("Clerk.users.getUser", { "tenant.userId": userId }, () =>
-			clerkClient.users.getUser(userId),
-		).pipe(Effect.option)
-
-		return Option.match(user, {
-			onNone: () => null as string | null,
-			onSome: extractVerifiedPrimaryEmail,
-		})
-	})
-}
+export const makeGetVerifiedPrimaryEmail = makeUserEmailLookup(
+	"AuthService.getVerifiedPrimaryEmail",
+	extractVerifiedPrimaryEmail,
+)
 
 export const makeGetCustomerData = (
 	env: Pick<AuthEnv, "MAPLE_AUTH_MODE" | "CLERK_SECRET_KEY" | "CLERK_PUBLISHABLE_KEY" | "CLERK_JWT_KEY">,

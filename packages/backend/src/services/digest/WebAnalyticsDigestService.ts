@@ -6,10 +6,8 @@ import {
 	DigestPreviewResponse,
 	DigestRenderError,
 	OrgId,
-	RoleName,
 	UserId,
 } from "@maple/domain/http"
-import type { RoleName as RoleNameType } from "@maple/domain/http"
 import { AI_CRAWLERS, AI_PRODUCTS, aiProductById } from "@maple/domain/ai-traffic"
 import { WEB_ANALYTICS_UNSET } from "@maple/domain/query-engine"
 import {
@@ -44,7 +42,6 @@ import { makeDbExecute } from "@maple/backend/platform/db-execute"
 import { EmailService } from "@maple/backend/platform/EmailService"
 import { Env } from "@maple/backend/platform/Env"
 import { summarizeCause } from "@maple/backend/platform/describe-cause"
-import type { TenantContext } from "@maple/backend/services/auth/AuthService"
 import {
 	isMissingAiCrawlerRequests,
 	isMissingProductEvents,
@@ -57,6 +54,7 @@ import {
 import { digestResendCutoffMs, isDigestDue, lastDigestActivity } from "./digest-schedule"
 import { resolveOrgName } from "./resolve-org-name"
 import { unsubscribeLinks } from "./unsubscribe-token"
+import { systemTenant } from "@maple/backend/services/auth/system-tenant"
 
 const DAY_MS = 24 * 60 * 60 * 1000
 /** The email is a glance: three rows per list, the app has the rest. */
@@ -151,12 +149,7 @@ export class WebAnalyticsDigestService extends Context.Service<WebAnalyticsDiges
 				const fortnight = { ...current, startTime: previous.startTime }
 				const currentStartDate = Str.slice(0, 10)(current.startTime)
 
-				const tenant: TenantContext = {
-					orgId,
-					userId: UserId.make("system-web-analytics-digest"),
-					roles: [RoleName.make("root")] as ReadonlyArray<RoleNameType>,
-					authMode: "self_hosted",
-				}
+				const tenant = systemTenant(orgId, UserId.make("system-web-analytics-digest"))
 				yield* warehouse.warmRoute(tenant)
 
 				const run = <T>(compiled: CompiledQueryInput<T>, context: string) =>

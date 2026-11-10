@@ -1,4 +1,9 @@
-import { BillingCustomer, BillingNotConfiguredError, BillingUpstreamError } from "@maple/domain/http"
+import {
+	BillingCustomer,
+	BillingNotConfiguredError,
+	BillingUpstreamError,
+	type TenantContext,
+} from "@maple/domain/http"
 import { ownBillingCustomer } from "@maple/backend/services/billing/billing-customer"
 import type { OrgId } from "@maple/domain/primitives"
 import {
@@ -13,7 +18,6 @@ import {
 } from "@maple/domain/onboarding-checklist"
 import { EdgeCacheService } from "@maple/cache"
 import { Clock, Context, Effect, Layer, Option, Array as Arr } from "effect"
-import type { TenantContext } from "@maple/backend/services/auth/AuthService"
 import { AlertDestinationsService } from "@maple/backend/services/alerts/AlertDestinationsService"
 import { AlertRulesService } from "@maple/backend/services/alerts/AlertRulesService"
 import { AutumnClient } from "@maple/backend/services/billing/autumn-http"

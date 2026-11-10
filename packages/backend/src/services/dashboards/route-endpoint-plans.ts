@@ -38,6 +38,7 @@ import {
 	ProductEventsPathsRequest,
 	ServiceOverviewRequest,
 	ServiceUsageRequest,
+	type TenantContext,
 } from "@maple/domain/http"
 import {
 	DEFAULT_PATHS_BRANCHES,
@@ -73,7 +74,6 @@ import { validateFunnelDefinition, validatePathsDefinition } from "@maple/backen
 import { makeQueryRunners } from "@maple/backend/queries/query-runner"
 import type { QueryEngineServiceApi } from "@maple/backend/services/warehouse/QueryEngineService"
 import type { WarehouseQueryServiceApi } from "@maple/backend/services/warehouse/WarehouseQueryService"
-import type { TenantContext } from "@maple/backend/services/auth/tenant-context"
 
 export interface RouteEndpointContext {
 	readonly tenant: TenantContext

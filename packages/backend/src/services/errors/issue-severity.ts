@@ -17,9 +17,7 @@ import * as PG from "@maple-dev/effect-orm/postgres"
 import type { MapleDb, MapleDbError } from "@maple/db/client"
 import { Actors, ErrorIssueEvents, ErrorIssues, IssueEscalations } from "@maple/db/tables"
 import { Effect, Schema, Array as Arr, String as Str } from "effect"
-import { TRIAGE_AGENT_NAME } from "@maple/backend/services/auth/system-actors"
-
-export { TRIAGE_AGENT_NAME } from "@maple/backend/services/auth/system-actors"
+import { TRIAGE_AGENT_NAME } from "@maple/domain/system-agents"
 
 /**
  * effect-orm over the caller's client; inside `orm.transaction` the writes join

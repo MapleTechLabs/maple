@@ -13,6 +13,7 @@ import {
 	PrReviewPersistenceError,
 	type VcsRepositoryId,
 	type WarehouseReadError,
+	type TenantContext,
 } from "@maple/domain/http"
 import type { OrgId } from "@maple/domain/primitives"
 import * as PG from "@maple-dev/effect-orm/postgres"
@@ -22,7 +23,6 @@ import type { CompiledQueryInput } from "@maple/query-engine/execution"
 import { Array as Arr, Clock, Context, DateTime, Effect, Layer, Option, String as Str } from "effect"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { makeDbExecute } from "@maple/backend/platform/db-execute"
-import type { TenantContext } from "@maple/backend/services/auth/AuthService"
 import { WarehouseQueryService } from "@maple/backend/services/warehouse/WarehouseQueryService"
 
 type CiError = PrReviewPersistenceError | WarehouseReadError

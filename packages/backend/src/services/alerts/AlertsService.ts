@@ -177,7 +177,7 @@ import { QueryEngineService } from "@maple/backend/services/warehouse/QueryEngin
 import { withAlertEvaluationScope, type GroupedAlertObservation } from "@maple/query-engine/runtime"
 import { WarehouseQueryService } from "@maple/backend/services/warehouse/WarehouseQueryService"
 import { chartImageUrl, chartWindow, loadChartSeries } from "./alert-chart-series"
-import { systemTenant } from "./system-tenant"
+import { ALERTING_SYSTEM_USER_ID, systemTenant } from "@maple/backend/services/auth/system-tenant"
 import type { AlertChecksRow } from "@maple/domain/tinybird"
 import { ChatAlertPoster } from "./ChatAlertPoster"
 import { LinearIssueTracker } from "./LinearIssueTracker"
@@ -974,7 +974,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 				const dayMs = 24 * 60 * 60_000
 				return yield* probeLiveness({
 					warehouse,
-					tenant: systemTenant(orgId),
+					tenant: systemTenant(orgId, ALERTING_SYSTEM_USER_ID),
 					serviceNames,
 					environments: normalized.environments,
 					windowStartMs: timestamp - windowMs,
@@ -1191,7 +1191,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 				const plan = rule.compiledPlan
 				const source = yield* planEvaluateSource(plan, rule)
 				const observations: ReadonlyArray<GroupedAlertObservation> = yield* queryEngine.evaluate(
-					systemTenant(orgId),
+					systemTenant(orgId, ALERTING_SYSTEM_USER_ID),
 					{
 						startTime: formatWarehouseDateTime(startMs),
 						endTime: formatWarehouseDateTime(endMs),
@@ -1510,14 +1510,18 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 						rule.signalType === "anomaly" ||
 						(!anySent && !withPayload)
 							? null
-							: yield* loadChartSeries(warehouse, systemTenant(orgId), {
-									orgId,
-									ruleId: rule.id,
-									groupKey: incident.groupKey,
-									comparator: rule.comparator,
-									threshold: rule.threshold,
-									...window,
-								})
+							: yield* loadChartSeries(
+									warehouse,
+									systemTenant(orgId, ALERTING_SYSTEM_USER_ID),
+									{
+										orgId,
+										ruleId: rule.id,
+										groupKey: incident.groupKey,
+										comparator: rule.comparator,
+										threshold: rule.threshold,
+										...window,
+									},
+								)
 
 					// The image URL rides with the series it describes: both pin the
 					// same window, so a retry an hour later renders the same picture
@@ -1982,7 +1986,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 				})
 				const startedAt = yield* now
 				const exit = yield* Effect.exit(
-					queryEngine.evaluate(systemTenant(orgId), {
+					queryEngine.evaluate(systemTenant(orgId, ALERTING_SYSTEM_USER_ID), {
 						startTime: formatWarehouseDateTime(endMs - rule.windowMinutes * 60_000),
 						endTime: formatWarehouseDateTime(endMs),
 						source,
@@ -2149,13 +2153,16 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 						serviceRules,
 						({ groupKey, rule }) =>
 							Effect.gen(function* () {
-								const observations = yield* queryEngine.evaluateSeries(systemTenant(orgId), {
-									startTime: formatWarehouseDateTime(startMs),
-									endTime: formatWarehouseDateTime(queryEndMs),
-									source: yield* planEvaluateSource(rule.compiledPlan, rule),
-									reducer: rule.compiledPlan.reducer,
-									sampleCountStrategy: rule.compiledPlan.sampleCountStrategy,
-								})
+								const observations = yield* queryEngine.evaluateSeries(
+									systemTenant(orgId, ALERTING_SYSTEM_USER_ID),
+									{
+										startTime: formatWarehouseDateTime(startMs),
+										endTime: formatWarehouseDateTime(queryEndMs),
+										source: yield* planEvaluateSource(rule.compiledPlan, rule),
+										reducer: rule.compiledPlan.reducer,
+										sampleCountStrategy: rule.compiledPlan.sampleCountStrategy,
+									},
+								)
 								for (const obs of observations) {
 									record(groupKey, parseWarehouseDateTime(obs.bucket), {
 										value: obs.value,
@@ -2174,7 +2181,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 							: normalized,
 					)
 					const charted = yield* queryEngine
-						.evaluateSeries(systemTenant(orgId), {
+						.evaluateSeries(systemTenant(orgId, ALERTING_SYSTEM_USER_ID), {
 							startTime: formatWarehouseDateTime(startMs),
 							endTime: formatWarehouseDateTime(queryEndMs),
 							source,
@@ -5143,19 +5150,25 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 					Record.toEntries(Arr.groupBy(checks, (check) => check.OrgId)),
 					([orgId, rows]) =>
 						// Not metered to Autumn: internal bookkeeping rows, not customer telemetry.
-						warehouse.ingest(systemTenant(decodeOrgIdSync(orgId)), "alert_checks", rows).pipe(
-							Effect.timeout(ALERT_CHECK_INGEST_TIMEOUT),
-							Effect.andThen(Ref.update(written, (n) => n + rows.length)),
-							Effect.catchCause((cause) =>
-								Effect.logWarning("Dropped alert_checks audit rows").pipe(
-									Effect.annotateLogs({
-										orgId,
-										rowCount: rows.length,
-										cause: summarizeCause(cause),
-									}),
+						warehouse
+							.ingest(
+								systemTenant(decodeOrgIdSync(orgId), ALERTING_SYSTEM_USER_ID),
+								"alert_checks",
+								rows,
+							)
+							.pipe(
+								Effect.timeout(ALERT_CHECK_INGEST_TIMEOUT),
+								Effect.andThen(Ref.update(written, (n) => n + rows.length)),
+								Effect.catchCause((cause) =>
+									Effect.logWarning("Dropped alert_checks audit rows").pipe(
+										Effect.annotateLogs({
+											orgId,
+											rowCount: rows.length,
+											cause: summarizeCause(cause),
+										}),
+									),
 								),
 							),
-						),
 					{ concurrency: ALERT_CHECK_INGEST_CONCURRENCY, discard: true },
 				).pipe(
 					Effect.timeout(ALERT_CHECK_INGEST_BUDGET),

@@ -21,13 +21,13 @@ import {
 	type SubmitDiagnosis,
 	type SubmitReview,
 } from "./tools"
-import type { TenantContext } from "@maple/backend/services/auth/tenant-context"
 import { makeRecordingTracer } from "@maple/backend/testing/recording-tracer"
 import {
 	PrReviewFinding,
 	type PrReviewFindingSubmission,
 	type PrReviewSubmission,
 	type SubmitPrReviewRequest,
+	type TenantContext,
 } from "@maple/domain/http"
 import type { ReviewCoverage } from "./review-coverage"
 import { makeChildFindings } from "./review-child-findings"

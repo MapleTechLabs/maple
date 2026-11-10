@@ -1,11 +1,10 @@
 import { Array as Arr, Effect, Option, Redacted, Schema, String as Str } from "effect"
-import type { TenantContext as McpTenantContext } from "@maple/backend/services/auth/tenant-context"
 import { AuthService } from "@maple/backend/services/auth/AuthService"
 import { secretsEqual } from "@maple/backend/services/auth/secret-equal"
 import { ApiKeysService } from "@maple/backend/services/org/ApiKeysService"
 import { ErrorActorsService } from "@maple/backend/services/errors/ErrorActorsService"
 import { Env } from "@maple/backend/platform/Env"
-import { ActorId, OrgId, RoleName, UserId } from "@maple/domain/http"
+import { ActorId, OrgId, RoleName, UserId, type TenantContext as McpTenantContext } from "@maple/domain/http"
 import { INVESTIGATION_READ_FAMILIES, missingReadScopes, scopeAllows } from "@maple/domain/http/v2"
 import {
 	McpAuthInvalidError,
@@ -325,7 +324,7 @@ export const resolveMcpTenantContext = Effect.fn("McpTenant.resolveMcpTenantCont
 				...(actorId ? { actorId } : undefined),
 				...(scopeAccess === "read" ? { readOnly: true } : undefined),
 				...(isMcpOAuthToken || resolved.scopes === null ? undefined : { scopes: resolved.scopes }),
-			} as McpAuthenticatedTenant
+			} satisfies McpAuthenticatedTenant
 		}
 
 		// Fall back to existing Clerk / self-hosted session auth

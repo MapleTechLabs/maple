@@ -1,10 +1,9 @@
-import { MAX_VERIFICATION_ATTEMPTS, type VerificationVerdict, type OrgId } from "@maple/domain/http"
-import { RoleName, UserId } from "@maple/domain/primitives"
+import { MAX_VERIFICATION_ATTEMPTS, type VerificationVerdict } from "@maple/domain/http"
+import { UserId } from "@maple/domain/primitives"
 import * as PG from "@maple-dev/effect-orm/postgres"
 import { ErrorIssuePullRequests, ErrorIssues, type ErrorIssueVerificationRow } from "@maple/db/tables"
 import { CH } from "@maple/query-engine"
 import { Cause, Clock, Context, DateTime, Effect, Layer, Option, Schema, Array as Arr } from "effect"
-import type { TenantContext } from "@maple/backend/services/auth/AuthService"
 import { ChatSessions } from "@maple/backend/platform/bindings"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { summarizeCause } from "@maple/backend/platform/describe-cause"
@@ -13,9 +12,10 @@ import { enqueueFixVerification } from "@maple/backend/services/errors/fix-verif
 import { IssueFixVerificationService } from "./IssueFixVerificationService"
 import { issueFingerprintHashes } from "./issue-fingerprints"
 import { makeErrorDatabaseExecute } from "./error-persistence"
+import { systemTenant } from "@maple/backend/services/auth/system-tenant"
 
 const decodeUserIdSync = Schema.decodeUnknownSync(UserId)
-const decodeRoleNameSync = Schema.decodeUnknownSync(RoleName)
+const SYSTEM_USER_ID = decodeUserIdSync("system-errors")
 
 /**
  * Verifications examined per tick. The tick runs every minute and each row costs
@@ -133,13 +133,6 @@ const make: Effect.Effect<
 	const chatSessionsOption = yield* Effect.serviceOption(ChatSessions)
 	const chatSessions = Option.getOrUndefined(chatSessionsOption)
 
-	const systemTenant = (orgId: OrgId): TenantContext => ({
-		orgId,
-		userId: decodeUserIdSync("system-errors"),
-		roles: [decodeRoleNameSync("root")],
-		authMode: "self_hosted",
-	})
-
 	/**
 	 * Split occurrences since the merge into "from a build that postdates the fix"
 	 * and "from a build that was already running".
@@ -165,7 +158,7 @@ const make: Effect.Effect<
 				endTime: DateTime.makeUnsafe(nowMs),
 			},
 		)
-		const rows = yield* warehouse.compiledQuery(systemTenant(row.orgId), compiled, {
+		const rows = yield* warehouse.compiledQuery(systemTenant(row.orgId, SYSTEM_USER_ID), compiled, {
 			profile: "aggregation",
 			context: "errorIssueVersionsSince",
 		})

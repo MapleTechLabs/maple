@@ -8,13 +8,13 @@ import {
 	UserId,
 	VcsInstallationId,
 	VcsRepositoryId,
+	type TenantContext,
 } from "@maple/domain/http"
 import * as PG from "@maple-dev/effect-orm/postgres"
 import { PrReviewFindings, PrReviews, VcsRepositories } from "@maple/db/tables"
 import { compiledQueryOf } from "@maple/query-engine/execution"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/testing/test-pglite"
-import type { TenantContext } from "@maple/backend/services/auth/AuthService"
 import { WarehouseQueryService } from "@maple/backend/services/warehouse/WarehouseQueryService"
 import { makeWarehouseServiceStub } from "@maple/backend/testing/warehouse-test-support"
 import { CodeReviewTeamService, median } from "./CodeReviewTeamService"

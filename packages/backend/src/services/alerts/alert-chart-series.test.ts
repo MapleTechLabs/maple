@@ -1,8 +1,7 @@
 import { assert, describe, it } from "@effect/vitest"
 import { DateTime, Effect, Fiber, Array as Arr } from "effect"
 import { TestClock } from "effect/testing"
-import type { OrgId } from "@maple/domain/http"
-import type { TenantContext } from "@maple/backend/services/auth/AuthService"
+import type { OrgId, TenantContext } from "@maple/domain/http"
 import {
 	AlertChartSeriesUnavailableError,
 	breachSideFor,

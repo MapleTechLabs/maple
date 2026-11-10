@@ -8,13 +8,7 @@ import {
 	AlertThresholds as AlertThresholdsSchema,
 	type AnomalySignalType,
 } from "@maple/domain/http"
-import {
-	AlertRuleId,
-	AnomalyIncidentId,
-	UserId,
-	type ErrorIssueId,
-	type OrgId,
-} from "@maple/domain/primitives"
+import { AlertRuleId, AnomalyIncidentId, type ErrorIssueId, type OrgId } from "@maple/domain/primitives"
 import { Array as Arr, Clock, Context, Effect, HashMap, HashSet, Layer, Option, Result, Schema } from "effect"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { makeDbExecute } from "@maple/backend/platform/db-execute"
@@ -33,6 +27,7 @@ import {
 	type AnomalyRuleScope,
 	type AnomalySeverityCode,
 } from "./anomaly-rule"
+import { ALERTING_SYSTEM_USER_ID } from "@maple/backend/services/auth/system-tenant"
 
 /** What an `anomaly` alert rule observes for one anomaly incident on a tick. */
 export interface AnomalyAlertObservation {
@@ -76,7 +71,6 @@ export interface AnomalyAlertSourceApi {
 }
 
 const MAX_DEFAULT_RULE_BACKFILL = 100
-const SYSTEM_USER_ID = Schema.decodeSync(UserId)("system-alerting")
 const decodeAnomalyIncidentId = Schema.decodeUnknownOption(AnomalyIncidentId)
 const decodeThresholds = Schema.decodeUnknownOption(AlertThresholdsSchema)
 const decodeSeverity = Schema.decodeUnknownOption(AlertSeveritySchema)
@@ -328,8 +322,8 @@ export class AnomalyAlertSource extends Context.Service<AnomalyAlertSource, Anom
 										lastScheduledAt: null,
 										createdAt: now,
 										updatedAt: now,
-										createdBy: SYSTEM_USER_ID,
-										updatedBy: SYSTEM_USER_ID,
+										createdBy: ALERTING_SYSTEM_USER_ID,
+										updatedBy: ALERTING_SYSTEM_USER_ID,
 									})
 									.onConflictDoNothing()
 									.returning("id"),

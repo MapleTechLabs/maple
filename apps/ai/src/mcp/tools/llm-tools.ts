@@ -29,7 +29,7 @@ import type { McpToolSurface } from "@maple/domain/mcp-manifest"
 import { mapleToolCatalogFor, toInputSchema } from "./registry"
 import { truncateToolOutput } from "./tool-output"
 import { toolHandlersWithContent } from "../../platform/genai-spans"
-import type { TenantContext } from "@maple/backend/services/auth/tenant-context"
+import type { TenantContext } from "@maple/domain/http"
 
 const UI_MARKER = "__maple_ui"
 

@@ -10,7 +10,7 @@ import {
 	recordingQueueLayer,
 	testRepoLayer,
 } from "@maple/backend/services/integrations/vcs/__tests__/harness"
-import { systemTenant } from "@maple/backend/services/alerts/system-tenant"
+import { ALERTING_SYSTEM_USER_ID, systemTenant } from "@maple/backend/services/auth/system-tenant"
 import {
 	DependencyScanService,
 	PRODUCTION_SCANS_PER_READ,
@@ -27,7 +27,7 @@ const org = Schema.decodeSync(OrgId)("org_deps")
 const admin = Schema.decodeSync(UserId)("user_admin")
 const sha = (digit: string) => Schema.decodeSync(GitCommitSha)(Str.repeat(40)(digit))
 
-const tenant = systemTenant(org)
+const tenant = systemTenant(org, ALERTING_SYSTEM_USER_ID)
 
 /** What telemetry says services ran; `undefined` makes the read fail. */
 interface Telemetry {

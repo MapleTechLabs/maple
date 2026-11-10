@@ -1,4 +1,3 @@
-import type { TenantContext } from "@maple/backend/services/auth/tenant-context"
 import { REPO_SANDBOX_IMPLEMENTATION } from "@maple/backend/services/sandbox/repo-mount"
 import { SandboxRunCheckoutPending, SandboxRunUnavailable } from "@maple/domain/sandbox"
 import { OrgId, UserId } from "@maple/domain/primitives"
@@ -9,6 +8,7 @@ import type { McpToolExecutorApi } from "../mcp/dispatcher"
 import type { McpToolResult } from "../mcp/tools/types"
 import { MAX_CHECKOUT_WAITS, withSandboxBreaker } from "./sandbox-breaker"
 import * as Arr from "effect/Array"
+import type { TenantContext } from "@maple/domain/http"
 
 const tenant: TenantContext = {
 	orgId: Schema.decodeSync(OrgId)("org_test"),

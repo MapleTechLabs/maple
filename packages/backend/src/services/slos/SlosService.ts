@@ -7,6 +7,7 @@ import {
 	SloValidationError,
 	AlertThresholds,
 	type WarehouseReadError,
+	type TenantContext,
 } from "@maple/domain/http"
 import {
 	type AlertDestinationId,
@@ -30,7 +31,6 @@ import type { MapleDb } from "@maple/db/client"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { makeDbExecute } from "@maple/backend/platform/db-execute"
 import { makeSloPersistenceError } from "./slo-persistence"
-import type { TenantContext } from "@maple/backend/services/auth/AuthService"
 import { WarehouseQueryService } from "@maple/backend/services/warehouse/WarehouseQueryService"
 import { deleteRuleRows } from "@maple/backend/services/alerts/AlertRulesService"
 import { lockOrgAlertRules } from "@maple/backend/services/alerts/alert-persistence"

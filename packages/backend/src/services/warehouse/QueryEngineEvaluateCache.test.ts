@@ -11,7 +11,6 @@ import {
 	type AlertEvaluateRequest,
 } from "@maple/query-engine/runtime"
 import { QueryEngineService } from "./QueryEngineService"
-import type { TenantContext } from "@maple/backend/services/auth/AuthService"
 import {
 	WarehouseQueryService,
 	type WarehouseQueryServiceApi,
@@ -20,6 +19,7 @@ import { BucketCacheService } from "@maple/query-engine/caching"
 import { EdgeCacheService, type EdgeCacheServiceApi } from "@maple/cache"
 import { traceCacheTtlSeconds } from "@maple/backend/services/warehouse/trace-detail-cache"
 import { compiledQueryOf } from "@maple/query-engine/execution"
+import type { TenantContext } from "@maple/domain/http"
 
 const asOrgId = Schema.decodeUnknownSync(OrgId)
 const asUserId = Schema.decodeUnknownSync(UserId)

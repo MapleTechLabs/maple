@@ -26,7 +26,7 @@
  */
 import * as CH from "@maple/query-engine/ch"
 import { CHNumber } from "@maple/query-engine/ch"
-import type { AlertComparator, AlertRuleId, OrgId } from "@maple/domain/http"
+import type { AlertComparator, AlertRuleId, OrgId, TenantContext } from "@maple/domain/http"
 import { alertChartId } from "@maple/db"
 import {
 	downsample,
@@ -36,7 +36,6 @@ import {
 	type ChartUnit,
 } from "@maple/widgets/chart/static-chart"
 import { Array as Arr, DateTime, Duration, Effect, Order, Result, Schema, String as Str } from "effect"
-import type { TenantContext } from "@maple/backend/services/auth/AuthService"
 import type { WarehouseQueryServiceApi } from "@maple/backend/services/warehouse/WarehouseQueryService"
 import { describeCause } from "@maple/backend/platform/describe-cause"
 

@@ -8,9 +8,9 @@ import type { DataSourcePersistenceError } from "@maple/domain/data-sources"
 import { WorkerEnvironment } from "@maple/infra/worker-runtime"
 import { createTestDb, type TestDb } from "@maple/backend/testing/test-pglite"
 import { McpToolExecutor } from "../dispatcher"
-import type { TenantContext } from "@maple/backend/services/auth/tenant-context"
 import type { McpToolSurface } from "@maple/domain/mcp-manifest"
 import { EVAL_TENANT, FIXTURES, jsonDepth, MAX_STRUCTURED_OUTPUT_DEPTH } from "./utils"
+import type { TenantContext } from "@maple/domain/http"
 
 const INTERNAL_TOKEN = "eval-internal-token"
 

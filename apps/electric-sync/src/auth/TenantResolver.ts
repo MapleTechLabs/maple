@@ -1,8 +1,9 @@
-import { makeResolveTenant, type TenantContext } from "@maple/auth"
+import { makeResolveTenant } from "@maple/auth"
 import type {
 	AuthorizationUnavailableError,
 	OrganizationAccessDeniedError,
 	UnauthorizedError,
+	TenantContext,
 } from "@maple/domain/http"
 import { Context, Effect, Layer } from "effect"
 import { SyncConfig } from "../config"

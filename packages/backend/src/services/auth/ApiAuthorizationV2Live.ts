@@ -15,7 +15,7 @@ import {
 import { Effect, Layer, Option, Schema, String as Str } from "effect"
 import { ApiKeysService } from "@maple/backend/services/org/ApiKeysService"
 import { ORG_SELECTION_HEADER } from "@maple/auth"
-import { makeResolveTenant } from "./AuthService"
+import { makeResolveTenant } from "@maple/auth"
 import { OrgMembershipService } from "@maple/backend/services/auth/OrgMembershipService"
 import { annotateAuthSpan } from "@maple/backend/services/auth/auth-span"
 import { DeviceCredentialsService } from "@maple/backend/services/auth/DeviceCredentialsService"

@@ -43,7 +43,7 @@ import { Array as Arr, Context, DateTime, Duration, Effect, Layer, Option, Schem
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { makeDbExecute } from "@maple/backend/platform/db-execute"
 import { makePersistenceError } from "./alert-persistence"
-import { systemTenant } from "./system-tenant"
+import { ALERTING_SYSTEM_USER_ID, systemTenant } from "@maple/backend/services/auth/system-tenant"
 import { WarehouseQueryService } from "@maple/backend/services/warehouse/WarehouseQueryService"
 import { parseUtc } from "@maple/query-engine"
 
@@ -397,7 +397,7 @@ export class AlertReadModelsService extends Context.Service<
 			const hasGroupKey = options.groupKey != null && options.groupKey !== ""
 			const readSince = (since: DateTime.Utc) =>
 				warehouse.compiledQuery(
-					systemTenant(orgId),
+					systemTenant(orgId, ALERTING_SYSTEM_USER_ID),
 					CH.compile(
 						CH.listRuleChecksQuery({
 							limit,
@@ -534,7 +534,7 @@ export class AlertReadModelsService extends Context.Service<
 			// At most 720 time buckets; minute alignment keeps the boundaries
 			// stable across refreshes and matches alert evaluation granularity.
 			const bucketSeconds = Math.max(1, Math.ceil(rangeMs / 1000 / 720 / 60)) * 60
-			const tenant = systemTenant(orgId)
+			const tenant = systemTenant(orgId, ALERTING_SYSTEM_USER_ID)
 			const groupRows = yield* warehouse.compiledQuery(
 				tenant,
 				CH.compile(CH.alertCheckGroupTotalsQuery({ since, until, limit: 20 }), {

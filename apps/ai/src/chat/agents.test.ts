@@ -18,11 +18,11 @@ import type { McpToolExecutorApi } from "../mcp/dispatcher"
 import { noRepositoryWarmup } from "../../test/chat/tool-executor"
 import { mapleToolCatalog } from "../mcp/tools/registry"
 import { MUTATING_TOOL_NAMES } from "../mcp/tools/mutating"
-import type { TenantContext } from "@maple/backend/services/auth/tenant-context"
 import { AGENTS, agentForSession } from "./agents"
 import { profileForTurn } from "./profiles"
 import { CONNECTOR_SYSTEM_PROMPT } from "./prompts"
 import { buildChatToolkit } from "./tools"
+import type { TenantContext } from "@maple/domain/http"
 
 /** A connector id, not a real one: the engine never learns which chat platform it answers in. */
 const CONNECTOR = Schema.decodeSync(ChatConnectorId)("testchat")

@@ -14,7 +14,7 @@ import { Database } from "@maple/backend/platform/DatabaseLive"
 import type { MaybeEnqueueTriageInput } from "./ai-triage-enqueue"
 import { issueSeverityFromAlert } from "./severity-map"
 import { applyIssueReopen, issueReopenFor } from "./issue-reopen"
-import { SYSTEM_ALERTS_AGENT_NAME } from "@maple/backend/services/auth/system-actors"
+import { SYSTEM_ALERTS_AGENT_NAME } from "@maple/domain/system-agents"
 import { summarizeCause } from "@maple/backend/platform/describe-cause"
 
 /**

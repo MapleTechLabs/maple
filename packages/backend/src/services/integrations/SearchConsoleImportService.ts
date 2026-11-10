@@ -11,7 +11,7 @@ import { FetchHttpClient, HttpClient } from "effect/http"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { makeDbExecute, makePersistenceErrorMapper } from "@maple/backend/platform/db-execute"
 import { summarizeCause } from "@maple/backend/platform/describe-cause"
-import { systemTenant } from "@maple/backend/services/alerts/system-tenant"
+import { ALERTING_SYSTEM_USER_ID, systemTenant } from "@maple/backend/services/auth/system-tenant"
 import { GoogleOAuthService } from "@maple/backend/services/auth/GoogleOAuthService"
 import { WarehouseQueryService } from "@maple/backend/services/warehouse/WarehouseQueryService"
 import {
@@ -282,7 +282,11 @@ export class SearchConsoleImportService extends Context.Service<
 				Arr.chunksOf(rows, INGEST_BATCH_ROWS),
 				(batch) =>
 					warehouse
-						.ingest(systemTenant(orgId), SEARCH_CONSOLE_DATASOURCE, batch)
+						.ingest(
+							systemTenant(orgId, ALERTING_SYSTEM_USER_ID),
+							SEARCH_CONSOLE_DATASOURCE,
+							batch,
+						)
 						.pipe(Effect.retry(INGEST_RETRY_SCHEDULE)),
 				{ discard: true },
 			).pipe(

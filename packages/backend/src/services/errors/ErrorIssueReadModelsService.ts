@@ -19,7 +19,6 @@ import {
 	type IssueKind,
 	type IssueSeverity,
 	type OrgId,
-	RoleName,
 	UserId as UserIdSchema,
 	type WorkflowState,
 	type WarehouseReadError,
@@ -40,12 +39,12 @@ import {
 	String as Str,
 } from "effect"
 import { Database } from "@maple/backend/platform/DatabaseLive"
-import type { TenantContext } from "@maple/backend/services/auth/AuthService"
 import { WarehouseQueryService } from "@maple/backend/services/warehouse/WarehouseQueryService"
 import { isMissingErrorEventsUserId } from "@maple/backend/services/warehouse/missing-table"
 import { ErrorIssueWorkflowService } from "./ErrorIssueWorkflowService"
 import { makeErrorDatabaseExecute } from "./error-persistence"
 import { issueFingerprintHashes } from "./issue-fingerprints"
+import { systemTenant } from "@maple/backend/services/auth/system-tenant"
 
 const decodeErrorIssueIdSync = Schema.decodeUnknownSync(ErrorIssueDocument.fields.id)
 const encodeIssueListCursor = Schema.encodeSync(IssueListCursor)
@@ -53,8 +52,8 @@ const encodeIssueSeverityListCursorRaw = Schema.encodeSync(IssueSeverityListCurs
 const encodeIssueSeverityListCursor = (fields: IssueSeverityListCursorFields): string =>
 	`sev_${encodeIssueSeverityListCursorRaw(fields)}`
 const decodeIsoDateTimeStringSync = Schema.decodeUnknownSync(ErrorIssueDocument.fields.firstSeenAt)
-const decodeRoleNameSync = Schema.decodeUnknownSync(RoleName)
 const decodeUserIdSync = Schema.decodeUnknownSync(UserIdSchema)
+const SYSTEM_USER_ID = decodeUserIdSync("system-errors")
 
 const DEFAULT_DETAIL_WINDOW_MS = 24 * 60 * 60 * 1000
 /** Fallback fingerprint-scan window for the issue list's env filter when the
@@ -255,13 +254,6 @@ const make: Effect.Effect<
 	const workflow = yield* ErrorIssueWorkflowService
 	const dbExecute = makeErrorDatabaseExecute(database, "ErrorIssueReadModelsService")
 
-	const systemTenant = (orgId: OrgId): TenantContext => ({
-		orgId,
-		userId: decodeUserIdSync("system-errors"),
-		roles: [decodeRoleNameSync("root")],
-		authMode: "self_hosted",
-	})
-
 	const rowToIncident = (row: ErrorIncidentRow) =>
 		new ErrorIncidentDocument({
 			id: row.id,
@@ -298,10 +290,14 @@ const make: Effect.Effect<
 					endTime: formatWarehouseDateTime(scanEndMs),
 				},
 			)
-			const fingerprintRows = yield* warehouse.compiledQuery(systemTenant(orgId), compiled, {
-				profile: "aggregation",
-				context: "errorIssueEnvFingerprints",
-			})
+			const fingerprintRows = yield* warehouse.compiledQuery(
+				systemTenant(orgId, SYSTEM_USER_ID),
+				compiled,
+				{
+					profile: "aggregation",
+					context: "errorIssueEnvFingerprints",
+				},
+			)
 			return Arr.filter(
 				Arr.map(fingerprintRows, (row) => row.fingerprintHash),
 				(hash) => hash.length > 0,
@@ -491,7 +487,7 @@ const make: Effect.Effect<
 			: endMs - DEFAULT_DETAIL_WINDOW_MS
 		const bucketSeconds = opts.bucketSeconds ?? 3600
 		const sampleLimit = opts.sampleLimit ?? 25
-		const tenant = systemTenant(orgId)
+		const tenant = systemTenant(orgId, SYSTEM_USER_ID)
 		const isErrorKind = issueRow.kind === "error"
 		const fingerprintHashes = (yield* dbExecute((db) =>
 			issueFingerprintHashes(db, orgId, [issueRow]),
@@ -597,7 +593,7 @@ const make: Effect.Effect<
 		const fingerprintHashes = (yield* dbExecute((db) =>
 			issueFingerprintHashes(db, orgId, [issueRow]),
 		)).get(issueRow.id) ?? [issueRow.fingerprintHash]
-		const tenant = systemTenant(orgId)
+		const tenant = systemTenant(orgId, SYSTEM_USER_ID)
 		const params = { orgId, startTime: opts.startTime, endTime: opts.endTime }
 		const [count, users] = yield* Effect.all(
 			[

@@ -12,9 +12,7 @@ import {
 	EmailUnsubscribeResponse,
 	OrgId,
 	UserId,
-	RoleName,
 } from "@maple/domain/http"
-import type { RoleName as RoleNameType } from "@maple/domain/http"
 import { createClerkClient } from "@clerk/backend"
 import {
 	Clock,
@@ -60,8 +58,8 @@ import { digestResendCutoffMs, isDigestDue, lastDigestActivity } from "./digest-
 import { resolveOrgName } from "./resolve-org-name"
 import { unsubscribeLinks, verifyUnsubscribeToken } from "./unsubscribe-token"
 import { summarizeCause } from "@maple/backend/platform/describe-cause"
+import { systemTenant } from "@maple/backend/services/auth/system-tenant"
 const SYSTEM_DIGEST_USER = UserId.make("system-digest")
-const ROOT_ROLE = RoleName.make("root")
 
 const toPersistenceError = (error: unknown) =>
 	new DigestPersistenceError({
@@ -476,12 +474,7 @@ export class DigestService extends Context.Service<DigestService>()("@maple/back
 			const previousStart = formatWarehouseDateTime(previousStartMs)
 			const previousEnd = formatWarehouseDateTime(currentStartMs - 1000)
 
-			const systemTenant = {
-				orgId,
-				userId: SYSTEM_DIGEST_USER,
-				roles: [ROOT_ROLE] as ReadonlyArray<RoleNameType>,
-				authMode: "self_hosted" as const,
-			}
+			const tenant = systemTenant(orgId, SYSTEM_DIGEST_USER)
 
 			// Filter lists are omitted rather than sent empty: an empty list would be
 			// a filter that matches nothing, not the absence of a filter.
@@ -490,11 +483,11 @@ export class DigestService extends Context.Service<DigestService>()("@maple/back
 			const window = (startTime: string, endTime: string) => ({ orgId, startTime, endTime })
 			// A weekly background job over two 7-day windows: the aggregation budget.
 			const run = <T>(compiled: CH.CompiledQueryInput<T>, context: string) =>
-				warehouse.compiledQuery(systemTenant, compiled, { profile: "aggregation", context })
+				warehouse.compiledQuery(tenant, compiled, { profile: "aggregation", context })
 
 			// Warm the route once before the fan-out, so the org-config read isn't
 			// racing concurrent warehouse fetches for a connection slot.
-			yield* warehouse.warmRoute(systemTenant)
+			yield* warehouse.warmRoute(tenant)
 
 			const warehouseFailure = (error: unknown) =>
 				new DigestPersistenceError({

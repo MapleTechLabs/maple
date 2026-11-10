@@ -7,7 +7,6 @@ import { listMcpTools } from "./tool-catalog"
 import { MCP_ANTICIPATED_ERROR_IDENTIFIERS, recordExpectedMcpFailure } from "./expected-failures"
 import { mapleToolCatalog, mapleToolCatalogFor, toInputSchema, toOutputSchema } from "./tools/registry"
 import type { McpToolRuntimeRequirements } from "./tools/runtime-requirements"
-import type { TenantContext } from "@maple/backend/services/auth/tenant-context"
 import { AuditLogService, makeMemoryAuditLog } from "@maple/backend/services/audit/AuditLogService"
 import { WarehouseQueryService } from "@maple/backend/services/warehouse/WarehouseQueryService"
 import { makeWarehouseServiceStub } from "@maple/backend/testing/warehouse-test-support"
@@ -19,6 +18,7 @@ import {
 	type ConnectedSourceRepository,
 	VcsSourceService,
 } from "@maple/backend/services/integrations/vcs/VcsSourceService"
+import type { TenantContext } from "@maple/domain/http"
 
 const TENANT: TenantContext = {
 	orgId: "org_test" as TenantContext["orgId"],

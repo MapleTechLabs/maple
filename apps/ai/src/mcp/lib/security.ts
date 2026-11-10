@@ -5,7 +5,7 @@
  */
 import { DateTime, Effect, Option, Order, Array as Arr, String as Str } from "effect"
 import type { SecurityAuditFindingRow, SecurityAuditRunRow, SecurityAuditTargetRow } from "@maple/db/tables"
-import type { DependencyFindingView, DependencyScanRepository } from "@maple/domain/http"
+import type { DependencyFindingView, DependencyScanRepository, TenantContext } from "@maple/domain/http"
 import type { DependencyFindingId } from "@maple/domain/dependency-scan"
 import type {
 	SecurityArea,
@@ -32,7 +32,6 @@ import { PROBE_CATEGORIES, probeCategoryOf } from "@maple/domain/security-teleme
 import { CH } from "@maple/query-engine"
 import { truncate } from "./format"
 import { WarehouseQueryService } from "@maple/backend/services/warehouse/WarehouseQueryService"
-import type { TenantContext } from "@maple/backend/services/auth/tenant-context"
 import * as Policy from "@maple/domain/policy"
 import { OrganizationFeatureFlagsService } from "@maple/backend/services/org/OrganizationFeatureFlagsService"
 import {

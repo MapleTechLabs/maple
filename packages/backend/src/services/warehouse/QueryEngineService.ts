@@ -1,7 +1,7 @@
 // BOUNDARY-FILE: This module owns unparsed external values and narrows them before domain use.
 import { Clock, Context, Effect, Layer, Metric, type Schema } from "effect"
 import { QueryEngineExecuteRequest, QueryEngineExecuteResponse } from "@maple/query-engine"
-import type { QueryEngineTimeoutError } from "@maple/domain/http"
+import type { QueryEngineTimeoutError, TenantContext } from "@maple/domain/http"
 import {
 	buildCacheKey,
 	buildDirectRouteCacheKey,
@@ -23,7 +23,6 @@ import {
 	type QueryEngineRouteError,
 	type TimeRangeBounds,
 } from "@maple/query-engine/runtime"
-import type { TenantContext } from "@maple/backend/services/auth/AuthService"
 import { BucketCacheService } from "@maple/query-engine/caching"
 import {
 	isTimeBucketQueryCachePolicy,

@@ -66,8 +66,8 @@ import type { McpToolRuntimeRequirements } from "./tools/runtime-requirements"
 import { CurrentMcpRequestTenant, CurrentMcpTenant } from "./lib/query-warehouse"
 import { recordExpectedMcpFailure } from "./expected-failures"
 import { loadRegistry } from "./tool-catalog"
-import type { TenantContext } from "@maple/backend/services/auth/tenant-context"
 import { recordMcpToolAudit } from "@maple/backend/services/audit/audit-access"
+import type { TenantContext } from "@maple/domain/http"
 
 /**
  * How a failure reads to the model: one short lead naming the kind of failure, never an error tag.

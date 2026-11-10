@@ -4,6 +4,7 @@ import {
 	SelfHostedAuthDisabledError,
 	SelfHostedInvalidPasswordError,
 	SelfHostedLoginResponse,
+	type TenantContext,
 	UnauthorizedError,
 } from "@maple/domain/http"
 import {
@@ -14,7 +15,6 @@ import {
 	makeRefreshSelfHostedSession,
 	makeResolveMcpTenant,
 	makeResolveTenant,
-	type TenantContext,
 } from "@maple/auth"
 import { Context, Effect, Layer, Option } from "effect"
 import { Env } from "@maple/backend/platform/Env"
@@ -24,9 +24,6 @@ import { OrgMembershipService } from "@maple/backend/services/auth/OrgMembership
 // `@maple/auth` package (consumed by apps/api AND the standalone
 // `apps/electric-sync` worker). This module is the apps/api-flavoured wrapper: an
 // `AuthService` Context.Service that binds those primitives to the app's `Env`.
-// Re-exported so existing `from "./AuthService"` / `@/services/AuthService`
-// imports keep resolving.
-export { makeResolveTenant, type TenantContext }
 
 type HeaderRecord = Record<string, string | undefined>
 

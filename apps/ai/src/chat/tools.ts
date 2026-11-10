@@ -38,6 +38,7 @@ import {
 	type PrReviewVerdict,
 	SubmitDiagnosisRequest,
 	SubmitPrReviewRequest,
+	type TenantContext,
 } from "@maple/domain/http"
 import { InvestigationId } from "@maple/domain/primitives"
 import type { RunBudgetHook, RunUsageDelta } from "@yielded/agent/run-options"
@@ -56,7 +57,6 @@ import {
 	type UiSource,
 } from "../mcp/tools/llm-tools"
 import { toolHandlersWithContent } from "../platform/genai-spans"
-import type { TenantContext } from "@maple/backend/services/auth/tenant-context"
 import { mergeSavedFindings } from "@maple/backend/services/pr-review/findings"
 import {
 	type ChildFindings,

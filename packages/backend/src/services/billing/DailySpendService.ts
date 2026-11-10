@@ -1,9 +1,8 @@
-import { DailySpendResponse, DailyVolume, WarehouseQueryError } from "@maple/domain/http"
+import { DailySpendResponse, DailyVolume, WarehouseQueryError, type TenantContext } from "@maple/domain/http"
 import { CH, formatWarehouseDateTime } from "@maple/query-engine"
 import { Context, DateTime, Effect, Layer, String as Str } from "effect"
 import { WarehouseQueryService } from "@maple/backend/services/warehouse/WarehouseQueryService"
 import { isMissingProductEvents } from "@maple/backend/services/warehouse/missing-table"
-import type { TenantContext } from "@maple/backend/services/auth/AuthService"
 import * as Integrations from "@maple/query-engine-integrations"
 
 /**

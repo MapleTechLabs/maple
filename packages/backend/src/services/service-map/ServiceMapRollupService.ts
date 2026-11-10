@@ -1,17 +1,17 @@
-import { RoleName, UserId as UserIdSchema, type OrgId } from "@maple/domain/http"
+import { UserId as UserIdSchema, type OrgId } from "@maple/domain/http"
 import * as PG from "@maple-dev/effect-orm/postgres"
 import { OrgClickHouseSettings, OrgIngestKeys } from "@maple/db/tables"
 import * as CH from "@maple/query-engine/ch"
 import { Clock, Cause, Context, Effect, Layer, Schema, Array as Arr } from "effect"
-import type { TenantContext } from "@maple/backend/services/auth/AuthService"
 import { Database, type DatabaseError } from "@maple/backend/platform/DatabaseLive"
 import { WarehouseQueryService } from "@maple/backend/services/warehouse/WarehouseQueryService"
 import { OrgClickHouseSettingsService } from "@maple/backend/services/org/OrgClickHouseSettingsService"
 
 import { formatWarehouseDateTime } from "@maple/query-engine"
 import { summarizeCause } from "@maple/backend/platform/describe-cause"
-const decodeRoleNameSync = Schema.decodeUnknownSync(RoleName)
+import { systemTenant } from "@maple/backend/services/auth/system-tenant"
 const decodeUserIdSync = Schema.decodeUnknownSync(UserIdSchema)
+const SYSTEM_USER_ID = decodeUserIdSync("system-service-map-rollup")
 
 const HOUR_MS = CH.SERVICE_MAP_ROLLUP_HOUR_MS
 
@@ -78,16 +78,9 @@ export class ServiceMapRollupService extends Context.Service<
 		const warehouse = yield* WarehouseQueryService
 		const orgChSettings = yield* OrgClickHouseSettingsService
 
-		const systemTenant = (orgId: OrgId): TenantContext => ({
-			orgId,
-			userId: decodeUserIdSync("system-service-map-rollup"),
-			roles: [decodeRoleNameSync("root")],
-			authMode: "self_hosted",
-		})
-
 		const processOrg = Effect.fn("ServiceMapRollupService.processOrg")(function* (orgId: OrgId) {
 			yield* Effect.annotateCurrentSpan("orgId", orgId)
-			const tenant = systemTenant(orgId)
+			const tenant = systemTenant(orgId, SYSTEM_USER_ID)
 			const currentHourMs = Math.floor((yield* Clock.currentTimeMillis) / HOUR_MS) * HOUR_MS
 			const oldestHourMs = currentHourMs - LOOKBACK_HOURS * HOUR_MS
 
@@ -209,7 +202,7 @@ export class ServiceMapRollupService extends Context.Service<
 			const startTime = formatWarehouseDateTime(nowMs - ACTIVE_DISCOVERY_HOURS * HOUR_MS)
 			return yield* warehouse
 				.crossOrgQuery(
-					systemTenant(routingOrg),
+					systemTenant(routingOrg, SYSTEM_USER_ID),
 					CH.compile(CH.activeOrgsByTracesQuery(), { startTime }),
 					{
 						profile: "discovery",

@@ -40,7 +40,7 @@ import { Clock, Context, Effect, Layer, Option, Schema, Array as Arr } from "eff
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { AuditLogService } from "@maple/backend/services/audit/AuditLogService"
 import { CurrentAuditActor } from "@maple/backend/services/auth/audit-actor"
-import { SYSTEM_ERRORS_AGENT_NAME } from "@maple/backend/services/auth/system-actors"
+import { SYSTEM_ERRORS_AGENT_NAME } from "@maple/domain/system-agents"
 import { currentTxid, readTxid } from "@maple/backend/platform/electric-txid"
 import { transitionRow } from "@maple/backend/platform/transition-row"
 import { ErrorActorsService } from "./ErrorActorsService"

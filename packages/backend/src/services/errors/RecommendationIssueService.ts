@@ -8,6 +8,7 @@ import {
 	RecommendationIssueNotFoundError,
 	RecommendationIssuePersistenceError,
 	RecommendationIssuesListResponse,
+	type TenantContext,
 } from "@maple/domain/http"
 import {
 	canonicalKeysToProbe,
@@ -23,7 +24,6 @@ import {
 } from "@maple/db/tables"
 import { CH, formatWarehouseDateTime } from "@maple/query-engine"
 import { Clock, Context, Effect, Layer, Option, Schema, Array as Arr } from "effect"
-import type { TenantContext } from "@maple/backend/services/auth/AuthService"
 import { Database, type DatabaseError } from "@maple/backend/platform/DatabaseLive"
 import { makeDbExecute } from "@maple/backend/platform/db-execute"
 import { WarehouseQueryService } from "@maple/backend/services/warehouse/WarehouseQueryService"

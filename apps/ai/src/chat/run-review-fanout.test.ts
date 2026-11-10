@@ -7,14 +7,13 @@
  * `invoke_agent` span was filed under the child's own thread instead of the review's session.
  */
 import { OrgId, UserId } from "@maple/domain"
-import type { SubmitPrReviewRequest } from "@maple/domain/http"
+import type { SubmitPrReviewRequest, TenantContext } from "@maple/domain/http"
 import { prReviewSessionId } from "@maple/domain/chat-session"
 import { Effect, Exit, Layer, Option, Schema, Stream, Array as Arr, String as Str } from "effect"
 import { LanguageModel } from "effect/ai"
 import type { Response } from "effect/ai"
 import * as AiModel from "effect/ai/Model"
 import { assert, describe, it } from "vitest"
-import type { TenantContext } from "@maple/backend/services/auth/tenant-context"
 import { makeRecordingTracer } from "@maple/backend/testing/recording-tracer"
 import type { McpToolExecutorApi } from "../mcp/dispatcher"
 import { noRepositoryWarmup } from "../../test/chat/tool-executor"

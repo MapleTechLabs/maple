@@ -12,8 +12,8 @@ import {
 	type ApplyTriageSeverityInput,
 	escalationReasonFor,
 	severityRank,
-	TRIAGE_AGENT_NAME,
 } from "./issue-severity"
+import { TRIAGE_AGENT_NAME } from "@maple/domain/system-agents"
 
 const createdDbs: TestDb[] = []
 

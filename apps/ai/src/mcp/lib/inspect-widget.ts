@@ -27,6 +27,7 @@ import {
 	QueryBuilderFormulaSchema,
 	QueryBuilderQueryDraftSchema,
 	WarehouseQueryRequest,
+	type TenantContext,
 } from "@maple/domain/http"
 import { describeQuerySpecDecodeError } from "@maple/domain/query-engine"
 import {
@@ -59,7 +60,6 @@ import {
 	QUERY_RESULT_ENDPOINTS,
 	RAW_SQL_ENDPOINT,
 } from "@maple/widgets/dashboard"
-import type { TenantContext } from "@maple/backend/services/auth/tenant-context"
 import { summarizeCause } from "@maple/backend/platform/describe-cause"
 import { doc, type DocBlock, type NextCall } from "./tool-doc"
 import type { WidgetInspectionSummary as WidgetInspectionSummaryOutput } from "@maple/domain/mcp-outputs"
