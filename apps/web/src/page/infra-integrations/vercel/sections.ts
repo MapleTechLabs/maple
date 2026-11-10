@@ -310,7 +310,7 @@ export const buildsSection = <M>(
 	return readSection(h, {
 		title: "Builds",
 		hint:
-			rows === null
+			rows === null || rows.length === 0
 				? "newest first, from Vercel's API"
 				: failedCount === 0
 					? "newest first, none failed"
