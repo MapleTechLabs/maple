@@ -1,4 +1,4 @@
-import { warehouseDateTimeToIso } from "@maple/query-engine"
+import { parseWarehouseDateTime } from "@maple/query-engine/datetime"
 import { countLabel, formatDuration, formatPercent } from "@maple/ui/lib/format"
 import { getHttpInfo, httpStatusTextClass } from "@maple/ui/lib/http"
 import { shortId } from "@maple/ui/lib/ids"
@@ -28,7 +28,7 @@ const startedAt = (
 	timeZone: string,
 	nowMs: number,
 ): Html | null => {
-	const epochMs = new Date(warehouseDateTimeToIso(startTime)).getTime()
+	const epochMs = parseWarehouseDateTime(startTime)
 	if (Number.isNaN(epochMs)) return null
 	return typography(h, { numeric: true }, [
 		timestamp(h, {

@@ -10,7 +10,7 @@ import { getServiceHealthSnapshot } from "@maple/web-data/warehouse/services"
 import { Clock, Effect, Option, Schema, Array as Arr, Record as Rec } from "effect"
 import { Command } from "foldkit"
 import { settleTo } from "@maple/views/data/load-failure"
-import { loadAnomalyServiceCounts } from "../../data/anomaly-service-counts"
+import { fetchAnomaliesCommand } from "../kit/service-health"
 import { loadServicesFacets } from "../../data/services-facets-probe"
 import { TimeWindow } from "../../data/time-range"
 import { loadSignalPresences } from "../kit/signal-presence"
@@ -114,14 +114,10 @@ export const FetchSnapshot = Command.define("FetchServiceHealthSnapshot", {
 })
 
 /** `openAnomalyServiceCountsAtom`. */
-export const FetchAnomalies = Command.define("FetchOverviewAnomalyCounts", {
-	args: { key: Schema.String, refresh: Schema.Boolean },
-	messages: [Message.CompletedFetchAnomalies],
-	execute: ({ key, refresh }) =>
-		loadAnomalyServiceCounts(key, { refresh }).pipe(
-			settleTo((result) => Message.CompletedFetchAnomalies({ key, result })),
-		),
-})
+export const FetchAnomalies = fetchAnomaliesCommand(
+	"FetchOverviewAnomalyCounts",
+	Message.CompletedFetchAnomalies,
+)
 
 /** `ServiceUsageCards`: current and previous totals in one request, summed per signal (`sumTotals`). */
 export const FetchUsage = Command.define("FetchOverviewServiceUsage", {

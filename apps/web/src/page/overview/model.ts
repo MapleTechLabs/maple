@@ -1,5 +1,4 @@
 import { ChartEnvFields } from "@maple/views/charts/chart-env"
-import { AlertSignalType } from "@maple/domain/http"
 import { V2AnomalyServiceCount } from "@maple/domain/http/v2"
 import { Schema } from "effect"
 import { AsyncData } from "foldkit"
@@ -13,6 +12,7 @@ import * as Select from "@maple/views/ui/select"
 import { SignalPresenceData } from "@maple/views/data/signal-presence"
 import * as TimeRangePicker from "../kit/time-range-picker"
 import * as SetupChecklist from "./setup-checklist"
+import { IncidentsData } from "../kit/service-health"
 
 // The Overview home page.
 
@@ -52,17 +52,6 @@ export type UsageTotals = typeof UsageTotals.Type
 export const Usage = Schema.Struct({ totals: UsageTotals, previous: Schema.NullOr(UsageTotals) })
 export type Usage = typeof Usage.Type
 
-/** The alert-incident fields the banner and health read (`rowToAlertIncidentDocument`). */
-export const Incident = Schema.Struct({
-	status: Schema.String,
-	groupKey: Schema.NullOr(Schema.String),
-	severity: Schema.Literals(["warning", "critical"]),
-	signalType: AlertSignalType,
-})
-export type Incident = typeof Incident.Type
-
-/** `Failure`: the live alert sync failed or stalled; the page reads it as no incidents. */
-export const IncidentsData = AsyncData.Schema(Schema.Array(Incident), Schema.Literal("Unavailable"))
 /** `useAlertRulesList()`, reduced to each rule's `enabled`. */
 /** `Failure`: the live rules sync failed or stalled; the banner stays out. */
 export const RulesData = AsyncData.Schema(Schema.Array(Schema.Boolean), Schema.Literal("Unavailable"))

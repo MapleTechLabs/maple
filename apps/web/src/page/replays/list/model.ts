@@ -8,6 +8,7 @@ import { SignalPresenceData } from "@maple/views/data/signal-presence"
 import * as TimeRangePicker from "../../kit/time-range-picker"
 import { SessionRow } from "../kit/session-row"
 import { VirtualWindow } from "../kit/virtualize"
+import { laterPagesFields } from "../../kit/infinite-pages"
 
 // The `/replays` list.
 
@@ -44,11 +45,8 @@ export type ReplaysFacets = typeof ReplaysFacets.Type
 /** `useInfiniteReplays`' pages after the first, for the current first-page key. */
 export const Pagination = Schema.Struct({
 	key: Schema.NullOr(Schema.String),
-	/** Bumped by every fresh set of pages (a new key or a Reload): an older page is dropped. */
-	generation: Schema.Number,
-	pages: Schema.Array(ReplaysPage),
-	isFetching: Schema.Boolean,
-	isStopped: Schema.Boolean,
+	/** `generation` is also bumped by a Reload. */
+	...laterPagesFields(ReplaysPage),
 })
 export type Pagination = typeof Pagination.Type
 

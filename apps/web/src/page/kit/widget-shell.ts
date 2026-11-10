@@ -10,8 +10,9 @@ import { hstack } from "@maple/views/ui/stack"
 import { swatch } from "@maple/views/ui/swatch"
 import { Array as Arr } from "effect"
 
-// A read-only widget shell in view
-// mode with no widget actions: title, hoisted legend chips, headline value, content and footer.
+// A read-only widget shell (the overview and the golden-signal grid): title, hint, hoisted legend
+// chips, headline value, content and footer. Dashboard tiles (dashboards/kit/tile-shell) frame the same
+// card but add a drag grip, a time-range chip and a menu and have no hint or value, so they stay apart.
 
 const MAX_HEADER_ITEMS = 5
 

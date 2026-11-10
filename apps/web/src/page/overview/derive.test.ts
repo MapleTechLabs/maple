@@ -2,7 +2,8 @@ import type { V2AnomalyServiceCount } from "@maple/domain/http/v2"
 import { Array as Arr } from "effect"
 import { describe, expect, test } from "vitest"
 import { type EnrichedService, enrichServices } from "./derive"
-import type { HealthSnapshot, Incident } from "./model"
+import type { HealthSnapshot } from "./model"
+import type { HealthIncident } from "../kit/service-health"
 
 const NOW = Date.parse("2026-10-01T12:00:00.000Z")
 const minutesAgo = (minutes: number) => new Date(NOW - minutes * 60_000).toISOString()
@@ -26,7 +27,7 @@ const anomaly = (fields: Partial<V2AnomalyServiceCount>): V2AnomalyServiceCount 
 	...fields,
 })
 
-const incident = (fields: Partial<Incident>): Incident => ({
+const incident = (fields: Partial<HealthIncident>): HealthIncident => ({
 	status: "open",
 	groupKey: "checkout",
 	severity: "critical",

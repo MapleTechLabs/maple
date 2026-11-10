@@ -1,49 +1,7 @@
 import { formatCompact } from "@maple/views/ui/filters/range-format"
-import { excludedOf, type Search } from "./derive"
-import type { Facet } from "./message"
-import { Array as Arr } from "effect"
+import type { Search } from "./derive"
 
 // The search edits the list's controls make (`onFilterChange`, `toggleOption`, `applyWhereClause`).
-
-/** An empty list leaves the URL. */
-const listOrUndefined = (values: ReadonlyArray<string>) => (values.length === 0 ? undefined : values)
-
-/** `FilterSection`'s toggle: include and exclude are exclusive per value. */
-export const toggledFacet = (search: Search, facet: Facet, name: string): Search => {
-	const excludedParam = excludedOf(facet)
-	const selected = search[facet] ?? []
-	const excluded = search[excludedParam] ?? []
-	return {
-		...search,
-		[excludedParam]: excluded.includes(name)
-			? listOrUndefined(Arr.filter(excluded, (v) => v !== name))
-			: search[excludedParam],
-		[facet]: listOrUndefined(
-			selected.includes(name) ? Arr.filter(selected, (v) => v !== name) : [...selected, name],
-		),
-	}
-}
-
-export const excludedFacet = (search: Search, facet: Facet, name: string): Search => {
-	const excludedParam = excludedOf(facet)
-	const selected = search[facet] ?? []
-	const excluded = search[excludedParam] ?? []
-	return {
-		...search,
-		[facet]: selected.includes(name)
-			? listOrUndefined(Arr.filter(selected, (v) => v !== name))
-			: search[facet],
-		[excludedParam]: listOrUndefined(
-			excluded.includes(name) ? Arr.filter(excluded, (v) => v !== name) : [...excluded, name],
-		),
-	}
-}
-
-export const onlyFacet = (search: Search, facet: Facet, name: string): Search => ({
-	...search,
-	[facet]: [name],
-	[excludedOf(facet)]: undefined,
-})
 
 /** `applyWhereClause(search, "")`: the clause and every param a clause can set leave the URL. */
 export const clearedWhereClause = (search: Search): Search => ({

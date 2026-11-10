@@ -16,7 +16,7 @@ import { listRow } from "@maple/views/ui/list-row"
 import { skeleton, skeletonList } from "@maple/views/ui/skeleton"
 import { textLink } from "@maple/views/ui/text-link"
 import { truncatedText } from "@maple/views/ui/truncated-text"
-import { type DeployEntry, deriveDeploys, firstLine, isResolvableSha } from "./derive-panels"
+import { type DeployEntry, deriveDeploys } from "./derive-panels"
 import { Message } from "./message"
 import type { Issue, Model } from "./model"
 import { DEPLOYS_EXPANDED, DEPLOYS_RAIL } from "./update"
@@ -25,6 +25,7 @@ import { relativeTime } from "../../kit/relative-time"
 import { severityBadge } from "../../kit/issue-severity"
 import { typography } from "@maple/views/ui/typography"
 import { hstack, vstack } from "@maple/views/ui/stack"
+import { commitAvatar, firstLine, isResolvableSha } from "../../kit/commit-card"
 
 // `ServiceErrorsPanel` + `IssueLine`, and `ServiceRecentDeploys`.
 
@@ -273,27 +274,6 @@ export const deploysPanel = (h: H, model: Model, clock: Clock, isLoading: boolea
 
 /** `shortReleaseLabel`: a full sha shortened, any other reference verbatim. */
 const shortReleaseLabel = (sha: string): string => (isResolvableSha(sha) ? shortId(sha, "sha") : sha)
-
-/** `CommitAvatar compact`. TODO(avatar-error): a broken avatar URL does not fall back to initials. */
-const commitAvatar = (h: H, url: string | null, name: string): Html =>
-	url === null
-		? hstack(
-				h,
-				{
-					align: "center",
-					justify: "center",
-					className:
-						"size-5 shrink-0 rounded-full bg-muted text-2xs font-medium uppercase text-muted-foreground",
-				},
-				[Str.slice(0, 2)(name)],
-			)
-		: h.img([
-				h.Src(url),
-				h.Alt(""),
-				h.Class("size-5 shrink-0 rounded-full ring-1 ring-foreground/10"),
-				h.Attribute("loading", "lazy"),
-				h.Attribute("referrerpolicy", "no-referrer"),
-			])
 
 /** `CommitShaHoverCard`'s trigger. TODO(commit-hover-card): the card itself is not ported. */
 const commitTrigger = (h: H, className: string, label: string): Html =>

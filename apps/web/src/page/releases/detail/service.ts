@@ -6,15 +6,15 @@ import { AsyncData, Command } from "foldkit"
 import { ChartRuntime, LoadChartRuntime } from "@maple/views/charts/chart-runtime"
 import * as Keyed from "@maple/views/data/keyed"
 import { requestKey } from "@maple/views/data/request-key"
-import { commitDetailKey } from "../../kit/commit-card"
+import { commitDetailKey, isResolvableSha } from "../../kit/commit-card"
 import type { Resources } from "../../../platform/resources"
 import type { PageContext, PageReturn } from "../../contract"
-import { commitMarkers, markerShas } from "../../services/detail/derive-markers"
-import { commitRangesKey, isResolvableSha } from "../kit"
+import { commitRangesKey } from "../kit"
 import { deriveOf } from "../list/derive"
 import { FetchChangeset, FetchMarkerCommit, FetchReleaseDetail, FetchServiceIssues } from "./command"
 import { Message } from "./message"
 import type { Model, ReleaseDetail } from "./model"
+import { commitMarkers, markerShas } from "../../kit/service-metrics/markers"
 
 // The release body for one service (`?service=`): the version this one replaced is
 // read off the list first, then the detail bundle, then what mounts with it (issues, changeset,

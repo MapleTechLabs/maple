@@ -30,10 +30,10 @@ import { presenceOf } from "@maple/views/data/signal-presence"
 import { stableSlice } from "../kit/stable-slice"
 import { Message, type RetryTarget } from "./message"
 import type { Model, OverviewPoint } from "./model"
-import { widgetShell } from "./view-widget"
 import { typography } from "@maple/views/ui/typography"
 import { chartFrameClass } from "@maple/views/ui/chart-frame"
 import { hstack, vstack } from "@maple/views/ui/stack"
+import { widgetShell } from "../kit/widget-shell"
 
 type MetricsData = Pick<Model, "overviewSeries" | "logSeries" | "refinement" | "presence">
 type CardId = "throughput" | "error-rate" | "latency" | "log-volume"

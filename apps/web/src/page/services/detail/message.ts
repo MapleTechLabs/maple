@@ -21,7 +21,8 @@ import {
 	SortTable,
 	StatusRow,
 } from "./model-tabs"
-import { Commit, CommitFailure, Issue, OverviewData, RefinementPoint, Usage, Workload } from "./model"
+import { Issue, OverviewData, RefinementPoint, Usage, Workload } from "./model"
+import { Commit, CommitFailure } from "../../kit/service-metrics/points"
 
 /** The reads that can be retried from their error state. */
 export const RetryTarget = Schema.Literals([

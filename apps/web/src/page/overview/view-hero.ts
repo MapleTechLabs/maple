@@ -7,7 +7,7 @@ import { hstack } from "@maple/views/ui/stack"
 import { textLink } from "@maple/views/ui/text-link"
 import { alertsHref } from "../kit/alert-links"
 import { Array as Arr } from "effect"
-import type { Incident } from "./model"
+import type { HealthIncident } from "../kit/service-health"
 
 // The one-line alert strip above the health rail; nothing when all is clear.
 // Open anomalies count apart from firing incidents and stay quiet.
@@ -25,7 +25,7 @@ export type HeroCounts = Readonly<{
 
 /** The strip's counts from the alert incidents and each rule's `enabled`. Anomaly rules' incidents are open anomalies. */
 export const heroCountsOf = (
-	incidents: ReadonlyArray<Incident>,
+	incidents: ReadonlyArray<HealthIncident>,
 	rules: ReadonlyArray<boolean>,
 ): HeroCounts => {
 	const openAll = Arr.filter(incidents, (incident) => incident.status === "open")

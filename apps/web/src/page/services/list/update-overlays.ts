@@ -1,10 +1,17 @@
 import type { Result } from "effect"
-import { AsyncData, Command } from "foldkit"
+import { Command } from "foldkit"
 import * as HoverCard from "@maple/views/ui/hover-card"
 import * as Tooltip from "@maple/views/ui/tooltip"
 import { PageOutMessage, type PageReturn } from "../../contract"
-import { type CommitDetail, type CommitFailure, commitDetailKey, OPEN_DELAY_MS } from "../../kit/commit-card"
-import { ArmCommitLookup, CopyCommitSha, FetchCommitDetail } from "./command"
+import {
+	type CommitDetail,
+	type CommitFailure,
+	elapsedCommitArm as elapsedArm,
+	initCommitCard,
+	settleCommitDetail,
+	stepCommitCard,
+} from "../../kit/commit-card"
+import { CommitCard, CopyCommitSha } from "./command"
 import { Message, type RowTooltip } from "./message"
 import type { Model } from "./model"
 import { String as Str } from "effect"
@@ -17,14 +24,7 @@ export const initOverlays = () => ({
 	rolloutTooltip: Tooltip.init("services-rollout-tooltip", { side: "left" }),
 	samplingTooltip: Tooltip.init("services-sampling-tooltip", { side: "bottom" }),
 	unnamedTooltip: Tooltip.init("services-unnamed-tooltip", { side: "bottom" }),
-	commitCard: HoverCard.init("services-commit-card", {
-		openDelayMs: OPEN_DELAY_MS,
-		side: "bottom",
-		align: "start",
-		sideOffset: 6,
-	}),
-	commitDetails: {},
-	commitArm: 0,
+	...initCommitCard("services-commit-card"),
 })
 
 const TOOLTIP_FIELD = {
@@ -36,8 +36,6 @@ const TOOLTIP_FIELD = {
 /** A DOM-safe trigger id for one row's overlay; commit triggers end in the sha they look up. */
 export const overlayTriggerId = (overlay: RowTooltip | "commit", rowKey: string, sha = ""): string =>
 	`services-${overlay}-${Str.replace(/[^A-Za-z0-9_-]/g, "_")(rowKey)}${sha === "" ? "" : `-${sha}`}`
-
-const shaOfTrigger = (triggerId: string): string => Str.slice(-40)(triggerId)
 
 export const rowTooltipMessage = (model: Model, tooltip: RowTooltip, message: Tooltip.Message): Return => {
 	const field = TOOLTIP_FIELD[tooltip]
@@ -51,48 +49,20 @@ export const rowTooltipMessage = (model: Model, tooltip: RowTooltip, message: To
 }
 
 /** The card's own update, plus the 20 ms arm a trigger enter starts and a leave cancels. */
-export const commitCardMessage = (model: Model, message: HoverCard.Message): Return => {
-	const next = HoverCard.update(model.commitCard, message)
-	const lifted = Command.mapMessages(next.commands ?? [], (inner) =>
-		Message.GotCommitCardMessage({ message: inner }),
-	)
-	const arm = model.commitArm + 1
-	if (message._tag === "EnteredTrigger") {
-		const sha = shaOfTrigger(message.triggerId)
-		const isArmed = model.commitDetails[sha] !== undefined
-		return {
-			model: { ...model, commitCard: next.model, commitArm: arm },
-			commands: [...lifted, ...(isArmed ? [] : [ArmCommitLookup({ sha, generation: arm })])],
-		}
-	}
-	if (message._tag === "LeftTrigger") {
-		return { model: { ...model, commitCard: next.model, commitArm: arm }, commands: lifted }
-	}
-	return { model: { ...model, commitCard: next.model }, commands: lifted }
-}
+export const commitCardMessage = (model: Model, message: HoverCard.Message): Return =>
+	stepCommitCard(model, message, {
+		toMessage: (inner) => Message.GotCommitCardMessage({ message: inner }),
+		arm: CommitCard.Arm,
+	})
 
-/** Once armed it stays armed: the lookup survives the pointer leaving. */
 export const elapsedCommitArm = (model: Model, orgId: string, sha: string, generation: number): Return =>
-	generation !== model.commitArm || model.commitDetails[sha] !== undefined
-		? { model }
-		: {
-				model: { ...model, commitDetails: { ...model.commitDetails, [sha]: AsyncData.Loading() } },
-				commands: [FetchCommitDetail({ key: commitDetailKey(orgId, sha), sha })],
-			}
+	elapsedArm(model, { orgId, sha, generation }, CommitCard.Fetch)
 
 export const completedCommitDetail = (
 	model: Model,
 	sha: string,
 	result: Result.Result<CommitDetail, CommitFailure>,
-): Return => ({
-	model: {
-		...model,
-		commitDetails: {
-			...model.commitDetails,
-			[sha]: AsyncData.settle(model.commitDetails[sha] ?? AsyncData.Loading(), result),
-		},
-	},
-})
+): Return => ({ model: settleCommitDetail(model, sha, result) })
 
 /**
  * `CopyableBadge label="commit SHA"`: writes the clipboard and toasts. The card sits

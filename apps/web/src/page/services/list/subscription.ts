@@ -1,31 +1,10 @@
-import { rowsToAlertIncidentDocuments } from "@maple/web-data/collections/alerts"
-import { Schema, Stream, Array as Arr } from "effect"
+import { Schema } from "effect"
 import { AsyncData, Subscription } from "foldkit"
-import { type OrgCollections, orgLive } from "../../../data/collections/org-collections"
-import { liveQueryStream } from "../../../data/live-query"
-import { collectionLoadFailed, ENRICHMENT_LOAD_TIMEOUT_MS } from "../../kit/collection-load"
 import type { Resources } from "../../../platform/resources"
 import type { PageSubscriptionInput } from "../../contract"
+import { incidentsLoadFailedStream, incidentsStream } from "../../kit/service-health"
 import { Message } from "./message"
 import type { Model } from "./model"
-
-/** `useAlertIncidentsList()`: the org's incidents, newest trigger first, reduced to what health reads. */
-const incidents = (orgId: string): Stream.Stream<Message, never, OrgCollections> =>
-	orgLive(orgId, (set) =>
-		liveQueryStream(
-			(q) => q.from({ i: set.alertIncidents }).orderBy(({ i }) => i.last_triggered_at, "desc"),
-			(rows) =>
-				Message.UpdatedIncidents({
-					orgId,
-					incidents: Arr.map(rowsToAlertIncidentDocuments(rows), (incident) => ({
-						status: incident.status,
-						groupKey: incident.groupKey,
-						severity: incident.severity,
-						signalType: incident.signalType,
-					})),
-				}),
-		),
-	)
 
 export const subscriptions = Subscription.make<PageSubscriptionInput<Model>, Message, Resources>()(
 	(entry) => ({
@@ -33,10 +12,10 @@ export const subscriptions = Subscription.make<PageSubscriptionInput<Model>, Mes
 			{ orgId: Schema.String },
 			{
 				modelToDependencies: ({ context }) => ({ orgId: context.orgId }),
-				dependenciesToStream: ({ orgId }) => incidents(orgId),
+				dependenciesToStream: ({ orgId }) =>
+					incidentsStream(orgId, (incidents) => Message.UpdatedIncidents({ orgId, incidents })),
 			},
 		),
-		/** Health stops waiting on an alert sync that failed or stalled. */
 		incidentsLoadFailed: entry(
 			{ orgId: Schema.String, isWaiting: Schema.Boolean },
 			{
@@ -45,13 +24,7 @@ export const subscriptions = Subscription.make<PageSubscriptionInput<Model>, Mes
 					isWaiting: AsyncData.isLoading(model.incidents),
 				}),
 				dependenciesToStream: ({ orgId, isWaiting }) =>
-					isWaiting
-						? collectionLoadFailed(
-								`alert_incidents:${orgId}`,
-								() => Message.FailedLoadIncidents({ orgId }),
-								ENRICHMENT_LOAD_TIMEOUT_MS,
-							)
-						: Stream.empty,
+					incidentsLoadFailedStream(orgId, isWaiting, () => Message.FailedLoadIncidents({ orgId })),
 			},
 		),
 	}),

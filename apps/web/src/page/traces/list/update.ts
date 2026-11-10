@@ -39,6 +39,7 @@ import {
 import { Message } from "./message"
 import type { Model, Pagination, TraceRow } from "./model"
 import { durationDraftOf } from "./search-edits"
+import { appendedPage, fetchingNext, freshLaterPages, pagedRows } from "../../kit/infinite-pages"
 
 type Return = PageReturn<Model, Message>
 type Cmd = Command.Command<Message, never, Resources>
@@ -55,10 +56,7 @@ export const allRows = (model: Model): ReadonlyArray<TraceRow> => {
 	const first = AsyncData.getData(model.firstPage.data)
 	return Option.isNone(first)
 		? []
-		: [...first.value.rows, ...Arr.flatMap(model.pagination.pages, (page) => page.rows)].slice(
-				0,
-				MAX_RETAINED_TRACES,
-			)
+		: pagedRows(first.value.rows, model.pagination.pages, (page) => page.rows, MAX_RETAINED_TRACES)
 }
 
 export const hiddenCount = (model: Model): number =>
@@ -100,10 +98,7 @@ const firstPageKey = (model: Model, context: PageContext, window: TimeWindow) =>
 
 const freshPagination = (key: string | null, generation: number): Pagination => ({
 	key,
-	generation,
-	pages: [],
-	isFetching: false,
-	isStopped: false,
+	...freshLaterPages(generation),
 })
 
 const requestAll = (model: Model, context: PageContext, window: TimeWindow, mode: RequestMode): Return => {
@@ -168,7 +163,7 @@ const reachEnd = (model: Model, context: PageContext): Return => {
 	)
 		return { model }
 	return {
-		model: { ...model, pagination: { ...pagination, isFetching: true } },
+		model: { ...model, pagination: fetchingNext(pagination) },
 		commands: [
 			FetchNextPage({
 				key: pagination.key,
@@ -382,16 +377,8 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 				offset !== nextOffset(current)
 			)
 				return { model }
-			const pagination: Pagination = Result.match(result, {
-				onSuccess: (page) => ({
-					...model.pagination,
-					pages: [...model.pagination.pages, page],
-					isFetching: false,
-				}),
-				// A failed page ends pagination, so the list stops asking (a backend offset cap).
-				onFailure: () => ({ ...model.pagination, isFetching: false, isStopped: true }),
-			})
-			return settled({ ...model, pagination }, context)
+			// A failed page ends pagination, so the list stops asking (a backend offset cap).
+			return settled({ ...model, pagination: appendedPage(current, result) }, context)
 		},
 		ChangedVirtualWindow: ({ rows, totalSize }) =>
 			reachEnd({ ...model, virtualRows: rows, totalSize }, context),

@@ -13,6 +13,7 @@ import { segmentedSelect } from "@maple/views/ui/segmented-select"
 import { timestamp } from "@maple/views/ui/timestamp"
 import { heading } from "@maple/views/ui/heading"
 import { label } from "@maple/views/ui/label"
+import { INCIDENT_STATUS_LABEL } from "@maple/status-page"
 import { relativeTime } from "../../kit/relative-time"
 import {
 	closingStatus,
@@ -20,7 +21,6 @@ import {
 	COMPONENT_STATUS_OPTIONS,
 	componentStatus,
 	IMPACT_LABEL,
-	INCIDENT_STATUS_LABEL,
 	isOpenIncident,
 	STATUSES_OF_KIND,
 } from "../shared/derive"

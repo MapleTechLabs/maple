@@ -193,7 +193,7 @@ existing copies onto it (see `apps/web/CLAUDE.md`).
 - `apps/web/src/page/kit/clipboard.ts` `writeClipboard`, `copyToast`: `useCopy`'s write: the clipboard API, then the `execCommand` fallback; `true` when it landed.
 - `apps/web/src/page/kit/code-block.ts` `codeBlock`: `CodeBlock`: language eyebrow, copy button, highlighted markup.
 - `apps/web/src/page/kit/collection-load.ts` `collectionLoadFailed`: Whether a collection a page is still waiting on failed to load.
-- `apps/web/src/page/kit/commit-card.ts` `isResolvableSha`, `commitDetailKey`, `commitDetailsKey`, `readCommitDetail`, `readCommitDetails`, `loadCommitDetail`, `commitDetailBody`: The commit SHA hover card: the body `CommitDetailBody` renders once `commitQueryAtom(sha)` settles, and the lookup itself.
+- `apps/web/src/page/kit/commit-card.ts` `isResolvableSha`, `firstLine`, `commitDetailKey`, `commitDetailsKey`, `readCommitDetail`, `readCommitDetails`, `loadCommitDetail`, `initCommitCard`, `commitCardCommands`, `stepCommitCard`, `elapsedCommitArm`, `settleCommitDetail`, `commitAvatar`, `commitDetailBody`: The commit SHA hover card: its state machine (arm, lookup, settle), the body `CommitDetailBody` renders once `commitQueryAtom(sha)` settles, and the lookup itself.
 - `apps/web/src/page/kit/compliance-line.ts` `compliance`: The compliance footnote under the plan pickers (DPA available, SOC 2 and ISO 27001 in progress).
 - `apps/web/src/page/kit/connect-flow.ts` `flowColumns`, `stepCard`, `choiceTiles`, `statusRow`, `foundChips`, `flowRail`, `savedBanner`, `liveChecklist`, `whereToFind`: The parts every source's connect flow is built from: the step card, its status row, the rail beside it and the Go live checklist.
 - `apps/web/src/page/kit/custom-range-view.ts` `view`: The custom range picker's DOM: a two-month range calendar (en-US, rdp-* classes, Maple's `calendarClassNames`), then the Start/End time fields and the actions.
@@ -203,10 +203,13 @@ existing copies onto it (see `apps/web/CLAUDE.md`).
 - `apps/web/src/page/kit/data-table.ts` `headSort`, `columnHead`, `dataTable`, `dataTableEmpty`, `skeletonRows`: `DataTable`, `ColumnHead`, `ROW_LINK_CLASS` and `NUMERIC_CELL`.
 - `apps/web/src/page/kit/destination-picker.ts` `destinationPicker`, `pickedDestination`: `DestinationPicker`: the alert destinations a form notifies, each removable, then an "Add destination" menu of the rest; the owner keeps the menu's Model and the chosen ids.
 - `apps/web/src/page/kit/detail-header.ts` `detailEyebrow`, `detailTitle`, `detailTitleSkeleton`, `detailActions`: `DetailHeader`'s title side and `DetailHeaderSkeleton`.
+- `apps/web/src/page/kit/environment-switcher.ts` `environmentEntries`, `entryLabel`, `stepEnvironmentSelect`, `environmentSwitcher`: The environment switcher the overview, the service map and a service's page share.
 - `apps/web/src/page/kit/error-chip.ts` `errorChip`: Tool failures read amber: the chip class for a tool error that is not a count.
+- `apps/web/src/page/kit/facets.ts` `toggledValue`, `onlyValue`, `excludedValue`, `editFacet`, `facetChipsOf`, `facetChips`: The include/exclude arithmetic of a tri-state `FilterSection`, as applied to a page's URL search: an empty list leaves the URL, and a value is never both included and excluded.
 - `apps/web/src/page/kit/form-section.ts` `formSection`, `formScrollArea`, `formCard`, `formActionBar`, `managersOnlyPage`: `FormSection`: one row of a form card, what it sets on the left (a title and an optional hint) and its controls on the right; the two stack on phones.
 - `apps/web/src/page/kit/grid-list-row.ts` `gridListRow`: `GridListRow`: one `<li>` of a bordered grid list (the alerts inbox, rules and resolved lists), padded, tinted on hover and press, positioned so a stretched row link covers it.
 - `apps/web/src/page/kit/guided-setup.ts` `keyFor`, `setupBlocks`, `serverKey`, `promptKey`, `frameworkIconStrip`, `frameworkPicker`, `setupAgentPrompt`, `agentPromptButton`, `connectInstructions`: `FrameworkIconStrip`, `FrameworkPicker` and `ConnectInstructions`, with `PackageManagerCodeBlock`.
+- `apps/web/src/page/kit/infinite-pages.ts` `laterPagesFields`, `freshLaterPages`, `fetchingNext`, `appendedPage`, `pagedRows`: An infinite list's pages after the first (`useInfinite*`): owned by one first page (`generation`), one fetch in flight at a time, stopped by a failed page.
 - `apps/web/src/page/kit/infra-correlation/command.ts` `operationOf`: The four `*InfraTimeseries` reads the panel's charts make, through the read cache under the atom key (`requestKey(org, "<function>", { data })`), so a reopened panel reuses them.
 - `apps/web/src/page/kit/infra-correlation/update.ts` `chartIdOf`, `requestsOf` (stateful: Model, init, update): A chart's slot and chart id, `<kind>-<metric>` (the linked-cursor id).
 - `apps/web/src/page/kit/infra-correlation/view-charts.ts` `correlationCharts`: `renderCharts`: each group's charts, drawn as the detail charts.
@@ -245,6 +248,11 @@ existing copies onto it (see `apps/web/CLAUDE.md`).
 - `apps/web/src/page/kit/save-bar.ts` `saveBar`: `SettingsSaveBar`: pinned while a tab has unsaved edits.
 - `apps/web/src/page/kit/section-heading.ts` `sectionHeading`: `SectionHeading`: the `title` row and the `eyebrow` overline.
 - `apps/web/src/page/kit/series-legend.ts` `seriesLegend`
+- `apps/web/src/page/kit/service-health.ts` `anomaliesKey`, `fetchAnomaliesCommand`, `incidentsStream`, `incidentsLoadFailedStream`, `receivedIncidents`, `failedIncidents`, `serviceHealthCauses`: Service health inputs the overview and the services list share: the synced alert incidents, the open anomaly counts, and the causes each service row reads from them.
+- `apps/web/src/page/kit/service-metrics/grid.ts` `metricsGridOf`: `MetricsGrid` over the four golden-signal cards (`SERVICE_CHARTS`, `syncId`, `overlay`, `yAxisWidth={72}`): a service's Overview tab and a release's service section feed it.
+- `apps/web/src/page/kit/service-metrics/marker-layout.ts` `estimateLabelWidth`, `buildCommitMarkers`, `shouldRenderLabels`, `layoutMarkerLabels`: Pure geometry + derivation for the chart's commit deploy markers.
+- `apps/web/src/page/kit/service-metrics/markers-view.ts` `markersOverlay`: Commit markers over a chart, idle.
+- `apps/web/src/page/kit/service-metrics/markers.ts` `commitMarkers`, `markerShas`, `markerLayout`: `useCommitMarkers` and `CommitMarkersOverlay`'s geometry (./marker-layout.ts).
 - `apps/web/src/page/kit/service-runtimes.ts` `runtimeLink`, `workloadLink`: Where a service runs, as links to the infra pages: its platform resources (`ServiceRuntimesResponse`) and its Kubernetes workloads.
 - `apps/web/src/page/kit/settings-section.ts` `settingsSection`, `settingsSections`, `adminOnlyNote`, `sectionNote`: `SettingsSection`, `SettingsSections`, `AdminOnlyNote`.
 - `apps/web/src/page/kit/sheet-detail-header.ts` `sheetDetailHeader`: `SheetDetailHeader`: a detail sheet's eyebrow kind, title, screen-reader description and meta row.
@@ -283,6 +291,7 @@ existing copies onto it (see `apps/web/CLAUDE.md`).
 - `apps/web/src/page/kit/where-field-command.ts` `lookupWhereValues`: The where fields' Commands and Mounts: the active key's values, and each textarea's caret.
 - `apps/web/src/page/kit/where-field-update.ts` `caretOf`, `autocompleteOf`, `isFieldOpen`, `updateWhereFields`: `useWhereClauseAutocomplete` for any number of fields: the caret, the open list, the active key's values, and an applied suggestion handed back to the owner as the field's new t...
 - `apps/web/src/page/kit/where-field.ts` `initWhereFields`: Any number of where editors with suggestions (`WhereClauseEditor`), by field id: their carets, open lists and active keys' values.
+- `apps/web/src/page/kit/widget-shell.ts` `widgetShell`: A read-only widget shell (the overview and the golden-signal grid): title, hint, hoisted legend chips, headline value, content and footer.
 
 ## apps/local-ui/src/page/kit
 

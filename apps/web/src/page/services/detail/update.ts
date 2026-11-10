@@ -13,7 +13,7 @@ import * as Chart from "@maple/views/charts/chart"
 import { LoadChartRuntime } from "@maple/views/charts/chart-runtime"
 import * as Keyed from "@maple/views/data/keyed"
 import { requestKey } from "@maple/views/data/request-key"
-import { commitDetailKey } from "../../kit/commit-card"
+import { commitDetailKey, isResolvableSha } from "../../kit/commit-card"
 import { resolveWindow, type TimeWindow } from "../../../data/time-range"
 import type { Resources } from "../../../platform/resources"
 import { AppRoute, hrefOf } from "../../../route"
@@ -53,16 +53,18 @@ import {
 	tabOf,
 	windowSeconds,
 } from "./derive"
-import { commitMarkers, markerShas } from "./derive-markers"
+import { stepEnvironmentSelect } from "../../kit/environment-switcher"
 import { initialSort, nextSort, operationTraceSearch, TRACE_DETAIL_LIMIT_SECONDS } from "./derive-tables"
-import { deriveDeploys, isResolvableSha } from "./derive-panels"
+import { deriveDeploys } from "./derive-panels"
 import { matchesFilter } from "./derive-api"
 import * as EndpointPeek from "./endpoint-peek/model"
 import * as EndpointPeekUpdate from "./endpoint-peek/update"
 import { Message, type RetryTarget } from "./message"
-import type { Commit, CommitFailure, Model } from "./model"
+import type { Model } from "./model"
 import type { Endpoint } from "./model-tabs"
 import { groupsOf, visibleEndpoints } from "./view-api"
+import { type Commit, type CommitFailure } from "../../kit/service-metrics/points"
+import { commitMarkers, markerShas } from "../../kit/service-metrics/markers"
 
 export type Return = PageReturn<Model, Message>
 
@@ -631,28 +633,23 @@ const withPicker = (model: Model, message: TimeRangePicker.Message): Return => {
 }
 
 const withEnvironmentSelect = (model: Model, message: Select.Message): Return => {
-	const next = Select.update(model.environmentSelect, message)
-	const lifted = {
-		model: { ...model, environmentSelect: next.model },
-		commands: Command.mapMessages(next.commands, (inner) =>
-			Message.GotEnvironmentSelectMessage({ message: inner }),
-		),
-	}
-	// `handleEnvironmentChange`: "All environments" leaves the URL.
-	return next.outMessage === undefined
-		? lifted
-		: {
-				...lifted,
-				outMessage: navigate(
-					model,
-					{
-						...model.search,
-						environments:
-							next.outMessage.value === ALL_ENVIRONMENTS ? undefined : [next.outMessage.value],
-					},
-					false,
-				).outMessage,
-			}
+	const step = stepEnvironmentSelect(model.environmentSelect, message, {
+		toMessage: (inner) => Message.GotEnvironmentSelectMessage({ message: inner }),
+		allValue: ALL_ENVIRONMENTS,
+		keepAllInUrl: false,
+	})
+	const lifted = { model: { ...model, environmentSelect: step.select }, commands: step.commands }
+	return Option.match(step.picked, {
+		onNone: () => lifted,
+		onSome: (environment) => ({
+			...lifted,
+			outMessage: navigate(
+				model,
+				{ ...model.search, environments: environment === undefined ? undefined : [environment] },
+				false,
+			).outMessage,
+		}),
+	})
 }
 
 const withChart = (model: Model, chartId: string, message: Chart.Message): Return => {

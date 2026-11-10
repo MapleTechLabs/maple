@@ -9,9 +9,9 @@ import {
 import { parseBucketMs } from "@maple/ui/lib/format"
 import { AsyncData } from "foldkit"
 import type { PlotGeometry } from "@maple/views/charts/chart"
-import { firstLine, isResolvableSha } from "./derive-panels"
-import type { CommitData, Release } from "./model"
+import type { CommitData, Release } from "./points"
 import { Array as Arr, Order } from "effect"
+import { firstLine, isResolvableSha } from "../commit-card"
 
 // `useCommitMarkers` and `CommitMarkersOverlay`'s geometry (./marker-layout.ts).
 

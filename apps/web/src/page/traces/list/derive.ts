@@ -3,6 +3,7 @@ import { Array as Arr, String as Str, Option } from "effect"
 import { attributeFilterOperator, formatAttributeClause } from "../advanced-filter-sync"
 import type { TracesSearch } from "../../../route/search"
 import type { Facet } from "./message"
+import { facetChipsOf } from "../../kit/facets"
 
 export type Search = typeof TracesSearch.Type
 type AttributeParam = "attributeFilters" | "resourceAttributeFilters"
@@ -81,20 +82,18 @@ const facetChip = (
 
 /** Applied facet and attribute filters, sidebar order, exclusions first. */
 export const traceFilterChips = (search: Search): ReadonlyArray<TraceFilterChip> => {
-	const facetChips = (polarity: "include" | "exclude") =>
-		Arr.flatMap(FACETS, (facet) => {
-			const values = search[facet[polarity]]
-			return values === undefined || values.length === 0
-				? []
-				: [facetChip(facet[polarity], facet.label, values, polarity === "exclude")]
-		})
+	const facetChips = (isNegated: boolean) =>
+		Arr.map(
+			facetChipsOf(FACETS, (param) => search[param], isNegated),
+			(chip) => facetChip(chip.param, chip.label, chip.values, chip.isNegated),
+		)
 	const attributes = [
 		...attributeChips(search, "attributeFilters"),
 		...attributeChips(search, "resourceAttributeFilters"),
 	]
 	return [
-		...facetChips("exclude"),
-		...facetChips("include"),
+		...facetChips(true),
+		...facetChips(false),
 		...Arr.filter(attributes, (chip) => chip.negated),
 		...Arr.filter(attributes, (chip) => !chip.negated),
 	]

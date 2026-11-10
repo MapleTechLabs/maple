@@ -2,9 +2,11 @@ import { shortId } from "@maple/ui/lib/ids"
 import { cn } from "@maple/ui/lib/utils"
 import { badgeVariants } from "@maple/views/ui/badge.styles"
 import { copyableBadgeStyles } from "@maple/views/ui/copyable-badge.styles"
-import { Effect, Predicate, Schema, String as Str, Option } from "effect"
-import { AsyncData } from "foldkit"
+import { Duration, Effect, Predicate, type Result, Schema, String as Str, Option } from "effect"
+import { AsyncData, Command } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
+import type { CallableTaggedStruct } from "foldkit/schema"
+import * as HoverCard from "@maple/views/ui/hover-card"
 import {
 	IntegrationsNotConnectedError,
 	VcsCommitDetailResponse,
@@ -17,11 +19,20 @@ import { MapleInternalApiClient } from "../../platform/api-clients"
 import { skeleton } from "@maple/views/ui/skeleton"
 import { relativeTime } from "./relative-time"
 
-// The commit SHA hover card: the body
+// The commit SHA hover card: its state machine (arm, lookup, settle), the body
 // `CommitDetailBody` renders once `commitQueryAtom(sha)` settles, and the lookup itself.
 
 /** A full 40-hex git SHA: only those open a card and reach the VCS endpoint. */
 export const isResolvableSha = (sha: string): boolean => /^[0-9a-f]{40}$/i.test(sha)
+
+/** `firstLine`: a commit message's subject, trimmed. */
+export const firstLine = (message: string): string =>
+	Str.trim(
+		Option.match(Str.indexOf("\n")(message), {
+			onNone: () => message,
+			onSome: (index) => Str.slice(0, index)(message),
+		}),
+	)
 
 /** `CommitShaHoverCard`'s timings: the fetch arms after 20 ms, the card opens after 200 ms. */
 export const ARM_DELAY_MS = 20
@@ -141,6 +152,123 @@ export const loadCommitDetail = (key: RequestKey, sha: string) =>
 		Effect.result,
 	)
 
+// STATE
+
+/** One card per page, shared by every trigger, and the commits it looked up by sha. */
+export const CommitCardState = Schema.Struct({
+	commitCard: HoverCard.Model,
+	commitDetails: Schema.Record(Schema.String, CommitDetailData.schema),
+	/** A trigger enter's generation: the 20 ms arm only fires for the latest one. */
+	commitArm: Schema.Number,
+})
+export type CommitCardState = typeof CommitCardState.Type
+
+export const initCommitCard = (id: string): CommitCardState => ({
+	commitCard: HoverCard.init(id, {
+		openDelayMs: OPEN_DELAY_MS,
+		side: "bottom",
+		align: "start",
+		sideOffset: 6,
+	}),
+	commitDetails: {},
+	commitArm: 0,
+})
+
+const ArmFields = { sha: Schema.String, generation: Schema.Number }
+const DetailFields = { sha: Schema.String, result: Schema.Result(CommitDetail, CommitFailure) }
+
+/** The messages a page spreads into its union to run the card. */
+export const CommitCardMessages = {
+	GotCommitCardMessage: { message: HoverCard.Message },
+	ElapsedCommitArm: ArmFields,
+	CompletedFetchCommitDetail: DetailFields,
+}
+
+/** A page's arm timer (the lookup starts 20 ms into a hover, ahead of the card) and `commitQueryAtom(sha)`. */
+export const commitCardCommands = <
+	const ArmName extends string,
+	const FetchName extends string,
+	const ArmTag extends string,
+	const DetailTag extends string,
+>(
+	names: Readonly<{ arm: ArmName; fetch: FetchName }>,
+	messages: Readonly<{
+		elapsed: CallableTaggedStruct<ArmTag, typeof ArmFields>
+		completed: CallableTaggedStruct<DetailTag, typeof DetailFields>
+	}>,
+) => ({
+	Arm: Command.define(names.arm, {
+		args: ArmFields,
+		messages: [messages.elapsed],
+		execute: ({ sha, generation }) =>
+			Effect.as(Effect.sleep(Duration.millis(ARM_DELAY_MS)), messages.elapsed({ sha, generation })),
+	}),
+	Fetch: Command.define(names.fetch, {
+		args: { key: Schema.String, sha: Schema.String },
+		messages: [messages.completed],
+		execute: ({ key, sha }) =>
+			Effect.map(loadCommitDetail(key, sha), (result) => messages.completed({ sha, result })),
+	}),
+})
+
+/** A commit trigger's id ends in the sha it looks up. */
+const shaOfTrigger = (triggerId: string): string => Str.slice(-40)(triggerId)
+
+type Step<S, C> = Readonly<{ model: S; commands?: ReadonlyArray<C> }>
+
+/** The card's own update, plus the 20 ms arm a trigger enter starts and a leave cancels. */
+export const stepCommitCard = <S extends CommitCardState, M, C>(
+	state: S,
+	message: HoverCard.Message,
+	options: Readonly<{
+		toMessage: (message: HoverCard.Message) => M
+		arm: (args: Readonly<{ sha: string; generation: number }>) => C
+	}>,
+): Step<S, Command.Command<M> | C> => {
+	const next = HoverCard.update(state.commitCard, message)
+	const lifted = Command.mapMessages(next.commands ?? [], options.toMessage)
+	const arm = state.commitArm + 1
+	if (message._tag === "EnteredTrigger") {
+		const sha = shaOfTrigger(message.triggerId)
+		const isArmed = state.commitDetails[sha] !== undefined
+		return {
+			model: { ...state, commitCard: next.model, commitArm: arm },
+			commands: [...lifted, ...(isArmed ? [] : [options.arm({ sha, generation: arm })])],
+		}
+	}
+	if (message._tag === "LeftTrigger")
+		return { model: { ...state, commitCard: next.model, commitArm: arm }, commands: lifted }
+	return { model: { ...state, commitCard: next.model }, commands: lifted }
+}
+
+/** Once armed it stays armed: the lookup survives the pointer leaving. */
+export const elapsedCommitArm = <S extends CommitCardState, C>(
+	state: S,
+	args: Readonly<{ orgId: string; sha: string; generation: number }>,
+	fetch: (args: Readonly<{ key: string; sha: string }>) => C,
+): Step<S, C> =>
+	args.generation !== state.commitArm || state.commitDetails[args.sha] !== undefined
+		? { model: state }
+		: {
+				model: {
+					...state,
+					commitDetails: { ...state.commitDetails, [args.sha]: AsyncData.Loading() },
+				},
+				commands: [fetch({ key: commitDetailKey(args.orgId, args.sha), sha: args.sha })],
+			}
+
+export const settleCommitDetail = <S extends CommitCardState>(
+	state: S,
+	sha: string,
+	result: Result.Result<CommitDetail, CommitFailure>,
+): S => ({
+	...state,
+	commitDetails: {
+		...state.commitDetails,
+		[sha]: AsyncData.settle(state.commitDetails[sha] ?? AsyncData.Loading(), result),
+	},
+})
+
 // VIEW
 
 type Clock = Readonly<{ nowMs: number; timeZone: string }>
@@ -167,25 +295,38 @@ const externalText = <M>(h: HtmlBuilder<M>, href: string | null, className: stri
 				[text],
 			)
 
-/** `CommitAvatar` (not compact). */
-const avatar = <M>(h: HtmlBuilder<M>, url: string | null, name: string, href: string | null): Html => {
-	const inner =
-		url === null
-			? h.div(
-					[
-						h.Class(
-							"size-7 flex shrink-0 items-center justify-center rounded-full bg-muted text-2xs font-medium uppercase text-muted-foreground",
+/** `CommitAvatar`: the author's avatar, or their initials. TODO(avatar-error): a broken URL does not fall back to initials. */
+export const commitAvatar = <M>(
+	h: HtmlBuilder<M>,
+	url: string | null,
+	name: string,
+	isCompact = true,
+): Html => {
+	const size = isCompact ? "size-5" : "size-7"
+	return url === null
+		? h.div(
+				[
+					h.Class(
+						cn(
+							size,
+							"flex shrink-0 items-center justify-center rounded-full bg-muted text-2xs font-medium uppercase text-muted-foreground",
 						),
-					],
-					[Str.slice(0, 2)(name)],
-				)
-			: h.img([
-					h.Src(url),
-					h.Alt(""),
-					h.Class("size-7 shrink-0 rounded-full ring-1 ring-foreground/10"),
-					h.Attribute("loading", "lazy"),
-					h.Attribute("referrerpolicy", "no-referrer"),
-				])
+					),
+				],
+				[Str.slice(0, 2)(name)],
+			)
+		: h.img([
+				h.Src(url),
+				h.Alt(""),
+				h.Class(cn(size, "shrink-0 rounded-full ring-1 ring-foreground/10")),
+				h.Attribute("loading", "lazy"),
+				h.Attribute("referrerpolicy", "no-referrer"),
+			])
+}
+
+/** `CommitAvatar` (not compact), linked to the author's profile when known. */
+const avatar = <M>(h: HtmlBuilder<M>, url: string | null, name: string, href: string | null): Html => {
+	const inner = commitAvatar(h, url, name, false)
 	return href === null
 		? inner
 		: h.a(

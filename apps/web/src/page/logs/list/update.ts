@@ -62,8 +62,10 @@ import {
 } from "./derive"
 import { initSearchHelp } from "./view-search-help"
 import { type Facet, Message } from "./message"
-import type { LogsPage, Model, Pagination } from "./model"
+import { editFacet, excludedValue, onlyValue, toggledValue } from "../../kit/facets"
+import type { LogsPage, Model } from "./model"
 import type { LoadFailure } from "@maple/views/data/load-failure"
+import { appendedPage, fetchingNext, freshLaterPages } from "../../kit/infinite-pages"
 
 export type Return = PageReturn<Model, Message>
 type Commands = ReadonlyArray<Command.Command<Message, never, Resources>>
@@ -72,13 +74,6 @@ type Commands = ReadonlyArray<Command.Command<Message, never, Resources>>
 export const DEFAULT_PRESET = "12h"
 
 const NO_BRUSH = { left: null, right: null, isSelecting: false }
-
-const freshPagination = (generation: number): Pagination => ({
-	generation,
-	pages: [],
-	isFetching: false,
-	isStopped: false,
-})
 
 export const resolveCommand = (model: Model, context: PageContext, mode: RequestMode) =>
 	ResolveWindow({
@@ -239,7 +234,7 @@ const requestAll = (
 	const isNewFirstPage = done.model.firstPage.key !== model.firstPage.key
 	return {
 		model: isNewFirstPage
-			? { ...done.model, pagination: freshPagination(model.pagination.generation + 1) }
+			? { ...done.model, pagination: freshLaterPages(model.pagination.generation + 1) }
 			: done.model,
 		commands: done.commands,
 	}
@@ -270,7 +265,7 @@ const fetchIfNearEnd =
 			return result
 		return {
 			...result,
-			model: { ...model, pagination: { ...model.pagination, isFetching: true } },
+			model: { ...model, pagination: fetchingNext(model.pagination) },
 			commands: [
 				...(result.commands ?? []),
 				FetchNextPage({
@@ -294,8 +289,6 @@ const navigate = (model: Model, search: Search, isReplace = false): Return => ({
 
 const searchHref = (search: Search) => hrefOf(AppRoute.Logs({ search }))
 
-const listOrUndefined = (values: ReadonlyArray<string>) => (values.length === 0 ? undefined : values)
-
 const EXCLUDED_OF = {
 	severities: "excludedSeverities",
 	deploymentEnvs: "excludedDeploymentEnvs",
@@ -303,32 +296,8 @@ const EXCLUDED_OF = {
 	services: "excludedServices",
 } as const satisfies Record<Facet, string>
 
-/** `toggleOption`: include and exclude are exclusive per value. */
-const toggledFacet = (search: Search, facet: Facet, name: string): Search => {
-	const selected = search[facet] ?? []
-	const excluded = search[EXCLUDED_OF[facet]] ?? []
-	return {
-		...search,
-		[EXCLUDED_OF[facet]]: excluded.includes(name)
-			? listOrUndefined(Arr.filter(excluded, (v) => v !== name))
-			: search[EXCLUDED_OF[facet]],
-		[facet]: listOrUndefined(
-			selected.includes(name) ? Arr.filter(selected, (v) => v !== name) : [...selected, name],
-		),
-	}
-}
-
-const excludedFacet = (search: Search, facet: Facet, name: string): Search => {
-	const selected = search[facet] ?? []
-	const excluded = search[EXCLUDED_OF[facet]] ?? []
-	return {
-		...search,
-		[facet]: listOrUndefined(Arr.filter(selected, (v) => v !== name)),
-		[EXCLUDED_OF[facet]]: listOrUndefined(
-			excluded.includes(name) ? Arr.filter(excluded, (v) => v !== name) : [...excluded, name],
-		),
-	}
-}
+/** A facet's include param and its excluded twin. */
+const paramsOf = (facet: Facet) => ({ include: facet, exclude: EXCLUDED_OF[facet] })
 
 const windowOnly = (search: Search): Search => ({
 	startTime: search.startTime,
@@ -344,7 +313,7 @@ export const init = (route: { readonly search: Search }, context: PageContext): 
 		window: null,
 		nowMs: 0,
 		firstPage: Keyed.idle(),
-		pagination: freshPagination(0),
+		pagination: freshLaterPages(0),
 		facets: Keyed.idle(),
 		volume: Keyed.idle(),
 		attributeKeys: Keyed.idle(),
@@ -482,7 +451,7 @@ const acceptFirstPage = (
 	const firstPage = Keyed.accept(model.firstPage, key, result)
 	if (firstPage === model.firstPage) return { model }
 	// A refreshed first page owns a fresh set of later pages; its rows replace the stream's.
-	const next = { ...model, firstPage, pagination: freshPagination(model.pagination.generation + 1) }
+	const next = { ...model, firstPage, pagination: freshLaterPages(model.pagination.generation + 1) }
 	return fetchIfNearEnd(context)(replaceStreamRows(next, context))
 }
 
@@ -494,9 +463,7 @@ const acceptNextPage = (
 	context: PageContext,
 ): Return => {
 	if (key !== model.firstPage.key || generation !== model.pagination.generation) return { model }
-	const pagination: Pagination = Result.isSuccess(result)
-		? { ...model.pagination, isFetching: false, pages: [...model.pagination.pages, result.success] }
-		: { ...model.pagination, isFetching: false, isStopped: true }
+	const pagination = appendedPage(model.pagination, result)
 	return fetchIfNearEnd(context)({ model: setStreamRows({ ...model, pagination }, context) })
 }
 
@@ -563,11 +530,21 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			model.window === null || model.facets.key === null
 				? { model }
 				: requestAll(model, context, model.window, "Load", "Refresh"),
-		ToggledFacetOption: ({ facet, name }) => navigate(model, toggledFacet(model.search, facet, name)),
+		ToggledFacetOption: ({ facet, name }) =>
+			navigate(
+				model,
+				editFacet(model.search, paramsOf(facet), (lists) => toggledValue(lists, name)),
+			),
 		ClickedOnlyFacetOption: ({ facet, name }) =>
-			navigate(model, { ...model.search, [facet]: [name], [EXCLUDED_OF[facet]]: undefined }),
+			navigate(
+				model,
+				editFacet(model.search, paramsOf(facet), () => onlyValue(name)),
+			),
 		ClickedExcludeFacetOption: ({ facet, name }) =>
-			navigate(model, excludedFacet(model.search, facet, name)),
+			navigate(
+				model,
+				editFacet(model.search, paramsOf(facet), (lists) => excludedValue(lists, name)),
+			),
 		ClickedClearAllFilters: () => navigate({ ...model, searchText: "" }, windowOnly(model.search)),
 		RemovedFilterChip: ({ chipId: id }) =>
 			navigate(

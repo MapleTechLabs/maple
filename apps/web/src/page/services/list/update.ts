@@ -3,7 +3,7 @@ import { applySteps, keyed, type Step as KitStep } from "../../kit/keyed-step"
 import { chartEnvHandlers } from "@maple/views/charts/chart-env"
 import { reloadSpin } from "@maple/views/data/timing"
 import type { RequestMode } from "@maple/views/data/keyed"
-import { Option, Array as Arr } from "effect"
+import { Option } from "effect"
 import { AsyncData, Command } from "foldkit"
 import { LoadChartRuntime } from "@maple/views/charts/chart-runtime"
 import { emptyOnFailure } from "../../../data/enrichment"
@@ -30,7 +30,9 @@ import {
 } from "./command"
 import { commitsKey, displayedServices, healthSummary, isServiceHealth, type Search } from "./derive"
 import { type Facet, Message } from "./message"
-import { IncidentsData, type Model } from "./model"
+import { editFacet, excludedValue, onlyValue, toggledValue } from "../../kit/facets"
+import type { Model } from "./model"
+import { anomaliesKey, failedIncidents, IncidentsData, receivedIncidents } from "../../kit/service-health"
 import {
 	clickedCopySha,
 	commitCardMessage,
@@ -136,10 +138,10 @@ const requestAll = (model: Model, context: PageContext, window: TimeWindow, mode
 		),
 		keyed(
 			model.anomalies,
-			requestKey(org, "anomalies.serviceCounts", { status: "open" }),
+			anomaliesKey(org),
 			"Load",
 			(anomalies) => ({ anomalies }),
-			(key) => FetchAnomalies({ key }),
+			(key) => FetchAnomalies({ key, refresh: false }),
 		),
 	])
 }
@@ -224,37 +226,8 @@ const EXCLUDED_OF = {
 	commitShas: "excludedCommitShas",
 } as const satisfies Record<Facet, string>
 
-/** `updateFilter`: an empty list leaves the URL. */
-const listOrUndefined = (values: ReadonlyArray<string>) => (values.length === 0 ? undefined : values)
-
-/** `toggleOption`: include and exclude are exclusive per value. */
-const toggledFacet = (search: Search, facet: Facet, name: string): Search => {
-	const selected = search[facet] ?? []
-	const excluded = search[EXCLUDED_OF[facet]] ?? []
-	return {
-		...search,
-		[EXCLUDED_OF[facet]]: excluded.includes(name)
-			? listOrUndefined(Arr.filter(excluded, (v) => v !== name))
-			: search[EXCLUDED_OF[facet]],
-		[facet]: listOrUndefined(
-			selected.includes(name) ? Arr.filter(selected, (v) => v !== name) : [...selected, name],
-		),
-	}
-}
-
-const excludedFacet = (search: Search, facet: Facet, name: string): Search => {
-	const selected = search[facet] ?? []
-	const excluded = search[EXCLUDED_OF[facet]] ?? []
-	return {
-		...search,
-		[facet]: selected.includes(name)
-			? listOrUndefined(Arr.filter(selected, (v) => v !== name))
-			: search[facet],
-		[EXCLUDED_OF[facet]]: listOrUndefined(
-			excluded.includes(name) ? Arr.filter(excluded, (v) => v !== name) : [...excluded, name],
-		),
-	}
-}
+/** A facet's include param and its excluded twin. */
+const paramsOf = (facet: Facet) => ({ include: facet, exclude: EXCLUDED_OF[facet] })
 
 const windowOnly = (search: Search): Search => ({
 	startTime: search.startTime,
@@ -305,8 +278,11 @@ export const init = (route: { readonly search: Search }, context: PageContext): 
 /** Back after leaving: the last rows stay on screen while the window re-resolves like entry (snapped). */
 export const revive = (model: Model, route: { readonly search: Search }, context: PageContext): Return => {
 	// The open-anomalies key never changes, so the window re-resolve alone would keep the parked counts.
-	const anomaliesKey = requestKey(context.orgId, "anomalies.serviceCounts", { status: "open" })
-	const anomalies = Keyed.request(Keyed.forgetFailure(model.anomalies), anomaliesKey, "Refresh")
+	const anomalies = Keyed.request(
+		Keyed.forgetFailure(model.anomalies),
+		anomaliesKey(context.orgId),
+		"Refresh",
+	)
 	const next = {
 		...model,
 		...initOverlays(),
@@ -329,7 +305,9 @@ export const revive = (model: Model, route: { readonly search: Search }, context
 		commands: [
 			LoadSignalPresence({ orgId: context.orgId }),
 			resolveCommand(next, context, "Load"),
-			...(Option.isSome(anomalies) ? [FetchAnomalies({ key: anomaliesKey })] : []),
+			...(Option.isSome(anomalies)
+				? [FetchAnomalies({ key: anomaliesKey(context.orgId), refresh: false })]
+				: []),
 			...(model.chartRuntime._tag === "Failed" ? [loadChartRuntime()] : []),
 		],
 	}
@@ -421,18 +399,18 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		CompletedLoadSignalPresence: ({ result }) => ({
 			model: { ...model, presence: AsyncData.settle(model.presence, result) },
 		}),
-		UpdatedIncidents: ({ orgId, incidents }) =>
-			orgId === context.orgId
-				? followData(context)({
-						model: { ...model, incidents: IncidentsData.Success({ data: incidents }) },
-					})
-				: { model },
-		FailedLoadIncidents: ({ orgId }) =>
-			orgId === context.orgId && AsyncData.isLoading(model.incidents)
-				? followData(context)({
-						model: { ...model, incidents: IncidentsData.Failure({ error: "Unavailable" }) },
-					})
-				: { model },
+		UpdatedIncidents: ({ orgId, incidents }) => {
+			const next = receivedIncidents(orgId, context.orgId, incidents)
+			return next === undefined
+				? { model }
+				: followData(context)({ model: { ...model, incidents: next } })
+		},
+		FailedLoadIncidents: ({ orgId }) => {
+			const next = failedIncidents(model.incidents, orgId, context.orgId)
+			return next === undefined
+				? { model }
+				: followData(context)({ model: { ...model, incidents: next } })
+		},
 		...chartEnvHandlers(model),
 		ClickedReload: () => {
 			const reloaded = { ...model, refreshVersion: model.refreshVersion + 1, isReloading: true }
@@ -450,11 +428,21 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			model.window === null
 				? { model }
 				: applySteps<Model, Message>(model, [facetsStep(model, context, model.window, "Refresh")]),
-		ToggledFacetOption: ({ facet, name }) => navigate(model, toggledFacet(model.search, facet, name)),
+		ToggledFacetOption: ({ facet, name }) =>
+			navigate(
+				model,
+				editFacet(model.search, paramsOf(facet), (lists) => toggledValue(lists, name)),
+			),
 		ClickedOnlyFacetOption: ({ facet, name }) =>
-			navigate(model, { ...model.search, [facet]: [name], [EXCLUDED_OF[facet]]: undefined }),
+			navigate(
+				model,
+				editFacet(model.search, paramsOf(facet), () => onlyValue(name)),
+			),
 		ClickedExcludeFacetOption: ({ facet, name }) =>
-			navigate(model, excludedFacet(model.search, facet, name)),
+			navigate(
+				model,
+				editFacet(model.search, paramsOf(facet), (lists) => excludedValue(lists, name)),
+			),
 		// Single-select on a multi-select control: the newly ticked value wins, re-unticking clears.
 		ToggledHealthOption: ({ name }) =>
 			navigate(model, {

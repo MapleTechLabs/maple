@@ -10,8 +10,8 @@ import { TimeWindow } from "../../../data/time-range"
 import * as TimeRangePicker from "../../kit/time-range-picker"
 import { ReleasesData } from "../list/model"
 import * as Chart from "@maple/views/charts/chart"
-import { Commit, CommitFailure } from "../../services/detail/model"
 import { ReleaseDetail } from "./model"
+import { Commit, CommitFailure } from "../../kit/service-metrics/points"
 
 const result = <A extends Schema.Top>(schema: A) => ({
 	key: Schema.String,

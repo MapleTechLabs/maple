@@ -18,7 +18,7 @@ import { panel } from "@maple/views/ui/panel"
 import { table, tableBody, tableCell, tableHead, tableHeader, tableRow } from "@maple/views/ui/table"
 import { emptyValue, errorRateValue, latencyValue, serviceDot } from "@maple/views/ui/values"
 import { relativeTime } from "../../kit/relative-time"
-import { commitAvatar, isResolvableSha, firstLine, releaseHealthFigure, releaseHref } from "../kit"
+import { releaseHealthFigure, releaseHref } from "../kit"
 import { commitTrigger, type Overlays, releaseHealthPill } from "../overlays-view"
 import { MountReleasesTable } from "./command"
 import { Message } from "./message"
@@ -27,6 +27,7 @@ import { textLink } from "@maple/views/ui/text-link"
 import { typography, typographyClass } from "@maple/views/ui/typography"
 import { hstack, vstack } from "@maple/views/ui/stack"
 import { Array as Arr, String as Str } from "effect"
+import { commitAvatar, isResolvableSha, firstLine } from "../../kit/commit-card"
 
 // The releases table and its commit count.
 
