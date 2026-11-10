@@ -63,28 +63,26 @@ export const FLAGGED_HREFS: ReadonlySet<string> = new Set([
 const icon = (name: IconName): Glyph => ({ _tag: "Icon", name })
 const href = (url: string): Target => ({ _tag: "Href", href: url })
 
-/** `paletteNavItems`: every section, its children and their views, deduplicated by title and href. */
+/** Every section, its children and their views, deduplicated by title and href. */
 const navigationEntries = (): ReadonlyArray<PaletteEntry> => {
-	const rows = Arr.flatMap(
-		navGroups({ releases: true, securityAudit: true, statusPages: true }),
-		(group) =>
-			Arr.flatMap(group.items, (item) => [
-				{ id: `nav:${item.title}`, title: item.title, href: item.href, icon: item.icon },
-				...Arr.flatMap(item.subItems ?? [], (sub) => [
-					{
-						id: `nav:${item.title}:${sub.title}`,
-						title: sub.paletteTitle ?? sub.title,
-						href: sub.href,
-						icon: sub.icon ?? item.icon,
-					},
-					...Arr.map(sub.views ?? [], (view) => ({
-						id: `nav:${item.title}:${sub.title}:${view.title}`,
-						title: view.paletteTitle ?? `${sub.title} ${view.title}`,
-						href: view.href,
-						icon: view.paletteIcon ?? sub.icon ?? item.icon,
-					})),
-				]),
+	const rows = Arr.flatMap(navGroups({ releases: true, securityAudit: true, statusPages: true }), (group) =>
+		Arr.flatMap(group.items, (item) => [
+			{ id: `nav:${item.title}`, title: item.title, href: item.href, icon: item.icon },
+			...Arr.flatMap(item.subItems ?? [], (sub) => [
+				{
+					id: `nav:${item.title}:${sub.title}`,
+					title: sub.paletteTitle ?? sub.title,
+					href: sub.href,
+					icon: sub.icon ?? item.icon,
+				},
+				...Arr.map(sub.views ?? [], (view) => ({
+					id: `nav:${item.title}:${sub.title}:${view.title}`,
+					title: view.paletteTitle ?? `${sub.title} ${view.title}`,
+					href: view.href,
+					icon: view.paletteIcon ?? sub.icon ?? item.icon,
+				})),
 			]),
+		]),
 	)
 	// One row per page, titled by its most specific row ("Traces", not its "Explore" parent);
 	// every title that opens the same page stays searchable as a keyword.
@@ -168,7 +166,7 @@ const integrationEntries = (): ReadonlyArray<PaletteEntry> =>
 
 const decodeDashboardId = Schema.decodeUnknownOption(DashboardId)
 
-/** Favourites first, each half newest first (`useDashboardsRead`'s order). */
+/** Favourites first, each half newest first. */
 const dashboardEntries = (inputs: EntryInputs): ReadonlyArray<PaletteEntry> => {
 	const favorites = Arr.filter(inputs.dashboards, (row) => inputs.favorites.includes(row.id))
 	const others = Arr.filter(inputs.dashboards, (row) => !inputs.favorites.includes(row.id))

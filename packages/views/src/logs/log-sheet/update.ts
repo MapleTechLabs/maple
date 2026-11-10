@@ -36,7 +36,7 @@ export const WriteDetailClipboard = Command.define("WriteDetailClipboard", {
 		),
 })
 
-/** `logPermalink`: the origin is read when copying, never in the view. */
+/** The log's permalink: the origin is read when copying, never in the view. */
 export const WritePermalinkClipboard = Command.define("WritePermalinkClipboard", {
 	args: { path: Schema.String, generation: Schema.Number, copyId: Schema.String },
 	messages: [Message.SucceededCopy, Message.FailedCopy],

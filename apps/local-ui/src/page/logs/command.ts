@@ -114,7 +114,7 @@ export const FetchNextPage = Command.define("FetchNextLocalLogsPage", {
 			},
 			args.apiBase,
 		).pipe(
-			// `fetchNextPage` updates the cached query too, so a reload opens on every page loaded.
+			// A next page updates the cached query too, so a reload opens on every page loaded.
 			Effect.tap((page) =>
 				Effect.flatMap(Clock.currentTimeMillis, (atMs) =>
 					recordCached(logsKey(args), pagesToCached({ pages: [...args.pages, page] }), atMs),
@@ -147,7 +147,7 @@ export const FetchPatterns = Command.define("FetchLocalLogPatterns", {
 		}).pipe(Effect.catch((failure) => Effect.succeed(Message.FailedFetchPatterns({ key, failure })))),
 })
 
-/** The facets' own `staleTime`. */
+/** How long the facets stay fresh. */
 const FACET_STALE_MS = 60_000
 
 export const FetchServices = Command.define("FetchLocalLogServices", {
@@ -205,7 +205,7 @@ export const SavePreferences = Command.define("SaveLocalLogsPreferences", {
 		Effect.as(saveLogsViewPreferences(preferences), Message.CompletedSavePreferences()),
 })
 
-/** `ToolbarSearch`'s 300 ms pause before a typed search commits. */
+/** The 300 ms pause before a typed search commits. */
 export const WaitSearchDebounce = Command.define("WaitLogsSearchDebounce", {
 	args: { version: Schema.Number },
 	messages: [Message.ElapsedSearchDebounce],

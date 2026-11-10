@@ -5,7 +5,7 @@ import { icon } from "./icon"
 import type * as Menu from "./menu"
 import * as MenuView from "./menu-view"
 
-// `RowActionsMenu`.
+// A row's overflow menu of actions.
 
 export type RowActionsMenuOptions<M> = Readonly<{
 	/** The menu's slot and Model. */

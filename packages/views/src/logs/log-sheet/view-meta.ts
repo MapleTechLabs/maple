@@ -40,7 +40,7 @@ export const triggerIdOf = (model: Model, trigger: keyof typeof TRIGGERS): strin
 export const triggerIdsOf = (model: Model): ReadonlyArray<string> =>
 	Arr.map(["json", "link", "page", "prompt"] as const, (trigger) => triggerIdOf(model, trigger))
 
-/** `copyTooltipText`: the tooltip follows the copy status. */
+/** The tooltip follows the copy status. */
 const copyTooltipText = (status: CopyStatus, label: string, copiedLabel = "Copied"): string =>
 	status === "copied" ? copiedLabel : status === "error" ? "Couldn't copy" : `Copy ${label}`
 

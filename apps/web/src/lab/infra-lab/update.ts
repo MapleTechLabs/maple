@@ -25,7 +25,7 @@ export const Model = Schema.Struct({
 	timeZone: Schema.String,
 	hostQuery: Schema.String,
 	hostScope: Schema.optional(HostsList.HostScope),
-	/** `HostTable`'s own `useTableSort`: CPU, descending. */
+	/** The host table's sort: CPU, descending. */
 	hostSort: SortState,
 	railway: RailwayModel,
 })

@@ -52,7 +52,7 @@ export function findFirstPartialIndex(
  *
  * A caller that has the row-level answer — a `totalCount`, a `hasData` flag,
  * anything the pipeline stamps per bucket rather than per series — should pass
- * it instead, and then this stops guessing. See `useFixedMetricModel`, where
+ * it instead, and then this stops guessing. See `fixedMetricModel`, where
  * one predicate over `totalCount` also makes the four service-overview panels
  * agree on where the data ends; deciding it per series is what let latency and
  * throughput trim to different buckets on the same card grid.

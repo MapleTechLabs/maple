@@ -9,7 +9,6 @@ import { liveControls } from "../../page/logs/live-controls"
 import { labShellView } from "../app-shell"
 import { Message, type Model, PIN_OPTIONS, type Toggle } from "./model"
 
-// `Toggle`
 const toggleButton = (h: HtmlBuilder<Message>, label: string, isOn: boolean, onClick: Message): Html =>
 	button(
 		h,

@@ -12,7 +12,7 @@ import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { Array as Arr, String as Str } from "effect"
 
-// Small value components: LatencyValue, ErrorRateValue, ServiceDot.
+// Small value components: latency, error rate and the service dot.
 
 /** A zero, a missing value and the `—` placeholder all read in this one quiet grey. */
 export const NIL_VALUE = "text-foreground-subtle"
@@ -47,7 +47,7 @@ const LATENCY_UNIT = {
 	critical: null,
 } satisfies Record<keyof typeof LATENCY_TEXT_TONE, string | null>
 
-/** `LatencyValue`: formatted and toned by magnitude against a percentile budget. */
+/** Formatted and toned by magnitude against a percentile budget. */
 export const latencyValue = <M>(
 	h: HtmlBuilder<M>,
 	options: Readonly<{ ms: number; scale?: LatencyScale; className?: string }>,
@@ -62,7 +62,6 @@ export const latencyValue = <M>(
 	)
 }
 
-/** `ErrorRateValue`. */
 export const errorRateValue = <M>(
 	h: HtmlBuilder<M>,
 	options: Readonly<{ rate: number; className?: string }>,
@@ -80,7 +79,7 @@ export const errorRateValue = <M>(
 		[formatErrorRate(options.rate)],
 	)
 
-/** `ServiceDot`: the service's deterministic colour blob. */
+/** The service's deterministic colour blob. */
 export const serviceDot = <M>(
 	h: HtmlBuilder<M>,
 	options: Readonly<{ serviceName: string; size?: "sm" | "default"; className?: string }>,

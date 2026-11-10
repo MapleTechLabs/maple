@@ -26,7 +26,7 @@ import { InvestigationRowSchema } from "@maple/web-data/collections/investigatio
 import { ApiKeyRowSchema } from "@maple/web-data/collections/api-keys"
 import { timestamptzParser } from "@maple/web-data/collections/shape-parsers"
 
-/** `getOrgCollections`'s 30 s fallback: a superseded set is cleaned up even if a reader lingers. */
+/** A 30 s fallback: a superseded set is cleaned up even if a reader lingers. */
 const CLEANUP_FALLBACK = Duration.seconds(30)
 
 export class CollectionCleanupError extends Schema.TaggedError<CollectionCleanupError>()(
@@ -69,7 +69,7 @@ const makeSet = (
 	client: MapleApiV2Client["Service"],
 ) => ({
 	orgId,
-	// `createDashboardsCollection`: writes PATCH/DELETE through the v2 API.
+	// Writes PATCH/DELETE through the v2 API.
 	dashboards: makeDashboardsCollection({ orgId, url: syncProxyUrl, runtime, fetchClient, client }),
 	apiKeys: createEffectCollection({
 		id: `api_keys:${orgId}`,
@@ -100,7 +100,7 @@ const makeSet = (
 		id: `alert_rule_states:${orgId}`,
 		runtime,
 		schema: AlertRuleStateRowSchema,
-		// Composite key (org_id, rule_id, group_key), as `createAlertRuleStatesCollection`.
+		// Composite key (org_id, rule_id, group_key).
 		getKey: (row) => `${row.rule_id}:${row.group_key}`,
 		shapeOptions: {
 			url: syncProxyUrl,
@@ -137,7 +137,7 @@ const makeSet = (
 export type OrgCollectionSet = ReturnType<typeof makeSet>
 
 /**
- * `createInvestigationCollection` (lib/collections/investigation-collections.ts): the
+ * The
  * `investigation_v2` shape scoped to one investigation, read-only. Not part of the org set: its
  * lifecycle is the page's, so the caller releases it when its live query lets go.
  */
@@ -169,7 +169,7 @@ type SyncedCollection =
 	| OrgCollectionSet["alertDestinations"]
 	| InvestigationCollection
 
-/** `cleanupCollectionWhenIdle`: wait for the last live query to let go, then clean up. */
+/** Wait for the last live query to let go, then clean up. */
 const cleanupWhenIdle = (collection: SyncedCollection): Effect.Effect<void> =>
 	Effect.callback<void>((resume) => {
 		if (collection.subscriberCount === 0) return resume(Effect.void)
@@ -205,10 +205,10 @@ export class OrgCollections extends Context.Service<
 		) => Effect.Effect<InvestigationCollection>
 		/** Cleans the collection up once its last live query has let go (in the background). */
 		readonly releaseInvestigation: (collection: InvestigationCollection) => Effect.Effect<void>
-		/** `retryOrgCollections`: a fresh set for the open org; live streams move onto it. */
+		/** A fresh set for the open org; live streams move onto it. */
 		readonly recreate: Effect.Effect<void>
 		/**
-		 * `useOrgCollections`: `build` over the org's set, rebuilt on each `recreate` (the old
+		 * `build` over the org's set, rebuilt on each `recreate` (the old
 		 * stream is torn down first, so its live queries let the superseded set drain).
 		 */
 		readonly liveFor: <A, R>(

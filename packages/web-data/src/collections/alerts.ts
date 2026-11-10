@@ -53,8 +53,6 @@ const parseJson = Schema.decodeUnknownOption(Schema.fromJsonString(Schema.Unknow
 const safeParseStringArray = (value: unknown): ReadonlyArray<string> =>
 	Option.getOrElse(decodeStringArray(value), () => [] as ReadonlyArray<string>)
 
-// alert_rules
-
 /**
  * Identity row schema for `alert_rules` — mirrors the pgTable columns (snake_case)
  * so a post-deploy column drift surfaces as a SchemaValidationError (→ self-heal),
@@ -106,8 +104,6 @@ export const AlertRuleRowSchema = Schema.Struct({
 })
 export type AlertRuleRow = typeof AlertRuleRowSchema.Type
 
-// alert_rule_states
-
 export const AlertRuleStateRowSchema = Schema.Struct({
 	org_id: Schema.String,
 	rule_id: Schema.String,
@@ -124,8 +120,6 @@ export const AlertRuleStateRowSchema = Schema.Struct({
 	updated_at: Schema.String,
 })
 export type AlertRuleStateRow = typeof AlertRuleStateRowSchema.Type
-
-// alert_incidents
 
 export const AlertIncidentRowSchema = Schema.Struct({
 	id: Schema.String,
@@ -347,8 +341,6 @@ export const rowsToAlertIncidentDocuments = (
 	rows: ReadonlyArray<AlertIncidentRow>,
 ): ReadonlyArray<AlertIncidentDocument> => Arr.getSomes(Arr.map(rows, rowToAlertIncidentDocument))
 
-// alert_destinations
-
 /**
  * Identity row schema for the `alert_destinations_v2` shape. The shape is
  * column-restricted server-side (the encrypted `secret_*` columns are dropped —
@@ -391,7 +383,7 @@ const decodeDestinationPublicConfig = Schema.decodeUnknownOption(AlertDestinatio
 /**
  * Decodes a raw `alert_destinations` row into the domain
  * {@link AlertDestinationDocument}, mirroring `rowToDestinationDocument` +
- * `safeParsePublicConfig` in AlertsService.ts (invalid config → the same
+ * `decodePublicConfig` in AlertDestinationsService.ts (invalid config → the same
  * "Invalid destination config" fallback the server uses). `None` for a type
  * this build does not know (a retired provider's leftover row): it is dropped,
  * never a crash.

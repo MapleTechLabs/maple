@@ -15,7 +15,7 @@ export interface TimeseriesAxisContext {
 	domainMs?: readonly [number, number]
 	/**
 	 * The IANA zone the labels print in and the ticks are chosen in; `undefined`
-	 * is the browser's. `useTimeseriesModel` reads it off `PlotTimeZoneProvider`.
+	 * is the browser's.
 	 */
 	timeZone?: string
 }

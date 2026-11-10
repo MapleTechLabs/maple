@@ -18,7 +18,7 @@ import { swatch } from "../ui/swatch"
 import { Array as Arr } from "effect"
 import { typography } from "../ui/typography"
 
-// `TimeseriesLegend`: the compact legend or the Min/Max/Mean/Last table, below or beside the
+// The timeseries legend: the compact legend or the Min/Max/Mean/Last table, below or beside the
 // plot; shared by the line, area and bar charts.
 
 export interface LegendSeries {
@@ -205,7 +205,7 @@ export const timeseriesLegend = (
 ): Html => {
 	const { series } = inputs
 	if ((inputs.legend !== "visible" && inputs.legend !== "right") || series.length === 0) return h.empty
-	// Stats over the closed buckets only, so all-zero series sink to the bottom (`TimeseriesLegend`).
+	// Stats over the closed buckets only, so all-zero series sink to the bottom.
 	const keys = Arr.map(series, (entry) => entry.key)
 	const normalised = normaliseRows(inputs.data, inputs.definitions)
 	const rows = scaleRates(normalised, keys, inputs.unit, bucketSecondsOf(normalised))

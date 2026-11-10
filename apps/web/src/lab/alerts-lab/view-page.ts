@@ -53,7 +53,7 @@ const acknowledgedByDana = (
 	}
 }
 
-/** `IncidentFrame`: `IncidentHeader` (a page header) over `IncidentBody`, from the fixture. */
+/** The incident header over its body, from the fixture. */
 const incidentFrame = (h: H, model: Model, fixture: AlertsLabFixture, isAcknowledged: boolean): Html => {
 	const { rule, ruleIncidents, states, preview, range, deliveries, investigation } = fixture.incident
 	const { incident, activity } = isAcknowledged

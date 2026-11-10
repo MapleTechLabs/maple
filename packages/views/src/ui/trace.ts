@@ -46,7 +46,7 @@ export const traceIcon = <M>(h: HtmlBuilder<M>, children: Children, className?: 
 export const traceTitle = <M>(h: HtmlBuilder<M>, children: Children, className?: string): Html =>
 	h.span([h.DataAttribute("slot", "trace-title"), h.Class(cn(traceTitleStyles, className))], children)
 
-/** `TraceCollapsible` (Base UI Collapsible): the trigger line and, while open, its detail panel. */
+/** A Base UI Collapsible: the trigger line and, while open, its detail panel. */
 export const traceCollapsible = <M>(
 	h: HtmlBuilder<M>,
 	options: {

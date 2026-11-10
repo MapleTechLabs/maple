@@ -20,7 +20,7 @@ export type RefreshButtonOptions<Message> = Readonly<{
 	triggerId?: string
 }>
 
-/** `<RefreshButton>`: the icon spins while pending and the button disables. */
+/** A refresh button: the icon spins while pending and the button disables. */
 export const refreshButton = <Message>(
 	h: HtmlBuilder<Message>,
 	options: RefreshButtonOptions<Message>,

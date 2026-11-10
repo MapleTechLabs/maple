@@ -30,7 +30,7 @@ const own = Subscription.make<Model, Message, Resources>()((entry) => ({
 					: Stream.empty,
 		},
 	),
-	/** `useIntervalRefresh`, held while the reader inspects the stream. */
+	/** The interval refresh, held while the reader inspects the stream. */
 	autoRefresh: entry(
 		{ intervalSeconds: Schema.Number },
 		{

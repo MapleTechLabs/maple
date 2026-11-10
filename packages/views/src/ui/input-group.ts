@@ -4,7 +4,7 @@ import type { Html, HtmlBuilder } from "foldkit/html"
 import { button, type ButtonOptions } from "./button"
 import { input, type InputOptions } from "./input"
 
-/** `<InputGroup>`: one bordered control holding addons and an unstyled input. */
+/** One bordered control holding addons and an unstyled input. */
 export const inputGroup = <Message>(
 	h: HtmlBuilder<Message>,
 	options: Readonly<{ className?: string }>,
@@ -22,7 +22,7 @@ export const inputGroup = <Message>(
 export type InputGroupAlign = "inline-start" | "inline-end" | "block-start" | "block-end"
 
 /**
- * `<InputGroupAddon>`. A mousedown on the addon does not focus the input: the addon is decorative
+ * An addon. A mousedown on the addon does not focus the input: the addon is decorative
  * text or icons and a button.
  */
 export const inputGroupAddon = <Message>(
@@ -47,7 +47,7 @@ export const inputGroupText = <Message>(
 	children: ReadonlyArray<Html | string>,
 ): Html => h.span([h.Class(cn(inputGroupTextStyles, options.className))], children)
 
-/** `<InputGroupButton>`: a ghost `xs` Button by default. */
+/** A ghost `xs` Button by default. */
 export const inputGroupButton = <Message>(
 	h: HtmlBuilder<Message>,
 	options: ButtonOptions<Message>,
@@ -64,7 +64,7 @@ export const inputGroupButton = <Message>(
 		children,
 	)
 
-/** `<InputGroupInput>`: an unstyled Input. */
+/** An unstyled Input. */
 export const inputGroupInput = <Message>(h: HtmlBuilder<Message>, options: InputOptions<Message>): Html =>
 	input(h, {
 		...options,

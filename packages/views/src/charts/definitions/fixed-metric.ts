@@ -35,7 +35,7 @@ import { gradientId, gradientUrl, type GradientId } from "./gradient-id"
 type FixedMetricSpec = Extract<ChartSpec, { readonly _tag: "FixedMetric" }>
 type Point = ChartPoint<TimeseriesRow, ChartValue, number>
 
-/** `PlotTooltipSeries`: one tooltip row reader. */
+/** One tooltip row reader. */
 interface TooltipSeries {
 	readonly label: string
 	readonly color: string
@@ -76,7 +76,7 @@ const chromeOf = (spec: FixedMetricSpec) => ({
 	background: colorOf(spec, "background"),
 })
 
-/** `PlotTooltipBody` reduced to data: rows off `points[0].datum`, nulls skipped. */
+/** The tooltip body as data: rows off `points[0].datum`, nulls skipped. */
 const bucketTooltip =
 	(
 		model: FixedMetricModel,
@@ -85,7 +85,7 @@ const bucketTooltip =
 	) =>
 	(points: ReadonlyArray<Point>): Option.Option<ChartTooltip> =>
 		Option.map(Option.fromNullishOr(points[0]), ({ datum }) => {
-			// `resolveTooltipHighlight`: the series nearest the cursor is emphasised.
+			// The series nearest the cursor is emphasised.
 			const highlighted = focus.highlight(
 				Arr.map(series, (entry) => [entry.label, entry.value(datum)] as const),
 			)
@@ -414,7 +414,7 @@ const latencyChart = (spec: FixedMetricSpec): BuiltChart<TimeseriesRow, ChartVal
 	}
 }
 
-/** `ApdexAreaChart`: the band and its top edge on a `[0, 1]` axis, the in-flight tail dashed. */
+/** The apdex chart: the band and its top edge on a `[0, 1]` axis, the in-flight tail dashed. */
 const apdexChart = (spec: FixedMetricSpec): BuiltChart<TimeseriesRow, ChartValue, number> => {
 	const model = fixedMetricModel(spec.rows, spec.timeZone, spec.nowMs)
 	const focus = tooltipFocusCapture()

@@ -13,7 +13,7 @@ import type { ToggleGroupItem } from "./toggle-group"
 
 export type FilterChipOptions<Message> = Readonly<{
 	isPressed: boolean
-	/** `onPressedChange`: the parent owns `pressed`, as in @maple/ui. */
+	/** The parent owns the pressed state. */
 	onClick: Message
 	tone?: Tone
 	size?: "xs" | "sm"
@@ -25,7 +25,7 @@ export type FilterChipOptions<Message> = Readonly<{
 	attributes?: ReadonlyArray<Attribute<Message> | ChildAttribute>
 }>
 
-/** `<FilterChip>`: an on/off filter toggle with an optional tone dot and trailing count. */
+/** An on/off filter toggle with an optional tone dot and trailing count. */
 export const filterChip = <Message>(
 	h: HtmlBuilder<Message>,
 	options: FilterChipOptions<Message>,

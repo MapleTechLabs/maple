@@ -18,7 +18,7 @@ import {
 } from "./connect-panel"
 import { view } from "./connect-panel-view"
 
-/** The top bar's Connect popover (`ConnectButton`): the panel's reads go out when it opens. */
+/** The top bar's Connect popover: the panel's reads go out when it opens. */
 const ORG = "org_a"
 const context = { orgId: ORG, pinnedNamespace: "prod" }
 const config = { update: (model: Model, message: Message) => update(model, message, context), view }

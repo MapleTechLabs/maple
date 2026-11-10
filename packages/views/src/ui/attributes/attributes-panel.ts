@@ -37,8 +37,6 @@ export const isOpen = (model: Model, key: string, defaultOpen: boolean): boolean
 export const copyStatusOf = (model: Model, id: string): CopyStatus =>
 	model.copy.id === id ? model.copy.status : "idle"
 
-// MESSAGE
-
 export const Message = defineMessageUnion({
 	ChangedSearch: { text: Schema.String },
 	ToggledCollapsible: { key: Schema.String, defaultOpen: Schema.Boolean },
@@ -65,8 +63,6 @@ export const OutMessage = defineMessageUnion({
 })
 export type OutMessage = typeof OutMessage.Type
 
-// COMMAND
-
 const COPY_TIMEOUT = Duration.millis(2000)
 
 export const WriteAttributeClipboard = Command.define("WriteAttributeClipboard", {
@@ -85,8 +81,6 @@ export const WaitAttributeCopyStatus = Command.define("WaitAttributeCopyStatus",
 	execute: ({ generation }) =>
 		Effect.sleep(COPY_TIMEOUT).pipe(Effect.as(Message.ElapsedCopyStatus({ generation }))),
 })
-
-// UPDATE
 
 type Return = Update.ReturnWithOutMessage<Model, Message, OutMessage>
 

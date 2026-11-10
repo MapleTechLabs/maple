@@ -42,7 +42,7 @@ import { Array as Arr, String as Str } from "effect"
  * fixed, and anything routed through `d3-color` chokes on `var(--token)` — `NaN`
  * channels, rendered black. The stops live in `tokens.css` as
  * `--heatmap-<name>-0..4` and are resolved to `oklch(...)` literals via
- * `usePlotColors` (re-resolved on theme flip) *before* they reach the ramp, so the
+ * `ResolveThemeColors` (re-resolved on theme flip) *before* they reach the ramp, so the
  * interpolator handed to d3 is a closure over resolved literals.
  *
  * The production heatmap blends flanking stops with CSS `color-mix(in oklch, …)` and lets
@@ -82,7 +82,7 @@ export type RampKey = "s0" | "s1" | "s2" | "s3" | "s4"
 
 const RAMP_KEYS: readonly RampKey[] = ["s0", "s1", "s2", "s3", "s4"]
 
-/** Flatten a `usePlotColors` result back into ordered ramp stops. */
+/** Flatten resolved ramp colours back into ordered ramp stops. */
 export function rampStops(colors: Readonly<Record<RampKey, string>>): readonly string[] {
 	return Arr.map(RAMP_KEYS, (key) => colors[key])
 }

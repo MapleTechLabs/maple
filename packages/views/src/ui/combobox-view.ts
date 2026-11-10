@@ -250,7 +250,7 @@ export type PopupOptions = Readonly<{
 		footer?: ReadonlyArray<Html>
 		sideOffset?: number
 	}>
-	/** `<ComboboxItem className>`. */
+	/** Classes per list item. */
 	itemClassName?: (value: string) => string | undefined
 	listClassName?: string
 	/** A custom `filter` already applied: `items` are the matches, empty means "no match". */
@@ -530,7 +530,6 @@ export type SingleViewInputs = Readonly<{
 	placeholder: string
 	emptyText: string
 	startAddon?: Html
-	/** `<ComboboxInput size>`. */
 	size?: "sm" | "default"
 	/** `<ComboboxInput showTrigger={false}>` drops the chevron button. */
 	showTrigger?: boolean
@@ -547,7 +546,7 @@ export type SingleViewInputs = Readonly<{
 	 * toolbar combobox, whose Base UI positioner resolves no input group and falls back to the input.
 	 */
 	anchorsInput?: boolean
-	/** `<ComboboxInput className>`: lands on the input-control span. */
+	/** Lands on the input-control span. */
 	className?: string
 	/** Wraps the input group (`<div className="w-64">`) and places it with the hidden input and portal. */
 	toView: (parts: Readonly<{ field: Html; rest: ReadonlyArray<Html> }>) => Html
@@ -657,7 +656,7 @@ export const view = Submodel.defineView<Model, Message, SingleViewInputs>((model
 	}),
 )
 
-/** `ComboboxTrigger` with its chevron. */
+/** The trigger button with its chevron. */
 const triggerButton = (h: H, model: Model, size: "sm" | "default"): Html =>
 	h.button(
 		[

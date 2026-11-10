@@ -6,7 +6,7 @@ import { type LongRow, transformRows } from "./infra-metric-series"
 import { resolveColor, type ThemeColors } from "./theme-colors"
 import { Array as Arr, Order, Record as Rec, String as Str } from "effect"
 
-// `StackedBreakdownChart`'s data side: the tail fold, the stack order and the palette, resolved for
+// The stacked breakdown chart's data side: the tail fold, the stack order and the palette, resolved for
 // the canvas. The card and legend are the page's.
 
 export type StackedBreakdownSpec = Extract<ChartSpec, { readonly _tag: "StackedBreakdown" }>

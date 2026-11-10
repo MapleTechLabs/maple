@@ -239,7 +239,7 @@ describe("hasBringYourOwnCloudAddOn", () => {
 })
 
 describe("malformed / error-shaped customer payloads", () => {
-	// Autumn's `useCustomer` surfaces an upstream response-validation failure as a
+	// Autumn's customer read surfaces an upstream response-validation failure as a
 	// `200` whose body is `{ code: "autumn_api_error" }` — it has no
 	// `subscriptions`/`flags`. The gating helpers must treat it as "no usable
 	// customer" rather than throwing `Cannot read properties of undefined

@@ -11,8 +11,6 @@ import { defineMessageUnion } from "foldkit/message"
 export const CalendarDate = Calendar.CalendarDate
 export type CalendarDate = Calendar.CalendarDate
 
-// MODEL
-
 export const Model = Schema.Struct({
 	viewYear: Schema.Number,
 	viewMonth: Schema.Number,
@@ -41,8 +39,6 @@ export const init = (config: InitConfig): Model => {
 	}
 }
 
-// MESSAGE
-
 export const DayKey = Schema.Literals([
 	"ArrowLeft",
 	"ArrowRight",
@@ -68,8 +64,6 @@ export type Message = typeof Message.Type
 export const isoDay = (date: CalendarDate): string =>
 	`${date.year}-${Str.padStart(2, "0")(String(date.month))}-${Str.padStart(2, "0")(String(date.day))}`
 
-// COMMAND
-
 /** Moves DOM focus to a day button after the render that shows it. */
 export const FocusDay = Command.define("FocusDay", {
 	args: { day: Schema.String },
@@ -80,8 +74,6 @@ export const FocusDay = Command.define("FocusDay", {
 			Effect.as(Message.CompletedFocusDay()),
 		),
 })
-
-// UPDATE
 
 type UpdateReturn = Update.Return<Model, Message>
 

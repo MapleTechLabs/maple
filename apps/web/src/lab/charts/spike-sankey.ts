@@ -16,8 +16,8 @@ import { MUTED_COLOR_AMOUNT } from "@maple/views/charts/definitions/plot-constan
 import { FLOW_BANDS, SANKEY_EDGES, SANKEY_NODES, type SankeyEdge, type SankeyNode } from "./spike-sankey-data"
 import { mutedOf, type SpikeSpec } from "./spike-spec"
 
-// `SankeySpike` / `SankeyLegendSpike`, definition half:
-// service call flow weighted by call volume, ribbons coloured by error band. Code copied.
+// The sankey spikes' definition: service call flow weighted by call volume, ribbons coloured by
+// error band.
 
 const NODE_WIDTH = 14
 
@@ -45,7 +45,7 @@ const bumpX: ChartCurve = {
 	},
 }
 
-/** `bandForEdge`: the error band an edge's ribbon is coloured by. */
+/** The error band an edge's ribbon is coloured by. */
 const bandForEdge = (edge: SankeyEdge): (typeof FLOW_BANDS)[number]["key"] => {
 	const rate = edge.callCount === 0 ? 0 : edge.errorCount / edge.callCount
 	return rate >= 0.05 ? "error" : rate >= 0.01 ? "warning" : "healthy"

@@ -15,7 +15,7 @@ export const Model = Schema.Struct({
 	timeZone: Schema.String,
 	/** The hub's Model, for the views that read its menus and the rules search. */
 	hub: AlertsHub.Model,
-	/** The Rules section's status chip (`useState<RuleBucket>`). */
+	/** The Rules section's status chip. */
 	status: Schema.NullOr(RuleBucket),
 	chart: Chart.Model,
 	...ChartEnvFields,

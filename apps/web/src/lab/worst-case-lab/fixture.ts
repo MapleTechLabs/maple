@@ -15,7 +15,7 @@ import type { WorstCaseMode } from "./model"
 
 const DAY_MS = 24 * 60 * 60 * 1000
 
-/** `MiscSection`'s `LogsTableView pinnedColumns`. */
+/** The misc section's pinned log columns. */
 export const PINNED_COLUMNS = ["db.user"]
 
 export type LabTrace = Readonly<{ trace: TraceData; deepestSpanId: string }>
@@ -41,7 +41,7 @@ export const actorIdentities = (mode: WorstCaseMode): ReadonlyArray<ActorIdentit
 		seed: person.userId,
 	}))
 
-/** `TablesSection`'s `RulesTab data`, its timeline ending at the boot clock. */
+/** The tables section's rules data, its timeline ending at the boot clock. */
 export const rulesOverview = (mode: WorstCaseMode, nowMs: number): AlertsOverviewReady => {
 	const { rules, derived, states } = rulesFixture(mode)
 	return {

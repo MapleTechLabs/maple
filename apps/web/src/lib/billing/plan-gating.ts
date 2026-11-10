@@ -56,7 +56,7 @@ export function isLegacyPlan(
 	)
 }
 
-// Autumn's `useCustomer` surfaces upstream API failures (e.g. a `200` whose
+// Autumn's customer read surfaces upstream API failures (e.g. a `200` whose
 // body is an `autumn_api_error` from a failed response validation) as `data`
 // rather than `error`. Those payloads have no `subscriptions`/`balances`, so a
 // blind `customer.subscriptions.find(...)` would throw and take down every

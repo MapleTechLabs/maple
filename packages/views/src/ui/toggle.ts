@@ -8,26 +8,18 @@ import type { VariantProps } from "class-variance-authority"
 
 /** Base UI `Toggle`'s uncontrolled state (`defaultPressed`): pressed or not. */
 
-// MODEL
-
 export const Model = Schema.Struct({ isPressed: Schema.Boolean })
 export type Model = typeof Model.Type
 
 export const init = (isPressed = false): Model => ({ isPressed })
 
-// MESSAGE
-
 export const Message = defineMessageUnion({ ClickedToggle: {} })
 export type Message = typeof Message.Type
-
-// UPDATE
 
 export const update = (model: Model, message: Message): Update.Return<Model, Message> =>
 	Message.match<Update.Return<Model, Message>>(message, {
 		ClickedToggle: () => ({ model: { isPressed: !model.isPressed } }),
 	})
-
-// VIEW
 
 /** The `<button>` Base UI's `Toggle` renders: `aria-pressed`, `data-pressed`, `data-disabled`. */
 export const togglePrimitive = <Message>(
@@ -70,7 +62,7 @@ export type ToggleOptions<Message> = VariantProps<typeof toggleVariants> &
 		attributes?: ReadonlyArray<Attribute<Message> | ChildAttribute>
 	}>
 
-/** `<Toggle>` from @maple/ui. */
+/** A toggle button. */
 export const toggle = <Message>(
 	h: HtmlBuilder<Message>,
 	options: ToggleOptions<Message>,

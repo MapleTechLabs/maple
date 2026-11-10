@@ -22,7 +22,7 @@ import { Message, type Model } from "./model"
 import { fieldEyebrow, labSelect } from "./view-controls"
 import { addOnSections } from "./view-add-ons"
 
-// One query card of `QueryBuilderLabInner`.
+// One query card of the lab.
 
 type H = HtmlBuilder<Message>
 

@@ -6,8 +6,6 @@ import type { ChartSpec } from "../chart-spec"
 import type { BuiltChart } from "./built-chart"
 import { gradientId, gradientUrl, type GradientId } from "./gradient-id"
 
-// `PlotSparkline`, definition half.
-
 type SparklineSpec = Extract<ChartSpec, { readonly _tag: "Sparkline" }>
 
 interface SparkPoint {

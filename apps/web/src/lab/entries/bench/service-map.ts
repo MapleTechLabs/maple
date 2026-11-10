@@ -93,7 +93,7 @@ const initMap = (params: BenchParams) => {
 	return ServiceMap.init(source, { minTrafficPct: params.minTraffic > 0 ? params.minTraffic : 0, focus })
 }
 
-/** `navigate({ search: (prev) => ({ ...prev, groups }) })`. */
+/** Push the group count into the URL. */
 const PushBenchGroups = Command.define("PushBenchGroups", {
 	args: { groups: Schema.Number },
 	messages: [Message.CompletedPushBenchUrl],

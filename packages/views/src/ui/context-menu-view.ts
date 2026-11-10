@@ -52,7 +52,7 @@ export type Entry =
 
 export type ViewInputs = Readonly<{
 	entries: ReadonlyArray<Entry>
-	/** Classes for the trigger area (`ContextMenuTrigger className`). */
+	/** Classes for the trigger area. */
 	triggerClassName?: string
 	triggerContent: ReadonlyArray<Html | string>
 	/** Trigger content with handlers of its own (a row link): built by the parent, scoped to it. */

@@ -199,8 +199,6 @@ export function nodeInfraTimeseries({ data }: { data: RequestInput<typeof NodeIn
 	)
 }
 
-// Containers (Docker)
-
 export type ListContainersInput = RequestInput<typeof ListContainersRequest>
 
 export function listContainers({ data }: { data: ListContainersInput }) {
@@ -270,8 +268,6 @@ export function containerInfraTimeseries({
 		}),
 	)
 }
-
-// Workloads (Deployments / StatefulSets / DaemonSets)
 
 export function listWorkloads({ data }: { data: RequestInput<typeof ListWorkloadsRequest> }) {
 	return runWarehouseQuery("listWorkloads", () =>

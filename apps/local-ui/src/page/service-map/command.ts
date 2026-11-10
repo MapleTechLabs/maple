@@ -8,7 +8,7 @@ import { mapFromCached } from "./data"
 import { fetchServiceMap } from "./fetch"
 import { Message } from "./message"
 
-// The map query, the clock reads and the per-browser storage of lib/service-map-state.ts.
+// The map query, the clock reads and the map's per-browser storage.
 
 const LAYOUT_KEY = "maple-local:service-map.layout"
 const VIEW_PREFS_KEY = "maple-local:service-map.view-prefs"
@@ -21,7 +21,7 @@ export const ReadClock = readClock("ReadServiceMapClock", Message.CompletedReadC
 
 export const ReadRefreshClock = readClock("ReadServiceMapRefreshClock", Message.CompletedReadRefreshClock)
 
-/** Undecodable entries fall back to the defaults, as `storedValue` does. */
+/** Undecodable entries fall back to the defaults. */
 export const ReadStored = Command.define("ReadLocalServiceMapStored", {
 	messages: [Message.CompletedReadStored],
 	execute: Effect.sync(() =>
@@ -62,7 +62,7 @@ export const SaveViewPrefs = Command.define("SaveLocalServiceMapViewPrefs", {
 		),
 })
 
-/** `useLocalServiceMap`: `windowed(["local", "service-map", durationSeconds, boundsKey(bounds)])`. */
+/** The map query, cached under `["local", "service-map", durationSeconds, boundsKey(bounds)]`. */
 export const FetchServiceMap = Command.define("FetchLocalServiceMap", {
 	args: {
 		key: Schema.String,

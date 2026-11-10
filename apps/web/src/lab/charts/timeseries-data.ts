@@ -248,7 +248,7 @@ export function stackedBarAxisContext(rows: readonly StackedBarSpikeRow[]): {
 	return { rangeMs: (buckets.size - 1) * BUCKET_MS, bucketSeconds: BUCKET_MS / 1000 }
 }
 
-/** Long form pivoted to wide form for `QueryBuilderBarChart`. */
+/** Long form pivoted to wide form for the query-builder bar chart. */
 export function toStackedBarProductionRows(rows: readonly StackedBarSpikeRow[]): Record<string, unknown>[] {
 	const byBucket = new Map<string, Record<string, unknown>>()
 	for (const row of rows) {

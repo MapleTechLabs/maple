@@ -25,11 +25,7 @@ export interface ViewportState {
 }
 
 /**
- * React state for the timeline.
- *
- * The viewport is deliberately absent: it lives in `ViewportController`'s ref and reaches the
- * DOM through CSS custom properties, so pan and zoom cost no re-render. Only things that
- * genuinely change what is *rendered* belong here.
+ * The timeline's state: expanded parents, keyboard focus and search.
  */
 export interface TimelineState {
 	focusedIndex: number | null

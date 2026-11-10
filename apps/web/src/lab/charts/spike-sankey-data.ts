@@ -1,5 +1,5 @@
-// The service-flow fixture of `SankeySpike` and its
-// error bands, kept apart from the definition so the lab page can build the legend.
+// The sankey spike's service-flow fixture and its error bands, kept apart from the definition so
+// the lab page can build the legend.
 
 export interface SankeyEdge {
 	readonly sourceService: string
@@ -40,7 +40,7 @@ export const SANKEY_NODES: ReadonlyArray<SankeyNode> = [
 	{ service: "clickhouse" },
 ]
 
-/** `FLOW_BANDS`: the status key, worst first. */
+/** The status key, worst first. */
 export const FLOW_BANDS = [
 	{ key: "error", label: "≥ 5% errors", token: "--destructive" },
 	{ key: "warning", label: "1–5% errors", token: "--chart-3" },

@@ -1,11 +1,9 @@
-// Shared helpers for the infra detail charts (host + k8s). The two chart files
-// keep their own <ChartView> (different units, container chrome, heights) but
-// share the row→series transform, grid/empty conventions, and the unit-aware
-// value formatting used by tooltips, legend chips, and axes. Series colors come
-// from `resolveSeriesColors` — a host/pod/zone keeps its color across windows.
+// Shared helpers for the infra detail charts (host + k8s). The two charts keep their own
+// units, container chrome and heights but share the row→series transform, grid/empty
+// conventions, and the unit-aware value formatting used by tooltips, legend chips, and axes.
+// Series colors come from `resolveSeriesColors`, so a host/pod/zone keeps its color across windows.
 
-// Framework-free: no `@/` imports. The zone-aware
-// `isoToLabel` default lives in `./chart-utils`.
+// Framework-free: no `@/` imports.
 import { bucketDate } from "../charts/plot/bucket-axis"
 import {
 	EMPTY_VALUE,

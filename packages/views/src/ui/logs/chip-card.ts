@@ -88,7 +88,7 @@ export const PlaceChipCard = Mount.define("PlaceChipCard", {
 		).pipe(Effect.as(Message.PlacedChipCard())),
 })
 
-/** `<CopyButton iconSize={10}>` in its idle state, as `SelectableValue` renders it. */
+/** A 10px copy button in its idle state. */
 const valueCopyButton = (h: HtmlBuilder<Message>, label: string, onClick: Message): Html =>
 	copyButton(h, {
 		label,

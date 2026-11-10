@@ -19,8 +19,6 @@ import { installLogsBench } from "../../bench/logs-harness"
  */
 const PINNED_COLUMNS = ["deployment.environment.name", "cloud.region"]
 
-// MODEL
-
 const Model = Schema.Struct({
 	stream: LogsStream.Model,
 	timeZone: Schema.String,
@@ -29,16 +27,12 @@ const Model = Schema.Struct({
 })
 type Model = typeof Model.Type
 
-// MESSAGE
-
 const Message = defineMessageUnion({
 	GotStreamMessage: { message: LogsStream.Message },
 	CompletedBenchInstall: {},
 	GotToastMessage: { message: Toast.Message },
 })
 type Message = typeof Message.Type
-
-// MOUNT
 
 const InstallLogsBench = Mount.define("InstallLogsBench", {
 	messages: [Message.CompletedBenchInstall],
@@ -48,8 +42,6 @@ const InstallLogsBench = Mount.define("InstallLogsBench", {
 			(uninstall) => Effect.sync(uninstall),
 		).pipe(Effect.as(Message.CompletedBenchInstall())),
 })
-
-// INIT
 
 const init = (flags: ViewerFlags): Update.Return<Model, Message> => {
 	const time = logTimeFormat(flags.timeZone)
@@ -72,8 +64,6 @@ const init = (flags: ViewerFlags): Update.Return<Model, Message> => {
 		},
 	}
 }
-
-// UPDATE
 
 const unchanged: Update.Step<Model, Message> = (model) => ({ model })
 
@@ -98,8 +88,6 @@ const update = (model: Model, message: Message): Update.Return<Model, Message> =
 		CompletedBenchInstall: () => ({ model }),
 		GotToastMessage: ({ message }) => foldToasts(model, message),
 	})
-
-// VIEW
 
 const view = (model: Model, h: HtmlBuilder<Message>): Html =>
 	labRoot(h, model.toasts, (message) => Message.GotToastMessage({ message }), page(model, h))
@@ -130,8 +118,6 @@ const page = (model: Model, h: HtmlBuilder<Message>): Html =>
 			}),
 		],
 	)
-
-// SUBSCRIPTION
 
 const subscriptions = Subscription.make<Model, Message>()((entry) => ({
 	navigationKeys: entry(

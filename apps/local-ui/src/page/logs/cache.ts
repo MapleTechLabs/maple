@@ -70,7 +70,7 @@ const CachedPatterns = Schema.Struct({
 	truncated: Schema.Boolean,
 })
 
-/** Legacy's `truncated` is the Model's `isTruncated`. */
+/** The cached form names the Model's `isTruncated` `truncated`, as earlier builds wrote it. */
 export const patternsToCached = ({ isTruncated, ...rest }: LogPatterns) => ({
 	...rest,
 	truncated: isTruncated,

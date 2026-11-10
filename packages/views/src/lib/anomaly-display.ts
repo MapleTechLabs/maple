@@ -20,7 +20,7 @@ export interface SeverityTone {
 	readonly accent: string
 	/** Plain text tone. */
 	readonly text: string
-	/** The shared status tone, for `StatusDot`. */
+	/** The shared status tone, for `statusDot`. */
 	readonly tone: Tone
 }
 

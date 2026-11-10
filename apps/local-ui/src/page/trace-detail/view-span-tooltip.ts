@@ -11,7 +11,7 @@ import type { Message } from "./message"
 import { hstack, hstackClass } from "@maple/views/ui/stack"
 import { typography } from "@maple/views/ui/typography"
 
-// `SpanTooltipContent` and the timeline's hover tooltip around it: fixed above the pointer,
+// The span tooltip content and the timeline's hover tooltip around it: fixed above the pointer,
 // never in the way of it.
 
 type H = HtmlBuilder<Message>

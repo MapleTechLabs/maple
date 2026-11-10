@@ -20,14 +20,13 @@ export const healthTone = (errorRate: number): Tone => {
 	return level === "neutral" ? "ok" : level
 }
 
-/** `SampledValue` without a tooltip: `~` before an extrapolated value. */
+/** A sampled value without a tooltip: `~` before an extrapolated value. */
 export const sampled = (estimated: boolean, value: string): Children => (estimated ? ["~", value] : [value])
 
-/** `MetricValue`. */
 export const metricValue = <M>(h: HtmlBuilder<M>, className: string | undefined, children: Children): Html =>
 	h.p([h.Class(cn("font-mono text-xl font-semibold tabular-nums text-foreground", className))], children)
 
-/** `MetricTile`: label over a big value, with an optional caption under it. */
+/** A label over a big value, with an optional caption under it. */
 export const metricTile = <M>(h: HtmlBuilder<M>, label: string, value: Html, caption?: Children): Html =>
 	h.div(
 		[h.Class("space-y-0.5")],
@@ -38,7 +37,7 @@ export const metricTile = <M>(h: HtmlBuilder<M>, label: string, value: Html, cap
 		],
 	)
 
-/** `DetailPanelHeader`: accent bar and title on the left, actions on the right. */
+/** Accent bar and title on the left, actions on the right. */
 export const detailPanelHeader = <M>(
 	h: HtmlBuilder<M>,
 	accentColor: string,
@@ -56,7 +55,7 @@ export const detailPanelHeader = <M>(
 		hstack(h, { gap: "2", className: "shrink-0" }, actions),
 	])
 
-/** `TagBadge`: a branch's "prod", an origin scheme. */
+/** A tag such as a branch's "prod" or an origin scheme. */
 export const tagBadge = <M>(h: HtmlBuilder<M>, children: Children): Html =>
 	badge(h, { variant: "tag", className: "shrink-0 font-semibold" }, children)
 

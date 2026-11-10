@@ -87,7 +87,7 @@ export const splitAttribute = (
 	return raw === "" ? [] : Str.split(separator)(raw)
 }
 
-/** The page scroller a list virtualizes against (`usePageScrollMargin`), or the list itself. */
+/** The page scroller a list virtualizes against, or the list itself. */
 export const pageScrollerOf = (list: HTMLElement): HTMLElement =>
 	list.closest<HTMLElement>('[data-slot="page-scroll-area"]') ?? list
 

@@ -68,7 +68,7 @@ export const update = (model: Model, message: Message, context: PageContext): Up
 		ChangedSql: ({ text }) => ({ model, outMessage: replaceParams(context.location, { sql: text }) }),
 		ClickedPickSql: ({ sql }) => ({ model, outMessage: replaceParams(context.location, { sql }) }),
 		ClickedRun: () => run(model, context),
-		// `cancelQueries`: the console goes idle; the root stops the run's request (`lanes.ts`).
+		// The console goes idle; the root stops the run's request (`lanes.ts`).
 		ClickedCancel: () =>
 			model.run._tag !== "Running" ? { model } : { model: { ...model, run: RunState.Idle() } },
 		SucceededRunQuery: ({ id, rows, elapsedMs }) =>

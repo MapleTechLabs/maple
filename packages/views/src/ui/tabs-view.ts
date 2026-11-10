@@ -27,16 +27,16 @@ export interface TabsViewInputs {
 	/** A tab's children when it has more than its label (an icon before it). */
 	readonly tabContent?: (value: string, label: string) => ReadonlyArray<Html | string>
 	readonly className?: string
-	/** `<TabsList className>`. */
+	/** Classes on the tab list. */
 	readonly listClassName?: string
 	readonly panelClassName?: string
 	/** Extra panel classes for one value (`<TabsContent className>` differing per tab). */
 	readonly panelClassNameFor?: (value: string) => string | undefined
 	/** The list inside a wrapper (`<div className="border-b"><TabsList /></div>`). */
 	readonly wrapList?: (list: Html) => Html
-	/** `<TabsTab className>` for every tab. */
+	/** Classes on every tab. */
 	readonly tabClassName?: string
-	/** `<TabsList aria-label>`. */
+	/** The tab list's accessible name. */
 	readonly ariaLabel?: string
 	/** Panel content for a value; values without one render no panel (Base UI unmounts it). */
 	readonly panel: (value: string) => ReadonlyArray<Html | string> | undefined

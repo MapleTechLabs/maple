@@ -101,7 +101,6 @@ const infrastructureItem: NavItem = {
 		providerItem("aws"),
 	],
 }
-// GROUPS
 
 const servicesItem: NavItem = {
 	title: "Services",

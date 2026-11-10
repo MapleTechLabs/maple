@@ -18,7 +18,7 @@ import { typography } from "@maple/views/ui/typography"
 
 const toSections = (message: FilterSections.Message) => Message.GotFilterSectionsMessage({ message })
 
-/** `DurationRangeFilter`: p50 and p95 presets from the facet stats, then "> 1s". */
+/** p50 and p95 presets from the facet stats, then "> 1s". */
 const durationPresets = (maybeStats: Option.Option<DurationStats>): ReadonlyArray<RangePreset> => {
 	const stats = Option.getOrNull(maybeStats)
 	const p50 = Math.round(stats?.p50DurationMs ?? 0)

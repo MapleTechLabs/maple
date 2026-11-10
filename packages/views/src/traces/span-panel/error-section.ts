@@ -13,7 +13,7 @@ import { hstack } from "@maple/views/ui/stack"
 import { Array as Arr, String as Str } from "effect"
 import { typography } from "../../ui/typography"
 
-// `ErrorSection`, with a "Copy as prompt" payload.
+// The span's error section, with a "Copy as prompt" payload.
 
 type H = HtmlBuilder<Message>
 

@@ -25,7 +25,7 @@ export const trackProduct = (event: ProductEvent, props?: Readonly<Record<string
 		Effect.sync(() => track(event, props === undefined ? undefined : { ...props })),
 	).pipe(Effect.ignore)
 
-/** `identify()` from `ClerkAuthBridge`: later session rows and events carry the user and org. */
+/** `identify()`: later session rows and events carry the user and org. */
 export const identifySession = (identity: SessionIdentity | null) =>
 	Effect.flatMap(sdk, ({ identify }) => Effect.sync(() => identify(identity ?? undefined))).pipe(
 		Effect.ignore,

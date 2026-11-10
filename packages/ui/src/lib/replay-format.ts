@@ -78,7 +78,3 @@ export function formatClock(ms: number): string {
 	if (hours === 0) return `${minutes}:${seconds}`
 	return `${hours}:${Str.padStart(2, "0")(minutes.toString())}:${seconds}`
 }
-
-// Relative-time formatting lives in `./time-format` — import `formatRelativeFrom`
-// for an epoch-ms instant. The `Intl.RelativeTimeFormat` version that used to
-// live here rendered "2 hours ago" while the rest of the app rendered "2h ago".

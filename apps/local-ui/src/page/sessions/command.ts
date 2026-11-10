@@ -89,7 +89,7 @@ export const FetchNextPage = Command.define("FetchNextLocalSessionsPage", {
 			{ startTime: cursorStartTime, sessionId: cursorSessionId },
 			apiBase,
 		).pipe(
-			// `fetchNextPage` updates the cached query too, so a reload opens on every page loaded.
+			// A next page updates the cached query too, so a reload opens on every page loaded.
 			Effect.tap((page) =>
 				Effect.flatMap(Clock.currentTimeMillis, (atMs) =>
 					recordCached(
@@ -130,7 +130,7 @@ export const FetchFacets = Command.define("FetchLocalSessionFacets", {
 		}).pipe(Effect.catch((failure) => Effect.succeed(Message.FailedFetchFacets({ key, failure })))),
 })
 
-/** `ToolbarSearch`'s 300 ms pause before a typed value commits. */
+/** The 300 ms pause before a typed value commits. */
 export const WaitSearchDebounce = Command.define("WaitSessionsSearchDebounce", {
 	args: { version: Schema.Number },
 	messages: [Message.ElapsedSearchDebounce],

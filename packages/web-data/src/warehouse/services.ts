@@ -106,8 +106,6 @@ const getServiceOverviewEffect = Effect.fn("QueryEngine.getServiceOverview")(fun
 	}
 })
 
-// Fast service-health snapshot (main overview)
-
 export interface ServiceHealthSnapshot {
 	serviceName: string
 	environment: string
@@ -186,8 +184,6 @@ const getServiceHealthSnapshotEffect = Effect.fn("QueryEngine.getServiceHealthSn
 	}
 })
 
-// Service latency baseline (baseline-relative health)
-
 export interface ServiceLatencyBaseline {
 	serviceName: string
 	serviceNamespace: string
@@ -262,7 +258,6 @@ const getServiceHealthBaselineEffect = Effect.fn("QueryEngine.getServiceHealthBa
 	return result
 })
 
-// Service overview time series types
 export interface ServiceTimeSeriesPoint {
 	bucket: string
 	throughput: number
@@ -310,7 +305,6 @@ function fillServiceApdexPoints(
 	return trimSparseLeadingBuckets(filled, (row) => row.totalCount ?? 0)
 }
 
-// Service facets types
 interface FacetItem {
 	name: string
 	count: number
@@ -393,7 +387,6 @@ const getServicesFacetsEffect = Effect.fn("QueryEngine.getServicesFacets")(funct
 	}
 })
 
-// Service detail types
 export interface ServiceDetailTimeSeriesPoint {
 	bucket: string
 	throughput: number

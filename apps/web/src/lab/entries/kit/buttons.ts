@@ -57,8 +57,6 @@ const TOGGLES = ["wrap", "wrap-pressed", "follow", "follow-pressed", "xs", "sm",
 const FILTER_CHIPS = ["errors", "warnings", "ok"] as const
 const COPY_BUTTONS = ["trace-id", "ingest-key"] as const
 
-// MODEL
-
 const Model = Schema.Struct({
 	toggles: Schema.Record(Schema.String, Toggle.Model),
 	toggleGroups: Schema.Record(Schema.String, ToggleGroup.Model),
@@ -80,8 +78,6 @@ const init = (): Update.Return<Model, Message> => ({
 	},
 })
 
-// MESSAGE
-
 const Message = defineMessageUnion({
 	GotToggleMessage: { id: Schema.String, message: Toggle.Message },
 	GotToggleGroupMessage: { id: Schema.String, message: ToggleGroup.Message },
@@ -90,8 +86,6 @@ const Message = defineMessageUnion({
 	ClickedRefresh: {},
 })
 type Message = typeof Message.Type
-
-// UPDATE
 
 const foldToggle = Update.foldChildAt({
 	update: Toggle.update,
@@ -124,8 +118,6 @@ const update = (model: Model, message: Message): Update.Return<Model, Message> =
 		}),
 		ClickedRefresh: () => ({ model }),
 	})
-
-// VIEW
 
 const buttonVariantRows = (h: HtmlBuilder<Message>): ReadonlyArray<Html> =>
 	Arr.map(VARIANTS, (variant) =>
@@ -417,16 +409,27 @@ const actionBars = (h: HtmlBuilder<Message>): ReadonlyArray<Html> => [
 				statusDot(h, { tone: "live" }),
 				typography(h, { size: "sm", tone: "foreground" }, ["Unsaved changes"]),
 			],
-			actions: [button(h, { variant: "ghost", size: "sm" }, ["Discard"]), button(h, { size: "sm" }, ["Save"])],
+			actions: [
+				button(h, { variant: "ghost", size: "sm" }, ["Discard"]),
+				button(h, { size: "sm" }, ["Save"]),
+			],
 		}),
 	]),
 	kitRow(h, "Editor, with a notice", [
 		actionBar(h, {
 			label: "Rule actions",
 			className: "static w-full",
-			notice: [alert(h, { variant: "crit", size: "sm" }, [icon(h, "CircleXmarkIcon"), alertTitle(h, ["Couldn't save the rule"])])],
+			notice: [
+				alert(h, { variant: "crit", size: "sm" }, [
+					icon(h, "CircleXmarkIcon"),
+					alertTitle(h, ["Couldn't save the rule"]),
+				]),
+			],
 			leading: [typography(h, { size: "sm", tone: "muted" }, ["Drop health checks from api-gateway"])],
-			actions: [button(h, { variant: "outline", size: "sm" }, ["Cancel"]), button(h, { size: "sm" }, ["Save changes"])],
+			actions: [
+				button(h, { variant: "outline", size: "sm" }, ["Cancel"]),
+				button(h, { size: "sm" }, ["Save changes"]),
+			],
 		}),
 	]),
 	kitRow(h, "Step flow", [

@@ -1,7 +1,7 @@
 import { Array as Arr, Record as Rec, String as Str } from "effect"
 import type { IconName } from "../ui/icon"
 
-// The AI vendors the ingest gateway stamps (`AI_VENDORS` in apps/ingest/src/ai_session.rs): one record
+// The AI vendors the ingest gateway stamps (`VENDORS` in apps/ingest/src/ai_session.rs): one record
 // per vendor id with its label, mark and brand colour, each optional.
 
 /** A brand's color on the light canvas and on the dark one. */

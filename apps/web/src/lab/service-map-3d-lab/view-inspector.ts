@@ -8,7 +8,7 @@ import { Message } from "./update"
 import { healthDot, topology } from "./view-inventory"
 import { Array as Arr, String as Str } from "effect"
 
-// `ServiceInventory` with a node selected: the inspector with its inbound and outbound calls.
+// The service inventory with a node selected: the inspector with its inbound and outbound calls.
 
 type H = HtmlBuilder<Message>
 

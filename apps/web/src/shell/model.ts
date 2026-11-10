@@ -51,9 +51,9 @@ export const Model = Schema.Struct({
 	isSidebarOpen: Schema.Boolean,
 	/** The last toggle came from ⌘B: keyboard toggles snap instead of animating the width. */
 	isSidebarToggleInstant: Schema.Boolean,
-	/** The mobile nav sheet (`openMobile`). */
+	/** The mobile nav sheet. */
 	isMobileNavOpen: Schema.Boolean,
-	/** Below `md` the sidebar is a sheet (`useIsMobile`). */
+	/** Below `md` the sidebar is a sheet. */
 	isMobile: Schema.Boolean,
 	/** The sidebar's own reads (infra presence, integrations, pinned dashboards) were sent for this org. */
 	hasRequestedSidebarData: Schema.Boolean,
@@ -87,15 +87,15 @@ export const Model = Schema.Struct({
 	clerkOrgMenu: ClerkOrgSwitcher.Model,
 	/** Clerk: the onboarding reward pill in the top bar. */
 	checklist: Checklist.Model,
-	/** The top bar's Connect popover (`ConnectButton`). */
+	/** The top bar's Connect popover. */
 	connect: ConnectPanel.Model,
 	/** Clerk: the shared Slack channel dialog of the Support menu. */
 	supportChannel: SupportChannel.Model,
 	/** `quota-banner-approaching` in sessionStorage: the approaching-quota banner was dismissed. */
 	isQuotaApproachingDismissed: Schema.Boolean,
-	/** The server serves a newer build than this tab (`AppUpdateBanner`). */
+	/** The server serves a newer build than this tab. */
 	isAppOutdated: Schema.Boolean,
-	/** `GlobalShortcuts`: the command palette and the shortcuts dialog, `null` while unmounted. */
+	/** The command palette and the shortcuts dialog, `null` while unmounted. */
 	palette: Schema.NullOr(Palette.Model),
 	shortcutsDialog: Schema.NullOr(Dialog.Model),
 	/** `detectPlatform`: how the shortcuts dialog spells modifiers. */
@@ -104,8 +104,8 @@ export const Model = Schema.Struct({
 export type Model = typeof Model.Type
 
 /**
- * What the shell reads from Clerk and Autumn in Clerk mode (`useUser`, `useOrganization`,
- * `useOrganizationList`, `useMapleCustomer`), passed in by the root; `null` self-hosted.
+ * What the shell reads from Clerk and Autumn in Clerk mode, passed in by the root; `null`
+ * self-hosted.
  */
 export type ShellClerk = Readonly<{
 	maybeUser: Option.Option<ClerkUser>
@@ -114,7 +114,7 @@ export type ShellClerk = Readonly<{
 	customer: BillingCustomer | undefined
 }>
 
-/** `<TooltipPopup side="right" align="center">` of `SidebarMenuButton`. */
+/** A rail item's tooltip: right of the item, centred. */
 export const initRailTooltip = (): Tooltip.Model =>
 	Tooltip.init("shell-rail-tooltip", { side: "right", align: "center" })
 

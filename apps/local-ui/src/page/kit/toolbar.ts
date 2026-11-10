@@ -63,7 +63,7 @@ export const toolbarStat = <M>(
 	)
 
 /**
- * apps/local-ui's `RefreshButton`: the "New data" pill once the server took telemetry after the
+ * The "New data" pill once the server took telemetry after the
  * list loaded, then the shared reload button, disabled and spinning while the refresh runs.
  */
 export const refreshButton = <M>(
@@ -106,7 +106,7 @@ const RANGE_LABELS: ReadonlyMap<string, string> = new Map([
 	["30d", "Last 30 days"],
 ])
 
-/** `TimeRangeSelect` bound to local mode's presets. */
+/** A time range select bound to local mode's presets. */
 export const timeRangeSelect = <M>(h: HtmlBuilder<M>, value: string, onChange: (next: string) => M): Html =>
 	hstack(h, { gap: "1.5" }, [
 		icon(h, "ClockIcon", {

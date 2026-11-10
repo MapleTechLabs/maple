@@ -201,8 +201,8 @@ declare global {
 }
 
 /**
- * An organization as the app reads it (`useOrganization`, `useOrganizationList`): its public
- * metadata decoded into the region (`useOrganizationRegion`) and rollout flags it decides.
+ * An organization as the app reads it: its public
+ * metadata decoded into the region and rollout flags it decides.
  */
 export const ClerkOrganization = Schema.Struct({
 	id: OrgId,
@@ -222,7 +222,7 @@ export const ClerkOrganization = Schema.Struct({
 })
 export type ClerkOrganization = typeof ClerkOrganization.Type
 
-/** `useUser()`: what the user menu shows. */
+/** What the user menu shows. */
 export const ClerkUser = Schema.Struct({
 	fullName: Schema.NullOr(Schema.String),
 	email: Schema.NullOr(Schema.String),
@@ -303,7 +303,7 @@ export const clerkSnapshots: Stream.Stream<ClerkSnapshot> = Stream.callback<Cler
 	}),
 ).pipe(Stream.mapEffect(toSnapshot))
 
-/** `setActive({ organization })` then reload, as `ClerkOrgSwitcherMenu`'s `switchOrganization`. */
+/** `setActive({ organization })`, then reload. */
 export const setActiveOrganization = (orgId: string): Effect.Effect<void> =>
 	Effect.promise(() => window.Clerk?.setActive({ organization: orgId }) ?? Promise.resolve()).pipe(
 		Effect.catchDefect(() => Effect.void),
@@ -392,7 +392,7 @@ export class ClerkActionError extends Schema.TaggedError<ClerkActionError>()("@m
 const stringField = (value: unknown, key: string): string | undefined =>
 	Predicate.hasProperty(value, key) && typeof value[key] === "string" ? value[key] : undefined
 
-/** `accountErrorMessage`: Clerk's own `longMessage`/`message`, else the error's, else `fallback`. */
+/** Clerk's own `longMessage`/`message`, else the error's, else `fallback`. */
 export const clerkErrorMessage = (cause: unknown, fallback: string): string => {
 	if (Predicate.hasProperty(cause, "errors") && Arr.isArray(cause.errors)) {
 		const first: unknown = cause.errors[0]
@@ -427,7 +427,7 @@ export const clerkTry = <A>(fallback: string, run: () => Promise<A>): Effect.Eff
 		catch: (cause) => new ClerkActionError({ message: clerkErrorMessage(cause, fallback), cause }),
 	})
 
-/** `isReverificationCancelledError`: a dismissed challenge, which the tabs settle without a toast. */
+/** A dismissed challenge, which the tabs settle without a toast. */
 export const REVERIFICATION_CANCELLED = "User cancelled attempted verification"
 
 /** `session_reverification_required`: the session is past the window for this write. */

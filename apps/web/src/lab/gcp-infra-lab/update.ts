@@ -48,7 +48,7 @@ const patch = (model: Model, next: Partial<ListState>): Return => ({
 	model: { ...model, state: { ...model.state, ...next } },
 })
 
-/** `GcpListPage`'s `onStateChange` and the page's own Mounts, minus every read the route sends. */
+/** The list page's state changes and its own Mounts, minus every read the route sends. */
 const stepList = (model: Model, message: GcpList.Message): Return => {
 	switch (message._tag) {
 		case "CompletedLoadChartRuntime":

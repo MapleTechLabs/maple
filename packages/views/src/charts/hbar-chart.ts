@@ -12,8 +12,8 @@ import { chartFrameClass, chartNoData } from "../ui/chart-frame"
 import { barFillClass } from "../ui/meter"
 import { hstack } from "../ui/stack"
 
-// `QueryBuilderHbarChart`: ranked DOM bars sized from the measured card. The hovered row is the chart
-// Model's `activeKey`.
+// The query-builder horizontal bar chart: ranked DOM bars sized from the measured card. The hovered
+// row is the chart Model's `activeKey`.
 
 export interface HbarChartInputs {
 	readonly data: ReadonlyArray<Record<string, unknown>>

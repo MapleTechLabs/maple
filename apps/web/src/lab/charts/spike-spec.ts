@@ -5,7 +5,7 @@ import { Array as Arr } from "effect"
 
 export type SpikeSpec = Extract<ChartSpec, { readonly _tag: "LabSpike" }>
 
-/** `MUTED_OPACITY`: how far a non-highlighted series fades. */
+/** How far a non-highlighted series fades. */
 export const MUTED_OPACITY = 0.22
 
 /** The series a pinned legend row pushes back: every other one. */

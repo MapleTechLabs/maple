@@ -16,8 +16,6 @@ import { defineMessageUnion } from "foldkit/message"
  * percent deltas from the drag start); arrows move it by 5, Home and End to the ends.
  */
 
-// MODEL
-
 export const Orientation = Schema.Literals(["horizontal", "vertical"])
 export type Orientation = typeof Orientation.Type
 
@@ -46,8 +44,6 @@ export const init = (id: string, orientation: Orientation, layout: ReadonlyArray
 	focusedHandle: null,
 })
 
-// MESSAGE
-
 export const Message = defineMessageUnion({
 	StartedDrag: { handleIndex: Schema.Number },
 	Dragged: { deltaPercent: Schema.Number },
@@ -57,8 +53,6 @@ export const Message = defineMessageUnion({
 	BlurredHandle: {},
 })
 export type Message = typeof Message.Type
-
-// UPDATE
 
 /** The library's `parseFloat(toFixed(3))` precision. */
 const precise = (value: number): number => parseFloat(value.toFixed(3))
@@ -116,8 +110,6 @@ export const update = (model: Model, message: Message): Update.Return<Model, Mes
 		FocusedHandle: ({ handleIndex }) => ({ model: { ...model, focusedHandle: handleIndex } }),
 		BlurredHandle: () => ({ model: { ...model, focusedHandle: null } }),
 	})
-
-// MOUNT
 
 type DragMessage =
 	| ReturnType<typeof Message.StartedDrag>
@@ -180,8 +172,6 @@ export const MountResizeGroup = Mount.defineStream("MountResizeGroup", {
 			).pipe(Effect.andThen(Effect.never)),
 		),
 })
-
-// VIEW
 
 export type ViewInputs = Readonly<{
 	/** Each panel's content, in order (a callback, so a panel can hold a nested group); `layout` holds the sizes. */

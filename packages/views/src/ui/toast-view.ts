@@ -217,7 +217,7 @@ export const region = Submodel.defineView<Model, Message>((model, h) => {
 	)
 })
 
-/** `AnchoredToasts`: the region for toasts pinned to an element (none are anchored yet). */
+/** The region for toasts pinned to an element (none are anchored yet). */
 const anchoredRegion = Submodel.defineView<Model, Message>((model, h) =>
 	h.div(
 		[

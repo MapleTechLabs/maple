@@ -132,7 +132,7 @@ export const fetchPatterns = (filters: LogFilters, bounds: TimeBounds, apiBase: 
 		}),
 	)
 
-/** `getNextPageParam`: only a full page asks for another. */
+/** Only a full page asks for another. */
 export const nextCursor = (page: ReadonlyArray<LocalLog>): LogCursor | undefined => {
 	const last = page.length === PAGE_SIZE ? page[page.length - 1] : undefined
 	return last

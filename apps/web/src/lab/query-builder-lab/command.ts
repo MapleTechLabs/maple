@@ -42,7 +42,7 @@ export const ResolveWindow = Command.define("ResolveQueryBuilderLabWindow", {
 		),
 })
 
-/** One `AutocompleteValuesProvider` lookup over the page's window. */
+/** One autocomplete values lookup over the page's window. */
 export const FetchAutocomplete = Command.define("FetchQueryBuilderLabAutocomplete", {
 	args: { key: Schema.String, lookup: AutocompleteLookup, window: TimeWindow },
 	messages: [Message.CompletedFetchAutocomplete],
@@ -52,7 +52,7 @@ export const FetchAutocomplete = Command.define("FetchQueryBuilderLabAutocomplet
 		),
 })
 
-/** `listMetricsResultAtom({ data: { limit: 300 } })`. */
+/** Up to 300 metrics, for the metric select. */
 export const FetchMetrics = Command.define("FetchQueryBuilderLabMetrics", {
 	args: { key: Schema.String },
 	messages: [Message.CompletedFetchMetrics],
@@ -105,7 +105,7 @@ export const CreateFormula = Command.define("CreateQueryBuilderLabFormula", {
 		Effect.sync(() => Message.CreatedFormula({ formula: createFormulaDraft(index, [...queryNames]) })),
 })
 
-/** `cloneQuery`'s fresh UUID. */
+/** A fresh UUID for a cloned query. */
 export const CreateCloneId = Command.define("CreateQueryBuilderLabCloneId", {
 	args: { queryId: Schema.String },
 	messages: [Message.CreatedCloneId],
@@ -115,7 +115,7 @@ export const CreateCloneId = Command.define("CreateQueryBuilderLabCloneId", {
 		),
 })
 
-/** `setLastRunAt(new Date().toLocaleTimeString())`. */
+/** The time of the last run, in the browser's locale. */
 export const StampRun = Command.define("StampQueryBuilderLabRun", {
 	messages: [Message.StampedRun],
 	execute: Effect.map(Clock.currentTimeMillis, (nowMs) =>

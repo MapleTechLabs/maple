@@ -16,7 +16,7 @@ import type { ErrorTrace, ErrorTypeRow } from "./fetch"
 import { Message } from "./message"
 import type { Card } from "./model"
 
-// The open panel of `ErrorTypeCard`: the most recent traces of one error type.
+// An error type card's open panel: the most recent traces of one error type.
 
 type H = HtmlBuilder<Message>
 
@@ -37,7 +37,7 @@ export const relativeTime = (h: H, value: DateTime.Utc, clock: Clock): Html | st
 			})
 }
 
-/** `traceLinkParams`: the view's params, plus the error span to focus when the trace has one. */
+/** The view's params, plus the error span to focus when the trace has one. */
 const traceLinkHref = (trace: ErrorTrace, query: URLSearchParams): string => {
 	const params = new URLSearchParams(Rec.fromEntries(query))
 	if (trace.errorSpanId) params.set("spanId", trace.errorSpanId)

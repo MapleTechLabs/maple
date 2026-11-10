@@ -16,8 +16,8 @@ import {
 import type { SpikeSpec } from "./spike-spec"
 import { RAMP_TOKENS } from "./spike-timeseries-tokens"
 
-// `HeatmapSpike`, definition half: grout cells for the
-// holes, value cells on a sequential scale, a gradient legend. Code copied, constants unchanged.
+// The heatmap spike's definition: grout cells for the holes, value cells on a sequential scale,
+// a gradient legend.
 
 type Slot = HeatmapSpikeRow | HeatmapHole
 type Point = ChartPoint<Slot>

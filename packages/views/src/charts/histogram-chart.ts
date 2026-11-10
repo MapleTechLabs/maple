@@ -12,7 +12,7 @@ import { hstack } from "../ui/stack"
 import { chartNoData } from "../ui/chart-frame"
 import { typography } from "../ui/typography"
 
-// `QueryBuilderHistogramChart`, view half. Definitions are in ./definitions/histogram.ts.
+// The query-builder histogram's view. Definitions are in ./definitions/histogram.ts.
 
 export interface HistogramChartInputs {
 	readonly chartId: string
@@ -80,7 +80,7 @@ const numericBins = (
 	})
 }
 
-/** `CountTooltipBody`. Shared with the histogram spike, whose body is the same markup. */
+/** A count tooltip body, shared with the lab histogram. */
 export const countTooltipBody = (
 	h: HtmlBuilder<Message>,
 	heading: string,

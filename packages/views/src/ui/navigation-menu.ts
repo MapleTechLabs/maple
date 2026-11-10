@@ -31,8 +31,6 @@ import { focusGuard, isMounted, SR_ONLY_STYLE, stateAttributes } from "./overlay
  * (50 ms); leaving trigger and popup closes it after 50 ms, as do Escape and a press outside.
  */
 
-// MODEL
-
 export const Model = Schema.Struct({
 	...PopupState.fields,
 	/** The open item's value; kept while the popup plays its exit. */
@@ -56,8 +54,6 @@ export const init = (id: string, options: Readonly<{ value?: string }> = {}): Mo
 	hoverGeneration: 0,
 })
 
-// MESSAGE
-
 export const Message = defineMessageUnion({
 	ClickedTrigger: { value: Schema.String },
 	EnteredTrigger: { value: Schema.String },
@@ -75,8 +71,6 @@ export const Message = defineMessageUnion({
 	GotAnimationMessage: { message: Animation.Message },
 })
 export type Message = typeof Message.Type
-
-// UPDATE
 
 /** The hover delay towards `value` (null closes); a newer pointer move drops it. */
 export const WaitHoverDelay = Command.define("WaitHoverDelay", {
@@ -153,8 +147,6 @@ export const update = (model: Model, message: Message): UpdateReturn =>
 		GotAnimationMessage: ({ message: animationMessage }) =>
 			transition.foldAnimation(model, animationMessage),
 	})
-
-// MOUNT
 
 /**
  * Base UI sizes the positioner to the popup's fractional box (`--positioner-width/height`). The
@@ -259,8 +251,6 @@ export const MountNavigationMenu = Mount.defineStream("MountNavigationMenu", {
 		),
 })
 
-// VIEW
-
 export type NavigationMenuItem =
 	| Readonly<{
 			_tag: "Trigger"
@@ -277,12 +267,12 @@ export type NavigationMenuItem =
 
 export type ViewInputs = Readonly<{
 	items: ReadonlyArray<NavigationMenuItem>
-	/** `<NavigationMenu align>` (the positioner's alignment). */
+	/** The positioner's alignment. */
 	align?: Align
 	className?: string
 }>
 
-/** `<NavigationMenuLink href>`. */
+/** A link inside a navigation menu's popup. */
 export const navigationMenuLink = <M>(
 	h: HtmlBuilder<M>,
 	href: string,

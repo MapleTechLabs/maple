@@ -5,7 +5,7 @@ import { icon } from "../icon"
 import { iconButton } from "../icon-button"
 import { Array as Arr } from "effect"
 
-// `ActiveFilterChips`.
+// The filters in effect as removable chips.
 
 const MAX_CHIP_VALUES = 3
 
@@ -15,7 +15,7 @@ export type ActiveFilterChip<M> = Readonly<{
 	values: ReadonlyArray<string>
 	isNegated?: boolean
 	onRemove: M
-	/** Stored value to display text (`getValueLabel`): a trace id shows its short form. */
+	/** Stored value to display text: a trace id shows its short form. */
 	valueLabel?: (value: string) => string
 }>
 

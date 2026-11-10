@@ -52,12 +52,10 @@ export const LoadSources = Command.define("LoadSources", {
 		),
 })
 
-// DASHBOARDS AND NAMESPACES
-
 const orgArgs = { orgId: Schema.String }
 
 /**
- * `NamespaceScopeList`: the same snapped 24 h services facets probe the overview runs, read through
+ * The same snapped 24 h services facets probe the overview runs, read through
  * the shared probe under the shell's org, so an answer the Overview page already has is reused.
  */
 export const LoadNamespaces = Command.define("LoadNamespaces", {

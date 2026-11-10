@@ -89,7 +89,7 @@ export type InitInput = Readonly<{
 	spanEvents: SpanEvents | null
 }>
 
-/** `<TraceTimeline />` mounting: default expansion keeps the selected span visible, then scrolls to it. */
+/** The timeline mounting: default expansion keeps the selected span visible, then scrolls to it. */
 /** The picker's value: `colorByFieldId`, the default when the stored one does not parse. */
 const colorBySelectValue = (colorBy: string): string =>
 	colorByFieldId(colorByFromId(colorBy) ?? DEFAULT_COLOR_BY)
@@ -185,7 +185,7 @@ const withExpanded = (model: Model, expanded: ReadonlySet<string>): Model => ({
 	expandedSpanIds: [...expanded],
 })
 
-/** `TOGGLE_COLLAPSE`; `wholeSubtree` drags every descendant parent to the node's new state. */
+/** `wholeSubtree` drags every descendant parent to the node's new state. */
 const toggleCollapse = (model: Model, spanId: string, wholeSubtree: boolean): Model => {
 	const next = new Set(model.expandedSpanIds)
 	const isExpanding = !next.has(spanId)
@@ -243,7 +243,7 @@ const panBy = (model: Model, fraction: number): Model => {
 	})
 }
 
-/** The timeline's own keys (`handleKeyDown`), only while the timeline itself has focus. */
+/** The timeline's own keys, only while the timeline itself has focus. */
 const pressedKey = (model: Model, key: string, isShift: boolean): UpdateReturn => {
 	const bars = barsOf(model)
 	const focused = model.focusedIndex === null ? undefined : bars[model.focusedIndex]

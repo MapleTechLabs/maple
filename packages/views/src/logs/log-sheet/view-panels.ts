@@ -42,7 +42,7 @@ type H = HtmlBuilder<Message>
 const ROW_CLASS = "flex w-full items-center gap-2 px-2 py-1"
 const QUIET_SEVERITIES = new Set(["DEBUG", "TRACE"])
 
-/** `centerSelected`: the selected row centred inside its list only (never scrolling the page). */
+/** The selected row centred inside its list only (never scrolling the page). */
 export const CenterContextRow = Mount.define("CenterLogContextRow", {
 	messages: [Message.PositionedLogRow],
 	execute: ({ element }) =>
@@ -69,7 +69,7 @@ export const showsErrorBanner = (log: LogRecord): boolean => {
 	return severity === "ERROR" || severity === "FATAL" || severity === "CRITICAL"
 }
 
-/** `LogErrorBanner`: the exception message (else the body), its type and a prompt to copy. */
+/** The error banner: the exception message (else the body), its type and a prompt to copy. */
 export const errorBanner = (
 	h: H,
 	model: Model,
@@ -115,7 +115,7 @@ const rowSkeleton = (h: H, rows: number, widths: readonly [string, string]) =>
 			]),
 	})
 
-/** `LogTime`: `HH:MM:SS` at full strength, the milliseconds a step back. */
+/** `HH:MM:SS` at full strength, the milliseconds a step back. */
 const logTime = (h: H, timestamp: string, timeZone: string): ReadonlyArray<Html | string> => {
 	const formatted = formatCompactTimeInTimezone(timestamp, { timeZone })
 	return Option.match(Str.lastIndexOf(".")(formatted), {
@@ -205,7 +205,7 @@ const contextList = (
 	)
 }
 
-/** `LogContextPanel`: the logs around this one from its instance, or its whole service. */
+/** The logs around this one from its instance, or its whole service. */
 export const contextPanel = (
 	h: H,
 	model: Model,
@@ -258,7 +258,7 @@ export const contextPanel = (
 	])
 }
 
-/** `formatTimelineOffset`: `+12.0ms` within the trace; negative is clock skew. */
+/** `+12.0ms` within the trace; negative is clock skew. */
 const timelineOffset = (ms: number): string => (ms < 0 ? `−${formatDuration(-ms)}` : `+${formatDuration(ms)}`)
 
 const isCurrentLog = (log: LogRecord, current: LogRecord): boolean =>
@@ -382,7 +382,7 @@ const timelineRows = (h: H, model: Model, current: LogRecord, data: ReadonlyArra
 	)
 }
 
-/** `LogTraceTimeline`: every log in this log's trace, with span boundaries. */
+/** Every log in this log's trace, with span boundaries. */
 export const traceTimeline = (h: H, model: Model, log: LogRecord): Html | null => {
 	if (log.traceId === undefined || log.traceId === "") return null
 	const returned = AsyncData.getData(model.traceLogs.data)

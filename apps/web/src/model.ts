@@ -54,9 +54,9 @@ export const Model = Schema.Struct({
 	parkedPages: Schema.Array(PageSlot),
 	/** The open onboarding or auth-handoff screen (`page/onboarding`): outside the shell and `PageContext`. */
 	onboarding: Schema.NullOr(Onboarding.Model),
-	/** The last Clerk emit (`useUser`, `useOrganization`, `useOrganizationList`), Clerk mode only. */
+	/** The last Clerk emit, Clerk mode only. */
 	clerkSnapshot: Schema.NullOr(ClerkSnapshot),
-	/** The active org's Autumn customer (`billingCustomerAtom`), Clerk mode only. */
+	/** The active org's Autumn customer, Clerk mode only. */
 	customer: CustomerSlot,
 	/** `maple.billing.selected-plan.<orgId>` per org, read at boot and written as plans settle. */
 	knownToRenderApp: Schema.Record(Schema.String, Schema.Boolean),

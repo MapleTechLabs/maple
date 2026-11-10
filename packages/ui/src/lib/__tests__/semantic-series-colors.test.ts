@@ -60,7 +60,7 @@ describe("resolveSeriesColors", () => {
 		for (const name of names) expect(reversed.get(name)).toBe(forward.get(name))
 	})
 
-	it("matches the service color used by ServiceDot and the service map", () => {
+	it("matches the service colour the service dot and the service map use", () => {
 		const colors = resolveSeriesColors(["checkout-service", "cart-service"])
 		expect(colors.get("checkout-service")).toBe(getServiceColor("checkout-service"))
 		expect(colors.get("cart-service")).toBe(getServiceColor("cart-service"))

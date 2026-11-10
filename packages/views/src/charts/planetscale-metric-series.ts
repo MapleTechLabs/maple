@@ -1,7 +1,7 @@
 import { formatDuration, formatNumber, formatPercent } from "@maple/ui/lib/format"
 import type { ChartSpec } from "./chart-spec"
 
-// The labels and value formats of `PlanetScaleChart`, shared by its definition and its card.
+// The labels and value formats of the PlanetScale chart, shared by its definition and its card.
 
 export type PlanetScaleMetric = Extract<ChartSpec, { readonly _tag: "PlanetScaleMetric" }>["metric"]
 

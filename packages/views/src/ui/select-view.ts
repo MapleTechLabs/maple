@@ -27,7 +27,9 @@ import { portalId, triggerId } from "./overlay/popup-state"
 import { focusGuard, isMounted, SR_ONLY_STYLE, stateAttributes } from "./overlay/transition"
 import { itemId, listId, Message, type Model, MountSelect } from "./select"
 
-/** `isDisabled`: `<SelectItem disabled>`, listed but not choosable. */
+// The Select's trigger and its popup list of options, groups and labels.
+
+/** `isDisabled`: listed but not choosable. */
 export type SelectOption = Readonly<{ value: string; label: string; isDisabled?: boolean; title?: string }>
 
 /** What the list shows: groups with a label, separators and loose items, in order. */
@@ -53,7 +55,7 @@ export type ViewInputs = Readonly<{
 	describedBy?: string
 	/** The field shows an error: the trigger reads `aria-invalid`. */
 	isInvalid?: boolean
-	/** `<SelectTrigger size>`. */
+	/** The trigger's size. */
 	size?: "sm" | "default" | "lg"
 	className?: string
 	/** `<SelectValue>`'s render function: the trigger's content for the value, listed or not. */

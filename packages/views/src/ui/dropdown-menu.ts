@@ -81,7 +81,6 @@ const backdropStyle = (maybePosition: Option.Option<PopupPosition>): Record<stri
 		},
 	})
 }
-// PORTAL
 
 export type MenuPopupOptions<Message> = Readonly<{
 	popupId: string
@@ -153,7 +152,6 @@ export const menuPopup = <Message>(
 		],
 	)
 }
-// PARTS
 
 /** `<DropdownMenuGroup>`; with a label, Base UI points `aria-labelledby` at it. */
 export const menuGroup = <Message>(
@@ -248,7 +246,6 @@ export const menuShortcut = <Message>(h: HtmlBuilder<Message>, children: Childre
 		[h.Class(cn(dropdownMenuShortcutStyles)), h.DataAttribute("slot", "dropdown-menu-shortcut")],
 		children,
 	)
-// CHECKABLE AND SUBMENU ITEMS
 
 /** What a highlightable item needs beyond its content: id, highlight and its two handlers. */
 export type MenuRowOptions<Message> = Readonly<{
@@ -312,7 +309,6 @@ export const menuCheckableItem = <Message>(
 	)
 }
 
-/** `<DropdownMenuRadioGroup>`. */
 export const menuRadioGroup = <Message>(
 	h: HtmlBuilder<Message>,
 	maybeLabelId: string | undefined,

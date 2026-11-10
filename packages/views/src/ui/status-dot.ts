@@ -10,7 +10,7 @@ export type StatusDotOptions<Message = never> = VariantProps<typeof statusDotVar
 		attributes?: ReadonlyArray<Attribute<Message>>
 	}>
 
-/** `<StatusDot>`: a static, decorative status dot. */
+/** A static, decorative status dot. */
 export const statusDot = <Message>(h: HtmlBuilder<Message>, options: StatusDotOptions<Message> = {}): Html =>
 	h.span([
 		h.AriaHidden(true),

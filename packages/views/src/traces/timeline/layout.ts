@@ -35,7 +35,7 @@ const barFillFromHue = (hue: number | null, isError: boolean, statusPreset: bool
 	return wash(barBorderFromHue(hue, false, statusPreset), hue === null ? 12 : 16)
 }
 
-/** `TimelineBar` over `SpanNodeData`. */
+/** A timeline bar over `SpanNodeData`. */
 export interface Bar {
 	readonly span: SpanNodeData
 	readonly startMs: number
@@ -51,7 +51,6 @@ export interface Bar {
 	readonly hasChildren: boolean
 }
 
-/** `countDescendants`. */
 export const countDescendants = (node: SpanNodeData): number =>
 	Arr.reduce(node.children, 0, (sum, child) => sum + 1 + countDescendants(child))
 
@@ -222,8 +221,6 @@ export const virtualRange = (count: number, scrollTop: number, height: number): 
 	const to = Math.min(endIndex + OVERSCAN, last)
 	return Array.from({ length: to - from + 1 }, (_, i) => from + i)
 }
-
-// `collectMinimapSpans`.
 
 export interface MinimapSpan {
 	readonly spanId: string

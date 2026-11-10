@@ -13,7 +13,6 @@ const BUCKET_COUNT = 145
 const BUCKET_MS = 5 * 60 * 1000
 const END_TIME_MS = Date.UTC(2026, 6, 17, 18, 30)
 
-/** `SERVICE_DETAIL_POINTS`, the same formulas. */
 export const SERVICE_DETAIL_POINTS: ReadonlyArray<FixedMetricRow> = Arr.makeBy(BUCKET_COUNT, (index) => {
 	const phase = (index / (BUCKET_COUNT - 1)) * Math.PI * 6
 	const traffic = 1_250 + Math.sin(phase) * 410 + Math.cos(phase * 0.37) * 190

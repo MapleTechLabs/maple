@@ -17,7 +17,7 @@ const browserTimeZone = (): string => {
 	return zone && (zone === "UTC" || isValidIanaTimeZone(zone)) ? zone : "UTC"
 }
 
-/** `getEffectiveTimezone`: the stored zone (raw or JSON-encoded), else the browser's. */
+/** The stored zone (raw or JSON-encoded), else the browser's. */
 const storedTimeZone = (raw: string | null): Option.Option<string> =>
 	Option.fromNullishOr(raw).pipe(
 		Option.map((value) =>
@@ -33,7 +33,7 @@ export const viewerFlags: Effect.Effect<ViewerFlags> = Effect.sync(() => ({
 	locale: navigator.language,
 }))
 
-/** `ListFooter`'s count line. */
+/** The list footer's count line. */
 export const listFooterText = (
 	locale: string,
 	options: {
@@ -54,7 +54,7 @@ export const listFooterText = (
 export const Density = Schema.Literals(["compact", "comfortable"])
 export type Density = typeof Density.Type
 
-/** `useLogsViewPreferences`: line wrapping and row density, kept per browser. */
+/** Line wrapping and row density, kept per browser. */
 export const LogsViewPreferences = Schema.Struct({ wrap: Schema.Boolean, density: Density })
 export type LogsViewPreferences = typeof LogsViewPreferences.Type
 

@@ -5,7 +5,7 @@ import { Command, Mount } from "foldkit"
 import { ROW_PITCH } from "./layout"
 import { Message } from "./message"
 
-/** `readSidebarWidth`'s storage read; clamping happens in `update`. */
+/** The stored sidebar width; clamping happens in `update`. */
 export const ReadSidebarWidth = Command.define("ReadTraceTimelineSidebarWidth", {
 	messages: [Message.CompletedReadSidebarWidth],
 	execute: Effect.sync(() =>
@@ -95,7 +95,7 @@ const measure = (scroller: HTMLElement): Stream.Stream<MeasureMessage> =>
 		).pipe(Effect.flatMap(() => Effect.never)),
 	)
 
-/** The body scroller: `useContainerSize` plus the scroll requests above. */
+/** The body scroller: its size plus the scroll requests above. */
 export const MeasureTimelineBody = Mount.defineStream("MeasureTraceTimelineBody", {
 	messages: [Message.MeasuredScroller],
 	execute: ({ element, viewStateChanges }) =>

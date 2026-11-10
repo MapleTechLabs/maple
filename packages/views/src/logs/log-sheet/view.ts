@@ -20,7 +20,7 @@ import { typography } from "@maple/views/ui/typography"
 import { hstack, vstack, vstackClass } from "@maple/views/ui/stack"
 import { Array as Arr, String as Str } from "effect"
 
-// `LogDetailSheet`: hero, meta strip and the tabbed panels in a right-hand sheet.
+// The log detail sheet: hero, meta strip and the tabbed panels in a right-hand sheet.
 
 type H = HtmlBuilder<Message>
 
@@ -40,7 +40,7 @@ const TAB_ICONS = new Map<string, IconName>([
 	["infrastructure", "ServerIcon"],
 ])
 
-/** `LogRawPanel`: the JSON payload, highlighted, with its copy control. */
+/** The raw panel: the JSON payload, highlighted, with its copy control. */
 const rawPanel = (h: H, model: Model, log: LogRecord): Html => {
 	const payload = buildLogJsonPayload(log)
 	return h.div(

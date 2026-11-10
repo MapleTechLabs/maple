@@ -11,11 +11,14 @@ import { Copies } from "../kit/copies"
 import * as LogSheet from "@maple/views/logs/log-sheet"
 import { LocalLog } from "../../lib/log-shape"
 
-// apps/local-ui/src/lib/log-shape.ts and the logs hooks, as Schemas.
+// The Logs page's data, as Schemas.
 
 export { LocalLog } from "../../lib/log-shape"
 
-export const LogPages = Schema.Struct({ pages: Schema.Array(Schema.Array(LocalLog)), hasNextPage: Schema.Boolean })
+export const LogPages = Schema.Struct({
+	pages: Schema.Array(Schema.Array(LocalLog)),
+	hasNextPage: Schema.Boolean,
+})
 export type LogPages = typeof LogPages.Type
 
 export const FacetOption = Schema.Struct({ name: Schema.String, count: Schema.Number })
@@ -31,7 +34,7 @@ export const LogPattern = Schema.Struct({
 })
 export type LogPattern = typeof LogPattern.Type
 
-/** `LocalLogPatterns`: the clusters, the sample size and whether the sample hit its cap. */
+/** The clusters, the sample size and whether the sample hit its cap. */
 export const LogPatterns = Schema.Struct({
 	patterns: Schema.Array(LogPattern),
 	totalSampled: Schema.Number,
@@ -43,14 +46,14 @@ export const Draft = Schema.Struct({ text: Schema.String, version: Schema.Number
 export type Draft = typeof Draft.Type
 
 export const Model = Schema.TaggedStruct("LogsPage", {
-	/** `useTimeWindow`'s anchor, snapped to the minute; none until the clock is read. */
+	/** The time window's anchor, snapped to the minute; none until the clock is read. */
 	maybeAnchorMs: Schema.Option(Schema.Number),
 	nowMs: Schema.Number,
 	logs: KeyedSchema(LogPages, LoadFailure),
 	isFetchingNextPage: Schema.Boolean,
 	/** Bumped when the list is refetched or rekeyed; a next page from an older generation is dropped. */
 	pageGeneration: Schema.Number,
-	/** `dataUpdatedAt` of the active mode's main query, for the "New data" pill. */
+	/** When the active mode's main query last loaded, for the "New data" pill. */
 	logsUpdatedAtMs: Schema.Number,
 	patternsUpdatedAtMs: Schema.Number,
 	patterns: KeyedSchema(LogPatterns, LoadFailure),

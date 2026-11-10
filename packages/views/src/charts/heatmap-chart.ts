@@ -25,7 +25,7 @@ import { swatch } from "../ui/swatch"
 import { chartFrameClass } from "../ui/chart-frame"
 import { hstack, vstack } from "../ui/stack"
 
-// `QueryBuilderHeatmapChart`. The definition is ./definitions/heatmap.ts.
+// The query-builder heatmap. The definition is ./definitions/heatmap.ts.
 
 export interface HeatmapChartInputs {
 	readonly chartId: string

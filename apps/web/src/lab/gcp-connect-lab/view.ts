@@ -11,7 +11,7 @@ import { Array as Arr } from "effect"
 
 type H = HtmlBuilder<Message>
 
-/** `GcpConfigure` / `GcpConfigureFrame`: the page's dialog, open while the wizard is. */
+/** The page's dialog, open while the wizard is. */
 const dialogView = Submodel.defineView<
 	IntegrationsModel,
 	IntegrationsMessage,

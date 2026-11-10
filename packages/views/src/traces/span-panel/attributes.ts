@@ -15,9 +15,10 @@ import type { PanelState as Model } from "./model"
 import { typography } from "@maple/views/ui/typography"
 import { hstack } from "../../ui/stack"
 
-// `AttributesSection` / `AttributesTable` / `AttributeRow`
-// with filter actions and a value renderer that links commit SHAs.
-// TODO(json-highlight): an expanded JSON value renders plain; it should highlight like `CollapsibleJsonValue`.
+// The span's attribute section, table and rows, with filter actions and a value renderer that
+// links commit SHAs.
+// TODO(json-highlight): an expanded JSON value renders plain; it should highlight like the kit's
+// collapsible JSON value.
 
 type H = HtmlBuilder<Message>
 type Entries = ReadonlyArray<readonly [string, string]>
@@ -27,7 +28,7 @@ const FULL_SHA = /^[0-9a-f]{40}$/i
 const filterAction = (h: H, label: string, onClick: Message, text: string): Html =>
 	attributeFilterAction(h, { label, onClick, text })
 
-/** `CommitShaAttributeValue`: the hover-card trigger (the card itself is not ported). */
+/** A commit SHA value: the hover-card trigger, without the card. */
 const commitShaValue = (h: H, id: string, value: string): Html => {
 	const className = cn(
 		"cursor-pointer",
@@ -109,11 +110,11 @@ type RowInput = Readonly<{
 	displayKey?: string
 	displayValue?: string
 	plainKey?: boolean
-	/** `onFilterByAttribute` is in scope: the row grows its Filter and Exclude verbs. */
+	/** The page can filter by attribute: the row grows its Filter and Exclude verbs. */
 	isFilterable: boolean
 }>
 
-/** `AttributeRow`: copyable key, selectable value (or JSON / commit SHA) and the filter verbs. */
+/** Copyable key, selectable value (or JSON / commit SHA) and the filter verbs. */
 const attributeRow = (h: H, model: Model, row: RowInput): Html => {
 	const id = `attr:${row.scope}:${row.attrKey}`
 	const shown = row.displayValue ?? row.value
@@ -213,7 +214,7 @@ const pick = (row: RowInput) => ({ scope: row.scope, key: row.attrKey, value: ro
 
 const tableTitle = (h: H, title: string): Html => heading(h, { level: 4, variant: "label" }, [title])
 
-/** `AttributesTable` without search or namespace grouping (the span panel uses neither). */
+/** The attributes table without search or namespace grouping (the span panel uses neither). */
 const attributesTable = (
 	h: H,
 	model: Model,
@@ -239,7 +240,7 @@ const attributesTable = (
 				],
 			)
 
-/** `GenAiSection`: the `gen_ai.*` fields under plain-language labels. */
+/** The `gen_ai.*` fields under plain-language labels. */
 const genAiSection = (
 	h: H,
 	model: Model,
@@ -292,7 +293,7 @@ const genAiSection = (
 				],
 			)
 
-/** `AttributesSection`: AI block, the raw table, and Maple's own `maple_` keys collapsed below. */
+/** AI block, the raw table, and Maple's own `maple_` keys collapsed below. */
 export const attributesSection = (
 	h: H,
 	model: Model,

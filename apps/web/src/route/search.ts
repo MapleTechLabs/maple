@@ -22,7 +22,6 @@ import { QUERY_BUILDER_METRIC_TYPES } from "@maple/query-model"
 import { TOOL_METRICS, TOOL_PERCENTILES } from "@maple/web-data/lib/tool-analytics"
 import { HUB_SORTS, HUB_VIEWS, LEGACY_HUB_VIEWS, SEVERITY_FILTERS } from "../page/errors/hub/hub-params"
 
-// apps/web/src/lib/search-params.ts
 const StringArray = Schema.Array(Schema.String)
 const StringArrayFromJsonString = Schema.fromJsonString(Schema.Array(Schema.String))
 
@@ -45,14 +44,12 @@ const DigitsParam = Schema.Number.pipe(
 const BooleanParam = Schema.optional(Schema.Union([Schema.Boolean, BooleanFromStringParam]))
 const NumberParam = Schema.optional(Schema.Union([Schema.Number, NumberFromStringParam]))
 
-// Time range
 export const TimeRangeSearchFields = {
 	startTime: Schema.optional(Schema.String),
 	endTime: Schema.optional(Schema.String),
 	timePreset: Schema.optional(Schema.String),
 }
 
-// apps/web/src/lib/dashboard-controls/search-params.ts
 export const VARIABLE_PARAM_PREFIX = "var-"
 
 export const variableSearchRest = Schema.Record(
@@ -73,8 +70,6 @@ export const dashboardViewParamsSchema = {
 	to: Schema.optional(Schema.Unknown),
 }
 
-// Agent tool analytics and search
-
 const ToolAnalyticsSearchFields = {
 	metric: Schema.optional(Schema.Literals(TOOL_METRICS)),
 	percentile: Schema.optional(Schema.Literals(TOOL_PERCENTILES)),
@@ -89,7 +84,6 @@ const ToolAnalyticsSearchFields = {
 	variant: Schema.optional(Schema.String),
 }
 
-// apps/web/src/components/analytics/filters.ts
 const analyticsFilterSearchFields = {
 	host: Schema.optional(Schema.String),
 	pagePath: Schema.optional(Schema.String),
@@ -107,7 +101,6 @@ const analyticsFilterSearchFields = {
 	eventName: Schema.optional(Schema.String),
 }
 
-// Code review
 const CodeReviewSearchFields = {
 	repo: Schema.optional(VcsRepositoryId),
 	author: Schema.optional(Schema.String),
@@ -180,7 +173,6 @@ export const ZONE_SCOPES = ["serving5xx", "mostly4xx", "lowVolume"] as const
 export const WORKER_SCOPES = ["erroring", "slow", "cpuHeavy"] as const
 export const ZONE_TABS = ["traffic", "dns", "security"] as const
 
-// PlanetScale filters
 const planetscaleFilterSearchFields = {
 	branches: OptionalStringArrayParam,
 	branchStates: OptionalStringArrayParam,
@@ -239,9 +231,6 @@ export const ErrorIssuesSearch = Schema.Struct({
 	severity: Schema.optional(Schema.Unknown),
 })
 
-// Top-level routes
-
-// sessionTimeRangeSearchMiddleware()
 export const HomeSearch = Schema.Struct({
 	environment: Schema.optional(Schema.String),
 	...TimeRangeSearchFields,
@@ -292,7 +281,6 @@ export const SelectPlanSearch = Schema.Struct({
 	checkout: Schema.optional(Schema.Literal("complete")),
 })
 
-// sessionTimeRangeSearchMiddleware({ maxRangeSeconds: one year })
 export const ServiceMapSearch = Schema.Struct({
 	view: Schema.optional(Schema.Literals(["2d", "3d"])),
 	environment: Schema.optional(Schema.String),
@@ -305,7 +293,6 @@ export const ServiceMapSearch = Schema.Struct({
 export const SettingsSearch = Schema.Struct({
 	tab: Schema.optional(Schema.Literals([...settingsTabValues, ...legacySettingsTabValues])),
 	checkout: Schema.optional(Schema.Literal("complete")),
-	// audit-log-filters.ts `AuditLogSearchFields`
 	range: Schema.optional(Schema.String),
 	since: Schema.optional(Schema.String),
 	until: Schema.optional(Schema.String),
@@ -336,8 +323,6 @@ export const UnsubscribeSearch = Schema.Struct({
 	token: Schema.optional(Schema.String),
 })
 
-// Detail routes
-
 export const AgentSessionSearch = Schema.Struct({
 	t: Schema.optional(Schema.String),
 	end: Schema.optional(Schema.String),
@@ -346,7 +331,6 @@ export const AgentSessionSearch = Schema.Struct({
 	tool: Schema.optional(Schema.String.check(Schema.isMinLength(1), Schema.isTrimmed())),
 })
 
-// sessionTimeRangeSearchMiddleware({ maxRangeSeconds: one year })
 export const AlertRuleSearch = Schema.Struct({
 	tab: Schema.optional(Schema.String),
 	...TimeRangeSearchFields,
@@ -440,7 +424,6 @@ export const InvestigationSearch = Schema.Struct({
 	action: Schema.optional(Schema.Unknown),
 })
 
-// sessionTimeRangeSearchMiddleware()
 export const MetricSearch = Schema.Struct({
 	type: Schema.optional(Schema.Literals(QUERY_BUILDER_METRIC_TYPES)),
 	agg: Schema.optional(
@@ -453,7 +436,6 @@ export const MetricSearch = Schema.Struct({
 	...TimeRangeSearchFields,
 })
 
-// sessionTimeRangeSearchMiddleware({ maxRangeSeconds: one year })
 export const ReleaseSearch = Schema.Struct({
 	service: Schema.optional(Schema.String),
 	environments: OptionalStringArrayParam,
@@ -464,7 +446,6 @@ export const ReplaySearch = Schema.Struct({
 	t: Schema.optional(Schema.String),
 })
 
-// sessionTimeRangeSearchMiddleware({ maxRangeSeconds: one year })
 export const ServiceSearch = Schema.Struct({
 	tab: Schema.optional(Schema.String),
 	/** The API tab's open endpoint drawer, by normalized span name ("GET /users/{id}"). */
@@ -492,8 +473,6 @@ export const TraceSearch = Schema.Struct({
 	t: Schema.optional(Schema.String),
 	view: Schema.optional(Schema.Literals(["waterfall", "timeline", "flow"])),
 })
-
-// List routes
 
 export const AgentSessionsSearch = Schema.Struct({
 	vendors: OptionalStringArrayParam,
@@ -531,7 +510,6 @@ export const AlertsSearch = Schema.Struct({
 	window: Schema.optional(Schema.String),
 })
 
-// sessionTimeRangeSearchMiddleware()
 export const AnalyticsSearch = Schema.Struct({
 	...analyticsFilterSearchFields,
 	...TimeRangeSearchFields,
@@ -571,7 +549,6 @@ export const ErrorsSearch = Schema.Struct({
 	severity: Schema.optional(Schema.Literals(SEVERITY_FILTERS)),
 })
 
-// sessionTimeRangeSearchMiddleware()
 export const InfraSearch = Schema.Struct({
 	...TimeRangeSearchFields,
 })
@@ -584,7 +561,6 @@ export const InvestigationsSearch = Schema.Struct({
 	q: Schema.optional(Schema.String),
 })
 
-// sessionTimeRangeSearchMiddleware()
 export const LogsSearch = Schema.Struct({
 	services: OptionalStringArrayParam,
 	severities: OptionalStringArrayParam,
@@ -604,7 +580,6 @@ export const LogsSearch = Schema.Struct({
 	...TimeRangeSearchFields,
 })
 
-// sessionTimeRangeSearchMiddleware()
 export const MetricsSearch = Schema.Struct({
 	q: Schema.optional(Schema.String),
 	type: Schema.optional(Schema.Literals(QUERY_BUILDER_METRIC_TYPES)),
@@ -612,7 +587,6 @@ export const MetricsSearch = Schema.Struct({
 	...TimeRangeSearchFields,
 })
 
-// sessionTimeRangeSearchMiddleware({ maxRangeSeconds: one year })
 export const ReleasesSearch = Schema.Struct({
 	environments: OptionalStringArrayParam,
 	excludedEnvironments: OptionalStringArrayParam,
@@ -621,7 +595,6 @@ export const ReleasesSearch = Schema.Struct({
 	...TimeRangeSearchFields,
 })
 
-// sessionTimeRangeSearchMiddleware()
 export const ReplaysSearch = Schema.Struct({
 	service: Schema.optional(Schema.String),
 	browser: Schema.optional(Schema.String),
@@ -666,7 +639,6 @@ export const UserDetailSearch = Schema.Struct({
 	...TimeRangeSearchFields,
 })
 
-// sessionTimeRangeSearchMiddleware({ maxRangeSeconds: one year })
 export const ServicesSearch = Schema.Struct({
 	environments: OptionalStringArrayParam,
 	namespaces: OptionalStringArrayParam,
@@ -691,7 +663,6 @@ const AttributeFilterParam = Schema.Struct({
 	or: Schema.optional(Schema.Array(Schema.Struct(attributeFilterParamFields))),
 })
 
-// sessionTimeRangeSearchMiddleware()
 export const TracesSearch = Schema.Struct({
 	services: OptionalStringArrayParam,
 	spanNames: OptionalStringArrayParam,
@@ -727,9 +698,6 @@ export const TracesSearch = Schema.Struct({
 	...TimeRangeSearchFields,
 })
 
-// Nested detail routes
-
-// sessionTimeRangeSearchMiddleware()
 export const AgentSessionToolSearch = Schema.Struct({
 	...ToolAnalyticsSearchFields,
 	...TimeRangeSearchFields,
@@ -737,51 +705,41 @@ export const AgentSessionToolSearch = Schema.Struct({
 
 export const AlertIncidentSearch = Schema.Struct({})
 
-// sessionTimeRangeSearchMiddleware()
 export const ErrorIssueSearch = Schema.Struct({
 	tab: Schema.optional(Schema.Literals(ISSUE_TABS)),
 	...TimeRangeSearchFields,
 })
 
-// sessionTimeRangeSearchMiddleware()
 export const InfraCloudflareZoneSearch = Schema.Struct({
 	...cloudflareFilterSearchFields,
 	...TimeRangeSearchFields,
 	tab: Schema.optional(Schema.Literals(ZONE_TABS)),
 })
 
-// sessionTimeRangeSearchMiddleware()
 export const InfraContainerSearch = Schema.Struct({
 	host: Schema.optional(Schema.String),
 	...TimeRangeSearchFields,
 })
 
-// sessionTimeRangeSearchMiddleware()
 export const InfraHostSearch = Schema.Struct({
 	...TimeRangeSearchFields,
 })
 
-// sessionTimeRangeSearchMiddleware()
 export const InfraPlanetscaleDatabaseSearch = Schema.Struct({
 	branch: Schema.optional(Schema.String),
 	...planetscaleFilterSearchFields,
 	...TimeRangeSearchFields,
 })
 
-// sessionTimeRangeSearchMiddleware()
 export const InfraRailwayServiceSearch = Schema.Struct({
 	...TimeRangeSearchFields,
 	environmentId: Schema.String,
 })
 
-// sessionTimeRangeSearchMiddleware()
 export const InfraSupabaseProjectSearch = Schema.Struct({
 	...TimeRangeSearchFields,
 })
 
-// Nested list routes
-
-// sessionTimeRangeSearchMiddleware()
 /** `/mcp-servers`, a server, its tool page and its sessions share one search: the time range and the toolbar. */
 export const McpServersSearch = Schema.Struct({
 	...TimeRangeSearchFields,
@@ -795,13 +753,11 @@ export const McpServersSearch = Schema.Struct({
 	calls: Schema.optional(Schema.Literals(["slowest", "failed", "recent"])),
 })
 
-// sessionTimeRangeSearchMiddleware()
 export const AgentSessionToolsSearch = Schema.Struct({
 	...ToolAnalyticsSearchFields,
 	...TimeRangeSearchFields,
 })
 
-// sessionTimeRangeSearchMiddleware()
 export const InfraCloudflareSearch = Schema.Struct({
 	...TimeRangeSearchFields,
 	view: Schema.optional(Schema.Literals(CLOUDFLARE_VIEWS)),
@@ -811,7 +767,6 @@ export const InfraCloudflareSearch = Schema.Struct({
 	account: Schema.optional(Schema.String),
 })
 
-// sessionTimeRangeSearchMiddleware()
 export const InfraContainersSearch = Schema.Struct({
 	q: Schema.optional(Schema.String),
 	scope: Schema.optional(Schema.Literals(["saturated", "elevated", "stale"])),
@@ -834,7 +789,6 @@ export const InfraContainersSearch = Schema.Struct({
 	...TimeRangeSearchFields,
 })
 
-// sessionTimeRangeSearchMiddleware()
 export const InfraAwsSearch = Schema.Struct({
 	tab: Schema.optional(Schema.String),
 	scope: Schema.optional(Schema.String),
@@ -843,7 +797,6 @@ export const InfraAwsSearch = Schema.Struct({
 	...TimeRangeSearchFields,
 })
 
-// sessionTimeRangeSearchMiddleware()
 export const InfraGcpSearch = Schema.Struct({
 	view: Schema.optional(Schema.String),
 	tab: Schema.optional(Schema.String),
@@ -855,45 +808,36 @@ export const InfraGcpSearch = Schema.Struct({
 	...TimeRangeSearchFields,
 })
 
-// sessionTimeRangeSearchMiddleware()
 export const InfraHostsSearch = Schema.Struct({
 	q: Schema.optional(Schema.String),
 	scope: Schema.optional(Schema.Literals(["saturated", "elevated", "stale"])),
 	...TimeRangeSearchFields,
 })
 
-// sessionTimeRangeSearchMiddleware(); beforeLoad redirects to /infra/kubernetes/pods carrying search.
 export const InfraKubernetesSearch = Schema.Struct(TimeRangeSearchFields)
 
-// sessionTimeRangeSearchMiddleware()
 export const InfraPlanetscaleSearch = Schema.Struct({
 	...TimeRangeSearchFields,
 })
 
-// sessionTimeRangeSearchMiddleware()
 export const InfraRailwaySearch = Schema.Struct({
 	q: Schema.optional(Schema.String),
 	...TimeRangeSearchFields,
 })
 
-// sessionTimeRangeSearchMiddleware()
 export const InfraSupabaseSearch = Schema.Struct({
 	...TimeRangeSearchFields,
 })
-
-// Deeper routes
 
 export const DashboardWidgetSearch = Schema.StructWithRest(Schema.Struct(dashboardViewParamsSchema), [
 	variableSearchRest,
 ])
 
-// sessionTimeRangeSearchMiddleware()
 export const InfraCloudflareWorkerSearch = Schema.Struct({
 	...TimeRangeSearchFields,
 	account: Schema.optional(Schema.String),
 })
 
-// sessionTimeRangeSearchMiddleware()
 /** The resource's keys after its name, as `AWS_INFRA_KINDS[kind].identity` orders them. */
 export const InfraAwsResourceSearch = Schema.Struct({
 	cluster: Schema.optional(Schema.String),
@@ -902,7 +846,6 @@ export const InfraAwsResourceSearch = Schema.Struct({
 	...TimeRangeSearchFields,
 })
 
-// sessionTimeRangeSearchMiddleware()
 export const InfraGcpResourceSearch = Schema.Struct({
 	project: Schema.optional(Schema.String),
 	region: Schema.optional(Schema.String),
@@ -919,19 +862,15 @@ export const InfraGcpResourceSearch = Schema.Struct({
 	...TimeRangeSearchFields,
 })
 
-// sessionTimeRangeSearchMiddleware()
 export const InfraKubernetesNodeSearch = Schema.Struct(TimeRangeSearchFields)
 
-// sessionTimeRangeSearchMiddleware()
 export const InfraKubernetesPodSearch = Schema.Struct({
 	namespace: Schema.optional(Schema.String),
 	...TimeRangeSearchFields,
 })
 
-// sessionTimeRangeSearchMiddleware()
 export const InfraKubernetesServiceSearch = Schema.Struct(TimeRangeSearchFields)
 
-// sessionTimeRangeSearchMiddleware()
 export const InfraKubernetesNodesSearch = Schema.Struct({
 	q: Schema.optional(Schema.String),
 	status: Schema.optional(Schema.Literals(["active", "idle", "ended"])),
@@ -941,7 +880,6 @@ export const InfraKubernetesNodesSearch = Schema.Struct({
 	...TimeRangeSearchFields,
 })
 
-// sessionTimeRangeSearchMiddleware()
 export const InfraKubernetesPodsSearch = Schema.Struct({
 	q: Schema.optional(Schema.String),
 	scope: Schema.optional(Schema.Literals(["saturated", "elevated", "unbounded", "ended"])),
@@ -973,10 +911,8 @@ export const InfraKubernetesPodsSearch = Schema.Struct({
 	...TimeRangeSearchFields,
 })
 
-// sessionTimeRangeSearchMiddleware()
 export const InfraKubernetesServicesSearch = Schema.Struct(TimeRangeSearchFields)
 
-// sessionTimeRangeSearchMiddleware()
 export const InfraKubernetesWorkloadsSearch = Schema.Struct({
 	kind: Schema.optional(WorkloadKindLiteral),
 	q: Schema.optional(Schema.String),
@@ -989,7 +925,6 @@ export const InfraKubernetesWorkloadsSearch = Schema.Struct({
 	...TimeRangeSearchFields,
 })
 
-// sessionTimeRangeSearchMiddleware(); params.parse decodes `kind` against the workload-kind literals.
 export const InfraKubernetesWorkloadSearch = Schema.Struct({
 	namespace: Schema.optional(Schema.String),
 	...TimeRangeSearchFields,
@@ -1001,7 +936,6 @@ export const InfraKubernetesWorkloadParams = Schema.Struct({
 	workloadName: Schema.String,
 })
 
-// Security Center
 export const SecurityFindingsSearch = Schema.Struct({
 	status: Schema.optional(Schema.Literals(["open", "fixed", "dismissed", "accepted_risk", "all"])),
 	/** A severity, or the unscored leads: the tiles' one filter. */

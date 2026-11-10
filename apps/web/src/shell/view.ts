@@ -35,7 +35,7 @@ import type { SourceLink } from "./source-link"
 
 export type { BreadcrumbEntry } from "./view-topbar"
 
-/** `AppSidebar`'s three regions, shared by the desktop rail and the mobile sheet. */
+/** The sidebar's three regions, shared by the desktop rail and the mobile sheet. */
 const sidebarRegions = (
 	h: HtmlBuilder<Message>,
 	model: Model,
@@ -125,7 +125,7 @@ const supportChannelDialog = (h: HtmlBuilder<Message>, model: Model, clerk: Shel
 		toParentMessage: (message) => Message.GotSupportChannelMessage({ message }),
 	})
 
-/** `AppUpdatePill`: not dismissible, a stale bundle may not read what the new build writes. */
+/** Not dismissible, a stale bundle may not read what the new build writes. */
 const appUpdatePill = (h: HtmlBuilder<Message>): Html =>
 	hstack(
 		h,
@@ -222,7 +222,6 @@ const mobileNav = (
 		{ id: "shell-mobile-sidebar", onDismiss: Message.DismissedMobileNav() },
 		sidebarRegions(h, model, currentPath, clerk),
 	)
-// OVERLAYS
 
 const openMenuPopup = (
 	h: HtmlBuilder<Message>,
@@ -279,7 +278,7 @@ export const sheetLayerView = Submodel.defineView<Model, Message, OverlayInputs>
 const layer = (h: HtmlBuilder<Message>, children: ReadonlyArray<Html>): Html =>
 	h.div([h.Style({ display: "contents" })], children)
 
-/** `CommandPalette`'s portal while it is mounted. */
+/** The command palette's portal while it is mounted. */
 export const paletteLayerView = Submodel.defineView<Model, Message, OverlayInputs>((model, inputs, h) =>
 	layer(
 		h,
@@ -303,7 +302,7 @@ export const paletteLayerView = Submodel.defineView<Model, Message, OverlayInput
 	),
 )
 
-/** `KeyboardShortcutsDialog`'s portal while it is mounted. */
+/** The shortcuts dialog's portal while it is mounted. */
 export const shortcutsLayerView = Submodel.defineView<Model, Message, OverlayInputs>((model, _inputs, h) =>
 	layer(
 		h,

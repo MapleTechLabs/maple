@@ -13,8 +13,8 @@ import { Message as SectionsMessage, type Model as SectionsModel, sectionOf } fr
 import { formatRange, type RangeUnit, UNIT_SUFFIX, UNIT_WORDS } from "./range-format"
 import { type HistogramMessage, type RangeBucket, rangeHistogram } from "./range-histogram"
 
-// `RangeFilterSection`. The draft text lives in the caller's Model; it commits on blur, Enter or
-// the caller's debounce.
+// A collapsible min/max range filter with presets. The draft text lives in the caller's Model; it
+// commits on blur, Enter or the caller's debounce.
 
 export type RangePreset = Readonly<{ key: string; label: string; value?: string; min?: number; max?: number }>
 
@@ -69,7 +69,7 @@ const boundInput = <M>(h: HtmlBuilder<M>, config: RangeFilterSectionConfig<M>, s
 		],
 	})
 
-/** `applyPreset`: the active preset clicked again clears the range. */
+/** The active preset clicked again clears the range. */
 const presetMessage = <M>(config: RangeFilterSectionConfig<M>, preset: RangePreset): M =>
 	config.minValue === preset.min && config.maxValue === preset.max
 		? config.onApply(undefined, undefined)

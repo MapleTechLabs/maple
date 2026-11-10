@@ -39,7 +39,7 @@ export const Message = defineMessageUnion({
 	DismissedMobileNav: {},
 	ChangedFilterViewport: { isCollapsed: Schema.Boolean },
 	ChangedSmallViewport: { isBelowSm: Schema.Boolean },
-	/** The top bar's "Open filters" / "Open context" (`FilterSidebarTrigger`, `RightSidebarTrigger`). */
+	/** The top bar's "Open filters" / "Open context". */
 	ClickedOpenFilters: {},
 	ClickedOpenContext: {},
 	GotFilterSheetMessage: { message: Dialog.Message },
@@ -93,11 +93,11 @@ export const Message = defineMessageUnion({
 	FailedOpenCustomerPortal: { message: Schema.String },
 	ClickedDismissQuotaBanner: {},
 	CompletedDismissQuotaBanner: {},
-	/** The sidebar's Search row (`openCommandPalette`). */
+	/** The sidebar's Search row. */
 	ClickedSearch: {},
 	/** Mod+K, anywhere: opens the palette (a no-op while it is open). */
 	PressedPaletteShortcut: {},
-	/** `?`, `T` and `/` outside fields and dialogs (`GlobalShortcuts`). */
+	/** `?`, `T` and `/` outside fields and dialogs. */
 	PressedShortcutsKey: {},
 	PressedThemeKey: {},
 	PressedFocusSearchKey: {},
@@ -105,7 +105,7 @@ export const Message = defineMessageUnion({
 	GotPaletteMessage: { message: Palette.Message },
 	GotShortcutsDialogMessage: { message: Dialog.Message },
 	MeasuredShortcutsPanel: {},
-	/** A menu's "Keyboard shortcuts" item (`showKeyboardShortcuts`). */
+	/** A menu's "Keyboard shortcuts" item. */
 	ClickedKeyboardShortcuts: {},
 })
 export type Message = typeof Message.Type

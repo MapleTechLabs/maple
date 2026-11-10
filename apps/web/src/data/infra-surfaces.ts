@@ -15,10 +15,10 @@ import type { TimeWindow } from "./time-range"
 const PRESENCE_WINDOW_MS = 60 * 60 * 1000
 const PRESENCE_BUCKET_MS = 5 * 60 * 1000
 
-/** `infraPresenceResultAtom`'s `staleTime`. */
+/** How long a presence read stays fresh. */
 const PRESENCE_IDLE_TTL_MS = 300_000
 
-/** The window `useInfraSurfaces()` probes when it is given none. */
+/** The window the infra surfaces probe when given none. */
 export const lastHourWindow = (nowMs: number): TimeWindow => {
 	const end = Math.floor(nowMs / PRESENCE_BUCKET_MS) * PRESENCE_BUCKET_MS
 	return {

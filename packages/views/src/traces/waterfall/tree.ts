@@ -1,7 +1,7 @@
 import type { SpanNodeData } from "@maple/views/traces/trace-data"
 import { Array as Arr } from "effect"
 
-// Pure tree walks over the Model's span tree for `SpanHierarchy`.
+// Pure tree walks over the Model's span tree for the waterfall.
 
 /** A visible row and what its tree connectors need: which ancestor rails continue past it. */
 export type TreeRow = Readonly<{
@@ -69,7 +69,7 @@ export const treeLevel = (row: TreeRow): number => (row.parent === null ? 0 : ro
 export const countSpans = (nodes: ReadonlyArray<SpanNodeData>): number =>
 	Arr.reduce(nodes, 0, (sum, node) => sum + 1 + countSpans(node.children))
 
-/** `countDescendants` for the collapsed `+N` badge. */
+/** Descendants, for the collapsed `+N` badge. */
 export const countDescendants = (node: SpanNodeData): number => countSpans(node.children)
 
 export const collectParentIdsByLevel = (rootSpans: ReadonlyArray<SpanNodeData>): Map<number, Set<string>> => {

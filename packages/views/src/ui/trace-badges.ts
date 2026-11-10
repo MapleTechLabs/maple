@@ -9,7 +9,7 @@ import { tooltipTrigger } from "./tooltip-host"
 import { serviceDot } from "./values"
 import { Array as Arr } from "effect"
 
-// `TraceIdBadge`, `TraceStatusBadge` and `ServicePills`.
+// A trace's id badge, status badge and service pills.
 
 /** The root's HTTP status toned by class (3xx keeps its own blue), else OK / Error. */
 export const traceStatusBadge = <M>(
@@ -70,7 +70,7 @@ export const servicePills = <M>(
 				],
 			)
 
-/** `TraceIdBadge` (`CopyableBadge` + id glyph); `onCopy` is the page's copy of the id. */
+/** A copyable badge with the id glyph; `onCopy` is the page's copy of the id. */
 export const traceIdBadge = <M>(
 	h: HtmlBuilder<M>,
 	traceId: string,

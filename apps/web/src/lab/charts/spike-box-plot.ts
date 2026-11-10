@@ -8,8 +8,8 @@ import type { BuiltChart } from "@maple/views/charts/definitions/built-chart"
 import { cursorTooltip } from "@maple/views/charts/definitions/plot-constants"
 import type { SpikeSpec } from "./spike-spec"
 
-// `BoxPlotSpike`, definition half: Tukey boxes over a
-// seeded log-normal sample per operation, on a log y scale. Code copied, constants unchanged.
+// The box plot spike's definition: Tukey boxes over a seeded log-normal sample per operation,
+// on a log y scale.
 
 interface BoxPlotRow {
 	readonly operation: string
@@ -31,7 +31,7 @@ const OPERATIONS: ReadonlyArray<{ name: string; medianMs: number; sigma: number 
 
 const SAMPLES_PER_OPERATION = 120
 
-/** `makeRandom`: an LCG, the same sequence for the same seed. */
+/** An LCG, the same sequence for the same seed. */
 const nextState = (state: number): number => (Math.imul(state, 1_664_525) + 1_013_904_223) >>> 0
 
 /** `makeRows`: two uniforms per sample through Box-Muller, in operation order. */

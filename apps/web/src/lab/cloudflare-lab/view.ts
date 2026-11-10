@@ -17,7 +17,7 @@ import { Array as Arr } from "effect"
 
 type H = HtmlBuilder<Message>
 
-/** `ListPage`: the route's title row and time controls around `CloudflareListPage`. */
+/** The route's title row and time controls around the Cloudflare list page. */
 const listView = Submodel.defineView<List.Model, List.Message, Readonly<{ multiAccount: boolean }>>(
 	(model, inputs, h) => {
 		const frame = listFrame(inputs.multiAccount)

@@ -105,7 +105,6 @@ const sliceTooltip = (
 		return ChartTooltip.PieSlice({ name, value, fraction, color, collapsedCount })
 	})
 
-/** `QueryBuilderPieChart`'s `definition` memo. */
 export const buildPie = (spec: PieSpec): BuiltChart<PieSlice, number, number> => {
 	const { activeName, highlighted, donut, innerRadius, showLabels, showPercent, unit } = spec
 	const slices = pie(spec.rows, { value: (row: PieSliceRow) => row.value })
@@ -180,7 +179,7 @@ export const buildPie = (spec: PieSpec): BuiltChart<PieSlice, number, number> =>
 	}
 }
 
-/** `PieFigure`'s `definition` memo. Rows carry the colour `colorFor` resolved. */
+/** The lab pie figure's definition. Rows carry their resolved colour. */
 export const buildPieSpike = (spec: PieSpikeSpec): BuiltChart<PieSlice, number, number> => {
 	const { donut, activeName } = spec
 	const slices = pie(spec.rows, { value: (row: PieSliceRow) => row.value, gapAngle: 0.012 })

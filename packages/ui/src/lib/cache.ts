@@ -10,7 +10,6 @@ export function getCacheInfo(attrs: Record<string, string>): CacheInfo | null {
 	const system = attrs["cache.system"]
 	const result = attrs["cache.result"]
 
-	// Detect cache span if any cache.* attribute is present
 	if (!system && !result) return null
 
 	return {
