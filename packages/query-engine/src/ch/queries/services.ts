@@ -16,14 +16,8 @@ import {
 } from "@maple-dev/effect-orm/clickhouse"
 import { unionAll, type CHUnionQuery } from "@maple-dev/effect-orm/clickhouse"
 import type { ColumnDefs } from "@maple-dev/effect-orm/clickhouse"
-import {
-	ServiceOverviewHourly,
-	ServiceOverviewMinutely,
-	ServiceOverviewSpans,
-	ServiceUsage,
-	TracesAggregatesHourly,
-	orgIdParam,
-} from "../tables"
+import * as Datasources from "@maple/domain/tinybird/datasources"
+import { orgIdParam } from "../tables"
 import { CHNumber } from "../schema"
 import { DateTimeUtcFromWarehouse } from "../../datetime"
 import {
@@ -169,7 +163,7 @@ export function serviceOverviewWindows(filters: ServiceWindowFilters, tiers: Ser
 			: undefined,
 	]
 
-	const rawEdges = from(ServiceOverviewSpans)
+	const rawEdges = from(Datasources.serviceOverviewSpans)
 		.select(($) => ({
 			bBucket: grain === "minute" ? CH.toStartOfMinute($.Timestamp) : CH.toStartOfHour($.Timestamp),
 			bServiceName: $.ServiceName,
@@ -194,7 +188,7 @@ export function serviceOverviewWindows(filters: ServiceWindowFilters, tiers: Ser
 		])
 		.groupBy(...SERVICE_WINDOW_GROUP_KEYS)
 
-	const hourlyInterior = from(ServiceOverviewHourly)
+	const hourlyInterior = from(Datasources.serviceOverviewHourly)
 		.select(($) => ({
 			bBucket: $.Hour,
 			bServiceName: $.ServiceName,
@@ -224,7 +218,7 @@ export function serviceOverviewWindows(filters: ServiceWindowFilters, tiers: Ser
 	// Without it, the minute tier covers the whole interior on its own, and the
 	// window is bounded by this table's 90-day retention rather than the hourly
 	// table's year.
-	const minutelyInterior = from(ServiceOverviewMinutely)
+	const minutelyInterior = from(Datasources.serviceOverviewMinutely)
 		.select(($) => ({
 			bBucket: $.Minute,
 			bServiceName: $.ServiceName,
@@ -528,7 +522,7 @@ export interface ServiceHealthSnapshotOutput {
  * `serviceHealthSnapshotHours` gives callers the same span to divide rates by.
  */
 export function serviceHealthSnapshotQuery(opts: ServiceHealthSnapshotOpts) {
-	return from(TracesAggregatesHourly)
+	return from(Datasources.tracesAggregatesHourly)
 		.select(($) => ({
 			serviceName: $.ServiceName,
 			environment: $.DeploymentEnv,
@@ -623,7 +617,7 @@ export interface ServiceReleasesTimelineOutput {
 function serviceReleasesTimelineRawQuery(
 	opts: ServiceReleasesTimelineOpts,
 ): CHQuery<ColumnDefs, ServiceReleasesTimelineOutput> {
-	return from(ServiceOverviewSpans)
+	return from(Datasources.serviceOverviewSpans)
 		.select(($) => ({
 			bucket: CH.toStartOfInterval($.Timestamp, param.int("bucketSeconds")),
 			commitSha: $.CommitSha,
@@ -770,7 +764,7 @@ export function serviceApdexTimeseriesQuery(
 	// `CommitSha` from ResourceAttributes. Cuts scan volume by ~20-100x vs.
 	// the raw-table path (same pattern `tracesTimeseriesQuery` already uses via
 	// `canUseServiceOverviewMv`).
-	return from(ServiceOverviewSpans)
+	return from(Datasources.serviceOverviewSpans)
 		.select(($) => ({
 			bucket: CH.toStartOfInterval($.Timestamp, param.int("bucketSeconds")),
 			totalCount: CH.count(),
@@ -836,7 +830,7 @@ export const serviceUsageRowSchema = Schema.Struct({
 }) satisfies CompiledQueryRowSchema<ServiceUsageOutput>
 
 export function serviceUsageQuery(opts: ServiceUsageOpts) {
-	return from(ServiceUsage)
+	return from(Datasources.serviceUsage)
 		.select(($) => ({
 			serviceName: $.ServiceName,
 			totalLogCount: CH.sum($.LogCount),
@@ -896,7 +890,7 @@ export const traceSpanVolumeRowSchema = Schema.Struct({
 
 /** Stored spans per service over every hour overlapping the window: sizes a raw `traces` scan before it runs. */
 export function traceSpanVolumeByServiceQuery() {
-	return from(ServiceUsage)
+	return from(Datasources.serviceUsage)
 		.select(($) => ({
 			serviceName: $.ServiceName,
 			spanCount: CH.sum($.TraceCount),
@@ -932,12 +926,12 @@ export interface ServiceUsageWithPreviousOutput extends ServiceUsageOutput {
  * delta chips consume.
  */
 export function serviceUsageWithPreviousQuery(opts: ServiceUsageOpts) {
-	const inCurrent = ($: ColumnAccessor<typeof ServiceUsage.columns>) =>
+	const inCurrent = ($: ColumnAccessor<typeof Datasources.serviceUsage.columns>) =>
 		$.Hour.gte(utcHourFloor("startTime")).and($.Hour.lte(utcHourFloor("endTime")))
-	const inPrevious = ($: ColumnAccessor<typeof ServiceUsage.columns>) =>
+	const inPrevious = ($: ColumnAccessor<typeof Datasources.serviceUsage.columns>) =>
 		$.Hour.gte(utcHourFloor("previousStartTime")).and($.Hour.lte(utcHourFloor("previousEndTime")))
 
-	return from(ServiceUsage)
+	return from(Datasources.serviceUsage)
 		.select(($) => ({
 			serviceName: $.ServiceName,
 			totalLogCount: CH.sumIf($.LogCount, inCurrent($)),

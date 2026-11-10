@@ -10,7 +10,8 @@ import { param, from, inSubquery } from "@maple-dev/effect-orm/clickhouse"
 import type { CHQuery, ColumnAccessor, ColumnDefs } from "@maple-dev/effect-orm/clickhouse"
 import * as T from "@maple-dev/effect-orm/clickhouse"
 import type { AttributeFilter, ProductEventsGroupBy, ProductEventsMetric } from "@maple/domain/query-engine"
-import { ProductEvents, SessionReplays, orgIdParam } from "../tables"
+import * as Datasources from "@maple/domain/tinybird/datasources"
+import { orgIdParam } from "../tables"
 import { buildAttrFilterCondition } from "../../traces-shared"
 import { finalizeTimeseries } from "./series-cap"
 import { soleValue, timeseriesBucket, wholeRangeEnd } from "./query-helpers"
@@ -18,7 +19,7 @@ import { replaysWhere, needsSessionSemiJoin, type WebAnalyticsFilters } from "./
 import { WEB_ANALYTICS_UNSET } from "@maple/domain/query-engine"
 import { Array as Arr } from "effect"
 
-type EventsAccessor = ColumnAccessor<typeof ProductEvents.columns>
+type EventsAccessor = ColumnAccessor<typeof Datasources.productEvents.columns>
 
 export type ProductEventsGroupByKey = ProductEventsGroupBy | "none"
 
@@ -131,7 +132,7 @@ function sessionSemiJoin($: EventsAccessor, opts: ProductEventsQueryOpts): CH.Co
 	if (!needsSessionSemiJoin(filters)) return undefined
 	return inSubquery(
 		$.SessionId,
-		from(SessionReplays)
+		from(Datasources.sessionReplays)
 			.select(($s) => ({ sessionId: $s.SessionId }))
 			.where(($s) => replaysWhere($s, filters))
 			.groupBy("sessionId"),
@@ -231,7 +232,7 @@ const TS_COLUMNS: ColumnDefs = {
 export function productEventsTimeseriesQuery(
 	opts: ProductEventsTimeseriesOpts,
 ): CHQuery<ColumnDefs, ProductEventsTimeseriesOutput> {
-	const inner = from(ProductEvents)
+	const inner = from(Datasources.productEvents)
 		.select(($) => ({
 			bucket: timeseriesBucket($.Timestamp, opts.wholeRange),
 			groupName: groupNameExpr($, opts),
@@ -247,7 +248,7 @@ export function productEventsTimeseriesQuery(
 export function productEventsBreakdownQuery(
 	opts: ProductEventsBreakdownOpts,
 ): CHQuery<ColumnDefs, ProductEventsBreakdownOutput> {
-	return from(ProductEvents)
+	return from(Datasources.productEvents)
 		.select(($) => ({
 			name: dimensionColumn($, opts.groupBy, opts.groupByAttributeKey),
 			value: metricExpr($, opts.metric),
@@ -262,7 +263,7 @@ export function productEventsBreakdownQuery(
 export function productEventsListQuery(
 	opts: ProductEventsListOpts,
 ): CHQuery<ColumnDefs, ProductEventsListOutput> {
-	return from(ProductEvents)
+	return from(Datasources.productEvents)
 		.select(($) => ({
 			timestamp: $.Timestamp,
 			eventName: $.EventName,
@@ -300,7 +301,7 @@ export interface ProductEventAttributeKeysOutput {
 export function productEventAttributeKeysQuery(
 	opts: ProductEventAttributeKeysOpts = {},
 ): CHQuery<ColumnDefs, ProductEventAttributeKeysOutput> {
-	return from(ProductEvents)
+	return from(Datasources.productEvents)
 		.select(($) => ({
 			attributeKey: CH.arrayJoin(CH.mapKeys($.Attributes)),
 			usageCount: CH.count(),
@@ -325,7 +326,7 @@ export interface ProductEventAttributeValuesOutput {
 export function productEventAttributeValuesQuery(
 	opts: ProductEventAttributeValuesOpts,
 ): CHQuery<ColumnDefs, ProductEventAttributeValuesOutput> {
-	return from(ProductEvents)
+	return from(Datasources.productEvents)
 		.select(($) => ({
 			attributeValue: $.Attributes.get(opts.attributeKey),
 			usageCount: CH.count(),

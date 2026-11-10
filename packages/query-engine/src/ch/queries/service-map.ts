@@ -27,21 +27,8 @@ import * as CH from "@maple-dev/effect-orm/expr"
 import { inSubquery, subqueryExpr } from "@maple-dev/effect-orm/clickhouse"
 import { param } from "@maple-dev/effect-orm/clickhouse"
 import { from, fromQuery, fromUnion } from "@maple-dev/effect-orm/clickhouse"
-import {
-	ServiceAddressResolutionsHourly,
-	ServiceExternalEdgesHourly,
-	ServiceMapChildren,
-	ServiceMapDbEdgesHourly,
-	ServiceMapDbEdgesMinutely,
-	ServiceMapDbQuerySignaturesHourly,
-	ServiceMapEdgesHourly,
-	ServiceMapSpans,
-	ServicePlatformsHourly,
-	type StringMap,
-	Traces,
-	orgIdParam,
-	utcSecondsParam,
-} from "../tables"
+import * as Datasources from "@maple/domain/tinybird/datasources"
+import { type StringMap, orgIdParam, utcSecondsParam } from "../tables"
 import { unionAll } from "@maple-dev/effect-orm/clickhouse"
 import { edgeCondition, hourGrain, minuteGrain, utcInteriorConditions } from "./rollup-splice"
 import { CHNumber, CHNumberOrZero } from "../schema"
@@ -163,7 +150,7 @@ function serviceMapEdgeJoinSource(opts: {
 		opts.deploymentEnv ? deploymentEnv.eq(opts.deploymentEnv) : undefined
 	const edgeOnly = opts.edgeHoursOnly ? edgeCondition("Timestamp") : undefined
 
-	const parentSpans = from(ServiceMapSpans)
+	const parentSpans = from(Datasources.serviceMapSpans)
 		.select(($) => ({
 			OrgId: $.OrgId,
 			Timestamp: $.Timestamp,
@@ -184,7 +171,7 @@ function serviceMapEdgeJoinSource(opts: {
 			CH.notInList($.ServiceName, SERVICE_MAP_EXCLUDED_SERVICES),
 		])
 
-	const childSpans = from(ServiceMapChildren)
+	const childSpans = from(Datasources.serviceMapChildren)
 		.select(($) => ({
 			TraceId: $.TraceId,
 			ParentSpanId: $.ParentSpanId,
@@ -341,7 +328,7 @@ export function serviceDependenciesQueryBase(opts: {
 	const endDateTime = CH.toDateTime(utcSecondsParam("endTime"))
 
 	// Hourly branch — only sealed, complete buckets inside the requested window.
-	const hourlyBranch = from(ServiceMapEdgesHourly)
+	const hourlyBranch = from(Datasources.serviceMapEdgesHourly)
 		.select(($) => ({
 			sourceService: $.SourceService,
 			targetService: $.TargetService,
@@ -580,7 +567,7 @@ function serviceDbEdgesQueryBase(opts: {
 	const minuteTier = opts.minuteTier ?? true
 
 	// Hourly branch — sealed buckets from service_map_db_edges_hourly_mv.
-	const hourlyBranch = from(ServiceMapDbEdgesHourly)
+	const hourlyBranch = from(Datasources.serviceMapDbEdgesHourly)
 		.select(($) => ({
 			sourceService: $.ServiceName,
 			dbSystem: $.DbSystem,
@@ -620,7 +607,7 @@ function serviceDbEdgesQueryBase(opts: {
 	// with rows that day gets the same coverage, one without starts coverage later,
 	// which shifts minutes to raw but never double-counts.
 	const coverageStart = subqueryExpr(
-		from(ServiceMapDbEdgesMinutely)
+		from(Datasources.serviceMapDbEdgesMinutely)
 			.select(($) => ({ insertedAt: $.FirstInsertedAt }))
 			.where(($) => [
 				$.OrgId.eq(orgIdParam),
@@ -632,7 +619,7 @@ function serviceDbEdgesQueryBase(opts: {
 			`(SELECT if(count() = 0, ${hourGrain.endDt}, toStartOfMinute(min(insertedAt)) + INTERVAL 1 MINUTE) FROM (${sql}))`,
 	)
 
-	const minutelyBranch = from(ServiceMapDbEdgesMinutely)
+	const minutelyBranch = from(Datasources.serviceMapDbEdgesMinutely)
 		.select(($) => ({
 			sourceService: $.ServiceName,
 			dbSystem: $.DbSystem,
@@ -658,7 +645,7 @@ function serviceDbEdgesQueryBase(opts: {
 	// Reads per-row `SampleRate` directly so no inline weight math is needed, and
 	// carries `bucketDurationSumMs` separately so the outer can do a
 	// properly-weighted average.
-	const recentBranch = from(Traces)
+	const recentBranch = from(Datasources.traces)
 		.select(($) => ({
 			sourceService: $.ServiceName,
 			dbSystem: dbSystemExpr($),
@@ -943,7 +930,7 @@ export function serviceDbQuerySummarySQL(
 ): Effect.Effect<CompiledQuery<ServiceDbQuerySummaryOutput>, QueryBuilderError> {
 	// Sealed hours from the rollup; ServiceName/DurationQuantiles re-aggregated at
 	// read time (the table is queried without FINAL).
-	const sealed = from(ServiceMapDbQuerySignaturesHourly)
+	const sealed = from(Datasources.serviceMapDbQuerySignaturesHourly)
 		.select(($) => ({
 			bCount: CH.sum($.CallCount),
 			bEst: CH.sum($.EstimatedCount),
@@ -954,7 +941,7 @@ export function serviceDbQuerySummarySQL(
 			bQ: CH.rawExpr(TDIGEST_MERGE_STATE_EXPR, DB_DURATION_STATE),
 		}))
 		.where(($) => signaturesHourlyFilters($, params))
-	const recent = from(Traces)
+	const recent = from(Datasources.traces)
 		.select(($) => ({
 			bCount: CH.count(),
 			bEst: CH.sum($.SampleRate),
@@ -992,7 +979,7 @@ export function serviceDbQueryTimeseriesSQL(
 	// for ≤24h) can't be served by the hourly rollup, but those scans are cheap;
 	// read raw `traces` directly for the full window.
 	if (bucketSeconds < 3600) {
-		const query = from(Traces)
+		const query = from(Datasources.traces)
 			.select(($) => ({
 				bucket: CH.toStartOfInterval(CH.toDateTime($.Timestamp), bucketSeconds),
 				queryCount: CH.count(),
@@ -1027,7 +1014,7 @@ export function serviceDbQueryTimeseriesSQL(
 
 	// Hour-aligned buckets (≥1h — pickDbSummaryBucketSeconds gives 1h/6h for >24h):
 	// sealed rollup hours UNION the in-progress hour from raw traces.
-	const sealed = from(ServiceMapDbQuerySignaturesHourly)
+	const sealed = from(Datasources.serviceMapDbQuerySignaturesHourly)
 		.select(($) => ({
 			bucket: CH.toStartOfInterval($.Hour, bucketSeconds),
 			bCount: CH.sum($.CallCount),
@@ -1039,7 +1026,7 @@ export function serviceDbQueryTimeseriesSQL(
 		}))
 		.where(($) => signaturesHourlyFilters($, params))
 		.groupBy("bucket")
-	const recent = from(Traces)
+	const recent = from(Datasources.traces)
 		.select(($) => ({
 			bucket: CH.toStartOfInterval(CH.toDateTime($.Timestamp), bucketSeconds),
 			bCount: CH.count(),
@@ -1078,7 +1065,7 @@ export function serviceDbTopQueriesSQL(
 
 	// Sealed rollup shapes — pre-computed QueryKey/QueryLabel, so no per-row
 	// fingerprinting on this branch.
-	const sealed = from(ServiceMapDbQuerySignaturesHourly)
+	const sealed = from(Datasources.serviceMapDbQuerySignaturesHourly)
 		.select(($) => ({
 			queryKey: $.QueryKey,
 			bLabel: CH.any_($.QueryLabel),
@@ -1098,7 +1085,7 @@ export function serviceDbTopQueriesSQL(
 	// In-progress hour — derives QueryKey/QueryLabel from the SAME shared SQL the
 	// rollup MV uses (raw exprs, no DSL equivalent), so a shape's key matches
 	// across the sealed/live boundary.
-	const recent = from(Traces)
+	const recent = from(Datasources.traces)
 		.select(($) => ({
 			queryKey: CH.rawExpr(DB_QUERY_KEY_SQL, T.string),
 			bLabel: CH.rawExpr(`any(substring(${DB_QUERY_LABEL_SQL}, 1, 220))`, T.string),
@@ -1179,7 +1166,7 @@ export function serviceDbQuerySpansQuery(params: {
 	queryKeys: ReadonlyArray<string>
 	limit: number
 }) {
-	return from(Traces)
+	return from(Datasources.traces)
 		.select(($) => ({
 			traceId: $.TraceId,
 			spanId: $.SpanId,
@@ -1255,7 +1242,7 @@ export function serviceExternalEdgesSQL(
 	// Hourly branch: sealed buckets from the MV-fed table. Carries `bucket*`
 	// aliases so the outer aggregate can't collide with inner ones (same
 	// nested-aggregate optimizer gotcha as `serviceDbEdgesSQL`).
-	const hourlyEdges = from(ServiceExternalEdgesHourly)
+	const hourlyEdges = from(Datasources.serviceExternalEdgesHourly)
 		.select(($) => ({
 			sourceService: $.ServiceName,
 			targetType: $.TargetType,
@@ -1283,7 +1270,7 @@ export function serviceExternalEdgesSQL(
 	// window — the exact complement of the hourly interior above. Mirrors the
 	// `multiIf` precedence the MV uses (messaging > rpc > http) so both branches
 	// produce identical row shapes for the same span.
-	const recentEdges = from(Traces)
+	const recentEdges = from(Datasources.traces)
 		.select(($) => {
 			const attr = (key: string) => $.SpanAttributes.get(key)
 			const destination = messagingDestinationExpr($.SpanAttributes)
@@ -1355,7 +1342,7 @@ export function serviceExternalEdgesSQL(
 
 	// Addresses this service was observed calling that resolve to a known
 	// internal service in the same window. `GROUP BY` is the DSL's SELECT DISTINCT.
-	const internalResolutions = from(ServiceAddressResolutionsHourly)
+	const internalResolutions = from(Datasources.serviceAddressResolutionsHourly)
 		.select(($) => ({ ParentServerAddress: $.ParentServerAddress }))
 		.where(($) => [
 			$.OrgId.eq(orgIdParam),
@@ -1434,7 +1421,7 @@ export function servicePlatformsSQL(
 	opts: ServicePlatformsOpts,
 	params: { orgId: OrgId; startTime: string; endTime: string },
 ): Effect.Effect<CompiledQuery<ServicePlatformsOutput>, QueryBuilderError> {
-	const query = from(ServicePlatformsHourly)
+	const query = from(Datasources.servicePlatformsHourly)
 		.select(($) => ({
 			serviceName: $.ServiceName,
 			// `max()` on a SimpleAggregateFunction(max, String) column merges
@@ -1509,7 +1496,7 @@ export const dbQueryVolumeRowSchema = Schema.Struct({
 }) satisfies CompiledQueryRowSchema<DbQueryVolumeOutput>
 
 export function dbQueryVolumeQuery(opts: DbQueryVolumeOpts) {
-	const sealed = from(ServiceMapDbQuerySignaturesHourly)
+	const sealed = from(Datasources.serviceMapDbQuerySignaturesHourly)
 		.select(($) => ({
 			bService: $.ServiceName,
 			bSystem: $.DbSystem,
@@ -1533,7 +1520,7 @@ export function dbQueryVolumeQuery(opts: DbQueryVolumeOpts) {
 		])
 		.groupBy("bService", "bSystem", "bNamespace", "queryKey")
 
-	const recent = from(Traces)
+	const recent = from(Datasources.traces)
 		.select(($) => ({
 			bService: $.ServiceName,
 			bSystem: dbSystemExpr($),

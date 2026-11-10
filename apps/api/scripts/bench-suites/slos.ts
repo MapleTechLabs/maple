@@ -5,6 +5,7 @@
  */
 import { Effect, Array as Arr } from "effect"
 import * as CH from "@maple/query-engine/ch"
+import * as Datasources from "@maple/domain/tinybird/datasources"
 import * as E from "@maple-dev/effect-orm/expr"
 import * as Bench from "@maple-dev/effect-orm/benchmark"
 import { OrgId } from "@maple/domain"
@@ -53,7 +54,7 @@ const flatScan = Bench.query({
 	inputs: window(30 * DAY_MS),
 	compile: (inputs) =>
 		CH.compile(
-			CH.from(CH.tables.ServiceOverviewSpans)
+			CH.from(Datasources.serviceOverviewSpans)
 				.select(($) => ({
 					total: E.sum($.SampleRate),
 					good: E.sumIf($.SampleRate, $.StatusCode.neq("Error")),

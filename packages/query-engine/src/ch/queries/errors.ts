@@ -21,17 +21,9 @@ import * as T from "@maple-dev/effect-orm/clickhouse"
 import { unionAll, type CHUnionQuery } from "@maple-dev/effect-orm/clickhouse"
 import type { SpanId, TraceId } from "@maple/domain"
 import { Schema, type DateTime, Array as Arr, String as Str } from "effect"
+import * as Datasources from "@maple/domain/tinybird/datasources"
 import {
-	ErrorEvents,
-	ErrorEventsByTime,
-	ErrorFingerprintsMinutely,
-	ErrorFingerprintLineage,
-	ServiceUsage,
-	TraceFacetsHourly,
-	TraceIndex,
-	TraceListMv,
 	asDateTime64,
-	Traces,
 	inTraces,
 	paramTraceWindow,
 	orgIdParam,
@@ -52,13 +44,13 @@ import { DateTimeUtcFromWarehouse } from "../../datetime"
 
 function errorEventsTableForRecentScan(opts: {
 	fingerprintHashes?: readonly string[]
-}): typeof ErrorEvents | typeof ErrorEventsByTime {
+}): typeof Datasources.errorEvents | typeof Datasources.errorEventsByTime {
 	// Fingerprint-filtered lookups align with error_events' key
 	// (OrgId, FingerprintHash, Timestamp). Broad recent-window scans align with
 	// error_events_by_time's key (OrgId, Timestamp, FingerprintHash).
 	return opts.fingerprintHashes !== undefined && opts.fingerprintHashes.length > 0
-		? ErrorEvents
-		: ErrorEventsByTime
+		? Datasources.errorEvents
+		: Datasources.errorEventsByTime
 }
 
 const fingerprintHashLiteral = (hash: string) => CH.toUInt64(CH.lit(hash))
@@ -261,7 +253,7 @@ export interface ErrorsTimeseriesOutput {
 }
 
 export function errorsTimeseriesQuery(opts: ErrorsTimeseriesOpts) {
-	return from(ErrorEvents)
+	return from(Datasources.errorEvents)
 		.select(($) => ({
 			bucket: CH.toStartOfInterval($.Timestamp, param.int("bucketSeconds")),
 			count: CH.count(),
@@ -304,7 +296,7 @@ export const ErrorsSparkOutputSchema = Schema.Struct({
 export type ErrorsSparkOutput = Schema.Schema.Type<typeof ErrorsSparkOutputSchema>
 
 export function errorsSparkQuery(opts: ErrorsSparkOpts) {
-	return from(ErrorEvents)
+	return from(Datasources.errorEvents)
 		.select(($) => ({
 			// Identity UInt64: unwrapped it corrupts above 2^53.
 			fingerprintHash: CH.toString_($.FingerprintHash),
@@ -426,7 +418,7 @@ export interface SpanHierarchyOutput {
 
 export function spanHierarchyQuery(opts: SpanHierarchyOpts) {
 	return (
-		from(Traces)
+		from(Datasources.traces)
 			.select(($) => {
 				// HTTP span name rewriting: "http.server GET" + route → "GET /api/users".
 				// Shared with the materialized view and the trace-list span-name filter.
@@ -516,7 +508,7 @@ export interface SpanDetailOutput {
  * intentionally omits.
  */
 export function spanDetailQuery(opts: SpanDetailOpts) {
-	return from(Traces)
+	return from(Datasources.traces)
 		.select(($) => ({
 			traceId: $.TraceId,
 			spanId: $.SpanId,
@@ -572,7 +564,7 @@ export interface SpanEventsOutput {
  * one second apart) and trace id seek a handful of granules.
  */
 export function spanEventsQuery(opts: SpanEventsOpts) {
-	return from(Traces)
+	return from(Datasources.traces)
 		.select(($) => ({
 			spanStart: CH.toString_($.Timestamp),
 			eventsTimestamp: CH.toJSONString($.EventsTimestamp),
@@ -612,7 +604,7 @@ const notEmpty = defineCondFn<[CH.Expr<ReadonlyArray<string>>]>("notEmpty")
  */
 export function spanEventsByTraceQuery(opts: { traceId: string; limit?: number }) {
 	return (
-		from(Traces)
+		from(Datasources.traces)
 			.select(($) => ({
 				spanId: $.SpanId,
 				spanStart: CH.toString_($.Timestamp),
@@ -651,7 +643,7 @@ export interface TraceTimeProbeOutput {
  * partition). No row when the trace is unknown.
  */
 export function traceTimeProbeQuery(opts: { traceId: string }) {
-	return from(TraceIndex)
+	return from(Datasources.traceIndex)
 		.select(($) => ({
 			traceId: $.TraceId,
 			timestamp: CH.min_($.MinTimestamp),
@@ -720,7 +712,7 @@ export interface TracesDurationStatsOpts {
 
 /** The facet dimensions, spelled the same on `trace_list_mv` and `trace_facets_hourly`. */
 type TraceFacetColumns = Pick<
-	typeof TraceListMv.columns,
+	typeof Datasources.traceListMv.columns,
 	| "ServiceName"
 	| "SpanName"
 	| "HttpMethod"
@@ -781,7 +773,10 @@ export function canUseTraceFacetsRollup(
 }
 
 /** `trace_list_mv` rows in the window, narrowed to the partial end hours when the rollup has the rest. */
-function traceListWindowConditions($: ColumnAccessor<typeof TraceListMv.columns>, opts: TracesFacetsOpts) {
+function traceListWindowConditions(
+	$: ColumnAccessor<typeof Datasources.traceListMv.columns>,
+	opts: TracesFacetsOpts,
+) {
 	return [
 		$.OrgId.eq(orgIdParam),
 		$.Timestamp.gte(utcSecondsParam("startTime")),
@@ -794,7 +789,7 @@ function traceListWindowConditions($: ColumnAccessor<typeof TraceListMv.columns>
 }
 
 function traceFacetsHourlyInteriorConditions(
-	$: ColumnAccessor<typeof TraceFacetsHourly.columns>,
+	$: ColumnAccessor<typeof Datasources.traceFacetsHourly.columns>,
 	opts: TracesDurationStatsOpts,
 ) {
 	return [
@@ -817,7 +812,7 @@ export function tracesDurationStatsQuery(
 	// Each tier reports its row count beside its extremes: an aggregate over an
 	// empty tier returns 0 rather than nothing, and that 0 must not win the
 	// outer `min`. The t-digest states merge across tiers; an empty one is inert.
-	const raw = from(TraceListMv)
+	const raw = from(Datasources.traceListMv)
 		.select(($) => ({
 			traceCount: CH.count(),
 			durationMin: CH.min_($.Duration),
@@ -826,7 +821,7 @@ export function tracesDurationStatsQuery(
 		}))
 		.where(($) => traceListWindowConditions($, opts))
 	const hourly = () =>
-		from(TraceFacetsHourly)
+		from(Datasources.traceFacetsHourly)
 			.select(($) => ({
 				traceCount: CH.sum($.TraceCount),
 				durationMin: CH.min_($.DurationMin),
@@ -883,7 +878,9 @@ type StringColumn<Cols extends ColumnDefs> = {
 }[keyof Cols & string]
 
 export function tracesFacetsQuery(opts: TracesFacetsOpts): CHUnionQuery<TracesFacetsOutput> {
-	const rawWhere = ($: ColumnAccessor<typeof TraceListMv.columns>): Array<CH.Condition | undefined> => {
+	const rawWhere = (
+		$: ColumnAccessor<typeof Datasources.traceListMv.columns>,
+	): Array<CH.Condition | undefined> => {
 		const conditions: Array<CH.Condition | undefined> = traceListWindowConditions($, opts)
 
 		// Attribute filter EXISTS subqueries (correlated — references outer TraceId)
@@ -898,7 +895,7 @@ export function tracesFacetsQuery(opts: TracesFacetsOpts): CHUnionQuery<TracesFa
 					: attrCol.eq(opts.attributeFilterValue ?? "")
 			conditions.push(
 				exists(
-					from(Traces, "t_attr")
+					from(Datasources.traces, "t_attr")
 						.select(() => ({ _: CH.lit(1) }))
 						.where(($) => [
 							CH.dynamicColumn("t_attr.TraceId").eq(CH.outerRef("TraceId")),
@@ -922,7 +919,7 @@ export function tracesFacetsQuery(opts: TracesFacetsOpts): CHUnionQuery<TracesFa
 					: resCol.eq(opts.resourceFilterValue ?? "")
 			conditions.push(
 				exists(
-					from(Traces, "t_res")
+					from(Datasources.traces, "t_res")
 						.select(() => ({ _: CH.lit(1) }))
 						.where(($) => [
 							CH.dynamicColumn("t_res.TraceId").eq(CH.outerRef("TraceId")),
@@ -943,17 +940,18 @@ export function tracesFacetsQuery(opts: TracesFacetsOpts): CHUnionQuery<TracesFa
 	// it decodes — naming it as a `dynamicColumn` threw that away and cost every
 	// facet branch its row schema.
 	const makeFacetQuery = (
-		colName: StringColumn<typeof TraceListMv.columns> & StringColumn<typeof TraceFacetsHourly.columns>,
+		colName: StringColumn<typeof Datasources.traceListMv.columns> &
+			StringColumn<typeof Datasources.traceFacetsHourly.columns>,
 		facetType: string,
 		dropEmpty: boolean,
 		limit = 50,
 	) => {
-		const raw = from(TraceListMv)
+		const raw = from(Datasources.traceListMv)
 			.select(($) => ({ name: $[colName], count: CH.count() }))
 			.where(($) => [...rawWhere($), CH.whenTrue(dropEmpty, () => $[colName].neq(""))])
 			.groupBy("name")
 		const hourly = () =>
-			from(TraceFacetsHourly)
+			from(Datasources.traceFacetsHourly)
 				.select(($) => ({ name: $[colName], count: CH.sum($.TraceCount) }))
 				.where(($) => [
 					...traceFacetsHourlyInteriorConditions($, opts),
@@ -975,11 +973,11 @@ export function tracesFacetsQuery(opts: TracesFacetsOpts): CHUnionQuery<TracesFa
 	}
 
 	const errorCountQuery = () => {
-		const raw = from(TraceListMv)
+		const raw = from(Datasources.traceListMv)
 			.select(() => ({ count: CH.count() }))
 			.where(($) => [...rawWhere($), $.HasError.eq(1)])
 		const hourly = () =>
-			from(TraceFacetsHourly)
+			from(Datasources.traceFacetsHourly)
 				.select(($) => ({ count: CH.sum($.TraceCount) }))
 				.where(($) => [...traceFacetsHourlyInteriorConditions($, opts), $.HasError.eq(1)])
 		return fromUnion(
@@ -1150,7 +1148,7 @@ export function errorsSummaryQuery(opts: ErrorsSummaryOpts) {
 
 	if (opts.rootOnly) {
 		return buildResult(
-			from(TraceListMv)
+			from(Datasources.traceListMv)
 				.select(() => ({
 					totalSpans: CH.count(),
 				}))
@@ -1171,7 +1169,7 @@ export function errorsSummaryQuery(opts: ErrorsSummaryOpts) {
 	if (opts.deploymentEnvs !== undefined && opts.deploymentEnvs.length > 0) {
 		const deploymentEnvs = opts.deploymentEnvs
 		return buildResult(
-			from(Traces)
+			from(Datasources.traces)
 				.select(() => ({
 					totalSpans: CH.count(),
 				}))
@@ -1190,7 +1188,7 @@ export function errorsSummaryQuery(opts: ErrorsSummaryOpts) {
 	// The hourly usage rollup only answers whole hours inside the window; the
 	// partial hours at each end come from raw spans. Reading the rollup alone
 	// made any window shorter than an hour report 0 spans and a 0% error rate.
-	const wholeHours = from(ServiceUsage)
+	const wholeHours = from(Datasources.serviceUsage)
 		.select(($) => ({
 			bucketSpans: CH.sum($.TraceCount),
 		}))
@@ -1201,7 +1199,7 @@ export function errorsSummaryQuery(opts: ErrorsSummaryOpts) {
 				? CH.inList($.ServiceName, opts.services)
 				: undefined,
 		])
-	const partialHours = from(Traces)
+	const partialHours = from(Datasources.traces)
 		.select(() => ({
 			bucketSpans: CH.count(),
 		}))
@@ -1290,7 +1288,7 @@ export function errorIssuesQuery(opts: ErrorIssuesOpts) {
  * advance only after every fingerprint in the claimed half-open window commits.
  */
 export function errorTickIssuesQuery() {
-	return from(ErrorFingerprintsMinutely)
+	return from(Datasources.errorFingerprintsMinutely)
 		.select(($) => ({
 			fingerprintHash: CH.toString_($.FingerprintHash),
 			serviceName: CH.any_($.ServiceName),
@@ -1320,7 +1318,7 @@ export function errorTickIssuesQuery() {
  * together). The tick asks only about the fingerprints it just scanned.
  */
 export function errorFingerprintLineageQuery(opts: { readonly fingerprintHashes: readonly string[] }) {
-	return from(ErrorFingerprintLineage)
+	return from(Datasources.errorFingerprintLineage)
 		.select(($) => ({
 			fingerprintHash: CH.toString_($.FingerprintHash),
 			previousFingerprintHash: CH.toString_($.PreviousFingerprintHash),
@@ -1341,7 +1339,7 @@ export function errorFingerprintLineageQuery(opts: { readonly fingerprintHashes:
  * being scanned straight to where there is something to process.
  */
 export function errorTickFirstErrorMinuteQuery() {
-	return from(ErrorFingerprintsMinutely)
+	return from(Datasources.errorFingerprintsMinutely)
 		.select(($) => ({ minute: $.Minute }))
 		.where(($) => [
 			$.OrgId.eq(orgIdParam),
@@ -1359,7 +1357,7 @@ export function errorTickFirstErrorMinuteQuery() {
  * deployed evaluator uses this query for its initial two-minute window only.
  */
 export function errorTickBootstrapIssuesQuery() {
-	return from(ErrorEventsByTime)
+	return from(Datasources.errorEventsByTime)
 		.select(($) => ({
 			fingerprintHash: CH.toString_($.FingerprintHash),
 			serviceName: CH.any_($.ServiceName),
@@ -1403,7 +1401,7 @@ export interface ErrorFingerprintsOutput {
  * observed in the selected environment.
  */
 export function errorFingerprintsQuery(opts: ErrorFingerprintsOpts) {
-	return from(ErrorEventsByTime)
+	return from(Datasources.errorEventsByTime)
 		.select(($) => ({
 			fingerprintHash: CH.toString_($.FingerprintHash),
 		}))
@@ -1436,7 +1434,7 @@ export interface ErrorIssueTimeseriesOutput {
 }
 
 export function errorIssueTimeseriesQuery(opts: IssueFingerprintsOpts) {
-	return from(ErrorEvents)
+	return from(Datasources.errorEvents)
 		.select(($) => ({
 			bucket: CH.toStartOfInterval($.Timestamp, param.int("bucketSeconds")),
 			count: CH.count(),
@@ -1466,7 +1464,7 @@ export interface ErrorIssueSampleTracesOutput {
 }
 
 export function errorIssueSampleTracesQuery(opts: IssueFingerprintsOpts & { limit?: number }) {
-	return from(ErrorEvents)
+	return from(Datasources.errorEvents)
 		.select(($) => ({
 			traceId: $.TraceId,
 			spanId: $.SpanId,
@@ -1508,7 +1506,7 @@ export type ErrorIssueVersionsSinceOutput = Schema.Schema.Type<typeof ErrorIssue
 
 export function errorIssueVersionsSinceQuery(opts: IssueFingerprintsOpts & { limit?: number }) {
 	return (
-		from(ErrorEvents)
+		from(Datasources.errorEvents)
 			.select(($) => ({
 				serviceVersion: $.ServiceVersion,
 				count: CH.count(),
@@ -1530,7 +1528,7 @@ export function errorIssueVersionsSinceQuery(opts: IssueFingerprintsOpts & { lim
 }
 
 export function errorIssueEnvironmentsQuery(opts: IssueFingerprintsOpts & { limit?: number }) {
-	return from(ErrorEvents)
+	return from(Datasources.errorEvents)
 		.select(($) => ({
 			name: $.DeploymentEnv,
 			count: CH.count(),
@@ -1593,7 +1591,7 @@ export function errorDetailTracesQuery(opts: ErrorDetailTracesOpts) {
 	// LIMIT keeps the N most recently errored traces. Each row names the span
 	// that occurrence belongs to: a trace usually carries other failing spans
 	// (the callers the error propagated through), and those are not this error.
-	const occurrences = from(ErrorEvents)
+	const occurrences = from(Datasources.errorEvents)
 		.select(($) => ({
 			TraceId: $.TraceId,
 			lastErrorSeen: CH.max_($.Timestamp),
@@ -1623,7 +1621,7 @@ export function errorDetailTracesQuery(opts: ErrorDetailTracesOpts) {
 
 	// `inTraces` bounds the read to these traces' granules; the join only
 	// carries each trace's occurrence span id across to pick the error span.
-	return from(Traces)
+	return from(Datasources.traces)
 		.innerJoinQuery(occurrences, "occurrence", (span, occurrence) => span.TraceId.eq(occurrence.TraceId))
 		.select(($) => {
 			const isOccurrence = $.SpanId.eq($.occurrence.occurrenceSpanId)
@@ -1683,7 +1681,7 @@ export interface ErrorFingerprintSummaryOpts {
 }
 
 export function errorFingerprintSummaryQuery(opts: ErrorFingerprintSummaryOpts) {
-	return from(ErrorEvents)
+	return from(Datasources.errorEvents)
 		.select(($) => ({
 			occurrences: CH.count(),
 			firstSeen: CH.min_($.Timestamp),
@@ -1719,7 +1717,7 @@ export interface ErrorCooccurringFingerprintsOpts {
 }
 
 export function errorCooccurringFingerprintsQuery(opts: ErrorCooccurringFingerprintsOpts) {
-	return from(ErrorEventsByTime)
+	return from(Datasources.errorEventsByTime)
 		.select(($) => ({
 			fingerprintHash: CH.toString_($.FingerprintHash),
 			errorLabel: CH.any_($.ErrorLabel),
@@ -1744,7 +1742,7 @@ export function errorCooccurringFingerprintsQuery(opts: ErrorCooccurringFingerpr
 // the span was doing ("GET 404 /api/org") instead of "Unknown Error".
 
 export function errorFingerprintOccurrencesQuery(opts: { fingerprintHashes: readonly string[] }) {
-	return from(ErrorEvents)
+	return from(Datasources.errorEvents)
 		.select(($) => ({
 			fingerprintHash: CH.toString_($.FingerprintHash),
 			traceId: CH.argMax($.TraceId, $.Timestamp),
@@ -1761,7 +1759,7 @@ export function errorFingerprintOccurrencesQuery(opts: { fingerprintHashes: read
 }
 
 export function errorOccurrenceSpansQuery(opts: { traceIds: readonly string[]; spanIds: readonly string[] }) {
-	return from(Traces)
+	return from(Datasources.traces)
 		.select(($) => ({
 			spanId: $.SpanId,
 			spanName: $.SpanName,
@@ -1789,7 +1787,7 @@ export function errorOccurrenceSpansQuery(opts: { traceIds: readonly string[]; s
 // how many of them carried no exception (a span with status Error and nothing else).
 
 export function errorsWindowTotalsQuery(opts: Omit<ErrorsByTypeOpts, "limit" | "fingerprintHashes">) {
-	return from(ErrorEventsByTime)
+	return from(Datasources.errorEventsByTime)
 		.select(($) => ({
 			occurrences: CH.count(),
 			// Not `fingerprints`: any name containing hash/fingerprint reads as an identity column.

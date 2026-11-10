@@ -21,7 +21,8 @@ import * as CH from "@maple-dev/effect-orm/expr"
 import { defineUntypedFn, inSubquery, param } from "@maple-dev/effect-orm/clickhouse"
 import { from, fromQuery, fromUnion, type ColumnAccessor } from "@maple-dev/effect-orm/clickhouse"
 import { unionAll, type CHUnionQuery } from "@maple-dev/effect-orm/clickhouse"
-import { MetricsGauge, MetricsSum, orgIdParam } from "../tables"
+import * as Datasources from "@maple/domain/tinybird/datasources"
+import { orgIdParam } from "../tables"
 import { containerRuntimeExpr, deploymentEnvExpr } from "@maple/domain/tinybird/semconv-renames"
 import { avgIfOrZero, facetAttrExpr, maxIfOrZero, type FacetOutput } from "./query-helpers"
 import { finiteOrZero } from "./format"
@@ -38,7 +39,7 @@ const HOSTMETRIC_NAMES = [
 // Per-state CPU values sum to 1 per core, so busy share is 1 - avg(idle).
 // Averaging every non-idle state instead divides a fully busy host by ~7.
 // A host with no idle samples falls back to idle = 1, i.e. 0% busy.
-const hostCpuPctExpr = ($: ColumnAccessor<typeof MetricsGauge.columns>) =>
+const hostCpuPctExpr = ($: ColumnAccessor<typeof Datasources.metricsGauge.columns>) =>
 	CH.greatest_(
 		CH.lit(1).sub(
 			CH.ifNotFinite(
@@ -90,8 +91,8 @@ const FILESYSTEM_USAGE_STATES = ["used", "free"] as const
 /** Which hosts to read, given the host.name expression. */
 type HostFilter = (hostName: CH.Expr<string>) => CH.Condition
 
-type SumColumns = ColumnAccessor<typeof MetricsSum.columns>
-type GaugeColumns = ColumnAccessor<typeof MetricsGauge.columns>
+type SumColumns = ColumnAccessor<typeof Datasources.metricsSum.columns>
+type GaugeColumns = ColumnAccessor<typeof Datasources.metricsGauge.columns>
 
 const usageFilters = ($: SumColumns, hosts: HostFilter) => [
 	$.OrgId.eq(orgIdParam),
@@ -129,7 +130,7 @@ const mountKey = ($: SumColumns | GaugeColumns) => ({
  * leaves averages and maxima unchanged.
  */
 function filesystemUsedFractionPoints(hosts: HostFilter) {
-	const fromUsage = from(MetricsSum)
+	const fromUsage = from(Datasources.metricsSum)
 		.select(($) => ({
 			...mountKey($),
 			sampleTime: $.TimeUnix,
@@ -140,7 +141,7 @@ function filesystemUsedFractionPoints(hosts: HostFilter) {
 		.where(($) => usageFilters($, hosts))
 		.groupBy("hostName", "mountpoint", "device", "sampleTime")
 
-	const fromUtilization = from(MetricsGauge)
+	const fromUtilization = from(Datasources.metricsGauge)
 		.select(($) => ({ ...mountKey($), sampleTime: $.TimeUnix, usedFraction: $.Value }))
 		.where(($) => utilizationFilters($, hosts))
 
@@ -157,7 +158,7 @@ const STALE_MOUNT_SECONDS = 60
  * wide the window, and mounts that stopped reporting before the host's last scrape drop out.
  */
 function hostDiskPctQuery(hosts: HostFilter) {
-	const latestUsage = from(MetricsSum)
+	const latestUsage = from(Datasources.metricsSum)
 		.select(($) => ({
 			...mountKey($),
 			state: filesystemAttr($.Attributes, "state"),
@@ -177,7 +178,7 @@ function hostDiskPctQuery(hosts: HostFilter) {
 		}))
 		.groupBy("hostName", "mountpoint", "device")
 
-	const fromUtilization = from(MetricsGauge)
+	const fromUtilization = from(Datasources.metricsGauge)
 		.select(($) => ({
 			...mountKey($),
 			sampleTime: CH.max_($.TimeUnix),
@@ -234,7 +235,7 @@ export interface ListHostsOutput {
 }
 
 export function listHostsQuery(opts: ListHostsOpts = {}) {
-	const hosts = from(MetricsGauge)
+	const hosts = from(Datasources.metricsGauge)
 		.select(($) => ({
 			hostName: $.ResourceAttributes.get("host.name"),
 			osType: CH.any_($.ResourceAttributes.get("os.type")),
@@ -307,7 +308,7 @@ export interface HostDetailSummaryOutput {
 }
 
 export function hostDetailSummaryQuery(opts: HostDetailSummaryOpts) {
-	const host = from(MetricsGauge)
+	const host = from(Datasources.metricsGauge)
 		.select(($) => ({
 			hostName: $.ResourceAttributes.get("host.name"),
 			osType: CH.any_($.ResourceAttributes.get("os.type")),
@@ -372,7 +373,7 @@ export interface HostGaugeTimeseriesOutput {
 }
 
 export function hostGaugeTimeseriesQuery(opts: HostGaugeTimeseriesOpts) {
-	const q = from(MetricsGauge)
+	const q = from(Datasources.metricsGauge)
 		.select(($) => ({
 			bucket: CH.toStartOfInterval($.TimeUnix, param.int("bucketSeconds")),
 			attributeValue: opts.groupByAttributeKey
@@ -436,7 +437,7 @@ const mapSort = defineUntypedFn<[CH.Expr<unknown>]>("mapSort")
 const NETWORK_LOOKBACK_SECONDS = 600
 
 export function hostNetworkTimeseriesQuery(opts: HostNetworkTimeseriesOpts) {
-	const deltas = from(MetricsSum)
+	const deltas = from(Datasources.metricsSum)
 		.select(($) => {
 			// Sorted, so a sender that reorders a point's attributes keeps one series.
 			const attributesHash = CH.cityHash64(mapSort($.Attributes))
@@ -692,7 +693,7 @@ const WORKLOAD_ATTR_KEY = {
 const workloadAttrKey = (kind: WorkloadKind) => WORKLOAD_ATTR_KEY[kind]
 
 const podBaseConditions = (
-	$: ColumnAccessor<typeof MetricsGauge.columns>,
+	$: ColumnAccessor<typeof Datasources.metricsGauge.columns>,
 	metricNames: ReadonlyArray<string> = POD_METRIC_NAMES,
 ): Array<CH.Condition | undefined> => [
 	$.OrgId.eq(orgIdParam),
@@ -732,7 +733,7 @@ const POD_FACETS = [
 }>
 
 const podFilterConditions = (
-	$: ColumnAccessor<typeof MetricsGauge.columns>,
+	$: ColumnAccessor<typeof Datasources.metricsGauge.columns>,
 	opts: ListPodsOpts,
 ): Array<CH.Condition | undefined> => [
 	CH.when(opts.search, (v: string) =>
@@ -792,7 +793,7 @@ export function listPodsQuery(opts: ListPodsOpts = {}) {
 		...Arr.filter(POD_SORT_TIEBREAK, ([key]) => key !== sortBy),
 	]
 
-	const grouped = from(MetricsGauge)
+	const grouped = from(Datasources.metricsGauge)
 		.select(($) => ({
 			podName: $.ResourceAttributes.get("k8s.pod.name"),
 			namespace: CH.any_($.ResourceAttributes.get("k8s.namespace.name")),
@@ -916,7 +917,7 @@ export interface ListPodsSummaryOutput {
  * ("7 saturated") the band leads with.
  */
 export function listPodsSummaryQuery(opts: ListPodsOpts = {}) {
-	const perPod = from(MetricsGauge)
+	const perPod = from(Datasources.metricsGauge)
 		.select(($) => ({
 			podName: $.ResourceAttributes.get("k8s.pod.name"),
 			lastSeen: CH.max_($.TimeUnix),
@@ -979,7 +980,7 @@ export interface PodDetailSummaryOutput {
 }
 
 export function podDetailSummaryQuery(opts: PodDetailSummaryOpts) {
-	return from(MetricsGauge)
+	return from(Datasources.metricsGauge)
 		.select(($) => ({
 			podName: $.ResourceAttributes.get("k8s.pod.name"),
 			namespace: CH.any_($.ResourceAttributes.get("k8s.namespace.name")),
@@ -1035,7 +1036,7 @@ export interface PodRestartsOutput {
 }
 
 export function podRestartsQuery(opts: PodRestartsOpts) {
-	return from(MetricsGauge)
+	return from(Datasources.metricsGauge)
 		.select(($) => ({
 			podName: $.ResourceAttributes.get("k8s.pod.name"),
 			namespace: $.ResourceAttributes.get("k8s.namespace.name"),
@@ -1082,7 +1083,7 @@ export interface PodGaugeTimeseriesOpts {
 }
 
 export function podGaugeTimeseriesQuery(opts: PodGaugeTimeseriesOpts) {
-	const q = from(MetricsGauge)
+	const q = from(Datasources.metricsGauge)
 		.select(($) => ({
 			bucket: CH.toStartOfInterval($.TimeUnix, param.int("bucketSeconds")),
 			attributeValue: opts.groupByAttributeKey
@@ -1161,7 +1162,7 @@ const ratioOrZero = (usage: CH.Expr<number>, allocatable: CH.Expr<number>): CH.E
 
 // The node row merges two receivers: kubeletstats (usage) and k8s_cluster (allocatable,
 // kubelet version). String attributes skip the receiver that leaves them empty.
-const nodeCapacityColumns = ($: ColumnAccessor<typeof MetricsGauge.columns>) => {
+const nodeCapacityColumns = ($: ColumnAccessor<typeof Datasources.metricsGauge.columns>) => {
 	const cpuUsage = avgIfOrZero($.Value, $.MetricName.eq("k8s.node.cpu.usage"))
 	const cpuAllocatable = maxIfOrZero($.Value, $.MetricName.eq(NODE_ALLOCATABLE_CPU_METRIC))
 	const memoryUsage = avgIfOrZero($.Value, $.MetricName.eq("k8s.node.memory.working_set"))
@@ -1177,16 +1178,16 @@ const nodeCapacityColumns = ($: ColumnAccessor<typeof MetricsGauge.columns>) => 
 	}
 }
 
-const nonEmptyAttr = ($: ColumnAccessor<typeof MetricsGauge.columns>, key: string) =>
+const nonEmptyAttr = ($: ColumnAccessor<typeof Datasources.metricsGauge.columns>, key: string) =>
 	CH.anyIf($.ResourceAttributes.get(key), $.ResourceAttributes.get(key).neq(""))
 
 // Nodes that only k8s_cluster reports (EKS Fargate virtual nodes, nodes the DaemonSet
 // does not run on) carry capacity but no usage; the list and facets both require kubelet data.
-const hasKubeletUsage = ($: ColumnAccessor<typeof MetricsGauge.columns>) =>
+const hasKubeletUsage = ($: ColumnAccessor<typeof Datasources.metricsGauge.columns>) =>
 	CH.countIf($.MetricName.eq(NODE_FACET_PROBE_METRIC)).gt(0)
 
 const nodeBaseConditions = (
-	$: ColumnAccessor<typeof MetricsGauge.columns>,
+	$: ColumnAccessor<typeof Datasources.metricsGauge.columns>,
 	metricNames: ReadonlyArray<string> = NODE_METRIC_NAMES,
 ): Array<CH.Condition | undefined> => [
 	$.OrgId.eq(orgIdParam),
@@ -1198,7 +1199,7 @@ const nodeBaseConditions = (
 ]
 
 const nodeFilterConditions = (
-	$: ColumnAccessor<typeof MetricsGauge.columns>,
+	$: ColumnAccessor<typeof Datasources.metricsGauge.columns>,
 	opts: ListNodesOpts,
 ): Array<CH.Condition | undefined> => [
 	CH.when(opts.search, (v: string) =>
@@ -1216,7 +1217,7 @@ const nodeFilterConditions = (
 ]
 
 export function listNodesQuery(opts: ListNodesOpts = {}) {
-	return from(MetricsGauge)
+	return from(Datasources.metricsGauge)
 		.select(($) => ({
 			nodeName: $.ResourceAttributes.get("k8s.node.name"),
 			nodeUid: nonEmptyAttr($, "k8s.node.uid"),
@@ -1253,7 +1254,7 @@ export interface NodeDetailSummaryOutput extends NodeCapacityOutput {
 }
 
 export function nodeDetailSummaryQuery(opts: NodeDetailSummaryOpts) {
-	return from(MetricsGauge)
+	return from(Datasources.metricsGauge)
 		.select(($) => ({
 			nodeName: $.ResourceAttributes.get("k8s.node.name"),
 			nodeUid: nonEmptyAttr($, "k8s.node.uid"),
@@ -1288,7 +1289,7 @@ export interface NodeGaugeTimeseriesOpts {
 
 export function nodeGaugeTimeseriesQuery(opts: NodeGaugeTimeseriesOpts) {
 	const capacityMetricName = opts.capacityMetricName
-	return from(MetricsGauge)
+	return from(Datasources.metricsGauge)
 		.select(($) => ({
 			bucket: CH.toStartOfInterval($.TimeUnix, param.int("bucketSeconds")),
 			attributeValue: CH.lit(""),
@@ -1374,7 +1375,7 @@ const JOB_FAILED_METRIC = "k8s.job.failed_pods" as const
 const CONTAINER_RESTARTS_METRIC = "k8s.container.restarts" as const
 
 const workloadFilterConditions = (
-	$: ColumnAccessor<typeof MetricsGauge.columns>,
+	$: ColumnAccessor<typeof Datasources.metricsGauge.columns>,
 	opts: ListWorkloadsOpts,
 	attrKey: string,
 ): Array<CH.Condition | undefined> => [
@@ -1423,7 +1424,7 @@ export function listWorkloadsQuery(opts: ListWorkloadsOpts) {
 		...(opts.kind === "job" ? [JOB_FAILED_METRIC] : []),
 	]
 
-	const perSeries = from(MetricsGauge)
+	const perSeries = from(Datasources.metricsGauge)
 		.select(($) => ({
 			workloadName: $.ResourceAttributes.get(attrKey),
 			// Same-named workloads in different namespaces/clusters are distinct rows.
@@ -1555,7 +1556,7 @@ export interface WorkloadDetailSummaryOutput {
 
 export function workloadDetailSummaryQuery(opts: WorkloadDetailSummaryOpts) {
 	const attrKey = workloadAttrKey(opts.kind)
-	return from(MetricsGauge)
+	return from(Datasources.metricsGauge)
 		.select(($) => ({
 			workloadName: $.ResourceAttributes.get(attrKey),
 			namespace: CH.any_($.ResourceAttributes.get("k8s.namespace.name")),
@@ -1589,7 +1590,7 @@ export interface WorkloadGaugeTimeseriesOpts {
 
 export function workloadGaugeTimeseriesQuery(opts: WorkloadGaugeTimeseriesOpts) {
 	const attrKey = workloadAttrKey(opts.kind)
-	const q = from(MetricsGauge)
+	const q = from(Datasources.metricsGauge)
 		.select(($) => ({
 			bucket: CH.toStartOfInterval($.TimeUnix, param.int("bucketSeconds")),
 			attributeValue: opts.groupByPod ? $.ResourceAttributes.get("k8s.pod.name") : CH.lit(""),
@@ -1618,7 +1619,7 @@ export function workloadGaugeTimeseriesQuery(opts: WorkloadGaugeTimeseriesOpts) 
 export type PodFacetsOutput = FacetOutput
 
 const makePodFacet = (opts: ListPodsOpts, attrKey: string, facetType: string, perFacetLimit: number) =>
-	from(MetricsGauge)
+	from(Datasources.metricsGauge)
 		.select(($) => ({
 			name: facetAttrExpr($.ResourceAttributes, attrKey),
 			count: CH.uniq($.ResourceAttributes.get("k8s.pod.uid")),
@@ -1651,7 +1652,7 @@ export function podFacetsQuery(opts: ListPodsOpts = {}): CHUnionQuery<PodFacetsO
 export type NodeFacetsOutput = FacetOutput
 
 const makeNodeFacet = (opts: ListNodesOpts, attrKey: string, facetType: string, perFacetLimit: number) =>
-	from(MetricsGauge)
+	from(Datasources.metricsGauge)
 		.select(($) => ({
 			name: facetAttrExpr($.ResourceAttributes, attrKey),
 			count: CH.uniq($.ResourceAttributes.get("k8s.node.name")),
@@ -1683,7 +1684,7 @@ const makeWorkloadFacet = (
 	perFacetLimit: number,
 ) => {
 	const ownerKey = workloadAttrKey(opts.kind)
-	return from(MetricsGauge)
+	return from(Datasources.metricsGauge)
 		.select(($) => ({
 			name: facetAttrExpr($.ResourceAttributes, attrKey),
 			count: CH.uniq($.ResourceAttributes.get(ownerKey)),
@@ -1753,9 +1754,9 @@ const WORKLOAD_OWNER_KEYS = ["k8s.deployment.name", "k8s.statefulset.name", "k8s
 const presenceBranch = (
 	surface: InfraSurface,
 	metricName: string,
-	identity: ($: ColumnAccessor<typeof MetricsGauge.columns>) => CH.Condition,
+	identity: ($: ColumnAccessor<typeof Datasources.metricsGauge.columns>) => CH.Condition,
 ) =>
-	from(MetricsGauge)
+	from(Datasources.metricsGauge)
 		.select(() => ({ surface: CH.lit(surface) }))
 		.where(($) => [
 			$.OrgId.eq(orgIdParam),

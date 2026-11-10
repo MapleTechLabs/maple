@@ -22,7 +22,8 @@ import { Schema } from "effect"
 import * as CH from "@maple-dev/effect-orm/expr"
 import { from, fromQuery, param, type CompiledQueryRowSchema } from "@maple-dev/effect-orm/clickhouse"
 import { CHNumber } from "@maple/query-engine/ch/schema"
-import { MetricsGauge, orgIdParam } from "@maple/query-engine/ch/tables"
+import * as Datasources from "@maple/domain/tinybird/datasources"
+import { orgIdParam } from "@maple/query-engine/ch/tables"
 
 /** Active connections (gauge) — one series per edge region/branch; summed per timestamp. */
 export const CONNECTION_METRIC_NAMES = [
@@ -145,7 +146,7 @@ export const planetscaleBranchStorageRowSchema: CompiledQueryRowSchema<PlanetSca
  * chip should show the worst, not the mean.
  */
 export function planetscaleGaugesSQL() {
-	return from(MetricsGauge)
+	return from(Datasources.metricsGauge)
 		.select(($) => ({
 			database: CH.coalesce(
 				CH.nullIf($.Attributes.get("planetscale_database_name"), ""),
@@ -172,7 +173,7 @@ export function planetscaleGaugesSQL() {
 
 /** Per-branch variant of {@link planetscaleGaugesSQL}, scoped to one database. */
 export function planetscaleBranchGaugesSQL() {
-	return from(MetricsGauge)
+	return from(Datasources.metricsGauge)
 		.select(($) => ({
 			database: CH.coalesce(
 				CH.nullIf($.Attributes.get("planetscale_database_name"), ""),
@@ -236,7 +237,7 @@ const usedPercentExpr = ($: {
  * slightly different rates, so a missing series is a real possibility.
  */
 export function planetscaleStorageSQL() {
-	const perBranch = from(MetricsGauge)
+	const perBranch = from(Datasources.metricsGauge)
 		.select(($) => ({
 			database: CH.coalesce(
 				CH.nullIf($.Attributes.get("planetscale_database_name"), ""),
@@ -275,7 +276,7 @@ export function planetscaleStorageSQL() {
 
 /** Per-branch variant of {@link planetscaleStorageSQL}, scoped to one database. */
 export function planetscaleBranchStorageSQL() {
-	const perBranch = from(MetricsGauge)
+	const perBranch = from(Datasources.metricsGauge)
 		.select(($) => ({
 			database: CH.coalesce(
 				CH.nullIf($.Attributes.get("planetscale_database_name"), ""),
@@ -321,7 +322,7 @@ export function planetscaleBranchStorageSQL() {
  * the window.
  */
 export function planetscaleConnectionsSQL() {
-	const inner = from(MetricsGauge)
+	const inner = from(Datasources.metricsGauge)
 		.select(($) => ({
 			database: CH.coalesce(
 				CH.nullIf($.Attributes.get("planetscale_database_name"), ""),
@@ -355,7 +356,7 @@ export function planetscaleConnectionsSQL() {
 
 /** Per-branch variant of {@link planetscaleConnectionsSQL}, scoped to one database. */
 export function planetscaleBranchConnectionsSQL() {
-	const inner = from(MetricsGauge)
+	const inner = from(Datasources.metricsGauge)
 		.select(($) => ({
 			database: CH.coalesce(
 				CH.nullIf($.Attributes.get("planetscale_database_name"), ""),

@@ -12,7 +12,8 @@ import type { SloSli } from "@maple/domain/slo"
 import { SLO_LATENCY_COVERAGE_COLUMN, sloLatencyColumnName } from "@maple/domain/tinybird"
 import { DateTimeUtcFromWarehouse } from "../../datetime"
 import { CHNumber } from "../schema"
-import { ServiceOverviewHourly, ServiceOverviewMinutely, ServiceOverviewSpans, orgIdParam } from "../tables"
+import * as Datasources from "@maple/domain/tinybird/datasources"
+import { orgIdParam } from "../tables"
 import { serviceOverviewWhereConditions } from "./query-helpers"
 import { edgeCondition, hourGrain, minuteGrain, utcInteriorConditions } from "./rollup-splice"
 
@@ -73,7 +74,7 @@ const nanos = (ms: number) => ms * 1_000_000
 
 /** Exact counts from the per-span projection, for the partial buckets at the window's ends. */
 const rawEdges = (opts: SloScope, grain: "hour" | "minute") =>
-	from(ServiceOverviewSpans)
+	from(Datasources.serviceOverviewSpans)
 		.select(($) => ({
 			bBucket: grain === "minute" ? CH.toStartOfMinute($.Timestamp) : CH.toStartOfHour($.Timestamp),
 			bService: $.ServiceName,
@@ -124,7 +125,7 @@ const rollupCounts = <
 			}
 
 const hourlyInterior = (opts: SloScope) =>
-	from(ServiceOverviewHourly)
+	from(Datasources.serviceOverviewHourly)
 		.select(($) => ({
 			bBucket: $.Hour,
 			bService: $.ServiceName,
@@ -135,7 +136,7 @@ const hourlyInterior = (opts: SloScope) =>
 		.groupBy(...BUCKET_KEYS)
 
 const minutelyInterior = (opts: SloScope, withinHours: boolean) =>
-	from(ServiceOverviewMinutely)
+	from(Datasources.serviceOverviewMinutely)
 		.select(($) => ({
 			bBucket: $.Minute,
 			bService: $.ServiceName,

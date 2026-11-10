@@ -9,7 +9,8 @@ import { finiteOrZero } from "@maple/query-engine/ch/format"
 import * as CH from "@maple-dev/effect-orm/expr"
 import { param } from "@maple-dev/effect-orm/clickhouse"
 import { from } from "@maple-dev/effect-orm/clickhouse"
-import { Traces, orgIdParam } from "@maple/query-engine/ch/tables"
+import * as Datasources from "@maple/domain/tinybird/datasources"
+import { orgIdParam } from "@maple/query-engine/ch/tables"
 
 // db.statement samples
 
@@ -50,7 +51,7 @@ export interface DbStatementSamplesOutput {
 }
 
 export function dbStatementSamplesQuery(opts: DbStatementSamplesOpts) {
-	return from(Traces)
+	return from(Datasources.traces)
 		.select(($) => ({
 			fingerprint: CH.coalesce(
 				CH.nullIf($.SpanAttributes.get("db.query.fingerprint"), ""),

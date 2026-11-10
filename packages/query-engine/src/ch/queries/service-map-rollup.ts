@@ -20,13 +20,8 @@ import * as CH from "@maple-dev/effect-orm/expr"
 import { param } from "@maple-dev/effect-orm/clickhouse"
 import { from, fromQuery } from "@maple-dev/effect-orm/clickhouse"
 import { OrgId } from "@maple/domain"
-import {
-	ServiceAddressResolutionsHourly,
-	ServiceMapEdgesHourly,
-	Traces,
-	orgIdParam,
-	utcSecondsParam,
-} from "../tables"
+import * as Datasources from "@maple/domain/tinybird/datasources"
+import { orgIdParam, utcSecondsParam } from "../tables"
 import { deploymentEnvExpr } from "@maple/domain/tinybird/semconv-renames"
 import { serviceMapEdgeJoinQuery } from "./service-map"
 import { CHNumber } from "../schema"
@@ -146,7 +141,7 @@ export function serviceMapEdgesExistingHoursSQL(params: {
 	// `GROUP BY hourTs` collapses identical hour values across edge rows — the
 	// rollup only cares about which hour starts have been sealed, not which
 	// edges live in them. Same semantics as SELECT DISTINCT, with the DSL.
-	const query = from(ServiceMapEdgesHourly)
+	const query = from(Datasources.serviceMapEdgesHourly)
 		.select(($) => ({ hourTs: CH.toUnixTimestamp($.Hour) }))
 		.where(($) => [
 			$.OrgId.eq(orgIdParam),
@@ -184,7 +179,7 @@ export function serviceMapResolutionsExistingHoursSQL(params: {
 	startTime: string
 	endTime: string
 }): Effect.Effect<CompiledQuery<ServiceMapEdgesExistingHour>, QueryBuilderError> {
-	const query = from(ServiceAddressResolutionsHourly)
+	const query = from(Datasources.serviceAddressResolutionsHourly)
 		.select(($) => ({ hourTs: CH.toUnixTimestamp($.Hour) }))
 		.where(($) => [
 			$.OrgId.eq(orgIdParam),
@@ -260,7 +255,7 @@ export function serviceMapResolutionsRollupSQL(
 	// SELECT needs. The map lookups (`server.address`, `deployment.environment`)
 	// happen here so the outer query reads them as plain columns instead of
 	// re-evaluating the map per output row.
-	const parents = from(Traces)
+	const parents = from(Datasources.traces)
 		.select(($) => ({
 			OrgId: $.OrgId,
 			Timestamp: $.Timestamp,
@@ -280,7 +275,7 @@ export function serviceMapResolutionsRollupSQL(
 
 	// Child side: Server/Consumer spans. Only the columns needed to JOIN on
 	// (TraceId, ParentSpanId) and to project the resolved target ServiceName.
-	const children = from(Traces)
+	const children = from(Datasources.traces)
 		.select(($) => ({
 			TraceId: $.TraceId,
 			ParentSpanId: $.ParentSpanId,

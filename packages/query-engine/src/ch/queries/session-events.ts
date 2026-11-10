@@ -17,7 +17,8 @@ import {
 	type ColumnAccessor,
 	type InferOutput,
 } from "@maple-dev/effect-orm/clickhouse"
-import { SessionEvents, orgIdParam } from "../tables"
+import * as Datasources from "@maple/domain/tinybird/datasources"
+import { orgIdParam } from "../tables"
 
 // The builder's `count`, which knows the result is a `UInt64` — a local
 // `compileFnCall` copy shadowed it and decoded nothing.
@@ -71,7 +72,7 @@ export interface SessionTranscriptOpts {
 
 export function sessionTranscriptQuery(opts: SessionTranscriptOpts = {}) {
 	const order = opts.newestFirst ? "desc" : "asc"
-	return from(SessionEvents)
+	return from(Datasources.sessionEvents)
 		.select(($) => ({
 			timestamp: $.Timestamp,
 			seq: $.Seq,
@@ -135,7 +136,7 @@ export interface SessionEventMatchOpts {
 }
 
 export function sessionEventMatchQuery(opts: SessionEventMatchOpts) {
-	return from(SessionEvents)
+	return from(Datasources.sessionEvents)
 		.select(($) => ({
 			sessionId: $.SessionId,
 			matchCount: count(),
@@ -194,7 +195,7 @@ export interface SessionActivityOpts {
 // Per-event gap (ms) to the previous distilled event in the same session.
 // dateTime64(9) subtraction via nanos, matching the metrics rate query's
 // lagInFrame pattern. Shared by the single-session and aggregate variants.
-function sessionGapSelect($: ColumnAccessor<typeof SessionEvents.columns>) {
+function sessionGapSelect($: ColumnAccessor<typeof Datasources.sessionEvents.columns>) {
 	const onePrecedingFrame = CH.windowSpec({
 		partitionBy: [$.SessionId],
 		orderBy: [
@@ -213,12 +214,12 @@ function sessionGapSelect($: ColumnAccessor<typeof SessionEvents.columns>) {
 }
 
 function sessionGaps() {
-	return from(SessionEvents).select(sessionGapSelect)
+	return from(Datasources.sessionEvents).select(sessionGapSelect)
 }
 
 /** The per-event gap query, whatever params its WHERE binds. */
 type SessionGaps<P> = CHQuery<
-	typeof SessionEvents.columns,
+	typeof Datasources.sessionEvents.columns,
 	InferOutput<ReturnType<typeof sessionGapSelect>>,
 	{},
 	undefined,

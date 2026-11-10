@@ -7,7 +7,8 @@
 
 import * as CH from "@maple-dev/effect-orm/expr"
 import { from, param } from "@maple-dev/effect-orm/clickhouse"
-import { MetricsSum, orgIdParam } from "@maple/query-engine/ch/tables"
+import * as Datasources from "@maple/domain/tinybird/datasources"
+import { orgIdParam } from "@maple/query-engine/ch/tables"
 import { ISO_Z_FORMAT, isoBucket } from "@maple/query-engine/ch/format"
 
 /**
@@ -49,7 +50,7 @@ export interface CloudflareUsageStatsOutput {
  * mitigated-firewall-event count, in one scan over `[prevStartTime, endTime]`.
  */
 export function cloudflareUsageStatsQuery() {
-	return from(MetricsSum)
+	return from(Datasources.metricsSum)
 		.select(($) => ({
 			previousRequests: CH.sumIf(
 				$.Value,
@@ -74,7 +75,7 @@ export function cloudflareUsageStatsQuery() {
 }
 
 export function cloudflareUsageQuery() {
-	return from(MetricsSum)
+	return from(Datasources.metricsSum)
 		.select(($) => ({
 			serviceName: $.ServiceName,
 			bucket: isoBucket($.TimeUnix),

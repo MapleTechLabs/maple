@@ -30,7 +30,8 @@ import { rawCompiledQuery } from "../raw-sql"
 import * as CH from "@maple-dev/effect-orm/expr"
 import { param } from "@maple-dev/effect-orm/clickhouse"
 import { from, fromQuery } from "@maple-dev/effect-orm/clickhouse"
-import { MetricsGauge, ServicePlatformsHourly, orgIdParam, utcSecondsParam } from "../tables"
+import * as Datasources from "@maple/domain/tinybird/datasources"
+import { orgIdParam, utcSecondsParam } from "../tables"
 import { CHNumber } from "../schema"
 import type { QueryBuilderError } from "@maple-dev/effect-orm/clickhouse"
 import type { OrgId } from "@maple/domain"
@@ -106,7 +107,7 @@ export function serviceWorkloadsSQL(
 	// `k8s.cluster.name` is never tagged (the `k8sattributes` processor doesn't
 	// set it), so `K8sCluster` is always ''. The kubeletstats pod gauges DO carry
 	// it, so the metrics side below owns clusterName for both the JOIN and display.
-	const workloadIdentity = from(ServicePlatformsHourly)
+	const workloadIdentity = from(Datasources.servicePlatformsHourly)
 		.select(($) => {
 			const deployment = CH.max_($.K8sDeploymentName)
 			const statefulSet = CH.max_($.K8sStatefulSetName)
@@ -150,7 +151,7 @@ export function serviceWorkloadsSQL(
 	// gauges, which require CPU/memory limits to be set) drives uniq(pod.uid).
 	// The avgIf aggregates still read their own *_utilization rows from the same
 	// scan, returning 0/null when a cluster doesn't set the matching limit.
-	const workloadMetrics = from(MetricsGauge)
+	const workloadMetrics = from(Datasources.metricsGauge)
 		.select(($) => {
 			const deployment = $.ResourceAttributes.get("k8s.deployment.name")
 			const statefulSet = $.ResourceAttributes.get("k8s.statefulset.name")
@@ -269,7 +270,7 @@ export function serviceRuntimesSQL(
 	opts: ServiceRuntimesOpts,
 	params: { orgId: OrgId; startTime: string; endTime: string },
 ): Effect.Effect<CompiledQuery<ServiceRuntimesOutput>, QueryBuilderError> {
-	const query = from(MetricsGauge)
+	const query = from(Datasources.metricsGauge)
 		.select(($) => ({
 			metricServiceName: $.ServiceName,
 			metricName: $.MetricName,

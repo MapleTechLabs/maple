@@ -15,7 +15,7 @@ import {
 	servicePlatformsSQL,
 } from "./service-map"
 import { serviceMapEdgesRollupSQL, serviceMapResolutionsRollupSQL } from "./service-map-rollup"
-import { ServiceMapEdgesHourly } from "../tables"
+import * as Datasources from "@maple/domain/tinybird/datasources"
 import { DB_NAMESPACE_ATTR_SQL, DB_QUERY_KEY_LAZY_SQL } from "@maple/domain/tinybird/db-query-shape-sql"
 import { OrgId } from "@maple/domain"
 
@@ -303,7 +303,7 @@ describe("serviceMapEdgeJoinQuery", () => {
 		const selectClause = Str.slice(0, Option.getOrThrow(Str.indexOf("FROM (")(sql)))(sql)
 		const aliases = Arr.map(Arr.fromIterable(Str.matchAll(/ AS (\w+)/g)(selectClause)), (m) => m[1])
 
-		expect(new Set(aliases)).toEqual(new Set(Rec.keys(ServiceMapEdgesHourly.columns)))
+		expect(new Set(aliases)).toEqual(new Set(Rec.keys(Datasources.serviceMapEdgesHourly.columns)))
 	})
 
 	it("filters OrgId on both join sides, so the scope is derived", () => {

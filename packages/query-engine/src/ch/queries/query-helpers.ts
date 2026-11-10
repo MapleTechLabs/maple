@@ -9,15 +9,8 @@ import type { AttributeFilter, MetricType } from "@maple/domain/query-engine"
 import * as CH from "@maple-dev/effect-orm/expr"
 import { param } from "@maple-dev/effect-orm/clickhouse"
 import type { ColumnAccessor } from "@maple-dev/effect-orm/clickhouse"
-import type { ServiceOverviewSpans, Traces, TracesAggregatesHourly } from "../tables"
-import {
-	MetricsSum,
-	MetricsGauge,
-	MetricsHistogram,
-	MetricsExpHistogram,
-	orgIdParam,
-	utcSecondsParam,
-} from "../tables"
+import * as Datasources from "@maple/domain/tinybird/datasources"
+import { orgIdParam, utcSecondsParam } from "../tables"
 import { deploymentEnvExpr } from "@maple/domain/tinybird/semconv-renames"
 import { buildAttrFilterCondition, httpDisplaySpanName } from "../../traces-shared"
 import type { AttributeIndexMode } from "../../capabilities"
@@ -320,7 +313,7 @@ export function errorsOnlyCondition(
 }
 
 type TracesBaseWhereColumns = Pick<
-	typeof Traces.columns,
+	typeof Datasources.traces.columns,
 	| "OrgId"
 	| "Timestamp"
 	| "ServiceName"
@@ -515,7 +508,7 @@ export function canUseServiceOverviewMv(opts: TracesBaseWhereOpts, groupBy?: rea
  * and `canUseServiceOverviewMv` only routes rootOnly queries to it.
  */
 export function serviceOverviewWhereConditions(
-	$: ColumnAccessor<typeof ServiceOverviewSpans.columns>,
+	$: ColumnAccessor<typeof Datasources.serviceOverviewSpans.columns>,
 	opts: TracesBaseWhereOpts,
 ): Array<CH.Condition | undefined> {
 	const mm = opts.matchModes
@@ -623,7 +616,7 @@ export function canUseTracesAggregatesMv(
  * requested window exactly instead of overlapping or leaving a gap.
  */
 export function tracesAggregatesWhereConditions(
-	$: ColumnAccessor<typeof TracesAggregatesHourly.columns>,
+	$: ColumnAccessor<typeof Datasources.tracesAggregatesHourly.columns>,
 	opts: TracesBaseWhereOpts,
 	hourBounds?: { readonly gte: string; readonly lt: string },
 ): Array<CH.Condition | undefined> {
@@ -675,13 +668,13 @@ export function tracesAggregatesWhereConditions(
 // Metrics table lookup + SELECT factory
 
 const VALUE_TABLES = {
-	sum: MetricsSum,
-	gauge: MetricsGauge,
+	sum: Datasources.metricsSum,
+	gauge: Datasources.metricsGauge,
 } as const
 
 const HISTOGRAM_TABLES = {
-	histogram: MetricsHistogram,
-	exponential_histogram: MetricsExpHistogram,
+	histogram: Datasources.metricsHistogram,
+	exponential_histogram: Datasources.metricsExponentialHistogram,
 } as const
 
 export function resolveMetricTable(metricType: MetricType) {
@@ -695,10 +688,13 @@ export function resolveMetricTable(metricType: MetricType) {
  * For value tables (sum/gauge): operates on $.Value column.
  * For histogram tables: operates on $.Sum, $.Count, $.Min, $.Max columns.
  */
-export function metricsSelectExprs($: ColumnAccessor<typeof MetricsSum.columns>, isHistogram: boolean) {
+export function metricsSelectExprs(
+	$: ColumnAccessor<typeof Datasources.metricsSum.columns>,
+	isHistogram: boolean,
+) {
 	if (isHistogram) {
 		// SAFETY: `isHistogram` selects the histogram table whose accessor includes Count/Sum/Min/Max.
-		const $h = $ as unknown as ColumnAccessor<typeof MetricsHistogram.columns>
+		const $h = $ as unknown as ColumnAccessor<typeof Datasources.metricsHistogram.columns>
 		return {
 			avgValue: finiteOrZero(CH.sum($h.Sum).div(CH.sum($h.Count))),
 			// Min/Max are Nullable (OTel histograms may omit extrema), and min/max

@@ -14,7 +14,8 @@
 
 import * as CH from "@maple-dev/effect-orm/expr"
 import { from, param, type ColumnAccessor } from "@maple-dev/effect-orm/clickhouse"
-import { MetricsGauge, MetricsSum, orgIdParam } from "@maple/query-engine/ch/tables"
+import * as Datasources from "@maple/domain/tinybird/datasources"
+import { orgIdParam } from "@maple/query-engine/ch/tables"
 import { avgWhere, isoBucket } from "@maple/query-engine/ch/format"
 import {
 	CF_FILTERABLE,
@@ -101,7 +102,7 @@ export interface CloudflareZoneTimeseriesOutput {
 	readonly visits: number
 }
 
-const zoneCounterColumns = ($: ColumnAccessor<typeof MetricsSum.columns>) => ({
+const zoneCounterColumns = ($: ColumnAccessor<typeof Datasources.metricsSum.columns>) => ({
 	requests: CH.sumIf($.Value, $.MetricName.eq("cloudflare.http.requests")),
 	errors5xx: CH.sumIf(
 		$.Value,
@@ -118,7 +119,7 @@ const zoneCounterColumns = ($: ColumnAccessor<typeof MetricsSum.columns>) => ({
 })
 
 /** Status mix and cacheable volume, for the zone list only; the timeseries doesn't need them. */
-const zoneMixColumns = ($: ColumnAccessor<typeof MetricsSum.columns>) => {
+const zoneMixColumns = ($: ColumnAccessor<typeof Datasources.metricsSum.columns>) => {
 	const requestsWhere = (status: string) =>
 		CH.sumIf(
 			$.Value,
@@ -141,12 +142,14 @@ const zoneMixColumns = ($: ColumnAccessor<typeof MetricsSum.columns>) => {
  * Filters applicable to the main HTTP cube (`host`, `cacheStatus`, `statusClass`). All three
  * counter metrics share the same attribute set, so one row of {@link CF_FILTERABLE} covers them.
  */
-const httpCubeFilters = ($: ColumnAccessor<typeof MetricsSum.columns>, opts: CloudflareFilterOpts) =>
-	cloudflareFilterConditions($, opts, CF_FILTERABLE[CF_METRIC.requests] ?? [])
+const httpCubeFilters = (
+	$: ColumnAccessor<typeof Datasources.metricsSum.columns>,
+	opts: CloudflareFilterOpts,
+) => cloudflareFilterConditions($, opts, CF_FILTERABLE[CF_METRIC.requests] ?? [])
 
 /** Counter rollup over `metrics_sum`, one row per zone pseudo-service. */
 export function cloudflareZoneCountersSQL(opts: CloudflareFilterOpts = {}) {
-	return from(MetricsSum)
+	return from(Datasources.metricsSum)
 		.select(($) => ({
 			serviceName: $.ServiceName,
 			...zoneCounterColumns($),
@@ -177,9 +180,10 @@ export function cloudflareZoneCountersSQL(opts: CloudflareFilterOpts = {}) {
  */
 export function cloudflareZoneLatencySQL() {
 	const quantileAvg =
-		(metricName: string, quantile: string) => ($: ColumnAccessor<typeof MetricsGauge.columns>) =>
+		(metricName: string, quantile: string) =>
+		($: ColumnAccessor<typeof Datasources.metricsGauge.columns>) =>
 			avgWhere($.Value, $.MetricName.eq(metricName).and($.Attributes.get("quantile").eq(quantile)))
-	return from(MetricsGauge)
+	return from(Datasources.metricsGauge)
 		.select(($) => ({
 			serviceName: $.ServiceName,
 			ttfbP50Ms: quantileAvg("cloudflare.http.edge.ttfb", "0.5")($),
@@ -202,7 +206,7 @@ export function cloudflareZoneLatencySQL() {
 
 /** Bucketed counter timeseries over `metrics_sum`, one row per zone × bucket. */
 export function cloudflareZoneTimeseriesSQL(opts: CloudflareFilterOpts = {}) {
-	return from(MetricsSum)
+	return from(Datasources.metricsSum)
 		.select(($) => ({
 			serviceName: $.ServiceName,
 			bucket: isoBucket($.TimeUnix),
@@ -253,7 +257,7 @@ export interface CloudflareZoneLatencyTimeseriesOutput {
 
 /** Bucketed request counts by HTTP status class for one zone pseudo-service. */
 export function cloudflareZoneStatusTimeseriesSQL(opts: CloudflareFilterOpts = {}) {
-	return from(MetricsSum)
+	return from(Datasources.metricsSum)
 		.select(($) => ({
 			bucket: isoBucket($.TimeUnix),
 			statusClass: $.Attributes.get("http.status_class"),
@@ -274,7 +278,7 @@ export function cloudflareZoneStatusTimeseriesSQL(opts: CloudflareFilterOpts = {
 
 /** Bucketed request counts by raw Cloudflare cache status for one zone pseudo-service. */
 export function cloudflareZoneCacheTimeseriesSQL(opts: CloudflareFilterOpts = {}) {
-	return from(MetricsSum)
+	return from(Datasources.metricsSum)
 		.select(($) => ({
 			bucket: isoBucket($.TimeUnix),
 			cacheStatus: $.Attributes.get("cache.status"),
@@ -301,9 +305,10 @@ export function cloudflareZoneCacheTimeseriesSQL(opts: CloudflareFilterOpts = {}
  */
 export function cloudflareZoneLatencyTimeseriesSQL() {
 	const quantileAvg =
-		(metricName: string, quantile: string) => ($: ColumnAccessor<typeof MetricsGauge.columns>) =>
+		(metricName: string, quantile: string) =>
+		($: ColumnAccessor<typeof Datasources.metricsGauge.columns>) =>
 			avgWhere($.Value, $.MetricName.eq(metricName).and($.Attributes.get("quantile").eq(quantile)))
-	return from(MetricsGauge)
+	return from(Datasources.metricsGauge)
 		.select(($) => ({
 			bucket: isoBucket($.TimeUnix),
 			ttfbP50Ms: quantileAvg("cloudflare.http.edge.ttfb", "0.5")($),
@@ -350,7 +355,7 @@ export interface CloudflareWorkerLatencyOutput {
 
 /** Counter rollup over `metrics_sum`, one row per Worker pseudo-service. */
 export function cloudflareWorkerCountersSQL() {
-	return from(MetricsSum)
+	return from(Datasources.metricsSum)
 		.select(($) => ({
 			serviceName: $.ServiceName,
 			accountId: $.ResourceAttributes.get("cloudflare.account.id"),
@@ -376,7 +381,7 @@ export function cloudflareWorkerCountersSQL() {
  * bucket-averaging caveat as {@link cloudflareZoneLatencySQL}.
  */
 export function cloudflareWorkerLatencySQL() {
-	return from(MetricsGauge)
+	return from(Datasources.metricsGauge)
 		.select(($) => ({
 			serviceName: $.ServiceName,
 			accountId: $.ResourceAttributes.get("cloudflare.account.id"),
@@ -416,7 +421,9 @@ export interface CloudflareWorkerDetailOpts {
 }
 
 const accountCondition = (
-	$: ColumnAccessor<typeof MetricsSum.columns> | ColumnAccessor<typeof MetricsGauge.columns>,
+	$:
+		| ColumnAccessor<typeof Datasources.metricsSum.columns>
+		| ColumnAccessor<typeof Datasources.metricsGauge.columns>,
 	opts: CloudflareWorkerDetailOpts,
 ) => (opts.byAccount ? [$.ResourceAttributes.get("cloudflare.account.id").eq(param.string("accountId"))] : [])
 
@@ -447,7 +454,7 @@ export interface CloudflareWorkerDurableObjectTimeseriesOutput {
 
 /** Invocations per bucket split by how they ended (`worker.status`). */
 export function cloudflareWorkerOutcomeTimeseriesSQL(opts: CloudflareWorkerDetailOpts = {}) {
-	return from(MetricsSum)
+	return from(Datasources.metricsSum)
 		.select(($) => ({
 			bucket: isoBucket($.TimeUnix),
 			status: $.Attributes.get("worker.status"),
@@ -469,9 +476,10 @@ export function cloudflareWorkerOutcomeTimeseriesSQL(opts: CloudflareWorkerDetai
 /** CPU, duration and Durable Object wall-time percentiles per bucket for one Worker. */
 export function cloudflareWorkerLatencyTimeseriesSQL(opts: CloudflareWorkerDetailOpts = {}) {
 	const quantileAvg =
-		(metricName: string, quantile: string) => ($: ColumnAccessor<typeof MetricsGauge.columns>) =>
+		(metricName: string, quantile: string) =>
+		($: ColumnAccessor<typeof Datasources.metricsGauge.columns>) =>
 			avgWhere($.Value, $.MetricName.eq(metricName).and($.Attributes.get("quantile").eq(quantile)))
-	return from(MetricsGauge)
+	return from(Datasources.metricsGauge)
 		.select(($) => ({
 			bucket: isoBucket($.TimeUnix),
 			cpuP50Ms: quantileAvg("cloudflare.worker.cpu_time", "0.5")($),
@@ -496,7 +504,7 @@ export function cloudflareWorkerLatencyTimeseriesSQL(opts: CloudflareWorkerDetai
 
 /** Durable Object calls and errors per bucket on the Worker that implements them. */
 export function cloudflareWorkerDurableObjectTimeseriesSQL(opts: CloudflareWorkerDetailOpts = {}) {
-	return from(MetricsSum)
+	return from(Datasources.metricsSum)
 		.select(($) => ({
 			bucket: isoBucket($.TimeUnix),
 			requests: CH.sumIf($.Value, $.MetricName.eq("cloudflare.durable_object.requests")),

@@ -79,14 +79,8 @@ import {
 import { AI_TOOLS_BREAKDOWN_MAX, AI_TOOLS_OTHER_SERIES_KEY, type AiToolsPeriod } from "@maple/domain/http"
 import { Array as Arr, type DateTime, Option, Schema, Record as Rec, String as Str } from "effect"
 import { QueryBuilderDefect, type CompiledQueryRowSchema } from "@maple-dev/effect-orm/clickhouse"
-import {
-	AiTraceIndex,
-	Traces,
-	exactDateTime64,
-	inTraces,
-	orgIdParam,
-	paramTraceWindow,
-} from "@maple/query-engine/ch/tables"
+import * as Datasources from "@maple/domain/tinybird/datasources"
+import { exactDateTime64, inTraces, orgIdParam, paramTraceWindow } from "@maple/query-engine/ch/tables"
 import { finiteOrZero, isoBucket } from "@maple/query-engine/ch/format"
 import { CHNumber } from "@maple/query-engine/ch/schema"
 import { aiToolCallPayload } from "./ai-integrations"
@@ -167,7 +161,7 @@ export const AI_TOOLS_BREAKDOWN_LIMIT = AI_TOOLS_BREAKDOWN_MAX
  * workflow node (or whose parent was never exported) still produces a row.
  */
 const parentModels = <W extends AiToolsWindow>(window: W) =>
-	from(AiTraceIndex)
+	from(Datasources.aiTraceIndex)
 		.select(($) => ({
 			TraceId: $.TraceId,
 			SpanId: $.SpanId,
@@ -214,7 +208,7 @@ const parentModels = <W extends AiToolsWindow>(window: W) =>
  * always passes it, so no tool call is lost to the join.
  */
 const traceFacts = <W extends AiToolsWindow>(window: W) =>
-	from(AiTraceIndex)
+	from(Datasources.aiTraceIndex)
 		.select(($) => ({
 			TraceId: $.TraceId,
 			rawSessionId: CH.max_($.SessionId),
@@ -277,7 +271,7 @@ interface ToolCallColumns {
 /** The index rows of the window with their trace's facts beside them — the half
  *  of {@link toolCalls} both its shapes share. */
 const toolCallIndex = <W extends AiToolsWindow>(window: W) =>
-	from(AiTraceIndex).innerJoinQuery(traceFacts(window), "trace", (call, trace) =>
+	from(Datasources.aiTraceIndex).innerJoinQuery(traceFacts(window), "trace", (call, trace) =>
 		call.TraceId.eq(trace.TraceId),
 	)
 
@@ -348,7 +342,7 @@ const toolCalls = <W extends AiToolsWindow>(
 			.select(($) => columns($, $.trace.traceModel))
 			.where(($) => filters($, $.trace.traceModel))
 	}
-	return from(AiTraceIndex)
+	return from(Datasources.aiTraceIndex)
 		.leftJoinQuery(parentModels(window), "parent", (call, parent) =>
 			call.TraceId.eq(parent.TraceId).and(call.ParentSpanId.eq(parent.SpanId)),
 		)
@@ -1027,7 +1021,7 @@ const cutAttributeBytes = (attributes: CH.Expr<Record<string, string>>): CH.Expr
  * that were, so a sample costs kilobytes on the wire rather than its whole span.
  */
 export function aiToolErrorPayloadsQuery(calls: Arr.NonEmptyReadonlyArray<AiToolErrorCallKey>) {
-	return from(Traces)
+	return from(Datasources.traces)
 		.select(($) => ({
 			traceId: $.TraceId,
 			spanId: $.SpanId,
@@ -1163,7 +1157,7 @@ export const aiToolDescriptionRowSchema: CompiledQueryRowSchema<AiToolDescriptio
  * a description is the tool's and not the selection's.
  */
 export function aiToolDescriptionQuery() {
-	return from(AiTraceIndex)
+	return from(Datasources.aiTraceIndex)
 		.select(($) => ({ description: CH.argMax($.ToolDescription, $.Timestamp) }))
 		.where(($) => [
 			$.OrgId.eq(orgIdParam),
