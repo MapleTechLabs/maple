@@ -341,7 +341,11 @@ const createClient = (
 ): Effect.Effect<WarehouseSqlClient, WarehouseDriverError, HttpClient.HttpClient> =>
 	config.kind === "tinybird" ? createTinybirdSqlClient(config) : createClickHouseSqlClient(config)
 
-let sqlClientFactory: typeof createClient = createClient
+/** Builds the SQL client for a resolved route. Tests and evals provide a fake driver here. */
+export class WarehouseSqlClientFactory extends Context.Reference<typeof createClient>(
+	"@maple/backend/services/warehouse/WarehouseSqlClientFactory",
+	{ defaultValue: () => createClient },
+) {}
 
 export class WarehouseQueryService extends Context.Service<WarehouseQueryService, WarehouseQueryServiceApi>()(
 	"@maple/backend/lib/WarehouseQueryService",
@@ -354,6 +358,7 @@ export class WarehouseQueryService extends Context.Service<WarehouseQueryService
 			const env = yield* Env
 			const orgClickHouseSettings = yield* OrgClickHouseSettingsService
 			const orgTokens = yield* TinybirdOrgTokenService
+			const sqlClientFactory = yield* WarehouseSqlClientFactory
 
 			// The managed (env-level) READ upstream: the Tinybird CH-gateway or vanilla
 			// ClickHouse when CLICKHOUSE_URL is set, otherwise the managed Tinybird SDK.
@@ -596,12 +601,6 @@ export const provideWarehouseExecutorFromTenant = (tenant: TenantContext) =>
 	)
 
 export const __testables = {
-	setClientFactory: (factory: typeof createClient) => {
-		sqlClientFactory = factory
-	},
-	reset: () => {
-		sqlClientFactory = createClient
-	},
 	createClickHouseSqlClient,
 	createTinybirdSqlClient,
 	clickHouseSessionSettings,

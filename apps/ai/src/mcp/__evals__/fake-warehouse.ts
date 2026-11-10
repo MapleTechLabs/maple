@@ -1,6 +1,6 @@
-import { Array as Arr, Effect, Option, String as Str } from "effect"
+import { Array as Arr, Effect, Layer, Option, String as Str } from "effect"
 import { WarehouseDriverError, WarehouseResponseLimitError } from "@maple/query-engine/execution"
-import { __testables } from "@maple/backend/services/warehouse/WarehouseQueryService"
+import { WarehouseSqlClientFactory } from "@maple/backend/services/warehouse/WarehouseQueryService"
 import { makeLargeTraceSpans, makeTraceLogs } from "./fixtures"
 import { FIXTURES } from "./utils"
 
@@ -35,6 +35,13 @@ export const defaultTraceFixtures = (): FixtureRule[] => [
 	},
 ]
 
+let fakeClient: ReturnType<typeof WarehouseSqlClientFactory.defaultValue> | undefined
+
+/** The eval runtime's warehouse driver: the installed fake, else the real one. Read on every route. */
+export const fakeableWarehouseLayer = Layer.succeed(WarehouseSqlClientFactory, (config) =>
+	(fakeClient ?? WarehouseSqlClientFactory.defaultValue())(config),
+)
+
 /**
  * Replace the warehouse SQL client with a fake that answers from fixtures. The
  * REAL WarehouseQueryService still runs (OrgId enforcement, CH-DSL compile,
@@ -54,7 +61,7 @@ export const installFakeWarehouse = (
 	/** What unmatched SQL gets: a loud failure (default), or no rows, for suites that only need tools to run. */
 	unmatched: "fail" | "empty" = "fail",
 ): void => {
-	__testables.setClientFactory(() =>
+	fakeClient = () =>
 		Effect.succeed({
 			sql: (statement) =>
 				Effect.suspend(
@@ -97,8 +104,9 @@ export const installFakeWarehouse = (
 					},
 				),
 			insert: () => Effect.void,
-		}),
-	)
+		})
 }
 
-export const restoreWarehouse = (): void => __testables.reset()
+export const restoreWarehouse = (): void => {
+	fakeClient = undefined
+}

@@ -12,6 +12,7 @@ import type { McpToolSurface } from "@maple/domain/mcp-manifest"
 import { EVAL_TENANT, FIXTURES, jsonDepth, MAX_STRUCTURED_OUTPUT_DEPTH } from "./utils"
 import type { TenantContext } from "@maple/domain/http"
 import { SandboxFetcher } from "@maple/backend/platform/bindings"
+import { fakeableWarehouseLayer } from "./fake-warehouse"
 
 const INTERNAL_TOKEN = "eval-internal-token"
 
@@ -44,7 +45,7 @@ export interface EvalRuntime {
 /**
  * Build a node runtime for the app services backed by an in-memory PGlite DB +
  * test config (the Worker's service graph, with PGlite in place of Hyperdrive).
- * The warehouse client must be faked separately via `installFakeWarehouse`:
+ * The warehouse driver is faked via `installFakeWarehouse` (real otherwise):
  * this runtime uses the REAL WarehouseQueryService. The returned `requestLayer`
  * carries the already-resolved MCP tenant, matching the post-auth dispatcher
  * context shared by HTTP and RPC.
@@ -71,7 +72,16 @@ export const makeEvalRuntime = (
 			? mcpServicesWithFeatureFlags(featureFlags)
 			: Layer.mergeAll(mcpServicesWithFeatureFlags(featureFlags, dataSources), dataSources)
 	const layer = services.pipe(
-		Layer.provide(Layer.mergeAll(configLive, envLive, databaseLive, workerEnvLive, SandboxFetcher.none)),
+		Layer.provide(
+			Layer.mergeAll(
+				configLive,
+				envLive,
+				databaseLive,
+				workerEnvLive,
+				SandboxFetcher.none,
+				fakeableWarehouseLayer,
+			),
+		),
 	)
 	// `as any`: the residual requirement set is satisfied at runtime.
 	// The lint type checker reads `make(any)` as already `<any, never>`; tsc infers `<unknown, unknown>`.

@@ -43,7 +43,7 @@ import {
 	type ResolvedWarehouseConfig,
 } from "@maple/query-engine/execution"
 import * as ClickHouseHttp from "@maple-dev/effect-clickhouse-http"
-import { __testables, WarehouseQueryService } from "./WarehouseQueryService"
+import { __testables, WarehouseQueryService, WarehouseSqlClientFactory } from "./WarehouseQueryService"
 import {
 	OrgClickHouseSettingsService,
 	type OrgClickHouseSettingsServiceApi,
@@ -54,8 +54,17 @@ import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/testin
 
 const trackedDbs: TestDb[] = []
 
+// The driver a case installs, read per route as the service reads it.
+let clientFactory = WarehouseSqlClientFactory.defaultValue()
+const setClientFactory = (factory: typeof clientFactory) => {
+	clientFactory = factory
+}
+const warehouseServiceLayer = Layer.effect(WarehouseQueryService, WarehouseQueryService.make).pipe(
+	Layer.provide(Layer.succeed(WarehouseSqlClientFactory, (config) => clientFactory(config))),
+)
+
 afterEach(async () => {
-	__testables.reset()
+	clientFactory = WarehouseSqlClientFactory.defaultValue()
 	await cleanupTestDbs(trackedDbs)
 })
 
@@ -91,7 +100,7 @@ const buildLayer = (testDb: TestDb, extra: Record<string, string> = {}, includeT
 		Layer.provide(Layer.mergeAll(envLive, databaseLive, edgeCacheLive)),
 	)
 	const tinybirdTokenLive = TinybirdOrgTokenService.layer.pipe(Layer.provide(envLive))
-	return Layer.effect(WarehouseQueryService, WarehouseQueryService.make).pipe(
+	return warehouseServiceLayer.pipe(
 		Layer.provide(FetchHttpClient.layer),
 		Layer.provide(Layer.mergeAll(envLive, orgSettingsLive, tinybirdTokenLive)),
 	)
@@ -139,7 +148,7 @@ describe("WarehouseQueryService raw-SQL provider routing", () => {
 	it.effect("substitutes a scoped JWT for the Tinybird SDK token", () => {
 		let captured: ResolvedWarehouseConfig | undefined
 		let responseLimits: { readonly maxRows: number; readonly maxBytes: number } | undefined
-		__testables.setClientFactory((config) =>
+		setClientFactory((config) =>
 			Effect.sync(() => {
 				captured = config
 				return {
@@ -171,7 +180,7 @@ describe("WarehouseQueryService raw-SQL provider routing", () => {
 
 	it.effect("defaults an env-level ClickHouse gateway to Tinybird and substitutes a scoped JWT", () => {
 		let captured: ResolvedWarehouseConfig | undefined
-		__testables.setClientFactory((config) =>
+		setClientFactory((config) =>
 			Effect.sync(() => {
 				captured = config
 				return { sql: () => Effect.succeed({ data: [] }), insert: () => Effect.void }
@@ -195,7 +204,7 @@ describe("WarehouseQueryService raw-SQL provider routing", () => {
 
 	it.effect("preserves env-level vanilla ClickHouse credentials for raw SQL", () => {
 		let captured: ResolvedWarehouseConfig | undefined
-		__testables.setClientFactory((config) =>
+		setClientFactory((config) =>
 			Effect.sync(() => {
 				captured = config
 				return { sql: () => Effect.succeed({ data: [] }), insert: () => Effect.void }
@@ -219,7 +228,7 @@ describe("WarehouseQueryService raw-SQL provider routing", () => {
 
 	it.effect("fails closed for env-level vanilla ClickHouse outside self-hosted mode", () => {
 		let constructed = false
-		__testables.setClientFactory(() =>
+		setClientFactory(() =>
 			Effect.sync(() => {
 				constructed = true
 				return { sql: () => Effect.succeed({ data: [] }), insert: () => Effect.void }
@@ -247,7 +256,7 @@ describe("WarehouseQueryService raw-SQL provider routing", () => {
 
 	it.effect("preserves per-org ClickHouse override credentials for raw SQL", () => {
 		let captured: ResolvedWarehouseConfig | undefined
-		__testables.setClientFactory((config) =>
+		setClientFactory((config) =>
 			Effect.sync(() => {
 				captured = config
 				return { sql: () => Effect.succeed({ data: [] }), insert: () => Effect.void }
@@ -275,7 +284,7 @@ describe("WarehouseQueryService raw-SQL provider routing", () => {
 				}),
 			invalidateRuntimeConfig: () => Effect.succeed(false),
 		} as OrgClickHouseSettingsServiceApi)
-		const layer = Layer.effect(WarehouseQueryService, WarehouseQueryService.make).pipe(
+		const layer = warehouseServiceLayer.pipe(
 			Layer.provide(FetchHttpClient.layer),
 			Layer.provide(Layer.mergeAll(envLive, tokenLive, orgSettingsLive)),
 		)
@@ -299,7 +308,7 @@ describe("WarehouseQueryService raw-SQL provider routing", () => {
 			resolveRuntimeConfig: () => Effect.fail(source),
 			invalidateRuntimeConfig: () => Effect.succeed(false),
 		} as OrgClickHouseSettingsServiceApi)
-		const layer = Layer.effect(WarehouseQueryService, WarehouseQueryService.make).pipe(
+		const layer = warehouseServiceLayer.pipe(
 			Layer.provide(FetchHttpClient.layer),
 			Layer.provide(Layer.mergeAll(envLive, tokenLive, orgSettingsLive)),
 		)
@@ -346,7 +355,7 @@ describe("WarehouseQueryService raw-SQL provider routing", () => {
 					resolveRuntimeConfig: () => Effect.fail(source),
 					invalidateRuntimeConfig: () => Effect.succeed(false),
 				} as OrgClickHouseSettingsServiceApi)
-				const layer = Layer.effect(WarehouseQueryService, WarehouseQueryService.make).pipe(
+				const layer = warehouseServiceLayer.pipe(
 					Layer.provide(FetchHttpClient.layer),
 					Layer.provide(Layer.mergeAll(envLive, tokenLive, orgSettingsLive)),
 				)
@@ -363,7 +372,7 @@ describe("WarehouseQueryService raw-SQL provider routing", () => {
 	})
 
 	it.effect("preserves missing Tinybird signing configuration as its own tag", () => {
-		__testables.setClientFactory(() =>
+		setClientFactory(() =>
 			Effect.succeed({
 				sql: () => Effect.succeed({ data: [] }),
 				insert: () => Effect.void,
@@ -384,7 +393,7 @@ describe("WarehouseQueryService raw-SQL provider routing", () => {
 
 	it.effect("rejects env-level URL userinfo before constructing a client", () => {
 		let constructed = false
-		__testables.setClientFactory(() =>
+		setClientFactory(() =>
 			Effect.sync(() => {
 				constructed = true
 				return { sql: () => Effect.succeed({ data: [] }), insert: () => Effect.void }
@@ -461,7 +470,7 @@ describe("WarehouseQueryService.compiledQuery retry on transient upstream failur
 	// delays, so the default TestClock would stall the retries.
 	it.live("recovers after two 503s on the third attempt", () => {
 		let attempts = 0
-		__testables.setClientFactory(() =>
+		setClientFactory(() =>
 			Effect.succeed({
 				sql: () =>
 					Effect.try({
@@ -491,7 +500,7 @@ describe("WarehouseQueryService.compiledQuery retry on transient upstream failur
 
 	it.effect("does not retry non-transient errors (auth)", () => {
 		let attempts = 0
-		__testables.setClientFactory(() =>
+		setClientFactory(() =>
 			Effect.succeed({
 				sql: () =>
 					Effect.try({
@@ -523,7 +532,7 @@ describe("WarehouseQueryService.compiledQuery retry on transient upstream failur
 	// Runs under it.live: exhausts the real backoff schedule before giving up.
 	it.live("gives up after the configured retry budget when all attempts fail", () => {
 		let attempts = 0
-		__testables.setClientFactory(() =>
+		setClientFactory(() =>
 			Effect.succeed({
 				sql: () =>
 					Effect.try({
@@ -562,7 +571,7 @@ describe("WarehouseQueryService.compiledQuery", () => {
 	const RowNumber = Schema.Union([Schema.Finite, Schema.FiniteFromString])
 
 	it.effect("executes compiled SQL and decodes rows with the compiled row schema", () => {
-		__testables.setClientFactory(() =>
+		setClientFactory(() =>
 			Effect.succeed({
 				sql: () => Effect.succeed({ data: [{ serviceName: "api", count: "42" }] }),
 				insert: () => Effect.void,
@@ -589,7 +598,7 @@ describe("WarehouseQueryService.compiledQuery", () => {
 	})
 
 	it.effect("maps row decode failures to WarehouseResultDecodeError", () => {
-		__testables.setClientFactory(() =>
+		setClientFactory(() =>
 			Effect.succeed({
 				sql: () => Effect.succeed({ data: [{ count: "not-a-number" }] }),
 				insert: () => Effect.void,
@@ -618,7 +627,7 @@ describe("WarehouseQueryService.compiledQuery", () => {
 	})
 
 	it.effect("still enforces OrgId scoping for compiled SQL", () => {
-		__testables.setClientFactory(() =>
+		setClientFactory(() =>
 			Effect.succeed({
 				sql: () => Effect.succeed({ data: [{ count: 1 }] }),
 				insert: () => Effect.void,
@@ -659,7 +668,7 @@ describe("WarehouseQueryService.compiledQueryFirst", () => {
 	const RowNumber = Schema.Union([Schema.Finite, Schema.FiniteFromString])
 
 	it.effect("returns Some with the decoded first row", () => {
-		__testables.setClientFactory(() =>
+		setClientFactory(() =>
 			Effect.succeed({
 				sql: () =>
 					Effect.succeed({
@@ -695,7 +704,7 @@ describe("WarehouseQueryService.compiledQueryFirst", () => {
 	})
 
 	it.effect("returns None when the compiled SQL returns no rows", () => {
-		__testables.setClientFactory(() =>
+		setClientFactory(() =>
 			Effect.succeed({
 				sql: () => Effect.succeed({ data: [] }),
 				insert: () => Effect.void,
@@ -722,7 +731,7 @@ describe("WarehouseQueryService.compiledQueryFirst", () => {
 	})
 
 	it.effect("maps first-row decode failures to WarehouseResultDecodeError", () => {
-		__testables.setClientFactory(() =>
+		setClientFactory(() =>
 			Effect.succeed({
 				sql: () => Effect.succeed({ data: [{ count: "not-a-number" }] }),
 				insert: () => Effect.void,
@@ -754,7 +763,7 @@ describe("WarehouseQueryService.compiledQueryFirst", () => {
 describe("WarehouseQueryService.ingest writes through the SQL client", () => {
 	it.effect("forwards datasource + rows to the client's insert", () => {
 		const calls: Array<{ datasource: string; rows: ReadonlyArray<unknown> }> = []
-		__testables.setClientFactory(() =>
+		setClientFactory(() =>
 			Effect.succeed({
 				sql: () => Effect.succeed({ data: [] }),
 				insert: (datasource, rows) =>
@@ -785,7 +794,7 @@ describe("WarehouseQueryService.ingest writes through the SQL client", () => {
 
 	it.effect("short-circuits without calling insert when there are no rows", () => {
 		let inserts = 0
-		__testables.setClientFactory(() =>
+		setClientFactory(() =>
 			Effect.succeed({
 				sql: () => Effect.succeed({ data: [] }),
 				insert: () =>
@@ -811,7 +820,7 @@ describe("WarehouseQueryService.ingest writes through the SQL client", () => {
 	// rows, not Maple's SQL, are what usually earned the rejection), so a
 	// syntax-shaped complaint takes the caller-authored invalid-SQL tag.
 	it.effect("maps a failed insert through the classifier", () => {
-		__testables.setClientFactory(() =>
+		setClientFactory(() =>
 			Effect.succeed({
 				sql: () => Effect.succeed({ data: [] }),
 				insert: () =>
@@ -1058,7 +1067,7 @@ describe("ingest pins writes to Tinybird even when CLICKHOUSE_URL makes managed 
 	// resolver (which prefers ClickHouse) is what kept demo-seed onboarding broken.
 	it.effect("reads resolve to managed ClickHouse, but ingest resolves to Tinybird", () => {
 		const used: Array<{ op: "sql" | "insert"; kind: string }> = []
-		__testables.setClientFactory((config) =>
+		setClientFactory((config) =>
 			Effect.succeed({
 				sql: () =>
 					Effect.try({
