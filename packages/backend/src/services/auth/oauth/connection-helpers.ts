@@ -17,12 +17,7 @@ import {
 import type { PullSourcePlatform, SourceId } from "@maple/domain/primitives"
 import type { MapleDb } from "@maple/db/client"
 import * as PG from "@maple-dev/effect-orm/postgres"
-import {
-	OAuthAuthStates,
-	OAuthConnections,
-	type OAuthConnectionInsert,
-	type OAuthConnectionRow,
-} from "@maple/db/tables"
+import { OAuthConnections, type OAuthConnectionInsert, type OAuthConnectionRow } from "@maple/db/tables"
 import { Clock, Effect, Option, Redacted, Schedule, Schema, Semaphore } from "effect"
 import { HttpClient, HttpClientRequest } from "effect/http"
 import {
@@ -35,9 +30,8 @@ import type { DatabaseApi } from "@maple/backend/platform/DatabaseLive"
 import { deleteSourcesOf, createIntegrationSource } from "@maple/backend/services/org/integration-sources"
 import { makeDbExecute, makePersistenceErrorMapper } from "@maple/backend/platform/db-execute"
 import type { EnvConfig } from "@maple/backend/platform/Env"
-import { makeOAuthStateConsumer, type OAuthFlowInitiator } from "./oauth-state"
+import { makeOAuthStateStore, type OAuthFlowInitiator } from "./oauth-state"
 
-export const OAUTH_STATE_TTL_MS = 10 * 60_000 // 10 minutes
 export const OAUTH_REFRESH_LEEWAY_MS = 60_000 // refresh when the access token is within 1 minute of expiry
 
 /**
@@ -207,16 +201,22 @@ export const makeOAuthConnectionHelpers = (options: MakeOAuthConnectionHelpersOp
 					}),
 			)
 
-		const purgeExpiredStates = (currentTime: number) =>
-			dbExecute((db) =>
-				db.run(PG.deleteFrom(OAuthAuthStates).where(($) => [$.expiresAt.lt(currentTime)])),
-			)
+		const states = makeOAuthStateStore(database, toPersistenceError)
 
-		const consumeState = makeOAuthStateConsumer(database, toPersistenceError)
+		/** Save this provider's state for the Maple user and org starting the flow. */
+		const saveState = (
+			state: string,
+			initiator: OAuthFlowInitiator,
+			options: {
+				readonly redirectUri: string
+				readonly returnTo: string | null
+				readonly codeVerifier?: string
+			},
+		) => states.save({ state, provider, initiator, ...options })
 
 		/** Claim this provider's state row, only for the Maple user and org that started the flow. */
 		const consumeStateRow = (state: string, initiator: OAuthFlowInitiator) =>
-			consumeState({ state, provider, initiator })
+			states.consume({ state, provider, initiator })
 
 		/**
 		 * Per-isolate connection-row memo backing `getValidConnectionToken` only.
@@ -741,7 +741,7 @@ export const makeOAuthConnectionHelpers = (options: MakeOAuthConnectionHelpersOp
 			dbExecute,
 			encryptValue,
 			decryptValue,
-			purgeExpiredStates,
+			saveState,
 			consumeStateRow,
 			loadConnection,
 			requireConnection,

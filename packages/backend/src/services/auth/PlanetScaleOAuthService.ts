@@ -1,4 +1,3 @@
-import { randomBytes } from "node:crypto"
 import {
 	IntegrationsConfigurationError,
 	IntegrationsNotConnectedError,
@@ -10,7 +9,7 @@ import {
 	type UserId,
 } from "@maple/domain/http"
 import * as PG from "@maple-dev/effect-orm/postgres"
-import { OAuthAuthStates, PlanetscaleConnections } from "@maple/db/tables"
+import { PlanetscaleConnections } from "@maple/db/tables"
 import * as PlanetScale from "@distilled.cloud/planetscale"
 import {
 	Clock,
@@ -35,8 +34,9 @@ import {
 	type PlanetScaleTokenRejectedError,
 	runPlanetScale,
 } from "@maple/backend/services/integrations/planetscale/api"
-import { makeOAuthConnectionHelpers, OAUTH_STATE_TTL_MS, toUpstreamError } from "./oauth/connection-helpers"
+import { makeOAuthConnectionHelpers, toUpstreamError } from "./oauth/connection-helpers"
 import type { OAuthFlowInitiator } from "./oauth/oauth-state"
+import { newOAuthState } from "./oauth/oauth-state"
 
 const PLANETSCALE_PROVIDER = "planetscale"
 
@@ -353,23 +353,11 @@ export class PlanetScaleOAuthService extends Context.Service<
 		) {
 			yield* Effect.annotateCurrentSpan({ orgId })
 			const config = yield* resolveConfig(env)
-			const state = randomBytes(24).toString("base64url")
-			const currentTime = yield* Clock.currentTimeMillis
-
-			yield* oauth.purgeExpiredStates(currentTime)
-			yield* oauth.dbExecute((db) =>
-				db.run(
-					PG.insertInto(OAuthAuthStates).values({
-						state,
-						orgId,
-						provider: PLANETSCALE_PROVIDER,
-						initiatedByUserId: userId,
-						redirectUri: options.callbackUrl,
-						returnTo: options.returnTo ?? null,
-						createdAt: currentTime,
-						expiresAt: currentTime + OAUTH_STATE_TTL_MS,
-					}),
-				),
+			const state = yield* newOAuthState
+			yield* oauth.saveState(
+				state,
+				{ orgId, userId },
+				{ redirectUri: options.callbackUrl, returnTo: options.returnTo ?? null },
 			)
 
 			// PlanetScale REQUIRES the scope param — the app's configured scopes are the

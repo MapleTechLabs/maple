@@ -1,4 +1,3 @@
-import { randomBytes } from "node:crypto"
 import {
 	IntegrationsNotConnectedError,
 	IntegrationsPersistenceError,
@@ -9,7 +8,7 @@ import {
 	type UserId,
 } from "@maple/domain/http"
 import * as PG from "@maple-dev/effect-orm/postgres"
-import { CloudflareLogpushConnectors, OAuthAuthStates } from "@maple/db/tables"
+import { CloudflareLogpushConnectors } from "@maple/db/tables"
 import { Array as Arr, Clock, Context, Effect, Layer, Option, Redacted, Schema } from "effect"
 import { FetchHttpClient } from "effect/http"
 import { listAccounts } from "@maple/backend/services/integrations/CloudflareApi"
@@ -20,9 +19,9 @@ import {
 	deriveCodeChallenge,
 	generateCodeVerifier,
 	makeOAuthConnectionHelpers,
-	OAUTH_STATE_TTL_MS,
 } from "./oauth/connection-helpers"
 import type { OAuthFlowInitiator } from "./oauth/oauth-state"
+import { newOAuthState } from "./oauth/oauth-state"
 
 const CLOUDFLARE_PROVIDER = "cloudflare"
 
@@ -229,26 +228,13 @@ export class CloudflareOAuthService extends Context.Service<
 		) {
 			yield* Effect.annotateCurrentSpan({ orgId })
 			const config = yield* resolveConfig(env)
-			const state = randomBytes(24).toString("base64url")
+			const state = yield* newOAuthState
 			// Cloudflare requires PKCE (S256) for public clients and accepts it for confidential ones.
 			const codeVerifier = generateCodeVerifier()
-			const currentTime = yield* Clock.currentTimeMillis
-
-			yield* oauth.purgeExpiredStates(currentTime)
-			yield* oauth.dbExecute((db) =>
-				db.run(
-					PG.insertInto(OAuthAuthStates).values({
-						state,
-						orgId,
-						provider: CLOUDFLARE_PROVIDER,
-						initiatedByUserId: userId,
-						redirectUri: options.callbackUrl,
-						returnTo: options.returnTo ?? null,
-						codeVerifier,
-						createdAt: currentTime,
-						expiresAt: currentTime + OAUTH_STATE_TTL_MS,
-					}),
-				),
+			yield* oauth.saveState(
+				state,
+				{ orgId, userId },
+				{ redirectUri: options.callbackUrl, returnTo: options.returnTo ?? null, codeVerifier },
 			)
 
 			// Cloudflare issues a refresh token only when `offline_access` is REQUESTED here — the
