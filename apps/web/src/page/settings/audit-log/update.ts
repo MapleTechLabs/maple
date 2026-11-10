@@ -475,7 +475,15 @@ export const update = (model: Model, message: Message, search: SettingsSearch): 
 					}),
 			}),
 		RemovedFilter: ({ key }) => navigateFilters(model, search, withoutFilter(filters, key)),
-		ClickedPivot: ({ key, value }) => navigateFilters(model, search, pivoted(filters, key, value)),
+		ClickedPivot: ({ key, value }) => {
+			const next = pivoted(filters, key, value)
+			// An entry link's window is that entry's minute: "every entry with this" must not stay inside it.
+			return navigateFilters(
+				model,
+				search,
+				search.entry === undefined ? next : { ...next, range: { kind: "all" } },
+			)
+		},
 		CompletedScrollToEntry: () => ({ model }),
 		ClickedCustomRange: ({ timeZone }) => ({ model, commands: [ResolveAuditCustomToday({ timeZone })] }),
 		ResolvedCustomToday: ({ timeZone, today, lastDay }) => {
