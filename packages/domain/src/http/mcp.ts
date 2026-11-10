@@ -60,10 +60,6 @@ export const McpClientItem = Schema.Struct({
 })
 export type McpClientItem = typeof McpClientItem.Type
 
-// ---------------------------------------------------------------------------
-// /mcp
-// ---------------------------------------------------------------------------
-
 export class McpServersRequest extends Schema.Class<McpServersRequest>("McpServersRequest")({
 	...windowFields,
 }) {}
@@ -86,10 +82,6 @@ export type McpServerItem = typeof McpServerItem.Type
 export class McpServersResponse extends Schema.Class<McpServersResponse>("McpServersResponse")({
 	servers: Schema.Array(McpServerItem),
 }) {}
-
-// ---------------------------------------------------------------------------
-// /mcp/:service
-// ---------------------------------------------------------------------------
 
 export class McpOverviewRequest extends Schema.Class<McpOverviewRequest>("McpOverviewRequest")({
 	service: selectionText,
@@ -159,10 +151,6 @@ export class McpOverviewResponse extends Schema.Class<McpOverviewResponse>("McpO
 	coverage: McpCoverage,
 }) {}
 
-// ---------------------------------------------------------------------------
-// /mcp/:service/tools/:tool
-// ---------------------------------------------------------------------------
-
 export class McpToolRequest extends Schema.Class<McpToolRequest>("McpToolRequest")({
 	service: selectionText,
 	tool: selectionText,
@@ -209,10 +197,6 @@ export class McpToolResponse extends Schema.Class<McpToolResponse>("McpToolRespo
 	failed: Schema.Array(McpCallItem),
 	recent: Schema.Array(McpCallItem),
 }) {}
-
-// ---------------------------------------------------------------------------
-// /mcp/:service/sessions
-// ---------------------------------------------------------------------------
 
 export class McpSessionsRequest extends Schema.Class<McpSessionsRequest>("McpSessionsRequest")({
 	service: selectionText,
@@ -278,10 +262,6 @@ export class McpSessionsResponse extends Schema.Class<McpSessionsResponse>("McpS
 	/** Every client in the window, for the client and kind facets. */
 	allClients: Schema.Array(McpClientItem),
 }) {}
-
-// ---------------------------------------------------------------------------
-// /mcp/:service/sessions/:sessionId
-// ---------------------------------------------------------------------------
 
 /** An issued session id, or a user session's key, which carries the user id. */
 const sessionKeyText = Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(512))

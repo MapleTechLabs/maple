@@ -1,9 +1,5 @@
-/** Output schemas for the setup, source-code, repository sandbox and pull request MCP tools. */
 import { Schema } from "effect"
 import { OutputTimeRange } from "./shared"
-
-// ---------------------------------------------------------------------------------------------
-// audit_setup (mirrors AuditSetupData)
 
 export const SetupAuditCheckRow = Schema.Struct({
 	/** Stable check id, e.g. `CFG-ALERT-03`. */
@@ -44,9 +40,6 @@ export const AuditSetupOutput = Schema.Struct({
 	includePassing: Schema.optionalKey(Schema.Boolean),
 })
 
-// ---------------------------------------------------------------------------------------------
-// get_instrumentation_recommendations (mirrors GetInstrumentationRecommendationsData)
-
 export const InstrumentationRecommendationRow = Schema.Struct({
 	id: Schema.String,
 	number: Schema.Number,
@@ -83,9 +76,6 @@ export const GetInstrumentationRecommendationsOutput = Schema.Struct({
 	/** The status filter that applied: a recommendation status, or `all`. */
 	statusFilter: Schema.optionalKey(Schema.String),
 })
-
-// ---------------------------------------------------------------------------------------------
-// Source code (GitHub App reads)
 
 export const ListSourceRepositoriesOutput = Schema.Struct({
 	repositories: Schema.Array(
@@ -137,9 +127,6 @@ export const ReadSourceFileOutput = Schema.Struct({
 	/** The source lines from `startLine`, unnumbered. */
 	lines: Schema.Array(Schema.String),
 })
-
-// ---------------------------------------------------------------------------------------------
-// Repository sandbox
 
 const SandboxRun = {
 	repository: Schema.String,
@@ -193,9 +180,6 @@ export const SandboxExecOutput = Schema.Struct({
 	truncated: Schema.Boolean,
 	maxOutputBytes: Schema.Number,
 })
-
-// ---------------------------------------------------------------------------------------------
-// Pull requests (the review agent's reads)
 
 export const ChangedFileKind = Schema.Literals([
 	"source",

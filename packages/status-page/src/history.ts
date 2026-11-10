@@ -22,7 +22,6 @@ const dayMs = (day: string): number => {
 	return Date.UTC(year, month - 1, date)
 }
 
-/** `day` moved by `offset` days. */
 export const shiftDay = (day: string, offset: number): string => utcDay(dayMs(day) + offset * DAY_MS)
 
 /** `Oct 2026` for a `YYYY-MM-DD` day. */

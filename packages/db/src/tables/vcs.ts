@@ -39,9 +39,6 @@ import { Sources } from "./sources"
 // discriminator; GitHub-specific concepts never reach this layer. External
 // provider ids (installation/repo/account) are stored as TEXT for
 // cross-provider generality. Timestamps are stored as `timestamptz`.
-//
-// IMPORTANT: only `VcsRepository` (apps/api/src/services/vcs/VcsRepository.ts)
-// may import these tables. All other code goes through that repo service.
 
 /** Who a before-merge step came from: read off the diff, or named by the reviewer. */
 export const PrReviewMergeStepSourceSchema = Schema.Literals(["diff", "reviewer"])

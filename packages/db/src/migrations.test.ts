@@ -127,7 +127,7 @@ describe("migrations", () => {
 	 * A migration is only recorded in the deploy's ledger after the whole file
 	 * succeeds, so one that dies halfway leaves the branch with some of
 	 * its DDL applied and no record of it — and every retry replays from the top
-	 * and fails on what it already created. `planned_investigations` (0035) hit exactly that on `main`
+	 * and fails on what it already created. `planned_investigations` hit exactly that on `main`
 	 * (`42701 duplicate_column` on `lens_name`), and the only fixes that do not
 	 * involve hand-writing production state are idempotent DDL.
 	 *
@@ -155,7 +155,7 @@ describe("migrations", () => {
 
 // The bundled migrations are applied to a fresh PGlite instance via a single
 // `exec()` (see readBundledMigrationsSql). This guards two things at once:
-//   1. Every migration — including the Electric publication (0009) — parses and
+//   1. Every migration, including `electric_publication`, parses and
 //      applies in PGlite, so the test harness never breaks on new DDL.
 //   2. The ElectricSQL publication + REPLICA IDENTITY FULL actually land, which
 //      is what Electric needs to serve these tables as shapes.
@@ -169,17 +169,17 @@ describe("bundled migrations", () => {
 		"alert_rules",
 		"alert_rule_states",
 		"alert_incidents",
-		// Wave 1 (0011_electric_publication_wave1)
+		// Wave 1 (`electric_publication_wave1`)
 		"alert_destinations",
-		// API-key live reads (0014_electric_publication_api_keys)
+		// API-key live reads (`electric_publication_api_keys`)
 		"api_keys",
-		// Investigation detail page (0037_electric_publication_investigations);
-		// its lane table was dropped again by 0058.
+		// Investigation detail page (`electric_publication_investigations`);
+		// its lane table was dropped again by `drop_investigation_lanes`.
 		"investigations",
 	]
 
-	// Published by 0009/0011, then pruned by 0022 once their client collections were
-	// removed. Asserted explicitly so re-adding a table to the publication without a
+	// Published by the first two waves, then pruned by `electric_publication_prune` once
+	// their client collections were removed. Asserted explicitly so re-adding a table to the publication without a
 	// consumer (or a prune migration that silently no-ops) fails here.
 	const UNSYNCED_TABLES = ["error_issues", "actors", "error_incidents", "scrape_target_checks"]
 
@@ -202,15 +202,15 @@ describe("bundled migrations", () => {
 		//    set to FULL"}
 		// and that is unconditional: it holds with and without a `where`, with and
 		// without a `columns` projection, and with (org_id, id) present in a USING INDEX
-		// identity. So the reasoning in 0009's header is wrong in its details — DEFAULT
-		// keys deletes on the primary key perfectly well, composite or not — but its
+		// identity. So the reasoning in `electric_publication`'s header is wrong in its details: DEFAULT
+		// keys deletes on the primary key perfectly well, composite or not, but its
 		// conclusion is binding: a published table MUST be FULL.
 		//
 		// This costs real money. FULL makes every UPDATE write the entire old row into
 		// the WAL on top of the new one, and those bytes are billed PlanetScale egress
 		// on their way to Electric Cloud. Since the per-write cost is not negotiable,
 		// the only lever on these tables is the *write rate* — which is why the
-		// scheduler claim lock moved to the unpublished `alert_rule_claims` (0027) and
+		// scheduler claim lock moved to the unpublished `alert_rule_claims` and
 		// why `api_keys.last_used_at` is heartbeat-gated in ApiKeysService. Do not try
 		// to reclaim this by relaxing the replica identity; Electric will 400 the shape
 		// and the synced lists will fail to load outright.
@@ -222,7 +222,7 @@ describe("bundled migrations", () => {
 			expect(row.relreplident, `${row.relname} replica identity`).toBe("f")
 		}
 
-		// The scheduler claim lock (0027) must stay out of the publication: it is
+		// The scheduler claim lock must stay out of the publication: it is
 		// written once per enabled rule per minute, which is precisely the churn that
 		// splitting it off `alert_rules` was meant to keep off the replication stream.
 		expect(Arr.map(members.rows, (r) => r.tablename)).not.toContain("alert_rule_claims")
@@ -260,7 +260,7 @@ describe("bundled migrations", () => {
 		).sort()
 
 	// The fresh EU database had an empty publication before the first migration ran,
-	// so 0009's CREATE PUBLICATION hit duplicate_object and its handler rolled back the
+	// so `electric_publication`'s CREATE PUBLICATION hit duplicate_object and its handler rolled back the
 	// whole block, REPLICA IDENTITY FULL included.
 	it("converges on the synced tables when the publication exists before any migration", async () => {
 		const pg = new PGlite()

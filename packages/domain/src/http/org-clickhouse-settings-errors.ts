@@ -1,7 +1,6 @@
 import { Schema } from "effect"
 import { HttpTaggedError } from "./error-policy"
 
-/** The caller is not allowed to manage the organization's ClickHouse connection. */
 export class OrgClickHouseSettingsForbiddenError extends HttpTaggedError<OrgClickHouseSettingsForbiddenError>()(
 	"@maple/http/errors/OrgClickHouseSettingsForbiddenError",
 	{ message: Schema.String },
@@ -15,7 +14,6 @@ export class OrgClickHouseSettingsForbiddenError extends HttpTaggedError<OrgClic
 	},
 ) {}
 
-/** Caller-supplied ClickHouse settings do not pass validation. */
 export class OrgClickHouseSettingsValidationError extends HttpTaggedError<OrgClickHouseSettingsValidationError>()(
 	"@maple/http/errors/OrgClickHouseSettingsValidationError",
 	{ message: Schema.String },
@@ -29,7 +27,6 @@ export class OrgClickHouseSettingsValidationError extends HttpTaggedError<OrgCli
 	},
 ) {}
 
-/** Maple could not load or persist the organization's ClickHouse settings. */
 export class OrgClickHouseSettingsPersistenceError extends HttpTaggedError<OrgClickHouseSettingsPersistenceError>()(
 	"@maple/http/errors/OrgClickHouseSettingsPersistenceError",
 	{ message: Schema.String },
@@ -37,14 +34,14 @@ export class OrgClickHouseSettingsPersistenceError extends HttpTaggedError<OrgCl
 		status: 503,
 		code: "clickhouse_settings_unavailable",
 		title: "Data connection settings temporarily unavailable",
-		message: "Maple couldn't load or save this organization's data connection settings. Retry in a few seconds.",
+		message:
+			"Maple couldn't load or save this organization's data connection settings. Retry in a few seconds.",
 		retry: "backoff",
 		recovery: "retry",
 		exposure: "redacted",
 	},
 ) {}
 
-/** Maple could not decrypt the organization's saved ClickHouse credentials. */
 export class OrgClickHouseSettingsEncryptionError extends HttpTaggedError<OrgClickHouseSettingsEncryptionError>()(
 	"@maple/http/errors/OrgClickHouseSettingsEncryptionError",
 	{ message: Schema.String },
@@ -59,7 +56,6 @@ export class OrgClickHouseSettingsEncryptionError extends HttpTaggedError<OrgCli
 	},
 ) {}
 
-/** Saved settings no longer satisfy the runtime connection invariants. */
 export class OrgClickHouseSettingsStoredConfigInvalidError extends HttpTaggedError<OrgClickHouseSettingsStoredConfigInvalidError>()(
 	"@maple/http/errors/OrgClickHouseSettingsStoredConfigInvalidError",
 	{ message: Schema.String, cause: Schema.Defect() },
@@ -91,7 +87,6 @@ export class OrgClickHouseSettingsUpstreamRejectedError extends HttpTaggedError<
 	},
 ) {}
 
-/** The configured ClickHouse service could not be reached. */
 export class OrgClickHouseSettingsUpstreamUnavailableError extends HttpTaggedError<OrgClickHouseSettingsUpstreamUnavailableError>()(
 	"@maple/http/errors/OrgClickHouseSettingsUpstreamUnavailableError",
 	{

@@ -176,10 +176,6 @@ export class UsersFacetsResponse extends Schema.Class<UsersFacetsResponse>("User
 	anonymousVisitors: Schema.Number,
 }) {}
 
-// ---------------------------------------------------------------------------
-// /users/:userId
-// ---------------------------------------------------------------------------
-
 export class UserDetailRequest extends Schema.Class<UserDetailRequest>("UserDetailRequest")({
 	...windowFields,
 	userId: EndUserId,

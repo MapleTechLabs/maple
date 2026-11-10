@@ -307,7 +307,6 @@ export const publicHttpErrorPolicy = <Error extends SelfDescribingHttpError>(
 ): PublicHttpErrorPolicy<Error, PublicHttpErrorStatusOf<Error>> =>
 	publicHttpErrorDefinitionFor<Error>(error.constructor).policy
 
-/** Read the tag and public policy owned by an error class. */
 export function publicHttpErrorDefinitionFor<Error extends SelfDescribingHttpError>(
 	errorClass: Function,
 ): PublicHttpErrorClassDefinition<Error, Error["_tag"], PublicHttpErrorStatusOf<Error>>

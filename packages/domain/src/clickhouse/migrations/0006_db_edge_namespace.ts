@@ -125,7 +125,6 @@ export const migration_0006_db_edge_namespace = {
 	description:
 		"Split service-map DB rollups by database identity: rebuild db-edge/query-shape sorting keys with DbNamespace and recreate their MVs",
 	statements: [
-		// --- service_map_db_edges_hourly -----------------------------------
 		"DROP VIEW IF EXISTS service_map_db_edges_hourly_mv",
 		"DROP TABLE IF EXISTS service_map_db_edges_hourly__v6",
 		`CREATE TABLE IF NOT EXISTS service_map_db_edges_hourly__v6 (
@@ -186,7 +185,6 @@ FROM traces
 WHERE ${DB_SPAN_WHERE}
 GROUP BY OrgId, Hour, ServiceName, DbSystem, DbNamespace, DeploymentEnv`,
 
-		// --- service_map_db_query_shapes_hourly -----------------------------
 		"DROP VIEW IF EXISTS service_map_db_query_shapes_hourly_mv",
 		"DROP TABLE IF EXISTS service_map_db_query_shapes_hourly__v6",
 		`CREATE TABLE IF NOT EXISTS service_map_db_query_shapes_hourly__v6 (

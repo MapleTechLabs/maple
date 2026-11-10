@@ -18,7 +18,6 @@ export interface BackfillSpec {
 	readonly kind: "backfill"
 	/** Destination table (Maple-managed, unqualified). */
 	readonly target: string
-	/** Explicit destination column list, in INSERT order. */
 	readonly columns: ReadonlyArray<string>
 	/** Source table the SELECT reads from (must have a known time column). */
 	readonly from: string

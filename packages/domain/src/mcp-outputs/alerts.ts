@@ -1,4 +1,3 @@
-/** Output schemas for the alerts MCP tools. */
 import { Schema } from "effect"
 import { QueryBuilderQueryDraftSchema } from "@maple/query-model"
 import { AlertIncidentLabels, AlertSeriesFailure } from "../http/alerts"

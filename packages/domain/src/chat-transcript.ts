@@ -64,7 +64,7 @@ export const makeChatTranscript = (): ChatTranscript => {
 			// A task-tagged event belongs to a sub-agent's transcript, which hangs off the parent's
 			// `task` tool call — not to the top-level conversation. Routing it here is what keeps a
 			// fan-out of sub-agents from appearing as a dozen stray assistant messages, in the
-			// browser *and* in what `toLlmMessages` replays to the model on the next turn.
+			// browser *and* in what is replayed to the model on the next turn.
 			if (event.type !== "user-message" && event.task !== undefined) {
 				foldTaskEvent(top, nested, event, event.task, createdAt)
 				return
@@ -190,7 +190,7 @@ const foldInto = (
 		}
 		case "turn-retry": {
 			// Undo the text of the attempt that failed. The clamp is not defensive noise:
-			// `Stream.takeWhile(holdsTurn)` in `turn-runner.ts` can drop appends between a delta and
+			// `Stream.takeWhile(holdsTurn)` in `apps/ai/src/chat/run.ts` can drop appends between a delta and
 			// the retraction that accounts for it, so `retractChars` can legitimately exceed what
 			// actually landed.
 			const message = open(event.messageId)

@@ -12,14 +12,9 @@ import {
 } from "../primitives"
 import { HttpTaggedError } from "./error-policy"
 
-// The dashboard *document* schema lives in `../dashboard`, which is versioned.
-// This module keeps the HTTP request/response envelopes and tagged errors. The
-// v1 endpoint group that used to live here is gone — `/v2/dashboards` replaced
-// it — but the v2 contract and the dashboard services still import these types.
-//
-// Every document-shape name is re-exported below so importing from
-// `@maple/domain/http` keeps working unchanged. New code should prefer
-// `@maple/domain/dashboard`.
+// The versioned dashboard *document* schema lives in `@maple/widgets/dashboard`;
+// this module keeps the HTTP envelopes and tagged errors. Document-shape names are
+// re-exported so `@maple/domain/http` imports keep working.
 export {
 	DASHBOARD_MAX_SECTIONS,
 	DASHBOARD_MAX_TABS_PER_SECTION,
@@ -67,8 +62,6 @@ export class DashboardDeleteResponse extends Schema.Class<DashboardDeleteRespons
 		txid: Schema.optionalKey(PostgresTransactionId),
 	},
 ) {}
-
-// Versions / history
 
 export const DashboardVersionChangeKind = Schema.Literals([
 	"created",
@@ -235,8 +228,6 @@ export class DashboardConcurrencyError extends HttpTaggedError<DashboardConcurre
 		exposure: "public_message",
 	},
 ) {}
-
-// Templates
 
 export class DashboardTemplateParameter extends Schema.Class<DashboardTemplateParameter>(
 	"DashboardTemplateParameter",

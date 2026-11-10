@@ -19,10 +19,6 @@ export {
 	AnomalyTriageStatus,
 } from "../anomalies"
 
-// Literals
-
-// Documents
-
 /**
  * One fingerprint participating in a (possibly consolidated) error-spike
  * incident. Co-onset fingerprints on the same service+env share one incident
@@ -130,8 +126,6 @@ export class AnomalyDetectorSettingsUpdateRequest extends Schema.Class<AnomalyDe
 	sensitivity: Schema.optionalKey(AnomalySensitivity),
 	mutedSignals: Schema.optionalKey(Schema.Array(AnomalySignalType)),
 }) {}
-
-// Errors
 
 export class AnomalyPersistenceError extends HttpTaggedError<AnomalyPersistenceError>()(
 	"@maple/http/anomalies/AnomalyPersistenceError",

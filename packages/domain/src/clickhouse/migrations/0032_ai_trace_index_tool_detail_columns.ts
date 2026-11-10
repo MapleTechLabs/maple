@@ -15,7 +15,7 @@
  * Every one of those facts belongs to the tool span itself, so they become
  * columns: `ErrorType` from `error.type`, `StatusMessage` truncated to
  * `GENAI_STATUS_MESSAGE_MAX`, and `ToolDescription` — `gen_ai.tool.description`
- * or the OpenInference spelling — truncated to `GENAI_TOOL_DESCRIPTION_MAX`.
+ * or the OpenInference spelling, truncated.
  * `ToolDescription` is a plain String, not LowCardinality: a description is
  * prose and several frameworks template it per call. The modal still reads the
  * spans for the call's arguments and result, but over the occurrences' own
@@ -24,9 +24,8 @@
  * Two more columns group failures by what went wrong. Several agent frameworks
  * record a failed tool call as an `Ok` span with no status message and the
  * error only in the call's result, so `FailedToolCallResult` carries that
- * result — `gen_ai.tool.call.result` or the Vercel AI SDK spelling, truncated to
- * `GENAI_FAILED_TOOL_CALL_RESULT_MAX` — on failed tool calls, and `''`
- * elsewhere. `ErrorFingerprint` is `cityHash64` of that result, else of the
+ * result (`gen_ai.tool.call.result` or the Vercel AI SDK spelling, truncated) on
+ * failed tool calls, and `''` elsewhere. `ErrorFingerprint` is `cityHash64` of that result, else of the
  * status message, cut to `GENAI_ERROR_FINGERPRINT_CHARS` and passed through the
  * `MSG_TEXT_REDACTIONS` chain `error_events` fingerprints messages with, so an
  * array index or an elapsed time does not split one failure into many; `0` on a

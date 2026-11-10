@@ -182,7 +182,6 @@ export const PullRequestSummary = Schema.Struct({
 })
 export type PullRequestSummary = Schema.Schema.Type<typeof PullRequestSummary>
 
-/** One file of a pull request's diff, as the provider reports it. */
 export const PullRequestFileStatus = Schema.Literals([
 	"added",
 	"modified",
@@ -194,6 +193,7 @@ export const PullRequestFileStatus = Schema.Literals([
 ])
 export type PullRequestFileStatus = Schema.Schema.Type<typeof PullRequestFileStatus>
 
+/** One file of a pull request's diff, as the provider reports it. */
 export const PullRequestFile = Schema.Struct({
 	path: Schema.String,
 	previousPath: Schema.NullOr(Schema.String),
@@ -567,7 +567,6 @@ export const PullRequestChecklistJob = Schema.Struct({
 	repoFullName: Schema.String,
 	number: Schema.Number,
 	commentId: Schema.String,
-	/** Who edited the comment. */
 	editorLogin: Schema.String,
 	ticks: Schema.Array(Schema.Struct({ key: Schema.String, done: Schema.Boolean })),
 	deliveryId: Schema.optionalKey(Schema.String),

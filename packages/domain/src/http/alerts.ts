@@ -144,7 +144,6 @@ export const AlertIncidentHoldReason = Schema.Literals([
 })
 export type AlertIncidentHoldReason = Schema.Schema.Type<typeof AlertIncidentHoldReason>
 
-/** Where an acknowledgement came from. */
 export const AlertIncidentAckSource = Schema.Literals(["web", "api", "mcp", "slack", "discord"]).annotate({
 	identifier: "@maple/AlertIncidentAckSource",
 	title: "Alert Incident Acknowledgement Source",
@@ -855,7 +854,6 @@ export class AlertRuleDocument extends Schema.Class<AlertRuleDocument>("AlertRul
 	slowedIntervalMinutes: Schema.NullOr(AlertEvaluationIntervalMinutes),
 	slowedAt: Schema.NullOr(IsoDateTimeString),
 	lastEvaluatedAt: Schema.NullOr(IsoDateTimeString),
-	/** Last time the scheduler picked this rule up for evaluation. */
 	lastScheduledAt: Schema.NullOr(IsoDateTimeString),
 	createdAt: IsoDateTimeString,
 	updatedAt: IsoDateTimeString,
@@ -997,12 +995,6 @@ export class AlertQueryTiming extends Schema.Class<AlertQueryTiming>("AlertQuery
 	fitsIntervalMinutes: Schema.Array(AlertEvaluationIntervalMinutes),
 }) {}
 
-/**
- * Evaluator-faithful preview of an alert rule over a time range: the exact
- * per-window observations the scheduler computes (tumbling `windowMinutes`
- * buckets — the live scheduler slides every tick, so `wouldFire` spans are an
- * approximation between bucket boundaries).
- */
 /** Why a raw SQL preview has no series: too heavy to chart, or no time bucket. */
 export const AlertSeriesFailure = Schema.Literals([
 	"query_too_slow",
@@ -1010,6 +1002,10 @@ export const AlertSeriesFailure = Schema.Literals([
 	"not_time_grouped",
 ])
 
+/**
+ * Evaluator-faithful preview over a time range, in tumbling `windowMinutes` buckets. The live
+ * scheduler slides every tick, so `wouldFire` spans are approximate between bucket boundaries.
+ */
 export class AlertRulePreviewResponse extends Schema.Class<AlertRulePreviewResponse>(
 	"AlertRulePreviewResponse",
 )({
@@ -1406,19 +1402,9 @@ export class AlertIncidentResolvedError extends HttpTaggedError<AlertIncidentRes
 	},
 ) {}
 
-// Alert delivery failures are one class per failure mode, discriminated by
-// `_tag`/`catchTags`, for the same reason the warehouse errors are (see the
-// header comment in `warehouse-errors.ts`): `retryable` is derived from the
-// class policy and baked into each endpoint's OpenAPI as a literal, so a
-// `reason` field inside a single class could not change it without the
-// published schema lying.
-//
-// It also matters operationally. Every delivery failure used to be one
-// `AlertDeliveryError` carrying `retry: "backoff"`, and the queue reads
-// `error.error.retryable` to decide whether to re-enqueue — so a destination
-// whose token had been revoked was retried the full `MAX_DELIVERY_ATTEMPTS`
-// against a provider that would never accept it. Splitting the class is what
-// makes "reconfigure the channel" terminal.
+// One class per delivery failure mode: `retryable` comes from the class policy and is
+// baked into each endpoint's OpenAPI as a literal (see `warehouse-errors.ts`). The queue
+// reads `error.error.retryable` to re-enqueue, so a revoked token must be its own terminal class.
 
 const alertDeliveryErrorFields = {
 	message: Schema.String,

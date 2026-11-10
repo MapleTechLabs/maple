@@ -1,8 +1,6 @@
 import { Schema } from "effect"
 import { QUERY_BUILDER_METRIC_TYPES } from "@maple/query-model"
 
-// Dashboard variables
-
 // Must not start with an underscore so `$name` references can never collide
 // with the `$__` built-in macros ($__startTime, $__timeFilter, ...).
 export const DashboardVariableName = Schema.String.check(

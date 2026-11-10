@@ -293,8 +293,6 @@ export const V2UserIssueList = Schema.Struct({
 	description: "A page of the issues one user hit, most hits first.",
 })
 
-// Requests
-
 const UsersWindow = {
 	start_time: Timestamp.annotate({ description: "Window start (ISO-8601). Required." }),
 	end_time: Timestamp.annotate({

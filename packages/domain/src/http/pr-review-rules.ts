@@ -144,7 +144,6 @@ const isCategory = Schema.is(PrReviewCategory)
 const isTestSignal = Schema.is(PrReviewTestSignal)
 const isRisk = Schema.is(PrReviewRisk)
 
-/** A finding the review can post: it names a file and a line, and says what is wrong. */
 const MAX_FINDINGS = 50
 const MAX_COVERAGE = 50
 const MAX_TEXT = 4_000

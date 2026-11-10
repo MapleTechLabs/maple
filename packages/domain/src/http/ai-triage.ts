@@ -8,10 +8,6 @@ import { normalizeRepoFullName } from "./vcs"
 import { AiTriageResult, AiTriageSuspectCommit, SUSPECT_SHA } from "../ai-triage"
 export { AiTriageEvidence, AiTriageIncidentKind, AiTriageResult, AiTriageSuspectCommit } from "../ai-triage"
 
-// Literals
-
-// Structured triage result (what the agent must submit)
-
 /**
  * What `submit_diagnosis` accepts off the wire, as opposed to what a stored report is.
  *
@@ -114,11 +110,10 @@ export type AiTriageSubmission = Schema.Schema.Type<typeof AiTriageSubmission>
 const TRIAGE_SEVERITIES: ReadonlySet<string> = new Set(["critical", "high", "medium", "low"])
 const TRIAGE_CONFIDENCES: ReadonlySet<string> = new Set(["high", "medium", "low"])
 
-/** A usable suspect commit, or undefined: a malformed one is dropped, never fatal to the report. */
-/** A string or number as text; anything else is not a value we can use. */
 const textOf = (value: unknown): string | undefined =>
 	typeof value === "string" ? value : typeof value === "number" ? String(value) : undefined
 
+/** A malformed suspect commit is dropped, never fatal to the report. */
 const suspectCommitOf = (value: unknown): AiTriageSuspectCommit | undefined => {
 	const raw = Predicate.isObject(value) ? value : { sha: value }
 	const sha = Str.toLowerCase(
@@ -274,8 +269,6 @@ export class AiTriageSettingsUpdateRequest extends Schema.Class<AiTriageSettings
 	),
 }) {}
 
-// Errors
-
 export class AiTriagePersistenceError extends Schema.TaggedError<AiTriagePersistenceError>()(
 	"@maple/http/ai-triage/AiTriagePersistenceError",
 	{
@@ -300,8 +293,6 @@ export class AiTriageValidationError extends Schema.TaggedError<AiTriageValidati
 	},
 	{ httpApiStatus: 400 },
 ) {}
-
-// API group
 
 export class AiTriageApiGroup extends HttpApiGroup.make("aiTriage")
 	.add(

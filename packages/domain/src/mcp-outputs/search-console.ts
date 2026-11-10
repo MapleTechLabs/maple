@@ -1,4 +1,3 @@
-/** Output schemas for the Search Console MCP tools: imported Google search performance per property. */
 import { Schema } from "effect"
 import { OutputTimeRange } from "./shared"
 
@@ -31,8 +30,6 @@ export const SearchConsoleSiteState = Schema.Struct({
 	otherSites: Schema.Array(Schema.String),
 })
 
-// search_console_queries
-
 export const SearchConsoleQueryRow = Schema.Struct({ query: Schema.String, ...MetricFields })
 
 export const SearchConsoleQueriesOutput = Schema.Struct({
@@ -49,8 +46,6 @@ export const SearchConsoleQueriesOutput = Schema.Struct({
 	queries: Schema.Array(SearchConsoleQueryRow),
 	truncated: Schema.Boolean,
 })
-
-// search_console_pages
 
 export const SearchConsolePageRow = Schema.Struct({
 	/** The most clicked URL Google reported for this host + path. */

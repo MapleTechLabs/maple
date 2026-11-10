@@ -5,22 +5,12 @@ import {
 	OrgClickHouseSettingsStoredConfigInvalidError,
 } from "./org-clickhouse-settings-errors"
 
-// Pure error definitions for warehouse queries. This module imports only
-// Effect Schema and other error-only modules — never `effect/http-api` — so non-HTTP consumers
-// (`@maple/query-engine/observability`, the CLI executors) can import these
-// classes without pulling the HttpApi AST builder into their bundles.
-// `warehouse.ts` re-exports everything here and owns the `WarehouseApiGroup`.
+// Pure error definitions for warehouse queries: Effect Schema and error-only modules, never
+// `effect/http-api`, so non-HTTP consumers (`@maple/query-engine/observability`, the CLI executors)
+// skip the HttpApi AST builder. `warehouse.ts` re-exports everything here.
 //
-// Each distinct warehouse failure mode is its own `Schema.TaggedError`,
-// discriminated by `_tag` / `instanceof` / `catchTags` rather than a stringly-
-// typed `category` field. This used to be a single `WarehouseQueryError` with a
-// `category` literal; it was kept that way to avoid adding TaggedError classes
-// to every endpoint's error union (a concern that adding ~7 classes × ~30
-// endpoints would blow Cloudflare Workers' script-startup CPU budget — error
-// 10021). That concern is obsolete: `apps/api/src/worker.ts` lazy-imports the
-// route graph behind `await import("./app")`, so Cloudflare's upload-validation
-// pass never evaluates these Schema ASTs (they build on the first request,
-// under the far larger per-request budget).
+// One tagged error per failure mode. The Workers startup CPU budget (error 10021) that once argued
+// for a single class no longer applies: `apps/api/src/worker/http.ts` lazy-imports the route graph.
 
 // Fields common to errors created by the SQL classifier/executor. Route
 // dependencies keep their own tagged errors instead of being copied into this

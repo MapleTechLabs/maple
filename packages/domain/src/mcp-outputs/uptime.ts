@@ -1,9 +1,6 @@
 import { Schema } from "effect"
 import { UptimeMonitorKind, UptimeMonitorStatus } from "../primitives"
 
-// ---------------------------------------------------------------------------------------------
-// list_uptime_monitors / create_uptime_monitor / update_uptime_monitor / delete_uptime_monitor
-
 export const UptimeMonitorLastCheckRow = Schema.Struct({
 	at: Schema.String,
 	ok: Schema.Boolean,

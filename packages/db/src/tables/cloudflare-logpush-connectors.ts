@@ -5,8 +5,7 @@ import { Sources } from "./sources"
 // NOTE: the manual connector CRUD (CloudflareLogpushService + UI) was removed in favor of the
 // account OAuth integration, but this table intentionally stays: the Rust ingest gateway's
 // `/v1/logpush/cloudflare/...` receiver resolves connector secrets from it (existing jobs keep
-// flowing), OrganizationService purges it on org deletion, and the upcoming OAuth-driven Logpush
-// auto-provisioning will create rows here programmatically instead of via manual setup.
+// flowing), and OrganizationService purges it on org deletion.
 export const CloudflareLogpushConnectors = PG.table("cloudflare_logpush_connectors", {
 	columns: {
 		id: PG.text,

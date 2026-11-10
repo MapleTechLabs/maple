@@ -1,4 +1,3 @@
-/** Output schemas for the escalation chain MCP tools. */
 import { Schema } from "effect"
 
 const NullableString = Schema.NullOr(Schema.String)

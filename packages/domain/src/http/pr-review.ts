@@ -353,14 +353,6 @@ export class PrReviewReport extends Schema.Class<PrReviewReport>("PrReviewReport
 	beforeMerge: Schema.optionalKey(Schema.Array(PrReviewMergeStep)),
 }) {}
 
-/**
- * What `submit_review` accepts off the wire.
- *
- * Every field is optional, for the reason `AiTriageSubmission` is: the engine decodes a tool call's
- * arguments before the handler runs, and a decode failure ends the run. A review that read every
- * hunk and wrote most of a report must not be thrown away over one absent key. The handler
- * normalizes and records what it dropped.
- */
 /** Models quote numbers and booleans (`"12"`, `"true"`) and send `null` for a field they skip; a strict decode here ends the run. */
 const LenientNumber = Schema.Union([Schema.Number, Schema.String])
 const LenientBoolean = Schema.Union([Schema.Boolean, Schema.String])
@@ -402,6 +394,10 @@ export const PrReviewChildDismissalSubmission = Schema.Struct({
 	reason: Schema.optionalKey(Schema.NullOr(Schema.String)),
 })
 
+/**
+ * What `submit_review` accepts off the wire. Every field is optional: the engine decodes a tool call
+ * before the handler runs, and a decode failure would throw away a nearly finished review.
+ */
 export const PrReviewSubmission = Schema.Struct({
 	/** Handles of earlier open findings this head fixes, as the kickoff listed them. */
 	resolved: Schema.optionalKey(Schema.NullOr(LenientArray(Schema.String))),
@@ -511,8 +507,6 @@ export const PrReviewEditSubmission = Schema.Struct({
 	newText: Schema.String,
 })
 export type PrReviewEditSubmission = Schema.Schema.Type<typeof PrReviewEditSubmission>
-
-// Errors
 
 export class PrReviewPersistenceError extends HttpTaggedError<PrReviewPersistenceError>()(
 	"@maple/http/pr-review/PrReviewPersistenceError",

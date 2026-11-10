@@ -24,7 +24,6 @@ export const EscalationScheduleTarget = Schema.Struct({
 	scheduleId: OnCallScheduleId,
 })
 
-/** Who a step notifies. */
 export const EscalationTarget = Schema.Union([
 	EscalationDestinationTarget,
 	EscalationUserTarget,
