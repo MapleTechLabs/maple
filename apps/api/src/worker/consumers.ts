@@ -5,7 +5,6 @@
  * layer graph and one Postgres socket for the batch.
  */
 import * as Cloudflare from "@alchemy.run/cloudflare"
-import { renamedFrom } from "alchemy/Rename"
 import { Effect, Layer, Stream } from "effect"
 import { DatabasePgLive } from "@maple/backend/platform/DatabasePgLive"
 import { AuditEventsDlq, AuditEventsQueue } from "@maple/infra/cloudflare"
@@ -17,13 +16,13 @@ import {
 } from "../resources/queues"
 import type { ApiPortsLayer } from "./bindings"
 import type { VcsSyncIsolateCaches } from "@maple/backend/services/integrations/vcs/vcs-sync-isolate-caches"
+import { AUDIT_EVENTS_MAX_RETRIES, CANCELLATION_REVIEW_MAX_RETRIES } from "../queue-retry-limits"
 import { runEvent } from "./events"
 import { auditEventsModule, cancellationReviewModule, planetScaleWebhookModule } from "./modules"
 import { consumeVcsSyncBatch } from "./vcs-sync"
 import { VCS_SYNC_BATCH_SIZE, VCS_SYNC_MAX_RETRIES } from "./vcs-sync-dispatch"
 
-// Consumer settings. The audit consumer's `maxRetries` must stay in sync with
-// AUDIT_EVENTS_MAX_RETRIES in audit-events-runtime.ts, which logs the drop on
+// Consumer settings. Each `maxRetries` is the constant its batch handler reads to log the drop on
 // the final attempt. The VCS one reads its constants from the batch route, which caps a request at them.
 const VCS_SYNC_CONSUMER = {
 	batchSize: VCS_SYNC_BATCH_SIZE,
@@ -33,12 +32,11 @@ const VCS_SYNC_CONSUMER = {
 } satisfies Cloudflare.Queues.MessagesProps
 const PLANETSCALE_WEBHOOKS_CONSUMER = VCS_SYNC_CONSUMER
 // A review is up to a minute of upstream reads and one model call: one per
-// invocation, few at once. The consumer sets each retry's delay; `maxRetries`
-// must match CANCELLATION_REVIEW_MAX_RETRIES in cancellation-review-runtime.ts.
+// invocation, few at once. The consumer sets each retry's delay.
 const CANCELLATION_REVIEWS_CONSUMER = {
 	batchSize: 1,
 	maxConcurrency: 2,
-	maxRetries: 5,
+	maxRetries: CANCELLATION_REVIEW_MAX_RETRIES,
 	maxWaitTime: "1 second",
 } satisfies Cloudflare.Queues.MessagesProps
 // Audit entries tolerate a few seconds of delivery latency; batch wider and
@@ -46,17 +44,14 @@ const CANCELLATION_REVIEWS_CONSUMER = {
 const auditEventsConsumer = (deadLetterQueue: string | undefined): Cloudflare.Queues.MessagesProps => ({
 	batchSize: 25,
 	maxConcurrency: 2,
-	maxRetries: 5,
+	maxRetries: AUDIT_EVENTS_MAX_RETRIES,
 	maxWaitTime: "5 seconds",
 	deadLetterQueue,
 })
 
 /**
  * Attaches the five consumers to the host at plan time and their listeners
- * at runtime. Needs `Queues.EventSourceLive`. `renamedFrom` carries the
- * consumer resources over from the ids the api factory declared them under,
- * so the deploy migrates their state rows instead of re-creating the
- * consumers; drop it once every stage has deployed past it.
+ * at runtime. Needs `Queues.EventSourceLive`.
  */
 export const registerQueueConsumers = (
 	ports: ApiPortsLayer,
@@ -70,7 +65,7 @@ export const registerQueueConsumers = (
 			Effect.flatMap(Stream.runCollect(stream), (messages) =>
 				consumeVcsSyncBatch(ports, env, vcsSyncCaches, messages),
 			),
-		).pipe(renamedFrom({ fqn: "vcs-sync-consumer" }))
+		)
 		// Same handler, own consumer: a scheduled sync's backlog drains here without holding up webhooks.
 		const vcsBackfillQueue = yield* VcsBackfillQueue
 		yield* Cloudflare.Queues.consumeQueueMessages(vcsBackfillQueue, VCS_SYNC_CONSUMER, (stream) =>
@@ -96,7 +91,7 @@ export const registerQueueConsumers = (
 							),
 						),
 				),
-		).pipe(renamedFrom({ fqn: "planetscale-webhooks-consumer" }))
+		)
 		const cancellationReviewsQueue = yield* CancellationReviewsQueue
 		yield* Cloudflare.Queues.consumeQueueMessages(
 			cancellationReviewsQueue,
@@ -136,5 +131,5 @@ export const registerQueueConsumers = (
 						),
 					),
 				),
-		).pipe(renamedFrom({ fqn: "audit-events-consumer" }))
+		)
 	})

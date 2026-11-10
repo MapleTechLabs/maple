@@ -13,6 +13,7 @@ import {
 	auditEventToRow,
 	decodeAuditLogEvent,
 } from "@maple/backend/services/audit/audit-event"
+import { AUDIT_EVENTS_MAX_RETRIES } from "./queue-retry-limits"
 
 /**
  * The consumer writes through `WarehouseQueryService.ingest`, which pins every
@@ -24,14 +25,6 @@ import {
 export const AuditEventsLive = WarehouseQueryService.layer.pipe(
 	Layer.provide(Layer.mergeAll(EventBaseLive, EdgeCacheServiceLive)),
 )
-
-/**
- * Must match `maxRetries` on the audit-events consumer in `worker.ts`.
- * Cloudflare routes the message to the DLQ after this many retries without
- * telling us; the check below is what makes the hand-off visible in logs at
- * the moment it happens.
- */
-const AUDIT_EVENTS_MAX_RETRIES = 5
 
 /**
  * Best-effort identity for the exhaustion log. The body reached us as queue
@@ -54,7 +47,9 @@ interface DecodedMessage {
 
 /**
  * Retrying past the limit is what hands the message to the DLQ; acking there
- * would silently discard it instead.
+ * would silently discard it instead. Cloudflare makes that hand-off without
+ * telling us, so the final-attempt check is what puts it in the logs. The
+ * limit is the consumer's own `maxRetries` (`worker/consumers.ts`).
  */
 const retryOrExhaust = (message: Message, cause: unknown) => {
 	const isFinalAttempt = message.attempts > AUDIT_EVENTS_MAX_RETRIES

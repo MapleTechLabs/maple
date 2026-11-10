@@ -107,6 +107,18 @@ export const tinybirdEnv: Config.Config<WorkerEnv> = merge(
 	optionalPlain("TINYBIRD_RAW_SQL_JWT_RPS_LIMIT"),
 )
 
+/**
+ * The managed ClickHouse read endpoint; `WarehouseQueryService` reads through it when
+ * `CLICKHOUSE_URL` is set. Shared by every Worker that queries, so they all read one warehouse.
+ */
+export const clickhouseEnv: Config.Config<WorkerEnv> = merge(
+	optionalPlain("CLICKHOUSE_URL"),
+	plainWithDefault("CLICKHOUSE_PROVIDER", "tinybird"),
+	optionalPlain("CLICKHOUSE_USER"),
+	optionalPlain("CLICKHOUSE_DATABASE"),
+	optionalSecret("CLICKHOUSE_PASSWORD"),
+)
+
 /** Ingest-key envelope encryption + lookup HMAC. Required wherever ingest keys are read. */
 export const ingestKeyCryptoEnv: Config.Config<WorkerEnv> = merge(
 	requireSecretEntry("MAPLE_INGEST_KEY_ENCRYPTION_KEY"),
