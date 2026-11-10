@@ -53,7 +53,7 @@ export const FunnelBreakdownBy = Schema.Union([
 ])
 export type FunnelBreakdownBy = typeof FunnelBreakdownBy.Type
 
-/** The most steps a funnel takes; mirrors `FUNNEL_MAX_STEPS` in the query engine. */
+/** The most steps a funnel takes. */
 export const FUNNEL_MAX_STEPS = 10
 
 /** Sentence-case labels for the session dimensions, shared by every surface that names a step. */

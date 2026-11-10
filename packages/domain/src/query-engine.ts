@@ -1,5 +1,10 @@
 import { Schema, Array as Arr, String as Str } from "effect"
-import { ALERT_REDUCERS } from "@maple/query-model"
+import {
+	ALERT_REDUCERS,
+	QUERY_BUILDER_DATA_SOURCES,
+	QUERY_BUILDER_METRIC_TYPES,
+	QUERY_BUILDER_SPACE_AGGREGATIONS,
+} from "@maple/query-model"
 import { PublicHttpErrorBodySchema } from "./http/error-policy"
 import {
 	CommitSha,
@@ -9,6 +14,7 @@ import {
 	ServiceName,
 	ServiceNamespace,
 	SpanName,
+	StatusCode,
 	TraceId,
 } from "./primitives"
 import { WireRow } from "./wire"
@@ -51,7 +57,7 @@ export type MetricsMetric = Schema.Schema.Type<typeof MetricsMetric>
  * Absent means `defaultSpaceAggregation(metric)`. Histograms ignore it: their
  * buckets merge across series.
  */
-export const MetricsSpaceAggregation = Schema.Literals(["sum", "avg", "min", "max", "count"])
+export const MetricsSpaceAggregation = Schema.Literals(QUERY_BUILDER_SPACE_AGGREGATIONS)
 export type MetricsSpaceAggregation = Schema.Schema.Type<typeof MetricsSpaceAggregation>
 
 export const defaultSpaceAggregation = (metric: MetricsMetric): MetricsSpaceAggregation =>
@@ -60,7 +66,7 @@ export const defaultSpaceAggregation = (metric: MetricsMetric): MetricsSpaceAggr
 /** Group-by keys per query across `groupByAttributeKeys` and `groupByResourceAttributeKeys`. */
 export const MAX_METRICS_GROUP_BY_KEYS = 5
 
-export const MetricType = Schema.Literals(["sum", "gauge", "histogram", "exponential_histogram"])
+export const MetricType = Schema.Literals(QUERY_BUILDER_METRIC_TYPES)
 export type MetricType = Schema.Schema.Type<typeof MetricType>
 
 const attributeFilterFields = {
@@ -107,7 +113,7 @@ export const TracesFilters = Schema.Struct({
 	 */
 	serviceNames: Schema.optional(Schema.Array(ServiceName)),
 	spanNames: Schema.optional(Schema.Array(SpanName)),
-	statusCode: Schema.optional(Schema.Literals(["Ok", "Error", "Unset"])),
+	statusCode: Schema.optional(Schema.Literals(StatusCode.literals)),
 	rootSpansOnly: Schema.optional(Schema.Boolean),
 	environments: Schema.optional(Schema.Array(DeploymentEnvironment)),
 	namespaces: Schema.optional(Schema.Array(ServiceNamespace)),
@@ -444,7 +450,7 @@ export type ProductEventsListQuery = Schema.Schema.Type<typeof ProductEventsList
 
 export const AttributeKeysQuery = Schema.Struct({
 	kind: Schema.Literal("attributeKeys"),
-	source: Schema.Literals(["traces", "logs", "metrics", "product_events"]),
+	source: Schema.Literals(QUERY_BUILDER_DATA_SOURCES),
 	scope: Schema.optional(Schema.Literals(["span", "resource"])),
 	// Scope metrics-source discovery to a single metric (reads the raw metric
 	// table instead of the org-wide hourly rollup). Both fields must be set.
@@ -509,7 +515,7 @@ export type TracesStatsQuery = Schema.Schema.Type<typeof TracesStatsQuery>
 
 export const AttributeValuesQuery = Schema.Struct({
 	kind: Schema.Literal("attributeValues"),
-	source: Schema.Literals(["traces", "logs", "metrics", "product_events"]),
+	source: Schema.Literals(QUERY_BUILDER_DATA_SOURCES),
 	scope: Schema.Literals(["span", "resource", "log", "metric", "event"]),
 	attributeKey: Schema.String,
 	// Scope metrics-source discovery to a single metric (see AttributeKeysQuery),
@@ -661,12 +667,12 @@ export type SparklineSeries = Schema.Schema.Type<typeof SparklineSeries>
 export const QueryEngineResult = Schema.Union([
 	Schema.Struct({
 		kind: Schema.Literal("timeseries"),
-		source: Schema.Literals(["traces", "logs", "metrics", "product_events"]),
+		source: Schema.Literals(QUERY_BUILDER_DATA_SOURCES),
 		data: Schema.Array(TimeseriesPoint),
 	}),
 	Schema.Struct({
 		kind: Schema.Literal("breakdown"),
-		source: Schema.Literals(["traces", "logs", "metrics", "product_events"]),
+		source: Schema.Literals(QUERY_BUILDER_DATA_SOURCES),
 		data: Schema.Array(BreakdownItem),
 	}),
 	Schema.Struct({
@@ -676,7 +682,7 @@ export const QueryEngineResult = Schema.Union([
 	}),
 	Schema.Struct({
 		kind: Schema.Literal("attributeKeys"),
-		source: Schema.Literals(["traces", "logs", "metrics", "product_events"]),
+		source: Schema.Literals(QUERY_BUILDER_DATA_SOURCES),
 		data: Schema.Array(AttributeKeyItem),
 	}),
 	Schema.Struct({
@@ -691,7 +697,7 @@ export const QueryEngineResult = Schema.Union([
 	}),
 	Schema.Struct({
 		kind: Schema.Literal("attributeValues"),
-		source: Schema.Literals(["traces", "logs", "metrics", "product_events"]),
+		source: Schema.Literals(QUERY_BUILDER_DATA_SOURCES),
 		data: Schema.Array(AttributeValueItem),
 	}),
 	Schema.Struct({

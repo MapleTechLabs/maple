@@ -11,6 +11,7 @@
 // same table (`useProductEvents`); this module owns everything funnel-shaped.
 
 import * as CH from "@maple-dev/effect-orm/expr"
+import { FUNNEL_MAX_STEPS } from "@maple/query-model"
 import {
 	param,
 	from,
@@ -182,7 +183,6 @@ export class ProductEventsFunnelError extends Schema.TaggedError<ProductEventsFu
 	},
 ) {}
 
-export const FUNNEL_MAX_STEPS = 10
 export const FUNNEL_BREAKDOWN_MAX_GROUPS = 20
 
 function validate(opts: ProductEventsFunnelOpts): ProductEventsFunnelError | undefined {
