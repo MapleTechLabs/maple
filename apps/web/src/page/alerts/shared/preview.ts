@@ -28,8 +28,9 @@ export type PreviewSlot = typeof PreviewSlot.Type
 const isPreviewQueryReady = (form: RuleFormState): boolean => {
 	// An anomaly rule has no query: the detector's own chart is its evidence.
 	if (form.signalType === "anomaly") return false
-	if (!Number.isFinite(Number(form.threshold))) return false
-	if (isRangeComparator(form.comparator) && !Number.isFinite(Number(form.thresholdUpper))) return false
+	// A blank threshold is missing, not zero: nothing to draw a line at or to ask the server for.
+	if (!isFilledNumber(form.threshold)) return false
+	if (isRangeComparator(form.comparator) && !isFilledNumber(form.thresholdUpper)) return false
 	if (form.signalType === "raw_query") {
 		const sql = Str.trim(form.rawQuerySql)
 		if (sql.length === 0 || !Str.includes("$__orgFilter")(sql)) return false
