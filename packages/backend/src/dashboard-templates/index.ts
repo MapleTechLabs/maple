@@ -1,5 +1,5 @@
 import { chartFamilyForChartId, widgetTypeByVisualization } from "@maple/domain/http"
-import type { DashboardTemplateId, DashboardTemplatePreviewKind } from "@maple/domain/http"
+import type { DashboardTemplatePreviewKind } from "@maple/domain/http"
 import { memoize } from "effect/Function"
 import { blankTemplate } from "./application/blank"
 import { errorTrackingTemplate } from "./application/error-tracking"
@@ -62,10 +62,6 @@ export const DASHBOARD_TEMPLATES: ReadonlyArray<TemplateDefinition> = [
 const TEMPLATE_BY_ID = new Map<string, TemplateDefinition>(Arr.map(DASHBOARD_TEMPLATES, (t) => [t.id, t]))
 
 export function getTemplate(id: string): TemplateDefinition | undefined {
-	return TEMPLATE_BY_ID.get(id)
-}
-
-export function getTemplateById(id: DashboardTemplateId): TemplateDefinition | undefined {
 	return TEMPLATE_BY_ID.get(id)
 }
 
