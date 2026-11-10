@@ -38,7 +38,7 @@ export class LocalQueryCache extends Context.Service<
 	{
 		/** The exact result for `key`, else (windowed keys) its view's newest older window. */
 		readonly lookup: (key: QueryKey) => Effect.Effect<Option.Option<CacheHit>>
-		/** A fetch landed: keep it, and save shortly after (`persistQueryCache`). */
+		/** A fetch landed: keep it, and save shortly after. */
 		readonly record: <A>(key: QueryKey, data: A, updatedAtMs: number) => Effect.Effect<void>
 	}
 >()("@maple/local-ui/LocalQueryCache") {

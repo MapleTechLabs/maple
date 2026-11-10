@@ -10,7 +10,7 @@ export const ReadClock = readClock("ReadServicesClock", Message.CompletedReadClo
 
 export const ReadRefreshClock = readClock("ReadServicesRefreshClock", Message.CompletedReadRefreshClock)
 
-/** One `useCatalog`: an env/ns slice (absent = unfiltered) over the window. */
+/** One catalog read: an env/ns slice (absent = unfiltered) over the window. */
 export const FetchCatalog = Command.define("FetchLocalServiceCatalog", {
 	args: {
 		key: Schema.String,

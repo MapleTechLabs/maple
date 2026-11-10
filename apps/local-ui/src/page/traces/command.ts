@@ -98,7 +98,7 @@ export const FetchNextPage = Command.define("FetchNextLocalTracesPage", {
 			{ timestamp: cursorTimestamp, traceId: cursorTraceId },
 			apiBase,
 		).pipe(
-			// `fetchNextPage` updates the cached query too, so a reload opens on every page loaded.
+			// A next page updates the cached query too, so a reload opens on every page loaded.
 			Effect.tap((page) =>
 				Effect.flatMap(Clock.currentTimeMillis, (atMs) =>
 					recordCached(
@@ -141,7 +141,7 @@ export const FetchFacets = Command.define("FetchLocalTraceFacets", {
 		}).pipe(Effect.catch((failure) => Effect.succeed(Message.FailedFetchFacets({ key, failure })))),
 })
 
-/** `ToolbarSearch`'s and `RangeFilterSection`'s 300 ms pause before a typed value commits. */
+/** The search's and the range filter's 300 ms pause before a typed value commits. */
 const DEBOUNCE = Duration.millis(300)
 
 export const WaitSearchDebounce = Command.define("WaitTracesSearchDebounce", {

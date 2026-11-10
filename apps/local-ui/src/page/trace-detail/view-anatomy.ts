@@ -18,7 +18,7 @@ import { hstack } from "@maple/views/ui/stack"
 import { typography, typographyClass } from "@maple/views/ui/typography"
 import { Array as Arr, Option } from "effect"
 
-// The @maple/ui `TraceAnatomyStrip` as local mode renders it: no start time, no commit.
+// The trace anatomy strip as local mode renders it: no start time, no commit.
 /** An Error status, or an HTTP status in the critical band, anywhere in the trace (as on web). */
 export const traceHasError = (trace: TraceData): boolean => Arr.some(trace.spans, isErrorSpan)
 

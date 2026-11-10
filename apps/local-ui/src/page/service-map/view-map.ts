@@ -28,7 +28,7 @@ const serviceHref =
 const tracesHref = (serviceName: string, range: string): string =>
 	hrefFor("/traces", new URLSearchParams({ scope: "spans", service: serviceName, range }))
 
-/** `renderDetailPanel`: a database node gets its panel, anything else the service panel. */
+/** A database node gets its panel, anything else the service panel. */
 const detailPanel =
 	(h: HtmlBuilder<Message>, data: LocalServiceMapData, map: ServiceMap.Model, inputs: PageViewInputs) =>
 	(selectedId: string): Html => {

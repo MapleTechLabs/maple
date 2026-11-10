@@ -305,7 +305,7 @@ existing copies onto it (see `apps/web/CLAUDE.md`).
 - `apps/local-ui/src/page/kit/connect-guide.ts` `otelEnvBlock`, `connectGuide`: The one "how to send telemetry here" block.
 - `apps/local-ui/src/page/kit/copies.ts` `copyOf`, `updateCopy`: Every copy button a view shows, by id: the owning Model keeps them in one record and folds `CopyButton.update` by id.
 - `apps/local-ui/src/page/kit/filter-rail.ts` `filterRailFrame`: `filterRailFrame`: a page's filter rail at Maple Local's fixed rail width and inset, over the shared `filterSidebarFrame` (which dims while `isWaiting`).
-- `apps/local-ui/src/page/kit/local-time.ts` `formatDateTime`, `formatTimestamp`: lib/time.ts `formatLocalDateTime` / `formatLocalTimestamp` over a locale and zone read once in Flags, so the views never read the browser's locale or zone themselves.
+- `apps/local-ui/src/page/kit/local-time.ts` `formatDateTime`, `formatTimestamp`: Local timestamps over a locale and zone read once in Flags, so the views never read the browser's locale or zone themselves.
 - `apps/local-ui/src/page/kit/log-sheet.ts` `openLocalLog`, `traceHash`, `sheetClock`: The shared log sheet as Maple Local opens it: no namespace pin, no page for one log, no Infrastructure tab.
 - `apps/local-ui/src/page/kit/page-body.ts` `loadingFill`: A page body's first load under its header or toolbar; the body itself is the kit's `scrollRegion`.
 - `apps/local-ui/src/page/kit/page-shell.ts` `pageShell`: The page shell: filter rail beside a toolbar over the scrolling content.

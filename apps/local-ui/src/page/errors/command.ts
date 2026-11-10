@@ -19,7 +19,7 @@ import {
 } from "./fetch"
 import { Message } from "./message"
 
-/** The view's filters from the hash query (`ErrorsView`). */
+/** The view's filters from the hash query. */
 export const errorsFiltersOf = (query: URLSearchParams): ErrorsFilters => ({
 	service: query.get("service") || undefined,
 	env: query.get("env") || undefined,

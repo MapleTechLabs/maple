@@ -8,7 +8,7 @@ import { LocalServiceMapData } from "./data"
 
 // The service map page.
 
-/** What local mode keeps per browser (lib/service-map-state.ts): declutter prefs and layout snapshots. */
+/** What local mode keeps per browser: declutter prefs and layout snapshots. */
 export const Stored = Schema.Struct({ prefs: ViewPrefs, snapshots: Schema.Array(Snapshot) })
 export type Stored = typeof Stored.Type
 
@@ -17,7 +17,7 @@ export const Model = Schema.TaggedStruct("ServiceMapPage", {
 	maybeAnchorMs: Schema.Option(Schema.Number),
 	nowMs: Schema.Number,
 	data: KeyedSchema(LocalServiceMapData, LoadFailure),
-	/** `dataUpdatedAt` of the map query, for the "New data" pill. */
+	/** When the map query last loaded, for the "New data" pill. */
 	dataUpdatedAtMs: Schema.Number,
 	/** localStorage read on entry; the map is built once it and the rows are in. */
 	maybeStored: Schema.Option(Stored),

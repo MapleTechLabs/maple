@@ -90,7 +90,7 @@ const tabPanel = (h: H, model: Model, value: string): ReadonlyArray<Html> | unde
 	return undefined
 }
 
-/** `TraceViewTabs`: Waterfall, Timeline and Flow over the trace (timeline by default). */
+/** Waterfall, Timeline and Flow over the trace (timeline by default). */
 const traceViewTabs = (h: H, model: Model): Html =>
 	h.submodel({
 		slotId: "trace-view-tabs",

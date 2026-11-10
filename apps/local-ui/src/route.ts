@@ -25,7 +25,7 @@ export type AppRoute = typeof AppRoute.Type
 export const Location = Schema.Struct({ path: Schema.String, search: Schema.String })
 export type Location = typeof Location.Type
 
-/** `parseLocation`: `#/sessions?range=1h` without its `#`. */
+/** `#/sessions?range=1h` without its `#`. */
 export const parseLocation = (hash: string): Location => {
 	const [rawPath, rawSearch = ""] = Str.split("?")(hash)
 	return { path: Str.startsWith("/")(rawPath) ? rawPath : "/traces", search: rawSearch }

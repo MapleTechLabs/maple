@@ -19,14 +19,14 @@ export const Message = defineMessageUnion({
 	ClickedBack: {},
 	ClickedRefresh: {},
 	PressedEscape: {},
-	/** The pointer over the page, for the timeline's span tooltip (`handleHover`'s position). */
+	/** The pointer over the page, for the timeline's span tooltip. */
 	MovedPointer: { x: Schema.Number, y: Schema.Number },
 	GotTabsMessage: { message: Tabs.Message },
 	GotTimelineMessage: { message: Timeline.Message },
 	GotWaterfallMessage: { message: Waterfall.Message },
 	GotFlowMessage: { message: TraceFlow.Message },
 	GotSpanPanelMessage: { message: SpanPanel.Message },
-	/** A Logs-tab row's whole log: `LogDetailSheet` opens on it. */
+	/** A Logs-tab row's whole log: the log sheet opens on it. */
 	FoundSpanLog: { log: LocalLog },
 	/** The clicked row's log could not be read again: the panel's reads are refreshed. */
 	FailedReadSpanLog: {},
