@@ -106,7 +106,7 @@ describe("alerts hub", () => {
 			{ update: pageUpdate, view },
 			given(loaded()),
 			expectView(text("1 firing")).toExist(),
-			expectView(role("link", { name: "P95 latency 1.84s on all" })).toHaveAttr(
+			expectView(role("link", { name: "P95 latency 1.84s" })).toHaveAttr(
 				"href",
 				"/alerts/incidents/0199a003-0000-7000-8000-000000000001",
 			),
@@ -247,7 +247,7 @@ describe("alerts hub", () => {
 			expectView(text("0 firing")).toExist(),
 			expectView(text(/1 acknowledged/)).toExist(),
 			expectView(text(/^Acknowledged by Dana Kim ·/)).toExist(),
-			expectView(role("button", { name: "Unacknowledge P95 latency 1.84s on all" })).toExist(),
+			expectView(role("button", { name: "Unacknowledge P95 latency 1.84s" })).toExist(),
 		)
 		const clicked = pageUpdate(
 			loaded(),
@@ -396,7 +396,7 @@ describe("alerts hub", () => {
 		)
 	})
 
-	test("a quiet Inbox stays calm: no Anomalies toggle without anomalies, MTTR n/a, ungrouped readings say all services", () => {
+	test("a quiet Inbox stays calm: no Anomalies toggle without anomalies, MTTR n/a, an ungrouped reading has no group line", () => {
 		// Nothing open, and one rule routed nowhere: a blind spot, so the last 24 hours are drawn.
 		const quiet = Arr.reduce(
 			[
@@ -419,7 +419,8 @@ describe("alerts hub", () => {
 			expectView(role("button", { name: /^Anomalies/ })).not.toExist(),
 			expectView(text("0 incidents · MTTR n/a · 0 rules fired")).toExist(),
 			expectView(role("link", { name: "Payment p95 latency" })).toExist(),
-			expectView(text("all services")).toExist(),
+			expectView(text("all")).not.toExist(),
+			expectView(text("__total__")).not.toExist(),
 		)
 	})
 

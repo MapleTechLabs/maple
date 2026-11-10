@@ -1,5 +1,4 @@
 import type { AlertIncidentDocument, AlertIncidentId, AlertRuleDocument } from "@maple/domain/http"
-import { ENGINE_UNGROUPED_GROUP_KEY } from "@maple/query-engine"
 import { acknowledgedLine } from "@maple/web-data/alerts/incident-timeline"
 import { countLabel } from "@maple/ui/lib/format"
 import { formatRelativeShortFrom } from "@maple/ui/lib/time-format"
@@ -548,11 +547,7 @@ const headroomRow = <M>(h: HtmlBuilder<M>, row: RuleHeadroom, now: number): Html
 								typography(
 									h,
 									{ size: "2xs", tone: "muted", mono: true, truncate: true, as: "p" },
-									[
-										row.groupLabel === ENGINE_UNGROUPED_GROUP_KEY
-											? "all services"
-											: row.groupLabel,
-									],
+									[row.groupLabel],
 								),
 							]
 						: []),

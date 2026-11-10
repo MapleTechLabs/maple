@@ -171,6 +171,13 @@ describe("incident lines", () => {
 		expect(incidentSubline(incident)).toBe("High error rate · checkout")
 	})
 
+	it("titles an ungrouped telemetry incident without a group, whichever way storage spells ungrouped", () => {
+		const ungrouped = (groupKey: string | null) =>
+			makeIncident({ groupKey, status: "open", resolvedAt: null })
+		expect(incidentTitle(ungrouped(null))).toBe("Error rate 8.0%")
+		expect(incidentTitle(ungrouped("__total__"))).toBe("Error rate 8.0%")
+	})
+
 	it("shows an anomaly incident's stored label, never its incident-id group key", () => {
 		const anomaly = (groupLabel?: string) =>
 			makeIncident({
