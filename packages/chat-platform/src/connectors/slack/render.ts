@@ -336,6 +336,12 @@ export const renderSlackMessage = (blocks: ReadonlyArray<ChatBlock>): SlackMessa
 				fallback.push(block.markdown)
 				break
 			}
+			case "page": {
+				const text = toMrkdwn(block.fallback)
+				if (Str.trim(text) !== "") rendered.push(section(text))
+				fallback.push(block.fallback)
+				break
+			}
 			case "chart":
 				rendered.push(...chartBlocks(block))
 				fallback.push(block.title === null ? block.summary : `${block.title} — ${block.summary}`)

@@ -84,6 +84,7 @@ import type { SupportChannelUnavailableError } from "@maple/domain/support-chann
 import { WarehouseQueryService } from "@maple/backend/services/warehouse/WarehouseQueryService"
 import { CancellationReader } from "./CancellationReader"
 import { buildCancellationChatBlocks } from "./chat-message"
+import { buildCancellationPageBlock } from "./chat-page"
 import {
 	AUDIT_ENTRIES_SHOWN,
 	SESSIONS_READ,
@@ -771,7 +772,10 @@ export class CancellationReviewService extends Context.Service<
 					)
 			})
 
-		/** One message, or one per section when the report is longer than Hazel takes in one. */
+		/**
+		 * The report as one HTML page. Should Hazel refuse the page, the markdown report goes out
+		 * instead: one message, or one per section when it is longer than Hazel takes in one.
+		 */
 		const postToHazel = (hazel: HazelDestination) => (report: CancellationReport) =>
 			Effect.gen(function* () {
 				const { workspace, channelId } = hazel
@@ -781,11 +785,27 @@ export class CancellationReviewService extends Context.Service<
 					httpClient,
 				)
 				const target = { workspaceId: workspace.externalWorkspaceId, channelId }
-				const messages: ReadonlyArray<ReadonlyArray<ChatBlock>> = splitBlocks(
-					buildCancellationChatBlocks(report),
-					workspace.connector.outbound.limits.maxMessageChars,
+				const postMarkdown = Effect.forEach(
+					splitBlocks(
+						buildCancellationChatBlocks(report),
+						workspace.connector.outbound.limits.maxMessageChars,
+					),
+					(blocks: ReadonlyArray<ChatBlock>) => transport.post(target, blocks),
+					{ discard: true },
 				)
-				yield* Effect.forEach(messages, (blocks) => transport.post(target, blocks), { discard: true })
+				yield* transport.post(target, [buildCancellationPageBlock(report)]).pipe(
+					Effect.asVoid,
+					Effect.catchIf(
+						(error) => error.reason === "rejected",
+						(error) =>
+							Effect.logWarning(
+								"Hazel refused the cancellation report's page; posting it as markdown",
+							).pipe(
+								Effect.annotateLogs({ hazelError: error.message }),
+								Effect.andThen(postMarkdown),
+							),
+					),
+				)
 				return true
 			}).pipe(
 				// The bot's grant, the channel or the message itself: a retry changes none of them.

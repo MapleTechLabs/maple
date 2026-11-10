@@ -16,6 +16,13 @@ export interface HazelEmbedAction {
 	readonly style?: "primary" | "secondary" | "danger"
 }
 
+/** `MessageEmbedHtml`: a page published through `POST /html-renders`, as its reply names it. */
+export interface HazelEmbedHtml {
+	readonly renderId: string
+	readonly title: string
+	readonly height: number
+}
+
 /** `MessageEmbed`, as far as this connector writes one. */
 export interface HazelEmbed {
 	readonly title?: string
@@ -35,6 +42,8 @@ export interface HazelEmbed {
 	readonly actions?: ReadonlyArray<HazelEmbedAction>
 	/** Turns live rendering on: Hazel shows the message's live state in place of its content. */
 	readonly liveState?: HazelLiveState
+	/** A sandboxed HTML page shown in the embed. */
+	readonly html?: HazelEmbedHtml
 }
 
 /** `MessageEmbedLiveState`, as far as this connector writes one. */
@@ -85,9 +94,15 @@ export const EMPTY_CONTENT = "—"
  */
 export const defuseMentions = (text: string): string => Str.replaceAll("@[", "@​[")(text)
 
-/** What one message's worth of blocks becomes. */
-export const renderHazelMessage = (blocks: ReadonlyArray<ChatBlock>): HazelMessageBody => {
-	const { content, embeds } = renderParts(blocks)
+/**
+ * What one message's worth of blocks becomes. `pages` are the message's page blocks once published,
+ * in order; a page with none (an edit, a live message) is posted as its fallback.
+ */
+export const renderHazelMessage = (
+	blocks: ReadonlyArray<ChatBlock>,
+	pages: ReadonlyArray<HazelEmbedHtml> = [],
+): HazelMessageBody => {
+	const { content, embeds } = renderParts(blocks, pages)
 	return { content: content === "" && embeds.length === 0 ? EMPTY_CONTENT : content, embeds }
 }
 
@@ -137,9 +152,13 @@ export const renderHazelLive = (blocks: ReadonlyArray<ChatBlock>): HazelLiveBody
 }
 
 /** The content, possibly empty, and the embeds. */
-const renderParts = (blocks: ReadonlyArray<ChatBlock>): HazelMessageBody => {
+const renderParts = (
+	blocks: ReadonlyArray<ChatBlock>,
+	pages: ReadonlyArray<HazelEmbedHtml> = [],
+): HazelMessageBody => {
 	const lines: Array<string> = []
 	const embeds: Array<HazelEmbed> = []
+	let pageIndex = 0
 
 	for (const block of blocks) {
 		switch (block.kind) {
@@ -201,6 +220,13 @@ const renderParts = (blocks: ReadonlyArray<ChatBlock>): HazelMessageBody => {
 			case "alert":
 				embeds.push(alertEmbed(block))
 				break
+			case "page": {
+				const page = pages[pageIndex]
+				pageIndex += 1
+				if (page === undefined) lines.push(block.fallback)
+				else embeds.push({ html: page })
+				break
+			}
 			default:
 				// A block kind added to the neutral model but not to this dialect would otherwise
 				// render as nothing at all.
