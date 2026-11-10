@@ -1,4 +1,4 @@
-import { warehouseDateTimeToIso } from "@maple/query-engine"
+import { parseWarehouseDateTime } from "@maple/query-engine/datetime"
 import { formatDuration, formatNumber, pluralize } from "@maple/ui/lib/format"
 import { shortId } from "@maple/ui/lib/ids"
 import { formatTimestampInTimezone } from "@maple/ui/lib/timezone-format"
@@ -24,8 +24,6 @@ import { vstack } from "@maple/views/ui/stack"
 
 // One row of the traces table.
 
-const epochOf = (startTime: string): number => new Date(warehouseDateTimeToIso(startTime)).getTime()
-
 /** `traceLink`: the trace page, with the row's own span pre-selected when it is not the root. */
 /** `traceLink`: the trace page, keeping the list's search (`{ ...prev, t, spanId }`). */
 export const traceHref = (search: Search, row: TraceRow): string =>
@@ -49,7 +47,7 @@ const rootSpanCell = (
 	nowMs: number,
 	search: Search,
 ): Html => {
-	const epochMs = epochOf(row.startTime)
+	const epochMs = parseWarehouseDateTime(row.startTime)
 	const stamp = formatTimestampInTimezone(epochMs, { timeZone })
 	const duration = formatDuration(row.durationMs)
 	return tableCell(

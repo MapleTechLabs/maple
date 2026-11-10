@@ -877,6 +877,12 @@ export const WEB_ANALYTICS_UNSET = "(none)"
  */
 export const SESSION_LIVE_WINDOW_SECONDS = 300
 
+/**
+ * The browser SDK's hard cap on one session's lifetime (`@maple/browser-session`'s session record,
+ * which keeps its own copy): a replay window never needs to reach further than this past its start.
+ */
+export const MAX_SESSION_MS = 24 * 60 * 60 * 1000
+
 export {
 	SESSION_QUALITY_TAGS,
 	SESSION_TAG_THRESHOLDS,

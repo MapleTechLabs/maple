@@ -9,6 +9,7 @@ import { recordedMarker, type ReplayPartitionWindow, replayPartitionWindow } fro
 import { chunksOf, neededFailure, seedEvents } from "./loader"
 import type { LoadFailure } from "@maple/views/data/load-failure"
 import type { Model, ReplayDetail } from "./model"
+import { MAX_SESSION_MS } from "@maple/domain/query-engine"
 
 export type PlayerStatus = "loading" | "error" | "empty" | "unrecorded" | "ready"
 
@@ -16,7 +17,6 @@ export const windowOf = (model: Model): ReplayPartitionWindow | undefined =>
 	replayPartitionWindow(model.search.t)
 
 const TRACE_WINDOW_MARGIN_MS = 15 * 60 * 1000
-const MAX_SESSION_MS = 24 * 60 * 60 * 1000
 
 /**
  * The trace bars' window: the session's own span plus slack (`sessionTraceWindow` on the server).
