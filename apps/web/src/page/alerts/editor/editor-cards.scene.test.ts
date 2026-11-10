@@ -135,6 +135,20 @@ describe("alert rule editor, sentence cards", () => {
 		)
 	})
 
+	test("with a threshold that is not a number, the empty chart asks for one, not for a signal", () => {
+		scene(
+			{ update: pageUpdate, view },
+			given(
+				run(opened({ template: "slow_p95" }), [
+					Message.ChangedField({ field: "threshold", value: "-" }),
+				]),
+			),
+			themeResolved(),
+			expectView(text(/^Enter a number for the threshold to preview it against the last/u)).toExist(),
+			expectView(text(/^Pick a signal/u)).not.toExist(),
+		)
+	})
+
 	test("an anomaly rule reads as its scope and has no Alert when card", () => {
 		scene(
 			{ update: pageUpdate, view },
@@ -341,7 +355,7 @@ describe("alert rule editor, sentence cards", () => {
 			{ update: pageUpdate, view },
 			given(timed),
 			themeResolved(),
-			expectView(text("Missing: Query too slow for this check interval")).toExist(),
+			expectView(text("Query too slow for this check interval")).toExist(),
 		)
 	})
 })

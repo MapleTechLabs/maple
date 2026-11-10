@@ -27,6 +27,7 @@ import {
 	type NameLookup,
 	type NotifyNames,
 	watchSummary,
+	isProblemIssue,
 } from "./summary"
 import { sentenceCard, sentenceChain } from "../../kit/sentence-card"
 import { actionBar } from "./view-action-bar"
@@ -195,7 +196,8 @@ const ruleCard = (
 			lead: spec.lead,
 			hint: spec.hint,
 			status: issues.length > 0 ? "missing" : "done",
-			issues,
+			issues: Arr.filter(issues, (issue) => !isProblemIssue(issue)),
+			problems: Arr.filter(issues, isProblemIssue),
 			summary: spec.summary,
 			isExpanded: model.expandedCards.includes(spec.card),
 			onExpand: Message.ClickedExpandCard({ card: spec.card }),

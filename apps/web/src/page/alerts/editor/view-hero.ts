@@ -190,7 +190,11 @@ const chartBody = (h: H, model: ChartView, form: RuleForm, timeZone: string): Ht
 				isLoading: preview.isLoading || (!isChartReady && preview.preview !== null),
 				loadingText: `Loading the ${range}…`,
 				emptyText: isIdle
-					? { title: `Pick a signal to preview it against the ${range}` }
+					? {
+							title: Number.isFinite(Number(form.threshold))
+								? `Pick a signal to preview it against the ${range}`
+								: `Enter a number for the threshold to preview it against the ${range}`,
+						}
 					: {
 							title: `No data for this signal in the ${range}`,
 							hint: "Pick another signal or widen the range",

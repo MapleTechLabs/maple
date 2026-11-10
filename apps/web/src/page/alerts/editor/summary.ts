@@ -1,4 +1,13 @@
 import { Array as Arr, String as Str } from "effect"
+
+// Blockers that are a problem with the rule, not a field left empty: a card says them in full.
+const PROBLEM_ISSUES: ReadonlyArray<string> = [
+	"Check interval longer than the window",
+	"Query too slow for this check interval",
+]
+
+/** Whether a blocker is a problem to fix (said as it is), not a missing field (said after "Missing:"). */
+export const isProblemIssue = (issue: string): boolean => Arr.contains(PROBLEM_ISSUES, issue)
 import type { AlertDestinationId, AlertQueryTiming, EscalationChainId } from "@maple/domain/http"
 import {
 	comparatorSupportsTiers,

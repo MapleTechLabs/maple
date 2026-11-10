@@ -26,6 +26,8 @@ export type SentenceCardOptions<M> = Readonly<{
 	status: SentenceCardStatus
 	/** What is missing, said while `status` is `missing`: "Threshold", "Rule name". */
 	issues?: ReadonlyArray<string>
+	/** Blockers that are not a missing field, said as they are: "Query too slow for this check interval". */
+	problems?: ReadonlyArray<string>
 	/** The clause in plain words, shown while the card is closed. */
 	summary: string
 	isExpanded: boolean
@@ -130,6 +132,11 @@ const openCard = <M>(
 ): Html => {
 	const headingId = sentenceCardHeadingId(options.id)
 	const issues = options.issues ?? []
+	// "Missing: Threshold. Query too slow for this check interval": fields by name, problems in full.
+	const issueLine = Arr.join(
+		[...(issues.length === 0 ? [] : [`Missing: ${Arr.join(issues, ", ")}`]), ...(options.problems ?? [])],
+		". ",
+	)
 	const onCollapse = options.status === "missing" ? undefined : options.onCollapse
 	// One frame around the header and the body, the same box the closed card draws.
 	return card(
@@ -177,9 +184,7 @@ const openCard = <M>(
 							...(options.status === "missing"
 								? [
 										typography(h, { size: "xs", tone: "warning", as: "p" }, [
-											issues.length === 0
-												? "Required"
-												: `Missing: ${Arr.join(issues, ", ")}`,
+											issueLine === "" ? "Required" : issueLine,
 										]),
 									]
 								: []),
