@@ -49,6 +49,8 @@ const ready = (search: { scheduleId?: string } = {}) => {
 			])
 }
 
+const memberNameOf = (index: number) => oncallMembers[index]?.name ?? ""
+
 const addPerson = (key: string, index: number) =>
 	Message.GotParticipantMenuMessage({
 		key,
@@ -313,8 +315,11 @@ describe("schedule form", () => {
 				{ update: pageUpdate, view },
 				given(ready()),
 				expectView(text("Primary has no people, so it covers nothing.")).toExist(),
-				expectView(text(/^1 gap in the next 14 days, longest 13d 12h/u)).toExist(),
+				expectView(text("Nobody is on call for the next 14 days")).toExist(),
 				expectView(text("Add people to see shifts")).toExist(),
+				// One gap that is the whole range has no link of its own.
+				expectView(role("button", { name: /^From /u })).not.toExist(),
+				expectView(role("img", { name: "No one on call from Tue 10 Nov 11:30" })).toExist(),
 			)
 		})
 
@@ -324,7 +329,8 @@ describe("schedule form", () => {
 				{ update: pageUpdate, view },
 				given(staffed),
 				expectView(text("Covered for the next 14 days")).toExist(),
-				expectView(text(/Primary starts in the past\. Shifts are scheduled from now/u)).toExist(),
+				// A new layer starts today at 09:00, which is not worth a note even after 09:00.
+				expectView(text(/started before today/u)).not.toExist(),
 				expectView(role("rowheader", { name: /Final schedule/u })).toExist(),
 			)
 			// Weeknights only (18:00 to 08:00): days and weekends are gaps.
@@ -340,7 +346,65 @@ describe("schedule form", () => {
 				expectView(role("button", { name: "Sat 14 Nov 08:00 to Mon 16 Nov 18:00" })).toExist(),
 			)
 			const focus = pageUpdate(nights, Message.ClickedPreviewGap({ index: 4 }))
-			expect(names(focus.commands)).toEqual(["FocusScheduleFormGap"])
+			expect(names(focus.commands)).toEqual(["FocusCoverageGap"])
+		})
+
+		test("a window with no days stops the layer previewing instead of reading as always active", () => {
+			const nights = run(ready(), [addPerson("l0", 0), Message.ClickedAddRestriction({ key: "l0" })])
+			const noDays = run(
+				nights,
+				Arr.map(["mon", "tue", "wed", "thu", "fri"] as const, (weekday) =>
+					Message.ToggledRestrictionDay({ key: "l0", restrictionKey: "r1", weekday }),
+				),
+			)
+			scene(
+				{ update: pageUpdate, view },
+				given(noDays),
+				expectView(text("Fix this layer to see shifts")).toExist(),
+				expectView(text("Nobody is on call for the next 14 days")).toExist(),
+				expectView(text("Covered for the next 14 days")).not.toExist(),
+			)
+		})
+
+		test("a new schedule started on an earlier day says the rotation is under way and who has it", () => {
+			// Two people, daily at 09:00 from Sun 8 Nov: by Tue 10 Nov 11:30 it is the first one's turn again.
+			const early = run(ready(), [
+				addPerson("l0", 0),
+				addPerson("l0", 1),
+				Message.PickedRotation({ key: "l0", rotation: "daily" }),
+				Message.ChangedLayerText({ key: "l0", field: "startsAt", value: "2026-11-08T09:00" }),
+			])
+			scene(
+				{ update: pageUpdate, view },
+				given(early),
+				expectView(
+					text(
+						`Primary started before today, so the rotation is already under way: ${memberNameOf(0)} is on call now.`,
+					),
+				).toExist(),
+			)
+			// A saved schedule always started in the past: no note for it.
+			scene(
+				{ update: pageUpdate, view },
+				given(ready({ scheduleId: schedulePublicId(1) })),
+				expectView(text(/started before today/u)).not.toExist(),
+			)
+		})
+
+		test("a draft has no past: Previous is off from today", () => {
+			const model = ready()
+			scene(
+				{ update: pageUpdate, view },
+				given(model),
+				expectView(role("button", { name: "Previous week" })).toBeDisabled(),
+			)
+			expect(pageUpdate(model, Message.ClickedPreviewPrevious()).model.previewWeekOffset).toBe(0)
+			const later = run(model, [Message.ClickedPreviewNext()])
+			scene(
+				{ update: pageUpdate, view },
+				given(later),
+				expectView(role("button", { name: "Previous week" })).not.toBeDisabled(),
+			)
 		})
 
 		test("the range switch and week steps change what the preview covers", () => {

@@ -1,10 +1,11 @@
-import { renderOnCall, type OnCallShift } from "@maple/alerting-core/oncall"
-import { OnCallLayer, OnCallLocalTime, OnCallScheduleConfig, OnCallTimeZone } from "@maple/domain/http"
+import { onCallAt, renderOnCall, type OnCallShift } from "@maple/alerting-core/oncall"
+import { OnCallLayer, OnCallScheduleConfig, OnCallTimeZone } from "@maple/domain/http"
 import type { OnCallOverride } from "@maple/domain/http"
+import type { UserId } from "@maple/domain/primitives"
 import { zonedDateParts } from "@maple/query-engine/datetime"
 import { zonedDayStart } from "@maple/views/ui/shift-timeline"
 import { Array as Arr, Option, Order, Result, Schema, String as Str } from "effect"
-import { localInputMs, type Form, type LayerDraft } from "../schedule-form/form"
+import { layerStartMs, restrictionError, type Form, type LayerDraft } from "../schedule-form/form"
 
 // Coverage preview: the draft rendered with the server's own `renderOnCall`, so the preview
 // and paging agree, plus the gaps where nobody is on call.
@@ -36,40 +37,49 @@ export const gapsOf = (
 	return cursor < toMs ? [...gaps, { startMs: cursor, endMs: toMs }] : gaps
 }
 
-const isLocalTime = Schema.is(OnCallLocalTime)
 const isZone = Schema.is(OnCallTimeZone)
 const decodeLayer = Schema.decodeUnknownOption(OnCallLayer)
 const decodeConfig = Schema.decodeUnknownOption(OnCallScheduleConfig)
 
-const layerStartMs = (layer: LayerDraft, timeZone: string): Option.Option<number> =>
-	layer.startsAtMs === null ? localInputMs(layer.startsAt, timeZone) : Option.some(layer.startsAtMs)
-
-/** A draft layer as the engine's layer, while it has people and a valid rotation; bad restrictions drop out. */
+/**
+ * A draft layer as the engine's layer, once it has people, a valid rotation and valid windows.
+ * A half-typed window is none, not "always active": the engine reads no windows as 24/7.
+ */
 export const previewLayerOf = (layer: LayerDraft, timeZone: string): Option.Option<OnCallLayer> =>
-	Option.flatMap(layerStartMs(layer, timeZone), (startsAt) =>
-		decodeLayer({
-			// The name never changes who is on call, so a blank one still previews.
-			name: Str.isEmpty(Str.trim(layer.name)) ? "Layer" : Str.slice(0, 100)(Str.trim(layer.name)),
-			participants: layer.participants,
-			rotation:
-				layer.rotation === "custom"
-					? { kind: "custom", lengthHours: Number(Str.trim(layer.lengthHours)) }
-					: layer.rotation === "daily"
-						? { kind: "daily", handoffTime: layer.handoffTime }
-						: {
-								kind: "weekly",
-								handoffWeekday: layer.handoffWeekday,
-								handoffTime: layer.handoffTime,
-							},
-			startsAt,
-			restrictions: Arr.map(
-				Arr.filter(
-					layer.restrictions,
-					(r) => r.weekdays.length > 0 && isLocalTime(r.startTime) && isLocalTime(r.endTime),
-				),
-				({ weekdays, startTime, endTime }) => ({ weekdays, startTime, endTime }),
-			),
-		}),
+	Arr.some(layer.restrictions, (restriction) => Option.isSome(restrictionError(restriction)))
+		? Option.none()
+		: Option.flatMap(layerStartMs(layer, timeZone), (startsAt) =>
+				decodeLayer(engineLayerOf(layer, startsAt)),
+			)
+
+const engineLayerOf = (layer: LayerDraft, startsAt: number) => ({
+	// The name never changes who is on call, so a blank one still previews.
+	name: Str.isEmpty(Str.trim(layer.name)) ? "Layer" : Str.slice(0, 100)(Str.trim(layer.name)),
+	participants: layer.participants,
+	rotation:
+		layer.rotation === "custom"
+			? { kind: "custom", lengthHours: Number(Str.trim(layer.lengthHours)) }
+			: layer.rotation === "daily"
+				? { kind: "daily", handoffTime: layer.handoffTime }
+				: {
+						kind: "weekly",
+						handoffWeekday: layer.handoffWeekday,
+						handoffTime: layer.handoffTime,
+					},
+	startsAt,
+	restrictions: Arr.map(layer.restrictions, ({ weekdays, startTime, endTime }) => ({
+		weekdays,
+		startTime,
+		endTime,
+	})),
+})
+
+/** Who the layer alone has on call at `atMs`; none in one of its gaps, or while it cannot preview. */
+export const layerOnCallAt = (layer: LayerDraft, timeZone: string, atMs: number): Option.Option<UserId> =>
+	previewLayerOf(layer, timeZone).pipe(
+		Option.flatMap((engineLayer) => decodeConfig({ timeZone, layers: [engineLayer] })),
+		Option.flatMap((config) => Option.fromNullishOr(onCallAt(config, [], atMs))),
+		Option.map((shift) => shift.userId),
 	)
 
 export interface DraftConfig {
@@ -134,9 +144,6 @@ export const draftCoverage = (
 
 // RANGE: whole wall-clock days in the schedule's zone, so DST days are 23 or 25 hours.
 
-export const RANGE_DAYS = [7, 14, 28] as const
-export type RangeDays = (typeof RANGE_DAYS)[number]
-
 /** `days` wall-clock days from the start of today, `weekOffset` weeks on. */
 export const previewRange = (
 	nowMs: number,
@@ -181,9 +188,13 @@ const sameDay = (a: number, b: number, timeZone: string) => {
 
 const dropComma = Str.replace(",", "")
 
-/** "Sat 21 Nov 00:00 to 16:00", or both ends in full across days. */
-export const gapRangeText = (gap: Interval, timeZone: string): string => {
+/** A gap that runs to the end of what was checked: its real end is not known. */
+export const isOpenGap = (gap: Interval, checkedToMs: number): boolean => gap.endMs >= checkedToMs
+
+/** "Sat 21 Nov 00:00 to 16:00", both ends in full across days, or "from Sat 21 Nov 00:00" when open. */
+export const gapRangeText = (gap: Interval, timeZone: string, checkedToMs: number): string => {
 	const start = dropComma(formatterOf(timeZone, "day").format(gap.startMs))
+	if (isOpenGap(gap, checkedToMs)) return `from ${start}`
 	const end = sameDay(gap.startMs, gap.endMs, timeZone)
 		? formatterOf(timeZone, "time").format(gap.endMs)
 		: dropComma(formatterOf(timeZone, "day").format(gap.endMs))
@@ -213,15 +224,38 @@ export const longestGap = (gaps: ReadonlyArray<Interval>): Option.Option<Interva
 		}),
 	)
 
-/** "2 gaps in the next 14 days, longest 16h (Sat 21 Nov 00:00 to 16:00)", or "Covered for the next 14 days". */
-export const gapSummary = (
+/** What the summary is about: the zone, the range picked and the stretch checked for gaps. */
+export type GapScope = Readonly<{
+	timeZone: string
+	weekOffset: number
+	days: number
+	/** Gaps are checked over [checkedFromMs, checkedToMs): from now to the range's end. */
+	checkedFromMs: number
+	checkedToMs: number
+}>
+
+/** One gap spanning everything checked: nobody is on call at all. */
+export const isUncovered = (
 	gaps: ReadonlyArray<Interval>,
-	timeZone: string,
-	weekOffset: number,
-	days: number,
-): string =>
-	Option.match(longestGap(gaps), {
-		onNone: () => (weekOffset === 0 ? `Covered for the next ${days} days` : "Covered in this period"),
+	scope: Pick<GapScope, "checkedFromMs" | "checkedToMs">,
+): boolean => {
+	const only = gaps.length === 1 ? gaps[0] : undefined
+	return only !== undefined && only.startMs <= scope.checkedFromMs && only.endMs >= scope.checkedToMs
+}
+
+/**
+ * "2 gaps in the next 14 days, longest 16h (Sat 21 Nov 00:00 to 16:00)", "Covered for the next
+ * 14 days", or "Nobody is on call for the next 14 days" when the one gap is everything checked.
+ */
+export const gapSummary = (gaps: ReadonlyArray<Interval>, scope: GapScope): string => {
+	const isFromToday = scope.weekOffset === 0
+	if (isUncovered(gaps, scope))
+		return isFromToday
+			? `Nobody is on call for the next ${scope.days} days`
+			: "Nobody is on call in this period"
+	return Option.match(longestGap(gaps), {
+		onNone: () => (isFromToday ? `Covered for the next ${scope.days} days` : "Covered in this period"),
 		onSome: (longest) =>
-			`${gaps.length} ${gaps.length === 1 ? "gap" : "gaps"} ${weekOffset === 0 ? `in the next ${days} days` : "in this period"}, longest ${durationText(longest.endMs - longest.startMs)} (${gapRangeText(longest, timeZone)})`,
+			`${gaps.length} ${gaps.length === 1 ? "gap" : "gaps"} ${isFromToday ? `in the next ${scope.days} days` : "in this period"}, longest ${durationText(longest.endMs - longest.startMs)}${isOpenGap(longest, scope.checkedToMs) ? " or longer" : ""} (${gapRangeText(longest, scope.timeZone, scope.checkedToMs)})`,
 	})
+}

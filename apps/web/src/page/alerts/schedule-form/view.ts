@@ -558,23 +558,37 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 	if (!model.isReady || (isEdit && !AsyncData.isSuccess(model.existing.data)))
 		return dashboardPage(h, header, [skeleton(h, "h-24 w-full"), skeleton(h, "h-80 w-full")])
 	return dashboardPage(h, { ...header, fill: true }, [
-		formScrollArea(h, [
-			// The form on the left and its live preview on the right; under 2xl the preview follows the form.
-			h.div(
-				[h.Class("grid gap-6 2xl:grid-cols-[minmax(0,40rem)_minmax(0,1fr)] 2xl:items-start")],
-				[
-					formCard(
-						h,
-						[nameSection(h, model), zoneSection(h, model), layersSection(h, model)],
-						FORM_WIDTH,
-					),
-					h.div(
-						[h.Class("min-w-0 rounded-md border bg-card p-4 2xl:sticky 2xl:top-0")],
-						[schedulePreview(h, model)],
-					),
-				],
-			),
-		]),
+		formScrollArea(
+			h,
+			[
+				// From 46rem of room (a 1024px screen beside the sidebar) the form keeps a narrow column and
+				// the preview takes the rest, held in view while the form scrolls. Under that it follows the form.
+				h.div(
+					[
+						h.Class(
+							"grid gap-4 @min-[46rem]/scroll:grid-cols-[26rem_minmax(0,1fr)] @min-[46rem]/scroll:items-start",
+						),
+					],
+					[
+						formCard(
+							h,
+							[nameSection(h, model), zoneSection(h, model), layersSection(h, model)],
+							FORM_WIDTH,
+						),
+						h.div(
+							[
+								h.Class(
+									"min-w-0 rounded-md border bg-card p-4 @min-[46rem]/scroll:sticky @min-[46rem]/scroll:top-0 @min-[46rem]/scroll:max-h-[100cqh] @min-[46rem]/scroll:overflow-y-auto",
+								),
+							],
+							[schedulePreview(h, model)],
+						),
+					],
+				),
+			],
+			// A size container: the columns read its width and the preview's height limit its height.
+			"@container-[size]/scroll",
+		),
 		actionBar(h, model),
 	])
 })

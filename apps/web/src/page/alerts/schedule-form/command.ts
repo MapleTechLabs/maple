@@ -1,7 +1,7 @@
 import { OnCallScheduleId } from "@maple/domain/http"
 import { V2OnCallScheduleCreateParams } from "@maple/domain/http/v2"
 import { Clock, Effect, Schema } from "effect"
-import { Command, Dom } from "foldkit"
+import { Command } from "foldkit"
 import { readGrants } from "../../../data/session-tenant"
 import { browserZone, readSupportedTimeZones } from "../../../platform/time-zone"
 import { retrieveOnCallSchedule, saveOnCallSchedule } from "../shared/oncall-schedules"
@@ -40,14 +40,6 @@ export const FetchScheduleFormSession = Command.define("FetchScheduleFormSession
 	messages: [Message.CompletedFetchSession],
 	execute: ({ orgId }) =>
 		Effect.map(readGrants, (grants) => Message.CompletedFetchSession({ orgId, grants })),
-})
-
-/** A gap's bar takes focus, which scrolls it into view. */
-export const FocusPreviewGap = Command.define("FocusScheduleFormGap", {
-	args: { selector: Schema.String },
-	messages: [Message.CompletedFocusGap],
-	execute: ({ selector }) =>
-		Dom.focus(selector).pipe(Effect.ignore, Effect.as(Message.CompletedFocusGap())),
 })
 
 export const SaveSchedule = Command.define("SaveOnCallSchedule", {

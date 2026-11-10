@@ -8,7 +8,7 @@ import * as Dialog from "@maple/views/ui/dialog"
 import { zonedDayStart } from "@maple/views/ui/shift-timeline"
 import type { AppRoute } from "../../../route"
 import { type PageContext, PageOutMessage, type PageReturn } from "../../contract"
-import { DEFAULT_RANGE_DAYS, gapBarId } from "../shared/coverage-preview"
+import { DEFAULT_RANGE_DAYS, FocusGap } from "../shared/coverage-preview"
 import { scheduleIdFromUrl } from "../shared/oncall-schedules"
 import { localInputMs, localInputOf } from "../schedule-form/form"
 import {
@@ -19,7 +19,6 @@ import {
 	FetchScheduleMembers,
 	FetchScheduleSession,
 	FetchShifts,
-	FocusScheduleGap,
 	ReadScheduleClock,
 } from "./command"
 import { Message } from "./message"
@@ -353,7 +352,11 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		PickedRange: ({ days }) => requestShifts({ ...model, rangeDays: days }, context, "Load"),
 		ClickedGap: ({ index }) => ({
 			model,
-			commands: [FocusScheduleGap({ selector: `#${gapBarId(CALENDAR_SCOPE, index)}` })],
+			commands: [
+				FoldkitCommand.mapMessage(FocusGap({ scope: CALENDAR_SCOPE, index }), () =>
+					Message.CompletedFocusGap(),
+				),
+			],
 		}),
 		CompletedFocusGap: () => ({ model }),
 		// An ended shift has nothing left to cover; a running one is covered from now to its end.

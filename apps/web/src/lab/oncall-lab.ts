@@ -56,6 +56,7 @@ export const LabState = Schema.Literals([
 	"editor-new",
 	"editor-covered",
 	"editor-gaps",
+	"editor-early",
 	"editor-edit",
 	"editor-invalid",
 	"editor-error",
@@ -260,7 +261,7 @@ const formFor = (state: LabState): Step<FormModel.Model, FormMessage.Message> =>
 					]
 				: state === "editor-new"
 					? [FormMessage.Message.ChangedName({ value: "Checkout primary" })]
-					: state === "editor-covered" || state === "editor-gaps"
+					: state === "editor-covered" || state === "editor-gaps" || state === "editor-early"
 						? [
 								FormMessage.Message.ChangedName({ value: "Checkout primary" }),
 								addPerson(0),
@@ -268,6 +269,20 @@ const formFor = (state: LabState): Step<FormModel.Model, FormMessage.Message> =>
 								// Weeknights only: the days and weekends show as gaps.
 								...(state === "editor-gaps"
 									? [FormMessage.Message.ClickedAddRestriction({ key: "l0" })]
+									: []),
+								// A start two days back: the rotation is already under way.
+								...(state === "editor-early"
+									? [
+											FormMessage.Message.PickedRotation({
+												key: "l0",
+												rotation: "daily",
+											}),
+											FormMessage.Message.ChangedLayerText({
+												key: "l0",
+												field: "startsAt",
+												value: "2026-11-08T09:00",
+											}),
+										]
 									: []),
 							]
 						: []

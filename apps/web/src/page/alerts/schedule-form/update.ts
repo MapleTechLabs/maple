@@ -7,13 +7,12 @@ import * as Combobox from "@maple/views/ui/combobox"
 import * as Menu from "@maple/views/ui/menu"
 import type { AppRoute } from "../../../route"
 import { type PageContext, PageOutMessage, type PageReturn } from "../../contract"
-import { DEFAULT_RANGE_DAYS, gapBarId } from "../shared/coverage-preview"
+import { DEFAULT_RANGE_DAYS, FocusGap } from "../shared/coverage-preview"
 import { scheduleHref, scheduleIdFromUrl } from "../shared/oncall-schedules"
 import {
 	FetchExistingSchedule,
 	FetchScheduleFormMembers,
 	FetchScheduleFormSession,
-	FocusPreviewGap,
 	ReadScheduleFormDefaults,
 	SaveSchedule,
 } from "./command"
@@ -308,15 +307,20 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			editRestriction(model, key, restrictionKey, (restriction) =>
 				edge === "start" ? { ...restriction, startTime: value } : { ...restriction, endTime: value },
 			),
+		// A draft has no past: the preview never steps back from today.
 		ClickedPreviewPrevious: () => ({
-			model: { ...model, previewWeekOffset: model.previewWeekOffset - 1 },
+			model: { ...model, previewWeekOffset: Math.max(0, model.previewWeekOffset - 1) },
 		}),
 		ClickedPreviewNext: () => ({ model: { ...model, previewWeekOffset: model.previewWeekOffset + 1 } }),
 		ClickedPreviewToday: () => ({ model: { ...model, previewWeekOffset: 0 } }),
 		PickedPreviewRange: ({ days }) => ({ model: { ...model, previewRange: days } }),
 		ClickedPreviewGap: ({ index }) => ({
 			model,
-			commands: [FocusPreviewGap({ selector: `#${gapBarId(PREVIEW_SCOPE, index)}` })],
+			commands: [
+				FoldkitCommand.mapMessage(FocusGap({ scope: PREVIEW_SCOPE, index }), () =>
+					Message.CompletedFocusGap(),
+				),
+			],
 		}),
 		CompletedFocusGap: () => ({ model }),
 		ClickedSave: () => save(model),

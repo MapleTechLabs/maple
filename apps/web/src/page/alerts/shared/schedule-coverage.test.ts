@@ -7,8 +7,11 @@ import {
 	draftConfigOf,
 	draftCoverage,
 	durationText,
+	gapRangeText,
 	gapsOf,
 	gapSummary,
+	layerOnCallAt,
+	previewLayerOf,
 	previewRange,
 	type Interval,
 } from "./schedule-coverage"
@@ -217,20 +220,72 @@ describe("previewRange", () => {
 })
 
 describe("gapSummary", () => {
+	const scope = {
+		timeZone: "Europe/Berlin",
+		weekOffset: 0,
+		days: 14,
+		checkedFromMs: at("2026-11-10T10:30:00Z"),
+		checkedToMs: at("2026-11-23T23:00:00Z"),
+	}
 	it("says covered when there are no gaps", () => {
-		expect(gapSummary([], "Europe/Berlin", 0, 14)).toBe("Covered for the next 14 days")
+		expect(gapSummary([], scope)).toBe("Covered for the next 14 days")
+		expect(gapSummary([], { ...scope, weekOffset: 2 })).toBe("Covered in this period")
 	})
 	it("counts gaps and names the longest in the schedule's zone", () => {
 		const gaps = [
 			{ startMs: at("2026-11-19T23:00:00Z"), endMs: at("2026-11-20T01:00:00Z") },
 			{ startMs: at("2026-11-20T23:00:00Z"), endMs: at("2026-11-21T15:00:00Z") },
 		]
-		expect(gapSummary(gaps, "Europe/Berlin", 0, 14)).toBe(
+		expect(gapSummary(gaps, scope)).toBe(
 			"2 gaps in the next 14 days, longest 16h (Sat 21 Nov 00:00 to 16:00)",
 		)
+	})
+	it("says nobody is on call when the one gap is everything checked", () => {
+		const whole = [{ startMs: scope.checkedFromMs, endMs: scope.checkedToMs }]
+		expect(gapSummary(whole, scope)).toBe("Nobody is on call for the next 14 days")
+		expect(gapSummary(whole, { ...scope, weekOffset: 1 })).toBe("Nobody is on call in this period")
+	})
+	it("gives a gap cut off by the range's end no end time", () => {
+		const closed = { startMs: at("2026-11-12T08:00:00Z"), endMs: at("2026-11-12T10:00:00Z") }
+		const open = { startMs: at("2026-11-21T07:00:00Z"), endMs: scope.checkedToMs }
+		expect(gapSummary([closed, open], scope)).toBe(
+			"2 gaps in the next 14 days, longest 2d 16h or longer (from Sat 21 Nov 08:00)",
+		)
+		expect(gapRangeText(closed, "Europe/Berlin", scope.checkedToMs)).toBe("Thu 12 Nov 09:00 to 11:00")
+		expect(gapRangeText(open, "Europe/Berlin", scope.checkedToMs)).toBe("from Sat 21 Nov 08:00")
 	})
 	it("formats durations", () => {
 		expect(durationText(90 * 60_000)).toBe("1h 30m")
 		expect(durationText(76 * HOUR)).toBe("3d 4h")
+	})
+})
+
+describe("a layer being edited", () => {
+	const window = { key: "r0", weekdays: ["mon" as const], startTime: "18:00", endTime: "08:00" }
+	const staffed = layer({
+		participants: people(["ana", "ben"]),
+		rotation: "daily",
+		startsAt: "2026-11-09T09:00",
+	})
+
+	it("does not preview while one of its windows is half typed, rather than reading as always active", () => {
+		const halfTyped = { ...staffed, restrictions: [window, { ...window, key: "r1", endTime: "" }] }
+		const noDays = { ...staffed, restrictions: [{ ...window, weekdays: [] }] }
+		expect(Option.isNone(previewLayerOf(halfTyped, "Europe/Berlin"))).toBe(true)
+		expect(Option.isNone(previewLayerOf(noDays, "Europe/Berlin"))).toBe(true)
+		const from = at("2026-11-09T00:00:00Z")
+		const to = at("2026-11-16T00:00:00Z")
+		const coverage = draftCoverage(formOf([halfTyped]), [], from, to, from)
+		expect(coverage.final).toEqual([])
+		expect(coverage.gaps).toEqual([{ startMs: from, endMs: to }])
+	})
+
+	it("names who the layer alone has on call at an instant, and nobody outside its windows", () => {
+		// Ana holds Mon 9 Nov 09:00, Ben Tue 10 Nov 09:00.
+		expect(layerOnCallAt(staffed, "Europe/Berlin", at("2026-11-10T10:30:00Z"))).toEqual(
+			Option.some("ben"),
+		)
+		const nights = { ...staffed, restrictions: [window] }
+		expect(layerOnCallAt(nights, "Europe/Berlin", at("2026-11-10T10:30:00Z"))).toEqual(Option.none())
 	})
 })

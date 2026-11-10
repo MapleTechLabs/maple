@@ -92,9 +92,7 @@ describe("on-call schedule page", () => {
 			given(loaded(ONCALL_NOW)),
 			expectView(text("Checkout primary")).toExist(),
 			expectView(
-				text(
-					"Times in Europe/Berlin. Yours is UTC. Pick a shift in the final row to cover it with an override.",
-				),
+				text("Your time zone is UTC. Pick a shift in the final row to cover it with an override."),
 			).toExist(),
 			expectView(role("rowheader", { name: /Final schedule/u })).toExist(),
 			expectView(role("rowheader", { name: /Weeknights/u })).toExist(),
@@ -394,7 +392,7 @@ describe("on-call schedule page", () => {
 			given(loaded(ONCALL_NOW, MEMBER)),
 			expectView(role("button", { name: "Add override" })).not.toExist(),
 			expectView(role("button", { name: /^Delete Dana Kim's override, /u })).not.toExist(),
-			expectView(text("Times in Europe/Berlin. Yours is UTC.")).toExist(),
+			expectView(text("Your time zone is UTC.")).toExist(),
 		)
 	})
 
@@ -475,5 +473,37 @@ describe("on-call schedule page", () => {
 			given(withShifts(month.model, ONCALL_NOW)),
 			expectView(text("10 Nov to 7 Dec")).toExist(),
 		)
+	})
+
+	test("a wider range draws a skeleton, not the old shifts as one long gap, until its shifts land", () => {
+		const model = loaded(ONCALL_NOW)
+		const month = pageUpdate(model, Message.PickedRange({ days: "28" }))
+		scene(
+			{ update: pageUpdate, view },
+			given(month.model),
+			expectView(text("10 Nov to 7 Dec")).toExist(),
+			expectView(role("rowheader", { name: /Final schedule/u })).not.toExist(),
+			expectView(text(/gap/u)).not.toExist(),
+			expectView(text(/^Covered/u)).not.toExist(),
+		)
+	})
+
+	test("a range that has wholly passed says its gaps are not checked, not that it was covered", () => {
+		const before = pageUpdate(
+			pageUpdate(loaded(ONCALL_NOW), Message.ClickedPreviousWeek()).model,
+			Message.ClickedPreviousWeek(),
+		)
+		scene(
+			{ update: pageUpdate, view },
+			given(withShifts(before.model, ONCALL_NOW)),
+			expectView(text("27 Oct to 9 Nov")).toExist(),
+			expectView(text("Past shifts. Gaps are only checked from now.")).toExist(),
+			expectView(text(/^Covered/u)).not.toExist(),
+		)
+	})
+
+	test("a gap in the summary focuses its bar on the calendar", () => {
+		const focus = pageUpdate(loaded(ONCALL_NOW), Message.ClickedGap({ index: 0 }))
+		expect(names(focus.commands)).toEqual(["FocusCoverageGap"])
 	})
 })

@@ -71,11 +71,12 @@ const previewShiftOf = (shift: V2OnCallShift): PreviewShift => ({
 const calendarSection = (h: H, model: Model, schedule: V2OnCallSchedule, viewerZone: string): Html => {
 	const range = rangeOf(model)
 	const nowMs = model.nowMs ?? 0
-	const zoneNote =
-		viewerZone === schedule.time_zone
-			? `Times in ${schedule.time_zone}.`
-			: `Times in ${schedule.time_zone}. Yours is ${viewerZone}.`
-	const note = `${zoneNote}${canManage(model) ? " Pick a shift in the final row to cover it with an override." : ""}`
+	// The axis names the schedule's zone; the note only says when the viewer's differs.
+	const noteParts = [
+		...(viewerZone === schedule.time_zone ? [] : [`Your time zone is ${viewerZone}.`]),
+		...(canManage(model) ? ["Pick a shift in the final row to cover it with an override."] : []),
+	]
+	const note = noteParts.length === 0 ? undefined : Arr.join(noteParts, " ")
 	const preview = (
 		fromMs: number,
 		toMs: number,
@@ -121,9 +122,13 @@ const calendarSection = (h: H, model: Model, schedule: V2OnCallSchedule, viewerZ
 	}
 	const loading = (fromMs: number, toMs: number) =>
 		preview(fromMs, toMs, Option.none(), skeleton(h, "h-40 w-full"))
-	// Shifts kept from another range (a read still in flight) draw as the skeleton, not blank rows.
+	// Shifts kept from another range (a read in flight, either end moved) draw as the skeleton: a
+	// shorter read on a longer axis would show its missing days as one long gap.
 	const loaded = (fromMs: number, toMs: number, shifts: V2OnCallShifts): Html =>
-		Option.exists(readRangeOf(model), (read) => isoMs(shifts.from) === read.fromMs)
+		Option.exists(
+			readRangeOf(model),
+			(read) => isoMs(shifts.from) === read.fromMs && isoMs(shifts.to) === read.toMs,
+		)
 			? preview(fromMs, toMs, Option.some(shifts))
 			: loading(fromMs, toMs)
 	const body = Option.match(range, {
