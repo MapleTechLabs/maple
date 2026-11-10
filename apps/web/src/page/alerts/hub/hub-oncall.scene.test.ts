@@ -3,9 +3,11 @@ import type { AlertsTab } from "../../../route/search"
 import { OrgId } from "@maple/domain"
 import { EscalationChainId, OnCallScheduleId } from "@maple/domain/http"
 import type { V2OnCallSchedule } from "@maple/domain/http/v2"
-import { Result, Schema, Array as Arr } from "effect"
+import { Result, Schema, Array as Arr, String as Str } from "effect"
 import * as Menu from "@maple/views/ui/menu"
-import { expect as expectView, given, role, scene, text, withViewInputs } from "foldkit/scene"
+import * as Dialog from "@maple/views/ui/dialog"
+import { MountDialog } from "@maple/views/ui/dialog"
+import { expect as expectView, given, Mount, role, scene, text, within, withViewInputs } from "foldkit/scene"
 import { describe, expect, test } from "vitest"
 import type { PageContext } from "../../contract"
 import { chainDestinations, chainUuid } from "../shared/escalation-test-fixtures"
@@ -217,6 +219,32 @@ describe("alerts hub, on-call schedules", () => {
 					"Slack #alerts-api, then whoever is on call on Checkout primary and Dana Kim after 5m, then Ben Brook after 15m; repeats once",
 				),
 			).toExist(),
+		)
+	})
+
+	test("the delete confirm is named for its schedule, a long unbroken name in full", () => {
+		const name = `checkout-primary-${Str.repeat(120)("x")}`
+		const scheduleId = Schema.decodeSync(OnCallScheduleId)(scheduleUuid(1))
+		const asked = pageUpdate(
+			onTab(
+				"on-call",
+				ENGINEER,
+				Arr.map(SCHEDULES, (schedule) =>
+					schedule.id === scheduleId ? { ...schedule, name } : schedule,
+				),
+			),
+			Message.GotRowMenuMessage({
+				menuId: scheduleMenuId(scheduleId),
+				message: Menu.Message.ClickedItem({ index: 1, item: { kind: "Item", value: "delete" } }),
+			}),
+		).model
+		expect(asked.confirmDeleteScheduleId).toBe(scheduleId)
+		scene(
+			{ update: pageUpdate, view },
+			given(asked),
+			Mount.resolve(MountDialog, Dialog.Message.CompletedMountDialog()),
+			expectView(role("alertdialog", { name: `Delete ${name}?` })).toExist(),
+			expectView(within(role("alertdialog"), role("heading", { name: `Delete ${name}?` }))).toExist(),
 		)
 	})
 

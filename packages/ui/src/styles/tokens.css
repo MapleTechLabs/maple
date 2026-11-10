@@ -830,3 +830,12 @@
 @utility loading-delay {
 	animation: loading-delay 0s 300ms both;
 }
+
+/* A hatch for something missing (an on-call gap): the error tone's lines over no fill. */
+@utility hatch-error {
+	background-image: repeating-linear-gradient(
+		135deg,
+		color-mix(in oklab, var(--severity-error) 32%, transparent) 0 1px,
+		transparent 1px 6px
+	);
+}
