@@ -6,6 +6,7 @@ import { Message, type Model, queryOf } from "./combobox"
 import { chipsInput, inputAttributes, listPopup } from "./combobox-view"
 import { icon } from "./icon"
 import { isMounted } from "./overlay/transition"
+import { tooltipTrigger } from "./tooltip-host"
 
 /**
  * `ComboboxPicker`: a button showing the current pick that opens a searchable list, the search
@@ -21,6 +22,8 @@ export type ComboboxPickerInputs = Readonly<{
 	/** The trigger's label: the pick, or a prompt drawn muted with `isPlaceholder`. */
 	trigger: ReadonlyArray<Html | string>
 	isPlaceholder?: boolean
+	/** The trigger's tooltip, for a pick the trigger shows shortened. */
+	tooltip?: string
 	renderItem?: (h: HtmlBuilder<Message>, value: string) => ReadonlyArray<Html | string>
 	itemClassName?: (value: string) => string | undefined
 	triggerClassName?: string
@@ -50,6 +53,10 @@ export const comboboxPicker = Submodel.defineView<Model, Message, ComboboxPicker
 					...(isShown ? [h.AriaControls(`${model.id}-popup`)] : []),
 					...(model.isOpen ? [h.DataAttribute("popup-open", "")] : []),
 					h.OnClick(Message.ClickedTriggerOf({ items: inputs.items })),
+					// Hidden while its own list is open, which would cover it.
+					...(inputs.tooltip === undefined || model.isOpen
+						? []
+						: tooltipTrigger(h, inputs.tooltip)),
 				],
 			},
 			[
@@ -99,7 +106,7 @@ export const comboboxPicker = Submodel.defineView<Model, Message, ComboboxPicker
 							isPrefiltered: true,
 							emptyText: inputs.emptyText,
 							anchorSelector: `#${triggerId}`,
-							className: "w-72 max-w-[calc(100vw-2rem)] overflow-hidden",
+							className: "w-90 max-w-[calc(100vw-2rem)] overflow-hidden",
 							positionerClassName: "z-60",
 							listClassName: "max-h-72 overflow-y-auto p-1",
 							itemClassName: (value) =>
