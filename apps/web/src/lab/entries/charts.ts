@@ -72,7 +72,7 @@ const scalarRows = (rows: ReadonlyArray<Record<string, unknown>>): ReadonlyArray
 		),
 	)
 
-/** The production timeseries arms: `QueryBuilderLineChart`, `QueryBuilderAreaChart`, stacked bars. */
+/** The production timeseries arms: the query-builder line, area and stacked bar charts. */
 const PRODUCTION_TIMESERIES = {
 	"line-production": { kind: "line", rows: scalarRows(toLatencyProductionRows(TIMESERIES_SPIKE_ROWS)) },
 	"line-incomplete-production": {
@@ -138,8 +138,6 @@ const THEME_TOKENS: ReadonlyArray<string> = [
 	]),
 ]
 
-// MODEL
-
 const Model = Schema.Struct({
 	maybeTheme: Schema.Option(ThemeColors),
 	chartRuntime: ChartRuntime,
@@ -175,8 +173,6 @@ const init = (): Update.Return<Model, Message> => ({
 	],
 })
 
-// MESSAGE
-
 const Message = defineMessageUnion({
 	ResolvedThemeColors: { colors: ThemeColors },
 	GotChartRuntimeMessage: { message: ChartRuntimeMessage },
@@ -190,8 +186,6 @@ const ReadClock = Command.define("ReadChartsLabClock", {
 	messages: [Message.CompletedReadClock],
 	execute: Effect.map(Clock.currentTimeMillis, (nowMs) => Message.CompletedReadClock({ nowMs })),
 })
-
-// UPDATE
 
 const foldChart = Update.foldChildAt({
 	update: Chart.update,
@@ -221,8 +215,6 @@ const update = (model: Model, message: Message) =>
 		GotToastMessage: ({ message }) => foldToasts(model, message),
 		CompletedReadClock: ({ nowMs }) => ({ model: modifyFields(model, { nowMs: () => nowMs }) }),
 	})
-
-// VIEW
 
 const toChartMessage = (slot: string) => (message: Chart.Message) =>
 	Message.GotChartMessage({ slot, message })

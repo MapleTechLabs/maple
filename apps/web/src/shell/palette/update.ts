@@ -26,7 +26,7 @@ const entriesOf = (model: Model, context: Context) =>
 
 export type Shown = Readonly<{ entries: ReadonlyArray<PaletteEntry>; isSearch: boolean }>
 
-/** `FUSE_OPTIONS`: title-weighted, location-free, threshold 0.35. */
+/** Title-weighted, location-free, threshold 0.35. */
 const FUSE_OPTIONS = {
 	keys: [
 		{ name: "title", weight: 0.7 },

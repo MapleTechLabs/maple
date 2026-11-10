@@ -132,7 +132,7 @@ const isMethodState = (state: LabState): boolean => state === "method" || state 
 const hubMessage = (model: Model, message: IntegrationsMessage): Return => {
 	const pinned = model.pinnedScripts
 	if (pinned !== null && isFixtureNoop(message)) return { model }
-	// `MethodLab`: Back is a `noop`, Continue closes.
+	// Back is a `noop`, Continue closes.
 	if (isMethodState(model.state) && message._tag === "ClickedGcpRunEdit") return { model }
 	if (isMethodState(model.state) && message._tag === "ClickedGcpMethodContinue")
 		return hubMessage(model, IntegrationsMessage.ClosedGcpConfigure())

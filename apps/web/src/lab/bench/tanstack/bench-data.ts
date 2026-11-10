@@ -41,7 +41,6 @@ function makeRows(): OverviewBenchRow[] {
 }
 
 /**
- * Recharts' `dataKey` reads and TanStack's channel accessors both need a mutable
- * array, so the mutable form is the one that is built.
+ * TanStack's channel accessors need a mutable array, so the mutable form is the one that is built.
  */
 export const overviewBenchRows: OverviewBenchRow[] = makeRows()

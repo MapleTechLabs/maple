@@ -8,7 +8,7 @@ import * as Waterfall from "@maple/views/traces/waterfall"
 import * as TraceFlow from "@maple/views/service-map/trace-flow/trace-flow"
 import * as Tabs from "@maple/views/ui/tabs"
 
-// `/lab/timeline`: `TraceViewTabs` over a synthetic trace with a
+// `/lab/timeline`: the trace view tabs over a synthetic trace with a
 // wide dynamic range, span event markers, and the selected span's events beside it.
 
 /** The fixture as the trace page's Model data, with the id `getSpanHierarchy` adds to the tree. */
@@ -34,7 +34,7 @@ export const LAB_FLOW_GRAPH = Option.map(LAB_TRACE, (trace) =>
 export const TAB_VALUES = ["waterfall", "timeline", "flow"]
 
 export const Model = Schema.Struct({
-	/** `TraceViewTabs` uncontrolled: `defaultValue="timeline"`. */
+	/** The trace view tabs, opening on the timeline. */
 	tabs: Tabs.Model,
 	colorBy: Schema.String,
 	selectedSpanId: Schema.NullOr(Schema.String),

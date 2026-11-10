@@ -10,7 +10,7 @@ import type * as PaletteModel from "./palette/model"
 import { SHORTCUTS_DIALOG_ID } from "./palette/shortcuts-view"
 import * as Palette from "./palette/update"
 
-// `GlobalShortcuts`: the palette and the shortcuts dialog mount on open and unmount on close, so
+// The palette and the shortcuts dialog mount on open and unmount on close, so
 // neither plays an exit transition.
 
 type UpdateReturn = Update.ReturnWithOutMessage<Model, Message, OutMessage, Resources>
@@ -53,7 +53,7 @@ export const toggleTheme = (model: Model): UpdateReturn => {
 
 const initShortcuts = () => Dialog.init(SHORTCUTS_DIALOG_ID, "dialog", { isOpen: true })
 
-/** `handleShowShortcuts`: the palette closes and the dialog opens. */
+/** The palette closes and the dialog opens. */
 export const openShortcuts = (model: Model): UpdateReturn => {
 	const closed = closePalette(model)
 	return {

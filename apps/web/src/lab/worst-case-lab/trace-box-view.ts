@@ -8,7 +8,7 @@ import type * as Tabs from "@maple/views/ui/tabs"
 import * as TabsView from "@maple/views/ui/tabs-view"
 import { flowGraphOf, Message, type Model } from "./trace-box"
 
-// `TraceViewTabs` inside the lab's `h-[640px]` box.
+// The trace view tabs inside the lab's `h-[640px]` box.
 
 type H = HtmlBuilder<Message>
 

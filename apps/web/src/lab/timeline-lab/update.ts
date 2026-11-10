@@ -66,7 +66,7 @@ export const init = (): Return => {
 	})
 }
 
-/** `setSelected`: the open tab re-renders with the span, and its events list starts closed. */
+/** The open tab re-renders with the span, and its events list starts closed. */
 const selectSpan = (model: Model, spanId: string): Return => {
 	if (model.selectedSpanId === spanId) return { model }
 	const span = Option.flatMap(LAB_TRACE, (trace) =>

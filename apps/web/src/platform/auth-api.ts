@@ -46,14 +46,14 @@ const makeClient = (transformClient?: (client: HttpClient.HttpClient) => HttpCli
 
 const withBearer = (token: string) => HttpClient.mapRequest(HttpClientRequest.bearerToken(token))
 
-/** Session check: any answer but a transport failure ends the session (`resolveSelfHostedRouterAuth`). */
+/** Session check: any answer but a transport failure ends the session. */
 const classifySessionCheck = (cause: unknown) =>
 	new SessionCheckError({
 		reason: Predicate.isTagged(cause, "HttpClientError") ? "Unreachable" : "Rejected",
 		cause,
 	})
 
-/** Renewal: only a 401 ends the session; anything else keeps the current token (`renewSessionToken`). */
+/** Renewal: only a 401 ends the session; anything else keeps the current token. */
 const classifyRenewal = (cause: unknown) =>
 	new SessionCheckError({ reason: Schema.is(UnauthorizedError)(cause) ? "Rejected" : "Unreachable", cause })
 

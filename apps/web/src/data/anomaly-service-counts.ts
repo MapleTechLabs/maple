@@ -6,7 +6,7 @@ import { ReadCache } from "./read-cache"
 import type { RequestKey } from "@maple/views/data/request-key"
 
 /**
- * `openAnomalyServiceCountsAtom`, which the Overview and the services list both read: through the
+ * The open anomaly counts per service, which the Overview and the services list both read: through the
  * read cache, so the second page is answered without a request; a Reload reads again.
  */
 export const loadAnomalyServiceCounts = (key: RequestKey, options?: { readonly refresh?: boolean }) =>

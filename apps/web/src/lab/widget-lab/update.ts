@@ -57,7 +57,7 @@ const foldToasts = foldLabToasts<Model, Message>((message) => Message.GotToastMe
 export const menuIdOf = (slot: string) => `widget-lab-menu-${slot}`
 export const detailsIdOf = (slot: string) => `widget-lab-details-${slot}`
 
-/** `useSortState` with `resettable`, as the dashboard's tables sort. */
+/** A resettable sort, as the dashboard's tables sort. */
 const nextSort = (model: Model, slot: string, field: string, isText: boolean) => {
 	const current = model.tableSorts[slot] ?? { key: null, dir: "desc" as const }
 	return current.key === field

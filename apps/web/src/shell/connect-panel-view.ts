@@ -42,7 +42,7 @@ const COPY_CLASS = "shrink-0 [&_svg:not([class*='size-'])]:size-4"
 const toCopy = (field: CopyField) => (message: CopyButton.Message) =>
 	Message.GotCopyMessage({ field, message })
 
-/** `ConnectionStatusPill`: amber while waiting, green once telemetry is observed, grey when the read failed. */
+/** Amber while waiting, green once telemetry is observed, grey when the read failed. */
 const statusPill = (h: H, model: Model): Html => {
 	const services = realServices(model)
 	const isConnected = services.length > 0
@@ -56,10 +56,7 @@ const statusPill = (h: H, model: Model): Html => {
 		h,
 		{
 			pill: true,
-			className: cn(
-				"gap-1.5 text-2xs sm:text-2xs",
-				toneBoxClass(isConnected ? "info" : "primary"),
-			),
+			className: cn("gap-1.5 text-2xs sm:text-2xs", toneBoxClass(isConnected ? "info" : "primary")),
 		},
 		isConnected
 			? [statusDot(h, { tone: "ok" }), `Connected · ${countLabel(services.length, "service")}`]
@@ -67,14 +64,14 @@ const statusPill = (h: H, model: Model): Html => {
 	)
 }
 
-/** `CopyableFieldSkeleton`: a labelled field whose value is still loading. */
+/** A labelled field whose value is still loading. */
 const fieldSkeleton = (h: H, label: string): Html =>
 	h.div(
 		[h.Class("space-y-1")],
 		[typography(h, { size: "xs", tone: "muted" }, [label]), skeleton(h, "h-8 w-full")],
 	)
 
-/** `IngestKeysUnavailableNote`: members cannot read the org's ingest keys. */
+/** Members cannot read the org's ingest keys. */
 const keysUnavailable = (h: H): Html =>
 	h.p(
 		[
@@ -102,7 +99,7 @@ const keysUnavailable = (h: H): Html =>
 		],
 	)
 
-/** `ConnectCredentials`: the endpoint and both keys, masked. */
+/** The endpoint and both keys, masked. */
 const credentials = (h: H, model: Model): Html =>
 	h.div(
 		[h.Class("space-y-3")],
@@ -197,7 +194,7 @@ const installAction = (h: H, href: string, label: string): Html =>
 		icon(h, "ExternalLinkIcon", { size: 12, className: "text-muted-foreground" }),
 	])
 
-/** `McpCard`: each client's fastest way to add Maple, the endpoint for any other. */
+/** Each client's fastest way to add Maple, the endpoint for any other. */
 const mcpCard = (h: H, model: Model): Html =>
 	h.div(
 		[h.Class("space-y-2")],
@@ -290,7 +287,6 @@ const commandBlock = (h: H, model: Model): Html =>
 const LINK_CLASS =
 	"font-prose text-muted-foreground underline underline-offset-2 hover:text-foreground active:text-foreground"
 
-/** `ConnectPanel`. */
 const connectPanel = (h: H, model: Model): ReadonlyArray<Html> => [
 	h.div(
 		[h.Class("space-y-4")],
@@ -341,7 +337,7 @@ const connectPanel = (h: H, model: Model): ReadonlyArray<Html> => [
 	),
 ]
 
-/** `ConnectButton`: the popover trigger and, while open, the panel. */
+/** The popover trigger and, while open, the panel. */
 export const view = Submodel.defineView<Model, Message>((model, h) =>
 	h.submodel({
 		slotId: "shell-connect-popover",

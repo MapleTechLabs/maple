@@ -28,7 +28,7 @@ import {
 } from "@maple/views/charts/definitions/plot-constants"
 import { type SpikeSpec, mutedOf, MUTED_OPACITY } from "./spike-spec"
 
-// `LineSpike` / `LineLegendSpike` and `AreaSpike` / `AreaLegendSpike`, definition half.
+// The line and area spikes' definitions, with and without a legend.
 
 type Point = ChartPoint<TimeseriesSpikeRow, ChartValue, number>
 
@@ -80,7 +80,7 @@ const xScale = (axisContext: ReturnType<typeof timeseriesAxisContext>) => ({
 	},
 })
 
-/** `PlotTooltipBody` reduced to data, emphasising the series nearest the cursor. */
+/** The tooltip body as data, emphasising the series nearest the cursor. */
 const tooltipOf =
 	(
 		series: ReadonlyArray<Series>,
@@ -117,7 +117,6 @@ const dataMaxOf = (rows: ReadonlyArray<TimeseriesSpikeRow>, series: ReadonlyArra
 		Arr.reduce(series, max, (seriesMax, entry) => Math.max(seriesMax, entry.value(row))),
 	)
 
-/** `LineFigure`. */
 export const buildLineSpike = (spec: SpikeSpec): BuiltChart<TimeseriesSpikeRow, ChartValue, number> => {
 	const rows = rowsOf(spec)
 	const series = latencySeries(spec)
@@ -180,7 +179,6 @@ export const buildLineSpike = (spec: SpikeSpec): BuiltChart<TimeseriesSpikeRow, 
 	}
 }
 
-/** `AreaFigure`. */
 export const buildAreaSpike = (spec: SpikeSpec): BuiltChart<TimeseriesSpikeRow, ChartValue, number> => {
 	const rows = rowsOf(spec)
 	const series = throughputSeries(spec)

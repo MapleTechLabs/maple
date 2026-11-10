@@ -101,7 +101,7 @@ export const labShellView = <Message>(
 	}),
 ]
 
-/** The root's shell Subscriptions: `useIsMobile`, the sidebar shortcut and the Pinned group's shape. */
+/** The root's shell Subscriptions: the viewport query, the sidebar shortcut and the Pinned group's shape. */
 export const labShellSubscriptions = <Model extends { readonly shell: Shell.Model }, Message>(
 	toParentMessage: (message: Shell.Message) => Message,
 ) =>

@@ -64,8 +64,6 @@ function parseEqualsClauses(text: string): FunnelFilterParse<ReadonlyArray<Equal
 	return { ok: true, value: clauses }
 }
 
-// Step filters → `attributeEquals`
-
 /**
  * `plan = "pro" AND source = "cli"` → `{ plan: "pro", source: "cli" }`. Keys
  * keep their case; an optional `attr.` prefix (muscle memory from the trace
@@ -150,8 +148,6 @@ export function compileFunnelSteps(
 	}
 	return { ok: true, value: steps }
 }
-
-// Population filter ↔ `display.funnel.filters`
 
 /**
  * The where-clause spelling of each population filter field, first entry

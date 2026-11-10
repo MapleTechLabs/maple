@@ -6,7 +6,7 @@ import type { AppRoute, RouteTag } from "./app-route"
 // The session time range middleware: a navigation that names no
 // window gets the one last chosen in this tab, when it fits the page's ceiling.
 
-/** `SessionTimeRangeSchema`: what the tab remembers, per org. */
+/** What the tab remembers, per org. */
 export const SessionTimeRange = Schema.Struct({
 	startTime: Schema.optionalKey(Schema.String),
 	endTime: Schema.optionalKey(Schema.String),
@@ -84,7 +84,7 @@ const isSet = (value: unknown): value is string => typeof value === "string" && 
 const namesTimeRange = (search: Readonly<Record<string, unknown>>): boolean =>
 	isSet(search["timePreset"]) || isSet(search["startTime"]) || isSet(search["endTime"])
 
-/** `isCompleteTimeRange`: a preset, or both absolute bounds. Only these are remembered. */
+/** A preset, or both absolute bounds. Only these are remembered. */
 export const completeRangeOf = (route: AppRoute): Option.Option<SessionTimeRange> =>
 	Option.flatMap(searchOf(route), (search) => {
 		const { timePreset, startTime, endTime } = search
@@ -95,7 +95,7 @@ export const completeRangeOf = (route: AppRoute): Option.Option<SessionTimeRange
 const epochOf = (value: string): Option.Option<number> =>
 	Option.map(DateTime.make(normalizeTimestampInput(value)), DateTime.toEpochMillis)
 
-/** `isTimeRangeWithin`, a preset resolved against the clock first (`relativeToAbsolute`). */
+/** Whether a range fits the ceiling, a preset resolved against the clock first. */
 export const isWithin = (
 	stored: SessionTimeRange,
 	maxSeconds: number,

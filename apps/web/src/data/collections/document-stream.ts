@@ -5,7 +5,7 @@ import { rowToDocument } from "./dashboards"
 import { liveQueryStream } from "../live-query"
 import { orgLive } from "./org-collections"
 
-/** `useDashboardsRead`'s `dashboards.find(id)`: the board's row, decoded, as that row changes. */
+/** The board's row, decoded, as that row changes. */
 export const documentStream = <M>(
 	orgId: string,
 	dashboardId: string,

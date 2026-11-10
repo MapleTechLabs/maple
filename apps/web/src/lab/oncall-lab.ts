@@ -122,8 +122,6 @@ const failure = (message: string): LoadFailure => ({
 	recovery: "fix_request",
 })
 
-// HUB
-
 const hubStep = (model: HubModel.Model, message: HubMessage.Message) =>
 	HubUpdate.update(model, message, CONTEXT)
 
@@ -180,8 +178,6 @@ const hubFor = (state: LabState): Step<HubModel.Model, HubMessage.Message> => {
 		hubStep,
 	)
 }
-
-// FORM
 
 const formStep = (model: FormModel.Model, message: FormMessage.Message) =>
 	FormUpdate.update(model, message, CONTEXT)
@@ -256,8 +252,6 @@ const formFor = (state: LabState): Step<FormModel.Model, FormMessage.Message> =>
 	return fold(start, [...base, ...extra], formStep)
 }
 
-// SCHEDULE PAGE
-
 const scheduleStep = (model: ScheduleModel.Model, message: ScheduleMessage.Message) =>
 	ScheduleUpdate.update(model, message, CONTEXT)
 
@@ -322,8 +316,6 @@ const scheduleFor = (state: LabState): Step<ScheduleModel.Model, ScheduleMessage
 				)
 			: withShifts
 }
-
-// INCIDENT
 
 const incidentStep = (model: IncidentModel.Model, message: IncidentMessage.Message) =>
 	IncidentUpdate.update(model, message, CONTEXT)

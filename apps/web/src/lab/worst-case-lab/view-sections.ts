@@ -9,7 +9,7 @@ import * as TraceBox from "./trace-box"
 import * as TraceBoxView from "./trace-box-view"
 import { type H, narrow, wcSection } from "./view-parts"
 
-// `TraceSection`, `LegendSection` and `VerdictSection`.
+// The trace, legend and verdict sections.
 
 const traceBox = (
 	h: H,

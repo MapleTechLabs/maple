@@ -12,8 +12,7 @@ import type { BuiltChart } from "@maple/views/charts/definitions/built-chart"
 import type { SpikeSpec } from "./spike-spec"
 import { RAMP_TOKENS } from "./spike-timeseries-tokens"
 
-// `TraceScatterSpike`, definition half: 5,000
-// seeded spans hex-binned by screen-space density. Code copied, constants unchanged.
+// The trace scatter spike's definition: 5,000 seeded spans hex-binned by screen-space density.
 
 interface ScatterRow {
 	readonly startMs: number

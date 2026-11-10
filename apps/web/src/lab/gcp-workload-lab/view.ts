@@ -11,7 +11,7 @@ import { type LabPage, Message, type Model, SPAN_STATES } from "./model"
 import { workloadOf } from "./update"
 import { Array as Arr } from "effect"
 
-/** `WorkloadPage`'s props, read off the fixture. */
+/** The workload page's data, read off the fixture. */
 const dataOf = (page: LabPage): PageData => {
 	const workload = workloadOf(page)
 	const sql = workload.cloudSql

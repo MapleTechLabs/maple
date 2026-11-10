@@ -11,8 +11,6 @@ export type Toggle = typeof Toggle.Type
 
 export const PIN_OPTIONS = ["k8s.pod.name", "user.id", "http.route"] as const
 
-// MODEL
-
 export const Model = Schema.Struct({
 	stream: LogsStream.Model,
 	footerText: Schema.String,
@@ -36,8 +34,6 @@ export const Model = Schema.Struct({
 	shell: Shell.Model,
 })
 export type Model = typeof Model.Type
-
-// MESSAGE
 
 export const Message = defineMessageUnion({
 	GotStreamMessage: { message: LogsStream.Message },

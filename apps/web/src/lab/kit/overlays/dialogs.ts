@@ -20,7 +20,7 @@ type H = HtmlBuilder<Message>
 const itemRow = (h: H, children: ReadonlyArray<Html>) =>
 	h.div([h.Class("flex min-h-48 items-start")], children)
 
-/** `<Label><Input defaultValue /></Label>`: an uncontrolled input inside its label. */
+/** An uncontrolled input inside its label. */
 const labelledInput = (h: H, id: string, label: string, value: string): Html =>
 	h.label(
 		[h.Class(cn(labelStyles, "flex flex-col items-start gap-2")), h.DataAttribute("slot", "label")],

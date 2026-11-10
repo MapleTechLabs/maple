@@ -5,7 +5,7 @@ import { seriesKeysOf } from "./derive"
 import type { Message, Model, RunResult } from "./model"
 import { Array as Arr } from "effect"
 
-// `QueryBuilderAtomResults` and the no-enabled-queries error in the Execution Results card.
+// The query results and the no-enabled-queries error in the Execution Results card.
 
 type H = HtmlBuilder<Message>
 

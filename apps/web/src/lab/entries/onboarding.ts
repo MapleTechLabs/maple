@@ -218,8 +218,6 @@ const createOrgStep = (model: Model, message: CreateOrg.Message): Return => {
 	}
 }
 
-// VIEW
-
 const plansView = Submodel.defineView<null, PricingCards.Message>((_, h) =>
 	h.div([h.Class("space-y-6")], [PricingCardsView.planCards(h, PLANS, null), compliance(h)]),
 )

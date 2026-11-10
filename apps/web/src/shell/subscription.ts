@@ -4,7 +4,7 @@ import { Dom } from "foldkit"
 import { DASHBOARD_FAVORITES_EVENT, readDashboardFavorites } from "./favorites"
 import { Message } from "./message"
 
-/** `useIsMobile` (`max-md`): below 768px the sidebar is a sheet. */
+/** `max-md`: below 768px the sidebar is a sheet. */
 export const MOBILE_QUERY = "(max-width: 767px)"
 
 export const viewportChanges: Stream.Stream<Message> = Dom.streamFromMediaQuery({
@@ -28,7 +28,7 @@ export const smallViewportChanges: Stream.Stream<Message> = Dom.streamFromMediaQ
 	mapMatches: (isBelowSm) => Message.ChangedSmallViewport({ isBelowSm }),
 })
 
-/** `SidebarProvider`'s ⌘B / Ctrl+B toggle. */
+/** The sidebar's ⌘B / Ctrl+B toggle. */
 export const sidebarShortcut: Stream.Stream<Message> = Dom.streamFromEventFilterMap({
 	target: () => window,
 	type: "keydown",
@@ -40,7 +40,7 @@ export const sidebarShortcut: Stream.Stream<Message> = Dom.streamFromEventFilter
 })
 
 /**
- * `GlobalShortcuts`' document keydown: Mod+K opens the palette anywhere; `?`, `T` and `/` only
+ * The document keydown: Mod+K opens the palette anywhere; `?`, `T` and `/` only
  * outside fields and dialogs, and not after an element handled the key (stopped propagation).
  */
 export const globalShortcuts: Stream.Stream<Message> = Dom.streamFromEventFilterMap({
@@ -76,7 +76,7 @@ export const globalShortcuts: Stream.Stream<Message> = Dom.streamFromEventFilter
 
 const favoritesTarget: Dom.TypedEventTarget<{ [DASHBOARD_FAVORITES_EVENT]: Event }> = window
 
-/** `dashboardFavoritesAtom`'s subscribers: the list starred or unstarred a dashboard. */
+/** The list starred or unstarred a dashboard. */
 export const favoritesChanges: Stream.Stream<Message> = Dom.streamFromEvent({
 	target: favoritesTarget,
 	type: DASHBOARD_FAVORITES_EVENT,

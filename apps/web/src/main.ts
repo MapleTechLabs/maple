@@ -23,8 +23,6 @@ export { subscriptions } from "./subscription"
 export { update } from "./update"
 export { view } from "./view"
 
-// FLAGS
-
 /** Read before the first render, so a signed-out visit paints the page, not the boot splash. */
 export const Flags = Schema.Struct({
 	hasStoredSession: Schema.Boolean,
@@ -49,8 +47,6 @@ export const flags: Effect.Effect<Flags> = Effect.all({
 	knownToRenderApp: readKnownToRenderApp,
 	shell: Shell.readShellFlags,
 })
-
-// INIT
 
 export const init: Runtime.RoutingApplicationInit<Model, Message, Flags, Resources> = (flags, url: Url) => {
 	const route = urlToAppRoute(url)

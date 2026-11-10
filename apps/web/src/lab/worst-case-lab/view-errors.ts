@@ -12,9 +12,9 @@ import { Message, type Model } from "./model"
 import { type H, narrow, wcSection } from "./view-parts"
 import { Array as Arr } from "effect"
 
-// `ErrorsSection`: occurrences, a signal row, avatars.
+// Occurrences, a signal row, avatars.
 
-/** `ErrorSignalRow` speaks the errors hub's Messages; the lab hosts it in that universe. */
+/** The error signal row speaks the errors hub's Messages; the lab hosts it in that universe. */
 const signalRowView = Submodel.defineView<ErrorSignal, SignalMessage, RowState>((signal, state, h) =>
 	signalRow(h, signal, state),
 )

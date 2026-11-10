@@ -13,20 +13,19 @@ import { statsLegend } from "@maple/views/charts/plot-legend"
 import { muteColor } from "@maple/views/charts/sequential-colors"
 import { resolveColor, type ThemeColors } from "@maple/views/charts/theme-colors"
 
-// `PieSpike` and `HistogramSpike`, canvas arm.
+// The pie and histogram spikes, canvas arm.
 
 export interface PieSpikeRow {
 	readonly name: string
 	readonly value: number
 }
 
-/** `MUTED_COLOR_AMOUNT`. */
 const MUTED_COLOR_AMOUNT = 0.78
 
 const SLICE_TOKENS = ["--chart-1", "--chart-2", "--chart-3", "--chart-4", "--chart-5"] as const
 export const SPIKE_TOKENS: ReadonlyArray<string> = [...SLICE_TOKENS]
 
-/** `useSliceColor`: a slice's colour by its row's position in the full list. */
+/** A slice's colour by its row's position in the full list. */
 const sliceColorFor = (theme: ThemeColors, rows: ReadonlyArray<PieSpikeRow>) => {
 	const palette = Arr.map(SLICE_TOKENS, (token) => resolveColor(theme, token))
 	const order = new Map<string, number>()
@@ -73,7 +72,7 @@ const pieSpikeTooltip = (
 		Bucket: () => Option.none(),
 	})
 
-/** `PieSpike` = `PieFigure` with no legend, so `activeName` is never wired. */
+/** The pie with no legend, so `activeName` is never wired. */
 export const pieSpikeView = Submodel.defineView<Model, Message, PieSpikeInputs>((model, inputs, h) => {
 	const colorFor = sliceColorFor(inputs.theme, inputs.rows)
 	return plotFrame(h, {
@@ -94,7 +93,7 @@ export const pieSpikeView = Submodel.defineView<Model, Message, PieSpikeInputs>(
 })
 
 /**
- * `PieLegendSpike`: the pie beside its stats legend. Plot focus and legend hover share the active
+ * The pie beside its stats legend. Plot focus and legend hover share the active
  * slice (it grows); a legend click pins one slice and mutes the rest by colour.
  */
 export const pieLegendSpikeView = Submodel.defineView<Model, Message, PieSpikeInputs>((model, inputs, h) => {
@@ -160,7 +159,7 @@ const expandSampleData = (): ReadonlyArray<number> => {
 	return values
 }
 
-/** `histogramSpikeRows`, as the plain numbers they wrap. */
+/** The histogram's sample rows, as the plain numbers they wrap. */
 export const histogramSpikeValues: ReadonlyArray<number> = expandSampleData()
 
 export interface HistogramSpikeInputs {

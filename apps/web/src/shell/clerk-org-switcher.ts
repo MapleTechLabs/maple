@@ -16,7 +16,7 @@ import { containSearchKeys } from "./namespace-search"
 
 /**
  * The Clerk org switcher menu: the active
- * user's organizations, "Create Organization" (its `CreateOrganizationDialog`), and in the sidebar
+ * user's organizations, "Create Organization" (and its dialog), and in the sidebar
  * the namespace submenu. One Submodel backs the sidebar switcher and the auth screens' buttons.
  */
 
@@ -60,7 +60,7 @@ export type Message = typeof Message.Type
 export const OutMessage = defineMessageUnion({
 	SelectedOrganization: { orgId: Schema.String },
 	SelectedNamespace: { maybeNamespace: Schema.Option(Schema.String) },
-	/** The namespace submenu opened: its list is read then (`NamespaceScopeList` mounts). */
+	/** The namespace submenu opened: its list is read then. */
 	OpenedNamespaces: {},
 })
 export type OutMessage = typeof OutMessage.Type
@@ -71,8 +71,6 @@ export const CREATE_VALUE = "create"
 export const NAMESPACE_SUBMENU = "namespace"
 export const ALL_NAMESPACES = "*"
 export const NAMESPACE_PREFIX = "ns:"
-
-// UPDATE
 
 export type UpdateReturn = Update.ReturnWithOutMessage<Model, Message, OutMessage, Resources>
 
@@ -197,8 +195,6 @@ export const MountNamespaceSearch = Mount.defineStream("MountSwitcherNamespaceSe
 		),
 })
 
-// COMMANDS
-
 /** Where switching to an org lands: its own region's dashboard, else a reload of this one. */
 export const switchTargetOf = (organization: {
 	readonly homeRegion: "us" | "eu"
@@ -228,7 +224,7 @@ export const openOrganization = (
 ): Effect.Effect<void, ClerkActionError> =>
 	activateOrganization(orgId).pipe(Effect.andThen(landOn(targetUrl)))
 
-/** `switchOrganization` / the create dialog's ending: `setActive`, then reload or the region's app. */
+/** A switch or the create dialog's ending: `setActive`, then reload or the region's app. */
 export const SwitchOrganization = Command.define("SwitchOrganization", {
 	args: { orgId: Schema.String, targetUrl: Schema.NullOr(Schema.String) },
 	messages: [Message.CompletedSwitchOrganization],

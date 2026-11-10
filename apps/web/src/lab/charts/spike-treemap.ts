@@ -9,8 +9,8 @@ import { MUTED_COLOR_AMOUNT } from "@maple/views/charts/definitions/plot-constan
 import type { SpikeSpec } from "./spike-spec"
 import { serviceToken, TREEMAP_ROWS, type TreemapRow } from "./spike-treemap-data"
 
-// `TreemapSpike` / `TreemapLegendSpike`, definition
-// half: span volume tiled service → operation, the legend muting by colour. Code copied.
+// The treemap spikes' definition: span volume tiled service → operation, the legend muting by
+// colour.
 
 const PATH_DELIMITER = "\u0000"
 const MUTED_LABEL_AMOUNT = 0.45

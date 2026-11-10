@@ -25,9 +25,8 @@ interface InfraCorrelationBase {
 	/** Resource-attribute key whose presence gated this group. */
 	detectAttribute: string
 	/**
-	 * Resolved identity value (pod / node / host name), kept raw — the deep-link
-	 * is built by `CorrelationLink` via TanStack `<Link to/params/search>`, which
-	 * owns URL encoding, so this value is passed through verbatim.
+	 * Resolved identity value (pod / node / host name), kept raw: the link builder owns URL
+	 * encoding, so this value is passed through verbatim.
 	 */
 	identifier: string
 }

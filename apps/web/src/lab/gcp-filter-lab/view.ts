@@ -11,7 +11,7 @@ const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
 
 type H = HtmlBuilder<Message>
 
-/** The card around `GcpLogFilterField`, labelled, with ids of its own. */
+/** The card around the log filter field, labelled, with ids of its own. */
 const cardView = Submodel.defineView<
 	ScenarioState,
 	IntegrationsMessage,

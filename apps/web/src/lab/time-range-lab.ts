@@ -49,7 +49,7 @@ export const flags: Effect.Effect<Flags> = Effect.all({
 	effectiveTimeZone: readEffectiveTimeZone,
 })
 
-/** `relativeToAbsolute` at `nowMs` in the zone, with the preset it came from. */
+/** A preset resolved at `nowMs` in the zone, with the preset it came from. */
 const rangeOf = (presetValue: string, nowMs: number, timeZone: string): Range | null => {
 	const resolved = resolveRelativeRangeToWarehouse(presetValue, nowMs, timeZone)
 	return resolved === null ? null : { ...resolved, presetValue }
@@ -66,7 +66,7 @@ const ResolveRange = Command.define("ResolveLabTimeRange", {
 
 type Return = Update.Return<Model, Message>
 
-/** `PRESET_OPTIONS[0]`: the last five minutes. */
+/** The first preset: the last five minutes. */
 export const init = (flags: Flags): Return => ({
 	model: {
 		picker: TimeRangePicker.init("lab-time-range"),
@@ -85,7 +85,7 @@ export const update = (model: Model, message: Message): Return =>
 				Message.GotPickerMessage({ message: child }),
 			)
 			const picker = { ...model, picker: next.model }
-			// `setRange`: a custom range is stored as picked, with no preset.
+			// A custom range is stored as picked, with no preset.
 			if (next.outMessage?._tag === "SelectedCustomRange")
 				return {
 					model: {

@@ -38,7 +38,7 @@ const crumb = (h: HtmlBuilder<Message>, entry: BreadcrumbEntry, className?: stri
 			: breadcrumbLink(h, { className: CRUMB_LABEL, href: entry.href }, [entry.label]),
 	])
 
-/** `ConnectButton`: the ingest endpoint, keys and MCP popover. */
+/** The ingest endpoint, keys and MCP popover. */
 const connectButton = (h: HtmlBuilder<Message>, model: Model): Html =>
 	h.submodel({
 		slotId: "connect-panel",
@@ -47,7 +47,7 @@ const connectButton = (h: HtmlBuilder<Message>, model: Model): Html =>
 		toParentMessage: (message) => Message.GotConnectMessage({ message }),
 	})
 
-/** `OnboardingChecklistButton`: Clerk only, self-hosted has no billing to credit. */
+/** Clerk only, self-hosted has no billing to credit. */
 const checklistPill = (h: HtmlBuilder<Message>, model: Model): Html =>
 	h.submodel({
 		slotId: "onboarding-checklist",
@@ -68,7 +68,7 @@ export const topbar = (
 	model: Model,
 	breadcrumbs: ReadonlyArray<BreadcrumbEntry>,
 	pageActions: Html,
-	/** `FilterSidebarTrigger` / `RightSidebarTrigger`: below `lg`, one per rail the page renders. */
+	/** Below `lg`, one per rail the page renders. */
 	railTriggers: ReadonlyArray<Html> = [],
 	showsConnect = true,
 	/** Where the page's data comes from (`source-link.ts`). */

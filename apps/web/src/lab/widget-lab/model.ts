@@ -48,7 +48,7 @@ export const Message = defineMessageUnion({
 	GotDetailsMessage: { slot: Schema.String, message: Popover.Message },
 	GotMenuMessage: { slot: Schema.String, message: Menu.Message },
 	ClickedSortColumn: { slot: Schema.String, field: Schema.String, isText: Schema.Boolean },
-	/** A widget action (`labActions`): the lab has nothing to do. */
+	/** A widget action: the lab has nothing to do. */
 	ClickedWidgetAction: { action: Schema.String },
 	UpdatedDashboards: { orgId: Schema.String },
 })

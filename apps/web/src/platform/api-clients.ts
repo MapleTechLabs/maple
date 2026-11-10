@@ -71,7 +71,7 @@ export class MapleApiV2Client extends Context.Service<MapleApiV2Client, Effect.S
 	static readonly layer = Layer.effect(this, makeApiV2).pipe(Layer.provide(MapleHttpClientLive))
 }
 
-/** `MapleAiAtomClient`: chat and AI endpoints. */
+/** Chat and AI endpoints. */
 export class MapleAiClient extends Context.Service<MapleAiClient, Effect.Success<typeof makeAiApi>>()(
 	"@maple/web/MapleAiClient",
 ) {

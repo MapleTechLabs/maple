@@ -8,7 +8,7 @@ import type { Resources } from "../../platform/resources"
 import * as TraceFlow from "@maple/views/service-map/trace-flow/trace-flow"
 import * as Tabs from "@maple/views/ui/tabs"
 
-// `TraceBox`: a controlled `TraceViewTabs` over one trace, its
+// Controlled trace view tabs over one trace, its
 // own tab and selected span, the way `/lab/timeline` hosts the trace page's Submodels.
 
 export const TAB_VALUES = ["waterfall", "timeline", "flow"]
@@ -97,7 +97,7 @@ export const init = (input: InitInput): Return =>
 		input.view,
 	)
 
-/** `onSelectSpan`: the open tab re-renders with the span. */
+/** The open tab re-renders with the span. */
 const selectSpan = (model: Model, spanId: string): Return => {
 	if (model.selectedSpanId === spanId) return { model }
 	const next: Model = { ...model, selectedSpanId: spanId }

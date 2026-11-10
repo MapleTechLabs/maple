@@ -8,7 +8,7 @@ import { statusDot } from "@maple/views/ui/status-dot"
 import { Message, type Model } from "./update"
 import { Array as Arr, Order, String as Str } from "effect"
 
-// `ServiceInventory` with nothing selected: the searchable list sorted by error rate.
+// The service inventory with nothing selected: the searchable list sorted by error rate.
 
 export const topology = SERVICE_MAP_3D_TOPOLOGY
 type H = HtmlBuilder<Message>

@@ -44,8 +44,6 @@ const closeMenu = (model: Model): Model => modifyFields(model, { openMenu: () =>
 
 const openMenuOf = (model: Model): Option.Option<Menu> => Option.map(model.openMenu, ({ menu }) => menu)
 
-// ENTRY POINTS
-
 /**
  * A shell route rendered for a signed-in org: the sidebar's and root's boot requests fire once
  * per org. A later org change (Clerk) reloads the page, so a new org reboots here.
@@ -69,7 +67,7 @@ export const enter =
 			model: sidebar.model,
 			commands: [
 				...(sidebar.commands ?? []),
-				// Clerk: the reward pill (`OnboardingChecklistButton`) and who is looking at it.
+				// Clerk: the reward pill and who is looking at it.
 				...(isClerkAuthEnabled
 					? [toChecklist(Checklist.LoadChecklist()), toChecklist(Checklist.LoadViewer())]
 					: []),
@@ -78,7 +76,7 @@ export const enter =
 	}
 
 /**
- * What `AppSidebar` reads once it mounts: always on desktop, but below `md` only when its sheet
+ * What the sidebar reads once it mounts: always on desktop, but below `md` only when its sheet
  * first opens (a closed sheet renders nothing). The live dashboards read follows the flag.
  */
 const requestSidebarData = (model: Model): UpdateReturn => {
@@ -126,7 +124,7 @@ const requestSources = (model: Model, isRefresh: boolean): UpdateReturn =>
 	)
 
 /**
- * `NamespaceScopeList` mounts with each menu open and probes a fresh 24 h window (cached while the
+ * The namespace list mounts with each menu open and probes a fresh 24 h window (cached while the
  * snapped window holds). Listed names stay up while it reads; only a first read shows the spinner.
  */
 const readNamespaces = (model: Model): UpdateReturn =>
@@ -267,7 +265,6 @@ const clickedMenuTrigger = (model: Model, menu: Menu): UpdateReturn => {
 	})
 	return menu._tag === "Org" ? readNamespaces(opened) : { model: opened }
 }
-// MENU KEYS
 
 /** Escape closes and refocuses the trigger, arrows walk the items (Base UI `Menu`). */
 const pressedMenuKey = (model: Model, key: string): UpdateReturn =>
@@ -334,8 +331,6 @@ const clerkOrgMenu = (model: Model, message: ClerkOrgSwitcher.Message): UpdateRe
 		},
 	})
 }
-
-// UPDATE
 
 const foldMessage = (model: Model, message: Message): UpdateReturn =>
 	Message.match<UpdateReturn>(message, {

@@ -53,7 +53,7 @@ const tabPanel = (h: H, model: Model, value: string): ReadonlyArray<Html> | unde
 	return undefined
 }
 
-/** `TraceViewTabs`: underline tabs over the active view. */
+/** Underline tabs over the active view. */
 const traceViewTabs = (h: H, model: Model): Html =>
 	h.submodel({
 		slotId: "trace-view-tabs",
@@ -80,7 +80,7 @@ const eventsView = Submodel.defineView<
 	Readonly<{ events: ReadonlyArray<SpanEventData> }>
 >((panel, inputs, h) => spanEventsSection(h, panel, inputs.events) ?? h.empty)
 
-/** `SpanEventsSection` in a side column, for a selected span that has events. */
+/** The span events section in a side column, for a selected span that has events. */
 const eventsAside = (h: H, model: Model): ReadonlyArray<Html> => {
 	const events = model.selectedSpanId === null ? [] : eventsOf(model.selectedSpanId)
 	return model.panel === null || events.length === 0
