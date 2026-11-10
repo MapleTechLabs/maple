@@ -155,6 +155,20 @@ export interface LogFilterChip {
 	readonly operator?: string
 }
 
+/** The substring mode an include list carries (`env contains "prod"`); it goes when the list changes. */
+const matchModeOf = (param: string) =>
+	param === "deploymentEnvs"
+		? ("deploymentEnvMatchMode" as const)
+		: param === "namespaces"
+			? ("namespaceMatchMode" as const)
+			: undefined
+
+/** The search with `param`'s substring mode cleared, if it has one. */
+export const withoutMatchMode = (search: Search, param: string): Search => {
+	const mode = matchModeOf(param)
+	return mode === undefined ? search : { ...search, [mode]: undefined }
+}
+
 /** The applied facet filters, exclusions first; the trace scope leads them all. */
 export const logFilterChips = (search: Search): ReadonlyArray<LogFilterChip> => {
 	const attrs = Arr.flatMap(search.attrs ?? [], (entry) => {
@@ -165,8 +179,10 @@ export const logFilterChips = (search: Search): ReadonlyArray<LogFilterChip> => 
 		Arr.flatMap(FACETS, (facet) => {
 			const param = isNegated ? facet.exclude : facet.include
 			const values = search[param]
+			const mode = matchModeOf(param)
+			const operator = mode !== undefined && search[mode] === "contains" ? "contains" : undefined
 			return values !== undefined && values.length > 0
-				? [{ param, label: facet.label, values, negated: isNegated }]
+				? [{ param, label: facet.label, values, negated: isNegated, operator }]
 				: []
 		})
 	const attrChips = (isNegated: boolean): ReadonlyArray<LogFilterChip> =>
@@ -207,9 +223,17 @@ export const logFilterChips = (search: Search): ReadonlyArray<LogFilterChip> => 
 /** The search with these chips' filters removed: a facet chip clears its param, an attribute chip its entry. */
 export const withoutChips = (search: Search, chips: ReadonlyArray<LogFilterChip>): Search => {
 	const cleared = Rec.fromEntries(
-		Arr.map(
+		Arr.flatMap(
 			Arr.filter(chips, (chip) => chip.attr === undefined && chip.index === undefined),
-			(chip) => [chip.param, undefined],
+			(chip: LogFilterChip): ReadonlyArray<readonly [string, undefined]> => {
+				const mode = matchModeOf(chip.param)
+				return mode === undefined
+					? [[chip.param, undefined]]
+					: [
+							[chip.param, undefined],
+							[mode, undefined],
+						]
+			},
 		),
 	)
 	const dropped = new Set(Arr.flatMap(chips, (chip) => (chip.attr === undefined ? [] : [chip.attr])))

@@ -56,6 +56,7 @@ import {
 	type Search,
 	volumeInput,
 	withoutChips,
+	withoutMatchMode,
 } from "./derive"
 import { initSearchHelp } from "./view-search-help"
 import { advancedHandlers, initAdvanced } from "./advanced"
@@ -569,9 +570,17 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			model.window === null || model.facets.key === null
 				? { model }
 				: requestAll(model, context, model.window, "Load", "Refresh"),
-		ToggledFacetOption: ({ facet, name }) => navigate(model, toggledFacet(model.search, facet, name)),
+		// A sidebar pick is an exact value: a clause's substring mode on that list goes with it.
+		ToggledFacetOption: ({ facet, name }) =>
+			navigate(model, withoutMatchMode(toggledFacet(model.search, facet, name), facet)),
 		ClickedOnlyFacetOption: ({ facet, name }) =>
-			navigate(model, { ...model.search, [facet]: [name], [EXCLUDED_OF[facet]]: undefined }),
+			navigate(
+				model,
+				withoutMatchMode(
+					{ ...model.search, [facet]: [name], [EXCLUDED_OF[facet]]: undefined },
+					facet,
+				),
+			),
 		ClickedExcludeFacetOption: ({ facet, name }) =>
 			navigate(model, excludedFacet(model.search, facet, name)),
 		ClickedClearAllFilters: () => navigate({ ...model, searchText: "" }, windowOnly(model.search)),

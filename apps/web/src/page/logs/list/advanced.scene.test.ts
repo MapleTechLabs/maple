@@ -141,4 +141,18 @@ describe("logs advanced filter", () => {
 			deploymentEnvMatchMode: "contains",
 		})
 	})
+
+	test("removing the environment chip or picking one in the sidebar drops the substring mode", () => {
+		const model = windowed({ deploymentEnvs: ["prod"], deploymentEnvMatchMode: "contains" })
+		const chip = Arr.findFirst(logFilterChips(model.search), (c) => c.param === "deploymentEnvs")
+		if (chip._tag === "None") throw new Error("no chip")
+		expect(chip.value.operator).toBe("contains")
+		const removed = searchOf(pageUpdate(model, Message.RemovedFilterChip({ chipId: chipId(chip.value) })))
+		expect(removed.deploymentEnvMatchMode).toBeUndefined()
+		const picked = searchOf(
+			pageUpdate(model, Message.ToggledFacetOption({ facet: "deploymentEnvs", name: "staging" })),
+		)
+		expect(picked.deploymentEnvs).toEqual(["prod", "staging"])
+		expect(picked.deploymentEnvMatchMode).toBeUndefined()
+	})
 })
