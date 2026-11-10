@@ -47,6 +47,7 @@ import {
 } from "./command"
 import {
 	allLogs,
+	attributeQueryFilters,
 	brushRange,
 	chipId,
 	FETCH_THRESHOLD,
@@ -59,8 +60,11 @@ import {
 	type Search,
 	volumeInput,
 	withoutChips,
+	withoutMatchMode,
 } from "./derive"
 import { initSearchHelp } from "./view-search-help"
+import { advancedHandlers, initAdvanced } from "./advanced"
+import { navigate } from "./navigation"
 import { type Facet, Message } from "./message"
 import { editFacet, excludedValue, onlyValue, toggledValue } from "../../kit/facets"
 import type { LogsPage, Model } from "./model"
@@ -177,7 +181,7 @@ const requestAll = (
 	const { search } = model
 	const input = listInput(search, window, pin)
 	const bucketSeconds = computeBucketSeconds(window.startTime, window.endTime, HISTOGRAM_TARGET_POINTS)
-	const facetsInput = { window, attrs: search.attrs, pinnedNamespace: pin }
+	const facetsInput = { window, ...attributeQueryFilters(search), pinnedNamespace: pin }
 	const listArgs = { search, window, pinnedNamespace: pin }
 	const steps: ReadonlyArray<(step: Step) => Step> = [
 		(step) =>
@@ -273,11 +277,6 @@ const fetchIfNearEnd =
 		}
 	}
 
-const navigate = (model: Model, search: Search, isReplace = false): Return => ({
-	model,
-	outMessage: PageOutMessage.RequestedNavigation({ url: hrefOf(AppRoute.Logs({ search })), isReplace }),
-})
-
 const searchHref = (search: Search) => hrefOf(AppRoute.Logs({ search }))
 
 const EXCLUDED_OF = {
@@ -331,6 +330,7 @@ export const init = (route: { readonly search: Search }, context: PageContext): 
 		refreshVersion: 0,
 		isReloading: false,
 		isFilterRailMounted: false,
+		advanced: initAdvanced(),
 	}
 	return {
 		model,
@@ -515,15 +515,22 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			model.window === null || model.facets.key === null
 				? { model }
 				: requestAll(model, context, model.window, "Load", "Refresh"),
+		// A sidebar pick is an exact value: a clause's substring mode on that list goes with it.
 		ToggledFacetOption: ({ facet, name }) =>
 			navigate(
 				model,
-				editFacet(model.search, paramsOf(facet), (lists) => toggledValue(lists, name)),
+				withoutMatchMode(
+					editFacet(model.search, paramsOf(facet), (lists) => toggledValue(lists, name)),
+					facet,
+				),
 			),
 		ClickedOnlyFacetOption: ({ facet, name }) =>
 			navigate(
 				model,
-				editFacet(model.search, paramsOf(facet), () => onlyValue(name)),
+				withoutMatchMode(
+					editFacet(model.search, paramsOf(facet), () => onlyValue(name)),
+					facet,
+				),
 			),
 		ClickedExcludeFacetOption: ({ facet, name }) =>
 			navigate(
@@ -706,6 +713,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 				? { model: cleared }
 				: navigate(cleared, { ...model.search, ...range, timePreset: undefined }, true)
 		},
+		...advancedHandlers(model, context),
 		LeftVolumeChart: () =>
 			model.volumeBrush.isSelecting ? { model: { ...model, volumeBrush: NO_BRUSH } } : { model },
 		// A preset: the absolute bounds leave the URL.

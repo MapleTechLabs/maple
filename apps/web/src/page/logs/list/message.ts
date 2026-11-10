@@ -14,6 +14,9 @@ import * as LogDetail from "@maple/views/logs/log-sheet"
 import * as InfraCorrelation from "../../kit/infra-correlation"
 import { SignalPresences } from "@maple/views/data/signal-presence"
 import * as TimeRangePicker from "../../kit/time-range-picker"
+import * as Dialog from "@maple/views/ui/dialog"
+import { LookupNames } from "../../kit/autocomplete-lookups"
+import { WhereFieldMessage } from "../../kit/where-field"
 import { Density } from "@maple/views/ui/logs/viewer"
 import { AttributeKey, LogsFacets, LogsPage, VolumeBucket } from "./model"
 
@@ -71,6 +74,16 @@ export const Message = defineMessageUnion({
 	ToggledColumn: { key: Schema.String },
 	GotVolumeChartMessage: { message: Chart.Message },
 	PressedVolumeChart: {},
+	/** The Advanced filter button, or `F` while nothing has focus. */
+	ClickedAdvancedFilter: {},
+	GotAdvancedDialogMessage: { message: Dialog.Message },
+	ChangedAdvancedDraft: { value: Schema.String },
+	GotWhereFieldMessage: { message: WhereFieldMessage },
+	SubmittedAdvanced: {},
+	ClickedClearAdvanced: {},
+	/** The applied clause panel's clear button. */
+	ClickedClearWhereClause: {},
+	CompletedFetchResourceKeys: result(LookupNames),
 	ReleasedVolumeChart: {},
 	LeftVolumeChart: {},
 })

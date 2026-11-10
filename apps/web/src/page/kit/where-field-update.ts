@@ -207,9 +207,11 @@ const caretStep = (
 		case "MeasuredAnchor":
 			return { fields: withCaret(fields, fieldId, { ...caret, anchor: message.anchor }) }
 		case "MovedCaret": {
-			// `onKeyUp`: arrows that moved through an open list leave the caret alone.
+			// `onKeyUp`: arrows that moved through an open list leave the caret alone, and the keyup of
+			// the Escape that dismissed it does not reopen it.
 			const isArrow = message.keyUp === "ArrowDown" || message.keyUp === "ArrowUp"
 			if (isArrow && isFieldOpen(fields, fieldId, spec)) return { fields }
+			if (message.keyUp === "Escape") return { fields }
 			const synced = syncedCaret(
 				{ ...caret, anchor: message.anchor },
 				spec.expression,

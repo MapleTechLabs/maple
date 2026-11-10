@@ -25,7 +25,7 @@ import {
 	ServiceNamespace,
 	SpanName,
 } from "@maple/domain/http"
-import { TraceId } from "@maple/domain"
+import { AttributeFilter, TraceId } from "@maple/domain"
 import {
 	WarehouseDateTimeString,
 	decodeInput,
@@ -233,8 +233,10 @@ const SharedFiltersSchema = Schema.Struct({
 	excludedSeverities: Schema.optional(Schema.Array(Schema.String)),
 	excludedEnvironments: Schema.optional(Schema.Array(DeploymentEnvironment)),
 	excludedNamespaces: Schema.optional(Schema.Array(ServiceNamespace)),
-	// Logs-source only: the /logs volume chart scoped to one trace.
+	// Logs-source only: the /logs volume chart scoped to one trace, and its substring env/namespace.
 	traceId: Schema.optional(TraceId),
+	deploymentEnvMatchMode: Schema.optional(Schema.Literal("contains")),
+	namespaceMatchMode: Schema.optional(Schema.Literal("contains")),
 	metricName: Schema.optional(MetricName),
 	metricType: Schema.optional(Schema.Literals(QUERY_BUILDER_METRIC_TYPES)),
 	rootSpansOnly: Schema.optional(Schema.Boolean),
@@ -243,26 +245,8 @@ const SharedFiltersSchema = Schema.Struct({
 	commitShas: Schema.optional(Schema.Array(CommitSha)),
 	groupByAttributeKeys: Schema.optional(Schema.Array(Schema.String)),
 	groupByAttributeKey: Schema.optional(Schema.String),
-	attributeFilters: Schema.optional(
-		Schema.Array(
-			Schema.Struct({
-				key: Schema.String,
-				value: Schema.optional(Schema.String),
-				mode: Schema.Literals(["equals", "exists"]),
-				negated: Schema.optional(Schema.Boolean),
-			}),
-		),
-	),
-	resourceAttributeFilters: Schema.optional(
-		Schema.Array(
-			Schema.Struct({
-				key: Schema.String,
-				value: Schema.optional(Schema.String),
-				mode: Schema.Literals(["equals", "exists"]),
-				negated: Schema.optional(Schema.Boolean),
-			}),
-		),
-	),
+	attributeFilters: Schema.optional(Schema.Array(AttributeFilter)),
+	resourceAttributeFilters: Schema.optional(Schema.Array(AttributeFilter)),
 })
 
 const CustomChartTimeSeriesInputSchema = Schema.Struct({
@@ -381,7 +365,9 @@ function buildTimeseriesQuerySpec(data: CustomChartTimeSeriesDecoded): QuerySpec
 				excludedEnvironments: data.filters?.excludedEnvironments,
 				excludedNamespaces: data.filters?.excludedNamespaces,
 				environments: data.filters?.environments,
+				deploymentEnvMatchMode: data.filters?.deploymentEnvMatchMode,
 				namespaces: data.filters?.namespaces,
+				namespaceMatchMode: data.filters?.namespaceMatchMode,
 				traceId: data.filters?.traceId,
 				attributeFilters: data.filters?.attributeFilters,
 				resourceAttributeFilters: data.filters?.resourceAttributeFilters,

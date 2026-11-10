@@ -1,6 +1,6 @@
 import { encodeJson } from "@maple/views/data/request-key"
 import { Array as Arr, String as Str, Option } from "effect"
-import { attributeFilterOperator, formatAttributeClause } from "../advanced-filter-sync"
+import { attributeChipText } from "../../../lib/query-builder/where-clause-filters"
 import type { TracesSearch } from "../../../route/search"
 import type { Facet } from "./message"
 import { facetChipsOf } from "../../kit/facets"
@@ -32,6 +32,8 @@ export interface TraceFilterChip {
 	readonly label: string
 	readonly values: ReadonlyArray<string>
 	readonly negated: boolean
+	/** The connector in place of is / is not (attribute chips). */
+	readonly operator?: string
 	/** The search without this chip's filter. */
 	readonly remove: (search: Search) => Search
 }
@@ -43,17 +45,6 @@ const sameEntry = (a: AttributeEntry, b: AttributeEntry): boolean =>
 	a.matchMode === b.matchMode &&
 	encodeJson(a.or ?? []) === encodeJson(b.or ?? [])
 
-const attributeChipText = (prefix: string, entry: AttributeEntry): { label: string; value: string } => {
-	if (entry.or !== undefined && entry.or.length > 0)
-		return { label: "Any of", value: formatAttributeClause(prefix, { ...entry, or: [...entry.or] }) }
-	const label = `${prefix}${entry.key}`
-	if (entry.matchMode === "contains") return { label: `${label} contains`, value: entry.value }
-	if (entry.matchMode === "exists") return { label, value: "set" }
-	if (entry.matchMode !== undefined)
-		return { label, value: `${attributeFilterOperator({ matchMode: entry.matchMode })} ${entry.value}` }
-	return { label, value: entry.value }
-}
-
 const attributeChips = (search: Search, param: AttributeParam): ReadonlyArray<TraceFilterChip> => {
 	const prefix = param === "resourceAttributeFilters" ? "resource." : ""
 	return Arr.map(search[param] ?? [], (entry) => {
@@ -63,7 +54,8 @@ const attributeChips = (search: Search, param: AttributeParam): ReadonlyArray<Tr
 		return {
 			id: `${param}:${entry.key}:${entry.value}:${entry.negated === true ? "not" : "is"}${mode}${group}`,
 			label: text.label,
-			values: [text.value],
+			values: text.value === "" ? [] : [text.value],
+			operator: text.operator,
 			negated: entry.negated === true,
 			remove: (s: Search): Search => {
 				const rest = Arr.filter(s[param] ?? [], (other) => !sameEntry(other, entry))

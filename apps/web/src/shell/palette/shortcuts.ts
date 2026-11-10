@@ -34,7 +34,7 @@ export const SHORTCUTS: ReadonlyArray<ShortcutDef> = [
 	{ label: "Toggle dark / light mode", group: "Global", combo: key("T") },
 	{ label: "Focus search", group: "Search & time", combo: key("/") },
 	{ label: "Open time range picker", group: "Search & time", combo: key("D") },
-	{ label: "Open advanced filter (traces)", group: "Search & time", combo: key("F") },
+	{ label: "Open advanced filter (traces, logs)", group: "Search & time", combo: key("F") },
 	{ label: "Next row", group: "Lists & tables", combo: key("J"), aliases: [key("ArrowDown")] },
 	{ label: "Previous row", group: "Lists & tables", combo: key("K"), aliases: [key("ArrowUp")] },
 	{ label: "Open focused row", group: "Lists & tables", combo: key("Enter") },
