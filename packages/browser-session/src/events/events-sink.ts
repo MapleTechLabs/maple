@@ -90,8 +90,11 @@ export interface SessionEventSink {
 	ignoreUrl: (url: string) => boolean
 }
 
+/** An event as buffered: `emit` has filled in when and where it happened. */
+type StampedEvent = SessionEvent & { readonly timestamp: number; readonly url: string }
+
 interface BufferedEvent {
-	readonly ev: SessionEvent
+	readonly ev: StampedEvent
 	readonly seq: number
 }
 
@@ -273,8 +276,16 @@ export function startEventSink(config: IngestConfig, sessionId: string): Session
 		} else if (ev.type === "click") clickCount++
 		else if (ev.type === "error" || (ev.type === "console" && ev.level === "error")) errorCount++
 		if (refused || isRepeatedError(ev)) return
-		buffer.push({ ev, seq: seq++ })
-		bufferBytes += approximateSize(ev)
+		// Stamped now, not when the row is built: a flush can run a minute later, on
+		// another page of the app and outside the span that was active.
+		const stamped: StampedEvent = {
+			...ev,
+			timestamp: ev.timestamp ?? Date.now(),
+			url: ev.url ?? (typeof location !== "undefined" ? location.href : ""),
+			traceId: ev.traceId ?? activeTraceId(),
+		}
+		buffer.push({ ev: stamped, seq: seq++ })
+		bufferBytes += approximateSize(stamped)
 		while (bufferBytes > MAX_BUFFER_BYTES && buffer.length > 1) {
 			const dropped = buffer.shift()
 			if (dropped) bufferBytes -= approximateSize(dropped.ev)
@@ -283,7 +294,7 @@ export function startEventSink(config: IngestConfig, sessionId: string): Session
 		for (const listener of listeners()) {
 			// A listener must never break capture.
 			try {
-				listener(ev)
+				listener(stamped)
 			} catch {}
 		}
 	}
@@ -444,16 +455,16 @@ function drainPending(sink: SessionEventSink): void {
 /**
  * Map an internal event to the snake_case ingest row (org_id is added server-side).
  *
- * Identity is resolved here, at flush time, alongside the trace id: it is the
- * person key funnels group on, and reading it late means an `identify()` that
- * lands shortly after init still stamps the initial page view. `visitor_id` is
- * `""` whenever the visitor cookie is off (consent, GPC, `persistVisitorId:
- * false`) — the same rule the metadata row applies.
+ * Identity is resolved here, at flush time: it is the person key funnels group
+ * on, and reading it late means an `identify()` that lands shortly after init
+ * still stamps the initial page view. `visitor_id` is `""` whenever the visitor
+ * cookie is off (consent, GPC, `persistVisitorId: false`), the same rule the
+ * metadata row applies. Time, URL and trace id were stamped by `emit`.
  */
 function toRow(
 	config: IngestConfig,
 	sessionId: string,
-	ev: SessionEvent,
+	ev: StampedEvent,
 	seq: number,
 ): Record<string, unknown> {
 	const identity = config.getIdentity?.()
@@ -462,11 +473,11 @@ function toRow(
 		visitor_id: getVisitorId() ?? "",
 		user_id: identity?.id ?? "",
 		group_id: identity?.groupId ?? "",
-		timestamp: formatCHDateTime(new Date(ev.timestamp ?? Date.now())),
+		timestamp: formatCHDateTime(new Date(ev.timestamp)),
 		seq,
 		type: ev.type,
-		url: scrubUrl(ev.url ?? (typeof location !== "undefined" ? location.href : "")),
-		trace_id: ev.traceId ?? activeTraceId() ?? "",
+		url: scrubUrl(ev.url),
+		trace_id: ev.traceId ?? "",
 		level: ev.level ?? "",
 		message: ev.message ?? "",
 		target_selector: ev.targetSelector ?? "",

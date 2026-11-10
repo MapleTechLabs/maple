@@ -22,9 +22,11 @@ export { resolveReplayOptions, resolveSignalOptions } from "./options"
 export type { PageSignal } from "./page"
 export {
 	claimPageSignal,
+	leasePageSignalAsOtherCopyForTests,
 	markReported,
 	notifyErrorRecorded,
 	onErrorRecorded,
+	pageSignalLeasesForTests,
 	resetPageForTests,
 	wasReported,
 } from "./page"
