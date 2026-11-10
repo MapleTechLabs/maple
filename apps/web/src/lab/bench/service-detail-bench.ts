@@ -3,8 +3,8 @@ import type { Html, HtmlBuilder } from "foldkit/html"
 import type { FixedMetricRow } from "@maple/views/charts/chart-spec"
 import { MountLinkedCursor } from "@maple/views/charts/linked-cursor"
 import { ResolveThemeColors } from "@maple/views/charts/theme-colors"
-import { CHART_TOKENS, metricsGridOf } from "../../page/services/detail/view-charts"
 import { isReady, Message, type Model } from "./chart-bench"
+import { CHART_TOKENS, metricsGridOf } from "../../page/kit/service-metrics/grid"
 
 // `/lab/bench/service-detail` and
 // `/lab/bench/overview`): the service-detail chart grid over synthetic rows.

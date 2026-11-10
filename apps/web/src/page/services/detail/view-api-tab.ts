@@ -45,18 +45,18 @@ import {
 	type WindowMs,
 	hasUnknownBuckets,
 } from "./derive-api"
-import { commitMarkers, markerLayout } from "./derive-markers"
 import { TRACE_DETAIL_LIMIT_SECONDS } from "./derive-tables"
 import { Message } from "./message"
 import type { Model } from "./model"
 import type { ApiBucket, ApiOverview, Endpoint, StatusRow } from "./model-tabs"
 import { COLUMN, COLUMN_COUNT, groupRows, groupsOf, type RowContext } from "./view-api"
 import { type ChartContext, SPARK_TOKENS, sparkline, STATUS_COLORS, statusChart } from "./view-api-charts"
-import { markersOverlay } from "./view-markers"
 import { headLabel, rangeNote, sortColumnHead, tableSkeletonHead, tableTitle } from "./view-table-cells"
 import { typography, typographyClass } from "@maple/views/ui/typography"
 import { hstack, vstack, vstackClass } from "@maple/views/ui/stack"
 import { stripClass } from "@maple/views/ui/rule"
+import { commitMarkers, markerLayout } from "../../kit/service-metrics/markers"
+import { markersOverlay } from "../../kit/service-metrics/markers-view"
 
 // `ServiceApiTab`: the KPI strip, the responses chart beside the non-2xx breakdown, and the
 // endpoint table with its filters. The endpoint drawer is the page's (`endpoint-peek`).

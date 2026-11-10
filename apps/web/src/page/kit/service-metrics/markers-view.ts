@@ -2,7 +2,7 @@ import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import type { PlotGeometry } from "@maple/views/charts/chart"
 import { truncatedText } from "@maple/views/ui/truncated-text"
-import type { MarkerLayout } from "./derive-markers"
+import type { MarkerLayout } from "./markers"
 import { Array as Arr } from "effect"
 
 // Commit markers over a chart, idle.

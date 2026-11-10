@@ -7,13 +7,14 @@ import type { PageContext } from "../../contract"
 import { environmentsOf, ISSUES_DETAIL_LIMIT_MS } from "./derive"
 import { Message } from "./message"
 import type { Model } from "./model"
-import { CHART_TOKENS, metricsGrid } from "./view-charts"
+import { metricsGrid } from "./view-charts"
 import { deploysPanel, issuesPanel } from "./view-deploys"
 import { dependencyStrip, runsOnPanel, usagePanel } from "./view-footprint"
 import { SPARKLINE_TOKEN, topOperationsPanel } from "./view-panels"
 import { uptimePanel } from "./view-uptime"
 import { vstack } from "@maple/views/ui/stack"
 import { grid } from "@maple/views/ui/grid"
+import { CHART_TOKENS } from "../../kit/service-metrics/grid"
 
 // The Overview tab: the chart grid, then the quiet panels and the "Talks to" strip.
 

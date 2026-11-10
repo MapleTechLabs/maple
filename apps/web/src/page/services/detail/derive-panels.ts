@@ -1,6 +1,6 @@
 import type { DependencyBundle } from "./model-tabs"
-import type { Release } from "./model"
 import { Array as Arr, Order } from "effect"
+import { type Release } from "../../kit/service-metrics/points"
 
 // Pure halves of the Overview panels (recent deploys, dependency strip).
 

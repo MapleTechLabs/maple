@@ -11,7 +11,7 @@ import { ReleaseRow, ReleasesData, TimelineBucket } from "../list/model"
 import * as Chart from "@maple/views/charts/chart"
 import { ChartRuntime } from "@maple/views/charts/chart-runtime"
 import { ThemeColors } from "@maple/views/charts/theme-colors"
-import { CommitData, DetailPoint } from "../../services/detail/model"
+import { CommitData, DetailPoint } from "../../kit/service-metrics/points"
 
 // `/releases/$commitSha`: the deploy across every service it reached.
 

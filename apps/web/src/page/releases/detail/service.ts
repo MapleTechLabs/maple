@@ -9,12 +9,12 @@ import { requestKey } from "@maple/views/data/request-key"
 import { commitDetailKey, isResolvableSha } from "../../kit/commit-card"
 import type { Resources } from "../../../platform/resources"
 import type { PageContext, PageReturn } from "../../contract"
-import { commitMarkers, markerShas } from "../../services/detail/derive-markers"
 import { commitRangesKey } from "../kit"
 import { deriveOf } from "../list/derive"
 import { FetchChangeset, FetchMarkerCommit, FetchReleaseDetail, FetchServiceIssues } from "./command"
 import { Message } from "./message"
 import type { Model, ReleaseDetail } from "./model"
+import { commitMarkers, markerShas } from "../../kit/service-metrics/markers"
 
 // The release body for one service (`?service=`): the version this one replaced is
 // read off the list first, then the detail bundle, then what mounts with it (issues, changeset,

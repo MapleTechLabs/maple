@@ -54,16 +54,17 @@ import {
 	windowSeconds,
 } from "./derive"
 import { stepEnvironmentSelect } from "../../kit/environment-switcher"
-import { commitMarkers, markerShas } from "./derive-markers"
 import { initialSort, nextSort, operationTraceSearch, TRACE_DETAIL_LIMIT_SECONDS } from "./derive-tables"
 import { deriveDeploys } from "./derive-panels"
 import { matchesFilter } from "./derive-api"
 import * as EndpointPeek from "./endpoint-peek/model"
 import * as EndpointPeekUpdate from "./endpoint-peek/update"
 import { Message, type RetryTarget } from "./message"
-import type { Commit, CommitFailure, Model } from "./model"
+import type { Model } from "./model"
 import type { Endpoint } from "./model-tabs"
 import { groupsOf, visibleEndpoints } from "./view-api"
+import { type Commit, type CommitFailure } from "../../kit/service-metrics/points"
+import { commitMarkers, markerShas } from "../../kit/service-metrics/markers"
 
 export type Return = PageReturn<Model, Message>
 

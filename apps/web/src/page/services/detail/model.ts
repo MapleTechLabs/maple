@@ -1,7 +1,6 @@
 import { ChartEnvFields } from "@maple/views/charts/chart-env"
 import { V2UptimeMonitor } from "@maple/domain/http/v2"
 import { Schema } from "effect"
-import { AsyncData } from "foldkit"
 import * as Chart from "@maple/views/charts/chart"
 import { KeyedSchema } from "@maple/views/data/keyed"
 import { LoadFailure } from "@maple/views/data/load-failure"
@@ -14,34 +13,9 @@ import { SortState } from "../../kit/table-sort"
 import { ENDPOINT_FILTERS } from "./derive-api"
 import * as EndpointPeek from "./endpoint-peek/model"
 import { ApiBucket, ApiOverview, DependencyBundle, Endpoint, Operation, StatusRow } from "./model-tabs"
+import { CommitData, DetailPoint, Release } from "../../kit/service-metrics/points"
 
 // The service detail page.
-
-/** `ServiceDetailTimeSeriesPoint` (@maple/web-data/warehouse/services). */
-export const DetailPoint = Schema.Struct({
-	bucket: Schema.String,
-	throughput: Schema.Number,
-	tracedThroughput: Schema.Number,
-	hasSampling: Schema.Boolean,
-	samplingWeight: Schema.Number,
-	errorRate: Schema.Number,
-	p50LatencyMs: Schema.Number,
-	p95LatencyMs: Schema.Number,
-	p99LatencyMs: Schema.Number,
-	apdexScore: Schema.Number,
-	totalCount: Schema.Number,
-	partial: Schema.Boolean,
-})
-export type DetailPoint = typeof DetailPoint.Type
-
-/** `ReleasePoint` (./marker-layout.ts). */
-export const Release = Schema.Struct({
-	bucket: Schema.String,
-	commitSha: Schema.String,
-	count: Schema.Number,
-	errorCount: Schema.Number,
-})
-export type Release = typeof Release.Type
 
 /** `ServiceDetailOverviewResult`: the charts, the release timeline and the switcher's options. */
 export const OverviewData = Schema.Struct({
@@ -84,23 +58,6 @@ export const Workload = Schema.Struct({
 	avgMemoryLimitUtilization: Schema.NullOr(Schema.Number),
 })
 export type Workload = typeof Workload.Type
-
-/** The `VcsCommitDetailResponse` fields the deploy rows and marker labels read. */
-export const Commit = Schema.Struct({
-	sha: Schema.String,
-	message: Schema.String,
-	authorName: Schema.NullOr(Schema.String),
-	authorLogin: Schema.NullOr(Schema.String),
-	authorAvatarUrl: Schema.NullOr(Schema.String),
-	committedAt: Schema.Number,
-})
-export type Commit = typeof Commit.Type
-
-/** A failed commit lookup keeps its error tag: "not connected" gets one panel-level CTA. */
-export const CommitFailure = Schema.Struct({ tag: Schema.String })
-export type CommitFailure = typeof CommitFailure.Type
-export const CommitData = AsyncData.Schema(Commit, CommitFailure)
-export type CommitData = AsyncData.AsyncData<Commit, CommitFailure>
 
 export const Model = Schema.Struct({
 	serviceName: Schema.String,
