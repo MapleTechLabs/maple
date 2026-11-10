@@ -19,7 +19,7 @@ import { FileSystem } from "effect/FileSystem"
 import { HttpClient, HttpClientRequest } from "effect/http"
 import { CHDB_VERSION, MAPLE_VERSION } from "./version"
 import { serverUrl } from "./local-address"
-import { errnoCode } from "./store-errors"
+import { errnoCode, syscallError } from "./store-errors"
 import { isProcessAlive } from "./process-liveness"
 import { MAINTENANCE_TOKEN_HEADER, readMaintenanceToken } from "./maintenance-auth"
 import { Chdb, MERGE_TREE_CONFIG_XML, RAW_TELEMETRY_TTL_COLUMNS, writeIngestConfig } from "./chdb"
@@ -1320,6 +1320,20 @@ const LockHolderSchema = Schema.Struct({
 	instanceId: Schema.optionalKey(Schema.String),
 })
 type LockHolder = Schema.Schema.Type<typeof LockHolderSchema>
+const decodeLockHolder = Schema.decodeUnknownOption(Schema.fromJsonString(LockHolderSchema))
+
+/** Is a checkpoint/restore/archive operation holding this store's maintenance lock? Read
+ *  from disk, since the server itself may be too busy in `BACKUP` to answer. */
+export const maintenanceInProgress = (dataDir: string): boolean =>
+	Effect.runSync(
+		Effect.try({
+			try: () => readFileSync(join(maintenanceLockPath(dataDir), "owner.json"), "utf8"),
+			catch: syscallError,
+		}).pipe(
+			Effect.map((raw) => Option.exists(decodeLockHolder(raw), (owner) => isProcessAlive(owner.pid))),
+			Effect.orElseSucceed(() => false),
+		),
+	)
 
 // Only an absent record can prove a crash leftover; unreadable or undecodable
 // records may belong to a live holder, so they stay "uncertain".

@@ -1,4 +1,4 @@
-import { Clock, DateTime, Duration, Effect, Option, Schema, Array as Arr, String as Str } from "effect"
+import { Clock, DateTime, Duration, Effect, Option, Array as Arr, String as Str } from "effect"
 import { FileSystem } from "effect/FileSystem"
 import * as Command from "effect/cli/Command"
 import * as Flag from "effect/cli/Flag"
@@ -63,6 +63,7 @@ import {
 	checkpointRefreshBackoff,
 	createCheckpoint,
 	formatCheckpointRefreshBackoff,
+	maintenanceInProgress,
 	parseCheckpointId,
 	reconcileCheckpointRecovery,
 	resetLiveStorePreservingCheckpoints,
@@ -1348,29 +1349,6 @@ const STOP_POLL_MS = 100
 /** A checkpoint in progress holds the server's JS thread in `BACKUP` and the
  *  shutdown waits for its child, so stop keeps waiting while one runs. */
 const STOP_CHECKPOINT_TIMEOUT_MS = 15 * 60_000
-
-const MaintenanceOwner = Schema.Struct({ pid: Schema.Int })
-const decodeMaintenanceOwner = Schema.decodeUnknownOption(Schema.fromJsonString(MaintenanceOwner))
-
-/**
- * Is a checkpoint/restore/archive operation running against this store? Read
- * from the maintenance lock's on-disk contract (`<dataDir>.maple-maintenance-lock`,
- * owned by `server/checkpoints.ts`), since the server itself may be too busy
- * in `BACKUP` to answer.
- */
-const maintenanceInProgress = (dataDir: string): boolean =>
-	Effect.runSync(
-		Effect.try({
-			try: () => readFileSync(`${resolve(dataDir)}.maple-maintenance-lock/owner.json`, "utf8"),
-			catch: stateFileError(`${resolve(dataDir)}.maple-maintenance-lock/owner.json`, "read"),
-		}).pipe(
-			Effect.map((raw) => {
-				const owner = decodeMaintenanceOwner(raw)
-				return Option.isSome(owner) && isProcessAlive(owner.value.pid)
-			}),
-			Effect.orElseSucceed(() => false),
-		),
-	)
 
 /** Does a server that answers for this store report `pid`? The positive
  *  identity check, preferred over the process start-time heuristic. */
