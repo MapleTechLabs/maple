@@ -11,6 +11,7 @@ fi
 [ "$#" -gt 0 ] && shift
 
 for name in MAPLE_LOCAL_INGEST_KEY MAPLE_LOCAL_ACCESS_TOKEN; do
+	value=""
 	eval "value=\${$name:-}"
 	# maple trims a secret and treats a blank one as unset, which would serve without auth.
 	if [ -z "$(printf '%s' "$value" | tr -d '[:space:]')" ]; then
