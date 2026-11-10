@@ -1,13 +1,14 @@
 import { readRealFile } from "../local-token"
 import { MAINTENANCE_TOKEN_HEADER, readMaintenanceToken } from "../maintenance-auth"
 // SAFETY-FILE: JSON rows here come from fixed internal formats and are validated before domain use.
-import { createHash, randomUUID } from "node:crypto"
-import { existsSync, readFileSync } from "node:fs"
+import { randomUUID } from "node:crypto"
+import { existsSync } from "node:fs"
 import { mkdir, rm } from "node:fs/promises"
 import { dirname, join, resolve } from "node:path"
 import type { Chdb } from "../chdb"
 import { durableJson, durableRemove, durableRename, syncDirectory } from "../durable-files"
 import { withMaintenanceLock } from "../checkpoints"
+import { sha256FileSync } from "../checkpoint-digest"
 import { computeMultisetDigest, captureSourceSchema } from "./export"
 import { assertCatalogExact, listActiveGenerations, rebuildCatalog, verifyActiveGeneration } from "./listing"
 import { readArchiveGenerationManifest } from "./manifest"
@@ -315,7 +316,6 @@ export const assertSealedUtcDay = (range: string, sealingLagHours = 24, now = Da
 	return validateSealedRangeDate(range, sealingLagHours, now)
 }
 
-const sha256File = (path: string): string => createHash("sha256").update(readFileSync(path)).digest("hex")
 const safeSqlPath = (path: string): string => {
 	if (Str.includes("'")(path) || Str.includes("\\")(path))
 		throw new Error(`unsafe archive path for chDB: ${path}`)
@@ -414,7 +414,7 @@ export const retireLiveDayInServer = async (options: {
 		evidence.push({
 			signal: signal.name,
 			generationId: summary.generationId,
-			manifestSha256: sha256File(manifestPath),
+			manifestSha256: sha256FileSync(manifestPath),
 			archivedRowCount: manifest.archivedRowCount,
 			contentDigest: archiveDigest,
 		})
@@ -434,7 +434,7 @@ export const retireLiveDayInServer = async (options: {
 			throw new Error(
 				`archive generation changed before retirement commit: ${item.signal}/${rangeDate}`,
 			)
-		const actualManifestSha = sha256File(
+		const actualManifestSha = sha256FileSync(
 			generationManifestPath(options.archiveDir, item.signal, rangeDate, item.generationId),
 		)
 		if (actualManifestSha !== item.manifestSha256)

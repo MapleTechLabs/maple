@@ -1,18 +1,8 @@
 // SAFETY-FILE: JSON rows here come from fixed internal formats and are validated before domain use.
-import { createHash } from "node:crypto"
-import {
-	closeSync,
-	constants,
-	existsSync,
-	fsyncSync,
-	openSync,
-	readFileSync,
-	renameSync,
-	rmSync,
-	statSync,
-} from "node:fs"
+import { closeSync, constants, existsSync, fsyncSync, openSync, renameSync, rmSync, statSync } from "node:fs"
 import { basename, join } from "node:path"
 import type { Chdb } from "../chdb"
+import { sha256FileSync } from "../checkpoint-digest"
 import { type ArchiveSignal } from "./signals"
 import { Option, Schema, Array as Arr, String as Str } from "effect"
 
@@ -138,12 +128,6 @@ const parseCount = (text: string): number => {
 	const count = typeof value === "number" ? value : Number(value ?? 0)
 	if (!Number.isSafeInteger(count) || count < 0) throw new Error(`invalid count result: ${String(value)}`)
 	return count
-}
-
-const sha256File = (path: string): string => {
-	const hash = createHash("sha256")
-	hash.update(readFileSync(path))
-	return hash.digest("hex")
 }
 
 /**
@@ -832,7 +816,7 @@ const exportShardPlans = (
 			rowCount: validated.rowCount,
 			minEventTimeUnixNano: validated.minEventTimeUnixNano,
 			maxEventTimeUnixNano: validated.maxEventTimeUnixNano,
-			sha256: sha256File(finalPath),
+			sha256: sha256FileSync(finalPath),
 			bytes: onDiskBytes,
 			columns: validated.columns,
 			complexDigest: validated.complexDigest,

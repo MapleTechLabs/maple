@@ -1,5 +1,5 @@
 // SAFETY-FILE: JSON rows here come from fixed internal formats and are validated before domain use.
-import { createHash, randomUUID } from "node:crypto"
+import { randomUUID } from "node:crypto"
 import { existsSync, readFileSync, statSync } from "node:fs"
 import { lstat, rm, statfs } from "node:fs/promises"
 import { dirname, join, parse, relative, resolve, sep } from "node:path"
@@ -28,7 +28,9 @@ import {
 	type ArchiveGenerationManifest,
 	parseArchiveActivePointer,
 	readArchiveGenerationManifest,
+	verifyGenerationShards,
 } from "./manifest"
+import { sha256FileSync } from "../checkpoint-digest"
 import { ArchiveCreateRefusedError } from "./errors"
 import { NonNegativeSafeInt } from "./schemas"
 import {
@@ -243,8 +245,6 @@ export interface ArchiveGenerationResult {
 
 const checkpointFingerprint = (manifest: CheckpointManifest): string =>
 	`${manifest.checkpointId}:${manifest.createdAt}:${manifest.backupBytes}`
-
-const sha256File = (path: string): string => createHash("sha256").update(readFileSync(path)).digest("hex")
 
 const toShardRecord = (shard: WrittenShard): ArchiveShardRecord => ({
 	name: shard.name,
@@ -600,7 +600,7 @@ export const createArchiveGeneration = async (
 							...faults,
 							afterManifestWritten: async () => {
 								const manifestPath = join(building, "manifest.json")
-								const manifestSha256 = sha256File(manifestPath)
+								const manifestSha256 = sha256FileSync(manifestPath)
 								await advancePhase(
 									archiveDir,
 									operationId,
@@ -1078,7 +1078,7 @@ const verifyPublishedGeneration = async (
 	)
 	await assertNoSymlink(archiveDir, manifestPath, "archive final manifest")
 	await assertRealFile(manifestPath, "archive final manifest")
-	const actualManifestSha256 = sha256File(manifestPath)
+	const actualManifestSha256 = sha256FileSync(manifestPath)
 	if (actualManifestSha256 !== intent.manifestSha256) {
 		throw new Error(
 			`archive final manifest SHA-256 mismatch: journal ${intent.manifestSha256}, actual ${actualManifestSha256}`,
@@ -1095,23 +1095,7 @@ const verifyPublishedGeneration = async (
 			`archive final manifest checkpoint mismatch: journal ${intent.checkpointId}, manifest ${manifest.checkpointId}`,
 		)
 	}
-	for (const shard of manifest.shards) {
-		const shardPath = join(finalGeneration, "shards", shard.name)
-		await assertNoSymlink(archiveDir, shardPath, `archive shard ${shard.name}`)
-		await assertRealFile(shardPath, `archive shard ${shard.name}`)
-		const actualBytes = statSync(shardPath).size
-		if (actualBytes !== shard.bytes) {
-			throw new Error(
-				`archive shard ${shard.name} byte size mismatch: manifest ${shard.bytes}, actual ${actualBytes}`,
-			)
-		}
-		const actualSha256 = sha256File(shardPath)
-		if (actualSha256 !== shard.sha256) {
-			throw new Error(
-				`archive shard ${shard.name} SHA-256 mismatch: manifest ${shard.sha256}, actual ${actualSha256}`,
-			)
-		}
-	}
+	verifyGenerationShards(archiveDir, finalGeneration, manifest.shards, "archive shard")
 	return manifest
 }
 
