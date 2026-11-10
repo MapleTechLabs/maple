@@ -69,7 +69,7 @@ import {
 } from "./derive"
 import { canRunAudits, Message, type Model } from "./model"
 import { bucketOf, countByBucket, isUnverified } from "../kit/findings"
-import { findingBadge } from "../kit/findings-view"
+import { estimatedSeverityBadge, unverifiedChip } from "../kit/findings-view"
 import { auditSteps, emptyOnRamp } from "./view-empty"
 import { leadsLine, stopSummaryOf } from "../kit/outcome"
 import { emptyMessage } from "@maple/views/ui/empty"
@@ -281,10 +281,7 @@ const leadCounts = (h: H, findings: ReadonlyArray<SecurityAuditFinding>): Html =
 						h.Class(cn(hstackClass({ gap: "1.5", inline: true }), ROW_LINK_LIFT)),
 						h.Title(countTitle(counts[severity], severity, unverified)),
 					],
-					[
-						severityDot(h, severity),
-						String(counts[severity]),
-					],
+					[severityDot(h, severity), String(counts[severity])],
 				),
 			),
 			...(toValidate === 0
@@ -510,7 +507,7 @@ const findingItem = (h: H, finding: SecurityAuditFinding, repository: string): H
 				[h.Class("w-16 shrink-0")],
 				[
 					isUnverified(finding)
-						? findingBadge(h, finding)
+						? estimatedSeverityBadge(h, finding)
 						: finding.verdict === "needs_validation"
 							? h.span([h.Class("text-xs text-muted-foreground normal-case")], ["To validate"])
 							: finding.overallSeverity === null
@@ -518,7 +515,7 @@ const findingItem = (h: H, finding: SecurityAuditFinding, repository: string): H
 								: securitySeverityBadge(h, finding.overallSeverity),
 				],
 			),
-			vstack(h, { shrink: true, as: "span" }, [
+			vstack(h, { shrink: true, grow: true, as: "span" }, [
 				typography(h, { size: "sm", truncate: true }, [finding.record.title]),
 				typography(h, { size: "xs", tone: "muted", truncate: true }, [
 					Arr.join(
@@ -527,6 +524,7 @@ const findingItem = (h: H, finding: SecurityAuditFinding, repository: string): H
 					),
 				]),
 			]),
+			...(isUnverified(finding) ? [h.span([h.Class("shrink-0")], [unverifiedChip(h)])] : []),
 		],
 		`${finding.targetId}/${finding.fingerprint}`,
 	)
