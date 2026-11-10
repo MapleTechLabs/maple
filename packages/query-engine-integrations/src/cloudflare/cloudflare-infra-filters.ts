@@ -51,6 +51,17 @@ export const CF_METRIC = {
 	requestsByClient: "cloudflare.http.requests.by_client",
 	firewallEvents: "cloudflare.firewall.events",
 	dnsQueries: "cloudflare.dns.queries",
+	workerRequests: "cloudflare.worker.requests",
+	workerErrors: "cloudflare.worker.errors",
+	workerSubrequests: "cloudflare.worker.subrequests",
+	workerCpuTime: "cloudflare.worker.cpu_time",
+	workerDuration: "cloudflare.worker.duration",
+	queueBacklogMessages: "cloudflare.queue.backlog.messages",
+	queueBacklogBytes: "cloudflare.queue.backlog.bytes",
+	queueConsumerConcurrency: "cloudflare.queue.consumer.concurrency",
+	durableObjectRequests: "cloudflare.durable_object.requests",
+	durableObjectErrors: "cloudflare.durable_object.errors",
+	durableObjectWallTime: "cloudflare.durable_object.wall_time",
 } as const
 
 const HTTP_CUBE_KEYS = ["host", "cacheStatus", "statusClass"] as const satisfies ReadonlyArray<CfFilterKey>
