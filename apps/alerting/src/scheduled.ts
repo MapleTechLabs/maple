@@ -616,7 +616,7 @@ type ScheduledServices =
 	| SupabaseLogsService
 	| SupabaseInsightsService
 
-export const scheduledTicks: ScheduledTickPrograms<ScheduledServices> = {
+const scheduledTicks: ScheduledTickPrograms<ScheduledServices> = {
 	alert: alertTick,
 	alertLongQuery: alertLongQueryTick,
 	anomaly: anomalyTick,

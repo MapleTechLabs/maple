@@ -252,7 +252,7 @@ interface CheckResult {
 }
 
 /** What one check means for the row and its source. */
-export const interpretCheck = (
+const interpretCheck = (
 	row: AwsConnectionRow,
 	result:
 		| {

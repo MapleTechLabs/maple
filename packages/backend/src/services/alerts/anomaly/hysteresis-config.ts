@@ -8,7 +8,7 @@ import type { AnomalySignalType } from "@maple/domain/http"
 
 import type { HysteresisConfig } from "@maple/alerting-core/hysteresis"
 
-export const DEFAULT_HYSTERESIS_CONFIG: HysteresisConfig = {
+const DEFAULT_HYSTERESIS_CONFIG: HysteresisConfig = {
 	breachesToOpen: 2,
 	healthyToResolve: 3,
 	cooldownMs: 60 * 60 * 1000,

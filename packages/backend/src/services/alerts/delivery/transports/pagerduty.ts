@@ -36,7 +36,7 @@ const actionRequest = (
  * rule may have dropped that tier since). PagerDuty ignores an acknowledge for a key it has no
  * open alert for. There is no un-acknowledge in the Events API.
  */
-export const pagerDutyAcknowledgeKeys = (
+const pagerDutyAcknowledgeKeys = (
 	context: Pick<DispatchContext, "dedupeKey" | "ruleSeverities" | "incidentPeakSeverity">,
 ): ReadonlyArray<string> =>
 	criticalHasOwnKey(context) || context.incidentPeakSeverity === "critical"

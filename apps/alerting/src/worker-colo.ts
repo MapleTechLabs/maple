@@ -15,7 +15,7 @@ export class ColoLookupError extends Schema.TaggedError<ColoLookupError>()(
 ) {}
 
 /** The `colo=` line of a `/cdn-cgi/trace` body, e.g. `IAD`. */
-export const parseTraceColo = (body: string): Option.Option<string> =>
+const parseTraceColo = (body: string): Option.Option<string> =>
 	Option.fromNullishOr(/^colo=([A-Z0-9]+)$/m.exec(body)?.[1])
 
 /** One trace request. An isolate never moves, so callers cache the success per isolate. */

@@ -54,7 +54,7 @@ const eventsFor = (kind: string): ReadonlyArray<string> =>
 		: PLANETSCALE_WEBHOOK_EVENTS
 
 /** Whether a grant's scopes allow creating webhooks (organization `write_databases`). */
-export const grantsWebhookManagement = (scopes: ReadonlyArray<string>): boolean =>
+const grantsWebhookManagement = (scopes: ReadonlyArray<string>): boolean =>
 	Arr.some(scopes, (scope) => scope === "write_databases" || Str.endsWith(":write_databases")(scope))
 
 /** The card's webhook summary, from the grant's scopes and the org's live database rows. */

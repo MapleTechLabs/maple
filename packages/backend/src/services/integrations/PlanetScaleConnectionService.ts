@@ -73,7 +73,7 @@ import {
  * `managedBy = "planetscale:{connectionId}"` and torn down on disconnect.
  */
 
-export const managedByForConnection = (connectionId: string): string => `planetscale:${connectionId}`
+const managedByForConnection = (connectionId: string): string => `planetscale:${connectionId}`
 
 const PROBE_TIMEOUT = Duration.seconds(10)
 

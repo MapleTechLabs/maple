@@ -37,7 +37,7 @@ import {
 /** Longer than the lane deadline, so a live tick never loses its claim. */
 const LEASE_MS = 15 * 60_000
 /** How often a current property re-imports its head. */
-export const HEAD_INTERVAL_MS = 6 * 60 * 60_000
+const HEAD_INTERVAL_MS = 6 * 60 * 60_000
 /** A 429 sits the property out at least this long. */
 const QUOTA_HOLD_MS = 25 * 60_000
 /** Backoff after a claim: doubles per consecutive failure, up to a day. */
@@ -110,7 +110,7 @@ interface SiteOutcome {
 const isSearchConsoleApiError = Schema.is(SearchConsoleApiError)
 
 /** The backoff a claim sets: 15 minutes doubled per consecutive failure, capped at a day. */
-export const nextBackoffMs = (consecutiveFailures: number): number =>
+const nextBackoffMs = (consecutiveFailures: number): number =>
 	Math.min(BACKOFF_MAX_MS, BACKOFF_BASE_MS * 2 ** Math.min(consecutiveFailures, 16))
 
 const SKIPPED: SiteOutcome = { status: "skipped", rowsWritten: 0, days: 0 }
