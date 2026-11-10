@@ -35,9 +35,9 @@ only shrink (`bun run ui:patterns:check` in CI). The workflow is in `apps/web/CL
   of the scroll area, status or Back on the left, buttons on the right, primary last. The settings
   `saveBar` is an `actionBar` that shows while edits are unsaved. A hand-built sticky bottom bar is
   flagged (`maple/no-handrolled-kit-look`).
-- A side sheet's width is its `size`, picked by what it holds: `default` a form or filters,
-  `detail` a peek at one item, `wide` a log, review or guide, `full` a trace waterfall. Never a
-  `max-w-*` in its className (`maple/sheet-size`).
+- A side sheet's width is its `size`, picked by what it holds: `default` a filter list or a few
+  fields, `detail` a peek at one item, `form` a create or edit form, `wide` a log, review or guide,
+  `full` a trace waterfall. Never a `max-w-*` in its className (`maple/sheet-size`).
 
 ## Type and spacing
 

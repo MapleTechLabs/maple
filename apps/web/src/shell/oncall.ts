@@ -113,7 +113,7 @@ export const nextHandoffMs = (snapshot: OnCallSnapshot): number | null => {
 const HANDOFF_SETTLE_MS = 5_000
 export const ONCALL_RETRY_MS = 60_000
 const ONCALL_RETRY_CAP_MS = 15 * 60_000
-/** A shift starting out of a gap shows up in no handoff, so a user off call checks hourly. */
+/** A new shift, override or first schedule shows up in no handoff the tab knows, so it checks hourly. */
 export const ONCALL_IDLE_READ_MS = 60 * 60_000
 /** Focus re-reads at most this often. */
 export const ONCALL_WAKE_MIN_MS = 60_000
@@ -131,23 +131,21 @@ const backedOff = (nowMs: number, backoffMs: number): OnCallSchedule => {
 }
 
 /**
- * After an answer: at the next handoff, or within the hour while the user is off call; a handoff
- * the answer already places in the past (the API has not caught up) retries with backoff.
+ * After an answer: at the next handoff, and within the hour whatever it said (a teammate's override
+ * or first schedule sends this tab no event); a handoff already in the past retries with backoff.
  */
 export const scheduleAfterAnswer = (
 	snapshot: OnCallSnapshot,
 	nowMs: number,
 	backoffMs: number,
 ): OnCallSchedule => {
-	if (snapshot.shifts.length === 0) return { nextReadAtMs: null, backoffMs: 0 }
 	const handoff = nextHandoffMs(snapshot)
 	if (handoff !== null && handoff <= nowMs) return backedOff(nowMs, backoffMs)
-	const isOnCall = onCallStatusOf(snapshot, nowMs)._tag === "OnCall"
-	const candidates = [
-		...(handoff === null ? [] : [handoff + HANDOFF_SETTLE_MS]),
-		...(isOnCall ? [] : [nowMs + ONCALL_IDLE_READ_MS]),
-	]
-	return { nextReadAtMs: candidates.length === 0 ? null : Math.min(...candidates), backoffMs: 0 }
+	const idle = nowMs + ONCALL_IDLE_READ_MS
+	return {
+		nextReadAtMs: handoff === null ? idle : Math.min(handoff + HANDOFF_SETTLE_MS, idle),
+		backoffMs: 0,
+	}
 }
 
 /** After a failed read: retry from a minute, doubling, capped. */
