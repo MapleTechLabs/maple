@@ -1,6 +1,6 @@
 // Shared auth core for Maple services. These are the pure tenant-resolution +
-// self-hosted login primitives — Clerk session verification and self-hosted
-// HS256 JWT verify/sign — with NO dependency on any app's `Env` service: every
+// self-hosted login primitives (Clerk session verification and self-hosted
+// HS256 JWT verify/sign) with NO dependency on any app's `Env` service: every
 // factory takes a structural {@link AuthEnv} (or a `Pick` of it). `apps/api`
 // wraps these in an `AuthService` Context.Service bound to its `Env`; the
 // standalone `apps/electric-sync` worker feeds them its own small config. Auth
@@ -38,7 +38,7 @@ import {
  * root password: there is no session store to revoke against, so the only thing
  * that can end a leaked token is time.
  *
- * - {@link SELF_HOSTED_SESSION_TTL_SECONDS} bounds ONE minted token — short
+ * - {@link SELF_HOSTED_SESSION_TTL_SECONDS} bounds ONE minted token: short
  *   enough that a leaked token dies on its own, long enough to cover a working
  *   day of dashboard use without a mid-session logout.
  * - {@link SELF_HOSTED_SESSION_MAX_LIFETIME_SECONDS} bounds the whole login.
@@ -101,7 +101,7 @@ const SelfHostedRoles = Schema.Union([Schema.Array(Schema.String), Schema.String
 
 /**
  * The self-hosted session contract, decoded IMMEDIATELY after the HMAC signature
- * is verified — there is no permissive intermediate payload and no second
+ * is verified: there is no permissive intermediate payload and no second
  * validation pipeline downstream.
  *
  * Every field a caller is trusted with is required and branded here: `sub` is a
@@ -110,7 +110,7 @@ const SelfHostedRoles = Schema.Union([Schema.Array(Schema.String), Schema.String
  * path is not a self-hosted session).
  *
  * `iat` is REQUIRED: `signHs256Jwt` is the only minter that has ever existed and
- * it has always set `iat`, so requiring it invalidates nothing already issued —
+ * it has always set `iat`, so requiring it invalidates nothing already issued;
  * and it is what gives a pre-`exp` token a bounded life (see the max-age check in
  * {@link verifySelfHostedSessionToken}). `exp`/`session_exp` stay optional for
  * exactly one release cycle: tokens minted before this change carry neither, and
@@ -146,9 +146,9 @@ const noActiveOrganization = () =>
 	new UnauthorizedError({ message: "Active organization is required", reason: "no_active_organization" })
 
 // NOTE: the decode helpers below deliberately discard the parse error and the
-// JWT helpers in `verifyHs256Jwt` do the same. Auth failures must NOT leak
+// JWT checks in `verifySelfHostedSessionToken` do the same. Auth failures must NOT leak
 // validation hints (e.g. which schema field rejected the input) to unauthorized
-// callers — that's an oracle for credential stuffing. Do not refactor these to
+// callers: that's an oracle for credential stuffing. Do not refactor these to
 // preserve `cause`.
 const decodeOrgId = (value: string, message: string): Effect.Effect<OrgId, UnauthorizedError> =>
 	Schema.decodeEffect(OrgId)(value).pipe(Effect.mapError(() => unauthorized(message)))
@@ -242,7 +242,7 @@ const verifySelfHostedSessionToken = Effect.fn("AuthService.verifySelfHostedSess
 
 	// Presence, not truthiness: `exp: 0` is a token that expired at the epoch, and
 	// a truthiness guard silently turned it into a token that never expires.
-	// Boundaries follow RFC 7519 §4.1.4/§4.1.5 — `now >= exp` is expired, `now == nbf`
+	// Boundaries follow RFC 7519 §4.1.4/§4.1.5: `now >= exp` is expired, `now == nbf`
 	// is already active.
 	if (claims.nbf !== undefined && now < claims.nbf) {
 		return yield* unauthorized("JWT is not active yet")
@@ -267,8 +267,8 @@ const verifySelfHostedSessionToken = Effect.fn("AuthService.verifySelfHostedSess
 
 	// The backstop, and the rollout mechanism: a token minted before `exp` existed
 	// carries only `iat`, and this is what bounds it. It never fires on a current
-	// token — `exp` is at most SELF_HOSTED_SESSION_TTL_SECONDS out and the session
-	// deadline is capped at the same horizon — so it costs nothing to keep
+	// token (`exp` is at most SELF_HOSTED_SESSION_TTL_SECONDS out and the session
+	// deadline is capped at the same horizon), so it costs nothing to keep
 	// afterwards as a floor under any future minting bug.
 	if (now - claims.iat >= SELF_HOSTED_SESSION_MAX_LIFETIME_SECONDS) {
 		return yield* unauthorized("JWT has expired")
@@ -297,7 +297,7 @@ const signHs256Jwt = (payload: SelfHostedTokenClaims, secret: string): string =>
 }
 
 /**
- * The single place a self-hosted session token is minted — login and renewal both
+ * The single place a self-hosted session token is minted: login and renewal both
  * go through it, so they cannot drift apart on lifetime.
  *
  * `sessionExpiresAt` is the absolute deadline of the login, chosen once at login
@@ -475,7 +475,7 @@ export const makeLoginSelfHosted = (
 		const tenant = makeSelfHostedTenant(env.MAPLE_DEFAULT_ORG_ID)
 		const now = Math.floor((yield* Clock.currentTimeMillis) / 1000)
 		// Entering the root password is what starts the absolute clock. Renewal
-		// never restarts it — only another login does.
+		// never restarts it: only another login does.
 		const sessionExpiresAt = now + SELF_HOSTED_SESSION_MAX_LIFETIME_SECONDS
 		const { token, expiresAt } = mintSelfHostedSessionToken(tenant, now, sessionExpiresAt, rootPassword)
 
@@ -493,7 +493,7 @@ export const makeLoginSelfHosted = (
  * token lifetime does not mean the operator is logged out mid-session.
  *
  * The presented token is re-verified from scratch rather than trusted from the
- * middleware that already let the request through — this function is the only
+ * middleware that already let the request through: this function is the only
  * thing standing between a token and a new one, so it does its own checking. An
  * expired token cannot be renewed; that is the point of the expiry.
  */
@@ -514,7 +514,7 @@ export const makeRefreshSelfHostedSession = (env: Pick<AuthEnv, "MAPLE_AUTH_MODE
 		// A token minted before `session_exp` existed still gets a bounded renewal
 		// window rather than an unlimited one: its own `iat` plus the same maximum
 		// lifetime, which is exactly the deadline the max-age rule already enforces
-		// against it. That is the rollout path — legacy sessions renew until they
+		// against it. That is the rollout path: legacy sessions renew until they
 		// hit the cap, then the operator logs in again.
 		const sessionExpiresAt = claims.session_exp ?? claims.iat + SELF_HOSTED_SESSION_MAX_LIFETIME_SECONDS
 		const renewed = mintSelfHostedSessionToken(
@@ -545,11 +545,11 @@ export const makeRefreshSelfHostedSession = (env: Pick<AuthEnv, "MAPLE_AUTH_MODE
  * It exists for one shape of caller: the iOS app publishing a Home Screen
  * widget snapshot per organization. A Clerk token carries exactly one active
  * organization, and `setActive` is global session state the foreground is
- * using — so the only way to read another org's data without disturbing the
+ * using, so the only way to read another org's data without disturbing the
  * user is to name it per request and prove membership server-side.
  *
  * Deliberately NOT `x-org-id`: that name belongs to the internal-service branch
- * in `apps/api/src/mcp/lib/resolve-tenant.ts`, which trusts it wholesale behind
+ * in `apps/ai/src/mcp/lib/resolve-tenant.ts`, which trusts it wholesale behind
  * a shared secret. Two very different trust models must not share a spelling.
  */
 export const ORG_SELECTION_HEADER = "x-maple-org-id"
@@ -593,12 +593,12 @@ const organizationAccessDenied = (requestedOrgId?: OrgId) => {
  * Two invariants, and both are load-bearing:
  *
  * 1. **The header only ever selects among organizations the caller can already
- *    be proven a member of.** Wherever that proof is unavailable — self-hosted
- *    mode, `MAPLE_ORG_ID_OVERRIDE`, API keys, no verifier wired — the request is
+ *    be proven a member of.** Wherever that proof is unavailable (self-hosted
+ *    mode, `MAPLE_ORG_ID_OVERRIDE`, API keys, no verifier wired) the request is
  *    rejected, never silently served under the credential's own organization.
  *    Silently ignoring it is the failure mode where a widget renders one
  *    organization's incidents under another's name and nobody notices.
- * 2. **Naming the organization you already have is free** — see
+ * 2. **Naming the organization you already have is free**: see
  *    {@link applyRequestedOrg}, which short-circuits before reaching here. That
  *    is what lets a client send the header unconditionally instead of branching.
  */
@@ -646,7 +646,7 @@ const applyRequestedOrg = Effect.fnUntraced(function* (
 	const requestedOrgId = yield* decodeOrgId(requested, "Invalid organization selection")
 	if (requestedOrgId === tenant.orgId) return tenant
 
-	// `None` means "no header", which the guard above has already ruled out — so
+	// `None` means "no header", which the guard above has already ruled out, so
 	// this either adopts an organization or fails. There is deliberately no
 	// branch here that returns the original tenant: that shape is what a silent
 	// ignore looks like, and it is the failure this whole path exists to avoid.
@@ -734,7 +734,7 @@ export const makeResolveTenant = (
 	authenticateClerkRequest = makeClerkAuthenticateRequest(env),
 	acceptsToken: ClerkAcceptsToken = "session_token",
 	/**
-	 * Omit to disable {@link ORG_SELECTION_HEADER} entirely — the header is then
+	 * Omit to disable {@link ORG_SELECTION_HEADER} entirely: the header is then
 	 * rejected rather than ignored. Callers that have no membership directory to
 	 * check against (electric-sync) and callers where the header has no meaning
 	 * (`makeResolveMcpTenant`, whose credentials include org-bound API keys)
@@ -808,7 +808,7 @@ export const makeResolveTenant = (
 
 			if (!auth.orgId) {
 				// No active organization in the session. A request that names one it
-				// can prove membership of is still serviceable — this is the widget
+				// can prove membership of is still serviceable: this is the widget
 				// publishing path, whose whole point is not to disturb whatever the
 				// foreground has active.
 				const selected = yield* selectRequestedOrg(userId, headers, selectable)
