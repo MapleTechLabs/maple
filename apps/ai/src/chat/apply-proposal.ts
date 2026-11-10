@@ -27,6 +27,7 @@ import { Cause, Effect, Layer, ManagedRuntime, Option, Schema, Array as Arr } fr
 import { MCP_ANTICIPATED_ERROR_IDENTIFIERS } from "../mcp/expected-failures"
 import { MUTATING_TOOL_NAMES } from "../mcp/tools/mutating"
 import type { AiSessionPortsLayer } from "../worker/bindings"
+import { provideSessionPorts } from "./session-ports"
 import { linkedUserTenant, toTenantContext, withConnectorActor } from "./turn-actor"
 
 /** Disposing the proposal's runtime or flushing its spans rejected; both are best effort. */
@@ -145,7 +146,7 @@ export const applyChatProposal = async (input: ApplyChatProposalInput): Promise<
 			Layer.provideMerge(layerMapleDbConnection(input.env)),
 			Layer.provideMerge(envPorts(input.env)),
 			Layer.provideMerge(chatSessionsLayerIfBound(input.chatSessions, input.env)),
-			Layer.provideMerge(input.bindingPorts ?? Layer.empty),
+			provideSessionPorts(input.bindingPorts),
 			Layer.provideMerge(telemetry.layer),
 		),
 	)
