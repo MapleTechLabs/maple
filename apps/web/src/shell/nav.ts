@@ -204,9 +204,6 @@ export const navGroups = (flags: NavFlags): ReadonlyArray<NavGroup> => [
 					...(flags.statusPages ? [] : ["/status-pages"]),
 				],
 			},
-			...(flags.statusPages
-				? [{ title: "Status pages", href: "/status-pages", icon: "WindowChartLineIcon" } as const]
-				: []),
 			...(flags.releases
 				? [{ title: "Releases", href: "/releases", icon: "RocketIcon" } as const]
 				: []),
@@ -238,6 +235,9 @@ export const navGroups = (flags: NavFlags): ReadonlyArray<NavGroup> => [
 			},
 			...(flags.securityAudit
 				? [{ title: "Security", href: "/security", icon: "ShieldCheckIcon", badge: "Beta" } as const]
+				: []),
+			...(flags.statusPages
+				? [{ title: "Status pages", href: "/status-pages", icon: "WindowChartLineIcon" } as const]
 				: []),
 		],
 	},
