@@ -197,9 +197,13 @@ describe("on-call reads", () => {
 		expectVitest(stale.model.onCall._tag).toBe("Loading")
 	})
 
-	test("an answer reads again after the next handoff, or within the hour while the user is off call", () => {
+	test("an answer reads again after the next handoff, and within the hour whoever is on call", () => {
+		const soon = NOW + 30 * 60_000
+		const handingOff = update(signedIn(), answer([shift({ endsAtMs: soon })])).model
+		expectVitest(handingOff.onCallNextReadAtMs).toBe(soon + 5_000)
+		// A handoff hours away: a teammate's override can still change who is on call before it.
 		const onCall = update(signedIn(), answer([shift()])).model
-		expectVitest(onCall.onCallNextReadAtMs).toBe(HANDOFF + 5_000)
+		expectVitest(onCall.onCallNextReadAtMs).toBe(NOW + ONCALL_IDLE_READ_MS)
 		const offCall = update(signedIn(), answer([shift({ userId: "user_someone", endsAtMs: null })])).model
 		expectVitest(offCall.onCallNextReadAtMs).toBe(NOW + ONCALL_IDLE_READ_MS)
 	})
@@ -240,7 +244,8 @@ describe("on-call reads", () => {
 		expectVitest(commandsOf(empty)).toEqual([
 			{ name: "SaveNoSchedules", args: { orgId: ORG, checkedAtMs: NOW } },
 		])
-		expectVitest(empty.model.onCallNextReadAtMs).toBeNull()
+		// Asked again within the hour, so a tab left open and focused still finds a first schedule.
+		expectVitest(empty.model.onCallNextReadAtMs).toBe(NOW + ONCALL_IDLE_READ_MS)
 		const booted = enter(ORG)(init({ ...flags, noScheduleOrgs: { [ORG]: NOW } }))
 		expectVitest(commandsOf(booted)).toContainEqual({
 			name: "LoadOnCall",

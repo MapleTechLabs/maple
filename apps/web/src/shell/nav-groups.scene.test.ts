@@ -92,7 +92,7 @@ describe("sidebar groups", () => {
 		)
 	})
 
-	test("a folded group on a sub-item's page shows the parent row alone, highlighted", () => {
+	test("a folded group on a sub-item's page keeps the section row and that sub-item alone", () => {
 		const explore = role("link", { name: "Explore" })
 		const logs = role("link", { name: "Logs" })
 		scene(
@@ -104,14 +104,15 @@ describe("sidebar groups", () => {
 			expect(explore).toHaveAttr("data-active", "child"),
 			click(analyze),
 			Command.resolve(SaveCollapsedNavGroups, Message.CompletedSaveNavGroups()),
-			expect(explore).toHaveAttr("data-active", "true"),
-			expect(logs).toBeAbsent(),
+			// Still Logs: the section row alone would link to Traces and name no current page.
+			expect(logs).toHaveAttr("data-active", "true"),
+			expect(explore).toHaveAttr("data-active", "child"),
 			expect(role("link", { name: "Traces" })).toBeAbsent(),
 			expect(dashboards).toBeAbsent(),
 		)
 	})
 
-	test("one link is the current page: the sub-item while its section is open, the section once folded", () => {
+	test("one link is the current page: the sub-item, with its group open or folded", () => {
 		const explore = role("link", { name: "Explore" })
 		const current = all.role("link", { current: "page" })
 		scene(
@@ -125,7 +126,8 @@ describe("sidebar groups", () => {
 			click(analyze),
 			Command.resolve(SaveCollapsedNavGroups, Message.CompletedSaveNavGroups()),
 			expectAll(current).toHaveCount(1),
-			expect(explore).toHaveAttr("aria-current", "page"),
+			expect(role("link", { name: "Traces" })).toHaveAttr("aria-current", "page"),
+			expect(explore).toHaveAttr("data-active", "child"),
 		)
 	})
 
