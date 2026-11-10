@@ -59,19 +59,15 @@ const withParent = (run: (parent: string) => void): void => {
 }
 
 describe("clean-shutdown sentinel", () => {
-	it("markStoreOpen writes the marker; markStoreClosed removes it", () => {
+	it("markStoreOpen writes the marker; markStoreClosed removes it, and closing twice is harmless", () => {
 		withDataDir((dataDir) => {
 			markStoreOpen(dataDir)
 			ok(existsSync(storeOpenMarkerPath(dataDir)))
 			markStoreClosed(dataDir)
 			ok(!existsSync(storeOpenMarkerPath(dataDir)))
-		})
-	})
-
-	it("markStoreClosed is a no-op when the marker is already gone", () => {
-		withDataDir((dataDir) => {
-			markStoreClosed(dataDir) // must not throw
-			ok(!existsSync(storeOpenMarkerPath(dataDir)))
+			markStoreClosed(dataDir)
+			markStoreOpen(dataDir)
+			ok(existsSync(storeOpenMarkerPath(dataDir)))
 		})
 	})
 
