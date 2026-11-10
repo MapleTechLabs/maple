@@ -10,7 +10,7 @@ import { StatusPageStore } from "@maple/backend/services/status-pages/StatusPage
 import { StatusSnapshotsBucket, StatusSnapshotsKv } from "@maple/infra/cloudflare"
 import { AuditEventsQueue, MapleDb } from "@maple/infra/cloudflare"
 import * as Cloudflare from "@alchemy.run/cloudflare"
-import { dischargeRuntimeContext } from "@maple/backend/platform/alchemy-runtime"
+import { dischargeRuntimeContext } from "@maple/infra/worker-runtime"
 import { Effect, Layer, Option } from "effect"
 import {
 	ApiV2RateLimit,

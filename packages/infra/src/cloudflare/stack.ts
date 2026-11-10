@@ -3,6 +3,7 @@ import type * as Output from "alchemy/Output"
 import * as Context from "effect/Context"
 import type * as Redacted from "effect/Redacted"
 import * as Effect from "effect/Effect"
+import * as Option from "effect/Option"
 import type { WorkerDev } from "@maple/alchemy-portless"
 import { type DevApp, isDevApp } from "../dev-urls.ts"
 import { Stage } from "alchemy/Stage"
@@ -13,7 +14,7 @@ import {
 	type MapleDeployment,
 	type MapleDomains,
 	type MapleStage,
-	parseMapleDeployment,
+	parseMapleDeploymentEffect,
 	resolveWorkerName,
 	resolveWorkerPlacement,
 } from "./stage.ts"
@@ -81,6 +82,32 @@ export class SandboxWorker extends Context.Service<SandboxWorker, Cloudflare.Wor
 export class AiWorker extends Context.Service<AiWorker, Cloudflare.Worker>()("@maple/infra/AiWorker") {}
 
 /**
+ * This deploy's stage and region, read off alchemy's `Stage` (yieldable from a Worker init). The
+ * root stack already failed typed on a bad stage, so here it is a defect.
+ */
+export const stageDeployment: Effect.Effect<MapleDeployment, never, Stage> = Effect.gen(function* () {
+	const stage = yield* Stage
+	return yield* parseMapleDeploymentEffect(stage)
+}).pipe(Effect.orDie)
+
+/**
+ * A binding attached on prd alone, yielded from a Worker init: other stages run the same crons
+ * and agents against live data. In the isolate `read` turns what is on the env into the client.
+ */
+export const prdOnlyBinding = <C, A, E, R, E2, R2>(
+	bind: Effect.Effect<C, E, R>,
+	read: (client: C) => Effect.Effect<Option.Option<A>, E2, R2>,
+) =>
+	Effect.gen(function* () {
+		if (!globalThis.__ALCHEMY_RUNTIME__ && (yield* stageDeployment).stage.kind !== "prd") {
+			return Option.none<A>()
+		}
+		const client = yield* bind
+		if (!globalThis.__ALCHEMY_RUNTIME__) return Option.none<A>()
+		return yield* read(client)
+	})
+
+/**
  * Props for a module-scope resource with a stage-derived name. Reads alchemy's `Stage` (not
  * `MapleStack`) so it can be yielded from a Worker init too; returns `{}` under `__ALCHEMY_RUNTIME__`.
  */
@@ -90,8 +117,7 @@ export const stageProps = <Props extends object>(
 ): Effect.Effect<Partial<Props>, never, Stage> =>
 	Effect.gen(function* () {
 		if (globalThis.__ALCHEMY_RUNTIME__) return {}
-		const stage = yield* Stage
-		const deployment = parseMapleDeployment(stage)
+		const deployment = yield* stageDeployment
 		return make(resolveWorkerName(base, deployment.stage, deployment.region), deployment)
 	})
 

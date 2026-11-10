@@ -1,6 +1,6 @@
 import { Option } from "effect"
 import { describe, expect, it } from "vitest"
-import { MAPLE_DB_BINDING, readMapleDbBinding } from "./maple-db.ts"
+import { MAPLE_DB_BINDING, readMapleDbBinding } from "./worker-runtime.ts"
 
 const hyperdrive = {
 	connectionString: "postgres://user:pw@ad4c487838594b89810b23e5fb14e129.hyperdrive.local:5432/postgres",

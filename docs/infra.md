@@ -63,14 +63,14 @@ Node compiled imports when rebasing these patches: declaration checks do not par
       Cloudflare zone, and `publishProxiedCname` for each ALB's public hostname.
     - `env.ts`: the deploy-time env primitives and the shared groups the Workers spread.
     - `cloudflare/maple-db.ts`: `MAPLE_DB` in the stage's flavor (`MapleDb`, yielded from a
-      Worker's init, or `mapleDbEnv` from its props) and the runtime read of the binding
-      (`readMapleDbBinding`).
+      Worker's init, or `mapleDbEnv` from its props). The runtime read of the binding
+      (`readMapleDbBinding`) is in `worker-runtime.ts`.
     - `config-helpers.ts`, `cloudflare/worker-runtime.ts`, `cloudflare/workers-cache.ts`:
       the _runtime_ (in-Worker) side, each behind its own subpath export so a Worker bundle
       never reaches the deploy graph through `./cloudflare`. `worker-runtime.ts` is the
-      `WorkerEnvironment` tag (alchemy's key, typed `Record<string, unknown>`) and
+      `WorkerEnvironment` tag (alchemy's key, typed `Record<string, unknown>`),
       `workerEnvLayer(env)`, the env plus its `ConfigProvider` for a graph built over one
-      env record. Nothing reaches for `cloudflare:workers`.
+      env record, and `dischargeRuntimeContext`. Nothing reaches for `cloudflare:workers`.
 
 **Read deploy-time config through `@maple/infra/env`, not `process.env`.** Alchemy resolves
 config through a ConfigProvider built as `fromDotEnv(--env-file ?? ".env")` **orElse**
