@@ -384,11 +384,14 @@ export const VERCEL_API_DETAIL = new VercelInfraProjectDetailResponse({
 	],
 })
 
+/** The age that makes a READY deployment go live `offsetMs` into bucket `i` (it is ready 94s after creation). */
+const liveIn = (i: number, offsetMs: number) => NOW - (new Date(bucketAt(i)).getTime() + offsetMs) + 94_000
+
 export const VERCEL_API_DEPLOYMENTS: ReadonlyArray<VercelDeploymentSummary> = [
 	deployment("api-y2", "BUILDING", "feat/batch-writes", "Batch the order writes", 6 * MINUTE, null),
-	// The spike's buckets run 71–75: the bad deploy lands just before it, the revert just after.
-	deployment("api-z4", "READY", "main", "Revert: cache product prices at the edge", (BUCKETS - 76) * BUCKET_MS - MINUTE),
-	deployment("api-z3", "READY", "main", "Cache product prices at the edge", (BUCKETS - 71) * BUCKET_MS + 4 * MINUTE),
+	// The spike's buckets run 71–75: the bad deploy goes live in its first bucket, the revert in its last.
+	deployment("api-z4", "READY", "main", "Revert: cache product prices at the edge", liveIn(75, 10 * MINUTE)),
+	deployment("api-z3", "READY", "main", "Cache product prices at the edge", liveIn(71, 3 * MINUTE)),
 	deployment("api-x8", "READY", "main", "Move rate limits to the edge config", 26 * HOUR),
 	deployment("api-w5", "ERROR", "fix/cold-start", "Lazy-load the PDF renderer", 30 * HOUR, null),
 	deployment("api-v1", "READY", "main", "Products: cache the price table for 60s", 3 * 24 * HOUR),

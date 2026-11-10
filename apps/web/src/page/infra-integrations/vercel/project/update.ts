@@ -1,4 +1,4 @@
-import { Array as Arr, Option, Record as Rec } from "effect"
+import { Option } from "effect"
 import { AsyncData, Command } from "foldkit"
 import * as Chart from "@maple/views/charts/chart"
 import { LoadChartRuntime } from "@maple/views/charts/chart-runtime"
@@ -11,18 +11,19 @@ import { routeWindowStep, snapModeOf } from "../../../kit/route-window"
 import * as TimeRangePicker from "../../../kit/time-range-picker"
 import { stepTimePicker, withPreset } from "../../kit/page-time"
 import { requestSlot } from "../../kit/slot"
-import { DEFAULT_PRESET, DEPLOYMENTS_LIMIT, seriesInput } from "../data"
-import { AI_GATEWAY_CHART_IDS } from "../view-parts"
+import { type BreakdownInput, DEFAULT_PRESET, DEPLOYMENTS_LIMIT, seriesInput } from "../data"
 import type { VercelIntegrationStatus } from "@maple/domain/http"
-import type { VercelProjectTab } from "../../../../route/search"
+import type { VercelBreakdownBy, VercelProjectTab } from "../../../../route/search"
 import {
 	CompleteReloadSpin,
 	FetchAiGateway,
+	FetchBreakdown,
 	FetchBuckets,
 	FetchDependencies,
 	FetchDeployments,
 	FetchDetail,
 	FetchFunctions,
+	FetchLatency,
 	FetchProjects,
 	FetchSpeedInsights,
 	FetchWebAnalytics,
@@ -35,8 +36,6 @@ type Return = PageReturn<Model, Message>
 type Search = Model["search"]
 type Route = { readonly projectId: string; readonly search: Search }
 type Commands = ReadonlyArray<Command.Command<Message, never, Resources>>
-
-export const CHART_IDS = ["vercel-status", "vercel-cache", "vercel-errors", ...AI_GATEWAY_CHART_IDS] as const
 
 const resolveCommand = (model: Model, context: PageContext, mode: RequestMode) =>
 	ResolveWindow({
@@ -58,6 +57,8 @@ const navigate = (model: Model, search: Search): Return => ({
 type Slot =
 	| "projects"
 	| "buckets"
+	| "latency"
+	| "breakdown"
 	| "detail"
 	| "deployments"
 	| "aiGateway"
@@ -66,23 +67,39 @@ type Slot =
 	| "speedInsights"
 	| "webAnalytics"
 
-export const tabOf = (model: Model): VercelProjectTab => model.search.tab ?? "traffic"
+export const tabOf = (model: Model): VercelProjectTab => {
+	switch (model.search.tab) {
+		case undefined:
+			return "traffic"
+		case "dependencies":
+			return "functions"
+		case "speedInsights":
+		case "webAnalytics":
+			return "users"
+		default:
+			return model.search.tab
+	}
+}
 
-/** What each tab shows; a drain-fed read waits for the status to say its drain is on. */
+export const breakdownByOf = (model: Model): VercelBreakdownBy => model.search.by ?? "path"
+
+/** The rail's reads, on every tab: the header's row, functions, outbound calls and builds. */
+const RAIL_SLOTS: ReadonlyArray<Slot> = ["projects", "functions", "dependencies", "deployments"]
+
+/** What each tab shows beside the rail; a drain-fed read waits for the status to say its drain is on. */
 const TAB_SLOTS = {
-	traffic: ["projects", "buckets", "detail"],
-	functions: ["projects", "functions"],
-	dependencies: ["dependencies"],
-	builds: ["deployments"],
+	traffic: ["buckets", "latency", "breakdown", "detail"],
+	functions: [],
+	builds: [],
+	users: ["speedInsights", "webAnalytics"],
 	aiGateway: ["aiGateway"],
-	speedInsights: ["speedInsights"],
-	webAnalytics: ["webAnalytics"],
 } satisfies Record<VercelProjectTab, ReadonlyArray<Slot>>
 
 const drainOn = (slot: Slot, status: VercelIntegrationStatus | null): boolean => {
 	switch (slot) {
 		case "functions":
 		case "dependencies":
+		case "latency":
 			return status?.tracesEnabled === true
 		case "aiGateway":
 			return status?.aiGatewayEnabled === true
@@ -95,7 +112,7 @@ const drainOn = (slot: Slot, status: VercelIntegrationStatus | null): boolean =>
 	}
 }
 
-/** The active tab's reads; the window's wait for it, the deployments only for the project. */
+/** The rail's and the active tab's reads; the window's wait for it, the deployments only for the project. */
 const sync = (
 	model: Model,
 	context: PageContext,
@@ -105,7 +122,7 @@ const sync = (
 	const org = context.orgId
 	const { projectId } = model
 	const status = Option.getOrNull(AsyncData.getData(model.status.data))
-	const shown: ReadonlyArray<Slot> = TAB_SLOTS[tabOf(model)]
+	const shown: ReadonlyArray<Slot> = [...RAIL_SLOTS, ...TAB_SLOTS[tabOf(model)]]
 	const commands: Array<Commands[number]> = []
 	const take = <A, E>(
 		slot: Slot,
@@ -135,6 +152,14 @@ const sync = (
 	const detailInput = { startTime: window.startTime, endTime: window.endTime, projectId }
 	const projectsKey = requestKey(org, "getVercelProjects", { data: window })
 	const bucketsKey = requestKey(org, "getVercelRequestTimeseries", { data: series })
+	const dimension = breakdownByOf(model)
+	const narrowed = model.search.status
+	const breakdownInput: BreakdownInput =
+		narrowed === undefined
+			? { ...detailInput, dimension }
+			: { ...detailInput, dimension, status: narrowed }
+	const latencyKey = requestKey(org, "getVercelLatencyTimeseries", { data: series })
+	const breakdownKey = requestKey(org, "getVercelBreakdown", { data: breakdownInput })
 	const detailKey = requestKey(org, "getVercelProjectDetail", { data: detailInput })
 	const aiKey = requestKey(org, "getVercelAiGateway", { data: series })
 	const functionsKey = requestKey(org, "getVercelFunctions", { data: detailInput })
@@ -149,6 +174,12 @@ const sync = (
 			),
 			buckets: take("buckets", model.buckets, bucketsKey, () =>
 				FetchBuckets({ key: bucketsKey, input: series }),
+			),
+			latency: take("latency", model.latency, latencyKey, () =>
+				FetchLatency({ key: latencyKey, input: series }),
+			),
+			breakdown: take("breakdown", model.breakdown, breakdownKey, () =>
+				FetchBreakdown({ key: breakdownKey, input: breakdownInput }),
 			),
 			detail: take("detail", model.detail, detailKey, () =>
 				FetchDetail({ key: detailKey, input: detailInput }),
@@ -183,6 +214,8 @@ export const init = (route: Route, context: PageContext): Return => {
 		status: { key: statusKey, data: AsyncData.Loading() },
 		projects: Keyed.idle(),
 		buckets: Keyed.idle(),
+		latency: Keyed.idle(),
+		breakdown: Keyed.idle(),
 		detail: Keyed.idle(),
 		deployments: Keyed.idle(),
 		aiGateway: Keyed.idle(),
@@ -190,7 +223,7 @@ export const init = (route: Route, context: PageContext): Return => {
 		dependencies: Keyed.idle(),
 		speedInsights: Keyed.idle(),
 		webAnalytics: Keyed.idle(),
-		charts: Rec.fromEntries(Arr.map(CHART_IDS, (id) => [id, Chart.init()])),
+		charts: {},
 		chartRuntime: { _tag: "Loading" },
 		themeColors: null,
 		timePicker: TimeRangePicker.init("vercel-project-time-range"),
@@ -238,6 +271,12 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		CompletedFetchBuckets: ({ key, result }) => ({
 			model: { ...model, buckets: Keyed.accept(model.buckets, key, result) },
 		}),
+		CompletedFetchLatency: ({ key, result }) => ({
+			model: { ...model, latency: Keyed.accept(model.latency, key, result) },
+		}),
+		CompletedFetchBreakdown: ({ key, result }) => ({
+			model: { ...model, breakdown: Keyed.accept(model.breakdown, key, result) },
+		}),
 		CompletedFetchDetail: ({ key, result }) => ({
 			model: { ...model, detail: Keyed.accept(model.detail, key, result) },
 		}),
@@ -264,8 +303,14 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			model: { ...model, chartRuntime: { _tag: "Failed", reason } },
 		}),
 		ResolvedThemeColors: ({ colors }) => ({ model: { ...model, themeColors: colors } }),
-		ClickedRetryRequests: () => sync(model, context, "Refresh", ["projects", "buckets"]),
+		ClickedRetryRequests: () => sync(model, context, "Refresh", ["projects", "buckets", "latency"]),
 		ClickedRetryDetail: () => sync(model, context, "Refresh", ["detail"]),
+		ClickedRetryBreakdown: () => sync(model, context, "Refresh", ["breakdown"]),
+		ClickedBreakdownBy: ({ by }) =>
+			navigate(model, { ...model.search, by: by === "path" ? undefined : by }),
+		ClickedBreakdownStatus: ({ status }) =>
+			navigate(model, { ...model.search, status: status ?? undefined }),
+		AttachedLinkedCursor: () => ({ model }),
 		ClickedRetryDeployments: () => sync(model, context, "Refresh", ["deployments"]),
 		ClickedRetryAiGateway: () => sync(model, context, "Refresh", ["aiGateway"]),
 		ClickedRetryFunctions: () => sync(model, context, "Refresh", ["functions"]),

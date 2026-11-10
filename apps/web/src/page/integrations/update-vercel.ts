@@ -16,14 +16,11 @@ import {
 	stoppedByDraft,
 	VERCEL_SAMPLING_RATES,
 } from "../../components/integrations/vercel-model"
-import * as Keyed from "@maple/views/data/keyed"
 import type { LoadFailure } from "@maple/views/data/load-failure"
-import { requestKey } from "@maple/views/data/request-key"
 import * as Dialog from "@maple/views/ui/dialog"
 import * as Field from "@maple/views/ui/field"
 import * as RadioGroup from "@maple/views/ui/radio-group"
 import { type PageContext, PageOutMessage, type PageReturn } from "../contract"
-import { integrationOfSearch } from "./catalog"
 import { ReadClock } from "./command"
 import { Message } from "./message"
 import type { Model } from "./model"
@@ -32,13 +29,8 @@ import {
 	ConnectVercel,
 	DiscoverVercel,
 	initVercelConfigure,
-	LoadVercelGateway,
-	LoadVercelProjects,
-	LoadVercelTimeseries,
 	SaveVercelSettings,
 	SyncVercel,
-	VERCEL_DAY,
-	VERCEL_DAY_HOURLY,
 } from "./vercel"
 import type {
 	VercelCardModel,
@@ -79,52 +71,12 @@ const toast = (
 
 const isBusy = (configure: VercelConfigureModel): boolean => configure.isLookingUp || configure.isSaving
 
-// THE LAST 24 HOURS
+// SETTLING
 
-/** The three reads, each asked once per mode like `useAtomValue` + `useAtomRefresh`. */
-export const requestUsage = (model: Model, context: PageContext, mode: Keyed.RequestMode): Return => {
-	const projectsKey = requestKey(context.orgId, "getVercelProjects", { data: VERCEL_DAY })
-	const timeseriesKey = requestKey(context.orgId, "getVercelRequestTimeseries", { data: VERCEL_DAY_HOURLY })
-	const gatewayKey = requestKey(context.orgId, "getVercelAiGateway", { data: VERCEL_DAY_HOURLY })
-	return chain(model, [
-		(next) =>
-			Option.match(Keyed.request(next.vercelCard.projects, projectsKey, mode), {
-				onNone: () => ({ model: next }),
-				onSome: (projects) => ({
-					model: withVercelCard(next, { projects }),
-					commands: [LoadVercelProjects({ key: projectsKey })],
-				}),
-			}),
-		(next) =>
-			Option.match(Keyed.request(next.vercelCard.timeseries, timeseriesKey, mode), {
-				onNone: () => ({ model: next }),
-				onSome: (timeseries) => ({
-					model: withVercelCard(next, { timeseries }),
-					commands: [LoadVercelTimeseries({ key: timeseriesKey })],
-				}),
-			}),
-		(next) =>
-			Option.match(Keyed.request(next.vercelCard.gateway, gatewayKey, mode), {
-				onNone: () => ({ model: next }),
-				onSome: (gateway) => ({
-					model: withVercelCard(next, { gateway }),
-					commands: [LoadVercelGateway({ key: gatewayKey })],
-				}),
-			}),
-	])
-}
-
-/** The warehouse is read only once the Vercel page shows a connected team. */
-export const enterVercel = (model: Model, context: PageContext): Return =>
-	integrationOfSearch(model.search.integration) === "vercel" && vercelStatusOf(model)?.connected === true
-		? requestUsage(model, context, "Load")
-		: { model }
-
-/** While a fresh connection settles: the status, the last 24 hours and the clock that ends it. */
+/** While a fresh connection settles: the status, and the clock that ends it. */
 export const tickedSettle = (model: Model, context: PageContext): Return =>
 	chain(model, [
 		(next) => requestStatus(next, context, "vercel", "Refresh"),
-		(next) => requestUsage(next, context, "Refresh"),
 		(next) => ({ model: next, commands: [ReadClock()] }),
 	])
 

@@ -1,20 +1,19 @@
 import {
 	VercelDiscoverResponse,
 	VercelDrainStatus,
-	VercelInfraProjectsResponse,
-	VercelInfraRequestTimeseriesResponse,
 	VercelIntegrationStatus,
+	VercelProjectStatus,
 	VercelTeam,
 } from "@maple/domain/http"
 import { Array as Arr, Schema } from "effect"
 import { AsyncData, Command, Submodel, type Update } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { defineMessageUnion } from "foldkit/message"
-import { toLoadFailure } from "@maple/views/data/load-failure"
 import { Message as IntegrationsMessage } from "../page/integrations/message"
 import { Model as IntegrationsModel } from "../page/integrations/model"
 import * as Integrations from "../page/integrations/update"
-import { vercelCard } from "../page/integrations/view-vercel"
+import { integrationHeader } from "../page/integrations/view-header"
+import { vercelCard, vercelHeaderActions, vercelHeaderStatus } from "../page/integrations/view-vercel"
 import { vercelConfigure } from "../page/integrations/view-vercel-configure"
 import { dashboardPage } from "../page/kit/dashboard-page"
 import type { Resources } from "../platform/resources"
@@ -22,17 +21,10 @@ import { button } from "@maple/views/ui/button"
 import * as Field from "@maple/views/ui/field"
 import * as RadioGroup from "@maple/views/ui/radio-group"
 import { type GcpLabFlags, LAB_CONTEXT } from "./gcp-host"
-import {
-	VERCEL_AI_GATEWAY,
-	VERCEL_BUCKETS,
-	VERCEL_EMPTY_AI_GATEWAY,
-	VERCEL_PROJECTS,
-	VERCEL_READ_FAILURE,
-	VERCEL_STATUS,
-} from "./vercel-infra-fixtures"
+import { VERCEL_STATUS } from "./vercel-infra-fixtures"
 
-// `/lab/vercel`: the Vercel card in each state, over fixtures, as an admin sees it. Each section
-// hosts its own integrations Model; the page's reads are never sent and its writes are answered here.
+// `/lab/vercel`: the Vercel settings page in each state, over fixtures, as an admin sees it. Each
+// section hosts its own integrations Model; the page's reads are never sent and its writes are answered here.
 
 type HubCommand = Command.Command<IntegrationsMessage, never, Resources>
 
@@ -42,6 +34,8 @@ const PICKABLE = Arr.map(VERCEL_STATUS.projects, ({ id, name, framework }) => ({
 
 const drain = (status: VercelDrainStatus["status"], id: string | null, lastError: string | null = null) =>
 	new VercelDrainStatus({ id, status, lastError })
+
+const PICKED = ["prj_storefront", "prj_api"]
 
 const NOT_CONNECTED = new VercelIntegrationStatus({
 	...VERCEL_STATUS,
@@ -53,13 +47,12 @@ const NOT_CONNECTED = new VercelIntegrationStatus({
 	lastSuccessAt: null,
 })
 
-type Usage = "loaded" | "empty" | "failed"
-type Scene = Readonly<{ id: string; title: string; status: VercelIntegrationStatus; usage: Usage }>
+type Scene = Readonly<{ id: string; title: string; status: VercelIntegrationStatus }>
 
 const scenesAt = (nowMs: number): ReadonlyArray<Scene> => [
-	{ id: "not-connected", title: "Not connected", status: NOT_CONNECTED, usage: "empty" },
-	{ id: "connect", title: "Connect dialog steps", status: NOT_CONNECTED, usage: "empty" },
-	{ id: "healthy", title: "Connected, healthy", status: VERCEL_STATUS, usage: "loaded" },
+	{ id: "not-connected", title: "Not connected", status: NOT_CONNECTED },
+	{ id: "connect", title: "Connect dialog steps", status: NOT_CONNECTED },
+	{ id: "healthy", title: "Connected, healthy", status: VERCEL_STATUS },
 	{
 		id: "logs-deleted",
 		title: "Logs drain deleted on Vercel",
@@ -67,7 +60,6 @@ const scenesAt = (nowMs: number): ReadonlyArray<Scene> => [
 			...VERCEL_STATUS,
 			drains: { ...VERCEL_STATUS.drains, logs: drain("missing", null) },
 		}),
-		usage: "loaded",
 	},
 	{
 		id: "traces-failing",
@@ -79,7 +71,6 @@ const scenesAt = (nowMs: number): ReadonlyArray<Scene> => [
 				traces: drain("errored", "drn_traces", "401 Unauthorized: the ingest key was rejected."),
 			},
 		}),
-		usage: "loaded",
 	},
 	{
 		id: "ai-gateway-disabled",
@@ -88,13 +79,11 @@ const scenesAt = (nowMs: number): ReadonlyArray<Scene> => [
 			...VERCEL_STATUS,
 			drains: { ...VERCEL_STATUS.drains, aiGateway: drain("disabled", "drn_ai_gateway") },
 		}),
-		usage: "loaded",
 	},
 	{
 		id: "token-rejected",
 		title: "Token rejected",
 		status: new VercelIntegrationStatus({ ...VERCEL_STATUS, authFailed: true }),
-		usage: "loaded",
 	},
 	{
 		id: "first-sync",
@@ -113,38 +102,46 @@ const scenesAt = (nowMs: number): ReadonlyArray<Scene> => [
 			connectedAt: nowMs - 2 * 60_000,
 			lastSuccessAt: null,
 		}),
-		usage: "empty",
 	},
-	{ id: "usage-failed", title: "Usage reads failed", status: VERCEL_STATUS, usage: "failed" },
+	{
+		id: "selected-projects",
+		title: "Picked projects, sampled, every signal on",
+		status: new VercelIntegrationStatus({
+			...VERCEL_STATUS,
+			team: new VercelTeam({ id: "team_acme", slug: "acme", name: "Acme", plan: "pro" }),
+			projectScope: "some",
+			projectIds: PICKED,
+			projects: Arr.map(
+				VERCEL_STATUS.projects,
+				(project) => new VercelProjectStatus({ ...project, forwarded: PICKED.includes(project.id) }),
+			),
+			samplingRate: 0.25,
+			speedInsightsEnabled: true,
+			webAnalyticsEnabled: true,
+			auditLogEnabled: true,
+			drains: {
+				...VERCEL_STATUS.drains,
+				speedInsights: drain("enabled", "drn_speed_insights"),
+				webAnalytics: drain("unknown", "drn_web_analytics"),
+				auditLog: drain("enabled", "drn_audit_log"),
+			},
+		}),
+	},
 ]
 
-const success = <A>(data: A) => ({ key: null, data: AsyncData.Success({ data }) })
-const FAILED = { key: null, data: AsyncData.Failure({ error: toLoadFailure(VERCEL_READ_FAILURE) }) }
-
-/** The page's Model with this scene's status and last 24 hours loaded, never requested. */
+/** The page's Model with this scene's status loaded, never requested. */
 const hubOf = (nowMs: number, scene: Scene): IntegrationsModel => {
 	const hub = Integrations.init({ search: { integration: "vercel" } }, LAB_CONTEXT).model
-	const empty = scene.usage === "empty"
 	return {
 		...hub,
 		nowMs,
 		grants: ["integrations:manage"],
-		statuses: { ...hub.statuses, vercel: success(scene.status) },
-		vercelCard: {
-			...hub.vercelCard,
-			...(scene.usage === "failed"
-				? { projects: FAILED, timeseries: FAILED, gateway: FAILED }
-				: {
-						projects: success(new VercelInfraProjectsResponse({ projects: empty ? [] : VERCEL_PROJECTS })),
-						timeseries: success(new VercelInfraRequestTimeseriesResponse({ buckets: empty ? [] : VERCEL_BUCKETS })),
-						gateway: success(empty ? VERCEL_EMPTY_AI_GATEWAY : VERCEL_AI_GATEWAY),
-					}),
-		},
+		statuses: { ...hub.statuses, vercel: { key: null, data: AsyncData.Success({ data: scene.status }) } },
 	}
 }
 
-/** Reads the page owns but the lab does not serve: statuses, the clock, the last 24 hours. */
-const PAGE_READS = /^(LoadIntegrations|LoadVercel|ReadIntegrationsClock)/
+/** Reads the page owns but the lab does not serve: statuses and the clock. */
+const PAGE_READS = /^(LoadIntegrations|ReadIntegrationsClock)/
 
 const stringArg = (command: HubCommand, name: string): string | null => {
 	const value = command.args?.[name]
@@ -300,15 +297,29 @@ const sceneView = Submodel.defineView<
 	Readonly<{ timeZone: string; isConnectSteps: boolean }>
 >((hub, inputs, h) =>
 	h.div(
-		[h.Class("flex flex-col gap-4")],
-		inputs.isConnectSteps ? vercelConfigure(h, hub) : vercelCard(h, hub, inputs.timeZone),
+		[h.Class("flex flex-col gap-6")],
+		inputs.isConnectSteps
+			? vercelConfigure(h, hub)
+			: [
+					integrationHeader(
+						h,
+						hub,
+						"vercel",
+						{
+							statusLine: vercelHeaderStatus(h, hub, inputs.timeZone),
+							actions: vercelHeaderActions(h, hub),
+						},
+						inputs.timeZone,
+					),
+					...vercelCard(h, hub, inputs.timeZone),
+				],
 	),
 )
 
 export const view = (model: Model, h: HtmlBuilder<Message>): Html =>
 	dashboardPage(h, {}, [
 		h.div(
-			[h.Class("mx-auto flex w-full max-w-6xl flex-col gap-8 p-4 font-display")],
+			[h.Class("mx-auto flex w-full max-w-4xl flex-col gap-8 p-4 font-display")],
 			Arr.map(model.scenes, (scene, index) =>
 				h.section(
 					[h.Key(scene.id), h.Id(`vercel-lab-${scene.id}`), h.Class("flex flex-col gap-2")],

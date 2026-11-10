@@ -4,6 +4,7 @@ import type {
 	VercelProjectScope,
 	VercelSettingsRequest,
 } from "@maple/domain/http"
+import { countLabel } from "@maple/ui/lib/format"
 import { Array as Arr, String as Str } from "effect"
 
 /** What the drains forward: the editable part of a connection. */
@@ -216,6 +217,43 @@ export function vercelIssues(status: VercelIntegrationStatus): ReadonlyArray<Ver
 export function vercelHealth(status: VercelIntegrationStatus): VercelHealth {
 	if (vercelIssues(status).length > 0) return "attention"
 	return status.lastSuccessAt === null ? "pending" : "healthy"
+}
+
+export type VercelTone = "ok" | "warn" | "crit" | "neutral"
+
+/** The page header's chip: a rejected token first, then the drains that need attention, then the first sync. */
+export function vercelHealthChip(status: VercelIntegrationStatus): { readonly label: string; readonly tone: VercelTone } {
+	if (status.authFailed) return { label: "Token rejected", tone: "crit" }
+	const issues = vercelIssues(status).length
+	if (issues > 0)
+		return {
+			label: `Connected · ${countLabel(issues, "drain")} ${issues === 1 ? "needs" : "need"} attention`,
+			tone: "warn",
+		}
+	return status.lastSuccessAt === null
+		? { label: "First sync pending", tone: "neutral" }
+		: { label: "Connected", tone: "ok" }
+}
+
+/** One drain's state as the signal table shows it: off, live, or what Vercel reports wrong with it. */
+export function drainState(
+	enabled: boolean,
+	drain: VercelDrainStatus | null,
+): { readonly label: string; readonly tone: VercelTone } {
+	if (!enabled) return { label: "off", tone: "neutral" }
+	if (drain === null) return { label: "missing on Vercel", tone: "crit" }
+	switch (drain.status) {
+		case "enabled":
+			return { label: "live", tone: "ok" }
+		case "disabled":
+			return { label: "disabled on Vercel", tone: "warn" }
+		case "errored":
+			return { label: drain.lastError === null ? "errored" : `errored: ${drain.lastError}`, tone: "crit" }
+		case "missing":
+			return { label: "missing on Vercel", tone: "crit" }
+		case "unknown":
+			return { label: "not checked yet", tone: "neutral" }
+	}
 }
 
 /** "Logs, traces and AI Gateway" / "Logs and traces" / "AI Gateway" / … */

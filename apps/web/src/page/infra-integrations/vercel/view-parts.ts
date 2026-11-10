@@ -1,8 +1,4 @@
-import type {
-	VercelAiGatewayBucket,
-	VercelAiGatewayResponse,
-	VercelDeploymentSummary,
-} from "@maple/domain/http"
+import type { VercelAiGatewayBucket, VercelAiGatewayResponse } from "@maple/domain/http"
 import { formatCost } from "@maple/agent-sessions"
 import { ERROR_RATE_TEXT, errorRateLevel } from "@maple/ui/lib/error-rate"
 import {
@@ -27,7 +23,6 @@ import type { ChartRuntime } from "@maple/views/charts/chart-runtime"
 import type { ThemeColors } from "@maple/views/charts/theme-colors"
 import type { LoadFailure } from "@maple/views/data/load-failure"
 import type { TimeWindow } from "../../../data/time-range"
-import { deploymentStateLabel, deploymentTone } from "../../../components/integrations/vercel-model"
 import { AppRoute, hrefOf } from "../../../route"
 import { chartLoading } from "@maple/views/ui/chart-state"
 import {
@@ -40,11 +35,9 @@ import {
 } from "@maple/views/ui/empty"
 import { icon } from "@maple/views/ui/icon"
 import { hstack } from "@maple/views/ui/stack"
-import { statusDot } from "@maple/views/ui/status-dot"
 import { typography, typographyClass } from "@maple/views/ui/typography"
 import { columnHead, dataTable, ROW_LINK_CLASS } from "../../infra/kit/data-table"
 import type { TimeSearch } from "../../infra/kit/view-tabs"
-import { relativeTime } from "../../kit/relative-time"
 import { sectionHeading } from "../../kit/section-heading"
 import { emptyActions } from "@maple/views/ui/signal-empty-state"
 import { docsLink } from "../../kit/signal-empty-state"
@@ -52,7 +45,7 @@ import { statRail, statRailItem, statRailLoading } from "../../kit/stat-rail"
 import { chartCard } from "../kit/chart-card"
 import { seriesInput } from "./data"
 
-// Pieces both Vercel pages draw: `DeploymentInline`, the rate formats and `VercelAiGatewayPanel`.
+// Pieces both Vercel pages draw: the rate formats and `VercelAiGatewayPanel`.
 
 export type Clock = Readonly<{ nowMs: number; timeZone: string }>
 
@@ -86,38 +79,6 @@ export const errorTone = (percent: number | null) => errorRateLevel(percent === 
 
 export const projectHref = (projectId: string, time: TimeSearch) =>
 	hrefOf(AppRoute.InfraVercelProject({ projectId, search: time }))
-
-/** State dot, state, branch and age of one deployment, on one line. */
-export const deploymentInline = <M>(
-	h: HtmlBuilder<M>,
-	deployment: VercelDeploymentSummary,
-	clock: Clock,
-): Html =>
-	hstack(h, { as: "span", gap: "1.5", shrink: true, className: "text-2xs" }, [
-		statusDot(h, { tone: deploymentTone(deployment.state), size: "lg" }),
-		typography(h, { tone: "soft", className: "shrink-0" }, [deploymentStateLabel(deployment.state)]),
-		...(deployment.branch === null || deployment.branch === ""
-			? []
-			: [
-					typography(
-						h,
-						{
-							tone: "muted",
-							mono: true,
-							truncate: true,
-							attributes: [h.Title(deployment.branch)],
-						},
-						[deployment.branch],
-					),
-				]),
-		relativeTime(h, {
-			value: deployment.createdAt,
-			...clock,
-			variant: "short",
-			mono: true,
-			className: "shrink-0 text-muted-foreground",
-		}),
-	])
 
 /** Nothing went through AI Gateway in the window: what makes it show up, or that its drain is off. */
 export const aiGatewayEmpty = <M>(h: HtmlBuilder<M>, enabled: boolean): Html =>

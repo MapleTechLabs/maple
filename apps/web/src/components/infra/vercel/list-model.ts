@@ -25,6 +25,7 @@ export interface VercelProjectRow {
 	/** The newest deployment of any target: the last build. */
 	readonly latest: VercelDeploymentSummary | null
 	readonly requests: number
+	readonly requests4xx: number
 	readonly requests5xx: number
 	/** 5xx share of requests, 0–100; null without requests. */
 	readonly errorPercent: number | null
@@ -52,6 +53,7 @@ const toRow = (
 	production: status?.productionDeployment ?? null,
 	latest: status?.latestDeployment ?? null,
 	requests: row?.requests ?? 0,
+	requests4xx: row?.requests4xx ?? 0,
 	requests5xx: row?.requests5xx ?? 0,
 	errorPercent: row === undefined ? null : percentOf(row.requests5xx, row.requests),
 	cacheHitPercent: row === undefined ? null : percentOf(row.cacheHits, row.cacheLookups),
@@ -249,7 +251,7 @@ export const isFailedBuild = (deployment: VercelDeploymentSummary): boolean => {
 export const WEB_VITALS: ReadonlyArray<VercelWebVital> = ["LCP", "INP", "CLS", "FCP", "TTFB"]
 
 /** web.dev's thresholds at p75: good at or under the first, poor over the second. */
-const VITAL_THRESHOLDS = {
+export const VITAL_THRESHOLDS = {
 	LCP: [2500, 4000],
 	INP: [200, 500],
 	CLS: [0.1, 0.25],

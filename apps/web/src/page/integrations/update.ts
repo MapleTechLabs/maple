@@ -197,7 +197,6 @@ export const routeChanged = (
 const enterIntegration = (model: Model, context: PageContext): Return => {
 	const integration = integrationOfSearch(model.search.integration)
 	if (integration === "cloudflare") return CloudflareCard.enterCloudflare(model, context)
-	if (integration === "vercel") return Vercel.enterVercel(model, context)
 	if (integration === "aws") return Aws.enterAws(model, context)
 	if (integration === "gcp")
 		return chain(model, [(next) => Gcp.enterGcp(next, context), (next) => Gcp.requestBand(next, context)])
@@ -227,8 +226,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			accepted(model, { ...s, cloudflare: Keyed.accept(s.cloudflare, key, result) }),
 		CompletedLoadRailway: ({ key, result }) =>
 			accepted(model, { ...s, railway: Keyed.accept(s.railway, key, result) }),
-		CompletedLoadVercel: ({ key, result }) =>
-			Vercel.enterVercel(accepted(model, { ...s, vercel: Keyed.accept(s.vercel, key, result) }).model, context),
+		CompletedLoadVercel: ({ key, result }) => accepted(model, { ...s, vercel: Keyed.accept(s.vercel, key, result) }),
 		CompletedLoadPlanetscale: ({ key, result }) => {
 			const read = accepted(model, {
 				...s,
@@ -415,18 +413,6 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		ClickedRailwayRotate: () => Railway.setRotating(model, true),
 		ClickedRailwayRotateCancel: () => Railway.setRotating(model, false),
 		TickedRailwaySettle: () => requestStatus(model, context, "railway", "Refresh"),
-		CompletedLoadVercelProjects: ({ key, result }) => ({
-			model: Vercel.withVercelCard(model, { projects: Keyed.accept(model.vercelCard.projects, key, result) }),
-		}),
-		CompletedLoadVercelTimeseries: ({ key, result }) => ({
-			model: Vercel.withVercelCard(model, {
-				timeseries: Keyed.accept(model.vercelCard.timeseries, key, result),
-			}),
-		}),
-		CompletedLoadVercelGateway: ({ key, result }) => ({
-			model: Vercel.withVercelCard(model, { gateway: Keyed.accept(model.vercelCard.gateway, key, result) }),
-		}),
-		ClickedVercelRetryUsage: () => Vercel.requestUsage(model, context, "Refresh"),
 		TickedVercelSettle: () => Vercel.tickedSettle(model, context),
 		ClickedVercelSync: () => Vercel.clickedSync(model),
 		CompletedVercelSync: ({ failure }) => Vercel.completedSync(model, context, failure),

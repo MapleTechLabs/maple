@@ -1,57 +1,53 @@
-import type { VercelInfraRequestBucket, VercelIntegrationStatus } from "@maple/domain/http"
+import type { VercelIntegrationStatus } from "@maple/domain/http"
 import { refreshingClass } from "@maple/ui/lib/refreshing"
+import { TONE_FILL } from "@maple/ui/lib/tone"
 import { cn } from "@maple/ui/lib/utils"
 import { Array as Arr, String as Str } from "effect"
 import { AsyncData, Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import {
-	fillBuckets,
-	vercelFleetTotals,
-	vercelProjectRows,
-	zeroRequestBucket,
-} from "../../../../components/infra/vercel/list-model"
-import type { TimeWindow } from "../../../../data/time-range"
-import { AppRoute, hrefOf } from "../../../../route"
+	inScope,
+	type ProjectHealth,
+	problemsFirst,
+	projectHealth,
+} from "../../../../components/infra/vercel/overview-model"
+import { drainState, VERCEL_DRAINS } from "../../../../components/integrations/vercel-model"
+import type { VercelProjectScope } from "../../../../route/search"
+import { INFRA_CHART_TOKENS } from "@maple/views/charts/infra-metric-series"
+import { ResolveThemeColors } from "@maple/views/charts/theme-colors"
 import { errorState } from "@maple/views/ui/error-state"
+import { grid } from "@maple/views/ui/grid"
 import { icon } from "@maple/views/ui/icon"
+import { hstack } from "@maple/views/ui/stack"
+import { statusDot } from "@maple/views/ui/status-dot"
 import type { PageViewInputs } from "../../../contract"
 import { dashboardPage } from "../../../kit/dashboard-page"
-import { filteredEmpty } from "@maple/views/ui/signal-empty-state"
+import { FLEET_BAND_BOXED, fleetBand, fleetBandLoading } from "../../../infra/kit/fleet-band"
 import { heroChip } from "../../../infra/kit/hero-chip"
-import { countLabel, pageHero, searchToolbar } from "../../../infra/kit/page-parts"
-import { pickTimeSearch, type TimeSearch, viewTabStrip } from "../../../infra/kit/view-tabs"
-import { dataTableEmpty, skeletonRows } from "../../../infra/kit/data-table"
-import { skeleton } from "@maple/views/ui/skeleton"
+import { pageHeroParts } from "../../../infra/kit/page-parts"
+import { pickTimeSearch, type TimeSearch } from "../../../infra/kit/view-tabs"
 import { integrationNotConnected } from "../../kit/empty-states"
 import { pageTime } from "../../kit/page-time"
-import { DEFAULT_PRESET, seriesInput } from "../data"
-import {
-	auditLogSection,
-	buildsSection,
-	drainNotice,
-	readSection,
-	speedInsightsSection,
-	webAnalyticsSection,
-} from "../sections"
-import { aiGatewayProjectsTable, type Clock, dataOf, failureOf, fillAiSeries } from "../view-parts"
+import { DEFAULT_PRESET } from "../data"
+import { drainNotice } from "../sections"
+import { type Clock, dataOf, failureOf } from "../view-parts"
+import { type Overview, overviewOf } from "./derive"
 import { Message, type Model } from "./model"
-import { isProjectsView } from "./update"
-import {
-	type BandAiGateway,
-	headline,
-	headlineLoading,
-	projectTable,
-	projectTableLoading,
-} from "./view-table"
+import { aiGatewayPanel, realUsersPanel } from "./view-panels"
+import { overviewRail } from "./view-rail"
+import { type ChartContext, overviewStrips } from "./view-strips"
+import { projectTable, projectTableLoading } from "./view-table"
 
-// `VercelPage`: the team overview, or the projects list.
+// `VercelPage`: health first, then traffic against deploys, the projects, AI Gateway and real users.
 
 type H = HtmlBuilder<Message>
 
-const VERCEL_DESCRIPTION =
-	"Requests, cache and builds across the team; functions, outbound calls and AI Gateway spend from Vercel's drains."
+const VERCEL_DESCRIPTION = "Traffic, errors, cache and deploys for every project on your Vercel team."
 
 const VERCEL_ICON = (h: H) => icon(h, "VercelIcon", { size: 16, className: "text-foreground" })
+
+/** The strips' status classes name `--chart-2`. */
+const THEME_TOKENS = [...INFRA_CHART_TOKENS, "--chart-2"]
 
 /** Nothing in the window: either nothing is forwarded yet, or the drains have not delivered. */
 const noDataYet = (h: H, status: VercelIntegrationStatus): Html => {
@@ -90,193 +86,169 @@ const tracesOnlyNotice = (h: H): Html =>
 		actionLabel: "Forward logs",
 	})
 
-const fillRequests = (rows: ReadonlyArray<VercelInfraRequestBucket>, window: TimeWindow | null) =>
-	window === null ? rows : fillBuckets(rows, seriesInput(window), zeroRequestBucket)
-
 export type ListFrame = Readonly<{
 	status: VercelIntegrationStatus
 	time: TimeSearch
 	clock: Clock
 }>
 
-const projectNames = (status: VercelIntegrationStatus): ReadonlyMap<string, string> =>
-	new Map(Arr.map(status.projects, (project) => [project.id, project.name] as const))
+const count = (healths: ReadonlyArray<ProjectHealth>, health: ProjectHealth) =>
+	Arr.filter(healths, (h) => h === health).length
 
-const bandAiGateway = (model: Model, status: VercelIntegrationStatus): BandAiGateway => {
-	if (!status.aiGatewayEnabled) return "off"
-	const ai = dataOf(model.aiGateway.data)
-	if (ai !== null)
-		return {
-			summary: ai.summary,
-			spark: Arr.map(fillAiSeries(ai.timeseries, model.window), (row) => row.costUsd),
-		}
-	return failureOf(model.aiGateway.data) === null ? null : "failed"
-}
-
-const aiGatewaySection = (h: H, model: Model, frame: ListFrame): Html =>
-	readSection(h, {
-		title: "AI Gateway spend",
-		hint: "by calling project, most spend first",
-		read: { data: model.aiGateway.data, onRetry: Message.ClickedRetryAiGateway() },
-		off: frame.status.aiGatewayEnabled
-			? null
-			: {
-					lead: "AI Gateway is off.",
-					text: "Turn on the AI Gateway drain to see model spend per project, and spend made outside any project.",
-				},
-		failure: "Couldn't load AI Gateway usage",
-		loading: () => skeletonRows(h, 3, () => [skeleton(h, "h-3 w-full")]),
-		body: (data) =>
-			data.summary.requests === 0
-				? [dataTableEmpty(h, ["No AI Gateway requests in this window"])]
-				: [aiGatewayProjectsTable(h, data.projects, projectNames(frame.status), frame.time)],
-	})
-
-const overviewBody = (h: H, model: Model, frame: ListFrame): ReadonlyArray<Html> => {
-	const projectsFailure = failureOf(model.projects.data)
-	const projects = dataOf(model.projects.data)
-	if (projectsFailure !== null)
-		return [
-			errorState(h, {
-				failure: projectsFailure,
-				title: "Couldn't load Vercel projects",
-				onRetry: Message.ClickedRetryProjects(),
-			}),
-		]
-	if (projects === null) return [headlineLoading(h)]
-	if (vercelProjectRows(frame.status.projects, projects).length === 0) return [noDataYet(h, frame.status)]
-	const bucketsFailure = failureOf(model.buckets.data)
-	const names = projectNames(frame.status)
-	const nameOf = (projectId: string) => names.get(projectId) ?? projectId
-	return [
-		headline(h, {
-			totals: vercelFleetTotals(projects),
-			projectCount: projects.length,
-			buckets: fillRequests(dataOf(model.buckets.data) ?? [], model.window),
-			aiGateway: bandAiGateway(model, frame.status),
-		}),
-		...(bucketsFailure === null
-			? []
-			: [
-					errorState(h, {
-						failure: bucketsFailure,
-						title: "Couldn't load the request series",
-						onRetry: Message.ClickedRetryBuckets(),
-						variant: "row",
-					}),
-				]),
-		...(frame.status.logsEnabled ? [] : [tracesOnlyNotice(h)]),
-		aiGatewaySection(h, model, frame),
-		buildsSection(h, {
-			read: { data: model.deployments.data, onRetry: Message.ClickedRetryDeployments() },
-			clock: frame.clock,
-			projectName: nameOf,
-		}),
-		speedInsightsSection(h, {
-			read: { data: model.speedInsights.data, onRetry: Message.ClickedRetrySpeedInsights() },
-			enabled: frame.status.speedInsightsEnabled,
-		}),
-		webAnalyticsSection(h, {
-			read: { data: model.webAnalytics.data, onRetry: Message.ClickedRetryWebAnalytics() },
-			enabled: frame.status.webAnalyticsEnabled,
-			compact: true,
-		}),
-		auditLogSection(h, {
-			read: { data: model.auditLog.data, onRetry: Message.ClickedRetryAuditLog() },
-			enabled: frame.status.auditLogEnabled,
-			clock: frame.clock,
-			projectName: nameOf,
-		}),
-	]
-}
-
-const projectsBody = (h: H, model: Model, frame: ListFrame): ReadonlyArray<Html> => {
-	const projectsFailure = failureOf(model.projects.data)
-	const projects = dataOf(model.projects.data)
-	if (projectsFailure !== null)
-		return [
-			errorState(h, {
-				failure: projectsFailure,
-				title: "Couldn't load Vercel projects",
-				onRetry: Message.ClickedRetryProjects(),
-			}),
-		]
-	if (projects === null) return [projectTableLoading(h)]
-	const rows = vercelProjectRows(frame.status.projects, projects)
-	if (rows.length === 0) return [noDataYet(h, frame.status)]
-	const q = Str.toLowerCase(Str.trim(model.search.q ?? ""))
-	const shown =
-		q === ""
-			? rows
-			: Arr.filter(rows, (row) =>
-					Str.includes(q)(Str.toLowerCase(`${row.name} ${row.framework ?? ""} ${row.projectId}`)),
-				)
-	return [
-		...(frame.status.logsEnabled ? [] : [tracesOnlyNotice(h)]),
-		searchToolbar(h, {
-			id: "vercel-search",
-			value: model.search.q ?? "",
-			placeholder: "Search projects…",
-			onInput: (value) => Message.ChangedSearch({ value }),
-			onClear: Message.ClickedClearSearch(),
-			trailing:
-				shown.length === rows.length
-					? countLabel(rows.length, rows.length, "project")
-					: `${shown.length} of ${rows.length} projects`,
-		}),
-		shown.length === 0
-			? filteredEmpty(h, {
-					noun: "projects",
-					description: "Clear the search to see them all.",
-					onClear: Message.ClickedClearSearch(),
-					clearLabel: "Clear search",
-				})
-			: projectTable(h, { rows: shown, sort: model.sort, time: frame.time, clock: frame.clock }),
-	]
-}
-
-const viewTabs = (h: H, model: Model, status: VercelIntegrationStatus): Html => {
-	const projects = dataOf(model.projects.data)
-	const count = projects === null ? null : vercelProjectRows(status.projects, projects).length
-	const time = pickTimeSearch(model.search)
-	return viewTabStrip(
-		h,
-		"Vercel views",
-		[
-			{ id: "overview", title: "Overview", href: hrefOf(AppRoute.InfraVercel({ search: time })) },
+/** `VercelFleetBand`: counts over every project, whatever the table is filtered to. */
+const band = (
+	h: H,
+	o: Overview,
+	rows: NonNullable<Overview["rows"]>,
+	active: VercelProjectScope | undefined,
+): Html => {
+	const healths = Arr.map(rows, (row) => projectHealth(row, o.window))
+	const scoped = (scope: VercelProjectScope) =>
+		Arr.filter(rows, (row) => inScope(row, scope, o.window)).length
+	const erroring = count(healths, "erroring")
+	const failed = count(healths, "failedDeploy")
+	const idle = count(healths, "idle")
+	return fleetBand<VercelProjectScope, Message>(h, {
+		total: rows.length,
+		noun: "project",
+		caption: `${rows.length - erroring - failed - idle} healthy · ${failed} build failing · ${erroring} erroring · ${idle} idle`,
+		segments: [
+			{ key: "healthy", count: rows.length - erroring - failed - idle, className: TONE_FILL.ok },
+			{ key: "failed deploy", count: failed, className: TONE_FILL.warn },
+			{ key: "erroring", count: erroring, className: TONE_FILL.crit },
+			{ key: "idle", count: idle, className: TONE_FILL.neutral },
+		],
+		cells: [
 			{
-				id: "projects",
-				title: count === null ? "Projects" : `Projects ${count}`,
-				href: hrefOf(AppRoute.InfraVercel({ search: { ...time, view: "projects" } })),
+				scope: "erroring",
+				label: "Serving 5xx",
+				hint: "≥ 1% of requests",
+				value: scoped("erroring"),
+				tone: "crit",
+			},
+			{
+				scope: "failedDeploys",
+				label: "Failed deploys",
+				hint: "latest deploy failed",
+				value: scoped("failedDeploys"),
+				tone: "warn",
+			},
+			{ scope: "slow", label: "Slow", hint: "p95 ≥ 1s", value: scoped("slow"), tone: "warn" },
+			{
+				scope: "coldStarts",
+				label: "Cold-start heavy",
+				hint: "≥ 10% cold",
+				value: scoped("coldStarts"),
+				tone: "neutral",
 			},
 		],
-		isProjectsView(model.search) ? "projects" : "overview",
+		activeScope: active,
+		onScopeChange: (scope) => Message.ClickedScope({ scope }),
+		className: FLEET_BAND_BOXED,
+	})
+}
+
+const table = (
+	h: H,
+	model: Model,
+	o: Overview,
+	rows: NonNullable<Overview["rows"]>,
+	frame: ListFrame,
+): Html => {
+	const query = model.search.q ?? ""
+	const q = Str.toLowerCase(Str.trim(query))
+	const scope = model.search.scope
+	const shown = Arr.filter(
+		problemsFirst(rows, o.window),
+		(row) =>
+			(scope === undefined || inScope(row, scope, o.window)) &&
+			(q === "" ||
+				Str.includes(q)(Str.toLowerCase(`${row.name} ${row.framework ?? ""} ${row.projectId}`))),
+	)
+	return projectTable(h, {
+		rows: Arr.map(shown, (row) => ({ row, health: projectHealth(row, o.window) })),
+		total: rows.length,
+		query,
+		isFiltered: shown.length !== rows.length,
+		notForwarded: Arr.map(
+			Arr.filter(frame.status.projects, (project) => !project.forwarded),
+			(project) => project.name,
+		),
+		time: frame.time,
+		clock: frame.clock,
+	})
+}
+
+const chartContext = (model: Model, timeZone: string): ChartContext | null =>
+	model.themeColors === null || model.chartRuntime._tag === "Loading"
+		? null
+		: { theme: model.themeColors, timeZone }
+
+/** `VercelOverview`'s main column: the fleet band, the strips, the projects and the two panels. */
+export const listBody = (h: H, model: Model, frame: ListFrame): Html =>
+	mainColumn(h, model, frame, overviewOf(model, frame.status))
+
+const mainColumn = (h: H, model: Model, frame: ListFrame, o: Overview): Html => {
+	const projectsFailure = failureOf(model.projects.data)
+	const waiting = AsyncData.isRefreshing(model.projects.data)
+	const content = (): ReadonlyArray<Html> => {
+		if (projectsFailure !== null)
+			return [
+				errorState(h, {
+					failure: projectsFailure,
+					title: "Couldn't load Vercel projects",
+					onRetry: Message.ClickedRetryProjects(),
+				}),
+			]
+		if (o.rows === null) return [fleetBandLoading(h, 4, FLEET_BAND_BOXED), projectTableLoading(h)]
+		if (o.rows.length === 0) return [noDataYet(h, frame.status)]
+		return [
+			band(h, o, o.rows, model.search.scope),
+			...(frame.status.logsEnabled ? [] : [tracesOnlyNotice(h)]),
+			...overviewStrips(h, model, o, chartContext(model, frame.clock.timeZone)),
+			table(h, model, o, o.rows, frame),
+			grid(h, { cols: 1, lg: 2, gap: "6" }, [aiGatewayPanel(h, model, o), realUsersPanel(h, model, o)]),
+		]
+	}
+	return h.div(
+		[h.Class(cn("space-y-6", refreshingClass(waiting))), ...(waiting ? [h.AriaBusy(true)] : [])],
+		content(),
 	)
 }
 
-const header = (h: H, status: VercelIntegrationStatus | null): Html =>
-	pageHero(h, {
+const header = (h: H, status: VercelIntegrationStatus | null) => {
+	const team = status?.team ?? null
+	const drains =
+		status === null || !status.connected
+			? []
+			: Arr.flatMap(VERCEL_DRAINS, (drain) =>
+					status[drain.flag] ? [drainState(true, status.drains[drain.key])] : [],
+				)
+	const live = Arr.filter(drains, (state) => state.tone === "ok").length
+	return pageHeroParts(h, {
 		title: "Vercel",
 		description: VERCEL_DESCRIPTION,
-		trailing:
-			status?.team === null || status === null ? undefined : heroChip(h, ["team ", status.team.name]),
-	})
-
-/** `VercelListPage`: header and view tabs, then the overview or the projects. */
-export const listBody = (h: H, model: Model, frame: ListFrame): Html => {
-	const projectsView = isProjectsView(model.search)
-	const waiting = AsyncData.isRefreshing(model.projects.data)
-	return h.div(
-		[h.Class("space-y-6")],
-		[
-			header(h, frame.status),
-			viewTabs(h, model, frame.status),
-			h.div(
-				[h.Class(cn("space-y-6", refreshingClass(waiting))), ...(waiting ? [h.AriaBusy(true)] : [])],
-				projectsView ? projectsBody(h, model, frame) : overviewBody(h, model, frame),
-			),
+		trailing: [
+			...(team === null
+				? []
+				: [
+						heroChip(h, [
+							team.name,
+							...(team.plan === undefined || team.plan === null ? [] : [` · ${team.plan}`]),
+						]),
+					]),
+			...(drains.length === 0
+				? []
+				: [
+						heroChip(h, [
+							hstack(h, { as: "span", gap: "1.5" }, [
+								statusDot(h, { tone: live === drains.length ? "ok" : "warn" }),
+								`${live} of ${drains.length} drains live`,
+							]),
+						]),
+					]),
 		],
-	)
+	})
 }
 
 const notConnected = (h: H): Html =>
@@ -290,54 +262,56 @@ const notConnected = (h: H): Html =>
 		docsPage: "vercel",
 	})
 
-const loading = (h: H): Html => h.div([h.Class("space-y-6")], [header(h, null), headlineLoading(h)])
-
-const statusView = (h: H, model: Model, timeZone: string): Html => {
-	const loaded = (status: VercelIntegrationStatus): Html =>
-		status.connected
-			? listBody(h, model, {
-					status,
+export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, inputs, h) => {
+	const timeZone = inputs.context.timeZone
+	const status = dataOf(model.status.data)
+	const statusFailure = failureOf(model.status.data)
+	const connected = status !== null && status.connected ? status : null
+	const frame: ListFrame | null =
+		connected === null
+			? null
+			: {
+					status: connected,
 					time: pickTimeSearch(model.search),
 					clock: { nowMs: model.nowMs, timeZone },
+				}
+	const hero = header(h, status)
+	const o = frame === null ? null : overviewOf(model, frame.status)
+	const body =
+		statusFailure !== null
+			? errorState(h, {
+					failure: statusFailure,
+					title: "Couldn't load the Vercel connection",
+					onRetry: Message.ClickedRetryStatus(),
 				})
-			: h.div([h.Class("space-y-6")], [header(h, status), notConnected(h)])
-	return AsyncData.match(model.status.data, {
-		onIdle: () => loading(h),
-		onLoading: () => loading(h),
-		onFailure: (failure) =>
-			h.div(
-				[h.Class("space-y-6")],
-				[
-					header(h, null),
-					errorState(h, {
-						failure,
-						title: "Couldn't load the Vercel connection",
-						onRetry: Message.ClickedRetryStatus(),
+			: status === null
+				? fleetBandLoading(h, 4, FLEET_BAND_BOXED)
+				: frame === null || o === null
+					? notConnected(h)
+					: mainColumn(h, model, frame, o)
+	return h.div(
+		[h.Class("contents"), h.OnMount(ResolveThemeColors({ tokens: THEME_TOKENS }))],
+		[
+			dashboardPage(
+				h,
+				{
+					gap: "lg",
+					titleContent: hero.title,
+					actions: pageTime(h, {
+						search: model.search,
+						defaultPreset: DEFAULT_PRESET,
+						window: model.window,
+						picker: model.timePicker,
+						toPickerMessage: (message) => Message.GotTimePickerMessage({ message }),
+						onReset: Message.ClickedResetTimeRange(),
+						onReload: Message.ClickedReload(),
+						isReloading: model.isReloading,
 					}),
-				],
+					rightPanel:
+						frame === null || o === null ? undefined : overviewRail(h, model, o, frame.clock),
+				},
+				[body],
 			),
-		onStale: ({ data }) => loaded(data),
-		onSuccess: loaded,
-		onRefreshing: loaded,
-	})
-}
-
-export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, inputs, h) =>
-	dashboardPage(
-		h,
-		{
-			scrollClassName: "gap-6",
-			actions: pageTime(h, {
-				search: model.search,
-				defaultPreset: DEFAULT_PRESET,
-				window: model.window,
-				picker: model.timePicker,
-				toPickerMessage: (message) => Message.GotTimePickerMessage({ message }),
-				onReset: Message.ClickedResetTimeRange(),
-				onReload: Message.ClickedReload(),
-				isReloading: model.isReloading,
-			}),
-		},
-		[statusView(h, model, inputs.context.timeZone)],
-	),
-)
+		],
+	)
+})

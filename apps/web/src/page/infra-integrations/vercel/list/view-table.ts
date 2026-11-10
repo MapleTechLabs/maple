@@ -1,279 +1,272 @@
-import type { VercelAiGatewaySummary, VercelInfraRequestBucket } from "@maple/domain/http"
-import { formatCost } from "@maple/agent-sessions"
+import type { VercelDeploymentSummary } from "@maple/domain/http"
 import { ERROR_RATE_TEXT } from "@maple/ui/lib/error-rate"
-import { EMPTY_VALUE, formatLatency, formatNumber } from "@maple/ui/lib/format"
-import { TONE_TEXT } from "@maple/ui/lib/tone"
+import { EMPTY_VALUE, formatLatency, formatNumber, formatPercentColumn } from "@maple/ui/lib/format"
+import type { Tone } from "@maple/ui/lib/tone"
 import { cn } from "@maple/ui/lib/utils"
-import { Array as Arr } from "effect"
+import { Array as Arr, String as Str } from "effect"
 import type { Html, HtmlBuilder } from "foldkit/html"
+import { deployLabel } from "../../../../components/infra/vercel/deploy-signals"
+import type { VercelProjectRow } from "../../../../components/infra/vercel/list-model"
 import {
-	buildDurationMs,
-	type VercelFleetTotals,
-	type VercelProjectRow,
-} from "../../../../components/infra/vercel/list-model"
+	COLD_START_HEAVY_PERCENT,
+	type ProjectHealth,
+	productionDeployOf,
+	SLOW_P95_MS,
+} from "../../../../components/infra/vercel/overview-model"
+import { AppRoute, hrefOf } from "../../../../route"
+import { compactSearchInput } from "@maple/views/ui/compact-search-input"
+import { badge } from "@maple/views/ui/display"
+import { segmentedBar } from "@maple/views/ui/meter"
+import { panel, panelHeader } from "@maple/views/ui/panel"
+import { filteredEmpty } from "@maple/views/ui/signal-empty-state"
 import { skeleton } from "@maple/views/ui/skeleton"
-import { hstack } from "@maple/views/ui/stack"
+import { hstack, vstack } from "@maple/views/ui/stack"
+import { statusDot } from "@maple/views/ui/status-dot"
+import { textLink } from "@maple/views/ui/text-link"
 import { typography } from "@maple/views/ui/typography"
-import { columnHead, dataTable, headSort, ROW_LINK_CLASS, skeletonRows } from "../../../infra/kit/data-table"
-import type { TimeSearch } from "../../../infra/kit/view-tabs"
-import { statRail, statRailItem, statRailItemSkeleton } from "../../../kit/stat-rail"
-import { type Sort, sortRowsByField } from "../../../kit/table-sort"
 import {
-	type Clock,
-	deploymentInline,
-	LEAD_COLUMN,
-	errorText,
-	errorTone,
-	percentText,
-	projectHref,
-} from "../view-parts"
-import { Message, type SortKey } from "./model"
+	columnHead,
+	dataTable,
+	NUMERIC_CELL,
+	ROW_LINK_CLASS,
+	skeletonRows,
+} from "../../../infra/kit/data-table"
+import type { TimeSearch } from "../../../infra/kit/view-tabs"
+import { relativeTime } from "../../../kit/relative-time"
+import { type Clock, errorTone, percentText, projectHref } from "../view-parts"
+import { Message } from "./model"
 
-/** The build time, or the empty value while it builds or when Vercel reported none. */
-const buildDurationText = (deployment: Parameters<typeof buildDurationMs>[0]): string => {
-	const ms = buildDurationMs(deployment)
-	return ms === null ? EMPTY_VALUE : formatLatency(ms)
-}
-
-// `VercelHeadline` and `VercelProjectTable`.
+// `VercelProjectTable`: every forwarded project, problems first.
 
 type H = HtmlBuilder<Message>
 
-/** Null while AI Gateway usage loads; "failed" when its read failed; "off" when its drain is. */
-export type BandAiGateway =
-	| Readonly<{ summary: VercelAiGatewaySummary; spark: ReadonlyArray<number> }>
-	| "failed"
-	| "off"
-	| null
+const NAME = "w-0 flex-1 min-w-52"
+const DEPLOY = "hidden w-32 lg:flex"
+const MIX = "hidden w-28 md:flex"
 
-const spendItem = (h: H, aiGateway: BandAiGateway): Html =>
-	aiGateway === null
-		? statRailItemSkeleton(h)
-		: aiGateway === "failed" || aiGateway === "off"
-			? statRailItem(h, {
-					eyebrow: "AI Gateway spend",
-					value: EMPTY_VALUE,
-					subline: aiGateway === "off" ? "drain off" : "couldn't load",
-				})
-			: statRailItem(h, {
-					eyebrow: "AI Gateway spend",
-					value:
-						aiGateway.summary.requests > 0 ? formatCost(aiGateway.summary.costUsd) : EMPTY_VALUE,
-					spark: aiGateway.spark,
-					subline:
-						aiGateway.summary.requests > 0
-							? `${formatNumber(aiGateway.summary.requests)} requests`
-							: "no requests",
-				})
+export const HEALTH_TONE = {
+	erroring: "crit",
+	failedDeploy: "warn",
+	slow: "warn",
+	coldStarts: "warn",
+	healthy: "ok",
+	idle: "neutral",
+} as const satisfies Record<ProjectHealth, Tone>
 
-/** The team in five numbers: traffic, failures, cache, cold starts and AI Gateway spend. */
-export const headline = (
-	h: H,
-	inputs: Readonly<{
-		totals: VercelFleetTotals
-		projectCount: number
-		buckets: ReadonlyArray<VercelInfraRequestBucket>
-		aiGateway: BandAiGateway
-	}>,
-): Html => {
-	const { totals, buckets } = inputs
-	return statRail(h, { columns: 5 }, [
-		statRailItem(h, {
-			eyebrow: "Requests",
-			value: formatNumber(totals.requests),
-			spark: Arr.map(buckets, (row) => row.requests),
-			subline: `across ${inputs.projectCount} ${inputs.projectCount === 1 ? "project" : "projects"}`,
-		}),
-		statRailItem(h, {
-			eyebrow: "Error rate",
-			value: errorText(totals.errorPercent),
-			tone: errorTone(totals.errorPercent),
-			spark: Arr.map(buckets, (row) => row.requests5xx),
-			subline: `${formatNumber(totals.requests5xx)} 5xx responses`,
-		}),
-		statRailItem(h, {
-			eyebrow: "Cache hit rate",
-			value: percentText(totals.cacheHitPercent),
-			spark: Arr.map(buckets, (row) => row.cacheHits),
-			subline: totals.cacheHitPercent === null ? "no cache lookups" : "of cache lookups",
-		}),
-		statRailItem(h, {
-			eyebrow: "Cold starts",
-			value: percentText(totals.coldStartPercent),
-			tone: errorTone(totals.coldStartPercent),
-			subline:
-				totals.coldStartPercent === null
-					? "no function traces"
-					: `${formatNumber(totals.coldStarts)} of ${formatNumber(totals.invocations)} invocations`,
-		}),
-		spendItem(h, inputs.aiGateway),
+const columns = (h: H): ReadonlyArray<Html> => [
+	columnHead(h, { label: "Project", width: NAME }),
+	columnHead(h, { label: "Production deploy", width: DEPLOY }),
+	columnHead(h, { label: "Requests", width: "w-20", align: "right" }),
+	columnHead(h, { label: "Status mix", width: MIX }),
+	columnHead(h, { label: "5xx", width: "w-16", align: "right" }),
+	columnHead(h, { label: "Cache", width: "w-16", align: "right", hidden: "hidden 2xl:flex" }),
+	columnHead(h, { label: "p95", width: "w-16", align: "right" }),
+	columnHead(h, { label: "Cold", width: "w-16", align: "right", hidden: "hidden 2xl:flex" }),
+]
+
+const deployCell = (h: H, deployment: VercelDeploymentSummary | null, clock: Clock): Html => {
+	if (deployment === null)
+		return typography(h, { size: "2xs", tone: "muted", className: DEPLOY }, ["no deploys recorded"])
+	const failed = Str.toUpperCase(deployment.state) === "ERROR"
+	return vstack(h, { gap: "0.5", className: DEPLOY }, [
+		hstack(h, { gap: "1.5" }, [
+			statusDot(h, { tone: failed ? "crit" : "ok" }),
+			typography(h, { size: "2xs", tone: "soft", mono: true }, [deployLabel(deployment)]),
+		]),
+		hstack(h, { gap: "1", className: "pl-3" }, [
+			typography(h, { size: "3xs", tone: failed ? "warning" : "muted", mono: true }, [
+				`${Str.toLowerCase(deployment.state)} ·`,
+			]),
+			relativeTime(h, {
+				value: deployment.createdAt,
+				...clock,
+				mono: true,
+				className: "text-3xs text-muted-foreground",
+			}),
+		]),
 	])
 }
 
-export const headlineLoading = (h: H): Html =>
-	statRail(
-		h,
-		{ columns: 5, isBusy: true },
-		Array.from({ length: 5 }, () => statRailItemSkeleton(h)),
-	)
-
-interface RowView extends VercelProjectRow {
-	readonly sortError: number
-	readonly sortCache: number
-	readonly sortColdStart: number
-	readonly sortP95: number
+/** 2xx-ish (everything not 4xx or 5xx), 4xx and 5xx shares, captioned with the share that matters. */
+const statusMix = (h: H, row: VercelProjectRow): Html => {
+	if (row.requests === 0)
+		return typography(h, { size: "2xs", tone: "muted", mono: true, className: MIX }, ["no requests"])
+	const other = Math.max(0, row.requests - row.requests4xx - row.requests5xx)
+	const tone = errorTone(row.errorPercent)
+	return hstack(h, { gap: "2.5", className: MIX }, [
+		segmentedBar(h, {
+			className: "w-12 shrink-0 gap-px bg-transparent",
+			minVisible: 2,
+			label: `other ${other}, 4xx ${row.requests4xx}, 5xx ${row.requests5xx}`,
+			segments: [
+				{ key: "ok", value: other, className: "bg-severity-info" },
+				{ key: "4xx", value: row.requests4xx, className: "bg-severity-warn" },
+				{ key: "5xx", value: row.requests5xx, className: "bg-severity-error" },
+			],
+		}),
+		tone === "neutral"
+			? typography(h, { size: "2xs", tone: "muted", mono: true, numeric: true, truncate: true }, [
+					`${formatPercentColumn(row.requests4xx / row.requests)} 4xx`,
+				])
+			: typography(h, { size: "2xs", tone: "error", mono: true, numeric: true, truncate: true }, [
+					`${formatPercentColumn(row.requests5xx / row.requests)} 5xx`,
+				]),
+	])
 }
 
-// A missing rate or latency sorts below every real one.
-const toView = (row: VercelProjectRow): RowView => ({
-	...row,
-	sortError: row.errorPercent ?? -1,
-	sortCache: row.cacheHitPercent ?? -1,
-	sortColdStart: row.coldStartPercent ?? -1,
-	sortP95: row.p95DurationMs ?? -1,
-})
-
-const columns = (h: H, sort: Sort<SortKey> | null): ReadonlyArray<Html> => {
-	const sorted = (label: string, key: SortKey, width: string, align?: "right", hidden?: string) =>
-		columnHead(h, {
-			label,
-			width,
-			align,
-			hidden,
-			sort: headSort(sort, key, (k) => Message.ClickedSort({ key: k })),
-		})
-	return [
-		sorted("Project", "name", LEAD_COLUMN),
-		columnHead(h, { label: "Last build", width: "w-[240px]", hidden: "hidden lg:flex" }),
-		sorted("Requests", "requests", "w-[90px]", "right"),
-		sorted("5xx", "sortError", "w-[72px]", "right"),
-		sorted("Cache hits", "sortCache", "w-[80px]", "right", "hidden md:flex"),
-		sorted("Cold starts", "sortColdStart", "w-[80px]", "right", "hidden md:flex"),
-		sorted("p95", "sortP95", "w-[72px]", "right"),
-		sorted("Error logs", "errorLogs", "w-[80px]", "right"),
-	]
-}
-
-export const projectTableLoading = (h: H): Html =>
-	dataTable(
-		h,
-		{ ariaLabel: "Vercel projects" },
-		columns(h, null),
-		skeletonRows(h, 5, () => [
-			h.div([h.Class(LEAD_COLUMN)], [skeleton(h, "h-4 w-36")]),
-			skeleton(h, "hidden h-3 w-[240px] lg:block"),
-			skeleton(h, "ml-auto h-3 w-[90px]"),
-			skeleton(h, "h-3 w-[72px]"),
-			skeleton(h, "hidden h-3 w-[80px] md:block"),
-			skeleton(h, "hidden h-3 w-[80px] md:block"),
-			skeleton(h, "h-3 w-[72px]"),
-			skeleton(h, "h-3 w-[80px]"),
-		]),
+const numeric = (h: H, width: string, text: string, className: string, title?: string): Html =>
+	h.div(
+		[h.Class(cn(NUMERIC_CELL, width, className)), ...(title === undefined ? [] : [h.Title(title)])],
+		[text],
 	)
 
-const NUM = "text-right font-mono text-xs tabular-nums"
-
-const row = (h: H, view: RowView, time: TimeSearch, clock: Clock): Html =>
+const row = (h: H, view: VercelProjectRow, health: ProjectHealth, time: TimeSearch, clock: Clock): Html =>
 	h.a(
 		[h.Key(view.projectId), h.Class(ROW_LINK_CLASS), h.Href(projectHref(view.projectId, time))],
 		[
-			hstack(h, { align: "baseline", gap: "2", grow: true, className: "w-0 min-w-[200px]" }, [
-				h.span(
-					[
-						h.Class(
-							"truncate font-mono text-xs font-medium text-foreground group-hover:text-primary",
-						),
-						h.Title(view.name),
-					],
+			hstack(h, { gap: "2", className: NAME }, [
+				statusDot(h, { tone: HEALTH_TONE[health] }),
+				typography(
+					h,
+					{
+						size: "xs",
+						tone: "foreground",
+						weight: "medium",
+						mono: true,
+						truncate: true,
+						className: "group-hover:text-primary",
+						attributes: [h.Title(view.name)],
+					},
 					[view.name],
 				),
 				...(view.framework === null
 					? []
 					: [
-							typography(h, { size: "3xs", tone: "muted", mono: true, className: "shrink-0" }, [
+							badge(h, { variant: "muted", size: "xs", mono: true, className: "shrink-0" }, [
 								view.framework,
 							]),
 						]),
 			]),
-			hstack(h, { gap: "2", className: "hidden w-[240px] lg:flex" }, [
-				...(view.latest === null
-					? [typography(h, { size: "2xs", tone: "muted" }, ["no builds recorded"])]
-					: [
-							deploymentInline(h, view.latest, clock),
-							typography(h, { size: "2xs", tone: "muted", mono: true, className: "shrink-0" }, [
-								buildDurationText(view.latest),
-							]),
-						]),
-			]),
-			h.div(
-				[
-					h.Class(
-						cn(
-							NUM,
-							"w-[90px]",
-							view.requests === 0 ? "text-muted-foreground" : "text-foreground",
-						),
-					),
-				],
-				[formatNumber(view.requests)],
+			deployCell(h, productionDeployOf(view), clock),
+			numeric(
+				h,
+				"w-20",
+				formatNumber(view.requests),
+				view.requests === 0 ? "text-muted-foreground" : "text-foreground",
 			),
-			h.div(
-				[h.Class(cn(NUM, "w-[72px]", ERROR_RATE_TEXT[errorTone(view.errorPercent)]))],
-				[errorText(view.errorPercent)],
+			statusMix(h, view),
+			numeric(
+				h,
+				"w-16",
+				view.requests === 0 ? EMPTY_VALUE : formatNumber(view.requests5xx),
+				ERROR_RATE_TEXT[errorTone(view.errorPercent)],
 			),
-			h.div(
-				[h.Class(cn(NUM, "hidden w-[80px] text-foreground-soft md:block"))],
-				[percentText(view.cacheHitPercent)],
+			numeric(h, "hidden w-16 2xl:block", percentText(view.cacheHitPercent), "text-foreground-soft"),
+			numeric(
+				h,
+				"w-16",
+				view.p95DurationMs === null ? EMPTY_VALUE : formatLatency(view.p95DurationMs),
+				view.p95DurationMs === null
+					? "text-muted-foreground"
+					: view.p95DurationMs >= SLOW_P95_MS
+						? "text-severity-warn"
+						: "text-foreground-soft",
+				view.p95DurationMs === null ? "This project sends no deployment traces" : "Edge request p95",
 			),
-			h.div(
-				[
-					h.Class(
-						cn(
-							NUM,
-							"hidden w-[80px] md:block",
-							ERROR_RATE_TEXT[errorTone(view.coldStartPercent)],
-						),
-					),
-					...(view.coldStartPercent === null ? [h.Title("No function invocations traced")] : []),
-				],
-				[percentText(view.coldStartPercent)],
-			),
-			h.div(
-				[
-					h.Class(
-						cn(
-							NUM,
-							"w-[72px]",
-							view.p95DurationMs === null ? "text-muted-foreground" : "text-foreground-soft",
-						),
-					),
-					...(view.p95DurationMs === null
-						? [h.Title("This project sends no deployment traces")]
-						: []),
-				],
-				[view.p95DurationMs === null ? EMPTY_VALUE : formatLatency(view.p95DurationMs)],
-			),
-			h.div(
-				[h.Class(cn(NUM, "w-[80px]", view.errorLogs > 0 ? TONE_TEXT.warn : "text-muted-foreground"))],
-				[formatNumber(view.errorLogs)],
+			numeric(
+				h,
+				"hidden w-16 2xl:block",
+				percentText(view.coldStartPercent),
+				view.coldStartPercent !== null && view.coldStartPercent >= COLD_START_HEAVY_PERCENT
+					? "text-severity-warn"
+					: "text-foreground-soft",
+				view.coldStartPercent === null
+					? "No function invocations traced"
+					: "Cold starts of invocations",
 			),
 		],
 	)
 
-export const projectTable = (
-	h: H,
-	inputs: Readonly<{
-		rows: ReadonlyArray<VercelProjectRow>
-		sort: Sort<SortKey>
-		time: TimeSearch
-		clock: Clock
-	}>,
-): Html =>
-	dataTable(
-		h,
-		{ ariaLabel: "Vercel projects" },
-		columns(h, inputs.sort),
-		Arr.map(sortRowsByField<RowView, SortKey>(Arr.map(inputs.rows, toView), inputs.sort), (view) =>
-			row(h, view, inputs.time, inputs.clock),
+export type ProjectTableInputs = Readonly<{
+	rows: ReadonlyArray<Readonly<{ row: VercelProjectRow; health: ProjectHealth }>>
+	total: number
+	query: string
+	isFiltered: boolean
+	notForwarded: ReadonlyArray<string>
+	time: TimeSearch
+	clock: Clock
+}>
+
+const header = (h: H, query: string, count: string): Html =>
+	panelHeader(h, {
+		title: "Projects",
+		scope: compactSearchInput(h, {
+			value: query,
+			placeholder: "Filter projects…",
+			ariaLabel: "Filter projects",
+			onInput: (value) => Message.ChangedSearch({ value }),
+			onClear: Message.ClickedClearSearch(),
+			className: "w-56",
+		}),
+		action: typography(h, { size: "2xs", tone: "muted", mono: true }, [count]),
+	})
+
+const footer = (h: H, notForwarded: ReadonlyArray<string>): Html =>
+	hstack(h, { gap: "3", justify: "between", className: "border-t px-4 py-2.5" }, [
+		typography(h, { size: "2xs", tone: "muted", truncate: true }, [
+			notForwarded.length === 0
+				? "Every project on the team is forwarded"
+				: `${notForwarded.length} ${notForwarded.length === 1 ? "project" : "projects"} not forwarded · ${Arr.join(notForwarded, ", ")}`,
+		]),
+		typography(h, { size: "2xs", className: "shrink-0" }, [
+			textLink(h, { href: hrefOf(AppRoute.Integrations({ search: { integration: "vercel" } })) }, [
+				"Manage scope",
+			]),
+		]),
+	])
+
+export const projectTable = (h: H, inputs: ProjectTableInputs): Html =>
+	panel(h, {}, [
+		header(
+			h,
+			inputs.query,
+			inputs.isFiltered
+				? `${inputs.rows.length} of ${inputs.total} projects`
+				: `${inputs.total} ${inputs.total === 1 ? "project" : "projects"} · problems first`,
 		),
-	)
+		inputs.rows.length === 0
+			? filteredEmpty(h, {
+					noun: "projects",
+					description: "Clear the filters to see them all.",
+					onClear: Message.ClickedClearFilters(),
+					clearLabel: "Clear filters",
+				})
+			: dataTable(
+					h,
+					{ ariaLabel: "Vercel projects", className: "border-y-0" },
+					columns(h),
+					Arr.map(inputs.rows, ({ row: view, health }) =>
+						row(h, view, health, inputs.time, inputs.clock),
+					),
+				),
+		footer(h, inputs.notForwarded),
+	])
+
+export const projectTableLoading = (h: H): Html =>
+	panel(h, {}, [
+		dataTable(
+			h,
+			{ ariaLabel: "Vercel projects", isWaiting: true, className: "border-y-0" },
+			columns(h),
+			skeletonRows(h, 5, () => [
+				h.div([h.Class(NAME)], [skeleton(h, "h-4 w-36")]),
+				skeleton(h, "hidden h-3 w-32 lg:block"),
+				skeleton(h, "h-3 w-20"),
+				skeleton(h, "hidden h-1.5 w-28 md:block"),
+				skeleton(h, "h-3 w-16"),
+				skeleton(h, "hidden h-3 w-16 2xl:block"),
+				skeleton(h, "h-3 w-16"),
+				skeleton(h, "hidden h-3 w-16 2xl:block"),
+			]),
+		),
+	])

@@ -1,8 +1,10 @@
 import {
 	VercelAiGatewayResponse,
 	VercelDeploymentSummary,
+	VercelInfraBreakdownRow,
 	VercelInfraDependency,
 	VercelInfraFunction,
+	VercelInfraLatencyBucket,
 	VercelInfraProject,
 	VercelInfraProjectDetailResponse,
 	VercelInfraRequestBucket,
@@ -18,10 +20,11 @@ import { ThemeColors } from "@maple/views/charts/theme-colors"
 import { KeyedSchema } from "@maple/views/data/keyed"
 import { LoadFailure } from "@maple/views/data/load-failure"
 import { TimeWindow } from "../../../../data/time-range"
-import { InfraVercelProjectSearch } from "../../../../route/search"
+import { InfraVercelProjectSearch, VercelBreakdownBy } from "../../../../route/search"
 import * as TimeRangePicker from "../../../kit/time-range-picker"
 
-// `/infra/vercel/$projectId`: one tab at a time (`tab`), each reading only what it shows.
+// `/infra/vercel/$projectId`: one tab at a time (`tab`), each reading only what it shows, beside the
+// rail every tab shares.
 
 export const Model = Schema.Struct({
 	projectId: Schema.String,
@@ -33,6 +36,9 @@ export const Model = Schema.Struct({
 	/** The list's own read: this project's row comes from it. */
 	projects: KeyedSchema(Schema.Array(VercelInfraProject), LoadFailure),
 	buckets: KeyedSchema(Schema.Array(VercelInfraRequestBucket), LoadFailure),
+	latency: KeyedSchema(Schema.Array(VercelInfraLatencyBucket), LoadFailure),
+	/** The traffic tab's breakdown, by `search.by` and narrowed by `search.status`. */
+	breakdown: KeyedSchema(Schema.Array(VercelInfraBreakdownRow), LoadFailure),
 	detail: KeyedSchema(VercelInfraProjectDetailResponse, LoadFailure),
 	deployments: KeyedSchema(Schema.Array(VercelDeploymentSummary), LoadFailure),
 	aiGateway: KeyedSchema(VercelAiGatewayResponse, LoadFailure),
@@ -62,6 +68,8 @@ export const Message = defineMessageUnion({
 	CompletedLoadStatus: result(VercelIntegrationStatus),
 	CompletedFetchProjects: result(Schema.Array(VercelInfraProject)),
 	CompletedFetchBuckets: result(Schema.Array(VercelInfraRequestBucket)),
+	CompletedFetchLatency: result(Schema.Array(VercelInfraLatencyBucket)),
+	CompletedFetchBreakdown: result(Schema.Array(VercelInfraBreakdownRow)),
 	CompletedFetchDetail: result(VercelInfraProjectDetailResponse),
 	CompletedFetchDeployments: result(Schema.Array(VercelDeploymentSummary)),
 	CompletedFetchAiGateway: result(VercelAiGatewayResponse),
@@ -74,6 +82,10 @@ export const Message = defineMessageUnion({
 	ResolvedThemeColors: { colors: ThemeColors },
 	ClickedRetryRequests: {},
 	ClickedRetryDetail: {},
+	ClickedRetryBreakdown: {},
+	ClickedBreakdownBy: { by: VercelBreakdownBy },
+	ClickedBreakdownStatus: { status: Schema.NullOr(Schema.Literals(["4xx", "5xx"])) },
+	AttachedLinkedCursor: {},
 	ClickedRetryDeployments: {},
 	ClickedRetryAiGateway: {},
 	ClickedRetryFunctions: {},

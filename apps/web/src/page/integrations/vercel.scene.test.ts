@@ -1,3 +1,4 @@
+import * as Animation from "@foldkit/ui/animation"
 import { OrgId } from "@maple/domain"
 import {
 	VercelDiscoverResponse,
@@ -7,7 +8,7 @@ import {
 	VercelTeam,
 } from "@maple/domain/http"
 import { Array as Arr, Option, Result, Schema } from "effect"
-import { expect as expectView, given, Mount, role, scene, text, within, withViewInputs } from "foldkit/scene"
+import { click, Command, expect as expectView, given, Mount, role, scene, text, within, withViewInputs } from "foldkit/scene"
 import { describe, expect, test } from "vitest"
 import * as Dialog from "@maple/views/ui/dialog"
 import * as Field from "@maple/views/ui/field"
@@ -108,6 +109,13 @@ const configureOf = (model: Model) => {
 }
 
 const mounted = () => Mount.resolve(Dialog.MountDialog, Dialog.Message.CompletedMountDialog())
+
+/** A dialog opened by a click: mounted, painted and settled. */
+const opened = [
+	mounted(),
+	Command.resolve(Animation.WaitForPaint, Animation.Message.CompletedWaitForPaint({ generation: 1 })),
+	Command.resolve(Animation.WaitForAnimationSettled, Animation.Message.EndedAnimation({ generation: 1 })),
+]
 
 const typed = (value: string) => Message.GotVercelTokenMessage({ message: Field.Message.ChangedValue({ value }) })
 
@@ -266,22 +274,66 @@ describe("vercel card: connecting", () => {
 })
 
 describe("vercel card: connected", () => {
-	test("a healthy team reads the last 24 hours once and shows its drains", () => {
+	test("a connected team reads only its status and shows what each drain sends", () => {
 		const entered = withStatus(connected())
-		expect(names(entered.commands)).toEqual(
-			expect.arrayContaining(["LoadVercelProjects", "LoadVercelTimeseries", "LoadVercelGateway"]),
-		)
+		expect(names(entered.commands)).toEqual([])
 		scene(
 			{ update: step, view },
 			given(entered.model),
-			expectView(text("Drains on Vercel")).toExist(),
+			expectView(text("What Maple receives")).toExist(),
 			expectView(text("Connected")).toExist(),
+			expectView(within(role("row", { name: /Logs/ }), text("live"))).toExist(),
+			expectView(within(role("row", { name: /Speed Insights/ }), text("off"))).toExist(),
+			expectView(role("link", { name: "storefront" })).toHaveAttr("href", "/infra/vercel/prj_web"),
+			expectView(role("link", { name: /Open Vercel dashboard/ })).toHaveAttr("href", "/infra/vercel"),
 		)
-		const again = step(
-			entered.model,
-			Message.CompletedLoadVercel({ key: entered.model.statuses.vercel.key ?? "", result: Result.succeed(connected()) }),
+	})
+
+	test("an errored drain shows Vercel's error in its row and the header counts it", () => {
+		const model = withStatus(
+			connected({
+				drains: {
+					traces: new VercelDrainStatus({ id: "drn_traces", status: "errored", lastError: "401 Unauthorized" }),
+				},
+			}),
+		).model
+		scene(
+			{ update: step, view },
+			given(model),
+			expectView(within(role("row", { name: /Traces/ }), text("errored: 401 Unauthorized"))).toExist(),
+			expectView(text("Connected · 1 drain needs attention")).toExist(),
 		)
-		expect(names(again.commands)).toEqual([])
+	})
+
+	test("Configure and Edit scope open the settings dialog", () => {
+		for (const name of ["Configure", "Edit scope"])
+			scene(
+				{ update: step, view },
+				given(withStatus(connected()).model),
+				click(role("button", { name })),
+				...opened,
+				expectView(text("Configure Acme")).toExist(),
+			)
+	})
+
+	test("projects outside a picked scope read as not forwarded and do not link", () => {
+		const model = withStatus(
+			connected({
+				projectScope: "some",
+				projectIds: ["prj_web"],
+				projects: [
+					new VercelProjectStatus({ ...PROJECTS[0]!, forwarded: true, productionDeployment: null, latestDeployment: null }),
+					new VercelProjectStatus({ ...PROJECTS[1]!, forwarded: false, productionDeployment: null, latestDeployment: null }),
+				],
+			}),
+		).model
+		scene(
+			{ update: step, view },
+			given(model),
+			expectView(text("Selected · 1 of 2")).toExist(),
+			expectView(text("not forwarded")).toExist(),
+			expectView(role("link", { name: "docs" })).toBeAbsent(),
+		)
 	})
 
 	test("a drain deleted on Vercel offers a re-apply, which sends an empty settings save once", () => {
@@ -306,8 +358,12 @@ describe("vercel card: connected", () => {
 		scene(
 			{ update: step, view },
 			given(model),
+			expectView(text("Token rejected")).toExist(),
 			expectView(text("Vercel rejected the saved token")).toExist(),
 			expectView(role("button", { name: "Paste a new token" })).toExist(),
+			click(role("button", { name: "Replace token" })),
+			...opened,
+			expectView(text("New token for Acme")).toExist(),
 		)
 		const typedIn = run(model, [Message.ClickedVercelConfigure({ target: "token" }), typed("vc_token_0002")])
 		expect(configureOf(typedIn).target).toBe("token")

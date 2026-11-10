@@ -1,10 +1,12 @@
 import { Clock, Duration, Effect, Schema } from "effect"
-import { Command } from "foldkit"
+import { Command, Mount } from "foldkit"
+import { linkedCursorStream } from "@maple/views/charts/linked-cursor"
 import { resolveWindow, TimeWindow } from "../../../../data/time-range"
 import {
 	loadVercelAiGateway,
 	loadVercelAuditLog,
 	loadVercelDeployments,
+	loadVercelLatencySeries,
 	loadVercelProjects,
 	loadVercelRequestSeries,
 	loadVercelSpeedInsights,
@@ -57,6 +59,15 @@ export const FetchBuckets = Command.define("FetchVercelRequestSeries", {
 		),
 })
 
+export const FetchLatency = Command.define("FetchVercelLatencySeries", {
+	args: { key: Schema.String, input: SeriesInput },
+	messages: [Message.CompletedFetchLatency],
+	execute: ({ key, input }) =>
+		Effect.map(loadVercelLatencySeries(input), (result) =>
+			Message.CompletedFetchLatency({ key, result }),
+		),
+})
+
 export const FetchAiGateway = Command.define("FetchVercelAiGateway", {
 	args: { key: Schema.String, input: SeriesInput },
 	messages: [Message.CompletedFetchAiGateway],
@@ -103,4 +114,10 @@ export const CompleteReloadSpin = Command.define("CompleteVercelReloadSpin", {
 	messages: [Message.CompletedReloadSpin],
 	execute: ({ version }) =>
 		Effect.as(Effect.sleep(Duration.millis(600)), Message.CompletedReloadSpin({ version })),
+})
+
+/** `useLinkedCursor` on the strips. */
+export const MountLinkedCursor = Mount.defineStream("MountVercelLinkedCursor", {
+	messages: [Message.AttachedLinkedCursor],
+	execute: ({ element }) => linkedCursorStream(element, Message.AttachedLinkedCursor()),
 })

@@ -1,6 +1,8 @@
 import { Option } from "effect"
 import { AsyncData, Command } from "foldkit"
 import type { VercelIntegrationStatus } from "@maple/domain/http"
+import * as Chart from "@maple/views/charts/chart"
+import { LoadChartRuntime } from "@maple/views/charts/chart-runtime"
 import * as Keyed from "@maple/views/data/keyed"
 import { requestKey } from "@maple/views/data/request-key"
 import type { Resources } from "../../../../platform/resources"
@@ -8,7 +10,6 @@ import { AppRoute, hrefOf } from "../../../../route"
 import { type PageContext, PageOutMessage, type PageReturn } from "../../../contract"
 import { routeWindowStep, snapModeOf } from "../../../kit/route-window"
 import * as TimeRangePicker from "../../../kit/time-range-picker"
-import { nextSort } from "../../../kit/table-sort"
 import { stepTimePicker, withPreset } from "../../kit/page-time"
 import { requestSlot } from "../../kit/slot"
 import { DEFAULT_PRESET, DEPLOYMENTS_LIMIT, seriesInput } from "../data"
@@ -18,6 +19,7 @@ import {
 	FetchAuditLog,
 	FetchBuckets,
 	FetchDeployments,
+	FetchLatency,
 	FetchProjects,
 	FetchSpeedInsights,
 	FetchWebAnalytics,
@@ -41,7 +43,7 @@ const resolveCommand = (model: Model, context: PageContext, mode: RequestMode) =
 
 const hrefOfSearch = (search: Search) => hrefOf(AppRoute.InfraVercel({ search }))
 
-/** The view, search and time range are written in place, like `navigate({ search })`. */
+/** The search, scope and time range are written in place, like `navigate({ search })`. */
 const navigate = (model: Model, search: Search): Return => ({
 	model,
 	outMessage: PageOutMessage.RequestedNavigation({ url: hrefOfSearch(search), isReplace: false }),
@@ -52,24 +54,17 @@ const statusKey = (context: PageContext) => requestKey(context.orgId, "integrati
 const connectedStatus = (model: Model): VercelIntegrationStatus | null =>
 	Option.getOrNull(Option.filter(AsyncData.getData(model.status.data), (status) => status.connected))
 
-export const isConnected = (model: Model): boolean => connectedStatus(model) !== null
-
-/** The projects list; anything else (including the retired `aiGateway`) is the overview. */
-export const isProjectsView = (search: Search): boolean => search.view === "projects"
-
 type Slot =
 	| "projects"
 	| "buckets"
+	| "latency"
 	| "aiGateway"
 	| "deployments"
 	| "speedInsights"
 	| "webAnalytics"
 	| "auditLog"
 
-/**
- * The reads the view shows, once the status says connected. The overview reads every section whose
- * drain is on; the projects list only the projects.
- */
+/** The reads the overview shows, once the status says connected: each only while its drain is on. */
 const sync = (
 	model: Model,
 	context: PageContext,
@@ -80,7 +75,6 @@ const sync = (
 	const status = connectedStatus(model)
 	if (window === null || status === null) return { model }
 	const org = context.orgId
-	const overview = !isProjectsView(model.search)
 	const series = seriesInput(window)
 	const commands: Array<Commands[number]> = []
 	const take = <A, E>(
@@ -97,6 +91,7 @@ const sync = (
 	}
 	const projectsKey = requestKey(org, "getVercelProjects", { data: window })
 	const bucketsKey = requestKey(org, "getVercelRequestTimeseries", { data: series })
+	const latencyKey = requestKey(org, "getVercelLatencyTimeseries", { data: series })
 	const aiKey = requestKey(org, "getVercelAiGateway", { data: series })
 	const deploymentsKey = requestKey(org, "integrations.vercelDeployments", { limit: DEPLOYMENTS_LIMIT })
 	const speedKey = requestKey(org, "getVercelSpeedInsights", { data: window })
@@ -108,30 +103,29 @@ const sync = (
 			projects: take("projects", true, model.projects, projectsKey, () =>
 				FetchProjects({ key: projectsKey, window }),
 			),
-			buckets: take("buckets", overview, model.buckets, bucketsKey, () =>
+			buckets: take("buckets", status.logsEnabled, model.buckets, bucketsKey, () =>
 				FetchBuckets({ key: bucketsKey, input: series }),
 			),
-			aiGateway: take("aiGateway", overview && status.aiGatewayEnabled, model.aiGateway, aiKey, () =>
+			latency: take("latency", status.tracesEnabled, model.latency, latencyKey, () =>
+				FetchLatency({ key: latencyKey, input: series }),
+			),
+			aiGateway: take("aiGateway", status.aiGatewayEnabled, model.aiGateway, aiKey, () =>
 				FetchAiGateway({ key: aiKey, input: series }),
 			),
-			deployments: take("deployments", overview, model.deployments, deploymentsKey, () =>
+			deployments: take("deployments", true, model.deployments, deploymentsKey, () =>
 				FetchDeployments({ key: deploymentsKey }),
 			),
 			speedInsights: take(
 				"speedInsights",
-				overview && status.speedInsightsEnabled,
+				status.speedInsightsEnabled,
 				model.speedInsights,
 				speedKey,
 				() => FetchSpeedInsights({ key: speedKey, input: window }),
 			),
-			webAnalytics: take(
-				"webAnalytics",
-				overview && status.webAnalyticsEnabled,
-				model.webAnalytics,
-				webKey,
-				() => FetchWebAnalytics({ key: webKey, input: window }),
+			webAnalytics: take("webAnalytics", status.webAnalyticsEnabled, model.webAnalytics, webKey, () =>
+				FetchWebAnalytics({ key: webKey, input: window }),
 			),
-			auditLog: take("auditLog", overview && status.auditLogEnabled, model.auditLog, auditKey, () =>
+			auditLog: take("auditLog", status.auditLogEnabled, model.auditLog, auditKey, () =>
 				FetchAuditLog({ key: auditKey, window }),
 			),
 		},
@@ -155,12 +149,15 @@ export const init = (route: { readonly search: Search }, context: PageContext): 
 		status: Keyed.idle(),
 		projects: Keyed.idle(),
 		buckets: Keyed.idle(),
+		latency: Keyed.idle(),
 		aiGateway: Keyed.idle(),
 		deployments: Keyed.idle(),
 		speedInsights: Keyed.idle(),
 		webAnalytics: Keyed.idle(),
 		auditLog: Keyed.idle(),
-		sort: { key: "requests", dir: "desc" },
+		charts: {},
+		chartRuntime: { _tag: "Loading" },
+		themeColors: null,
 		timePicker: TimeRangePicker.init("vercel-time-range"),
 		refreshVersion: 0,
 		isReloading: false,
@@ -168,7 +165,15 @@ export const init = (route: { readonly search: Search }, context: PageContext): 
 	const status = loadStatus(model, context)
 	return {
 		model: status.model,
-		commands: [resolveCommand(model, context, "Load"), ...(status.commands ?? [])],
+		commands: [
+			resolveCommand(model, context, "Load"),
+			...(status.commands ?? []),
+			Command.mapMessage(LoadChartRuntime(), (message) =>
+				message._tag === "CompletedLoadChartRuntime"
+					? Message.CompletedLoadChartRuntime()
+					: Message.FailedLoadChartRuntime({ reason: message.reason }),
+			),
+		],
 	}
 }
 
@@ -184,7 +189,6 @@ export const routeChanged = (
 			model: next,
 			commands: [resolveCommand(next, context, snapModeOf(model.refreshVersion))],
 		}),
-		// A new view may show reads the old one did not.
 		requestAll: (mode): Return => sync(next, context, mode),
 	})
 }
@@ -202,6 +206,9 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		CompletedFetchBuckets: ({ key, result }) => ({
 			model: { ...model, buckets: Keyed.accept(model.buckets, key, result) },
 		}),
+		CompletedFetchLatency: ({ key, result }) => ({
+			model: { ...model, latency: Keyed.accept(model.latency, key, result) },
+		}),
 		CompletedFetchAiGateway: ({ key, result }) => ({
 			model: { ...model, aiGateway: Keyed.accept(model.aiGateway, key, result) },
 		}),
@@ -217,10 +224,17 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		CompletedFetchAuditLog: ({ key, result }) => ({
 			model: { ...model, auditLog: Keyed.accept(model.auditLog, key, result) },
 		}),
-		TickedEmptyRefresh: () => sync(model, context, "Refresh", ["projects", "buckets"]),
+		CompletedLoadChartRuntime: () => ({ model: { ...model, chartRuntime: { _tag: "Ready" } } }),
+		FailedLoadChartRuntime: ({ reason }) => ({
+			model: { ...model, chartRuntime: { _tag: "Failed", reason } },
+		}),
+		ResolvedThemeColors: ({ colors }) => ({ model: { ...model, themeColors: colors } }),
+		AttachedLinkedCursor: () => ({ model }),
+		TickedEmptyRefresh: () => sync(model, context, "Refresh", ["projects", "buckets", "latency"]),
 		ClickedRetryStatus: () => loadStatus(model, context),
 		ClickedRetryProjects: () => sync(model, context, "Refresh", ["projects"]),
 		ClickedRetryBuckets: () => sync(model, context, "Refresh", ["buckets"]),
+		ClickedRetryLatency: () => sync(model, context, "Refresh", ["latency"]),
 		ClickedRetryAiGateway: () => sync(model, context, "Refresh", ["aiGateway"]),
 		ClickedRetryDeployments: () => sync(model, context, "Refresh", ["deployments"]),
 		ClickedRetrySpeedInsights: () => sync(model, context, "Refresh", ["speedInsights"]),
@@ -229,9 +243,8 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		ChangedSearch: ({ value }) =>
 			navigate(model, { ...model.search, q: value === "" ? undefined : value }),
 		ClickedClearSearch: () => navigate(model, { ...model.search, q: undefined }),
-		ClickedSort: ({ key }) => ({
-			model: { ...model, sort: nextSort(model.sort, key, { stringKeys: ["name"] }) },
-		}),
+		ClickedScope: ({ scope }) => navigate(model, { ...model.search, scope }),
+		ClickedClearFilters: () => navigate(model, { ...model.search, q: undefined, scope: undefined }),
 		ClickedReload: () => {
 			const reloaded = { ...model, refreshVersion: model.refreshVersion + 1, isReloading: true }
 			return {
@@ -256,6 +269,15 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 				model: { ...model, timePicker: step.timePicker },
 				commands: step.commands,
 				outMessage: step.outMessage,
+			}
+		},
+		GotChartMessage: ({ chartId, message: inner }) => {
+			const next = Chart.update(model.charts[chartId] ?? Chart.init(), inner)
+			return {
+				model: { ...model, charts: { ...model.charts, [chartId]: next.model } },
+				commands: Command.mapMessages(next.commands ?? [], (chart) =>
+					Message.GotChartMessage({ chartId, message: chart }),
+				),
 			}
 		},
 	})

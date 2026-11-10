@@ -15,10 +15,7 @@ import {
 	SearchConsoleIntegrationStatus,
 	SupabaseIntegrationStatus,
 	VcsRepositoryId,
-	VercelAiGatewayResponse,
 	VercelDiscoverResponse,
-	VercelInfraProjectsResponse,
-	VercelInfraRequestTimeseriesResponse,
 	VercelIntegrationStatus,
 	VercelProjectScope,
 } from "@maple/domain/http"
@@ -248,10 +245,6 @@ export const Message = defineMessageUnion({
 	ClickedRailwayRotateCancel: {},
 	/** Every 15 s while environments wait for their first sync. */
 	TickedRailwaySettle: {},
-	CompletedLoadVercelProjects: result(VercelInfraProjectsResponse),
-	CompletedLoadVercelTimeseries: result(VercelInfraRequestTimeseriesResponse),
-	CompletedLoadVercelGateway: result(VercelAiGatewayResponse),
-	ClickedVercelRetryUsage: {},
 	/** Every 15 s while a fresh connection waits for its first sync. */
 	TickedVercelSettle: {},
 	ClickedVercelSync: {},

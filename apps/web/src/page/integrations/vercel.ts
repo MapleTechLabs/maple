@@ -4,11 +4,9 @@ import {
 	VercelSettingsRequest,
 	type VercelIntegrationStatus,
 } from "@maple/domain/http"
-import { getVercelAiGateway, getVercelProjects, getVercelRequestTimeseries } from "@maple/web-data/warehouse/vercel-infra"
 import { displayError, isUnexpectedError } from "@maple/web-data/lib/error-messages"
 import { Array as Arr, Effect, Schema } from "effect"
 import { Command } from "foldkit"
-import * as Keyed from "@maple/views/data/keyed"
 import { toLoadFailure } from "@maple/views/data/load-failure"
 import { MapleInternalApiClient } from "../../platform/api-clients"
 import * as Dialog from "@maple/views/ui/dialog"
@@ -23,7 +21,7 @@ import {
 	VercelDraftSchema,
 } from "./vercel-schema"
 
-// `VercelIntegrationCard` and `VercelConfigure`: state, reads and writes.
+// `VercelIntegrationCard` and `VercelConfigure`: state and writes.
 
 export const VERCEL_CONFIGURE_DIALOG_ID = "vercel-configure"
 export const VERCEL_TOKENS_URL = "https://vercel.com/account/settings/tokens"
@@ -33,14 +31,7 @@ export const VERCEL_SETTLING_REFRESH_MS = 15_000
 /** A first sync that has not succeeded by then is a failure the card shows, not something to poll for. */
 const SETTLING_WINDOW_MS = 10 * 60_000
 
-/** The card's window: no times, so the reads default to the last 24 hours and keep one key. */
-export const VERCEL_DAY = {} as const
-export const VERCEL_DAY_HOURLY = { bucketSeconds: 3600 } as const
-
 export const initVercelCard = (): VercelCardModel => ({
-	projects: Keyed.idle(),
-	timeseries: Keyed.idle(),
-	gateway: Keyed.idle(),
 	isSyncing: false,
 	isReapplying: false,
 	configure: null,
@@ -83,38 +74,6 @@ const errorText = (error: unknown, fallback: string): string => {
 	const presentation = displayError(error)
 	return isUnexpectedError(presentation) ? fallback : presentation.message
 }
-
-const settled = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
-	effect.pipe(Effect.mapError(toLoadFailure), Effect.result)
-
-const Args = { key: Schema.String }
-
-export const LoadVercelProjects = Command.define("LoadVercelProjects", {
-	args: Args,
-	messages: [Message.CompletedLoadVercelProjects],
-	execute: ({ key }) =>
-		Effect.map(settled(getVercelProjects({ data: VERCEL_DAY })), (result) =>
-			Message.CompletedLoadVercelProjects({ key, result }),
-		),
-})
-
-export const LoadVercelTimeseries = Command.define("LoadVercelTimeseries", {
-	args: Args,
-	messages: [Message.CompletedLoadVercelTimeseries],
-	execute: ({ key }) =>
-		Effect.map(settled(getVercelRequestTimeseries({ data: VERCEL_DAY_HOURLY })), (result) =>
-			Message.CompletedLoadVercelTimeseries({ key, result }),
-		),
-})
-
-export const LoadVercelGateway = Command.define("LoadVercelGateway", {
-	args: Args,
-	messages: [Message.CompletedLoadVercelGateway],
-	execute: ({ key }) =>
-		Effect.map(settled(getVercelAiGateway({ data: VERCEL_DAY_HOURLY })), (result) =>
-			Message.CompletedLoadVercelGateway({ key, result }),
-		),
-})
 
 /** Lists the token's teams, and one team's projects (`forTeam`, or the only team). */
 export const DiscoverVercel = Command.define("DiscoverVercel", {

@@ -1,11 +1,15 @@
 import { Clock, Duration, Effect, Schema } from "effect"
-import { Command } from "foldkit"
+import { Command, Mount } from "foldkit"
+import { linkedCursorStream } from "@maple/views/charts/linked-cursor"
 import { resolveWindow, TimeWindow } from "../../../../data/time-range"
 import {
+	BreakdownInput,
 	loadVercelAiGateway,
+	loadVercelBreakdown,
 	loadVercelDependencies,
 	loadVercelDeployments,
 	loadVercelFunctions,
+	loadVercelLatencySeries,
 	loadVercelProjectDetail,
 	loadVercelProjects,
 	loadVercelRequestSeries,
@@ -58,6 +62,22 @@ export const FetchBuckets = Command.define("FetchVercelProjectRequestSeries", {
 		Effect.map(loadVercelRequestSeries(input), (result) =>
 			Message.CompletedFetchBuckets({ key, result }),
 		),
+})
+
+export const FetchLatency = Command.define("FetchVercelProjectLatencySeries", {
+	args: { key: Schema.String, input: SeriesInput },
+	messages: [Message.CompletedFetchLatency],
+	execute: ({ key, input }) =>
+		Effect.map(loadVercelLatencySeries(input), (result) =>
+			Message.CompletedFetchLatency({ key, result }),
+		),
+})
+
+export const FetchBreakdown = Command.define("FetchVercelProjectBreakdown", {
+	args: { key: Schema.String, input: BreakdownInput },
+	messages: [Message.CompletedFetchBreakdown],
+	execute: ({ key, input }) =>
+		Effect.map(loadVercelBreakdown(input), (result) => Message.CompletedFetchBreakdown({ key, result })),
 })
 
 export const FetchDetail = Command.define("FetchVercelProjectDetail", {
@@ -122,4 +142,10 @@ export const CompleteReloadSpin = Command.define("CompleteVercelProjectReloadSpi
 	messages: [Message.CompletedReloadSpin],
 	execute: ({ version }) =>
 		Effect.as(Effect.sleep(Duration.millis(600)), Message.CompletedReloadSpin({ version })),
+})
+
+/** `useLinkedCursor` on the strips. */
+export const MountLinkedCursor = Mount.defineStream("MountVercelProjectLinkedCursor", {
+	messages: [Message.AttachedLinkedCursor],
+	execute: ({ element }) => linkedCursorStream(element, Message.AttachedLinkedCursor()),
 })

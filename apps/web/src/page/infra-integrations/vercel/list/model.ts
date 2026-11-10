@@ -2,6 +2,7 @@ import {
 	VercelAiGatewayResponse,
 	VercelAuditEvent,
 	VercelDeploymentSummary,
+	VercelInfraLatencyBucket,
 	VercelInfraProject,
 	VercelInfraRequestBucket,
 	VercelIntegrationStatus,
@@ -10,25 +11,16 @@ import {
 } from "@maple/domain/http"
 import { Schema } from "effect"
 import { defineMessageUnion } from "foldkit/message"
+import * as Chart from "@maple/views/charts/chart"
+import { ChartRuntime } from "@maple/views/charts/chart-runtime"
+import { ThemeColors } from "@maple/views/charts/theme-colors"
 import { KeyedSchema } from "@maple/views/data/keyed"
 import { LoadFailure } from "@maple/views/data/load-failure"
 import { TimeWindow } from "../../../../data/time-range"
-import { InfraVercelSearch } from "../../../../route/search"
+import { InfraVercelSearch, VercelProjectScope } from "../../../../route/search"
 import * as TimeRangePicker from "../../../kit/time-range-picker"
-import { sortStateOf } from "../../../kit/table-sort"
 
-// `/infra/vercel`: the team overview, or the projects list (`view=projects`).
-
-export const SortKey = Schema.Literals([
-	"name",
-	"requests",
-	"sortError",
-	"sortCache",
-	"sortColdStart",
-	"sortP95",
-	"errorLogs",
-])
-export type SortKey = typeof SortKey.Type
+// `/infra/vercel`: the team overview.
 
 export const Model = Schema.Struct({
 	search: InfraVercelSearch,
@@ -36,15 +28,19 @@ export const Model = Schema.Struct({
 	nowMs: Schema.Number,
 	status: KeyedSchema(VercelIntegrationStatus, LoadFailure),
 	projects: KeyedSchema(Schema.Array(VercelInfraProject), LoadFailure),
-	/** The team's request series, for the headline's sparks. */
+	/** The team's request series, from the logs drain. */
 	buckets: KeyedSchema(Schema.Array(VercelInfraRequestBucket), LoadFailure),
+	/** The team's function latency series, from the traces drain. */
+	latency: KeyedSchema(Schema.Array(VercelInfraLatencyBucket), LoadFailure),
 	aiGateway: KeyedSchema(VercelAiGatewayResponse, LoadFailure),
 	/** The team's newest deployments, from Vercel's API. */
 	deployments: KeyedSchema(Schema.Array(VercelDeploymentSummary), LoadFailure),
 	speedInsights: KeyedSchema(VercelSpeedInsightsResponse, LoadFailure),
 	webAnalytics: KeyedSchema(VercelWebAnalyticsResponse, LoadFailure),
 	auditLog: KeyedSchema(Schema.Array(VercelAuditEvent), LoadFailure),
-	sort: sortStateOf(SortKey),
+	charts: Schema.Record(Schema.String, Chart.Model),
+	chartRuntime: ChartRuntime,
+	themeColors: Schema.NullOr(ThemeColors),
 	timePicker: TimeRangePicker.Model,
 	refreshVersion: Schema.Number,
 	isReloading: Schema.Boolean,
@@ -64,16 +60,22 @@ export const Message = defineMessageUnion({
 	CompletedLoadStatus: result(VercelIntegrationStatus),
 	CompletedFetchProjects: result(Schema.Array(VercelInfraProject)),
 	CompletedFetchBuckets: result(Schema.Array(VercelInfraRequestBucket)),
+	CompletedFetchLatency: result(Schema.Array(VercelInfraLatencyBucket)),
 	CompletedFetchAiGateway: result(VercelAiGatewayResponse),
 	CompletedFetchDeployments: result(Schema.Array(VercelDeploymentSummary)),
 	CompletedFetchSpeedInsights: result(VercelSpeedInsightsResponse),
 	CompletedFetchWebAnalytics: result(VercelWebAnalyticsResponse),
 	CompletedFetchAuditLog: result(Schema.Array(VercelAuditEvent)),
+	CompletedLoadChartRuntime: {},
+	FailedLoadChartRuntime: { reason: Schema.String },
+	ResolvedThemeColors: { colors: ThemeColors },
+	AttachedLinkedCursor: {},
 	/** `useIntervalRefresh` while the projects are empty: the drains' first deliveries fill in on their own. */
 	TickedEmptyRefresh: {},
 	ClickedRetryStatus: {},
 	ClickedRetryProjects: {},
 	ClickedRetryBuckets: {},
+	ClickedRetryLatency: {},
 	ClickedRetryAiGateway: {},
 	ClickedRetryDeployments: {},
 	ClickedRetrySpeedInsights: {},
@@ -81,10 +83,13 @@ export const Message = defineMessageUnion({
 	ClickedRetryAuditLog: {},
 	ChangedSearch: { value: Schema.String },
 	ClickedClearSearch: {},
-	ClickedSort: { key: SortKey },
+	/** A fleet band cell: its health filter on the projects table, or none to leave it. */
+	ClickedScope: { scope: Schema.optional(VercelProjectScope) },
+	ClickedClearFilters: {},
 	ClickedReload: {},
 	ClickedResetTimeRange: {},
 	CompletedReloadSpin: { version: Schema.Number },
 	GotTimePickerMessage: { message: TimeRangePicker.Message },
+	GotChartMessage: { chartId: Schema.String, message: Chart.Message },
 })
 export type Message = typeof Message.Type

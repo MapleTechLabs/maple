@@ -18,9 +18,12 @@ import type * as RailwayList from "../../page/infra-integrations/railway/list/me
 import type { Model as RailwayModel } from "../../page/infra-integrations/railway/list/model"
 import { servicesList } from "../../page/infra-integrations/railway/list/view"
 import * as VercelList from "../../page/infra-integrations/vercel/list/model"
+import { overviewOf } from "../../page/infra-integrations/vercel/list/derive"
 import { listBody } from "../../page/infra-integrations/vercel/list/view"
+import { overviewRail } from "../../page/infra-integrations/vercel/list/view-rail"
 import * as VercelProject from "../../page/infra-integrations/vercel/project/model"
 import { projectPage } from "../../page/infra-integrations/vercel/project/view"
+import { projectRail } from "../../page/infra-integrations/vercel/project/view-rail"
 import {
 	auditLogSection,
 	buildsSection,
@@ -179,17 +182,28 @@ const railway = (h: H, model: Model, fixture: InfraLabFixture): Html =>
 type VercelInputs = Readonly<{ timeZone: string }>
 
 /** `VercelListPage` over the fixtures, in the view its search names. */
+/** A page's main column beside its right rail, as `dashboardPage` lays them out at lg. */
+const withRail = <M>(h: HtmlBuilder<M>, main: Html, rail: Html): Html =>
+	h.div([h.Class("flex items-start gap-6")], [h.div([h.Class("min-w-0 flex-1")], [main]), rail])
+
 const vercelListView = Submodel.defineView<VercelList.Model, VercelList.Message, VercelInputs>(
-	(list, inputs, h) =>
-		listBody(h, list, {
-			status: VERCEL_ALL_DRAINS_STATUS,
-			time: pickTimeSearch(list.search),
-			clock: { nowMs: list.nowMs, timeZone: inputs.timeZone },
-		}),
+	(list, inputs, h) => {
+		const clock = { nowMs: list.nowMs, timeZone: inputs.timeZone }
+		return withRail(
+			h,
+			listBody(h, list, { status: VERCEL_ALL_DRAINS_STATUS, time: pickTimeSearch(list.search), clock }),
+			overviewRail(h, list, overviewOf(list, VERCEL_ALL_DRAINS_STATUS), clock),
+		)
+	},
 )
 
 const vercelProjectView = Submodel.defineView<VercelProject.Model, VercelProject.Message, VercelInputs>(
-	(project, inputs, h) => h.div([h.Class("space-y-6")], projectPage(h, project, inputs.timeZone)),
+	(project, inputs, h) =>
+		withRail(
+			h,
+			h.div([h.Class("space-y-6")], projectPage(h, project, inputs.timeZone)),
+			projectRail(h, project, { nowMs: project.nowMs, timeZone: inputs.timeZone }, "#"),
+		),
 )
 
 type SectionState = "data" | "empty" | "off" | "error"
@@ -275,18 +289,7 @@ const vercel = (h: H, model: Model): ReadonlyArray<Html> => [
 			model: model.vercelOverview,
 			view: vercelListView,
 			viewInputs: { timeZone: model.timeZone },
-			toParentMessage: (message: VercelList.Message) =>
-				Message.GotVercelListMessage({ view: "overview", message }),
-		}),
-	]),
-	frame(h, "/infra/vercel?view=projects", [
-		h.submodel({
-			slotId: "lab-vercel-projects",
-			model: model.vercelProjects,
-			view: vercelListView,
-			viewInputs: { timeZone: model.timeZone },
-			toParentMessage: (message: VercelList.Message) =>
-				Message.GotVercelListMessage({ view: "projects", message }),
+			toParentMessage: (message: VercelList.Message) => Message.GotVercelListMessage({ message }),
 		}),
 	]),
 	frame(h, "/infra/vercel/$projectId", [
@@ -307,7 +310,7 @@ export const view = (model: Model, h: H): Html => {
 	const fixture = buildInfraLabFixture(model.nowMs)
 	return h.div(
 		[
-			h.Class("mx-auto max-w-6xl space-y-16 p-8"),
+			h.Class("mx-auto max-w-7xl space-y-16 p-8"),
 			h.OnMount(ResolveThemeColors({ tokens: THEME_TOKENS })),
 		],
 		[overview(h, fixture), hosts(h, model, fixture), railway(h, model, fixture), ...vercel(h, model)],

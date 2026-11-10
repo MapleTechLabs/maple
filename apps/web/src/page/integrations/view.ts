@@ -21,7 +21,7 @@ import { linearCard } from "./view-linear"
 import { searchConsoleCard } from "./view-search-console"
 import { planetscaleCard } from "./view-planetscale"
 import { railwayCard } from "./view-railway"
-import { vercelCard } from "./view-vercel"
+import { vercelCard, vercelHeaderActions, vercelHeaderStatus } from "./view-vercel"
 import { awsCard } from "./view-aws"
 import { supabaseCard } from "./view-supabase"
 import { scrapeIntro, scrapeTargetsSection } from "./view-prometheus"
@@ -108,8 +108,18 @@ const detailView = (h: H, model: Model, integration: IntegrationId, timeZone: st
 				integration,
 				{
 					connect: connectButton(h, model, integration),
-					actions: integration === "cloudflare" ? cloudflareHeaderActions(h, model) : undefined,
-					statusLine: integration === "gcp" ? gcpHeaderStatus(h, model) : undefined,
+					actions:
+						integration === "cloudflare"
+							? cloudflareHeaderActions(h, model)
+							: integration === "vercel"
+								? vercelHeaderActions(h, model)
+								: undefined,
+					statusLine:
+						integration === "gcp"
+							? gcpHeaderStatus(h, model)
+							: integration === "vercel"
+								? vercelHeaderStatus(h, model, timeZone)
+								: undefined,
 				},
 				timeZone,
 			),

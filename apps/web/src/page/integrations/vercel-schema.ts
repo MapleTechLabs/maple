@@ -1,14 +1,5 @@
-import {
-	VercelAiGatewayResponse,
-	VercelDiscoverResponse,
-	VercelInfraProjectsResponse,
-	VercelInfraRequestTimeseriesResponse,
-	VercelProjectScope,
-	VercelTeam,
-} from "@maple/domain/http"
+import { VercelDiscoverResponse, VercelProjectScope, VercelTeam } from "@maple/domain/http"
 import { Schema } from "effect"
-import { KeyedSchema } from "@maple/views/data/keyed"
-import { LoadFailure } from "@maple/views/data/load-failure"
 import * as Dialog from "@maple/views/ui/dialog"
 import * as Field from "@maple/views/ui/field"
 import * as RadioGroup from "@maple/views/ui/radio-group"
@@ -64,10 +55,6 @@ export const VercelConfigureModel = Schema.Struct({
 export type VercelConfigureModel = typeof VercelConfigureModel.Type
 
 export const VercelCardModel = Schema.Struct({
-	/** The card's last 24 hours (`vercelProjectsResultAtom`, `…RequestTimeseries…`, `…AiGateway…`). */
-	projects: KeyedSchema(VercelInfraProjectsResponse, LoadFailure),
-	timeseries: KeyedSchema(VercelInfraRequestTimeseriesResponse, LoadFailure),
-	gateway: KeyedSchema(VercelAiGatewayResponse, LoadFailure),
 	isSyncing: Schema.Boolean,
 	isReapplying: Schema.Boolean,
 	configure: Schema.NullOr(VercelConfigureModel),

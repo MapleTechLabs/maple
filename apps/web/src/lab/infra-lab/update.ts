@@ -23,7 +23,11 @@ import {
 	VERCEL_API_DEPLOYMENTS,
 	VERCEL_API_DETAIL,
 	VERCEL_AUDIT_LOG,
+	VERCEL_BREAKDOWN,
 	VERCEL_BUCKETS,
+	VERCEL_DEPENDENCIES,
+	VERCEL_FUNCTIONS,
+	VERCEL_LATENCY_BUCKETS,
 	VERCEL_PROJECTS,
 	VERCEL_SPEED_INSIGHTS,
 	VERCEL_STATUS,
@@ -49,9 +53,8 @@ export const Model = Schema.Struct({
 	/** `HostTable`'s own `useTableSort`: CPU, descending. */
 	hostSort: SortState,
 	railway: RailwayModel,
-	/** The Vercel overview, projects list and one project's page, their reads answered. */
+	/** The Vercel overview and one project's page, their reads answered. */
 	vercelOverview: VercelList.Model,
-	vercelProjects: VercelList.Model,
 	vercelProject: VercelProject.Model,
 })
 export type Model = typeof Model.Type
@@ -61,7 +64,7 @@ export const Message = defineMessageUnion({
 	ChangedHostScope: { scope: Schema.optional(HostsList.HostScope) },
 	ClickedHostSort: { key: HostsList.HostSortKey },
 	GotRailwayMessage: { message: RailwayList.Message },
-	GotVercelListMessage: { view: Schema.Literals(["overview", "projects"]), message: VercelList.Message },
+	GotVercelListMessage: { message: VercelList.Message },
 	/** A retry in the Vercel sections frame: the fixtures have nothing to ask again. */
 	ClickedVercelSectionRetry: {},
 	GotVercelProjectMessage: { message: VercelProject.Message },
@@ -90,13 +93,14 @@ const vercelWindow = (nowMs: number) => ({
 	endTime: formatWarehouseDateTime(nowMs),
 })
 
-const vercelList = (flags: Flags, view: "overview" | "projects"): VercelList.Model => ({
-	...VercelListUpdate.init({ search: view === "projects" ? { view } : {} }, LAB_CONTEXT).model,
+const vercelList = (flags: Flags): VercelList.Model => ({
+	...VercelListUpdate.init({ search: {} }, LAB_CONTEXT).model,
 	window: vercelWindow(flags.nowMs),
 	nowMs: flags.nowMs,
 	status: answered(VERCEL_ALL_DRAINS_STATUS),
 	projects: answered(VERCEL_PROJECTS),
 	buckets: answered(VERCEL_BUCKETS),
+	latency: answered(VERCEL_LATENCY_BUCKETS),
 	aiGateway: answered(VERCEL_AI_GATEWAY),
 	deployments: answered(VERCEL_TEAM_DEPLOYMENTS),
 	speedInsights: answered(VERCEL_SPEED_INSIGHTS),
@@ -111,6 +115,10 @@ const vercelProject = (flags: Flags): VercelProject.Model => ({
 	status: answered(VERCEL_STATUS),
 	projects: answered(VERCEL_PROJECTS),
 	buckets: answered(VERCEL_BUCKETS),
+	latency: answered(VERCEL_LATENCY_BUCKETS),
+	breakdown: answered(VERCEL_BREAKDOWN.rows),
+	functions: answered(VERCEL_FUNCTIONS),
+	dependencies: answered(VERCEL_DEPENDENCIES),
 	detail: answered(VERCEL_API_DETAIL),
 	deployments: answered(VERCEL_API_DEPLOYMENTS),
 	aiGateway: answered(VERCEL_API_AI_GATEWAY),
@@ -123,8 +131,7 @@ export const init = (flags: Flags): Return => ({
 		hostQuery: "",
 		hostSort: { key: "cpuPct", dir: "desc" },
 		railway: RailwayUpdate.init({ search: {} }, LAB_CONTEXT).model,
-		vercelOverview: vercelList(flags, "overview"),
-		vercelProjects: vercelList(flags, "projects"),
+		vercelOverview: vercelList(flags),
 		vercelProject: vercelProject(flags),
 	},
 	commands: [
@@ -139,17 +146,18 @@ export const init = (flags: Flags): Return => ({
 	],
 })
 
-/** The chart runtime and theme reach the Vercel project frame. */
+/** The chart runtime and theme reach both Vercel frames. */
 const vercelPatch = (
 	model: Model,
 	patch: Partial<Pick<VercelProject.Model, "chartRuntime" | "themeColors">>,
 ): Model => ({
 	...model,
+	vercelOverview: { ...model.vercelOverview, ...patch },
 	vercelProject: { ...model.vercelProject, ...patch },
 })
 
-/** The Vercel pages' table sort and charts; their links, search and reads stay inert here. */
-const LOCAL_VERCEL_MESSAGES: ReadonlySet<string> = new Set(["ClickedSort", "GotChartMessage"])
+/** The Vercel pages' charts; their links, search and reads stay inert here. */
+const LOCAL_VERCEL_MESSAGES: ReadonlySet<string> = new Set(["GotChartMessage"])
 
 export const update = (model: Model, message: Message): Return =>
 	Message.match<Return>(message, {
@@ -158,14 +166,13 @@ export const update = (model: Model, message: Message): Return =>
 		ClickedHostSort: ({ key }) => ({
 			model: { ...model, hostSort: nextSort(model.hostSort, key, { stringKeys: ["hostName"] }) },
 		}),
-		GotVercelListMessage: ({ view, message: inner }) => {
+		GotVercelListMessage: ({ message: inner }) => {
 			if (!LOCAL_VERCEL_MESSAGES.has(inner._tag)) return { model }
-			const field = view === "projects" ? "vercelProjects" : "vercelOverview"
-			const next = VercelListUpdate.update(model[field], inner, LAB_CONTEXT)
+			const next = VercelListUpdate.update(model.vercelOverview, inner, LAB_CONTEXT)
 			return {
-				model: { ...model, [field]: next.model },
+				model: { ...model, vercelOverview: next.model },
 				commands: Command.mapMessages(next.commands ?? [], (child) =>
-					Message.GotVercelListMessage({ view, message: child }),
+					Message.GotVercelListMessage({ message: child }),
 				),
 			}
 		},

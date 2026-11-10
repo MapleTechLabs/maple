@@ -4,6 +4,7 @@ import { VercelDrainStatus, VercelIntegrationStatus } from "@maple/domain/http"
 import {
 	DEFAULT_VERCEL_DRAFT,
 	deploymentStateLabel,
+	drainState,
 	deploymentTone,
 	percentOf,
 	draftProblem,
@@ -12,6 +13,7 @@ import {
 	signalsLabel,
 	stoppedByDraft,
 	vercelHealth,
+	vercelHealthChip,
 	vercelIssues,
 	type VercelDraft,
 } from "./vercel-model"
@@ -233,6 +235,41 @@ describe("vercelHealth", () => {
 				}),
 			),
 		).toBe("attention")
+	})
+})
+
+describe("vercelHealthChip", () => {
+	it("leads with a rejected token, then counts the drains that need attention", () => {
+		expect(vercelHealthChip(connected({ authFailed: true, drains: { logs: drain("errored") } })).label).toBe(
+			"Token rejected",
+		)
+		expect(vercelHealthChip(connected({ drains: { logs: drain("errored") } })).label).toBe(
+			"Connected · 1 drain needs attention",
+		)
+		expect(
+			vercelHealthChip(connected({ drains: { logs: drain("errored"), traces: drain("disabled") } })).label,
+		).toBe("Connected · 2 drains need attention")
+	})
+
+	it("says the first sync is pending until one succeeds", () => {
+		expect(vercelHealthChip(connected({ lastSuccessAt: null })).label).toBe("First sync pending")
+		expect(vercelHealthChip(connected()).label).toBe("Connected")
+	})
+})
+
+describe("drainState", () => {
+	it("reads a switched-off signal as off, whatever Vercel reports", () => {
+		expect(drainState(false, drain("errored", "boom")).label).toBe("off")
+	})
+
+	it("names an errored drain with Vercel's error, and a missing one as missing", () => {
+		expect(drainState(true, drain("errored", "401 Unauthorized"))).toEqual({
+			label: "errored: 401 Unauthorized",
+			tone: "crit",
+		})
+		expect(drainState(true, null)).toEqual({ label: "missing on Vercel", tone: "crit" })
+		expect(drainState(true, drain("disabled")).tone).toBe("warn")
+		expect(drainState(true, drain("enabled")).label).toBe("live")
 	})
 })
 

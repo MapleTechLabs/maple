@@ -1,14 +1,30 @@
 import { OrgId } from "@maple/domain"
 import { VercelIntegrationStatus, VercelProjectStatus } from "@maple/domain/http"
-import { Array as Arr, Result, Schema } from "effect"
-import { expect as expectView, given, role, scene, text, withViewInputs } from "foldkit/scene"
+import { Array as Arr, Result, Schema, String as Str } from "effect"
+import {
+	all,
+	expect as expectView,
+	given,
+	inside,
+	Mount,
+	nth,
+	role,
+	scene,
+	selector,
+	text,
+	withViewInputs,
+} from "foldkit/scene"
 import { describe, expect, test } from "vitest"
+import * as Chart from "@maple/views/charts/chart"
+import { MountChart } from "@maple/views/charts/chart-mounts"
+import { ResolveThemeColors, ThemeMessage } from "@maple/views/charts/theme-colors"
 import { toLoadFailure } from "@maple/views/data/load-failure"
 import {
 	VERCEL_AI_GATEWAY,
 	VERCEL_ALL_DRAINS_STATUS,
 	VERCEL_AUDIT_LOG,
 	VERCEL_BUCKETS,
+	VERCEL_LATENCY_BUCKETS,
 	VERCEL_PROJECTS,
 	VERCEL_SPEED_INSIGHTS,
 	VERCEL_STATUS,
@@ -18,15 +34,24 @@ import {
 	VERCEL_WEB_ANALYTICS,
 } from "../../../../lab/vercel-infra-fixtures"
 import { PageOutMessage, type PageContext } from "../../../contract"
+import { MountLinkedCursor } from "./command"
 import { Message, type Model } from "./model"
 import { init, update } from "./update"
 import { view as pageView } from "./view"
 
 const orgId = Schema.decodeSync(OrgId)("org_acme")
 const context: PageContext = { orgId, pinnedNamespace: null, timeZone: "UTC" }
-const window = { startTime: "2026-10-01 00:00:00", endTime: "2026-10-02 00:00:00" }
-const later = { startTime: "2026-10-01 00:05:00", endTime: "2026-10-02 00:05:00" }
-const NOW = Date.UTC(2026, 9, 2)
+
+// The fixtures are relative to the clock: the window covers their 24 hours of buckets.
+const BUCKET_MS = 15 * 60_000
+const warehouseTime = (ms: number) => Str.replace("T", " ")(Str.slice(0, 19)(new Date(ms).toISOString()))
+const firstBucketMs = Date.parse(VERCEL_BUCKETS[0]?.bucket ?? "")
+const NOW = Date.parse(VERCEL_BUCKETS[VERCEL_BUCKETS.length - 1]?.bucket ?? "") + BUCKET_MS
+const window = { startTime: warehouseTime(firstBucketMs), endTime: warehouseTime(NOW) }
+const later = {
+	startTime: warehouseTime(firstBucketMs + 5 * 60_000),
+	endTime: warehouseTime(NOW + 5 * 60_000),
+}
 
 const pageUpdate = (model: Model, message: Message) => update(model, message, context)
 const view = withViewInputs(pageView, { context })()
@@ -59,6 +84,11 @@ const loaded = (
 				result: Result.succeed(VERCEL_BUCKETS),
 			}),
 		(model) =>
+			Message.CompletedFetchLatency({
+				key: model.latency.key ?? "",
+				result: Result.succeed(VERCEL_LATENCY_BUCKETS),
+			}),
+		(model) =>
 			Message.CompletedFetchAiGateway({
 				key: model.aiGateway.key ?? "",
 				result: Result.succeed(VERCEL_AI_GATEWAY),
@@ -85,11 +115,18 @@ const loaded = (
 			}),
 	])
 
-/** The window resolved, the status not yet answered. */
-const withStatusOnly = (): Model =>
-	steps(init({ search: {} }, context).model, [
+/** The commands the status answer starts, the window already resolved. */
+const readsFor = (status: VercelIntegrationStatus) => {
+	const model = steps(init({ search: {} }, context).model, [
 		() => Message.CompletedResolveWindow({ window, nowMs: NOW, mode: "Load" }),
 	])
+	return names(
+		pageUpdate(
+			model,
+			Message.CompletedLoadStatus({ key: model.status.key ?? "", result: Result.succeed(status) }),
+		).commands,
+	)
+}
 
 const notConnected = new VercelIntegrationStatus({
 	...VERCEL_STATUS,
@@ -98,53 +135,46 @@ const notConnected = new VercelIntegrationStatus({
 	projects: [],
 })
 
-describe("vercel list", () => {
+const themeResolved = () =>
+	Mount.resolve(ResolveThemeColors, ThemeMessage.ResolvedThemeColors({ colors: {} }))
+
+/** The chart runtime loaded and every strip's chart mounted. */
+const withCharts = (model: Model): Model => ({ ...model, chartRuntime: { _tag: "Ready" } })
+const chartsMounted = (strips: number) => [
+	Mount.resolve(MountLinkedCursor, Message.AttachedLinkedCursor()),
+	...Arr.makeBy(strips, () => Mount.resolve(MountChart, Chart.Message.CompletedMountChart())),
+]
+
+const projectsTable = selector('[aria-label="Vercel projects"]')
+
+describe("vercel overview", () => {
 	test("entry asks for the status and the window; the warehouse reads wait for a connected status", () => {
 		const entered = init({ search: {} }, context)
 		expect(names(entered.commands)).toEqual(
 			expect.arrayContaining(["ResolveVercelWindow", "LoadVercelStatus"]),
 		)
 		expect(names(entered.commands)).not.toContain("FetchVercelProjects")
-		const windowed = pageUpdate(
-			entered.model,
-			Message.CompletedResolveWindow({ window, nowMs: NOW, mode: "Load" }),
-		)
-		expect(names(windowed.commands)).toEqual([])
-		const connected = pageUpdate(
-			windowed.model,
-			Message.CompletedLoadStatus({
-				key: windowed.model.status.key ?? "",
-				result: Result.succeed(VERCEL_STATUS),
-			}),
-		)
-		expect(names(connected.commands)).toEqual(
+		expect(readsFor(VERCEL_STATUS)).toEqual(
 			expect.arrayContaining([
 				"FetchVercelProjects",
 				"FetchVercelRequestSeries",
+				"FetchVercelLatencySeries",
 				"FetchVercelAiGateway",
 				"FetchVercelTeamDeployments",
 			]),
 		)
 	})
 
-	test("the overview reads only the sections whose drain is on", () => {
-		const answered = (status: VercelIntegrationStatus) => {
-			const model = withStatusOnly()
-			return names(
-				pageUpdate(
-					model,
-					Message.CompletedLoadStatus({
-						key: model.status.key ?? "",
-						result: Result.succeed(status),
-					}),
-				).commands,
-			)
-		}
-		const off = answered(VERCEL_STATUS)
-		expect(off).not.toContain("FetchVercelSpeedInsights")
-		expect(off).not.toContain("FetchVercelWebAnalytics")
-		expect(off).not.toContain("FetchVercelAuditLog")
-		expect(answered(VERCEL_ALL_DRAINS_STATUS)).toEqual(
+	test("a drain that is off is never read", () => {
+		const defaults = readsFor(VERCEL_STATUS)
+		expect(defaults).not.toContain("FetchVercelSpeedInsights")
+		expect(defaults).not.toContain("FetchVercelWebAnalytics")
+		expect(defaults).not.toContain("FetchVercelAuditLog")
+		expect(readsFor(VERCEL_TRACES_ONLY_STATUS)).not.toContain("FetchVercelRequestSeries")
+		expect(
+			readsFor(new VercelIntegrationStatus({ ...VERCEL_STATUS, tracesEnabled: false })),
+		).not.toContain("FetchVercelLatencySeries")
+		expect(readsFor(VERCEL_ALL_DRAINS_STATUS)).toEqual(
 			expect.arrayContaining([
 				"FetchVercelSpeedInsights",
 				"FetchVercelWebAnalytics",
@@ -153,83 +183,132 @@ describe("vercel list", () => {
 		)
 	})
 
-	test("the overview shows headline traffic, spend by project with a no-project row, and builds", () => {
+	test("the projects table lists problems first: erroring, then a failed deploy, then the busiest", () => {
 		scene(
 			{ update: pageUpdate, view },
 			given(loaded(VERCEL_STATUS, VERCEL_PROJECTS)),
+			themeResolved(),
 			expectView(role("heading", { name: "Vercel" })).toExist(),
-			expectView(text("Cold starts")).toExist(),
-			expectView(text("3.9%")).toExist(),
-			expectView(role("link", { name: /storefront/ })).toHaveAttr(
-				"href",
-				"/infra/vercel/prj_storefront",
+			inside(
+				projectsTable,
+				expectView(nth(all.role("link"), 0)).toHaveAttr("href", "/infra/vercel/prj_api"),
+				expectView(nth(all.role("link"), 1)).toHaveAttr("href", "/infra/vercel/prj_admin"),
+				expectView(nth(all.role("link"), 2)).toHaveAttr("href", "/infra/vercel/prj_storefront"),
+				expectView(nth(all.role("link"), 3)).toHaveAttr("href", "/infra/vercel/prj_docs"),
 			),
-			expectView(text("No project")).toExist(),
-			expectView(text('BUILD_FAILED: Command "vite build" exited with 1')).toExist(),
-			expectView(text(/Speed Insights is off/)).toExist(),
-			expectView(text(/Web Analytics is off/)).toExist(),
-			expectView(text(/The audit log is off/)).toExist(),
+			expectView(text(/1 project not forwarded · marketing-legacy/)).toExist(),
 		)
 	})
 
-	test("with every drain on, the overview shows Web Vitals, page views and audit events", () => {
+	test("a fleet band cell filters the table to its projects, and pressing it again leaves the filter", () => {
+		scene(
+			{ update: pageUpdate, view },
+			given(loaded(VERCEL_STATUS, VERCEL_PROJECTS, { scope: "erroring" })),
+			themeResolved(),
+			inside(
+				projectsTable,
+				expectView(role("link", { name: /api/ })).toExist(),
+				expectView(role("link", { name: /storefront/ })).toBeAbsent(),
+			),
+			expectView(text("1 of 4 projects")).toExist(),
+		)
+		scene(
+			{ update: pageUpdate, view },
+			given(loaded(VERCEL_STATUS, VERCEL_PROJECTS, { scope: "failedDeploys" })),
+			themeResolved(),
+			inside(
+				projectsTable,
+				expectView(role("link", { name: /admin/ })).toExist(),
+				expectView(role("link", { name: /api/ })).toBeAbsent(),
+			),
+		)
+		const model = loaded(VERCEL_STATUS, VERCEL_PROJECTS)
+		expect(pageUpdate(model, Message.ClickedScope({ scope: "erroring" })).outMessage).toEqual(
+			PageOutMessage.RequestedNavigation({ url: "/infra/vercel?scope=erroring", isReplace: false }),
+		)
+		const scoped = loaded(VERCEL_STATUS, VERCEL_PROJECTS, { scope: "erroring", q: "api" })
+		expect(pageUpdate(scoped, Message.ClickedClearFilters()).outMessage).toEqual(
+			PageOutMessage.RequestedNavigation({ url: "/infra/vercel", isReplace: false }),
+		)
+	})
+
+	test("the strips follow the drains: request strips with logs, function p95 with traces", () => {
+		scene(
+			{ update: pageUpdate, view },
+			given(withCharts(loaded(VERCEL_STATUS, VERCEL_PROJECTS))),
+			themeResolved(),
+			...chartsMounted(4),
+			expectView(text("5xx rate")).toExist(),
+			expectView(text("Cache hit")).toExist(),
+			expectView(text("Function p95")).toExist(),
+		)
+		scene(
+			{ update: pageUpdate, view },
+			given(
+				withCharts(
+					loaded(
+						new VercelIntegrationStatus({ ...VERCEL_STATUS, tracesEnabled: false }),
+						VERCEL_PROJECTS,
+					),
+				),
+			),
+			themeResolved(),
+			...chartsMounted(3),
+			expectView(text("5xx rate")).toExist(),
+			expectView(text("Function p95")).toBeAbsent(),
+		)
+		scene(
+			{ update: pageUpdate, view },
+			given(withCharts(loaded(VERCEL_TRACES_ONLY_STATUS, VERCEL_TRACES_ONLY_PROJECTS))),
+			themeResolved(),
+			...chartsMounted(1),
+			expectView(text("Function p95")).toExist(),
+			expectView(text("5xx rate")).toBeAbsent(),
+		)
+	})
+
+	test("the deploy before the 5xx spike is flagged in the rail; a failed build says why", () => {
+		scene(
+			{ update: pageUpdate, view },
+			given(loaded(VERCEL_STATUS, VERCEL_PROJECTS)),
+			themeResolved(),
+			expectView(text("Deploys in this window")).toExist(),
+			expectView(text(/5xx after deploy/)).toExist(),
+			expectView(text(/build error · Command "vite build" exited with 1/)).toExist(),
+		)
+	})
+
+	test("the panels show AI Gateway spend by model, and say which real-user drains are off", () => {
+		scene(
+			{ update: pageUpdate, view },
+			given(loaded(VERCEL_STATUS, VERCEL_PROJECTS)),
+			themeResolved(),
+			expectView(text(VERCEL_AI_GATEWAY.models[0]?.model ?? "")).toExist(),
+			expectView(text(/Speed Insights is off/)).toExist(),
+			expectView(text(/Web Analytics is off/)).toExist(),
+			expectView(text("Team activity")).toBeAbsent(),
+		)
+	})
+
+	test("with every drain on, the overview shows Web Vitals, page views and team activity", () => {
 		scene(
 			{ update: pageUpdate, view },
 			given(loaded(VERCEL_ALL_DRAINS_STATUS, VERCEL_PROJECTS)),
-			expectView(text("needs improvement")).toExist(),
+			themeResolved(),
+			expectView(text("needs work")).toExist(),
 			expectView(text("184.2K")).toExist(),
 			expectView(text("project.env-variable.updated")).toExist(),
 			expectView(text(/Speed Insights is off/)).toBeAbsent(),
 		)
 	})
 
-	test("the projects view lists every forwarded project, a silent one included, and opens its page", () => {
+	test("a retired projects link lands on the one overview", () => {
 		scene(
 			{ update: pageUpdate, view },
 			given(loaded(VERCEL_STATUS, VERCEL_PROJECTS, { view: "projects" })),
-			expectView(text("4 projects")).toExist(),
-			expectView(role("link", { name: /storefront/ })).toHaveAttr(
-				"href",
-				"/infra/vercel/prj_storefront",
-			),
-			expectView(role("link", { name: /admin/ })).toContainText("feat/audit-log"),
-			expectView(role("link", { name: "Projects 4" })).toHaveAttr(
-				"href",
-				"/infra/vercel?view=projects",
-			),
-		)
-		const model = loaded(VERCEL_STATUS, VERCEL_PROJECTS, { view: "projects" })
-		expect(pageUpdate(model, Message.ChangedSearch({ value: "api" })).outMessage).toEqual(
-			PageOutMessage.RequestedNavigation({
-				url: "/infra/vercel?q=api&view=projects",
-				isReplace: false,
-			}),
-		)
-	})
-
-	test("the projects view reads only the projects", () => {
-		const model = steps(init({ search: { view: "projects" } }, context).model, [
-			() => Message.CompletedResolveWindow({ window, nowMs: NOW, mode: "Load" }),
-		])
-		expect(
-			names(
-				pageUpdate(
-					model,
-					Message.CompletedLoadStatus({
-						key: model.status.key ?? "",
-						result: Result.succeed(VERCEL_ALL_DRAINS_STATUS),
-					}),
-				).commands,
-			),
-		).toEqual(["FetchVercelProjects"])
-	})
-
-	test("a retired AI Gateway link lands on the overview", () => {
-		scene(
-			{ update: pageUpdate, view },
-			given(loaded(VERCEL_STATUS, VERCEL_PROJECTS, { view: "aiGateway" })),
-			expectView(text("AI Gateway spend")).toExist(),
-			expectView(text("Builds")).toExist(),
+			themeResolved(),
+			expectView(text("Projects in scope")).toExist(),
+			inside(projectsTable, expectView(role("link", { name: /storefront/ })).toExist()),
 		)
 	})
 
@@ -239,6 +318,7 @@ describe("vercel list", () => {
 		scene(
 			{ update: pageUpdate, view },
 			given(model),
+			themeResolved(),
 			expectView(role("link", { name: "Connect Vercel" })).toHaveAttr(
 				"href",
 				"/integrations?integration=vercel",
@@ -250,6 +330,7 @@ describe("vercel list", () => {
 		scene(
 			{ update: pageUpdate, view },
 			given(loaded(VERCEL_TRACES_ONLY_STATUS, VERCEL_TRACES_ONLY_PROJECTS)),
+			themeResolved(),
 			expectView(text(/Only traces are forwarded/)).toExist(),
 			expectView(role("link", { name: "Forward logs" })).toExist(),
 		)
@@ -263,6 +344,7 @@ describe("vercel list", () => {
 		scene(
 			{ update: pageUpdate, view },
 			given(loaded(quiet, [])),
+			themeResolved(),
 			expectView(text("No deployment traces in this window")).toExist(),
 		)
 	})
@@ -278,6 +360,7 @@ describe("vercel list", () => {
 		scene(
 			{ update: pageUpdate, view },
 			given(model),
+			themeResolved(),
 			expectView(text("Couldn't load Vercel projects")).toExist(),
 		)
 		expect(names(pageUpdate(model, Message.ClickedRetryProjects()).commands)).toEqual([
@@ -285,7 +368,7 @@ describe("vercel list", () => {
 		])
 	})
 
-	test("a failed AI Gateway read keeps the overview and says so in its section", () => {
+	test("a failed AI Gateway read keeps the overview and says so in its panel", () => {
 		const model = steps(withStatus(VERCEL_STATUS), [
 			(current) =>
 				Message.CompletedFetchProjects({
@@ -301,8 +384,9 @@ describe("vercel list", () => {
 		scene(
 			{ update: pageUpdate, view },
 			given(model),
+			themeResolved(),
 			expectView(text("Couldn't load AI Gateway usage")).toExist(),
-			expectView(text("couldn't load")).toExist(),
+			inside(projectsTable, expectView(role("link", { name: /storefront/ })).toExist()),
 		)
 		expect(names(pageUpdate(model, Message.ClickedRetryAiGateway()).commands)).toEqual([
 			"FetchVercelAiGateway",

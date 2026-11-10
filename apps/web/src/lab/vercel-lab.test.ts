@@ -30,7 +30,6 @@ describe("vercel lab", () => {
 			"The AI Gateway drain is disabled on Vercel",
 		])
 		expect(Arr.map(vercelIssues(statusOf(model, "token-rejected")), (issue) => issue.fix)).toEqual(["token"])
-		expect(sceneOf(model, "usage-failed").hub.vercelCard.projects.data._tag).toBe("Failure")
 	})
 
 	test("each connect step opens the dialog on that step without sending a request", () => {
