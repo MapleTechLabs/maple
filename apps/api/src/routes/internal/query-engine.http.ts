@@ -178,7 +178,7 @@ import { type RuntimeProduct, runtimeProductOf } from "@maple/domain/runtime-pos
 import type { ExecutionTenant, WarehouseExecutionError } from "@maple/query-engine/execution"
 import * as Integrations from "@maple/query-engine-integrations"
 import { decodeTraceId, decodeSpanId, decodeServiceName } from "../warehouse-ids"
-import { makeServeRows } from "./serve-rows"
+import { makeServeRows, serveData } from "./serve-rows"
 
 /**
  * Payload → query-engine filter opts. Every Cloudflare zone endpoint carries the same optional
@@ -474,20 +474,9 @@ export const HttpQueryEngineLive = HttpApiBuilder.group(MapleInternalApi, "query
 						})
 					}),
 				)
-				.handle("serviceHealthBaseline", ({ payload }) =>
-					Effect.gen(function* () {
-						const tenant = yield* CurrentTenant.Context
-						const rows = yield* reads.serviceHealthBaseline(tenant, payload)
-						return new ServiceHealthBaselineResponse({
-							data: Arr.map(rows, (row) => ({
-								serviceName: decodeServiceName(row.serviceName),
-								serviceNamespace: row.serviceNamespace,
-								environment: row.environment,
-								baselineP95LatencyMs: row.baselineP95LatencyMs,
-								baselineSpanCount: row.baselineSpanCount,
-							})),
-						})
-					}),
+				.handle(
+					"serviceHealthBaseline",
+					serveData(reads.serviceHealthBaseline, ServiceHealthBaselineResponse),
 				)
 				.handle("serviceApdex", serve.rows(Queries.serviceApdex, ServiceApdexResponse))
 				.handle("serviceCloudflareStats", ({ payload }) =>
@@ -1379,13 +1368,7 @@ export const HttpQueryEngineLive = HttpApiBuilder.group(MapleInternalApi, "query
 					}),
 				)
 				.handle("serviceUsage", serve.rows(Queries.serviceUsage, ServiceUsageResponse))
-				.handle("serviceOperations", ({ payload }) =>
-					Effect.gen(function* () {
-						const tenant = yield* CurrentTenant.Context
-						const data = yield* reads.serviceOperations(tenant, payload)
-						return new ServiceOperationsResponse({ data })
-					}),
-				)
+				.handle("serviceOperations", serveData(reads.serviceOperations, ServiceOperationsResponse))
 				.handle("serviceEndpoints", ({ payload }) =>
 					Effect.gen(function* () {
 						const tenant = yield* CurrentTenant.Context
@@ -1679,36 +1662,7 @@ export const HttpQueryEngineLive = HttpApiBuilder.group(MapleInternalApi, "query
 						})
 					}),
 				)
-				.handle("podDetailSummary", ({ payload }) =>
-					Effect.gen(function* () {
-						const tenant = yield* CurrentTenant.Context
-						const row = yield* runQueryFirst(Queries.podDetailSummary, tenant, payload)
-						return new PodDetailSummaryResponse({
-							data: row
-								? {
-										podName: row.podName,
-										namespace: row.namespace,
-										nodeName: row.nodeName,
-										deploymentName: row.deploymentName,
-										statefulsetName: row.statefulsetName,
-										daemonsetName: row.daemonsetName,
-										qosClass: row.qosClass,
-										podUid: row.podUid,
-										computeType: row.computeType,
-										podStartTime: row.podStartTime,
-										sourceId: row.sourceId,
-										firstSeen: DateTime.formatIso(row.firstSeen),
-										lastSeen: DateTime.formatIso(row.lastSeen),
-										cpuUsage: row.cpuUsage,
-										cpuLimitPct: row.cpuLimitPct,
-										memoryLimitPct: row.memoryLimitPct,
-										cpuRequestPct: row.cpuRequestPct,
-										memoryRequestPct: row.memoryRequestPct,
-									}
-								: null,
-						})
-					}),
-				)
+				.handle("podDetailSummary", serve.first(Queries.podDetailSummary, PodDetailSummaryResponse))
 				.handle("podRestarts", serve.rows(Queries.podRestarts, PodRestartsResponse))
 				.handle("podInfraTimeseries", ({ payload }) =>
 					Effect.gen(function* () {
@@ -2126,82 +2080,41 @@ export const HttpQueryEngineLive = HttpApiBuilder.group(MapleInternalApi, "query
 						})
 					}),
 				)
-				.handle("webAnalyticsTimeseries", ({ payload }) =>
-					Effect.gen(function* () {
-						const tenant = yield* CurrentTenant.Context
-						const rows = yield* withProductEventsFallback(
-							(t, pl) => runQuery(Queries.webAnalyticsTimeseries, t, pl),
-							(t, pl) => runQuery(Queries.webAnalyticsTimeseriesRaw, t, pl),
-							tenant,
-							payload,
-						)
-						return new WebAnalyticsTimeseriesResponse({
-							data: Arr.map(rows, (row) => ({
-								bucket: DateTime.formatIso(row.bucket),
-								visitors: row.visitors,
-								sessions: row.sessions,
-								newSessions: row.newSessions,
-								bouncedSessions: row.bouncedSessions,
-								identifiedSessions: row.identifiedSessions,
-								avgDurationMs: row.avgDurationMs,
-							})),
-						})
-					}),
+				.handle(
+					"webAnalyticsTimeseries",
+					serve.fallbackRows(
+						withProductEventsFallback,
+						Queries.webAnalyticsTimeseries,
+						Queries.webAnalyticsTimeseriesRaw,
+						WebAnalyticsTimeseriesResponse,
+					),
 				)
-				.handle("webAnalyticsPageviews", ({ payload }) =>
-					Effect.gen(function* () {
-						const tenant = yield* CurrentTenant.Context
-						const rows = yield* withProductEventsFallback(
-							(t, pl) => runQuery(Queries.webAnalyticsPageviews, t, pl),
-							(t, pl) => runQuery(Queries.webAnalyticsPageviewsRaw, t, pl),
-							tenant,
-							payload,
-						)
-						return new WebAnalyticsPageviewsResponse({
-							data: Arr.map(rows, (row) => ({
-								bucket: DateTime.formatIso(row.bucket),
-								pageViews: row.pageViews,
-								sessions: row.sessions,
-							})),
-						})
-					}),
+				.handle(
+					"webAnalyticsPageviews",
+					serve.fallbackRows(
+						withProductEventsFallback,
+						Queries.webAnalyticsPageviews,
+						Queries.webAnalyticsPageviewsRaw,
+						WebAnalyticsPageviewsResponse,
+					),
 				)
-				.handle("webAnalyticsPages", ({ payload }) =>
-					Effect.gen(function* () {
-						const tenant = yield* CurrentTenant.Context
-						const rows = yield* withProductEventsFallback(
-							(t, pl) => runQuery(Queries.webAnalyticsPages, t, pl),
-							(t, pl) => runQuery(Queries.webAnalyticsPagesRaw, t, pl),
-							tenant,
-							payload,
-						)
-						return new WebAnalyticsPagesResponse({
-							data: Arr.map(rows, (row) => ({
-								host: row.host,
-								pagePath: row.pagePath,
-								pageViews: row.pageViews,
-								sessions: row.sessions,
-							})),
-						})
-					}),
+				.handle(
+					"webAnalyticsPages",
+					serve.fallbackRows(
+						withProductEventsFallback,
+						Queries.webAnalyticsPages,
+						Queries.webAnalyticsPagesRaw,
+						WebAnalyticsPagesResponse,
+					),
 				)
-				.handle("webAnalyticsEvents", ({ payload }) =>
-					Effect.gen(function* () {
-						const tenant = yield* CurrentTenant.Context
-						const rows = yield* withProductEventsFallback(
-							(t, pl) => runQuery(Queries.webAnalyticsEvents, t, pl),
-							(t, pl) => runQuery(Queries.webAnalyticsEventsRaw, t, pl),
-							tenant,
-							payload,
-						)
-						return new WebAnalyticsEventsResponse({
-							data: Arr.map(rows, (row) => ({
-								name: row.name,
-								events: row.events,
-								sessions: row.sessions,
-							})),
-						})
-					}),
+				.handle(
+					"webAnalyticsEvents",
+					serve.fallbackRows(
+						withProductEventsFallback,
+						Queries.webAnalyticsEvents,
+						Queries.webAnalyticsEventsRaw,
+						WebAnalyticsEventsResponse,
+					),
 				)
 				.handle("webAnalyticsBreakdowns", ({ payload }) =>
 					Effect.gen(function* () {
@@ -2250,23 +2163,14 @@ export const HttpQueryEngineLive = HttpApiBuilder.group(MapleInternalApi, "query
 						return new WebAnalyticsBreakdownsResponse({ data: buckets })
 					}),
 				)
-				.handle("webAnalyticsAiReferrals", ({ payload }) =>
-					Effect.gen(function* () {
-						const tenant = yield* CurrentTenant.Context
-						const rows = yield* withProductEventsFallback(
-							(t, pl) => runQuery(Queries.webAnalyticsAiReferrals, t, pl),
-							(t, pl) => runQuery(Queries.webAnalyticsAiReferralsRaw, t, pl),
-							tenant,
-							payload,
-						)
-						return new WebAnalyticsAiReferralsResponse({
-							data: Arr.map(rows, (row) => ({
-								bucket: DateTime.formatIso(row.bucket),
-								product: row.product,
-								sessions: row.sessions,
-							})),
-						})
-					}),
+				.handle(
+					"webAnalyticsAiReferrals",
+					serve.fallbackRows(
+						withProductEventsFallback,
+						Queries.webAnalyticsAiReferrals,
+						Queries.webAnalyticsAiReferralsRaw,
+						WebAnalyticsAiReferralsResponse,
+					),
 				)
 				// No raw fallback: `ai_crawler_requests` is the only source, and a cluster
 				// without migration 0033 answers 502 while the referral half still renders.
@@ -2316,40 +2220,25 @@ export const HttpQueryEngineLive = HttpApiBuilder.group(MapleInternalApi, "query
 					}),
 				)
 				// Search Console reads the ingest-pinned table; landing pages also join web analytics.
-				.handle("searchConsoleOverview", ({ payload }) =>
-					Effect.gen(function* () {
-						const tenant = yield* CurrentTenant.Context
-						const data = yield* searchConsole.overview(tenant, payload)
-						return new SearchConsoleOverviewResponse({ data })
-					}),
+				.handle(
+					"searchConsoleOverview",
+					serveData(searchConsole.overview, SearchConsoleOverviewResponse),
 				)
-				.handle("searchConsoleTimeseries", ({ payload }) =>
-					Effect.gen(function* () {
-						const tenant = yield* CurrentTenant.Context
-						const data = yield* searchConsole.timeseries(tenant, payload)
-						return new SearchConsoleTimeseriesResponse({ data })
-					}),
+				.handle(
+					"searchConsoleTimeseries",
+					serveData(searchConsole.timeseries, SearchConsoleTimeseriesResponse),
 				)
-				.handle("searchConsoleTopQueries", ({ payload }) =>
-					Effect.gen(function* () {
-						const tenant = yield* CurrentTenant.Context
-						const data = yield* searchConsole.topQueries(tenant, payload)
-						return new SearchConsoleTopQueriesResponse({ data })
-					}),
+				.handle(
+					"searchConsoleTopQueries",
+					serveData(searchConsole.topQueries, SearchConsoleTopQueriesResponse),
 				)
-				.handle("searchConsoleTopPages", ({ payload }) =>
-					Effect.gen(function* () {
-						const tenant = yield* CurrentTenant.Context
-						const data = yield* searchConsole.topPages(tenant, payload)
-						return new SearchConsoleTopPagesResponse({ data })
-					}),
+				.handle(
+					"searchConsoleTopPages",
+					serveData(searchConsole.topPages, SearchConsoleTopPagesResponse),
 				)
-				.handle("searchConsoleLandingPages", ({ payload }) =>
-					Effect.gen(function* () {
-						const tenant = yield* CurrentTenant.Context
-						const data = yield* searchConsole.landingPages(tenant, payload)
-						return new SearchConsoleLandingPagesResponse({ data })
-					}),
+				.handle(
+					"searchConsoleLandingPages",
+					serveData(searchConsole.landingPages, SearchConsoleLandingPagesResponse),
 				)
 				// No raw fallback, like the crawler tab: a cluster without migration 0050 answers 502.
 				.handle("securityExposure", ({ payload }) =>

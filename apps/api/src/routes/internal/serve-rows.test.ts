@@ -12,6 +12,7 @@ import {
 import { TinybirdDateTime } from "@maple/domain/query-engine"
 import { DateTime, Effect, Exit, Schema } from "effect"
 import { Queries } from "@maple/backend/queries/registry"
+import { defineQuery } from "@maple/query-engine/registry"
 import { makeServeRows, serveData } from "./serve-rows"
 
 const TENANT = new CurrentTenant.TenantSchema({
@@ -122,5 +123,17 @@ describe("makeServeRows.checkedRows", () => {
 		const served = await run(handler({ payload: window("2026-11-01 00:00:00", "2026-11-02 00:00:00") }))
 		expect(served).toStrictEqual(Exit.succeed(new ErrorRateByServiceResponse({ data: [] })))
 		expect(ran).toStrictEqual(["errorRateByService"])
+	})
+	it("reads the raw twin when the fallback rejects the rollup", async () => {
+		ran.length = 0
+		const viaRaw = serve.fallbackRows(
+			(_rollup, raw, tenant, payload) => raw(tenant, payload),
+			Queries.errorRateByService,
+			defineQuery({ ...Queries.errorRateByService, id: "errorRateByServiceRaw" }),
+			ErrorRateByServiceResponse,
+		)
+		const served = await run(viaRaw({ payload: window("2026-11-01 00:00:00", "2026-11-02 00:00:00") }))
+		expect(served).toStrictEqual(Exit.succeed(new ErrorRateByServiceResponse({ data: [] })))
+		expect(ran).toStrictEqual(["errorRateByServiceRaw"])
 	})
 })

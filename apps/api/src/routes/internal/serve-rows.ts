@@ -33,6 +33,14 @@ type FirstRunner<E> = <Payload, Row>(
 	payload: Payload,
 ) => Effect.Effect<Row | null, E>
 
+/** A rollup read that falls back to its raw twin, as `makeRollupFallback` builds. */
+type Fallback<E> = <A, P>(
+	rollup: (tenant: TenantContext, payload: P) => Effect.Effect<A, E>,
+	raw: (tenant: TenantContext, payload: P) => Effect.Effect<A, E>,
+	tenant: TenantContext,
+	payload: P,
+) => Effect.Effect<A, E>
+
 const encodeWire = Schema.encodeSync(WireValue)
 
 /**
@@ -71,6 +79,23 @@ export const makeServeRows = <E, EF>(runQuery: Runner<E>, runQueryFirst: FirstRu
 	) =>
 		serveData<Payload, Row | null, S, EF>(
 			(tenant, payload) => runQueryFirst(definition, tenant, payload),
+			Response,
+		),
+	/** `rows` from a rollup definition, or from `raw` where `fallback` finds the rollup missing. */
+	fallbackRows: <Payload, Row, S extends DataResponse>(
+		fallback: Fallback<E>,
+		definition: QueryDefinition<Payload, Row>,
+		raw: QueryDefinition<Payload, Row>,
+		Response: Fits<ReadonlyArray<WireOf<Row>>, S> & S,
+	) =>
+		serveData<Payload, ReadonlyArray<Row>, S, E>(
+			(tenant, payload) =>
+				fallback(
+					(t, p: Payload) => runQuery(definition, t, p),
+					(t, p: Payload) => runQuery(raw, t, p),
+					tenant,
+					payload,
+				),
 			Response,
 		),
 	/** `rows`, after `check` accepts the payload; its failure is the response. */
