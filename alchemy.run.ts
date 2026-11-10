@@ -314,9 +314,17 @@ export default Alchemy.Stack(
 			})
 		}
 
-		const ingest = profile.deploys.ingest
-			? yield* createMapleIngest({ stage, region, domains, profile, dbLogin: db?.ingest })
-			: undefined
+		// Every stage that deploys a fleet has its hostname (`resolveMapleDomains`).
+		const ingest =
+			profile.deploys.ingest && domains.ingest
+				? yield* createMapleIngest({
+						stage,
+						region,
+						hostname: domains.ingest,
+						profile,
+						dbLogin: db?.ingest,
+					})
+				: undefined
 
 		// Account audit controls (CloudTrail, Config, GuardDuty): prd instances only.
 		const { awsSecurityBaseline } = profile.deploys
@@ -344,11 +352,11 @@ export default Alchemy.Stack(
 		// prd's electric-sync reads `ELECTRIC_URL` from the secret store, so its cutover is
 		// separate; a preview's points at this one. Electric runs in ingest's VPC, hence `ingest &&`.
 		const electric =
-			ingest && db?.electric
+			ingest && db?.electric && domains.electric
 				? yield* createMapleElectric({
 						stage,
 						region,
-						domains,
+						hostname: domains.electric,
 						profile,
 						network: ingest.network,
 						dbLogin: db.electric,

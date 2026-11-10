@@ -606,8 +606,8 @@ Each has a comment at the site.
 - **`listenerPort` vs `port` on `ECS.Service`.** `port` is the container port; the listener
   defaults to 443 once `certificateArn` is set. Setting `listenerPort` to the container port
   breaks both the Cloudflare proxy and the health check.
-- **A security group that does not admit the listener port.** A stage without a domain gets
-  an HTTP listener on 80, not 443.
+- **A security group that does not admit the listener port.** The listener is 443 only
+  because a certificate is set; every stage that deploys ingest or Electric has a hostname.
 - **An image whose architecture does not match the task.** Keep `runtimePlatform` explicit.
 - **A cargo `--target-dir` inside the image context.** Alchemy's `hashDirectory` ignores
   `.dockerignore` and root-anchored gitignore rules, so the target dir would be hashed on

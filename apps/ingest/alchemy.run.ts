@@ -104,10 +104,9 @@ ECS_CONTAINER_STOP_TIMEOUT=120s
 CONFIG
 `
 
-export interface CreateMapleIngestOptions extends Pick<
-	MapleStackContext,
-	"stage" | "region" | "domains" | "profile"
-> {
+export interface CreateMapleIngestOptions extends Pick<MapleStackContext, "stage" | "region" | "profile"> {
+	/** The public hostname (`domains.ingest`). Every stage that deploys a fleet has one. */
+	hostname: string
 	/** The declared database's gateway login; a stage without one reads `MAPLE_INGEST_PG_URL` instead. */
 	dbLogin?: MapleDbLogin
 }
@@ -201,7 +200,7 @@ const blockIngestKeys = (stage: MapleStage) =>
  * ARM64 EC2 hosts with the WAL on local NVMe, behind a public ALB, plus an OTel
  * collector for the gateway's own telemetry, reached by Cloud Map private DNS.
  */
-export const createMapleIngest = ({ stage, region, domains, profile, dbLogin }: CreateMapleIngestOptions) =>
+export const createMapleIngest = ({ stage, region, hostname, profile, dbLogin }: CreateMapleIngestOptions) =>
 	Effect.gen(function* () {
 		const replayBlobs = yield* replayBlobWriterCredentials(stage, region, profile.deploys.replayBlobs)
 		const { desiredCount, scaling, instanceType, taskSize, collectorTaskSize, selfTraceSampleRatio } =
@@ -219,29 +218,19 @@ export const createMapleIngest = ({ stage, region, domains, profile, dbLogin }: 
 			tags,
 		})
 
-		// With an ingest domain the ALB terminates TLS on 443 behind Cloudflare's proxy, and
-		// admits only Cloudflare's edge: that is what makes `Cf-IPCountry` trustworthy. A stage
-		// without one (PR previews) gets alchemy's default HTTP listener on 80, open to all.
-		// The group's `description` must not change: AWS treats it as immutable (a replace).
-		const listenerPort = domains.ingest ? 443 : 80
-		// ALB gRPC needs an HTTPS listener, so a stage without a domain serves OTLP/HTTP only.
-		const serveGrpc = domains.ingest !== undefined
-		const albSources = domains.ingest
-			? (yield* cloudflareIpv4Ranges).map((cidr) => ({
-					cidr,
-					description: "OTLP over HTTPS from Cloudflare",
-				}))
-			: [{ cidr: "0.0.0.0/0", description: "OTLP over HTTP (no ingest domain, no certificate)" }]
+		// The ALB terminates TLS on 443 behind Cloudflare's proxy and admits only Cloudflare's
+		// edge: that is what makes `Cf-IPCountry` trustworthy. The group's `description` must not
+		// change: AWS treats it as immutable (a replace).
 		const albSecurityGroup = yield* AWS.EC2.SecurityGroup("ingest-alb-sg", {
 			vpcId: network.vpcId,
 			groupName: name("ingest-alb"),
-			description: `Maple OTLP ingest - public ${listenerPort === 443 ? "HTTPS" : "HTTP"} to the load balancer`,
-			ingress: albSources.map(({ cidr, description }) => ({
+			description: "Maple OTLP ingest - public HTTPS to the load balancer",
+			ingress: (yield* cloudflareIpv4Ranges).map((cidr) => ({
 				ipProtocol: "tcp",
-				fromPort: listenerPort,
-				toPort: listenerPort,
+				fromPort: 443,
+				toPort: 443,
 				cidrIpv4: cidr,
-				description,
+				description: "OTLP over HTTPS from Cloudflare",
 			})),
 		})
 
@@ -265,17 +254,13 @@ export const createMapleIngest = ({ stage, region, domains, profile, dbLogin }: 
 					referencedGroupId: albSecurityGroup.groupId,
 					description: "ALB to gateway",
 				},
-				...(serveGrpc
-					? [
-							{
-								ipProtocol: "tcp",
-								fromPort: INGEST_GRPC_PORT,
-								toPort: INGEST_GRPC_PORT,
-								referencedGroupId: albSecurityGroup.groupId,
-								description: "ALB to gateway OTLP/gRPC",
-							},
-						]
-					: []),
+				{
+					ipProtocol: "tcp",
+					fromPort: INGEST_GRPC_PORT,
+					toPort: INGEST_GRPC_PORT,
+					referencedGroupId: albSecurityGroup.groupId,
+					description: "ALB to gateway OTLP/gRPC",
+				},
 			],
 		})
 
@@ -470,7 +455,7 @@ export const createMapleIngest = ({ stage, region, domains, profile, dbLogin }: 
 
 		const issuedCertificateArn = yield* issueRegionalCertificate({
 			id: "ingest-cert",
-			hostname: domains.ingest,
+			hostname,
 			region: resolveAwsRegion(region),
 			tags,
 		})
@@ -574,13 +559,11 @@ export const createMapleIngest = ({ stage, region, domains, profile, dbLogin }: 
 				stopTimeout: 120,
 				mountPoints: [{ sourceVolume: "wal", containerPath: WAL_CONTAINER_DIR }],
 				// Replaces the mapping alchemy derives from `port`; host mode needs hostPort = containerPort.
-				...(serveGrpc && {
-					portMappings: [INGEST_PORT, INGEST_GRPC_PORT].map((port) => ({
-						containerPort: port,
-						hostPort: port,
-						protocol: "tcp",
-					})),
-				}),
+				portMappings: [INGEST_PORT, INGEST_GRPC_PORT].map((port) => ({
+					containerPort: port,
+					hostPort: port,
+					protocol: "tcp",
+				})),
 			},
 
 			desiredCount,
@@ -592,23 +575,21 @@ export const createMapleIngest = ({ stage, region, domains, profile, dbLogin }: 
 
 			// The conditionless rule is the listener's default action, the same ALB, listener
 			// and target group `true` composes. OTLP/gRPC paths go to a gRPC target group.
-			loadBalancer: serveGrpc
-				? {
-						rules: [
-							{},
-							{
-								path: OTLP_GRPC_PATH,
-								forward: `${INGEST_GRPC_PORT}/http`,
-								protocolVersion: "GRPC",
-							},
-						],
-					}
-				: true,
+			loadBalancer: {
+				rules: [
+					{},
+					{
+						path: OTLP_GRPC_PATH,
+						forward: `${INGEST_GRPC_PORT}/http`,
+						protocolVersion: "GRPC",
+					},
+				],
+			},
 			// `port` is the CONTAINER port; the listener defaults to 443 with a
 			// certificate. Do not set `listenerPort`: Cloudflare cannot proxy to 3474.
 			port: INGEST_PORT,
 			healthCheckPath: "/health",
-			...(issuedCertificateArn ? { certificateArn: issuedCertificateArn } : undefined),
+			certificateArn: issuedCertificateArn,
 			// Covers the startup Postgres probe, which exits the process on failure.
 			healthCheckGracePeriod: "60 seconds",
 			// Old tasks stay scale-in protected for up to 15 minutes while the WAL drains,
@@ -635,7 +616,7 @@ export const createMapleIngest = ({ stage, region, domains, profile, dbLogin }: 
 			// variable is silently dropped. The `satisfies` below turns that into a type error.
 			env: {
 				INGEST_PORT: String(INGEST_PORT),
-				...(serveGrpc && { INGEST_OTLP_GRPC_PORT: String(INGEST_GRPC_PORT) }),
+				INGEST_OTLP_GRPC_PORT: String(INGEST_GRPC_PORT),
 				MAPLE_ENVIRONMENT: resolveDeploymentEnvironment(stage),
 				// Lets the unknown-key 401 name the other region's ingest URL.
 				...(stage.kind === "prd" && { MAPLE_REGION: region }),
@@ -645,9 +626,8 @@ export const createMapleIngest = ({ stage, region, domains, profile, dbLogin }: 
 				// new secret before alchemy deletes the old role.
 				...(dbLogin && { MAPLE_PG_ROLE_ID: dbLogin.id }),
 
-				// Trust `Cf-IPCountry` (fills `session_replays.Country`) only where the ALB admits
-				// nothing but Cloudflare; a preview's open ALB would let any client set it.
-				...(domains.ingest && { MAPLE_INGEST_TRUST_PROXY_GEO: "true" }),
+				// Trust `Cf-IPCountry` (fills `session_replays.Country`): the ALB admits only Cloudflare.
+				MAPLE_INGEST_TRUST_PROXY_GEO: "true",
 
 				INGEST_QUEUE_MAX_BYTES: String(WAL_STORAGE[instanceType].maxBytes),
 				INGEST_WAL_SHARDS: String(WAL_SHARDS),
@@ -718,18 +698,12 @@ export const createMapleIngest = ({ stage, region, domains, profile, dbLogin }: 
 		})
 
 		// The public name, proxied through Cloudflare to the ALB.
-		if (domains.ingest) {
-			yield* publishProxiedCname({
-				id: "ingest-public-cname",
-				hostname: domains.ingest,
-				serviceUrl: service.url,
-			})
-		}
+		yield* publishProxiedCname({ id: "ingest-public-cname", hostname, serviceUrl: service.url })
 
 		if (stage.kind === "prd" && region === "us") yield* blockIngestKeys(stage)
 
 		return {
-			// The ALB. A PR preview has no ingest domain and is reached here.
+			// The ALB itself, behind the public hostname.
 			serviceUrl: service.url,
 			// Shared with `apps/electric`: two `AWS.EC2.Network`s in one stack fight
 			// over the internet gateway.

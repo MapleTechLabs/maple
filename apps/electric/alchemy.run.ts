@@ -19,10 +19,9 @@ const ELECTRIC_PORT = 3000
 const ELECTRIC_IMAGE =
 	"ghcr.io/mapletechlabs/maple/electric:1.7.12@sha256:d8a377eee0edeac0d4dbbd77c22b92c1ef601184722ea2b7da5b3381e3bb8e2c"
 
-export interface CreateMapleElectricOptions extends Pick<
-	MapleStackContext,
-	"stage" | "region" | "domains" | "profile"
-> {
+export interface CreateMapleElectricOptions extends Pick<MapleStackContext, "stage" | "region" | "profile"> {
+	/** The public hostname (`domains.electric`). Every stage that deploys Electric has one. */
+	hostname: string
 	/** The ingest VPC: a second `AWS.EC2.Network` in one stack fights over the internet gateway. */
 	network: Pick<AWS.EC2.Network, "vpcId" | "publicSubnetIds">
 	/** A direct login with REPLICATION on the declared branch, minted by the root. */
@@ -37,7 +36,7 @@ export interface CreateMapleElectricOptions extends Pick<
 export const createMapleElectric = ({
 	stage,
 	region,
-	domains,
+	hostname,
 	profile,
 	network,
 	dbLogin,
@@ -51,16 +50,15 @@ export const createMapleElectric = ({
 		// new group must also get a new `groupName` or it collides with the old one.
 		// `securityGroups` apply to both ALB and tasks, so only the ALB's group may reach
 		// ELECTRIC_PORT; otherwise a task's public IP serves plaintext around the cert.
-		const listenerPort = domains.electric ? 443 : 80
 		const albSecurityGroup = yield* AWS.EC2.SecurityGroup("electric-lb-sg", {
 			vpcId: network.vpcId,
 			groupName: name("electric-lb"),
-			description: `Maple ElectricSQL - public ${listenerPort === 443 ? "HTTPS" : "HTTP"} to the load balancer`,
+			description: "Maple ElectricSQL - public HTTPS to the load balancer",
 			ingress: [
 				{
 					ipProtocol: "tcp",
-					fromPort: listenerPort,
-					toPort: listenerPort,
+					fromPort: 443,
+					toPort: 443,
 					// Not narrowed to Cloudflare ranges (they rotate); ELECTRIC_SECRET authorizes.
 					cidrIpv4: "0.0.0.0/0",
 					description: "Shape requests from the electric-sync Worker",
@@ -99,7 +97,7 @@ export const createMapleElectric = ({
 
 		const issuedCertificateArn = yield* issueRegionalCertificate({
 			id: "electric-cert",
-			hostname: domains.electric,
+			hostname,
 			region: resolveAwsRegion(region),
 			tags,
 		})
@@ -146,7 +144,7 @@ export const createMapleElectric = ({
 			public: true,
 			port: ELECTRIC_PORT,
 			healthCheckPath: "/v1/health",
-			...(issuedCertificateArn ? { certificateArn: issuedCertificateArn } : undefined),
+			certificateArn: issuedCertificateArn,
 			// Covers the replication connect and a cold task's first snapshot.
 			healthCheckGracePeriod: "120 seconds",
 
@@ -163,13 +161,7 @@ export const createMapleElectric = ({
 		})
 
 		// The public name, proxied through Cloudflare to the ALB.
-		if (domains.electric) {
-			yield* publishProxiedCname({
-				id: "electric-public-cname",
-				hostname: domains.electric,
-				serviceUrl: service.url,
-			})
-		}
+		yield* publishProxiedCname({ id: "electric-public-cname", hostname, serviceUrl: service.url })
 
 		return { serviceUrl: service.url }
 	})
