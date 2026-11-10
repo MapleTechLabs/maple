@@ -1319,7 +1319,7 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 				return { kept, vectors: keptVectors, suppressed }
 			})
 
-			const { upstreamFor, canPush } = yield* makeRepoUpstream("PrReviewService")
+			const { upstreamFor, canPush } = yield* makeRepoUpstream
 
 			/**
 			 * The diff read against the organization's telemetry, for the kickoff and the report. Best

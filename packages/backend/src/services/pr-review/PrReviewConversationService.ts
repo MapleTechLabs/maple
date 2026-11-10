@@ -266,7 +266,7 @@ export class PrReviewConversationService extends Context.Service<
 			skipReason: reason,
 		})
 
-		const { upstreamFor, pushAccess, canPush } = yield* makeRepoUpstream("PrReviewConversationService")
+		const { upstreamFor, pushAccess, canPush } = yield* makeRepoUpstream
 
 		const updateReply = (
 			orgId: OrgId,
