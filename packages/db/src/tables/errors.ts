@@ -323,6 +323,20 @@ export const ErrorIncidents = PG.table("error_incidents", {
 	tenantColumn: "orgId",
 })
 
+/** Column defaults of `error_notification_policies`; an org with no row behaves as if it had these. */
+export const ERROR_NOTIFICATION_POLICY_DEFAULTS = {
+	enabled: true,
+	destinationIdsJson: [],
+	notifyOnFirstSeen: true,
+	notifyOnRegression: true,
+	notifyOnResolve: false,
+	notifyOnTransitionInReview: false,
+	notifyOnTransitionDone: false,
+	notifyOnClaim: false,
+	minOccurrenceCount: 1,
+	severity: "warning",
+} as const
+
 /**
  * Per-org policy controlling which alert destinations receive error
  * notifications and under what conditions. Referenced by the scheduled
@@ -331,19 +345,42 @@ export const ErrorIncidents = PG.table("error_incidents", {
 export const ErrorNotificationPolicies = PG.table("error_notification_policies", {
 	columns: {
 		orgId: PG.column(PG.brand(PG.text, OrgId), { name: "org_id" }),
-		enabled: PG.column(PG.bool, { default: true }),
-		destinationIdsJson: PG.column(PG.jsonb(StringList), { name: "destination_ids_json", default: [] }),
-		notifyOnFirstSeen: PG.column(PG.bool, { name: "notify_on_first_seen", default: true }),
-		notifyOnRegression: PG.column(PG.bool, { name: "notify_on_regression", default: true }),
-		notifyOnResolve: PG.column(PG.bool, { name: "notify_on_resolve", default: false }),
+		enabled: PG.column(PG.bool, { default: ERROR_NOTIFICATION_POLICY_DEFAULTS.enabled }),
+		destinationIdsJson: PG.column(PG.jsonb(StringList), {
+			name: "destination_ids_json",
+			default: ERROR_NOTIFICATION_POLICY_DEFAULTS.destinationIdsJson,
+		}),
+		notifyOnFirstSeen: PG.column(PG.bool, {
+			name: "notify_on_first_seen",
+			default: ERROR_NOTIFICATION_POLICY_DEFAULTS.notifyOnFirstSeen,
+		}),
+		notifyOnRegression: PG.column(PG.bool, {
+			name: "notify_on_regression",
+			default: ERROR_NOTIFICATION_POLICY_DEFAULTS.notifyOnRegression,
+		}),
+		notifyOnResolve: PG.column(PG.bool, {
+			name: "notify_on_resolve",
+			default: ERROR_NOTIFICATION_POLICY_DEFAULTS.notifyOnResolve,
+		}),
 		notifyOnTransitionInReview: PG.column(PG.bool, {
 			name: "notify_on_transition_in_review",
-			default: false,
+			default: ERROR_NOTIFICATION_POLICY_DEFAULTS.notifyOnTransitionInReview,
 		}),
-		notifyOnTransitionDone: PG.column(PG.bool, { name: "notify_on_transition_done", default: false }),
-		notifyOnClaim: PG.column(PG.bool, { name: "notify_on_claim", default: false }),
-		minOccurrenceCount: PG.column(PG.int4, { name: "min_occurrence_count", default: 1 }),
-		severity: PG.column(PG.brand(PG.text, AlertSeverity), { default: "warning" }),
+		notifyOnTransitionDone: PG.column(PG.bool, {
+			name: "notify_on_transition_done",
+			default: ERROR_NOTIFICATION_POLICY_DEFAULTS.notifyOnTransitionDone,
+		}),
+		notifyOnClaim: PG.column(PG.bool, {
+			name: "notify_on_claim",
+			default: ERROR_NOTIFICATION_POLICY_DEFAULTS.notifyOnClaim,
+		}),
+		minOccurrenceCount: PG.column(PG.int4, {
+			name: "min_occurrence_count",
+			default: ERROR_NOTIFICATION_POLICY_DEFAULTS.minOccurrenceCount,
+		}),
+		severity: PG.column(PG.brand(PG.text, AlertSeverity), {
+			default: ERROR_NOTIFICATION_POLICY_DEFAULTS.severity,
+		}),
 		updatedAt: PG.column(PG.timestamptzMillis, { name: "updated_at" }),
 		updatedBy: PG.column(PG.text, { name: "updated_by" }),
 	},

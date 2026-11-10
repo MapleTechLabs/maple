@@ -26,6 +26,7 @@ import * as Orm from "@maple-dev/effect-orm/database"
 import * as PG from "@maple-dev/effect-orm/postgres"
 import {
 	AlertDestinations,
+	ERROR_NOTIFICATION_POLICY_DEFAULTS,
 	ErrorNotificationPolicies,
 	type ErrorNotificationPolicyRow,
 	IssueEscalationPolicies,
@@ -129,27 +130,14 @@ const make: Effect.Effect<ErrorPolicyServiceApi, never, Database> = Effect.gen(f
 	const database = yield* Database
 	const dbExecute = makeErrorDatabaseExecute(database, "ErrorPolicyService")
 
-	// Mirrors the column defaults on `error_notification_policies` — an org with no
-	// row must behave exactly like an org that just got one. Notifications are
-	// enabled but route nowhere until a destination is picked, so the empty
-	// `destinationIdsJson` (not `enabled`) is what holds delivery back. Setting
-	// `enabled: false` here instead made CFG-NOTIF-01 report "turned off" for
-	// row-less orgs and hid the real reason.
+	// The column defaults: an org with no row behaves exactly like one that just got one. Enabled
+	// but routed nowhere, so the empty `destinationIdsJson` (not `enabled`) holds delivery back.
 	const defaultNotificationPolicy: ErrorPolicyServiceApi["defaultNotificationPolicy"] = (
 		orgId,
 		timestamp,
 	) => ({
 		orgId,
-		enabled: true,
-		destinationIdsJson: [],
-		notifyOnFirstSeen: true,
-		notifyOnRegression: true,
-		notifyOnResolve: false,
-		notifyOnTransitionInReview: false,
-		notifyOnTransitionDone: false,
-		notifyOnClaim: false,
-		minOccurrenceCount: 1,
-		severity: "warning",
+		...ERROR_NOTIFICATION_POLICY_DEFAULTS,
 		updatedAt: timestamp,
 		updatedBy: "system",
 	})
