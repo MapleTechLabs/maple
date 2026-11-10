@@ -23,7 +23,6 @@ export function registerSetIssueSeverityTool(server: McpToolRegistrar) {
 		phrases: ["Setting issue severity"],
 		handler: Effect.fn("McpTool.setIssueSeverity")(function* (params) {
 			const tenant = yield* CurrentMcpTenant
-			// `none` clears the severity (null).
 			const target = params.severity === "none" ? null : params.severity
 
 			const { actorId, isAgent } = yield* resolveActor(tenant)

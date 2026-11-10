@@ -696,7 +696,6 @@ export function registerStatusPageTools(server: McpToolRegistrar) {
 				})
 				.pipe(Effect.mapError(toMcpError(tool)))
 			const audit = yield* AuditLogService
-			// Nothing written, nothing to audit.
 			if (hasStatusPageConfigChanges(changes)) {
 				const actor = yield* CurrentAuditActor
 				yield* audit.record({

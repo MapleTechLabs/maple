@@ -1,6 +1,6 @@
 /**
  * Target-code execution for audit agents: `run_in_sandbox`, given to hunters and verifiers when the
- * run's executor prepared the commit. `AuditExecution` is the port: a deployed run answers it with
+ * run's executor prepared the commit. `AuditExecutionApi` is the port: a deployed run answers it with
  * the execution sandbox (`ExecutorService`), the local runner with a Docker executor.
  */
 import type { Ecosystem, ExecutionPolicy } from "@maple/security-audit"

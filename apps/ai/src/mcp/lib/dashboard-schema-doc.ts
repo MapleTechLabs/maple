@@ -49,8 +49,6 @@ const json = (value: unknown): string => "```json\n" + stringifyJsonPretty(value
 
 const mcpPanels = (): ReadonlyArray<WidgetTypeMeta> => Arr.filter(PANEL_TYPES, (meta) => meta.mcpExposed)
 
-// --- panel types ---------------------------------------------------------
-
 const panelTypesSection = (): string => {
 	const rows = Arr.map(mcpPanels(), (meta) => {
 		const notes: string[] = []
@@ -100,8 +98,6 @@ const panelTypesSection = (): string => {
 		"\n",
 	)
 }
-
-// --- data sources --------------------------------------------------------
 
 const exampleQuerySource = () =>
 	makeQueryDataSource({
@@ -329,8 +325,6 @@ const dataSourcesSection = (): string =>
 		"\n",
 	)
 
-// --- units ---------------------------------------------------------------
-
 const unitsSection = (): string =>
 	Arr.join(
 		[
@@ -359,8 +353,6 @@ const unitsSection = (): string =>
 		],
 		"\n",
 	)
-
-// --- queries -------------------------------------------------------------
 
 const queriesSection = (): string => {
 	const aggRows = Arr.map(
@@ -476,8 +468,6 @@ const queriesSection = (): string => {
 	)
 }
 
-// --- display -------------------------------------------------------------
-
 const displaySection = (): string =>
 	Arr.join(
 		[
@@ -525,8 +515,6 @@ const displaySection = (): string =>
 		],
 		"\n",
 	)
-
-// --- raw sql -------------------------------------------------------------
 
 const rawSqlSection = (): string =>
 	Arr.join(

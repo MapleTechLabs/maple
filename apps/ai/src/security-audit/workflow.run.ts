@@ -155,7 +155,6 @@ const preparedNothing = (profile: ExecutionProfile, why: string): ExecutionProfi
 	],
 })
 
-/** The repo-size step's recorded result. */
 interface RepoSizeVerdict {
 	readonly violations: ReadonlyArray<string>
 	/** The run's note on LFS files it did not read; absent when there were none. */
@@ -628,7 +627,6 @@ export const auditWithAgents = <E, R>(
 			prior,
 			changedSincePrior,
 		}).pipe(
-			// The run composes the engine with its host here.
 			Effect.provide([
 				Layer.succeed(AuditAgents, durableAgents(agents, workflowStep, admit, charge)),
 				Layer.succeed(AuditStore, retried(store)),

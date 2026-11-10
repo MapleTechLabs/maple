@@ -56,11 +56,8 @@ import type { TenantContext } from "@maple/domain/http"
  * Supplied as run options rather than retained by the engine: `ChatSession` is the authority on what
  * was said, and a second history owner would be a second answer to the same question.
  *
- * Bounded by count and characters, and that is the whole of it. There was a durable `compaction`
- * event here once, carrying a summary and a `throughSeq` to replay from, but nothing ever wrote one:
- * the engine's compaction is per-model-call and lives inside the run, and `toChatEvents` mapped
- * `CompactionPerformed` to nothing. Summarizing *across* turns is a separate design, not a branch
- * that was already half-built.
+ * Bounded by count and characters, and that is the whole of it: the engine's compaction is
+ * per-model-call and lives inside the run. Summarizing *across* turns is a separate design.
  */
 export const promptFromHistory = (history: ReadonlyArray<ChatMessage>): ReadonlyArray<PromptMessage> => {
 	const spoken = Arr.filter(history, (message) => Str.trim(message.text) !== "")

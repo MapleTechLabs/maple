@@ -5,11 +5,6 @@
  * The route resolves the connector by id and hands it the request. It does not
  * verify a signature, parse a body or know a payload: a connector that cannot
  * authenticate its own caller is a connector that has not been written yet.
- *
- * Nothing registered today delivers this way — the first connector is a socket
- * one — so this exists as the contract's other half, tested against a fake
- * connector. It is also why the Worker takes no public hostname yet; see
- * `../worker.ts`.
  */
 import { connectors as registeredConnectors } from "@maple/chat-platform/connectors"
 import { ConfigProvider, Effect, Option, Schema, Array as Arr } from "effect"

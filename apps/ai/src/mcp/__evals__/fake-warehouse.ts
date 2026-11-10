@@ -22,11 +22,7 @@ export type FixtureRule = {
 export const readsTraceSpans = (sql: string): boolean =>
 	/\bFROM traces\b/.test(sql) && Str.includes("FROM trace_index")(sql)
 
-/**
- * Default fixtures for the large-trace `inspect_trace` scenario. Both the
- * `span_hierarchy` and `list_logs` pipes compile to SQL referencing their CH
- * table, so we route by table name.
- */
+/** Default fixtures for the large-trace `inspect_trace` scenario, routed by table and trace id. */
 export const defaultTraceFixtures = (): FixtureRule[] => [
 	{
 		match: (sql) => readsTraceSpans(sql) && Str.includes(FIXTURES.traceId)(sql),
@@ -42,7 +38,7 @@ export const defaultTraceFixtures = (): FixtureRule[] => [
 /**
  * Replace the warehouse SQL client with a fake that answers from fixtures. The
  * REAL WarehouseQueryService still runs (OrgId enforcement, CH-DSL compile,
- * pipe-dispatch, row parsing) — only the wire call is faked. Unmatched SQL
+ * row parsing); only the wire call is faked. Unmatched SQL
  * throws loudly so missing fixtures never look like an empty result.
  *
  * The client is built once with the layer and cannot be re-installed for a

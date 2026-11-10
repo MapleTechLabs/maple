@@ -6,7 +6,7 @@
  * passed, and chat was still broken end to end. The fold test in particular would have caught the
  * headline one on the first run.
  */
-import { assert, beforeEach, describe, it } from "vitest"
+import { afterEach, assert, describe, it, vi } from "vitest"
 import { Effect, Array as Arr, Option, String as Str } from "effect"
 import { encodeChatTurnTenant, type ChatTurnOrigin, type ChatTurnTenant } from "@maple/domain/chat-session"
 import { ChatSession, MAX_TURN_RESUMES, TURN_STALE_MS } from "./ChatSession"
@@ -37,15 +37,18 @@ const APP: ChatTurnOrigin = { kind: "app" }
 const makeSession = () => {
 	const state = makeFakeDurableObjectState()
 	const session = new ChatSession(state, {})
-	/** The id the session minted for the in-flight turn — deliberately not the user message's. */
-	const turnId = (): string | undefined =>
-		(
-			state.storage.sql.exec("SELECT running_message_id FROM session WHERE id = 1").toArray()[0] as
-				| { running_message_id: string | null }
-				| undefined
-		)?.running_message_id ?? undefined
-	return { session, state, turnId }
+	return { session, state }
 }
+
+/** Moves the clock past the staleness ceiling, as a turn that vanished mid-stream leaves its claim. */
+const outliveClaim = () => {
+	vi.useFakeTimers({ toFake: ["Date"] })
+	vi.setSystemTime(Date.now() + TURN_STALE_MS + 60_000)
+}
+
+afterEach(() => {
+	vi.useRealTimers()
+})
 
 describe("ChatSession.history", () => {
 	it("folds a streamed turn into ONE assistant message", () => {
@@ -237,11 +240,6 @@ describe("ChatSession cursor and replay", () => {
 })
 
 describe("ChatSession turn mutex", () => {
-	let clock: number
-	beforeEach(() => {
-		clock = Date.now()
-	})
-
 	it("admits one turn and refuses a second", () => {
 		const { session } = makeSession()
 		const first = session.beginTurn({
@@ -274,25 +272,26 @@ describe("ChatSession turn mutex", () => {
 			tenant: TENANT,
 			origin: APP,
 		})
-		// Simulate what the turn emits, using the id the session actually handed it.
+		// Reusing the user's id made the fold append every delta to the user's own bubble: "Say PONG"
+		// came back as "Say PONGPING". Caught only end to end, since unit tests used distinct ids.
+		assert.isDefined(claimed)
+		assert.notEqual(claimed.turnMessageId, "u1")
+		assert.isTrue(session.holdsTurn(claimed.turnMessageId))
 		assert.isFalse(session.holdsTurn("u1"), "the user's message id must not own the turn")
 
-		const events = session.since(0)
 		const userMessage = Option.getOrUndefined(
-			Arr.findFirst(events, (event) => event.type === "user-message"),
+			Arr.findFirst(session.since(0), (event) => event.type === "user-message"),
 		)
-		assert.equal(userMessage?.type === "user-message" ? userMessage.id : undefined, claimed?.messageId)
+		assert.equal(userMessage?.type === "user-message" ? userMessage.id : undefined, "u1")
 
-		// The regression, caught only end-to-end: reusing the user's id meant `openAssistant` found
-		// the *user* message, so every delta appended to the user's own bubble — "Say PONG" came
-		// back as "Say PONGPING". The unit tests missed it because they used distinct ids by hand.
-		session.append({ type: "turn-start", messageId: "u1" })
-		session.append({ type: "text-delta", messageId: "u1", text: "PING" })
-		const collided = session.history()
-		assert.equal(
-			Option.getOrUndefined(Arr.findFirst(collided, (message) => message.role === "user"))?.text,
-			"Say PONGPING",
-			"this is the shape the bug produced; the fix is that the turn never uses this id",
+		session.append({ type: "turn-start", messageId: claimed.turnMessageId })
+		session.append({ type: "text-delta", messageId: claimed.turnMessageId, text: "PING" })
+		assert.deepEqual(
+			Arr.map(session.history(), (message) => [message.role, message.text]),
+			[
+				["user", "Say PONG"],
+				["assistant", "PING"],
+			],
 		)
 	})
 
@@ -315,15 +314,14 @@ describe("ChatSession turn mutex", () => {
 	})
 
 	it("abort ends the turn against the message that actually holds it", () => {
-		const { session, turnId } = makeSession()
-		session.beginTurn({
+		const { session } = makeSession()
+		const turn = session.beginTurn({
 			sessionId: "org_test:tab",
 			messageId: "m1",
 			text: "hi",
 			tenant: TENANT,
 			origin: APP,
-		})
-		const turn = turnId()
+		})?.turnMessageId
 
 		session.abort()
 
@@ -337,24 +335,22 @@ describe("ChatSession turn mutex", () => {
 	})
 
 	it("a straggler cannot release a newer turn's claim", () => {
-		const { session, turnId } = makeSession()
-		session.beginTurn({
+		const { session } = makeSession()
+		const first = session.beginTurn({
 			sessionId: "org_test:tab",
 			messageId: "m1",
 			text: "one",
 			tenant: TENANT,
 			origin: APP,
-		})
-		const first = turnId()!
+		})!.turnMessageId
 		session.abort()
-		session.beginTurn({
+		const second = session.beginTurn({
 			sessionId: "org_test:tab",
 			messageId: "m2",
 			text: "two",
 			tenant: TENANT,
 			origin: APP,
-		})
-		const second = turnId()!
+		})!.turnMessageId
 
 		// The aborted turn keeps draining and eventually calls `endTurn` for its own message.
 		session.endTurn(first, { reason: "stop" })
@@ -366,22 +362,16 @@ describe("ChatSession turn mutex", () => {
 	})
 
 	it("expires an abandoned claim instead of wedging the conversation forever", () => {
-		const { session, state, turnId } = makeSession()
-		session.beginTurn({
+		const { session } = makeSession()
+		const turn = session.beginTurn({
 			sessionId: "org_test:tab",
 			messageId: "m1",
 			text: "hi",
 			tenant: TENANT,
 			origin: APP,
-		})
-		const turn = turnId()
+		})?.turnMessageId
 
-		// Simulate the turn vanishing (isolate eviction, a defect, a deploy mid-stream) by ageing
-		// its claim past the staleness ceiling.
-		state.storage.sql.exec(
-			"UPDATE session SET running_since = ? WHERE id = 1",
-			clock - TURN_STALE_MS - 60 * 1000,
-		)
+		outliveClaim()
 
 		assert.isFalse(session.running(), "a stale claim is not running")
 		const reclaimed = session.beginTurn({
@@ -409,21 +399,19 @@ describe("ChatSession turn slot transitions", () => {
 		Arr.filter(session.since(0), (event) => event.type === "turn-end" && event.messageId === messageId)
 
 	it("reads a stale claim without expiring it; only a transition does", () => {
-		const { session, state, turnId } = makeSession()
-		begin(session)
-		const turn = turnId()
-		state.storage.sql.exec(
-			"UPDATE session SET running_since = ? WHERE id = 1",
-			Date.now() - TURN_STALE_MS - 1,
-		)
+		const { session } = makeSession()
+		const turn = begin(session)!.turnMessageId
+		outliveClaim()
 
 		assert.isFalse(session.running())
-		assert.isFalse(session.holdsTurn(turn!))
+		assert.isFalse(session.holdsTurn(turn))
 		assert.lengthOf(turnEnds(session, turn), 0, "a read appends nothing")
 
 		session.alarm()
 		assert.lengthOf(turnEnds(session, turn), 1)
-		assert.strictEqual(turnId(), undefined)
+		// The alarm released the slot: a new turn finds nothing stale left to expire.
+		assert.isDefined(begin(session, "m2"))
+		assert.lengthOf(turnEnds(session, turn), 1)
 	})
 
 	it("treats a legacy claim with no start time as stale, so a new turn is admitted", () => {
@@ -450,9 +438,8 @@ describe("ChatSession turn slot transitions", () => {
 	})
 
 	it("writes one turn-end when the turn ends and is aborted at once", () => {
-		const { session, turnId } = makeSession()
-		begin(session)
-		const turn = turnId()!
+		const { session } = makeSession()
+		const turn = begin(session)!.turnMessageId
 
 		session.abort("user")
 		const ended = session.endTurn(turn, { reason: "stop" })
@@ -464,9 +451,8 @@ describe("ChatSession turn slot transitions", () => {
 	})
 
 	it("writes one turn-end when an ended turn is then aborted or ended again", () => {
-		const { session, turnId } = makeSession()
-		begin(session)
-		const turn = turnId()!
+		const { session } = makeSession()
+		const turn = begin(session)!.turnMessageId
 
 		assert.isTrue(session.endTurn(turn, { reason: "max-steps" }))
 		session.abort("user")
@@ -500,15 +486,15 @@ describe("ChatSession turn heartbeat", () => {
 	})
 
 	it("stops re-arming once no turn holds the slot", () => {
-		const { session, state, turnId } = makeSession()
-		session.beginTurn({
+		const { session, state } = makeSession()
+		const claimed = session.beginTurn({
 			sessionId: "org_test:tab",
 			messageId: "u1",
 			text: "hi",
 			tenant: TENANT,
 			origin: APP,
 		})
-		session.endTurn(turnId()!, { reason: "stop" })
+		session.endTurn(claimed!.turnMessageId, { reason: "stop" })
 
 		session.alarm()
 		assert.lengthOf(state.alarms, 1)
@@ -516,15 +502,14 @@ describe("ChatSession turn heartbeat", () => {
 
 	/** A fresh activation holds the claim but not the fiber: the object was evicted mid-turn. */
 	it("releases a slot whose turn did not survive an eviction", () => {
-		const { session, state, turnId } = makeSession()
-		session.beginTurn({
+		const { session, state } = makeSession()
+		const orphaned = session.beginTurn({
 			sessionId: "org_test:tab",
 			messageId: "u1",
 			text: "hi",
 			tenant: TENANT,
 			origin: APP,
-		})
-		const orphaned = turnId()!
+		})!.turnMessageId
 
 		const revived = new ChatSession(state, {})
 		revived.alarm()
@@ -551,13 +536,6 @@ describe("ChatSession eviction recovery", () => {
 		return { session, state, runs }
 	}
 
-	const claimedTurn = (state: ReturnType<typeof makeFakeDurableObjectState>): string | undefined =>
-		(
-			state.storage.sql.exec("SELECT running_message_id FROM session WHERE id = 1").toArray()[0] as
-				| { running_message_id: string | null }
-				| undefined
-		)?.running_message_id ?? undefined
-
 	const beginReview = (session: ChatSession) =>
 		session.beginTurn({
 			sessionId: REVIEW_SESSION,
@@ -570,17 +548,16 @@ describe("ChatSession eviction recovery", () => {
 	/** A deploy resets the object; the alarm is what reaches the new activation. */
 	it("starts an evicted autonomous review again from its kickoff", () => {
 		const { session, state } = recording()
-		beginReview(session)
-		const orphaned = claimedTurn(state)!
+		const orphaned = beginReview(session)!.turnMessageId
 
 		const revived = recording(state)
 		revived.session.alarm()
 
 		assert.isTrue(revived.session.running())
-		const restarted = claimedTurn(state)!
-		assert.notStrictEqual(restarted, orphaned)
 		assert.lengthOf(revived.runs, 1)
-		assert.strictEqual(revived.runs[0]?.messageId, restarted)
+		const restarted = revived.runs[0]!.messageId
+		assert.notStrictEqual(restarted, orphaned)
+		assert.isTrue(revived.session.holdsTurn(restarted))
 		assert.deepEqual(revived.runs[0]?.resume, { userMessageId: "kickoff", text: KICKOFF, attempt: 1 })
 		assert.strictEqual(revived.runs[0]?.sessionId, REVIEW_SESSION)
 		// The dead attempt's message is closed, so a reader does not see it streaming forever.
@@ -595,20 +572,22 @@ describe("ChatSession eviction recovery", () => {
 		assert.lengthOf(state.alarms, 2)
 		// And a heartbeat on the activation that runs it is just a heartbeat.
 		revived.session.alarm()
-		assert.strictEqual(claimedTurn(state), restarted)
+		assert.isTrue(revived.session.holdsTurn(restarted))
+		assert.lengthOf(revived.runs, 1)
 	})
 
 	it("gives the review up, and says so, once it has been evicted too often", () => {
 		const first = recording()
 		beginReview(first.session)
 		let state = first.state
+		let last: string | undefined
 		for (let attempt = 1; attempt <= MAX_TURN_RESUMES; attempt++) {
 			const revived = recording(state)
 			revived.session.alarm()
 			assert.strictEqual(revived.runs[0]?.resume?.attempt, attempt)
+			last = revived.runs[0]?.messageId
 			state = revived.state
 		}
-		const last = claimedTurn(state)!
 
 		const final = recording(state)
 		final.session.alarm()
@@ -693,13 +672,10 @@ describe("ChatSession abort interrupts the running turn", () => {
 	})
 
 	it("interrupts a turn whose claim went stale", async () => {
-		const { session, state, runs } = recording()
+		const { session, runs } = recording()
 		begin(session, "u1")
 		const span = interruptedSpan(runs[0]?.signal)
-		state.storage.sql.exec(
-			"UPDATE session SET running_since = ? WHERE id = 1",
-			Date.now() - TURN_STALE_MS - 1,
-		)
+		outliveClaim()
 
 		assert.isFalse(session.running())
 		session.alarm()
@@ -786,25 +762,25 @@ describe("ChatSession.subscribe", () => {
 	})
 
 	it("pushes an event that lands AFTER the subscription, without waiting out a poll", async () => {
-		const { session } = makeSession()
-		const stream = session.subscribe(0)
-		const collected = drain(stream)
-
 		// The regression this pins: `tail` slept 40ms between SELECTs, so nothing could reach a
-		// reader faster than that no matter how fast the model produced it. A push has no floor.
-		// The clock starts after the yield: on a loaded CI runner that macrotask alone can take
-		// tens of milliseconds, and it is the delivery that is being measured.
-		await new Promise((resolve) => setTimeout(resolve, 0))
-		const started = Date.now()
+		// reader faster than that. With timers frozen, a poll never wakes and only a push delivers;
+		// Effect's scheduler runs on `setImmediate`, which stays real.
+		vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "setInterval", "clearInterval"] })
+		const turns = async (count: number) => {
+			for (let turn = 0; turn < count; turn++) await new Promise((resolve) => setImmediate(resolve))
+		}
+		const { session } = makeSession()
+		const collected = drain(session.subscribe(0))
+		await turns(10)
+
 		session.append({ type: "turn-start", messageId: "a1" })
 		session.append({ type: "turn-end", messageId: "a1", reason: "stop" })
 
-		const frames = framesOf(await collected)
-		assert.deepEqual(
-			Arr.map(frames, (frame) => frame.type),
-			["turn-start", "turn-end"],
-		)
-		assert.isBelow(Date.now() - started, 40, "a push must not pay the old poll interval")
+		const delivered = await Promise.race([
+			collected.then((text) => Arr.map(framesOf(text), (frame) => frame.type)),
+			turns(200).then(() => "still waiting on a timer"),
+		])
+		assert.deepEqual(delivered, ["turn-start", "turn-end"])
 	})
 
 	it("stays open on an idle conversation rather than closing instantly", async () => {

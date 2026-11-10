@@ -236,7 +236,6 @@ export const resolveMcpTenantContext = Effect.fn("McpTenant.resolveMcpTenantCont
 	function* (request: Request) {
 		const token = getBearerToken(request.headers)
 
-		// Internal service auth (e.g. chat agent)
 		if (token && Str.startsWith(INTERNAL_SERVICE_BEARER_PREFIX)(token)) {
 			return yield* resolveInternalServiceTenant(request, token)
 		}
@@ -358,7 +357,6 @@ export const resolveMcpTenantContext = Effect.fn("McpTenant.resolveMcpTenantCont
 		Effect.tapError(effect, (error) => recordExpectedMcpFailure(error, "MCP authentication failed")),
 )
 
-/** Resolve the tenant of the HTTP request being served. */
 export const resolveHttpMcpTenant = Effect.gen(function* () {
 	const req = yield* HttpServerRequest.HttpServerRequest
 	const nativeReq = yield* HttpServerRequest.toWeb(req).pipe(

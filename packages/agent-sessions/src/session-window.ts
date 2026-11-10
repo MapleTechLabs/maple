@@ -90,9 +90,9 @@ export function padSessionWindow(startMs: number, endMs: number): SessionWindow 
 }
 
 /** Everything but the detail page's own params, so Back lands on the list the
- *  reader left — same time range, same filters. Mirrors `buildBackToTracesHref`
- *  in traces/$traceId, including reading the raw `searchStr`: the list owns its
- *  search schema, and re-encoding it through the detail route's would drop it. */
+ *  reader left: same time range, same filters. Mirrors the trace page's `listQueryOf`
+ *  (apps/web/src/page/traces/detail/list-query.ts), including reading the raw `searchStr`: the
+ *  list owns its search schema, and re-encoding it through the detail route's would drop it. */
 export function buildBackToSessionsHref(searchStr: string): string {
 	const params = new URLSearchParams(searchStr)
 	params.delete("t")

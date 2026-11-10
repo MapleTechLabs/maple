@@ -10,7 +10,7 @@ describe("fanoutTimeRefusal", () => {
 		assert.isUndefined(fanoutTimeRefusal(5.75 * 60_000))
 	})
 
-	// The engine does not stop a child at the parent's deadline: a late start loses its findings.
+	// A child started late cannot finish before the review is stopped, and loses its findings.
 	it("refuses a group that could not finish before the review is stopped", () => {
 		const late = fanoutTimeRefusal(5 * 60_000)
 		assert.include(late ?? "", "300 s are left")

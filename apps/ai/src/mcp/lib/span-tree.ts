@@ -43,7 +43,6 @@ const isError = (n: SpanNode): boolean => n.statusCode === "Error"
 const isEntry = (n: SpanNode): boolean => ENTRY_KINDS.has(n.spanKind)
 const key = (n: SpanNode): string => n.spanId
 
-/** Walk every node once, invoking `visit(node, parent)`. */
 function forEachNode(
 	roots: ReadonlyArray<SpanNode>,
 	visit: (node: SpanNode, parent: SpanNode | null) => void,
@@ -66,11 +65,6 @@ function subtreeSize(node: SpanNode): number {
 	return count
 }
 
-/**
- * Prune `roots` to at most ~`budget` spans, biasing toward errors, roots and
- * long/structural spans. Returns the original tree unchanged when it already
- * fits within `budget` (so small traces render exactly as before).
- */
 export interface OverviewOptions {
 	/**
 	 * Keep only error spans, their ancestor chains and the roots — no budget fill. Applies even
@@ -79,6 +73,11 @@ export interface OverviewOptions {
 	readonly errorsOnly?: boolean
 }
 
+/**
+ * Prune `roots` to at most ~`budget` spans, biasing toward errors, roots and
+ * long/structural spans. Returns the original tree unchanged when it already
+ * fits within `budget` (so small traces render exactly as before).
+ */
 export function selectOverviewSpans(
 	roots: ReadonlyArray<SpanNode>,
 	budget: number,

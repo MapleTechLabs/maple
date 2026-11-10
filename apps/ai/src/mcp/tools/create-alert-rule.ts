@@ -29,8 +29,6 @@ import * as P from "../lib/params"
 
 const decodeAlertRuleRequest = Schema.decodeUnknownEffect(AlertRuleUpsertRequest)
 
-// Template definitions
-
 interface AlertTemplate {
 	readonly signalType: AlertSignalType
 	readonly comparator: AlertComparator

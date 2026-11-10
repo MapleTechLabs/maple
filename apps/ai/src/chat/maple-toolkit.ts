@@ -1,9 +1,8 @@
 /**
  * What a chat run is allowed to call.
  *
- * Kept out of `loop/` on purpose: deciding *when* to call a tool is the engine's job, not this
- * module's. Swapping the tool set — a read-only sub-agent, a mode with narrower reach — should not
- * touch control flow at all.
+ * Deciding *when* to call a tool is the engine's job, not this module's. Swapping the tool set (a
+ * read-only sub-agent, a mode with narrower reach) should not touch control flow at all.
  */
 import { evaluatePermission, type PermissionRuleset } from "@maple/domain/permission"
 import type { TenantContext } from "@maple/domain/http"

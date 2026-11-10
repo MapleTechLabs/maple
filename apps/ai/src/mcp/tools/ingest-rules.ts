@@ -65,7 +65,6 @@ const adminOnly = (tool: string) =>
 		return tenant
 	})
 
-/** Validation failures name the parameter, so the model can fix the call. */
 /** The tool parameter a validator problem is about, so the model knows which argument to fix. */
 export const parameterOfProblem = (problem: string): string => {
 	if (Str.startsWith("condition ")(problem) || Str.includes("needs at least one condition")(problem))
@@ -159,8 +158,6 @@ const renderRule = (title: string, row: IngestRuleRow) => ({
 	],
 	next: [doc.next("preview_ingest_rule", { rule: row.id }, "what the rule does to recent data")],
 })
-
-// PREVIEW
 
 const parseAttributes = (raw: string): Effect.Effect<Readonly<Record<string, string>>> =>
 	Schema.decodeEffect(Schema.fromJsonString(Schema.Record(Schema.String, Schema.String)))(raw).pipe(

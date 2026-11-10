@@ -42,7 +42,6 @@ export const queryLanguageLabel = (language: QueryLanguage): string => {
 	return `${SQL_DIALECT_NAMES.get(dialect) ?? dialect} SQL`
 }
 
-/** `name (kind, query language, environment): description`, one per source. */
 /** A JSON string literal: the text cannot end the quote or start a new prompt section. */
 const quoted = (text: string): string => stringifyJson(text) ?? `"${Str.replace(/"/g, "'")(text)}"`
 
@@ -53,6 +52,7 @@ const quoted = (text: string): string => stringifyJson(text) ?? `"${Str.replace(
 export const untrustedText = (text: string, max = 300): string =>
 	quoted(truncate(Str.replace(/\s+/g, " ")(text), max))
 
+/** `name (kind, query language, environment): description`, one per source. */
 export const dataSourceLine = (source: {
 	readonly name: string
 	readonly kind: string

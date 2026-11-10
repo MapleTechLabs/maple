@@ -43,8 +43,7 @@ export interface EvalRuntime {
 
 /**
  * Build a node runtime for the app services backed by an in-memory PGlite DB +
- * test config (mirrors apps/api `getMapleAgentSetup`/buildSetup, swapping Hyperdrive→PGlite).
- * The warehouse client must be faked separately via `installFakeWarehouse` —
+ * test config. The warehouse client must be faked separately via `installFakeWarehouse`:
  * this runtime uses the REAL WarehouseQueryService. The returned `requestLayer`
  * carries the already-resolved MCP tenant, matching the post-auth dispatcher
  * context shared by HTTP and RPC.
@@ -73,8 +72,7 @@ export const makeEvalRuntime = (
 	const layer = services.pipe(
 		Layer.provide(Layer.mergeAll(configLive, envLive, databaseLive, workerEnvLive, SandboxFetcher.none)),
 	)
-	// `as any`: the residual requirement set is satisfied at runtime (same pattern
-	// as apps/api/src/agent.ts buildSetup).
+	// `as any`: the residual requirement set is satisfied at runtime.
 	// The lint type checker reads `make(any)` as already `<any, never>`; tsc infers `<unknown, unknown>`.
 	// oxlint-disable-next-line typescript/no-explicit-any, typescript/no-unnecessary-type-assertion
 	const runtime = ManagedRuntime.make(layer as any) as ManagedRuntime.ManagedRuntime<any, never>

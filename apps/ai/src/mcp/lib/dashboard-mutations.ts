@@ -260,7 +260,6 @@ export const defaultSizeForPanelType = (panelType: PanelType): { w: number; h: n
 /**
  * Auto-layout is the shared `findNextPosition` from `@maple/widgets`, so a
  * widget an agent adds lands exactly where the "Add widget" button would put it.
- * This used to be a hand-maintained port of the web copy.
  */
 export { findNextPosition as findNextWidgetPosition }
 

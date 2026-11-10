@@ -260,7 +260,6 @@ export function registerExploreAttributesTool(server: McpToolRegistrar) {
 				}
 			}
 
-			// The services source reads a different pipe.
 			if (params.source === "services") {
 				const result = yield* queryWarehouse<ServicesFacetRow>("services_facets", {
 					start_time: st,

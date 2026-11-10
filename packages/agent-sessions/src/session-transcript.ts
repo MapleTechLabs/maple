@@ -46,10 +46,6 @@ import { rawFailureText } from "./failure-text"
 import { countTurnUsage, type SessionTurnUsage } from "./session-summary"
 import { codeUnitAt } from "@maple/strings"
 
-/* -------------------------------------------------------------------------- */
-/* Rows                                                                       */
-/* -------------------------------------------------------------------------- */
-
 /** Why a lane exists, which is also how its header reads. */
 export type LaneKind = "lane" | "subagent"
 
@@ -403,10 +399,6 @@ export function assembleTranscript(
 	return rows
 }
 
-/* -------------------------------------------------------------------------- */
-/* One turn                                                                   */
-/* -------------------------------------------------------------------------- */
-
 interface TurnRows {
 	readonly turn: SessionTurn
 	readonly header: Extract<TranscriptRow, { kind: "turn" }>
@@ -575,32 +567,25 @@ function coverageOf(hasInput: boolean, hasOutput: boolean): CaptureCoverage {
 	return "none"
 }
 
-/* -------------------------------------------------------------------------- */
-/* Forest                                                                     */
-/* -------------------------------------------------------------------------- */
-
 interface SpanForest {
 	readonly roots: readonly AiSessionSpan[]
 	readonly children: ReadonlyMap<string, readonly AiSessionSpan[]>
 }
 
 /**
- * The turn's spans as a forest.
+ * The AI spans as a forest. A span whose parent is the app's own (a runtime's
+ * `AgentRuntime.model` wrapper around each model call) hangs off its nearest AI
+ * ancestor through it: promoted to a root instead, every model call of an agent
+ * would print after that agent's whole tool subtree.
  *
  * `parentSpanId` is intra-trace only, so a turn spanning several traces has one
  * root per trace; roots and siblings are ordered by start time, which is the
  * only ordering the data supports. A span whose parent lives in another turn is
  * promoted to a root rather than dropped.
  *
- * TODO: `session-waterfall.tsx`'s `orderByTree` builds the same forest and could
- * read this one, but it deliberately preserves input order where this sorts —
- * unifying them is a behavioural change to the waterfall, not a lift.
- */
-/**
- * The AI spans as a forest. A span whose parent is the app's own (a runtime's
- * `AgentRuntime.model` wrapper around each model call) hangs off its nearest AI
- * ancestor through it: promoted to a root instead, every model call of an agent
- * would print after that agent's whole tool subtree.
+ * TODO: the web waterfall's `orderByTree` (apps/web/src/page/agent-sessions/session/waterfall-rows.ts)
+ * builds the same forest and could read this one, but it deliberately preserves input order where
+ * this sorts: unifying them is a behavioural change to the waterfall, not a lift.
  */
 function buildForest(spans: readonly AiSessionSpan[], all: readonly AiSessionSpan[] = spans): SpanForest {
 	const present = new Set(Arr.map(spans, (span) => span.spanId))
@@ -632,10 +617,6 @@ function buildForest(spans: readonly AiSessionSpan[], all: readonly AiSessionSpa
 	for (const siblings of children.values()) siblings.sort(byStart)
 	return { roots, children }
 }
-
-/* -------------------------------------------------------------------------- */
-/* Lane walking                                                               */
-/* -------------------------------------------------------------------------- */
 
 interface LaneScope {
 	readonly context: TurnContext
@@ -879,10 +860,6 @@ function markParallelLanes(
 	return out
 }
 
-/* -------------------------------------------------------------------------- */
-/* Overlap clustering                                                         */
-/* -------------------------------------------------------------------------- */
-
 /** Anything the transcript can announce as concurrent: a lane, or a turn. */
 interface Interval {
 	readonly startMs: number
@@ -1003,10 +980,6 @@ function markParallelTurns(entries: readonly TurnRows[]): ReadonlyMap<string, Tr
 	return marked
 }
 
-/* -------------------------------------------------------------------------- */
-/* One span's rows                                                            */
-/* -------------------------------------------------------------------------- */
-
 function spanRows(span: AiSessionSpan, scope: LaneScope): readonly TranscriptRow[] {
 	const rows: TranscriptRow[] = []
 	const { context, depth } = scope
@@ -1059,8 +1032,6 @@ function rowKey(scope: LaneScope, span: AiSessionSpan, suffix?: string): string 
 		: `${scope.keyPrefix}:${span.spanId}:${suffix}`
 }
 
-/* System ------------------------------------------------------------------ */
-
 /** Emitters re-send the system prompt on every call, so it is shown once per
  *  turn per distinct text, with the repeat count instead of the repeats. */
 function systemRows(
@@ -1103,8 +1074,6 @@ function countSystemInstructions(
 	}
 	return counts
 }
-
-/* User -------------------------------------------------------------------- */
 
 /**
  * The turn's new user input.
@@ -1162,8 +1131,6 @@ function userRows(
 		},
 	]
 }
-
-/* Output ------------------------------------------------------------------ */
 
 /**
  * What the call produced: its reply, its reasoning, and any tool call no span
@@ -1296,7 +1263,6 @@ function outputRows(
 	]
 }
 
-/** Does a tool span already account for this `tool_call` part? */
 function coveredBySpan(part: Extract<SpanMessagePart, { kind: "tool_call" }>, context: TurnContext): boolean {
 	// A tool span for the same call carries the duration, the service and the
 	// error; the message-only row exists only where there is no such span.
@@ -1322,8 +1288,6 @@ function capturedPromptText(messages: readonly SpanMessage[]): string | undefine
 	return undefined
 }
 
-/* Capture boundary --------------------------------------------------------- */
-
 /**
  * Where a turn's capture changes hands.
  *
@@ -1348,8 +1312,6 @@ function captureBoundaryRow(span: AiSessionSpan, scope: LaneScope): readonly Tra
 		},
 	]
 }
-
-/* Tools -------------------------------------------------------------------- */
 
 function toolRow(span: AiSessionSpan, scope: LaneScope): TranscriptRow {
 	return {
@@ -1391,10 +1353,6 @@ function toolResultText(span: AiSessionSpan, context: TurnContext): string | und
 	const echoed = id === undefined ? undefined : toolResultFor(context.input.toolResults, span.traceId, id)
 	return echoed ?? (spanFailed(span) ? rawFailureText(span) : undefined)
 }
-
-/* -------------------------------------------------------------------------- */
-/* Payloads                                                                   */
-/* -------------------------------------------------------------------------- */
 
 /** Trailing marker instrumentations append when they cut a payload short. */
 const TRUNCATION_MARKER = /…\s*\[truncated\]\s*$/
@@ -1469,10 +1427,6 @@ function measure(text: string): { byteLength: number; lineCount: number } {
 	return { byteLength: bytes, lineCount: lines }
 }
 
-/* -------------------------------------------------------------------------- */
-/* Filtering                                                                  */
-/* -------------------------------------------------------------------------- */
-
 /**
  * The toolbar's filter, applied to blocks rather than to spans: in a transcript
  * the text IS the content, so a query has to reach the messages and not only
@@ -1515,10 +1469,6 @@ function rowText(row: TranscriptRow): string | undefined {
 			return undefined
 	}
 }
-
-/* -------------------------------------------------------------------------- */
-/* Shared bits                                                                */
-/* -------------------------------------------------------------------------- */
 
 /**
  * Has this call captured any of the CONVERSATION?

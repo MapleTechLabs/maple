@@ -132,9 +132,9 @@ const complete = Effect.fnUntraced(function* (input: ChatInstallCallback) {
 })
 
 /**
- * No settings. Slack's interaction payload carries no membership facts, so the approver role the
- * other connector offers has nothing to check against here; an empty record is stored and a posted
- * key is reported rather than silently dropped.
+ * No settings. Slack's interaction payload carries no membership facts, so there is no approver
+ * role to check against; an empty record is stored and a posted key is reported rather than
+ * silently dropped.
  */
 const decodeSettings = (
 	input: ChatWorkspaceSettings,

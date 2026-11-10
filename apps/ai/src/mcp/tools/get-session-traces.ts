@@ -40,8 +40,9 @@ export function registerGetSessionTracesTool(server: McpToolRegistrar) {
 			}
 			yield* Effect.annotateCurrentSpan("result.traceCount", traces.length)
 
-			// ClickHouse serializes integer aggregates as JSON strings while Tinybird returns numbers
-			// (see the facets handler in session-replay.http.ts); coerce every numeric at the edge.
+			// ClickHouse serializes integer aggregates as JSON strings while Tinybird returns numbers (see
+			// the facets handler in `apps/api/src/routes/internal/session-replays.http.ts`); coerce every
+			// numeric at the edge.
 			return {
 				session: {
 					sessionId: session.sessionId,

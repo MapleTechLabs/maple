@@ -46,7 +46,6 @@ export function registerSearchSessionsTool(server: McpToolRegistrar) {
 			"Find browser session replays (end-user web sessions). Not AI agent sessions: those are `list_agent_sessions`. Filter by who (user_id, user_search, group_name), by client, by whether the session errored, by session type (tags: `engaged` drops bots, bounces, idle tabs and glances), by how long it lasted, or by what happened inside it (an event type, console level, HTTP status, URL, message or trace id). All filters are ANDed. Then `get_session_transcript` reads a session's events and `get_session_traces` lists the backend traces it produced.",
 		parameters: Schema.Struct({
 			...WINDOW.fields,
-			// Session metadata filters (who / where / how long)
 			user_id: P.optionalText("Exact match on the session's end-user id (e.g. 4632)"),
 			user_search: P.optionalText(
 				"Case-insensitive substring match on the identified user's name or email (e.g. ada, @acme.com)",
@@ -69,7 +68,6 @@ export function registerSearchSessionsTool(server: McpToolRegistrar) {
 				"Only sessions with at least this much active (non-idle) time (ms)",
 			),
 			active_max_ms: P.optionalNumber("Only sessions with at most this much active time (ms)"),
-			// In-session event refinement (what happened)
 			event_type: P.optionalOneOf(
 				["navigation", "click", "input", "console", "network", "error"],
 				"Match sessions that contain this event type",

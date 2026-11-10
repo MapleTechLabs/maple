@@ -664,12 +664,12 @@ const toDecodeErrorMessage = (
 		? formatDecodeFailure(definition.name, error, inputSchemaOf(definition), normalized)
 		: String(error)
 
-/** A registered tool this surface cannot see: a shared tool pointing at it is expected. */
 const findDefinition = (name: string): MapleToolDefinition | undefined => {
 	const canonical = canonicalToolName(name)
 	return mapleToolDefinitions.find((candidate) => candidate.name === canonical)
 }
 
+/** A registered tool this surface cannot see: a shared tool pointing at it is expected. */
 const isHiddenOn = (tool: string, surface: McpToolSurface): boolean => {
 	const target = findDefinition(tool)
 	return target !== undefined && !audienceAdmits(target.audience, surface)
