@@ -31,7 +31,7 @@ interface ScheduleParams {
 	readonly ends_at?: string | undefined
 	readonly time_zone?: string | undefined
 	readonly days?: ReadonlyArray<string> | undefined
-	readonly start_time?: string | undefined
+	readonly start_time_of_day?: string | undefined
 	readonly duration_minutes?: number | undefined
 }
 
@@ -40,15 +40,15 @@ const scheduleFrom = Effect.fnUntraced(function* (params: ScheduleParams) {
 	if (params.schedule_type === "weekly") {
 		if (params.days === undefined || params.days.length === 0)
 			return yield* invalid('A weekly window needs days, e.g. ["sat", "sun"].', "days")
-		if (params.start_time === undefined)
-			return yield* invalid("A weekly window needs start_time as HH:MM.", "start_time")
+		if (params.start_time_of_day === undefined)
+			return yield* invalid("A weekly window needs start_time_of_day as HH:MM.", "start_time_of_day")
 		if (params.duration_minutes === undefined)
 			return yield* invalid("A weekly window needs duration_minutes.", "duration_minutes")
 		return {
 			_tag: "weekly",
 			timeZone: params.time_zone ?? "UTC",
 			days: params.days,
-			startTime: params.start_time,
+			startTime: params.start_time_of_day,
 			durationMinutes: params.duration_minutes,
 		}
 	}
@@ -83,7 +83,7 @@ export function registerCreateMaintenanceWindowTool(server: McpToolRegistrar) {
 		description:
 			"Schedule a maintenance window: alert notifications for matching rules are held back during each occurrence (incidents still open and resolve). " +
 			"schedule_type=once takes starts_at (default now) and ends_at or duration_minutes (max 30 days); " +
-			"schedule_type=weekly takes days, start_time (HH:MM, local to time_zone) and duration_minutes (5 to 10080). " +
+			"schedule_type=weekly takes days, start_time_of_day (HH:MM, local to time_zone) and duration_minutes (5 to 10080). " +
 			"Matchers AND together, values inside one OR; pass at least one. With services or environments, the window's hours are also left out of anomaly baselines unless exclude_from_baselines=false.",
 		parameters: Schema.Struct({
 			name: P.text("Short name, shown on the window and on the silences it writes"),
@@ -92,10 +92,11 @@ export function registerCreateMaintenanceWindowTool(server: McpToolRegistrar) {
 			starts_at: P.optionalTimestamp("When a one-off window opens (default: now)"),
 			ends_at: P.optionalTimestamp("When a one-off window closes"),
 			time_zone: P.optionalText(
-				"IANA time zone a weekly start_time is read in, e.g. Europe/Berlin (default UTC)",
+				"IANA time zone a weekly start_time_of_day is read in, e.g. Europe/Berlin (default UTC)",
 			),
 			days: P.optionalOneOfList(MAINTENANCE_WEEKDAYS, "Weekdays a weekly window opens on"),
-			start_time: P.optionalText("Local start of a weekly window, HH:MM (24-hour)"),
+			// Not `start_time`: that name is a window bound, which a lookback (`since: "2h"`) is written into.
+			start_time_of_day: P.optionalText("Local start of a weekly window, HH:MM (24-hour)"),
 			duration_minutes: P.optionalNumber("How long each occurrence lasts, in minutes"),
 			rule_ids: P.optionalResourceIdList(
 				"alertRule",
@@ -108,7 +109,7 @@ export function registerCreateMaintenanceWindowTool(server: McpToolRegistrar) {
 				"Leave the window's hours out of anomaly baselines (default true; needs services or environments)",
 			),
 		}),
-		aliases: { service_names: "services" },
+		aliases: { service_names: "services", start_time: "start_time_of_day" },
 		output: MaintenanceWindowMutationOutput,
 		hints: { readOnly: false, destructive: false, idempotent: false },
 		phrases: ["Scheduling a maintenance window", "Creating a maintenance window"],

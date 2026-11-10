@@ -32,17 +32,10 @@ import {
 	apiV2RateLimitKey,
 	deviceRateLimitKey,
 } from "./ApiV2RateLimiter"
+import { getBearerToken } from "./bearer-token"
 
 const decodeRoleNameSync = Schema.decodeUnknownSync(RoleName)
 const apiKeyDefaultRoles = [decodeRoleNameSync("root")] as const
-
-const getBearerToken = (headers: Record<string, string | undefined>): string | undefined => {
-	const header = headers["authorization"] ?? headers["Authorization"]
-	if (!header) return undefined
-	const [scheme, token] = Str.split(" ")(header)
-	if (!scheme || !token || Str.toLowerCase(scheme) !== "bearer") return undefined
-	return token
-}
 
 /** The access token of an RFC 9449 `Authorization: DPoP <token>` request. */
 const getDpopToken = (headers: Record<string, string | undefined>): string | undefined => {

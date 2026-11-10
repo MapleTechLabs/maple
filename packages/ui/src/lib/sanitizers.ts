@@ -18,21 +18,6 @@ const LINE_SEPARATOR = " "
 const PARAGRAPH_SEPARATOR = " "
 
 /**
- * CSS.escape an identifier the way browsers do, so a value like
- * `</style><script>alert(1)</script>` cannot break out of the surrounding
- * `--color-…` declaration.
- */
-export const sanitizeCssIdentifier = (key: string): string => {
-	if (typeof CSS !== "undefined" && typeof CSS.escape === "function") {
-		return CSS.escape(key)
-	}
-	// Fallback for environments without CSS.escape: hex-encode anything
-	// that isn't [a-zA-Z0-9_-].
-	// oxlint-disable-next-line effecttsgo/prefer-effect-string -- function replacer; Str.replace only takes a string
-	return key.replace(/[^a-zA-Z0-9_-]/g, (ch) => `\\${ch.charCodeAt(0).toString(16)} `)
-}
-
-/**
  * Returns `value` only if it parses as a known-safe CSS color expression.
  * Drops anything containing CSS structural tokens like `;`, `}`, `<` etc.
  */

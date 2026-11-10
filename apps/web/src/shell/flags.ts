@@ -75,10 +75,15 @@ const readNoScheduleOrgs = readPrefixed(
 	Schema.decodeUnknownOption(Schema.NumberFromString),
 )
 
+/** `SaveSidebarState`'s cookie: open unless the last toggle collapsed it (as Maple Local reads it). */
+export const isSidebarOpenIn = (cookie: string): boolean =>
+	!Arr.contains(Str.split("; ")(cookie), "sidebar_state=false")
+
 /** Persisted shell UI state, read once before the first render. */
 export const readShellFlags: Effect.Effect<ShellFlags> = Effect.gen(function* () {
 	const pinnedNamespaces = yield* readPinnedNamespaces
 	return {
+		isSidebarOpen: isSidebarOpenIn(document.cookie),
 		isMobile: window.matchMedia(MOBILE_QUERY).matches,
 		isFilterCollapsed: window.matchMedia(FILTER_COLLAPSED_QUERY).matches,
 		isBelowSm: window.matchMedia(SMALL_QUERY).matches,

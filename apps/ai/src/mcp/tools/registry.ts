@@ -229,7 +229,7 @@ const isEmptyStructSchema = (base: Record<string, unknown>): boolean => {
  * `Schema.optional(X)` — which CLAUDE.md mandates for MCP tool params — has type
  * `X | undefined`, but `toJsonSchemaDocument` renders that absence as a JSON
  * `null` branch. The published schema therefore told every MCP client that
- * `{"service": null}` was valid on every optional parameter of all 57 tools,
+ * `{"service": null}` was valid on every optional parameter of every tool,
  * while the decoder rejects it with `Expected string | undefined`. An agent that
  * read the schema literally got "Invalid parameters" for doing what it was told.
  *
@@ -355,7 +355,7 @@ export const toInputSchema = (schema: Schema.Top): Record<string, unknown> => {
 	// `onExcessProperty: "error"` keeps `additionalProperties: false` on every
 	// published tool. rc.116 made the emitted value follow this option and
 	// defaults it to the decoder's behaviour, which would have loosened the
-	// schema all 57 public MCP tools advertise.
+	// schema every public MCP tool advertises.
 	const document = Schema.toJsonSchemaDocument(schema, { onExcessProperty: "error" })
 	const rawBase =
 		Rec.keys(document.definitions).length > 0

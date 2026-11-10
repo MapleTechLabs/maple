@@ -1,4 +1,4 @@
-import { String as Str } from "effect"
+import { Option, String as Str } from "effect"
 /**
  * The pure half of share social previews: which URLs are involved, and what
  * tags a link's metadata turns into.
@@ -11,6 +11,9 @@ import { String as Str } from "effect"
 const SHARE_PATH_PREFIX = "/share/"
 export const OG_IMAGE_PREFIX = "/share/og/"
 const OG_IMAGE_SUFFIX = ".png"
+
+/** A lone `%` is a `URIError`; a path that will not decode names nothing, and is not a 500. */
+const decodeSegment = Option.liftThrowable(decodeURIComponent)
 
 export const OG_IMAGE_WIDTH = 1200
 export const OG_IMAGE_HEIGHT = 630
@@ -31,7 +34,9 @@ export interface ShareOgMeta {
 export const shareTokenFromPath = (pathname: string): string | undefined => {
 	if (!Str.startsWith(SHARE_PATH_PREFIX)(pathname) || Str.startsWith(OG_IMAGE_PREFIX)(pathname))
 		return undefined
-	const token = Str.split("/")(decodeURIComponent(Str.slice(SHARE_PATH_PREFIX.length)(pathname)))[0]
+	const decoded = decodeSegment(Str.slice(SHARE_PATH_PREFIX.length)(pathname))
+	if (Option.isNone(decoded)) return undefined
+	const token = Str.split("/")(decoded.value)[0]
 	return token === undefined || token.length === 0 ? undefined : token
 }
 
@@ -39,15 +44,11 @@ export const shareTokenFromPath = (pathname: string): string | undefined => {
 export const ogIdFromPath = (pathname: string): string | undefined => {
 	if (!Str.startsWith(OG_IMAGE_PREFIX)(pathname) || !Str.endsWith(OG_IMAGE_SUFFIX)(pathname))
 		return undefined
-	let ogId: string
-	try {
-		ogId = decodeURIComponent(
-			Str.slice(OG_IMAGE_PREFIX.length, pathname.length - OG_IMAGE_SUFFIX.length)(pathname),
-		)
-	} catch {
-		// A lone `%` is a `URIError`; routed worker-first, letting it out is a 500 instead of a 404.
-		return undefined
-	}
+	const decoded = decodeSegment(
+		Str.slice(OG_IMAGE_PREFIX.length, pathname.length - OG_IMAGE_SUFFIX.length)(pathname),
+	)
+	if (Option.isNone(decoded)) return undefined
+	const ogId = decoded.value
 	return ogId.length === 0 || Str.includes("/")(ogId) ? undefined : ogId
 }
 

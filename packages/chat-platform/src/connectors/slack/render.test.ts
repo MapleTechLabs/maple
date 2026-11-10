@@ -56,6 +56,22 @@ describe("slack message bodies", () => {
 		expect(payload.unfurl_links).toBe(false)
 	})
 
+	// Slack shows no HTML page: the page's markdown stands in for it.
+	it("posts a page as its fallback", () => {
+		const payload = renderSlackMessage([
+			{
+				kind: "page",
+				title: "Acme cancelled",
+				html: "<p>report</p>",
+				height: 900,
+				fallback: "**Acme** cancelled",
+			},
+		])
+		const block = payload.blocks?.[0]
+		expect(block?.type === "section" && block.text.text).toBe("*Acme* cancelled")
+		expect(payload.text).toBe("**Acme** cancelled")
+	})
+
 	it("answers an empty turn with something Slack will accept", () => {
 		// Slack rejects a post carrying neither text nor blocks, and the driver empties a message a
 		// retraction shrank a turn past.

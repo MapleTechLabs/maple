@@ -24,6 +24,7 @@ import {
 } from "@maple/domain/chat-chart-spec"
 import { delegatedAgentOf, type ChatMessage, type ChatToolCall } from "@maple/domain/chat-session"
 import { formatDuration, formatNumber } from "@maple/domain/format"
+import { truncate } from "@maple/strings"
 import { encodeChatActionToken } from "../action-token"
 import { Array as Arr, Option, Record as Rec, Schema, String as Str } from "effect"
 import { approvalOutcome } from "./approval-outcome"
@@ -319,6 +320,3 @@ export const summarizeToolInput = (input: unknown): string => {
 }
 
 const plural = (count: number, noun: string): string => `${count} ${noun}${count === 1 ? "" : "s"}`
-
-const truncate = (text: string, max: number): string =>
-	text.length <= max ? text : `${Str.slice(0, max - 1)(text)}…`

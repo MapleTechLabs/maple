@@ -24,7 +24,7 @@ echo "$HELM_REGISTRY_PASSWORD" | helm registry login "$REGISTRY" \
     --username "$HELM_REGISTRY_USERNAME" \
     --password-stdin
 
-for chart in "$PACKAGE_DIR"/$CHART_NAME-*.tgz; do
+for chart in "$PACKAGE_DIR/$CHART_NAME"-*.tgz; do
     helm push "$chart" "oci://$REGISTRY/$OWNER_LC/charts"
 done
 

@@ -699,7 +699,6 @@ export const createMapleIngest = ({ stage, region, domains, profile, dbLogin }: 
 				// keys again after normalizing the header, so a respelled one is still blocked.
 				...(yield* Config.map(blockedIngestKeys, blockedIngestKeysEnv)),
 				...(yield* optionalPlain("INGEST_EXPORT_MAX_ATTEMPTS")),
-				...(yield* optionalPlain("INGEST_TINYBIRD_CONCURRENCY_PER_SHARD")),
 				...(yield* optionalPlain("INGEST_REPLAY_MAX_SESSION_BYTES")),
 				// The org Maple's own telemetry is filed under. Required, no fallback.
 				MAPLE_INTERNAL_ORG_ID: yield* requiredPlain("MAPLE_INTERNAL_ORG_ID"),

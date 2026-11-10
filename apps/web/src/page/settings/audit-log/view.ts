@@ -1,4 +1,10 @@
-import { auditActionLabel } from "@maple/domain/audit-actions"
+import {
+	auditActionLabel,
+	AuditResourceLabels,
+	AuditResources,
+	auditResourceLabel,
+	isAuditAccessAction,
+} from "@maple/domain/audit-actions"
 import type { AuditActorType, AuditLogSource } from "@maple/domain/http"
 import { encodePublicId, PublicIdPrefixes, type V2ApiKey, type V2AuditLogEntry } from "@maple/domain/http/v2"
 import { EMPTY_VALUE } from "@maple/ui/lib/format"
@@ -8,9 +14,15 @@ import { cn } from "@maple/ui/lib/utils"
 import {
 	AUDIT_RANGE_PRESETS,
 	type AuditDateRange,
+	type AuditLogFilters,
+	auditLogKindOf,
 	hasAuditLogFilters,
 	parseAuditLogSearch,
 } from "../../../components/settings/audit-log-filters"
+import { compactSearchInput } from "@maple/views/ui/compact-search-input"
+import { removableChip } from "@maple/views/ui/removable-chip"
+import type { Message as SelectMessage } from "@maple/views/ui/select"
+import * as CustomRangeView from "../../kit/custom-range-view"
 import { auditResourceDisplay } from "../../../components/settings/audit-log-resource"
 import { formatTimestampInTimezone } from "@maple/web-data/lib/timezone-format"
 import { Submodel } from "foldkit"
@@ -21,7 +33,7 @@ import { avatarFallback, badge, separator } from "@maple/views/ui/display"
 import { empty, emptyDescription, emptyHeader, emptyMedia, emptyTitle } from "@maple/views/ui/empty"
 import { errorState } from "@maple/views/ui/error-state"
 import { eyebrow } from "@maple/views/ui/eyebrow"
-import { icon } from "@maple/views/ui/icon"
+import { icon, type IconName } from "@maple/views/ui/icon"
 import { listFooter } from "@maple/views/ui/list-footer"
 import { panel } from "@maple/views/ui/panel"
 import * as Popover from "@maple/views/ui/popover"
@@ -30,16 +42,19 @@ import { refreshButton } from "@maple/views/ui/refresh-button"
 import { segmentedSelect } from "@maple/views/ui/segmented-select"
 import * as SelectView from "@maple/views/ui/select-view"
 import { skeletonList } from "@maple/views/ui/skeleton"
+import { tooltipTrigger } from "@maple/views/ui/tooltip-host"
 import { truncatedText } from "@maple/views/ui/truncated-text"
 import { relativeTime } from "../../kit/relative-time"
 import { filteredEmpty } from "@maple/views/ui/signal-empty-state"
 import { settingsSection } from "../kit/section"
 import { Message, type Model } from "./model"
-import { ANYONE } from "./update"
-import { auditDetail, resourceHref } from "./view-detail"
+import { ACTION_ICON, ACTOR_ICONS, auditActionIcon, OUTCOME_ICONS, SOURCE_ICONS } from "./icons"
+import { ANY, ANYONE, entryRowId } from "./update"
+import { auditDetail, memberName, resourceHref } from "./view-detail"
 import { typography, typographyClass } from "@maple/views/ui/typography"
-import { hstack, hstackClass, vstack, vstackClass } from "@maple/views/ui/stack"
-import { Array as Arr, String as Str, Option } from "effect"
+import { hstack, hstackClass, vstack } from "@maple/views/ui/stack"
+import { Array as Arr, DateTime, String as Str, Option, Order, Record as Rec } from "effect"
+import { dayKey, dayLabel } from "../../kit/day-label"
 import { textLink } from "@maple/views/ui/text-link"
 
 type H = HtmlBuilder<Message>
@@ -51,18 +66,38 @@ export type ViewInputs = Readonly<{
 	apiKeys: ReadonlyArray<V2ApiKey>
 }>
 
+type FilterOption<Value extends string> = Readonly<{ value: Value; label: string; icon?: IconName }>
+
 const ACTOR_FILTERS = [
 	{ value: "all", label: "All" },
-	{ value: "user", label: "Users" },
-	{ value: "api_key", label: "API keys" },
-	{ value: "agent", label: "Agents" },
-	{ value: "system", label: "System" },
-] as const
+	{ value: "user", label: "Users", icon: ACTOR_ICONS.user },
+	{ value: "api_key", label: "API keys", icon: ACTOR_ICONS.api_key },
+	{ value: "agent", label: "Agents", icon: ACTOR_ICONS.agent },
+	{ value: "system", label: "System", icon: ACTOR_ICONS.system },
+] as const satisfies ReadonlyArray<FilterOption<string>>
+const KIND_OPTIONS = [
+	{ value: "changes", label: "Changes", icon: "PencilIcon" },
+	{ value: "access", label: "Data access", icon: "EyeIcon" },
+	{ value: "all", label: "All" },
+] as const satisfies ReadonlyArray<FilterOption<string>>
 const OUTCOME_FILTERS = [
 	{ value: "all", label: "All" },
-	{ value: "allowed", label: "Allowed" },
-	{ value: "denied", label: "Denied" },
-] as const
+	{ value: "allowed", label: "Allowed", icon: OUTCOME_ICONS.allowed },
+	{ value: "denied", label: "Denied", icon: OUTCOME_ICONS.denied },
+] as const satisfies ReadonlyArray<FilterOption<string>>
+
+/** Segmented options with their glyph drawn before the label. */
+const withGlyphs = <Value extends string>(h: H, options: ReadonlyArray<FilterOption<Value>>) =>
+	Arr.map(options, (option) =>
+		option.icon === undefined
+			? { value: option.value, label: option.label }
+			: { value: option.value, label: option.label, icon: icon(h, option.icon) },
+	)
+
+/** The glyph a filter's trigger leads with, naming the filter once its value replaces the label. */
+const filterGlyph = (h: H, name: IconName): ReadonlyArray<Html> => [
+	icon(h, name, { className: "text-muted-foreground shrink-0" }),
+]
 
 export const SOURCE_LABELS = {
 	dashboard: "Dashboard",
@@ -72,7 +107,7 @@ export const SOURCE_LABELS = {
 	system: "System",
 } as const satisfies { readonly [Source in AuditLogSource]: string }
 
-export const ACTOR_BADGES = {
+const ACTOR_BADGES = {
 	user: { label: "User", variant: "secondary" },
 	api_key: { label: "API key", variant: "ok" },
 	agent: { label: "Agent", variant: "info" },
@@ -85,9 +120,10 @@ const COL = {
 	time: "flex w-22 shrink-0 items-center gap-2",
 	actor: "min-w-0 flex-1 @md:w-38 @md:flex-none",
 	action: "min-w-0 basis-full pl-5 @md:basis-0 @md:flex-1 @md:pl-0",
-	resource: "hidden w-56 min-w-0 shrink-0 @3xl:block",
-	source: "hidden w-20 shrink-0 @2xl:block",
-	outcome: "hidden w-15 shrink-0 @md:block",
+	// Shares the row's spare width with the action, so neither starves the other when it appears.
+	resource: "hidden min-w-0 @3xl:block @3xl:basis-0 @3xl:flex-1",
+	source: "hidden w-24 shrink-0 @2xl:block",
+	outcome: "hidden w-16 shrink-0 @md:block",
 }
 
 const initialsOf = (label: string) => (Str.startsWith("user_")(label) ? "?" : initialsFrom(label))
@@ -102,8 +138,11 @@ const abbreviateId = (id: string): string => {
 	)
 }
 
-const actorDisplayName = (entry: V2AuditLogEntry): string | null =>
-	entry.actor_name ?? (entry.actor_id === null ? null : abbreviateId(entry.actor_id))
+/** The name frozen on the entry, else the member's current name, else a short id. */
+const actorDisplayName = (model: Model, entry: V2AuditLogEntry): string | null =>
+	entry.actor_name ??
+	memberName(model, entry.actor_id) ??
+	(entry.actor_id === null ? null : abbreviateId(entry.actor_id))
 
 const rangeLabel = (range: AuditDateRange, timeZone: string): string => {
 	if (range.kind === "all") return "All time"
@@ -122,6 +161,13 @@ const rangeLabel = (range: AuditDateRange, timeZone: string): string => {
 
 // TOOLBAR
 
+// On a phone the four filters share each row evenly instead of ending wherever their label does.
+const FILTER_GROW = "grow basis-36 @md:grow-0 @md:basis-auto"
+const SELECT_FIT = cn("w-auto max-w-none @md:max-w-64", FILTER_GROW)
+
+const RANGE_OPTION_CLASS =
+	"flex h-7 items-center px-3 text-left text-xs hover:bg-surface-sunken active:bg-surface-sunken"
+
 const dateRange = (h: H, model: Model, range: AuditDateRange, timeZone: string): Html => {
 	const label = rangeLabel(range, timeZone)
 	const activeKey = range.kind === "all" ? "all" : range.kind === "preset" ? range.preset : null
@@ -129,13 +175,19 @@ const dateRange = (h: H, model: Model, range: AuditDateRange, timeZone: string):
 		{ key: "all", label: "All time" },
 		...Arr.map(AUDIT_RANGE_PRESETS, (preset) => ({ key: preset.value, label: preset.label })),
 	]
+	const optionClass = (isActive: boolean) =>
+		cn(
+			RANGE_OPTION_CLASS,
+			isActive ? typographyClass({ tone: "foreground", weight: "medium" }) : "text-foreground-soft",
+		)
 	return h.submodel({
 		slotId: "audit-date-range",
 		model: model.dateRange,
 		view: Popover.view,
 		toParentMessage: (message) => Message.GotDateRangeMessage({ message }),
 		viewInputs: {
-			className: "w-48 p-0",
+			// `w-max`, not `w-auto`: the positioner keeps the presets' width, and auto would stay inside it.
+			className: model.customRange === null ? "w-48 p-0" : "w-max max-w-(--available-width) p-0",
 			toView: ({ trigger, withTrigger }) =>
 				h.div(
 					[h.Class("contents")],
@@ -145,52 +197,125 @@ const dateRange = (h: H, model: Model, range: AuditDateRange, timeZone: string):
 							{
 								variant: "outline",
 								size: "sm",
-								className: "gap-1.5",
+								className: cn("justify-start gap-1.5 @md:justify-center", FILTER_GROW),
 								slot: "popover-trigger",
 								attributes: [h.AriaLabel(`Date range: ${label}`), ...trigger],
 							},
-							[icon(h, "ClockIcon"), h.span([], [label])],
+							[
+								icon(h, "ClockIcon", { className: "text-muted-foreground" }),
+								typography(
+									h,
+									{ weight: "normal", tone: range.kind === "all" ? "muted" : "foreground" },
+									[label],
+								),
+							],
 						),
 					),
 				),
-			// TODO(settings-audit): "Custom range…" opens `CustomRangePicker`, not ported (shared with the
-			// time-range picker's custom tab); it is drawn without its picker.
 			toContent: () => [
-				vstack(h, { className: "py-1.5" }, [
-					...Arr.map(options, (option) =>
-						pressable(
-							h,
-							{
-								onClick: Message.ClickedRangePreset({ value: option.key }),
-								className: cn(
-									"flex h-7 items-center px-3 text-left text-xs hover:bg-surface-sunken active:bg-surface-sunken",
-									option.key === activeKey
-										? typographyClass({ tone: "foreground", weight: "medium" })
-										: "text-foreground-soft",
+				model.customRange !== null
+					? h.submodel({
+							slotId: "audit-custom-range",
+							model: model.customRange,
+							view: CustomRangeView.view,
+							viewInputs: {},
+							toParentMessage: (message) => Message.GotCustomRangeMessage({ message }),
+						})
+					: vstack(h, { className: "py-1.5" }, [
+							...Arr.map(options, (option) =>
+								pressable(
+									h,
+									{
+										onClick: Message.ClickedRangePreset({ value: option.key }),
+										className: optionClass(option.key === activeKey),
+										attributes: [h.Key(option.key)],
+									},
+									[option.label],
 								),
-								attributes: [h.Key(option.key)],
-							},
-							[option.label],
-						),
-					),
-					separator(h, "horizontal", "mx-3 my-1 data-[orientation=horizontal]:w-auto"),
-					pressable(
-						h,
-						{
-							className: cn(
-								"flex h-7 items-center px-3 text-left text-xs hover:bg-surface-sunken active:bg-surface-sunken hover:text-foreground active:text-foreground",
-								range.kind === "custom"
-									? typographyClass({ tone: "foreground", weight: "medium" })
-									: "text-muted-foreground",
 							),
-						},
-						["Custom range…"],
-					),
-				]),
+							separator(h, "horizontal", "mx-3 my-1 data-[orientation=horizontal]:w-auto"),
+							pressable(
+								h,
+								{
+									onClick: Message.ClickedCustomRange({ timeZone }),
+									className: optionClass(range.kind === "custom"),
+								},
+								["Custom range…"],
+							),
+						]),
 			],
 		},
 	})
 }
+
+/** A filter select with an "any" first item and the picked label shown in the trigger. */
+const filterSelect = (
+	h: H,
+	options: Readonly<{
+		slotId: string
+		model: Model["resourceTypeSelect"]
+		value: string | undefined
+		anyLabel: string
+		ariaLabel: string
+		icon: IconName
+		items: ReadonlyArray<SelectView.SelectOption>
+		toMessage: (message: SelectMessage) => Message
+	}>,
+): Html => {
+	const label =
+		options.value === undefined
+			? options.anyLabel
+			: Option.match(
+					Arr.findFirst(options.items, (item) => item.value === options.value),
+					{ onNone: () => options.value ?? options.anyLabel, onSome: (item) => item.label },
+				)
+	return h.submodel({
+		slotId: options.slotId,
+		model: { ...options.model, value: options.value ?? ANY },
+		view: SelectView.view,
+		toParentMessage: options.toMessage,
+		viewInputs: {
+			entries: [
+				{ _tag: "Item", item: { value: ANY, label: options.anyLabel } },
+				...Arr.map(options.items, (item): SelectView.SelectEntry => ({ _tag: "Item", item })),
+			],
+			ariaLabel: options.ariaLabel,
+			size: "sm",
+			className: SELECT_FIT,
+			leading: filterGlyph(h, options.icon),
+			renderValue: () => [
+				typography(
+					h,
+					{ truncate: true, tone: options.value === undefined ? "muted" : "foreground" },
+					[label],
+				),
+			],
+			toView: (parts) => h.div([h.Class("contents")], parts),
+		},
+	})
+}
+
+const byLabel = Order.mapInput(Order.String, (item: SelectView.SelectOption) => item.label)
+
+const RESOURCE_TYPE_ITEMS: ReadonlyArray<SelectView.SelectOption> = Arr.sort(
+	Arr.map(Rec.toEntries(AuditResourceLabels), ([value, label]) => ({ value, label })),
+	byLabel,
+)
+
+const actionItems = (resourceType: string): ReadonlyArray<SelectView.SelectOption> =>
+	Option.match(
+		Arr.findFirst(Rec.toEntries(AuditResources), ([key]) => key === resourceType),
+		{
+			onNone: () => [],
+			onSome: ([, resource]) => {
+				const verbs: ReadonlyArray<string> = resource.verbs
+				return Arr.map(verbs, (verb) => {
+					const action = `${resourceType}.${verb}`
+					return { value: action, label: auditActionLabel(action) ?? action }
+				})
+			},
+		},
+	)
 
 const personFilter = (
 	h: H,
@@ -229,8 +354,13 @@ const personFilter = (
 			entries,
 			ariaLabel: "Person",
 			size: "sm",
-			className: "w-auto min-w-40 max-w-64",
-			renderValue: () => [typography(h, { truncate: true }, [label])],
+			className: SELECT_FIT,
+			leading: filterGlyph(h, ACTOR_ICONS.user),
+			renderValue: () => [
+				typography(h, { truncate: true, tone: actorId === undefined ? "muted" : "foreground" }, [
+					label,
+				]),
+			],
 			toView: (parts) => h.div([h.Class("contents")], parts),
 		},
 	})
@@ -238,33 +368,33 @@ const personFilter = (
 
 // ROWS
 
-const actorCell = (h: H, entry: V2AuditLogEntry): Html => {
-	const actor = ACTOR_BADGES[entry.actor_type]
-	const name = actorDisplayName(entry)
+const actorCell = (h: H, model: Model, entry: V2AuditLogEntry): Html => {
+	const name = actorDisplayName(model, entry)
+	const isNamed = entry.actor_name !== null || memberName(model, entry.actor_id) !== null
 	return h.div(
 		[h.Class(cn(COL.actor, hstackClass({ gap: "1.5" })))],
 		[
+			// One marker slot, so every name starts on the same line down the column.
 			entry.actor_type === "user"
 				? avatarFallback(
 						h,
-						{ className: "size-4 shrink-0 text-4xs" },
-						initialsOf(entry.actor_name ?? entry.actor_id ?? ""),
+						{ className: "size-4 shrink-0" },
+						typography(h, { size: "4xs" }, [initialsOf(name ?? "")]),
 					)
-				: badge(h, { variant: actor.variant, size: "sm", className: "shrink-0" }, [actor.label]),
+				: actorMark(h, entry.actor_type, name === null),
 			...(name === null
-				? []
+				? entry.actor_type === "user"
+					? []
+					: [typography(h, { size: "xs", truncate: true }, [ACTOR_BADGES[entry.actor_type].label])]
 				: [
 						truncatedText(
 							h,
 							{
 								text:
-									entry.actor_name !== null && entry.actor_id !== null
+									isNamed && entry.actor_id !== null
 										? `${name} (${entry.actor_id})`
 										: (entry.actor_id ?? name),
-								className: cn(
-									"text-xs",
-									entry.actor_name === null && "text-muted-foreground",
-								),
+								className: cn("text-xs", !isNamed && "text-muted-foreground"),
 							},
 							[name],
 						),
@@ -273,11 +403,18 @@ const actorCell = (h: H, entry: V2AuditLogEntry): Html => {
 	)
 }
 
-const actionLabel = (h: H, action: string): ReadonlyArray<Html> => {
+/** A read, tool call, SQL run or API request that went through: background next to a change. */
+const isQuietAccess = (entry: V2AuditLogEntry): boolean =>
+	entry.outcome === "allowed" && isAuditAccessAction(entry.action)
+
+const actionLabel = (h: H, action: string, isQuiet: boolean): ReadonlyArray<Html> => {
 	const label = auditActionLabel(action)
 	if (label === null) return [truncatedText(h, { mono: true, text: action, className: "text-xs" })]
 	return [
-		truncatedText(h, { text: label, className: typographyClass({ size: "xs", tone: "foreground" }) }),
+		truncatedText(h, {
+			text: label,
+			className: typographyClass({ size: "xs", tone: isQuiet ? "muted" : "foreground" }),
+		}),
 		truncatedText(h, {
 			mono: true,
 			text: action,
@@ -286,10 +423,44 @@ const actionLabel = (h: H, action: string): ReadonlyArray<Html> => {
 	]
 }
 
-const deniedBadge = (h: H) => badge(h, { variant: "crit", size: "sm", className: "shrink-0" }, ["Denied"])
+/** The refused outcome, as the rows and an entry's detail both show it. */
+export const deniedBadge = (h: H): Html =>
+	badge(h, { variant: "crit", size: "sm", className: "shrink-0" }, [
+		icon(h, OUTCOME_ICONS.denied),
+		"Denied",
+	])
 
-const resourceCell = (h: H, entry: V2AuditLogEntry): Html => {
-	const display = auditResourceDisplay(entry)
+/**
+ * A non-person actor in a row: its glyph alone, the size of a person's avatar. It names the actor
+ * type (and says it on hover) unless the type is already the text beside it.
+ */
+const actorMark = (h: H, actorType: AuditActorType, isNamedBeside: boolean): Html =>
+	badge(
+		h,
+		{
+			variant: ACTOR_BADGES[actorType].variant,
+			size: "sm",
+			className: "size-4 min-w-4 shrink-0 px-0",
+			attributes: isNamedBeside
+				? [h.AriaHidden(true)]
+				: [
+						h.Role("img"),
+						h.AriaLabel(ACTOR_BADGES[actorType].label),
+						...tooltipTrigger(h, ACTOR_BADGES[actorType].label),
+					],
+		},
+		[icon(h, ACTOR_ICONS[actorType])],
+	)
+
+/** What kind of actor made an entry: its glyph and its name. */
+export const actorBadge = (h: H, actorType: AuditActorType): Html =>
+	badge(h, { variant: ACTOR_BADGES[actorType].variant, size: "sm", className: "shrink-0" }, [
+		icon(h, ACTOR_ICONS[actorType]),
+		ACTOR_BADGES[actorType].label,
+	])
+
+const resourceCell = (h: H, model: Model, entry: V2AuditLogEntry): Html => {
+	const display = withMemberName(model, entry, auditResourceDisplay(entry))
 	if (display === null) return typography(h, { size: "xs", tone: "muted" }, [EMPTY_VALUE])
 	if (display.link === null) return truncatedText(h, { text: display.text, className: "text-xs" })
 	return textLink(
@@ -298,28 +469,45 @@ const resourceCell = (h: H, entry: V2AuditLogEntry): Html => {
 			href: resourceHref(display.link),
 			tone: "inherit",
 			className:
-				"relative z-10 block truncate text-xs text-foreground underline decoration-muted-foreground/40 hover:decoration-foreground active:decoration-foreground",
+				"relative z-10 block truncate underline decoration-muted-foreground/40 hover:decoration-foreground active:decoration-foreground",
 			attributes: [h.Title(display.text)],
 		},
-		[display.text],
+		[typography(h, { size: "xs", tone: "foreground" }, [display.text])],
 	)
 }
 
+/** A membership change acts on a person: name them rather than showing their id. */
+const withMemberName = (
+	model: Model,
+	entry: V2AuditLogEntry,
+	display: ReturnType<typeof auditResourceDisplay>,
+): ReturnType<typeof auditResourceDisplay> => {
+	const name = memberName(model, entry.affected_user)
+	return display === null || name === null || entry.resource_type !== "member"
+		? display
+		: { ...display, text: `${auditResourceLabel(entry.resource_type) ?? "Member"} · ${name}` }
+}
+
 const auditRow = (h: H, model: Model, entry: V2AuditLogEntry, inputs: ViewInputs): Html => {
+	// Muting reads only helps where they sit beside changes; in Data access every row is one.
+	const isMixedView = auditLogKindOf(parseAuditLogSearch(inputs.search)) === "all"
 	const isExpanded = model.expanded.includes(entry.id)
 	const detailId = `audit-entry-${entry.id}`
 	const isDenied = entry.outcome === "denied"
 	const label = auditActionLabel(entry.action) ?? entry.action
 	return h.div(
-		[h.Key(entry.id), ...(isExpanded ? [h.Class("bg-surface-faint")] : [])],
+		[h.Key(entry.id), h.Id(entryRowId(entry.id)), ...(isExpanded ? [h.Class("bg-surface-faint")] : [])],
 		[
 			hstack(
 				h,
 				{
 					align: "center",
 					wrap: true,
-					className:
-						"hover:bg-surface-sunken active:bg-surface-sunken relative w-full gap-x-3 gap-y-1 px-4 py-2.5 @md:flex-nowrap",
+					className: cn(
+						"hover:bg-surface-sunken active:bg-surface-sunken relative w-full gap-x-3 gap-y-1 border-l-2 py-2.5 pr-4 pl-3.5 @md:flex-nowrap",
+						// A refused attempt is the entry worth spotting while scrolling.
+						isDenied ? "border-l-severity-error" : "border-l-transparent",
+					),
 				},
 				[
 					pressable(
@@ -350,28 +538,53 @@ const auditRow = (h: H, model: Model, entry: V2AuditLogEntry, inputs: ViewInputs
 							}),
 						],
 					),
-					actorCell(h, entry),
+					actorCell(h, model, entry),
 					h.div(
-						[h.Class(cn(COL.action, vstackClass({ shrink: true })))],
+						[h.Class(cn(COL.action, hstackClass({ gap: "2", align: "start" })))],
 						[
-							hstack(h, { gap: "1.5", shrink: true }, [
-								vstack(h, { shrink: true }, actionLabel(h, entry.action)),
-								...(isDenied ? [h.span([h.Class("@md:hidden")], [deniedBadge(h)])] : []),
+							// What kind of thing happened, readable before the label is.
+							icon(h, auditActionIcon(entry.action), {
+								size: 14,
+								className: cn(
+									"mt-px shrink-0",
+									isDenied ? "text-severity-error" : "text-foreground-subtle",
+								),
+							}),
+							vstack(h, { shrink: true }, [
+								hstack(h, { gap: "1.5", shrink: true }, [
+									vstack(
+										h,
+										{ shrink: true },
+										actionLabel(h, entry.action, isMixedView && isQuietAccess(entry)),
+									),
+									...(isDenied ? [h.span([h.Class("@md:hidden")], [deniedBadge(h)])] : []),
+								]),
+								...(isDenied && entry.denial_reason !== null
+									? [
+											truncatedText(h, {
+												text: entry.denial_reason,
+												className: typographyClass({ size: "2xs", tone: "muted" }),
+											}),
+										]
+									: []),
 							]),
-							...(isDenied && entry.denial_reason !== null
-								? [
-										truncatedText(h, {
-											text: entry.denial_reason,
-											className: typographyClass({ size: "2xs", tone: "muted" }),
-										}),
-									]
-								: []),
 						],
 					),
-					h.div([h.Class(COL.resource)], [resourceCell(h, entry)]),
+					h.div([h.Class(COL.resource)], [resourceCell(h, model, entry)]),
+					// Quiet: most rows share one source, and a box on each would outweigh the action.
 					h.span(
 						[h.Class(COL.source)],
-						[badge(h, { variant: "outline", size: "sm" }, [SOURCE_LABELS[entry.source]])],
+						[
+							hstack(h, { gap: "1.5", align: "center", as: "span" }, [
+								icon(h, SOURCE_ICONS[entry.source], {
+									size: 12,
+									className: "text-foreground-subtle shrink-0",
+								}),
+								typography(h, { size: "xs", tone: "muted", truncate: true }, [
+									SOURCE_LABELS[entry.source],
+								]),
+							]),
+						],
 					),
 					h.span([h.Class(COL.outcome)], isDenied ? [deniedBadge(h)] : []),
 				],
@@ -413,7 +626,7 @@ const listBody = (h: H, model: Model, inputs: ViewInputs, isFiltered: boolean): 
 	if (view.entries.length === 0 && isFiltered)
 		return filteredEmpty(h, {
 			noun: "entries",
-			description: "Nothing recorded for this range, person, actor type and outcome.",
+			description: "Nothing recorded matches these filters.",
 			onClear: Message.ClickedClearFilters(),
 			className: "py-8",
 		})
@@ -433,18 +646,122 @@ const listBody = (h: H, model: Model, inputs: ViewInputs, isFiltered: boolean): 
 		)
 	return h.div(
 		[h.Class("divide-border divide-y")],
-		[headerRow(h), ...Arr.map(view.entries, (entry) => auditRow(h, model, entry, inputs))],
+		[headerRow(h), ...withDayHeadings(h, model, view.entries, inputs)],
 	)
 }
+
+/** The rows with a heading wherever the day changes ("Today", "Yesterday", "Mon 2 Nov"). */
+const withDayHeadings = (
+	h: H,
+	model: Model,
+	entries: ReadonlyArray<V2AuditLogEntry>,
+	inputs: ViewInputs,
+): ReadonlyArray<Html> => {
+	const clock = { nowMs: inputs.nowMs, timeZone: inputs.timeZone }
+	const atMs = (entry: V2AuditLogEntry) => DateTime.toEpochMillis(DateTime.makeUnsafe(entry.occurred_at))
+	return Arr.flatMap(entries, (entry, index) => {
+		const day = dayKey(atMs(entry), inputs.timeZone)
+		const previous = index === 0 ? undefined : entries[index - 1]
+		const isNewDay = previous === undefined || dayKey(atMs(previous), inputs.timeZone) !== day
+		return [
+			...(isNewDay
+				? [
+						h.div(
+							[
+								h.Key(`day-${day}`),
+								h.Class("bg-surface-faint px-4 py-1.5"),
+								h.Role("heading"),
+								h.AriaLevel(3),
+							],
+							[
+								// The gap the time column has, so the day sits above the times.
+								eyebrow(h, { variant: "mono", icon: "CalendarIcon", className: "gap-2" }, [
+									dayLabel(atMs(entry), clock),
+								]),
+							],
+						),
+					]
+				: []),
+			auditRow(h, model, entry, inputs),
+		]
+	})
+}
+
+/** Filters that have no control of their own, shown as removable chips (a looked-up id, an action). */
+const filterChips = (h: H, model: Model, filters: AuditLogFilters): ReadonlyArray<Html> => {
+	const memberName = (userId: string) =>
+		Option.match(
+			Arr.findFirst(model.members, (member) => member.value === userId),
+			{ onNone: () => userId, onSome: (member) => member.label },
+		)
+	const chips: ReadonlyArray<{ key: string; label: string } | null> = [
+		filters.resourceId === undefined
+			? null
+			: { key: "resourceId", label: `Resource ${filters.resourceId}` },
+		filters.requestId === undefined ? null : { key: "requestId", label: `Request ${filters.requestId}` },
+		// With a resource type picked, the action has its own select.
+		filters.action === undefined || filters.resourceType !== undefined
+			? null
+			: { key: "action", label: auditActionLabel(filters.action) ?? filters.action },
+		filters.affectedUserId === undefined || model.members.length > 0
+			? null
+			: { key: "affectedUserId", label: `Affected ${memberName(filters.affectedUserId)}` },
+	]
+	return Arr.flatMap(chips, (chip) =>
+		chip === null
+			? []
+			: [
+					removableChip(h, {
+						label: chip.label,
+						onRemove: Message.RemovedFilter({ key: chip.key }),
+						attributes: [h.Key(chip.key)],
+					}),
+				],
+	)
+}
+
+const lookupField = (h: H, model: Model): ReadonlyArray<Html> => [
+	compactSearchInput(h, {
+		value: model.lookup,
+		placeholder: "Paste an ID or action, then Enter",
+		ariaLabel: "Look up an ID or action",
+		onInput: (value) => Message.ChangedLookup({ value }),
+		onEnter: Message.SubmittedLookup(),
+		onClear: Message.ClearedLookup(),
+		clearLabel: "Clear lookup",
+		className: "h-7 w-full",
+	}),
+	...(model.isLookupUnknown
+		? [
+				hstack(h, { gap: "1.5", align: "start", attributes: [h.Role("status")] }, [
+					icon(h, "CircleInfoIcon", {
+						size: 12,
+						className: "text-muted-foreground mt-0.5 shrink-0",
+					}),
+					typography(h, { size: "2xs", tone: "muted" }, [
+						"Not something the log filters by. Paste a user, API key, agent, resource or request ID, or an action like dashboard.updated.",
+					]),
+				]),
+			]
+		: []),
+]
+
+const KIND_DESCRIPTIONS = {
+	changes: "Changes and refused attempts. Data reads are under Data access.",
+	access: "Telemetry and replay reads, MCP tool calls, SQL and API requests.",
+	all: "Every entry, changes and data access together.",
+} as const
 
 export const description =
 	"Every change, refused attempt and data read from the dashboard, API, MCP and chat. Select an entry for its full record."
 
 export const view = Submodel.defineView<Model, Message, ViewInputs>((model, inputs, h) => {
 	const filters = parseAuditLogSearch(inputs.search)
+	const kind = auditLogKindOf(filters)
 	const isFailed = model.failure !== null
 	const isWaiting = model.isWaiting && !model.isQuiet
 	const view = model.view
+	const chips = filterChips(h, model, filters)
 	return settingsSection(
 		h,
 		{
@@ -454,10 +771,24 @@ export const view = Submodel.defineView<Model, Message, ViewInputs>((model, inpu
 			framed: false,
 		},
 		[
-			vstack(h, { gap: "2" }, [
-				hstack(h, { gap: "2", wrap: true }, [
-					dateRange(h, model, filters.range, inputs.timeZone),
-					personFilter(h, model, filters.actorId, inputs.apiKeys),
+			vstack(h, { gap: "3", className: "@container" }, [
+				hstack(h, { gap: "3", wrap: true, align: "center", justify: "between" }, [
+					segmentedSelect(h, {
+						size: "sm",
+						ariaLabel: "Show",
+						value: kind,
+						onChange: (value) => Message.ClickedKind({ value }),
+						options: withGlyphs(h, KIND_OPTIONS),
+					}),
+					// Takes the width between the switch and Reload, and shortens before it moves either.
+					truncatedText(h, {
+						text: KIND_DESCRIPTIONS[kind],
+						tooltip: "overflow",
+						className: cn(
+							"hidden min-w-0 flex-1 @2xl:block",
+							typographyClass({ size: "xs", tone: "muted" }),
+						),
+					}),
 					// The labelled Reload every page header uses, beside the range it re-reads.
 					refreshButton(h, {
 						label: "Reload",
@@ -465,22 +796,76 @@ export const view = Submodel.defineView<Model, Message, ViewInputs>((model, inpu
 						onRefresh: Message.ClickedRefresh(),
 					}),
 				]),
-				hstack(h, { gap: "3", wrap: true }, [
-					segmentedSelect(h, {
-						size: "sm",
-						ariaLabel: "Actor type",
-						value: filters.actorType ?? "all",
-						onChange: (value) => Message.ClickedActorType({ value }),
-						options: ACTOR_FILTERS,
+				hstack(h, { gap: "2", wrap: true, align: "center" }, [
+					dateRange(h, model, filters.range, inputs.timeZone),
+					personFilter(h, model, filters.actorId, inputs.apiKeys),
+					filterSelect(h, {
+						slotId: "audit-resource-type",
+						model: model.resourceTypeSelect,
+						value: filters.resourceType,
+						anyLabel: "Any resource",
+						ariaLabel: "Resource type",
+						icon: "CubeIcon",
+						items: RESOURCE_TYPE_ITEMS,
+						toMessage: (message) => Message.GotResourceTypeSelectMessage({ message }),
 					}),
-					segmentedSelect(h, {
-						size: "sm",
-						ariaLabel: "Outcome",
-						value: filters.outcome ?? "all",
-						onChange: (value) => Message.ClickedOutcome({ value }),
-						options: OUTCOME_FILTERS,
-					}),
+					...(filters.resourceType === undefined
+						? []
+						: [
+								filterSelect(h, {
+									slotId: "audit-action",
+									model: model.actionSelect,
+									value: filters.action,
+									anyLabel: "Any action",
+									ariaLabel: "Action",
+									icon: ACTION_ICON,
+									items: actionItems(filters.resourceType),
+									toMessage: (message) => Message.GotActionSelectMessage({ message }),
+								}),
+							]),
+					...(model.members.length === 0
+						? []
+						: [
+								filterSelect(h, {
+									slotId: "audit-affected",
+									model: model.affectedSelect,
+									value: filters.affectedUserId,
+									anyLabel: "Any affected user",
+									ariaLabel: "Affected user",
+									icon: "IdBadgeIcon",
+									items: model.members,
+									toMessage: (message) => Message.GotAffectedSelectMessage({ message }),
+								}),
+							]),
 				]),
+				// Top-aligned: the lookup's hint grows downward without dragging the filters with it.
+				hstack(h, { gap: "3", wrap: true, align: "start", justify: "between" }, [
+					hstack(h, { gap: "3", wrap: true, className: "min-w-0 max-w-full" }, [
+						segmentedSelect(h, {
+							size: "sm",
+							ariaLabel: "Actor type",
+							// Five options outgrow a phone; the group scrolls instead of the page.
+							className: "max-w-full overflow-x-auto",
+							value: filters.actorType ?? "all",
+							onChange: (value) => Message.ClickedActorType({ value }),
+							options: withGlyphs(h, ACTOR_FILTERS),
+						}),
+						segmentedSelect(h, {
+							size: "sm",
+							ariaLabel: "Outcome",
+							value: filters.outcome ?? "all",
+							onChange: (value) => Message.ClickedOutcome({ value }),
+							options: withGlyphs(h, OUTCOME_FILTERS),
+						}),
+					]),
+					// Takes what the filters beside it leave, and its own row once that is too little to type in.
+					vstack(
+						h,
+						{ gap: "1", className: "min-w-0 grow basis-full @lg:max-w-72 @lg:basis-56" },
+						lookupField(h, model),
+					),
+				]),
+				...(chips.length === 0 ? [] : [hstack(h, { gap: "1.5", wrap: true }, chips)]),
 			]),
 			panel(
 				h,

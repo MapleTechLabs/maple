@@ -10,6 +10,7 @@ import { type ClientReplayConfig, startClientSession } from "./replay-loader.js"
 import { withSessionLink } from "./session-link.js"
 import { type IdentifyInput, type PrivacyOptions, type TrackProps, track as trackEvent } from "./track.js"
 import { clearIdentity as clearIdentityUser, identify as identifyUser } from "./user.js"
+import { CLIENT_SDK_HINT } from "../version.js"
 
 export interface MapleClientConfig extends MapleSpanOptions {
 	/** The service name reported in traces, logs, and metrics. */
@@ -133,7 +134,11 @@ export const layer = (config: MapleClientConfig) => {
 			serviceVersion: config.serviceVersion,
 			attributes,
 		},
-		headers: config.ingestKey ? { Authorization: `Bearer ${config.ingestKey}` } : undefined,
+		headers: {
+			// A page cannot set `user-agent`; ingest reads the SDK and its version from this.
+			"x-maple-sdk": CLIENT_SDK_HINT,
+			...(config.ingestKey ? { Authorization: `Bearer ${config.ingestKey}` } : undefined),
+		},
 		maxBatchSize: config.maxBatchSize,
 		loggerExportInterval: config.loggerExportInterval,
 		metricsExportInterval: config.metricsExportInterval,
