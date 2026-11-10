@@ -166,12 +166,17 @@ const notifyNamesOf = (model: Model): NotifyNames => {
 	}
 }
 
+// A card of short fields stops near 768px, so nothing stretches across the page.
+const SHORT_FIELDS = "max-w-3xl"
+
 type CardSpec = Readonly<{
 	card: RuleCard
 	lead: string
 	hint?: string | undefined
 	summary: string
-	body: () => Html
+	/** The open card's body: a width cap for a card of short fields. */
+	bodyClassName?: string | undefined
+	body: () => ReadonlyArray<Html>
 }>
 
 const ruleCard = (
@@ -195,8 +200,9 @@ const ruleCard = (
 			isExpanded: model.expandedCards.includes(spec.card),
 			onExpand: Message.ClickedExpandCard({ card: spec.card }),
 			onCollapse: Message.ClickedCollapseCard({ card: spec.card }),
+			...(spec.bodyClassName === undefined ? undefined : { bodyClassName: spec.bodyClassName }),
 		},
-		() => [spec.body()],
+		spec.body,
 	)
 }
 
@@ -211,11 +217,8 @@ const surface = (h: H, model: Model, form: RuleForm, timeZone: string): Readonly
 		lead: "Alert when",
 		hint: "The dashed line on the chart is your threshold.",
 		summary: conditionSummary(form),
-		body: () =>
-			h.div(
-				[h.Class("space-y-4")],
-				[conditionFields(h, model, evaluated), noiseSection(h, model, evaluated)],
-			),
+		bodyClassName: SHORT_FIELDS,
+		body: () => [conditionFields(h, model, evaluated), noiseSection(h, model, evaluated)],
 	}
 	const cards: ReadonlyArray<CardSpec> = [
 		{
@@ -225,20 +228,22 @@ const surface = (h: H, model: Model, form: RuleForm, timeZone: string): Readonly
 				? "Which anomalies this rule pages on."
 				: "A built-in signal, or a query built like a dashboard widget.",
 			summary: watchSummary(form, isDefault),
-			body: () => querySection(h, model, evaluated),
+			body: () => [querySection(h, model, evaluated)],
 		},
 		...(isAnomaly ? [] : [condition]),
 		{
 			card: "notify",
 			lead: "Notify",
 			summary: notifySummary(form, notifyNamesOf(model)),
-			body: () => notificationsSection(h, model, form),
+			bodyClassName: SHORT_FIELDS,
+			body: () => [notificationsSection(h, model, form)],
 		},
 		{
 			card: "name",
 			lead: "Name",
 			summary: nameSummary(form),
-			body: () => detailsSection(h, model, form),
+			bodyClassName: SHORT_FIELDS,
+			body: () => [detailsSection(h, model, form)],
 		},
 	]
 	return [

@@ -29,7 +29,8 @@ export const cardsOf = (form: RuleForm): ReadonlyArray<RuleCard> =>
 const WATCH_ISSUES = new Set(["SQL query", "$__orgFilter in SQL", "SQL value column", "Scope"])
 const NOTIFY_ISSUES = new Set(["Who gets notified", "Critical destinations"])
 
-const cardOfIssue = (issue: string): RuleCard =>
+/** The card an issue is fixed on. */
+export const cardOfIssue = (issue: string): RuleCard =>
 	issue === "Rule name"
 		? "name"
 		: NOTIFY_ISSUES.has(issue)
@@ -37,6 +38,54 @@ const cardOfIssue = (issue: string): RuleCard =>
 			: WATCH_ISSUES.has(issue) || Str.startsWith("Query:")(issue)
 				? "watch"
 				: "condition"
+
+// Each issue's control, by element id. A query that does not compile has no one field.
+const ISSUE_FIELDS = new Map<string, string>([
+	["Rule name", "rule-name"],
+	["Threshold", "rule-threshold"],
+	["Upper threshold", "rule-threshold-upper"],
+	["Recovery value", "rule-recovery"],
+	["Critical threshold", "rule-critical-threshold"],
+	["Critical threshold past warning", "rule-critical-threshold"],
+	["Critical recovery past warning", "rule-critical-recovery"],
+	["Critical recovery value", "rule-critical-recovery"],
+	["Window", "rule-window-minutes"],
+	["Checks to fire", "rule-consecutive-breaches"],
+	["Breach window", "rule-breaches-out-of"],
+	["Min samples", "rule-minimum-samples"],
+	["Checks to resolve", "rule-consecutive-healthy"],
+	["Remind interval", "rule-renotify"],
+	["Check interval longer than the window", "rule-interval-trigger"],
+	["Query too slow for this check interval", "rule-interval-trigger"],
+	["SQL query", "alert-rule-sql"],
+	["$__orgFilter in SQL", "alert-rule-sql"],
+	["SQL value column", "alert-rule-sql"],
+	["Scope", "rule-services-input"],
+	["Who gets notified", "rule-chain-warning-trigger"],
+	["Critical destinations", "rule-chain-critical-trigger"],
+])
+
+/** The control that fixes an issue, by element id; `null` when the card itself is the best target. */
+export const issueFieldId = (issue: string): string | null => ISSUE_FIELDS.get(issue) ?? null
+
+/**
+ * The fields that show their error: one with an issue, once the user left it or tried to save.
+ * A pristine form shows none, only the card's "Missing" note.
+ */
+export const revealedInvalidFields = (
+	issues: ReadonlyArray<string>,
+	touchedFields: ReadonlyArray<string>,
+	hasAttemptedSave: boolean,
+): ReadonlyArray<string> =>
+	Arr.dedupe(
+		Arr.filter(
+			Arr.flatMap(issues, (issue) => {
+				const id = issueFieldId(issue)
+				return id === null ? [] : [id]
+			}),
+			(id) => hasAttemptedSave || touchedFields.includes(id),
+		),
+	)
 
 /**
  * What blocks saving on one card: the action bar's own list (`saveIssues`), so a closed card never

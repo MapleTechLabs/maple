@@ -124,6 +124,12 @@ export const Model = Schema.Struct({
 	isNotesOpen: Schema.Boolean,
 	/** The sentence cards opened for editing; a card with something missing is open regardless. */
 	expandedCards: Schema.Array(RuleCard),
+	/** "Out of the last N" was picked for the breach count: its field stays while N is retyped. */
+	isBreachWindowOpen: Schema.Boolean,
+	/** Save was pressed with something missing: every field then shows its error. */
+	hasAttemptedSave: Schema.Boolean,
+	/** The controls the user has left (by element id): each shows its error from then on. */
+	touchedFields: Schema.Array(Schema.String),
 	/** Tags already in use across the org's rules, sorted; kept by reference while they stay the same. */
 	tagSuggestions: Schema.Array(Schema.String),
 	isSqlCollapsed: Schema.Boolean,

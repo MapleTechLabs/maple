@@ -1,24 +1,32 @@
 import { OrgId } from "@maple/domain"
 import { AlertRulePreviewResponse } from "@maple/domain/http"
 import { Result, Schema, Array as Arr } from "effect"
+import * as Animation from "@foldkit/ui/animation"
 import {
+	all,
 	click,
 	Command,
 	expect as expectView,
+	expectAll,
 	given,
+	keydown,
 	Mount,
 	role,
 	scene,
+	selector,
 	text,
 	type,
 	withViewInputs,
 } from "foldkit/scene"
 import { describe, expect, test } from "vitest"
 import { ResolveThemeColors, ThemeMessage } from "@maple/views/charts/theme-colors"
+import * as Dialog from "@maple/views/ui/dialog"
 import type { PageContext } from "../../contract"
 import { scopedAnomalyRuleRow } from "../shared/anomaly-test-fixtures"
 import { destinationRow, NOW, ORG, ruleId, ruleRow } from "../shared/test-rows"
+import * as Select from "@maple/views/ui/select"
 import { FocusRuleCard } from "./command"
+import { BREACH_MODE_SELECT_ID } from "./form-steps"
 import { init } from "./init"
 import { Message } from "./message"
 import type { Model } from "./model"
@@ -137,6 +145,182 @@ describe("alert rule editor, sentence cards", () => {
 			).toExist(),
 			expectView(text("Alert when")).not.toExist(),
 		)
+	})
+
+	test("the action bar says one thing: no changes, ready, or what to fix", () => {
+		const saved = opened({ ruleId: ruleId(2) })
+		scene(
+			{ update: pageUpdate, view },
+			given(saved),
+			themeResolved(),
+			expectView(text("No changes")).toExist(),
+			expectView(text("Ready to save")).not.toExist(),
+			expectView(role("button", { name: "Save changes" })).toBeDisabled(),
+		)
+		const edited = run(saved, [Message.ChangedField({ field: "threshold", value: "900" })])
+		scene(
+			{ update: pageUpdate, view },
+			given(edited),
+			themeResolved(),
+			expectView(text("Ready to save")).toExist(),
+			expectView(text("No changes")).not.toExist(),
+			expectView(text("1 unsaved change")).toExist(),
+			expectView(role("button", { name: "Save changes" })).toBeEnabled(),
+		)
+		scene(
+			{ update: pageUpdate, view },
+			given(run(edited, [Message.ChangedField({ field: "name", value: "" })])),
+			themeResolved(),
+			expectView(text("Fix before saving:")).toExist(),
+			expectView(text("Ready to save")).not.toExist(),
+			expectView(role("button", { name: "Rule name" })).toExist(),
+		)
+	})
+
+	test("a thing to fix in the action bar opens its card and focuses its field", () => {
+		const blank = run(opened({ ruleId: ruleId(2) }), [
+			Message.ChangedField({ field: "threshold", value: "" }),
+			Message.ClickedCollapseCard({ card: "name" }),
+		])
+		scene(
+			{ update: pageUpdate, view },
+			given(blank),
+			themeResolved(),
+			expectView(role("textbox", { name: "Rule name" })).not.toExist(),
+			click(role("button", { name: "Threshold" })),
+			Command.expectHas(FocusRuleCard({ id: "rule-threshold" })),
+			Command.resolve(FocusRuleCard, Message.CompletedFocusCard()),
+			// The field it lands on now shows its error.
+			expectView(selector("#rule-threshold")).toHaveAttr("aria-invalid", "true"),
+		)
+		// An issue on a closed card opens the card first.
+		const next = pageUpdate(opened({ ruleId: ruleId(2) }), Message.ClickedIssue({ issue: "Rule name" }))
+		expect(next.model.expandedCards).toContain("name")
+		expect(Arr.map(next.commands ?? [], ({ name }) => name)).toEqual(["FocusAlertRuleCard"])
+	})
+
+	test("a pristine form shows no red errors until a field is left or save is pressed", () => {
+		// A new rule in an org with no destination: Notify and Name are missing from the start.
+		const pristine = run(
+			init({ _tag: "AlertsCreate", search: { template: "slow_p95" } }, context).model,
+			[
+				Message.GeneratedDraftId({ id: "6f1c2e3a-0000-4000-8000-000000000001" }),
+				Message.CompletedReadClock({ nowMs: NOW }),
+				Message.UpdatedDestinations({ orgId: ORG, rows: [] }),
+				Message.UpdatedRules({ orgId: ORG, rows: [] }),
+				Message.ChangedField({ field: "name", value: "" }),
+			],
+		)
+		const routeError = text("Pick a destination or an escalation chain")
+		scene(
+			{ update: pageUpdate, view },
+			given(pristine),
+			themeResolved(),
+			expectView(text("Missing: Who gets notified")).toExist(),
+			expectView(text("Missing: Rule name")).toExist(),
+			expectAll(all.selector('[aria-invalid="true"]')).toHaveCount(0),
+			expectView(routeError).not.toExist(),
+		)
+		scene(
+			{ update: pageUpdate, view },
+			// Leaving the empty name shows its error, and only its own.
+			given(run(pristine, [Message.BlurredField({ id: "rule-name" })])),
+			themeResolved(),
+			expectView(role("textbox", { name: "Rule name" })).toHaveAttr("aria-invalid", "true"),
+			expectView(routeError).not.toExist(),
+			// Pressing save shows the rest, and lands on the first thing to fix.
+			click(role("button", { name: "Create rule" })),
+			Command.expectHas(FocusRuleCard({ id: "rule-name" })),
+			Command.resolve(FocusRuleCard, Message.CompletedFocusCard()),
+			expectView(routeError).toExist(),
+		)
+	})
+
+	test("Escape inside an open, complete card collapses it and returns focus to its summary", () => {
+		scene(
+			{ update: pageUpdate, view },
+			given(opened({ ruleId: ruleId(2) })),
+			themeResolved(),
+			click(summary("When", "P95 latency on payment-svc in production")),
+			Command.resolve(FocusRuleCard, Message.CompletedFocusCard()),
+			keydown(role("region", { name: "When" }), "Escape"),
+			Command.expectHas(FocusRuleCard({ id: "sentence-card-watch-summary" })),
+			Command.resolve(FocusRuleCard, Message.CompletedFocusCard()),
+			expectView(summary("When", "P95 latency on payment-svc in production")).toExist(),
+			expectView(queryMode).not.toExist(),
+		)
+		// A card with something missing has nothing to collapse to: Escape is not handled.
+		scene(
+			{ update: pageUpdate, view },
+			given(opened({ ruleId: ruleId(2) }, [ruleRow(2, { name: "" })])),
+			themeResolved(),
+			expectView(role("region", { name: "Name" })).not.toHaveHandler("keydown"),
+			expectView(role("button", { name: "Done" })).not.toExist(),
+		)
+	})
+
+	test("Start blank closes the templates dialog and unmounts it, leaving nothing over the form", () => {
+		const fresh = run(init({ _tag: "AlertsCreate", search: {} }, context).model, [
+			Message.GeneratedDraftId({ id: "6f1c2e3a-0000-4000-8000-000000000001" }),
+			Message.CompletedReadClock({ nowMs: NOW }),
+		])
+		expect(fresh.templates.isOpen).toBe(true)
+		scene(
+			{ update: pageUpdate, view },
+			given(fresh),
+			themeResolved(),
+			Mount.resolve(Dialog.MountDialog, Dialog.Message.CompletedMountDialog()),
+			expectView(role("dialog")).toExist(),
+			click(role("button", { name: /^Start blank/ })),
+			// The exit transition settles, then the dialog leaves the tree.
+			Command.resolve(
+				Animation.WaitForPaint,
+				Animation.Message.CompletedWaitForPaint({ generation: 2 }),
+			),
+			Command.resolve(
+				Dialog.WaitForDialogTransition,
+				Dialog.Message.GotAnimationMessage({
+					message: Animation.Message.EndedAnimation({ generation: 2 }),
+				}),
+			),
+			Mount.expectEnded(Dialog.MountDialog),
+			expectView(role("dialog")).not.toExist(),
+			expectView(text("Start with a template")).not.toExist(),
+		)
+	})
+
+	test("breaches count in a row, or out of the last N once that is picked", () => {
+		const draft = opened({ template: "slow_p95" })
+		const pick = (value: string) =>
+			Message.GotSelectMessage({
+				id: BREACH_MODE_SELECT_ID,
+				message: Select.Message.SelectedItem({ index: 0, value }),
+			})
+		const mode = role("combobox", { name: "How breaches are counted" })
+		scene(
+			{ update: pageUpdate, view },
+			given(draft),
+			themeResolved(),
+			expectView(mode).toContainText("in a row"),
+			expectView(selector("#rule-breaches-out-of")).not.toExist(),
+		)
+		const windowed = run(draft, [pick("window")])
+		scene(
+			{ update: pageUpdate, view },
+			given(windowed),
+			themeResolved(),
+			expectView(mode).toContainText("out of the last"),
+			expectView(selector("#rule-breaches-out-of")).toHaveValue(windowed.form?.breachesOutOf ?? ""),
+		)
+		// Retyping N passes through empty: the field stays until "in a row" is picked.
+		const emptied = run(windowed, [Message.ChangedField({ field: "breachesOutOf", value: "" })])
+		scene(
+			{ update: pageUpdate, view },
+			given(emptied),
+			themeResolved(),
+			expectView(selector("#rule-breaches-out-of")).toExist(),
+		)
+		expect(run(emptied, [pick("row")]).isBreachWindowOpen).toBe(false)
 	})
 
 	test("a SQL rule whose timing lands too slow opens Alert when with the blocker", () => {

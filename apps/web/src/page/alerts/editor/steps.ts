@@ -3,7 +3,8 @@ import * as Dialog from "@maple/views/ui/dialog"
 import type { PageContext, PageReturn } from "../../contract"
 import { editingRuleOf, initialization } from "./draft"
 import type { RuleForm } from "./form"
-import { Message } from "./message"
+import * as F from "./form-steps"
+import { Message, type SignalKind } from "./message"
 import type { Model } from "./model"
 import { applyDefaultDestination, planMetrics, planPreviews } from "./plan"
 import { isProtectedDefault } from "./derive"
@@ -59,6 +60,10 @@ export const initialize = (model: Model, context: PageContext): Return => {
 }
 
 /** An edit to the draft; the preview follows it (`useDeferredValue` over the form). */
+/** Marks a control as left (by element id), so it shows its error from now on. */
+export const touched = (model: Model, id: string): Model =>
+	model.touchedFields.includes(id) ? model : { ...model, touchedFields: [...model.touchedFields, id] }
+
 /** Opens every card with a save blocker; it stays open once fixed, so it never closes under the cursor. */
 export const withMissingCardsOpen = (model: Model): Model =>
 	model.form === null
@@ -87,4 +92,25 @@ export const followRows = (model: Model, context: PageContext): Return => {
 	)
 		return { model: { ...model, form: null, status: "Unreadable" } }
 	return { model: applyDefaultDestination(model) }
+}
+
+/** The mode switch: the filters carry over, and a destination the editor chose leaves an anomaly rule. */
+export const switchKindStep = (model: Model, context: PageContext, kind: SignalKind): Return => {
+	if (model.form === null || isProtectedDefault(model)) return { model }
+	const moved = F.switchKind(model.form, kind)
+	// Anomaly paging is opt-in: a destination the editor chose, not the user, does not carry over.
+	const auto = model.autoDestinationId
+	const form =
+		kind === "anomaly" && auto !== null
+			? F.updateTierIds(
+					F.updateTierIds(moved.form, "warning", F.removeId(auto)),
+					"critical",
+					F.removeId(auto),
+				)
+			: moved.form
+	return editForm(
+		{ ...model, kindNotice: moved.notice, autoDestinationId: kind === "anomaly" ? null : auto },
+		context,
+		() => form,
+	)
 }

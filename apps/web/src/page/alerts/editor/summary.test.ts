@@ -3,15 +3,19 @@ import { anomalyRuleForm, defaultRuleForm } from "@maple/web-data/alerts/form-ut
 import { Schema } from "effect"
 import { describe, expect, it } from "vitest"
 import { fromFormState, type RuleForm } from "./form"
+import { setBreachMode } from "./form-steps"
 import {
 	cardIssues,
+	cardOfIssue,
 	cardsOf,
 	conditionSummary,
+	issueFieldId,
 	missingCards,
 	nameSummary,
 	notifySummary,
 	type NameLookup,
 	type NotifyNames,
+	revealedInvalidFields,
 	watchSummary,
 } from "./summary"
 
@@ -219,6 +223,40 @@ describe("nameSummary", () => {
 			"Checkout errors · checkout and tier-1",
 		)
 		expect(nameSummary(form({ name: "  " }))).toBe("Unnamed rule")
+	})
+})
+
+describe("field errors", () => {
+	it("points each issue at the control that fixes it", () => {
+		expect(issueFieldId("Threshold")).toBe("rule-threshold")
+		expect(issueFieldId("Critical threshold past warning")).toBe("rule-critical-threshold")
+		expect(issueFieldId("Query too slow for this check interval")).toBe("rule-interval-trigger")
+		expect(issueFieldId("Who gets notified")).toBe("rule-chain-warning-trigger")
+		// A query that does not compile has no one field: its card's heading is the target.
+		expect(issueFieldId("Query: pick a metric")).toBeNull()
+		expect(cardOfIssue("Query: pick a metric")).toBe("watch")
+	})
+
+	it("shows no field error on a pristine form, one a left field has, and all after a save attempt", () => {
+		const issues = ["Rule name", "Threshold", "Who gets notified"]
+		expect(revealedInvalidFields(issues, [], false)).toEqual([])
+		expect(revealedInvalidFields(issues, ["rule-threshold", "rule-window-minutes"], false)).toEqual([
+			"rule-threshold",
+		])
+		expect(revealedInvalidFields(issues, [], true)).toEqual([
+			"rule-name",
+			"rule-threshold",
+			"rule-chain-warning-trigger",
+		])
+	})
+})
+
+describe("setBreachMode", () => {
+	it("starts the window two past the breaches to fire, keeps one already typed, and clears it in a row", () => {
+		expect(setBreachMode(form({ consecutiveBreachesRequired: "3" }), "window").breachesOutOf).toBe("5")
+		expect(setBreachMode(form({ consecutiveBreachesRequired: "" }), "window").breachesOutOf).toBe("5")
+		expect(setBreachMode(form({ breachesOutOf: "8" }), "window").breachesOutOf).toBe("8")
+		expect(setBreachMode(form({ breachesOutOf: "8" }), "row").breachesOutOf).toBe("")
 	})
 })
 

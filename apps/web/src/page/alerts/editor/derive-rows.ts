@@ -12,7 +12,9 @@ import { AsyncData } from "foldkit"
 import { lookupField } from "../../kit/autocomplete-lookups"
 import { previewIssue, previewPayload, previewStateOf, type PreviewState } from "../shared/preview"
 import { isoMs } from "../shared/time"
+import { isProtectedDefault, saveIssues } from "./derive"
 import type { RuleForm } from "./form"
+import { revealedInvalidFields } from "./summary"
 import type { Model, TraceFacets } from "./model"
 import { Array as Arr } from "effect"
 
@@ -89,8 +91,10 @@ export const windowMsOf = (model: Pick<Model, "previewWindow">): { min: number; 
 				max: isoMs(normalizeTimestampInput(model.previewWindow.endTime)),
 			}
 
-const hasPayload = (model: Pick<Model, "previewWindow">, form: RuleForm): boolean =>
+/** Whether the draft can be previewed at all: a window, and a query the preview can run. */
+export const hasPreviewPayload = (model: Pick<Model, "previewWindow">, form: RuleForm): boolean =>
 	model.previewWindow !== null && previewPayload(form, model.previewWindow)._tag === "Some"
+const hasPayload = hasPreviewPayload
 
 /** The timing of the draft's own preview: none while a new one loads, so nothing gates on an older query. */
 export const draftTimingOf = (
@@ -113,3 +117,23 @@ export const draftPreviewOf = (
 	model: Pick<Model, "preview" | "previewWindow">,
 	form: RuleForm,
 ): PreviewState => previewStateOf(model.preview, hasPayload(model, form), previewIssue(form))
+
+/**
+ * The fields that show their error (by element id), as one string: a `createLazy` slot compares it
+ * by value. Empty on a pristine form.
+ */
+export const invalidFieldsOf = (
+	model: Pick<
+		Model,
+		"preview" | "previewWindow" | "touchedFields" | "hasAttemptedSave" | "editingRuleId" | "savedForm"
+	>,
+	form: RuleForm,
+): string =>
+	Arr.join(
+		revealedInvalidFields(
+			saveIssues(form, draftTimingOf(model, form), isProtectedDefault(model)),
+			model.touchedFields,
+			model.hasAttemptedSave,
+		),
+		",",
+	)

@@ -107,7 +107,7 @@ export const Message = defineMessageUnion({
 	GotTimePickerMessage: { message: TimeRangePicker.Message },
 	ClickedSignalKind: { kind: SignalKind },
 	GotRadioMessage: {
-		group: Schema.Literals(["signal", "severity", "interval"]),
+		group: Schema.Literals(["signal", "severity"]),
 		message: RadioGroup.Message,
 	},
 	ClickedOpenInBuilder: {},
@@ -146,9 +146,13 @@ export const Message = defineMessageUnion({
 	ClickedAddNotes: {},
 	/** A closed sentence card's summary: opens the card for editing. */
 	ClickedExpandCard: { card: RuleCard },
-	/** An open card's Done: back to its summary. */
+	/** An open card's Done, or Escape inside it: back to its summary. */
 	ClickedCollapseCard: { card: RuleCard },
 	CompletedFocusCard: {},
+	/** A form control lost focus (by element id): its error may show from now on. */
+	BlurredField: { id: Schema.String },
+	/** One of the action bar's "Fix before saving" items: opens its card and focuses its field. */
+	ClickedIssue: { issue: Schema.String },
 	ToggledSqlCollapsed: {},
 	ClickedSqlToken: { token: Schema.String },
 	CompletedInsertSqlToken: { sql: Schema.String, caret: Schema.Number },

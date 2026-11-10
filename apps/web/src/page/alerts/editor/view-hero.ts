@@ -10,7 +10,7 @@ import {
 	focusPreviewOnClosestGroups,
 } from "@maple/web-data/alerts/preview-insights"
 import { cn } from "@maple/ui/lib/utils"
-import { Struct, Array as Arr } from "effect"
+import { Struct, Array as Arr, String as Str } from "effect"
 import { createLazy, type Html, type HtmlBuilder } from "foldkit/html"
 import { isChartRuntimeReady } from "@maple/views/charts/chart-runtime"
 import { button } from "@maple/views/ui/button"
@@ -24,7 +24,7 @@ import { alertStatusBadge } from "../shared/badges"
 import { previewStateOf } from "../shared/preview"
 import { ruleChart } from "../shared/rule-chart"
 import { conditionSubject, groupBySummary, previewIdentityKey } from "./derive"
-import { draftPreviewOf, windowMsOf } from "./derive-rows"
+import { draftPreviewOf, hasPreviewPayload, windowMsOf } from "./derive-rows"
 import type { RuleForm } from "./form"
 import { Message } from "./message"
 import type { DryRun, Model } from "./model"
@@ -156,13 +156,19 @@ const header = (h: H, model: HeaderView, form: RuleForm, timeZone: string): Html
 }
 
 /** The chart with the threshold and would-fire bands, and the notes under it. */
-type ChartView = Pick<Model, "preview" | "previewWindow" | "chart" | "themeColors" | "chartRuntime">
+type ChartView = Pick<
+	Model,
+	"preview" | "previewWindow" | "previewPreset" | "chart" | "themeColors" | "chartRuntime"
+>
 
 const chartBody = (h: H, model: ChartView, form: RuleForm, timeZone: string): Html => {
 	const preview = draftPreviewOf(model, form)
 	const thresholds = draftThresholds(form)
 	const focused = focusPreviewOnClosestGroups(preview.preview)
 	const isChartReady = model.themeColors !== null && isChartRuntimeReady(model.chartRuntime)
+	const range = Str.toLowerCase(presetLabel(model.previewPreset))
+	// No request to wait for: the rule has nothing previewable yet (no query, or a blank threshold).
+	const isIdle = !hasPreviewPayload(model, form)
 	return h.div(
 		[h.Class("space-y-2 px-4 pt-3 pb-4")],
 		[
@@ -180,7 +186,15 @@ const chartBody = (h: H, model: ChartView, form: RuleForm, timeZone: string): Ht
 				comparator: form.comparator,
 				signalType: displaySignalType(form),
 				window: windowMsOf(model),
-				isLoading: preview.isLoading || !isChartReady,
+				// With nothing to draw the text states need no chart runtime, so they never flash "Loading".
+				isLoading: preview.isLoading || (!isChartReady && preview.preview !== null),
+				loadingText: `Loading the ${range}…`,
+				emptyText: isIdle
+					? { title: `Pick a signal to preview it against the ${range}` }
+					: {
+							title: `No data for this signal in the ${range}`,
+							hint: "Pick another signal or widen the range",
+						},
 				error: preview.error,
 			}),
 			...(focused.hiddenGroupCount > 0
@@ -218,7 +232,7 @@ const impactOf = stableSlice((model: Model): ImpactView =>
 	]),
 )
 const chartOf = stableSlice((model: Model): ChartView =>
-	Struct.pick(model, ["preview", "previewWindow", "chart", "themeColors", "chartRuntime"]),
+	Struct.pick(model, ["preview", "previewWindow", "previewPreset", "chart", "themeColors", "chartRuntime"]),
 )
 
 /** Step 2's chart card; the comparison block joins it while editing with unsaved changes. */

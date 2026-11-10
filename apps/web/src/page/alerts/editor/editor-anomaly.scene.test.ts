@@ -56,6 +56,9 @@ const pickExisting = (tier: "warning" | "critical", id: string) =>
 		message: Menu.Message.ClickedItem({ index: 0, item: { kind: "Item", value: `existing:${id}` } }),
 	})
 
+const savesOf = (model: Model) =>
+	Arr.map(pageUpdate(model, Message.ClickedSave()).commands ?? [], ({ name }) => name)
+
 const DESCRIPTION = /^Pages when Maple detects unusual error rate, latency, throughput/
 const DEFAULT_NOTE = /^This is the default anomaly rule/
 
@@ -136,9 +139,9 @@ describe("alert rule editor: anomaly rules", () => {
 			{ update: pageUpdate, view },
 			given(unrouted),
 			themeResolved(),
-			expectView(text("Who gets notified")).toExist(),
-			expectView(role("button", { name: "Create rule" })).toBeDisabled(),
+			expectView(role("button", { name: "Who gets notified" })).toExist(),
 		)
+		expect(savesOf(unrouted)).not.toContain("SaveAlertRule")
 	})
 
 	test("editing a scoped anomaly rule opens on its scope and keeps the save unchanged", () => {
@@ -270,12 +273,12 @@ describe("alert rule editor: anomaly rules", () => {
 			given(unscoped),
 			themeResolved(),
 			expectView(text(/^Pick at least one service, environment or signal/)).toExist(),
-			expectView(role("button", { name: "Create rule" })).toBeDisabled(),
+			expectView(role("button", { name: "Scope" })).toExist(),
 			click(role("button", { name: "Throughput" })),
 			expectView(text(/^Pick at least one service, environment or signal/)).not.toExist(),
-			expectView(role("button", { name: "Create rule" })).not.toBeDisabled(),
+			expectView(text("Ready to save")).toExist(),
 		)
-		expect(pageUpdate(unscoped, Message.ClickedSave()).commands ?? []).toHaveLength(0)
+		expect(savesOf(unscoped)).not.toContain("SaveAlertRule")
 	})
 
 	test("an anomaly rule's name suggests what it covers", () => {
