@@ -165,8 +165,3 @@ const getQueryBuilderTimeseriesEffect = Effect.fn("QueryEngine.getQueryBuilderTi
 		diagnostics: outcome.diagnostics,
 	} satisfies QueryBuilderTimeseriesResponse
 })
-
-export const __testables = {
-	resolveStrategy,
-	emptyTimeseriesResponse,
-}
