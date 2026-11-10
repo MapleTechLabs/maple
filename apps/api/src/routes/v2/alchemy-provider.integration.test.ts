@@ -70,6 +70,7 @@ import { HttpV2ApiKeysLive } from "./api-keys.http"
 import { InvestigationService } from "@maple/backend/services/errors/InvestigationService"
 import { compiledQueryOf } from "@maple/query-engine/execution"
 import { InvestigationStarter } from "@maple/backend/services/errors/InvestigationStarter"
+import { SloReadService } from "@maple/backend/services/slos/SloReadService"
 
 const createdDbs: TestDb[] = []
 afterEach(() => cleanupTestDbs(createdDbs))
@@ -202,6 +203,7 @@ const makeHarness = () => {
 				UptimeAlertSource.layer.pipe(Layer.provide(testDb.layer)),
 				AnomalyAlertSource.layer.pipe(Layer.provide(testDb.layer)),
 				Layer.effect(SloAlertSource, SloAlertSource.make).pipe(
+					Layer.provide(Layer.effect(SloReadService, SloReadService.make)),
 					Layer.provide(Layer.mergeAll(testDb.layer, warehouseLive)),
 				),
 			),

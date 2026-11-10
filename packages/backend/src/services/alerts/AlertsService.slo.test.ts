@@ -25,6 +25,7 @@ import {
 	makeLayer,
 	alertServices,
 } from "./alerts-service-test-support"
+import { SloReadService } from "@maple/backend/services/slos/SloReadService"
 
 const trackedDbs: TestDb[] = []
 afterEach(() => cleanupTestDbs(trackedDbs))
@@ -70,6 +71,7 @@ const harness = (traffic: Traffic) => {
 	const testDb = createTestDb(trackedDbs)
 	const warehouse = sloWarehouse(traffic)
 	const slos = Layer.effect(SlosService, SlosService.make).pipe(
+		Layer.provide(Layer.effect(SloReadService, SloReadService.make)),
 		Layer.provide(Layer.mergeAll(testDb.layer, Layer.succeed(WarehouseQueryService, warehouse))),
 	)
 	return { testDb, layer: Layer.mergeAll(makeLayer(testDb, warehouse), slos) }

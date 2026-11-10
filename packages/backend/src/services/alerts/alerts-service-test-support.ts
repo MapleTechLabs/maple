@@ -62,6 +62,7 @@ import {
 import { makeWarehouseServiceStub } from "@maple/backend/testing/warehouse-test-support"
 import { ChatSessions, type ChatSessionsApi } from "@maple/backend/platform/bindings"
 import { InvestigationStarter } from "@maple/backend/services/errors/InvestigationStarter"
+import { SloReadService } from "@maple/backend/services/slos/SloReadService"
 
 export const getError = <A, E>(exit: Exit.Exit<A, E>): unknown => {
 	if (!Exit.isFailure(exit)) return undefined
@@ -358,6 +359,7 @@ export const makeLayer = (
 		),
 		Layer.provide(
 			Layer.effect(SloAlertSource, SloAlertSource.make).pipe(
+				Layer.provide(Layer.effect(SloReadService, SloReadService.make)),
 				Layer.provide(Layer.mergeAll(databaseLive, warehouseLive)),
 			),
 		),

@@ -11,6 +11,7 @@ import { McpToolExecutor } from "../dispatcher"
 import type { McpToolSurface } from "@maple/domain/mcp-manifest"
 import { EVAL_TENANT, FIXTURES, jsonDepth, MAX_STRUCTURED_OUTPUT_DEPTH } from "./utils"
 import type { TenantContext } from "@maple/domain/http"
+import { SandboxFetcher } from "@maple/backend/platform/bindings"
 
 const INTERNAL_TOKEN = "eval-internal-token"
 
@@ -70,7 +71,7 @@ export const makeEvalRuntime = (
 			? mcpServicesWithFeatureFlags(featureFlags)
 			: Layer.mergeAll(mcpServicesWithFeatureFlags(featureFlags, dataSources), dataSources)
 	const layer = services.pipe(
-		Layer.provide(Layer.mergeAll(configLive, envLive, databaseLive, workerEnvLive)),
+		Layer.provide(Layer.mergeAll(configLive, envLive, databaseLive, workerEnvLive, SandboxFetcher.none)),
 	)
 	// `as any`: the residual requirement set is satisfied at runtime (same pattern
 	// as apps/api/src/agent.ts buildSetup).

@@ -17,6 +17,7 @@ import { DashboardPersistenceService } from "@maple/backend/services/dashboards/
 import { ErrorActorsService } from "@maple/backend/services/errors/ErrorActorsService"
 import { ErrorIssueReadModelsService } from "@maple/backend/services/errors/ErrorIssueReadModelsService"
 import { UsersReadService } from "@maple/backend/services/users/UsersReadService"
+import { AiSessionReadService } from "@maple/backend/services/ai-sessions/AiSessionReadService"
 import { ErrorIssueMergeService } from "@maple/backend/services/errors/ErrorIssueMergeService"
 import { ErrorIssueWorkflowService } from "@maple/backend/services/errors/ErrorIssueWorkflowService"
 import { ErrorPolicyService } from "@maple/backend/services/errors/ErrorPolicyService"
@@ -94,6 +95,7 @@ export const McpRuntimeServicesLive = Layer.mergeAll(
 	StatusPagesService.layer,
 	UptimeMonitorsService.layer,
 	UsersReadService.layer,
+	AiSessionReadService.layer,
 	IngestRuleService.layer,
 	VcsCommitService.layer,
 	VcsSourceService.layer,

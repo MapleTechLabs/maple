@@ -31,10 +31,9 @@ import type { MapleDb } from "@maple/db/client"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { makeDbExecute } from "@maple/backend/platform/db-execute"
 import { makeSloPersistenceError } from "./slo-persistence"
-import { WarehouseQueryService } from "@maple/backend/services/warehouse/WarehouseQueryService"
 import { deleteRuleRows } from "@maple/backend/services/alerts/AlertRulesService"
 import { lockOrgAlertRules } from "@maple/backend/services/alerts/alert-persistence"
-import { readBudgetHistory, readBurnWindows, readStatuses, readWindowTotals } from "./slo-reads"
+import { SloReadService } from "./SloReadService"
 import { sloRuleFields, type SloRuleInput } from "./slo-alert-rule"
 
 export interface SloRecord {
@@ -285,8 +284,7 @@ export class SlosService extends Context.Service<SlosService, SlosServiceApi>()(
 		make: Effect.gen(function* () {
 			const database = yield* Database
 			const dbExecute = makeDbExecute(database, "SlosService", makeSloPersistenceError)
-			const warehouse = yield* WarehouseQueryService
-			const withWarehouse = Effect.provideService(WarehouseQueryService, warehouse)
+			const reads = yield* SloReadService
 			const nowMinute = Effect.map(Clock.currentTimeMillis, (now) => Math.floor(now / 60_000) * 60_000)
 
 			const selectOne = (orgId: OrgId, sloId: SloId) =>
@@ -545,9 +543,9 @@ export class SlosService extends Context.Service<SlosService, SlosServiceApi>()(
 				const slo = yield* selectOne(tenant.orgId, sloId)
 				const asOfMs = yield* nowMinute
 				const [totals, windows] = yield* Effect.all(
-					[readWindowTotals(tenant, slo, asOfMs), readBurnWindows(tenant, slo, asOfMs)],
+					[reads.windowTotals(tenant, slo, asOfMs), reads.burnWindows(tenant, slo, asOfMs)],
 					{ concurrency: 2 },
-				).pipe(withWarehouse)
+				)
 				return {
 					asOfMs,
 					total: totals.total,
@@ -562,7 +560,7 @@ export class SlosService extends Context.Service<SlosService, SlosServiceApi>()(
 				yield* Effect.annotateCurrentSpan({ orgId: tenant.orgId })
 				const slos = yield* list(tenant.orgId)
 				const asOfMs = yield* nowMinute
-				const read = yield* readStatuses(tenant, slos, asOfMs).pipe(withWarehouse)
+				const read = yield* reads.statuses(tenant, slos, asOfMs)
 				return Arr.map(slos, (slo) => {
 					const found = read.get(slo.id)
 					const totals = found?.totals ?? { total: 0, good: 0 }
@@ -584,7 +582,7 @@ export class SlosService extends Context.Service<SlosService, SlosServiceApi>()(
 				yield* Effect.annotateCurrentSpan({ orgId: tenant.orgId, "maple.slo.id": sloId })
 				const slo = yield* selectOne(tenant.orgId, sloId)
 				const asOfMs = yield* nowMinute
-				const points = yield* readBudgetHistory(tenant, slo, asOfMs).pipe(withWarehouse)
+				const points = yield* reads.budgetHistory(tenant, slo, asOfMs)
 				return { asOfMs, bucketSeconds: 3600, points } satisfies SloHistory
 			})
 
@@ -601,5 +599,5 @@ export class SlosService extends Context.Service<SlosService, SlosServiceApi>()(
 		}),
 	},
 ) {
-	static readonly layer = Layer.effect(this, this.make).pipe(Layer.provide(WarehouseQueryService.layer))
+	static readonly layer = Layer.effect(this, this.make).pipe(Layer.provide(SloReadService.layer))
 }
