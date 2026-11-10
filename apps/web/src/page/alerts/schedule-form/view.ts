@@ -561,12 +561,12 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 		formScrollArea(
 			h,
 			[
-				// From 46rem of room (a 1024px screen beside the sidebar) the form keeps a narrow column and
-				// the preview takes the rest, held in view while the form scrolls. Under that it follows the form.
+				// From 58rem of room (the form column plus the 30rem the timeline needs unscrolled) the form
+				// keeps a narrow column and the preview takes the rest, held in view. Under that it follows the form.
 				h.div(
 					[
 						h.Class(
-							"grid gap-4 @min-[46rem]/scroll:grid-cols-[26rem_minmax(0,1fr)] @min-[46rem]/scroll:items-start",
+							"grid gap-4 @min-[58rem]/scroll:grid-cols-[26rem_minmax(0,1fr)] @min-[58rem]/scroll:items-start",
 						),
 					],
 					[
@@ -578,7 +578,7 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 						h.div(
 							[
 								h.Class(
-									"min-w-0 rounded-md border bg-card p-4 @min-[46rem]/scroll:sticky @min-[46rem]/scroll:top-0 @min-[46rem]/scroll:max-h-[100cqh] @min-[46rem]/scroll:overflow-y-auto",
+									"min-w-0 rounded-md border bg-card p-4 @min-[58rem]/scroll:sticky @min-[58rem]/scroll:top-0 @min-[58rem]/scroll:max-h-[100cqh] @min-[58rem]/scroll:overflow-y-auto",
 								),
 							],
 							[schedulePreview(h, model)],
