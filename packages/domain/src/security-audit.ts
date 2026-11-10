@@ -63,6 +63,9 @@ export const ORG_NO_AI_CREDITS = "org_no_ai_credits"
 /** Why a run ends incomplete when the org reaches its monthly spend limit mid-run. */
 export const ORG_SPEND_LIMIT_REACHED = "org_spend_limit_reached"
 
+/** Why a run ends incomplete when the org's audit spend could not be read (billing unreachable). */
+export const ORG_BUDGET_UNAVAILABLE = "org_budget_unavailable"
+
 /** The UTC month containing `epochMs`: when an org's audit spend started counting, and when it resets. */
 export const securityAuditSpendWindow = (
 	epochMs: number,

@@ -1,5 +1,9 @@
 import type { SecurityAuditEvent, SecurityAuditUnit } from "@maple/domain/http"
-import { ORG_NO_AI_CREDITS, ORG_SPEND_LIMIT_REACHED } from "@maple/domain/security-audit"
+import {
+	ORG_BUDGET_UNAVAILABLE,
+	ORG_NO_AI_CREDITS,
+	ORG_SPEND_LIMIT_REACHED,
+} from "@maple/domain/security-audit"
 import { incompleteReasonLabel } from "./format"
 import { Array as Arr, String as Str, Option } from "effect"
 
@@ -100,7 +104,7 @@ const REASON_COPY = new Map<string, (detail: string) => ReasonCopy>([
 		}),
 	],
 	[
-		"org_budget_unavailable",
+		ORG_BUDGET_UNAVAILABLE,
 		() => ({
 			kind: "broken",
 			title: "Billing could not be reached",

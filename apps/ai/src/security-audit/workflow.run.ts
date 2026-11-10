@@ -15,6 +15,7 @@ import {
 	SandboxTimeoutError,
 } from "@maple/backend/services/sandbox/contract"
 import {
+	ORG_BUDGET_UNAVAILABLE,
 	ORG_NO_AI_CREDITS,
 	ORG_SPEND_LIMIT_REACHED,
 	securityAuditSpendWindow,
@@ -210,7 +211,7 @@ const durableAgents = (
 			Effect.mapError((error) =>
 				refused(
 					`the organization's audit spend could not be read: ${messageOf(error)}`,
-					"org_budget_unavailable",
+					ORG_BUDGET_UNAVAILABLE,
 				),
 			),
 			// A step that dies (its timeout, an isolate past its CPU limit) refuses too, as an agent
@@ -219,7 +220,7 @@ const durableAgents = (
 				Effect.fail(
 					refused(
 						`the organization's audit spend step died: ${Str.slice(0, 600)(Cause.pretty(Cause.die(defect)))}`,
-						"org_budget_unavailable",
+						ORG_BUDGET_UNAVAILABLE,
 					),
 				),
 			),
@@ -265,7 +266,7 @@ const durableAgents = (
 					default:
 						// A step recorded by an older deploy replays a value this one does not know.
 						return Effect.fail(
-							refused(`unknown admission ${String(reservation)}`, "org_budget_unavailable"),
+							refused(`unknown admission ${String(reservation)}`, ORG_BUDGET_UNAVAILABLE),
 						)
 				}
 			},
