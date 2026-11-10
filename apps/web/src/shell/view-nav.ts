@@ -168,7 +168,7 @@ const subList = (
 
 /**
  * `NavRow`: a link, a section with its children while active, or on the collapsed rail a menu. In a
- * folded group the current page's row stands alone, highlighted, without its children.
+ * folded group the current section keeps its row and, of its children, the current one alone.
  */
 const navRow = (
 	h: HtmlBuilder<Message>,
