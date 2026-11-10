@@ -1,5 +1,13 @@
 import { describe, expect, test } from "vitest"
-import { canMatchAnyOf, fieldOf, fieldsOf, operatorsOf, sharesLabel } from "./condition-fields"
+import {
+	canMatchAnyOf,
+	fieldOf,
+	fieldPickerItems,
+	fieldsOf,
+	isPickable,
+	operatorsOf,
+	sharesLabel,
+} from "./condition-fields"
 import { Array as Arr } from "effect"
 
 // The builder offers what the source's clause handler applies (the engine's key rules).
@@ -71,4 +79,59 @@ describe("sharesLabel", () => {
 		expect(sharesLabel(fieldOf("attr.http.route", "traces"), fields)).toBe(false)
 		expect(sharesLabel(fieldOf("service.name", "traces"), fields)).toBe(false)
 	})
+})
+
+// What the picker offers is what the source applies: a key it drops is not listed and cannot be typed in.
+describe("fields the source drops", () => {
+	const vocabulary = { attributeKeys: ["plan", "http.route"], resourceAttributeKeys: ["host.name"] }
+	const offered = (
+		dataSource: "traces" | "logs" | "metrics" | "product_events",
+		drill: "all" | "resource" | "attribute",
+		search: string,
+	) => fieldPickerItems(fieldsOf(dataSource, vocabulary), drill, search, dataSource)
+	const keysOf = (items: ReturnType<typeof offered>) =>
+		Arr.flatMap(items, (item) =>
+			item._tag === "Field" ? [item.field.key] : item._tag === "Custom" ? [item.key] : [],
+		)
+
+	test("product events list no resource attributes", () => {
+		expect(
+			Arr.filter(fieldsOf("product_events", vocabulary), (field) => field.group === "resource"),
+		).toEqual([])
+		expect(Arr.map(offered("product_events", "all", ""), (item) => item.value)).not.toContain(
+			"@group:resource",
+		)
+		expect(Arr.map(offered("traces", "all", ""), (item) => item.value)).toContain("@group:resource")
+	})
+
+	test("product events take no typed resource.* key, in the list or inside a stale resource drill", () => {
+		expect(offered("product_events", "all", "resource.host.name")).toEqual([])
+		expect(offered("product_events", "all", "host.name")).toEqual([
+			{ _tag: "Custom", value: "@custom:attr.host.name", key: "attr.host.name" },
+		])
+		expect(keysOf(offered("product_events", "resource", "region"))).toEqual([])
+		expect(keysOf(offered("traces", "all", "resource.cloud.region"))).toEqual(["resource.cloud.region"])
+	})
+
+	test.each(["logs", "metrics"] as const)(
+		"%s never offer a bare unknown key: what is typed becomes an attribute",
+		(dataSource) => {
+			expect(isPickable("db.system", dataSource)).toBe(false)
+			expect(keysOf(offered(dataSource, "all", "db.system"))).toEqual(["attr.db.system"])
+			expect(keysOf(offered(dataSource, "attribute", "db.system"))).toEqual(["attr.db.system"])
+			expect(keysOf(offered(dataSource, "resource", "db.system"))).toEqual(["resource.db.system"])
+		},
+	)
+
+	test.each(["traces", "logs", "metrics", "product_events"] as const)(
+		"every key %s offers is one it applies",
+		(dataSource) => {
+			const keys = Arr.flatMap(["", "db.system", "resource.x", "attr.y", "service", "host"], (search) =>
+				Arr.flatMap(["all", "resource", "attribute"] as const, (drill) =>
+					keysOf(offered(dataSource, drill, search)),
+				),
+			)
+			expect(Arr.filter(keys, (key) => !isPickable(key, dataSource))).toEqual([])
+		},
+	)
 })

@@ -110,7 +110,7 @@ const fieldPicker = (
 	const search = Combobox.queryOf(current)
 	const fields = fieldsOf(query.dataSource, values)
 	const field = fieldOf(row.key, query.dataSource)
-	const items = fieldPickerItems(fields, model.fieldDrills[id] ?? "all", search)
+	const items = fieldPickerItems(fields, model.fieldDrills[id] ?? "all", search, query.dataSource)
 	const byValue = new Map(Arr.map(items, (item) => [item.value, item]))
 	const firstGroup = Option.getOrNull(Arr.findFirst(items, (item) => item._tag === "Group"))
 	return h.submodel({

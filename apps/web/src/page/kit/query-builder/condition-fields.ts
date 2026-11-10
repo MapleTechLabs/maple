@@ -90,21 +90,33 @@ export const canMatchAnyOf = (field: ConditionField, dataSource: DataSource): bo
 export const isOwnedElsewhere = (key: string, dataSource: DataSource): boolean =>
 	dataSource === "traces" && key === "root_only"
 
-/** Every field the query offers: the common ones, then resource and own attributes as the editor writes them. */
+/**
+ * Whether the source applies a filter on this key at all (the engine's `whereOperatorsOf`). A key
+ * it drops (`resource.*` on product events) is never a new pick; a saved row on one stays as it is.
+ */
+export const isPickable = (key: string, dataSource: DataSource): boolean =>
+	whereOperatorsOf(dataSource, key).length > 0
+
+/**
+ * Every field the query offers: the common ones, then resource and own attributes as the editor
+ * writes them, less the keys the source drops.
+ */
 export const fieldsOf = (
 	dataSource: DataSource,
 	values: WhereClauseAutocompleteValues,
-): ReadonlyArray<ConditionField> =>
-	Arr.dedupeWith(
-		[
-			...Arr.filter(COMMON_FIELDS[dataSource], (field) => !isOwnedElsewhere(field.key, dataSource)),
-			...Arr.map(values.resourceAttributeKeys ?? [], (key) =>
-				fieldOf(`${RESOURCE_PREFIX}${key}`, dataSource),
-			),
-			...Arr.map(values.attributeKeys ?? [], (key) => fieldOf(`${ATTRIBUTE_PREFIX}${key}`, dataSource)),
-		],
-		(a, b) => a.key === b.key,
+): ReadonlyArray<ConditionField> => {
+	const known: ReadonlyArray<ConditionField> = [
+		...Arr.filter(COMMON_FIELDS[dataSource], (field) => !isOwnedElsewhere(field.key, dataSource)),
+		...Arr.map(values.resourceAttributeKeys ?? [], (key) =>
+			fieldOf(`${RESOURCE_PREFIX}${key}`, dataSource),
+		),
+		...Arr.map(values.attributeKeys ?? [], (key) => fieldOf(`${ATTRIBUTE_PREFIX}${key}`, dataSource)),
+	]
+	return Arr.filter(
+		Arr.dedupeWith(known, (a, b) => a.key === b.key),
+		(field) => isPickable(field.key, dataSource),
 	)
+}
 
 /** Whether another known field reads the same in a trigger, so this one needs its group named. */
 export const sharesLabel = (field: ConditionField, known: ReadonlyArray<ConditionField>): boolean =>
@@ -135,7 +147,10 @@ const matchesQuery = (field: ConditionField, query: string): boolean => {
 	)
 }
 
-/** What a typed key means inside a group: the group's prefix unless it already has one. */
+/**
+ * What a typed key means inside a group: the group's prefix unless it already has one. A bare key
+ * is never free entry, so a source that drops unknown bare keys (logs, metrics) gets `attr.<key>`.
+ */
 const customKeyOf = (typed: string, drill: FieldDrill, fields: ReadonlyArray<ConditionField>): string => {
 	if (Str.startsWith(RESOURCE_PREFIX)(typed) || Str.startsWith(ATTRIBUTE_PREFIX)(typed)) return typed
 	if (drill === "resource") return `${RESOURCE_PREFIX}${typed}`
@@ -144,10 +159,12 @@ const customKeyOf = (typed: string, drill: FieldDrill, fields: ReadonlyArray<Con
 	return `${ATTRIBUTE_PREFIX}${typed}`
 }
 
+/** The list for a search: the matching fields, then the typed key itself when the source takes it. */
 export const fieldPickerItems = (
 	fields: ReadonlyArray<ConditionField>,
 	drill: FieldDrill,
 	query: string,
+	dataSource: DataSource,
 ): ReadonlyArray<FieldPickerItem> => {
 	const typed = Str.trim(query)
 	const inScope = drill === "all" ? fields : Arr.filter(fields, (field) => field.group === drill)
@@ -155,7 +172,9 @@ export const fieldPickerItems = (
 	if (typed !== "") {
 		const key = customKeyOf(typed, drill, fields)
 		const custom: ReadonlyArray<FieldPickerItem> =
-			KEY_PATTERN.test(typed) && !Arr.some(fields, (field) => field.key === key)
+			KEY_PATTERN.test(typed) &&
+			isPickable(key, dataSource) &&
+			!Arr.some(fields, (field) => field.key === key)
 				? [{ _tag: "Custom", value: `${CUSTOM_VALUE}${key}`, key }]
 				: []
 		return [

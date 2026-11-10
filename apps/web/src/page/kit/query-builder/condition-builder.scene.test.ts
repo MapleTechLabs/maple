@@ -171,21 +171,67 @@ describe("condition builder", () => {
 			caretMounted(),
 			expectView(text("This filter mixes fields in an OR, so it stays in Text.")).toExist(),
 			// The query applies an OR of attribute filters, so nothing warns.
-			expectView(
-				text("This OR group is not applied: only attribute filters can be OR-ed."),
-			).not.toExist(),
+			expectView(text(/This OR group is not applied/)).not.toExist(),
 			expectView(label("Where clause for query A")).toExist(),
 			expectView(role("button", { name: "Builder" })).toBeDisabled(),
 		)
 	})
 
-	test("an OR group the query drops also says it is not applied", () => {
+	test("an OR group the query drops also says which group is not applied", () => {
 		scene(
 			{ update, view },
 			given(hosted('(service.name = "a" OR span.name = "b")')),
 			caretMounted(),
 			expectView(text("This filter mixes fields in an OR, so it stays in Text.")).toExist(),
-			expectView(text("This OR group is not applied: only attribute filters can be OR-ed.")).toExist(),
+			expectView(
+				text(
+					"This OR group is not applied: (service.name = a OR span.name = b). Only attribute filters can be OR-ed.",
+				),
+			).toExist(),
+		)
+	})
+
+	test("an OR group on a named field stays in Text, untouched, with its reason and the dropped group", () => {
+		const clause = '(service.name = "checkout" OR service.name = "worker")'
+		scene(
+			{ update, view },
+			given(hosted(clause)),
+			caretMounted(),
+			expectView(label("Where clause for query A")).toHaveValue(clause),
+			expectView(role("group", { name: "Conditions for query A" })).not.toExist(),
+			expectView(role("button", { name: "Builder" })).toBeDisabled(),
+			expectView(
+				text("This OR group is on a field that can't be OR-ed, so it stays in Text."),
+			).toExist(),
+			// The note already says why, so the warning only names the group.
+			expectView(
+				text("This OR group is not applied: (service.name = checkout OR service.name = worker)."),
+			).toExist(),
+			expectView(text(clause)).toExist(),
+		)
+	})
+
+	test("two dropped OR groups give two lines, one per group", () => {
+		scene(
+			{ update, view },
+			given(
+				hosted('(service.name = "a" OR service.name = "b") AND (span.name = "x" OR span.name = "y")'),
+			),
+			caretMounted(),
+			expectView(
+				text("This OR group is not applied: (service.name = a OR service.name = b)."),
+			).toExist(),
+			expectView(text("This OR group is not applied: (span.name = x OR span.name = y).")).toExist(),
+		)
+	})
+
+	test("the same OR group on an attribute key reads as one row with both values", () => {
+		scene(
+			{ update, view },
+			given(hosted('(attr.http.route = "/cart" OR attr.http.route = "/pay")')),
+			expectView(role("group", { name: "Conditions for query A" })).toExist(),
+			expectView(text(/stays in Text/)).not.toExist(),
+			expectView(text(/This OR group is not applied/)).not.toExist(),
 		)
 	})
 
