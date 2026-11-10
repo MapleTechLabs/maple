@@ -78,6 +78,7 @@ import { HttpV2AlertMaintenanceWindowsLive } from "./alert-maintenance-windows.h
 import { HttpV2AlertRulesLive } from "./alert-rules.http"
 import { InvestigationService } from "@maple/backend/services/errors/InvestigationService"
 import { compiledQueryOf } from "@maple/query-engine/execution"
+import { InvestigationStarter } from "@maple/backend/services/errors/InvestigationStarter"
 
 const createdDbs: TestDb[] = []
 afterEach(() => cleanupTestDbs(createdDbs))
@@ -179,6 +180,7 @@ const makeHarness = (
 		Layer.provide(Layer.mergeAll(testDb.layer, runtimeLive)),
 	)
 	const alertsLive = Layer.effect(AlertsService, AlertsService.make).pipe(
+		Layer.provide(InvestigationStarter.layer),
 		Layer.provide(FetchHttpClient.layer),
 		Layer.provide(ChatAlertPoster.layer),
 		Layer.provide(

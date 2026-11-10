@@ -115,7 +115,6 @@ import {
 	Redacted,
 	Ref,
 	Schema,
-	Semaphore,
 	Stream,
 	Context,
 	String as Str,
@@ -141,7 +140,7 @@ import {
 	isQueryLimitFailure,
 	SLOWDOWN_AFTER_LIMIT_FAILURES,
 } from "./alert-evaluation-errors"
-import { ChatSessions } from "@maple/backend/platform/bindings"
+import { InvestigationStarter } from "@maple/backend/services/errors/InvestigationStarter"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { formatComparator, signalCarriesDetail } from "./alert-formatting"
 import { escalationChainFor, ruleAtSeverity, tierRoutedUpTo } from "./alert-thresholds"
@@ -669,10 +668,8 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 				buildPayload,
 				sendImmediateNotification,
 			} = destinationDelivery
-			// Optional: present only inside a Worker isolate. Used to kick off the
-			// AI triage Workflow for issues created from freshly opened incidents.
-			const chatSessionsOption = yield* Effect.serviceOption(ChatSessions)
-			const chatSessions = Option.getOrUndefined(chatSessionsOption)
+			// Starts the investigation for issues created from freshly opened incidents.
+			const starter = yield* InvestigationStarter
 			const now = runtime.now
 			const makeUuid = () => runtime.makeUuid()
 			const workerId = makeUuid()
@@ -3249,20 +3246,14 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 				pending: ReadonlyArray<MaybeEnqueueTriageInput>,
 			) {
 				yield* Effect.annotateCurrentSpan("maple.alerting.triages_pending", pending.length)
-				// One admission permit per org keeps the daily quota exact under concurrency.
-				const admissionEntries = yield* Effect.forEach(
-					Arr.dedupe(Arr.map(pending, (triage) => triage.orgId)),
-					(orgId) => Effect.map(Semaphore.make(1), (admission) => [orgId, admission] as const),
-				)
-				const admissions = new Map(admissionEntries)
+				// The starter's per-org admission lock keeps the daily quota exact under concurrency.
 				yield* Effect.forEach(
 					pending,
 					(triage) =>
-						maybeEnqueueTriage({
-							...triage,
-							chatSessions,
-							admission: admissions.get(triage.orgId),
-						}).pipe(Effect.provideService(Database, database)),
+						maybeEnqueueTriage(triage).pipe(
+							Effect.provideService(Database, database),
+							Effect.provideService(InvestigationStarter, starter),
+						),
 					{ concurrency: TRIAGE_START_CONCURRENCY, discard: true },
 				)
 			})
@@ -6301,6 +6292,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 	static readonly layer = Layer.effect(this, this.make).pipe(
 		Layer.provide(
 			Layer.mergeAll(
+				InvestigationStarter.layer,
 				AlertMemberNotifier.layer,
 				OrgMembersService.layer,
 				ChatAlertPoster.layer,

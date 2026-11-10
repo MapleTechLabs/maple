@@ -4,8 +4,8 @@
  * There are two ceilings because there were two costs. A *run* is an
  * investigation — the unit an operator thinks in and configures. A *pass* is one
  * agent turn; an investigation spends exactly one now, so the two ceilings count
- * the same thing, but both stay configurable and both producers read the same
- * query and the same verdict.
+ * the same thing, but both stay configurable and every producer is judged by
+ * `InvestigationStarter` with the same query and the same verdict.
  *
  * The second failure this module has to prevent is subtler than a wrong unit: a
  * budget spent is not the same as a budget spent *well*. A single UTC-day bucket
@@ -71,10 +71,8 @@ export interface InvestigationUsage {
  * so restarting an investigation opened last week correctly spends today's
  * budget instead of escaping the window entirely.
  *
- * Takes the orm client rather than the `Database` service so both call sites
- * can pass their own `execute` wrapper — `InvestigationService` has `dbExecute`,
- * `maybeEnqueueTriage` has `database.execute`, and neither should have to adopt
- * the other's.
+ * Takes the orm client so `InvestigationStarter` reads it inside the admission
+ * transaction, under the org's lock.
  */
 export const selectInvestigationUsage = (
 	orm: MapleDb,

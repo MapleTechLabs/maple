@@ -27,6 +27,7 @@ import { configResolvingWarehouse, makeOrgConfigProbe } from "@maple/backend/tes
 import { AnomalyDetectionService } from "./AnomalyDetectionService"
 import { makeWarehouseServiceStub } from "@maple/backend/testing/warehouse-test-support"
 import { compiledQueryOf } from "@maple/query-engine/execution"
+import { InvestigationStarter } from "@maple/backend/services/errors/InvestigationStarter"
 
 const asOrgId = Schema.decodeUnknownSync(OrgId)
 const asIncidentId = Schema.decodeUnknownSync(AnomalyIncidentId)
@@ -62,6 +63,7 @@ const warehouseStub: WarehouseQueryServiceApi = makeWarehouseServiceStub({
 const makeLayer = (testDb: TestDb) => {
 	const configLive = makeConfig()
 	return Layer.effect(AnomalyDetectionService, AnomalyDetectionService.make).pipe(
+		Layer.provide(InvestigationStarter.layer),
 		Layer.provide(
 			Layer.mergeAll(
 				Layer.succeed(WarehouseQueryService, warehouseStub),
@@ -250,6 +252,7 @@ describe("AnomalyDetectionService.runTick baseline cache", () => {
 		})
 		const configLive = makeConfig()
 		const layer = Layer.effect(AnomalyDetectionService, AnomalyDetectionService.make).pipe(
+			Layer.provide(InvestigationStarter.layer),
 			Layer.provide(
 				Layer.mergeAll(
 					Layer.succeed(WarehouseQueryService, warehouse),
@@ -310,6 +313,7 @@ describe("AnomalyDetectionService.runTick baseline cache", () => {
 		})
 		const configLive = makeConfig()
 		const layer = Layer.effect(AnomalyDetectionService, AnomalyDetectionService.make).pipe(
+			Layer.provide(InvestigationStarter.layer),
 			Layer.provide(
 				Layer.mergeAll(
 					Layer.succeed(WarehouseQueryService, warehouse),
@@ -401,6 +405,7 @@ describe("AnomalyDetectionService.runTick org config priming", () => {
 				}),
 			)
 			const layer = Layer.effect(AnomalyDetectionService, AnomalyDetectionService.make).pipe(
+				Layer.provide(InvestigationStarter.layer),
 				Layer.provide(warehouse),
 				Layer.provideMerge(probe.orgChSettingsLive),
 				Layer.provide(
@@ -538,6 +543,7 @@ describe("AnomalyDetectionService.runTick outbound budget", () => {
 			})
 			const configLive = makeConfig()
 			const layer = Layer.effect(AnomalyDetectionService, AnomalyDetectionService.make).pipe(
+				Layer.provide(InvestigationStarter.layer),
 				Layer.provide(
 					Layer.mergeAll(
 						Layer.succeed(WarehouseQueryService, warehouse),
@@ -842,6 +848,7 @@ describe("AnomalyDetectionService.runTick baseline resolve races", () => {
 		})
 		const configLive = makeConfig()
 		return Layer.effect(AnomalyDetectionService, AnomalyDetectionService.make).pipe(
+			Layer.provide(InvestigationStarter.layer),
 			Layer.provide(
 				Layer.mergeAll(
 					Layer.succeed(WarehouseQueryService, warehouse),

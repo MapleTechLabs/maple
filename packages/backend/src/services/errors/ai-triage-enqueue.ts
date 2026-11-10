@@ -17,9 +17,8 @@ import { InvestigationId, IsoDateTimeString } from "@maple/domain/primitives"
 import * as PG from "@maple-dev/effect-orm/postgres"
 import type { MapleDb } from "@maple/db/client"
 import { AiTriageSettings, ErrorIssues, Investigations } from "@maple/db/tables"
-import { Clock, Effect, Option, Schema, type Semaphore, Array as Arr, String as Str } from "effect"
+import { Clock, Effect, Option, Schema, Array as Arr, String as Str } from "effect"
 
-import type { ChatSessionsApi } from "@maple/backend/platform/bindings"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 
 import { IncidentClassifier } from "@maple/backend/services/errors/IncidentClassifier"
@@ -29,12 +28,8 @@ import {
 	type LatestIssueInvestigation,
 	REINVESTIGATE_AFTER_MS,
 } from "@maple/backend/services/errors/investigation-gate"
-import {
-	evaluateInvestigationQuota,
-	selectInvestigationUsage,
-} from "@maple/backend/services/errors/investigation-quota"
 import { applyClassifierSeverity } from "@maple/backend/services/errors/issue-severity"
-import { startInvestigationTurn } from "@maple/backend/services/errors/investigation-start"
+import { InvestigationStarter } from "@maple/backend/services/errors/InvestigationStarter"
 import {
 	isInvestigationStale,
 	storedProgressJson,
@@ -43,98 +38,79 @@ import {
 import { summarizeCause } from "@maple/backend/platform/describe-cause"
 
 const decodeInvestigationId = Schema.decodeUnknownSync(InvestigationId)
-
-const contextString = (context: Record<string, unknown>, key: string): string | undefined => {
-	const value = context[key]
-	return typeof value === "string" && Str.trim(value).length > 0 ? value : undefined
-}
-
-const contextNumber = (context: Record<string, unknown>, key: string): number | null => {
-	const value = context[key]
-	return typeof value === "number" && Number.isFinite(value) ? value : null
-}
-
-/**
- * The first of these keys that carries a usable instant, as an ISO string.
- *
- * Several keys because each incident kind names its own window differently and
- * none of them was reaching the snapshot: the interval was hardcoded `null` while
- * every prompt opened with "establish the exact incident interval from the
- * attached subject". The `Date` branch is load-bearing, not defensive — the error
- * path passes `firstSeen`/`lastSeen` as `Date` objects, and a string-only reader
- * would have silently kept the old `null`.
- *
- * Every branch normalizes through `Date` before encoding, so a producer that
- * passes an already-ISO string still gets a value the branded schema accepts
- * rather than one that merely looks like it.
- */
 const decodeIso = Schema.decodeUnknownSync(IsoDateTimeString)
 
-const contextInstant = (
-	context: Record<string, unknown>,
-	...keys: ReadonlyArray<string>
-): IsoDateTimeString | null => {
-	for (const key of keys) {
-		const value = context[key]
-		const instant =
-			value instanceof Date
-				? value
-				: typeof value === "number" && Number.isFinite(value)
-					? new Date(value)
-					: typeof value === "string" && Str.trim(value).length > 0
-						? new Date(value)
-						: null
-		if (instant !== null && !Number.isNaN(instant.getTime())) {
-			return decodeIso(instant.toISOString())
-		}
-	}
-	return null
+/**
+ * What a producer knows about the incident it opened. Every field is optional because each
+ * incident kind knows a different slice; the snapshot and the classifier read what is there.
+ */
+export interface TriageIncidentContext {
+	/** Why the incident opened (`first_seen`, `regression`): a token, never a title. */
+	readonly reason?: string
+	readonly title?: string
+	readonly ruleName?: string
+	readonly severity?: IssueSeverity | null
+	readonly serviceName?: string | null
+	readonly deploymentEnv?: string | null
+	readonly signalType?: string | null
+	readonly exceptionType?: string | null
+	readonly exceptionMessage?: string | null
+	readonly errorLabel?: string | null
+	readonly topFrame?: string | null
+	readonly fingerprintHash?: string | null
+	readonly occurrenceCount?: number | null
+	readonly observedValue?: number | null
+	readonly thresholdValue?: number | null
+	/** Epoch ms the incident's window opened and last fired. */
+	readonly startedAtMs?: number | null
+	readonly endedAtMs?: number | null
+}
+
+/** Blank text reads as absent, so a fallback chain moves on past it. */
+const text = (value: string | null | undefined): string | undefined =>
+	value !== null && value !== undefined && Str.trim(value).length > 0 ? value : undefined
+
+const finite = (value: number | null | undefined): number | null =>
+	value !== null && value !== undefined && Number.isFinite(value) ? value : null
+
+const instant = (ms: number | null | undefined): IsoDateTimeString | null => {
+	const value = finite(ms)
+	return value === null ? null : decodeIso(new Date(value).toISOString())
 }
 
 const snapshotFor = (input: MaybeEnqueueTriageInput): InstanceType<typeof InvestigationSubjectSnapshot> => {
-	const serviceName = contextString(input.context, "serviceName")
+	const { context } = input
+	const serviceName = text(context.serviceName)
 	const kindWord = `${Str.toUpperCase(Str.slice(0, 1)(input.incidentKind))}${Str.slice(1)(input.incidentKind)}`
 	// The last resort is what the investigations list renders as a title, so it
-	// names the service when there is one — "Alert incident" says nothing the
-	// list's kind marker doesn't already say. (`reason` is deliberately not in
-	// this chain: it's an enum token like `first_seen`, not a sentence.)
-	// `exceptionType: message` beats either alone: the type is what an engineer
-	// recognizes, the message is what distinguishes two of the same type. Falling
-	// through to `errorLabel` before `signalType` matters for the exact class of
-	// error that reads worst — a status-message-only error has no exception type,
-	// and its label is the only human-readable thing about it.
-	const exceptionHeadline = (() => {
-		const type = contextString(input.context, "exceptionType")
-		const message = contextString(input.context, "exceptionMessage")
-		if (type && message) return `${type}: ${message}`
-		return type ?? message
-	})()
+	// names the service when there is one. `exceptionType: message` beats either
+	// alone, and `errorLabel` comes before `signalType`: a status-message-only error
+	// has no exception type, and its label is the only human-readable thing about it.
+	const exceptionType = text(context.exceptionType)
+	const exceptionMessage = text(context.exceptionMessage)
+	const exceptionHeadline =
+		exceptionType && exceptionMessage
+			? `${exceptionType}: ${exceptionMessage}`
+			: (exceptionType ?? exceptionMessage)
 	const title =
-		contextString(input.context, "title") ??
-		contextString(input.context, "ruleName") ??
+		text(context.title) ??
+		text(context.ruleName) ??
 		exceptionHeadline ??
-		contextString(input.context, "errorLabel") ??
-		contextString(input.context, "signalType") ??
+		text(context.errorLabel) ??
+		text(context.signalType) ??
 		(serviceName ? `${kindWord} on ${serviceName}` : `${kindWord} incident`)
-	const severityValue = Schema.decodeUnknownOption(Schema.Literals(["critical", "high", "medium", "low"]))(
-		input.context.severity,
-	)
-	const severity: IssueSeverity | null = severityValue._tag === "Some" ? severityValue.value : null
-	const fingerprintHash = contextString(input.context, "fingerprintHash") ?? null
-	const exceptionType = contextString(input.context, "exceptionType") ?? null
-	const exceptionMessage = contextString(input.context, "exceptionMessage") ?? null
-	const topFrame = contextString(input.context, "topFrame") ?? null
-	const occurrenceCount = contextNumber(input.context, "occurrenceCount")
+	const fingerprintHash = text(context.fingerprintHash) ?? null
+	const topFrame = text(context.topFrame) ?? null
+	const occurrenceCount = finite(context.occurrenceCount)
 
 	// Display facts. The identifier fields below are the same values again, but the
-	// two lists are for different readers — this one renders on the investigation
-	// page, that one is what the agent calls tools with — so they are built from one
-	// source rather than allowed to drift.
+	// two lists are for different readers (this one renders on the investigation
+	// page, that one is what the agent calls tools with), so they share one source.
 	const factKeys = [
 		["Incident", input.incidentId],
 		["Service", serviceName],
-		["Signal", contextString(input.context, "signalType")],
-		["Reason", contextString(input.context, "reason")],
+		["Signal", text(context.signalType)],
+		["Reason", text(context.reason)],
 		["Exception", exceptionType],
 		["Top frame", topFrame],
 		["Fingerprint", fingerprintHash],
@@ -145,7 +121,7 @@ const snapshotFor = (input: MaybeEnqueueTriageInput): InstanceType<typeof Invest
 		title,
 		scope: serviceName ?? null,
 		status: "open",
-		severity,
+		severity: context.severity ?? null,
 		facts: Arr.flatMap(factKeys, ([label, value]) =>
 			value ? [new InvestigationSnapshotFact({ label, value })] : [],
 		),
@@ -157,26 +133,19 @@ const snapshotFor = (input: MaybeEnqueueTriageInput): InstanceType<typeof Invest
 					}),
 				]
 			: [],
-		// Both were hardcoded `null` while every producer already knew the answer.
-		incidentStartedAt: contextInstant(
-			input.context,
-			"firstSeen",
-			"firstTriggeredAt",
-			"windowStart",
-			"detectedAt",
-		),
-		incidentEndedAt: contextInstant(input.context, "lastSeen", "lastTriggeredAt"),
+		incidentStartedAt: instant(context.startedAtMs),
+		incidentEndedAt: instant(context.endedAtMs),
 		fingerprintHash,
-		exceptionType,
-		exceptionMessage,
+		exceptionType: exceptionType ?? null,
+		exceptionMessage: exceptionMessage ?? null,
 		topFrame,
-		errorLabel: contextString(input.context, "errorLabel") ?? null,
+		errorLabel: text(context.errorLabel) ?? null,
 		occurrenceCount,
 		serviceName: serviceName ?? null,
-		deploymentEnv: contextString(input.context, "deploymentEnv") ?? null,
-		signalType: contextString(input.context, "signalType") ?? null,
-		observedValue: contextNumber(input.context, "observedValue"),
-		thresholdValue: contextNumber(input.context, "thresholdValue"),
+		deploymentEnv: text(context.deploymentEnv) ?? null,
+		signalType: text(context.signalType) ?? null,
+		observedValue: finite(context.observedValue),
+		thresholdValue: finite(context.thresholdValue),
 	})
 }
 
@@ -185,13 +154,9 @@ export interface MaybeEnqueueTriageInput {
 	readonly incidentKind: AiTriageIncidentKind
 	readonly incidentId: string
 	readonly issueId?: ErrorIssueId
-	readonly context: Record<string, unknown>
-	/** The `ChatSession` port. Absent means the row records why it could not run. */
-	readonly chatSessions?: ChatSessionsApi
+	readonly context: TriageIncidentContext
 	/** Manual starts ignore the automation-enabled flag and the gates, but never the quota. */
 	readonly force?: boolean
-	/** One per org when a producer starts several at once: holds the quota read and the insert. */
-	readonly admission?: Semaphore.Semaphore
 }
 
 /**
@@ -377,11 +342,12 @@ const recordSkip = (
  */
 export const maybeEnqueueTriage: (
 	input: MaybeEnqueueTriageInput,
-) => Effect.Effect<MaybeEnqueueTriageResult, never, Database> = Effect.fn(
+) => Effect.Effect<MaybeEnqueueTriageResult, never, Database | InvestigationStarter> = Effect.fn(
 	"AiTriageEnqueue.maybeStartInvestigation",
 )(
 	function* (input) {
 		const database = yield* Database
+		const starter = yield* InvestigationStarter
 		const nowMs = yield* Clock.currentTimeMillis
 
 		const existingRows = yield* database.execute((db) =>
@@ -423,7 +389,7 @@ export const maybeEnqueueTriage: (
 		}
 
 		const detected = snapshotFor(input)
-		const reason = contextString(input.context, "reason") ?? null
+		const reason = text(input.context.reason) ?? null
 
 		// Gate 1: what Maple already knows about the issue. An error incident
 		// auto-resolves after thirty quiet minutes and the next occurrence opens a
@@ -555,61 +521,20 @@ export const maybeEnqueueTriage: (
 				? detected
 				: new InvestigationSubjectSnapshot({ ...detected, severity: gate.severity })
 
-		// Quota read through insert. Under `admission`, concurrent starts for one org
-		// cannot all read the same usage and overshoot the daily cap together.
-		const admit = Effect.gen(function* () {
-			// One agent, one pass. Shared with `InvestigationService` so the two ceilings
-			// are judged the same way on both paths.
-			const usage = yield* database.execute((db) => selectInvestigationUsage(db, input.orgId, nowMs))
-			const quota = evaluateInvestigationQuota({
-				usage,
-				limits: settings,
-				passCount: 1,
-				nowMs,
-				// Severity decides which ceiling applies, in both units, so that a burst of
-				// `low` incidents just after UTC midnight cannot spend the slice a
-				// `critical` opening at noon needs.
-				severity: snapshot.severity,
-			})
-			if (quota.kind === "exceeded") {
-				yield* Effect.logWarning(
-					"Investigation daily budget reached; skipping autonomous start",
-				).pipe(
-					Effect.annotateLogs({
-						orgId: input.orgId,
-						incidentId: input.incidentId,
-						quotaDimension: quota.dimension,
-						quotaLimit: quota.limit,
-						// Without this the log says a start was refused but not what was
-						// refused. "runs, 100" read the same for a `low` anomaly and for the
-						// `critical` the reserve exists to protect, so there was no way to tell
-						// a working ceiling from one that had just turned away the day's only
-						// real incident.
-						severity: snapshot.severity ?? "unclassified",
-					}),
-				)
-				// A refused start has to be visible as a *refusal*. `start_result` used to
-				// be set only on the success path, so a budget-exhausted org looked
-				// identical in traces to one with nothing to investigate, which is how
-				// this went unnoticed for two weeks.
-				yield* Effect.annotateCurrentSpan({
-					orgId: input.orgId,
-					"maple.investigation.start_result": "quota_exceeded",
-					"maple.investigation.quota_dimension": quota.dimension,
-					"maple.investigation.quota_limit": quota.limit,
-					"maple.investigation.severity": snapshot.severity ?? "unclassified",
-				})
-				return { refused: { enqueued: false, reason: "daily_cap" as const } }
-			}
-
-			const investigationId = decodeInvestigationId(randomUUID())
-			const subject = new InvestigationIncidentSubject({
-				type: "incident",
-				incidentKind: input.incidentKind,
-				incidentId: input.incidentId,
-				...(input.issueId ? { issueId: input.issueId } : undefined),
-			})
-			const inserted = yield* database.execute((db) =>
+		// Quota read and insert under the org's admission lock, judged by the settled severity.
+		const investigationId = decodeInvestigationId(randomUUID())
+		const subject = new InvestigationIncidentSubject({
+			type: "incident",
+			incidentKind: input.incidentKind,
+			incidentId: input.incidentId,
+			...(input.issueId ? { issueId: input.issueId } : undefined),
+		})
+		const admission = yield* starter.admit({
+			orgId: input.orgId,
+			nowMs,
+			severity: snapshot.severity,
+			annotations: { incidentId: input.incidentId },
+			spend: (db) =>
 				db.run(
 					PG.insertInto(Investigations)
 						.values({
@@ -630,22 +555,15 @@ export const maybeEnqueueTriage: (
 						.onConflictDoNothing()
 						.returning("id"),
 				),
-			)
-			if (inserted.length === 0) {
-				return { refused: { enqueued: false, reason: "duplicate" as const } }
-			}
-			return { refused: null, investigationId, subject }
 		})
-		const admitted = yield* input.admission ? input.admission.withPermit(admit) : admit
-		if (admitted.refused !== null) return admitted.refused
-		const { investigationId, subject } = admitted
+		if (!admission.admitted) return { enqueued: false, reason: "daily_cap" as const }
+		if (admission.value.length === 0) return { enqueued: false, reason: "duplicate" as const }
 
-		const started = yield* startInvestigationTurn({
+		const started = yield* starter.startTurn({
 			orgId: input.orgId,
 			investigationId,
 			subject,
 			snapshot,
-			chatSessions: input.chatSessions,
 			nowMs,
 		})
 		if (!started.started) {

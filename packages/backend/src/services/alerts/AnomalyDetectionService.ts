@@ -59,7 +59,7 @@ import {
 } from "effect"
 import { isTriageSkipReason, maybeEnqueueTriage } from "@maple/backend/services/errors/ai-triage-enqueue"
 import { issuesOwningHashes } from "@maple/backend/services/errors/issue-fingerprints"
-import { ChatSessions } from "@maple/backend/platform/bindings"
+import { InvestigationStarter } from "@maple/backend/services/errors/InvestigationStarter"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { makeDbExecute, makePersistenceErrorMapper } from "@maple/backend/platform/db-execute"
 import { transitionRow } from "@maple/backend/platform/transition-row"
@@ -290,16 +290,14 @@ export interface AnomalyDetectionServiceApi {
 const make: Effect.Effect<
 	AnomalyDetectionServiceApi,
 	never,
-	Database | WarehouseQueryService | OrgClickHouseSettingsService | EdgeCacheService
+	Database | WarehouseQueryService | OrgClickHouseSettingsService | EdgeCacheService | InvestigationStarter
 > = Effect.gen(function* () {
 	const database = yield* Database
 	const warehouse = yield* WarehouseQueryService
 	const orgChSettings = yield* OrgClickHouseSettingsService
 	const edgeCache = yield* EdgeCacheService
-	// Optional: present only inside a Worker isolate. Used to start the
-	// investigation agent when an incident opens (org opt-in).
-	const chatSessionsOption = yield* Effect.serviceOption(ChatSessions)
-	const chatSessions = Option.getOrUndefined(chatSessionsOption)
+	// Starts the investigation agent when an incident opens (org opt-in).
+	const starter = yield* InvestigationStarter
 
 	const dbExecute = makeDbExecute(database, "AnomalyDetectionService", makePersistenceError)
 
@@ -1830,7 +1828,6 @@ const make: Effect.Effect<
 							incidentId,
 							issueId: errorIssueId ?? undefined,
 							context: {
-								kind: "anomaly",
 								signalType: evaluation.signalType,
 								serviceName: evaluation.serviceName,
 								deploymentEnv: evaluation.deploymentEnv,
@@ -1839,14 +1836,13 @@ const make: Effect.Effect<
 								// anomaly reached the snapshot as an unclassified incident.
 								severity: issueSeverityFromAlert(evaluation.severity),
 								observedValue: evaluation.value,
-								baselineMedian: evaluation.baselineMedian,
-								baselineSigma: evaluation.baselineSigma,
 								thresholdValue: evaluation.threshold,
-								sampleCount: evaluation.sampleCount,
-								detectedAt: DateTime.formatIso(DateTime.makeUnsafe(nowMs)),
+								startedAtMs: nowMs,
 							},
-							chatSessions,
-						}).pipe(Effect.provideService(Database, database))
+						}).pipe(
+							Effect.provideService(Database, database),
+							Effect.provideService(InvestigationStarter, starter),
+						)
 						// A gate skip is recorded as `skipped`, not left at `none`: the
 						// incident was judged, and the hub should say so rather than
 						// read as one automation never reached.
@@ -2395,6 +2391,12 @@ export class AnomalyDetectionService extends Context.Service<
 	AnomalyDetectionServiceApi
 >()("@maple/backend/services/AnomalyDetectionService", { make }) {
 	static readonly layer = Layer.effect(this, this.make).pipe(
-		Layer.provide(Layer.mergeAll(WarehouseQueryService.layer, OrgClickHouseSettingsService.layer)),
+		Layer.provide(
+			Layer.mergeAll(
+				WarehouseQueryService.layer,
+				OrgClickHouseSettingsService.layer,
+				InvestigationStarter.layer,
+			),
+		),
 	)
 }

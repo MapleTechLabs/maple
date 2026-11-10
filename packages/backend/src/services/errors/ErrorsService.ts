@@ -39,7 +39,7 @@ import {
 	OrgClickHouseSettings,
 	OrgIngestKeys,
 } from "@maple/db/tables"
-import { CH, parseWarehouseDateTime, formatWarehouseDateTime } from "@maple/query-engine"
+import { CH, parseWarehouseDateTime } from "@maple/query-engine"
 import {
 	Array as Arr,
 	Cause,
@@ -60,7 +60,7 @@ import {
 	isErrorTickClaimLost,
 	persistErrorTickWindow,
 } from "@maple/backend/services/errors/error-tick-persistence"
-import { ChatSessions } from "@maple/backend/platform/bindings"
+import { InvestigationStarter } from "@maple/backend/services/errors/InvestigationStarter"
 import { toPgText } from "@maple/backend/platform/pg-text"
 import { SYSTEM_ERRORS_AGENT_NAME } from "@maple/domain/system-agents"
 import { Database } from "@maple/backend/platform/DatabaseLive"
@@ -266,6 +266,7 @@ const make: Effect.Effect<
 	| ErrorActorsService
 	| ErrorIssueWorkflowService
 	| ErrorPolicyService
+	| InvestigationStarter
 > = Effect.gen(function* () {
 	const database = yield* Database
 	const actorService = yield* ErrorActorsService
@@ -287,10 +288,8 @@ const make: Effect.Effect<
 	const env = yield* Env
 	const dispatcher = yield* NotificationDispatcher
 	const earlyPromotionsPerDay = yield* EarlyPromotionsPerDay
-	// Optional: present only inside a Worker isolate. Used to start the
-	// investigation agent when an incident opens (org opt-in).
-	const chatSessionsOption = yield* Effect.serviceOption(ChatSessions)
-	const chatSessions = Option.getOrUndefined(chatSessionsOption)
+	// Starts the investigation agent when an incident opens (org opt-in).
+	const starter = yield* InvestigationStarter
 
 	const newErrorIssueId = () => decodeErrorIssueIdSync(randomUUID())
 	const newErrorIncidentId = () => decodeErrorIncidentIdSync(randomUUID())
@@ -1513,7 +1512,6 @@ const make: Effect.Effect<
 				incidentId: pending.incidentId,
 				issueId: pending.issueId,
 				context: {
-					kind: "error",
 					reason: pending.reason,
 					severity: pending.severity,
 					serviceName: pending.row.serviceName,
@@ -1523,12 +1521,13 @@ const make: Effect.Effect<
 					topFrame: pending.row.topFrame,
 					fingerprintHash: pending.row.fingerprintHash,
 					occurrenceCount: pending.row.count,
-					firstSeen: formatWarehouseDateTime(pending.row.firstSeenMs),
-					lastSeen: formatWarehouseDateTime(pending.row.lastSeenMs),
-					issueId: pending.issueId,
+					startedAtMs: pending.row.firstSeenMs,
+					endedAtMs: pending.row.lastSeenMs,
 				},
-				chatSessions,
-			}).pipe(Effect.provideService(Database, database)),
+			}).pipe(
+				Effect.provideService(Database, database),
+				Effect.provideService(InvestigationStarter, starter),
+			),
 		)
 
 		const issuesTouched = persistence.issuesTouched
@@ -2027,6 +2026,7 @@ export class ErrorsService extends Context.Service<ErrorsService, ErrorsServiceA
 				ErrorPolicyService.layer,
 				NotificationDispatcher.layer,
 				IssueFixVerificationService.layer,
+				InvestigationStarter.layer,
 			),
 		),
 	)

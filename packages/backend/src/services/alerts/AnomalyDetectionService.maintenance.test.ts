@@ -11,6 +11,7 @@ import { OrgClickHouseSettingsService } from "@maple/backend/services/org/OrgCli
 import { makeWarehouseServiceStub } from "@maple/backend/testing/warehouse-test-support"
 import { compiledQueryOf } from "@maple/query-engine/execution"
 import { AnomalyDetectionService } from "./AnomalyDetectionService"
+import { InvestigationStarter } from "@maple/backend/services/errors/InvestigationStarter"
 
 const ORG = Schema.decodeSync(OrgId)("org_anomaly_maintenance")
 const HOUR_MS = 60 * 60_000
@@ -67,6 +68,7 @@ const makeLayer = (testDb: TestDb, currentHourStartMs: number) => {
 				.pipe(Effect.orDie),
 	})
 	return Layer.effect(AnomalyDetectionService, AnomalyDetectionService.make).pipe(
+		Layer.provide(InvestigationStarter.layer),
 		Layer.provide(
 			Layer.mergeAll(
 				Layer.succeed(WarehouseQueryService, warehouse),

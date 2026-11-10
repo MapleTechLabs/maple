@@ -35,13 +35,12 @@ import {
 	applyInconclusiveWrites,
 	subjectTypeOf,
 } from "@maple/backend/services/errors/apply-diagnosis"
-import { startInvestigationTurn } from "@maple/backend/services/errors/investigation-start"
+import { admitManualStart, InvestigationStarter } from "@maple/backend/services/errors/InvestigationStarter"
 import {
 	isInvestigationStale,
 	storedProgressJson,
 	sweepAbandonedInvestigations,
 } from "@maple/backend/services/errors/investigation-stale"
-import { ChatSessions } from "@maple/backend/platform/bindings"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { makeDbExecute, makePersistenceErrorMapper } from "@maple/backend/platform/db-execute"
 import { transitionRow } from "@maple/backend/platform/transition-row"
@@ -182,7 +181,7 @@ export class InvestigationService extends Context.Service<InvestigationService, 
 	{
 		make: Effect.gen(function* () {
 			const database = yield* Database
-			const chatSessions = yield* Effect.serviceOption(ChatSessions)
+			const starter = yield* InvestigationStarter
 
 			const dbExecute = makeDbExecute(database, "InvestigationService", makePersistenceError)
 
@@ -409,14 +408,15 @@ export class InvestigationService extends Context.Service<InvestigationService, 
 				doc: InvestigationDocument,
 				nowMs: number,
 			) {
-				const started = yield* startInvestigationTurn({
-					orgId,
-					investigationId: doc.id,
-					subject: doc.subject,
-					snapshot: doc.snapshot,
-					chatSessions: Option.getOrUndefined(chatSessions),
-					nowMs,
-				}).pipe(Effect.mapError(makePersistenceError), Effect.provideService(Database, database))
+				const started = yield* starter
+					.startTurn({
+						orgId,
+						investigationId: doc.id,
+						subject: doc.subject,
+						snapshot: doc.snapshot,
+						nowMs,
+					})
+					.pipe(Effect.mapError(makePersistenceError))
 				if (started.started) return
 				if (started.reason === "no_binding") {
 					return yield* new InvestigationAgentUnavailableError({
@@ -579,21 +579,26 @@ export class InvestigationService extends Context.Service<InvestigationService, 
 							}
 						}
 						const doc = yield* createInvestigation(orgId, userId, request)
+						// A manual start spends the day's budget but is never refused by it.
 						const claimed = yield* dbExecute((db) =>
-							db.run(
-								PG.update(Investigations)
-									.set(($) => ({
-										startedAt: nowMs,
-										autonomousTurns: $.autonomousTurns.add(1),
-										updatedAt: nowMs,
-									}))
-									.where(($) => [
-										$.orgId.eq(orgId),
-										$.id.eq(doc.id),
-										$.status.eq("investigating"),
-										$.startedAt.isNull(),
-									])
-									.returning("id"),
+							admitManualStart(
+								db,
+								orgId,
+								db.run(
+									PG.update(Investigations)
+										.set(($) => ({
+											startedAt: nowMs,
+											autonomousTurns: $.autonomousTurns.add(1),
+											updatedAt: nowMs,
+										}))
+										.where(($) => [
+											$.orgId.eq(orgId),
+											$.id.eq(doc.id),
+											$.status.eq("investigating"),
+											$.startedAt.isNull(),
+										])
+										.returning("id"),
+								),
 							),
 						)
 						if (claimed.length === 0) return doc
@@ -619,35 +624,39 @@ export class InvestigationService extends Context.Service<InvestigationService, 
 				// A run in flight is not restarted underneath itself; a stale one was failed by the read
 				// above, and one whose start never claimed it (no `startedAt`) is not in flight.
 				const restarted = yield* dbExecute((db) =>
-					transitionRow(
-						{
-							table: "investigations",
-							id,
-							from: RESTARTABLE_INVESTIGATION_STATUSES,
-							to: "investigating",
-						},
-						(from) =>
-							db.run(
-								PG.update(Investigations)
-									.set(($) => ({
-										status: "investigating",
-										error: null,
-										startedAt: nowMs,
-										autonomousTurns: $.autonomousTurns.add(1),
-										updatedAt: nowMs,
-									}))
-									.where(($) => [
-										$.orgId.eq(orgId),
-										$.id.eq(id),
-										// Only from the status read above, so a concurrent resolve is a conflict.
-										$.status.eq(existing.status),
-										PG.or(
-											$.status.in_(...from),
-											PG.and($.status.eq("investigating"), $.startedAt.isNull()),
-										),
-									])
-									.returning("incidentKind", "incidentId"),
-							),
+					admitManualStart(
+						db,
+						orgId,
+						transitionRow(
+							{
+								table: "investigations",
+								id,
+								from: RESTARTABLE_INVESTIGATION_STATUSES,
+								to: "investigating",
+							},
+							(from) =>
+								db.run(
+									PG.update(Investigations)
+										.set(($) => ({
+											status: "investigating",
+											error: null,
+											startedAt: nowMs,
+											autonomousTurns: $.autonomousTurns.add(1),
+											updatedAt: nowMs,
+										}))
+										.where(($) => [
+											$.orgId.eq(orgId),
+											$.id.eq(id),
+											// Only from the status read above, so a concurrent resolve is a conflict.
+											$.status.eq(existing.status),
+											PG.or(
+												$.status.in_(...from),
+												PG.and($.status.eq("investigating"), $.startedAt.isNull()),
+											),
+										])
+										.returning("incidentKind", "incidentId"),
+								),
+						),
 					),
 				).pipe(
 					Effect.catchTag("@maple/backend/TransitionConflictError", () =>
@@ -871,5 +880,5 @@ export class InvestigationService extends Context.Service<InvestigationService, 
 		}),
 	},
 ) {
-	static readonly layer = Layer.effect(this, this.make)
+	static readonly layer = Layer.effect(this, this.make).pipe(Layer.provide(InvestigationStarter.layer))
 }

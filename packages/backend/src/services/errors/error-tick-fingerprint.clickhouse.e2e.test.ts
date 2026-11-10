@@ -45,6 +45,7 @@ import { ErrorIssueWorkflowService } from "./ErrorIssueWorkflowService"
 import { ErrorPolicyService } from "./ErrorPolicyService"
 import { ErrorsService } from "./ErrorsService"
 import { InvestigationService } from "./InvestigationService"
+import { InvestigationStarter } from "@maple/backend/services/errors/InvestigationStarter"
 
 const ORG = Schema.decodeSync(OrgId)("org_error_tick_fingerprint_e2e")
 const asIssueId = Schema.decodeSync(ErrorIssueId)
@@ -181,6 +182,7 @@ const makeTickLayer = (database: string) => {
 		Layer.provide(errorActorsLive),
 	)
 	return Layer.effect(ErrorsService, ErrorsService.make).pipe(
+		Layer.provide(InvestigationStarter.layer),
 		Layer.provide(envLive),
 		Layer.provide(databaseLive),
 		Layer.provide(warehouseLive),

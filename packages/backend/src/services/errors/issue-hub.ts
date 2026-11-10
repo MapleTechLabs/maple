@@ -9,7 +9,7 @@ import {
 } from "@maple/domain/primitives"
 import * as PG from "@maple-dev/effect-orm/postgres"
 import { AlertIncidents, ErrorIssueEvents, ErrorIssues, type ErrorIssueRow } from "@maple/db/tables"
-import { DateTime, Clock, Effect, Option, Schema } from "effect"
+import { Clock, Effect, Option, Schema } from "effect"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import type { MaybeEnqueueTriageInput } from "./ai-triage-enqueue"
 import { issueSeverityFromAlert } from "./severity-map"
@@ -299,24 +299,19 @@ export const upsertAlertIssue: (
 			incidentId: input.incidentId,
 			issueId,
 			context: {
-				kind: "alert",
 				ruleName: input.ruleName,
 				signalType: input.signalType,
 				// `AlertSeverity` is a two-value scale and the snapshot decodes a
 				// four-value one, so passing it through unmapped meant every `warning`
 				// alert failed the decode and arrived as an unclassified incident.
 				severity: issueSeverityFromAlert(input.severity),
-				comparator: input.comparator,
-				threshold: input.threshold,
-				thresholdUpper: input.thresholdUpper,
-				windowMinutes: input.windowMinutes,
-				groupKey: input.groupKey,
 				serviceName: input.serviceName,
 				observedValue: input.observedValue,
-				sampleCount: input.sampleCount,
-				firstTriggeredAt: DateTime.formatIso(DateTime.makeUnsafe(input.timestamp)),
-				lastTriggeredAt: DateTime.formatIso(DateTime.makeUnsafe(input.timestamp)),
-				issueId,
+				// Was passed as `threshold`, a key the snapshot never read, so every alert
+				// investigation and its classifier request carried a null threshold.
+				thresholdValue: input.threshold,
+				startedAtMs: input.timestamp,
+				endedAtMs: input.timestamp,
 			},
 		}
 
