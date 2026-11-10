@@ -422,10 +422,9 @@ export const archiveReconcile = Command.make("reconcile", {
 	Command.withHandler(
 		Effect.fnUntraced(function* (a) {
 			const { dataDir, archiveDir, scratchRoot } = resolveRoots(a.dataDir, a.archiveDir, a.scratchRoot)
-			// Both dry-run and apply go through the locked runArchiveReconciliation
-			// entry point (blocker 2): dry-run returns the plan without mutating;
-			// apply acquires the maintenance lock, migrates any v2 intent, then
-			// reconciles — never racing create/GC planning or pointer/catalog repair.
+			// Both modes go through the locked runArchiveReconciliation: dry-run returns the plan
+			// without mutating; apply takes the maintenance lock, so it never races create/GC
+			// planning or pointer/catalog repair.
 			const decision = yield* maintenanceOperation({
 				operation: "archive.reconcile",
 				try: () => runArchiveReconciliation(dataDir, archiveDir, scratchRoot, { dryRun: a.dryRun }),

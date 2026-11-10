@@ -249,10 +249,6 @@ const adoptSidecars = (dataDir: string): Effect.Effect<void, ServerStateFileErro
 		}),
 	)
 
-// ---------------------------------------------------------------------------
-// Discovery file and status probe.
-// ---------------------------------------------------------------------------
-
 /**
  * `GET /local/status`, untraced: readiness polls hit ECONNREFUSED until the
  * child binds, and each would otherwise close an `http.client` span as `Error`
@@ -270,10 +266,6 @@ const fetchLocalStatus = (
 		Effect.option,
 		Effect.provideService(HttpClient.TracerDisabledWhen, () => true),
 	)
-
-// ---------------------------------------------------------------------------
-// Flags.
-// ---------------------------------------------------------------------------
 
 const port = Flag.Int("port").pipe(
 	Flag.withDescription("Port for OTLP/HTTP ingest, the query API, and the bundled UI"),
@@ -400,7 +392,6 @@ const offlineFlag = Flag.Boolean("offline").pipe(
 	Flag.withDefault(false),
 )
 
-// Log file for `--background` runs, beside the PID file (e.g. ~/.maple/maple.log).
 const logFilePath = (dataDir: string): string => dataDirSidecarPath(dataDir, "maple.log")
 
 /** `maple.log` is rotated to `maple.log.1` at a background start once it passes this. */
@@ -1093,8 +1084,6 @@ export const start = Command.make("start", {
 						})
 					}
 
-					// `--reset`: wipe the store (and its version marker) so we bootstrap
-					// fresh. Preserve the checkpoint registry under dataDir/backups.
 					if (a.reset) {
 						const { preserved } = yield* resetLiveStorePreservingCheckpoints(dataDir)
 						yield* reportPreserved(preserved.length, scope)
@@ -1516,7 +1505,6 @@ export const reset = Command.make("reset", { dataDir: dataDirFlag, yes: yesFlag 
 			const scope = commandScope({ dataDir })
 			yield* adoptSidecars(dataDir)
 
-			// Refuse while a server still owns the store.
 			yield* refuseIfRunning(dataDir, runningRefusal(scope))
 
 			// Deleting a store is irreversible: require explicit confirmation, and

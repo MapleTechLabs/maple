@@ -44,7 +44,6 @@ export const cli = Command.make("maple").pipe(
 	}),
 	Command.withGlobalFlags([OutputFormatSetting]),
 	Command.withSubcommands([
-		// Server (local mode)
 		start,
 		stop,
 		reset,
@@ -52,37 +51,27 @@ export const cli = Command.make("maple").pipe(
 		restore,
 		deleteCommand,
 		schema,
-		// Parquet archives (local mode)
 		archive,
-		// Self-update
 		update,
 		changelog,
-		// Services
 		services,
 		diagnose,
 		serviceMap,
 		topOps,
-		// Traces
 		traces,
 		trace,
 		slowTraces,
-		// Errors
 		errors,
 		error,
-		// Logs
 		logs,
 		logPatterns,
 		logDiff,
-		// Attributes & metrics
 		attributes,
 		metrics,
-		// Analytics
 		timeseries,
 		breakdown,
 		compare,
-		// Raw SQL
 		query,
-		// Auth / config
 		login,
 		auth,
 		logout,

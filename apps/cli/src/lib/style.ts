@@ -25,15 +25,9 @@ export const amber = (s: string): string => (useColor ? `\x1b[38;5;208m${s}\x1b[
  *
  *   rsvg-convert -w 16 -h 16 -b white <mark>.svg -o m.png   # threshold 150
  *
- * 16px is the floor, not a preference. The mark's identity is the two eye
- * knockouts, and below 16 they smear into the crown — at 12px it is a blob.
- * That is why this is eight rows tall, and why it is printed as a left gutter
- * beside the banner rows rather than stacked above them: the banner already
- * runs eight or nine lines, so the mark costs no extra height.
- *
- * Shape carries without color, which is the point — half-blocks survive
- * NO_COLOR and a piped stdout. The emoji this replaced did neither, and it was
- * a maple *leaf* besides, while the brand mark is a tree.
+ * 16px is the floor: below it the two eye knockouts smear into the crown. It is
+ * printed as a left gutter beside the banner rows, so it costs no extra height.
+ * Half-blocks survive NO_COLOR and a piped stdout.
  *
  * The eyes sit left of centre and the right shoulder stays solid. That is the
  * artwork, not a rounding error.
