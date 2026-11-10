@@ -458,18 +458,24 @@ const openRouterAttempts = (
 			}
 }
 
+interface OpenRouterModelOptions {
+	/** The effort when `MAPLE_TRIAGE_REASONING_EFFORT` is unset. */
+	readonly fallbackEffort?: ReasoningEffort
+	/** Whether `MAPLE_TRIAGE_MODEL_CONTEXT`/`_OUTPUT` may override the model's limits. */
+	readonly overridableLimits: boolean
+	/** Nobody watches the run stream, so its deltas are joined and long calls retried. */
+	readonly unattended: boolean
+}
+
 const openRouterModel = (
 	settings: LlmSettings,
 	name: string,
-	effortKey: StringKey,
-	fallbackEffort: ReasoningEffort | undefined,
 	tags: LlmCallTags | undefined,
-	overridableLimits = true,
-	/** Nobody watches the run stream, so its deltas are joined; see `coalesceDeltas`. */
-	unattended = false,
+	options: OpenRouterModelOptions,
 ): ResolvedModel => {
-	const effort = readReasoningEffort(settings, effortKey) ?? fallbackEffort
-	const limits = limitsFor(settings, name, overridableLimits)
+	const { unattended } = options
+	const effort = readReasoningEffort(settings, "MAPLE_TRIAGE_REASONING_EFFORT") ?? options.fallbackEffort
+	const limits = limitsFor(settings, name, options.overridableLimits)
 	const maxTokens = Math.min(limits.output, MODEL_CALL_OUTPUT_TOKENS)
 	return {
 		provider: "openrouter",
@@ -535,13 +541,10 @@ export const resolveTriageModel = (
 					(openRouterRegion(settings) === "eu"
 						? EU_DEFAULT_OPENROUTER_MODEL
 						: DEFAULT_OPENROUTER_MODEL),
-				"MAPLE_TRIAGE_REASONING_EFFORT",
-				// No default. This resolver serves chat, AI triage *and* the validator, so a number
-				// picked here would retune three stages with different shapes at once.
-				undefined,
 				tags,
-				true,
-				unattended,
+				// No fallback effort. This resolver serves chat, AI triage *and* the validator, so a
+				// number picked here would retune three stages with different shapes at once.
+				{ overridableLimits: true, unattended },
 			)
 
 /** The organization's pick, when this region serves it: the EU endpoint 404s a model it lacks. */
@@ -566,7 +569,7 @@ export const resolveReviewModel = (
 	chosen: Option.Option<PrReviewModel> = Option.none(),
 ): ResolvedModel =>
 	resolveLlmProvider(settings) === "workers-ai"
-		? resolveTriageModel(settings, tags)
+		? resolveTriageModel(settings, tags, true)
 		: openRouterModel(
 				settings,
 				Option.getOrElse(
@@ -577,12 +580,16 @@ export const resolveReviewModel = (
 							? EU_DEFAULT_REVIEW_MODEL
 							: DEFAULT_REVIEW_MODEL),
 				),
-				"MAPLE_TRIAGE_REASONING_EFFORT",
-				undefined,
 				tags,
-				false,
-				true,
+				{ overridableLimits: false, unattended: true },
 			)
+
+/**
+ * The model a plan cancellation's second read runs on: the review model. One structured answer over
+ * a large JSON input, like a review: on 16 real cancellations the review default answered in 14 s
+ * (median, 43 s at most), where the production triage model took 46 s (520 s at most).
+ */
+export const resolveCancellationModel = (settings: LlmSettings): ResolvedModel => resolveReviewModel(settings)
 
 /**
  * Security-audit defaults per region. Discovery hunts on a cheap model so whole-repository audits
@@ -655,16 +662,12 @@ export const resolveSecurityAuditModel = (
 	chosen: string | null = null,
 ): ResolvedModel =>
 	resolveLlmProvider(settings) === "workers-ai"
-		? resolveTriageModel(settings, tags)
-		: openRouterModel(
-				settings,
-				securityAuditModelId(settings, stage, chosen),
-				"MAPLE_TRIAGE_REASONING_EFFORT",
-				"high",
-				tags,
-				false,
-				true,
-			)
+		? resolveTriageModel(settings, tags, true)
+		: openRouterModel(settings, securityAuditModelId(settings, stage, chosen), tags, {
+				fallbackEffort: "high",
+				overridableLimits: false,
+				unattended: true,
+			})
 
 /**
  * Splice the per-call fields into every outgoing OpenRouter chat request.

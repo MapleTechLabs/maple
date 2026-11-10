@@ -1,12 +1,11 @@
-import { Array as Arr, Effect, Option, Redacted, Schema, String as Str } from "effect"
+import { Array as Arr, Effect, Option, Schema, String as Str } from "effect"
 import { HttpServerRequest } from "effect/http"
 import type { TenantContext as McpTenantContext } from "@maple/backend/services/auth/tenant-context"
 import { AuthService } from "@maple/backend/services/auth/AuthService"
-import { secretsEqual } from "@maple/backend/services/auth/secret-equal"
 import { ApiKeysService } from "@maple/backend/services/org/ApiKeysService"
 import { ErrorActorsService } from "@maple/backend/services/errors/ErrorActorsService"
 import { Env } from "@maple/backend/platform/Env"
-import { ActorId, OrgId, RoleName, UserId } from "@maple/domain/http"
+import { ActorId, INTERNAL_SERVICE_BEARER_PREFIX, OrgId, RoleName, UserId } from "@maple/domain/http"
 import { INVESTIGATION_READ_FAMILIES, missingReadScopes, scopeAllows } from "@maple/domain/http/v2"
 import {
 	McpAuthInvalidError,
@@ -15,9 +14,8 @@ import {
 	McpInvalidTenantError,
 } from "../tools/types"
 import { recordExpectedMcpFailure } from "../expected-failures"
+import { checkInternalServiceToken } from "../../platform/internal-service-token"
 
-/** Exported so the audit layer classifies the same token the same way. */
-export const INTERNAL_SERVICE_PREFIX = "maple_svc_"
 /** The user every internal service call resolves to: a credential, not a person. */
 export const INTERNAL_SERVICE_USER_ID = "internal-service"
 
@@ -136,20 +134,16 @@ const resolveInternalServiceTenant = Effect.fn("McpTenant.resolveInternalService
 	request: Request,
 	token: string,
 ) {
-	const provided = Str.slice(INTERNAL_SERVICE_PREFIX.length)(token)
 	const env = yield* Env
-	const expected = Option.match(env.INTERNAL_SERVICE_TOKEN, {
-		onNone: () => undefined,
-		onSome: (value) => Redacted.value(value),
-	})
+	const check = checkInternalServiceToken(token, env.INTERNAL_SERVICE_TOKEN)
 
-	if (!expected) {
+	if (check === "unconfigured") {
 		return yield* new McpAuthMissingError({
 			message: "INTERNAL_SERVICE_TOKEN is not configured on the server",
 		})
 	}
 
-	if (secretsEqual(provided, expected)) {
+	if (check === "accepted") {
 		const orgId = Option.match(env.MAPLE_ORG_ID_OVERRIDE, {
 			onNone: () => request.headers.get("x-org-id"),
 			onSome: (value) => value,
@@ -223,7 +217,7 @@ const resolveSessionTenant = Effect.fn("McpTenant.resolveSessionTenant")(functio
 export const resolveChatSessionTenantContext = Effect.fn("McpTenant.resolveChatSessionTenantContext")(
 	function* (request: Request) {
 		const token = getBearerToken(request.headers)
-		if (token !== undefined && Str.startsWith(INTERNAL_SERVICE_PREFIX)(token)) {
+		if (token !== undefined && Str.startsWith(INTERNAL_SERVICE_BEARER_PREFIX)(token)) {
 			return yield* resolveInternalServiceTenant(request, token)
 		}
 		return yield* resolveSessionTenant(request)
@@ -237,7 +231,7 @@ export const resolveMcpTenantContext = Effect.fn("McpTenant.resolveMcpTenantCont
 		const token = getBearerToken(request.headers)
 
 		// Internal service auth (e.g. chat agent)
-		if (token && Str.startsWith(INTERNAL_SERVICE_PREFIX)(token)) {
+		if (token && Str.startsWith(INTERNAL_SERVICE_BEARER_PREFIX)(token)) {
 			return yield* resolveInternalServiceTenant(request, token)
 		}
 

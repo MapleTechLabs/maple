@@ -1,4 +1,5 @@
 import { MAPLE_MCP_SERVER_VERSION } from "@maple/domain/mcp-manifest"
+import { INTERNAL_SERVICE_BEARER_PREFIX } from "@maple/domain/http"
 import { MAPLE_MCP_SERVER_INSTRUCTIONS } from "./server-instructions"
 import { McpProtocol, McpServer } from "effect/ai"
 import { RpcSerialization } from "effect/rpc"
@@ -15,7 +16,6 @@ import type { McpToolExecutorLoader } from "./executor-loader"
 import { CurrentMcpRequestTenant, CurrentMcpTenant } from "./tenant"
 import { resolveHttpMcpTenant } from "./lib/resolve-tenant"
 import { type AuditActorInfo, CurrentAuditActor } from "@maple/backend/services/auth/audit-actor"
-import { INTERNAL_SERVICE_PREFIX } from "./lib/resolve-tenant"
 import { ApiKeysService } from "@maple/backend/services/org/ApiKeysService"
 import { ErrorActorsService } from "@maple/backend/services/errors/ErrorActorsService"
 import { AuthService } from "@maple/backend/services/auth/AuthService"
@@ -122,7 +122,7 @@ const mcpAuditActor = (headers: Record<string, string | undefined>): AuditActorI
 		return { type: "user", source: "mcp" }
 	}
 	const bearer = Str.trim(Str.slice("bearer ".length)(authorization))
-	return Str.startsWith(INTERNAL_SERVICE_PREFIX)(bearer)
+	return Str.startsWith(INTERNAL_SERVICE_BEARER_PREFIX)(bearer)
 		? { type: "system", source: "system" }
 		: { type: "api_key", source: "mcp" }
 }
