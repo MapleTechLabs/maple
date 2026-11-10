@@ -9,7 +9,11 @@ import { CliUsageError } from "../lib/errors"
 import { encodeJsonEffect } from "@maple/local-server/json"
 import { bold, dim, green } from "../lib/style"
 import { isLoopbackHostname } from "@maple/local-server/local-address"
-import { maintenanceTokenPath } from "@maple/local-server/archives/retention"
+import {
+	MAINTENANCE_TOKEN_HEADER,
+	maintenanceTokenPath,
+	readMaintenanceToken,
+} from "@maple/local-server/maintenance-auth"
 import { hasSubject, ScopedDeleteReport, ScopedDeleteRequest } from "@maple/local-server/scoped-delete"
 import { jsonFormatRequested, writeJson } from "./json-output"
 import { serverDiscoveryPath } from "@maple/local-server/store-version"
@@ -130,7 +134,7 @@ const postDelete = (baseUrl: string, body: ScopedDeleteRequest & { readonly dryR
 		// The token sits beside the data dir, so only the machine that owns the store can delete.
 		const tokenPath = maintenanceTokenPath(status.dataDir)
 		const token = yield* Effect.try({
-			try: () => Str.trim(readFileSync(tokenPath, "utf8")),
+			try: () => readMaintenanceToken(status.dataDir),
 			catch: () =>
 				failure(
 					`cannot read the maintenance token at ${prettyPath(tokenPath)}`,
@@ -143,7 +147,7 @@ const postDelete = (baseUrl: string, body: ScopedDeleteRequest & { readonly dryR
 		const response = yield* client
 			.execute(
 				HttpClientRequest.post(`${baseUrl}/local/maintenance/delete`).pipe(
-					HttpClientRequest.setHeader("x-maple-maintenance-token", token),
+					HttpClientRequest.setHeader(MAINTENANCE_TOKEN_HEADER, token),
 					HttpClientRequest.bodyText(bodyJson, "application/json"),
 				),
 			)

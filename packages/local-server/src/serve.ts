@@ -93,12 +93,8 @@ import { applyLocalIngestRules, localIngestRulesPath, makeLocalIngestRulesSource
 import { localServiceMapRollupLoop } from "./service-map-rollup"
 import { ensureStoreMarkerDurable, storeHasData } from "./store-version"
 import { describeError, errnoCode } from "./store-errors"
-import {
-	ensureMaintenanceToken,
-	maintenanceTokenMatches,
-	RetiredDayAuthority,
-	retireLiveDayInServer,
-} from "./archives/retention"
+import { RetiredDayAuthority, retireLiveDayInServer } from "./archives/retention"
+import { ensureMaintenanceToken, hasMaintenanceToken } from "./maintenance-auth"
 import { encodeJson } from "./json"
 
 /** Resolves a request path to a static asset (the bundled SPA). Returns
@@ -642,10 +638,7 @@ async function handleQuery(
 	if (req.signal.aborted) return finish(text("client closed request", CLIENT_CLOSED), sql.length)
 	// Trusted local tooling (checkpoint probes, maintenance) authenticates with
 	// the maintenance token; browsers cannot read it and never send the header.
-	const allowWrites = maintenanceTokenMatches(
-		maintenanceToken,
-		req.headers.get("x-maple-maintenance-token"),
-	)
+	const allowWrites = hasMaintenanceToken(maintenanceToken, req)
 	const prepared = prepareLocalQuery(db, sql, { allowWrites })
 	if (Result.isFailure(prepared)) {
 		const failure = prepared.failure
@@ -1110,8 +1103,8 @@ const handleRetirement = async (
 	token: string,
 	req: Request,
 ): Promise<Response> => {
-	if (!maintenanceTokenMatches(token, req.headers.get("x-maple-maintenance-token")))
-		return text("maintenance authorization required", 403)
+	const unauthorized = requireMaintenance(token, req)
+	if (unauthorized) return unauthorized
 	const read = await readBoundedJsonResult(req, MAX_RETIREMENT_BODY_BYTES)
 	if (Result.isFailure(read)) return bodyFailureResponse(read.failure)
 	const body = read.success
@@ -1164,8 +1157,8 @@ const handleScopedDelete = (
 	token: string,
 	req: Request,
 ): Effect.Effect<Response> => {
-	if (!maintenanceTokenMatches(token, req.headers.get("x-maple-maintenance-token")))
-		return Effect.succeed(text("maintenance authorization required", 403))
+	const unauthorized = requireMaintenance(token, req)
+	if (unauthorized) return Effect.succeed(unauthorized)
 	return Effect.gen(function* () {
 		const body = yield* readBoundedJson(req, MAX_DELETE_BODY_BYTES)
 		const decoded = Schema.decodeUnknownResult(ScopedDeleteBody, { onExcessProperty: "error" })(body)
@@ -1211,8 +1204,8 @@ const handleCheckpointBackup = (
 	token: string,
 	req: Request,
 ): Effect.Effect<Response, never, LocalEventingControlStore> => {
-	if (!maintenanceTokenMatches(token, req.headers.get("x-maple-maintenance-token")))
-		return Effect.succeed(text("maintenance authorization required", 403))
+	const unauthorized = requireMaintenance(token, req)
+	if (unauthorized) return Effect.succeed(unauthorized)
 	return Effect.gen(function* () {
 		const body = yield* readBoundedJson(req, MAX_CHECKPOINT_BODY_BYTES)
 		const decoded = Schema.decodeUnknownResult(
@@ -1257,17 +1250,16 @@ const handleCheckpointBackup = (
 	)
 }
 
-const eventingAuthorized = (token: string, req: Request): Response | null =>
-	maintenanceTokenMatches(token, req.headers.get("x-maple-maintenance-token"))
-		? null
-		: text("maintenance authorization required", 403)
+/** A 403 unless `req` carries the maintenance token. */
+const requireMaintenance = (token: string, req: Request): Response | null =>
+	hasMaintenanceToken(token, req) ? null : text("maintenance authorization required", 403)
 
 const handleProjectionActivation = (
 	gate: RequestQuiescenceGate,
 	token: string,
 	req: Request,
 ): Effect.Effect<Response, never, LocalEventingRuntime> => {
-	const unauthorized = eventingAuthorized(token, req)
+	const unauthorized = requireMaintenance(token, req)
 	if (unauthorized) return Effect.succeed(unauthorized)
 	return Effect.gen(function* () {
 		const eventing = yield* LocalEventingRuntime
@@ -1358,7 +1350,7 @@ const handleConsumerRegistration = (
 	req: Request,
 ): Effect.Effect<Response, never, LocalEventingRuntime> =>
 	Effect.suspend(() => {
-		const unauthorized = eventingAuthorized(maintenanceToken, req)
+		const unauthorized = requireMaintenance(maintenanceToken, req)
 		if (unauthorized) return Effect.succeed(unauthorized)
 		return consumerRequest(
 			gate,
@@ -1379,7 +1371,7 @@ const handleConsumerDisable = (
 	req: Request,
 ): Effect.Effect<Response, never, LocalEventingRuntime> =>
 	Effect.suspend(() => {
-		const unauthorized = eventingAuthorized(maintenanceToken, req)
+		const unauthorized = requireMaintenance(maintenanceToken, req)
 		if (unauthorized) return Effect.succeed(unauthorized)
 		return consumerRequest(
 			gate,
@@ -1445,7 +1437,7 @@ const handleOutboxAdministration = (
 	req: Request,
 	action: "abandon" | "accept-gap",
 ): Effect.Effect<Response, never, LocalEventingRuntime> => {
-	const unauthorized = eventingAuthorized(token, req)
+	const unauthorized = requireMaintenance(token, req)
 	if (unauthorized) return Effect.succeed(unauthorized)
 	return Effect.gen(function* () {
 		const eventing = yield* LocalEventingRuntime
@@ -1526,7 +1518,7 @@ const handleEventingRead = (
 	req: Request,
 	url: URL,
 ): Effect.Effect<Response, never, LocalEventingRuntime> => {
-	const unauthorized = eventingAuthorized(token, req)
+	const unauthorized = requireMaintenance(token, req)
 	if (unauthorized) return Effect.succeed(unauthorized)
 	return Effect.gen(function* () {
 		const eventing = yield* LocalEventingRuntime

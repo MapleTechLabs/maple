@@ -21,6 +21,7 @@ import { CHDB_VERSION, MAPLE_VERSION } from "./version"
 import { serverUrl } from "./local-address"
 import { errnoCode } from "./store-errors"
 import { isProcessAlive } from "./process-liveness"
+import { MAINTENANCE_TOKEN_HEADER, readMaintenanceToken } from "./maintenance-auth"
 import { Chdb, MERGE_TREE_CONFIG_XML, RAW_TELEMETRY_TTL_COLUMNS, writeIngestConfig } from "./chdb"
 import { ttlDaysFromDefinition } from "./schema-manifest"
 import { sha256File } from "./checkpoint-digest"
@@ -574,12 +575,12 @@ export const postCheckpointBackup = (
 	const url = `${serverUrl(host, port)}/local/checkpoint/backup`
 	return Effect.gen(function* () {
 		const token = yield* Effect.try({
-			try: () => Str.trim(readFileSync(`${resolve(dataDir)}.maintenance-token`, "utf8")),
+			try: () => readMaintenanceToken(dataDir),
 			catch: (error) => localQueryError(0, `failed to read maintenance token: ${errorMessage(error)}`),
 		})
 		const client = yield* HttpClient.HttpClient
 		const request = HttpClientRequest.post(url).pipe(
-			HttpClientRequest.setHeader("x-maple-maintenance-token", token),
+			HttpClientRequest.setHeader(MAINTENANCE_TOKEN_HEADER, token),
 			HttpClientRequest.bodyText(encodeJson({ checkpointId }), "application/json"),
 		)
 		const response = yield* client

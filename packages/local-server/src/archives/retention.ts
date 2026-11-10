@@ -1,4 +1,5 @@
-import { readRealFile, ensureLocalToken, localTokenMatches } from "../local-token"
+import { readRealFile } from "../local-token"
+import { MAINTENANCE_TOKEN_HEADER, readMaintenanceToken } from "../maintenance-auth"
 // SAFETY-FILE: JSON rows here come from fixed internal formats and are validated before domain use.
 import { createHash, randomUUID } from "node:crypto"
 import { existsSync, readFileSync } from "node:fs"
@@ -148,17 +149,12 @@ export const parseRetiredDayLedger = (value: unknown): RetiredDayLedger => {
 }
 
 export const retiredDayLedgerPath = (dataDir: string): string => `${resolve(dataDir)}.retired-days.json`
-export const maintenanceTokenPath = (dataDir: string): string => `${resolve(dataDir)}.maintenance-token`
 
 export const readRetiredDayLedger = (dataDir: string): RetiredDayLedger => {
 	const path = retiredDayLedgerPath(dataDir)
 	if (!existsSync(path)) return { formatVersion: LEDGER_FORMAT_VERSION, retiredDays: [] }
 	return parseRetiredDayLedger(decodeJsonSync(readRealFile(path, "retired-day ledger")))
 }
-
-export const ensureMaintenanceToken = (dataDir: string): Promise<string> =>
-	ensureLocalToken(maintenanceTokenPath(dataDir), "maintenance token")
-export const maintenanceTokenMatches = localTokenMatches
 
 const eventDateKey: Readonly<Record<string, string>> = {
 	traces: "start_time",
@@ -658,11 +654,11 @@ export const retireLiveDay = async (options: {
 	await withMaintenanceLock(options.dataDir, randomUUID(), async () => {
 		const { reconcileArchiveGeneration } = await import("./generation")
 		await reconcileArchiveGeneration(options.dataDir, options.archiveDir, options.scratchRoot)
-		const token = Str.trim(readRealFile(maintenanceTokenPath(options.dataDir), "maintenance token"))
+		const token = readMaintenanceToken(options.dataDir)
 		const request = options.request ?? fetch
 		const response = await request(`http://127.0.0.1:${options.port}/local/retention/retire`, {
 			method: "POST",
-			headers: { "content-type": "application/json", "x-maple-maintenance-token": token },
+			headers: { "content-type": "application/json", [MAINTENANCE_TOKEN_HEADER]: token },
 			body: encodeJson({
 				archiveDir: resolve(options.archiveDir),
 				rangeDate,
