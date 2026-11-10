@@ -23,7 +23,7 @@ import { errorState } from "@maple/views/ui/error-state"
 import { segmentedSelect } from "@maple/views/ui/segmented-select"
 import { relativeTime } from "../../kit/relative-time"
 import { statRail, statRailItem } from "../../kit/stat-rail"
-import { isoMs } from "../../kit/alert-time"
+import { isoMs, formatSpan } from "../../kit/alert-time"
 import * as CopyButton from "@maple/views/ui/copy-button"
 import { copyableField } from "@maple/views/ui/copyable-field"
 import { eyebrow } from "@maple/views/ui/eyebrow"
@@ -34,10 +34,8 @@ import {
 	formatEvery,
 	formatMs,
 	formatShare,
-	formatSpan,
 	checkHealth,
 	latencyPercentiles,
-	medianOf,
 	STATUS_TONE,
 	type UptimeMonitor,
 	uptimeShare,
@@ -51,6 +49,7 @@ import { chartFrameClass } from "@maple/views/ui/chart-frame"
 import { dividedList } from "@maple/views/ui/rule"
 import { textLink } from "@maple/views/ui/text-link"
 import { selectableRow } from "@maple/views/ui/selectable-row"
+import { medianOf } from "@maple/ui/lib/number"
 
 // The monitor page's panels: response time, the checks list and the side panels.
 

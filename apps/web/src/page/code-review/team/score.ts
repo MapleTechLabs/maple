@@ -1,5 +1,6 @@
 import type { CodeReviewTeamMember } from "@maple/domain/http"
-import { Array as Arr, Order } from "effect"
+import { Array as Arr } from "effect"
+import { medianOf } from "@maple/ui/lib/number"
 
 // One 0-100 score per person: 80% quality, 20% merged volume against the team's median. Quality is
 // how much of what the review raised reached the merge, each part a defect rate compared to the
@@ -56,13 +57,6 @@ export type Score = Readonly<{
 }>
 
 const sum = (values: ReadonlyArray<number>) => Arr.reduce(values, 0, (total, value) => total + value)
-
-export const medianOf = (values: ReadonlyArray<number>): number | null => {
-	if (values.length === 0) return null
-	const sorted = Arr.sort(values, Order.Number)
-	const mid = Math.floor(sorted.length / 2)
-	return sorted.length % 2 === 1 ? (sorted[mid] ?? null) : ((sorted[mid - 1] ?? 0) + (sorted[mid] ?? 0)) / 2
-}
 
 /** Scores by login. People with no merged pull request have nothing to judge and are left out. */
 export const teamScores = (members: ReadonlyArray<CodeReviewTeamMember>): ReadonlyMap<string, Score> => {

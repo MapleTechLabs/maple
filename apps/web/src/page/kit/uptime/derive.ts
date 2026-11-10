@@ -1,6 +1,6 @@
 import type { V2UptimeMonitor } from "@maple/domain/http/v2"
 import type { Tone } from "@maple/ui/lib/tone"
-import { isoMs } from "../alert-time"
+import { isoMs, formatSpan } from "../alert-time"
 import { Array as Arr, String as Str } from "effect"
 
 // Pure reads of an uptime monitor shared by the Uptime tab, the monitor page and the service card.
@@ -26,18 +26,6 @@ export const STATUS_TONE = {
 	pending: "neutral",
 	paused: "neutral",
 } as const satisfies Record<DisplayStatus, Tone>
-
-/** `6m`, `3h 12m`, `2d 4h`: the two largest units of a span. */
-export const formatSpan = (ms: number): string => {
-	const seconds = Math.max(0, Math.floor(ms / 1000))
-	if (seconds < 60) return `${seconds}s`
-	const minutes = Math.floor(seconds / 60)
-	if (minutes < 60) return `${minutes}m`
-	const hours = Math.floor(minutes / 60)
-	if (hours < 24) return minutes % 60 === 0 ? `${hours}h` : `${hours}h ${minutes % 60}m`
-	const days = Math.floor(hours / 24)
-	return hours % 24 === 0 ? `${days}d` : `${days}d ${hours % 24}h`
-}
 
 /** A cadence in seconds as `30s`, `5m`, `24h`. */
 export const formatEvery = (seconds: number): string => formatSpan(seconds * 1000)
@@ -148,13 +136,6 @@ export type CheckHealth = "fast" | "slower" | "slow" | "someFailed" | "mostlyFai
 /** Latency over these multiples of the window's median reads as slower and slow. */
 const SLOWER_FACTOR = 1.5
 const SLOW_FACTOR = 2
-
-export const medianOf = (values: ReadonlyArray<number>): number | null => {
-	if (values.length === 0) return null
-	const sorted = [...values].sort((a, b) => a - b)
-	const mid = Math.floor(sorted.length / 2)
-	return sorted.length % 2 === 1 ? (sorted[mid] ?? null) : ((sorted[mid - 1] ?? 0) + (sorted[mid] ?? 0)) / 2
-}
 
 /** Failures first (most of the bucket failing is red, some is amber), then latency against the median. */
 export const checkHealth = (

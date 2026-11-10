@@ -34,6 +34,7 @@ import { typography } from "@maple/views/ui/typography"
 import { hstack } from "@maple/views/ui/stack"
 import { Array as Arr, String as Str, Option } from "effect"
 import { ALERT_SEVERITY_LABEL } from "../shared/badges"
+import { everyMinutes } from "../../kit/alert-time"
 
 // `RuleConditionFields`: the rule's condition row.
 
@@ -243,7 +244,7 @@ const windowDescription = (form: RuleForm): string => {
 	const minutes = Number(Str.trim(form.windowMinutes))
 	if (!Number.isFinite(minutes) || minutes <= 0) return "Each check looks at this much data."
 	const every = formIntervalMinutes(form)
-	return `Each check looks at this much data, checked every ${every === 1 ? "minute" : `${every} min`}.`
+	return `Each check looks at this much data, checked every ${everyMinutes(every)}.`
 }
 
 /** "Check every": the interval, and for raw SQL the query time each one allows. */

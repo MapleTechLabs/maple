@@ -7,13 +7,13 @@ import {
 	type CheckHealth,
 	checkHealth,
 	displayStatus,
-	medianOf,
 	type RecentCheck,
 	STATUS_TONE,
 	statusLabel,
 	type UptimeMonitor,
 } from "./derive"
 import { Array as Arr } from "effect"
+import { medianOf } from "@maple/ui/lib/number"
 
 // The uptime marks: the status chip, the status square and the recent-checks strip.
 

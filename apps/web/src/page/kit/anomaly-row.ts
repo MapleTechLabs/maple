@@ -21,15 +21,12 @@ import { icon } from "@maple/views/ui/icon"
 import { statusDot } from "@maple/views/ui/status-dot"
 import { serviceDot } from "@maple/views/ui/values"
 import { relativeTime } from "./relative-time"
-import { Array as Arr, String as Str } from "effect"
+import { Array as Arr } from "effect"
 import { hstack } from "@maple/views/ui/stack"
 import { typography } from "@maple/views/ui/typography"
+import { shortIssueId } from "@maple/ui/lib/ids"
 
 // `AnomalyRow`: one anomaly in a list.
-
-/** `shortIssueId`: the first seven hex digits, upper case. */
-export const shortIssueId = (id: string): string =>
-	Str.toUpperCase(Str.slice(0, 7)(Str.replace(/-/g, "")(id)))
 
 export const anomalyHref = (incidentId: AnomalyIncidentId) => hrefOf(AppRoute.Anomaly({ incidentId }))
 

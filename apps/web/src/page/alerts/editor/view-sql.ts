@@ -22,6 +22,7 @@ import { hstack } from "@maple/views/ui/stack"
 import { SQL_MACRO_HINTS, sqlPanelHeader } from "../../kit/query-builder/sql-panel"
 import { Array as Arr, Record as Rec } from "effect"
 import { stripClass } from "@maple/views/ui/rule"
+import { everyMinutes } from "../../kit/alert-time"
 
 // `RawSqlEditorPanel` without the bucket control, and the alert's reducer row under it
 // (`RawQueryEditor`).
@@ -102,7 +103,7 @@ const meterNote = (form: RuleForm, timing: AlertQueryTiming, interval: number, l
 	}
 	if (intervalWindowIssue(form) !== null)
 		return "The picked interval is longer than the window. Pick a shorter one."
-	return `Fits checks every ${interval === 1 ? "minute" : `${interval} min`}.`
+	return `Fits checks every ${everyMinutes(interval)}.`
 }
 
 /** One check's query time against the limit at the picked interval, and the switch to one it fits. */

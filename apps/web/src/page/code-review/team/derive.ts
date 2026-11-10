@@ -1,7 +1,8 @@
 import type { CodeReviewTeamMember } from "@maple/domain/http"
 import type { CodeReviewTeamSearch, CodeReviewTeamSort } from "../../../route/search"
-import { medianOf, type Score } from "./score"
+import type { Score } from "./score"
 import { Array as Arr, String as Str, Order } from "effect"
+import { medianOf } from "@maple/ui/lib/number"
 
 // The scorecard's numbers from the members' counts: rates, the team median of each, the order, the
 // ranked view and the highlights.
