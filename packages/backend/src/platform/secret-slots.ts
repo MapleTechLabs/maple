@@ -114,6 +114,12 @@ export const railwayTokenSlot: SecretSlot<OrgRef> = {
 	legacyAad: (ref) => Buffer.from(`railway-token:${ref.orgId}`, "utf8"),
 }
 
+export const vercelTokenSlot: SecretSlot<OrgRef> = {
+	name: "vercel_connections.token",
+	binding: orgBinding,
+	legacyAad: (ref) => Buffer.from(`vercel-token:${ref.orgId}`, "utf8"),
+}
+
 export const scrapeTargetCredentialsSlot: SecretSlot<OrgRowRef> = {
 	name: "scrape_targets.auth_credentials",
 	binding: orgRowBinding,

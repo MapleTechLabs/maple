@@ -53,7 +53,8 @@ import {
 	String as Str,
 } from "effect"
 import { FetchHttpClient, HttpClient } from "effect/http"
-import { decryptAes256Gcm, encryptAes256Gcm, parseBase64Aes256GcmKey } from "@maple/backend/platform/Crypto"
+import { openSecret, sealSecret, secretKeyringFromEnv } from "@maple/backend/platform/SecretBox"
+import { vercelTokenSlot } from "@maple/backend/platform/secret-slots"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { makeDbExecute, makePersistenceErrorMapper } from "@maple/backend/platform/db-execute"
 import { summarizeCause } from "@maple/backend/platform/describe-cause"
@@ -103,8 +104,6 @@ const SYSTEM_USER_ID = decodeUserId("system-vercel-integration")
 
 const toPersistenceError = makePersistenceErrorMapper(IntegrationsPersistenceError, "Vercel database error")
 
-/** Binds each ciphertext to its org so a row copied across orgs fails to decrypt. */
-const tokenAad = (orgId: OrgId) => Buffer.from(`vercel-token:${orgId}`)
 
 type DrainKind = "logs" | "traces" | "aiGateway" | "speedInsights" | "webAnalytics" | "auditLog"
 const DRAIN_KINDS: ReadonlyArray<DrainKind> = [
@@ -405,10 +404,7 @@ export class VercelIntegrationService extends Context.Service<
 		const httpClient = yield* HttpClient.HttpClient
 		const ingestKeys = yield* OrgIngestKeysService
 		const toConfigError = (message: string) => new IntegrationsPersistenceError({ message })
-		const encryptionKey = yield* parseBase64Aes256GcmKey(
-			Redacted.value(env.MAPLE_INGEST_KEY_ENCRYPTION_KEY),
-			toConfigError,
-		)
+		const keyring = yield* secretKeyringFromEnv(env, toConfigError)
 		const lookupHmacKey = yield* parseIngestKeyLookupHmacKey(
 			Redacted.value(env.MAPLE_INGEST_KEY_LOOKUP_HMAC_KEY),
 			toConfigError,
@@ -486,11 +482,12 @@ export class VercelIntegrationService extends Context.Service<
 			)
 
 		const decryptToken = (connection: VercelConnectionRow) =>
-			decryptAes256Gcm(
+			openSecret(
+				keyring,
+				vercelTokenSlot,
+				{ orgId: connection.orgId },
 				{ ciphertext: connection.tokenCiphertext, iv: connection.tokenIv, tag: connection.tokenTag },
-				encryptionKey,
 				() => new IntegrationsPersistenceError({ message: "Failed to decrypt the Vercel token" }),
-				tokenAad(connection.orgId),
 			)
 
 		/**
@@ -1182,11 +1179,12 @@ export class VercelIntegrationService extends Context.Service<
 								}).pipe(Effect.as(false)),
 							),
 						)
-			const encrypted = yield* encryptAes256Gcm(
+			const encrypted = yield* sealSecret(
+				keyring,
+				vercelTokenSlot,
+				{ orgId },
 				token,
-				encryptionKey,
 				(message) => new IntegrationsPersistenceError({ message }),
-				tokenAad(orgId),
 			)
 			const now = yield* Clock.currentTimeMillis
 			const fields = {
