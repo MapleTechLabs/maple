@@ -1,6 +1,16 @@
-import { elementScroll, observeElementOffset, observeElementRect, Virtualizer } from "@tanstack/virtual-core"
-import { Effect, Queue, Stream, Array as Arr } from "effect"
+import { Virtualizer } from "@tanstack/virtual-core"
+import { type Stream, Array as Arr } from "effect"
 import { Mount } from "foldkit"
+import {
+	batchedOnChange,
+	DOM_OPTIONS,
+	type Instance,
+	measureRow,
+	rowMountObserver,
+	sameRows,
+	virtualizerStream,
+	whileLive,
+} from "@maple/views/lib/virtualizer"
 import { Message } from "./message"
 import type { VirtualRow } from "./model"
 
@@ -8,10 +18,6 @@ import type { VirtualRow } from "./model"
 export const COUNT_ATTRIBUTE = "trace-count"
 const ROW_HEIGHT = 44
 const OVERSCAN = 10
-
-const sameRows = (a: ReadonlyArray<VirtualRow>, b: ReadonlyArray<VirtualRow>): boolean =>
-	a.length === b.length &&
-	Arr.every(a, (row, i) => row.index === b[i]?.index && row.start === b[i]?.start && row.end === b[i]?.end)
 
 const rowsOf = (scroller: HTMLElement): ReadonlyArray<HTMLElement> =>
 	Array.from(scroller.querySelectorAll<HTMLElement>("tbody > tr[data-index]"))
@@ -21,114 +27,78 @@ const countOf = (scroller: HTMLElement): number =>
 
 type WindowMessage = typeof Message.ChangedVirtualWindow.Type
 
-/**
- * `useVirtualizer` from `TracesTableView` on @tanstack/virtual-core: the same estimate, overscan
- * and measuring of every mounted row (`VirtualTableBody`'s `measureRef`). Changes raised
- * while measuring are batched to a microtask; a scroll renders synchronously.
- */
 /** The virtualizer's running state between its measure and scroll callbacks. */
 type VirtualizerState = {
 	count: number
 	rows: ReadonlyArray<VirtualRow>
 	totalSize: number
 	isMeasuring: boolean
-	isEmitScheduled: boolean
 }
 
+/**
+ * `useVirtualizer` from `TracesTableView` on @tanstack/virtual-core: the same estimate, overscan
+ * and measuring of every mounted row (`VirtualTableBody`'s `measureRef`). Changes raised
+ * while measuring are batched to a microtask; a scroll renders synchronously.
+ */
 const virtualize = (scroller: HTMLElement): Stream.Stream<WindowMessage> =>
-	Stream.callback<WindowMessage>((queue) =>
-		Effect.acquireRelease(
-			Effect.sync(() => {
-				const state: VirtualizerState = {
-					count: countOf(scroller),
-					rows: [],
-					totalSize: -1,
-					isMeasuring: false,
-					isEmitScheduled: false,
-				}
-				const emitWindow = (instance: Virtualizer<HTMLElement, HTMLElement>) => {
-					const rows = Arr.map(instance.getVirtualItems(), (item) => ({
-						index: item.index,
-						start: item.start,
-						end: item.end,
-					}))
-					const totalSize = instance.getTotalSize()
-					if (totalSize === state.totalSize && sameRows(rows, state.rows)) return
-					state.rows = rows
-					state.totalSize = totalSize
-					Queue.offerUnsafe(queue, Message.ChangedVirtualWindow({ rows, totalSize }))
-				}
-				const options = () => ({
-					count: state.count,
-					getScrollElement: () => scroller,
-					estimateSize: () => ROW_HEIGHT,
-					overscan: OVERSCAN,
-					observeElementRect,
-					observeElementOffset,
-					scrollToFn: elementScroll,
-					onChange: (instance: Virtualizer<HTMLElement, HTMLElement>, sync: boolean) => {
-						if (sync && !state.isMeasuring) return emitWindow(instance)
-						if (state.isEmitScheduled) return
-						state.isEmitScheduled = true
-						queueMicrotask(() => {
-							state.isEmitScheduled = false
-							emitWindow(instance)
-						})
-					},
-				})
-				const virtualizer = new Virtualizer<HTMLElement, HTMLElement>(options())
-				const measure = (node: HTMLElement) => {
-					state.isMeasuring = true
-					virtualizer.measureElement(node)
-					state.isMeasuring = false
-				}
-				const rowObserver = new MutationObserver((records) => {
-					if (Arr.some(records, (record) => record.removedNodes.length > 0))
-						virtualizer.measureElement(null)
-					Arr.forEach(records, (record) =>
-						record.addedNodes.forEach((node) => {
-							if (node instanceof HTMLElement && node.hasAttribute("data-index")) measure(node)
-						}),
-					)
-				})
-				const observeBody = () => {
-					const body = scroller.querySelector("tbody")
-					if (body !== null) rowObserver.observe(body, { childList: true })
-				}
-				const countObserver = new MutationObserver(() => {
-					state.count = countOf(scroller)
-					virtualizer.setOptions(options())
-					rowObserver.disconnect()
-					observeBody()
-					virtualizer._willUpdate()
-					emitWindow(virtualizer)
-				})
-				countObserver.observe(scroller, {
-					attributes: true,
-					attributeFilter: [`data-${COUNT_ATTRIBUTE}`],
-				})
+	virtualizerStream<WindowMessage>((offer) => {
+		const state: VirtualizerState = {
+			count: countOf(scroller),
+			rows: [],
+			totalSize: -1,
+			isMeasuring: false,
+		}
+		const emitWindow = (instance: Instance) => {
+			const rows = Arr.map(instance.getVirtualItems(), (item) => ({
+				index: item.index,
+				start: item.start,
+				end: item.end,
+			}))
+			const totalSize = instance.getTotalSize()
+			if (totalSize === state.totalSize && sameRows(rows, state.rows)) return
+			state.rows = rows
+			state.totalSize = totalSize
+			offer(Message.ChangedVirtualWindow({ rows, totalSize }))
+		}
+		const onChange = batchedOnChange(state, emitWindow)
+		const options = () => ({
+			count: state.count,
+			getScrollElement: () => scroller,
+			estimateSize: () => ROW_HEIGHT,
+			overscan: OVERSCAN,
+			...DOM_OPTIONS,
+			onChange,
+		})
+		const virtualizer: Instance = new Virtualizer<HTMLElement, HTMLElement>(options())
+		const measure = measureRow(state, virtualizer)
+		const rowObserver = rowMountObserver(virtualizer, measure)
+		const observeBody = () => {
+			const body = scroller.querySelector("tbody")
+			if (body !== null) rowObserver.observe(body, { childList: true })
+		}
+		const countObserver = new MutationObserver(() => {
+			state.count = countOf(scroller)
+			virtualizer.setOptions(options())
+			rowObserver.disconnect()
+			observeBody()
+			virtualizer._willUpdate()
+			emitWindow(virtualizer)
+		})
+		countObserver.observe(scroller, { attributes: true, attributeFilter: [`data-${COUNT_ATTRIBUTE}`] })
 
-				observeBody()
-				Arr.forEach(rowsOf(scroller), measure)
-				const unmount = virtualizer._didMount()
-				virtualizer._willUpdate()
-				emitWindow(virtualizer)
-				return () => {
-					countObserver.disconnect()
-					rowObserver.disconnect()
-					unmount()
-				}
-			}),
-			(cleanup) => Effect.sync(cleanup),
-		).pipe(Effect.flatMap(() => Effect.never)),
-	)
+		observeBody()
+		Arr.forEach(rowsOf(scroller), measure)
+		const unmount = virtualizer._didMount()
+		virtualizer._willUpdate()
+		emitWindow(virtualizer)
+		return () => {
+			countObserver.disconnect()
+			rowObserver.disconnect()
+			unmount()
+		}
+	})
 
 export const VirtualizeTraces = Mount.defineStream("VirtualizeTraces", {
 	messages: [Message.ChangedVirtualWindow],
-	execute: ({ element, viewStateChanges }) =>
-		viewStateChanges.pipe(
-			Stream.switchMap((viewState) =>
-				viewState === "Live" && element instanceof HTMLElement ? virtualize(element) : Stream.never,
-			),
-		),
+	execute: ({ element, viewStateChanges }) => whileLive(element, viewStateChanges, virtualize),
 })

@@ -1,5 +1,15 @@
-import { elementScroll, observeElementOffset, observeElementRect, Virtualizer } from "@tanstack/virtual-core"
-import { Effect, Queue, Schema, Stream, Array as Arr, String as Str } from "effect"
+import { Virtualizer } from "@tanstack/virtual-core"
+import { Schema, type Stream, Array as Arr } from "effect"
+import {
+	batchedOnChange,
+	DOM_OPTIONS,
+	type Instance,
+	pageScrollerOf,
+	sameRows,
+	scrollMarginOf,
+	splitAttribute,
+	virtualizerStream,
+} from "@maple/views/lib/virtualizer"
 
 // `SessionsList`'s `useVirtualizer` over the page scroller (`usePageScrollMargin`), on
 // @tanstack/virtual-core: same estimate, overscan, item keys and measuring of every mounted row.
@@ -23,112 +33,79 @@ export const emptyWindow: VirtualWindow = { rows: [], totalSize: 0, scrollMargin
 
 export const keysValue = (keys: ReadonlyArray<string>): string => Arr.join(keys, "\n")
 
-const keysOf = (list: HTMLElement): ReadonlyArray<string> => {
-	const raw = list.getAttribute(`data-${KEYS_ATTRIBUTE}`) ?? ""
-	return raw === "" ? [] : Str.split("\n")(raw)
-}
-
-const marginBetween = (list: HTMLElement, scroller: HTMLElement): number =>
-	Math.max(
-		0,
-		Math.round(
-			list.getBoundingClientRect().top - scroller.getBoundingClientRect().top + scroller.scrollTop,
-		),
-	)
-
 const sameWindow = (a: VirtualWindow, b: VirtualWindow): boolean =>
-	a.totalSize === b.totalSize &&
-	a.scrollMargin === b.scrollMargin &&
-	a.rows.length === b.rows.length &&
-	Arr.every(
-		a.rows,
-		(row, i) =>
-			row.index === b.rows[i]?.index && row.start === b.rows[i]?.start && row.end === b.rows[i]?.end,
-	)
+	a.totalSize === b.totalSize && a.scrollMargin === b.scrollMargin && sameRows(a.rows, b.rows)
 
 /** Runs the virtualizer for the list element; every window change becomes `toMessage(window)`. */
 export const virtualizeSessions = <A>(
 	list: HTMLElement,
 	toMessage: (window: VirtualWindow) => A,
 ): Stream.Stream<A> =>
-	Stream.callback<A>((queue) =>
-		Effect.acquireRelease(
-			Effect.sync(() => {
-				const scroller = list.closest<HTMLElement>('[data-slot="page-scroll-area"]') ?? list
-				const state = { keys: keysOf(list), scrollMargin: 0, last: emptyWindow, isScheduled: false }
-				const emit = (instance: Virtualizer<HTMLElement, HTMLElement>) => {
-					const next: VirtualWindow = {
-						rows: Arr.map(instance.getVirtualItems(), (item) => ({
-							index: item.index,
-							start: item.start,
-							end: item.end,
-						})),
-						totalSize: instance.getTotalSize(),
-						scrollMargin: state.scrollMargin,
-					}
-					if (sameWindow(next, state.last)) return
-					state.last = next
-					Queue.offerUnsafe(queue, toMessage(next))
-				}
-				// The re-render a measurement raises is batched to a microtask.
-				const schedule = (instance: Virtualizer<HTMLElement, HTMLElement>) => {
-					if (state.isScheduled) return
-					state.isScheduled = true
-					queueMicrotask(() => {
-						state.isScheduled = false
-						emit(instance)
-					})
-				}
-				const options = () => ({
-					count: state.keys.length,
-					getItemKey: (index: number) => state.keys[index] ?? String(index),
-					getScrollElement: () => scroller,
-					estimateSize: () => ESTIMATE,
-					overscan: OVERSCAN,
-					scrollMargin: state.scrollMargin,
-					observeElementRect,
-					observeElementOffset,
-					scrollToFn: elementScroll,
-					onChange: (instance: Virtualizer<HTMLElement, HTMLElement>) => schedule(instance),
-				})
-				const virtualizer = new Virtualizer<HTMLElement, HTMLElement>(options())
-				const update = () => {
-					virtualizer.setOptions(options())
-					virtualizer._willUpdate()
-					schedule(virtualizer)
-				}
-				const measureRows = () =>
-					list
-						.querySelectorAll<HTMLElement>(":scope > [data-index]")
-						.forEach((node) => virtualizer.measureElement(node))
-				const rowObserver = new MutationObserver(measureRows)
-				rowObserver.observe(list, { childList: true })
-				const keysObserver = new MutationObserver(() => {
-					state.keys = keysOf(list)
-					update()
-				})
-				keysObserver.observe(list, { attributes: true, attributeFilter: [`data-${KEYS_ATTRIBUTE}`] })
-				const resizes = new ResizeObserver(() => {
-					const margin = marginBetween(list, scroller)
-					if (margin === state.scrollMargin) return
-					state.scrollMargin = margin
-					update()
-				})
-				resizes.observe(list)
-				resizes.observe(scroller)
-				state.scrollMargin = marginBetween(list, scroller)
-				const unmount = virtualizer._didMount()
-				virtualizer.setOptions(options())
-				virtualizer._willUpdate()
-				measureRows()
-				emit(virtualizer)
-				return () => {
-					rowObserver.disconnect()
-					keysObserver.disconnect()
-					resizes.disconnect()
-					unmount()
-				}
-			}),
-			(cleanup) => Effect.sync(cleanup),
-		).pipe(Effect.flatMap(() => Effect.never)),
-	)
+	virtualizerStream<A>((offer) => {
+		const scroller = pageScrollerOf(list)
+		const keysOf = () => splitAttribute(list, KEYS_ATTRIBUTE, "\n")
+		const state = { keys: keysOf(), scrollMargin: 0, last: emptyWindow, isMeasuring: false }
+		const emit = (instance: Instance) => {
+			const next: VirtualWindow = {
+				rows: Arr.map(instance.getVirtualItems(), (item) => ({
+					index: item.index,
+					start: item.start,
+					end: item.end,
+				})),
+				totalSize: instance.getTotalSize(),
+				scrollMargin: state.scrollMargin,
+			}
+			if (sameWindow(next, state.last)) return
+			state.last = next
+			offer(toMessage(next))
+		}
+		// Every re-render, a measurement's or a scroll's, is batched to a microtask.
+		const onChange = batchedOnChange(state, emit, false)
+		const options = () => ({
+			count: state.keys.length,
+			getItemKey: (index: number) => state.keys[index] ?? String(index),
+			getScrollElement: () => scroller,
+			estimateSize: () => ESTIMATE,
+			overscan: OVERSCAN,
+			scrollMargin: state.scrollMargin,
+			...DOM_OPTIONS,
+			onChange,
+		})
+		const virtualizer: Instance = new Virtualizer<HTMLElement, HTMLElement>(options())
+		const update = () => {
+			virtualizer.setOptions(options())
+			virtualizer._willUpdate()
+			onChange(virtualizer, false)
+		}
+		const measureRows = () =>
+			list
+				.querySelectorAll<HTMLElement>(":scope > [data-index]")
+				.forEach((node) => virtualizer.measureElement(node))
+		const rowObserver = new MutationObserver(measureRows)
+		rowObserver.observe(list, { childList: true })
+		const keysObserver = new MutationObserver(() => {
+			state.keys = keysOf()
+			update()
+		})
+		keysObserver.observe(list, { attributes: true, attributeFilter: [`data-${KEYS_ATTRIBUTE}`] })
+		const resizes = new ResizeObserver(() => {
+			const margin = scrollMarginOf(list, scroller)
+			if (margin === state.scrollMargin) return
+			state.scrollMargin = margin
+			update()
+		})
+		resizes.observe(list)
+		resizes.observe(scroller)
+		state.scrollMargin = scrollMarginOf(list, scroller)
+		const unmount = virtualizer._didMount()
+		virtualizer.setOptions(options())
+		virtualizer._willUpdate()
+		measureRows()
+		emit(virtualizer)
+		return () => {
+			rowObserver.disconnect()
+			keysObserver.disconnect()
+			resizes.disconnect()
+			unmount()
+		}
+	})

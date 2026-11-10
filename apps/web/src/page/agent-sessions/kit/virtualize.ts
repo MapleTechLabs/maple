@@ -1,6 +1,15 @@
-import { elementScroll, observeElementOffset, observeElementRect, Virtualizer } from "@tanstack/virtual-core"
-import { Effect, Queue, Schema, Stream, Array as Arr, String as Str, Option } from "effect"
+import { Virtualizer } from "@tanstack/virtual-core"
+import { Schema, type Stream, Array as Arr, String as Str, Option } from "effect"
 import type { HtmlBuilder } from "foldkit/html"
+import {
+	batchedOnChange,
+	DOM_OPTIONS,
+	type Instance,
+	pageScrollerOf,
+	scrollMarginOf,
+	splitAttribute,
+	virtualizerStream,
+} from "@maple/views/lib/virtualizer"
 
 // `useVirtualizer` over the page scroller (`usePageScrollMargin`) on @tanstack/virtual-core, for the
 // agent session list, waterfall and transcript. The list element carries the inputs as attributes,
@@ -60,23 +69,10 @@ export const virtualAttributes = <M>(
 			]),
 ]
 
-const keysOf = (list: HTMLElement): ReadonlyArray<string> => {
-	const raw = list.getAttribute(`data-${KEYS}`) ?? ""
-	return raw === "" ? [] : Str.split("\n")(raw)
-}
+const keysOf = (list: HTMLElement): ReadonlyArray<string> => splitAttribute(list, KEYS, "\n")
 
-const estimatesOf = (list: HTMLElement): ReadonlyArray<number> => {
-	const raw = list.getAttribute(`data-${ESTIMATES}`) ?? ""
-	return raw === "" ? [] : Arr.map(Str.split(",")(raw), Number)
-}
-
-const marginBetween = (list: HTMLElement, scroller: HTMLElement): number =>
-	Math.max(
-		0,
-		Math.round(
-			list.getBoundingClientRect().top - scroller.getBoundingClientRect().top + scroller.scrollTop,
-		),
-	)
+const estimatesOf = (list: HTMLElement): ReadonlyArray<number> =>
+	Arr.map(splitAttribute(list, ESTIMATES, ","), Number)
 
 const sameItems = (
 	a: ReadonlyArray<VirtualItem>,
@@ -104,8 +100,6 @@ const scrollOf = (list: HTMLElement): (ScrollRequest & { raw: string }) | undefi
 	}
 }
 
-type Instance = Virtualizer<HTMLElement, HTMLElement>
-
 type State = {
 	keys: ReadonlyArray<string>
 	estimates: ReadonlyArray<number>
@@ -115,7 +109,6 @@ type State = {
 	lastSize: number
 	positions: WeakMap<HTMLElement, number>
 	isMeasuring: boolean
-	isScheduled: boolean
 }
 
 /** `directDomUpdates`' `applyDirectStyles`: the container's height and each row's offset. */
@@ -153,20 +146,19 @@ const setUp = (
 	config: VirtualConfig,
 	offer: (window: VirtualWindow) => void,
 ): (() => void) => {
-	const scroller = list.closest<HTMLElement>('[data-slot="page-scroll-area"]') ?? list
+	const scroller = pageScrollerOf(list)
 	const container =
 		config.container === undefined ? null : list.querySelector<HTMLElement>(config.container)
 	const isDirect = container !== null
 	const state: State = {
 		keys: keysOf(list),
 		estimates: estimatesOf(list),
-		scrollMargin: marginBetween(list, scroller),
+		scrollMargin: scrollMarginOf(list, scroller),
 		last: emptyWindow,
 		lastScroll: "",
 		lastSize: -1,
 		positions: new WeakMap(),
 		isMeasuring: false,
-		isScheduled: false,
 	}
 	const emit = (instance: Instance) => {
 		const next = windowOf(instance, state, isDirect)
@@ -175,15 +167,10 @@ const setUp = (
 		offer(next)
 	}
 	// The re-render a measurement raises is batched to a microtask; a scroll flushes.
+	const batched = batchedOnChange(state, emit)
 	const onChange = (instance: Instance, sync: boolean) => {
 		applyDirect(instance, state, container)
-		if (sync && !state.isMeasuring) return emit(instance)
-		if (state.isScheduled) return
-		state.isScheduled = true
-		queueMicrotask(() => {
-			state.isScheduled = false
-			emit(instance)
-		})
+		batched(instance, sync)
 	}
 	const options = () => ({
 		count: state.keys.length,
@@ -193,9 +180,7 @@ const setUp = (
 		overscan: config.overscan,
 		scrollMargin: state.scrollMargin,
 		useAnimationFrameWithResizeObserver: config.isAnimationFrameResize === true,
-		observeElementRect,
-		observeElementOffset,
-		scrollToFn: elementScroll,
+		...DOM_OPTIONS,
 		onChange,
 	})
 	const virtualizer: Instance = new Virtualizer<HTMLElement, HTMLElement>(options())
@@ -256,7 +241,7 @@ const setUp = (
 		attributeFilter: [`data-${KEYS}`, `data-${ESTIMATES}`, `data-${SCROLL}`],
 	})
 	const resizes = new ResizeObserver(() => {
-		const margin = marginBetween(list, scroller)
+		const margin = scrollMarginOf(list, scroller)
 		if (margin === state.scrollMargin) return
 		state.scrollMargin = margin
 		update()
@@ -281,9 +266,4 @@ export const virtualize = <A>(
 	config: VirtualConfig,
 	toMessage: (window: VirtualWindow) => A,
 ): Stream.Stream<A> =>
-	Stream.callback<A>((queue) =>
-		Effect.acquireRelease(
-			Effect.sync(() => setUp(list, config, (window) => Queue.offerUnsafe(queue, toMessage(window)))),
-			(cleanup) => Effect.sync(cleanup),
-		).pipe(Effect.flatMap(() => Effect.never)),
-	)
+	virtualizerStream<A>((offer) => setUp(list, config, (window) => offer(toMessage(window))))
