@@ -219,8 +219,11 @@ describe("unshowableReasonOf", () => {
 		["service.name ==checkout", Option.some("syntax")],
 		['service.name = "a" AND attr.b !==', Option.some("syntax")],
 		['(attr.a = "1" OR attr.a ==)', Option.some("syntax")],
+		// A sibling's quoted `=` does not vouch for the bare one beside it.
+		['(attr.a = "=" OR attr.a ==)', Option.some("syntax")],
 		// Quoted, the same characters are a value the user meant.
 		['attr.a = "="', Option.none()],
+		['(attr.a = "=" OR attr.a = "=")', Option.none()],
 		["attr.a = '=x'", Option.none()],
 		["attr.duration >= 5", Option.none()],
 		['service.name = "a" AND (service.name = "b" AND span.name = "c")', Option.some("syntax")],
