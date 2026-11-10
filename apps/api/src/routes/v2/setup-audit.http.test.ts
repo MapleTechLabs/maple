@@ -53,7 +53,7 @@ import { compiledQueryOf } from "@maple/query-engine/execution"
 
 /**
  * End-to-end HTTP tests for `GET /v2/instrumentation/audit` over an embedded PGlite. The pure check
- * predicates are covered in packages/domain/src/setup-audit.test.ts — these assert the wire contract,
+ * predicates are covered in packages/backend/src/services/org/setup-audit.test.ts — these assert the wire contract,
  * the public-ID encoding of affected entities, and the two degradation paths (no telemetry ever
  * received, warehouse unreachable).
  */
