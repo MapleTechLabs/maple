@@ -1,5 +1,5 @@
 import { String as Str } from "effect"
-import { replaceWith } from "@maple/strings"
+import { escapeHtml, replaceWith } from "@maple/strings"
 /**
  * The whole email runtime: HTML escaping plus a token/slot splicer for the
  * templates compiled into `src/generated/`.
@@ -8,19 +8,6 @@ import { replaceWith } from "@maple/strings"
  * the API Worker, where pulling react + react-email in just to produce a string
  * was the problem this package exists to solve.
  */
-
-/** Escapes into a form that is safe in both text nodes and quoted attributes. */
-export function escapeHtml(value: string): string {
-	return Str.replace(
-		/'/g,
-		"&#39;",
-	)(
-		Str.replace(
-			/"/g,
-			"&quot;",
-		)(Str.replace(/>/g, "&gt;")(Str.replace(/</g, "&lt;")(Str.replace(/&/g, "&amp;")(value)))),
-	)
-}
 
 const TOKEN = /\[\[(#?)([A-Za-z0-9_]+)\]\]/g
 

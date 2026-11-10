@@ -94,8 +94,6 @@ const ALL_BLOCKS: ReadonlyMap<string, SkillBlock> = new Map(
 
 export const ORDINARY_BLOCK_REFS: ReadonlyArray<string> = Arr.map(ordinaryBlocks(), (block) => block.ref)
 
-export const blockRefs = (): ReadonlyArray<string> => [...ALL_BLOCKS.keys()]
-
 export const findBlock = (ref: string): SkillBlock | undefined => ALL_BLOCKS.get(ref)
 
 /** The sections every prompt using a companion must carry alongside its chosen classes. */

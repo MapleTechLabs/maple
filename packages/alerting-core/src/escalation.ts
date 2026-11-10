@@ -90,7 +90,3 @@ export const planEscalationAdvance = (
 		next: nextPosition(run, step, nowMs),
 	}
 }
-
-/** Total steps a chain sends when nobody acknowledges. */
-export const escalationStepCount = (steps: EscalationSteps, repeatCount: number): number =>
-	steps.length * (repeatCount + 1)
