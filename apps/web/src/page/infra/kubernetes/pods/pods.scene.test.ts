@@ -1,16 +1,21 @@
 import { OrgId } from "@maple/domain"
 import { Result, Schema, Array as Arr } from "effect"
+import { expect as expectView, given, Mount, scene, text, withViewInputs } from "foldkit/scene"
 import { describe, expect, test } from "vitest"
+import { ResolveThemeColors, ThemeMessage } from "@maple/views/charts/theme-colors"
 import { PageOutMessage, type PageContext } from "../../../contract"
 import * as Dialog from "@maple/views/ui/dialog"
 import { toLoadFailure } from "@maple/views/data/load-failure"
 import * as Frame from "../../../kit/time-frame"
+import { MountPeekKeys } from "../peek/keys"
 import * as PeekMessage from "../peek/message"
+import { MountPodPeek, PeekRowMessage } from "../peek-rows"
 import { PEEK_METRICS, seriesId } from "../peek/model"
 import type { PodRow } from "../pod-data"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { init, podsInput, update } from "./update"
+import { view as pageView } from "./view"
 
 const orgId = Schema.decodeSync(OrgId)("org_acme")
 const context: PageContext = { orgId, pinnedNamespace: null, timeZone: "UTC" }
@@ -107,15 +112,23 @@ describe("pods list", () => {
 	const names = (commands: ReadonlyArray<{ readonly name: string }> | undefined) =>
 		Arr.map(commands ?? [], ({ name }) => name)
 
-	test("the window read brings the browser locale the peek counter formats with", () => {
+	test("the peek counter counts in the browser locale the window read brought", () => {
 		const read = Frame.Message.CompletedResolveWindow({
 			window,
 			nowMs: NOW,
 			locale: "ar-EG",
 			mode: "Load",
 		})
-		const model = pageUpdate(windowed().model, Message.GotFrameMessage({ message: read })).model
-		expect(model.frame.locale).toBe("ar-EG")
+		const { model } = peekedPage()
+		scene(
+			{ update: pageUpdate, view: withViewInputs(pageView, { context })() },
+			given(pageUpdate(model, Message.GotFrameMessage({ message: read })).model),
+			Mount.resolve(Dialog.MountDialog, Dialog.Message.CompletedMountDialog()),
+			Mount.resolve(ResolveThemeColors, ThemeMessage.ResolvedThemeColors({ colors: {} })),
+			Mount.resolve(MountPodPeek, PeekRowMessage.ClickedPeekRow({ key: "shop/payment-2" })),
+			Mount.resolve(MountPeekKeys, PeekMessage.Message.PressedStepKey({ step: 1 })),
+			expectView(text((2).toLocaleString("ar-EG"))).toExist(),
+		)
 	})
 
 	test("a peeked row opens the sheet and warms it and both neighbours", () => {

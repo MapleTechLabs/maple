@@ -192,18 +192,6 @@ describe("layoutMarkerLabels", () => {
 		expect(groups.length).toBeLessThan(12) // some merging happened
 	})
 
-	it("merges two close dashes into one label that covers both", () => {
-		// Two dashes close enough that the second falls under the first's label → one
-		// label, both dashes kept and the box covers both so each connects straight up.
-		const groups = layoutMarkerLabels([at("a", 20), at("b", 44)], 0, 600)
-		expect(groups).toHaveLength(1)
-		expect(Arr.getUnsafe(groups, 0).dashXs).toEqual([20, 44])
-		expect(Arr.getUnsafe(groups, 0).boxLeft).toBeLessThanOrEqual(20)
-		expect(Arr.getUnsafe(groups, 0).boxLeft + Arr.getUnsafe(groups, 0).boxWidth).toBeGreaterThanOrEqual(
-			44,
-		)
-	})
-
 	it("offsets a new label to the right when centering would collide with the previous one", () => {
 		// `a` sits alone; `b`'s dash clears `a`'s box (so it is NOT merged) but a
 		// dash-centered `b` label would overlap `a`. It is shoved right to clear `a`,

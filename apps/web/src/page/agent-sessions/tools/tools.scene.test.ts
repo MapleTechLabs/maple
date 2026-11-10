@@ -66,6 +66,9 @@ describe("agent tools", () => {
 		expect(cleared.outMessage).toEqual(
 			PageOutMessage.RequestedNavigation({ url: "/agent-sessions/tools", isReplace: false }),
 		)
+		const unfiltered = routeChanged(answered.model, { search: {} }, context)
+		expect(names(unfiltered.commands)).not.toContain("FetchAgentToolsTotals")
+		expect(AsyncData.hasData(unfiltered.model.totals.data)).toBe(true)
 	})
 
 	test("a stale totals answer is dropped", () => {

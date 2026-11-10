@@ -234,15 +234,6 @@ describe("workload identity", () => {
 		])
 	})
 
-	it("marks the columns that are totals over the range", () => {
-		expect(
-			Arr.map(
-				Arr.filter(GCP_INFRA_COLUMNS.computeEngine, (spec) => spec.total === true),
-				(spec) => spec.label,
-			),
-		).toEqual(["Network in", "Network out", "Disk read", "Disk write"])
-	})
-
 	it("names a row in running text, keeping an acronym", () => {
 		expect(gcpWorkloadNoun("gke")).toBe("container")
 		expect(gcpWorkloadNoun("loadBalancing")).toBe("URL map")

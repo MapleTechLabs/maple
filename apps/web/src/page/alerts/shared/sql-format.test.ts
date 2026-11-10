@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest"
 import { formatSql } from "./sql-format"
-import { Array as Arr } from "effect"
+import { Array as Arr, String as Str } from "effect"
 
 describe("formatSql", () => {
 	it("reflows the canonical alert query onto clause/column/condition lines", () => {
@@ -68,9 +68,10 @@ describe("formatSql", () => {
 		expect(formatSql(once)).toBe(once)
 	})
 
-	it("returns empty for blank input and does not throw on odd input", () => {
+	it("returns empty for blank input and keeps every character of input it cannot parse", () => {
+		const visible = (sql: string) => Str.replaceAll(/\s/gu, "")(sql)
 		expect(formatSql("   ")).toBe("")
-		expect(() => formatSql("SELECT (((")).not.toThrow()
-		expect(() => formatSql("@#$ %^&")).not.toThrow()
+		expect(visible(formatSql("SELECT ((("))).toBe("SELECT(((")
+		expect(visible(formatSql("@#$ %^&"))).toBe("@#$%^&")
 	})
 })
