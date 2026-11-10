@@ -49,8 +49,17 @@ describe("org-scoped table registry", () => {
 		const unclassified = Arr.filter([...orgScopedTables().keys()], (name) => !classified.has(name)).sort()
 		expect(
 			unclassified,
-			"Every org-scoped table must be registered in OrganizationService: add it to ORG_SCOPED_TABLES (purged by org_id), APPROVED_ORG_SCOPED_TABLES (purged by approved_org_id), or UNPURGED_ORG_SCOPED_TABLES (deliberately kept).",
+			"Every org-scoped table is purged unless UNPURGED_ORG_SCOPED_TABLES keeps it; one that is neither escaped the derivation.",
 		).toEqual([])
+	})
+
+	it("orders only tables it purges", () => {
+		const purged = new Set([
+			...registeredNames(ORG_DELETE_REGISTRY.orgScoped),
+			...registeredNames(ORG_DELETE_REGISTRY.approvedOrgScoped),
+		])
+		const ignored = Arr.filter(ORG_DELETE_REGISTRY.purgeOrder, (name) => !purged.has(name))
+		expect(ignored, "PURGE_ORDER names a table delete does not purge").toEqual([])
 	})
 
 	it("registers nothing that no longer carries an org column", () => {
