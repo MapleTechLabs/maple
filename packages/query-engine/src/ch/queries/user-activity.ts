@@ -47,8 +47,6 @@ const requestQuantileMs = (index: 1 | 2) =>
 		T.float64,
 	)
 
-// A. Slices: per service, the hours a user's requests and logs span
-
 /** `minIf`/`maxIf` over the `Hour` column, typed as the hour (the DSL's take numbers only). */
 const hourIf = (fn: "minIf" | "maxIf", hour: ActivityColumns["Hour"], condition: CH.Condition) =>
 	CH.compileTypedFnCall(fn, T.dateTime.schema, hour, condition)
@@ -106,8 +104,6 @@ export function userActivitySlicesQuery(opts: UserActivitySlicesOpts) {
 		.orderBy(["serviceName", "asc"])
 		.format("JSON")
 }
-
-// B. One user's totals, and the services they touched
 
 export interface UserActivitySummaryOutput {
 	readonly spanCount: number
@@ -233,8 +229,6 @@ export function userActivityServicesQuery(opts: UserScopeOpts & { readonly limit
 		.format("JSON")
 }
 
-// C. Totals for a page of users (the directory's requests and errors columns)
-
 export interface UserActivityTotalsOpts extends UserNamespaceScope {
 	readonly userIds: readonly string[]
 }
@@ -298,8 +292,6 @@ export function userActivityTotalsQuery(opts: UserActivityTotalsOpts) {
 		.limit(opts.userIds.length)
 		.format("JSON")
 }
-
-// D. Raw reads, pruned by the slices
 
 export interface UserRawReadOpts extends UserScopeOpts {
 	/** The services `userActivitySlicesQuery` returned; `startTime`/`endTime` span its hours. */
@@ -434,7 +426,7 @@ export function userLogsQuery(opts: UserRawReadOpts & { readonly minSeverity?: n
 		.format("JSON")
 }
 
-// E. Issues: `error_events.UserId` (migration 0057), set on occurrences ingested since
+// Issues read `error_events.UserId` (migration 0057), which only occurrences ingested since carry.
 
 /** Only decimal UInt64 hashes live in the warehouse; alert/integration keys would abort `toUInt64`. */
 const fingerprintHashesCondition = (column: CH.Expr<number>, hashes: readonly string[]) => {

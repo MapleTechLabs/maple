@@ -50,8 +50,6 @@ function ifNotFinite(value: CH.Expr<number | null>, fallback: number): CH.Expr<n
 	return CH.ifNull(CH.ifNotFinite(value, fallback), CH.lit(fallback))
 }
 
-// Shared filter surface
-
 /**
  * The URL-driven filter surface, shared by every query on the page so a facet
  * click narrows all of them identically.
@@ -415,8 +413,7 @@ function matchingSessionsSubquery(filters: WebAnalyticsFilters) {
 /**
  * The `session_replays` semi-join clause, appended to whichever page-view source
  * is in play. Source-independent — it matches on `SessionId`, which both tables
- * carry — so it is shared rather than duplicated across the two `navigationWhere`
- * variants below.
+ * carry, so `navigationWhereRaw` and `navigationWhereRollup` share it.
  */
 function replaysSemiJoin(sessionId: CH.Expr<string>, filters: WebAnalyticsFilters): CH.Condition | undefined {
 	return needsSessionSemiJoin(filters)
@@ -447,8 +444,6 @@ function navigationWhereRollup(
 		eventSemiJoin($.SessionId, filters),
 	]
 }
-
-// Summary KPIs
 
 export interface WebAnalyticsSummaryOutput {
 	/** Distinct persistent browser ids. 0 when no session carries the analytics block. */
@@ -530,8 +525,6 @@ export function webAnalyticsSummaryQuery(
 		.format("JSON")
 }
 
-// Live visitors
-
 export interface WebAnalyticsLiveOpts extends WebAnalyticsFilters {
 	/** Activity recency that counts as "now". Defaults to {@link SESSION_LIVE_WINDOW_SECONDS}. */
 	readonly windowSeconds?: number
@@ -577,8 +570,6 @@ export function webAnalyticsLiveQuery(
 		])
 		.format("JSON")
 }
-
-// Visitor timeseries
 
 export interface WebAnalyticsTimeseriesOpts extends WebAnalyticsFilters {
 	readonly bucketSeconds?: number
@@ -642,8 +633,6 @@ export function webAnalyticsTimeseriesQuery(
 		.format("JSON")
 }
 
-// Page-view timeseries
-
 export interface WebAnalyticsPageviewsTimeseriesOpts extends WebAnalyticsFilters {
 	readonly bucketSeconds?: number
 }
@@ -688,8 +677,6 @@ export function webAnalyticsPageviewsTimeseriesQuery(
 				.orderBy(["bucket", "asc"])
 				.format("JSON")
 }
-
-// Top pages
 
 export interface WebAnalyticsPagesOpts extends WebAnalyticsFilters {
 	readonly limit?: number
@@ -745,8 +732,6 @@ export function webAnalyticsPagesQuery(
 				.format("JSON")
 }
 
-// Entry pages
-
 export interface WebAnalyticsEntryPagesOpts extends WebAnalyticsFilters {
 	/** Only sessions entering on one of these paths; values are inlined as escaped literals. */
 	readonly entryPaths?: ReadonlyArray<string>
@@ -789,8 +774,6 @@ export function webAnalyticsEntryPagesQuery(
 		.limit(opts.limit ?? 1000)
 		.format("JSON")
 }
-
-// Top custom events
 
 export interface WebAnalyticsEventsOpts extends WebAnalyticsFilters {
 	readonly limit?: number
@@ -852,8 +835,6 @@ export function webAnalyticsEventsQuery(
 				.limit(limit)
 				.format("JSON")
 }
-
-// Dimension breakdowns (UNION ALL fan-out)
 
 export type WebAnalyticsBreakdownsOpts = WebAnalyticsFilters & {
 	/** Rows per dimension. Defaults to 50 — enough for a sidebar, small enough to stay cheap. */

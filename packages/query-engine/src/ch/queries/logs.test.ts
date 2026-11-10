@@ -20,8 +20,6 @@ const baseParams = {
 	bucketSeconds: 3600,
 }
 
-// Facet filters, in both polarities
-
 describe("logs facet filters", () => {
 	it("compiles a multi-value service selection to IN, not just its first value", () => {
 		// The logs sidebar has rendered multi-select checkboxes since it shipped, but the list only
@@ -72,8 +70,6 @@ describe("logs facet filters", () => {
 		expect(sql).toContain("DeploymentEnv NOT IN ('staging')")
 	})
 })
-
-// logsTimeseriesQuery
 
 describe("logsTimeseriesQuery", () => {
 	it("compiles basic timeseries with no groupBy", () => {
@@ -220,8 +216,6 @@ describe("logsTimeseriesQuery", () => {
 	})
 })
 
-// canUseLogsAggregatesHourly + MV routing in logsTimeseriesQuery
-
 describe("canUseLogsAggregatesHourly", () => {
 	it("accepts hour-aligned bucket sizes", () => {
 		expect(canUseLogsAggregatesHourly({}, 3600)).toBe(true)
@@ -324,8 +318,6 @@ describe("logsTimeseriesQuery MV routing", () => {
 		)
 	})
 })
-
-// logsBreakdownQuery
 
 describe("logsBreakdownQuery", () => {
 	it("uses the hourly aggregate for full interior hours when grouping by service", () => {
@@ -435,8 +427,6 @@ describe("logsBreakdownQuery", () => {
 	})
 })
 
-// logsCountQuery
-
 describe("logsCountQuery", () => {
 	it("uses the hourly aggregate for full interior hours and raw logs for exact edges", () => {
 		const q = logsCountQuery({})
@@ -478,8 +468,6 @@ describe("logsCountQuery", () => {
 		expect(sql).toContain("Body ILIKE '%timeout%'")
 	})
 })
-
-// logsListQuery
 
 describe("logsListQuery", () => {
 	it("applies filter-in and filter-out attribute predicates with escaped user input", () => {
@@ -665,8 +653,6 @@ describe("logsListQuery", () => {
 	})
 })
 
-// getLogByKeyQuery
-
 describe("getLogByKeyQuery", () => {
 	const keyParams = { ...baseParams, timestamp: "2024-01-01 12:00:00.123456" }
 
@@ -677,8 +663,6 @@ describe("getLogByKeyQuery", () => {
 		expect(sql).not.toContain("SpanId =")
 	})
 })
-
-// errorRateByServiceQuery
 
 describe("errorRateByServiceQuery", () => {
 	it("uses the hourly aggregate for full interior hours and raw logs for exact edges", () => {
@@ -698,8 +682,6 @@ describe("errorRateByServiceQuery", () => {
 		expect(sql).toContain("ORDER BY errorRate DESC")
 	})
 })
-
-// logsFacetsQuery
 
 describe("logsFacetsQuery", () => {
 	it("routes all four facet branches to logs_aggregates_hourly", () => {
@@ -773,8 +755,6 @@ describe("logsFacetsQuery", () => {
 		expect(sql).not.toContain("'namespace' AS facetType")
 	})
 })
-
-// environments filter (applies to all logs queries via ResourceAttributes)
 
 describe("environments filter", () => {
 	it("logsListQuery filters by a single environment", () => {

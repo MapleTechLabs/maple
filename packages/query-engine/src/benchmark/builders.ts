@@ -5,8 +5,8 @@
 //
 // Each fixture calls the REAL exported builder with parameters shaped like its
 // production call site (file:line noted per fixture), so the catalog sweeps the
-// SQL the app actually emits. `benchmark/catalog.test.ts`'s `uncoveredBuilders`
-// anti-rot test enforces that every module export is either fixtured here or
+// SQL the app actually emits. `benchmark/catalog.test.ts`'s "covers or exempts every
+// exported builder" test enforces that every module export is either fixtured here or
 // explicitly exempted there — adding a builder without either breaks the build.
 //
 // Only builders swept through a pipe, or composed into a fixtured builder, are
@@ -1258,7 +1258,7 @@ export const builderFixtures: ReadonlyArray<BuilderFixture> = [
 	...productEventsFixtures,
 	...productEventsExploreFixtures,
 	// Signal presence — the org-wide "have you ever sent this?" probe behind every
-	// empty state (apps/api/src/services/org/SignalPresenceService.ts). One fixture
+	// empty state (packages/backend/src/services/org/SignalPresenceService.ts). One fixture
 	// suffices: the builder takes no options, so there is only one SQL shape.
 	{
 		module: "signal-presence",
@@ -1349,7 +1349,7 @@ export const builderFixtures: ReadonlyArray<BuilderFixture> = [
 				window,
 			),
 	},
-	// Audit log listing (apps/api/src/services/audit/AuditLogService.ts `list`).
+	// Audit log listing (packages/backend/src/services/audit/AuditLogService.ts `list`).
 	{
 		module: "audit-log",
 		name: "auditLogEntriesQuery",
@@ -1878,7 +1878,7 @@ export const builderFixtures: ReadonlyArray<BuilderFixture> = [
 
 	// Service-operation splice across raw, minutely, and hourly sources.
 	{
-		// routes/v2/services.http.ts — service detail "Operations" tab.
+		// registry/queries.ts: service detail "Operations" tab.
 		module: "service-operations",
 		name: "serviceOperationsSummaryQuery",
 		label: "default",
@@ -2765,7 +2765,7 @@ export const builderFixtures: ReadonlyArray<BuilderFixture> = [
 
 	// Service-catalog hourly-rollup splice.
 	{
-		// routes/v2/services.http.ts — the services list.
+		// TelemetryReadService (packages/backend): the services list.
 		module: "services",
 		name: "serviceCatalogQuery",
 		label: "default",
@@ -3283,7 +3283,7 @@ export const builderFixtures: ReadonlyArray<BuilderFixture> = [
 		compile: () => runCompile(CH.serviceDbTopQueriesSQL({ ...window, dbSystem: "postgresql" })),
 	},
 	{
-		// apps/api/src/routes/queries.ts gcpCloudSqlStatementSpans.
+		// packages/backend/src/queries/registry.ts gcpCloudSqlStatementSpans.
 		module: "service-map",
 		name: "serviceDbQuerySpansQuery",
 		label: "default",

@@ -29,8 +29,6 @@ import {
 import { edgeCondition, hourGrain, minuteGrain, utcInteriorConditions } from "./rollup-splice"
 import { DURATION_STATE, RAW_DURATION_STATE, ROLLUP_DURATION_STATE } from "./service-operations"
 
-// Service overview
-
 /** A commit tuple as JSON: `[sha, spanCount, errorCount, firstSeen]`. */
 const COMMIT_TUPLE = T.array(
 	T.custom(
@@ -439,8 +437,6 @@ export function serviceOverviewQuery(opts: ServiceOverviewOpts) {
 		.format("JSON")
 }
 
-// Service presence
-
 /**
  * Span count for one service over the window, from the same tiers as
  * `serviceOverviewQuery`. Group-less, so it always returns one row and is not
@@ -462,8 +458,6 @@ export const servicePresenceRowSchema = Schema.Struct({
 })
 
 export type ServicePresenceOutput = typeof servicePresenceRowSchema.Type
-
-// Service health snapshot
 
 export interface ServiceHealthSnapshotOpts {
 	environments?: readonly string[]
@@ -519,8 +513,6 @@ export function serviceHealthSnapshotQuery(opts: ServiceHealthSnapshotOpts) {
 		.format("JSON")
 }
 
-// Service health baseline
-
 export interface ServiceHealthBaselineOpts {
 	environments?: readonly string[]
 	namespaces?: readonly string[]
@@ -560,8 +552,6 @@ export function serviceHealthBaselineQuery(opts: ServiceHealthBaselineOpts) {
 		.limit(200)
 		.format("JSON")
 }
-
-// Service releases timeline
 
 export interface ServiceReleasesTimelineOpts {
 	serviceName: string
@@ -629,8 +619,6 @@ export function serviceReleasesTimelineQuery(
 		.format("JSON")
 }
 
-// Service environments
-//
 // Distinct non-empty deployment environments reported in the window, for one
 // service or for the whole organization. Backs the service-detail environment
 // switcher and the mobile app's global environment picker, replacing an
@@ -668,8 +656,6 @@ export function serviceEnvironmentsQuery(opts: ServiceEnvironmentsOpts = {}) {
 		.limit(100)
 		.format("JSON")
 }
-
-// Service Apdex time series
 
 export interface ServiceApdexTimeseriesOpts {
 	serviceName: string
@@ -751,8 +737,6 @@ export function serviceApdexTimeseriesQuery(
 		.orderBy(["bucket", "asc"])
 		.format("JSON") as CHQuery<ColumnDefs, ServiceApdexTimeseriesOutput>
 }
-
-// Service usage
 
 export interface ServiceUsageOpts {
 	serviceName?: string
@@ -930,8 +914,6 @@ export function serviceUsageWithPreviousQuery(opts: ServiceUsageOpts) {
 		.orderBy(["totalSizeBytes", "desc"])
 		.format("JSON")
 }
-
-// Services facets (UNION ALL — environment + commit_sha facets)
 
 export type ServicesFacetsOutput = FacetOutput
 

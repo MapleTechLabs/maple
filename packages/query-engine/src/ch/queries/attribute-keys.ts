@@ -37,8 +37,6 @@ export function attributeKeysQuery(opts: AttributeKeysQueryOpts) {
 		.format("JSON")
 }
 
-// Attribute values queries
-
 export interface AttributeValuesOpts {
 	attributeKey: string
 	limit?: number

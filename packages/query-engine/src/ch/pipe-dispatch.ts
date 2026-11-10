@@ -958,8 +958,6 @@ function buildAttributeFiltersFromParams(
 	return filters.length > 0 ? filters : undefined
 }
 
-// Parameter adapters — translate pipe-style params to typed query opts
-
 /**
  * `errorsOnly` is tri-state in the query layer: `true` keeps only errored spans,
  * `false` keeps only *non*-errored ones, and `undefined` applies no filter at

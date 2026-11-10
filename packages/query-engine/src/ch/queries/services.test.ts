@@ -43,8 +43,6 @@ describe("serviceCatalogQuery", () => {
 	})
 })
 
-// serviceHealthSnapshotQuery
-
 describe("serviceHealthSnapshotQuery", () => {
 	it("reads the hourly aggregate and merges weighted golden signals", () => {
 		const { sql } = compileUnsafe(
@@ -89,8 +87,6 @@ describe("serviceHealthSnapshotQuery", () => {
 		})
 	})
 })
-
-// serviceOverviewQuery
 
 describe("serviceOverviewQuery exclusions", () => {
 	it("emits NOT IN for every excluded dimension", () => {
@@ -221,8 +217,6 @@ describe("serviceOverviewQuery", () => {
 	})
 })
 
-// serviceHealthBaselineQuery
-
 describe("serviceHealthBaselineQuery", () => {
 	it("compiles a per-service p95 baseline scoped to the org", () => {
 		const q = serviceHealthBaselineQuery({})
@@ -238,8 +232,6 @@ describe("serviceHealthBaselineQuery", () => {
 		expect(sql).toContain("LIMIT 200")
 	})
 })
-
-// serviceReleasesTimelineQuery
 
 describe("serviceReleasesTimelineQuery", () => {
 	it("compiles releases timeline on the hourly tier for hour-multiple buckets", () => {
@@ -279,8 +271,6 @@ describe("serviceReleasesTimelineQuery", () => {
 	})
 })
 
-// serviceEnvironmentsQuery
-
 describe("serviceEnvironmentsQuery", () => {
 	it("compiles a service-scoped, time-windowed distinct-environments query", () => {
 		const q = serviceEnvironmentsQuery({ serviceName: "api" })
@@ -291,8 +281,6 @@ describe("serviceEnvironmentsQuery", () => {
 		expect(sql).toContain("GROUP BY environment")
 	})
 })
-
-// serviceApdexTimeseriesQuery
 
 describe("serviceApdexTimeseriesQuery", () => {
 	it("compiles apdex timeseries with default threshold", () => {
@@ -368,8 +356,6 @@ describe("serviceApdexTimeseriesQuery", () => {
 	})
 })
 
-// serviceUsageQuery
-
 describe("serviceUsageQuery", () => {
 	it("compiles basic usage query", () => {
 		const q = serviceUsageQuery({})
@@ -431,8 +417,6 @@ describe("serviceUsageWithPreviousQuery", () => {
 		expect(sql).toContain("GROUP BY serviceName")
 	})
 })
-
-// servicesFacetsQuery
 
 describe("servicesFacetsQuery", () => {
 	it("emits a non-empty-filtered branch per facet type the UI keys on", () => {

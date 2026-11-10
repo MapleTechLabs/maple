@@ -24,8 +24,6 @@ import { orgIdParam } from "../tables"
 // `compileFnCall` copy shadowed it and decoded nothing.
 const count = CH.count
 
-// Transcript: every event for one session, in order
-//
 // (OrgId, SessionId) is the sort-key prefix, so this is a contiguous range
 // scan. Timestamp + Seq give a stable playback/reading order.
 //
@@ -112,8 +110,6 @@ export function sessionTranscriptQuery(opts: SessionTranscriptOpts = {}) {
 		.format("JSON")
 }
 
-// Event-match semi-join: sessions whose distilled events match the predicates
-//
 // Row-level filters are ANDed, so callers pass a coherent predicate set (e.g.
 // type="network" + minStatus=500, or messageSearch="…"). Returns one row per
 // matching session with the match count — an UNFORMATTED grouped builder used as
@@ -155,8 +151,6 @@ export function sessionEventMatchQuery(opts: SessionEventMatchOpts) {
 		.groupBy("sessionId")
 }
 
-// Active / idle time, computed from gaps between distilled events
-//
 // A session's wall-clock duration overstates engagement: a 30s interaction left
 // open in a background tab for 45 minutes reports 45:00. We approximate *active*
 // time from `session_events` — the distilled semantic stream (click / nav /

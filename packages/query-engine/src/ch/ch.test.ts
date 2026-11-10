@@ -13,8 +13,6 @@ import {
 import { OrgId } from "@maple/domain"
 import { String as Str, Array as Arr, Option } from "effect"
 
-// Traces timeseries query — parity with buildTracesTimeseriesSQL
-
 describe("tracesTimeseriesQuery", () => {
 	const baseParams = {
 		orgId: OrgId.make("org_123"),
@@ -476,8 +474,6 @@ describe("tracesTimeseriesQuery", () => {
 	})
 })
 
-// Traces breakdown query — parity with buildTracesBreakdownSQL
-
 describe("tracesBreakdownQuery", () => {
 	const baseParams = {
 		orgId: OrgId.make("org_123"),
@@ -669,8 +665,6 @@ describe("tracesBreakdownQuery", () => {
 	})
 })
 
-// Traces list query
-
 describe("tracesListQuery", () => {
 	const baseParams = {
 		orgId: OrgId.make("org_123"),
@@ -773,8 +767,6 @@ describe("tracesListQuery", () => {
 		expect(sql).toContain("NOT (positionCaseInsensitive(SpanAttributes['http.route'], '/health') > 0)")
 	})
 })
-
-// Converted queries — smoke tests
 
 describe("converted queries", () => {
 	const baseParams = { orgId: OrgId.make("org_1"), startTime: "2024-01-01", endTime: "2024-01-02" }

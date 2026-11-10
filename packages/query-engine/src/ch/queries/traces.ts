@@ -61,8 +61,6 @@ const WEIGHTED_DURATION_STATE = T.aggregateState(
 	"UInt32",
 )
 
-// Metric SELECT expressions
-//
 // COUNT SEMANTICS — read this before touching `count`.
 //
 // `count` is the **sample-weighted estimate of how many spans actually
@@ -155,8 +153,6 @@ function metricSelectExprs(
 	}
 }
 
-// GROUP BY expression builder
-
 function buildGroupNameExpr(
 	$: ColumnAccessor<typeof Datasources.traces.columns>,
 	groupBy: readonly string[] | undefined,
@@ -189,7 +185,6 @@ function buildGroupNameExpr(
 					const keys: CH.Expr<string>[] = Arr.map(groupByAttributeKeys, (k) =>
 						CH.toString_($.SpanAttributes.get(k)),
 					)
-					// When multiple attribute keys, join them into a single part
 					const soleKey = soleValue(keys)
 					if (soleKey !== undefined) {
 						parts.push(soleKey)
@@ -337,8 +332,6 @@ function buildMvBreakdownGroupExpr(
 	}
 }
 
-// WHERE clause builders
-
 function buildWhereConditions(
 	$: ColumnAccessor<typeof Datasources.traces.columns>,
 	opts: TracesQueryOpts,
@@ -346,11 +339,7 @@ function buildWhereConditions(
 	return tracesBaseWhereConditions($, opts)
 }
 
-// Shared options interface
-
 interface TracesQueryOpts extends TracesBaseWhereOpts {}
-
-// Timeseries query
 
 export interface TracesTimeseriesOpts extends TracesQueryOpts {
 	metric: TracesMetric
@@ -873,8 +862,6 @@ export function tracesTimeseriesQuery(
 	>
 }
 
-// Breakdown query
-
 export interface TracesBreakdownOpts extends TracesQueryOpts {
 	metric: TracesMetric
 	groupBy: string
@@ -959,8 +946,6 @@ export function tracesBreakdownQuery(opts: TracesBreakdownOpts) {
 		.format("JSON")
 	return raw as CHQuery<ColumnDefs, TracesBreakdownOutput>
 }
-
-// List query
 
 export interface TracesListOpts extends TracesQueryOpts {
 	limit?: number
@@ -1121,8 +1106,6 @@ export function tracesListQuery(opts: TracesListOpts) {
 	return q
 }
 
-// Slow traces query
-//
 // DSL port of the previously string-interpolated query in
 // `observability/find-slow-traces.ts`. Returns the slowest root spans
 // (`ParentSpanId = ''`) ordered by Duration DESC at the database, so the
@@ -1166,8 +1149,6 @@ export function slowTracesQuery(opts: SlowTracesOpts) {
 		.format("JSON")
 }
 
-// Span-level search query
-//
 // DSL port of the span-level search in `observability/search-traces.ts`
 // (`spanLevelSearch`). Returns the matched span rows (not root summaries) for
 // flexible span-level filtering: span name (exact or contains), service,
@@ -1275,8 +1256,6 @@ export function spanSearchQuery(opts: SpanSearchOpts) {
 
 	return spanSearchFrom(Datasources.traces, opts, limit, offset, cutoff)
 }
-
-// Root trace list query (aggregated root-span-level, for trace list UI)
 
 export interface TracesRootListOpts extends TracesQueryOpts {
 	limit?: number
@@ -1547,8 +1526,6 @@ export function tracesRootListQuery(opts: TracesRootListOpts) {
 
 	return q
 }
-
-// Trace list query (one row per TraceId, for trace list UIs)
 
 export interface TraceListOpts extends TracesQueryOpts {
 	limit?: number
@@ -1884,8 +1861,6 @@ export function traceListQuery(opts: TraceListOpts) {
 		.format("JSON")
 }
 
-// Trace-list service enrichment
-
 export interface TraceServicesByTraceIdsOpts {
 	readonly traceIds: readonly string[]
 }
@@ -1929,8 +1904,6 @@ export function traceServicesByTraceIdsQuery(opts: TraceServicesByTraceIdsOpts) 
 		.limit(opts.traceIds.length)
 		.format("JSON")
 }
-
-// Trace-list span stats
 
 export interface TraceSpanStatsByTraceIdsOpts {
 	readonly traceIds: readonly string[]

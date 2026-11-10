@@ -401,8 +401,6 @@ export function serviceOperationsTimeseriesQuery(opts: ServiceOperationsTimeseri
 		.format("JSON")
 }
 
-// Route usage
-//
 // HTTP endpoints across one or every service with first/last seen, off the same
 // three-tier splice as the summary. `firstSeen`/`lastSeen` are bucket starts:
 // minute-exact at the window ends, hour-grained for hours inside the window.

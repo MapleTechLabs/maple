@@ -45,7 +45,6 @@ describe("findSlowTraces", () => {
 			assert.strictEqual(slow.params.end_time, "2026-04-02 00:00:00")
 			// Confirm we are NOT calling the list_traces pipe (old behavior)
 			assert.isTrue(Option.isNone(Arr.findFirst(captured.pipeCalls, (c) => c.pipe === "list_traces")))
-			// Stats pipe is still called
 			assert.isTrue(Arr.some(captured.pipeCalls, (c) => c.pipe === "traces_duration_stats"))
 		}),
 	)

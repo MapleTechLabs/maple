@@ -30,8 +30,6 @@ const oneLine = (sql: string): string => Str.replace(/\s+/g, " ")(sql)
 const rejection = (built: Result.Result<unknown, ProductEventsFunnelError>) =>
 	Result.isFailure(built) ? built.failure : undefined
 
-// productEventsFunnelQuery
-//
 // One `windowFunnel` per person over the rows matching any step, then
 // `countIf(level >= n)` per step, unpacked to `{ step, count }` rows.
 
@@ -240,8 +238,6 @@ describe("productEventsFunnelQuery", () => {
 	})
 })
 
-// productEventsFunnelBreakdownQuery
-
 describe("productEventsFunnelBreakdownQuery", () => {
 	it("groups persons by the first non-empty dimension value and keeps the top N by step-1 count", () => {
 		const compiled = compileUnsafe(
@@ -338,8 +334,6 @@ describe("productEventsFunnelBreakdownQuery", () => {
 	})
 })
 
-// productEventNamesQuery
-
 describe("productEventNamesQuery", () => {
 	it("lists names with counts, sessions and persons, most frequent first", () => {
 		const compiled = compileUnsafe(productEventNamesQuery({ limit: 25 }), params)
@@ -372,8 +366,6 @@ describe("productEventNamesQuery", () => {
 	})
 })
 
-// productEventsFunnelTimingQuery / productEventsFunnelLeaversQuery
-//
 // The drop-off view's extras. Both walk each person's chain from the first
 // step-1 event (`t1..tN`); timing takes quantiles of the gaps, leavers join
 // every event of the population back onto the chain to find what came next.

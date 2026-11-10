@@ -60,8 +60,6 @@ function isAiReferral(referrerHost: CH.Expr<string>, utmSource: CH.Expr<string>)
 	)
 }
 
-// AI referrals
-
 export interface WebAnalyticsAiReferralsOpts extends WebAnalyticsFilters {
 	readonly bucketSeconds?: number
 }
@@ -93,8 +91,6 @@ export function webAnalyticsAiReferralsQuery(
 		.orderBy(["bucket", "asc"])
 		.format("JSON")
 }
-
-// AI crawlers
 
 type CrawlerAccessor = ColumnAccessor<typeof Datasources.aiCrawlerRequests.columns>
 

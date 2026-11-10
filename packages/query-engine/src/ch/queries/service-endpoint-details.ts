@@ -35,8 +35,6 @@ const scopeConditions = ($: DetailColumns, opts: ServiceEndpointDetailsScopeOpts
 		: undefined,
 ]
 
-// D. Status code x error.type breakdown
-
 export interface ServiceEndpointStatusBreakdownOpts extends ServiceEndpointDetailsScopeOpts {
 	/** One endpoint; omitted means every HTTP endpoint of the service. */
 	readonly spanName?: string
@@ -79,8 +77,6 @@ export function serviceEndpointStatusBreakdownQuery(opts: ServiceEndpointStatusB
 		.limit(opts.limit ?? 500)
 		.format("JSON")
 }
-
-// E1. One endpoint's distributions and top user agents
 
 /** Latency levels the detail panel draws; finalize-time, so any set reads the stored digests. */
 export const ENDPOINT_LATENCY_QUANTILE_LEVELS = [
@@ -151,8 +147,6 @@ export function serviceEndpointDistributionQuery(opts: ServiceEndpointDetailOpts
 		.where(($) => [...scopeConditions($, opts), $.SpanName.eq(opts.spanName)])
 		.format("JSON")
 }
-
-// E2. One endpoint's slowest requests
 
 export interface ServiceEndpointSlowestOpts extends ServiceEndpointDetailOpts {
 	readonly limit?: number

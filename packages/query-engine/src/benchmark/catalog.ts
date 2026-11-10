@@ -22,7 +22,7 @@
 // Fixtures are a route matrix, not a happy path. A query function that picks
 // between materialized views and raw scans is several unrelated SQL shapes
 // wearing one name, and only the shape the fixture happens to select is ever
-// executed. `assertRouteCoverage` below fails when a route is never exercised.
+// executed. `routeCoverage` below reports a route that is never exercised.
 
 import { Effect, Array as Arr, String as Str, Option, Schema } from "effect"
 import { TracesMetric } from "@maple/domain/query-engine"
@@ -45,8 +45,6 @@ import { compiledQueryOf } from "../execution/compiled-input"
 import { fingerprintSql } from "../execution/fingerprint"
 import { makeQueryEngineExecute, type QueryEngineWarehouse, type QueryTenant } from "../runtime"
 import { BenchmarkError, validateSuite, type Suite } from "@maple-dev/effect-orm/benchmark"
-
-// Fixture inputs
 
 const ORG_ID = FIXTURE_ORG_ID
 const START_TIME = FIXTURE_START_TIME
@@ -105,7 +103,7 @@ const FINGERPRINT = "11640393269246331608"
 
 /**
  * At least one fixture per name in `warehouseQueries` — enforced by
- * `assertPipeCoverage`, so adding a pipe without a fixture breaks the build.
+ * `uncoveredPipes`, so adding a pipe without a fixture breaks the build.
  */
 export const pipeFixtures: ReadonlyArray<PipeFixture> = [
 	{ pipe: "list_traces", label: "default", params: {}, allCapabilities: true },
@@ -397,8 +395,6 @@ export const pipeFixtures: ReadonlyArray<PipeFixture> = [
 	},
 ]
 
-// Collection
-
 export interface CatalogEntry {
 	/** Stable identifier, e.g. `pipe:list_traces:filtered:bloom`. */
 	readonly id: string
@@ -464,8 +460,6 @@ export function collectPipeCatalog(): ReadonlyArray<CatalogEntry> {
 	return entries
 }
 
-// QuerySpec collection (dashboards, overview charts, the metrics explorer)
-//
 // The pipe registry is only half the product. Dashboards and the overview go
 // through `QueryEngineService.execute`, and the two adapters do NOT agree:
 // `pipeParamsToTracesTimeseriesOpts` never forwards `bucketSeconds` into the
@@ -1100,8 +1094,6 @@ export function collectQuerySpecCatalog(): ReadonlyArray<CatalogEntry> {
 	return entries
 }
 
-// Builder collection (direct `warehouse.compiledQuery` call sites)
-//
 // The pipe registry + QuerySpec lowering cover only ~36 of 161 exported query
 // builders; the rest are compiled directly at call sites in apps/api and never
 // met the analyzer. `builderFixtures` (benchmark/builders.ts) enumerates them
@@ -1159,8 +1151,6 @@ export function dedupeByFingerprint(entries: ReadonlyArray<CatalogEntry>): Reado
 	}
 	return [...seen.values()]
 }
-
-// Anti-rot assertions
 
 /**
  * Catalog entries whose rows nothing validates.
