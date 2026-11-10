@@ -15,11 +15,12 @@ import { OrgOpenRouterKeys, type OrgOpenRouterKeyRow } from "@maple/db/tables"
 import { EdgeCacheService } from "@maple/cache"
 import { Clock, Context, Duration, Effect, Layer, Option, Redacted, Schema, String as Str } from "effect"
 import { FetchHttpClient, HttpClient } from "effect/http"
-import { decryptAes256Gcm, encryptAes256Gcm, parseBase64Aes256GcmKey } from "@maple/backend/platform/Crypto"
 import { EU_DEFAULT_OPENROUTER_MODEL, type MapleRegion } from "@maple/domain/organization-regions"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { makeDbExecute, makePersistenceErrorMapper } from "@maple/backend/platform/db-execute"
 import { Env } from "@maple/backend/platform/Env"
+import { openSecret, sealSecret, secretKeyringFromEnv } from "@maple/backend/platform/SecretBox"
+import { openRouterKeySlot } from "@maple/backend/platform/secret-slots"
 import { ensureOk, readCustomerCached } from "@maple/backend/services/billing/autumn-client"
 import { AutumnClient } from "@maple/backend/services/billing/autumn-http"
 import * as OpenRouterApi from "@maple/backend/services/org/openrouter-api"
@@ -75,9 +76,6 @@ const toPersistenceError = makePersistenceErrorMapper(
 	"OpenRouter key persistence failure",
 )
 
-/** Binds the ciphertext to its org: a row copied onto another org's id no longer decrypts. */
-const keyAad = (orgId: OrgId) => Buffer.from(`org_openrouter_keys:v1:${orgId}`, "utf8")
-
 /**
  * Whether the org holds the add-on. `unknown` is Autumn failing to answer, which callers settle
  * their own way: a write refuses, a run trusts the key it already has.
@@ -113,8 +111,8 @@ export class OrgOpenRouterKeyService extends Context.Service<
 		const autumn = yield* AutumnClient
 		const billingCustomers = yield* BillingCustomerResolver
 		const httpClient = yield* HttpClient.HttpClient
-		const encryptionKey = yield* parseBase64Aes256GcmKey(
-			Redacted.value(env.MAPLE_INGEST_KEY_ENCRYPTION_KEY),
+		const keyring = yield* secretKeyringFromEnv(
+			env,
 			(message) => new OpenRouterKeyPersistenceError({ message }),
 		)
 		const dbExecute = makeDbExecute(database, "OrgOpenRouterKeyService", toPersistenceError)
@@ -234,11 +232,13 @@ export class OrgOpenRouterKeyService extends Context.Service<
 				})
 			}
 			yield* validateWithOpenRouter(apiKey)
-			const encrypted = yield* encryptAes256Gcm(
+			// The org binding: a row copied onto another org's id no longer opens.
+			const encrypted = yield* sealSecret(
+				keyring,
+				openRouterKeySlot,
+				{ orgId },
 				apiKey,
-				encryptionKey,
 				(message) => new OpenRouterKeyPersistenceError({ message }),
-				keyAad(orgId),
 			)
 			const now = yield* Clock.currentTimeMillis
 			const next = {
@@ -278,11 +278,12 @@ export class OrgOpenRouterKeyService extends Context.Service<
 					yield* Effect.annotateCurrentSpan("maple.llm.byok_lapsed", true)
 					return Option.none<Redacted.Redacted>()
 				}
-				const apiKey = yield* decryptAes256Gcm(
+				const apiKey = yield* openSecret(
+					keyring,
+					openRouterKeySlot,
+					{ orgId: row.value.orgId },
 					{ ciphertext: row.value.keyCiphertext, iv: row.value.keyIv, tag: row.value.keyTag },
-					encryptionKey,
 					(message) => new OpenRouterKeyPersistenceError({ message }),
-					keyAad(orgId),
 				)
 				return Option.some(Redacted.make(apiKey))
 			},

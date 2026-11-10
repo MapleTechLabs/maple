@@ -40,17 +40,13 @@ import {
 	Exit,
 	Layer,
 	Option,
-	Redacted,
 	Schema,
 	Record as Rec,
 	String as Str,
 } from "effect"
 import { HttpClient, HttpClientRequest } from "effect/http"
-import {
-	encryptAes256Gcm,
-	parseIngestKeyEncryptionKey,
-	type EncryptedValue,
-} from "@maple/backend/platform/Crypto"
+import { sealSecret, secretKeyringFromEnv, type SecretKeyring } from "@maple/backend/platform/SecretBox"
+import { scrapeTargetCredentialsSlot } from "@maple/backend/platform/secret-slots"
 import { forkRequestScoped } from "@maple/backend/platform/fork-request-scoped"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { makeDbExecute } from "@maple/backend/platform/db-execute"
@@ -329,11 +325,15 @@ const normalizeBranchPatterns = (patterns: ReadonlyArray<string> | undefined): s
 	return [...seen]
 }
 
+/** Seals credentials for the scrape target row that `ref` names. */
 const encryptCredentials = (
+	keyring: SecretKeyring,
+	ref: { readonly orgId: OrgId; readonly id: ScrapeTargetId },
 	plaintext: string,
-	encryptionKey: Buffer,
-): Effect.Effect<EncryptedValue, ScrapeTargetEncryptionError> =>
-	encryptAes256Gcm(plaintext, encryptionKey, () => toEncryptionError("Failed to encrypt credentials"))
+) =>
+	sealSecret(keyring, scrapeTargetCredentialsSlot, ref, plaintext, () =>
+		toEncryptionError("Failed to encrypt credentials"),
+	)
 
 const decodeAuthTypeEffect = Schema.decodeUnknownEffect(ScrapeAuthType)
 
@@ -633,10 +633,7 @@ export class ScrapeTargetsService extends Context.Service<ScrapeTargetsService, 
 			// Scoped per hop, so an unread body (non-2xx, PlanetScale) is cancelled on exit.
 			const httpClient = yield* HttpClient.HttpClient
 			const probeClient = guard(HttpClient.withScope(httpClient))
-			const encryptionKey = yield* parseIngestKeyEncryptionKey(
-				Redacted.value(env.MAPLE_INGEST_KEY_ENCRYPTION_KEY),
-				toEncryptionError,
-			)
+			const keyring = yield* secretKeyringFromEnv(env, toEncryptionError)
 
 			const selectById = Effect.fn("ScrapeTargetsService.selectById")(function* (
 				orgId: OrgId,
@@ -681,7 +678,7 @@ export class ScrapeTargetsService extends Context.Service<ScrapeTargetsService, 
 					const { accessToken } = yield* supabaseOAuth.getValidAccessToken(row.orgId)
 					return { Authorization: `Bearer ${accessToken}` }
 				}
-				return yield* buildScrapeAuthHeaders(row, encryptionKey)
+				return yield* buildScrapeAuthHeaders(row, keyring)
 			})
 
 			const list = Effect.fn("ScrapeTargetsService.list")(function* (orgId: OrgId) {
@@ -788,6 +785,8 @@ export class ScrapeTargetsService extends Context.Service<ScrapeTargetsService, 
 
 				const name = Str.trim(request.name)
 				const serviceName = request.serviceName ?? null
+				// Minted before sealing: the credentials are bound to the row id.
+				const id = decodeTargetIdSync(randomUUID())
 
 				interface EncryptedCredentialFields {
 					authCredentialsCiphertext: string | null
@@ -802,7 +801,11 @@ export class ScrapeTargetsService extends Context.Service<ScrapeTargetsService, 
 
 				if (!isCredentialLessAuthType(authType)) {
 					yield* validateAuthCredentials(authType, request.authCredentials)
-					const encrypted = yield* encryptCredentials(request.authCredentials!, encryptionKey)
+					const encrypted = yield* encryptCredentials(
+						keyring,
+						{ orgId, id },
+						request.authCredentials!,
+					)
 					credentialFields = {
 						authCredentialsCiphertext: encrypted.ciphertext,
 						authCredentialsIv: encrypted.iv,
@@ -811,7 +814,6 @@ export class ScrapeTargetsService extends Context.Service<ScrapeTargetsService, 
 				}
 
 				const now = yield* Clock.currentTimeMillis
-				const id = decodeTargetIdSync(randomUUID())
 
 				// The target and the source it sends as land together.
 				const inserted = yield* dbExecute((db) =>
@@ -1044,7 +1046,11 @@ export class ScrapeTargetsService extends Context.Service<ScrapeTargetsService, 
 						updates.authCredentialsTag = null
 					} else if (newAuthType !== existing.authType || request.authCredentials) {
 						yield* validateAuthCredentials(newAuthType!, request.authCredentials)
-						const encrypted = yield* encryptCredentials(request.authCredentials!, encryptionKey)
+						const encrypted = yield* encryptCredentials(
+							keyring,
+							{ orgId: existing.orgId, id: existing.id },
+							request.authCredentials!,
+						)
 						updates.authCredentialsCiphertext = encrypted.ciphertext
 						updates.authCredentialsIv = encrypted.iv
 						updates.authCredentialsTag = encrypted.tag
@@ -1053,7 +1059,11 @@ export class ScrapeTargetsService extends Context.Service<ScrapeTargetsService, 
 					const currentAuthType = existing.authType
 					if (!isCredentialLessAuthType(currentAuthType)) {
 						yield* validateAuthCredentials(currentAuthType, request.authCredentials)
-						const encrypted = yield* encryptCredentials(request.authCredentials, encryptionKey)
+						const encrypted = yield* encryptCredentials(
+							keyring,
+							{ orgId: existing.orgId, id: existing.id },
+							request.authCredentials,
+						)
 						updates.authCredentialsCiphertext = encrypted.ciphertext
 						updates.authCredentialsIv = encrypted.iv
 						updates.authCredentialsTag = encrypted.tag

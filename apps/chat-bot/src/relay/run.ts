@@ -24,7 +24,7 @@ import { envPorts } from "@maple/backend/platform/env-ports"
 import { Cause, Config, Effect, Layer, Option, Redacted, Schema, Array as Arr } from "effect"
 import { FetchHttpClient, HttpClient } from "effect/http"
 import { summarizeCause } from "@maple/backend/platform/describe-cause"
-import { parseBase64Aes256GcmKey } from "@maple/backend/platform/Crypto"
+import { parseSecretKeyring, type SecretKeyring } from "@maple/backend/platform/SecretBox"
 import { chatChartImageUrl } from "@maple/backend/services/chat/chat-chart"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { DatabasePgLive } from "@maple/backend/platform/DatabasePgLive"
@@ -71,28 +71,32 @@ const relaySettings = Config.all({
 	),
 	shareTokenHmacKey: optionalSecret("MAPLE_SHARE_TOKEN_HMAC_KEY"),
 	credentialKey: optionalSecret("MAPLE_INGEST_KEY_ENCRYPTION_KEY"),
+	credentialDecryptionKeys: optionalSecret("MAPLE_INGEST_KEY_DECRYPTION_KEYS"),
 })
 
 type RelaySettings = Config.Success<typeof relaySettings>
 
-/** `MAPLE_INGEST_KEY_ENCRYPTION_KEY` is set on this deployment but is not a usable key. */
+/** The credential keys are set on this deployment but do not parse into a usable keyring. */
 class CredentialKeyUnusable extends Schema.TaggedError<CredentialKeyUnusable>()(
 	"@maple/chat-bot/CredentialKeyUnusable",
 	{ message: Schema.String },
 ) {}
 
 /**
- * The key a connector's per-workspace credential was sealed with, or `null` where this deployment
- * binds none.
+ * The keyring a connector's per-workspace credential opens with, or `null` where this deployment
+ * binds no primary key.
  *
  * Optional because most of this Worker does not need it: a connector whose credential is one
  * deployment-wide secret stores nothing to open, and a stage without the key runs those normally.
  * A workspace that DID store one then fails its lookup rather than resolving without its token —
  * see `chat-workspace-rows.ts`.
  */
-const credentialKey = (settings: RelaySettings): Effect.Effect<Buffer | null> =>
-	parseBase64Aes256GcmKey(
-		Option.match(settings.credentialKey, { onNone: () => "", onSome: Redacted.value }),
+const credentialKeyring = (settings: RelaySettings): Effect.Effect<SecretKeyring | null> =>
+	parseSecretKeyring(
+		{
+			primary: Option.match(settings.credentialKey, { onNone: () => "", onSome: Redacted.value }),
+			decryptOnly: Option.map(settings.credentialDecryptionKeys, Redacted.value),
+		},
 		(message) => new CredentialKeyUnusable({ message }),
 	).pipe(
 		// Absent is the ordinary case on a stage running no connector that stores a credential, so
@@ -178,12 +182,12 @@ const lookupWorkspace = (
 	workspaceId: string,
 	externalUserId: string | undefined,
 ) =>
-	Effect.flatMap(credentialKey(settings), (key) =>
+	Effect.flatMap(credentialKeyring(settings), (keyring) =>
 		withDatabase(
 			host.env,
 			Effect.gen(function* () {
 				const database = yield* Database
-				const workspace = yield* resolveChatWorkspace(database, connectorId, workspaceId, key)
+				const workspace = yield* resolveChatWorkspace(database, connectorId, workspaceId, keyring)
 				if (Option.isNone(workspace)) return Option.none<ResolvedWorkspace>()
 				const credentials = workspace.value.credentials
 				// Nothing to link with, or nobody asked: one query.

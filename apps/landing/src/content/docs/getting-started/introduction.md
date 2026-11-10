@@ -21,11 +21,17 @@ Maple is an observability platform built on OpenTelemetry. Your applications sen
 - [Service map](/docs/explore/service-map): the calls between your services, built from trace data.
 - [Errors](/docs/errors/overview): exceptions grouped into issues that you can assign and track to done.
 - [Alerts](/docs/alerting/alert-rules): rules on any signal, with notifications to your destinations.
+- [Anomalies](/docs/alerting/anomalies): error rate, latency, traffic and error log changes against each service's own baseline, with no rules to write.
+- [Uptime](/docs/alerting/uptime-monitoring): availability alerts from your traces and hosted HTTP, TCP and DNS checks, plus [heartbeat monitors](/docs/alerting/heartbeat-monitors) for cron jobs.
 - [Dashboards](/docs/dashboards/build-dashboards): charts and tables built from queries.
 - [Replays](/docs/session-replay/replays): recordings of browser sessions, linked to their traces.
 - [Web analytics](/docs/product-events/web-analytics): page views and visitors from the browser SDK.
+- [Frontend tracing](/docs/frontend): browser navigations, data loading and errors in the same trace as your backend.
+- [Users](/docs/explore/users): one page per signed-in person, with their sessions, requests, errors and events.
 - [Agent Sessions](/docs/agent-sessions/overview): AI agent conversations, with every model call and tool call.
-- Infrastructure: [Hosts](/docs/infrastructure/hosts), [Kubernetes](/docs/infrastructure/kubernetes), [Containers](/docs/infrastructure/docker), [Cloudflare](/docs/integrations/cloudflare), [Google Cloud](/docs/integrations/gcp) and [PlanetScale](/docs/integrations/planetscale).
+- [MCP servers](/docs/mcp-servers/overview): the tools agents call on your MCP server, who calls them and why calls fail.
+- [Code review](/docs/code-review/overview): pull request reviews on GitHub repositories.
+- Infrastructure: [Hosts](/docs/infrastructure/hosts), [Kubernetes](/docs/infrastructure/kubernetes), [Containers](/docs/infrastructure/docker), [Cloudflare](/docs/integrations/cloudflare), [Google Cloud](/docs/integrations/gcp), [AWS](/docs/integrations/aws), [PlanetScale](/docs/integrations/planetscale), [Railway](/docs/integrations/railway) and [Supabase](/docs/integrations/supabase).
 
 ## Getting started
 
