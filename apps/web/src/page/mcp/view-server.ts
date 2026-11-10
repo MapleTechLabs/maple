@@ -32,9 +32,7 @@ import {
 	attr,
 	clientIcon,
 	clientPlot,
-	durationSeries,
 	errorTypeChip,
-	formatClock,
 	headingNote,
 	kindTag,
 	lastSeenCell,
@@ -55,6 +53,8 @@ import { hstack, vstack } from "@maple/views/ui/stack"
 import { columnClass } from "@maple/views/ui/column"
 import { swatch } from "@maple/views/ui/swatch"
 import { textLink } from "@maple/views/ui/text-link"
+import { durationSeries } from "../kit/tools/series-chart"
+import { formatClock } from "../kit/timezone-zones"
 
 // `/mcp/:service`: the tools page's layout for one MCP server. Toolbar, scope, a metric strip that
 // picks the chart, the tools table, then who calls, why calls fail, the protocol and what is sent.

@@ -28,7 +28,6 @@ import {
 	attr,
 	clientIcon,
 	durationMeterCell,
-	formatClock,
 	headingNote,
 	kindTag,
 	lastSeenCell,
@@ -43,6 +42,7 @@ import {
 import { Array as Arr, Order } from "effect"
 import { hstack, vstack } from "@maple/views/ui/stack"
 import { typography } from "@maple/views/ui/typography"
+import { formatClock } from "../kit/timezone-zones"
 
 // `/mcp-servers/:service/sessions` and one session: a server's requests grouped by `mcp.session.id`,
 // each session its requests in order, linked to the Agent Session whose trace made them.
