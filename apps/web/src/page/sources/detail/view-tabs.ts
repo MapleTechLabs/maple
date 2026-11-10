@@ -1,6 +1,7 @@
 import type { V2Source } from "@maple/domain/http/v2"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { AppRoute, hrefOf } from "../../../route"
+import { ingestionHref } from "../../settings/ingest-rule/hrefs"
 import { button } from "@maple/views/ui/button"
 import { type FieldIds, type FieldState, field, fieldLabel, input } from "@maple/views/ui/field"
 import { textarea } from "@maple/views/ui/textarea"
@@ -26,7 +27,7 @@ import { String as Str } from "effect"
 type H = HtmlBuilder<Message>
 
 const LINK_CLASS = typographyClass({ tone: "foreground", className: "underline underline-offset-2" })
-const INGESTION_HREF = hrefOf(AppRoute.Settings({ search: { tab: "ingestion" } }))
+const INGESTION_HREF = ingestionHref()
 
 const note = (h: H, children: ReadonlyArray<Html | string>) =>
 	typography(h, { size: "sm", tone: "muted", as: "p" }, children)

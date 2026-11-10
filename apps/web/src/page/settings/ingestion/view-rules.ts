@@ -35,21 +35,22 @@ import { hstack } from "@maple/views/ui/stack"
 import { spaced } from "@maple/views/ui/spaced"
 import { Array as Arr } from "effect"
 import { textLink } from "@maple/views/ui/text-link"
+import { RECOMMENDATION_KIND_LABEL, RECOMMENDATION_STATUS_LABEL } from "../../kit/recommendations"
 
 // `RecommendedMappingsSection` and `AttributeMappingsSection`.
 
 type H = HtmlBuilder<Message>
 
 const KIND_TAG = {
-	rename: { label: "Rename", className: TONE_TEXT.info },
-	"double-emission": { label: "Duplicate", className: TONE_TEXT.warn },
-	naming: { label: "Naming", className: TONE_TEXT.warn },
+	rename: { label: RECOMMENDATION_KIND_LABEL.rename, className: TONE_TEXT.info },
+	"double-emission": { label: RECOMMENDATION_KIND_LABEL["double-emission"], className: TONE_TEXT.warn },
+	naming: { label: RECOMMENDATION_KIND_LABEL.naming, className: TONE_TEXT.warn },
 } as const
 const STATUS_BADGE = {
-	open: { label: "Open", variant: "secondary" },
-	dismissed: { label: "Dismissed", variant: "secondary" },
-	applied: { label: "Applied", variant: "ok" },
-	resolved: { label: "Resolved", variant: "done" },
+	open: { label: RECOMMENDATION_STATUS_LABEL.open, variant: "secondary" },
+	dismissed: { label: RECOMMENDATION_STATUS_LABEL.dismissed, variant: "secondary" },
+	applied: { label: RECOMMENDATION_STATUS_LABEL.applied, variant: "ok" },
+	resolved: { label: RECOMMENDATION_STATUS_LABEL.resolved, variant: "done" },
 } as const
 
 const code = (h: H, text: string) => inlineCode(h, { variant: "plain" }, [text])

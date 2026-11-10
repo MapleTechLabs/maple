@@ -1,16 +1,14 @@
 import { AttributeMappingPublicId, RecommendationPublicId } from "@maple/domain/http/v2"
 import { readLocalStorage } from "@maple/ui/lib/local-storage"
-import { collectV2Pages } from "@maple/web-data/lib/v2-pagination"
 import { getServiceOverview } from "@maple/web-data/warehouse/services"
 import { Clock, Effect, Option, Schema, Array as Arr } from "effect"
 import { Command } from "foldkit"
 import { settleTo } from "@maple/views/data/load-failure"
 import { resolveWindow } from "../../../data/time-range"
 import { MapleApiV2Client } from "../../../platform/api-clients"
+import { listAttributeMappings, listRecommendations } from "../../kit/recommendations"
 import { Message } from "./message"
 import { IngestKeyKind } from "./model"
-
-const PAGE_LIMIT = 100
 
 /** `useIngestConnection`: the last hour's service overview, snapped like `useEffectiveTimeRange`. */
 export const FetchIngestOverview = Command.define("FetchIngestOverview", {
@@ -55,27 +53,15 @@ export const RollIngestKey = Command.define("RollIngestKey", {
 /** `recommendationIssuesListAtom`: every page. */
 export const FetchRecommendations = Command.define("FetchRecommendations", {
 	messages: [Message.CompletedFetchRecommendations],
-	execute: Effect.gen(function* () {
-		const client = yield* MapleApiV2Client
-		return yield* collectV2Pages((cursor) =>
-			client.instrumentationRecommendations.list({
-				query: cursor === undefined ? { limit: PAGE_LIMIT } : { limit: PAGE_LIMIT, cursor },
-			}),
-		)
-	}).pipe(settleTo((result) => Message.CompletedFetchRecommendations({ result }))),
+	execute: listRecommendations.pipe(
+		settleTo((result) => Message.CompletedFetchRecommendations({ result })),
+	),
 })
 
 /** `ingestAttributeMappingsListAtom`: every page. */
 export const FetchMappings = Command.define("FetchAttributeMappings", {
 	messages: [Message.CompletedFetchMappings],
-	execute: Effect.gen(function* () {
-		const client = yield* MapleApiV2Client
-		return yield* collectV2Pages((cursor) =>
-			client.attributeMappings.list({
-				query: cursor === undefined ? { limit: PAGE_LIMIT } : { limit: PAGE_LIMIT, cursor },
-			}),
-		)
-	}).pipe(settleTo((result) => Message.CompletedFetchMappings({ result }))),
+	execute: listAttributeMappings.pipe(settleTo((result) => Message.CompletedFetchMappings({ result }))),
 })
 
 // QUICK-START FRAMEWORK (`quickStartAtomFamily`, an `Atom.kvs` JSON entry)

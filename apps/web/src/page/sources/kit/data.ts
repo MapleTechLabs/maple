@@ -1,9 +1,11 @@
 import type { SourceId } from "@maple/domain/primitives"
 import { V2Source, V2SourceUsage, V2SourceUsageSummary } from "@maple/domain/http/v2"
 import { collectV2Pages } from "@maple/web-data/lib/v2-pagination"
-import { Effect, Schema } from "effect"
+import { Effect, type Result, Schema } from "effect"
+import { Command } from "foldkit"
+import { baseKey } from "@maple/views/data/keyed"
 import { IdleTtl } from "../../../data/idle-ttl"
-import { toLoadFailure } from "@maple/views/data/load-failure"
+import { type LoadFailure, toLoadFailure } from "@maple/views/data/load-failure"
 import { readThrough } from "../../../data/read-cache"
 import { type RequestKey, requestKey } from "@maple/views/data/request-key"
 import { MapleApiV2Client } from "../../../platform/api-clients"
@@ -66,3 +68,21 @@ export const loadSource = (key: RequestKey, id: SourceId, refresh: boolean) =>
 		{ key, idleTtlMs: IdleTtl.retainedQuery, schema: V2Source, refresh },
 		Effect.flatMap(MapleApiV2Client, (client) => client.sources.retrieve({ params: { id } })),
 	).pipe(Effect.mapError(toLoadFailure))
+
+type ListDone<M> = Schema.Top &
+	((fields: {
+		readonly key: string
+		readonly result: Result.Result<typeof SourceList.Type, LoadFailure>
+	}) => M)
+
+/** `sourcesListAtom`, read through the cache and answered with the page's Message; a superseded key re-reads. */
+export const fetchSourcesList = <M>(done: ListDone<M>) =>
+	Command.define("FetchSourcesList", {
+		args: { key: Schema.String, refresh: Schema.Boolean },
+		messages: [done],
+		execute: ({ key, refresh }) =>
+			loadSources(baseKey(key), refresh).pipe(
+				Effect.result,
+				Effect.map((result) => done({ key, result })),
+			),
+	})
