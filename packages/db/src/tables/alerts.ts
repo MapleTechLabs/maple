@@ -149,7 +149,7 @@ export const AlertRules = PG.table("alert_rules", {
  *
  * Holding the lock in its own narrow, unpublished table keeps the per-minute write out
  * of the replication stream entirely. Electric runs with
- * ELECTRIC_MANUAL_TABLE_PUBLISHING=true (see 0009_electric_publication.sql), so a new
+ * ELECTRIC_MANUAL_TABLE_PUBLISHING=true (see drizzle/20260704212005_electric_publication), so a new
  * table is unpublished unless a migration explicitly adds it; do not add this one.
  */
 export const AlertRuleClaims = PG.table("alert_rule_claims", {

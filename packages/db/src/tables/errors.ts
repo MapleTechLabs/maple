@@ -63,9 +63,9 @@ export const Actors = PG.table("actors", {
 
 /**
  * Persistent identity for an error group (one row per unique fingerprint).
- * Fingerprint = cityHash64(OrgId, ServiceName, ExceptionType, TopFrame),
- * computed in Tinybird error_events_mv and stored here as the decimal
- * UInt64 string (matches `toString(FingerprintHash)` in ClickHouse).
+ * The fingerprint is cityHash64 of the inputs in `@maple/domain` `fingerprint.ts`,
+ * computed in error_events_mv and stored here as the decimal UInt64 string
+ * (matches `toString(FingerprintHash)` in ClickHouse).
  */
 export const ErrorIssues = PG.table("error_issues", {
 	columns: {
@@ -158,13 +158,13 @@ export const ErrorIssues = PG.table("error_issues", {
 		PG.index("error_issues_org_live_seen_idx", ["orgId", "lastSeenAt", "id"], {
 			where: `"archived_at" is null`,
 		}),
+		// The errors tick counts the error issues an org opened in the last day to
+		// spend its early-promotion budget (`EarlyPromotionsPerDay`).
+		PG.index("error_issues_org_kind_created_idx", ["orgId", "kind", "createdAt"]),
 		// Retention sweeps for issues left behind by a fingerprint-algorithm bump.
 		// Once a sweep drains them the scan returns nothing, and it stays an index
 		// lookup rather than the heap check that `error_issues_org_archived_idx`
 		// below was added to prevent.
-		// The errors tick counts the error issues an org opened in the last day to
-		// spend its early-promotion budget (`EarlyPromotionsPerDay`).
-		PG.index("error_issues_org_kind_created_idx", ["orgId", "kind", "createdAt"]),
 		PG.index("error_issues_org_fp_version_idx", ["orgId", "fingerprintVersion"]),
 		PG.index("error_issues_org_assignee_idx", ["orgId", "assignedActorId"]),
 		PG.index("error_issues_lease_expiry_idx", ["leaseExpiresAt"]),
@@ -411,15 +411,12 @@ export const ErrorNotificationDeliveries = PG.table("error_notification_deliveri
  *
  * The repository is denormalized (`provider` + `repoFullName` + the provider's
  * own `externalRepoId`) rather than carried as a foreign key into
- * `vcs_repositories`. Three reasons, and the first is the load-bearing one:
+ * `vcs_repositories`:
  *   1. A PR can be attached to an issue for a repository Maple has never synced
  *      (an agent pastes a URL, or the org connected only some of its repos). A
  *      FK would reject exactly the link a user most wants to make.
  *   2. `external_repo_id` is null until a webhook or sync resolves it, so the
  *      merge lookup matches on it when present and on `repo_full_name` otherwise.
- *   3. It keeps this table out of the `vcs.ts` ownership rule (only
- *      `VcsRepository` may import those tables); this one is issue-owned and is
- *      written by the errors services.
  */
 export const ErrorIssuePullRequests = PG.table("error_issue_pull_requests", {
 	columns: {
