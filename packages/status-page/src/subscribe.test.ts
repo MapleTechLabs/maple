@@ -36,6 +36,12 @@ describe("the subscribe panel", () => {
 		)
 	})
 
+	it("leaves out the Slack command when the page's origin is unknown, as in the editor preview", () => {
+		const section = panel(renderPage(makeSnapshot(), live, FIXTURE_NOW, { basePath: "/s/acme" }))
+		expect(section).not.toContain("/feed subscribe")
+		expect(section).toContain(`href="/s/acme/feed.rss"`)
+	})
+
 	it("asks only for an address on a page without components", () => {
 		const section = panel(renderPage(makeSnapshot({ components: [] }), live, FIXTURE_NOW, SHARED))
 		expect(section).toContain(`name="email"`)

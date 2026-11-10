@@ -49,18 +49,27 @@ export const apiSubscriptions = (api: Option.Option<Pick<Fetcher, "fetch">>): St
 					},
 					catch: (cause) => new SubscriptionCallError({ message: "Maple did not answer", cause }),
 				}).pipe(
-					Effect.map(({ status, text }): SubscriptionOutcome => {
-						if (status >= 200 && status < 300) return OK
-						if (status === 404) return NOT_FOUND
-						if (status !== 400) return UNAVAILABLE
-						return {
+					Effect.flatMap(({ status, text }): Effect.Effect<SubscriptionOutcome> => {
+						if (status >= 200 && status < 300) return Effect.succeed(OK)
+						if (status === 404) return Effect.succeed(NOT_FOUND)
+						if (status !== 400)
+							return Effect.logWarning("Status page subscription call failed").pipe(
+								Effect.annotateLogs({ "http.response.status_code": status }),
+								Effect.as(UNAVAILABLE),
+							)
+						return Effect.succeed({
 							_tag: "rejected",
 							message: Option.match(decodeMessage(text), {
 								onNone: () => "That request could not be accepted.",
 								onSome: (decoded) => decoded.message,
 							}),
-						}
+						})
 					}),
+					Effect.tapError((error) =>
+						Effect.logWarning("Status page subscription call failed").pipe(
+							Effect.annotateLogs({ "error.message": error.message }),
+						),
+					),
 					Effect.orElseSucceed(() => UNAVAILABLE),
 				),
 		})

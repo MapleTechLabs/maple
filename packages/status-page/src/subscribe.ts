@@ -43,10 +43,14 @@ const emailPane = (snapshot: StatusPageSnapshot, options: RenderOptions): string
 export const renderSubscribePanel = (snapshot: StatusPageSnapshot, options: RenderOptions): string => {
 	const rss = pageHref(options, "/feed.rss")
 	const atom = pageHref(options, "/feed.atom")
-	const command = `/feed subscribe ${options.origin ?? ""}${options.basePath ?? ""}/feed.rss`
+	// Slack fetches the feed itself, so the command needs an absolute URL; the editor preview has none.
+	const command =
+		options.origin === undefined
+			? undefined
+			: `/feed subscribe ${options.origin}${options.basePath ?? ""}/feed.rss`
 	const tab = (id: string, label: string, checked = false) =>
 		`<input type="radio" name="sub-via" id="sub-${id}" class="sr"${checked ? " checked" : ""}><label for="sub-${id}">${label}</label>`
-	return `<section class="panel subscribe" id="subscribe" aria-labelledby="h-subscribe"><div class="panel-head"><h2 id="h-subscribe">Get updates</h2></div><div class="tabs">${tab("email", "Email", true)}${tab("rss", "RSS", false)}${tab("slack", "Slack", false)}<div class="pane pane-email">${emailPane(snapshot, options)}</div><div class="pane pane-rss"><p>Follow incidents and maintenance in any feed reader.</p><p><a href="${rss}">RSS feed</a> · <a href="${atom}">Atom feed</a></p></div><div class="pane pane-slack"><p>Run this in the Slack channel that should get updates:</p><div class="copy"><code>${escapeHtml(command)}</code><button type="button" data-copy="${escapeHtml(command)}" hidden>Copy</button></div><p class="meta">Uses Slack's RSS app, which must be installed in your workspace.</p></div></div></section>`
+	return `<section class="panel subscribe" id="subscribe" aria-labelledby="h-subscribe"><div class="panel-head"><h2 id="h-subscribe">Get updates</h2></div><div class="tabs">${tab("email", "Email", true)}${tab("rss", "RSS", false)}${command === undefined ? "" : tab("slack", "Slack", false)}<div class="pane pane-email">${emailPane(snapshot, options)}</div><div class="pane pane-rss"><p>Follow incidents and maintenance in any feed reader.</p><p><a href="${rss}">RSS feed</a> · <a href="${atom}">Atom feed</a></p></div>${command === undefined ? "" : `<div class="pane pane-slack"><p>Run this in the Slack channel that should get updates:</p><div class="copy"><code>${escapeHtml(command)}</code><button type="button" data-copy="${escapeHtml(command)}" hidden>Copy</button></div><p class="meta">Uses Slack's RSS app, which must be installed in your workspace.</p></div>`}</div></section>`
 }
 
 export interface SubscriptionView {
