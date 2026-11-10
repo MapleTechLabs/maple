@@ -47,6 +47,7 @@ import {
 	type ChatOutboundOperation,
 	type ChatTarget,
 	type ChatThreadRequest,
+	withRateLimitRetry,
 } from "../../outbound"
 import type { ChatBlock } from "../../render/blocks"
 import { API_BASE, API_HOST, BOT_TOKEN_CONFIG } from "./api"
@@ -88,9 +89,6 @@ const majorParameter = (url: string): string =>
 
 const isGlobalLimit = (response: HttpClientResponse.HttpClientResponse): boolean =>
 	response.headers["x-ratelimit-global"] === "true" || response.headers["x-ratelimit-scope"] === "global"
-
-/** How many times a 429 is waited out before the turn gives up on the message. */
-const MAX_RATE_LIMIT_ATTEMPTS = 3
 
 /**
  * The longest a 429 may park a turn.
@@ -382,27 +380,21 @@ export const discordOutbound: ChatOutbound<HttpClient.HttpClient | ConnectorCred
 			Effect.flatMap(token, (bearer) => {
 				const major = majorParameter(request.url)
 				const bucket = `${route} ${major}`
-				const tryOnce = (
-					count: number,
-				): Effect.Effect<HttpClientResponse.HttpClientResponse, ChatOutboundError> =>
-					awaitBudget(bucket).pipe(
-						Effect.andThen(attempt(bearer, operation, route, request)),
-						Effect.tap((response) => noteRemaining(bucket, response)),
-						Effect.catchTag("@maple/chat-platform/connectors/discord/RateLimited", (limited) =>
-							Effect.andThen(
-								hold(limited.global ? GLOBAL_BUCKET : bucket, limited.wait),
-								count >= MAX_RATE_LIMIT_ATTEMPTS
-									? Effect.fail(
-											failed(operation, "Discord kept rate limiting this message", {
-												status: 429,
-												reason: "rate_limited",
-											}),
-										)
-									: tryOnce(count + 1),
-							),
-						),
-					)
-				return Effect.flatMap(laneFor(major), (lane) => lane.withPermit(tryOnce(1)))
+				// The 429 is held on its bucket even when the call gives up, so the next call waits it out.
+				const once = awaitBudget(bucket).pipe(
+					Effect.andThen(attempt(bearer, operation, route, request)),
+					Effect.tap((response) => noteRemaining(bucket, response)),
+					Effect.tapErrorTag("@maple/chat-platform/connectors/discord/RateLimited", (limited) =>
+						hold(limited.global ? GLOBAL_BUCKET : bucket, limited.wait),
+					),
+				)
+				const retried = withRateLimitRetry(once, {
+					operation,
+					rateLimited: DiscordRateLimited,
+					pause: () => Effect.void,
+					gaveUp: (extra) => failed(operation, "Discord kept rate limiting this message", extra),
+				})
+				return Effect.flatMap(laneFor(major), (lane) => lane.withPermit(retried))
 			})
 
 		const body = (blocks: ReadonlyArray<ChatBlock>) =>
