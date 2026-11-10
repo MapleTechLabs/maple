@@ -243,8 +243,32 @@ export const MountCombobox = Mount.defineStream("MountCombobox", {
 				}
 			}),
 			Stream.merge(escapeContained(anchorSelector)),
+			// A popup with its own search input: a pressed option leaves focus (and the keys) there,
+			// and Escape there is stopped at the portal, which the anchor does not enclose.
+			Stream.merge(returnFocusId === undefined ? Stream.empty : optionPressesKeepFocus(element)),
+			Stream.merge(returnFocusId === undefined ? Stream.empty : escapeContainedIn(element)),
 		),
 })
+
+/** Base UI keeps focus in the input while an option is pressed, so typing and Enter go on working. */
+const optionPressesKeepFocus = (root: Element): Stream.Stream<never> =>
+	Stream.callback<never>(() =>
+		Effect.acquireRelease(
+			Effect.sync(() => {
+				const onMouseDown = (event: Event) => {
+					if (event.target instanceof Element && event.target.closest('[role="option"]') !== null)
+						event.preventDefault()
+				}
+				root.addEventListener("mousedown", onMouseDown)
+				return onMouseDown
+			}),
+			(onMouseDown) => Effect.sync(() => root.removeEventListener("mousedown", onMouseDown)),
+		).pipe(Effect.andThen(Effect.never)),
+	)
+
+/** Escape typed in the popup's own input stops at the portal, short of an enclosing dialog or page. */
+const escapeContainedIn = (root: Element): Stream.Stream<never> =>
+	Stream.callback<never>(() => containEscape(root).pipe(Effect.andThen(Effect.never)))
 
 /** While the list is open, Escape in the input closes it and stops short of an enclosing dialog. */
 const escapeContained = (anchorSelector: string): Stream.Stream<never> =>

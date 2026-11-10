@@ -1,9 +1,9 @@
 import { ALERT_TEMPLATE_VARIABLES, type AlertDestinationId, type EscalationChainId } from "@maple/domain/http"
 import { comparatorSupportsTiers } from "@maple/web-data/alerts/form-utils"
-import { Option, Struct, Array as Arr } from "effect"
+import { Option, Struct, Array as Arr, String as Str } from "effect"
 import { createLazy, type Html, type HtmlBuilder } from "foldkit/html"
 import { button } from "@maple/views/ui/button"
-import { card } from "@maple/views/ui/card"
+import { triggerId } from "@maple/views/ui/overlay/popup-state"
 import { badge } from "@maple/views/ui/display"
 import { field, fieldLabel, input } from "@maple/views/ui/field"
 import { icon } from "@maple/views/ui/icon"
@@ -12,7 +12,7 @@ import { statusDot } from "@maple/views/ui/status-dot"
 import { pressable } from "@maple/views/ui/pressable"
 import { textarea } from "@maple/views/ui/textarea"
 import { stableSlice } from "../../kit/stable-slice"
-import { destinationsOf } from "./derive-rows"
+import { destinationsOf, invalidFieldsOf } from "./derive-rows"
 import type { RuleForm } from "./form"
 import { Message } from "./message"
 import type { Model } from "./model"
@@ -103,11 +103,13 @@ const chainPicker = (
 	label: string,
 	/** Each tier needs its own route; an anomaly rule only needs someone on either tier. */
 	isRouteRequired: boolean,
+	/** The picker shows its error: the user left it unrouted, or tried to save. */
+	isRevealed: boolean,
 ): Html => {
 	const id = chainSelectIdOf(tier)
 	const ids = idsOf(id, false)
 	const value = chainId ?? NO_CHAIN
-	const isUnrouted = isRouteRequired && chainId === null && destinationIds.length === 0
+	const isUnrouted = isRevealed && isRouteRequired && chainId === null && destinationIds.length === 0
 	const state = { ...fieldStateOf(value, undefined), isInvalid: isUnrouted }
 	const destinations = destinationsOf(model)
 	const nameOf = (destinationId: AlertDestinationId) =>
@@ -147,12 +149,12 @@ const chainPicker = (
 		],
 	})
 	return formSelect(h, model.selects[id], id, value, chainOptions(model, chainId), {
-		className: "h-9 w-full",
+		className: "w-full sm:w-80",
 		labelledBy: ids.label,
 		...(isUnrouted ? { errorId: ids.error } : undefined),
 		toView: (parts) =>
 			field(h, { className: "items-stretch gap-1.5", state }, [
-				hstack(h, { gap: "2", justify: "between" }, [
+				hstack(h, { gap: "3", wrap: true }, [
 					fieldLabel(h, { ids, state, className: "text-xs" }, label),
 					textLink(
 						h,
@@ -180,9 +182,11 @@ const tierRouting = (
 	chainId: EscalationChainId | null,
 	tiered: boolean,
 	isRouteRequired: boolean,
+	isRevealed: boolean,
+	emptyText: string,
 ): Html =>
 	vstack(h, { gap: "3" }, [
-		destinationList(h, model, tier, destinationIds, destinationsOf(model)),
+		destinationList(h, model, tier, destinationIds, destinationsOf(model), emptyText),
 		chainPicker(
 			h,
 			model,
@@ -192,6 +196,7 @@ const tierRouting = (
 			// Two tiers render two pickers, so each needs its own accessible name.
 			tiered ? `${tier === "warning" ? "Warning" : "Critical"} escalation chain` : "Escalation chain",
 			isRouteRequired,
+			isRevealed,
 		),
 	])
 
@@ -204,7 +209,7 @@ const messageTemplate = (h: H, model: NotificationsView, form: NotificationsForm
 	const titleIds = idsOf("notification-title", false)
 	const bodyIds = idsOf("notification-body", false)
 	return h.div(
-		[h.Class("mt-3")],
+		[],
 		[
 			pressable(
 				h,
@@ -279,7 +284,44 @@ const messageTemplate = (h: H, model: NotificationsView, form: NotificationsForm
 	)
 }
 
-const notifications = (h: H, model: NotificationsView, form: NotificationsForm): Html => {
+/** A tier's chain by name, for the empty destination list: "the Checkout on-call chain". */
+const chainPhrase = (model: NotificationsView, chainId: EscalationChainId | null): string | null =>
+	chainId === null
+		? null
+		: Option.match(
+				Arr.findFirst(model.escalationChains ?? [], (chain) => chain.id === chainId),
+				{ onNone: () => "its escalation chain", onSome: (chain) => `the ${chain.name} chain` },
+			)
+
+/** What a tier with no destinations of its own still reaches, so the list never contradicts the chain. */
+const emptyTextOf = (
+	model: NotificationsView,
+	form: NotificationsForm,
+	escalation: NotificationsForm["escalation"],
+	tier: Tier,
+): string => {
+	if (tier === "warning" || escalation === null) {
+		const chain = chainPhrase(model, form.escalationChainId)
+		return chain === null
+			? "No one is notified yet"
+			: `No destinations. Notifications go through ${chain}.`
+	}
+	const chain = chainPhrase(model, escalation.escalationChainId)
+	if (form.destinationIds.length > 0)
+		return `No extra destinations. Critical also goes to the warning destinations${chain === null ? "." : ` and ${chain}.`}`
+	return chain === null
+		? "No one is notified yet"
+		: `No destinations of its own. Critical goes through ${chain}.`
+}
+
+const notifications = (
+	h: H,
+	model: NotificationsView,
+	form: NotificationsForm,
+	revealedIds: string,
+): Html => {
+	const revealed = new Set(Str.split(revealedIds, ","))
+	const isRevealed = (tier: Tier) => revealed.has(triggerId(chainSelectIdOf(tier)))
 	const destinations = destinationsOf(model)
 	const escalation = comparatorSupportsTiers(form.comparator) ? form.escalation : null
 	const isRouteRequired = form.signalType !== "anomaly"
@@ -287,91 +329,92 @@ const notifications = (h: H, model: NotificationsView, form: NotificationsForm):
 		destinations,
 		(d) => form.destinationIds.includes(d.id) || (escalation?.destinationIds.includes(d.id) ?? false),
 	)
-	return card(
-		h,
-		[
-			...(isAnySelected
-				? [
-						// TODO(alert-editor): the "Send a real test notification…" tooltip.
-						hstack(h, { align: "stretch", justify: "end", className: "-mt-1" }, [
-							button(
-								h,
-								{
-									variant: "ghost",
-									size: "sm",
-									isLoading: model.isSendingTest,
-									className: "-my-1 px-2 text-xs",
-									attributes: [h.OnClick(Message.ClickedSendTest())],
-								},
-								[icon(h, "PaperPlaneIcon", { size: 12 }), "Send test"],
-							),
-						]),
-					]
-				: []),
-			...(escalation === null
-				? [
-						tierRouting(
+	return vstack(h, { gap: "4" }, [
+		...(isAnySelected
+			? [
+					// TODO(alert-editor): the "Send a real test notification…" tooltip.
+					hstack(h, { align: "stretch", justify: "end" }, [
+						button(
 							h,
-							model,
-							"warning",
-							form.destinationIds,
-							form.escalationChainId,
-							false,
-							isRouteRequired,
-						),
-					]
-				: [
-						h.div(
-							[h.Class("mt-1 space-y-4")],
-							[
-								...(form.signalType === "anomaly"
-									? [
-											typography(h, { size: "xs", tone: "muted", as: "p" }, [
-												"Maple rates each anomaly warning or critical by how far it strays from its baseline.",
-											]),
-										]
-									: []),
-								h.div(
-									[h.Class("space-y-1.5")],
-									[
-										tierHeading(h, "warning", "Warning"),
-										tierRouting(
-											h,
-											model,
-											"warning",
-											form.destinationIds,
-											form.escalationChainId,
-											true,
-											isRouteRequired,
-										),
-									],
-								),
-								h.div(
-									[h.Class("space-y-1.5")],
-									[
-										tierHeading(
-											h,
-											"critical",
-											"Critical, on top of the warning destinations",
-										),
-										tierRouting(
-											h,
-											model,
-											"critical",
-											escalation.destinationIds,
-											escalation.escalationChainId,
-											true,
-											isRouteRequired,
-										),
-									],
-								),
-							],
+							{
+								variant: "outline",
+								size: "sm",
+								isLoading: model.isSendingTest,
+								attributes: [h.OnClick(Message.ClickedSendTest())],
+							},
+							[icon(h, "PaperPlaneIcon", { size: 12 }), "Send test"],
 						),
 					]),
-			messageTemplate(h, model, form),
-		],
-		"p-4",
-	)
+				]
+			: []),
+		...(escalation === null
+			? [
+					tierRouting(
+						h,
+						model,
+						"warning",
+						form.destinationIds,
+						form.escalationChainId,
+						false,
+						isRouteRequired,
+						isRevealed("warning"),
+						emptyTextOf(model, form, escalation, "warning"),
+					),
+				]
+			: [
+					h.div(
+						[h.Class("space-y-4")],
+						[
+							...(form.signalType === "anomaly"
+								? [
+										typography(h, { size: "xs", tone: "muted", as: "p" }, [
+											"Maple rates each anomaly warning or critical by how far it strays from its baseline.",
+										]),
+									]
+								: []),
+							h.div(
+								[h.Class("space-y-1.5")],
+								[
+									tierHeading(h, "warning", "Warning"),
+									tierRouting(
+										h,
+										model,
+										"warning",
+										form.destinationIds,
+										form.escalationChainId,
+										true,
+										isRouteRequired,
+										isRevealed("warning"),
+										emptyTextOf(model, form, escalation, "warning"),
+									),
+								],
+							),
+							h.div(
+								[h.Class("space-y-1.5")],
+								[
+									tierHeading(
+										h,
+										"critical",
+										"Critical, on top of the warning destinations",
+									),
+									tierRouting(
+										h,
+										model,
+										"critical",
+										escalation.destinationIds,
+										escalation.escalationChainId,
+										true,
+										isRouteRequired,
+										isRevealed("critical"),
+										emptyTextOf(model, form, escalation, "critical"),
+									),
+								],
+							),
+						],
+					),
+				]),
+		messageTemplate(h, model, form),
+	])
 }
 
 /** "Insert a variable": one button per template variable. TODO(alert-editor): their description tooltips. */
@@ -433,4 +476,4 @@ const formOf = stableSlice((form: RuleForm) =>
 
 /** "Who gets notified": one list per tier, Send test while anything is selected, and the template. */
 export const notificationsSection = (h: H, model: Model, form: RuleForm): Html =>
-	slot(notifications, [h, viewOf(model), formOf(form)])
+	slot(notifications, [h, viewOf(model), formOf(form), invalidFieldsOf(model, form)])

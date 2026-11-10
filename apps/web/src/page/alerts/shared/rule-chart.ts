@@ -58,10 +58,11 @@ export const RULE_CHART_TOKENS: ReadonlyArray<string> = [
 	"--background",
 ]
 
-const SIGNAL_TOKEN = "--chart-1"
+// Blue in both themes: `--chart-1` is the dark theme's orange, the warning threshold's colour.
+const SIGNAL_TOKEN = "--chart-p50"
 const CHART_HEIGHT = 300
 const Y_AXIS_WIDTH = 72
-const PLOT_RIGHT = 12
+const PLOT_RIGHT = 28
 const RAIL_CELLS = 60
 
 type RailStatus = "breached" | "error" | "skipped" | "healthy" | "empty"
@@ -101,6 +102,10 @@ export type RuleChartInputs<M> = Readonly<{
 	/** `onSelectBucket`: the rail cells are buttons when set. */
 	onSelectBucket?: (index: number | null) => M
 	isLoading?: boolean
+	/** Said in place of the loading skeleton, whose drawn trend reads like data (the rule editor). */
+	loadingText?: string
+	/** Said when there is nothing to chart and nothing failed, in place of "No data in this window". */
+	emptyText?: Readonly<{ title: string; hint?: string | undefined }>
 	error?: string | null
 	className?: string
 }>
@@ -133,7 +138,11 @@ export const ruleChart = <M>(h: HtmlBuilder<M>, inputs: RuleChartInputs<M>): Htm
 					source === "preview" ? checksChart.rows : previewChart.rows,
 					(domain.max - domain.min) / RAIL_CELLS,
 				)
-	const chartData = merged.rows
+	// A point outside the window would draw past the plot, over the axis labels.
+	const chartData = Arr.filter(merged.rows, (row) => {
+		const t = num(row.t)
+		return t >= domain.min && t <= domain.max
+	})
 	const hasSignal = chartData.length > 0
 	const bucketSeconds =
 		inputs.preview != null
@@ -242,6 +251,9 @@ export const ruleChart = <M>(h: HtmlBuilder<M>, inputs: RuleChartInputs<M>): Htm
 		gradientId: `${inputs.chartId}-signal`,
 	})
 
+	const hint = inputs.emptyText === undefined ? "Try widening the range" : inputs.emptyText.hint
+	const emptyHint = hint === undefined ? {} : { hint }
+
 	const chartArea = hasSignal
 		? h.div(
 				[h.Class("w-full")],
@@ -274,7 +286,9 @@ export const ruleChart = <M>(h: HtmlBuilder<M>, inputs: RuleChartInputs<M>): Htm
 				],
 			)
 		: inputs.isLoading === true
-			? chartLoading(h, { variant: "area", height: CHART_HEIGHT })
+			? inputs.loadingText === undefined
+				? chartLoading(h, { variant: "area", height: CHART_HEIGHT })
+				: chartEmpty(h, { height: CHART_HEIGHT }, [inputs.loadingText])
 			: inputs.error != null
 				? chartError(h, { height: CHART_HEIGHT }, [
 						h.div(
@@ -289,8 +303,8 @@ export const ruleChart = <M>(h: HtmlBuilder<M>, inputs: RuleChartInputs<M>): Htm
 							],
 						),
 					])
-				: chartEmpty(h, { height: CHART_HEIGHT, hint: "Try widening the range" }, [
-						"No data in this window",
+				: chartEmpty(h, { height: CHART_HEIGHT, ...emptyHint }, [
+						inputs.emptyText?.title ?? "No data in this window",
 					])
 
 	const thresholdCaption = hstack(

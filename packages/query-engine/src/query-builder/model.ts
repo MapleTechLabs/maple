@@ -10,6 +10,8 @@ import {
 } from "@maple/domain/where-clause"
 import { Match, Array as Arr, Record as Rec, String as Str, Option, Result } from "effect"
 
+export * from "./where-key-rules"
+
 export type {
 	QueryBuilderDataSource,
 	QueryBuilderMetricType,

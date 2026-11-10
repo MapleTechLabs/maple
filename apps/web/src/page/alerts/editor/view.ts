@@ -1,4 +1,3 @@
-import { deriveTierIssues, isFilledNumber } from "@maple/web-data/alerts/form-utils"
 import { cn } from "@maple/ui/lib/utils"
 import { Submodel } from "foldkit"
 import { createLazy, type Html, type HtmlBuilder } from "foldkit/html"
@@ -16,7 +15,21 @@ import { RULE_CHART_TOKENS } from "../shared/rule-chart"
 import type { RuleForm } from "./form"
 import { Message } from "./message"
 import type { Model, Notice } from "./model"
-import { isAnomalyUnrouted, isProtectedDefault } from "./derive"
+import { destinationTarget, isProtectedDefault } from "./derive"
+import type { AlertQueryTiming } from "@maple/domain/http"
+import { destinationsOf, draftTimingOf } from "./derive-rows"
+import type { RuleCard } from "./form"
+import {
+	cardIssues,
+	conditionSummary,
+	nameSummary,
+	notifySummary,
+	type NameLookup,
+	type NotifyNames,
+	watchSummary,
+	isProblemIssue,
+} from "./summary"
+import { sentenceCard, sentenceChain } from "../../kit/sentence-card"
 import { actionBar } from "./view-action-bar"
 import { conditionFields } from "./view-condition"
 import { detailsSection } from "./view-details"
@@ -24,9 +37,9 @@ import { liveChartHero } from "./view-hero"
 import { noiseSection } from "./view-noise"
 import { notificationsSection } from "./view-notifications"
 import { querySection } from "./view-query"
-import { RULE_FORM_MAX_WIDTH, ruleStep } from "./view-step"
+import { RULE_FORM_MAX_WIDTH } from "./view-step"
 import { templatesOverlay } from "./view-templates"
-import { Array as Arr, String as Str } from "effect"
+import { Array as Arr, Option } from "effect"
 
 // `AlertCreatePageContent` and `AlertCreateFormSurface`: the rule editor page and its form.
 
@@ -123,85 +136,128 @@ const evaluatedFormOf = stableSlice((form: RuleForm): RuleForm => ({
 	notificationBody: "",
 }))
 
-/** Who gets paged is missing: no destination or escalation chain on a tier that needs one. */
-const isNotifyMissingOf = (form: RuleForm, isDefault: boolean): boolean =>
-	form.signalType === "anomaly"
-		? !isDefault && isAnomalyUnrouted(form)
-		: (form.destinationIds.length === 0 && form.escalationChainId === null) ||
-			deriveTierIssues(form).includes("Critical destinations")
+/** How the Notify summary names destinations and chains, from the lists the editor holds. */
+const notifyNamesOf = (model: Model): NotifyNames => {
+	const destinations = destinationsOf(model)
+	// A list that has not answered (or failed, for chains) is loading, never "removed".
+	const lookup = <A>(
+		list: ReadonlyArray<A> | null,
+		isMatch: (item: A) => boolean,
+		nameOf: (item: A) => string,
+	): NameLookup =>
+		list === null
+			? { _tag: "Loading" }
+			: Option.match(Arr.findFirst(list, isMatch), {
+					onNone: (): NameLookup => ({ _tag: "Gone" }),
+					onSome: (item): NameLookup => ({ _tag: "Found", name: nameOf(item) }),
+				})
+	return {
+		destination: (id) =>
+			lookup(
+				model.destinations === null ? null : destinations,
+				(destination) => destination.id === id,
+				(destination) => destinationTarget(destination).primary,
+			),
+		chain: (id) =>
+			lookup(
+				model.isEscalationChainsFailed ? null : model.escalationChains,
+				(chain) => chain.id === id,
+				(chain) => chain.name,
+			),
+	}
+}
+
+// A card of short fields stops near 768px, so nothing stretches across the page.
+const SHORT_FIELDS = "max-w-3xl"
+
+type CardSpec = Readonly<{
+	card: RuleCard
+	lead: string
+	hint?: string | undefined
+	summary: string
+	/** The open card's body: a width cap for a card of short fields. */
+	bodyClassName?: string | undefined
+	body: () => ReadonlyArray<Html>
+}>
+
+const ruleCard = (
+	h: H,
+	model: Model,
+	form: RuleForm,
+	timing: AlertQueryTiming | null,
+	isDefault: boolean,
+	spec: CardSpec,
+): Html => {
+	const issues = cardIssues(form, spec.card, timing, isDefault)
+	return sentenceCard(
+		h,
+		{
+			id: spec.card,
+			lead: spec.lead,
+			hint: spec.hint,
+			status: issues.length > 0 ? "missing" : "done",
+			issues: Arr.filter(issues, (issue) => !isProblemIssue(issue)),
+			problems: Arr.filter(issues, isProblemIssue),
+			summary: spec.summary,
+			isExpanded: model.expandedCards.includes(spec.card),
+			onExpand: Message.ClickedExpandCard({ card: spec.card }),
+			onCollapse: Message.ClickedCollapseCard({ card: spec.card }),
+			...(spec.bodyClassName === undefined ? undefined : { bodyClassName: spec.bodyClassName }),
+		},
+		spec.body,
+	)
+}
 
 const surface = (h: H, model: Model, form: RuleForm, timeZone: string): ReadonlyArray<Html> => {
 	const evaluated = evaluatedFormOf(form)
-	// An anomaly rule has no condition to tune: the detector decides, so "When to alert" goes.
+	// An anomaly rule has no condition to tune: the detector decides, so "Alert when" and the chart go.
 	const isAnomaly = form.signalType === "anomaly"
-	const stepAfterQuery = isAnomaly ? 2 : 3
+	const isDefault = isProtectedDefault(model)
+	const timing = draftTimingOf(model, form)
+	const condition: CardSpec = {
+		card: "condition",
+		lead: "Alert when",
+		hint: "The dashed line on the chart is your threshold.",
+		summary: conditionSummary(form),
+		bodyClassName: SHORT_FIELDS,
+		body: () => [conditionFields(h, model, evaluated), noiseSection(h, model, evaluated)],
+	}
+	const cards: ReadonlyArray<CardSpec> = [
+		{
+			card: "watch",
+			lead: "When",
+			hint: isAnomaly
+				? "Which anomalies this rule pages on."
+				: "A built-in signal, or a query built like a dashboard widget.",
+			summary: watchSummary(form, isDefault),
+			body: () => [querySection(h, model, evaluated)],
+		},
+		...(isAnomaly ? [] : [condition]),
+		{
+			card: "notify",
+			lead: "Notify",
+			summary: notifySummary(form, notifyNamesOf(model)),
+			bodyClassName: SHORT_FIELDS,
+			body: () => [notificationsSection(h, model, form)],
+		},
+		{
+			card: "name",
+			lead: "Name",
+			summary: nameSummary(form),
+			bodyClassName: SHORT_FIELDS,
+			body: () => [detailsSection(h, model, form)],
+		},
+	]
 	return [
 		h.div(
-			[h.Class(cn("mx-auto w-full space-y-10", RULE_FORM_MAX_WIDTH))],
+			[h.Class(cn("mx-auto w-full space-y-6", RULE_FORM_MAX_WIDTH))],
 			[
 				...noticeBanner(h, model.notices),
-				ruleStep(
+				...(isAnomaly ? [] : [liveChartHero(h, model, form, evaluated, timeZone)]),
+				sentenceChain(
 					h,
-					{
-						number: 1,
-						hasDivider: false,
-						title: "What to watch",
-						hint: isAnomaly
-							? "Pick which anomalies this rule pages on."
-							: "Pick a built-in signal, or build the query like a dashboard widget.",
-						status: "done",
-					},
-					[querySection(h, model, evaluated)],
-				),
-				...(isAnomaly
-					? []
-					: [
-							ruleStep(
-								h,
-								{
-									number: 2,
-									title: "When to alert",
-									hint: "The dashed line is your threshold. Shaded bands show when the rule would have fired.",
-									status: isFilledNumber(form.threshold) ? "done" : "missing",
-								},
-								[
-									h.div(
-										[h.Class("space-y-4")],
-										[
-											liveChartHero(h, model, form, evaluated, timeZone),
-											conditionFields(h, model, evaluated),
-											noiseSection(h, model, evaluated),
-										],
-									),
-								],
-							),
-						]),
-				h.div(
-					[h.Class("grid grid-cols-1 gap-6 border-t pt-8 lg:grid-cols-2 lg:items-start")],
-					[
-						ruleStep(
-							h,
-							{
-								number: stepAfterQuery,
-								hasDivider: false,
-								title: "Who gets notified",
-								status: isNotifyMissingOf(form, isProtectedDefault(model))
-									? "missing"
-									: "done",
-							},
-							[notificationsSection(h, model, form)],
-						),
-						ruleStep(
-							h,
-							{
-								number: stepAfterQuery + 1,
-								hasDivider: false,
-								title: "Name it",
-								status: Str.trim(form.name).length === 0 ? "missing" : "done",
-							},
-							[detailsSection(h, model, form)],
-						),
-					],
+					{ label: "Rule" },
+					Arr.map(cards, (spec) => ruleCard(h, model, form, timing, isDefault, spec)),
 				),
 			],
 		),

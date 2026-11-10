@@ -7,16 +7,29 @@ import { Array as Arr, Result } from "effect"
 import type { PageContext } from "../../contract"
 import * as DestinationDialog from "../destination/dialog"
 import { completeSave, completeTest, runTest, save } from "./actions"
-import { FetchEditorChains, FocusSqlCaret, InsertSqlToken, ReloadPage } from "./command"
+import { FetchEditorChains, FocusRuleCard, FocusSqlCaret, InsertSqlToken, ReloadPage } from "./command"
+import { sentenceCardHeadingId, sentenceCardSummaryId } from "../../kit/sentence-card"
 import { SQL_TEXTAREA_ID } from "./view-sql"
 import { chatConnectStep, connectorsAnswered, liftDialog, menuStep, removeDestination } from "./dest-steps"
 import { isProtectedDefault, suggestedName } from "./derive"
 import { tagSuggestionsOf } from "./derive-rows"
+import { triggerId } from "@maple/views/ui/overlay/popup-state"
+import { chainSelectIdOf } from "./form-steps"
+import { cardOfIssue, issueFieldId } from "./summary"
 import * as F from "./form-steps"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { planAutocomplete, planPreviews } from "./plan"
-import { editForm, followRows, initialize, liftTemplates, type Return } from "./steps"
+import {
+	editForm,
+	followRows,
+	initialize,
+	liftTemplates,
+	type Return,
+	switchKindStep,
+	touched,
+	withMissingCardsOpen,
+} from "./steps"
 import { chartStep, comboStep, queryPanelStep, radioStep, selectStep, timePickerStep } from "./sub-steps"
 
 const AUTOCOMPLETE_PRESET = "24h"
@@ -44,6 +57,11 @@ const readClock = (model: Model, context: PageContext, nowMs: number): Return =>
 	const previewed = planPreviews(looked.model, context)
 	return { model: previewed.model, commands: [...looked.commands, ...previewed.commands] }
 }
+
+const isChainSelect = (id: string): boolean =>
+	id === chainSelectIdOf("warning") || id === chainSelectIdOf("critical")
+// The select was left: a pick, Escape or a press outside.
+const LEFT_SELECT = new Set(["SelectedItem", "PressedEscape", "PressedOutside"])
 
 const closeTemplates = (model: Model): Return => liftTemplates(model, Dialog.close(model.templates))
 
@@ -126,14 +144,15 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 					},
 		// Both slots take an answer for their key: the replay can share the draft's first request.
 		CompletedFetchPreview: ({ key, result }) => ({
-			model: {
+			// A timing that lands as too slow opens "Alert when", where the interval is picked.
+			model: withMissingCardsOpen({
 				...model,
 				preview: model.preview.key === key ? Keyed.accept(model.preview, key, result) : model.preview,
 				savedPreview:
 					model.savedPreview.key === key
 						? Keyed.accept(model.savedPreview, key, result)
 						: model.savedPreview,
-			},
+			}),
 		}),
 		ResolvedThemeColors: ({ colors }) => ({ model: { ...model, themeColors: colors } }),
 		CompletedLoadChartRuntime: () => ({ model: { ...model, chartRuntime: { _tag: "Ready" } } }),
@@ -142,25 +161,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		}),
 		GotChartMessage: ({ message: inner }) => chartStep(model, inner),
 		GotTimePickerMessage: ({ message: inner }) => timePickerStep(model, inner),
-		ClickedSignalKind: ({ kind }) => {
-			if (model.form === null || isProtectedDefault(model)) return { model }
-			const moved = F.switchKind(model.form, kind)
-			// Anomaly paging is opt-in: a destination the editor chose, not the user, does not carry over.
-			const auto = model.autoDestinationId
-			const form =
-				kind === "anomaly" && auto !== null
-					? F.updateTierIds(
-							F.updateTierIds(moved.form, "warning", F.removeId(auto)),
-							"critical",
-							F.removeId(auto),
-						)
-					: moved.form
-			return editForm(
-				{ ...model, kindNotice: moved.notice, autoDestinationId: kind === "anomaly" ? null : auto },
-				context,
-				() => form,
-			)
-		},
+		ClickedSignalKind: ({ kind }) => switchKindStep(model, context, kind),
 		GotRadioMessage: ({ group, message: inner }) => radioStep(model, context, group, inner),
 		ClickedOpenInBuilder: () => {
 			if (model.form === null) return { model }
@@ -172,7 +173,14 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 				? { model }
 				: editForm(model, context, (form) => F.toggleAnomalySignal(form, signal)),
 		GotQueryPanelMessage: ({ message: inner }) => queryPanelStep(model, context, inner),
-		GotSelectMessage: ({ id, message: inner }) => selectStep(model, context, id, inner),
+		GotSelectMessage: ({ id, message: inner }) =>
+			selectStep(
+				// Leaving a tier's chain picker without a route shows its error from then on.
+				isChainSelect(id) && LEFT_SELECT.has(inner._tag) ? touched(model, triggerId(id)) : model,
+				context,
+				id,
+				inner,
+			),
 		GotComboMessage: ({ id, message: inner }) => comboStep(model, context, id, inner),
 		ChangedField: ({ field, value }) => editForm(model, context, (form) => F.setText(form, field, value)),
 		ChangedEscalationField: ({ field, value }) =>
@@ -214,6 +222,24 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			editForm({ ...model, tagDraft: "" }, context, (form) => F.commitTag(form, model.tagDraft)),
 		ClickedRemoveTag: ({ tag }) => editForm(model, context, (form) => F.removeTag(form, tag)),
 		ClickedAddNotes: () => ({ model: { ...model, isNotesOpen: true } }),
+		ClickedExpandCard: ({ card }) => ({
+			model: { ...model, expandedCards: Arr.union(model.expandedCards, [card]) },
+			commands: [FocusRuleCard({ id: sentenceCardHeadingId(card) })],
+		}),
+		ClickedCollapseCard: ({ card }) => ({
+			model: { ...model, expandedCards: Arr.filter(model.expandedCards, (open) => open !== card) },
+			commands: [FocusRuleCard({ id: sentenceCardSummaryId(card) })],
+		}),
+		CompletedFocusCard: () => ({ model }),
+		BlurredField: ({ id }) => ({ model: touched(model, id) }),
+		ClickedIssue: ({ issue }) => {
+			const card = cardOfIssue(issue)
+			const id = issueFieldId(issue) ?? sentenceCardHeadingId(card)
+			return {
+				model: touched({ ...model, expandedCards: Arr.union(model.expandedCards, [card]) }, id),
+				commands: [FocusRuleCard({ id })],
+			}
+		},
 		ToggledSqlCollapsed: () => ({ model: { ...model, isSqlCollapsed: !model.isSqlCollapsed } }),
 		ClickedSqlToken: ({ token }) =>
 			model.form === null
@@ -237,7 +263,8 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		}),
 		ClickedTemplateVariable: ({ key }) => editForm(model, context, (form) => F.appendVariable(form, key)),
 		GotMenuMessage: ({ id, message: inner }) => menuStep(model, id, inner),
-		ClickedRemoveDestination: ({ tier, id }) => removeDestination(model, tier, id),
+		ClickedRemoveDestination: ({ tier, id }) =>
+			removeDestination(touched(model, triggerId(chainSelectIdOf(tier))), tier, id),
 		GotDestinationDialogMessage: ({ message: inner }) =>
 			liftDialog(model, DestinationDialog.update(model.destinationDialog, inner)),
 		GotIssuesTooltipMessage: ({ message: inner }) => {

@@ -1,7 +1,17 @@
 import { OrgId } from "@maple/domain"
 import { AlertDestinationId } from "@maple/domain/http"
 import { Schema, Array as Arr } from "effect"
-import { expect as expectView, given, Mount, role, scene, text, withViewInputs } from "foldkit/scene"
+import {
+	click,
+	Command,
+	expect as expectView,
+	given,
+	Mount,
+	role,
+	scene,
+	text,
+	withViewInputs,
+} from "foldkit/scene"
 import { describe, expect, test } from "vitest"
 import { ResolveThemeColors, ThemeMessage } from "@maple/views/charts/theme-colors"
 import * as Select from "@maple/views/ui/select"
@@ -9,6 +19,7 @@ import type { PageContext } from "../../contract"
 import { chainDestinations, chainUuid, populatedChains } from "../shared/escalation-test-fixtures"
 import { destinationRow, NOW, ORG, ruleRow } from "../shared/test-rows"
 import { chainSelectIdOf } from "./form-steps"
+import { FocusRuleCard } from "./command"
 import { init } from "./init"
 import { Message, type Tier } from "./message"
 import type { Model } from "./model"
@@ -83,7 +94,7 @@ describe("alert rule editor, escalation chains", () => {
 	test("a tier with neither a destination nor a chain says so and cannot be saved", () => {
 		const model = withoutDestination(ready())
 		expect(issuesOf(model)).toContain("Who gets notified")
-		expect(names(pageUpdate(model, Message.ClickedSave()).commands)).toEqual([])
+		expect(names(pageUpdate(model, Message.ClickedSave()).commands)).not.toContain("SaveAlertRule")
 		scene(
 			{ update: pageUpdate, view },
 			given(model),
@@ -145,6 +156,10 @@ describe("alert rule editor, escalation chains", () => {
 			{ update: pageUpdate, view },
 			given(tiered),
 			themeResolved(),
+			// Untouched, the new tier only counts as missing; pressing save shows its error.
+			expectView(text("Pick a destination or an escalation chain")).not.toExist(),
+			click(role("button", { name: "Create rule" })),
+			Command.resolve(FocusRuleCard, Message.CompletedFocusCard()),
 			expectView(text("Pick a destination or an escalation chain")).toExist(),
 		)
 		const routed = run(tiered, [pickChain("critical", chainUuid(2))])
@@ -167,8 +182,9 @@ describe("alert rule editor, escalation chains", () => {
 			{ update: pageUpdate, view },
 			given(anomaly),
 			themeResolved(),
-			expectView(role("button", { name: "Create rule" })).toBeDisabled(),
+			expectView(text("Missing: Who gets notified")).toExist(),
 		)
+		expect(names(pageUpdate(anomaly, Message.ClickedSave()).commands)).not.toContain("SaveAlertRule")
 		const routed = run(anomaly, [pickChain("critical", chainUuid(1))])
 		expect(routed.form?.destinationIds).toEqual([])
 		expect(routed.form?.escalation?.destinationIds).toEqual([])

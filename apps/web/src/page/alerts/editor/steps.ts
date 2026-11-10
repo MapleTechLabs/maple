@@ -3,10 +3,14 @@ import * as Dialog from "@maple/views/ui/dialog"
 import type { PageContext, PageReturn } from "../../contract"
 import { editingRuleOf, initialization } from "./draft"
 import type { RuleForm } from "./form"
-import { Message } from "./message"
+import * as F from "./form-steps"
+import { Message, type SignalKind } from "./message"
 import type { Model } from "./model"
 import { applyDefaultDestination, planMetrics, planPreviews } from "./plan"
-import { Option, String as Str } from "effect"
+import { isProtectedDefault } from "./derive"
+import { draftTimingOf } from "./derive-rows"
+import { missingCards, RULE_CARDS } from "./summary"
+import { Option, String as Str, Array as Arr } from "effect"
 
 export type Return = PageReturn<Model, Message>
 
@@ -43,15 +47,39 @@ export const initialize = (model: Model, context: PageContext): Return => {
 		isNotesOpen: Str.trim(form.notes).length > 0,
 		isMessageTemplateOpen: form.notificationTitle.length > 0 || form.notificationBody.length > 0,
 	}
-	const loaded = planned(applyDefaultDestination(ready), context)
+	// A new rule opens every card; a saved one opens on its summaries, with any gap left open.
+	const withCards: Model = {
+		...ready,
+		expandedCards:
+			draft.editingRule === null ? RULE_CARDS : missingCards(form, null, isProtectedDefault(ready)),
+	}
+	const loaded = planned(applyDefaultDestination(withCards), context)
 	if (!draft.isShowingTemplates) return loaded
 	const opened = liftTemplates(loaded.model, Dialog.open(loaded.model.templates))
 	return { model: opened.model, commands: [...(loaded.commands ?? []), ...(opened.commands ?? [])] }
 }
 
 /** An edit to the draft; the preview follows it (`useDeferredValue` over the form). */
+/** Marks a control as left (by element id), so it shows its error from now on. */
+export const touched = (model: Model, id: string): Model =>
+	model.touchedFields.includes(id) ? model : { ...model, touchedFields: [...model.touchedFields, id] }
+
+/** Opens every card with a save blocker; it stays open once fixed, so it never closes under the cursor. */
+export const withMissingCardsOpen = (model: Model): Model =>
+	model.form === null
+		? model
+		: {
+				...model,
+				expandedCards: Arr.union(
+					model.expandedCards,
+					missingCards(model.form, draftTimingOf(model, model.form), isProtectedDefault(model)),
+				),
+			}
+
 export const editForm = (model: Model, context: PageContext, edit: (form: RuleForm) => RuleForm): Return =>
-	model.form === null ? { model } : planned({ ...model, form: edit(model.form) }, context)
+	model.form === null
+		? { model }
+		: planned(withMissingCardsOpen({ ...model, form: edit(model.form) }), context)
 
 /** A list answered: the draft may now be known, and the default destination picked. */
 export const followRows = (model: Model, context: PageContext): Return => {
@@ -64,4 +92,25 @@ export const followRows = (model: Model, context: PageContext): Return => {
 	)
 		return { model: { ...model, form: null, status: "Unreadable" } }
 	return { model: applyDefaultDestination(model) }
+}
+
+/** The mode switch: the filters carry over, and a destination the editor chose leaves an anomaly rule. */
+export const switchKindStep = (model: Model, context: PageContext, kind: SignalKind): Return => {
+	if (model.form === null || isProtectedDefault(model)) return { model }
+	const moved = F.switchKind(model.form, kind)
+	// Anomaly paging is opt-in: a destination the editor chose, not the user, does not carry over.
+	const auto = model.autoDestinationId
+	const form =
+		kind === "anomaly" && auto !== null
+			? F.updateTierIds(
+					F.updateTierIds(moved.form, "warning", F.removeId(auto)),
+					"critical",
+					F.removeId(auto),
+				)
+			: moved.form
+	return editForm(
+		{ ...model, kindNotice: moved.notice, autoDestinationId: kind === "anomaly" ? null : auto },
+		context,
+		() => form,
+	)
 }
