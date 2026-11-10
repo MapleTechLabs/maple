@@ -3,7 +3,6 @@ import { ConfigProvider, Effect, Layer, Schema, Array as Arr } from "effect"
 import { hashIngestKey } from "../../platform/credential-tokens"
 import { gcpConnectorResourceNames } from "@maple/domain/gcp"
 import { GcpProjectId, GcpResourceNumber, OrgId, UserId } from "@maple/primitives"
-import { encryptAes256Gcm } from "@maple/backend/platform/Crypto"
 import { Env } from "@maple/backend/platform/Env"
 import {
 	cleanupTestDbs,
@@ -558,17 +557,16 @@ describe("GcpConnectorService", () => {
 		}).pipe(Effect.provide(makeLayer(testDb)))
 	})
 
-	it.effect("renders a secret that was stored before secrets were sealed per slot", () => {
+	it.effect("refuses to render a stored secret that is not in the v2 envelope", () => {
 		const testDb = createTestDb(trackedDbs)
 		return Effect.gen(function* () {
 			const gcp = yield* GcpConnectorService
 			const connector = yield* gcp.create(orgId, userId, projectScope("acme-prod"))
-			const stored = yield* encryptAes256Gcm(
-				"maple_gcp_stored_earlier",
-				Buffer.alloc(32, 9),
-				(message) => message,
-				Buffer.from(`gcp_connectors:v1:${connector.id}`, "utf8"),
-			)
+			const stored = {
+				ciphertext: Buffer.from("old").toString("base64"),
+				iv: Buffer.alloc(12, 1).toString("base64"),
+				tag: Buffer.alloc(16, 2).toString("base64"),
+			}
 			yield* Effect.promise(() =>
 				executeSql(
 					testDb,
@@ -576,10 +574,8 @@ describe("GcpConnectorService", () => {
 					[stored.ciphertext, stored.iv, stored.tag, connector.id],
 				),
 			)
-			const { setupScript } = yield* gcp.scripts(orgId, connector.id, scriptOptions)
-			const endpoint = /PUSH_ENDPOINT='([^']+)'/.exec(setupScript)?.[1]
-			assert.isDefined(endpoint)
-			assert.strictEqual(new URL(endpoint).searchParams.get("secret"), "maple_gcp_stored_earlier")
+			const error = yield* Effect.flip(gcp.scripts(orgId, connector.id, scriptOptions))
+			assert.strictEqual(error.message, "Failed to decrypt the Google Cloud connector secret")
 		}).pipe(Effect.provide(makeLayer(testDb)))
 	})
 

@@ -21,24 +21,21 @@ export const ingestKeyLookupHmacKey = <E>(
 	})
 
 /**
- * Optional additional authenticated data. AAD is authenticated but not stored,
- * so it binds a ciphertext to the row it was written for: decryption only
- * succeeds when the caller reconstructs the exact same bytes. Omitting it keeps
- * the original (AAD-free) format — existing ciphertexts written without one must
- * keep decrypting, so callers may only start passing an `aad` for columns with
- * no live rows.
+ * AES-256-GCM, the primitive under `SecretBox`. Stored secrets go through `SecretBox`, which
+ * picks the key and the AAD. `aad` is authenticated but not stored, so it binds a ciphertext to
+ * the row it was written for: decryption only succeeds with the exact same bytes.
  */
 export const encryptAes256Gcm = <E>(
 	plaintext: string,
 	encryptionKey: Buffer,
 	onError: (message: string) => E,
-	aad?: Buffer,
+	aad: Buffer,
 ) =>
 	Effect.try({
 		try: () => {
 			const iv = randomBytes(IV_BYTES)
 			const cipher = createCipheriv("aes-256-gcm", encryptionKey, iv)
-			if (aad !== undefined) cipher.setAAD(aad)
+			cipher.setAAD(aad)
 			const ciphertext = Buffer.concat([cipher.update(plaintext, "utf8"), cipher.final()])
 
 			return {
@@ -50,12 +47,12 @@ export const encryptAes256Gcm = <E>(
 		catch: (error) => onError(error instanceof Error ? error.message : "Encryption failed"),
 	})
 
-/** Counterpart to {@link encryptAes256Gcm} — `aad` must match the value used to encrypt. */
+/** Counterpart to {@link encryptAes256Gcm}: `aad` must match the value used to encrypt. */
 export const decryptAes256Gcm = <E>(
 	encrypted: EncryptedValue,
 	encryptionKey: Buffer,
 	onError: (message: string) => E,
-	aad?: Buffer,
+	aad: Buffer,
 ) =>
 	Effect.try({
 		try: () => {
@@ -64,7 +61,7 @@ export const decryptAes256Gcm = <E>(
 			// A shorter tag is still a valid GCM tag to the runtime, and far easier to forge.
 			if (iv.length !== IV_BYTES || tag.length !== TAG_BYTES) return Option.none()
 			const decipher = createDecipheriv("aes-256-gcm", encryptionKey, iv)
-			if (aad !== undefined) decipher.setAAD(aad)
+			decipher.setAAD(aad)
 			decipher.setAuthTag(tag)
 
 			const plaintext = Buffer.concat([

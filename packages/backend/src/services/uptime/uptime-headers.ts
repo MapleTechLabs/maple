@@ -8,7 +8,7 @@ import { Effect, Record as Rec, Schema } from "effect"
 import { openSecret, sealSecret, type SecretKeyring } from "@maple/backend/platform/SecretBox"
 import { uptimeMonitorHeadersSlot } from "@maple/backend/platform/secret-slots"
 
-export const UptimeHeadersJson = Schema.fromJsonString(Schema.Record(Schema.String, Schema.String))
+const UptimeHeadersJson = Schema.fromJsonString(Schema.Record(Schema.String, Schema.String))
 const encodeHeaders = Schema.encodeEffect(UptimeHeadersJson)
 const decodeHeaders = Schema.decodeEffect(UptimeHeadersJson)
 
@@ -45,24 +45,28 @@ export const sealConfigHeaders = <E>(
 				})),
 			)
 
-/**
- * The config with its headers back in place. Headers still in `config_json` win: they were
- * written before sealing existed, or by a Worker that has not been deployed with it yet.
- */
+/** The config with its headers taken from the sealed columns, the only place they are read from. */
 export const openConfigHeaders = <E>(
 	keyring: SecretKeyring,
 	row: MonitorRef & StoredUptimeHeaders,
 	config: UptimeMonitorConfig,
 	onError: (reason: string) => E,
 ): Effect.Effect<UptimeMonitorConfig, E> => {
-	if (
-		config._tag !== "http" ||
-		!Rec.isEmptyRecord(config.headers) ||
-		row.headersCiphertext === null ||
-		row.headersIv === null ||
-		row.headersTag === null
-	) {
-		return Effect.succeed(config)
+	if (config._tag !== "http") return Effect.succeed(config)
+	if (row.headersCiphertext === null || row.headersIv === null || row.headersTag === null) {
+		const unsealed = { ...config, headers: {} }
+		// Nothing writes headers into the config any more, so say so when a row still has them:
+		// they are not sent, and the check would otherwise just start failing.
+		return Rec.isEmptyRecord(config.headers)
+			? Effect.succeed(unsealed)
+			: Effect.logWarning("Uptime monitor has request headers outside the sealed columns").pipe(
+					Effect.annotateLogs({
+						"maple.uptime.monitor_id": row.id,
+						orgId: row.orgId,
+						"maple.uptime.unsealed_header_count": Rec.size(config.headers),
+					}),
+					Effect.as(unsealed),
+				)
 	}
 	return openSecret(
 		keyring,

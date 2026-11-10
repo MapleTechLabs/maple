@@ -33,7 +33,6 @@ import { TestClock } from "effect/testing"
 import { FetchHttpClient } from "effect/http"
 import type { TableDiffEntry } from "@maple/domain/clickhouse"
 import { Env } from "@maple/backend/platform/Env"
-import { encryptAes256Gcm } from "@maple/backend/platform/Crypto"
 import { parseSecretKeyring, sealSecret } from "@maple/backend/platform/SecretBox"
 import { clickHousePasswordSlot } from "@maple/backend/platform/secret-slots"
 import { SchemaApplyWorkflow, WorkflowStartError } from "@maple/backend/platform/bindings"
@@ -410,13 +409,17 @@ describe("resolveRuntimeConfig caching", () => {
 			[orgId, chUrl],
 		)
 
-	/** A row written before SecretBox: sealed with the master key, no row binding. */
+	/** A row with a stored password, sealed for its org under the key `configLive` carries. */
 	const seedPasswordRow = async (db: TestDb, orgId: string, chUrl: string) => {
+		const onError = (message: string) => new OrgClickHouseSettingsEncryptionError({ message })
 		const encrypted = await Effect.runPromise(
-			encryptAes256Gcm(
-				"legacy-password",
-				Buffer.alloc(32, 5),
-				(message) => new OrgClickHouseSettingsEncryptionError({ message }),
+			parseSecretKeyring(
+				{ primary: Buffer.alloc(32, 5).toString("base64"), decryptOnly: Option.none() },
+				onError,
+			).pipe(
+				Effect.flatMap((keyring) =>
+					sealSecret(keyring, clickHousePasswordSlot, { orgId }, "stored-password", onError),
+				),
 			),
 		)
 		await executeSql(
@@ -754,7 +757,7 @@ describe("resolveRuntimeConfig caching", () => {
 			// encrypted material survived the round trip and still decrypts.
 			const byo = yield* service.resolveRuntimeConfig(asOrgId(byoOrg))
 			expect(expectSome(byo).url).toBe("https://wire.example")
-			expect(expectSome(byo).password).toBe("legacy-password")
+			expect(expectSome(byo).password).toBe("stored-password")
 
 			// Both reads were served by the cache; nothing was recomputed.
 			expect(stats.puts).toBe(2)

@@ -4,7 +4,6 @@ import { TestClock } from "effect/testing"
 import { HttpClient } from "effect/http"
 import { hashIngestKey } from "../../platform/credential-tokens"
 import { AwsAccountId, AwsRegion, OrgId, UserId } from "@maple/primitives"
-import { encryptAes256Gcm } from "@maple/backend/platform/Crypto"
 import { Env } from "@maple/backend/platform/Env"
 import {
 	cleanupTestDbs,
@@ -318,7 +317,7 @@ describe("AwsConnectionService", () => {
 		}).pipe(Effect.provide(makeLayer(testDb, aws)))
 	})
 
-	it.effect("hands out a stream secret that was stored before secrets were sealed per slot", () => {
+	it.effect("refuses a stored stream secret that is not in the v2 envelope", () => {
 		const testDb = createTestDb(trackedDbs)
 		const aws = makeFakeAws()
 		const region = Schema.decodeSync(AwsRegion)("us-east-1")
@@ -329,12 +328,11 @@ describe("AwsConnectionService", () => {
 				modules: [],
 				metricStream: { regions: [region], namespaces: ["AWS/Lambda"] },
 			})
-			const stored = yield* encryptAes256Gcm(
-				"maple_aws_stored_earlier",
-				Buffer.alloc(32, 9),
-				(message) => message,
-				Buffer.from(`aws_connections:stream:v1:${created.id}`, "utf8"),
-			)
+			const stored = {
+				ciphertext: Buffer.from("old").toString("base64"),
+				iv: Buffer.alloc(12, 1).toString("base64"),
+				tag: Buffer.alloc(16, 2).toString("base64"),
+			}
 			yield* Effect.promise(() =>
 				executeSql(
 					testDb,
@@ -343,8 +341,8 @@ describe("AwsConnectionService", () => {
 					[stored.ciphertext, stored.iv, stored.tag, created.id],
 				),
 			)
-			const setup = yield* service.setup(orgId, created.id)
-			assert.include(setup.setupScript, "AccessKey=maple_aws_stored_earlier")
+			const error = yield* service.setup(orgId, created.id).pipe(Effect.flip)
+			assert.strictEqual(error.message, "Failed to decrypt the AWS stream secret")
 		}).pipe(Effect.provide(makeLayer(testDb, aws)))
 	})
 

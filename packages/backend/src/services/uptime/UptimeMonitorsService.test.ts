@@ -4,6 +4,7 @@ import {
 	Effect,
 	Exit,
 	Layer,
+	Logger,
 	Option,
 	Ref,
 	Result,
@@ -1299,8 +1300,14 @@ describe("UptimeMonitorsService backing alert rule", () => {
 			}).pipe(Effect.provide(makeLayer(testDb)))
 		})
 
-		it.effect("still reads a monitor saved with its headers in the config", () => {
+		it.effect("sends only sealed headers, and warns about ones written into the config", () => {
 			const testDb = createTestDb(trackedDbs)
+			const warnings: Array<string> = []
+			const captureWarnings = Logger.layer([
+				Logger.make(({ message, logLevel }) => {
+					if (logLevel === "Warn") warnings.push(String(message))
+				}),
+			])
 			return Effect.gen(function* () {
 				const service = yield* UptimeMonitorsService
 				const monitor = yield* createHttp("Old")
@@ -1313,10 +1320,13 @@ describe("UptimeMonitorsService backing alert rule", () => {
 					),
 				)
 
-				assert.deepStrictEqual(headersOf((yield* service.get(ORG, monitor.id)).config), SECRET)
+				assert.deepStrictEqual(headersOf((yield* service.get(ORG, monitor.id)).config), {})
 				const [target] = yield* service.listProbeTargets
-				assert.deepStrictEqual(target === undefined ? null : headersOf(target.config), SECRET)
-			}).pipe(Effect.provide(makeLayer(testDb)))
+				assert.deepStrictEqual(target === undefined ? null : headersOf(target.config), {})
+				assert.deepStrictEqual(Arr.dedupe(warnings), [
+					"Uptime monitor has request headers outside the sealed columns",
+				])
+			}).pipe(Effect.provide(Layer.merge(makeLayer(testDb), captureWarnings)))
 		})
 	})
 })
