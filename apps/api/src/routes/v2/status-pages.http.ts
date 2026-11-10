@@ -18,6 +18,7 @@ import {
 	V2InsufficientPermissions,
 	type V2StatusPage,
 	type V2StatusPageComponent,
+	type V2StatusPageCustomDomain,
 	type V2StatusPageIncident,
 	hasStatusPageConfigChanges,
 } from "@maple/domain/http/v2"
@@ -45,6 +46,10 @@ import {
 	toStatusPageDraft,
 } from "@maple/backend/services/status-pages/StatusPageSnapshotBuilder"
 import { StatusPagesService } from "@maple/backend/services/status-pages/StatusPagesService"
+import {
+	StatusPageCustomDomainsService,
+	type StatusPageCustomDomainView,
+} from "@maple/backend/services/status-pages/StatusPageCustomDomainsService"
 import { StatusPageStore } from "@maple/backend/services/status-pages/StatusPageStore"
 
 // Page settings and components need an engineer: they change what the public sees about the
@@ -127,6 +132,20 @@ export const toV2StatusPageIncident = (incident: StatusPageIncidentRecord): V2St
 	updated_at: isoTimestamp(incident.updatedAt),
 })
 
+export const toV2StatusPageCustomDomain = (view: StatusPageCustomDomainView): V2StatusPageCustomDomain => ({
+	object: "status_page_custom_domain",
+	page_id: view.pageId,
+	available: view.available,
+	cname_target: view.cnameTarget,
+	hostname: view.domain?.hostname ?? null,
+	status: view.domain?.status ?? null,
+	dns_records: view.domain?.dnsRecords ?? [],
+	last_error: view.domain?.lastError ?? null,
+	last_checked_at: isoTimestampOrNull(view.domain?.lastCheckedAt ?? null),
+	activated_at: isoTimestampOrNull(view.domain?.activatedAt ?? null),
+	created_at: isoTimestampOrNull(view.domain?.createdAt ?? null),
+})
+
 const pageAuditDiff = auditDiff({
 	fields: [
 		"name",
@@ -168,6 +187,7 @@ const publishFailed = (message: string) => new StatusPagePersistenceError({ mess
 export const HttpV2StatusPagesLive = HttpApiBuilder.group(MapleApiV2, "statusPages", (handlers) =>
 	Effect.gen(function* () {
 		const service = yield* StatusPagesService
+		const customDomains = yield* StatusPageCustomDomainsService
 		const snapshotBuilder = yield* StatusPageSnapshotBuilder
 		const featureFlags = yield* OrganizationFeatureFlagsService
 		const enabledTenant = tenantInRollout(featureFlags)
@@ -330,16 +350,29 @@ export const HttpV2StatusPagesLive = HttpApiBuilder.group(MapleApiV2, "statusPag
 						V2InsufficientPermissions.make(denial.message),
 					)
 					const current = yield* service.get(tenant.orgId, params.id)
+					const domain = yield* customDomains.get(tenant.orgId, params.id)
 					const deleted = yield* service.remove(tenant.orgId, params.id)
 					// Best effort: the row is gone, so the page must not stay up; a failure is logged.
+					// Cloudflare's side of a custom domain goes with the cleanup queue's next drain.
 					const store = yield* Effect.serviceOption(StatusPageStore)
 					if (Option.isSome(store)) {
-						// The slug route only while it still names this page: slugs free up for reuse at once.
+						// Routes only while they still name this page: slugs and hostnames free up at once.
+						const hostname = domain.domain?.hostname ?? null
 						yield* store.value.deletePage(deleted).pipe(
 							Effect.andThen(store.value.readSlugRoute(current.slug)),
 							Effect.flatMap((owner) =>
 								owner === deleted
 									? store.value.deleteRoutes({ slug: current.slug, hostnames: [] })
+									: Effect.void,
+							),
+							Effect.andThen(
+								hostname === null
+									? Effect.succeed(null)
+									: store.value.readHostRoute(hostname),
+							),
+							Effect.flatMap((owner) =>
+								hostname !== null && owner === deleted
+									? store.value.deleteHostRoute(hostname)
 									: Effect.void,
 							),
 							Effect.catch((error) =>
@@ -424,6 +457,56 @@ export const HttpV2StatusPagesLive = HttpApiBuilder.group(MapleApiV2, "statusPag
 					yield* recordHttpAudit("status_page.break_glass_revoked", { resourceId: params.id })
 					const page = yield* service.get(tenant.orgId, params.id)
 					return toV2StatusPage(page)
+				}),
+			)
+			.handle("getCustomDomain", ({ params }) =>
+				Effect.gen(function* () {
+					const tenant = yield* enabledTenant
+					const view = yield* customDomains.get(tenant.orgId, params.id)
+					return toV2StatusPageCustomDomain(view)
+				}),
+			)
+			.handle("setCustomDomain", ({ params, payload }) =>
+				Effect.gen(function* () {
+					const tenant = yield* enabledTenant
+					yield* Policy.check(tenant.roles, "status_pages:edit", (denial) =>
+						V2InsufficientPermissions.make(denial.message),
+					)
+					const before = yield* customDomains.get(tenant.orgId, params.id)
+					const view = yield* customDomains.set(tenant.orgId, params.id, payload.hostname)
+					const previous = before.domain?.hostname ?? null
+					if (previous !== payload.hostname) {
+						yield* recordHttpAudit("status_page.custom_domain_set", {
+							resourceId: params.id,
+							metadata: { hostname: payload.hostname, previous_hostname: previous },
+						})
+					}
+					return toV2StatusPageCustomDomain(view)
+				}),
+			)
+			.handle("removeCustomDomain", ({ params }) =>
+				Effect.gen(function* () {
+					const tenant = yield* enabledTenant
+					yield* Policy.check(tenant.roles, "status_pages:edit", (denial) =>
+						V2InsufficientPermissions.make(denial.message),
+					)
+					const before = yield* customDomains.get(tenant.orgId, params.id)
+					const view = yield* customDomains.remove(tenant.orgId, params.id)
+					yield* recordHttpAudit("status_page.custom_domain_removed", {
+						resourceId: params.id,
+						metadata: { hostname: before.domain?.hostname ?? null },
+					})
+					return toV2StatusPageCustomDomain(view)
+				}),
+			)
+			.handle("checkCustomDomain", ({ params }) =>
+				Effect.gen(function* () {
+					const tenant = yield* enabledTenant
+					yield* Policy.check(tenant.roles, "status_pages:edit", (denial) =>
+						V2InsufficientPermissions.make(denial.message),
+					)
+					const view = yield* customDomains.check(tenant.orgId, params.id)
+					return toV2StatusPageCustomDomain(view)
 				}),
 			)
 			.handle("getConfig", ({ params }) =>

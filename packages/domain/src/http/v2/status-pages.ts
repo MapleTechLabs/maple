@@ -4,6 +4,7 @@ import {
 	StatusPageAutoIncidents,
 	StatusPageComponentId,
 	StatusPageComponentStatus,
+	StatusPageCustomDomainStatus,
 	StatusPageId,
 	StatusPageIncidentId,
 	StatusPageIncidentImpact,
@@ -14,6 +15,8 @@ import {
 } from "@maple/primitives"
 import {
 	DEFAULT_STATUS_PAGE_THEME,
+	StatusPageCustomDomainHostname,
+	StatusPageCustomDomainRecordPurpose,
 	StatusPageThemeAppearance,
 	StatusPageThemeFont,
 	StatusPageThemePreset,
@@ -23,6 +26,9 @@ import {
 import {
 	StatusPageComponentNotFoundError,
 	StatusPageConflictError,
+	StatusPageCustomDomainNotFoundError,
+	StatusPageCustomDomainsUnavailableError,
+	StatusPageCustomDomainTakenError,
 	StatusPageIncidentNotFoundError,
 	StatusPageNotFoundError,
 	StatusPagePersistenceError,
@@ -287,6 +293,85 @@ export const V2StatusPageBreakGlassToken = Schema.Struct({
 	],
 })
 export type V2StatusPageBreakGlassToken = Schema.Schema.Type<typeof V2StatusPageBreakGlassToken>
+
+export const V2StatusPageCustomDomainDnsRecord = Schema.Struct({
+	type: Schema.Literals(["CNAME", "TXT"]),
+	name: Schema.String.annotate({ description: "The record's name, as your DNS provider asks for it." }),
+	value: Schema.String,
+	purpose: StatusPageCustomDomainRecordPurpose.annotate({
+		description:
+			"`routing` sends the hostname to Maple (always needed), `ownership` proves you own it before the CNAME is live, `certificate` lets the certificate be issued.",
+	}),
+}).annotate({
+	identifier: "StatusPageCustomDomainDnsRecord",
+	title: "Status page custom domain DNS record",
+	description: "A DNS record to add at your DNS provider.",
+})
+
+export const V2StatusPageCustomDomain = Schema.Struct({
+	object: Schema.Literal("status_page_custom_domain"),
+	page_id: StatusPagePublicId,
+	available: Schema.Boolean.annotate({
+		description: "False when this Maple deployment cannot serve pages on custom domains.",
+	}),
+	cname_target: Schema.NullOr(Schema.String).annotate({
+		description: "The hostname to CNAME your custom domain to, or `null` when unavailable.",
+	}),
+	hostname: Schema.NullOr(Schema.String).annotate({
+		description: "The page's custom domain, or `null` when it has none.",
+		examples: ["status.acme.com"],
+	}),
+	status: Schema.NullOr(StatusPageCustomDomainStatus).annotate({
+		description:
+			"`pending_dns` waits for the DNS records below, `pending_ssl` for the certificate, `active` serves the page, `failed` needs you to act (see `last_error`). `null` without a domain.",
+	}),
+	dns_records: Schema.Array(V2StatusPageCustomDomainDnsRecord),
+	last_error: Schema.NullOr(Schema.String).annotate({
+		description: "What the last check found wrong, or `null`.",
+	}),
+	last_checked_at: Schema.NullOr(Timestamp),
+	activated_at: Schema.NullOr(Timestamp).annotate({
+		description: "When the domain first served the page.",
+	}),
+	created_at: Schema.NullOr(Timestamp),
+}).annotate({
+	identifier: "StatusPageCustomDomain",
+	title: "Status page custom domain",
+	description:
+		"A status page's custom domain (`status.acme.com`). Add the DNS records it lists; Maple checks them every minute at first and the page goes live on the domain once its certificate is issued.",
+	examples: [
+		wireExample({
+			object: "status_page_custom_domain",
+			page_id: "stp_YofPTrK9782DWwcnXhpcCw",
+			available: true,
+			cname_target: "status-domains.maple.dev",
+			hostname: "status.acme.com",
+			status: "pending_dns",
+			dns_records: [
+				{
+					type: "CNAME",
+					name: "status.acme.com",
+					value: "status-domains.maple.dev",
+					purpose: "routing",
+				},
+			],
+			last_error: null,
+			last_checked_at: "2026-07-15T09:12:00.000Z",
+			activated_at: null,
+			created_at: "2026-07-15T09:11:00.000Z",
+		}),
+	],
+})
+export type V2StatusPageCustomDomain = Schema.Schema.Type<typeof V2StatusPageCustomDomain>
+
+export const V2StatusPageCustomDomainParams = Schema.Struct({
+	hostname: StatusPageCustomDomainHostname,
+}).annotate({
+	identifier: "StatusPageCustomDomainParams",
+	title: "Status page custom domain parameters",
+	description: "The custom domain to serve the page on. Replaces a different one the page has.",
+	examples: [wireExample({ hostname: "status.acme.com" })],
+})
 
 const componentStatusField = StatusPageComponentStatus.annotate({
 	description:
@@ -939,6 +1024,9 @@ const [
 	conflict,
 	persistence,
 	disabled,
+	customDomainNotFound,
+	customDomainTaken,
+	customDomainsUnavailable,
 ] = publicErrors(
 	StatusPageNotFoundError,
 	StatusPageComponentNotFoundError,
@@ -948,6 +1036,9 @@ const [
 	StatusPageConflictError,
 	StatusPagePersistenceError,
 	StatusPagesDisabledError,
+	StatusPageCustomDomainNotFoundError,
+	StatusPageCustomDomainTakenError,
+	StatusPageCustomDomainsUnavailableError,
 )
 
 const StatusPageList = ListOf(V2StatusPage).annotate({
@@ -1105,6 +1196,81 @@ export class V2StatusPagesApiGroup extends HttpApiGroup.make("statusPages")
 				identifier: "revokeStatusPageBreakGlassToken",
 				summary: "Revoke the break-glass token",
 				description: `Revokes the page's break-glass token. ${adminNote}`,
+			}),
+		),
+	)
+	.add(
+		HttpApiEndpoint.get("getCustomDomain", "/:id/custom_domain", {
+			params: pageParams,
+			success: V2StatusPageCustomDomain,
+			error: [pageNotFound, persistence, disabled],
+		}).annotateMerge(
+			OpenApi.annotations({
+				identifier: "getStatusPageCustomDomain",
+				summary: "Retrieve a status page's custom domain",
+				description:
+					"Returns the page's custom domain with its status and the DNS records to add, or `hostname: null` without one. Requires the `status_pages:read` scope.",
+			}),
+		),
+	)
+	.add(
+		HttpApiEndpoint.put("setCustomDomain", "/:id/custom_domain", {
+			params: pageParams,
+			payload: V2StatusPageCustomDomainParams,
+			success: V2StatusPageCustomDomain,
+			error: [
+				V2InsufficientPermissions.schema,
+				pageNotFound,
+				validation,
+				customDomainTaken,
+				customDomainsUnavailable,
+				persistence,
+				disabled,
+			],
+		}).annotateMerge(
+			OpenApi.annotations({
+				identifier: "setStatusPageCustomDomain",
+				summary: "Set a status page's custom domain",
+				description: `Serves the page on a subdomain you control, like \`status.acme.com\`, replacing a different one it has; the same hostname again changes nothing. Add the returned DNS records; the page goes live there once the certificate is issued. ${adminNote}`,
+			}),
+		),
+	)
+	.add(
+		HttpApiEndpoint.delete("removeCustomDomain", "/:id/custom_domain", {
+			params: pageParams,
+			success: V2StatusPageCustomDomain,
+			error: [
+				V2InsufficientPermissions.schema,
+				pageNotFound,
+				customDomainNotFound,
+				persistence,
+				disabled,
+			],
+		}).annotateMerge(
+			OpenApi.annotations({
+				identifier: "removeStatusPageCustomDomain",
+				summary: "Remove a status page's custom domain",
+				description: `Stops serving the page on its custom domain within a minute. The page stays up at its Maple address. ${adminNote}`,
+			}),
+		),
+	)
+	.add(
+		HttpApiEndpoint.post("checkCustomDomain", "/:id/custom_domain/check", {
+			params: pageParams,
+			success: V2StatusPageCustomDomain,
+			error: [
+				V2InsufficientPermissions.schema,
+				pageNotFound,
+				customDomainNotFound,
+				customDomainsUnavailable,
+				persistence,
+				disabled,
+			],
+		}).annotateMerge(
+			OpenApi.annotations({
+				identifier: "checkStatusPageCustomDomain",
+				summary: "Check a status page's custom domain now",
+				description: `Checks the domain's DNS and certificate now instead of waiting for the next scheduled check, and retries a failed certificate. ${adminNote}`,
 			}),
 		),
 	)

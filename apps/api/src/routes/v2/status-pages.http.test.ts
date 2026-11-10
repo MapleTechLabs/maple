@@ -25,6 +25,21 @@ import { ApiV2RateLimiterAllowAllLayer } from "./v2-test-support"
 import { HttpV2StatusPageIncidentsLive, HttpV2StatusPagesLive } from "./status-pages.http"
 import { StatusPagesService } from "@maple/backend/services/status-pages/StatusPagesService"
 import { StatusPageSnapshotBuilder } from "@maple/backend/services/status-pages/StatusPageSnapshotBuilder"
+import { CloudflareCustomHostnames } from "@maple/backend/services/status-pages/CloudflareCustomHostnames"
+import { StatusPageCustomDomainsService } from "@maple/backend/services/status-pages/StatusPageCustomDomainsService"
+
+/** Custom domains over the Cloudflare test double; `cnameTarget: null` is a deployment without them. */
+const customDomainsLayer = (cnameTarget: string | null = "status-domains.maple.test") =>
+	Layer.effect(StatusPageCustomDomainsService, StatusPageCustomDomainsService.make).pipe(
+		Layer.provide(
+			Layer.effect(
+				CloudflareCustomHostnames,
+				CloudflareCustomHostnames.makeInMemory({ cnameTarget }).pipe(
+					Effect.map((double) => double.api),
+				),
+			),
+		),
+	)
 
 /** `/v2/status_pages` and `/v2/status_page_incidents` over an embedded PGlite with the real service. */
 
@@ -70,6 +85,7 @@ const fakePublisher = (published: Array<StatusPageId>, options: { readonly fail?
 const makeHarness = (
 	publisher?: Layer.Layer<StatusPagePublisher>,
 	featureFlags: Layer.Layer<OrganizationFeatureFlagsService> = OrganizationFeatureFlagsService.allEnabled,
+	customDomains: ReturnType<typeof customDomainsLayer> = customDomainsLayer(),
 ) => {
 	const testDb = createTestDb(createdDbs)
 	const audit = makeMemoryAuditLog()
@@ -89,7 +105,12 @@ const makeHarness = (
 		Layer.provide(
 			Layer.mergeAll(HttpV2StatusPagesLive, HttpV2StatusPageIncidentsLive).pipe(
 				Layer.provide(
-					Layer.mergeAll(StatusPagesService.layer, StatusPageSnapshotBuilder.layer, featureFlags),
+					Layer.mergeAll(
+						StatusPagesService.layer,
+						StatusPageSnapshotBuilder.layer,
+						featureFlags,
+						customDomains,
+					),
 				),
 			),
 		),
@@ -148,10 +169,11 @@ const withHarness = (
 	body: (harness: ReturnType<typeof makeHarness>) => Promise<void>,
 	publisher?: Layer.Layer<StatusPagePublisher>,
 	featureFlags?: Layer.Layer<OrganizationFeatureFlagsService>,
+	customDomains?: ReturnType<typeof customDomainsLayer>,
 ) =>
 	Effect.runPromise(
 		Effect.acquireUseRelease(
-			Effect.sync(() => makeHarness(publisher, featureFlags)),
+			Effect.sync(() => makeHarness(publisher, featureFlags, customDomains)),
 			(harness) => Effect.promise(() => body(harness)),
 			(harness) => Effect.promise(() => harness.dispose()),
 		),
@@ -917,5 +939,154 @@ describe("v2 status pages", () => {
 				expect(refused.status).toBe(400)
 				expect(refused.body.error.code).toBe("status_page_invalid")
 			}))
+	})
+	describe("custom domains", () => {
+		it("sets, reads, checks and removes a page's custom domain, audited", () =>
+			withHarness(async (harness) => {
+				const { secret: token } = await harness.bootstrapKey()
+				const created = await harness.request("POST", "/v2/status_pages", token, {
+					name: "Acme",
+					slug: "acme-domain",
+				})
+				const id: string = created.body.id
+				const none = await harness.request("GET", `/v2/status_pages/${id}/custom_domain`, token)
+				expect(none.body).toMatchObject({
+					object: "status_page_custom_domain",
+					page_id: id,
+					available: true,
+					cname_target: "status-domains.maple.test",
+					hostname: null,
+					status: null,
+					dns_records: [],
+				})
+
+				const set = await harness.request("PUT", `/v2/status_pages/${id}/custom_domain`, token, {
+					hostname: " Status.Acme.com ",
+				})
+				expect(set.status).toBe(200)
+				expect(set.body).toMatchObject({ hostname: "status.acme.com", status: "pending_dns" })
+				expect(set.body.dns_records[0]).toEqual({
+					type: "CNAME",
+					name: "status.acme.com",
+					value: "status-domains.maple.test",
+					purpose: "routing",
+				})
+				const read = await harness.request("GET", `/v2/status_pages/${id}/custom_domain`, token)
+				expect(read.body).toEqual(set.body)
+
+				const checked = await harness.request(
+					"POST",
+					`/v2/status_pages/${id}/custom_domain/check`,
+					token,
+				)
+				expect(checked.status).toBe(200)
+				expect(checked.body.hostname).toBe("status.acme.com")
+
+				const removed = await harness.request("DELETE", `/v2/status_pages/${id}/custom_domain`, token)
+				expect(removed.body).toMatchObject({ hostname: null, status: null })
+				const again = await harness.request("DELETE", `/v2/status_pages/${id}/custom_domain`, token)
+				expect(again.status).toBe(404)
+				expect(again.body.error.code).toBe("status_page_custom_domain_not_found")
+
+				const [setEntry] = await harness.auditEntries("status_page.custom_domain_set")
+				expect(setEntry?.metadata).toMatchObject({
+					hostname: "status.acme.com",
+					previous_hostname: null,
+				})
+				const [removedEntry] = await harness.auditEntries("status_page.custom_domain_removed")
+				expect(removedEntry?.metadata).toMatchObject({ hostname: "status.acme.com" })
+			}))
+
+		it("answers 400 for a hostname that cannot be a custom domain, 409 for a taken one", () =>
+			withHarness(async (harness) => {
+				const { secret: token } = await harness.bootstrapKey()
+				const first = await harness.request("POST", "/v2/status_pages", token, {
+					name: "A",
+					slug: "acme-a",
+				})
+				const second = await harness.request("POST", "/v2/status_pages", token, {
+					name: "B",
+					slug: "acme-b",
+				})
+				for (const hostname of [
+					"acme.com",
+					"status.maple.dev",
+					"10.1.2.3",
+					"https://status.acme.com",
+				]) {
+					const refused = await harness.request(
+						"PUT",
+						`/v2/status_pages/${first.body.id}/custom_domain`,
+						token,
+						{ hostname },
+					)
+					expect(refused.status, hostname).toBe(400)
+					expect(refused.body.error.type).toBe("invalid_request_error")
+				}
+				await harness.request("PUT", `/v2/status_pages/${first.body.id}/custom_domain`, token, {
+					hostname: "status.acme.com",
+				})
+				const taken = await harness.request(
+					"PUT",
+					`/v2/status_pages/${second.body.id}/custom_domain`,
+					token,
+					{
+						hostname: "status.acme.com",
+					},
+				)
+				expect(taken.status).toBe(409)
+				expect(taken.body.error.code).toBe("status_page_custom_domain_taken")
+			}))
+
+		it("lets members read the domain but not change it", () =>
+			withHarness(async (harness) => {
+				const { secret: token } = await harness.bootstrapKey()
+				const { secret: member } = await harness.bootstrapKey(ORG, MEMBER)
+				const created = await harness.request("POST", "/v2/status_pages", token, {
+					name: "A",
+					slug: "acme-m",
+				})
+				const read = await harness.request(
+					"GET",
+					`/v2/status_pages/${created.body.id}/custom_domain`,
+					member,
+				)
+				expect(read.status).toBe(200)
+				const refused = await harness.request(
+					"PUT",
+					`/v2/status_pages/${created.body.id}/custom_domain`,
+					member,
+					{ hostname: "status.acme.com" },
+				)
+				expect(refused.status).toBe(403)
+			}))
+
+		it("says custom domains are unavailable on a deployment without them", () =>
+			withHarness(
+				async (harness) => {
+					const { secret: token } = await harness.bootstrapKey()
+					const created = await harness.request("POST", "/v2/status_pages", token, {
+						name: "A",
+						slug: "acme-u",
+					})
+					const read = await harness.request(
+						"GET",
+						`/v2/status_pages/${created.body.id}/custom_domain`,
+						token,
+					)
+					expect(read.body).toMatchObject({ available: false, cname_target: null })
+					const refused = await harness.request(
+						"PUT",
+						`/v2/status_pages/${created.body.id}/custom_domain`,
+						token,
+						{ hostname: "status.acme.com" },
+					)
+					expect(refused.status).toBe(503)
+					expect(refused.body.error.code).toBe("status_page_custom_domains_unavailable")
+				},
+				undefined,
+				undefined,
+				customDomainsLayer(null),
+			))
 	})
 })
