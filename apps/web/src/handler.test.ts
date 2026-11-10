@@ -116,6 +116,45 @@ describe("handleRequest API proxy", () => {
 	})
 })
 
+describe("share page trace", () => {
+	it("records a server span named for the route, with the token nowhere on it", async () => {
+		const spans: Array<Tracer.NativeSpan> = []
+		const tracer = Tracer.make({
+			span: (options) => {
+				const span = new Tracer.NativeSpan(options)
+				spans.push(span)
+				return span
+			},
+		})
+		await handleRequest(
+			new Request("https://app.maple.test/share/mshare_secret123"),
+			{ ASSETS: assets },
+			(effect) => Effect.runPromise(effect.pipe(Effect.provideService(Tracer.Tracer, tracer))),
+		)
+		expect(
+			Arr.map(spans, (span) => [
+				span.name,
+				span.kind,
+				span.attributes.get("http.response.status_code"),
+			]),
+		).toEqual([["GET /share/:token", "server", 200]])
+		const recorded = Arr.flatMap(spans, (span) => [
+			span.name,
+			...Arr.fromIterable(span.attributes.values()),
+		])
+		expect(Arr.filter(recorded, (value) => Str.includes("mshare_secret123")(String(value)))).toEqual([])
+	})
+
+	it("leaves an app route untraced: the assets layer serves it, not the Worker", async () => {
+		const traced: Array<unknown> = []
+		await handleRequest(new Request("https://app.maple.test/traces"), { ASSETS: assets }, (effect) => {
+			traced.push(effect)
+			return Effect.runPromise(effect)
+		})
+		expect(traced).toEqual([])
+	})
+})
+
 describe("document security headers", () => {
 	const headersFor = async (path: string) => {
 		const response = await handleRequest(new Request(`https://app.maple.test${path}`), { ASSETS: assets })
