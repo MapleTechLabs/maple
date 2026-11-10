@@ -606,6 +606,19 @@ export const InvestigationsSearch = Schema.Struct({
 	q: StringParam,
 })
 
+/** A where-clause attribute predicate (`/traces` and `/logs` advanced filters). */
+const attributeFilterParamFields = {
+	key: Schema.String,
+	value: Schema.String,
+	matchMode: Schema.optional(Schema.Literals(["contains", "exists", "gt", "gte", "lt", "lte"])),
+	negated: Schema.optional(Schema.Union([Schema.Boolean, BooleanFromStringParam])),
+}
+
+const AttributeFilterParam = Schema.Struct({
+	...attributeFilterParamFields,
+	or: Schema.optional(Schema.Array(Schema.Struct(attributeFilterParamFields))),
+})
+
 export const LogsSearch = Schema.Struct({
 	services: OptionalStringArrayParam,
 	severities: OptionalStringArrayParam,
@@ -618,6 +631,10 @@ export const LogsSearch = Schema.Struct({
 	excludedDeploymentEnvs: OptionalStringArrayParam,
 	excludedNamespaces: OptionalStringArrayParam,
 	attrs: OptionalStringArrayParam,
+	/** The advanced filter's clause; the facet params it sets are synced into their own params. */
+	whereClause: StringParam,
+	attributeFilters: Schema.optional(Schema.Array(AttributeFilterParam)),
+	resourceAttributeFilters: Schema.optional(Schema.Array(AttributeFilterParam)),
 	columns: OptionalStringArrayParam,
 	search: StringParam,
 	traceId: StringParam,
@@ -694,18 +711,6 @@ export const ServicesSearch = Schema.Struct({
 	health: Schema.optional(Schema.Literals(["healthy", "degraded", "unhealthy"])),
 	groupBy: Schema.optional(Schema.Literals(["namespace", "environment"])),
 	...TimeRangeSearchFields,
-})
-
-const attributeFilterParamFields = {
-	key: Schema.String,
-	value: Schema.String,
-	matchMode: Schema.optional(Schema.Literals(["contains", "exists", "gt", "gte", "lt", "lte"])),
-	negated: Schema.optional(Schema.Union([Schema.Boolean, BooleanFromStringParam])),
-}
-
-const AttributeFilterParam = Schema.Struct({
-	...attributeFilterParamFields,
-	or: Schema.optional(Schema.Array(Schema.Struct(attributeFilterParamFields))),
 })
 
 export const TracesSearch = Schema.Struct({
