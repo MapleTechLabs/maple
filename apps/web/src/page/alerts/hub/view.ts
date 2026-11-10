@@ -38,9 +38,8 @@ import { anomalyInbox, inboxFilters } from "./view-anomalies"
 import { inboxTab } from "./view-inbox"
 import { routingTab } from "./view-routing"
 import * as DestinationDialogView from "../destination/view"
-import * as ChainDialogView from "../escalation-dialog/view"
 import { deleteChainDialog } from "./view-chains"
-import { CHAIN_DIALOG_ID, WINDOW_DIALOG_ID } from "./update"
+import { WINDOW_DIALOG_ID } from "./update"
 import * as SilenceDialogView from "../silence-dialog/view"
 import { silencesTab } from "./view-silences"
 import { deleteWindowDialog, hasWindows, maintenanceTab } from "./view-maintenance"
@@ -381,19 +380,6 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 			deleteChainDialog(h, model),
 			deleteScheduleDialog(h, model),
 			deleteWindowDialog(h, model),
-			h.submodel({
-				slotId: CHAIN_DIALOG_ID,
-				model: model.chainDialog,
-				view: ChainDialogView.view,
-				viewInputs: {
-					id: CHAIN_DIALOG_ID,
-					destinations: model.destinations,
-					members: model.members,
-					// `null` until the schedules load (or after a failed read): names read neutrally.
-					schedules: Option.getOrNull(AsyncData.getData(model.schedules.data)),
-				},
-				toParentMessage: (message) => Message.GotChainDialogMessage({ message }),
-			}),
 			h.submodel({
 				slotId: "alerts-destination",
 				model: model.destinationDialog,

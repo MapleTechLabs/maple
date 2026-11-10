@@ -1,13 +1,10 @@
 import * as Policy from "@maple/domain/policy"
 import { OrgId } from "@maple/domain"
-import type { LoadFailure } from "@maple/views/data/load-failure"
 import { Effect, Option, Result, Schema, Array as Arr, String as Str } from "effect"
 import { Command, type Update } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { defineMessageUnion } from "foldkit/message"
-import * as Menu from "@maple/views/ui/menu"
 import * as Select from "@maple/views/ui/select"
-import * as ChainDialog from "../page/alerts/escalation-dialog/dialog"
 import * as EditorMessage from "../page/alerts/editor/message"
 import * as EditorModel from "../page/alerts/editor/model"
 import { init as editorInit } from "../page/alerts/editor/init"
@@ -33,16 +30,12 @@ import type { PageContext } from "../page/contract"
 import type { Resources } from "../platform/resources"
 import { keepLocal } from "./local-commands"
 
-// `/lab/escalation`: escalation chains in the Routing tab, their dialog, a rule tier's chain picker
+// `/lab/escalation`: escalation chains in the Routing tab, a rule tier's chain picker
 // and the incident rail, over fixtures. `?state=` picks one.
 
 export const LabState = Schema.Literals([
 	"chains-empty",
 	"chains",
-	"dialog-new",
-	"dialog-edit",
-	"dialog-invalid",
-	"dialog-error",
 	"rule-picker",
 	"incident-escalating",
 	"incident-paused",
@@ -99,18 +92,6 @@ const fold = <PM, PS>(
 
 const hubStep = (model: HubModel.Model, message: HubMessage.Message) =>
 	HubUpdate.update(model, message, CONTEXT)
-const dialog = (message: ChainDialog.Message) => HubMessage.Message.GotChainDialogMessage({ message })
-
-const SAVE_FAILURE: LoadFailure = {
-	_tag: "@maple/http/errors/AlertValidationError",
-	type: "invalid_request_error",
-	code: "invalid_request",
-	title: "Invalid request",
-	message: "Step 2 names a destination that no longer exists.",
-	retryable: false,
-	recovery: "fix_request",
-}
-
 const hubFor = (state: LabState): Step<HubModel.Model, HubMessage.Message> => {
 	const entered = HubUpdate.init(hubAt({ tab: "routing" }), CONTEXT).model
 	const chains = state === "chains-empty" ? [] : populatedChains([ruleId(1), ruleId(2), ruleId(3)])
@@ -128,45 +109,7 @@ const hubFor = (state: LabState): Step<HubModel.Model, HubMessage.Message> => {
 			result: Result.succeed(chains),
 		}),
 	]
-	const firstStepKey = "s0"
-	const extra: ReadonlyArray<HubMessage.Message> =
-		state === "dialog-new"
-			? [HubMessage.Message.ClickedNewChain()]
-			: state === "dialog-invalid"
-				? [
-						HubMessage.Message.ClickedNewChain(),
-						dialog(ChainDialog.Message.ChangedWait({ key: firstStepKey, value: "2000" })),
-						dialog(ChainDialog.Message.ClickedSave()),
-					]
-				: state === "dialog-error"
-					? [
-							HubMessage.Message.GotRowMenuMessage({
-								menuId: `chain:${chainUuid(1)}`,
-								message: Menu.Message.ClickedItem({
-									index: 0,
-									item: { kind: "Item", value: "edit" },
-								}),
-							}),
-							dialog(ChainDialog.Message.ClickedSave()),
-							dialog(
-								ChainDialog.Message.CompletedSave({
-									openCount: 1,
-									result: Result.fail(SAVE_FAILURE),
-								}),
-							),
-						]
-					: state === "dialog-edit"
-						? [
-								HubMessage.Message.GotRowMenuMessage({
-									menuId: `chain:${chainUuid(3)}`,
-									message: Menu.Message.ClickedItem({
-										index: 0,
-										item: { kind: "Item", value: "edit" },
-									}),
-								}),
-							]
-						: []
-	return fold({ model: entered }, [...base, ...extra], hubStep)
+	return fold({ model: entered }, base, hubStep)
 }
 
 const editorStep = (model: EditorModel.Model, message: EditorMessage.Message) =>
@@ -250,8 +193,7 @@ const incidentFor = (state: LabState): Step<IncidentModel.Model, IncidentMessage
 	return settled
 }
 
-const isHub = (state: LabState) =>
-	state === "chains" || state === "chains-empty" || Str.startsWith("dialog-")(state)
+const isHub = (state: LabState) => state === "chains" || state === "chains-empty"
 const isIncident = (state: LabState) => Str.startsWith("incident-")(state)
 
 export const init = (flags: Flags): Return => {

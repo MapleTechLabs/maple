@@ -32,7 +32,6 @@ import { AlertsHubSearch, AlertsTab } from "../../../route/search"
 import * as Dialog from "@maple/views/ui/dialog"
 import * as Menu from "@maple/views/ui/menu"
 import * as DestinationDialog from "../destination/dialog"
-import * as ChainDialog from "../escalation-dialog/dialog"
 import { OrgMember } from "../shared/org-members"
 import * as WindowDialog from "../maintenance-dialog/dialog"
 import * as SilenceDialog from "../silence-dialog/dialog"
@@ -106,7 +105,6 @@ export const Model = Schema.Struct({
 	slos: KeyedSchema(Schema.Array(SloListRow), LoadFailure),
 	/** Routing tab: `escalationChains.list`, read only while the tab is open. */
 	chains: KeyedSchema(Schema.Array(V2EscalationChain), LoadFailure),
-	chainDialog: ChainDialog.Model,
 	/** The chain awaiting delete confirmation, the delete in flight, and why the last one was refused. */
 	confirmDeleteChainId: Schema.NullOr(EscalationChainId),
 	deletingChainId: Schema.NullOr(EscalationChainId),

@@ -23,13 +23,12 @@ import type { AppRoute } from "../../../route"
 import * as Dialog from "@maple/views/ui/dialog"
 import * as Menu from "@maple/views/ui/menu"
 import * as DestinationDialog from "../destination/dialog"
-import * as ChainDialog from "../escalation-dialog/dialog"
 import * as WindowDialog from "../maintenance-dialog/dialog"
 import * as SilenceDialog from "../silence-dialog/dialog"
 import { isCancelledSilence } from "../shared/silences"
 import { type PageContext, PageOutMessage, type PageReturn } from "../../contract"
 import { alertsHref, createHref, ruleHref } from "../shared/links"
-import { CHAIN_IN_USE_CODE, CHAIN_LIST_LIMIT } from "../shared/escalation-chains"
+import { CHAIN_IN_USE_CODE, CHAIN_LIST_LIMIT, chainHref } from "../shared/escalation-chains"
 import {
 	editScheduleHref,
 	handoffMs,
@@ -89,7 +88,6 @@ const DELETE_DIALOG_ID = "alerts-delete-destination"
 const DELETE_MONITOR_DIALOG_ID = "alerts-delete-monitor"
 const DELETE_CHAIN_DIALOG_ID = "alerts-delete-chain"
 export const DELETE_SCHEDULE_DIALOG_ID = "alerts-delete-schedule"
-export const CHAIN_DIALOG_ID = "alerts-escalation-chain"
 export const NEW_RULE_MENU_ID = "alerts-new-rule-menu"
 export const WINDOW_DIALOG_ID = "alerts-maintenance-window"
 const DELETE_WINDOW_DIALOG_ID = "alerts-delete-window"
@@ -337,7 +335,6 @@ export const init = (route: HubRoute, context: PageContext): Return => {
 		deleteMonitorDialog: Dialog.init(DELETE_MONITOR_DIALOG_ID, "alert-dialog"),
 		slos: Keyed.idle(),
 		chains: Keyed.idle(),
-		chainDialog: ChainDialog.init(CHAIN_DIALOG_ID),
 		confirmDeleteChainId: null,
 		deletingChainId: null,
 		deleteChainError: null,
@@ -503,28 +500,6 @@ const refreshChains = (model: Model, context: PageContext): Return => {
 	return { model: schedules.model, commands: [...chains.commands, ...schedules.commands] }
 }
 
-/** The chain dialog's outcome: a toast, and the list read again. */
-const liftChainDialog = (
-	model: Model,
-	context: PageContext,
-	step: ReturnType<typeof ChainDialog.update>,
-): Return => {
-	const lifted: Model = { ...model, chainDialog: step.model }
-	const commands = FoldkitCommand.mapMessages(step.commands ?? [], (message) =>
-		Message.GotChainDialogMessage({ message }),
-	)
-	if (step.outMessage === undefined) return { model: lifted, commands }
-	const refreshed = refreshChains(lifted, context)
-	return {
-		model: refreshed.model,
-		commands: [...commands, ...(refreshed.commands ?? [])],
-		outMessage: toast(
-			"success",
-			step.outMessage.isNew ? "Escalation chain created" : "Escalation chain saved",
-		),
-	}
-}
-
 /** The names of the rules that start `chain` that this tab has loaded; the rest are counted, not named. */
 export const chainRuleNames = (
 	model: Pick<Model, "rules">,
@@ -575,7 +550,7 @@ const updateDeleteChainDialog = (model: Model, step: ReturnType<typeof Dialog.up
 	}
 }
 
-const pickedChainAction = (model: Model, context: PageContext, rawId: string, value: string): Return =>
+const pickedChainAction = (model: Model, rawId: string, value: string): Return =>
 	Option.match(
 		Array.findFirst(chainsOf(model), (chain) => chain.id === rawId),
 		{
@@ -591,7 +566,13 @@ const pickedChainAction = (model: Model, context: PageContext, rawId: string, va
 							},
 							Dialog.open(model.deleteChainDialog),
 						)
-					: liftChainDialog(model, context, ChainDialog.openEdit(model.chainDialog, chain)),
+					: {
+							model,
+							outMessage: PageOutMessage.RequestedNavigation({
+								url: chainHref(chain.id),
+								isReplace: false,
+							}),
+						},
 		},
 	)
 
@@ -1048,7 +1029,7 @@ const pickedFromMenu = (model: Model, context: PageContext, menuId: string, valu
 	const [kind, ...rest] = Str.split(":")(menuId)
 	const target = Array.join(rest, ":")
 	if (kind === "monitor") return pickedMonitorAction(model, target, value)
-	if (kind === "chain") return pickedChainAction(model, context, target, value)
+	if (kind === "chain") return pickedChainAction(model, target, value)
 	if (kind === "schedule") return pickedScheduleAction(model, target, value)
 	if (kind === "window") return pickedWindowAction(model, context, target, value)
 	if (kind === "rule") {
@@ -1307,9 +1288,6 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			}
 		},
 		ClickedRetryChains: () => refreshChains(model, context),
-		ClickedNewChain: () => liftChainDialog(model, context, ChainDialog.openNew(model.chainDialog)),
-		GotChainDialogMessage: ({ message: child }) =>
-			liftChainDialog(model, context, ChainDialog.update(model.chainDialog, child)),
 		ClickedConfirmDeleteChain: () => confirmDeleteChain(model),
 		CompletedDeleteChain: ({ chainId, result }) => deletedChain(model, context, chainId, result),
 		GotDeleteChainDialogMessage: ({ message: child }) =>

@@ -21,7 +21,7 @@ import { destinationList, type NotifyView } from "./view-notify"
 import { typography, typographyClass } from "@maple/views/ui/typography"
 import { hstack, vstack } from "@maple/views/ui/stack"
 import { textLink } from "@maple/views/ui/text-link"
-import { chainSummary, routingTabHref } from "../shared/escalation-chains"
+import { chainSummary, newChainHref } from "../shared/escalation-chains"
 import { chainSelectIdOf, NO_CHAIN } from "./form-steps"
 import type { Tier } from "./message"
 import { formSelect } from "./view-select"
@@ -159,7 +159,7 @@ const chainPicker = (
 					textLink(
 						h,
 						{
-							href: routingTabHref(),
+							href: newChainHref(),
 							tone: "muted",
 							className: "text-xs",
 							attributes: [h.Target("_blank"), h.Rel("noopener")],
