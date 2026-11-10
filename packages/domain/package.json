@@ -50,6 +50,7 @@
 		"./query-engine": "./src/query-engine.ts",
 		"./raw-sql": "./src/raw-sql.ts",
 		"./recommendations": "./src/recommendations.ts",
+		"./semconv": "./src/semconv.ts",
 		"./sandbox": "./src/sandbox.ts",
 		"./executor": "./src/executor.ts",
 		"./dependency-scan": "./src/dependency-scan.ts",
