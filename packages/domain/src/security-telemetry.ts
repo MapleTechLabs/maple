@@ -96,6 +96,8 @@ export interface ScannerAgent {
 	/** Matched case-insensitively anywhere in the user agent. */
 	readonly token: string
 	readonly name: string
+	/** An autonomous attack agent: one request from it marks the source as an attack chain. */
+	readonly autonomous?: boolean
 }
 
 /** Scanning tools that name themselves. Generic clients (curl, python-requests) are left out. */
@@ -119,6 +121,10 @@ export const SCANNER_AGENTS: ReadonlyArray<ScannerAgent> = [
 	{ token: "l9tcpid", name: "LeakIX" },
 	{ token: "modatscanner", name: "Modat" },
 	{ token: "internetmeasurement", name: "Driftnet" },
+	// ARTEX, an autonomous pentest agent. norma is the SDK behind its WebFetch tool, which benign
+	// LLM agents use too, so it names the client without marking a chain.
+	{ token: "artex-enrich", name: "ARTEX", autonomous: true },
+	{ token: "norma/", name: "norma agent SDK" },
 ]
 
 const CATEGORY_BY_TOKEN = new Map(
@@ -145,3 +151,68 @@ export const OTHER_PROBE_SIGNATURES: ReadonlyArray<ProbeSignature> = Arr.filter(
 	PROBE_SIGNATURES,
 	(signature) => !isCritical(signature),
 )
+
+/** Autonomous agents' names, read apart from a source's other tools so none can hide them. */
+export const AUTONOMOUS_SCANNER_NAMES: ReadonlyArray<string> = Arr.map(
+	Arr.filter(SCANNER_AGENTS, (agent) => agent.autonomous === true),
+	(agent) => agent.name,
+)
+
+/** Steps of a multi-stage attack a source's probes can show, in display order. */
+export const ATTACK_STAGES = ["sweep", "exploit", "persisted"] as const
+export type AttackStage = (typeof ATTACK_STAGES)[number]
+
+/** A stage's name in a table cell (`short`) and in a sentence (`long`). */
+export const ATTACK_STAGE_LABELS = {
+	sweep: { short: "Sweep", long: "probed three or more categories" },
+	exploit: { short: "Exploit paths", long: "tried traversal or exploit paths" },
+	persisted: { short: "Past a denial", long: "was answered again after being refused" },
+} as const satisfies Record<AttackStage, { readonly short: string; readonly long: string }>
+
+const SWEEP_MIN_CATEGORIES = 3
+const PERSIST_MIN_SECONDS = 60
+
+export interface SourceActivity {
+	/** Distinct stored `Signature`s the source sent, `''` included. */
+	readonly probed: ReadonlyArray<string>
+	/** Requests refused with 401, 403 or 429. */
+	readonly denied: number
+	/** Seconds from the first refused request to the last one answered with a 2xx or 3xx. */
+	readonly passedDenialSeconds: number
+}
+
+/** The stages a source's probes show, in `ATTACK_STAGES` order. */
+export const attackStagesOf = (source: SourceActivity): ReadonlyArray<AttackStage> => {
+	const categories = new Set(
+		Arr.flatMap(source.probed, (signature) => {
+			const category = probeCategoryOf(signature)
+			return category === undefined ? [] : [category]
+		}),
+	)
+	return Arr.filter(
+		[
+			categories.size >= SWEEP_MIN_CATEGORIES ? "sweep" : undefined,
+			categories.has("path_traversal") || categories.has("exploits") ? "exploit" : undefined,
+			source.denied > 0 && source.passedDenialSeconds >= PERSIST_MIN_SECONDS ? "persisted" : undefined,
+		],
+		(stage): stage is AttackStage => stage !== undefined,
+	)
+}
+
+/**
+ * Why a source is an automated attack chain: every stage, or an autonomous agent's user agent.
+ * Empty when it is not one.
+ */
+export const attackChainReasons = (source: {
+	readonly agent?: string
+	readonly stages?: ReadonlyArray<AttackStage>
+}): ReadonlyArray<string> => {
+	const agent = source.agent ?? ""
+	const stages = source.stages ?? []
+	return agent === "" && stages.length < ATTACK_STAGES.length
+		? []
+		: [
+				...(agent === "" ? [] : [`sent the ${agent} user agent`]),
+				...Arr.map(stages, (stage) => ATTACK_STAGE_LABELS[stage].long),
+			]
+}

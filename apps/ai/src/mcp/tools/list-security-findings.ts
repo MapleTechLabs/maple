@@ -27,6 +27,7 @@ import {
 	STATUS_FILTERS,
 	unreadRepository,
 } from "../lib/security"
+import { attackChainReasons } from "@maple/domain/security-telemetry"
 import type { McpToolRegistrar } from "./types"
 
 const TOOL = "list_security_findings"
@@ -222,6 +223,9 @@ export function registerListSecurityFindingsTool(server: McpToolRegistrar) {
 									scanner: row.scanner,
 									userAgent: row.userAgent,
 									lastSeen: DateTime.formatIso(row.lastSeen),
+									stages: row.stages,
+									agent: row.agent,
+									attackChain: attackChainReasons(row),
 								})),
 							},
 						}
@@ -432,6 +436,7 @@ export function registerListSecurityFindingsTool(server: McpToolRegistrar) {
 										"Probe paths",
 										"Scanner",
 										"User agent",
+										"Attack chain",
 										"Last seen",
 									],
 									Arr.map(output.exposure.sources, (s) => [
@@ -440,6 +445,9 @@ export function registerListSecurityFindingsTool(server: McpToolRegistrar) {
 										String(s.signatures),
 										s.scanner,
 										truncate(s.userAgent, 80),
+										s.attackChain === undefined || s.attackChain.length === 0
+											? "no"
+											: Arr.join(s.attackChain, "; "),
 										s.lastSeen,
 									]),
 								),

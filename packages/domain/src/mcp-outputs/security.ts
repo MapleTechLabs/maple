@@ -1,4 +1,5 @@
 import { Schema } from "effect"
+import { ATTACK_STAGES } from "../security-telemetry"
 
 /** The Security Center's four sources of findings. */
 export const SECURITY_AREAS = ["code", "dependencies", "exposure", "runtimes"] as const
@@ -146,6 +147,12 @@ export const ListSecurityFindingsOutput = Schema.Struct({
 					scanner: Schema.String,
 					userAgent: Schema.String,
 					lastSeen: Schema.String,
+					/** Multi-stage behavior the source showed: a sweep, exploit paths, getting past a refusal. */
+					stages: Schema.optionalKey(Schema.Array(Schema.Literals(ATTACK_STAGES))),
+					/** The autonomous attack agent the source named, empty for none. */
+					agent: Schema.optionalKey(Schema.String),
+					/** Why it is an automated attack chain; empty when it is not one. */
+					attackChain: Schema.optionalKey(Schema.Array(Schema.String)),
 				}),
 			),
 		}),

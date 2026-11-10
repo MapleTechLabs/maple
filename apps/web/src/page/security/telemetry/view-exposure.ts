@@ -40,8 +40,9 @@ import {
 import { type Exposure, Message, type Model } from "./model"
 import { dividedList } from "@maple/views/ui/rule"
 import { typography, typographyClass } from "@maple/views/ui/typography"
-import { hstack } from "@maple/views/ui/stack"
+import { hstack, vstack } from "@maple/views/ui/stack"
 import { Array as Arr } from "effect"
+import { ATTACK_STAGE_LABELS, attackChainReasons } from "@maple/domain/security-telemetry"
 
 // The Exposure tab: probe paths a service answered, the week's totals, categories and sources.
 
@@ -192,9 +193,12 @@ const totalsRail = (h: H, clock: Clock, exposure: Exposure): Html => {
 			eyebrow: "Clients",
 			value: totals.isSourcesCapped ? `${SOURCES_SHOWN}+` : String(totals.sources),
 			compact: true,
-			subline: totals.isSourcesCapped
-				? `client addresses, the ${SOURCES_SHOWN} most active listed`
-				: "distinct client addresses",
+			subline:
+				totals.attackChains > 0
+					? `${totals.attackChains}${totals.isSourcesCapped ? ` of the ${SOURCES_SHOWN} listed` : ""} ran an attack chain`
+					: totals.isSourcesCapped
+						? `client addresses, the ${SOURCES_SHOWN} most active listed`
+						: "distinct client addresses",
 		}),
 		statRailItem(h, {
 			eyebrow: "Services probed",
@@ -341,17 +345,36 @@ const categoriesPanel = (h: H, rows: ReadonlyArray<CategoryRow>): Html =>
 		]),
 	])
 
+/** A red badge when the source ran an attack chain, over the stages or agent behind it, muted otherwise. */
+const behaviorCell = (h: H, source: Exposure["sources"][number]): Html => {
+	const reasons = attackChainReasons(source)
+	const stages = Arr.map(source.stages ?? [], (stage) => ATTACK_STAGE_LABELS[stage].short)
+	const agent = source.agent ?? ""
+	const detail = stages.length > 0 ? Arr.join(stages, ", ") : agent !== "" ? `${agent} user agent` : "None"
+	return vstack(h, { gap: "1", align: "start" }, [
+		...(reasons.length === 0
+			? []
+			: [
+					badge(h, { variant: "crit", attributes: [h.Title(Arr.join(reasons, "\n"))] }, [
+						"Attack chain",
+					]),
+				]),
+		typography(h, { size: "xs", tone: "muted", className: "max-w-36 whitespace-normal" }, [detail]),
+	])
+}
+
 const sourcesPanel = (h: H, clock: Clock, sources: Exposure["sources"]): Html =>
 	panel(h, { className: "overflow-hidden" }, [
 		panelHeader(h, {
 			title: "Top clients",
-			action: typography(h, { size: "xs", tone: "muted" }, ["Most requests first"]),
+			action: typography(h, { size: "xs", tone: "muted" }, ["Agents first, then most requests"]),
 		}),
 		table(h, { ariaLabel: "Top clients" }, [
 			tableHeader(h, [
 				tableRow(h, [
 					tableHead(h, ["Client address"]),
-					tableHead(h, ["Tool"]),
+					tableHead(h, ["Tool"], WIDE_COLUMN),
+					tableHead(h, ["Behavior"]),
 					tableHead(h, ["User agent"], WIDE_COLUMN),
 					tableHead(h, ["Requests"], "text-right"),
 					tableHead(h, ["Distinct probes"], cn("text-right", WIDE_COLUMN)),
@@ -368,14 +391,15 @@ const sourcesPanel = (h: H, clock: Clock, sources: Exposure["sources"]): Html =>
 							tableCell(
 								h,
 								[source.scanner === "" ? "Unnamed" : source.scanner],
-								source.scanner === "" ? "text-muted-foreground" : undefined,
+								cn(source.scanner === "" ? "text-muted-foreground" : undefined, WIDE_COLUMN),
 							),
+							tableCell(h, [behaviorCell(h, source)]),
 							tableCell(
 								h,
 								[
 									h.span(
 										[
-											h.Class("block max-w-72 truncate text-xs text-muted-foreground"),
+											h.Class("block max-w-56 truncate text-xs text-muted-foreground"),
 											h.Title(source.userAgent),
 										],
 										[source.userAgent === "" ? "None sent" : source.userAgent],

@@ -156,12 +156,23 @@ export const exposureOf = (nowMs: number): Exposure => ({
 	],
 	sources: [
 		{
+			clientAddress: "192.0.2.61",
+			requests: 240,
+			signatures: 0,
+			scanner: "ARTEX",
+			userAgent: "artex-enrich/1.0",
+			lastSeen: at(nowMs, 20 * MINUTE),
+			stages: [],
+			agent: "ARTEX",
+		},
+		{
 			clientAddress: "198.51.100.23",
 			requests: 702,
 			signatures: 1,
 			scanner: "ZGrab",
 			userAgent: "Mozilla/5.0 zgrab/0.x",
 			lastSeen: at(nowMs, 8 * MINUTE),
+			stages: [],
 		},
 		{
 			clientAddress: "203.0.113.77",
@@ -171,6 +182,7 @@ export const exposureOf = (nowMs: number): Exposure => ({
 			userAgent:
 				"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
 			lastSeen: at(nowMs, 12 * MINUTE),
+			stages: ["sweep", "exploit", "persisted"],
 		},
 		{
 			clientAddress: "192.0.2.140",
@@ -180,6 +192,7 @@ export const exposureOf = (nowMs: number): Exposure => ({
 			userAgent:
 				"Mozilla/5.0 (compatible; Nuclei - Open-source project (github.com/projectdiscovery/nuclei))",
 			lastSeen: at(nowMs, 30 * MINUTE),
+			stages: ["sweep"],
 		},
 		{
 			clientAddress: "198.51.100.9",
@@ -188,6 +201,7 @@ export const exposureOf = (nowMs: number): Exposure => ({
 			scanner: "Censys",
 			userAgent: "Mozilla/5.0 (compatible; CensysInspect/1.1; +https://about.censys.io/)",
 			lastSeen: at(nowMs, 2 * HOUR),
+			stages: [],
 		},
 		{
 			clientAddress: "2001:db8::4f",
@@ -196,6 +210,7 @@ export const exposureOf = (nowMs: number): Exposure => ({
 			scanner: "",
 			userAgent: "",
 			lastSeen: at(nowMs, 2 * DAY),
+			stages: [],
 		},
 	],
 	timeline: Arr.map(

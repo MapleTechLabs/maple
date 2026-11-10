@@ -3,6 +3,7 @@ import { Schema, String as Str } from "effect"
 import { AWS_INFRA_KIND_IDS } from "../aws-infra"
 import { GCP_INFRA_SERVICE_IDS, GCP_INFRA_SOURCE_IDS } from "../gcp-infra"
 import { ADVISORY_SEVERITIES } from "../runtime-advisories"
+import { ATTACK_STAGES } from "../security-telemetry"
 import { SERVICE_RUNTIME_KIND_IDS } from "../service-runtimes"
 import { MAX_RAW_SQL_LENGTH } from "../raw-sql"
 import { RawSqlDisplayType } from "@maple/widgets"
@@ -2731,6 +2732,10 @@ export class SecurityExposureResponse extends Schema.Class<SecurityExposureRespo
 				scanner: Schema.String,
 				userAgent: Schema.String,
 				lastSeen: Schema.String,
+				/** Multi-stage behavior the source showed: a sweep, exploit paths, getting past a refusal. */
+				stages: Schema.optionalKey(Schema.Array(Schema.Literals(ATTACK_STAGES))),
+				/** The autonomous attack agent the source named, '' for none. */
+				agent: Schema.optionalKey(Schema.String),
 			}),
 		),
 		timeline: Schema.Array(

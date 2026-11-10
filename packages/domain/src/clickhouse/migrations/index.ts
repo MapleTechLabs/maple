@@ -60,6 +60,7 @@ import { migration_0058_user_activity_channels } from "./0058_user_activity_chan
 import { migration_0059_service_overview_slo_latency_ladder } from "./0059_service_overview_slo_latency_ladder"
 import { migration_0060_search_console_daily } from "./0060_search_console_daily"
 import { migration_0061_error_events_blank_event_fingerprint } from "./0061_error_events_blank_event_fingerprint"
+import { migration_0062_scanner_autonomous_agents } from "./0062_scanner_autonomous_agents"
 import { Array as Arr } from "effect"
 
 /**
@@ -153,6 +154,7 @@ export const migrations: ReadonlyArray<ClickHouseMigration> = [
 	migration_0059_service_overview_slo_latency_ladder,
 	migration_0060_search_console_daily,
 	migration_0061_error_events_blank_event_fingerprint,
+	migration_0062_scanner_autonomous_agents,
 ] as const
 
 /** Highest migration `version` bundled — i.e. the schema level a fully-applied
