@@ -66,6 +66,8 @@ When a service has sampled spans in the selected window:
 
 **The estimate is only as good as the weight.** If a sampler drops spans without recording `th` in `tracestate` or a `SampleRate` attribute, Maple counts the surviving spans at weight 1 and underestimates throughput.
 
+**Ingest rules record no weight.** A drop rule under **Settings → Ingestion → Ingest rules** that keeps a sample of matching traces (**Keep a sample**, `keepPercent` in the API) stores no `SampleRate` on the spans it keeps. They count at weight 1, so throughput is underestimated for the traffic the rule matches. Drop rules on metrics ignore the sample and drop every matching data point.
+
 ## Exact counts with SpanMetrics
 
 For exact RED metrics (rate, errors, duration) next to sampled traces, use the OpenTelemetry Collector [SpanMetrics Connector](https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/connector/spanmetricsconnector). It derives metrics from every span before sampling, so the counts do not depend on the sampling configuration.

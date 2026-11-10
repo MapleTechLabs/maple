@@ -65,6 +65,7 @@ The detail sheet opens with the message, a meta strip, and an **Error** or **Fat
 
 - **Attributes**: **Log Attributes** and **Resource Attributes**, with a **Search attributes...** box.
 - **Trace**: a **Trace Timeline** of every log in the same trace (up to 200), with span boundaries marked. Shown when the log has a trace ID.
+- **Context**: **Surrounding logs**, the logs written around this one by the same **Instance** or the whole **Service**.
 - **Raw**: the record as a **JSON Payload**.
 - **Infrastructure**: host, container, or Kubernetes details, shown when the log carries those resource attributes.
 
