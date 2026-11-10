@@ -6,6 +6,7 @@ import { Option, Record as Rec, String as Str } from "effect"
 // accepts per key. Editors read it so they never offer a clause the query drops with a
 // warning; `where-key-rules.test.ts` holds it to the handlers in both directions.
 
+/** Every grammar operator, in the order editors list them; the test holds it to the domain's literals. */
 export const WHERE_OPERATORS: ReadonlyArray<Operator> = [
 	"=",
 	"!=",

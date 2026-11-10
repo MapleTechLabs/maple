@@ -1,8 +1,15 @@
 import type { QueryBuilderQueryDraftPayload } from "@maple/domain/http"
 import type { QueryBuilderDataSource } from "@maple/query-model"
 import { describe, expect, it } from "vitest"
-import { buildTimeseriesQuerySpec, WHERE_DIMENSIONS, WHERE_OPERATORS, whereOperatorsOf } from "./model"
-import { Array as Arr, Option, Record as Rec } from "effect"
+import { Operator } from "@maple/domain/where-clause"
+import {
+	buildTimeseriesQuerySpec,
+	WHERE_DIMENSIONS,
+	WHERE_OPERATORS,
+	whereKeyMatchesAnyOf,
+	whereOperatorsOf,
+} from "./model"
+import { Array as Arr, Option, Order, Record as Rec } from "effect"
 
 // The key rules against the clause handlers: every allowlisted operator is applied without a
 // warning, and every other operator on a dimension warns, so the table cannot drift.
@@ -100,6 +107,25 @@ describe("where key rules", () => {
 
 	it("product events offer no operator on resource.*, which they would read as a prop of that name", () => {
 		expect(whereOperatorsOf("product_events", "resource.host.name")).toEqual([])
+	})
+
+	it("the operator list is the grammar's: an operator added there is one an attribute key takes", () => {
+		expect(Arr.sort(WHERE_OPERATORS, Order.String)).toEqual(Arr.sort(Operator.literals, Order.String))
+	})
+
+	const anyOfSources: ReadonlyArray<QueryBuilderDataSource> = [
+		"traces",
+		"logs",
+		"metrics",
+		"product_events",
+	]
+	const anyOfCases = Arr.flatMap(anyOfSources, (dataSource) =>
+		Arr.map(["attr.http.route", "resource.host.name", "service.name"], (key) => ({ dataSource, key })),
+	)
+
+	it.each(anyOfCases)("$dataSource applies an OR group on $key exactly when the rule says so", (each) => {
+		const warnings = warningsOf(each.dataSource, `(${each.key} = "a" OR ${each.key} = "b")`)
+		expect(warnings.length === 0).toBe(whereKeyMatchesAnyOf(each.dataSource, each.key))
 	})
 
 	it("a bare unknown key is an attribute on traces and dropped on logs and metrics", () => {
