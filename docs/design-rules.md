@@ -89,7 +89,8 @@ bordered box takes its parent's radius minus 1px: `before:rounded-lg-inset` insi
   `surface-strong`.
 - A see-through surface is a token, never `bg-background/NN` or `bg-card/NN`
   (`maple/surface-translucency`): `surface-well` is an inset well on a card, `surface-float` (with
-  `backdrop-blur-sm`) a label over a chart, map or media, `scrim` the layer behind a dialog.
+  `backdrop-blur-sm`) a label over a chart, map or media, `scrim` the layer behind a dialog,
+  `scrim-panel` the lighter, unblurred one beside a side panel (the page stays readable).
 - Layers come from the z scale, never `z-[…]` (`maple/no-arbitrary-z`): `z-1`..`z-10` inside a
   surface, `z-50` dialogs and sheets, `z-55` popovers and tooltips, `z-60` toasts and nested lists.
   A popup takes a popup radius (`maple/popup-radius`).

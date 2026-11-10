@@ -1,6 +1,10 @@
 export const sheetBackdropStyles =
 	"fixed inset-0 z-50 bg-scrim backdrop-blur-sm transition-opacity duration-200 data-ending-style:opacity-0 data-starting-style:opacity-0"
 
+/** Behind a side panel: a lighter dim and no blur, so the page it edits stays readable. */
+export const sheetBackdropPanelStyles =
+	"fixed inset-0 z-50 bg-scrim-panel transition-opacity duration-200 data-ending-style:opacity-0 data-starting-style:opacity-0"
+
 export const sheetViewportStyles = "fixed inset-0 z-50 grid"
 
 export const sheetViewportBottomStyles = "grid grid-rows-[1fr_auto] pt-12"
