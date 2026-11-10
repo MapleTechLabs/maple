@@ -1,6 +1,6 @@
 import { BuildingType } from "@maple/domain/http"
 import { Array as Arr, String as Str } from "effect"
-import type { Node3D, Node3DKind } from "../../../components/service-map/three/types"
+import type { Node3D, Node3DKind } from "../three/types"
 
 // What can be built. Each catalog is data keyed by its type literal, so a new building (or a
 // later decoration catalog) is one entry plus its model in the scene.

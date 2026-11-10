@@ -12,7 +12,7 @@ import {
 	completedSteps,
 	DEFAULT_FUNNEL_KEY_BY,
 	DEFAULT_FUNNEL_WINDOW_SECONDS,
-} from "../../../components/funnels/definition"
+} from "../kit/funnel-definition"
 import {
 	compileFunnelStep,
 	compileFunnelSteps,

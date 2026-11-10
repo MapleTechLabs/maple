@@ -5,7 +5,7 @@ import {
 	layoutMarkerLabels,
 	type PositionedMarker,
 	shouldRenderLabels,
-} from "../../../components/vcs/commit-markers/marker-layout"
+} from "./marker-layout"
 import { parseBucketMs } from "@maple/ui/lib/format"
 import { AsyncData } from "foldkit"
 import type { PlotGeometry } from "@maple/views/charts/chart"
@@ -13,7 +13,7 @@ import { firstLine, isResolvableSha } from "./derive-panels"
 import type { CommitData, Release } from "./model"
 import { Array as Arr, Order } from "effect"
 
-// `useCommitMarkers` and `CommitMarkersOverlay`'s geometry (components/vcs/commit-markers/).
+// `useCommitMarkers` and `CommitMarkersOverlay`'s geometry (./marker-layout.ts).
 
 /** The markers over the chart buckets, each relabelled with its commit subject once that resolved. */
 export const commitMarkers = (

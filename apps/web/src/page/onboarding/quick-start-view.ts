@@ -9,7 +9,7 @@ import {
 	type StackAnswers,
 	type StackItem,
 	type StackPlatform,
-} from "../../lib/onboarding-stack"
+} from "./onboarding-stack"
 import { cn } from "@maple/ui/lib/utils"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"

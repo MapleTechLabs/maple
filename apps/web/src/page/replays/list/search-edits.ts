@@ -1,4 +1,4 @@
-import { nextTagSelection } from "../../../components/replays/session-tags"
+import { nextTagSelection } from "../kit/session-tags"
 import type { Facet, Range } from "./message"
 import type { Search } from "./model"
 import { selectedTags } from "./derive"

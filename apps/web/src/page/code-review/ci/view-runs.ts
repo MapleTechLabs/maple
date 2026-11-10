@@ -1,5 +1,5 @@
 import type { CodeReviewCiRun } from "@maple/domain/http"
-import { externalUrl, pullRequestUrl } from "../../../components/code-review/ci/ci-format"
+import { externalUrl, pullRequestUrl } from "../kit/ci-format"
 import { formatDuration } from "@maple/ui/lib/format"
 import { TONE_TEXT } from "@maple/ui/lib/tone"
 import { cn } from "@maple/ui/lib/utils"
@@ -258,16 +258,8 @@ export const runsList = (h: H, model: Model, time: TimeContext, canClear: boolea
 							tableRow(h, [
 								tableHead(h, ["Result"], "w-24 px-3 sm:w-36 sm:px-4"),
 								tableHead(h, ["Run"], "px-3"),
-								tableHead(
-									h,
-									["Duration"],
-									"hidden px-3 text-right sm:table-cell sm:w-24",
-								),
-								tableHead(
-									h,
-									["Started"],
-									"hidden px-3 text-right md:table-cell md:w-24",
-								),
+								tableHead(h, ["Duration"], "hidden px-3 text-right sm:table-cell sm:w-24"),
+								tableHead(h, ["Started"], "hidden px-3 text-right md:table-cell md:w-24"),
 								tableHead(
 									h,
 									[h.span([h.Class("sr-only")], ["Links"])],

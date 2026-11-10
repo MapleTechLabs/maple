@@ -188,7 +188,7 @@ const planetscaleFilterSearchFields = {
 	branchContains: Schema.optional(Schema.String),
 }
 
-// apps/web/src/lib/errors/hub-params.ts
+// apps/web/src/page/errors/hub/hub-params.ts
 const HUB_VIEWS = ["open", "closed", "all"] as const
 const LEGACY_HUB_VIEWS = ["triage", "active", "resolved"] as const
 const HUB_SORTS = ["last_seen", "volume", "severity"] as const

@@ -1,7 +1,7 @@
-import type { FrameworkId } from "../components/quick-start/sdk-snippets"
+import type { FrameworkId } from "../../components/quick-start/sdk-snippets"
 import type { IconName } from "@maple/views/ui/icon"
-import type { DocsPage } from "./docs"
-import { ONBOARDING_INTENT_IDS, type OnboardingIntent } from "./onboarding-intent"
+import type { DocsPage } from "../../lib/docs"
+import { ONBOARDING_INTENT_IDS, type OnboardingIntent } from "../../lib/onboarding-intent"
 import { Array as Arr, String as Str } from "effect"
 
 // The onboarding stack step: what the user runs, and which of Maple's surfaces each pick fills.

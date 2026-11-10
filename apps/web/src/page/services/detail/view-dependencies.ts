@@ -41,7 +41,7 @@ import { hstack, vstack, vstackClass } from "@maple/views/ui/stack"
 import { stripClass } from "@maple/views/ui/rule"
 import { Array as Arr } from "effect"
 
-// `ServiceDependenciesTab` + `DependencyTable` + `DependencyTypeBadge` (components/services/).
+// `ServiceDependenciesTab` + `DependencyTable` + `DependencyTypeBadge`.
 // TODO(sampled-tooltip): an estimated rate's "Estimated ×N" tooltip is not ported (trigger only).
 
 type H = HtmlBuilder<Message>

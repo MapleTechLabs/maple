@@ -1,5 +1,5 @@
 import type { CodeReviewCiRun } from "@maple/domain/http"
-import { ciResultLabel, ciResultTone } from "../../../components/code-review/ci/ci-format"
+import { ciResultLabel, ciResultTone } from "./ci-format"
 import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { AppRoute, hrefOf } from "../../../route"
@@ -29,7 +29,12 @@ export const bulletList = <M>(h: HtmlBuilder<M>, items: ReadonlyArray<string>): 
 	)
 
 /** A run's result; a rerun says which attempt it was. */
-export const ciResultBadge = <M>(h: HtmlBuilder<M>, result: string, attempt = 1, className?: string): Html => {
+export const ciResultBadge = <M>(
+	h: HtmlBuilder<M>,
+	result: string,
+	attempt = 1,
+	className?: string,
+): Html => {
 	const tone = ciResultTone(result)
 	return h.span(
 		[h.Class(cn(hstackClass({ gap: "1.5", inline: true }), className))],

@@ -1,4 +1,4 @@
-import { dependencyDrillWhereClause } from "../../../components/services/dependency-drill"
+import { dependencyDrillWhereClause } from "./dependency-drill"
 import type { DependencyKind } from "./derive-panels"
 import type { DependencyBundle } from "./model-tabs"
 import { Array as Arr, String as Str, Option, Order } from "effect"

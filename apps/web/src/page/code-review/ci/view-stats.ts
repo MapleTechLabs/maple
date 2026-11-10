@@ -1,6 +1,6 @@
 import type { CodeReviewCiAnalytics, CodeReviewCiTotals } from "@maple/domain/http"
-import { rateChange, successRate } from "../../../components/code-review/ci/ci-format"
-import { bucketIso, formatSpan } from "../../../components/code-review/code-review-format"
+import { rateChange, successRate } from "../kit/ci-format"
+import { bucketIso, formatSpan } from "../kit/code-review-format"
 import { EMPTY_VALUE, formatDuration, formatNumber, formatPercent } from "@maple/ui/lib/format"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import * as AreaChart from "@maple/views/charts/area-chart"

@@ -1,6 +1,6 @@
 import { formatErrorRate } from "@maple/ui/lib/format"
-import { health, HEALTH_COLOR } from "../../components/service-map/three/spatial-layout"
-import type { Node3D } from "../../components/service-map/three/types"
+import { health, HEALTH_COLOR } from "../../page/service-map/three/spatial-layout"
+import type { Node3D } from "../../page/service-map/three/types"
 import { SERVICE_MAP_3D_TOPOLOGY } from "../service-map-3d/fixture"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { input } from "@maple/views/ui/input"

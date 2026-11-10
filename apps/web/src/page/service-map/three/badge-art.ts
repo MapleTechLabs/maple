@@ -1,4 +1,4 @@
-import type { Node3D } from "../../../components/service-map/three/types"
+import type { Node3D } from "./types"
 import { machineBadge } from "../badge"
 import { MARK_PATHS } from "./mark-paths.generated"
 

@@ -26,7 +26,7 @@ import { severityBadge } from "../../errors/kit/severity"
 import { typography } from "@maple/views/ui/typography"
 import { hstack, vstack } from "@maple/views/ui/stack"
 
-// `ServiceErrorsPanel` + `IssueLine`, and `ServiceRecentDeploys` (components/services/).
+// `ServiceErrorsPanel` + `IssueLine`, and `ServiceRecentDeploys`.
 
 type H = HtmlBuilder<Message>
 

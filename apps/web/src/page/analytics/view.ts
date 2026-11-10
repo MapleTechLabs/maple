@@ -1,4 +1,4 @@
-import { activeFilterChips } from "../../components/analytics/filters"
+import { activeFilterChips } from "./filters"
 import { formatNumber, pluralize } from "@maple/ui/lib/format"
 import { TONE_BORDER, TONE_SOFT } from "@maple/ui/lib/tone"
 import { cn } from "@maple/ui/lib/utils"

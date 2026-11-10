@@ -1,9 +1,4 @@
-import {
-	buildDeviceKeyRows,
-	buildKeyRows,
-	filterKeyRows,
-	type KeyTypeFilter,
-} from "../../../components/settings/keys-table"
+import { buildDeviceKeyRows, buildKeyRows, filterKeyRows, type KeyTypeFilter } from "../kit/keys-table"
 import { Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { button } from "@maple/views/ui/button"

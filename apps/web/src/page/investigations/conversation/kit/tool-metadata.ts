@@ -1,4 +1,4 @@
-import { humanize } from "../../../../lib/humanize"
+import { humanize } from "../../humanize"
 import type { IconName } from "@maple/views/ui/icon"
 import { Array as Arr, String as Str } from "effect"
 

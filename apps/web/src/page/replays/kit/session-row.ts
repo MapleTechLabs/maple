@@ -1,7 +1,7 @@
 import { countLabel } from "@maple/ui/lib/format"
 import { SessionTag } from "@maple/domain/query-engine"
 import { isSessionLive } from "@maple/ui/lib/replay-format"
-import { noiseTierOf, SESSION_TAG_LABELS } from "../../../components/replays/session-tags"
+import { noiseTierOf, SESSION_TAG_LABELS } from "./session-tags"
 import { Schema, Array as Arr, String as Str } from "effect"
 
 /** A session list row, the list's view of `replayListItemFromV2`. */

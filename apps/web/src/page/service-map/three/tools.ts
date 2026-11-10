@@ -1,4 +1,4 @@
-import { DRAG_TOLERANCE } from "../../../components/service-map/three/scene-input"
+import { DRAG_TOLERANCE } from "./scene-input"
 import type * as THREE from "three"
 import type { Size } from "./camera"
 import type { DuckClick } from "./critters"

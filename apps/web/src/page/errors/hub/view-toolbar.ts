@@ -1,7 +1,7 @@
 import { formatErrorRate, formatNumber } from "@maple/ui/lib/format"
 import { refreshingClass } from "@maple/ui/lib/refreshing"
 import { cn } from "@maple/ui/lib/utils"
-import { HUB_SORTS, SEVERITY_FILTERS, type SeverityFilter } from "../../../lib/errors/hub-params"
+import { HUB_SORTS, SEVERITY_FILTERS, type SeverityFilter } from "./hub-params"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import * as SelectView from "@maple/views/ui/select-view"

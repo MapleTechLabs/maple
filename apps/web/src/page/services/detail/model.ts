@@ -35,7 +35,7 @@ export const DetailPoint = Schema.Struct({
 })
 export type DetailPoint = typeof DetailPoint.Type
 
-/** `ReleasePoint` (components/vcs/commit-markers/marker-layout.ts). */
+/** `ReleasePoint` (./marker-layout.ts). */
 export const Release = Schema.Struct({
 	bucket: Schema.String,
 	commitSha: Schema.String,

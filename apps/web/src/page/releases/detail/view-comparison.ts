@@ -1,8 +1,4 @@
-import {
-	MIN_COMPARE_SPANS,
-	type ReleaseServiceImpact,
-	shortReleaseLabel,
-} from "../../../components/releases/release-model"
+import { MIN_COMPARE_SPANS, type ReleaseServiceImpact, shortReleaseLabel } from "../release-model"
 import {
 	countLabel,
 	EMPTY_VALUE,

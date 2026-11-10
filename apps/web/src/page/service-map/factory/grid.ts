@@ -1,5 +1,5 @@
 import type { WorldCell } from "@maple/domain/http"
-import type { Vec3 } from "../../../components/service-map/three/types"
+import type { Vec3 } from "../three/types"
 
 // The factory floor's snapping grid. A cell is centred on its lattice point: cell (x, z) covers
 // scene [(x - 0.5) * CELL_SIZE, (x + 0.5) * CELL_SIZE) on each axis.

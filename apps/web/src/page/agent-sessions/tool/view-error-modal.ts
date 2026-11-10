@@ -7,7 +7,7 @@ import {
 	unwrapToolErrorText,
 	variantDifferences,
 	type VariantDifference,
-} from "../../../lib/agent-sessions/tool-error-display"
+} from "../kit/tool-error-display"
 import { UNGROUPED_FINGERPRINT } from "@maple/web-data/lib/tool-analytics"
 import { Option, Array as Arr } from "effect"
 import { AsyncData, Submodel } from "foldkit"

@@ -4,7 +4,7 @@ import {
 	type SessionToolCall,
 	type SessionToolUsage,
 } from "@maple/agent-sessions"
-import { buildSessionAxis, type SessionAxis } from "../../../lib/agent-sessions/session-axis"
+import { buildSessionAxis, type SessionAxis } from "../kit/session-axis"
 import { formatDuration, formatNumber } from "@maple/ui/lib/format"
 import { formatSessionDuration } from "@maple/ui/lib/replay-format"
 import { cn } from "@maple/ui/lib/utils"

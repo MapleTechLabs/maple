@@ -5,7 +5,7 @@ import {
 	type AiReferralSummary,
 	productForCrawler,
 	purposeForCrawler,
-} from "../../components/analytics/ai/ai-traffic-model"
+} from "./ai-traffic-model"
 import { SPARK_COLOR } from "../../components/infra/severity-tokens"
 import { formatNumber, formatPercent, pluralize } from "@maple/ui/lib/format"
 import { cn } from "@maple/ui/lib/utils"

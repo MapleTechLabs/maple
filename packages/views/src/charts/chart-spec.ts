@@ -177,7 +177,7 @@ export const ChartSpec = defineTaggedUnion({
 		showTooltip: Schema.Boolean,
 		axis: Schema.optionalKey(TimeseriesAxisSpec),
 	},
-	/** `IssueOccurrenceChart` (apps/web/src/components/errors): bucketed counts as bars. */
+	/** `IssueOccurrenceChart`: bucketed counts as bars. */
 	Occurrences: {
 		points: Schema.Array(Schema.Struct({ bucket: Schema.String, count: Schema.Number })),
 		color: Schema.String,

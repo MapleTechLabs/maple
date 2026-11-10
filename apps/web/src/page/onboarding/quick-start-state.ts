@@ -6,7 +6,7 @@ import {
 	STACK_LANGUAGE_IDS,
 	STACK_PLATFORM_IDS,
 	type StackAnswers as StackPicks,
-} from "../../lib/onboarding-stack"
+} from "./onboarding-stack"
 import { readLocalStorage, writeLocalStorage } from "@maple/ui/lib/local-storage"
 import { Effect, Option, Schema, SchemaGetter, Array as Arr, Record as Rec } from "effect"
 

@@ -1,4 +1,4 @@
-import { toggleFilterValue, toggleTraffic } from "../../components/analytics/filters"
+import { toggleFilterValue, toggleTraffic } from "./filters"
 import {
 	SearchConsoleIntegrationStatus,
 	SearchConsoleLandingPage,

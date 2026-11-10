@@ -1,6 +1,6 @@
 import type { CodeReviewCiJob, CodeReviewCiPipeline, CodeReviewCiRedStreak } from "@maple/domain/http"
-import { failRate } from "../../../components/code-review/ci/ci-format"
-import { formatSpan } from "../../../components/code-review/code-review-format"
+import { failRate } from "../kit/ci-format"
+import { formatSpan } from "../kit/code-review-format"
 import { EMPTY_VALUE, formatDuration, formatNumber, formatPercent } from "@maple/ui/lib/format"
 import { TONE_TEXT } from "@maple/ui/lib/tone"
 import { cn } from "@maple/ui/lib/utils"

@@ -32,7 +32,7 @@ import { typography, typographyClass } from "@maple/views/ui/typography"
 import { hstack, vstack, vstackClass } from "@maple/views/ui/stack"
 import { Array as Arr } from "effect"
 
-// `ServiceUsagePanel`, `ServiceWorkloadsPanel` and `ServiceDependencyStrip` (components/services/).
+// `ServiceUsagePanel`, `ServiceWorkloadsPanel` and `ServiceDependencyStrip`.
 
 type H = HtmlBuilder<Message>
 

@@ -1,5 +1,5 @@
 import { toEpochMs } from "@maple/ui/lib/time-format"
-import { isReleaseHealth } from "../../../components/releases/release-model"
+import { isReleaseHealth } from "../release-model"
 import { AsyncData, Command } from "foldkit"
 import * as Overlays from "../overlays"
 import * as Keyed from "@maple/views/data/keyed"

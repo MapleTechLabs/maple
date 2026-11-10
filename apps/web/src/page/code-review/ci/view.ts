@@ -1,5 +1,5 @@
 import type { CodeReviewCiAnalytics } from "@maple/domain/http"
-import { CI_RESULT_LABELS } from "../../../components/code-review/ci/ci-format"
+import { CI_RESULT_LABELS } from "../kit/ci-format"
 import { Option, Array as Arr, Record as Rec, Order } from "effect"
 import { AsyncData, Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"

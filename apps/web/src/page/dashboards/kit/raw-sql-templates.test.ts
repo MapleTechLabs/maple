@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { RAW_SQL_TEMPLATES, visualizationToDisplayType } from "./templates"
+import { RAW_SQL_TEMPLATES, visualizationToDisplayType } from "./raw-sql-templates"
 import { WIDGET_TYPES } from "@maple/domain/http"
 import { Record as Rec } from "effect"
 

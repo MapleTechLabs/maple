@@ -1,5 +1,5 @@
-import { liveTopology } from "../../components/service-map/three/live-topology"
-import { mapPalette, paperBackground } from "../../components/service-map/three/palette"
+import { liveTopology } from "./three/live-topology"
+import { mapPalette, paperBackground } from "./three/palette"
 import {
 	connectedIds,
 	type District,
@@ -7,8 +7,8 @@ import {
 	formatRate,
 	HEALTH_COLOR,
 	HEALTH_LABEL,
-} from "../../components/service-map/three/spatial-layout"
-import type { Edge3D, Topology3D } from "../../components/service-map/three/types"
+} from "./three/spatial-layout"
+import type { Edge3D, Topology3D } from "./three/types"
 import type { WorldEntity } from "@maple/domain/http"
 import { Option, Schema, Array as Arr } from "effect"
 import { Mount } from "foldkit"
@@ -261,7 +261,9 @@ const districtPlanks = <M>(
 			[
 				h.Key(`${perspective}:${district.id}`),
 				h.Attribute(LABEL, `district:${district.id}`),
-				h.Class(`absolute top-0 left-0 font-mono text-4xs uppercase tracking-overline ${PLANK_CLASS}`),
+				h.Class(
+					`absolute top-0 left-0 font-mono text-4xs uppercase tracking-overline ${PLANK_CLASS}`,
+				),
 				h.Style({ visibility: "hidden", "background-color": palette.trunk, color: palette.tape }),
 			],
 			[district.label],

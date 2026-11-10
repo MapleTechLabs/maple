@@ -1,6 +1,6 @@
 import type { ErrorIssueDocument, IssueKind, WorkflowState } from "@maple/domain/http"
 import { ERROR_ISSUE_SEARCH_MAX_LENGTH } from "@maple/domain/http/v2"
-import { hubViewOf, type HubSort, type HubView, type SeverityFilter } from "../../../lib/errors/hub-params"
+import { hubViewOf, type HubSort, type HubView, type SeverityFilter } from "./hub-params"
 import {
 	buildErrorSignals,
 	type ErrorSignal,

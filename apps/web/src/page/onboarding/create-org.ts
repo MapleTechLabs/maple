@@ -3,7 +3,7 @@ import { UnauthorizedError } from "@maple/domain/http"
 import { Cause, Effect, Option, Schema, String as Str } from "effect"
 import { Command, Mount, type Update } from "foldkit"
 import { defineMessageUnion } from "foldkit/message"
-import { suggestOrganizationName } from "../../lib/onboarding-org-name"
+import { suggestOrganizationName } from "./onboarding-org-name"
 import { currentRegion } from "../../lib/region"
 import {
 	acceptUserInvitation,

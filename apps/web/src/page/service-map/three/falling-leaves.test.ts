@@ -1,6 +1,6 @@
 import { Array as Arr } from "effect"
 import { describe, expect, it } from "vitest"
-import type { District } from "../../../components/service-map/three/spatial-layout"
+import type { District } from "./spatial-layout"
 import { groundAt, type LeafWorld, leafPose } from "./falling-leaves"
 
 const FLOOR = -0.14

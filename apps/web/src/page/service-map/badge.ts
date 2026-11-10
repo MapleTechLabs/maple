@@ -1,5 +1,5 @@
 import { getDbStyle } from "@maple/views/service-map/graph/service-map-db-style"
-import type { Node3D } from "../../components/service-map/three/types"
+import type { Node3D } from "./three/types"
 import { resolveRuntimeGlyph } from "@maple/views/service-map/map/runtime"
 import { String as Str } from "effect"
 

@@ -1,6 +1,6 @@
 import { formatWarehouseDateTime } from "@maple/query-engine"
 import { isSessionLive, sessionDurationMs } from "@maple/ui/lib/replay-format"
-import { parseChTimestampMs } from "../../../components/replays/replay-timeline"
+import { parseChTimestampMs } from "../kit/replay-timeline"
 import { Option } from "effect"
 import { AsyncData } from "foldkit"
 import { classifyUnplayable } from "../kit/replay-meta"
@@ -12,7 +12,8 @@ import type { Model, ReplayDetail } from "./model"
 
 export type PlayerStatus = "loading" | "error" | "empty" | "unrecorded" | "ready"
 
-export const windowOf = (model: Model): ReplayPartitionWindow | undefined => replayPartitionWindow(model.search.t)
+export const windowOf = (model: Model): ReplayPartitionWindow | undefined =>
+	replayPartitionWindow(model.search.t)
 
 const TRACE_WINDOW_MARGIN_MS = 15 * 60 * 1000
 const MAX_SESSION_MS = 24 * 60 * 60 * 1000
@@ -50,7 +51,10 @@ export const labelOf = (session: ReplayDetail): string =>
 	session.userName || session.userEmail || session.userId || "Anonymous session"
 
 /** The player's load status (`ReplayPlayerProvider`'s memo). */
-export const playerStatus = (model: Model, session: ReplayDetail): { status: PlayerStatus; failure: LoadFailure | null } => {
+export const playerStatus = (
+	model: Model,
+	session: ReplayDetail,
+): { status: PlayerStatus; failure: LoadFailure | null } => {
 	const recorded = recordedMarker(session.resourceAttributes)
 	const sessionActive = isActive(model, session)
 	const rangeFailure = AsyncData.isFailure(model.loader.range.data) && model.loader.queue.length > 0

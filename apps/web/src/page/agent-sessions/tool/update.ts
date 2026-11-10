@@ -1,4 +1,4 @@
-import { errorTrendBucket } from "../../../lib/agent-sessions/tool-error-display"
+import { errorTrendBucket } from "../kit/tool-error-display"
 import { toEpochMs } from "@maple/ui/lib/time-format"
 import { Option, Record, Array as Arr } from "effect"
 import { AsyncData, Command } from "foldkit"

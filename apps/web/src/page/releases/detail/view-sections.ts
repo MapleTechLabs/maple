@@ -14,7 +14,7 @@ import {
 	shortReleaseLabel,
 	type ReleaseGroup,
 	type ReleaseServiceImpact,
-} from "../../../components/releases/release-model"
+} from "../release-model"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { AppRoute, hrefOf } from "../../../route"
 import { severityBadge } from "../../errors/kit/severity"

@@ -1,7 +1,7 @@
 import { formatWarehouseDateTime } from "@maple/query-engine"
 import { formatBytes, formatNumber, pluralize } from "@maple/ui/lib/format"
 import { cn } from "@maple/ui/lib/utils"
-import type { VariantDifference } from "../../../lib/agent-sessions/tool-error-display"
+import type { VariantDifference } from "../kit/tool-error-display"
 import { formatDurationNs } from "@maple/web-data/lib/tool-analytics"
 import { formatTimestampInTimezone } from "@maple/ui/lib/timezone-format"
 import { AsyncData } from "foldkit"

@@ -1,9 +1,6 @@
 import { ApiKeyKind } from "@maple/domain/http"
 import { V2ApiKeyCreateParams, V2ApiKeyWithSecret, type V2Scope } from "@maple/domain/http/v2"
-import {
-	type ApiKeyCreateOptions,
-	buildApiKeyCreatePayload,
-} from "../../../components/settings/api-key-create-payload"
+import { type ApiKeyCreateOptions, buildApiKeyCreatePayload } from "../kit/api-key-create-payload"
 import { Effect, Result, Schema, Array as Arr, Record as Rec, String as Str } from "effect"
 import { Command, type Update } from "foldkit"
 import { defineMessageUnion } from "foldkit/message"

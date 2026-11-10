@@ -1,13 +1,8 @@
 import type { V2ApiKey } from "@maple/domain/http/v2"
 import { EMPTY_VALUE } from "@maple/ui/lib/format"
 import { cn } from "@maple/ui/lib/utils"
-import { apiKeyRowPermissions } from "../../../components/settings/api-key-permissions"
-import {
-	KEY_TYPE_LABELS,
-	keyAccessSummary,
-	type KeyRow,
-	type KeyType,
-} from "../../../components/settings/keys-table"
+import { apiKeyRowPermissions } from "../kit/api-key-permissions"
+import { KEY_TYPE_LABELS, keyAccessSummary, type KeyRow, type KeyType } from "../kit/keys-table"
 import { formatDateInTimezone } from "@maple/ui/lib/timezone-format"
 import { DateTime, Option, Array as Arr, String as Str } from "effect"
 import type { Html, HtmlBuilder } from "foldkit/html"

@@ -12,7 +12,7 @@ import {
 	schemaApplyPlan,
 	type SchemaDiffStatus,
 	schemaDiffCounts,
-} from "../../../components/settings/schema-apply-plan"
+} from "../kit/schema-apply-plan"
 import { AsyncData, Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { button } from "@maple/views/ui/button"

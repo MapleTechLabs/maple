@@ -1,7 +1,7 @@
 import { formatNumber } from "@maple/domain/format"
 import { FUNNEL_MAX_STEPS, FUNNEL_SESSION_DIMENSION_LABEL } from "@maple/query-model"
 import { cn } from "@maple/ui/lib/utils"
-import { FUNNEL_SESSION_DIMENSIONS } from "../../../components/funnels/definition"
+import { FUNNEL_SESSION_DIMENSIONS } from "../kit/funnel-definition"
 import { parseFunnelStepFilter } from "../../../lib/query-builder/funnel-filters"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { button } from "@maple/views/ui/button"

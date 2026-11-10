@@ -12,12 +12,12 @@ import {
 	auditLogKindOf,
 	hasAuditLogFilters,
 	parseAuditLogSearch,
-} from "../../../components/settings/audit-log-filters"
+} from "../kit/audit-log-filters"
 import { compactSearchInput } from "@maple/views/ui/compact-search-input"
 import { removableChip } from "@maple/views/ui/removable-chip"
 import type { Message as SelectMessage } from "@maple/views/ui/select"
 import * as CustomRangeView from "../../kit/custom-range-view"
-import { auditResourceDisplay } from "../../../components/settings/audit-log-resource"
+import { auditResourceDisplay } from "../kit/audit-log-resource"
 import { formatTimestampInTimezone } from "@maple/ui/lib/timezone-format"
 import { Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"

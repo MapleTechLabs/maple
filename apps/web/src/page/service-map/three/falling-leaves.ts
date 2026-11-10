@@ -1,6 +1,6 @@
 import { Array as Arr, Option } from "effect"
-import { hash } from "../../../components/service-map/three/maple-scenery-sketch"
-import type { District } from "../../../components/service-map/three/spatial-layout"
+import { hash } from "./maple-scenery-sketch"
+import type { District } from "./spatial-layout"
 
 // Where a falling leaf is at time `t`, as a pure function, so motion never accumulates drift and
 // a paused map holds every leaf exactly. Each leaf runs a cycle: it grows in at a crown, flutters

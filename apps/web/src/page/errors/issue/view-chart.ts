@@ -17,7 +17,7 @@ import type { ChartWindow } from "./derive"
 import { Message } from "./message"
 import { typography } from "@maple/views/ui/typography"
 
-// `IssueOccurrencePanel` and `IssueOccurrenceChart` (components/errors/).
+// `IssueOccurrencePanel` and `IssueOccurrenceChart`.
 
 type H = HtmlBuilder<Message>
 type Point = Readonly<{ bucket: string; count: number }>

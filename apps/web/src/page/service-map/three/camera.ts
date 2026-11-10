@@ -1,6 +1,6 @@
 import { Schema, Array as Arr, String as Str, Option, Order } from "effect"
-import { connectedIds, type SpatialView } from "../../../components/service-map/three/spatial-layout"
-import type { Topology3D } from "../../../components/service-map/three/types"
+import { connectedIds, type SpatialView } from "./spatial-layout"
+import type { Topology3D } from "./types"
 import * as THREE from "three"
 import type { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js"
 import type { Vec3 } from "./kit"

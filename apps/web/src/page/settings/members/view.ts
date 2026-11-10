@@ -1,6 +1,6 @@
 import * as Policy from "@maple/domain/policy"
 import { cn } from "@maple/ui/lib/utils"
-import { orgRoleLabel, roleChangePrompt, toOrgRole } from "../../../components/settings/org-membership"
+import { orgRoleLabel, roleChangePrompt, toOrgRole } from "../kit/org-membership"
 import { formatDateInTimezone } from "@maple/ui/lib/timezone-format"
 import { AsyncData, Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"

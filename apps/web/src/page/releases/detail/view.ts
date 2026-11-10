@@ -1,5 +1,5 @@
 import type { ErrorIssueDocument } from "@maple/domain/http"
-import { attributeIssues, previousSha, shortReleaseLabel } from "../../../components/releases/release-model"
+import { attributeIssues, previousSha, shortReleaseLabel } from "../release-model"
 import { errorIssueFromV2 } from "../../../lib/services/error-issues"
 import { Option, Array as Arr } from "effect"
 import { AsyncData, Submodel } from "foldkit"

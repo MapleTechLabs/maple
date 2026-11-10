@@ -1,4 +1,4 @@
-import { videoSegmentPayload } from "../../../components/replays/engine/video-engine"
+import { videoSegmentPayload } from "../engine/video-engine"
 import { Schema, Array as Arr, Order } from "effect"
 
 // A replay's derived meta, why it cannot play, and the marker maps. rrweb's enum values are

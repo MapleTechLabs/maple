@@ -6,7 +6,7 @@ import {
 	type V2AuditLogEntry,
 } from "@maple/domain/http/v2"
 import { EMPTY_VALUE } from "@maple/ui/lib/format"
-import type { AuditResourceLink } from "../../../components/settings/audit-log-resource"
+import type { AuditResourceLink } from "../kit/audit-log-resource"
 import { Option, Schema, Array as Arr, Record as Rec, String as Str } from "effect"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { AppRoute, hrefOf } from "../../../route"
@@ -99,11 +99,7 @@ const identifier = (h: H, model: Model, value: string, label: string): Html => {
 const changesTable = (h: H, changes: V2AuditChanges): Html =>
 	table(h, { size: "sm", className: "font-mono" }, [
 		tableHeader(h, [
-			tableRow(h, [
-				tableHead(h, ["Field"], "w-40"),
-				tableHead(h, ["Before"]),
-				tableHead(h, ["After"]),
-			]),
+			tableRow(h, [tableHead(h, ["Field"], "w-40"), tableHead(h, ["Before"]), tableHead(h, ["After"])]),
 		]),
 		tableBody(
 			h,

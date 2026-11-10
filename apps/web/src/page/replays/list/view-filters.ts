@@ -4,7 +4,7 @@ import {
 	SESSION_TAG_DOTS,
 	SESSION_TAG_LABELS,
 	SESSION_TAG_ORDER,
-} from "../../../components/replays/session-tags"
+} from "../kit/session-tags"
 import { Option, Array as Arr, Record as Rec, String as Str } from "effect"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"

@@ -1,11 +1,7 @@
 import { formatErrorRate, formatNumber, pluralize } from "@maple/ui/lib/format"
 import { TONE_TEXT } from "@maple/ui/lib/tone"
 import { cn } from "@maple/ui/lib/utils"
-import type {
-	ErrorPathPart,
-	ErrorTextToken,
-	FailureStatus,
-} from "../../../lib/agent-sessions/tool-error-display"
+import type { ErrorPathPart, ErrorTextToken, FailureStatus } from "../kit/tool-error-display"
 import { formatDateInTimezone, formatTimestampInTimezone } from "@maple/ui/lib/timezone-format"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { heading } from "@maple/views/ui/heading"

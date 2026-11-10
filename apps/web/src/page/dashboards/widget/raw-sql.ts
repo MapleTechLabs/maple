@@ -1,6 +1,6 @@
 import { rawSqlDisplayTypeFor, widgetTypeByVisualization } from "@maple/domain/http"
 import { rawSqlIssue } from "@maple/domain/raw-sql"
-import { RAW_SQL_TEMPLATES } from "../../../lib/raw-sql/templates"
+import { RAW_SQL_TEMPLATES } from "../kit/raw-sql-templates"
 import { dataSourceRawSql, dataSourceTransform, makeRawSqlDataSource } from "@maple/widgets/dashboard"
 import { Array as Arr, Schema, String as Str, Record as Rec } from "effect"
 import { toSeriesFieldOptions } from "./drafts"

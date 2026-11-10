@@ -10,7 +10,7 @@ import {
 	type ReleaseGroup,
 	type ReleaseIssueCounts,
 	type ReleaseServiceImpact,
-} from "../../../components/releases/release-model"
+} from "../release-model"
 import { errorIssueFromV2 } from "../../../lib/services/error-issues"
 import { AsyncData } from "foldkit"
 import type { ReleasesSearch } from "../../../route/search"

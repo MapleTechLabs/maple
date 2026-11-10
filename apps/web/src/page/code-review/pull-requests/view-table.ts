@@ -1,5 +1,5 @@
 import type { CodeReviewListItem, CodeReviewSortDir, CodeReviewSortKey } from "@maple/domain/http"
-import { outcomeOf, SKIP_LABELS } from "../../../components/code-review/code-review-format"
+import { outcomeOf, SKIP_LABELS } from "../kit/code-review-format"
 import { EMPTY_VALUE, formatNumber } from "@maple/ui/lib/format"
 import { TONE_SOFT } from "@maple/ui/lib/tone"
 import { cn } from "@maple/ui/lib/utils"

@@ -1,9 +1,5 @@
 import type { GithubRepoSummary } from "@maple/domain/http"
-import {
-	type RepositoryFilter,
-	SEARCH_THRESHOLD,
-	visibleRepositories,
-} from "../../../components/code-review/repository-filter"
+import { type RepositoryFilter, SEARCH_THRESHOLD, visibleRepositories } from "../kit/repository-filter"
 import { pluralize } from "@maple/ui/lib/format"
 import { cn } from "@maple/ui/lib/utils"
 import { Schema, Array as Arr, String as Str, Option } from "effect"

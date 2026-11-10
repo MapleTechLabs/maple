@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { parseWhereClause } from "../../lib/traces/advanced-filter-sync"
+import { parseWhereClause } from "../../traces/advanced-filter-sync"
 import { dependencyDrillWhereClause, type DependencyDrillKind } from "./dependency-drill"
 import { Array as Arr } from "effect"
 

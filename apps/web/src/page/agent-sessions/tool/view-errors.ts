@@ -9,7 +9,7 @@ import {
 	failureStatus,
 	fillTrend,
 	unwrapToolErrorText,
-} from "../../../lib/agent-sessions/tool-error-display"
+} from "../kit/tool-error-display"
 import { UNGROUPED_FINGERPRINT } from "@maple/web-data/lib/tool-analytics"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import type { LoadFailure } from "@maple/views/data/load-failure"
@@ -153,9 +153,11 @@ const errorRow = (
 					groupTitle(h, row),
 					...(sharedType === undefined && row.errorType !== ""
 						? [
-								badge(h, { variant: "meta", size: "xs", className: cn("px-1.5", TONE_TEXT.crit) }, [
-									row.errorType,
-								]),
+								badge(
+									h,
+									{ variant: "meta", size: "xs", className: cn("px-1.5", TONE_TEXT.crit) },
+									[row.errorType],
+								),
 							]
 						: []),
 					...(row.variants > 1

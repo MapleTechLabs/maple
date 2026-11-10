@@ -1,5 +1,5 @@
-import { createSketch, type Sketch } from "../../../components/service-map/three/maple-scenery-sketch"
-import { FACE_TONE } from "../../../components/service-map/three/palette"
+import { createSketch, type Sketch } from "./maple-scenery-sketch"
+import { FACE_TONE } from "./palette"
 import * as THREE from "three"
 import { Array as Arr } from "effect"
 

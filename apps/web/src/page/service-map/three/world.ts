@@ -1,21 +1,8 @@
 import { Schema, Array as Arr } from "effect"
-import {
-	type InkPalette,
-	type MachineKind,
-	sceneryPalette,
-} from "../../../components/service-map/three/appearance"
-import {
-	decorateRoutes,
-	type FactoryLink,
-	factoryRoutes,
-	type RoutingTopology,
-} from "../../../components/service-map/three/factory-routing"
-import {
-	connectedIds,
-	type SpatialLayout,
-	type SpatialView,
-} from "../../../components/service-map/three/spatial-layout"
-import type { Topology3D } from "../../../components/service-map/three/types"
+import { type InkPalette, type MachineKind, sceneryPalette } from "./appearance"
+import { decorateRoutes, type FactoryLink, factoryRoutes, type RoutingTopology } from "./factory-routing"
+import { connectedIds, type SpatialLayout, type SpatialView } from "./spatial-layout"
+import type { Topology3D } from "./types"
 import type * as THREE from "three"
 import type { WorldEntity } from "@maple/domain/http"
 import type { OccupancyWorld } from "../factory/occupancy"

@@ -1,7 +1,7 @@
 import type { ErrorIssueDocument } from "@maple/domain/http"
 import type { V2Investigation } from "@maple/domain/http/v2"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { agentPromptFromIssue } from "../../../components/errors/agent-debug-prompt"
+import { agentPromptFromIssue } from "../kit/agent-debug-prompt"
 import { docsUrl } from "../../../lib/docs"
 import { AppRoute, hrefOf } from "../../../route"
 import { button, linkButton } from "@maple/views/ui/button"

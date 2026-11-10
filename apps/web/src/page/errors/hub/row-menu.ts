@@ -1,5 +1,5 @@
 import { allowedTransitionsForAll, type ErrorIssueDocument, type WorkflowState } from "@maple/domain/http"
-import { agentPromptFromIssue } from "../../../components/errors/agent-debug-prompt"
+import { agentPromptFromIssue } from "../kit/agent-debug-prompt"
 import { Command, type Update } from "foldkit"
 import type { HtmlBuilder } from "foldkit/html"
 import * as ContextMenu from "@maple/views/ui/context-menu"

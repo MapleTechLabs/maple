@@ -1,5 +1,5 @@
 import { Schema, Array as Arr, String as Str, Option } from "effect"
-import { attributeFilterOperator, formatAttributeClause } from "../../../lib/traces/advanced-filter-sync"
+import { attributeFilterOperator, formatAttributeClause } from "../advanced-filter-sync"
 import type { TracesSearch } from "../../../route/search"
 import type { Facet } from "./message"
 
