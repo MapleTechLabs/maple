@@ -70,6 +70,14 @@ export const LAB_ENTRIES: ReadonlyArray<LabEntry> = [
 		session: "none",
 	},
 	{
+		path: "/lab/audit-log",
+		title: "Audit log",
+		description:
+			"The settings audit log over fixtures: changes, data access, filters, an expanded entry, an unknown lookup, empty, failing and loading (`?state=`).",
+		kind: "lab",
+		session: "none",
+	},
+	{
 		path: "/lab/slos",
 		title: "SLOs",
 		description:

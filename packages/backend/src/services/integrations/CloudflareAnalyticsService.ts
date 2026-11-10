@@ -52,7 +52,6 @@ import {
 	CloudflareZoneSettings,
 	OAuthConnections,
 	type CloudflareAnalyticsStateRow as StoredStateRow,
-	type CloudflareBackoffReason,
 	type CloudflareHyperdriveConfigRow,
 } from "@maple/db/tables"
 import {
@@ -213,18 +212,16 @@ const GRANT_CAP_CEILING = 150
 const GRANT_CAP_STEP = 5
 const LEASE_MS = 4 * 60_000
 /**
- * How long a connection sits out after Cloudflare rate-limits it partway through a poll, i.e.
- * after at least one call was answered. Held as the tick lease (see `releaseLease`), which stays
- * under the `2 * LEASE_MS` corrupt-lease escape hatch.
+ * How long a connection sits out after any rate-limited poll. Held as the tick lease (see
+ * `releaseLease`), which stays under the `2 * LEASE_MS` corrupt-lease escape hatch.
  */
 const RATE_LIMIT_BACKOFF_MS = 5 * 60_000
 /**
- * Escalating backoff steps, persisted on the anchor row (`backoffUntil`) so they can outlast the
- * lease escape hatch. Ingest refusing the org's metrics (402 billing, 401/403 key refused) clears
- * on the first accepted ingest; a rate limit on a poll's FIRST call clears on any answered call.
+ * Escalating backoff steps for ingest refusing the org's metrics (402 billing, 401/403 key
+ * refused), persisted on the anchor row (`backoffUntil`) so they outlast the lease escape hatch.
+ * Clears on the first accepted ingest. Rate limits never escalate: they take the lease hold.
  */
 const INGEST_REFUSED_BACKOFF_STEPS_MS = [7 * 60_000, 15 * 60_000, 30 * 60_000, 60 * 60_000] as const
-const FIRST_CALL_RATE_LIMIT_BACKOFF_STEPS_MS = [10 * 60_000, 20 * 60_000] as const
 const SETTINGS_TTL_MS = 24 * 60 * 60_000
 /** Zone discovery (REST pagination) runs hourly; poll ticks in between reuse the state rows. */
 const DISCOVERY_TTL_MS = 60 * 60_000
@@ -983,20 +980,15 @@ const CLEARED_BACKOFF: ConnectionBackoff = { backoffUntil: null, backoffStreak: 
 const isBackedOff = (backoff: ConnectionBackoff, now: number) =>
 	backoff.backoffUntil !== null && backoff.backoffUntil > now
 
-/** The next step for `reason`: a repeat climbs the ladder (capped at its top), a new reason starts over. */
-const escalateBackoff = (
-	previous: ConnectionBackoff,
-	reason: CloudflareBackoffReason,
-	end: number,
-): ConnectionBackoff => {
-	const steps =
-		reason === "ingest_refused" ? INGEST_REFUSED_BACKOFF_STEPS_MS : FIRST_CALL_RATE_LIMIT_BACKOFF_STEPS_MS
+/** The next ingest_refused step: a repeat climbs the ladder (capped at its top), another reason starts over. */
+const escalateIngestRefusedBackoff = (previous: ConnectionBackoff, end: number): ConnectionBackoff => {
+	const steps = INGEST_REFUSED_BACKOFF_STEPS_MS
 	const streak = Math.min(
-		(previous.backoffReason === reason ? previous.backoffStreak : 0) + 1,
+		(previous.backoffReason === "ingest_refused" ? previous.backoffStreak : 0) + 1,
 		steps.length,
 	)
 	const step = steps[streak - 1] ?? steps[0]
-	return { backoffUntil: end + step, backoffStreak: streak, backoffReason: reason }
+	return { backoffUntil: end + step, backoffStreak: streak, backoffReason: "ingest_refused" }
 }
 
 /** What one poll did to the connection's backoff. Null leaves the stored state untouched. */
@@ -1010,8 +1002,8 @@ const backoffAfterPoll = (
 	},
 	end: number,
 ): ConnectionBackoff | null => {
-	if (poll.deliveryBlocked) return escalateBackoff(previous, "ingest_refused", end)
-	if (poll.rateLimited && poll.answeredCalls === 0) return escalateBackoff(previous, "rate_limited", end)
+	if (poll.deliveryBlocked) return escalateIngestRefusedBackoff(previous, end)
+	// `rate_limited` rows are no longer written but may still be stored; an answered call clears them.
 	const recovered =
 		previous.backoffReason === "ingest_refused"
 			? poll.rowsIngested > 0
@@ -2856,15 +2848,14 @@ export class CloudflareAnalyticsService extends Context.Service<
 								"maple.cloudflare.backoff_streak": backoff.backoffStreak,
 							})
 						}
-						// A rate limit after answered calls keeps the short lease hold: the budget was
-						// there this tick, so the next-but-one tick retries.
-						const laterCallRateLimit = rateLimited && answeredCalls > 0 && !deliveryBlocked
+						// Any rate limit takes the short lease hold, so the next-but-one tick retries.
+						const rateLimitHold = rateLimited && !deliveryBlocked
 						yield* releaseLease(
 							orgId,
 							accountId,
 							end,
 							anchor.leaseUntil,
-							laterCallRateLimit ? end + RATE_LIMIT_BACKOFF_MS : undefined,
+							rateLimitHold ? end + RATE_LIMIT_BACKOFF_MS : undefined,
 							backoff ?? undefined,
 						)
 					}).pipe(
