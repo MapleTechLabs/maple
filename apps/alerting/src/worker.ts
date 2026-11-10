@@ -5,6 +5,7 @@
  */
 import {
 	AiWorker,
+	createMapleAwsOidcKey,
 	MapleDb,
 	mapleDbEnv,
 	type MapleDomains,
@@ -95,7 +96,7 @@ const configuredEnv = (stage: MapleStage, region: MapleRegion, domains: MapleDom
 const props = Effect.gen(function* () {
 	if (globalThis.__ALCHEMY_RUNTIME__) return { main: import.meta.url }
 	const stack = yield* MapleStack
-	const { stage, region, domains, devEnv, db, awsOidc } = stack
+	const { stage, region, domains, devEnv, db } = stack
 	// For `IncidentClassifier`. Yielded, not `Worker.ref`: a ref cannot see a sibling this deploy creates.
 	const ai = yield* AiWorker
 	const env = yield* configuredEnv(stage, region, domains)
@@ -114,7 +115,8 @@ const props = Effect.gen(function* () {
 			// Cron fires hop through it so their ticks run where placement applies.
 			[SELF_BINDING]: Cloudflare.Workers.Self,
 			...env,
-			...awsOidc,
+			// The same key as api's: alchemy registers a resource by id.
+			...(yield* createMapleAwsOidcKey),
 			...devEnv,
 		},
 	}

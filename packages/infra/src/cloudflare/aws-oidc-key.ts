@@ -9,7 +9,7 @@ import type * as Output from "alchemy/Output"
 import * as Effect from "effect/Effect"
 import type * as Redacted from "effect/Redacted"
 
-/** The env api and alerting read the key from (`packages/backend/src/platform/Env.ts`). */
+/** The env api and alerting read the key from (`packages/backend/src/platform/Env.ts`). Yield it from both. */
 export interface MapleAwsOidcEnv {
 	readonly MAPLE_AWS_OIDC_SIGNING_KEY: Output.Output<Redacted.Redacted>
 }

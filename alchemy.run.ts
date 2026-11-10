@@ -15,12 +15,11 @@ import { SourceError } from "effect/ConfigProvider"
 import * as Effect from "effect/Effect"
 import * as Layer from "effect/Layer"
 import * as Redacted from "effect/Redacted"
-import { AwsRegionMismatchError, createMapleAwsOidcKey, resolveAwsRegion } from "@maple/infra/aws"
+import { AwsRegionMismatchError, resolveAwsRegion } from "@maple/infra/aws"
 import {
 	ApiWorker,
 	AiWorker,
 	SandboxWorker,
-	createMapleDeviceTokenKey,
 	formatMapleDeployment,
 	formatMapleStage,
 	ManagedMapleDb,
@@ -250,8 +249,6 @@ const MapleStackLive = Layer.effect(
 			workerDev,
 			devEnv,
 			db: yield* declareMapleDb(deployment, profile),
-			awsOidc: yield* createMapleAwsOidcKey,
-			deviceToken: yield* createMapleDeviceTokenKey,
 		}
 		return context
 	}),

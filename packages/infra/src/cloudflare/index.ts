@@ -1,4 +1,5 @@
 export * from "./audit-events.ts"
+export * from "./aws-oidc-key.ts"
 export * from "./device-token-key.ts"
 export * from "./email.ts"
 export * from "./status-pages.ts"
