@@ -43,6 +43,7 @@ import {
 import { FetchHttpClient } from "effect/http"
 import type { WorkersAiBinding } from "../platform/WorkersAiHttpClient"
 import type { AiSessionPortsLayer } from "../worker/bindings"
+import { provideSessionPorts } from "./session-ports"
 import { ReturnedToolFailuresOkLive } from "../platform/genai-spans"
 import type { ChatSession } from "./ChatSession"
 import { withToolTranscript } from "./close-out"
@@ -71,12 +72,7 @@ import {
 
 import { interruptOnAbort, makeTurnObservability, turnSpanAttributes } from "./turn-outcome"
 import { makeAutonomousOutcome, type PhaseKind } from "./autonomous-outcome"
-import {
-	makeUnfinishedSettler,
-	runAutonomousTurn,
-	settleAbandonedTurn,
-	settleRow,
-} from "./autonomous-settle"
+import { makeUnfinishedSettler, runAutonomousTurn, settleAbandonedTurn, settleRow } from "./autonomous-settle"
 import { type AgentDefinition, agentForSession } from "./agents"
 import { profileForTurn } from "./profiles"
 import { runChatTurn } from "./run"
@@ -328,7 +324,7 @@ export const runChatSessionTurn = async (input: RunChatSessionTurnInput): Promis
 			Layer.provideMerge(layerMapleDbConnection(input.env)),
 			Layer.provideMerge(envPorts(input.env)),
 			Layer.provideMerge(chatSessionsLayerIfBound(input.chatSessions, input.env)),
-			Layer.provideMerge(input.bindingPorts ?? Layer.empty),
+			provideSessionPorts(input.bindingPorts),
 			Layer.provideMerge(ReturnedToolFailuresOkLive.pipe(Layer.provideMerge(telemetry.layer))),
 		),
 	)
