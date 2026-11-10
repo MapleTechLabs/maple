@@ -12,7 +12,7 @@ import { Cause, Clock, Duration, Effect } from "effect"
 import type { AgentCompletion, AgentDefinition } from "./agents"
 import type { AutonomousOutcome, PhaseKind } from "./autonomous-outcome"
 import { withToolTranscript } from "./close-out"
-import { reviewFailureReason } from "./review-failure"
+import { reviewFailureReason } from "./review/failure"
 import type { ChatRunOutcome } from "./run"
 
 /** A phase with less than this much of the pass's clock left is not started. */

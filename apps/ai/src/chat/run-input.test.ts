@@ -17,7 +17,7 @@ import type { McpToolExecutorApi } from "../mcp/dispatcher"
 import { noRepositoryWarmup } from "../../test/chat/tool-executor"
 import { layerLlm, type ResolvedModel } from "../platform/Llm"
 import { runChatTurn } from "./run"
-import { makeRunUsage } from "./tools"
+import { makeRunUsage } from "./usage"
 import type { TenantContext } from "@maple/domain/http"
 
 const TENANT: TenantContext = {

@@ -22,7 +22,7 @@ import type { TenantContext } from "@maple/domain/http"
 import { AGENTS, agentForSession, isAutonomousTurn, sessionOf } from "./agents"
 import { profileForTurn } from "./profiles"
 import { CONNECTOR_SYSTEM_PROMPT } from "./prompts"
-import { buildChatToolkit } from "./tools"
+import { buildChatToolkit } from "./maple-toolkit"
 
 /** A connector id, not a real one: the engine never learns which chat platform it answers in. */
 const CONNECTOR = Schema.decodeSync(ChatConnectorId)("testchat")

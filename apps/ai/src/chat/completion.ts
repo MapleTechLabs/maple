@@ -4,8 +4,8 @@
  */
 import type { Layer } from "effect"
 import type { Toolkit } from "effect/ai"
-import type { ReviewTurnState } from "./tools"
-import type { RunUsage } from "./tools"
+import type { ReviewTurnState } from "./review/completion"
+import type { RunUsage } from "./usage"
 
 export const SUBMIT_DIAGNOSIS = "submit_diagnosis"
 export const SUBMIT_REVIEW = "submit_review"

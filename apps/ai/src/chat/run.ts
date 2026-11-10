@@ -43,9 +43,10 @@ import {
 	type ChatTurnEvent,
 	type ProgramCall,
 } from "./events"
-import { buildReviewFanout } from "./review-fanout"
+import { buildReviewFanout } from "./review/fanout"
 import { buildCodeMode, CODE_MODE_GUIDANCE, CODE_MODE_TOOLS } from "./code-mode"
-import { accumulateUsage, buildChatToolkit, type RunUsage, type SessionPullRequest } from "./tools"
+import { buildChatToolkit, type SessionPullRequest } from "./maple-toolkit"
+import { accumulateUsage, type RunUsage } from "./usage"
 import type { MakeCompletion } from "./completion"
 import type { TenantContext } from "@maple/domain/http"
 

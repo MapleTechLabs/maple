@@ -42,20 +42,19 @@ import type { WorkersAiBinding } from "../platform/WorkersAiHttpClient"
 import { ReturnedToolFailuresOkLive } from "../platform/genai-spans"
 import type { ChatSession } from "./ChatSession"
 import { INVESTIGATION_PROGRESS_HEARTBEAT, makeProgressFeed, parseToolInput, stepLabel } from "./progress"
-import { makeChildFindings } from "./review-child-findings"
-import { makeReviewCoverage } from "./review-coverage"
-import { reviewFailureError } from "./review-failure"
-import { makeReviewLedger } from "./review-ledger"
+import { makeChildFindings } from "./review/child-findings"
+import { makeReviewCoverage } from "./review/coverage"
+import { reviewFailureError } from "./review/failure"
+import { makeReviewLedger } from "./review/ledger"
+import { diagnosisCompletion } from "./investigation"
+import { replyCompletion } from "./reply"
 import {
-	diagnosisCompletion,
 	fileSavedFindings,
-	makeRunUsage,
-	replyCompletion,
 	reviewCompletion,
 	type ReviewTurnState,
-	type RunUsage,
 	withPartialReason,
-} from "./tools"
+} from "./review/completion"
+import { makeRunUsage, type RunUsage } from "./usage"
 import type { MakeCompletion } from "./completion"
 
 import { interruptOnAbort, makeTurnObservability, turnSpanAttributes } from "./turn-outcome"

@@ -1,6 +1,6 @@
 import { PrReviewFinding } from "@maple/domain/http"
 import { assert, describe, it } from "vitest"
-import { closeOutFindings, parseChildFindings, unaccountedChildFindings } from "./review-child-findings"
+import { closeOutFindings, parseChildFindings, unaccountedChildFindings } from "./child-findings"
 import { Array as Arr } from "effect"
 
 const anchors = (answer: string) =>

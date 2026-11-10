@@ -6,7 +6,7 @@
  * the same handlers. `submit_review` consults it once before recording.
  */
 import { followUpScope, ignoredPathsInKickoff, pathIgnored } from "@maple/backend/services/pr-review/findings"
-import { pathsInDiffAnswer, reviewablePathsInListing } from "../mcp/tools/pull-request"
+import { pathsInDiffAnswer, reviewablePathsInListing } from "../../mcp/tools/pull-request"
 import { Array as Arr } from "effect"
 
 export interface ReviewCoverage {
