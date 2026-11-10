@@ -1,4 +1,7 @@
 import { decodeLogAttributeFilter, logAttributeQueryFilters } from "@maple/views/lib/log-attribute-filters"
+import type { AttributeFilter } from "@maple/domain"
+import { attributeChipText, toQueryAttributeFilter } from "../../../lib/query-builder/where-clause-filters"
+import { clauseParams } from "../../../lib/logs/advanced-filter-sync"
 import { SEVERITY_ORDER } from "@maple/ui/lib/severity"
 import type { CustomChartTimeSeriesInput } from "@maple/web-data/warehouse/custom-charts"
 import type { ListLogsInput } from "@maple/web-data/warehouse/logs"
@@ -43,6 +46,23 @@ export const brushRange = (
 const mutable = <A>(values: ReadonlyArray<A> | undefined): Array<A> | undefined =>
 	values === undefined ? undefined : [...values]
 
+type AttributeParam = "attributeFilters" | "resourceAttributeFilters"
+
+const joined = (...lists: ReadonlyArray<ReadonlyArray<AttributeFilter> | undefined>) => {
+	const all = Arr.flatten(Arr.map(lists, (list) => list ?? []))
+	return all.length > 0 ? all : undefined
+}
+
+/** The sheet's `attrs` chips and the advanced filter's attribute predicates, as the request takes them. */
+export const attributeQueryFilters = (search: Search) => {
+	const chips = logAttributeQueryFilters(search.attrs)
+	const clause = (param: AttributeParam) => Arr.map(search[param] ?? [], toQueryAttributeFilter)
+	return {
+		attributeFilters: joined(chips.attributeFilters, clause("attributeFilters")),
+		resourceAttributeFilters: joined(chips.resourceAttributeFilters, clause("resourceAttributeFilters")),
+	}
+}
+
 /**
  * `buildQueryParams`: the org-global pin overrides the URL's namespace filters (they stay in the
  * URL; unpinning restores them). The first page and every later page send exactly this.
@@ -68,7 +88,7 @@ export const listInput = (
 		excludedNamespaces: isPinned ? undefined : mutable(search.excludedNamespaces),
 		search: search.search,
 		traceId: search.traceId,
-		...logAttributeQueryFilters(search.attrs),
+		...attributeQueryFilters(search),
 	}
 }
 
@@ -120,7 +140,7 @@ const FACETS = [
 	{ label: "Namespace", include: "namespaces", exclude: "excludedNamespaces" },
 ] as const
 
-export type ChipParam = (typeof FACETS)[number]["include" | "exclude"] | "traceId" | "attrs"
+export type ChipParam = (typeof FACETS)[number]["include" | "exclude"] | "traceId" | "attrs" | AttributeParam
 
 export interface LogFilterChip {
 	readonly param: ChipParam
@@ -129,6 +149,24 @@ export interface LogFilterChip {
 	readonly negated: boolean
 	/** Set on attribute chips: the one `attrs` entry the chip removes, not the whole param. */
 	readonly attr?: string
+	/** Set on advanced-filter attribute chips: the index of the entry the chip removes. */
+	readonly index?: number
+	/** The connector in place of is / is not (advanced-filter attribute chips). */
+	readonly operator?: string
+}
+
+/** The substring mode an include list carries (`env contains "prod"`); it goes when the list changes. */
+const matchModeOf = (param: string) =>
+	param === "deploymentEnvs"
+		? ("deploymentEnvMatchMode" as const)
+		: param === "namespaces"
+			? ("namespaceMatchMode" as const)
+			: undefined
+
+/** The search with `param`'s substring mode cleared, if it has one. */
+export const withoutMatchMode = (search: Search, param: string): Search => {
+	const mode = matchModeOf(param)
+	return mode === undefined ? search : { ...search, [mode]: undefined }
 }
 
 /** The applied facet filters, exclusions first; the trace scope leads them all. */
@@ -141,8 +179,10 @@ export const logFilterChips = (search: Search): ReadonlyArray<LogFilterChip> => 
 		Arr.flatMap(FACETS, (facet) => {
 			const param = isNegated ? facet.exclude : facet.include
 			const values = search[param]
+			const mode = matchModeOf(param)
+			const operator = mode !== undefined && search[mode] === "contains" ? "contains" : undefined
 			return values !== undefined && values.length > 0
-				? [{ param, label: facet.label, values, negated: isNegated }]
+				? [{ param, label: facet.label, values, negated: isNegated, operator }]
 				: []
 		})
 	const attrChips = (isNegated: boolean): ReadonlyArray<LogFilterChip> =>
@@ -156,28 +196,68 @@ export const logFilterChips = (search: Search): ReadonlyArray<LogFilterChip> => 
 				attr: entry,
 			}),
 		)
+	const clauseChips = (isNegated: boolean): ReadonlyArray<LogFilterChip> =>
+		Arr.flatMap(["attributeFilters", "resourceAttributeFilters"] as const, (param) =>
+			Arr.flatMap(search[param] ?? [], (entry, index) => {
+				if ((entry.negated === true) !== isNegated) return []
+				const text = attributeChipText(param === "resourceAttributeFilters" ? "resource." : "", entry)
+				const values = text.value === "" ? [] : [text.value]
+				return [
+					{ param, label: text.label, values, operator: text.operator, negated: isNegated, index },
+				]
+			}),
+		)
 	return [
 		...(search.traceId
 			? [{ param: "traceId" as const, label: "Trace", values: [search.traceId], negated: false }]
 			: []),
 		...facetChips(true),
 		...attrChips(true),
+		...clauseChips(true),
 		...facetChips(false),
 		...attrChips(false),
+		...clauseChips(false),
 	]
 }
 
 /** The search with these chips' filters removed: a facet chip clears its param, an attribute chip its entry. */
 export const withoutChips = (search: Search, chips: ReadonlyArray<LogFilterChip>): Search => {
 	const cleared = Rec.fromEntries(
-		Arr.map(
-			Arr.filter(chips, (chip) => chip.attr === undefined),
-			(chip) => [chip.param, undefined],
+		Arr.flatMap(
+			Arr.filter(chips, (chip) => chip.attr === undefined && chip.index === undefined),
+			(chip: LogFilterChip): ReadonlyArray<readonly [string, undefined]> => {
+				const mode = matchModeOf(chip.param)
+				return mode === undefined
+					? [[chip.param, undefined]]
+					: [
+							[chip.param, undefined],
+							[mode, undefined],
+						]
+			},
 		),
 	)
 	const dropped = new Set(Arr.flatMap(chips, (chip) => (chip.attr === undefined ? [] : [chip.attr])))
 	const attrs = Arr.filter(search.attrs ?? [], (entry) => !dropped.has(entry))
-	return { ...search, ...cleared, attrs: attrs.length > 0 ? attrs : undefined }
+	const kept = (param: AttributeParam) => {
+		const indexes = new Set(
+			Arr.flatMap(chips, (chip) =>
+				chip.param === param && chip.index !== undefined ? [chip.index] : [],
+			),
+		)
+		const rest = Arr.filter(search[param] ?? [], (_, index) => !indexes.has(index))
+		return rest.length > 0 ? rest : undefined
+	}
+	// A chip the advanced filter set takes the clause with it: the panel no longer describes the list.
+	const owned = clauseParams(search.whereClause)
+	const isClauseEdited = Arr.some(chips, (chip) => owned.includes(chip.param))
+	return {
+		...search,
+		...cleared,
+		attrs: attrs.length > 0 ? attrs : undefined,
+		attributeFilters: kept("attributeFilters"),
+		resourceAttributeFilters: kept("resourceAttributeFilters"),
+		whereClause: isClauseEdited ? undefined : search.whereClause,
+	}
 }
 
 // VOLUME
@@ -201,13 +281,15 @@ export const volumeInput = (
 		serviceNames: mutable(search.services),
 		severities: mutable(search.severities),
 		environments: mutable(search.deploymentEnvs),
+		deploymentEnvMatchMode: search.deploymentEnvMatchMode,
 		namespaces: pinnedNamespace !== null ? [pinnedNamespace] : mutable(search.namespaces),
+		namespaceMatchMode: pinnedNamespace === null ? search.namespaceMatchMode : undefined,
 		excludedServiceNames: mutable(search.excludedServices),
 		excludedSeverities: mutable(search.excludedSeverities),
 		excludedEnvironments: mutable(search.excludedDeploymentEnvs),
 		excludedNamespaces: pinnedNamespace === null ? mutable(search.excludedNamespaces) : undefined,
 		traceId: search.traceId,
-		...logAttributeQueryFilters(search.attrs),
+		...attributeQueryFilters(search),
 	},
 })
 
@@ -235,6 +317,10 @@ export const volumeSeriesKeys = (buckets: ReadonlyArray<VolumeBucket>): Readonly
 export const volumeTotal = (buckets: ReadonlyArray<VolumeBucket>): number =>
 	Arr.reduce(buckets, 0, (sum, bucket) => sum + Arr.reduce(Rec.values(bucket.counts), 0, (s, v) => s + v))
 
-/** The chip's id in `ActiveFilterChips`: its param, or `attrs:<entry>`. */
+/** The chip's id in `ActiveFilterChips`: its param, `attrs:<entry>` or `<param>:<index>`. */
 export const chipId = (chip: LogFilterChip): string =>
-	chip.attr === undefined ? chip.param : `attrs:${chip.attr}`
+	chip.attr !== undefined
+		? `attrs:${chip.attr}`
+		: chip.index !== undefined
+			? `${chip.param}:${chip.index}`
+			: chip.param

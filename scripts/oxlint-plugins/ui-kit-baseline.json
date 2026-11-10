@@ -231,7 +231,6 @@
 		"apps/web/src/page/traces/detail/view.ts": 1,
 		"apps/web/src/page/traces/detail/waterfall/row.ts": 5,
 		"apps/web/src/page/traces/detail/waterfall/view.ts": 2,
-		"apps/web/src/page/traces/list/view-advanced.ts": 1,
 		"apps/web/src/page/traces/list/view-row.ts": 1,
 		"apps/web/src/page/users/view-detail.ts": 3,
 		"apps/web/src/page/users/view-states.ts": 1,

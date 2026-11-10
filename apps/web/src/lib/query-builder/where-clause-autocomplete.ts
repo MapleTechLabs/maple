@@ -19,6 +19,7 @@ type WhereClauseAutocompleteContext = "key" | "operator" | "value" | "conjunctio
 export type WhereClauseAutocompleteScope =
 	| "default"
 	| "trace_search"
+	| "log_search"
 	| "product_events"
 	| "product_event_attributes"
 
@@ -31,6 +32,7 @@ export interface WhereClauseAutocompleteValues {
 	services?: string[]
 	spanNames?: string[]
 	environments?: string[]
+	namespaces?: string[]
 	commitShas?: string[]
 	severities?: string[]
 	httpMethods?: string[]
@@ -236,6 +238,25 @@ const PRODUCT_EVENTS_KEY_DEFINITIONS: KeyDefinition[] = Arr.map(FUNNEL_POPULATIO
 	insertText: productEventsFilterKey(field),
 	description: PRODUCT_EVENTS_KEY_DESCRIPTIONS[field],
 }))
+
+/** The `/logs` advanced filter: the keys its list request filters on. */
+const LOG_SEARCH_KEY_DEFINITIONS: KeyDefinition[] = [
+	{ label: "service.name", insertText: "service.name", description: "Filter by service" },
+	{ label: "severity", insertText: "severity", description: "Filter by severity" },
+	{
+		label: "deployment.environment",
+		insertText: "deployment.environment",
+		description: "Filter by deployment environment",
+	},
+	{
+		label: "service.namespace",
+		insertText: "service.namespace",
+		description: "Filter by service namespace",
+	},
+	{ label: "body", insertText: "body", description: "Log message contains text" },
+	{ label: "attr.<key>", insertText: "attr.", description: "Filter by a log attribute" },
+	{ label: "resource.<key>", insertText: "resource.", description: "Filter by a resource attribute" },
+]
 
 const TRACE_SEARCH_KEY_DEFINITIONS: KeyDefinition[] = [
 	{
@@ -864,6 +885,7 @@ function buildValueSuggestions(
 		"service.name": uniqueValues(values?.services ?? []),
 		"span.name": uniqueValues(values?.spanNames ?? []),
 		"deployment.environment": uniqueValues(values?.environments ?? []),
+		"service.namespace": uniqueValues(values?.namespaces ?? []),
 		"vcs.ref.head.revision": uniqueValues(values?.commitShas ?? []),
 		severity: uniqueValues(values?.severities ?? []),
 		...(scope === "trace_search"
@@ -976,7 +998,9 @@ function buildSuggestions(
 					? []
 					: scope === "trace_search" && dataSource === "traces"
 						? TRACE_SEARCH_KEY_DEFINITIONS
-						: KEY_DEFINITIONS[dataSource]
+						: scope === "log_search" && dataSource === "logs"
+							? LOG_SEARCH_KEY_DEFINITIONS
+							: KEY_DEFINITIONS[dataSource]
 
 		const keySuggestions = Arr.map(keyDefinitions, (keyDef) =>
 			toSuggestion(
