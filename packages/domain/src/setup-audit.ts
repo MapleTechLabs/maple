@@ -22,29 +22,37 @@ export class SetupAuditUnavailableError extends HttpTaggedError<SetupAuditUnavai
 	},
 ) {}
 
-export type AuditSeverity = "critical" | "warn" | "info"
-export type AuditStatus = "pass" | "fail" | "skip"
+export const AUDIT_SEVERITIES = ["critical", "warn", "info"] as const
+export type AuditSeverity = (typeof AUDIT_SEVERITIES)[number]
 
-export type AuditCategory =
-	| "alerting"
-	| "notifications"
-	| "ingestion"
-	| "attributes"
-	| "traces"
-	| "integrations"
-	| "data_platform"
+export const AUDIT_STATUSES = ["pass", "fail", "skip"] as const
+export type AuditStatus = (typeof AUDIT_STATUSES)[number]
+
+export const AUDIT_CATEGORIES = [
+	"alerting",
+	"notifications",
+	"ingestion",
+	"attributes",
+	"traces",
+	"integrations",
+	"data_platform",
+] as const
+export type AuditCategory = (typeof AUDIT_CATEGORIES)[number]
+
+export const AUDIT_AFFECTED_KINDS = [
+	"service",
+	"alert_rule",
+	"alert_destination",
+	"attribute_mapping",
+	"scrape_target",
+	"repository",
+	"integration",
+	"attribute_key",
+] as const
 
 /** A concrete thing a finding points at, so the UI can chip it and deep-link to its editor. */
 export interface AuditAffectedEntity {
-	readonly kind:
-		| "service"
-		| "alert_rule"
-		| "alert_destination"
-		| "attribute_mapping"
-		| "scrape_target"
-		| "repository"
-		| "integration"
-		| "attribute_key"
+	readonly kind: (typeof AUDIT_AFFECTED_KINDS)[number]
 	/** Internal id when the entity has one; encoded to a public id at the wire boundary. */
 	readonly id?: string
 	readonly name: string
