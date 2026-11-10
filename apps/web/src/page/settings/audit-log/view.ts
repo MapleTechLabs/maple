@@ -3,6 +3,7 @@ import {
 	AuditResourceLabels,
 	AuditResources,
 	auditResourceLabel,
+	isAuditAccessAction,
 } from "@maple/domain/audit-actions"
 import type { AuditActorType, AuditLogSource } from "@maple/domain/http"
 import { encodePublicId, PublicIdPrefixes, type V2ApiKey, type V2AuditLogEntry } from "@maple/domain/http/v2"
@@ -50,7 +51,8 @@ import { ANY, ANYONE, entryRowId } from "./update"
 import { auditDetail, memberName, resourceHref } from "./view-detail"
 import { typography, typographyClass } from "@maple/views/ui/typography"
 import { hstack, hstackClass, vstack, vstackClass } from "@maple/views/ui/stack"
-import { Array as Arr, String as Str, Option, Order, Record as Rec } from "effect"
+import { Array as Arr, DateTime, String as Str, Option, Order, Record as Rec } from "effect"
+import { dayKey, dayLabel } from "../../kit/day-label"
 import { textLink } from "@maple/views/ui/text-link"
 
 type H = HtmlBuilder<Message>
@@ -102,7 +104,7 @@ const COL = {
 	actor: "min-w-0 flex-1 @md:w-38 @md:flex-none",
 	action: "min-w-0 basis-full pl-5 @md:basis-0 @md:flex-1 @md:pl-0",
 	resource: "hidden w-56 min-w-0 shrink-0 @3xl:block",
-	source: "hidden w-20 shrink-0 @2xl:block",
+	source: "hidden w-20 shrink-0 @xl:block",
 	outcome: "hidden w-15 shrink-0 @md:block",
 }
 
@@ -337,7 +339,11 @@ const actorCell = (h: H, model: Model, entry: V2AuditLogEntry): Html => {
 		[h.Class(cn(COL.actor, hstackClass({ gap: "1.5" })))],
 		[
 			entry.actor_type === "user"
-				? avatarFallback(h, { className: "size-4 shrink-0 text-4xs" }, initialsOf(name ?? ""))
+				? avatarFallback(
+						h,
+						{ className: "size-4 shrink-0" },
+						typography(h, { size: "4xs" }, [initialsOf(name ?? "")]),
+					)
 				: badge(h, { variant: actor.variant, size: "sm", className: "shrink-0" }, [actor.label]),
 			...(name === null
 				? []
@@ -358,11 +364,18 @@ const actorCell = (h: H, model: Model, entry: V2AuditLogEntry): Html => {
 	)
 }
 
-const actionLabel = (h: H, action: string): ReadonlyArray<Html> => {
+/** A read, tool call, SQL run or API request that went through: background next to a change. */
+const isQuietAccess = (entry: V2AuditLogEntry): boolean =>
+	entry.outcome === "allowed" && isAuditAccessAction(entry.action)
+
+const actionLabel = (h: H, action: string, isQuiet: boolean): ReadonlyArray<Html> => {
 	const label = auditActionLabel(action)
 	if (label === null) return [truncatedText(h, { mono: true, text: action, className: "text-xs" })]
 	return [
-		truncatedText(h, { text: label, className: typographyClass({ size: "xs", tone: "foreground" }) }),
+		truncatedText(h, {
+			text: label,
+			className: typographyClass({ size: "xs", tone: isQuiet ? "muted" : "foreground" }),
+		}),
 		truncatedText(h, {
 			mono: true,
 			text: action,
@@ -383,10 +396,10 @@ const resourceCell = (h: H, model: Model, entry: V2AuditLogEntry): Html => {
 			href: resourceHref(display.link),
 			tone: "inherit",
 			className:
-				"relative z-10 block truncate text-xs text-foreground underline decoration-muted-foreground/40 hover:decoration-foreground active:decoration-foreground",
+				"relative z-10 block truncate underline decoration-muted-foreground/40 hover:decoration-foreground active:decoration-foreground",
 			attributes: [h.Title(display.text)],
 		},
-		[display.text],
+		[typography(h, { size: "xs", tone: "foreground" }, [display.text])],
 	)
 }
 
@@ -403,6 +416,8 @@ const withMemberName = (
 }
 
 const auditRow = (h: H, model: Model, entry: V2AuditLogEntry, inputs: ViewInputs): Html => {
+	// Muting reads only helps where they sit beside changes; in Data access every row is one.
+	const isMixedView = auditLogKindOf(parseAuditLogSearch(inputs.search)) === "all"
 	const isExpanded = model.expanded.includes(entry.id)
 	const detailId = `audit-entry-${entry.id}`
 	const isDenied = entry.outcome === "denied"
@@ -415,8 +430,11 @@ const auditRow = (h: H, model: Model, entry: V2AuditLogEntry, inputs: ViewInputs
 				{
 					align: "center",
 					wrap: true,
-					className:
-						"hover:bg-surface-sunken active:bg-surface-sunken relative w-full gap-x-3 gap-y-1 px-4 py-2.5 @md:flex-nowrap",
+					className: cn(
+						"hover:bg-surface-sunken active:bg-surface-sunken relative w-full gap-x-3 gap-y-1 border-l-2 py-2.5 pr-4 pl-3.5 @md:flex-nowrap",
+						// A refused attempt is the entry worth spotting while scrolling.
+						isDenied ? "border-l-severity-error" : "border-l-transparent",
+					),
 				},
 				[
 					pressable(
@@ -452,7 +470,11 @@ const auditRow = (h: H, model: Model, entry: V2AuditLogEntry, inputs: ViewInputs
 						[h.Class(cn(COL.action, vstackClass({ shrink: true })))],
 						[
 							hstack(h, { gap: "1.5", shrink: true }, [
-								vstack(h, { shrink: true }, actionLabel(h, entry.action)),
+								vstack(
+									h,
+									{ shrink: true },
+									actionLabel(h, entry.action, isMixedView && isQuietAccess(entry)),
+								),
 								...(isDenied ? [h.span([h.Class("@md:hidden")], [deniedBadge(h)])] : []),
 							]),
 							...(isDenied && entry.denial_reason !== null
@@ -530,8 +552,40 @@ const listBody = (h: H, model: Model, inputs: ViewInputs, isFiltered: boolean): 
 		)
 	return h.div(
 		[h.Class("divide-border divide-y")],
-		[headerRow(h), ...Arr.map(view.entries, (entry) => auditRow(h, model, entry, inputs))],
+		[headerRow(h), ...withDayHeadings(h, model, view.entries, inputs)],
 	)
+}
+
+/** The rows with a heading wherever the day changes ("Today", "Yesterday", "Mon 2 Nov"). */
+const withDayHeadings = (
+	h: H,
+	model: Model,
+	entries: ReadonlyArray<V2AuditLogEntry>,
+	inputs: ViewInputs,
+): ReadonlyArray<Html> => {
+	const clock = { nowMs: inputs.nowMs, timeZone: inputs.timeZone }
+	const atMs = (entry: V2AuditLogEntry) => DateTime.toEpochMillis(DateTime.makeUnsafe(entry.occurred_at))
+	return Arr.flatMap(entries, (entry, index) => {
+		const day = dayKey(atMs(entry), inputs.timeZone)
+		const previous = index === 0 ? undefined : entries[index - 1]
+		const isNewDay = previous === undefined || dayKey(atMs(previous), inputs.timeZone) !== day
+		return [
+			...(isNewDay
+				? [
+						h.div(
+							[
+								h.Key(`day-${day}`),
+								h.Class("bg-surface-faint px-4 py-1.5"),
+								h.Role("heading"),
+								h.AriaLevel(3),
+							],
+							[eyebrow(h, { variant: "mono" }, [dayLabel(atMs(entry), clock)])],
+						),
+					]
+				: []),
+			auditRow(h, model, entry, inputs),
+		]
+	})
 }
 
 /** Filters that have no control of their own, shown as removable chips (a looked-up id, an action). */

@@ -334,6 +334,15 @@ describe("audit log tab", () => {
 			expect(Arr.map(loaded.commands ?? [], ({ name }) => name)).toEqual(["ScrollToAuditEntry"])
 		})
 
+		test("rows sit under a heading for each day, counted in the viewer's zone", () => {
+			scene(
+				sceneOf(search),
+				given(loadedWith(search).model),
+				expectView(role("heading", { name: "Today" })).toExist(),
+				expectView(role("heading", { name: "Yesterday" })).toExist(),
+			)
+		})
+
 		test("a shared entry link still opens its entry when it arrives on a later page", () => {
 			const target = AUDIT_ENTRIES[5]
 			if (target === undefined) throw new Error("fixture")
