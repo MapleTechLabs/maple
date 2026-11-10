@@ -624,6 +624,47 @@ describe("ChatSession eviction recovery", () => {
 		assert.strictEqual(again.runs[0]?.resume?.attempt, 1)
 	})
 
+	/** Nothing else moves a reply's row off `running` or tells the pull request it went unanswered. */
+	it("gives an evicted pull request reply up without running it again, and says so", () => {
+		const { session, state } = recording()
+		session.beginTurn({
+			sessionId: "org_test:prr-reply_1",
+			messageId: "kickoff",
+			text: "Answer the comment",
+			tenant: TENANT,
+			origin: { kind: "autonomous" },
+		})
+		const orphaned = claimedTurn(state)!
+
+		const revived = recording(state)
+		revived.session.alarm()
+
+		assert.isFalse(revived.session.running())
+		assert.lengthOf(revived.runs, 1)
+		assert.strictEqual(revived.runs[0]?.abandoned, true)
+		assert.isUndefined(revived.runs[0]?.resume)
+		assert.strictEqual(revived.runs[0]?.messageId, orphaned)
+		assert.strictEqual(revived.runs[0]?.sessionId, "org_test:prr-reply_1")
+	})
+
+	/** A person writing into a reply's session retries their own message, like any chat turn. */
+	it("does not record a person's evicted turn on a reply session as abandoned", () => {
+		const { session, state } = recording()
+		session.beginTurn({
+			sessionId: "org_test:prr-reply_1",
+			messageId: "u1",
+			text: "and the other file?",
+			tenant: TENANT,
+			origin: APP,
+		})
+
+		const revived = recording(state)
+		revived.session.alarm()
+
+		assert.isFalse(revived.session.running())
+		assert.lengthOf(revived.runs, 0)
+	})
+
 	/** A person's chat turn is theirs to retry: released, not re-run. */
 	it("does not start an evicted chat turn again", () => {
 		const { session, state } = recording()

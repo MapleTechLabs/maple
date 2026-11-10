@@ -48,7 +48,7 @@ import {
 import { HttpClient, HttpClientRequest } from "effect/http"
 import {
 	encryptAes256Gcm,
-	parseBase64Aes256GcmKey,
+	parseIngestKeyEncryptionKey,
 	type EncryptedValue,
 } from "@maple/backend/platform/Crypto"
 import { forkRequestScoped } from "@maple/backend/platform/fork-request-scoped"
@@ -328,17 +328,6 @@ const normalizeBranchPatterns = (patterns: ReadonlyArray<string> | undefined): s
 	}
 	return [...seen]
 }
-
-const parseEncryptionKey = (raw: string): Effect.Effect<Buffer, ScrapeTargetEncryptionError> =>
-	parseBase64Aes256GcmKey(raw, (message) =>
-		toEncryptionError(
-			message === "Expected a non-empty base64 encryption key"
-				? "MAPLE_INGEST_KEY_ENCRYPTION_KEY is required"
-				: message === "Expected base64 for exactly 32 bytes"
-					? "MAPLE_INGEST_KEY_ENCRYPTION_KEY must be base64 for exactly 32 bytes"
-					: message,
-		),
-	)
 
 const encryptCredentials = (
 	plaintext: string,
@@ -644,8 +633,9 @@ export class ScrapeTargetsService extends Context.Service<ScrapeTargetsService, 
 			// Scoped per hop, so an unread body (non-2xx, PlanetScale) is cancelled on exit.
 			const httpClient = yield* HttpClient.HttpClient
 			const probeClient = guard(HttpClient.withScope(httpClient))
-			const encryptionKey = yield* parseEncryptionKey(
+			const encryptionKey = yield* parseIngestKeyEncryptionKey(
 				Redacted.value(env.MAPLE_INGEST_KEY_ENCRYPTION_KEY),
+				toEncryptionError,
 			)
 
 			const selectById = Effect.fn("ScrapeTargetsService.selectById")(function* (

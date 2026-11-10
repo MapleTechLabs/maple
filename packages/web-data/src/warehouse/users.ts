@@ -103,7 +103,7 @@ export const getUsersFacets = Effect.fn("Users.facets")(function* ({ data }: { d
 })
 
 const UserDetailInput = Schema.Struct({ ...UsersWindowInput.fields, userId: EndUserId })
-export type UserDetailInput = typeof UserDetailInput.Encoded
+type UserDetailInput = typeof UserDetailInput.Encoded
 
 const detailRequest = (input: typeof UserDetailInput.Type) =>
 	new UserDetailRequest({ ...windowOf(input), userId: input.userId })

@@ -215,7 +215,7 @@ export type CopyButtonOptions<M> = Readonly<{
 	errorLabel?: string
 	iconSize?: number
 	variant?: "default" | "secondary" | "outline" | "ghost"
-	size?: "xs" | "sm" | "default" | "icon-xs" | "icon-sm" | "icon"
+	size?: "xs" | "sm" | "default" | "icon-2xs" | "icon-xs" | "icon-sm" | "icon"
 	/** Keep a filled (`default`) button's own ink; the copy button's muted ink is for ghost ones. */
 	keepsFillInk?: boolean
 	className?: string

@@ -6,6 +6,7 @@
  * verbatim put a report's headings and a dashboard's validation table into a thread. The record
  * stays as it is — the model reads it on its next turn — and a channel gets one sentence and a link.
  */
+import { truncate } from "@maple/strings"
 import { Option, Schema, String as Str } from "effect"
 import { MAX_APPROVAL_OUTCOME_CHARS, type ChatApprovalOutcome, type ChatRenderContext } from "./blocks"
 
@@ -202,6 +203,3 @@ const describe = (output: MutationPayload, app: string): Described => {
 			}
 	}
 }
-
-const truncate = (text: string, max: number): string =>
-	text.length <= max ? text : `${Str.slice(0, max - 1)(text)}…`

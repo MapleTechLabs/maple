@@ -197,6 +197,12 @@ let ephemeralStorage: Storage | undefined
  * every heartbeat as a new session. Keep this separate from the read try/catch.
  */
 let writesFailed = false
+/**
+ * The raw record last read from storage and what it parsed to. The session is
+ * resolved per span and per replay input event, between which the stored string
+ * rarely changes: an unchanged one is not parsed and validated again.
+ */
+let lastParsed: { readonly raw: string; readonly record: SessionRecord | undefined } | undefined
 
 export type SessionRotationListener = (previous: SessionRecord, next: SessionRecord) => void
 const rotationListeners = new Set<SessionRotationListener>()
@@ -254,9 +260,11 @@ function readRecord(): SessionRecord | undefined {
 		const raw = storage.getItem(STORAGE_KEY)
 		// Cleared under us: minting here would orphan the running recorder and lifecycle.
 		if (!raw) return storage === ephemeralStorage ? ephemeral : undefined
+		if (lastParsed?.raw !== raw) lastParsed = { raw, record: parseSessionRecord(raw) }
 		// A corrupt record falls back to the in-memory copy, exactly as an
 		// unreadable sessionStorage does — it is the same loss of the durable copy.
-		return parseSessionRecord(raw) ?? ephemeral
+		// A copy, so no caller can change what the next read of the same string returns.
+		return lastParsed.record ? { ...lastParsed.record } : ephemeral
 	} catch {
 		return ephemeral
 	}
@@ -439,6 +447,7 @@ function ownedByAnotherTab(record: SessionRecord, now: number): boolean {
 
 /** Test seam: drop the in-memory record and its write-failure latch. */
 export function resetSessionStorageStateForTests(): void {
+	lastParsed = undefined
 	ephemeral = undefined
 	ephemeralStorage = undefined
 	writesFailed = false
@@ -520,7 +529,8 @@ export function rotateSession(): SessionRecord | undefined {
  * Resolve the active session, rotating when the stored one has expired, and
  * persist the activity bump only once it has gone stale by
  * `ACTIVITY_TOUCH_THROTTLE_MS`. Shared by the two hot-path entry points so a
- * chatty page doesn't pay a sessionStorage read *and* write per span/event.
+ * chatty page doesn't pay a sessionStorage read *and* write per span/event:
+ * the write is throttled, and an unchanged record is not parsed again.
  */
 function touchSession(now: number): SessionRecord {
 	const existing = readRecord()

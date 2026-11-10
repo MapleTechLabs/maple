@@ -168,49 +168,75 @@ function wrapFetch(original: typeof fetch, hooks: () => NetworkHooks | undefined
 	return async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
 		const live = hooks()
 		if (!live) return original(input, init)
-		const url = requestUrl(input)
-		const method = requestMethod(input, init)
-		const ambientTraceId = activeTraceId()
+		// Capture only observes: whatever it throws is dropped, so the app's fetch
+		// resolves or rejects exactly as the real one did.
+		const request = quietly(() => ({
+			url: requestUrl(input),
+			method: requestMethod(input, init),
+			traceId: activeTraceId(),
+		}))
+		if (!request) return original(input, init)
+		const { url, method } = request
 		const start = performance.now()
-		let traceId = ambientTraceId
+		let traceId = request.traceId
+		let res: Response
 		try {
 			// Synchronous up to here, so a fetch instrumentation wrapped inside
 			// this one starts its span within the slot.
 			const call = withStartedTraceId(() => original(input, init))
-			traceId = call.traceId ?? ambientTraceId
-			const res = await call.result
-			if (!live.wantsBody(url)) {
-				live.record(url, method, res.status, start, traceId)
-				return res
-			}
-			// Read a clone in the background: the app gets its response untouched and unwaited.
-			const requestBody = typeof init?.body === "string" ? init.body : undefined
-			const done = performance.now()
-			const contentType = res.headers.get("content-type") ?? ""
-			void (
-				isReadableText(contentType)
-					? readPrefix(res.clone(), live.maxLength)
-					: Promise.resolve(undefined)
-			)
-				.catch(() => undefined)
-				.then((responseBody) =>
-					live.record(
-						url,
-						method,
-						res.status,
-						start,
-						traceId,
-						undefined,
-						live.bodyAttrs(requestBody, responseBody),
-						done,
-					),
-				)
-			return res
+			traceId = call.traceId ?? traceId
+			res = await call.result
 		} catch (error) {
-			live.record(url, method, 0, start, traceId, String(error))
+			quietly(() => live.record(url, method, 0, start, traceId, String(error)))
 			throw error
 		}
+		quietly(() => recordResponse(live, res, url, method, start, traceId, init))
+		return res
 	}
+}
+
+/** Run a piece of capture bookkeeping, giving `undefined` if it throws. */
+function quietly<T>(fn: () => T): T | undefined {
+	try {
+		return fn()
+	} catch {
+		return undefined
+	}
+}
+
+function recordResponse(
+	live: NetworkHooks,
+	res: Response,
+	url: string,
+	method: string,
+	start: number,
+	traceId: string | undefined,
+	init: RequestInit | undefined,
+): void {
+	if (!live.wantsBody(url)) {
+		live.record(url, method, res.status, start, traceId)
+		return
+	}
+	// Read a clone in the background: the app gets its response untouched and unwaited.
+	const requestBody = typeof init?.body === "string" ? init.body : undefined
+	const done = performance.now()
+	const contentType = res.headers.get("content-type") ?? ""
+	void (isReadableText(contentType) ? readPrefix(res.clone(), live.maxLength) : Promise.resolve(undefined))
+		.catch(() => undefined)
+		.then((responseBody) =>
+			live.record(
+				url,
+				method,
+				res.status,
+				start,
+				traceId,
+				undefined,
+				live.bodyAttrs(requestBody, responseBody),
+				done,
+			),
+		)
+		// Nothing awaits this chain: a throw here would be an unhandled rejection in the app.
+		.catch(() => undefined)
 }
 
 // XMLHttpRequest: `open` captures method and url, `send` times and observes.
@@ -241,12 +267,17 @@ function wrapXhrSend(
 		if (!live) return original.apply(this, args as never)
 		const meta = xhrMeta(this)
 		const start = performance.now()
-		let traceId = meta.__mapleTraceId ?? activeTraceId()
+		let traceId = meta.__mapleTraceId ?? quietly(activeTraceId)
 		const url = meta.__mapleUrl ?? ""
 		const requestBody = typeof args[0] === "string" ? args[0] : undefined
 		this.addEventListener("loadend", () => {
-			const extra = live.wantsBody(url) ? live.bodyAttrs(requestBody, xhrResponseText(this)) : undefined
-			live.record(url, meta.__mapleMethod ?? "GET", this.status, start, traceId, undefined, extra)
+			// A throw from a listener is an uncaught error on the app's page.
+			quietly(() => {
+				const extra = live.wantsBody(url)
+					? live.bodyAttrs(requestBody, xhrResponseText(this))
+					: undefined
+				live.record(url, meta.__mapleMethod ?? "GET", this.status, start, traceId, undefined, extra)
+			})
 		})
 		const call = withStartedTraceId(() => original.apply(this, args as never))
 		traceId = call.traceId ?? traceId
@@ -314,10 +345,21 @@ interface XhrMeta extends XMLHttpRequest {
 /** The request with the fields capture keeps on it; all optional, so any request is one. */
 const xhrMeta = (xhr: XMLHttpRequest): XhrMeta => xhr
 
-function requestUrl(input: RequestInfo | URL): string {
+/** What `fetch` takes besides a string: a `Request`, or anything it stringifies (a `URL`, a `Location`). */
+interface FetchInputLike {
+	readonly url?: string
+	toString(): string
+}
+
+/** True for a `Request` from any realm; `instanceof` misses one made in another frame. */
+const isRequest = (input: FetchInputLike): boolean =>
+	Object.prototype.toString.call(input) === "[object Request]"
+
+function requestUrl(input: string | FetchInputLike): string {
 	if (typeof input === "string") return input
-	if (input instanceof URL) return input.href
-	return input.url
+	// Only a `Request` carries its URL in `url`. Anything else is read by `toString`, as `fetch`
+	// reads it: a `Location` has no `url`, and one added to a `URL` is not the request's.
+	return isRequest(input) ? (input.url ?? input.toString()) : input.toString()
 }
 
 function requestMethod(input: RequestInfo | URL, init?: RequestInit): string {

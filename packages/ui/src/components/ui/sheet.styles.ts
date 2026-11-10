@@ -11,8 +11,6 @@ export const sheetViewportLeftStyles = "flex justify-start"
 
 export const sheetViewportRightStyles = "flex justify-end"
 
-export const sheetViewportInsetStyles = "sm:p-4"
-
 export const sheetPopupStyles =
 	"relative flex max-h-full min-h-0 w-full min-w-0 flex-col bg-popover not-dark:bg-clip-padding text-popover-foreground shadow-popup transition-[opacity,translate] duration-200 ease-in-out will-change-transform before:pointer-events-none before:absolute before:inset-0 before:shadow-control data-ending-style:opacity-0 data-starting-style:opacity-0 max-sm:before:hidden"
 
@@ -40,9 +38,6 @@ export const sheetSizeStyles = {
 } as const
 export type SheetSize = keyof typeof sheetSizeStyles
 
-export const sheetPopupInsetStyles =
-	"before:hidden sm:rounded-2xl sm:border sm:before:rounded-2xl-inset sm:**:data-[slot=sheet-footer]:rounded-b-2xl-inset"
-
 export const sheetCloseStyles = "absolute end-2 top-2"
 
 export const sheetHeaderStyles =
@@ -51,9 +46,6 @@ export const sheetHeaderStyles =
 export const sheetFooterStyles = "flex flex-col-reverse gap-2 px-6 sm:flex-row sm:justify-end"
 
 export const sheetFooterDefaultStyles = "border-t bg-surface-strong py-4"
-
-export const sheetFooterBareStyles =
-	"in-[[data-slot=sheet-popup]:has([data-slot=sheet-panel])]:pt-3 pt-4 pb-6"
 
 export const sheetTitleStyles = "font-heading font-semibold text-xl leading-none"
 

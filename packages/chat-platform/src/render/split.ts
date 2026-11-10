@@ -82,6 +82,8 @@ const blockWeight = (block: ChatBlock): number => {
 			)
 		case "notice":
 			return block.text.length
+		case "page":
+			return block.fallback.length
 		case "alert":
 			return (
 				block.title.length +

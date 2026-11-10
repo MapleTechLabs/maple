@@ -36,7 +36,7 @@ import * as AiError from "effect/ai/AiError"
 import type * as LanguageModel from "effect/ai/LanguageModel"
 import type * as Prompt from "effect/ai/Prompt"
 import * as Telemetry from "effect/ai/Telemetry"
-import * as Tool from "effect/ai/Tool"
+import type * as Tool from "effect/ai/Tool"
 import type * as Toolkit from "effect/ai/Toolkit"
 import { coalesceDeltas } from "./coalesce-deltas"
 
@@ -51,8 +51,6 @@ const INPUT_MESSAGES_BUDGET = 20_000
 const OUTPUT_MESSAGES_BUDGET = 8_000
 const TOOL_JSON_BUDGET = 8_000
 const SYSTEM_INSTRUCTIONS_BUDGET = 8_000
-const TOOL_DEFINITIONS_BUDGET = 16_000
-const AGENT_DESCRIPTION_BUDGET = 1_024
 
 type SerializedPart =
 	| { readonly type: "text"; readonly content: string }
@@ -545,67 +543,6 @@ export const toolCallJson = (value: unknown): string => {
 	if (json === undefined) return resultJson("[unserializable value]")
 	if (json.length <= TOOL_JSON_BUDGET) return json
 	return withinToolBudget(json, (prefix) => encodeJson({ truncated: true, prefix }))
-}
-
-/**
- * `gen_ai.tool.definitions`: `[{type, name, description, parameters}]`. Schemas are the bulk, so over
- * budget they are the first thing dropped — names and the opening of each description are what the
- * session view needs, and 128 characters keeps the chat agent's ~60 MCP tools inside the budget.
- */
-const toolDefinitionsJson = (tools: ReadonlyArray<Tool.Any>): string | undefined => {
-	if (tools.length === 0) return undefined
-	const described = Arr.map(tools, (tool) => ({
-		type: "function",
-		// `Tool.Any` types the name parameter as `any`.
-		name: String(tool.name),
-		description: Tool.getDescription(tool) ?? "",
-	}))
-	// A schema that cannot be expressed as JSON Schema throws here; it degrades to the compact form.
-	const full = Option.getOrUndefined(
-		Option.liftThrowable(() =>
-			encodeJson(
-				Arr.map(tools, (tool, index) => ({
-					...described[index],
-					parameters: Tool.getJsonSchema(tool),
-				})),
-			),
-		)(),
-	)
-	if (full !== undefined && full.length <= TOOL_DEFINITIONS_BUDGET) return full
-	return encodeJson(
-		Arr.map(described, (tool) => ({ ...tool, description: truncated(tool.description, 128) })),
-	)
-}
-
-/**
- * The `invoke_agent` half of a headless agent pass: which agent ran, on what, with which tools.
- *
- * Tool definitions go here rather than on every model call: they are the same for the whole pass,
- * and at up to 16k characters each they would otherwise be repeated on every step.
- */
-export const invokeAgentAttributes = (options: {
-	readonly agentName: string
-	readonly agentDescription: string
-	/** The engine's thread id, which its `execute_tool` spans carry as `gen_ai.conversation.id`. */
-	readonly conversationId: string
-	readonly providerName: string
-	readonly model: string
-	readonly tools: ReadonlyArray<Tool.Any>
-}): Readonly<Record<string, string>> => {
-	const definitions = toolDefinitionsJson(options.tools)
-	return {
-		"gen_ai.operation.name": "invoke_agent",
-		"gen_ai.agent.name": options.agentName,
-		// Bounded: hypothesis agents put planner-written text there, the one description with no
-		// length guarantee.
-		...(options.agentDescription === ""
-			? undefined
-			: { "gen_ai.agent.description": truncated(options.agentDescription, AGENT_DESCRIPTION_BUDGET) }),
-		"gen_ai.conversation.id": options.conversationId,
-		"gen_ai.provider.name": options.providerName,
-		"gen_ai.request.model": options.model,
-		...(definitions === undefined ? undefined : { "gen_ai.tool.definitions": definitions }),
-	}
 }
 
 const EXECUTE_TOOL_SPAN_PREFIX = "execute_tool "

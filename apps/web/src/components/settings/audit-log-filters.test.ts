@@ -1,11 +1,12 @@
+import { Option } from "effect"
 import { describe, expect, it } from "vitest"
 
 import {
 	auditLogSearchFrom,
 	hasAuditLogFilters,
 	parseAuditLogSearch,
+	parseAuditLookup,
 	pickAuditLogSearch,
-	resolveAuditDateRange,
 } from "./audit-log-filters"
 
 describe("parseAuditLogSearch", () => {
@@ -93,21 +94,57 @@ describe("auditLogSearchFrom", () => {
 	})
 })
 
-describe("resolveAuditDateRange", () => {
-	const now = Date.parse("2026-10-17T12:00:00.000Z")
-
-	it("resolves a rolling preset against the given moment", () => {
-		expect(resolveAuditDateRange({ kind: "preset", preset: "24h" }, now)).toEqual({
-			since: "2026-10-16T12:00:00.000Z",
-			until: undefined,
+describe("the resource, action, request and kind filters", () => {
+	it("keeps known values and round-trips them through the URL", () => {
+		const search = {
+			kind: "access",
+			resource_type: "dashboard",
+			action: "dashboard.updated",
+			resource: "dash_YofPTrK9782DWwcnXhpcCw",
+			affected: "user_2fj3K9dLqWm8xYbT",
+			request: "8f2c1a9d4b7e3f60",
+		}
+		const filters = parseAuditLogSearch(search)
+		expect(filters).toMatchObject({
+			kind: "access",
+			resourceType: "dashboard",
+			action: "dashboard.updated",
+			resourceId: "dash_YofPTrK9782DWwcnXhpcCw",
+			affectedUserId: "user_2fj3K9dLqWm8xYbT",
+			requestId: "8f2c1a9d4b7e3f60",
 		})
+		expect(auditLogSearchFrom(filters)).toMatchObject(search)
 	})
 
-	it("passes a fixed range through and leaves all time unbounded", () => {
-		expect(resolveAuditDateRange({ kind: "custom", since: "2026-10-01T00:00:00.000Z" }, now)).toEqual({
-			since: "2026-10-01T00:00:00.000Z",
-			until: undefined,
+	it("drops unknown resource types and actions, and leaves the default kind out of the URL", () => {
+		const filters = parseAuditLogSearch({
+			kind: "changes",
+			resource_type: "spaceship",
+			action: "dashboard.launched",
+			request: "not-a-ray",
 		})
-		expect(resolveAuditDateRange({ kind: "all" }, now)).toEqual({ since: undefined, until: undefined })
+		expect(filters.kind).toBeUndefined()
+		expect(filters.resourceType).toBeUndefined()
+		expect(filters.action).toBeUndefined()
+		expect(filters.requestId).toBeUndefined()
+		expect(auditLogSearchFrom(filters).kind).toBeUndefined()
+	})
+})
+
+describe("parseAuditLookup", () => {
+	it("reads each id shape as its filter", () => {
+		expect(Option.getOrNull(parseAuditLookup("user_2fj3K9dLqWm8xYbT"))).toEqual({
+			key: "actorId",
+			value: "user_2fj3K9dLqWm8xYbT",
+		})
+		expect(Option.getOrNull(parseAuditLookup("alrt_YofPTrK9782DWwcnXhpcCw"))).toEqual({
+			key: "resourceId",
+			value: "alrt_YofPTrK9782DWwcnXhpcCw",
+		})
+		expect(Option.getOrNull(parseAuditLookup("api_key.revoked"))).toEqual({
+			key: "action",
+			value: "api_key.revoked",
+		})
+		expect(Option.isNone(parseAuditLookup("dashboards"))).toBe(true)
 	})
 })
