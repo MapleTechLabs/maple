@@ -87,38 +87,6 @@ import {
 import { runQueryDefinition } from "./query-definition-runner"
 import { resolveDirectRouteCachePolicy, type DirectRouteCachePolicyInput } from "./cache-policy"
 
-export {
-	makeDirectRouteCachePolicy,
-	makeTimeRangeCachePolicy,
-	resolveDirectRouteCachePolicy,
-	timeRangeCache,
-	type DirectRouteCachePolicy,
-	type DirectRouteCachePolicyInput,
-	type TimeRangeCachePayload,
-} from "./cache-policy"
-
-// Re-exported so `@maple/query-engine/runtime` consumers (apps/api) keep importing
-// `computeBucketSeconds` from here; the implementation now lives in the pure
-// `../datetime` module so the web app and the engine share one definition.
-export { alertWindowBucketSeconds, computeBucketSeconds } from "../datetime"
-
-// Same arrangement for the range ceilings: they now live in the pure `../limits`
-// module so the MCP tools, the v2 API, and the web widget layer all bound
-// ranges against one definition instead of their own copies.
-export {
-	MAX_BREAKDOWN_RANGE_SECONDS,
-	MAX_LIST_RANGE_SECONDS,
-	MAX_QUERY_RANGE_SECONDS,
-	MAX_TIMESERIES_POINTS,
-	MAX_TIMESERIES_RANGE_SECONDS,
-	MAX_UNFILTERED_BREAKDOWN_RANGE_SECONDS,
-	formatRangeSeconds,
-	maxRangeSecondsForKind,
-	timeWindowViolation,
-	validateRelativeRange,
-} from "../limits"
-export { relativeRangeSeconds, resolveRelativeRange, resolveRelativeRangeToWarehouse } from "../datetime"
-
 /** Minimal tenant surface the lowering needs — only the org scope. */
 export interface QueryTenant {
 	readonly orgId: OrgId
@@ -245,20 +213,9 @@ export const withTimeout = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
 		}),
 	)
 
-export const toEpochMs = (value: string): number => new Date(Str.replace(" ", "T")(value) + "Z").getTime()
 const TINYBIRD_DATETIME_RE = /^(\d{4}-\d{2}-\d{2}) (\d{2}:\d{2}:\d{2})(\.\d+)?$/
 
-export const msToTinybirdDateTime = (ms: number): string => {
-	const iso = new Date(ms).toISOString()
-	return `${Str.slice(0, 10)(iso)} ${Str.slice(11, 19)(iso)}`
-}
-
 const CACHE_SNAP_S = 15
-
-// Re-exported so `@maple/query-engine/runtime` consumers keep one import site;
-// the definition is in the driver-free `../group-key` because the query-set merge
-// needs it too and runs in the browser.
-export { ENGINE_UNGROUPED_GROUP_KEY } from "../group-key"
 
 /**
  * The time span of the rows already selected for this page. The services lookup
@@ -499,8 +456,8 @@ const validateTimeRange = Effect.fn("QueryEngineService.validateTimeRange")(func
 	},
 	maxRangeSeconds: number = MAX_QUERY_RANGE_SECONDS,
 ): Effect.fn.Return<TimeRangeBounds, QueryEngineValidationError> {
-	const startMs = toEpochMs(request.startTime)
-	const endMs = toEpochMs(request.endTime)
+	const startMs = parseWarehouseDateTime(request.startTime)
+	const endMs = parseWarehouseDateTime(request.endTime)
 
 	if (Number.isNaN(startMs) || Number.isNaN(endMs)) {
 		return yield* new QueryEngineValidationError({
@@ -1012,7 +969,10 @@ const wholeRangeCounterLookbackSeconds = (range: {
 	readonly bucketSeconds: number
 }): number =>
 	2 *
-	Math.max(range.bucketSeconds, Math.ceil((toEpochMs(range.endTime) - toEpochMs(range.startTime)) / 1000))
+	Math.max(
+		range.bucketSeconds,
+		Math.ceil((parseWarehouseDateTime(range.endTime) - parseWarehouseDateTime(range.startTime)) / 1000),
+	)
 
 type MetricsTimeseriesSpec = Extract<QuerySpec, { readonly source: "metrics"; readonly kind: "timeseries" }>
 
@@ -2724,8 +2684,8 @@ const prepareAlertEvaluation = Effect.fnUntraced(function* (request: AlertEvalua
 
 	yield* validateEvaluate(request)
 
-	const startMs = toEpochMs(request.startTime)
-	const endMs = toEpochMs(request.endTime)
+	const startMs = parseWarehouseDateTime(request.startTime)
+	const endMs = parseWarehouseDateTime(request.endTime)
 
 	if (request.source.kind === "raw_sql") {
 		// One evaluation window is one bucket; a query using `$__timeGroup` lines

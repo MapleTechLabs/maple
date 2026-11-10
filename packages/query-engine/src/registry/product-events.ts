@@ -17,7 +17,7 @@ import type {
 import { Effect, Result } from "effect"
 import { QueryBuilderError } from "@maple-dev/effect-orm/clickhouse"
 import * as CH from "../ch"
-import { timeRangeCache } from "../runtime/query-engine"
+import { timeRangeCache } from "../runtime/cache-policy"
 import { defineQuery, makeTimeBucketQueryCachePolicy } from "./query-definition"
 import type { OrgId } from "@maple/domain"
 

@@ -10,7 +10,7 @@ import {
 import type { OrgId } from "@maple/domain"
 import { formatWarehouseDateTime, parseWarehouseDateTime } from "../datetime"
 import * as CH from "../ch"
-import { timeRangeCache } from "../runtime/query-engine"
+import { timeRangeCache } from "../runtime/cache-policy"
 import { defineQuery } from "./query-definition"
 
 // Search Console reads. Google reports whole days, so the page's window is floored to the

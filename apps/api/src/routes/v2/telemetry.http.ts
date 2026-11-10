@@ -47,8 +47,6 @@ import {
 	formatWarehouseDateTimeMs,
 	parseWarehouseDateTime,
 	serviceHealthSnapshotHours,
-} from "@maple/query-engine"
-import {
 	computeBucketSeconds,
 	formatRangeSeconds,
 	MAX_BREAKDOWN_RANGE_SECONDS,
@@ -57,7 +55,7 @@ import {
 	MAX_TIMESERIES_POINTS as MAX_TIMESERIES_BUCKETS,
 	MAX_UNFILTERED_BREAKDOWN_RANGE_SECONDS,
 	timeWindowViolation,
-} from "@maple/query-engine/runtime"
+} from "@maple/query-engine"
 import {
 	Array as Arr,
 	DateTime,
