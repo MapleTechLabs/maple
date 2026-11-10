@@ -4,6 +4,12 @@ import * as Combobox from "@maple/views/ui/combobox"
 import * as Select from "@maple/views/ui/select"
 import { initWhereFields, WhereFieldMessage, WhereFields } from "../where-field"
 import { AddOnKey, QueryChange, QueryTextField } from "./change"
+import { FieldDrill } from "./condition-fields"
+import { ConditionRow } from "./condition-rows"
+
+/** How a query's where clause is edited: condition rows, or the text editor. */
+export const WhereMode = Schema.Literals(["builder", "text"])
+export type WhereMode = typeof WhereMode.Type
 
 // `QueryPanel`'s own state: the
 // selects and group-by chips of every panel, and which panels are collapsed. The drafts stay with
@@ -19,6 +25,14 @@ export const Model = Schema.Struct({
 	collapsed: Schema.Array(Schema.String),
 	/** Each where editor's caret, list and active key values, by query id. */
 	whereFields: WhereFields,
+	/** Draft UI state, never saved: the editor each query shows (builder when absent). */
+	whereModes: Schema.Record(Schema.String, WhereMode),
+	/** The builder's rows by query id, kept while they still print to the draft's where clause. */
+	conditions: Schema.Record(Schema.String, Schema.Array(ConditionRow)),
+	/** Each row's field and value pickers, by picker id (`conditionPickerId`). */
+	conditionPickers: Schema.Record(Schema.String, Combobox.Model),
+	/** Which group a field picker has drilled into, by picker id. */
+	fieldDrills: Schema.Record(Schema.String, FieldDrill),
 })
 export type Model = typeof Model.Type
 
@@ -29,6 +43,10 @@ export const init = (slotPrefix: string): Model => ({
 	metricPickers: {},
 	collapsed: [],
 	whereFields: initWhereFields(),
+	whereModes: {},
+	conditions: {},
+	conditionPickers: {},
+	fieldDrills: {},
 })
 
 export const Message = defineMessageUnion({
@@ -44,6 +62,11 @@ export const Message = defineMessageUnion({
 	ClickedRemove: { queryId: Schema.String },
 	/** The where editors' suggestions; a field id is its query's id. */
 	GotWhereField: { message: WhereFieldMessage },
+	ChangedWhereMode: { queryId: Schema.String, mode: WhereMode },
+	ClickedAddCondition: { queryId: Schema.String },
+	ClickedRemoveCondition: { queryId: Schema.String, rowId: Schema.String },
+	GotConditionField: { queryId: Schema.String, rowId: Schema.String, message: Combobox.Message },
+	GotConditionValues: { queryId: Schema.String, rowId: Schema.String, message: Combobox.Message },
 })
 export type Message = typeof Message.Type
 
