@@ -13,7 +13,7 @@ import { badge, kbd, kbdGroup, separator } from "@maple/views/ui/display"
 import { emptyMessage } from "@maple/views/ui/empty"
 import { panel } from "@maple/views/ui/panel"
 import { textarea } from "@maple/views/ui/textarea"
-import { messageResponse } from "../../code-review/kit/markdown"
+import { messageResponse } from "../../kit/message-response"
 import { relativeTime } from "../../kit/relative-time"
 import { type ActorIdentity, identityAvatar, resolveActorIdentity } from "../../kit/issue-actor"
 import {
@@ -210,7 +210,7 @@ const messageRow = (
 								),
 							),
 						],
-						[messageResponse(h, body, "text-sm leading-relaxed")],
+						[messageResponse(h, null, body, "text-sm leading-relaxed")],
 					),
 				],
 			),
