@@ -1,6 +1,6 @@
 import { afterEach, assert, describe, it } from "@effect/vitest"
 import * as Cloudflare from "@alchemy.run/cloudflare"
-import { Cause, Effect, Exit, Fiber, Layer, Schema, Array as Arr } from "effect"
+import { Cause, Effect, Exit, Fiber, Layer, Option, Schema, Array as Arr } from "effect"
 import { TestClock } from "effect/testing"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { OrgId } from "@maple/domain/http"
@@ -14,6 +14,8 @@ import {
 	type TestDb,
 } from "@maple/backend/testing/test-pglite"
 import { durableStep } from "@maple/backend/platform/durable-step"
+import { parseSecretKeyring, sealSecret } from "@maple/backend/platform/SecretBox"
+import { clickHousePasswordSlot } from "@maple/backend/platform/secret-slots"
 import { workerEnvLayer } from "@maple/infra/worker-runtime"
 import {
 	loadOptionalFeatureState,
@@ -125,6 +127,30 @@ describe("runClickHouseSchemaApply failure bookkeeping", () => {
 			),
 		)
 
+	/** A passworded row on plain HTTP: loadConfig refuses it, but only after opening the password. */
+	const seedPasswordSettings = (testDb: TestDb, orgId: string, key: string) =>
+		Effect.gen(function* () {
+			const keyring = yield* parseSecretKeyring(
+				{ primary: key, decryptOnly: Option.none() },
+				(message) => message,
+			)
+			const sealed = yield* sealSecret(
+				keyring,
+				clickHousePasswordSlot,
+				{ orgId },
+				"stored-password",
+				(message) => message,
+			)
+			yield* Effect.promise(() =>
+				executeSql(
+					testDb,
+					`INSERT INTO org_clickhouse_settings (org_id, ch_url, ch_user, ch_database, ch_password_ciphertext, ch_password_iv, ch_password_tag, sync_status, created_at, updated_at, created_by, updated_by)
+					 VALUES ($1, 'http://127.0.0.1:9', 'default', 'default', $2, $3, $4, 'connected', now(), now(), 'u', 'u')`,
+					[orgId, sealed.ciphertext, sealed.iv, sealed.tag],
+				),
+			)
+		}).pipe(Effect.orDie)
+
 	const readRun = (testDb: TestDb, orgId: string) =>
 		Effect.promise(() =>
 			queryFirstRow<{
@@ -216,6 +242,34 @@ describe("runClickHouseSchemaApply failure bookkeeping", () => {
 			const row = yield* readRun(testDb, "org_wf_cfg")
 			assert.strictEqual(row?.status, "failed")
 			assert.include(row?.error_message ?? "", "No ClickHouse settings configured")
+		}),
+	)
+
+	it.effect("opens a password sealed before a key rotation only with the retired key configured", () =>
+		Effect.gen(function* () {
+			const testDb = createTestDb(trackedDbs)
+			const retiredKey = Buffer.alloc(32, 6).toString("base64")
+			yield* seedQueuedRun(testDb, "org_wf_rotated")
+			yield* seedPasswordSettings(testDb, "org_wf_rotated", retiredKey)
+			yield* seedQueuedRun(testDb, "org_wf_key_gone")
+			yield* seedPasswordSettings(testDb, "org_wf_key_gone", retiredKey)
+
+			const opened = yield* runFor(
+				testDb,
+				{
+					MAPLE_INGEST_KEY_ENCRYPTION_KEY: ENCRYPTION_KEY,
+					MAPLE_INGEST_KEY_DECRYPTION_KEYS: retiredKey,
+				},
+				"org_wf_rotated",
+			)
+			assert.include(failureMessage(opened), "must use HTTPS when a password is configured")
+
+			const unreadable = yield* runFor(
+				testDb,
+				{ MAPLE_INGEST_KEY_ENCRYPTION_KEY: ENCRYPTION_KEY },
+				"org_wf_key_gone",
+			)
+			assert.include(failureMessage(unreadable), "password could not be decrypted")
 		}),
 	)
 

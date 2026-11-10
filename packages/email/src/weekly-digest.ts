@@ -7,7 +7,8 @@
  * from a Cloudflare Worker's request path.
  */
 import { FRAGMENTS, PAGE } from "./generated/weekly-digest"
-import { escapeHtml, fill, preheaderPadding, truncate } from "./template"
+import { escapeHtml } from "@maple/strings"
+import { fill, preheaderPadding, truncate } from "./template"
 import { C, deltaPalette, deltaParts, rowBorder, trendColor } from "./delta-render"
 import {
 	deriveDigestStatus,

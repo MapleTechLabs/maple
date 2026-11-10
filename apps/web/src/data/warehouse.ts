@@ -1,10 +1,13 @@
 import { QueryEngineExecuteBatchRequest } from "@maple/domain/query-engine"
+import { isBlipping, originOf } from "@maple/web-data/lib/peer-reachability"
 import {
+	ApiReachability,
 	MapleApiV2Http,
 	MapleInternalHttp,
 	WarehouseExecutor,
 } from "@maple/web-data/warehouse/warehouse-services"
 import { Effect, Layer } from "effect"
+import { apiBaseUrl } from "../lib/services/common/api-base-url"
 import { MapleApiV2Client, MapleInternalApiClient } from "../platform/api-clients"
 import { withResourceTiming } from "../lib/resource-timing"
 import { makeExecuteBatcher } from "./execute-batcher"
@@ -32,8 +35,14 @@ const WarehouseExecutorLive = Layer.effect(
 	}),
 )
 
+/** The API origin's reachability clock, which the HTTP client keeps (`withRequestTimeout`). */
+export const ApiReachabilityLive = Layer.succeed(ApiReachability, {
+	isBlipping: (nowMs) => isBlipping(originOf(apiBaseUrl), nowMs),
+})
+
 export const WarehouseLive = Layer.mergeAll(
 	WarehouseExecutorLive,
+	ApiReachabilityLive,
 	Layer.effect(MapleInternalHttp, Effect.service(MapleInternalApiClient)),
 	Layer.effect(MapleApiV2Http, Effect.service(MapleApiV2Client)),
 ).pipe(Layer.provide([MapleInternalApiClient.layer, MapleApiV2Client.layer]))

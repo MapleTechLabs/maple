@@ -101,7 +101,7 @@ export const SaveInfraSurfaces = Command.define("SaveInfraSurfaces", {
 		}),
 })
 
-/** `SidebarProvider.setOpen`: the `sidebar_state` cookie (7 days). Never read back. */
+/** `SidebarProvider.setOpen`: the `sidebar_state` cookie (7 days), which `readShellFlags` reads at boot. */
 export const SaveSidebarState = Command.define("SaveSidebarState", {
 	args: { isOpen: Schema.Boolean },
 	messages: [Message.CompletedSaveSidebarState],

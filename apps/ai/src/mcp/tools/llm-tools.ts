@@ -50,17 +50,16 @@ const splitToolResult = (
 		readonly content: ReadonlyArray<{ readonly text: string }>
 		readonly structuredContent?: Schema.Json
 	},
-): { readonly text: string; readonly ui: ToolUiPayload | undefined } => {
-	const ui: ToolUiPayload | undefined =
-		result.structuredContent === undefined
-			? undefined
-			: { [TOOL_UI_MARKER]: true, tool: name, data: result.structuredContent }
-	const text = Arr.join(
+): { readonly text: string; readonly ui: ToolUiPayload | undefined } => ({
+	text: Arr.join(
 		Arr.map(result.content, (block) => block.text),
 		"\n\n",
-	)
-	return { text, ui }
-}
+	),
+	ui:
+		result.structuredContent === undefined
+			? undefined
+			: { [TOOL_UI_MARKER]: true, tool: name, data: result.structuredContent },
+})
 
 /** Capped: "one line" is a convention the error's author never agreed to. */
 const cap = (message: string): string =>

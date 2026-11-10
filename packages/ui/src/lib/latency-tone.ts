@@ -4,7 +4,7 @@
 // rendered (services table, infra tables, service map, chat renderers).
 
 /** Emphasis steps, low → high. Warm-only: nothing is colored for being fine. */
-export type LatencyLevel = "quiet" | "nominal" | "elevated" | "slow" | "critical"
+type LatencyLevel = "quiet" | "nominal" | "elevated" | "slow" | "critical"
 
 /**
  * Which budget a value is measured against. p99 is *expected* to be higher than

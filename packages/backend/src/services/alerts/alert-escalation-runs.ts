@@ -327,27 +327,31 @@ export const loadStepRecipients = (
 		const scheduleIds = Arr.dedupe(
 			Arr.flatMap(step.targets, (target) => (target.type === "schedule" ? [target.scheduleId] : [])),
 		)
-		const [schedules, overrides] = yield* Effect.all([
-			scheduleIds.length === 0
-				? Effect.succeed([])
-				: db.run(
-						PG.from(OnCallSchedules)
-							.select("id", "timeZone", "layersJson")
-							.where(($) => [$.orgId.eq(orgId), $.id.in_(...scheduleIds)]),
-					),
-			scheduleIds.length === 0
-				? Effect.succeed([])
-				: db.run(
-						PG.from(OnCallOverrides)
-							.select("id", "scheduleId", "userId", "startsAt", "endsAt", "createdAt")
-							.where(($) => [
-								$.orgId.eq(orgId),
-								$.scheduleId.in_(...scheduleIds),
-								$.endsAt.gt(nowMs - ONCALL_LOOKAROUND_MS),
-								$.startsAt.lt(nowMs + ONCALL_LOOKAROUND_MS),
-							]),
-					),
-		])
+		// Both pairs below are independent reads: they share the pool instead of queueing.
+		const [schedules, overrides] = yield* Effect.all(
+			[
+				scheduleIds.length === 0
+					? Effect.succeed([])
+					: db.run(
+							PG.from(OnCallSchedules)
+								.select("id", "timeZone", "layersJson")
+								.where(($) => [$.orgId.eq(orgId), $.id.in_(...scheduleIds)]),
+						),
+				scheduleIds.length === 0
+					? Effect.succeed([])
+					: db.run(
+							PG.from(OnCallOverrides)
+								.select("id", "scheduleId", "userId", "startsAt", "endsAt", "createdAt")
+								.where(($) => [
+									$.orgId.eq(orgId),
+									$.scheduleId.in_(...scheduleIds),
+									$.endsAt.gt(nowMs - ONCALL_LOOKAROUND_MS),
+									$.startsAt.lt(nowMs + ONCALL_LOOKAROUND_MS),
+								]),
+						),
+			],
+			{ concurrency: "unbounded" },
+		)
 		const shifts = Arr.map(scheduleIds, (scheduleId) => {
 			const schedule = Arr.findFirst(schedules, (row) => row.id === scheduleId)
 			if (Option.isNone(schedule)) return { scheduleId, userId: null }
@@ -367,19 +371,22 @@ export const loadStepRecipients = (
 		)
 		const base = { userIds, gapScheduleIds, onCall, missingUserIds: [] }
 		if (userIds.length === 0) return { ...base, recipients: [] } satisfies StepRecipients
-		const [identities, workspaces] = yield* Effect.all([
-			db.run(
-				PG.from(ChatIdentities)
-					.select("id", "userId", "connector", "externalUserId", "createdAt")
-					.where(($) => [$.orgId.eq(orgId), $.userId.in_(...userIds)])
-					.orderBy(["createdAt", "asc"], ["id", "asc"]),
-			),
-			db.run(
-				PG.from(ChatWorkspaces)
-					.select("connector")
-					.where(($) => [$.orgId.eq(orgId)]),
-			),
-		])
+		const [identities, workspaces] = yield* Effect.all(
+			[
+				db.run(
+					PG.from(ChatIdentities)
+						.select("id", "userId", "connector", "externalUserId", "createdAt")
+						.where(($) => [$.orgId.eq(orgId), $.userId.in_(...userIds)])
+						.orderBy(["createdAt", "asc"], ["id", "asc"]),
+				),
+				db.run(
+					PG.from(ChatWorkspaces)
+						.select("connector")
+						.where(($) => [$.orgId.eq(orgId)]),
+				),
+			],
+			{ concurrency: "unbounded" },
+		)
 		const linked = new Set(Arr.map(workspaces, (row) => row.connector))
 		// A connector that cannot open a DM, or with no workspace to send through, pages nobody.
 		const chatRecipients = Arr.flatMap(identities, (identity): ReadonlyArray<MemberRecipient> =>

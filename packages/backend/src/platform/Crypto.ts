@@ -1,5 +1,8 @@
 import { createCipheriv, createDecipheriv, randomBytes } from "node:crypto"
-import { Effect, Result, String as Str } from "effect"
+import { Effect, Option, Result } from "effect"
+
+const IV_BYTES = 12
+const TAG_BYTES = 16
 
 export interface EncryptedValue {
 	readonly ciphertext: string
@@ -7,43 +10,15 @@ export interface EncryptedValue {
 	readonly tag: string
 }
 
-/** A base64 AES-256-GCM key, or why it is unusable. */
-export const aes256GcmKeyFromBase64 = (raw: string): Result.Result<Buffer, string> => {
-	const trimmed = Str.trim(raw)
-	if (trimmed.length === 0) return Result.fail("Expected a non-empty base64 encryption key")
-	const decoded = Buffer.from(trimmed, "base64")
-	if (decoded.length !== 32) return Result.fail("Expected base64 for exactly 32 bytes")
-	return Result.succeed(decoded)
-}
-
-export const parseBase64Aes256GcmKey = <E>(raw: string, onError: (message: string) => E) =>
-	Effect.suspend(() => keyOrFail(aes256GcmKeyFromBase64(raw), onError))
-
-const keyOrFail = <A, E>(
-	key: Result.Result<A, string>,
-	onError: (message: string) => E,
-): Effect.Effect<A, E> =>
-	Result.match(key, { onSuccess: Effect.succeed, onFailure: (message) => Effect.fail(onError(message)) })
-
-/** A bad ingest encryption key's problem, naming the variable to fix. */
-export const ingestKeyEncryptionProblem = (message: string): string =>
-	message === "Expected a non-empty base64 encryption key"
-		? "MAPLE_INGEST_KEY_ENCRYPTION_KEY is required"
-		: message === "Expected base64 for exactly 32 bytes"
-			? "MAPLE_INGEST_KEY_ENCRYPTION_KEY must be base64 for exactly 32 bytes"
-			: message
-
-/** `MAPLE_INGEST_KEY_ENCRYPTION_KEY`, parsed once with `Env`; `onError` names a bad key in the caller's terms. */
-export const ingestKeyEncryptionKey = <E>(
-	env: { readonly ingestKeyEncryptionKey: Result.Result<Buffer, string> },
-	onError: (message: string) => E,
-): Effect.Effect<Buffer, E> => keyOrFail(env.ingestKeyEncryptionKey, onError)
-
 /** `MAPLE_INGEST_KEY_LOOKUP_HMAC_KEY`, trimmed and checked once with `Env`. */
 export const ingestKeyLookupHmacKey = <E>(
 	env: { readonly ingestKeyLookupHmacKey: Result.Result<string, string> },
 	onError: (message: string) => E,
-): Effect.Effect<string, E> => keyOrFail(env.ingestKeyLookupHmacKey, onError)
+): Effect.Effect<string, E> =>
+	Result.match(env.ingestKeyLookupHmacKey, {
+		onSuccess: Effect.succeed,
+		onFailure: (message) => Effect.fail(onError(message)),
+	})
 
 /**
  * Optional additional authenticated data. AAD is authenticated but not stored,
@@ -61,7 +36,7 @@ export const encryptAes256Gcm = <E>(
 ) =>
 	Effect.try({
 		try: () => {
-			const iv = randomBytes(12)
+			const iv = randomBytes(IV_BYTES)
 			const cipher = createCipheriv("aes-256-gcm", encryptionKey, iv)
 			if (aad !== undefined) cipher.setAAD(aad)
 			const ciphertext = Buffer.concat([cipher.update(plaintext, "utf8"), cipher.final()])
@@ -84,20 +59,27 @@ export const decryptAes256Gcm = <E>(
 ) =>
 	Effect.try({
 		try: () => {
-			const decipher = createDecipheriv(
-				"aes-256-gcm",
-				encryptionKey,
-				Buffer.from(encrypted.iv, "base64"),
-			)
+			const iv = Buffer.from(encrypted.iv, "base64")
+			const tag = Buffer.from(encrypted.tag, "base64")
+			// A shorter tag is still a valid GCM tag to the runtime, and far easier to forge.
+			if (iv.length !== IV_BYTES || tag.length !== TAG_BYTES) return Option.none()
+			const decipher = createDecipheriv("aes-256-gcm", encryptionKey, iv)
 			if (aad !== undefined) decipher.setAAD(aad)
-			decipher.setAuthTag(Buffer.from(encrypted.tag, "base64"))
+			decipher.setAuthTag(tag)
 
 			const plaintext = Buffer.concat([
 				decipher.update(Buffer.from(encrypted.ciphertext, "base64")),
 				decipher.final(),
 			])
 
-			return plaintext.toString("utf8")
+			return Option.some(plaintext.toString("utf8"))
 		},
 		catch: () => onError("Decryption failed"),
-	})
+	}).pipe(
+		Effect.flatMap(
+			Option.match({
+				onNone: () => Effect.fail(onError("Decryption failed")),
+				onSome: (plaintext) => Effect.succeed(plaintext),
+			}),
+		),
+	)

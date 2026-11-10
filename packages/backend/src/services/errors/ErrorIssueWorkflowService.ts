@@ -58,6 +58,18 @@ const decodeIssueDateTimeSync = Schema.decodeUnknownSync(ErrorIssueDocument.fiel
 const DEFAULT_EVENTS_LIMIT = 100
 const DEFAULT_LEASE_DURATION_MS = 30 * 60_000
 
+/** The 409 for an issue somebody else holds. `row` is the holder's row, when one was read. */
+export const leaseConflict = (issueId: ErrorIssueId, row: ErrorIssueRow | null) =>
+	new ErrorIssueLeaseConflictError({
+		message: "Issue is held by another actor",
+		issueId,
+		currentHolderActorId: row?.leaseHolderActorId ?? null,
+		leaseExpiresAt:
+			row?.leaseExpiresAt == null
+				? null
+				: decodeIssueDateTimeSync(new Date(row.leaseExpiresAt).toISOString()),
+	})
+
 export interface ErrorIssueWorkflowPublicApi {
 	readonly heartbeatIssue: (
 		orgId: OrgId,
@@ -318,26 +330,33 @@ const make: Effect.Effect<
 		issueIds,
 	) => {
 		if (issueIds.length === 0) return Effect.succeed(new Set<ErrorIssueId>())
-		return Effect.all([
-			dbExecute((db) =>
-				db.run(
-					PG.from(ErrorIncidents)
-						.select("issueId")
-						.where(($) => [$.orgId.eq(orgId), $.status.eq("open"), $.issueId.in_(...issueIds)]),
+		return Effect.all(
+			[
+				dbExecute((db) =>
+					db.run(
+						PG.from(ErrorIncidents)
+							.select("issueId")
+							.where(($) => [
+								$.orgId.eq(orgId),
+								$.status.eq("open"),
+								$.issueId.in_(...issueIds),
+							]),
+					),
 				),
-			),
-			dbExecute((db) =>
-				db.run(
-					PG.from(AlertIncidents)
-						.select(($) => ({ issueId: $.errorIssueId }))
-						.where(($) => [
-							$.orgId.eq(orgId),
-							$.status.eq("open"),
-							$.errorIssueId.in_(...issueIds),
-						]),
+				dbExecute((db) =>
+					db.run(
+						PG.from(AlertIncidents)
+							.select(($) => ({ issueId: $.errorIssueId }))
+							.where(($) => [
+								$.orgId.eq(orgId),
+								$.status.eq("open"),
+								$.errorIssueId.in_(...issueIds),
+							]),
+					),
 				),
-			),
-		]).pipe(
+			],
+			{ concurrency: "unbounded" },
+		).pipe(
 			Effect.map(
 				([errorRows, alertRows]) =>
 					new Set([
@@ -363,28 +382,31 @@ const make: Effect.Effect<
 			if (issueIds.length === 0) return rollups
 			const upsert = (issueId: ErrorIssueId, patch: Partial<IssueActivityRollup>) =>
 				rollups.set(issueId, { ...(rollups.get(issueId) ?? EMPTY_ACTIVITY), ...patch })
-			const [commentRows, prRows] = yield* Effect.all([
-				dbExecute((db) =>
-					db.run(
-						PG.from(ErrorIssueEvents)
-							.select(($) => ({ issueId: $.issueId, count: PG.count() }))
-							.where(($) => [
-								$.orgId.eq(orgId),
-								$.issueId.in_(...issueIds),
-								$.type.in_("comment", "agent_note"),
-							])
-							.groupBy("issueId"),
+			const [commentRows, prRows] = yield* Effect.all(
+				[
+					dbExecute((db) =>
+						db.run(
+							PG.from(ErrorIssueEvents)
+								.select(($) => ({ issueId: $.issueId, count: PG.count() }))
+								.where(($) => [
+									$.orgId.eq(orgId),
+									$.issueId.in_(...issueIds),
+									$.type.in_("comment", "agent_note"),
+								])
+								.groupBy("issueId"),
+						),
 					),
-				),
-				dbExecute((db) =>
-					db.run(
-						PG.from(ErrorIssuePullRequests)
-							.select(($) => ({ issueId: $.issueId, state: $.state, count: PG.count() }))
-							.where(($) => [$.orgId.eq(orgId), $.issueId.in_(...issueIds)])
-							.groupBy("issueId", "state"),
+					dbExecute((db) =>
+						db.run(
+							PG.from(ErrorIssuePullRequests)
+								.select(($) => ({ issueId: $.issueId, state: $.state, count: PG.count() }))
+								.where(($) => [$.orgId.eq(orgId), $.issueId.in_(...issueIds)])
+								.groupBy("issueId", "state"),
+						),
 					),
-				),
-			])
+				],
+				{ concurrency: "unbounded" },
+			)
 			for (const row of commentRows) upsert(row.issueId, { commentCount: row.count })
 			for (const row of prRows) {
 				if (row.state === "open") upsert(row.issueId, { openPullRequestCount: row.count })
@@ -396,12 +418,22 @@ const make: Effect.Effect<
 	const hydrateNonEmpty = (orgId: OrgId, rows: Arr.NonEmptyReadonlyArray<ErrorIssueRow>) =>
 		Effect.gen(function* () {
 			const issueIds = Arr.map(rows, (row) => row.id)
-			const openSet = yield* issuesWithOpenIncidents(orgId, issueIds)
-			const activityMap = yield* issueActivityRollups(orgId, issueIds)
-			const hashesByIssue = yield* dbExecute((db) => issueFingerprintHashes(db, orgId, rows))
-			const actorMap = yield* actorsService.collectActorDocs(
-				orgId,
-				Arr.flatMap(rows, (row) => [row.assignedActorId ?? null, row.leaseHolderActorId ?? null]),
+			// Independent reads, run on every list call and after every mutation.
+			// The invocation's pool bounds how many are really in flight.
+			const [openSet, activityMap, hashesByIssue, actorMap] = yield* Effect.all(
+				[
+					issuesWithOpenIncidents(orgId, issueIds),
+					issueActivityRollups(orgId, issueIds),
+					dbExecute((db) => issueFingerprintHashes(db, orgId, rows)),
+					actorsService.collectActorDocs(
+						orgId,
+						Arr.flatMap(rows, (row) => [
+							row.assignedActorId ?? null,
+							row.leaseHolderActorId ?? null,
+						]),
+					),
+				],
+				{ concurrency: "unbounded" },
 			)
 			return Arr.map(rows, (row) =>
 				rowToIssue(
@@ -687,14 +719,6 @@ const make: Effect.Effect<
 		}
 		return yield* requireIssue(orgId, row.id)
 	})
-
-	const leaseConflict = (issueId: ErrorIssueId, row: ErrorIssueRow | null) =>
-		new ErrorIssueLeaseConflictError({
-			message: "Issue is held by another actor",
-			issueId,
-			currentHolderActorId: row?.leaseHolderActorId ?? null,
-			leaseExpiresAt: row?.leaseExpiresAt == null ? null : isoFromMs(row.leaseExpiresAt),
-		})
 
 	const heartbeatIssue: ErrorIssueWorkflowServiceApi["heartbeatIssue"] = Effect.fn(
 		"ErrorIssueWorkflowService.heartbeatIssue",

@@ -923,3 +923,87 @@ describe("DigestService — subscriber opt-out", () => {
 		}).pipe(Effect.provide(layer))
 	})
 })
+
+describe("DigestService.reconcileSubscriptions", () => {
+	const subsOf = (orgId: OrgId) =>
+		Effect.gen(function* () {
+			const database = yield* Database
+			return yield* database.execute((db) =>
+				db.run(
+					PG.from(DigestSubscriptions)
+						.select()
+						.where(($) => [$.orgId.eq(orgId)]),
+				),
+			)
+		})
+
+	it.effect("subscribes every member of every org, past one statement's worth of rows", () => {
+		const { layer } = makeHarness()
+		const otherOrg = OrgId.make("org_digest_other")
+		const member = (orgId: OrgId, index: number) => ({
+			orgId,
+			userId: UserId.make(`user-${index}`),
+			email: `member-${index}@example.com`,
+		})
+		return Effect.gen(function* () {
+			yield* TestClock.setTime(TICK_MS)
+			const digest = yield* DigestService
+
+			yield* digest.reconcileSubscriptions([
+				...Arr.makeBy(520, (index) => member(ORG_ID, index)),
+				...Arr.makeBy(3, (index) => member(otherOrg, index)),
+			])
+
+			const first = yield* subsOf(ORG_ID)
+			assert.strictEqual(new Set(Arr.map(first, (row) => row.userId)).size, 520)
+			assert.strictEqual(new Set(Arr.map(first, (row) => row.id)).size, 520)
+			assert.isTrue(
+				Arr.every(
+					first,
+					(row) =>
+						row.enabled &&
+						row.dayOfWeek === 1 &&
+						row.timezone === "UTC" &&
+						row.createdAt === TICK_MS,
+				),
+			)
+			assert.deepStrictEqual(Arr.map(yield* subsOf(otherOrg), (row) => row.email).sort(), [
+				"member-0@example.com",
+				"member-1@example.com",
+				"member-2@example.com",
+			])
+		}).pipe(Effect.provide(layer))
+	})
+
+	it.effect("updates a stored email and keeps one row for a member Clerk lists twice", () => {
+		const { layer } = makeHarness()
+		return Effect.gen(function* () {
+			yield* TestClock.setTime(TICK_MS)
+			const digest = yield* DigestService
+			const existing = yield* seedSub({
+				email: "old@example.com",
+				dayOfWeek: 4,
+				timezone: "Europe/Berlin",
+			})
+			const existingUser = UserId.make(`user-${existing}`)
+			const repeated = UserId.make("user-repeated")
+
+			yield* digest.reconcileSubscriptions([
+				{ orgId: ORG_ID, userId: repeated, email: "first@example.com" },
+				{ orgId: ORG_ID, userId: existingUser, email: "new@example.com" },
+				{ orgId: ORG_ID, userId: repeated, email: "second@example.com" },
+			])
+
+			// The sweep owns the email and nothing else on a row that already exists.
+			const kept = yield* getSub(existing)
+			assert.strictEqual(kept.email, "new@example.com")
+			assert.strictEqual(kept.dayOfWeek, 4)
+			assert.strictEqual(kept.timezone, "Europe/Berlin")
+			const rows = Arr.filter(yield* subsOf(ORG_ID), (row) => row.userId === repeated)
+			assert.deepStrictEqual(
+				Arr.map(rows, (row) => row.email),
+				["second@example.com"],
+			)
+		}).pipe(Effect.provide(layer))
+	})
+})

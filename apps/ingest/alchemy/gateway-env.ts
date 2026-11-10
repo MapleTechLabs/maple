@@ -29,7 +29,6 @@ export const gatewayTuningEnv: Config.Config<PlainEnv> = Config.all([
 	optionalPlain("INGEST_MAX_DECODE_HEAP_BYTES"),
 	optionalPlain("INGEST_DECODE_MEMORY_BYTES"),
 	optionalPlain("INGEST_EXPORT_MAX_ATTEMPTS"),
-	optionalPlain("INGEST_TINYBIRD_CONCURRENCY_PER_SHARD"),
 	optionalPlain("INGEST_REPLAY_MAX_SESSION_BYTES"),
 	optionalPlain("AUTUMN_API_URL"),
 	// Entitlement cache TTLs. The allow TTL is how soft a hard cap is.

@@ -1537,11 +1537,9 @@ const make: Effect.Effect<
 		let openBudget = MAX_OPENS_PER_TICK
 
 		// Detector-state writes are accumulated here and flushed as one multi-row
-		// upsert after the loop, rather than one `dbExecute` per decision. Under
-		// `DatabasePgLive` each execute dials and tears down its own postgres.js
-		// client, so the handshake count is what costs, not the statement count —
-		// same trade as `error-tick-persistence.ts`. This loop averaged ~70 dials
-		// per org tick and peaked at 628.
+		// upsert after the loop, rather than one `dbExecute` per decision: that was
+		// a round trip per row, ~70 per org tick on average and 628 at peak. The
+		// invocation's pool is reused across executes, so it saves round trips, not dials.
 		//
 		// Keyed by `detectorKey` rather than a plain list: the consolidated-incident
 		// refcount below has to see this tick's own buffered writes, and last-wins

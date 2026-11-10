@@ -7,7 +7,7 @@ import {
 import { optionalRedacted, optionalString, stringWithDefault } from "@maple/infra/config-helpers"
 import { Config, Context, Effect, Layer, Option, Redacted, Result, Schema, String as Str } from "effect"
 import { type MapleRegion, parseMapleRegion } from "@maple/domain/organization-regions"
-import { aes256GcmKeyFromBase64 } from "./Crypto"
+import { type SecretKeyring, secretKeyringFrom } from "./SecretBox"
 import { DEFAULT_AUTUMN_API_URL } from "@maple/backend/services/billing/autumn-api"
 import { ingestKeyLookupHmacKeyFrom } from "./credential-tokens"
 
@@ -30,11 +30,12 @@ export interface EnvConfig {
 	readonly CLICKHOUSE_USER: string
 	readonly CLICKHOUSE_PASSWORD: Option.Option<Redacted.Redacted>
 	readonly CLICKHOUSE_DATABASE: string
-	readonly MAPLE_DB_URL: string
 	readonly MAPLE_AUTH_MODE: string
 	readonly MAPLE_ROOT_PASSWORD: Option.Option<Redacted.Redacted>
 	readonly MAPLE_DEFAULT_ORG_ID: string
 	readonly MAPLE_INGEST_KEY_ENCRYPTION_KEY: Redacted.Redacted
+	/** Comma-separated keys accepted for opening stored secrets only (docs/secret-encryption.md). */
+	readonly MAPLE_INGEST_KEY_DECRYPTION_KEYS: Option.Option<Redacted.Redacted>
 	readonly MAPLE_INGEST_KEY_LOOKUP_HMAC_KEY: Redacted.Redacted
 	/**
 	 * Keyed HMAC for dashboard share-link tokens. Optional here, and required by
@@ -57,8 +58,6 @@ export interface EnvConfig {
 	readonly MAPLE_ENVIRONMENT: string
 	/** The regional instance this worker belongs to, derived by the stack from the stage (`prd-eu` → `eu`). */
 	readonly MAPLE_REGION: MapleRegion
-	/** Escape hatch: allow real email sends outside production (e.g. a deliberate test run on a dev stage). */
-	readonly MAPLE_EMAIL_ALLOW_NONPROD: boolean
 	/** Route every org to the managed warehouse; honoured only in development. */
 	readonly MAPLE_IGNORE_ORG_CLICKHOUSE: boolean
 	readonly CLERK_SECRET_KEY: Option.Option<Redacted.Redacted>
@@ -238,11 +237,11 @@ const envConfig = Config.all({
 	CLICKHOUSE_USER: stringWithDefault("CLICKHOUSE_USER", "default"),
 	CLICKHOUSE_PASSWORD: optionalRedacted("CLICKHOUSE_PASSWORD"),
 	CLICKHOUSE_DATABASE: stringWithDefault("CLICKHOUSE_DATABASE", "default"),
-	MAPLE_DB_URL: stringWithDefault("MAPLE_DB_URL", ""),
 	MAPLE_AUTH_MODE: stringWithDefault("MAPLE_AUTH_MODE", "self_hosted"),
 	MAPLE_ROOT_PASSWORD: optionalRedacted("MAPLE_ROOT_PASSWORD"),
 	MAPLE_DEFAULT_ORG_ID: stringWithDefault("MAPLE_DEFAULT_ORG_ID", "default"),
 	MAPLE_INGEST_KEY_ENCRYPTION_KEY: Config.Redacted("MAPLE_INGEST_KEY_ENCRYPTION_KEY"),
+	MAPLE_INGEST_KEY_DECRYPTION_KEYS: optionalRedacted("MAPLE_INGEST_KEY_DECRYPTION_KEYS"),
 	MAPLE_INGEST_KEY_LOOKUP_HMAC_KEY: Config.Redacted("MAPLE_INGEST_KEY_LOOKUP_HMAC_KEY"),
 	MAPLE_SHARE_TOKEN_HMAC_KEY: optionalRedacted("MAPLE_SHARE_TOKEN_HMAC_KEY"),
 	MAPLE_INGEST_PUBLIC_URL: stringWithDefault("MAPLE_INGEST_PUBLIC_URL", "http://127.0.0.1:3474"),
@@ -250,9 +249,6 @@ const envConfig = Config.all({
 	MAPLE_API_BASE_URL: stringWithDefault("MAPLE_API_BASE_URL", "http://127.0.0.1:3472"),
 	MAPLE_ENVIRONMENT: stringWithDefault("MAPLE_ENVIRONMENT", "development"),
 	MAPLE_REGION: stringWithDefault("MAPLE_REGION", "us").pipe(Config.map(parseMapleRegion)),
-	MAPLE_EMAIL_ALLOW_NONPROD: stringWithDefault("MAPLE_EMAIL_ALLOW_NONPROD", "false").pipe(
-		Config.map((value) => value === "true"),
-	),
 	MAPLE_IGNORE_ORG_CLICKHOUSE: stringWithDefault("MAPLE_IGNORE_ORG_CLICKHOUSE", "false").pipe(
 		Config.map((value) => value === "1" || value === "true"),
 	),
@@ -461,7 +457,10 @@ const makeEnv = Effect.gen(function* () {
 
 	return Env.of({
 		...env,
-		ingestKeyEncryptionKey: aes256GcmKeyFromBase64(Redacted.value(env.MAPLE_INGEST_KEY_ENCRYPTION_KEY)),
+		secretKeyring: secretKeyringFrom({
+			primary: Redacted.value(env.MAPLE_INGEST_KEY_ENCRYPTION_KEY),
+			decryptOnly: Option.map(env.MAPLE_INGEST_KEY_DECRYPTION_KEYS, Redacted.value),
+		}),
 		ingestKeyLookupHmacKey: ingestKeyLookupHmacKeyFrom(
 			Redacted.value(env.MAPLE_INGEST_KEY_LOOKUP_HMAC_KEY),
 		),
@@ -470,8 +469,8 @@ const makeEnv = Effect.gen(function* () {
 
 /** The config, plus the keys every service that encrypts or hashes would otherwise parse itself. */
 export interface EnvApi extends EnvConfig {
-	/** `MAPLE_INGEST_KEY_ENCRYPTION_KEY` as an AES-256-GCM key; read through `ingestKeyEncryptionKey`. */
-	readonly ingestKeyEncryptionKey: Result.Result<Buffer, string>
+	/** The keys stored secrets are sealed and opened with; read through `secretKeyringFromEnv`. */
+	readonly secretKeyring: Result.Result<SecretKeyring, string>
 	/** `MAPLE_INGEST_KEY_LOOKUP_HMAC_KEY`, trimmed; read through `ingestKeyLookupHmacKey`. */
 	readonly ingestKeyLookupHmacKey: Result.Result<string, string>
 }

@@ -59,7 +59,8 @@ import {
 	String as Str,
 } from "effect"
 import { FetchHttpClient, HttpClient } from "effect/http"
-import { decryptAes256Gcm, encryptAes256Gcm, ingestKeyEncryptionKey } from "@maple/backend/platform/Crypto"
+import { openSecret, sealSecret, secretKeyringFromEnv } from "@maple/backend/platform/SecretBox"
+import { externalDataSourceSecretSlot } from "@maple/backend/platform/secret-slots"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { makeDbExecute, makePersistenceErrorMapper } from "@maple/backend/platform/db-execute"
 import { Env } from "@maple/backend/platform/Env"
@@ -177,10 +178,6 @@ const toPersistenceError = makePersistenceErrorMapper(
 	"External data source persistence failure",
 )
 
-/** Binds a secret to its org and source: a row copied elsewhere no longer decrypts. */
-const secretAad = (orgId: OrgId, id: ExternalDataSourceId) =>
-	Buffer.from(`external_data_sources:v1:${orgId}:${id}`, "utf8")
-
 const decodeId = Schema.decodeUnknownOption(ExternalDataSourceId)
 
 /** Settings pages and the API: everything the org has, hidden entries included. */
@@ -290,7 +287,7 @@ export class ExternalDataSourceService extends Context.Service<
 		const drivers = yield* DataSourceDrivers
 		const budget = yield* DataSourceCallBudget
 		const httpClient = yield* HttpClient.HttpClient
-		const encryptionKey = yield* ingestKeyEncryptionKey(
+		const keyring = yield* secretKeyringFromEnv(
 			env,
 			(message) => new DataSourcePersistenceError({ message }),
 		)
@@ -453,11 +450,12 @@ export class ExternalDataSourceService extends Context.Service<
 			if (row.secretCiphertext === null || row.secretIv === null || row.secretTag === null) {
 				return { sourceId: row.id, config: row.config, secret: null } satisfies DriverConnection
 			}
-			const secret = yield* decryptAes256Gcm(
+			const secret = yield* openSecret(
+				keyring,
+				externalDataSourceSecretSlot,
+				{ orgId: row.orgId, id: row.id },
 				{ ciphertext: row.secretCiphertext, iv: row.secretIv, tag: row.secretTag },
-				encryptionKey,
 				persistenceError,
-				secretAad(row.orgId, row.id),
 			)
 			return {
 				sourceId: row.id,
@@ -742,11 +740,12 @@ export class ExternalDataSourceService extends Context.Service<
 			const encrypted =
 				validated.secret === null
 					? null
-					: yield* encryptAes256Gcm(
+					: yield* sealSecret(
+							keyring,
+							externalDataSourceSecretSlot,
+							{ orgId, id },
 							validated.secret,
-							encryptionKey,
 							persistenceError,
-							secretAad(orgId, id),
 						)
 			const now = yield* Clock.currentTimeMillis
 			yield* dbExecute((db) =>
@@ -841,11 +840,12 @@ export class ExternalDataSourceService extends Context.Service<
 				const encrypted =
 					validated.secret === null
 						? null
-						: yield* encryptAes256Gcm(
+						: yield* sealSecret(
+								keyring,
+								externalDataSourceSecretSlot,
+								{ orgId: row.orgId, id: row.id },
 								validated.secret,
-								encryptionKey,
 								persistenceError,
-								secretAad(orgId, id),
 							)
 				warnings = test.warnings
 				const checked = {

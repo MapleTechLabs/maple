@@ -39,7 +39,9 @@ import {
 } from "@maple/db/tables"
 import { Context, Effect, Layer, Match, Option, Schema, Array as Arr, String as Str } from "effect"
 import { HttpClient } from "effect/http"
-import { encryptAes256Gcm, type EncryptedValue } from "@maple/backend/platform/Crypto"
+import type { EncryptedValue } from "@maple/backend/platform/Crypto"
+import { sealSecret, type SecretKeyring } from "@maple/backend/platform/SecretBox"
+import { alertDestinationSecretSlot } from "@maple/backend/platform/secret-slots"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { EmailService } from "@maple/backend/platform/EmailService"
 import { Env } from "@maple/backend/platform/Env"
@@ -72,7 +74,7 @@ import {
 	type DestinationPublicConfig,
 	type DestinationSecretConfig,
 } from "./AlertDestinationHydration"
-import { makeAlertDestinationDelivery, parseAlertDestinationEncryptionKey } from "./AlertDestinationDelivery"
+import { alertDestinationKeyringFromEnv, makeAlertDestinationDelivery } from "./AlertDestinationDelivery"
 import { AlertRuntime } from "./AlertRuntime"
 import { decodeStoredAlertRuleDestinationIds } from "./AlertRuleModel"
 
@@ -139,17 +141,19 @@ const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
 
 const encryptSecret = (
 	secretConfig: DestinationSecretConfig,
-	encryptionKey: Buffer,
-	destinationId: AlertDestinationDocument["id"],
+	keyring: SecretKeyring,
+	ref: { readonly orgId: OrgId; readonly id: AlertDestinationDocument["id"] },
 ): Effect.Effect<EncryptedValue, AlertDestinationEncryptionError> => {
 	const encryptionError = () =>
 		new AlertDestinationEncryptionError({
 			message: "Failed to encrypt destination secret",
-			destinationId,
+			destinationId: ref.id,
 		})
 	return Schema.encodeEffect(Schema.fromJsonString(Schema.Unknown))(secretConfig).pipe(
 		Effect.mapError(encryptionError),
-		Effect.flatMap((plaintext) => encryptAes256Gcm(plaintext, encryptionKey, encryptionError)),
+		Effect.flatMap((plaintext) =>
+			sealSecret(keyring, alertDestinationSecretSlot, ref, plaintext, encryptionError),
+		),
 	)
 }
 
@@ -417,9 +421,9 @@ export class AlertDestinationsService extends Context.Service<
 		const email = yield* EmailService
 		const orgMembers = yield* OrgMembersService
 		const chatAlertPoster = yield* ChatAlertPoster
-		const encryptionKey = yield* parseAlertDestinationEncryptionKey(env)
+		const keyring = yield* alertDestinationKeyringFromEnv(env)
 		const delivery = makeAlertDestinationDelivery({
-			encryptionKey,
+			keyring,
 			appBaseUrl: env.MAPLE_APP_BASE_URL,
 			runtime,
 			httpClient,
@@ -621,7 +625,7 @@ export class AlertDestinationsService extends Context.Service<
 			if (secretConfig.type === "telegram") {
 				yield* validateTelegramCredentials(secretConfig.botToken, secretConfig.chatId)
 			}
-			const encryptedSecret = yield* encryptSecret(secretConfig, encryptionKey, destinationId)
+			const encryptedSecret = yield* encryptSecret(secretConfig, keyring, { orgId, id: destinationId })
 			const timestamp = yield* runtime.now
 			const row = {
 				id: destinationId,
@@ -929,7 +933,10 @@ export class AlertDestinationsService extends Context.Service<
 			) {
 				yield* validateTelegramCredentials(nextSecretConfig.botToken, nextSecretConfig.chatId)
 			}
-			const encryptedSecret = yield* encryptSecret(nextSecretConfig, encryptionKey, destinationId)
+			const encryptedSecret = yield* encryptSecret(nextSecretConfig, keyring, {
+				orgId: existing.orgId,
+				id: existing.id,
+			})
 			const timestamp = yield* runtime.now
 			const nextName = normalizeOptionalString(request.name) ?? existing.name
 			const nextEnabled = request.enabled === undefined ? existing.enabled : request.enabled

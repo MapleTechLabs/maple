@@ -63,7 +63,7 @@ const weekly = {
 	schedule_type: "weekly",
 	time_zone: "Europe/Berlin",
 	days: ["mon", "tue", "wed", "thu", "fri", "sat", "sun"],
-	start_time: "02:00",
+	start_time_of_day: "02:00",
 	duration_minutes: "60",
 }
 
@@ -104,6 +104,50 @@ describe("maintenance window tools", () => {
 			// A destructive delete is never handed back as a ready-made follow-up.
 			assert.notInclude(text(created.success), "delete_maintenance_window")
 			assert.notInclude(text(listed.success), "delete_maintenance_window")
+		}).pipe(Effect.provide(layerFor(testDb)))
+	})
+
+	/** `since` is a lookback on tools with a window; here it must not land in the HH:MM field. */
+	it.effect("create_maintenance_window keeps its HH:MM start when a lookback is sent with it", () => {
+		const testDb = createTestDb(trackedDbs)
+		return Effect.gen(function* () {
+			const created = yield* call("create_maintenance_window", {
+				...weekly,
+				services: "checkout",
+				since: "2h",
+			})
+			assert.strictEqual(created._tag, "Success")
+			if (created._tag !== "Success") return
+			const { window } = Schema.decodeUnknownSync(MaintenanceWindowMutationOutput)(
+				created.success.structuredContent,
+			)
+			assert.strictEqual(
+				window.schedule.type === "weekly" ? window.schedule.startTime : undefined,
+				"02:00",
+			)
+			assert.include(text(created.success), "`since` is not a parameter")
+		}).pipe(Effect.provide(layerFor(testDb)))
+	})
+
+	it.effect("create_maintenance_window still reads the retired start_time as the HH:MM start", () => {
+		const testDb = createTestDb(trackedDbs)
+		return Effect.gen(function* () {
+			const { start_time_of_day, ...rest } = weekly
+			const created = yield* call("create_maintenance_window", {
+				...rest,
+				services: "checkout",
+				start_time: start_time_of_day,
+				since: "2h",
+			})
+			assert.strictEqual(created._tag, "Success")
+			if (created._tag !== "Success") return
+			const { window } = Schema.decodeUnknownSync(MaintenanceWindowMutationOutput)(
+				created.success.structuredContent,
+			)
+			assert.strictEqual(
+				window.schedule.type === "weekly" ? window.schedule.startTime : undefined,
+				"02:00",
+			)
 		}).pipe(Effect.provide(layerFor(testDb)))
 	})
 

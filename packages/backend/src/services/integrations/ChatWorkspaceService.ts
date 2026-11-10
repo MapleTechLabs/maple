@@ -34,10 +34,10 @@ import {
 	String as Str,
 } from "effect"
 import { FetchHttpClient, HttpClient } from "effect/http"
-import { ingestKeyEncryptionKey } from "@maple/backend/platform/Crypto"
 import { Database, type DatabaseError } from "@maple/backend/platform/DatabaseLive"
 import { makeDbExecute } from "@maple/backend/platform/db-execute"
 import { Env } from "@maple/backend/platform/Env"
+import { secretKeyringFromEnv } from "@maple/backend/platform/SecretBox"
 import { sealChatWorkspaceCredentials } from "@maple/backend/services/integrations/chat-workspace-credentials"
 import { OAuthStateRepository } from "@maple/backend/services/auth/OAuthStateRepository"
 import type { OAuthFlowInitiator } from "@maple/backend/services/auth/oauth/oauth-state"
@@ -242,12 +242,12 @@ const make: Effect.Effect<
 	const config = env.CHAT_CONNECTOR_CONFIG
 
 	/**
-	 * The key the per-workspace credential envelope is sealed and opened with.
+	 * The keyring the per-workspace credential envelope is sealed and opened with.
 	 *
 	 * Read lazily rather than at layer build: only a connector whose install mints a credential
 	 * needs it, and a deployment without one must still list, link and unlink everything else.
 	 */
-	const credentialKey = ingestKeyEncryptionKey(
+	const credentialKeyring = secretKeyringFromEnv(
 		env,
 		(message) =>
 			new IntegrationsConfigurationError({
@@ -413,10 +413,10 @@ const make: Effect.Effect<
 		const sealed =
 			credentials === undefined
 				? null
-				: yield* Effect.flatMap(credentialKey, (key) =>
+				: yield* Effect.flatMap(credentialKeyring, (keyring) =>
 						sealChatWorkspaceCredentials(
 							credentials,
-							key,
+							keyring,
 							{
 								orgId,
 								connector: connectorId,
@@ -646,8 +646,8 @@ const make: Effect.Effect<
 		workspaceId: ChatWorkspaceId,
 	) {
 		yield* Effect.annotateCurrentSpan({ orgId })
-		const key = yield* credentialKey
-		const workspace = yield* loadOwnedChatWorkspace(database, registry, orgId, workspaceId, key).pipe(
+		const keyring = yield* credentialKeyring
+		const workspace = yield* loadOwnedChatWorkspace(database, registry, orgId, workspaceId, keyring).pipe(
 			Effect.catchTags({
 				"@maple/backend/lib/DatabaseError": (error) => Effect.fail(toPersistenceError(error)),
 				"@maple/backend/ChatWorkspaceCredentialsUnreadable": () =>
@@ -704,7 +704,7 @@ const make: Effect.Effect<
 		// A deployment with no usable key resolves the workspace without its credential rather than
 		// failing the lookup: everything that does not need one keeps working, and the connector
 		// that does reports it cannot post.
-		const key = yield* credentialKey.pipe(
+		const keyring = yield* credentialKeyring.pipe(
 			Effect.tapError((error) =>
 				Effect.logError("Chat workspace credential key is unusable").pipe(
 					Effect.annotateLogs({ "error.type": error._tag, "error.message": error.message }),
@@ -712,7 +712,7 @@ const make: Effect.Effect<
 			),
 			Effect.orElseSucceed(() => null),
 		)
-		const resolved = yield* resolveChatWorkspace(database, connectorId, externalWorkspaceId, key)
+		const resolved = yield* resolveChatWorkspace(database, connectorId, externalWorkspaceId, keyring)
 		// The one cross-tenant lookup here — the resolved org belongs on the span.
 		if (Option.isSome(resolved)) yield* Effect.annotateCurrentSpan({ orgId: resolved.value.orgId })
 		return resolved

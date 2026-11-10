@@ -786,19 +786,6 @@ const alertingFixtures: ReadonlyArray<BuilderFixture> = [
 				bucketSeconds: 300,
 			}),
 	},
-	{
-		// No production caller yet; shaped like the fingerprint series above.
-		module: "anomaly",
-		name: "anomalyErrorSpikeServiceTimeseriesQuery",
-		label: "default",
-		compile: () =>
-			CH.compileUnsafe(CH.anomalyErrorSpikeServiceTimeseriesQuery(), {
-				...window,
-				serviceName: "api",
-				deploymentEnv: "production",
-				bucketSeconds: 300,
-			}),
-	},
 
 	// backend telemetry-liveness, the auto-resolve liveness probes.
 	{

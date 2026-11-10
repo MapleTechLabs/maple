@@ -1043,6 +1043,10 @@ describe("ScrapeTargetsService", () => {
 			)
 			assert.strictEqual(moved.url, "https://other.example.com/metrics")
 			assert.isTrue(moved.hasCredentials)
+			const row = Option.getOrThrow(
+				Arr.findFirst(yield* service.listAllEnabled(), (candidate) => candidate.id === target.id),
+			)
+			assert.deepStrictEqual(yield* service.authHeaders(row), { Authorization: "Bearer fresh-token" })
 		}).pipe(Effect.provide(makeLayer(testDb)))
 	})
 

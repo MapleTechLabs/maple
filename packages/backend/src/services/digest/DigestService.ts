@@ -865,6 +865,11 @@ export class DigestService extends Context.Service<DigestService>()("@maple/back
 		// holds starts empty on every tick.
 		const SYNC_WINDOW_MS = 15 * 60 * 1000
 		const CLERK_PAGE_SIZE = 100
+		// Orgs whose member lists are read at once: under a Worker's six open connections
+		// and well clear of Clerk's rate limit.
+		const CLERK_ORG_CONCURRENCY = 4
+		// Nine bound parameters per row, far under Postgres's 65535 per statement.
+		const MEMBERSHIP_UPSERT_CHUNK = 500
 
 		const paginateClerk = <T>(
 			spanName: string,
@@ -898,32 +903,35 @@ export class DigestService extends Context.Service<DigestService>()("@maple/back
 				"Failed to list Clerk organizations",
 			)
 
-			const perOrgMemberships = yield* Effect.forEach(orgs, (org) =>
-				Effect.gen(function* () {
-					const members = yield* paginateClerk(
-						"Clerk.organizations.getOrganizationMembershipList",
-						{ orgId: org.id },
-						(params) =>
-							clerk.organizations.getOrganizationMembershipList({
-								organizationId: org.id,
-								...params,
-							}),
-						`Failed to list Clerk members for org ${org.id}`,
-					)
+			const perOrgMemberships = yield* Effect.forEach(
+				orgs,
+				(org) =>
+					Effect.gen(function* () {
+						const members = yield* paginateClerk(
+							"Clerk.organizations.getOrganizationMembershipList",
+							{ orgId: org.id },
+							(params) =>
+								clerk.organizations.getOrganizationMembershipList({
+									organizationId: org.id,
+									...params,
+								}),
+							`Failed to list Clerk members for org ${org.id}`,
+						)
 
-					return Arr.flatMap(members, (member) => {
-						const memberEmail = member.publicUserData?.identifier
-						const memberUserId = member.publicUserData?.userId
-						if (!memberEmail || !memberUserId) return []
-						return [
-							{
-								orgId: OrgId.make(org.id),
-								userId: UserId.make(memberUserId),
-								email: memberEmail,
-							},
-						]
-					})
-				}),
+						return Arr.flatMap(members, (member) => {
+							const memberEmail = member.publicUserData?.identifier
+							const memberUserId = member.publicUserData?.userId
+							if (!memberEmail || !memberUserId) return []
+							return [
+								{
+									orgId: OrgId.make(org.id),
+									userId: UserId.make(memberUserId),
+									email: memberEmail,
+								},
+							]
+						})
+					}),
+				{ concurrency: CLERK_ORG_CONCURRENCY },
 			)
 
 			return perOrgMemberships.flat()
@@ -934,40 +942,44 @@ export class DigestService extends Context.Service<DigestService>()("@maple/back
 		) {
 			const now = yield* Clock.currentTimeMillis
 
+			// One row per (org, user), the last one winning as it did row by row: Postgres
+			// rejects an upsert that touches the same row twice in one statement.
+			const members = Arr.fromIterable(
+				new Map(Arr.map(clerkMemberships, (m) => [`${m.orgId}:${m.userId}`, m] as const)).values(),
+			)
+			const rows = yield* Effect.forEach(members, (m) =>
+				Effect.map(random.uuidV4(), (id) => ({
+					id,
+					orgId: m.orgId,
+					userId: m.userId,
+					email: m.email,
+					enabled: true,
+					dayOfWeek: 1,
+					timezone: "UTC",
+					createdAt: now,
+					updatedAt: now,
+				})),
+			)
 			// Upsert all current Clerk members (re-enables returning members, updates
 			// email). `enabled` is recomputed from the stored opt-out rather than
 			// forced true: a member who turned the digest off stays off, while one
 			// this sweep disabled when they left the org comes back enabled.
 			yield* Effect.forEach(
-				clerkMemberships,
-				(m) =>
-					Effect.flatMap(random.uuidV4(), (id) =>
-						dbExecute((db) =>
-							db.run(
-								PG.insertInto(DigestSubscriptions)
-									.values({
-										id,
-										orgId: m.orgId,
-										userId: m.userId,
-										email: m.email,
-										enabled: true,
-										dayOfWeek: 1,
-										timezone: "UTC",
-										createdAt: now,
+				Arr.chunksOf(rows, MEMBERSHIP_UPSERT_CHUNK),
+				(chunk) =>
+					dbExecute((db) =>
+						db.run(
+							PG.insertInto(DigestSubscriptions)
+								.values(chunk)
+								.onConflictDoUpdate({
+									target: ["orgId", "userId"],
+									set: ($, excluded) => ({
+										email: excluded.email,
+										enabled: PG.asBoolean($.optedOutAt.isNull()),
+										webAnalyticsEnabled: PG.asBoolean($.webAnalyticsOptedOutAt.isNull()),
 										updatedAt: now,
-									})
-									.onConflictDoUpdate({
-										target: ["orgId", "userId"],
-										set: ($) => ({
-											email: m.email,
-											enabled: PG.asBoolean($.optedOutAt.isNull()),
-											webAnalyticsEnabled: PG.asBoolean(
-												$.webAnalyticsOptedOutAt.isNull(),
-											),
-											updatedAt: now,
-										}),
 									}),
-							),
+								}),
 						),
 					),
 				{ discard: true },

@@ -11,55 +11,33 @@
  * mention opens the envelope (`chat-workspace-rows.ts`) and never links anything, so it must not
  * take the install service's OAuth state, HTTP client and connector config just to read a token.
  */
-import { Effect } from "effect"
-import { decryptAes256Gcm, encryptAes256Gcm, type EncryptedValue } from "@maple/backend/platform/Crypto"
+import type { Effect } from "effect"
+import type { EncryptedValue } from "@maple/backend/platform/Crypto"
+import { openSecret, sealSecret, type SecretKeyring } from "@maple/backend/platform/SecretBox"
+import {
+	chatWorkspaceCredentialsSlot,
+	type ChatWorkspaceCredentialsRef,
+} from "@maple/backend/platform/secret-slots"
 
 /**
- * What the envelope is authenticated against.
- *
- * Authenticated but not stored, so it binds the ciphertext to its row: an attacker holding only
- * database writes cannot relocate an `(iv, ciphertext, tag)` triple onto another org's row, onto
- * another connector's row, or onto the same connector's row for a different workspace — which is
- * exactly the move that would point one team's bot token at another team's conversations.
+ * Seal a connector's credential string for storage. The ref (org, connector, workspace) is
+ * authenticated but not stored, so a triple copied onto another row does not open.
  */
-export const chatWorkspaceCredentialsAad = (
-	orgId: string,
-	connector: string,
-	externalWorkspaceId: string,
-): Buffer => Buffer.from(`chat_workspaces:v1:${orgId}:${connector}:${externalWorkspaceId}`, "utf8")
-
-export interface ChatWorkspaceCredentialsRef {
-	readonly orgId: string
-	readonly connector: string
-	readonly externalWorkspaceId: string
-}
-
 export const sealChatWorkspaceCredentials = <E>(
 	credentials: string,
-	encryptionKey: Buffer,
+	keyring: SecretKeyring,
 	ref: ChatWorkspaceCredentialsRef,
 	onError: (message: string) => E,
 ): Effect.Effect<EncryptedValue, E> =>
-	encryptAes256Gcm(
-		credentials,
-		encryptionKey,
-		onError,
-		chatWorkspaceCredentialsAad(ref.orgId, ref.connector, ref.externalWorkspaceId),
-	)
+	sealSecret(keyring, chatWorkspaceCredentialsSlot, ref, credentials, onError)
 
-/** Open a stored envelope. Fails when the key, the row or the AAD no longer match. */
+/** Open a stored envelope. Fails when the key or the row it is bound to no longer match. */
 export const openChatWorkspaceCredentials = <E>(
 	encrypted: EncryptedValue,
-	encryptionKey: Buffer,
+	keyring: SecretKeyring,
 	ref: ChatWorkspaceCredentialsRef,
 	onError: (message: string) => E,
-): Effect.Effect<string, E> =>
-	decryptAes256Gcm(
-		encrypted,
-		encryptionKey,
-		onError,
-		chatWorkspaceCredentialsAad(ref.orgId, ref.connector, ref.externalWorkspaceId),
-	)
+): Effect.Effect<string, E> => openSecret(keyring, chatWorkspaceCredentialsSlot, ref, encrypted, onError)
 
 /**
  * The three columns as one value, or `null` when the row carries no credential.

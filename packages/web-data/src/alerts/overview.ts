@@ -41,12 +41,6 @@ export interface AlertsOverviewReady {
 	readonly timelineRange: { readonly min: number; readonly max: number }
 }
 
-/** The derived overview, in the phases the tab renders distinctly. */
-export type AlertsOverviewData =
-	| { readonly phase: "loading" }
-	| { readonly phase: "error"; readonly message: string }
-	| AlertsOverviewReady
-
 export interface OverviewInputs {
 	readonly rules: ReadonlyArray<AlertRuleDocument>
 	readonly incidents: ReadonlyArray<AlertIncidentDocument>

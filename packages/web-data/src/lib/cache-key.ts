@@ -1,32 +1,16 @@
 // BOUNDARY-FILE: This module intentionally carries opaque values; callers decode them before domain use.
-import { Option, Schema, Array as Arr, Record as Rec, String as Str } from "effect"
+import { Schema, Array as Arr, Record as Rec, String as Str } from "effect"
 import { snapTimestamp } from "./time-range"
 
 const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
-const decodeJson = Schema.decodeUnknownOption(Schema.fromJsonString(Schema.Unknown))
 
-/** How a leaf string is treated: snapped to the 15s grid, or dropped entirely. */
-type TimestampMode = "snap" | "drop"
-
-/** Matches the warehouse `YYYY-MM-DD HH:MM:SS[.fff]` shape, with or without a `T`. */
-const TIMESTAMP_PATTERN = /^\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}:\d{2}(?:\.\d+)?$/
-
-const DROPPED = Symbol("dropped")
-
-function normalize(value: unknown, mode: TimestampMode): unknown {
+function normalize(value: unknown): unknown {
 	if (value === null || typeof value !== "object") {
-		if (typeof value === "string") {
-			if (mode === "snap") return snapTimestamp(value)
-			return TIMESTAMP_PATTERN.test(value) ? DROPPED : value
-		}
-		return value
+		return typeof value === "string" ? snapTimestamp(value) : value
 	}
 
 	if (Arr.isArray(value)) {
-		return Arr.filter(
-			Arr.map(value, (entry) => normalize(entry, mode)),
-			(entry) => entry !== DROPPED,
-		)
+		return Arr.map(value, (entry) => normalize(entry))
 	}
 
 	const entries = Arr.filter(
@@ -36,19 +20,14 @@ function normalize(value: unknown, mode: TimestampMode): unknown {
 
 	const normalized: Record<string, unknown> = {}
 	for (const [key, entryValue] of entries) {
-		const entry = normalize(entryValue, mode)
-		if (entry !== DROPPED) normalized[key] = entry
+		normalized[key] = normalize(entryValue)
 	}
 
 	return normalized
 }
 
-function normalizeForKey(value: unknown): unknown {
-	return normalize(value, "snap")
-}
-
 export function encodeKey(value: unknown): string {
-	const normalized = normalizeForKey(value)
+	const normalized = normalize(value)
 	return encodeJson(normalized === undefined ? null : normalized)
 }
 
@@ -72,45 +51,4 @@ const ORG_KEY_SEPARATOR = "\u0000"
 
 export function encodeOrgScopedKey(orgId: string | null | undefined, value: unknown): string {
 	return `${orgId ?? ""}${ORG_KEY_SEPARATOR}${encodeKey(value)}`
-}
-
-/** Recover just the encoded input from a key built by `encodeOrgScopedKey`. */
-export function orgScopedKeyPayload(key: string): string {
-	return Option.match(Str.indexOf(ORG_KEY_SEPARATOR)(key), {
-		onNone: () => key,
-		onSome: (separatorIndex) => Str.slice(separatorIndex + 1)(key),
-	})
-}
-
-/**
- * The *logical* identity of an atom key: the same query, with the time window
- * removed. Two keys that differ only in their range collapse to one identity.
- *
- * This is what lets a remount serve the previous result while the new window
- * loads. Snapping the range (see `snapRangeForCache`) keeps a key stable for
- * minutes at a time, but the boundary still has to be crossed eventually, and
- * on a 1h preset the grid is only 15s — at that point the key is genuinely new
- * and only an identity that ignores time can find what was there before.
- *
- * Derived from the key rather than the input because `Atom.family` factories
- * only ever see the key.
- *
- * The org prefix is preserved deliberately. An identity that spanned orgs would
- * revive exactly the bug `ORG_KEY_SEPARATOR` above exists to prevent: switching
- * orgs and being shown the previous org's rows.
- */
-export function identityFromKey(key: string): string {
-	const orgPrefix = Option.match(Str.indexOf(ORG_KEY_SEPARATOR)(key), {
-		onNone: () => "",
-		onSome: (separatorIndex) => Str.slice(0, separatorIndex)(key),
-	})
-	const payload = orgScopedKeyPayload(key)
-
-	const parsed = decodeJson(payload)
-	// Not decodable: fall back to the key itself. Identity stays correct
-	// (never over-shares), it just can't match across windows.
-	if (Option.isNone(parsed)) return key
-
-	const stripped = normalize(parsed.value, "drop")
-	return `${orgPrefix}${ORG_KEY_SEPARATOR}${encodeJson(stripped === DROPPED ? null : stripped)}`
 }

@@ -1,5 +1,5 @@
 import { afterEach, assert, describe, it } from "@effect/vitest"
-import { OrgId, UserId } from "@maple/domain/http"
+import { AuthorizationUnavailableError, OrgId, UserId } from "@maple/domain/http"
 import { fakeChatSessionsLayer } from "@maple/backend/testing/chat-sessions-fake"
 import { envPorts } from "@maple/backend/platform/env-ports"
 import { ConfigProvider, Effect, Layer, Schema } from "effect"
@@ -67,7 +67,11 @@ const makeStub = (turns: Array<BeginTurnInput>): ChatSessionStub => ({
  * every service a handler needs has to have been captured while the router was built. This is
  * the shape that answered every chat request with "Service not found" until it was.
  */
-const makeRouterLayer = (testDb: TestDb, turns: Array<BeginTurnInput>) => {
+const makeRouterLayer = (
+	testDb: TestDb,
+	turns: Array<BeginTurnInput>,
+	auth: Layer.Layer<AuthService, never, Layer.Services<typeof AuthService.layer>> = AuthService.layer,
+) => {
 	const base = Layer.mergeAll(testDb.layer, Env.layer.pipe(Layer.provide(config)))
 	const workerEnv = Layer.merge(
 		envPorts({}),
@@ -77,7 +81,7 @@ const makeRouterLayer = (testDb: TestDb, turns: Array<BeginTurnInput>) => {
 		Layer.provide(
 			Layer.mergeAll(
 				ApiKeysService.layer.pipe(Layer.provide(base)),
-				AuthService.layer.pipe(Layer.provide(base)),
+				auth.pipe(Layer.provide(base)),
 				ErrorActorsService.layer.pipe(Layer.provide(base)),
 				base,
 				workerEnv,
@@ -90,8 +94,9 @@ const withHandler = (
 	testDb: TestDb,
 	turns: Array<BeginTurnInput>,
 	body: (handler: (request: Request) => Promise<Response>) => Effect.Effect<void>,
+	auth?: Parameters<typeof makeRouterLayer>[2],
 ) => {
-	const { handler, dispose } = HttpRouter.toWebHandler(makeRouterLayer(testDb, turns), {
+	const { handler, dispose } = HttpRouter.toWebHandler(makeRouterLayer(testDb, turns, auth), {
 		disableLogger: true,
 	})
 	return body((request) => handler(request)).pipe(Effect.ensuring(Effect.promise(dispose)))
@@ -281,6 +286,34 @@ describe("ChatSessionsRouter", () => {
 				assert.strictEqual(anonymous.status, 401)
 				assert.strictEqual(turns.length, 0)
 			}),
+		)
+	})
+
+	it.effect("answers 503, not a sign-in prompt, while the auth provider is away", () => {
+		const testDb = createTestDb(trackedDbs)
+		const turns: Array<BeginTurnInput> = []
+		const authProviderAway = Layer.effect(
+			AuthService,
+			Effect.gen(function* () {
+				const auth = yield* AuthService
+				return {
+					...auth,
+					resolveTenant: () =>
+						Effect.fail(
+							new AuthorizationUnavailableError({ message: "The auth provider is away" }),
+						),
+				}
+			}),
+		).pipe(Layer.provide(AuthService.layer))
+		return withHandler(
+			testDb,
+			turns,
+			Effect.fnUntraced(function* (handler) {
+				const response = yield* send(handler, { authorization: "Bearer aaa.bbb.ccc" })
+				assert.strictEqual(response.status, 503)
+				assert.strictEqual(turns.length, 0)
+			}),
+			authProviderAway,
 		)
 	})
 

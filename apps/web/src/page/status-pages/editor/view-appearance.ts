@@ -10,6 +10,7 @@ import { previewSnapshot } from "@maple/status-page"
 import { Schema, Array as Arr, String as Str } from "effect"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { alert, alertDescription, alertTitle } from "@maple/views/ui/alert"
+import { colorInput } from "@maple/views/ui/color-input"
 import { segmentedSelect } from "@maple/views/ui/segmented-select"
 import { skeleton } from "@maple/views/ui/skeleton"
 import { heading } from "@maple/views/ui/heading"
@@ -31,9 +32,12 @@ import { APPEARANCES, presetCards } from "../shared/look"
 import {
 	daysOf,
 	isListedIncident,
+	previewControls,
 	previewDocument,
+	previewExampleNote,
 	previewFrame,
 	previewTheme,
+	simulatePreview,
 	toSnapshotIncident,
 } from "../shared/preview"
 import { componentsOf, incidentsOf, monitorsOf, statusReadsReady } from "./reads"
@@ -90,29 +94,28 @@ const colorField = (
 	isDisabled: boolean,
 ): Html => {
 	const value = theme[entry.field]
-	const showSwatch = error === null && Str.trim(value) !== "" && !isDisabled
+	const preset = presetTokens(theme)[entry.token]
+	// The picker opens on the colour in effect: the typed one, or the preset's when the field is empty.
+	const picked = Str.trim(value) === "" ? preset : Str.toLowerCase(Str.trim(value))
 	return hstack(h, { gap: "2", align: "end" }, [
 		textField(h, {
 			id: `status-page-theme-${entry.field}`,
 			label: entry.label,
 			value,
-			placeholder: presetTokens(theme)[entry.token],
+			placeholder: preset,
 			isMono: true,
 			isDisabled,
 			error,
 			className: "flex-1",
 			onInput: (next) => Message.ChangedThemeColor({ field: entry.field, value: next }),
 		}),
-		...(showSwatch
+		...(error === null && !isDisabled
 			? [
-					h.span(
-						[
-							h.AriaHidden(true),
-							h.Class("mb-1.5 size-6 shrink-0 rounded-md border"),
-							h.Style({ backgroundColor: Str.trim(value) }),
-						],
-						[],
-					),
+					colorInput(h, {
+						value: picked,
+						label: `${entry.label} color`,
+						onInput: (next) => Message.ChangedThemeColor({ field: entry.field, value: next }),
+					}),
 				]
 			: []),
 	])
@@ -215,19 +218,7 @@ const orNull = (value: string): string | null => (Str.trim(value) === "" ? null 
 export const settingsDocument = (model: Model, page: V2StatusPage, form: SettingsForm): string => {
 	const nowMs = model.nowMs ?? toEpochMs(page.updated_at)
 	const monitors = monitorsOf(model)
-	const snapshot = previewSnapshot({
-		pageId: page.id,
-		page: {
-			name: Str.trim(form.name) === "" ? page.name : Str.trim(form.name),
-			slug: form.slug,
-			description: orNull(form.description),
-			websiteUrl: orNull(form.websiteUrl),
-			logoUrl: orNull(form.logoUrl),
-			privacyUrl: orNull(form.privacyUrl),
-			termsUrl: orNull(form.termsUrl),
-			showPoweredBy: form.showPoweredBy,
-			theme: previewTheme(themeOf(form.theme), model.previewScheme),
-		},
+	const shown = simulatePreview(model.previewState, {
 		components: Arr.map(componentsOf(model), (component) => ({
 			id: component.id,
 			name: component.name,
@@ -245,6 +236,23 @@ export const settingsDocument = (model: Model, page: V2StatusPage, form: Setting
 		),
 		nowMs,
 	})
+	const snapshot = previewSnapshot({
+		pageId: page.id,
+		page: {
+			name: Str.trim(form.name) === "" ? page.name : Str.trim(form.name),
+			slug: form.slug,
+			description: orNull(form.description),
+			websiteUrl: orNull(form.websiteUrl),
+			logoUrl: orNull(form.logoUrl),
+			privacyUrl: orNull(form.privacyUrl),
+			termsUrl: orNull(form.termsUrl),
+			showPoweredBy: form.showPoweredBy,
+			theme: previewTheme(themeOf(form.theme), model.previewScheme),
+		},
+		components: shown.components,
+		incidents: shown.incidents,
+		nowMs,
+	})
 	return previewDocument({ snapshot, nowMs, isSelectable: false, selectedIds: [] })
 }
 
@@ -259,27 +267,23 @@ export const previewPanel = (h: H, model: Model, page: V2StatusPage, form: Setti
 			attributes: [h.AriaLabelledBy("status-page-preview-title")],
 		},
 		[
-			hstack(h, { gap: "3", justify: "between", className: "min-h-7" }, [
+			hstack(h, { gap: "3", justify: "between", wrap: true, className: "min-h-7" }, [
 				heading(h, { level: 2, variant: "subsection", id: "status-page-preview-title" }, ["Preview"]),
-				...(form.theme.appearance === "auto"
-					? [
-							segmentedSelect(h, {
-								size: "xs",
-								ariaLabel: "Preview mode",
-								value: model.previewScheme,
-								onChange: (scheme) => Message.PickedPreviewScheme({ scheme }),
-								options: [
-									{ value: "light", label: "Light" },
-									{ value: "dark", label: "Dark" },
-								],
-							}),
-						]
-					: []),
+				previewControls(h, {
+					state: model.previewState,
+					width: model.previewWidth,
+					scheme: form.theme.appearance === "auto" ? model.previewScheme : null,
+					onState: (state) => Message.PickedPreviewState({ state }),
+					onWidth: (width) => Message.PickedPreviewWidth({ width }),
+					onScheme: (scheme) => Message.PickedPreviewScheme({ scheme }),
+				}),
 			]),
+			...previewExampleNote(h, model.previewState),
 			statusReadsReady(model)
 				? previewFrame(h, {
 						title: "Status page preview",
 						document: settingsDocument(model, page, form),
+						width: model.previewWidth,
 						className: "h-[640px]",
 					})
 				: skeleton(h, "h-[640px] w-full"),

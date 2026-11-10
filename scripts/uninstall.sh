@@ -4,9 +4,10 @@
 #   curl -fsSL https://maple.dev/cli/uninstall | sh
 #
 # Removes the `maple` PATH symlink and the `~/.maple/bin` bundle (maple +
-# libchdb.so). Your data dir (`~/.maple/data`) and config (`~/.maple/config.json`,
-# holding any remote token) are KEPT unless you opt in: the data dir prompts
-# (or set MAPLE_REMOVE_DATA=1 for non-interactive removal).
+# libchdb.so). Your data dir (`~/.maple/data`) is KEPT unless you opt in: it prompts
+# (or set MAPLE_REMOVE_DATA=1 for non-interactive removal). Everything else under
+# `~/.maple` always stays: config.json (holding any remote token), ingest-rules.json,
+# archive/, scratch/, cache/ and the log.
 #
 # Honors the same overrides as the installer so a custom install can be undone:
 #   MAPLE_INSTALL_DIR  bundle directory          (default: ~/.maple/bin)
@@ -70,4 +71,5 @@ if [ -d "$DATA_DIR" ]; then
 fi
 
 say ""
-say "Maple uninstalled. ~/.maple/config.json (if present) was left in place."
+say "Maple uninstalled. Anything else under ~/.maple was left in place:"
+say "config.json, ingest-rules.json, archive/, scratch/, cache/ and the log."

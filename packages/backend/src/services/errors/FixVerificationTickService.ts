@@ -1,4 +1,8 @@
-import { MAX_VERIFICATION_ATTEMPTS, type VerificationVerdict } from "@maple/domain/http"
+import {
+	type ErrorPersistenceError,
+	MAX_VERIFICATION_ATTEMPTS,
+	type VerificationVerdict,
+} from "@maple/domain/http"
 import { UserId } from "@maple/domain/primitives"
 import * as PG from "@maple-dev/effect-orm/postgres"
 import { ErrorIssuePullRequests, ErrorIssues, type ErrorIssueVerificationRow } from "@maple/db/tables"
@@ -104,6 +108,8 @@ export interface FixVerificationTickResult {
 	readonly investigationsStarted: number
 	readonly verdictsApplied: number
 	readonly skipped: number
+	/** Rows settled as `abandoned` because their issue or pull request link is gone. */
+	readonly abandoned: number
 	/** Rows whose verdict could not be written this tick; they are due again next minute. */
 	readonly failedRows: number
 }
@@ -199,6 +205,29 @@ const make: Effect.Effect<
 				),
 			)
 
+		// The two writes that are not verdicts, guarded per row for the same reason.
+		const guardedWrite = (
+			row: ErrorIssueVerificationRow,
+			action: "abandon" | "defer",
+			write: Effect.Effect<void, ErrorPersistenceError>,
+		) =>
+			write.pipe(
+				Effect.as(true),
+				Effect.catchCause((cause) =>
+					Cause.hasInterruptsOnly(cause)
+						? Effect.interrupt
+						: Effect.logError("[FixVerification] could not update a verification").pipe(
+								Effect.annotateLogs({
+									orgId: row.orgId,
+									verificationId: row.id,
+									action,
+									error: summarizeCause(cause),
+								}),
+								Effect.as(false),
+							),
+				),
+			)
+
 		// Phase 1: settle runs that have finished since the last tick. Done first so
 		// a verification that already has an answer is not competing for this
 		// minute's budget with one that still needs an agent.
@@ -229,7 +258,16 @@ const make: Effect.Effect<
 					),
 				)
 				const subject = context[0]
-				if (subject === undefined) return "skipped"
+				if (subject === undefined) {
+					// The issue or its link is gone, so no later tick can judge this row.
+					// Left `waiting` it would hold a slot in every tick's page forever.
+					const abandoned = yield* guardedWrite(
+						row,
+						"abandon",
+						verification.abandonVerification(row, nowMs),
+					)
+					return abandoned ? "abandoned" : "failed"
+				}
 
 				const split = yield* occurrenceSplit(row, subject.fingerprintHash, nowMs).pipe(
 					Effect.asSome,
@@ -245,6 +283,15 @@ const make: Effect.Effect<
 										error: summarizeCause(cause),
 									}),
 									// Leave the row waiting; the warehouse being down is not a verdict.
+									// It goes to the back of the due queue, so an org whose warehouse
+									// keeps failing does not sit ahead of every other org.
+									Effect.andThen(
+										guardedWrite(
+											row,
+											"defer",
+											verification.deferVerification(row, nowMs),
+										),
+									),
 									Effect.as(
 										Option.none<{
 											postMerge: number
@@ -358,6 +405,7 @@ const make: Effect.Effect<
 		const refuted = countOutcome("refuted")
 		const investigationsStarted = countOutcome("started")
 		const skipped = countOutcome("skipped")
+		const abandoned = countOutcome("abandoned")
 		const verdictsApplied = Arr.filter(settledApplied, Boolean).length + countOutcome("verdict")
 		const failedRows = Arr.filter(settledApplied, (applied) => !applied).length + countOutcome("failed")
 
@@ -367,10 +415,19 @@ const make: Effect.Effect<
 			"maple.verification.investigations_started": investigationsStarted,
 			"maple.verification.verdicts_applied": verdictsApplied,
 			"maple.verification.skipped": skipped,
+			"maple.verification.abandoned": abandoned,
 			"maple.verification.failed_rows": failedRows,
 		})
 
-		return { examined: due.length, refuted, investigationsStarted, verdictsApplied, skipped, failedRows }
+		return {
+			examined: due.length,
+			refuted,
+			investigationsStarted,
+			verdictsApplied,
+			skipped,
+			abandoned,
+			failedRows,
+		}
 	}).pipe(Effect.withSpan("FixVerificationTick.runTick"))
 
 	const runTickSafely: FixVerificationTickServiceApi["runTick"] = runTick.pipe(
@@ -389,6 +446,7 @@ const make: Effect.Effect<
 							investigationsStarted: 0,
 							verdictsApplied: 0,
 							skipped: 0,
+							abandoned: 0,
 							failedRows: 0,
 						} satisfies FixVerificationTickResult),
 					),

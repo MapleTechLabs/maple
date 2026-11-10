@@ -87,6 +87,10 @@ export const findingBadge = <M>(h: HtmlBuilder<M>, finding: SecurityAuditFinding
 			])
 		: bucketBadge(h, bucketOf(finding))
 
+/** A compact estimated severity for narrow columns; pair it with `unverifiedChip`. */
+export const estimatedSeverityBadge = <M>(h: HtmlBuilder<M>, finding: SecurityAuditFinding): Html =>
+	badge(h, { variant: "outline", className: "border-dashed" }, [BUCKET_LABEL[bucketOf(finding)]])
+
 /** A scored lead's mark: its severity, quieter and labelled, until something proves it. */
 export const unverifiedChip = <M>(h: HtmlBuilder<M>): Html =>
 	h.span(

@@ -1,6 +1,6 @@
 export { renderBadgeSvg } from "./badge"
 export type { RenderOptions } from "./document"
-export { escapeHtml, escapeXml } from "./escape"
+export { escapeXml } from "./escape"
 export { INCIDENT_STATUS_LABEL } from "./format"
 export { renderAtomFeed } from "./feed"
 export { renderStatusJson, STATUS_INDICATOR } from "./json"

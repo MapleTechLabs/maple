@@ -1,14 +1,18 @@
 import { UptimeMonitorId } from "@maple/domain"
 import type { StatusPagePreviewParams, V2StatusPageIncident } from "@maple/domain/http/v2"
 import {
+	isActiveIncident,
 	isListedIncident as isListedSnapshotIncident,
 	StatusPageDayBar,
 	type StatusPageSnapshot,
 	type StatusPageSnapshotIncident,
 	type StatusPageTheme,
 } from "@maple/domain/status-page"
-import { renderPage } from "@maple/status-page"
+import { type PreviewComponent, renderPage } from "@maple/status-page"
 import { cn } from "@maple/ui/lib/utils"
+import { segmentedSelect } from "@maple/views/ui/segmented-select"
+import { hstack } from "@maple/views/ui/stack"
+import { typography } from "@maple/views/ui/typography"
 import { Option, Schema, Stream, Array as Arr, String as Str } from "effect"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { toEpochMs } from "@maple/ui/lib/time-format"
@@ -50,6 +54,86 @@ export const previewTheme = (theme: StatusPageTheme, scheme: PreviewScheme): Sta
 	theme.appearance === "auto"
 		? { ...theme, appearance: scheme, background: null, text: null, card: null, border: null }
 		: theme
+
+/** The width the preview is drawn at: the whole column, or a phone. */
+export const PreviewWidth = Schema.Literals(["desktop", "mobile"])
+export type PreviewWidth = typeof PreviewWidth.Type
+
+/** What the preview shows: the page as it is now, or a state it is not in, to check how it reads. */
+export const PreviewState = Schema.Literals(["live", "operational", "outage", "maintenance"])
+export type PreviewState = typeof PreviewState.Type
+
+const exampleIncident = (
+	state: "outage" | "maintenance",
+	nowMs: number,
+	componentIds: ReadonlyArray<string>,
+): StatusPageSnapshotIncident => {
+	const startedAt = nowMs - 25 * 60_000
+	const isOutage = state === "outage"
+	return {
+		id: "preview-example",
+		kind: isOutage ? "incident" : "maintenance",
+		title: isOutage ? "Example incident" : "Example maintenance",
+		impact: isOutage ? "critical" : "none",
+		status: isOutage ? "investigating" : "in_progress",
+		startedAt,
+		resolvedAt: null,
+		scheduledStart: isOutage ? null : startedAt,
+		scheduledEnd: isOutage ? null : nowMs + 95 * 60_000,
+		componentIds,
+		openedByOverlayEntryId: null,
+		updates: [
+			{
+				id: "preview-example-update",
+				status: isOutage ? "investigating" : "in_progress",
+				body: isOutage
+					? "This is how an incident reads to visitors. Nothing was posted."
+					: "This is how maintenance reads to visitors. Nothing was scheduled.",
+				at: startedAt,
+				source: "dashboard",
+				overlayEntryId: null,
+			},
+		],
+	}
+}
+
+/**
+ * The components and incidents the preview draws for a state. `live` passes them through; the
+ * others clear what is open and, for an outage or maintenance, add an example on the first component.
+ */
+export const simulatePreview = (
+	state: PreviewState,
+	input: Readonly<{
+		components: ReadonlyArray<PreviewComponent>
+		incidents: ReadonlyArray<StatusPageSnapshotIncident>
+		nowMs: number
+	}>,
+): Readonly<{
+	components: ReadonlyArray<PreviewComponent>
+	incidents: ReadonlyArray<StatusPageSnapshotIncident>
+}> => {
+	if (state === "live") return { components: input.components, incidents: input.incidents }
+	const components = Arr.map(input.components, (component) => ({
+		...component,
+		monitorStatus: component.monitorStatus === "down" ? "up" : component.monitorStatus,
+		manualStatus: null,
+	}))
+	const settled = Arr.filter(input.incidents, (incident) => !isActiveIncident(incident))
+	return {
+		components,
+		incidents:
+			state === "operational"
+				? settled
+				: [
+						exampleIncident(
+							state,
+							input.nowMs,
+							Arr.map(Arr.take(input.components, 1), (component) => component.id),
+						),
+						...settled,
+					],
+	}
+}
 
 const msOrNull = (value: string | null): number | null => (value === null ? null : toEpochMs(value))
 
@@ -184,10 +268,80 @@ export const previewSelections: Stream.Stream<PreviewSelection> = Stream.suspend
 	),
 )
 
+const PREVIEW_STATES: ReadonlyArray<{ value: PreviewState; label: string }> = [
+	{ value: "live", label: "Live" },
+	{ value: "operational", label: "All clear" },
+	{ value: "outage", label: "Outage" },
+	{ value: "maintenance", label: "Maintenance" },
+]
+
+/** The preview's own switches: which state, width and (for an Auto page) scheme it draws. None is a page edit. */
+export const previewControls = <M>(
+	h: HtmlBuilder<M>,
+	options: Readonly<{
+		state: PreviewState
+		width: PreviewWidth
+		/** `null` on a page with a fixed mode: there is no scheme to pick. */
+		scheme: PreviewScheme | null
+		onState: (state: PreviewState) => M
+		onWidth: (width: PreviewWidth) => M
+		onScheme: (scheme: PreviewScheme) => M
+	}>,
+): Html =>
+	hstack(h, { gap: "2", wrap: true, justify: "end" }, [
+		segmentedSelect(h, {
+			size: "xs",
+			ariaLabel: "Preview state",
+			value: options.state,
+			onChange: options.onState,
+			options: PREVIEW_STATES,
+		}),
+		segmentedSelect(h, {
+			size: "xs",
+			ariaLabel: "Preview width",
+			value: options.width,
+			onChange: options.onWidth,
+			options: [
+				{ value: "desktop", label: "Desktop" },
+				{ value: "mobile", label: "Mobile" },
+			],
+		}),
+		...(options.scheme === null
+			? []
+			: [
+					segmentedSelect(h, {
+						size: "xs",
+						ariaLabel: "Preview mode",
+						value: options.scheme,
+						onChange: options.onScheme,
+						options: [
+							{ value: "light", label: "Light" },
+							{ value: "dark", label: "Dark" },
+						],
+					}),
+				]),
+	])
+
+/** Said under a preview that is not showing the live state, so an example is never read as real. */
+export const previewExampleNote = <M>(h: HtmlBuilder<M>, state: PreviewState): ReadonlyArray<Html> =>
+	state === "live"
+		? []
+		: [
+				typography(h, { size: "xs", tone: "muted", as: "p" }, [
+					"Showing an example state. Visitors still see the live page.",
+				]),
+			]
+
 /** The sandboxed frame: scripts run so the page pages its bars, but it can reach nothing of ours. */
 export const previewFrame = <M>(
 	h: HtmlBuilder<M>,
-	options: Readonly<{ document: string; title: string; className?: string; isSelectable?: boolean }>,
+	options: Readonly<{
+		document: string
+		title: string
+		className?: string
+		isSelectable?: boolean
+		width?: PreviewWidth
+	}>,
 ): Html =>
 	h.iframe(
 		[
@@ -195,7 +349,14 @@ export const previewFrame = <M>(
 			h.Title(options.title),
 			h.Sandbox("allow-scripts"),
 			h.Srcdoc(options.document),
-			h.Class(cn("block w-full rounded-lg border bg-background", options.className)),
+			h.DataAttribute("width", options.width ?? "desktop"),
+			h.Class(
+				cn(
+					"block w-full rounded-lg border bg-background",
+					options.width === "mobile" && "mx-auto max-w-sm",
+					options.className,
+				),
+			),
 		],
 		[],
 	)

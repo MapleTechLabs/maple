@@ -1,5 +1,6 @@
 import { auditActionLabel, auditResourceLabel } from "@maple/domain/audit-actions"
 import type { AuditActorType, AuditOutcome } from "@maple/domain/http"
+import { decodePublicId, PublicIdPrefixes } from "@maple/domain/http/v2"
 import { Array as Arr, Option, String as Str } from "effect"
 
 export interface AuditLogSearch {
@@ -127,6 +128,11 @@ export function parseAuditLogSearch(search: AuditLogSearch): AuditLogFilters {
 	}
 }
 
+/** The entry a shared link points at (`?entry=alog_…`), as the internal id rows carry; none if malformed. */
+export function linkedAuditEntryId(search: { readonly entry?: string | undefined }): string | null {
+	return search.entry === undefined ? null : decodePublicId(PublicIdPrefixes.auditLogEntry, search.entry)
+}
+
 /** The filter one pasted value stands for: an id of a known shape, or an action name. */
 export type AuditLookup =
 	| { readonly key: "actorId"; readonly value: string }
@@ -166,25 +172,6 @@ export function auditLogSearchFrom(filters: AuditLogFilters): AuditLogSearchUpda
 /** Just the audit filters out of a search object, for links that should keep them. */
 export function pickAuditLogSearch(search: AuditLogSearch): AuditLogSearchUpdate {
 	return auditLogSearchFrom(parseAuditLogSearch(search))
-}
-
-/** The `since`/`until` bounds a range resolves to at `now`. */
-export function resolveAuditDateRange(
-	range: AuditDateRange,
-	now: number,
-): { readonly since: string | undefined; readonly until: string | undefined } {
-	if (range.kind === "custom") return { since: range.since, until: range.until }
-	const preset =
-		range.kind === "preset"
-			? Arr.findFirst(AUDIT_RANGE_PRESETS, (option) => option.value === range.preset)
-			: Option.none()
-	return {
-		since: Option.match(preset, {
-			onNone: () => undefined,
-			onSome: (found) => new Date(now - found.ms).toISOString(),
-		}),
-		until: undefined,
-	}
 }
 
 export function hasAuditLogFilters(filters: AuditLogFilters): boolean {

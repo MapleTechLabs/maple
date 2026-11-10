@@ -599,27 +599,23 @@ export function canUseTracesAggregatesMv(
 /**
  * Build WHERE conditions for queries against traces_aggregates_hourly.
  *
- * `hourBounds` overrides the default `[startTime, endTime]` window with raw SQL
- * expressions. Callers that union this MV with raw partial-hour edges pass the
- * whole-hour interior (`[firstFullHour, endHour)`) so the two halves tile the
- * requested window exactly instead of overlapping or leaving a gap.
+ * `hourBounds` is the `Hour` window as raw SQL expressions. Callers union this MV
+ * with raw partial-hour edges and pass the whole-hour interior
+ * (`[firstFullHour, endHour)`) so the two halves tile the requested window exactly
+ * instead of overlapping or leaving a gap.
  */
 export function tracesAggregatesWhereConditions(
 	$: ColumnAccessor<typeof Datasources.tracesAggregatesHourly.columns>,
 	opts: TracesBaseWhereOpts,
-	hourBounds?: { readonly gte: string; readonly lt: string },
+	hourBounds: { readonly gte: string; readonly lt: string },
 ): Array<CH.Condition | undefined> {
 	const mm = opts.matchModes
 	const services = inclusionValues(opts.serviceName, opts.serviceNames)
 	const spanNames = inclusionValues(opts.spanName, opts.spanNames)
 	const conditions: Array<CH.Condition | undefined> = [
 		$.OrgId.eq(orgIdParam),
-		hourBounds
-			? $.Hour.gte(CH.rawExpr(hourBounds.gte, T.dateTime))
-			: $.Hour.gte(utcSecondsParam("startTime")),
-		hourBounds
-			? $.Hour.lt(CH.rawExpr(hourBounds.lt, T.dateTime))
-			: $.Hour.lte(utcSecondsParam("endTime")),
+		$.Hour.gte(CH.rawExpr(hourBounds.gte, T.dateTime)),
+		$.Hour.lt(CH.rawExpr(hourBounds.lt, T.dateTime)),
 		CH.when(services, (v: readonly string[]) =>
 			matchOrIn($.ServiceName, v, mm?.serviceName === "contains"),
 		),

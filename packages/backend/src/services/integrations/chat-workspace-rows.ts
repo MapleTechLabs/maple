@@ -7,7 +7,6 @@
  * that reads one row per mention. The service calls these same functions, so there is one query
  * per question rather than two.
  */
-import { Buffer } from "node:buffer"
 import * as PG from "@maple-dev/effect-orm/postgres"
 import { ChatWorkspaces } from "@maple/db/tables"
 import type { ChatWorkspaceSettings } from "@maple/chat-platform"
@@ -15,6 +14,7 @@ import { ChatConnectorId, ChatWorkspaceId, IntegrationsPersistenceError, OrgId }
 import { Effect, Option } from "effect"
 import type { DatabaseApi, DatabaseError } from "@maple/backend/platform/DatabaseLive"
 import { makeDbExecute } from "@maple/backend/platform/db-execute"
+import type { SecretKeyring } from "@maple/backend/platform/SecretBox"
 import {
 	openChatWorkspaceCredentials,
 	storedCredentials,
@@ -51,13 +51,13 @@ export const resolveChatWorkspace = Effect.fn("ChatWorkspaceRows.resolveChatWork
 	connectorId: ChatConnectorId,
 	externalWorkspaceId: string,
 	/**
-	 * The key the credential envelope was sealed with, or `null` on a deployment that has none.
+	 * The keys the credential envelope opens with, or `null` on a deployment that has none.
 	 * A row that carries a credential no key can open fails the resolution rather than resolving to
 	 * a workspace whose connector then cannot post — the second is a bot that answers nothing and
 	 * says why nowhere. No default: both callers hold a key or know they do not, and a forgotten
 	 * argument would read every credential row as unopenable.
 	 */
-	encryptionKey: Buffer | null,
+	keyring: SecretKeyring | null,
 ) {
 	yield* Effect.annotateCurrentSpan({ "maple.chat.connector": connectorId })
 	const rows = yield* dbExecute(database)((db) =>
@@ -79,14 +79,14 @@ export const resolveChatWorkspace = Effect.fn("ChatWorkspaceRows.resolveChatWork
 			credentials: undefined,
 		})
 	}
-	if (encryptionKey === null) {
+	if (keyring === null) {
 		return yield* unreadable(
 			"This chat workspace stores a credential and this deployment has no key for it",
 		)
 	}
 	const credentials = yield* openChatWorkspaceCredentials(
 		sealed,
-		encryptionKey,
+		keyring,
 		{ orgId: row.orgId, connector: connectorId, externalWorkspaceId },
 		// The message never carries the cause: everything below it is key material and ciphertext.
 		(message) => unreadable(`Stored chat workspace credential is unreadable: ${message}`),

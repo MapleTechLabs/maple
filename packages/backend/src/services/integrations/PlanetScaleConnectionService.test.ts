@@ -526,10 +526,14 @@ describe("PlanetScaleConnectionService", () => {
 			assert.strictEqual(sameOrg.scrapeTarget?.id, firstTargetId)
 			assert.deepStrictEqual(sameOrg.scrapeTarget?.includeBranches, ["main"])
 			assert.strictEqual((yield* scrapeTargetsService.list(orgId)).targets.length, 1)
+			const webhookBefore = yield* service.webhookConfig(orgId)
 
 			const rebound = yield* service.finalizeOrgSelection(orgId, { organization: "beta" })
 			assert.strictEqual(rebound.organization, "beta")
 			assert.notStrictEqual(rebound.scrapeTarget?.id, firstTargetId)
+			// The webhook secret and its URL are minted once and survive the rebind.
+			assert.isNotNull(webhookBefore.secret)
+			assert.deepStrictEqual(yield* service.webhookConfig(orgId), webhookBefore)
 			const targets = yield* scrapeTargetsService.list(orgId)
 			assert.strictEqual(targets.targets.length, 1)
 			assert.strictEqual(targets.targets[0]?.id, rebound.scrapeTarget?.id)

@@ -5,7 +5,6 @@
  * layer graph and one Postgres socket for the batch.
  */
 import * as Cloudflare from "@alchemy.run/cloudflare"
-import { renamedFrom } from "alchemy/Rename"
 import { Effect, Layer, Stream } from "effect"
 import { DatabasePgLive } from "@maple/backend/platform/DatabasePgLive"
 import { AuditEventsDlq, AuditEventsQueue } from "@maple/infra/cloudflare"
@@ -50,10 +49,7 @@ const AUDIT_EVENTS_CONSUMER = {
 
 /**
  * Attaches the five consumers to the host at plan time and their listeners
- * at runtime. Needs `Queues.EventSourceLive`. `renamedFrom` carries the
- * consumer resources over from the ids the api factory declared them under,
- * so the deploy migrates their state rows instead of re-creating the
- * consumers; drop it once every stage has deployed past it.
+ * at runtime. Needs `Queues.EventSourceLive`.
  */
 export const registerQueueConsumers = (
 	ports: ApiPortsLayer,
@@ -67,7 +63,7 @@ export const registerQueueConsumers = (
 			Effect.flatMap(Stream.runCollect(stream), (messages) =>
 				consumeVcsSyncBatch(ports, env, vcsSyncCaches, messages),
 			),
-		).pipe(renamedFrom({ fqn: "vcs-sync-consumer" }))
+		)
 		// Same handler, own consumer: a scheduled sync's backlog drains here without holding up webhooks.
 		const vcsBackfillQueue = yield* VcsBackfillQueue
 		yield* Cloudflare.Queues.consumeQueueMessages(vcsBackfillQueue, VCS_SYNC_CONSUMER, (stream) =>
@@ -93,7 +89,7 @@ export const registerQueueConsumers = (
 							),
 						),
 				),
-		).pipe(renamedFrom({ fqn: "planetscale-webhooks-consumer" }))
+		)
 		const cancellationReviewsQueue = yield* CancellationReviewsQueue
 		yield* Cloudflare.Queues.consumeQueueMessages(
 			cancellationReviewsQueue,
@@ -136,5 +132,5 @@ export const registerQueueConsumers = (
 						),
 					),
 				),
-		).pipe(renamedFrom({ fqn: "audit-events-consumer" }))
+		)
 	})

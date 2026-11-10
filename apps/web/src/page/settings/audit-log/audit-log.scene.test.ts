@@ -1,11 +1,15 @@
-import { Result, Array as Arr } from "effect"
-import { expect as expectView, given, role, scene, withViewInputs } from "foldkit/scene"
+import { Array as Arr, Option, Record as Rec, Result, Schema } from "effect"
+import { encodePublicId, PublicIdPrefixes } from "@maple/domain/http/v2"
+import { expect as expectView, given, role, scene, text, withViewInputs } from "foldkit/scene"
+import { AUDIT_ENTRIES, AUDIT_MEMBERS, AUDIT_NOW } from "../../../lab/audit-log-fixture"
 import { describe, expect, test } from "vitest"
 import { PageOutMessage } from "../../contract"
 import * as CustomRange from "../../kit/custom-range"
 import { Message } from "./model"
 import { init, revisit, searchChanged, update } from "./update"
 import { view } from "./view"
+import { entryHref } from "./view-detail"
+import { SettingsSearch } from "../../../route/search"
 
 const page = { data: [], has_more: true, next_cursor: "cursor_2" }
 
@@ -231,5 +235,241 @@ describe("audit log tab", () => {
 			}),
 		)
 		expect(picked.model.customRange).toBeNull()
+	})
+
+	test("opening the custom range moves focus into the popover, so Escape still closes it", () => {
+		const search = { tab: "audit-log" } as const
+		const opened = update(
+			init(search).model,
+			Message.ResolvedCustomToday({
+				timeZone: "UTC",
+				today: { year: 2026, month: 11, day: 9 },
+				lastDay: { year: 2026, month: 11, day: 9 },
+			}),
+			search,
+		)
+		expect(Arr.map(opened.commands ?? [], ({ name }) => name)).toEqual(["FocusAuditDateRange"])
+	})
+
+	describe("an entry's detail", () => {
+		const search = { tab: "audit-log" } as const
+		const loadedWith = (searchFor: typeof SettingsSearch.Type) => {
+			const entered = init(searchFor).model
+			const withMembers = update(
+				entered,
+				Message.CompletedFetchMembers({ members: AUDIT_MEMBERS }),
+				searchFor,
+			).model
+			return update(
+				withMembers,
+				Message.CompletedFetchPage({
+					request: entered.request,
+					resolvedSince: null,
+					result: Result.succeed({ data: AUDIT_ENTRIES, has_more: false, next_cursor: null }),
+				}),
+				searchFor,
+			)
+		}
+		const sceneOf = (searchFor: Parameters<typeof loadedWith>[0]) => ({
+			update: (model: ReturnType<typeof init>["model"], message: Message) =>
+				update(model, message, searchFor),
+			view: withViewInputs(view, {
+				search: searchFor,
+				nowMs: AUDIT_NOW,
+				timeZone: "UTC",
+				apiKeys: [],
+			})(),
+		})
+
+		test("names a member the entry froze no name for, from the org's memberships", () => {
+			scene(
+				sceneOf(search),
+				given(loadedWith(search).model),
+				expectView(text("Linus Torvalds")).toExist(),
+			)
+		})
+
+		test("Filter beside the actor lists that actor's entries of any type", () => {
+			const step = update(
+				loadedWith({ ...search }).model,
+				Message.ClickedPivot({ key: "actorId", value: "key_aXwpxqBkqtYwtBtmsGbR41" }),
+				{ tab: "audit-log", actor_type: "user" },
+			)
+			expect(step.outMessage).toEqual(
+				PageOutMessage.RequestedNavigation({
+					url: "/settings?tab=audit-log&actor=key_aXwpxqBkqtYwtBtmsGbR41",
+					isReplace: true,
+				}),
+			)
+		})
+
+		test("Filter beside the action also picks its resource type, so the action select shows it", () => {
+			const step = update(
+				loadedWith(search).model,
+				Message.ClickedPivot({ key: "action", value: "dashboard.updated" }),
+				search,
+			)
+			expect(step.outMessage).toEqual(
+				PageOutMessage.RequestedNavigation({
+					url: "/settings?tab=audit-log&resource_type=dashboard&action=dashboard.updated",
+					isReplace: true,
+				}),
+			)
+		})
+
+		test("Filter from a shared entry link leaves that link's one-minute window", () => {
+			const target = AUDIT_ENTRIES[5]
+			if (target === undefined) throw new Error("fixture")
+			const linked = Schema.decodeSync(SettingsSearch)(
+				Rec.fromEntries([...new URL(entryHref(target), "https://maple.test").searchParams.entries()]),
+			)
+			const step = update(
+				loadedWith(linked).model,
+				Message.ClickedPivot({ key: "actorId", value: "key_aXwpxqBkqtYwtBtmsGbR41" }),
+				linked,
+			)
+			expect(step.outMessage).toEqual(
+				PageOutMessage.RequestedNavigation({
+					url: "/settings?tab=audit-log&actor=key_aXwpxqBkqtYwtBtmsGbR41&kind=all",
+					isReplace: true,
+				}),
+			)
+		})
+
+		test("a shared entry link opens that entry and scrolls to it", () => {
+			const target = AUDIT_ENTRIES[2]
+			if (target === undefined) throw new Error("fixture")
+			const linked = {
+				tab: "audit-log",
+				entry: encodePublicId(PublicIdPrefixes.auditLogEntry, target.id),
+			} as const
+			const loaded = loadedWith(linked)
+			expect(loaded.model.expanded).toEqual([target.id])
+			expect(Arr.map(loaded.commands ?? [], ({ name }) => name)).toEqual(["ScrollToAuditEntry"])
+		})
+
+		test("rows sit under a heading for each day, counted in the viewer's zone", () => {
+			scene(
+				sceneOf(search),
+				given(loadedWith(search).model),
+				expectView(role("heading", { name: "Today" })).toExist(),
+				expectView(role("heading", { name: "Yesterday" })).toExist(),
+			)
+		})
+
+		test("a shared entry link still opens its entry when it arrives on a later page", () => {
+			const target = AUDIT_ENTRIES[5]
+			if (target === undefined) throw new Error("fixture")
+			const linked = {
+				tab: "audit-log",
+				entry: encodePublicId(PublicIdPrefixes.auditLogEntry, target.id),
+			} as const
+			const entered = init(linked).model
+			const first = update(
+				entered,
+				Message.CompletedFetchPage({
+					request: entered.request,
+					resolvedSince: null,
+					result: Result.succeed({
+						data: AUDIT_ENTRIES.slice(0, 3),
+						has_more: true,
+						next_cursor: "cursor_2",
+					}),
+				}),
+				linked,
+			).model
+			expect(first.expanded).toEqual([])
+			const asked = update(first, Message.ClickedLoadMore(), linked).model
+			const second = update(
+				asked,
+				Message.CompletedFetchPage({
+					request: asked.request,
+					resolvedSince: null,
+					result: Result.succeed({
+						data: AUDIT_ENTRIES.slice(3),
+						has_more: false,
+						next_cursor: null,
+					}),
+				}),
+				linked,
+			)
+			expect(second.model.expanded).toEqual([target.id])
+			expect(Arr.map(second.commands ?? [], ({ name }) => name)).toEqual(["ScrollToAuditEntry"])
+		})
+
+		test("a filter change leaves a shared entry link behind", () => {
+			const linked = { tab: "audit-log", entry: "alog_gQUY7khzfVuTjEMzpTTstW" } as const
+			const step = update(init(linked).model, Message.ClickedOutcome({ value: "denied" }), linked)
+			expect(step.outMessage).toEqual(
+				PageOutMessage.RequestedNavigation({
+					url: "/settings?tab=audit-log&outcome=denied",
+					isReplace: true,
+				}),
+			)
+		})
+
+		test("an entry's link lists the minute that ends at the entry, and opens it", () => {
+			const target = AUDIT_ENTRIES[5]
+			if (target === undefined) throw new Error("fixture")
+			const linked = Schema.decodeSync(SettingsSearch)(
+				Rec.fromEntries([...new URL(entryHref(target), "https://maple.test").searchParams.entries()]),
+			)
+			// The fixture's sixth entry happened 47 minutes before `AUDIT_NOW`.
+			expect(linked).toEqual({
+				tab: "audit-log",
+				kind: "all",
+				since: new Date(AUDIT_NOW - 48 * 60_000).toISOString(),
+				until: new Date(AUDIT_NOW - 47 * 60_000).toISOString(),
+				entry: encodePublicId(PublicIdPrefixes.auditLogEntry, target.id),
+			})
+			expect(loadedWith(linked).model.expanded).toEqual([target.id])
+		})
+
+		test("an entry Maple itself made still names its surface", () => {
+			const target = Arr.findFirst(AUDIT_ENTRIES, (entry) => entry.source === "system")
+			if (Option.isNone(target)) throw new Error("fixture")
+			const opened = update(
+				loadedWith(search).model,
+				Message.ToggledEntry({ id: target.value.id }),
+				search,
+			).model
+			scene(sceneOf(search), given(opened), expectView(text("Surface")).toExist())
+		})
+
+		test("an open entry offers a filter beside its actor, action and resource", () => {
+			const target = AUDIT_ENTRIES[2]
+			if (target === undefined) throw new Error("fixture")
+			const opened = update(
+				loadedWith(search).model,
+				Message.ToggledEntry({ id: target.id }),
+				search,
+			).model
+			scene(
+				sceneOf(search),
+				given(opened),
+				expectView(role("button", { name: "Show every entry with this actor" })).toExist(),
+				expectView(role("button", { name: "Show every entry with this action" })).toExist(),
+				expectView(role("button", { name: "Show every entry with this resource" })).toExist(),
+			)
+		})
+
+		test("a row names the kind of actor behind an API key", () => {
+			scene(
+				sceneOf(search),
+				given(loadedWith(search).model),
+				expectView(role("img", { name: "API key" })).toExist(),
+			)
+		})
+
+		test("the Origin section names the country an entry came from", () => {
+			const target = AUDIT_ENTRIES[4]
+			if (target === undefined) throw new Error("fixture")
+			const opened = update(
+				loadedWith(search).model,
+				Message.ToggledEntry({ id: target.id }),
+				search,
+			).model
+			scene(sceneOf(search), given(opened), expectView(text(/United Kingdom \(GB\)/)).toExist())
+		})
 	})
 })

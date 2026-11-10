@@ -171,7 +171,7 @@ const templateTile = <M>(
 				),
 				typography(h, { size: "sm", weight: "medium" }, [template.title]),
 			]),
-			inlineCode(h, { className: "self-start text-2xs text-muted-foreground" }, [template.summary]),
+			inlineCode(h, { size: "2xs", tone: "muted", className: "self-start" }, [template.summary]),
 		],
 	)
 }

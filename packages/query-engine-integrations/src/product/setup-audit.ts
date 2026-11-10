@@ -69,7 +69,7 @@ export function auditAttributeKeyInventoryQuery(opts: { limit?: number } = {}) {
 		.where(($) => [
 			$.OrgId.eq(orgIdParam),
 			CH.inList($.AttributeScope, ["span", "resource", "log", "metric"]),
-			$.Hour.gte(utcSecondsParam("startTime")),
+			$.Hour.gte(utcHourFloor("startTime")),
 			$.Hour.lte(utcSecondsParam("endTime")),
 		])
 		.groupBy("scope", "attributeKey")
@@ -340,7 +340,7 @@ export function auditMetricLabelCardinalityQuery(opts: { limit?: number } = {}) 
 		.where(($) => [
 			$.OrgId.eq(orgIdParam),
 			$.AttributeScope.eq("metric"),
-			$.Hour.gte(utcSecondsParam("startTime")),
+			$.Hour.gte(utcHourFloor("startTime")),
 			$.Hour.lte(utcSecondsParam("endTime")),
 		])
 		.groupBy("attributeKey")
@@ -388,7 +388,7 @@ export function auditPeerValueInventoryQuery(opts: { limit?: number } = {}) {
 			$.OrgId.eq(orgIdParam),
 			$.AttributeScope.eq("span"),
 			CH.inList($.AttributeKey, [...AUDIT_PEER_KEYS]),
-			$.Hour.gte(utcSecondsParam("startTime")),
+			$.Hour.gte(utcHourFloor("startTime")),
 			$.Hour.lte(utcSecondsParam("endTime")),
 			$.AttributeValue.neq(""),
 		])
@@ -519,7 +519,7 @@ export function auditResourceValueSamplesQuery(keys: ReadonlyArray<string>, opts
 			$.OrgId.eq(orgIdParam),
 			$.AttributeScope.eq("resource"),
 			CH.inList($.AttributeKey, keys),
-			$.Hour.gte(utcSecondsParam("startTime")),
+			$.Hour.gte(utcHourFloor("startTime")),
 			$.Hour.lte(utcSecondsParam("endTime")),
 		])
 		.groupBy("attributeKey", "attributeValue")

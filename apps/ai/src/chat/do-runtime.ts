@@ -8,6 +8,8 @@ import { envPorts } from "@maple/backend/platform/env-ports"
 import { runtimeTelemetry } from "@maple/infra/worker-telemetry"
 import { Effect, Layer, Schema } from "effect"
 import { MCP_ANTICIPATED_ERROR_IDENTIFIERS } from "../mcp/expected-failures"
+import type { AiSessionPortsLayer } from "../worker/bindings"
+import { provideSessionPorts } from "./session-ports"
 
 /** A best-effort step of an invocation (loading the code executor, disposing, flushing) rejected. */
 export class ChatRuntimeStepError extends Schema.TaggedError<ChatRuntimeStepError>()(
@@ -51,11 +53,13 @@ export interface ChatRuntimeInput {
 	readonly env: Record<string, unknown>
 	/** This Worker's `ChatSession` namespace, from the activation; the graph's `ChatSessions` port. */
 	readonly chatSessions?: ChatSessionNamespace
+	/** The data-source call limiters and the audit queue, from the activation; none where a test or script runs. */
+	readonly bindingPorts?: AiSessionPortsLayer
 }
 
 /**
- * What every invocation's service graph sits on: Postgres, the env ports, the session namespace and
- * `tracing`, which is {@link chatTelemetry}'s layer or a decoration of it.
+ * What every invocation's service graph sits on: Postgres, the env ports, the session namespace, the
+ * Worker's bound ports and `tracing`, which is {@link chatTelemetry}'s layer or a decoration of it.
  */
 export const chatPlatformLayer = async <T, E>(input: ChatRuntimeInput, tracing: Layer.Layer<T, E>) => {
 	const [{ DatabasePgLive }, { layerMapleDbConnection }] = await Promise.all([
@@ -66,6 +70,7 @@ export const chatPlatformLayer = async <T, E>(input: ChatRuntimeInput, tracing: 
 		Layer.provideMerge(layerMapleDbConnection(input.env)),
 		Layer.provideMerge(envPorts(input.env)),
 		Layer.provideMerge(chatSessionsLayerIfBound(input.chatSessions, input.env)),
+		provideSessionPorts(input.bindingPorts),
 		Layer.provideMerge(tracing),
 	)
 }

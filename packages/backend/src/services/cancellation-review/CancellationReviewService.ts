@@ -54,7 +54,7 @@ import {
 } from "effect"
 import * as SecureRandom from "effect/crypto/SecureRandom"
 import { FetchHttpClient, HttpClient } from "effect/http"
-import { ingestKeyEncryptionKey } from "@maple/backend/platform/Crypto"
+import { secretKeyringFromEnv } from "@maple/backend/platform/SecretBox"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { Env } from "@maple/backend/platform/Env"
 import { summarizeCause } from "@maple/backend/platform/describe-cause"
@@ -84,6 +84,7 @@ import type { SupportChannelUnavailableError } from "@maple/domain/support-chann
 import { WarehouseQueryService } from "@maple/backend/services/warehouse/WarehouseQueryService"
 import { CancellationReader } from "./CancellationReader"
 import { buildCancellationChatBlocks } from "./chat-message"
+import { buildCancellationPageBlock } from "./chat-page"
 import {
 	AUDIT_ENTRIES_SHOWN,
 	SESSIONS_READ,
@@ -264,7 +265,7 @@ export class CancellationReviewService extends Context.Service<
 		const chatConnectors = yield* ChatConnectorRegistry
 		// An Option rather than failing the layer: a bad key costs only the Hazel report, and the
 		// services that seal chat credentials refuse to boot on one first.
-		const encryptionKey = yield* ingestKeyEncryptionKey(env, (message) => message).pipe(Effect.option)
+		const keyring = yield* secretKeyringFromEnv(env, (message) => message).pipe(Effect.option)
 
 		const clerkOrgUrl = (orgId: string) =>
 			Option.match(env.MAPLE_CLERK_DASHBOARD_URL, {
@@ -696,7 +697,7 @@ export class CancellationReviewService extends Context.Service<
 			const channelId = env.MAPLE_CANCELLATION_HAZEL_CHANNEL_ID
 			if (Option.isNone(channelId)) return null
 			const ownOrgId = Option.flatMap(env.MAPLE_INTERNAL_ORG_ID, Schema.decodeUnknownOption(OrgId))
-			if (Option.isNone(ownOrgId) || Option.isNone(encryptionKey)) {
+			if (Option.isNone(ownOrgId) || Option.isNone(keyring)) {
 				yield* Effect.logWarning(
 					"cancellation reviews have a Hazel channel but no MAPLE_INTERNAL_ORG_ID or usable encryption key; nothing is posted to Hazel",
 				)
@@ -719,7 +720,7 @@ export class CancellationReviewService extends Context.Service<
 							chatConnectors,
 							ownOrgId.value,
 							linked.id,
-							encryptionKey.value,
+							keyring.value,
 						)
 			if (Option.isNone(workspace)) {
 				yield* Effect.logWarning(
@@ -768,7 +769,10 @@ export class CancellationReviewService extends Context.Service<
 					)
 			})
 
-		/** One message, or one per section when the report is longer than Hazel takes in one. */
+		/**
+		 * The report as one HTML page. Should Hazel refuse or not know the page, the markdown report goes out
+		 * instead: one message, or one per section when it is longer than Hazel takes in one.
+		 */
 		const postToHazel = (hazel: HazelDestination) => (report: CancellationReport) =>
 			Effect.gen(function* () {
 				const { workspace, channelId } = hazel
@@ -778,11 +782,28 @@ export class CancellationReviewService extends Context.Service<
 					httpClient,
 				)
 				const target = { workspaceId: workspace.externalWorkspaceId, channelId }
-				const messages: ReadonlyArray<ReadonlyArray<ChatBlock>> = splitBlocks(
-					buildCancellationChatBlocks(report),
-					workspace.connector.outbound.limits.maxMessageChars,
+				const postMarkdown = Effect.forEach(
+					splitBlocks(
+						buildCancellationChatBlocks(report),
+						workspace.connector.outbound.limits.maxMessageChars,
+					),
+					(blocks: ReadonlyArray<ChatBlock>) => transport.post(target, blocks),
+					{ discard: true },
 				)
-				yield* Effect.forEach(messages, (blocks) => transport.post(target, blocks), { discard: true })
+				yield* transport.post(target, [buildCancellationPageBlock(report)]).pipe(
+					Effect.asVoid,
+					Effect.catchIf(
+						// A 404 too: a Hazel without HTML renders still takes markdown.
+						(error) => error.reason === "rejected" || error.reason === "not_found",
+						(error) =>
+							Effect.logWarning(
+								"Hazel refused the cancellation report's page; posting it as markdown",
+							).pipe(
+								Effect.annotateLogs({ hazelError: error.message }),
+								Effect.andThen(postMarkdown),
+							),
+					),
+				)
 				return true
 			}).pipe(
 				// The bot's grant, the channel or the message itself: a retry changes none of them.

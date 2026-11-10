@@ -8,13 +8,14 @@ import {
 	type AuditLogFilters,
 	auditLogKindOf,
 	auditLogSearchFrom,
+	linkedAuditEntryId,
 	parseAuditLogSearch,
 	parseAuditLookup,
 } from "../kit/audit-log-filters"
 import { formatWarehouseDateTime, parseWarehouseDateTime } from "@maple/query-engine/datetime"
 import * as CustomRange from "../../kit/custom-range"
 import { Clock, DateTime, Effect, Option, Result, Schema, Array as Arr, String as Str } from "effect"
-import { Command } from "foldkit"
+import { Command, Dom } from "foldkit"
 import { settleTo } from "@maple/views/data/load-failure"
 import { isClerkAuthEnabled } from "../../../lib/services/common/auth-mode"
 import { MapleApiV2Client } from "../../../platform/api-clients"
@@ -23,6 +24,7 @@ import { memberDisplayName } from "../kit/members"
 import { AppRoute, hrefOf } from "../../../route"
 import type { SettingsSearch as SettingsSearchSchema } from "../../../route/search"
 import * as CopyButton from "@maple/views/ui/copy-button"
+import { popupId } from "@maple/views/ui/overlay/popup-state"
 import * as Popover from "@maple/views/ui/popover"
 import * as Select from "@maple/views/ui/select"
 import { PageOutMessage, type PageReturn } from "../../contract"
@@ -212,7 +214,10 @@ const dedupeById = (existing: ReadonlyArray<V2AuditLogEntry>, next: ReadonlyArra
 const navigateFilters = (model: Model, search: SettingsSearch, filters: AuditLogFilters): Return => ({
 	model,
 	outMessage: PageOutMessage.RequestedNavigation({
-		url: hrefOf(AppRoute.Settings({ search: { ...search, ...auditLogSearchFrom(filters) } })),
+		// A filter change leaves a shared entry link behind: it named one entry, not a view.
+		url: hrefOf(
+			AppRoute.Settings({ search: { ...search, ...auditLogSearchFrom(filters), entry: undefined } }),
+		),
 		isReplace: true,
 	}),
 })
@@ -302,30 +307,86 @@ const withoutFilter = (filters: AuditLogFilters, key: string): AuditLogFilters =
 
 const liftCustom = (model: Model, customRange: CustomRange.Model | null): Model => ({ ...model, customRange })
 
+/** The detail row's DOM id: what a shared link scrolls to. */
+export const entryRowId = (id: string) => `audit-entry-row-${id}`
+
+/** A shared entry link opens with its row in view. */
+const ScrollToAuditEntry = Command.define("ScrollToAuditEntry", {
+	args: { id: Schema.String },
+	messages: [Message.CompletedScrollToEntry],
+	execute: ({ id }) =>
+		Effect.sync(() => {
+			document.getElementById(entryRowId(id))?.scrollIntoView({ block: "center" })
+			return Message.CompletedScrollToEntry()
+		}),
+})
+
+/** Focus back inside the popover once the calendar replaces the pressed preset, so Escape still closes it. */
+const FocusAuditDateRange = Command.define("FocusAuditDateRange", {
+	args: { id: Schema.String },
+	messages: [Message.CompletedFocusDateRange],
+	execute: ({ id }) =>
+		Dom.focus(`#${CSS.escape(popupId(id))}`).pipe(
+			Effect.ignore,
+			Effect.as(Message.CompletedFocusDateRange()),
+		),
+})
+
+/** The filters a detail pivot navigates to: the value replaces that filter, the rest stay. */
+const pivoted = (filters: AuditLogFilters, key: string, value: string): AuditLogFilters => {
+	switch (key) {
+		case "action": {
+			// The action select lives under its resource type, so pick that too.
+			const resourceType = Arr.headNonEmpty(Str.split(".")(value))
+			return { ...filters, action: value, resourceType }
+		}
+		case "actorId":
+			// A person's entries are any actor type; a stale type filter would hide them.
+			return { ...filters, actorId: value, actorType: undefined }
+		case "resourceId":
+		case "affectedUserId":
+		case "requestId":
+			return { ...filters, [key]: value }
+		default:
+			return filters
+	}
+}
+
 export const update = (model: Model, message: Message, search: SettingsSearch): Return => {
 	const filters = parseAuditLogSearch(search)
 	return Message.match<Return>(message, {
 		CompletedFetchMembers: ({ members }) => ({ model: { ...model, members } }),
 		CompletedFetchPage: ({ request, resolvedSince, result }) => {
 			if (!sameRequest(request, model.request)) return { model }
+			const linked = linkedAuditEntryId(search)
 			return Result.match(result, {
-				onSuccess: (page) => ({
-					model: {
-						...model,
-						resolvedSince,
-						isWaiting: false,
-						isQuiet: false,
-						failure: null,
-						view: {
-							entries:
-								request.cursor === undefined
-									? page.data
-									: dedupeById(model.view?.entries ?? [], page.data),
-							hasMore: page.has_more,
-							nextCursor: page.next_cursor,
+				onSuccess: (page) => {
+					// A shared link opens on its entry, once, on whichever page holds it.
+					const reveal =
+						linked !== null &&
+						!model.expanded.includes(linked) &&
+						Arr.some(page.data, (entry) => entry.id === linked)
+					return {
+						commands: reveal && linked !== null ? [ScrollToAuditEntry({ id: linked })] : [],
+						model: {
+							...model,
+							resolvedSince,
+							isWaiting: false,
+							isQuiet: false,
+							failure: null,
+							view: {
+								entries:
+									request.cursor === undefined
+										? page.data
+										: dedupeById(model.view?.entries ?? [], page.data),
+								hasMore: page.has_more,
+								nextCursor: page.next_cursor,
+							},
+							expanded:
+								reveal && linked !== null ? [...model.expanded, linked] : model.expanded,
 						},
-					},
-				}),
+					}
+				},
 				onFailure: (failure) => ({
 					model: { ...model, resolvedSince, isWaiting: false, isQuiet: false, failure },
 				}),
@@ -422,6 +483,17 @@ export const update = (model: Model, message: Message, search: SettingsSearch): 
 					}),
 			}),
 		RemovedFilter: ({ key }) => navigateFilters(model, search, withoutFilter(filters, key)),
+		ClickedPivot: ({ key, value }) => {
+			const next = pivoted(filters, key, value)
+			// An entry link's window is that entry's minute: "every entry with this" must not stay inside it.
+			return navigateFilters(
+				model,
+				search,
+				search.entry === undefined ? next : { ...next, range: { kind: "all" } },
+			)
+		},
+		CompletedScrollToEntry: () => ({ model }),
+		CompletedFocusDateRange: () => ({ model }),
 		ClickedCustomRange: ({ timeZone }) => ({ model, commands: [ResolveAuditCustomToday({ timeZone })] }),
 		ResolvedCustomToday: ({ timeZone, today, lastDay }) => {
 			const range = filters.range
@@ -436,6 +508,7 @@ export const update = (model: Model, message: Message, search: SettingsSearch): 
 						lastDay,
 					}),
 				),
+				commands: [FocusAuditDateRange({ id: model.dateRange.id })],
 			}
 		},
 		GotCustomRangeMessage: ({ message: child }) => {

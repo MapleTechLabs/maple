@@ -12,7 +12,7 @@
 import { AuditEventsQueue, MapleDb, prdOnlyBinding } from "@maple/infra/cloudflare"
 import { dischargeRuntimeContext } from "@maple/infra/worker-runtime"
 import * as Cloudflare from "@alchemy.run/cloudflare"
-import { Effect, Layer, Option } from "effect"
+import { Context, Effect, Layer, Option } from "effect"
 import { securityAuditWorkflowControl } from "../security-audit/workflow-control"
 import { isWorkersAiBinding, viaGateway, WorkersAiGateway } from "../platform/WorkersAiHttpClient"
 import {
@@ -35,7 +35,7 @@ import {
 } from "@maple/backend/services/auth/McpToolRateLimiter"
 import { DATA_SOURCE_CALL_LIMITS } from "@maple/backend/services/data-sources/DataSourceCallBudgetLive"
 
-export const bindAiClients = Effect.gen(function* () {
+const bindClients = Effect.gen(function* () {
 	// `MAPLE_DB` in the stage's flavor. The agents read and write the same
 	// application database api does — investigations, error issues, dashboards —
 	// so this is a connection budget of its own, not a share of api's.
@@ -66,7 +66,27 @@ export const bindAiClients = Effect.gen(function* () {
 	}
 })
 
-type AiBindingClients = Effect.Success<typeof bindAiClients>
+type AiBindingClients = Effect.Success<typeof bindClients>
+
+/**
+ * The bound clients as a service: the init and the chat Durable Object's activation both read
+ * them, and an alchemy binding reaches an activation only through a tag. One layer value, so the
+ * bindings attach once.
+ */
+export class BoundAiClients extends Context.Service<BoundAiClients, AiBindingClients>()(
+	"@maple/ai/worker/BoundAiClients",
+) {
+	static readonly layer = Layer.effect(this, bindClients).pipe(
+		Layer.provide([
+			Cloudflare.Hyperdrive.ConnectBinding,
+			Cloudflare.Workers.RateLimitBinding,
+			Cloudflare.Queues.WriteQueueBinding,
+		]),
+	)
+}
+
+/** The clients, for the Worker's init. */
+export const bindAiClients = Effect.service(BoundAiClients)
 
 /**
  * The AI Gateway Workers AI calls route through. The logical id is the api's, unchanged: the
@@ -101,6 +121,7 @@ export const AiBindingsLive = Layer.mergeAll(
 	Cloudflare.Workers.RateLimitBinding,
 	Cloudflare.Queues.WriteQueueBinding,
 	WorkersAiGatewayLive,
+	BoundAiClients.layer,
 )
 
 const limiter = (client: Cloudflare.Workers.RateLimitClient): RateLimiter => ({
@@ -115,6 +136,19 @@ const limiter = (client: Cloudflare.Workers.RateLimitClient): RateLimiter => ({
 			),
 		),
 })
+
+/**
+ * The ports a graph outside a request still needs: a chat turn or an approval in the Durable
+ * Object spends the same data-source call budget as `/mcp`, and queues its audit entries.
+ */
+export const aiSessionPorts = (clients: AiBindingClients) =>
+	Layer.mergeAll(
+		Layer.succeed(DataSourceProductionCallLimit, limiter(clients.dataSourceProductionCallLimit)),
+		Layer.succeed(DataSourceDevelopmentCallLimit, limiter(clients.dataSourceDevelopmentCallLimit)),
+		Layer.succeed(AuditEventsQueueProducer, queueProducer(clients.auditEvents)),
+	)
+
+export type AiSessionPortsLayer = ReturnType<typeof aiSessionPorts>
 
 /**
  * The ports the service graph depends on, plus the env-backed ports
@@ -133,9 +167,7 @@ export const aiPorts = (
 		Layer.succeed(WorkersAiGateway, workersAi),
 		Layer.succeed(SecurityAuditWorkflowStarter, securityAuditWorkflowControl(audits)),
 		Layer.succeed(McpToolsRateLimit, limiter(clients.mcpToolsRateLimit)),
-		Layer.succeed(DataSourceProductionCallLimit, limiter(clients.dataSourceProductionCallLimit)),
-		Layer.succeed(DataSourceDevelopmentCallLimit, limiter(clients.dataSourceDevelopmentCallLimit)),
-		Layer.succeed(AuditEventsQueueProducer, queueProducer(clients.auditEvents)),
+		aiSessionPorts(clients),
 		layerMapleDbConnection(env),
 		envPorts(env),
 		layerChatSessions(chatSessions, env),

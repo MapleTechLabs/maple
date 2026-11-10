@@ -33,12 +33,9 @@ import {
 } from "@maple/domain/primitives"
 import { Cause, Clock, Context, Effect, Layer, Option, Array as Arr } from "effect"
 import { FetchHttpClient, HttpClient } from "effect/http"
-import {
-	decryptAes256Gcm,
-	encryptAes256Gcm,
-	ingestKeyEncryptionKey,
-	ingestKeyLookupHmacKey,
-} from "@maple/backend/platform/Crypto"
+import { ingestKeyLookupHmacKey } from "@maple/backend/platform/Crypto"
+import { openSecret, sealSecret, secretKeyringFromEnv } from "@maple/backend/platform/SecretBox"
+import { awsStreamSecretSlot } from "@maple/backend/platform/secret-slots"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { makeDbExecute, makePersistenceErrorMapper } from "@maple/backend/platform/db-execute"
 import { Env } from "@maple/backend/platform/Env"
@@ -228,10 +225,6 @@ const toConnection = (issuer: string, row: AwsConnectionRow): AwsConnection => {
 	}
 }
 
-// Binds the ciphertext to its row, so a stored secret cannot be moved onto another connection.
-const streamSecretAad = (connectionId: string) =>
-	Buffer.from(`aws_connections:stream:v1:${connectionId}`, "utf8")
-
 const MODULE_INFO: ReadonlyArray<AwsModuleInfo> = Arr.map(AWS_MODULES, (module) => ({
 	module,
 	title: AWS_MODULE_SPECS[module].title,
@@ -353,20 +346,21 @@ export class AwsConnectionService extends Context.Service<AwsConnectionService, 
 			const httpClient = yield* HttpClient.HttpClient
 			const dbExecute = makeDbExecute(database, "AwsConnectionService", toPersistenceError)
 			const persistence = (message: string) => new IntegrationsPersistenceError({ message })
-			const encryptionKey = yield* ingestKeyEncryptionKey(env, persistence)
+			const keyring = yield* secretKeyringFromEnv(env, persistence)
 			// The ingest gateway hashes a delivery's access key with this and looks the row up by it.
 			const lookupHmacKey = yield* ingestKeyLookupHmacKey(env, persistence)
 			const ingestBase = ingestBaseUrl(env)
 
 			/** A new stream secret as the four columns that hold it. */
-			const mintStreamSecret = (connectionId: AwsConnectionId) =>
+			const mintStreamSecret = (ref: { readonly orgId: OrgId; readonly id: AwsConnectionId }) =>
 				Effect.gen(function* () {
 					const secret = `maple_aws_${randomBytes(24).toString("base64url")}`
-					const encrypted = yield* encryptAes256Gcm(
+					const encrypted = yield* sealSecret(
+						keyring,
+						awsStreamSecretSlot,
+						ref,
 						secret,
-						encryptionKey,
 						persistence,
-						streamSecretAad(connectionId),
 					)
 					return {
 						streamSecretCiphertext: encrypted.ciphertext,
@@ -435,7 +429,7 @@ export class AwsConnectionService extends Context.Service<AwsConnectionService, 
 				if (signer === undefined) return yield* unavailable()
 				const modules = yield* validateModules(input.modules)
 				const id = AwsConnectionId.make(randomUUID())
-				const streamSecret = yield* mintStreamSecret(id)
+				const streamSecret = yield* mintStreamSecret({ orgId, id })
 				const now = yield* Clock.currentTimeMillis
 				// The connection and the source it sends as land together.
 				const [row] = yield* dbExecute((db) =>
@@ -529,7 +523,7 @@ export class AwsConnectionService extends Context.Service<AwsConnectionService, 
 			/** Mints a stream secret for a connection made before streams. */
 			const withStreamSecret = (row: AwsConnectionRow) =>
 				Effect.gen(function* () {
-					const minted = yield* mintStreamSecret(row.id)
+					const minted = yield* mintStreamSecret({ orgId: row.orgId, id: row.id })
 					// A concurrent setup may mint first: whichever secret landed is the one to use.
 					const [updated] = yield* dbExecute((db) =>
 						db.run(
@@ -554,11 +548,12 @@ export class AwsConnectionService extends Context.Service<AwsConnectionService, 
 					) {
 						return yield* persistence("The AWS connection has no stream secret")
 					}
-					return yield* decryptAes256Gcm(
+					return yield* openSecret(
+						keyring,
+						awsStreamSecretSlot,
+						{ orgId: held.orgId, id: held.id },
 						{ ciphertext: streamSecretCiphertext, iv: streamSecretIv, tag: streamSecretTag },
-						encryptionKey,
 						() => persistence("Failed to decrypt the AWS stream secret"),
-						streamSecretAad(row.id),
 					)
 				})
 

@@ -68,12 +68,6 @@ export const customLayoutOf = (
 	}
 }
 
-export const spatialLayoutOf = (
-	topology: Topology3D,
-	view: SpatialView,
-	entities: ReadonlyArray<WorldEntity> = [],
-): SpatialLayout => customLayoutOf(topology, view, entities).layout
-
 export interface LinkLabel {
 	readonly id: string
 	readonly edge: Edge3D

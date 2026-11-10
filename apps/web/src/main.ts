@@ -29,6 +29,7 @@ export const Flags = Schema.Struct({
 	timeZone: Schema.String,
 	knownToRenderApp: Schema.Record(Schema.String, Schema.Boolean),
 	shell: Schema.Struct({
+		isSidebarOpen: Schema.optionalKey(Schema.Boolean),
 		isMobile: Schema.Boolean,
 		isFilterCollapsed: Schema.optionalKey(Schema.Boolean),
 		isBelowSm: Schema.optionalKey(Schema.Boolean),
@@ -37,6 +38,7 @@ export const Flags = Schema.Struct({
 		dashboardFavorites: Schema.Array(Schema.String),
 		rememberedSurfaces: Schema.optionalKey(Schema.Record(Schema.String, Schema.Array(Shell.NavSurface))),
 		isQuotaApproachingDismissed: Schema.optionalKey(Schema.Boolean),
+		platform: Schema.optionalKey(Shell.Platform),
 	}),
 })
 export type Flags = typeof Flags.Type

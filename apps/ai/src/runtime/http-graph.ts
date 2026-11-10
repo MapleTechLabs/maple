@@ -37,7 +37,6 @@ import { HttpSecurityAuditLive } from "../routes/security-audit.http"
 import { layerDecisionModelFromConfig } from "../platform/Llm"
 import { WorkersAiGateway } from "../platform/WorkersAiHttpClient"
 import { ChatSessionsRouter } from "../routes/chat-sessions.http"
-import { HealthRouter } from "../routes/health"
 import { API_CORS_OPTIONS } from "@maple/backend/http/api-cors"
 import { OrganizationFeatureFlagsService } from "@maple/backend/services/org/OrganizationFeatureFlagsService"
 import { AiCredits } from "@maple/backend/services/billing/AiCredits"
@@ -47,7 +46,7 @@ import { ApiErrorBoundaryLive } from "@maple/backend/http/error-boundary"
 import { rawRoutes } from "@maple/backend/http/raw-routes"
 import type { AiPortsLayer } from "../worker/bindings"
 
-const RawRoutes = rawRoutes<Layer.Success<AiPortsLayer>>()(Layer.mergeAll(HealthRouter, ChatSessionsRouter))
+const RawRoutes = rawRoutes<Layer.Success<AiPortsLayer>>()(ChatSessionsRouter)
 
 /**
  * The decision model the triage route asks, built once per isolate from the

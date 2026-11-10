@@ -540,6 +540,83 @@ describe("guard with strictRedirects", () => {
 	)
 })
 
+/** What the hop after a same-origin redirect looked like on the wire. */
+const hopAfterRedirect = (
+	status: number,
+	send: (
+		client: HttpClient.HttpClient.With<HttpClientError.HttpClientError | UrlValidationError>,
+		url: string,
+		options: { readonly headers: Record<string, string>; readonly body: HttpBody.HttpBody },
+	) => Effect.Effect<unknown, HttpClientError.HttpClientError | UrlValidationError>,
+) =>
+	Effect.gen(function* () {
+		const seen: Array<ReadonlyArray<string | null | undefined>> = []
+		const fakeFetch: typeof fetch = async (_input, init) => {
+			const headers = new Headers(init?.headers)
+			seen.push([
+				init?.method,
+				bodyOf(init?.body),
+				headers.get("content-type"),
+				headers.get("content-encoding"),
+				headers.get("content-language"),
+				headers.get("x-api-key"),
+			])
+			return seen.length === 1
+				? new Response(null, { status, headers: { location: "/next" } })
+				: new Response("ok", { status: 200 })
+		}
+		yield* run(fakeFetch, (client) =>
+			send(client, "https://api.example.com/x", {
+				headers: { "Content-Encoding": "identity", "Content-Language": "en", "X-Api-Key": "k" },
+				body: HttpBody.text("payload", "application/json"),
+			}),
+		)
+		return seen[1]
+	})
+
+describe("guard redirects follow the fetch standard", () => {
+	it.effect("a POST continues as a body-less GET after a 301, 302 or 303", () =>
+		Effect.gen(function* () {
+			const hops = yield* Effect.forEach([301, 302, 303], (status) =>
+				hopAfterRedirect(status, (client, url, options) => client.post(url, options)),
+			)
+			const bodylessGet = ["GET", "", null, null, null, "k"]
+			assert.deepStrictEqual(hops, [bodylessGet, bodylessGet, bodylessGet])
+		}),
+	)
+
+	it.effect("a PUT keeps its body on a 302 and becomes a GET only on a 303", () =>
+		Effect.gen(function* () {
+			const hops = yield* Effect.forEach([302, 303], (status) =>
+				hopAfterRedirect(status, (client, url, options) => client.put(url, options)),
+			)
+			assert.deepStrictEqual(hops, [
+				["PUT", "payload", "application/json", "identity", "en", "k"],
+				["GET", "", null, null, null, "k"],
+			])
+		}),
+	)
+
+	it.effect("a HEAD stays a HEAD after a 303", () =>
+		Effect.gen(function* () {
+			const hop = yield* hopAfterRedirect(303, (client, url, options) =>
+				client.head(url, { headers: options.headers }),
+			)
+			assert.strictEqual(hop?.[0], "HEAD")
+		}),
+	)
+
+	it.effect("a POST is replayed with its body after a 307 or 308", () =>
+		Effect.gen(function* () {
+			const hops = yield* Effect.forEach([307, 308], (status) =>
+				hopAfterRedirect(status, (client, url, options) => client.post(url, options)),
+			)
+			const replayed = ["POST", "payload", "application/json", "identity", "en", "k"]
+			assert.deepStrictEqual(hops, [replayed, replayed])
+		}),
+	)
+})
+
 describe("describeHttpClientError", () => {
 	it.effect("redacts the request URL from a transport failure's message", () =>
 		Effect.gen(function* () {

@@ -24,12 +24,6 @@ import {
 export const apiConfiguredEnv = (stage: MapleStage, region: MapleRegion, domains: MapleDomains) =>
 	merge(
 		mapleServerEnv(stage, region, domains),
-		// ClickHouse (BYO warehouse); `tinybird` unless an org config overrides it.
-		optionalPlain("CLICKHOUSE_URL"),
-		plainWithDefault("CLICKHOUSE_PROVIDER", "tinybird"),
-		optionalPlain("CLICKHOUSE_USER"),
-		optionalPlain("CLICKHOUSE_DATABASE"),
-		optionalSecret("CLICKHOUSE_PASSWORD"),
 		devOrgOverrideEnv(stage),
 		// PR previews only: the shared key behind the sign-in page's preview access form.
 		...(stage.kind === "pr" ? [optionalSecret("PREVIEW_SIGNIN_KEY")] : []),

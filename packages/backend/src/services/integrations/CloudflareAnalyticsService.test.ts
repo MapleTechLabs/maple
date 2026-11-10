@@ -33,7 +33,8 @@ import * as CloudflareAnalyticsMetrics from "@maple/backend/observability/Cloudf
 import { EdgeCacheService, MemoryCacheBackendLive } from "@maple/cache"
 import { TestClock } from "effect/testing"
 import { FetchHttpClient } from "effect/http"
-import { encryptAes256Gcm, parseBase64Aes256GcmKey } from "@maple/backend/platform/Crypto"
+import { parseSecretKeyring, sealSecret } from "@maple/backend/platform/SecretBox"
+import { oauthAccessTokenSlot } from "@maple/backend/platform/secret-slots"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { Env } from "@maple/backend/platform/Env"
 import {
@@ -556,13 +557,15 @@ const seedConnection = (
 ) =>
 	Effect.gen(function* () {
 		const database = yield* Database
-		const key = yield* parseBase64Aes256GcmKey(
-			ENCRYPTION_KEY_B64,
+		const keyring = yield* parseSecretKeyring(
+			{ primary: ENCRYPTION_KEY_B64, decryptOnly: Option.none() },
 			(message) => new IntegrationsValidationError({ message }),
 		)
-		const accessEnc = yield* encryptAes256Gcm(
+		const accessEnc = yield* sealSecret(
+			keyring,
+			oauthAccessTokenSlot,
+			{ orgId: ORG, provider: "cloudflare" },
 			"cf-access-token",
-			key,
 			(message) => new IntegrationsValidationError({ message }),
 		)
 		const id = randomUUID()

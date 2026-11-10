@@ -1,19 +1,8 @@
 import { Array as Arr, Option, String as Str } from "effect"
 import { codeUnitAt } from "@maple/strings"
+
 /** Neutral color for the aggregated "Other" bucket of a chart. */
 export const OTHER_COLOR = "var(--muted-foreground)"
-
-export const CHART_BG_CLASSES = [
-	"bg-chart-1",
-	"bg-chart-2",
-	"bg-chart-3",
-	"bg-chart-4",
-	"bg-chart-5",
-] as const
-
-export function getDepthColorClass(depth: number): string {
-	return cyclic(CHART_BG_CLASSES, depth)
-}
 
 /** The element at `index` modulo the list length, wrapping negatives. */
 const cyclic = <A>(items: Arr.NonEmptyReadonlyArray<A>, index: number): A =>

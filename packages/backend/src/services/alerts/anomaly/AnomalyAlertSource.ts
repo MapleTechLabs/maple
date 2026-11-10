@@ -123,49 +123,53 @@ export class AnomalyAlertSource extends Context.Service<AnomalyAlertSource, Anom
 			) {
 				yield* Effect.annotateCurrentSpan({ orgId, "maple.alert.rule_id": ruleId })
 				const { rules, anomalies, openAlertIncidents, settings } = yield* dbExecute((db) =>
-					Effect.all({
-						settings: detectionSettings(db, orgId),
-						rules: db.run(
-							PG.from(AlertRules)
-								.select(
-									"id",
-									"severity",
-									"thresholdsJson",
-									"serviceNamesJson",
-									"environmentsJson",
-									"anomalySignalsJson",
-								)
-								.where(($) => [
-									$.orgId.eq(orgId),
-									$.signalType.eq("anomaly"),
-									$.enabled.eq(true),
-								]),
-						),
-						anomalies: db.run(
-							PG.from(AnomalyIncidents)
-								.select(
-									"id",
-									"signalType",
-									"serviceName",
-									"deploymentEnv",
-									"severity",
-									"lastObservedValue",
-									"baselineMedian",
-									"errorIssueId",
-								)
-								.where(($) => [$.orgId.eq(orgId), $.status.eq("open")]),
-						),
-						// Every anomaly rule's open incidents, so an anomaly stays on the rule paging it.
-						openAlertIncidents: db.run(
-							PG.from(AlertIncidents)
-								.select("ruleId", "groupKey")
-								.where(($) => [
-									$.orgId.eq(orgId),
-									$.signalType.eq("anomaly"),
-									$.status.eq("open"),
-								]),
-						),
-					}),
+					Effect.all(
+						{
+							settings: detectionSettings(db, orgId),
+							rules: db.run(
+								PG.from(AlertRules)
+									.select(
+										"id",
+										"severity",
+										"thresholdsJson",
+										"serviceNamesJson",
+										"environmentsJson",
+										"anomalySignalsJson",
+									)
+									.where(($) => [
+										$.orgId.eq(orgId),
+										$.signalType.eq("anomaly"),
+										$.enabled.eq(true),
+									]),
+							),
+							anomalies: db.run(
+								PG.from(AnomalyIncidents)
+									.select(
+										"id",
+										"signalType",
+										"serviceName",
+										"deploymentEnv",
+										"severity",
+										"lastObservedValue",
+										"baselineMedian",
+										"errorIssueId",
+									)
+									.where(($) => [$.orgId.eq(orgId), $.status.eq("open")]),
+							),
+							// Every anomaly rule's open incidents, so an anomaly stays on the rule paging it.
+							openAlertIncidents: db.run(
+								PG.from(AlertIncidents)
+									.select("ruleId", "groupKey")
+									.where(($) => [
+										$.orgId.eq(orgId),
+										$.signalType.eq("anomaly"),
+										$.status.eq("open"),
+									]),
+							),
+						},
+						// Four independent reads, so they share the pool instead of queueing.
+						{ concurrency: "unbounded" },
+					),
 				)
 				const candidates = Arr.map(rules, (rule) => ({
 					id: rule.id,

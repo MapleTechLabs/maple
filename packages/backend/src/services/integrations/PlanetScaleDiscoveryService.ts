@@ -27,7 +27,7 @@ import {
 	String as Str,
 } from "effect"
 import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/http"
-import { ingestKeyEncryptionKey } from "@maple/backend/platform/Crypto"
+import { secretKeyringFromEnv } from "@maple/backend/platform/SecretBox"
 import { Env } from "@maple/backend/platform/Env"
 import { buildScrapeAuthHeaders } from "@maple/backend/services/auth/scrape-auth"
 import { parseExternalUrl } from "@maple/safe-fetch"
@@ -243,7 +243,7 @@ export class PlanetScaleDiscoveryService extends Context.Service<
 		const env = yield* Env
 		const psOAuth = yield* PlanetScaleOAuthService
 		const httpClient = yield* HttpClient.HttpClient
-		const encryptionKey = yield* ingestKeyEncryptionKey(
+		const keyring = yield* secretKeyringFromEnv(
 			env,
 			(message) => new ScrapeTargetEncryptionError({ message }),
 		)
@@ -265,7 +265,7 @@ export class PlanetScaleDiscoveryService extends Context.Service<
 			row: ScrapeTargetRow,
 		) {
 			if (row.authType !== "planetscale_oauth") {
-				return yield* buildScrapeAuthHeaders(row, encryptionKey)
+				return yield* buildScrapeAuthHeaders(row, keyring)
 			}
 			const { accessToken } = yield* psOAuth.getValidAccessToken(row.orgId)
 			return { Authorization: planetScaleBearerHeader(accessToken) }

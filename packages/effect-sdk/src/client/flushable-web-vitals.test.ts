@@ -1,5 +1,11 @@
 // SAFETY-FILE: JSON in this test is the OTLP body the SDK under test posted, parsed before its fields are asserted.
-import type { EmitLog, SpanLink } from "@maple/sdk-core"
+import {
+	type EmitLog,
+	leasePageSignalAsOtherCopyForTests,
+	pageSignalLeasesForTests,
+	resetPageForTests,
+	type SpanLink,
+} from "@maple/sdk-core"
 import { Array as Arr, String as Str } from "effect"
 import { afterEach, describe, expect, it, vi } from "vitest"
 import { make, type MapleClientFlushableConfig } from "./flushable.js"
@@ -66,6 +72,7 @@ const later = () => new Promise((resolve) => setTimeout(resolve, 20))
 describe("MapleFlush.make webVitals", () => {
 	afterEach(() => {
 		vi.unstubAllGlobals()
+		resetPageForTests()
 	})
 
 	it("posts a reported vital as a browser.web_vital log event linked to the page load", async () => {
@@ -114,6 +121,29 @@ describe("MapleFlush.make webVitals", () => {
 		await later()
 		await disposal
 		expect(collector.starts).toHaveLength(0)
+	})
+
+	it("leaves web vitals to another Maple SDK on the page that already reports them", async () => {
+		setup()
+		leasePageSignalAsOtherCopyForTests("webVitals")
+		const collector = fakeCollector()
+		const telemetry = make(
+			withIntegration({ ...config, webVitals: true }, { loadWebVitals: collector.load }),
+		)
+		await later()
+		expect(collector.starts).toHaveLength(0)
+		await telemetry.dispose()
+	})
+
+	it("holds the page's web vitals lease until disposed", async () => {
+		setup()
+		const collector = fakeCollector()
+		const telemetry = make(
+			withIntegration({ ...config, webVitals: true }, { loadWebVitals: collector.load }),
+		)
+		expect(pageSignalLeasesForTests("webVitals")).toBe(1)
+		await telemetry.dispose()
+		expect(pageSignalLeasesForTests("webVitals")).toBe(0)
 	})
 
 	it("loads nothing by default", async () => {

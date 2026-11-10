@@ -177,12 +177,12 @@ export class LinearOAuthService extends Context.Service<LinearOAuthService, Line
 					"query MapleConnectedWorkspace { organization { id name } }",
 				).pipe(Effect.flatMap(linearData(ViewerSchema, "workspace lookup")))
 
-				const accessEnc = yield* oauth.encryptValue(tokens.access_token)
+				const orgId = decodeOrgId(stateRow.orgId)
+				const accessEnc = yield* oauth.sealAccessToken(orgId, tokens.access_token)
 				const refreshEnc = tokens.refresh_token
-					? yield* oauth.encryptValue(tokens.refresh_token)
+					? yield* oauth.sealRefreshToken(orgId, tokens.refresh_token)
 					: null
 				const currentTime = yield* Clock.currentTimeMillis
-				const orgId = decodeOrgId(stateRow.orgId)
 
 				// An app-actor grant belongs to the workspace, so the workspace is the principal.
 				yield* oauth.upsertConnection(orgId, currentTime, {
@@ -266,7 +266,7 @@ export class LinearOAuthService extends Context.Service<LinearOAuthService, Line
 				function* (orgId: OrgId) {
 					const row = yield* oauth.loadConnection(orgId)
 					if (row === null) return
-					const accessToken = yield* oauth.decryptValue({
+					const accessToken = yield* oauth.openAccessToken(row.orgId, {
 						ciphertext: row.accessTokenCiphertext,
 						iv: row.accessTokenIv,
 						tag: row.accessTokenTag,

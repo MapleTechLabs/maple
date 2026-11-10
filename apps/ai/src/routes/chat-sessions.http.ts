@@ -33,7 +33,7 @@ import {
 } from "@maple/domain/chat-session"
 import type { ChatSessionCallError, ChatSessionClient } from "@maple/domain/chat-session-stub"
 import { ChatSessions } from "@maple/backend/platform/bindings"
-import { Context, Effect, Layer, Option, Schema, Stream, String as Str } from "effect"
+import { Context, Effect, Layer, Option, Result, Schema, Stream, String as Str } from "effect"
 import { HttpRouter, HttpServerRequest, HttpServerResponse } from "effect/http"
 import * as SecureRandom from "effect/crypto/SecureRandom"
 import { AuthService } from "@maple/backend/services/auth/AuthService"
@@ -119,18 +119,24 @@ const resolveSession = Effect.fn("ChatSessionsRouter.resolveSession")(function* 
 	if (!sessionOrgId) return { ok: false, failure: problem("Malformed chat session id", 400) } as const
 
 	// Unauthenticated and bad-credential requests are 401, not the 500 an uncaught `McpAuth*Error`
-	// would produce out of a raw router. `Effect.option` rather than `catchTags` because the
-	// resolver's whole error channel *is* the auth failures. Session-only: API keys and MCP OAuth
-	// tokens are refused here, since a turn from this route runs as an attended `app` turn.
-	const tenant: Option.Option<TenantContext> = yield* HttpServerRequest.toWeb(request).pipe(
+	// would produce out of a raw router. Session-only: API keys and MCP OAuth tokens are refused
+	// here, since a turn from this route runs as an attended `app` turn.
+	const resolved = yield* HttpServerRequest.toWeb(request).pipe(
 		Effect.flatMap(resolveChatSessionTenantContext),
-		Effect.option,
+		Effect.result,
 	)
-	if (Option.isNone(tenant)) {
-		return { ok: false, failure: problem("Authentication required", 401) } as const
+	if (Result.isFailure(resolved)) {
+		// The auth provider being away is retryable: a 401 would send the reader to sign in again.
+		return resolved.failure._tag === "@maple/mcp/errors/McpAuthUnavailableError"
+			? ({
+					ok: false,
+					failure: problem("Authentication is temporarily unavailable", 503),
+				} as const)
+			: ({ ok: false, failure: problem("Authentication required", 401) } as const)
 	}
+	const tenant: TenantContext = resolved.success
 
-	if (tenant.value.orgId !== sessionOrgId) {
+	if (tenant.orgId !== sessionOrgId) {
 		// Deliberately 404, not 403: confirming that another org's conversation exists is itself
 		// a leak.
 		return { ok: false, failure: problem("Chat session not found", 404) } as const
@@ -143,7 +149,7 @@ const resolveSession = Effect.fn("ChatSessionsRouter.resolveSession")(function* 
 
 	const stub = (yield* ChatSessions).session(sessionId)
 
-	const session: ResolvedSession = { sessionId, tenant: tenant.value, stub, url }
+	const session: ResolvedSession = { sessionId, tenant, stub, url }
 	return { ok: true, session } as const
 })
 

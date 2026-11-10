@@ -3,6 +3,7 @@ import { ConfigProvider, Effect, Layer, Schema, Array as Arr } from "effect"
 import { hashIngestKey } from "../../platform/credential-tokens"
 import { gcpConnectorResourceNames } from "@maple/domain/gcp"
 import { GcpProjectId, GcpResourceNumber, OrgId, UserId } from "@maple/domain/primitives"
+import { encryptAes256Gcm } from "@maple/backend/platform/Crypto"
 import { Env } from "@maple/backend/platform/Env"
 import {
 	cleanupTestDbs,
@@ -554,6 +555,31 @@ describe("GcpConnectorService", () => {
 			)
 			const error = yield* Effect.flip(gcp.scripts(orgId, target.id, scriptOptions))
 			assert.strictEqual(error._tag, "@maple/http/errors/IntegrationsPersistenceError")
+		}).pipe(Effect.provide(makeLayer(testDb)))
+	})
+
+	it.effect("renders a secret that was stored before secrets were sealed per slot", () => {
+		const testDb = createTestDb(trackedDbs)
+		return Effect.gen(function* () {
+			const gcp = yield* GcpConnectorService
+			const connector = yield* gcp.create(orgId, userId, projectScope("acme-prod"))
+			const stored = yield* encryptAes256Gcm(
+				"maple_gcp_stored_earlier",
+				Buffer.alloc(32, 9),
+				(message) => message,
+				Buffer.from(`gcp_connectors:v1:${connector.id}`, "utf8"),
+			)
+			yield* Effect.promise(() =>
+				executeSql(
+					testDb,
+					"UPDATE gcp_connectors SET secret_ciphertext = $1, secret_iv = $2, secret_tag = $3 WHERE id = $4",
+					[stored.ciphertext, stored.iv, stored.tag, connector.id],
+				),
+			)
+			const { setupScript } = yield* gcp.scripts(orgId, connector.id, scriptOptions)
+			const endpoint = /PUSH_ENDPOINT='([^']+)'/.exec(setupScript)?.[1]
+			assert.isDefined(endpoint)
+			assert.strictEqual(new URL(endpoint).searchParams.get("secret"), "maple_gcp_stored_earlier")
 		}).pipe(Effect.provide(makeLayer(testDb)))
 	})
 

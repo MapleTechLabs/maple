@@ -1,6 +1,7 @@
+import { isAuditAccessAction as isAccess } from "@maple/domain/audit-actions"
 import type { V2AuditLogEntry } from "@maple/domain/http/v2"
 import { toLoadFailure } from "@maple/views/data/load-failure"
-import { Array as Arr, Effect, Option, Record as Rec, Result, Schema, String as Str } from "effect"
+import { Array as Arr, Effect, Option, Record as Rec, Result, Schema } from "effect"
 import { Command, type Update } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { defineMessageUnion } from "foldkit/message"
@@ -50,8 +51,6 @@ type Return = Update.Return<Model, Message, Resources>
 type AuditCommand = Command.Command<AuditModel.Message, never, Resources>
 
 const TIME_ZONE = "Europe/Berlin"
-const ACCESS_SUFFIXES = [".read", ".called", ".sql_executed", ".request"]
-const isAccess = (action: string) => Arr.some(ACCESS_SUFFIXES, (suffix) => Str.endsWith(suffix)(action))
 
 /** The fixtures the API would answer `request` with. */
 const matching = (request: AuditModel.PageRequest): ReadonlyArray<V2AuditLogEntry> =>
@@ -111,10 +110,13 @@ const answer = (state: LabState, model: AuditModel.Model, commands: ReadonlyArra
 	).model
 }
 
-/** The kit's own commands and the custom range's clock read; every API read is answered above. */
+/** The kit's own commands and the custom range's clock read and focus; every API read is answered above. */
 const local = (commands: ReadonlyArray<AuditCommand> | undefined) => [
 	...keepLocal(commands),
-	...Arr.filter(commands ?? [], (command) => command.name === "ResolveAuditCustomToday"),
+	...Arr.filter(
+		commands ?? [],
+		(command) => command.name === "ResolveAuditCustomToday" || command.name === "FocusAuditDateRange",
+	),
 ]
 
 const lift = (commands: ReadonlyArray<AuditCommand>) =>

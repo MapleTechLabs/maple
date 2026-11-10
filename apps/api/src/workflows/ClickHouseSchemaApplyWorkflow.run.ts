@@ -12,7 +12,6 @@
  * Clocks are read inside steps only: the body replays, and a clock read there
  * would differ on every replay.
  */
-import { createDecipheriv } from "node:crypto"
 import * as PG from "@maple-dev/effect-orm/postgres"
 import { OrgClickHouseSchemaApplyRuns, OrgClickHouseSettings } from "@maple/db/tables"
 import {
@@ -60,6 +59,14 @@ import {
 	ORG_CH_CONFIG_CACHE_BUCKET,
 } from "@maple/backend/services/org/OrgClickHouseSettingsService"
 import { durableStep, type DurableStepConfig } from "@maple/backend/platform/durable-step"
+import {
+	DECRYPTION_KEYS_ENV,
+	openSecret,
+	parseSecretKeyring,
+	PRIMARY_KEY_ENV,
+	type SecretKeyring,
+} from "@maple/backend/platform/SecretBox"
+import { clickHousePasswordSlot } from "@maple/backend/platform/secret-slots"
 import { transitionRow } from "@maple/backend/platform/transition-row"
 
 /**
@@ -101,8 +108,7 @@ export interface SchemaApplyWorkflowResult {
 	readonly appliedVersions: ReadonlyArray<number>
 }
 
-/** The one secret the run needs, resolved by the `ConfigProvider` the Workflow class builds on the env. */
-const ENCRYPTION_KEY_CONFIG = "MAPLE_INGEST_KEY_ENCRYPTION_KEY"
+/** The secrets the run needs, resolved by the `ConfigProvider` the Workflow class builds on the env. */
 
 interface LoadOptionalFeatureStateOptions<E, R> {
 	readonly ensureBookkeeping: Effect.Effect<void, E, R>
@@ -313,31 +319,10 @@ export class SchemaApplyConfigError extends Schema.TaggedError<SchemaApplyConfig
 	{ message: Schema.String },
 ) {}
 
-const decryptPassword = (
-	encryptionKey: Buffer,
-	ciphertext: string,
-	iv: string,
-	tag: string,
-): Effect.Effect<string, SchemaApplyConfigError> =>
-	Effect.try({
-		try: () => {
-			const decipher = createDecipheriv("aes-256-gcm", encryptionKey, Buffer.from(iv, "base64"))
-			decipher.setAuthTag(Buffer.from(tag, "base64"))
-			return Buffer.concat([
-				decipher.update(Buffer.from(ciphertext, "base64")),
-				decipher.final(),
-			]).toString("utf8")
-		},
-		catch: (cause) =>
-			new SchemaApplyConfigError({
-				message: `Stored ClickHouse password could not be decrypted: ${cause instanceof Error ? cause.message : String(cause)}`,
-			}),
-	})
-
 const loadConfig = (
 	database: DatabaseApi,
 	orgId: OrgId,
-	encryptionKey: Buffer,
+	keyring: SecretKeyring,
 ): Effect.Effect<ChConfig, SchemaApplyConfigError | DatabaseError> =>
 	Effect.gen(function* () {
 		const rows = yield* database.execute((db) =>
@@ -356,11 +341,19 @@ const loadConfig = (
 		}
 		const password =
 			row.chPasswordCiphertext && row.chPasswordIv && row.chPasswordTag
-				? yield* decryptPassword(
-						encryptionKey,
-						row.chPasswordCiphertext,
-						row.chPasswordIv,
-						row.chPasswordTag,
+				? yield* openSecret(
+						keyring,
+						clickHousePasswordSlot,
+						{ orgId: row.orgId },
+						{
+							ciphertext: row.chPasswordCiphertext,
+							iv: row.chPasswordIv,
+							tag: row.chPasswordTag,
+						},
+						(message) =>
+							new SchemaApplyConfigError({
+								message: `Stored ClickHouse password could not be decrypted: ${message}`,
+							}),
 					)
 				: ""
 		const parsedUrl = yield* Effect.try({
@@ -645,28 +638,37 @@ export const runClickHouseSchemaApply = (
 const applySchema = (fence: RunFence) =>
 	Effect.gen(function* () {
 		const { database, orgId } = fence
-		const encryptionKeyText = yield* Config.Redacted(ENCRYPTION_KEY_CONFIG).pipe(
+		const encryptionKeyText = yield* Config.Redacted(PRIMARY_KEY_ENV).pipe(
 			Effect.mapError(
 				(error) =>
 					new SchemaApplyConfigError({
-						message: `${ENCRYPTION_KEY_CONFIG} is not configured: ${error.message}`,
+						message: `${PRIMARY_KEY_ENV} is not configured: ${error.message}`,
 					}),
 			),
 		)
-		const encryptionKey = Buffer.from(Str.trim(Redacted.value(encryptionKeyText)), "base64")
-		// AES-256-GCM: anything else fails later as a misleading password-decryption error.
-		if (encryptionKey.length !== 32) {
-			return yield* new SchemaApplyConfigError({
-				message: `${ENCRYPTION_KEY_CONFIG} must be base64 for exactly 32 bytes`,
-			})
-		}
+		const decryptionKeysText = yield* Config.option(Config.Redacted(DECRYPTION_KEYS_ENV)).pipe(
+			Effect.mapError(
+				(error) =>
+					new SchemaApplyConfigError({
+						message: `${DECRYPTION_KEYS_ENV} is not readable: ${error.message}`,
+					}),
+			),
+		)
+		// A malformed key fails here: later it would surface as a misleading decryption error.
+		const keyring = yield* parseSecretKeyring(
+			{
+				primary: Redacted.value(encryptionKeyText),
+				decryptOnly: Option.map(decryptionKeysText, Redacted.value),
+			},
+			(message) => new SchemaApplyConfigError({ message }),
+		)
 		const appliedVersions: number[] = []
 		const skippedFeatures: SkippedFeature[] = []
 
 		const cfg = yield* durableStep(
 			"load-config",
 			Effect.gen(function* () {
-				const c = yield* loadConfig(database, orgId, encryptionKey)
+				const c = yield* loadConfig(database, orgId, keyring)
 				const startedAt = yield* Clock.currentTimeMillis
 				yield* updateRun(fence, {
 					status: "running",

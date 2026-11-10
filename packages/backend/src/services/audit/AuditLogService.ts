@@ -10,6 +10,7 @@ import { runAfterResponse } from "@maple/backend/platform/after-response"
 import { AuditEventsQueueProducer } from "@maple/backend/platform/bindings"
 import { ALERTING_SYSTEM_USER_ID, systemTenant } from "@maple/backend/services/auth/system-tenant"
 import { CurrentAuditActor } from "@maple/backend/services/auth/audit-actor"
+import { AUDIT_ACCESS_ACTION_SUFFIXES, isAuditAccessAction } from "@maple/domain/audit-actions"
 import { WarehouseQueryService } from "@maple/backend/services/warehouse/WarehouseQueryService"
 import { type AuditAction, auditResourceFields, type AuditResourceIdOption } from "./audit-actions"
 import {
@@ -99,11 +100,7 @@ export interface AuditLogListFilters {
 	readonly offset: number
 }
 
-/**
- * Actions that record access rather than a change: reads, tool calls, SQL runs
- * and API requests. A heavy agent user writes hundreds of these a day.
- */
-export const AUDIT_ACCESS_ACTION_SUFFIXES = [".read", ".called", ".sql_executed", ".request"] as const
+export { AUDIT_ACCESS_ACTION_SUFFIXES }
 
 export interface AuditLogServiceApi {
 	/**
@@ -175,9 +172,6 @@ const neverFail =
 				Effect.logWarning("Audit log write failed", { action, cause: defect }),
 			),
 		)
-
-const isAccessAction = (action: string) =>
-	Arr.some(AUDIT_ACCESS_ACTION_SUFFIXES, (suffix) => Str.endsWith(suffix)(action))
 
 /** The suffix exclusion a listing applies: the caller's own, or the one `actionKind` implies. */
 const actionSuffixOpts = (filters: AuditLogListFilters) => {
@@ -400,9 +394,9 @@ export function makeMemoryAuditLog(): AuditLogServiceApi {
 						Str.endsWith(suffix)(entry.action),
 					) &&
 					(filters.actionKind !== "changes" ||
-						!isAccessAction(entry.action) ||
+						!isAuditAccessAction(entry.action) ||
 						entry.outcome === "denied") &&
-					(filters.actionKind !== "access" || isAccessAction(entry.action)),
+					(filters.actionKind !== "access" || isAuditAccessAction(entry.action)),
 			)
 				.sort((a, b) => {
 					const byTime = b.occurredAt.getTime() - a.occurredAt.getTime()

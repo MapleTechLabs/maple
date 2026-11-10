@@ -202,6 +202,7 @@ existing copies onto it (see `apps/web/CLAUDE.md`).
 - `apps/web/src/page/kit/danger-zone.ts` `dangerZone`, `dangerRow`: The one "Danger zone" section: a destructive-edged panel of rows, each a title, what it does, and its action.
 - `apps/web/src/page/kit/dashboard-page.ts` `pageBody`, `filterRail`, `pageContent`, `pageHeader`, `pageScrollArea`, `dashboardPage`: The dashboard page below the shell's top bar: its filter rail, content column, sticky header and scroll area.
 - `apps/web/src/page/kit/data-table.ts` `headSort`, `columnHead`, `dataTable`, `dataTableEmpty`, `skeletonRows`: A sortable data table: its column heads, numeric cells, row links, and empty and skeleton rows.
+- `apps/web/src/page/kit/day-label.ts` `dayKey`, `dayLabel`: Calendar days in a time zone, for lists grouped by day ("Today", "Yesterday", "Mon 2 Nov").
 - `apps/web/src/page/kit/destination-picker.ts` `destinationPicker`, `pickedDestination`: The alert destinations a form notifies, each removable, then an "Add destination" menu of the rest; the owner keeps the menu's Model and the chosen ids.
 - `apps/web/src/page/kit/detail-header.ts` `detailEyebrow`, `detailTitle`, `detailTitleSkeleton`, `detailActions`: A detail page's title block and its loading skeleton.
 - `apps/web/src/page/kit/environment-switcher.ts` `environmentEntries`, `entryLabel`, `stepEnvironmentSelect`, `environmentSwitcher`: The environment switcher the overview, the service map and a service's page share.
@@ -311,6 +312,6 @@ existing copies onto it (see `apps/web/CLAUDE.md`).
 - `apps/local-ui/src/page/kit/page-shell.ts` `pageShell`: The page shell: filter rail beside a toolbar over the scrolling content.
 - `apps/local-ui/src/page/kit/placeholders.ts` `emptyNotice`, `listSkeleton`: A page body's "nothing here" block from the kit's `empty` parts, filling its area.
 - `apps/local-ui/src/page/kit/row-link.ts` `linkRow`, `rowLink`: A row that navigates is a real link, its first cell's anchor stretched over the row (keyboard focus, cmd-click and "copy link" for free).
-- `apps/local-ui/src/page/kit/series-chart.ts` `seriesChart`: The series chart: the pivot, gap handling and the loading / not-enough-data states the detail pages share, over `QueryBuilderLineChart`.
+- `apps/local-ui/src/page/kit/series-chart.ts` `seriesChart`: The series chart: the pivot, gap handling and the loading / not-enough-data states the detail pages share, drawn as a line chart.
 - `apps/local-ui/src/page/kit/signal-empty-state.ts` `signalEmptyState`: The shared `SignalEmptyState` with Maple Local's on-ramp: this server's OTLP endpoint to copy.
 - `apps/local-ui/src/page/kit/toolbar.ts` `toolbar`, `toolbarStats`, `toolbarStat`, `refreshButton`, `timeRangeSelect`, `toolbarSearch`: The page toolbar: stats, refresh, time range and search.

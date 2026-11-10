@@ -24,7 +24,7 @@ const vocabulary = (node: unknown, into: Set<string>): Set<string> => {
 }
 
 /** Parameter names that were retired for one spelling per concept. They live on only as aliases. */
-const RETIRED_PARAMETERS = new Set(["service_name", "service_names", "since", "until"])
+const RETIRED_PARAMETERS = new Set(["service_name", "service_names", "since", "until", "timezone"])
 
 const isRecord = (value: unknown): value is Readonly<Record<string, unknown>> =>
 	typeof value === "object" && value !== null && !Arr.isArray(value)

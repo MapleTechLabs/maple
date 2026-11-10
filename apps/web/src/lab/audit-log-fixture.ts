@@ -60,7 +60,8 @@ const entry = (wire: Wire): V2AuditLogEntry => {
 		actor_avatar_url: null,
 		affected_user: wire.affected ?? null,
 		source: wire.source,
-		resource_type: wire.resource?.type ?? null,
+		// The service derives the type from the action, so every stored entry has one.
+		resource_type: wire.resource?.type ?? Arr.headNonEmpty(Str.split(".")(wire.action)),
 		resource_id:
 			wire.resource?.prefix === undefined
 				? null
@@ -162,6 +163,7 @@ export const AUDIT_ENTRIES: ReadonlyArray<V2AuditLogEntry> = Arr.map(
 			action: "member.role_changed",
 			actor: "grace",
 			source: "dashboard",
+			resource: { type: "member" },
 			affected: LINUS,
 			changes: { fields: ["role"], before: { role: "org:member" }, after: { role: "org:admin" } },
 			ip: "192.0.2.44",

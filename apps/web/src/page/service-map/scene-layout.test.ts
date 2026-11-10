@@ -2,7 +2,7 @@ import { decorateRoutes, factoryRoutes } from "./three/factory-routing"
 import type { Edge3D, Node3D, Topology3D } from "./three/types"
 import { describe, expect, test } from "vitest"
 import { machineBadge } from "./badge"
-import { layoutTopologyOf, linkLabels, spatialLayoutOf, topologyKeyOf } from "./scene-layout"
+import { customLayoutOf, layoutTopologyOf, linkLabels, topologyKeyOf } from "./scene-layout"
 import { Array as Arr } from "effect"
 
 const node = (id: string, namespace: string, kind: Node3D["kind"] = "service"): Node3D => ({
@@ -42,7 +42,7 @@ const TOPOLOGY: Topology3D = {
 
 describe("3D labels match the scene's belts", () => {
 	test.each(["atlas", "cascade"] as const)("%s: ids, order and prominence equal decorateRoutes", (view) => {
-		const layout = spatialLayoutOf(TOPOLOGY, view)
+		const layout = customLayoutOf(TOPOLOGY, view, []).layout
 		const routes = factoryRoutes(layoutTopologyOf(topologyKeyOf(TOPOLOGY)), layout)
 		const legacy = Arr.map(decorateRoutes(routes, TOPOLOGY.edges), ({ id, edge, prominent }) => ({
 			id,
@@ -54,7 +54,10 @@ describe("3D labels match the scene's belts", () => {
 
 	test("the busiest call, queue belts and failing calls are prominent; quiet calls are not", () => {
 		const prominent = Arr.map(
-			Arr.filter(linkLabels(TOPOLOGY, spatialLayoutOf(TOPOLOGY, "atlas")), (link) => link.prominent),
+			Arr.filter(
+				linkLabels(TOPOLOGY, customLayoutOf(TOPOLOGY, "atlas", []).layout),
+				(link) => link.prominent,
+			),
 			(link) => link.id,
 		)
 		expect(prominent).toEqual(['link:["orders","kafka"]', 'link:["orders","pg"]', 'link:["web","api"]'])

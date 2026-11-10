@@ -234,7 +234,6 @@ export const getAiSessionSpans = Effect.fn("AiSessions.aiSessionSpans")(function
 	)
 	return { data: result.data, nextCursor: result.nextCursor }
 })
-export type AiSessionSpansPage = Effect.Success<ReturnType<typeof getAiSessionSpans>>
 
 const AiSessionSummaryInput = Schema.Struct({
 	sessionId: Schema.String.check(Schema.isMinLength(1)),

@@ -43,7 +43,8 @@ export interface EvalRuntime {
 
 /**
  * Build a node runtime for the app services backed by an in-memory PGlite DB +
- * test config. The warehouse client must be faked separately via `installFakeWarehouse`:
+ * test config (the Worker's service graph, with PGlite in place of Hyperdrive).
+ * The warehouse client must be faked separately via `installFakeWarehouse`:
  * this runtime uses the REAL WarehouseQueryService. The returned `requestLayer`
  * carries the already-resolved MCP tenant, matching the post-auth dispatcher
  * context shared by HTTP and RPC.

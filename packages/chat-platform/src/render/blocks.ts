@@ -158,6 +158,19 @@ export interface ChatAlertBlock {
 	readonly acknowledge?: ChatAlertAcknowledge
 }
 
+/**
+ * A self-contained HTML page, for a platform that renders one inside a message. Every other
+ * platform posts `fallback`: standard markdown that says the same.
+ */
+export interface ChatPageBlock {
+	readonly kind: "page"
+	readonly title: string
+	readonly html: string
+	/** The frame's height in CSS pixels until the page reports its own. */
+	readonly height: number
+	readonly fallback: string
+}
+
 export type ChatBlock =
 	| ChatProseBlock
 	| ChatChartBlock
@@ -166,6 +179,7 @@ export type ChatBlock =
 	| ChatApprovalBlock
 	| ChatNoticeBlock
 	| ChatAlertBlock
+	| ChatPageBlock
 
 /** Which chart, for the port that mints an image of it. */
 export interface ChatChartRef {

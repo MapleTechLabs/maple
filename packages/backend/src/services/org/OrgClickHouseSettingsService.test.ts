@@ -3,6 +3,7 @@ import { OrgClickHouseSettingsEncryptionError } from "@maple/domain/http"
 import { afterEach, describe, expect, it, layer } from "@effect/vitest"
 import {
 	OrgClickHouseSettingsPersistenceError,
+	OrgClickHouseSettingsUpsertRequest,
 	OrgClickHouseSettingsUpstreamRejectedError,
 	OrgClickHouseSettingsUpstreamUnavailableError,
 	OrgClickHouseSettingsStoredConfigInvalidError,
@@ -407,6 +408,7 @@ describe("resolveRuntimeConfig caching", () => {
 			[orgId, chUrl],
 		)
 
+	/** A row written before SecretBox: sealed with the master key, no row binding. */
 	const seedPasswordRow = async (db: TestDb, orgId: string, chUrl: string) => {
 		const encrypted = await Effect.runPromise(
 			encryptAes256Gcm(
@@ -1046,6 +1048,36 @@ describe("resolveRuntimeConfig caching", () => {
 				.collectorConfig(asOrgId(orgId), [asRole("org:admin")])
 				.pipe(Effect.exit)
 			expect(getError(exit)).toBeInstanceOf(OrgClickHouseSettingsEncryptionError)
+		}).pipe(Effect.provide(buildLayer(testDb)))
+	})
+
+	it.effect("a saved password is what queries run with, and a blank re-save keeps it", () => {
+		const testDb = createTestDb(cacheTrackedDbs)
+		const orgId = asOrgId("org_ch_password_round_trip")
+		const userId = Schema.decodeSync(UserId)("user_ch")
+		const { fetchImpl } = makeFetch(() => Promise.resolve(mockResponse("1\n", 200)))
+		const endpoint = { url: "https://clickhouse.example.test", user: "default", database: "maple" }
+		return Effect.gen(function* () {
+			const service = yield* OrgClickHouseSettingsService
+			const save = (password?: string) =>
+				service
+					.upsert(
+						orgId,
+						userId,
+						[asRole("org:admin")],
+						new OrgClickHouseSettingsUpsertRequest(
+							password === undefined ? endpoint : { ...endpoint, password },
+						),
+					)
+					.pipe(Effect.provideService(FetchHttpClient.Fetch, fetchImpl))
+
+			yield* save("s3cret-password")
+			const saved = yield* service.resolveRuntimeConfig(orgId)
+			expect(expectSome(saved).password).toBe("s3cret-password")
+
+			yield* save()
+			const resaved = yield* service.resolveRuntimeConfig(orgId)
+			expect(expectSome(resaved).password).toBe("s3cret-password")
 		}).pipe(Effect.provide(buildLayer(testDb)))
 	})
 })

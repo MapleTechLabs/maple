@@ -237,11 +237,10 @@ What each kind of Worker keeps beside the module:
 - **Queues** (`api`): `Cloudflare.Queues.consumeQueueMessages(queue, settings, handler)` in
   `impl`, under `Queues.EventSourceLive`, yields the `Consumer` resource at plan time and the
   listener at runtime (`src/worker/consumers.ts`, over the declarations in
-  `src/resources/queues.ts`). The consumers carry `renamedFrom({ fqn })` with the ids the
-  retired api factory declared them under (`vcs-sync-consumer`, …). Alchemy migrates the
-  state rows, so the deploy plans a noop instead of re-creating each consumer. Without it,
-  the delete of the old row would have removed the physical consumer the new row had
-  adopted. Drop the decoration once every stage has deployed past it.
+  `src/resources/queues.ts`). Renaming a consumer's id needs `renamedFrom({ fqn })` from
+  `alchemy/Rename` until every stage has deployed past it: alchemy then migrates the state
+  row and plans a noop. Without it, the delete of the old row removes the physical consumer
+  the new row had adopted.
 - **Background telemetry** (`api`): queue batches and cron ticks run under their own SDK
   instance (`eventTelemetry` in `@maple/infra/worker-telemetry`, provided around the event),
   so `maple-vcs-sync` and `maple-planetscale-webhooks` keep their own service names.
@@ -332,8 +331,9 @@ What each kind of Worker keeps beside the module:
 
     A connector whose install mints a credential per workspace (rather than using one
     deployment-wide secret) has it sealed into `chat_workspaces.credentials_{ciphertext,iv,tag}`,
-    AAD-bound to `(org_id, connector, external_workspace_id)`. That is why chat-bot also
-    binds `MAPLE_INGEST_KEY_ENCRYPTION_KEY`, optionally. Without it such a workspace fails
+    AAD-bound to `(org_id, connector, external_workspace_id)` (see `secret-encryption.md`).
+    That is why chat-bot also binds `MAPLE_INGEST_KEY_ENCRYPTION_KEY` and
+    `MAPLE_INGEST_KEY_DECRYPTION_KEYS`, optionally. Without it such a workspace fails
     its lookup and the mention goes unanswered, while every other connector runs normally.
 
 - **The sandbox Worker** (`sandbox`): the one Worker in the fleet whose own module is its

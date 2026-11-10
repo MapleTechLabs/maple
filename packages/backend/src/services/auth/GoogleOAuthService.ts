@@ -204,10 +204,10 @@ export class GoogleOAuthService extends Context.Service<GoogleOAuthService, Goog
 				}
 				const claims = yield* idTokenClaims(tokens.id_token)
 
-				const accessEnc = yield* oauth.encryptValue(tokens.access_token)
-				const refreshEnc = yield* oauth.encryptValue(tokens.refresh_token)
-				const currentTime = yield* Clock.currentTimeMillis
 				const orgId = stateRow.orgId
+				const accessEnc = yield* oauth.sealAccessToken(orgId, tokens.access_token)
+				const refreshEnc = yield* oauth.sealRefreshToken(orgId, tokens.refresh_token)
+				const currentTime = yield* Clock.currentTimeMillis
 
 				yield* oauth.upsertConnection(orgId, currentTime, {
 					externalUserId: claims.sub,
@@ -255,21 +255,19 @@ export class GoogleOAuthService extends Context.Service<GoogleOAuthService, Goog
 					const row = yield* oauth.loadConnection(orgId)
 					if (row === null) return
 					// Revoking the refresh token ends the whole grant, access tokens included.
-					const token = yield* oauth.decryptValue(
-						row.refreshTokenCiphertext !== null &&
-							row.refreshTokenIv !== null &&
-							row.refreshTokenTag !== null
-							? {
-									ciphertext: row.refreshTokenCiphertext,
-									iv: row.refreshTokenIv,
-									tag: row.refreshTokenTag,
-								}
-							: {
-									ciphertext: row.accessTokenCiphertext,
-									iv: row.accessTokenIv,
-									tag: row.accessTokenTag,
-								},
-					)
+					const token = yield* row.refreshTokenCiphertext !== null &&
+					row.refreshTokenIv !== null &&
+					row.refreshTokenTag !== null
+						? oauth.openRefreshToken(row.orgId, {
+								ciphertext: row.refreshTokenCiphertext,
+								iv: row.refreshTokenIv,
+								tag: row.refreshTokenTag,
+							})
+						: oauth.openAccessToken(row.orgId, {
+								ciphertext: row.accessTokenCiphertext,
+								iv: row.accessTokenIv,
+								tag: row.accessTokenTag,
+							})
 					yield* oauth.postForm(REVOKE_URL, { token })
 				},
 				(effect) => Effect.ignore(effect),

@@ -51,7 +51,7 @@ import type { MakeCompletion } from "./completion"
 import { interruptOnAbort, makeTurnObservability, turnSpanAttributes } from "./turn-outcome"
 import { makeAutonomousOutcome } from "./autonomous-outcome"
 import { type PhaseTurn, runAutonomousPhases } from "./autonomous-phases"
-import { makeUnfinishedSettler, runAutonomousTurn, settleRow } from "./autonomous-settle"
+import { makeUnfinishedSettler, runAutonomousTurn, settleAbandonedTurn, settleRow } from "./autonomous-settle"
 import { AGENTS, isAutonomousTurn, sessionOf } from "./agents"
 import { profileForTurn } from "./profiles"
 import { runChatTurn } from "./run"
@@ -272,15 +272,16 @@ export const runChatSessionTurn = async (input: RunChatSessionTurnInput): Promis
 				),
 			)
 			if (runTenant === undefined) return yield* annotateTurn()
-			if (prReviewId !== undefined && input.abandoned === true) {
+			if (input.abandoned === true) {
 				observability.outcome = "abandoned"
-				yield* reviews
-					.failReview(tenant.orgId, prReviewId, reviewFailureError("interrupted"))
-					.pipe(
-						Effect.catchCause((cause) =>
-							Effect.logError("Could not record the abandoned review", cause),
-						),
-					)
+				yield* settleAbandonedTurn({
+					orgId: tenant.orgId,
+					prReviewId,
+					prReplyId,
+					reviewInterrupted: reviewFailureError("interrupted"),
+					failReview: (orgId, id, error) => reviews.failReview(orgId, id, error),
+					failReply: (orgId, id, error) => conversations.failReply(orgId, id, error),
+				})
 				yield* annotateTurn()
 				return
 			}
@@ -353,7 +354,8 @@ export const runChatSessionTurn = async (input: RunChatSessionTurnInput): Promis
 						),
 						"Could not record the refused reply",
 					)
-				if (autonomous)
+				// A reply's row is settled above, with the refusal's own notice.
+				else if (autonomous)
 					yield* failUnfinished("ai_credits_exhausted", creditRefusalError(refusal.value))
 				observability.failureReason = `AiCreditsExhausted:${refusal.value.reason}`
 				input.session.endTurn(input.messageId, { reason: "error", error: refusal.value.message })

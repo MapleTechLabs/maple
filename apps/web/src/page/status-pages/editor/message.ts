@@ -21,9 +21,15 @@ import { defineMessageUnion } from "foldkit/message"
 import * as CopyButton from "@maple/views/ui/copy-button"
 import * as Dialog from "@maple/views/ui/dialog"
 import * as Menu from "@maple/views/ui/menu"
-import { ComponentTextField, IncidentTextField, SettingsTextField, ThemeColorField } from "../shared/form"
+import {
+	ComponentTextField,
+	IncidentEditField,
+	IncidentTextField,
+	SettingsTextField,
+	ThemeColorField,
+} from "../shared/form"
 import { PickerMessage } from "../shared/picker"
-import { PreviewScheme, PreviewSelection } from "../shared/preview"
+import { PreviewScheme, PreviewSelection, PreviewState, PreviewWidth } from "../shared/preview"
 import { LoadOutcome } from "../../kit/load-schemas"
 import { SessionGrants } from "../../kit/session-grants"
 
@@ -91,6 +97,16 @@ export const Message = defineMessageUnion({
 	CompletedPostUpdate: { generation: Schema.Number, result: LoadOutcome(V2StatusPageIncident) },
 	ClickedPublishIncident: { incidentId: StatusPageIncidentId },
 	CompletedPublishIncident: { incidentId: StatusPageIncidentId, result: LoadOutcome(V2StatusPageIncident) },
+	ClickedEditIncident: { incidentId: StatusPageIncidentId },
+	ChangedIncidentEditField: { field: IncidentEditField, value: Schema.String },
+	ToggledIncidentEditComponent: { componentId: StatusPageComponentId },
+	SubmittedIncidentEdit: {},
+	ClickedCancelIncidentEdit: {},
+	CompletedSaveIncident: { result: LoadOutcome(V2StatusPageIncident) },
+	ClickedDeleteIncident: { incidentId: StatusPageIncidentId },
+	ClickedConfirmDeleteIncident: {},
+	CompletedDeleteIncident: { result: LoadOutcome(Schema.Void) },
+	GotDeleteIncidentDialogMessage: { message: Dialog.Message },
 	// Live
 	GotUrlCopyMessage: { message: CopyButton.Message },
 	// Settings
@@ -102,6 +118,8 @@ export const Message = defineMessageUnion({
 	PickedThemeRadius: { radius: StatusPageThemeRadius },
 	PickedThemeFont: { font: StatusPageThemeFont },
 	PickedPreviewScheme: { scheme: PreviewScheme },
+	PickedPreviewWidth: { width: PreviewWidth },
+	PickedPreviewState: { state: PreviewState },
 	ClickedDiscardSettings: {},
 	ClickedSaveSettings: {},
 	CompletedSaveSettings: { result: LoadOutcome(V2StatusPage) },

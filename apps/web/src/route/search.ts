@@ -20,9 +20,27 @@ import {
 import { PushSourcePlatform } from "@maple/domain/primitives"
 import { QUERY_BUILDER_METRIC_TYPES } from "@maple/query-model"
 import { TOOL_METRICS, TOOL_PERCENTILES } from "@maple/web-data/lib/tool-analytics"
+import { VARIABLE_PARAM_PREFIX } from "../lib/dashboard-controls/search-params"
 import { HUB_SORTS, HUB_VIEWS, LEGACY_HUB_VIEWS, SEVERITY_FILTERS } from "../page/errors/hub/hub-params"
 
-const StringArray = Schema.Array(Schema.String)
+/**
+ * A string as a link wrote it. The search format reads an unquoted `404`, `true` or `null` as
+ * JSON, so a hand-written `?userId=12345` arrives as a number: it prints back to its text.
+ */
+const LenientString = Schema.Union([
+	Schema.String,
+	Schema.Union([Schema.Number, Schema.Boolean, Schema.Null]).pipe(
+		Schema.decodeTo(Schema.String, {
+			decode: SchemaGetter.transform((value: number | boolean | null) => String(value)),
+			// Never reached: the plain string member encodes every string first.
+			encode: SchemaGetter.forbidden(() => "A string param is written as a string"),
+		}),
+	),
+])
+
+const StringParam = Schema.optional(LenientString)
+
+const StringArray = Schema.Array(LenientString)
 const StringArrayFromJsonString = Schema.fromJsonString(Schema.Array(Schema.String))
 
 export const BooleanFromStringParam = Schema.fromJsonString(Schema.Boolean)
@@ -33,24 +51,14 @@ export const OptionalStringArrayParam = Schema.optional(
 	Schema.Union([StringArray, StringArrayFromJsonString]),
 )
 
-/** A string of digits a URL wrote unquoted, which the search format parses as a number. */
-const DigitsParam = Schema.Number.pipe(
-	Schema.decodeTo(Schema.String, {
-		decode: SchemaGetter.transform((value: number) => String(value)),
-		encode: SchemaGetter.transform((value: string) => Number(value)),
-	}),
-)
-
 const BooleanParam = Schema.optional(Schema.Union([Schema.Boolean, BooleanFromStringParam]))
 const NumberParam = Schema.optional(Schema.Union([Schema.Number, NumberFromStringParam]))
 
 export const TimeRangeSearchFields = {
-	startTime: Schema.optional(Schema.String),
-	endTime: Schema.optional(Schema.String),
-	timePreset: Schema.optional(Schema.String),
+	startTime: StringParam,
+	endTime: StringParam,
+	timePreset: StringParam,
 }
-
-export const VARIABLE_PARAM_PREFIX = "var-"
 
 export const variableSearchRest = Schema.Record(
 	Schema.TemplateLiteral([VARIABLE_PARAM_PREFIX, Schema.String]),
@@ -58,11 +66,11 @@ export const variableSearchRest = Schema.Record(
 )
 
 export const dashboardViewParamsSchema = {
-	filter: Schema.optional(Schema.String),
-	collapsed: Schema.optional(Schema.String),
-	expanded: Schema.optional(Schema.String),
-	tab: Schema.optional(Schema.String),
-	widget: Schema.optional(Schema.String),
+	filter: StringParam,
+	collapsed: StringParam,
+	expanded: StringParam,
+	tab: StringParam,
+	widget: StringParam,
 	refresh: Schema.optional(Schema.Union([Schema.Number, Schema.String])),
 	/** This viewer's time range; read leniently by `timeRangeFromSearch`, so a bad value is ignored. */
 	range: Schema.optional(Schema.Unknown),
@@ -73,37 +81,37 @@ export const dashboardViewParamsSchema = {
 const ToolAnalyticsSearchFields = {
 	metric: Schema.optional(Schema.Literals(TOOL_METRICS)),
 	percentile: Schema.optional(Schema.Literals(TOOL_PERCENTILES)),
-	tool: Schema.optional(Schema.String),
-	model: Schema.optional(Schema.String),
-	q: Schema.optional(Schema.String),
-	service: Schema.optional(Schema.String),
-	env: Schema.optional(Schema.String),
+	tool: StringParam,
+	model: StringParam,
+	q: StringParam,
+	service: StringParam,
+	env: StringParam,
 	failing: BooleanParam,
-	error: Schema.optional(Schema.String),
-	session: Schema.optional(Schema.String),
-	variant: Schema.optional(Schema.String),
+	error: StringParam,
+	session: StringParam,
+	variant: StringParam,
 }
 
 const analyticsFilterSearchFields = {
-	host: Schema.optional(Schema.String),
-	pagePath: Schema.optional(Schema.String),
-	referrerHost: Schema.optional(Schema.String),
-	country: Schema.optional(Schema.String),
-	deviceType: Schema.optional(Schema.String),
-	browserName: Schema.optional(Schema.String),
-	osName: Schema.optional(Schema.String),
-	language: Schema.optional(Schema.String),
-	utmSource: Schema.optional(Schema.String),
-	utmMedium: Schema.optional(Schema.String),
-	utmCampaign: Schema.optional(Schema.String),
+	host: StringParam,
+	pagePath: StringParam,
+	referrerHost: StringParam,
+	country: StringParam,
+	deviceType: StringParam,
+	browserName: StringParam,
+	osName: StringParam,
+	language: StringParam,
+	utmSource: StringParam,
+	utmMedium: StringParam,
+	utmCampaign: StringParam,
 	visitorType: Schema.optional(Schema.Literals(["new", "returning"])),
 	traffic: Schema.optional(Schema.Literals(["all", "humans", "bots"])),
-	eventName: Schema.optional(Schema.String),
+	eventName: StringParam,
 }
 
 const CodeReviewSearchFields = {
 	repo: Schema.optional(VcsRepositoryId),
-	author: Schema.optional(Schema.String),
+	author: StringParam,
 	...TimeRangeSearchFields,
 }
 
@@ -112,14 +120,14 @@ const CodeReviewIssuesSearchFields = {
 	severity: Schema.optional(PrReviewSeverity),
 	category: Schema.optional(PrReviewCategory),
 	state: Schema.optional(PrReviewFindingStatus),
-	q: Schema.optional(Schema.String),
+	q: StringParam,
 	review: Schema.optional(PrReviewId),
 }
 
 const CodeReviewListSearchFields = {
 	...CodeReviewSearchFields,
 	status: Schema.optional(Schema.Literals(["completed", "failed", "skipped", "running", "queued"])),
-	q: Schema.optional(Schema.String),
+	q: StringParam,
 	sortBy: Schema.optional(CodeReviewSortKey),
 	sortDir: Schema.optional(CodeReviewSortDir),
 	review: Schema.optional(PrReviewId),
@@ -161,7 +169,7 @@ const cloudflareFilterSearchFields = {
 	cacheStatuses: OptionalStringArrayParam,
 	statusClasses: OptionalStringArrayParam,
 	paths: OptionalStringArrayParam,
-	pathContains: Schema.optional(Schema.String),
+	pathContains: StringParam,
 	countries: OptionalStringArrayParam,
 	methods: OptionalStringArrayParam,
 	protocols: OptionalStringArrayParam,
@@ -177,7 +185,7 @@ const planetscaleFilterSearchFields = {
 	branches: OptionalStringArrayParam,
 	branchStates: OptionalStringArrayParam,
 	branchRoles: OptionalStringArrayParam,
-	branchContains: Schema.optional(Schema.String),
+	branchContains: StringParam,
 }
 
 // Tab sets of the account, settings (plus retired settings tabs), issue and investigation navs
@@ -232,7 +240,7 @@ export const ErrorIssuesSearch = Schema.Struct({
 })
 
 export const HomeSearch = Schema.Struct({
-	environment: Schema.optional(Schema.String),
+	environment: StringParam,
 	...TimeRangeSearchFields,
 })
 
@@ -241,7 +249,7 @@ export const AccountSearch = Schema.Struct({
 })
 
 export const CliLoginSearch = Schema.Struct({
-	user_code: Schema.optional(Schema.String),
+	user_code: StringParam,
 })
 
 // Keeps `tab` only when it is a string; the route redirects to /integrations.
@@ -255,36 +263,36 @@ export const DeveloperSearch = Schema.Struct({
 })
 
 export const IntegrationsSearch = Schema.Struct({
-	integration: Schema.optional(Schema.String),
-	chat: Schema.optional(Schema.String),
-	chat_reason: Schema.optional(Schema.String),
-	chat_workspace: Schema.optional(Schema.String),
-	chat_identity: Schema.optional(Schema.String),
-	chat_identity_name: Schema.optional(Schema.String),
+	integration: StringParam,
+	chat: StringParam,
+	chat_reason: StringParam,
+	chat_workspace: StringParam,
+	chat_identity: StringParam,
+	chat_identity_name: StringParam,
 })
 
 export const McpAuthorizeSearch = Schema.Struct({
-	request_id: Schema.optional(Schema.String),
+	request_id: StringParam,
 })
 
 export const OrgRequiredSearch = Schema.Struct({
-	redirect_url: Schema.optional(Schema.String),
+	redirect_url: StringParam,
 })
 
 export const QuickStartSearch = Schema.Struct({
-	redirect_url: Schema.optional(Schema.String),
+	redirect_url: StringParam,
 	checkout: Schema.optional(Schema.Literal("complete")),
 })
 
 export const SelectPlanSearch = Schema.Struct({
-	redirect_url: Schema.optional(Schema.String),
+	redirect_url: StringParam,
 	checkout: Schema.optional(Schema.Literal("complete")),
 })
 
 export const ServiceMapSearch = Schema.Struct({
 	view: Schema.optional(Schema.Literals(["2d", "3d"])),
-	environment: Schema.optional(Schema.String),
-	focusService: Schema.optional(Schema.String),
+	environment: StringParam,
+	focusService: StringParam,
 	focusHops: Schema.optional(Schema.Literals([1, 2])),
 	focusMode: Schema.optional(Schema.Literals(["dim", "hide"])),
 	...TimeRangeSearchFields,
@@ -293,95 +301,95 @@ export const ServiceMapSearch = Schema.Struct({
 export const SettingsSearch = Schema.Struct({
 	tab: Schema.optional(Schema.Literals([...settingsTabValues, ...legacySettingsTabValues])),
 	checkout: Schema.optional(Schema.Literal("complete")),
-	range: Schema.optional(Schema.String),
-	since: Schema.optional(Schema.String),
-	until: Schema.optional(Schema.String),
-	actor: Schema.optional(Schema.String),
-	actor_type: Schema.optional(Schema.String),
-	outcome: Schema.optional(Schema.String),
-	kind: Schema.optional(Schema.String),
-	resource_type: Schema.optional(Schema.String),
-	action: Schema.optional(Schema.String),
-	resource: Schema.optional(Schema.String),
-	affected: Schema.optional(Schema.String),
-	request: Schema.optional(Schema.String),
-	entry: Schema.optional(Schema.String),
+	range: StringParam,
+	since: StringParam,
+	until: StringParam,
+	actor: StringParam,
+	actor_type: StringParam,
+	outcome: StringParam,
+	kind: StringParam,
+	resource_type: StringParam,
+	action: StringParam,
+	resource: StringParam,
+	affected: StringParam,
+	request: StringParam,
+	entry: StringParam,
 	// Data sources deep links from `/integrations`: one source, or the connect form of a kind.
-	source: Schema.optional(Schema.String),
+	source: StringParam,
 	connect: Schema.optional(Schema.Literals(DATA_SOURCE_KINDS)),
 })
 
 export const SignInSearch = Schema.Struct({
-	redirect_url: Schema.optional(Schema.String),
+	redirect_url: StringParam,
 })
 
 export const SignUpSearch = Schema.Struct({
-	redirect_url: Schema.optional(Schema.String),
+	redirect_url: StringParam,
 })
 
 export const UnsubscribeSearch = Schema.Struct({
-	token: Schema.optional(Schema.String),
+	token: StringParam,
 })
 
 export const AgentSessionSearch = Schema.Struct({
-	t: Schema.optional(Schema.String),
-	end: Schema.optional(Schema.String),
-	view: Schema.optional(Schema.String),
-	span: Schema.optional(Schema.String.check(Schema.isMinLength(1), Schema.isTrimmed())),
-	tool: Schema.optional(Schema.String.check(Schema.isMinLength(1), Schema.isTrimmed())),
+	t: StringParam,
+	end: StringParam,
+	view: StringParam,
+	span: Schema.optional(LenientString.check(Schema.isMinLength(1), Schema.isTrimmed())),
+	tool: Schema.optional(LenientString.check(Schema.isMinLength(1), Schema.isTrimmed())),
 })
 
 export const AlertRuleSearch = Schema.Struct({
-	tab: Schema.optional(Schema.String),
+	tab: StringParam,
 	...TimeRangeSearchFields,
 })
 
 export const AlertsCreateSearch = Schema.Struct({
-	serviceName: Schema.optional(Schema.String),
-	ruleId: Schema.optional(Schema.String),
-	template: Schema.optional(Schema.String),
-	dashboardId: Schema.optional(Schema.String),
-	widgetId: Schema.optional(Schema.String),
-	chart: Schema.optional(Schema.String),
+	serviceName: StringParam,
+	ruleId: StringParam,
+	template: StringParam,
+	dashboardId: StringParam,
+	widgetId: StringParam,
+	chart: StringParam,
 })
 
 /** `/alerts/uptime/new`: `monitorId` edits that monitor; `serviceName` and `kind` prefill a new one. */
 export const AlertsUptimeNewSearch = Schema.Struct({
-	monitorId: Schema.optional(Schema.String),
-	serviceName: Schema.optional(Schema.String),
-	kind: Schema.optional(Schema.String),
+	monitorId: StringParam,
+	serviceName: StringParam,
+	kind: StringParam,
 })
 
 export const AlertsUptimeMonitorSearch = Schema.Struct({})
 
 /** `/alerts/slos/new`: `sloId` edits that SLO; `serviceName` prefills a new one. */
 export const AlertsSloNewSearch = Schema.Struct({
-	sloId: Schema.optional(Schema.String),
-	serviceName: Schema.optional(Schema.String),
+	sloId: StringParam,
+	serviceName: StringParam,
 })
 
 export const AlertsSloSearch = Schema.Struct({})
 
 /** `/alerts/schedules/new`: `scheduleId` edits that on-call schedule. */
 export const AlertsScheduleNewSearch = Schema.Struct({
-	scheduleId: Schema.optional(Schema.String),
+	scheduleId: StringParam,
 })
 
 export const AlertsScheduleSearch = Schema.Struct({})
 
 /** `/settings/ingestion/rules/new`: `template` prefills the editor from an empty-state template. */
 export const IngestRuleNewSearch = Schema.Struct({
-	template: Schema.optional(Schema.String),
+	template: StringParam,
 })
 
 /** The retired `/alerts/status-pages/$pageId`: `tab` picks the view its redirect opens. */
 export const AlertsStatusPageSearch = Schema.Struct({
-	tab: Schema.optional(Schema.String),
+	tab: StringParam,
 })
 
 /** `/status-pages/$pageId`: `view` is `appearance`, `settings`, `json` or `live`; none is the page itself. */
 export const StatusPageSearch = Schema.Struct({
-	view: Schema.optional(Schema.String),
+	view: StringParam,
 })
 
 export const CodeReviewCiSearch = Schema.Struct(CodeReviewCiSearchFields)
@@ -404,7 +412,7 @@ export const DashboardSearch = Schema.StructWithRest(
 export const SourcesNewSearch = Schema.Struct({
 	platform: Schema.optional(PushSourcePlatform),
 	/** A data integration's connect step. A plain string: OAuth callbacks return here, so an unknown id falls back to the picker. */
-	integration: Schema.optional(Schema.String),
+	integration: StringParam,
 })
 
 /** Push sources show Setup, integration sources show Connection; a link to the other one falls back. */
@@ -416,7 +424,7 @@ export const SourceSearch = Schema.Struct({
 })
 
 export const DashboardsTemplatesSearch = Schema.Struct({
-	template: Schema.optional(Schema.String),
+	template: StringParam,
 })
 
 export const InvestigationSearch = Schema.Struct({
@@ -429,27 +437,27 @@ export const MetricSearch = Schema.Struct({
 	agg: Schema.optional(
 		Schema.Literals(["avg", "sum", "min", "max", "count", "latest", "rate", "increase"]),
 	),
-	where: Schema.optional(Schema.String),
-	groupBy: Schema.optional(Schema.String),
-	step: Schema.optional(Schema.String),
-	bd: Schema.optional(Schema.String),
+	where: StringParam,
+	groupBy: StringParam,
+	step: StringParam,
+	bd: StringParam,
 	...TimeRangeSearchFields,
 })
 
 export const ReleaseSearch = Schema.Struct({
-	service: Schema.optional(Schema.String),
+	service: StringParam,
 	environments: OptionalStringArrayParam,
 	...TimeRangeSearchFields,
 })
 
 export const ReplaySearch = Schema.Struct({
-	t: Schema.optional(Schema.String),
+	t: StringParam,
 })
 
 export const ServiceSearch = Schema.Struct({
-	tab: Schema.optional(Schema.String),
+	tab: StringParam,
 	/** The API tab's open endpoint drawer, by normalized span name ("GET /users/{id}"). */
-	endpoint: Schema.optional(Schema.String),
+	endpoint: StringParam,
 	environments: OptionalStringArrayParam,
 	...TimeRangeSearchFields,
 })
@@ -457,20 +465,20 @@ export const ServiceSearch = Schema.Struct({
 export const ShareSearch = Schema.StructWithRest(
 	Schema.Struct({
 		embed: Schema.optional(Schema.Boolean),
-		theme: Schema.optional(Schema.String),
-		from: Schema.optional(Schema.String),
-		to: Schema.optional(Schema.String),
-		range: Schema.optional(Schema.String),
+		theme: StringParam,
+		from: StringParam,
+		to: StringParam,
+		range: StringParam,
 		/** The link creator's IANA zone; a calendar range ("today", "7d") resolves in it. */
-		tz: Schema.optional(Schema.String),
+		tz: StringParam,
 		refresh: Schema.optional(Schema.Union([Schema.Number, Schema.String])),
 	}),
 	[variableSearchRest],
 )
 
 export const TraceSearch = Schema.Struct({
-	spanId: Schema.optional(Schema.String),
-	t: Schema.optional(Schema.String),
+	spanId: StringParam,
+	t: StringParam,
 	view: Schema.optional(Schema.Literals(["waterfall", "timeline", "flow"])),
 })
 
@@ -481,7 +489,7 @@ export const AgentSessionsSearch = Schema.Struct({
 	models: OptionalStringArrayParam,
 	agents: OptionalStringArrayParam,
 	tools: OptionalStringArrayParam,
-	q: Schema.optional(Schema.String),
+	q: StringParam,
 	hasErrors: BooleanParam,
 	grouped: BooleanParam,
 	durationMin: NumberParam,
@@ -499,23 +507,23 @@ export const AgentSessionsSearch = Schema.Struct({
 })
 
 export const AlertsSearch = Schema.Struct({
-	tab: Schema.optional(Schema.String),
-	serviceName: Schema.optional(Schema.String),
-	status: Schema.optional(Schema.String),
+	tab: StringParam,
+	serviceName: StringParam,
+	status: StringParam,
 	/** The Inbox narrowed to one kind of incident: "anomaly" lists anomalies alone. */
-	signal: Schema.optional(Schema.String),
+	signal: StringParam,
 	/** The Anomalies view's incidents: open (the default), "resolved" or "all". */
-	anomalyStatus: Schema.optional(Schema.String),
+	anomalyStatus: StringParam,
 	/** The Silences tab narrowed to one maintenance window's occurrences (`mw_…`). */
-	window: Schema.optional(Schema.String),
+	window: StringParam,
 })
 
 export const AnalyticsSearch = Schema.Struct({
 	...analyticsFilterSearchFields,
 	...TimeRangeSearchFields,
-	tab: Schema.optional(Schema.String),
+	tab: StringParam,
 	/** The Search tab's Search Console property, when more than one is enabled. */
-	site: Schema.optional(Schema.String),
+	site: StringParam,
 })
 
 /**
@@ -532,19 +540,19 @@ export const AnomaliesSearch = Schema.Struct({
 export const CodeReviewSearch = Schema.Struct(CodeReviewSearchFields)
 
 export const DashboardsSearch = Schema.Struct({
-	q: Schema.optional(Schema.String),
+	q: StringParam,
 	scope: Schema.optional(Schema.Literals(["all", "favorites"])),
-	tags: Schema.optional(Schema.Array(Schema.String)),
+	tags: Schema.optional(StringArray),
 	sort: Schema.optional(Schema.Literals(["updated", "created", "name-asc", "name-desc", "widgets"])),
 })
 
 export const ErrorsSearch = Schema.Struct({
-	service: Schema.optional(Schema.String),
-	env: Schema.optional(Schema.String),
+	service: StringParam,
+	env: StringParam,
 	kind: Schema.optional(IssueKind),
 	regressed: Schema.optional(Schema.Union([Schema.Boolean, BooleanFromStringParam])),
 	view: Schema.optional(Schema.Literals([...HUB_VIEWS, ...LEGACY_HUB_VIEWS])),
-	q: Schema.optional(Schema.String),
+	q: StringParam,
 	sort: Schema.optional(Schema.Literals(HUB_SORTS)),
 	severity: Schema.optional(Schema.Literals(SEVERITY_FILTERS)),
 })
@@ -558,7 +566,7 @@ export const InvestigationsSearch = Schema.Struct({
 	kind: Schema.optional(Schema.Literals(["alert", "error", "anomaly", "question", "verification"])),
 	sort: Schema.optional(Schema.Literals(["updated", "severity", "confidence"])),
 	dir: Schema.optional(Schema.Literals(["asc", "desc"])),
-	q: Schema.optional(Schema.String),
+	q: StringParam,
 })
 
 export const LogsSearch = Schema.Struct({
@@ -574,14 +582,14 @@ export const LogsSearch = Schema.Struct({
 	excludedNamespaces: OptionalStringArrayParam,
 	attrs: OptionalStringArrayParam,
 	columns: OptionalStringArrayParam,
-	search: Schema.optional(Schema.String),
-	traceId: Schema.optional(Schema.String),
+	search: StringParam,
+	traceId: StringParam,
 	refresh: dashboardViewParamsSchema.refresh,
 	...TimeRangeSearchFields,
 })
 
 export const MetricsSearch = Schema.Struct({
-	q: Schema.optional(Schema.String),
+	q: StringParam,
 	type: Schema.optional(Schema.Literals(QUERY_BUILDER_METRIC_TYPES)),
 	view: Schema.optional(Schema.Literals(["grid", "table"])),
 	...TimeRangeSearchFields,
@@ -596,29 +604,29 @@ export const ReleasesSearch = Schema.Struct({
 })
 
 export const ReplaysSearch = Schema.Struct({
-	service: Schema.optional(Schema.String),
-	browser: Schema.optional(Schema.String),
-	country: Schema.optional(Schema.String),
-	deviceType: Schema.optional(Schema.String),
-	userId: Schema.optional(Schema.String),
-	user: Schema.optional(Schema.String),
-	group: Schema.optional(Schema.String),
-	groupId: Schema.optional(Schema.String),
-	visitorId: Schema.optional(Schema.String),
+	service: StringParam,
+	browser: StringParam,
+	country: StringParam,
+	deviceType: StringParam,
+	userId: StringParam,
+	user: StringParam,
+	group: StringParam,
+	groupId: StringParam,
+	visitorId: StringParam,
 	hasErrors: Schema.optional(Schema.Union([Schema.Boolean, BooleanFromStringParam])),
 	durationMin: Schema.optional(Schema.Union([Schema.Number, NumberFromStringParam])),
 	durationMax: Schema.optional(Schema.Union([Schema.Number, NumberFromStringParam])),
 	activeMin: Schema.optional(Schema.Union([Schema.Number, NumberFromStringParam])),
 	activeMax: Schema.optional(Schema.Union([Schema.Number, NumberFromStringParam])),
-	q: Schema.optional(Schema.String),
-	page: Schema.optional(Schema.String),
+	q: StringParam,
+	page: StringParam,
 	tags: OptionalStringArrayParam,
 	...TimeRangeSearchFields,
 })
 
 /** `/users`: the directory's search, toggles and facet picks (a pinned namespace overrides `namespaces`). */
 export const UsersSearch = Schema.Struct({
-	q: Schema.optional(Schema.String),
+	q: StringParam,
 	hasErrors: BooleanParam,
 	hasReplay: BooleanParam,
 	namespaces: OptionalStringArrayParam,
@@ -635,7 +643,7 @@ export type UserDetailTab = (typeof USER_DETAIL_TABS)[number]
 /** `/users/$userId`: the tab and a namespace picked on the page (the org pin overrides it). */
 export const UserDetailSearch = Schema.Struct({
 	tab: Schema.optional(Schema.Literals(USER_DETAIL_TABS)),
-	namespace: Schema.optional(Schema.String),
+	namespace: StringParam,
 	...TimeRangeSearchFields,
 })
 
@@ -676,13 +684,13 @@ export const TracesSearch = Schema.Struct({
 	rootOnly: Schema.optional(Schema.Union([Schema.Boolean, BooleanFromStringParam])),
 	hideNoise: Schema.optional(Schema.Union([Schema.Boolean, BooleanFromStringParam])),
 	minSpanCount: Schema.optional(Schema.Union([Schema.Number, Schema.NumberFromString])),
-	whereClause: Schema.optional(Schema.String),
+	whereClause: StringParam,
 	attributeFilters: Schema.optional(Schema.Array(AttributeFilterParam)),
 	resourceAttributeFilters: Schema.optional(Schema.Array(AttributeFilterParam)),
-	peek: Schema.optional(Schema.String),
-	peekRow: Schema.optional(Schema.String),
-	peekT: Schema.optional(Schema.String),
-	peekSpan: Schema.optional(Schema.String),
+	peek: StringParam,
+	peekRow: StringParam,
+	peekT: StringParam,
+	peekSpan: StringParam,
 	serviceMatchMode: ContainsMatchMode,
 	spanNameMatchMode: ContainsMatchMode,
 	deploymentEnvMatchMode: ContainsMatchMode,
@@ -717,7 +725,7 @@ export const InfraCloudflareZoneSearch = Schema.Struct({
 })
 
 export const InfraContainerSearch = Schema.Struct({
-	host: Schema.optional(Schema.String),
+	host: StringParam,
 	...TimeRangeSearchFields,
 })
 
@@ -726,14 +734,14 @@ export const InfraHostSearch = Schema.Struct({
 })
 
 export const InfraPlanetscaleDatabaseSearch = Schema.Struct({
-	branch: Schema.optional(Schema.String),
+	branch: StringParam,
 	...planetscaleFilterSearchFields,
 	...TimeRangeSearchFields,
 })
 
 export const InfraRailwayServiceSearch = Schema.Struct({
 	...TimeRangeSearchFields,
-	environmentId: Schema.String,
+	environmentId: LenientString,
 })
 
 export const InfraSupabaseProjectSearch = Schema.Struct({
@@ -743,9 +751,9 @@ export const InfraSupabaseProjectSearch = Schema.Struct({
 /** `/mcp-servers`, a server, its tool page and its sessions share one search: the time range and the toolbar. */
 export const McpServersSearch = Schema.Struct({
 	...TimeRangeSearchFields,
-	client: Schema.optional(Schema.String),
+	client: StringParam,
 	kind: Schema.optional(Schema.Literals(MCP_CLIENT_KINDS)),
-	q: Schema.optional(Schema.String),
+	q: StringParam,
 	failing: Schema.optional(Schema.Boolean),
 	metric: Schema.optional(Schema.Literals(["calls", "error_rate", "duration", "clients"])),
 	percentile: Schema.optional(Schema.Literals(["p50", "p90", "p95"])),
@@ -761,14 +769,14 @@ export const AgentSessionToolsSearch = Schema.Struct({
 export const InfraCloudflareSearch = Schema.Struct({
 	...TimeRangeSearchFields,
 	view: Schema.optional(Schema.Literals(CLOUDFLARE_VIEWS)),
-	q: Schema.optional(Schema.String),
+	q: StringParam,
 	scope: Schema.optional(Schema.Literals([...ZONE_SCOPES, ...WORKER_SCOPES])),
 	previews: Schema.optional(Schema.Boolean),
-	account: Schema.optional(Schema.String),
+	account: StringParam,
 })
 
 export const InfraContainersSearch = Schema.Struct({
-	q: Schema.optional(Schema.String),
+	q: StringParam,
 	scope: Schema.optional(Schema.Literals(["saturated", "elevated", "stale"])),
 	sortBy: Schema.optional(
 		Schema.Literals(["saturation", "cpuPct", "memoryPct", "containerName", "lastSeen"]),
@@ -790,26 +798,26 @@ export const InfraContainersSearch = Schema.Struct({
 })
 
 export const InfraAwsSearch = Schema.Struct({
-	tab: Schema.optional(Schema.String),
-	scope: Schema.optional(Schema.String),
-	region: Schema.optional(Schema.String),
-	q: Schema.optional(Schema.String),
+	tab: StringParam,
+	scope: StringParam,
+	region: StringParam,
+	q: StringParam,
 	...TimeRangeSearchFields,
 })
 
 export const InfraGcpSearch = Schema.Struct({
-	view: Schema.optional(Schema.String),
-	tab: Schema.optional(Schema.String),
-	scope: Schema.optional(Schema.String),
-	project: Schema.optional(Schema.String),
-	region: Schema.optional(Schema.String),
-	q: Schema.optional(Schema.String),
-	type: Schema.optional(Schema.String),
+	view: StringParam,
+	tab: StringParam,
+	scope: StringParam,
+	project: StringParam,
+	region: StringParam,
+	q: StringParam,
+	type: StringParam,
 	...TimeRangeSearchFields,
 })
 
 export const InfraHostsSearch = Schema.Struct({
-	q: Schema.optional(Schema.String),
+	q: StringParam,
 	scope: Schema.optional(Schema.Literals(["saturated", "elevated", "stale"])),
 	...TimeRangeSearchFields,
 })
@@ -821,7 +829,7 @@ export const InfraPlanetscaleSearch = Schema.Struct({
 })
 
 export const InfraRailwaySearch = Schema.Struct({
-	q: Schema.optional(Schema.String),
+	q: StringParam,
 	...TimeRangeSearchFields,
 })
 
@@ -835,44 +843,41 @@ export const DashboardWidgetSearch = Schema.StructWithRest(Schema.Struct(dashboa
 
 export const InfraCloudflareWorkerSearch = Schema.Struct({
 	...TimeRangeSearchFields,
-	account: Schema.optional(Schema.String),
+	account: StringParam,
 })
 
 /** The resource's keys after its name, as `AWS_INFRA_KINDS[kind].identity` orders them. */
 export const InfraAwsResourceSearch = Schema.Struct({
-	cluster: Schema.optional(Schema.String),
-	region: Schema.optional(Schema.String),
-	account: Schema.optional(Schema.String),
+	cluster: StringParam,
+	region: StringParam,
+	account: StringParam,
 	...TimeRangeSearchFields,
 })
 
 export const InfraGcpResourceSearch = Schema.Struct({
-	project: Schema.optional(Schema.String),
-	region: Schema.optional(Schema.String),
-	namespace: Schema.optional(Schema.String),
-	cluster: Schema.optional(Schema.String),
-	location: Schema.optional(Schema.String),
-	zone: Schema.optional(Schema.String),
-	backend: Schema.optional(Schema.String),
-	/**
-	 * A Cloud SQL instance's statement open in the side panel, by its Query Insights hash. The hash
-	 * is digits, which a hand-written `peek=123` parses as a number.
-	 */
-	peek: Schema.optional(Schema.Union([Schema.String, DigitsParam])),
+	project: StringParam,
+	region: StringParam,
+	namespace: StringParam,
+	cluster: StringParam,
+	location: StringParam,
+	zone: StringParam,
+	backend: StringParam,
+	/** A Cloud SQL instance's statement open in the side panel, by its Query Insights hash (digits). */
+	peek: StringParam,
 	...TimeRangeSearchFields,
 })
 
 export const InfraKubernetesNodeSearch = Schema.Struct(TimeRangeSearchFields)
 
 export const InfraKubernetesPodSearch = Schema.Struct({
-	namespace: Schema.optional(Schema.String),
+	namespace: StringParam,
 	...TimeRangeSearchFields,
 })
 
 export const InfraKubernetesServiceSearch = Schema.Struct(TimeRangeSearchFields)
 
 export const InfraKubernetesNodesSearch = Schema.Struct({
-	q: Schema.optional(Schema.String),
+	q: StringParam,
 	status: Schema.optional(Schema.Literals(["active", "idle", "ended"])),
 	nodeNames: OptionalStringArrayParam,
 	clusters: OptionalStringArrayParam,
@@ -881,13 +886,13 @@ export const InfraKubernetesNodesSearch = Schema.Struct({
 })
 
 export const InfraKubernetesPodsSearch = Schema.Struct({
-	q: Schema.optional(Schema.String),
+	q: StringParam,
 	scope: Schema.optional(Schema.Literals(["saturated", "elevated", "unbounded", "ended"])),
 	sortBy: Schema.optional(
 		Schema.Literals(["saturation", "cpuUsage", "cpuLimitPct", "memoryLimitPct", "podName", "lastSeen"]),
 	),
 	sortDir: SortDirParam,
-	peek: Schema.optional(Schema.String),
+	peek: StringParam,
 	podNames: OptionalStringArrayParam,
 	namespaces: OptionalStringArrayParam,
 	nodeNames: OptionalStringArrayParam,
@@ -915,7 +920,7 @@ export const InfraKubernetesServicesSearch = Schema.Struct(TimeRangeSearchFields
 
 export const InfraKubernetesWorkloadsSearch = Schema.Struct({
 	kind: Schema.optional(WorkloadKindLiteral),
-	q: Schema.optional(Schema.String),
+	q: StringParam,
 	scope: Schema.optional(Schema.Literals(["saturated", "elevated", "stale"])),
 	workloadNames: OptionalStringArrayParam,
 	namespaces: OptionalStringArrayParam,
@@ -926,7 +931,7 @@ export const InfraKubernetesWorkloadsSearch = Schema.Struct({
 })
 
 export const InfraKubernetesWorkloadSearch = Schema.Struct({
-	namespace: Schema.optional(Schema.String),
+	namespace: StringParam,
 	...TimeRangeSearchFields,
 })
 
@@ -942,17 +947,17 @@ export const SecurityFindingsSearch = Schema.Struct({
 	severity: Schema.optional(
 		Schema.Literals(["critical", "high", "medium", "low", "informational", "needs_validation"]),
 	),
-	target: Schema.optional(Schema.String),
-	q: Schema.optional(Schema.String),
+	target: StringParam,
+	q: StringParam,
 	rejected: Schema.optional(Schema.Boolean),
 })
 
 export const SecurityRunsSearch = Schema.Struct({
-	target: Schema.optional(Schema.String),
+	target: StringParam,
 })
 /** One repository's breakdown on the Dependencies tab; absent shows them all. */
 export const SecurityDependenciesSearch = Schema.Struct({
-	repo: Schema.optional(Schema.String),
+	repo: StringParam,
 	/** The repositories or advisories table; absent shows the matrix, or a repository's upgrade plan. */
 	view: Schema.optional(Schema.Literals(["repositories", "advisories"])),
 })

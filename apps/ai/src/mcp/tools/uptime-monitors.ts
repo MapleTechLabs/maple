@@ -214,7 +214,7 @@ const configParameters = {
 	expected: P.optionalText("dns: up when any answer equals this; omit to only require that it resolves"),
 	heartbeat_interval_seconds: P.optionalNumber("heartbeat: expected seconds between pings (at least 60)"),
 	cron: P.optionalText("heartbeat: cron expression of the expected pings, instead of an interval"),
-	timezone: P.optionalText("heartbeat: IANA timezone the cron expression runs in (default UTC)"),
+	time_zone: P.optionalText("heartbeat: IANA time zone the cron expression runs in (default UTC)"),
 	grace_seconds: P.optionalNumber(
 		`heartbeat: how late a ping may be before the monitor goes down (0 to 86400, default ${DEFAULT_GRACE_SECONDS})`,
 	),
@@ -225,7 +225,7 @@ const configParameters = {
 	service: P.service("The `service.name` the monitor belongs to: links its failures to that service"),
 } as const
 
-const ALIASES = { ...P.SERVICE_ALIASES, hostname: "host" } as const
+const ALIASES = { ...P.SERVICE_ALIASES, hostname: "host", timezone: "time_zone" } as const
 
 const configFields = (params: UptimeConfigFields): UptimeConfigFields => ({
 	url: params.url,
@@ -239,7 +239,7 @@ const configFields = (params: UptimeConfigFields): UptimeConfigFields => ({
 	expected: params.expected,
 	heartbeat_interval_seconds: params.heartbeat_interval_seconds,
 	cron: params.cron,
-	timezone: params.timezone,
+	time_zone: params.time_zone,
 	grace_seconds: params.grace_seconds,
 })
 

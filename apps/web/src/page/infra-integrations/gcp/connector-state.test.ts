@@ -5,12 +5,10 @@ import { GcpLogRuntime } from "@maple/domain/primitives"
 import {
 	GCP_LOG_RUNTIMES,
 	cloudShellUrl,
-	gcpApplyLine,
 	gcpCollectLock,
 	gcpConnectionState,
 	gcpCreateRequest,
 	gcpDraftEffect,
-	gcpApplicationLogsLine,
 	gcpLogFilterChoice,
 	gcpLogState,
 	gcpMessageParts,
@@ -522,17 +520,6 @@ describe("gcpRunAsked", () => {
 	})
 })
 
-describe("gcpApplyLine", () => {
-	it("says what the run does about a capability", () => {
-		expect(gcpApplyLine(true, true)).toBe("On")
-		expect(gcpApplyLine(true, null)).toBe("On after this run")
-		expect(gcpApplyLine(true, false)).toBe("On after this run")
-		expect(gcpApplyLine(false, true)).toBe("Off in Maple. This run removes it from Google Cloud.")
-		expect(gcpApplyLine(false, false)).toBe("Off")
-		expect(gcpApplyLine(false, null)).toBe("Off")
-	})
-})
-
 describe("gcpMessageParts", () => {
 	it("cuts the first sentence, the remedy and what Google answered, without rewording", () => {
 		expect(
@@ -714,14 +701,7 @@ describe("gcpLogFilterChoice", () => {
 	})
 })
 
-describe("gcpApplicationLogsLine", () => {
-	it("names the runtimes in display order, whatever order they were ticked in", () => {
-		expect(gcpApplicationLogsLine(["gke", "cloud_run"])).toBe(
-			"Platform logs and the output of Cloud Run, GKE containers",
-		)
-		expect(gcpApplicationLogsLine([])).toBe("Platform logs only, no application output")
-	})
-
+describe("GCP_LOG_RUNTIMES", () => {
 	it("has a name for every runtime the API takes", () => {
 		expect(Arr.map(GCP_LOG_RUNTIMES, ({ value }) => value)).toEqual([...GcpLogRuntime.literals])
 	})

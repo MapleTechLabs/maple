@@ -38,7 +38,7 @@ with `packageManager`.
   `apps/api` forwards `/mcp`, `/api/chat/*`, `/internal/chat/*` to it over a service binding;
   OAuth stays in `apps/api`.
 - An investigation is **one agent turn** ending in `submit_diagnosis`. Do not split it across
-  planner/lanes/validator. Sub-agents are fine elsewhere (e.g. review fan-out) via `SubagentHost`.
+  planner/lanes/validator. Sub-agents are fine elsewhere (e.g. review fan-out) via `Subagent` from `@yielded/agent/subagent`.
 - LLM code (Effect AI + `@yielded/agent`) is only in `apps/ai`; Maple-specific wiring lives in
   `apps/ai/src/platform/Llm.ts`.
 - Shared services live in `packages/backend`, imported via `@maple/backend/*` subpaths.
@@ -175,5 +175,5 @@ form on the sign-in page with `PREVIEW_SIGNIN_KEY` (Infisical `dev`).
 
 Read the relevant doc before touching an area: `error-issue-lifecycle.md` (anything in
 `packages/backend/src/services/errors/`), `warehouse-rollups.md`, `service-map-architecture.md`,
-`ingest-wal-durability.md`, `local-mode.md`, `infra.md`, `api-v2.md`, `otel-spec/`,
+`ingest-wal-durability.md`, `secret-encryption.md` (any `*_ciphertext` column), `local-mode.md`, `infra.md`, `api-v2.md`, `otel-spec/`,
 `dashboard-grid.md` (the dashboard canvas and `lib/grid-engine`), `design-rules.md` (tokens and the `maple/*` design lint rules for `apps/web` and `packages/ui`).

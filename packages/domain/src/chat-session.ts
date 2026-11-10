@@ -309,7 +309,7 @@ const eventFields = {
 		attempt: Schema.Number,
 		/** Characters of this message's text that never happened; readers truncate by this much. */
 		retractChars: Schema.Number,
-		/** The model error's reason tag, for display and for triage. */
+		/** The provider error's reason tag, for display and for triage. */
 		reason: Schema.String,
 		/** Milliseconds until the attempt starts, so a client can show a countdown. */
 		delayMs: Schema.Number,

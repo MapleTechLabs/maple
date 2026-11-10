@@ -1,3 +1,4 @@
+import { dayKey, dayLabel } from "../kit/day-label"
 import {
 	countLabel,
 	EMPTY_VALUE,
@@ -31,7 +32,7 @@ import { statusDot } from "@maple/views/ui/status-dot"
 import { textLink } from "@maple/views/ui/text-link"
 import { typography, typographyClass } from "@maple/views/ui/typography"
 import { serviceDot } from "@maple/views/ui/values"
-import { Array as Arr, Option, Order } from "effect"
+import { Array as Arr, Order } from "effect"
 import {
 	th,
 	toolTable,
@@ -80,36 +81,6 @@ const timeFormat = (timeZone: string, options: Intl.DateTimeFormatOptions) =>
 
 const clockOf = (atMs: number, timeZone: string): string =>
 	timeFormat(timeZone, { hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).format(atMs)
-
-const dayKey = (atMs: number, timeZone: string): string =>
-	timeFormat(timeZone, { year: "numeric", month: "2-digit", day: "2-digit" }).format(atMs)
-
-/** The local calendar day as a day count, so "yesterday" is one less even across a DST change. */
-const dayNumber = (atMs: number, timeZone: string): number => {
-	const parts = timeFormat(timeZone, { year: "numeric", month: "numeric", day: "numeric" }).formatToParts(
-		atMs,
-	)
-	const part = (type: Intl.DateTimeFormatPartTypes): number =>
-		Number(
-			Option.getOrElse(
-				Option.map(
-					Arr.findFirst(parts, (entry) => entry.type === type),
-					(entry) => entry.value,
-				),
-				() => "0",
-			),
-		)
-	return Date.UTC(part("year"), part("month") - 1, part("day")) / 86_400_000
-}
-
-/** "Today", "Yesterday", else "Mon 2 Nov". */
-export const dayLabel = (atMs: number, clock: Clock): string => {
-	const day = dayNumber(atMs, clock.timeZone)
-	const today = dayNumber(clock.nowMs, clock.timeZone)
-	if (day === today) return "Today"
-	if (day === today - 1) return "Yesterday"
-	return timeFormat(clock.timeZone, { weekday: "short", day: "numeric", month: "short" }).format(atMs)
-}
 
 // --- header -------------------------------------------------------------------------------------
 

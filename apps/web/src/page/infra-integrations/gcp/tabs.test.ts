@@ -4,13 +4,10 @@ import { GCP_INFRA_SERVICE_IDS, GCP_INFRA_SERVICES, gcpInfraMetrics } from "@map
 import { GCP_ASSET_TYPES } from "@maple/domain/gcp-metrics"
 import {
 	GCP_INFRA_COLUMNS,
-	GCP_VIEW_SERVICES,
 	formatGcpValue,
 	gcpAssetTypeLabel,
-	gcpHasRegion,
 	gcpInfraNotice,
 	gcpInfraSetupPending,
-	gcpServiceView,
 	gcpResourceName,
 	gcpResourcesError,
 	gcpStateLabel,
@@ -227,13 +224,6 @@ describe("workload identity", () => {
 		expect(gcpWorkloadName("cloudRun", API)).toBe("api")
 	})
 
-	it("knows which services have a region to filter by", () => {
-		expect(Arr.filter(GCP_INFRA_SERVICE_IDS, (id) => !gcpHasRegion(id))).toEqual([
-			"pubsub",
-			"loadBalancing",
-		])
-	})
-
 	it("names a row in running text, keeping an acronym", () => {
 		expect(gcpWorkloadNoun("gke")).toBe("container")
 		expect(gcpWorkloadNoun("loadBalancing")).toBe("URL map")
@@ -261,20 +251,6 @@ describe("formatGcpValue", () => {
 		expect(formatGcpValue("cores", 0)).toBe("0m")
 		expect(formatGcpValue("cores", 1.25)).toBe("1.25")
 		expect(formatGcpValue("cores", 0.9996)).toBe("1")
-	})
-})
-
-describe("gcpServiceView", () => {
-	it("lists every service in exactly the view it names", () => {
-		for (const service of GCP_INFRA_SERVICE_IDS) {
-			const views = Arr.filter(Rec.toEntries(GCP_VIEW_SERVICES), ([, services]) =>
-				Arr.some(services, (listed) => listed === service),
-			)
-			expect(
-				Arr.map(views, ([view]) => view),
-				service,
-			).toEqual([gcpServiceView(service)])
-		}
 	})
 })
 

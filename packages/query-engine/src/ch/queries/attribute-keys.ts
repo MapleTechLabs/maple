@@ -4,7 +4,7 @@ import { param } from "@maple-dev/effect-orm/clickhouse"
 import { from, fromQuery, type ColumnAccessor } from "@maple-dev/effect-orm/clickhouse"
 import * as Datasources from "@maple/domain/tinybird/datasources"
 import { orgIdParam, utcSecondsParam } from "../tables"
-import { resolveMetricTable } from "./query-helpers"
+import { resolveMetricTable, utcHourFloor } from "./query-helpers"
 
 export interface AttributeKeysQueryOpts {
 	scope: string
@@ -26,7 +26,7 @@ export function attributeKeysQuery(opts: AttributeKeysQueryOpts) {
 		}))
 		.where(($) => [
 			$.OrgId.eq(orgIdParam),
-			$.Hour.gte(utcSecondsParam("startTime")),
+			$.Hour.gte(utcHourFloor("startTime")),
 			$.Hour.lte(utcSecondsParam("endTime")),
 			$.AttributeScope.eq(opts.scope),
 			opts.keys ? CH.inList($.AttributeKey, opts.keys) : undefined,
@@ -55,7 +55,7 @@ export function spanAttributeValuesQuery(opts: AttributeValuesOpts) {
 		}))
 		.where(($) => [
 			$.OrgId.eq(orgIdParam),
-			$.Hour.gte(utcSecondsParam("startTime")),
+			$.Hour.gte(utcHourFloor("startTime")),
 			$.Hour.lte(utcSecondsParam("endTime")),
 			$.AttributeScope.eq("span"),
 			$.AttributeKey.eq(opts.attributeKey),
@@ -74,7 +74,7 @@ export function resourceAttributeValuesQuery(opts: AttributeValuesOpts) {
 		}))
 		.where(($) => [
 			$.OrgId.eq(orgIdParam),
-			$.Hour.gte(utcSecondsParam("startTime")),
+			$.Hour.gte(utcHourFloor("startTime")),
 			$.Hour.lte(utcSecondsParam("endTime")),
 			$.AttributeScope.eq("resource"),
 			$.AttributeKey.eq(opts.attributeKey),
@@ -93,7 +93,7 @@ export function logAttributeValuesQuery(opts: AttributeValuesOpts) {
 		}))
 		.where(($) => [
 			$.OrgId.eq(orgIdParam),
-			$.Hour.gte(utcSecondsParam("startTime")),
+			$.Hour.gte(utcHourFloor("startTime")),
 			$.Hour.lte(utcSecondsParam("endTime")),
 			$.AttributeScope.eq("log"),
 			$.AttributeKey.eq(opts.attributeKey),
@@ -185,7 +185,7 @@ export function metricAttributeValuesQuery(opts: AttributeValuesOpts) {
 		}))
 		.where(($) => [
 			$.OrgId.eq(orgIdParam),
-			$.Hour.gte(utcSecondsParam("startTime")),
+			$.Hour.gte(utcHourFloor("startTime")),
 			$.Hour.lte(utcSecondsParam("endTime")),
 			$.AttributeScope.eq("metric"),
 			$.AttributeKey.eq(opts.attributeKey),

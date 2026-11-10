@@ -223,6 +223,57 @@ describe("parseWhereClause", () => {
 	})
 })
 
+describe("formatAttributeClause", () => {
+	it("emits the operator each entry asks for, in both polarities", () => {
+		expect(formatAttributeClause("attr.", { key: "http.route", value: "/orders/:id" })).toBe(
+			'attr.http.route = "/orders/:id"',
+		)
+		expect(formatAttributeClause("attr.", { key: "env", value: "prod", negated: true })).toBe(
+			'attr.env != "prod"',
+		)
+		expect(
+			formatAttributeClause("attr.", { key: "http.route", value: "/api", matchMode: "contains" }),
+		).toBe('attr.http.route contains "/api"')
+		expect(
+			formatAttributeClause("attr.", {
+				key: "http.route",
+				value: "/health",
+				matchMode: "contains",
+				negated: true,
+			}),
+		).toBe('attr.http.route !contains "/health"')
+	})
+
+	it("emits exists and comparison operators that parse back to the same entries", () => {
+		const entries = [
+			{ key: "user.id", value: "", matchMode: "exists" },
+			{ key: "retry.count", value: "3", matchMode: "gte" },
+		] as const
+		const clause = Arr.join(
+			Arr.map(entries, (entry) => formatAttributeClause("attr.", entry)),
+			" AND ",
+		)
+		expect(clause).toBe('attr.user.id exists AND attr.retry.count >= "3"')
+		expect(parseWhereClause(clause).filters.attributeFilters).toEqual(entries)
+		expect(
+			formatAttributeClause("resource.", {
+				key: "k8s.pod.name",
+				value: "",
+				matchMode: "exists",
+				negated: true,
+			}),
+		).toBe("resource.k8s.pod.name !exists")
+	})
+
+	it("quotes values with the grammar's quotes, not backslash escapes", () => {
+		const clause = formatAttributeClause("attr.", { key: "msg", value: 'say "hi"' })
+		expect(clause).toBe(`attr.msg = 'say "hi"'`)
+		const { filters, warnings } = parseWhereClause(clause)
+		expect(warnings).toEqual([])
+		expect(Arr.getUnsafe(filters.attributeFilters, 0).value).toBe('say "hi"')
+	})
+})
+
 describe("applyWhereClause", () => {
 	it("merges parsed values into search params", () => {
 		const result = applyWhereClause(
@@ -441,8 +492,6 @@ describe("OR groups", () => {
 	it("round-trips a group through formatAttributeClause", () => {
 		const whereClause = '(attr.a = "1" OR attr.b !exists)'
 		const { filters } = parseWhereClause(whereClause)
-		expect(Arr.map(filters.attributeFilters, (entry) => formatAttributeClause("attr.", entry))).toEqual([
-			whereClause,
-		])
+		expect(formatAttributeClause("attr.", Arr.getUnsafe(filters.attributeFilters, 0))).toBe(whereClause)
 	})
 })

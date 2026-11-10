@@ -1,7 +1,7 @@
 /**
  * Tool-use tasks: one user message to the production chat agent, graded on what the calls mean.
  *
- * Ported tasks come from the old selection suites and the CLI's eval scenarios; their targets now list
+ * Ported tasks come from the old selection suites and the CLI's former eval list; their targets now list
  * every acceptable answer instead of one exact argument object. New tasks are negative cases (no
  * tool fits, a read must not mutate, an ambiguous destructive request) and near-miss phrasings,
  * after BFCL's irrelevance category and MCP-Bench's fuzzy tasks. `tasks.test.ts` checks every

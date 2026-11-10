@@ -243,35 +243,6 @@ export function gcpConsoleLinks(service: GcpInfraServiceId, keys: ReadonlyArray<
 	}
 }
 
-/** The console page of what a connection covers: the project's dashboard, or the folder or organization in the resource manager. */
-export function gcpConsoleScopePage(scope: {
-	readonly scope_type: string
-	readonly scope_id: string
-}): string {
-	switch (scope.scope_type) {
-		case "organization":
-			return consoleUrl("cloud-resource-manager", "organizationId", scope.scope_id)
-		case "folder":
-			return consoleUrl("cloud-resource-manager", "folder", scope.scope_id)
-		default:
-			return consoleUrl("home/dashboard", "project", scope.scope_id)
-	}
-}
-
-/** A project's console pages for what Maple shows of it: its metrics, logs and resources. */
-export const gcpConsoleProjectPages = (
-	project: string,
-): ReadonlyArray<{ readonly label: string; readonly href: string }> =>
-	Arr.map(
-		[
-			["Dashboard", "home/dashboard"],
-			["Metrics Explorer", "monitoring/metrics-explorer"],
-			["Logs Explorer", "logs/query"],
-			["Asset Inventory", "iam-admin/asset-inventory/dashboard"],
-		] as const,
-		([label, path]) => ({ label, href: consoleUrl(path, "project", project) }),
-	)
-
 /**
  * Where a workload's other telemetry is. Its metrics, and its traces when it is instrumented, are
  * under `serviceName`: the workload's own for compute, `gcp/<resource type>` for a managed

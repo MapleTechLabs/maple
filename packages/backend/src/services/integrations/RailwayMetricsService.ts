@@ -40,7 +40,8 @@ import {
 	Record as Rec,
 } from "effect"
 import { FetchHttpClient, HttpClient } from "effect/http"
-import { decryptAes256Gcm, encryptAes256Gcm, ingestKeyEncryptionKey } from "@maple/backend/platform/Crypto"
+import { openSecret, sealSecret, secretKeyringFromEnv } from "@maple/backend/platform/SecretBox"
+import { railwayTokenSlot } from "@maple/backend/platform/secret-slots"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { makeDbExecute, makePersistenceErrorMapper } from "@maple/backend/platform/db-execute"
 import { isolatePollFailure, pollFleet } from "./poll-fleet"
@@ -102,9 +103,6 @@ const TOKEN_REJECTED_REASON = "Railway rejected the token. Reconnect Railway wit
 const toPersistenceError = makePersistenceErrorMapper(IntegrationsPersistenceError, "Railway database error")
 
 const floorToSample = (ms: number) => ms - (ms % SAMPLE_MS)
-
-/** Binds each ciphertext to its org so a row copied across orgs fails to decrypt. */
-const tokenAad = (orgId: OrgId) => Buffer.from(`railway-token:${orgId}`)
 
 const parseServices = (json: string): Readonly<Record<string, string>> =>
 	decodeServices(json).pipe((option) => (option._tag === "Some" ? option.value : {}))
@@ -173,7 +171,7 @@ export class RailwayMetricsService extends Context.Service<RailwayMetricsService
 			const env = yield* Env
 			const httpClient = yield* HttpClient.HttpClient
 			const ingestKeys = yield* OrgIngestKeysService
-			const encryptionKey = yield* ingestKeyEncryptionKey(
+			const keyring = yield* secretKeyringFromEnv(
 				env,
 				(message) => new IntegrationsPersistenceError({ message }),
 			)
@@ -245,16 +243,17 @@ export class RailwayMetricsService extends Context.Service<RailwayMetricsService
 				)
 
 			const decryptToken = (connection: RailwayConnectionRow) =>
-				decryptAes256Gcm(
+				openSecret(
+					keyring,
+					railwayTokenSlot,
+					{ orgId: connection.orgId },
 					{
 						ciphertext: connection.tokenCiphertext,
 						iv: connection.tokenIv,
 						tag: connection.tokenTag,
 					},
-					encryptionKey,
 					() =>
 						new IntegrationsPersistenceError({ message: "Failed to decrypt the Railway token" }),
-					tokenAad(connection.orgId),
 				)
 
 			/** Upsert discovered environments; soft-disable the ones that disappeared. */
@@ -393,11 +392,12 @@ export class RailwayMetricsService extends Context.Service<RailwayMetricsService
 						sampleRateSeconds: SAMPLE_RATE_SECONDS,
 					}).pipe(Effect.mapError(toConnectError))
 				}
-				const encrypted = yield* encryptAes256Gcm(
+				const encrypted = yield* sealSecret(
+					keyring,
+					railwayTokenSlot,
+					{ orgId },
 					token,
-					encryptionKey,
 					(message) => new IntegrationsPersistenceError({ message }),
-					tokenAad(orgId),
 				)
 				const now = yield* Clock.currentTimeMillis
 				// A reconnect keeps the connection id and so its source.

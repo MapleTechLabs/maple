@@ -13,7 +13,7 @@ import { HttpClient } from "effect/http"
 import { dispatchDelivery as dispatchDeliveryImpl } from "./delivery/dispatch"
 import type { DispatchContext } from "./delivery/context"
 import { hydrateDestinationRow } from "./AlertDestinationHydration"
-import { ingestKeyEncryptionKey } from "@maple/backend/platform/Crypto"
+import { secretKeyringFromEnv } from "@maple/backend/platform/SecretBox"
 import { ChatAlertPoster } from "./ChatAlertPoster"
 import { LinearIssueTracker } from "./LinearIssueTracker"
 import { Database } from "@maple/backend/platform/DatabaseLive"
@@ -115,13 +115,7 @@ const make: Effect.Effect<
 	const linear = yield* LinearIssueTracker
 	const runtime = yield* AlertRuntime
 
-	const encryptionKey = yield* ingestKeyEncryptionKey(
-		env,
-		(message) =>
-			new NotificationDispatchError({
-				message: `MAPLE_INGEST_KEY_ENCRYPTION_KEY: ${message}`,
-			}),
-	)
+	const keyring = yield* secretKeyringFromEnv(env, (message) => new NotificationDispatchError({ message }))
 
 	const sendEmail = emailDeliverySender(email)
 
@@ -133,7 +127,7 @@ const make: Effect.Effect<
 			"maple.destination.id": row.id,
 			"maple.destination.type": row.type,
 		})
-		const hydrated = yield* hydrateDestinationRow(row, encryptionKey, {
+		const hydrated = yield* hydrateDestinationRow(row, keyring, {
 			onPublicConfigInvalid: () =>
 				new NotificationDispatchError({ message: "Stored destination config is invalid" }),
 			onDecryptFailure: () =>

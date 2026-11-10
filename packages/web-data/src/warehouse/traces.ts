@@ -161,23 +161,6 @@ export interface Trace {
 	hasError: boolean
 }
 
-export interface TracesResponse {
-	data: Trace[]
-	meta: {
-		limit: number
-		offset: number
-		/**
-		 * Rows the warehouse page actually produced before the noise filter ran.
-		 * Pagination must advance by pages, not by `data.length`: a filtered page
-		 * returns fewer rows than it consumed, and `scannedCount === limit` — not
-		 * a full `data` array — is what means "more pages exist".
-		 */
-		scannedCount: number
-		/** Noise traces dropped from this page (`scannedCount - data.length`). */
-		hiddenCount: number
-	}
-}
-
 /** Fold the singular alias and the array spelling of a facet into one list. */
 function oneOrMany<T extends string>(
 	list: readonly T[] | undefined,
@@ -653,10 +636,6 @@ interface TracesFacets {
 		p50DurationMs: number
 		p95DurationMs: number
 	}
-}
-
-export interface TracesFacetsResponse {
-	data: TracesFacets
 }
 
 const GetTracesFacetsInputSchema = Schema.Struct({

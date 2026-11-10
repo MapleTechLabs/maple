@@ -32,22 +32,15 @@ import { generateShareToken, hashShareToken, shareTokenSuffix } from "../../plat
 import { DashboardShares, type DashboardShareRow as DashboardShareTableRow } from "@maple/db/tables"
 import { Clock, Context, Effect, Layer, Option, Redacted, Schema } from "effect"
 import { randomUUID } from "node:crypto"
-import { decryptAes256Gcm, encryptAes256Gcm, ingestKeyEncryptionKey } from "@maple/backend/platform/Crypto"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { makeDbExecute } from "@maple/backend/platform/db-execute"
 import { postgresSqlState } from "@maple/backend/platform/postgres-errors"
 import { Env } from "@maple/backend/platform/Env"
+import { openSecret, sealSecret, secretKeyringFromEnv } from "@maple/backend/platform/SecretBox"
+import { dashboardShareTokenSlot } from "@maple/backend/platform/secret-slots"
 
 /** SQLSTATE for `unique_violation` — here, `dashboard_shares_live_unq`. */
 const UNIQUE_VIOLATION = "23505"
-
-/**
- * AAD for a stored share token. Authenticated but not stored, so it binds the
- * ciphertext to its row: someone with database write access cannot move an
- * `(iv, ciphertext, tag)` triple onto another org's share and have it decrypt.
- */
-const shareTokenAad = (orgId: string, shareId: string): Buffer =>
-	Buffer.from(`dashboard_shares:v1:${orgId}:${shareId}:token`, "utf8")
 
 const decodeShareIdSync = Schema.decodeUnknownSync(DashboardShareId)
 const decodeShareId = Schema.decodeUnknownOption(DashboardShareId)
@@ -231,12 +224,9 @@ export class SharedDashboardService extends Context.Service<
 		 * configured" case to model: a value that is not base64 for 32 bytes is a
 		 * broken deployment, so it fails the layer build with a typed config error.
 		 */
-		const encryptionKey = yield* ingestKeyEncryptionKey(
+		const keyring = yield* secretKeyringFromEnv(
 			env,
-			(message) =>
-				new ShareEncryptionKeyConfigError({
-					message: `MAPLE_INGEST_KEY_ENCRYPTION_KEY: ${message}`,
-				}),
+			(message) => new ShareEncryptionKeyConfigError({ message }),
 		)
 
 		/**
@@ -246,14 +236,15 @@ export class SharedDashboardService extends Context.Service<
 		 * the only people who can revoke it.
 		 */
 		const readToken = (row: DashboardShareRow) =>
-			decryptAes256Gcm(
+			openSecret(
+				keyring,
+				dashboardShareTokenSlot,
+				{ orgId: row.orgId, id: row.id },
 				{ ciphertext: row.tokenCiphertext, iv: row.tokenIv, tag: row.tokenTag },
-				encryptionKey,
 				() =>
 					new SharePersistenceError({
 						message: `Stored share token for ${row.id} could not be decrypted`,
 					}),
-				shareTokenAad(row.orgId, row.id),
 			)
 
 		const decodeShare = (row: DashboardShareRow) =>
@@ -323,11 +314,12 @@ export class SharedDashboardService extends Context.Service<
 		) {
 			const rawToken = generateShareToken()
 			const id = decodeShareIdSync(`dshare_${randomUUID()}`)
-			const encrypted = yield* encryptAes256Gcm(
+			const encrypted = yield* sealSecret(
+				keyring,
+				dashboardShareTokenSlot,
+				{ orgId, id },
 				rawToken,
-				encryptionKey,
 				(message) => new SharePersistenceError({ message: `Share token encryption: ${message}` }),
-				shareTokenAad(orgId, id),
 			)
 			return {
 				rawToken,
