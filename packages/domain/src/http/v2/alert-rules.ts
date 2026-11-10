@@ -28,6 +28,7 @@ import {
 	AlertBreachWindow,
 	AlertEvaluationIntervalMinutes,
 	AlertEvaluationErrorKind,
+	AlertRuleTags,
 	type AlertThreshold,
 } from "../alerts"
 import { AnomalySignalType } from "../anomalies"
@@ -113,9 +114,6 @@ export const toV2Threshold = (tier: AlertThreshold): V2AlertThreshold => ({
 	destination_ids: tier.destinationIds,
 	escalation_chain_id: tier.escalationChainId ?? null,
 })
-
-/** Mirrors the v1 caps (alerts.ts): 32-char tags, at most 20 per rule. */
-const RuleTags = Schema.Array(Schema.String.check(Schema.isMaxLength(32))).check(Schema.isMaxLength(20))
 
 /**
  * The dashboard query-builder draft backing `builder_query` rules, passed
@@ -428,7 +426,7 @@ const createParamsFields = {
 			examples: [["error_rate"]],
 		}),
 	),
-	tags: Schema.optionalKey(RuleTags),
+	tags: Schema.optionalKey(AlertRuleTags),
 	group_by: Schema.optionalKey(Schema.NullOr(GroupBy)),
 	signal_type: AlertSignalType.annotate({
 		description: "What the rule measures.",

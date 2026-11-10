@@ -742,7 +742,7 @@ const TemplateString = Schema.String.check(Schema.isMaxLength(4_000))
 /** A single rule tag. Free-form, bounded so the list/group UI stays legible. */
 const TagString = Schema.String.check(Schema.isMaxLength(32))
 /** The tags array on a rule — capped to keep grouping and filtering manageable. */
-const RuleTags = Schema.Array(TagString).check(Schema.isMaxLength(20))
+export const AlertRuleTags = Schema.Array(TagString).check(Schema.isMaxLength(20))
 
 export const AlertNotificationTemplateOverride = Schema.Struct({
 	title: Schema.optionalKey(Schema.NullOr(TemplateString)),
@@ -881,7 +881,7 @@ export class AlertRuleUpsertRequest extends Schema.Class<AlertRuleUpsertRequest>
 	environments: Schema.optionalKey(Schema.Array(Schema.String)),
 	/** Anomaly rules only: the detector signals to page on. Absent or empty means every signal. */
 	anomalySignals: Schema.optionalKey(Schema.Array(AnomalySignalType)),
-	tags: Schema.optionalKey(RuleTags),
+	tags: Schema.optionalKey(AlertRuleTags),
 	groupBy: Schema.optionalKey(Schema.NullOr(AlertGroupBy)),
 	signalType: AlertSignalType,
 	comparator: AlertComparator,
