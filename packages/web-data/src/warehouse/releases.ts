@@ -47,8 +47,6 @@ const toTimelineBucket = (row: ReleaseTimelinePoint): ReleaseTimelineBucket => (
 	bucket: toIsoBucket(row.bucket),
 })
 
-// Releases list
-
 const GetReleasesInput = Schema.Struct({
 	startTime: Schema.optional(dateTimeString),
 	endTime: Schema.optional(dateTimeString),
@@ -117,8 +115,6 @@ const getReleasesEffect = Effect.fn("QueryEngine.getReleases")(function* ({
 		bucketSeconds,
 	} satisfies ReleasesResult
 })
-
-// Release detail
 
 const GetReleaseDetailInput = Schema.Struct({
 	serviceName: ServiceName,

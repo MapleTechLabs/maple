@@ -120,8 +120,6 @@ export const getAiSessionDetails = Effect.fn("AiSessions.aiSessionDetails")(func
 	return { data: result.data }
 })
 
-// List facets (filter sidebar option counts)
-
 const AiSessionsFacetsInput = Schema.Struct({
 	startTime: Schema.optional(WarehouseDateTimeString),
 	endTime: Schema.optional(WarehouseDateTimeString),
@@ -187,8 +185,6 @@ export const getAiSessionsDistributions = Effect.fn("AiSessions.aiSessionsDistri
 		toolCalls: result.toolCalls,
 	}
 })
-
-// Session spans (detail page)
 
 const AiSessionSpansInput = Schema.Struct({
 	sessionId: Schema.String.check(Schema.isMinLength(1)),

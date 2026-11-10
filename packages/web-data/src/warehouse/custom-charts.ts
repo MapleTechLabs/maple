@@ -110,7 +110,6 @@ function querySpanMetricsCalls(params: {
 			return { data: [] as never[] }
 		}
 
-		// Transform grouped timeseries back to flat rows for compatibility
 		const data: Array<Record<string, unknown>> = []
 		for (const point of response.result.data) {
 			for (const [serviceName, value] of Rec.toEntries(point.series)) {
@@ -696,12 +695,7 @@ function extractAllMetricsSeries(response: QueryEngineExecuteResponse): Map<stri
 	const map = new Map<string, AllMetricsPoint>()
 	if (response.result.kind !== "timeseries") return map
 	for (const point of response.result.data) {
-		// Normalize to ISO so this map's keys line up with `metricsMap` (which already
-		// `toIsoBucket`s its keys). Without this, the same time bucket lands under two
-		// different string keys in the merged `allBuckets` Set, producing duplicate
-		// points — one with traces data only, one with metrics throughput only — and
-		// the metrics-only duplicate (sorted after the raw key) overwrites the traces
-		// entry in `byBucket`, dropping latency/error-rate and stranding throughput.
+		// Normalize to ISO so one instant has one key, whichever spelling the warehouse sent.
 		map.set(toIsoBucket(point.bucket), {
 			count: point.series.count ?? 0,
 			errorRate: point.series.error_rate ?? 0,

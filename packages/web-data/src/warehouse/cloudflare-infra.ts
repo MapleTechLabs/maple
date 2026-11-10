@@ -451,8 +451,6 @@ export const getCloudflareWorkers = Effect.fn("QueryEngine.getCloudflareWorkers"
 	}
 })
 
-// Zone detail: security, DNS, and live top traffic
-
 export interface CloudflareZoneFirewallBucket {
 	bucket: string
 	/** Cloudflare action: block / challenge / managed_challenge / skip / log / …. */
@@ -620,8 +618,6 @@ export const getCloudflarePlatformResources = Effect.fn("QueryEngine.getCloudfla
 		}
 	},
 )
-
-// Generic zone breakdown + filter facets
 
 export const CLOUDFLARE_BREAKDOWN_DIMENSIONS = [
 	"path",

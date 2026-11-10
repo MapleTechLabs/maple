@@ -356,8 +356,6 @@ const executeQueryEngineEffect = Effect.fn("QueryEngine.execute")(function* (
 	return yield* executor.enqueue(payload).pipe(Effect.catch(failNormalized("QueryEngine.executeBatch")))
 })
 
-// Typed result extractors for QueryEngineResult union
-
 export function extractFacets(response: QueryEngineExecuteResponse): ReadonlyArray<FacetItem> {
 	const r = response.result
 	if (r.kind === "facets") return r.data
