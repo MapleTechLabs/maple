@@ -73,9 +73,8 @@ import { interruptOnAbort, makeTurnObservability, turnSpanAttributes } from "./t
 import { makeAutonomousOutcome, type PhaseKind } from "./autonomous-outcome"
 import {
 	makeUnfinishedSettler,
-	NO_REPLY_INTERRUPTED,
 	runAutonomousTurn,
-	settleAbandoned,
+	settleAbandonedTurn,
 	settleRow,
 } from "./autonomous-settle"
 import { type AgentDefinition, agentForSession } from "./agents"
@@ -375,25 +374,13 @@ export const runChatSessionTurn = async (input: RunChatSessionTurnInput): Promis
 			if (runTenant === undefined) return yield* annotateTurn()
 			if (input.abandoned === true) {
 				observability.outcome = "abandoned"
-				yield* settleAbandoned({
-					...(prReviewId === undefined
-						? undefined
-						: {
-								failReview: reviews.failReview(
-									tenant.orgId,
-									prReviewId,
-									reviewFailureError("interrupted"),
-								),
-							}),
-					...(prReplyId === undefined
-						? undefined
-						: {
-								failReply: conversations.failReply(
-									tenant.orgId,
-									prReplyId,
-									NO_REPLY_INTERRUPTED,
-								),
-							}),
+				yield* settleAbandonedTurn({
+					orgId: tenant.orgId,
+					prReviewId,
+					prReplyId,
+					reviewInterrupted: reviewFailureError("interrupted"),
+					failReview: (orgId, id, error) => reviews.failReview(orgId, id, error),
+					failReply: (orgId, id, error) => conversations.failReply(orgId, id, error),
 				})
 				yield* annotateTurn()
 				return
