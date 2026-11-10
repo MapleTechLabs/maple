@@ -1,17 +1,28 @@
 import { assert, describe, it } from "@effect/vitest"
-import { Effect, Fiber, Result } from "effect"
+import { MapleInternalApi } from "@maple/domain/http"
+import { Effect, Fiber, Layer, Result } from "effect"
+import { HttpApiClient } from "effect/http-api"
 import { TestClock } from "effect/testing"
 import { FetchHttpClient, HttpClient, HttpClientError } from "effect/http"
 
+import { PEER_OUTAGE_GRACE_MS } from "@maple/web-data/lib/peer-reachability"
+import {
+	MapleInternalHttp,
+	runWarehouseQuery,
+	WarehouseQueryError,
+	WarehouseUnreachableError,
+} from "@maple/web-data/warehouse/effect-utils"
+import { ApiReachabilityLive } from "../../../data/warehouse"
+import { apiBaseUrl } from "./api-base-url"
 import { withRequestTimeout } from "./http-client"
 import { isRetryableTransportError } from "./retry-policy"
 
 const NEVER_RESPONDS: typeof globalThis.fetch = () => new Promise<Response>(() => {})
 
-const get = (fetchStub: typeof globalThis.fetch) =>
+const get = (fetchStub: typeof globalThis.fetch, url = "https://api.test/anything") =>
 	Effect.gen(function* () {
 		const client = withRequestTimeout(yield* HttpClient.HttpClient)
-		return yield* client.get("https://api.test/anything")
+		return yield* client.get(url)
 	}).pipe(Effect.provide(FetchHttpClient.layer), Effect.provideService(FetchHttpClient.Fetch, fetchStub))
 
 /**
@@ -53,6 +64,48 @@ describe("withRequestTimeout", () => {
 			const response = yield* get(async () => new Response("{}", { status: 200 }))
 
 			assert.strictEqual(response.status, 200)
+		}),
+	)
+})
+
+const DROPS: typeof globalThis.fetch = () => Promise.reject(new TypeError("Failed to fetch"))
+const ANSWERS_500: typeof globalThis.fetch = async () => new Response("{}", { status: 500 })
+
+// `runWarehouseQuery` runs on the internal client; these reads go through `get` instead.
+const InternalHttp = Layer.effect(MapleInternalHttp, HttpApiClient.make(MapleInternalApi)).pipe(
+	Layer.provide(FetchHttpClient.layer),
+)
+
+/** A warehouse read over the app's client, failing as the dashboard would report it. */
+const queryFailure = (fetchStub: typeof globalThis.fetch) =>
+	runWarehouseQuery("listThings", () => get(fetchStub, `${apiBaseUrl}/internal/things`)).pipe(
+		Effect.provide([ApiReachabilityLive, InternalHttp]),
+		Effect.flip,
+	)
+
+describe("API reachability", () => {
+	it.effect("reports a dropped connection as unreachable, then as an outage once it lasts", () =>
+		Effect.gen(function* () {
+			// Any response ends a run left over from another test.
+			yield* get(ANSWERS_500, `${apiBaseUrl}/internal/things`)
+
+			assert.instanceOf(yield* queryFailure(DROPS), WarehouseUnreachableError)
+
+			yield* TestClock.adjust(PEER_OUTAGE_GRACE_MS)
+			assert.instanceOf(yield* queryFailure(DROPS), WarehouseQueryError)
+		}),
+	)
+
+	it.effect("starts a new grace window after the API answers, even with a 500", () =>
+		Effect.gen(function* () {
+			yield* get(ANSWERS_500, `${apiBaseUrl}/internal/things`)
+			assert.instanceOf(yield* queryFailure(DROPS), WarehouseUnreachableError)
+
+			yield* TestClock.adjust(PEER_OUTAGE_GRACE_MS - 1)
+			yield* get(ANSWERS_500, `${apiBaseUrl}/internal/things`)
+			yield* TestClock.adjust(PEER_OUTAGE_GRACE_MS - 1)
+
+			assert.instanceOf(yield* queryFailure(DROPS), WarehouseUnreachableError)
 		}),
 	)
 })
