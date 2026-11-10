@@ -155,6 +155,8 @@ const ORG_CH_CONFIG_MEMO_HARD_MS = 21_600_000
  */
 export const ORG_CH_CONFIG_CACHE_BUCKET = "org-ch-config"
 const ORG_CH_CONFIG_CACHE_TTL_SECONDS = 21_600
+/** How long a password that did not open straight from Postgres goes without another read of its row. */
+const UNOPENABLE_PASSWORD_RECHECK_MS = 60_000
 interface RuntimeConfigMemoEntry {
 	readonly value: CachedChSettings | null
 	readonly freshUntil: number
@@ -1700,8 +1702,14 @@ export class OrgClickHouseSettingsService extends Context.Service<
 			},
 		)
 
-		/** Ciphertexts that did not open straight from Postgres, so a broken row is not re-read per call. */
-		const unopenablePasswords = new Map<OrgId, string | null>()
+		/**
+		 * Ciphertexts that did not open straight from Postgres, so a broken row is not re-read per
+		 * call. A marker expires: the reseal pass may repair the row behind the cache.
+		 */
+		const unopenablePasswords = new Map<
+			OrgId,
+			{ readonly ciphertext: string | null; readonly atMs: number }
+		>()
 
 		/**
 		 * The cached settings with their password opened. The cache outlives a reseal and a key
@@ -1712,21 +1720,31 @@ export class OrgClickHouseSettingsService extends Context.Service<
 			decryptStoredPassword(orgId, cached).pipe(
 				Effect.map((password) => ({ settings: cached, password })),
 				Effect.catchTag("@maple/http/errors/OrgClickHouseSettingsEncryptionError", (error) =>
-					unopenablePasswords.get(orgId) === cached.chPasswordCiphertext
-						? Effect.fail(error)
-						: Effect.gen(function* () {
-								yield* invalidateRuntimeConfigCache(orgId)
-								const fresh = yield* resolveCachedSettings(orgId)
-								if (fresh === null) return null
-								const password = yield* decryptStoredPassword(orgId, fresh).pipe(
-									Effect.tapError(() =>
-										Effect.sync(() =>
-											unopenablePasswords.set(orgId, fresh.chPasswordCiphertext),
-										),
-									),
-								)
-								return { settings: fresh, password }
-							}),
+					Effect.gen(function* () {
+						const nowMs = yield* Clock.currentTimeMillis
+						const marker = unopenablePasswords.get(orgId)
+						if (
+							marker !== undefined &&
+							marker.ciphertext === cached.chPasswordCiphertext &&
+							nowMs - marker.atMs < UNOPENABLE_PASSWORD_RECHECK_MS
+						) {
+							return yield* error
+						}
+						yield* invalidateRuntimeConfigCache(orgId)
+						const fresh = yield* resolveCachedSettings(orgId)
+						if (fresh === null) return null
+						const password = yield* decryptStoredPassword(orgId, fresh).pipe(
+							Effect.tapError(() =>
+								Effect.sync(() =>
+									unopenablePasswords.set(orgId, {
+										ciphertext: fresh.chPasswordCiphertext,
+										atMs: nowMs,
+									}),
+								),
+							),
+						)
+						return { settings: fresh, password }
+					}),
 				),
 			)
 

@@ -770,9 +770,8 @@ describe("resolveRuntimeConfig caching", () => {
 		}).pipe(Effect.provide(layer))
 	})
 
-	it.effect("re-reads the row when the cached password was sealed by a key that is gone", () => {
-		const testDb = createTestDb(cacheTrackedDbs)
-		const orgId = "org_ch_rotated"
+	/** One org's row and deployments that each hold a single key, all sharing one edge cache. */
+	const rotationWorld = (testDb: TestDb, orgId: string) => {
 		const { backend } = makeJsonRoundTripBackend()
 		const keyOf = (byte: number) => Buffer.alloc(32, byte).toString("base64")
 		const sealedBy = (byte: number) =>
@@ -781,7 +780,6 @@ describe("resolveRuntimeConfig caching", () => {
 					sealSecret(keyring, clickHousePasswordSlot, { orgId }, "ch-pass", String),
 				),
 			)
-		/** A deployment whose only key is `byte`, sharing the edge cache with the others. */
 		const deployment = (byte: number) =>
 			OrgClickHouseSettingsService.layer.pipe(
 				Layer.provide(
@@ -807,41 +805,65 @@ describe("resolveRuntimeConfig caching", () => {
 					),
 				),
 			)
+		/** Stores the password as a deployment whose key is `byte` sealed it. */
+		const store = (byte: number) =>
+			Effect.flatMap(sealedBy(byte), (sealed) =>
+				Effect.promise(() =>
+					executeSql(
+						testDb,
+						`INSERT INTO org_clickhouse_settings
+							(org_id, ch_url, ch_user, ch_database, ch_password_ciphertext, ch_password_iv,
+							 ch_password_tag, sync_status, created_at, updated_at, created_by, updated_by)
+						 VALUES ($1, 'https://rotated.example', 'default', 'maple', $2, $3, $4, 'connected',
+							NOW(), NOW(), 'u', 'u')
+						 ON CONFLICT (org_id) DO UPDATE SET ch_password_ciphertext = $2,
+							ch_password_iv = $3, ch_password_tag = $4`,
+						[orgId, sealed.ciphertext, sealed.iv, sealed.tag],
+					),
+				),
+			)
+		return { deployment, store }
+	}
+
+	it.effect("re-reads the row when the cached password was sealed by a key that is gone", () => {
+		const testDb = createTestDb(cacheTrackedDbs)
+		const orgId = "org_ch_rotated"
+		const { deployment, store } = rotationWorld(testDb, orgId)
 		const resolve = (byte: number) =>
 			OrgClickHouseSettingsService.use((service) => service.resolveRuntimeConfig(asOrgId(orgId))).pipe(
 				Effect.provide(deployment(byte)),
 			)
 		return Effect.gen(function* () {
-			const old = yield* sealedBy(1)
-			yield* Effect.promise(() =>
-				executeSql(
-					testDb,
-					`INSERT INTO org_clickhouse_settings
-						(org_id, ch_url, ch_user, ch_database, ch_password_ciphertext, ch_password_iv,
-						 ch_password_tag, sync_status, created_at, updated_at, created_by, updated_by)
-					 VALUES ($1, 'https://rotated.example', 'default', 'maple', $2, $3, $4, 'connected',
-						NOW(), NOW(), 'u', 'u')`,
-					[orgId, old.ciphertext, old.iv, old.tag],
-				),
-			)
+			yield* store(1)
 			expect(expectSome(yield* resolve(1)).password).toBe("ch-pass")
 
 			// The reseal pass moves the row to the new key, then the old key is retired. The
 			// shared cache still holds the triple the old key sealed.
-			const resealed = yield* sealedBy(2)
-			yield* Effect.promise(() =>
-				executeSql(
-					testDb,
-					`UPDATE org_clickhouse_settings
-					 SET ch_password_ciphertext = $2, ch_password_iv = $3, ch_password_tag = $4
-					 WHERE org_id = $1`,
-					[orgId, resealed.ciphertext, resealed.iv, resealed.tag],
-				),
-			)
+			yield* store(2)
 			invalidateOrgRuntimeConfigMemo(orgId)
 
 			expect(expectSome(yield* resolve(2)).password).toBe("ch-pass")
 		})
+	})
+
+	it.effect("tries a row again a minute after it failed, in case it was repaired meanwhile", () => {
+		const testDb = createTestDb(cacheTrackedDbs)
+		const orgId = "org_ch_repaired"
+		const { deployment, store } = rotationWorld(testDb, orgId)
+		return Effect.gen(function* () {
+			const service = yield* OrgClickHouseSettingsService
+			const resolve = service.resolveRuntimeConfig(asOrgId(orgId))
+			// This deployment only holds key 2, so a row sealed by key 1 does not open.
+			yield* store(1)
+			expect(getError(yield* Effect.exit(resolve))).toBeInstanceOf(OrgClickHouseSettingsEncryptionError)
+
+			// The reseal pass, running where key 1 is still held, moves the row to key 2.
+			yield* store(2)
+			expect(getError(yield* Effect.exit(resolve))).toBeInstanceOf(OrgClickHouseSettingsEncryptionError)
+
+			yield* TestClock.adjust("61 seconds")
+			expect(expectSome(yield* resolve).password).toBe("ch-pass")
+		}).pipe(Effect.provide(deployment(2)))
 	})
 
 	// The memo's soft TTL (5min) and hard ceiling (6h), mirrored from the
