@@ -1,5 +1,6 @@
 import type { EdgeCacheServiceApi } from "@maple/cache"
-import { Cause, Effect, Option, Array as Arr } from "effect"
+import { WarehouseAuthError, WarehouseConfigError } from "@maple/domain/http"
+import { Cause, Effect, Option, Predicate, Schema, Array as Arr } from "effect"
 
 /**
  * Per-org quarantine for the cross-org alerting ticks (errors / anomalies /
@@ -23,18 +24,15 @@ type EdgeCache = EdgeCacheServiceApi
  * Errors that indicate the org's warehouse is unusable until an operator fixes
  * its configuration — not until the next retry.
  */
-const QUARANTINE_ERROR_TAGS: ReadonlySet<string> = new Set([
-	"@maple/http/errors/WarehouseAuthError",
-	"@maple/http/errors/WarehouseConfigError",
-])
+const isAuthError = Schema.is(WarehouseAuthError)
+const isConfigError = Schema.is(WarehouseConfigError)
 
 const hasQuarantineTag = (value: unknown, depth = 0): boolean => {
 	if (depth > 8 || typeof value !== "object" || value === null) return false
-	const candidate = value as { readonly _tag?: unknown; readonly cause?: unknown }
-	if (typeof candidate._tag === "string" && QUARANTINE_ERROR_TAGS.has(candidate._tag)) return true
+	if (isAuthError(value) || isConfigError(value)) return true
 	// Services wrap warehouse failures in their own tagged errors (e.g.
-	// AnomalyPersistenceError) with the original error as `cause` — walk it.
-	return hasQuarantineTag(candidate.cause, depth + 1)
+	// AnomalyPersistenceError) with the original error as `cause`: walk it.
+	return Predicate.hasProperty(value, "cause") && hasQuarantineTag(value.cause, depth + 1)
 }
 
 /** Does this cause (or anything wrapped inside it) carry an auth/config-class warehouse error? */
