@@ -5,12 +5,16 @@
  * is a timestamp it formats itself, never user input.
  */
 import { SOURCE_ID_ATTRIBUTE } from "@maple/domain/http"
+import {
+	SUPABASE_LOG_PROJECT_REF_ATTRIBUTE,
+	SUPABASE_LOG_SOURCE_ATTRIBUTE,
+	SUPABASE_SERVICE_NAME,
+} from "@maple/query-engine-integrations"
 import { Effect, Option, Schema, Array as Arr, Record as Rec, String as Str } from "effect"
 import { HttpClient, HttpClientRequest } from "effect/http"
 import type { SupabaseProjectRef } from "@maple/primitives"
 import { timestampMs } from "@maple/backend/platform/time"
 import { send, SupabaseApiError } from "./api"
-import { SUPABASE_SERVICE_NAME } from "./scrape-targets"
 
 /** Rows asked for per query; a full page means the window has more. */
 export const LOGS_PAGE_SIZE = 1000
@@ -213,7 +217,7 @@ export const logRecordOf = (row: SupabaseLogRow) => {
 		body: { stringValue: row.event_message ?? "" },
 		attributes: keyValues({
 			...attributes,
-			"supabase.log.source": row.source,
+			[SUPABASE_LOG_SOURCE_ATTRIBUTE]: row.source,
 			"log.record.uid": row.id,
 		}),
 	}
@@ -225,7 +229,7 @@ export const logsToOtlp = (resource: SupabaseLogsResource, rows: ReadonlyArray<S
 			resource: {
 				attributes: keyValues({
 					"service.name": SUPABASE_SERVICE_NAME,
-					"supabase.project.ref": resource.projectRef,
+					[SUPABASE_LOG_PROJECT_REF_ATTRIBUTE]: resource.projectRef,
 					"supabase.project.name": resource.projectName,
 					"supabase.project.region": resource.region,
 					"supabase.organization.slug": resource.organizationSlug,

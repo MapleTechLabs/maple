@@ -17,8 +17,8 @@ import * as Datasources from "@maple/domain/tinybird/datasources"
 import { orgIdParam, utcSecondsParam } from "@maple/query-engine/ch/tables"
 import type { DateTime } from "effect"
 
-/** The `service.name` the logs poller stamps on every Supabase log record. */
-export const SUPABASE_LOGS_SERVICE_NAME = "supabase"
+/** The `service.name` on every Supabase log record and scrape target. */
+export const SUPABASE_SERVICE_NAME = "supabase"
 export const SUPABASE_LOG_PROJECT_REF_ATTRIBUTE = "supabase.project.ref"
 export const SUPABASE_LOG_SOURCE_ATTRIBUTE = "supabase.log.source"
 
@@ -52,7 +52,7 @@ const windowSeconds = () =>
 /** Supabase log records of the window; `TimestampTime` prunes partitions, `Timestamp` is exact. */
 const supabaseLogsWindow = ($: LogColumns) => [
 	$.OrgId.eq(orgIdParam),
-	$.ServiceName.eq(SUPABASE_LOGS_SERVICE_NAME),
+	$.ServiceName.eq(SUPABASE_SERVICE_NAME),
 	$.TimestampTime.gte(utcSecondsParam("startTime")),
 	$.TimestampTime.lte(utcSecondsParam("endTime")),
 	$.Timestamp.gte(param.dateTime("startTime")),

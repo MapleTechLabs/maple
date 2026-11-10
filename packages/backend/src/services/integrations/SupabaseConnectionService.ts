@@ -80,6 +80,7 @@ import {
 	type SupabaseProject,
 } from "./supabase/api"
 import { deleteSupabaseScrapeTargets, reconcileSupabaseScrapeTargets } from "./supabase/scrape-targets"
+import { SUPABASE_LOG_PROJECT_REF_ATTRIBUTE, SUPABASE_SERVICE_NAME } from "@maple/query-engine-integrations"
 
 /** A discovery holds its lease this long; a crashed run frees the org after it. */
 const LEASE_MS = 5 * 60_000
@@ -476,9 +477,9 @@ export class SupabaseConnectionService extends Context.Service<
 					description: `Log drain of Supabase project ${ref}, created by the Supabase integration.`,
 					allowedSignals: ["logs"],
 					resourceAttributes: [
-						{ key: "supabase.project.ref", value: ref, mode: "set" },
+						{ key: SUPABASE_LOG_PROJECT_REF_ATTRIBUTE, value: ref, mode: "set" },
 						{ key: "supabase.project.name", value: project.name, mode: "set" },
-						{ key: "service.name", value: "supabase", mode: "default" },
+						{ key: "service.name", value: SUPABASE_SERVICE_NAME, mode: "default" },
 					],
 				})
 				.pipe(
