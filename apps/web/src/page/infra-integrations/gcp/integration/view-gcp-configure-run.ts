@@ -28,8 +28,6 @@ import { hstack, vstack, vstackClass } from "@maple/views/ui/stack"
 import { Array as Arr } from "effect"
 import { typography } from "@maple/views/ui/typography"
 
-// `ApplyStage` / `GcpApplyView`: the script and the run's status, or the confirmed run.
-
 type H = HtmlBuilder<Message>
 type Children = ReadonlyArray<Html | string>
 
@@ -78,7 +76,7 @@ export const runSummary = (h: H, connector: V2GcpConnector, logFilter: string, b
 	])
 }
 
-/** `RunAs`: who may run or apply a setup, an Owner of the host project with the scope's roles. */
+/** Who may run or apply a setup: an Owner of the host project with the scope's roles. */
 export const runAs = (h: H, connector: V2GcpConnector): ReadonlyArray<Html | string> => {
 	const scopeRoles = gcpScopeRoles(connector.scope_type, connector)
 	const role = (name: string) => typography(h, { tone: "foreground" }, [name])

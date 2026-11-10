@@ -11,8 +11,6 @@ import { CAPABILITIES, CAPABILITY_IDS } from "./gcp-configure-copy"
 import type { ApplyOpened, Capability, ConfigureModel, GcpFlags } from "./gcp-configure-schema"
 import { Array as Arr, String as Str } from "effect"
 
-// `GcpConfigure`'s pure rules: the scope step's readiness, what a save changes and when.
-
 export const newDraft = (configure: ConfigureModel) => ({
 	scopeType: configure.scopeType,
 	scopeId: configure.scopeId.value,
@@ -33,7 +31,7 @@ export const isScopeReady = (configure: ConfigureModel): boolean => {
 
 type Acting = Readonly<{ capability: Capability; acts: "stops-now" | "resumes-now" }>
 
-/** `ChooseStage`: what changed, what acts in Maple when saved, and whether a script run follows. */
+/** What changed, what acts in Maple when saved, and whether a script run follows. */
 export const chooseChanges = (connector: V2GcpConnector, draft: GcpFlags) => {
 	const changed = Arr.filter(
 		CAPABILITY_IDS,

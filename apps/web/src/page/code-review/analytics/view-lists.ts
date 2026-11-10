@@ -13,8 +13,6 @@ import { typography } from "@maple/views/ui/typography"
 import { hstack, vstack } from "@maple/views/ui/stack"
 import { Array as Arr } from "effect"
 
-// `RepositoryList`, `BarList`, `CategoriesCard`, `OutcomesCard`, `AuthorsCard`.
-
 type Row = Readonly<{ key: VcsRepositoryId; name: string; value: number }>
 
 /** Each repository links to its pull requests, in the page's window and author. */

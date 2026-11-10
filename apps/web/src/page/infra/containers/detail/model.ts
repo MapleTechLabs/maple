@@ -7,8 +7,6 @@ import { InfraContainerSearch } from "../../../../route/search"
 import * as Frame from "../../../kit/time-frame"
 import { ChartModels, SeriesSlots } from "../../../kit/series"
 
-// `/infra/containers/$containerName`.
-
 export const ContainerSummary = ContainerDetailSummaryResponse.fields.data
 export type ContainerSummary = ContainerDetailSummaryResponse["data"]
 
@@ -25,7 +23,6 @@ export const Model = Schema.Struct({
 	containerName: Schema.String,
 	search: InfraContainerSearch,
 	frame: Frame.Model,
-	/** The metric tab (`useState("cpu")`). */
 	metric: ContainerMetric,
 	summary: KeyedSchema(ContainerSummary, LoadFailure),
 	series: SeriesSlots,

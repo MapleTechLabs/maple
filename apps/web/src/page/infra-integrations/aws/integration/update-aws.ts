@@ -39,8 +39,6 @@ import { Message } from "../../../integrations/message"
 import type { Model } from "../../../integrations/model"
 import { chain, requestStatus } from "../../../integrations/update-status"
 
-// `AwsIntegrationCard`'s state changes.
-
 type Return = PageReturn<Model, Message>
 
 const withCard = (model: Model, card: Partial<AwsCardModel>): Model => ({

@@ -45,7 +45,7 @@ const detailInfraTab = (h: HtmlBuilder<Message>, model: Model, timeZone: string)
 		toParentMessage: (message) => Message.GotDetailInfraMessage({ message }),
 	})
 
-/** `LoadingState`: forty compact placeholder rows (a shorter row makes the list jump on load). */
+/** Forty compact placeholder rows: a shorter row makes the list jump on load. */
 const loadingState = (h: HtmlBuilder<Message>): Html =>
 	vstack(h, { grow: true, className: "min-h-0" }, [
 		skeletonList(h, {
@@ -67,7 +67,6 @@ const loadingState = (h: HtmlBuilder<Message>): Html =>
 
 const toStream = (message: LogsStream.Message) => Message.GotStreamMessage({ message })
 
-/** `LogsTableView` with rows: the toolbar, then the stream, inside one refreshing box. */
 const streamArea = (
 	h: HtmlBuilder<Message>,
 	model: Model,

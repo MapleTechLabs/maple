@@ -27,8 +27,6 @@ import { peekHeader } from "./view-header"
 import { hstack } from "@maple/views/ui/stack"
 import { Array as Arr, String as Str } from "effect"
 
-// `PodPeekSheet`.
-
 type H = HtmlBuilder<Message>
 
 export type ViewInputs = Readonly<{
@@ -51,7 +49,7 @@ const compactItem = (h: H, eyebrow: string, value: number, isToned: boolean): Ht
 		valueClassName: "text-xl",
 	})
 
-/** `PeekSummary`: the four limit ratios the pod page leads with, over the list's window. */
+/** The four limit ratios the pod page leads with, over the list's window. */
 const peekSummary = (h: H, model: Model, pod: PodRow): Html => {
 	const data = model.summaries[podKey(pod)]?.data ?? AsyncData.Idle()
 	return AsyncData.matchData(data, {

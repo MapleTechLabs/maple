@@ -14,8 +14,6 @@ import { Message } from "./message"
 import type { Model } from "./model"
 import { type HeaderSelection, type RowState, signalHeader, signalRow, signalRowSkeleton } from "./view-row"
 
-// `ErrorsHubView`'s body: skeleton rows, the retry card, the rows, the empty states and paging.
-
 type H = HtmlBuilder<Message>
 
 /** The fallback when a failed list carries no error of its own. */

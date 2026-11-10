@@ -106,7 +106,6 @@ const statusLine = <M>(
 	]
 }
 
-/** `IncidentHeader`'s title side. */
 export const headerTitle = <M>(
 	h: HtmlBuilder<M>,
 	incident: AlertIncidentDocument,
@@ -194,7 +193,7 @@ const silenceBadges = (h: H, model: Model, view: IncidentView, timeZone: string)
 	)
 }
 
-/** `IncidentHeader`'s Acknowledge or Unacknowledge button; nothing once the incident resolved. */
+/** The incident header's Acknowledge or Unacknowledge button; nothing once the incident resolved. */
 export const acknowledgeAction = <M>(
 	h: HtmlBuilder<M>,
 	options: Readonly<{
@@ -244,7 +243,7 @@ const investigateAction = (h: H, model: Model, investigation: V2Investigation | 
 				[icon(h, "ChatBubbleSparkleIcon"), "Investigate"],
 			)
 
-/** What `IncidentBody` renders, from props (the page reads them off its Model, the lab off a fixture). */
+/** What `incidentBody` renders: the page reads it off its Model, the lab off a fixture. */
 export type IncidentBodyInputs<M> = Readonly<{
 	incident: AlertIncidentDocument
 	rule: AlertRuleDocument | null
@@ -291,7 +290,7 @@ const sourceNote = <M>(
 		]),
 	])
 
-/** `IncidentBody`: signal chart, timeline and rail. */
+/** Signal chart, timeline and rail. */
 export const incidentBody = <M>(h: HtmlBuilder<M>, inputs: IncidentBodyInputs<M>): Html => {
 	const { incident, rule } = inputs
 	const group = incidentGroup(incident)
@@ -535,7 +534,6 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 	)
 })
 
-/** `DashboardPage`'s breadcrumbs per state. */
 export const breadcrumbsOf = (model: Model) =>
 	Option.match(incidentViewOf(model), {
 		onNone: () => [

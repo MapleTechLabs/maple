@@ -25,7 +25,7 @@ import type { ToolMetric, ToolPercentile, ToolSeriesPoint } from "./model"
 import { typography } from "@maple/views/ui/typography"
 import { vstackClass } from "@maple/views/ui/stack"
 
-// A tool series chart in a bare `ChartCard`.
+// A tool series chart in a bare chart card.
 
 const PLOT_HEIGHT = 220
 const CHART_EMPTY_MESSAGE = "No data for this metric in this window"
@@ -105,7 +105,7 @@ export type ToolPlotInputs = Readonly<{
 	timeZone: string
 }>
 
-/** `CursorPlot` at a fixed height: the lines, the crosshair and the bucket tooltip. */
+/** The plot at a fixed height: the lines, the crosshair and the bucket tooltip. */
 export const toolPlotView = Submodel.defineView<Chart.Model, Chart.Message, ToolPlotInputs>(
 	(model, inputs, h) =>
 		h.div(

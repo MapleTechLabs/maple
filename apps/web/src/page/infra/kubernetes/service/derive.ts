@@ -6,8 +6,6 @@ import type { ServiceWorkload } from "../lens/rail"
 import type { Model } from "./model"
 import { Array as Arr, String as Str, Option } from "effect"
 
-// Pure derivations of `LensBody`.
-
 export type LinkedWorkload = Readonly<{
 	workloadKind: "deployment" | "statefulset" | "daemonset"
 	workloadName: string
@@ -16,7 +14,7 @@ export type LinkedWorkload = Readonly<{
 	podCount: number
 }>
 
-/** `firstLinkedWorkload`: the first row with a kind the downstream queries accept. */
+/** The first row with a kind the downstream queries accept. */
 export const linkedWorkload = (model: Model): LinkedWorkload | null => {
 	const rows: ReadonlyArray<ServiceWorkload> = AsyncData.getOrElse(model.linked.data, () => [])
 	const match = Arr.findFirst(rows, (row) => row.workloadKind !== "unknown")

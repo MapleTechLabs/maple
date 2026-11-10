@@ -26,8 +26,6 @@ import { typography, typographyClass } from "@maple/views/ui/typography"
 import { hstack } from "@maple/views/ui/stack"
 import { Array as Arr } from "effect"
 
-// `ChecksPanel` and `CheckDelta`: the rule's recent checks.
-
 type H = HtmlBuilder<Message>
 
 const checkKey = (check: AlertCheckDocument) => `${check.timestamp}:${check.groupKey}:${check.status}`

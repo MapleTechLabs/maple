@@ -4,7 +4,7 @@ import { toLoadFailure } from "@maple/views/data/load-failure"
 import { MapleApiV2Client } from "../../../platform/api-clients"
 import { Message, type Model } from "./chat-connect"
 
-// The popup itself (`useOAuthPopupFlow`): opened in the click, sent to the install URL, ticked
+// The popup itself: opened in the click, sent to the install URL, ticked
 // every 500 ms (a poll every sixth tick), and closed when the Subscription releases it.
 
 const WINDOW_NAME = "maple-chat-connect"
@@ -82,7 +82,7 @@ const tick = (
 
 const closing = (popup: Window | null) => Effect.addFinalizer(() => Effect.sync(() => popup?.close()))
 
-/** `connect`: open in the click, install, then send the popup to the platform and watch it. */
+/** Open in the click, install, then send the popup to the platform and watch it. */
 const popupFlow = (attempt: number, connector: ChatConnectorId, name: string) =>
 	Stream.callback<Message, never, MapleApiV2Client>((queue) =>
 		Effect.gen(function* () {

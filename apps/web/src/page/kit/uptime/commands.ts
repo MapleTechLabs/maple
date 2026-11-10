@@ -85,8 +85,6 @@ export const saveMonitor = (editingId: UptimeMonitorId | null, raw: unknown) =>
 /** The plan's monitor allowance is used up (402 `uptime_monitor_limit_reached`). */
 export const LIMIT_REACHED_CODE = "uptime_monitor_limit_reached"
 
-// LINKS
-
 const encodePublicId = Schema.encodeSync(UptimeMonitorPublicId)
 const decodePublicId = Schema.decodeUnknownOption(UptimeMonitorPublicId)
 const decodeInternalId = Schema.decodeUnknownOption(UptimeMonitorId)

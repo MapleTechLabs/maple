@@ -38,8 +38,6 @@ import { localInputOf } from "../schedule-form/form"
 import { parseLocalDateTime } from "../silence-dialog/dialog"
 import { toEpochMs } from "@maple/ui/lib/time-format"
 
-// "New maintenance window" / "Edit maintenance window": the hub's dialog, as one Submodel.
-
 export const ScheduleKind = Schema.Literals(["once", "weekly"])
 export type ScheduleKind = typeof ScheduleKind.Type
 
@@ -114,7 +112,7 @@ export const init = (id: string): Model => ({
 export const zoneItems = (model: Pick<Model, "zones" | "timeZone">): ReadonlyArray<string> =>
 	Arr.sort(Arr.dedupe(Arr.filter([...model.zones, "UTC", model.timeZone], Str.isNonEmpty)), Order.String)
 
-// VALIDATION: the limits the API's schemas hold.
+// The limits the API's schemas hold.
 
 const isName = Schema.is(AlertMaintenanceWindowName)
 const isReason = Schema.is(AlertMaintenanceWindowReason)
@@ -188,7 +186,7 @@ export const durationError = (raw: string): Option.Option<string> =>
 		? Option.none()
 		: Option.some("Enter 5 to 10080 minutes (7 days)")
 
-// EDIT DIFF: an edit sends only what changed, so a window that already ran or names a deleted
+// An edit sends only what changed, so a window that already ran or names a deleted
 // rule can still be renamed (the API checks a schedule or matchers whenever they are sent).
 
 const weekOrder = (days: ReadonlyArray<MaintenanceWeekday>): ReadonlyArray<MaintenanceWeekday> =>
@@ -305,8 +303,6 @@ export const requestOf = (model: Model): Option.Option<SaveRequest> => {
 	)
 }
 
-// MESSAGES
-
 export const Message = defineMessageUnion({
 	GotDialogMessage: { message: Dialog.Message },
 	ReadZones: { zones: Schema.Array(Schema.String) },
@@ -339,9 +335,6 @@ export type OutMessage = typeof OutMessage.Type
 
 type Return = Update.ReturnWithOutMessage<Model, Message, OutMessage, Resources>
 
-// COMMANDS
-
-/** Every zone to pick from. */
 export const ReadWindowZones = Command.define("ReadMaintenanceWindowZones", {
 	messages: [Message.ReadZones],
 	execute: Effect.map(readSupportedTimeZones, (zones) => Message.ReadZones({ zones })),
@@ -359,8 +352,6 @@ export const SaveWindow = Command.define("SaveMaintenanceWindow", {
 			Effect.map((result) => Message.CompletedSave({ openCount, result })),
 		),
 })
-
-// UPDATE
 
 const liftDialog = (model: Model, result: ReturnType<typeof Dialog.update>): Return => ({
 	model: { ...model, dialog: result.model },
@@ -531,7 +522,6 @@ const toggled = <A>(values: ReadonlyArray<A>, value: A): ReadonlyArray<A> =>
 export const update = (model: Model, message: Message): Return =>
 	Message.match<Return>(message, {
 		GotDialogMessage: ({ message: child }) =>
-			// The dialog stays open while a save is in flight.
 			model.isSaving ? { model } : liftDialog(model, Dialog.update(model.dialog, child)),
 		ReadZones: ({ zones }) => ({ model: { ...model, zones } }),
 		ChangedName: ({ value }) => unlessSaving(model, () => ({ ...model, name: value })),

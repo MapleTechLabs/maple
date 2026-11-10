@@ -27,8 +27,6 @@ import * as Menu from "@maple/views/ui/menu"
 import type { Resources } from "../../../platform/resources"
 import { saveEscalationChain } from "../shared/escalation-chains"
 
-// "New escalation chain" / "Edit escalation chain": the Routing tab's dialog, as one Submodel.
-
 /** One step as the form holds it; `key` keeps a step's row (and its menu) across reorders. */
 export const StepDraft = Schema.Struct({
 	key: Schema.String,
@@ -108,7 +106,7 @@ type Return = Update.ReturnWithOutMessage<Model, Message, OutMessage, Resources>
 export const menuIdOf = (model: Pick<Model, "dialog">, key: string): string =>
 	`${model.dialog.id}-step-${key}`
 
-// VALIDATION: the same limits the API's schemas hold.
+// The same limits the API's schemas hold.
 
 const isName = Schema.is(EscalationChainName)
 const isDescription = Schema.is(EscalationChainDescription)
@@ -225,8 +223,6 @@ export const payloadOf = (model: Model): Option.Option<V2EscalationChainCreatePa
 	)
 }
 
-// COMMANDS
-
 export const SaveEscalationChain = Command.define("SaveEscalationChain", {
 	args: {
 		openCount: Schema.Number,
@@ -240,8 +236,6 @@ export const SaveEscalationChain = Command.define("SaveEscalationChain", {
 			Effect.map((result) => Message.CompletedSave({ openCount, result })),
 		),
 })
-
-// UPDATE
 
 const liftDialog = (model: Model, result: ReturnType<typeof Dialog.update>): Return => ({
 	model: { ...model, dialog: result.model },
@@ -351,7 +345,6 @@ const unlessSaving = (model: Model, edit: () => Return): Return => (model.isSavi
 export const update = (model: Model, message: Message): Return =>
 	Message.match<Return>(message, {
 		GotDialogMessage: ({ message: child }) =>
-			// The dialog stays open while a save is in flight.
 			model.isSaving ? { model } : liftDialog(model, Dialog.update(model.dialog, child)),
 		ChangedName: ({ value }) => unlessSaving(model, () => ({ model: { ...model, name: value } })),
 		ChangedDescription: ({ value }) =>

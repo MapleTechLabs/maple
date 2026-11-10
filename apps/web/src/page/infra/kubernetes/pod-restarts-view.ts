@@ -13,8 +13,6 @@ import { columnClass } from "@maple/views/ui/column"
 import { Array as Arr } from "effect"
 import { hstack } from "@maple/views/ui/stack"
 
-// `PodRestartsStat` and `PodContainerRestarts`.
-
 type Restarts = AsyncData.AsyncData<ReadonlyArray<RestartRow>, LoadFailure>
 
 /** The restarts tile for the pod page's stat rail. */

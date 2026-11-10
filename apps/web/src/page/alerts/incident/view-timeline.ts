@@ -13,8 +13,6 @@ import { Array as Arr } from "effect"
 import { hstack } from "@maple/views/ui/stack"
 import { dividedList } from "@maple/views/ui/rule"
 
-// `IncidentTimeline`: the incident's events in order.
-
 const sameDay = (a: number, b: number, timeZone: string): boolean =>
 	formatDateInTimezone(a, { timeZone }) === formatDateInTimezone(b, { timeZone })
 

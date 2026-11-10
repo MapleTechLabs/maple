@@ -9,9 +9,6 @@ import { ALERT_TEMPLATES } from "../shared/templates"
 import { fromFormState, type RuleForm } from "./form"
 import type { Model, Notice } from "./model"
 
-// `deriveRuleInitialization`: which draft the
-// page opens on, once the inputs it needs have answered.
-
 export type Initialization =
 	| { readonly _tag: "Loading" }
 	| { readonly _tag: "Failed" }
@@ -43,7 +40,6 @@ const ready = (
 	isShowingTemplates = false,
 ): Initialization => ({ _tag: "Ready", key, form, notices, editingRule, isShowingTemplates })
 
-// `decodeAlertChartFromSearchParam`.
 const AlertChartContext = Schema.Struct({
 	dashboardId: Schema.String,
 	widget: Schema.Struct({

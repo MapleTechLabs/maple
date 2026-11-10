@@ -48,7 +48,7 @@ export const Message = defineMessageUnion({
 	GotQueryPanelMessage: { message: QueryPanel.Message },
 	ClickedAddQuery: {},
 	ClickedAddFormula: {},
-	/** A fresh id for what was asked (`crypto.randomUUID()`). */
+	/** A fresh id for what was asked. */
 	GeneratedId: {
 		purpose: GeneratedIdPurpose,
 		source: Schema.String,
@@ -94,14 +94,14 @@ export const Message = defineMessageUnion({
 	FocusedQueryEditor: {},
 	/** An edit of the list, funnel or paths panel. */
 	ChangedProduct: { edit: ProductEdit },
-	/** A step's suggesting input (`SuggestingInput`), by combobox id. */
+	/** A step's suggesting input, by combobox id. */
 	GotStepComboMessage: { id: Schema.String, message: Combobox.Message },
 	FocusedListField: { index: Schema.Number },
-	/** The list, population and step filters' suggestions (`WhereFields`). */
+	/** The list, population and step filters' suggestions. */
 	GotWhereFieldMessage: { message: WhereFieldMessage },
 	ToggledProductPanel: {},
 	BlurredListField: {},
-	/** The key typed under `BreakdownPicker`'s "Attribute…" mode. */
+	/** The key typed under the breakdown picker's "Attribute…" mode. */
 	ChangedBreakdownAttribute: { value: Schema.String },
 	CompletedFetchSuggestions: {
 		key: Schema.String,

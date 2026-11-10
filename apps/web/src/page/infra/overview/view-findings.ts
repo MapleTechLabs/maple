@@ -20,8 +20,6 @@ import { Array as Arr, String as Str, Order } from "effect"
 export const sectionCaption = <M>(h: HtmlBuilder<M>, text: string): Html =>
 	typography(h, { size: "xs", tone: "muted", className: "font-prose" }, [text])
 
-// `NeedsAttention` and its rows.
-
 // A stale source is an outline, not a status fill.
 const STALE_DOT = "border-[1.5px] border-muted-foreground bg-transparent"
 

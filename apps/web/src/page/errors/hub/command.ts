@@ -34,7 +34,6 @@ const warehouseData = (filters: WarehouseFilters) => ({
 	deploymentEnvs: filters.deploymentEnvs,
 })
 
-/** `useEffectiveTimeRange(undefined, undefined, ERRORS_WINDOW)`. */
 export const ResolveWindow = Command.define("ResolveErrorsWindow", {
 	args: { mode: RequestMode, preset: Schema.String, timeZone: Schema.String },
 	messages: [Message.CompletedResolveWindow],
@@ -94,7 +93,6 @@ export const FetchRanking = Command.define("FetchErrorsRanking", {
 
 export type ListQuery = typeof V2ErrorIssueListQuery.Type
 
-/** One `errorIssues.list` page. */
 export const FetchPage = Command.define("FetchErrorIssuesPage", {
 	args: { key: Schema.String, query: V2ErrorIssueListQuery },
 	messages: [Message.CompletedFetchPage],
@@ -159,7 +157,7 @@ export const LoadSignalPresence = Command.define("LoadErrorsSignalPresence", {
 		Effect.map(loadSignalPresences(orgId), (result) => Message.CompletedLoadSignalPresence({ result })),
 })
 
-/** `ToolbarSearch`'s 300 ms debounce; a newer keystroke bumps the generation. */
+/** The search box's 300 ms debounce; a newer keystroke bumps the generation. */
 export const WaitSearchDebounce = Command.define("WaitErrorsSearchDebounce", {
 	args: { generation: Schema.Number },
 	messages: [Message.ElapsedSearchDebounce],
@@ -175,7 +173,6 @@ export const MountFilterRail = Mount.define("MountErrorsFilterRail", {
 	execute: () => Effect.succeed(Message.MountedFilterRail()),
 })
 
-/** A row's or the selection's workflow write. */
 export const RunHubWrite = Command.define("RunErrorsHubWrite", {
 	args: {
 		ids: Schema.Array(ErrorIssueId),
@@ -231,7 +228,7 @@ export const MountRowSelect = Mount.defineStream("MountErrorsRowSelect", {
 		),
 })
 
-/** `useCopy({ label })` for a row; `isPath` copies an absolute link on this origin. */
+/** `isPath` copies an absolute link on this origin. */
 export const CopyRowText = Command.define("CopyErrorsRowText", {
 	args: { label: Schema.String, text: Schema.String, isPath: Schema.Boolean },
 	messages: [Message.CompletedCopy],
@@ -241,7 +238,6 @@ export const CopyRowText = Command.define("CopyErrorsRowText", {
 		),
 })
 
-/** "Open in new tab": `window.open(href, "_blank", "noopener,noreferrer")`. */
 export const OpenInNewTab = Command.define("OpenErrorsRowInNewTab", {
 	args: { path: Schema.String },
 	messages: [Message.CompletedOpenInNewTab],

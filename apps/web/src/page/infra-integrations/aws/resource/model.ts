@@ -9,8 +9,6 @@ import * as TimeRangePicker from "../../../kit/time-range-picker"
 import { TracedService } from "../../kit/traced"
 import { BucketPoint, KindId } from "../data"
 
-// `/infra/aws/$kind/$name`.
-
 export const Model = Schema.Struct({
 	/** Null for a kind this page does not know: it says so instead of reading. */
 	kind: Schema.NullOr(KindId),

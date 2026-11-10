@@ -12,7 +12,6 @@ import { Message } from "./message"
 
 export const ReadClock = readClock("ReadTemplatesClock", Message.CompletedReadClock)
 
-/** `retainedQueryV2("dashboards", "listTemplates", { query: { limit: LIST_LIMIT_MAX } })`. */
 export const FetchTemplates = Command.define("FetchDashboardTemplates", {
 	args: { key: Schema.String },
 	messages: [Message.CompletedFetchTemplates],
@@ -24,7 +23,7 @@ export const FetchTemplates = Command.define("FetchDashboardTemplates", {
 		}).pipe(settleTo((result) => Message.CompletedFetchTemplates({ key, result }))),
 })
 
-/** Readiness reads the org's metric names from the last 24 h (`METRIC_LIMIT` 1000). */
+/** Readiness reads the org's metric names from the last 24 h (up to 1000). */
 export const FetchMetrics = Command.define("FetchTemplateReadinessMetrics", {
 	args: { key: Schema.String },
 	messages: [Message.CompletedFetchMetrics],
@@ -40,7 +39,7 @@ export const FetchMetrics = Command.define("FetchTemplateReadinessMetrics", {
 		),
 })
 
-/** `SELECTION_DEBOUNCE_MS`: a template must stay selected this long before its preview queries. */
+/** A template must stay selected this long before its preview queries. */
 export const WaitPreviewDelay = Command.define("WaitTemplatePreviewDelay", {
 	args: { generation: Schema.Number },
 	messages: [Message.ElapsedPreviewDelay],
@@ -56,7 +55,7 @@ export const WaitParameterDebounce = Command.define("WaitTemplateParameterDeboun
 		Effect.as(Effect.sleep(Duration.millis(300)), Message.ElapsedParameterDebounce({ generation })),
 })
 
-/** `ToolbarSearch`'s 300 ms debounce before the query applies. */
+/** The search box's 300 ms debounce before the query applies. */
 export const WaitSearchDebounce = Command.define("WaitTemplatesSearchDebounce", {
 	args: { generation: Schema.Number },
 	messages: [Message.ElapsedSearchDebounce],
@@ -71,7 +70,7 @@ const parametersPayload = (parameters: Readonly<Record<string, string>>) => {
 	return entries.length > 0 ? { parameters: Rec.fromEntries(entries) } : {}
 }
 
-/** `previewTemplate`: the template's own build for these parameters, nothing persisted. */
+/** The template's own build for these parameters, nothing persisted. */
 export const FetchPreview = Command.define("FetchDashboardTemplatePreview", {
 	args: {
 		key: Schema.String,
@@ -105,7 +104,7 @@ export const FetchWidget = Command.define("FetchTemplatePreviewWidget", {
 		),
 })
 
-/** `instantiateTemplate`: the dashboard is created now; its txid is reconciled in the background. */
+/** The dashboard is created now; its txid is reconciled in the background. */
 export const CreateFromTemplate = Command.define("CreateDashboardFromTemplate", {
 	args: { templateId: Schema.String, parameters: Schema.Record(Schema.String, Schema.String) },
 	messages: [Message.CompletedCreate],
@@ -121,7 +120,7 @@ export const CreateFromTemplate = Command.define("CreateDashboardFromTemplate", 
 		}).pipe(settleTo((result) => Message.CompletedCreate({ result }))),
 })
 
-/** `reconcileTxid`: waits for the new row on the shape stream; nothing waits on it. */
+/** Waits for the new row on the shape stream; nothing waits on it. */
 export const AwaitCreated = Command.define("AwaitCreatedDashboard", {
 	args: { orgId: Schema.String, id: Schema.String, txid: Schema.NullOr(Schema.String) },
 	messages: [Message.CompletedAwaitCreated],
@@ -129,7 +128,7 @@ export const AwaitCreated = Command.define("AwaitCreatedDashboard", {
 		Effect.as(awaitTxid(orgId, txid ?? undefined), Message.CompletedAwaitCreated({ id })),
 })
 
-/** `useContainerSize` on the preview grid: its width picks the column count. */
+/** The preview grid's width picks the column count. */
 export const MeasurePreview = Mount.defineStream("MeasureTemplatePreview", {
 	messages: [Message.MeasuredPreview],
 	execute: ({ element }) =>

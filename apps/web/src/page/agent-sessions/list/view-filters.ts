@@ -165,7 +165,6 @@ const facetSection = (
 		...extra,
 	})
 
-/** `SingleCheckboxFilter`. */
 const singleCheckbox = (
 	h: H,
 	title: string,
@@ -285,7 +284,7 @@ const loadedRail = (h: H, model: Model, facets: Facets): Html => {
 	])
 }
 
-/** `AgentSessionsFilterSidebar`; its Mount starts the rail's model detection. */
+/** The filter rail; its Mount starts the rail's model detection. */
 export const filtersRail = (h: H, model: Model): Html =>
 	h.div(
 		[h.Class("contents"), h.OnMount(MountFilterRail())],

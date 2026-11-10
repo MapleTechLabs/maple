@@ -217,8 +217,6 @@ const syncSelects = (model: Model): Model =>
 		}),
 	})
 
-// ENTRY POINTS
-
 export const init = (
 	route: { readonly issueId: ErrorIssueId; readonly search: Search },
 	context: PageContext,
@@ -328,7 +326,7 @@ const selectStep = (
 	return { ...picked, commands: [...(stepped.commands ?? []), ...(picked.commands ?? [])] }
 }
 
-/** The reads a write invalidates (`invalidateKeys`): the detail, affected users, timeline, escalations, PRs, verifications. */
+/** The reads a write invalidates: the detail, affected users, timeline, escalations, PRs, verifications. */
 const refreshAfterWrite =
 	(context: PageContext) =>
 	(model: Model): { readonly model: Model; readonly commands: ReadonlyArray<Cmd> } => {
@@ -525,7 +523,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		},
 		ClickedAttach: () => openAttach(model),
 		ClickedShowEarlier: () => ({ model: { ...model, isShowingEarlier: true } }),
-		// `onValueChange`: the picked repository's pull requests, with the search cleared.
+		// The picked repository's pull requests, with the search cleared.
 		GotRepositorySelectMessage: ({ message: inner }) =>
 			selectStep(
 				model,

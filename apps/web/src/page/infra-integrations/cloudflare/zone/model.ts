@@ -26,8 +26,6 @@ import {
 	ZoneSecurity,
 } from "../data"
 
-// `/infra/cloudflare/$zoneName`.
-
 export const ZoneTab = Schema.Literals(ZONE_TABS)
 export type ZoneTab = typeof ZoneTab.Type
 
@@ -60,7 +58,7 @@ export const Model = Schema.Struct({
 	facets: KeyedSchema(ZoneFacets, LoadFailure),
 	/** The list rollup's rows, for this zone's bytes, visits and latency. */
 	zones: KeyedSchema(Schema.Array(ZoneRow), LoadFailure),
-	/** `CloudflareBreakdownPanel`'s own state: the dimension, the toolbar filter, the live lookup. */
+	/** The breakdown panel's own state: the dimension, the toolbar filter, the live lookup. */
 	dimension: BreakdownDimension,
 	breakdown: KeyedSchema(ZoneBreakdown, LoadFailure),
 	breakdownSearch: Schema.String,

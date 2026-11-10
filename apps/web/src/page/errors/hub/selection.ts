@@ -14,9 +14,6 @@ import { Message } from "./message"
 import type { Model } from "./model"
 import { type HubWrite, outcomeToast, type WriteOutcome } from "./writes"
 
-// The list's selection (`updateIssueSelection`), keyboard (`useListNavigation`) and the writes
-// `useIssueMutations` sends from a row, a picker or the bulk bar.
-
 type Return = PageReturn<Model, Message>
 
 const orderedIds = (model: Model): ReadonlyArray<ErrorIssueId> =>
@@ -113,7 +110,7 @@ export const pressedListKey = (
 	}
 }
 
-/** Starts a write; like `useIssueMutations` there is no per-row guard, so the newest pick is sent too. */
+/** Starts a write; there is no per-row guard, so the newest pick is sent too. */
 export const startHubWrite = (
 	model: Model,
 	ids: ReadonlyArray<ErrorIssueId>,
@@ -150,13 +147,13 @@ const settledWriting = (writing: ReadonlyArray<string>, ids: ReadonlyArray<strin
 		return at === -1 ? left : [...left.slice(0, at), ...left.slice(at + 1)]
 	})
 
-/** The bulk bar acts on the selection and clears it at once (`onClear` after each action). */
+/** The bulk bar acts on the selection and clears it at once. */
 export const bulkWrite = (model: Model, write: HubWrite): Return => {
 	const ids = Arr.filter(orderedIds(model), (id) => model.selectedIds.includes(id))
 	return startHubWrite(cleared(model), ids, write, true)
 }
 
-/** `ISSUES_KEY`: every loaded page and the sidebar's service counts are read again. */
+/** Every loaded page and the sidebar's service counts are read again. */
 type PageQuery = (model: Model, cursor: string | null) => Parameters<typeof FetchPage>[0]["query"]
 
 const refreshIssues = (model: Model, context: PageContext, pageQuery: PageQuery): Return => {

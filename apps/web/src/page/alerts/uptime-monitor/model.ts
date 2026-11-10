@@ -10,9 +10,6 @@ import { LoadFailure } from "@maple/views/data/load-failure"
 import * as CopyButton from "@maple/views/ui/copy-button"
 import { LiveRows } from "../../kit/load-schemas"
 
-// `/alerts/uptime/$monitorId`: one monitor, its recent checks and setup.
-
-/** The response-time chart's window. */
 export const UptimeWindow = Schema.Literals(["1h", "24h", "7d"])
 export type UptimeWindow = typeof UptimeWindow.Type
 
@@ -28,7 +25,6 @@ export const CheckPoint = Schema.Struct({
 })
 export type CheckPoint = typeof CheckPoint.Type
 
-/** `UptimeCheckSample`: one check, from its span. */
 /** An HTTP check's phases in ms; null on a check that recorded none (TCP, DNS, older checks). */
 export const CheckPhases = Schema.Struct({
 	dnsMs: Schema.Number,
@@ -39,6 +35,7 @@ export const CheckPhases = Schema.Struct({
 })
 export type CheckPhases = typeof CheckPhases.Type
 
+/** `UptimeCheckSample`: one check, from its span. */
 export const CheckSample = Schema.Struct({
 	at: Schema.String,
 	durationMs: Schema.Number,

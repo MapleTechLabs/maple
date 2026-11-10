@@ -30,8 +30,6 @@ import { columnClass } from "@maple/views/ui/column"
 import { Array as Arr } from "effect"
 import { hstack, vstack } from "@maple/views/ui/stack"
 
-// `GcpCloudSqlTopQueries` and the workload page's `GcpAppWaitCallout`.
-
 type H = HtmlBuilder<Message>
 type TimeSearch = Readonly<{ startTime?: string; endTime?: string; timePreset?: string }>
 
@@ -269,7 +267,7 @@ export const figure = (h: H, value: string, caption: string, className?: string)
 		typography(h, { size: "3xs", tone: "muted", mono: true }, [caption]),
 	])
 
-/** `GcpAppWaitCallout`: a statement's app-side p95 far over its database-side p95. */
+/** A statement's app-side p95 far over its database-side p95. */
 export const appWaitCallout = (
 	h: H,
 	wait: GcpAppWait,

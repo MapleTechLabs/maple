@@ -1,13 +1,8 @@
-// Setup progression for the PlanetScale integration.
-//
 // The OAuth grant covers everything: inventory, query insights, webhooks, and
 // branch metrics, which Maple polls from PlanetScale's metrics API every 5
 // minutes. A service token switches metrics to Prometheus scraping
 // (`metrics_auth: "service_token"`); health is derived from whichever source
 // the connection uses, so the status row and the Go live checks always agree.
-//
-// Pure, so the progression rules are testable on their own
-// (same shape as branch-selection.ts).
 
 import type { V2PlanetScaleIntegration } from "@maple/domain/http/v2"
 import { countLabel } from "@maple/ui/lib/format"

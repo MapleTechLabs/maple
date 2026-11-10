@@ -51,7 +51,7 @@ export const FetchRepoConfig = Command.define("FetchCodeReviewRepoConfig", {
 		),
 })
 
-/** `useIsOrgAdmin` under Clerk: the session's roles. */
+/** The session's roles under Clerk, which decide whether the viewer is an org admin. */
 export const ReadGrants = Command.define("ReadCodeReviewGrants", {
 	messages: [Message.CompletedReadGrants],
 	execute: Effect.map(readGrants, (grants) => Message.CompletedReadGrants({ grants })),

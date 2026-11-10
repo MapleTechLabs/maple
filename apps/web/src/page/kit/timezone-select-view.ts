@@ -15,7 +15,7 @@ import { Array as Arr } from "effect"
 export type ZoneListInputs = Readonly<{
 	rows: ReadonlyArray<ZoneRow>
 	triggerId: string
-	/** The footer row: the list spans its width (`anchor={anchor}`, `w-(--anchor-width)`). */
+	/** The footer row: the list spans its width (`w-(--anchor-width)`). */
 	anchorId: string
 	/** The picker popover's id: a press in the list stays inside it. */
 	popoverId: string

@@ -39,7 +39,7 @@ export const ReadEditorGrants = Command.define("ReadAlertEditorGrants", {
 	execute: Effect.map(readGrants, (grants) => Message.CompletedReadGrants({ grants })),
 })
 
-/** `useChatConnectors`: Slack first, empty on failure. */
+/** Slack first, empty on failure. */
 export const FetchEditorConnectors = Command.define("FetchAlertEditorConnectors", {
 	messages: [Message.CompletedFetchConnectors],
 	execute: Effect.map(listChatConnectors, (connectors) => Message.CompletedFetchConnectors({ connectors })),
@@ -80,7 +80,7 @@ export const FetchEditorAutocomplete = Command.define("FetchAlertEditorAutocompl
 		),
 })
 
-/** `useAlertRulePreview`: the draft's replay, or the saved rule's while editing. */
+/** The draft's replay, or the saved rule's while editing. */
 export const FetchEditorPreview = Command.define("FetchAlertEditorPreview", {
 	args: { key: Schema.String, payload: V2AlertRulePreviewParams, isSaved: Schema.Boolean },
 	messages: [Message.CompletedFetchPreview],
@@ -91,14 +91,14 @@ export const FetchEditorPreview = Command.define("FetchAlertEditorPreview", {
 		),
 })
 
-/** `AtomHttpApi` turns transport and decode failures into defects, which `toastExit` reads as unexpected. */
+/** Transport and decode failures are defects, which the toast reads as unexpected. */
 const failure = (error: unknown) => {
 	const isDefect = Schema.isSchemaError(error) || HttpClientError.isHttpClientError(error)
 	const body = displayError(isDefect ? Exit.die(error) : Exit.fail(error))
 	return { title: body.title, message: testSendFailureMessage(body) }
 }
 
-/** `runTest`: Dry run evaluates once; Send test also notifies. */
+/** Dry run evaluates once; Send test also notifies. */
 export const RunRuleTest = Command.define("RunAlertRuleTest", {
 	args: { key: Schema.String, payload: V2AlertRuleTestParams },
 	messages: [Message.CompletedTest],
@@ -116,7 +116,7 @@ export const RunRuleTest = Command.define("RunAlertRuleTest", {
 		),
 })
 
-/** `insertToken`: the token at the caret (replacing a selection), read off the textarea. */
+/** The token at the caret (replacing a selection), read off the textarea. */
 export const InsertSqlToken = Command.define("InsertAlertSqlToken", {
 	args: { id: Schema.String, sql: Schema.String, token: Schema.String },
 	messages: [Message.CompletedInsertSqlToken],
@@ -148,7 +148,7 @@ export const FocusSqlCaret = Command.define("FocusAlertSqlCaret", {
 		}),
 })
 
-/** `onRetry={() => window.location.reload()}`: a live query past its recovery has no other retry. */
+/** A live query past its recovery has no other retry. */
 export const ReloadPage = Command.define("ReloadAlertEditorPage", {
 	messages: [Message.ReloadedPage],
 	execute: Effect.sync(() => {
@@ -157,7 +157,6 @@ export const ReloadPage = Command.define("ReloadAlertEditorPage", {
 	}),
 })
 
-/** `trackProduct("alert_rule_created", { signal })` after a create lands. */
 export const TrackRuleCreated = Command.define("TrackAlertRuleCreated", {
 	args: { signal: Schema.String },
 	messages: [Message.TrackedRuleCreated],
@@ -165,7 +164,7 @@ export const TrackRuleCreated = Command.define("TrackAlertRuleCreated", {
 		Effect.as(trackProduct("alert_rule_created", { signal }), Message.TrackedRuleCreated()),
 })
 
-/** `handleSave`: create, or update the rule being edited. */
+/** Create, or update the rule being edited. */
 export const SaveRule = Command.define("SaveAlertRule", {
 	args: { ruleId: Schema.NullOr(AlertRuleId), payload: V2AlertRuleCreateParams },
 	messages: [Message.CompletedSave],
@@ -181,7 +180,7 @@ export const SaveRule = Command.define("SaveAlertRule", {
 		),
 })
 
-/** The metric picker's page for what was searched (`listMetrics`). */
+/** The metric picker's page for what was searched. */
 export const FetchEditorMetricOptions = Command.define("FetchAlertEditorMetricOptions", {
 	args: { search: Schema.String },
 	messages: [Message.CompletedFetchMetricOptions],

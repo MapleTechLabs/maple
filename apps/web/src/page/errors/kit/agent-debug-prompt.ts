@@ -2,20 +2,18 @@ import type { ErrorIssueDocument } from "@maple/domain/http"
 import { Array as Arr } from "effect"
 
 export interface AgentDebugPromptInput {
-	/** Stable error identity — the input to the `error_detail` MCP tool. */
+	/** Stable error identity: the input to the `error_detail` MCP tool. */
 	fingerprintHash: string
 	/** Human-readable error label (exception type / grouped label). */
 	label: string
-	/** Triage issue UUID — enables the claim_error_issue / propose_fix steps. Absent on the legacy errors-by-type page. */
+	/** Triage issue UUID; enables the claim_error_issue / propose_fix steps. */
 	issueId?: string | null
 	serviceName?: string | null
-	/** Exception / sample message. */
 	message?: string | null
-	/** Top stack frame, when available. */
 	topFrame?: string | null
 	occurrenceCount?: number | null
 	affectedServicesCount?: number | null
-	/** First/last seen — pass an ISO string; rendered verbatim. */
+	/** First/last seen as an ISO string; rendered verbatim. */
 	firstSeen?: string | null
 	lastSeen?: string | null
 }
@@ -25,7 +23,7 @@ export interface AgentDebugPromptInput {
  * (Claude Code, Cursor, …) to debug a specific Maple error using the Maple MCP
  * tools. Mirrors the "Copy as prompt" pattern in the span detail panel, but
  * tailored to the error-debugging tool flow (`error_detail`, `inspect_trace`,
- * `search_logs`, and — when an issue id is present — `claim_error_issue` /
+ * `search_logs`, and (when an issue id is present) `claim_error_issue` /
  * `propose_fix`).
  *
  * Step order is load-bearing: the claim comes first, because this is the text a
@@ -74,7 +72,7 @@ export function formatAgentDebugPrompt(input: AgentDebugPromptInput): string {
 	}
 
 	// Claiming leads, and is not optional. It used to be step 5 of 5, prefixed
-	// with "Optionally" — and across 50 live issues in the internal org not one
+	// with "Optionally", and across 50 live issues in the internal org not one
 	// had ever been claimed. This prompt is what users paste into their coding
 	// agent, so it is the instruction that actually reaches them.
 	const steps: string[] = []
@@ -88,8 +86,6 @@ export function formatAgentDebugPrompt(input: AgentDebugPromptInput): string {
 		"Use `inspect_trace` on one of the sample traces and `search_logs` to gather surrounding context and confirm the failure path.",
 	)
 	if (issueId) {
-		// Only offered with an issue: the tool takes an issue id, and the legacy
-		// errors-by-type page has none.
 		steps.push(
 			`Read the issue's history with \`list_error_issue_events\` (issue_id "${issueId}"). It carries Maple's own AI diagnosis and any earlier attempt at this bug.`,
 		)

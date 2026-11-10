@@ -16,8 +16,6 @@ import { Array as Arr } from "effect"
 import { textLink } from "@maple/views/ui/text-link"
 import { dividedList } from "@maple/views/ui/rule"
 
-// `GcpValue` and `GcpManualSteps`.
-
 type H = HtmlBuilder<Message>
 
 /** An exact name in mono with its copy button, or a setting in words. */

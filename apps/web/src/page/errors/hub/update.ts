@@ -79,8 +79,6 @@ type Step = KitStep<Model, Message>
 
 const NO_STEP: Step = { patch: {}, commands: [] }
 
-// REQUESTS
-
 const summaryStep =
 	(context: PageContext, window: TimeWindow, mode: RequestMode) =>
 	(model: Model): Step => {
@@ -105,7 +103,7 @@ const environmentsStep =
 			(key) => FetchEnvironments({ key, window }),
 		)
 
-/** `useAtomValue(retainedQueryV2(...))`: not on the page's Reload. */
+/** Not re-read on the page's Reload. */
 const serviceCountsStep =
 	(context: PageContext) =>
 	(model: Model): Step =>
@@ -279,9 +277,6 @@ const pageQuery = (model: Model, cursor: string | null) => {
 	return cursor === null ? base : { ...base, cursor }
 }
 
-// NAVIGATION
-
-/** `navigate({ to: "/errors", search: (prev) => ({ ...prev, ...patch }) })`. */
 export const navigate = (model: Model, patch: Partial<Search>): Return => ({
 	model,
 	outMessage: PageOutMessage.RequestedNavigation({
@@ -313,8 +308,6 @@ export const navigateSeverity = (model: Model, value: string): Return =>
 		onSome: (severity) =>
 			navigate(model, { severity: severity === DEFAULT_SEVERITY_FILTER ? undefined : severity }),
 	})
-
-// ENTRY POINTS
 
 const sortIndex = (search: Search) => HUB_SORTS.indexOf(sortOf(search))
 const severityIndex = (search: Search) => SEVERITY_FILTERS.indexOf(severityOf(search))
@@ -387,7 +380,7 @@ export const routeChanged = (
 	const next: Model = {
 		...model,
 		search,
-		// `ToolbarSearch` resyncs only for a change it did not send itself.
+		// The search box resyncs only for a change it did not send itself.
 		searchDraft: draftQuery(model.searchDraft) === search.q ? model.searchDraft : (search.q ?? ""),
 		tabs: {
 			...model.tabs,
@@ -402,8 +395,6 @@ export const routeChanged = (
 
 export const contextChanged = (model: Model, context: PageContext): Return =>
 	model.window === null ? { model } : requestAll(model, context, model.window, "Load")
-
-// EVENTS
 
 const isIssueKind = (value: string): value is IssueKind => Arr.some(SOURCES, (kind) => kind === value)
 

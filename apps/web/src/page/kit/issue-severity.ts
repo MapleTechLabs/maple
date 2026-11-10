@@ -48,7 +48,7 @@ export { SEVERITY_ORDER, severityRank } from "@maple/web-data/investigations/dis
 /** Whether free text (a select value, a URL param) names a severity. */
 export const isIssueSeverity = Schema.is(IssueSeverity)
 
-/** `SeverityDot`: a filled dot, or a hollow ring for "not set". */
+/** A filled dot, or a hollow ring for "not set". */
 export const severityDot = <M>(h: HtmlBuilder<M>, severity: IssueSeverity | null, className?: string): Html =>
 	statusDot(h, {
 		tone: "custom",
@@ -66,7 +66,7 @@ const SEVERITY_BADGE_VARIANT = {
 	low: "done",
 } as const satisfies Record<IssueSeverity, "crit" | "warn" | "done">
 
-/** `SeverityBadge`: blank for "not set", so the lane keeps its width without a mark. */
+/** Blank for "not set", so the lane keeps its width without a mark. */
 export const severityBadge = <M>(
 	h: HtmlBuilder<M>,
 	severity: IssueSeverity | null,
@@ -86,7 +86,7 @@ export const severityBadge = <M>(
 
 const SEVERITY_BARS = ["M3 16V18", "M11 12V18", "M19 6V18"]
 
-/** `SeverityIcon`: three blocks for unset, one to three bars, the pixel triangle for critical. */
+/** Three blocks for unset, one to three bars, the pixel triangle for critical. */
 export const severityIcon = <M>(
 	h: HtmlBuilder<M>,
 	severity: IssueSeverity | null,

@@ -35,8 +35,6 @@ import { dividedList } from "@maple/views/ui/rule"
 import { PROVIDERS } from "../../../kit/providers"
 import { successOf } from "../../kit/success-of"
 
-// The connected `CloudflareAccountCard` and `CloudflareStatCards`.
-
 type H = HtmlBuilder<Message>
 
 const accountsStrip = (h: H, accounts: ReadonlyArray<ConnectedAccountEntry>): Html | null =>
@@ -92,7 +90,7 @@ const accountsStrip = (h: H, accounts: ReadonlyArray<ConnectedAccountEntry>): Ht
 				),
 			])
 
-/** `TrafficDelta`: quiet unless traffic moved. */
+/** Quiet unless traffic moved. */
 const trafficDelta = (h: H, usage: CloudflareUsageResponse): Html | string => {
 	const previous = usage.previousTotalRequests
 	if (previous === null || previous === undefined) return "Requests · last 24h"

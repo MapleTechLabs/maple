@@ -101,7 +101,6 @@ const syncPeek = (result: Return, context: PageContext, mode: Keyed.RequestMode 
 	}
 }
 
-/** Every read of the page for the resolved window, keyed like the atoms. */
 const requestAll = (model: Model, context: PageContext, mode: Keyed.RequestMode): Return => {
 	const window = model.window
 	if (window === null) return { model }

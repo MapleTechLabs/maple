@@ -46,7 +46,6 @@ const resolveCommand = (model: Model, context: PageContext, mode: RequestMode) =
 const hrefOfSearch = (model: Model, search: Search) =>
 	hrefOf(AppRoute.InfraCloudflareWorker({ scriptName: model.scriptName, search }))
 
-/** Every read of the window, keyed like the atoms. */
 const requestAll = (model: Model, context: PageContext, mode: Keyed.RequestMode): Return => {
 	const window = model.window
 	if (window === null) return { model }

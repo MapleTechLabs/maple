@@ -60,9 +60,8 @@ import { typography } from "@maple/views/ui/typography"
 import { hstack } from "@maple/views/ui/stack"
 import { Array as Arr, String as Str, Option } from "effect"
 
-// `PlanetScaleDatabasePage`.
 // TODO(alert-menu): "Alert on this" renders its trigger; the suggestion menu and its prefilled
-// `/alerts/create` navigation (`encodeAlertChartToSearchParam`, `makeQueryDataSource`) are not ported.
+// `/alerts/create` navigation are not ported.
 
 type H = HtmlBuilder<Message>
 type Clock = Readonly<{ nowMs: number; timeZone: string }>
@@ -352,7 +351,6 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 				viewInputs: {
 					triggerIds: tooltipIds,
 					toContent: tooltipContent,
-					// `ScopeChip`'s `TooltipContent className="max-w-[32ch]"`.
 					className:
 						Str.startsWith("ps-chart-")(model.tooltip.triggerId) ||
 						Str.startsWith("ps-insights-")(model.tooltip.triggerId)

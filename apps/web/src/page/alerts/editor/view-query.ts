@@ -29,12 +29,8 @@ import { typography, typographyClass } from "@maple/views/ui/typography"
 import { hstack } from "@maple/views/ui/stack"
 import { Array as Arr } from "effect"
 
-// `RuleQuerySection`: Built-in, the query builder's
-// `QueryPanel`, or SQL, over the same draft.
-
 type H = HtmlBuilder<Message>
 
-/** What the section reads off the Model. */
 type QueryView = SqlView &
 	Pick<
 		Model,
@@ -136,7 +132,7 @@ const signalRadios = (h: H, form: RuleForm): Html => {
 	)
 }
 
-/** A `MultiSelectCombobox` in chips mode, kept by id; its selection is the form's. */
+/** A chips-mode combobox, kept by id; its selection is the form's. */
 const chipsPicker = (
 	h: H,
 	model: QueryView,
@@ -172,7 +168,7 @@ const chipsPicker = (
 	})
 }
 
-/** `GroupByMultiSelect` over traces: the built-in dimensions and the span attributes as `attr.*`. */
+/** The traces group-by choices: the built-in dimensions and the span attributes as `attr.*`. */
 const groupByItems = (model: QueryView): ReadonlyArray<string> => [
 	...new Set([
 		...Arr.map(
@@ -183,7 +179,6 @@ const groupByItems = (model: QueryView): ReadonlyArray<string> => [
 	]),
 ]
 
-/** `BuiltinRow`: a label column and the control. */
 const builtinRow = (h: H, text: string, htmlFor: string, hint: string | undefined, control: Html): Html =>
 	h.div(
 		[h.Class("grid items-start gap-1 sm:grid-cols-[120px_minmax(0,1fr)] sm:gap-3")],
@@ -210,7 +205,7 @@ const builtinRow = (h: H, text: string, htmlFor: string, hint: string | undefine
 
 const inputOf = Combobox.inputId
 
-/** `BuiltinQueryForm`: the five canned signals and their scope. */
+/** The five canned signals and their scope. */
 const builtinForm = (h: H, model: QueryView, form: RuleForm): Html => {
 	const hasServices = form.serviceNames.length > 0
 	const facets = traceFacetsOf(model)
@@ -430,7 +425,7 @@ const anomalyForm = (h: H, model: QueryView, form: RuleForm): Html => {
 
 const ANOMALY_SIGNALS_ID = "rule-anomaly-signals"
 
-/** `AlertQueryPanel`: the dashboard `QueryPanel` without Clone, Remove or the visibility box. */
+/** The dashboard query panel without Clone, Remove or the visibility box. */
 const builderPanel = (h: H, model: QueryView, form: RuleForm): Html =>
 	h.div(
 		[h.Class("space-y-1.5")],

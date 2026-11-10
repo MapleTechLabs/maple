@@ -21,8 +21,6 @@ import { typography, typographyClass } from "@maple/views/ui/typography"
 import { hstack, hstackClass, vstack, vstackClass } from "@maple/views/ui/stack"
 import { Array as Arr, String as Str } from "effect"
 
-// `VerdictCard` and `RunProgress`: the verdict and the run's progress.
-
 type Children = ReadonlyArray<Html | string>
 
 const verdictHeading = <M>(h: HtmlBuilder<M>, text: string): Html =>
@@ -277,7 +275,7 @@ const silenceLabel = (ms: number): string => {
 	return minutes < 1 ? "under a minute" : minutes === 1 ? "a minute" : `${minutes} minutes`
 }
 
-/** `RunProgress`: the pass's steps, the last one live; a silent run goes still and says so. */
+/** The pass's steps, the last one live; a silent run goes still and says so. */
 const runProgress = <M>(
 	h: HtmlBuilder<M>,
 	investigation: V2Investigation,

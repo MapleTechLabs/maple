@@ -14,8 +14,6 @@ import type { Model } from "../../../integrations/model"
 import { Array as Arr } from "effect"
 import { PROVIDERS } from "../../../kit/providers"
 
-// `GcpUsageBand`, its tiles, `Workloads` and `Resources`.
-
 type H = HtmlBuilder<Message>
 
 /** A tile's read: null while it loads, "failed" when it failed. */
@@ -46,7 +44,7 @@ export const inventoryOf = (model: Model): Loaded<Inventory> =>
 
 const volumeOf = (model: Model): Loaded<LogVolume> => loaded(model.gcpCard.logVolume, (volume) => volume)
 
-/** `Tile`: a number and a line, or what stands in while its read is out or failed. */
+/** A number and a line, or what stands in while its read is out or failed. */
 const tile = <A>(
 	h: H,
 	options: Readonly<{

@@ -21,8 +21,6 @@ import { Array as Arr, Option } from "effect"
 import { AsyncData } from "foldkit"
 import { toEpochMs } from "@maple/ui/lib/time-format"
 
-// `IncidentRail`: the incident detail's side rail.
-
 const GROUP_ROW_LIMIT = 8
 const DAY_MS = 24 * 60 * 60 * 1000
 
@@ -301,7 +299,7 @@ const RUN_TONE = { escalating: "warn", paused: "neutral", finished: "neutral" } 
 	Tone
 >
 
-/** `EscalationSection`: the chain paging this incident, where it stands, and when it pages next. */
+/** The chain paging this incident, where it stands, and when it pages next. */
 export const escalationSection = <M>(
 	h: HtmlBuilder<M>,
 	run: V2AlertIncidentEscalation,

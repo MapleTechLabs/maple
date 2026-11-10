@@ -17,8 +17,6 @@ import type { ChartWindow } from "./derive"
 import { Message } from "./message"
 import { typography } from "@maple/views/ui/typography"
 
-// `IssueOccurrencePanel` and `IssueOccurrenceChart`.
-
 type H = HtmlBuilder<Message>
 type Point = Readonly<{ bucket: string; count: number }>
 
@@ -39,7 +37,7 @@ export type ChartInputs = Readonly<{
 	timeZone: string
 }>
 
-/** `IssueOccurrenceChart`: the bars, or the dashed empty line when the window saw nothing. */
+/** The bars, or the dashed empty line when the window saw nothing. */
 const chartView = Submodel.defineView<Chart.Model, Chart.Message, ChartInputs>((model, inputs, h) =>
 	sortedOccurrences(inputs.points).length === 0
 		? emptyMessage(

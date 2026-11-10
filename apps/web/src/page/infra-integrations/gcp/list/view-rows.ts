@@ -19,8 +19,6 @@ import { columnClass } from "@maple/views/ui/column"
 import { spaced } from "@maple/views/ui/spaced"
 import { Array as Arr, String as Str } from "effect"
 
-// The shared parts of the Google Cloud list rows.
-
 export type H = HtmlBuilder<Message>
 
 export type TimeSearch = Readonly<{ startTime?: string; endTime?: string; timePreset?: string }>
@@ -59,7 +57,7 @@ type RowBase = Readonly<{
 	engine?: string | undefined
 }>
 
-/** `WorkloadRow`: the health dot, the service glyph, the name with its sub-line, then the cells. */
+/** The health dot, the service glyph, the name with its sub-line, then the cells. */
 export const workloadRow = <R extends RowBase, S extends string>(
 	h: H,
 	options: Readonly<{
@@ -107,7 +105,7 @@ export const workloadRow = <R extends RowBase, S extends string>(
 
 const CHART_MODEL = Chart.init()
 
-/** `Spark`: a monotone `PlotSparkline`, or the reserved box under two values. */
+/** A monotone sparkline, or the reserved box under two values. */
 export const spark = (
 	h: H,
 	ctx: RowsContext,
@@ -144,7 +142,6 @@ export const spark = (
 					],
 				)
 
-/** `VolumeCell`: a count and its sparkline. */
 /** "880K" over "880.0K": a trailing ".0" carries nothing, so the column drops it. */
 const formatVolume = (value: number): string => Str.replace(/\.0(?=[KMBT]$)/, "")(formatNumber(value))
 

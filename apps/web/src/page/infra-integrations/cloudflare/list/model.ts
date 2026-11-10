@@ -12,8 +12,6 @@ import * as TimeRangePicker from "../../../kit/time-range-picker"
 import { sortStateOf } from "../../../kit/table-sort"
 import { PlatformResources, Status, Usage, WorkerRow, ZoneBucket, ZoneRow } from "../data"
 
-// `/infra/cloudflare`.
-
 export const View = Schema.Literals(CLOUDFLARE_VIEWS)
 export type View = typeof View.Type
 

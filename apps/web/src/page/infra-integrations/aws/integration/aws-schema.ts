@@ -1,6 +1,6 @@
 import { Schema } from "effect"
 
-// `AwsIntegrationCard`'s schemas that its Messages carry, apart from `./aws`, which imports them.
+// The schemas the Messages carry, kept apart from `./aws`, which imports them.
 
 export const AwsSetupMethod = Schema.Literals(["cloudshell", "console", "terraform"])
 export type AwsSetupMethod = typeof AwsSetupMethod.Type

@@ -15,8 +15,7 @@ import { typography } from "@maple/views/ui/typography"
 import { vstack } from "@maple/views/ui/stack"
 import { Array as Arr } from "effect"
 
-// `PlanetScaleOrgPicker` and `OptionCard` / `DrawnCheck`, shared by Choose data and the Edit data dialog.
-// The check is drawn at its end state.
+// Shared by Choose data and the Edit data dialog. The check is drawn at its end state.
 
 type H = HtmlBuilder<Message>
 
@@ -43,7 +42,6 @@ const drawnCheck = (h: H, isChecked: boolean, className: string): Html =>
 		],
 	)
 
-/** `OptionCard type="radio" layout="row"`. */
 const optionCard = (h: H, name: string, isChecked: boolean): Html =>
 	choiceCard(
 		h,

@@ -17,8 +17,6 @@ import { emptyMessage } from "@maple/views/ui/empty"
 import { typography, typographyClass } from "@maple/views/ui/typography"
 import { hstack, vstack } from "@maple/views/ui/stack"
 
-// `ProductionSection`, `PostMergeSection`, `PullRequestCiRuns` and the review history.
-
 type H = HtmlBuilder<SheetMessage>
 
 /** What production said about the change when it was reviewed. */
@@ -132,7 +130,7 @@ export const postMergeSection = (
 
 const ciSection = (h: H, children: ReadonlyArray<Html>): Html => section(h, "CI runs", children)
 
-/** `PullRequestCiRuns`: the pull request's runs over the last 90 days. */
+/** The pull request's runs over the last 90 days. */
 export const ciRunsSection = (h: H, sheet: ReviewSheet): Html =>
 	AsyncData.matchData(sheet.ciRuns.data, {
 		onEmpty: () => ciSection(h, [ciRunsSkeleton(h)]),

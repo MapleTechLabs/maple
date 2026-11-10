@@ -10,8 +10,6 @@ import { EvaluateEscalation, RunIssueWrite } from "./command"
 import { type IssueWrite, Message } from "./message"
 import type { Model } from "./model"
 
-// The rail's writes (`transitionTo`, `claim`, `heartbeat`, `release`, `changeSeverity` in the route).
-
 type Return = PageReturn<Model, Message>
 type Busy = Model["busy"][number]
 
@@ -24,7 +22,6 @@ const BUSY = {
 	Unmerge: "unmerge",
 } satisfies Readonly<Record<IssueWrite["_tag"], Busy>>
 
-/** `useMutationAction`'s failure toast: the title, the error's user-facing message. */
 const ERROR_TITLE = {
 	Transition: "Couldn't change state",
 	Claim: "Couldn't claim issue",
@@ -65,7 +62,6 @@ export const startWrite = (model: Model, write: IssueWrite): Return => {
 			}
 }
 
-/** Drops one in-flight entry of the write's kind. */
 const settledBusy = (busy: Model["busy"], kind: Busy): Model["busy"] => {
 	const at = busy.indexOf(kind)
 	return at === -1 ? busy : [...busy.slice(0, at), ...busy.slice(at + 1)]
@@ -73,13 +69,12 @@ const settledBusy = (busy: Model["busy"], kind: Busy): Model["busy"] => {
 
 const BUSY_PRIORITY: ReadonlyArray<Busy> = ["state", "severity", "heartbeat", "release", "claim", "unmerge"]
 
-/** The sidebar's busy state: the first in-flight kind by its priority chain. */
 export const sidebarBusy = (model: Model): Busy | null =>
 	Option.getOrNull(Arr.findFirst(BUSY_PRIORITY, (kind) => model.busy.includes(kind)))
 
 const currentIssue = (model: Model) => Option.getOrNull(AsyncData.getData(model.detail.data))
 
-/** `StateSelect`'s `change`: only a reachable state other than the current one moves the issue. */
+/** Only a reachable state other than the current one moves the issue. */
 export const pickedState = (model: Model, value: string): Return => {
 	const issue = currentIssue(model)
 	if (issue === null) return { model }
@@ -90,7 +85,7 @@ export const pickedState = (model: Model, value: string): Return => {
 		: startWrite(model, { _tag: "Transition", fromState: issue.workflow_state, toState: next.value })
 }
 
-/** `changeSeverity`: clearing writes at once, a level asks the escalation policy first. */
+/** Clearing writes at once; a level asks the escalation policy first. */
 export const pickedSeverity = (model: Model, severity: IssueSeverity | null): Return => {
 	const picked = { ...model, severityPick: model.severityPick + 1 }
 	return severity === null

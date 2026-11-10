@@ -41,8 +41,6 @@ import { typography, typographyClass } from "@maple/views/ui/typography"
 import { hstack, vstack } from "@maple/views/ui/stack"
 import { providerBrand } from "../../../kit/providers"
 
-// `AwsIntegrationCard`.
-
 type H = HtmlBuilder<Message>
 
 const BRAND = providerBrand("aws")

@@ -29,8 +29,6 @@ import { chainMenuId, chainRuleNames } from "./update"
 import { dividedList } from "@maple/views/ui/rule"
 import { canManageAlerts } from "../../kit/session-grants"
 
-// The Routing tab's "Escalation chains" section and its delete confirmation.
-
 type H = HtmlBuilder<Message>
 
 const nameOfDestination =
@@ -44,7 +42,7 @@ const nameOfDestination =
 			() => "an unavailable destination",
 		)
 
-/** `ChainRow`: name, the steps in one line, and how many rules start it. */
+/** Name, the steps in one line, and how many rules start it. */
 export const chainRow = (
 	h: H,
 	model: Model,

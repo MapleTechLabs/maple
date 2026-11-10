@@ -16,8 +16,6 @@ import { githubFlowView } from "./view-flow-github"
 import { supabaseFlowView } from "../infra-integrations/supabase/integration/view-flow-supabase"
 import { awsFlowView } from "../infra-integrations/aws/integration/view-flow-aws"
 
-// The body of `/sources/new`'s current step for a data integration: the step card and its rail.
-
 type H = HtmlBuilder<Message>
 
 /** A source not yet on the shared steps: its own card to connect, then its overview as Go live. */

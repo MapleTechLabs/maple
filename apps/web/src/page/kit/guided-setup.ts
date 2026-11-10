@@ -27,7 +27,8 @@ import * as TabsView from "@maple/views/ui/tabs-view"
 import { codeBlock } from "./code-block"
 import { Array as Arr, Option } from "effect"
 
-// `FrameworkIconStrip`, `FrameworkPicker` and `ConnectInstructions`, with `PackageManagerCodeBlock`.
+// The SDK setup guide: the stack picker, then the Install / Instrument / coding-agent tabs filled in
+// with the org's ingest keys.
 
 const FRAMEWORK_ICONS = {
 	nodejs: "FrameworkNodejsIcon",
@@ -136,7 +137,7 @@ export const frameworkIconStrip = <M>(h: HtmlBuilder<M>): Html =>
 		),
 	)
 
-/** `FrameworkPicker`: pill chips (`compact`) or labelled cards under "Pick your stack". */
+/** Pill chips (`compact`) or labelled cards under "Pick your stack". */
 export const frameworkPicker = <M>(
 	h: HtmlBuilder<M>,
 	options: Readonly<{ selected: string; compact: boolean; onSelect: (framework: FrameworkId) => M }>,
@@ -277,7 +278,7 @@ export const agentPromptButton = <M>(
 		],
 	)
 
-/** The parent's state for `ConnectInstructions`: its tabs, snippet copy states and Messages. */
+/** The parent's state for the setup instructions: its tabs, snippet copy states and Messages. */
 export type InstructionsParts<M> = Readonly<{
 	/** Slot id prefix, unique per page (`ingestion`, `overview-setup`). */
 	slot: string
@@ -347,7 +348,7 @@ const packageManagerBlock = <M>(
 		},
 	})
 
-/** `ConnectInstructions` without credentials: Install / Instrument / Claude Code tabs. */
+/** The setup instructions without credentials: Install / Instrument / Claude Code tabs. */
 export const connectInstructions = <M>(h: HtmlBuilder<M>, parts: InstructionsParts<M>): Html => {
 	const found = Arr.findFirst(sdkSnippets, (entry) => entry.language === parts.framework)
 	if (Option.isNone(found)) return h.empty

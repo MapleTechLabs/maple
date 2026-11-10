@@ -10,8 +10,6 @@ import { scopeChip } from "../../kit/scope-chip"
 import { hstack } from "@maple/views/ui/stack"
 import { Array as Arr, String as Str } from "effect"
 
-// `PanelScope`: what a panel is actually scoped to.
-
 export type Trigger = (id: string) => ReadonlyArray<ChildAttribute>
 
 const listNames = (keys: ReadonlyArray<CloudflareFilterKey>): string => {

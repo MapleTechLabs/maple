@@ -64,7 +64,7 @@ export const Message = defineMessageUnion({
 			LoadFailure,
 		),
 	},
-	/** `setExpanded(!isOpen)`: the header knows whether the panel is open (verdict-driven by default). */
+	/** The header knows whether the panel is open (verdict-driven by default). */
 	ClickedDiagnosisHeader: { isOpen: Schema.Boolean },
 	ClickedShowAllStages: {},
 	ClickedDiagnosisGroup: { groupKey: Schema.String },

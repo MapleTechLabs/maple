@@ -18,8 +18,6 @@ import { AuthType } from "./prometheus-form-field"
 
 export { FormFieldName } from "./prometheus-form-field"
 
-// `ScrapeTargetsSection`: state and writes.
-
 export const ScrapeForm = Schema.Struct({
 	name: Field.Model,
 	serviceName: Field.Model,
@@ -38,7 +36,7 @@ export type ProbeOutcome = typeof ProbeOutcome.Type
 
 export const PrometheusCardModel = Schema.Struct({
 	selectedId: Schema.NullOr(ScrapeTargetId),
-	/** `useScrapeTargetChecks(selectedId)`: the latest 20 checks, re-read every 10 s. */
+	/** The selected target's latest 20 checks, re-read every 10 s. */
 	checks: KeyedSchema(Schema.Array(V2ScrapeTargetCheck), LoadFailure),
 	formDialog: Dialog.Model,
 	editingId: Schema.NullOr(ScrapeTargetId),
@@ -48,7 +46,7 @@ export const PrometheusCardModel = Schema.Struct({
 	deleteDialog: Dialog.Model,
 	deleteId: Schema.NullOr(ScrapeTargetId),
 	isDeleting: Schema.Boolean,
-	/** `useKeyedAsyncAction`: the targets a probe or an enable toggle is in flight for. */
+	/** The targets a probe or an enable toggle is in flight for. */
 	probing: Schema.Array(ScrapeTargetId),
 	toggling: Schema.Array(ScrapeTargetId),
 	/** The last probe per target id, so the connect flow's status row can show it. */
@@ -85,7 +83,6 @@ export const initPrometheusCard = (): PrometheusCardModel => ({
 	menus: {},
 })
 
-/** `hostnameFromUrl`: the URL's host, or the raw value when it does not parse. */
 export const hostnameOf = (value: string): string => (URL.canParse(value) ? new URL(value).host : value)
 
 const failureOf = (error: unknown): LoadFailure => toLoadFailure(error)

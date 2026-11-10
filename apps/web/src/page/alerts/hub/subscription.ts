@@ -9,7 +9,7 @@ import { destinationRows, incidentRows, ruleRows, ruleStateRows } from "../../ki
 import { Message } from "./message"
 import type { Model } from "./model"
 
-/** How often the staleness derivation's clock advances (`CLOCK_TICK`). */
+/** How often the staleness derivation's clock advances. */
 const CLOCK_TICK = "30 seconds"
 
 const byOrg = { orgId: Schema.String }
@@ -73,7 +73,7 @@ export const subscriptions = Subscription.make<PageSubscriptionInput<Model>, Mes
 					Message.GotDestinationDialogMessage({ message }),
 				),
 		}),
-		/** The destination dialog's workspace connect popup (`useChatWorkspaceConnect`). */
+		/** The destination dialog's workspace connect popup. */
 		destinationChatConnect: entry(ChatConnectStream.Dependencies.fields, {
 			modelToDependencies: ({ model }) =>
 				DestinationDialog.chatConnectDependencies(model.destinationDialog),

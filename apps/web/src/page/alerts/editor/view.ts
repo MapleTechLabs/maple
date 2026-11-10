@@ -28,11 +28,9 @@ import { RULE_FORM_MAX_WIDTH, ruleStep } from "./view-step"
 import { templatesOverlay } from "./view-templates"
 import { Array as Arr, String as Str } from "effect"
 
-// `AlertCreatePageContent` and `AlertCreateFormSurface`: the rule editor page and its form.
-
 type H = HtmlBuilder<Message>
 
-/** `AlertRuleFormSkeleton`: while the rule (or the draft's inputs) load. */
+/** While the rule (or the draft's inputs) load. */
 const formSkeleton = (h: H): Html =>
 	h.div(
 		[h.Class(cn("mx-auto w-full space-y-4", RULE_FORM_MAX_WIDTH))],
@@ -51,7 +49,7 @@ const formSkeleton = (h: H): Html =>
 		],
 	)
 
-/** `AlertRuleFormLoadError`: the rules stream stopped, so the rule being edited can never load. */
+/** The rules stream stopped, so the rule being edited can never load. */
 const loadError = (h: H): Html =>
 	h.div(
 		[h.Class(cn("mx-auto w-full", RULE_FORM_MAX_WIDTH))],
@@ -81,7 +79,6 @@ const unreadableRule = (h: H): Html =>
 		],
 	)
 
-/** `WidgetPrefillNoticeBanner`. */
 const noticeBanner = (h: H, notices: ReadonlyArray<Notice>): ReadonlyArray<Html> =>
 	notices.length === 0
 		? []
@@ -244,7 +241,6 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 	)
 })
 
-/** `AlertRuleFormShell`'s breadcrumb. */
 export const breadcrumbsOf = (model: Model) => [
 	{ label: "Alerts", href: "/alerts" },
 	{

@@ -24,8 +24,6 @@ import { typography } from "@maple/views/ui/typography"
 import { hstack } from "@maple/views/ui/stack"
 import { providerBrand } from "../kit/providers"
 
-// The Linear card: connect, the connected workspace, and a revoked grant that needs a reconnect.
-
 type H = HtmlBuilder<Message>
 
 const BRAND = providerBrand("linear")

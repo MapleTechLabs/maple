@@ -24,8 +24,6 @@ import { hstack, vstack } from "@maple/views/ui/stack"
 import { strip } from "@maple/views/ui/rule"
 import { providerBrand } from "../../../kit/providers"
 
-// `PlanetScaleIntegrationCard` and `PlanetScaleWebhooks`: the source page's Connection tab.
-
 type H = HtmlBuilder<Message>
 
 const BRAND = providerBrand("planetscale")
@@ -85,7 +83,7 @@ const webhookLine = (webhooks: Webhooks): string => {
 	}
 }
 
-/** `PlanetScaleWebhooks`: Maple registers them itself, so this only reports. */
+/** Maple registers the webhooks itself, so this only reports. */
 const webhookStatus = (h: H, model: Model, webhooks: Webhooks): Html =>
 	panel(h, {}, [
 		item(h, { className: "items-start gap-3 rounded-none p-4" }, [

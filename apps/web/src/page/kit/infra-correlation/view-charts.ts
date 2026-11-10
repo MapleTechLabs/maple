@@ -14,7 +14,7 @@ import { Message, type Model } from "./model"
 import { chartIdOf } from "./update"
 import { Array as Arr, String as Str } from "effect"
 
-// `renderCharts`: each group's charts, drawn as the detail charts.
+// Each correlation group's charts, drawn as the detail charts.
 
 type H = HtmlBuilder<Message>
 
@@ -36,7 +36,7 @@ const SERIES_LABELS = new Map([
 
 const toChart = (chartId: string) => (message: Chart.Message) => Message.GotChartMessage({ chartId, message })
 
-/** `ContainerDetailChart`, `PodDetailChart`, `NodeDetailChart`: `K8sMetricChartView` cards. */
+/** The container, pod and node charts: Kubernetes metric chart cards. */
 const k8sCard = (
 	h: H,
 	model: Model,
@@ -57,7 +57,7 @@ const k8sCard = (
 		timeZone,
 	})
 
-/** `HostDetailChart` in the correlation's `Panel`: the plot area holds every state. */
+/** The host chart in the correlation's panel: the plot area holds every state. */
 const hostChart = (h: H, model: Model, chartId: string, isStacked: boolean, timeZone: string): Html => {
 	const slot = model.series[chartId]
 	const data = slot === undefined ? AsyncData.Idle() : slot.data

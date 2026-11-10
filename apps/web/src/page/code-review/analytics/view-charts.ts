@@ -16,8 +16,6 @@ import { vstack } from "@maple/views/ui/stack"
 import { Array as Arr, Record as Rec, Order } from "effect"
 import { textLink } from "@maple/views/ui/text-link"
 
-// `VolumeCard` and `IssuesCard`.
-
 type H = HtmlBuilder<Message>
 
 const VOLUME_LABELS = { pullRequests: "PRs reviewed", reviews: "Reviews" } as const

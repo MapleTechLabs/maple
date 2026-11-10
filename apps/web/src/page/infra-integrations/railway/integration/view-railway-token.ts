@@ -9,7 +9,7 @@ import { Message } from "../../../integrations/message"
 import type { RailwayCardModel } from "./railway"
 import { hstack } from "@maple/views/ui/stack"
 
-// `RailwayTokenForm`: the connect flow's Connect step, and Update credential on the connected card.
+// The connect flow's Connect step, and Update credential on the connected card.
 
 type H = HtmlBuilder<Message>
 

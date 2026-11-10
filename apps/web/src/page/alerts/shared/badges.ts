@@ -5,13 +5,10 @@ import type { Html, HtmlBuilder } from "foldkit/html"
 import { badge } from "@maple/views/ui/display"
 import { statusDot } from "@maple/views/ui/status-dot"
 
-// The alert severity and status badges.
-
 const TONE_BY_SEVERITY = new Map<AlertSeverity, "warn" | "crit">([
 	["warning", "warn"],
 	["critical", "crit"],
 ])
-/** Each alert severity's name. */
 export const ALERT_SEVERITY_LABEL = {
 	warning: "Warning",
 	critical: "Critical",

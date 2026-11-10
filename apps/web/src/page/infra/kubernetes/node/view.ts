@@ -34,8 +34,6 @@ import type { Model, NodeMetric, NodeSummary } from "./model"
 import { DEFAULT_PRESET } from "./update"
 import { typography } from "@maple/views/ui/typography"
 
-// `NodeDetailPage` in `KubernetesShell`.
-
 type H = HtmlBuilder<Message>
 type Summary = NonNullable<NodeSummary>
 
@@ -69,7 +67,6 @@ const rightPanel = (h: H, model: Model): Html | undefined => {
 		: undefined
 }
 
-/** `CapacityStat`. */
 const capacityStat = (h: H, eyebrow: string, fraction: number, subline: string): Html =>
 	statRailItem(h, {
 		eyebrow,

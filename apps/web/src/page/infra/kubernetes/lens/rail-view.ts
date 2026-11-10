@@ -15,8 +15,6 @@ import type { Model } from "./rail"
 import { typography, typographyClass } from "@maple/views/ui/typography"
 import { Array as Arr, String as Str } from "effect"
 
-// `ServiceLensRail` and the rail rows `useServiceLensRail` folds out of the join.
-
 export type RailService = Readonly<{
 	serviceName: string
 	podCount: number
@@ -74,7 +72,6 @@ export const railState = (model: Model) => {
 	}
 }
 
-/** `ServiceLensRail`. */
 export const lensRail = <M>(
 	h: HtmlBuilder<M>,
 	model: Model,

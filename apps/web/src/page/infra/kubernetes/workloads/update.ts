@@ -36,7 +36,6 @@ export const filtersOf = (search: Search) => ({
 	computeTypes: search.computeTypes,
 })
 
-/** `search.kind ?? "deployment"`. */
 export const kindOf = (search: Search): WorkloadKind => search.kind ?? "deployment"
 
 type RequestStep = (
@@ -104,7 +103,7 @@ export const init = (route: { readonly search: Search }, context: PageContext): 
 				Message.GotFilterSectionsMessage({ message }),
 			),
 		],
-		// `useInfraSurfaces()`: the sidebar's probe, which this page reads for its fleet band.
+		// The sidebar's presence probe, which this page reads for its fleet band.
 		outMessage: PageOutMessage.RequestedInfraSurfaces(),
 	}
 }

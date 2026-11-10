@@ -24,8 +24,6 @@ import { hstack } from "@maple/views/ui/stack"
 import { column, columnClass } from "@maple/views/ui/column"
 import { Array as Arr } from "effect"
 
-// `ContainerTable` / `ContainerTableLoading`.
-
 type H = HtmlBuilder<Message>
 type Sort = Readonly<{ key: string | null; dir: SortDir }> | null
 

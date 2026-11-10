@@ -16,8 +16,6 @@ import { typography, typographyClass } from "@maple/views/ui/typography"
 import { hstack, hstackClass, vstack } from "@maple/views/ui/stack"
 import { Array as Arr, String as Str } from "effect"
 
-// `GcpCommand`, `GcpOpenCloudShellButton`, `GcpCopyScriptButton`, `Script` and `Step`.
-
 type H = HtmlBuilder<Message>
 
 export const GCP_LINK = "underline underline-offset-2 hover:no-underline active:no-underline"
@@ -85,7 +83,7 @@ export const copyScriptButton = (
 
 export type ScriptFailure = Readonly<{ message: string; isRetrying: boolean }>
 
-/** `Script`: copy, read on request; `leading` are the buttons before the copy button. */
+/** Copy, read on request; `leading` are the buttons before the copy button. */
 export const scriptBlock = (
 	h: H,
 	model: Model,
@@ -180,7 +178,7 @@ const scriptText = (h: H, label: string, text: string): Html =>
 
 export type StepState = "current" | "pending" | "waiting" | "done"
 
-/** `Step`: a numbered marker on a line to the next step, the title, a line under it, the controls. */
+/** A numbered marker on a line to the next step, the title, a line under it, the controls. */
 export const step = (
 	h: H,
 	options: Readonly<{

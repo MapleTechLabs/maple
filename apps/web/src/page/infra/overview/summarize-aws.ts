@@ -6,7 +6,7 @@ import type { FleetRead } from "../../infra-integrations/aws/data"
 import { type ResourceView, resourceViews, summaryOf } from "../../infra-integrations/aws/derive"
 import type { Finding, SourceSummary } from "./model"
 
-// `summarizeAws`: the /infra/aws page's health, as the overview's row and findings.
+// The /infra/aws page's health, as the overview's row and findings.
 
 const MAX_FINDINGS = 3
 

@@ -23,8 +23,6 @@ import { DEFAULT_PRESET, MAX_ROWS } from "./update"
 import { findingsList } from "./view-list"
 import { vstack } from "@maple/views/ui/stack"
 
-// The code review issues page.
-
 type H = HtmlBuilder<Message>
 
 const entries = (

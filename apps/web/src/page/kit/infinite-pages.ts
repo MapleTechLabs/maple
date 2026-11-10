@@ -1,8 +1,8 @@
 import { Array as Arr, Result, Schema } from "effect"
 
-// An infinite list's pages after the first (`useInfinite*`): owned by one first page (`generation`),
-// one fetch in flight at a time, stopped by a failed page. Traces, logs and replays share it; each
-// page keeps its own cursor (an offset, a log cursor, a replay cursor) and its own "has more" rule.
+// An infinite list's pages after the first: owned by one first page (`generation`), one fetch in
+// flight at a time, stopped by a failed page. Traces, logs and replays share it; each page keeps its
+// own cursor (an offset, a log cursor, a replay cursor) and its own "has more" rule.
 
 /** The later pages' fields; a page whose pages are keyed by the first-page request adds `key`. */
 export const laterPagesFields = <P extends Schema.Top>(page: P) => ({
@@ -51,7 +51,7 @@ export const appendedPage = <A, S extends LaterPages<A>>(
 		onFailure: () => ({ ...pages, isFetching: false, isStopped: true }),
 	})
 
-/** `allData`: the first page's rows then every later page's, capped. */
+/** The first page's rows then every later page's, capped. */
 export const pagedRows = <A, R>(
 	first: ReadonlyArray<R>,
 	pages: ReadonlyArray<A>,

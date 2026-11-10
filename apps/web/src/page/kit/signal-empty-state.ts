@@ -6,8 +6,8 @@ import { docsLink as kitDocsLink } from "@maple/views/ui/docs-link"
 import type { PresenceState, TelemetrySignalKind } from "@maple/views/data/signal-presence"
 import { emptyActions, signalEmptyState as sharedSignalEmptyState } from "@maple/views/ui/signal-empty-state"
 
-// The dashboard's copy for `SignalEmptyState`: where each signal comes from, and the setup
-// page and guides it links. Presence comes from the page's Model.
+// The dashboard's copy for a signal's empty state: where each signal comes from, and the setup page
+// and guides it links. Presence comes from the page's Model.
 
 type SignalSetup = Readonly<{ source: string; action: string; setupDocs: DocsPage; guideDocs: DocsPage }>
 
@@ -44,7 +44,6 @@ const SIGNAL_SETUP = {
 	},
 } satisfies Record<TelemetrySignalKind, SignalSetup>
 
-/** `DocsLink`. */
 export const docsLink = <M>(h: HtmlBuilder<M>, page: DocsPage, label = "Read the docs"): Html =>
 	kitDocsLink(h, docsUrl(page), label)
 
@@ -63,7 +62,7 @@ export type SignalEmptyStateOptions<M> = Readonly<{
 	/** The setup guide the absent state links in place of the signal's. */
 	setupDocs?: DocsPage
 	isFiltered?: boolean
-	/** `onClearFilters`: the Message the "Clear filters" button sends. */
+	/** The Message the "Clear filters" button sends. */
 	onClearFilters?: M
 	onWidenRange?: M
 	/** Page detail under the description (Traces' excluded-values hint); `null` renders nothing. */
@@ -71,7 +70,7 @@ export type SignalEmptyStateOptions<M> = Readonly<{
 	className?: string
 }>
 
-/** The shared `SignalEmptyState` with the dashboard's on-ramp: the ingestion settings and a setup guide. */
+/** The shared signal empty state with the dashboard's on-ramp: the ingestion settings and a setup guide. */
 export const signalEmptyState = <M>(h: HtmlBuilder<M>, options: SignalEmptyStateOptions<M>): Html => {
 	const setup = SIGNAL_SETUP[options.signal]
 	return sharedSignalEmptyState(h, {

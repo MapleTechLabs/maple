@@ -22,8 +22,6 @@ import { typography } from "@maple/views/ui/typography"
 import { hstack, vstack } from "@maple/views/ui/stack"
 import { Array as Arr } from "effect"
 
-// The overview rail and its time composition: where the time, cost and tokens went.
-
 type H = HtmlBuilder<Message>
 
 const railSection = (h: H, title: string, aside: Html | undefined, children: ReadonlyArray<Html>): Html =>

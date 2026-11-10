@@ -24,8 +24,6 @@ import { incidentHref } from "../../kit/alert-links"
 import { inboxTab, type InboxAcknowledge } from "./view-inbox"
 import { Message, type InboxSignal, type IncidentStatusFilter } from "./message"
 
-// The Inbox's signal view: anomaly incidents alone, open, resolved or both (what `/anomalies` was).
-
 type H = HtmlBuilder<Message>
 
 const RESOLVED_LIMIT = 50

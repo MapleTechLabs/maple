@@ -115,7 +115,7 @@ export const DownloadCode = Command.define("DownloadChatCode", {
 		),
 })
 
-/** `MapleAiAtomClient.mutation("chat", "apply")`: the session runs (or declines) the proposal. */
+/** The session runs (or declines) the proposal. */
 export const DecideApproval = Command.define("DecideChatApproval", {
 	args: {
 		sessionId: Schema.String,

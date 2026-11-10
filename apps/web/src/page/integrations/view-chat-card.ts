@@ -26,9 +26,8 @@ import { typography, typographyClass } from "@maple/views/ui/typography"
 import { hstack, vstack } from "@maple/views/ui/stack"
 import { Array as Arr, Option } from "effect"
 
-// `ChatIntegrationCard`.
-// TODO(clerk): `useIsOrgAdmin` (self-hosted is the root admin) and `WorkspaceSettings`, which renders
-// nothing until a manifest declares settings fields (none does).
+// TODO(clerk): admin gating is hardcoded (self-hosted is the root admin), and workspace settings
+// render nothing until a manifest declares settings fields (none does).
 
 type H = HtmlBuilder<Message>
 

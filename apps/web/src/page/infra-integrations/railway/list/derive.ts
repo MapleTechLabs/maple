@@ -11,8 +11,6 @@ import type { RailwayServiceRow } from "../model"
 import type { SortKey } from "./model"
 import { Array as Arr, String as Str } from "effect"
 
-// The pure half of `RailwayServiceTable` and `RailwayFleetBand` (components/infra/railway/).
-
 export { fleetSync, hasConfiguredLimits, type RailwayServiceGroup, type RailwaySync }
 
 /** Peak use against the service's own limit, 0..1, or NaN when Railway reported no limit. */

@@ -14,8 +14,6 @@ import { ToolErrorRow, ToolSeries, TotalsResult } from "../../kit/tools/model"
 import * as ErrorModal from "./error-modal-model"
 import { SortState } from "../../kit/table-sort"
 
-// `/agent-sessions/tools/$toolName`.
-
 export const SessionRows = Schema.Struct({ data: Schema.Array(AiSessionListItem) })
 
 export const Model = Schema.Struct({
@@ -41,7 +39,7 @@ export const Model = Schema.Struct({
 	chartRuntime: ChartRuntime,
 	refreshVersion: Schema.Number,
 	isReloading: Schema.Boolean,
-	/** `ToolErrorModal`, open while `?error=` names a row the Errors table holds. */
+	/** The error modal, open while `?error=` names a row the Errors table holds. */
 	errorModal: ErrorModal.Model,
 })
 export type Model = typeof Model.Type

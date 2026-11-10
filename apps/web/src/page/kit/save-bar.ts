@@ -5,9 +5,8 @@ import { statusDot } from "@maple/views/ui/status-dot"
 import { typography } from "@maple/views/ui/typography"
 import { actionBar } from "@maple/views/ui/action-bar"
 
-// `SettingsSaveBar`: pinned while a tab has unsaved edits. TODO(settings): its `UnsavedChangesGuard`
-// (confirm before navigating away, and the browser's beforeunload prompt) needs a root-level navigation
-// blocker; not implemented.
+// Pinned while a settings tab has unsaved edits. TODO(settings): confirm before navigating away
+// (and the browser's beforeunload prompt) needs a root-level navigation blocker.
 
 export type SaveBarOptions<M> = Readonly<{
 	isDirty: boolean

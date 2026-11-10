@@ -31,7 +31,7 @@ export const SQL_MACRO_HINTS: ReadonlyArray<SqlMacroHint> = Arr.map(
 	(macro) => MACRO_HINT[macro],
 )
 
-/** `RawSqlEditorPanel`'s header bar: collapse toggle, `sql` badge, and the open panel's SQL issue. */
+/** The raw SQL panel's header bar: collapse toggle, `sql` badge, and the open panel's SQL issue. */
 export const sqlPanelHeader = <M>(
 	h: HtmlBuilder<M>,
 	options: Readonly<{ isCollapsed: boolean; issue: RawSqlIssue | null; toggled: M }>,

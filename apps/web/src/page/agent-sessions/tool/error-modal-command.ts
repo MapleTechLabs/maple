@@ -7,7 +7,6 @@ import { writeClipboard } from "../../kit/clipboard"
 import { Selection, toInput } from "../../kit/tools/reads"
 import { Message, type ModalKey } from "./error-modal-model"
 
-/** `aiToolErrorDetailResultAtom({ ...selection, fingerprint })`. */
 export const FetchErrorDetail = Command.define("FetchAgentToolErrorDetail", {
 	args: { key: Schema.String, selection: Selection, fingerprint: Schema.String },
 	messages: [Message.CompletedFetchDetail],
@@ -17,7 +16,7 @@ export const FetchErrorDetail = Command.define("FetchAgentToolErrorDetail", {
 		}).pipe(settleTo((result) => Message.CompletedFetchDetail({ key, result }))),
 })
 
-/** One page of `aiToolErrorSamplesResultAtom`: the narrowing and the cursor that fetched it. */
+/** One page of samples: the narrowing and the cursor that fetched it. */
 export const FetchErrorSamples = Command.define("FetchAgentToolErrorSamples", {
 	args: {
 		key: Schema.String,
@@ -59,7 +58,6 @@ export const CopyErrorArguments = Command.define("CopyAgentToolErrorArguments", 
 		writeClipboard(text).pipe(Effect.map((isCopied) => Message.CompletedCopyArguments({ isCopied }))),
 })
 
-/** `rowRefs.current.get(index)?.scrollIntoView({ block: "nearest" })`. */
 export const ScrollSampleIntoView = Command.define("ScrollAgentToolErrorSample", {
 	args: { index: Schema.Number },
 	messages: [Message.CompletedScrollSample],
@@ -97,7 +95,7 @@ const SAMPLE_KEYS = new Map<string, ModalKey>([
 	["k", "NewerSample"],
 ])
 
-/** `useWindowKeydown`: ↑/↓ read the next group (default prevented), j/k the next sample. */
+/** ↑/↓ read the next group (default prevented), j/k the next sample. */
 export const modalKeys = (position: GroupPosition): Stream.Stream<Message> =>
 	Stream.merge(
 		Dom.streamFromEventFilterMapPreventDefault({

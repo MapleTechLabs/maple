@@ -4,8 +4,6 @@ import { Option, Schema, String as Str, Array as Arr } from "effect"
 import type { IconName } from "@maple/views/ui/icon"
 import { type Provider, type ProviderId, PROVIDERS } from "../kit/providers"
 
-// The integration catalog's data.
-
 export type ChatIntegrationId = `chat-${string}`
 export type IntegrationId = ProviderId | ChatIntegrationId
 

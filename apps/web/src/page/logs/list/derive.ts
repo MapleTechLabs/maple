@@ -14,18 +14,17 @@ import { pagedRows } from "../../kit/infinite-pages"
 
 export type Search = typeof LogsSearch.Type
 
-/** `useInfiniteLogs`' page size, its reach-end threshold and the retention cap. */
 export const PAGE_SIZE = 100
 export const FETCH_THRESHOLD = 20
 export const MAX_RETAINED_LOGS = 2_000
 
-/** `LogsInspectState.inspecting`: the tail holds while the sheet is open, or while hovering/scrolled. */
+/** The tail holds while the sheet is open, or while hovering/scrolled. */
 export const isInspectingOf = (model: Model): boolean =>
 	model.isInspecting || (model.detail.dialog.isOpen && model.stream.rows.length > 0)
 
 /**
- * `handleMouseUp`: the dragged buckets as a window, the right edge widened by one bucket so the last
- * bar is in. `undefined` for a click without a drag or an unreadable bucket.
+ * The dragged buckets as a window, the right edge widened by one bucket so the last bar is in.
+ * `undefined` for a click without a drag or an unreadable bucket.
  */
 export const brushRange = (
 	left: string,
@@ -43,8 +42,8 @@ export const brushRange = (
 }
 
 /**
- * `buildQueryParams`: the org-global pin overrides the URL's namespace filters (they stay in the
- * URL; unpinning restores them). The first page and every later page send exactly this.
+ * The org-global pin overrides the URL's namespace filters (they stay in the URL; unpinning
+ * restores them). The first page and every later page send exactly this.
  */
 export const listInput = (
 	search: Search,
@@ -86,8 +85,6 @@ export const hasNextPage = (firstPage: LogsPage | undefined, pagination: Paginat
 	allLogs(firstPage, pagination).length < MAX_RETAINED_LOGS &&
 	!pagination.isStopped &&
 	lastCursor(firstPage, pagination) !== null
-
-// FILTER CHIPS
 
 const FACETS = [
 	{ label: "Severity", include: "severities", exclude: "excludedSeverities" },
@@ -158,9 +155,7 @@ export const withoutChips = (search: Search, chips: ReadonlyArray<LogFilterChip>
 	return { ...search, ...cleared, attrs: attrs.length > 0 ? attrs : undefined }
 }
 
-// VOLUME
-
-/** `LogsVolumeChart`'s denser histogram target, and its request. */
+/** The volume strip's denser histogram target, and its request. */
 export const HISTOGRAM_TARGET_POINTS = 150
 
 export const volumeInput = (
@@ -213,6 +208,6 @@ export const volumeSeriesKeys = (buckets: ReadonlyArray<VolumeBucket>): Readonly
 export const volumeTotal = (buckets: ReadonlyArray<VolumeBucket>): number =>
 	Arr.reduce(buckets, 0, (sum, bucket) => sum + Arr.reduce(Rec.values(bucket.counts), 0, (s, v) => s + v))
 
-/** The chip's id in `ActiveFilterChips`: its param, or `attrs:<entry>`. */
+/** The chip's id: its param, or `attrs:<entry>`. */
 export const chipId = (chip: LogFilterChip): string =>
 	chip.attr === undefined ? chip.param : `attrs:${chip.attr}`

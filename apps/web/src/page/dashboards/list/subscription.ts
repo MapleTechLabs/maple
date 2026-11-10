@@ -13,13 +13,13 @@ import type { ListDashboard, Model } from "./model"
 
 const byUpdatedDesc = Order.flip(Order.mapInput(Order.String, (row: DashboardRow) => row.updated_at))
 
-/** `deriveDashboardsList`: newest-updated first; an undecodable payload drops its row. */
+/** Newest-updated first; an undecodable payload drops its row. */
 export const deriveDashboardsList = (rows: ReadonlyArray<DashboardRow>): ReadonlyArray<ListDashboard> =>
 	Arr.flatMap(Arr.sort(rows, byUpdatedDesc), (row: DashboardRow) =>
 		Option.toArray(Option.map(rowToDocument(row), toListDashboard)),
 	)
 
-/** `DashboardsListModel`: the org's synced `dashboards` collection. */
+/** The org's synced `dashboards` collection. */
 const dashboards = (orgId: string) =>
 	orgLive(orgId, ({ dashboards: collection }) =>
 		liveQueryStream(
@@ -37,7 +37,7 @@ export const subscriptions = Subscription.make<PageSubscriptionInput<Model>, Mes
 				dependenciesToStream: ({ orgId }) => dashboards(orgId),
 			},
 		),
-		/** `useCollectionLoadFailed`: a live list still loading after the bounded wait has failed. */
+		/** A live list still loading after the bounded wait has failed. */
 		loadWatchdog: entry(
 			{ orgId: Schema.NullOr(Schema.String) },
 			{

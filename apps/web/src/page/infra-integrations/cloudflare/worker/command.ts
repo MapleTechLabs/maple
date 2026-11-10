@@ -67,7 +67,7 @@ export const CompleteReloadSpin = reloadSpin(
 	Message.CompletedReloadSpin,
 )
 
-/** `useLinkedCursor` on the strips. */
+/** One cursor shared by the strips. */
 export const MountLinkedCursor = Mount.defineStream("MountCloudflareWorkerLinkedCursor", {
 	messages: [Message.AttachedLinkedCursor],
 	execute: ({ element }) => linkedCursorStream(element, Message.AttachedLinkedCursor()),

@@ -14,8 +14,6 @@ import { Message } from "./message"
 import type { HostSummary } from "./model"
 import { typography, typographyClass } from "@maple/views/ui/typography"
 
-// `HostDetailHeader` / `HostDetailHeaderLoading` and `HeroChip`.
-
 type H = HtmlBuilder<Message>
 
 /** The header row's title and actions, and what opens the page body. */

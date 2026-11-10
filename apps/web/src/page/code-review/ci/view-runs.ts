@@ -23,8 +23,6 @@ import { typography } from "@maple/views/ui/typography"
 import { emptyFrameClass } from "@maple/views/ui/empty"
 import { hstack, vstack } from "@maple/views/ui/stack"
 
-// `CiRunsList`, `RunRows` and the paging footers.
-
 type H = HtmlBuilder<Message>
 type TimeContext = Readonly<{ nowMs: number; timeZone: string }>
 

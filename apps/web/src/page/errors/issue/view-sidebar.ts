@@ -31,9 +31,6 @@ import { hstack, vstack } from "@maple/views/ui/stack"
 import { Array as Arr } from "effect"
 import { shortIssueId } from "@maple/ui/lib/ids"
 
-// The issue sidebar with its state and severity selects.
-// TODO(lease): a held lease should render the lease HUD with Extend and Release; Claim is inert here.
-
 type H = HtmlBuilder<Message>
 
 const GHOST_TRIGGER = cn(
@@ -154,9 +151,6 @@ const environmentValue = (h: H, environments: ReadonlyArray<ErrorIssueEnvironmen
 	])
 }
 
-/** `shortIssueId`: the first seven hex digits, upper case. */
-
-/** `IssueIdCopy`: the short id that copies the full one. */
 const issueIdCopy = (h: H, model: Model, id: string): Html =>
 	button(
 		h,

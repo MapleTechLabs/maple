@@ -9,8 +9,6 @@ import * as TimeRangePicker from "../../../kit/time-range-picker"
 import { TracedService } from "../../kit/traced"
 import { RailwayServiceRow, RailwayServiceTimeseriesRow } from "../model"
 
-// `/infra/railway/$serviceId`.
-
 export const Model = Schema.Struct({
 	serviceId: Schema.String,
 	search: InfraRailwayServiceSearch,

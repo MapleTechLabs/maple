@@ -203,7 +203,6 @@ const clockRead = (model: Model, context: PageContext, nowMs: number): Return =>
 
 const decodeUserId = Schema.decodeUnknownOption(UserId)
 
-/** What is wrong with the override form, or none. */
 export const overrideIssue = (
 	draft: OverrideDraft,
 	timeZone: string,
@@ -300,7 +299,6 @@ const createOverride = (model: Model): Return => {
 	})
 }
 
-/** Runs the delete confirmation's update; `Closed` forgets the target. */
 const updateDeleteDialog = (model: Model, step: ReturnType<typeof Dialog.update>): Return => ({
 	model: {
 		...model,

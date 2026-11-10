@@ -8,10 +8,7 @@ import type { Html, HtmlBuilder } from "foldkit/html"
 import type * as Dialog from "@maple/views/ui/dialog"
 import * as DialogView from "@maple/views/ui/dialog-view"
 
-/**
- * `PageLayout.FilterSidebar` / `RightSidebar` below `lg`: the page's rail in a side sheet
- * (`<Sheet><SheetContent side>`) with an sr-only header.
- */
+/** A page's filter or context rail below `lg`, in a side sheet with an sr-only header. */
 export const pageRailSheet = <M>(
 	h: HtmlBuilder<M>,
 	options: Readonly<{

@@ -47,8 +47,6 @@ import { typography, typographyClass } from "@maple/views/ui/typography"
 import { hstack } from "@maple/views/ui/stack"
 import { selectableRow } from "@maple/views/ui/selectable-row"
 
-// `ServiceLensPage` / `LensBody` in `ServiceLensShell`.
-
 type H = HtmlBuilder<Message>
 
 const isInitial = (data: AsyncData.AsyncData<unknown, unknown>) =>
@@ -279,7 +277,7 @@ const lensBody = (h: H, model: Model, serviceName: string, inputs: PageViewInput
 	)
 }
 
-/** `PodDistribution`: which nodes the service landed on; nothing for one node. */
+/** Which nodes the service landed on; nothing for one node. */
 const podDistribution = (h: H, pods: ReadonlyArray<PodRow>, isWaiting: boolean): Html => {
 	const byNode = [
 		...Arr.reduce(pods, new Map<string, { count: number; worst: number }>(), (map, pod) => {
@@ -335,7 +333,7 @@ const lensEmpty = (h: H, title: string, description: string, hasDocs: boolean): 
 		"py-24",
 	)
 
-/** `ServiceLensIndexPage`: nothing picked yet. */
+/** The lens with nothing picked yet. */
 const pickAService = (h: H, model: Model): Html => {
 	const rail = railState(model.rail)
 	return !rail.isLoading && rail.services.length === 0

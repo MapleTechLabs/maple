@@ -14,8 +14,6 @@ import { gcpCommand, SMALL } from "./view-gcp-parts"
 import { vstack } from "@maple/views/ui/stack"
 import { Array as Arr, String as Str } from "effect"
 
-// `ScopeFields`: what kind of thing to connect, and its ID.
-
 type H = HtmlBuilder<Message>
 type FieldName = "scopeId" | "hostProjectId"
 

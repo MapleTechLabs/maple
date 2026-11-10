@@ -21,8 +21,6 @@ import {
 	TimeseriesRow,
 } from "../data"
 
-// `/infra/planetscale/$dbName`.
-
 export const Measure = Schema.Literals(["connections", "cpu", "memory", "storage", "lag"])
 export type Measure = typeof Measure.Type
 

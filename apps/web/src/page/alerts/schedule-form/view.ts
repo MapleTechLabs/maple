@@ -53,16 +53,12 @@ import { participantMenuId } from "./update"
 import { stripClass } from "@maple/views/ui/rule"
 import { canManageAlerts } from "../../kit/session-grants"
 
-// `/alerts/schedules/new`: the schedule's name and zone, then its layers: who rotates, how they
-// hand off, from when, and the weekly windows a layer is limited to.
-
 type H = HtmlBuilder<Message>
 
 const isLocalTime = Schema.is(OnCallLocalTime)
 
 const FORM_WIDTH = "max-w-3xl"
 
-/** A field's error line once a save was tried. */
 const shown = (h: H, model: Model, error: Option.Option<string>): ReadonlyArray<Html> =>
 	model.isShowingErrors
 		? Option.match(error, {
@@ -74,7 +70,6 @@ const shown = (h: H, model: Model, error: Option.Option<string>): ReadonlyArray<
 const fieldLabel = (h: H, id: string, text: string): Html =>
 	label(h, { className: typographyClass({ size: "xs", tone: "muted" }), attributes: [h.For(id)] }, [text])
 
-/** A labelled input bound to one value. */
 const textInput = (
 	h: H,
 	options: Readonly<{
@@ -402,7 +397,6 @@ const restrictionsField = (h: H, model: Model, layer: LayerDraft, layerIndex: nu
 	])
 }
 
-/** One layer: its name and order, its people, how it hands off, from when, and its windows. */
 /** "Layer 2, on top": layers are numbered bottom first, and drawn top first. */
 export const layerLabel = (index: number, count: number): string =>
 	count === 1

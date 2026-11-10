@@ -20,8 +20,6 @@ import {
 } from "./supabase"
 import { requestStatus } from "../../../integrations/update-status"
 
-// The Supabase card's state changes.
-
 type Return = PageReturn<Model, Message>
 
 const withCard = (model: Model, card: Partial<SupabaseCardModel>): Model => ({

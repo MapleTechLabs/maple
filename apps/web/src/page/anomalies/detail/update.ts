@@ -159,8 +159,8 @@ const wrapResolve = (message: Dialog.Message) => Message.GotResolveDialogMessage
 const wrapLink = (message: Dialog.Message) => Message.GotLinkDialogMessage({ message })
 
 /**
- * A successful write re-reads the incident (its `reactivityKeys`); the answer re-follows the issue.
- * It supersedes a live-refresh read in flight, so a pre-write answer cannot land last.
+ * A successful write re-reads the incident; the answer re-follows the issue. It supersedes a
+ * live-refresh read in flight, so a pre-write answer cannot land last.
  */
 const afterWrite = (model: Model, context: PageContext): Return =>
 	loadIncident({ ...model, busy: null }, context, "Supersede")
@@ -290,7 +290,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 				}),
 			}),
 		GotLinkComboboxMessage: ({ message: inner }) => {
-			// `onClick={() => onSelect(issue.id)}`: a picked item links; the rest is the input's own state.
+			// A picked item links; the rest is the input's own state.
 			if (inner._tag === "ClickedItem")
 				return update(
 					model,

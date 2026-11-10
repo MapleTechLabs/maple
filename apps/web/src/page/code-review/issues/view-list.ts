@@ -18,8 +18,6 @@ import { hstack } from "@maple/views/ui/stack"
 import { Array as Arr, String as Str, Option } from "effect"
 import { dividedList } from "@maple/views/ui/rule"
 
-// `FindingRow` and the findings list.
-
 type H = HtmlBuilder<Message>
 
 /** Last path segment: kept visible when a long path middle-truncates. */

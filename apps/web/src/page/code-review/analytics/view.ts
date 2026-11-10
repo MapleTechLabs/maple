@@ -25,8 +25,6 @@ import { grid } from "@maple/views/ui/grid"
 const skeleton = <M>(h: HtmlBuilder<M>): Html =>
 	analyticsSkeleton(h, { headline: Rec.values(HEADLINE_LABELS), secondary: Rec.values(SECONDARY_LABELS) })
 
-// `CodeReviewAnalyticsPage` and `CodeReviewAnalyticsView`.
-
 type H = HtmlBuilder<Message>
 
 const THEME_TOKENS = seriesTokens(["PRs reviewed", "Reviews", ...Rec.values(SEVERITY_SERIES)])

@@ -1,12 +1,8 @@
 import { String as Str } from "effect"
 /**
- * What the logs search box does with what you typed.
- *
- * A trace id (bare, or lifted out of a W3C `traceparent` header) becomes the
- * page's trace scope — an indexed `TraceId` seek, and a removable chip. Anything
- * else is a substring scan over message bodies, where a 32-hex id could never
- * have matched. The shape of the input picks the lookup, and the help sheet
- * beside the box lists the shapes it knows.
+ * A trace id (bare, or lifted out of a W3C `traceparent` header) becomes the page's trace scope: an
+ * indexed `TraceId` seek and a removable chip. Anything else is a substring scan over message
+ * bodies, where a 32-hex id could never have matched.
  */
 export type LogSearchQuery =
 	| { readonly kind: "trace"; readonly traceId: string }

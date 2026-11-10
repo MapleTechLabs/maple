@@ -52,13 +52,10 @@ import { selectableRow } from "@maple/views/ui/selectable-row"
 import { medianOf } from "@maple/ui/lib/number"
 import { toEpochMs } from "@maple/ui/lib/time-format"
 
-// The monitor page's panels: response time, the checks list and the side panels.
-
 type H = HtmlBuilder<Message>
 
 const CHECK_ROWS = 15
 
-/** A key/value row in a side panel. */
 const fact = (h: H, label: string, value: Html | string, valueClass?: string): Html =>
 	hstack(h, { gap: "3", align: "baseline", justify: "between", className: "px-4 py-2.5 text-sm" }, [
 		typography(h, { tone: "muted", className: "shrink-0 whitespace-nowrap" }, [label]),
@@ -236,12 +233,6 @@ export const kpiRail = (
 	)
 }
 
-/**
- * The latency rows: buckets that ran a check, with a null row where checks stopped for longer than
- * two check intervals, so the line breaks there instead of drawing latency nobody measured. A shorter
- * empty bucket (a check every 5 minutes on 1-minute buckets) stays joined: a null there would leave
- * each check a lone point the line never draws.
- */
 /** The monitor's check interval, 0 until it loads (the bucket width then sets the gap). */
 const checkIntervalMs = (model: Model): number =>
 	(Option.getOrNull(AsyncData.getData(model.monitor.data))?.interval_seconds ?? 0) * 1000
@@ -252,6 +243,12 @@ const breakBuckets = (stats: CheckStats, intervalMs: number): ReadonlyArray<stri
 		row.p50LatencyMs === null && typeof row.bucket === "string" ? [row.bucket] : [],
 	)
 
+/**
+ * The latency rows: buckets that ran a check, with a null row where checks stopped for longer than
+ * two check intervals, so the line breaks there instead of drawing latency nobody measured. A shorter
+ * empty bucket (a check every 5 minutes on 1-minute buckets) stays joined: a null there would leave
+ * each check a lone point the line never draws.
+ */
 export const chartRows = (stats: CheckStats, intervalMs: number) => {
 	const stepMs = bucketStepMs(stats.points, stats.windowEndMs)
 	const gapAfterMs = 2 * Math.max(intervalMs, stepMs)

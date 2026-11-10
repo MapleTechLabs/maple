@@ -7,7 +7,7 @@ import { typography } from "@maple/views/ui/typography"
 import { Array as Arr, String as Str } from "effect"
 import { vstack } from "@maple/views/ui/stack"
 
-// `GcpMessage`, `Linked` and `GcpExternalLink`: a failure in the API's own words, laid out to be scanned.
+// A failure in the API's own words, laid out to be scanned.
 
 const GCP_LINK = "underline underline-offset-2 hover:no-underline active:no-underline"
 const BILLING_PAGE = "Settings, Billing"

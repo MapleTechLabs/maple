@@ -29,8 +29,6 @@ import { hstack } from "@maple/views/ui/stack"
 import { strip } from "@maple/views/ui/rule"
 import { Array as Arr } from "effect"
 
-// `RuleDiagnosisPanel`: the rule's diagnosis.
-
 type H = HtmlBuilder<Message>
 
 const STATUS_CLASS = new Map<DiagnosisStageStatus, string>([

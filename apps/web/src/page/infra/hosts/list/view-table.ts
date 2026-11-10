@@ -23,14 +23,14 @@ import { hstack } from "@maple/views/ui/stack"
 import { column, columnClass } from "@maple/views/ui/column"
 import { Array as Arr } from "effect"
 
-// `HostTable` / `HostTableLoading`, generic over the host's Message: /infra/hosts sorts through its Model,
-// `/lab/worst-case` through its own.
+// Generic over the host's Message: /infra/hosts sorts through its Model, `/lab/worst-case` through
+// its own.
 
 type OnSort<M> = (key: HostSortKey) => M
 
 const INERT_SORT = { isActive: false, dir: "desc" } satisfies Readonly<{ isActive: boolean; dir: SortDir }>
 
-/** `HostColumns`: interactive with `sort`, inert for the skeleton. */
+/** Interactive with `sort`, inert for the skeleton. */
 const columns = <M>(h: HtmlBuilder<M>, sort: SortState | null, onSort?: OnSort<M>): ReadonlyArray<Html> => {
 	const sortOf = (key: HostSortKey) => (onSort === undefined ? INERT_SORT : headSort(sort, key, onSort))
 	return [

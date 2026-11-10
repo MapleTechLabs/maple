@@ -18,10 +18,7 @@ import { spinner } from "@maple/views/ui/spinner"
 import { integrationLinkActions, integrationNotConnected } from "../kit/empty-states"
 import type { Status, Usage } from "./data"
 
-// `CloudflareIngestBanner`, `CloudflareIngestEmpty`, `CloudflareStalledAction`
-// and the missing-permissions empty state.
-
-/** `useCloudflareIngestPhase`'s phase: null without a usable connection. */
+/** Null without a usable connection. */
 export const ingestPhaseOf = (
 	status: Status | null,
 	usage: Usage | null,

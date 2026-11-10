@@ -15,17 +15,14 @@ import * as InfraCorrelation from "../../kit/infra-correlation"
 import { SignalPresenceData } from "@maple/views/data/signal-presence"
 import * as TimeRangePicker from "../../kit/time-range-picker"
 
-// The `/logs` stream.
-
 import { LogRecord } from "@maple/views/ui/logs/log-row-view"
 import { Density } from "@maple/views/ui/logs/viewer"
 import { laterPagesFields } from "../../kit/infinite-pages"
 
-/** `LogRow` (`@maple/query-engine` route-rows), shared with the stream (`ui/logs`). */
 export const LogRowSchema = LogRecord
 export type LogRowSchema = LogRecord
 
-/** `LogsResponse`: one page and the cursor of the next (`null` when the page was short). */
+/** One page and the cursor of the next (`null` when the page was short). */
 export const LogsPage = Schema.Struct({
 	logs: Schema.Array(LogRecord),
 	cursor: Schema.NullOr(Schema.String),
@@ -41,7 +38,7 @@ export const LogsFacets = Schema.Struct({
 })
 export type LogsFacets = typeof LogsFacets.Type
 
-/** One histogram bucket, severities folded to upper case (`LogsVolumeChart`'s `chartData`). */
+/** One histogram bucket, severities folded to upper case. */
 export const VolumeBucket = Schema.Struct({
 	bucket: Schema.String,
 	counts: Schema.Record(Schema.String, Schema.Number),
@@ -51,11 +48,10 @@ export type VolumeBucket = typeof VolumeBucket.Type
 export const AttributeKey = Schema.Struct({ name: Schema.String, count: Schema.Number })
 export type AttributeKey = typeof AttributeKey.Type
 
-/** `useInfiniteLogs`' later pages: owned by one first page (`generation`), reset with it. */
+/** Later pages: owned by one first page (`generation`), reset with it. */
 export const Pagination = Schema.Struct(laterPagesFields(LogsPage))
 export type Pagination = typeof Pagination.Type
 
-/** `LogsVolumeChart`'s drag-to-zoom: `refAreaLeft`/`refAreaRight` and `isSelecting`. */
 export const VolumeBrush = Schema.Struct({
 	left: Schema.NullOr(Schema.String),
 	right: Schema.NullOr(Schema.String),
@@ -68,7 +64,7 @@ export const Model = Schema.Struct({
 	/** The resolved window and the clock it was resolved at; `null` until the first resolve. */
 	window: Schema.NullOr(TimeWindow),
 	nowMs: Schema.Number,
-	/** `listLogsResultAtom`: the first page; later pages are `pagination`. */
+	/** The first page; later pages are `pagination`. */
 	firstPage: KeyedSchema(LogsPage, LoadFailure),
 	pagination: Pagination,
 	facets: KeyedSchema(LogsFacets, LoadFailure),
@@ -79,33 +75,32 @@ export const Model = Schema.Struct({
 	volumeChart: Chart.Model,
 	volumeBrush: VolumeBrush,
 	stream: LogsStream.Model,
-	/** `useLogsViewPreferences` (`maple.logs.wrap` / `maple.logs.density`), read on entry. */
+	/** Stored as `maple.logs.wrap` / `maple.logs.density`, read on entry. */
 	wrap: Schema.Boolean,
 	density: Density,
 	/** The sidebar's search box text, ahead of its 300 ms debounce into the URL. */
 	searchText: Schema.String,
 	searchGeneration: Schema.Number,
 	locale: Schema.String,
-	/** `LogsInspectState`: holds the live tail while the reader inspects. */
+	/** Holds the live tail while the reader inspects. */
 	isInspecting: Schema.Boolean,
 	isScrolledAway: Schema.Boolean,
-	/** `useSignalPresence("logs")`: asked once the empty state painted. */
+	/** Asked once the empty state painted. */
 	presence: SignalPresenceData.schema,
 	filterSections: FilterSections.Model,
 	timePicker: TimeRangePicker.Model,
-	/** `RefreshControls`' cadence menu. */
 	refreshMenu: Menu.Model,
 	/** The toolbar's three tooltips, one Tooltip shared by its triggers. */
 	toolbarTooltip: Tooltip.Model,
 	columnsPopover: Popover.Model,
 	searchHelp: Popover.Model,
-	/** `LogDetailSheet` and the row it shows (`selectedLog`, by index into the stream). */
+	/** The log sheet; `selectedIndex` is its row, by index into the stream. */
 	detail: LogDetail.Model,
 	/** The sheet's Infrastructure tab, rebuilt per log. */
 	detailInfra: InfraCorrelation.Model,
 	selectedIndex: Schema.NullOr(Schema.Number),
 	...ChartEnvFields,
-	/** `PageRefreshProvider`: Reloads so far (non-zero stops snapping) and the 600 ms spinner. */
+	/** Reloads so far (non-zero stops snapping) and the 600 ms spinner. */
 	refreshVersion: Schema.Number,
 	isReloading: Schema.Boolean,
 })

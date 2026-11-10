@@ -1,10 +1,6 @@
 import { Array as Arr, Record as Rec } from "effect"
-// Shared filter vocabulary for the Cloudflare pages.
-//
-// The poller stores dimensions as single-dimension slices, not one cube, so a
-// filter that applies to one panel may be inapplicable to the next. The API
-// answers that per panel via `ignoredFilters`; this module holds the labels and
-// the URL <-> request plumbing both pages share.
+// The poller stores dimensions as single-dimension slices, not one cube, so a filter that applies
+// to one panel may be inapplicable to the next. The API answers that per panel via `ignoredFilters`.
 
 export interface CloudflareFilters {
 	hosts?: ReadonlyArray<string>
@@ -74,7 +70,6 @@ export const filterKeysFromServer = (
 
 const FILTER_KEYS = Rec.keys(FILTER_CHIP_LABEL) as ReadonlyArray<CloudflareFilterKey>
 
-/** Pull just the filter fields out of a route's search object. */
 export const filtersFromSearch = (search: Record<string, unknown>): CloudflareFilters => {
 	const out: CloudflareFilters = {}
 	for (const key of FILTER_KEYS) {
@@ -95,7 +90,6 @@ export interface ActiveFilterChip {
 	readonly label: string
 }
 
-/** Flatten the filter object into one removable chip per selected value. */
 export const activeFilterChips = (filters: CloudflareFilters): ReadonlyArray<ActiveFilterChip> => {
 	const chips: Array<ActiveFilterChip> = []
 	for (const key of FILTER_KEYS) {

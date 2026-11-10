@@ -8,8 +8,6 @@ import * as Frame from "../../../kit/time-frame"
 import * as InstallModal from "../../kit/install-modal"
 import { SortState } from "../../../kit/table-sort"
 
-// `/infra/kubernetes/nodes`.
-
 export const NodeRows = ListNodesResponse.fields.data
 export type NodeRow = ListNodesResponse["data"][number]
 export const NodeFacets = NodeFacetsResponse.fields.data
@@ -23,7 +21,7 @@ export const Model = Schema.Struct({
 	frame: Frame.Model,
 	nodes: KeyedSchema(NodeRows, LoadFailure),
 	facets: KeyedSchema(NodeFacets, LoadFailure),
-	/** `useTableSort` in `NodeTable`: initial key `cpuUtilization`, descending. */
+	/** Initial key `cpuUtilization`, descending. */
 	sort: SortState,
 	filterSections: FilterSections.Model,
 	install: InstallModal.Model,

@@ -30,8 +30,6 @@ import { manualSteps, removalItem } from "./view-gcp-setup-methods"
 import { hstack, vstack, vstackClass } from "@maple/views/ui/stack"
 import { Array as Arr } from "effect"
 
-// `GcpMethodStage` and `GcpMethodApplyView`: how Google Cloud is set up, and the setup without the script.
-
 type H = HtmlBuilder<Message>
 type Children = ReadonlyArray<Html | string>
 
@@ -63,7 +61,7 @@ export const methodStage = (
 	]
 }
 
-/** `useGcpScripts` for the setup: only a settled read counts, as a held-over one is for another filter. */
+/** Only a settled read counts: a held-over one is for another filter. */
 const setupState = (
 	configure: ConfigureModel,
 ): { setup: V2GcpSetupScripts | null; failure: ScriptFailure | null } => {

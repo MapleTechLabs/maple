@@ -18,9 +18,6 @@ import { toLoadFailure } from "@maple/views/data/load-failure"
 import { MapleApiV2Client } from "../../../platform/api-clients"
 import { toEpochMs } from "@maple/ui/lib/time-format"
 
-// Alert silences: the reads and writes the hub, rule and incident pages share, and how a page
-// tells which silence covers a rule or an incident.
-
 const listByStatus = (status?: V2AlertSilence["status"]) =>
 	Effect.gen(function* () {
 		const client = yield* MapleApiV2Client

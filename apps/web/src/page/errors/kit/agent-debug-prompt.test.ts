@@ -15,7 +15,7 @@ describe("formatAgentDebugPrompt", () => {
 		expect(prompt).toContain("**Error:** TypeError in checkout")
 		expect(prompt).toContain("Cannot read property 'id' of undefined")
 		expect(Str.endsWith("Start by calling error_detail.")(Str.trimEnd(prompt))).toBe(true)
-		// No issue, so no claim to make — the numbered list starts at the read.
+		// No issue, so no claim to make: the numbered list starts at the read.
 		expect(prompt).toContain('1. Call `error_detail` with fingerprint "fp_abc123"')
 	})
 
@@ -46,8 +46,7 @@ describe("formatAgentDebugPrompt", () => {
 		expect(withoutIssue).not.toContain("Maple issue ID")
 		expect(withoutIssue).not.toContain("claim_error_issue")
 		expect(withoutIssue).not.toContain("propose_fix")
-		// `list_error_issue_events` takes an issue id, so it must not be suggested
-		// on the legacy errors-by-type page that has none.
+		// `list_error_issue_events` takes an issue id, so it must not be suggested without one.
 		expect(withoutIssue).not.toContain("list_error_issue_events")
 	})
 

@@ -18,8 +18,6 @@ import { grid as gridLayout } from "@maple/views/ui/grid"
 import { Array as Arr, Record as Rec } from "effect"
 import { hstack } from "@maple/views/ui/stack"
 
-// `PlanetScaleChart` cards and the chart section of `PlanetScaleDatabaseData`.
-
 type H = HtmlBuilder<Message>
 export type Trigger = (id: string) => ReadonlyArray<ChildAttribute>
 
@@ -55,7 +53,7 @@ export const FALLBACK_EXPLANATION = {
 		"PlanetScale's Query Insights API answers one branch at a time, so this shows the resolved branch only.",
 } as const
 
-/** `PlanetScaleBranchScope`: the trigger ids are `${idPrefix}-all` and `${idPrefix}-fallback`. */
+/** The trigger ids are `${idPrefix}-all` and `${idPrefix}-fallback`. */
 export const branchScope = (
 	h: H,
 	options: Readonly<{

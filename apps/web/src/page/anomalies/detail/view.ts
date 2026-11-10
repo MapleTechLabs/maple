@@ -29,8 +29,6 @@ import { anomalySidebar } from "./view-sidebar"
 import { hstack } from "@maple/views/ui/stack"
 import { Array as Arr } from "effect"
 
-// The anomaly detail page over `ResultPage`.
-
 type H = HtmlBuilder<Message>
 
 /**

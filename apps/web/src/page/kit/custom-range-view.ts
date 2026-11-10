@@ -32,7 +32,7 @@ const MONTH_NAMES = [
 const ordinal = (day: number): string =>
 	day % 100 >= 11 && day % 100 <= 13 ? `${day}th` : `${day}${["th", "st", "nd", "rd"][day % 10] ?? "th"}`
 
-/** `labelDayButton`: date-fns `PPPP`, "Today, " and ", selected" by modifier. */
+/** A day button's label: date-fns `PPPP`, plus "Today, " and ", selected" by modifier. */
 const dayLabel = (date: CalendarDate, isToday: boolean, isSelected: boolean): string =>
 	`${isToday ? "Today, " : ""}${Calendar.dayOfWeek(date)}, ${MONTH_NAMES[date.month - 1] ?? ""} ${ordinal(date.day)}, ${date.year}${isSelected ? ", selected" : ""}`
 

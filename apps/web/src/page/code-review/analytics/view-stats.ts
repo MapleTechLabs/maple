@@ -7,8 +7,6 @@ import { delta, relativeChange } from "@maple/views/ui/delta"
 import { statRail, statRailItem } from "../../kit/stat-rail"
 import { Array as Arr } from "effect"
 
-// `HeadlineStrip` and `SecondaryStats`.
-
 /** Change against the previous window; nothing when there is no baseline to compare with. */
 export const changeOf = <M>(
 	h: HtmlBuilder<M>,

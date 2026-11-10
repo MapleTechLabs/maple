@@ -24,7 +24,7 @@ const IDLE: FieldState = {
 	isTouched: false,
 }
 
-/** `Thresholds`: a colour, a value and a remove button per line, then "+ Add threshold". */
+/** A colour, a value and a remove button per line, then "+ Add threshold". */
 export const thresholds = (h: H, state: EditorState): Html =>
 	field(h, { className: "items-stretch gap-1.5", state: IDLE }, [
 		fieldGroupLabel(h, { isEyebrow: true }, "Thresholds"),

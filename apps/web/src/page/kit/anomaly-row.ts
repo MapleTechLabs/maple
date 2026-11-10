@@ -26,7 +26,7 @@ import { hstack } from "@maple/views/ui/stack"
 import { typography } from "@maple/views/ui/typography"
 import { shortIssueId } from "@maple/ui/lib/ids"
 
-// `AnomalyRow`: one anomaly in a list.
+// One anomaly as a list row.
 
 export const anomalyHref = (incidentId: AnomalyIncidentId) => hrefOf(AppRoute.Anomaly({ incidentId }))
 
@@ -205,7 +205,7 @@ export const anomalyRow = <M>(h: HtmlBuilder<M>, options: AnomalyRowOptions<M>):
 	)
 }
 
-/** The linked-issue `Badge render={<Link />}`. */
+/** The linked issue as a badge link. */
 const linkedIssueChip = <M>(h: HtmlBuilder<M>, issueId: ErrorIssueId): Html =>
 	badge(
 		h,

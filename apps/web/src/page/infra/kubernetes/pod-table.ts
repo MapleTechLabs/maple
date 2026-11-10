@@ -33,8 +33,6 @@ import { typographyClass } from "@maple/views/ui/typography"
 import { hstack } from "@maple/views/ui/stack"
 import { column, columnClass } from "@maple/views/ui/column"
 
-// `PodTable` / `PodTableLoading`.
-
 export type PodSortKey = "saturation" | "cpuUsage" | "cpuLimitPct" | "memoryLimitPct" | "podName" | "lastSeen"
 type Sort = Readonly<{ key: string | null; dir: SortDir }> | null
 
@@ -113,7 +111,7 @@ export const podTableLoading = <M>(h: HtmlBuilder<M>): Html =>
 		]),
 	)
 
-/** `RestartMarker`: beside the name, only when the pod restarted in the window. */
+/** Beside the name, only when the pod restarted in the window. */
 const restartMarker = <M>(h: HtmlBuilder<M>, summary: PodRestartSummary | undefined): Html => {
 	if (summary === undefined || summary.restarts <= 0) return null
 	const label = Arr.join(

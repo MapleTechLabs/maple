@@ -29,7 +29,7 @@ import type { PresetValue } from "../../kit/time-controls"
 export type Search = typeof CodeReviewCiSearch.Type
 type Return = PageReturn<Model, Message>
 
-/** `CODE_REVIEW_CI_DEFAULT_PRESET`: a week, since CI runs many times a day. */
+/** A week, since CI runs many times a day. */
 export const DEFAULT_PRESET: PresetValue = "1w"
 const FRAME_ID = "code-review-ci"
 const isRunResult = Schema.is(CiRunResult)
@@ -175,7 +175,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		ClickedClearFilters: () => navigate(model, { repo: undefined, pipeline: undefined }),
 		ClickedClearRunFilters: () => navigate(model, { branch: undefined, result: undefined }),
 		ClickedClearBranch: () => navigate(model, { branch: undefined }),
-		// `onSelectPipeline(name === pipeline ? undefined : name)`: a second click clears it.
+		// A second click on the selected workflow clears it.
 		ClickedWorkflow: ({ pipeline }) =>
 			navigate(model, { pipeline: pipeline === model.search.pipeline ? undefined : pipeline }),
 		ClickedBranch: ({ branch }) => navigate(model, { branch }),

@@ -18,8 +18,8 @@ import { typography } from "@maple/views/ui/typography"
 import { hstackClass, vstack } from "@maple/views/ui/stack"
 import { Array as Arr } from "effect"
 
-// `CorrelationStrips`: signals stacked on one time axis under one linked cursor, each with its label, source
-// and window summary.
+// Signals stacked on one time axis under one linked cursor, each with its label, source and window
+// summary.
 
 const STRIP_HEIGHT = 96
 

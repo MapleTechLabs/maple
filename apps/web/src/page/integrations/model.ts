@@ -35,11 +35,9 @@ import { SearchConsoleCardModel } from "./search-console"
 import { ConnectModel } from "./connect"
 import { HubFilter } from "./catalog"
 
-// `/integrations`: the hub and every integration's page.
-
 const keyed = <A, AI>(schema: Schema.Codec<A, AI>) => KeyedSchema(schema, LoadFailure)
 
-/** The status reads the hub and the headers share (`useIntegrationOverviews`'s atoms). */
+/** The status reads the hub and the headers share. */
 export const Statuses = Schema.Struct({
 	cloudflare: keyed(CloudflareIntegrationStatus),
 	railway: keyed(RailwayIntegrationStatus),
@@ -63,15 +61,14 @@ export const Model = Schema.Struct({
 	/** The clock at entry, for the relative "synced 5m ago" labels. */
 	nowMs: Schema.Number,
 	statuses: Statuses,
-	/** `useMapleCustomer` (the settings nav's Data platform gate under Clerk). */
+	/** The billing customer: the settings nav's Data platform gate under Clerk. */
 	customer: keyed(BillingCustomer),
-	/** `useIsOrgAdmin()`: the session's roles (`false` until it loads under Clerk). */
+	/** The session's grants (empty until it loads under Clerk). */
 	grants: Schema.Array(Policy.PermissionName),
 	/** The org's `dataSources` rollout flag, read with the session (the settings rail's tab). */
 	hasDataSources: Schema.Boolean,
-	/** The hub's capability filter. */
 	filter: HubFilter,
-	/** The OAuth popup flow of the page's integration (`IntegrationConnectProvider`). */
+	/** The OAuth popup flow of the page's integration. */
 	connect: ConnectModel,
 	/** The page's disconnect confirmation and its in-flight flag (one integration shows at a time). */
 	disconnect: Schema.Struct({ dialog: Dialog.Model, isPending: Schema.Boolean }),

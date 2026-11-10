@@ -20,9 +20,6 @@ import { hstack, vstack } from "@maple/views/ui/stack"
 
 const encodePrettyJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown, { space: 2 }))
 
-// `SampleBody` of `ToolErrorModal`: what the call was handed and what it gave back, and where the
-// arguments confirm a schema failure, what is wrong with them.
-
 type H = HtmlBuilder<Message>
 
 const payloadHead = (

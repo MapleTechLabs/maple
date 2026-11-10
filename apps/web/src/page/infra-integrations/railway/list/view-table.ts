@@ -16,8 +16,6 @@ import { typography, typographyClass } from "@maple/views/ui/typography"
 import { Array as Arr } from "effect"
 import { hstack } from "@maple/views/ui/stack"
 
-// `RailwayServiceTable` and `RailwayServiceTableLoading`.
-
 type H = HtmlBuilder<Message>
 type Trigger = (id: string) => ReadonlyArray<ChildAttribute>
 

@@ -43,8 +43,6 @@ import { grid } from "@maple/views/ui/grid"
 import { Array as Arr, String as Str } from "effect"
 import { typography } from "@maple/views/ui/typography"
 
-// `GcpWorkloadPage`.
-
 type H = HtmlBuilder<Message>
 type TimeSearch = Readonly<{ startTime?: string; endTime?: string; timePreset?: string }>
 
@@ -67,7 +65,6 @@ const HEALTH_TONE = { crit: "crit", warn: "warn", neutral: "ok" } as const satis
 const BARE_IDENTITY = ["Region", "Zone", "Location"]
 const RAIL_IDENTITY = ["Project"]
 
-/** `GcpWorkloadHeader`, with `GcpCloudSqlChips` as a Cloud SQL instance's meta. */
 const header = (h: H, model: Model, data: PageData) => {
 	const service = model.service
 	const keys = data.keys
@@ -146,7 +143,7 @@ const GAP_COPY = {
 	},
 } as const
 
-/** `GcpTraceGapCallout`: Google counted clearly more server errors than the spans did. */
+/** Google counted clearly more server errors than the spans did. */
 const traceGapCallout = (
 	h: H,
 	service: "cloudRun" | "cloudFunctions",
@@ -388,7 +385,7 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 	}),
 )
 
-/** `GcpWorkloadPage` over its derived data: the route reads it off its slots, the lab off fixtures. */
+/** The route reads its data off its slots, the lab off fixtures. */
 export const workloadPageView = (
 	h: H,
 	model: Model,

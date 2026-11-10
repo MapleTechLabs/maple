@@ -1,6 +1,6 @@
 // Google Cloud connector rules shared by the card, the hub and the Infrastructure page: what
 // each capability is doing, what a connection asks of its owner, what a change to its configuration
-// does and when, and the add form's validation. Pure, like planetscale-setup-steps.ts.
+// does and when, and the add form's validation.
 
 import { Option, Schema, Array as Arr, String as Str } from "effect"
 import { V2GcpCreateConnectorRequest, type V2GcpConnector } from "@maple/domain/http/v2"
@@ -435,7 +435,6 @@ export function gcpOverlapNote(
 			)}) are collected twice if they sit inside this ${scopeType}. Disconnect them once this connection receives data.`
 }
 
-/** What the add form holds. */
 export interface GcpConnectorDraft {
 	readonly scopeType: GcpScopeType
 	/** A project ID, or the numeric ID of a folder or organization. */

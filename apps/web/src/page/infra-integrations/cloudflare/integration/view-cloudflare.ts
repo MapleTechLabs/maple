@@ -12,8 +12,6 @@ import { cloudflareConnected } from "./view-cloudflare-connected"
 import { disconnectDialog } from "../../../integrations/view-disconnect"
 import { hstack } from "@maple/views/ui/stack"
 
-// `CloudflareAccountCard` and `CloudflareHeaderActions`.
-
 type H = HtmlBuilder<Message>
 
 /** A source page whose grant was removed: the way back is the connect flow. */
@@ -79,7 +77,7 @@ export const cloudflareReconnectButton = (h: H, model: Model): Html =>
 		["Reconnect"],
 	)
 
-/** `CloudflareHeaderActions`: reconnect (or edit accounts) and disconnect, while connected. */
+/** Reconnect (or edit accounts) and disconnect, while connected. */
 export const cloudflareHeaderActions = (h: H, model: Model): ReadonlyArray<Html> => {
 	const multi = isMultiAccount(model)
 	const busy = isBusy(model)

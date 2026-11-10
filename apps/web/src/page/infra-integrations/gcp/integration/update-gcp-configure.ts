@@ -37,8 +37,6 @@ import type { Model } from "../../../integrations/model"
 import { gcpConnectors, refreshInventory, updateGcpCard } from "./update-gcp"
 import { chain, requestStatus } from "../../../integrations/update-status"
 
-// `GcpConfigure`'s state changes: open, the steps, the create and the save, the run step's script.
-
 type Return = PageReturn<Model, Message>
 
 export const withConfigure = (
@@ -61,7 +59,6 @@ export const metricsAvailable = (model: Model): boolean =>
 		onSome: (status) => status.metrics_available,
 	})
 
-/** `connectors.find(target.id) ?? created`, before `asked` is applied. */
 export const savedConnector = (model: Model, configure: ConfigureModel): V2GcpConnector | undefined => {
 	const target = configure.target
 	if (target._tag === "New") return undefined
@@ -105,7 +102,7 @@ const requestScripts = (model: Model, context: PageContext, mode: Keyed.RequestM
 	const configure = model.gcpCard.configure
 	const connector = configure === null ? undefined : configureConnector(model, configure)
 	if (configure === null || connector === undefined || configure.opened === null) return { model }
-	// Without the script the sink is the one found when the step opened (`MethodApplyStage`).
+	// Without the script the sink is the one found when the step opened.
 	const sinkExists =
 		configure.method === "script" ? connector.applied_logs_enabled === true : configure.sinkExisted
 	const { key, applicationLogs } = scriptsKey(context, connector, configure.filter, sinkExists)
@@ -119,8 +116,8 @@ const requestScripts = (model: Model, context: PageContext, mode: Keyed.RequestM
 }
 
 /**
- * `setOpened(open(rerun))`: the run step, timed from now (the page clock), with the report on
- * record so a newer run tells itself apart. The script is read afresh, as a remounted query is.
+ * The run step, timed from now (the page clock), with the report on record so a newer run tells
+ * itself apart. The script is read afresh.
  */
 const enterApply = (model: Model, context: PageContext, rerun: boolean): Return => {
 	const configure = model.gcpCard.configure
@@ -517,7 +514,7 @@ export const statusArrived = (model: Model): Return => {
 		: { model }
 }
 
-/** `GcpManualSteps`: one step open at a time; the open one closes on its own click. */
+/** One console step open at a time; the open one closes on its own click. */
 export const clickedManualStep = (model: Model, title: string, firstTitle: string | null): Return => ({
 	model: withConfigure(model, (configure) => {
 		const open = configure.isManualTouched ? configure.manualOpen : firstTitle

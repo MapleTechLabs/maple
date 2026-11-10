@@ -52,8 +52,6 @@ import { borderedBox } from "@maple/views/ui/bordered-box"
 import { dividedList } from "@maple/views/ui/rule"
 import { canManageAlerts } from "../../kit/session-grants"
 
-// The hub's Uptime tab: the filters with the readout, and the monitor table.
-
 type H = HtmlBuilder<Message>
 
 // The checks strip shares the slack with the name, so no column floats in dead space.
@@ -72,7 +70,6 @@ const KIND_FILTERS: ReadonlyArray<{ value: UptimeKindFilter; label: string }> = 
 const isKindFilter = (value: string): value is UptimeKindFilter =>
 	Arr.some(KIND_FILTERS, (kind) => kind.value === value)
 
-/** The empty org: what uptime checks are and the first one to add. */
 const uptimeEmptyState = (h: H, serviceName: string | undefined, canEdit: boolean): Html =>
 	empty(
 		h,

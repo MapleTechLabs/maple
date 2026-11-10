@@ -2,11 +2,16 @@ import type { DocsPage } from "../../../lib/docs"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { AppRoute, hrefOf } from "../../../route"
 import { button, linkButton } from "@maple/views/ui/button"
-import { empty, emptyContent, emptyDescription, emptyHeader, emptyMedia, emptyTitle } from "@maple/views/ui/empty"
+import {
+	empty,
+	emptyContent,
+	emptyDescription,
+	emptyHeader,
+	emptyMedia,
+	emptyTitle,
+} from "@maple/views/ui/empty"
 import { docsLink } from "../../kit/signal-empty-state"
 import { emptyActions } from "@maple/views/ui/signal-empty-state"
-
-// `IntegrationNotConnected`.
 
 type ButtonVariant = Parameters<typeof button>[1]["variant"]
 
@@ -18,7 +23,7 @@ export type IntegrationLinkActionsOptions = Readonly<{
 	docsPage?: DocsPage
 }>
 
-/** `IntegrationLinkActions`: the integration-page button plus an optional docs link. */
+/** The integration-page button plus an optional docs link. */
 export const integrationLinkActions = <M>(h: HtmlBuilder<M>, options: IntegrationLinkActionsOptions): Html =>
 	emptyActions(h, [
 		linkButton(

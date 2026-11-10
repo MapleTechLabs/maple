@@ -20,7 +20,6 @@ import { MapleApiV2Client, MapleInternalApiClient } from "../../../platform/api-
 import { writeClipboard } from "../../kit/clipboard"
 import { IssueWrite, Message } from "./message"
 
-/** `useEffectiveTimeRange(search.startTime, search.endTime, preset)`. */
 export const ResolveWindow = resolveWindowCommand("ResolveIssueWindow", Message.CompletedResolveWindow)
 
 export const DetailQuery = Schema.Struct({
@@ -106,7 +105,7 @@ export const FetchEscalations = Command.define("FetchErrorIssueEscalations", {
 		}).pipe(settleTo((result) => Message.CompletedFetchEscalations({ key, result }))),
 })
 
-/** `useRelatedAnomalies`: detector incidents linked to this issue. */
+/** Detector incidents linked to this issue. */
 export const FetchAnomalies = Command.define("FetchErrorIssueAnomalies", {
 	args: { key: Schema.String, issueId: ErrorIssueId },
 	messages: [Message.CompletedFetchAnomalies],
@@ -193,7 +192,7 @@ export const RunIssueWrite = Command.define("RunErrorIssueWrite", {
 		),
 })
 
-/** `startInvestigation`: opens one over the issue; the page then navigates to it. */
+/** Opens an investigation over the issue; the page then navigates to it. */
 export const CreateInvestigation = Command.define("CreateErrorIssueInvestigation", {
 	args: { payload: V2InvestigationCreateParams },
 	messages: [Message.CompletedCreateInvestigation],
@@ -205,7 +204,6 @@ export const CreateInvestigation = Command.define("CreateErrorIssueInvestigation
 		}).pipe(settleTo((result) => Message.CompletedCreateInvestigation({ result }))),
 })
 
-/** `attachPullRequest`: links a pull request by URL. */
 export const LinkPullRequest = Command.define("LinkErrorIssuePullRequest", {
 	args: { issueId: ErrorIssueId, url: Schema.String },
 	messages: [Message.CompletedLinkPullRequest],
@@ -220,7 +218,6 @@ export const LinkPullRequest = Command.define("LinkErrorIssuePullRequest", {
 		}).pipe(settleTo((result) => Message.CompletedLinkPullRequest({ result }))),
 })
 
-/** `submitComment`. */
 export const CommentOnIssue = Command.define("CommentOnErrorIssue", {
 	args: { issueId: ErrorIssueId, body: Schema.String },
 	messages: [Message.CompletedComment],
@@ -235,7 +232,6 @@ export const CommentOnIssue = Command.define("CommentOnErrorIssue", {
 		}).pipe(settleTo((result) => Message.CompletedComment({ result }))),
 })
 
-/** `detachPullRequest`. */
 export const UnlinkPullRequest = Command.define("UnlinkErrorIssuePullRequest", {
 	args: { issueId: ErrorIssueId, pullRequestId: ErrorIssuePullRequestId },
 	messages: [Message.CompletedUnlinkPullRequest],
@@ -247,7 +243,7 @@ export const UnlinkPullRequest = Command.define("UnlinkErrorIssuePullRequest", {
 		}).pipe(settleTo((result) => Message.CompletedUnlinkPullRequest({ result }))),
 })
 
-/** `useCopy({ label })`; `path` copies as an absolute link on this origin. */
+/** `path` copies as an absolute link on this origin. */
 export const CopyText = Command.define("CopyErrorIssueText", {
 	args: { label: Schema.String, text: Schema.String, isPath: Schema.Boolean },
 	messages: [Message.CompletedCopy],

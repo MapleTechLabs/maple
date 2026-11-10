@@ -7,7 +7,7 @@ import * as Frame from "../../../kit/time-frame"
 import * as InstallModal from "../../kit/install-modal"
 import { Message } from "./message"
 import type { ContainerRow, Model } from "./model"
-import { containersInput, init, update } from "./update"
+import { init, routeChanged, update } from "./update"
 import { view as pageView } from "./view"
 
 const orgId = Schema.decodeSync(OrgId)("org_acme")
@@ -74,13 +74,23 @@ describe("containers list", () => {
 	})
 
 	test("the server sees the debounced search, not each keystroke", () => {
-		const typed = pageUpdate(windowed().model, Message.ElapsedSearchDebounce({ query: "red" }))
-		expect(typed.commands ?? []).toHaveLength(0)
-		const settled = pageUpdate(
-			{ ...windowed({ q: "redis" }).model },
-			Message.ElapsedSearchDebounce({ query: "redis" }),
+		const searchOf = (commands: ReadonlyArray<{ readonly name: string; readonly args?: unknown }> = []) =>
+			Arr.map(
+				Arr.filter(commands, ({ name }) => name === "FetchInfraContainers"),
+				({ args }) => args,
+			)
+		const typed = routeChanged(windowed().model, { search: { q: "redis" } }, context)
+		expect(Arr.map(typed.commands ?? [], ({ name }) => name)).toContain("DebounceInfraContainersSearch")
+		expect(searchOf(typed.commands)).not.toContainEqual(
+			expect.objectContaining({ input: expect.objectContaining({ search: "redis" }) }),
 		)
-		expect(containersInput(settled.model, window).search).toBe("redis")
+		expect(
+			pageUpdate(typed.model, Message.ElapsedSearchDebounce({ query: "red" })).commands ?? [],
+		).toHaveLength(0)
+		const settled = pageUpdate(typed.model, Message.ElapsedSearchDebounce({ query: "redis" }))
+		expect(searchOf(settled.commands)).toEqual([
+			expect.objectContaining({ input: expect.objectContaining({ search: "redis" }) }),
+		])
 	})
 
 	test("a sort header cycles the direction on its key", () => {

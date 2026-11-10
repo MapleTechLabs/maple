@@ -8,8 +8,6 @@ import * as Frame from "../../../kit/time-frame"
 import { ChartModels, SeriesSlots } from "../../../kit/series"
 import { PodsPage } from "../pod-data"
 
-// `/infra/kubernetes/workloads/$kind/$workloadName`.
-
 export const WorkloadSummary = WorkloadDetailSummaryResponse.fields.data
 export type WorkloadSummary = WorkloadDetailSummaryResponse["data"]
 
@@ -25,7 +23,7 @@ export const Model = Schema.Struct({
 	search: InfraKubernetesWorkloadSearch,
 	frame: Frame.Model,
 	metric: WorkloadMetric,
-	/** The "Per-pod breakdown" checkbox (`useState(true)`). */
+	/** The "Per-pod breakdown" checkbox, on at first. */
 	groupByPod: Schema.Boolean,
 	summary: KeyedSchema(WorkloadSummary, LoadFailure),
 	pods: KeyedSchema(PodsPage, LoadFailure),

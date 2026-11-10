@@ -12,7 +12,7 @@ import { fetchWidgetData, toWidgetFailure } from "../kit/widget-data"
 import { GeneratedIdPurpose, Message } from "./message"
 import { fetchSuggestions, SuggestionLookup } from "./suggestions"
 
-/** One `useFunnelSuggestions` lookup over the preview's window. */
+/** One funnel suggestion lookup over the preview's window. */
 export const FetchSuggestions = Command.define("FetchWidgetEditorSuggestions", {
 	args: { key: Schema.String, lookup: SuggestionLookup, window: TimeWindow },
 	messages: [Message.CompletedFetchSuggestions],
@@ -24,7 +24,7 @@ export const FetchSuggestions = Command.define("FetchWidgetEditorSuggestions", {
 
 export const ReadClock = readClock("ReadWidgetEditorClock", Message.CompletedReadClock)
 
-/** `useWidgetData` for the preview: one fetch per request key. */
+/** One preview fetch per request key. */
 export const FetchWidget = Command.define("FetchWidgetPreview", {
 	args: {
 		key: Schema.String,
@@ -40,7 +40,7 @@ export const FetchWidget = Command.define("FetchWidgetPreview", {
 		),
 })
 
-/** A query variable's option list over the board's window (`readVariableOptions`). */
+/** A query variable's option list over the board's window. */
 export const FetchVariableOptions = Command.define("FetchWidgetEditorVariableOptions", {
 	args: { name: Schema.String, key: Schema.String, variable: DashboardVariableSchema, window: TimeWindow },
 	messages: [Message.CompletedFetchVariableOptions],
@@ -65,7 +65,7 @@ export const GenerateId = Command.define("GenerateWidgetEditorId", {
 
 const Target = { orgId: Schema.String, dashboardId: Schema.String }
 
-/** `updateWidget`: the edited widget replaces the stored one; no override drops the key. */
+/** The edited widget replaces the stored one; no override drops the key. */
 export const SaveWidget = Command.define("SaveDashboardWidget", {
 	args: { ...Target, widget: DashboardWidgetSchema },
 	messages: [Message.CompletedSave],
@@ -82,7 +82,7 @@ export const SaveWidget = Command.define("SaveDashboardWidget", {
 		),
 })
 
-/** `useWidgetMaxDataPoints`: the preview pane's width in 100 px steps, now and on resize. */
+/** The preview pane's width in 100 px steps, now and on resize. */
 export const MeasurePreview = Mount.defineStream("MeasureWidgetEditorPreview", {
 	messages: [Message.MeasuredPreview],
 	execute: ({ element }) =>
@@ -110,7 +110,7 @@ export const MeasurePreview = Mount.defineStream("MeasureWidgetEditorPreview", {
 		),
 })
 
-/** One `AutocompleteValuesProvider` lookup over the board's window. */
+/** One autocomplete value lookup over the board's window. */
 export const FetchAutocomplete = Command.define("FetchWidgetEditorAutocomplete", {
 	args: { key: Schema.String, lookup: AutocompleteLookup, window: TimeWindow },
 	messages: [Message.CompletedFetchAutocomplete],

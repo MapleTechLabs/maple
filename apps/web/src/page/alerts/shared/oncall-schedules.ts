@@ -15,9 +15,6 @@ import { msIso } from "../../kit/alert-time"
 import { formatSpan } from "../../kit/alert-time"
 import { toEpochMs } from "@maple/ui/lib/time-format"
 
-// On-call schedule reads and writes as Effects the pages' Commands wrap, their links, and how a
-// shift's edges read.
-
 /** An org holds at most 50 schedules, one v2 page. */
 export const SCHEDULE_LIST_LIMIT = 50
 
@@ -108,8 +105,6 @@ export const deleteOverride = (id: OnCallScheduleId, overrideId: OnCallOverrideI
 		yield* client.oncallSchedules.deleteOverride({ params: { id, override_id: overrideId } })
 	}).pipe(Effect.mapError(toLoadFailure))
 
-// LINKS
-
 const encodePublicId = Schema.encodeSync(OnCallSchedulePublicId)
 const decodePublicId = Schema.decodeUnknownOption(OnCallSchedulePublicId)
 
@@ -126,8 +121,6 @@ export const editScheduleHref = (id: OnCallScheduleId): string =>
 	newScheduleHref({ scheduleId: encodePublicId(id) })
 
 export const oncallTabHref = (): string => hrefOf(AppRoute.Alerts({ search: { tab: "oncall" } }))
-
-// FORMAT
 
 const edgeFormatters = new Map<string, Intl.DateTimeFormat>()
 

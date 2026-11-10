@@ -13,12 +13,10 @@ import type { Message } from "./message"
 import type { Model } from "./model"
 import type { Return } from "./steps"
 
-// The writes: Dry run and Send test (`runTest`), and Create / Save changes (`handleSave`).
-
 const errorToast = (title: string, description = ""): PageOutMessage =>
 	PageOutMessage.RequestedToast({ type: "error", title, description })
 
-/** `runTest`: a form that cannot be previewed yet says so instead of asking. */
+/** A form that cannot be previewed yet says so instead of asking. */
 export const runTest = (model: Model, isSending: boolean): Return => {
 	const form = model.form
 	if (form === null || model.isDryRunning || model.isSendingTest) return { model }
@@ -59,7 +57,7 @@ export const completeTest = (model: Model, message: Extract<Message, { _tag: "Co
 	})
 }
 
-/** `handleSave`: the ready form as create (or update) params; success lands on `/alerts`. */
+/** The ready form as create (or update) params; success lands on `/alerts`. */
 export const save = (model: Model): Return => {
 	const form = model.form
 	if (form === null || model.isSaving) return { model }

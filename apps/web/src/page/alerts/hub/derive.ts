@@ -38,7 +38,7 @@ const overviewFor = lastBy(
 )
 
 /**
- * `AlertsOverviewModel.buildOverview`: rules and incidents gate the hub; evaluation states and
+ * Rules and incidents gate the hub; evaluation states and
  * deliveries degrade to empty while loading or failed. Recomputed only when one of them changes.
  */
 export const overviewOf = (model: Model): Option.Option<AlertsOverviewReady> =>
@@ -108,7 +108,6 @@ const destinationsFor = lastBy(
 		rowsToAlertDestinationDocuments(rows ?? []),
 )
 
-/** `useAlertDestinationsList()`, `orElse(() => [])`. */
 export const destinationsOf = (model: Model): ReadonlyArray<AlertDestinationDocument> =>
 	destinationsFor([model.destinations])
 

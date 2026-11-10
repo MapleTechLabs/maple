@@ -35,16 +35,13 @@ import { isNumericString, SortState, sortRowsByField } from "../../kit/table-sor
 
 export { formatStatValue } from "./tiles-stat"
 
-// The tiles: stat, gauge, table, list and note here, every registry
-// chart through `chartWidgetTile` (./tiles-chart.ts).
-
 /** What a tile reads of its widget; a share's redacted widget satisfies it too. */
 export type TileWidget = Pick<DashboardDocument["widgets"][number], "id" | "timeRange"> &
 	Readonly<{ visualization: string; dataSource: unknown; display: typeof SharedWidgetDisplayV3.Type }>
 type Widget = TileWidget
 type Row = Readonly<Record<string, unknown>>
 
-/** `useTableSort`: per table widget, the active key and direction. */
+/** Per table widget, the active key and direction. */
 export const TableSort = SortState
 export type TableSort = SortState
 
@@ -80,8 +77,6 @@ export type TileContext<M> = Readonly<{
 	errorDetails?: ((message: string) => Html) | null
 }>
 
-// VALUES
-
 /** A cell as text: primitives as themselves, objects and arrays as JSON-like text. */
 const cellText = (value: unknown): string =>
 	typeof value === "string"
@@ -104,7 +99,7 @@ const plainNumber = (value: unknown): string | undefined =>
 			})
 		: undefined
 
-/** `formatCellValue`: units format numbers; unitless measures are trimmed, other cells stay raw. */
+/** Units format numbers; unitless measures are trimmed, other cells stay raw. */
 export const formatCell = (value: unknown, unit?: string): string => {
 	if (value === null || value === undefined) return EMPTY_VALUE
 	const num = Number(value)
@@ -155,8 +150,6 @@ const columnsOf = (
 	return Arr.filter(base, (column) => column.hidden !== true)
 }
 
-// TILES
-
 const sortableHeader = <M>(h: HtmlBuilder<M>, ctx: TileContext<M>, column: Column, isText: boolean): Html =>
 	sortButton(
 		h,
@@ -176,7 +169,7 @@ const cellStyle = <M>(h: HtmlBuilder<M>, column: Column, extra: Readonly<Record<
 			: { "text-align": column.align ?? "left", width: `${column.width}px`, ...extra },
 	)
 
-/** `TableWidget`: sortable headers, unit-formatted cells, progressive column reveal. */
+/** Sortable headers, unit-formatted cells, progressive column reveal. */
 const tableTile = <M>(h: HtmlBuilder<M>, ctx: TileContext<M>, widget: Widget): Html => {
 	const options = frame(ctx, widget, {
 		contentClassName: "flex-1 min-h-0 overflow-auto p-0",
@@ -319,7 +312,7 @@ const listCell = <M>(h: HtmlBuilder<M>, column: Column, index: number, row: Row)
 	return tableCell(h, [content], className, [cellStyle(h, column)])
 }
 
-/** `ListWidget`: raw rows, trace ids and span names as links. TODO(list): `TruncatedCell` bodies. */
+/** Raw rows, trace ids and span names as links. TODO(list): truncated cell bodies. */
 const listTile = <M>(h: HtmlBuilder<M>, ctx: TileContext<M>, widget: Widget): Html => {
 	const options = frame(ctx, widget, {
 		contentClassName: "flex-1 min-h-0 overflow-auto p-0",
@@ -360,7 +353,7 @@ const listTile = <M>(h: HtmlBuilder<M>, ctx: TileContext<M>, widget: Widget): Ht
 	})
 }
 
-/** `MarkdownWidget`: a static note, no data state; empty reads as a prompt to edit. */
+/** A static note, no data state; empty reads as a prompt to edit. */
 const markdownTile = <M>(h: HtmlBuilder<M>, ctx: TileContext<M>, widget: Widget): Html => {
 	const content = widget.display.markdown?.content ?? ""
 	return widgetShell(
@@ -385,7 +378,7 @@ const markdownTile = <M>(h: HtmlBuilder<M>, ctx: TileContext<M>, widget: Widget)
 	)
 }
 
-/** `GaugeWidget`: the segmented dial; one `glowId` per tile, as `useId` gives. */
+/** The segmented dial; one `glowId` per tile. */
 const gaugeTile = <M>(h: HtmlBuilder<M>, ctx: TileContext<M>, widget: Widget): Html => {
 	const options = frame(ctx, widget, {
 		contentClassName: "flex-1 min-h-0 flex items-center justify-center p-1 @min-[200px]/widget:p-2",
@@ -407,7 +400,6 @@ const gaugeTile = <M>(h: HtmlBuilder<M>, ctx: TileContext<M>, widget: Widget): H
 	})
 }
 
-/** `visualizationFor(widget.visualization)`. */
 export const widgetTile = <M>(h: HtmlBuilder<M>, ctx: TileContext<M>, widget: Widget): Html => {
 	switch (widget.visualization) {
 		case "stat":

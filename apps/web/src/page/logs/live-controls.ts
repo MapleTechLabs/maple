@@ -16,12 +16,12 @@ export type LiveControlsInputs<M> = Readonly<{
 	isReloading: boolean
 	onReload: M
 	onJumpToLatest: M
-	/** The cadence menu (Base UI DropdownMenu); picking an interval is its `SelectedRadio`. */
+	/** The cadence menu; picking an interval is its `SelectedRadio`. */
 	menu: Menu.Model
 	toMenuMessage: (message: Menu.Message) => M
 }>
 
-/** `LogsLiveControls`: why the tail holds still, then `RefreshControls`' split button. */
+/** Why the tail holds still, then the refresh split button. */
 export const liveControls = <M>(h: HtmlBuilder<M>, model: LiveControlsInputs<M>): Html => {
 	const isOn = model.refreshInterval > 0
 	const isPaused = isOn && model.isInspecting

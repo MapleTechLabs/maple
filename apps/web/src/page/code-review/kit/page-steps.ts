@@ -3,7 +3,7 @@ import { AsyncData, type Command } from "foldkit"
 import * as Keyed from "@maple/views/data/keyed"
 import type { Resources } from "../../../platform/resources"
 
-// `Keyed.request` steps shared by the Code Review pages (S6): two slots that may read the same
+// `Keyed.request` steps shared by the Code Review pages: two slots that may read the same
 // request (the page's own and the filters' list) send it once, and its answer fills both.
 
 export type Step<Patch, M> = Readonly<{
@@ -24,7 +24,7 @@ export const keyedStep = <Patch, M, A, E>(
 		onSome: (next) => ({ patch: write(next), commands: [fetch(key)], keys: [key] }),
 	})
 
-/** `DEFAULT_QUERY_TTL`: a retained answer serves a revisit of its key for a minute. */
+/** A retained answer serves a revisit of its key for a minute. */
 export const CACHE_TTL_MS = 60_000
 
 /** Answers by request key and when they were last used, kept across tabs. */

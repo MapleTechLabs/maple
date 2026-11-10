@@ -13,8 +13,6 @@ import { Option, Schema, Array as Arr, String as Str } from "effect"
 import type { SessionData } from "./derive"
 import type { Model } from "./model"
 
-// The session waterfall's row model (`buildRows`, `orderByTree`, `spanHeading`, `toolTarget`).
-
 export const TURN_ROW_HEIGHT = 30
 export const ROW_HEIGHT = 28
 

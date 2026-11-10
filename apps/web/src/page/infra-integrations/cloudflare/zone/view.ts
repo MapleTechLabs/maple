@@ -51,8 +51,6 @@ import { zoneSignals } from "./view-strips"
 import { hstack } from "@maple/views/ui/stack"
 import { Array as Arr, Record as Rec } from "effect"
 
-// `ZoneDetailPage`.
-
 type H = HtmlBuilder<Message>
 type Context = Readonly<{ theme: ThemeColors; timeZone: string }>
 
@@ -229,7 +227,6 @@ const tooltipContent = (model: Model, id: string): ReadonlyArray<string> => {
 	return []
 }
 
-/** `ZoneDetailPage` below the top bar. */
 export const zonePage = (h: H, model: Model, timeZone: string, options: ZonePageOptions = {}): Html => {
 	const theme = model.themeColors
 	const ctx = theme === null || model.chartRuntime._tag === "Loading" ? null : { theme, timeZone }
@@ -245,7 +242,6 @@ export const zonePage = (h: H, model: Model, timeZone: string, options: ZonePage
 				viewInputs: {
 					triggerIds: Rec.values(SCOPE_IDS),
 					toContent: (id) => tooltipContent(model, id),
-					// `ScopeChip`'s `TooltipContent className="max-w-[32ch]"`.
 					className: "max-w-[32ch]",
 					toView: ({ trigger, portal }) => {
 						const body = section(h, model, ctx, (id) => trigger(id))

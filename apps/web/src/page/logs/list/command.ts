@@ -14,7 +14,7 @@ import { listInput, PAGE_SIZE, toVolumeBuckets, volumeInput } from "./derive"
 import { Message } from "./message"
 import type { LogRowSchema, LogsPage } from "./model"
 
-/** `useEffectiveTimeRange`: snapped on entry, re-resolved against the real clock on Reload. */
+/** Snapped on entry, re-resolved against the real clock on Reload. */
 export const ResolveWindow = resolveWindowCommand("ResolveLogsWindow", Message.CompletedResolveWindow)
 
 const ListArgs = {
@@ -26,9 +26,8 @@ const ListArgs = {
 
 const page = (logs: ReadonlyArray<LogRowSchema>, cursor: string | null): LogsPage => ({ logs, cursor })
 
-// Fetches carry their request key back so `update` drops a superseded answer (S6).
+// Fetches carry their request key back so `update` drops a superseded answer.
 
-/** `listLogsResultAtom`: the first page. */
 export const FetchFirstPage = Command.define("FetchLogsFirstPage", {
 	args: ListArgs,
 	messages: [Message.CompletedFetchFirstPage],
@@ -39,7 +38,7 @@ export const FetchFirstPage = Command.define("FetchLogsFirstPage", {
 		),
 })
 
-/** `fetchNextPage`: the page after `cursor`, for the first page it was started under. */
+/** The page after `cursor`, for the first page it was started under. */
 export const FetchNextPage = Command.define("FetchLogsNextPage", {
 	args: { ...ListArgs, generation: Schema.Number, cursor: Schema.String },
 	messages: [Message.CompletedFetchNextPage],
@@ -50,7 +49,7 @@ export const FetchNextPage = Command.define("FetchLogsNextPage", {
 		),
 })
 
-/** `getLogsFacetsResultAtom`: counts within the attribute-filtered set, so they agree with the list. */
+/** Counts within the attribute-filtered set, so they agree with the list. */
 export const FetchFacets = Command.define("FetchLogsFacets", {
 	args: {
 		key: Schema.String,
@@ -73,7 +72,6 @@ export const FetchFacets = Command.define("FetchLogsFacets", {
 		),
 })
 
-/** `getCustomChartTimeSeriesResultAtom` for the stacked severity histogram. */
 export const FetchVolume = Command.define("FetchLogsVolume", {
 	args: { ...ListArgs, bucketSeconds: Schema.Number },
 	messages: [Message.CompletedFetchVolume],
@@ -84,7 +82,7 @@ export const FetchVolume = Command.define("FetchLogsVolume", {
 		),
 })
 
-/** `getLogAttributeKeysResultAtom`: what the Columns picker offers. */
+/** What the Columns picker offers. */
 export const FetchAttributeKeys = Command.define("FetchLogAttributeKeys", {
 	args: { key: Schema.String, window: TimeWindow },
 	messages: [Message.CompletedFetchAttributeKeys],
@@ -96,8 +94,6 @@ export const FetchAttributeKeys = Command.define("FetchLogAttributeKeys", {
 			settleTo((result) => Message.CompletedFetchAttributeKeys({ key, result })),
 		),
 })
-
-// PREFERENCES
 
 /** The view preferences and the number locale, read on entry. */
 export const ReadPreferences = Command.define("ReadLogsPreferences", {
@@ -116,7 +112,6 @@ export const SavePreferences = Command.define("SaveLogsPreferences", {
 
 export const CompleteReloadSpin = reloadSpin("CompleteLogsReloadSpin", Message.CompletedReloadSpin)
 
-/** `useDebouncedCallback(..., 300)` on the search box. */
 export const WaitSearchDebounce = Command.define("WaitLogsSearchDebounce", {
 	args: { generation: Schema.Number },
 	messages: [Message.ElapsedSearchDebounce],
@@ -130,7 +125,7 @@ export const MountFilterRail = Mount.define("MountLogsFilterRail", {
 	execute: () => Effect.succeed(Message.MountedFilterRail()),
 })
 
-/** `useSignalPresence`, sent when the empty state mounts (never with the data). */
+/** Sent when the empty state mounts (never with the data). */
 export const LoadSignalPresence = Command.define("LoadLogsSignalPresence", {
 	args: { orgId: Schema.String },
 	messages: [Message.CompletedLoadSignalPresence],

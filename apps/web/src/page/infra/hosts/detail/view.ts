@@ -16,8 +16,6 @@ import { type HostHeaderParts, hostDetailHeader, hostDetailHeaderLoading } from 
 import { hostMetadataPanel, metricsPanel } from "./view-panels"
 import { typography } from "@maple/views/ui/typography"
 
-// `HostDetailPage`.
-
 type H = HtmlBuilder<Message>
 
 const toFrame = (message: Frame.Message) => Message.GotFrameMessage({ message })

@@ -11,8 +11,6 @@ import * as FilterSections from "@maple/views/ui/filters/filter-sections"
 import * as Frame from "../../../kit/time-frame"
 import * as InstallModal from "../../kit/install-modal"
 
-// `/infra/containers`.
-
 export const ContainersPage = Schema.Struct(ListContainersResponse.fields)
 export type ContainersPage = typeof ContainersPage.Type
 export type ContainerRow = ContainersPage["data"][number]
@@ -23,13 +21,13 @@ export type ContainerCounts = typeof ContainerCounts.Type
 export const ContainerFacets = ContainerFacetsResponse.fields.data
 export type ContainerFacets = typeof ContainerFacets.Type
 
-/** `useResettingPage`: the index snaps back to 0 whenever the reset key (filters, search, sort) changes. */
+/** The index snaps back to 0 whenever the reset key (filters, search, sort) changes. */
 export const PageIndex = Schema.Struct({ resetKey: Schema.String, index: Schema.Number })
 
 export const Model = Schema.Struct({
 	search: InfraContainersSearch,
 	frame: Frame.Model,
-	/** `useDebouncedValue(search.q, 300)`: the name filter the server sees. */
+	/** The name filter the server sees, 300 ms behind the search box. */
 	debouncedQuery: Schema.String,
 	page: PageIndex,
 	containers: KeyedSchema(ContainersPage, LoadFailure),

@@ -13,8 +13,7 @@ import { Message, type Tier } from "./message"
 import type { Model } from "./model"
 import type { Return } from "./steps"
 
-// "Who gets notified": the Add destination menus, and the destination dialog they open. A
-// destination made here is selected on the draft (`useDestinationManager({ onCreated })`).
+// A destination made from the Add destination menus is selected on the draft.
 
 export const menuIdOf = (tier: Tier): string => `alert-rule-add-destination-${tier}`
 const tierOfMenu = (menuId: string): Tier => (Str.endsWith("critical")(menuId) ? "critical" : "warning")
@@ -53,7 +52,7 @@ export const liftDialog = (model: Model, step: ReturnType<typeof DestinationDial
 	})
 }
 
-/** A pick from a tier's menu: an existing destination, or a new one of a type (`onAddDestination`). */
+/** A pick from a tier's menu: an existing destination, or a new one of a type. */
 const picked = (model: Model, menuId: string, value: string): Return => {
 	const [kind, ...rest] = Str.split(":")(value)
 	const tier = tierOfMenu(menuId)
@@ -96,7 +95,7 @@ const picked = (model: Model, menuId: string, value: string): Return => {
 			},
 		)
 	}
-	// `chatConnect.connect(connector)`: link a workspace in a popup first.
+	// Link a workspace in a popup first.
 	if (kind === "connect") {
 		const connector = Arr.findFirst(model.connectors ?? [], (entry) => entry.id === Arr.join(rest, ":"))
 		return Option.isNone(connector) || ChatConnect.waitingFor(model.chatConnect) !== null
@@ -126,7 +125,7 @@ export const chatConnectStep = (model: Model, message: ChatConnect.Message): Ret
 	}
 }
 
-/** `onLinked`: the popup closes and the new workspace opens the destination dialog. */
+/** The popup closes and the new workspace opens the destination dialog. */
 export const connectorsAnswered = (model: Model, connectors: ReadonlyArray<V2ChatConnector>): Return => {
 	const next: Model = { ...model, connectors }
 	return Option.match(ChatConnect.linkedOf(model.chatConnect, connectors), {

@@ -14,7 +14,6 @@ import { FetchCiAnalytics, FetchCiRuns, type Message, type Model } from "./model
 
 type Return = PageReturn<Model, Message>
 
-/** `PAGE` in `CiRunsList`. */
 export const RUNS_PAGE = 50
 
 const runsFilterOf = (model: Model, window: TimeWindow) => ({
@@ -53,7 +52,7 @@ export const runsPageStep = (
 	)
 }
 
-/** `<CiRunsList key={JSON.stringify(runsFilter)}>`: mounted with the analytics; a new filter starts over. */
+/** Mounted with the analytics; a new filter starts the runs over. */
 export const followRuns = (model: Model, context: PageContext): Return => {
 	const window = model.frame.window
 	if (window === null || isEmpty(model)) return { model }

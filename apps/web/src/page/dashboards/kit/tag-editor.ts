@@ -13,12 +13,12 @@ import { input } from "@maple/views/ui/input"
 import { typography, typographyClass } from "@maple/views/ui/typography"
 import { hstack } from "@maple/views/ui/stack"
 
-// `TagEditorDialog` on `FormDialog`: one dashboard's tags,
-// added by typing or from the org's other tags, removed by chip; Save reports them.
+// One dashboard's tags, added by typing or from the org's other tags, removed by chip; Save reports
+// them.
 
 const MAX_TAG_LENGTH = 32
 
-/** `normalizeTags`: trimmed, lower-cased, capped, deduped, sorted. */
+/** Trimmed, lower-cased, capped, deduped, sorted. */
 export const normalizeTags = (input: ReadonlyArray<string>): ReadonlyArray<string> =>
 	Array.from(
 		new Set(
@@ -29,10 +29,8 @@ export const normalizeTags = (input: ReadonlyArray<string>): ReadonlyArray<strin
 		),
 	).sort()
 
-/** `splitInput`: commas and newlines separate tags. */
+/** Commas and newlines separate tags. */
 export const splitTagInput = (value: string): ReadonlyArray<string> => Str.split(/[,\n]/)(value)
-
-// MODEL
 
 export const Model = Schema.Struct({
 	dialog: Dialog.Model,
@@ -50,8 +48,6 @@ export const init = (id: string): Model => ({
 	input: "",
 })
 
-// MESSAGE
-
 export const Message = defineMessageUnion({
 	GotDialogMessage: { message: Dialog.Message },
 	ChangedTagInput: { value: Schema.String },
@@ -65,8 +61,6 @@ export type Message = typeof Message.Type
 
 export const OutMessage = defineMessageUnion({ SavedTags: { tags: Schema.Array(Schema.String) } })
 export type OutMessage = typeof OutMessage.Type
-
-// UPDATE
 
 type Return = Update.ReturnWithOutMessage<Model, Message, OutMessage>
 
@@ -121,8 +115,6 @@ export const update = (model: Model, message: Message): Return =>
 		},
 	})
 
-// VIEW
-
 type H = HtmlBuilder<Message>
 
 const IDLE: FieldState = {
@@ -133,7 +125,7 @@ const IDLE: FieldState = {
 	isInvalid: false,
 }
 
-/** A `FieldLabel` with no control of its own (a chip list follows it). */
+/** A field label with no control of its own (a chip list follows it). */
 const plainFieldLabel = (h: H, text: string): Html => fieldGroupLabel(h, { className: "text-xs" }, text)
 
 const TAG_INPUT_ID = "tag-editor-input"
@@ -234,7 +226,7 @@ const tagInput = (h: H, model: Model): Html => {
 }
 
 export type ViewInputs = Readonly<{
-	/** Every tag in the org (`collectTags`); those not on this dashboard are offered. */
+	/** Every tag in the org; those not on this dashboard are offered. */
 	allTags: ReadonlyArray<string>
 }>
 

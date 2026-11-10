@@ -12,7 +12,7 @@ import { breakdownTable, dimensionTabs, panelFilterInput, panelView } from "./vi
 import { overviewCards } from "./view-overview"
 import { hstack, vstack } from "@maple/views/ui/stack"
 
-// The expand dialogs of `AnalyticsBreakdownPanel` and `AiPanel`: one dialog, whichever card opened it.
+// One expand dialog for the breakdown and AI cards, whichever card opened it.
 
 type H = HtmlBuilder<Message>
 

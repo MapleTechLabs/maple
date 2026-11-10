@@ -17,8 +17,6 @@ import { typography, typographyClass } from "@maple/views/ui/typography"
 import { Array as Arr } from "effect"
 import { hstack } from "@maple/views/ui/stack"
 
-// `RuntimeFields`: the runtimes whose application output Google Cloud forwards.
-
 type H = HtmlBuilder<Message>
 
 const FORWARD_ID = "gcp-forward"

@@ -42,8 +42,6 @@ import { rowHeight, spanHeading, spanTarget, type WaterfallRow, waterfallRowsOf 
 import { typography, typographyClass } from "@maple/views/ui/typography"
 import { hstack, hstackClass, vstack } from "@maple/views/ui/stack"
 
-// The session waterfall: turns, spans and idle gaps on one axis.
-
 type H = HtmlBuilder<Message>
 
 const MAX_INDENT_DEPTH = 6
@@ -517,7 +515,7 @@ export const waterfall = (h: H, model: Model, data: SessionData): Html => {
 	])
 }
 
-/** `useVirtualizer` over the page scroller: rows are their estimates, never measured. */
+/** The virtualizer over the page scroller: rows are their estimates, never measured. */
 const VirtualizeWaterfall = Mount.defineStream("VirtualizeAgentSessionWaterfall", {
 	messages: [Message.ChangedWaterfallWindow],
 	execute: ({ element, viewStateChanges }) =>

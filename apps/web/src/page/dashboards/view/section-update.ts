@@ -17,8 +17,7 @@ import { menuStep } from "./menu-step"
 import { SectionEdit } from "./section-edit"
 import { Array as Arr, String as Str, Option } from "effect"
 
-// The groups' interactions (`DashboardSectionView`, `SectionTabBar`, `InlineEditableText`): view state
-// rides the URL with `replace`; every structural change is one `EditSections` write.
+// View state rides the URL with `replace`; every structural change is one `EditSections` write.
 
 type Return = PageReturn<Model, Message>
 type SectionMessage = Extract<
@@ -45,8 +44,8 @@ type SectionMessage = Extract<
 export const sectionMenuIdOf = (sectionId: string): string => `dashboard-section-menu-${sectionId}`
 
 /**
- * `applySectionView`: the update applied to the picked controls, `mode` kept as the URL had it.
- * A previewed version's groups are browsed locally (`PreviewedCanvas`), never in the URL.
+ * The update applied to the picked controls, `mode` kept as the URL had it. A previewed version's
+ * groups are browsed locally, never in the URL.
  */
 const applySectionView = (model: Model, update: (search: SectionViewSearch) => SectionViewSearch): Return => {
 	if (model.history.previewed !== null)
@@ -151,7 +150,7 @@ const sectionAction = (model: Model, context: PageContext, sectionId: string, va
 	}
 }
 
-/** `commit`: a trimmed, changed title is saved; an empty one is discarded. */
+/** A trimmed, changed title is saved; an empty one is discarded. */
 const submitRename = (model: Model, context: PageContext): Return => {
 	const rename = model.rename
 	const closed = { ...model, rename: null }

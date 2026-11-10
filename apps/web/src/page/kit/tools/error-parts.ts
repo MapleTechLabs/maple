@@ -15,7 +15,7 @@ import { Array as Arr, Option } from "effect"
 
 // The pieces the Errors table (and the error modal) draw a failure with.
 
-/** `MaskChip`: a span the grouping ignores, drawn as the kind of value it is; the raw text is its title. */
+/** A span the grouping ignores, drawn as the kind of value it is; the raw text is its title. */
 export const maskChip = <M>(h: HtmlBuilder<M>, label: string, raw: string, className?: string): Html =>
 	h.code(
 		[
@@ -69,7 +69,7 @@ const headingTokens = <M>(h: HtmlBuilder<M>, tokens: ReadonlyArray<ErrorTextToke
 
 const HEADING = "font-mono text-lg leading-6.5 font-semibold tracking-tight text-foreground"
 
-/** `ErrorTextHeading`: the message whole, its path on a line of its own in the error colour. */
+/** The message whole, its path on a line of its own in the error colour. */
 export const errorTextHeading = <M>(h: HtmlBuilder<M>, tokens: ReadonlyArray<ErrorTextToken>): Html => {
 	const foundPath = Arr.findFirstIndex(tokens, (token) => token.kind === "path")
 	if (Option.isNone(foundPath))
@@ -141,7 +141,7 @@ const lineToken = <M>(h: HtmlBuilder<M>, token: ErrorTextToken): Html[] => {
 const lineTokens = <M>(h: HtmlBuilder<M>, tokens: ReadonlyArray<ErrorTextToken>): Html[] =>
 	Arr.flatMap(tokens, (token) => lineToken(h, token))
 
-/** `ErrorTextLine`: a message on one line; the error path never shrinks. */
+/** A message on one line; the error path never shrinks. */
 export const errorTextLine = <M>(
 	h: HtmlBuilder<M>,
 	tokens: ReadonlyArray<ErrorTextToken>,
@@ -183,7 +183,7 @@ export const windowRangeLabel = (startMs: number, endMs: number, timeZone: strin
 
 const STATUS_TONE = { stopped: "ok", ongoing: "crit", quiet: "neutral" } as const
 
-/** `FailureStatusLine`: whether failing has stopped, in one line. */
+/** Whether failing has stopped, in one line. */
 export const failureStatusLine = <M>(
 	h: HtmlBuilder<M>,
 	options: Readonly<{

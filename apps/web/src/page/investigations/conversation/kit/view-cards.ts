@@ -18,9 +18,6 @@ import { hstack } from "@maple/views/ui/stack"
 
 const encodePrettyJsonOption = Schema.encodeOption(Schema.fromJsonString(Schema.Unknown, { space: 2 }))
 
-// `ApprovalCard` and `TaskCard`: a proposal waiting on the user, and
-// a sub-agent run as a line.
-
 const stringify = (input: unknown): string =>
 	Option.getOrElse(encodePrettyJsonOption(input), () => String(input))
 
@@ -56,7 +53,6 @@ const formatValue = (value: unknown): Formatted => {
 const RAW_CLASS =
 	"max-h-48 overflow-auto whitespace-pre-wrap break-words rounded-sm bg-surface-sunken p-2 font-mono text-2xs leading-snug"
 
-/** `KeyValueFallback`: the proposal's arguments, one row each. */
 const approvalSummary = <M>(h: HtmlBuilder<M>, input: unknown, timeZone: string): Html =>
 	Option.match(inputRecord(input), {
 		onNone: () => h.pre([h.Class(RAW_CLASS)], [stringify(input)]),
@@ -202,8 +198,6 @@ export const approvalCard = <M>(h: HtmlBuilder<M>, options: ApprovalCardOptions<
 			),
 		],
 	)
-
-// SUB-AGENTS
 
 type AgentPresentation = Readonly<{ label: string; activity: string; icon: IconName }>
 

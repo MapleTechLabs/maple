@@ -10,9 +10,9 @@ import { type PresetValue, timeControls, type TimeSearch } from "./time-controls
 import { INITIAL_LOCALE, readLocale } from "@maple/views/lib/locale"
 import * as TimeRangePicker from "./time-range-picker"
 
-// A page's time scope (the infra pages embed it whole): `useEffectiveTimeRange`, `PageRefreshProvider` (Reload
-// re-resolves unsnapped and spins 600 ms) and `TimeRangeHeaderControls`. The page owns its search;
-// the frame reports a resolved window or a new time search as OutMessages.
+// A page's time scope (the infra pages embed it whole): the resolved window, Reload (re-resolves
+// unsnapped and spins 600 ms) and the header's time controls. The page owns its search; the frame
+// reports a resolved window or a new time search as OutMessages.
 
 export const Model = Schema.Struct({
 	window: Schema.NullOr(TimeWindow),
@@ -74,7 +74,7 @@ export const WindowArgs = {
 	timeZone: Schema.String,
 }
 
-/** A page's own resolve Command (`useEffectiveTimeRange`): snapped on `Load`, unsnapped on `Refresh`. */
+/** A page's own resolve Command: snapped on `Load`, unsnapped on `Refresh`. */
 export const resolveWindowCommand = <const Name extends string, const Tag extends string>(
 	name: Name,
 	completed: CallableTaggedStruct<
@@ -158,7 +158,7 @@ export const update = (model: Model, message: Message, scope: Scope): Return =>
 					Message.GotTimePickerMessage({ message: picker }),
 				),
 			}
-			// `applyTimeRangeSearch` with a preset: the absolute bounds leave the URL.
+			// A preset: the absolute bounds leave the URL.
 			return next.outMessage === undefined || next.outMessage._tag === "RejectedRange"
 				? lifted
 				: {

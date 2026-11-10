@@ -8,8 +8,6 @@ import { WORKFLOW_LABEL, workflowRingIcon } from "../../kit/issue-workflow"
 import { String as Str } from "effect"
 import { typography } from "@maple/views/ui/typography"
 
-// The signal state and investigation chips.
-
 const INVESTIGATION_LABEL = {
 	investigating: "Investigating",
 	diagnosed: "Diagnosed",

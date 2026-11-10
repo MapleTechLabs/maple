@@ -17,8 +17,6 @@ import { alertsHref } from "../../kit/alert-links"
 import { formatSilenceTime } from "./silences"
 import { toEpochMs } from "@maple/ui/lib/time-format"
 
-// Maintenance windows: the hub's reads and writes, and how a window's schedule reads in a row.
-
 export const WINDOW_LIST_LIMIT = 100
 
 export const listMaintenanceWindows = Effect.gen(function* () {

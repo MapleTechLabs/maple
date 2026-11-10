@@ -31,7 +31,7 @@ import type { PresetValue } from "../../kit/time-controls"
 type Return = PageReturn<Model, Message>
 type Search = typeof CodeReviewSearch.Type
 
-/** `CODE_REVIEW_DEFAULT_PRESET`: reviews are slow-moving, a month has something in it. */
+/** Reviews are slow-moving, so a month has something in it. */
 export const DEFAULT_PRESET: PresetValue = "1mo"
 const FRAME_ID = "code-review-analytics"
 
@@ -91,8 +91,6 @@ const applyOut = (model: Model, out: FrameOut, context: PageContext): Return => 
 			return request(model, context, out.window, out.mode)
 	}
 }
-
-// ENTRY POINTS
 
 export const init = (
 	route: { readonly search: Search },

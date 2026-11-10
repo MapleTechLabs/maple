@@ -22,8 +22,8 @@ import type { DestinationForm } from "./form"
 import { typography } from "@maple/views/ui/typography"
 import { hstack } from "@maple/views/ui/stack"
 
-// `ChatDestinationFields`' view. TODO(destination-dialog): the input's clear button and the
-// "Showing N of M" status line under a capped list.
+// TODO(destination-dialog): the input's clear button and the "Showing N of M" status line under
+// a capped list.
 
 const IDLE: FieldState = {
 	isInvalid: false,
@@ -32,7 +32,7 @@ const IDLE: FieldState = {
 	isFocused: false,
 	isTouched: false,
 }
-/** The label points at the combobox input (`htmlFor="destination-chat-channel"`). */
+/** The label points at the combobox input. */
 const IDS: FieldIds = {
 	control: Combobox.inputId(CHANNEL_COMBOBOX_ID),
 	label: "destination-chat-channel-label",

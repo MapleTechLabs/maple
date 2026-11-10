@@ -526,7 +526,6 @@ export function gcpTraceGap(
 	}
 }
 
-/** A line of the rail's facts. */
 export interface GcpRailFact {
 	readonly label: string
 	readonly value: string

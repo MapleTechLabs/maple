@@ -9,7 +9,7 @@ import { typography } from "@maple/views/ui/typography"
 import { hstack, vstackClass } from "@maple/views/ui/stack"
 import { Array as Arr } from "effect"
 
-// `IntegrationEmpty` and its parts and `IntegrationIconPlate`.
+// An integration page's empty state: the brand plate, what the page will show, and the way to connect.
 
 export type IntegrationBrand = Readonly<{
 	icon: IconName
@@ -67,7 +67,6 @@ export const integrationIconPlate = <M>(
 
 export type IntegrationFeature = Readonly<{ label: string; title: string; description: string }>
 
-/** `IntegrationEmptyFeatures` with one `IntegrationEmptyFeature` per entry. */
 export const integrationEmptyFeatures = <M>(
 	h: HtmlBuilder<M>,
 	features: ReadonlyArray<IntegrationFeature>,
@@ -103,7 +102,7 @@ export const integrationEmptyFeatures = <M>(
 const BACKER =
 	"absolute bottom-0.5 flex size-11 items-center justify-center rounded-xl-inset border border-border-subtle bg-muted text-foreground-subtle opacity-80"
 
-/** `IntegrationEmptyMedia`: two dim backer plates fanned behind the brand plate. */
+/** Two dim backer plates fanned behind the brand plate. */
 export const integrationEmptyMedia = <M>(h: HtmlBuilder<M>, brand: IntegrationBrand): Html => {
 	const backerIcon = brand.backerIcon ?? brand.icon
 	return hstack(
@@ -131,7 +130,7 @@ export const integrationEmptyMedia = <M>(h: HtmlBuilder<M>, brand: IntegrationBr
 	)
 }
 
-/** `IntegrationEmptyCard`: the dashed waiting-room card. */
+/** The dashed waiting-room card. */
 export const integrationEmptyCard = <M>(
 	h: HtmlBuilder<M>,
 	children: ReadonlyArray<Html>,
@@ -155,7 +154,7 @@ export const integrationEmptyHint = <M>(h: HtmlBuilder<M>, children: ReadonlyArr
 export const integrationEmptyFooter = <M>(h: HtmlBuilder<M>, children: ReadonlyArray<Html | string>): Html =>
 	typography(h, { size: "xs", tone: "muted", as: "p" }, children)
 
-/** `IntegrationEmpty`: the feature row, then the card. */
+/** The feature row, then the card. */
 export const integrationEmpty = <M>(
 	h: HtmlBuilder<M>,
 	children: ReadonlyArray<Html>,

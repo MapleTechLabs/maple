@@ -11,9 +11,9 @@ import {
 	virtualizerStream,
 } from "@maple/views/lib/virtualizer"
 
-// `useVirtualizer` over the page scroller (`usePageScrollMargin`) on @tanstack/virtual-core, for the
-// agent session list, waterfall and transcript. The list element carries the inputs as attributes,
-// so the Mount sees every change without re-mounting; the window comes back as a Message.
+// A virtualizer over the page scroller for the agent session list, waterfall and transcript. The list
+// element carries the inputs as attributes, so the Mount sees every change without re-mounting; the window
+// comes back as a Message.
 
 const KEYS = "virtual-keys"
 const ESTIMATES = "virtual-estimates"
@@ -41,9 +41,9 @@ export type ScrollRequest = Readonly<{
 
 export type VirtualConfig = Readonly<{
 	overscan: number
-	/** Rows are measured (`ref={virtualizer.measureElement}`); otherwise every row is its estimate. */
+	/** Rows are measured; otherwise every row is its estimate. */
 	isMeasured: boolean
-	/** `directDomUpdates`: row transforms and the container height are written here, not rendered. */
+	/** Row transforms and the container height are written here, not rendered. */
 	container?: string
 	/** The mounted rows, relative to the list element. */
 	rows: string
@@ -111,7 +111,7 @@ type State = {
 	isMeasuring: boolean
 }
 
-/** `directDomUpdates`' `applyDirectStyles`: the container's height and each row's offset. */
+/** Writes the container's height and each row's offset straight to the DOM. */
 const applyDirect = (instance: Instance, state: State, container: HTMLElement | null) => {
 	if (container === null) return
 	const totalSize = instance.getTotalSize()

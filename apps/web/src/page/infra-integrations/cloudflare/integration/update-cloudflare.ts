@@ -21,8 +21,6 @@ import type { Model } from "../../../integrations/model"
 import { chain, requestStatus } from "../../../integrations/update-status"
 import { successOf } from "../../kit/success-of"
 
-// The Cloudflare card's reads and the connect flow's prime (`CloudflareConnectBoundary`).
-
 type Return = PageReturn<Model, Message>
 
 const withCard = (model: Model, card: Partial<CloudflareCardModel>): Model => ({
@@ -38,14 +36,13 @@ export const requestUsage = (model: Model, context: PageContext, mode: Keyed.Req
 	})
 }
 
-/** `refreshStatus()` + `refreshUsage()`. */
 export const refreshCloudflare = (model: Model, context: PageContext): Return =>
 	chain(model, [
 		(next) => requestStatus(next, context, "cloudflare", "Supersede"),
 		(next) => requestUsage(next, context, "Refresh"),
 	])
 
-/** `primeIntegration`: once per attempt, unless the last prime found no grant yet. */
+/** Once per attempt, unless the last prime found no grant yet. */
 export const prime = (model: Model): Return =>
 	model.cloudflareCard.isPrimed || model.cloudflareCard.isPriming
 		? { model }
@@ -83,7 +80,7 @@ export const gotZoneFilter = (model: Model, message: ToggleGroup.Message): Retur
 	}
 }
 
-/** `handleSort`: the active column flips; a new one starts high-to-low for traffic, else low-to-high. */
+/** The active column flips; a new one starts high-to-low for traffic, else low-to-high. */
 export const clickedZoneSort = (model: Model, key: ZoneSortKey): Return => {
 	const sort = model.cloudflareCard.zoneSort
 	return {
@@ -100,7 +97,7 @@ export const updateBoard = (model: Model, card: Partial<CloudflareCardModel>): R
 	model: withCard(model, card),
 })
 
-/** A new attempt primes again (`primedRef.current = false` in `start`). */
+/** A new attempt primes again. */
 export const resetPrime = (model: Model): Model => withCard(model, { isPrimed: false })
 
 const storedZoneChoices = (model: Model): ReadonlyArray<ZoneChoice> => {

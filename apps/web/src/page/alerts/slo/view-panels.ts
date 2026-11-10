@@ -51,8 +51,6 @@ import { type Model } from "./model"
 import { canManageAlerts } from "../../kit/session-grants"
 import { toEpochMs } from "@maple/ui/lib/time-format"
 
-// The SLO page's panels: the figures, the two charts, the burn windows, alerting and incidents.
-
 type H = HtmlBuilder<Message>
 
 /** The tokens the charts resolve: their series and chrome, the 0% line and the target line. */
@@ -61,8 +59,6 @@ export const CHART_TOKENS = AreaChart.AREA_CHART_TOKENS
 export type ChartContext = Readonly<{ theme: ThemeColors; timeZone: string; nowMs: number }>
 
 const INCIDENT_ROWS = 5
-
-// FIGURES
 
 /** Current SLI against the target, the budget left and the events the window counted. */
 export const figures = (h: H, model: Model, slo: Slo): Html => {
@@ -111,8 +107,6 @@ export const figures = (h: H, model: Model, slo: Slo): Html => {
 		},
 	})
 }
-
-// CHARTS
 
 type Row = Readonly<Record<string, string | number | boolean>>
 
@@ -256,8 +250,6 @@ export const sliPanel = (h: H, model: Model, slo: Slo, context: ChartContext | n
 		]),
 	])
 
-// BURN RATES
-
 const TIER_ROLE = { critical: "pages", warning: "opens a ticket" } as const satisfies Record<
 	AlertSeverity,
 	string
@@ -361,8 +353,6 @@ export const burnPanel = (h: H, model: Model): Html =>
 		}),
 	])
 
-// ALERTING
-
 const destinationNames = (model: Model, ids: ReadonlyArray<string>): string => {
 	if (ids.length === 0) return "Nobody, the incident still opens in the inbox"
 	const fallback = model.destinations === null ? "Destination" : "Unavailable destination"
@@ -427,8 +417,6 @@ export const alertingPanel = (h: H, model: Model, slo: Slo): Html =>
 					]),
 				]),
 	])
-
-// INCIDENTS
 
 const incidentRow = (h: H, row: AlertIncidentRow, nowMs: number, timeZone: string): Html =>
 	listRow(h, {

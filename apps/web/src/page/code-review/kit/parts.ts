@@ -10,10 +10,6 @@ import { typography } from "@maple/views/ui/typography"
 import { hstackClass, vstack } from "@maple/views/ui/stack"
 import { Array as Arr } from "effect"
 
-// Small pieces the Code Review tabs share: the sheet `Section`, `BulletList`, `CiResultBadge` and
-// `TraceLink`.
-
-/** The sheet's `Section`. */
 export const section = <M>(h: HtmlBuilder<M>, title: string, children: ReadonlyArray<Html>): Html =>
 	vstack(h, { gap: "2.5", as: "section" }, [sectionHeading(h, { title, as: "h3" }), ...children])
 

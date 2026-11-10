@@ -113,7 +113,7 @@ const navigate = (model: Model, search: Search, isReplace = false): Return => ({
 	}),
 })
 
-/** `onFilterChange`: an empty value drops out of the URL. */
+/** An empty value drops out of the URL. */
 const withFilter = (search: Search, key: FilterKey, value: string | undefined): Search => ({
 	...search,
 	[key]: value === "" ? undefined : value,
@@ -152,8 +152,8 @@ const hasRows = <A>(slot: Keyed.Keyed<ReadonlyArray<A>, LoadFailure>): boolean =
 	Option.match(AsyncData.getData(slot.data), { onNone: () => false, onSome: (rows) => rows.length > 0 })
 
 /**
- * `useTableSort`'s `initialKey` is read once, when the card mounts with the breakdowns: Pages and
- * Events sort by their second column only if those rows were already in by then.
+ * A card's initial sort is read once, when it mounts with the breakdowns: Pages and Events sort by
+ * their second column only if those rows were already in by then.
  */
 const seedPanels = (model: Model): Model => {
 	if (tabOf(model.search) !== "overview" || !showsOverviewContent(model)) return model
@@ -185,8 +185,6 @@ const delivered = (model: Model, key: string, result: Result.Result<unknown, Loa
 		? next
 		: seedPanels(settleSlots({ ...next, heldEvents: null }, held.key, held.result))
 }
-
-// ENTRY POINTS
 
 export const init = (route: { readonly search: Search }, context: PageContext): Return => {
 	const model: Model = {
@@ -279,7 +277,7 @@ const refreshOnly = (model: Model, context: PageContext, slots: ReadonlyArray<Sl
 const retryFailed = (model: Model, context: PageContext, slots: ReadonlyArray<SlotName>): Return =>
 	model.window === null ? { model } : requestSlots(model, context, model.window, "Load", slots)
 
-/** `onClearFilters`: the window and the tab stay; the filters go. */
+/** The window and the tab stay; the filters go. */
 const clearedFilters = (search: Search): Search => ({
 	startTime: search.startTime,
 	endTime: search.endTime,

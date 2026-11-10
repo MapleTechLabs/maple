@@ -10,8 +10,6 @@ import { hstack, vstack, vstackClass } from "@maple/views/ui/stack"
 import { Array as Arr } from "effect"
 import { typography, typographyClass } from "@maple/views/ui/typography"
 
-// `GcpMethodChoice`: one row per way to connect.
-
 type H = HtmlBuilder<Message>
 type Row = "script" | "manual" | "code"
 

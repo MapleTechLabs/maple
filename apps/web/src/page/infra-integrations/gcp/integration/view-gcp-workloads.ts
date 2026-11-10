@@ -36,8 +36,6 @@ import { Array as Arr, String as Str, Order } from "effect"
 import { textLink } from "@maple/views/ui/text-link"
 import { selectableRow } from "@maple/views/ui/selectable-row"
 
-// `Workloads`, `Resources` and `GcpUsageBand`.
-
 type H = HtmlBuilder<Message>
 
 const TONE_ORDER = ["crit", "warn", "neutral"] as const
@@ -305,7 +303,7 @@ const resources = (h: H, model: Model, className: string): Html => {
 	])
 }
 
-/** `GcpUsageBand`: shown once a connection has delivered logs or metrics. */
+/** Shown once a connection has delivered logs or metrics. */
 export const usageBand = (h: H, model: Model, connectors: ReadonlyArray<V2GcpConnector>): Html | null => {
 	const logs = Arr.some(connectors, (connector) => connector.last_log_received_at !== null)
 	const metrics = Arr.some(connectors, (connector) => connector.last_metrics_received_at !== null)

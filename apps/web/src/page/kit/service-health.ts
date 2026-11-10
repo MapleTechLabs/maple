@@ -46,11 +46,11 @@ export const HealthMessages = {
 	FailedLoadIncidents: { orgId: Schema.String },
 }
 
-/** `openAnomalyServiceCountsAtom`'s identity; it never changes within an org. */
+/** The open anomaly counts read's cache key; it never changes within an org. */
 export const anomaliesKey = (orgId: string): RequestKey =>
 	requestKey(orgId, "anomalies.serviceCounts", { status: "open" })
 
-/** A page's `openAnomalyServiceCountsAtom` read, under its own command name. */
+/** A page's open anomaly counts read, under its own command name. */
 export const fetchAnomaliesCommand = <const Name extends string, const Tag extends string>(
 	name: Name,
 	completed: CallableTaggedStruct<Tag, typeof AnomalyCountsResult>,
@@ -62,7 +62,7 @@ export const fetchAnomaliesCommand = <const Name extends string, const Tag exten
 			loadAnomalyServiceCounts(key, { refresh }).pipe(settleTo((result) => completed({ key, result }))),
 	})
 
-/** `useAlertIncidentsList()`: the org's incidents, newest trigger first, reduced to what health reads. */
+/** The org's incidents, newest trigger first, reduced to what health reads. */
 export const incidentsStream = <M>(
 	orgId: string,
 	updated: (incidents: ReadonlyArray<HealthIncident>) => M,

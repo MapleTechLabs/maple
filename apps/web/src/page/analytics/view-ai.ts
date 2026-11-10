@@ -46,8 +46,6 @@ import {
 import { favicon } from "./view-icons"
 import { hstack } from "@maple/views/ui/stack"
 
-// `AnalyticsAiTab`: the AI traffic tab.
-
 type H = HtmlBuilder<Message>
 
 const VISITOR_ONLY_FILTERS: ReadonlyArray<FilterKey> = [

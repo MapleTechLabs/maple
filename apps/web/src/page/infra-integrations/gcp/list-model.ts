@@ -1,7 +1,3 @@
-// The /infra/gcp list: which views show, one row per workload of each view, every row's worst
-// signal, the band's scopes, the problems-first order and each project's share. Pure, so the route
-// and the lab read the same rows.
-
 import { gcpInfraMetrics, type GcpInfraServiceId } from "@maple/domain/gcp-infra"
 import type { V2GcpConnector } from "@maple/domain/http/v2"
 import { ERROR_RATE_WARN } from "@maple/ui/lib/error-rate"
@@ -117,8 +113,6 @@ export function gcpSparks(
 	return sparks
 }
 
-// Views -----------------------------------------------------------------------------------------
-
 /** `?view=`, else a link from before the views: `?tab=` named a service. */
 export function gcpRequestedView(view: string | undefined, tab: string | undefined): GcpView | undefined {
 	const wanted = view ?? (tab === "cloudRun" || tab === "cloudFunctions" ? "services" : tab)
@@ -148,8 +142,6 @@ export function gcpViews(
 	)
 	return { views, view }
 }
-
-// Rows ------------------------------------------------------------------------------------------
 
 interface GcpRowBase {
 	readonly service: GcpInfraServiceId
@@ -212,8 +204,6 @@ export function sortByAttention<R, S extends string>(
 		),
 	)
 }
-
-// Cloud Run services and Cloud Functions -------------------------------------------------------
 
 const RUN = "gcp.cloud_run"
 const FUNCTION = "gcp.cloud_functions"
@@ -307,8 +297,6 @@ export const GCP_SERVICE_RULES: RowRules<GcpServiceRow, GcpServiceScope> = {
 	volume: (row) => row.requests,
 }
 
-// Pub/Sub subscriptions ------------------------------------------------------------------------
-
 const SUBSCRIPTION = "gcp.pubsub.subscription"
 
 /** A backlog this much older than its first message is stuck, not busy. */
@@ -383,8 +371,6 @@ export const GCP_SUBSCRIPTION_RULES: RowRules<GcpSubscriptionRow, GcpSubscriptio
 	},
 	volume: (row) => row.delivered,
 }
-
-// Cloud SQL instances --------------------------------------------------------------------------
 
 const DATABASE = "gcp.cloud_sql"
 
@@ -531,11 +517,8 @@ export const GCP_DATABASE_RULES: RowRules<GcpDatabaseRow, GcpDatabaseScope> = {
 				return worstLag(row) >= GCP_REPLICA_LAG_SECONDS
 		}
 	},
-	// Closest to a limit first.
 	volume: gcpDatabasePeak,
 }
-
-// GKE containers, VMs, URL maps ----------------------------------------------------------------
 
 export type GcpGenericView = "gke" | "computeEngine" | "loadBalancing"
 
@@ -571,8 +554,6 @@ export const GCP_WORKLOAD_RULES: RowRules<GcpWorkloadRow, GcpWorkloadScope> = {
 	// The first column is the service's volume: CPU, or requests.
 	volume: (row) => row.workload.values[0] ?? 0,
 }
-
-// The page's rows ------------------------------------------------------------------------------
 
 export interface GcpListRows {
 	readonly services: ReadonlyArray<GcpServiceRow>
@@ -637,7 +618,6 @@ export const gcpViewFailed = (fleet: ReadonlyArray<GcpFleetRead>, view: GcpServi
 		(entry) => entry.failed && Arr.some(GCP_VIEW_SERVICES[view], (service) => service === entry.service),
 	)
 
-/** A view's rows as what every row has. */
 const listed = (rows: GcpListRows, view: GcpServiceView): ReadonlyArray<GcpRowBase> => rows[view]
 
 const NO_ROWS: GcpListRows = {
@@ -672,8 +652,6 @@ export function gcpListScope(
 /** The services whose sparklines a view draws: see `gcpInfraSparklinesSQL`. */
 export const gcpSparklineServices = (view: GcpView): ReadonlyArray<GcpInfraServiceId> =>
 	view === "services" || view === "pubsub" || view === "cloudSql" ? GCP_VIEW_SERVICES[view] : []
-
-// Projects -------------------------------------------------------------------------------------
 
 /** Every project with a workload, the biggest first. */
 export function gcpProjects(rows: GcpListRows): ReadonlyArray<string> {

@@ -85,7 +85,6 @@ const followOverview = (model: Model, context: PageContext): Return =>
 					? { model }
 					: chain(
 							(() => {
-								// `getServiceOverviewResultAtom` is `globalNamespace: "top"`.
 								const namespaces =
 									context.pinnedNamespace === null ? undefined : [context.pinnedNamespace]
 								const input = {
@@ -131,7 +130,7 @@ const followOverview = (model: Model, context: PageContext): Return =>
 		},
 	})
 
-/** `ProvenanceCanvas` holds the sheet: it opens only on Overview, for an action the graph drew. */
+/** The canvas holds the sheet: it opens only on Overview, for an action the graph drew. */
 const hasOpenAction = (model: Model, timeZone: string): boolean => {
 	const index = openActionIndexOf(model)
 	return (
@@ -235,7 +234,7 @@ const requestHandoffRepo = (model: Model): Return =>
 const replace = (model: Model, timeZone: string): Model =>
 	placeGraph(modifyFields(model, { canvas: (canvas) => ({ ...canvas, movedByUser: false }) }), timeZone)
 
-/** The header's primary button, by status (`InvestigationActions`). */
+/** The header's primary button, by status. */
 const primaryKind = (investigation: V2Investigation): "resolve" | "restart" =>
 	investigation.status === "failed" ||
 	investigation.status === "inconclusive" ||
@@ -276,7 +275,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 				onNone: () => ({ model }),
 				onSome: (investigation) => startWrite(model, primaryKind(investigation)),
 			}),
-		// `retryOrgCollections` mints a fresh scoped collection; the bumped attempt resubscribes onto one.
+		// Retry mints a fresh scoped collection; the bumped attempt resubscribes onto one.
 		ClickedRetrySync: () => ({
 			model: { ...model, sync: { _tag: "Loading" }, syncAttempt: model.syncAttempt + 1 },
 		}),

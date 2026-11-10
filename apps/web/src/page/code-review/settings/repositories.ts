@@ -17,9 +17,6 @@ import { typography } from "@maple/views/ui/typography"
 import { hstack, vstack } from "@maple/views/ui/stack"
 import { textLink } from "@maple/views/ui/text-link"
 
-// `RepositoryList`, `RepositoryRow` and `RepositoryName`, shared with
-// `/lab/code-review-repos`.
-
 export const RepoFilter = Schema.Literals(["all", "reviewed", "off"])
 
 /** The list's own state: the search, the review filter and the rows pinned first on mount. */

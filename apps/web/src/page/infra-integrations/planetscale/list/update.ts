@@ -41,7 +41,7 @@ const isConnected = (model: Model): boolean =>
 export const neverCollected = (model: Model): boolean =>
 	Option.match(AsyncData.getData(model.status.data), { onNone: () => false, onSome: metricsNeverCollected })
 
-/** `useTableSort`'s state: the clicked sort, else the initial one for the metrics state. */
+/** The clicked sort, else the initial one for the metrics state. */
 export const sortOf = (model: Model): Sort<SortKey> =>
 	model.sort ?? { key: neverCollected(model) ? "name" : "connectionsAvg", dir: "desc" }
 
@@ -75,7 +75,7 @@ const statsStep =
 		})
 	}
 
-/** `PlanetScaleData` mounts once the status says connected: inventory, then the window's stats. */
+/** The data reads start once the status says connected: inventory, then the window's stats. */
 const requestData = (model: Model, context: PageContext, mode: Keyed.RequestMode): Return =>
 	isConnected(model) ? merge([databasesStep(context, "Load"), statsStep(context, mode)], model) : { model }
 

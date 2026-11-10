@@ -38,8 +38,6 @@ import { DEFAULT_PRESET } from "./update"
 import { hstack } from "@maple/views/ui/stack"
 import { Array as Arr, Record as Rec, String as Str } from "effect"
 
-// `/infra/aws/$kind/$name`: one resource's CloudWatch metrics, and the service it runs as.
-
 type H = HtmlBuilder<Message>
 
 const MUTED = "text-muted-foreground"

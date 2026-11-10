@@ -12,8 +12,6 @@ import { FLEET_BAND_BOXED, fleetBand, fleetBandLoading } from "../../../infra/ki
 import { statusDot } from "@maple/views/ui/status-dot"
 import { Array as Arr } from "effect"
 
-// The band specs and `GcpHealthDot`.
-
 interface CellSpec {
 	readonly label: string
 	readonly hint: string
@@ -124,7 +122,7 @@ export const gcpWorkloadBand = (noun: string): GcpBandSpec<GcpWorkloadScope> => 
 	},
 })
 
-/** `GcpHealthDot`: the worst signal's tone, hollow for a quiet problem, blue when healthy. */
+/** The worst signal's tone, hollow for a quiet problem, blue when healthy. */
 export const healthDot = <S extends string, M>(
 	h: HtmlBuilder<M>,
 	spec: GcpBandSpec<S>,

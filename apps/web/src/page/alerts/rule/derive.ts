@@ -25,7 +25,6 @@ import type { ChecksResponse, Model } from "./model"
 
 export const DEFAULT_PRESET: PresetValue = "24h"
 
-/** `formatBucketSpan`. */
 export const formatBucketSpan = (seconds: number): string => {
 	if (seconds < 60) return `${Math.round(seconds)}s`
 	const minutes = Math.round(seconds / 60)

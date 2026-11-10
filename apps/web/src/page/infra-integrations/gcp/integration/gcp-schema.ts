@@ -1,7 +1,5 @@
 import { Schema } from "effect"
 
-// The Google Cloud card's data shapes (shared by the Model and the Messages).
-
 export const LogVolume = Schema.Struct({
 	total: Schema.Number,
 	errors: Schema.Number,
@@ -10,7 +8,7 @@ export const LogVolume = Schema.Struct({
 })
 export type LogVolume = typeof LogVolume.Type
 
-/** `RemovedGcpConnector`: a connection removed before its cleanup script was seen to run. */
+/** A connection removed before its cleanup script was seen to run. */
 export const RemovedConnector = Schema.Struct({
 	id: Schema.String,
 	label: Schema.String,

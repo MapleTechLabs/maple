@@ -21,9 +21,6 @@ import { previewIdentityKey } from "./derive"
 import type { Message } from "./message"
 import type { Model } from "./model"
 
-// The editor's reads, planned from the Model: the autocomplete provider's lookups over 24h, the
-// draft's preview and the saved rule's replay over the preview window.
-
 type Commands = ReadonlyArray<Command.Command<Message, never, Resources>>
 export type Planned = Readonly<{ model: Model; commands: Commands }>
 
@@ -33,7 +30,7 @@ const then = (step: Planned, next: (model: Model) => Planned): Planned => {
 	return { model: after.model, commands: [...step.commands, ...after.commands] }
 }
 
-/** `AutocompleteValuesProvider` (not lazy here): every lookup once the 24h window is known. */
+/** Every autocomplete lookup, not lazily, once the 24h window is known. */
 export const planAutocomplete = (model: Model, context: PageContext): Planned => {
 	const window = model.autocompleteWindow
 	if (window === null) return none(model)
@@ -80,13 +77,13 @@ export const planMetrics = (model: Model): Planned => {
 	}
 }
 
-/** Whether the saved rule evaluates differently from the draft (`evaluationChanged`). */
+/** Whether the saved rule evaluates differently from the draft. */
 export const isEvaluationChanged = (model: Pick<Model, "savedForm" | "form">): boolean =>
 	model.savedForm !== null &&
 	model.form !== null &&
 	previewIdentityKey(model.savedForm) !== previewIdentityKey(model.form)
 
-/** `useAlertRulePreview` for the draft and, once it evaluates differently, the saved rule. */
+/** The draft's preview and, once it evaluates differently, the saved rule's. */
 export const planPreviews = (model: Model, context: PageContext): Planned => {
 	const window = model.previewWindow
 	if (window === null || model.form === null) return none(model)

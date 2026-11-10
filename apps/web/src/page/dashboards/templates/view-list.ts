@@ -26,8 +26,6 @@ import { typography, typographyClass } from "@maple/views/ui/typography"
 import { Array as Arr, String as Str } from "effect"
 import { hstack, vstack } from "@maple/views/ui/stack"
 
-// `TemplateList`: the templates as rows.
-
 type H = HtmlBuilder<Message>
 
 const READINESS_OPTIONS = [
@@ -36,7 +34,7 @@ const READINESS_OPTIONS = [
 	{ value: "needs-setup", label: "Needs setup" },
 ] as const
 
-/** `TemplateRow`: fixed-width lanes so names, counts and statuses form columns. */
+/** Fixed-width lanes so names, counts and statuses form columns. */
 const templateRow = (
 	h: H,
 	template: V2DashboardTemplate,

@@ -28,8 +28,6 @@ import { columnClass } from "@maple/views/ui/column"
 import { Array as Arr } from "effect"
 import { providerBrand } from "../../../kit/providers"
 
-// `RailwayIntegrationCard`.
-
 type H = HtmlBuilder<Message>
 
 const BRAND = providerBrand("railway")

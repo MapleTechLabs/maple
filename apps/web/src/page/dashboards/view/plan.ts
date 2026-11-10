@@ -20,8 +20,6 @@ import { isEditing } from "./mode"
 import type { Model, WidgetSlot } from "./model"
 import type { ShareLinkRange } from "./share"
 
-// Which tiles fetch what: the window every tile shares, and each revealed tile's request.
-
 type Widget = DashboardDocument["widgets"][number]
 
 /** A viewer's own pick from the URL; an edit session works on the board's saved range instead. */
@@ -45,7 +43,7 @@ export const isSameTimeRange = (a: TimeRange | null, b: TimeRange | null): boole
 			? b.type === "relative" && a.value === b.value
 			: b.type === "absolute" && a.startTime === b.startTime && a.endTime === b.endTime
 
-/** `resolveTimeRange`: snapped on entry, unsnapped after a reload; a bad preset falls back to 1h. */
+/** Snapped on entry, unsnapped after a reload; a bad preset falls back to 1h. */
 export const windowOf = (model: Model, context: PageContext) => {
 	const timeRange = timeRangeOf(model)
 	if (timeRange === null || model.nowMs === null) return null
@@ -86,7 +84,7 @@ export const withCharts = (model: Model, widgets: ReadonlyArray<Widget>): Model[
 
 type FetchCommand = ReturnType<typeof FetchWidget> | ReturnType<typeof FetchVariableOptions>
 
-/** `optionsByName`: inline lists, fetched lists, and the loading state of the rest. */
+/** Inline lists, fetched lists, and the loading state of the rest. */
 export const optionsByNameOf = (model: Model, context: PageContext): Record<string, OptionsState> =>
 	optionsByNameFor(
 		context.orgId,

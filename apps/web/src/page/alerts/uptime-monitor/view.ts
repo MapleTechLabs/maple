@@ -43,8 +43,6 @@ import {
 import { typography } from "@maple/views/ui/typography"
 import { vstack } from "@maple/views/ui/stack"
 
-// `/alerts/uptime/$monitorId`: the header, the incident block when down, then the panels.
-
 type H = HtmlBuilder<Message>
 
 /** "expects 2xx under 2000 ms", from the status and latency assertions. */

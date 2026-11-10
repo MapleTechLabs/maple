@@ -27,8 +27,6 @@ import { DEFAULT_PRESET } from "./update"
 import { String as Str } from "effect"
 import { typography } from "@maple/views/ui/typography"
 
-// `PodDetailPage` in `KubernetesShell`.
-
 type H = HtmlBuilder<Message>
 type Summary = NonNullable<PodSummary>
 

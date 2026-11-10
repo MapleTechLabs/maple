@@ -20,8 +20,6 @@ import { typographyClass } from "@maple/views/ui/typography"
 import { Array as Arr, String as Str, Option } from "effect"
 import { textLink } from "@maple/views/ui/text-link"
 
-// `GcpDisconnectDialog`, and the `ConfirmDialog`s of `GcpConnection` and `GcpIntegrationCard`.
-
 type H = HtmlBuilder<Message>
 
 const toDialog = (message: Parameters<typeof Message.GotGcpDisconnectDialogMessage>[0]["message"]) =>
@@ -98,7 +96,7 @@ const deletesText = (connector: V2GcpConnector): string => {
 	return `${Str.toUpperCase(Str.slice(0, 1)(text))}${Str.slice(1)(text)}.`
 }
 
-/** `GcpDisconnectDialog`: the cleanup script first, then the disconnect. */
+/** The cleanup script first, then the disconnect. */
 const cleanupDisconnect = (h: H, model: Model, connector: V2GcpConnector, timeZone: string): Html => {
 	const card = model.gcpCard
 	const cleaned = connector.applied_logs_enabled === false && connector.applied_metrics_enabled === false

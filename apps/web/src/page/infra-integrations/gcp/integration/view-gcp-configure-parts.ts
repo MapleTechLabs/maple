@@ -10,8 +10,6 @@ import { hstack, hstackClass } from "@maple/views/ui/stack"
 import { Array as Arr } from "effect"
 import { typography } from "@maple/views/ui/typography"
 
-// `GcpExternalLink`, `Mono`, `Chip`, `FooterNote`, `Stepper` and `ConfigureHeader`.
-
 type H = HtmlBuilder<Message>
 type Children = ReadonlyArray<Html | string>
 

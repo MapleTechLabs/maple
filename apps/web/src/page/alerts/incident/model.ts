@@ -25,11 +25,9 @@ import { PreviewSlot } from "../shared/preview"
 import * as SilenceDialog from "../silence-dialog/dialog"
 import { LiveRows } from "../../kit/load-schemas"
 
-// `/alerts/incidents/$incidentId`.
-
 export const Model = Schema.Struct({
 	incidentId: Schema.String,
-	/** `clockAtSync`: the wall clock to the minute, read when the incident first arrives. */
+	/** The wall clock to the minute, read when the incident first arrives. */
 	nowMs: Schema.NullOr(Schema.Number),
 	incidents: LiveRows(AlertIncidentRowSchema),
 	rules: LiveRows(AlertRuleRowSchema),
@@ -43,7 +41,6 @@ export const Model = Schema.Struct({
 	escalation: KeyedSchema(Schema.NullOr(V2AlertIncidentEscalation), LoadFailure),
 	/** Acknowledgement history, refetched whenever the incident's acknowledgement changes. */
 	activity: KeyedSchema(Schema.Array(V2AlertIncidentEvent), LoadFailure),
-	/** An acknowledge or unacknowledge request is running. */
 	isUpdatingAcknowledgement: Schema.Boolean,
 	/** An SLO incident's link to its SLO: `slos.list`, read only for one. */
 	slos: KeyedSchema(Schema.Array(V2Slo), LoadFailure),
@@ -53,7 +50,7 @@ export const Model = Schema.Struct({
 	anomaly: KeyedSchema(V2AnomalyIncident, LoadFailure),
 	anomalyTimeseries: KeyedSchema(V2AnomalyIncidentTimeseries, LoadFailure),
 	anomalyChart: Chart.Model,
-	/** `useAsyncAction`: the create request is running, so repeat clicks cannot start duplicates. */
+	/** The create request is running, so repeat clicks cannot start duplicates. */
 	isStartingInvestigation: Schema.Boolean,
 	chart: Chart.Model,
 	...ChartEnvFields,

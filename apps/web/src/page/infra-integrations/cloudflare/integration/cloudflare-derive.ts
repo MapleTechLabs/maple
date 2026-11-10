@@ -7,9 +7,6 @@ import type { ZoneChoice } from "./cloudflare"
 import { TONE_TEXT, type Tone } from "@maple/ui/lib/tone"
 import { Array as Arr, String as Str, Option } from "effect"
 
-// The pure halves of `CloudflareZoneBoard` and `CloudflareAccountCard`: row usage, error descriptions, the
-// zone status rules, and the entries the board renders.
-
 const HOUR_MS = 3_600_000
 
 export interface RowUsage {
@@ -25,7 +22,7 @@ const fillHourlyPoints = (usage: CloudflareUsageResponse, byStart: ReadonlyMap<n
 	return Array.from({ length: count }, (_, index) => byStart.get(first + index * HOUR_MS) ?? 0)
 }
 
-/** `toRowUsage`: one or more services merged into a single readout. */
+/** One or more services merged into a single readout. */
 export const toRowUsage = (
 	usage: CloudflareUsageResponse,
 	services: ReadonlyArray<CloudflareServiceUsage>,
@@ -58,7 +55,7 @@ export interface CloudflareErrorInfo {
 	readonly scope: "account" | "resource"
 }
 
-/** `describeCloudflareError`: a friendly readout of the poller's free-form `lastError`. */
+/** A friendly readout of the poller's free-form `lastError`. */
 export const describeCloudflareError = (raw: string): CloudflareErrorInfo => {
 	const s = Str.toLowerCase(raw)
 	const has = (...needles: ReadonlyArray<string>) => Arr.some(needles, (needle) => Str.includes(needle)(s))
@@ -122,7 +119,7 @@ export interface ZoneEntry {
 
 export type ZoneStatusKind = "live" | "issue" | "no-data" | "paused" | "disabled"
 
-/** `detail` is text, or an error line (`ErrorLine`: summary plus the raw string behind "Details"). */
+/** `detail` is text, or an error line: a summary plus the raw string behind "Details". */
 export type ZoneDetail =
 	| Readonly<{ _tag: "Text"; text: string }>
 	/** `Last data 3m ago`: a lead-in and the instant it reads relative to the page clock. */
@@ -152,7 +149,7 @@ export const rowHasData = (usage: RowUsage | null): boolean =>
 const text = (value: string): ZoneDetail => ({ _tag: "Text", text: value })
 const muted = "text-muted-foreground"
 
-/** `zoneStatus`: the one health derivation behind the dot, the detail, the chips and the sort. */
+/** The one health derivation behind the dot, the detail, the chips and the sort. */
 export const zoneStatus = (entry: ZoneEntry, usageLoaded: boolean): ZoneStatusInfo => {
 	const { enabled, lastError, usage, lastSyncedAt } = entry
 	const err = lastError !== null && lastError !== "" ? describeCloudflareError(lastError) : null

@@ -31,8 +31,6 @@ import { stripClass } from "@maple/views/ui/rule"
 import { columnClass } from "@maple/views/ui/column"
 import { Array as Arr } from "effect"
 
-// GitHub in the connect flow: install the Maple GitHub App, then watch the repositories sync.
-
 type H = HtmlBuilder<Message>
 
 const DOCS_HREF = catalogEntry("github").docsUrl

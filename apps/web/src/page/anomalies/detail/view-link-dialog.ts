@@ -24,9 +24,6 @@ import { typography, typographyClass } from "@maple/views/ui/typography"
 import { Array as Arr, String as Str } from "effect"
 import { hstack } from "@maple/views/ui/stack"
 
-// `AnomalyLinkIssueDialog`: a command
-// dialog over the service's issues, filtered here (`filter={null}`), the linked one left out.
-
 type H = HtmlBuilder<Message>
 
 const toCombobox = (message: Combobox.Message) => Message.GotLinkComboboxMessage({ message })
@@ -150,7 +147,6 @@ export const linkIssueDialog = (
 		view: dialogView,
 		viewInputs: {
 			hasTrigger: false,
-			// The dialog has no trigger: closing leaves focus on the body.
 			isReturningFocus: false,
 			toView: ({ portal }) => portal,
 			toContent: () =>

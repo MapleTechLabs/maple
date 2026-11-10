@@ -16,9 +16,6 @@ import { toLoadFailure } from "@maple/views/data/load-failure"
 import { MapleApiV2Client } from "../../../platform/api-clients"
 import { AppRoute, hrefOf } from "../../../route"
 
-// Escalation chain reads and writes as Effects the pages' Commands wrap, and how a chain and an
-// incident's run read in one line.
-
 /** An org holds at most 100 chains, one v2 page. */
 export const CHAIN_LIST_LIMIT = 100
 
@@ -52,7 +49,6 @@ export const deleteEscalationChain = (id: EscalationChainId) =>
 		yield* client.escalationChains.delete({ params: { id } })
 	}).pipe(Effect.mapError(toLoadFailure))
 
-/** The incident's latest escalation run, from its v2 document. */
 export const retrieveIncidentEscalation = (id: AlertIncidentId) =>
 	Effect.gen(function* () {
 		const client = yield* MapleApiV2Client
@@ -61,8 +57,6 @@ export const retrieveIncidentEscalation = (id: AlertIncidentId) =>
 	}).pipe(Effect.mapError(toLoadFailure))
 
 export const routingTabHref = (): string => hrefOf(AppRoute.Alerts({ search: { tab: "routing" } }))
-
-// SUMMARY
 
 /** `10m`, `1h`, `1h 30m`, `1d`. */
 export const formatWait = (minutes: number): string => {
@@ -120,8 +114,6 @@ export const chainSummary = (
 	})
 	return `${Arr.join(parts, ", ")}${repeatPhrase(chain.repeat_count)}`
 }
-
-// INCIDENT RUN
 
 export type RunState = "escalating" | "paused" | "finished"
 

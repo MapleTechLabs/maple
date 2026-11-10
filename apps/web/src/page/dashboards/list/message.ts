@@ -17,7 +17,7 @@ const Created = Schema.Struct({
 	warnings: Schema.Array(Schema.String),
 })
 
-/** A failed write: the message `getErrorMessage` would show, and whether the API refused this one write. */
+/** A failed write: its message, and whether the API refused this one write. */
 export const WriteFailure = Schema.Struct({ message: Schema.String, isRejected: Schema.Boolean })
 export type WriteFailure = typeof WriteFailure.Type
 
@@ -28,7 +28,7 @@ export const Message = defineMessageUnion({
 	CompletedReadClock: { nowMs: Schema.Number, locale: Schema.String },
 	CompletedLoadPreferences: { favorites: Schema.Array(Schema.String), sort: Schema.String },
 	UpdatedDashboards: { orgId: Schema.String, dashboards: Schema.Array(ListDashboard) },
-	/** The live list sat loading past the timeout (`useCollectionLoadFailed`). */
+	/** The live list sat loading past the timeout. */
 	TimedOutLiveDashboards: { orgId: Schema.String },
 	CompletedFetchFallback: {
 		orgId: Schema.String,

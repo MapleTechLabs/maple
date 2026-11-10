@@ -11,10 +11,10 @@ import { hstack } from "@maple/views/ui/stack"
 import { typography } from "@maple/views/ui/typography"
 import type { SortState } from "../table-sort"
 
-// The table chrome the tools pages share: open,
-// mono, uppercase heads and 38px rows, with client-side column sorting.
+// The table chrome the tools pages share: open, mono, uppercase heads and 38px rows, with
+// client-side column sorting.
 
-/** `ToolTable`: scrolls sideways once the fixed lanes outgrow the panel. */
+/** Scrolls sideways once the fixed lanes outgrow the panel. */
 export const toolTable = <M>(h: HtmlBuilder<M>, children: ReadonlyArray<Html>, className?: string): Html =>
 	h.div([h.Class(cn("overflow-x-auto", className))], [h.div([h.Class("min-w-fit")], children)])
 
@@ -38,7 +38,7 @@ export type ThOptions<M> = Readonly<{
 	hidden?: string
 }>
 
-/** `Th`: a column head, sortable when it has a key. */
+/** A column head, sortable when it has a key. */
 export const th = <M>(h: HtmlBuilder<M>, options: ThOptions<M>): Html => {
 	const { sortKey, onSort, sort } = options
 	const isActive = sortKey !== undefined && sort?.key === sortKey
@@ -73,7 +73,7 @@ export const th = <M>(h: HtmlBuilder<M>, options: ThOptions<M>): Html => {
 	)
 }
 
-/** `ToolTableBody`: the rows, at full height; the page scrolls, not the table. */
+/** The rows, at full height; the page scrolls, not the table. */
 export const toolTableBody = <M>(
 	h: HtmlBuilder<M>,
 	children: ReadonlyArray<Html>,
@@ -106,7 +106,7 @@ export type ToolTableRowOptions<M> = Readonly<{
 }> &
 	({ onClick: M; href?: never } | { href: string; onClick?: never } | { onClick?: never; href?: never })
 
-/** `ToolTableRow`: one 38px row in the selection lane: a button with `onClick`, a link with `href`. */
+/** One 38px row in the selection lane: a button with `onClick`, a link with `href`. */
 export const toolTableRow = <M>(
 	h: HtmlBuilder<M>,
 	options: ToolTableRowOptions<M>,
@@ -151,7 +151,7 @@ export const errorTone = (rate: number): Readonly<{ bar: string; text: string }>
 	}
 }
 
-/** `ShareCell`: a bar scaled against the worst row, and the number. */
+/** A bar scaled against the worst row, and the number. */
 export const shareCell = <M>(
 	h: HtmlBuilder<M>,
 	options: Readonly<{

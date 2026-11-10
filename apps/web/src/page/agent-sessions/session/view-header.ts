@@ -18,8 +18,6 @@ import type { Model } from "./model"
 import { hstack } from "@maple/views/ui/stack"
 import { typography } from "@maple/views/ui/typography"
 
-// The session header: what ran, when, on what.
-
 type H = HtmlBuilder<Message>
 
 const ID_PREFIX_LENGTH = 32
@@ -33,7 +31,7 @@ const firstPlusRest = (h: H, names: ReadonlyArray<string>): Html => {
 	])
 }
 
-/** `CopyableValue`: the id that copies itself, tinted by the copy's outcome. */
+/** The id that copies itself, tinted by the copy's outcome. */
 const copyableId = (
 	h: H,
 	model: Model,

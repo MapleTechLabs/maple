@@ -30,8 +30,6 @@ import { typography, typographyClass } from "@maple/views/ui/typography"
 import { hstack, vstack } from "@maple/views/ui/stack"
 import { Array as Arr } from "effect"
 
-// The session overview: checks and the tool ledger, the rail.
-
 type H = HtmlBuilder<Message>
 
 const LEDGER_NAME = "w-44 min-w-0 shrink-0"

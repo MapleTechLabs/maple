@@ -22,8 +22,6 @@ import { moveValue } from "./move-target"
 import { Schema, Array as Arr, Record as Rec } from "effect"
 import { DashboardWidgetSchema } from "@maple/widgets/dashboard"
 
-// The open dashboard's tiles: their actions menu and the context the shared tiles read.
-
 type H = HtmlBuilder<Message>
 type Widget = DashboardDocument["widgets"][number]
 
@@ -96,8 +94,6 @@ const requestsOf = (inputs: TileInputs): Model["requests"] => {
 	}
 }
 
-// MENU
-
 const widgetMenuEntries = (inputs: TileInputs, widget: Widget): ReadonlyArray<MenuView.MenuEntry> => {
 	const isEdit = inputs.isEdit
 	const sections = inputs.sections ?? []
@@ -142,7 +138,7 @@ const embedEntry = (widget: Widget): MenuView.MenuItemEntry =>
 				tooltip: { content: ["This widget can't be shown in shared views"], side: "left" },
 			}
 
-/** `MoveWidgetToSectionMenu`: Ungrouped, then every `Group · Tab`; where it lives now is disabled. */
+/** Ungrouped, then every `Group · Tab`; where it lives now is disabled. */
 const moveToEntry = (sections: Sections, widget: Widget): MenuView.MenuEntry => {
 	const inRoot = widget.sectionId === undefined || widget.tabId === undefined
 	return {
@@ -260,8 +256,6 @@ export const tileContext = (
 	timeZone: string,
 	variables: VariableValues,
 ): TileContext<Message> => contextOf(h, tileInputsOf(model, widget), widget, timeZone, variables)
-
-// MEMO
 
 const sameFields = (a: TileInputs, b: TileInputs): boolean => {
 	const before = Rec.values(a)

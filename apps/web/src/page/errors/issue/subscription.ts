@@ -7,7 +7,7 @@ import type { PageSubscriptionInput } from "../../contract"
 import { Message } from "./message"
 import type { Model } from "./model"
 
-/** `useAlertDestinationsList()`: the names the escalation confirmation would list. */
+/** The names the escalation confirmation would list. */
 const destinations = (orgId: string): Stream.Stream<Message, never, OrgCollections> =>
 	orgLive(orgId, (set) =>
 		liveQueryStream(
@@ -20,7 +20,7 @@ const destinations = (orgId: string): Stream.Stream<Message, never, OrgCollectio
 		),
 	)
 
-/** `LeaseHud`'s `setInterval(..., 1000)`: the countdown's clock, read at once and every second. */
+/** The lease countdown's clock, read at once and every second. */
 const leaseClock = Stream.tick(Duration.seconds(1)).pipe(
 	Stream.mapEffect(() => Clock.currentTimeMillis),
 	Stream.map((nowMs) => Message.TickedLeaseClock({ nowMs })),

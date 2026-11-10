@@ -4,11 +4,9 @@ import { Option, Array as Arr, String as Str } from "effect"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { iconButton } from "@maple/views/ui/icon-button"
 
-// Lightweight markdown over Streamdown:
-// laid out with Streamdown's element classes. The parser loads on first use, never at startup.
-// TODO(markdown-table): Maple's `MarkdownTable` primitives are drawn with Streamdown's own table classes.
-
-// The parse is the shared one (`page/kit/markdown`), re-exported for the pages that import it here.
+// Lightweight markdown laid out with Streamdown's element classes. The parser loads on first use,
+// never at startup.
+// TODO(markdown-table): tables are drawn with Streamdown's own table classes, not Maple's table kit.
 export { ParsedMarkdown, parseMarkdownTexts } from "./markdown"
 
 const streamdown =

@@ -10,8 +10,6 @@ import { AlertsScheduleNewSearch } from "../../../route/search"
 import { OrgMember } from "../shared/org-members"
 import { Form } from "./form"
 
-// `/alerts/schedules/new`: create an on-call schedule, or edit one (`?scheduleId=`).
-
 export const Model = Schema.Struct({
 	search: AlertsScheduleNewSearch,
 	/** The schedule being edited; `null` creates. */

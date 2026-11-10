@@ -19,14 +19,10 @@ import { RULE_FORM_MAX_WIDTH } from "./view-step"
 import { typography, typographyClass } from "@maple/views/ui/typography"
 import { hstack, vstack } from "@maple/views/ui/stack"
 
-// `RuleActionBar`: the sticky bar with the rule in one
-// sentence, what is still missing, and Cancel / Save.
-
 type H = HtmlBuilder<Message>
 
 const MAX_VISIBLE_ISSUES = 3
 
-/** What the bar reads off the Model. */
 type BarView = Pick<Model, "issuesTooltip" | "isSaving" | "editingRuleId" | "savedForm">
 
 /** The "details" trigger and its tooltip: every issue, one per line. */
@@ -64,7 +60,6 @@ const issuesDetails = (h: H, model: BarView, issues: ReadonlyArray<string>): Htm
 		},
 	})
 
-/** `ValidationSummary`. */
 const validationSummary = (h: H, model: BarView, issues: ReadonlyArray<string>): Html => {
 	if (issues.length === 0)
 		return hstack(
@@ -162,6 +157,6 @@ const viewOf = stableSlice((model: Model) =>
 	Struct.pick(model, ["issuesTooltip", "isSaving", "editingRuleId", "savedForm"]),
 )
 
-/** `RuleActionBar`. */
+/** The sticky bar: the rule in one sentence, what is still missing, and Cancel / Save. */
 export const actionBar = (h: H, model: Model, form: RuleForm): Html =>
 	slot(bar, [h, viewOf(model), form, draftTimingOf(model, form)])

@@ -2,8 +2,6 @@ import { humanize } from "../../humanize"
 import type { IconName } from "@maple/views/ui/icon"
 import { Array as Arr, String as Str } from "effect"
 
-// A tool's label, icon and live activity.
-
 /** Strips the `mcp__<server>__` prefix MCP tools arrive with. */
 export const normalizeToolName = (toolName: string): string => Str.replace(/^mcp__.+?__/, "")(toolName)
 

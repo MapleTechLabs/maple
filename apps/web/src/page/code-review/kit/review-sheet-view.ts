@@ -15,8 +15,6 @@ import { SheetMessage } from "./review-sheet"
 import { reviewSections } from "./review-sheet-sections"
 import { hstack, vstackClass } from "@maple/views/ui/stack"
 
-// `ReviewDetailSheet`, `ReviewDetailBody` and `SheetDetailHeader`.
-
 type H = HtmlBuilder<SheetMessage>
 
 const linkOut = (h: H, href: string, label: string): Html =>
@@ -31,7 +29,7 @@ const linkOut = (h: H, href: string, label: string): Html =>
 		[label, icon(h, "ExternalLinkIcon")],
 	)
 
-/** `SheetDetailHeader` with the review's kind, title, repository line and links out. */
+/** The sheet header with the review's kind, title, repository line and links out. */
 const detailHeader = (h: H, id: string, detail: CodeReviewDetail, window: WindowSearch): Html => {
 	const { review } = detail
 	return sheetDetailHeader(h, {
@@ -74,7 +72,7 @@ const detailHeader = (h: H, id: string, detail: CodeReviewDetail, window: Window
 const panel = (h: H, id: string, className: string | undefined, children: ReadonlyArray<Html>): Html =>
 	DialogView.dialogPanel(h, "sheet", id, children, className)
 
-/** `ReviewDetailBody`: skeleton until the first answer, the error with a retry, or the review. */
+/** Skeleton until the first answer, the error with a retry, or the review. */
 const body = (h: H, sheet: ReviewSheet, timeZone: string, window: WindowSearch): ReadonlyArray<Html> => {
 	const id = sheet.dialog.id
 	if (sheet.reviewId === null) return []

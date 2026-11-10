@@ -54,8 +54,6 @@ import {
 import { textLink } from "@maple/views/ui/text-link"
 import { canManageAlerts } from "../../kit/session-grants"
 
-// `/alerts/slos/$sloId`: the header, a callout while the budget burns or is spent, then the panels.
-
 type H = HtmlBuilder<Message>
 
 const headerActions = (h: H, model: Model, slo: Slo): Html =>

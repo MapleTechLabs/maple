@@ -20,8 +20,6 @@ import { typography } from "@maple/views/ui/typography"
 import { hstack, vstack } from "@maple/views/ui/stack"
 import { Array as Arr, String as Str } from "effect"
 
-// The rail of `ToolErrorModal`: the variants a group folded, where it happens, which sessions hit it.
-
 type H = HtmlBuilder<Message>
 type BreakdownRow = ErrorDetail["breakdown"][number]
 

@@ -226,7 +226,7 @@ const loadedView = (h: H, model: Model, totals: TotalsResult, timeZone: string, 
 	])
 }
 
-/** `ErrorModal`: mounted from the row, so a stale `?error=` the window no longer holds opens nothing. */
+/** Mounted from the row, so a stale `?error=` the window no longer holds opens nothing. */
 const errorModalView = (
 	h: H,
 	model: Model,
@@ -272,7 +272,7 @@ const loadingView = (h: H): Html =>
 		skeleton(h, "h-64"),
 	])
 
-/** `ResultView` over the totals read; the lab draws it without the route's time controls. */
+/** The page over the totals read; the lab draws it without the route's time controls. */
 export const toolDetailBody = (
 	h: H,
 	model: Model,

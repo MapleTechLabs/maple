@@ -23,8 +23,6 @@ import { column, columnClass } from "@maple/views/ui/column"
 import { Array as Arr, String as Str } from "effect"
 import { hstack } from "@maple/views/ui/stack"
 
-// `PlanetScaleDatabaseTable` and its loading state.
-
 type H = HtmlBuilder<Message>
 
 interface DatabaseRow {
@@ -67,7 +65,7 @@ const COLUMNS: ReadonlyArray<{
 	{ label: "Replica lag", key: "replicaLagMaxSeconds", width: "w-24", align: "right", metric: true },
 ]
 
-/** `headerCells`: sortable heads only when a sort is given; `metricsPaused` drops the metric columns. */
+/** Sortable heads only when a sort is given; `metricsPaused` drops the metric columns. */
 const headerCells = (h: H, sort: Sort<SortKey> | undefined, metricsPaused: boolean): ReadonlyArray<Html> =>
 	Arr.map(
 		Arr.filter(COLUMNS, (column) => !metricsPaused || column.metric !== true),

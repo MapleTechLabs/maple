@@ -7,8 +7,6 @@ import { typography } from "@maple/views/ui/typography"
 import { Array as Arr, Option } from "effect"
 import { hstack } from "@maple/views/ui/stack"
 
-// The `Select` of `GcpLogFilterField`: keep an existing sink's filter, or replace it.
-
 type H = HtmlBuilder<Message>
 
 const ENTRIES: ReadonlyArray<SelectView.SelectEntry> = Arr.map(FILTER_MODES, (mode) => ({
@@ -16,7 +14,7 @@ const ENTRIES: ReadonlyArray<SelectView.SelectEntry> = Arr.map(FILTER_MODES, (mo
 	item: { value: mode.value, label: mode.label },
 }))
 
-/** `FilterMode`: the mode by name, with what it does beside it. */
+/** The mode by name, with what it does beside it. */
 const filterMode = (h: H, value: string): ReadonlyArray<Html> => {
 	const found = Arr.findFirst(FILTER_MODES, (entry) => entry.value === value)
 	if (Option.isNone(found)) return []

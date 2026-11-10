@@ -15,7 +15,7 @@ import { MapleApiV2Client, MapleInternalApiClient } from "../../../platform/api-
 import { Message } from "./message"
 import { AgentTargetSchema } from "./model"
 
-/** `KnownServicesProvider`: the org's service names, read once a thread shows its scroller. */
+/** The org's service names, read once a thread shows its scroller. */
 export const LoadKnownServices = Command.define("LoadInvestigationKnownServices", {
 	messages: [Message.CompletedLoadKnownServices],
 	execute: Effect.map(loadKnownServices, (services) => Message.CompletedLoadKnownServices({ services })),

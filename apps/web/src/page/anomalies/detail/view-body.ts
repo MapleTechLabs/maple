@@ -25,11 +25,8 @@ import type { Model } from "./model"
 import { typography, typographyClass } from "@maple/views/ui/typography"
 import { hstack } from "@maple/views/ui/stack"
 
-// `AnomalyHero`, `AnomalySignalChart` + `AnomalyTimeseriesChart` and `AnomalyLinkedIssueCard`.
-
 type H = HtmlBuilder<Message>
 
-/** The theme tokens the signal chart reads. */
 export const CHART_TOKENS = ANOMALY_CHART_TOKENS
 
 /** The detail header's title side: the signal and service under the "Anomaly" eyebrow. */
@@ -44,7 +41,6 @@ export const anomalyTitle = (h: H, incident: AnomalyIncidentDocument): Html =>
 		titleText: `${SIGNAL_LABEL[incident.signalType]} · ${incident.serviceName}`,
 	})
 
-/** `AnomalySignalChart` over the page's series, theme and chart runtime. */
 export const signalChart = (h: H, model: Model, incident: AnomalyIncidentDocument, timeZone: string): Html =>
 	anomalySignalChart(h, {
 		chartId: "anomaly-signal",
@@ -105,7 +101,6 @@ const cardActions = (
 		),
 	])
 
-/** `AnomalyLinkedIssueCard`. */
 export const linkedIssueCard = (
 	h: H,
 	model: Model,

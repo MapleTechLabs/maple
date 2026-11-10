@@ -68,7 +68,7 @@ export type FacetSelectConfig<M> = Readonly<{
 	toMessage: (message: Select.Message) => M
 }>
 
-/** `FacetSelect`: the label small beside the value; a set value is drawn in the primary tint. */
+/** The label small beside the value; a set value is drawn in the primary tint. */
 export const facetSelect = <M>(h: HtmlBuilder<M>, config: FacetSelectConfig<M>): Html => {
 	const isSet = config.value !== undefined
 	return h.submodel({
@@ -133,7 +133,7 @@ const nameSearchInput = <M>(h: HtmlBuilder<M>, search: NonNullable<ToolbarConfig
 	})
 
 /**
- * `ToolFilterToolbar` on the kit's `listToolbar`, edge to edge above the page's flush body:
+ * The tool filter toolbar on the kit's `listToolbar`, edge to edge above the page's flush body:
  * the search pinned left and the filters right, or the filters alone on the left.
  */
 export const toolFilterToolbar = <M>(h: HtmlBuilder<M>, config: ToolbarConfig<M>): Html => {

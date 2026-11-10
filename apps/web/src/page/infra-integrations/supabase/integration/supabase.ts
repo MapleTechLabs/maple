@@ -11,8 +11,6 @@ import { SupabaseProjectRow } from "../model"
 import { MapleInternalApiClient } from "../../../../platform/api-clients"
 import { Message } from "../../../integrations/message"
 
-// The Supabase card: state and writes.
-
 export const SupabaseSwitchKind = Schema.Literals(["metrics", "logs", "drain"])
 export type SupabaseSwitchKind = typeof SupabaseSwitchKind.Type
 
@@ -50,7 +48,7 @@ export const LoadSupabaseMetrics = Command.define("LoadIntegrationsSupabaseMetri
 		),
 })
 
-/** After a switch settles, so the rows re-read resolves its window against now, not page mount. */
+/** After a switch settles, so the rows re-read resolves its window against now, not page load. */
 export const ReadSupabaseClock = readClock("ReadSupabaseClock", Message.CompletedReadSupabaseClock)
 
 export const SyncSupabase = Command.define("SyncSupabase", {

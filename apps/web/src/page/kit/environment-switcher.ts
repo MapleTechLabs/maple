@@ -34,8 +34,8 @@ export type Step<M> = Readonly<{
 }>
 
 /**
- * One switcher step (`handleEnvironmentChange`): a pick of `allValue` reads as `undefined` (it
- * leaves the URL) unless `keepAllInUrl`, so the explicit choice sticks.
+ * One switcher step: a pick of `allValue` reads as `undefined` (it leaves the URL) unless
+ * `keepAllInUrl`, so the explicit choice sticks.
  */
 export const stepEnvironmentSelect = <M>(
 	select: Select.Model,

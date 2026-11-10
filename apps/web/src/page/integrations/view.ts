@@ -36,13 +36,11 @@ import { scrapeIntro, scrapeTargetsSection } from "./view-prometheus"
 import { integrationHeader } from "./view-header"
 import { hubTitle, integrationCatalog, integrationsSummary } from "./view-hub"
 
-// `IntegrationsPage`.
-
 type H = HtmlBuilder<Message>
 
 const selectIntegration = (id: IntegrationId) => Message.ClickedIntegration({ integration: id })
 
-/** The header's Connect button for an OAuth integration (`useIntegrationConnect()`). */
+/** The header's Connect button for an OAuth integration. */
 export const connectButton = (h: H, model: Model, integration: IntegrationId): Html | undefined => {
 	if (!Schema.is(ConnectProvider)(integration)) return undefined
 	const entry = catalogEntry(integration)

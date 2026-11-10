@@ -15,8 +15,6 @@ import { InfraSupabaseProjectSearch } from "../../../../route/search"
 import * as TimeRangePicker from "../../../kit/time-range-picker"
 import { SupabaseProjectRow, SupabaseProjectTimeseriesRow, SupabaseStatus } from "../model"
 
-// `/infra/supabase/$projectRef`.
-
 const keyed = <A, AI>(schema: Schema.Codec<A, AI>) => KeyedSchema(schema, LoadFailure)
 
 /** The page's independently retried reads. */

@@ -8,8 +8,6 @@ import { PROVIDERS as REGISTRY } from "../../kit/providers"
 import { Array as Arr, String as Str } from "effect"
 import { hstack } from "@maple/views/ui/stack"
 
-// `PROVIDERS` and `ProviderLogo`: the destination providers and their marks.
-
 const BRANDFETCH_CLIENT_ID = "1id0IQ-4i8Z46-n-DfQ"
 const INK_ON_DARK_ACCENT = "#FFFFFF"
 const INK_ON_BRIGHT_ACCENT = "#1E1B17"
@@ -182,7 +180,7 @@ export const PROVIDERS = new Map<AlertDestinationType, DestinationProvider>([
 const WEBHOOK = PROVIDERS.get("webhook")
 const CHAT = PROVIDERS.get("chat")
 
-/** `CHAT_PROVIDERS`: a `chat` destination drawn as its connector (name, accent and mark). */
+/** A `chat` destination drawn as its connector (name, accent and mark). */
 const CHAT_PROVIDERS: ReadonlyMap<string, DestinationProvider> = new Map(
 	Arr.flatMap(chatConnectorManifests, (manifest) =>
 		CHAT === undefined
@@ -203,7 +201,7 @@ const CHAT_PROVIDERS: ReadonlyMap<string, DestinationProvider> = new Map(
 	),
 )
 
-/** `destinationProvider`: a `chat` destination's connector, else the type's provider. */
+/** A `chat` destination's connector, else the type's provider. */
 export const destinationProvider = (
 	type: AlertDestinationType,
 	chatConnector?: string,
@@ -222,7 +220,7 @@ export const providerOf = (type: AlertDestinationType): DestinationProvider =>
 		accentOn: "",
 	}
 
-/** `DESTINATION_TYPES` / `destinationTypesFor`: the provider tiles, in the order people reach for them. */
+/** The provider tiles, in the order people reach for them. */
 export const DESTINATION_TYPES: ReadonlyArray<AlertDestinationType> = [
 	"pagerduty",
 	"incident-io",
@@ -249,7 +247,7 @@ export type ProviderLogoOptions<M> = Readonly<{
 	onLogoError?: M
 }>
 
-/** `ProviderLogo`: the brand image, else a monogram plate, else the provider's icon. */
+/** The brand image, else a monogram plate, else the provider's icon. */
 export const providerLogo = <M>(h: HtmlBuilder<M>, options: ProviderLogoOptions<M>): Html => {
 	const provider = destinationProvider(options.type, options.chatConnector)
 	const size = options.size ?? 40

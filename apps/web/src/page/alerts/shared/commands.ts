@@ -6,8 +6,6 @@ import { Effect, Array as Arr } from "effect"
 import { toLoadFailure } from "@maple/views/data/load-failure"
 import { MapleApiV2Client } from "../../../platform/api-clients"
 
-// The alert reads and writes the hub, rule and incident pages share, as Effects their Commands wrap.
-
 /** `alertDeliveries.list({ limit: 100 })` (optionally one incident's), as documents. */
 export const listDeliveriesRaw = (incidentId?: AlertIncidentId) =>
 	Effect.gen(function* () {
@@ -21,7 +19,6 @@ export const listDeliveriesRaw = (incidentId?: AlertIncidentId) =>
 export const listDeliveries = (incidentId?: AlertIncidentId) =>
 	listDeliveriesRaw(incidentId).pipe(Effect.mapError(toLoadFailure))
 
-/** `toggleRuleHandler`: PATCH the rule's `enabled`. */
 export const setRuleEnabled = (ruleId: AlertRuleId, isEnabled: boolean) =>
 	Effect.gen(function* () {
 		const client = yield* MapleApiV2Client
@@ -111,7 +108,7 @@ export const withAcknowledgement = <R extends AlertIncidentRow>(
 			: row,
 	)
 
-/** `useChatConnectors`: the org's chat connectors, Slack first; none when the read fails. */
+/** The org's chat connectors, Slack first; none when the read fails. */
 export const listChatConnectors = Effect.gen(function* () {
 	const client = yield* MapleApiV2Client
 	const response = yield* client.chatIntegration.connectors()

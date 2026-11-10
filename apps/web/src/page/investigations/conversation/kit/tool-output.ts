@@ -3,9 +3,6 @@ import { Option, Predicate, Schema, Record as Rec, String as Str, Array as Arr }
 
 const encodePrettyJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown, { space: 2 }))
 
-// A tool call's one-line summary, and
-// its output split into the report text and the structured `__maple_ui` payload.
-
 const SUMMARY_KEYS = [
 	"service",
 	"serviceName",

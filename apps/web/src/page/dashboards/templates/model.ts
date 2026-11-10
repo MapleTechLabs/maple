@@ -11,12 +11,10 @@ import * as Dialog from "@maple/views/ui/dialog"
 import { TableSort } from "../kit/tiles"
 import { WidgetFailure, WidgetGate } from "../kit/widget-data"
 
-// The template gallery.
-
 export const ReadinessFilter = Schema.Literals(["all", "ready", "needs-setup"])
 export type ReadinessFilter = typeof ReadinessFilter.Type
 
-/** The subset of a metric row readiness reads (`MetricLike`). */
+/** The subset of a metric row readiness reads. */
 export const MetricSeen = Schema.Struct({ metricName: Schema.String, lastSeen: Schema.String })
 export type MetricSeen = typeof MetricSeen.Type
 
@@ -24,14 +22,14 @@ export const Model = Schema.Struct({
 	search: DashboardsTemplatesSearch,
 	nowMs: Schema.NullOr(Schema.Number),
 	templates: KeyedSchema(Schema.Array(V2DashboardTemplate), LoadFailure),
-	/** `listMetricsResultAtom({ limit: 1000 })`: readiness fails open until it answers. */
+	/** Readiness fails open until it answers. */
 	metrics: KeyedSchema(Schema.Array(MetricSeen), LoadFailure),
-	/** `ToolbarSearch`'s input, its debounce generation, and the applied query (component state). */
+	/** The search input, its debounce generation, and the applied query. */
 	searchDraft: Schema.String,
 	searchGeneration: Schema.Number,
 	query: Schema.String,
 	filter: ReadinessFilter,
-	/** The selection's preview: armed 250 ms after the template was picked (`SELECTION_DEBOUNCE_MS`). */
+	/** The selection's preview: armed 250 ms after the template was picked. */
 	previewGeneration: Schema.Number,
 	isPreviewArmed: Schema.Boolean,
 	preview: KeyedSchema(V2DashboardTemplatePreview, LoadFailure),

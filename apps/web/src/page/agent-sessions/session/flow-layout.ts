@@ -14,8 +14,6 @@ import { filterSpans, isDelegation, shortTarget } from "../kit/span-filters"
 import { formatDuration, formatNumber } from "@maple/ui/lib/format"
 import { Array as Arr, Option } from "effect"
 
-// The session flow's grid layout (`layoutLanes`, `flowSpans`, `assignColumns`, `nodeSubtitle`).
-
 export const NODE_WIDTH = 148
 export const NODE_HEIGHT = 52
 const COLUMN_GAP = 48

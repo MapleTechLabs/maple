@@ -4,9 +4,6 @@ import type { Score } from "./score"
 import { Array as Arr, String as Str, Order } from "effect"
 import { medianOf } from "@maple/ui/lib/number"
 
-// The scorecard's numbers from the members' counts: rates, the team median of each, the order, the
-// ranked view and the highlights.
-
 /** Ranked view: people with fewer reviewed pull requests than this are left out. */
 export const RANK_MIN_PULL_REQUESTS = 5
 /** A highlight on first-try CI needs this many judged first attempts. */

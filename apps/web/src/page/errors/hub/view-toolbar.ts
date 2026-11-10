@@ -17,8 +17,6 @@ import { typography } from "@maple/views/ui/typography"
 import { hstack } from "@maple/views/ui/stack"
 import { Array as Arr } from "effect"
 
-// The errors stat strip, list toolbar, search and the sort and severity selects.
-
 type H = HtmlBuilder<Message>
 
 const stat = (h: H, value: number | string, label: string): Html =>
@@ -81,7 +79,7 @@ const SEVERITY_TRIGGER_LABEL = { ...SEVERITY_FILTER_LABEL, all: "Severity" } sat
 const isSeverityFilter = (value: string): value is SeverityFilter =>
 	Arr.some(SEVERITY_FILTERS, (filter) => filter === value)
 
-/** `SeverityFilterDot`: the four real levels stacked for "all", the hollow ring for unset. */
+/** The four real levels stacked for "all", the hollow ring for unset. */
 const severityFilterDot = (h: H, value: SeverityFilter): Html =>
 	value === "all"
 		? hstack(
@@ -121,7 +119,7 @@ const SEVERITY_ENTRIES: ReadonlyArray<SelectView.SelectEntry> = Arr.map(SEVERITY
 	item: { value, label: SEVERITY_FILTER_LABEL[value] },
 }))
 
-/** `ToolbarSearch` (`SearchInput` size sm): typing is debounced into the URL's `q`. */
+/** Typing is debounced into the URL's `q`. */
 const toolbarSearch = (h: H, draft: string): Html =>
 	searchInput(h, {
 		id: "errors-search",
@@ -133,7 +131,6 @@ const toolbarSearch = (h: H, draft: string): Html =>
 		onClear: Message.ChangedSearchDraft({ value: "" }),
 	})
 
-/** `ListToolbar`: view tabs, then search, sort, severity and the count readout. */
 export const toolbar = (h: H, model: Model, count: ReadonlyArray<string> | null, className?: string): Html =>
 	listToolbar(h, {
 		className,

@@ -21,8 +21,8 @@ import {
 import type { WhereFieldMessage, WhereFields } from "./where-field"
 import { FetchWhereFieldValues, PlaceWhereFieldCaret, type WhereValuesRequest } from "./where-field-command"
 
-// `useWhereClauseAutocomplete` for any number of fields: the caret, the open list, the active
-// key's values, and an applied suggestion handed back to the owner as the field's new text.
+// Where-clause autocomplete for any number of fields: the caret, the open list, the active key's
+// values, and an applied suggestion handed back to the owner as the field's new text.
 
 export type ActiveKeyKind = "attr" | "resource"
 
@@ -34,7 +34,7 @@ export type WhereFieldSpec = Readonly<{
 	scope?: WhereClauseAutocompleteScope
 	/** The editor's `values`; the active key's own values are merged in when they are read. */
 	values: WhereClauseAutocompleteValues
-	/** The read for the key the caret is in (`onActiveAttributeKey`), or null where none is needed. */
+	/** The read for the key the caret is in, or null where none is needed. */
 	requestOf: (kind: ActiveKeyKind, attributeKey: string) => WhereValuesRequest | null
 }>
 
@@ -95,7 +95,7 @@ const withCaret = (fields: WhereFields, fieldId: string, caret: WhereCaret): Whe
 	carets: { ...fields.carets, [fieldId]: caret },
 })
 
-/** Each active key asks for its values once (`onActiveAttributeKey`). */
+/** Each active key asks for its values once. */
 const planValues = (
 	step: WhereFieldsReturn,
 	fieldId: string,
@@ -135,7 +135,7 @@ const appliedCaret = (
 	return { ...syncedCaret(current, expression, cursor, spec.dataSource), activeIndex: current.activeIndex }
 }
 
-/** `handleApplySuggestion`: the text changes like typing, the caret lands after the insert. */
+/** The text changes like typing, the caret lands after the insert. */
 const appliedSuggestion = (
 	fields: WhereFields,
 	fieldId: string,
@@ -162,7 +162,7 @@ const appliedSuggestion = (
 			),
 	})
 
-/** `onKeyIntent("accept")`: the hook's own apply; the caret and keys move, the text does not. */
+/** A key accepts the active row: the caret and keys move, the text does not. */
 const pressedTab = (fields: WhereFields, fieldId: string, spec: WhereFieldSpec, orgId: string) =>
 	Option.match(
 		applied(

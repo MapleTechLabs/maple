@@ -5,16 +5,15 @@ import * as Select from "@maple/views/ui/select"
 import { initWhereFields, WhereFieldMessage, WhereFields } from "../where-field"
 import { AddOnKey, QueryChange, QueryTextField } from "./change"
 
-// `QueryPanel`'s own state: the
-// selects and group-by chips of every panel, and which panels are collapsed. The drafts stay with
-// the host page; an edit leaves as `ChangedQuery` for the host to apply.
+// `QueryPanel`'s own state: the selects and group-by chips of every panel, and which panels are
+// collapsed. The drafts stay with the host page; an edit leaves as `ChangedQuery` for the host to apply.
 
 export const Model = Schema.Struct({
 	/** Prefixes the selects' slot ids (`<prefix>-select-<field>:<query id>`). */
 	slotPrefix: Schema.String,
 	selects: Schema.Record(Schema.String, Select.Model),
 	groupBys: Schema.Record(Schema.String, Combobox.Model),
-	/** `MetricsBody`: the metric picker and the one-field "by" combobox, by query id. */
+	/** The metric picker and the one-field "by" combobox of a metrics query, by query id. */
 	metricPickers: Schema.Record(Schema.String, Combobox.Model),
 	collapsed: Schema.Array(Schema.String),
 	/** Each where editor's caret, list and active key values, by query id. */
@@ -51,7 +50,7 @@ export const OutMessage = defineMessageUnion({
 	ChangedQuery: { queryId: Schema.String, change: QueryChange },
 	/** A metric picked: the host knows whether it is monotonic from the list it fetched. */
 	PickedMetric: { queryId: Schema.String, value: Schema.String },
-	/** `onMetricSearch`: the host re-reads the metric list for what is typed. */
+	/** The host re-reads the metric list for what is typed. */
 	ChangedMetricSearch: { search: Schema.String },
 	ClickedClone: { queryId: Schema.String },
 	ClickedRemove: { queryId: Schema.String },

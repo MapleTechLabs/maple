@@ -42,8 +42,6 @@ import {
 import { DEFAULT_PRESET, filtersOf, kindOf } from "./update"
 import { workloadTable, workloadTableLoading } from "./view-table"
 
-// `WorkloadsPage` and `WorkloadsFilterSidebarView`.
-
 type H = HtmlBuilder<Message>
 
 export const KIND_OPTIONS: ReadonlyArray<Readonly<{ value: WorkloadKind; label: string }>> = [
@@ -107,7 +105,7 @@ const loadedRail = (h: H, model: Model, facets: WorkloadFacets, label: string): 
 
 const toInstall = (message: InstallModal.Message) => Message.GotInstallMessage({ message })
 
-/** The sidebar's presence probe (`useInfraSurfaces()`): any Kubernetes surface means the chart is in. */
+/** The sidebar's presence probe: any Kubernetes surface means the chart is in. */
 const isClusterReporting = (presence: ReadonlyArray<string>): boolean =>
 	Arr.some(
 		presence,

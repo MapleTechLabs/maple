@@ -11,12 +11,12 @@ const page = (cursor: string | undefined) => ({
 	query: cursor === undefined ? { limit: PAGE_LIMIT } : { limit: PAGE_LIMIT, cursor },
 })
 
-/** `recommendationIssuesListAtom`: every page. */
+/** Every page of the instrumentation recommendations. */
 export const listRecommendations = Effect.flatMap(MapleApiV2Client, (client) =>
 	collectV2Pages((cursor) => client.instrumentationRecommendations.list(page(cursor))),
 )
 
-/** `ingestAttributeMappingsListAtom`: every page. */
+/** Every page of the ingest attribute mappings. */
 export const listAttributeMappings = Effect.flatMap(MapleApiV2Client, (client) =>
 	collectV2Pages((cursor) => client.attributeMappings.list(page(cursor))),
 )

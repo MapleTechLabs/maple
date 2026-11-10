@@ -34,8 +34,6 @@ import { typography, typographyClass } from "@maple/views/ui/typography"
 import { hstack, hstackClass, vstack } from "@maple/views/ui/stack"
 import { Array as Arr } from "effect"
 
-// `IntegrationsSummary` and `IntegrationCatalog`.
-
 type H = HtmlBuilder<Message>
 type Select = (id: IntegrationId) => Message
 

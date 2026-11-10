@@ -10,13 +10,11 @@ import { indexOfFrom } from "@maple/strings"
  * lowercased name, and the caller renders only the top {@link CHANNEL_RESULT_LIMIT}.
  */
 
-/** The shape this module needs; the picker maps each listed channel onto it. */
 export interface RankableChannel {
 	readonly name: string
 	readonly is_member: boolean
 }
 
-/** The extra fields the picker-state helpers need on top of {@link RankableChannel}. */
 export interface PickableChannel extends RankableChannel {
 	readonly id: string
 	readonly is_private: boolean
@@ -32,7 +30,6 @@ export const CHANNEL_RESULT_LIMIT = 50
  */
 const normalize = (value: string): string => Str.replace(/^#+/, "")(Str.toLowerCase(Str.trim(value)))
 
-/** Characters that start a new "word" inside a channel name. */
 const isBoundary = (char: string): boolean => char === "-" || char === "_" || char === "." || char === " "
 
 /**
@@ -112,7 +109,7 @@ export const rankChannels = <T extends RankableChannel>(
 
 /**
  * The exact string the Combobox shows for a channel — in the popup row, and,
- * once a channel is picked, written by Base UI into the input itself.
+ * once a channel is picked, written by the combobox into the input itself.
  *
  * Selection detection ({@link resolveSearchQuery}) *must* compare against this
  * and not against the bare name: a private channel's label carries a
@@ -123,9 +120,8 @@ export const channelLabel = (channel: Pick<PickableChannel, "name" | "is_private
 	channel.is_private ? `#${channel.name} (private)` : `#${channel.name}`
 
 /**
- * Base UI writes the selected item's label into the input, which fires
- * `onInputValueChange` — indistinguishable from typing unless we recognise the
- * label. Anything the input could plausibly be holding *because of* a selection
+ * The combobox writes the selected item's label into the input, which reads
+ * the same as typing unless we recognise the label. Anything the input could plausibly be holding *because of* a selection
  * counts: the rendered label, and the plain `#name` / `name` forms so a stored
  * value or a manual retype of the name doesn't wipe the list either.
  */
@@ -149,7 +145,7 @@ export const resolveSearchQuery = (
 }
 
 export interface ChannelPickerView<T> {
-	/** The rows to render, and the `items` handed to Base UI. */
+	/** The rows to render, and the `items` handed to the combobox. */
 	readonly visible: ReadonlyArray<T>
 	/** True only when matches were actually dropped by the cap. */
 	readonly truncated: boolean

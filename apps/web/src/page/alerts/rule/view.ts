@@ -33,8 +33,6 @@ import { incidentGroup } from "@maple/web-data/alerts/incident-timeline"
 import * as SilenceDialogView from "../silence-dialog/view"
 import { canManageAlerts } from "../../kit/session-grants"
 
-// The rule detail page through `ResultPage` and `DetailHeader`.
-
 type H = HtmlBuilder<Message>
 
 const TABS = ["overview", "history"] as const
@@ -91,8 +89,6 @@ const ruleSilence = (
 			),
 	)
 }
-
-/** `DetailHeader` (kind eyebrow, title, meta row) with the time controls and Edit rule. */
 
 const header = (h: H, model: Model, rule: AlertRuleDocument, timeZone: string) => {
 	const openIncidents = Arr.filter(ruleIncidentsOf(model), (i) => i.status === "open")
@@ -164,7 +160,7 @@ const tabStrip = (h: H, model: Model): Html => {
 		"Rule sections",
 		Arr.map(TABS, (tab) => ({
 			key: tab,
-			// `search={(prev) => ({ ...prev, tab })}`: the time range rides along.
+			// The time range rides along.
 			href: ruleHref(model.ruleId, { ...model.search, tab }),
 			label: tab === "overview" ? "Overview" : "History",
 			isCurrent: tab === active,

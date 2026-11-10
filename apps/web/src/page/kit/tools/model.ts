@@ -99,7 +99,7 @@ export const toolWindowArgs = (search: ToolSearch, timeZone: string, mode: Reque
 export const selectedMetric = (search: ToolSearch): ToolMetric => search.metric ?? "calls"
 export const selectedPercentile = (search: ToolSearch): ToolPercentile => search.percentile ?? "p90"
 
-/** `toolAnalyticsSelection`: the search as the endpoints take it; a blank box is no filter. */
+/** The search as the endpoints take it; a blank box is no filter. */
 export const toolSelection = (
 	search: ToolSearch,
 	window: Readonly<{ startTime: string; endTime: string }>,

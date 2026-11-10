@@ -122,9 +122,9 @@ export const Message = defineMessageUnion({
 	CompletedTrackConnected: {},
 	/** The shared session read answered with its grants. */
 	CompletedLoadSession: { grants: Schema.Array(Policy.PermissionName), hasDataSources: Schema.Boolean },
-	/** A catalog row or card, or the header's back button (`navigate({ search })`). */
+	/** A catalog row or card, or the header's back button. */
 	ClickedIntegration: { integration: Schema.NullOr(Schema.String) },
-	/** A settings nav tab (`navigate({ to: "/settings", search: { tab } })`). */
+	/** A settings nav tab. */
 	ClickedSettingsTab: { tab: Schema.String },
 	/** The chat callback toast went out; the return params are stripped next (a replace). */
 	CompletedChatToast: {},
@@ -145,7 +145,7 @@ export const Message = defineMessageUnion({
 	FailedStartConnect: { attempt: Schema.Number, title: Schema.String, description: Schema.String },
 	/** The authorize URL arrived but the popup was gone and could not be reopened. */
 	BlockedConnectPopup: { attempt: Schema.Number },
-	/** Every 3 s while a polling provider's popup is out (`onPoll`). */
+	/** Every 3 s while a polling provider's popup is out. */
 	PolledConnect: { attempt: Schema.Number },
 	ClosedConnectPopup: { attempt: Schema.Number },
 	EndedConnectGrace: { attempt: Schema.Number },
@@ -187,7 +187,7 @@ export const Message = defineMessageUnion({
 	},
 	CompletedLoadCloudflareUsage: result(CloudflareUsageResponse),
 	CompletedCloudflarePrime: { isConnected: Schema.Boolean, isOk: Schema.Boolean },
-	/** Every 30 s while a fresh Cloudflare connection settles (`useCloudflareIngestPhase`). */
+	/** Every 30 s while a fresh Cloudflare connection settles. */
 	TickedCloudflareIngest: {},
 	GotZoneFilterMessage: { message: ToggleGroup.Message },
 	ChangedZoneSearch: { value: Schema.String },
@@ -209,7 +209,7 @@ export const Message = defineMessageUnion({
 		key: Schema.String,
 		result: Schema.Result(Schema.Array(V2ScrapeTargetCheck), LoadFailure),
 	},
-	/** `useIntervalRefresh`: the target list every 30 s, the selected target's checks every 10 s. */
+	/** The target list every 30 s, the selected target's checks every 10 s. */
 	TickedTargetsRefresh: {},
 	TickedChecksRefresh: {},
 	ClickedProbe: { id: ScrapeTargetId },
@@ -406,7 +406,7 @@ export const Message = defineMessageUnion({
 	ClickedGcpPromptBack: {},
 	ClickedGcpConfirmRemoval: {},
 	CompletedGcpConfirmRemoval: { failure: Schema.NullOr(LoadFailure) },
-	/** The status poll: 10 s while a connection settles, else every minute (`useIntervalRefresh`). */
+	/** The status poll: 10 s while a connection settles, else every minute. */
 	TickedGcpRefresh: {},
 	ReceivedConnectMessage: {
 		provider: ConnectProvider,

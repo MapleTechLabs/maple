@@ -92,7 +92,6 @@ export const signalWindowOf = (investigation: V2Investigation): SignalWindow | n
 	}
 }
 
-/** `resolveService`: the one service the signals card can speak for. */
 /** The overview is per service and environment; the busiest row for the service is the incident's. */
 export const busiestRowOf = (rows: ReadonlyArray<OverviewRow>, service: string): OverviewRow | null =>
 	Option.getOrNull(
@@ -131,7 +130,7 @@ export const traceTips = (investigation: V2Investigation): ReadonlyMap<string, s
 		),
 	)
 
-/** `openActionIndex`: only a real non-negative integer opens the panel. */
+/** Only a real non-negative integer opens the panel. */
 export const openActionIndexOf = (model: Model): number | null => {
 	const action = model.search.action
 	return typeof action === "number" && Number.isInteger(action) && action >= 0 ? action : null

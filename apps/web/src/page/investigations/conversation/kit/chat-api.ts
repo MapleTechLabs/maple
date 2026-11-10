@@ -68,8 +68,6 @@ export const abortTurn = (sessionId: string) =>
 		yield* client.execute(HttpClientRequest.post(sessionUrl(sessionId, "/abort")))
 	}).pipe(Effect.ignore)
 
-// THE LIVE TAIL
-
 /** Consecutive-failure budget for a dropped events stream before it surfaces an error. */
 const MAX_STREAM_RETRIES = 3
 /** An empty close sooner than this is the server refusing; a later one is an idle connection recycled. */

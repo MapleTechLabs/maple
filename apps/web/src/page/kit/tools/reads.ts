@@ -6,7 +6,7 @@ import type { TotalsResult } from "./model"
 
 // The reads both tools pages make, as Effects returning the Model's shapes.
 
-/** A read's selection as data (`toolAnalyticsSelection`'s output). */
+/** A read's selection as data. */
 export const Selection = Schema.Struct({
 	startTime: Schema.String,
 	endTime: Schema.String,
@@ -21,7 +21,7 @@ export type Selection = typeof Selection.Type
 
 export const toInput = (selection: Selection): AiToolsSelection => ({ ...selection })
 
-/** `aiToolTotalsResultAtom`; `periods` absent asks for the comparison window and the population too. */
+/** Tool totals; `periods` absent asks for the comparison window and the population too. */
 export const fetchTotals = (selection: Selection, periods?: ReadonlyArray<AiToolsPeriod>) =>
 	getAiToolTotals({ data: { ...toInput(selection), periods } }).pipe(
 		Effect.map((value): TotalsResult => ({

@@ -129,7 +129,7 @@ const keyed = <A, E>(
 	write: (next: Keyed.Keyed<A, E>) => Partial<Model>,
 	fetch: (key: string) => Command.Command<Message, never, Resources>,
 ): ReadonlyArray<Step> =>
-	// An atom never refetches a failed read on its own: a same-key `Load` leaves the slot alone.
+	// A same-key `Load` leaves the slot alone, so a failed read is not refetched on its own.
 	mode === "Load" && slot.key === key
 		? []
 		: Option.match(Keyed.request(slot, key, mode), {
@@ -259,7 +259,7 @@ const navigate = (model: Model, search: Model["search"]): Return => ({
 const errorToast = (title: string, message: string) =>
 	PageOutMessage.RequestedToast({ type: "error", title, description: message })
 
-/** `openInvestigation(incident)`: the incident's investigation, seeded with the rule. */
+/** The incident's investigation, seeded with the rule. */
 const investigationPayload = (
 	rule: AlertRuleDocument,
 	incident: AlertIncidentDocument,
@@ -392,7 +392,7 @@ const withRows = (model: Model, context: PageContext, orgId: string, patch: Part
 	return { ...followed, commands: [...(followed.commands ?? []), ReadDiagnosisClock()] }
 }
 
-/** The ChecksPanel is keyed by window and status filter: either change starts it over. */
+/** The checks panel is keyed by window and status filter: either change starts it over. */
 const resetChecksPanel = (model: Model): Model => ({
 	...model,
 	extraChecks: [],

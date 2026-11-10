@@ -20,8 +20,7 @@ import { LINKED_CURSOR_STYLE, linkedCursorOverlay } from "@maple/views/charts/li
 import { markersOverlay } from "./markers-view"
 import { chartFrameClass } from "@maple/views/ui/chart-frame"
 
-// `MetricsGrid` over the four golden-signal cards (`SERVICE_CHARTS`, `syncId`, `overlay`,
-// `yAxisWidth={72}`): a service's Overview tab and a release's service section feed it.
+// The four golden-signal cards in a grid: a service's Overview tab and a release's service section feed it.
 
 export const CHART_TOKENS = [
 	"--chart-throughput",
@@ -128,7 +127,7 @@ const specOf = (chart: ChartConfig, rows: ReadonlyArray<FixedMetricRow>, context
 		showTooltip: true,
 	})
 
-/** The hoisted header chips (`usePlotLegendSlot`): only the throughput card has two series. */
+/** The hoisted header chips: only the throughput card has two series. */
 /** Every card's legend sits in its header, right side, so latency and throughput read alike. */
 const headerChips = (chart: ChartConfig, rows: ReadonlyArray<FixedMetricRow>, context: GridContext) =>
 	chart.kind === "Latency"
@@ -197,7 +196,7 @@ const chartBody = <M>(
 	)
 }
 
-/** `MetricsGrid`: the four cards in a 2-column grid, the hover cursor linked across them. */
+/** The four cards in a 2-column grid, the hover cursor linked across them. */
 export const metricsGridOf = <M>(h: HtmlBuilder<M>, input: GridInput<M>, state: GridState): Html => {
 	const { rows } = input
 	const hasOverlay = input.markers.length > 0
@@ -227,7 +226,7 @@ export const metricsGridOf = <M>(h: HtmlBuilder<M>, input: GridInput<M>, state: 
 							legend: isChart ? headerChips(chart, rows, context) : [],
 							contentClassName: hasOverlay ? "flex-1 min-h-0 p-2 overflow-visible" : undefined,
 						},
-						// TODO(chart-empty): `ChartEmpty` for a loaded overview with no buckets is not ported.
+						// TODO(chart-empty): a loaded overview with no buckets shows no empty state yet.
 						isChart ? chartBody(h, input, chart, context) : chartSkeleton(h, chart.skeleton),
 					),
 				],

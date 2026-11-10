@@ -4,7 +4,7 @@ import type { TimeSearch } from "./time-controls"
 import { linkTabStrip } from "./underline-tabs"
 import { Array as Arr, Option } from "effect"
 
-// `HostsViewTabs` and `KubernetesViewTabs`, on the kit's `linkTabStrip`.
+// The infra pages' view tabs (hosts, Kubernetes) on the kit's `linkTabStrip`, carrying the time window.
 
 /** `onClick` handles a plain click in place of the router; the href still serves new tabs. */
 export type TabLink<M = never> = Readonly<{
@@ -36,7 +36,7 @@ export const viewTabStrip = <M>(
 
 export type { TimeSearch }
 
-/** `pickTimeRangeSearch`: only the window travels between sibling views. */
+/** Only the window travels between sibling views. */
 export const pickTimeSearch = (search: TimeSearch): TimeSearch => ({
 	startTime: search.startTime,
 	endTime: search.endTime,
@@ -64,7 +64,6 @@ export const hostsViewTabs = <M>(h: HtmlBuilder<M>, view: HostsView, search: Tim
 
 export type KubernetesView = "pods" | "workloads" | "nodes" | "services"
 
-/** `KUBERNETES_VIEWS` (components/infra/kubernetes/views.ts), with the window carried. */
 const kubernetesViews = (search: TimeSearch): ReadonlyArray<TabLink> => {
 	const window = pickTimeSearch(search)
 	return [
@@ -83,11 +82,10 @@ const kubernetesViews = (search: TimeSearch): ReadonlyArray<TabLink> => {
 	]
 }
 
-/** `KubernetesViewTabs`. */
 export const kubernetesViewTabs = <M>(h: HtmlBuilder<M>, view: KubernetesView, search: TimeSearch): Html =>
 	viewTabStrip(h, "Kubernetes views", kubernetesViews(search), view)
 
-/** `KubernetesShell`'s breadcrumbs: the view crumb links back to its list once a trail follows. */
+/** The Kubernetes pages' breadcrumbs: the view crumb links back to its list once a trail follows. */
 export const kubernetesBreadcrumbs = (
 	view: KubernetesView,
 	search: TimeSearch,

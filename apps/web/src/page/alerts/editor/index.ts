@@ -26,7 +26,6 @@ const lookupDashboardId = (model: Model): string | null => {
 	return chart !== undefined && Option.isSome(decodeChartParam(chart)) ? null : dashboardId
 }
 
-/** `useAlertRulesList`, `useAlertIncidentsList` and `useAlertDestinationsList`. */
 const subscriptions = Subscription.make<PageSubscriptionInput<Model>, Message, Resources>()((entry) => ({
 	rules: entry(byOrg, {
 		modelToDependencies: ({ context }) => ({ orgId: context.orgId }),
@@ -47,7 +46,7 @@ const subscriptions = Subscription.make<PageSubscriptionInput<Model>, Message, R
 		dependenciesToStream: ({ orgId }) =>
 			destinationRows(orgId, (rows) => Message.UpdatedDestinations({ orgId, rows })),
 	}),
-	/** The Add destination menu's `useChatWorkspaceConnect`, outside the menu so closing it keeps watching. */
+	/** The Add destination menu's workspace connect, outside the menu so closing it keeps watching. */
 	menuChatConnect: entry(ChatConnectStream.Dependencies.fields, {
 		modelToDependencies: ({ model }) => ChatConnectStream.dependenciesOf(model.chatConnect),
 		dependenciesToStream: (dependencies) =>
@@ -72,7 +71,7 @@ const subscriptions = Subscription.make<PageSubscriptionInput<Model>, Message, R
 				Message.GotDestinationDialogMessage({ message }),
 			),
 	}),
-	/** `useCollectionLoadFailed(rulesCollection.id, pending)` while an edit waits on the rules. */
+	/** The rules sync failing while an edit waits on it. */
 	rulesLoad: entry(watching, {
 		modelToDependencies: ({ model, context }) => ({
 			orgId: context.orgId,
@@ -91,7 +90,7 @@ const subscriptions = Subscription.make<PageSubscriptionInput<Model>, Message, R
 			dependenciesToStream: () => Stream.map(returns(), () => Message.ReturnedToTab()),
 		},
 	),
-	/** `useDashboardsRead`, only for the id-lookup fallback (a widget link without its snapshot). */
+	/** The dashboards read, only for the id-lookup fallback (a widget link without its snapshot). */
 	sourceDashboard: entry(
 		{ orgId: Schema.String, dashboardId: Schema.NullOr(Schema.String) },
 		{
@@ -128,7 +127,7 @@ export const page = definePage(
 	{ Model, Message },
 	{
 		routes: ["AlertsCreate"],
-		// A different rule or prefill source is a different draft (`RuleDraft.key` remounts the surface).
+		// A different rule or prefill source is a different draft, which remounts the surface.
 		key: (route) => encodeJson(route.search),
 		init,
 		update,

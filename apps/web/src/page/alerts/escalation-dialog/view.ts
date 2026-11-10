@@ -221,7 +221,6 @@ const textField = (
 	])
 }
 
-/** A short number input on one line with its label. */
 const numberField = (
 	h: H,
 	options: Readonly<{

@@ -16,7 +16,7 @@ import { CheckStatusFilter } from "./model"
 import { Message } from "./message"
 
 const PAGE_LIMIT = 100
-/** `useEffectiveTimeRange(search…, "24h")`: snapped on entry, against the real clock on Reload. */
+/** The window, 24h by default: snapped on entry, against the real clock on Reload. */
 export const ResolveRuleWindow = resolveWindowCommand(
 	"ResolveAlertRuleWindow",
 	Message.CompletedResolveWindow,
@@ -36,7 +36,7 @@ export const FetchRuleDeliveries = Command.define("FetchAlertRuleDeliveries", {
 		),
 })
 
-/** `checksAtomFamily`: the newest page and the window summary, together. */
+/** The newest page and the window summary, together. */
 export const FetchRuleChecks = Command.define("FetchAlertRuleChecks", {
 	args: { key: Schema.String, ruleId: AlertRuleId, since: IsoDateTimeString, until: IsoDateTimeString },
 	messages: [Message.CompletedFetchChecks],
@@ -62,7 +62,7 @@ export const FetchRuleChecks = Command.define("FetchAlertRuleChecks", {
 		}).pipe(settleTo((result) => Message.CompletedFetchChecks({ key, result }))),
 })
 
-/** `handleSelectBucket`: one bucket's checks, bounded; the request number drops stale answers. */
+/** One bucket's checks, bounded; the request number drops stale answers. */
 export const FetchBucketChecks = Command.define("FetchAlertRuleBucketChecks", {
 	args: { request: Schema.Number, ruleId: AlertRuleId, since: IsoDateTimeString, until: IsoDateTimeString },
 	messages: [Message.CompletedFetchBucketChecks],
@@ -77,7 +77,6 @@ export const FetchBucketChecks = Command.define("FetchAlertRuleBucketChecks", {
 		}).pipe(settleTo((result) => Message.CompletedFetchBucketChecks({ request, result }))),
 })
 
-/** `ChecksPanel`'s "Load 100 more". */
 export const LoadMoreChecks = Command.define("LoadMoreAlertRuleChecks", {
 	args: {
 		ruleId: AlertRuleId,

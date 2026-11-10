@@ -13,7 +13,7 @@ import type { CommitData, Release } from "./points"
 import { Array as Arr, Order } from "effect"
 import { firstLine, isResolvableSha } from "../commit-card"
 
-// `useCommitMarkers` and `CommitMarkersOverlay`'s geometry (./marker-layout.ts).
+// Commit markers over a chart: the markers, their commit labels and their geometry (./marker-layout.ts).
 
 /** The markers over the chart buckets, each relabelled with its commit subject once that resolved. */
 export const commitMarkers = (
@@ -29,7 +29,7 @@ export const commitMarkers = (
 		return label === "" ? marker : { ...marker, label }
 	})
 
-/** Every sha a marker label resolves (`commitQueryAtom` per representative commit). */
+/** Every sha a marker label resolves (one lookup per representative commit). */
 export const markerShas = (markers: ReadonlyArray<CommitMarker>): ReadonlyArray<string> =>
 	Arr.flatMap(markers, (marker) => {
 		const sha = marker.commits[0]?.sha
@@ -53,7 +53,7 @@ const markerPixel = (bucket: string, plot: PlotGeometry): number | null => {
 
 export type MarkerLayout = Readonly<{ groups: ReadonlyArray<LabelGroup>; labeled: boolean }>
 
-/** The groups `CommitMarkersOverlay` draws on one chart: labelled, or dashes only when dense. */
+/** The groups the markers overlay draws on one chart: labelled, or dashes only when dense. */
 export const markerLayout = (markers: ReadonlyArray<CommitMarker>, plot: PlotGeometry): MarkerLayout => {
 	const plotLeft = plot.x
 	const plotRight = plot.x + plot.width

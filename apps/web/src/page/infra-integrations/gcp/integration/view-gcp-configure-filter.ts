@@ -17,8 +17,6 @@ import { hstack, vstack } from "@maple/views/ui/stack"
 import { dividedList } from "@maple/views/ui/rule"
 import { Array as Arr } from "effect"
 
-// `LogFilter` and `GcpLogFilterField`: the filter the script gives the log sink.
-
 type H = HtmlBuilder<Message>
 
 const PANEL_ID = "gcp-log-filter-panel"
@@ -104,14 +102,13 @@ export type FilterFieldOptions = Readonly<{
 
 const LABEL = typographyClass({ size: "xs", tone: "muted", weight: "medium" })
 
-/** `GcpLogFilterField`: whose application output comes along. */
 export const filterField = (
 	h: H,
 	configure: Pick<ConfigureModel, "filter" | "filterMode">,
 	options: FilterFieldOptions,
 ): Html => {
 	const choice = gcpLogFilterChoice(configure.filter, options.sinkExists)
-	// Base UI's field is filled once its Select holds a value.
+	// The field is filled once its Select holds a value.
 	const state: FieldState = {
 		isInvalid: false,
 		isDirty: false,

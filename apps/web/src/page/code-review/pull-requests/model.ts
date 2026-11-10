@@ -15,8 +15,6 @@ import { Frame, FrameMessage } from "../kit/frame"
 import { ResponseCache } from "../kit/page-steps"
 import { ReviewSheet, SheetMessage } from "../kit/review-sheet"
 
-// `/code-review/pull-requests` and its review sheet.
-
 export const Model = Schema.Struct({
 	search: CodeReviewPullRequestsSearch,
 	frame: Frame,
@@ -26,7 +24,7 @@ export const Model = Schema.Struct({
 	/** The filters' author list (`codeReview.analytics` without the author). */
 	authors: KeyedSchema(CodeReviewAnalytics, LoadFailure),
 	authorsCache: ResponseCache(CodeReviewAnalytics),
-	/** `useState(PAGE)`: Load more adds a page; a filter change starts over. */
+	/** Load more adds a page; a filter change starts over. */
 	limit: Schema.Number,
 	statusSelect: Select.Model,
 	/** The search box's input and its debounce generation. */

@@ -5,7 +5,7 @@ import { PageOutMessage, type PageReturn } from "../contract"
 import { type PresetValue, timeControls, type TimeSearch } from "./time-controls"
 import * as TimeRangePicker from "./time-range-picker"
 
-// The header time cluster pages share (`DashboardPage`'s `time` prop) and the picker's update step.
+// The header time cluster pages share, and the picker's update step.
 
 export type TimePickerStep<M> = Readonly<{
 	timePicker: TimeRangePicker.Model
@@ -18,7 +18,7 @@ export const stepTimePicker = <M>(
 	picker: TimeRangePicker.Model,
 	message: TimeRangePicker.Message,
 	toMessage: (message: TimeRangePicker.Message) => M,
-	/** The page URL for a picked range (`applyTimeRangeSearch`; `withPreset` takes it). */
+	/** The page URL for a picked range (`withPreset` takes it). */
 	hrefFor: (picked: TimeRangePicker.TimeSearchPatch) => string,
 ): TimePickerStep<M> => {
 	const next = TimeRangePicker.update(picker, message)
@@ -56,7 +56,7 @@ export const pickerStep = <Model extends Readonly<{ timePicker: TimeRangePicker.
 	return { ...lifted, outMessage: onPick(TimeRangePicker.searchPatchOf(next.outMessage)) }
 }
 
-/** `applyTimeRangeSearch`: a preset clears the absolute bounds, a custom range the preset. */
+/** A preset clears the absolute bounds, a custom range the preset. */
 export const withPreset = <S extends TimeSearch>(
 	search: S,
 	picked: string | TimeRangePicker.TimeSearchPatch,

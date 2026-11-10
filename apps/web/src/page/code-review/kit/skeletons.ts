@@ -495,7 +495,7 @@ export const repositoryListSkeleton = <M>(h: HtmlBuilder<M>, access: Html, isNes
 export const withSlowNote = <M>(h: HtmlBuilder<M>, label: string, block: Html): Html =>
 	h.div([h.Class("relative"), h.AriaBusy(true), h.AriaLabel(label)], [block, slowNote(h)])
 
-/** `PullRequestCiRuns`' rows: result badge, workflow, commit and duration. */
+/** The CI runs list's rows: result badge, workflow, commit and duration. */
 export const ciRunsSkeleton = <M>(h: HtmlBuilder<M>, isNested = false): Html =>
 	vstack(
 		h,
@@ -530,7 +530,7 @@ const findingCardSkeleton = <M>(h: HtmlBuilder<M>, index: number): Html =>
 		],
 	)
 
-/** `ReviewDetailBody` before the first answer: header, stat tiles and the report's sections in place. */
+/** The review sheet body before the first answer: header, stat tiles and the report's sections in place. */
 export const reviewSheetSkeleton = <M>(h: HtmlBuilder<M>, id: string): ReadonlyArray<Html> => [
 	DialogView.dialogHeader(
 		h,

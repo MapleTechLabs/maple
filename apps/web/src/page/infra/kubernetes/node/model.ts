@@ -8,8 +8,6 @@ import * as Frame from "../../../kit/time-frame"
 import { ChartModels, SeriesSlots } from "../../../kit/series"
 import { PodsPage } from "../pod-data"
 
-// `/infra/kubernetes/nodes/$nodeName`.
-
 export const NodeSummary = NodeDetailSummaryResponse.fields.data
 export type NodeSummary = NodeDetailSummaryResponse["data"]
 

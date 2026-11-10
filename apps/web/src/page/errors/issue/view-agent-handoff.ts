@@ -16,8 +16,6 @@ import { typography } from "@maple/views/ui/typography"
 import { hstack, vstack } from "@maple/views/ui/stack"
 import { Array as Arr, String as Str } from "effect"
 
-// `GetItFixed`: the two ways to a fix, the user's own coding agent and Maple's investigation.
-
 type H = HtmlBuilder<Message>
 
 const AGENTS: ReadonlyArray<readonly [string, IconName]> = [
@@ -46,7 +44,6 @@ const agentGlyphs = (h: H): Html =>
 		),
 	)
 
-/** One way to a fix: its label and glyphs, what it does, then its actions. */
 const lane = (
 	h: H,
 	options: Readonly<{
@@ -187,7 +184,6 @@ const promptPreview = (h: H, prompt: string): Html =>
 		],
 	)
 
-/** `GetItFixed`: both ways to a fix side by side, the prompt preview under them. */
 export const getItFixedPanel = (
 	h: H,
 	model: Model,

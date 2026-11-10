@@ -14,21 +14,19 @@ import * as Field from "@maple/views/ui/field"
 import { derivePlanetScaleSetup } from "../setup-steps"
 import { Message } from "../../../integrations/message"
 
-// `PlanetScaleIntegrationCard` and its connect flow: state and IO.
-
 /** Where branch metrics come from: the OAuth grant's metrics API, or a Prometheus service token. */
 export const PlanetscaleMetricsMethod = Schema.Literals(["api", "service_token"])
 export type PlanetscaleMetricsMethod = typeof PlanetscaleMetricsMethod.Type
 
 export const PlanetscaleCardModel = Schema.Struct({
-	/** `PlanetScaleOrgPicker`: inline on the flow's Choose data step, in a dialog for Edit data. */
+	/** The org picker: inline on the flow's Choose data step, in a dialog for Edit data. */
 	pickerDialog: Dialog.Model,
 	organizations: KeyedSchema(V2PlanetScaleOrganizationList, LoadFailure),
 	selectedOrg: Schema.NullOr(Schema.String),
 	includeBranches: Field.Model,
 	excludeBranches: Field.Model,
 	isSelecting: Schema.Boolean,
-	/** `PlanetScaleMetricsHealth`'s "Show details". */
+	/** The metrics health row's "Show details". */
 	isDetailsOpen: Schema.Boolean,
 	/** The Connect step's metrics choice; null follows the connection's current `metrics_auth`. */
 	metricsMethod: Schema.NullOr(PlanetscaleMetricsMethod),

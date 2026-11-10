@@ -10,8 +10,6 @@ import { LoadFailure, toLoadFailure, settleTo } from "@maple/views/data/load-fai
 import { MapleInternalApiClient } from "../../platform/api-clients"
 import { Message } from "./message"
 
-// The Google Search Console card: the property picker's state and its reads and writes.
-
 export const SearchConsoleCardModel = Schema.Struct({
 	/** The Google account's properties, live from Google. */
 	sites: KeyedSchema(SearchConsoleAvailableSitesResponse, LoadFailure),

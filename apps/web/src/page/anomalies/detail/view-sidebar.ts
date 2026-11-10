@@ -23,8 +23,6 @@ import { typography, typographyClass } from "@maple/views/ui/typography"
 import { hstack, vstack } from "@maple/views/ui/stack"
 import { Array as Arr } from "effect"
 
-// `AnomalySidebar`: the anomaly detail's side rail.
-
 type H = HtmlBuilder<Message>
 
 export type SidebarInput = Readonly<{

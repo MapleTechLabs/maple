@@ -15,8 +15,8 @@ const DEFAULT_PAD_MS = 15 * 60_000
 const FALLBACK_PRESET = "30m"
 
 /**
- * `infraCorrelationWindow` for a parseable anchor: 15 minutes either side, covering the span, on
- * snapped to a 15 s grid before the request is sent.
+ * The window for a parseable anchor: 15 minutes either side, covering the span, snapped to a 15 s
+ * grid before the request is sent.
  */
 export const anchoredWindow = (anchor: string, spanDurationMs: number): Option.Option<TimeWindow> => {
 	const anchorMs = new Date(normalizeTimestampInput(anchor)).getTime()

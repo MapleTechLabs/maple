@@ -11,9 +11,7 @@ import { Option, Array as Arr } from "effect"
 import { AsyncData } from "foldkit"
 import { type Model, SESSION_VIEWS, type SessionView } from "./model"
 
-// The hook half of `useSessionSpans` and what the route derives from it.
-
-/** `SessionLoadProgress` without its `retry` (a Message here). */
+/** How far a large session has loaded; its retry is a Message. */
 export type LoadProgress = Readonly<{
 	phase: "agent" | "app" | "complete" | "failed"
 	agentSpansComplete: boolean

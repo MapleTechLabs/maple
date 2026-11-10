@@ -10,7 +10,7 @@ export const resourceNotFound = <M>(
 		title: string
 		/** Text, or text with inline markup (a mono id). */
 		description?: string | ReadonlyArray<Html | string>
-		/** `icon`: the media tile's glyph, at the icon's own size (default: the warning at 18). */
+		/** The media tile's glyph, at the icon's own size (default: the warning at 18). */
 		icon?: Html
 		back?: Readonly<{ href: string; label: string }>
 		className?: string

@@ -18,8 +18,7 @@ import { detailPanel, panelRestState } from "./view-panel"
 import { typography } from "@maple/views/ui/typography"
 import { hstack, vstack } from "@maple/views/ui/stack"
 
-// The templates page: below `lg` the detail panel is a
-// right sheet over the list (`panelIsSheet`), else the side pane.
+// Below `lg` the detail panel is a right sheet over the list, else the side pane.
 
 type H = HtmlBuilder<Message>
 
@@ -109,7 +108,7 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 	)
 })
 
-/** `<SheetContent side="right">` with the sr-only header, around the detail panel. */
+/** The right sheet with the sr-only header, around the detail panel. */
 const panelSheet = (h: H, model: Model, content: Html): Html =>
 	h.submodel({
 		slotId: `${PANEL_SHEET_ID}-dialog`,

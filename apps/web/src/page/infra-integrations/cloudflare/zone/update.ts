@@ -65,7 +65,6 @@ const navigate = (model: Model, search: Search, isReplace = false): Return => ({
 
 const warehouseTimeToMs = (value: string) => new Date(`${Str.replace(" ", "T")(value)}Z`).getTime()
 
-/** Every read the page shows right now, keyed like the atoms. */
 const sync = (model: Model, context: PageContext, mode: Keyed.RequestMode): Return => {
 	const window = model.window
 	if (window === null) return { model }
@@ -197,7 +196,7 @@ export const routeChanged = (model: Model, route: Route, context: PageContext): 
 
 export const contextChanged = (model: Model, context: PageContext): Return => sync(model, context, "Load")
 
-/** `onToggleFilter`: one value in or out of a multi-select filter; `pathContains` is not toggled. */
+/** One value in or out of a multi-select filter; `pathContains` is not toggled. */
 const toggled = (model: Model, key: FilterKey, value: string): Return => {
 	if (key === "pathContains") return { model }
 	const next = toggleFilterValue(filtersOf(model)[key], value)

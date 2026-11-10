@@ -10,8 +10,6 @@ import {
 } from "../../kit/integration-empty"
 import { providerBrand } from "../../kit/providers"
 
-// The Supabase on-ramp /infra/supabase shows while nothing is connected.
-
 export const SUPABASE_BRAND = providerBrand("supabase")
 
 export const SUPABASE_NOT_CONFIGURED = "Supabase isn't configured on this deployment."

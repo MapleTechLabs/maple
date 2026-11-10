@@ -34,7 +34,7 @@ type TileOptions<M> = Readonly<{
 	className: string
 }>
 
-/** `StatRailItem` with `onSelect`: the tile is a button that lights when its metric is drawn. */
+/** A stat rail item with `onSelect`: the tile is a button that lights when its metric is drawn. */
 export const selectableTile = <M>(h: HtmlBuilder<M>, options: TileOptions<M>): Html =>
 	statRailItem(h, {
 		eyebrow: options.eyebrow,
@@ -55,7 +55,7 @@ const sublineText = <M>(h: HtmlBuilder<M>, children: ReadonlyArray<Html | string
 		children,
 	)
 
-/** `ToolDeltaValue`: the change in the metric's own unit, graded by `toolDelta`. */
+/** The change in the metric's own unit, graded by `toolDelta`. */
 const deltaValue = <M>(h: HtmlBuilder<M>, change: ToolDelta): Html =>
 	delta(h, {
 		ratio: change.direction === "flat" ? 0 : change.direction === "up" ? 1 : -1,
@@ -148,7 +148,6 @@ export const metricStrip = <M>(h: HtmlBuilder<M>, config: MetricStripConfig<M>):
 	)
 }
 
-/** `ToolMetricStripLoading`. */
 export const metricStripLoading = <M>(h: HtmlBuilder<M>): Html =>
 	hstack(
 		h,

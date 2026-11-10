@@ -12,8 +12,6 @@ import { typography, typographyClass } from "@maple/views/ui/typography"
 import { Array as Arr } from "effect"
 import { hstack, vstack } from "@maple/views/ui/stack"
 
-// The project table and its loading state.
-
 type H = HtmlBuilder<Message>
 
 const COLUMNS: ReadonlyArray<{ label: string; width: string; align?: "right"; hidden?: string }> = [

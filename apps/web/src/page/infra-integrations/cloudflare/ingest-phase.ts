@@ -9,13 +9,13 @@ import { Array as Arr } from "effect"
  *
  * The poller's shape is what makes the wait explainable: the alerting cron ticks every 5 minutes
  * and never queries buckets younger than the 10-minute safety lag, so a fresh connection is empty
- * for a quarter hour by design — and the 24h history then fills in behind it, bounded by the
+ * for a quarter hour by design, and the 24h history then fills in behind it, bounded by the
  * per-tick call budget. Silence past {@link STALL_AFTER_MS} is no longer explainable that way.
  */
 export type CloudflareIngestPhase =
 	/** Connected, but the poller hasn't listed the account's zones and Workers yet. */
 	| { readonly kind: "discovering" }
-	/** Zones known, nothing queryable yet — the expected first ~15 minutes. */
+	/** Zones known, nothing queryable yet: the expected first ~15 minutes. */
 	| { readonly kind: "collecting" }
 	/** Some zones report data, others don't. */
 	| { readonly kind: "partial"; readonly live: number; readonly total: number }
@@ -47,7 +47,7 @@ const hasData = (usage: CloudflareUsageResponse, displayName: string): boolean =
 	)
 
 /**
- * `usage` is the warehouse read — pass `null` while it is loading or failed, which holds the
+ * `usage` is the warehouse read: pass `null` while it is loading or failed, which holds the
  * phase at the poller's own view rather than reporting an absence the warehouse never confirmed.
  */
 export function cloudflareIngestPhase(
@@ -59,7 +59,7 @@ export function cloudflareIngestPhase(
 	const stalled = status.connectedAt != null && now - status.connectedAt > STALL_AFTER_MS
 
 	// No state rows at all: discovery hasn't run (or found nothing). The connect callback primes
-	// it, so this is normally a few seconds — long enough and it's the same dead end as no data.
+	// it, so this is normally a few seconds; long enough and it's the same dead end as no data.
 	if (zones.length === 0 && status.workers == null) {
 		return stalled ? { kind: "stalled" } : { kind: "discovering" }
 	}
@@ -85,7 +85,7 @@ export function cloudflareIngestPhase(
 	}
 	// A zone with no traffic at all is indistinguishable from one still catching up, so only
 	// call it partial while the connection is young enough for catching-up to be the likelier
-	// explanation — past that, a quiet zone is just quiet and shouldn't nag forever.
+	// explanation. Past that, a quiet zone is just quiet and shouldn't nag forever.
 	if (live < zones.length && !stalled) {
 		return { kind: "partial", live, total: zones.length }
 	}
@@ -95,9 +95,9 @@ export function cloudflareIngestPhase(
 }
 
 /**
- * Fraction of the 24h history already ingested, or null when it is complete (or hasn't started —
+ * Fraction of the 24h history already ingested, or null when it is complete (or hasn't started:
  * the frontier is seeded by the first head poll). Zones fill independently and the frontier walks
- * DOWN, so the zone with the HIGHEST frontier is the one furthest from done — and a chart reaching
+ * DOWN, so the zone with the HIGHEST frontier is the one furthest from done, and a chart reaching
  * back a day is only as complete as that zone. Reporting the lowest instead would let one
  * finished zone (whose frontier rests at the floor) claim the whole account was caught up.
  */

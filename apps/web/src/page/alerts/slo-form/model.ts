@@ -9,8 +9,6 @@ import * as Menu from "@maple/views/ui/menu"
 import { AlertsSloNewSearch } from "../../../route/search"
 import { Form } from "./form"
 
-// `/alerts/slos/new`: create an SLO, or edit one (`?sloId=`).
-
 export const Model = Schema.Struct({
 	search: AlertsSloNewSearch,
 	/** The SLO being edited; `null` creates. */

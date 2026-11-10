@@ -48,8 +48,6 @@ import { sectionHeading } from "../../kit/section-heading"
 import { typography } from "@maple/views/ui/typography"
 import { hstack, vstack } from "@maple/views/ui/stack"
 
-// The rule detail's Overview tab.
-
 type H = HtmlBuilder<Message>
 
 const SIGNAL_SOURCE_DESCRIPTION = new Map<SignalSource, string>([
@@ -57,7 +55,7 @@ const SIGNAL_SOURCE_DESCRIPTION = new Map<SignalSource, string>([
 	["checks", "What the evaluator actually observed and stored, one point per check."],
 ])
 
-/** `tierCondition`: one tier's condition, e.g. "> 2.00% (recovers < 1.50%)". */
+/** One tier's condition, e.g. "> 2.00% (recovers < 1.50%)". */
 const tierCondition = (rule: AlertRuleDocument, tier: AlertRuleDocument["thresholds"][number]): string => {
 	const value = (n: number) => formatSignalValue(rule.signalType, n)
 	const bound = tier.upper === null ? value(tier.value) : `${value(tier.value)} – ${value(tier.upper)}`
@@ -272,7 +270,6 @@ const configuration = (h: H, rule: AlertRuleDocument): Html =>
 		],
 	)
 
-/** `Result.builder(checksResult).onError(...)`: the checks read's failure, if any. */
 const checksFailureOf = (model: Model): Option.Option<LoadFailure> =>
 	AsyncData.match(model.checks.data, {
 		onIdle: () => Option.none(),

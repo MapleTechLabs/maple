@@ -4,8 +4,8 @@ import * as CopyButton from "@maple/views/ui/copy-button"
 import * as Popover from "@maple/views/ui/popover"
 import { hstack } from "@maple/views/ui/stack"
 
-// `ErrorDetailsPopover`: the card clamps a failed tile's
-// message to two lines; the full SQL or ClickHouse message lives behind "Details", with a copy button.
+// The card clamps a failed tile's message to two lines; the full SQL or ClickHouse message lives
+// behind "Details", with a copy button.
 
 export type ErrorDetailsInputs<M> = Readonly<{
 	slotId: string
@@ -28,31 +28,36 @@ export const errorDetailsPopover = <M>(h: HtmlBuilder<M>, inputs: ErrorDetailsIn
 				h.div(
 					[h.Class("contents")],
 					withTrigger(
-						button(h, { variant: "ghost", size: "xs", className: "h-5 text-3xs", attributes: [...trigger] }, [
-							"Details",
-						]),
+						button(
+							h,
+							{
+								variant: "ghost",
+								size: "xs",
+								className: "h-5 text-3xs",
+								attributes: [...trigger],
+							},
+							["Details"],
+						),
 					),
 				),
 			toContent: () => [
-				hstack(h, { gap: "2", align: "start" },
-					[
-						h.pre(
-							[
-								h.Class(
-									"max-h-60 min-w-0 flex-1 overflow-auto whitespace-pre-wrap break-words font-mono text-xs",
-								),
-							],
-							[inputs.message],
-						),
-						CopyButton.view(h, {
-							model: inputs.copy,
-							toParentMessage: inputs.onCopy,
-							value: inputs.message,
-							label: "Error message",
-							className: "shrink-0",
-						}),
-					],
-				),
+				hstack(h, { gap: "2", align: "start" }, [
+					h.pre(
+						[
+							h.Class(
+								"max-h-60 min-w-0 flex-1 overflow-auto whitespace-pre-wrap break-words font-mono text-xs",
+							),
+						],
+						[inputs.message],
+					),
+					CopyButton.view(h, {
+						model: inputs.copy,
+						toParentMessage: inputs.onCopy,
+						value: inputs.message,
+						label: "Error message",
+						className: "shrink-0",
+					}),
+				]),
 			],
 		},
 	})

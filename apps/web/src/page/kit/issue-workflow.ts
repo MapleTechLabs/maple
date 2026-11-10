@@ -56,7 +56,7 @@ const CLOSED_MARK = new Map<WorkflowState, readonly [string, boolean]>([
 const circle = <M>(h: HtmlBuilder<M>, attributes: ReadonlyArray<readonly [string, string]>): Html =>
 	h.circle(Arr.map(attributes, ([name, value]) => h.Attribute(name, value)))
 
-/** `WorkflowRingIcon`: the state as a ring that fills as the work progresses. */
+/** The state as a ring that fills as the work progresses. */
 export const workflowRingIcon = <M>(
 	h: HtmlBuilder<M>,
 	state: WorkflowState,

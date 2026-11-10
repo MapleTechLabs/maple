@@ -27,12 +27,8 @@ import type { Tier } from "./message"
 import { formSelect } from "./view-select"
 import { ALERT_SEVERITY_LABEL } from "../shared/badges"
 
-// `NotificationsSection`: who gets notified, per tier,
-// and the optional message template.
-
 type H = HtmlBuilder<Message>
 
-/** What the section reads off the Model and the draft. */
 type NotificationsView = NotifyView &
 	Pick<
 		Model,
@@ -94,7 +90,7 @@ const chainOptions = (model: NotificationsView, chainId: EscalationChainId | nul
 	]
 }
 
-/** `TierChainPicker`: the escalation chain a tier starts on top of its destinations. */
+/** The escalation chain a tier starts on top of its destinations. */
 const chainPicker = (
 	h: H,
 	model: NotificationsView,
@@ -196,7 +192,7 @@ const tierRouting = (
 		),
 	])
 
-/** `MessageTemplate`: collapsed until opened, or open when the rule has one. */
+/** Collapsed until opened, or open when the rule has one. */
 const messageTemplate = (h: H, model: NotificationsView, form: NotificationsForm): Html => {
 	const hasTemplate = form.notificationTitle.length > 0 || form.notificationBody.length > 0
 	const isOpen = model.isMessageTemplateOpen

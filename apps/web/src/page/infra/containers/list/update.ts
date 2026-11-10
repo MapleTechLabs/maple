@@ -44,7 +44,7 @@ export const EXCLUDED_OF = {
 	environments: "excludedEnvironments",
 } as const satisfies Record<Facet, string>
 
-/** The `ContainerFilters` the URL carries. */
+/** The container filters the URL carries. */
 export const filtersOf = (search: Search) => ({
 	containerNames: search.containerNames,
 	hostNames: search.hostNames,
@@ -66,7 +66,7 @@ export const sortOf = (search: Search) => {
 	return { sortBy, sortDir }
 }
 
-/** `useResettingPage`'s key: the page index survives only while this is unchanged. */
+/** The page index survives only while this key is unchanged. */
 const resetKeyOf = (model: Model) =>
 	encodeJson({
 		filters: filtersOf(model.search),

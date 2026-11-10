@@ -12,8 +12,6 @@ import { GCP_TITLE, SMALL } from "./view-gcp-parts"
 import { hstack, vstack, vstackClass } from "@maple/views/ui/stack"
 import { Array as Arr } from "effect"
 
-// `CollectFields`: a switch per capability, with the log filter under Logs. Nothing is saved here.
-
 type H = HtmlBuilder<Message>
 
 const COLLECT_ID = "gcp-collect"
